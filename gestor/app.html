@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gestor • Painel Grão 1000</title>
+  <link rel="stylesheet" href="/ui.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="inner">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <div class="title">Grão 1000</div>
+          <div class="pill">Gestor</div>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn" id="btnLogout">Sair</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="grid cols-2" style="grid-template-columns: 280px 1fr; align-items:start">
+      <div class="card side">
+        <div class="hd">
+          <h3 style="margin:0">Módulos</h3>
+          <div class="small mono" id="who"></div>
+        </div>
+        <div class="bd">
+          <div class="nav" id="nav">
+            <a href="#compras" data-mod="compras">Compras</a>
+<a href="#hospedagem" data-mod="hospedagem">Hospedagem</a>
+<a href="#frotas" data-mod="frotas">Frotas</a>
+<a href="#multas" data-mod="multas">Multas</a>
+          </div>
+          <div style="height:10px"></div>
+          <div class="small">
+            API: <span class="mono">/api</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd">
+          <h2 style="margin:0" id="pageTitle">Início</h2>
+          <div class="small" id="pageSub">Selecione um módulo ao lado.</div>
+        </div>
+        <div class="bd" id="module_container">
+          <div class="notice">Pronto. Escolha um módulo.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/session.js"></script>
+<script src="/assets/js/auth.js"></script>
+<script src="/assets/js/router.js"></script>
+<script>
+(function(){
+  if(!SESSION.requireAuth()) return;
+
+  const role = (SESSION.role() || "gestor").toLowerCase();
+  const profile = SESSION.profile() || {};
+  document.getElementById("who").textContent = (profile.nome || profile.Nome || "Usuário") + " • " + role;
+
+  document.getElementById("btnLogout").addEventListener("click", ()=>AUTH.logout());
+
+  const nav = document.getElementById("nav");
+  const container = document.getElementById("module_container");
+  const pageTitle = document.getElementById("pageTitle");
+  const pageSub = document.getElementById("pageSub");
+
+  function setActive(modName){
+    [...nav.querySelectorAll("a")].forEach(a=>a.classList.toggle("active", a.dataset.mod===modName));
+  }
+
+  async function open(modName){
+    try{
+      setActive(modName);
+      pageTitle.textContent = modName.charAt(0).toUpperCase() + modName.slice(1);
+      pageSub.textContent = "Carregando...";
+      container.innerHTML = '<div class="notice">Carregando módulo <span class="mono">'+modName+'</span>…</div>';
+
+      await APP_ROUTER.openModule(modName, container, {
+        auth: { token: SESSION.token(), role },
+        api: window.API,
+        onBack: ()=>{ location.hash=""; }
+      });
+      pageSub.textContent = "OK";
+    }catch(e){
+      container.innerHTML = '<div class="notice err">Erro: '+(e.message||e)+'</div>';
+      pageSub.textContent = "Erro";
+    }
+  }
+
+  function fromHash(){
+    const h = (location.hash||"").replace(/^#/, "");
+    return h || "compras";
+  }
+
+  window.addEventListener("hashchange", ()=>open(fromHash()));
+  nav.addEventListener("click", (e)=>{
+    const a = e.target.closest("a[data-mod]");
+    if(!a) return;
+    e.preventDefault();
+    location.hash = a.dataset.mod;
+  });
+
+  open(fromHash());
+})();
+</script>
+</body>
+</html>

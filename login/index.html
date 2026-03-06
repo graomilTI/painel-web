@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Login • Painel Grão 1000</title>
+  <link rel="stylesheet" href="/ui.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="inner">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <div class="title">Grão 1000</div>
+          <div class="pill">Painel • Login</div>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <a class="btn" href="/">Voltar</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="grid cols-2" style="align-items:start">
+      <div class="card">
+        <div class="hd">
+          <h2 style="margin:0">Acesso ao painel</h2>
+          <div class="small">Entre com CPF e PIN.</div>
+        </div>
+        <div class="bd">
+          <div style="margin-bottom:12px">
+            <div class="label">CPF</div>
+            <input class="input" id="cpf" inputmode="numeric" autocomplete="username" placeholder="000.000.000-00" />
+          </div>
+          <div style="margin-bottom:12px">
+            <div class="label">PIN</div>
+            <input class="input" id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••" />
+          </div>
+          <div class="row">
+            <button class="btn primary" id="btnLogin">Entrar</button>
+            <button class="btn" id="btnClear" type="button">Limpar</button>
+          </div>
+          <div id="msg" style="margin-top:12px"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd">
+          <h3 style="margin:0">Dicas</h3>
+          <div class="small">Problemas de acesso?</div>
+        </div>
+        <div class="bd">
+          <div class="notice">
+            Se a API estiver fora, teste <span class="mono">/api/health</span>.
+          </div>
+          <div style="height:10px"></div>
+          <div class="small">
+            Atalhos: <span class="mono">/gestor/</span> • <span class="mono">/adm/</span> • <span class="mono">/diretoria/</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/session.js"></script>
+<script src="/assets/js/auth.js"></script>
+<script>
+(function(){
+  const cpfEl = document.getElementById("cpf");
+  const pinEl = document.getElementById("pin");
+  const msgEl = document.getElementById("msg");
+  const btn = document.getElementById("btnLogin");
+  const btnClear = document.getElementById("btnClear");
+
+  cpfEl.addEventListener("input", ()=>{ cpfEl.value = AUTH.formatCPF(cpfEl.value); });
+
+  function setMsg(html, isErr){
+    msgEl.innerHTML = '<div class="notice '+(isErr?'err':'')+'">'+html+'</div>';
+  }
+
+  btnClear.addEventListener("click", ()=>{
+    cpfEl.value = "";
+    pinEl.value = "";
+    msgEl.innerHTML = "";
+    cpfEl.focus();
+  });
+
+  async function doLogin(){
+    btn.disabled = true;
+    btn.textContent = "Entrando...";
+    msgEl.innerHTML = "";
+    try{
+      const data = await AUTH.login({ cpf: cpfEl.value, pin: pinEl.value });
+      const next = new URLSearchParams(location.search).get("next");
+      const role = (data.role || SESSION.role() || "gestor").toLowerCase();
+      const fallback = role === "adm" ? "/adm/" : (role === "diretoria" ? "/diretoria/" : "/gestor/");
+      location.href = next || fallback;
+    }catch(e){
+      setMsg(e.message || "Falha no login", true);
+    }finally{
+      btn.disabled = false;
+      btn.textContent = "Entrar";
+    }
+  }
+
+  btn.addEventListener("click", doLogin);
+  pinEl.addEventListener("keydown", (e)=>{ if(e.key==="Enter") doLogin(); });
+})();
+</script>
+</body>
+</html>
