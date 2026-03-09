@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="../ui.css"/>
+  <style>
+    .wrap{padding:18px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row" style="justify-content:flex-end; margin-bottom:10px">
+      <a class="btn" href="app.html">Voltar</a>
+    </div>
+    <div class="h1">Início</div>
+    <div class="notice">Selecione um módulo no menu ou clique em um cartão abaixo.</div>
+
+    <div style="height:14px"></div>
+
+    <div class="gridCards">
+      <div class="tile" data-route="programacao">
+        <div class="title">🗓️ Programação</div>
+        <div class="desc">Etapas A–E (salva ao avançar)</div>
+      </div>
+      <div class="tile" data-route="clientes">
+        <div class="title">👥 Clientes</div>
+        <div class="desc">Registrar contatos e PDFs</div>
+      </div>
+      <div class="tile" data-route="compras">
+        <div class="title">🧾 Compras</div>
+        <div class="desc">Uniformes, EPIs e materiais</div>
+      </div>
+      <div class="tile" data-route="relatorios">
+        <div class="title">✅ Relatórios</div>
+        <div class="desc">Bônus/Desconto e notificações</div>
+      </div>
+      <div class="tile" data-route="gps">
+        <div class="title">📍 GPS</div>
+        <div class="desc">Mapa operacional</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // comunica com o app (parent)
+    document.querySelectorAll(".tile").forEach(el=>{
+      el.addEventListener("click", ()=>{
+        const route = el.getAttribute("data-route");
+        parent.postMessage({ type:"nav", route }, "*");
+      });
+    });
+  </script>
+</body>
+</html>

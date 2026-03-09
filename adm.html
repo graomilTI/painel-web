@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Redirecionando…</title>
+  <meta name="robots" content="noindex"/>
+</head>
+<body>
+  <noscript>
+    <a href="/painel/adm/">Abrir Painel ADM</a>
+  </noscript>
+
+  <script>
+    (function(){
+      const isProd = (location.hostname === "grao1000.com.br" || location.hostname === "www.grao1000.com.br");
+      // ✅ Em produção, sempre entra pelo prefixo /painel para evitar loops/redirects externos em /adm
+      const target = isProd ? "/painel/adm/" : "adm/adm.html";
+      location.replace(target);
+    })();
+  </script>
+</body>
+</html>

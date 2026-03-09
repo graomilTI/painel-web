@@ -57,6 +57,7 @@
 
 <script src="/painel/assets/js/api.js"></script>
 <script src="/painel/assets/js/session.js"></script>
+<script src="/painel/assets/js/auth_unificado.js"></script>
 <script src="/painel/assets/js/auth.js"></script>
 <script src="/painel/assets/js/router.js"></script>
 <script>
@@ -86,7 +87,7 @@
       container.innerHTML = '<div class="notice">Carregando módulo <span class="mono">'+modName+'</span>…</div>';
 
       await APP_ROUTER.openModule(modName, container, {
-        auth: { token: SESSION.token(), role },
+        auth: { token: SESSION.token(), role, profile },
         api: window.API,
         onBack: ()=>{ location.hash=""; }
       });

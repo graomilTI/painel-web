@@ -1,66 +1,479 @@
-
-/* ===== Ajuste fluxo de consistência (v5.3) ===== */
-
-.flow-section{
-display:grid;
-grid-template-columns: 1.2fr 1fr;
-gap:60px;
-align-items:center;
+:root{
+  --bg1:#071625;
+  --bg2:#020b15;
+  --card:#0b2236;
+  --card2:#0d2b44;
+  --text:#e8f1ff;
+  --muted:#a8c1dd;
+  --line:rgba(255,255,255,.10);
+  --green:#10b981;
+  --green2:#14b8a6;
+  --danger:#ef4444;
+  --warn:#f59e0b;
 }
 
-.flow-cards{
-display:flex;
-align-items:center;
-justify-content:center;
-gap:26px;
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  color:var(--text);
+  background: radial-gradient(1200px 700px at 30% 20%, #123a5b 0%, var(--bg1) 35%, var(--bg2) 100%);
+  min-height:100vh;
 }
 
-.flow-card{
-width:210px;
-min-height:260px;
-padding:20px 18px;
-display:flex;
-flex-direction:column;
-align-items:center;
-background:rgba(10,20,25,.88);
-border:1px solid rgba(0,255,140,.15);
-border-radius:16px;
-box-shadow:
-0 10px 25px rgba(0,0,0,.55),
-inset 0 0 0 1px rgba(0,255,140,.05);
-transition:.25s;
-text-align:center;
+.container{max-width:1100px;margin:0 auto;padding:24px}
+.loginCard{
+  width:min(520px, calc(100vw - 32px));
+  margin:72px auto;
+  padding:22px;
+  border:1px solid var(--line);
+  background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+  border-radius:18px;
+  box-shadow:0 18px 60px rgba(0,0,0,.45);
+  backdrop-filter: blur(10px);
+}
+.h1{font-size:34px;font-weight:800;letter-spacing:.2px;margin-bottom:4px}
+.hint{color:var(--muted);margin-bottom:16px}
+.row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.field{flex:1;min-width:180px}
+label{display:block;font-size:12px;color:var(--muted);margin:6px 2px}
+input, select, textarea{
+  width:100%;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid var(--line);
+  outline:none;
+  background:rgba(0,0,0,.18);
+  color:var(--text);
 }
 
-.flow-card:hover{
-transform:translateY(-4px);
-border-color:rgba(0,255,140,.35);
+/* =========================
+ * SELECT / OPTION — tema escuro (corrige dropdown branco)
+ * ========================= */
+select{
+  color-scheme: dark;
 }
 
-.flow-arrow{
-font-size:22px;
-color:#21ff86;
-opacity:.8;
+select option{
+  background-color: #0b2236; /* card */
+  color: var(--text);
 }
 
-.flow-card .pill{
-margin-top:8px;
-font-size:12px;
-padding:6px 10px;
-border-radius:20px;
-background:rgba(255,255,255,.05);
-border:1px solid rgba(255,255,255,.08);
+select option:checked{
+  background-color: rgba(16,185,129,.35);
+  color: #ffffff;
 }
 
-@media(max-width:980px){
+/* alguns navegadores respeitam hover */
+select option:hover{
+  background-color: rgba(16,185,129,.22);
+  color: #ffffff;
+}
+textarea{min-height:90px;resize:vertical}
+.btn{
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.06);
+  color:var(--text);
+  padding:10px 14px;
+  border-radius:12px;
+  cursor:pointer;
+  font-weight:700;
+}
+.btn:hover{background:rgba(255,255,255,.10)}
+.btn.primary{
+  border:0;
+  background:linear-gradient(90deg, var(--green), var(--green2));
+  color:#042016;
+}
+.btn.danger{background:rgba(239,68,68,.16); border-color:rgba(239,68,68,.35)}
 
-.flow-section{
-grid-template-columns:1fr;
+/* =====================================================
+   Salvar programação — botão com barra de progressão
+   (preenche em verde conforme o JS ajusta --p)
+   ===================================================== */
+.btn-save{
+  position:relative;
+  overflow:hidden;
+  isolation:isolate;
+  border:1px solid rgba(245,158,11,.35);
+  background:rgba(245,158,11,.10);
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+}
+.btn-save::before{
+  content:"";
+  position:absolute;
+  left:0; top:0; bottom:0;
+  width:var(--p, 0%);
+  background:linear-gradient(90deg, rgba(22,101,52,.85), rgba(16,185,129,.65));
+  transition:width .25s ease;
+  z-index:-1;
+}
+.btn-save.is-saved{
+  border-color:rgba(16,185,129,.45);
+  background:rgba(16,185,129,.10);
+}
+.btn-save:disabled{
+  opacity:.7;
+  cursor:not-allowed;
 }
 
-.flow-cards{
-flex-wrap:wrap;
-gap:18px;
+/* Conteúdos do botão (label + % + spinner) */
+.btn-save .btnp-label{ position:relative; z-index:2; }
+.btn-save .btnp-pct{
+  position:relative; z-index:2;
+  font-weight:800;
+  font-size:12px;
+  padding:3px 8px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(0,0,0,.18);
+}
+.btn-save .btnp-spin{
+  position:relative; z-index:2;
+  width:14px; height:14px;
+  border-radius:999px;
+  border:2px solid rgba(255,255,255,.35);
+  border-top-color: rgba(255,255,255,.9);
+  display:none;
+  animation:spin 1s linear infinite;
+}
+.btn-save.is-progress .btnp-spin{ display:inline-block; }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+.status{margin-top:12px;color:var(--muted);font-size:13px}
+.footer{margin-top:14px;color:rgba(255,255,255,.45);font-size:12px;text-align:center}
+
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px;
+  padding:14px 16px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800}
+.pill{font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
+
+.gridMenu{
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0,1fr));
+  gap:12px;
+  margin-top:14px;
+}
+.tile{
+  padding:14px;
+  border-radius:16px;
+  border:1px solid var(--line);
+  background:rgba(0,0,0,.12);
+  cursor:pointer;
+  min-height:86px;
+}
+.tile .t{font-weight:900;font-size:16px;margin-bottom:4px}
+.tile .s{color:var(--muted);font-size:12px}
+.tile.active{outline:2px solid rgba(16,185,129,.45); background:rgba(16,185,129,.08)}
+.stepBtn.active{
+  background: rgba(16,185,129,.18);
+  border-color: rgba(16,185,129,.55);
+  box-shadow: 0 0 0 1px rgba(16,185,129,.35);
 }
 
+.view{margin-top:14px}
+.hidden{display:none}
+.card{
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:rgba(0,0,0,.12);
+}
+.label{font-weight:900;margin-bottom:10px}
+.mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;color:var(--muted);font-size:12px}
+.badge{
+  display:inline-block;
+  padding:2px 8px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  font-size:12px;
+  color:var(--muted);
+}
+.badge.ok{border-color:rgba(16,185,129,.4); color:#a7f3d0}
+.badge.bad{border-color:rgba(239,68,68,.4); color:#fecaca}
+.table{width:100%;border-collapse:collapse}
+.table th,.table td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;font-size:13px}
+.table th{color:var(--muted);font-size:12px;font-weight:800}
+hr.sep{border:0;border-top:1px solid var(--line);margin:12px 0}
+
+@media (max-width: 920px){
+  .gridMenu{grid-template-columns:repeat(2, minmax(0,1fr))}
+}
+@media (max-width: 560px){
+  .container{padding:14px}
+  .loginCard{margin:32px auto;padding:16px}
+  .h1{font-size:28px}
+  .row{gap:8px}
+  input,select,textarea{padding:10px}
+  .topbar{flex-direction:column;align-items:flex-start}
+  .actions{width:100%;display:flex;gap:8px}
+  .actions .btn{flex:1}
+}
+
+/* ===== ADM — Tabela de histórico ===== */
+.adm-table-wrap{
+  margin-top: 12px;
+  overflow:auto;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.10);
+}
+table.adm-table{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+table.adm-table thead th{
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(8, 20, 30, .95);
+  text-align: left;
+  padding: 10px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  white-space: nowrap;
+}
+table.adm-table tbody td{
+  padding: 10px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  vertical-align: top;
+}
+table.adm-table tbody tr:hover{
+  background: rgba(255,255,255,.04);
+}
+.adm-subline{
+  display:block;
+  opacity:.75;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.adm-money{
+  text-align:right;
+  white-space:nowrap;
+}
+.adm-pill{
+  display:inline-block;
+  padding:2px 8px;
+  border-radius:999px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.adm-actions-row{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin-top: 10px;
+}
+
+/* ======================================================
+ * CONFERÊNCIA — LISTA EM CARDS + SCROLL INTERNO + HEADER FIXO
+ * ====================================================== */
+
+/* quando o módulo Conferência estiver aberto, a página não rola */
+body.conf-mode{
+  overflow: hidden;
+}
+
+/* raiz do módulo dentro do #view */
+.conf-root{
+  height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* filtros ficam fixos no topo do card */
+.conf-filtros{
+  flex: 0 0 auto;
+}
+
+/* área rolável da lista */
+.conf-scroll{
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-top: 10px;
+}
+
+/* header “fixo” dentro do scroll */
+.conf-head{
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  backdrop-filter: blur(10px);
+}
+
+.conf-grid{
+  display: grid;
+  grid-template-columns: 120px 1.6fr 1.2fr 110px 110px 120px 110px 110px 90px;
+  gap: 10px;
+  align-items: center;
+}
+
+.conf-head .conf-cell{
+  font-size: 12px;
+  color: rgba(229, 231, 235, 0.85);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.conf-row{
+  margin-top: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+  padding: 12px;
+}
+
+.conf-row:hover{
+  border-color: rgba(22, 101, 52, 0.55);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.22);
+}
+
+.conf-row .conf-cell{
+  font-size: 13px;
+  color: rgba(229,231,235,0.92);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conf-row .conf-num{
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.conf-pill{
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(22, 101, 52, 0.14);
+  color: rgba(229,231,235,0.95);
+  font-size: 12px;
+  max-width: 100%;
+}
+
+.conf-actions{
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.conf-actions .btn{
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+@media (max-width: 980px){
+  .conf-grid{
+    grid-template-columns: 110px 1.8fr 1.2fr 90px 90px 90px 90px 90px 84px;
+  }
+}
+
+@media (max-width: 760px){
+  /* no mobile vira cards empilhados */
+  .conf-head{ display: none; }
+
+  .conf-row{
+    padding: 12px;
+  }
+
+  .conf-row .conf-grid{
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 10px;
+    align-items: start;
+  }
+
+  .conf-row .conf-cell{
+    white-space: normal;
+  }
+
+  .conf-row .conf-label{
+    font-size: 11px;
+    color: rgba(229,231,235,0.70);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+
+  .conf-row .conf-value{
+    font-size: 13px;
+  }
+
+  .conf-actions{
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    margin-top: 6px;
+  }
+}
+.adm-btn{
+  appearance:none;
+  border:none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor:pointer;
+  box-shadow: 0 10px 24px rgba(0,0,0,.25);
+}
+.adm-btn-primary{
+  background: linear-gradient(180deg, rgba(16,185,129,1), rgba(5,150,105,1));
+  color: #071316;
+}
+.adm-btn-primary:hover{ filter: brightness(1.05); }
+.adm-btn-secondary{
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.92);
+  border: 1px solid rgba(255,255,255,.14);
+}
+.adm-date-input{
+  letter-spacing: .06em;
+}
+
+/* ======================================================
+   CONFERÊNCIA — TRAVA SCROLL DA PÁGINA / LISTA ROLA
+   ====================================================== */
+
+body.conf-mode{ overflow:hidden; }
+
+body.conf-mode #view{
+  height: calc(100vh - 110px);
+  overflow: hidden;
+  display:flex;
+  flex-direction: column;
+}
+
+body.conf-mode #view .conf-root{
+  flex: 1 1 auto;
+  min-height: 0;
+  display:flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+body.conf-mode #view .conf-scroll{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.conf-mode #view .conf-table-wrap{
+  height: 100%;
+  max-height: none;
 }

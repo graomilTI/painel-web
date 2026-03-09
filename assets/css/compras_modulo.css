@@ -1,0 +1,72 @@
+:root{
+  color-scheme: dark;
+}
+
+/* Mantém padrão escuro dos selects (PADRÃO do projeto) */
+select, .input, textarea{
+  color-scheme: dark;
+  background: #0f172a;
+  color: #e5e7eb;
+  border: 1px solid rgba(255,255,255,.10);
+}
+select option{
+  background: #0f172a;
+  color: #e5e7eb;
+}
+select option:hover,
+select option:checked{
+  background: #166534;
+  color: #e5e7eb;
+}
+
+/* Harmoniza cards internos do módulo com ui.css */
+.card{
+  background: rgba(0,0,0,.12);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px;
+}
+.tag{
+  display:inline-block;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background: rgba(0,0,0,.12);
+  font-size:12px;
+  color: var(--muted);
+  font-weight:800;
+}
+.label{
+  font-weight:700;
+  margin-bottom:6px;
+  color: var(--muted);
+  font-size:12px;
+}
+.mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+/* botões do módulo */
+.btn.primary{ background: linear-gradient(135deg, var(--green), var(--green2)); color:#032016; border:none; }
+.btn{ cursor:pointer; }
+.hidden{ display:none !important; }
+
+
+/* ===== Compras módulo (complemento funcional) ===== */
+.chip{ display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:999px;
+  border:1px solid var(--line); background: rgba(255,255,255,.06); color: var(--txt); font-weight:700; cursor:pointer; }
+.chip.active{ background: rgba(22,101,52,.25); border-color: rgba(22,101,52,.55); }
+.label{ color: rgba(229,231,235,.85); font-size:12px; margin:0 0 6px 2px; }
+.h2{ font-size:16px; font-weight:900; margin:6px 0 6px; }
+.muted{ color: rgba(229,231,235,.65); font-size:12.5px; }
+.tableWrap{ width:100%; overflow:auto; border:1px solid var(--line); border-radius:14px; background: rgba(15,23,42,.55); }
+.table{ width:100%; border-collapse:separate; border-spacing:0; min-width: 720px; }
+.table th, .table td{ padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.06); white-space:nowrap; }
+.table th{ position:sticky; top:0; background: rgba(15,23,42,.85); z-index:1; text-align:left; }
+.btn.sm{ padding:8px 10px; border-radius:12px; }
+.spacer{ flex:1; }
+
+/* ===== Segmented toggle (dark) — Patrimônio/Outros ===== */
+.cSeg{ display:inline-flex; gap:0; border:1px solid rgba(255,255,255,.14); background:#0b1220; border-radius:12px; overflow:hidden; }
+.cSegBtn{ height:38px; padding:0 14px; border:0; background:transparent; color:#e5e7eb; cursor:pointer; font-weight:800; }
+.cSegBtn + .cSegBtn{ border-left:1px solid rgba(255,255,255,.10); }
+.cSegBtn:hover{ background: rgba(22,101,52,.28); }
+.cSegBtn.is-active{ background:#166534; color:#e5e7eb; }

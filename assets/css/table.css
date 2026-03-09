@@ -1,0 +1,247 @@
+/* table.css — layout compacto tipo tabela (somente no app.html) */
+.tbl{ width:100%; border-radius:14px; overflow:hidden; }
+.tbl-head, .tbl-row{
+  display:grid;
+  grid-template-columns: 2.4fr 1.2fr 1.8fr; /* Nome | Campo | Obs */
+  gap:10px;
+  align-items:center;
+}
+.tbl-head{
+  padding:10px 12px;
+  background: rgba(255,255,255,.06);
+  font-weight:700;
+  font-size:13px;
+}
+.tbl-row{
+  padding:8px 12px;
+  border-top:1px solid rgba(255,255,255,.06);
+  background: rgba(255,255,255,.03);
+}
+.tbl-row:nth-child(even){ background: rgba(255,255,255,.035); }
+.cell{ min-width:0; }
+.cell.strong{ font-weight:700; }
+.cell .sub{
+  font-size:12px;
+  opacity:.75;
+  margin-top:2px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.tbl select, .tbl input[type="text"], .tbl input[type="number"], .tbl input[type="date"], .tbl input[type="time"]{
+  width:100%;
+  padding:6px 8px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.18);
+  color: inherit;
+  outline:none;
+  font-size:13px;
+}
+
+/* dropdown (option) — evita lista branca com texto claro */
+.tbl select{ color-scheme: dark; }
+.tbl select option{
+  background-color: #0f1a2f;
+  color: #e8efff;
+}
+.tbl select option:checked{
+  background-color: rgba(16,185,129,.28);
+  color:#fff;
+}
+.tbl select option:hover{
+  background-color: rgba(16,185,129,.18);
+  color:#fff;
+}
+.tbl input::placeholder{ opacity:.6; }
+
+
+/* ===== ADM: tabela de histórico (Conferência) ===== */
+.adm-table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  overflow:hidden;
+  border-radius:14px;
+  background: rgba(255,255,255,0.03);
+  border:1px solid rgba(255,255,255,0.08);
+}
+.adm-table thead th{
+  position: sticky;
+  top:0;
+  z-index:2;
+  text-align:left;
+  font-size:12px;
+  letter-spacing:.2px;
+  color: rgba(229,231,235,0.9);
+  background: rgba(15,23,42,0.92);
+  padding:10px 10px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+}
+.adm-table tbody td{
+  padding:9px 10px;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+  font-size:13px;
+  color: rgba(229,231,235,0.92);
+  vertical-align:middle;
+}
+.adm-table tbody tr:nth-child(2n){
+  background: rgba(255,255,255,0.02);
+}
+.adm-table tbody tr:hover{
+  background: rgba(22,101,52,0.12);
+}
+.adm-table.compact thead th{ padding:8px 10px; }
+.adm-table.compact tbody td{ padding:8px 10px; }
+.adm-table .num{ text-align:right; white-space:nowrap; font-variant-numeric: tabular-nums; }
+.adm-table .center{ text-align:center; }
+.adm-table .col-colaborador{ min-width:240px; }
+.colab-wrap{ max-width: 520px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+.badge.bad{ border-color: rgba(239,68,68,.35); color: rgba(254,202,202,.95); } /* fallback (tema escuro) */
+
+.adm-groups{ display:flex; flex-direction:column; gap:12px; margin-top:8px; }
+.adm-group{ padding:10px; border-radius:16px; background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); }
+.adm-group-head{ display:flex; align-items:baseline; justify-content:space-between; padding:2px 4px 10px; }
+.adm-group-title{ font-weight:800; font-size:14px; }
+.adm-group-meta{ font-size:12px; }
+
+
+/* Conferência — botão Atualizar (CTA) */
+.btn.btn-cta{
+  height:42px;
+  border-radius:12px;
+  font-weight:800;
+  letter-spacing:.2px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.25);
+}
+.btn.btn-cta:active{ transform: translateY(1px); }
+
+
+/* Conferência — wrapper para rolagem horizontal/vertical sem quebrar layout */
+.adm-table-wrap{
+  margin-top:10px;
+  border-radius:14px;
+  overflow:auto;
+  max-height: 62vh;
+  border:1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.02);
+}
+.adm-table-wrap .adm-table{ border:0; border-radius:0; background:transparent; }
+.adm-table-wrap::-webkit-scrollbar{ height:10px; width:10px; }
+.adm-table-wrap::-webkit-scrollbar-thumb{ background: rgba(255,255,255,0.12); border-radius:999px; }
+.adm-table-wrap::-webkit-scrollbar-track{ background: rgba(0,0,0,0.15); }
+
+.adm-table thead th{
+  white-space:nowrap;
+}
+.adm-table tbody td{
+  line-height:1.15;
+}
+
+/* Melhor leitura da coluna Data */
+.adm-table td.mono{ opacity:.95; }
+
+/* Ajuste: deixa o “—”/“-” mais discreto */
+.adm-table td .dash{ opacity:.55; }
+
+/* Botão Atualizar mais padrão painel */
+.btn.primary.btn-cta{
+  background: linear-gradient(180deg, rgba(22,101,52,1), rgba(14,78,38,1));
+  border:1px solid rgba(34,197,94,0.35);
+}
+.btn.primary.btn-cta:hover{
+  filter: brightness(1.05);
+  box-shadow: 0 14px 34px rgba(0,0,0,.28);
+}
+
+
+/* ===== Conferência (Histórico) — colunas fixas + header sticky ===== */
+.conf-table{
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  --conf-col-data-w: 110px;
+}
+.conf-table th, .conf-table td{ white-space: nowrap; }
+.conf-table .col-data{ width: var(--conf-col-data-w); min-width: var(--conf-col-data-w); }
+.conf-table .col-colaborador{ min-width: 280px; }
+
+/* sticky header já existe em .adm-table thead th; reforço z-index para não “sumir” */
+.conf-table thead th{ z-index: 20; }
+
+/* sticky left columns */
+.conf-table th.sticky-col,
+.conf-table td.sticky-col{
+  position: sticky;
+  left: 0;
+  z-index: 6;
+  background: rgba(7,22,37,0.92); /* blend com o card */
+  backdrop-filter: blur(6px);
+}
+.conf-table th.sticky-col{ z-index: 25; } /* header acima de td */
+.conf-table .col-colaborador.sticky-col{ left: var(--conf-col-data-w); z-index: 7; }
+.conf-table thead .col-colaborador.sticky-col{ z-index: 26; }
+
+/* separador visual entre fixo e scroll */
+.conf-table td.sticky-col,
+.conf-table th.sticky-col{
+  box-shadow: 1px 0 0 rgba(255,255,255,0.06);
+}
+
+
+
+/* ============================
+   CONFERÊNCIA — resultados em "cards" (visual), mantendo tabela
+   + cabeçalho sticky dentro do scroll
+   ============================ */
+.conf-results-scroll{
+  max-height: 62vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: 14px;
+}
+
+/* garante sticky header também dentro do container de resultados */
+.conf-results-scroll .adm-table thead th{
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(15,23,42,0.98);
+  backdrop-filter: blur(6px);
+}
+
+/* estilo tipo "cards" para cada linha */
+.conf-results-scroll .adm-table{
+  border-collapse: separate;
+  border-spacing: 0 10px;
+}
+
+.conf-results-scroll .adm-table tbody tr{
+  background: rgba(255,255,255,0.03);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.22);
+}
+
+.conf-results-scroll .adm-table tbody td{
+  border-top: 1px solid rgba(148,163,184,0.16);
+  border-bottom: 1px solid rgba(148,163,184,0.16);
+}
+
+/* arredonda as pontas do "card" */
+.conf-results-scroll .adm-table tbody td:first-child{
+  border-left: 1px solid rgba(148,163,184,0.16);
+  border-top-left-radius: 14px;
+  border-bottom-left-radius: 14px;
+}
+.conf-results-scroll .adm-table tbody td:last-child{
+  border-right: 1px solid rgba(148,163,184,0.16);
+  border-top-right-radius: 14px;
+  border-bottom-right-radius: 14px;
+}
+
+/* remove gridlines internas (visual mais limpo) */
+.conf-results-scroll .adm-table td,
+.conf-results-scroll .adm-table th{
+  border-right: none;
+}
+

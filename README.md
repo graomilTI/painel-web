@@ -1,15 +1,24 @@
-# Painel Web — Arquitetura (Grão 1000)
+# Painel Web (GitHub Pages) — Frontend
 
-Este repositório é o **frontend** do Painel (Cloudflare Pages).
+## Por que está dando "Failed to fetch" no GitHub Pages?
+Porque o browser bloqueia requisições diretas para `https://script.google.com/macros/...` por **CORS**.
 
-## Rotas
-- `/login/` login (CPF+PIN)
-- `/gestor/` app gestor
-- `/adm/` app adm
-- `/diretoria/` app diretoria
+✅ Solução: o frontend **deve chamar um endpoint com CORS habilitado**, ex.: **Cloudflare Worker** (proxy) apontando para o seu Apps Script.
 
-## Padrão de módulos
-Cada módulo expõe:
-- `window.<MOD>.openHome(container, opts)`
+## Configurar
+1) Edite: `assets/js/config.js`
+- `API_BASE = "https://SEU-WORKER.workers.dev"`
 
-Arquivos em `modules/<nome>/module.js`.
+2) Suba tudo na raiz do repositório (GitHub Pages -> /root).
+
+## Rotas esperadas no Worker
+- `GET  /ping`
+- `POST /` com JSON `{ action: "...", ... }`
+
+Ações usadas hoje:
+- `loginPIN`, `loginAdminCPF`
+- `getDataPadrao`
+- `carregarContexto`
+- `gerarPDFProgramacao`
+- `aloj_getPermissoes`
+- `aloj_listarHospedados`
