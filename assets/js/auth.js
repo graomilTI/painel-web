@@ -11,11 +11,35 @@
     return out;
   }
 
+  function normalizeRole(data){
+    return String(
+      (data && (data.role || data.tipo || data.type)) ||
+      (data && data.user && (data.user.role || data.user.tipo || data.user.type)) ||
+      "GESTOR"
+    ).toLowerCase();
+  }
+
+  function normalizeProfile(data){
+    if(data && data.profile && typeof data.profile === "object") return data.profile;
+    if(data && data.user && typeof data.user === "object") return data.user;
+    return {
+      nome: (data && data.nome) || "",
+      coord: (data && data.coord) || (data && data.coordenacao) || "",
+      supervisoesLiberadas: (data && data.supervisoes_liberadas) || []
+    };
+  }
+
   async function login({cpf, pin}){
     const body = { cpf: digitsOnly(cpf), pin: String(pin||"") };
-    const data = await window.API.post("/exec", { module:"auth", action:"login", payload: body });
+    const data = await window.API.post("/exec", { module:"despesas", action:"login", payload: body });
     if(!data || data.ok !== true) throw new Error((data && data.error) || "Login inválido");
-    window.SESSION.setSession({ token: data.token, role: data.role || "gestor", profile: data.profile || {} });
+
+    window.SESSION.setSession({
+      token: data.token,
+      role: normalizeRole(data),
+      profile: normalizeProfile(data)
+    });
+
     return data;
   }
 
