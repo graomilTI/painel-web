@@ -43,7 +43,7 @@
       <div class="card">
         <div class="hd">
           <h2 style="margin:0" id="pageTitle">Início</h2>
-          <div class="small" id="pageSub">Selecione um módulo ao lado.</div>
+          <div class="small" id="pageSub">Fluxo do gestor com Programação, Hospedagem, Visita Cliente e Compras.</div>
         </div>
         <div class="bd" id="module_container">
           <div class="notice">Pronto. Escolha um módulo.</div>
@@ -62,7 +62,8 @@
 
   const role = (SESSION.role() || "gestor").toLowerCase();
   const profile = SESSION.profile() || {};
-  document.getElementById("who").textContent = (profile.nome || profile.Nome || "Usuário") + " • " + role;
+  const nomeExibicao = (profile.nome || profile.Nome || "Usuário");
+  document.getElementById("who").textContent = "Usuário: " + nomeExibicao + " • Perfil: " + role;
 
   document.getElementById("btnLogout").addEventListener("click", ()=>AUTH.logout());
 
