@@ -7,9 +7,9 @@
   <link rel="stylesheet" href="/painel/ui.css" />
 </head>
 <body>
-  <div class="topbar">
-    <div class="inner">
-      <div class="brand">
+  <div class="topbar shell-topbar">
+    <div class="inner shell-topbar-inner">
+      <div class="brand shell-brand">
         <div class="logo"></div>
         <div>
           <div class="title">Grão 1000</div>
@@ -21,34 +21,64 @@
     </div>
   </div>
 
-  <div class="container">
-    <div class="grid cols-2" style="grid-template-columns: 280px 1fr; align-items:start">
-      <div class="card side">
-        <div class="hd">
-          <h3 style="margin:0">Módulos</h3>
-          <div class="small mono" id="who"></div>
-        </div>
-        <div class="bd">
-          <div class="nav" id="nav">
-            <a href="#programacao" data-mod="programacao">Programação</a>
-            <a href="#hospedagem" data-mod="hospedagem">Hospedagem</a>
-            <a href="#visita_cliente" data-mod="visita_cliente">Visita Cliente</a>
-            <a href="#compras" data-mod="compras">Compras</a>
+  <div class="container shell-container">
+    <div class="shell-grid">
+      <aside class="card side shell-side">
+        <div class="bd shell-side-body">
+          <div class="shell-usercard">
+            <div class="shell-user-kicker">Painel do gestor</div>
+            <h2>Módulos</h2>
+            <div class="small mono" id="who"></div>
           </div>
-          <div style="height:10px"></div>
-          <div class="small">API: <span class="mono">/api</span></div>
-        </div>
-      </div>
 
-      <div class="card">
-        <div class="hd">
-          <h2 style="margin:0" id="pageTitle">Início</h2>
-          <div class="small" id="pageSub">Fluxo do gestor com Programação, Hospedagem, Visita Cliente e Compras.</div>
+          <nav class="nav shell-nav" id="nav">
+            <a href="#programacao" data-mod="programacao">
+              <span class="shell-nav-title">Programação</span>
+              <span class="shell-nav-sub">Contexto, equipe e etapas A–E</span>
+            </a>
+            <a href="#hospedagem" data-mod="hospedagem">
+              <span class="shell-nav-title">Hospedagem</span>
+              <span class="shell-nav-sub">Reservas, avulsas e acompanhamento</span>
+            </a>
+            <a href="#visita_cliente" data-mod="visita_cliente">
+              <span class="shell-nav-title">Visita Cliente</span>
+              <span class="shell-nav-sub">Agenda, registros e observações</span>
+            </a>
+            <a href="#compras" data-mod="compras">
+              <span class="shell-nav-title">Compras</span>
+              <span class="shell-nav-sub">Solicitações, itens e status</span>
+            </a>
+          </nav>
+
+          <div class="shell-side-foot">
+            <div class="small">API principal</div>
+            <div class="badge"><span class="mono">/api</span></div>
+          </div>
         </div>
-        <div class="bd" id="module_container">
-          <div class="notice">Pronto. Escolha um módulo.</div>
-        </div>
-      </div>
+      </aside>
+
+      <main class="shell-main">
+        <section class="card shell-hero">
+          <div class="bd shell-hero-body">
+            <div>
+              <div class="shell-kicker">Operação diária</div>
+              <h1 id="pageTitle">Programação</h1>
+              <div class="shell-subtitle" id="pageSub">Fluxo do gestor com Programação, Hospedagem, Visita Cliente e Compras.</div>
+            </div>
+            <div class="shell-hero-tags">
+              <span class="badge">Fluxo do gestor</span>
+              <span class="badge">Tema escuro</span>
+              <span class="badge">Base integrada</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card shell-module-card">
+          <div class="bd" id="module_container">
+            <div class="notice">Pronto. Escolha um módulo.</div>
+          </div>
+        </section>
+      </main>
     </div>
   </div>
 
@@ -64,7 +94,7 @@
   const role = (SESSION.role() || "gestor").toLowerCase();
   const profile = SESSION.profile() || {};
   const nomeExibicao = (profile.nome || profile.Nome || "Usuário");
-  document.getElementById("who").textContent = "Usuário: " + nomeExibicao + " • Perfil: " + role;
+  document.getElementById("who").textContent = nomeExibicao + " • " + role;
 
   document.getElementById("btnLogout").addEventListener("click", ()=>AUTH.logout());
 
@@ -78,6 +108,12 @@
     visita_cliente: 'Visita Cliente',
     compras: 'Compras'
   };
+  const subtitles = {
+    programacao: 'Carregue contexto, avance pelas etapas A–E e acompanhe o resumo operacional do dia.',
+    hospedagem: 'Organize reservas, hospedagens avulsas e acompanhe o status por colaborador.',
+    visita_cliente: 'Registre visitas, clientes, locais e histórico de acompanhamento.',
+    compras: 'Centralize solicitações, itens, quantidades, urgências e andamento das compras.'
+  };
 
   function setActive(modName){
     [...nav.querySelectorAll("a")].forEach(a=>a.classList.toggle("active", a.dataset.mod===modName));
@@ -87,7 +123,7 @@
     try{
       setActive(modName);
       pageTitle.textContent = labels[modName] || modName;
-      pageSub.textContent = "Carregando...";
+      pageSub.textContent = subtitles[modName] || 'Carregando módulo...';
       container.innerHTML = '<div class="notice">Carregando módulo <span class="mono">'+(labels[modName]||modName)+'</span>…</div>';
 
       await APP_ROUTER.openModule(modName, container, {
@@ -95,10 +131,9 @@
         api: window.API,
         onBack: ()=>{ location.hash=""; }
       });
-      pageSub.textContent = "OK";
     }catch(e){
       container.innerHTML = '<div class="notice err">Erro: '+(e.message||e)+'</div>';
-      pageSub.textContent = "Erro";
+      pageSub.textContent = 'Não foi possível carregar este módulo agora.';
     }
   }
 
