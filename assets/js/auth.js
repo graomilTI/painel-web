@@ -15,9 +15,7 @@
     const body = { cpf: digitsOnly(cpf), pin: String(pin||"") };
     const data = await window.API.post("/exec", { module:"auth", action:"login", payload: body });
     if(!data || data.ok !== true) throw new Error((data && data.error) || "Login inválido");
-    const role = (data.role || data.user?.role || "gestor");
-    const profile = data.profile || data.user || {};
-    window.SESSION.setSession({ token: data.token, role, profile });
+    window.SESSION.setSession({ token: data.token, role: data.role || "gestor", profile: data.profile || {} });
     return data;
   }
 

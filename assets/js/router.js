@@ -16,8 +16,8 @@
     const src = "/painel/modules/" + modName + "/module.js";
     await loadScriptOnce(src);
 
-    const modKey = modName.toUpperCase();
-    const mod = window[modKey] || (window.ADM_MODULES && window.ADM_MODULES[modName]);
+    const modKey = modName.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+    const mod = window[modKey] || window[modName.toUpperCase()] || (window.ADM_MODULES && window.ADM_MODULES[modName]);
     if(!mod) throw new Error("Módulo não encontrado: " + modName);
 
     if(mod.openHome) return mod.openHome(container, opts);

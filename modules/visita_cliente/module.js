@@ -1,36 +1,14 @@
 (function(){
-  const KEY = "VISITA_CLIENTE";
-  function fitFrame(iframe){
-    function resize(){
-      try{
-        const doc = iframe.contentDocument || iframe.contentWindow.document;
-        if(!doc) return;
-        const h = Math.max(
-          doc.body ? doc.body.scrollHeight : 0,
-          doc.documentElement ? doc.documentElement.scrollHeight : 0,
-          720
-        );
-        iframe.style.height = h + "px";
-      }catch(_ ){}
+  function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  window.VISITA_CLIENTE = {
+    openHome(container, opts){
+      const profile = (opts.auth && opts.auth.profile) || {};
+      const nome = profile.nome || profile.Nome || 'Usuário';
+      container.innerHTML = `
+        <div class="grid cols-2">
+          <div class="card"><div class="hd"><h3 style="margin:0">Visita Cliente</h3><div class="small">Base restaurada para agenda, registro de visitas e acompanhamento de clientes.</div></div><div class="bd"><div class="notice">Módulo restaurado no padrão novo do painel.</div><div style="height:12px"></div><div class="small">Responsável atual: ${esc(nome)}</div></div></div>
+          <div class="card"><div class="hd"><h3 style="margin:0">Próximos passos</h3></div><div class="bd"><div class="small">- Conectar ações reais da API</div><div class="small">- Renderizar tabela/filtros</div><div class="small">- Replicar campos do fluxo antigo</div></div></div>
+        </div>`;
     }
-    iframe.addEventListener("load", ()=>{
-      resize();
-      setTimeout(resize, 300);
-      setTimeout(resize, 1000);
-      try{ iframe.contentWindow.addEventListener("resize", resize); }catch(_ ){}
-    });
-  }
-
-  function openHome(container){
-    container.innerHTML = `
-      <div>
-        <div class="notice">Visita Cliente restaurada a partir do módulo legado de clientes.</div>
-        <div style="height:12px"></div>
-        <iframe id="modframe" src="/painel/gestor/clientes.html" style="width:100%;min-height:720px;border:0;border-radius:18px;background:transparent"></iframe>
-      </div>
-    `;
-    fitFrame(container.querySelector('#modframe'));
-  }
-
-  window[KEY] = { openHome };
+  };
 })();
