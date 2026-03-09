@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Login • Painel Grão 1000</title>
-  <link rel="stylesheet" href="/ui.css" />
+  <link rel="stylesheet" href="/painel/ui.css" />
 </head>
 <body>
   <div class="topbar">
@@ -17,7 +17,7 @@
         </div>
       </div>
       <div class="spacer"></div>
-      <a class="btn" href="/">Voltar</a>
+      <a class="btn" href="/painel/">Voltar</a>
     </div>
   </div>
 
@@ -63,9 +63,9 @@
     </div>
   </div>
 
-<script src="/assets/js/api.js"></script>
-<script src="/assets/js/session.js"></script>
-<script src="/assets/js/auth.js"></script>
+<script src="/painel/assets/js/api.js"></script>
+<script src="/painel/assets/js/session.js"></script>
+<script src="/painel/assets/js/auth.js"></script>
 <script>
 (function(){
   const cpfEl = document.getElementById("cpf");
@@ -95,7 +95,7 @@
       const data = await AUTH.login({ cpf: cpfEl.value, pin: pinEl.value });
       const next = new URLSearchParams(location.search).get("next");
       const role = (data.role || SESSION.role() || "gestor").toLowerCase();
-      const fallback = role === "adm" ? "/adm/" : (role === "diretoria" ? "/diretoria/" : "/gestor/");
+      const fallback = role === "adm" ? "/painel/adm/" : (role === "diretoria" ? "/painel/diretoria/" : "/painel/gestor/");
       location.href = next || fallback;
     }catch(e){
       setMsg(e.message || "Falha no login", true);

@@ -23,7 +23,7 @@
   function requireAuth(){
     if(!token()){
       const next = encodeURIComponent(location.pathname + location.search + location.hash);
-      location.href = "/login/?next=" + next;
+      location.href = "/painel/login/?next=" + next;
       return false;
     }
     return true;

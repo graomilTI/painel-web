@@ -13,7 +13,7 @@
   }
 
   async function openModule(modName, container, opts){
-    const src = "/modules/" + modName + "/module.js";
+    const src = "/painel/modules/" + modName + "/module.js";
     await loadScriptOnce(src);
 
     const modKey = modName.toUpperCase();

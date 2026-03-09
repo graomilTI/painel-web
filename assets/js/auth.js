@@ -21,7 +21,7 @@
 
   function logout(){
     window.SESSION.clearSession();
-    location.href = "/login/";
+    location.href = "/painel/login/";
   }
 
   window.AUTH = { login, logout, formatCPF };
