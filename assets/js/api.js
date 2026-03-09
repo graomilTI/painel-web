@@ -1,31 +1,31 @@
-(function(){
-  const BASE = "/api";
-  function getToken(){ return localStorage.getItem("G1000_TOKEN") || ""; }
+/* =========================================================
+ * api.js — compat (blindado)
+ * - Mantém window.API.post para o app
+ * - Usa AUTH.post do auth_unificado.js
+ *
+ * ✅ Novo padrão: API.post({ module, action, token, payload })
+ * ✅ Legado:     API.post(action, body)
+ *    - action: string
+ *    - body: objeto (ex.: { token, ... })
+ *    - será enviado como { action, ...body }
+ * ========================================================= */
+(function(global){
+  "use strict";
+  const API = global.API || (global.API = {});
 
-  async function request(path, opts={}){
-    const headers = new Headers(opts.headers || {});
-    const token = getToken();
-    if(token) headers.set("Authorization", "Bearer " + token);
-    if(!headers.has("Content-Type") && opts.body && typeof opts.body === "string") headers.set("Content-Type","application/json");
-
-    const res = await fetch(BASE + path, { ...opts, headers });
-    const ct = res.headers.get("content-type") || "";
-    const text = await res.text();
-    let data = text;
-    if(ct.includes("application/json")){
-      try{ data = JSON.parse(text || "{}"); }catch(_){ data = { ok:false, error:"JSON inválido", raw:text }; }
+  API.post = async function(arg1, arg2){
+    if (!global.AUTH || typeof global.AUTH.post !== "function") {
+      throw new Error("AUTH.post não disponível (carregue auth_unificado.js nas páginas protegidas)");
     }
-    if(!res.ok){
-      const msg = (data && data.error) ? data.error : ("HTTP " + res.status);
-      throw new Error(msg);
-    }
-    return data;
-  }
 
-  window.API = {
-    request,
-    get: (path) => request(path, { method:"GET" }),
-    post: (path, bodyObj) => request(path, { method:"POST", body: JSON.stringify(bodyObj || {}) }),
-    put: (path, bodyObj) => request(path, { method:"PUT", body: JSON.stringify(bodyObj || {}) }),
+    // Compat: API.post(action, body)
+    let payload;
+    if (typeof arg1 === "string") {
+      payload = Object.assign({ action: arg1 }, (arg2 && typeof arg2 === "object") ? arg2 : {});
+    } else {
+      payload = arg1 || {};
+    }
+
+    return await global.AUTH.post(payload);
   };
-})();
+})(window);

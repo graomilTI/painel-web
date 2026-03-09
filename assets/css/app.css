@@ -1,0 +1,83 @@
+:root{
+  --bg:#0b1220;
+  --card:#0f1a2f;
+  --muted:#9fb0d2;
+  --text:#e8efff;
+  --brand:#20c997;
+  --brand2:#17a2b8;
+  --danger:#ff5c5c;
+  --border:rgba(255,255,255,0.08);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;background:linear-gradient(180deg,#061025,#0b1220);color:var(--text)}
+a{color:inherit}
+.center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:rgba(15,26,47,0.86);border:1px solid var(--border);backdrop-filter:blur(8px);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.35);padding:18px}
+.row{display:flex;gap:10px}
+.col{display:flex;flex-direction:column;gap:10px}
+.muted{color:var(--muted)}
+input,select,textarea{width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:12px 12px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:rgba(32,201,151,0.65);box-shadow:0 0 0 3px rgba(32,201,151,0.15)}
+
+/* =========================
+ * SELECT / OPTION — tema escuro (corrige dropdown branco)
+ * ========================= */
+select{color-scheme: dark;}
+select option{background-color: var(--card); color: var(--text);}
+select option:checked{background-color: rgba(32,201,151,0.28); color:#fff;}
+select option:hover{background-color: rgba(32,201,151,0.18); color:#fff;}
+.btn{border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);padding:10px 12px;border-radius:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn:hover{background:rgba(255,255,255,0.07)}
+.btn.primary{background:linear-gradient(90deg,var(--brand),var(--brand2));border:0}
+.btn.primary:hover{filter:brightness(1.05)}
+.btn.danger{background:rgba(255,92,92,0.15);border-color:rgba(255,92,92,0.35)}
+.badge{font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid var(--border);color:var(--muted)}
+.topbar{position:sticky;top:0;background:rgba(6,16,37,0.85);border-bottom:1px solid var(--border);backdrop-filter:blur(8px);padding:10px 14px;z-index:10}
+.shell{display:grid;grid-template-columns:260px 1fr;min-height:calc(100vh - 60px)}
+.sidebar{border-right:1px solid var(--border);padding:14px}
+.nav{display:flex;flex-direction:column;gap:8px}
+.nav a{padding:10px 12px;border-radius:12px;border:1px solid transparent;text-decoration:none;color:var(--muted)}
+.nav a:hover{background:rgba(255,255,255,0.04);color:var(--text)}
+.nav a.active{background:rgba(32,201,151,0.12);border-color:rgba(32,201,151,0.35);color:var(--text)}
+.content{padding:14px}
+.toast{position:fixed;right:14px;bottom:14px;max-width:320px;background:rgba(15,26,47,0.92);border:1px solid var(--border);border-radius:14px;padding:10px 12px;box-shadow:0 20px 60px rgba(0,0,0,0.35)}
+.toast.ok{border-color:rgba(32,201,151,0.35)}
+.toast.err{border-color:rgba(255,92,92,0.45)}
+small{font-size:12px}
+@media (max-width: 860px){
+  .shell{grid-template-columns:1fr}
+  .sidebar{border-right:0;border-bottom:1px solid var(--border)}
+}
+
+/* === Programação — botão "Salvar programação" (amarelo -> verde após salvar / progresso) === */
+.btn-save{
+  position:relative;
+  overflow:hidden;
+  background:#f59e0b; /* amarelo */
+  color:#111827;
+  font-weight:700;
+}
+.btn-save .btnp-fill{
+  position:absolute;
+  inset:0;
+  width:var(--p, 0%);
+  background:#16a34a; /* verde */
+  transition:width .25s ease;
+  z-index:0;
+}
+.btn-save .btnp-label{
+  position:relative;
+  z-index:1;
+  white-space:nowrap;
+}
+.btn-save.is-progress{
+  cursor:progress;
+}
+.btn-save.is-saved{
+  background:#16a34a; /* verde */
+  color:#ffffff;
+}
+.btn-save.is-saved .btnp-fill{
+  width:100%;
+}
+

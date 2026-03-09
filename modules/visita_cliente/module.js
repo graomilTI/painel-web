@@ -1,5 +1,5 @@
 (function(){
-  const KEY = "COMPRAS";
+  const KEY = "VISITA_CLIENTE";
   function fitFrame(iframe){
     function resize(){
       try{
@@ -24,9 +24,9 @@
   function openHome(container){
     container.innerHTML = `
       <div>
-        <div class="notice">Compras restaurado com base na versão encontrada do painel.</div>
+        <div class="notice">Visita Cliente restaurada a partir do módulo legado de clientes.</div>
         <div style="height:12px"></div>
-        <iframe id="modframe" src="/painel/gestor/compras.html" style="width:100%;min-height:720px;border:0;border-radius:18px;background:transparent"></iframe>
+        <iframe id="modframe" src="/painel/gestor/clientes.html" style="width:100%;min-height:720px;border:0;border-radius:18px;background:transparent"></iframe>
       </div>
     `;
     fitFrame(container.querySelector('#modframe'));

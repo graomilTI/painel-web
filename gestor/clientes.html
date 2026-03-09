@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="../ui.css"/>
+  <link rel="stylesheet" href="../assets/css/clientes.css"/>
+  <style>
+    body{
+      background: radial-gradient(1200px 700px at 30% 20%, #123a5b 0%, #071625 35%, #020b15 100%);
+      min-height:100vh;
+    }
+    .wrap{padding:18px}
+    .panel{
+      max-width: 1100px;
+      margin: 0 auto;
+      background: rgba(0,0,0,.12);
+      border:1px solid var(--line);
+      border-radius:24px;
+      box-shadow: 0 30px 60px rgba(0,0,0,.35);
+      padding:22px 24px 30px;
+    }
+
+    .hidden{display:none}
+    .label{font-weight:700; margin-bottom:6px}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; white-space:pre-wrap}
+    .text-area{min-height:96px; resize:vertical}
+    .card{ background: rgba(0,0,0,.12); border:1px solid var(--line); border-radius:16px; }
+    .card + .card{margin-top:18px}
+    .section-title{margin-top:12px; font-weight:700}
+    .inline-list{margin-top:8px; background: rgba(0,0,0,.12); border:1px solid var(--line); border-radius:12px; padding:10px}
+    .checks{display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-top:8px}
+    .checks label{
+      display:flex; align-items:flex-start; gap:10px;
+      font-size:13px; padding:10px 12px; border-radius:14px;
+      border:1px solid var(--line); background: rgba(0,0,0,.12);
+    }
+    .checks input{margin-top:2px; accent-color: var(--green2)}
+    .actions{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+    textarea{width:100%; padding:12px 14px; border-radius:12px; background: rgba(0,0,0,.18); border:1px solid var(--line); color:var(--text); outline:none}
+    textarea:focus{border-color: rgba(34,197,94,.55); box-shadow: 0 0 0 3px rgba(34,197,94,.14)}
+    .badge{ background: rgba(0,0,0,.12); border:1px solid var(--line); }
+    .row{gap:16px}
+    .field{min-width:240px}
+    .btn{border-radius:14px}
+    .btn.primary{box-shadow: 0 8px 20px rgba(34,197,94,.18)}
+  </style>
+</head>
+<body>
+  <div class="wrap" id="view-clientes">
+    <div class="row" style="justify-content:flex-end; margin-bottom:10px">
+      <a class="btn" href="app.html">Voltar</a>
+    </div>
+
+    <div class="panel">
+      <div class="row" style="align-items:center; justify-content:space-between">
+        <div>
+          <div class="h1">Clientes</div>
+          <div class="sub">Registrar contatos e consultar histórico.</div>
+        </div>
+        <div class="badge">Gestor: <span id="userName">—</span></div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="row" style="align-items:center">
+        <button class="btn primary" id="cliTabNovo" type="button">Informar Contato Cliente</button>
+        <button class="btn" id="cliTabHist" type="button">Histórico</button>
+      </div>
+
+      <div class="card" id="cliNovoBox">
+        <div class="inner">
+          <div class="label">Informar contato com cliente</div>
+          <div class="notice">Preencha os campos abaixo para gerar o registro e o PDF no Drive.</div>
+
+          <div class="row">
+            <div class="field">
+              <label>Cliente</label>
+              <input id="cliCliente" placeholder="Nome do cliente"/>
+            </div>
+            <div class="field">
+              <label>Data do contato (dd/MM/aaaa)</label>
+              <input id="cliData" placeholder="dd/MM/aaaa"/>
+            </div>
+            <input type="hidden" id="cliSup"/>
+            <input type="hidden" id="cliCoord"/>
+
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>Nome do contato</label>
+              <input id="cliContatoNome" placeholder="Nome de quem atendeu"/>
+            </div>
+            <div class="field">
+              <label>Telefone</label>
+              <input id="cliTelefone" placeholder="(00) 00000-0000"/>
+            </div>
+          </div>
+
+          <div class="section-title">Tipo de interação</div>
+          <div class="checks">
+            <label><input type="checkbox" id="cliInterVisita"/> <span>Visita sede do cliente</span></label>
+            <label><input type="checkbox" id="cliInterOnline"/> <span>Reunião online</span></label>
+            <label><input type="checkbox" id="cliInterAlmoco"/> <span>Almoço/Jantar</span></label>
+            <label><input type="checkbox" id="cliInterOutros"/> <span>Outros</span></label>
+          </div>
+
+          <div class="field" id="cliOutrosField" style="display:none">
+            <label>Outros (descreva)</label>
+            <input id="cliOutrosDesc" placeholder="Descreva a interação"/>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>Participantes (Grão 1000)</label>
+              <div class="actions">
+                <input id="cliAddGrao" placeholder="Nome do participante"/>
+                <button class="btn" id="cliBtnAddGrao" type="button">Adicionar</button>
+              </div>
+              <div class="inline-list mono" id="cliListaGrao">—</div>
+            </div>
+
+            <div class="field">
+              <label>Participantes (Cliente)</label>
+              <div class="actions">
+                <input id="cliAddCliente" placeholder="Nome do participante"/>
+                <button class="btn" id="cliBtnAddCliente" type="button">Adicionar</button>
+              </div>
+              <div class="inline-list mono" id="cliListaCliente">—</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>Resumo do que foi discutido</label>
+              <textarea id="cliResumo" class="text-area" placeholder="Resumo da conversa"></textarea>
+            </div>
+            <div class="field">
+              <label>Providências a serem tomadas</label>
+              <textarea id="cliProvidencias" class="text-area" placeholder="Providências"></textarea>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>Fotos (até 4 imagens)</label>
+              <input id="cliFotos" type="file" accept="image/*" multiple/>
+              <div class="notice" id="cliFotosInfo">Nenhuma imagem selecionada.</div>
+            </div>
+          </div>
+
+          <div class="row" style="align-items:center; margin-top:10px">
+            <button class="btn primary" id="cliBtnSalvar" type="button">Salvar contato</button>
+          </div>
+
+          <div id="cliNovoOut" style="margin-top:10px"></div>
+        </div>
+      </div>
+
+      <div class="card hidden" id="cliHistBox">
+        <div class="inner">
+          <div class="label">Histórico de contatos</div>
+          <div class="notice">Use filtros opcionais para localizar registros.</div>
+
+          <div class="row">
+            <div class="field">
+              <label>Cliente</label>
+              <input id="cliFiltroCliente" placeholder="Nome do cliente"/>
+            </div>
+            <div class="field">
+              <label>Data inicial (dd/MM/aaaa)</label>
+              <input id="cliFiltroIni" placeholder="dd/MM/aaaa"/>
+            </div>
+            <div class="field">
+              <label>Data final (dd/MM/aaaa)</label>
+              <input id="cliFiltroFim" placeholder="dd/MM/aaaa"/>
+            </div>
+          </div>
+
+          <div class="row" style="align-items:center">
+            <button class="btn primary" id="cliBtnBuscar" type="button">Buscar registros</button>
+          </div>
+
+          <div id="cliHistOut" style="margin-top:10px">
+            <div id="historicoLista" class="historico-lista"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/js/config.js"></script>
+    <script src="../assets/js/auth_unificado.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/clientes.js"></script>
+</body>
+</html>

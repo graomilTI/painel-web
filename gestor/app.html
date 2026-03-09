@@ -22,7 +22,7 @@
   </div>
 
   <div class="container">
-    <div class="grid cols-2" style="grid-template-columns: 280px 1fr; align-items:start">
+    <div class="grid cols-2" style="grid-template-columns: 300px 1fr; align-items:start">
       <div class="card side">
         <div class="hd">
           <h3 style="margin:0">Módulos</h3>
@@ -30,10 +30,10 @@
         </div>
         <div class="bd">
           <div class="nav" id="nav">
+            <a href="#programacao" data-mod="programacao">Programação</a>
+            <a href="#hospedagem" data-mod="hospedagem">Hospedagem</a>
+            <a href="#visita_cliente" data-mod="visita_cliente">Visita Cliente</a>
             <a href="#compras" data-mod="compras">Compras</a>
-<a href="#hospedagem" data-mod="hospedagem">Hospedagem</a>
-<a href="#frotas" data-mod="frotas">Frotas</a>
-<a href="#multas" data-mod="multas">Multas</a>
           </div>
           <div style="height:10px"></div>
           <div class="small">
@@ -44,11 +44,11 @@
 
       <div class="card">
         <div class="hd">
-          <h2 style="margin:0" id="pageTitle">Início</h2>
-          <div class="small" id="pageSub">Selecione um módulo ao lado.</div>
+          <h2 style="margin:0" id="pageTitle">Programação</h2>
+          <div class="small" id="pageSub">Carregando módulo.</div>
         </div>
         <div class="bd" id="module_container">
-          <div class="notice">Pronto. Escolha um módulo.</div>
+          <div class="notice">Carregando…</div>
         </div>
       </div>
     </div>
@@ -64,9 +64,16 @@
 
   const role = (SESSION.role() || "gestor").toLowerCase();
   const profile = SESSION.profile() || {};
-  document.getElementById("who").textContent = (profile.nome || profile.Nome || "Usuário") + " • " + role;
+  document.getElementById("who").textContent = (profile.nome || profile.Nome || profile.user || "Usuário") + " • " + role;
 
   document.getElementById("btnLogout").addEventListener("click", ()=>AUTH.logout());
+
+  const TITLES = {
+    programacao: ["Programação", "Carregar contexto do dia e etapas A–E."],
+    hospedagem: ["Hospedagem", "Solicitações e hospedagem avulsa."],
+    visita_cliente: ["Visita Cliente", "Registrar visitas e consultar histórico."],
+    compras: ["Compras", "Acesso ao módulo de compras do gestor."]
+  };
 
   const nav = document.getElementById("nav");
   const container = document.getElementById("module_container");
@@ -78,18 +85,19 @@
   }
 
   async function open(modName){
+    const meta = TITLES[modName] || [modName, ""];
     try{
       setActive(modName);
-      pageTitle.textContent = modName.charAt(0).toUpperCase() + modName.slice(1);
+      pageTitle.textContent = meta[0];
       pageSub.textContent = "Carregando...";
       container.innerHTML = '<div class="notice">Carregando módulo <span class="mono">'+modName+'</span>…</div>';
 
       await APP_ROUTER.openModule(modName, container, {
-        auth: { token: SESSION.token(), role },
+        auth: { token: SESSION.token(), role, profile },
         api: window.API,
-        onBack: ()=>{ location.hash=""; }
+        onBack: ()=>{ location.hash="#programacao"; }
       });
-      pageSub.textContent = "OK";
+      pageSub.textContent = meta[1] || "OK";
     }catch(e){
       container.innerHTML = '<div class="notice err">Erro: '+(e.message||e)+'</div>';
       pageSub.textContent = "Erro";
@@ -98,7 +106,7 @@
 
   function fromHash(){
     const h = (location.hash||"").replace(/^#/, "");
-    return h || "compras";
+    return h || "programacao";
   }
 
   window.addEventListener("hashchange", ()=>open(fromHash()));
