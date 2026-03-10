@@ -39,37 +39,38 @@
     return api.post('/exec', body);
   }
 
-  async function tryLoadContext(api, payload){
-    const attempts = [
-      { module:'programacao', action:'carregar_contexto', payload },
-      { module:'programacao', action:'contexto', payload },
-      { action:'programacao_contexto', ...payload },
-    ];
-    let lastErr = null;
-    for(const body of attempts){
-      try{
-        const res = await callExec(api, body);
-        if(res && (res.ok !== false)) return res;
-      }catch(err){ lastErr = err; }
-    }
-    throw lastErr || new Error('Não foi possível carregar o contexto.');
+async function tryLoadContext(api, payload){
+  const attempts = [
+    { module:'programacao', action:'carregar_contexto', payload, ...payload },
+    { module:'programacao', action:'contexto', payload, ...payload },
+    { module:'despesas', action:'carregarContexto', payload, ...payload },
+    { action:'programacao_contexto', ...payload },
+  ];
+  let lastErr = null;
+  for(const body of attempts){
+    try{
+      const res = await callExec(api, body);
+      if(res && (res.ok !== false)) return res;
+    }catch(err){ lastErr = err; }
   }
-
-  async function trySaveStep(api, payload){
-    const attempts = [
-      { module:'programacao', action:'salvar_etapa', payload },
-      { module:'programacao', action:'salvar', payload },
-      { action:'programacao_salvar_etapa', ...payload }
-    ];
-    let lastErr = null;
-    for(const body of attempts){
-      try{
-        const res = await callExec(api, body);
-        if(res && (res.ok !== false)) return res;
-      }catch(err){ lastErr = err; }
-    }
-    throw lastErr || new Error('Não foi possível salvar a etapa.');
+  throw lastErr || new Error('Não foi possível carregar o contexto.');
+}
+async function trySaveStep(api, payload){
+  const attempts = [
+    { module:'programacao', action:'salvar_etapa', payload, ...payload },
+    { module:'programacao', action:'salvar', payload, ...payload },
+    { module:'despesas', action:'salvarEtapa', payload },
+    { action:'programacao_salvar_etapa', ...payload }
+  ];
+  let lastErr = null;
+  for(const body of attempts){
+    try{
+      const res = await callExec(api, body);
+      if(res && (res.ok !== false)) return res;
+    }catch(err){ lastErr = err; }
   }
+  throw lastErr || new Error('Não foi possível salvar a etapa.');
+}
 
   function normalizeColabs(rawList, profile){
     const list = Array.isArray(rawList) ? rawList : [];
