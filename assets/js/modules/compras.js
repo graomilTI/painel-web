@@ -352,6 +352,7 @@
 
         <div class="cAdmTop">
           <div>
+            <button class="cAdmBtn" id="cAdmBack" style="margin-bottom:8px">← Voltar</button>
             <div class="cAdmTitle">Compras — ADM</div>
             <div class="cAdmMeta">Gerencie solicitações dos gestores (Pendente → Andamento → Efetuada / Recusada)</div>
           </div>
@@ -1308,6 +1309,12 @@ async function changeStatus_(root, opts, state, pedido, newStatus){
     buildUI_(container);
 
     const root = container.querySelector(".cAdmWrap");
+    try{
+      const backBtn = root.querySelector("#cAdmBack");
+      if(backBtn && opts && typeof opts.onBack === "function"){
+        backBtn.onclick = ()=> opts.onBack();
+      }
+    }catch(_){}
     const state = {
       tab: STATUS.PENDENTE,
       query: "",

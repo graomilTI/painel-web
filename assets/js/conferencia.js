@@ -19,24 +19,53 @@
   }
 
   async function execScripts_(root) {
+    // scripts dentro de innerHTML não executam; aqui executamos manualmente.
+    // ✅ Blindagem extra:
+    // - Inline scripts do HTML (conferencia.html) vinham declarando const/let no escopo global.
+    // - Ao abrir o módulo mais de uma vez, ocorria: "Identifier ... has already been declared".
+    //
+    // Estratégia:
+    // 1) Scripts com src: carrega 1x (dedupe por URL).
+    // 2) Scripts inline: concatena todos em 1 único bloco e executa dentro de IIFE,
+    //    preservando o compartilhamento de variáveis ENTRE scripts do mesmo HTML,
+    //    mas sem vazar para o escopo global.
+
+    window.__G1000_LOADED_SCRIPTS__ = window.__G1000_LOADED_SCRIPTS__ || new Set();
+    const LOADED = window.__G1000_LOADED_SCRIPTS__;
+
     const scripts = Array.from(root.querySelectorAll("script"));
+    const inlineParts = [];
+
     for (const old of scripts) {
-      const s = document.createElement("script");
-      for (const attr of Array.from(old.attributes || [])) {
-        if (attr && attr.name && attr.value) s.setAttribute(attr.name, attr.value);
-      }
-      if (old.src) {
-        s.src = old.src;
-        await new Promise((res, rej) => {
-          s.onload = () => res();
-          s.onerror = () => rej(new Error("Falha ao carregar script: " + old.src));
-          document.head.appendChild(s);
-        });
+      if (old && old.src) {
+        const src = String(old.src || "").trim();
+        if (src && !LOADED.has(src)) {
+          const s = document.createElement("script");
+          // copia atributos relevantes
+          for (const attr of Array.from(old.attributes || [])) {
+            if (!attr || !attr.name) continue;
+            if (attr.name.toLowerCase() === "src") continue;
+            s.setAttribute(attr.name, attr.value);
+          }
+          s.src = src;
+          await new Promise((res, rej) => {
+            s.onload = () => res();
+            s.onerror = () => rej(new Error("Falha ao carregar script: " + src));
+            document.head.appendChild(s);
+          });
+          LOADED.add(src);
+        }
       } else {
-        s.text = old.textContent || "";
-        document.head.appendChild(s);
+        const code = (old && old.textContent) ? String(old.textContent) : "";
+        if (code.trim()) inlineParts.push(code);
       }
-      old.remove();
+      try { old.remove(); } catch (e) {}
+    }
+
+    if (inlineParts.length) {
+      const s = document.createElement("script");
+      s.text = "(function(){\n" + inlineParts.join("\n\n") + "\n})();";
+      document.head.appendChild(s);
     }
   }
 

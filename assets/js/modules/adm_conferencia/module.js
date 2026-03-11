@@ -33,6 +33,16 @@
 
     if (res && res.ok === false) throw new Error(res.error || res.message || "Erro no backend");
     return res || {};
+  // Trata "" como vazio e tenta alternativas
+  function pickStr_(...vals){
+    for (const v of vals){
+      if (v === null || v === undefined) continue;
+      const s = String(v).trim();
+      if (s !== "") return s;
+    }
+    return "";
+  }
+
   }
 
   function setStatus(el, msg, kind="info"){
@@ -54,12 +64,25 @@
     if (keep && Array.from(sel.options).some(o=>o.value===cur)) sel.value = cur;
   }
 
-  function badgeSIM(v){
-    // aceita: "SIM", 1, "1", true
-    const s = safeStr(v).trim().toUpperCase();
-    const on = (s === "SIM" || s === "1" || v === 1 || v === true);
-    return `<span class="chip ${on?"on":"off"}">${on?"SIM":"-"}</span>`;
-  }
+  function isYes_(v){
+  if (v === true) return true;
+  if (v === false || v == null) return false;
+  if (typeof v === "number") return v === 1;
+  const s = safeStr(v).trim().toUpperCase();
+  return (s === "SIM" || s === "S" || s === "1" || s === "TRUE" || s === "YES" || s === "Y");
+}
+
+// Para tabela (sempre mostra SIM/NÃO)
+function badgeBool_(v){
+  return isYes_(v)
+    ? '<span class="chip on">SIM</span>'
+    : '<span class="chip">NÃO</span>';
+}
+
+// Mantém compatibilidade (retorna texto simples)
+function badgeSIM(v){
+  return isYes_(v) ? "SIM" : "";
+}
 
   function cellText(v){
     const s = safeStr(v).trim();
@@ -68,8 +91,26 @@
 
   // Moeda BRL: 0/vazio => "R$ -,00"
   function moneyBRL(v){
-    if (v == null || v === "") return "R$ -,00";
-    // já vem número na maioria dos casos, mas aceita string "20,5" etc.
+    // ✅ O relatório já pode vir como "233,87" (pt-BR). Não reformatar.
+    // ✅ Não forçar ",00" quando for inteiro.
+    if (v == null || v === "") return "R$ -";
+
+    const s0 = safeStr(v).trim();
+    if (s0) {
+      // já vem no padrão pt-BR com vírgula
+      if (/^-?\d{1,3}(?:\.\d{3})*,\d{1,}$/.test(s0) || /^-?\d+,\d{1,}$/.test(s0)) {
+        if (s0 === "0" || s0 === "0,0" || s0 === "0,00") return "R$ -";
+        return "R$ " + s0;
+      }
+      // inteiro como string
+      if (/^-?\d+$/.test(s0)) {
+        const ni = Number(s0);
+        if (!isFinite(ni) || ni === 0) return "R$ -";
+        return "R$ " + ni.toLocaleString("pt-BR");
+      }
+    }
+
+    // tenta converter quando não veio pronto
     let n;
     if (typeof v === "number") n = v;
     else {
@@ -79,15 +120,57 @@
         .replace(/[^0-9\-\.]/g, "");
       n = Number(raw);
     }
-    if (!isFinite(n) || n <= 0) return "R$ -,00";
+    if (!isFinite(n) || n === 0) return "R$ -";
+
+    const isInt = Number.isInteger(n) || (isFinite(n) && Math.abs(n - Math.round(n)) < 1e-9);
     try {
-      return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+      // formata sem casas quando inteiro
+      return "R$ " + n.toLocaleString("pt-BR", {
+        minimumFractionDigits: isInt ? 0 : 2,
+        maximumFractionDigits: isInt ? 0 : 2,
+      });
     } catch (e) {
-      // fallback bem simples
-      const s = n.toFixed(2).replace(".", ",");
-      return "R$ " + s;
+      const s = isInt ? String(n) : n.toFixed(2);
+      return "R$ " + s.replace(".", ",");
     }
   }
+
+/** Parse number in pt-BR formats (e.g. "43.382,00", "43382,00", "R$ 1.234,56"). Returns NaN if not numeric. */
+function parsePtBRNumber_(v){
+  if (v == null) return NaN;
+  if (typeof v === "number") return v;
+  let s = safeStr(v).trim();
+  if (!s) return NaN;
+  const up = s.toUpperCase();
+  if (up === "—" || up === "-" || up === "N/A" || up === "FOB") return NaN;
+
+  // remove spaces + currency markers
+  s = s.replace(/\s+/g, "");
+  s = s.replace(/R\$/g, "");
+
+  // pt-BR: thousands '.' and decimal ','
+  s = s.replace(/\./g, "").replace(/,/g, ".");
+  s = s.replace(/[^0-9\-.]/g, "");
+
+  let n = Number(s);
+  if (!isFinite(n)) return NaN;
+
+  // Heuristic fix: sometimes upstream sends 43382000000000008 instead of 43382 (floating/scale glitch)
+  if (n > 1e9){
+    const n2 = n / 1e12;
+    if (isFinite(n2) && n2 >= 0 && n2 <= 1e7){
+      const rounded = Math.round(n2 * 100) / 100;
+      if (Math.abs(n2 - rounded) < 1e-6) n = rounded;
+    }
+  }
+  return n;
+}
+
+function fmtIntBR_(n){
+  try { return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n); }
+  catch(e){ return String(Math.round(n)); }
+}
+
 
   function applyBusca(rows, q){
     const s = safeStr(q).trim().toLowerCase();
@@ -151,6 +234,11 @@
     if (o.coordenacao == null) o.coordenacao = o["Coordenação"] ?? o.Coordenacao ?? o.coordenacao;
     if (o.conferente == null) o.conferente = o.Conferente ?? o.conferente;
 
+    // Almoço pode vir com variações de chave (com acento / sem acento)
+    if (o.almoco == null || String(o.almoco).trim() === "") {
+      o.almoco = o.almoco ?? o["almoço"] ?? o["ALMOÇO"] ?? o["Almoço"] ?? o["ALMOCO"];
+    }
+
     // Alimentação (alguns backends mandam *_Valor em vez de SIM)
     if (o.cafe == null && o.Cafe_Valor != null) o.cafe = (Number(o.Cafe_Valor) > 0) ? "SIM" : "";
     if (o.almoco == null && o.Almoco_Valor != null) o.almoco = (Number(o.Almoco_Valor) > 0) ? "SIM" : "";
@@ -168,6 +256,15 @@
     if (o.cafe != null)   o.cafe   = bool01ToSIM_(o.cafe);
     if (o.almoco != null) o.almoco = bool01ToSIM_(o.almoco);
     if (o.janta != null)  o.janta  = bool01ToSIM_(o.janta);
+
+    // Aliases (compatibilidade com chaves acentuadas/maiúsculas)
+    o["CAFÉ"] = o.cafe;
+    o["café"] = o.cafe;
+    o["ALMOÇO"] = o.almoco;
+    o["almoço"] = o.almoco;
+    o["JANTA"] = o.janta;
+    o["janta"] = o.janta;
+
 
     return o;
   }
@@ -194,7 +291,7 @@
     if (up === "—" || up === "N/A") return `<span class="chip">—</span>`;
 
     // tenta parsear tons ("298,12" ou "298.12")
-    const n = Number(s.replace(/\./g, "").replace(",", "."));
+    const n = parsePtBRNumber_(s);
     if (isFinite(n)){
       const txt = (Math.abs(n) < 1e-9) ? "FOB" : n.toFixed(2).replace(".", ",");
       return `<span class="chip ${txt === "FOB" ? "" : "on"}">${txt}</span>`;
@@ -283,6 +380,9 @@
         lavagem: g.lavagem ? g.lavagem.toFixed(2).replace(".",",") : "0,00",
         passagem: g.passagem ? g.passagem.toFixed(2).replace(".",",") : "0,00",
         extras,
+        cafe: g.dias ? (g.cafeSim + "/" + g.dias) : "—",
+        almoco: g.dias ? (g.almocoSim + "/" + g.dias) : "—",
+        janta: g.dias ? (g.jantaSim + "/" + g.dias) : "—",
         _isGroup: true,
       };
     });
@@ -312,9 +412,9 @@
         }</td>
         <td>${grouped ? cellText(r.producao) : badgeProducao(r.producao ?? r.hasProducao)}</td>
         <td>${cellText(r.estadia)}</td>
-        <td>${grouped ? badgeFrac(r.cafe) : badgeSIM(r.cafe)}</td>
-        <td>${grouped ? badgeFrac(r.almoco) : badgeSIM(r.almoco)}</td>
-        <td>${grouped ? badgeFrac(r.janta) : badgeSIM(r.janta)}</td>
+        <td>${grouped ? badgeFrac(r.cafe) : badgeSIM((r.cafe ?? r["CAFÉ"] ?? r["café"]))}</td>
+        <td>${grouped ? badgeFrac(r.almoco) : badgeSIM((r.almoco ?? r["ALMOÇO"] ?? r["almoço"]))}</td>
+        <td>${grouped ? badgeFrac(r.janta) : badgeSIM((r.janta ?? r["JANTA"] ?? r["janta"]))}</td>
         <td>${cellText(r.desl)}</td>
         <td class="num">${moneyBRL(r.recarga)}</td>
         <td class="num">${moneyBRL(r.lavagem)}</td>
@@ -385,9 +485,9 @@
                   <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);">${escapeHtml(cellText(it.data))}</td>
                   <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);">${badgeProducao(it.producao)}</td>
                   <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);">${escapeHtml(cellText(it.estadia))}</td>
-                  <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);">${badgeSIM(it.cafe)}</td>
-                  <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);">${badgeSIM(it.almoco)}</td>
-                  <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);">${badgeSIM(it.janta)}</td>
+                  <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);">${badgeBool_(it.cafe)}</td>
+                  <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);">${badgeBool_(it.almoco)}</td>
+                  <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);">${badgeBool_(it.janta)}</td>
                   <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);">${escapeHtml(cellText(it.desl))}</td>
                   <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);text-align:right;">${escapeHtml(cellText(it.recarga))}</td>
                   <td style="padding:8px;border-bottom:1px solid rgba(148,163,184,.10);text-align:right;">${escapeHtml(cellText(it.lavagem))}</td>

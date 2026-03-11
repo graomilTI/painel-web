@@ -257,6 +257,24 @@ function norm_(s){
     return (+v || 0) > 0 ? "Sim" : `<span class="dash">-</span>`;
   }
 
+function toBoolNum_(v){
+  if (v === 1 || v === "1") return 1;
+  if (v === 0 || v === "0") return 0;
+  if (v === true) return 1;
+  if (v === false || v == null) return 0;
+  if (typeof v === "string") {
+    const s = v.trim().toUpperCase();
+    if (!s) return 0;
+    if (["SIM","S","YES","Y","TRUE","T","X","OK"].includes(s)) return 1;
+    if (["NAO","NÃO","N","NO","FALSE","F"].includes(s)) return 0;
+    const n = parseFloat(s.replace(",", "."));
+    return (isFinite(n) && n !== 0) ? 1 : 0;
+  }
+  const n = Number(v);
+  return (isFinite(n) && n !== 0) ? 1 : 0;
+}
+
+
   function fmtProducao_(r){
     const p = (r && (r.Producao ?? r.ProducaoTons)) ?? "";
     if (typeof p === "string") return p || "—";
@@ -266,6 +284,61 @@ function norm_(s){
 
 
 /** Produção: converte com MoneyShield e bloqueia valores absurdos */
+
+  function normalizeHistoricoRow_(r){
+    if (!r) return null;
+
+    // se já veio no formato "Front/ADM" (Camel/Title), não mexe muito
+    const hasFrontShape = ("DataReferencia" in r) || ("Colaborador" in r);
+    if (hasFrontShape){
+      // garante campos mínimos esperados
+      if (!r.DataReferencia && r.Data) r.DataReferencia = r.Data;
+      if (!r.Data && r.DataReferencia) r.Data = r.DataReferencia;
+      return r;
+    }
+
+    // backend (GAS) vem em snake/lowercase: data, colaborador, producaoTons, cafe, almoco, janta...
+    const out = Object.assign({}, r);
+
+    const d = r.data || r.Data || r.dataReferencia || r.DataReferencia || "";
+    out.DataReferencia = r.DataReferencia || d;
+    out.Data = r.Data || d;
+
+    out.Colaborador = r.Colaborador || r.colaborador || "";
+    out.Coordenacao = r.Coordenacao || r.coordenacao || "";
+    out.Supervisao = r.Supervisao || r.supervisao || "";
+    out.Conferente = r.Conferente || r.conferente || "";
+
+    // produção
+    out.ProducaoTons = (r.ProducaoTons ?? r.producaoTons ?? r.producao_tons ?? 0);
+    out.Producao = r.Producao || r.producao || "";
+
+    // despesas / refeições
+    out.Estadia = r.Estadia || r.estadia || "";
+  // ✅ Refeições: API pode vir como 1/0, true/false, ou "SIM"/"" — padroniza para 1/0
+  const cafeRaw   = (r.Cafe_Valor   ?? r.cafe_Valor   ?? r.Cafe   ?? r.cafe   ?? "");
+  const almocoRaw = (r.Almoco_Valor ?? r.almoco_Valor ?? r.Almoco ?? r.almoco ?? "");
+  const jantaRaw  = (r.Janta_Valor  ?? r.janta_Valor  ?? r.Janta  ?? r.janta  ?? "");
+  out.Cafe_Valor   = toBoolNum_(cafeRaw);
+  out.Almoco_Valor = toBoolNum_(almocoRaw);
+  out.Janta_Valor  = toBoolNum_(jantaRaw);
+  // mantém compatibilidade (se algum trecho antigo ainda usar Cafe/Almoco/Janta)
+  out.Cafe   = out.Cafe_Valor;
+  out.Almoco = out.Almoco_Valor;
+  out.Janta  = out.Janta_Valor;
+
+    out.Deslocamento = r.Deslocamento || r.desl || r.deslocamento || "";
+    out.Recarga = (r.Recarga ?? r.recarga ?? 0);
+    out.Lavagem = (r.Lavagem ?? r.lavagem ?? 0);
+    out.Passagem = (r.Passagem ?? r.passagem ?? 0);
+    out.Extras = r.Extras || r.extras || "";
+
+    // compat de campos usados no renderer
+    out.Disponibilidade_Status = r.Disponibilidade_Status || r.disponibilidade_status || out.Estadia || "";
+
+    return out;
+  }
+
 function prodNum_(v){
   try{
     const n = (window.MoneyShield && MoneyShield.num) ? MoneyShield.num(v) : (+v || 0);
@@ -546,16 +619,25 @@ function prodNum_(v){
 
     metaEl.textContent = "Carregando histórico...";
 
+    
     const res = await window.admBackendCall({
       module: "adm",
-      action: "adm_getHistoricoPeriodoDespesas",
+      action: "adm_getHistoricoPeriodo",
+      // compat: alguns backends esperam dataIni/dataFim, outros dtIni/dtFim
       dtIni, dtFim,
+      dataIni: dtIni,
+      dataFim: dtFim,
       filtros: {} // filtros locais ficam no front (busca mais rápida ao digitar)
     });
 
-    __histAll = Array.isArray(res?.rows) ? res.rows : [];
+    // backend pode devolver {ok:true,data:[...],meta:{...}} ou {rows:[...]}
+    const rawRows = Array.isArray(res?.rows) ? res.rows
+                  : Array.isArray(res?.data) ? res.data
+                  : Array.isArray(res?.data?.rows) ? res.data.rows
+                  : [];
 
-    // garante Conferente (se vier vazio do GAS, deriva pela coord/supervisão)
+    __histAll = rawRows.map(normalizeHistoricoRow_).filter(Boolean);
+// garante Conferente (se vier vazio do GAS, deriva pela coord/supervisão)
     __histAll.forEach(r=>{
       if (!r) return;
       const c = String(r.Conferente || "").trim();

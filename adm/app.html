@@ -1,118 +1,446 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ADM • Painel Grão 1000</title>
-  <link rel="stylesheet" href="/painel/ui.css" />
-</head>
-<body>
-  <div class="topbar">
-    <div class="inner">
-      <div class="brand">
-        <div class="logo"></div>
-        <div>
-          <div class="title">Grão 1000</div>
-          <div class="pill">ADM</div>
-        </div>
-      </div>
-      <div class="spacer"></div>
-      <button class="btn" id="btnLogout">Sair</button>
-    </div>
-  </div>
+  <title>Painel ADM — Grão 1000</title>
 
-  <div class="container">
-    <div class="grid cols-2" style="grid-template-columns: 280px 1fr; align-items:start">
-      <div class="card side">
-        <div class="hd">
-          <h3 style="margin:0">Módulos</h3>
-          <div class="small mono" id="who"></div>
-        </div>
-        <div class="bd">
-          <div class="nav" id="nav">
-            <a href="#compras" data-mod="compras">Compras</a>
-<a href="#conferencia" data-mod="conferencia">Conferencia</a>
-<a href="#hospedagem" data-mod="hospedagem">Hospedagem</a>
-<a href="#correios" data-mod="correios">Correios</a>
-<a href="#multas" data-mod="multas">Multas</a>
-          </div>
-          <div style="height:10px"></div>
-          <div class="small">
-            API: <span class="mono">/api</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="hd">
-          <h2 style="margin:0" id="pageTitle">Início</h2>
-          <div class="small" id="pageSub">Selecione um módulo ao lado.</div>
-        </div>
-        <div class="bd" id="module_container">
-          <div class="notice">Pronto. Escolha um módulo.</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-<script src="/painel/assets/js/api.js"></script>
-<script src="/painel/assets/js/session.js"></script>
-<script src="/painel/assets/js/auth_unificado.js"></script>
-<script src="/painel/assets/js/auth.js"></script>
-<script src="/painel/assets/js/router.js"></script>
-<script>
-(function(){
-  if(!SESSION.requireAuth()) return;
-
-  const role = (SESSION.role() || "adm").toLowerCase();
-  const profile = SESSION.profile() || {};
-  document.getElementById("who").textContent = (profile.nome || profile.Nome || "Usuário") + " • " + role;
-
-  document.getElementById("btnLogout").addEventListener("click", ()=>AUTH.logout());
-
-  const nav = document.getElementById("nav");
-  const container = document.getElementById("module_container");
-  const pageTitle = document.getElementById("pageTitle");
-  const pageSub = document.getElementById("pageSub");
-
-  function setActive(modName){
-    [...nav.querySelectorAll("a")].forEach(a=>a.classList.toggle("active", a.dataset.mod===modName));
-  }
-
-  async function open(modName){
-    try{
-      setActive(modName);
-      pageTitle.textContent = modName.charAt(0).toUpperCase() + modName.slice(1);
-      pageSub.textContent = "Carregando...";
-      container.innerHTML = '<div class="notice">Carregando módulo <span class="mono">'+modName+'</span>…</div>';
-
-      await APP_ROUTER.openModule(modName, container, {
-        auth: { token: SESSION.token(), role, profile },
-        api: window.API,
-        onBack: ()=>{ location.hash=""; }
-      });
-      pageSub.textContent = "OK";
-    }catch(e){
-      container.innerHTML = '<div class="notice err">Erro: '+(e.message||e)+'</div>';
-      pageSub.textContent = "Erro";
+  <style>
+    :root{
+      --bg0:#030712;
+      --bg1:#071427;
+      --bg2:#0b2038;
+      --card:#0b1f33;
+      --card2:#0a1a2b;
+      --border:rgba(255,255,255,.10);
+      --border2:rgba(255,255,255,.08);
+      --text:#e5f0ff;
+      --muted:rgba(229,240,255,.70);
+      --muted2:rgba(229,240,255,.55);
+      --green:#16a34a;
+      --green2:#22c55e;
+      --shadow: 0 18px 60px rgba(0,0,0,.45);
+      --r:22px;
     }
-  }
 
-  function fromHash(){
-    const h = (location.hash||"").replace(/^#/, "");
-    return h || "compras";
-  }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: Arial, Helvetica, sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(1200px 700px at 30% 0%, #0e2a44 0%, rgba(14,42,68,0) 60%),
+        radial-gradient(900px 600px at 90% 10%, #12385a 0%, rgba(18,56,90,0) 55%),
+        linear-gradient(180deg, var(--bg1), var(--bg0));
+      min-height:100vh;
+    }
 
-  window.addEventListener("hashchange", ()=>open(fromHash()));
-  nav.addEventListener("click", (e)=>{
-    const a = e.target.closest("a[data-mod]");
-    if(!a) return;
-    e.preventDefault();
-    location.hash = a.dataset.mod;
+    /* ✅ Tela inteira (monitor): sem "bloco" central */
+    .wrap{
+      max-width: none;
+      margin: 0;
+      padding: 14px;
+      height: 100vh;
+    }
+
+    .shell{
+      border-radius: 26px;
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      backdrop-filter: blur(8px);
+      min-height: calc(100vh - 28px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ===== Header (igual do gestor) ===== */
+    .topbar{
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding: 16px 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border-bottom: 1px solid var(--border2);
+    }
+    .welcome{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+      font-weight: 900;
+      letter-spacing:.2px;
+    }
+    .tag{
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,.15);
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .pill{
+      padding: 10px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      font-weight: 900;
+      cursor:pointer;
+      transition:.12s ease;
+      user-select:none;
+    }
+    .pill:hover{transform:translateY(-1px);background:rgba(255,255,255,.06)}
+    .pill:active{transform:translateY(0px)}
+    .pill.green{
+      background: rgba(34,197,94,.20);
+      border-color: rgba(34,197,94,.35);
+    }
+
+    /* ===== Conteúdo ===== */
+    .content{
+      padding: 16px 18px 18px;
+      flex: 1;
+      overflow: auto;
+    }
+
+    /* cards “módulos” igual gestor */
+    .hidden{display:none !important;}
+
+/* cards “módulos” (quadrados / responsivos) */
+.moduleGrid{
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.mCard{
+  text-align:left;
+  padding: 14px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.20));
+  box-shadow: 0 10px 28px rgba(0,0,0,.22);
+  cursor:pointer;
+  transition:.12s ease;
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+
+  /* compacto (não quadrado) */
+  min-height: 130px;
+  overflow:hidden;
+}
+.mCard:hover{transform:translateY(-1px)}
+    .mCard.active{
+      border-color: rgba(34,197,94,.45);
+      box-shadow: 0 14px 34px rgba(34,197,94,.15);
+      background: linear-gradient(180deg, rgba(34,197,94,.14), rgba(0,0,0,.22));
+    }
+    .mTitle{
+      font-weight: 900;
+      font-size: 16px;
+      margin: 0 0 4px 0;
+    }
+    .mSub{
+      margin:0;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    /* Área do módulo */
+    .panel{
+      margin-top: 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(0,0,0,.22));
+      overflow:hidden;
+    }
+    .panelHead{
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border2);
+      display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+    }
+    .panelHead b{font-size:16px}
+    .crumb{font-size:12px;color:var(--muted);font-weight:800}
+    .panelBody{padding: 14px 16px}
+    #view{min-height: 360px}
+
+    /* inputs */
+    input, select{
+      width:100%;
+      padding: 12px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,.22);
+      color: var(--text);
+      outline:none;
+      font-weight:800;
+    }
+    input::placeholder{color:rgba(229,240,255,.35)}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .hint{font-size:12px;color:var(--muted2);margin-top:8px}
+
+    /* mobile */
+    @media (max-width: 1100px){
+      .moduleGrid{grid-template-columns: repeat(2, minmax(0, 1fr));}
+    }
+    @media (max-width: 700px){
+      .moduleGrid{grid-template-columns:1fr}
+      .mCard{min-height:120px}
+      #view{min-height:260px}
+      .wrap{margin:14px auto}
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="shell">
+      <div class="topbar">
+        <div class="welcome">
+          <span id="welcomeTxt">Bem-vindo, —</span>
+          <span class="tag" id="verTag">ADM</span>
+        </div>
+
+        <div class="actions">
+          <button class="pill" id="btnPing" type="button">Ping</button>
+          <button class="pill" id="btnAjuda" type="button">Ajuda</button>
+          <button class="pill green" id="btnSair" type="button">Sair</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <!-- Módulos (cards) -->
+        <div class="moduleGrid" id="menu">
+          <div class="mCard active" data-view="conferencia">
+            <div class="mTitle">Conferência</div>
+            <p class="mSub">Histórico, ocorrências e acompanhamento</p>
+          </div>
+
+          <div class="mCard" data-view="compras">
+            <div class="mTitle">Compras</div>
+            <p class="mSub">Solicitações e histórico</p>
+          </div>
+
+          <div class="mCard" data-view="patrimonio">
+            <div class="mTitle">Patrimônio</div>
+            <p class="mSub">Pendentes de cadastro e numeração</p>
+          </div>
+
+          <div class="mCard" data-view="hospedagem">
+            <div class="mTitle">Hospedagem</div>
+            <p class="mSub">Check-in, reservas e alojamentos</p>
+          </div>
+
+          <div class="mCard" data-view="frotas">
+            <div class="mTitle">Frotas</div>
+            <p class="mSub">Veículos, apontamentos e rotas</p>
+          </div>
+
+          <div class="mCard" data-view="logistica">
+            <div class="mTitle">Logística</div>
+            <p class="mSub">Operação, demandas e controle</p>
+          </div>
+          <div class="mCard" data-view="correios">
+            <div class="mTitle">Correios</div>
+            <p class="mSub">Postagens, rastreio e notificações</p>
+          </div>
+
+
+          <div class="mCard" data-view="financeiro">
+            <div class="mTitle">Financeiro</div>
+            <p class="mSub">Pagamentos, lançamentos e relatórios</p>
+          </div>
+
+          <div class="mCard" data-view="notas_fiscais">
+            <div class="mTitle">Notas Fiscais</div>
+            <p class="mSub">Emissão, validação e status</p>
+          </div>
+
+          <div class="mCard" data-view="rh">
+            <div class="mTitle">RH</div>
+            <p class="mSub">Equipe, indisponibilidades e regras</p>
+          </div>
+
+          <div class="mCard" data-view="auditoria">
+            <div class="mTitle">Auditoria</div>
+            <p class="mSub">Alertas, políticas e conferências</p>
+          </div>
+
+          <div class="mCard" data-view="ti">
+            <div class="mTitle">TI</div>
+            <p class="mSub">Suporte, acessos e manutenção</p>
+          </div>
+
+          <div class="mCard" data-view="diretoria">
+            <div class="mTitle">Diretoria</div>
+            <p class="mSub">Visão macro e indicadores</p>
+          </div>
+        </div>
+
+        <!-- Área do módulo -->
+        <div class="panel hidden" id="panelWrap">
+          <div class="panelHead">
+            <button class="pill" id="btnBackMenu" type="button">← Voltar</button>
+            <div>
+              <b id="viewHeader">Conferência</b>
+              <div class="crumb" id="viewCrumb">Tela: conferencia</div>
+            </div>
+            <div class="crumb">/adm/app.html</div>
+          </div>
+
+          <div class="panelBody">
+            <div id="view">
+              <div class="row">
+                <div>
+                  <div class="crumb">Status</div>
+                  <input value="ADM OK ✅" readonly />
+                </div>
+                <div>
+                  <div class="crumb">Módulo</div>
+                  <input value="conferencia" readonly />
+                </div>
+              </div>
+              <div class="hint">Aguardando implementação do módulo (adm.js).</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint" style="padding:10px 2px 0">
+          Grão 1000 • Painel Web
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Core (mantém seu padrão) -->
+  <script src="../assets/js/config.js?v=999"></script>
+  <script src="../assets/js/core/api.js?v=4"></script>
+  <script src="../assets/js/auth_unificado.js?v=4"></script>
+
+  <script>
+    function getAuthSafe_(){
+      try { if (window.AUTH && typeof AUTH.getAuth === "function") return AUTH.getAuth(); } catch(e){}
+      try { return JSON.parse(localStorage.getItem("g1000_auth")||"null"); } catch(e){}
+      try { const t=(localStorage.getItem("g1000_token")||"").trim(); return t?{token:t}:null; } catch(e){}
+      return null;
+    }
+    function setWelcome_(){
+      const a=getAuthSafe_();
+      const nome=(a && (a.nome || (a.user&&a.user.nome))) ? (a.nome || a.user.nome) : "—";
+      const tipo=(a && (a.tipo || a.type || a.role)) ? (a.tipo || a.type || a.role) : "ADM";
+      document.getElementById("welcomeTxt").textContent = "Bem-vindo, " + nome;
+      document.getElementById("verTag").textContent = String(tipo).toUpperCase();
+    }
+    function clearAuth_(){
+      try{localStorage.removeItem("g1000_auth")}catch(e){}
+      try{localStorage.removeItem("g1000_token")}catch(e){}
+    }
+
+    function setViewHeader_(title, view){
+      document.getElementById("viewHeader").textContent = title;
+      document.getElementById("viewCrumb").textContent = "Tela: " + view;
+    }
+
+    function showMenu_(){
+  document.getElementById("menu").classList.remove("hidden");
+  document.getElementById("panelWrap").classList.add("hidden");
+}
+
+function showModule_(){
+  document.getElementById("menu").classList.add("hidden");
+  document.getElementById("panelWrap").classList.remove("hidden");
+}
+
+function bindMenu_(){
+  const menu=document.getElementById("menu");
+  menu.addEventListener("click",(ev)=>{
+    const card=ev.target.closest("[data-view]");
+    if(!card) return;
+
+    [...menu.querySelectorAll("[data-view]")].forEach(x=>x.classList.remove("active"));
+    card.classList.add("active");
+
+    const v=card.getAttribute("data-view");
+    const title = card.querySelector(".mTitle") ? card.querySelector(".mTitle").textContent.trim() : v;
+    setViewHeader_(title, v);
+
+    // abre tela única do módulo
+    showModule_();
+
+    if (window.ADM && typeof window.ADM.open === "function") {
+      window.ADM.open(v);
+    } else {
+      const viewEl=document.getElementById("view");
+      viewEl.innerHTML = `
+        <div class="row">
+          <div><div class="crumb">Módulo</div><input value="${v}" readonly></div>
+          <div><div class="crumb">Status</div><input value="Aguardando implementação do módulo (adm.js)" readonly></div>
+        </div>
+        <div class="hint">Carregue/crie o <code>../assets/js/adm.js</code> e os módulos do ADM.</div>
+      `;
+    }
   });
 
-  open(fromHash());
-})();
-</script>
+  // botão voltar
+  const backBtn = document.getElementById("btnBackMenu");
+  if (backBtn){
+    backBtn.addEventListener("click", ()=>{
+      showMenu_();
+    });
+  }
+
+  // estado inicial: só menu
+  showMenu_();
+}
+
+    // Botões topo
+    document.getElementById("btnSair").addEventListener("click", ()=>{
+      clearAuth_();
+      location.href="../index.html";
+    });
+
+    document.getElementById("btnAjuda").addEventListener("click", ()=>{
+      alert("Painel ADM — Grão 1000\n\nSelecione um módulo.\nSe algum módulo não abrir, verifique se adm.js está carregando.");
+    });
+
+    document.getElementById("btnPing").addEventListener("click", async ()=>{
+      try{
+        if (window.API && typeof API.post === "function") {
+          // tenta ping no adm (se existir)
+          const r = await API.post("ping", { module:"adm" });
+          alert("Ping OK ✅\n" + JSON.stringify(r));
+        } else {
+          alert("API não carregada.");
+        }
+      }catch(e){
+        alert("Ping falhou: " + (e && e.message ? e.message : e));
+      }
+    });
+
+    (function boot(){
+      setWelcome_();
+      bindMenu_();
+
+      // carrega adm.js
+      const s=document.createElement("script");
+      s.src="../assets/js/adm.js?v=1";
+      s.onload=()=>console.log("adm.js carregado");
+      s.onerror=()=>console.warn("adm.js não encontrado em ../assets/js/adm.js");
+      document.body.appendChild(s);
+
+      // (início: fica no menu; abre um módulo somente quando clicar)
+    })();
+  </script>
 </body>
 </html>

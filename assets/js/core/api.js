@@ -26,16 +26,34 @@
   }
 
   async function post(action, payload, opts){
+    // ------------------------------------------------------------------
+    // Compat extra (blindado):
+    // - Muitos módulos novos do painel passaram a chamar API.post({ ... })
+    //   no formato { module, action, token, ... }.
+    // - Este core/api.js era "antigo" e sempre embrulhava como
+    //   { action:<string>, payload:{...} }, o que quebra o backend
+    //   quando action vem como objeto (=> action.toLowerCase is not a function).
+    //
+    // ✅ Regra:
+    // - Se o 1º argumento for objeto, enviamos o body "como veio".
+    // - Caso contrário, mantemos o formato legado { action, payload }.
+    // ------------------------------------------------------------------
     opts = opts || {};
     var base = opts.base || getBase_();
     var url  = (opts.url || (base.replace(/\/$/, "") + "/exec")); // compat: muitos workers usam /exec
     var token = opts.token || (window.AUTH && window.AUTH.token) || (window.__auth && window.__auth.token) || null;
 
-    var body = {
-      action: action,
-      payload: payload || {}
-    };
-    if (token) body.token = token;
+    var body;
+    if (action && typeof action === "object" && !Array.isArray(action)) {
+      body = action;
+      if (token && !body.token) body.token = token;
+    } else {
+      body = {
+        action: action,
+        payload: payload || {}
+      };
+      if (token) body.token = token;
+    }
 
     var timeoutMs = Number(opts.timeoutMs || 45000);
 

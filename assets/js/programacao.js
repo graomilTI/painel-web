@@ -1,3 +1,4 @@
+
 (function(){
   if(!window.Auth?.requireAuth?.()) return;
 
@@ -11,6 +12,8 @@
     ctxBadge: document.getElementById("ctxBadge"),
     steps: document.getElementById("steps"),
     etapaAtual: document.getElementById("etapaAtual"),
+// [DESATIVADO]     btnPrev: document.getElementById("btnPrev"),
+// [DESATIVADO]     btnNext: document.getElementById("btnNext"),
     lista: document.getElementById("lista"),
     busca: document.getElementById("busca"),
   };
@@ -18,7 +21,7 @@
   const state = {
     etapa: "A",
     contexto: null,
-    colaboradores: [],
+    colaboradores: [],  // {id,nome,bloqueado, ...}
     filtro: ""
   };
 
@@ -55,6 +58,7 @@
 
   function getSupList(){
     const sups = window.Auth.getSupervisoes?.() || [];
+    // normaliza (remove vazios)
     return (sups || []).map(s=>String(s).trim()).filter(Boolean);
   }
 
@@ -79,22 +83,9 @@
 
   function getChave(){
     const dataRef = (el.dataRef?.value || "").trim();
-    const supervisao = (el.selSup?.value || "").trim();
-    if(!dataRef || !supervisao) return null;
-    return { dataRef, dataReferencia: dataRef, supervisao, sup: supervisao };
-  }
-
-  async function tryPostAttempts(attempts){
-    let lastErr = null;
-    for(const body of attempts){
-      try{
-        const json = await apiPost(body.action, body);
-        if(json && json.ok !== false) return json;
-      }catch(e){
-        lastErr = e;
-      }
-    }
-    throw lastErr || new Error("Falha na comunicação com a API.");
+    const sup = (el.selSup?.value || "").trim();
+    if(!dataRef || !sup) return null;
+    return { dataRef, sup };
   }
 
   async function carregarContexto(){
@@ -103,17 +94,11 @@
       alert("Selecione a data e a supervisão.");
       return;
     }
-
     setBadge("Carregando contexto…", true);
-
     try{
-      const json = await tryPostAttempts([
-        { module: "programacao", action: "carregar_contexto", payload: chave, ...chave },
-        { module: "programacao", action: "contexto", payload: chave, ...chave },
-        { module: "despesas", action: "carregarContexto", payload: chave, ...chave },
-        { action: "programacao_contexto", ...chave }
-      ]);
-
+      // esperado no worker/GS:
+      // { ok:true, contexto:{...}, colaboradores:[{id,nome,bloqueado, motivo}] }
+      const json = await apiPost("programacao_contexto", chave);
       state.contexto = json.contexto || {};
       state.colaboradores = Array.isArray(json.colaboradores) ? json.colaboradores : [];
       setBadge("Contexto carregado.", true);
@@ -166,25 +151,20 @@
     const chave = getChave();
     if(!chave) return;
 
+    // coleta seleção do checklist
     const selecionados = Array.from(el.lista?.querySelectorAll("input.chk") || [])
       .filter(i=>i.checked)
       .map(i=>i.getAttribute("data-id"));
 
-    const payload = {
-      ...chave,
-      etapa: state.etapa,
-      selecionados
-    };
-
     try{
-      await tryPostAttempts([
-        { module: "programacao", action: "salvar_etapa", payload, ...payload },
-        { module: "programacao", action: "salvar", payload, ...payload },
-        { module: "despesas", action: "salvarEtapa", payload },
-        { action: "programacao_salvar_etapa", ...payload }
-      ]);
+      await apiPost("programacao_salvar_etapa", {
+        ...chave,
+        etapa: state.etapa,
+        selecionados
+      });
     }catch(e){
       console.error(e);
+      // silencioso (não bloquear), mas sinaliza no badge
       setBadge("⚠️ Não salvou (ver console).", false);
     }
   }
@@ -194,7 +174,6 @@
     const i = order.indexOf(step);
     return order[Math.min(order.length-1, i+1)];
   }
-
   function prevStep(step){
     const order = ["A","B","C","D","E"];
     const i = order.indexOf(step);
@@ -205,7 +184,6 @@
     await salvarSilencioso();
     setEtapa(nextStep(state.etapa));
   }
-
   async function onPrev(){
     await salvarSilencioso();
     setEtapa(prevStep(state.etapa));
@@ -213,22 +191,22 @@
 
   function bind(){
     el.btnContexto?.addEventListener("click", carregarContexto);
-
     el.steps?.addEventListener("click", (ev)=>{
       const b = ev.target.closest(".stepbtn");
       if(!b) return;
       setEtapa(b.getAttribute("data-step"));
     });
-
+// [DESATIVADO] navegação por botões (cards fazem a troca)
+//     el.btnNext?.addEventListener("click", onNext);
+// [DESATIVADO] navegação por botões (cards fazem a troca)
+//     el.btnPrev?.addEventListener("click", onPrev);
     el.busca?.addEventListener("input", ()=>{
       state.filtro = el.busca.value || "";
       renderLista();
     });
-
-    document.getElementById("btnNext")?.addEventListener("click", onNext);
-    document.getElementById("btnPrev")?.addEventListener("click", onPrev);
   }
 
+  // init
   if(el.dataRef) el.dataRef.value = defaultDate();
   fillSup();
   bind();

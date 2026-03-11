@@ -160,15 +160,7 @@
       { key:"luva_pu", label:"Luva PU", type:"qty" },
       { key:"colete_refletivo", label:"Colete Refletivo", type:"qty" },
       { key:"botina", label:"Botina (tam)", type:"size" },
-      { key:"epi_outro1_nome", label:"Outro 1 (nome)", type:"text", placeholder:"Nome do EPI" },
-      { key:"epi_outro1_qtd", label:"Outro 1 (qtd)", type:"qty", min:0 },
-      { key:"epi_outro2_nome", label:"Outro 2 (nome)", type:"text", placeholder:"Nome do EPI" },
-      { key:"epi_outro2_qtd", label:"Outro 2 (qtd)", type:"qty", min:0 },
-      { key:"epi_outro3_nome", label:"Outro 3 (nome)", type:"text", placeholder:"Nome do EPI" },
-      { key:"epi_outro3_qtd", label:"Outro 3 (qtd)", type:"qty", min:0 },
-      { key:"epi_outro4_nome", label:"Outro 4 (nome)", type:"text", placeholder:"Nome do EPI" },
-      { key:"epi_outro4_qtd", label:"Outro 4 (qtd)", type:"qty", min:0 }
-    ],
+                                                    ],
     materiais: [
       { key:"balanca_precisao", label:"Balança de Precisão", type:"qty", min:0 },
       { key:"calador", label:"Calador", type:"qty", min:0 },
@@ -181,15 +173,7 @@
       { key:"micropipeta", label:"Micropipeta", type:"qty", min:0 },
       { key:"impressora_a4", label:"Impressora A4", type:"qty", min:0 },
       { key:"pinca", label:"Pinça", type:"qty", min:0 },
-      { key:"mat_outro1_nome", label:"Outro 1 (nome)", type:"text", placeholder:"Nome do material" },
-      { key:"mat_outro1_qtd", label:"Outro 1 (qtd)", type:"qty", min:0 },
-      { key:"mat_outro2_nome", label:"Outro 2 (nome)", type:"text", placeholder:"Nome do material" },
-      { key:"mat_outro2_qtd", label:"Outro 2 (qtd)", type:"qty", min:0 },
-      { key:"mat_outro3_nome", label:"Outro 3 (nome)", type:"text", placeholder:"Nome do material" },
-      { key:"mat_outro3_qtd", label:"Outro 3 (qtd)", type:"qty", min:0 },
-      { key:"mat_outro4_nome", label:"Outro 4 (nome)", type:"text", placeholder:"Nome do material" },
-      { key:"mat_outro4_qtd", label:"Outro 4 (qtd)", type:"qty", min:0 }
-    ],
+                                                    ],
     uniformes: [
       { key:"uniforme", label:"Uniforme (Qtd 1/2)", type:"qtd12" },
       { key:"tamanho", label:"Tamanho", type:"size_uniforme" },
@@ -299,6 +283,7 @@
             </div>
 
             <div class="actions">
+              <button class="btn mini" id="cpro_back">← Voltar</button>
               <button class="btn mini" id="cpro_load_last">Carregar último</button>
               <button class="btn mini" id="cpro_last_pdf">Último PDF</button>
               <button class="btn ok" id="cpro_save">Salvar pedido</button>
@@ -359,6 +344,7 @@
     container.querySelector("#cpro_add_row").addEventListener("click", ()=> openAddRow_(container));
     container.querySelector("#cpro_add_col").addEventListener("click", ()=> openAddCol_(container));
     container.querySelector("#cpro_save").addEventListener("click", ()=> doSave_(container));
+    container.querySelector("#cpro_back").addEventListener("click", ()=> goBack_());
     container.querySelector("#cpro_load_last").addEventListener("click", ()=> loadLast_(container));
     container.querySelector("#cpro_last_pdf").addEventListener("click", ()=> openLastPdf_());
 
@@ -366,7 +352,25 @@
     wireGridInputs_(container);
   }
 
-  function tabBtn_(key, label){
+  
+function goBack_(){
+  try{
+    // tenta voltar no histórico (se veio do menu)
+    if (window.history && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+  }catch(_){}
+  // fallback: volta pro menu do gestor
+  try{
+    const base = (location.origin || "") + "/painel/gestor/app";
+    location.href = base;
+  }catch(_){
+    try{ location.href = "/painel/gestor/app"; }catch(__){}
+  }
+}
+
+function tabBtn_(key, label){
     const active = (state.tab === key) ? "active" : "";
     return `<button class="cpro-tab ${active}" data-tab="${esc(key)}">${esc(label)}</button>`;
   }
@@ -561,6 +565,8 @@
         <label>Colaborador</label>
         <select id="cpro_pick_colab">
           <option value="">Selecione</option>
+          <option value="__TODOS__">TODOS</option>
+          <option value="RESERVA">RESERVA</option>
           ${options.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}
         </select>
       </div>
@@ -575,8 +581,16 @@
       const name = norm(sel.value);
       if(!name){ toast_("Selecione um colaborador."); return; }
       const grid = state.grids[state.tab];
-      ensureRow_(grid, name);
-      m.close();
+
+      if(name === "__TODOS__"){
+        // adiciona todos da supervisão selecionada
+        options.forEach(n=>{ try{ ensureRow_(grid, n); }catch(_){} });
+        m.close();
+      }else{
+        // RESERVA ou colaborador específico
+        ensureRow_(grid, name);
+        m.close();
+      }
       render_(container);
     });
   }

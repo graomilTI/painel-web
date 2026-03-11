@@ -1,157 +1,237 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Gestor • Painel Grão 1000</title>
-  <link rel="stylesheet" href="/painel/ui.css" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Painel Web — App</title>
+  <link rel="stylesheet" href="../assets/css/style.css"/>
+  <link rel="stylesheet" href="../assets/css/table.css"/>
 </head>
 <body>
-  <div class="topbar shell-topbar">
-    <div class="inner shell-topbar-inner">
-      <div class="brand shell-brand">
-        <div class="logo"></div>
-        <div>
-          <div class="title">Grão 1000</div>
-          <div class="pill">Gestor</div>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <span>Bem-vindo, <span id="userName">Usuário</span></span>
+        <span class="pill">v1</span>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnPing" type="button">Ping</button>
+        <button class="btn" id="btnHelp" type="button">Ajuda</button>
+        <button class="btn" id="btnLogout" type="button">Sair</button>
+      </div>
+    </div>
+
+    <div class="gridMenu">
+      <div class="tile active" data-view="view-programacao">
+        <div class="t">Programação</div>
+        <div class="s">Carregar contexto do dia</div>
+      </div>
+      <div class="tile" data-view="view-hospedagem">
+        <div class="t">Hospedagem</div>
+        <div class="s">Solicitar hospedagem avulsa</div>
+      </div>
+      <div class="tile" data-view="view-relatorios">
+        <div class="t">Relatórios</div>
+        <div class="s">Gerar PDF</div>
+      </div>
+      <div class="tile" data-view="view-compras">
+        <div class="t">Compras</div>
+        <div class="s">Acessar compras</div>
+      </div>
+
+      <div class="tile" data-view="view-patrimonio">
+        <div class="t">Patrimônio</div>
+        <div class="s">Solicitar cadastro de numeração</div>
+      </div>
+      <div class="tile" data-view="view-clientes">
+        <div class="t">Contato Cliente</div>
+        <div class="s">Registrar contatos e consultar histórico</div>
+      </div>
+    </div>
+
+    <!-- PROGRAMACAO -->
+    <div class="view" id="view-programacao">
+      <div class="row">
+        <div class="field">
+          <label>Data referência (dd/MM/aaaa)</label>
+          <input id="dataRef" placeholder="dd/MM/aaaa"/>
+        </div>
+        <div class="field" id="supField" style="min-width:260px; display:none;">
+          <label>Supervisão</label>
+          <select id="selSup"></select>
+        </div>
+        <button class="btn" id="btnDataPadrao" type="button">Data padrão</button>
+        <button class="btn primary" id="btnCarregar" type="button">Carregar contexto</button>
+      </div>
+      <div id="contextoBox" style="margin-top:12px"><div class="mono">Carregue o contexto para ver liberados/bloqueados.</div></div>
+      <div class="card" style="margin-top:12px">
+        <div class="row" style="gap:8px; flex-wrap:wrap">
+          <div class="btn stepBtn active" data-step="A" aria-disabled="true">Disponibilidade</div>
+          <div class="btn stepBtn" data-step="B" aria-disabled="true">Estadia</div>
+          <div class="btn stepBtn" data-step="C" aria-disabled="true">Alimentação</div>
+          <div class="btn stepBtn" data-step="D" aria-disabled="true">Deslocamento</div>
+          <div class="btn stepBtn" data-step="E" aria-disabled="true">Extras</div>
+          <div style="flex:1"></div>
+<button class="btn btn-save" id="btnSalvarProg" type="button" style="--p:0%">
+  <span class="btnp-label">Salvar programação</span>
+  <span class="btnp-spin" aria-hidden="true"></span>
+  <span class="btnp-pct" aria-hidden="true">0%</span>
+</button>
         </div>
       </div>
-      <div class="spacer"></div>
-      <button class="btn" id="btnLogout">Sair</button>
-    </div>
-  </div>
 
-  <div class="container shell-container">
-    <div class="shell-grid">
-      <aside class="card side shell-side">
-        <div class="bd shell-side-body">
-          <div class="shell-usercard">
-            <div class="shell-user-kicker">Painel do gestor</div>
-            <h2>Módulos</h2>
-            <div class="small mono" id="who"></div>
-          </div>
-
-          <nav class="nav shell-nav" id="nav">
-            <a href="#programacao" data-mod="programacao">
-              <span class="shell-nav-title">Programação</span>
-              <span class="shell-nav-sub">Contexto, equipe e etapas A–E</span>
-            </a>
-            <a href="#hospedagem" data-mod="hospedagem">
-              <span class="shell-nav-title">Hospedagem</span>
-              <span class="shell-nav-sub">Reservas, avulsas e acompanhamento</span>
-            </a>
-            <a href="#visita_cliente" data-mod="visita_cliente">
-              <span class="shell-nav-title">Visita Cliente</span>
-              <span class="shell-nav-sub">Agenda, registros e observações</span>
-            </a>
-            <a href="#compras" data-mod="compras">
-              <span class="shell-nav-title">Compras</span>
-              <span class="shell-nav-sub">Solicitações, itens e status</span>
-            </a>
-          </nav>
-
-          <div class="shell-side-foot">
-            <div class="small">API principal</div>
-            <div class="badge"><span class="mono">/api</span></div>
+      <div class="step" id="step-A" style="margin-top:12px">
+        <div class="card">
+          <div class="label">Liberados</div>
+          <div class="mono">Marque indisponíveis aqui. Bloqueados aparecem abaixo.</div>
+          <div style="overflow:auto; margin-top:10px">
+            <table class="table">
+              <thead><tr><th>Colaborador</th><th>Supervisão</th><th>Status</th><th>Motivo</th></tr></thead>
+              <tbody id="tblA_body"></tbody>
+            </table>
           </div>
         </div>
-      </aside>
+        <div class="card" style="margin-top:12px">
+          <div class="label">Bloqueados</div>
+          <div style="overflow:auto; margin-top:10px">
+            <table class="table">
+              <thead><tr><th></th><th>Colaborador</th><th>Supervisão</th><th>Status</th><th>Obs</th><th>Motivo (sistema)</th><th>Período</th></tr></thead>
+              <tbody id="tblA_bloq"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
-      <main class="shell-main">
-        <section class="card shell-hero">
-          <div class="bd shell-hero-body">
+      <div class="step hidden" id="step-B" style="margin-top:12px">
+        <div class="card">
+          <div class="label">Estadia</div>
+          <div class="mono">Defina Hotel/Alojamento por colaborador (se necessário).</div>
+          <div style="overflow:auto; margin-top:10px">
+            <table class="table">
+              <thead><tr><th>Colaborador</th><th>Tipo</th><th>Obs (Cidade/UF ou Alojamento)</th><th>Diárias</th><th>Horário de chegada</th></tr></thead>
+              <tbody id="tblB_body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="step hidden" id="step-C" style="margin-top:12px">
+        <div class="card">
+          <div class="row" style="justify-content:space-between; align-items:center">
             <div>
-              <div class="shell-kicker">Operação diária</div>
-              <h1 id="pageTitle">Programação</h1>
-              <div class="shell-subtitle" id="pageSub">Fluxo do gestor com Programação, Hospedagem, Visita Cliente e Compras.</div>
+              <div class="label">Alimentação</div>
+              <div class="mono">Marque Café/Almoço/Janta.</div>
             </div>
-            <div class="shell-hero-tags">
-              <span class="badge">Fluxo do gestor</span>
-              <span class="badge">Tema escuro</span>
-              <span class="badge">Base integrada</span>
-            </div>
+            <button class="btn" id="btnAllAlmoco" type="button">Selecionar todos (Almoço)</button>
           </div>
-        </section>
+          <div style="overflow:auto; margin-top:10px">
+            <table class="table">
+              <thead><tr><th>Colaborador</th><th>Café</th><th>Almoço</th><th>Janta</th></tr></thead>
+              <tbody id="tblC_body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
-        <section class="card shell-module-card">
-          <div class="bd" id="module_container">
-            <div class="notice">Pronto. Escolha um módulo.</div>
+      <div class="step hidden" id="step-D" style="margin-top:12px">
+        <div class="card">
+          <div class="label">Deslocamento</div>
+          <div class="mono">Selecione o veículo (se houver) a partir das OS/placas disponíveis.</div>
+          <div style="overflow:auto; margin-top:10px">
+            <table class="table">
+              <thead><tr><th>Colaborador</th><th>Veículo/OS</th></tr></thead>
+              <tbody id="tblD_body"></tbody>
+            </table>
           </div>
-        </section>
-      </main>
+        </div>
+      </div>
+
+      <div class="step hidden" id="step-E" style="margin-top:12px">
+        <div class="card">
+          <div class="label">Extras</div>
+          <div class="mono">Informe descrição e valor (se aplicável).</div>
+          <div style="overflow:auto; margin-top:10px">
+            <table class="table">
+              <thead><tr><th>Colaborador</th><th>Recarga</th><th>Lavagem</th><th>Manut. Veículos</th><th>Extras</th></tr></thead>
+              <tbody id="tblE_body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      </div>
+    </div>
+
+    <!-- RELATORIOS -->
+      <div class="view hidden" id="view-relatorios">
+      <div class="card" style="margin-bottom:12px">
+        <div class="row" style="justify-content:space-between; align-items:center">
+          <div>
+            <div class="label">Hospedagem</div>
+            <div class="mono">Com data • Colaborador • Tipo (hotel ou alojamento) • Cidade</div>
+          </div>
+          <button class="btn primary" type="button">Gerar PDF</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="row" style="justify-content:space-between; align-items:center">
+          <div>
+            <div class="label">FOB</div>
+            <div class="mono">Com data • O.S • Colaborador • Status • Observação</div>
+          </div>
+          <button class="btn primary" type="button">Gerar PDF</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="row" style="justify-content:space-between; align-items:center">
+          <div>
+            <div class="label">Auditoria</div>
+            <div class="mono">Com Data • Placa • Cliente • Colaborador • Resultado</div>
+          </div>
+          <button class="btn primary" type="button">Gerar PDF</button>
+        </div>
+      </div>
+      <div id="pdfOut" style="margin-top:12px">
+        <div class="mono">Gere o PDF para abrir/baixar.</div>
+      </div>
+    </div>
+
+    <!-- COMPRAS -->
+    <div class="view hidden" id="view-compras">
+      <div class="row">
+        <div class="field">
+          <label>Alojamento</label>
+          <select id="alojSelect">
+            <option value="">Carregando…</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Data inicial (opcional)</label>
+          <input id="alojIni" placeholder="dd/MM/aaaa"/>
+        </div>
+        <div class="field">
+          <label>Data final (opcional)</label>
+          <input id="alojFim" placeholder="dd/MM/aaaa"/>
+        </div>
+        <button class="btn primary" id="btnAlojCarregar" type="button">Listar</button>
+      </div>
+      <div id="alojOut" style="margin-top:12px">
+        <div class="mono">Selecione um alojamento e clique em listar.</div>
+      </div>
+    </div>
+
+    <!-- CLIENTES -->
+    <div class="view hidden" id="view-clientes">
+      <div class="card">
+        <div class="label">Contato Cliente</div>
+        <div class="mono">Esse menu está pronto para você plugar o módulo de clientes do seu GAS (cliente_registrarContato).</div>
+      </div>
     </div>
   </div>
 
-<script src="/painel/assets/js/api.js"></script>
-<script src="/painel/assets/js/session.js"></script>
-<script src="/painel/assets/js/auth_unificado.js"></script>
-<script src="/painel/assets/js/auth.js"></script>
-<script src="/painel/assets/js/router.js"></script>
-<script>
-(function(){
-  if(!SESSION.requireAuth()) return;
-
-  const role = (SESSION.role() || "gestor").toLowerCase();
-  const profile = SESSION.profile() || {};
-  const nomeExibicao = (profile.nome || profile.Nome || "Usuário");
-  document.getElementById("who").textContent = nomeExibicao + " • " + role;
-
-  document.getElementById("btnLogout").addEventListener("click", ()=>AUTH.logout());
-
-  const nav = document.getElementById("nav");
-  const container = document.getElementById("module_container");
-  const pageTitle = document.getElementById("pageTitle");
-  const pageSub = document.getElementById("pageSub");
-  const labels = {
-    programacao: 'Programação',
-    hospedagem: 'Hospedagem',
-    visita_cliente: 'Visita Cliente',
-    compras: 'Compras'
-  };
-  const subtitles = {
-    programacao: 'Carregue contexto, avance pelas etapas A–E e acompanhe o resumo operacional do dia.',
-    hospedagem: 'Organize reservas, hospedagens avulsas e acompanhe o status por colaborador.',
-    visita_cliente: 'Registre visitas, clientes, locais e histórico de acompanhamento.',
-    compras: 'Centralize solicitações, itens, quantidades, urgências e andamento das compras.'
-  };
-
-  function setActive(modName){
-    [...nav.querySelectorAll("a")].forEach(a=>a.classList.toggle("active", a.dataset.mod===modName));
-  }
-
-  async function open(modName){
-    try{
-      setActive(modName);
-      pageTitle.textContent = labels[modName] || modName;
-      pageSub.textContent = subtitles[modName] || 'Carregando módulo...';
-      container.innerHTML = '<div class="notice">Carregando módulo <span class="mono">'+(labels[modName]||modName)+'</span>…</div>';
-
-      await APP_ROUTER.openModule(modName, container, {
-        auth: { token: SESSION.token(), role, profile },
-        api: window.API,
-        onBack: ()=>{ location.hash=""; }
-      });
-    }catch(e){
-      container.innerHTML = '<div class="notice err">Erro: '+(e.message||e)+'</div>';
-      pageSub.textContent = 'Não foi possível carregar este módulo agora.';
-    }
-  }
-
-  function fromHash(){
-    const h = (location.hash||"").replace(/^#/, "");
-    return h || "programacao";
-  }
-
-  window.addEventListener("hashchange", ()=>open(fromHash()));
-  nav.addEventListener("click", (e)=>{
-    const a = e.target.closest("a[data-mod]");
-    if(!a) return;
-    e.preventDefault();
-    location.hash = a.dataset.mod;
-  });
-
-  open(fromHash());
-})();
-</script>
+  <script src="../assets/js/config.js"></script>
+    <script src="../assets/js/auth_unificado.js?v=4"></script>
+  <script src="../assets/js/api.js?v=4"></script>
+  <script src="../assets/js/app.js?v=5"></script>
 </body>
 </html>

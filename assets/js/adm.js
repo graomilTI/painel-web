@@ -60,16 +60,49 @@
 
     if (!post) throw new Error("API.post/AUTH.post indisponível (verifique api.js e auth_unificado.js).");
 
-    // Compat:
-    // - API.post(action, payload)
-    // - API.post(payload)
-    try{
-      if (post.length >= 2 && typeof req?.action === "string") {
-        return await post(req.action, req);
-      }
-    }catch(_){ /* ignora e tenta forma 1 arg */ }
+    // Normaliza formatos aceitos:
+    // - callPostCompat_({ action:"x", ... })
+    // - callPostCompat_({ acao:"x", ... })
+    // - callPostCompat_({ route:"x", payload:{...} })
+    // - callPostCompat_("x", payload)  [alguns legados chamam assim indiretamente]
+    let obj = req;
 
-    return await post(req);
+    // Se vier no formato {payload:{...}} tenta mesclar no topo (AUTH.post costuma esperar no topo)
+    if (obj && typeof obj === "object") {
+      if (!obj.action && obj.acao) obj.action = obj.acao;
+      if (!obj.action && obj.route) obj.action = obj.route;
+      if (!obj.action && obj.name) obj.action = obj.name;
+      if (obj.payload && typeof obj.payload === "object") {
+        obj = Object.assign({}, obj.payload, obj);
+        delete obj.payload;
+      }
+      if (obj.data && typeof obj.data === "object") {
+        obj = Object.assign({}, obj.data, obj);
+        delete obj.data;
+      }
+      if (obj.body && typeof obj.body === "object") {
+        obj = Object.assign({}, obj.body, obj);
+        delete obj.body;
+      }
+      if (obj.params && typeof obj.params === "object") {
+        obj = Object.assign({}, obj.params, obj);
+        delete obj.params;
+      }
+    }
+
+    const act = (obj && typeof obj === "object") ? obj.action : null;
+    const hasAction = typeof act === "string" && act.trim();
+
+    // 1) Tenta padrão legado de 2 args (action, body) — SEM confiar em post.length
+    if (hasAction) {
+      try { return await post(String(act).trim(), obj); } catch(e1) {
+        // 2) Se o post espera objeto único, tenta 1 arg
+        try { return await post(obj); } catch(e2) { throw e1; }
+      }
+    }
+
+    // 3) Sem action: manda o objeto como veio
+    return await post(obj);
   }
 
   async function backendCall(body){
