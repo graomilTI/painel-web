@@ -151,7 +151,6 @@ const __mod = {
     fill("#matSupAlvo", selSup?.value || "");
     fill("#matSup", selSup?.value || "");
     fill("#epiSup", selSup?.value || "");
-    fill("#patSup", selSup?.value || "");
 
     // colaboradores datalist
     const dl = this.$(root, "#uniColabList");
@@ -453,7 +452,6 @@ const __mod = {
           <button class="chip active" data-comp-tab="uniformes">Uniformes</button>
           <button class="chip" data-comp-tab="materiais">Materiais</button>
           <button class="chip" data-comp-tab="epis">EPIs</button>
-          <button class="chip" data-comp-tab="patrimonios">Patrimônios</button>
 
           <div class="spacer"></div>
           <button id="btnSalvarTudo" class="btn">Salvar tudo</button>
@@ -571,23 +569,6 @@ const __mod = {
 
           <div id="epiCarrinho" style="margin-top:12px;"></div>
         </div>
-
-        <div data-comp-view="patrimonios" style="margin-top:14px; display:none;">
-          <div class="h2">Patrimônios</div>
-          <div class="muted">Consulta por Supervisão</div>
-
-          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:12px;">
-            <div style="min-width:240px; flex:1;">
-              <div class="label">Supervisão</div>
-              <select id="patSup" class="input"></select>
-            </div>
-            <div style="min-width:200px; align-self:end;">
-              <button id="btnPatConsultar" class="btn">Consultar</button>
-            </div>
-          </div>
-
-          <div id="patLista" style="margin-top:12px;"></div>
-        </div>
       </div>
     `;
 
@@ -642,14 +623,9 @@ const __mod = {
       catch(e){ this.toast_("❌ " + (e?.message || e)); }
     });
 
-    this.$(root, "#btnPatConsultar").addEventListener("click", async () => {
-      try { await this.consultarPatrimonios_(root); }
-      catch(e){ this.toast_("❌ " + (e?.message || e)); }
-    });
-
     this.$(root, "#compSup").addEventListener("change", () => {
       const v = (this.$(root, "#compSup").value || "");
-      ["#uniSup","#matSupAlvo","#matSup","#epiSup","#patSup"].forEach(id=>{
+      ["#uniSup","#matSupAlvo","#matSup","#epiSup"].forEach(id=>{
         const el = this.$(root, id);
         if (el) el.value = v;
       });
