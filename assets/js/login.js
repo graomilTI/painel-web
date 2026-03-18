@@ -7,7 +7,7 @@
 (function () {
   "use strict";
 
-  const CONFIG = window.APP_CONFIG || {};
+  const CONFIG = window.__APP_CONFIG__ || window.APP_CONFIG || {};
   const API_BASE = String(CONFIG.API_BASE || "/api").replace(/\/$/, "");
 
   const ACTION_LOGIN = "login";
@@ -26,8 +26,8 @@
   }
 
   function setBusy(busy) {
-    const btnTest = $("btn_test");
-    const btnEnter = $("btn_enter");
+    const btnTest = $("btn_test") || $("btnTest");
+    const btnEnter = $("btn_enter") || $("btnEntrar");
     [btnTest, btnEnter].forEach((b) => {
       if (!b) return;
       b.disabled = !!busy;
@@ -148,8 +148,8 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    const btnTest = $("btn_test");
-    const btnEnter = $("btn_enter");
+    const btnTest = $("btn_test") || $("btnTest");
+    const btnEnter = $("btn_enter") || $("btnEntrar");
 
     if (btnTest) btnTest.addEventListener("click", (ev) => { ev.preventDefault(); onTest(); });
     if (btnEnter) btnEnter.addEventListener("click", (ev) => { ev.preventDefault(); onEnter(); });

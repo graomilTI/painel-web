@@ -37,8 +37,10 @@
   }
 
   function loginUrl_(){
-    const p = (location.pathname || "");
-    return (p.includes("/gestor/") || p.includes("/adm/")) ? "../index.html" : "index.html";
+    const p = (location.pathname || "").toLowerCase();
+    if (p.includes('/painel/')) return '/painel/login/';
+    if (p.includes('/gestor/') || p.includes('/adm/') || p.includes('/diretoria/')) return '../index.html';
+    return 'index.html';
   }
 
   function clearAuthAndRedirect_(){
@@ -51,7 +53,7 @@
   function isLoginPage_(){
     const p = (location.pathname || "").toLowerCase();
     // GH Pages pode servir /painel-web/ sem index explícito
-    return p.endsWith("/index.html") || p.endsWith("/painel-web/") || p === "/" || p.endsWith("/painel-web");
+    return p.endsWith('/index.html') || p.endsWith('/painel-web/') || p === '/' || p.endsWith('/painel-web') || p.includes('/login/');
   }
 
   function isAuthExpiredResponse_(resp){

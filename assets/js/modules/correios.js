@@ -332,10 +332,16 @@
       }
     }
 
-    function v(elect(label, id, items){
+    function fieldSelect(label, id, items){
+      const select = el('select', { class:'correios-select', id });
+      (Array.isArray(items) ? items : []).forEach((it) => {
+        const value = it && (it.code ?? it.value ?? it.id ?? it.label ?? '');
+        const labelText = it && (it.label ?? it.name ?? it.code ?? it.value ?? '');
+        select.appendChild(el('option', { value: String(value) }, [String(labelText)]));
+      });
       return el('div', { class:'correios-col-4' }, [
         el('div', { class:'correios-label' }, [label]),
-        el('select', { class:'correios-select', id })
+        select
       ]);
     }
 
