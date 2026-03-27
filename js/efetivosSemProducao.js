@@ -209,7 +209,7 @@ async function processDay() {
   if (errProd) throw errProd;
 
   const excecoes = await fetchOptional('excecoes', null, null);
-  const indisponibilidades = await fetchOptional('indisponibilidade', null, null);
+  const indisponibilidades = await fetchOptional('indisponibilidades', null, null);
 
   const producedNames = new Set(
     (producao || [])

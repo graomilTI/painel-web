@@ -23,10 +23,21 @@ export async function getCurrentUser() {
   return data.user;
 }
 
+function normalizeContextPayload(data) {
+  if (!data) return null;
+  if (Array.isArray(data)) return data[0] || null;
+  return data;
+}
+
 export async function getUserContext(userId) {
   const { data, error } = await supabase.rpc('get_user_context', { p_user_id: userId });
   if (error) throw error;
-  return data;
+
+  const context = normalizeContextPayload(data);
+  if (!context) {
+    throw new Error('Contexto do usuário não retornado pela RPC get_user_context.');
+  }
+  return context;
 }
 
 export function onAuthStateChange(callback) {
