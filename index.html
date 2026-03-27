@@ -1,24 +1,42 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <title>Painel</title>
-  <script type="module">
-    import { supabase } from './assets/js/supabaseClient.js'
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel Corporativo</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body class="auth-page">
+  <div class="auth-card">
+    <div class="brand-eyebrow">Painel corporativo</div>
+    <h1>Acessando o sistema</h1>
+    <p>Estamos verificando sua sessão para abrir o painel da forma correta.</p>
+    <div class="feedback" id="bootFeedback">Carregando...</div>
+  </div>
 
-    async function init() {
-      const { data } = await supabase.auth.getUser()
-      if (data?.user) {
-        window.location.href = "/dashboard.html"
-      } else {
-        window.location.href = "/login.html"
+  <script type="module">
+    import { getSession } from './js/auth.js';
+
+    const feedback = document.getElementById('bootFeedback');
+
+    async function boot() {
+      try {
+        const session = await getSession();
+        if (session?.user) {
+          feedback.textContent = 'Sessão encontrada. Redirecionando para o dashboard...';
+          window.location.replace('./dashboard.html');
+          return;
+        }
+        feedback.textContent = 'Nenhuma sessão ativa. Redirecionando para o login...';
+        window.location.replace('./login.html');
+      } catch (err) {
+        console.error(err);
+        feedback.textContent = 'Não foi possível validar a sessão. Abrindo login...';
+        window.location.replace('./login.html');
       }
     }
 
-    init()
+    boot();
   </script>
-</head>
-<body style="background:#0f172a;color:white;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;">
-  <h2>Carregando painel...</h2>
 </body>
 </html>

@@ -1,28 +1,37 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
-  <title>Login</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login - Painel Corporativo</title>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
-<body style="background:#0f172a;color:white;font-family:sans-serif;">
-  <h2>Login</h2>
-  <input id="email" placeholder="Email"><br><br>
-  <input id="password" type="password" placeholder="Senha"><br><br>
-  <button onclick="doLogin()">Entrar</button>
+<body class="auth-page">
+  <div class="auth-card">
+    <div class="brand-eyebrow">Painel corporativo</div>
+    <h1>Entrar no sistema</h1>
+    <p>Use seu e-mail e senha cadastrados no Supabase Auth.</p>
 
-  <script type="module">
-    import { login } from './assets/js/auth.js'
+    <form id="loginForm">
+      <div class="field">
+        <label for="email">E-mail</label>
+        <input id="email" type="email" autocomplete="username" required />
+      </div>
 
-    window.doLogin = async () => {
-      const email = document.getElementById('email').value
-      const password = document.getElementById('password').value
+      <div class="field">
+        <label for="password">Senha</label>
+        <div class="password-wrap">
+          <input id="password" type="password" autocomplete="current-password" required />
+          <button type="button" id="togglePassword">Mostrar</button>
+        </div>
+      </div>
 
-      const { error } = await login(email, password)
-      if (error) {
-        alert("Erro: " + error.message)
-      } else {
-        window.location.href = "/dashboard.html"
-      }
-    }
-  </script>
+      <button class="btn btn-primary" type="submit">Entrar</button>
+    </form>
+
+    <div class="feedback" id="loginFeedback"></div>
+  </div>
+
+  <script type="module" src="./js/login.js"></script>
 </body>
 </html>
