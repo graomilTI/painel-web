@@ -495,31 +495,7 @@ function limpar(el) { if (el) el.innerHTML = ""; }
   }
 
 
-// ✅ Poll do status da FILA_PROGRAMACAO para notificar "Salvo" quando processar
-async function pollFilaProgramacao_(queueId, token, opts){
-  const o = Object.assign({ timeoutMs: 60000, intervalMs: 1500 }, (opts||{}));
-  const started = Date.now();
-  let last;
-  while ((Date.now() - started) < o.timeoutMs){
-    await sleep_(o.intervalMs);
-    try{
-      if (typeof o.onProgress === 'function'){
-        const elapsed = Date.now() - started;
-        const pct = Math.min(95, 75 + Math.floor((elapsed / o.timeoutMs) * 20));
-        o.onProgress(pct);
-      }
-    }catch(_){ }
-
-    const r = await apiPost({ module:"despesas", action:"salvarProgramacao_status", token, queueId });
-    last = r;
-    const data = (r && r.result) ? r.result : r;
-    const st = String(data?.status || "").toUpperCase();
-    if (data?.ok && (st === "OK" || st === "ERRO")) return data;
-  }
-  return last && last.result ? last.result : last;
-}
-
-  /***********************
+/***********************
    * STATE
    ***********************/
   const state = {
@@ -953,7 +929,7 @@ async function carregarContexto() {
 
       __emitProg(45, 'Salvando…');
       const resp = await apiPost(payloadSalvar);
-      __emitProg(70, 'Processando…');
+      __emitProg(85, 'Finalizando…');
 
       if (!resp || resp.ok === false) {
         const dbg = resp?.debugRouter ? `\n\nDEBUG:\n${JSON.stringify(resp.debugRouter, null, 2)}` : "";
@@ -965,46 +941,18 @@ async function carregarContexto() {
         throw new Error((resp.result.error || "Backend retornou result.ok=false") + dbg);
       }
 
-      // Se veio da FILA (ERP), considera "salvo" assim que entrou na fila.
-      // O processamento FILA -> Despesas roda em OFF (trigger) e NÃO deve travar o painel.
-      const r0 = (resp && resp.result) ? resp.result : resp;
-      const qid = String(r0?.queueId || r0?.queueID || r0?.ticket || "").trim();
-      if (qid) {
-        // ✅ Fecha a barra / botão imediatamente (fila gravada)
-        setBox("Salvamento concluído ✅ (processando em segundo plano)", "ok");
-        __emitProg(100, 'Concluído');
-        __emitOk();
+      setBox("Salvo ✅", "ok");
+      __emitProg(100, 'Concluído');
+      __emitOk();
 
-        // 🔁 Opcional (não-bloqueante): acompanhar fila em background e atualizar contexto depois
-        (async () => {
-          try{
-            const st = await pollFilaProgramacao_(qid, token, { timeoutMs: 90000, intervalMs: 2500 });
-            if (st && st.ok && String(st.status||"").toUpperCase() === "OK") {
-              // ✅ Hospedagem via PROGRAMAÇÃO (novo/edição/checkout) — em OFF
-              try{ await processarHospedagemProgramacaoAposSalvar_(parsedDR, token, base); }catch(eh){
-                console.warn("[HOSPEDAGEM] Falha pós-salvar:", eh);
-              }
-              // Recarrega contexto sem travar o fluxo do usuário
-              try{ await carregarContexto(); }catch(ec){ console.warn("[CTX] Falha ao recarregar contexto:", ec); }
-            }
-          }catch(e){
-            console.warn("[FILA] Acompanhamento em background falhou:", e);
-          }
-        })();
-      } else {
-        setBox("Salvo ✅", "ok");
-        __emitProg(100, 'Concluído');
-        __emitOk();
-
-        // ✅ Hospedagem via PROGRAMAÇÃO (novo/edição/checkout)
-        try{
-          await processarHospedagemProgramacaoAposSalvar_(parsedDR, token, base);
-        }catch(eh){
-          console.warn("[HOSPEDAGEM] Falha ao processar solicitações pós-salvar:", eh);
-        }
-
-        await carregarContexto();
+      // ✅ Hospedagem via PROGRAMAÇÃO (novo/edição/checkout)
+      try{
+        await processarHospedagemProgramacaoAposSalvar_(parsedDR, token, base);
+      }catch(eh){
+        console.warn("[HOSPEDAGEM] Falha ao processar solicitações pós-salvar:", eh);
       }
+
+      await carregarContexto();
     } catch (e) {
       console.error(e);
       __emitErr();
