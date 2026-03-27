@@ -1,36 +1,17 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Painel</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <meta charset="UTF-8">
+  <title>Programação</title>
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <h2>Painel</h2>
-        <p>Gestão integrada</p>
-      </div>
-      <div id="sidebarMenu"></div>
-    </aside>
 
-    <div class="content-wrap">
-      <header class="topbar">
-        <div>
-          <h1 id="pageTitle">Painel</h1>
-          <div class="meta" id="welcomeUser">Olá</div>
-        </div>
-        <div class="topbar-actions">
-          <span class="badge" id="roleBadge">USUÁRIO</span>
-          <button class="btn btn-secondary" id="signOutBtn" type="button">Sair</button>
-        </div>
-      </header>
+<input type="date" id="dataRef">
+<select id="selSup"></select>
+<button id="btnContexto">Carregar</button>
 
-      <main class="page-main" id="pageContent"></main>
-    </div>
-  </div>
-  <script type="module" src="./js/programacao.js"></script>
+<div id="lista"></div>
+
+<script src="assets/js/programacao.js"></script>
 </body>
 </html>
