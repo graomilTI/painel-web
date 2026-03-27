@@ -2,7 +2,7 @@
 
 ## Por que está dando "Failed to fetch" no GitHub Pages?
 Porque o browser bloqueia requisições diretas para `https://script.google.com/macros/...` por **CORS**.
-
+ 
 ✅ Solução: o frontend **deve chamar um endpoint com CORS habilitado**, ex.: **Cloudflare Worker** (proxy) apontando para o seu Apps Script.
 
 ## Configurar
