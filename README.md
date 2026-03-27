@@ -1,24 +1,21 @@
-# Painel Web (GitHub Pages) — Frontend
+# Painel Frontend
 
-## Por que está dando "Failed to fetch" no GitHub Pages?
-Porque o browser bloqueia requisições diretas para `https://script.google.com/macros/...` por **CORS**.
- 
-✅ Solução: o frontend **deve chamar um endpoint com CORS habilitado**, ex.: **Cloudflare Worker** (proxy) apontando para o seu Apps Script.
+Estrutura inicial pronta para:
+- login com Supabase Auth
+- carregar `get_user_context`
+- montar menu dinâmico
+- proteger páginas
 
-## Configurar
-1) Edite: `assets/js/config.js`
-- `API_BASE = "https://SEU-WORKER.workers.dev"`
+## Arquivos principais
+- `login.html`
+- `dashboard.html`
+- `js/supabaseClient.js`
+- `js/auth.js`
+- `js/authGuard.js`
+- `js/menuConfig.js`
+- `js/menuBuilder.js`
 
-2) Suba tudo na raiz do repositório (GitHub Pages -> /root).
-
-## Rotas esperadas no Worker
-- `GET  /ping`
-- `POST /` com JSON `{ action: "...", ... }`
-
-Ações usadas hoje:
-- `loginPIN`, `loginAdminCPF`
-- `getDataPadrao`
-- `carregarContexto`
-- `gerarPDFProgramacao`
-- `aloj_getPermissoes`
-- `aloj_listarHospedados`
+## Observações
+- A chave publicada já foi configurada em `js/supabaseClient.js`.
+- O projeto usa import ES Module via CDN do Supabase.
+- Próximo passo recomendado: conectar a tela `programacao.html` ao banco.
