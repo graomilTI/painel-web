@@ -30,11 +30,14 @@ export const MENU_CONFIG = [
       { id: "COMPRAS_ADM", nome: "Compras ADM", path: "#" },
       { id: "FINANCEIRO", nome: "Financeiro", path: "#" },
       { id: "PATRIMONIO_ADM", nome: "Patrimônio ADM", path: "#" },
-      { id: "LOGISTICA_ADM", nome: "Logística ADM", path: "#" }
+      { id: "LOGISTICA_ADM", nome: "Logística ADM", path: "#" },
+
+      // 🔥 RH (DENTRO DO ADM)
+      { id: "RH_FERIAS_ATESTADOS", nome: "Férias e Atestados", path: "/ferias-atestados.html" },
+      { id: "RH_HIST_INDISP", nome: "Histórico de Indisponibilidade", path: "/historico-indisponibilidade.html" }
     ]
   },
 
-  // 🔥 NOVO BLOCO — BASE DE COLABORADORES
   {
     grupo: "BASE DE COLABORADORES",
     itens: [
@@ -44,7 +47,6 @@ export const MENU_CONFIG = [
     ]
   },
 
-  // 🔥 NOVO BLOCO — PRODUÇÃO
   {
     grupo: "PRODUÇÃO DIÁRIA",
     itens: [
