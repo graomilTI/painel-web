@@ -282,3 +282,121 @@ a { color: inherit; }
     align-items: flex-start;
   }
 }
+
+
+/* =========================
+   MÓDULOS GESTOR / PROGRAMAÇÃO
+   ========================= */
+
+.prog-context-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.prog-filter-actions {
+  align-self: end;
+}
+
+.steps-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.stepbtn {
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.05);
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.stepbtn.active {
+  background: rgba(22,101,52,.25);
+  border-color: rgba(22,101,52,.55);
+  color: #dcfce7;
+}
+
+.prog-list {
+  display: grid;
+  gap: 14px;
+}
+
+.prog-item {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 16px;
+  background: #0b1220;
+}
+
+.prog-row-content {
+  display: grid;
+  gap: 14px;
+}
+
+.prog-colab-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prog-colab-name {
+  font-weight: 800;
+  font-size: 17px;
+}
+
+.prog-colab-meta {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.prog-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.prog-check {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  padding: 12px 14px;
+  min-height: 48px;
+}
+
+.prog-check input {
+  width: 18px;
+  height: 18px;
+}
+
+.prog-block-note {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(239,68,68,.08);
+  color: #fecaca;
+  border: 1px solid rgba(239,68,68,.18);
+  font-size: 13px;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
+
+@media (max-width: 980px) {
+  .prog-context-grid,
+  .prog-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .prog-colab-main {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
