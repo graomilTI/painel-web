@@ -1,22 +1,192 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<title>Histórico</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Histórico de Colaboradores</title>
+  <style>
+    :root{
+      --bg:#07152f;
+      --panel:#0b1d3d;
+      --panel-2:#0f244b;
+      --border:#16325f;
+      --text:#e5e7eb;
+      --muted:#9fb1d1;
+      --green:#166534;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:linear-gradient(180deg, #07152f 0%, #091a38 100%);
+      color:var(--text);
+      font-family:Arial, Helvetica, sans-serif;
+    }
+    .wrap{
+      max-width:1200px;
+      margin:32px auto;
+      padding:0 20px;
+    }
+    .topbar{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:16px;
+      flex-wrap:wrap;
+      margin-bottom:20px;
+    }
+    h1{margin:0 0 8px 0; font-size:34px;}
+    .subtitle{margin:0; color:var(--muted);}
+    .nav-links{display:flex; gap:10px; flex-wrap:wrap;}
+    .nav-links a{
+      color:var(--text);
+      text-decoration:none;
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.03);
+      padding:10px 14px;
+      border-radius:12px;
+    }
+    .card{
+      background:rgba(10,26,58,.96);
+      border:1px solid var(--border);
+      border-radius:20px;
+      padding:20px;
+      box-shadow:0 10px 30px rgba(0,0,0,.18);
+      margin-bottom:20px;
+    }
+    .filters{
+      display:grid;
+      grid-template-columns:repeat(4,1fr);
+      gap:12px;
+      margin-bottom:16px;
+    }
+    label{
+      display:block;
+      font-size:14px;
+      color:var(--muted);
+      margin-bottom:8px;
+      font-weight:700;
+    }
+    input, select, button{
+      width:100%;
+      padding:12px 14px;
+      background:#0a1732;
+      color:var(--text);
+      border:1px solid var(--border);
+      border-radius:12px;
+      font:inherit;
+    }
+    button{
+      cursor:pointer;
+      background:#13294f;
+      font-weight:700;
+    }
+    .table-wrap{
+      overflow:auto;
+      border:1px solid var(--border);
+      border-radius:16px;
+    }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:800px;
+      background:#09152b;
+    }
+    th, td{
+      padding:14px 12px;
+      border-bottom:1px solid #14305a;
+      text-align:left;
+      vertical-align:top;
+    }
+    th{
+      color:var(--muted);
+      font-size:13px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }
+    .pill{
+      display:inline-block;
+      padding:6px 10px;
+      border-radius:999px;
+      background:#12305b;
+      border:1px solid var(--border);
+      font-size:12px;
+    }
+    .meta{
+      color:var(--muted);
+      font-size:13px;
+      margin-top:10px;
+    }
+    @media (max-width: 900px){
+      .filters{grid-template-columns:1fr}
+      h1{font-size:28px}
+    }
+  </style>
 </head>
 <body>
-<h1>Histórico de Importações</h1>
-<table border="1">
-<thead>
-<tr>
-<th>Data</th>
-<th>Arquivo</th>
-<th>Status</th>
-<th>Total</th>
-</tr>
-</thead>
-<tbody id="tbodyImportacoes"></tbody>
-</table>
-<script type="module" src="./js/historicoColaboradores.js"></script>
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <h1>Histórico de Importações</h1>
+        <p class="subtitle">Consulte as cargas já enviadas para a base de colaboradores.</p>
+      </div>
+      <div class="nav-links">
+        <a href="./dashboard.html">Dashboard</a>
+        <a href="./importar-colaboradores.html">Importar</a>
+        <a href="./consultar-colaboradores.html">Consultar base</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="filters">
+        <div>
+          <label for="filtroData">Data de referência</label>
+          <input type="date" id="filtroData" />
+        </div>
+        <div>
+          <label for="filtroStatus">Status</label>
+          <select id="filtroStatus">
+            <option value="">Todos</option>
+            <option value="processado">Processado</option>
+            <option value="processando">Processando</option>
+            <option value="erro">Erro</option>
+          </select>
+        </div>
+        <div>
+          <label for="filtroOrigem">Origem</label>
+          <select id="filtroOrigem">
+            <option value="">Todas</option>
+            <option value="upload_manual">Upload manual</option>
+            <option value="base_rh">Base RH</option>
+            <option value="ajuste_manual">Ajuste manual</option>
+          </select>
+        </div>
+        <div style="display:flex; align-items:end;">
+          <button id="btnBuscar">Atualizar histórico</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Data referência</th>
+              <th>Arquivo</th>
+              <th>Origem</th>
+              <th>Status</th>
+              <th>Total linhas</th>
+              <th>Importado em</th>
+              <th>Importado por</th>
+              <th>Observações</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyImportacoes"></tbody>
+        </table>
+      </div>
+
+      <div class="meta" id="metaInfo">Carregando histórico...</div>
+    </div>
+  </div>
+
+  <script type="module" src="./js/historicoColaboradores.js"></script>
 </body>
 </html>
