@@ -1,40 +1,56 @@
-export const PANEL_MENU = [
+// menuConfig.js
+
+export const MENU_CONFIG = [
   {
-    section: 'Início',
-    items: [
-      { code: 'DASHBOARD', label: 'Dashboard', path: './dashboard.html' },
-      { code: 'NOTIFICATIONS', label: 'Notificações', path: './notificacoes.html' },
-      { code: 'HISTORY', label: 'Histórico Geral', path: './historico.html' },
-    ],
+    grupo: "INÍCIO",
+    itens: [
+      { id: "DASHBOARD", nome: "Dashboard", path: "/dashboard.html" },
+      { id: "NOTIFICACOES", nome: "Notificações", path: "#" },
+      { id: "HISTORICO_GERAL", nome: "Histórico Geral", path: "#" }
+    ]
   },
+
   {
-    section: 'Gestor',
-    items: [
-      { code: 'PROGRAMACAO', label: 'Programação', path: './programacao.html' },
-      { code: 'HOSPEDAGEM', label: 'Hospedagem', path: './hospedagem.html' },
-      { code: 'COMPRAS', label: 'Compras', path: './compras.html' },
-      { code: 'LOGISTICA', label: 'Logística', path: './logistica.html' },
-      { code: 'PATRIMONIO', label: 'Patrimônios', path: './patrimonios.html' },
-      { code: 'CONTATO_CLIENTE', label: 'Contato Cliente', path: './contato-cliente.html' },
-    ],
+    grupo: "GESTOR",
+    itens: [
+      { id: "PROGRAMACAO", nome: "Programação", path: "#" },
+      { id: "HOSPEDAGEM", nome: "Hospedagem", path: "#" },
+      { id: "COMPRAS", nome: "Compras", path: "#" },
+      { id: "LOGISTICA", nome: "Logística", path: "#" },
+      { id: "PATRIMONIOS", nome: "Patrimônios", path: "#" },
+      { id: "CONTATO_CLIENTE", nome: "Contato Cliente", path: "#" }
+    ]
   },
+
   {
-    section: 'Administração Operacional',
-    items: [
-      { code: 'ADM_CONFERENCIA', label: 'ADM Conferência', path: './adm-conferencia.html' },
-      { code: 'ADM_HOTEL', label: 'ADM Hotel', path: './adm-hotel.html' },
-      { code: 'ADM_COMPRAS', label: 'Compras ADM', path: './adm-compras.html' },
-      { code: 'FINANCEIRO', label: 'Financeiro', path: './financeiro.html' },
-      { code: 'ADM_PATRIMONIO', label: 'Patrimônio ADM', path: './adm-patrimonio.html' },
-      { code: 'ADM_LOGISTICA', label: 'Logística ADM', path: './adm-logistica.html' },
-    ],
+    grupo: "ADMINISTRAÇÃO OPERACIONAL",
+    itens: [
+      { id: "ADM_CONFERENCIA", nome: "ADM Conferência", path: "#" },
+      { id: "ADM_HOTEL", nome: "ADM Hotel", path: "#" },
+      { id: "COMPRAS_ADM", nome: "Compras ADM", path: "#" },
+      { id: "FINANCEIRO", nome: "Financeiro", path: "#" },
+      { id: "PATRIMONIO_ADM", nome: "Patrimônio ADM", path: "#" },
+      { id: "LOGISTICA_ADM", nome: "Logística ADM", path: "#" }
+    ]
   },
+
+  // 🔥 NOVO BLOCO — BASE DE COLABORADORES
   {
-    section: 'Sistema',
-    items: [
-      { code: 'USERS_ACCESS', label: 'Usuários e Acessos', path: './admin-usuarios.html' },
-      { code: 'SYSTEM_SETTINGS', label: 'Configurações', path: './admin-configuracoes.html' },
-      { code: 'AUDIT', label: 'Auditoria', path: './admin-auditoria.html' },
-    ],
+    grupo: "BASE DE COLABORADORES",
+    itens: [
+      { id: "BASE_COLAB_IMPORT", nome: "Importar Colaboradores", path: "/importar-colaboradores.html" },
+      { id: "BASE_COLAB_HIST", nome: "Histórico de Importações", path: "/historico-colaboradores.html" },
+      { id: "BASE_COLAB_CONSULTA", nome: "Consultar Base", path: "/consultar-colaboradores.html" }
+    ]
   },
+
+  // 🔥 NOVO BLOCO — PRODUÇÃO
+  {
+    grupo: "PRODUÇÃO DIÁRIA",
+    itens: [
+      { id: "PRODUCAO_IMPORT", nome: "Importar Produção", path: "/importar-producao.html" },
+      { id: "PRODUCAO_HIST", nome: "Histórico Produção", path: "/historico-producao.html" },
+      { id: "EFETIVOS_ZERO", nome: "Efetivos sem Produção", path: "/efetivos-sem-producao.html" }
+    ]
+  }
 ];
