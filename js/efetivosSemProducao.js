@@ -11,7 +11,7 @@ async function processarDia() {
   try {
     // 1. Buscar colaboradores ativos no dia
     const { data: colaboradores, error: errColab } = await supabase
-      .from("colaboradores_snapshot")
+      .from("colaborador_snapshot")
       .select("*")
       .eq("data_referencia", data)
       .eq("situacao", "Ativo");
