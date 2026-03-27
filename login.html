@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Login</title>
+</head>
+<body style="background:#0f172a;color:white;font-family:sans-serif;">
+  <h2>Login</h2>
+  <input id="email" placeholder="Email"><br><br>
+  <input id="password" type="password" placeholder="Senha"><br><br>
+  <button onclick="doLogin()">Entrar</button>
+
+  <script type="module">
+    import { login } from './assets/js/auth.js'
+
+    window.doLogin = async () => {
+      const email = document.getElementById('email').value
+      const password = document.getElementById('password').value
+
+      const { error } = await login(email, password)
+      if (error) {
+        alert("Erro: " + error.message)
+      } else {
+        window.location.href = "/dashboard.html"
+      }
+    }
+  </script>
+</body>
+</html>

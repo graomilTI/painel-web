@@ -1,0 +1,51 @@
+import { PANEL_MENU } from './menuConfig.js';
+
+export function buildAllowedMenu(userContext) {
+  if (!userContext) return [];
+  if (userContext.user?.is_master) return PANEL_MENU;
+
+  const allowedCodes = new Set(
+    (userContext.modules || [])
+      .filter((m) => m.can_view)
+      .map((m) => m.code)
+  );
+
+  return PANEL_MENU
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => allowedCodes.has(item.code)),
+    }))
+    .filter((section) => section.items.length > 0);
+}
+
+export function renderMenu(container, menuSections, currentPath = '') {
+  if (!container) return;
+  container.innerHTML = '';
+
+  menuSections.forEach((section) => {
+    const sectionEl = document.createElement('section');
+    sectionEl.className = 'menu-section';
+
+    const title = document.createElement('h4');
+    title.textContent = section.section;
+    sectionEl.appendChild(title);
+
+    const list = document.createElement('ul');
+    list.className = 'menu-list';
+
+    section.items.forEach((item) => {
+      const li = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = item.path;
+      link.textContent = item.label;
+      if (currentPath && currentPath.endsWith(item.path.replace('./', '/'))) {
+        link.classList.add('active');
+      }
+      li.appendChild(link);
+      list.appendChild(li);
+    });
+
+    sectionEl.appendChild(list);
+    container.appendChild(sectionEl);
+  });
+}
