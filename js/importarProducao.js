@@ -7,7 +7,6 @@ function normalizeText(value) {
   const s = String(value).trim();
   return s || null;
 }
-
 function excelDateToISO(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number') {
@@ -24,7 +23,6 @@ function excelDateToISO(value) {
   if (iso) return s;
   return null;
 }
-
 function normalizeNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number') return value;
@@ -32,7 +30,6 @@ function normalizeNumber(value) {
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
-
 function mapRow(row, dataReferencia, importacaoId) {
   return {
     importacao_id: importacaoId,
@@ -53,7 +50,6 @@ function mapRow(row, dataReferencia, importacaoId) {
     tons: normalizeNumber(row['Tons'])
   };
 }
-
 async function insertBatches(table, rows, batchSize = 300, onProgress) {
   for (let i = 0; i < rows.length; i += batchSize) {
     const chunk = rows.slice(i, i + batchSize);
@@ -62,13 +58,11 @@ async function insertBatches(table, rows, batchSize = 300, onProgress) {
     if (onProgress) onProgress(Math.min(i + chunk.length, rows.length), rows.length);
   }
 }
-
 function setSummary({ linhas = 0, validas = 0, status = 'Aguardando' }) {
   document.getElementById('sumLinhas').textContent = String(linhas);
   document.getElementById('sumValidas').textContent = String(validas);
   document.getElementById('sumStatus').textContent = status;
 }
-
 async function run() {
   const ctx = await requireAuth();
   if (!ctx) return;
@@ -95,8 +89,6 @@ async function run() {
     let importacaoId = null;
     try {
       btnImportar.disabled = true;
-    } catch(e){}
-    try {
       const file = fileInput.files?.[0];
       const dataReferencia = dataInput.value;
       const origem = origemInput.value || 'upload_manual';
@@ -155,10 +147,7 @@ async function run() {
     } catch (err) {
       console.error(err);
       if (importacaoId) {
-        await supabase
-          .from('producao_importacoes')
-          .update({ status: 'erro' })
-          .eq('id', importacaoId);
+        await supabase.from('producao_importacoes').update({ status: 'erro' }).eq('id', importacaoId);
       }
       setSummary({ status: 'Erro' });
       feedback.textContent = `Erro na importação:\n${err.message || err}`;
@@ -167,5 +156,4 @@ async function run() {
     }
   });
 }
-
 run().catch(console.error);

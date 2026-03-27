@@ -5,13 +5,11 @@ function formatDateTime(value) {
   if (!value) return '';
   return new Date(value).toLocaleString('pt-BR');
 }
-
 function makeCell(text) {
   const td = document.createElement('td');
   td.textContent = text ?? '';
   return td;
 }
-
 function makeStatusPill(status) {
   const td = document.createElement('td');
   const span = document.createElement('span');
@@ -20,7 +18,6 @@ function makeStatusPill(status) {
   td.appendChild(span);
   return td;
 }
-
 async function loadData() {
   const tbody = document.getElementById('tbodyImportacoes');
   const meta = document.getElementById('metaInfo');
@@ -33,13 +30,7 @@ async function loadData() {
 
   let query = supabase
     .from('producao_importacoes')
-    .select(`
-      *,
-      profiles:importado_por (
-        full_name,
-        email
-      )
-    `)
+    .select(`*, profiles:importado_por ( full_name, email )`)
     .order('data_referencia', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -76,13 +67,11 @@ async function loadData() {
 
   meta.textContent = `${data.length} importação(ões) encontrada(s).`;
 }
-
 async function run() {
   await requireAuth();
   document.getElementById('btnBuscar')?.addEventListener('click', loadData);
   await loadData();
 }
-
 run().catch((err) => {
   console.error(err);
   document.getElementById('metaInfo').textContent = `Erro ao carregar histórico: ${err.message || err}`;
