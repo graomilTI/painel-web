@@ -1,13 +1,23 @@
-Arquivos ajustados (front-end)
-- assets/js/api.js: normaliza API.post retornando JSON direto
-- adm/adm.js: inicializa módulo conferência (conf) para renderizar histórico em tabela (ordenado por data)
-- style.css + assets/css/style.css: estilos adicionados para tabela/botões do ADM
+Módulo Usuários e Acessos
 
-Como usar no seu repo:
-1) Copie os arquivos para os mesmos caminhos no painel-web.
-2) Garanta que o adm/adm.html referencie:
-   - ../assets/js/api.js
-   - ../assets/js/auth.js
-   - ../assets/js/auth_guard.js
-   - adm.js
-   - adm/style.css (ou ../assets/css/style.css)
+Arquivos alterados para upload:
+- admin-usuarios.html
+- js/admin-usuarios.js
+- js/menuConfig.js
+- styles.css
+
+Arquivos adicionais:
+- backend/worker-api.js  -> substitua o código do seu worker-api por este arquivo
+- sql/modulo_usuarios.sql -> execute no SQL Editor do Supabase
+
+Variáveis necessárias no worker-api:
+- SUPABASE_URL
+- SUPABASE_ANON_KEY
+- SUPABASE_SERVICE_KEY
+- GAS_EXEC_URL (para não quebrar as rotas já existentes)
+
+Fluxo:
+1) Execute sql/modulo_usuarios.sql no Supabase
+2) Suba os arquivos do frontend
+3) Atualize o worker-api com backend/worker-api.js
+4) Hard refresh no navegador

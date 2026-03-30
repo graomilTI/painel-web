@@ -52,6 +52,15 @@ export const MENU_CONFIG = [
       { id: "PRODUCAO_HIST", nome: "Histórico Produção", path: "./historico-producao.html" },
       { id: "EFETIVOS_ZERO", nome: "Efetivos sem Produção", path: "./efetivos-sem-producao.html" }
     ]
+  },
+
+  {
+    grupo: "ADMINISTRAÇÃO",
+    itens: [
+      { id: "ADMIN_USUARIOS", nome: "Usuários e Acessos", path: "./admin-usuarios.html" },
+      { id: "ADMIN_AUDITORIA", nome: "Auditoria", path: "./admin-auditoria.html" },
+      { id: "ADMIN_CONFIG", nome: "Configurações", path: "./admin-configuracoes.html" }
+    ]
   }
 ];
 

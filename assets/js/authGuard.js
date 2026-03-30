@@ -1,18 +1,9 @@
-import { supabase } from "./supabaseClient.js";
-import { loadUserContext } from "./authContext.js";
+// authGuard.js
+import { getUser } from './auth.js'
 
-export async function protectPage() {
-  const { data } = await supabase.auth.getSession();
-
-  if (!data?.session) {
-    window.location.href = "/painel/login.html";
-    return;
+(async () => {
+  const user = await getUser()
+  if (!user) {
+    window.location.href = "/login.html"
   }
-
-  try {
-    await loadUserContext();
-  } catch (err) {
-    console.error("Erro contexto:", err);
-    window.location.href = "/painel/login.html";
-  }
-}
+})()
