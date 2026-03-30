@@ -1,78 +1,45 @@
-import { supabase } from "./supabaseClient.js";
-import { loadUserContext, getUserContext, logout } from "./authContext.js";
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Painel</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
 
-// ===============================
-// INIT
-// ===============================
-async function init() {
-  const { data } = await supabase.auth.getSession();
+<body>
+  <div class="app-shell">
+    
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h2>Painel</h2>
+        <p>Gestão integrada</p>
+      </div>
 
-  if (!data?.session) {
-    window.location.href = "/painel/login.html";
-    return;
-  }
+      <div id="sidebarMenu"></div>
+    </aside>
 
-  try {
-    await loadUserContext();
-    renderUser();
-    renderMenu();
-    bindEvents();
-  } catch (err) {
-    console.error("Erro ao iniciar dashboard:", err);
-    window.location.href = "/painel/login.html";
-  }
-}
+    <div class="content-wrap">
+      
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">Dashboard</h1>
+          <div class="meta" id="welcomeUser">Olá</div>
+        </div>
 
+        <div class="topbar-actions">
+          <span class="badge" id="roleBadge">USUÁRIO</span>
+          <button class="btn btn-secondary" id="signOutBtn">Sair</button>
+        </div>
+      </header>
 
-// ===============================
-// USER INFO
-// ===============================
-function renderUser() {
-  const ctx = getUserContext();
-  if (!ctx) return;
+      <main class="page-main" id="pageContent"></main>
 
-  const nome = ctx.usuario.nome;
-  const perfil = ctx.usuario.perfil_nome;
+    </div>
+  </div>
 
-  document.getElementById("welcomeUser").innerText = `Olá, ${nome}`;
-  document.getElementById("roleBadge").innerText = perfil.toUpperCase();
-}
+  <!-- 🔥 IMPORTANTE -->
+  <script type="module" src="./js/dashboard.js"></script>
 
-
-// ===============================
-// MENU DINÂMICO
-// ===============================
-function renderMenu() {
-  const ctx = getUserContext();
-  if (!ctx) return;
-
-  const container = document.getElementById("sidebarMenu");
-  if (!container) return;
-
-  const modulos = ctx.modulos || [];
-
-  // ordena
-  modulos.sort((a, b) => a.ordem - b.ordem);
-
-  container.innerHTML = modulos
-    .map(
-      (m) => `
-      <a href="${m.rota}" class="menu-item">
-        ${m.nome}
-      </a>
-    `
-    )
-    .join("");
-}
-
-
-// ===============================
-// EVENTOS
-// ===============================
-function bindEvents() {
-  document.getElementById("signOutBtn")?.addEventListener("click", logout);
-}
-
-
-// ===============================
-init();
+</body>
+</html>
