@@ -1,45 +1,31 @@
-import { supabase } from './supabaseClient.js';
+import { createClient } from "https://esm.sh/@supabase/supabase-js";
 
-export async function signInWithPassword(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
-  return data;
-}
+const supabase = createClient(
+  "https://xyzpnuumdqhegxakkyws.supabase.co",
+  "sb_publishable_YDjKfceWqANbNVMaHte2Kw_Dy4_i471"
+);
 
-export async function signOut() {
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
-}
+async function proteger() {
+  const path = window.location.pathname;
 
-export async function getSession() {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  return data.session;
-}
+  if (path.includes("login")) return;
 
-export async function getCurrentUser() {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  return data.user;
-}
+  const { data } = await supabase.auth.getSession();
 
-function normalizeContextPayload(data) {
-  if (!data) return null;
-  if (Array.isArray(data)) return data[0] || null;
-  return data;
-}
-
-export async function getUserContext(userId) {
-  const { data, error } = await supabase.rpc('get_user_context', { p_user_id: userId });
-  if (error) throw error;
-
-  const context = normalizeContextPayload(data);
-  if (!context) {
-    throw new Error('Contexto do usuário não retornado pela RPC get_user_context.');
+  if (!data.session) {
+    window.location.href = "/painel/login.html";
+    return;
   }
-  return context;
+
+  localStorage.setItem("last_page", path);
 }
 
-export function onAuthStateChange(callback) {
-  return supabase.auth.onAuthStateChange(callback);
-}
+supabase.auth.onAuthStateChange((event, session) => {
+  if (!session) {
+    window.location.href = "/painel/login.html";
+  }
+});
+
+proteger();
+
+export { supabase };
