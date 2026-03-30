@@ -1,51 +1,37 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<title>Login</title>
-<base href="/painel/">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login - Painel Corporativo</title>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
-<body>
+<body class="auth-page">
+  <div class="auth-card">
+    <div class="brand-eyebrow">Painel corporativo</div>
+    <h1>Entrar no sistema</h1>
+    <p>Use seu e-mail e senha cadastrados no Supabase Auth.</p>
 
-<h2>Login</h2>
+    <form id="loginForm">
+      <div class="field">
+        <label for="email">E-mail</label>
+        <input id="email" type="email" autocomplete="username" required />
+      </div>
 
-<input id="email" placeholder="Email"><br>
-<input id="senha" type="password" placeholder="Senha"><br>
-<button onclick="login()">Entrar</button>
+      <div class="field">
+        <label for="password">Senha</label>
+        <div class="password-wrap">
+          <input id="password" type="password" autocomplete="current-password" required />
+          <button type="button" id="togglePassword">Mostrar</button>
+        </div>
+      </div>
 
-<script type="module">
-import { createClient } from "https://esm.sh/@supabase/supabase-js";
+      <button class="btn btn-primary" type="submit">Entrar</button>
+    </form>
 
-const supabase = createClient(
-  "https://xyzpnuumdqhegxakkyws.supabase.co",
-  "sb_publishable_YDjKfceWqANbNVMaHte2Kw_Dy4_i471"
-);
+    <div class="feedback" id="loginFeedback"></div>
+  </div>
 
-const { data } = await supabase.auth.getSession();
-
-if (data.session) {
-  const lastPage = localStorage.getItem("last_page") || "/painel/dashboard.html";
-  window.location.href = lastPage;
-}
-
-window.login = async function () {
-  const email = document.getElementById("email").value;
-  const senha = document.getElementById("senha").value;
-
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password: senha,
-  });
-
-  if (error) {
-    alert("Erro no login");
-    return;
-  }
-
-  const lastPage = localStorage.getItem("last_page");
-  window.location.href = lastPage || "/painel/dashboard.html";
-};
-</script>
-
+  <script type="module" src="./js/login.js"></script>
 </body>
 </html>

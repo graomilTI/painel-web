@@ -1,30 +1,36 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<title>Dashboard</title>
-<base href="/painel/">
-<script type="module" src="/painel/js/auth.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel</title>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h2>Painel</h2>
+        <p>Gestão integrada</p>
+      </div>
+      <div id="sidebarMenu"></div>
+    </aside>
 
-<h1>Dashboard</h1>
+    <div class="content-wrap">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">Painel</h1>
+          <div class="meta" id="welcomeUser">Olá</div>
+        </div>
+        <div class="topbar-actions">
+          <span class="badge" id="roleBadge">USUÁRIO</span>
+          <button class="btn btn-secondary" id="signOutBtn" type="button">Sair</button>
+        </div>
+      </header>
 
-<button onclick="logout()">Sair</button>
-
-<script type="module">
-import { supabase } from "/painel/js/auth.js";
-
-window.logout = async function () {
-  localStorage.removeItem("last_page");
-  await supabase.auth.signOut();
-  window.location.href = "/painel/login.html";
-};
-</script>
-
-<script>
-localStorage.setItem("last_page", window.location.pathname);
-</script>
-
+      <main class="page-main" id="pageContent"></main>
+    </div>
+  </div>
+  <script type="module" src="./js/dashboard.js"></script>
 </body>
 </html>
