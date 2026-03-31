@@ -1,1 +1,0 @@
-// geração imagem png
