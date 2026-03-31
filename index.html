@@ -16,6 +16,7 @@
 
   <script type="module">
     import { getSession } from './js/auth.js';
+    import { toPanelUrl } from './js/paths.js';
 
     const feedback = document.getElementById('bootFeedback');
 
@@ -24,15 +25,15 @@
         const session = await getSession();
         if (session?.user) {
           feedback.textContent = 'Sessão encontrada. Redirecionando para o dashboard...';
-          window.location.replace('./dashboard.html');
+          window.location.replace(toPanelUrl('dashboard.html'));
           return;
         }
         feedback.textContent = 'Nenhuma sessão ativa. Redirecionando para o login...';
-        window.location.replace('./login.html');
+        window.location.replace(toPanelUrl('login.html'));
       } catch (err) {
         console.error(err);
         feedback.textContent = 'Não foi possível validar a sessão. Abrindo login...';
-        window.location.replace('./login.html');
+        window.location.replace(toPanelUrl('login.html'));
       }
     }
 

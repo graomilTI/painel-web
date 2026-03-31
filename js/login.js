@@ -1,5 +1,6 @@
 import { signInWithPassword, getUserContext, getSession } from './auth.js';
 import { saveUserContext } from './sessionStore.js';
+import { toPanelUrl } from './paths.js';
 
 const form = document.getElementById('loginForm');
 const emailInput = document.getElementById('email');
@@ -20,7 +21,7 @@ async function redirectIfSessionExists() {
     const session = await getSession();
     if (session?.user) {
       feedback.textContent = 'Sessão ativa encontrada. Redirecionando...';
-      window.location.replace('./dashboard.html');
+      window.location.replace(toPanelUrl('dashboard.html'));
     }
   } catch (err) {
     console.error(err);
@@ -45,7 +46,7 @@ form?.addEventListener('submit', async (e) => {
 
     saveUserContext(context);
     feedback.textContent = 'Login realizado com sucesso.';
-    window.location.replace('./dashboard.html');
+    window.location.replace(toPanelUrl('dashboard.html'));
   } catch (err) {
     console.error(err);
     feedback.textContent = err.message || 'Erro ao realizar login.';

@@ -1,11 +1,12 @@
 import { getSession, getUserContext } from './auth.js';
 import { loadUserContext, saveUserContext, clearUserContext } from './sessionStore.js';
+import { toPanelUrl } from './paths.js';
 
 export async function requireAuth() {
   const session = await getSession();
   if (!session?.user) {
     clearUserContext();
-    window.location.replace('./login.html');
+    window.location.replace(toPanelUrl('login.html'));
     return null;
   }
 
@@ -17,7 +18,7 @@ export async function requireAuth() {
 
   if (!context?.user?.active) {
     clearUserContext();
-    window.location.replace('./login.html');
+    window.location.replace(toPanelUrl('login.html'));
     return null;
   }
 

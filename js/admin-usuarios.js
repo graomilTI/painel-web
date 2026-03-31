@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { getSession } from './auth.js';
+import { toPanelUrl } from './paths.js';
 
 const state = {
   users: [],
@@ -35,7 +36,7 @@ function setModalFeedback(message, type = 'info') {
 async function apiFetch(path, options = {}) {
   const session = await getSession();
   if (!session?.access_token) {
-    window.location.replace('./login.html');
+    window.location.replace(toPanelUrl('login.html'));
     throw new Error('Sessão expirada.');
   }
 

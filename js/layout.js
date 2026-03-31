@@ -1,6 +1,7 @@
 import { buildAllowedMenu, renderMenu } from './menuBuilder.js';
 import { signOut } from './auth.js';
 import { clearUserContext } from './sessionStore.js';
+import { toPanelUrl } from './paths.js';
 
 export function renderAppLayout({ userContext, currentPageTitle = 'Painel' }) {
   const menu = buildAllowedMenu(userContext);
@@ -28,7 +29,7 @@ export function renderAppLayout({ userContext, currentPageTitle = 'Painel' }) {
         await signOut();
       } finally {
         clearUserContext();
-        window.location.replace('./login.html');
+        window.location.replace(toPanelUrl('login.html'));
       }
     });
   }
