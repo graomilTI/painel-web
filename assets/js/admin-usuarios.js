@@ -1,703 +1,626 @@
+// admin-usuarios.js
+// Frontend Admin Usuários
+//
+// Espera existir no HTML:
+//
+// <div id="adminUsuariosApp"></div>
+//
+// Este arquivo renderiza a tela inteira dentro desse container.
 
-import { initProtectedPage } from './pageInit.js';
-import { getSession } from './auth.js';
-import { toApiUrl, toPanelUrl } from './paths.js';
+(function () {
+  const state = {
+    users: [],
+    modulosCatalogo: [],
+    editingUserId: null,
+  };
 
-const state = {
-  users: [],
-  profiles: [],
-  modulesCatalog: [],
-  collaboratorResults: [],
-  selectedCollaborator: null,
-  editingUserId: null,
-};
+  const rootId = "adminUsuariosApp";
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function setFeedback(message, type = 'info') {
-  const el = document.getElementById('usersFeedback');
-  if (!el) return;
-  el.textContent = message || '';
-  el.className = `feedback users-feedback ${type}`;
-}
-
-function setModalFeedback(message, type = 'info') {
-  const el = document.getElementById('userModalFeedback');
-  if (!el) return;
-  el.textContent = message || '';
-  el.className = `feedback users-feedback ${type}`;
-}
-
-async function apiFetch(path, options = {}) {
-  const session = await getSession();
-  if (!session?.access_token) {
-    window.location.replace(toPanelUrl('login.html'));
-    throw new Error('Sessão expirada.');
+  function qs(sel, el = document) {
+    return el.querySelector(sel);
   }
 
-  const headers = new Headers(options.headers || {});
-  headers.set('Authorization', `Bearer ${session.access_token}`);
-  if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
-    headers.set('Content-Type', 'application/json');
+  function qsa(sel, el = document) {
+    return Array.from(el.querySelectorAll(sel));
   }
 
-  const response = await fetch(toApiUrl(path), {
-    ...options,
-    headers,
-  });
-
-  const contentType = response.headers.get('content-type') || '';
-  const payload = contentType.includes('application/json')
-    ? await response.json()
-    : await response.text();
-
-  if (!response.ok) {
-    const message =
-      payload?.error ||
-      payload?.message ||
-      (typeof payload === 'string' ? payload : 'Erro na requisição');
-    throw new Error(message);
+  function escapeHtml(str) {
+    return String(str ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
   }
 
-  return payload;
-}
-
-function userCardMetrics(users) {
-  const total = users.length;
-  const ativos = users.filter((u) => String(u.status || '').toLowerCase() === 'ativo').length;
-  const masters = users.filter((u) => String(u.perfil_codigo || '').toLowerCase() === 'master').length;
-  return { total, ativos, masters };
-}
-
-function renderPage(content, userContext) {
-  if (!userContext?.user?.is_master) {
-    content.innerHTML = `
-      <article class="card">
-        <h3>Acesso restrito</h3>
-        <p>Este módulo é exclusivo para usuários Master.</p>
-      </article>
-    `;
-    return;
-  }
-
-  content.innerHTML = `
-    <section class="hero-card">
-      <div>
-        <div class="eyebrow">Administração</div>
-        <h2>Usuários e Acessos</h2>
-        <p>
-          Cadastre logins a partir da base diária de colaboradores, defina o perfil,
-          ajuste o setor e libere módulos sem precisar criar usuários via SQL.
-        </p>
-      </div>
-      <div class="hero-badge-wrap">
-        <span class="hero-badge">MASTER</span>
-      </div>
-    </section>
-
-    <div class="grid-cards mt-16">
-      <article class="card">
-        <h3>Total de usuários</h3>
-        <p class="metric" id="metricUsuariosTotal">-</p>
-        <p class="muted">Cadastros de acesso na tabela app_usuarios.</p>
-      </article>
-
-      <article class="card">
-        <h3>Ativos</h3>
-        <p class="metric" id="metricUsuariosAtivos">-</p>
-        <p class="muted">Usuários com status de acesso ativo.</p>
-      </article>
-
-      <article class="card">
-        <h3>Masters</h3>
-        <p class="metric" id="metricUsuariosMaster">-</p>
-        <p class="muted">Contas com perfil master.</p>
-      </article>
-    </div>
-
-    <article class="card mt-16">
-      <div class="users-toolbar">
-        <div class="users-toolbar-left">
-          <input id="filtroUsuario" class="users-input" type="text" placeholder="Buscar por nome, e-mail, empresa, setor ou supervisão" />
-          <select id="filtroPerfil" class="users-select">
-            <option value="">Todos os perfis</option>
-          </select>
-          <select id="filtroStatus" class="users-select">
-            <option value="">Todos os status</option>
-            <option value="ativo">Ativo</option>
-            <option value="inativo">Inativo</option>
-          </select>
-        </div>
-
-        <div class="users-toolbar-right">
-          <button class="btn btn-secondary" type="button" id="btnAtualizarUsuarios">Atualizar</button>
-          <button class="btn btn-primary users-btn-inline" type="button" id="btnNovoUsuario">Novo usuário</button>
-        </div>
-      </div>
-
-      <div id="usersFeedback" class="feedback users-feedback"></div>
-
-      <div class="users-table-wrap">
-        <table class="users-table">
-          <thead>
-            <tr>
-              <th>Nome</th>
-              <th>E-mail</th>
-              <th>Perfil</th>
-              <th>Status</th>
-              <th>Setor</th>
-              <th>Empresa</th>
-              <th>Coordenação</th>
-              <th>Supervisão</th>
-              <th>Módulos</th>
-              <th>Criado em</th>
-              <th style="width: 250px;">Ações</th>
-            </tr>
-          </thead>
-          <tbody id="usersTableBody">
-            <tr><td colspan="11">Carregando usuários...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </article>
-
-    <div class="users-modal-backdrop hidden" id="userModalBackdrop">
-      <div class="users-modal users-modal-lg">
-        <div class="users-modal-header">
-          <div>
-            <h3 id="userModalTitle">Novo usuário</h3>
-            <p class="muted">Selecione o colaborador da base diária, defina o perfil, ajuste o setor e libere os módulos.</p>
-          </div>
-          <button class="btn btn-secondary" type="button" id="btnFecharModal">Fechar</button>
-        </div>
-
-        <div id="userModalFeedback" class="feedback users-feedback"></div>
-
-        <div class="users-form-grid">
-          <div class="users-form-col-span-2">
-            <label class="users-label" for="colaboradorBusca">Colaborador</label>
-            <input id="colaboradorBusca" class="users-input" type="text" placeholder="Busque por nome, e-mail ou CPF" autocomplete="off" />
-            <div class="users-search-results hidden" id="colaboradorResultados"></div>
-          </div>
-
-          <div>
-            <label class="users-label">Nome</label>
-            <input id="colaboradorNome" class="users-input" type="text" readonly />
-          </div>
-
-          <div>
-            <label class="users-label">E-mail</label>
-            <input id="colaboradorEmail" class="users-input" type="text" readonly />
-          </div>
-
-          <div>
-            <label class="users-label">Empresa</label>
-            <input id="colaboradorEmpresa" class="users-input" type="text" readonly />
-          </div>
-
-          <div>
-            <label class="users-label">Coordenação</label>
-            <input id="colaboradorCoordenacao" class="users-input" type="text" readonly />
-          </div>
-
-          <div>
-            <label class="users-label">Supervisão</label>
-            <input id="colaboradorSupervisao" class="users-input" type="text" readonly />
-          </div>
-
-          <div>
-            <label class="users-label">Perfil</label>
-            <select id="perfilCodigo" class="users-select"></select>
-          </div>
-
-          <div>
-            <label class="users-label">Status</label>
-            <select id="statusAcesso" class="users-select">
-              <option value="ativo">Ativo</option>
-              <option value="inativo">Inativo</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="users-label" for="setorUsuario">Setor</label>
-            <input id="setorUsuario" class="users-input" type="text" placeholder="Ex.: Administração, RH, Compras" />
-          </div>
-
-          <div id="passwordWrap">
-            <label class="users-label" for="senhaTemporaria">Senha temporária</label>
-            <input id="senhaTemporaria" class="users-input" type="text" placeholder="Deixe em branco para gerar automática" />
-          </div>
-
-          <div class="users-form-col-span-2">
-            <label class="users-label">Módulos liberados</label>
-            <div id="modulosChecklist" class="users-modules-grid"></div>
-            <div class="muted users-hint">Selecione os módulos que este usuário poderá visualizar no painel.</div>
-          </div>
-        </div>
-
-        <div class="users-modal-actions">
-          <button class="btn btn-secondary" type="button" id="btnLimparForm">Limpar</button>
-          <button class="btn btn-primary users-btn-inline" type="button" id="btnSalvarUsuario">Salvar usuário</button>
-        </div>
-      </div>
-    </div>
-  `;
-
-  bindPageEvents();
-  loadInitialData().catch((err) => {
-    console.error(err);
-    setFeedback(err.message || 'Erro ao carregar módulo.', 'error');
-  });
-}
-
-async function loadInitialData() {
-  setFeedback('Carregando dados do módulo...');
-  const [profilesPayload, usersPayload, modulesPayload] = await Promise.all([
-    apiFetch('admin/users/profiles'),
-    apiFetch('admin/users/list'),
-    apiFetch('admin/users/modules'),
-  ]);
-
-  state.profiles = profilesPayload.items || [];
-  state.users = usersPayload.items || [];
-  state.modulesCatalog = modulesPayload.items || [];
-
-  fillProfileSelects();
-  renderModulesChecklist([]);
-  renderUsersTable();
-  setFeedback(`${state.users.length} usuário(s) carregado(s).`, 'success');
-}
-
-function fillProfileSelects() {
-  const selects = [
-    document.getElementById('perfilCodigo'),
-    document.getElementById('filtroPerfil'),
-  ];
-
-  selects.forEach((select, index) => {
-    if (!select) return;
-    const currentValue = select.value;
-    if (index === 0) {
-      select.innerHTML = state.profiles
-        .map((profile) => `<option value="${profile.codigo}">${escapeHtml(profile.nome)}</option>`)
-        .join('');
-    } else {
-      select.innerHTML = `<option value="">Todos os perfis</option>` +
-        state.profiles
-          .map((profile) => `<option value="${profile.codigo}">${escapeHtml(profile.nome)}</option>`)
-          .join('');
-    }
-    if (currentValue) select.value = currentValue;
-  });
-}
-
-function normalizeModuleCodes(codes = []) {
-  return [...new Set((Array.isArray(codes) ? codes : []).map((code) => String(code || '').trim()).filter(Boolean))];
-}
-
-function getSelectedModuleCodes() {
-  return Array.from(document.querySelectorAll('input[name="usuarioModulo"]:checked'))
-    .map((el) => el.value)
-    .filter(Boolean);
-}
-
-function renderModulesChecklist(selectedCodes = []) {
-  const wrap = document.getElementById('modulosChecklist');
-  if (!wrap) return;
-
-  const selected = new Set(normalizeModuleCodes(selectedCodes));
-  const grouped = state.modulesCatalog.reduce((acc, item) => {
-    const group = item.grupo || 'OUTROS';
-    acc[group] ||= [];
-    acc[group].push(item);
-    return acc;
-  }, {});
-
-  const groups = Object.entries(grouped);
-  if (!groups.length) {
-    wrap.innerHTML = '<div class="muted">Nenhum módulo cadastrado.</div>';
-    return;
-  }
-
-  wrap.innerHTML = groups.map(([group, items]) => `
-    <section class="users-module-group">
-      <h4>${escapeHtml(group)}</h4>
-      <div class="users-module-items">
-        ${items.map((item) => `
-          <label class="users-module-item">
-            <input type="checkbox" name="usuarioModulo" value="${escapeHtml(item.codigo)}" ${selected.has(item.codigo) ? 'checked' : ''} />
-            <span>${escapeHtml(item.nome)}</span>
-          </label>
-        `).join('')}
-      </div>
-    </section>
-  `).join('');
-}
-
-function applyFilters() {
-  const q = (document.getElementById('filtroUsuario')?.value || '').trim().toLowerCase();
-  const perfil = (document.getElementById('filtroPerfil')?.value || '').trim().toLowerCase();
-  const status = (document.getElementById('filtroStatus')?.value || '').trim().toLowerCase();
-
-  return state.users.filter((user) => {
-    const haystack = [
-      user.nome,
-      user.email,
-      user.empresa,
-      user.coordenacao,
-      user.supervisao,
-      user.perfil_nome,
-      user.perfil_codigo,
-      user.setor,
-      (user.modulo_nomes || []).join(' '),
-    ].join(' ').toLowerCase();
-
-    const qOk = !q || haystack.includes(q);
-    const perfilOk = !perfil || String(user.perfil_codigo || '').toLowerCase() === perfil;
-    const statusOk = !status || String(user.status || '').toLowerCase() === status;
-    return qOk && perfilOk && statusOk;
-  });
-}
-
-function renderUsersTable() {
-  const tbody = document.getElementById('usersTableBody');
-  if (!tbody) return;
-
-  const filtered = applyFilters();
-  const metrics = userCardMetrics(state.users);
-
-  const totalEl = document.getElementById('metricUsuariosTotal');
-  const ativosEl = document.getElementById('metricUsuariosAtivos');
-  const mastersEl = document.getElementById('metricUsuariosMaster');
-  if (totalEl) totalEl.textContent = String(metrics.total);
-  if (ativosEl) ativosEl.textContent = String(metrics.ativos);
-  if (mastersEl) mastersEl.textContent = String(metrics.masters);
-
-  if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="11">Nenhum usuário encontrado com os filtros aplicados.</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = filtered.map((user) => {
-    const moduleSummary = Array.isArray(user.modulo_nomes) && user.modulo_nomes.length
-      ? user.modulo_nomes.slice(0, 3).map(escapeHtml).join(', ') + (user.modulo_nomes.length > 3 ? ` +${user.modulo_nomes.length - 3}` : '')
-      : '-';
-    return `
-      <tr>
-        <td>${escapeHtml(user.nome)}</td>
-        <td>${escapeHtml(user.email)}</td>
-        <td>${escapeHtml(user.perfil_nome || user.perfil_codigo || '-')}</td>
-        <td><span class="users-status ${String(user.status).toLowerCase() === 'ativo' ? 'is-active' : 'is-inactive'}">${escapeHtml(user.status || '-')}</span></td>
-        <td>${escapeHtml(user.setor || '-')}</td>
-        <td>${escapeHtml(user.empresa || '-')}</td>
-        <td>${escapeHtml(user.coordenacao || '-')}</td>
-        <td>${escapeHtml(user.supervisao || '-')}</td>
-        <td>${moduleSummary}</td>
-        <td>${escapeHtml((user.created_at || '').slice(0, 10) || '-')}</td>
-        <td>
-          <div class="users-actions">
-            <button class="btn btn-secondary users-action-btn" type="button" data-action="edit" data-id="${user.id}">Editar</button>
-            <button class="btn btn-secondary users-action-btn" type="button" data-action="toggle" data-id="${user.id}">${String(user.status).toLowerCase() === 'ativo' ? 'Inativar' : 'Ativar'}</button>
-            <button class="btn btn-secondary users-action-btn" type="button" data-action="reset" data-id="${user.id}">Resetar senha</button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-function bindPageEvents() {
-  document.getElementById('filtroUsuario')?.addEventListener('input', renderUsersTable);
-  document.getElementById('filtroPerfil')?.addEventListener('change', renderUsersTable);
-  document.getElementById('filtroStatus')?.addEventListener('change', renderUsersTable);
-  document.getElementById('btnAtualizarUsuarios')?.addEventListener('click', refreshUsers);
-  document.getElementById('btnNovoUsuario')?.addEventListener('click', () => openModal());
-  document.getElementById('btnFecharModal')?.addEventListener('click', closeModal);
-  document.getElementById('btnLimparForm')?.addEventListener('click', resetForm);
-  document.getElementById('btnSalvarUsuario')?.addEventListener('click', submitForm);
-  document.getElementById('colaboradorBusca')?.addEventListener('input', onCollaboratorSearch);
-  document.getElementById('usersTableBody')?.addEventListener('click', onTableAction);
-  document.getElementById('colaboradorResultados')?.addEventListener('click', onSelectCollaborator);
-  document.getElementById('userModalBackdrop')?.addEventListener('click', (event) => {
-    if (event.target.id === 'userModalBackdrop') closeModal();
-  });
-}
-
-async function refreshUsers() {
-  setFeedback('Atualizando usuários...');
-  const payload = await apiFetch('admin/users/list');
-  state.users = payload.items || [];
-  renderUsersTable();
-  setFeedback(`${state.users.length} usuário(s) carregado(s).`, 'success');
-}
-
-async function openModal(user = null) {
-  state.editingUserId = user?.id || null;
-  const backdrop = document.getElementById('userModalBackdrop');
-  const title = document.getElementById('userModalTitle');
-  const saveBtn = document.getElementById('btnSalvarUsuario');
-  const searchInput = document.getElementById('colaboradorBusca');
-  const passwordWrap = document.getElementById('passwordWrap');
-
-  resetForm();
-  setModalFeedback('');
-
-  if (title) title.textContent = user ? 'Editar usuário' : 'Novo usuário';
-  if (saveBtn) saveBtn.textContent = user ? 'Salvar alterações' : 'Salvar usuário';
-  if (passwordWrap) passwordWrap.style.display = user ? 'none' : 'block';
-
-  if (user) {
-    setSelectedCollaborator({
-      id: user.colaborador_id,
-      nome: user.nome,
-      email_empresa: user.email,
-      empresa: user.empresa,
-      coordenacao: user.coordenacao,
-      supervisao: user.supervisao,
+  async function api(url, options = {}) {
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
     });
-    if (searchInput) {
-      searchInput.value = `${user.nome} • ${user.email}`;
-      searchInput.disabled = true;
-    }
-    document.getElementById('perfilCodigo').value = user.perfil_codigo || '';
-    document.getElementById('statusAcesso').value = user.status || 'ativo';
-    document.getElementById('setorUsuario').value = user.setor || '';
+
+    const text = await res.text();
+    let data = {};
 
     try {
-      const payload = await apiFetch(`admin/users/access?usuario_id=${encodeURIComponent(user.id)}`);
-      renderModulesChecklist(payload.item?.modulo_codigos || []);
-      if (!document.getElementById('setorUsuario').value && payload.item?.setor) {
-        document.getElementById('setorUsuario').value = payload.item.setor;
-      }
-    } catch (err) {
-      console.error(err);
-      setModalFeedback(err.message || 'Erro ao carregar acessos do usuário.', 'error');
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { raw: text };
     }
-  } else if (searchInput) {
-    searchInput.disabled = false;
-    renderModulesChecklist([]);
+
+    if (!res.ok || data?.ok === false) {
+      throw new Error(data?.error || `Erro HTTP ${res.status}`);
+    }
+
+    return data;
   }
 
-  backdrop?.classList.remove('hidden');
-}
+  function renderBase() {
+    const root = document.getElementById(rootId);
+    if (!root) return;
 
-function closeModal() {
-  document.getElementById('userModalBackdrop')?.classList.add('hidden');
-  state.editingUserId = null;
-  state.collaboratorResults = [];
-  state.selectedCollaborator = null;
-}
+    root.innerHTML = `
+      <div class="au-wrap">
+        <div class="au-header">
+          <div>
+            <h2 class="au-title">Usuários</h2>
+            <div class="au-subtitle">Gerencie setor e módulos liberados por usuário</div>
+          </div>
+          <div class="au-actions">
+            <button id="auBtnNovo" class="au-btn au-btn-primary">Novo usuário</button>
+          </div>
+        </div>
 
-function resetForm() {
-  state.selectedCollaborator = null;
-  state.collaboratorResults = [];
-  setModalFeedback('');
+        <div class="au-toolbar">
+          <input id="auFiltro" class="au-input" type="text" placeholder="Buscar por nome, e-mail ou setor" />
+        </div>
 
-  const searchInput = document.getElementById('colaboradorBusca');
-  if (searchInput) {
-    searchInput.value = '';
-    searchInput.disabled = false;
+        <div id="auFeedback" class="au-feedback" style="display:none;"></div>
+
+        <div class="au-table-wrap">
+          <table class="au-table">
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>E-mail</th>
+                <th>Setor</th>
+                <th>Status</th>
+                <th>Módulos</th>
+                <th style="width: 260px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="auTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="auModal" class="au-modal" style="display:none;">
+        <div class="au-modal-card">
+          <div class="au-modal-header">
+            <h3 id="auModalTitle">Usuário</h3>
+            <button id="auBtnCloseModal" class="au-btn au-btn-light" type="button">Fechar</button>
+          </div>
+
+          <form id="auForm" class="au-form">
+            <input type="hidden" id="auUserId" />
+
+            <div class="au-grid">
+              <div class="au-field">
+                <label for="auNome">Nome</label>
+                <input id="auNome" class="au-input" type="text" required />
+              </div>
+
+              <div class="au-field">
+                <label for="auEmail">E-mail</label>
+                <input id="auEmail" class="au-input" type="email" required />
+              </div>
+
+              <div class="au-field">
+                <label for="auSetor">Setor</label>
+                <input id="auSetor" class="au-input" type="text" />
+              </div>
+
+              <div class="au-field">
+                <label for="auAtivo">Status</label>
+                <select id="auAtivo" class="au-input">
+                  <option value="true">Ativo</option>
+                  <option value="false">Inativo</option>
+                </select>
+              </div>
+
+              <div class="au-field au-field-full">
+                <label for="auPassword">Senha</label>
+                <input id="auPassword" class="au-input" type="password" placeholder="Preencha só se quiser definir/alterar" />
+                <small class="au-help">
+                  No cadastro a senha é obrigatória. Na edição, só preencha se quiser trocar.
+                </small>
+              </div>
+
+              <div class="au-field au-field-full">
+                <label>Módulos liberados</label>
+                <div id="auModulosContainer" class="au-modulos"></div>
+              </div>
+            </div>
+
+            <div class="au-modal-footer">
+              <button type="submit" class="au-btn au-btn-primary">Salvar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <style>
+        .au-wrap {
+          padding: 16px;
+          color: #e5e7eb;
+        }
+
+        .au-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .au-title {
+          margin: 0;
+          font-size: 24px;
+        }
+
+        .au-subtitle {
+          opacity: 0.8;
+          margin-top: 4px;
+        }
+
+        .au-toolbar {
+          margin-bottom: 12px;
+        }
+
+        .au-input {
+          width: 100%;
+          box-sizing: border-box;
+          border: 1px solid #334155;
+          background: #0f172a;
+          color: #e5e7eb;
+          border-radius: 10px;
+          padding: 10px 12px;
+          outline: none;
+        }
+
+        .au-input:focus {
+          border-color: #166534;
+          box-shadow: 0 0 0 2px rgba(22,101,52,.25);
+        }
+
+        .au-btn {
+          border: 0;
+          border-radius: 10px;
+          padding: 10px 14px;
+          cursor: pointer;
+        }
+
+        .au-btn-primary {
+          background: #166534;
+          color: #fff;
+        }
+
+        .au-btn-light {
+          background: #1e293b;
+          color: #e5e7eb;
+        }
+
+        .au-feedback {
+          margin-bottom: 12px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          background: #1e293b;
+          border: 1px solid #334155;
+        }
+
+        .au-table-wrap {
+          overflow: auto;
+          background: #0b1220;
+          border: 1px solid #1f2937;
+          border-radius: 14px;
+        }
+
+        .au-table {
+          width: 100%;
+          border-collapse: collapse;
+          min-width: 980px;
+        }
+
+        .au-table th,
+        .au-table td {
+          text-align: left;
+          padding: 12px;
+          border-bottom: 1px solid #1f2937;
+          vertical-align: top;
+        }
+
+        .au-badge {
+          display: inline-block;
+          border-radius: 999px;
+          padding: 4px 10px;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .au-badge-on {
+          background: rgba(22, 101, 52, .25);
+          color: #86efac;
+        }
+
+        .au-badge-off {
+          background: rgba(127, 29, 29, .25);
+          color: #fca5a5;
+        }
+
+        .au-mod-chip {
+          display: inline-block;
+          padding: 4px 8px;
+          margin: 2px;
+          border-radius: 999px;
+          background: #1e293b;
+          border: 1px solid #334155;
+          font-size: 12px;
+        }
+
+        .au-actions-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .au-modal {
+          position: fixed;
+          inset: 0;
+          background: rgba(2,6,23,.72);
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+
+        .au-modal-card {
+          width: min(920px, 100%);
+          max-height: 92vh;
+          overflow: auto;
+          background: #0b1220;
+          border: 1px solid #1f2937;
+          border-radius: 18px;
+          padding: 18px;
+        }
+
+        .au-modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 14px;
+        }
+
+        .au-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+
+        .au-field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .au-field-full {
+          grid-column: 1 / -1;
+        }
+
+        .au-help {
+          opacity: 0.75;
+          font-size: 12px;
+        }
+
+        .au-modulos {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+          border: 1px solid #1f2937;
+          border-radius: 12px;
+          padding: 12px;
+          background: #0f172a;
+        }
+
+        .au-mod-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border: 1px solid #1f2937;
+          border-radius: 10px;
+          background: #111827;
+        }
+
+        .au-modal-footer {
+          margin-top: 16px;
+          display: flex;
+          justify-content: flex-end;
+        }
+
+        @media (max-width: 900px) {
+          .au-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .au-modulos {
+            grid-template-columns: 1fr;
+          }
+
+          .au-header {
+            flex-direction: column;
+            align-items: stretch;
+          }
+        }
+      </style>
+    `;
+
+    qs("#auBtnNovo", root).addEventListener("click", () => openModal());
+    qs("#auBtnCloseModal", root).addEventListener("click", closeModal);
+    qs("#auFiltro", root).addEventListener("input", renderTable);
+    qs("#auForm", root).addEventListener("submit", onSubmitForm);
   }
 
-  ['colaboradorNome','colaboradorEmail','colaboradorEmpresa','colaboradorCoordenacao','colaboradorSupervisao','senhaTemporaria','setorUsuario']
-    .forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.value = '';
+  function setFeedback(msg, isError = false) {
+    const el = qs("#auFeedback");
+    if (!el) return;
+
+    if (!msg) {
+      el.style.display = "none";
+      el.innerHTML = "";
+      return;
+    }
+
+    el.style.display = "block";
+    el.style.borderColor = isError ? "#7f1d1d" : "#334155";
+    el.style.background = isError ? "rgba(127,29,29,.15)" : "#1e293b";
+    el.innerHTML = escapeHtml(msg);
+  }
+
+  function renderModules(selectedIds = []) {
+    const container = qs("#auModulosContainer");
+    if (!container) return;
+
+    container.innerHTML = state.modulosCatalogo
+      .map((m) => {
+        const checked = selectedIds.includes(m.id) ? "checked" : "";
+        return `
+          <label class="au-mod-item">
+            <input type="checkbox" value="${escapeHtml(m.id)}" ${checked} />
+            <span>${escapeHtml(m.nome || m.codigo || "Módulo")}</span>
+          </label>
+        `;
+      })
+      .join("");
+  }
+
+  function renderTable() {
+    const tbody = qs("#auTableBody");
+    if (!tbody) return;
+
+    const filtro = (qs("#auFiltro")?.value || "").trim().toLowerCase();
+
+    const items = state.users.filter((u) => {
+      const text = [
+        u.nome || "",
+        u.email || "",
+        u.setor || "",
+        ...(u.modulos || []).map((m) => m.nome || m.codigo || ""),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return !filtro || text.includes(filtro);
     });
 
-  if (document.getElementById('statusAcesso')) document.getElementById('statusAcesso').value = 'ativo';
-  if (document.getElementById('perfilCodigo') && state.profiles[0]) {
-    document.getElementById('perfilCodigo').value = state.profiles[0].codigo;
+    tbody.innerHTML = items
+      .map((u) => {
+        const statusClass = u.ativo ? "au-badge-on" : "au-badge-off";
+        const statusLabel = u.ativo ? "Ativo" : "Inativo";
+        const modulosHtml = (u.modulos || []).length
+          ? u.modulos
+              .map(
+                (m) =>
+                  `<span class="au-mod-chip">${escapeHtml(m.nome || m.codigo || "")}</span>`
+              )
+              .join("")
+          : `<span style="opacity:.7;">Sem módulos</span>`;
+
+        return `
+          <tr>
+            <td>${escapeHtml(u.nome || "")}</td>
+            <td>${escapeHtml(u.email || "")}</td>
+            <td>${escapeHtml(u.setor || "")}</td>
+            <td><span class="au-badge ${statusClass}">${statusLabel}</span></td>
+            <td>${modulosHtml}</td>
+            <td>
+              <div class="au-actions-row">
+                <button class="au-btn au-btn-light" data-action="edit" data-id="${escapeHtml(u.id)}">Editar</button>
+                <button class="au-btn au-btn-light" data-action="toggle" data-id="${escapeHtml(u.id)}" data-ativo="${u.ativo ? "false" : "true"}">
+                  ${u.ativo ? "Desativar" : "Ativar"}
+                </button>
+                <button class="au-btn au-btn-light" data-action="reset" data-id="${escapeHtml(u.id)}">Reset senha</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    qsa("[data-action='edit']", tbody).forEach((btn) => {
+      btn.addEventListener("click", () => editUser(btn.dataset.id));
+    });
+
+    qsa("[data-action='toggle']", tbody).forEach((btn) => {
+      btn.addEventListener("click", () =>
+        toggleStatus(btn.dataset.id, btn.dataset.ativo === "true")
+      );
+    });
+
+    qsa("[data-action='reset']", tbody).forEach((btn) => {
+      btn.addEventListener("click", () => resetPassword(btn.dataset.id));
+    });
   }
 
-  renderModulesChecklist([]);
-  renderCollaboratorResults();
-}
+  async function loadUsers() {
+    const res = await api("/api/admin/users/list");
+    state.users = res.items || [];
+    renderTable();
+  }
 
-let collaboratorSearchTimer = null;
+  async function loadModulesCatalog() {
+    const res = await api("/api/admin/users/modulos");
+    state.modulosCatalogo = res.items || [];
+  }
 
-function onCollaboratorSearch(event) {
-  const term = String(event.target.value || '').trim();
-  if (state.editingUserId) return;
+  async function loadUserModuleIds(userId) {
+    const res = await api(`/api/admin/users/user-modulos?user_id=${encodeURIComponent(userId)}`);
+    return res.items || [];
+  }
 
-  clearTimeout(collaboratorSearchTimer);
-  collaboratorSearchTimer = setTimeout(async () => {
-    if (term.length < 3) {
-      state.collaboratorResults = [];
-      renderCollaboratorResults();
+  function openModal(user = null, selectedModuleIds = []) {
+    state.editingUserId = user?.id || null;
+
+    qs("#auModalTitle").textContent = user ? "Editar usuário" : "Novo usuário";
+    qs("#auUserId").value = user?.id || "";
+    qs("#auNome").value = user?.nome || "";
+    qs("#auEmail").value = user?.email || "";
+    qs("#auSetor").value = user?.setor || "";
+    qs("#auAtivo").value = String(user?.ativo ?? true);
+    qs("#auPassword").value = "";
+
+    renderModules(selectedModuleIds);
+    qs("#auModal").style.display = "flex";
+  }
+
+  function closeModal() {
+    qs("#auModal").style.display = "none";
+  }
+
+  function getSelectedModules() {
+    return qsa("#auModulosContainer input:checked").map((el) => el.value);
+  }
+
+  async function editUser(userId) {
+    try {
+      setFeedback("");
+      const user = state.users.find((x) => x.id === userId);
+      if (!user) throw new Error("Usuário não encontrado.");
+
+      const selectedModuleIds = await loadUserModuleIds(userId);
+      openModal(user, selectedModuleIds);
+    } catch (err) {
+      setFeedback(err.message || String(err), true);
+    }
+  }
+
+  async function toggleStatus(userId, ativo) {
+    try {
+      setFeedback("Salvando status...");
+      await api("/api/admin/users/toggle-status", {
+        method: "POST",
+        body: JSON.stringify({ id: userId, ativo }),
+      });
+      setFeedback("Status atualizado com sucesso.");
+      await loadUsers();
+    } catch (err) {
+      setFeedback(err.message || String(err), true);
+    }
+  }
+
+  async function resetPassword(userId) {
+    const senha = window.prompt("Digite a nova senha:");
+    if (!senha) return;
+
+    try {
+      setFeedback("Redefinindo senha...");
+      await api("/api/admin/users/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ id: userId, password: senha }),
+      });
+      setFeedback("Senha redefinida com sucesso.");
+    } catch (err) {
+      setFeedback(err.message || String(err), true);
+    }
+  }
+
+  async function onSubmitForm(ev) {
+    ev.preventDefault();
+
+    const id = qs("#auUserId").value.trim();
+    const nome = qs("#auNome").value.trim();
+    const email = qs("#auEmail").value.trim();
+    const setor = qs("#auSetor").value.trim();
+    const ativo = qs("#auAtivo").value === "true";
+    const password = qs("#auPassword").value;
+    const modulos = getSelectedModules();
+
+    const payload = {
+      id,
+      nome,
+      email,
+      setor,
+      ativo,
+      modulos,
+    };
+
+    const isCreate = !id;
+    if (password) payload.password = password;
+
+    if (isCreate && !password) {
+      setFeedback("No cadastro, a senha é obrigatória.", true);
       return;
     }
 
     try {
-      const payload = await apiFetch(`admin/users/collaborators?q=${encodeURIComponent(term)}`);
-      state.collaboratorResults = payload.items || [];
-      renderCollaboratorResults();
+      setFeedback(isCreate ? "Criando usuário..." : "Salvando usuário...");
+
+      await api(isCreate ? "/api/admin/users/create" : "/api/admin/users/update", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      closeModal();
+      setFeedback(isCreate ? "Usuário criado com sucesso." : "Usuário atualizado com sucesso.");
+      await loadUsers();
     } catch (err) {
-      console.error(err);
-      setModalFeedback(err.message || 'Erro ao buscar colaboradores.', 'error');
+      setFeedback(err.message || String(err), true);
     }
-  }, 250);
-}
-
-function renderCollaboratorResults() {
-  const wrap = document.getElementById('colaboradorResultados');
-  if (!wrap) return;
-
-  if (!state.collaboratorResults.length) {
-    wrap.innerHTML = '';
-    wrap.classList.add('hidden');
-    return;
   }
 
-  wrap.innerHTML = state.collaboratorResults.map((item) => `
-    <button class="users-search-item" type="button" data-id="${item.id}">
-      <strong>${escapeHtml(item.nome)}</strong>
-      <span>${escapeHtml(item.email || item.email_empresa || 'Sem e-mail')} • ${escapeHtml(item.empresa || '-')} • ${escapeHtml(item.supervisao || '-')}</span>
-    </button>
-  `).join('');
-  wrap.classList.remove('hidden');
-}
-
-function onSelectCollaborator(event) {
-  const btn = event.target.closest('[data-id]');
-  if (!btn) return;
-  const found = state.collaboratorResults.find((item) => item.id === btn.dataset.id);
-  if (!found) return;
-  setSelectedCollaborator(found);
-  document.getElementById('colaboradorBusca').value = `${found.nome} • ${found.email || found.email_empresa || 'Sem e-mail'}`;
-  state.collaboratorResults = [];
-  renderCollaboratorResults();
-}
-
-function setSelectedCollaborator(item) {
-  state.selectedCollaborator = item;
-  document.getElementById('colaboradorNome').value = item.nome || '';
-  document.getElementById('colaboradorEmail').value = item.email || item.email_empresa || '';
-  document.getElementById('colaboradorEmpresa').value = item.empresa || '';
-  document.getElementById('colaboradorCoordenacao').value = item.coordenacao || '';
-  document.getElementById('colaboradorSupervisao').value = item.supervisao || '';
-  const setorInput = document.getElementById('setorUsuario');
-  if (setorInput && !setorInput.value) {
-    setorInput.value = item.coordenacao || item.empresa || '';
-  }
-}
-
-async function submitForm() {
-  const perfilCodigo = document.getElementById('perfilCodigo')?.value;
-  const status = document.getElementById('statusAcesso')?.value || 'ativo';
-  const senhaTemporaria = document.getElementById('senhaTemporaria')?.value?.trim() || null;
-  const setor = document.getElementById('setorUsuario')?.value?.trim() || null;
-  const moduloCodigos = normalizeModuleCodes(getSelectedModuleCodes());
-
-  if (!state.editingUserId && !state.selectedCollaborator?.id) {
-    setModalFeedback('Selecione um colaborador da base antes de salvar.', 'error');
-    return;
-  }
-
-  if (!perfilCodigo) {
-    setModalFeedback('Selecione o perfil do usuário.', 'error');
-    return;
-  }
-
-  try {
-    if (state.editingUserId) {
-      await apiFetch('admin/users/update', {
-        method: 'POST',
-        body: JSON.stringify({
-          id: state.editingUserId,
-          perfil_codigo: perfilCodigo,
-          status,
-          setor,
-          modulo_codigos: moduloCodigos,
-        }),
-      });
-      setFeedback('Usuário atualizado com sucesso.', 'success');
-    } else {
-      const payload = await apiFetch('admin/users/create', {
-        method: 'POST',
-        body: JSON.stringify({
-          colaborador_id: state.selectedCollaborator.id,
-          perfil_codigo: perfilCodigo,
-          status,
-          senha_temporaria: senhaTemporaria,
-          setor,
-          modulo_codigos: moduloCodigos,
-        }),
-      });
-
-      const generatedPassword = payload.temp_password || payload.senha_temporaria;
-      const message = generatedPassword
-        ? `Usuário criado com sucesso. Senha temporária: ${generatedPassword}`
-        : 'Usuário criado com sucesso.';
-      setFeedback(message, 'success');
-    }
-
-    closeModal();
-    await refreshUsers();
-  } catch (err) {
-    console.error(err);
-    setModalFeedback(err.message || 'Erro ao salvar usuário.', 'error');
-  }
-}
-
-async function onTableAction(event) {
-  const button = event.target.closest('[data-action]');
-  if (!button) return;
-
-  const action = button.dataset.action;
-  const userId = button.dataset.id;
-  const user = state.users.find((item) => item.id === userId);
-  if (!user) return;
-
-  if (action === 'edit') {
-    await openModal(user);
-    return;
-  }
-
-  if (action === 'toggle') {
-    const novoStatus = String(user.status || '').toLowerCase() === 'ativo' ? 'inativo' : 'ativo';
-    if (!confirm(`Deseja alterar o status de ${user.nome} para ${novoStatus}?`)) return;
-
+  async function init() {
+    renderBase();
     try {
-      await apiFetch('admin/users/toggle-status', {
-        method: 'POST',
-        body: JSON.stringify({
-          id: user.id,
-        }),
-      });
-      setFeedback(`Status de ${user.nome} alterado para ${novoStatus}.`, 'success');
-      await refreshUsers();
+      setFeedback("Carregando...");
+      await loadModulesCatalog();
+      await loadUsers();
+      setFeedback("");
     } catch (err) {
-      console.error(err);
-      setFeedback(err.message || 'Erro ao alterar status.', 'error');
-    }
-    return;
-  }
-
-  if (action === 'reset') {
-    if (!confirm(`Gerar nova senha temporária para ${user.nome}?`)) return;
-
-    try {
-      const payload = await apiFetch('admin/users/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({
-          id: user.id,
-        }),
-      });
-      const generatedPassword = payload.temp_password || payload.senha_temporaria;
-      setFeedback(`Nova senha temporária para ${user.nome}: ${generatedPassword}`, 'success');
-    } catch (err) {
-      console.error(err);
-      setFeedback(err.message || 'Erro ao resetar senha.', 'error');
+      setFeedback(err.message || String(err), true);
     }
   }
-}
 
-initProtectedPage('Usuários e Acessos', renderPage);
+  window.ADMIN_USUARIOS = {
+    init,
+    reload: loadUsers,
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const root = document.getElementById(rootId);
+    if (root) init();
+  });
+})();
