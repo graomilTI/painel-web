@@ -4,7 +4,6 @@ import { initProtectedPage } from './pageInit.js';
 // assets/js/admin-usuarios.js
 (function () {
   const state = { users: [], modulosCatalogo: [], editingUserId: null };
-  const rootId = "adminUsuariosApp";
   const qs = (s, e = document) => e.querySelector(s);
   const qsa = (s, e = document) => Array.from(e.querySelectorAll(s));
 
@@ -17,20 +16,43 @@ import { initProtectedPage } from './pageInit.js';
       .replaceAll("'", "&#039;");
   }
 
+  function extractAccessToken(sessionLike) {
+    return (
+      sessionLike?.access_token ||
+      sessionLike?.session?.access_token ||
+      sessionLike?.data?.session?.access_token ||
+      null
+    );
+  }
+
   async function api(url, options = {}) {
     const session = await getSession();
-    const token = session?.access_token;
+    const token = extractAccessToken(session);
 
     if (!token) {
+      console.error("SESSION DEBUG: sem token", session);
       throw new Error("Sessão expirada. Faça login novamente.");
     }
+
+    const cleanToken = String(token).trim();
+
+    if (cleanToken.split(".").length !== 3) {
+      console.error("SESSION DEBUG:", session);
+      console.error("TOKEN DEBUG:", cleanToken);
+      console.error("TOKEN PARTS:", cleanToken.split(".").length);
+      throw new Error("Token de sessão inválido.");
+    }
+
+    console.log("SESSION DEBUG:", session);
+    console.log("TOKEN DEBUG:", cleanToken);
+    console.log("TOKEN PARTS:", cleanToken.split(".").length);
 
     const res = await fetch(url, {
       ...options,
       headers: {
         ...(options.body ? { "Content-Type": "application/json" } : {}),
         ...(options.headers || {}),
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${cleanToken}`,
       },
     });
 
@@ -51,7 +73,7 @@ import { initProtectedPage } from './pageInit.js';
 
   function renderBase(content) {
     content.innerHTML = `
-      <div id="${rootId}">
+      <div id="adminUsuariosApp">
         <div class="au-wrap">
           <div class="au-header">
             <div>
