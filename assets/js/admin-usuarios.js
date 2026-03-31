@@ -1,11 +1,6 @@
 // admin-usuarios.js
-// Frontend Admin Usuários
-//
-// Espera existir no HTML:
-//
-// <div id="adminUsuariosApp"></div>
-//
-// Este arquivo renderiza a tela inteira dentro desse container.
+// Compatível com páginas que usam #adminUsuariosApp
+// e também com o template padrão que usa #pageContent.
 
 (function () {
   const state = {
@@ -14,7 +9,7 @@
     editingUserId: null,
   };
 
-  const rootId = "adminUsuariosApp";
+  const rootCandidates = ["adminUsuariosApp", "pageContent"];
 
   function qs(sel, el = document) {
     return el.querySelector(sel);
@@ -31,6 +26,30 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+
+  function getRootHost() {
+    for (const id of rootCandidates) {
+      const el = document.getElementById(id);
+      if (el) return el;
+    }
+    return null;
+  }
+
+  function ensureRoot() {
+    let appRoot = document.getElementById("adminUsuariosApp");
+    if (appRoot) return appRoot;
+
+    const host = getRootHost();
+    if (!host) return null;
+
+    if (host.id === "adminUsuariosApp") return host;
+
+    appRoot = document.createElement("div");
+    appRoot.id = "adminUsuariosApp";
+    host.innerHTML = "";
+    host.appendChild(appRoot);
+    return appRoot;
   }
 
   async function api(url, options = {}) {
@@ -58,9 +77,17 @@
     return data;
   }
 
+  function toBoolStatus(user) {
+    if (typeof user?.ativo === "boolean") return user.ativo;
+    return String(user?.status || "ativo").toLowerCase() === "ativo";
+  }
+
   function renderBase() {
-    const root = document.getElementById(rootId);
+    const root = ensureRoot();
     if (!root) return;
+
+    const pageTitle = document.getElementById("pageTitle");
+    if (pageTitle) pageTitle.textContent = "Admin - Usuários";
 
     root.innerHTML = `
       <div class="au-wrap">
@@ -153,219 +180,36 @@
       </div>
 
       <style>
-        .au-wrap {
-          padding: 16px;
-          color: #e5e7eb;
-        }
-
-        .au-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          margin-bottom: 16px;
-        }
-
-        .au-title {
-          margin: 0;
-          font-size: 24px;
-        }
-
-        .au-subtitle {
-          opacity: 0.8;
-          margin-top: 4px;
-        }
-
-        .au-toolbar {
-          margin-bottom: 12px;
-        }
-
-        .au-input {
-          width: 100%;
-          box-sizing: border-box;
-          border: 1px solid #334155;
-          background: #0f172a;
-          color: #e5e7eb;
-          border-radius: 10px;
-          padding: 10px 12px;
-          outline: none;
-        }
-
-        .au-input:focus {
-          border-color: #166534;
-          box-shadow: 0 0 0 2px rgba(22,101,52,.25);
-        }
-
-        .au-btn {
-          border: 0;
-          border-radius: 10px;
-          padding: 10px 14px;
-          cursor: pointer;
-        }
-
-        .au-btn-primary {
-          background: #166534;
-          color: #fff;
-        }
-
-        .au-btn-light {
-          background: #1e293b;
-          color: #e5e7eb;
-        }
-
-        .au-feedback {
-          margin-bottom: 12px;
-          padding: 10px 12px;
-          border-radius: 10px;
-          background: #1e293b;
-          border: 1px solid #334155;
-        }
-
-        .au-table-wrap {
-          overflow: auto;
-          background: #0b1220;
-          border: 1px solid #1f2937;
-          border-radius: 14px;
-        }
-
-        .au-table {
-          width: 100%;
-          border-collapse: collapse;
-          min-width: 980px;
-        }
-
-        .au-table th,
-        .au-table td {
-          text-align: left;
-          padding: 12px;
-          border-bottom: 1px solid #1f2937;
-          vertical-align: top;
-        }
-
-        .au-badge {
-          display: inline-block;
-          border-radius: 999px;
-          padding: 4px 10px;
-          font-size: 12px;
-          font-weight: 600;
-        }
-
-        .au-badge-on {
-          background: rgba(22, 101, 52, .25);
-          color: #86efac;
-        }
-
-        .au-badge-off {
-          background: rgba(127, 29, 29, .25);
-          color: #fca5a5;
-        }
-
-        .au-mod-chip {
-          display: inline-block;
-          padding: 4px 8px;
-          margin: 2px;
-          border-radius: 999px;
-          background: #1e293b;
-          border: 1px solid #334155;
-          font-size: 12px;
-        }
-
-        .au-actions-row {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .au-modal {
-          position: fixed;
-          inset: 0;
-          background: rgba(2,6,23,.72);
-          z-index: 9999;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 20px;
-        }
-
-        .au-modal-card {
-          width: min(920px, 100%);
-          max-height: 92vh;
-          overflow: auto;
-          background: #0b1220;
-          border: 1px solid #1f2937;
-          border-radius: 18px;
-          padding: 18px;
-        }
-
-        .au-modal-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 12px;
-          margin-bottom: 14px;
-        }
-
-        .au-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 14px;
-        }
-
-        .au-field {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-
-        .au-field-full {
-          grid-column: 1 / -1;
-        }
-
-        .au-help {
-          opacity: 0.75;
-          font-size: 12px;
-        }
-
-        .au-modulos {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 8px;
-          border: 1px solid #1f2937;
-          border-radius: 12px;
-          padding: 12px;
-          background: #0f172a;
-        }
-
-        .au-mod-item {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 10px;
-          border: 1px solid #1f2937;
-          border-radius: 10px;
-          background: #111827;
-        }
-
-        .au-modal-footer {
-          margin-top: 16px;
-          display: flex;
-          justify-content: flex-end;
-        }
-
-        @media (max-width: 900px) {
-          .au-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .au-modulos {
-            grid-template-columns: 1fr;
-          }
-
-          .au-header {
-            flex-direction: column;
-            align-items: stretch;
-          }
-        }
+        .au-wrap { padding: 16px; color: #e5e7eb; }
+        .au-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+        .au-title { margin:0; font-size:24px; }
+        .au-subtitle { opacity:.8; margin-top:4px; }
+        .au-toolbar { margin-bottom:12px; }
+        .au-input { width:100%; box-sizing:border-box; border:1px solid #334155; background:#0f172a; color:#e5e7eb; border-radius:10px; padding:10px 12px; outline:none; }
+        .au-input:focus { border-color:#166534; box-shadow:0 0 0 2px rgba(22,101,52,.25); }
+        .au-btn { border:0; border-radius:10px; padding:10px 14px; cursor:pointer; }
+        .au-btn-primary { background:#166534; color:#fff; }
+        .au-btn-light { background:#1e293b; color:#e5e7eb; }
+        .au-feedback { margin-bottom:12px; padding:10px 12px; border-radius:10px; background:#1e293b; border:1px solid #334155; }
+        .au-table-wrap { overflow:auto; background:#0b1220; border:1px solid #1f2937; border-radius:14px; }
+        .au-table { width:100%; border-collapse:collapse; min-width:980px; }
+        .au-table th, .au-table td { text-align:left; padding:12px; border-bottom:1px solid #1f2937; vertical-align:top; }
+        .au-badge { display:inline-block; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:600; }
+        .au-badge-on { background:rgba(22,101,52,.25); color:#86efac; }
+        .au-badge-off { background:rgba(127,29,29,.25); color:#fca5a5; }
+        .au-mod-chip { display:inline-block; padding:4px 8px; margin:2px; border-radius:999px; background:#1e293b; border:1px solid #334155; font-size:12px; }
+        .au-actions-row { display:flex; flex-wrap:wrap; gap:8px; }
+        .au-modal { position:fixed; inset:0; background:rgba(2,6,23,.72); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px; }
+        .au-modal-card { width:min(920px,100%); max-height:92vh; overflow:auto; background:#0b1220; border:1px solid #1f2937; border-radius:18px; padding:18px; }
+        .au-modal-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
+        .au-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .au-field { display:flex; flex-direction:column; gap:6px; }
+        .au-field-full { grid-column:1 / -1; }
+        .au-help { opacity:.75; font-size:12px; }
+        .au-modulos { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; border:1px solid #1f2937; border-radius:12px; padding:12px; background:#0f172a; }
+        .au-mod-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid #1f2937; border-radius:10px; background:#111827; }
+        .au-modal-footer { margin-top:16px; display:flex; justify-content:flex-end; }
+        @media (max-width:900px) { .au-grid { grid-template-columns:1fr; } .au-modulos { grid-template-columns:1fr; } .au-header { flex-direction:column; align-items:stretch; } }
       </style>
     `;
 
@@ -378,13 +222,11 @@
   function setFeedback(msg, isError = false) {
     const el = qs("#auFeedback");
     if (!el) return;
-
     if (!msg) {
       el.style.display = "none";
       el.innerHTML = "";
       return;
     }
-
     el.style.display = "block";
     el.style.borderColor = isError ? "#7f1d1d" : "#334155";
     el.style.background = isError ? "rgba(127,29,29,.15)" : "#1e293b";
@@ -394,18 +236,14 @@
   function renderModules(selectedIds = []) {
     const container = qs("#auModulosContainer");
     if (!container) return;
-
-    container.innerHTML = state.modulosCatalogo
-      .map((m) => {
-        const checked = selectedIds.includes(m.id) ? "checked" : "";
-        return `
-          <label class="au-mod-item">
-            <input type="checkbox" value="${escapeHtml(m.id)}" ${checked} />
-            <span>${escapeHtml(m.nome || m.codigo || "Módulo")}</span>
-          </label>
-        `;
-      })
-      .join("");
+    container.innerHTML = state.modulosCatalogo.map((m) => {
+      const checked = selectedIds.includes(m.id) ? "checked" : "";
+      return `
+        <label class="au-mod-item">
+          <input type="checkbox" value="${escapeHtml(m.id)}" ${checked} />
+          <span>${escapeHtml(m.nome || m.codigo || "Módulo")}</span>
+        </label>`;
+    }).join("");
   }
 
   function renderTable() {
@@ -413,67 +251,38 @@
     if (!tbody) return;
 
     const filtro = (qs("#auFiltro")?.value || "").trim().toLowerCase();
-
     const items = state.users.filter((u) => {
-      const text = [
-        u.nome || "",
-        u.email || "",
-        u.setor || "",
-        ...(u.modulos || []).map((m) => m.nome || m.codigo || ""),
-      ]
-        .join(" ")
-        .toLowerCase();
-
+      const text = [u.nome || "", u.email || "", u.setor || "", ...(u.modulos || []).map((m) => m.nome || m.codigo || "")].join(" ").toLowerCase();
       return !filtro || text.includes(filtro);
     });
 
-    tbody.innerHTML = items
-      .map((u) => {
-        const statusClass = u.ativo ? "au-badge-on" : "au-badge-off";
-        const statusLabel = u.ativo ? "Ativo" : "Inativo";
-        const modulosHtml = (u.modulos || []).length
-          ? u.modulos
-              .map(
-                (m) =>
-                  `<span class="au-mod-chip">${escapeHtml(m.nome || m.codigo || "")}</span>`
-              )
-              .join("")
-          : `<span style="opacity:.7;">Sem módulos</span>`;
+    tbody.innerHTML = items.map((u) => {
+      const ativo = toBoolStatus(u);
+      const statusClass = ativo ? "au-badge-on" : "au-badge-off";
+      const statusLabel = ativo ? "Ativo" : "Inativo";
+      const modulosHtml = (u.modulos || []).length
+        ? u.modulos.map((m) => `<span class="au-mod-chip">${escapeHtml(m.nome || m.codigo || "")}</span>`).join("")
+        : `<span style="opacity:.7;">Sem módulos</span>`;
+      return `
+        <tr>
+          <td>${escapeHtml(u.nome || "")}</td>
+          <td>${escapeHtml(u.email || "")}</td>
+          <td>${escapeHtml(u.setor || "")}</td>
+          <td><span class="au-badge ${statusClass}">${statusLabel}</span></td>
+          <td>${modulosHtml}</td>
+          <td>
+            <div class="au-actions-row">
+              <button class="au-btn au-btn-light" data-action="edit" data-id="${escapeHtml(u.id)}">Editar</button>
+              <button class="au-btn au-btn-light" data-action="toggle" data-id="${escapeHtml(u.id)}" data-ativo="${ativo ? "false" : "true"}">${ativo ? "Desativar" : "Ativar"}</button>
+              <button class="au-btn au-btn-light" data-action="reset" data-id="${escapeHtml(u.id)}">Reset senha</button>
+            </div>
+          </td>
+        </tr>`;
+    }).join("");
 
-        return `
-          <tr>
-            <td>${escapeHtml(u.nome || "")}</td>
-            <td>${escapeHtml(u.email || "")}</td>
-            <td>${escapeHtml(u.setor || "")}</td>
-            <td><span class="au-badge ${statusClass}">${statusLabel}</span></td>
-            <td>${modulosHtml}</td>
-            <td>
-              <div class="au-actions-row">
-                <button class="au-btn au-btn-light" data-action="edit" data-id="${escapeHtml(u.id)}">Editar</button>
-                <button class="au-btn au-btn-light" data-action="toggle" data-id="${escapeHtml(u.id)}" data-ativo="${u.ativo ? "false" : "true"}">
-                  ${u.ativo ? "Desativar" : "Ativar"}
-                </button>
-                <button class="au-btn au-btn-light" data-action="reset" data-id="${escapeHtml(u.id)}">Reset senha</button>
-              </div>
-            </td>
-          </tr>
-        `;
-      })
-      .join("");
-
-    qsa("[data-action='edit']", tbody).forEach((btn) => {
-      btn.addEventListener("click", () => editUser(btn.dataset.id));
-    });
-
-    qsa("[data-action='toggle']", tbody).forEach((btn) => {
-      btn.addEventListener("click", () =>
-        toggleStatus(btn.dataset.id, btn.dataset.ativo === "true")
-      );
-    });
-
-    qsa("[data-action='reset']", tbody).forEach((btn) => {
-      btn.addEventListener("click", () => resetPassword(btn.dataset.id));
-    });
+    qsa("[data-action='edit']", tbody).forEach((btn) => btn.addEventListener("click", () => editUser(btn.dataset.id)));
+    qsa("[data-action='toggle']", tbody).forEach((btn) => btn.addEventListener("click", () => toggleStatus(btn.dataset.id, btn.dataset.ativo === "true")));
+    qsa("[data-action='reset']", tbody).forEach((btn) => btn.addEventListener("click", () => resetPassword(btn.dataset.id)));
   }
 
   async function loadUsers() {
@@ -494,21 +303,20 @@
 
   function openModal(user = null, selectedModuleIds = []) {
     state.editingUserId = user?.id || null;
-
     qs("#auModalTitle").textContent = user ? "Editar usuário" : "Novo usuário";
     qs("#auUserId").value = user?.id || "";
     qs("#auNome").value = user?.nome || "";
     qs("#auEmail").value = user?.email || "";
     qs("#auSetor").value = user?.setor || "";
-    qs("#auAtivo").value = String(user?.ativo ?? true);
+    qs("#auAtivo").value = String(toBoolStatus(user ?? { status: "ativo" }));
     qs("#auPassword").value = "";
-
     renderModules(selectedModuleIds);
     qs("#auModal").style.display = "flex";
   }
 
   function closeModal() {
-    qs("#auModal").style.display = "none";
+    const modal = qs("#auModal");
+    if (modal) modal.style.display = "none";
   }
 
   function getSelectedModules() {
@@ -520,7 +328,6 @@
       setFeedback("");
       const user = state.users.find((x) => x.id === userId);
       if (!user) throw new Error("Usuário não encontrado.");
-
       const selectedModuleIds = await loadUserModuleIds(userId);
       openModal(user, selectedModuleIds);
     } catch (err) {
@@ -533,7 +340,7 @@
       setFeedback("Salvando status...");
       await api("/api/admin/users/toggle-status", {
         method: "POST",
-        body: JSON.stringify({ id: userId, ativo }),
+        body: JSON.stringify({ id: userId, ativo, status: ativo ? "ativo" : "inativo" }),
       });
       setFeedback("Status atualizado com sucesso.");
       await loadUsers();
@@ -545,7 +352,6 @@
   async function resetPassword(userId) {
     const senha = window.prompt("Digite a nova senha:");
     if (!senha) return;
-
     try {
       setFeedback("Redefinindo senha...");
       await api("/api/admin/users/reset-password", {
@@ -560,7 +366,6 @@
 
   async function onSubmitForm(ev) {
     ev.preventDefault();
-
     const id = qs("#auUserId").value.trim();
     const nome = qs("#auNome").value.trim();
     const email = qs("#auEmail").value.trim();
@@ -575,12 +380,12 @@
       email,
       setor,
       ativo,
+      status: ativo ? "ativo" : "inativo",
       modulos,
     };
 
     const isCreate = !id;
     if (password) payload.password = password;
-
     if (isCreate && !password) {
       setFeedback("No cadastro, a senha é obrigatória.", true);
       return;
@@ -588,12 +393,10 @@
 
     try {
       setFeedback(isCreate ? "Criando usuário..." : "Salvando usuário...");
-
       await api(isCreate ? "/api/admin/users/create" : "/api/admin/users/update", {
         method: "POST",
         body: JSON.stringify(payload),
       });
-
       closeModal();
       setFeedback(isCreate ? "Usuário criado com sucesso." : "Usuário atualizado com sucesso.");
       await loadUsers();
@@ -614,13 +417,11 @@
     }
   }
 
-  window.ADMIN_USUARIOS = {
-    init,
-    reload: loadUsers,
-  };
+  window.ADMIN_USUARIOS = { init, reload: loadUsers };
 
-  document.addEventListener("DOMContentLoaded", () => {
-    const root = document.getElementById(rootId);
-    if (root) init();
-  });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();
