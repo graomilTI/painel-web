@@ -1,3 +1,4 @@
+
 import { initProtectedPage } from './pageInit.js';
 import { getSession } from './auth.js';
 import { toApiUrl, toPanelUrl } from './paths.js';
@@ -5,6 +6,7 @@ import { toApiUrl, toPanelUrl } from './paths.js';
 const state = {
   users: [],
   profiles: [],
+  modulesCatalog: [],
   collaboratorResults: [],
   selectedCollaborator: null,
   editingUserId: null,
@@ -91,8 +93,8 @@ function renderPage(content, userContext) {
         <div class="eyebrow">Administração</div>
         <h2>Usuários e Acessos</h2>
         <p>
-          Cadastre logins a partir da base diária de colaboradores, defina o perfil
-          e controle o status de acesso sem precisar criar usuários via SQL.
+          Cadastre logins a partir da base diária de colaboradores, defina o perfil,
+          ajuste o setor e libere módulos sem precisar criar usuários via SQL.
         </p>
       </div>
       <div class="hero-badge-wrap">
@@ -123,7 +125,7 @@ function renderPage(content, userContext) {
     <article class="card mt-16">
       <div class="users-toolbar">
         <div class="users-toolbar-left">
-          <input id="filtroUsuario" class="users-input" type="text" placeholder="Buscar por nome, e-mail, empresa ou supervisão" />
+          <input id="filtroUsuario" class="users-input" type="text" placeholder="Buscar por nome, e-mail, empresa, setor ou supervisão" />
           <select id="filtroPerfil" class="users-select">
             <option value="">Todos os perfis</option>
           </select>
@@ -150,26 +152,28 @@ function renderPage(content, userContext) {
               <th>E-mail</th>
               <th>Perfil</th>
               <th>Status</th>
+              <th>Setor</th>
               <th>Empresa</th>
               <th>Coordenação</th>
               <th>Supervisão</th>
+              <th>Módulos</th>
               <th>Criado em</th>
-              <th style="width: 220px;">Ações</th>
+              <th style="width: 250px;">Ações</th>
             </tr>
           </thead>
           <tbody id="usersTableBody">
-            <tr><td colspan="9">Carregando usuários...</td></tr>
+            <tr><td colspan="11">Carregando usuários...</td></tr>
           </tbody>
         </table>
       </div>
     </article>
 
     <div class="users-modal-backdrop hidden" id="userModalBackdrop">
-      <div class="users-modal">
+      <div class="users-modal users-modal-lg">
         <div class="users-modal-header">
           <div>
             <h3 id="userModalTitle">Novo usuário</h3>
-            <p class="muted">Selecione o colaborador da base diária e defina o perfil de acesso.</p>
+            <p class="muted">Selecione o colaborador da base diária, defina o perfil, ajuste o setor e libere os módulos.</p>
           </div>
           <button class="btn btn-secondary" type="button" id="btnFecharModal">Fechar</button>
         </div>
@@ -221,9 +225,20 @@ function renderPage(content, userContext) {
             </select>
           </div>
 
-          <div id="passwordWrap" class="users-form-col-span-2">
+          <div>
+            <label class="users-label" for="setorUsuario">Setor</label>
+            <input id="setorUsuario" class="users-input" type="text" placeholder="Ex.: Administração, RH, Compras" />
+          </div>
+
+          <div id="passwordWrap">
             <label class="users-label" for="senhaTemporaria">Senha temporária</label>
             <input id="senhaTemporaria" class="users-input" type="text" placeholder="Deixe em branco para gerar automática" />
+          </div>
+
+          <div class="users-form-col-span-2">
+            <label class="users-label">Módulos liberados</label>
+            <div id="modulosChecklist" class="users-modules-grid"></div>
+            <div class="muted users-hint">Selecione os módulos que este usuário poderá visualizar no painel.</div>
           </div>
         </div>
 
@@ -244,15 +259,18 @@ function renderPage(content, userContext) {
 
 async function loadInitialData() {
   setFeedback('Carregando dados do módulo...');
-  const [profilesPayload, usersPayload] = await Promise.all([
+  const [profilesPayload, usersPayload, modulesPayload] = await Promise.all([
     apiFetch('admin/users/profiles'),
     apiFetch('admin/users/list'),
+    apiFetch('admin/users/modules'),
   ]);
 
   state.profiles = profilesPayload.items || [];
   state.users = usersPayload.items || [];
+  state.modulesCatalog = modulesPayload.items || [];
 
   fillProfileSelects();
+  renderModulesChecklist([]);
   renderUsersTable();
   setFeedback(`${state.users.length} usuário(s) carregado(s).`, 'success');
 }
@@ -280,12 +298,55 @@ function fillProfileSelects() {
   });
 }
 
+function normalizeModuleCodes(codes = []) {
+  return [...new Set((Array.isArray(codes) ? codes : []).map((code) => String(code || '').trim()).filter(Boolean))];
+}
+
+function getSelectedModuleCodes() {
+  return Array.from(document.querySelectorAll('input[name="usuarioModulo"]:checked'))
+    .map((el) => el.value)
+    .filter(Boolean);
+}
+
+function renderModulesChecklist(selectedCodes = []) {
+  const wrap = document.getElementById('modulosChecklist');
+  if (!wrap) return;
+
+  const selected = new Set(normalizeModuleCodes(selectedCodes));
+  const grouped = state.modulesCatalog.reduce((acc, item) => {
+    const group = item.grupo || 'OUTROS';
+    acc[group] ||= [];
+    acc[group].push(item);
+    return acc;
+  }, {});
+
+  const groups = Object.entries(grouped);
+  if (!groups.length) {
+    wrap.innerHTML = '<div class="muted">Nenhum módulo cadastrado.</div>';
+    return;
+  }
+
+  wrap.innerHTML = groups.map(([group, items]) => `
+    <section class="users-module-group">
+      <h4>${escapeHtml(group)}</h4>
+      <div class="users-module-items">
+        ${items.map((item) => `
+          <label class="users-module-item">
+            <input type="checkbox" name="usuarioModulo" value="${escapeHtml(item.codigo)}" ${selected.has(item.codigo) ? 'checked' : ''} />
+            <span>${escapeHtml(item.nome)}</span>
+          </label>
+        `).join('')}
+      </div>
+    </section>
+  `).join('');
+}
+
 function applyFilters() {
   const q = (document.getElementById('filtroUsuario')?.value || '').trim().toLowerCase();
   const perfil = (document.getElementById('filtroPerfil')?.value || '').trim().toLowerCase();
   const status = (document.getElementById('filtroStatus')?.value || '').trim().toLowerCase();
 
-  const filtered = state.users.filter((user) => {
+  return state.users.filter((user) => {
     const haystack = [
       user.nome,
       user.email,
@@ -294,6 +355,8 @@ function applyFilters() {
       user.supervisao,
       user.perfil_nome,
       user.perfil_codigo,
+      user.setor,
+      (user.modulo_nomes || []).join(' '),
     ].join(' ').toLowerCase();
 
     const qOk = !q || haystack.includes(q);
@@ -301,8 +364,6 @@ function applyFilters() {
     const statusOk = !status || String(user.status || '').toLowerCase() === status;
     return qOk && perfilOk && statusOk;
   });
-
-  return filtered;
 }
 
 function renderUsersTable() {
@@ -320,29 +381,36 @@ function renderUsersTable() {
   if (mastersEl) mastersEl.textContent = String(metrics.masters);
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="9">Nenhum usuário encontrado com os filtros aplicados.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11">Nenhum usuário encontrado com os filtros aplicados.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = filtered.map((user) => `
-    <tr>
-      <td>${escapeHtml(user.nome)}</td>
-      <td>${escapeHtml(user.email)}</td>
-      <td>${escapeHtml(user.perfil_nome || user.perfil_codigo || '-')}</td>
-      <td><span class="users-status ${String(user.status).toLowerCase() === 'ativo' ? 'is-active' : 'is-inactive'}">${escapeHtml(user.status || '-')}</span></td>
-      <td>${escapeHtml(user.empresa || '-')}</td>
-      <td>${escapeHtml(user.coordenacao || '-')}</td>
-      <td>${escapeHtml(user.supervisao || '-')}</td>
-      <td>${escapeHtml((user.created_at || '').slice(0, 10) || '-')}</td>
-      <td>
-        <div class="users-actions">
-          <button class="btn btn-secondary users-action-btn" type="button" data-action="edit" data-id="${user.id}">Editar</button>
-          <button class="btn btn-secondary users-action-btn" type="button" data-action="toggle" data-id="${user.id}">${String(user.status).toLowerCase() === 'ativo' ? 'Inativar' : 'Ativar'}</button>
-          <button class="btn btn-secondary users-action-btn" type="button" data-action="reset" data-id="${user.id}">Resetar senha</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = filtered.map((user) => {
+    const moduleSummary = Array.isArray(user.modulo_nomes) && user.modulo_nomes.length
+      ? user.modulo_nomes.slice(0, 3).map(escapeHtml).join(', ') + (user.modulo_nomes.length > 3 ? ` +${user.modulo_nomes.length - 3}` : '')
+      : '-';
+    return `
+      <tr>
+        <td>${escapeHtml(user.nome)}</td>
+        <td>${escapeHtml(user.email)}</td>
+        <td>${escapeHtml(user.perfil_nome || user.perfil_codigo || '-')}</td>
+        <td><span class="users-status ${String(user.status).toLowerCase() === 'ativo' ? 'is-active' : 'is-inactive'}">${escapeHtml(user.status || '-')}</span></td>
+        <td>${escapeHtml(user.setor || '-')}</td>
+        <td>${escapeHtml(user.empresa || '-')}</td>
+        <td>${escapeHtml(user.coordenacao || '-')}</td>
+        <td>${escapeHtml(user.supervisao || '-')}</td>
+        <td>${moduleSummary}</td>
+        <td>${escapeHtml((user.created_at || '').slice(0, 10) || '-')}</td>
+        <td>
+          <div class="users-actions">
+            <button class="btn btn-secondary users-action-btn" type="button" data-action="edit" data-id="${user.id}">Editar</button>
+            <button class="btn btn-secondary users-action-btn" type="button" data-action="toggle" data-id="${user.id}">${String(user.status).toLowerCase() === 'ativo' ? 'Inativar' : 'Ativar'}</button>
+            <button class="btn btn-secondary users-action-btn" type="button" data-action="reset" data-id="${user.id}">Resetar senha</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function bindPageEvents() {
@@ -370,7 +438,7 @@ async function refreshUsers() {
   setFeedback(`${state.users.length} usuário(s) carregado(s).`, 'success');
 }
 
-function openModal(user = null) {
+async function openModal(user = null) {
   state.editingUserId = user?.id || null;
   const backdrop = document.getElementById('userModalBackdrop');
   const title = document.getElementById('userModalTitle');
@@ -400,8 +468,21 @@ function openModal(user = null) {
     }
     document.getElementById('perfilCodigo').value = user.perfil_codigo || '';
     document.getElementById('statusAcesso').value = user.status || 'ativo';
+    document.getElementById('setorUsuario').value = user.setor || '';
+
+    try {
+      const payload = await apiFetch(`admin/users/access?usuario_id=${encodeURIComponent(user.id)}`);
+      renderModulesChecklist(payload.item?.modulo_codigos || []);
+      if (!document.getElementById('setorUsuario').value && payload.item?.setor) {
+        document.getElementById('setorUsuario').value = payload.item.setor;
+      }
+    } catch (err) {
+      console.error(err);
+      setModalFeedback(err.message || 'Erro ao carregar acessos do usuário.', 'error');
+    }
   } else if (searchInput) {
     searchInput.disabled = false;
+    renderModulesChecklist([]);
   }
 
   backdrop?.classList.remove('hidden');
@@ -425,7 +506,7 @@ function resetForm() {
     searchInput.disabled = false;
   }
 
-  ['colaboradorNome','colaboradorEmail','colaboradorEmpresa','colaboradorCoordenacao','colaboradorSupervisao','senhaTemporaria']
+  ['colaboradorNome','colaboradorEmail','colaboradorEmpresa','colaboradorCoordenacao','colaboradorSupervisao','senhaTemporaria','setorUsuario']
     .forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.value = '';
@@ -436,6 +517,7 @@ function resetForm() {
     document.getElementById('perfilCodigo').value = state.profiles[0].codigo;
   }
 
+  renderModulesChecklist([]);
   renderCollaboratorResults();
 }
 
@@ -501,12 +583,18 @@ function setSelectedCollaborator(item) {
   document.getElementById('colaboradorEmpresa').value = item.empresa || '';
   document.getElementById('colaboradorCoordenacao').value = item.coordenacao || '';
   document.getElementById('colaboradorSupervisao').value = item.supervisao || '';
+  const setorInput = document.getElementById('setorUsuario');
+  if (setorInput && !setorInput.value) {
+    setorInput.value = item.coordenacao || item.empresa || '';
+  }
 }
 
 async function submitForm() {
   const perfilCodigo = document.getElementById('perfilCodigo')?.value;
   const status = document.getElementById('statusAcesso')?.value || 'ativo';
   const senhaTemporaria = document.getElementById('senhaTemporaria')?.value?.trim() || null;
+  const setor = document.getElementById('setorUsuario')?.value?.trim() || null;
+  const moduloCodigos = normalizeModuleCodes(getSelectedModuleCodes());
 
   if (!state.editingUserId && !state.selectedCollaborator?.id) {
     setModalFeedback('Selecione um colaborador da base antes de salvar.', 'error');
@@ -523,9 +611,11 @@ async function submitForm() {
       await apiFetch('admin/users/update', {
         method: 'POST',
         body: JSON.stringify({
-          usuario_id: state.editingUserId,
+          id: state.editingUserId,
           perfil_codigo: perfilCodigo,
           status,
+          setor,
+          modulo_codigos: moduloCodigos,
         }),
       });
       setFeedback('Usuário atualizado com sucesso.', 'success');
@@ -537,11 +627,14 @@ async function submitForm() {
           perfil_codigo: perfilCodigo,
           status,
           senha_temporaria: senhaTemporaria,
+          setor,
+          modulo_codigos: moduloCodigos,
         }),
       });
 
-      const message = payload.senha_temporaria
-        ? `Usuário criado com sucesso. Senha temporária: ${payload.senha_temporaria}`
+      const generatedPassword = payload.temp_password || payload.senha_temporaria;
+      const message = generatedPassword
+        ? `Usuário criado com sucesso. Senha temporária: ${generatedPassword}`
         : 'Usuário criado com sucesso.';
       setFeedback(message, 'success');
     }
@@ -564,7 +657,7 @@ async function onTableAction(event) {
   if (!user) return;
 
   if (action === 'edit') {
-    openModal(user);
+    await openModal(user);
     return;
   }
 
@@ -576,8 +669,7 @@ async function onTableAction(event) {
       await apiFetch('admin/users/toggle-status', {
         method: 'POST',
         body: JSON.stringify({
-          usuario_id: user.id,
-          status: novoStatus,
+          id: user.id,
         }),
       });
       setFeedback(`Status de ${user.nome} alterado para ${novoStatus}.`, 'success');
@@ -596,10 +688,11 @@ async function onTableAction(event) {
       const payload = await apiFetch('admin/users/reset-password', {
         method: 'POST',
         body: JSON.stringify({
-          usuario_id: user.id,
+          id: user.id,
         }),
       });
-      setFeedback(`Nova senha temporária para ${user.nome}: ${payload.senha_temporaria}`, 'success');
+      const generatedPassword = payload.temp_password || payload.senha_temporaria;
+      setFeedback(`Nova senha temporária para ${user.nome}: ${generatedPassword}`, 'success');
     } catch (err) {
       console.error(err);
       setFeedback(err.message || 'Erro ao resetar senha.', 'error');
