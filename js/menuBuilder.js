@@ -1,3 +1,4 @@
+import { toPanelUrl } from './paths.js';
 import { PANEL_MENU } from './menuConfig.js';
 
 export function buildAllowedMenu(userContext) {
@@ -38,10 +39,10 @@ export function renderMenu(container, menuSections, currentPath = '') {
     section.items.forEach((item) => {
       const li = document.createElement('li');
       const link = document.createElement('a');
-      link.href = item.path;
+      link.href = toPanelUrl(item.path);
       link.textContent = item.label;
 
-      const normalizedItemPath = item.path.replace(/^\./, '').replace(/\/+/g, '/');
+      const normalizedItemPath = ('/' + String(item.path || '').replace(/^\.\//, '').replace(/^\//, '')).replace(/\/+/g, '/');
       if (
         normalizedCurrent.endsWith(normalizedItemPath) ||
         normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, ''))

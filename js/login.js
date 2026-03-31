@@ -21,7 +21,7 @@ async function redirectIfSessionExists() {
     const session = await getSession();
     if (session?.user) {
       feedback.textContent = 'Sessão ativa encontrada. Redirecionando...';
-      window.location.replace(toPanelUrl('dashboard.html'));
+      window.location.replace(toPanelUrl('dashboard'));
     }
   } catch (err) {
     console.error(err);
@@ -46,7 +46,7 @@ form?.addEventListener('submit', async (e) => {
 
     saveUserContext(context);
     feedback.textContent = 'Login realizado com sucesso.';
-    window.location.replace(toPanelUrl('dashboard.html'));
+    window.location.replace(toPanelUrl('dashboard'));
   } catch (err) {
     console.error(err);
     feedback.textContent = err.message || 'Erro ao realizar login.';

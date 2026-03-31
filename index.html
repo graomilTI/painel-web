@@ -25,7 +25,7 @@
         const session = await getSession();
         if (session?.user) {
           feedback.textContent = 'Sessão encontrada. Redirecionando para o dashboard...';
-          window.location.replace(toPanelUrl('dashboard.html'));
+          window.location.replace(toPanelUrl('dashboard'));
           return;
         }
         feedback.textContent = 'Nenhuma sessão ativa. Redirecionando para o login...';

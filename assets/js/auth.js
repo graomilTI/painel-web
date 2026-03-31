@@ -1,4 +1,4 @@
-// auth.js
+import { toPanelUrl } from '../../js/paths.js'
 import { supabase } from './supabaseClient.js'
 
 export async function login(email, password) {
@@ -8,7 +8,7 @@ export async function login(email, password) {
 
 export async function logout() {
   await supabase.auth.signOut()
-  window.location.href = "/login.html"
+  window.location.href = toPanelUrl("login.html")
 }
 
 export async function getUser() {
