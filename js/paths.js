@@ -17,3 +17,18 @@ export function toPanelUrl(target = '') {
 
   return `${base}/${normalized}`.replace(/\/+/g, '/');
 }
+
+export function getApiBaseUrl(origin = window.location.origin) {
+  const normalizedOrigin = String(origin || '').toLowerCase();
+  const isPrimaryDomain =
+    normalizedOrigin.includes('grao1000.com.br') ||
+    normalizedOrigin.includes('www.grao1000.com.br');
+
+  return isPrimaryDomain ? '/api' : 'https://grao1000.com.br/api';
+}
+
+export function toApiUrl(path = '') {
+  const normalizedPath = String(path || '').replace(/^\/+/, '');
+  const apiBase = getApiBaseUrl();
+  return `${apiBase}/${normalizedPath}`.replace(/([^:]\/)\/+/g, '$1');
+}

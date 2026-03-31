@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { getSession } from './auth.js';
-import { toPanelUrl } from './paths.js';
+import { toApiUrl, toPanelUrl } from './paths.js';
 
 const state = {
   users: [],
@@ -46,7 +46,7 @@ async function apiFetch(path, options = {}) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(path, {
+  const response = await fetch(toApiUrl(path), {
     ...options,
     headers,
   });
@@ -245,8 +245,8 @@ function renderPage(content, userContext) {
 async function loadInitialData() {
   setFeedback('Carregando dados do módulo...');
   const [profilesPayload, usersPayload] = await Promise.all([
-    apiFetch('/api/admin/users/profiles'),
-    apiFetch('/api/admin/users/list'),
+    apiFetch('admin/users/profiles'),
+    apiFetch('admin/users/list'),
   ]);
 
   state.profiles = profilesPayload.items || [];
@@ -364,7 +364,7 @@ function bindPageEvents() {
 
 async function refreshUsers() {
   setFeedback('Atualizando usuários...');
-  const payload = await apiFetch('/api/admin/users/list');
+  const payload = await apiFetch('admin/users/list');
   state.users = payload.items || [];
   renderUsersTable();
   setFeedback(`${state.users.length} usuário(s) carregado(s).`, 'success');
@@ -454,7 +454,7 @@ function onCollaboratorSearch(event) {
     }
 
     try {
-      const payload = await apiFetch(`/api/admin/users/collaborators?q=${encodeURIComponent(term)}`);
+      const payload = await apiFetch(`admin/users/collaborators?q=${encodeURIComponent(term)}`);
       state.collaboratorResults = payload.items || [];
       renderCollaboratorResults();
     } catch (err) {
@@ -520,7 +520,7 @@ async function submitForm() {
 
   try {
     if (state.editingUserId) {
-      await apiFetch('/api/admin/users/update', {
+      await apiFetch('admin/users/update', {
         method: 'POST',
         body: JSON.stringify({
           usuario_id: state.editingUserId,
@@ -530,7 +530,7 @@ async function submitForm() {
       });
       setFeedback('Usuário atualizado com sucesso.', 'success');
     } else {
-      const payload = await apiFetch('/api/admin/users/create', {
+      const payload = await apiFetch('admin/users/create', {
         method: 'POST',
         body: JSON.stringify({
           colaborador_id: state.selectedCollaborator.id,
@@ -573,7 +573,7 @@ async function onTableAction(event) {
     if (!confirm(`Deseja alterar o status de ${user.nome} para ${novoStatus}?`)) return;
 
     try {
-      await apiFetch('/api/admin/users/toggle-status', {
+      await apiFetch('admin/users/toggle-status', {
         method: 'POST',
         body: JSON.stringify({
           usuario_id: user.id,
@@ -593,7 +593,7 @@ async function onTableAction(event) {
     if (!confirm(`Gerar nova senha temporária para ${user.nome}?`)) return;
 
     try {
-      const payload = await apiFetch('/api/admin/users/reset-password', {
+      const payload = await apiFetch('admin/users/reset-password', {
         method: 'POST',
         body: JSON.stringify({
           usuario_id: user.id,
