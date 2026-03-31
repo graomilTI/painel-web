@@ -1,4 +1,4 @@
-import { toPanelUrl } from "../../js/paths.js";
+import { toPanelUrl } from "./paths.js";
 import { supabase } from "./supabaseClient.js";
 
 let USER_CONTEXT = null;
