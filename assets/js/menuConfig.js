@@ -1,85 +1,68 @@
-// menuConfig.js CORRIGIDO (completo + RELATÓRIOS)
+// menuConfig.js AJUSTADO para menuBuilder (label/path/items)
 
 export const MENU_CONFIG = [
   {
     id: 'conferencia',
-    nome: 'CONFERÊNCIA',
-    itens: [
-      { nome: 'Irregularidades', rota: '/painel/adm-conferencia.html' },
-      { nome: 'Lançamentos', rota: '/painel/adm-conferencia.html' }
-    ]
+    label: 'CONFERÊNCIA',
+    items: []
   },
   {
     id: 'compras',
-    nome: 'COMPRAS',
-    itens: [
-      { nome: 'Pedidos', rota: '/painel/adm-compras.html' },
-      { nome: 'Fornecedores', rota: '/painel/adm-compras.html' }
-    ]
+    label: 'COMPRAS',
+    items: []
   },
   {
     id: 'patrimonios',
-    nome: 'PATRIMÔNIOS',
-    itens: [
-      { nome: 'Controle', rota: '/painel/adm-patrimonio.html' }
-    ]
+    label: 'PATRIMÔNIOS',
+    items: []
   },
   {
     id: 'hospedagem',
-    nome: 'HOSPEDAGEM',
-    itens: [
-      { nome: 'Gestão', rota: '/painel/adm-hotel.html' }
-    ]
+    label: 'HOSPEDAGEM',
+    items: []
   },
   {
     id: 'rh',
-    nome: 'RECURSOS HUMANOS',
-    itens: [
-      { nome: 'Colaboradores', rota: '/painel/consultar-colaboradores.html' }
-    ]
+    label: 'RECURSOS HUMANOS',
+    items: []
   },
   {
     id: 'frotas',
-    nome: 'FROTAS',
-    itens: []
+    label: 'FROTAS',
+    items: []
   },
   {
     id: 'logistica',
-    nome: 'LOGÍSTICA',
-    itens: [
-      { nome: 'Operações', rota: '/painel/adm-logistica.html' }
-    ]
+    label: 'LOGÍSTICA',
+    items: []
   },
   {
     id: 'troca_notas',
-    nome: 'TROCA DE NOTAS',
-    itens: []
+    label: 'TROCA DE NOTAS',
+    items: []
   },
   {
     id: 'auditoria',
-    nome: 'AUDITORIA',
-    itens: [
-      { nome: 'Logs', rota: '/painel/admin-auditoria.html' },
-      { nome: 'Relatórios', rota: '/painel/admin-auditoria.html' }
-    ]
+    label: 'AUDITORIA',
+    items: []
   },
   {
     id: 'relatorios',
-    nome: 'RELATÓRIOS',
-    itens: [
+    label: 'RELATÓRIOS',
+    items: [
       {
-        nome: 'Importar Produção',
-        rota: '/painel/importar-producao.html'
+        label: 'Importar Produção',
+        path: '/painel/importar-producao'
       },
       {
-        nome: 'Importar Relatório Externo',
-        rota: '/painel/importar-relatorio.html'
+        label: 'Importar Relatório Externo',
+        path: '/painel/importar-relatorio'
       }
     ]
   },
   {
     id: 'diretoria',
-    nome: 'DIRETORIA',
-    itens: []
+    label: 'DIRETORIA',
+    items: []
   }
 ];
