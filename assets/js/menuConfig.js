@@ -1,4 +1,4 @@
-// menuConfig.js
+// assets/js/menuConfig.js
 
 export const MENU_CONFIG = [
   {
@@ -23,31 +23,9 @@ export const MENU_CONFIG = [
   },
 
   {
-    grupo: "ADMINISTRAÇÃO OPERACIONAL",
+    grupo: "CONFERÊNCIA",
     itens: [
-      { id: "ADM_CONFERENCIA", nome: "Conferência", path: "adm-conferencia" },
-      { id: "ADM_HOTEL", nome: "Hotel", path: "adm-hotel" },
-      { id: "COMPRAS_ADM", nome: "Compras", path: "adm-compras" },
-      { id: "FINANCEIRO", nome: "Financeiro", path: "financeiro" },
-      { id: "PATRIMONIO_ADM", nome: "Patrimônio", path: "adm-patrimonio" },
-      { id: "LOGISTICA_ADM", nome: "Logística", path: "adm-logistica" },
-      { id: "RH_FERIAS_ATESTADOS", nome: "Férias e Atestados", path: "ferias-atestados" },
-      { id: "RH_HIST_INDISP", nome: "Histórico de Indisponibilidade", path: "historico-indisponibilidade" }
-    ]
-  },
-
-  {
-    grupo: "BASE DE COLABORADORES",
-    itens: [
-      { id: "BASE_COLAB_IMPORT", nome: "Importar Colaboradores", path: "importar-colaboradores" },
-      { id: "BASE_COLAB_HIST", nome: "Histórico de Importações", path: "historico-colaboradores" },
-      { id: "BASE_COLAB_CONSULTA", nome: "Consultar Base", path: "consultar-colaboradores" }
-    ]
-  },
-
-  {
-    grupo: "PRODUÇÃO DIÁRIA",
-    itens: [
+      { id: "ADM_CONFERENCIA", nome: "Painel de Conferência", path: "adm-conferencia" },
       { id: "PRODUCAO_IMPORT", nome: "Importar Produção", path: "importar-producao" },
       { id: "PRODUCAO_HIST", nome: "Histórico Produção", path: "historico-producao" },
       { id: "EFETIVOS_ZERO", nome: "Efetivos sem Produção", path: "efetivos-sem-producao" }
@@ -55,10 +33,66 @@ export const MENU_CONFIG = [
   },
 
   {
-    grupo: "ADMINISTRAÇÃO",
+    grupo: "COMPRAS",
     itens: [
+      { id: "COMPRAS_ADM", nome: "Painel de Compras", path: "adm-compras" }
+    ]
+  },
+
+  {
+    grupo: "PATRIMÔNIOS",
+    itens: [
+      { id: "PATRIMONIO_ADM", nome: "Painel de Patrimônios", path: "adm-patrimonio" }
+    ]
+  },
+
+  {
+    grupo: "HOSPEDAGEM",
+    itens: [
+      { id: "ADM_HOTEL", nome: "Painel de Hospedagem", path: "adm-hotel" }
+    ]
+  },
+
+  {
+    grupo: "RECURSOS HUMANOS",
+    itens: [
+      { id: "RH_FERIAS_ATESTADOS", nome: "Férias e Atestados", path: "ferias-atestados" },
+      { id: "RH_HIST_INDISP", nome: "Histórico de Indisponibilidade", path: "historico-indisponibilidade" },
+      { id: "BASE_COLAB_IMPORT", nome: "Importar Colaboradores", path: "importar-colaboradores" },
+      { id: "BASE_COLAB_HIST", nome: "Histórico de Importações", path: "historico-colaboradores" },
+      { id: "BASE_COLAB_CONSULTA", nome: "Consultar Base", path: "consultar-colaboradores" }
+    ]
+  },
+
+  {
+    grupo: "FROTAS",
+    itens: []
+  },
+
+  {
+    grupo: "LOGÍSTICA",
+    itens: [
+      { id: "LOGISTICA_ADM", nome: "Painel de Logística", path: "adm-logistica" }
+    ]
+  },
+
+  {
+    grupo: "TROCA DE NOTAS",
+    itens: []
+  },
+
+  {
+    grupo: "AUDITORIA",
+    itens: [
+      { id: "ADMIN_AUDITORIA", nome: "Auditoria do Sistema", path: "admin-auditoria" }
+    ]
+  },
+
+  {
+    grupo: "DIRETORIA",
+    itens: [
+      { id: "FINANCEIRO", nome: "Financeiro", path: "financeiro" },
       { id: "ADMIN_USUARIOS", nome: "Usuários e Acessos", path: "admin-usuarios" },
-      { id: "ADMIN_AUDITORIA", nome: "Auditoria", path: "admin-auditoria" },
       { id: "ADMIN_CONFIG", nome: "Configurações", path: "admin-configuracoes" }
     ]
   }
