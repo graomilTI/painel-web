@@ -1,5 +1,6 @@
-import { requireAuth } from './authGuard.js';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { toPanelUrl } from './paths.js';
 
 function cell(text) {
   const td = document.createElement('td');
@@ -26,13 +27,7 @@ async function carregarHistorico() {
 
   let query = supabase
     .from('indisponibilidades')
-    .select(`
-      *,
-      profiles:created_by (
-        full_name,
-        email
-      )
-    `)
+    .select('*, profiles:created_by ( full_name, email )')
     .order('data_inicio', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(1000);
@@ -75,10 +70,72 @@ async function carregarHistorico() {
   meta.textContent = `${data.length} registro(s) encontrado(s).`;
 }
 
-async function run() {
-  await requireAuth();
-  document.getElementById('btnPesquisar').addEventListener('click', carregarHistorico);
-  await carregarHistorico();
-}
+initProtectedPage('Histórico de Indisponibilidade', (content) => {
+  content.innerHTML = `
+    <section class="base-page">
+      <div class="section-heading">
+        <div>
+          <h2>Histórico de Indisponibilidade</h2>
+          <p class="section-subtitle">Consulte e filtre férias, atestados e outros registros de indisponibilidade lançados pelo RH.</p>
+        </div>
+        <div class="inline-nav">
+          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
+          <a href="${toPanelUrl('ferias-atestados')}">Novo lançamento</a>
+        </div>
+      </div>
 
-run().catch(console.error);
+      <div class="base-card">
+        <div class="base-grid">
+          <div class="base-field fourth">
+            <label class="base-label" for="fNome">Colaborador</label>
+            <input class="base-input" id="fNome" type="text" />
+          </div>
+          <div class="base-field fourth">
+            <label class="base-label" for="fMotivo">Motivo</label>
+            <select class="base-select" id="fMotivo">
+              <option value="">Todos</option>
+              <option value="Férias">Férias</option>
+              <option value="Atestado">Atestado</option>
+              <option value="Folga">Folga</option>
+              <option value="Afastamento">Afastamento</option>
+              <option value="Outro">Outro</option>
+            </select>
+          </div>
+          <div class="base-field fourth">
+            <label class="base-label" for="fInicio">Início</label>
+            <input class="base-input" id="fInicio" type="date" />
+          </div>
+          <div class="base-field fourth">
+            <label class="base-label" for="fFim">Fim</label>
+            <input class="base-input" id="fFim" type="date" />
+          </div>
+        </div>
+        <div class="base-actions">
+          <button class="base-button secondary" id="btnPesquisar">Pesquisar</button>
+        </div>
+
+        <div class="base-table-wrap">
+          <table class="base-table">
+            <thead>
+              <tr>
+                <th>Colaborador</th>
+                <th>CPF</th>
+                <th>Início</th>
+                <th>Fim</th>
+                <th>Motivo</th>
+                <th>Observações</th>
+                <th>Criado em</th>
+                <th>Lançado por</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyHistorico"></tbody>
+          </table>
+        </div>
+        <div id="metaHistorico" class="base-meta">Carregando histórico...</div>
+      </div>
+    </section>
+  `;
+
+  document.getElementById('btnPesquisar').addEventListener('click', carregarHistorico);
+  carregarHistorico().catch(console.error);
+});

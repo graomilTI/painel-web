@@ -13,7 +13,6 @@ function setStatus(message, detail = '') {
 async function boot() {
   try {
     setStatus('Verificando sessão', 'Redirecionando para a tela correta...');
-
     const session = await getSession();
 
     if (session?.user) {

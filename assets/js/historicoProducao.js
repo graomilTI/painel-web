@@ -1,15 +1,18 @@
-import { requireAuth } from './authGuard.js';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { toPanelUrl } from './paths.js';
 
 function formatDateTime(value) {
   if (!value) return '';
   return new Date(value).toLocaleString('pt-BR');
 }
+
 function makeCell(text) {
   const td = document.createElement('td');
   td.textContent = text ?? '';
   return td;
 }
+
 function makeStatusPill(status) {
   const td = document.createElement('td');
   const span = document.createElement('span');
@@ -18,6 +21,7 @@ function makeStatusPill(status) {
   td.appendChild(span);
   return td;
 }
+
 async function loadData() {
   const tbody = document.getElementById('tbodyImportacoes');
   const meta = document.getElementById('metaInfo');
@@ -30,7 +34,7 @@ async function loadData() {
 
   let query = supabase
     .from('producao_importacoes')
-    .select(`*, profiles:importado_por ( full_name, email )`)
+    .select('*, profiles:importado_por ( full_name, email )')
     .order('data_referencia', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -67,12 +71,77 @@ async function loadData() {
 
   meta.textContent = `${data.length} importação(ões) encontrada(s).`;
 }
-async function run() {
-  await requireAuth();
+
+initProtectedPage('Histórico de Produção', (content) => {
+  content.innerHTML = `
+    <section class="base-page">
+      <div class="section-heading">
+        <div>
+          <h2>Histórico de Produção</h2>
+          <p class="section-subtitle">Consulte as cargas de produção diária já importadas no sistema.</p>
+        </div>
+        <div class="inline-nav">
+          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
+          <a href="${toPanelUrl('importar-producao')}">Importar</a>
+          <a href="${toPanelUrl('efetivos-sem-producao')}">Efetivos sem produção</a>
+        </div>
+      </div>
+
+      <div class="base-card">
+        <div class="base-grid">
+          <div class="base-field fourth">
+            <label class="base-label" for="filtroData">Data</label>
+            <input class="base-input" type="date" id="filtroData" />
+          </div>
+          <div class="base-field fourth">
+            <label class="base-label" for="filtroStatus">Status</label>
+            <select class="base-select" id="filtroStatus">
+              <option value="">Todos</option>
+              <option value="processado">Processado</option>
+              <option value="processando">Processando</option>
+              <option value="erro">Erro</option>
+            </select>
+          </div>
+          <div class="base-field fourth">
+            <label class="base-label" for="filtroOrigem">Origem</label>
+            <select class="base-select" id="filtroOrigem">
+              <option value="">Todas</option>
+              <option value="upload_manual">Upload manual</option>
+              <option value="producao_diaria">Produção diária</option>
+              <option value="ajuste_manual">Ajuste manual</option>
+            </select>
+          </div>
+          <div class="base-field fourth">
+            <label class="base-label">&nbsp;</label>
+            <button class="base-button secondary" id="btnBuscar">Pesquisar</button>
+          </div>
+        </div>
+
+        <div class="base-table-wrap" style="margin-top:16px;">
+          <table class="base-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Arquivo</th>
+                <th>Origem</th>
+                <th>Status</th>
+                <th>Total</th>
+                <th>Criado em</th>
+                <th>Importado por</th>
+                <th>Observações</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyImportacoes"></tbody>
+          </table>
+        </div>
+        <div id="metaInfo" class="base-meta">Carregando histórico...</div>
+      </div>
+    </section>
+  `;
+
   document.getElementById('btnBuscar')?.addEventListener('click', loadData);
-  await loadData();
-}
-run().catch((err) => {
-  console.error(err);
-  document.getElementById('metaInfo').textContent = `Erro ao carregar histórico: ${err.message || err}`;
+  loadData().catch((err) => {
+    console.error(err);
+    document.getElementById('metaInfo').textContent = `Erro ao carregar histórico: ${err.message || err}`;
+  });
 });

@@ -1,5 +1,6 @@
-import { requireAuth } from './authGuard.js';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { toPanelUrl } from './paths.js';
 
 function normalizeName(value) {
   return String(value || '')
@@ -135,7 +136,6 @@ function generateImage(rows, dataReferencia) {
   ctx.fillText('Coordenação', col2, headerY);
   ctx.fillText('Supervisão', col3, headerY);
 
-  ctx.strokeStyle = '#16325f';
   ctx.beginPath();
   ctx.moveTo(margin, headerY + 16);
   ctx.lineTo(width - margin, headerY + 16);
@@ -144,12 +144,10 @@ function generateImage(rows, dataReferencia) {
   ctx.font = '20px Arial';
   rows.forEach((row, idx) => {
     const y = tableY + idx * rowHeight;
-
     if (idx % 2 === 0) {
       ctx.fillStyle = 'rgba(255,255,255,0.03)';
       ctx.fillRect(margin - 12, y - 24, width - margin * 2 + 24, rowHeight);
     }
-
     ctx.fillStyle = '#e5e7eb';
     const line1 = wrapText(ctx, row.colaborador, 800)[0] || '';
     ctx.fillText(line1, col1, y);
@@ -211,31 +209,10 @@ async function processDay() {
   const excecoes = await fetchOptional('excecoes', null, null);
   const indisponibilidades = await fetchOptional('indisponibilidades', null, null);
 
-  const producedNames = new Set(
-    (producao || [])
-      .map((r) => normalizeName(r.funcionario))
-      .filter(Boolean)
-  );
-
-  const excludedCoordenacoes = new Set([
-    'GERAL',
-    'MATRIZ GERAL',
-    'MATRIZ',
-    'ADMINISTRATIVO',
-    'DIRETORIA'
-  ]);
-
-  const excecoesSet = new Set(
-    (excecoes || [])
-      .map((r) => normalizeName(r.Nome || r.nome))
-      .filter(Boolean)
-  );
-
-  const indisponiveisSet = new Set(
-    (indisponibilidades || [])
-      .map((r) => normalizeName(r.Nome || r.nome))
-      .filter(Boolean)
-  );
+  const producedNames = new Set((producao || []).map((r) => normalizeName(r.funcionario)).filter(Boolean));
+  const excludedCoordenacoes = new Set(['GERAL', 'MATRIZ GERAL', 'MATRIZ', 'ADMINISTRATIVO', 'DIRETORIA']);
+  const excecoesSet = new Set((excecoes || []).map((r) => normalizeName(r.Nome || r.nome)).filter(Boolean));
+  const indisponiveisSet = new Set((indisponibilidades || []).map((r) => normalizeName(r.Nome || r.nome)).filter(Boolean));
 
   const rows = (colaboradores || [])
     .filter((c) => normalizeName(c.tipo) === 'EFETIVO')
@@ -258,7 +235,6 @@ async function processDay() {
     });
 
   await saveResults(rows, dataReferencia);
-
   window.__efetivosRows = rows;
   window.__filteredRows = rows;
   window.__efetivosDate = dataReferencia;
@@ -286,8 +262,73 @@ function applyFilters(rows) {
   document.getElementById('metaResultado').textContent = `${filtered.length} colaborador(es) após filtros.`;
 }
 
-async function run() {
-  await requireAuth();
+initProtectedPage('Efetivos sem Produção', async (content) => {
+  content.innerHTML = `
+    <section class="base-page">
+      <div class="section-heading">
+        <div>
+          <h2>Efetivos sem Produção</h2>
+          <p class="section-subtitle">Cruze a base de colaboradores com a produção do dia para identificar efetivos classificadores sem lançamento.</p>
+        </div>
+        <div class="inline-nav">
+          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
+          <a href="${toPanelUrl('importar-producao')}">Importar produção</a>
+          <a href="${toPanelUrl('historico-producao')}">Histórico</a>
+        </div>
+      </div>
+
+      <div class="base-card">
+        <div class="base-grid">
+          <div class="base-field fourth">
+            <label class="base-label" for="fData">Data</label>
+            <input class="base-input" type="date" id="fData" />
+          </div>
+          <div class="base-field fourth">
+            <label class="base-label" for="fCoordenacao">Coordenação</label>
+            <input class="base-input" type="text" id="fCoordenacao" />
+          </div>
+          <div class="base-field fourth">
+            <label class="base-label" for="fSupervisao">Supervisão</label>
+            <input class="base-input" type="text" id="fSupervisao" />
+          </div>
+          <div class="base-field fourth">
+            <label class="base-label" for="fNome">Colaborador</label>
+            <input class="base-input" type="text" id="fNome" />
+          </div>
+        </div>
+        <div class="base-actions">
+          <button class="base-button primary" id="btnProcessar">Processar dia</button>
+          <button class="base-button secondary" id="btnPesquisar">Aplicar filtros</button>
+          <button class="base-button secondary" id="btnGerarImagem">Gerar imagem</button>
+        </div>
+
+        <div class="base-summary">
+          <div class="base-mini"><div class="base-mini-label">Data</div><div class="base-mini-value" id="sumData">-</div></div>
+          <div class="base-mini"><div class="base-mini-label">Total</div><div class="base-mini-value" id="sumTotal">0</div></div>
+          <div class="base-mini"><div class="base-mini-label">Status</div><div class="base-mini-value" id="sumStatus">Aguardando</div></div>
+        </div>
+
+        <div class="base-table-wrap">
+          <table class="base-table">
+            <thead>
+              <tr>
+                <th>Colaborador</th>
+                <th>Coordenação</th>
+                <th>Supervisão</th>
+                <th>Cargo</th>
+                <th>Tipo</th>
+                <th>Motivo</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyResultado"></tbody>
+          </table>
+        </div>
+        <div id="metaResultado" class="base-meta">Aguardando processamento.</div>
+      </div>
+
+      <canvas id="canvasImagem" style="display:none;"></canvas>
+    </section>
+  `;
 
   const dataInput = document.getElementById('fData');
   if (!dataInput.value) {
@@ -305,10 +346,7 @@ async function run() {
     }
   });
 
-  document.getElementById('btnPesquisar').addEventListener('click', () => {
-    applyFilters(window.__efetivosRows || []);
-  });
-
+  document.getElementById('btnPesquisar').addEventListener('click', () => applyFilters(window.__efetivosRows || []));
   document.getElementById('btnGerarImagem').addEventListener('click', () => {
     const rows = window.__filteredRows || window.__efetivosRows || [];
     if (!rows.length) {
@@ -317,9 +355,4 @@ async function run() {
     }
     generateImage(rows, window.__efetivosDate || document.getElementById('fData').value);
   });
-}
-
-run().catch((err) => {
-  console.error(err);
-  document.getElementById('metaResultado').textContent = `Erro ao carregar página: ${err.message || err}`;
 });

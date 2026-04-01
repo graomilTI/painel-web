@@ -1,5 +1,6 @@
-import { requireAuth } from './authGuard.js';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { toPanelUrl } from './paths.js';
 import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
 function normalizeText(value) {
@@ -7,6 +8,7 @@ function normalizeText(value) {
   const s = String(value).trim();
   return s || null;
 }
+
 function excelDateToISO(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number') {
@@ -23,6 +25,7 @@ function excelDateToISO(value) {
   if (iso) return s;
   return null;
 }
+
 function normalizeNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number') return value;
@@ -30,6 +33,7 @@ function normalizeNumber(value) {
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
+
 function mapRow(row, dataReferencia, importacaoId) {
   return {
     importacao_id: importacaoId,
@@ -50,6 +54,7 @@ function mapRow(row, dataReferencia, importacaoId) {
     tons: normalizeNumber(row['Tons'])
   };
 }
+
 async function insertBatches(table, rows, batchSize = 300, onProgress) {
   for (let i = 0; i < rows.length; i += batchSize) {
     const chunk = rows.slice(i, i + batchSize);
@@ -58,14 +63,70 @@ async function insertBatches(table, rows, batchSize = 300, onProgress) {
     if (onProgress) onProgress(Math.min(i + chunk.length, rows.length), rows.length);
   }
 }
+
 function setSummary({ linhas = 0, validas = 0, status = 'Aguardando' }) {
   document.getElementById('sumLinhas').textContent = String(linhas);
   document.getElementById('sumValidas').textContent = String(validas);
   document.getElementById('sumStatus').textContent = status;
 }
-async function run() {
-  const ctx = await requireAuth();
-  if (!ctx) return;
+
+initProtectedPage('Importar Produção', (content, ctx) => {
+  content.innerHTML = `
+    <section class="base-page">
+      <div class="section-heading">
+        <div>
+          <h2>Importar Produção Diária</h2>
+          <p class="section-subtitle">Envie o relatório diário de produção para cruzar com a base histórica e identificar efetivos sem produção.</p>
+        </div>
+        <div class="inline-nav">
+          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
+          <a href="${toPanelUrl('historico-producao')}">Histórico</a>
+          <a href="${toPanelUrl('efetivos-sem-producao')}">Efetivos sem produção</a>
+        </div>
+      </div>
+
+      <div class="base-card">
+        <div class="base-grid">
+          <div class="base-field third">
+            <label class="base-label" for="dataReferencia">Data de referência</label>
+            <input class="base-input" type="date" id="dataReferencia" />
+          </div>
+          <div class="base-field third">
+            <label class="base-label" for="arquivoExcel">Arquivo Excel</label>
+            <input class="base-input" type="file" id="arquivoExcel" accept=".xlsx,.xls" />
+          </div>
+          <div class="base-field third">
+            <label class="base-label" for="origemCarga">Origem da carga</label>
+            <select class="base-select" id="origemCarga">
+              <option value="upload_manual">Upload manual</option>
+              <option value="producao_diaria">Produção diária</option>
+              <option value="ajuste_manual">Ajuste manual</option>
+            </select>
+          </div>
+          <div class="base-field">
+            <label class="base-label" for="observacoes">Observações</label>
+            <textarea class="base-textarea" id="observacoes" placeholder="Opcional. Ex.: relatório fechado às 14h."></textarea>
+          </div>
+        </div>
+
+        <div class="base-actions">
+          <button class="base-button primary" id="btnImportar">Importar produção</button>
+          <button class="base-button secondary" id="btnLimpar">Limpar</button>
+        </div>
+
+        <div class="base-summary">
+          <div class="base-mini"><div class="base-mini-label">Linhas lidas</div><div class="base-mini-value" id="sumLinhas">0</div></div>
+          <div class="base-mini"><div class="base-mini-label">Linhas válidas</div><div class="base-mini-value" id="sumValidas">0</div></div>
+          <div class="base-mini"><div class="base-mini-label">Status</div><div class="base-mini-value" id="sumStatus">Aguardando</div></div>
+        </div>
+      </div>
+
+      <div class="base-card">
+        <h3 style="margin-top:0">Retorno da importação</h3>
+        <div id="feedback" class="base-status">Selecione um arquivo e clique em "Importar produção".</div>
+      </div>
+    </section>
+  `;
 
   const dataInput = document.getElementById('dataReferencia');
   const fileInput = document.getElementById('arquivoExcel');
@@ -155,5 +216,4 @@ async function run() {
       btnImportar.disabled = false;
     }
   });
-}
-run().catch(console.error);
+});
