@@ -1,5 +1,6 @@
-import { requireAuth } from './authGuard.js';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { toPanelUrl } from './paths.js';
 
 function makeCell(text) {
   const td = document.createElement('td');
@@ -74,7 +75,6 @@ async function loadData() {
   if (fCpf) query = query.eq('cpf', fCpf);
 
   const { data, error } = await query;
-
   if (error) throw error;
 
   if (!data.length) {
@@ -108,14 +108,94 @@ async function loadData() {
   meta.textContent = `${data.length} registro(s) localizado(s).`;
 }
 
-async function run() {
-  await requireAuth();
-  document.getElementById('btnPesquisar')?.addEventListener('click', loadData);
-  await loadData();
-}
+initProtectedPage('Consultar Base de Colaboradores', (content) => {
+  content.innerHTML = `
+    <section class="base-page">
+      <div class="section-heading">
+        <div>
+          <h2>Consultar Base de Colaboradores</h2>
+          <p class="section-subtitle">Filtre a base histórica por data, coordenação, supervisão e colaborador.</p>
+        </div>
+        <div class="inline-nav">
+          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
+          <a href="${toPanelUrl('importar-colaboradores')}">Importar</a>
+          <a href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
+        </div>
+      </div>
 
-run().catch((err) => {
-  console.error(err);
-  const meta = document.getElementById('metaConsulta');
-  if (meta) meta.textContent = `Erro ao consultar base: ${err.message || err}`;
+      <div class="base-card">
+        <div class="base-actions-row filters-5">
+          <div>
+            <label class="base-label" for="fData">Data referência</label>
+            <input class="base-input" type="date" id="fData" />
+          </div>
+          <div>
+            <label class="base-label" for="fCoordenacao">Coordenação</label>
+            <input class="base-input" type="text" id="fCoordenacao" placeholder="Ex.: Operações" />
+          </div>
+          <div>
+            <label class="base-label" for="fSupervisao">Supervisão</label>
+            <input class="base-input" type="text" id="fSupervisao" placeholder="Ex.: Supervisão Sul" />
+          </div>
+          <div>
+            <label class="base-label" for="fNome">Nome</label>
+            <input class="base-input" type="text" id="fNome" placeholder="Buscar nome" />
+          </div>
+          <div>
+            <label class="base-label" for="fSituacao">Situação</label>
+            <input class="base-input" type="text" id="fSituacao" placeholder="Ex.: Ativo" />
+          </div>
+        </div>
+
+        <div class="base-actions-row compact" style="margin-top:12px;">
+          <div>
+            <label class="base-label" for="fEmpresa">Empresa</label>
+            <input class="base-input" type="text" id="fEmpresa" placeholder="Empresa" />
+          </div>
+          <div>
+            <label class="base-label" for="fTipo">Tipo</label>
+            <input class="base-input" type="text" id="fTipo" placeholder="Tipo" />
+          </div>
+          <div>
+            <label class="base-label" for="fCpf">CPF</label>
+            <input class="base-input" type="text" id="fCpf" placeholder="CPF" />
+          </div>
+          <div style="display:flex; align-items:end;">
+            <button class="base-button secondary inline" id="btnPesquisar">Pesquisar</button>
+          </div>
+        </div>
+
+        <div class="base-table-wrap" style="margin-top:16px;">
+          <table class="base-table wide">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>CPF</th>
+                <th>Nome</th>
+                <th>Situação</th>
+                <th>Empresa</th>
+                <th>Coordenação</th>
+                <th>Supervisão</th>
+                <th>Cargo</th>
+                <th>Cidade</th>
+                <th>Tipo</th>
+                <th>E-mail empresa</th>
+                <th>Whatsapp</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyColaboradores"></tbody>
+          </table>
+        </div>
+
+        <div class="base-meta" id="metaConsulta">Aguardando pesquisa.</div>
+      </div>
+    </section>
+  `;
+
+  document.getElementById('btnPesquisar')?.addEventListener('click', loadData);
+  loadData().catch((err) => {
+    console.error(err);
+    const meta = document.getElementById('metaConsulta');
+    if (meta) meta.textContent = `Erro ao consultar base: ${err.message || err}`;
+  });
 });

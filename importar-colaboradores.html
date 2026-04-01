@@ -4,254 +4,33 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Importar Colaboradores</title>
-  <style>
-    :root{
-      --bg:#07152f;
-      --panel:#0b1d3d;
-      --panel-2:#0f244b;
-      --border:#16325f;
-      --text:#e5e7eb;
-      --muted:#9fb1d1;
-      --green:#166534;
-      --green-2:#15803d;
-      --danger:#991b1b;
-      --warning:#92400e;
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      background:linear-gradient(180deg, #07152f 0%, #091a38 100%);
-      color:var(--text);
-      font-family:Arial, Helvetica, sans-serif;
-    }
-    .wrap{
-      max-width:1100px;
-      margin:32px auto;
-      padding:0 20px;
-    }
-    .topbar{
-      display:flex;
-      justify-content:space-between;
-      align-items:flex-start;
-      gap:16px;
-      margin-bottom:20px;
-      flex-wrap:wrap;
-    }
-    h1{
-      margin:0 0 8px 0;
-      font-size:34px;
-    }
-    .subtitle{
-      color:var(--muted);
-      margin:0;
-      line-height:1.5;
-    }
-    .nav-links{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-    }
-    .nav-links a{
-      color:var(--text);
-      text-decoration:none;
-      border:1px solid var(--border);
-      background:rgba(255,255,255,.03);
-      padding:10px 14px;
-      border-radius:12px;
-    }
-    .card{
-      background:rgba(10,26,58,.96);
-      border:1px solid var(--border);
-      border-radius:20px;
-      padding:24px;
-      box-shadow:0 10px 30px rgba(0,0,0,.18);
-      margin-bottom:20px;
-    }
-    .grid{
-      display:grid;
-      grid-template-columns:repeat(12,1fr);
-      gap:16px;
-    }
-    .field{
-      grid-column:span 12;
-    }
-    .field.half{
-      grid-column:span 6;
-    }
-    .field.third{
-      grid-column:span 4;
-    }
-    label{
-      display:block;
-      font-size:14px;
-      color:var(--muted);
-      margin-bottom:8px;
-      font-weight:700;
-    }
-    input, button, select, textarea{
-      font:inherit;
-      border-radius:14px;
-    }
-    input[type="date"], input[type="file"], textarea, select{
-      width:100%;
-      padding:14px 16px;
-      background:#0a1732;
-      color:var(--text);
-      border:1px solid var(--border);
-      outline:none;
-    }
-    textarea{min-height:90px; resize:vertical}
-    .actions{
-      display:flex;
-      gap:12px;
-      flex-wrap:wrap;
-      margin-top:8px;
-    }
-    button{
-      border:0;
-      cursor:pointer;
-      padding:14px 18px;
-      font-weight:700;
-      min-width:180px;
-    }
-    .btn-primary{
-      background:linear-gradient(180deg, var(--green-2), var(--green));
-      color:#fff;
-    }
-    .btn-secondary{
-      background:#13294f;
-      color:var(--text);
-      border:1px solid var(--border);
-    }
-    .status{
-      white-space:pre-wrap;
-      line-height:1.6;
-      font-size:14px;
-      background:#09152b;
-      border:1px dashed var(--border);
-      padding:16px;
-      border-radius:14px;
-      min-height:80px;
-    }
-    .hint-list{
-      margin:0;
-      padding-left:20px;
-      color:var(--muted);
-      line-height:1.7;
-    }
-    .summary{
-      display:grid;
-      grid-template-columns:repeat(3, 1fr);
-      gap:16px;
-      margin-top:16px;
-    }
-    .summary .mini{
-      background:#09152b;
-      border:1px solid var(--border);
-      border-radius:16px;
-      padding:16px;
-    }
-    .mini .label{
-      color:var(--muted);
-      font-size:13px;
-      margin-bottom:8px;
-    }
-    .mini .value{
-      font-size:24px;
-      font-weight:700;
-    }
-    .ok{color:#86efac}
-    .warn{color:#fcd34d}
-    .err{color:#fca5a5}
-    @media (max-width: 900px){
-      .field.half, .field.third{grid-column:span 12}
-      .summary{grid-template-columns:1fr}
-      h1{font-size:28px}
-    }
-  </style>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <div class="wrap">
-    <div class="topbar">
-      <div>
-        <h1>Importar Colaboradores</h1>
-        <p class="subtitle">
-          Envie a planilha diária de colaboradores para registrar o histórico da base no Supabase.
-          Essa carga poderá alimentar a programação do gestor e relatórios operacionais.
-        </p>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h2>Painel</h2>
+        <p>Gestão integrada</p>
       </div>
-      <div class="nav-links">
-        <a href="./dashboard">Dashboard</a>
-        <a href="./historico-colaboradores.html">Histórico</a>
-        <a href="./consultar-colaboradores.html">Consultar base</a>
-      </div>
-    </div>
+      <div id="sidebarMenu"></div>
+    </aside>
 
-    <div class="card">
-      <div class="grid">
-        <div class="field third">
-          <label for="dataReferencia">Data de referência</label>
-          <input type="date" id="dataReferencia" />
+    <div class="content-wrap">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">Importar Colaboradores</h1>
+          <div class="meta" id="welcomeUser">Olá</div>
         </div>
-
-        <div class="field third">
-          <label for="arquivoExcel">Arquivo Excel</label>
-          <input type="file" id="arquivoExcel" accept=".xlsx,.xls" />
+        <div class="topbar-actions">
+          <span class="badge" id="roleBadge">USUÁRIO</span>
+          <button class="btn btn-secondary" id="signOutBtn" type="button">Sair</button>
         </div>
+      </header>
 
-        <div class="field third">
-          <label for="origemCarga">Origem da carga</label>
-          <select id="origemCarga">
-            <option value="upload_manual">Upload manual</option>
-            <option value="base_rh">Base RH</option>
-            <option value="ajuste_manual">Ajuste manual</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="observacoes">Observações da importação</label>
-          <textarea id="observacoes" placeholder="Opcional. Ex.: base baixada do RH às 07:10, já conferida."></textarea>
-        </div>
-      </div>
-
-      <div class="actions">
-        <button class="btn-primary" id="btnImportar">Importar planilha</button>
-        <button class="btn-secondary" id="btnLimpar">Limpar</button>
-      </div>
-
-      <div class="summary">
-        <div class="mini">
-          <div class="label">Linhas lidas</div>
-          <div class="value" id="sumLinhas">0</div>
-        </div>
-        <div class="mini">
-          <div class="label">Linhas válidas</div>
-          <div class="value" id="sumValidas">0</div>
-        </div>
-        <div class="mini">
-          <div class="label">Status</div>
-          <div class="value" id="sumStatus">Aguardando</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2 style="margin-top:0">Retorno da importação</h2>
-      <div id="feedback" class="status">Selecione um arquivo e clique em "Importar planilha".</div>
-    </div>
-
-    <div class="card">
-      <h2 style="margin-top:0">Regras aplicadas na importação</h2>
-      <ul class="hint-list">
-        <li>CPF é normalizado com 11 dígitos, preservando zeros à esquerda.</li>
-        <li>Datas como Admissão, Desligamento e Data de Nascimento são convertidas para formato ISO.</li>
-        <li>O campo <strong>ativo</strong> é calculado automaticamente com base em Situação e Desligamento.</li>
-        <li>Os registros são gravados em histórico por <strong>data de referência</strong>.</li>
-        <li>A importação é salva em lotes para reduzir risco de falha em arquivos maiores.</li>
-      </ul>
+      <main class="page-main" id="pageContent"></main>
     </div>
   </div>
-
   <script type="module" src="./assets/js/importarColaboradores.js"></script>
 </body>
 </html>

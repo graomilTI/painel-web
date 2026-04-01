@@ -1,5 +1,6 @@
-import { requireAuth } from './authGuard.js';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { toPanelUrl } from './paths.js';
 import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
 function normalizeText(value) {
@@ -121,9 +122,89 @@ function setSummary({ linhas = 0, validas = 0, status = 'Aguardando' }) {
   if (elStatus) elStatus.textContent = status;
 }
 
-async function run() {
-  const ctx = await requireAuth();
-  if (!ctx) return;
+initProtectedPage('Importar Colaboradores', (content, ctx) => {
+  content.innerHTML = `
+    <section class="base-page">
+      <div class="section-heading">
+        <div>
+          <h2>Importar Colaboradores</h2>
+          <p class="section-subtitle">
+            Envie a planilha diária de colaboradores para registrar o histórico da base no Supabase.
+            Essa carga poderá alimentar a programação do gestor e relatórios operacionais.
+          </p>
+        </div>
+        <div class="inline-nav">
+          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
+          <a href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
+          <a href="${toPanelUrl('consultar-colaboradores')}">Consultar base</a>
+        </div>
+      </div>
+
+      <div class="base-card">
+        <div class="base-grid">
+          <div class="base-field third">
+            <label class="base-label" for="dataReferencia">Data de referência</label>
+            <input class="base-input" type="date" id="dataReferencia" />
+          </div>
+
+          <div class="base-field third">
+            <label class="base-label" for="arquivoExcel">Arquivo Excel</label>
+            <input class="base-input" type="file" id="arquivoExcel" accept=".xlsx,.xls" />
+          </div>
+
+          <div class="base-field third">
+            <label class="base-label" for="origemCarga">Origem da carga</label>
+            <select class="base-select" id="origemCarga">
+              <option value="upload_manual">Upload manual</option>
+              <option value="base_rh">Base RH</option>
+              <option value="ajuste_manual">Ajuste manual</option>
+            </select>
+          </div>
+
+          <div class="base-field">
+            <label class="base-label" for="observacoes">Observações da importação</label>
+            <textarea class="base-textarea" id="observacoes" placeholder="Opcional. Ex.: base baixada do RH às 07:10, já conferida."></textarea>
+          </div>
+        </div>
+
+        <div class="base-actions">
+          <button class="base-button primary" id="btnImportar">Importar planilha</button>
+          <button class="base-button secondary" id="btnLimpar">Limpar</button>
+        </div>
+
+        <div class="base-summary">
+          <div class="base-mini">
+            <div class="base-mini-label">Linhas lidas</div>
+            <div class="base-mini-value" id="sumLinhas">0</div>
+          </div>
+          <div class="base-mini">
+            <div class="base-mini-label">Linhas válidas</div>
+            <div class="base-mini-value" id="sumValidas">0</div>
+          </div>
+          <div class="base-mini">
+            <div class="base-mini-label">Status</div>
+            <div class="base-mini-value" id="sumStatus">Aguardando</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="base-card">
+        <h3 style="margin-top:0">Retorno da importação</h3>
+        <div id="feedback" class="base-status">Selecione um arquivo e clique em "Importar planilha".</div>
+      </div>
+
+      <div class="base-card">
+        <h3 style="margin-top:0">Regras aplicadas na importação</h3>
+        <ul class="base-hint-list">
+          <li>CPF é normalizado com 11 dígitos, preservando zeros à esquerda.</li>
+          <li>Datas como Admissão, Desligamento e Data de Nascimento são convertidas para formato ISO.</li>
+          <li>O campo <strong>ativo</strong> é calculado automaticamente com base em Situação e Desligamento.</li>
+          <li>Os registros são gravados em histórico por <strong>data de referência</strong>.</li>
+          <li>A importação é salva em lotes para reduzir risco de falha em arquivos maiores.</li>
+        </ul>
+      </div>
+    </section>
+  `;
 
   const dataInput = document.getElementById('dataReferencia');
   const fileInput = document.getElementById('arquivoExcel');
@@ -179,7 +260,10 @@ async function run() {
       if (!rows.length) throw new Error('A planilha está vazia.');
 
       setSummary({ linhas: rows.length, validas: 0, status: 'Criando importação' });
-      setFeedback(`Arquivo lido com sucesso.\nAba: ${firstSheet}\nLinhas encontradas: ${rows.length}\nCriando registro de importação...`);
+      setFeedback(`Arquivo lido com sucesso.
+Aba: ${firstSheet}
+Linhas encontradas: ${rows.length}
+Criando registro de importação...`);
 
       const { data: importacao, error: impError } = await supabase
         .from('colaborador_importacoes')
@@ -204,12 +288,23 @@ async function run() {
 
       setSummary({ linhas: rows.length, validas: mapped.length, status: 'Importando' });
       setFeedback(
-        `Importação criada.\nID: ${importacaoId}\nLinhas lidas: ${rows.length}\nLinhas válidas: ${mapped.length}\n\nEnviando registros ao banco...`
+        `Importação criada.
+ID: ${importacaoId}
+Linhas lidas: ${rows.length}
+Linhas válidas: ${mapped.length}
+
+Enviando registros ao banco...`
       );
 
       await insertBatches('colaborador_snapshot', mapped, 300, (done, total) => {
         setFeedback(
-          `Importação criada.\nID: ${importacaoId}\nLinhas lidas: ${rows.length}\nLinhas válidas: ${mapped.length}\n\nEnviando registros ao banco...\nProgresso: ${done}/${total}`
+          `Importação criada.
+ID: ${importacaoId}
+Linhas lidas: ${rows.length}
+Linhas válidas: ${mapped.length}
+
+Enviando registros ao banco...
+Progresso: ${done}/${total}`
         );
       });
 
@@ -225,7 +320,13 @@ async function run() {
 
       setSummary({ linhas: rows.length, validas: mapped.length, status: 'Concluído' });
       setFeedback(
-        `Importação concluída com sucesso.\n\nID da importação: ${importacaoId}\nArquivo: ${file.name}\nLinhas lidas: ${rows.length}\nLinhas válidas: ${mapped.length}\nData de referência: ${dataReferencia}`
+        `Importação concluída com sucesso.
+
+ID da importação: ${importacaoId}
+Arquivo: ${file.name}
+Linhas lidas: ${rows.length}
+Linhas válidas: ${mapped.length}
+Data de referência: ${dataReferencia}`
       );
 
       fileInput.value = '';
@@ -237,19 +338,17 @@ async function run() {
           .from('colaborador_importacoes')
           .update({
             status: 'erro',
-            observacoes: `${obsInput.value?.trim() || ''}\nErro: ${err.message || err}`.trim()
+            observacoes: `${obsInput.value?.trim() || ''}
+Erro: ${err.message || err}`.trim()
           })
           .eq('id', importacaoId);
       }
 
       setSummary({ status: 'Erro' });
-      setFeedback(`Erro na importação:\n${err.message || err}`);
+      setFeedback(`Erro na importação:
+${err.message || err}`);
     } finally {
       btnImportar.disabled = false;
     }
   });
-}
-
-run().catch((err) => {
-  console.error(err);
 });

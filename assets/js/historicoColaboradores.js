@@ -1,5 +1,6 @@
-import { requireAuth } from './authGuard.js';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { toPanelUrl } from './paths.js';
 
 function formatDateTime(value) {
   if (!value) return '';
@@ -15,7 +16,7 @@ function makeCell(text) {
 function makeStatusPill(status) {
   const td = document.createElement('td');
   const span = document.createElement('span');
-  span.className = 'pill';
+  span.className = 'base-pill';
   span.textContent = status || '';
   td.appendChild(span);
   return td;
@@ -48,7 +49,6 @@ async function loadData() {
   if (filtroOrigem) query = query.eq('origem', filtroOrigem);
 
   const { data, error } = await query;
-
   if (error) throw error;
 
   if (!data.length) {
@@ -78,14 +78,77 @@ async function loadData() {
   meta.textContent = `${data.length} importação(ões) encontrada(s).`;
 }
 
-async function run() {
-  await requireAuth();
-  document.getElementById('btnBuscar')?.addEventListener('click', loadData);
-  await loadData();
-}
+initProtectedPage('Histórico de Importações', (content) => {
+  content.innerHTML = `
+    <section class="base-page">
+      <div class="section-heading">
+        <div>
+          <h2>Histórico de Importações</h2>
+          <p class="section-subtitle">Consulte as cargas já enviadas para a base de colaboradores.</p>
+        </div>
+        <div class="inline-nav">
+          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
+          <a href="${toPanelUrl('importar-colaboradores')}">Importar</a>
+          <a href="${toPanelUrl('consultar-colaboradores')}">Consultar base</a>
+        </div>
+      </div>
 
-run().catch((err) => {
-  console.error(err);
-  const meta = document.getElementById('metaInfo');
-  if (meta) meta.textContent = `Erro ao carregar histórico: ${err.message || err}`;
+      <div class="base-card">
+        <div class="base-actions-row">
+          <div>
+            <label class="base-label" for="filtroData">Data de referência</label>
+            <input class="base-input" type="date" id="filtroData" />
+          </div>
+          <div>
+            <label class="base-label" for="filtroStatus">Status</label>
+            <select class="base-select" id="filtroStatus">
+              <option value="">Todos</option>
+              <option value="processado">Processado</option>
+              <option value="processando">Processando</option>
+              <option value="erro">Erro</option>
+            </select>
+          </div>
+          <div>
+            <label class="base-label" for="filtroOrigem">Origem</label>
+            <select class="base-select" id="filtroOrigem">
+              <option value="">Todas</option>
+              <option value="upload_manual">Upload manual</option>
+              <option value="base_rh">Base RH</option>
+              <option value="ajuste_manual">Ajuste manual</option>
+            </select>
+          </div>
+          <div style="display:flex; align-items:end;">
+            <button class="base-button secondary inline" id="btnBuscar">Atualizar histórico</button>
+          </div>
+        </div>
+
+        <div class="base-table-wrap" style="margin-top:16px;">
+          <table class="base-table">
+            <thead>
+              <tr>
+                <th>Data referência</th>
+                <th>Arquivo</th>
+                <th>Origem</th>
+                <th>Status</th>
+                <th>Total linhas</th>
+                <th>Importado em</th>
+                <th>Importado por</th>
+                <th>Observações</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyImportacoes"></tbody>
+          </table>
+        </div>
+
+        <div class="base-meta" id="metaInfo">Carregando histórico...</div>
+      </div>
+    </section>
+  `;
+
+  document.getElementById('btnBuscar')?.addEventListener('click', loadData);
+  loadData().catch((err) => {
+    console.error(err);
+    const meta = document.getElementById('metaInfo');
+    if (meta) meta.textContent = `Erro ao carregar histórico: ${err.message || err}`;
+  });
 });
