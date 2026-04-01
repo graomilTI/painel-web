@@ -1,5 +1,5 @@
 // assets/js/menuConfig.js
-// Corrigido: exporta MENU_CONFIG e PANEL_MENU
+// Ajustado: remove "Importar Colaboradores" de RH e cria itens de Colaboradores em RELATÓRIOS
 
 export const MENU_CONFIG = [
   {
@@ -56,8 +56,6 @@ export const MENU_CONFIG = [
     itens: [
       { id: "RH_FERIAS_ATESTADOS", nome: "Férias e Atestados", path: "ferias-atestados" },
       { id: "RH_HIST_INDISP", nome: "Histórico de Indisponibilidade", path: "historico-indisponibilidade" },
-      { id: "BASE_COLAB_IMPORT", nome: "Importar Colaboradores", path: "importar-colaboradores" },
-      { id: "BASE_COLAB_HIST", nome: "Histórico de Importações", path: "historico-colaboradores" },
       { id: "BASE_COLAB_CONSULTA", nome: "Consultar Base", path: "consultar-colaboradores" }
     ]
   },
@@ -92,7 +90,9 @@ export const MENU_CONFIG = [
       { id: "PRODUCAO_IMPORT", nome: "Importar Produção", path: "importar-producao" },
       { id: "IMPORTAR_RELATORIO_EXTERNO", nome: "Importar Relatório Externo", path: "importar-relatorio" },
       { id: "PRODUCAO_HIST", nome: "Histórico Produção", path: "historico-producao" },
-      { id: "EFETIVOS_ZERO", nome: "Efetivos sem Produção", path: "efetivos-sem-producao" }
+      { id: "EFETIVOS_ZERO", nome: "Efetivos sem Produção", path: "efetivos-sem-producao" },
+      { id: "COLAB_IMPORT", nome: "Colaboradores • Importar", path: "importar-colaboradores" },
+      { id: "COLAB_HIST", nome: "Colaboradores • Histórico", path: "historico-colaboradores" }
     ]
   },
 
