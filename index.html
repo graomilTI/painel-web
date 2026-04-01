@@ -1,43 +1,24 @@
+
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Painel Corporativo</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <title>Painel ADM</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
-<body class="auth-page">
-  <div class="auth-card">
-    <div class="brand-eyebrow">Painel corporativo</div>
-    <h1>Acessando o sistema</h1>
-    <p>Estamos verificando sua sessão para abrir o painel da forma correta.</p>
-    <div class="feedback" id="bootFeedback">Carregando...</div>
-  </div>
+<body>
 
-  <script type="module">
-    import { getSession } from './assets/js/auth.js';
-    import { toPanelUrl } from './assets/js/paths.js';
+<div id="sidebar"></div>
 
-    const feedback = document.getElementById('bootFeedback');
+<div style="margin-left:260px; padding:20px;">
+  <h1>Painel ADM</h1>
+</div>
 
-    async function boot() {
-      try {
-        const session = await getSession();
-        if (session?.user) {
-          feedback.textContent = 'Sessão encontrada. Redirecionando para o dashboard...';
-          window.location.replace(toPanelUrl('dashboard'));
-          return;
-        }
-        feedback.textContent = 'Nenhuma sessão ativa. Redirecionando para o login...';
-        window.location.replace(toPanelUrl('login.html'));
-      } catch (err) {
-        console.error(err);
-        feedback.textContent = 'Não foi possível validar a sessão. Abrindo login...';
-        window.location.replace(toPanelUrl('login.html'));
-      }
-    }
+<script src="assets/js/menuconfig.js"></script>
+<script src="assets/js/sidebar.js"></script>
+<script>
+  SIDEBAR.renderSidebar(document.getElementById("sidebar"));
+</script>
 
-    boot();
-  </script>
 </body>
 </html>
