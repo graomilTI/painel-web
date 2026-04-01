@@ -1,24 +1,19 @@
-
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Painel ADM</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel</title>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
-<body>
+<body class="auth-page">
+  <div class="auth-card">
+    <div class="brand-eyebrow">Painel corporativo</div>
+    <h1>Carregando acesso</h1>
+    <p id="bootMessage">Validando sessão e redirecionando...</p>
+    <div class="feedback" id="bootFeedback">Aguarde um instante.</div>
+  </div>
 
-<div id="sidebar"></div>
-
-<div style="margin-left:260px; padding:20px;">
-  <h1>Painel ADM</h1>
-</div>
-
-<script src="assets/js/menuconfig.js"></script>
-<script src="assets/js/sidebar.js"></script>
-<script>
-  SIDEBAR.renderSidebar(document.getElementById("sidebar"));
-</script>
-
+  <script type="module" src="./assets/js/index.js"></script>
 </body>
 </html>
