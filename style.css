@@ -1,0 +1,37 @@
+
+body {
+  margin: 0;
+  font-family: Arial;
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+.sidebar {
+  width: 260px;
+  height: 100vh;
+  background: #020617;
+  padding: 10px;
+  position: fixed;
+  left: 0;
+  top: 0;
+}
+
+.menu-title {
+  padding: 10px;
+  cursor: pointer;
+  font-weight: bold;
+  border-radius: 6px;
+}
+
+.menu-title:hover {
+  background: #166534;
+}
+
+.submenu {
+  padding-left: 10px;
+}
+
+.submenu-item {
+  padding: 6px;
+  font-size: 13px;
+}

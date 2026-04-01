@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Painel ADM</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
 
@@ -14,10 +14,13 @@
   <h1>Painel ADM</h1>
 </div>
 
-<script src="assets/js/menuconfig.js"></script>
-<script src="assets/js/sidebar.js"></script>
+<script src="./assets/js/menuconfig.js"></script>
+<script src="./assets/js/sidebar.js"></script>
+
 <script>
-  SIDEBAR.renderSidebar(document.getElementById("sidebar"));
+  document.addEventListener("DOMContentLoaded", function() {
+    SIDEBAR.renderSidebar(document.getElementById("sidebar"));
+  });
 </script>
 
 </body>
