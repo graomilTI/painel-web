@@ -1,18 +1,16 @@
 
 :root {
   color-scheme: dark;
-  --bg: #4cd17a;
-  --bg-soft: #36b86a;
-  --bg-card: #08140f;
-  --line: #123325;
-  --line-2: #1b4a36;
-  --text: #ecf7f1;
-  --muted: #b8d6c6;
-  --green: #00c853;
-  --green-2: #00e676;
-  --green-3: #0c5a2f;
-  --green-soft: rgba(0,200,83,.12);
-  --shadow: 0 20px 50px rgba(0,0,0,.25);
+  --bg: #6fbf9a;
+  --bg-soft: #5aa884;
+  --bg-card: #0b1a14;
+  --line: #244a3a;
+  --text: #ecf4ef;
+  --muted: #a8bfb3;
+  --green: #2f8f68;
+  --green-2: #49a87c;
+  --green-soft: rgba(79,168,124,.12);
+  --shadow: 0 20px 50px rgba(0,0,0,.2);
   --radius: 22px;
 }
 
@@ -949,85 +947,38 @@ a { color: inherit; }
 
 
 
-/* === Light green background + ultra dark elements === */
+/* CLEAN GREEN GRADIENT */
 
 html, body {
   background:
-    radial-gradient(circle at 20% 10%, rgba(255,255,255,.25), transparent 30%),
-    linear-gradient(180deg, #5be089 0%, #3ac773 40%, #2fb565 100%) !important;
+    linear-gradient(180deg, #79caa3 0%, #5fb18c 50%, #4aa07c 100%) !important;
 }
 
-.app-shell,
-.auth-page {
-  background:
-    linear-gradient(180deg, #5be089 0%, #3ac773 40%, #2fb565 100%) !important;
-}
-
-/* SIDEBAR ESCURA */
 .sidebar {
-  background:
-    linear-gradient(180deg, #050b08 0%, #030705 100%) !important;
-  border-right: 1px solid rgba(0,0,0,.6) !important;
+  background: linear-gradient(180deg, #081611, #050d09) !important;
 }
 
-/* TOPBAR ESCURA */
 .topbar {
-  background:
-    linear-gradient(180deg, rgba(5,11,8,.9), rgba(3,7,5,.95)) !important;
-  border-bottom: 1px solid rgba(0,0,0,.5) !important;
+  background: rgba(8,22,17,.85) !important;
+  backdrop-filter: blur(10px);
 }
 
-/* CARDS ESCUROS */
-.card,
-.base-card,
-.hero-card,
-.mini-card {
-  background:
-    linear-gradient(180deg, #07110d, #040906) !important;
-  border: 1px solid rgba(0,0,0,.6) !important;
-  box-shadow: 0 14px 30px rgba(0,0,0,.3);
-}
-
-/* MENU */
-.menu-list a {
-  background: transparent;
-}
-
-.menu-list a:hover {
-  background: rgba(0,230,118,.08) !important;
+.card, .base-card {
+  background: linear-gradient(180deg, #0b1a14, #07130f) !important;
+  border: 1px solid rgba(255,255,255,.06);
 }
 
 .menu-list a.active {
-  background:
-    linear-gradient(135deg, #00e676, #00c853) !important;
-  color: #032013 !important;
-  border-color: rgba(0,0,0,.8) !important;
-  box-shadow: 0 0 0 2px rgba(0,0,0,.6);
+  background: linear-gradient(135deg, #49a87c, #2f8f68) !important;
+  color: #02150d !important;
 }
 
-/* BOTÕES */
-.btn-primary,
-.base-button.primary,
-.inline-nav a.active {
-  background:
-    linear-gradient(135deg, #00e676, #00c853) !important;
-  color: #032013 !important;
-  box-shadow: 0 10px 25px rgba(0,0,0,.25);
+.btn-primary {
+  background: linear-gradient(135deg, #49a87c, #2f8f68) !important;
+  color: #02150d !important;
 }
 
-/* INPUTS */
-.base-input,
-.base-select,
-.field input {
-  background: #06100c !important;
-  border: 1px solid rgba(0,0,0,.6) !important;
-}
-
-/* TABELA */
-.base-table {
-  background: #040906 !important;
-}
-
-.base-table tbody tr:hover {
-  background: rgba(0,230,118,.08) !important;
+.base-input {
+  background: #0b1a14 !important;
+  border: 1px solid rgba(255,255,255,.08);
 }
