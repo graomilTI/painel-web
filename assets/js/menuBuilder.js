@@ -2,6 +2,32 @@ import { toPanelUrl } from './paths.js';
 import { PANEL_MENU } from './menuConfig.js';
 
 const MENU_STORAGE_KEY = 'painel_sidebar_open_sections';
+const PREFETCHED_URLS = new Set();
+
+function prefetchUrl(url) {
+  try {
+    const absolute = new URL(url, window.location.href).toString();
+    if (PREFETCHED_URLS.has(absolute)) return;
+    PREFETCHED_URLS.add(absolute);
+
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = absolute;
+    link.as = 'document';
+    document.head.appendChild(link);
+  } catch {}
+}
+
+function shouldHandleAsNormalNavigation(event) {
+  return !(
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  );
+}
 
 function loadOpenSections() {
   try {
@@ -107,6 +133,14 @@ export function renderMenu(container, menuSections, currentPath = '') {
         ) {
           link.classList.add('active');
         }
+
+        link.addEventListener('mouseenter', () => prefetchUrl(link.href), { passive: true });
+        link.addEventListener('focus', () => prefetchUrl(link.href), { passive: true });
+        link.addEventListener('touchstart', () => prefetchUrl(link.href), { passive: true, once: true });
+        link.addEventListener('click', (event) => {
+          if (!shouldHandleAsNormalNavigation(event)) return;
+          document.documentElement.classList.add('is-route-transitioning');
+        });
 
         li.appendChild(link);
         list.appendChild(li);
