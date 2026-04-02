@@ -1,19 +1,17 @@
 :root {
   color-scheme: dark;
-  --bg: #030504;
-  --bg-soft: #060907;
-  --bg-card: #0a0f0c;
-  --line: #16311f;
-  --line-2: #1d3d28;
-  --text: #edf2ee;
-  --muted: #97a59c;
+  --bg: #07130d;
+  --bg-soft: #0b1f15;
+  --bg-card: #0f2619;
+  --line: #1f3d2a;
+  --line-2: #2a5238;
+  --text: #ecf5ef;
+  --muted: #9bb3a6;
   --green: #00c853;
   --green-2: #00e676;
-  --green-3: #0c7a34;
-  --green-soft: rgba(0, 200, 83, 0.14);
-  --danger: #dc2626;
-  --shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
-  --shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.22);
+  --green-3: #0f5c2f;
+  --green-soft: rgba(0, 200, 83, 0.12);
+  --shadow: 0 18px 48px rgba(0,0,0,.35);
   --radius: 22px;
 }
 
@@ -948,189 +946,62 @@ a { color: inherit; }
 }
 
 
-/* ===== Grão1000 black + dark green ===== */
+/* ===== GREEN BACKGROUND PREMIUM ===== */
+
 html, body {
   background:
-    radial-gradient(circle at 18% 14%, rgba(0,200,83,.08), transparent 26%),
-    radial-gradient(circle at 84% 18%, rgba(0,120,52,.06), transparent 22%),
-    linear-gradient(180deg, #020302 0%, #050805 58%, #030403 100%) !important;
-}
-
-body {
-  color: var(--text);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
-
-.auth-page,
-.app-shell {
-  background:
-    radial-gradient(circle at 18% 14%, rgba(0,200,83,.06), transparent 26%),
-    radial-gradient(circle at 84% 18%, rgba(0,120,52,.04), transparent 22%),
-    linear-gradient(180deg, #020302 0%, #050805 58%, #030403 100%) !important;
+    radial-gradient(circle at 20% 15%, rgba(0,230,118,.10), transparent 28%),
+    radial-gradient(circle at 85% 20%, rgba(0,200,83,.08), transparent 22%),
+    linear-gradient(180deg, #06110c 0%, #0a1c13 60%, #07130d 100%) !important;
 }
 
 .sidebar {
   background:
-    linear-gradient(180deg, #030504 0%, #020302 100%) !important;
-  border-right: 1px solid rgba(22,49,31,.95) !important;
-  box-shadow: inset -1px 0 0 rgba(255,255,255,.015);
-}
-
-.sidebar-brand {
-  border-bottom: 1px solid rgba(22,49,31,.95) !important;
+    linear-gradient(180deg, #081710 0%, #06110c 100%) !important;
+  border-right: 1px solid rgba(31,61,42,.9) !important;
 }
 
 .topbar {
   background:
-    linear-gradient(180deg, rgba(3,5,4,.92), rgba(3,5,4,.84)) !important;
-  border-bottom: 1px solid rgba(22,49,31,.92) !important;
-  backdrop-filter: blur(12px);
+    linear-gradient(180deg, rgba(10,25,18,.85), rgba(6,17,12,.8)) !important;
+  border-bottom: 1px solid rgba(31,61,42,.9) !important;
 }
 
 .card,
 .base-card,
-.hero-card,
-.mini-card,
-.auth-card {
+.hero-card {
   background:
-    linear-gradient(180deg, rgba(8,12,9,.96), rgba(4,7,5,.985)) !important;
-  border: 1px solid rgba(22,49,31,.92) !important;
-  box-shadow:
-    0 12px 30px rgba(0,0,0,.26),
-    inset 0 1px 0 rgba(255,255,255,.018) !important;
-}
-
-.menu-section-toggle,
-.menu-list a,
-.inline-nav a,
-.btn,
-.base-button {
-  transition:
-    background-color .16s ease,
-    border-color .16s ease,
-    color .16s ease,
-    transform .16s ease,
-    box-shadow .16s ease;
-}
-
-.menu-section-toggle {
-  border: 1px solid transparent;
-  border-radius: 18px;
-}
-
-.menu-section-toggle:hover,
-.menu-section-toggle.is-active {
-  background:
-    linear-gradient(180deg, rgba(0,200,83,.09), rgba(0,120,52,.05)) !important;
-  border-color: rgba(0,200,83,.18) !important;
-  color: #f7fff9 !important;
-}
-
-.menu-list a {
-  border: 1px solid transparent;
-  border-radius: 16px;
+    linear-gradient(180deg, rgba(15,38,25,.92), rgba(10,28,19,.96)) !important;
+  border: 1px solid rgba(42,82,56,.6) !important;
 }
 
 .menu-list a:hover {
-  background: rgba(0,200,83,.06) !important;
-  border-color: rgba(0,200,83,.10) !important;
+  background: rgba(0,230,118,.08) !important;
 }
 
 .menu-list a.active {
   background:
-    linear-gradient(180deg, rgba(0,200,83,.14), rgba(0,120,52,.10)) !important;
-  border-color: rgba(0,230,118,.30) !important;
-  color: #ffffff !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.03),
-    0 8px 20px rgba(0,0,0,.18);
-}
-
-.inline-nav a {
-  background:
-    linear-gradient(180deg, rgba(8,12,9,.96), rgba(4,7,5,.985)) !important;
-  border: 1px solid rgba(22,49,31,.92) !important;
-  color: var(--text) !important;
-}
-
-.inline-nav a:hover {
-  background:
-    linear-gradient(180deg, rgba(0,200,83,.10), rgba(0,120,52,.07)) !important;
-  border-color: rgba(0,230,118,.22) !important;
-  transform: translateY(-1px);
+    linear-gradient(135deg, rgba(0,230,118,.18), rgba(0,200,83,.12)) !important;
+  border-color: rgba(0,230,118,.35) !important;
 }
 
 .inline-nav a.active,
-.badge,
-.hero-badge,
 .btn-primary,
 .base-button.primary {
   background:
-    linear-gradient(135deg, #00e676 0%, #00c853 58%, #0c7a34 100%) !important;
-  border-color: rgba(0,230,118,.34) !important;
-  color: #021b0a !important;
-  box-shadow:
-    0 10px 24px rgba(0,200,83,.16),
-    inset 0 1px 0 rgba(255,255,255,.18) !important;
+    linear-gradient(135deg, #00e676 0%, #00c853 100%) !important;
+  color: #032013 !important;
 }
 
-.btn-primary:hover,
-.base-button.primary:hover,
-.inline-nav a.active:hover {
-  filter: brightness(1.03);
-  transform: translateY(-1px);
-}
-
-.base-input,
-.base-select,
-.base-textarea,
-.field input {
-  background:
-    linear-gradient(180deg, #080d0a, #050805) !important;
-  border: 1px solid rgba(22,49,31,.92) !important;
-  color: var(--text) !important;
-}
-
-.base-input:focus,
-.base-select:focus,
-.base-textarea:focus,
-.field input:focus {
-  border-color: rgba(0,230,118,.42) !important;
-  box-shadow: 0 0 0 3px rgba(0,200,83,.10) !important;
-  outline: none;
-}
-
-.base-table-wrap {
-  border: 1px solid rgba(22,49,31,.92) !important;
-  background: rgba(255,255,255,.01) !important;
+.base-input {
+  background: #0c2116 !important;
+  border: 1px solid rgba(42,82,56,.7) !important;
 }
 
 .base-table {
-  background: #040704 !important;
-}
-
-.base-table th,
-.base-table td {
-  border-bottom: 1px solid rgba(22,49,31,.82) !important;
+  background: #081710 !important;
 }
 
 .base-table tbody tr:hover {
-  background: rgba(0,200,83,.05) !important;
-}
-
-.base-pill,
-.pill {
-  background:
-    linear-gradient(180deg, rgba(8,12,9,.96), rgba(4,7,5,.985)) !important;
-  border: 1px solid rgba(22,49,31,.92) !important;
-  color: #effaf1 !important;
-}
-
-.section-subtitle,
-.topbar .meta,
-.muted,
-.base-meta,
-.sidebar-brand p {
-  color: #95a39a !important;
+  background: rgba(0,230,118,.06) !important;
 }
