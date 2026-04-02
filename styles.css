@@ -995,3 +995,64 @@ html.is-route-ready .app-shell {
     transform: translateY(0);
   }
 }
+
+
+/* ajuste para relatórios caberem na tela sem empurrar os botões para fora */
+.content-wrap,
+.page-main,
+.base-page,
+.base-card,
+.section-heading {
+  min-width: 0;
+}
+
+.page-main {
+  overflow-x: hidden;
+}
+
+.section-heading {
+  align-items: stretch;
+}
+
+.section-heading > div:first-child {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.inline-nav {
+  width: 100%;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.inline-nav a {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.base-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.base-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+@media (max-width: 980px) {
+  .section-heading h2 {
+    font-size: 28px;
+  }
+
+  .inline-nav {
+    gap: 8px;
+  }
+
+  .inline-nav a {
+    padding: 9px 12px;
+    font-size: 14px;
+  }
+}
