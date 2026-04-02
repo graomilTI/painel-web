@@ -10,6 +10,7 @@ window.MENU_CONFIG = {
     { nome: "LOGÍSTICA", modulos: [] },
     { nome: "TROCA DE NOTAS", modulos: [] },
     { nome: "AUDITORIA", modulos: ["Logs", "Relatórios"] },
-    { nome: "DIRETORIA", modulos: [] }
+    { nome: "DIRETORIA", modulos: [] },
+    { nome: "RELATÓRIOS", modulos: ["Colaboradores","Produção"] }
   ]
 };
