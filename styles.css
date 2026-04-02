@@ -1,16 +1,16 @@
 
 :root {
   color-scheme: dark;
-  --bg: #6fbf9a;
-  --bg-soft: #5aa884;
-  --bg-card: #0b1a14;
-  --line: #244a3a;
-  --text: #ecf4ef;
-  --muted: #a8bfb3;
-  --green: #2f8f68;
-  --green-2: #49a87c;
-  --green-soft: rgba(79,168,124,.12);
-  --shadow: 0 20px 50px rgba(0,0,0,.2);
+  --bg: #b7f5d6;
+  --bg-soft: #9feac8;
+  --bg-card: #07130f;
+  --line: #2d6f57;
+  --text: #ecfdf5;
+  --muted: #a7d9c4;
+  --green: #5ed6a3;
+  --green-2: #7ee5bb;
+  --green-soft: rgba(126,229,187,.18);
+  --shadow: 0 20px 50px rgba(0,0,0,.15);
   --radius: 22px;
 }
 
@@ -947,38 +947,33 @@ a { color: inherit; }
 
 
 
-/* CLEAN GREEN GRADIENT */
+/* CANDY GREEN LIGHT */
 
 html, body {
   background:
-    linear-gradient(180deg, #79caa3 0%, #5fb18c 50%, #4aa07c 100%) !important;
-}
-
-.sidebar {
-  background: linear-gradient(180deg, #081611, #050d09) !important;
+    linear-gradient(180deg, #d7fff0 0%, #b7f5d6 40%, #8eeac2 100%) !important;
 }
 
 .topbar {
-  background: rgba(8,22,17,.85) !important;
-  backdrop-filter: blur(10px);
+  background: rgba(7,19,15,.75) !important;
+  backdrop-filter: blur(12px);
+}
+
+.sidebar {
+  background: linear-gradient(180deg, #06110d, #030806) !important;
 }
 
 .card, .base-card {
-  background: linear-gradient(180deg, #0b1a14, #07130f) !important;
-  border: 1px solid rgba(255,255,255,.06);
+  background: linear-gradient(180deg, #07130f, #040a07) !important;
+  border: 1px solid rgba(255,255,255,.05);
 }
 
 .menu-list a.active {
-  background: linear-gradient(135deg, #49a87c, #2f8f68) !important;
-  color: #02150d !important;
+  background: linear-gradient(135deg, #7ee5bb, #5ed6a3) !important;
+  color: #022017 !important;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #49a87c, #2f8f68) !important;
-  color: #02150d !important;
-}
-
-.base-input {
-  background: #0b1a14 !important;
-  border: 1px solid rgba(255,255,255,.08);
+  background: linear-gradient(135deg, #7ee5bb, #5ed6a3) !important;
+  color: #022017 !important;
 }
