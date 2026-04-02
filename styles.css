@@ -1521,3 +1521,60 @@ body {
     font-size: 29px;
   }
 }
+
+
+
+/* ========================================
+   CORREÇÃO FINAL — REMOVER LAYOUT ANTIGO
+   ======================================== */
+
+.base-card {
+  background: rgba(8, 22, 17, 0.68) !important;
+  border: 1px solid rgba(111,208,165,.10) !important;
+  backdrop-filter: blur(12px);
+}
+
+.base-table {
+  background: rgba(8,22,17,.62) !important;
+}
+
+.base-table th,
+.base-table td {
+  border-bottom: 1px solid rgba(111,208,165,.08) !important;
+}
+
+.base-table th {
+  background: rgba(255,255,255,.012) !important;
+}
+
+.base-status {
+  background: rgba(8,22,17,.55) !important;
+  border: 1px solid rgba(111,208,165,.10) !important;
+  color: var(--text) !important;
+  border-radius: 16px;
+}
+
+.base-mini {
+  background: rgba(8,22,17,.55) !important;
+  border: 1px solid rgba(111,208,165,.10) !important;
+}
+
+.base-mini-label {
+  color: rgba(236,247,242,.7) !important;
+}
+
+.base-mini-value {
+  color: var(--text) !important;
+}
+
+.base-button.secondary,
+.btn-secondary {
+  background: rgba(8,22,17,.54) !important;
+  border: 1px solid rgba(111,208,165,.10) !important;
+  color: var(--text) !important;
+}
+
+.base-hint-list,
+.feedback {
+  color: rgba(236,247,242,.7) !important;
+}
