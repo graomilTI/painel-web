@@ -78,12 +78,12 @@ initProtectedPage('Histórico de Produção', (content) => {
       <div class="section-heading">
         <div>
           <h2>Histórico de Produção</h2>
-          <p class="section-subtitle">Consulte as cargas de produção diária já importadas no sistema.</p>
+          <p class="section-subtitle">Consulte as cargas já enviadas para a base de produção.</p>
         </div>
         <div class="inline-nav">
-          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
           <a href="${toPanelUrl('importar-producao')}">Importar</a>
-          <a href="${toPanelUrl('efetivos-sem-producao')}">Efetivos sem produção</a>
+<a href="${toPanelUrl('consultar-producao')}" class="active">Consultar</a>
+<a href="${toPanelUrl('efetivos-sem-producao')}">Efetivos sem Produção</a>
         </div>
       </div>
 

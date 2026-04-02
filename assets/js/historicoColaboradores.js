@@ -87,9 +87,9 @@ initProtectedPage('Histórico de Importações', (content) => {
           <p class="section-subtitle">Consulte as cargas já enviadas para a base de colaboradores.</p>
         </div>
         <div class="inline-nav">
-          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
           <a href="${toPanelUrl('importar-colaboradores')}">Importar</a>
-          <a href="${toPanelUrl('consultar-colaboradores')}">Consultar base</a>
+<a href="${toPanelUrl('consultar-colaboradores')}">Consultar</a>
+<a class="active" href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
         </div>
       </div>
 

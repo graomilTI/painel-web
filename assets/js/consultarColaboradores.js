@@ -114,12 +114,12 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
       <div class="section-heading">
         <div>
           <h2>Consultar Base de Colaboradores</h2>
-          <p class="section-subtitle">Filtre a base histórica por data, coordenação, supervisão e colaborador.</p>
+          <p class="section-subtitle">Filtre a base funcional por data, coordenação, supervisão e colaborador.</p>
         </div>
         <div class="inline-nav">
-          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
           <a href="${toPanelUrl('importar-colaboradores')}">Importar</a>
-          <a href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
+<a class="active" href="${toPanelUrl('consultar-colaboradores')}">Consultar</a>
+<a href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
         </div>
       </div>
 

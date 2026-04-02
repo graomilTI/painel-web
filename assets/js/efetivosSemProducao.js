@@ -268,12 +268,12 @@ initProtectedPage('Efetivos sem Produção', async (content) => {
       <div class="section-heading">
         <div>
           <h2>Efetivos sem Produção</h2>
-          <p class="section-subtitle">Cruze a base de colaboradores com a produção do dia para identificar efetivos classificadores sem lançamento.</p>
+          <p class="section-subtitle">Cruze a base funcional com a produção do dia para localizar efetivos sem lançamento.</p>
         </div>
         <div class="inline-nav">
-          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
-          <a href="${toPanelUrl('importar-producao')}">Importar produção</a>
-          <a href="${toPanelUrl('historico-producao')}">Histórico</a>
+          <a href="${toPanelUrl('importar-producao')}">Importar</a>
+<a href="${toPanelUrl('consultar-producao')}">Consultar</a>
+<a href="${toPanelUrl('efetivos-sem-producao')}" class="active">Efetivos sem Produção</a>
         </div>
       </div>
 

@@ -128,15 +128,12 @@ initProtectedPage('Importar Colaboradores', (content, ctx) => {
       <div class="section-heading">
         <div>
           <h2>Importar Colaboradores</h2>
-          <p class="section-subtitle">
-            Envie a planilha diária de colaboradores para registrar o histórico da base no Supabase.
-            Essa carga poderá alimentar a programação do gestor e relatórios operacionais.
-          </p>
+          <p class="section-subtitle">Envie a planilha diária de colaboradores para registrar o histórico da base no Supabase. Essa carga poderá alimentar a programação do gestor e relatórios operacionais.</p>
         </div>
         <div class="inline-nav">
-          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
-          <a href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
-          <a href="${toPanelUrl('consultar-colaboradores')}">Consultar base</a>
+          <a class="active" href="${toPanelUrl('importar-colaboradores')}">Importar</a>
+<a href="${toPanelUrl('consultar-colaboradores')}">Consultar</a>
+<a href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
         </div>
       </div>
 

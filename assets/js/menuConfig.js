@@ -87,12 +87,8 @@ export const MENU_CONFIG = [
   {
     grupo: "RELATÓRIOS",
     itens: [
-      { id: "PRODUCAO_IMPORT", nome: "Importar Produção", path: "importar-producao" },
-      { id: "IMPORTAR_RELATORIO_EXTERNO", nome: "Importar Relatório Externo", path: "importar-relatorio" },
-      { id: "PRODUCAO_HIST", nome: "Histórico Produção", path: "historico-producao" },
-      { id: "EFETIVOS_ZERO", nome: "Efetivos sem Produção", path: "efetivos-sem-producao" },
-      { id: "COLAB_IMPORT", nome: "Colaboradores • Importar", path: "importar-colaboradores" },
-      { id: "COLAB_HIST", nome: "Colaboradores • Histórico", path: "historico-colaboradores" }
+      { id: "RELATORIOS_COLAB", nome: "Colaboradores", path: "consultar-colaboradores" },
+      { id: "RELATORIOS_PROD", nome: "Produção", path: "consultar-producao" }
     ]
   },
 

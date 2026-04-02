@@ -79,9 +79,9 @@ initProtectedPage('Importar Produção', (content, ctx) => {
           <p class="section-subtitle">Envie o relatório diário de produção para cruzar com a base histórica e identificar efetivos sem produção.</p>
         </div>
         <div class="inline-nav">
-          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
-          <a href="${toPanelUrl('historico-producao')}">Histórico</a>
-          <a href="${toPanelUrl('efetivos-sem-producao')}">Efetivos sem produção</a>
+          <a href="${toPanelUrl('importar-producao')}" class="active">Importar</a>
+<a href="${toPanelUrl('consultar-producao')}">Consultar</a>
+<a href="${toPanelUrl('efetivos-sem-producao')}">Efetivos sem Produção</a>
         </div>
       </div>
 
