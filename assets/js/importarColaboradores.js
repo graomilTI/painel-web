@@ -37,6 +37,13 @@ function getField(row, aliases = []) {
   return null;
 }
 
+function hasAnyHeader(row, aliases = []) {
+  if (!row || typeof row !== 'object') return false;
+  const keys = Object.keys(row);
+  const normalized = new Set(keys.map(normalizeKey));
+  return aliases.some((alias) => keys.includes(alias) || normalized.has(normalizeKey(alias)));
+}
+
 const COL = {
   cpf: ['CPF', 'Cpf'],
   nome: ['Nome', 'NOME'],
@@ -61,6 +68,54 @@ const COL = {
   emailPessoal: ['E-mail Pessoal', 'Email Pessoal'],
   emailEmpresa: ['E-mail da Empresa', 'Email da Empresa', 'E-mail Empresa']
 };
+
+function validateRows(rows) {
+  const firstRow = rows?.[0] || {};
+  const missingHeaders = [];
+
+  if (!hasAnyHeader(firstRow, COL.cpf)) missingHeaders.push('CPF');
+  if (!hasAnyHeader(firstRow, COL.nome)) missingHeaders.push('Nome');
+  if (!hasAnyHeader(firstRow, COL.admissao)) missingHeaders.push('Admissão');
+
+  if (missingHeaders.length) {
+    throw new Error(`Cabeçalho(s) obrigatório(s) ausente(s): ${missingHeaders.join(', ')}`);
+  }
+
+  const invalidAdmissao = [];
+  rows.forEach((row, index) => {
+    const nome = normalizeText(getField(row, COL.nome));
+    const cpf = normalizeCPF(getField(row, COL.cpf));
+    const rawAdmissao = getField(row, COL.admissao);
+    const admissao = excelDateToISO(rawAdmissao);
+
+    const hasIdentity = !!(nome || cpf);
+    if (!hasIdentity) return;
+
+    if (!admissao) {
+      invalidAdmissao.push({
+        linha: index + 2,
+        nome: nome || '(sem nome)',
+        cpf: cpf || '(sem CPF)',
+        valor: rawAdmissao ?? '(vazio)'
+      });
+    }
+  });
+
+  if (invalidAdmissao.length) {
+    const preview = invalidAdmissao
+      .slice(0, 12)
+      .map((item) => `Linha ${item.linha}: ${item.nome} | CPF ${item.cpf} | Admissão: ${item.valor}`)
+      .join('\n');
+
+    throw new Error(
+      `Importação bloqueada: ${invalidAdmissao.length} registro(s) estão sem Admissão válida.\n\n` +
+      `A coluna deve estar preenchida com data real do Excel ou no formato dd/mm/aaaa.\n\n` +
+      `Primeiros casos encontrados:\n${preview}`
+    );
+  }
+
+  return { invalidAdmissao: 0 };
+}
 
 function normalizeCPF(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -312,6 +367,13 @@ initProtectedPage('Importar Colaboradores', (content, ctx) => {
       });
 
       if (!rows.length) throw new Error('A planilha está vazia.');
+
+      setFeedback(`Arquivo lido com sucesso.
+Aba: ${firstSheet}
+Linhas encontradas: ${rows.length}
+Validando cabeçalhos e coluna de admissão...`);
+
+      validateRows(rows);
 
       setSummary({ linhas: rows.length, validas: 0, status: 'Criando importação' });
       setFeedback(`Arquivo lido com sucesso.
