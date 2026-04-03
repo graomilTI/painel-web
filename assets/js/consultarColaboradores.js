@@ -29,27 +29,22 @@ async function loadData() {
   const tbody = document.getElementById('tbodyColaboradores');
   const meta = document.getElementById('metaConsulta');
 
-  let fData = document.getElementById('fData').value;
   const fCoordenacao = document.getElementById('fCoordenacao').value.trim();
   const fSupervisao = document.getElementById('fSupervisao').value.trim();
   const fNome = document.getElementById('fNome').value.trim();
-  const fSituacao = document.getElementById('fSituacao').value.trim();
+  const fSituacao = document.getElementById('fSituacao').value;
   const fEmpresa = document.getElementById('fEmpresa').value.trim();
   const fTipo = document.getElementById('fTipo').value.trim();
   const fCpf = normalizeCpfInput(document.getElementById('fCpf').value);
 
-  if (!fData) {
-    fData = await getLatestReferenceDate();
-    if (fData) document.getElementById('fData').value = fData;
-  }
-
   tbody.innerHTML = '';
   meta.textContent = 'Consultando base...';
+
+  const latestReferenceDate = await getLatestReferenceDate();
 
   let query = supabase
     .from('colaborador_snapshot')
     .select(`
-      data_referencia,
       cpf,
       nome,
       situacao,
@@ -65,11 +60,11 @@ async function loadData() {
     .order('nome', { ascending: true })
     .limit(1000);
 
-  if (fData) query = query.eq('data_referencia', fData);
+  if (latestReferenceDate) query = query.eq('data_referencia', latestReferenceDate);
   if (fCoordenacao) query = query.ilike('coordenacao', `%${fCoordenacao}%`);
   if (fSupervisao) query = query.ilike('supervisao', `%${fSupervisao}%`);
   if (fNome) query = query.ilike('nome', `%${fNome}%`);
-  if (fSituacao) query = query.ilike('situacao', `%${fSituacao}%`);
+  if (fSituacao && fSituacao !== 'Todos') query = query.eq('situacao', fSituacao);
   if (fEmpresa) query = query.ilike('empresa', `%${fEmpresa}%`);
   if (fTipo) query = query.ilike('tipo', `%${fTipo}%`);
   if (fCpf) query = query.eq('cpf', fCpf);
@@ -80,7 +75,7 @@ async function loadData() {
   if (!data.length) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 12;
+    td.colSpan = 11;
     td.textContent = 'Nenhum colaborador encontrado com os filtros informados.';
     tr.appendChild(td);
     tbody.appendChild(tr);
@@ -90,7 +85,6 @@ async function loadData() {
 
   data.forEach((row) => {
     const tr = document.createElement('tr');
-    tr.appendChild(makeCell(row.data_referencia));
     tr.appendChild(makeCell(row.cpf));
     tr.appendChild(makeCell(row.nome));
     tr.appendChild(makeCell(row.situacao));
@@ -105,7 +99,9 @@ async function loadData() {
     tbody.appendChild(tr);
   });
 
-  meta.textContent = `${data.length} registro(s) localizado(s).`;
+  meta.textContent = latestReferenceDate
+    ? `${data.length} registro(s) localizado(s) na base mais recente.`
+    : `${data.length} registro(s) localizado(s).`;
 }
 
 initProtectedPage('Consultar Base de Colaboradores', (content) => {
@@ -114,21 +110,17 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
       <div class="section-heading">
         <div>
           <h2>Consultar Base de Colaboradores</h2>
-          <p class="section-subtitle">Filtre a base funcional por data, coordenação, supervisão e colaborador.</p>
+          <p class="section-subtitle">Filtre a base funcional por coordenação, supervisão e colaborador.</p>
         </div>
         <div class="inline-nav">
           <a href="${toPanelUrl('importar-colaboradores')}">Importar</a>
-<a class="active" href="${toPanelUrl('consultar-colaboradores')}">Consultar</a>
-<a href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
+          <a class="active" href="${toPanelUrl('consultar-colaboradores')}">Consultar</a>
+          <a href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
         </div>
       </div>
 
       <div class="base-card">
         <div class="base-actions-row filters-5">
-          <div>
-            <label class="base-label" for="fData">Data referência</label>
-            <input class="base-input" type="date" id="fData" />
-          </div>
           <div>
             <label class="base-label" for="fCoordenacao">Coordenação</label>
             <input class="base-input" type="text" id="fCoordenacao" placeholder="Ex.: Operações" />
@@ -143,15 +135,19 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
           </div>
           <div>
             <label class="base-label" for="fSituacao">Situação</label>
-            <input class="base-input" type="text" id="fSituacao" placeholder="Ex.: Ativo" />
+            <select class="base-select" id="fSituacao">
+              <option value="Todos">Todos</option>
+              <option value="Ativo" selected>Ativo</option>
+              <option value="Não Ativo">Não Ativo</option>
+            </select>
           </div>
-        </div>
-
-        <div class="base-actions-row compact" style="margin-top:12px;">
           <div>
             <label class="base-label" for="fEmpresa">Empresa</label>
             <input class="base-input" type="text" id="fEmpresa" placeholder="Empresa" />
           </div>
+        </div>
+
+        <div class="base-actions-row compact" style="margin-top:12px;">
           <div>
             <label class="base-label" for="fTipo">Tipo</label>
             <input class="base-input" type="text" id="fTipo" placeholder="Tipo" />
@@ -160,6 +156,7 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
             <label class="base-label" for="fCpf">CPF</label>
             <input class="base-input" type="text" id="fCpf" placeholder="CPF" />
           </div>
+          <div></div>
           <div style="display:flex; align-items:end;">
             <button class="base-button secondary inline" id="btnPesquisar">Pesquisar</button>
           </div>
@@ -169,7 +166,6 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
           <table class="base-table wide">
             <thead>
               <tr>
-                <th>Data</th>
                 <th>CPF</th>
                 <th>Nome</th>
                 <th>Situação</th>
