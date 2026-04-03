@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { toPanelUrl } from './paths.js';
+import { getSession } from './auth.js';
+import { toPanelUrl, toApiUrl } from './paths.js';
 
 function makeCell(text) {
   const td = document.createElement('td');
@@ -107,9 +108,9 @@ async function loadData() {
 
 function getExportEndpoint(tipo) {
   const map = {
-    ifood: '/api/exportacoes/cartoes/ifood',
-    flash: '/api/exportacoes/cartoes/flash',
-    uber: '/api/exportacoes/uber',
+    ifood: toApiUrl('exportacoes/cartoes/ifood'),
+    flash: toApiUrl('exportacoes/cartoes/flash'),
+    uber: toApiUrl('exportacoes/uber'),
   };
   return map[tipo] || '';
 }
@@ -143,6 +144,12 @@ async function gerarExportacao() {
   try {
     btn.disabled = true;
 
+    const session = await getSession();
+    const token = session?.access_token;
+    if (!token) {
+      throw new Error('Sessão expirada. Faça login novamente para exportar.');
+    }
+
     const payload = {
       data_admissao_inicial: admissaoInicial || null,
       data_admissao_final: admissaoFinal || null,
@@ -150,7 +157,10 @@ async function gerarExportacao() {
 
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(payload),
     });
 
@@ -163,7 +173,7 @@ async function gerarExportacao() {
     feedback.textContent = `Exportação ${getExportLabel(tipo)} gerada com sucesso.`;
 
     const arquivoId = data?.arquivo_id || data?.file_id || data?.id || '';
-    const downloadUrl = data?.download_url || (arquivoId ? `/api/exportacoes/download?id=${arquivoId}` : '');
+    const downloadUrl = data?.download_url || (arquivoId ? `${toApiUrl('exportacoes/download')}?id=${arquivoId}` : '');
 
     if (downloadUrl) {
       const a = document.createElement('a');
