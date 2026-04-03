@@ -55,7 +55,8 @@ async function loadData() {
       cidade,
       tipo,
       email_empresa,
-      whatsapp
+      whatsapp,
+      admissao
     `)
     .order('nome', { ascending: true })
     .limit(1000);
@@ -104,6 +105,89 @@ async function loadData() {
     : `${data.length} registro(s) localizado(s).`;
 }
 
+function getExportEndpoint(tipo) {
+  const map = {
+    ifood: '/api/exportacoes/cartoes/ifood',
+    flash: '/api/exportacoes/cartoes/flash',
+    uber: '/api/exportacoes/uber',
+  };
+  return map[tipo] || '';
+}
+
+function getExportLabel(tipo) {
+  const map = {
+    ifood: 'iFood',
+    flash: 'Flash',
+    uber: 'Uber',
+  };
+  return map[tipo] || tipo;
+}
+
+async function gerarExportacao() {
+  const tipo = document.getElementById('exportTipo').value;
+  const admissaoInicial = document.getElementById('exportAdmissaoInicial').value;
+  const admissaoFinal = document.getElementById('exportAdmissaoFinal').value;
+  const feedback = document.getElementById('exportFeedback');
+  const boxDownload = document.getElementById('exportDownload');
+  const btn = document.getElementById('btnGerarExportacao');
+
+  boxDownload.innerHTML = '';
+  feedback.textContent = 'Gerando exportação...';
+
+  const endpoint = getExportEndpoint(tipo);
+  if (!endpoint) {
+    feedback.textContent = 'Tipo de exportação inválido.';
+    return;
+  }
+
+  try {
+    btn.disabled = true;
+
+    const payload = {
+      data_admissao_inicial: admissaoInicial || null,
+      data_admissao_final: admissaoFinal || null,
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.error || 'Erro ao gerar exportação.');
+    }
+
+    feedback.textContent = `Exportação ${getExportLabel(tipo)} gerada com sucesso.`;
+
+    const arquivoId = data?.arquivo_id || data?.file_id || data?.id || '';
+    const downloadUrl = data?.download_url || (arquivoId ? `/api/exportacoes/download?id=${arquivoId}` : '');
+
+    if (downloadUrl) {
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.className = 'base-button primary inline';
+      a.textContent = `Baixar tabela ${getExportLabel(tipo)}`;
+      a.target = '_blank';
+      boxDownload.innerHTML = '';
+      boxDownload.appendChild(a);
+    } else {
+      boxDownload.innerHTML = '';
+      const info = document.createElement('div');
+      info.className = 'base-meta';
+      info.textContent = 'A exportação foi criada, mas a rota não retornou um link de download.';
+      boxDownload.appendChild(info);
+    }
+  } catch (err) {
+    console.error(err);
+    feedback.textContent = err.message || 'Erro ao gerar exportação.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 initProtectedPage('Consultar Base de Colaboradores', (content) => {
   content.innerHTML = `
     <section class="base-page">
@@ -116,7 +200,35 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
           <a href="${toPanelUrl('importar-colaboradores')}">Importar</a>
           <a class="active" href="${toPanelUrl('consultar-colaboradores')}">Consultar</a>
           <a href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
+          <a href="#exportar" id="btnAbrirExportar">Exportar</a>
         </div>
+      </div>
+
+      <div class="base-card" id="exportar">
+        <h3 style="margin-top:0">Exportar tabelas</h3>
+        <div class="base-actions-row compact" style="margin-top:12px;">
+          <div>
+            <label class="base-label" for="exportTipo">Tabela</label>
+            <select class="base-select" id="exportTipo">
+              <option value="ifood">iFood</option>
+              <option value="flash">Flash</option>
+              <option value="uber">Uber</option>
+            </select>
+          </div>
+          <div>
+            <label class="base-label" for="exportAdmissaoInicial">Admissão inicial</label>
+            <input class="base-input" type="date" id="exportAdmissaoInicial" />
+          </div>
+          <div>
+            <label class="base-label" for="exportAdmissaoFinal">Admissão final</label>
+            <input class="base-input" type="date" id="exportAdmissaoFinal" />
+          </div>
+          <div style="display:flex; align-items:end;">
+            <button class="base-button primary inline" id="btnGerarExportacao">Gerar exportação</button>
+          </div>
+        </div>
+        <div id="exportFeedback" class="base-meta" style="margin-top:12px;">Selecione a tabela e o período de admissão para exportar.</div>
+        <div id="exportDownload" class="base-actions" style="margin-top:12px;"></div>
       </div>
 
       <div class="base-card">
@@ -189,6 +301,12 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
   `;
 
   document.getElementById('btnPesquisar')?.addEventListener('click', loadData);
+  document.getElementById('btnGerarExportacao')?.addEventListener('click', gerarExportacao);
+  document.getElementById('btnAbrirExportar')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    document.getElementById('exportar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
   loadData().catch((err) => {
     console.error(err);
     const meta = document.getElementById('metaConsulta');
