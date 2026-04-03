@@ -124,6 +124,36 @@ function getExportLabel(tipo) {
   return map[tipo] || tipo;
 }
 
+async function baixarArquivoAutenticado(downloadUrl, filename) {
+  const session = await getSession();
+  const token = session?.access_token;
+  if (!token) {
+    throw new Error('Sessão expirada. Faça login novamente para baixar o arquivo.');
+  }
+
+  const response = await fetch(downloadUrl, {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error || 'Erro ao baixar arquivo.');
+  }
+
+  const blob = await response.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename || 'exportacao.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(blobUrl);
+}
+
 async function gerarExportacao() {
   const tipo = document.getElementById('exportTipo').value;
   const admissaoInicial = document.getElementById('exportAdmissaoInicial').value;
@@ -174,15 +204,27 @@ async function gerarExportacao() {
 
     const arquivoId = data?.arquivo_id || data?.file_id || data?.id || '';
     const downloadUrl = data?.download_url || (arquivoId ? `${toApiUrl('exportacoes/download')}?id=${arquivoId}` : '');
+    const filename = data?.filename || `export_${tipo}.csv`;
 
     if (downloadUrl) {
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.className = 'base-button primary inline';
-      a.textContent = `Baixar tabela ${getExportLabel(tipo)}`;
-      a.target = '_blank';
+      const btnDownload = document.createElement('button');
+      btnDownload.type = 'button';
+      btnDownload.className = 'base-button primary inline';
+      btnDownload.textContent = `Baixar tabela ${getExportLabel(tipo)}`;
+
+      btnDownload.addEventListener('click', async () => {
+        try {
+          feedback.textContent = `Baixando tabela ${getExportLabel(tipo)}...`;
+          await baixarArquivoAutenticado(downloadUrl, filename);
+          feedback.textContent = `Download ${getExportLabel(tipo)} concluído.`;
+        } catch (err) {
+          console.error(err);
+          feedback.textContent = err.message || 'Erro ao baixar arquivo.';
+        }
+      });
+
       boxDownload.innerHTML = '';
-      boxDownload.appendChild(a);
+      boxDownload.appendChild(btnDownload);
     } else {
       boxDownload.innerHTML = '';
       const info = document.createElement('div');
