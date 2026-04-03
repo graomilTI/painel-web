@@ -1,3 +1,4 @@
+
 function xCorsHeaders(origin = "*") {
   return {
     "access-control-allow-origin": origin,
@@ -69,7 +70,7 @@ async function xRequireMaster(request, env) {
   const authUser = xSafeJsonParse(await res.text());
   if (!res.ok || !authUser?.id) throw new Error("Usuário autenticado inválido");
 
-  const appUsers = await xSupabaseRest(env, `app_usuarios?select=id,auth_user_id,perfil_id,status&auth_user_id=eq.${authUser.id}&limit=1`);
+  const appUsers = await xSupabaseRest(env, `app_usuarios?select=id,auth_user_id,perfil_id,status,nome&auth_user_id=eq.${authUser.id}&limit=1`);
   const appUser = Array.isArray(appUsers) ? appUsers[0] : null;
   if (!appUser) throw new Error("Usuário não encontrado em app_usuarios");
   if (String(appUser.status || "").toLowerCase() !== "ativo") throw new Error("Usuário sem acesso ativo");
@@ -128,35 +129,85 @@ async function xGetLatestColabReferenceDate(env) {
   return Array.isArray(rows) && rows[0]?.data_referencia ? rows[0].data_referencia : null;
 }
 
+function xNormalizeDate(v) {
+  if (!v) return null;
+  const s = String(v).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+function xDistinctLatestByCpf(rows) {
+  const byCpf = new Map();
+  for (const row of rows || []) {
+    const cpf = String(row.cpf || "").trim();
+    if (!cpf) continue;
+    const prev = byCpf.get(cpf);
+    if (!prev) {
+      byCpf.set(cpf, row);
+      continue;
+    }
+    const prevDate = String(prev.data_referencia || "");
+    const currDate = String(row.data_referencia || "");
+    if (currDate > prevDate) byCpf.set(cpf, row);
+  }
+  return [...byCpf.values()].sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || "")));
+}
+
 async function xLoadColaboradores(env, filtros = {}) {
   const latestReference = await xGetLatestColabReferenceDate(env);
-  if (!latestReference) return [];
+  if (!latestReference) {
+    return {
+      rows: [],
+      debug: { latest_reference: null, total_base: 0, total_filtrado: 0, total_distinct: 0 }
+    };
+  }
 
   const parts = [
-    "select=*",
-    `data_referencia=eq.${encodeURIComponent(latestReference)}`,
-    "order=nome.asc",
-    `limit=${Math.min(Number(filtros.limit || 5000), 10000)}`
+    "select=cpf,nome,situacao,admissao,desligamento,ativo,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cidade,bairro,endereco,complemento,estado,cep,data_referencia",
+    "admissao=not.is.null",
+    `data_referencia=lte.${encodeURIComponent(latestReference)}`,
+    "limit=10000",
+    "order=data_referencia.desc"
   ];
 
   if (filtros.empresa) parts.push(`empresa=ilike.*${encodeURIComponent(filtros.empresa)}*`);
   if (filtros.nome) parts.push(`nome=ilike.*${encodeURIComponent(filtros.nome)}*`);
-  if (filtros.situacao) {
-    if (filtros.situacao !== "Todos") {
-      parts.push(`situacao=eq.${encodeURIComponent(filtros.situacao)}`);
+
+  const baseRows = await xSupabaseRest(env, `colaborador_snapshot?${parts.join("&")}`);
+  const totalBase = Array.isArray(baseRows) ? baseRows.length : 0;
+
+  const dataInicial = xNormalizeDate(filtros.data_admissao_inicial);
+  const dataFinal = xNormalizeDate(filtros.data_admissao_final);
+
+  let filtrados = (baseRows || []).filter((r) => {
+    const adm = xNormalizeDate(r.admissao);
+    if (!adm) return false;
+    if (dataInicial && adm < dataInicial) return false;
+    if (dataFinal && adm > dataFinal) return false;
+
+    const situacaoFiltro = filtros.situacao || "Ativo";
+    if (situacaoFiltro !== "Todos") {
+      if (situacaoFiltro === "Ativo" && r.ativo !== true) return false;
+      if (situacaoFiltro === "Não Ativo" && r.ativo !== false) return false;
+      if (situacaoFiltro !== "Ativo" && situacaoFiltro !== "Não Ativo") {
+        if (String(r.situacao || "") !== String(situacaoFiltro)) return false;
+      }
     }
-  } else {
-    parts.push(`situacao=eq.${encodeURIComponent("Ativo")}`);
-  }
+    return true;
+  });
 
-  if (filtros.data_admissao_inicial) {
-    parts.push(`admissao=gte.${encodeURIComponent(filtros.data_admissao_inicial)}`);
-  }
-  if (filtros.data_admissao_final) {
-    parts.push(`admissao=lte.${encodeURIComponent(filtros.data_admissao_final)}`);
-  }
+  const distinctRows = xDistinctLatestByCpf(filtrados);
 
-  return xSupabaseRest(env, `colaborador_snapshot?${parts.join("&")}`);
+  return {
+    rows: distinctRows,
+    debug: {
+      latest_reference: latestReference,
+      total_base: totalBase,
+      total_filtrado: filtrados.length,
+      total_distinct: distinctRows.length,
+      data_inicial: dataInicial,
+      data_final: dataFinal,
+    }
+  };
 }
 
 function mapCartoes(colabs, tipo) {
@@ -192,7 +243,7 @@ function mapUber(colabs) {
   return { headers, rows, filename: `uber_empresas_${xToday()}.csv` };
 }
 
-async function finalizeExport(env, job, tipo, spec) {
+async function finalizeExport(env, job, tipo, spec, debug) {
   const csv = xToCsv(spec.headers, spec.rows);
   const contentBase64 = xBase64Utf8(csv);
 
@@ -209,10 +260,17 @@ async function finalizeExport(env, job, tipo, spec) {
     status: "concluido",
     total_registros: spec.rows.length,
     arquivo_id: arquivo.id,
-    finished_at: new Date().toISOString()
+    finished_at: new Date().toISOString(),
+    observacoes: JSON.stringify(debug || {})
   });
 
-  return { job_id: job.id, arquivo_id: arquivo.id, filename: arquivo.filename, total: spec.rows.length };
+  return {
+    job_id: job.id,
+    arquivo_id: arquivo.id,
+    filename: arquivo.filename,
+    total: spec.rows.length,
+    debug
+  };
 }
 
 async function createExport(request, env, tipo) {
@@ -227,14 +285,15 @@ async function createExport(request, env, tipo) {
   });
 
   try {
-    const colabs = await xLoadColaboradores(env, body);
+    const loaded = await xLoadColaboradores(env, body);
+    const colabs = loaded.rows;
 
     let spec;
     if (tipo === "flash") spec = mapCartoes(colabs, "flash");
     if (tipo === "ifood") spec = mapCartoes(colabs, "ifood");
     if (tipo === "uber") spec = mapUber(colabs);
 
-    return xJson({ ok: true, ...(await finalizeExport(env, job, tipo, spec)) });
+    return xJson({ ok: true, ...(await finalizeExport(env, job, tipo, spec, loaded.debug)) });
   } catch (err) {
     await xPatchById(env, "exportacoes_jobs", job.id, {
       status: "erro",
