@@ -26,6 +26,13 @@ async function getLatestReferenceDate() {
   return data?.data_referencia || null;
 }
 
+async function getAccessToken() {
+  const session = await getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+  return token;
+}
+
 async function loadData() {
   const tbody = document.getElementById('tbodyColaboradores');
   const meta = document.getElementById('metaConsulta');
@@ -127,11 +134,7 @@ function getExportLabel(tipo) {
 }
 
 async function baixarArquivoAutenticado(downloadUrl, filename) {
-  const session = await getSession();
-  const token = session?.access_token;
-  if (!token) {
-    throw new Error('Sessão expirada. Faça login novamente para baixar o arquivo.');
-  }
+  const token = await getAccessToken();
 
   const response = await fetch(downloadUrl, {
     method: 'GET',
@@ -156,6 +159,16 @@ async function baixarArquivoAutenticado(downloadUrl, filename) {
   window.URL.revokeObjectURL(blobUrl);
 }
 
+function buildSyncPayload(prefix = 'sync') {
+  return {
+    data_admissao_inicial: document.getElementById(`${prefix}AdmissaoInicial`).value || null,
+    data_admissao_final: document.getElementById(`${prefix}AdmissaoFinal`).value || null,
+    situacao: document.getElementById(`${prefix}Situacao`).value || 'Ativo',
+    empresa: document.getElementById(`${prefix}Empresa`).value.trim() || null,
+    nome: document.getElementById(`${prefix}Nome`).value.trim() || null,
+  };
+}
+
 async function gerarExportacao() {
   const tipo = document.getElementById('exportTipo').value;
   const admissaoInicial = document.getElementById('exportAdmissaoInicial').value;
@@ -175,11 +188,7 @@ async function gerarExportacao() {
     btn.disabled = true;
     btn.textContent = 'Gerando...';
 
-    const session = await getSession();
-    const token = session?.access_token;
-    if (!token) {
-      throw new Error('Sessão expirada. Faça login novamente para exportar.');
-    }
+    const token = await getAccessToken();
 
     const payload = {
       data_admissao_inicial: admissaoInicial || null,
@@ -221,6 +230,42 @@ async function gerarExportacao() {
   }
 }
 
+async function sincronizarBotConversa() {
+  const feedback = document.getElementById('syncFeedback');
+  const btn = document.getElementById('btnSyncBot');
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Sincronizando...';
+    feedback.textContent = 'Sincronizando contatos e tags no BotConversa...';
+
+    const token = await getAccessToken();
+    const payload = buildSyncPayload('sync');
+
+    const response = await fetch(toApiUrl('botconversa/sync-subscribers'), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || 'Erro ao sincronizar com o BotConversa.');
+    }
+
+    feedback.textContent = `Sincronização concluída. Total: ${data?.total ?? 0} | Sucesso: ${data?.sucesso ?? 0} | Erro: ${data?.erro ?? 0}${data?.job_id ? ` | Job: ${data.job_id}` : ''}`;
+  } catch (err) {
+    console.error(err);
+    feedback.textContent = err.message || 'Erro ao sincronizar com o BotConversa.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sincronizar contatos e tags';
+  }
+}
+
 initProtectedPage('Consultar Base de Colaboradores', (content) => {
   content.innerHTML = `
     <section class="base-page">
@@ -234,6 +279,7 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
           <a class="active" href="${toPanelUrl('consultar-colaboradores')}">Consultar</a>
           <a href="${toPanelUrl('historico-colaboradores')}">Histórico</a>
           <a href="#exportar" id="btnAbrirExportar">Exportar</a>
+          <a href="#botconversa" id="btnAbrirSync">BotConversa</a>
         </div>
       </div>
 
@@ -262,6 +308,50 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
           </div>
         </div>
         <div id="exportFeedback" class="base-meta" style="margin-top:12px;">Selecione a tabela e o período de admissão para gerar e baixar o arquivo.</div>
+      </div>
+
+      <div class="base-card" id="botconversa">
+        <h3 style="margin-top:0">Sincronizar BotConversa</h3>
+        <div class="base-actions-row compact" style="margin-top:12px;">
+          <div>
+            <label class="base-label" for="syncAdmissaoInicial">Admissão inicial</label>
+            <input class="base-input" type="date" id="syncAdmissaoInicial" />
+          </div>
+          <div>
+            <label class="base-label" for="syncAdmissaoFinal">Admissão final</label>
+            <input class="base-input" type="date" id="syncAdmissaoFinal" />
+          </div>
+          <div>
+            <label class="base-label" for="syncSituacao">Situação</label>
+            <select class="base-select" id="syncSituacao">
+              <option value="Ativo" selected>Ativo</option>
+              <option value="Todos">Todos</option>
+              <option value="Não Ativo">Não Ativo</option>
+            </select>
+          </div>
+          <div>
+            <label class="base-label" for="syncEmpresa">Empresa</label>
+            <input class="base-input" type="text" id="syncEmpresa" placeholder="Empresa" />
+          </div>
+        </div>
+
+        <div class="base-actions-row compact" style="margin-top:12px;">
+          <div>
+            <label class="base-label" for="syncNome">Nome (opcional)</label>
+            <input class="base-input" type="text" id="syncNome" placeholder="Filtrar nome" />
+          </div>
+          <div></div>
+          <div></div>
+          <div style="display:flex; align-items:end;">
+            <button class="base-button primary inline" id="btnSyncBot">Sincronizar contatos e tags</button>
+          </div>
+        </div>
+
+        <div class="base-hint-list" style="margin-top:12px;">
+          <div><strong>Tags incluídas automaticamente:</strong> EMPRESA, CARGO e CIDADE.</div>
+          <div>Use o período de admissão para sincronizar só o grupo desejado.</div>
+        </div>
+        <div id="syncFeedback" class="base-meta" style="margin-top:12px;">Pronto para sincronizar contatos e tags com o BotConversa.</div>
       </div>
 
       <div class="base-card">
@@ -335,9 +425,16 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
 
   document.getElementById('btnPesquisar')?.addEventListener('click', loadData);
   document.getElementById('btnGerarExportacao')?.addEventListener('click', gerarExportacao);
+  document.getElementById('btnSyncBot')?.addEventListener('click', sincronizarBotConversa);
+
   document.getElementById('btnAbrirExportar')?.addEventListener('click', (event) => {
     event.preventDefault();
     document.getElementById('exportar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  document.getElementById('btnAbrirSync')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    document.getElementById('botconversa')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
   loadData().catch((err) => {
