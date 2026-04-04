@@ -353,3 +353,103 @@ export async function handleExportacoesBotRoutes(request, env) {
 }
 
 export default { handleExportacoesBotRoutes };
+
+
+async function sincronizarBotConversa() {
+  const btn = document.getElementById('btn-sync-botconversa');
+  const statusEl = document.getElementById('sync-bot-status');
+  const filtros = getBotSyncFiltros();
+
+  const oldText = btn ? btn.textContent : 'Sincronizar contatos e tags';
+  let totalSucesso = 0;
+  let totalErro = 0;
+  let totalProcessados = 0;
+  let offset = 0;
+  const maxProcess = 15;
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Sincronizando...';
+    }
+    if (statusEl) {
+      statusEl.textContent = 'Iniciando sincronização...';
+    }
+
+    while (true) {
+      const resp = await fetch('/api/admin/botconversa/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(window.AUTH_TOKEN ? { Authorization: `Bearer ${window.AUTH_TOKEN}` } : {})
+        },
+        body: JSON.stringify({
+          ...filtros,
+          offset,
+          max_process: maxProcess
+        })
+      });
+
+      const data = await resp.json().catch(() => ({}));
+
+      if (!resp.ok || !data.ok) {
+        throw new Error(data?.error || 'Falha ao sincronizar BotConversa');
+      }
+
+      totalSucesso += Number(data.sucesso || 0);
+      totalErro += Number(data.erro || 0);
+      totalProcessados += Number(data.processados_nesta_execucao || 0);
+
+      if (statusEl) {
+        const totalDisponivel = Number(data.total_disponivel || totalProcessados || 0);
+        statusEl.textContent = `Sincronizando... ${totalProcessados}/${totalDisponivel} processados | Sucesso: ${totalSucesso} | Erros: ${totalErro}`;
+      }
+
+      if (!data.has_more) break;
+      offset = Number(data.next_offset || 0);
+
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+
+    if (statusEl) {
+      statusEl.textContent = `Concluído. Processados: ${totalProcessados} | Sucesso: ${totalSucesso} | Erros: ${totalErro}`;
+    }
+
+    alert(
+      'Sincronização concluída.\n' +
+      `Processados: ${totalProcessados}\n` +
+      `Sucesso: ${totalSucesso}\n` +
+      `Erros: ${totalErro}`
+    );
+  } catch (err) {
+    console.error(err);
+    if (statusEl) {
+      statusEl.textContent = err?.message || 'Erro ao sincronizar';
+    }
+    alert(err?.message || 'Erro ao sincronizar BotConversa');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+}
+
+function getBotSyncFiltros() {
+  const pick = (ids) => {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el && typeof el.value !== 'undefined') return String(el.value || '').trim();
+    }
+    return '';
+  };
+
+  return {
+    data_admissao_inicial: pick(['sync-admissao-inicial', 'admissao-inicial-bot', 'bot-admissao-inicial']),
+    data_admissao_final: pick(['sync-admissao-final', 'admissao-final-bot', 'bot-admissao-final']),
+    situacao: pick(['sync-situacao', 'situacao-bot', 'bot-situacao']) || 'Todos',
+    empresa: pick(['sync-empresa', 'empresa-bot', 'bot-empresa']),
+    nome: pick(['sync-nome', 'nome-bot', 'bot-nome'])
+  };
+}
+
