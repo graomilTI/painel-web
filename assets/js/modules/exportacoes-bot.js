@@ -1,4 +1,10 @@
 
+<style id="bot-sync-layout-fix">
+#btnSyncBotTop { margin-left: 12px; }
+.bot-sync-card input, .bot-sync-card select { display:none !important; }
+</style>
+
+
 function xCorsHeaders(origin = "*") {
   return {
     "access-control-allow-origin": origin,
@@ -366,7 +372,9 @@ async function sincronizarBotConversa() {
     document.getElementById("statusSync") ||
     document.querySelector('[data-role="status-sync-bot"]');
 
+  const btnTop = document.querySelector("#btnSyncBotTop");
   const oldText = btn ? btn.textContent : "Sincronizar contatos e tags";
+  const oldTextTop = btnTop ? btnTop.textContent : "Sincronizar contatos e tags";
 
   let offset = 0;
   let totalSucesso = 0;
@@ -379,6 +387,10 @@ async function sincronizarBotConversa() {
     if (btn) {
       btn.disabled = true;
       btn.textContent = "Sincronizando...";
+    }
+    if (btnTop) {
+      btnTop.disabled = true;
+      btnTop.textContent = "Sincronizando...";
     }
 
     atualizarStatusSync({
@@ -460,6 +472,10 @@ async function sincronizarBotConversa() {
     if (btn) {
       btn.disabled = false;
       btn.textContent = oldText;
+    }
+    if (btnTop) {
+      btnTop.disabled = false;
+      btnTop.textContent = oldTextTop;
     }
   }
 }
