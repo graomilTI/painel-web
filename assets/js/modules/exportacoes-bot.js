@@ -211,7 +211,7 @@ async function xLoadColaboradores(env, filtros = {}) {
 }
 
 function mapCartoes(colabs, tipo) {
-  const headers = ["Nome completo", "CPF", "Celular", "E-mail", "Empresa", "Cargo"];
+  const headers = ["Nome completo", "CPF", "Celular", "E-mail", "", "Cargo"];
   const rows = colabs.map(c => [
     c.nome || "",
     c.cpf || "",
@@ -396,38 +396,6 @@ async function sincronizarBotConversa() {
         max_process: 5
       };
 
-      const admissaoInicial =
-        document.getElementById("bot-admissao-inicial")?.value ||
-        document.getElementById("admissaoInicialBot")?.value ||
-        document.getElementById("admissaoInicial")?.value ||
-        "";
-      const admissaoFinal =
-        document.getElementById("bot-admissao-final")?.value ||
-        document.getElementById("admissaoFinalBot")?.value ||
-        document.getElementById("admissaoFinal")?.value ||
-        "";
-      const situacao =
-        document.getElementById("bot-situacao")?.value ||
-        document.getElementById("situacaoBot")?.value ||
-        document.getElementById("situacao")?.value ||
-        "Todos";
-      const empresa =
-        document.getElementById("bot-empresa")?.value ||
-        document.getElementById("empresaBot")?.value ||
-        document.getElementById("empresa")?.value ||
-        "";
-      const nome =
-        document.getElementById("bot-nome")?.value ||
-        document.getElementById("nomeBot")?.value ||
-        document.getElementById("nome")?.value ||
-        "";
-
-      if (admissaoInicial) payload.data_admissao_inicial = admissaoInicial;
-      if (admissaoFinal) payload.data_admissao_final = admissaoFinal;
-      if (situacao) payload.situacao = situacao;
-      if (empresa) payload.empresa = empresa;
-      if (nome) payload.nome = nome;
-
       const authToken =
         window.AUTH_TOKEN ||
         localStorage.getItem("supabase_token") ||
@@ -504,7 +472,7 @@ function atualizarStatusSync({ statusEl, sucesso = 0, erro = 0, processados = 0,
 
 function atualizarStatusFinal({ statusEl, sucesso = 0, erro = 0, processados = 0, total = 0, jobId = "" }) {
   if (!statusEl) return;
-  statusEl.textContent = `Sincronização concluída. Total: ${processados}/${total} | Sucesso: ${sucesso} | Erro: ${erro} | Job: ${jobId || "-"}`;
+  statusEl.textContent = `Sincronização concluída. Total: ${processados}/${total} | Sucesso: ${sucesso} | Erro: ${erro}`;
 }
 
 
