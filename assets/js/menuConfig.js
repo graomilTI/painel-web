@@ -89,7 +89,7 @@ export const MENU_CONFIG = [
     itens: [
       { id: "RELATORIOS_COLAB", nome: "Colaboradores", path: "consultar-colaboradores" },
       { id: "RELATORIOS_PROD", nome: "Produção", path: "consultar-producao" },
-      { id: "RELATORIOS_PATRIMONIOS_IMPORTAR", nome: "Patrimônios · Importar arquivo", path: "importar-patrimonios" }
+      { id: "RELATORIOS_PATRIMONIOS_IMPORTAR", nome: "Patrimônios", path: "importar-patrimonios" }
     ]
   },
 
