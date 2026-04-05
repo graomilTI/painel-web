@@ -2,7 +2,7 @@ window.MENU_CONFIG = {
   adm: [
     { nome: "CONFERÊNCIA", modulos: ["Irregularidades", "Lançamentos"] },
     { nome: "COMPRAS", modulos: ["Pedidos", "Fornecedores"] },
-    { nome: "PATRIMÔNIOS", modulos: [] },
+    { nome: "PATRIMÔNIOS", modulos: ["Painel de Patrimônios"] },
     { nome: "HOSPEDAGEM", modulos: [] },
     { nome: "RECURSOS HUMANOS", modulos: [] },
     { nome: "FROTAS", modulos: [] },
@@ -10,6 +10,6 @@ window.MENU_CONFIG = {
     { nome: "TROCA DE NOTAS", modulos: [] },
     { nome: "AUDITORIA", modulos: ["Logs", "Relatórios"] },
     { nome: "DIRETORIA", modulos: [] },
-    { nome: "RELATÓRIOS", modulos: ["Colaboradores", "Produção", "Patrimônios"] }
+    { nome: "RELATÓRIOS", modulos: ["Colaboradores", "Produção", "Patrimônios · Importar arquivo"] }
   ]
 };
