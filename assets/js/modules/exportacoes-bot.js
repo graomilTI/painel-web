@@ -356,77 +356,138 @@ export default { handleExportacoesBotRoutes };
 
 
 async function sincronizarBotConversa() {
-  const btn = document.getElementById('btn-sync-botconversa');
-  const statusEl = document.getElementById('sync-bot-status');
-  const filtros = getBotSyncFiltros();
+  const btn =
+    document.querySelector("#btnSyncBot") ||
+    document.getElementById("btnSyncBot") ||
+    document.querySelector('[data-action="sync-bot"]');
 
-  const oldText = btn ? btn.textContent : 'Sincronizar contatos e tags';
+  const statusEl =
+    document.querySelector("#statusSync") ||
+    document.getElementById("statusSync") ||
+    document.querySelector('[data-role="status-sync-bot"]');
+
+  const oldText = btn ? btn.textContent : "Sincronizar contatos e tags";
+
+  let offset = 0;
   let totalSucesso = 0;
   let totalErro = 0;
   let totalProcessados = 0;
-  let offset = 0;
-  const maxProcess = 15;
+  let totalDisponivel = 0;
+  let jobId = null;
 
   try {
     if (btn) {
       btn.disabled = true;
-      btn.textContent = 'Sincronizando...';
-    }
-    if (statusEl) {
-      statusEl.textContent = 'Iniciando sincronização...';
+      btn.textContent = "Sincronizando...";
     }
 
+    atualizarStatusSync({
+      statusEl,
+      sucesso: 0,
+      erro: 0,
+      processados: 0,
+      total: 0,
+      textoExtra: "Iniciando sincronização..."
+    });
+
     while (true) {
-      const resp = await fetch('/api/admin/botconversa/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(window.AUTH_TOKEN ? { Authorization: `Bearer ${window.AUTH_TOKEN}` } : {})
-        },
-        body: JSON.stringify({
-          ...filtros,
-          offset,
-          max_process: maxProcess
-        })
+      const payload = {
+        offset,
+        max_process: 5
+      };
+
+      const admissaoInicial =
+        document.getElementById("bot-admissao-inicial")?.value ||
+        document.getElementById("admissaoInicialBot")?.value ||
+        document.getElementById("admissaoInicial")?.value ||
+        "";
+      const admissaoFinal =
+        document.getElementById("bot-admissao-final")?.value ||
+        document.getElementById("admissaoFinalBot")?.value ||
+        document.getElementById("admissaoFinal")?.value ||
+        "";
+      const situacao =
+        document.getElementById("bot-situacao")?.value ||
+        document.getElementById("situacaoBot")?.value ||
+        document.getElementById("situacao")?.value ||
+        "Todos";
+      const empresa =
+        document.getElementById("bot-empresa")?.value ||
+        document.getElementById("empresaBot")?.value ||
+        document.getElementById("empresa")?.value ||
+        "";
+      const nome =
+        document.getElementById("bot-nome")?.value ||
+        document.getElementById("nomeBot")?.value ||
+        document.getElementById("nome")?.value ||
+        "";
+
+      if (admissaoInicial) payload.data_admissao_inicial = admissaoInicial;
+      if (admissaoFinal) payload.data_admissao_final = admissaoFinal;
+      if (situacao) payload.situacao = situacao;
+      if (empresa) payload.empresa = empresa;
+      if (nome) payload.nome = nome;
+
+      const authToken =
+        window.AUTH_TOKEN ||
+        localStorage.getItem("supabase_token") ||
+        sessionStorage.getItem("supabase_token") ||
+        localStorage.getItem("access_token") ||
+        sessionStorage.getItem("access_token") ||
+        "";
+
+      const headers = { "Content-Type": "application/json" };
+      if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+
+      const resp = await fetch("/api/botconversa/sync-subscribers", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload)
       });
 
       const data = await resp.json().catch(() => ({}));
 
-      if (!resp.ok || !data.ok) {
-        throw new Error(data?.error || 'Falha ao sincronizar BotConversa');
+      if (!resp.ok || !data?.ok) {
+        throw new Error(data?.error || "Falha ao sincronizar BotConversa");
       }
+
+      if (!jobId) jobId = data.job_id || null;
 
       totalSucesso += Number(data.sucesso || 0);
       totalErro += Number(data.erro || 0);
       totalProcessados += Number(data.processados_nesta_execucao || 0);
+      totalDisponivel = Number(data.total_disponivel || totalDisponivel || 0);
 
-      if (statusEl) {
-        const totalDisponivel = Number(data.total_disponivel || totalProcessados || 0);
-        statusEl.textContent = `Sincronizando... ${totalProcessados}/${totalDisponivel} processados | Sucesso: ${totalSucesso} | Erros: ${totalErro}`;
+      atualizarStatusSync({
+        statusEl,
+        sucesso: totalSucesso,
+        erro: totalErro,
+        processados: totalProcessados,
+        total: totalDisponivel
+      });
+
+      if (!data.has_more) {
+        break;
       }
 
-      if (!data.has_more) break;
       offset = Number(data.next_offset || 0);
-
-      await new Promise(resolve => setTimeout(resolve, 250));
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
-    if (statusEl) {
-      statusEl.textContent = `Concluído. Processados: ${totalProcessados} | Sucesso: ${totalSucesso} | Erros: ${totalErro}`;
-    }
-
-    alert(
-      'Sincronização concluída.\n' +
-      `Processados: ${totalProcessados}\n` +
-      `Sucesso: ${totalSucesso}\n` +
-      `Erros: ${totalErro}`
-    );
+    atualizarStatusFinal({
+      statusEl,
+      sucesso: totalSucesso,
+      erro: totalErro,
+      processados: totalProcessados,
+      total: totalDisponivel,
+      jobId
+    });
   } catch (err) {
     console.error(err);
     if (statusEl) {
-      statusEl.textContent = err?.message || 'Erro ao sincronizar';
+      statusEl.textContent = err?.message || "Erro ao sincronizar BotConversa";
     }
-    alert(err?.message || 'Erro ao sincronizar BotConversa');
+    alert(err?.message || "Erro ao sincronizar BotConversa");
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -434,6 +495,21 @@ async function sincronizarBotConversa() {
     }
   }
 }
+
+function atualizarStatusSync({ statusEl, sucesso = 0, erro = 0, processados = 0, total = 0, textoExtra = "" }) {
+  if (!statusEl) return;
+  const prefixo = textoExtra ? `${textoExtra} ` : "";
+  statusEl.textContent = `${prefixo}Processando: ${processados}/${total} | Sucesso: ${sucesso} | Erro: ${erro}`;
+}
+
+function atualizarStatusFinal({ statusEl, sucesso = 0, erro = 0, processados = 0, total = 0, jobId = "" }) {
+  if (!statusEl) return;
+  statusEl.textContent = `Sincronização concluída. Total: ${processados}/${total} | Sucesso: ${sucesso} | Erro: ${erro} | Job: ${jobId || "-"}`;
+}
+
+
+
+
 
 function getBotSyncFiltros() {
   const pick = (ids) => {
@@ -452,4 +528,6 @@ function getBotSyncFiltros() {
     nome: pick(['sync-nome', 'nome-bot', 'bot-nome'])
   };
 }
+
+
 
