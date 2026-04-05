@@ -1,5 +1,5 @@
 // assets/js/menuConfig.js
-// Ajustado: remove "Importar Colaboradores" de RH e cria itens de Colaboradores em RELATÓRIOS
+// Ajustado: mantém o menu principal de Patrimônios e adiciona a importação de Patrimônios em RELATÓRIOS.
 
 export const MENU_CONFIG = [
   {
@@ -88,7 +88,8 @@ export const MENU_CONFIG = [
     grupo: "RELATÓRIOS",
     itens: [
       { id: "RELATORIOS_COLAB", nome: "Colaboradores", path: "consultar-colaboradores" },
-      { id: "RELATORIOS_PROD", nome: "Produção", path: "consultar-producao" }
+      { id: "RELATORIOS_PROD", nome: "Produção", path: "consultar-producao" },
+      { id: "RELATORIOS_PATRIMONIOS_IMPORTAR", nome: "Patrimônios · Importar arquivo", path: "importar-patrimonios" }
     ]
   },
 
