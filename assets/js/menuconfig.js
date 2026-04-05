@@ -1,4 +1,3 @@
-
 window.MENU_CONFIG = {
   adm: [
     { nome: "CONFERÊNCIA", modulos: ["Irregularidades", "Lançamentos"] },
@@ -11,6 +10,6 @@ window.MENU_CONFIG = {
     { nome: "TROCA DE NOTAS", modulos: [] },
     { nome: "AUDITORIA", modulos: ["Logs", "Relatórios"] },
     { nome: "DIRETORIA", modulos: [] },
-    { nome: "RELATÓRIOS", modulos: ["Colaboradores","Produção"] }
+    { nome: "RELATÓRIOS", modulos: ["Colaboradores", "Produção", "Patrimônios"] }
   ]
 };
