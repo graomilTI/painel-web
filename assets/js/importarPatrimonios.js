@@ -85,6 +85,18 @@ function normalizeInteger(value) {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 }
 
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function wait(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const COL = {
   patrimonioCodigo: ['Patrimônio', 'Patrimonio'],
   coordenacao: ['Coordenação', 'Coordenacao'],
@@ -135,12 +147,18 @@ function mapRow(row, importacaoId) {
   };
 }
 
-async function insertBatches(table, rows, batchSize = 300, onProgress) {
-  for (let i = 0; i < rows.length; i += batchSize) {
-    const chunk = rows.slice(i, i + batchSize);
+async function insertBatches(table, rows, batchSize = 500, onProgress) {
+  const chunks = chunkArray(rows, batchSize);
+
+  for (let i = 0; i < chunks.length; i += 1) {
+    const chunk = chunks[i];
     const { error } = await supabase.from(table).insert(chunk);
     if (error) throw error;
-    if (onProgress) onProgress(Math.min(i + chunk.length, rows.length), rows.length);
+
+    const done = Math.min((i + 1) * batchSize, rows.length);
+    if (onProgress) onProgress(done, rows.length, i + 1, chunks.length);
+
+    await wait(15);
   }
 }
 
@@ -148,6 +166,10 @@ function setSummary({ linhas = 0, validas = 0, status = 'Aguardando' }) {
   document.getElementById('sumLinhas').textContent = String(linhas);
   document.getElementById('sumValidas').textContent = String(validas);
   document.getElementById('sumStatus').textContent = status;
+}
+
+function safeErrorMessage(err) {
+  return err?.message || err?.error_description || err?.details || String(err);
 }
 
 initProtectedPage('Importar Patrimônios', (content, ctx) => {
@@ -207,6 +229,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       <div class="base-card">
         <h3 style="margin-top:0">Retorno da importação</h3>
         <div id="feedback" class="base-status">Selecione um arquivo e clique em "Importar patrimônios".</div>
+        <p style="margin:12px 0 0;opacity:.75;font-size:.95rem">Nesta versão, a importação grava primeiro o snapshot atual para evitar excesso de requisições e travamentos.</p>
       </div>
     </section>
   `;
@@ -232,6 +255,8 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
     let importacaoId = null;
     try {
       btnImportar.disabled = true;
+      btnLimpar.disabled = true;
+
       const file = fileInput.files?.[0];
       const origem = origemInput.value || 'upload_manual';
       const observacoes = obsInput.value?.trim() || null;
@@ -251,7 +276,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       if (!rows.length) throw new Error('A planilha está vazia.');
 
       validateRows(rows);
-      setSummary({ linhas: rows.length, validas: 0, status: 'Criando importação' });
+      setSummary({ linhas: rows.length, validas: 0, status: 'Preparando' });
 
       const { data: importacao, error: impError } = await supabase
         .from('patrimonios_importacoes')
@@ -263,10 +288,10 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
           total_importadas: 0,
           total_erros: 0,
           observacoes,
-          criado_por: ctx.user.id,
-          criado_por_nome: ctx.user.name || null
+          criado_por: ctx?.user?.id || null,
+          criado_por_nome: ctx?.user?.name || ctx?.user?.email || null
         })
-        .select()
+        .select('id')
         .single();
 
       if (impError) throw impError;
@@ -276,8 +301,8 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
         .map((row) => mapRow(row, importacaoId))
         .filter((row) => row.patrimonio_codigo);
 
-      setSummary({ linhas: rows.length, validas: mapped.length, status: 'Atualizando snapshot' });
-      feedback.textContent = `Importação criada.\nAba usada: ${selectedSheetName}\nLimpando snapshot atual...`;
+      setSummary({ linhas: rows.length, validas: mapped.length, status: 'Limpando snapshot' });
+      feedback.textContent = `Importação criada.\nAba usada: ${selectedSheetName}\nRemovendo snapshot anterior...`;
 
       const { error: deleteError } = await supabase
         .from('patrimonios_snapshot')
@@ -286,11 +311,16 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
 
       if (deleteError) throw deleteError;
 
-      await insertBatches('patrimonios_snapshot', mapped, 300, (done, total) => {
-        feedback.textContent = `Importando snapshot de patrimônios...\nID: ${importacaoId}\nAba usada: ${selectedSheetName}\nProgresso: ${done}/${total}`;
+      setSummary({ linhas: rows.length, validas: mapped.length, status: 'Importando snapshot' });
+      await insertBatches('patrimonios_snapshot', mapped, 500, (done, total, loteAtual, totalLotes) => {
+        feedback.textContent = [
+          'Importando snapshot de patrimônios...',
+          `ID: ${importacaoId}`,
+          `Aba usada: ${selectedSheetName}`,
+          `Lote: ${loteAtual}/${totalLotes}`,
+          `Progresso: ${done}/${total}`
+        ].join('\n');
       });
-
-      await insertBatches('patrimonios_historico', mapped, 300);
 
       const { error: updError } = await supabase
         .from('patrimonios_importacoes')
@@ -304,17 +334,30 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       if (updError) throw updError;
 
       setSummary({ linhas: rows.length, validas: mapped.length, status: 'Concluído' });
-      feedback.textContent = `Importação concluída com sucesso.\n\nID da importação: ${importacaoId}\nArquivo: ${file.name}\nAba usada: ${selectedSheetName}\nLinhas lidas: ${rows.length}\nLinhas válidas: ${mapped.length}`;
+      feedback.textContent = [
+        'Importação concluída com sucesso.',
+        '',
+        `ID da importação: ${importacaoId}`,
+        `Arquivo: ${file.name}`,
+        `Aba usada: ${selectedSheetName}`,
+        `Linhas lidas: ${rows.length}`,
+        `Linhas válidas: ${mapped.length}`,
+        'Histórico detalhado será ativado depois, sem travar a tela.'
+      ].join('\n');
       fileInput.value = '';
     } catch (err) {
       console.error(err);
       if (importacaoId) {
-        await supabase.from('patrimonios_importacoes').update({ status: 'erro' }).eq('id', importacaoId);
+        await supabase
+          .from('patrimonios_importacoes')
+          .update({ status: 'erro' })
+          .eq('id', importacaoId);
       }
       setSummary({ status: 'Erro' });
-      feedback.textContent = `Erro na importação:\n${err.message || err}`;
+      feedback.textContent = `Erro na importação:\n${safeErrorMessage(err)}`;
     } finally {
       btnImportar.disabled = false;
+      btnLimpar.disabled = false;
     }
   });
 });
