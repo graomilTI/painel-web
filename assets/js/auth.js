@@ -29,45 +29,119 @@ function normalizeContextPayload(data) {
   return data;
 }
 
+function normalizeString(value) {
+  return String(value ?? '').trim();
+}
+
+function normalizeLower(value) {
+  return normalizeString(value).toLowerCase();
+}
+
+function normalizeBoolean(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+
+  const normalized = normalizeLower(value);
+  return ['1', 'true', 't', 'yes', 'y', 'sim', 's'].includes(normalized);
+}
+
+function normalizeActiveStatus(context) {
+  const candidates = [
+    context?.user?.active,
+    context?.user?.ativo,
+    context?.user?.status,
+    context?.active,
+    context?.ativo,
+    context?.status,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+
+    const normalized = normalizeLower(value);
+    if (!normalized) continue;
+
+    if (['ativo', 'active', '1', 'true', 't', 'yes', 'sim'].includes(normalized)) return true;
+    if (['inativo', 'inactive', '0', 'false', 'f', 'no', 'nao', 'não'].includes(normalized)) return false;
+  }
+
+  return false;
+}
+
 function normalizeModule(module) {
   return {
-    code: String(module?.code || '').toLowerCase().trim(),
-    name: module?.name || module?.code || '',
-    route: module?.route || '',
-    icon: module?.icon || '',
-    category: String(module?.category || '').toLowerCase().trim(),
-    order: Number(module?.order || 0),
-    can_view: !!module?.can_view,
-    can_create: !!module?.can_create,
-    can_edit: !!module?.can_edit,
-    can_delete: !!module?.can_delete,
-    can_approve: !!module?.can_approve,
+    code: normalizeLower(module?.code ?? module?.codigo ?? module?.modulo_codigo),
+    name: normalizeString(module?.name ?? module?.nome ?? module?.modulo_nome),
+    route: normalizeString(module?.route ?? module?.rota ?? module?.modulo_rota),
+    icon: normalizeString(module?.icon ?? module?.icone ?? module?.modulo_icone),
+    category: normalizeLower(module?.category ?? module?.categoria ?? module?.modulo_categoria),
+    order: Number(module?.order ?? module?.ordem ?? module?.modulo_ordem ?? 0) || 0,
+    can_view: normalizeBoolean(module?.can_view ?? module?.pode_ver ?? true),
+    can_create: normalizeBoolean(module?.can_create ?? module?.pode_criar),
+    can_edit: normalizeBoolean(module?.can_edit ?? module?.pode_editar),
+    can_delete: normalizeBoolean(module?.can_delete ?? module?.pode_excluir),
+    can_approve: normalizeBoolean(module?.can_approve ?? module?.pode_aprovar),
   };
 }
 
-function normalizeRpcUserContext(payload) {
-  const data = normalizeContextPayload(payload);
-  if (!data) return null;
+function ensureContextShape(context) {
+  if (!context || typeof context !== 'object') {
+    throw new Error('Contexto do usuário não retornado pela RPC rpc_get_user_context.');
+  }
 
-  const modules = Array.isArray(data.modules)
-    ? data.modules.map(normalizeModule)
+  const role = normalizeString(
+    context?.user?.role ??
+    context?.perfil_nome ??
+    context?.perfil_codigo ??
+    context?.role
+  );
+
+  const departmentName = normalizeString(
+    context?.department?.name ??
+    context?.department_name ??
+    context?.setor ??
+    context?.user?.department
+  );
+
+  const departmentCode = normalizeLower(
+    context?.department?.code ??
+    context?.department_code ??
+    context?.setor_codigo ??
+    departmentName
+  );
+
+  const userId = normalizeString(
+    context?.user?.id ??
+    context?.usuario_id ??
+    context?.id
+  );
+
+  if (!userId) {
+    throw new Error('A RPC rpc_get_user_context retornou um payload inválido.');
+  }
+
+  const active = normalizeActiveStatus(context);
+  const isMaster = normalizeBoolean(context?.user?.is_master ?? context?.is_master) || normalizeLower(role) === 'master';
+
+  const modules = Array.isArray(context?.modules)
+    ? context.modules.map(normalizeModule).filter((module) => module.code)
     : [];
 
-  const role = data.perfil_codigo || data.perfil_nome || data.role || '';
-  const roleNormalized = String(role || '').trim();
-
   return {
-    user: {
-      id: data.auth_user_id || data.usuario_id || null,
-      app_user_id: data.usuario_id || null,
-      name: data.nome || data.name || '',
-      email: data.email || '',
-      role: roleNormalized,
-      active: String(data.status || '').toLowerCase() === 'ativo' || data.active === true,
-      is_master: roleNormalized.toLowerCase() === 'master',
-    },
+    ...context,
     department: {
-      name: data.setor || data.department || '',
+      name: departmentName || null,
+      code: departmentCode || null,
+    },
+    user: {
+      id: userId,
+      name: normalizeString(context?.user?.name ?? context?.nome),
+      email: normalizeString(context?.user?.email ?? context?.email),
+      role: role || null,
+      status: active ? 'ativo' : 'inativo',
+      active,
+      is_master: isMaster,
     },
     modules,
   };
@@ -77,11 +151,8 @@ export async function getUserContext(_userId) {
   const { data, error } = await supabase.rpc('rpc_get_user_context');
   if (error) throw error;
 
-  const context = normalizeRpcUserContext(data);
-  if (!context) {
-    throw new Error('Contexto do usuário não retornado pela RPC rpc_get_user_context.');
-  }
-  return context;
+  const context = normalizeContextPayload(data);
+  return ensureContextShape(context);
 }
 
 export function onAuthStateChange(callback) {
