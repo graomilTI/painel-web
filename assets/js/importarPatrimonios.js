@@ -297,12 +297,30 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       if (impError) throw impError;
       importacaoId = importacao.id;
 
-      const mapped = rows
+      const mappedRaw = rows
         .map((row) => mapRow(row, importacaoId))
         .filter((row) => row.patrimonio_codigo);
 
+      const uniqueMap = new Map();
+      let duplicadosIgnorados = 0;
+
+      for (const item of mappedRaw) {
+        const key = String(item.patrimonio_codigo || '').trim().toUpperCase();
+        if (!key) continue;
+
+        if (uniqueMap.has(key)) duplicadosIgnorados += 1;
+        uniqueMap.set(key, item);
+      }
+
+      const mapped = Array.from(uniqueMap.values());
+
       setSummary({ linhas: rows.length, validas: mapped.length, status: 'Limpando snapshot' });
-      feedback.textContent = `Importação criada.\nAba usada: ${selectedSheetName}\nRemovendo snapshot anterior...`;
+      feedback.textContent = [
+        'Importação criada.',
+        `Aba usada: ${selectedSheetName}`,
+        `Duplicados ignorados no arquivo: ${duplicadosIgnorados}`,
+        'Removendo snapshot anterior...'
+      ].join('\n');
 
       const { error: deleteError } = await supabase
         .from('patrimonios_snapshot')
@@ -327,7 +345,11 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
         .update({
           status: 'concluido',
           total_importadas: mapped.length,
-          total_erros: Math.max(rows.length - mapped.length, 0)
+          total_erros: Math.max(rows.length - mapped.length, 0),
+          observacoes: [
+            observacoes,
+            duplicadosIgnorados > 0 ? `Duplicados ignorados no arquivo: ${duplicadosIgnorados}` : null
+          ].filter(Boolean).join(' | ') || null
         })
         .eq('id', importacaoId);
 
@@ -342,6 +364,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
         `Aba usada: ${selectedSheetName}`,
         `Linhas lidas: ${rows.length}`,
         `Linhas válidas: ${mapped.length}`,
+        `Duplicados ignorados: ${duplicadosIgnorados}`,
         'Histórico detalhado será ativado depois, sem travar a tela.'
       ].join('\n');
       fileInput.value = '';
