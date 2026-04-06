@@ -10,6 +10,14 @@ window.MENU_CONFIG = {
     { nome: "TROCA DE NOTAS", modulos: [] },
     { nome: "AUDITORIA", modulos: ["Logs", "Relatórios"] },
     { nome: "DIRETORIA", modulos: [] },
-    { nome: "RELATÓRIOS", modulos: ["Colaboradores", "Produção", "Patrimônios · Importar arquivo"] }
+    { nome: "RELATÓRIOS", modulos: [
+      "Caixa do Fornecedor",
+      "Relatório de Despesas",
+      "Notas Fiscais",
+      "Produção Consolidada",
+      "Colaboradores",
+      "Produção",
+      "Patrimônios · Importar arquivo"
+    ] }
   ]
 };
