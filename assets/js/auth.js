@@ -29,15 +29,32 @@ function normalizeContextPayload(data) {
   return data;
 }
 
-export async function getUserContext(userId) {
-  const { data, error } = await supabase.rpc('get_user_context', { p_user_id: userId });
+function ensureContextShape(context) {
+  if (!context || typeof context !== 'object') {
+    throw new Error('Contexto do usuário não retornado pela RPC rpc_get_user_context.');
+  }
+
+  if (!context.user || !context.user.id) {
+    throw new Error('A RPC rpc_get_user_context retornou um payload inválido.');
+  }
+
+  context.modules = Array.isArray(context.modules) ? context.modules : [];
+  context.department = context.department || { name: null, code: null };
+  context.user = {
+    ...context.user,
+    active: Boolean(context.user.active),
+    is_master: Boolean(context.user.is_master),
+  };
+
+  return context;
+}
+
+export async function getUserContext() {
+  const { data, error } = await supabase.rpc('rpc_get_user_context');
   if (error) throw error;
 
   const context = normalizeContextPayload(data);
-  if (!context) {
-    throw new Error('Contexto do usuário não retornado pela RPC get_user_context.');
-  }
-  return context;
+  return ensureContextShape(context);
 }
 
 export function onAuthStateChange(callback) {

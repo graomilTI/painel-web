@@ -1,7 +1,12 @@
-import { toPanelUrl } from "./paths.js";
 import { supabase } from "./supabaseClient.js";
 
 let USER_CONTEXT = null;
+
+function normalizeContextPayload(data) {
+  if (!data) return null;
+  if (Array.isArray(data)) return data[0] || null;
+  return data;
+}
 
 export async function loadUserContext() {
   const { data, error } = await supabase.rpc("rpc_get_user_context");
@@ -11,11 +16,15 @@ export async function loadUserContext() {
     throw error;
   }
 
-  if (!data?.ok) {
-    throw new Error(data?.error || "Erro ao carregar contexto");
+  const context = normalizeContextPayload(data);
+  if (!context?.user?.id) {
+    throw new Error("Erro ao carregar contexto do usuário autenticado.");
   }
 
-  USER_CONTEXT = data;
+  USER_CONTEXT = {
+    ...context,
+    modules: Array.isArray(context.modules) ? context.modules : [],
+  };
   return USER_CONTEXT;
 }
 
@@ -25,5 +34,5 @@ export function getUserContext() {
 
 export async function logout() {
   await supabase.auth.signOut();
-  window.location.href = toPanelUrl("login.html");
+  window.location.href = "/painel/login.html";
 }
