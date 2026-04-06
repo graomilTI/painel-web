@@ -59,22 +59,18 @@ function normalizePath(value = '') {
 
 function buildAllowedCodeSet(userContext) {
   const set = new Set();
-
   for (const mod of userContext?.modules || []) {
     if (mod?.can_view === false) continue;
     const code = normalizeCode(mod?.code);
     if (code) set.add(code);
   }
-
   return set;
 }
 
 function isItemAllowed(item, allowedCodes) {
-  const candidates = [
-    item.code,
-    ...(Array.isArray(item.aliases) ? item.aliases : []),
-  ].map(normalizeCode).filter(Boolean);
-
+  const candidates = [item.code, ...(Array.isArray(item.aliases) ? item.aliases : [])]
+    .map(normalizeCode)
+    .filter(Boolean);
   return candidates.some((code) => allowedCodes.has(code));
 }
 
@@ -82,10 +78,7 @@ export function buildAllowedMenu(userContext) {
   if (!userContext) return [];
 
   if (userContext.user?.is_master) {
-    return PANEL_MENU.map((section) => ({
-      ...section,
-      items: section.items.map((item) => ({ ...item })),
-    }));
+    return PANEL_MENU.map((section) => ({ ...section, items: [...section.items] }));
   }
 
   const allowedCodes = buildAllowedCodeSet(userContext);
@@ -99,7 +92,9 @@ export function buildAllowedMenu(userContext) {
 }
 
 export function flattenAllowedMenu(userContext) {
-  return buildAllowedMenu(userContext).flatMap((section) => section.items.map((item) => ({ ...item, section: section.section })));
+  return buildAllowedMenu(userContext).flatMap((section) =>
+    section.items.map((item) => ({ ...item, section: section.section }))
+  );
 }
 
 export function renderMenu(container, menuSections, currentPath = '') {
