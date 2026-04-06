@@ -83,9 +83,7 @@ function injectVisualStyles() {
       line-height: 1;
       margin-top: 12px;
     }
-    .patrimonio-table-card {
-      padding: 18px;
-    }
+    .patrimonio-table-card { padding: 18px; }
     .patrimonio-table-toolbar {
       display: flex;
       justify-content: space-between;
@@ -99,13 +97,8 @@ function injectVisualStyles() {
       flex-direction: column;
       gap: 4px;
     }
-    .patrimonio-table-title strong {
-      font-size: 1.05rem;
-    }
-    .patrimonio-table-subtitle {
-      opacity: .72;
-      font-size: .92rem;
-    }
+    .patrimonio-table-title strong { font-size: 1.05rem; }
+    .patrimonio-table-subtitle { opacity: .72; font-size: .92rem; }
     .patrimonio-legend {
       display: flex;
       gap: 10px;
@@ -123,26 +116,17 @@ function injectVisualStyles() {
       font-size: .84rem;
       color: #dbeafe;
     }
-    .legend-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 999px;
-      display: inline-block;
-    }
+    .legend-dot { width: 9px; height: 9px; border-radius: 999px; display: inline-block; }
     .legend-dot.ok { background: #22c55e; }
     .legend-dot.atraso { background: #ef4444; }
     .legend-dot.neutro { background: #94a3b8; }
-
     .table-shell {
       border: 1px solid rgba(148, 163, 184, 0.14);
       border-radius: 18px;
       overflow: hidden;
       background: rgba(2, 12, 10, 0.55);
     }
-    .table-scroll-x {
-      overflow: auto;
-      max-height: calc(100vh - 300px);
-    }
+    .table-scroll-x { overflow: auto; max-height: calc(100vh - 300px); }
     .patrimonio-table {
       width: 100%;
       min-width: 1180px;
@@ -163,22 +147,14 @@ function injectVisualStyles() {
       color: #dbeafe;
       white-space: nowrap;
     }
-    .patrimonio-table tbody tr:nth-child(odd) td {
-      background: rgba(255,255,255,0.018);
-    }
-    .patrimonio-table tbody tr:hover td {
-      background: rgba(52, 211, 153, 0.08);
-    }
+    .patrimonio-table tbody tr:nth-child(odd) td { background: rgba(255,255,255,0.018); }
+    .patrimonio-table tbody tr:hover td { background: rgba(52, 211, 153, 0.08); }
     .patrimonio-table td {
       padding: 12px;
       border-top: 1px solid rgba(148, 163, 184, 0.1);
       vertical-align: top;
     }
-    .pat-cell-patrimonio {
-      min-width: 110px;
-      font-weight: 700;
-      color: #f8fafc;
-    }
+    .pat-cell-patrimonio { min-width: 110px; font-weight: 700; color: #f8fafc; }
     .pat-cell-stack {
       display: flex;
       flex-direction: column;
@@ -206,21 +182,9 @@ function injectVisualStyles() {
       font-weight: 700;
       border: 1px solid transparent;
     }
-    .pat-tag.ok {
-      color: #dcfce7;
-      background: rgba(34, 197, 94, 0.16);
-      border-color: rgba(34, 197, 94, 0.34);
-    }
-    .pat-tag.danger {
-      color: #fee2e2;
-      background: rgba(239, 68, 68, 0.16);
-      border-color: rgba(239, 68, 68, 0.34);
-    }
-    .pat-tag.neutral {
-      color: #e2e8f0;
-      background: rgba(148, 163, 184, 0.16);
-      border-color: rgba(148, 163, 184, 0.34);
-    }
+    .pat-tag.ok { color: #dcfce7; background: rgba(34, 197, 94, 0.16); border-color: rgba(34, 197, 94, 0.34); }
+    .pat-tag.danger { color: #fee2e2; background: rgba(239, 68, 68, 0.16); border-color: rgba(239, 68, 68, 0.34); }
+    .pat-tag.neutral { color: #e2e8f0; background: rgba(148, 163, 184, 0.16); border-color: rgba(148, 163, 184, 0.34); }
     .pat-regional-badge {
       display: inline-flex;
       max-width: 100%;
@@ -241,20 +205,13 @@ function injectVisualStyles() {
       font-size: .9rem;
     }
     @media (max-width: 900px) {
-      .patrimonio-table-card {
-        padding: 14px;
-      }
-      .patrimonio-table-toolbar {
-        align-items: flex-start;
-      }
-      .table-scroll-x {
-        max-height: none;
-      }
+      .patrimonio-table-card { padding: 14px; }
+      .patrimonio-table-toolbar { align-items: flex-start; }
+      .table-scroll-x { max-height: none; }
     }
   `;
   document.head.appendChild(style);
 }
-
 
 function getDiasInfo(row) {
   if (row?.dias_sem_leitura === null || row?.dias_sem_leitura === undefined || row?.dias_sem_leitura === '') {
@@ -386,38 +343,17 @@ function ensureStyles() {
       color: #0f172a;
       font-family: Arial, Helvetica, sans-serif;
     }
-    .g1000-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
-      margin-bottom: 18px;
-    }
+    .g1000-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
     .g1000-header h1 { margin: 0; font-size: 34px; line-height: 1.1; }
     .g1000-header p { margin: 8px 0 0; font-size: 16px; color: #475569; }
-    .gpage-badge {
-      background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 999px;
-      padding: 10px 16px; font-size: 14px; font-weight: 700; white-space: nowrap;
-    }
+    .gpage-badge { background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 999px; padding: 10px 16px; font-size: 14px; font-weight: 700; white-space: nowrap; }
     .gstats { display: flex; gap: 16px; margin-bottom: 26px; flex-wrap: wrap; }
-    .gstat {
-      background: #fff; border: 1px solid #cbd5e1; border-radius: 18px;
-      padding: 14px 18px; min-width: 150px;
-    }
+    .gstat { background: #fff; border: 1px solid #cbd5e1; border-radius: 18px; padding: 14px 18px; min-width: 150px; }
     .glabel { color: #475569; margin-right: 6px; }
-    .gtable-wrap {
-      background: #fff; border-radius: 20px; overflow: hidden;
-      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
-    }
+    .gtable-wrap { background: #fff; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); }
     .gtable { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .gtable thead th {
-      background: #0f172a; color: #fff; font-size: 13px; letter-spacing: .04em;
-      text-align: left; padding: 14px 10px; border-right: 1px solid rgba(255,255,255,.15);
-    }
-    .gtable tbody td {
-      font-size: 14px; padding: 10px 10px; border: 1px solid #dbe4ef;
-      vertical-align: top; word-break: break-word;
-    }
+    .gtable thead th { background: #0f172a; color: #fff; font-size: 13px; letter-spacing: .04em; text-align: left; padding: 14px 10px; border-right: 1px solid rgba(255,255,255,.15); }
+    .gtable tbody td { font-size: 14px; padding: 10px 10px; border: 1px solid #dbe4ef; vertical-align: top; word-break: break-word; }
     .gtable tbody tr.is-atrasado td.col-dias { color: #b91c1c; font-weight: 700; }
     .gtable tbody tr.is-ok td.col-dias { color: #166534; font-weight: 700; }
     .gtable tbody tr.is-empty td.col-dias { color: #475569; font-weight: 700; }
@@ -673,17 +609,21 @@ function groupRowsByRegional(rows) {
 
 initProtectedPage('Relatórios de Patrimônios', (content) => {
   injectVisualStyles();
+  const relatoriosUrl = toPanelUrl('adm-patrimonio');
+  const importarUrl = toPanelUrl('importar-patrimonios');
+  const statusUrl = toPanelUrl('patrimonio-status');
+
   content.innerHTML = `
     <section class="base-page patrimonio-relatorios-page">
       <div class="section-heading">
         <div>
           <h2>Relatórios de Patrimônios</h2>
-          <p class="section-subtitle">Consulta da base atual importada em <strong>RELATÓRIOS &gt; Patrimônios</strong>, com filtros por coordenação, supervisão e situação de atraso.</p>
+          <p class="section-subtitle">Consulta da base atual importada em <strong>RELATÓRIOS &gt; Patrimônios</strong>, com filtros por regional, supervisão e situação de atraso.</p>
         </div>
         <div class="inline-nav">
-          <a href="${toPanelUrl('patrimonio-relatorios')}" class="active">Relatórios</a>
-          <a href="${toPanelUrl('importar-patrimonios')}">Importar arquivo</a>
-          <a href="${toPanelUrl('adm-patrimonio')}">Painel de Patrimônios</a>
+          <a href="${relatoriosUrl}" class="active">Relatórios</a>
+          <a href="${importarUrl}">Importar arquivo</a>
+          <a href="${statusUrl}">Status</a>
         </div>
       </div>
 
@@ -759,11 +699,11 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
 
         <div class="table-shell">
           <div class="table-scroll-x">
-            <table class="data-table patrimonio-table">
+            <table class="patrimonio-table">
               <thead>
                 <tr>
                   <th>Patrimônio</th>
-                  <th>Regional / Situação</th>
+                  <th>Regional</th>
                   <th>Supervisão</th>
                   <th>Funcionário</th>
                   <th>Identificação</th>
@@ -781,7 +721,11 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
     </section>
   `;
 
-  const state = { allRows: [], filteredRows: [], currentPage: 1 };
+  const state = {
+    allRows: [],
+    filteredRows: [],
+    page: 1
+  };
 
   const readFilters = () => ({
     coordenacao: document.getElementById('fCoordenacao')?.value || '',
@@ -791,10 +735,10 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
     excluirIgnorados: (document.getElementById('fIgnorados')?.value || 'mostrar') === 'excluir'
   });
 
-  const applyAndRender = (page = 1) => {
+  const applyAndRender = () => {
     state.filteredRows = applyFilters(state.allRows, readFilters());
-    state.currentPage = updatePagination(state.filteredRows.length, page);
-    renderTableRows(state.filteredRows, state.currentPage);
+    state.page = updatePagination(state.filteredRows.length, state.page);
+    renderTableRows(state.filteredRows, state.page);
     updateSummary(state.filteredRows);
 
     const stats = computeStats(state.filteredRows);
@@ -803,48 +747,72 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
 
   const refreshSupervisoes = () => {
     const coord = document.getElementById('fCoordenacao')?.value || '';
-    const source = coord ? state.allRows.filter((row) => normalizeKey(getRegional(row)) === normalizeKey(coord)) : state.allRows;
+    const source = coord
+      ? state.allRows.filter((row) => normalizeKey(getRegional(row)) === normalizeKey(coord))
+      : state.allRows;
     const supervisoes = [...new Set(source.map((row) => normalizeText(row.supervisao)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     fillSelectOptions('fSupervisao', supervisoes, 'Todas');
   };
 
-  document.getElementById('btnAplicar')?.addEventListener('click', () => applyAndRender(1));
+  document.getElementById('btnAplicar')?.addEventListener('click', () => {
+    state.page = 1;
+    applyAndRender();
+  });
   document.getElementById('btnLimpar')?.addEventListener('click', () => {
     document.getElementById('fCoordenacao').value = '';
+    refreshSupervisoes();
+    document.getElementById('fSupervisao').value = '';
     document.getElementById('fTipo').value = 'geral';
     document.getElementById('fIgnorados').value = 'mostrar';
     document.getElementById('fBusca').value = '';
-    refreshSupervisoes();
-    document.getElementById('fSupervisao').value = '';
-    applyAndRender(1);
+    state.page = 1;
+    applyAndRender();
   });
-  document.getElementById('fCoordenacao')?.addEventListener('change', () => { refreshSupervisoes(); applyAndRender(1); });
-  document.getElementById('fSupervisao')?.addEventListener('change', () => applyAndRender(1));
-  document.getElementById('fTipo')?.addEventListener('change', () => applyAndRender(1));
-  document.getElementById('fIgnorados')?.addEventListener('change', () => applyAndRender(1));
-  document.getElementById('fBusca')?.addEventListener('input', () => applyAndRender(1));
-  document.getElementById('btnPrevPage')?.addEventListener('click', () => applyAndRender(state.currentPage - 1));
-  document.getElementById('btnNextPage')?.addEventListener('click', () => applyAndRender(state.currentPage + 1));
+  document.getElementById('fCoordenacao')?.addEventListener('change', () => {
+    refreshSupervisoes();
+    state.page = 1;
+    applyAndRender();
+  });
+  document.getElementById('fSupervisao')?.addEventListener('change', () => { state.page = 1; applyAndRender(); });
+  document.getElementById('fTipo')?.addEventListener('change', () => { state.page = 1; applyAndRender(); });
+  document.getElementById('fIgnorados')?.addEventListener('change', () => { state.page = 1; applyAndRender(); });
+  document.getElementById('fBusca')?.addEventListener('input', () => { state.page = 1; applyAndRender(); });
+
+  document.getElementById('btnPrevPage')?.addEventListener('click', () => {
+    state.page = Math.max(1, state.page - 1);
+    state.page = updatePagination(state.filteredRows.length, state.page);
+    renderTableRows(state.filteredRows, state.page);
+  });
+  document.getElementById('btnNextPage')?.addEventListener('click', () => {
+    const maxPage = Math.max(1, Math.ceil(state.filteredRows.length / TABLE_ROWS_PER_PAGE));
+    state.page = Math.min(maxPage, state.page + 1);
+    state.page = updatePagination(state.filteredRows.length, state.page);
+    renderTableRows(state.filteredRows, state.page);
+  });
 
   document.getElementById('btnCsv')?.addEventListener('click', () => {
-    if (!state.filteredRows.length) return setFeedback('Não há registros filtrados para exportar.', true);
-    downloadBlob('relatorio-patrimonios.csv', new Blob([toCsv(state.filteredRows)], { type: 'text/csv;charset=utf-8' }));
+    if (!state.filteredRows.length) {
+      setFeedback('Não há registros filtrados para exportar.', true);
+      return;
+    }
+    const blob = new Blob([toCsv(state.filteredRows)], { type: 'text/csv;charset=utf-8' });
+    downloadBlob('relatorio-patrimonios.csv', blob);
     setFeedback('CSV gerado com sucesso.');
   });
 
   document.getElementById('btnZip')?.addEventListener('click', async () => {
-    if (!state.filteredRows.length) return setFeedback('Não há registros filtrados para exportar.', true);
+    if (!state.filteredRows.length) {
+      setFeedback('Não há registros filtrados para exportar.', true);
+      return;
+    }
     try {
       setFeedback('Carregando bibliotecas de exportação e montando páginas...');
       await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
       await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'JSZip');
-      const images = await gerarPacoteImagensPaginado({
-        rows: state.filteredRows,
-        titulo: buildReportTitle(readFilters().tipo, readFilters().coordenacao),
-        subtitulo: `Base filtrada em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}`,
-        stats: computeStats(state.filteredRows),
-        filePrefix: 'patrimonios'
-      });
+      const stats = computeStats(state.filteredRows);
+      const titulo = buildReportTitle(readFilters().tipo);
+      const subtitulo = `Base filtrada em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}`;
+      const images = await gerarPacoteImagensPaginado({ rows: state.filteredRows, titulo, subtitulo, stats, filePrefix: 'patrimonios' });
       await baixarZipDeImagens(images, 'relatorios-patrimonios.zip');
       setFeedback('ZIP de imagens gerado com sucesso.');
     } catch (error) {
@@ -854,55 +822,42 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
   });
 
   document.getElementById('btnZipRegional')?.addEventListener('click', async () => {
+    if (!state.filteredRows.length) {
+      setFeedback('Não há registros filtrados para exportar por regional.', true);
+      return;
+    }
+
     try {
-      setFeedback('Gerando ZIP geral por regional...');
+      setFeedback('Carregando bibliotecas e preparando pacotes por regional...');
       await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
       await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'JSZip');
 
-      const globalFilters = readFilters();
-      const baseRows = applyFilters(state.allRows, { ...globalFilters, coordenacao: '', supervisao: '', busca: '' });
-      const regionais = groupRowsByRegional(baseRows);
-      if (!regionais.length) return setFeedback('Não há registros para gerar o ZIP por regional.', true);
-
       const zip = new window.JSZip();
-      const geradoEm = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date());
-      const resumo = [
-        `Total de regionais: ${regionais.length}`,
-        `Total de registros considerados: ${baseRows.length}`,
-        `Gerado em: ${geradoEm}`,
-        ''
-      ];
+      const groups = groupRowsByRegional(state.filteredRows);
+      const resumo = [];
 
-      for (let i = 0; i < regionais.length; i += 1) {
-        const [regional, rows] = regionais[i];
-        const slug = slugify(regional);
-        const stats = computeStats(rows);
-        const folder = zip.folder(slug);
-        if (!folder) continue;
+      for (const [regional, rows] of groups) {
+        const folder = zip.folder(slugify(regional));
+        const regionalStats = computeStats(rows);
+        const csvContent = toCsv(rows);
+        folder.file('relatorio.csv', csvContent);
 
-        resumo.push(`${regional}: ${rows.length} registro(s)`);
-        folder.file('relatorio.csv', toCsv(rows));
-
-        setFeedback(`Gerando ZIP por regional... ${i + 1}/${regionais.length} | ${regional}`);
+        const titulo = buildReportTitle(readFilters().tipo, regional);
+        const subtitulo = `Regional ${regional} • gerado em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}`;
         // eslint-disable-next-line no-await-in-loop
-        const images = await gerarPacoteImagensPaginado({
-          rows,
-          titulo: buildReportTitle(globalFilters.tipo, regional),
-          subtitulo: `Regional ${regional} • Gerado em ${geradoEm}`,
-          stats,
-          filePrefix: slug
-        });
-
+        const images = await gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats: regionalStats, filePrefix: slugify(regional) });
         images.forEach((img) => {
           const base64 = img.dataUrl.split(',')[1];
           folder.file(img.filename, base64, { base64: true });
         });
+
+        resumo.push(`${regional}: ${rows.length} registro(s) | Em dia: ${regionalStats.emDia} | Em atraso: ${regionalStats.atrasados} | Sem dias: ${regionalStats.semDias}`);
       }
 
       zip.file('resumo.txt', resumo.join('\n'));
       const blob = await zip.generateAsync({ type: 'blob' });
       downloadBlob('relatorios-patrimonios-por-regional.zip', blob);
-      setFeedback(`ZIP por regional gerado com sucesso. ${regionais.length} regional(is) incluída(s).`);
+      setFeedback('ZIP por regional gerado com sucesso.');
     } catch (error) {
       console.error(error);
       setFeedback(error?.message || 'Não foi possível gerar o ZIP por regional.', true);
@@ -915,12 +870,11 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
       const coordenacoes = [...new Set(state.allRows.map((row) => getRegional(row)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       fillSelectOptions('fCoordenacao', coordenacoes, 'Todas');
       refreshSupervisoes();
-      applyAndRender(1);
+      applyAndRender();
     } catch (error) {
       console.error(error);
-      renderTableRows([], 1);
+      renderTableRows([]);
       updateSummary([]);
-      updatePagination(0, 1);
       setFeedback(error?.message || 'Erro ao carregar base de patrimônios.', true);
     }
   })();

@@ -9,18 +9,6 @@ function normalizeText(value) {
   return s || null;
 }
 
-function normalizePatrimonioCodigo(value) {
-  const normalized = normalizeText(value);
-  if (!normalized) return null;
-  return normalized
-    .normalize('NFKC')
-    .replace(/[\u200B-\u200D\uFEFF]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toUpperCase();
-}
-
-
 function normalizeKey(value) {
   return String(value || '')
     .normalize('NFD')
@@ -138,6 +126,10 @@ function validateRows(rows) {
   }
 }
 
+function normalizePatrimonioCodigo(value) {
+  return normalizeText(value)?.trim().toUpperCase() || null;
+}
+
 function mapRow(row, importacaoId) {
   const patrimonioCodigo = normalizePatrimonioCodigo(getField(row, COL.patrimonioCodigo));
   return {
@@ -155,27 +147,22 @@ function mapRow(row, importacaoId) {
     situacao: normalizeText(getField(row, COL.situacao)),
     ultima_leitura: excelDateTimeToISO(getField(row, COL.ultimaLeitura)),
     dias_sem_leitura: normalizeInteger(getField(row, COL.diasSemLeitura)),
-    hash_linha: patrimonioCodigo || null
+    hash_linha: patrimonioCodigo
   };
 }
 
-async function insertBatches(table, rows, batchSize = 500, onProgress) {
+async function upsertBatches(table, rows, batchSize = 500, onProgress) {
   const chunks = chunkArray(rows, batchSize);
 
   for (let i = 0; i < chunks.length; i += 1) {
     const chunk = chunks[i];
-    const { error } = await supabase
-      .from(table)
-      .upsert(chunk, {
-        onConflict: 'patrimonio_codigo',
-        ignoreDuplicates: false
-      });
+    const { error } = await supabase.from(table).upsert(chunk, { onConflict: 'patrimonio_codigo' });
     if (error) throw error;
 
     const done = Math.min((i + 1) * batchSize, rows.length);
     if (onProgress) onProgress(done, rows.length, i + 1, chunks.length);
 
-    await wait(25);
+    await wait(15);
   }
 }
 
@@ -190,6 +177,9 @@ function safeErrorMessage(err) {
 }
 
 initProtectedPage('Importar Patrimônios', (content, ctx) => {
+  const relatoriosUrl = toPanelUrl('adm-patrimonio');
+  const statusUrl = toPanelUrl('patrimonio-status');
+
   content.innerHTML = `
     <section class="base-page">
       <div class="section-heading">
@@ -197,13 +187,13 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
           <h2>Importar Patrimônios</h2>
           <p class="section-subtitle">
             Use esta tela para subir a planilha diária de patrimônios em <strong>RELATÓRIOS</strong>,
-            mantendo o menu principal de <strong>PATRIMÔNIOS</strong> para o módulo operacional.
+            mantendo o menu principal de <strong>PATRIMÔNIOS</strong> para acompanhamento, relatórios e status.
           </p>
         </div>
         <div class="inline-nav">
+          <a href="${relatoriosUrl}">Relatórios</a>
           <a href="${toPanelUrl('importar-patrimonios')}" class="active">Importar arquivo</a>
-          <a href="${toPanelUrl('adm-patrimonio')}">Painel de Patrimônios</a>
-          <a href="${toPanelUrl('dashboard')}">Dashboard</a>
+          <a href="${statusUrl}">Status</a>
         </div>
       </div>
 
@@ -246,7 +236,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       <div class="base-card">
         <h3 style="margin-top:0">Retorno da importação</h3>
         <div id="feedback" class="base-status">Selecione um arquivo e clique em "Importar patrimônios".</div>
-        <p style="margin:12px 0 0;opacity:.75;font-size:.95rem">Nesta versão, a importação grava primeiro o snapshot atual para evitar excesso de requisições e travamentos.</p>
+        <p style="margin:12px 0 0;opacity:.75;font-size:.95rem">Nesta versão, a importação limpa o snapshot atual e regrava a base para manter relatórios e status alinhados.</p>
       </div>
     </section>
   `;
@@ -322,9 +312,8 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       let duplicadosIgnorados = 0;
 
       for (const item of mappedRaw) {
-        const key = normalizePatrimonioCodigo(item.patrimonio_codigo);
+        const key = item.patrimonio_codigo;
         if (!key) continue;
-
         if (uniqueMap.has(key)) duplicadosIgnorados += 1;
         uniqueMap.set(key, item);
       }
@@ -336,15 +325,14 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
         'Importação criada.',
         `Aba usada: ${selectedSheetName}`,
         `Duplicados ignorados no arquivo: ${duplicadosIgnorados}`,
-        'Removendo snapshot anterior...'
+        'Limpando snapshot atual...'
       ].join('\n');
 
       const { error: deleteError } = await supabase.rpc('limpar_patrimonios_snapshot');
-
       if (deleteError) throw deleteError;
 
       setSummary({ linhas: rows.length, validas: mapped.length, status: 'Importando snapshot' });
-      await insertBatches('patrimonios_snapshot', mapped, 500, (done, total, loteAtual, totalLotes) => {
+      await upsertBatches('patrimonios_snapshot', mapped, 500, (done, total, loteAtual, totalLotes) => {
         feedback.textContent = [
           'Importando snapshot de patrimônios...',
           `ID: ${importacaoId}`,
@@ -378,8 +366,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
         `Aba usada: ${selectedSheetName}`,
         `Linhas lidas: ${rows.length}`,
         `Linhas válidas: ${mapped.length}`,
-        `Duplicados ignorados: ${duplicadosIgnorados}`,
-        'Histórico detalhado será ativado depois, sem travar a tela.'
+        `Duplicados ignorados: ${duplicadosIgnorados}`
       ].join('\n');
       fileInput.value = '';
     } catch (err) {
@@ -387,13 +374,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       if (importacaoId) {
         await supabase
           .from('patrimonios_importacoes')
-          .update({
-            status: 'erro',
-            observacoes: [
-              obsInput?.value?.trim() || null,
-              `Erro: ${safeErrorMessage(err)}`
-            ].filter(Boolean).join(' | ')
-          })
+          .update({ status: 'erro', observacoes: safeErrorMessage(err) })
           .eq('id', importacaoId);
       }
       setSummary({ status: 'Erro' });
