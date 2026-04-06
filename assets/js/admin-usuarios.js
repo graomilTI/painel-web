@@ -3,9 +3,25 @@ import { initProtectedPage } from './pageInit.js';
 
 // assets/js/admin-usuarios.js
 (function () {
-  const state = { users: [], modulosCatalogo: [], editingUserId: null };
+  const state = { users: [], modulosCatalogo: [], editingUserId: null, selectedModuleIds: [] };
   const qs = (s, e = document) => e.querySelector(s);
   const qsa = (s, e = document) => Array.from(e.querySelectorAll(s));
+
+  const BASE_ACCESS_CODES = new Set([
+    'dashboard',
+    'notificacoes',
+    'historico_geral'
+  ]);
+
+  const GESTOR_CODES = new Set([
+    'programacao',
+    'hospedagem',
+    'compras_gestor',
+    'logistica_gestor',
+    'patrimonios_gestor',
+    'contato_cliente',
+    'conferencia'
+  ]);
 
   function esc(v) {
     return String(v ?? "")
@@ -14,6 +30,44 @@ import { initProtectedPage } from './pageInit.js';
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+
+  function normalizeCode(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function getUserNivel(user = {}) {
+    return String(
+      user?.nivel ||
+      user?.perfil_codigo ||
+      user?.perfil_nome ||
+      user?.role ||
+      'adm'
+    ).trim().toLowerCase() === 'gestor'
+      ? 'gestor'
+      : 'adm';
+  }
+
+  function isGestorModule(modulo) {
+    const code = normalizeCode(modulo?.codigo || modulo?.code || modulo?.id || '');
+    return BASE_ACCESS_CODES.has(code) || GESTOR_CODES.has(code);
+  }
+
+  function getVisibleModulesByNivel(nivel) {
+    const normalizedNivel = String(nivel || 'adm').trim().toLowerCase();
+    if (normalizedNivel === 'gestor') {
+      return state.modulosCatalogo.filter(isGestorModule);
+    }
+    return state.modulosCatalogo.slice();
+  }
+
+  function syncSelectedModulesWithNivel(nivel) {
+    const visibleIds = new Set(getVisibleModulesByNivel(nivel).map((m) => m.id));
+    state.selectedModuleIds = (state.selectedModuleIds || []).filter((id) => visibleIds.has(id));
   }
 
   function extractAccessToken(sessionLike) {
@@ -42,10 +96,6 @@ import { initProtectedPage } from './pageInit.js';
       console.error("TOKEN PARTS:", cleanToken.split(".").length);
       throw new Error("Token de sessão inválido.");
     }
-
-    console.log("SESSION DEBUG:", session);
-    console.log("TOKEN DEBUG:", cleanToken);
-    console.log("TOKEN PARTS:", cleanToken.split(".").length);
 
     const res = await fetch(url, {
       ...options,
@@ -78,7 +128,7 @@ import { initProtectedPage } from './pageInit.js';
           <div class="au-header">
             <div>
               <h2 class="au-title">Usuários</h2>
-              <div class="au-subtitle">Gerencie setor e módulos liberados por usuário</div>
+              <div class="au-subtitle">Gerencie nível, setor e módulos liberados por usuário</div>
             </div>
             <div class="au-actions">
               <button id="auBtnNovo" class="au-btn au-btn-primary" type="button">Novo usuário</button>
@@ -86,7 +136,7 @@ import { initProtectedPage } from './pageInit.js';
           </div>
 
           <div class="au-toolbar">
-            <input id="auFiltro" class="au-input" type="text" placeholder="Buscar por nome, e-mail ou setor" />
+            <input id="auFiltro" class="au-input" type="text" placeholder="Buscar por nome, e-mail, setor ou nível" />
           </div>
 
           <div id="auFeedback" class="au-feedback" style="display:none;"></div>
@@ -97,6 +147,7 @@ import { initProtectedPage } from './pageInit.js';
                 <tr>
                   <th>Nome</th>
                   <th>E-mail</th>
+                  <th>Nível</th>
                   <th>Setor</th>
                   <th>Status</th>
                   <th>Módulos</th>
@@ -130,6 +181,14 @@ import { initProtectedPage } from './pageInit.js';
                 </div>
 
                 <div class="au-field">
+                  <label for="auNivel">Nível</label>
+                  <select id="auNivel" class="au-input">
+                    <option value="gestor">Gestor</option>
+                    <option value="adm">ADM</option>
+                  </select>
+                </div>
+
+                <div class="au-field">
                   <label for="auSetor">Setor</label>
                   <input id="auSetor" class="au-input" type="text" />
                 </div>
@@ -149,6 +208,7 @@ import { initProtectedPage } from './pageInit.js';
 
                 <div class="au-field au-field-full">
                   <label>Módulos liberados</label>
+                  <div class="au-note" id="auNivelNote"></div>
                   <div id="auModulosContainer" class="au-modulos"></div>
                 </div>
               </div>
@@ -174,11 +234,12 @@ import { initProtectedPage } from './pageInit.js';
         .au-btn-light{background:#1e293b;color:#e5e7eb}
         .au-feedback{margin-bottom:12px;padding:10px 12px;border-radius:10px;background:#1e293b;border:1px solid #334155}
         .au-table-wrap{overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:14px}
-        .au-table{width:100%;border-collapse:collapse;min-width:980px}
+        .au-table{width:100%;border-collapse:collapse;min-width:1080px}
         .au-table th,.au-table td{text-align:left;padding:12px;border-bottom:1px solid #1f2937;vertical-align:top}
         .au-badge{display:inline-block;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:600}
         .au-badge-on{background:rgba(22,101,52,.25);color:#86efac}
         .au-badge-off{background:rgba(127,29,29,.25);color:#fca5a5}
+        .au-badge-level{background:rgba(59,130,246,.18);color:#bfdbfe}
         .au-mod-chip{display:inline-block;padding:4px 8px;margin:2px;border-radius:999px;background:#1e293b;border:1px solid #334155;font-size:12px}
         .au-actions-row{display:flex;flex-wrap:wrap;gap:8px}
         .au-modal{position:fixed;inset:0;background:rgba(2,6,23,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -187,6 +248,7 @@ import { initProtectedPage } from './pageInit.js';
         .au-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
         .au-field{display:flex;flex-direction:column;gap:6px}
         .au-field-full{grid-column:1 / -1}
+        .au-note{font-size:12px;opacity:.82;margin-bottom:8px}
         .au-modulos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;border:1px solid #1f2937;border-radius:12px;padding:12px;background:#0f172a}
         .au-mod-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #1f2937;border-radius:10px;background:#111827}
         .au-modal-footer{margin-top:16px;display:flex;justify-content:flex-end}
@@ -198,6 +260,10 @@ import { initProtectedPage } from './pageInit.js';
     qs("#auBtnCloseModal").addEventListener("click", closeModal);
     qs("#auFiltro").addEventListener("input", renderTable);
     qs("#auForm").addEventListener("submit", onSubmitForm);
+    qs("#auNivel").addEventListener("change", () => {
+      syncSelectedModulesWithNivel(qs("#auNivel").value);
+      renderModules(state.selectedModuleIds);
+    });
   }
 
   function setFeedback(msg, isError = false) {
@@ -216,9 +282,20 @@ import { initProtectedPage } from './pageInit.js';
 
   function renderModules(selectedIds = []) {
     const container = qs("#auModulosContainer");
+    const note = qs("#auNivelNote");
+    const nivel = qs("#auNivel")?.value || 'adm';
+    const visibleModules = getVisibleModulesByNivel(nivel);
+    state.selectedModuleIds = selectedIds.slice();
+
+    if (note) {
+      note.textContent = nivel === 'gestor'
+        ? 'Gestor visualiza somente módulos de gestor e acessos base.'
+        : 'ADM pode receber módulos administrativos e de gestor conforme liberação.';
+    }
+
     if (!container) return;
-    container.innerHTML = state.modulosCatalogo.map((m) => {
-      const checked = selectedIds.includes(m.id) ? "checked" : "";
+    container.innerHTML = visibleModules.map((m) => {
+      const checked = state.selectedModuleIds.includes(m.id) ? "checked" : "";
       return `<label class="au-mod-item"><input type="checkbox" value="${esc(m.id)}" ${checked} /><span>${esc(m.nome || m.codigo || "Módulo")}</span></label>`;
     }).join("");
   }
@@ -229,7 +306,8 @@ import { initProtectedPage } from './pageInit.js';
 
     const filtro = (qs("#auFiltro")?.value || "").trim().toLowerCase();
     const items = state.users.filter((u) => {
-      const text = [u.nome || "", u.email || "", u.setor || "", ...(u.modulos || []).map((m) => m.nome || m.codigo || "")]
+      const nivel = getUserNivel(u);
+      const text = [u.nome || "", u.email || "", u.setor || "", nivel, ...(u.modulos || []).map((m) => m.nome || m.codigo || "")]
         .join(" ").toLowerCase();
       return !filtro || text.includes(filtro);
     });
@@ -238,6 +316,8 @@ import { initProtectedPage } from './pageInit.js';
       const isAtivo = (u.status || "ativo") === "ativo";
       const statusClass = isAtivo ? "au-badge-on" : "au-badge-off";
       const statusLabel = isAtivo ? "Ativo" : "Inativo";
+      const nivel = getUserNivel(u);
+      const nivelLabel = nivel === 'gestor' ? 'Gestor' : 'ADM';
       const modulosHtml = (u.modulos || []).length
         ? u.modulos.map((m) => `<span class="au-mod-chip">${esc(m.nome || m.codigo || "")}</span>`).join("")
         : `<span style="opacity:.7;">Sem módulos</span>`;
@@ -246,6 +326,7 @@ import { initProtectedPage } from './pageInit.js';
         <tr>
           <td>${esc(u.nome || "")}</td>
           <td>${esc(u.email || "")}</td>
+          <td><span class="au-badge au-badge-level">${nivelLabel}</span></td>
           <td>${esc(u.setor || "")}</td>
           <td><span class="au-badge ${statusClass}">${statusLabel}</span></td>
           <td>${modulosHtml}</td>
@@ -283,14 +364,17 @@ import { initProtectedPage } from './pageInit.js';
 
   function openModal(user = null, selectedModuleIds = []) {
     state.editingUserId = user?.id || null;
+    state.selectedModuleIds = selectedModuleIds.slice();
     qs("#auModalTitle").textContent = user ? "Editar usuário" : "Novo usuário";
     qs("#auUserId").value = user?.id || "";
     qs("#auNome").value = user?.nome || "";
     qs("#auEmail").value = user?.email || "";
+    qs("#auNivel").value = getUserNivel(user);
     qs("#auSetor").value = user?.setor || "";
     qs("#auAtivo").value = (user?.status || "ativo") === "ativo" ? "true" : "false";
     qs("#auPassword").value = "";
-    renderModules(selectedModuleIds);
+    syncSelectedModulesWithNivel(qs("#auNivel").value);
+    renderModules(state.selectedModuleIds);
     qs("#auModal").style.display = "flex";
   }
 
@@ -353,12 +437,23 @@ import { initProtectedPage } from './pageInit.js';
     const id = qs("#auUserId").value.trim();
     const nome = qs("#auNome").value.trim();
     const email = qs("#auEmail").value.trim();
+    const nivel = qs("#auNivel").value.trim();
     const setor = qs("#auSetor").value.trim();
     const status = qs("#auAtivo").value === "true" ? "ativo" : "inativo";
     const password = qs("#auPassword").value;
     const modulos = getSelectedModules();
 
-    const payload = { id, nome, email, setor, status, modulos };
+    const payload = {
+      id,
+      nome,
+      email,
+      nivel,
+      role: nivel,
+      perfil_codigo: nivel,
+      setor,
+      status,
+      modulos
+    };
     const isCreate = !id;
 
     if (password) payload.password = password;
