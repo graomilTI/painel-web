@@ -128,9 +128,10 @@ function validateRows(rows) {
 
 function mapRow(row, importacaoId) {
   const patrimonioCodigo = normalizeText(getField(row, COL.patrimonioCodigo));
+  const patrimonioCodigoNormalizado = patrimonioCodigo ? String(patrimonioCodigo).trim().toUpperCase() : null;
   return {
     importacao_id: importacaoId,
-    patrimonio_codigo: patrimonioCodigo,
+    patrimonio_codigo: patrimonioCodigoNormalizado,
     coordenacao: normalizeText(getField(row, COL.coordenacao)),
     supervisao: normalizeText(getField(row, COL.supervisao)),
     funcionario: normalizeText(getField(row, COL.funcionario)),
@@ -143,7 +144,7 @@ function mapRow(row, importacaoId) {
     situacao: normalizeText(getField(row, COL.situacao)),
     ultima_leitura: excelDateTimeToISO(getField(row, COL.ultimaLeitura)),
     dias_sem_leitura: normalizeInteger(getField(row, COL.diasSemLeitura)),
-    hash_linha: patrimonioCodigo
+    hash_linha: patrimonioCodigoNormalizado
   };
 }
 
@@ -152,7 +153,13 @@ async function insertBatches(table, rows, batchSize = 500, onProgress) {
 
   for (let i = 0; i < chunks.length; i += 1) {
     const chunk = chunks[i];
-    const { error } = await supabase.from(table).insert(chunk);
+    const { error } = await supabase
+      .from(table)
+      .upsert(chunk, {
+        onConflict: 'patrimonio_codigo',
+        ignoreDuplicates: false
+      });
+
     if (error) throw error;
 
     const done = Math.min((i + 1) * batchSize, rows.length);
