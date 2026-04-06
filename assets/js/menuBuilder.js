@@ -4,6 +4,14 @@ import { PANEL_MENU } from './menuConfig.js';
 const MENU_STORAGE_KEY = 'painel_sidebar_open_sections';
 const PREFETCHED_URLS = new Set();
 
+function normalizeCode(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 function prefetchUrl(url) {
   try {
     const absolute = new URL(url, window.location.href).toString();
@@ -49,25 +57,49 @@ function normalizePath(value = '') {
   return ('/' + String(value || '').replace(/^\.\//, '').replace(/^\//, '')).replace(/\/+/g, '/');
 }
 
+function buildAllowedCodeSet(userContext) {
+  const set = new Set();
+
+  for (const mod of userContext?.modules || []) {
+    if (mod?.can_view === false) continue;
+    const code = normalizeCode(mod?.code);
+    if (code) set.add(code);
+  }
+
+  return set;
+}
+
+function isItemAllowed(item, allowedCodes) {
+  const candidates = [
+    item.code,
+    ...(Array.isArray(item.aliases) ? item.aliases : []),
+  ].map(normalizeCode).filter(Boolean);
+
+  return candidates.some((code) => allowedCodes.has(code));
+}
+
 export function buildAllowedMenu(userContext) {
   if (!userContext) return [];
 
   if (userContext.user?.is_master) {
-    return PANEL_MENU.map((section) => ({ ...section, items: [...section.items] }));
+    return PANEL_MENU.map((section) => ({
+      ...section,
+      items: section.items.map((item) => ({ ...item })),
+    }));
   }
 
-  const allowedCodes = new Set(
-    (userContext.modules || [])
-      .filter((m) => m.can_view)
-      .map((m) => m.code)
-  );
+  const allowedCodes = buildAllowedCodeSet(userContext);
 
   return PANEL_MENU
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => allowedCodes.has(item.code)),
+      items: section.items.filter((item) => isItemAllowed(item, allowedCodes)),
     }))
     .filter((section) => section.items.length > 0);
+}
+
+export function flattenAllowedMenu(userContext) {
+  return buildAllowedMenu(userContext).flatMap((section) => section.items.map((item) => ({ ...item, section: section.section })));
 }
 
 export function renderMenu(container, menuSections, currentPath = '') {
@@ -86,7 +118,8 @@ export function renderMenu(container, menuSections, currentPath = '') {
       const normalizedItemPath = normalizePath(item.path);
       return (
         normalizedCurrent.endsWith(normalizedItemPath) ||
-        normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, ''))
+        normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, '')) ||
+        normalizedCurrent.endsWith(normalizedItemPath + '.html')
       );
     });
 
@@ -109,7 +142,7 @@ export function renderMenu(container, menuSections, currentPath = '') {
     const listWrap = document.createElement('div');
     listWrap.className = 'menu-section-body';
 
-    let isOpen = hasItems && (hasActiveItem || storedOpenSections.has(section.section) || menuSections.length <= 3);
+    const isOpen = hasItems && (hasActiveItem || storedOpenSections.has(section.section) || menuSections.length <= 3);
 
     if (!isOpen) {
       listWrap.hidden = true;
@@ -129,7 +162,8 @@ export function renderMenu(container, menuSections, currentPath = '') {
         const normalizedItemPath = normalizePath(item.path);
         if (
           normalizedCurrent.endsWith(normalizedItemPath) ||
-          normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, ''))
+          normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, '')) ||
+          normalizedCurrent.endsWith(normalizedItemPath + '.html')
         ) {
           link.classList.add('active');
         }

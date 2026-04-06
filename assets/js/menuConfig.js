@@ -1,113 +1,74 @@
 // assets/js/menuConfig.js
-// Ajustado: mantém o menu principal de Patrimônios e adiciona a importação de Patrimônios em RELATÓRIOS.
+// Versão compatível com códigos reais do Supabase + aliases legados.
 
-export const MENU_CONFIG = [
+function item(code, label, path, aliases = []) {
+  return { code, label, path, aliases };
+}
+
+export const PANEL_MENU = [
   {
-    grupo: "INÍCIO",
-    itens: [
-      { id: "DASHBOARD", nome: "Dashboard", path: "dashboard" },
-      { id: "NOTIFICACOES", nome: "Notificações", path: "notificacoes" },
-      { id: "HISTORICO_GERAL", nome: "Histórico Geral", path: "historico" }
-    ]
+    section: 'INÍCIO',
+    items: [
+      item('dashboard', 'Dashboard', 'dashboard'),
+      item('notificacoes', 'Notificações', 'notificacoes'),
+      item('historico_geral', 'Histórico Geral', 'historico', ['HISTORICO_GERAL'])
+    ],
   },
 
   {
-    grupo: "GESTOR",
-    itens: [
-      { id: "PROGRAMACAO", nome: "Programação", path: "programacao" },
-      { id: "HOSPEDAGEM", nome: "Hospedagem", path: "hospedagem" },
-      { id: "COMPRAS", nome: "Compras", path: "compras" },
-      { id: "LOGISTICA", nome: "Logística", path: "logistica" },
-      { id: "PATRIMONIOS", nome: "Patrimônios", path: "patrimonios" },
-      { id: "CONTATO_CLIENTE", nome: "Contato Cliente", path: "contato-cliente" }
-    ]
+    section: 'GESTOR',
+    items: [
+      item('programacao', 'Programação', 'programacao', ['PROGRAMACAO']),
+      item('hospedagem', 'Hospedagem', 'hospedagem', ['HOSPEDAGEM']),
+      item('compras_gestor', 'Compras', 'compras', ['COMPRAS', 'compras']),
+      item('logistica_gestor', 'Logística', 'logistica', ['LOGISTICA', 'logistica']),
+      item('patrimonios_gestor', 'Patrimônios', 'patrimonios', ['PATRIMONIOS', 'patrimonios']),
+      item('contato_cliente', 'Contato Cliente', 'contato-cliente', ['CONTATO_CLIENTE']),
+      item('conferencia', 'Conferência', 'adm-conferencia', ['ADM_CONFERENCIA']),
+    ],
   },
 
   {
-    grupo: "CONFERÊNCIA",
-    itens: [
-      { id: "ADM_CONFERENCIA", nome: "Painel de Conferência", path: "adm-conferencia" }
-    ]
+    section: 'COMPRAS',
+    items: [
+      item('compras_adm', 'Painel de Compras', 'adm-compras', ['COMPRAS_ADM']),
+    ],
   },
 
   {
-    grupo: "COMPRAS",
-    itens: [
-      { id: "COMPRAS_ADM", nome: "Painel de Compras", path: "adm-compras" }
-    ]
+    section: 'PATRIMÔNIOS',
+    items: [
+      item('patrimonio', 'Painel de Patrimônios', 'adm-patrimonio', ['PATRIMONIO_ADM']),
+    ],
   },
 
   {
-    grupo: "PATRIMÔNIOS",
-    itens: [
-      { id: "PATRIMONIO_ADM", nome: "Painel de Patrimônios", path: "adm-patrimonio" }
-    ]
+    section: 'HOSPEDAGEM',
+    items: [
+      item('hotel', 'Painel de Hospedagem', 'adm-hotel', ['ADM_HOTEL']),
+    ],
   },
 
   {
-    grupo: "HOSPEDAGEM",
-    itens: [
-      { id: "ADM_HOTEL", nome: "Painel de Hospedagem", path: "adm-hotel" }
-    ]
+    section: 'RECURSOS HUMANOS',
+    items: [
+      item('ferias_atestados', 'Férias e Atestados', 'ferias-atestados', ['RH_FERIAS_ATESTADOS']),
+      item('historico_geral', 'Histórico Geral', 'historico', ['RH_HIST_INDISP']),
+    ],
   },
 
   {
-    grupo: "RECURSOS HUMANOS",
-    itens: [
-      { id: "RH_FERIAS_ATESTADOS", nome: "Férias e Atestados", path: "ferias-atestados" },
-      { id: "RH_HIST_INDISP", nome: "Histórico de Indisponibilidade", path: "historico-indisponibilidade" },
-      { id: "BASE_COLAB_CONSULTA", nome: "Consultar Base", path: "consultar-colaboradores" }
-    ]
+    section: 'LOGÍSTICA',
+    items: [
+      item('logistica_adm', 'Painel de Logística', 'adm-logistica', ['LOGISTICA_ADM']),
+    ],
   },
 
   {
-    grupo: "FROTAS",
-    itens: []
+    section: 'DIRETORIA',
+    items: [
+      item('financeiro', 'Financeiro', 'financeiro', ['FINANCEIRO']),
+      item('usuarios_acessos', 'Usuários e Acessos', 'admin-usuarios', ['ADMIN_USUARIOS', 'USUARIOS_E_ACESSOS']),
+    ],
   },
-
-  {
-    grupo: "LOGÍSTICA",
-    itens: [
-      { id: "LOGISTICA_ADM", nome: "Painel de Logística", path: "adm-logistica" }
-    ]
-  },
-
-  {
-    grupo: "TROCA DE NOTAS",
-    itens: []
-  },
-
-  {
-    grupo: "AUDITORIA",
-    itens: [
-      { id: "ADMIN_AUDITORIA", nome: "Auditoria do Sistema", path: "admin-auditoria" }
-    ]
-  },
-
-  {
-    grupo: "RELATÓRIOS",
-    itens: [
-      { id: "RELATORIOS_COLAB", nome: "Colaboradores", path: "consultar-colaboradores" },
-      { id: "RELATORIOS_PROD", nome: "Produção", path: "consultar-producao" },
-      { id: "RELATORIOS_PATRIMONIOS_IMPORTAR", nome: "Patrimônios", path: "importar-patrimonios" }
-    ]
-  },
-
-  {
-    grupo: "DIRETORIA",
-    itens: [
-      { id: "FINANCEIRO", nome: "Financeiro", path: "financeiro" },
-      { id: "ADMIN_USUARIOS", nome: "Usuários e Acessos", path: "admin-usuarios" },
-      { id: "ADMIN_CONFIG", nome: "Configurações", path: "admin-configuracoes" }
-    ]
-  }
 ];
-
-export const PANEL_MENU = MENU_CONFIG.map((section) => ({
-  section: section.grupo,
-  items: section.itens.map((item) => ({
-    code: item.id,
-    label: item.nome,
-    path: item.path
-  }))
-}));
