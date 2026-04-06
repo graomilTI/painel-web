@@ -1,19 +1,53 @@
+
 import { getSession } from './auth.js';
 import { initProtectedPage } from './pageInit.js';
 
-// assets/js/admin-usuarios.js
 (function () {
-  const state = { users: [], modulosCatalogo: [], editingUserId: null };
+  const state = {
+    users: [],
+    modulosCatalogo: [],
+    editingUserId: null,
+    collaboratorResults: [],
+    collaboratorSearchToken: 0,
+  };
+
   const qs = (s, e = document) => e.querySelector(s);
   const qsa = (s, e = document) => Array.from(e.querySelectorAll(s));
 
+  const BASE_CODES = new Set(['dashboard', 'notificacoes', 'historico_geral']);
+  const GESTOR_CODES = new Set([
+    'programacao',
+    'hospedagem',
+    'compras_gestor',
+    'logistica_gestor',
+    'patrimonios_gestor',
+    'contato_cliente',
+    'conferencia',
+  ]);
+
   function esc(v) {
-    return String(v ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+    return String(v ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function normalizeCode(v) {
+    return String(v || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function debounce(fn, wait = 250) {
+    let timer = null;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), wait);
+    };
   }
 
   function extractAccessToken(sessionLike) {
@@ -25,65 +59,23 @@ import { initProtectedPage } from './pageInit.js';
     );
   }
 
-  function normalizeText(value) {
-    return String(value || "")
-      .trim()
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
-  }
-
-  function inferNivelFromUser(user) {
-    const raw = normalizeText(user?.nivel || user?.perfil_codigo || user?.perfil || user?.role || "");
-    if (["adm", "administrador", "admin", "master"].includes(raw)) return "adm";
-    return "gestor";
-  }
-
-  function inferModuloGrupo(modulo) {
-    const codigo = normalizeText(modulo?.codigo);
-    const nome = normalizeText(modulo?.nome);
-    const categoria = normalizeText(modulo?.categoria);
-
-    const isBase =
-      ["dashboard", "notificacoes", "historico_geral"].includes(codigo) ||
-      categoria === "inicio";
-
-    if (isBase) return "base";
-
-    const isAdm =
-      codigo.includes("_adm") ||
-      ["financeiro", "hotel", "patrimonio", "usuarios_acessos", "admin_usuarios", "ferias_atestados"].includes(codigo) ||
-      categoria === "administracao" ||
-      categoria === "diretoria" ||
-      categoria === "rh";
-
-    return isAdm ? "adm" : "gestor";
-  }
-
-  function getNivelDescription(nivel) {
-    return nivel === "adm"
-      ? "ADM pode receber módulos administrativos e de gestor conforme liberação."
-      : "Gestor pode receber apenas acessos base e módulos do bloco Gestor.";
-  }
-
   async function api(url, options = {}) {
     const session = await getSession();
     const token = extractAccessToken(session);
 
     if (!token) {
-      throw new Error("Sessão expirada. Faça login novamente.");
+      throw new Error('Sessão expirada. Faça login novamente.');
     }
 
     const cleanToken = String(token).trim();
-
-    if (cleanToken.split(".").length !== 3) {
-      throw new Error("Token de sessão inválido.");
+    if (cleanToken.split('.').length !== 3) {
+      throw new Error('Token de sessão inválido.');
     }
 
     const res = await fetch(url, {
       ...options,
       headers: {
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         ...(options.headers || {}),
         Authorization: `Bearer ${cleanToken}`,
       },
@@ -102,6 +94,62 @@ import { initProtectedPage } from './pageInit.js';
     }
 
     return data;
+  }
+
+  function detectNivelFromUser(user = {}) {
+    const raw = String(
+      user?.nivel ||
+      user?.perfil_codigo ||
+      user?.perfil?.codigo ||
+      user?.role ||
+      user?.perfil_nome ||
+      ''
+    ).toLowerCase();
+
+    if (raw.includes('gestor')) return 'gestor';
+    if (raw.includes('adm') || raw.includes('admin')) return 'adm';
+    if (raw.includes('master')) return 'adm';
+    return 'gestor';
+  }
+
+  function getPerfilCodigoByNivel(nivel) {
+    return nivel === 'adm' ? 'adm' : 'gestor';
+  }
+
+  function getGroupedModules() {
+    const base = [];
+    const gestor = [];
+    const adm = [];
+
+    for (const mod of state.modulosCatalogo) {
+      const code = normalizeCode(mod.codigo || mod.code);
+      if (BASE_CODES.has(code)) {
+        base.push(mod);
+      } else if (GESTOR_CODES.has(code)) {
+        gestor.push(mod);
+      } else {
+        adm.push(mod);
+      }
+    }
+
+    const sorter = (a, b) => String(a.nome || a.codigo || '').localeCompare(String(b.nome || b.codigo || ''));
+    base.sort(sorter);
+    gestor.sort(sorter);
+    adm.sort(sorter);
+
+    return { base, gestor, adm };
+  }
+
+  function moduleLabel(mod) {
+    return mod.nome || mod.codigo || 'Módulo';
+  }
+
+  function userVisibleModulesForTable(user = {}) {
+    const mods = Array.isArray(user.modulos) ? user.modulos : [];
+    return mods.map((m) => ({
+      nome: m.nome || m.name || m.codigo || m.code || '',
+      codigo: m.codigo || m.code || '',
+    }));
   }
 
   function renderBase(content) {
@@ -153,14 +201,15 @@ import { initProtectedPage } from './pageInit.js';
               <input type="hidden" id="auUserId" />
 
               <div class="au-grid">
-                <div class="au-field">
+                <div class="au-field au-field-search">
                   <label for="auNome">Nome</label>
-                  <input id="auNome" class="au-input" type="text" required />
+                  <input id="auNome" class="au-input" type="text" required autocomplete="off" />
+                  <div id="auCollaboratorResults" class="au-search-results" style="display:none;"></div>
                 </div>
 
                 <div class="au-field">
                   <label for="auEmail">E-mail</label>
-                  <input id="auEmail" class="au-input" type="email" required />
+                  <input id="auEmail" class="au-input" type="email" required autocomplete="email" />
                 </div>
 
                 <div class="au-field">
@@ -186,13 +235,13 @@ import { initProtectedPage } from './pageInit.js';
 
                 <div class="au-field au-field-full">
                   <label for="auPassword">Senha</label>
-                  <input id="auPassword" class="au-input" type="password" placeholder="No cadastro é obrigatória. Na edição, preencha só se quiser trocar." />
+                  <input id="auPassword" class="au-input" type="password" placeholder="No cadastro é obrigatória. Na edição, preencha só se quiser trocar." autocomplete="new-password" />
                 </div>
 
                 <div class="au-field au-field-full">
                   <label>Módulos liberados</label>
-                  <div id="auNivelHint" class="au-level-hint"></div>
-                  <div id="auModulosContainer" class="au-modulos-sections"></div>
+                  <div id="auNivelHint" class="au-hint"></div>
+                  <div id="auModulosContainer" class="au-module-groups"></div>
                 </div>
               </div>
 
@@ -222,197 +271,269 @@ import { initProtectedPage } from './pageInit.js';
         .au-badge{display:inline-block;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:600}
         .au-badge-on{background:rgba(22,101,52,.25);color:#86efac}
         .au-badge-off{background:rgba(127,29,29,.25);color:#fca5a5}
-        .au-badge-level{background:#1e293b;color:#cbd5e1}
         .au-mod-chip{display:inline-block;padding:4px 8px;margin:2px;border-radius:999px;background:#1e293b;border:1px solid #334155;font-size:12px}
         .au-actions-row{display:flex;flex-wrap:wrap;gap:8px}
         .au-modal{position:fixed;inset:0;background:rgba(2,6,23,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
-        .au-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:18px;padding:18px}
+        .au-modal-card{width:min(1120px,100%);max-height:92vh;overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:18px;padding:18px}
         .au-modal-header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
         .au-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
         .au-field{display:flex;flex-direction:column;gap:6px}
+        .au-field-search{position:relative}
         .au-field-full{grid-column:1 / -1}
-        .au-level-hint{font-size:13px;color:#cbd5e1;opacity:.92}
-        .au-modulos-sections{display:grid;gap:12px}
-        .au-mod-group{border:1px solid #1f2937;border-radius:12px;padding:12px;background:#0f172a}
-        .au-mod-group-title{font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#93c5fd;margin-bottom:8px}
-        .au-mod-group-subtitle{font-size:12px;color:#94a3b8;margin:-2px 0 10px}
-        .au-modulos-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+        .au-hint{font-size:13px;opacity:.8;margin-bottom:8px}
+        .au-module-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+        .au-module-group{border:1px solid #1f2937;border-radius:12px;padding:12px;background:#0f172a}
+        .au-module-group h4{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;opacity:.86}
+        .au-modulos{display:grid;grid-template-columns:1fr;gap:8px}
         .au-mod-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #1f2937;border-radius:10px;background:#111827}
-        .au-mod-item.is-disabled{opacity:.45}
+        .au-search-results{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 6px);max-height:240px;overflow:auto;background:#0b1220;border:1px solid #334155;border-radius:12px;padding:6px}
+        .au-search-item{padding:10px 12px;border-radius:10px;cursor:pointer;border:1px solid transparent}
+        .au-search-item:hover{background:#111827;border-color:#1f2937}
+        .au-search-item strong{display:block}
+        .au-search-item span{display:block;font-size:12px;opacity:.75;margin-top:4px}
+        .au-empty-search{padding:10px 12px;opacity:.75}
         .au-modal-footer{margin-top:16px;display:flex;justify-content:flex-end}
-        @media (max-width:900px){.au-grid{grid-template-columns:1fr}.au-modulos-grid{grid-template-columns:1fr}.au-header{flex-direction:column;align-items:stretch}}
+        @media (max-width:1000px){.au-grid{grid-template-columns:1fr}.au-module-groups{grid-template-columns:1fr}.au-header{flex-direction:column;align-items:stretch}}
       </style>
     `;
 
-    qs("#auBtnNovo").addEventListener("click", () => openModal());
-    qs("#auBtnCloseModal").addEventListener("click", closeModal);
-    qs("#auFiltro").addEventListener("input", renderTable);
-    qs("#auForm").addEventListener("submit", onSubmitForm);
-    qs("#auNivel").addEventListener("change", () => syncModulesByLevel());
+    qs('#auBtnNovo').addEventListener('click', () => openModal());
+    qs('#auBtnCloseModal').addEventListener('click', closeModal);
+    qs('#auFiltro').addEventListener('input', renderTable);
+    qs('#auForm').addEventListener('submit', onSubmitForm);
+    qs('#auNivel').addEventListener('change', () => renderModulesForNivel(qs('#auNivel').value, getSelectedModules()));
+    bindCollaboratorSearch();
   }
 
   function setFeedback(msg, isError = false) {
-    const el = qs("#auFeedback");
+    const el = qs('#auFeedback');
     if (!el) return;
     if (!msg) {
-      el.style.display = "none";
-      el.innerHTML = "";
+      el.style.display = 'none';
+      el.innerHTML = '';
       return;
     }
-    el.style.display = "block";
-    el.style.borderColor = isError ? "#7f1d1d" : "#334155";
-    el.style.background = isError ? "rgba(127,29,29,.15)" : "#1e293b";
+    el.style.display = 'block';
+    el.style.borderColor = isError ? '#7f1d1d' : '#334155';
+    el.style.background = isError ? 'rgba(127,29,29,.15)' : '#1e293b';
     el.textContent = msg;
   }
 
-  function buildGroupsForNivel(nivel) {
-    const all = state.modulosCatalogo.map((m) => ({ ...m, grupo: inferModuloGrupo(m) }));
-    const base = all.filter((m) => m.grupo === "base");
-    const gestor = all.filter((m) => m.grupo === "gestor");
-    const adm = all.filter((m) => m.grupo === "adm");
-
-    if (nivel === "adm") {
-      return [
-        { key: "base", title: "Base", subtitle: "Acessos iniciais e utilitários.", items: base },
-        { key: "gestor", title: "Gestor", subtitle: "Módulos operacionais do gestor.", items: gestor },
-        { key: "adm", title: "ADM", subtitle: "Módulos administrativos.", items: adm },
-      ].filter((g) => g.items.length);
-    }
-
-    return [
-      { key: "base", title: "Base", subtitle: "Acessos iniciais e utilitários.", items: base },
-      { key: "gestor", title: "Gestor", subtitle: "Módulos operacionais do gestor.", items: gestor },
-    ].filter((g) => g.items.length);
-  }
-
-  function renderModules(selectedIds = [], nivel = "gestor") {
-    const container = qs("#auModulosContainer");
-    const hint = qs("#auNivelHint");
+  function renderModulesForNivel(nivel, selectedIds = []) {
+    const container = qs('#auModulosContainer');
+    const hint = qs('#auNivelHint');
     if (!container) return;
 
-    hint.textContent = getNivelDescription(nivel);
-    const groups = buildGroupsForNivel(nivel);
+    const groups = getGroupedModules();
+    const blocks = [
+      { key: 'base', title: 'Base', items: groups.base },
+      { key: 'gestor', title: 'Gestor', items: groups.gestor },
+    ];
+    if (nivel === 'adm') {
+      blocks.push({ key: 'adm', title: 'ADM', items: groups.adm });
+    }
 
-    container.innerHTML = groups.map((group) => `
-      <section class="au-mod-group">
-        <div class="au-mod-group-title">${esc(group.title)}</div>
-        <div class="au-mod-group-subtitle">${esc(group.subtitle)}</div>
-        <div class="au-modulos-grid">
-          ${group.items.map((m) => {
-            const checked = selectedIds.includes(m.id) ? "checked" : "";
-            return `<label class="au-mod-item"><input type="checkbox" value="${esc(m.id)}" ${checked} /><span>${esc(m.nome || m.codigo || "Módulo")}</span></label>`;
-          }).join("")}
+    hint.textContent = nivel === 'adm'
+      ? 'ADM pode receber módulos administrativos e de gestor conforme liberação.'
+      : 'Gestor pode receber apenas acessos base e módulos do bloco Gestor.';
+
+    container.innerHTML = blocks.map((block) => `
+      <section class="au-module-group">
+        <h4>${esc(block.title)}</h4>
+        <div class="au-modulos">
+          ${block.items.map((m) => {
+            const checked = selectedIds.includes(m.id) ? 'checked' : '';
+            return `<label class="au-mod-item"><input type="checkbox" value="${esc(m.id)}" ${checked} /><span>${esc(moduleLabel(m))}</span></label>`;
+          }).join('') || '<div style="opacity:.7;">Sem módulos neste bloco.</div>'}
         </div>
       </section>
-    `).join("");
-  }
-
-  function syncModulesByLevel() {
-    const nivel = qs("#auNivel")?.value || "gestor";
-    const selected = getSelectedModules();
-    const allowedIds = new Set(buildGroupsForNivel(nivel).flatMap((g) => g.items.map((m) => m.id)));
-    const filtered = selected.filter((id) => allowedIds.has(id));
-    renderModules(filtered, nivel);
+    `).join('');
   }
 
   function renderTable() {
-    const tbody = qs("#auTableBody");
+    const tbody = qs('#auTableBody');
     if (!tbody) return;
 
-    const filtro = (qs("#auFiltro")?.value || "").trim().toLowerCase();
+    const filtro = (qs('#auFiltro')?.value || '').trim().toLowerCase();
     const items = state.users.filter((u) => {
-      const text = [u.nome || "", u.email || "", u.setor || "", u.nivel || "", ...(u.modulos || []).map((m) => m.nome || m.codigo || "")]
-        .join(" ").toLowerCase();
+      const mods = userVisibleModulesForTable(u).map((m) => m.nome || m.codigo || '');
+      const text = [u.nome || '', u.email || '', u.setor || '', detectNivelFromUser(u), ...mods].join(' ').toLowerCase();
       return !filtro || text.includes(filtro);
     });
 
     tbody.innerHTML = items.map((u) => {
-      const isAtivo = (u.status || "ativo") === "ativo";
-      const statusClass = isAtivo ? "au-badge-on" : "au-badge-off";
-      const statusLabel = isAtivo ? "Ativo" : "Inativo";
-      const nivel = (u.nivel || inferNivelFromUser(u)).toUpperCase();
-      const modulosHtml = (u.modulos || []).length
-        ? u.modulos.map((m) => `<span class="au-mod-chip">${esc(m.nome || m.codigo || "")}</span>`).join("")
-        : `<span style="opacity:.7;">Nenhum</span>`;
+      const isAtivo = (u.status || 'ativo') === 'ativo';
+      const statusClass = isAtivo ? 'au-badge-on' : 'au-badge-off';
+      const statusLabel = isAtivo ? 'Ativo' : 'Inativo';
+      const nivel = detectNivelFromUser(u);
+      const modulosHtml = userVisibleModulesForTable(u).length
+        ? userVisibleModulesForTable(u).map((m) => `<span class="au-mod-chip">${esc(m.nome || m.codigo || '')}</span>`).join('')
+        : `<span style="opacity:.7;">Sem módulos</span>`;
 
       return `
         <tr>
-          <td>${esc(u.nome || "")}</td>
-          <td>${esc(u.email || "")}</td>
-          <td><span class="au-badge au-badge-level">${esc(nivel)}</span></td>
-          <td>${esc(u.setor || "")}</td>
+          <td>${esc(u.nome || '')}</td>
+          <td>${esc(u.email || '')}</td>
+          <td>${esc(nivel === 'adm' ? 'ADM' : 'Gestor')}</td>
+          <td>${esc(u.setor || '')}</td>
           <td><span class="au-badge ${statusClass}">${statusLabel}</span></td>
           <td>${modulosHtml}</td>
           <td>
             <div class="au-actions-row">
-              <button class="au-btn au-btn-light" type="button" data-action="edit" data-id="${esc(u.id)}">Editar</button>
-              <button class="au-btn au-btn-light" type="button" data-action="toggle" data-id="${esc(u.id)}">${isAtivo ? "Desativar" : "Ativar"}</button>
-              <button class="au-btn au-btn-light" type="button" data-action="reset" data-id="${esc(u.id)}">Reset senha</button>
+              <button class="au-btn au-btn-light" data-action="edit" data-id="${esc(u.id)}" type="button">Editar</button>
+              <button class="au-btn au-btn-light" data-action="toggle" data-id="${esc(u.id)}" type="button">${isAtivo ? 'Desativar' : 'Ativar'}</button>
+              <button class="au-btn au-btn-light" data-action="reset" data-id="${esc(u.id)}" type="button">Reset senha</button>
             </div>
           </td>
         </tr>
       `;
-    }).join("");
+    }).join('');
 
-    qsa("[data-action='edit']", tbody).forEach((btn) => btn.addEventListener("click", () => editUser(btn.dataset.id)));
-    qsa("[data-action='toggle']", tbody).forEach((btn) => btn.addEventListener("click", () => toggleStatus(btn.dataset.id)));
-    qsa("[data-action='reset']", tbody).forEach((btn) => btn.addEventListener("click", () => resetPassword(btn.dataset.id)));
-  }
-
-  async function loadModulesCatalog() {
-    const data = await api("/api/admin/users/profiles");
-    state.modulosCatalogo = (data.modulos || data.modules || []).map((m) => ({
-      ...m,
-      codigo: m.codigo || m.code || "",
-      nome: m.nome || m.name || "",
-      categoria: m.categoria || m.category || "",
-    }));
+    qsa("[data-action='edit']", tbody).forEach((b) => b.addEventListener('click', () => editUser(b.dataset.id)));
+    qsa("[data-action='toggle']", tbody).forEach((b) => b.addEventListener('click', () => toggleStatus(b.dataset.id)));
+    qsa("[data-action='reset']", tbody).forEach((b) => b.addEventListener('click', () => resetPassword(b.dataset.id)));
   }
 
   async function loadUsers() {
-    const data = await api("/api/admin/users/list");
-    state.users = (data.usuarios || data.users || []).map((u) => ({
-      ...u,
-      nivel: u.nivel || inferNivelFromUser(u),
-    }));
+    const res = await api('/api/admin/users/list');
+    state.users = res.items || [];
     renderTable();
   }
 
+  async function loadModulesCatalog() {
+    const res = await api('/api/admin/users/modulos');
+    state.modulosCatalogo = res.items || [];
+  }
+
   async function loadUserModuleIds(userId) {
-    const data = await api(`/api/admin/users/list?id=${encodeURIComponent(userId)}`);
-    const user = (data.usuarios || data.users || []).find((u) => u.id === userId);
-    return (user?.modulos || []).map((m) => m.id);
+    const res = await api(`/api/admin/users/user-modulos?user_id=${encodeURIComponent(userId)}`);
+    return res.items || [];
+  }
+
+  async function searchCollaborators(query) {
+    const q = String(query || '').trim();
+    if (q.length < 3) {
+      state.collaboratorResults = [];
+      renderCollaboratorResults();
+      return;
+    }
+
+    const token = ++state.collaboratorSearchToken;
+    try {
+      const res = await api(`/api/admin/users/collaborators?q=${encodeURIComponent(q)}`);
+      if (token !== state.collaboratorSearchToken) return;
+      state.collaboratorResults = res.items || [];
+      renderCollaboratorResults();
+    } catch (err) {
+      if (token !== state.collaboratorSearchToken) return;
+      state.collaboratorResults = [];
+      renderCollaboratorResults('Não foi possível consultar a base de colaboradores.');
+    }
+  }
+
+  function renderCollaboratorResults(errorMsg = '') {
+    const box = qs('#auCollaboratorResults');
+    if (!box) return;
+
+    const results = state.collaboratorResults || [];
+    if (errorMsg) {
+      box.style.display = 'block';
+      box.innerHTML = `<div class="au-empty-search">${esc(errorMsg)}</div>`;
+      return;
+    }
+
+    if (!results.length) {
+      box.style.display = 'none';
+      box.innerHTML = '';
+      return;
+    }
+
+    box.style.display = 'block';
+    box.innerHTML = results.map((item, idx) => {
+      const nome = item.nome || item.name || '';
+      const email = item.email || item.email_empresa || item.email_pessoal || '';
+      const setor = item.setor || item.coordenacao || item.supervisao || item.empresa || '';
+      return `
+        <div class="au-search-item" data-idx="${idx}">
+          <strong>${esc(nome)}</strong>
+          <span>${esc([email, setor].filter(Boolean).join(' • '))}</span>
+        </div>
+      `;
+    }).join('');
+
+    qsa('.au-search-item', box).forEach((el) => {
+      el.addEventListener('click', () => {
+        const idx = Number(el.dataset.idx);
+        const item = results[idx];
+        applyCollaborator(item);
+      });
+    });
+  }
+
+  function applyCollaborator(item = {}) {
+    qs('#auNome').value = item.nome || item.name || '';
+    const email = item.email || item.email_empresa || item.email_pessoal || '';
+    const setor = item.setor || item.coordenacao || item.supervisao || item.empresa || '';
+    if (email) qs('#auEmail').value = email;
+    if (setor) qs('#auSetor').value = setor;
+    state.collaboratorResults = [];
+    renderCollaboratorResults();
+  }
+
+  function bindCollaboratorSearch() {
+    const input = qs('#auNome');
+    const debounced = debounce((value) => searchCollaborators(value), 250);
+
+    input.addEventListener('input', () => {
+      if (state.editingUserId) return;
+      debounced(input.value);
+    });
+
+    input.addEventListener('focus', () => {
+      if (!state.editingUserId && (input.value || '').trim().length >= 3) {
+        searchCollaborators(input.value);
+      }
+    });
+
+    document.addEventListener('click', (ev) => {
+      const wrap = qs('.au-field-search');
+      if (!wrap || wrap.contains(ev.target)) return;
+      state.collaboratorResults = [];
+      renderCollaboratorResults();
+    });
   }
 
   function openModal(user = null, selectedModuleIds = []) {
     state.editingUserId = user?.id || null;
-    const nivel = user?.nivel || inferNivelFromUser(user);
-    qs("#auModalTitle").textContent = user ? "Editar usuário" : "Novo usuário";
-    qs("#auUserId").value = user?.id || "";
-    qs("#auNome").value = user?.nome || "";
-    qs("#auEmail").value = user?.email || "";
-    qs("#auNivel").value = nivel;
-    qs("#auSetor").value = user?.setor || "";
-    qs("#auAtivo").value = (user?.status || "ativo") === "ativo" ? "true" : "false";
-    qs("#auPassword").value = "";
-    renderModules(selectedModuleIds, nivel);
-    qs("#auModal").style.display = "flex";
+    const nivel = detectNivelFromUser(user || {});
+    qs('#auModalTitle').textContent = user ? 'Editar usuário' : 'Novo usuário';
+    qs('#auUserId').value = user?.id || '';
+    qs('#auNome').value = user?.nome || '';
+    qs('#auEmail').value = user?.email || '';
+    qs('#auNivel').value = nivel;
+    qs('#auSetor').value = user?.setor || '';
+    qs('#auAtivo').value = (user?.status || 'ativo') === 'ativo' ? 'true' : 'false';
+    qs('#auPassword').value = '';
+    state.collaboratorResults = [];
+    renderCollaboratorResults();
+    renderModulesForNivel(nivel, selectedModuleIds);
+    qs('#auModal').style.display = 'flex';
   }
 
   function closeModal() {
-    const modal = qs("#auModal");
-    if (modal) modal.style.display = "none";
+    const modal = qs('#auModal');
+    if (modal) modal.style.display = 'none';
   }
 
   function getSelectedModules() {
-    return qsa("#auModulosContainer input:checked").map((el) => el.value);
+    return qsa('#auModulosContainer input:checked').map((el) => el.value);
   }
 
   async function editUser(userId) {
     try {
-      setFeedback("");
+      setFeedback('');
       const user = state.users.find((x) => x.id === userId);
-      if (!user) throw new Error("Usuário não encontrado.");
+      if (!user) throw new Error('Usuário não encontrado.');
       const selected = await loadUserModuleIds(userId);
       openModal(user, selected);
     } catch (err) {
@@ -423,12 +544,12 @@ import { initProtectedPage } from './pageInit.js';
 
   async function toggleStatus(userId) {
     try {
-      setFeedback("Salvando status...");
-      await api("/api/admin/users/toggle-status", {
-        method: "POST",
+      setFeedback('Salvando status...');
+      await api('/api/admin/users/toggle-status', {
+        method: 'POST',
         body: JSON.stringify({ id: userId }),
       });
-      setFeedback("Status atualizado com sucesso.");
+      setFeedback('Status atualizado com sucesso.');
       await loadUsers();
     } catch (err) {
       console.error(err);
@@ -437,15 +558,15 @@ import { initProtectedPage } from './pageInit.js';
   }
 
   async function resetPassword(userId) {
-    const senha = window.prompt("Digite a nova senha:");
+    const senha = window.prompt('Digite a nova senha:');
     if (!senha) return;
     try {
-      setFeedback("Redefinindo senha...");
-      await api("/api/admin/users/reset-password", {
-        method: "POST",
+      setFeedback('Redefinindo senha...');
+      await api('/api/admin/users/reset-password', {
+        method: 'POST',
         body: JSON.stringify({ id: userId, password: senha }),
       });
-      setFeedback("Senha redefinida com sucesso.");
+      setFeedback('Senha redefinida com sucesso.');
     } catch (err) {
       console.error(err);
       setFeedback(err.message || String(err), true);
@@ -455,13 +576,13 @@ import { initProtectedPage } from './pageInit.js';
   async function onSubmitForm(ev) {
     ev.preventDefault();
 
-    const id = qs("#auUserId").value.trim();
-    const nome = qs("#auNome").value.trim();
-    const email = qs("#auEmail").value.trim();
-    const nivel = qs("#auNivel").value;
-    const setor = qs("#auSetor").value.trim();
-    const status = qs("#auAtivo").value === "true" ? "ativo" : "inativo";
-    const password = qs("#auPassword").value;
+    const id = qs('#auUserId').value.trim();
+    const nome = qs('#auNome').value.trim();
+    const email = qs('#auEmail').value.trim();
+    const nivel = qs('#auNivel').value;
+    const setor = qs('#auSetor').value.trim();
+    const status = qs('#auAtivo').value === 'true' ? 'ativo' : 'inativo';
+    const password = qs('#auPassword').value;
     const modulos = getSelectedModules();
 
     const payload = {
@@ -470,27 +591,28 @@ import { initProtectedPage } from './pageInit.js';
       email,
       nivel,
       role: nivel,
-      perfil_codigo: nivel,
+      perfil_codigo: getPerfilCodigoByNivel(nivel),
       setor,
       status,
-      modulos
+      modulos,
     };
+
     const isCreate = !id;
 
     if (password) payload.password = password;
     if (isCreate && !password) {
-      setFeedback("No cadastro, a senha é obrigatória.", true);
+      setFeedback('No cadastro, a senha é obrigatória.', true);
       return;
     }
 
     try {
-      setFeedback(isCreate ? "Criando usuário..." : "Salvando usuário...");
-      await api(isCreate ? "/api/admin/users/create" : "/api/admin/users/update", {
-        method: "POST",
+      setFeedback(isCreate ? 'Criando usuário...' : 'Salvando usuário...');
+      await api(isCreate ? '/api/admin/users/create' : '/api/admin/users/update', {
+        method: 'POST',
         body: JSON.stringify(payload),
       });
       closeModal();
-      setFeedback(isCreate ? "Usuário criado com sucesso." : "Usuário atualizado com sucesso.");
+      setFeedback(isCreate ? 'Usuário criado com sucesso.' : 'Usuário atualizado com sucesso.');
       await loadUsers();
     } catch (err) {
       console.error(err);
@@ -501,15 +623,15 @@ import { initProtectedPage } from './pageInit.js';
   async function boot(content) {
     renderBase(content);
     try {
-      setFeedback("Carregando...");
+      setFeedback('Carregando...');
       await loadModulesCatalog();
       await loadUsers();
-      setFeedback("");
+      setFeedback('');
     } catch (err) {
-      console.error("Erro ao iniciar admin-usuarios:", err);
+      console.error('Erro ao iniciar admin-usuarios:', err);
       setFeedback(err.message || String(err), true);
     }
   }
 
-  initProtectedPage("Usuários", boot);
+  initProtectedPage('Usuários', boot);
 })();
