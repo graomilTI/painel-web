@@ -6,7 +6,7 @@ const EXPORT_W = 1920;
 const EXPORT_H = 1080;
 const EXPORT_SCALE = 2;
 const DEFAULT_ROWS_PER_PAGE = 18;
-const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
+const INACTIVE_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
 
 function escapeHtml(v) {
   return String(v ?? '')
@@ -40,13 +40,14 @@ function ensureExportHost() {
 function buildPageHtml({ titulo, subtitulo, stats, rows, pageIndex, pageCount }) {
   const statHtml = [
     `<div class="gstat"><span class="glabel">Registros:</span><strong>${stats.registros}</strong></div>`,
-    `<div class="gstat"><span class="glabel">Base:</span><strong>${stats.base}</strong></div>`,
+    `<div class="gstat"><span class="glabel">Com dias:</span><strong>${stats.considerados}</strong></div>`,
+    `<div class="gstat"><span class="glabel">Sem dias:</span><strong>${stats.semLeitura}</strong></div>`,
     `<div class="gstat"><span class="glabel">% em dia:</span><strong>${stats.percentual}</strong></div>`
   ].join('');
 
   const bodyRows = rows.map((item) => {
-    const dias = Number(item.dias_sem_leitura ?? item.diasSemLeitura ?? item.dias ?? 0) || 0;
-    const rowClass = dias > 10 ? 'is-atrasado' : 'is-ok';
+    const dias = parseDias(item.dias_sem_leitura ?? item.diasSemLeitura ?? item.dias);
+    const rowClass = dias === null ? '' : dias > 10 ? 'is-atrasado' : 'is-ok';
     return `
       <tr class="${rowClass}">
         <td class="col-pat">${escapeHtml(item.patrimonio_codigo ?? item.patrimonio ?? '')}</td>
@@ -54,7 +55,7 @@ function buildPageHtml({ titulo, subtitulo, stats, rows, pageIndex, pageCount })
         <td class="col-nome">${escapeHtml(item.funcionario ?? item.nome ?? '')}</td>
         <td class="col-id">${escapeHtml(item.identificacao ?? '')}</td>
         <td class="col-leitura">${escapeHtml(item.ultima_leitura_fmt ?? item.ultimaLeitura ?? item.ultima_leitura ?? '')}</td>
-        <td class="col-dias">${escapeHtml(dias)}</td>
+        <td class="col-dias">${escapeHtml(dias === null ? '-' : dias)}</td>
       </tr>`;
   }).join('');
 
@@ -333,15 +334,27 @@ function downloadTextFile(filename, content, mimeType = 'text/plain;charset=utf-
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 
+function parseDias(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function computeStats(rows) {
   const registros = rows.length;
-  const emDia = rows.filter((r) => Number(r.dias_sem_leitura || 0) <= 10).length;
+  const comDias = rows.filter((r) => parseDias(r.dias_sem_leitura) !== null);
+  const emDia = comDias.filter((r) => parseDias(r.dias_sem_leitura) <= 10).length;
+  const atrasados = comDias.filter((r) => parseDias(r.dias_sem_leitura) > 10).length;
+  const semLeitura = registros - comDias.length;
+
   return {
     registros,
-    base: registros ? 'Snapshot atual' : 'Sem base',
-    percentual: formatPercent(emDia, registros),
-    atrasados: rows.filter((r) => Number(r.dias_sem_leitura || 0) > 10).length,
-    emDia
+    base: registros ? 'Snapshot atual completo' : 'Sem base',
+    percentual: formatPercent(emDia, comDias.length),
+    atrasados,
+    emDia,
+    semLeitura,
+    considerados: comDias.length
   };
 }
 
@@ -354,16 +367,16 @@ function buildReportTitle(tipo) {
 function applyFilters(rows, filters) {
   return rows.filter((row) => {
     const situacao = normalizeKey(row.situacao);
-    if (IGNORED_STATUS.has(situacao)) return false;
-
-    const dias = Number(row.dias_sem_leitura || 0);
+    const dias = parseDias(row.dias_sem_leitura);
     const nome = normalizeKey(`${row.funcionario || ''} ${row.identificacao || ''} ${row.patrimonio_codigo || ''}`);
 
     if (filters.coordenacao && normalizeKey(row.coordenacao) !== normalizeKey(filters.coordenacao)) return false;
     if (filters.supervisao && normalizeKey(row.supervisao) !== normalizeKey(filters.supervisao)) return false;
     if (filters.busca && !nome.includes(normalizeKey(filters.busca))) return false;
-    if (filters.tipo === 'atrasados' && dias <= 10) return false;
-    if (filters.tipo === 'emdia' && dias > 10) return false;
+    if (filters.tipo === 'ativos' && INACTIVE_STATUS.has(situacao)) return false;
+    if (filters.tipo === 'atrasados' && (dias === null || dias <= 10)) return false;
+    if (filters.tipo === 'emdia' && (dias === null || dias > 10)) return false;
+    if (filters.tipo === 'semleitura' && dias !== null) return false;
     return true;
   });
 }
@@ -375,7 +388,7 @@ async function loadSnapshotRows() {
     .order('coordenacao', { ascending: true })
     .order('supervisao', { ascending: true })
     .order('funcionario', { ascending: true })
-    .limit(10000);
+    ;
 
   if (error) throw error;
 
@@ -395,8 +408,8 @@ function renderTableRows(rows) {
   }
 
   tbody.innerHTML = rows.map((row) => {
-    const dias = Number(row.dias_sem_leitura || 0);
-    const tagClass = dias > 10 ? 'danger' : 'success';
+    const dias = parseDias(row.dias_sem_leitura);
+    const tagClass = dias === null ? 'neutral' : dias > 10 ? 'danger' : 'success';
     return `
       <tr>
         <td>${escapeHtml(row.patrimonio_codigo || '-')}</td>
@@ -405,7 +418,7 @@ function renderTableRows(rows) {
         <td>${escapeHtml(row.funcionario || '-')}</td>
         <td>${escapeHtml(row.identificacao || '-')}</td>
         <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
-        <td><span class="status-badge ${tagClass}">${escapeHtml(String(dias))}</span></td>
+        <td><span class="status-badge ${tagClass}">${escapeHtml(dias === null ? '-' : String(dias))}</span></td>
       </tr>
     `;
   }).join('');
@@ -430,6 +443,7 @@ function updateSummary(rows) {
   set('sumRegistros', stats.registros);
   set('sumEmDia', stats.emDia);
   set('sumAtrasados', stats.atrasados);
+  set('sumSemLeitura', stats.semLeitura);
   set('sumPercentual', stats.percentual);
 }
 
@@ -474,6 +488,7 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
         <article class="card"><h3>Total filtrado</h3><div class="hero-metric" id="sumRegistros">0</div></article>
         <article class="card"><h3>Em dia</h3><div class="hero-metric" id="sumEmDia">0</div></article>
         <article class="card"><h3>Em atraso</h3><div class="hero-metric" id="sumAtrasados">0</div></article>
+        <article class="card"><h3>Sem dias</h3><div class="hero-metric" id="sumSemLeitura">0</div></article>
         <article class="card"><h3>% em dia</h3><div class="hero-metric" id="sumPercentual">0%</div></article>
       </div>
 
@@ -491,8 +506,10 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
             <label class="base-label" for="fTipo">Situação</label>
             <select class="base-select" id="fTipo">
               <option value="geral">Geral</option>
+              <option value="ativos">Excluir baixado/manutenção</option>
               <option value="atrasados">Somente atrasados</option>
               <option value="emdia">Somente em dia</option>
+              <option value="semleitura">Sem dias informados</option>
             </select>
           </div>
           <div class="base-field">
@@ -550,7 +567,12 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
     state.filteredRows = applyFilters(state.allRows, readFilters());
     renderTableRows(state.filteredRows);
     updateSummary(state.filteredRows);
-    setFeedback(`${state.filteredRows.length} registro(s) exibido(s) na tela.`);
+    const stats = computeStats(state.filteredRows);
+    setFeedback([
+      `${state.filteredRows.length} registro(s) exibido(s) na tela.`,
+      `Com dias informados: ${stats.considerados}`,
+      `Sem dias informados: ${stats.semLeitura}`
+    ].join(' | '));
   };
 
   const refreshSupervisoes = () => {
