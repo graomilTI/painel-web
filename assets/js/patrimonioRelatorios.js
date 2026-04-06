@@ -2,6 +2,7 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 import JSZip from 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm';
+import html2canvas from 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm';
 
 const state = {
   patrimonios: [],
@@ -359,12 +360,34 @@ function reportToCsv(report) {
   return [header, ...lines].join('\n');
 }
 
+function getPrintableColumns(report) {
+  if (report.type !== 'patrimonios') return report.columns;
+
+  const hidden = new Set([
+    'coordenacao',
+    'categoria',
+    'marca',
+    'modelo',
+    'situacao_material',
+    'limite_dias',
+    'situacao_colaborador'
+  ]);
+
+  return report.columns
+    .filter(([field]) => !hidden.has(field))
+    .map(([field, label]) => [field, field === 'funcionario' ? 'Nome' : label]);
+}
+
 function reportToHtml(report) {
+  const printableColumns = getPrintableColumns(report);
   const rowsHtml = report.rows.length
     ? report.rows.map((row) => `
-        <tr>${report.columns.map(([field]) => `<td>${row[field] ?? ''}</td>`).join('')}</tr>
+        <tr>${printableColumns.map(([field]) => {
+          const cls = field === 'funcionario' || field === 'nome' ? ' class="col-nome"' : '';
+          return `<td${cls}>${row[field] ?? ''}</td>`;
+        }).join('')}</tr>
       `).join('')
-    : `<tr><td colspan="${report.columns.length}" style="text-align:center;padding:24px;color:#64748b">Nenhum registro encontrado para os filtros escolhidos.</td></tr>`;
+    : `<tr><td colspan="${printableColumns.length}" style="text-align:center;padding:24px;color:#64748b">Nenhum registro encontrado para os filtros escolhidos.</td></tr>`;
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -372,15 +395,20 @@ function reportToHtml(report) {
 <meta charset="UTF-8" />
 <title>${report.title}</title>
 <style>
-  body { font-family: Arial, Helvetica, sans-serif; margin: 24px; color: #0f172a; }
+  body { font-family: Arial, Helvetica, sans-serif; margin: 24px; color: #0f172a; background: #ffffff; }
   h1 { margin: 0 0 8px; font-size: 28px; }
   p { margin: 0 0 8px; color: #475569; }
   .meta { display: flex; gap: 18px; flex-wrap: wrap; margin: 18px 0 22px; }
   .meta div { padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 12px; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; vertical-align: top; }
-  th { background: #e2e8f0; text-transform: uppercase; letter-spacing: .04em; font-size: 11px; }
-  @media print { body { margin: 10mm; } }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; vertical-align: top; word-break: break-word; }
+  th { background: #111827; color: #ffffff; text-transform: uppercase; letter-spacing: .04em; font-size: 11px; }
+  .col-nome { width: 28%; min-width: 280px; }
+  @media print {
+    body { margin: 10mm; font-size: 11px; }
+    table { width: 100%; }
+    .col-nome { width: 32% !important; min-width: 320px !important; }
+  }
 </style>
 </head>
 <body>
@@ -392,11 +420,82 @@ function reportToHtml(report) {
     <div><strong>% em dia:</strong> ${formatPercent(report.stats.percentualEmDia)}</div>
   </div>
   <table>
-    <thead><tr>${report.columns.map(([, label]) => `<th>${label}</th>`).join('')}</tr></thead>
+    <thead><tr>${printableColumns.map(([field, label]) => {
+      const cls = field === 'funcionario' || field === 'nome' ? ' class="col-nome"' : '';
+      return `<th${cls}>${label}</th>`;
+    }).join('')}</tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table>
 </body>
 </html>`;
+}
+
+async function reportToImageBlob(report) {
+  const printableColumns = getPrintableColumns(report);
+  const host = document.createElement('div');
+  host.style.position = 'fixed';
+  host.style.left = '-100000px';
+  host.style.top = '0';
+  host.style.width = '1600px';
+  host.style.background = '#ffffff';
+  host.style.padding = '32px';
+  host.style.zIndex = '-1';
+
+  const bodyRows = report.rows.length
+    ? report.rows.map((row) => `<tr>${printableColumns.map(([field]) => {
+        const style = field === 'funcionario' || field === 'nome'
+          ? 'style="padding:10px;border:1px solid #cbd5e1;vertical-align:top;width:460px;min-width:460px;font-size:15px;font-weight:600;word-break:break-word;"'
+          : 'style="padding:10px;border:1px solid #cbd5e1;vertical-align:top;font-size:14px;word-break:break-word;"';
+        return `<td ${style}>${row[field] ?? ''}</td>`;
+      }).join('')}</tr>`).join('')
+    : `<tr><td colspan="${printableColumns.length}" style="padding:24px;border:1px solid #cbd5e1;text-align:center;color:#64748b;">Nenhum registro encontrado para os filtros escolhidos.</td></tr>`;
+
+  host.innerHTML = `
+    <div style="font-family: Arial, Helvetica, sans-serif; color:#0f172a; background:#ffffff; width:1536px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:24px;">
+        <div>
+          <div style="font-size:36px;font-weight:800;margin-bottom:8px;">${report.title}</div>
+          <div style="font-size:18px;color:#475569;max-width:980px;">${report.subtitle}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;min-width:540px;">
+          <div style="border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Registros</div>
+            <div style="font-size:26px;font-weight:800;">${report.stats.total}</div>
+          </div>
+          <div style="border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Base</div>
+            <div style="font-size:26px;font-weight:800;">${report.stats.referencia}</div>
+          </div>
+          <div style="border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">% em dia</div>
+            <div style="font-size:26px;font-weight:800;">${formatPercent(report.stats.percentualEmDia)}</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:24px;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;background:#ffffff;">
+          <thead>
+            <tr>${printableColumns.map(([field, label]) => {
+              const style = field === 'funcionario' || field === 'nome'
+                ? 'style="background:#111827;color:#fff;padding:12px;border:1px solid #0f172a;text-align:left;font-size:13px;text-transform:uppercase;letter-spacing:.04em;width:460px;min-width:460px;"'
+                : 'style="background:#111827;color:#fff;padding:12px;border:1px solid #0f172a;text-align:left;font-size:13px;text-transform:uppercase;letter-spacing:.04em;"';
+              return `<th ${style}>${label}</th>`;
+            }).join('')}</tr>
+          </thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  document.body.appendChild(host);
+  const canvas = await html2canvas(host.firstElementChild, {
+    backgroundColor: '#ffffff',
+    scale: 2,
+    useCORS: true,
+    logging: false
+  });
+  document.body.removeChild(host);
+  return await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 1));
 }
 
 function renderPreview(report) {
@@ -484,16 +583,18 @@ async function exportZipByCoord() {
   }
 
   const zip = new JSZip();
-  coords.forEach((coord) => {
+  for (const coord of coords) {
     const report = buildReport(filters.type, coord, filters.filtroLeitura, filters.statusFiltro);
-    zip.file(`${slugify(report.fileBase)}.html`, reportToHtml(report));
-  });
+    const imageBlob = await reportToImageBlob(report);
+    zip.file(`${slugify(report.fileBase)}.png`, imageBlob);
+  }
 
   const overview = buildReport(filters.type, 'TODAS', filters.filtroLeitura, filters.statusFiltro);
-  zip.file(`${slugify(overview.fileBase)}.html`, reportToHtml(overview));
+  const overviewBlob = await reportToImageBlob(overview);
+  zip.file(`${slugify(overview.fileBase)}.png`, overviewBlob);
 
   const blob = await zip.generateAsync({ type: 'blob' });
-  downloadBlob(blob, `${slugify(filters.type)}-relatorios.zip`);
+  downloadBlob(blob, `${slugify(filters.type)}-relatorios-imagens.zip`);
 }
 
 function setBusy(value) {
@@ -610,7 +711,7 @@ initProtectedPage('Relatórios de Patrimônios', async (content) => {
       setBusy(true);
       feedback.textContent = 'Gerando arquivos por coordenação...';
       await exportZipByCoord();
-      feedback.textContent = 'ZIP gerado com sucesso. O arquivo contém versões HTML prontas para impressão por coordenação.';
+      feedback.textContent = 'ZIP gerado com sucesso. O arquivo contém imagens PNG por coordenação, prontas para compartilhar no WhatsApp.';
     } catch (error) {
       console.error(error);
       feedback.textContent = `Erro ao gerar ZIP: ${error.message || error}`;
