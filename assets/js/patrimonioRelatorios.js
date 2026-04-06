@@ -6,7 +6,8 @@ const EXPORT_W = 1920;
 const EXPORT_H = 1080;
 const EXPORT_SCALE = 2;
 const DEFAULT_ROWS_PER_PAGE = 18;
-const INACTIVE_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
+const TABLE_ROWS_PER_PAGE = 50;
+const API_PAGE_SIZE = 1000;
 
 function escapeHtml(v) {
   return String(v ?? '')
@@ -40,14 +41,13 @@ function ensureExportHost() {
 function buildPageHtml({ titulo, subtitulo, stats, rows, pageIndex, pageCount }) {
   const statHtml = [
     `<div class="gstat"><span class="glabel">Registros:</span><strong>${stats.registros}</strong></div>`,
-    `<div class="gstat"><span class="glabel">Com dias:</span><strong>${stats.considerados}</strong></div>`,
-    `<div class="gstat"><span class="glabel">Sem dias:</span><strong>${stats.semLeitura}</strong></div>`,
+    `<div class="gstat"><span class="glabel">Base:</span><strong>${stats.base}</strong></div>`,
     `<div class="gstat"><span class="glabel">% em dia:</span><strong>${stats.percentual}</strong></div>`
   ].join('');
 
   const bodyRows = rows.map((item) => {
-    const dias = parseDias(item.dias_sem_leitura ?? item.diasSemLeitura ?? item.dias);
-    const rowClass = dias === null ? '' : dias > 10 ? 'is-atrasado' : 'is-ok';
+    const dias = Number(item.dias_sem_leitura ?? item.diasSemLeitura ?? item.dias ?? 0) || 0;
+    const rowClass = dias > 10 ? 'is-atrasado' : 'is-ok';
     return `
       <tr class="${rowClass}">
         <td class="col-pat">${escapeHtml(item.patrimonio_codigo ?? item.patrimonio ?? '')}</td>
@@ -55,7 +55,7 @@ function buildPageHtml({ titulo, subtitulo, stats, rows, pageIndex, pageCount })
         <td class="col-nome">${escapeHtml(item.funcionario ?? item.nome ?? '')}</td>
         <td class="col-id">${escapeHtml(item.identificacao ?? '')}</td>
         <td class="col-leitura">${escapeHtml(item.ultima_leitura_fmt ?? item.ultimaLeitura ?? item.ultima_leitura ?? '')}</td>
-        <td class="col-dias">${escapeHtml(dias === null ? '-' : dias)}</td>
+        <td class="col-dias">${escapeHtml(dias)}</td>
       </tr>`;
   }).join('');
 
@@ -334,27 +334,19 @@ function downloadTextFile(filename, content, mimeType = 'text/plain;charset=utf-
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 
-function parseDias(value) {
-  if (value === null || value === undefined || value === '') return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
 function computeStats(rows) {
   const registros = rows.length;
-  const comDias = rows.filter((r) => parseDias(r.dias_sem_leitura) !== null);
-  const emDia = comDias.filter((r) => parseDias(r.dias_sem_leitura) <= 10).length;
-  const atrasados = comDias.filter((r) => parseDias(r.dias_sem_leitura) > 10).length;
-  const semLeitura = registros - comDias.length;
-
+  const comDias = rows.filter((r) => r.dias_sem_leitura !== null && r.dias_sem_leitura !== undefined && r.dias_sem_leitura !== '').length;
+  const emDia = rows.filter((r) => r.dias_sem_leitura !== null && r.dias_sem_leitura !== undefined && r.dias_sem_leitura !== '' && Number(r.dias_sem_leitura) <= 10).length;
+  const atrasados = rows.filter((r) => r.dias_sem_leitura !== null && r.dias_sem_leitura !== undefined && r.dias_sem_leitura !== '' && Number(r.dias_sem_leitura) > 10).length;
   return {
     registros,
-    base: registros ? 'Snapshot atual completo' : 'Sem base',
-    percentual: formatPercent(emDia, comDias.length),
+    base: registros ? 'Snapshot atual' : 'Sem base',
+    percentual: formatPercent(emDia, comDias),
     atrasados,
     emDia,
-    semLeitura,
-    considerados: comDias.length
+    semDias: registros - comDias,
+    comDias
   };
 }
 
@@ -366,50 +358,70 @@ function buildReportTitle(tipo) {
 
 function applyFilters(rows, filters) {
   return rows.filter((row) => {
-    const situacao = normalizeKey(row.situacao);
-    const dias = parseDias(row.dias_sem_leitura);
+    const diasRaw = row.dias_sem_leitura;
+    const hasDias = diasRaw !== null && diasRaw !== undefined && diasRaw !== '';
+    const dias = hasDias ? Number(diasRaw) : null;
     const nome = normalizeKey(`${row.funcionario || ''} ${row.identificacao || ''} ${row.patrimonio_codigo || ''}`);
 
     if (filters.coordenacao && normalizeKey(row.coordenacao) !== normalizeKey(filters.coordenacao)) return false;
     if (filters.supervisao && normalizeKey(row.supervisao) !== normalizeKey(filters.supervisao)) return false;
     if (filters.busca && !nome.includes(normalizeKey(filters.busca))) return false;
-    if (filters.tipo === 'ativos' && INACTIVE_STATUS.has(situacao)) return false;
-    if (filters.tipo === 'atrasados' && (dias === null || dias <= 10)) return false;
-    if (filters.tipo === 'emdia' && (dias === null || dias > 10)) return false;
-    if (filters.tipo === 'semleitura' && dias !== null) return false;
+    if (filters.tipo === 'atrasados' && (!hasDias || dias <= 10)) return false;
+    if (filters.tipo === 'emdia' && (!hasDias || dias > 10)) return false;
+    if (filters.tipo === 'semdias' && hasDias) return false;
     return true;
   });
 }
 
 async function loadSnapshotRows() {
-  const { data, error } = await supabase
-    .from('patrimonios_snapshot')
-    .select('patrimonio_codigo, coordenacao, supervisao, funcionario, identificacao, situacao, ultima_leitura, dias_sem_leitura')
-    .order('coordenacao', { ascending: true })
-    .order('supervisao', { ascending: true })
-    .order('funcionario', { ascending: true })
-    ;
+  const allRows = [];
+  let from = 0;
 
-  if (error) throw error;
+  while (true) {
+    const to = from + API_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from('patrimonios_snapshot')
+      .select('patrimonio_codigo, coordenacao, supervisao, funcionario, identificacao, situacao, ultima_leitura, dias_sem_leitura')
+      .order('coordenacao', { ascending: true })
+      .order('supervisao', { ascending: true })
+      .order('funcionario', { ascending: true })
+      .range(from, to);
 
-  return (data || []).map((row) => ({
+    if (error) throw error;
+
+    const batch = data || [];
+    allRows.push(...batch);
+
+    if (batch.length < API_PAGE_SIZE) break;
+    from += API_PAGE_SIZE;
+  }
+
+  return allRows.map((row) => ({
     ...row,
     ultima_leitura_fmt: formatDateTime(row.ultima_leitura)
   }));
 }
 
-function renderTableRows(rows) {
+function renderTableRows(rows, page = 1) {
   const tbody = document.getElementById('patrimonioRows');
   if (!tbody) return;
 
+  const totalPages = Math.max(1, Math.ceil(rows.length / TABLE_ROWS_PER_PAGE));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * TABLE_ROWS_PER_PAGE;
+  const pageRows = rows.slice(start, start + TABLE_ROWS_PER_PAGE);
+
   if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="7">Nenhum registro encontrado com os filtros informados.</td></tr>';
+    updatePagination({ page: 1, totalPages: 1, totalRows: 0, start: 0, end: 0 });
     return;
   }
 
-  tbody.innerHTML = rows.map((row) => {
-    const dias = parseDias(row.dias_sem_leitura);
-    const tagClass = dias === null ? 'neutral' : dias > 10 ? 'danger' : 'success';
+  tbody.innerHTML = pageRows.map((row) => {
+    const hasDias = row.dias_sem_leitura !== null && row.dias_sem_leitura !== undefined && row.dias_sem_leitura !== '';
+    const dias = hasDias ? Number(row.dias_sem_leitura) : null;
+    const tagClass = !hasDias ? 'neutral' : dias > 10 ? 'danger' : 'success';
+    const diasLabel = hasDias ? String(dias) : '-';
     return `
       <tr>
         <td>${escapeHtml(row.patrimonio_codigo || '-')}</td>
@@ -418,10 +430,18 @@ function renderTableRows(rows) {
         <td>${escapeHtml(row.funcionario || '-')}</td>
         <td>${escapeHtml(row.identificacao || '-')}</td>
         <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
-        <td><span class="status-badge ${tagClass}">${escapeHtml(dias === null ? '-' : String(dias))}</span></td>
+        <td><span class="status-badge ${tagClass}">${escapeHtml(diasLabel)}</span></td>
       </tr>
     `;
   }).join('');
+
+  updatePagination({
+    page: safePage,
+    totalPages,
+    totalRows: rows.length,
+    start: start + 1,
+    end: start + pageRows.length
+  });
 }
 
 function fillSelectOptions(selectId, values, placeholder) {
@@ -434,6 +454,24 @@ function fillSelectOptions(selectId, values, placeholder) {
   el.value = values.includes(current) ? current : '';
 }
 
+function updatePagination({ page, totalPages, totalRows, start, end }) {
+  const info = document.getElementById('patrimonioPageInfo');
+  const current = document.getElementById('patrimonioPageCurrent');
+  const total = document.getElementById('patrimonioPageTotal');
+  const prev = document.getElementById('btnPrevPage');
+  const next = document.getElementById('btnNextPage');
+
+  if (info) {
+    info.textContent = totalRows
+      ? `Mostrando ${start}-${end} de ${totalRows} registro(s)`
+      : 'Nenhum registro para paginação';
+  }
+  if (current) current.textContent = String(page || 1);
+  if (total) total.textContent = String(totalPages || 1);
+  if (prev) prev.disabled = !totalRows || page <= 1;
+  if (next) next.disabled = !totalRows || page >= totalPages;
+}
+
 function updateSummary(rows) {
   const stats = computeStats(rows);
   const set = (id, value) => {
@@ -443,7 +481,7 @@ function updateSummary(rows) {
   set('sumRegistros', stats.registros);
   set('sumEmDia', stats.emDia);
   set('sumAtrasados', stats.atrasados);
-  set('sumSemLeitura', stats.semLeitura);
+  set('sumSemDias', stats.semDias);
   set('sumPercentual', stats.percentual);
 }
 
@@ -488,7 +526,7 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
         <article class="card"><h3>Total filtrado</h3><div class="hero-metric" id="sumRegistros">0</div></article>
         <article class="card"><h3>Em dia</h3><div class="hero-metric" id="sumEmDia">0</div></article>
         <article class="card"><h3>Em atraso</h3><div class="hero-metric" id="sumAtrasados">0</div></article>
-        <article class="card"><h3>Sem dias</h3><div class="hero-metric" id="sumSemLeitura">0</div></article>
+        <article class="card"><h3>Sem dias</h3><div class="hero-metric" id="sumSemDias">0</div></article>
         <article class="card"><h3>% em dia</h3><div class="hero-metric" id="sumPercentual">0%</div></article>
       </div>
 
@@ -506,10 +544,9 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
             <label class="base-label" for="fTipo">Situação</label>
             <select class="base-select" id="fTipo">
               <option value="geral">Geral</option>
-              <option value="ativos">Excluir baixado/manutenção</option>
               <option value="atrasados">Somente atrasados</option>
               <option value="emdia">Somente em dia</option>
-              <option value="semleitura">Sem dias informados</option>
+              <option value="semdias">Somente sem dias</option>
             </select>
           </div>
           <div class="base-field">
@@ -529,6 +566,14 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
       </article>
 
       <article class="base-card">
+        <div class="base-actions" style="justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">
+          <div id="patrimonioPageInfo" style="color:#cbd5e1;">Mostrando 0-0 de 0 registro(s)</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button class="base-button secondary" id="btnPrevPage" type="button">Anterior</button>
+            <span style="color:#cbd5e1;">Página <strong id="patrimonioPageCurrent">1</strong> de <strong id="patrimonioPageTotal">1</strong></span>
+            <button class="base-button secondary" id="btnNextPage" type="button">Próxima</button>
+          </div>
+        </div>
         <div style="overflow:auto;">
           <table class="data-table">
             <thead>
@@ -553,7 +598,8 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
 
   const state = {
     allRows: [],
-    filteredRows: []
+    filteredRows: [],
+    currentPage: 1
   };
 
   const readFilters = () => ({
@@ -563,16 +609,13 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
     busca: document.getElementById('fBusca')?.value || ''
   });
 
-  const applyAndRender = () => {
+  const applyAndRender = (page = 1) => {
     state.filteredRows = applyFilters(state.allRows, readFilters());
-    renderTableRows(state.filteredRows);
+    state.currentPage = page;
+    renderTableRows(state.filteredRows, state.currentPage);
     updateSummary(state.filteredRows);
     const stats = computeStats(state.filteredRows);
-    setFeedback([
-      `${state.filteredRows.length} registro(s) exibido(s) na tela.`,
-      `Com dias informados: ${stats.considerados}`,
-      `Sem dias informados: ${stats.semLeitura}`
-    ].join(' | '));
+    setFeedback(`${state.filteredRows.length} registro(s) filtrado(s). | Com dias informados: ${stats.comDias} | Sem dias informados: ${stats.semDias}`);
   };
 
   const refreshSupervisoes = () => {
@@ -584,22 +627,35 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
     fillSelectOptions('fSupervisao', supervisoes, 'Todas');
   };
 
-  document.getElementById('btnAplicar')?.addEventListener('click', applyAndRender);
+  document.getElementById('btnAplicar')?.addEventListener('click', () => applyAndRender(1));
   document.getElementById('btnLimpar')?.addEventListener('click', () => {
     document.getElementById('fCoordenacao').value = '';
     refreshSupervisoes();
     document.getElementById('fSupervisao').value = '';
     document.getElementById('fTipo').value = 'geral';
     document.getElementById('fBusca').value = '';
-    applyAndRender();
+    applyAndRender(1);
   });
   document.getElementById('fCoordenacao')?.addEventListener('change', () => {
     refreshSupervisoes();
-    applyAndRender();
+    applyAndRender(1);
   });
-  document.getElementById('fSupervisao')?.addEventListener('change', applyAndRender);
-  document.getElementById('fTipo')?.addEventListener('change', applyAndRender);
-  document.getElementById('fBusca')?.addEventListener('input', applyAndRender);
+  document.getElementById('fSupervisao')?.addEventListener('change', () => applyAndRender(1));
+  document.getElementById('fTipo')?.addEventListener('change', () => applyAndRender(1));
+  document.getElementById('fBusca')?.addEventListener('input', () => applyAndRender(1));
+  document.getElementById('btnPrevPage')?.addEventListener('click', () => {
+    if (state.currentPage > 1) {
+      state.currentPage -= 1;
+      renderTableRows(state.filteredRows, state.currentPage);
+    }
+  });
+  document.getElementById('btnNextPage')?.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(state.filteredRows.length / TABLE_ROWS_PER_PAGE));
+    if (state.currentPage < totalPages) {
+      state.currentPage += 1;
+      renderTableRows(state.filteredRows, state.currentPage);
+    }
+  });
 
   document.getElementById('btnCsv')?.addEventListener('click', () => {
     if (!state.filteredRows.length) {
@@ -645,7 +701,7 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
       const coordenacoes = [...new Set(state.allRows.map((row) => normalizeText(row.coordenacao)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       fillSelectOptions('fCoordenacao', coordenacoes, 'Todas');
       refreshSupervisoes();
-      applyAndRender();
+      applyAndRender(1);
     } catch (error) {
       console.error(error);
       renderTableRows([]);
