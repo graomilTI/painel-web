@@ -9,6 +9,18 @@ function normalizeText(value) {
   return s || null;
 }
 
+function normalizePatrimonioCodigo(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) return null;
+  return normalized
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+
 function normalizeKey(value) {
   return String(value || '')
     .normalize('NFD')
@@ -127,11 +139,10 @@ function validateRows(rows) {
 }
 
 function mapRow(row, importacaoId) {
-  const patrimonioCodigo = normalizeText(getField(row, COL.patrimonioCodigo));
-  const patrimonioCodigoNormalizado = patrimonioCodigo ? String(patrimonioCodigo).trim().toUpperCase() : null;
+  const patrimonioCodigo = normalizePatrimonioCodigo(getField(row, COL.patrimonioCodigo));
   return {
     importacao_id: importacaoId,
-    patrimonio_codigo: patrimonioCodigoNormalizado,
+    patrimonio_codigo: patrimonioCodigo,
     coordenacao: normalizeText(getField(row, COL.coordenacao)),
     supervisao: normalizeText(getField(row, COL.supervisao)),
     funcionario: normalizeText(getField(row, COL.funcionario)),
@@ -144,7 +155,7 @@ function mapRow(row, importacaoId) {
     situacao: normalizeText(getField(row, COL.situacao)),
     ultima_leitura: excelDateTimeToISO(getField(row, COL.ultimaLeitura)),
     dias_sem_leitura: normalizeInteger(getField(row, COL.diasSemLeitura)),
-    hash_linha: patrimonioCodigoNormalizado
+    hash_linha: patrimonioCodigo || null
   };
 }
 
@@ -159,13 +170,12 @@ async function insertBatches(table, rows, batchSize = 500, onProgress) {
         onConflict: 'patrimonio_codigo',
         ignoreDuplicates: false
       });
-
     if (error) throw error;
 
     const done = Math.min((i + 1) * batchSize, rows.length);
     if (onProgress) onProgress(done, rows.length, i + 1, chunks.length);
 
-    await wait(15);
+    await wait(25);
   }
 }
 
@@ -312,7 +322,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       let duplicadosIgnorados = 0;
 
       for (const item of mappedRaw) {
-        const key = String(item.patrimonio_codigo || '').trim().toUpperCase();
+        const key = normalizePatrimonioCodigo(item.patrimonio_codigo);
         if (!key) continue;
 
         if (uniqueMap.has(key)) duplicadosIgnorados += 1;
@@ -329,10 +339,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
         'Removendo snapshot anterior...'
       ].join('\n');
 
-      const { error: deleteError } = await supabase
-        .from('patrimonios_snapshot')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
+      const { error: deleteError } = await supabase.rpc('limpar_patrimonios_snapshot');
 
       if (deleteError) throw deleteError;
 
@@ -380,7 +387,13 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       if (importacaoId) {
         await supabase
           .from('patrimonios_importacoes')
-          .update({ status: 'erro' })
+          .update({
+            status: 'erro',
+            observacoes: [
+              obsInput?.value?.trim() || null,
+              `Erro: ${safeErrorMessage(err)}`
+            ].filter(Boolean).join(' | ')
+          })
           .eq('id', importacaoId);
       }
       setSummary({ status: 'Erro' });
