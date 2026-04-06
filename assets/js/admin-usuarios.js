@@ -3,25 +3,9 @@ import { initProtectedPage } from './pageInit.js';
 
 // assets/js/admin-usuarios.js
 (function () {
-  const state = { users: [], modulosCatalogo: [], editingUserId: null, selectedModuleIds: [] };
+  const state = { users: [], modulosCatalogo: [], editingUserId: null };
   const qs = (s, e = document) => e.querySelector(s);
   const qsa = (s, e = document) => Array.from(e.querySelectorAll(s));
-
-  const BASE_ACCESS_CODES = new Set([
-    'dashboard',
-    'notificacoes',
-    'historico_geral'
-  ]);
-
-  const GESTOR_CODES = new Set([
-    'programacao',
-    'hospedagem',
-    'compras_gestor',
-    'logistica_gestor',
-    'patrimonios_gestor',
-    'contato_cliente',
-    'conferencia'
-  ]);
 
   function esc(v) {
     return String(v ?? "")
@@ -30,44 +14,6 @@ import { initProtectedPage } from './pageInit.js';
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
-  }
-
-  function normalizeCode(value) {
-    return String(value || '')
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-  }
-
-  function getUserNivel(user = {}) {
-    return String(
-      user?.nivel ||
-      user?.perfil_codigo ||
-      user?.perfil_nome ||
-      user?.role ||
-      'adm'
-    ).trim().toLowerCase() === 'gestor'
-      ? 'gestor'
-      : 'adm';
-  }
-
-  function isGestorModule(modulo) {
-    const code = normalizeCode(modulo?.codigo || modulo?.code || modulo?.id || '');
-    return BASE_ACCESS_CODES.has(code) || GESTOR_CODES.has(code);
-  }
-
-  function getVisibleModulesByNivel(nivel) {
-    const normalizedNivel = String(nivel || 'adm').trim().toLowerCase();
-    if (normalizedNivel === 'gestor') {
-      return state.modulosCatalogo.filter(isGestorModule);
-    }
-    return state.modulosCatalogo.slice();
-  }
-
-  function syncSelectedModulesWithNivel(nivel) {
-    const visibleIds = new Set(getVisibleModulesByNivel(nivel).map((m) => m.id));
-    state.selectedModuleIds = (state.selectedModuleIds || []).filter((id) => visibleIds.has(id));
   }
 
   function extractAccessToken(sessionLike) {
@@ -79,21 +25,58 @@ import { initProtectedPage } from './pageInit.js';
     );
   }
 
+  function normalizeText(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function inferNivelFromUser(user) {
+    const raw = normalizeText(user?.nivel || user?.perfil_codigo || user?.perfil || user?.role || "");
+    if (["adm", "administrador", "admin", "master"].includes(raw)) return "adm";
+    return "gestor";
+  }
+
+  function inferModuloGrupo(modulo) {
+    const codigo = normalizeText(modulo?.codigo);
+    const nome = normalizeText(modulo?.nome);
+    const categoria = normalizeText(modulo?.categoria);
+
+    const isBase =
+      ["dashboard", "notificacoes", "historico_geral"].includes(codigo) ||
+      categoria === "inicio";
+
+    if (isBase) return "base";
+
+    const isAdm =
+      codigo.includes("_adm") ||
+      ["financeiro", "hotel", "patrimonio", "usuarios_acessos", "admin_usuarios", "ferias_atestados"].includes(codigo) ||
+      categoria === "administracao" ||
+      categoria === "diretoria" ||
+      categoria === "rh";
+
+    return isAdm ? "adm" : "gestor";
+  }
+
+  function getNivelDescription(nivel) {
+    return nivel === "adm"
+      ? "ADM pode receber módulos administrativos e de gestor conforme liberação."
+      : "Gestor pode receber apenas acessos base e módulos do bloco Gestor.";
+  }
+
   async function api(url, options = {}) {
     const session = await getSession();
     const token = extractAccessToken(session);
 
     if (!token) {
-      console.error("SESSION DEBUG: sem token", session);
       throw new Error("Sessão expirada. Faça login novamente.");
     }
 
     const cleanToken = String(token).trim();
 
     if (cleanToken.split(".").length !== 3) {
-      console.error("SESSION DEBUG:", session);
-      console.error("TOKEN DEBUG:", cleanToken);
-      console.error("TOKEN PARTS:", cleanToken.split(".").length);
       throw new Error("Token de sessão inválido.");
     }
 
@@ -136,7 +119,7 @@ import { initProtectedPage } from './pageInit.js';
           </div>
 
           <div class="au-toolbar">
-            <input id="auFiltro" class="au-input" type="text" placeholder="Buscar por nome, e-mail, setor ou nível" />
+            <input id="auFiltro" class="au-input" type="text" placeholder="Buscar por nome, e-mail ou setor" />
           </div>
 
           <div id="auFeedback" class="au-feedback" style="display:none;"></div>
@@ -208,8 +191,8 @@ import { initProtectedPage } from './pageInit.js';
 
                 <div class="au-field au-field-full">
                   <label>Módulos liberados</label>
-                  <div class="au-note" id="auNivelNote"></div>
-                  <div id="auModulosContainer" class="au-modulos"></div>
+                  <div id="auNivelHint" class="au-level-hint"></div>
+                  <div id="auModulosContainer" class="au-modulos-sections"></div>
                 </div>
               </div>
 
@@ -234,25 +217,30 @@ import { initProtectedPage } from './pageInit.js';
         .au-btn-light{background:#1e293b;color:#e5e7eb}
         .au-feedback{margin-bottom:12px;padding:10px 12px;border-radius:10px;background:#1e293b;border:1px solid #334155}
         .au-table-wrap{overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:14px}
-        .au-table{width:100%;border-collapse:collapse;min-width:1080px}
+        .au-table{width:100%;border-collapse:collapse;min-width:1120px}
         .au-table th,.au-table td{text-align:left;padding:12px;border-bottom:1px solid #1f2937;vertical-align:top}
         .au-badge{display:inline-block;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:600}
         .au-badge-on{background:rgba(22,101,52,.25);color:#86efac}
         .au-badge-off{background:rgba(127,29,29,.25);color:#fca5a5}
-        .au-badge-level{background:rgba(59,130,246,.18);color:#bfdbfe}
+        .au-badge-level{background:#1e293b;color:#cbd5e1}
         .au-mod-chip{display:inline-block;padding:4px 8px;margin:2px;border-radius:999px;background:#1e293b;border:1px solid #334155;font-size:12px}
         .au-actions-row{display:flex;flex-wrap:wrap;gap:8px}
         .au-modal{position:fixed;inset:0;background:rgba(2,6,23,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
-        .au-modal-card{width:min(920px,100%);max-height:92vh;overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:18px;padding:18px}
+        .au-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:18px;padding:18px}
         .au-modal-header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
         .au-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
         .au-field{display:flex;flex-direction:column;gap:6px}
         .au-field-full{grid-column:1 / -1}
-        .au-note{font-size:12px;opacity:.82;margin-bottom:8px}
-        .au-modulos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;border:1px solid #1f2937;border-radius:12px;padding:12px;background:#0f172a}
+        .au-level-hint{font-size:13px;color:#cbd5e1;opacity:.92}
+        .au-modulos-sections{display:grid;gap:12px}
+        .au-mod-group{border:1px solid #1f2937;border-radius:12px;padding:12px;background:#0f172a}
+        .au-mod-group-title{font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#93c5fd;margin-bottom:8px}
+        .au-mod-group-subtitle{font-size:12px;color:#94a3b8;margin:-2px 0 10px}
+        .au-modulos-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
         .au-mod-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #1f2937;border-radius:10px;background:#111827}
+        .au-mod-item.is-disabled{opacity:.45}
         .au-modal-footer{margin-top:16px;display:flex;justify-content:flex-end}
-        @media (max-width:900px){.au-grid{grid-template-columns:1fr}.au-modulos{grid-template-columns:1fr}.au-header{flex-direction:column;align-items:stretch}}
+        @media (max-width:900px){.au-grid{grid-template-columns:1fr}.au-modulos-grid{grid-template-columns:1fr}.au-header{flex-direction:column;align-items:stretch}}
       </style>
     `;
 
@@ -260,10 +248,7 @@ import { initProtectedPage } from './pageInit.js';
     qs("#auBtnCloseModal").addEventListener("click", closeModal);
     qs("#auFiltro").addEventListener("input", renderTable);
     qs("#auForm").addEventListener("submit", onSubmitForm);
-    qs("#auNivel").addEventListener("change", () => {
-      syncSelectedModulesWithNivel(qs("#auNivel").value);
-      renderModules(state.selectedModuleIds);
-    });
+    qs("#auNivel").addEventListener("change", () => syncModulesByLevel());
   }
 
   function setFeedback(msg, isError = false) {
@@ -280,24 +265,54 @@ import { initProtectedPage } from './pageInit.js';
     el.textContent = msg;
   }
 
-  function renderModules(selectedIds = []) {
-    const container = qs("#auModulosContainer");
-    const note = qs("#auNivelNote");
-    const nivel = qs("#auNivel")?.value || 'adm';
-    const visibleModules = getVisibleModulesByNivel(nivel);
-    state.selectedModuleIds = selectedIds.slice();
+  function buildGroupsForNivel(nivel) {
+    const all = state.modulosCatalogo.map((m) => ({ ...m, grupo: inferModuloGrupo(m) }));
+    const base = all.filter((m) => m.grupo === "base");
+    const gestor = all.filter((m) => m.grupo === "gestor");
+    const adm = all.filter((m) => m.grupo === "adm");
 
-    if (note) {
-      note.textContent = nivel === 'gestor'
-        ? 'Gestor visualiza somente módulos de gestor e acessos base.'
-        : 'ADM pode receber módulos administrativos e de gestor conforme liberação.';
+    if (nivel === "adm") {
+      return [
+        { key: "base", title: "Base", subtitle: "Acessos iniciais e utilitários.", items: base },
+        { key: "gestor", title: "Gestor", subtitle: "Módulos operacionais do gestor.", items: gestor },
+        { key: "adm", title: "ADM", subtitle: "Módulos administrativos.", items: adm },
+      ].filter((g) => g.items.length);
     }
 
+    return [
+      { key: "base", title: "Base", subtitle: "Acessos iniciais e utilitários.", items: base },
+      { key: "gestor", title: "Gestor", subtitle: "Módulos operacionais do gestor.", items: gestor },
+    ].filter((g) => g.items.length);
+  }
+
+  function renderModules(selectedIds = [], nivel = "gestor") {
+    const container = qs("#auModulosContainer");
+    const hint = qs("#auNivelHint");
     if (!container) return;
-    container.innerHTML = visibleModules.map((m) => {
-      const checked = state.selectedModuleIds.includes(m.id) ? "checked" : "";
-      return `<label class="au-mod-item"><input type="checkbox" value="${esc(m.id)}" ${checked} /><span>${esc(m.nome || m.codigo || "Módulo")}</span></label>`;
-    }).join("");
+
+    hint.textContent = getNivelDescription(nivel);
+    const groups = buildGroupsForNivel(nivel);
+
+    container.innerHTML = groups.map((group) => `
+      <section class="au-mod-group">
+        <div class="au-mod-group-title">${esc(group.title)}</div>
+        <div class="au-mod-group-subtitle">${esc(group.subtitle)}</div>
+        <div class="au-modulos-grid">
+          ${group.items.map((m) => {
+            const checked = selectedIds.includes(m.id) ? "checked" : "";
+            return `<label class="au-mod-item"><input type="checkbox" value="${esc(m.id)}" ${checked} /><span>${esc(m.nome || m.codigo || "Módulo")}</span></label>`;
+          }).join("")}
+        </div>
+      </section>
+    `).join("");
+  }
+
+  function syncModulesByLevel() {
+    const nivel = qs("#auNivel")?.value || "gestor";
+    const selected = getSelectedModules();
+    const allowedIds = new Set(buildGroupsForNivel(nivel).flatMap((g) => g.items.map((m) => m.id)));
+    const filtered = selected.filter((id) => allowedIds.has(id));
+    renderModules(filtered, nivel);
   }
 
   function renderTable() {
@@ -306,8 +321,7 @@ import { initProtectedPage } from './pageInit.js';
 
     const filtro = (qs("#auFiltro")?.value || "").trim().toLowerCase();
     const items = state.users.filter((u) => {
-      const nivel = getUserNivel(u);
-      const text = [u.nome || "", u.email || "", u.setor || "", nivel, ...(u.modulos || []).map((m) => m.nome || m.codigo || "")]
+      const text = [u.nome || "", u.email || "", u.setor || "", u.nivel || "", ...(u.modulos || []).map((m) => m.nome || m.codigo || "")]
         .join(" ").toLowerCase();
       return !filtro || text.includes(filtro);
     });
@@ -316,65 +330,72 @@ import { initProtectedPage } from './pageInit.js';
       const isAtivo = (u.status || "ativo") === "ativo";
       const statusClass = isAtivo ? "au-badge-on" : "au-badge-off";
       const statusLabel = isAtivo ? "Ativo" : "Inativo";
-      const nivel = getUserNivel(u);
-      const nivelLabel = nivel === 'gestor' ? 'Gestor' : 'ADM';
+      const nivel = (u.nivel || inferNivelFromUser(u)).toUpperCase();
       const modulosHtml = (u.modulos || []).length
         ? u.modulos.map((m) => `<span class="au-mod-chip">${esc(m.nome || m.codigo || "")}</span>`).join("")
-        : `<span style="opacity:.7;">Sem módulos</span>`;
+        : `<span style="opacity:.7;">Nenhum</span>`;
 
       return `
         <tr>
           <td>${esc(u.nome || "")}</td>
           <td>${esc(u.email || "")}</td>
-          <td><span class="au-badge au-badge-level">${nivelLabel}</span></td>
+          <td><span class="au-badge au-badge-level">${esc(nivel)}</span></td>
           <td>${esc(u.setor || "")}</td>
           <td><span class="au-badge ${statusClass}">${statusLabel}</span></td>
           <td>${modulosHtml}</td>
           <td>
             <div class="au-actions-row">
-              <button class="au-btn au-btn-light" data-action="edit" data-id="${esc(u.id)}" type="button">Editar</button>
-              <button class="au-btn au-btn-light" data-action="toggle" data-id="${esc(u.id)}" type="button">${isAtivo ? "Desativar" : "Ativar"}</button>
-              <button class="au-btn au-btn-light" data-action="reset" data-id="${esc(u.id)}" type="button">Reset senha</button>
+              <button class="au-btn au-btn-light" type="button" data-action="edit" data-id="${esc(u.id)}">Editar</button>
+              <button class="au-btn au-btn-light" type="button" data-action="toggle" data-id="${esc(u.id)}">${isAtivo ? "Desativar" : "Ativar"}</button>
+              <button class="au-btn au-btn-light" type="button" data-action="reset" data-id="${esc(u.id)}">Reset senha</button>
             </div>
           </td>
         </tr>
       `;
     }).join("");
 
-    qsa("[data-action='edit']", tbody).forEach((b) => b.addEventListener("click", () => editUser(b.dataset.id)));
-    qsa("[data-action='toggle']", tbody).forEach((b) => b.addEventListener("click", () => toggleStatus(b.dataset.id)));
-    qsa("[data-action='reset']", tbody).forEach((b) => b.addEventListener("click", () => resetPassword(b.dataset.id)));
-  }
-
-  async function loadUsers() {
-    const res = await api("/api/admin/users/list");
-    state.users = res.items || [];
-    renderTable();
+    qsa("[data-action='edit']", tbody).forEach((btn) => btn.addEventListener("click", () => editUser(btn.dataset.id)));
+    qsa("[data-action='toggle']", tbody).forEach((btn) => btn.addEventListener("click", () => toggleStatus(btn.dataset.id)));
+    qsa("[data-action='reset']", tbody).forEach((btn) => btn.addEventListener("click", () => resetPassword(btn.dataset.id)));
   }
 
   async function loadModulesCatalog() {
-    const res = await api("/api/admin/users/modulos");
-    state.modulosCatalogo = res.items || [];
+    const data = await api("/api/admin/users/profiles");
+    state.modulosCatalogo = (data.modulos || data.modules || []).map((m) => ({
+      ...m,
+      codigo: m.codigo || m.code || "",
+      nome: m.nome || m.name || "",
+      categoria: m.categoria || m.category || "",
+    }));
+  }
+
+  async function loadUsers() {
+    const data = await api("/api/admin/users/list");
+    state.users = (data.usuarios || data.users || []).map((u) => ({
+      ...u,
+      nivel: u.nivel || inferNivelFromUser(u),
+    }));
+    renderTable();
   }
 
   async function loadUserModuleIds(userId) {
-    const res = await api(`/api/admin/users/user-modulos?user_id=${encodeURIComponent(userId)}`);
-    return res.items || [];
+    const data = await api(`/api/admin/users/list?id=${encodeURIComponent(userId)}`);
+    const user = (data.usuarios || data.users || []).find((u) => u.id === userId);
+    return (user?.modulos || []).map((m) => m.id);
   }
 
   function openModal(user = null, selectedModuleIds = []) {
     state.editingUserId = user?.id || null;
-    state.selectedModuleIds = selectedModuleIds.slice();
+    const nivel = user?.nivel || inferNivelFromUser(user);
     qs("#auModalTitle").textContent = user ? "Editar usuário" : "Novo usuário";
     qs("#auUserId").value = user?.id || "";
     qs("#auNome").value = user?.nome || "";
     qs("#auEmail").value = user?.email || "";
-    qs("#auNivel").value = getUserNivel(user);
+    qs("#auNivel").value = nivel;
     qs("#auSetor").value = user?.setor || "";
     qs("#auAtivo").value = (user?.status || "ativo") === "ativo" ? "true" : "false";
     qs("#auPassword").value = "";
-    syncSelectedModulesWithNivel(qs("#auNivel").value);
-    renderModules(state.selectedModuleIds);
+    renderModules(selectedModuleIds, nivel);
     qs("#auModal").style.display = "flex";
   }
 
@@ -437,7 +458,7 @@ import { initProtectedPage } from './pageInit.js';
     const id = qs("#auUserId").value.trim();
     const nome = qs("#auNome").value.trim();
     const email = qs("#auEmail").value.trim();
-    const nivel = qs("#auNivel").value.trim();
+    const nivel = qs("#auNivel").value;
     const setor = qs("#auSetor").value.trim();
     const status = qs("#auAtivo").value === "true" ? "ativo" : "inativo";
     const password = qs("#auPassword").value;
