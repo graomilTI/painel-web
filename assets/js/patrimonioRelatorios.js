@@ -6,7 +6,7 @@ const EXPORT_W = 1920;
 const EXPORT_H = 1080;
 const EXPORT_SCALE = 2;
 const DEFAULT_ROWS_PER_PAGE = 18;
-const TABLE_ROWS_PER_PAGE = 100;
+const TABLE_ROWS_PER_PAGE = 50;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
 const FETCH_BATCH_SIZE = 1000;
 
@@ -62,6 +62,199 @@ function formatPercent(numerator, denominator) {
   if (!denominator) return '0%';
   return `${Math.round((numerator / denominator) * 100)}%`;
 }
+
+function injectVisualStyles() {
+  if (document.getElementById('patrimonio-relatorios-visual-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'patrimonio-relatorios-visual-styles';
+  style.textContent = `
+    .patrimonio-relatorios-page .grid-cards {
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .patrimonio-relatorios-page .grid-cards .card {
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      background: linear-gradient(180deg, rgba(3, 19, 17, 0.88), rgba(4, 28, 24, 0.92));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+    }
+    .patrimonio-relatorios-page .hero-metric {
+      font-size: clamp(1.8rem, 2.5vw, 2.3rem);
+      line-height: 1;
+      margin-top: 12px;
+    }
+    .patrimonio-table-card {
+      padding: 18px;
+    }
+    .patrimonio-table-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .patrimonio-table-title {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .patrimonio-table-title strong {
+      font-size: 1.05rem;
+    }
+    .patrimonio-table-subtitle {
+      opacity: .72;
+      font-size: .92rem;
+    }
+    .patrimonio-legend {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .legend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.28);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      font-size: .84rem;
+      color: #dbeafe;
+    }
+    .legend-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+    .legend-dot.ok { background: #22c55e; }
+    .legend-dot.atraso { background: #ef4444; }
+    .legend-dot.neutro { background: #94a3b8; }
+
+    .table-shell {
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 18px;
+      overflow: hidden;
+      background: rgba(2, 12, 10, 0.55);
+    }
+    .table-scroll-x {
+      overflow: auto;
+      max-height: calc(100vh - 300px);
+    }
+    .patrimonio-table {
+      width: 100%;
+      min-width: 1180px;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+    .patrimonio-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: rgba(5, 18, 16, 0.98);
+      backdrop-filter: blur(6px);
+      box-shadow: inset 0 -1px 0 rgba(148, 163, 184, 0.14);
+      padding: 13px 12px;
+      font-size: .8rem;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: #dbeafe;
+      white-space: nowrap;
+    }
+    .patrimonio-table tbody tr:nth-child(odd) td {
+      background: rgba(255,255,255,0.018);
+    }
+    .patrimonio-table tbody tr:hover td {
+      background: rgba(52, 211, 153, 0.08);
+    }
+    .patrimonio-table td {
+      padding: 12px;
+      border-top: 1px solid rgba(148, 163, 184, 0.1);
+      vertical-align: top;
+    }
+    .pat-cell-patrimonio {
+      min-width: 110px;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+    .pat-cell-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .pat-primary {
+      font-weight: 600;
+      color: #f8fafc;
+      overflow-wrap: anywhere;
+    }
+    .pat-secondary {
+      font-size: .82rem;
+      color: #94a3b8;
+      overflow-wrap: anywhere;
+    }
+    .pat-tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 10px;
+      min-width: 42px;
+      border-radius: 999px;
+      font-size: .84rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+    .pat-tag.ok {
+      color: #dcfce7;
+      background: rgba(34, 197, 94, 0.16);
+      border-color: rgba(34, 197, 94, 0.34);
+    }
+    .pat-tag.danger {
+      color: #fee2e2;
+      background: rgba(239, 68, 68, 0.16);
+      border-color: rgba(239, 68, 68, 0.34);
+    }
+    .pat-tag.neutral {
+      color: #e2e8f0;
+      background: rgba(148, 163, 184, 0.16);
+      border-color: rgba(148, 163, 184, 0.34);
+    }
+    .pat-regional-badge {
+      display: inline-flex;
+      max-width: 100%;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(20, 184, 166, 0.12);
+      border: 1px solid rgba(45, 212, 191, 0.25);
+      color: #ccfbf1;
+      font-weight: 600;
+      font-size: .82rem;
+    }
+    .pagination-chip {
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.34);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      color: #e2e8f0;
+      font-size: .9rem;
+    }
+    @media (max-width: 900px) {
+      .patrimonio-table-card {
+        padding: 14px;
+      }
+      .patrimonio-table-toolbar {
+        align-items: flex-start;
+      }
+      .table-scroll-x {
+        max-height: none;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 
 function getDiasInfo(row) {
   if (row?.dias_sem_leitura === null || row?.dias_sem_leitura === undefined || row?.dias_sem_leitura === '') {
@@ -360,7 +553,7 @@ function renderTableRows(rows, page = 1) {
   if (!tbody) return;
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7">Nenhum registro encontrado com os filtros informados.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="pat-cell-stack"><span class="pat-primary">Nenhum registro encontrado</span><span class="pat-secondary">Tente ajustar os filtros para visualizar outros patrimônios.</span></div></td></tr>';
     return;
   }
 
@@ -370,16 +563,40 @@ function renderTableRows(rows, page = 1) {
   tbody.innerHTML = pageRows.map((row) => {
     const diasInfo = getDiasInfo(row);
     const diasLabel = diasInfo.hasValue ? String(diasInfo.value) : '-';
-    const tagClass = !diasInfo.hasValue ? '' : diasInfo.value > 10 ? 'danger' : 'success';
+    const tagClass = !diasInfo.hasValue ? 'neutral' : diasInfo.value > 10 ? 'danger' : 'ok';
+    const situacao = normalizeText(row.situacao) || 'Sem situação';
+
     return `
       <tr>
-        <td>${escapeHtml(row.patrimonio_codigo || '-')}</td>
-        <td>${escapeHtml(getRegional(row))}</td>
-        <td>${escapeHtml(row.supervisao || '-')}</td>
-        <td>${escapeHtml(row.funcionario || '-')}</td>
-        <td>${escapeHtml(row.identificacao || '-')}</td>
-        <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
-        <td><span class="status-badge ${tagClass}">${escapeHtml(diasLabel)}</span></td>
+        <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
+        <td>
+          <div class="pat-cell-stack">
+            <span class="pat-regional-badge">${escapeHtml(getRegional(row))}</span>
+            <span class="pat-secondary">${escapeHtml(situacao)}</span>
+          </div>
+        </td>
+        <td>
+          <div class="pat-cell-stack">
+            <span class="pat-primary">${escapeHtml(row.supervisao || '-')}</span>
+          </div>
+        </td>
+        <td>
+          <div class="pat-cell-stack">
+            <span class="pat-primary">${escapeHtml(row.funcionario || '-')}</span>
+          </div>
+        </td>
+        <td>
+          <div class="pat-cell-stack">
+            <span class="pat-primary">${escapeHtml(row.identificacao || '-')}</span>
+          </div>
+        </td>
+        <td>
+          <div class="pat-cell-stack">
+            <span class="pat-primary">${escapeHtml(row.ultima_leitura_fmt || '-')}</span>
+            <span class="pat-secondary">${diasInfo.hasValue ? 'Dias calculados' : 'Sem dias informados'}</span>
+          </div>
+        </td>
+        <td><span class="pat-tag ${tagClass}">${escapeHtml(diasLabel)}</span></td>
       </tr>
     `;
   }).join('');
@@ -455,8 +672,9 @@ function groupRowsByRegional(rows) {
 }
 
 initProtectedPage('Relatórios de Patrimônios', (content) => {
+  injectVisualStyles();
   content.innerHTML = `
-    <section class="base-page">
+    <section class="base-page patrimonio-relatorios-page">
       <div class="section-heading">
         <div>
           <h2>Relatórios de Patrimônios</h2>
@@ -520,32 +738,44 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
         <pre id="patrimonioFeedback" style="white-space:pre-wrap;margin:14px 0 0;color:#cbd5e1;">Carregando base atual...</pre>
       </article>
 
-      <article class="base-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
-          <strong>Lista de patrimônios</strong>
+      <article class="base-card patrimonio-table-card">
+        <div class="patrimonio-table-toolbar">
+          <div class="patrimonio-table-title">
+            <strong>Lista de patrimônios</strong>
+            <span class="patrimonio-table-subtitle">Visualização organizada por patrimônio, regional, supervisão e status de leitura.</span>
+          </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <button class="base-button secondary" id="btnPrevPage" type="button">Anterior</button>
-            <span id="paginationInfo" style="opacity:.85;">Página 1/1</span>
+            <span id="paginationInfo" class="pagination-chip">Página 1/1</span>
             <button class="base-button secondary" id="btnNextPage" type="button">Próxima</button>
           </div>
         </div>
-        <div style="overflow:auto;">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Patrimônio</th>
-                <th>Regional</th>
-                <th>Supervisão</th>
-                <th>Funcionário</th>
-                <th>Identificação</th>
-                <th>Última leitura</th>
-                <th>Dias</th>
-              </tr>
-            </thead>
-            <tbody id="patrimonioRows">
-              <tr><td colspan="7">Carregando...</td></tr>
-            </tbody>
-          </table>
+
+        <div class="patrimonio-legend" style="margin-bottom:12px;">
+          <span class="legend-chip"><span class="legend-dot ok"></span> Em dia</span>
+          <span class="legend-chip"><span class="legend-dot atraso"></span> Em atraso</span>
+          <span class="legend-chip"><span class="legend-dot neutro"></span> Sem dias informados</span>
+        </div>
+
+        <div class="table-shell">
+          <div class="table-scroll-x">
+            <table class="data-table patrimonio-table">
+              <thead>
+                <tr>
+                  <th>Patrimônio</th>
+                  <th>Regional / Situação</th>
+                  <th>Supervisão</th>
+                  <th>Funcionário</th>
+                  <th>Identificação</th>
+                  <th>Última leitura</th>
+                  <th>Dias</th>
+                </tr>
+              </thead>
+              <tbody id="patrimonioRows">
+                <tr><td colspan="7">Carregando...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </article>
     </section>
