@@ -91,6 +91,7 @@ export const MENU_CONFIG = [
   {
     grupo: "RELATÓRIOS",
     itens: [
+      item("relatorios_importar", "Importar Relatórios", "importar-relatorios", ["RELATORIOS_IMPORTAR", "RELATORIOS_UPLOAD"]),
       item("relatorios_colab", "Colaboradores", "consultar-colaboradores", ["RELATORIOS_COLAB"]),
       item("relatorios_prod", "Produção", "consultar-producao", ["RELATORIOS_PROD"]),
       item("relatorios_patrimonios_importar", "Patrimônios", "importar-patrimonios", ["RELATORIOS_PATRIMONIOS_IMPORTAR"])
