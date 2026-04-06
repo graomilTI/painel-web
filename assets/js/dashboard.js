@@ -1,20 +1,32 @@
 import { initProtectedPage } from './pageInit.js';
+import { flattenAllowedMenu } from './menuBuilder.js';
 
-function renderModuleList(modules) {
-  const liberados = (modules || []).filter((m) => m.can_view);
-  if (!liberados.length) {
+function getVisibleMenuItems(userContext) {
+  const items = flattenAllowedMenu(userContext);
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = String(item.code || '').trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function renderModuleList(items) {
+  if (!items.length) {
     return '<p class="empty-state">Nenhum módulo liberado no momento.</p>';
   }
 
   return `
     <div class="chips">
-      ${liberados.map((m) => `<span class="chip">${m.name || m.code}</span>`).join('')}
+      ${items.map((m) => `<span class="chip">${m.label || m.name || m.code}</span>`).join('')}
     </div>
   `;
 }
 
 initProtectedPage('Dashboard', (content, userContext) => {
-  const totalLiberados = (userContext.modules || []).filter((m) => m.can_view).length;
+  const visibleItems = getVisibleMenuItems(userContext);
+  const totalLiberados = visibleItems.length;
 
   content.innerHTML = `
     <section class="hero-card">
@@ -55,7 +67,7 @@ initProtectedPage('Dashboard', (content, userContext) => {
 
     <article class="card mt-16">
       <h3>Acessos disponíveis</h3>
-      ${renderModuleList(userContext.modules)}
+      ${renderModuleList(visibleItems)}
     </article>
 
     <article class="card mt-16">
