@@ -1,31 +1,19 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<title>Programação</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel Corporativo</title>
+  <link rel="icon" href="./favicon.ico" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
-<body>
+<body class="auth-page">
+  <div class="auth-card">
+    <div class="brand-eyebrow">Painel corporativo</div>
+    <h1 id="bootMessage">Iniciando painel</h1>
+    <p id="bootFeedback">Validando sua sessão e carregando o ambiente...</p>
+  </div>
 
-<div class="container">
-  <h2>Programação</h2>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Nome</th>
-        <th>Disponível</th>
-        <th>Café</th>
-        <th>Almoço</th>
-        <th>Janta</th>
-        <th>Transporte</th>
-        <th>Extras</th>
-      </tr>
-    </thead>
-    <tbody id="tbody"></tbody>
-  </table>
-</div>
-
-<script src="script.js"></script>
+  <script type="module" src="./assets/js/index.js"></script>
 </body>
 </html>
