@@ -249,6 +249,57 @@ async function loadHistory(key, historyEl, emptyEl) {
   });
 }
 
+
+async function insertMetadataRecord(payload) {
+  const attempts = [
+    payload,
+    {
+      ...payload,
+      tipo: payload.tipo_relatorio,
+      titulo: payload.titulo_relatorio
+    },
+    {
+      tipo: payload.tipo_relatorio,
+      titulo: payload.titulo_relatorio,
+      arquivo_nome_original: payload.arquivo_nome_original,
+      arquivo_nome_storage: payload.arquivo_nome_storage,
+      storage_bucket: payload.storage_bucket,
+      storage_path: payload.storage_path,
+      tamanho_bytes: payload.tamanho_bytes,
+      mime_type: payload.mime_type,
+      status: payload.status,
+      observacoes: payload.observacoes,
+      importado_por: payload.importado_por,
+      importado_por_nome: payload.importado_por_nome
+    }
+  ];
+
+  let lastError = null;
+
+  for (const body of attempts) {
+    const { error } = await supabase.from(METADATA_TABLE).insert(body);
+    if (!error) return;
+
+    lastError = error;
+
+    const message = String(error.message || '').toLowerCase();
+
+    // Se faltou a coluna/constraint legada "tipo", tenta a próxima estratégia.
+    if (
+      message.includes('column "tipo"') ||
+      message.includes("column 'tipo'") ||
+      message.includes('null value in column "tipo"') ||
+      message.includes('violates not-null constraint')
+    ) {
+      continue;
+    }
+
+    throw error;
+  }
+
+  if (lastError) throw lastError;
+}
+
 function renderDetail(content, ctx, key) {
   const cfg = getConfig(key);
 
@@ -396,8 +447,7 @@ function renderDetail(content, ctx, key) {
         importado_por_nome: ctx.user?.name || null
       };
 
-      const { error: insertError } = await supabase.from(METADATA_TABLE).insert(payload);
-      if (insertError) throw insertError;
+      await insertMetadataRecord(payload);
 
       fileInput.value = '';
       obsInput.value = '';
