@@ -157,7 +157,31 @@ function statusClass(value = '') {
   return 'neutral';
 }
 
-function renderHub(content) {
+
+function normalizeText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function detectReportKeyFromFileName(fileName = '') {
+  const n = normalizeText(fileName);
+
+  if (n.includes('producao consolidada') || (n.includes('producao') && n.includes('consolid'))) return 'producao-consolidada';
+  if (n.includes('nota fiscal') || n.includes('notas fiscais') || n.includes('nfe')) return 'notas-fiscais';
+  if (n.includes('despesa')) return 'despesas';
+  if (n.includes('caixa do fornecedor') || n.includes('caixa fornecedor') || n.includes('caixa')) return 'caixa-fornecedor';
+  if (n.includes('resultado diario') || n.includes('resultado')) return 'resultado-diario';
+  if (n.includes('relatorio de cargas') || n.includes('cargas') || n.includes('carga')) return 'cargas';
+  if (n.includes('servicos faturados') || n.includes('servico faturado') || n.includes('servicos')) return 'servicos-faturados';
+
+  return null;
+}
+
+
+function renderHub(content, ctx) {
   const cards = HUB_ITEMS.map(({ key, path, grupo }) => {
     const cfg = getConfig(key);
     return `
@@ -186,16 +210,184 @@ function renderHub(content) {
     <section class="base-card mt-16">
       <div class="section-heading">
         <div>
-          <h2>Escolha o relatório</h2>
+          <h2>Upload em lote inteligente</h2>
+          <p class="section-subtitle">Selecione vários arquivos de uma vez. O sistema identifica o tipo pelo nome do arquivo e envia cada relatório para a base correta.</p>
+        </div>
+      </div>
+
+      <div class="base-grid">
+        <div class="base-field">
+          <label class="base-label" for="arquivoLoteRelatorios">Arquivos</label>
+          <input id="arquivoLoteRelatorios" class="base-input" type="file" multiple accept=".xlsx,.xls,.csv" />
+        </div>
+
+        <div class="base-field">
+          <label class="base-label" for="observacoesLoteRelatorios">Observações gerais</label>
+          <textarea id="observacoesLoteRelatorios" class="base-textarea" placeholder="Opcional. Ex.: fechamento diário, lote da manhã, importação enviada pela coordenação."></textarea>
+        </div>
+
+        <div class="base-field half">
+          <label class="base-label">Destino</label>
+          <div class="base-status">Bucket: ${STORAGE_BUCKET}<br>Tabela: ${METADATA_TABLE}<br>Usuário: ${ctx.user?.name || '-'}</div>
+        </div>
+
+        <div class="base-field half">
+          <label class="base-label">Regras de identificação</label>
+          <div class="base-status">O sistema reconhece Produção, Notas, Despesas, Caixa, Resultado, Cargas e Serviços Faturados pelo nome do arquivo.</div>
+        </div>
+      </div>
+
+      <div class="base-actions">
+        <button id="btnValidarLoteRelatorios" class="base-button secondary" type="button">Validar lote</button>
+        <button id="btnImportarLoteRelatorios" class="base-button primary" type="button">Enviar lote para Supabase</button>
+      </div>
+
+      <div id="statusLoteRelatorios" class="base-status mt-16">Nenhum arquivo selecionado.</div>
+      <div id="listaLoteRelatorios" class="base-status mt-16">Aguardando seleção de arquivos.</div>
+    </section>
+
+    <section class="base-card mt-16">
+      <div class="section-heading">
+        <div>
+          <h2>Escolha o relatório individual</h2>
           <p class="section-subtitle">Cada card abre uma tela de upload com histórico recente e gravação no banco.</p>
         </div>
       </div>
       <div class="report-link-grid">${cards}</div>
     </section>
   `;
+
+  const fileInput = document.getElementById('arquivoLoteRelatorios');
+  const obsInput = document.getElementById('observacoesLoteRelatorios');
+  const statusEl = document.getElementById('statusLoteRelatorios');
+  const listEl = document.getElementById('listaLoteRelatorios');
+  const btnValidar = document.getElementById('btnValidarLoteRelatorios');
+  const btnImportar = document.getElementById('btnImportarLoteRelatorios');
+
+  const renderList = () => {
+    const files = Array.from(fileInput?.files || []);
+    if (!files.length) {
+      statusEl.textContent = 'Nenhum arquivo selecionado.';
+      listEl.innerHTML = 'Aguardando seleção de arquivos.';
+      return [];
+    }
+
+    const rows = files.map((file) => {
+      const detectedKey = detectReportKeyFromFileName(file.name);
+      const cfg = detectedKey ? getConfig(detectedKey) : null;
+      const issue = detectedKey ? validateFile(file, cfg) : 'Tipo de relatório não identificado pelo nome do arquivo.';
+      const ok = !issue;
+
+      return {
+        file,
+        detectedKey,
+        cfg,
+        issue,
+        ok
+      };
+    });
+
+    const okCount = rows.filter((row) => row.ok).length;
+    const failCount = rows.length - okCount;
+
+    statusEl.textContent = `${rows.length} arquivo(s) selecionado(s) · ${okCount} pronto(s) para envio · ${failCount} com pendência`;
+
+    listEl.innerHTML = rows.map((row) => `
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);">
+        <div>
+          <strong>${row.file.name}</strong><br>
+          <span style="opacity:.8;">${formatBytes(row.file.size)}</span>
+        </div>
+        <div style="text-align:right;">
+          <div>${row.cfg?.titulo || 'Não identificado'}</div>
+          <span class="status-pill ${row.ok ? 'success' : 'danger'}">${row.ok ? 'Pronto' : (row.issue || 'Erro')}</span>
+        </div>
+      </div>
+    `).join('');
+
+    return rows;
+  };
+
+  fileInput?.addEventListener('change', renderList);
+
+  btnValidar?.addEventListener('click', () => {
+    renderList();
+  });
+
+  btnImportar?.addEventListener('click', async () => {
+    const rows = renderList();
+    if (!rows.length) {
+      statusEl.textContent = 'Selecione ao menos um arquivo para enviar.';
+      return;
+    }
+
+    const validRows = rows.filter((row) => row.ok);
+    const invalidRows = rows.filter((row) => !row.ok);
+
+    if (!validRows.length) {
+      statusEl.textContent = 'Nenhum arquivo válido para envio.';
+      return;
+    }
+
+    btnImportar.disabled = true;
+    btnValidar.disabled = true;
+
+    const results = [];
+
+    try {
+      for (let i = 0; i < validRows.length; i += 1) {
+        const row = validRows[i];
+        statusEl.textContent = `Enviando ${i + 1} de ${validRows.length}: ${row.file.name}`;
+        try {
+          await uploadSingleReport({
+            file: row.file,
+            key: row.detectedKey,
+            cfg: row.cfg,
+            observations: obsInput?.value?.trim() || null,
+            ctx
+          });
+          results.push({ name: row.file.name, ok: true, title: row.cfg?.titulo || row.detectedKey });
+        } catch (error) {
+          console.error(error);
+          results.push({ name: row.file.name, ok: false, error: error.message || String(error), title: row.cfg?.titulo || row.detectedKey });
+        }
+      }
+
+      invalidRows.forEach((row) => {
+        results.push({ name: row.file.name, ok: false, error: row.issue || 'Arquivo inválido', title: row.cfg?.titulo || 'Não identificado' });
+      });
+
+      const sentCount = results.filter((item) => item.ok).length;
+      const failCount = results.length - sentCount;
+
+      statusEl.textContent = `Lote finalizado · ${sentCount} enviado(s) · ${failCount} com erro`;
+
+      listEl.innerHTML = results.map((item) => `
+        <div style="display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);">
+          <div>
+            <strong>${item.name}</strong><br>
+            <span style="opacity:.8;">${item.title || '-'}</span>
+          </div>
+          <div style="text-align:right;">
+            <span class="status-pill ${item.ok ? 'success' : 'danger'}">${item.ok ? 'Enviado' : 'Erro'}</span>
+            ${item.ok ? '' : `<div style="margin-top:6px;max-width:420px;opacity:.85;">${item.error || 'Falha no envio'}</div>`}
+          </div>
+        </div>
+      `).join('');
+
+      if (sentCount > 0) {
+        fileInput.value = '';
+        obsInput.value = '';
+      }
+    } finally {
+      btnImportar.disabled = false;
+      btnValidar.disabled = false;
+    }
+  });
 }
 
 async function loadHistory(key, historyEl, emptyEl) {
+(key, historyEl, emptyEl) {
   historyEl.innerHTML = '';
   emptyEl.textContent = 'Carregando histórico...';
 
@@ -250,6 +442,7 @@ async function loadHistory(key, historyEl, emptyEl) {
 }
 
 
+
 async function insertMetadataRecord(payload) {
   const attempts = [
     payload,
@@ -284,7 +477,6 @@ async function insertMetadataRecord(payload) {
 
     const message = String(error.message || '').toLowerCase();
 
-    // Se faltou a coluna/constraint legada "tipo", tenta a próxima estratégia.
     if (
       message.includes('column "tipo"') ||
       message.includes("column 'tipo'") ||
@@ -300,7 +492,39 @@ async function insertMetadataRecord(payload) {
   if (lastError) throw lastError;
 }
 
-function renderDetail(content, ctx, key) {
+async function uploadSingleReport({ file, key, cfg, observations = null, ctx }) {
+  const issue = validateFile(file, cfg);
+  if (issue) throw new Error(issue);
+
+  const storagePath = buildStoragePath(key, file);
+
+  const { error: uploadError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath, file, { cacheControl: '3600', upsert: false, contentType: file.type || undefined });
+
+  if (uploadError) throw uploadError;
+
+  const payload = {
+    tipo_relatorio: key,
+    titulo_relatorio: cfg.titulo,
+    arquivo_nome_original: file.name,
+    arquivo_nome_storage: sanitizeFileName(file.name),
+    storage_bucket: STORAGE_BUCKET,
+    storage_path: storagePath,
+    tamanho_bytes: file.size,
+    mime_type: file.type || null,
+    status: 'enviado',
+    observacoes: observations,
+    importado_por: ctx.user?.id || null,
+    importado_por_nome: ctx.user?.name || null
+  };
+
+  await insertMetadataRecord(payload);
+  return { storagePath, payload };
+}
+
+function renderDetail
+(content, ctx, key) {
   const cfg = getConfig(key);
 
   content.innerHTML = `
@@ -424,30 +648,13 @@ function renderDetail(content, ctx, key) {
 
     try {
       setStatus('Enviando arquivo para o Storage...');
-      const storagePath = buildStoragePath(key, file);
-      const { error: uploadError } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .upload(storagePath, file, { cacheControl: '3600', upsert: false, contentType: file.type || undefined });
-
-      if (uploadError) throw uploadError;
-
-      setStatus('Registrando upload no banco...');
-      const payload = {
-        tipo_relatorio: key,
-        titulo_relatorio: cfg.titulo,
-        arquivo_nome_original: file.name,
-        arquivo_nome_storage: sanitizeFileName(file.name),
-        storage_bucket: STORAGE_BUCKET,
-        storage_path: storagePath,
-        tamanho_bytes: file.size,
-        mime_type: file.type || null,
-        status: 'enviado',
-        observacoes: obsInput.value?.trim() || null,
-        importado_por: ctx.user?.id || null,
-        importado_por_nome: ctx.user?.name || null
-      };
-
-      await insertMetadataRecord(payload);
+      await uploadSingleReport({
+        file,
+        key,
+        cfg,
+        observations: obsInput.value?.trim() || null,
+        ctx
+      });
 
       fileInput.value = '';
       obsInput.value = '';
@@ -469,7 +676,7 @@ function renderDetail(content, ctx, key) {
 initProtectedPage('Relatórios', (content, ctx) => {
   const key = getKey();
   if (!key) {
-    renderHub(content);
+    renderHub(content, ctx);
     return;
   }
   renderDetail(content, ctx, key);
