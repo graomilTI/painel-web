@@ -453,9 +453,19 @@ import { initProtectedPage } from './pageInit.js';
   }
 
   async function loadSupervisoesCatalog() {
-    const res = await api('/api/admin/users/supervisoes');
-    state.supervisoesCatalogo = Array.isArray(res.items) ? res.items : [];
+    try {
+      const res = await api('/api/admin/users/supervisoes');
+      state.supervisoesCatalogo = Array.isArray(res.items) ? res.items : [];
+    } catch (err) {
+      console.warn('Falha ao carregar catálogo de supervisões:', err);
+      state.supervisoesCatalogo = [];
+      setFeedback('Não foi possível carregar as supervisões liberadas pela API. Você ainda pode listar usuários, mas o cadastro/edição dependerá desse endpoint.', true);
+    }
     renderSupervisoes();
+  }
+
+  async function handleAdminSupervisoesList() {
+    return loadSupervisoesCatalog();
   }
 
   async function loadUserModuleIds(userId) {
