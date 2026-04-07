@@ -1,6 +1,51 @@
 import { initProtectedPage } from './pageInit.js';
 import { getSession } from './auth.js';
 
+const SUPERVISOES_DISPONIVEIS = [
+  "TOCANTINS - Geral",
+  "PARA - Sul",
+  "GOIAS 1 - Rio Verde",
+  "RIO GRANDE DO SUL - Cruz Alta",
+  "Londrina",
+  "LOG1000",
+  "RIO GRANDE DO SUL - Santa Rosa",
+  "MINAS GERAIS - Geral",
+  "GERAL - Administrativo",
+  "CASCAVEL - Geral",
+  "MATO GROSSO MT2 - Sul",
+  "MATO GROSSO MT3 - Confresa",
+  "MATO GROSSO MT3 - Querencia",
+  "SP - Cândido Mota",
+  "PARA - Norte",
+  "MATO GROSSO MT1 - Lucas do Rio Verde/Nova Mutum",
+  "MATO GROSSO MT1 - Sinop",
+  "MATO GROSSO MT4 - Geral",
+  "BAHIA - Geral",
+  "Maringa e Terminais",
+  "MATO GROSSO DO SUL - Geral",
+  "RIO GRANDE DO SUL - Palmeira das Missões",
+  "PONTA GROSSA - Geral",
+  "GOIAS 4 - Cristalina",
+  "GERAL - Operacional",
+  "SP - Avaré",
+  "Geral - Frota",
+  "MATO GROSSO MT2 - Campo Verde",
+  "CASCAVEL - Campo Mourão",
+  "RIO GRANDE DO SUL - Norte",
+  "RIO GRANDE DO SUL - Geral",
+  "Geral - Estoque",
+  "Geral - Logistica",
+  "MATO GROSSO MT2 - Leste",
+  "MATO GROSSO MT1 - Sorriso",
+  "SP - Araçatuba",
+  "GOIAS 2 - Jataí",
+  "Geral - Troca de Notas",
+  "MARANHAO - Geral",
+  "GOIAS 3 - Pontalina",
+  "MATO GROSSO MT1 - Geral",
+  "AGROTRADER"
+];
+
 const state = {
   profiles: [],
   modules: [],
@@ -457,7 +502,7 @@ function normalizeList(values = []) {
 }
 
 function getAllSupervisoesOptions() {
-  const set = new Set();
+  const set = new Set(SUPERVISOES_DISPONIVEIS);
   state.users.forEach((user) => {
     (Array.isArray(user.supervisoes) ? user.supervisoes : []).forEach((sup) => {
       const value = String(sup || '').trim();
