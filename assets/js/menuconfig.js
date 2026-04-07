@@ -11,10 +11,14 @@ window.MENU_CONFIG = {
     { nome: "AUDITORIA", modulos: ["Logs", "Relatórios"] },
     { nome: "DIRETORIA", modulos: [] },
     { nome: "RELATÓRIOS", modulos: [
+      "Importar Relatórios",
       "Caixa do Fornecedor",
       "Relatório de Despesas",
       "Notas Fiscais",
       "Produção Consolidada",
+      "Resultado Diário",
+      "Relatório de Cargas",
+      "Serviços Faturados",
       "Colaboradores",
       "Produção",
       "Patrimônios · Importar arquivo"
