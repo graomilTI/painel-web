@@ -1,6 +1,7 @@
 
 import { getSession } from './auth.js';
 import { initProtectedPage } from './pageInit.js';
+import { supabase } from './supabaseClient.js';
 
 (function () {
   const state = {
@@ -9,6 +10,8 @@ import { initProtectedPage } from './pageInit.js';
     editingUserId: null,
     collaboratorResults: [],
     collaboratorSearchToken: 0,
+    supervisoesCatalogo: [],
+    currentUserContext: null,
   };
 
   const qs = (s, e = document) => e.querySelector(s);
@@ -40,6 +43,23 @@ import { initProtectedPage } from './pageInit.js';
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function parseSupervisaoList(value) {
+    if (Array.isArray(value)) {
+      return [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))];
+    }
+
+    return [...new Set(
+      String(value || '')
+        .split(/[,;|\n]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )];
+  }
+
+  function currentUserIsMaster() {
+    return !!state.currentUserContext?.user?.is_master;
   }
 
   function debounce(fn, wait = 250) {
@@ -180,6 +200,7 @@ import { initProtectedPage } from './pageInit.js';
                   <th>E-mail</th>
                   <th>Nível</th>
                   <th>Setor</th>
+                  <th>Supervisão</th>
                   <th>Status</th>
                   <th>Módulos</th>
                   <th style="width:260px;">Ações</th>
@@ -223,6 +244,13 @@ import { initProtectedPage } from './pageInit.js';
                 <div class="au-field">
                   <label for="auSetor">Setor</label>
                   <input id="auSetor" class="au-input" type="text" />
+                </div>
+
+                <div class="au-field au-field-full" id="auSupervisaoField" style="display:none;">
+                  <label>Supervisões liberadas</label>
+                  <div class="au-hint">Selecione as supervisões que este usuário poderá acessar.</div>
+                  <input id="auSupervisaoBusca" class="au-input" type="text" placeholder="Buscar supervisão" />
+                  <div id="auSupervisaoOptions" class="au-supervisao-grid"></div>
                 </div>
 
                 <div class="au-field">
@@ -292,8 +320,11 @@ import { initProtectedPage } from './pageInit.js';
         .au-search-item strong{display:block}
         .au-search-item span{display:block;font-size:12px;opacity:.75;margin-top:4px}
         .au-empty-search{padding:10px 12px;opacity:.75}
+        .au-supervisao-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;max-height:220px;overflow:auto;padding:4px 0}
+        .au-supervisao-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid #1f2937;border-radius:10px;background:#111827}
+        .au-supervisao-empty{padding:10px 12px;border:1px dashed #334155;border-radius:10px;opacity:.75}
         .au-modal-footer{margin-top:16px;display:flex;justify-content:flex-end}
-        @media (max-width:1000px){.au-grid{grid-template-columns:1fr}.au-module-groups{grid-template-columns:1fr}.au-header{flex-direction:column;align-items:stretch}}
+        @media (max-width:1000px){.au-grid{grid-template-columns:1fr}.au-module-groups,.au-supervisao-grid{grid-template-columns:1fr}.au-header{flex-direction:column;align-items:stretch}}
       </style>
     `;
 
@@ -302,6 +333,7 @@ import { initProtectedPage } from './pageInit.js';
     qs('#auFiltro').addEventListener('input', renderTable);
     qs('#auForm').addEventListener('submit', onSubmitForm);
     qs('#auNivel').addEventListener('change', () => renderModulesForNivel(qs('#auNivel').value, getSelectedModules()));
+    qs('#auSupervisaoBusca')?.addEventListener('input', renderSupervisaoOptions);
     bindCollaboratorSearch();
   }
 
@@ -350,6 +382,78 @@ import { initProtectedPage } from './pageInit.js';
     `).join('');
   }
 
+  function getSelectedSupervisoes() {
+    return qsa('#auSupervisaoOptions input:checked').map((el) => el.value);
+  }
+
+  function renderSupervisaoOptions() {
+    const wrap = qs('#auSupervisaoField');
+    const container = qs('#auSupervisaoOptions');
+    if (!wrap || !container) return;
+
+    if (!currentUserIsMaster()) {
+      wrap.style.display = 'none';
+      container.innerHTML = '';
+      return;
+    }
+
+    wrap.style.display = 'flex';
+    const selected = new Set(parseSupervisaoList(qs('#auSupervisaoOptions')?.dataset.selected || ''));
+    const term = normalizeCode(qs('#auSupervisaoBusca')?.value || '');
+    const items = state.supervisoesCatalogo.filter((name) => !term || normalizeCode(name).includes(term));
+
+    if (!items.length) {
+      container.innerHTML = '<div class="au-supervisao-empty">Nenhuma supervisão encontrada.</div>';
+      return;
+    }
+
+    container.innerHTML = items.map((name) => {
+      const checked = selected.has(name) ? 'checked' : '';
+      return `<label class="au-supervisao-item"><input type="checkbox" value="${esc(name)}" ${checked} /><span>${esc(name)}</span></label>`;
+    }).join('');
+
+    qsa('#auSupervisaoOptions input[type="checkbox"]', container).forEach((input) => {
+      input.addEventListener('change', () => {
+        const current = new Set(parseSupervisaoList(container.dataset.selected || ''));
+        if (input.checked) current.add(input.value);
+        else current.delete(input.value);
+        container.dataset.selected = [...current].join(', ');
+      });
+    });
+  }
+
+  function presetSupervisoes(values = []) {
+    const container = qs('#auSupervisaoOptions');
+    if (!container) return;
+    container.dataset.selected = parseSupervisaoList(values).join(', ');
+    renderSupervisaoOptions();
+  }
+
+  async function loadSupervisoesCatalog() {
+    const tables = ['supervisoes', 'colaboradores', 'colaborador_snapshot'];
+    const all = new Set();
+
+    for (const table of tables) {
+      try {
+        const { data, error } = await supabase
+          .from(table)
+          .select('nome, supervisao')
+          .limit(5000);
+
+        if (error) continue;
+        for (const row of data || []) {
+          const value = row?.nome || row?.supervisao;
+          if (String(value || '').trim()) all.add(String(value).trim());
+        }
+        if (all.size) break;
+      } catch (err) {
+        console.warn(`Falha ao carregar supervisões de ${table}:`, err);
+      }
+    }
+
+    state.supervisoesCatalogo = [...all].sort((a, b) => a.localeCompare(b));
+  }
+
   function renderTable() {
     const tbody = qs('#auTableBody');
     if (!tbody) return;
@@ -376,6 +480,7 @@ import { initProtectedPage } from './pageInit.js';
           <td>${esc(u.email || '')}</td>
           <td>${esc(nivel === 'adm' ? 'ADM' : 'Gestor')}</td>
           <td>${esc(u.setor || '')}</td>
+          <td>${parseSupervisaoList(u.supervisao || u.supervisoes).map((item) => `<span class="au-mod-chip">${esc(item)}</span>`).join('') || '<span style="opacity:.7;">Todas</span>'}</td>
           <td><span class="au-badge ${statusClass}">${statusLabel}</span></td>
           <td>${modulosHtml}</td>
           <td>
@@ -512,6 +617,8 @@ import { initProtectedPage } from './pageInit.js';
     qs('#auEmail').value = user?.email || '';
     qs('#auNivel').value = nivel;
     qs('#auSetor').value = user?.setor || '';
+    qs('#auSupervisaoBusca').value = '';
+    presetSupervisoes(user?.supervisoes || user?.supervisao || '');
     qs('#auAtivo').value = (user?.status || 'ativo') === 'ativo' ? 'true' : 'false';
     qs('#auPassword').value = '';
     state.collaboratorResults = [];
@@ -584,6 +691,7 @@ import { initProtectedPage } from './pageInit.js';
     const status = qs('#auAtivo').value === 'true' ? 'ativo' : 'inativo';
     const password = qs('#auPassword').value;
     const modulos = getSelectedModules();
+    const supervisoes = getSelectedSupervisoes();
 
     const payload = {
       id,
@@ -595,6 +703,8 @@ import { initProtectedPage } from './pageInit.js';
       setor,
       status,
       modulos,
+      supervisao: supervisoes.join(', '),
+      supervisoes,
     };
 
     const isCreate = !id;
@@ -620,11 +730,16 @@ import { initProtectedPage } from './pageInit.js';
     }
   }
 
-  async function boot(content) {
+  async function boot(content, userContext) {
+    state.currentUserContext = userContext || null;
     renderBase(content);
     try {
       setFeedback('Carregando...');
       await loadModulesCatalog();
+      if (currentUserIsMaster()) {
+        await loadSupervisoesCatalog();
+        renderSupervisaoOptions();
+      }
       await loadUsers();
       setFeedback('');
     } catch (err) {
