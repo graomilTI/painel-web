@@ -404,88 +404,101 @@ function bindPageEvents(content) {
 
 function ensureModal() {
   let overlay = document.getElementById('auModalOverlay');
+
   if (!overlay) {
     overlay = document.createElement('div');
-  overlay.id = 'auModalOverlay';
-  overlay.className = 'au-overlay';
-  overlay.innerHTML = `
-    <div class="au-modal" role="dialog" aria-modal="true" aria-labelledby="auModalTitle">
-      <div class="au-modal-head">
-        <div>
-          <h3 id="auModalTitle">Usuário</h3>
-          <p id="auModalSubtitle">Gerencie acessos e permissões.</p>
-        </div>
-        <button class="au-close" type="button" id="auModalClose">×</button>
-      </div>
-      <div class="au-modal-body">
-        <section class="au-card">
-          <h4>Dados do usuário</h4>
-          <div class="au-form-grid">
-            <div class="au-field full au-search-box" id="auCollaboratorWrap">
-              <label for="auCollaboratorSearch">Vincular colaborador</label>
-              <input class="au-input" id="auCollaboratorSearch" type="text" placeholder="Digite nome, CPF ou e-mail do colaborador">
-              <div class="au-search-results" id="auCollaboratorResults"></div>
-              <div id="auSelectedCollaborator"></div>
-            </div>
-            <div class="au-field">
-              <label for="auNome">Nome</label>
-              <input class="au-input" id="auNome" type="text" autocomplete="name">
-            </div>
-            <div class="au-field">
-              <label for="auEmail">E-mail</label>
-              <input class="au-input" id="auEmail" type="email" autocomplete="email">
-            </div>
-            <div class="au-field">
-              <label for="auPerfil">Perfil</label>
-              <select class="au-select" id="auPerfil"></select>
-            </div>
-            <div class="au-field">
-              <label for="auStatus">Status</label>
-              <select class="au-select" id="auStatus">
-                <option value="ativo">Ativo</option>
-                <option value="inativo">Inativo</option>
-              </select>
-            </div>
-            <div class="au-field full">
-              <label for="auSetor">Setor</label>
-              <input class="au-input" id="auSetor" type="text" placeholder="Ex.: Diretoria, RH, Logística">
-            </div>
-            <div class="au-field full">
-              <label>Supervisões liberadas</label>
-              <div class="au-section-tools">
-                <button class="au-link-btn" type="button" id="auToggleAllSupervisoes">Marcar / desmarcar todas</button>
-              </div>
-              <div class="au-check-grid" id="auSupervisoesGrid"></div>
-              <div class="au-section-note">Selecione em checkbox as supervisões que o usuário poderá acessar.</div>
-            </div>
-            <div class="au-field full">
-              <label for="auPassword">Senha ${'${mode}'}</label>
-              <input class="au-input" id="auPassword" type="text" placeholder="Deixe em branco para gerar automaticamente">
-            </div>
+    overlay.id = 'auModalOverlay';
+    overlay.className = 'au-overlay';
+    overlay.innerHTML = `
+      <div class="au-modal" role="dialog" aria-modal="true" aria-labelledby="auModalTitle">
+        <div class="au-modal-head">
+          <div>
+            <h3 id="auModalTitle">Usuário</h3>
+            <p id="auModalSubtitle">Gerencie acessos e permissões.</p>
           </div>
-        </section>
-        <section class="au-card">
-          <h4>Módulos liberados</h4>
-          <div class="au-section-note">Selecione os módulos que esse usuário pode acessar individualmente.</div>
-          <div class="au-check-grid" id="auModulesGrid"></div>
-        </section>
+          <button class="au-close" type="button" id="auModalClose">×</button>
+        </div>
+        <div class="au-modal-body">
+          <section class="au-card">
+            <h4>Dados do usuário</h4>
+            <div class="au-form-grid">
+              <div class="au-field full au-search-box" id="auCollaboratorWrap">
+                <label for="auCollaboratorSearch">Vincular colaborador</label>
+                <input class="au-input" id="auCollaboratorSearch" type="text" placeholder="Digite nome, CPF ou e-mail do colaborador">
+                <div class="au-search-results" id="auCollaboratorResults"></div>
+                <div id="auSelectedCollaborator"></div>
+              </div>
+              <div class="au-field">
+                <label for="auNome">Nome</label>
+                <input class="au-input" id="auNome" type="text" autocomplete="name">
+              </div>
+              <div class="au-field">
+                <label for="auEmail">E-mail</label>
+                <input class="au-input" id="auEmail" type="email" autocomplete="email">
+              </div>
+              <div class="au-field">
+                <label for="auPerfil">Perfil</label>
+                <select class="au-select" id="auPerfil"></select>
+              </div>
+              <div class="au-field">
+                <label for="auStatus">Status</label>
+                <select class="au-select" id="auStatus">
+                  <option value="ativo">Ativo</option>
+                  <option value="inativo">Inativo</option>
+                </select>
+              </div>
+              <div class="au-field full">
+                <label for="auSetor">Setor</label>
+                <input class="au-input" id="auSetor" type="text" placeholder="Ex.: Diretoria, RH, Logística">
+              </div>
+              <div class="au-field full">
+                <label>Supervisões liberadas</label>
+                <div class="au-section-tools">
+                  <button class="au-link-btn" type="button" id="auToggleAllSupervisoes">Marcar / desmarcar todas</button>
+                </div>
+                <div class="au-check-grid" id="auSupervisoesGrid"></div>
+                <div class="au-section-note">Selecione em checkbox as supervisões que o usuário poderá acessar.</div>
+              </div>
+              <div class="au-field full">
+                <label for="auPassword">Senha</label>
+                <input class="au-input" id="auPassword" type="text" placeholder="Deixe em branco para gerar automaticamente">
+              </div>
+            </div>
+          </section>
+          <section class="au-card">
+            <h4>Módulos liberados</h4>
+            <div class="au-section-note">Selecione os módulos que esse usuário pode acessar individualmente.</div>
+            <div class="au-check-grid" id="auModulesGrid"></div>
+          </section>
+        </div>
+        <div class="au-feedback" id="auModalFeedback" style="margin:0 22px 18px"></div>
+        <div class="au-modal-actions">
+          <button class="au-btn au-btn-ghost" type="button" id="auModalCancel">Cancelar</button>
+          <button class="au-btn au-btn-primary" type="button" id="auModalSave">Salvar</button>
+        </div>
       </div>
-      <div class="au-feedback" id="auModalFeedback" style="margin:0 22px 18px"></div>
-      <div class="au-modal-actions">
-        <button class="au-btn au-btn-ghost" type="button" id="auModalCancel">Cancelar</button>
-        <button class="au-btn au-btn-primary" type="button" id="auModalSave">Salvar</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
+    `;
+    document.body.appendChild(overlay);
+  }
 
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) closeModal();
-  });
-  overlay.querySelector('#auModalClose')?.addEventListener('click', closeModal);
-  overlay.querySelector('#auModalCancel')?.addEventListener('click', closeModal);
-  overlay.querySelector('#auModalSave')?.addEventListener('click', handleSaveModal);
-  bindCollaboratorSearch(overlay);
+  if (overlay.dataset.bound !== '1') {
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) closeModal();
+    });
+    overlay.querySelector('#auModalClose')?.addEventListener('click', closeModal);
+    overlay.querySelector('#auModalCancel')?.addEventListener('click', closeModal);
+    overlay.querySelector('#auModalSave')?.addEventListener('click', handleSaveModal);
+    overlay.querySelector('#auToggleAllSupervisoes')?.addEventListener('click', () => {
+      const boxes = [...overlay.querySelectorAll('#auSupervisoesGrid input[type="checkbox"]')];
+      if (!boxes.length) return;
+      const shouldCheck = boxes.some((box) => !box.checked);
+      boxes.forEach((box) => {
+        box.checked = shouldCheck;
+      });
+    });
+    bindCollaboratorSearch(overlay);
+    overlay.dataset.bound = '1';
+  }
 
   return overlay;
 }
