@@ -404,9 +404,8 @@ function bindPageEvents(content) {
 
 function ensureModal() {
   let overlay = document.getElementById('auModalOverlay');
-  if (overlay) return overlay;
-
-  overlay = document.createElement('div');
+  if (!overlay) {
+    overlay = document.createElement('div');
   overlay.id = 'auModalOverlay';
   overlay.className = 'au-overlay';
   overlay.innerHTML = `
