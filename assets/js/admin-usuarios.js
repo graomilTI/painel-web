@@ -1,17 +1,15 @@
 
 import { getSession } from './auth.js';
 import { initProtectedPage } from './pageInit.js';
-import { supabase } from './supabaseClient.js';
 
 (function () {
   const state = {
     users: [],
     modulosCatalogo: [],
+    supervisoesCatalogo: [],
     editingUserId: null,
     collaboratorResults: [],
     collaboratorSearchToken: 0,
-    supervisoesCatalogo: [],
-    currentUserContext: null,
   };
 
   const qs = (s, e = document) => e.querySelector(s);
@@ -43,23 +41,6 @@ import { supabase } from './supabaseClient.js';
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
-  }
-
-  function parseSupervisaoList(value) {
-    if (Array.isArray(value)) {
-      return [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))];
-    }
-
-    return [...new Set(
-      String(value || '')
-        .split(/[,;|\n]+/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-    )];
-  }
-
-  function currentUserIsMaster() {
-    return !!state.currentUserContext?.user?.is_master;
   }
 
   function debounce(fn, wait = 250) {
@@ -200,7 +181,6 @@ import { supabase } from './supabaseClient.js';
                   <th>E-mail</th>
                   <th>Nível</th>
                   <th>Setor</th>
-                  <th>Supervisão</th>
                   <th>Status</th>
                   <th>Módulos</th>
                   <th style="width:260px;">Ações</th>
@@ -246,13 +226,6 @@ import { supabase } from './supabaseClient.js';
                   <input id="auSetor" class="au-input" type="text" />
                 </div>
 
-                <div class="au-field au-field-full" id="auSupervisaoField" style="display:none;">
-                  <label>Supervisões liberadas</label>
-                  <div class="au-hint">Selecione as supervisões que este usuário poderá acessar.</div>
-                  <input id="auSupervisaoBusca" class="au-input" type="text" placeholder="Buscar supervisão" />
-                  <div id="auSupervisaoOptions" class="au-supervisao-grid"></div>
-                </div>
-
                 <div class="au-field">
                   <label for="auAtivo">Status</label>
                   <select id="auAtivo" class="au-input">
@@ -264,6 +237,12 @@ import { supabase } from './supabaseClient.js';
                 <div class="au-field au-field-full">
                   <label for="auPassword">Senha</label>
                   <input id="auPassword" class="au-input" type="password" placeholder="No cadastro é obrigatória. Na edição, preencha só se quiser trocar." autocomplete="new-password" />
+                </div>
+
+                <div class="au-field au-field-full">
+                  <label>Supervisões liberadas</label>
+                  <div id="auSupervisoesHint" class="au-hint">Selecione as supervisões que este usuário poderá acessar.</div>
+                  <div id="auSupervisoesContainer" class="au-supervisoes-wrap"></div>
                 </div>
 
                 <div class="au-field au-field-full">
@@ -309,6 +288,10 @@ import { supabase } from './supabaseClient.js';
         .au-field-search{position:relative}
         .au-field-full{grid-column:1 / -1}
         .au-hint{font-size:13px;opacity:.8;margin-bottom:8px}
+        .au-supervisoes-wrap{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+        .au-supervisao-item{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #1f2937;border-radius:10px;background:#111827}
+        .au-supervisao-item input{accent-color:#166534}
+        .au-supervisoes-empty{padding:10px 12px;border:1px dashed #334155;border-radius:10px;background:#0f172a;opacity:.8}
         .au-module-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
         .au-module-group{border:1px solid #1f2937;border-radius:12px;padding:12px;background:#0f172a}
         .au-module-group h4{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;opacity:.86}
@@ -320,11 +303,8 @@ import { supabase } from './supabaseClient.js';
         .au-search-item strong{display:block}
         .au-search-item span{display:block;font-size:12px;opacity:.75;margin-top:4px}
         .au-empty-search{padding:10px 12px;opacity:.75}
-        .au-supervisao-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;max-height:220px;overflow:auto;padding:4px 0}
-        .au-supervisao-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid #1f2937;border-radius:10px;background:#111827}
-        .au-supervisao-empty{padding:10px 12px;border:1px dashed #334155;border-radius:10px;opacity:.75}
         .au-modal-footer{margin-top:16px;display:flex;justify-content:flex-end}
-        @media (max-width:1000px){.au-grid{grid-template-columns:1fr}.au-module-groups,.au-supervisao-grid{grid-template-columns:1fr}.au-header{flex-direction:column;align-items:stretch}}
+        @media (max-width:1000px){.au-grid{grid-template-columns:1fr}.au-supervisoes-wrap{grid-template-columns:1fr}.au-module-groups{grid-template-columns:1fr}.au-header{flex-direction:column;align-items:stretch}}
       </style>
     `;
 
@@ -333,8 +313,8 @@ import { supabase } from './supabaseClient.js';
     qs('#auFiltro').addEventListener('input', renderTable);
     qs('#auForm').addEventListener('submit', onSubmitForm);
     qs('#auNivel').addEventListener('change', () => renderModulesForNivel(qs('#auNivel').value, getSelectedModules()));
-    qs('#auSupervisaoBusca')?.addEventListener('input', renderSupervisaoOptions);
     bindCollaboratorSearch();
+    renderSupervisoes();
   }
 
   function setFeedback(msg, isError = false) {
@@ -349,6 +329,40 @@ import { supabase } from './supabaseClient.js';
     el.style.borderColor = isError ? '#7f1d1d' : '#334155';
     el.style.background = isError ? 'rgba(127,29,29,.15)' : '#1e293b';
     el.textContent = msg;
+  }
+
+
+
+  function normalizeSupervisoesList(user = {}) {
+    if (Array.isArray(user.supervisoes)) {
+      return [...new Set(user.supervisoes.map((v) => String(v || '').trim()).filter(Boolean))];
+    }
+    if (typeof user.supervisao === 'string' && user.supervisao.trim()) {
+      return [...new Set(user.supervisao.split('|').map((v) => String(v || '').trim()).filter(Boolean))];
+    }
+    return [];
+  }
+
+  function renderSupervisoes(selected = []) {
+    const container = qs('#auSupervisoesContainer');
+    if (!container) return;
+
+    const itens = Array.isArray(state.supervisoesCatalogo) ? state.supervisoesCatalogo : [];
+    const selectedSet = new Set((selected || []).map((v) => String(v || '').trim()));
+
+    if (!itens.length) {
+      container.innerHTML = '<div class="au-supervisoes-empty">Nenhuma supervisão cadastrada/retornada pela API.</div>';
+      return;
+    }
+
+    container.innerHTML = itens.map((nome) => {
+      const checked = selectedSet.has(nome) ? 'checked' : '';
+      return `<label class="au-supervisao-item"><input type="checkbox" value="${esc(nome)}" ${checked} /><span>${esc(nome)}</span></label>`;
+    }).join('');
+  }
+
+  function getSelectedSupervisoes() {
+    return qsa('#auSupervisoesContainer input:checked').map((el) => el.value);
   }
 
   function renderModulesForNivel(nivel, selectedIds = []) {
@@ -382,78 +396,6 @@ import { supabase } from './supabaseClient.js';
     `).join('');
   }
 
-  function getSelectedSupervisoes() {
-    return qsa('#auSupervisaoOptions input:checked').map((el) => el.value);
-  }
-
-  function renderSupervisaoOptions() {
-    const wrap = qs('#auSupervisaoField');
-    const container = qs('#auSupervisaoOptions');
-    if (!wrap || !container) return;
-
-    if (!currentUserIsMaster()) {
-      wrap.style.display = 'none';
-      container.innerHTML = '';
-      return;
-    }
-
-    wrap.style.display = 'flex';
-    const selected = new Set(parseSupervisaoList(qs('#auSupervisaoOptions')?.dataset.selected || ''));
-    const term = normalizeCode(qs('#auSupervisaoBusca')?.value || '');
-    const items = state.supervisoesCatalogo.filter((name) => !term || normalizeCode(name).includes(term));
-
-    if (!items.length) {
-      container.innerHTML = '<div class="au-supervisao-empty">Nenhuma supervisão encontrada.</div>';
-      return;
-    }
-
-    container.innerHTML = items.map((name) => {
-      const checked = selected.has(name) ? 'checked' : '';
-      return `<label class="au-supervisao-item"><input type="checkbox" value="${esc(name)}" ${checked} /><span>${esc(name)}</span></label>`;
-    }).join('');
-
-    qsa('#auSupervisaoOptions input[type="checkbox"]', container).forEach((input) => {
-      input.addEventListener('change', () => {
-        const current = new Set(parseSupervisaoList(container.dataset.selected || ''));
-        if (input.checked) current.add(input.value);
-        else current.delete(input.value);
-        container.dataset.selected = [...current].join(', ');
-      });
-    });
-  }
-
-  function presetSupervisoes(values = []) {
-    const container = qs('#auSupervisaoOptions');
-    if (!container) return;
-    container.dataset.selected = parseSupervisaoList(values).join(', ');
-    renderSupervisaoOptions();
-  }
-
-  async function loadSupervisoesCatalog() {
-    const tables = ['supervisoes', 'colaboradores', 'colaborador_snapshot'];
-    const all = new Set();
-
-    for (const table of tables) {
-      try {
-        const { data, error } = await supabase
-          .from(table)
-          .select('nome, supervisao')
-          .limit(5000);
-
-        if (error) continue;
-        for (const row of data || []) {
-          const value = row?.nome || row?.supervisao;
-          if (String(value || '').trim()) all.add(String(value).trim());
-        }
-        if (all.size) break;
-      } catch (err) {
-        console.warn(`Falha ao carregar supervisões de ${table}:`, err);
-      }
-    }
-
-    state.supervisoesCatalogo = [...all].sort((a, b) => a.localeCompare(b));
-  }
-
   function renderTable() {
     const tbody = qs('#auTableBody');
     if (!tbody) return;
@@ -461,7 +403,8 @@ import { supabase } from './supabaseClient.js';
     const filtro = (qs('#auFiltro')?.value || '').trim().toLowerCase();
     const items = state.users.filter((u) => {
       const mods = userVisibleModulesForTable(u).map((m) => m.nome || m.codigo || '');
-      const text = [u.nome || '', u.email || '', u.setor || '', detectNivelFromUser(u), ...mods].join(' ').toLowerCase();
+      const supervisoes = normalizeSupervisoesList(u);
+      const text = [u.nome || '', u.email || '', u.setor || '', detectNivelFromUser(u), ...mods, ...supervisoes].join(' ').toLowerCase();
       return !filtro || text.includes(filtro);
     });
 
@@ -480,7 +423,6 @@ import { supabase } from './supabaseClient.js';
           <td>${esc(u.email || '')}</td>
           <td>${esc(nivel === 'adm' ? 'ADM' : 'Gestor')}</td>
           <td>${esc(u.setor || '')}</td>
-          <td>${parseSupervisaoList(u.supervisao || u.supervisoes).map((item) => `<span class="au-mod-chip">${esc(item)}</span>`).join('') || '<span style="opacity:.7;">Todas</span>'}</td>
           <td><span class="au-badge ${statusClass}">${statusLabel}</span></td>
           <td>${modulosHtml}</td>
           <td>
@@ -508,6 +450,12 @@ import { supabase } from './supabaseClient.js';
   async function loadModulesCatalog() {
     const res = await api('/api/admin/users/modulos');
     state.modulosCatalogo = res.items || [];
+  }
+
+  async function loadSupervisoesCatalog() {
+    const res = await api('/api/admin/users/supervisoes');
+    state.supervisoesCatalogo = Array.isArray(res.items) ? res.items : [];
+    renderSupervisoes();
   }
 
   async function loadUserModuleIds(userId) {
@@ -617,12 +565,11 @@ import { supabase } from './supabaseClient.js';
     qs('#auEmail').value = user?.email || '';
     qs('#auNivel').value = nivel;
     qs('#auSetor').value = user?.setor || '';
-    qs('#auSupervisaoBusca').value = '';
-    presetSupervisoes(user?.supervisoes || user?.supervisao || '');
     qs('#auAtivo').value = (user?.status || 'ativo') === 'ativo' ? 'true' : 'false';
     qs('#auPassword').value = '';
     state.collaboratorResults = [];
     renderCollaboratorResults();
+    renderSupervisoes(normalizeSupervisoesList(user || {}));
     renderModulesForNivel(nivel, selectedModuleIds);
     qs('#auModal').style.display = 'flex';
   }
@@ -703,7 +650,6 @@ import { supabase } from './supabaseClient.js';
       setor,
       status,
       modulos,
-      supervisao: supervisoes.join(', '),
       supervisoes,
     };
 
@@ -730,16 +676,12 @@ import { supabase } from './supabaseClient.js';
     }
   }
 
-  async function boot(content, userContext) {
-    state.currentUserContext = userContext || null;
+  async function boot(content) {
     renderBase(content);
     try {
       setFeedback('Carregando...');
       await loadModulesCatalog();
-      if (currentUserIsMaster()) {
-        await loadSupervisoesCatalog();
-        renderSupervisaoOptions();
-      }
+      await loadSupervisoesCatalog();
       await loadUsers();
       setFeedback('');
     } catch (err) {
