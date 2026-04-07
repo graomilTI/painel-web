@@ -119,6 +119,10 @@ function ensureStyles() {
     .au-loading{opacity:.7;pointer-events:none}
     .au-section-note{font-size:12px;color:#94a3b8;margin-top:-4px;margin-bottom:12px}
     .au-switch{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:#cbd5e1}
+    .au-check-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .au-check-grid .au-switch{padding:10px 12px;border:1px solid rgba(51,65,85,.72);border-radius:14px;background:#020617}
+    .au-section-tools{display:flex;justify-content:flex-end;margin:-4px 0 10px}
+    .au-link-btn{background:none;border:none;color:#86efac;font-weight:700;cursor:pointer;padding:0;font-size:12px}
     @media (max-width: 1100px){.au-grid,.au-filter-grid,.au-modal-body,.au-form-grid{grid-template-columns:1fr}.au-modal-body{display:block}.au-card + .au-card{margin-top:18px}}
   `;
   document.head.appendChild(style);
@@ -403,9 +407,12 @@ function ensureModal() {
               <input class="au-input" id="auSetor" type="text" placeholder="Ex.: Diretoria, RH, Logística">
             </div>
             <div class="au-field full">
-              <label for="auSupervisoes">Supervisões liberadas</label>
-              <textarea class="au-textarea" id="auSupervisoes" placeholder="Uma por linha ou separadas por vírgula"></textarea>
-              <div class="au-section-note">Use para restringir o acesso do usuário às supervisões liberadas.</div>
+              <label>Supervisões liberadas</label>
+              <div class="au-section-tools">
+                <button class="au-link-btn" type="button" id="auToggleAllSupervisoes">Marcar / desmarcar todas</button>
+              </div>
+              <div class="au-check-grid" id="auSupervisoesGrid"></div>
+              <div class="au-section-note">Selecione em checkbox as supervisões que o usuário poderá acessar.</div>
             </div>
             <div class="au-field full">
               <label for="auPassword">Senha ${'${mode}'}</label>
@@ -445,11 +452,44 @@ function closeModal() {
   overlay.classList.remove('is-open');
 }
 
-function parseSupervisoes(value) {
-  return [...new Set(String(value || '')
-    .split(/[\n,;|]+/g)
-    .map((item) => item.trim())
-    .filter(Boolean))];
+function normalizeList(values = []) {
+  return [...new Set((values || []).map((item) => String(item || '').trim()).filter(Boolean))];
+}
+
+function getAllSupervisoesOptions() {
+  const set = new Set();
+  state.users.forEach((user) => {
+    (Array.isArray(user.supervisoes) ? user.supervisoes : []).forEach((sup) => {
+      const value = String(sup || '').trim();
+      if (value) set.add(value);
+    });
+    const single = String(user.supervisao || '').trim();
+    if (single) set.add(single);
+  });
+  return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+function renderSupervisoes(selectedValues = [], extraValues = []) {
+  const wrap = document.getElementById('auSupervisoesGrid');
+  if (!wrap) return;
+  const selectedSet = new Set(normalizeList(selectedValues));
+  const options = normalizeList([...getAllSupervisoesOptions(), ...(extraValues || [])]);
+
+  wrap.innerHTML = options.length
+    ? options.map((sup) => `
+      <label class="au-switch">
+        <input type="checkbox" value="${escapeHtml(sup)}" ${selectedSet.has(String(sup)) ? 'checked' : ''}>
+        <span>${escapeHtml(sup)}</span>
+      </label>
+    `).join('')
+    : '<span class="au-sub">Nenhuma supervisão encontrada na base.</span>';
+}
+
+function getSelectedSupervisoes(overlay) {
+  return normalizeList(
+    [...overlay.querySelectorAll('#auSupervisoesGrid input[type="checkbox"]:checked')]
+      .map((input) => input.value)
+  );
 }
 
 function renderSelectedCollaborator(collaborator) {
@@ -509,7 +549,7 @@ function openUserModal(mode, user = null) {
   overlay.querySelector('#auEmail').value = user?.email || '';
   overlay.querySelector('#auStatus').value = String(user?.status || 'ativo').toLowerCase() === 'inativo' ? 'inativo' : 'ativo';
   overlay.querySelector('#auSetor').value = user?.setor || '';
-  overlay.querySelector('#auSupervisoes').value = Array.isArray(user?.supervisoes) ? user.supervisoes.join('\n') : '';
+  renderSupervisoes(user?.supervisoes || [], user?.supervisao ? [user.supervisao] : []);
   overlay.querySelector('#auPassword').value = '';
   overlay.querySelector('#auModalFeedback').className = 'au-feedback';
   overlay.querySelector('#auModalFeedback').textContent = '';
@@ -568,8 +608,12 @@ function bindCollaboratorSearch(overlay) {
             overlay.dataset.collaboratorId = collaborator.id;
             overlay.querySelector('#auNome').value = collaborator.nome || '';
             if (collaborator.email_empresa) overlay.querySelector('#auEmail').value = collaborator.email_empresa;
-            const currentSup = overlay.querySelector('#auSupervisoes').value.trim();
-            if (!currentSup && collaborator.supervisao) overlay.querySelector('#auSupervisoes').value = collaborator.supervisao;
+            const currentSup = getSelectedSupervisoes(overlay);
+            if (!currentSup.length && collaborator.supervisao) {
+              renderSupervisoes([collaborator.supervisao], [collaborator.supervisao]);
+            } else if (collaborator.supervisao) {
+              renderSupervisoes(currentSup, [collaborator.supervisao]);
+            }
             renderSelectedCollaborator(collaborator);
             results.classList.remove('is-open');
             results.innerHTML = '';
@@ -595,7 +639,7 @@ async function handleSaveModal() {
     perfil_codigo: overlay.querySelector('#auPerfil').value,
     status: overlay.querySelector('#auStatus').value,
     setor: overlay.querySelector('#auSetor').value.trim(),
-    supervisoes: parseSupervisoes(overlay.querySelector('#auSupervisoes').value),
+    supervisoes: getSelectedSupervisoes(overlay),
     modulos: moduleIds,
   };
   const password = overlay.querySelector('#auPassword').value.trim();
