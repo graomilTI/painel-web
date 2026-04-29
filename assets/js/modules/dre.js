@@ -70,6 +70,7 @@
   async function loadXlsx(){return loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js','XLSX');}
   async function loadHtml2Canvas(){return loadScript('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js','html2canvas');}
   async function loadJsPdf(){await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js','jspdf'); return window.jspdf.jsPDF;}
+  async function loadJsZip(){return loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js','JSZip');}
 
   function parseManifest(report){
     const raw=String(report?.observacoes||'').trim();
@@ -264,7 +265,10 @@
 
   function buildDre(){
     const src=state.reportsData;
-    const regionais=[...new Set([...src.desp.regionais,...src.nf.regionais,...src.prod.regionais])].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    const regionais=[...new Set([...src.desp.regionais,...src.nf.regionais,...src.prod.regionais])]
+      .map(mapReg)
+      .filter(r => r && norm(r) !== 'GERAL' && !isExcluded(r) && !isIgnored(r))
+      .sort((a,b)=>a.localeCompare(b,'pt-BR'));
     const regionalReports={}; regionais.forEach(r=>regionalReports[r]=buildForRegional(r,src));
     state.data={regionais, geral:buildForRegional('',src), regional:regionalReports};
     if(!state.regional && regionais.length) state.regional=regionais[0];
@@ -536,9 +540,9 @@
   function cell(label,v){ const neg=n(v)<0?' class="neg"':''; let txt; if(PERCENT_ROWS.has(label)) txt=fmtPct(v); else if(MONEY_ROWS.has(label)) txt=fmtMoney(v); else txt=fmtNum(v); return `<td${neg}>${txt}</td>`; }
   function renderTable(report){
     if(!report) return '<div class="dre-status show">Sem dados para exibir.</div>';
-    return `<div class="dre-table-wrap"><table class="dre-table"><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL</th></tr></thead><tbody>${report.main.map(r=>{const cls=['RECEITA LÍQUIDA','LUCRO BRUTO','LUCRO OPERACIONAL (EBTIDA)','LUCRO LÍQUIDO','MARGEM BRUTA','MARGEM EBTIDA'].includes(r.label)?'highlight':r.label==='RESULTADO FINAL'?'result':'';return `<tr class="${cls}"><td>${safe(r.label)}</td>${r.values.map(v=>cell(r.label,v)).join('')}${cell(r.label,r.total)}</tr>`;}).join('')}</tbody></table></div>${renderExtras(report.extras)}`;
+    return `<div class="dre-table-wrap"><table class="dre-table"><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL</th></tr></thead><tbody>${report.main.map(r=>{const cls=['RECEITA LÍQUIDA','LUCRO BRUTO','LUCRO OPERACIONAL (EBTIDA)','LUCRO LÍQUIDO','MARGEM BRUTA','MARGEM EBTIDA'].includes(r.label)?'highlight':r.label==='RESULTADO FINAL'?'result':'';return `<tr class="${cls}"><td>${safe(r.label)}</td>${r.values.map(v=>cell(r.label,v)).join('')}${cell(r.label,r.total)}</tr>`;}).join('')}</tbody></table></div>${renderExtras(report.extras, report)}`;
   }
-  function renderExtras(ex){
+  function renderExtras(ex, reportForTotals=null){
     if(!ex) return '';
     const rows=[
       ['Total Despesas',ex.totalDesp,'money'],
@@ -552,7 +556,7 @@
       ['Cargas',ex.cargas,'num']
     ];
     const format=(type,v)=> type==='money'?fmtMoney(v):type==='pct'?fmtPct(v):fmtNum(v);
-    return `<div class="dre-extra"><div class="dre-extra-box"><h4>INDICADORES OPERACIONAIS</h4><table><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL / MÉDIA</th></tr></thead><tbody>${rows.map(([label,arr,type])=>{const totalVal=type==='pct'?div(total(ex.volEmb),total(ex.volClass)):type==='money'&&label.includes('tonelada')?div(label.includes('Receita')?total(activeReport()?.vals?.rec):label.includes('Margem')?total(activeReport()?.vals?.res):total(ex.totalDesp), label.includes('classificado')?total(ex.volClass):total(ex.volEmb)):total(arr); return `<tr><td>${safe(label)}</td>${arr.map(v=>`<td>${format(type,v)}</td>`).join('')}<td>${format(type,totalVal)}</td></tr>`;}).join('')}</tbody></table></div></div>`;
+    return `<div class="dre-extra"><div class="dre-extra-box"><h4>INDICADORES OPERACIONAIS</h4><table><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL / MÉDIA</th></tr></thead><tbody>${rows.map(([label,arr,type])=>{const totalVal=type==='pct'?div(total(ex.volEmb),total(ex.volClass)):type==='money'&&label.includes('tonelada')?div(label.includes('Receita')?total((reportForTotals||activeReport())?.vals?.rec):label.includes('Margem')?total((reportForTotals||activeReport())?.vals?.res):total(ex.totalDesp), label.includes('classificado')?total(ex.volClass):total(ex.volEmb)):total(arr); return `<tr><td>${safe(label)}</td>${arr.map(v=>`<td>${format(type,v)}</td>`).join('')}<td>${format(type,totalVal)}</td></tr>`;}).join('')}</tbody></table></div></div>`;
   }
 
   function renderCharts(container, report){
@@ -576,24 +580,90 @@
     const cpt=div(total(report?.extras?.totalDesp||[]),volEmb);
     container.querySelector('#dreCards').innerHTML=`<div class="dre-card"><span>Receita Líquida</span><strong>${fmtMoney(rec)}</strong></div><div class="dre-card ${eb>=0?'positive':'negative'}"><span>EBTIDA</span><strong>${fmtMoney(eb)}</strong></div><div class="dre-card ${res>=0?'positive':'negative'}"><span>Resultado Final</span><strong>${fmtMoney(res)}</strong></div><div class="dre-card"><span>Volume Embarcado</span><strong>${fmtNum(volEmb)}</strong><small>Classificado: ${fmtNum(volClass)}</small></div><div class="dre-card"><span>Custo / Ton</span><strong>${fmtMoney(cpt)}</strong><small>Eficiência: ${fmtPct(div(volEmb,volClass))}</small></div>`;
     renderCharts(container,report);
-    container.querySelector('#dreReport').innerHTML=`<div class="dre-report-head"><div><h3>${safe(title)}</h3><p>Ano ${state.year} · Toneladas = Volume Classificado · Embarcado = Volume Embarcado + NHE + cad</p></div><strong>Grão 1000</strong></div>${renderTable(report)}`;
+    container.querySelector('#dreReport').innerHTML=renderReportHtml(title, `Ano ${state.year} · Toneladas = Volume Classificado · Embarcado = Volume Embarcado + NHE + cad`, report);
     const sel=container.querySelector('#regionalSelect');
     sel.innerHTML=(state.data?.regionais||[]).map(r=>`<option value="${safe(r)}" ${r===state.regional?'selected':''}>${safe(r)}</option>`).join('');
     sel.disabled=state.tab!=='regional';
   }
 
-  async function exportImage(){ const node=document.querySelector('#dreReport'); if(!node) return; const html2canvas=await loadHtml2Canvas(); const canvas=await html2canvas(node,{backgroundColor:'#ffffff',scale:2}); const a=document.createElement('a'); a.download=`${state.tab==='geral'?'DRE_Geral':'DRE_'+state.regional}_${state.year}.png`; a.href=canvas.toDataURL('image/png'); a.click(); }
-  async function exportPdf(){ const node=document.querySelector('#dreReport'); if(!node) return; const html2canvas=await loadHtml2Canvas(); const JsPDF=await loadJsPdf(); const canvas=await html2canvas(node,{backgroundColor:'#ffffff',scale:2}); const img=canvas.toDataURL('image/png'); const pdf=new JsPDF('l','mm','a4'); const w=297, h=canvas.height*w/canvas.width; pdf.addImage(img,'PNG',0,0,w,h); pdf.save(`${state.tab==='geral'?'DRE_Geral':'DRE_'+state.regional}_${state.year}.pdf`); }
+  function dreFileName(name){
+    return String(name || 'GERAL')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-zA-Z0-9_-]+/g,'_')
+      .replace(/^_+|_+$/g,'') || 'regional';
+  }
+
+  function renderReportHtml(title, subtitle, report){
+    return `<div class="dre-report-head"><div><h3>${safe(title)}</h3><p>${safe(subtitle)}</p></div><strong>Grão 1000</strong></div>${renderTable(report)}`;
+  }
+
+  async function reportNodeToPdfBlob(node){
+    const html2canvas=await loadHtml2Canvas();
+    const JsPDF=await loadJsPdf();
+    const canvas=await html2canvas(node,{backgroundColor:'#ffffff',scale:2});
+    const img=canvas.toDataURL('image/png');
+    const pdf=new JsPDF('l','mm','a4');
+    const w=297;
+    const h=canvas.height*w/canvas.width;
+    pdf.addImage(img,'PNG',0,0,w,h);
+    return pdf.output('blob');
+  }
+
+  async function exportImage(){ const node=document.querySelector('#dreReport'); if(!node) return; const html2canvas=await loadHtml2Canvas(); const canvas=await html2canvas(node,{backgroundColor:'#ffffff',scale:2}); const a=document.createElement('a'); a.download=`${state.tab==='geral'?'DRE_Geral':'DRE_'+dreFileName(state.regional)}_${state.year}.png`; a.href=canvas.toDataURL('image/png'); a.click(); }
+  async function exportPdf(){ const node=document.querySelector('#dreReport'); if(!node) return; const blob=await reportNodeToPdfBlob(node); const a=document.createElement('a'); a.download=`${state.tab==='geral'?'DRE_Geral':'DRE_'+dreFileName(state.regional)}_${state.year}.pdf`; a.href=URL.createObjectURL(blob); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1500); }
+
+  async function exportAllRegionalPdfs(){
+    if(!state.data?.regional) return;
+    const regions=(state.data.regionais||[]).filter(r => r && norm(r) !== 'GERAL' && !isExcluded(r) && state.data.regional[r]);
+    if(!regions.length) return;
+
+    const btn=document.querySelector('#exportAllPdfs');
+    const oldTxt=btn ? btn.textContent : '';
+    if(btn){ btn.disabled=true; btn.textContent='Gerando ZIP...'; }
+
+    const JSZip=await loadJsZip();
+    const zip=new JSZip();
+    const hidden=document.createElement('div');
+    hidden.style.position='fixed';
+    hidden.style.left='-10000px';
+    hidden.style.top='0';
+    hidden.style.width='1400px';
+    hidden.style.background='#fff';
+    hidden.className='dre-wrap';
+    document.body.appendChild(hidden);
+
+    try{
+      for(const reg of regions){
+        const report=state.data.regional[reg];
+        const article=document.createElement('article');
+        article.className='dre-report';
+        article.innerHTML=renderReportHtml(`DRE Regional - ${reg}`, `Ano ${state.year} · Despesas GERAL rateadas · Toneladas = Volume Classificado · Embarcado = Volume Embarcado + NHE + cad`, report);
+        hidden.innerHTML='';
+        hidden.appendChild(article);
+        const blob=await reportNodeToPdfBlob(article);
+        zip.file(`DRE_${dreFileName(reg)}_${state.year}.pdf`, blob);
+      }
+      const zipBlob=await zip.generateAsync({type:'blob'});
+      const a=document.createElement('a');
+      a.download=`DRE_Regionais_${state.year}.zip`;
+      a.href=URL.createObjectURL(zipBlob);
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+    } finally {
+      hidden.remove();
+      if(btn){ btn.disabled=false; btn.textContent=oldTxt || 'PDFs Regionais'; }
+    }
+  }
 
   function openHome(container, opts={}){
     state.year=new Date().getFullYear(); state.tab='geral'; state.data=null; state.reports=[];
-    container.innerHTML=`${styles}<section class="dre-wrap"><div class="dre-hero"><div><div class="dre-kicker">Diretoria · DRE</div><h2>Dashboard DRE completo</h2><p>DRE geral e regional com indicadores operacionais do novo Resultado Diário: <b>Toneladas</b> como Volume Classificado e <b>Embarcado</b> como Volume Embarcado + NHE + cad.</p></div><div class="dre-controls"><select id="yearSelect">${[state.year-1,state.year,state.year+1].map(y=>`<option value="${y}" ${y===state.year?'selected':''}>${y}</option>`).join('')}</select><select id="regionalSelect" disabled></select><button id="refreshDre" class="primary">Processar DRE</button><button id="exportPdf" disabled>PDF</button><button id="exportImg" disabled>Imagem</button></div></div><div class="dre-tabs"><button class="dre-tab active" data-tab="geral">DRE Geral</button><button class="dre-tab" data-tab="regional">DRE Regional</button></div><div class="dre-status show" id="dreStatus"><strong>Aguardando processamento.</strong> Clique em Processar DRE para carregar os últimos relatórios importados.</div><div id="dreCards" class="dre-cards"></div><div id="dreCharts" class="dre-grid"></div><article class="dre-report" id="dreReport"><div class="dre-report-head"><div><h3>DRE</h3><p>Sem dados processados.</p></div></div></article></section>`;
+    container.innerHTML=`${styles}<section class="dre-wrap"><div class="dre-hero"><div><div class="dre-kicker">Diretoria · DRE</div><h2>Dashboard DRE completo</h2><p>DRE geral e regional com indicadores operacionais do novo Resultado Diário: <b>Toneladas</b> como Volume Classificado e <b>Embarcado</b> como Volume Embarcado + NHE + cad.</p></div><div class="dre-controls"><select id="yearSelect">${[state.year-1,state.year,state.year+1].map(y=>`<option value="${y}" ${y===state.year?'selected':''}>${y}</option>`).join('')}</select><select id="regionalSelect" disabled></select><button id="refreshDre" class="primary">Processar DRE</button><button id="exportPdf" disabled>PDF</button><button id="exportAllPdfs" disabled>PDFs Regionais</button><button id="exportImg" disabled>Imagem</button></div></div><div class="dre-tabs"><button class="dre-tab active" data-tab="geral">DRE Geral</button><button class="dre-tab" data-tab="regional">DRE Regional</button></div><div class="dre-status show" id="dreStatus"><strong>Aguardando processamento.</strong> Clique em Processar DRE para carregar os últimos relatórios importados.</div><div id="dreCards" class="dre-cards"></div><div id="dreCharts" class="dre-grid"></div><article class="dre-report" id="dreReport"><div class="dre-report-head"><div><h3>DRE</h3><p>Sem dados processados.</p></div></div></article></section>`;
     const status=container.querySelector('#dreStatus'); const setStatus=(txt)=>{status.classList.add('show');status.innerHTML=txt.includes('<')?txt:`<strong>Status:</strong> ${safe(txt)}`;};
     container.querySelector('#yearSelect').addEventListener('change',e=>{state.year=Number(e.target.value)||state.year;});
     container.querySelector('#regionalSelect').addEventListener('change',e=>{state.regional=e.target.value; renderReport(container);});
     container.querySelectorAll('.dre-tab').forEach(btn=>btn.addEventListener('click',()=>{state.tab=btn.dataset.tab; container.querySelectorAll('.dre-tab').forEach(b=>b.classList.toggle('active',b===btn)); if(state.data) renderReport(container);}));
-    container.querySelector('#refreshDre').addEventListener('click',async()=>{try{container.querySelector('#refreshDre').disabled=true; await processReports(opts,setStatus); status.classList.remove('show'); container.querySelector('#exportPdf').disabled=false; container.querySelector('#exportImg').disabled=false; renderReport(container);}catch(err){console.error(err);setStatus(`<strong>Erro:</strong> ${safe(err?.message||'Falha ao processar DRE.')}`);}finally{container.querySelector('#refreshDre').disabled=false;}});
-    container.querySelector('#exportPdf').addEventListener('click',exportPdf); container.querySelector('#exportImg').addEventListener('click',exportImage);
+    container.querySelector('#refreshDre').addEventListener('click',async()=>{try{container.querySelector('#refreshDre').disabled=true; await processReports(opts,setStatus); status.classList.remove('show'); container.querySelector('#exportPdf').disabled=false; container.querySelector('#exportAllPdfs').disabled=false; container.querySelector('#exportImg').disabled=false; renderReport(container);}catch(err){console.error(err);setStatus(`<strong>Erro:</strong> ${safe(err?.message||'Falha ao processar DRE.')}`);}finally{container.querySelector('#refreshDre').disabled=false;}});
+    container.querySelector('#exportPdf').addEventListener('click',exportPdf); container.querySelector('#exportAllPdfs').addEventListener('click',exportAllRegionalPdfs); container.querySelector('#exportImg').addEventListener('click',exportImage);
   }
   window.DRE={openHome};
 })();
