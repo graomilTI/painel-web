@@ -1768,9 +1768,9 @@ body.sidebar-collapsed .sidebar-toggle-btn {
   --green-2: #7cf29f;
   --green-3: #166534;
   --green-soft: rgba(34,197,94,.12);
-  --accent: #f5b318;
-  --accent-2: #f2a90c;
-  --accent-soft: rgba(245,179,24,.13);
+  --accent: #3fae64;
+  --accent-2: #56c97a;
+  --accent-soft: rgba(63,174,100,.14);
   --danger: #ef4444;
   --shadow: 0 24px 60px rgba(0,0,0,.28);
   --shadow-soft: 0 14px 34px rgba(0,0,0,.18);
@@ -1787,7 +1787,7 @@ body {
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
   background:
     radial-gradient(circle at 16% 8%, rgba(34,197,94,.16), transparent 30%),
-    radial-gradient(circle at 78% 6%, rgba(245,179,24,.11), transparent 25%),
+    radial-gradient(circle at 78% 6%, rgba(63,174,100,.10), transparent 25%),
     radial-gradient(circle at 82% 86%, rgba(34,197,94,.08), transparent 34%),
     linear-gradient(180deg, #041219 0%, #061923 42%, #071a22 100%) !important;
   color: var(--text);
@@ -1920,14 +1920,14 @@ body::before {
 
 .menu-list a.active,
 .menu-section-toggle.is-active {
-  background: linear-gradient(135deg, rgba(245,179,24,.96), rgba(242,169,12,.92)) !important;
-  color: #1f1603 !important;
-  border-color: rgba(245,179,24,.36) !important;
+  background: linear-gradient(135deg, rgba(63,174,100,.98), rgba(86,201,122,.94)) !important;
+  color: #ffffff !important;
+  border-color: rgba(86,201,122,.34) !important;
   box-shadow: 0 14px 28px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.28) !important;
 }
 
 .menu-list a.active::before {
-  background: linear-gradient(180deg, #fff2bd, #f5b318) !important;
+  background: linear-gradient(180deg, #dfffe9, #3fae64) !important;
 }
 
 /* Cards e blocos */
@@ -1952,21 +1952,21 @@ body::before {
 .base-card:hover,
 .report-link-card:hover,
 .mini-card:hover {
-  border-color: rgba(245,179,24,.18) !important;
+  border-color: rgba(86,201,122,.20) !important;
   box-shadow: 0 22px 54px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.055) !important;
 }
 
 .hero-card {
   background:
-    radial-gradient(circle at 92% 10%, rgba(245,179,24,.14), transparent 28%),
+    radial-gradient(circle at 92% 10%, rgba(63,174,100,.14), transparent 28%),
     radial-gradient(circle at 8% 0%, rgba(34,197,94,.13), transparent 28%),
     linear-gradient(180deg, rgba(12,31,40,.84), rgba(8,24,32,.68)) !important;
 }
 
 .metric,
 .base-mini-value {
-  color: #fff7df !important;
-  text-shadow: 0 8px 24px rgba(245,179,24,.08);
+  color: #f2fff6 !important;
+  text-shadow: 0 8px 24px rgba(63,174,100,.10);
 }
 
 .chip,
@@ -2008,8 +2008,8 @@ button,
 .base-button.primary,
 .inline-nav a.active {
   background: linear-gradient(135deg, var(--accent), var(--accent-2)) !important;
-  color: #241805 !important;
-  border: 1px solid rgba(245,179,24,.36) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(86,201,122,.34) !important;
   box-shadow: 0 14px 30px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.30) !important;
 }
 
@@ -2074,8 +2074,8 @@ select:focus,
 textarea:focus,
 input:focus {
   outline: none !important;
-  border-color: rgba(245,179,24,.34) !important;
-  box-shadow: 0 0 0 4px rgba(245,179,24,.08), inset 0 1px 0 rgba(255,255,255,.035) !important;
+  border-color: rgba(86,201,122,.40) !important;
+  box-shadow: 0 0 0 4px rgba(63,174,100,.10), inset 0 1px 0 rgba(255,255,255,.035) !important;
 }
 
 label,
@@ -2114,7 +2114,7 @@ label,
 
 .base-table tbody tr:hover,
 .users-table tbody tr:hover {
-  background: rgba(245,179,24,.045) !important;
+  background: rgba(86,201,122,.055) !important;
 }
 
 /* Módulo programação */
@@ -2126,8 +2126,8 @@ label,
 
 .stepbtn.active {
   background: linear-gradient(135deg, var(--accent), var(--accent-2)) !important;
-  color: #241805 !important;
-  border-color: rgba(245,179,24,.36) !important;
+  color: #ffffff !important;
+  border-color: rgba(86,201,122,.34) !important;
 }
 
 .prog-check,
@@ -2146,19 +2146,19 @@ input[type="radio"] {
 
 /* Relatórios e status */
 .report-link-cta {
-  color: #ffe08a !important;
+  color: #bfffd0 !important;
 }
 
 .report-pill.financeiro,
 .report-pill.operacional {
-  background: rgba(245,179,24,.12) !important;
-  color: #ffe8a3 !important;
-  border-color: rgba(245,179,24,.22) !important;
+  background: rgba(86,201,122,.14) !important;
+  color: #dfffe9 !important;
+  border-color: rgba(86,201,122,.26) !important;
 }
 
 .base-status {
   background: rgba(3,15,20,.50) !important;
-  border: 1px dashed rgba(245,179,24,.20) !important;
+  border: 1px dashed rgba(86,201,122,.24) !important;
 }
 
 /* Scroll premium */
@@ -2172,7 +2172,7 @@ input[type="radio"] {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(245,179,24,.35), rgba(34,197,94,.24));
+  background: linear-gradient(180deg, rgba(86,201,122,.38), rgba(34,197,94,.24));
   border-radius: 999px;
   border: 2px solid rgba(4,18,25,.72);
 }
