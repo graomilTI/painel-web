@@ -270,6 +270,68 @@
       .import-log.is-visible { display: block; }
       .import-log strong { color: var(--ri-text); }
 
+      .import-intelligence {
+        margin-top: 16px;
+        padding: 14px;
+        border: 1px solid rgba(34, 197, 94, .18);
+        border-radius: 18px;
+        background: rgba(2, 6, 23, .42);
+        display: grid;
+        gap: 12px;
+      }
+
+      .import-intelligence-row {
+        display: grid;
+        grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+        gap: 12px;
+        align-items: end;
+      }
+
+      .import-field label {
+        display: block;
+        margin: 0 0 6px;
+        color: #bbf7d0;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+      }
+
+      .import-field select {
+        width: 100%;
+        min-height: 40px;
+        border: 1px solid rgba(148, 163, 184, .22);
+        border-radius: 12px;
+        padding: 0 12px;
+        color: #e5e7eb;
+        background: #0f172a;
+        color-scheme: dark;
+        outline: none;
+      }
+
+      .import-intelligence-note {
+        color: var(--ri-muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .file-period {
+        display: inline-flex;
+        margin-left: 8px;
+        padding: 3px 7px;
+        border-radius: 999px;
+        background: rgba(34, 197, 94, .1);
+        border: 1px solid rgba(34, 197, 94, .22);
+        color: #bbf7d0;
+        font-size: 10px;
+        font-weight: 900;
+        white-space: nowrap;
+      }
+
+      @media (max-width: 760px) {
+        .import-intelligence-row { grid-template-columns: 1fr; }
+      }
+
       @keyframes spin { to { transform: rotate(360deg); } }
 
       @media (max-width: 760px) {
@@ -287,6 +349,28 @@
     imported: 0,
     errors: 0,
   };
+
+  function loadScript(src, globalName) {
+    if (globalName && window[globalName]) return Promise.resolve(window[globalName]);
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[src="${src}"]`);
+      if (existing) {
+        existing.addEventListener('load', () => resolve(globalName ? window[globalName] : true), { once: true });
+        existing.addEventListener('error', reject, { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = () => resolve(globalName ? window[globalName] : true);
+      script.onerror = () => reject(new Error('Falha ao carregar biblioteca XLSX.'));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function loadXlsx() {
+    return loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js', 'XLSX');
+  }
 
   function sanitizeFileName(name) {
     return String(name || 'arquivo')
@@ -310,6 +394,139 @@
 
   function uploadModeLabel(file) {
     return isEnterpriseUpload(file) ? 'ENTERPRISE · CHUNKS' : 'SEGURO';
+  }
+
+
+  function normalizeHeader(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  function toIsoDate(value) {
+    if (!value) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+    if (typeof value === 'number' && window.XLSX?.SSF?.parse_date_code) {
+      const parsed = window.XLSX.SSF.parse_date_code(value);
+      if (parsed?.y && parsed?.m && parsed?.d) {
+        return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+      }
+    }
+    const s = String(value || '').trim();
+    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (m) return `${m[3]}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+    m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+    if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+    m = s.match(/^(\d{1,2})[\/\-.](\d{4})$/);
+    if (m) return `${m[2]}-${String(m[1]).padStart(2, '0')}-01`;
+    const MAP = {jan:1,fev:2,feb:2,mar:3,abr:4,apr:4,mai:5,may:5,jun:6,jul:7,ago:8,aug:8,set:9,sep:9,out:10,oct:10,nov:11,dez:12,dec:12};
+    m = normalizeHeader(s).match(/^([a-z]{3,})[\/\-. ]+(\d{4})$/);
+    if (m && MAP[m[1].slice(0,3)]) return `${m[2]}-${String(MAP[m[1].slice(0,3)]).padStart(2,'0')}-01`;
+    return null;
+  }
+
+  function findHeaderRow(rows, required) {
+    let best = 0;
+    let score = -1;
+    const req = required.map(normalizeHeader);
+    (rows || []).slice(0, 12).forEach((row, index) => {
+      const headers = (row || []).map(normalizeHeader);
+      const current = req.filter((name) => headers.includes(name)).length;
+      if (current > score) {
+        score = current;
+        best = index;
+      }
+    });
+    return best;
+  }
+
+  function extractPeriodFromRows(rows, tipo) {
+    const dates = [];
+    if (!Array.isArray(rows) || !rows.length) return null;
+
+    if (tipo === 'despesas') {
+      const first = rows[0] || [];
+      first.forEach((cell) => {
+        const iso = toIsoDate(cell);
+        if (iso) dates.push(iso);
+      });
+    } else {
+      const hrow = findHeaderRow(rows, ['Data']);
+      const header = rows[hrow] || [];
+      const idxData = header.findIndex((h) => ['data', 'data n.f.', 'data nf', 'data da nf', 'data nota'].includes(normalizeHeader(h)));
+      if (idxData >= 0) {
+        rows.slice(hrow + 1).forEach((row) => {
+          const iso = toIsoDate(row?.[idxData]);
+          if (iso) dates.push(iso);
+        });
+      }
+    }
+
+    const unique = [...new Set(dates)].sort();
+    if (!unique.length) return null;
+    return {
+      inicio: unique[0],
+      fim: unique[unique.length - 1],
+      totalDatas: unique.length,
+    };
+  }
+
+  async function detectFilePeriod(file, tipo) {
+    try {
+      if (!/\.(xlsx|xls|csv)$/i.test(file.name)) return null;
+      const XLSX = await loadXlsx();
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const preferred = workbook.SheetNames.find((name) => normalizeHeader(name).includes('resultado')) || workbook.SheetNames[0];
+      const sheet = workbook.Sheets[preferred];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+      return extractPeriodFromRows(rows, tipo);
+    } catch (err) {
+      console.warn('[RELATORIOS] Não foi possível detectar período:', err);
+      return null;
+    }
+  }
+
+  function formatPeriod(period) {
+    if (!period?.inicio || !period?.fim) return 'período não detectado';
+    const br = (iso) => String(iso).slice(0, 10).split('-').reverse().join('/');
+    return period.inicio === period.fim ? br(period.inicio) : `${br(period.inicio)} a ${br(period.fim)}`;
+  }
+
+  async function checkExistingPeriod({ tipo, period, opts }) {
+    if (!period?.inicio || !period?.fim) return { exists: false, total: 0, items: [] };
+    const { data: sessionData } = await opts.supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token || null;
+    const response = await fetch('/api/relatorios/inteligente/check', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({ tipo, periodo_inicio: period.inicio, periodo_fim: period.fim }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) throw new Error(payload?.error || 'Falha ao verificar duplicidade.');
+    return payload;
+  }
+
+  async function registerSmartImport(payload, opts) {
+    const { data: sessionData } = await opts.supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token || null;
+    const response = await fetch('/api/relatorios/inteligente/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.error) throw new Error(result?.error || 'Falha ao registrar importação inteligente.');
+    return result;
   }
 
   function detectRelatorio(fileName) {
@@ -582,7 +799,7 @@
     return { mode: 'single', storagePath: path, manifest: null };
   }
 
-  async function uploadAndRegister({ file, item, bar, status }, opts) {
+  async function uploadAndRegister({ file, item, bar, status, entry }, opts) {
     const supabase = opts.supabase;
     const detected = detectRelatorio(file.name);
     const path = buildStoragePath(file);
@@ -607,42 +824,78 @@
       publicUrl = null;
     }
 
+    const importMode = opts.importMode || 'auto';
+    const period = entry?.period || await detectFilePeriod(file, detected.tipo);
+    let check = { exists: false, total: 0, items: [] };
+
+    if (period?.inicio && period?.fim) {
+      status.textContent = 'Verificando período existente...';
+      check = await checkExistingPeriod({ tipo: detected.tipo, period, opts });
+    }
+
+    const effectiveMode = importMode === 'auto'
+      ? (check.exists ? 'replace' : 'append')
+      : importMode;
+
+    status.textContent = effectiveMode === 'replace'
+      ? 'Registrando substituição inteligente...'
+      : 'Registrando complemento inteligente...';
+
+    const observacoesPayload = uploadResult.mode === 'chunked'
+      ? {
+          upload_mode: 'chunked',
+          pipeline: 'browser-chunks-no-worker-merge',
+          original_path: path,
+          total_chunks: uploadResult.manifest?.total_chunks || 0,
+          original_size: file.size,
+          manifest: uploadResult.manifest,
+        }
+      : {
+          upload_mode: 'single',
+          pipeline: 'signed-url',
+        };
+
     const payload = {
-      tipo_relatorio: detected.tipo,
-      titulo_relatorio: detected.titulo,
-      arquivo_nome_original: file.name,
-      arquivo_nome_storage: finalStoragePath.split('/').pop(),
-      storage_bucket: BUCKET,
-      storage_path: finalStoragePath,
-      tamanho_bytes: file.size || 0,
-      mime_type: file.type || null,
-      status: 'enviado',
-      observacoes: uploadResult.mode === 'chunked'
-        ? JSON.stringify({
-            upload_mode: 'chunked',
-            pipeline: 'browser-chunks-no-worker-merge',
-            original_path: path,
-            total_chunks: uploadResult.manifest?.total_chunks || 0,
-            original_size: file.size,
-            manifest: uploadResult.manifest,
-          })
-        : 'Arquivo enviado pelo painel via upload assinado. Aguardando processamento/conferência.',
-      importado_por: user?.id || null,
-      importado_por_nome: userName,
-      nome_arquivo: file.name,
-      tipo: detected.tipo,
-      path: finalStoragePath,
-      url: publicUrl,
-      usuario_id: user?.id || null,
-      usuario_nome: userName,
-      usuario_email: user?.email || null,
+      mode: effectiveMode,
+      check,
+      importacao: {
+        tipo_relatorio: detected.tipo,
+        titulo_relatorio: detected.titulo,
+        arquivo_nome_original: file.name,
+        arquivo_nome_storage: finalStoragePath.split('/').pop(),
+        storage_bucket: BUCKET,
+        storage_path: finalStoragePath,
+        tamanho_bytes: file.size || 0,
+        mime_type: file.type || null,
+        status: 'enviado',
+        observacoes: JSON.stringify({
+          ...observacoesPayload,
+          import_mode_requested: importMode,
+          import_mode_effective: effectiveMode,
+          periodo: period || null,
+          replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
+        }),
+        importado_por: user?.id || null,
+        importado_por_nome: userName,
+        nome_arquivo: file.name,
+        tipo: detected.tipo,
+        path: finalStoragePath,
+        url: publicUrl,
+        usuario_id: user?.id || null,
+        usuario_nome: userName,
+        usuario_email: user?.email || null,
+        periodo_inicio: period?.inicio || null,
+        periodo_fim: period?.fim || null,
+        modo_importacao: effectiveMode,
+        substitui_importacoes: effectiveMode === 'replace' ? (check.items || []).map((x) => x.id) : [],
+        total_periodo_registros: period?.totalDatas || null,
+      }
     };
 
-    const { error: insertError } = await supabase
-      .from('relatorios_importacoes')
-      .insert([payload]);
-
-    if (insertError) throw insertError;
+    const result = await registerSmartImport(payload, opts);
+    if (result?.mode === 'replace' && result?.replaced_count) {
+      status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
+    }
 
     setProgress(bar, 100);
     status.textContent = 'Importado';
@@ -676,6 +929,22 @@
               </div>
             </div>
 
+            <div class="import-intelligence">
+              <div class="import-intelligence-row">
+                <div class="import-field">
+                  <label for="modoImportacao">Modo de importação</label>
+                  <select id="modoImportacao">
+                    <option value="auto">Automático inteligente</option>
+                    <option value="replace">Substituir período detectado</option>
+                    <option value="append">Complementar dados existentes</option>
+                  </select>
+                </div>
+                <div class="import-intelligence-note" id="intelligenceNote">
+                  No automático, se o período já existir no banco, o painel substitui a versão anterior; se não existir, complementa.
+                </div>
+              </div>
+            </div>
+
             <div class="file-list" id="fileList">
               <div class="file-empty">Nenhum arquivo selecionado.</div>
             </div>
@@ -695,6 +964,7 @@
     const input = container.querySelector('#fileInput');
     const list = container.querySelector('#fileList');
     const btn = container.querySelector('#btnConcluirImportacao');
+    const modeSelect = container.querySelector('#modoImportacao');
     const summary = container.querySelector('#importSummary');
     const log = container.querySelector('#importLog');
 
@@ -738,7 +1008,7 @@
               <span>📄</span>
               <span title="${entry.file.name.replace(/"/g, '&quot;')}">${entry.file.name}</span>
             </div>
-            <div class="file-meta">${detected.titulo} · ${humanSize(entry.file.size)} <span class="upload-mode">${uploadModeLabel(entry.file)}</span></div>
+            <div class="file-meta">${detected.titulo} · ${humanSize(entry.file.size)} <span class="upload-mode">${uploadModeLabel(entry.file)}</span>${entry.period ? `<span class="file-period">${formatPeriod(entry.period)}</span>` : ''}</div>
           </div>
           <div class="file-right">
             <div class="file-status-row">
@@ -769,7 +1039,7 @@
       updateSummary();
     }
 
-    function addFiles(fileList) {
+    async function addFiles(fileList) {
       const incoming = Array.from(fileList || []);
       if (!incoming.length || state.running) return;
 
@@ -781,13 +1051,24 @@
         existingKey.add(key);
 
         const valid = isAllowedFile(file);
-        state.files.push({
+        const detected = detectRelatorio(file.name);
+        const entry = {
           file,
           valid,
+          period: null,
           status: valid ? 'pendente' : 'erro',
-          message: valid ? 'Pendente' : 'Use XLSX, XLS ou CSV até 1GB',
+          message: valid ? 'Detectando período...' : 'Use XLSX, XLS ou CSV até 1GB',
           elements: null,
-        });
+        };
+        state.files.push(entry);
+
+        if (valid) {
+          detectFilePeriod(file, detected.tipo).then((period) => {
+            entry.period = period;
+            entry.message = period ? `Período: ${formatPeriod(period)}` : 'Pendente · período não detectado';
+            renderFiles();
+          });
+        }
       });
 
       log.classList.remove('is-visible');
@@ -834,7 +1115,7 @@
           if (status) status.textContent = 'Processando...';
           if (bar) bar.style.width = '12%';
 
-          await uploadAndRegister({ file: entry.file, item, bar, status }, opts);
+          await uploadAndRegister({ file: entry.file, item, bar, status, entry }, { ...opts, importMode: modeSelect?.value || 'auto' });
 
           entry.status = 'importado';
           entry.message = 'Importado';
