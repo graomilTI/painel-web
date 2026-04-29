@@ -101,7 +101,7 @@ export const MENU_CONFIG = [
   {
     grupo: "DIRETORIA",
     itens: [
-      item("DRE","dre","Dre",["DRE"]),
+      item("diretoria_dre", "DRE", "dre", ["DRE", "DIRETORIA_DRE"]),
       item("financeiro", "Financeiro", "financeiro", ["FINANCEIRO"]),
       item("usuarios_acessos", "Usuários e Acessos", "admin-usuarios", ["ADMIN_USUARIOS", "USUARIOS_E_ACESSOS"]),
       item("admin_config", "Configurações", "admin-configuracoes", ["ADMIN_CONFIG"])
