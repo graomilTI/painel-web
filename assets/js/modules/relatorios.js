@@ -321,8 +321,14 @@
     if (n.includes('despesa')) {
       return { tipo: 'despesas', titulo: 'Relatório de Despesas' };
     }
-    if (n.includes('resultado') || n.includes('gavilon')) {
-      return { tipo: 'resultado', titulo: 'Relatório de Resultado' };
+    if ((n.includes('resultado') && (n.includes('diario') || n.includes('diário'))) || n.includes('resultado-diario')) {
+      return { tipo: 'resultado-diario', titulo: 'Relatório Resultado Diário' };
+    }
+    if (n.includes('gavilon')) {
+      return { tipo: 'resultado-diario-gavilon', titulo: 'Relatório Resultado Diário Gavilon' };
+    }
+    if (n.includes('resultado')) {
+      return { tipo: 'resultado-diario', titulo: 'Relatório Resultado Diário' };
     }
     if (n.includes('producao') || n.includes('produção')) {
       return { tipo: 'producao', titulo: 'Relatório de Produção' };

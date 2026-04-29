@@ -1,28 +1,32 @@
 (function () {
   const MESES = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
-  const MONEY_ROWS = new Set([
-    'NOTAS FISCAIS','DESCONTOS CONCEDIDOS+ACRÉSCIMOS','TOTAL DE IMPOSTOS','RECEITA LÍQUIDA',
-    'TOTAL DE DESPESAS OPERACIONAIS','DESP COM VEICULOS+COMBUSTIVEIS','TOTAL DESPESAS PESSOAL',
-    'LUCRO BRUTO','DESP ADM + COMERCIAL','LUCRO OPERACIONAL (EBTIDA)','DESPESAS FINANCEIRAS',
-    'LUCRO LÍQUIDO','EMPRESTIMOS TERCEIROS','ANTECIPAÇÕES A FORNECEDORES','INVESTIMENTOS','RESULTADO FINAL',
-    'TOTAL DESPESAS','CUSTO POR TONELADA'
-  ]);
-  const PERCENT_ROWS = new Set(['MARGEM BRUTA','MARGEM EBTIDA']);
+  const BUCKET_DEFAULT = 'relatorios-uploads';
   const INDIVIDUAL_EXCLUDED = ['AGROTRADER','LOG1000','PARAGUAI'];
   const IGNORED = ['NULL'];
   const POOL = ['GERAL','AGROTRADER','LOG1000'];
   const ALIASES = { TERMINAISINATIVO: 'MARINGA E TERMINAIS' };
 
+  const MONEY_ROWS = new Set([
+    'NOTAS FISCAIS','DESCONTOS CONCEDIDOS+ACRÉSCIMOS','TOTAL DE IMPOSTOS','RECEITA LÍQUIDA',
+    'TOTAL DE DESPESAS OPERACIONAIS','DESP COM VEICULOS+COMBUSTIVEIS','TOTAL DESPESAS PESSOAL',
+    'LUCRO BRUTO','DESP ADM + COMERCIAL','LUCRO OPERACIONAL (EBTIDA)','DESPESAS FINANCEIRAS',
+    'LUCRO LÍQUIDO','EMPRESTIMOS TERCEIROS','ANTECIPAÇÕES A FORNECEDORES','INVESTIMENTOS','RESULTADO FINAL',
+    'TOTAL DESPESAS','CUSTO POR TONELADA','RECEITA POR TONELADA','MARGEM POR TONELADA'
+  ]);
+  const PERCENT_ROWS = new Set(['MARGEM BRUTA','MARGEM EBTIDA','EFICIÊNCIA OPERACIONAL']);
+  const VOLUME_ROWS = new Set(['VOLUME CLASSIFICADO (SEM CADÊNCIA)','VOLUME EMBARCADO + NHE + CAD','CARGAS']);
+
   const styles = `
     <style>
-      .dre-wrap{--bg:#020617;--card:rgba(15,23,42,.76);--line:rgba(148,163,184,.18);--green:#22c55e;--green2:#166534;--text:#e5e7eb;--muted:#94a3b8;color:var(--text)}
-      .dre-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:end;margin-bottom:18px;padding:18px;border:1px solid rgba(34,197,94,.20);border-radius:24px;background:radial-gradient(circle at 15% 10%,rgba(34,197,94,.18),transparent 34%),linear-gradient(145deg,rgba(15,23,42,.92),rgba(2,6,23,.78));box-shadow:0 20px 60px rgba(0,0,0,.20)}
-      .dre-kicker{font-size:12px;color:#bbf7d0;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.dre-hero h2{margin:6px 0 4px;font-size:28px;letter-spacing:-.04em}.dre-hero p{margin:0;color:var(--muted)}
-      .dre-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end}.dre-controls select,.dre-controls button{height:42px;border-radius:13px;border:1px solid #334155;background:#0f172a;color:#e5e7eb;padding:0 12px;font-weight:800;color-scheme:dark}.dre-controls button{cursor:pointer}.dre-controls button.primary{background:linear-gradient(135deg,#166534,#22c55e);color:#052e16;border:0}.dre-controls button:disabled{opacity:.5;cursor:not-allowed}.dre-tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.dre-tab{border:1px solid var(--line);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:900}.dre-tab.active{background:#166534;color:#fff;border-color:#22c55e}
+      .dre-wrap{--bg:#020617;--panel:#0f172a;--card:rgba(15,23,42,.78);--line:rgba(148,163,184,.18);--green:#22c55e;--green2:#166534;--text:#e5e7eb;--muted:#94a3b8;color:var(--text)}
+      .dre-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:end;margin-bottom:18px;padding:20px;border:1px solid rgba(34,197,94,.22);border-radius:26px;background:radial-gradient(circle at 10% 0%,rgba(34,197,94,.22),transparent 30%),radial-gradient(circle at 90% 0%,rgba(20,184,166,.16),transparent 26%),linear-gradient(145deg,rgba(15,23,42,.96),rgba(2,6,23,.82));box-shadow:0 22px 70px rgba(0,0,0,.24)}
+      .dre-kicker{font-size:12px;color:#bbf7d0;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.dre-hero h2{margin:6px 0 4px;font-size:30px;letter-spacing:-.045em}.dre-hero p{margin:0;color:var(--muted);max-width:760px;line-height:1.5}
+      .dre-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end}.dre-controls select,.dre-controls button{height:42px;border-radius:14px;border:1px solid #334155;background:#0f172a;color:#e5e7eb;padding:0 12px;font-weight:850;color-scheme:dark}.dre-controls button{cursor:pointer}.dre-controls button.primary{background:linear-gradient(135deg,#166534,#22c55e);color:#052e16;border:0}.dre-controls button:disabled{opacity:.5;cursor:not-allowed}.dre-tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.dre-tab{border:1px solid var(--line);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:10px 15px;cursor:pointer;font-weight:900}.dre-tab.active{background:#166534;color:#fff;border-color:#22c55e}
       .dre-status{display:none;margin:0 0 14px;padding:12px 14px;border-radius:16px;border:1px solid var(--line);background:rgba(15,23,42,.72);color:var(--muted)}.dre-status.show{display:block}.dre-status strong{color:var(--text)}
-      .dre-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}.dre-card{padding:15px;border-radius:20px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(15,23,42,.8),rgba(2,6,23,.58))}.dre-card span{display:block;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase}.dre-card strong{display:block;margin-top:8px;font-size:20px;letter-spacing:-.03em}.dre-card.positive strong{color:#86efac}.dre-card.negative strong{color:#fca5a5}
-      .dre-report{border:1px solid var(--line);border-radius:24px;overflow:hidden;background:#fff;color:#111827}.dre-report-head{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:18px 20px;background:linear-gradient(135deg,#052e16,#166534);color:#fff}.dre-report-head h3{margin:0;font-size:20px}.dre-report-head p{margin:4px 0 0;color:#dcfce7;font-size:12px}.dre-table-wrap{overflow:auto;background:#fff}.dre-table{width:100%;border-collapse:collapse;font-size:12px;min-width:1180px}.dre-table th{background:#b7e3c6;color:#052e16;text-align:center;font-weight:900;padding:10px;border:1px solid #b7cfc0}.dre-table td{padding:9px 10px;border:1px solid #d1d5db;text-align:right;white-space:nowrap}.dre-table td:first-child{text-align:left;font-weight:900;color:#111827}.dre-table tr:nth-child(even) td{background:#f0fdf4}.dre-table tr.highlight td{background:#dcfce7!important;font-weight:900}.dre-table tr.result td{background:#bbf7d0!important;font-weight:900}.dre-table .neg{color:#dc2626}.dre-extra{display:grid;gap:12px;padding:14px;background:#fff}.dre-extra-box{border:1px solid #d1d5db;border-radius:16px;overflow:hidden}.dre-extra-box h4{margin:0;padding:10px 12px;background:#b7e3c6;color:#052e16}.dre-extra-box table{width:100%;border-collapse:collapse;font-size:12px}.dre-extra-box td,.dre-extra-box th{border:1px solid #d1d5db;padding:8px;text-align:right}.dre-extra-box td:first-child,.dre-extra-box th:first-child{text-align:left;font-weight:800}
-      @media(max-width:1000px){.dre-hero{grid-template-columns:1fr}.dre-controls{justify-content:flex-start}.dre-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:640px){.dre-cards{grid-template-columns:1fr}}
+      .dre-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:14px}.dre-card{padding:15px;border-radius:22px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(15,23,42,.86),rgba(2,6,23,.62))}.dre-card span{display:block;color:var(--muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.035em}.dre-card strong{display:block;margin-top:8px;font-size:20px;letter-spacing:-.03em}.dre-card small{display:block;margin-top:5px;color:#94a3b8}.dre-card.positive strong{color:#86efac}.dre-card.negative strong{color:#fca5a5}
+      .dre-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px;margin-bottom:14px}.dre-chart{border:1px solid var(--line);border-radius:22px;background:rgba(15,23,42,.78);padding:15px;min-height:260px}.dre-chart h3{margin:0 0 6px;font-size:15px}.dre-chart p{margin:0 0 12px;color:var(--muted);font-size:12px}.dre-bars{display:grid;grid-template-columns:repeat(12,1fr);gap:7px;align-items:end;height:170px;border-bottom:1px solid rgba(148,163,184,.2);padding-top:10px}.dre-bar-wrap{height:100%;display:flex;align-items:end;position:relative}.dre-bar{width:100%;min-height:3px;border-radius:12px 12px 0 0;background:linear-gradient(180deg,#22c55e,#166534)}.dre-bar.negative{background:linear-gradient(180deg,#fca5a5,#dc2626)}.dre-chart-labels{display:grid;grid-template-columns:repeat(12,1fr);gap:7px;margin-top:8px;font-size:10px;color:#94a3b8;text-align:center}.dre-volume-row{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:center;margin:12px 0}.dre-volume-row strong{font-size:12px}.dre-track{height:14px;border-radius:999px;background:#020617;overflow:hidden;border:1px solid rgba(148,163,184,.22)}.dre-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#166534,#22c55e)}.dre-fill.secondary{background:linear-gradient(90deg,#0f766e,#67e8f9)}
+      .dre-report{border:1px solid var(--line);border-radius:24px;overflow:hidden;background:#fff;color:#111827}.dre-report-head{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:18px 20px;background:linear-gradient(135deg,#052e16,#166534);color:#fff}.dre-report-head h3{margin:0;font-size:20px}.dre-report-head p{margin:4px 0 0;color:#dcfce7;font-size:12px}.dre-table-wrap{overflow:auto;background:#fff}.dre-table{width:100%;border-collapse:collapse;font-size:12px;min-width:1180px}.dre-table th{background:#b7e3c6;color:#052e16;text-align:center;font-weight:900;padding:10px;border:1px solid #b7cfc0}.dre-table td{padding:9px 10px;border:1px solid #d1d5db;text-align:right;white-space:nowrap}.dre-table td:first-child{text-align:left;font-weight:900;color:#111827}.dre-table tr:nth-child(even) td{background:#f0fdf4}.dre-table tr.highlight td{background:#dcfce7!important;font-weight:900}.dre-table tr.result td{background:#bbf7d0!important;font-weight:900}.dre-table .neg{color:#dc2626}.dre-extra{display:grid;gap:12px;padding:14px;background:#fff}.dre-extra-box{border:1px solid #d1d5db;border-radius:16px;overflow:hidden}.dre-extra-box h4{margin:0;padding:10px 12px;background:#b7e3c6;color:#052e16}.dre-extra-box table{width:100%;border-collapse:collapse;font-size:12px}.dre-extra-box td,.dre-extra-box th{border:1px solid #d1d5db;padding:8px;text-align:right}.dre-extra-box td:first-child,.dre-extra-box th:first-child{text-align:left;font-weight:850}
+      @media(max-width:1180px){.dre-cards{grid-template-columns:repeat(3,minmax(0,1fr))}.dre-grid{grid-template-columns:1fr}.dre-hero{grid-template-columns:1fr}.dre-controls{justify-content:flex-start}}@media(max-width:720px){.dre-cards{grid-template-columns:1fr}.dre-controls select,.dre-controls button{width:100%}}
     </style>`;
 
   const state = { tab:'geral', year:new Date().getFullYear(), regional:'', data:null, reports:[], busy:false };
@@ -32,204 +36,330 @@
   function isIgnored(r){return IGNORED.some(x=>norm(x)===norm(r));}
   function isExcluded(r){return INDIVIDUAL_EXCLUDED.some(x=>norm(x)===norm(r));}
   function isPool(r){return POOL.some(x=>norm(x)===norm(r));}
-  function n(v){ if(v==null||v==='') return 0; if(typeof v==='number') return Number.isFinite(v)?v:0; const s=String(v).replace(/[^\d,.-]/g,''); const out=s.includes(',')&&s.includes('.')?s.replace(/\./g,'').replace(',','.'):s.replace(',','.'); const num=parseFloat(out); return Number.isFinite(num)?num:0; }
-  function monthFrom(value){ if(value instanceof Date && !isNaN(value)) return {month:value.getMonth(), year:value.getFullYear()}; if(typeof value==='number'){ const d=new Date(Math.round((value-25569)*86400*1000)); if(!isNaN(d)) return {month:d.getUTCMonth(),year:d.getUTCFullYear()}; } const raw=String(value??'').trim(); let m=raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/); if(m) return {month:+m[2]-1,year:+m[3]}; m=raw.match(/^(\d{1,2})[\/\-.](\d{4})$/); if(m) return {month:+m[1]-1,year:+m[2]}; const map={JAN:0,FEV:1,FEB:1,MAR:2,ABR:3,APR:3,MAI:4,MAY:4,JUN:5,JUL:6,AGO:7,AUG:7,SET:8,SEP:8,OUT:9,OCT:9,NOV:10,DEZ:11,DEC:11}; m=raw.match(/^([A-Za-zÀ-ÿ]{3,})[\/\-. ]?(\d{4})?$/); if(m){const mo=map[norm(m[1]).slice(0,3)]; if(mo!=null) return {month:mo,year:m[2]?+m[2]:state.year};} const d=new Date(raw); return isNaN(d)?null:{month:d.getMonth(),year:d.getFullYear()}; }
-  function fmtMoney(v){return (n(v)).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});} function fmtNum(v){return (n(v)).toLocaleString('pt-BR',{maximumFractionDigits:2});} function fmtPct(v){return (n(v)).toLocaleString('pt-BR',{style:'percent',minimumFractionDigits:1,maximumFractionDigits:1});}
+  function n(v){ if(v==null||v==='') return 0; if(typeof v==='number') return Number.isFinite(v)?v:0; const s=String(v).replace(/R\$\s*/gi,'').replace(/[^\d,.-]/g,''); const out=s.includes(',')&&s.includes('.')?s.replace(/\./g,'').replace(',','.'):s.replace(',','.'); const num=parseFloat(out); return Number.isFinite(num)?num:0; }
   function safe(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');}
+  function fmtMoney(v){return n(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});} 
+  function fmtNum(v){return n(v).toLocaleString('pt-BR',{maximumFractionDigits:2});}
+  function fmtPct(v){return n(v).toLocaleString('pt-BR',{style:'percent',minimumFractionDigits:1,maximumFractionDigits:1});}
+  function total(arr){return (arr||[]).reduce((a,b)=>a+n(b),0);}
+  function div(a,b){return n(b)?n(a)/n(b):0;}
+
+  function monthFrom(value){
+    if(value instanceof Date && !isNaN(value)) return {month:value.getMonth(), year:value.getFullYear()};
+    if(typeof value==='number'){
+      const d = new Date(Math.round((value - 25569) * 86400 * 1000));
+      if(!isNaN(d)) return {month:d.getUTCMonth(), year:d.getUTCFullYear()};
+    }
+    const raw=String(value??'').trim();
+    let m=raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/); if(m) return {month:+m[2]-1,year:+m[3]};
+    m=raw.match(/^(\d{1,2})[\/\-.](\d{4})$/); if(m) return {month:+m[1]-1,year:+m[2]};
+    const map={JAN:0,FEV:1,FEB:1,MAR:2,ABR:3,APR:3,MAI:4,MAY:4,JUN:5,JUL:6,AGO:7,AUG:7,SET:8,SEP:8,OUT:9,OCT:9,NOV:10,DEZ:11,DEC:11};
+    m=raw.match(/^([A-Za-zÀ-ÿ]{3,})[\/\-. ]?(\d{4})?$/); if(m){const mo=map[norm(m[1]).slice(0,3)]; if(mo!=null) return {month:mo,year:m[2]?+m[2]:state.year};}
+    const d=new Date(raw); return isNaN(d)?null:{month:d.getMonth(),year:d.getFullYear()};
+  }
+
+  function add(map, reg, key, mi, value){ if(!map[reg]) map[reg]={}; if(!map[reg][key]) map[reg][key]=Array(12).fill(0); map[reg][key][mi]+=n(value); }
+  function addArr(map, reg, mi, value){ if(!map[reg]) map[reg]=Array(12).fill(0); map[reg][mi]+=n(value); }
+  function getArr(map, reg){ return map?.[reg] || Array(12).fill(0); }
+  function sumMapMonth(map, mi){ return Object.values(map||{}).reduce((a,arr)=>a+n(arr?.[mi]),0); }
+  function sumTopic(base, reg, topics, mi){ const target=topics.map(norm); const obj=base[reg]||{}; return Object.entries(obj).reduce((acc,[tp,arr])=> target.includes(norm(tp)) ? acc+n(arr?.[mi]) : acc,0); }
+  function sumTopicsAll(base, topics, mi){ return Object.keys(base||{}).reduce((acc,reg)=>acc+sumTopic(base,reg,topics,mi),0); }
+  function geralTopic(geral, topics, mi){ return topics.reduce((a,tp)=>a+n(geral[tp]?.[mi]||geral[norm(tp)]?.[mi]),0); }
 
   async function loadScript(src, globalName){ if(window[globalName]) return window[globalName]; await new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);}); return window[globalName]; }
   async function loadXlsx(){return loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js','XLSX');}
   async function loadHtml2Canvas(){return loadScript('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js','html2canvas');}
   async function loadJsPdf(){await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js','jspdf'); return window.jspdf.jsPDF;}
 
-  async function getLatestReports(supabase){
-    const {data,error}=await supabase.from('relatorios_importacoes').select('*').order('created_at',{ascending:false}).limit(80);
-    if(error) throw error;
-    const wanted=['despesas','notas_fiscais','resultado','producao','patrimonios','caixa_fornecedor'];
-    const chosen=[]; const seen=new Set();
-    for(const r of data||[]){ const tipo=r.tipo||r.tipo_relatorio||'outros'; if(!wanted.includes(tipo)||seen.has(tipo)) continue; seen.add(tipo); chosen.push({...r,tipo}); }
-    return chosen;
+  function parseManifest(report){
+    const raw=String(report?.observacoes||'').trim();
+    if(!raw.startsWith('{')) return null;
+    try{ const info=JSON.parse(raw); return info?.upload_mode==='chunked' ? (info.manifest || info) : null; }catch(_){ return null; }
   }
   async function fetchStorageBuffer(supabase, bucket, path){
-    const {data,error}=await supabase.storage.from(bucket).createSignedUrl(path, 60*10);
+    const {data,error}=await supabase.storage.from(bucket||BUCKET_DEFAULT).createSignedUrl(path, 600);
     if(error) throw error;
     const resp=await fetch(data.signedUrl);
-    if(!resp.ok) throw new Error('Falha ao baixar parte do arquivo: '+path);
+    if(!resp.ok) throw new Error(`Falha ao baixar arquivo: ${path}`);
     return resp.arrayBuffer();
   }
-
-  function parseEnterpriseManifest(report){
-    const raw = String(report?.observacoes || '').trim();
-    if(!raw || raw[0] !== '{') return null;
-    try{
-      const info = JSON.parse(raw);
-      if(info?.upload_mode !== 'chunked') return null;
-      return info.manifest || info;
-    }catch(_){
-      return null;
-    }
-  }
-
-  async function mergeEnterpriseChunks(supabase, manifest, fallbackBucket, label){
-    if(!manifest || !Array.isArray(manifest.chunks) || !manifest.chunks.length){
-      throw new Error('Manifesto enterprise inválido para '+label);
-    }
-
-    const bucket = manifest.bucket || fallbackBucket;
-    const ordered=[...manifest.chunks].sort((a,b)=>Number(a.index||0)-Number(b.index||0));
-    const buffers=[];
-    let total=0;
-
-    for(const chunk of ordered){
-      const buf=await fetchStorageBuffer(supabase, bucket, chunk.path);
-      buffers.push(new Uint8Array(buf));
-      total+=buf.byteLength;
-    }
-
-    if(manifest.original_size && Number(manifest.original_size) !== total){
-      throw new Error('Arquivo enterprise incompleto para '+label+'. Esperado '+manifest.original_size+', obtido '+total+'.');
-    }
-
-    const merged=new Uint8Array(total);
-    let offset=0;
-    for(const part of buffers){
-      merged.set(part, offset);
-      offset+=part.byteLength;
-    }
-
-    return merged.buffer;
-  }
-
   async function fetchReportBuffer(supabase, report){
-    const bucket=report.storage_bucket;
-    const storagePath=report.storage_path||report.path;
-    const label=report.nome_arquivo||report.arquivo_nome_original||report.tipo;
-    const enterpriseManifest = parseEnterpriseManifest(report);
-
-    if(enterpriseManifest){
-      return await mergeEnterpriseChunks(supabase, enterpriseManifest, bucket, label);
+    const manifest=parseManifest(report);
+    const bucket=report.storage_bucket||BUCKET_DEFAULT;
+    if(manifest?.chunks?.length){
+      const parts=[...manifest.chunks].sort((a,b)=>Number(a.index||0)-Number(b.index||0));
+      const buffers=[]; let size=0;
+      for(const p of parts){ const buf=await fetchStorageBuffer(supabase, bucket, p.path); buffers.push(new Uint8Array(buf)); size+=buf.byteLength; }
+      const merged=new Uint8Array(size); let offset=0;
+      for(const b of buffers){ merged.set(b,offset); offset+=b.byteLength; }
+      return merged.buffer;
     }
-
-    let url=report.url;
-
-    if(!url && bucket && storagePath){
-      const {data,error}=await supabase.storage.from(bucket).createSignedUrl(storagePath, 60*10);
-      if(error) throw error;
-      url=data.signedUrl;
-    }
-
-    if(!url) throw new Error('Arquivo sem URL: '+label);
-
-    const isManifest=String(storagePath||url).includes('.manifest.json');
-    const resp=await fetch(url);
-    if(!resp.ok) throw new Error('Falha ao baixar '+label);
-
-    if(!isManifest){
-      return await resp.arrayBuffer();
-    }
-
-    const manifest=await resp.json();
-    return await mergeEnterpriseChunks(supabase, manifest, bucket, label);
+    const path=report.storage_path||report.path||report.arquivo_nome_storage;
+    if(!path) throw new Error('Relatório sem caminho de storage.');
+    return fetchStorageBuffer(supabase, bucket, path);
   }
-
-  async function fetchWorkbook(supabase, report){
+  async function readWorkbook(supabase, report){
     const XLSX=await loadXlsx();
     const buf=await fetchReportBuffer(supabase, report);
     return XLSX.read(buf,{type:'array',cellDates:true});
   }
-  function sheetRows(wb, preferred){ const XLSX=window.XLSX; const name=preferred.find(x=>wb.SheetNames.includes(x))||wb.SheetNames[0]; return XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:''}); }
-
-  function add(map, reg, topic, mi, val){ if(!map[reg]) map[reg]={}; if(!map[reg][topic]) map[reg][topic]=Array(12).fill(0); map[reg][topic][mi]+=n(val); }
-  function sumTopic(map, reg, topics, mi){ return topics.reduce((a,t)=>a+n(map[reg]?.[t]?.[mi]),0); }
-  function sumAll(map, topics, mi){ return Object.keys(map).reduce((a,r)=>a+sumTopic(map,r,topics,mi),0); }
-  function rateio(base, geral, reg, topics, mi){ const proprio=sumTopic(base,reg,topics,mi); if(!proprio) return 0; let totalSemPool=0; Object.keys(base).forEach(r=>{if(!isPool(r)) totalSemPool+=sumTopic(base,r,topics,mi);}); if(!totalSemPool) return 0; let pool=topics.reduce((a,t)=>a+n(geral[t]?.[mi]),0); Object.keys(base).forEach(r=>{if(isPool(r)) pool+=sumTopic(base,r,topics,mi);}); return pool ? (proprio/totalSemPool)*pool : 0; }
+  function sheetRows(wb, names){
+    const XLSX=window.XLSX;
+    const wanted=(names||[]).map(norm);
+    let name=wb.SheetNames.find(s=>wanted.includes(norm(s))) || wb.SheetNames[0];
+    return XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, defval:null, raw:true});
+  }
+  function findHeaderRow(rows, required){
+    const req=(required||[]).map(norm);
+    let best=0, score=-1;
+    rows.forEach((row,i)=>{ const headers=(row||[]).map(norm); const s=req.filter(r=>headers.includes(r)).length; if(s>score){score=s;best=i;} });
+    return best;
+  }
+  function indexByHeaders(header){ const idx={}; (header||[]).forEach((h,i)=>{ const k=norm(h); if(k && idx[k]==null) idx[k]=i; }); return idx; }
+  function col(idx, names){ for(const name of names){ const k=norm(name); if(idx[k]!=null) return idx[k]; } return -1; }
 
   function parseDespesas(rows){
-    const base={}, geral={}, regionais=new Set(); if(rows.length<3) return {base,geral,regionais};
-    const headerDatas=rows[0], headerTipos=rows[1], dateFF=[]; let last=null;
-    headerDatas.forEach((cell,i)=>{const d=monthFrom(cell); if(d) last=d; dateFF[i]=last;});
-    const cols=[]; for(let c=1;c<headerTipos.length;c++){const tipo=String(headerTipos[c]||'').trim(); const d=dateFF[c]; if(!tipo||!d||/TOTAL/i.test(tipo)||/IMPOSTOS PARCELADOS/i.test(tipo)) continue; cols.push({c,tipo,mi:d.month,year:d.year});}
-    rows.slice(2).forEach(row=>{let reg=mapReg(row[0]); if(!reg||/TOTAL/i.test(reg)||isIgnored(reg)) return; const isG=norm(reg)==='GERAL'; if(!isG&&!isExcluded(reg)) regionais.add(reg); cols.forEach(col=>{ if(col.year!==state.year) return; if(isG) { if(!geral[col.tipo]) geral[col.tipo]=Array(12).fill(0); geral[col.tipo][col.mi]+=n(row[col.c]); } else add(base,reg,col.tipo,col.mi,row[col.c]); });});
-    return {base,geral,regionais};
+    const out={base:{}, geral:{}, regionais:new Set()};
+    if(!rows || rows.length<3) return out;
+    const headerDates=rows[0]||[]; const headerTypes=rows[1]||[]; const columns=[]; let last=null;
+    for(let c=1;c<headerTypes.length;c++){
+      const m=monthFrom(headerDates[c]) || last; if(m) last=m;
+      const tipo=String(headerTypes[c]||'').trim();
+      if(!tipo || !m || m.year!==state.year) continue;
+      if(/TOTAL/i.test(tipo) || /IMPOSTOS\s*PARCELADOS/i.test(tipo)) continue;
+      columns.push({c,tipo,mi:m.month});
+    }
+    for(const row of rows.slice(2)){
+      let reg=mapReg(row?.[0]);
+      if(!reg || /TOTAL/i.test(reg) || isIgnored(reg)) continue;
+      const isGeral=norm(reg)==='GERAL';
+      if(!isGeral && !isExcluded(reg)) out.regionais.add(reg);
+      for(const x of columns){
+        if(isGeral){ const key=norm(x.tipo); if(!out.geral[key]) out.geral[key]=Array(12).fill(0); out.geral[key][x.mi]+=n(row[x.c]); }
+        else add(out.base,reg,x.tipo,x.mi,row[x.c]);
+      }
+    }
+    return out;
   }
-  function headerIndex(header, aliases){ for(let i=0;i<header.length;i++){const h=norm(header[i]); if(aliases.some(a=>h===norm(a))) return i;} return -1; }
+
   function parseNF(rows){
-    const out={bruto:{},descAcresc:{},impostos:{}}; if(rows.length<2) return out; const h=rows[0];
-    const iReg=headerIndex(h,['COORDENAÇÃO','COORDENACAO','REGIONAL']); const iData=headerIndex(h,['DATA N.F.','DATA DA NF','DATA NF','DATA NOTA','DATA']);
-    const iBruto=headerIndex(h,['VALOR BRUTO','VALOR BRUTO DA NF','VALOR BRUTO NF','VALOR DA NF','VALOR NF','VALOR']);
-    const iDesc=headerIndex(h,['DESCONTO','DESCONTOS']); const iAcr=headerIndex(h,['ACRÉSCIMO','ACRESCIMO','ACRÉSCIMOS','ACRESCIMOS']); const iImp=headerIndex(h,['IMPOSTO','IMPOSTOS']);
-    rows.slice(1).forEach(row=>{let reg=mapReg(row[iReg]); const d=monthFrom(row[iData]); if(!reg||!d||d.year!==state.year||isIgnored(reg)) return; if(!out.bruto[reg]){out.bruto[reg]=Array(12).fill(0);out.descAcresc[reg]=Array(12).fill(0);out.impostos[reg]=Array(12).fill(0);} out.bruto[reg][d.month]+=n(row[iBruto]); out.descAcresc[reg][d.month]+=n(iAcr>-1?row[iAcr]:0)-n(iDesc>-1?row[iDesc]:0); out.impostos[reg][d.month]+=n(iImp>-1?row[iImp]:0); });
+    const out={bruto:{}, descAcresc:{}, impostos:{}, regionais:new Set()};
+    if(!rows?.length) return out;
+    const hrow=findHeaderRow(rows,['Coordenação','Data','Valor Bruto']);
+    const header=rows[hrow]||[]; const idx=indexByHeaders(header);
+    const iReg=col(idx,['Coordenação','Coordenacao','Regional']);
+    const iData=col(idx,['Data N.F.','Data da NF','Data NF','Data Nota','Data']);
+    const iBruto=col(idx,['Valor Bruto','Valor Bruto da NF','Valor Bruto NF','Valor da N.F.','Valor NF','Valor']);
+    const iDesc=col(idx,['Desconto','Descontos']);
+    const iAcr=col(idx,['Acréscimo','Acrescimo','Acréscimos','Acrescimos']);
+    const iImp=col(idx,['Imposto','Impostos','Total de Impostos']);
+    if(iReg<0 || iData<0 || iBruto<0) return out;
+    for(const row of rows.slice(hrow+1)){
+      const reg=mapReg(row[iReg]); const m=monthFrom(row[iData]);
+      if(!reg || !m || m.year!==state.year || isIgnored(reg)) continue;
+      if(!isExcluded(reg)) out.regionais.add(reg);
+      addArr(out.bruto,reg,m.month,row[iBruto]);
+      addArr(out.descAcresc,reg,m.month,n(row[iAcr])-n(row[iDesc]));
+      addArr(out.impostos,reg,m.month,row[iImp]);
+    }
     return out;
   }
-  function parseProducao(rows){
-    const out={emb:{},classif:{}}; if(rows.length<2) return out; const h=rows[0];
-    const iReg=headerIndex(h,['COORDENAÇÃO','COORDENACAO','REGIONAL']); const iData=headerIndex(h,['DATA']);
-    const iEmb=headerIndex(h,['TOTAL EMBARCADO','VOLUME EMBARCADO','EMBARCADO','TONS EMBARCADAS','TONS EMBARCADOS']); const iClass=headerIndex(h,['TONS CLASSIFICADAS D1','TONS CLASSIFICADAS','VOLUME CLASSIFICADO SEM CADENCIA','VOLUME CLASSIFICADO']);
-    rows.slice(1).forEach(row=>{let reg=mapReg(row[iReg]); const d=monthFrom(row[iData]); if(!reg||!d||d.year!==state.year||isIgnored(reg)||norm(reg)==='GERAL') return; if(!out.emb[reg]){out.emb[reg]=Array(12).fill(0);out.classif[reg]=Array(12).fill(0);} out.emb[reg][d.month]+=n(row[iEmb]); if(iClass>-1) out.classif[reg][d.month]+=n(row[iClass]); });
-    return out;
-  }
-  function parseAntecipacoes(rows){ const out=Array(12).fill(0); if(rows.length<2) return out; const h=rows[0]; const iData=headerIndex(h,['DATA','DATA DA NF','DATA EMISSÃO']); const iCred=headerIndex(h,['CREDITO','CRÉDITO']); rows.slice(1).forEach(r=>{const d=monthFrom(r[iData]); if(d&&d.year===state.year) out[d.month]+=n(r[iCred]);}); return out; }
 
-  function sumMap(maps, mi){return Object.values(maps||{}).reduce((a,arr)=>a+n(arr?.[mi]),0);}
-  function buildDRE(){
-    const reports=state.reportsData||{}; const base=reports.despesas?.base||{}, geral=reports.despesas?.geral||{}, nf=reports.nf||{}, prod=reports.producao||{}, antecip=reports.antecipacoes||Array(12).fill(0);
-    const regionais=new Set([...(reports.despesas?.regionais||[]), ...Object.keys(nf.bruto||{}), ...Object.keys(prod.emb||{})]);
-    [...regionais].forEach(r=>{ if(isExcluded(r)||isIgnored(r)||norm(r)==='GERAL') regionais.delete(r); });
-    const rowsGeral=calcGeral(base,geral,nf,prod,antecip); const rowsRegional={}; [...regionais].sort((a,b)=>a.localeCompare(b,'pt-BR')).forEach(r=>rowsRegional[r]=calcRegional(r,base,geral,nf,prod));
-    state.data={rowsGeral, rowsRegional, regionais:[...regionais].sort((a,b)=>a.localeCompare(b,'pt-BR'))}; if(!state.regional && state.data.regionais.length) state.regional=state.data.regionais[0];
+  function parseResultadoDiario(rows){
+    const out={classificado:{}, embarcado:{}, cargas:{}, valorEmbarcado:{}, testes:{}, regionais:new Set()};
+    if(!rows?.length) return out;
+    const hrow=findHeaderRow(rows,['O.S.','Toneladas','Embarcado','Coordenação']);
+    const header=rows[hrow]||[]; const idx=indexByHeaders(header);
+    const iReg=col(idx,['Coordenação','Coordenacao','Regional']);
+    const iData=col(idx,['Data']);
+    const iTon=col(idx,['Toneladas']);
+    const iEmb=col(idx,['Embarcado']);
+    const iCargas=col(idx,['Cargas']);
+    const iValorEmb=col(idx,['Valor Embarcado']);
+    const testCols=['Total Afla','Total Vomitoxina','Total Falling Number','Total Intacta','Total GMO'].map(x=>col(idx,[x])).filter(i=>i>=0);
+    if(iReg<0 || iData<0 || iTon<0 || iEmb<0) return out;
+    for(const row of rows.slice(hrow+1)){
+      const reg=mapReg(row[iReg]); const m=monthFrom(row[iData]);
+      if(!reg || !m || m.year!==state.year || isIgnored(reg)) continue;
+      if(!isExcluded(reg)) out.regionais.add(reg);
+      addArr(out.classificado,reg,m.month,row[iTon]);
+      addArr(out.embarcado,reg,m.month,row[iEmb]);
+      addArr(out.cargas,reg,m.month,row[iCargas]);
+      addArr(out.valorEmbarcado,reg,m.month,row[iValorEmb]);
+      addArr(out.testes,reg,m.month,testCols.reduce((a,i)=>a+n(row[i]),0));
+    }
+    return out;
   }
-  function total(row){return row.values.reduce((a,b)=>a+n(b),0);} function pctTotal(num,den){return den?n(num)/n(den):0;}
-  function row(label,values){return {label,values,total:values.reduce((a,b)=>a+n(b),0)};}
-  function calcGeral(base,geral,nf,prod,antecip){
-    const linhas=[]; const vals={}; ['notas','desc','imp','rec','despOp','veic','pessoal','lb','adm','ebtida','fin','ll','emp','antecip','inv','res','mb','me'].forEach(k=>vals[k]=Array(12).fill(0));
+
+  function parseAntecipacoes(rows){
+    const arr=Array(12).fill(0); if(!rows?.length) return arr;
+    const hrow=findHeaderRow(rows,['Data','Credito']); const idx=indexByHeaders(rows[hrow]||[]);
+    const iData=col(idx,['Data','Data da NF','Data Emissão']); const iCred=col(idx,['Credito','Crédito']);
+    if(iData<0 || iCred<0) return arr;
+    rows.slice(hrow+1).forEach(row=>{ const m=monthFrom(row[iData]); if(m && m.year===state.year) arr[m.month]+=n(row[iCred]); });
+    return arr;
+  }
+
+  function rateio(base,geral,reg,topics,mi){
+    const proprio=sumTopic(base,reg,topics,mi);
+    if(!proprio) return 0;
+    let totalSemPool=0;
+    for(const r of Object.keys(base||{})){ if(!isPool(r)) totalSemPool+=sumTopic(base,r,topics,mi); }
+    if(!totalSemPool) return 0;
+    let pool=geralTopic(geral,topics,mi);
+    for(const r of Object.keys(base||{})){ if(isPool(r)) pool+=sumTopic(base,r,topics,mi); }
+    return pool ? (proprio/totalSemPool)*pool : 0;
+  }
+
+  function buildForRegional(reg, source){
+    const {desp,nf,prod,antecipacoes}=source;
+    const rows=[];
+    const vals={notas:Array(12).fill(0),desc:Array(12).fill(0),imp:Array(12).fill(0),rec:Array(12).fill(0),despOp:Array(12).fill(0),veic:Array(12).fill(0),pessoal:Array(12).fill(0),lb:Array(12).fill(0),adm:Array(12).fill(0),ebtida:Array(12).fill(0),fin:Array(12).fill(0),ll:Array(12).fill(0),emp:Array(12).fill(0),antec:Array(12).fill(0),inv:Array(12).fill(0),res:Array(12).fill(0),mb:Array(12).fill(0),me:Array(12).fill(0)};
     for(let mi=0;mi<12;mi++){
-      vals.notas[mi]=sumMap(nf.bruto,mi); vals.desc[mi]=sumMap(nf.descAcresc,mi); vals.imp[mi]=sumMap(nf.impostos,mi); vals.rec[mi]=vals.notas[mi]+vals.desc[mi]-vals.imp[mi];
-      vals.despOp[mi]=sumAll(base,['DESPESAS OPERACIONAIS'],mi)+n(geral['DESPESAS OPERACIONAIS']?.[mi]);
-      vals.veic[mi]=sumAll(base,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi)+n(geral['COMBUSTIVEIS E LUBRIFICANTES']?.[mi])+n(geral['DESPESAS COM VEICULOS']?.[mi]);
-      vals.pessoal[mi]=sumAll(base,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi)+n(geral['DESPESAS RH']?.[mi])+n(geral['FOLHA DE PAGAMENTO']?.[mi])+n(geral['IMPOSTOS SOBRE FOLHA']?.[mi]);
+      vals.notas[mi]=reg?n(getArr(nf.bruto,reg)[mi]):sumMapMonth(nf.bruto,mi);
+      vals.desc[mi]=reg?n(getArr(nf.descAcresc,reg)[mi]):sumMapMonth(nf.descAcresc,mi);
+      vals.imp[mi]=reg?n(getArr(nf.impostos,reg)[mi]):sumMapMonth(nf.impostos,mi);
+      vals.rec[mi]=vals.notas[mi]+vals.desc[mi]-vals.imp[mi];
+      if(reg){
+        vals.despOp[mi]=sumTopic(desp.base,reg,['DESPESAS OPERACIONAIS'],mi)+rateio(desp.base,desp.geral,reg,['DESPESAS OPERACIONAIS'],mi);
+        vals.veic[mi]=sumTopic(desp.base,reg,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi)+rateio(desp.base,desp.geral,reg,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi);
+        vals.pessoal[mi]=sumTopic(desp.base,reg,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi)+rateio(desp.base,desp.geral,reg,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi);
+        vals.adm[mi]=sumTopic(desp.base,reg,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi)+rateio(desp.base,desp.geral,reg,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi);
+        vals.fin[mi]=rateio(desp.base,desp.geral,reg,['DESPESAS FINANCEIRAS'],mi);
+        vals.inv[mi]=sumTopic(desp.base,reg,['PATRIMONIO'],mi)+rateio(desp.base,desp.geral,reg,['PATRIMONIO'],mi);
+      } else {
+        vals.despOp[mi]=sumTopicsAll(desp.base,['DESPESAS OPERACIONAIS'],mi)+geralTopic(desp.geral,['DESPESAS OPERACIONAIS'],mi);
+        vals.veic[mi]=sumTopicsAll(desp.base,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi)+geralTopic(desp.geral,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi);
+        vals.pessoal[mi]=sumTopicsAll(desp.base,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi)+geralTopic(desp.geral,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi);
+        vals.adm[mi]=sumTopicsAll(desp.base,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi)+geralTopic(desp.geral,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi);
+        vals.fin[mi]=sumTopicsAll(desp.base,['DESPESAS FINANCEIRAS','RETIRADA SÓCIOS','RETIRADA SOCIOS'],mi)+geralTopic(desp.geral,['DESPESAS FINANCEIRAS','RETIRADA SÓCIOS','RETIRADA SOCIOS'],mi);
+        vals.emp[mi]=sumTopicsAll(desp.base,['EMPRESTIMOS TERCEIROS'],mi)+geralTopic(desp.geral,['EMPRESTIMOS TERCEIROS'],mi);
+        vals.antec[mi]=n(antecipacoes[mi]);
+        vals.inv[mi]=sumTopicsAll(desp.base,['PATRIMONIO'],mi)+geralTopic(desp.geral,['PATRIMONIO'],mi);
+      }
       vals.lb[mi]=vals.rec[mi]-vals.despOp[mi]-vals.veic[mi]-vals.pessoal[mi];
-      vals.adm[mi]=sumAll(base,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi)+n(geral['DESPESAS ADMINISTRATIVAS']?.[mi])+n(geral['DESPESAS COMERCIAIS']?.[mi]);
       vals.ebtida[mi]=vals.lb[mi]-vals.adm[mi];
-      const retirada=sumAll(base,['RETIRADA SÓCIOS','RETIRADA SOCIOS'],mi)+n(geral['RETIRADA SÓCIOS']?.[mi])+n(geral['RETIRADA SOCIOS']?.[mi]);
-      vals.fin[mi]=sumAll(base,['DESPESAS FINANCEIRAS'],mi)+n(geral['DESPESAS FINANCEIRAS']?.[mi])+retirada;
-      vals.ll[mi]=vals.ebtida[mi]-vals.fin[mi]; vals.emp[mi]=sumAll(base,['EMPRESTIMOS TERCEIROS'],mi)+n(geral['EMPRESTIMOS TERCEIROS']?.[mi]); vals.antecip[mi]=n(antecip[mi]); vals.inv[mi]=sumAll(base,['PATRIMONIO'],mi)+n(geral['PATRIMONIO']?.[mi]); vals.res[mi]=vals.ll[mi]-vals.emp[mi]-vals.antecip[mi]-vals.inv[mi]; vals.mb[mi]=pctTotal(vals.lb[mi],vals.rec[mi]); vals.me[mi]=pctTotal(vals.ebtida[mi],vals.rec[mi]);
+      vals.ll[mi]=vals.ebtida[mi]-vals.fin[mi];
+      vals.res[mi]=vals.ll[mi]-vals.emp[mi]-vals.antec[mi]-vals.inv[mi];
+      vals.mb[mi]=div(vals.lb[mi],vals.rec[mi]); vals.me[mi]=div(vals.ebtida[mi],vals.rec[mi]);
     }
-    [['NOTAS FISCAIS','notas'],['DESCONTOS CONCEDIDOS+ACRÉSCIMOS','desc'],['TOTAL DE IMPOSTOS','imp'],['RECEITA LÍQUIDA','rec'],['TOTAL DE DESPESAS OPERACIONAIS','despOp'],['DESP COM VEICULOS+COMBUSTIVEIS','veic'],['TOTAL DESPESAS PESSOAL','pessoal'],['LUCRO BRUTO','lb'],['DESP ADM + COMERCIAL','adm'],['LUCRO OPERACIONAL (EBTIDA)','ebtida'],['DESPESAS FINANCEIRAS','fin'],['LUCRO LÍQUIDO','ll'],['EMPRESTIMOS TERCEIROS','emp'],['ANTECIPAÇÕES A FORNECEDORES','antecip'],['INVESTIMENTOS','inv'],['RESULTADO FINAL','res'],['MARGEM BRUTA','mb'],['MARGEM EBTIDA','me']].forEach(([l,k])=>linhas.push(row(l,vals[k])));
-    return {main:linhas, extras:extrasFor(null, vals, prod)};
-  }
-  function calcRegional(reg,base,geral,nf,prod){
-    const linhas=[]; const vals={}; ['notas','desc','imp','rec','despOp','veic','pessoal','lb','adm','ebtida','fin','ll','inv','res','mb','me'].forEach(k=>vals[k]=Array(12).fill(0));
-    for(let mi=0;mi<12;mi++){
-      vals.notas[mi]=n(nf.bruto?.[reg]?.[mi]); vals.desc[mi]=n(nf.descAcresc?.[reg]?.[mi]); vals.imp[mi]=n(nf.impostos?.[reg]?.[mi]); vals.rec[mi]=vals.notas[mi]+vals.desc[mi]-vals.imp[mi];
-      vals.despOp[mi]=sumTopic(base,reg,['DESPESAS OPERACIONAIS'],mi)+rateio(base,geral,reg,['DESPESAS OPERACIONAIS'],mi);
-      vals.veic[mi]=sumTopic(base,reg,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi)+rateio(base,geral,reg,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi);
-      vals.pessoal[mi]=sumTopic(base,reg,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi)+rateio(base,geral,reg,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi);
-      vals.lb[mi]=vals.rec[mi]-vals.despOp[mi]-vals.veic[mi]-vals.pessoal[mi]; vals.adm[mi]=sumTopic(base,reg,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi)+rateio(base,geral,reg,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi); vals.ebtida[mi]=vals.lb[mi]-vals.adm[mi]; vals.fin[mi]=rateio(base,geral,reg,['DESPESAS FINANCEIRAS'],mi); vals.ll[mi]=vals.ebtida[mi]-vals.fin[mi]; vals.inv[mi]=sumTopic(base,reg,['PATRIMONIO'],mi)+rateio(base,geral,reg,['PATRIMONIO'],mi); vals.res[mi]=vals.ll[mi]-vals.inv[mi]; vals.mb[mi]=pctTotal(vals.lb[mi],vals.rec[mi]); vals.me[mi]=pctTotal(vals.ebtida[mi],vals.rec[mi]);
-    }
-    [['NOTAS FISCAIS','notas'],['DESCONTOS CONCEDIDOS+ACRÉSCIMOS','desc'],['TOTAL DE IMPOSTOS','imp'],['RECEITA LÍQUIDA','rec'],['TOTAL DE DESPESAS OPERACIONAIS','despOp'],['DESP COM VEICULOS+COMBUSTIVEIS','veic'],['TOTAL DESPESAS PESSOAL','pessoal'],['LUCRO BRUTO','lb'],['DESP ADM + COMERCIAL','adm'],['LUCRO OPERACIONAL (EBTIDA)','ebtida'],['DESPESAS FINANCEIRAS','fin'],['LUCRO LÍQUIDO','ll'],['INVESTIMENTOS','inv'],['RESULTADO FINAL','res'],['MARGEM BRUTA','mb'],['MARGEM EBTIDA','me']].forEach(([l,k])=>linhas.push(row(l,vals[k])));
-    return {main:linhas, extras:extrasFor(reg, vals, prod)};
-  }
-  function extrasFor(reg, vals, prod){ const volEmb=Array(12).fill(0), volClass=Array(12).fill(0), cptEmb=Array(12).fill(0), cptClass=Array(12).fill(0), totalDesp=Array(12).fill(0); for(let mi=0;mi<12;mi++){ volEmb[mi]=reg?n(prod.emb?.[reg]?.[mi]):sumMap(prod.emb,mi); volClass[mi]=reg?n(prod.classif?.[reg]?.[mi]):sumMap(prod.classif,mi); totalDesp[mi]=['despOp','veic','pessoal','adm','fin','inv'].reduce((a,k)=>a+n(vals[k][mi]),0); cptEmb[mi]=volEmb[mi]?totalDesp[mi]/volEmb[mi]:0; cptClass[mi]=volClass[mi]?totalDesp[mi]/volClass[mi]:0; } return {totalDesp,volEmb,volClass,cptEmb,cptClass}; }
+    const push=(label,arr)=>rows.push({label,values:arr,total:PERCENT_ROWS.has(label)?0:total(arr)});
+    push('NOTAS FISCAIS',vals.notas); push('DESCONTOS CONCEDIDOS+ACRÉSCIMOS',vals.desc); push('TOTAL DE IMPOSTOS',vals.imp); push('RECEITA LÍQUIDA',vals.rec);
+    push('TOTAL DE DESPESAS OPERACIONAIS',vals.despOp); push('DESP COM VEICULOS+COMBUSTIVEIS',vals.veic); push('TOTAL DESPESAS PESSOAL',vals.pessoal); push('LUCRO BRUTO',vals.lb);
+    push('DESP ADM + COMERCIAL',vals.adm); push('LUCRO OPERACIONAL (EBTIDA)',vals.ebtida); push('DESPESAS FINANCEIRAS',vals.fin); push('LUCRO LÍQUIDO',vals.ll);
+    if(!reg){ push('EMPRESTIMOS TERCEIROS',vals.emp); push('ANTECIPAÇÕES A FORNECEDORES',vals.antec); }
+    push('INVESTIMENTOS',vals.inv); push('RESULTADO FINAL',vals.res); rows.push({label:'MARGEM BRUTA',values:vals.mb,total:div(total(vals.lb),total(vals.rec))}); rows.push({label:'MARGEM EBTIDA',values:vals.me,total:div(total(vals.ebtida),total(vals.rec))});
 
-  async function processReports(opts, setStatus){
-    state.busy=true; setStatus('Buscando últimos relatórios importados...'); state.reports=await getLatestReports(opts.supabase);
-    const data={despesas:null,nf:null,producao:null,antecipacoes:Array(12).fill(0)};
-    for(const r of state.reports){ setStatus(`Processando ${r.nome_arquivo||r.arquivo_nome_original||r.tipo}...`); const wb=await fetchWorkbook(opts.supabase,r); const rows=sheetRows(wb, r.tipo==='despesas'?['Despesas por Regional','Despesas','DESPESAS']:r.tipo==='notas_fiscais'?['Faturamento','Notas Fiscais']:r.tipo==='producao'||r.tipo==='resultado'?['Resultado Diario','Resultado Diário','Producao','Produção']:['Antecipações']); if(r.tipo==='despesas') data.despesas=parseDespesas(rows); if(r.tipo==='notas_fiscais') data.nf=parseNF(rows); if(r.tipo==='producao'||r.tipo==='resultado') data.producao=parseProducao(rows); if(r.tipo==='caixa_fornecedor') data.antecipacoes=parseAntecipacoes(rows); }
-    state.reportsData=data; buildDRE(); state.busy=false;
+    const volClass=reg?getArr(prod.classificado,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.classificado,mi));
+    const volEmb=reg?getArr(prod.embarcado,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.embarcado,mi));
+    const cargas=reg?getArr(prod.cargas,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.cargas,mi));
+    const totalDesp=vals.despOp.map((_,mi)=>vals.despOp[mi]+vals.veic[mi]+vals.pessoal[mi]+vals.adm[mi]+vals.fin[mi]+vals.inv[mi]);
+    const cptEmb=totalDesp.map((v,mi)=>div(v,volEmb[mi]));
+    const cptClass=totalDesp.map((v,mi)=>div(v,volClass[mi]));
+    const receitaTon=vals.rec.map((v,mi)=>div(v,volEmb[mi]));
+    const margemTon=vals.res.map((v,mi)=>div(v,volEmb[mi]));
+    const eficiencia=volEmb.map((v,mi)=>div(v,volClass[mi]));
+    return {main:rows, extras:{totalDesp,volClass,volEmb,cargas,cptEmb,cptClass,receitaTon,margemTon,eficiencia}, vals};
   }
 
-  function renderTable(report){ if(!report) return '<div class="dre-status show">Sem dados para exibir.</div>'; const rows=report.main; return `<div class="dre-table-wrap"><table class="dre-table"><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL</th></tr></thead><tbody>${rows.map(r=>{const cls=['RECEITA LÍQUIDA','LUCRO BRUTO','LUCRO OPERACIONAL (EBTIDA)','LUCRO LÍQUIDO','MARGEM BRUTA','MARGEM EBTIDA'].includes(r.label)?'highlight':r.label==='RESULTADO FINAL'?'result':''; const totalVal=PERCENT_ROWS.has(r.label)?(total(rows.find(x=>x.label==='RECEITA LÍQUIDA')||{values:[]})? (r.label==='MARGEM BRUTA'? total(rows.find(x=>x.label==='LUCRO BRUTO'))/total(rows.find(x=>x.label==='RECEITA LÍQUIDA')) : total(rows.find(x=>x.label==='LUCRO OPERACIONAL (EBTIDA)'))/total(rows.find(x=>x.label==='RECEITA LÍQUIDA'))) : 0):r.total; return `<tr class="${cls}"><td>${safe(r.label)}</td>${r.values.map(v=>cell(r.label,v)).join('')}${cell(r.label,totalVal)}</tr>`}).join('')}</tbody></table></div>${renderExtras(report.extras)}`; }
-  function cell(label,v){ const neg=n(v)<0?' class="neg"':''; const txt=PERCENT_ROWS.has(label)?fmtPct(v):MONEY_ROWS.has(label)?fmtMoney(v):fmtNum(v); return `<td${neg}>${txt}</td>`; }
-  function renderExtras(ex){ if(!ex) return ''; const rows=[['Total Despesas',ex.totalDesp,'money'],['Volume Classificado (sem cadência)',ex.volClass,'num'],['Custo por tonelada - classificado',ex.cptClass,'money'],['Volume Embarcado + NHE + cad',ex.volEmb,'num'],['Custo por tonelada - embarcado',ex.cptEmb,'money']]; return `<div class="dre-extra"><div class="dre-extra-box"><h4>CUSTO POR TONELADA</h4><table><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL</th></tr></thead><tbody>${rows.map(([label,arr,type])=>`<tr><td>${label}</td>${arr.map(v=>`<td>${type==='money'?fmtMoney(v):fmtNum(v)}</td>`).join('')}<td>${type==='money'?fmtMoney(arr.reduce((a,b)=>a+n(b),0)):fmtNum(arr.reduce((a,b)=>a+n(b),0))}</td></tr>`).join('')}</tbody></table></div></div>`; }
-  function activeReport(){return state.tab==='geral'?state.data?.rowsGeral:state.data?.rowsRegional?.[state.regional];}
-  function renderReport(container){ const report=activeReport(); const title=state.tab==='geral'?'DRE Geral':`DRE Regional - ${state.regional||''}`; const rec=(report?.main||[]).find(r=>r.label==='RECEITA LÍQUIDA')?.total||0; const res=(report?.main||[]).find(r=>r.label==='RESULTADO FINAL')?.total||0; const eb=(report?.main||[]).find(r=>r.label==='LUCRO OPERACIONAL (EBTIDA)')?.total||0; const mb=rec?((report?.main||[]).find(r=>r.label==='LUCRO BRUTO')?.total||0)/rec:0; container.querySelector('#dreCards').innerHTML=`<div class="dre-card"><span>Receita Líquida</span><strong>${fmtMoney(rec)}</strong></div><div class="dre-card ${eb>=0?'positive':'negative'}"><span>EBTIDA</span><strong>${fmtMoney(eb)}</strong></div><div class="dre-card ${res>=0?'positive':'negative'}"><span>Resultado Final</span><strong>${fmtMoney(res)}</strong></div><div class="dre-card"><span>Margem Bruta</span><strong>${fmtPct(mb)}</strong></div>`; container.querySelector('#dreReport').innerHTML=`<div class="dre-report-head"><div><h3>${safe(title)}</h3><p>Ano ${state.year} · gerado pelos relatórios importados</p></div><strong>Grão 1000</strong></div>${renderTable(report)}`; const sel=container.querySelector('#regionalSelect'); sel.innerHTML=(state.data?.regionais||[]).map(r=>`<option value="${safe(r)}" ${r===state.regional?'selected':''}>${safe(r)}</option>`).join(''); sel.disabled=state.tab!=='regional'; }
+  function buildDre(){
+    const src=state.reportsData;
+    const regionais=[...new Set([...src.desp.regionais,...src.nf.regionais,...src.prod.regionais])].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    const regionalReports={}; regionais.forEach(r=>regionalReports[r]=buildForRegional(r,src));
+    state.data={regionais, geral:buildForRegional('',src), regional:regionalReports};
+    if(!state.regional && regionais.length) state.regional=regionais[0];
+  }
+
+  async function getLatestReports(supabase){
+    const {data,error}=await supabase.from('relatorios_importacoes').select('*').order('created_at',{ascending:false}).limit(100);
+    if(error) throw error;
+    const wanted=['despesas','notas_fiscais','resultado','resultado-diario','resultado_diario','producao','caixa_fornecedor'];
+    const chosen=[]; const seen=new Set();
+    for(const r of data||[]){
+      let tipo=String(r.tipo||r.tipo_relatorio||'outros');
+      if(tipo==='resultado_diario') tipo='resultado-diario';
+      if(tipo==='resultado') tipo='resultado-diario';
+      if(!wanted.includes(tipo) || seen.has(tipo)) continue;
+      seen.add(tipo); chosen.push({...r,tipo});
+    }
+    return chosen;
+  }
+
+  async function processReports(opts,setStatus){
+    state.busy=true; setStatus('Buscando últimos relatórios importados...');
+    state.reports=await getLatestReports(opts.supabase);
+    const src={desp:null,nf:null,prod:null,antecipacoes:Array(12).fill(0)};
+    for(const report of state.reports){
+      const nome=report.nome_arquivo||report.arquivo_nome_original||report.tipo;
+      setStatus(`Processando ${nome}...`);
+      const wb=await readWorkbook(opts.supabase,report);
+      if(report.tipo==='despesas') src.desp=parseDespesas(sheetRows(wb,['Despesas por Regional','Despesas','DESPESAS','Despesas_regionais']));
+      if(report.tipo==='notas_fiscais') src.nf=parseNF(sheetRows(wb,['Faturamento','Notas Fiscais','NF','NFe','NFSe']));
+      if(report.tipo==='resultado-diario' || report.tipo==='producao') src.prod=parseResultadoDiario(sheetRows(wb,['Resultado Diário','Resultado Diario','Produção','Producao','Resultado']));
+      if(report.tipo==='caixa_fornecedor') src.antecipacoes=parseAntecipacoes(sheetRows(wb,['Antecipações','Antecipacoes','Caixa Fornecedor']));
+    }
+    src.desp=src.desp||{base:{},geral:{},regionais:new Set()};
+    src.nf=src.nf||{bruto:{},descAcresc:{},impostos:{},regionais:new Set()};
+    src.prod=src.prod||{classificado:{},embarcado:{},cargas:{},valorEmbarcado:{},testes:{},regionais:new Set()};
+    state.reportsData=src; buildDre(); state.busy=false;
+  }
+
+  function activeReport(){ return state.tab==='geral' ? state.data?.geral : state.data?.regional?.[state.regional]; }
+  function cell(label,v){ const neg=n(v)<0?' class="neg"':''; let txt; if(PERCENT_ROWS.has(label)) txt=fmtPct(v); else if(MONEY_ROWS.has(label)) txt=fmtMoney(v); else txt=fmtNum(v); return `<td${neg}>${txt}</td>`; }
+  function renderTable(report){
+    if(!report) return '<div class="dre-status show">Sem dados para exibir.</div>';
+    return `<div class="dre-table-wrap"><table class="dre-table"><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL</th></tr></thead><tbody>${report.main.map(r=>{const cls=['RECEITA LÍQUIDA','LUCRO BRUTO','LUCRO OPERACIONAL (EBTIDA)','LUCRO LÍQUIDO','MARGEM BRUTA','MARGEM EBTIDA'].includes(r.label)?'highlight':r.label==='RESULTADO FINAL'?'result':'';return `<tr class="${cls}"><td>${safe(r.label)}</td>${r.values.map(v=>cell(r.label,v)).join('')}${cell(r.label,r.total)}</tr>`;}).join('')}</tbody></table></div>${renderExtras(report.extras)}`;
+  }
+  function renderExtras(ex){
+    if(!ex) return '';
+    const rows=[
+      ['Total Despesas',ex.totalDesp,'money'],
+      ['Volume Classificado (sem cadência)',ex.volClass,'num'],
+      ['Volume Embarcado + NHE + cad',ex.volEmb,'num'],
+      ['Eficiência Operacional',ex.eficiencia,'pct'],
+      ['Custo por tonelada - classificado',ex.cptClass,'money'],
+      ['Custo por tonelada - embarcado',ex.cptEmb,'money'],
+      ['Receita por tonelada',ex.receitaTon,'money'],
+      ['Margem por tonelada',ex.margemTon,'money'],
+      ['Cargas',ex.cargas,'num']
+    ];
+    const format=(type,v)=> type==='money'?fmtMoney(v):type==='pct'?fmtPct(v):fmtNum(v);
+    return `<div class="dre-extra"><div class="dre-extra-box"><h4>INDICADORES OPERACIONAIS</h4><table><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL / MÉDIA</th></tr></thead><tbody>${rows.map(([label,arr,type])=>{const totalVal=type==='pct'?div(total(ex.volEmb),total(ex.volClass)):type==='money'&&label.includes('tonelada')?div(label.includes('Receita')?total(activeReport()?.vals?.rec):label.includes('Margem')?total(activeReport()?.vals?.res):total(ex.totalDesp), label.includes('classificado')?total(ex.volClass):total(ex.volEmb)):total(arr); return `<tr><td>${safe(label)}</td>${arr.map(v=>`<td>${format(type,v)}</td>`).join('')}<td>${format(type,totalVal)}</td></tr>`;}).join('')}</tbody></table></div></div>`;
+  }
+
+  function renderCharts(container, report){
+    if(!report){ container.querySelector('#dreCharts').innerHTML=''; return; }
+    const res=report.main.find(r=>r.label==='RESULTADO FINAL')?.values||Array(12).fill(0);
+    const max=Math.max(...res.map(v=>Math.abs(n(v))),1);
+    const bars=res.map(v=>`<div class="dre-bar-wrap" title="${fmtMoney(v)}"><div class="dre-bar ${n(v)<0?'negative':''}" style="height:${Math.max(3,Math.abs(n(v))/max*100)}%"></div></div>`).join('');
+    const volClass=report.extras?.volClass||[]; const volEmb=report.extras?.volEmb||[]; const tClass=total(volClass); const tEmb=total(volEmb); const maxVol=Math.max(tClass,tEmb,1);
+    container.querySelector('#dreCharts').innerHTML=`
+      <div class="dre-chart"><h3>Resultado final mês a mês</h3><p>Visão rápida de lucro/prejuízo mensal.</p><div class="dre-bars">${bars}</div><div class="dre-chart-labels">${MESES.map(m=>`<span>${m.slice(0,3)}</span>`).join('')}</div></div>
+      <div class="dre-chart"><h3>Eficiência operacional</h3><p>Toneladas = volume classificado · Embarcado = produção efetiva.</p><div class="dre-volume-row"><strong>Classificado</strong><div class="dre-track"><div class="dre-fill secondary" style="width:${Math.min(100,tClass/maxVol*100)}%"></div></div></div><div class="dre-volume-row"><strong>Embarcado</strong><div class="dre-track"><div class="dre-fill" style="width:${Math.min(100,tEmb/maxVol*100)}%"></div></div></div><div class="dre-cards" style="grid-template-columns:repeat(2,1fr);margin:16px 0 0"><div class="dre-card"><span>Volume classificado</span><strong>${fmtNum(tClass)}</strong></div><div class="dre-card"><span>Volume embarcado</span><strong>${fmtNum(tEmb)}</strong><small>${fmtPct(div(tEmb,tClass))} de conversão</small></div></div></div>`;
+  }
+
+  function renderReport(container){
+    const report=activeReport();
+    const title=state.tab==='geral'?'DRE Geral':`DRE Regional - ${state.regional||''}`;
+    const rec=report?.main.find(r=>r.label==='RECEITA LÍQUIDA')?.total||0;
+    const res=report?.main.find(r=>r.label==='RESULTADO FINAL')?.total||0;
+    const eb=report?.main.find(r=>r.label==='LUCRO OPERACIONAL (EBTIDA)')?.total||0;
+    const volEmb=total(report?.extras?.volEmb||[]); const volClass=total(report?.extras?.volClass||[]);
+    const cpt=div(total(report?.extras?.totalDesp||[]),volEmb);
+    container.querySelector('#dreCards').innerHTML=`<div class="dre-card"><span>Receita Líquida</span><strong>${fmtMoney(rec)}</strong></div><div class="dre-card ${eb>=0?'positive':'negative'}"><span>EBTIDA</span><strong>${fmtMoney(eb)}</strong></div><div class="dre-card ${res>=0?'positive':'negative'}"><span>Resultado Final</span><strong>${fmtMoney(res)}</strong></div><div class="dre-card"><span>Volume Embarcado</span><strong>${fmtNum(volEmb)}</strong><small>Classificado: ${fmtNum(volClass)}</small></div><div class="dre-card"><span>Custo / Ton</span><strong>${fmtMoney(cpt)}</strong><small>Eficiência: ${fmtPct(div(volEmb,volClass))}</small></div>`;
+    renderCharts(container,report);
+    container.querySelector('#dreReport').innerHTML=`<div class="dre-report-head"><div><h3>${safe(title)}</h3><p>Ano ${state.year} · Toneladas = Volume Classificado · Embarcado = Volume Embarcado + NHE + cad</p></div><strong>Grão 1000</strong></div>${renderTable(report)}`;
+    const sel=container.querySelector('#regionalSelect');
+    sel.innerHTML=(state.data?.regionais||[]).map(r=>`<option value="${safe(r)}" ${r===state.regional?'selected':''}>${safe(r)}</option>`).join('');
+    sel.disabled=state.tab!=='regional';
+  }
 
   async function exportImage(){ const node=document.querySelector('#dreReport'); if(!node) return; const html2canvas=await loadHtml2Canvas(); const canvas=await html2canvas(node,{backgroundColor:'#ffffff',scale:2}); const a=document.createElement('a'); a.download=`${state.tab==='geral'?'DRE_Geral':'DRE_'+state.regional}_${state.year}.png`; a.href=canvas.toDataURL('image/png'); a.click(); }
-  async function exportPdf(){ const node=document.querySelector('#dreReport'); if(!node) return; const html2canvas=await loadHtml2Canvas(); const JsPDF=await loadJsPdf(); const canvas=await html2canvas(node,{backgroundColor:'#ffffff',scale:2}); const img=canvas.toDataURL('image/png'); const pdf=new JsPDF('l','mm','a4'); const w=297, h=canvas.height*w/canvas.width; let y=0; pdf.addImage(img,'PNG',0,y,w,h); pdf.save(`${state.tab==='geral'?'DRE_Geral':'DRE_'+state.regional}_${state.year}.pdf`); }
+  async function exportPdf(){ const node=document.querySelector('#dreReport'); if(!node) return; const html2canvas=await loadHtml2Canvas(); const JsPDF=await loadJsPdf(); const canvas=await html2canvas(node,{backgroundColor:'#ffffff',scale:2}); const img=canvas.toDataURL('image/png'); const pdf=new JsPDF('l','mm','a4'); const w=297, h=canvas.height*w/canvas.width; pdf.addImage(img,'PNG',0,0,w,h); pdf.save(`${state.tab==='geral'?'DRE_Geral':'DRE_'+state.regional}_${state.year}.pdf`); }
 
   function openHome(container, opts={}){
     state.year=new Date().getFullYear(); state.tab='geral'; state.data=null; state.reports=[];
-    container.innerHTML=`${styles}<section class="dre-wrap"><div class="dre-hero"><div><div class="dre-kicker">Diretoria · DRE</div><h2>Demonstrativo de Resultado</h2><p>DRE geral e regional calculada com base nos relatórios importados.</p></div><div class="dre-controls"><select id="yearSelect">${[state.year-1,state.year,state.year+1].map(y=>`<option value="${y}" ${y===state.year?'selected':''}>${y}</option>`).join('')}</select><select id="regionalSelect" disabled></select><button id="refreshDre" class="primary">Processar DRE</button><button id="exportPdf" disabled>PDF</button><button id="exportImg" disabled>Imagem</button></div></div><div class="dre-tabs"><button class="dre-tab active" data-tab="geral">DRE Geral</button><button class="dre-tab" data-tab="regional">DRE Regional</button></div><div class="dre-status show" id="dreStatus"><strong>Aguardando processamento.</strong> Clique em Processar DRE para carregar os últimos relatórios importados.</div><div id="dreCards" class="dre-cards"></div><article class="dre-report" id="dreReport"><div class="dre-report-head"><div><h3>DRE</h3><p>Sem dados processados.</p></div></div></article></section>`;
+    container.innerHTML=`${styles}<section class="dre-wrap"><div class="dre-hero"><div><div class="dre-kicker">Diretoria · DRE</div><h2>Dashboard DRE completo</h2><p>DRE geral e regional com indicadores operacionais do novo Resultado Diário: <b>Toneladas</b> como Volume Classificado e <b>Embarcado</b> como Volume Embarcado + NHE + cad.</p></div><div class="dre-controls"><select id="yearSelect">${[state.year-1,state.year,state.year+1].map(y=>`<option value="${y}" ${y===state.year?'selected':''}>${y}</option>`).join('')}</select><select id="regionalSelect" disabled></select><button id="refreshDre" class="primary">Processar DRE</button><button id="exportPdf" disabled>PDF</button><button id="exportImg" disabled>Imagem</button></div></div><div class="dre-tabs"><button class="dre-tab active" data-tab="geral">DRE Geral</button><button class="dre-tab" data-tab="regional">DRE Regional</button></div><div class="dre-status show" id="dreStatus"><strong>Aguardando processamento.</strong> Clique em Processar DRE para carregar os últimos relatórios importados.</div><div id="dreCards" class="dre-cards"></div><div id="dreCharts" class="dre-grid"></div><article class="dre-report" id="dreReport"><div class="dre-report-head"><div><h3>DRE</h3><p>Sem dados processados.</p></div></div></article></section>`;
     const status=container.querySelector('#dreStatus'); const setStatus=(txt)=>{status.classList.add('show');status.innerHTML=txt.includes('<')?txt:`<strong>Status:</strong> ${safe(txt)}`;};
     container.querySelector('#yearSelect').addEventListener('change',e=>{state.year=Number(e.target.value)||state.year;});
     container.querySelector('#regionalSelect').addEventListener('change',e=>{state.regional=e.target.value; renderReport(container);});
