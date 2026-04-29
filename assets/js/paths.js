@@ -1,37 +1,26 @@
 export function getPanelBasePath(pathname = window.location.pathname) {
-  const clean = String(pathname || '').split('?')[0].split('#')[0].replace(/\/+$/, '');
+  const clean = String(pathname || '').split('?')[0].split('#')[0];
 
   const painelMatch = clean.match(/^(.*?)(\/painel)(?:\/.*)?$/i);
-  if (painelMatch) return `${painelMatch[1]}${painelMatch[2]}` || '/painel';
-
-  const fileMatch = clean.match(/^(.*)\/[^/]+\.html$/i);
-  if (fileMatch) return fileMatch[1] || '';
+  if (painelMatch) return `${painelMatch[1]}${painelMatch[2]}`;
 
   const lastSlash = clean.lastIndexOf('/');
   if (lastSlash <= 0) return '';
   return clean.slice(0, lastSlash);
 }
 
-export function normalizePanelTarget(target = '') {
-  const raw = String(target || '').trim();
-  if (!raw || raw === '/') return 'dashboard';
-  if (/^(https?:)?\/\//i.test(raw)) return raw;
-  return raw
-    .replace(/^\/+/, '')
-    .replace(/^\.\//, '')
-    .replace(/\.html$/i, '')
-    .replace(/\/+$/, '');
-}
-
 export function toPanelUrl(target = '') {
-  const normalized = normalizePanelTarget(target);
-  if (/^(https?:)?\/\//i.test(normalized)) return normalized;
+  const normalized = String(target || '')
+    .replace(/^\/+/, '')
+    .replace(/\.html$/i, '');
 
   const base = getPanelBasePath();
-  const safeTarget = normalized || 'dashboard';
 
-  if (!base) return `./${safeTarget}`.replace(/\/+/g, '/');
-  return `${base}/${safeTarget}`.replace(/([^:]\/)\/+/g, '$1');
+  if (!normalized) return base || './';
+
+  if (!base) return `./${normalized}`;
+
+  return `${base}/${normalized}`.replace(/\/+/g, '/');
 }
 
 export function getApiBaseUrl(origin = window.location.origin) {
