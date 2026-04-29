@@ -486,6 +486,39 @@
     });
   }
 
+
+  async function completeChunkedUpload({ file, path, chunks, opts, bar, status }) {
+    const supabase = opts.supabase;
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token || null;
+
+    status.textContent = 'Finalizando arquivo enterprise...';
+    setProgress(bar, 92);
+
+    const response = await fetch('/api/upload/complete-chunked', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({
+        bucket: BUCKET,
+        finalPath: path,
+        filename: file.name,
+        contentType: file.type || 'application/vnd.ms-excel',
+        size: file.size || 0,
+        chunks,
+        deleteChunks: true,
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+      throw new Error(payload?.error || payload?.message || 'Falha ao finalizar upload enterprise.');
+    }
+    return payload;
+  }
+
   async function uploadFileEnterpriseChunked({ file, path, opts, bar, status }) {
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
     const chunks = [];
@@ -515,31 +548,23 @@
     }
 
     const manifest = {
-      version: 1,
-      mode: 'chunked',
+      version: 2,
+      mode: 'chunked-composed',
       bucket: BUCKET,
       original_name: file.name,
       original_path: path,
       original_size: file.size,
-      content_type: file.type || 'application/octet-stream',
+      content_type: file.type || 'application/vnd.ms-excel',
       chunk_size: CHUNK_SIZE,
       total_chunks: totalChunks,
       chunks,
       created_at: new Date().toISOString(),
     };
 
-    status.textContent = 'Gravando manifesto enterprise...';
-    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-    await uploadBlobWithSignedUrl({
-      blob: manifestBlob,
-      path: manifestPath,
-      fileName: `${sanitizeFileName(file.name)}.manifest.json`,
-      contentType: 'application/json',
-      opts,
-    });
+    await completeChunkedUpload({ file, path, chunks, opts, bar, status });
 
-    setProgress(bar, 95);
-    return { mode: 'chunked', storagePath: manifestPath, manifest };
+    setProgress(bar, 96);
+    return { mode: 'chunked', storagePath: path, manifest };
   }
 
   async function uploadFileSmart({ file, path, opts, bar, status }) {
