@@ -50,17 +50,69 @@
     for(const r of data||[]){ const tipo=r.tipo||r.tipo_relatorio||'outros'; if(!wanted.includes(tipo)||seen.has(tipo)) continue; seen.add(tipo); chosen.push({...r,tipo}); }
     return chosen;
   }
-  async function fetchWorkbook(supabase, report){
-    const XLSX=await loadXlsx();
-    let url=report.url;
-    if(!url && report.storage_bucket && report.storage_path){
-      const {data,error}=await supabase.storage.from(report.storage_bucket).createSignedUrl(report.storage_path, 60*10);
-      if(error) throw error; url=data.signedUrl;
+  function reportFileName(report){
+    return report?.nome_arquivo || report?.arquivo_nome_original || report?.arquivo_nome_storage || report?.tipo || 'relatório';
+  }
+
+  function normalizeStoragePath(report){
+    const bucket = report?.storage_bucket || 'relatorios-uploads';
+    let path = report?.storage_path || report?.path || '';
+
+    if (!path && report?.url) {
+      try {
+        const u = new URL(report.url);
+        const marker = '/storage/v1/object/public/' + bucket + '/';
+        const idx = u.pathname.indexOf(marker);
+        if (idx >= 0) path = decodeURIComponent(u.pathname.slice(idx + marker.length));
+      } catch (_) {}
     }
-    if(!url) throw new Error('Arquivo sem URL: '+(report.nome_arquivo||report.arquivo_nome_original||report.tipo));
-    const resp=await fetch(url); if(!resp.ok) throw new Error('Falha ao baixar '+(report.nome_arquivo||report.tipo));
-    const buf=await resp.arrayBuffer();
-    return XLSX.read(buf,{type:'array',cellDates:true});
+
+    path = String(path || '').trim();
+    if (path.startsWith(bucket + '/')) path = path.slice(bucket.length + 1);
+    if (path.startsWith('/')) path = path.slice(1);
+    return path;
+  }
+
+  async function signedReportUrl(supabase, report){
+    const bucket = report?.storage_bucket || 'relatorios-uploads';
+    const path = normalizeStoragePath(report);
+    if (!path) return null;
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 10);
+    if (error) throw error;
+    return data?.signedUrl || null;
+  }
+
+  async function fetchArrayBufferWithFallback(supabase, report){
+    const name = reportFileName(report);
+    const attempts = [];
+
+    try {
+      const signed = await signedReportUrl(supabase, report);
+      if (signed) attempts.push({ label: 'url assinada', url: signed });
+    } catch (err) {
+      console.warn('Não foi possível gerar URL assinada para', name, err);
+    }
+
+    if (report?.url) attempts.push({ label: 'url pública', url: report.url });
+
+    let lastError = null;
+    for (const attempt of attempts) {
+      try {
+        const resp = await fetch(attempt.url, { cache: 'no-store' });
+        if (resp.ok) return await resp.arrayBuffer();
+        lastError = new Error(attempt.label + ': HTTP ' + resp.status);
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    throw new Error('Falha ao baixar ' + name + (lastError ? ' (' + lastError.message + ')' : '') + '. Verifique se o arquivo ainda existe no bucket relatorios-uploads.');
+  }
+
+  async function fetchWorkbook(supabase, report){
+    const XLSX = await loadXlsx();
+    const buf = await fetchArrayBufferWithFallback(supabase, report);
+    return XLSX.read(buf, { type: 'array', cellDates: true });
   }
   function sheetRows(wb, preferred){ const XLSX=window.XLSX; const name=preferred.find(x=>wb.SheetNames.includes(x))||wb.SheetNames[0]; return XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:''}); }
 
