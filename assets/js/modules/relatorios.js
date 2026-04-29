@@ -350,6 +350,70 @@
     btn.innerHTML = label;
   }
 
+  async function requestSignedUpload({ file, path, opts }) {
+    const supabase = opts.supabase;
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token || null;
+
+    const response = await fetch('/api/upload/signed-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({
+        bucket: BUCKET,
+        path,
+        filename: file.name,
+        contentType: file.type || 'application/octet-stream',
+        size: file.size || 0,
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+      throw new Error(payload?.error || payload?.message || 'Falha ao gerar URL assinada para upload.');
+    }
+
+    return payload;
+  }
+
+  async function uploadFileWithSignedUrl({ file, path, opts }) {
+    const supabase = opts.supabase;
+    const signed = await requestSignedUpload({ file, path, opts });
+
+    if (signed?.token) {
+      const { error } = await supabase.storage
+        .from(BUCKET)
+        .uploadToSignedUrl(path, signed.token, file, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: false,
+        });
+      if (error) throw error;
+      return;
+    }
+
+    if (signed?.signedUrl || signed?.url) {
+      const uploadUrl = signed.signedUrl || signed.url;
+      const response = await fetch(uploadUrl, {
+        method: signed.method || 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          ...(signed.headers || {}),
+        },
+        body: file,
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(text || `Falha no upload assinado. HTTP ${response.status}`);
+      }
+      return;
+    }
+
+    throw new Error('Resposta inválida ao gerar URL assinada.');
+  }
+
   async function uploadAndRegister({ file, item, bar, status }, opts) {
     const supabase = opts.supabase;
     const detected = detectRelatorio(file.name);
@@ -358,18 +422,10 @@
     const userMeta = user?.user_metadata || {};
     const userName = userMeta.full_name || userMeta.name || user?.email || null;
 
-    status.textContent = 'Enviando arquivo...';
-    bar.style.width = '35%';
+    status.textContent = 'Gerando upload seguro...';
+    bar.style.width = '18%';
 
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, file, {
-        cacheControl: '3600',
-        upsert: false,
-        contentType: file.type || undefined,
-      });
-
-    if (uploadError) throw uploadError;
+    await uploadFileWithSignedUrl({ file, path, opts });
 
     bar.style.width = '72%';
     status.textContent = 'Registrando importação...';
@@ -392,7 +448,7 @@
       tamanho_bytes: file.size || 0,
       mime_type: file.type || null,
       status: 'enviado',
-      observacoes: 'Arquivo enviado pelo painel. Aguardando processamento/conferência.',
+      observacoes: 'Arquivo enviado pelo painel via upload assinado. Aguardando processamento/conferência.',
       importado_por: user?.id || null,
       importado_por_nome: userName,
       nome_arquivo: file.name,
