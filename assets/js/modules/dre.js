@@ -50,69 +50,64 @@
     for(const r of data||[]){ const tipo=r.tipo||r.tipo_relatorio||'outros'; if(!wanted.includes(tipo)||seen.has(tipo)) continue; seen.add(tipo); chosen.push({...r,tipo}); }
     return chosen;
   }
-  function reportFileName(report){
-    return report?.nome_arquivo || report?.arquivo_nome_original || report?.arquivo_nome_storage || report?.tipo || 'relatório';
+  async function fetchStorageBuffer(supabase, bucket, path){
+    const {data,error}=await supabase.storage.from(bucket).createSignedUrl(path, 60*10);
+    if(error) throw error;
+    const resp=await fetch(data.signedUrl);
+    if(!resp.ok) throw new Error('Falha ao baixar parte do arquivo: '+path);
+    return resp.arrayBuffer();
   }
 
-  function normalizeStoragePath(report){
-    const bucket = report?.storage_bucket || 'relatorios-uploads';
-    let path = report?.storage_path || report?.path || '';
+  async function fetchReportBuffer(supabase, report){
+    const bucket=report.storage_bucket;
+    const storagePath=report.storage_path||report.path;
+    let url=report.url;
 
-    if (!path && report?.url) {
-      try {
-        const u = new URL(report.url);
-        const marker = '/storage/v1/object/public/' + bucket + '/';
-        const idx = u.pathname.indexOf(marker);
-        if (idx >= 0) path = decodeURIComponent(u.pathname.slice(idx + marker.length));
-      } catch (_) {}
+    if(!url && bucket && storagePath){
+      const {data,error}=await supabase.storage.from(bucket).createSignedUrl(storagePath, 60*10);
+      if(error) throw error;
+      url=data.signedUrl;
     }
 
-    path = String(path || '').trim();
-    if (path.startsWith(bucket + '/')) path = path.slice(bucket.length + 1);
-    if (path.startsWith('/')) path = path.slice(1);
-    return path;
-  }
+    if(!url) throw new Error('Arquivo sem URL: '+(report.nome_arquivo||report.arquivo_nome_original||report.tipo));
 
-  async function signedReportUrl(supabase, report){
-    const bucket = report?.storage_bucket || 'relatorios-uploads';
-    const path = normalizeStoragePath(report);
-    if (!path) return null;
-    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 10);
-    if (error) throw error;
-    return data?.signedUrl || null;
-  }
+    const isManifest=String(storagePath||url).includes('.manifest.json');
+    const resp=await fetch(url);
+    if(!resp.ok) throw new Error('Falha ao baixar '+(report.nome_arquivo||report.tipo));
 
-  async function fetchArrayBufferWithFallback(supabase, report){
-    const name = reportFileName(report);
-    const attempts = [];
-
-    try {
-      const signed = await signedReportUrl(supabase, report);
-      if (signed) attempts.push({ label: 'url assinada', url: signed });
-    } catch (err) {
-      console.warn('Não foi possível gerar URL assinada para', name, err);
+    if(!isManifest){
+      return await resp.arrayBuffer();
     }
 
-    if (report?.url) attempts.push({ label: 'url pública', url: report.url });
-
-    let lastError = null;
-    for (const attempt of attempts) {
-      try {
-        const resp = await fetch(attempt.url, { cache: 'no-store' });
-        if (resp.ok) return await resp.arrayBuffer();
-        lastError = new Error(attempt.label + ': HTTP ' + resp.status);
-      } catch (err) {
-        lastError = err;
-      }
+    const manifest=await resp.json();
+    if(manifest?.mode!=='chunked' || !Array.isArray(manifest.chunks) || !manifest.chunks.length){
+      throw new Error('Manifesto enterprise inválido para '+(report.nome_arquivo||report.tipo));
     }
 
-    throw new Error('Falha ao baixar ' + name + (lastError ? ' (' + lastError.message + ')' : '') + '. Verifique se o arquivo ainda existe no bucket relatorios-uploads.');
+    const ordered=[...manifest.chunks].sort((a,b)=>Number(a.index||0)-Number(b.index||0));
+    const buffers=[];
+    let total=0;
+
+    for(const chunk of ordered){
+      const buf=await fetchStorageBuffer(supabase, manifest.bucket||bucket, chunk.path);
+      buffers.push(new Uint8Array(buf));
+      total+=buf.byteLength;
+    }
+
+    const merged=new Uint8Array(total);
+    let offset=0;
+    for(const part of buffers){
+      merged.set(part, offset);
+      offset+=part.byteLength;
+    }
+
+    return merged.buffer;
   }
 
   async function fetchWorkbook(supabase, report){
-    const XLSX = await loadXlsx();
-    const buf = await fetchArrayBufferWithFallback(supabase, report);
-    return XLSX.read(buf, { type: 'array', cellDates: true });
+    const XLSX=await loadXlsx();
+    const buf=await fetchReportBuffer(supabase, report);
+    return XLSX.read(buf,{type:'array',cellDates:true});
   }
   function sheetRows(wb, preferred){ const XLSX=window.XLSX; const name=preferred.find(x=>wb.SheetNames.includes(x))||wb.SheetNames[0]; return XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:''}); }
 

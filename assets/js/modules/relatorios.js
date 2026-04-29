@@ -1,5 +1,8 @@
 (function () {
   const BUCKET = 'relatorios-uploads';
+  const DIRECT_UPLOAD_LIMIT = 45 * 1024 * 1024;
+  const CHUNK_SIZE = 8 * 1024 * 1024;
+  const MAX_ENTERPRISE_SIZE = 1024 * 1024 * 1024;
 
   const styles = `
     <style>
@@ -189,6 +192,9 @@
       .file-item.is-error .progress-bar { background: linear-gradient(90deg, #b91c1c, var(--ri-red)); }
       .file-item.is-success { border-color: rgba(34, 197, 94, .38); }
       .file-item.is-error { border-color: rgba(239, 68, 68, .42); }
+      .file-item.is-enterprise { border-color: rgba(59, 130, 246, .38); }
+      .file-item.is-enterprise .progress-bar { background: linear-gradient(90deg, #2563eb, #22c55e); }
+      .upload-mode { margin-left: 8px; font-size: 10px; font-weight: 900; letter-spacing: .05em; color: #bfdbfe; border: 1px solid rgba(59, 130, 246, .35); background: rgba(37, 99, 235, .16); border-radius: 999px; padding: 3px 7px; white-space: nowrap; }
 
       .tag {
         display: inline-flex;
@@ -298,6 +304,14 @@
     return `${(value / 1024 / 1024).toFixed(1)} MB`;
   }
 
+  function isEnterpriseUpload(file) {
+    return Number(file?.size || 0) > DIRECT_UPLOAD_LIMIT;
+  }
+
+  function uploadModeLabel(file) {
+    return isEnterpriseUpload(file) ? 'ENTERPRISE · CHUNKS' : 'SEGURO';
+  }
+
   function detectRelatorio(fileName) {
     const n = String(fileName || '').toLowerCase();
 
@@ -331,7 +345,8 @@
 
   function isAllowedFile(file) {
     const name = String(file?.name || '').toLowerCase();
-    return /\.(xlsx|xls|csv)$/i.test(name);
+    if (!/\.(xlsx|xls|csv)$/i.test(name)) return false;
+    return Number(file?.size || 0) <= MAX_ENTERPRISE_SIZE;
   }
 
   function buildStoragePath(file) {
@@ -414,6 +429,128 @@
     throw new Error('Resposta inválida ao gerar URL assinada.');
   }
 
+
+  function setProgress(bar, percent) {
+    if (!bar) return;
+    const value = Math.max(0, Math.min(100, Number(percent || 0)));
+    bar.style.width = `${value.toFixed(1)}%`;
+  }
+
+  async function putToSignedUrl({ signed, blob, contentType }) {
+    if (!signed?.signedUrl && !signed?.url) {
+      throw new Error('URL assinada inválida.');
+    }
+
+    const uploadUrl = signed.signedUrl || signed.url;
+    const response = await fetch(uploadUrl, {
+      method: signed.method || 'PUT',
+      headers: {
+        'Content-Type': contentType || 'application/octet-stream',
+        ...(signed.headers || {}),
+      },
+      body: blob,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || `Falha no upload assinado. HTTP ${response.status}`);
+    }
+  }
+
+  async function uploadBlobWithSignedUrl({ blob, path, fileName, contentType, opts }) {
+    const signed = await requestSignedUpload({
+      file: {
+        name: fileName || path.split('/').pop() || 'arquivo.bin',
+        size: blob.size || 0,
+        type: contentType || blob.type || 'application/octet-stream',
+      },
+      path,
+      opts,
+    });
+
+    if (signed?.token && opts.supabase?.storage?.from) {
+      const { error } = await opts.supabase.storage
+        .from(BUCKET)
+        .uploadToSignedUrl(path, signed.token, blob, {
+          contentType: contentType || blob.type || 'application/octet-stream',
+          upsert: false,
+        });
+      if (error) throw error;
+      return;
+    }
+
+    await putToSignedUrl({
+      signed,
+      blob,
+      contentType: contentType || blob.type || 'application/octet-stream',
+    });
+  }
+
+  async function uploadFileEnterpriseChunked({ file, path, opts, bar, status }) {
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const chunks = [];
+    const chunkRoot = `${path}.chunks`;
+    const manifestPath = `${path}.manifest.json`;
+
+    status.textContent = `Upload enterprise: preparando ${totalChunks} partes...`;
+    setProgress(bar, 5);
+
+    for (let index = 0; index < totalChunks; index++) {
+      const start = index * CHUNK_SIZE;
+      const end = Math.min(file.size, start + CHUNK_SIZE);
+      const chunk = file.slice(start, end);
+      const chunkPath = `${chunkRoot}/part-${String(index + 1).padStart(5, '0')}.bin`;
+
+      status.textContent = `Enviando parte ${index + 1}/${totalChunks}...`;
+      await uploadBlobWithSignedUrl({
+        blob: chunk,
+        path: chunkPath,
+        fileName: `${sanitizeFileName(file.name)}.part-${index + 1}`,
+        contentType: 'application/octet-stream',
+        opts,
+      });
+
+      chunks.push({ index, path: chunkPath, size: chunk.size });
+      setProgress(bar, 8 + ((index + 1) / totalChunks) * 82);
+    }
+
+    const manifest = {
+      version: 1,
+      mode: 'chunked',
+      bucket: BUCKET,
+      original_name: file.name,
+      original_path: path,
+      original_size: file.size,
+      content_type: file.type || 'application/octet-stream',
+      chunk_size: CHUNK_SIZE,
+      total_chunks: totalChunks,
+      chunks,
+      created_at: new Date().toISOString(),
+    };
+
+    status.textContent = 'Gravando manifesto enterprise...';
+    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    await uploadBlobWithSignedUrl({
+      blob: manifestBlob,
+      path: manifestPath,
+      fileName: `${sanitizeFileName(file.name)}.manifest.json`,
+      contentType: 'application/json',
+      opts,
+    });
+
+    setProgress(bar, 95);
+    return { mode: 'chunked', storagePath: manifestPath, manifest };
+  }
+
+  async function uploadFileSmart({ file, path, opts, bar, status }) {
+    if (isEnterpriseUpload(file)) {
+      return uploadFileEnterpriseChunked({ file, path, opts, bar, status });
+    }
+
+    await uploadFileWithSignedUrl({ file, path, opts });
+    return { mode: 'single', storagePath: path, manifest: null };
+  }
+
   async function uploadAndRegister({ file, item, bar, status }, opts) {
     const supabase = opts.supabase;
     const detected = detectRelatorio(file.name);
@@ -422,17 +559,18 @@
     const userMeta = user?.user_metadata || {};
     const userName = userMeta.full_name || userMeta.name || user?.email || null;
 
-    status.textContent = 'Gerando upload seguro...';
-    bar.style.width = '18%';
+    status.textContent = isEnterpriseUpload(file) ? 'Iniciando upload enterprise...' : 'Gerando upload seguro...';
+    setProgress(bar, 12);
 
-    await uploadFileWithSignedUrl({ file, path, opts });
+    const uploadResult = await uploadFileSmart({ file, path, opts, bar, status });
+    const finalStoragePath = uploadResult.storagePath || path;
 
-    bar.style.width = '72%';
+    setProgress(bar, 72);
     status.textContent = 'Registrando importação...';
 
     let publicUrl = null;
     try {
-      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(finalStoragePath);
       publicUrl = data?.publicUrl || null;
     } catch (_) {
       publicUrl = null;
@@ -442,18 +580,20 @@
       tipo_relatorio: detected.tipo,
       titulo_relatorio: detected.titulo,
       arquivo_nome_original: file.name,
-      arquivo_nome_storage: path.split('/').pop(),
+      arquivo_nome_storage: finalStoragePath.split('/').pop(),
       storage_bucket: BUCKET,
-      storage_path: path,
+      storage_path: finalStoragePath,
       tamanho_bytes: file.size || 0,
       mime_type: file.type || null,
       status: 'enviado',
-      observacoes: 'Arquivo enviado pelo painel via upload assinado. Aguardando processamento/conferência.',
+      observacoes: uploadResult.mode === 'chunked'
+        ? JSON.stringify({ upload_mode: 'chunked', original_path: path, manifest_path: finalStoragePath, total_chunks: uploadResult.manifest?.total_chunks || 0, original_size: file.size })
+        : 'Arquivo enviado pelo painel via upload assinado. Aguardando processamento/conferência.',
       importado_por: user?.id || null,
       importado_por_nome: userName,
       nome_arquivo: file.name,
       tipo: detected.tipo,
-      path,
+      path: finalStoragePath,
       url: publicUrl,
       usuario_id: user?.id || null,
       usuario_nome: userName,
@@ -466,7 +606,7 @@
 
     if (insertError) throw insertError;
 
-    bar.style.width = '100%';
+    setProgress(bar, 100);
     status.textContent = 'Importado';
     item.classList.add('is-success');
   }
@@ -549,6 +689,7 @@
         const detected = detectRelatorio(entry.file.name);
         const item = document.createElement('div');
         item.className = 'file-item';
+        if (isEnterpriseUpload(entry.file)) item.classList.add('is-enterprise');
         if (!entry.valid) item.classList.add('is-error');
         if (entry.status === 'importado') item.classList.add('is-success');
         if (entry.status === 'erro') item.classList.add('is-error');
@@ -559,7 +700,7 @@
               <span>📄</span>
               <span title="${entry.file.name.replace(/"/g, '&quot;')}">${entry.file.name}</span>
             </div>
-            <div class="file-meta">${detected.titulo} · ${humanSize(entry.file.size)}</div>
+            <div class="file-meta">${detected.titulo} · ${humanSize(entry.file.size)} <span class="upload-mode">${uploadModeLabel(entry.file)}</span></div>
           </div>
           <div class="file-right">
             <div class="file-status-row">
@@ -606,7 +747,7 @@
           file,
           valid,
           status: valid ? 'pendente' : 'erro',
-          message: valid ? 'Pendente' : 'Use apenas XLSX, XLS ou CSV',
+          message: valid ? 'Pendente' : 'Use XLSX, XLS ou CSV até 1GB',
           elements: null,
         });
       });
