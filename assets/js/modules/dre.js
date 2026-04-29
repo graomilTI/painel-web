@@ -270,37 +270,127 @@
     if(!state.regional && regionais.length) state.regional=regionais[0];
   }
 
+  function normalizeReportTipo(raw){
+    const t = String(raw || 'outros').trim().toLowerCase().replace(/_/g, '-');
+    if (t.includes('despesa')) return 'despesas';
+    if (t.includes('nota') || t.includes('fiscal') || t.includes('nfe') || t.includes('nfse')) return 'notas_fiscais';
+    if (t.includes('resultado') || t.includes('gavilon')) return 'resultado-diario';
+    if (t.includes('producao') || t.includes('produção')) return 'resultado-diario';
+    if (t.includes('caixa') || t.includes('fornecedor')) return 'caixa_fornecedor';
+    return t;
+  }
+
+  function isActiveImport(row){
+    const status = norm(row?.status || 'enviado');
+    return !['SUBSTITUIDO','SUBSTITUÍDO','CANCELADO','ERRO','EXCLUIDO','EXCLUÍDO'].includes(status);
+  }
+
   async function getLatestReports(supabase){
-    const {data,error}=await supabase.from('relatorios_importacoes').select('*').order('created_at',{ascending:false}).limit(100);
+    const {data,error}=await supabase
+      .from('relatorios_importacoes')
+      .select('*')
+      .order('created_at',{ascending:false})
+      .limit(500);
     if(error) throw error;
-    const wanted=['despesas','notas_fiscais','resultado','resultado-diario','resultado_diario','producao','caixa_fornecedor'];
-    const chosen=[]; const seen=new Set();
+
+    const wanted = new Set(['despesas','notas_fiscais','resultado-diario','caixa_fornecedor']);
+    const chosen = [];
     for(const r of data||[]){
-      let tipo=String(r.tipo||r.tipo_relatorio||'outros');
-      if(tipo==='resultado_diario') tipo='resultado-diario';
-      if(tipo==='resultado') tipo='resultado-diario';
-      if(!wanted.includes(tipo) || seen.has(tipo)) continue;
-      seen.add(tipo); chosen.push({...r,tipo});
+      if(!isActiveImport(r)) continue;
+      const tipo = normalizeReportTipo(r.tipo || r.tipo_relatorio || r.titulo_relatorio || r.nome_arquivo || r.arquivo_nome_original);
+      if(!wanted.has(tipo)) continue;
+      chosen.push({...r,tipo});
     }
-    return chosen;
+
+    // Processa em ordem cronológica para manter append/replaces previsíveis.
+    return chosen.sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')));
+  }
+
+  function mergeArrMap(target, source){
+    for(const [reg, arr] of Object.entries(source || {})){
+      if(!target[reg]) target[reg] = Array(12).fill(0);
+      for(let i=0;i<12;i++) target[reg][i] += n(arr?.[i]);
+    }
+  }
+
+  function mergeNestedTopicMap(target, source){
+    for(const [reg, topics] of Object.entries(source || {})){
+      if(!target[reg]) target[reg] = {};
+      for(const [topic, arr] of Object.entries(topics || {})){
+        if(!target[reg][topic]) target[reg][topic] = Array(12).fill(0);
+        for(let i=0;i<12;i++) target[reg][topic][i] += n(arr?.[i]);
+      }
+    }
+  }
+
+  function mergeSet(target, source){
+    for(const item of source || []) target.add(item);
+  }
+
+  function mergeDespesas(target, source){
+    if(!source) return target;
+    mergeNestedTopicMap(target.base, source.base);
+    for(const [topic, arr] of Object.entries(source.geral || {})){
+      if(!target.geral[topic]) target.geral[topic] = Array(12).fill(0);
+      for(let i=0;i<12;i++) target.geral[topic][i] += n(arr?.[i]);
+    }
+    mergeSet(target.regionais, source.regionais);
+    return target;
+  }
+
+  function mergeNF(target, source){
+    if(!source) return target;
+    mergeArrMap(target.bruto, source.bruto);
+    mergeArrMap(target.descAcresc, source.descAcresc);
+    mergeArrMap(target.impostos, source.impostos);
+    mergeSet(target.regionais, source.regionais);
+    return target;
+  }
+
+  function mergeProducao(target, source){
+    if(!source) return target;
+    mergeArrMap(target.classificado, source.classificado);
+    mergeArrMap(target.embarcado, source.embarcado);
+    mergeArrMap(target.cargas, source.cargas);
+    mergeArrMap(target.valorEmbarcado, source.valorEmbarcado);
+    mergeArrMap(target.testes, source.testes);
+    mergeSet(target.regionais, source.regionais);
+    return target;
   }
 
   async function processReports(opts,setStatus){
-    state.busy=true; setStatus('Buscando últimos relatórios importados...');
+    state.busy=true; setStatus('Buscando relatórios ativos importados...');
     state.reports=await getLatestReports(opts.supabase);
-    const src={desp:null,nf:null,prod:null,antecipacoes:Array(12).fill(0)};
+    const src={
+      desp:{base:{},geral:{},regionais:new Set()},
+      nf:{bruto:{},descAcresc:{},impostos:{},regionais:new Set()},
+      prod:{classificado:{},embarcado:{},cargas:{},valorEmbarcado:{},testes:{},regionais:new Set()},
+      antecipacoes:Array(12).fill(0)
+    };
+
     for(const report of state.reports){
       const nome=report.nome_arquivo||report.arquivo_nome_original||report.tipo;
       setStatus(`Processando ${nome}...`);
       const wb=await readWorkbook(opts.supabase,report);
-      if(report.tipo==='despesas') src.desp=parseDespesas(sheetRows(wb,['Despesas por Regional','Despesas','DESPESAS','Despesas_regionais']));
-      if(report.tipo==='notas_fiscais') src.nf=parseNF(sheetRows(wb,['Faturamento','Notas Fiscais','NF','NFe','NFSe']));
-      if(report.tipo==='resultado-diario' || report.tipo==='producao') src.prod=parseResultadoDiario(sheetRows(wb,['Resultado Diário','Resultado Diario','Produção','Producao','Resultado']));
-      if(report.tipo==='caixa_fornecedor') src.antecipacoes=parseAntecipacoes(sheetRows(wb,['Antecipações','Antecipacoes','Caixa Fornecedor']));
+
+      if(report.tipo==='despesas') {
+        mergeDespesas(src.desp, parseDespesas(sheetRows(wb,['Despesas por Regional','Despesas','DESPESAS','Despesas_regionais'])));
+      }
+
+      if(report.tipo==='notas_fiscais') {
+        mergeNF(src.nf, parseNF(sheetRows(wb,['Faturamento','Notas Fiscais','NF','NFe','NFSe'])));
+      }
+
+      if(report.tipo==='resultado-diario') {
+        mergeProducao(src.prod, parseResultadoDiario(sheetRows(wb,['Resultado Diário','Resultado Diario','Produção','Producao','Resultado'])));
+      }
+
+      if(report.tipo==='caixa_fornecedor') {
+        const ant = parseAntecipacoes(sheetRows(wb,['Antecipações','Antecipacoes','Caixa Fornecedor']));
+        for(let i=0;i<12;i++) src.antecipacoes[i] += n(ant[i]);
+      }
     }
-    src.desp=src.desp||{base:{},geral:{},regionais:new Set()};
-    src.nf=src.nf||{bruto:{},descAcresc:{},impostos:{},regionais:new Set()};
-    src.prod=src.prod||{classificado:{},embarcado:{},cargas:{},valorEmbarcado:{},testes:{},regionais:new Set()};
+
     state.reportsData=src; buildDre(); state.busy=false;
   }
 
