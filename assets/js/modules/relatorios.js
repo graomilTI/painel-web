@@ -548,8 +548,9 @@
     }
 
     const manifest = {
-      version: 2,
-      mode: 'chunked-composed',
+      version: 3,
+      mode: 'chunked',
+      strategy: 'no-worker-merge',
       bucket: BUCKET,
       original_name: file.name,
       original_path: path,
@@ -561,8 +562,7 @@
       created_at: new Date().toISOString(),
     };
 
-    await completeChunkedUpload({ file, path, chunks, opts, bar, status });
-
+    status.textContent = 'Upload enterprise concluído. Registrando índice dos chunks...';
     setProgress(bar, 96);
     return { mode: 'chunked', storagePath: path, manifest };
   }
@@ -612,7 +612,14 @@
       mime_type: file.type || null,
       status: 'enviado',
       observacoes: uploadResult.mode === 'chunked'
-        ? JSON.stringify({ upload_mode: 'chunked', original_path: path, manifest_path: finalStoragePath, total_chunks: uploadResult.manifest?.total_chunks || 0, original_size: file.size })
+        ? JSON.stringify({
+            upload_mode: 'chunked',
+            pipeline: 'browser-chunks-no-worker-merge',
+            original_path: path,
+            total_chunks: uploadResult.manifest?.total_chunks || 0,
+            original_size: file.size,
+            manifest: uploadResult.manifest,
+          })
         : 'Arquivo enviado pelo painel via upload assinado. Aguardando processamento/conferência.',
       importado_por: user?.id || null,
       importado_por_nome: userName,

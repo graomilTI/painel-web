@@ -58,40 +58,36 @@
     return resp.arrayBuffer();
   }
 
-  async function fetchReportBuffer(supabase, report){
-    const bucket=report.storage_bucket;
-    const storagePath=report.storage_path||report.path;
-    let url=report.url;
+  function parseEnterpriseManifest(report){
+    const raw = String(report?.observacoes || '').trim();
+    if(!raw || raw[0] !== '{') return null;
+    try{
+      const info = JSON.parse(raw);
+      if(info?.upload_mode !== 'chunked') return null;
+      return info.manifest || info;
+    }catch(_){
+      return null;
+    }
+  }
 
-    if(!url && bucket && storagePath){
-      const {data,error}=await supabase.storage.from(bucket).createSignedUrl(storagePath, 60*10);
-      if(error) throw error;
-      url=data.signedUrl;
+  async function mergeEnterpriseChunks(supabase, manifest, fallbackBucket, label){
+    if(!manifest || !Array.isArray(manifest.chunks) || !manifest.chunks.length){
+      throw new Error('Manifesto enterprise inválido para '+label);
     }
 
-    if(!url) throw new Error('Arquivo sem URL: '+(report.nome_arquivo||report.arquivo_nome_original||report.tipo));
-
-    const isManifest=String(storagePath||url).includes('.manifest.json');
-    const resp=await fetch(url);
-    if(!resp.ok) throw new Error('Falha ao baixar '+(report.nome_arquivo||report.tipo));
-
-    if(!isManifest){
-      return await resp.arrayBuffer();
-    }
-
-    const manifest=await resp.json();
-    if(manifest?.mode!=='chunked' || !Array.isArray(manifest.chunks) || !manifest.chunks.length){
-      throw new Error('Manifesto enterprise inválido para '+(report.nome_arquivo||report.tipo));
-    }
-
+    const bucket = manifest.bucket || fallbackBucket;
     const ordered=[...manifest.chunks].sort((a,b)=>Number(a.index||0)-Number(b.index||0));
     const buffers=[];
     let total=0;
 
     for(const chunk of ordered){
-      const buf=await fetchStorageBuffer(supabase, manifest.bucket||bucket, chunk.path);
+      const buf=await fetchStorageBuffer(supabase, bucket, chunk.path);
       buffers.push(new Uint8Array(buf));
       total+=buf.byteLength;
+    }
+
+    if(manifest.original_size && Number(manifest.original_size) !== total){
+      throw new Error('Arquivo enterprise incompleto para '+label+'. Esperado '+manifest.original_size+', obtido '+total+'.');
     }
 
     const merged=new Uint8Array(total);
@@ -102,6 +98,38 @@
     }
 
     return merged.buffer;
+  }
+
+  async function fetchReportBuffer(supabase, report){
+    const bucket=report.storage_bucket;
+    const storagePath=report.storage_path||report.path;
+    const label=report.nome_arquivo||report.arquivo_nome_original||report.tipo;
+    const enterpriseManifest = parseEnterpriseManifest(report);
+
+    if(enterpriseManifest){
+      return await mergeEnterpriseChunks(supabase, enterpriseManifest, bucket, label);
+    }
+
+    let url=report.url;
+
+    if(!url && bucket && storagePath){
+      const {data,error}=await supabase.storage.from(bucket).createSignedUrl(storagePath, 60*10);
+      if(error) throw error;
+      url=data.signedUrl;
+    }
+
+    if(!url) throw new Error('Arquivo sem URL: '+label);
+
+    const isManifest=String(storagePath||url).includes('.manifest.json');
+    const resp=await fetch(url);
+    if(!resp.ok) throw new Error('Falha ao baixar '+label);
+
+    if(!isManifest){
+      return await resp.arrayBuffer();
+    }
+
+    const manifest=await resp.json();
+    return await mergeEnterpriseChunks(supabase, manifest, bucket, label);
   }
 
   async function fetchWorkbook(supabase, report){
