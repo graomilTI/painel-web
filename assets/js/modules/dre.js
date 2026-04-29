@@ -270,19 +270,144 @@
     if(!state.regional && regionais.length) state.regional=regionais[0];
   }
 
-  function normalizeReportTipo(raw){
-    const t = String(raw || 'outros').trim().toLowerCase().replace(/_/g, '-');
-    if (t.includes('despesa')) return 'despesas';
-    if (t.includes('nota') || t.includes('fiscal') || t.includes('nfe') || t.includes('nfse')) return 'notas_fiscais';
-    if (t.includes('resultado') || t.includes('gavilon')) return 'resultado-diario';
-    if (t.includes('producao') || t.includes('produção')) return 'resultado-diario';
-    if (t.includes('caixa') || t.includes('fornecedor')) return 'caixa_fornecedor';
-    return t;
+  const STRICT_SINGLE_REPORT_TYPES = new Set(['despesas','notas_fiscais','caixa_fornecedor']);
+  const VALID_DRE_TYPES = new Set(['despesas','notas_fiscais','resultado-diario','caixa_fornecedor']);
+
+  function normalizeReportTipo(raw, row = null){
+    const candidates = [
+      row?.tipo,
+      row?.tipo_relatorio,
+      row?.titulo_relatorio,
+      row?.nome_arquivo,
+      row?.arquivo_nome_original,
+      raw
+    ].map(v => String(v || '').trim()).filter(Boolean);
+
+    const clean = (v) => String(v || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'')
+      .replace(/_/g,'-')
+      .replace(/\s+/g,'-');
+
+    for (const original of candidates) {
+      const t = clean(original);
+
+      // Igualdade / aliases controlados primeiro.
+      if (['despesas','relatorio-de-despesas','despesas-por-regional'].includes(t)) return 'despesas';
+      if (['notas-fiscais','nota-fiscal','nfs','nf','nfe','nfse','faturamento','relatorio-de-notas-fiscais'].includes(t)) return 'notas_fiscais';
+      if (['resultado-diario','resultado-diario-gavilon','relatorio-resultado-diario','producao','producao-consolidada','relatorio-de-resultado-diario'].includes(t)) return 'resultado-diario';
+      if (['caixa-fornecedor','caixa-fornecedores','antecipacoes','antecipacao-fornecedores','relatorio-caixa-fornecedor'].includes(t)) return 'caixa_fornecedor';
+
+      // Fallback por nome do arquivo, mas restrito a padrões claros.
+      if (/resultado.*diario|diario.*resultado|gavilon|producao|produção/.test(original.toLowerCase())) return 'resultado-diario';
+      if (/notas?\s*fiscais?|nfe|nfse|faturamento/.test(original.toLowerCase())) return 'notas_fiscais';
+      if (/despesas?|despesas?\s*por\s*regional/.test(original.toLowerCase())) return 'despesas';
+      if (/caixa.*fornecedor|antecipac/.test(original.toLowerCase())) return 'caixa_fornecedor';
+    }
+
+    return clean(candidates[0] || 'outros');
   }
 
   function isActiveImport(row){
     const status = norm(row?.status || 'enviado');
-    return !['SUBSTITUIDO','SUBSTITUÍDO','CANCELADO','ERRO','EXCLUIDO','EXCLUÍDO'].includes(status);
+    return !['SUBSTITUIDO','SUBSTITUÍDO','CANCELADO','ERRO','EXCLUIDO','EXCLUÍDO','REMOVIDO'].includes(status);
+  }
+
+  function parseObservacoesJson(row){
+    const raw = String(row?.observacoes || '').trim();
+    if(!raw || !raw.startsWith('{')) return {};
+    try { return JSON.parse(raw) || {}; } catch(_) { return {}; }
+  }
+
+  function importMode(row){
+    const obs = parseObservacoesJson(row);
+    return String(
+      row?.modo_importacao ||
+      row?.modo ||
+      row?.import_mode ||
+      row?.modoImportacao ||
+      obs?.modo_importacao ||
+      obs?.modo ||
+      obs?.import_mode ||
+      obs?.modoImportacao ||
+      ''
+    ).trim().toLowerCase();
+  }
+
+  function reportTime(row){
+    return Date.parse(row?.created_at || row?.updated_at || '') || 0;
+  }
+
+  function reportLabel(row){
+    return row?.nome_arquivo || row?.arquivo_nome_original || row?.titulo_relatorio || row?.tipo || row?.id || 'sem nome';
+  }
+
+  function chooseReportsForDre(rows){
+    const normalized = [];
+    const ignored = [];
+
+    for(const r of rows || []){
+      if(!isActiveImport(r)){
+        ignored.push({ ...r, dre_ignore_reason: 'status_inativo' });
+        continue;
+      }
+
+      const tipo = normalizeReportTipo(null, r);
+      if(!VALID_DRE_TYPES.has(tipo)){
+        ignored.push({ ...r, tipo, dre_ignore_reason: 'tipo_fora_dre' });
+        continue;
+      }
+
+      normalized.push({ ...r, tipo, import_mode: importMode(r) });
+    }
+
+    const byType = new Map();
+    for(const r of normalized){
+      if(!byType.has(r.tipo)) byType.set(r.tipo, []);
+      byType.get(r.tipo).push(r);
+    }
+
+    const chosen = [];
+
+    for(const [tipo, listRaw] of byType.entries()){
+      const list = [...listRaw].sort((a,b) => reportTime(b) - reportTime(a));
+
+      // Financeiro deve espelhar o script: 1 fonte ativa por tipo.
+      // Isso evita multiplicar NF/despesas quando existem uploads antigos ainda ativos.
+      if(STRICT_SINGLE_REPORT_TYPES.has(tipo)){
+        chosen.push(list[0]);
+        list.slice(1).forEach(r => ignored.push({
+          ...r,
+          dre_ignore_reason: `ignorado_por_blindagem_financeira_usando_mais_recente_${tipo}`
+        }));
+        continue;
+      }
+
+      // Resultado Diário pode ser complementar, mas somente quando o modo veio marcado como append/complementar.
+      // Se não houver marcação clara, usa apenas o mais recente para evitar duplicidade silenciosa.
+      if(tipo === 'resultado-diario'){
+        const appendList = list.filter(r => ['append','complementar','complemento'].includes(r.import_mode));
+        if(appendList.length >= 2){
+          chosen.push(...appendList.sort((a,b)=>reportTime(a)-reportTime(b)));
+          list.filter(r => !appendList.includes(r)).forEach(r => ignored.push({
+            ...r,
+            dre_ignore_reason: 'resultado_diario_antigo_nao_complementar'
+          }));
+        } else {
+          chosen.push(list[0]);
+          list.slice(1).forEach(r => ignored.push({
+            ...r,
+            dre_ignore_reason: 'resultado_diario_duplicado_usando_mais_recente'
+          }));
+        }
+      }
+    }
+
+    chosen.sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')));
+
+    return { chosen, ignored };
   }
 
   async function getLatestReports(supabase){
@@ -293,17 +418,27 @@
       .limit(500);
     if(error) throw error;
 
-    const wanted = new Set(['despesas','notas_fiscais','resultado-diario','caixa_fornecedor']);
-    const chosen = [];
-    for(const r of data||[]){
-      if(!isActiveImport(r)) continue;
-      const tipo = normalizeReportTipo(r.tipo || r.tipo_relatorio || r.titulo_relatorio || r.nome_arquivo || r.arquivo_nome_original);
-      if(!wanted.has(tipo)) continue;
-      chosen.push({...r,tipo});
-    }
+    const { chosen, ignored } = chooseReportsForDre(data || []);
+    state.sourceAudit = {
+      used: chosen.map(r => ({
+        id: r.id,
+        tipo: r.tipo,
+        nome: reportLabel(r),
+        status: r.status,
+        modo: r.import_mode || '',
+        created_at: r.created_at
+      })),
+      ignored: ignored.map(r => ({
+        id: r.id,
+        tipo: r.tipo || normalizeReportTipo(null, r),
+        nome: reportLabel(r),
+        status: r.status,
+        motivo: r.dre_ignore_reason || '',
+        created_at: r.created_at
+      }))
+    };
 
-    // Processa em ordem cronológica para manter append/replaces previsíveis.
-    return chosen.sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')));
+    return chosen;
   }
 
   function mergeArrMap(target, source){
@@ -361,6 +496,9 @@
   async function processReports(opts,setStatus){
     state.busy=true; setStatus('Buscando relatórios ativos importados...');
     state.reports=await getLatestReports(opts.supabase);
+    const audit = state.sourceAudit || { used: [], ignored: [] };
+    const usedTxt = audit.used.map(r => `${r.tipo}: ${r.nome}`).join(' · ');
+    setStatus(`<strong>DRE blindada:</strong> usando ${audit.used.length} fonte(s). ${audit.ignored.length ? `${audit.ignored.length} importação(ões) antiga(s)/duplicada(s) ignorada(s).` : 'Nenhuma duplicidade detectada.'}<br><span style="font-size:11px;color:#94a3b8">${safe(usedTxt)}</span>`);
     const src={
       desp:{base:{},geral:{},regionais:new Set()},
       nf:{bruto:{},descAcresc:{},impostos:{},regionais:new Set()},
