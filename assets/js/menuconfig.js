@@ -3,7 +3,7 @@ window.MENU_CONFIG = {
     { nome: "CONFERÊNCIA", modulos: ["Irregularidades", "Lançamentos"] },
     { nome: "COMPRAS", modulos: ["Pedidos", "Fornecedores"] },
     { nome: "PATRIMÔNIOS", modulos: ["Painel de Patrimônios", "Relatórios de Patrimônios"] },
-    { nome: "HOSPEDAGEM", modulos: [] },
+    { nome: "HOSPEDAGEM", modulos: ["Painel", "Solicitações", "Reservas", "Checkouts", "Financeiro", "Notas Fiscais", "Hotéis"] },
     { nome: "RECURSOS HUMANOS", modulos: [] },
     { nome: "FROTAS", modulos: [] },
     { nome: "LOGÍSTICA", modulos: [] },
