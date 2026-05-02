@@ -490,6 +490,69 @@
     }
   }
 
+  async function readSpreadsheetAsObjects(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+
+    let selectedRows = null;
+    let selectedHeaderRow = 0;
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+      const headerRow = findHeaderRow(rows, ['HOTEL', 'Ciudad']);
+      const header = (rows[headerRow] || []).map(normalizeHeader);
+      const hasHotel = header.includes('hotel') || header.includes('nome hotel') || header.includes('nome_hotel');
+      const hasCity = header.includes('ciudad') || header.includes('cidade');
+
+      if (hasHotel || hasCity) {
+        selectedRows = rows;
+        selectedHeaderRow = headerRow;
+        break;
+      }
+
+      if (!selectedRows && rows?.length) {
+        selectedRows = rows;
+        selectedHeaderRow = headerRow;
+      }
+    }
+
+    if (!selectedRows?.length) return [];
+
+    const headers = (selectedRows[selectedHeaderRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+    const dataRows = selectedRows.slice(selectedHeaderRow + 1);
+
+    return dataRows
+      .map((row) => {
+        const obj = {};
+        headers.forEach((header, index) => {
+          if (!header) return;
+          obj[header] = row?.[index] ?? '';
+        });
+        return obj;
+      })
+      .filter((obj) => Object.values(obj).some((value) => String(value ?? '').trim() !== ''));
+  }
+
+  async function importarHoteisDaPlanilha(file, opts) {
+    const linhas = await readSpreadsheetAsObjects(file);
+    if (!linhas.length) {
+      throw new Error('A planilha de hotéis não possui linhas válidas para importar.');
+    }
+
+    const { data, error } = await opts.supabase.rpc('hospedagem_importar_hoteis_json', {
+      p_linhas: linhas,
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Falha ao importar hotéis para o módulo Hospedagem.');
+    }
+
+    const resumo = Array.isArray(data) ? data[0] : data;
+    return resumo || { total_linhas: linhas.length, inseridos: 0, atualizados: 0, ignorados: 0 };
+  }
+
   function formatPeriod(period) {
     if (!period?.inicio || !period?.fim) return 'período não detectado';
     const br = (iso) => String(iso).slice(0, 10).split('-').reverse().join('/');
@@ -531,6 +594,10 @@
 
   function detectRelatorio(fileName) {
     const n = String(fileName || '').toLowerCase();
+
+    if (n.includes('hotel') || n.includes('hoteis') || n.includes('hotéis') || n.includes('hospedagem')) {
+      return { tipo: 'hoteis', titulo: 'Banco de Hotéis' };
+    }
 
     if (n.includes('nota') || n.includes('fiscal') || n.includes('nfse') || n.includes('nfe')) {
       return { tipo: 'notas_fiscais', titulo: 'Notas Fiscais' };
@@ -824,8 +891,15 @@
       publicUrl = null;
     }
 
+    let hoteisResumo = null;
+    if (detected.tipo === 'hoteis') {
+      status.textContent = 'Importando hotéis no módulo Hospedagem...';
+      setProgress(bar, 82);
+      hoteisResumo = await importarHoteisDaPlanilha(file, opts);
+    }
+
     const importMode = opts.importMode || 'auto';
-    const period = entry?.period || await detectFilePeriod(file, detected.tipo);
+    const period = detected.tipo === 'hoteis' ? null : (entry?.period || await detectFilePeriod(file, detected.tipo));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -837,9 +911,11 @@
       ? (check.exists ? 'replace' : 'append')
       : importMode;
 
-    status.textContent = effectiveMode === 'replace'
-      ? 'Registrando substituição inteligente...'
-      : 'Registrando complemento inteligente...';
+    status.textContent = detected.tipo === 'hoteis'
+      ? 'Registrando upload da planilha de hotéis...'
+      : (effectiveMode === 'replace'
+        ? 'Registrando substituição inteligente...'
+        : 'Registrando complemento inteligente...');
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -873,6 +949,7 @@
           import_mode_requested: importMode,
           import_mode_effective: effectiveMode,
           periodo: period || null,
+          hoteis_importacao: hoteisResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -893,12 +970,14 @@
     };
 
     const result = await registerSmartImport(payload, opts);
-    if (result?.mode === 'replace' && result?.replaced_count) {
+    if (detected.tipo === 'hoteis' && hoteisResumo) {
+      status.textContent = `Hotéis: ${hoteisResumo.inseridos || 0} novos · ${hoteisResumo.atualizados || 0} atualizados · ${hoteisResumo.ignorados || 0} ignorados`;
+    } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -940,7 +1019,7 @@
                   </select>
                 </div>
                 <div class="import-intelligence-note" id="intelligenceNote">
-                  No automático, se o período já existir no banco, o painel substitui a versão anterior; se não existir, complementa.
+                  No automático, se o período já existir no banco, o painel substitui a versão anterior; planilhas de hotéis são importadas direto no cadastro de Hospedagem.
                 </div>
               </div>
             </div>
@@ -1063,11 +1142,15 @@
         state.files.push(entry);
 
         if (valid) {
-          detectFilePeriod(file, detected.tipo).then((period) => {
-            entry.period = period;
-            entry.message = period ? `Período: ${formatPeriod(period)}` : 'Pendente · período não detectado';
-            renderFiles();
-          });
+          if (detected.tipo === 'hoteis') {
+            entry.message = 'Pendente · importará cadastro de hotéis';
+          } else {
+            detectFilePeriod(file, detected.tipo).then((period) => {
+              entry.period = period;
+              entry.message = period ? `Período: ${formatPeriod(period)}` : 'Pendente · período não detectado';
+              renderFiles();
+            });
+          }
         }
       });
 
