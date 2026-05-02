@@ -327,6 +327,9 @@ initProtectedPage('Hospedagem', (content, userContext) => {
     }
 
     const payload = {
+      // Compatibilidade com bases antigas do painel que possuem data_solicitacao NOT NULL.
+      // Na base nova, a view usa created_at como data_solicitacao; este campo extra é ignorado quando não existe.
+      data_solicitacao: new Date().toISOString().slice(0, 10),
       solicitante_id: userContext?.user?.id || null,
       solicitante_nome: userContext?.user?.name || null,
       solicitante_email: userContext?.user?.email || null,
