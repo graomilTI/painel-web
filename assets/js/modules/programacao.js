@@ -1,750 +1,779 @@
-
+/*
+  Módulo: Programação Operacional
+  Padrão: window.PROGRAMACAO.openHome(container, { auth, api, onBack })
+  Observação: este módulo não usa checkbox "Incluir na programação".
+  Todo colaborador retornado no contexto entra automaticamente na programação.
+*/
 (function () {
-  const STATUS_OPTIONS = [
-    "DISPONÍVEL",
-    "ATESTADO",
-    "FÉRIAS",
-    "FOLGA",
-    "FALTA",
-    "TRANSFERIR",
-    "INATIVO",
+  'use strict';
+
+  const MOD = 'PROGRAMACAO';
+  const VERSION = '2026-05-04.table-v1';
+
+  const DISPONIBILIDADES = ['OK', 'FÉRIAS', 'FOLGA', 'ATESTADO', 'FALTA', 'TRANSFERIR', 'INATIVO'];
+  const TIPOS_ESTADIA = ['NÃO PRECISA', 'CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
+  const TIPOS_DESLOCAMENTO = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'ÔNIBUS', 'OUTRO'];
+  const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
+  const BLOQUEIOS = new Set(['FÉRIAS', 'FOLGA', 'ATESTADO', 'FALTA', 'INATIVO']);
+
+  const STAGES = [
+    { id: 'A', label: 'Disponibilidade', short: 'A' },
+    { id: 'B', label: 'Estadia', short: 'B' },
+    { id: 'C', label: 'Alimentação', short: 'C' },
+    { id: 'D', label: 'Deslocamento', short: 'D' },
+    { id: 'E', label: 'Extras', short: 'E' },
   ];
 
-  const TRANSPORTE_OPTIONS = [
-    "",
-    "MOTORISTA FROTA",
-    "CARONA FROTA",
-    "UBER/TÁXI",
-    "REEMBOLSO KM",
-  ];
+  const state = {
+    container: null,
+    opts: {},
+    auth: null,
+    api: null,
+    stage: 'A',
+    search: '',
+    loading: false,
+    saving: false,
+    error: '',
+    programacaoId: null,
+    dataReferencia: todayISO(),
+    coordenacao: '',
+    supervisao: '',
+    colaboradores: [],
+    disponibilidade: new Map(),
+    estadia: new Map(),
+    alimentacao: new Map(),
+    deslocamento: new Map(),
+    extras: new Map(),
+    timers: new Map(),
+  };
 
-  const ESTADIA_OPTIONS = [
-    "",
-    "CASA",
-    "PERNOITE",
-    "ALOJAMENTO",
-    "HOTEL",
-  ];
-
-  const MODULE_ID = "programacao-module";
-  const STORAGE_KEY = "programacao_demo_state_v2";
-
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+  function todayISO() {
+    const d = new Date();
+    const tz = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - tz).toISOString().slice(0, 10);
   }
 
-  function debounce(fn, wait) {
-    let timer = null;
-    return function (...args) {
-      clearTimeout(timer);
-      timer = setTimeout(() => fn.apply(this, args), wait);
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    }[c]));
+  }
+
+  function norm(value) {
+    return String(value ?? '').trim();
+  }
+
+  function keyColab(colab) {
+    return String(colab?.colaborador_id || colab?.id || colab?.cpf || colab?.nome || '').trim();
+  }
+
+  function parseMoney(value) {
+    if (typeof value === 'number') return value;
+    const s = String(value ?? '').replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function moneyBR(value) {
+    const n = Number(value || 0);
+    return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+
+  function debounceSave(name, fn, delay = 500) {
+    clearTimeout(state.timers.get(name));
+    state.timers.set(name, setTimeout(fn, delay));
+  }
+
+  async function request(path, options = {}) {
+    const api = state.api;
+    const method = String(options.method || 'GET').toUpperCase();
+    const body = options.body;
+    const qs = options.params ? '?' + new URLSearchParams(options.params).toString() : '';
+    const url = `${path}${qs}`;
+
+    if (api) {
+      if (typeof api.request === 'function') return api.request(url, { method, body });
+      if (method === 'GET' && typeof api.get === 'function') return api.get(url, options.params || undefined);
+      if (method === 'POST' && typeof api.post === 'function') return api.post(url, body);
+      if (method === 'PUT' && typeof api.put === 'function') return api.put(url, body);
+      if (method === 'PATCH' && typeof api.patch === 'function') return api.patch(url, body);
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    const token = state.auth?.access_token || state.auth?.session?.access_token || window.__APP_TOKEN__;
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const res = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: 'include',
+    });
+
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
+    if (!res.ok) throw new Error(data?.message || data?.error || `Erro ${res.status} em ${url}`);
+    return data;
+  }
+
+  function getSupabase() {
+    return window.supabaseClient || window.supabase || window._supabase || null;
+  }
+
+  async function supabaseFallbackContext() {
+    const sb = getSupabase();
+    if (!sb?.from) return null;
+
+    let latest = null;
+    try {
+      const r = await sb.from('colaborador_importacoes')
+        .select('data_referencia')
+        .eq('status', 'processado')
+        .order('data_referencia', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      latest = r?.data?.data_referencia || null;
+    } catch (_) {}
+
+    let q = sb.from('colaborador_snapshot')
+      .select('id,nome,cpf,cargo,empresa,coordenacao,supervisao,ativo,data_referencia')
+      .eq('ativo', true)
+      .order('nome', { ascending: true });
+
+    if (latest) q = q.eq('data_referencia', latest);
+    if (state.supervisao) q = q.eq('supervisao', state.supervisao);
+    if (state.coordenacao) q = q.eq('coordenacao', state.coordenacao);
+
+    const { data, error } = await q.limit(1200);
+    if (error) throw error;
+    return { colaboradores: data || [] };
+  }
+
+  async function loadContext() {
+    setLoading(true, 'Carregando colaboradores...');
+    state.error = '';
+    try {
+      let payload = null;
+      try {
+        payload = await request('/api/programacao/contexto', {
+          params: {
+            data_referencia: state.dataReferencia,
+            coordenacao: state.coordenacao,
+            supervisao: state.supervisao,
+          },
+        });
+      } catch (err) {
+        payload = await supabaseFallbackContext();
+        if (!payload) throw err;
+      }
+
+      state.programacaoId = payload?.programacao?.id || payload?.programacao_id || state.programacaoId;
+      state.colaboradores = normalizeColaboradores(payload?.colaboradores || payload?.data || []);
+      hydrateStageMaps(payload || {});
+      ensureRowsForEveryCollaborator();
+      render();
+      await ensureProgramacaoDia();
+    } catch (err) {
+      state.error = err?.message || String(err);
+      render();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function normalizeColaboradores(list) {
+    const seen = new Set();
+    return (list || [])
+      .map((x) => ({
+        colaborador_id: x.colaborador_id || x.id || x.cpf || x.nome,
+        id: x.colaborador_id || x.id || x.cpf || x.nome,
+        cpf: x.cpf || '',
+        nome: norm(x.nome || x.funcionario || x.colaborador || x.name).toUpperCase(),
+        cargo: norm(x.cargo || x.funcao || ''),
+        empresa: norm(x.empresa || ''),
+        coordenacao: norm(x.coordenacao || x.coordenação || state.coordenacao || ''),
+        supervisao: norm(x.supervisao || x.supervisão || state.supervisao || ''),
+        ativo: x.ativo !== false,
+      }))
+      .filter((x) => {
+        const k = keyColab(x);
+        if (!k || seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  }
+
+  function hydrateStageMaps(payload) {
+    fillMap(state.disponibilidade, payload.disponibilidade || payload.programacao_colaboradores || [], rowDisponibilidade);
+    fillMap(state.estadia, payload.estadia || payload.programacao_estadia || [], rowEstadia);
+    fillMap(state.alimentacao, payload.alimentacao || payload.programacao_alimentacao || [], rowAlimentacao);
+    fillMap(state.deslocamento, payload.deslocamento || payload.programacao_deslocamento || [], rowDeslocamento);
+
+    state.extras.clear();
+    const extras = payload.extras || payload.programacao_extras || [];
+    extras.forEach((r) => {
+      const id = String(r.colaborador_id || r.colaborador || r.cpf || '');
+      if (!state.extras.has(id)) state.extras.set(id, []);
+      state.extras.get(id).push(rowExtra(r));
+    });
+  }
+
+  function fillMap(map, rows, factory) {
+    map.clear();
+    (rows || []).forEach((r) => {
+      const id = String(r.colaborador_id || r.colaborador || r.cpf || '');
+      if (id) map.set(id, factory(r));
+    });
+  }
+
+  function ensureRowsForEveryCollaborator() {
+    state.colaboradores.forEach((c) => {
+      const id = keyColab(c);
+      if (!state.disponibilidade.has(id)) state.disponibilidade.set(id, rowDisponibilidade({ colaborador_id: id }));
+      if (!state.estadia.has(id)) state.estadia.set(id, rowEstadia({ colaborador_id: id }));
+      if (!state.alimentacao.has(id)) state.alimentacao.set(id, rowAlimentacao({ colaborador_id: id }));
+      if (!state.deslocamento.has(id)) state.deslocamento.set(id, rowDeslocamento({ colaborador_id: id }));
+      if (!state.extras.has(id)) state.extras.set(id, []);
+    });
+  }
+
+  function rowDisponibilidade(r = {}) {
+    return {
+      colaborador_id: String(r.colaborador_id || ''),
+      disponibilidade: r.disponibilidade || r.status_disponibilidade || 'OK',
+      observacao: r.observacao || r.observacao_disponibilidade || '',
     };
   }
 
-  function injectStyles() {
-    if (document.getElementById("programacao-v2-styles")) return;
-    const style = document.createElement("style");
-    style.id = "programacao-v2-styles";
-    style.textContent = `
-      .prog-shell{display:flex;flex-direction:column;gap:16px;color:#e5e7eb}
-      .prog-hero{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:18px 20px;border:1px solid rgba(22,101,52,.45);border-radius:22px;background:linear-gradient(135deg, rgba(2,6,23,.95), rgba(6,78,59,.18));box-shadow:0 16px 40px rgba(0,0,0,.24)}
-      .prog-title-wrap h1{margin:0;font-size:30px;line-height:1.1;font-weight:800}
-      .prog-title-wrap p{margin:6px 0 0;color:#94a3b8}
-      .prog-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(22,101,52,.18);border:1px solid rgba(34,197,94,.35);font-size:12px;font-weight:700;letter-spacing:.03em}
-      .prog-toolbar{display:grid;grid-template-columns:1.4fr .9fr .9fr auto;gap:12px;padding:14px;border:1px solid rgba(51,65,85,.8);border-radius:20px;background:rgba(2,6,23,.7)}
-      .prog-card{border:1px solid rgba(51,65,85,.8);border-radius:22px;background:rgba(2,6,23,.88);box-shadow:0 12px 28px rgba(0,0,0,.18);overflow:hidden}
-      .prog-table-wrap{overflow:auto}
-      .prog-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1180px}
-      .prog-table thead th{position:sticky;top:0;z-index:2;background:#07111f;color:#cbd5e1;font-size:12px;text-transform:uppercase;letter-spacing:.05em;padding:14px 12px;border-bottom:1px solid rgba(51,65,85,.8);white-space:nowrap}
-      .prog-table tbody td{padding:10px 12px;border-bottom:1px solid rgba(15,23,42,.95);vertical-align:middle}
-      .prog-table tbody tr.main-row:hover{background:rgba(15,23,42,.62)}
-      .prog-colab{display:flex;flex-direction:column;gap:4px;min-width:240px}
-      .prog-colab strong{font-size:13px;line-height:1.2}
-      .prog-colab span{font-size:11px;color:#94a3b8}
-      .prog-status-pill{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid rgba(51,65,85,.85);background:rgba(15,23,42,.75);min-width:90px}
-      .prog-status-pill.blocked{background:rgba(127,29,29,.18);border-color:rgba(248,113,113,.4);color:#fecaca}
-      .prog-status-pill.ok{background:rgba(20,83,45,.2);border-color:rgba(74,222,128,.35);color:#bbf7d0}
-      .prog-checkbox-cell{text-align:center}
-      .prog-checkbox{width:18px;height:18px;accent-color:#16a34a;cursor:pointer}
-      .prog-actions{display:flex;justify-content:center}
-      .prog-btn,.prog-input,.prog-select{width:100%;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:12px;min-height:40px;padding:0 12px;outline:none;box-sizing:border-box}
-      .prog-input:focus,.prog-select:focus{border-color:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.14)}
-      .prog-input[disabled],.prog-select[disabled],.prog-checkbox[disabled]{opacity:.45;cursor:not-allowed}
-      .prog-btn{width:auto;padding:0 14px;cursor:pointer;font-weight:700;background:linear-gradient(180deg,#0f172a,#111827)}
-      .prog-btn:hover{border-color:#22c55e}
-      .prog-btn.secondary{background:#08111e}
-      .prog-btn.ghost{background:transparent}
-      .prog-extra-row td{padding:0;background:rgba(5,10,22,.96)}
-      .prog-extra-box{padding:16px 16px 18px;border-top:1px solid rgba(22,101,52,.3);background:linear-gradient(180deg, rgba(8,17,30,.98), rgba(2,6,23,.98))}
-      .prog-extra-grid{display:grid;grid-template-columns:1.1fr 1.2fr .9fr .9fr .8fr .8fr .8fr auto;gap:12px}
-      .prog-field{display:flex;flex-direction:column;gap:6px}
-      .prog-field label{font-size:11px;color:#94a3b8;font-weight:700;letter-spacing:.03em}
-      .prog-required::after{content:" *";color:#f87171}
-      .prog-muted{color:#94a3b8;font-size:12px}
-      .prog-inline-actions{display:flex;align-items:flex-end;gap:10px}
-      .prog-error{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(127,29,29,.2);border:1px solid rgba(248,113,113,.35);color:#fecaca;font-size:12px}
-      .prog-success{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(20,83,45,.2);border:1px solid rgba(74,222,128,.35);color:#bbf7d0;font-size:12px}
-      .prog-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-top:1px solid rgba(51,65,85,.8);background:rgba(2,6,23,.75)}
-      .prog-page-actions{display:flex;gap:8px;align-items:center}
-      .prog-small{font-size:12px;color:#94a3b8}
-      .prog-maint-btn{white-space:nowrap}
-      .prog-chip{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:700;background:rgba(30,41,59,.9);border:1px solid rgba(51,65,85,.8)}
-      @media (max-width: 960px){
-        .prog-toolbar{grid-template-columns:1fr}
-        .prog-hero{flex-direction:column}
-        .prog-extra-grid{grid-template-columns:1fr 1fr}
-        .prog-pagination{flex-direction:column;align-items:flex-start}
+  function rowEstadia(r = {}) {
+    return {
+      colaborador_id: String(r.colaborador_id || ''),
+      tem_estadia: Boolean(r.tem_estadia || (r.tipo_estadia && r.tipo_estadia !== 'NÃO PRECISA')),
+      tipo_estadia: r.tipo_estadia || r.tipo || 'NÃO PRECISA',
+      cidade: r.cidade || '',
+      uf: r.uf || '',
+      diarias: Number(r.diarias || 0),
+      checkin: r.checkin || r.check_in || '',
+      checkout: r.checkout || r.check_out || '',
+      observacao: r.observacao || '',
+    };
+  }
+
+  function rowAlimentacao(r = {}) {
+    return {
+      colaborador_id: String(r.colaborador_id || ''),
+      cafe: Boolean(r.cafe),
+      almoco: r.almoco !== false,
+      janta: Boolean(r.janta),
+      observacao: r.observacao || '',
+    };
+  }
+
+  function rowDeslocamento(r = {}) {
+    return {
+      colaborador_id: String(r.colaborador_id || ''),
+      tipo_deslocamento: r.tipo_deslocamento || r.tipo || 'NÃO PRECISA',
+      origem: r.origem || '',
+      destino: r.destino || '',
+      km: Number(r.km || 0),
+      valor: Number(r.valor || 0),
+      observacao: r.observacao || '',
+    };
+  }
+
+  function rowExtra(r = {}) {
+    return {
+      id: r.id || `tmp_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      colaborador_id: String(r.colaborador_id || ''),
+      tipo_despesa: r.tipo_despesa || r.tipo || 'OUTRO',
+      descricao: r.descricao || '',
+      valor: Number(r.valor || 0),
+      observacao: r.observacao || '',
+      _deleted: false,
+    };
+  }
+
+  async function ensureProgramacaoDia() {
+    if (state.programacaoId) return state.programacaoId;
+    try {
+      const resp = await request('/api/programacao/dia', {
+        method: 'POST',
+        body: {
+          data_referencia: state.dataReferencia,
+          coordenacao: state.coordenacao,
+          supervisao: state.supervisao,
+          status: 'rascunho',
+        },
+      });
+      state.programacaoId = resp?.id || resp?.programacao?.id || resp?.programacao_id || state.programacaoId;
+    } catch (_) {
+      // O fallback permite a tela funcionar para edição local enquanto a API é ajustada.
+    }
+    return state.programacaoId;
+  }
+
+  function basePayload(colab) {
+    return {
+      programacao_id: state.programacaoId,
+      data_referencia: state.dataReferencia,
+      colaborador_id: keyColab(colab),
+      nome_colaborador: colab.nome,
+      cargo: colab.cargo,
+      coordenacao: colab.coordenacao || state.coordenacao,
+      supervisao: colab.supervisao || state.supervisao,
+    };
+  }
+
+  async function saveStage(stage, colab, row) {
+    state.saving = true;
+    updateSaveStatus();
+    try {
+      await ensureProgramacaoDia();
+      const payload = { ...basePayload(colab), ...row };
+      const paths = {
+        A: '/api/programacao/disponibilidade',
+        B: '/api/programacao/estadia',
+        C: '/api/programacao/alimentacao',
+        D: '/api/programacao/deslocamento',
+        E: '/api/programacao/extras',
+      };
+      await request(paths[stage], { method: 'POST', body: payload });
+    } catch (err) {
+      console.warn(`[${MOD}] Falha ao salvar etapa ${stage}:`, err);
+      toast(`Não consegui salvar automaticamente: ${err.message || err}`, 'warn');
+    } finally {
+      state.saving = false;
+      updateSaveStatus();
+    }
+  }
+
+  async function deleteExtra(colab, extra) {
+    extra._deleted = true;
+    renderStage();
+    try {
+      if (extra.id && !String(extra.id).startsWith('tmp_')) {
+        await request('/api/programacao/extras/delete', { method: 'POST', body: { id: extra.id, programacao_id: state.programacaoId } });
       }
+    } catch (err) {
+      toast(`Não consegui excluir no servidor: ${err.message || err}`, 'warn');
+    }
+  }
+
+  function filteredColaboradores() {
+    const q = state.search.trim().toLowerCase();
+    if (!q) return state.colaboradores;
+    return state.colaboradores.filter((c) => [c.nome, c.cargo, c.supervisao, c.coordenacao, c.cpf].join(' ').toLowerCase().includes(q));
+  }
+
+  function isBloqueado(colab) {
+    const row = state.disponibilidade.get(keyColab(colab));
+    return BLOQUEIOS.has(row?.disponibilidade);
+  }
+
+  function setLoading(value, label = '') {
+    state.loading = value;
+    const el = state.container?.querySelector('[data-loading-label]');
+    if (el) el.textContent = label || '';
+  }
+
+  function updateSaveStatus() {
+    const el = state.container?.querySelector('[data-save-status]');
+    if (el) el.textContent = state.saving ? 'Salvando...' : 'Alterações salvas automaticamente';
+  }
+
+  function render() {
+    if (!state.container) return;
+    injectStyles();
+    state.container.innerHTML = `
+      <section class="prog-page">
+        <header class="prog-header">
+          <div>
+            <div class="prog-eyebrow">Gestor • Programação operacional</div>
+            <h1>Programação</h1>
+            <p>Todos os colaboradores da regional entram automaticamente. Edite as necessidades em formato de tabela.</p>
+          </div>
+          <div class="prog-header-actions">
+            <span class="prog-pill">${escapeHtml(VERSION)}</span>
+            <span class="prog-save" data-save-status>Alterações salvas automaticamente</span>
+          </div>
+        </header>
+
+        <div class="prog-toolbar">
+          <label>
+            <span>Data de referência</span>
+            <input type="date" data-field="dataReferencia" value="${escapeHtml(state.dataReferencia)}">
+          </label>
+          <label>
+            <span>Coordenação</span>
+            <input type="text" data-field="coordenacao" value="${escapeHtml(state.coordenacao)}" placeholder="Todas">
+          </label>
+          <label>
+            <span>Supervisão / Regional</span>
+            <input type="text" data-field="supervisao" value="${escapeHtml(state.supervisao)}" placeholder="Todas">
+          </label>
+          <button class="prog-btn primary" data-action="reload">Carregar</button>
+        </div>
+
+        ${state.error ? `<div class="prog-alert">${escapeHtml(state.error)}</div>` : ''}
+
+        <div class="prog-tabs" role="tablist">
+          ${STAGES.map((s) => `
+            <button class="prog-tab ${state.stage === s.id ? 'active' : ''}" data-stage="${s.id}">
+              <strong>${s.short}</strong> ${s.label}
+            </button>
+          `).join('')}
+        </div>
+
+        <div class="prog-kpis">
+          <article><span>Colaboradores</span><strong>${state.colaboradores.length}</strong><small>Total carregado no contexto</small></article>
+          <article><span>Bloqueados</span><strong>${state.colaboradores.filter(isBloqueado).length}</strong><small>Férias, folga, atestado, falta ou inativo</small></article>
+          <article><span>Etapa atual</span><strong>${state.stage}</strong><small>${escapeHtml(STAGES.find(s => s.id === state.stage)?.label || '')}</small></article>
+        </div>
+
+        <section class="prog-card">
+          <div class="prog-list-head">
+            <div>
+              <h2>Lista da etapa</h2>
+              <p data-loading-label>${state.loading ? 'Carregando...' : 'Edite direto na tabela. O salvamento é automático.'}</p>
+            </div>
+            <label class="prog-search">
+              <span>Buscar colaborador</span>
+              <input type="search" data-action="search" value="${escapeHtml(state.search)}" placeholder="Digite nome, cargo ou supervisão...">
+            </label>
+          </div>
+          <div data-stage-container></div>
+        </section>
+      </section>
+    `;
+    bindGlobalEvents();
+    renderStage();
+  }
+
+  function renderStage() {
+    const host = state.container?.querySelector('[data-stage-container]');
+    if (!host) return;
+    const rows = filteredColaboradores();
+    if (state.loading) {
+      host.innerHTML = `<div class="prog-empty">Carregando colaboradores...</div>`;
+      return;
+    }
+    if (!rows.length) {
+      host.innerHTML = `<div class="prog-empty">Nenhum colaborador encontrado para este contexto.</div>`;
+      return;
+    }
+    if (state.stage === 'A') host.innerHTML = renderDisponibilidade(rows);
+    if (state.stage === 'B') host.innerHTML = renderEstadia(rows);
+    if (state.stage === 'C') host.innerHTML = renderAlimentacao(rows);
+    if (state.stage === 'D') host.innerHTML = renderDeslocamento(rows);
+    if (state.stage === 'E') host.innerHTML = renderExtras(rows);
+    bindStageEvents();
+  }
+
+  function colabCell(c) {
+    const disp = state.disponibilidade.get(keyColab(c))?.disponibilidade || 'OK';
+    const blocked = BLOQUEIOS.has(disp);
+    return `
+      <div class="prog-colab">
+        <strong>${escapeHtml(c.nome)}</strong>
+        <span>${escapeHtml([c.cargo, c.supervisao].filter(Boolean).join(' • '))}</span>
+        ${blocked ? `<em class="prog-badge danger">${escapeHtml(disp)}</em>` : `<em class="prog-badge ok">Liberado</em>`}
+      </div>
+    `;
+  }
+
+  function options(list, selected) {
+    return list.map((x) => `<option value="${escapeHtml(x)}" ${x === selected ? 'selected' : ''}>${escapeHtml(x)}</option>`).join('');
+  }
+
+  function renderDisponibilidade(rows) {
+    return `
+      <div class="prog-table-wrap"><table class="prog-table">
+        <thead><tr><th>Colaborador</th><th>Disponibilidade</th><th>Observação</th></tr></thead>
+        <tbody>${rows.map((c) => {
+          const id = keyColab(c); const r = state.disponibilidade.get(id);
+          return `<tr data-colab="${escapeHtml(id)}">
+            <td>${colabCell(c)}</td>
+            <td><select data-step="A" data-name="disponibilidade">${options(DISPONIBILIDADES, r?.disponibilidade || 'OK')}</select></td>
+            <td><input data-step="A" data-name="observacao" value="${escapeHtml(r?.observacao || '')}" placeholder="Observação da disponibilidade"></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    `;
+  }
+
+  function renderEstadia(rows) {
+    return `
+      <div class="prog-table-wrap"><table class="prog-table wide">
+        <thead><tr><th>Colaborador</th><th>Estadia</th><th>Tipo</th><th>Cidade</th><th>UF</th><th>Diárias</th><th>Check-in</th><th>Check-out</th><th>Observação</th></tr></thead>
+        <tbody>${rows.map((c) => {
+          const id = keyColab(c); const r = state.estadia.get(id); const disabled = isBloqueado(c) ? 'disabled' : '';
+          return `<tr data-colab="${escapeHtml(id)}" class="${disabled ? 'muted' : ''}">
+            <td>${colabCell(c)}</td>
+            <td class="center"><input type="checkbox" data-step="B" data-name="tem_estadia" ${r?.tem_estadia ? 'checked' : ''} ${disabled}></td>
+            <td><select data-step="B" data-name="tipo_estadia" ${disabled}>${options(TIPOS_ESTADIA, r?.tipo_estadia || 'NÃO PRECISA')}</select></td>
+            <td><input data-step="B" data-name="cidade" value="${escapeHtml(r?.cidade || '')}" placeholder="Cidade" ${disabled}></td>
+            <td><input class="uf" data-step="B" data-name="uf" value="${escapeHtml(r?.uf || '')}" maxlength="2" placeholder="UF" ${disabled}></td>
+            <td><input type="number" min="0" step="1" data-step="B" data-name="diarias" value="${escapeHtml(r?.diarias || 0)}" ${disabled}></td>
+            <td><input type="date" data-step="B" data-name="checkin" value="${escapeHtml(r?.checkin || '')}" ${disabled}></td>
+            <td><input type="date" data-step="B" data-name="checkout" value="${escapeHtml(r?.checkout || '')}" ${disabled}></td>
+            <td><input data-step="B" data-name="observacao" value="${escapeHtml(r?.observacao || '')}" placeholder="Observação" ${disabled}></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    `;
+  }
+
+  function renderAlimentacao(rows) {
+    return `
+      <div class="prog-table-wrap"><table class="prog-table">
+        <thead><tr><th>Colaborador</th><th>Café</th><th>Almoço</th><th>Janta</th><th>Observação</th></tr></thead>
+        <tbody>${rows.map((c) => {
+          const id = keyColab(c); const r = state.alimentacao.get(id); const disabled = isBloqueado(c) ? 'disabled' : '';
+          return `<tr data-colab="${escapeHtml(id)}" class="${disabled ? 'muted' : ''}">
+            <td>${colabCell(c)}</td>
+            <td class="center"><input type="checkbox" data-step="C" data-name="cafe" ${r?.cafe ? 'checked' : ''} ${disabled}></td>
+            <td class="center"><input type="checkbox" data-step="C" data-name="almoco" ${r?.almoco ? 'checked' : ''} ${disabled}></td>
+            <td class="center"><input type="checkbox" data-step="C" data-name="janta" ${r?.janta ? 'checked' : ''} ${disabled}></td>
+            <td><input data-step="C" data-name="observacao" value="${escapeHtml(r?.observacao || '')}" placeholder="Observação" ${disabled}></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    `;
+  }
+
+  function renderDeslocamento(rows) {
+    return `
+      <div class="prog-table-wrap"><table class="prog-table wide">
+        <thead><tr><th>Colaborador</th><th>Deslocamento</th><th>Origem</th><th>Destino</th><th>KM</th><th>Valor</th><th>Observação</th></tr></thead>
+        <tbody>${rows.map((c) => {
+          const id = keyColab(c); const r = state.deslocamento.get(id); const disabled = isBloqueado(c) ? 'disabled' : '';
+          return `<tr data-colab="${escapeHtml(id)}" class="${disabled ? 'muted' : ''}">
+            <td>${colabCell(c)}</td>
+            <td><select data-step="D" data-name="tipo_deslocamento" ${disabled}>${options(TIPOS_DESLOCAMENTO, r?.tipo_deslocamento || 'NÃO PRECISA')}</select></td>
+            <td><input data-step="D" data-name="origem" value="${escapeHtml(r?.origem || '')}" placeholder="Origem" ${disabled}></td>
+            <td><input data-step="D" data-name="destino" value="${escapeHtml(r?.destino || '')}" placeholder="Destino" ${disabled}></td>
+            <td><input type="number" min="0" step="0.01" data-step="D" data-name="km" value="${escapeHtml(r?.km || 0)}" ${disabled}></td>
+            <td><input type="text" data-step="D" data-name="valor" value="${escapeHtml(r?.valor ? moneyBR(r.valor) : '')}" placeholder="R$ 0,00" ${disabled}></td>
+            <td><input data-step="D" data-name="observacao" value="${escapeHtml(r?.observacao || '')}" placeholder="Observação" ${disabled}></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    `;
+  }
+
+  function renderExtras(rows) {
+    return `
+      <div class="prog-table-wrap"><table class="prog-table extra-table">
+        <thead><tr><th>Colaborador</th><th>Extras</th></tr></thead>
+        <tbody>${rows.map((c) => {
+          const id = keyColab(c); const extras = (state.extras.get(id) || []).filter(e => !e._deleted); const disabled = isBloqueado(c);
+          return `<tr data-colab="${escapeHtml(id)}" class="${disabled ? 'muted' : ''}">
+            <td>${colabCell(c)}<button class="prog-btn mini" data-extra-add ${disabled ? 'disabled' : ''}>+ Adicionar extra</button></td>
+            <td>
+              <div class="extras-list">
+                ${extras.length ? extras.map((e) => renderExtraLine(e, disabled)).join('') : '<span class="prog-muted-text">Nenhuma despesa extra.</span>'}
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    `;
+  }
+
+  function renderExtraLine(e, disabled) {
+    return `<div class="extra-line" data-extra-id="${escapeHtml(e.id)}">
+      <select data-step="E" data-name="tipo_despesa" ${disabled ? 'disabled' : ''}>${options(TIPOS_EXTRA, e.tipo_despesa || 'OUTRO')}</select>
+      <input data-step="E" data-name="descricao" value="${escapeHtml(e.descricao || '')}" placeholder="Descrição" ${disabled ? 'disabled' : ''}>
+      <input data-step="E" data-name="valor" value="${escapeHtml(e.valor ? moneyBR(e.valor) : '')}" placeholder="Valor" ${disabled ? 'disabled' : ''}>
+      <input data-step="E" data-name="observacao" value="${escapeHtml(e.observacao || '')}" placeholder="Observação" ${disabled ? 'disabled' : ''}>
+      <button class="prog-icon-btn" title="Remover extra" data-extra-remove ${disabled ? 'disabled' : ''}>×</button>
+    </div>`;
+  }
+
+  function bindGlobalEvents() {
+    state.container.querySelectorAll('[data-stage]').forEach((btn) => {
+      btn.addEventListener('click', () => { state.stage = btn.dataset.stage; render(); });
+    });
+    state.container.querySelector('[data-action="reload"]')?.addEventListener('click', loadContext);
+    state.container.querySelector('[data-action="search"]')?.addEventListener('input', (ev) => {
+      state.search = ev.target.value;
+      renderStage();
+    });
+    state.container.querySelectorAll('[data-field]').forEach((input) => {
+      input.addEventListener('change', () => {
+        state[input.dataset.field] = input.value;
+        state.programacaoId = null;
+        loadContext();
+      });
+    });
+  }
+
+  function bindStageEvents() {
+    state.container.querySelectorAll('[data-step]').forEach((el) => {
+      const eventName = el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'date' ? 'change' : 'input';
+      el.addEventListener(eventName, onCellChange);
+      if (el.dataset.name === 'valor') {
+        el.addEventListener('blur', () => { el.value = parseMoney(el.value) ? moneyBR(parseMoney(el.value)) : ''; });
+      }
+    });
+
+    state.container.querySelectorAll('[data-extra-add]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tr = btn.closest('tr[data-colab]');
+        const colab = findColab(tr.dataset.colab);
+        if (!colab) return;
+        const id = keyColab(colab);
+        const list = state.extras.get(id) || [];
+        const extra = rowExtra({ colaborador_id: id });
+        list.push(extra);
+        state.extras.set(id, list);
+        renderStage();
+      });
+    });
+
+    state.container.querySelectorAll('[data-extra-remove]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tr = btn.closest('tr[data-colab]');
+        const line = btn.closest('[data-extra-id]');
+        const colab = findColab(tr.dataset.colab);
+        const extra = findExtra(tr.dataset.colab, line.dataset.extraId);
+        if (colab && extra) deleteExtra(colab, extra);
+      });
+    });
+  }
+
+  function onCellChange(ev) {
+    const el = ev.currentTarget;
+    const tr = el.closest('tr[data-colab]');
+    const colab = findColab(tr?.dataset.colab);
+    if (!colab) return;
+
+    const step = el.dataset.step;
+    const name = el.dataset.name;
+    const value = el.type === 'checkbox' ? el.checked : (name === 'valor' ? parseMoney(el.value) : el.value);
+    const id = keyColab(colab);
+
+    if (step === 'A') {
+      const row = state.disponibilidade.get(id) || rowDisponibilidade({ colaborador_id: id });
+      row[name] = value;
+      state.disponibilidade.set(id, row);
+      debounceSave(`A:${id}`, () => saveStage('A', colab, row));
+      if (name === 'disponibilidade') renderStage();
+      return;
+    }
+
+    if (step === 'B') {
+      const row = state.estadia.get(id) || rowEstadia({ colaborador_id: id });
+      row[name] = name === 'diarias' ? Number(value || 0) : value;
+      if (name === 'tipo_estadia') row.tem_estadia = value !== 'NÃO PRECISA';
+      if (name === 'checkin' || name === 'checkout') autoDiarias(row);
+      state.estadia.set(id, row);
+      debounceSave(`B:${id}`, () => saveStage('B', colab, row));
+      return;
+    }
+
+    if (step === 'C') {
+      const row = state.alimentacao.get(id) || rowAlimentacao({ colaborador_id: id });
+      row[name] = value;
+      state.alimentacao.set(id, row);
+      debounceSave(`C:${id}`, () => saveStage('C', colab, row));
+      return;
+    }
+
+    if (step === 'D') {
+      const row = state.deslocamento.get(id) || rowDeslocamento({ colaborador_id: id });
+      row[name] = name === 'km' || name === 'valor' ? Number(value || 0) : value;
+      state.deslocamento.set(id, row);
+      debounceSave(`D:${id}`, () => saveStage('D', colab, row));
+      return;
+    }
+
+    if (step === 'E') {
+      const line = el.closest('[data-extra-id]');
+      const extra = findExtra(id, line.dataset.extraId);
+      if (!extra) return;
+      extra[name] = name === 'valor' ? Number(value || 0) : value;
+      debounceSave(`E:${id}:${extra.id}`, () => saveStage('E', colab, extra));
+    }
+  }
+
+  function autoDiarias(row) {
+    if (!row.checkin || !row.checkout) return;
+    const a = new Date(row.checkin + 'T00:00:00');
+    const b = new Date(row.checkout + 'T00:00:00');
+    const days = Math.ceil((b - a) / 86400000);
+    if (Number.isFinite(days) && days > 0) row.diarias = days;
+  }
+
+  function findColab(id) {
+    return state.colaboradores.find((c) => keyColab(c) === String(id));
+  }
+
+  function findExtra(colabId, extraId) {
+    return (state.extras.get(String(colabId)) || []).find((x) => String(x.id) === String(extraId));
+  }
+
+  function toast(message, type = 'info') {
+    let host = document.querySelector('.prog-toast-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'prog-toast-host';
+      document.body.appendChild(host);
+    }
+    const el = document.createElement('div');
+    el.className = `prog-toast ${type}`;
+    el.textContent = message;
+    host.appendChild(el);
+    setTimeout(() => el.remove(), 4500);
+  }
+
+  function injectStyles() {
+    if (document.getElementById('programacao-table-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'programacao-table-styles';
+    style.textContent = `
+      :root { color-scheme: dark; }
+      .prog-page{padding:24px;max-width:1500px;margin:0 auto;color:#e5e7eb;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+      .prog-header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:20px}
+      .prog-eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#86efac;font-weight:800;margin-bottom:6px}
+      .prog-header h1{margin:0;font-size:32px;line-height:1.1;color:#f8fafc}.prog-header p{margin:8px 0 0;color:#a7b7ad}
+      .prog-header-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}.prog-pill,.prog-save{border:1px solid rgba(34,197,94,.22);background:rgba(20,83,45,.25);color:#bbf7d0;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:700}.prog-save{color:#d1fae5;background:rgba(2,44,34,.6)}
+      .prog-toolbar{display:grid;grid-template-columns:200px 1fr 1fr auto;gap:12px;align-items:end;background:linear-gradient(180deg,rgba(8,47,35,.85),rgba(3,20,16,.92));border:1px solid rgba(34,197,94,.15);border-radius:22px;padding:16px;margin-bottom:14px;box-shadow:0 18px 60px rgba(0,0,0,.28)}
+      .prog-toolbar label,.prog-search{display:flex;flex-direction:column;gap:6px}.prog-toolbar span,.prog-search span{font-size:12px;color:#b6c8bd;font-weight:700}
+      .prog-page input,.prog-page select{width:100%;box-sizing:border-box;border:1px solid rgba(52,211,153,.18);border-radius:12px;background:#0f172a;color:#e5e7eb;min-height:40px;padding:9px 12px;outline:none;color-scheme:dark}.prog-page select option{background:#0f172a;color:#e5e7eb}.prog-page input:focus,.prog-page select:focus{border-color:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.13)}.prog-page input[disabled],.prog-page select[disabled]{opacity:.55;cursor:not-allowed}.prog-page input[type="checkbox"]{width:18px;height:18px;min-height:18px;accent-color:#22c55e}
+      .prog-btn{border:1px solid rgba(34,197,94,.26);background:rgba(15,23,42,.88);color:#e5e7eb;border-radius:12px;min-height:40px;padding:9px 14px;font-weight:800;cursor:pointer}.prog-btn.primary{background:linear-gradient(135deg,#166534,#22c55e);border-color:transparent;color:#f8fafc}.prog-btn.mini{margin-top:10px;min-height:32px;font-size:12px;padding:6px 10px}.prog-btn:hover{filter:brightness(1.08)}
+      .prog-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.prog-tab{border:1px solid rgba(52,211,153,.2);background:rgba(2,20,15,.72);color:#d1d5db;border-radius:15px;padding:12px 16px;font-weight:800;cursor:pointer}.prog-tab strong{color:#bbf7d0;margin-right:4px}.prog-tab.active{background:linear-gradient(135deg,rgba(20,83,45,.96),rgba(5,46,22,.96));border-color:#22c55e;box-shadow:0 10px 34px rgba(34,197,94,.13)}
+      .prog-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:16px}.prog-kpis article{border:1px solid rgba(34,197,94,.14);border-radius:22px;padding:18px;background:linear-gradient(180deg,rgba(8,47,35,.75),rgba(2,20,15,.86))}.prog-kpis span{display:block;color:#cbd5e1;font-weight:800}.prog-kpis strong{display:block;font-size:38px;margin:8px 0 2px;color:#f8fafc}.prog-kpis small{color:#9fb3a8}
+      .prog-card{border:1px solid rgba(34,197,94,.14);border-radius:24px;padding:18px;background:linear-gradient(180deg,rgba(3,28,21,.86),rgba(1,15,12,.95));box-shadow:0 22px 80px rgba(0,0,0,.24)}.prog-list-head{display:flex;justify-content:space-between;gap:16px;align-items:end;margin-bottom:14px}.prog-list-head h2{margin:0;color:#f8fafc;font-size:20px}.prog-list-head p{margin:6px 0 0;color:#9fb3a8}.prog-search{min-width:360px}
+      .prog-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.12);border-radius:18px;background:rgba(15,23,42,.55)}.prog-table{width:100%;border-collapse:separate;border-spacing:0;min-width:920px}.prog-table.wide{min-width:1280px}.prog-table th{position:sticky;top:0;z-index:1;text-align:left;background:#081611;color:#bbf7d0;font-size:12px;letter-spacing:.04em;text-transform:uppercase;padding:12px;border-bottom:1px solid rgba(52,211,153,.16);white-space:nowrap}.prog-table td{padding:10px 12px;border-bottom:1px solid rgba(148,163,184,.10);vertical-align:middle}.prog-table tr:hover td{background:rgba(34,197,94,.04)}.prog-table tr.muted td{background:rgba(15,23,42,.36);opacity:.82}.prog-table .center{text-align:center}.prog-table .uf{max-width:70px;text-transform:uppercase}.prog-colab{display:grid;gap:3px;min-width:260px}.prog-colab strong{font-size:14px;color:#f8fafc;letter-spacing:.02em}.prog-colab span{font-size:12px;color:#a7b7ad}.prog-badge{display:inline-flex;width:max-content;border-radius:999px;padding:3px 8px;font-style:normal;font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase}.prog-badge.ok{background:rgba(34,197,94,.12);color:#bbf7d0}.prog-badge.danger{background:rgba(239,68,68,.15);color:#fecaca}.prog-muted-text{color:#94a3b8;font-size:13px}.prog-empty,.prog-alert{padding:18px;border-radius:16px;background:rgba(15,23,42,.65);border:1px solid rgba(148,163,184,.14);color:#cbd5e1}.prog-alert{background:rgba(127,29,29,.28);border-color:rgba(248,113,113,.3);color:#fecaca;margin-bottom:14px}
+      .extra-table{min-width:1180px}.extras-list{display:grid;gap:8px}.extra-line{display:grid;grid-template-columns:170px minmax(180px,1fr) 140px minmax(160px,1fr) 36px;gap:8px;align-items:center}.prog-icon-btn{width:34px;height:34px;border-radius:10px;border:1px solid rgba(248,113,113,.26);background:rgba(127,29,29,.32);color:#fecaca;font-size:20px;font-weight:900;cursor:pointer}
+      .prog-toast-host{position:fixed;right:20px;bottom:20px;display:grid;gap:10px;z-index:99999}.prog-toast{max-width:380px;border-radius:14px;padding:12px 14px;color:#e5e7eb;background:#0f172a;border:1px solid rgba(148,163,184,.2);box-shadow:0 18px 45px rgba(0,0,0,.35)}.prog-toast.warn{border-color:rgba(245,158,11,.45);color:#fde68a}
+      @media (max-width:900px){.prog-page{padding:14px}.prog-header,.prog-list-head{flex-direction:column;align-items:stretch}.prog-toolbar,.prog-kpis{grid-template-columns:1fr}.prog-search{min-width:0}.prog-header-actions{justify-content:flex-start}}
     `;
     document.head.appendChild(style);
   }
 
-  function getDefaultRows() {
-    return [
-      { id: "1", nome: "ADRIANA DA SILVA DA LUZ", cargo: "Administrativo", supervisao: "GERAL", coordenacao: "Administrativo", status: "DISPONÍVEL", cafe: false, almoco: false, janta: false, transporte: "", extrasOpen: false, extras: { estadia: "", cidade_uf: "", alojamento_id: "", alojamento_nome: "", checkin: "", checkout: "", chegada: "", recarga: "", lavagem: "", manutencao_solicitada: false } },
-      { id: "2", nome: "AMANDA RAQUEL DO NASCIMENTO BRAZ", cargo: "Administrativo", supervisao: "GERAL", coordenacao: "Administrativo", status: "DISPONÍVEL", cafe: false, almoco: false, janta: false, transporte: "", extrasOpen: false, extras: { estadia: "", cidade_uf: "", alojamento_id: "", alojamento_nome: "", checkin: "", checkout: "", chegada: "", recarga: "", lavagem: "", manutencao_solicitada: false } },
-      { id: "3", nome: "ANDREA APARECIDA DE MORAIS OLIVERIO", cargo: "Administrativo", supervisao: "GERAL", coordenacao: "Administrativo", status: "DISPONÍVEL", cafe: false, almoco: false, janta: false, transporte: "", extrasOpen: false, extras: { estadia: "", cidade_uf: "", alojamento_id: "", alojamento_nome: "", checkin: "", checkout: "", chegada: "", recarga: "", lavagem: "", manutencao_solicitada: false } },
-      { id: "4", nome: "BRUNO HENRIQUE RIBEIRO", cargo: "Técnico de Campo", supervisao: "SUL", coordenacao: "Operações", status: "DISPONÍVEL", cafe: true, almoco: true, janta: false, transporte: "MOTORISTA FROTA", extrasOpen: false, extras: { estadia: "HOTEL", cidade_uf: "Cascavel/PR", alojamento_id: "", alojamento_nome: "", checkin: "2026-04-06", checkout: "2026-04-07", chegada: "18:30", recarga: "", lavagem: "", manutencao_solicitada: false } },
-      { id: "5", nome: "CARLA FERNANDA LOPES", cargo: "Classificadora", supervisao: "OESTE", coordenacao: "Operações", status: "FOLGA", cafe: false, almoco: false, janta: false, transporte: "", extrasOpen: false, extras: { estadia: "", cidade_uf: "", alojamento_id: "", alojamento_nome: "", checkin: "", checkout: "", chegada: "", recarga: "", lavagem: "", manutencao_solicitada: false } },
-      { id: "6", nome: "DANIEL MARTINS", cargo: "Motorista", supervisao: "FROTAS", coordenacao: "Frotas", status: "DISPONÍVEL", cafe: false, almoco: true, janta: true, transporte: "CARONA FROTA", extrasOpen: false, extras: { estadia: "ALOJAMENTO", cidade_uf: "", alojamento_id: "1", alojamento_nome: "Alojamento Cascavel Centro", checkin: "", checkout: "", chegada: "", recarga: "75", lavagem: "", manutencao_solicitada: false } },
-    ];
+  function openHome(container, opts = {}) {
+    if (!container) throw new Error('Container não informado para PROGRAMACAO.openHome');
+    state.container = container;
+    state.opts = opts;
+    state.auth = opts.auth || window.APP_AUTH || null;
+    state.api = opts.api || window.APP_API || null;
+    state.stage = 'A';
+    state.search = '';
+    state.error = '';
+
+    const user = state.auth?.user || state.auth?.usuario || opts.user || {};
+    state.coordenacao = user.coordenacao || user.coordenação || state.coordenacao || '';
+    state.supervisao = user.supervisao || user.supervisão || state.supervisao || '';
+
+    render();
+    loadContext();
   }
 
-  async function loadAlojamentos(api) {
-    const fallback = [
-      { id: "1", nome: "Alojamento Cascavel Centro", cidade_uf: "Cascavel/PR", ativo: true },
-      { id: "2", nome: "Alojamento Londrina Norte", cidade_uf: "Londrina/PR", ativo: true },
-      { id: "3", nome: "Alojamento Primavera do Leste", cidade_uf: "Primavera do Leste/MT", ativo: true },
-    ];
-
-    if (!api || typeof api.getAlojamentos !== "function") return fallback;
-
-    try {
-      const res = await api.getAlojamentos();
-      if (Array.isArray(res) && res.length) return res;
-      return fallback;
-    } catch (_) {
-      return fallback;
-    }
-  }
-
-  async function loadCidades(api) {
-    const fallback = [
-      "Cascavel/PR",
-      "Londrina/PR",
-      "Maringá/PR",
-      "Toledo/PR",
-      "Ponta Grossa/PR",
-      "Goiânia/GO",
-      "Rio Verde/GO",
-      "Rondonópolis/MT",
-      "Primavera do Leste/MT",
-      "Lucas do Rio Verde/MT",
-      "Sorriso/MT",
-      "Uberlândia/MG",
-      "Luis Eduardo Magalhães/BA",
-      "Barreiras/BA"
-    ];
-
-    if (!api || typeof api.getCidades !== "function") return fallback;
-
-    try {
-      const res = await api.getCidades();
-      if (Array.isArray(res) && res.length) return res;
-      return fallback;
-    } catch (_) {
-      return fallback;
-    }
-  }
-
-  function blockedStatus(status) {
-    return ["ATESTADO", "FÉRIAS", "FOLGA", "FALTA", "INATIVO"].includes(status);
-  }
-
-  function normalizeMoneyInput(value) {
-    if (value == null) return "";
-    const clean = String(value).replace(/[^\d.,]/g, "").replace(",", ".");
-    return clean;
-  }
-
-  function toNumberOrNull(value) {
-    if (value === "" || value == null) return null;
-    const n = Number(String(value).replace(",", "."));
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function buildState() {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed.rows)) return parsed;
-      } catch (_) {}
-    }
-    return {
-      rows: getDefaultRows(),
-      query: "",
-      filtroStatus: "",
-      filtroCoordenacao: "",
-      page: 1,
-      pageSize: 20,
-      message: "",
-      messageType: "",
-      alojamentos: [],
-      cidades: [],
-    };
-  }
-
-  function persistState(state) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      rows: state.rows,
-      query: state.query,
-      filtroStatus: state.filtroStatus,
-      filtroCoordenacao: state.filtroCoordenacao,
-      page: state.page,
-      pageSize: state.pageSize,
-    }));
-  }
-
-  function getFilteredRows(state) {
-    const q = state.query.trim().toLowerCase();
-    return state.rows.filter((row) => {
-      const matchQuery = !q || [
-        row.nome,
-        row.cargo,
-        row.supervisao,
-        row.coordenacao,
-      ].some(v => String(v || "").toLowerCase().includes(q));
-
-      const matchStatus = !state.filtroStatus || row.status === state.filtroStatus;
-      const matchCoord = !state.filtroCoordenacao || row.coordenacao === state.filtroCoordenacao;
-      return matchQuery && matchStatus && matchCoord;
-    });
-  }
-
-  function paginate(rows, page, pageSize) {
-    const total = rows.length;
-    const pages = Math.max(1, Math.ceil(total / pageSize));
-    const current = Math.min(Math.max(1, page), pages);
-    const start = (current - 1) * pageSize;
-    return {
-      page: current,
-      pages,
-      total,
-      items: rows.slice(start, start + pageSize),
-      start: total ? start + 1 : 0,
-      end: Math.min(start + pageSize, total),
-    };
-  }
-
-  function getCoordenacoes(rows) {
-    return [...new Set(rows.map(r => r.coordenacao).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  }
-
-  function validateRow(row) {
-    const errors = [];
-    const ex = row.extras || {};
-
-    if (ex.estadia === "HOTEL") {
-      if (!ex.cidade_uf) errors.push("Cidade/UF é obrigatório para Hotel.");
-      if (!ex.checkin) errors.push("Check-in é obrigatório para Hotel.");
-      if (!ex.checkout) errors.push("Checkout é obrigatório para Hotel.");
-      if (!ex.chegada) errors.push("Chegada é obrigatória para Hotel.");
-    }
-
-    if (ex.estadia === "ALOJAMENTO") {
-      if (!ex.alojamento_id) errors.push("Selecionar o alojamento é obrigatório quando a estadia for Alojamento.");
-    }
-
-    if (ex.checkin && ex.checkout && ex.checkout < ex.checkin) {
-      errors.push("Checkout não pode ser menor que o Check-in.");
-    }
-
-    return errors;
-  }
-
-  function makePayload(row) {
-    return {
-      colaborador_id: row.id,
-      nome: row.nome,
-      status: row.status,
-      cafe: !!row.cafe,
-      almoco: !!row.almoco,
-      janta: !!row.janta,
-      transporte: row.transporte || null,
-      extras: {
-        estadia: row.extras.estadia || null,
-        cidade_uf: row.extras.cidade_uf || null,
-        alojamento_id: row.extras.alojamento_id || null,
-        checkin: row.extras.checkin || null,
-        checkout: row.extras.checkout || null,
-        chegada: row.extras.chegada || null,
-        recarga: toNumberOrNull(row.extras.recarga),
-        lavagem: toNumberOrNull(row.extras.lavagem),
-        manutencao_solicitada: !!row.extras.manutencao_solicitada,
-      },
-    };
-  }
-
-  async function defaultSave(api, row) {
-    const payload = makePayload(row);
-
-    if (api && typeof api.saveProgramacaoRow === "function") {
-      return api.saveProgramacaoRow(payload);
-    }
-
-    return new Promise((resolve) => {
-      setTimeout(() => resolve({ ok: true, local: true, payload }), 180);
-    });
-  }
-
-  async function createFrotaRequest(api, row) {
-    const payload = {
-      colaborador_id: row.id,
-      colaborador_nome: row.nome,
-      tipo: "MANUT_VEICULO",
-      origem: "PROGRAMACAO",
-      status: "ABERTA",
-      descricao: `Solicitação criada pela Programação para ${row.nome}.`,
-      metadata: {
-        coordenacao: row.coordenacao,
-        supervisao: row.supervisao,
-      }
-    };
-
-    if (api && typeof api.createFrotaSolicitacao === "function") {
-      return api.createFrotaSolicitacao(payload);
-    }
-
-    return new Promise((resolve) => {
-      setTimeout(() => resolve({ ok: true, local: true, payload }), 180);
-    });
-  }
-
-  function createApiBridge(opts) {
-    const api = opts?.api || {};
-    return {
-      getAlojamentos: api.getAlojamentos,
-      getCidades: api.getCidades,
-      saveProgramacaoRow: api.saveProgramacaoRow,
-      createFrotaSolicitacao: api.createFrotaSolicitacao,
-    };
-  }
-
-  function render(root, state, ctx) {
-    const filtered = getFilteredRows(state);
-    const paged = paginate(filtered, state.page, state.pageSize);
-    state.page = paged.page;
-
-    const coordenacoes = getCoordenacoes(state.rows);
-
-    root.innerHTML = `
-      <div class="prog-shell" id="${MODULE_ID}">
-        <section class="prog-hero">
-          <div class="prog-title-wrap">
-            <h1>Programação</h1>
-            <p>Lista compacta por colaborador com extras expansíveis, validações e integração para Frotas.</p>
-          </div>
-          <div class="prog-badge">Autosave por linha ativo</div>
-        </section>
-
-        <section class="prog-toolbar">
-          <input class="prog-input" id="prog-search" type="text" placeholder="Buscar por nome, cargo, supervisão ou coordenação..." value="${escapeHtml(state.query)}">
-          <select class="prog-select" id="prog-filter-status">
-            <option value="">Todos os status</option>
-            ${STATUS_OPTIONS.map(s => `<option value="${escapeHtml(s)}" ${state.filtroStatus === s ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
-          </select>
-          <select class="prog-select" id="prog-filter-coord">
-            <option value="">Todas as coordenações</option>
-            ${coordenacoes.map(c => `<option value="${escapeHtml(c)}" ${state.filtroCoordenacao === c ? "selected" : ""}>${escapeHtml(c)}</option>`).join("")}
-          </select>
-          <button class="prog-btn secondary" id="prog-expand-all">Fechar extras</button>
-        </section>
-
-        <section class="prog-card">
-          <div class="prog-table-wrap">
-            <table class="prog-table">
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>Disponível</th>
-                  <th>Café</th>
-                  <th>Almoço</th>
-                  <th>Janta</th>
-                  <th>Transporte</th>
-                  <th>Situação</th>
-                  <th>Extras</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${paged.items.map((row) => {
-                  const blocked = blockedStatus(row.status);
-                  const rowErrors = validateRow(row);
-                  return `
-                    <tr class="main-row" data-row-id="${escapeHtml(row.id)}">
-                      <td>
-                        <div class="prog-colab">
-                          <strong>${escapeHtml(row.nome)}</strong>
-                          <span>${escapeHtml(row.cargo)} • ${escapeHtml(row.supervisao)} • ${escapeHtml(row.coordenacao)}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <select class="prog-select" data-action="status" data-row-id="${escapeHtml(row.id)}">
-                          ${STATUS_OPTIONS.map(s => `<option value="${escapeHtml(s)}" ${row.status === s ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
-                        </select>
-                      </td>
-                      <td class="prog-checkbox-cell"><input class="prog-checkbox" data-action="cafe" data-row-id="${escapeHtml(row.id)}" type="checkbox" ${row.cafe ? "checked" : ""} ${blocked ? "disabled" : ""}></td>
-                      <td class="prog-checkbox-cell"><input class="prog-checkbox" data-action="almoco" data-row-id="${escapeHtml(row.id)}" type="checkbox" ${row.almoco ? "checked" : ""} ${blocked ? "disabled" : ""}></td>
-                      <td class="prog-checkbox-cell"><input class="prog-checkbox" data-action="janta" data-row-id="${escapeHtml(row.id)}" type="checkbox" ${row.janta ? "checked" : ""} ${blocked ? "disabled" : ""}></td>
-                      <td>
-                        <select class="prog-select" data-action="transporte" data-row-id="${escapeHtml(row.id)}" ${blocked ? "disabled" : ""}>
-                          ${TRANSPORTE_OPTIONS.map(s => `<option value="${escapeHtml(s)}" ${row.transporte === s ? "selected" : ""}>${escapeHtml(s || "Selecione...")}</option>`).join("")}
-                        </select>
-                      </td>
-                      <td>
-                        <span class="prog-status-pill ${rowErrors.length ? "blocked" : "ok"}">${rowErrors.length ? "Pendente" : "Ok"}</span>
-                      </td>
-                      <td class="prog-actions">
-                        <button class="prog-btn ghost" data-action="toggle-extra" data-row-id="${escapeHtml(row.id)}">${row.extrasOpen ? "Ocultar" : "Extras"}</button>
-                      </td>
-                    </tr>
-                    ${row.extrasOpen ? renderExtraRow(row, state) : ""}
-                  `;
-                }).join("")}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="prog-pagination">
-            <div class="prog-small">Exibindo ${paged.start}–${paged.end} de ${paged.total} colaboradores</div>
-            <div class="prog-page-actions">
-              <button class="prog-btn secondary" id="prog-prev-page" ${paged.page <= 1 ? "disabled" : ""}>Anterior</button>
-              <span class="prog-chip">Página ${paged.page} / ${paged.pages}</span>
-              <button class="prog-btn secondary" id="prog-next-page" ${paged.page >= paged.pages ? "disabled" : ""}>Próxima</button>
-            </div>
-          </div>
-        </section>
-
-        ${state.message ? `<div class="${state.messageType === "error" ? "prog-error" : "prog-success"}">${escapeHtml(state.message)}</div>` : ""}
-      </div>
-    `;
-
-    bindEvents(root, state, ctx);
-  }
-
-  function renderExtraRow(row, state) {
-    const blocked = blockedStatus(row.status);
-    const ex = row.extras || {};
-    const errors = validateRow(row);
-    const showHotelFields = ex.estadia === "HOTEL";
-    const showAlojamento = ex.estadia === "ALOJAMENTO";
-    const showCityForHotel = ex.estadia === "HOTEL";
-    const listaAlojamentos = state.alojamentos
-      .filter(a => a.ativo !== false)
-      .sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
-
-    return `
-      <tr class="prog-extra-row">
-        <td colspan="8">
-          <div class="prog-extra-box">
-            <div class="prog-extra-grid">
-              <div class="prog-field">
-                <label class="prog-required">Estadia</label>
-                <select class="prog-select" data-extra="estadia" data-row-id="${escapeHtml(row.id)}" ${blocked ? "disabled" : ""}>
-                  ${ESTADIA_OPTIONS.map(s => `<option value="${escapeHtml(s)}" ${ex.estadia === s ? "selected" : ""}>${escapeHtml(s || "Selecione...")}</option>`).join("")}
-                </select>
-              </div>
-
-              <div class="prog-field">
-                <label class="${showCityForHotel ? "prog-required" : ""}">Cidade/UF</label>
-                <input class="prog-input" list="programacao-cidades-list" data-extra="cidade_uf" data-row-id="${escapeHtml(row.id)}" value="${escapeHtml(ex.cidade_uf || "")}" placeholder="Digite a cidade/UF" ${blocked || !showCityForHotel ? "disabled" : ""}>
-              </div>
-
-              <div class="prog-field">
-                <label class="${showHotelFields ? "prog-required" : ""}">Check-in</label>
-                <input class="prog-input" type="date" data-extra="checkin" data-row-id="${escapeHtml(row.id)}" value="${escapeHtml(ex.checkin || "")}" ${blocked || !showHotelFields ? "disabled" : ""}>
-              </div>
-
-              <div class="prog-field">
-                <label class="${showHotelFields ? "prog-required" : ""}">Checkout</label>
-                <input class="prog-input" type="date" data-extra="checkout" data-row-id="${escapeHtml(row.id)}" value="${escapeHtml(ex.checkout || "")}" ${blocked || !showHotelFields ? "disabled" : ""}>
-              </div>
-
-              <div class="prog-field">
-                <label class="${showHotelFields ? "prog-required" : ""}">Chegada</label>
-                <input class="prog-input" type="time" data-extra="chegada" data-row-id="${escapeHtml(row.id)}" value="${escapeHtml(ex.chegada || "")}" ${blocked || !showHotelFields ? "disabled" : ""}>
-              </div>
-
-              <div class="prog-field">
-                <label>Recarga</label>
-                <input class="prog-input" inputmode="decimal" data-extra="recarga" data-row-id="${escapeHtml(row.id)}" value="${escapeHtml(ex.recarga || "")}" placeholder="0,00" ${blocked ? "disabled" : ""}>
-              </div>
-
-              <div class="prog-field">
-                <label>Lavagem</label>
-                <input class="prog-input" inputmode="decimal" data-extra="lavagem" data-row-id="${escapeHtml(row.id)}" value="${escapeHtml(ex.lavagem || "")}" placeholder="0,00" ${blocked ? "disabled" : ""}>
-              </div>
-
-              <div class="prog-inline-actions">
-                <button class="prog-btn prog-maint-btn" data-action="manutencao" data-row-id="${escapeHtml(row.id)}" ${blocked ? "disabled" : ""}>Manut. veículo</button>
-              </div>
-            </div>
-
-            <div style="margin-top:12px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end;">
-              <div class="prog-field">
-                <label class="${showAlojamento ? "prog-required" : ""}">Alojamento</label>
-                <select class="prog-select" data-extra="alojamento_id" data-row-id="${escapeHtml(row.id)}" ${blocked || !showAlojamento ? "disabled" : ""}>
-                  <option value="">Selecione o alojamento...</option>
-                  ${listaAlojamentos.map(a => `<option value="${escapeHtml(a.id)}" ${String(ex.alojamento_id || "") === String(a.id) ? "selected" : ""}>${escapeHtml(a.nome)}${a.cidade_uf ? " • " + escapeHtml(a.cidade_uf) : ""}</option>`).join("")}
-                </select>
-              </div>
-              <div class="prog-inline-actions">
-                <button class="prog-btn secondary" data-action="save-row" data-row-id="${escapeHtml(row.id)}">Salvar linha</button>
-              </div>
-            </div>
-
-            ${showAlojamento ? `<div class="prog-muted" style="margin-top:8px;">Para estadia em alojamento, a seleção do alojamento é obrigatória.</div>` : ""}
-            ${showHotelFields ? `<div class="prog-muted" style="margin-top:8px;">Para Hotel, Cidade/UF, Check-in, Checkout e Chegada são obrigatórios.</div>` : ""}
-            ${errors.length ? `<div class="prog-error">${errors.map(escapeHtml).join("<br>")}</div>` : ""}
-          </div>
-        </td>
-      </tr>
-    `;
-  }
-
-  function bindEvents(root, state, ctx) {
-    const updateSearch = debounce((value) => {
-      state.query = value;
-      state.page = 1;
-      persistState(state);
-      render(root, state, ctx);
-    }, 180);
-
-    root.querySelector("#prog-search")?.addEventListener("input", (e) => updateSearch(e.target.value));
-    root.querySelector("#prog-filter-status")?.addEventListener("change", (e) => {
-      state.filtroStatus = e.target.value;
-      state.page = 1;
-      persistState(state);
-      render(root, state, ctx);
-    });
-    root.querySelector("#prog-filter-coord")?.addEventListener("change", (e) => {
-      state.filtroCoordenacao = e.target.value;
-      state.page = 1;
-      persistState(state);
-      render(root, state, ctx);
-    });
-
-    root.querySelector("#prog-expand-all")?.addEventListener("click", () => {
-      state.rows.forEach(r => r.extrasOpen = false);
-      persistState(state);
-      render(root, state, ctx);
-    });
-
-    root.querySelector("#prog-prev-page")?.addEventListener("click", () => {
-      state.page = Math.max(1, state.page - 1);
-      persistState(state);
-      render(root, state, ctx);
-    });
-
-    root.querySelector("#prog-next-page")?.addEventListener("click", () => {
-      state.page = state.page + 1;
-      persistState(state);
-      render(root, state, ctx);
-    });
-
-    root.querySelectorAll("[data-action='toggle-extra']").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const row = findRow(state, btn.dataset.rowId);
-        if (!row) return;
-        row.extrasOpen = !row.extrasOpen;
-        state.message = "";
-        persistState(state);
-        render(root, state, ctx);
-      });
-    });
-
-    root.querySelectorAll("[data-action='status']").forEach((el) => {
-      el.addEventListener("change", async () => {
-        const row = findRow(state, el.dataset.rowId);
-        if (!row) return;
-        row.status = el.value;
-
-        if (blockedStatus(row.status)) {
-          row.cafe = false;
-          row.almoco = false;
-          row.janta = false;
-          row.transporte = "";
-          row.extras = {
-            ...row.extras,
-            estadia: "",
-            cidade_uf: "",
-            alojamento_id: "",
-            alojamento_nome: "",
-            checkin: "",
-            checkout: "",
-            chegada: "",
-          };
-        }
-
-        await saveRow(root, state, ctx, row, true);
-      });
-    });
-
-    ["cafe", "almoco", "janta"].forEach((field) => {
-      root.querySelectorAll(`[data-action='${field}']`).forEach((el) => {
-        el.addEventListener("change", async () => {
-          const row = findRow(state, el.dataset.rowId);
-          if (!row) return;
-          row[field] = !!el.checked;
-          await saveRow(root, state, ctx, row, true);
-        });
-      });
-    });
-
-    root.querySelectorAll("[data-action='transporte']").forEach((el) => {
-      el.addEventListener("change", async () => {
-        const row = findRow(state, el.dataset.rowId);
-        if (!row) return;
-        row.transporte = el.value;
-        await saveRow(root, state, ctx, row, true);
-      });
-    });
-
-    root.querySelectorAll("[data-action='save-row']").forEach((el) => {
-      el.addEventListener("click", async () => {
-        const row = findRow(state, el.dataset.rowId);
-        if (!row) return;
-        await saveRow(root, state, ctx, row, false);
-      });
-    });
-
-    root.querySelectorAll("[data-action='manutencao']").forEach((el) => {
-      el.addEventListener("click", async () => {
-        const row = findRow(state, el.dataset.rowId);
-        if (!row) return;
-        state.message = "";
-        try {
-          await createFrotaRequest(ctx.api, row);
-          row.extras.manutencao_solicitada = true;
-          state.message = `Solicitação de manutenção criada para ${row.nome}.`;
-          state.messageType = "success";
-          persistState(state);
-          render(root, state, ctx);
-        } catch (err) {
-          state.message = err?.message || "Não foi possível criar a solicitação de manutenção.";
-          state.messageType = "error";
-          render(root, state, ctx);
-        }
-      });
-    });
-
-    root.querySelectorAll("[data-extra]").forEach((el) => {
-      const apply = async (autosave) => {
-        const row = findRow(state, el.dataset.rowId);
-        if (!row) return;
-        const field = el.dataset.extra;
-        let value = el.value;
-
-        if (field === "recarga" || field === "lavagem") value = normalizeMoneyInput(value);
-
-        row.extras[field] = value;
-
-        if (field === "estadia") {
-          row.extras.cidade_uf = "";
-          row.extras.alojamento_id = "";
-          row.extras.alojamento_nome = "";
-          row.extras.checkin = "";
-          row.extras.checkout = "";
-          row.extras.chegada = "";
-        }
-
-        if (field === "alojamento_id") {
-          const found = state.alojamentos.find(a => String(a.id) === String(value));
-          row.extras.alojamento_nome = found?.nome || "";
-        }
-
-        persistState(state);
-        if (autosave) {
-          await saveRow(root, state, ctx, row, true);
-        } else {
-          render(root, state, ctx);
-        }
-      };
-
-      const isTextLike = el.tagName === "INPUT" && ["text", "date", "time"].includes((el.type || "text").toLowerCase());
-      if (isTextLike) {
-        const debounced = debounce(() => apply(true), 300);
-        el.addEventListener("input", debounced);
-        el.addEventListener("change", () => apply(true));
-      } else {
-        el.addEventListener("change", () => apply(true));
-      }
-    });
-
-    ensureCityList(root, state);
-  }
-
-  function ensureCityList(root, state) {
-    let dl = root.querySelector("#programacao-cidades-list");
-    if (!dl) {
-      dl = document.createElement("datalist");
-      dl.id = "programacao-cidades-list";
-      root.appendChild(dl);
-    }
-    dl.innerHTML = state.cidades.map(c => `<option value="${escapeHtml(c)}"></option>`).join("");
-  }
-
-  function findRow(state, id) {
-    return state.rows.find(r => String(r.id) === String(id));
-  }
-
-  async function saveRow(root, state, ctx, row, silent) {
-    const errors = validateRow(row);
-    if (errors.length) {
-      state.message = errors[0];
-      state.messageType = "error";
-      persistState(state);
-      render(root, state, ctx);
-      return false;
-    }
-
-    try {
-      await defaultSave(ctx.api, row);
-      state.message = silent ? "Alterações salvas automaticamente." : `Linha de ${row.nome} salva com sucesso.`;
-      state.messageType = "success";
-      persistState(state);
-      render(root, state, ctx);
-      return true;
-    } catch (err) {
-      state.message = err?.message || "Erro ao salvar a linha.";
-      state.messageType = "error";
-      render(root, state, ctx);
-      return false;
-    }
-  }
-
-  async function openHome(container, opts = {}) {
-    injectStyles();
-
-    const root = document.createElement("div");
-    container.innerHTML = "";
-    container.appendChild(root);
-
-    const state = buildState();
-    const api = createApiBridge(opts);
-
-    state.alojamentos = await loadAlojamentos(api);
-    state.cidades = await loadCidades(api);
-
-    render(root, state, { api, opts });
-  }
-
-  window.PROGRAMACAO = {
-    openHome,
-  };
+  window[MOD] = { openHome, version: VERSION };
+  window.ADM_MODULES = window.ADM_MODULES || {};
+  window.ADM_MODULES.programacao = { mount: openHome };
 })();
