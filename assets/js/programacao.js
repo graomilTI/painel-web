@@ -76,6 +76,10 @@ function injectProgramacaoStyles() {
     .prog-mini-btn{border:1px solid rgba(52,211,153,.28);background:rgba(22,101,52,.22);color:#dcfce7;border-radius:12px;padding:9px 12px;font-weight:800;cursor:pointer;white-space:nowrap}
     .prog-mini-btn:hover{background:rgba(22,101,52,.42)}
     .prog-mini-btn.danger{border-color:rgba(248,113,113,.22);background:rgba(127,29,29,.25);color:#fecaca}
+    .prog-save-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+    .prog-save-main{border:1px solid rgba(187,247,208,.32);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;border-radius:14px;padding:12px 18px;font-weight:950;cursor:pointer;box-shadow:0 14px 35px rgba(22,163,74,.18)}
+    .prog-save-main:hover{filter:brightness(1.04)}
+    .prog-save-main:disabled{opacity:.55;cursor:not-allowed;filter:none}
     .prog-extra-card{display:grid;grid-template-columns:160px 1.2fr 120px 1.2fr 86px;gap:8px;align-items:center;margin-bottom:8px;padding:8px;border:1px solid rgba(148,163,184,.14);border-radius:14px;background:rgba(15,23,42,.38)}
     .prog-extra-total{font-weight:900;color:#bbf7d0;text-align:right;white-space:nowrap}
     .prog-feedback-ok{color:#bbf7d0}.prog-feedback-error{color:#fecaca}.prog-feedback-warn{color:#fde68a}
@@ -146,7 +150,10 @@ initProtectedPage('Programação', (content) => {
       <div class="section-head">
         <div>
           <h3>Lista da etapa</h3>
-          <p class="muted">As alterações são salvas automaticamente.</p>
+          <p class="muted">As alterações são salvas automaticamente, mas o botão abaixo confirma e finaliza a programação.</p>
+        </div>
+        <div class="prog-save-actions">
+          <button class="prog-save-main" type="button" id="progSaveProgramacao" disabled>Salvar programação</button>
         </div>
       </div>
       <div class="filters-grid prog-context-grid">
@@ -167,6 +174,7 @@ initProtectedPage('Programação', (content) => {
     steps: document.getElementById('progSteps'),
     list: document.getElementById('progList'),
     search: document.getElementById('progSearch'),
+    saveBtn: document.getElementById('progSaveProgramacao'),
     statTotal: document.getElementById('progStatTotal'),
     statBlocked: document.getElementById('progStatBlocked'),
     currentStep: document.getElementById('progCurrentStep'),
@@ -201,6 +209,7 @@ initProtectedPage('Programação', (content) => {
 
   function bindEvents() {
     el.loadBtn.addEventListener('click', loadContext);
+    el.saveBtn.addEventListener('click', saveProgramacao);
     el.search.addEventListener('input', () => {
       state.search = el.search.value.trim().toLowerCase();
       renderRows();
@@ -311,6 +320,7 @@ initProtectedPage('Programação', (content) => {
     state.dataReferencia = dataReferencia;
     state.supervisao = supervisao;
     setFeedback('Carregando contexto...', 'warn');
+    el.saveBtn.disabled = true;
     el.list.innerHTML = '<div class="table-empty">Carregando colaboradores...</div>';
 
     try {
@@ -348,6 +358,7 @@ initProtectedPage('Programação', (content) => {
       await loadStageData();
       updateStats();
       renderRows();
+      el.saveBtn.disabled = false;
       setFeedback(`Contexto carregado com ${state.colaboradores.length} colaboradores.`, 'ok');
     } catch (error) {
       console.error(error);
@@ -706,7 +717,7 @@ initProtectedPage('Programação', (content) => {
     setFeedback('Despesa extra adicionada.', 'ok');
   }
 
-  async function saveExtra(card) {
+  async function saveExtra(card, opts = {}) {
     const extraId = card?.dataset.extraId;
     if (!extraId) return;
     const payload = getFieldPayload(card, 'data-extra-field');
@@ -728,8 +739,10 @@ initProtectedPage('Programação', (content) => {
     const idx = arr.findIndex((r) => r.id === data.id);
     if (idx >= 0) arr[idx] = data;
     state.maps.extras.set(String(data.colaborador_id), arr);
-    setFeedback(`Extra salvo em ${new Date().toLocaleTimeString('pt-BR')}.`, 'ok');
-    renderRows();
+    if (!opts.silent) {
+      setFeedback(`Extra salvo em ${new Date().toLocaleTimeString('pt-BR')}.`, 'ok');
+      renderRows();
+    }
   }
 
   async function deleteExtra(extraId) {
@@ -745,6 +758,43 @@ initProtectedPage('Programação', (content) => {
     }
     renderRows();
     setFeedback('Despesa extra excluída.', 'ok');
+  }
+
+  async function saveProgramacao() {
+    if (!state.programacaoId) {
+      setFeedback('Carregue um contexto antes de salvar a programação.', 'warn');
+      return;
+    }
+
+    try {
+      el.saveBtn.disabled = true;
+      el.saveBtn.textContent = 'Salvando...';
+      setFeedback('Salvando programação...', 'warn');
+
+      for (const timer of state.timers.values()) clearTimeout(timer);
+      state.timers.clear();
+
+      const rows = [...el.list.querySelectorAll('tr[data-table]:not([data-table="programacao_extras"])')];
+      for (const tr of rows) await saveRow(tr);
+
+      const extraCards = [...el.list.querySelectorAll('.prog-extra-card[data-extra-id]')];
+      for (const card of extraCards) await saveExtra(card, { silent: true });
+
+      const { error } = await supabase
+        .from('programacao_dia')
+        .update({ status: 'salvo', updated_at: new Date().toISOString() })
+        .eq('id', state.programacaoId);
+
+      if (error) throw error;
+
+      setFeedback(`Programação salva com sucesso em ${new Date().toLocaleTimeString('pt-BR')}.`, 'ok');
+    } catch (error) {
+      console.error(error);
+      setFeedback(error.message || 'Falha ao salvar programação.', 'error');
+    } finally {
+      el.saveBtn.disabled = false;
+      el.saveBtn.textContent = 'Salvar programação';
+    }
   }
 
   function setFeedback(message, type = '') {
