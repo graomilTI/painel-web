@@ -65,6 +65,13 @@ export const MENU_CONFIG = [
   },
 
   {
+    grupo: "OPERACIONAL",
+    itens: [
+      item("operacional_mapa", "Mapa de Direcionamento", "adm-operacional", ["OPERACIONAL", "OPERACIONAL_MAPA", "MAPA_DIRECIONAMENTO"])
+    ]
+  },
+
+  {
     grupo: "FROTAS",
     itens: []
   },
