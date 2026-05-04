@@ -213,8 +213,39 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   }
 
   async function loadHoteis() {
-    const { data, error } = await supabase.from('hospedagem_hoteis').select('*').order('cidade', { ascending: true }).order('nome', { ascending: true });
-    if (error) { document.getElementById('hotelTbody').innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; return; }
+    const tbody = document.getElementById('hotelTbody');
+    tbody.innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">Carregando hotéis...</td></tr>`;
+
+    let data = [];
+    let error = null;
+
+    const direct = await supabase
+      .from('hospedagem_hoteis')
+      .select('*')
+      .order('cidade', { ascending: true })
+      .order('nome', { ascending: true });
+
+    data = direct.data || [];
+    error = direct.error || null;
+
+    // Fallback para ambientes onde a importação via RPC grava os hotéis,
+    // mas a tabela ainda está bloqueada por RLS para SELECT direto no painel.
+    // Rode o SQL sql/hospedagem_hoteis_fix_rls_rpc.sql para habilitar este fallback.
+    if ((!data.length || error) && supabase.rpc) {
+      const fallback = await supabase.rpc('hospedagem_listar_hoteis');
+      if (!fallback.error && Array.isArray(fallback.data)) {
+        data = fallback.data;
+        error = null;
+      } else if (error) {
+        error = fallback.error || error;
+      }
+    }
+
+    if (error) {
+      tbody.innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message || 'Falha ao carregar hotéis.')}</td></tr>`;
+      return;
+    }
+
     state.hoteis = data || [];
     fillHotelSelect();
     renderHoteis();
