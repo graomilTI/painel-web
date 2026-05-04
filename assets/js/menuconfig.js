@@ -2,10 +2,10 @@ window.MENU_CONFIG = {
   adm: [
     { nome: "CONFERÊNCIA", modulos: ["Irregularidades", "Lançamentos"] },
     { nome: "COMPRAS", modulos: ["Pedidos", "Fornecedores"] },
-    { nome: "OPERACIONAL", modulos: ["Mapa de Direcionamento"] },
     { nome: "PATRIMÔNIOS", modulos: ["Painel de Patrimônios", "Relatórios de Patrimônios"] },
     { nome: "HOSPEDAGEM", modulos: ["Painel", "Solicitações", "Reservas", "Checkouts", "Financeiro", "Notas Fiscais", "Hotéis"] },
     { nome: "RECURSOS HUMANOS", modulos: [] },
+    { nome: "OPERACIONAL", modulos: ["Mapa de Direcionamento"] },
     { nome: "FROTAS", modulos: [] },
     { nome: "LOGÍSTICA", modulos: [] },
     { nome: "TROCA DE NOTAS", modulos: [] },

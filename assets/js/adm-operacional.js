@@ -1,7 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import './modules/operacional.js';
 
-initProtectedPage('Operacional', (content, userContext) => {
+initProtectedPage('Operacional ADM', (content, userContext) => {
   if (window.OPERACIONAL?.openHome) {
     window.OPERACIONAL.openHome(content, { userContext });
     return;
@@ -9,7 +9,7 @@ initProtectedPage('Operacional', (content, userContext) => {
 
   content.innerHTML = `
     <article class="card">
-      <h3>Operacional</h3>
+      <h3>Operacional ADM</h3>
       <p>Não foi possível carregar o módulo operacional.</p>
     </article>
   `;
