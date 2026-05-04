@@ -529,6 +529,90 @@
     return allObjects;
   }
 
+
+  function pickValue(row, keys) {
+    const normalizedMap = new Map(Object.keys(row || {}).map((key) => [normalizeHeader(key), row[key]]));
+    for (const key of keys) {
+      const value = normalizedMap.get(normalizeHeader(key));
+      if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+    }
+    return null;
+  }
+
+  function normalizeNumberBr(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const raw = String(value).trim().replace(/\s/g, '');
+    const normalized = raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw;
+    const number = Number(normalized.replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(number) ? number : null;
+  }
+
+  async function readPontosEmbarqueFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
+    const sheetName = workbook.SheetNames.find((name) => normalizeHeader(name) === 'dados') || workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+
+    const mapped = [];
+    const seen = new Set();
+
+    rows.forEach((row) => {
+      const tipoLocal = String(pickValue(row, ['Tipo do Local', 'Tipo Local', 'Tipo']) || '').trim();
+      const nomeLocal = String(pickValue(row, ['Local', 'Nome Local', 'Ponto', 'Ponto de Embarque']) || '').trim();
+      const uf = String(pickValue(row, ['UF', 'Estado']) || '').trim().toUpperCase().slice(0, 2);
+      const cidade = String(pickValue(row, ['Cidade', 'Município', 'Municipio']) || '').trim();
+      const latitude = normalizeNumberBr(pickValue(row, ['Latitude', 'Lat']));
+      const longitude = normalizeNumberBr(pickValue(row, ['Longitude', 'Lng', 'Long']));
+      const supervisao = String(pickValue(row, ['Supervisão', 'Supervisao']) || '').trim();
+      const coordenacao = String(pickValue(row, ['Coordenação', 'Coordenacao']) || '').trim();
+
+      if (!nomeLocal || !cidade || !uf) return;
+      const key = `${nomeLocal.toUpperCase()}|${cidade.toUpperCase()}|${uf}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      mapped.push({
+        tipo_local: tipoLocal || null,
+        nome_local: nomeLocal,
+        uf,
+        cidade,
+        latitude,
+        longitude,
+        supervisao: supervisao || null,
+        coordenacao: coordenacao || null,
+        origem: 'importar_relatorios',
+        ativo: true,
+      });
+    });
+
+    return mapped;
+  }
+
+  async function importarPontosEmbarqueDaPlanilha(file, opts) {
+    const pontos = await readPontosEmbarqueFromFile(file);
+    if (!pontos.length) {
+      throw new Error('A planilha de pontos de embarque não possui linhas válidas. Cabeçalhos esperados: Tipo do Local, Local, UF, Cidade, Latitude, Longitude, Supervisão e Coordenação.');
+    }
+
+    const batchSize = 500;
+    let total = 0;
+    for (let i = 0; i < pontos.length; i += batchSize) {
+      const batch = pontos.slice(i, i + batchSize);
+      const { error } = await opts.supabase
+        .from('operacional_pontos_embarque')
+        .upsert(batch, { onConflict: 'nome_local,cidade,uf' });
+      if (error) throw new Error(error.message || 'Falha ao gravar pontos de embarque no Supabase.');
+      total += batch.length;
+    }
+
+    const cidades = new Set(pontos.map((ponto) => `${ponto.cidade}/${ponto.uf}`)).size;
+    const supervisoes = new Set(pontos.map((ponto) => ponto.supervisao).filter(Boolean)).size;
+    return { total_linhas: pontos.length, importados: total, cidades, supervisoes };
+  }
+
   async function importarHoteisDaPlanilha(file, opts) {
     const linhas = await readSpreadsheetAsObjects(file);
     if (!linhas.length) {
@@ -588,6 +672,10 @@
 
   function detectRelatorio(fileName) {
     const n = String(fileName || '').toLowerCase();
+
+    if ((n.includes('mapa') && n.includes('g1000')) || n.includes('ponto-embarque') || n.includes('pontos-embarque') || n.includes('pontos_de_embarque') || n.includes('pontos de embarque')) {
+      return { tipo: 'pontos_embarque', titulo: 'Pontos de Embarque Operacional' };
+    }
 
     if (n.includes('hotel') || n.includes('hoteis') || n.includes('hotéis') || n.includes('hospedagem') || n.includes('hospedagens')) {
       return { tipo: 'hoteis', titulo: 'Banco de Hotéis' };
@@ -886,14 +974,20 @@
     }
 
     let hoteisResumo = null;
+    let pontosResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
       hoteisResumo = await importarHoteisDaPlanilha(file, opts);
     }
+    if (detected.tipo === 'pontos_embarque') {
+      status.textContent = 'Importando pontos no módulo Operacional...';
+      setProgress(bar, 82);
+      pontosResumo = await importarPontosEmbarqueDaPlanilha(file, opts);
+    }
 
     const importMode = opts.importMode || 'auto';
-    const period = detected.tipo === 'hoteis' ? null : (entry?.period || await detectFilePeriod(file, detected.tipo));
+    const period = ['hoteis', 'pontos_embarque'].includes(detected.tipo) ? null : (entry?.period || await detectFilePeriod(file, detected.tipo));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -907,9 +1001,11 @@
 
     status.textContent = detected.tipo === 'hoteis'
       ? 'Registrando upload da planilha de hotéis...'
-      : (effectiveMode === 'replace'
-        ? 'Registrando substituição inteligente...'
-        : 'Registrando complemento inteligente...');
+      : (detected.tipo === 'pontos_embarque'
+        ? 'Registrando upload dos pontos de embarque...'
+        : (effectiveMode === 'replace'
+          ? 'Registrando substituição inteligente...'
+          : 'Registrando complemento inteligente...'));
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -944,6 +1040,7 @@
           import_mode_effective: effectiveMode,
           periodo: period || null,
           hoteis_importacao: hoteisResumo || null,
+          pontos_embarque_importacao: pontosResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -966,12 +1063,14 @@
     const result = await registerSmartImport(payload, opts);
     if (detected.tipo === 'hoteis' && hoteisResumo) {
       status.textContent = `Hotéis: ${hoteisResumo.inseridos || 0} novos · ${hoteisResumo.atualizados || 0} atualizados · ${hoteisResumo.ignorados || 0} ignorados`;
+    } else if (detected.tipo === 'pontos_embarque' && pontosResumo) {
+      status.textContent = `Pontos: ${pontosResumo.importados || 0} importados · ${pontosResumo.cidades || 0} cidades · ${pontosResumo.supervisoes || 0} supervisões`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -1013,7 +1112,7 @@
                   </select>
                 </div>
                 <div class="import-intelligence-note" id="intelligenceNote">
-                  No automático, se o período já existir no banco, o painel substitui a versão anterior; planilhas de hotéis são importadas direto no cadastro de Hospedagem.
+                  No automático, se o período já existir no banco, o painel substitui a versão anterior; planilhas de hotéis vão para Hospedagem e a planilha Mapa G1000 vai para Operacional.
                 </div>
               </div>
             </div>
@@ -1138,6 +1237,8 @@
         if (valid) {
           if (detected.tipo === 'hoteis') {
             entry.message = 'Pendente · importará cadastro de hotéis';
+          } else if (detected.tipo === 'pontos_embarque') {
+            entry.message = 'Pendente · importará pontos de embarque operacional';
           } else {
             detectFilePeriod(file, detected.tipo).then((period) => {
               entry.period = period;
