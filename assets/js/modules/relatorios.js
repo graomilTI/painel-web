@@ -494,45 +494,39 @@
     const XLSX = await loadXlsx();
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-
-    let selectedRows = null;
-    let selectedHeaderRow = 0;
+    const allObjects = [];
 
     for (const sheetName of workbook.SheetNames || []) {
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
-      const headerRow = findHeaderRow(rows, ['HOTEL', 'Ciudad']);
+      if (!rows?.length) continue;
+
+      const headerRow = findHeaderRow(rows, ['HOTEL', 'CIDADE']);
       const header = (rows[headerRow] || []).map(normalizeHeader);
       const hasHotel = header.includes('hotel') || header.includes('nome hotel') || header.includes('nome_hotel');
-      const hasCity = header.includes('ciudad') || header.includes('cidade');
+      const hasCity = header.includes('cidade') || header.includes('ciudad');
+      const hasDailyRate = header.some((h) => ['valor', 'diaria', 'diaria r$', 'r$ por dia', 'vlr diaria', 'valor diaria', 'valor diario'].includes(h));
 
-      if (hasHotel || hasCity) {
-        selectedRows = rows;
-        selectedHeaderRow = headerRow;
-        break;
-      }
+      // Para cadastro de hotéis, só importa abas que realmente tenham estrutura de hotel.
+      // Isso evita ler abas auxiliares/observações como a "Página2".
+      if (!hasHotel || (!hasCity && !hasDailyRate)) continue;
 
-      if (!selectedRows && rows?.length) {
-        selectedRows = rows;
-        selectedHeaderRow = headerRow;
-      }
-    }
+      const headers = (rows[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+      const dataRows = rows.slice(headerRow + 1);
 
-    if (!selectedRows?.length) return [];
-
-    const headers = (selectedRows[selectedHeaderRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
-    const dataRows = selectedRows.slice(selectedHeaderRow + 1);
-
-    return dataRows
-      .map((row) => {
-        const obj = {};
+      dataRows.forEach((row) => {
+        const obj = { __aba: sheetName };
         headers.forEach((header, index) => {
           if (!header) return;
           obj[header] = row?.[index] ?? '';
         });
-        return obj;
-      })
-      .filter((obj) => Object.values(obj).some((value) => String(value ?? '').trim() !== ''));
+        if (Object.values(obj).some((value) => String(value ?? '').trim() !== '')) {
+          allObjects.push(obj);
+        }
+      });
+    }
+
+    return allObjects;
   }
 
   async function importarHoteisDaPlanilha(file, opts) {
@@ -595,7 +589,7 @@
   function detectRelatorio(fileName) {
     const n = String(fileName || '').toLowerCase();
 
-    if (n.includes('hotel') || n.includes('hoteis') || n.includes('hotéis') || n.includes('hospedagem')) {
+    if (n.includes('hotel') || n.includes('hoteis') || n.includes('hotéis') || n.includes('hospedagem') || n.includes('hospedagens')) {
       return { tipo: 'hoteis', titulo: 'Banco de Hotéis' };
     }
 
