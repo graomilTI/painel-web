@@ -19,6 +19,19 @@ function slug(value) { return String(value || '').toLowerCase().replace(/[^a-z0-
 function label(value) { return LABELS[value] || value || '-'; }
 function normalizeText(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase(); }
 function normalizeUF(value) { return String(value || '').trim().toUpperCase().slice(0, 2); }
+function toNumber(value) { const n = Number(String(value ?? '').replace(',', '.')); return Number.isFinite(n) ? n : 0; }
+function getHotelDiariaPorTipo(hotel, tipo = 'INDIVIDUAL') {
+  if (!hotel) return 0;
+  const keyByTipo = {
+    INDIVIDUAL: 'valor_diaria_individual',
+    DUPLO: 'valor_diaria_duplo',
+    TRIPLO: 'valor_diaria_triplo',
+    QUADRUPLO: 'valor_diaria_quadruplo'
+  };
+  const key = keyByTipo[String(tipo || 'INDIVIDUAL').toUpperCase()] || 'valor_diaria_individual';
+  return toNumber(hotel[key] ?? hotel.valor_diaria_padrao ?? hotel.valor_diaria_individual);
+}
+
 
 function injectStyles() {
   if (document.getElementById('admHospStyles')) return;
@@ -35,6 +48,7 @@ function injectStyles() {
 initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   injectStyles();
   const state = { rows: [], resumo: {}, hoteis: [], editingHotel: null, tab: 'painel', selected: null };
+  function getHotelById(id) { return state.hoteis.find((h) => String(h.id) === String(id)); }
 
   content.innerHTML = `
     <section class="hero-card">
@@ -85,7 +99,10 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
           <div class="adm-hosp-field"><label>Nome do hotel *</label><input id="hotelNome" required /></div>
           <div class="adm-hosp-field"><label>Cidade *</label><input id="hotelCidade" required /></div>
           <div class="adm-hosp-field"><label>UF *</label><input id="hotelUf" required maxlength="2" /></div>
-          <div class="adm-hosp-field"><label>Valor diária padrão</label><input id="hotelDiaria" type="number" step="0.01" min="0" /></div>
+          <div class="adm-hosp-field"><label>Diária individual</label><input id="hotelDiariaIndividual" type="number" step="0.01" min="0" /></div>
+          <div class="adm-hosp-field"><label>Diária duplo</label><input id="hotelDiariaDuplo" type="number" step="0.01" min="0" /></div>
+          <div class="adm-hosp-field"><label>Diária triplo</label><input id="hotelDiariaTriplo" type="number" step="0.01" min="0" /></div>
+          <div class="adm-hosp-field"><label>Diária quádruplo</label><input id="hotelDiariaQuadruplo" type="number" step="0.01" min="0" /></div>
           <div class="adm-hosp-field"><label>WhatsApp</label><input id="hotelWhatsapp" /></div>
           <div class="adm-hosp-field"><label>CNPJ/CPF</label><input id="hotelCnpj" /></div>
           <div class="adm-hosp-field full"><label>Endereço</label><input id="hotelEndereco" /></div>
@@ -96,7 +113,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
         </form>
         <div class="adm-hosp-form-actions"><button class="btn btn-primary adm-hosp-btn" type="submit" form="hotelForm" id="hotelSave">Salvar hotel</button><button class="btn btn-secondary adm-hosp-btn" type="button" id="hotelClear">Limpar</button><span id="hotelFeedback" class="adm-hosp-feedback"></span></div>
       </article>
-      <article class="card mt-16"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Hotel</th><th>Cidade</th><th>Diária</th><th>Contato</th><th>Status</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody id="hotelTbody"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article>
+      <article class="card mt-16"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Hotel</th><th>Cidade</th><th>Diárias</th><th>Contato</th><th>Status</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody id="hotelTbody"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article>
     </section>
 
     <div id="reservaModal" class="adm-hosp-modal">
@@ -112,7 +129,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
           <div class="adm-hosp-field"><label>Check-out *</label><input id="resCheckout" type="date" required /></div>
           <div class="adm-hosp-field"><label>Diárias</label><input id="resDiarias" readonly /></div>
           <div class="adm-hosp-field"><label>Total previsto</label><input id="resTotal" readonly /></div>
-          <div class="adm-hosp-field"><label>Tipo quarto</label><select id="resTipo"><option value="INDIVIDUAL">Individual</option><option value="DUPLO">Duplo</option><option value="TRIPLO">Triplo</option><option value="COLETIVO">Coletivo</option><option value="OUTRO">Outro</option></select></div>
+          <div class="adm-hosp-field"><label>Tipo quarto</label><select id="resTipo"><option value="INDIVIDUAL">Individual</option><option value="DUPLO">Duplo</option><option value="TRIPLO">Triplo</option><option value="QUADRUPLO">Quádruplo</option><option value="OUTRO">Outro</option></select></div>
           <div class="adm-hosp-field"><label>Confirmado com</label><input id="resConfirmado" /></div>
           <div class="adm-hosp-field"><label>Contato confirmação</label><input id="resContato" /></div>
           <div class="adm-hosp-field"><label>Status hospedagem</label><select id="resStatus"><option value="CHECKIN_PREVISTO">Check-in previsto</option><option value="HOSPEDADO">Hospedado</option><option value="CHECKOUT_HOJE">Checkout hoje</option><option value="RENOVACAO_NECESSARIA">Renovação necessária</option><option value="CHECKOUT_REALIZADO">Checkout realizado</option><option value="CANCELADA">Cancelada</option></select></div>
@@ -243,7 +260,10 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     const hint = document.getElementById('resHotelHint');
     const rows = getHoteisRecomendados(row);
     const cidadeUf = [row?.cidade, row?.uf].filter(Boolean).join('/');
-    select.innerHTML = `<option value="">Selecionar hotel cadastrado</option>` + rows.map((h) => `<option value="${esc(h.id)}" data-diaria="${esc(h.valor_diaria_padrao || '')}" data-nome="${esc(h.nome)}" data-cidade="${esc(h.cidade || '')}" data-uf="${esc(h.uf || '')}">${esc(h.nome)} · ${esc(h.cidade || '-')}/${esc(h.uf || '')}${h.valor_diaria_padrao ? ` · ${money(h.valor_diaria_padrao)}` : ''}</option>`).join('');
+    select.innerHTML = `<option value="">Selecionar hotel cadastrado</option>` + rows.map((h) => {
+      const diaria = getHotelDiariaPorTipo(h, document.getElementById('resTipo')?.value || 'INDIVIDUAL');
+      return `<option value="${esc(h.id)}" data-nome="${esc(h.nome)}" data-cidade="${esc(h.cidade || '')}" data-uf="${esc(h.uf || '')}">${esc(h.nome)} · ${esc(h.cidade || '-')}/${esc(h.uf || '')}${diaria ? ` · ${money(diaria)}` : ''}</option>`;
+    }).join('');
     if (hint) {
       if (rows.length) {
         hint.textContent = `${rows.length} hotel(is) recomendado(s) para ${cidadeUf || 'a cidade solicitada'}.`;
@@ -265,7 +285,12 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       <tr>
         <td><strong>${esc(h.nome)}</strong><span class="adm-hosp-row-note">${esc(h.endereco || '')}</span></td>
         <td>${esc([h.cidade, h.uf].filter(Boolean).join('/'))}</td>
-        <td>${h.valor_diaria_padrao ? money(h.valor_diaria_padrao) : '-'}</td>
+        <td>
+          <strong>Ind:</strong> ${h.valor_diaria_individual ? money(h.valor_diaria_individual) : '-'}<br>
+          <strong>Dup:</strong> ${h.valor_diaria_duplo ? money(h.valor_diaria_duplo) : '-'}<br>
+          <strong>Tri:</strong> ${h.valor_diaria_triplo ? money(h.valor_diaria_triplo) : '-'}<br>
+          <strong>Quad:</strong> ${h.valor_diaria_quadruplo ? money(h.valor_diaria_quadruplo) : '-'}
+        </td>
         <td>${esc(h.whatsapp || h.telefone || '-')}<span class="adm-hosp-row-note">${esc(h.cnpj_cpf || '')}</span></td>
         <td>${statusPill(h.status || 'ATIVO')}</td>
         <td>${statusPill(h.prioridade || 'NORMAL')}</td>
@@ -288,7 +313,10 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     document.getElementById('hotelNome').value = h.nome || '';
     document.getElementById('hotelCidade').value = h.cidade || '';
     document.getElementById('hotelUf').value = h.uf || '';
-    document.getElementById('hotelDiaria').value = h.valor_diaria_padrao || '';
+    document.getElementById('hotelDiariaIndividual').value = h.valor_diaria_individual || h.valor_diaria_padrao || '';
+    document.getElementById('hotelDiariaDuplo').value = h.valor_diaria_duplo || '';
+    document.getElementById('hotelDiariaTriplo').value = h.valor_diaria_triplo || '';
+    document.getElementById('hotelDiariaQuadruplo').value = h.valor_diaria_quadruplo || '';
     document.getElementById('hotelWhatsapp').value = h.whatsapp || '';
     document.getElementById('hotelCnpj').value = h.cnpj_cpf || '';
     document.getElementById('hotelEndereco').value = h.endereco || '';
@@ -305,7 +333,12 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     setFeedback('hotelFeedback', 'Salvando...');
     const payload = {
       nome: document.getElementById('hotelNome').value.trim(), cidade: document.getElementById('hotelCidade').value.trim(), uf: document.getElementById('hotelUf').value.trim().toUpperCase(),
-      valor_diaria_padrao: document.getElementById('hotelDiaria').value ? Number(document.getElementById('hotelDiaria').value) : null, whatsapp: document.getElementById('hotelWhatsapp').value.trim() || null,
+      valor_diaria_padrao: document.getElementById('hotelDiariaIndividual').value ? Number(document.getElementById('hotelDiariaIndividual').value) : null,
+      valor_diaria_individual: document.getElementById('hotelDiariaIndividual').value ? Number(document.getElementById('hotelDiariaIndividual').value) : null,
+      valor_diaria_duplo: document.getElementById('hotelDiariaDuplo').value ? Number(document.getElementById('hotelDiariaDuplo').value) : null,
+      valor_diaria_triplo: document.getElementById('hotelDiariaTriplo').value ? Number(document.getElementById('hotelDiariaTriplo').value) : null,
+      valor_diaria_quadruplo: document.getElementById('hotelDiariaQuadruplo').value ? Number(document.getElementById('hotelDiariaQuadruplo').value) : null,
+      whatsapp: document.getElementById('hotelWhatsapp').value.trim() || null,
       cnpj_cpf: document.getElementById('hotelCnpj').value.trim() || null, endereco: document.getElementById('hotelEndereco').value.trim() || null, link_maps: document.getElementById('hotelMaps').value.trim() || null,
       status: document.getElementById('hotelStatus').value, prioridade: document.getElementById('hotelPrioridade').value, observacoes: document.getElementById('hotelObs').value.trim() || null, atualizado_por: userContext?.user?.id || null
     };
@@ -323,7 +356,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     document.getElementById('resCheckout').value = row.data_checkout || row.data_checkout_prevista || '';
     document.getElementById('resDiaria').value = row.valor_diaria || '';
     document.getElementById('resQuartos').value = row.quantidade_quartos || 1;
-    document.getElementById('resTipo').value = 'INDIVIDUAL';
+    document.getElementById('resTipo').value = row.tipo_quarto || 'INDIVIDUAL';
     document.getElementById('resStatus').value = row.status_hospedagem || 'CHECKIN_PREVISTO';
     document.getElementById('resHotelNome').value = row.hotel || '';
     fillHotelSelect(row);
@@ -350,6 +383,17 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   }
 
   function closeModal() { document.getElementById('reservaModal').classList.remove('open'); state.selected = null; }
+function aplicarDiariaHotelSelecionado() {
+    const select = document.getElementById('resHotel');
+    const hotel = getHotelById(select?.value);
+    if (!hotel) return;
+    const tipo = document.getElementById('resTipo')?.value || 'INDIVIDUAL';
+    const diaria = getHotelDiariaPorTipo(hotel, tipo);
+    document.getElementById('resHotelNome').value = hotel.nome || '';
+    if (diaria) document.getElementById('resDiaria').value = diaria;
+    updateReservaTotals();
+  }
+
   function updateReservaTotals() { const dias = diffDays(document.getElementById('resCheckin').value, document.getElementById('resCheckout').value); const total = dias * Number(document.getElementById('resDiaria').value || 0) * Number(document.getElementById('resQuartos').value || 1); document.getElementById('resDiarias').value = dias; document.getElementById('resTotal').value = money(total); if (!document.getElementById('finValor').value) document.getElementById('finValor').value = total || ''; }
 
   async function saveReserva(ev) {
@@ -418,7 +462,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   document.getElementById('markAnalise').addEventListener('click', markAnalise);
   document.getElementById('modalClose').addEventListener('click', closeModal);
   ['resDiaria','resQuartos','resCheckin','resCheckout'].forEach((id) => document.getElementById(id).addEventListener('input', updateReservaTotals));
-  document.getElementById('resHotel').addEventListener('change', () => { const opt = document.getElementById('resHotel').selectedOptions[0]; if (opt?.dataset?.diaria) document.getElementById('resDiaria').value = opt.dataset.diaria; if (opt?.dataset?.nome) document.getElementById('resHotelNome').value = opt.dataset.nome; updateReservaTotals(); });
+  document.getElementById('resHotel').addEventListener('change', aplicarDiariaHotelSelecionado);
+  document.getElementById('resTipo').addEventListener('change', () => { fillHotelSelect(state.selected); if (state.selected?.hotel_id) document.getElementById('resHotel').value = state.selected.hotel_id; aplicarDiariaHotelSelecionado(); });
   document.getElementById('reservaModal').addEventListener('click', (ev) => { if (ev.target.id === 'reservaModal') closeModal(); });
   content.addEventListener('click', (ev) => {
     const btn = ev.target.closest('button[data-action]'); if (!btn) return;
