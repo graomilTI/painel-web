@@ -1,4 +1,3 @@
-
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
@@ -11,6 +10,12 @@ const STEPS = [
   { code: 'E', label: 'Extras' },
 ];
 
+const DISPONIBILIDADES = ['OK', 'FÉRIAS', 'FOLGA', 'ATESTADO', 'FALTA', 'TRANSFERIR', 'INATIVO'];
+const TIPOS_ESTADIA = ['NÃO PRECISA', 'CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
+const TIPOS_DESLOCAMENTO = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'ÔNIBUS', 'OUTRO'];
+const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
+const BLOQUEIOS = new Set(['FÉRIAS', 'FOLGA', 'ATESTADO', 'FALTA', 'INATIVO']);
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -22,181 +27,72 @@ function escapeHtml(value) {
 
 function todayIso() {
   const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  const tz = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - tz).toISOString().slice(0, 10);
 }
 
-function fieldValue(row, path, fallback = '') {
-  return row?.[path] ?? fallback;
+function normalizeCpf(value) {
+  return String(value || '').replace(/\D/g, '');
 }
 
-function buildRowTemplate(item, step) {
-  const blocked = !!item.blocked;
-  const baseInfo = `
-    <div class="prog-colab-main">
-      <div>
-        <div class="prog-colab-name">${escapeHtml(item.nome)}</div>
-        <div class="prog-colab-meta">${escapeHtml(item.cargo || 'Colaborador')} • ${escapeHtml(item.supervisao || '-')}</div>
-      </div>
-      <span class="status-pill ${blocked ? 'status-cancelado' : 'status-concluido'}">${blocked ? 'Bloqueado' : 'Liberado'}</span>
-    </div>
+function colaboradorKey(colab) {
+  return normalizeCpf(colab.cpf) || String(colab.id || colab.nome || '').trim();
+}
+
+function toNumberBR(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const clean = String(value ?? '').replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+  const parsed = Number(clean);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function moneyBR(value) {
+  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function selectOptions(options, selected) {
+  return options.map((opt) => `<option value="${escapeHtml(opt)}" ${String(selected || '') === opt ? 'selected' : ''}>${escapeHtml(opt)}</option>`).join('');
+}
+
+function injectProgramacaoStyles() {
+  if (document.getElementById('programacao-table-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'programacao-table-styles';
+  style.textContent = `
+    .prog-table-wrap{width:100%;overflow:auto;border:1px solid rgba(52,211,153,.18);border-radius:18px;background:rgba(2,6,23,.26)}
+    .prog-table{width:100%;border-collapse:separate;border-spacing:0;min-width:980px;color:#e5e7eb}
+    .prog-table th{position:sticky;top:0;z-index:1;background:#07170f;color:#c7f9df;font-size:12px;text-transform:uppercase;letter-spacing:.045em;text-align:left;padding:13px 12px;border-bottom:1px solid rgba(52,211,153,.2)}
+    .prog-table td{padding:10px 12px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:middle;background:rgba(15,23,42,.28)}
+    .prog-table tr:hover td{background:rgba(22,101,52,.12)}
+    .prog-table .colab-name{font-weight:900;color:#f8fafc;line-height:1.15;min-width:240px}
+    .prog-table .colab-meta{font-size:12px;color:#a7b5aa;margin-top:3px}
+    .prog-table input,.prog-table select,.prog-table textarea,.prog-context-grid select{color-scheme:dark;background:#0f172a!important;color:#e5e7eb!important;border:1px solid rgba(52,211,153,.18);border-radius:11px;padding:9px 10px;outline:none;width:100%;min-height:38px}
+    .prog-table select option,.prog-context-grid select option{background:#0f172a;color:#e5e7eb}
+    .prog-table input[type="checkbox"]{width:18px;min-height:18px;accent-color:#16a34a}
+    .prog-table input:disabled,.prog-table select:disabled,.prog-table textarea:disabled{opacity:.58;cursor:not-allowed;background:#111827!important}
+    .prog-status{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;white-space:nowrap;border:1px solid rgba(148,163,184,.18)}
+    .prog-status.ok{background:rgba(22,163,74,.14);color:#bbf7d0;border-color:rgba(34,197,94,.22)}
+    .prog-status.block{background:rgba(239,68,68,.12);color:#fecaca;border-color:rgba(248,113,113,.22)}
+    .prog-mini-btn{border:1px solid rgba(52,211,153,.28);background:rgba(22,101,52,.22);color:#dcfce7;border-radius:12px;padding:9px 12px;font-weight:800;cursor:pointer;white-space:nowrap}
+    .prog-mini-btn:hover{background:rgba(22,101,52,.42)}
+    .prog-mini-btn.danger{border-color:rgba(248,113,113,.22);background:rgba(127,29,29,.25);color:#fecaca}
+    .prog-extra-card{display:grid;grid-template-columns:160px 1.2fr 120px 1.2fr 86px;gap:8px;align-items:center;margin-bottom:8px;padding:8px;border:1px solid rgba(148,163,184,.14);border-radius:14px;background:rgba(15,23,42,.38)}
+    .prog-extra-total{font-weight:900;color:#bbf7d0;text-align:right;white-space:nowrap}
+    .prog-feedback-ok{color:#bbf7d0}.prog-feedback-error{color:#fecaca}.prog-feedback-warn{color:#fde68a}
+    @media(max-width:900px){.prog-extra-card{grid-template-columns:1fr}.prog-table{min-width:860px}}
   `;
-
-  if (step === 'A') {
-    return `
-      <div class="prog-row-content">
-        ${baseInfo}
-        <div class="prog-fields">
-          <label class="prog-check">
-            <input type="checkbox" data-field="disponibilidade_marcado" ${fieldValue(item.record, 'disponibilidade_marcado') ? 'checked' : ''} ${blocked ? 'disabled' : ''} />
-            <span>Incluir na programação</span>
-          </label>
-          <div class="field field-span-2">
-            <label>Observação</label>
-            <input type="text" data-field="disponibilidade_obs" placeholder="Observação da disponibilidade" value="${escapeHtml(fieldValue(item.record, 'disponibilidade_obs'))}" ${blocked ? 'disabled' : ''} />
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  if (step === 'B') {
-    return `
-      <div class="prog-row-content">
-        ${baseInfo}
-        <div class="prog-fields">
-          <label class="prog-check">
-            <input type="checkbox" data-field="estadia_necessaria" ${fieldValue(item.record, 'estadia_necessaria') ? 'checked' : ''} ${blocked ? 'disabled' : ''} />
-            <span>Precisa de estadia</span>
-          </label>
-          <div class="field">
-            <label>Cidade / local</label>
-            <input type="text" data-field="estadia_local" value="${escapeHtml(fieldValue(item.record, 'estadia_local'))}" ${blocked ? 'disabled' : ''} />
-          </div>
-          <div class="field">
-            <label>Check-in</label>
-            <input type="date" data-field="estadia_checkin" value="${escapeHtml(fieldValue(item.record, 'estadia_checkin'))}" ${blocked ? 'disabled' : ''} />
-          </div>
-          <div class="field">
-            <label>Check-out</label>
-            <input type="date" data-field="estadia_checkout" value="${escapeHtml(fieldValue(item.record, 'estadia_checkout'))}" ${blocked ? 'disabled' : ''} />
-          </div>
-          <div class="field field-span-2">
-            <label>Observação</label>
-            <input type="text" data-field="estadia_obs" value="${escapeHtml(fieldValue(item.record, 'estadia_obs'))}" ${blocked ? 'disabled' : ''} />
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  if (step === 'C') {
-    return `
-      <div class="prog-row-content">
-        ${baseInfo}
-        <div class="prog-fields">
-          <label class="prog-check">
-            <input type="checkbox" data-field="alimentacao_necessaria" ${fieldValue(item.record, 'alimentacao_necessaria') ? 'checked' : ''} ${blocked ? 'disabled' : ''} />
-            <span>Precisa de alimentação</span>
-          </label>
-          <div class="field">
-            <label>Tipo</label>
-            <select data-field="alimentacao_tipo" ${blocked ? 'disabled' : ''}>
-              <option value="">Selecione...</option>
-              <option value="cafe" ${fieldValue(item.record, 'alimentacao_tipo') === 'cafe' ? 'selected' : ''}>Café</option>
-              <option value="almoco" ${fieldValue(item.record, 'alimentacao_tipo') === 'almoco' ? 'selected' : ''}>Almoço</option>
-              <option value="janta" ${fieldValue(item.record, 'alimentacao_tipo') === 'janta' ? 'selected' : ''}>Janta</option>
-              <option value="integral" ${fieldValue(item.record, 'alimentacao_tipo') === 'integral' ? 'selected' : ''}>Integral</option>
-            </select>
-          </div>
-          <div class="field field-span-2">
-            <label>Observação</label>
-            <input type="text" data-field="alimentacao_obs" value="${escapeHtml(fieldValue(item.record, 'alimentacao_obs'))}" ${blocked ? 'disabled' : ''} />
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  if (step === 'D') {
-    return `
-      <div class="prog-row-content">
-        ${baseInfo}
-        <div class="prog-fields">
-          <label class="prog-check">
-            <input type="checkbox" data-field="deslocamento_necessario" ${fieldValue(item.record, 'deslocamento_necessario') ? 'checked' : ''} ${blocked ? 'disabled' : ''} />
-            <span>Precisa de deslocamento</span>
-          </label>
-          <div class="field">
-            <label>Origem</label>
-            <input type="text" data-field="deslocamento_origem" value="${escapeHtml(fieldValue(item.record, 'deslocamento_origem'))}" ${blocked ? 'disabled' : ''} />
-          </div>
-          <div class="field">
-            <label>Destino</label>
-            <input type="text" data-field="deslocamento_destino" value="${escapeHtml(fieldValue(item.record, 'deslocamento_destino'))}" ${blocked ? 'disabled' : ''} />
-          </div>
-          <div class="field">
-            <label>Tipo</label>
-            <select data-field="deslocamento_tipo" ${blocked ? 'disabled' : ''}>
-              <option value="">Selecione...</option>
-              <option value="frota" ${fieldValue(item.record, 'deslocamento_tipo') === 'frota' ? 'selected' : ''}>Frota</option>
-              <option value="uber" ${fieldValue(item.record, 'deslocamento_tipo') === 'uber' ? 'selected' : ''}>Uber / Táxi</option>
-              <option value="rodoviario" ${fieldValue(item.record, 'deslocamento_tipo') === 'rodoviario' ? 'selected' : ''}>Rodoviário</option>
-              <option value="aereo" ${fieldValue(item.record, 'deslocamento_tipo') === 'aereo' ? 'selected' : ''}>Aéreo</option>
-            </select>
-          </div>
-          <div class="field field-span-2">
-            <label>Observação</label>
-            <input type="text" data-field="deslocamento_obs" value="${escapeHtml(fieldValue(item.record, 'deslocamento_obs'))}" ${blocked ? 'disabled' : ''} />
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="prog-row-content">
-      ${baseInfo}
-      <div class="prog-fields">
-        <label class="prog-check">
-          <input type="checkbox" data-field="extras_necessario" ${fieldValue(item.record, 'extras_necessario') ? 'checked' : ''} ${blocked ? 'disabled' : ''} />
-          <span>Precisa de extra</span>
-        </label>
-        <div class="field">
-          <label>Tipo</label>
-          <input type="text" data-field="extras_tipo" value="${escapeHtml(fieldValue(item.record, 'extras_tipo'))}" ${blocked ? 'disabled' : ''} />
-        </div>
-        <div class="field field-span-2">
-          <label>Observação</label>
-          <input type="text" data-field="extras_obs" value="${escapeHtml(fieldValue(item.record, 'extras_obs'))}" ${blocked ? 'disabled' : ''} />
-        </div>
-      </div>
-    </div>
-  `;
+  document.head.appendChild(style);
 }
 
-initProtectedPage('Programação', (content, userContext) => {
+initProtectedPage('Programação', (content) => {
+  injectProgramacaoStyles();
+
   content.innerHTML = `
-    <section class="hero-card">
-      <div>
-        <div class="eyebrow">Gestor</div>
-        <h2>Programação por etapas</h2>
-        <p>
-          Fluxo fiel ao painel antigo, agora ligado ao Supabase com salvamento automático.
-        </p>
-      </div>
-      <div class="hero-badge-wrap">
-        <span class="hero-badge">A → E</span>
-      </div>
-    </section>
-
     <section class="card mt-16">
       <div class="section-head">
         <div>
           <h3>Contexto da programação</h3>
-          <p class="muted">Selecione a data e a supervisão para carregar os colaboradores.</p>
+          <p class="muted">Selecione a data e a supervisão. Todo colaborador da supervisão entra automaticamente na programação.</p>
         </div>
       </div>
 
@@ -220,10 +116,9 @@ initProtectedPage('Programação', (content, userContext) => {
       <div class="section-head">
         <div>
           <h3>Etapas</h3>
-          <p class="muted">Clique em uma etapa para editar as necessidades daquele grupo.</p>
+          <p class="muted">Clique em uma etapa para editar as necessidades em formato de tabela.</p>
         </div>
       </div>
-
       <div class="steps-wrap" id="progSteps">
         ${STEPS.map((step) => `<button type="button" class="stepbtn ${step.code === 'A' ? 'active' : ''}" data-step="${step.code}">${step.code} · ${step.label}</button>`).join('')}
       </div>
@@ -238,7 +133,7 @@ initProtectedPage('Programação', (content, userContext) => {
       <article class="card">
         <h3>Bloqueados</h3>
         <p class="metric" id="progStatBlocked">0</p>
-        <p class="muted">Colaboradores com indisponibilidade no período.</p>
+        <p class="muted">Férias, folga, atestado, falta ou inativo.</p>
       </article>
       <article class="card">
         <h3>Etapa atual</h3>
@@ -254,19 +149,17 @@ initProtectedPage('Programação', (content, userContext) => {
           <p class="muted">As alterações são salvas automaticamente.</p>
         </div>
       </div>
-
       <div class="filters-grid prog-context-grid">
         <div class="field field-span-2">
           <label for="progSearch">Buscar colaborador</label>
           <input id="progSearch" type="text" placeholder="Digite nome, cargo ou supervisão..." />
         </div>
       </div>
-
-      <div class="prog-list" id="progList"></div>
+      <div class="prog-list mt-16" id="progList"></div>
     </section>
   `;
 
-  const elements = {
+  const el = {
     dataRef: document.getElementById('progDataRef'),
     sup: document.getElementById('progSup'),
     loadBtn: document.getElementById('progLoadContext'),
@@ -281,277 +174,582 @@ initProtectedPage('Programação', (content, userContext) => {
   };
 
   const state = {
-    currentUser: null,
-    currentStep: 'A',
-    contextId: null,
+    user: null,
+    step: 'A',
+    dataReferencia: todayIso(),
+    supervisao: '',
+    programacaoId: null,
     colaboradores: [],
-    allRows: [],
     search: '',
-    saveTimer: null,
+    maps: {
+      disponibilidade: new Map(),
+      estadia: new Map(),
+      alimentacao: new Map(),
+      deslocamento: new Map(),
+      extras: new Map(),
+    },
+    timers: new Map(),
   };
 
-  elements.dataRef.value = todayIso();
+  el.dataRef.value = state.dataReferencia;
 
   async function init() {
-    state.currentUser = await getCurrentUser();
-    await fillSupervisoes();
+    state.user = await getCurrentUser();
     bindEvents();
+    await fillSupervisoes();
+  }
+
+  function bindEvents() {
+    el.loadBtn.addEventListener('click', loadContext);
+    el.search.addEventListener('input', () => {
+      state.search = el.search.value.trim().toLowerCase();
+      renderRows();
+    });
+    el.steps.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-step]');
+      if (!btn) return;
+      setStep(btn.dataset.step);
+    });
+    el.list.addEventListener('change', handleTableChange);
+    el.list.addEventListener('input', handleTableInput);
+    el.list.addEventListener('click', handleTableClick);
   }
 
   async function fillSupervisoes() {
-    elements.sup.innerHTML = '<option value="">Selecione...</option>';
-
-    const { data, error } = await supabase
-      .from('colaborador_snapshot')
-      .select('supervisao, data_referencia')
-      .order('data_referencia', { ascending: false })
-      .limit(10000);
-
+    el.sup.innerHTML = '<option value="">Selecione...</option>';
+    const latest = await getLatestSnapshotDate();
+    let query = supabase.from('colaborador_snapshot').select('supervisao, data_referencia').limit(10000);
+    if (latest) query = query.eq('data_referencia', latest);
+    const { data, error } = await query.order('supervisao', { ascending: true });
     if (error) {
-      elements.feedback.textContent = `Erro ao carregar supervisões: ${error.message}`;
+      setFeedback(`Erro ao carregar supervisões: ${error.message}`, 'error');
       return;
     }
-
     const supervisoes = [...new Set((data || []).map((r) => String(r.supervisao || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     supervisoes.forEach((sup) => {
       const option = document.createElement('option');
       option.value = sup;
       option.textContent = sup;
-      elements.sup.appendChild(option);
+      el.sup.appendChild(option);
     });
-
     if (supervisoes.length === 1) {
-      elements.sup.value = supervisoes[0];
-      elements.sup.disabled = true;
+      el.sup.value = supervisoes[0];
+      el.sup.disabled = true;
     }
-  }
-
-  function bindEvents() {
-    elements.loadBtn.addEventListener('click', loadContext);
-    elements.search.addEventListener('input', () => {
-      state.search = elements.search.value.trim().toLowerCase();
-      renderRows();
-    });
-    elements.steps.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-step]');
-      if (!button) return;
-      setStep(button.dataset.step);
-    });
-    elements.list.addEventListener('change', queueAutoSave);
-    elements.list.addEventListener('input', queueAutoSave);
-  }
-
-  function setStep(step) {
-    state.currentStep = step;
-    elements.currentStep.textContent = step;
-    elements.currentStepLabel.textContent = (STEPS.find((item) => item.code === step) || {}).label || '';
-    [...elements.steps.querySelectorAll('.stepbtn')].forEach((btn) => btn.classList.toggle('active', btn.dataset.step === step));
-    renderRows();
   }
 
   async function getLatestSnapshotDate() {
     const { data, error } = await supabase
       .from('colaborador_importacoes')
       .select('data_referencia')
+      .eq('status', 'processado')
       .order('data_referencia', { ascending: false })
       .limit(1);
 
-    if (error) throw error;
-    return data?.[0]?.data_referencia || null;
+    if (!error && data?.[0]?.data_referencia) return data[0].data_referencia;
+
+    const fallback = await supabase
+      .from('colaborador_snapshot')
+      .select('data_referencia')
+      .order('data_referencia', { ascending: false })
+      .limit(1);
+
+    return fallback.data?.[0]?.data_referencia || null;
   }
 
-  async function ensureContext(dataRef, supervisao) {
-    let { data, error } = await supabase
-      .from('programacao_contextos')
+  async function ensureProgramacaoDia(dataReferencia, supervisao, coordenacao = '') {
+    const found = await supabase
+      .from('programacao_dia')
       .select('*')
-      .eq('data_referencia', dataRef)
+      .eq('data_referencia', dataReferencia)
       .eq('supervisao', supervisao)
       .limit(1)
       .maybeSingle();
 
-    if (error) throw error;
+    if (found.error) throw found.error;
+    if (found.data) return found.data;
 
-    if (!data) {
-      const inserted = await supabase
-        .from('programacao_contextos')
-        .insert({
-          data_referencia: dataRef,
-          supervisao,
-          created_by: state.currentUser?.id || null,
-        })
-        .select()
-        .single();
+    const inserted = await supabase
+      .from('programacao_dia')
+      .insert({
+        data_referencia: dataReferencia,
+        supervisao,
+        coordenacao: coordenacao || null,
+        regional: supervisao || null,
+        status: 'rascunho',
+        criado_por: state.user?.id || null,
+      })
+      .select('*')
+      .single();
 
-      if (inserted.error) throw inserted.error;
-      data = inserted.data;
-    }
-
-    return data;
+    if (inserted.error) throw inserted.error;
+    return inserted.data;
   }
 
-  async function loadBlockedCpfSet(dataRef) {
-    const { data, error } = await supabase
-      .from('indisponibilidades')
-      .select('colaborador_cpf, colaborador_nome, data_inicio, data_fim, motivo')
-      .lte('data_inicio', dataRef)
-      .or(`data_fim.is.null,data_fim.gte.${dataRef}`);
-
-    if (error) throw error;
-
-    const set = new Set();
-    (data || []).forEach((row) => {
-      const cpf = String(row.colaborador_cpf || '').replace(/\D/g, '');
-      if (cpf) set.add(cpf);
-    });
-    return { set, rows: data || [] };
+  async function loadIndisponibilidades(dataReferencia) {
+    try {
+      const { data, error } = await supabase
+        .from('indisponibilidades')
+        .select('colaborador_cpf, colaborador_nome, data_inicio, data_fim, motivo')
+        .lte('data_inicio', dataReferencia)
+        .or(`data_fim.is.null,data_fim.gte.${dataReferencia}`);
+      if (error) return new Map();
+      return new Map((data || []).map((r) => [normalizeCpf(r.colaborador_cpf), r]));
+    } catch (_) {
+      return new Map();
+    }
   }
 
   async function loadContext() {
-    const dataRef = elements.dataRef.value;
-    const supervisao = elements.sup.value;
-
-    if (!dataRef || !supervisao) {
-      elements.feedback.textContent = 'Selecione a data e a supervisão.';
+    const dataReferencia = el.dataRef.value;
+    const supervisao = el.sup.value;
+    if (!dataReferencia || !supervisao) {
+      setFeedback('Selecione a data e a supervisão.', 'warn');
       return;
     }
 
-    elements.feedback.textContent = 'Carregando contexto...';
-    elements.list.innerHTML = '<div class="table-empty">Carregando colaboradores...</div>';
+    state.dataReferencia = dataReferencia;
+    state.supervisao = supervisao;
+    setFeedback('Carregando contexto...', 'warn');
+    el.list.innerHTML = '<div class="table-empty">Carregando colaboradores...</div>';
 
     try {
-      const context = await ensureContext(dataRef, supervisao);
-      state.contextId = context.id;
-
       const latestSnapshotDate = await getLatestSnapshotDate();
-      if (!latestSnapshotDate) {
-        state.colaboradores = [];
-        state.allRows = [];
-        renderRows();
-        elements.feedback.textContent = 'Nenhuma base de colaboradores foi importada ainda.';
-        return;
-      }
+      if (!latestSnapshotDate) throw new Error('Nenhuma base de colaboradores foi importada ainda.');
 
-      const { data: colaboradores, error: colaboradoresError } = await supabase
+      const { data: colaboradores, error: colabError } = await supabase
         .from('colaborador_snapshot')
         .select('*')
         .eq('data_referencia', latestSnapshotDate)
         .eq('supervisao', supervisao)
         .order('nome', { ascending: true });
 
-      if (colaboradoresError) throw colaboradoresError;
+      if (colabError) throw colabError;
 
-      const blockedData = await loadBlockedCpfSet(dataRef);
+      const programacao = await ensureProgramacaoDia(dataReferencia, supervisao, colaboradores?.[0]?.coordenacao || '');
+      state.programacaoId = programacao.id;
 
-      const { data: registros, error: registrosError } = await supabase
-        .from('programacao_itens')
-        .select('*')
-        .eq('contexto_id', context.id);
-
-      if (registrosError) throw registrosError;
-
-      const byCpf = new Map((registros || []).map((item) => [String(item.colaborador_cpf || '').replace(/\D/g, ''), item]));
-      const indisponibilidadeByCpf = new Map((blockedData.rows || []).map((item) => [String(item.colaborador_cpf || '').replace(/\D/g, ''), item]));
-
+      const indisponibilidades = await loadIndisponibilidades(dataReferencia);
       state.colaboradores = (colaboradores || []).map((colab) => {
-        const cpf = String(colab.cpf || '').replace(/\D/g, '');
-        const indisponibilidade = indisponibilidadeByCpf.get(cpf);
+        const key = colaboradorKey(colab);
+        const indis = indisponibilidades.get(normalizeCpf(colab.cpf));
         return {
+          id: key,
+          cpf: normalizeCpf(colab.cpf),
           nome: colab.nome || 'Colaborador',
           cargo: colab.cargo || '',
+          coordenacao: colab.coordenacao || '',
           supervisao: colab.supervisao || '',
-          cpf,
-          blocked: blockedData.set.has(cpf),
-          blockReason: indisponibilidade?.motivo || '',
-          record: byCpf.get(cpf) || {
-            contexto_id: context.id,
-            colaborador_nome: colab.nome || '',
-            colaborador_cpf: cpf || null,
-          },
+          indisponibilidade: indis || null,
         };
       });
 
-      state.allRows = [...state.colaboradores];
+      await ensureDefaultRows();
+      await loadStageData();
       updateStats();
       renderRows();
-      elements.feedback.textContent = `Contexto carregado com ${state.colaboradores.length} colaboradores.`;
+      setFeedback(`Contexto carregado com ${state.colaboradores.length} colaboradores.`, 'ok');
     } catch (error) {
       console.error(error);
-      elements.feedback.textContent = error.message || 'Erro ao carregar contexto.';
-      elements.list.innerHTML = `<div class="table-empty">${escapeHtml(error.message || 'Erro ao carregar')}</div>`;
+      setFeedback(error.message || 'Erro ao carregar contexto.', 'error');
+      el.list.innerHTML = `<div class="table-empty">${escapeHtml(error.message || 'Erro ao carregar')}</div>`;
     }
+  }
+
+  async function ensureDefaultRows() {
+    if (!state.programacaoId || !state.colaboradores.length) return;
+    const payload = state.colaboradores.map((colab) => {
+      const motivo = String(colab.indisponibilidade?.motivo || '').toUpperCase();
+      const disponibilidade = DISPONIBILIDADES.includes(motivo) ? motivo : (colab.indisponibilidade ? 'ATESTADO' : 'OK');
+      return {
+        programacao_id: state.programacaoId,
+        data_referencia: state.dataReferencia,
+        colaborador_id: colab.id,
+        nome_colaborador: colab.nome,
+        cargo: colab.cargo || null,
+        coordenacao: colab.coordenacao || null,
+        supervisao: colab.supervisao || null,
+        disponibilidade,
+      };
+    });
+
+    const { error } = await supabase
+      .from('programacao_colaboradores')
+      .upsert(payload, { onConflict: 'programacao_id,colaborador_id', ignoreDuplicates: true });
+    if (error) throw error;
+  }
+
+  async function loadStageData() {
+    const pid = state.programacaoId;
+    const [disp, estadia, alimentacao, deslocamento, extras] = await Promise.all([
+      supabase.from('programacao_colaboradores').select('*').eq('programacao_id', pid),
+      supabase.from('programacao_estadia').select('*').eq('programacao_id', pid),
+      supabase.from('programacao_alimentacao').select('*').eq('programacao_id', pid),
+      supabase.from('programacao_deslocamento').select('*').eq('programacao_id', pid),
+      supabase.from('programacao_extras').select('*').eq('programacao_id', pid).order('created_at', { ascending: true }),
+    ]);
+
+    for (const res of [disp, estadia, alimentacao, deslocamento, extras]) {
+      if (res.error) throw res.error;
+    }
+
+    state.maps.disponibilidade = new Map((disp.data || []).map((r) => [String(r.colaborador_id), r]));
+    state.maps.estadia = new Map((estadia.data || []).map((r) => [String(r.colaborador_id), r]));
+    state.maps.alimentacao = new Map((alimentacao.data || []).map((r) => [String(r.colaborador_id), r]));
+    state.maps.deslocamento = new Map((deslocamento.data || []).map((r) => [String(r.colaborador_id), r]));
+    const extrasMap = new Map();
+    (extras.data || []).forEach((r) => {
+      const key = String(r.colaborador_id);
+      if (!extrasMap.has(key)) extrasMap.set(key, []);
+      extrasMap.get(key).push(r);
+    });
+    state.maps.extras = extrasMap;
+  }
+
+  function setStep(step) {
+    state.step = step;
+    const meta = STEPS.find((s) => s.code === step) || STEPS[0];
+    el.currentStep.textContent = meta.code;
+    el.currentStepLabel.textContent = meta.label;
+    [...el.steps.querySelectorAll('.stepbtn')].forEach((btn) => btn.classList.toggle('active', btn.dataset.step === step));
+    renderRows();
+  }
+
+  function isBlocked(colab) {
+    const row = state.maps.disponibilidade.get(String(colab.id));
+    return BLOQUEIOS.has(String(row?.disponibilidade || 'OK').toUpperCase());
   }
 
   function updateStats() {
-    elements.statTotal.textContent = String(state.colaboradores.length);
-    elements.statBlocked.textContent = String(state.colaboradores.filter((item) => item.blocked).length);
+    el.statTotal.textContent = String(state.colaboradores.length);
+    el.statBlocked.textContent = String(state.colaboradores.filter(isBlocked).length);
+  }
+
+  function filteredColaboradores() {
+    return state.colaboradores.filter((colab) => {
+      if (!state.search) return true;
+      return `${colab.nome} ${colab.cargo} ${colab.supervisao} ${colab.coordenacao}`.toLowerCase().includes(state.search);
+    });
   }
 
   function renderRows() {
-    if (!state.colaboradores.length) {
-      elements.list.innerHTML = '<div class="table-empty">Nenhum colaborador carregado neste contexto.</div>';
+    if (!state.programacaoId) {
+      el.list.innerHTML = '<div class="table-empty">Carregue um contexto para iniciar a programação.</div>';
       return;
     }
-
-    const filtered = state.colaboradores.filter((item) => {
-      if (!state.search) return true;
-      const raw = `${item.nome} ${item.cargo || ''} ${item.supervisao || ''}`.toLowerCase();
-      return raw.includes(state.search);
-    });
-
-    if (!filtered.length) {
-      elements.list.innerHTML = '<div class="table-empty">Nenhum colaborador encontrado na busca.</div>';
+    const rows = filteredColaboradores();
+    if (!rows.length) {
+      el.list.innerHTML = '<div class="table-empty">Nenhum colaborador encontrado.</div>';
       return;
     }
-
-    elements.list.innerHTML = filtered.map((item) => `
-      <article class="prog-item" data-cpf="${escapeHtml(item.cpf)}">
-        ${buildRowTemplate(item, state.currentStep)}
-        ${item.blocked ? `<div class="prog-block-note">Motivo da indisponibilidade: ${escapeHtml(item.blockReason || 'Indisponível')}</div>` : ''}
-      </article>
-    `).join('');
+    if (state.step === 'A') return renderDisponibilidade(rows);
+    if (state.step === 'B') return renderEstadia(rows);
+    if (state.step === 'C') return renderAlimentacao(rows);
+    if (state.step === 'D') return renderDeslocamento(rows);
+    return renderExtras(rows);
   }
 
-  function queueAutoSave(event) {
-    const wrapper = event.target.closest('.prog-item');
-    if (!wrapper) return;
-
-    if (state.saveTimer) clearTimeout(state.saveTimer);
-    state.saveTimer = setTimeout(() => saveRow(wrapper), 350);
+  function colabCell(colab) {
+    const blocked = isBlocked(colab);
+    return `
+      <div class="colab-name">${escapeHtml(colab.nome)}</div>
+      <div class="colab-meta">${escapeHtml(colab.cargo || 'Colaborador')} • ${escapeHtml(colab.supervisao || '-')}</div>
+      ${colab.indisponibilidade ? `<div class="colab-meta">Indisponibilidade importada: ${escapeHtml(colab.indisponibilidade.motivo || 'Indisponível')}</div>` : ''}
+      <div style="margin-top:6px"><span class="prog-status ${blocked ? 'block' : 'ok'}">${blocked ? 'Bloqueado' : 'Liberado'}</span></div>
+    `;
   }
 
-  async function saveRow(wrapper) {
-    const cpf = wrapper.dataset.cpf;
-    const item = state.colaboradores.find((row) => row.cpf === cpf);
-    if (!item) return;
+  function renderDisponibilidade(rows) {
+    el.list.innerHTML = `
+      <div class="prog-table-wrap">
+        <table class="prog-table">
+          <thead><tr><th>Colaborador</th><th>Disponibilidade</th><th>Observação</th></tr></thead>
+          <tbody>
+            ${rows.map((colab) => {
+              const r = state.maps.disponibilidade.get(String(colab.id)) || {};
+              return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_colaboradores">
+                <td>${colabCell(colab)}</td>
+                <td><select data-field="disponibilidade">${selectOptions(DISPONIBILIDADES, r.disponibilidade || 'OK')}</select></td>
+                <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" placeholder="Observação da disponibilidade" /></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
 
-    const payload = { ...item.record };
-    wrapper.querySelectorAll('[data-field]').forEach((field) => {
-      if (field.type === 'checkbox') {
-        payload[field.dataset.field] = !!field.checked;
-      } else {
-        payload[field.dataset.field] = field.value || null;
-      }
+  function renderEstadia(rows) {
+    el.list.innerHTML = `
+      <div class="prog-table-wrap">
+        <table class="prog-table">
+          <thead><tr><th>Colaborador</th><th>Tipo</th><th>Cidade</th><th>UF</th><th>Diárias</th><th>Check-in</th><th>Check-out</th><th>Observação</th></tr></thead>
+          <tbody>
+            ${rows.map((colab) => {
+              const r = state.maps.estadia.get(String(colab.id)) || {};
+              const blocked = isBlocked(colab);
+              return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_estadia">
+                <td>${colabCell(colab)}</td>
+                <td><select data-field="tipo_estadia" ${blocked ? 'disabled' : ''}>${selectOptions(TIPOS_ESTADIA, r.tipo_estadia || 'NÃO PRECISA')}</select></td>
+                <td><input data-field="cidade" type="text" value="${escapeHtml(r.cidade || '')}" placeholder="Cidade" ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="uf" type="text" value="${escapeHtml(r.uf || '')}" placeholder="UF" maxlength="2" ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="diarias" type="number" min="0" step="1" value="${escapeHtml(r.diarias || 0)}" ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="checkin" type="date" value="${escapeHtml(r.checkin || '')}" ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="checkout" type="date" value="${escapeHtml(r.checkout || '')}" ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" ${blocked ? 'disabled' : ''}/></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function renderAlimentacao(rows) {
+    el.list.innerHTML = `
+      <div class="prog-table-wrap">
+        <table class="prog-table">
+          <thead><tr><th>Colaborador</th><th>Café</th><th>Almoço</th><th>Janta</th><th>Observação</th></tr></thead>
+          <tbody>
+            ${rows.map((colab) => {
+              const r = state.maps.alimentacao.get(String(colab.id)) || { almoco: true };
+              const blocked = isBlocked(colab);
+              return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_alimentacao">
+                <td>${colabCell(colab)}</td>
+                <td><input data-field="cafe" type="checkbox" ${r.cafe ? 'checked' : ''} ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="almoco" type="checkbox" ${r.almoco !== false ? 'checked' : ''} ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="janta" type="checkbox" ${r.janta ? 'checked' : ''} ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" ${blocked ? 'disabled' : ''}/></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function renderDeslocamento(rows) {
+    el.list.innerHTML = `
+      <div class="prog-table-wrap">
+        <table class="prog-table">
+          <thead><tr><th>Colaborador</th><th>Deslocamento</th><th>Origem</th><th>Destino</th><th>KM</th><th>Valor</th><th>Observação</th></tr></thead>
+          <tbody>
+            ${rows.map((colab) => {
+              const r = state.maps.deslocamento.get(String(colab.id)) || {};
+              const blocked = isBlocked(colab);
+              return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_deslocamento">
+                <td>${colabCell(colab)}</td>
+                <td><select data-field="tipo_deslocamento" ${blocked ? 'disabled' : ''}>${selectOptions(TIPOS_DESLOCAMENTO, r.tipo_deslocamento || 'NÃO PRECISA')}</select></td>
+                <td><input data-field="origem" type="text" value="${escapeHtml(r.origem || '')}" ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="destino" type="text" value="${escapeHtml(r.destino || '')}" ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="km" type="number" min="0" step="0.01" value="${escapeHtml(r.km || 0)}" ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="valor" type="text" value="${escapeHtml(r.valor || '')}" placeholder="R$ 0,00" ${blocked ? 'disabled' : ''}/></td>
+                <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" ${blocked ? 'disabled' : ''}/></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function renderExtras(rows) {
+    el.list.innerHTML = `
+      <div class="prog-table-wrap">
+        <table class="prog-table">
+          <thead><tr><th style="width:280px">Colaborador</th><th>Despesas extras</th><th style="width:130px">Total</th><th style="width:150px">Ação</th></tr></thead>
+          <tbody>
+            ${rows.map((colab) => {
+              const blocked = isBlocked(colab);
+              const extras = state.maps.extras.get(String(colab.id)) || [];
+              const total = extras.reduce((acc, r) => acc + Number(r.valor || 0), 0);
+              return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_extras">
+                <td>${colabCell(colab)}</td>
+                <td>
+                  ${extras.length ? extras.map((r) => extraCard(r, blocked)).join('') : '<span class="muted">Nenhuma despesa extra lançada.</span>'}
+                </td>
+                <td class="prog-extra-total">${moneyBR(total)}</td>
+                <td><button type="button" class="prog-mini-btn" data-action="add-extra" ${blocked ? 'disabled' : ''}>+ Adicionar</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function extraCard(r, blocked) {
+    return `<div class="prog-extra-card" data-extra-id="${escapeHtml(r.id)}">
+      <select data-extra-field="tipo_despesa" ${blocked ? 'disabled' : ''}>${selectOptions(TIPOS_EXTRA, r.tipo_despesa || 'OUTRO')}</select>
+      <input data-extra-field="descricao" type="text" value="${escapeHtml(r.descricao || '')}" placeholder="Descrição" ${blocked ? 'disabled' : ''}/>
+      <input data-extra-field="valor" type="text" value="${escapeHtml(r.valor || '')}" placeholder="R$ 0,00" ${blocked ? 'disabled' : ''}/>
+      <input data-extra-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" placeholder="Observação" ${blocked ? 'disabled' : ''}/>
+      <button type="button" class="prog-mini-btn danger" data-action="delete-extra" ${blocked ? 'disabled' : ''}>Excluir</button>
+    </div>`;
+  }
+
+  function handleTableInput(event) {
+    if (event.target.matches('[data-field]')) scheduleSaveRow(event.target.closest('tr'));
+    if (event.target.matches('[data-extra-field]')) scheduleSaveExtra(event.target.closest('.prog-extra-card'));
+  }
+
+  function handleTableChange(event) {
+    if (event.target.matches('[data-field]')) scheduleSaveRow(event.target.closest('tr'));
+    if (event.target.matches('[data-extra-field]')) scheduleSaveExtra(event.target.closest('.prog-extra-card'));
+  }
+
+  async function handleTableClick(event) {
+    const addBtn = event.target.closest('[data-action="add-extra"]');
+    if (addBtn) {
+      const tr = addBtn.closest('tr');
+      await addExtra(tr?.dataset.colabId);
+      return;
+    }
+    const delBtn = event.target.closest('[data-action="delete-extra"]');
+    if (delBtn) {
+      const card = delBtn.closest('.prog-extra-card');
+      await deleteExtra(card?.dataset.extraId);
+    }
+  }
+
+  function scheduleSaveRow(tr) {
+    if (!tr) return;
+    const key = `${tr.dataset.table}:${tr.dataset.colabId}`;
+    clearTimeout(state.timers.get(key));
+    state.timers.set(key, setTimeout(() => saveRow(tr), 450));
+  }
+
+  function scheduleSaveExtra(card) {
+    if (!card) return;
+    const key = `extra:${card.dataset.extraId}`;
+    clearTimeout(state.timers.get(key));
+    state.timers.set(key, setTimeout(() => saveExtra(card), 450));
+  }
+
+  function colabById(id) {
+    return state.colaboradores.find((c) => String(c.id) === String(id));
+  }
+
+  function getFieldPayload(container, attr = 'data-field') {
+    const payload = {};
+    container.querySelectorAll(`[${attr}]`).forEach((field) => {
+      const key = field.getAttribute(attr);
+      if (field.type === 'checkbox') payload[key] = !!field.checked;
+      else if (['km', 'valor', 'diarias'].includes(key)) payload[key] = toNumberBR(field.value);
+      else payload[key] = field.value || null;
     });
+    return payload;
+  }
 
-    payload.contexto_id = state.contextId;
-    payload.colaborador_nome = item.nome;
-    payload.colaborador_cpf = cpf || null;
-    payload.updated_by = state.currentUser?.id || null;
+  async function saveRow(tr) {
+    const table = tr.dataset.table;
+    const colab = colabById(tr.dataset.colabId);
+    if (!table || !colab) return;
+
+    const payload = {
+      ...getFieldPayload(tr),
+      programacao_id: state.programacaoId,
+      data_referencia: state.dataReferencia,
+      colaborador_id: colab.id,
+      nome_colaborador: colab.nome,
+    };
+
+    if (table === 'programacao_estadia') payload.tem_estadia = payload.tipo_estadia && payload.tipo_estadia !== 'NÃO PRECISA';
 
     const { data, error } = await supabase
-      .from('programacao_itens')
-      .upsert(payload, { onConflict: 'contexto_id,colaborador_cpf' })
-      .select()
+      .from(table)
+      .upsert(payload, { onConflict: 'programacao_id,colaborador_id' })
+      .select('*')
       .single();
 
     if (error) {
       console.error(error);
-      elements.feedback.textContent = `Falha ao salvar ${item.nome}: ${error.message}`;
+      setFeedback(`Falha ao salvar ${colab.nome}: ${error.message}`, 'error');
       return;
     }
 
-    item.record = data || payload;
-    elements.feedback.textContent = `Salvo automaticamente em ${new Date().toLocaleTimeString('pt-BR')}.`;
+    if (table === 'programacao_colaboradores') state.maps.disponibilidade.set(String(colab.id), data);
+    if (table === 'programacao_estadia') state.maps.estadia.set(String(colab.id), data);
+    if (table === 'programacao_alimentacao') state.maps.alimentacao.set(String(colab.id), data);
+    if (table === 'programacao_deslocamento') state.maps.deslocamento.set(String(colab.id), data);
+
+    updateStats();
+    setFeedback(`Salvo automaticamente em ${new Date().toLocaleTimeString('pt-BR')}.`, 'ok');
+
+    if (table === 'programacao_colaboradores') renderRows();
+  }
+
+  async function addExtra(colabId) {
+    const colab = colabById(colabId);
+    if (!colab) return;
+
+    const { data, error } = await supabase
+      .from('programacao_extras')
+      .insert({
+        programacao_id: state.programacaoId,
+        data_referencia: state.dataReferencia,
+        colaborador_id: colab.id,
+        nome_colaborador: colab.nome,
+        tipo_despesa: 'OUTRO',
+        descricao: '',
+        valor: 0,
+        observacao: '',
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error(error);
+      setFeedback(`Falha ao adicionar extra: ${error.message}`, 'error');
+      return;
+    }
+
+    const arr = state.maps.extras.get(String(colab.id)) || [];
+    arr.push(data);
+    state.maps.extras.set(String(colab.id), arr);
+    renderRows();
+    setFeedback('Despesa extra adicionada.', 'ok');
+  }
+
+  async function saveExtra(card) {
+    const extraId = card?.dataset.extraId;
+    if (!extraId) return;
+    const payload = getFieldPayload(card, 'data-extra-field');
+
+    const { data, error } = await supabase
+      .from('programacao_extras')
+      .update(payload)
+      .eq('id', extraId)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error(error);
+      setFeedback(`Falha ao salvar extra: ${error.message}`, 'error');
+      return;
+    }
+
+    const arr = state.maps.extras.get(String(data.colaborador_id)) || [];
+    const idx = arr.findIndex((r) => r.id === data.id);
+    if (idx >= 0) arr[idx] = data;
+    state.maps.extras.set(String(data.colaborador_id), arr);
+    setFeedback(`Extra salvo em ${new Date().toLocaleTimeString('pt-BR')}.`, 'ok');
+    renderRows();
+  }
+
+  async function deleteExtra(extraId) {
+    if (!extraId) return;
+    const { error } = await supabase.from('programacao_extras').delete().eq('id', extraId);
+    if (error) {
+      console.error(error);
+      setFeedback(`Falha ao excluir extra: ${error.message}`, 'error');
+      return;
+    }
+    for (const [key, arr] of state.maps.extras.entries()) {
+      state.maps.extras.set(key, arr.filter((r) => r.id !== extraId));
+    }
+    renderRows();
+    setFeedback('Despesa extra excluída.', 'ok');
+  }
+
+  function setFeedback(message, type = '') {
+    el.feedback.className = `feedback mt-16 ${type ? `prog-feedback-${type}` : ''}`;
+    el.feedback.textContent = message;
   }
 
   init();
