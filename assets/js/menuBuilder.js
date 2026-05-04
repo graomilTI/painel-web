@@ -74,21 +74,42 @@ function isItemAllowed(item, allowedCodes) {
   return candidates.some((code) => allowedCodes.has(code));
 }
 
+function ensureOperationalSection(menuSections, userContext) {
+  const sections = Array.isArray(menuSections) ? menuSections.map((section) => ({ ...section, items: [...(section.items || [])] })) : [];
+  const hasOperational = sections.some((section) => normalizeCode(section.section) === 'operacional');
+  if (hasOperational) return sections;
+
+  const operationalItem = {
+    code: 'operacional_mapa',
+    label: 'Mapa de Direcionamento',
+    path: 'adm-operacional',
+    aliases: ['OPERACIONAL', 'OPERACIONAL_MAPA', 'MAPA_DIRECIONAMENTO']
+  };
+
+  const canShow = Boolean(userContext?.user?.is_master) || isItemAllowed(operationalItem, buildAllowedCodeSet(userContext));
+  if (!canShow) return sections;
+
+  const indexRh = sections.findIndex((section) => normalizeCode(section.section) === 'recursos humanos');
+  const insertAt = indexRh >= 0 ? indexRh + 1 : sections.length;
+  sections.splice(insertAt, 0, { section: 'OPERACIONAL', items: [operationalItem] });
+  return sections;
+}
+
 export function buildAllowedMenu(userContext) {
   if (!userContext) return [];
 
   if (userContext.user?.is_master) {
-    return PANEL_MENU.map((section) => ({ ...section, items: [...section.items] }));
+    return ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext);
   }
 
   const allowedCodes = buildAllowedCodeSet(userContext);
 
-  return PANEL_MENU
+  return ensureOperationalSection(PANEL_MENU
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => isItemAllowed(item, allowedCodes)),
     }))
-    .filter((section) => section.items.length > 0);
+    .filter((section) => section.items.length > 0), userContext);
 }
 
 export function flattenAllowedMenu(userContext) {

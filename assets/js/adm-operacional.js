@@ -1,5 +1,5 @@
 import { initProtectedPage } from './pageInit.js';
-import './modules/operacional.js';
+import './operacional.js';
 
 initProtectedPage('Operacional ADM', (content, userContext) => {
   if (window.OPERACIONAL?.openHome) {
