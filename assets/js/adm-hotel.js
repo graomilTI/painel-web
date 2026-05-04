@@ -17,6 +17,8 @@ function money(value) { return Number(value || 0).toLocaleString('pt-BR', { styl
 function diffDays(start, end) { if (!start || !end) return 1; return Math.max(1, Math.round((new Date(`${end}T00:00:00`) - new Date(`${start}T00:00:00`)) / 86400000) || 1); }
 function slug(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '_'); }
 function label(value) { return LABELS[value] || value || '-'; }
+function normalizeText(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase(); }
+function normalizeUF(value) { return String(value || '').trim().toUpperCase().slice(0, 2); }
 
 function injectStyles() {
   if (document.getElementById('admHospStyles')) return;
@@ -24,7 +26,7 @@ function injectStyles() {
   style.id = 'admHospStyles';
   style.textContent = `
     .adm-hosp-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.adm-hosp-tab{width:auto!important;margin-top:0!important;border:1px solid var(--line-2);background:#0b1220;color:var(--text);border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:800}.adm-hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}.adm-hosp-panel{display:none}.adm-hosp-panel.active{display:block}.adm-hosp-btn{width:auto!important;margin-top:0!important}.adm-hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-hosp-table{width:100%;border-collapse:collapse;min-width:1180px;background:#0b1220}.adm-hosp-table th,.adm-hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-hosp-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.adm-hosp-table tr:hover td{background:rgba(111,208,165,.035)}.adm-hosp-actions{display:flex;gap:8px;flex-wrap:wrap}.adm-hosp-small{padding:8px 10px!important;border-radius:12px!important;font-size:12px}.adm-hosp-status{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:800;white-space:nowrap}.adm-hosp-status.solicitada,.adm-hosp-status.em_analise,.adm-hosp-status.em_cotacao,.adm-hosp-status.aguardando_pagamento,.adm-hosp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.adm-hosp-status.reservada,.adm-hosp-status.checkin_previsto,.adm-hosp-status.hospedado,.adm-hosp-status.enviado_ao_financeiro,.adm-hosp-status.nf_recebida{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.adm-hosp-status.concluida,.adm-hosp-status.pago,.adm-hosp-status.lancado,.adm-hosp-status.ativo,.adm-hosp-status.preferencial{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.adm-hosp-status.cancelada,.adm-hosp-status.bloqueado,.adm-hosp-status.evitar{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}.adm-hosp-status.checkout_hoje,.adm-hosp-status.renovacao_necessaria{color:#fed7aa;background:rgba(249,115,22,.11);border-color:rgba(249,115,22,.24)}
-    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}
+    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}
     @media(max-width:900px){.adm-hosp-form,.adm-hosp-filters{grid-template-columns:1fr}.adm-hosp-search{min-width:0;width:100%}}
   `;
   document.head.appendChild(style);
@@ -102,7 +104,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
         <div class="adm-hosp-modal-head"><div><h3 id="modalTitle">Reserva</h3><p class="muted" id="modalSub">Transforme a solicitação em reserva e acompanhe financeiro/NF.</p></div><button class="btn btn-secondary adm-hosp-btn" type="button" id="modalClose">Fechar</button></div>
         <form id="reservaForm" class="adm-hosp-form">
           <div class="adm-hosp-field full"><label>Solicitação</label><input id="resInfo" readonly /></div>
-          <div class="adm-hosp-field"><label>Hotel *</label><select id="resHotel" required></select></div>
+          <div class="adm-hosp-field"><label>Hotel recomendado *</label><select id="resHotel"></select><span id="resHotelHint" class="adm-hosp-select-hint"></span></div>
           <div class="adm-hosp-field"><label>Nome do hotel manual</label><input id="resHotelNome" placeholder="Use caso ainda não esteja cadastrado" /></div>
           <div class="adm-hosp-field"><label>Valor diária *</label><input id="resDiaria" type="number" step="0.01" min="0" required /></div>
           <div class="adm-hosp-field"><label>Quartos</label><input id="resQuartos" type="number" min="1" value="1" /></div>
@@ -213,48 +215,44 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   }
 
   async function loadHoteis() {
-    const tbody = document.getElementById('hotelTbody');
-    tbody.innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">Carregando hotéis...</td></tr>`;
-
-    let data = [];
-    let error = null;
-
-    const direct = await supabase
-      .from('hospedagem_hoteis')
-      .select('*')
-      .order('cidade', { ascending: true })
-      .order('nome', { ascending: true });
-
-    data = direct.data || [];
-    error = direct.error || null;
-
-    // Fallback para ambientes onde a importação via RPC grava os hotéis,
-    // mas a tabela ainda está bloqueada por RLS para SELECT direto no painel.
-    // Rode o SQL sql/hospedagem_hoteis_fix_rls_rpc.sql para habilitar este fallback.
-    if ((!data.length || error) && supabase.rpc) {
-      const fallback = await supabase.rpc('hospedagem_listar_hoteis');
-      if (!fallback.error && Array.isArray(fallback.data)) {
-        data = fallback.data;
-        error = null;
-      } else if (error) {
-        error = fallback.error || error;
-      }
-    }
-
-    if (error) {
-      tbody.innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message || 'Falha ao carregar hotéis.')}</td></tr>`;
-      return;
-    }
-
+    const { data, error } = await supabase.from('hospedagem_hoteis').select('*').order('cidade', { ascending: true }).order('nome', { ascending: true });
+    if (error) { document.getElementById('hotelTbody').innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; return; }
     state.hoteis = data || [];
     fillHotelSelect();
     renderHoteis();
   }
 
-  function fillHotelSelect() {
+  function getHoteisRecomendados(row = state.selected) {
+    const cidadeSolicitada = normalizeText(row?.cidade);
+    const ufSolicitada = normalizeUF(row?.uf);
+    if (!cidadeSolicitada && !ufSolicitada) return [];
+    return state.hoteis.filter((h) => {
+      const mesmaCidade = cidadeSolicitada ? normalizeText(h.cidade) === cidadeSolicitada : true;
+      const mesmaUf = ufSolicitada ? normalizeUF(h.uf) === ufSolicitada : true;
+      return mesmaCidade && mesmaUf && String(h.status || 'ATIVO').toUpperCase() !== 'INATIVO' && String(h.status || '').toUpperCase() !== 'BLOQUEADO';
+    }).sort((a, b) => {
+      const prioridade = { PREFERENCIAL: 0, NORMAL: 1, EVITAR: 2 };
+      return (prioridade[String(a.prioridade || 'NORMAL').toUpperCase()] ?? 1) - (prioridade[String(b.prioridade || 'NORMAL').toUpperCase()] ?? 1)
+        || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+    });
+  }
+
+  function fillHotelSelect(row = state.selected) {
     const select = document.getElementById('resHotel');
     if (!select) return;
-    select.innerHTML = `<option value="">Selecionar hotel cadastrado</option>` + state.hoteis.map((h) => `<option value="${esc(h.id)}" data-diaria="${esc(h.valor_diaria_padrao || '')}" data-nome="${esc(h.nome)}" data-cidade="${esc(h.cidade || '')}" data-uf="${esc(h.uf || '')}">${esc(h.nome)} · ${esc(h.cidade || '-')}/${esc(h.uf || '')}</option>`).join('');
+    const hint = document.getElementById('resHotelHint');
+    const rows = getHoteisRecomendados(row);
+    const cidadeUf = [row?.cidade, row?.uf].filter(Boolean).join('/');
+    select.innerHTML = `<option value="">Selecionar hotel cadastrado</option>` + rows.map((h) => `<option value="${esc(h.id)}" data-diaria="${esc(h.valor_diaria_padrao || '')}" data-nome="${esc(h.nome)}" data-cidade="${esc(h.cidade || '')}" data-uf="${esc(h.uf || '')}">${esc(h.nome)} · ${esc(h.cidade || '-')}/${esc(h.uf || '')}${h.valor_diaria_padrao ? ` · ${money(h.valor_diaria_padrao)}` : ''}</option>`).join('');
+    if (hint) {
+      if (rows.length) {
+        hint.textContent = `${rows.length} hotel(is) recomendado(s) para ${cidadeUf || 'a cidade solicitada'}.`;
+        hint.className = 'adm-hosp-select-hint';
+      } else {
+        hint.textContent = `Nenhum hotel ativo cadastrado para ${cidadeUf || 'a cidade solicitada'}. Use o campo manual ou cadastre o hotel.`;
+        hint.className = 'adm-hosp-select-hint warn';
+      }
+    }
   }
 
   function renderHoteis() {
@@ -328,10 +326,14 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     document.getElementById('resTipo').value = 'INDIVIDUAL';
     document.getElementById('resStatus').value = row.status_hospedagem || 'CHECKIN_PREVISTO';
     document.getElementById('resHotelNome').value = row.hotel || '';
+    fillHotelSelect(row);
     document.getElementById('resConfirmado').value = '';
     document.getElementById('resContato').value = '';
     document.getElementById('resObs').value = '';
     document.getElementById('resHotel').value = row.hotel_id || '';
+    if (row.hotel_id && document.getElementById('resHotel').value !== row.hotel_id) {
+      document.getElementById('resHotel').value = '';
+    }
     document.getElementById('finStatus').value = row.status_financeiro || 'NAO_INICIADO';
     document.getElementById('finValor').value = row.valor_financeiro || row.valor_total_previsto || '';
     document.getElementById('finVenc').value = row.data_vencimento || '';
@@ -357,12 +359,14 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     const hotelSelect = document.getElementById('resHotel');
     const opt = hotelSelect.selectedOptions[0];
     const hotelId = hotelSelect.value || null;
+    const hotelManual = document.getElementById('resHotelNome').value.trim();
+    if (!hotelId && !hotelManual) { setFeedback('resFeedback', 'Selecione um hotel recomendado da cidade/UF solicitada ou informe o nome manualmente.', 'err'); return; }
     const diaria = Number(document.getElementById('resDiaria').value || 0);
     const quartos = Number(document.getElementById('resQuartos').value || 1);
     const diarias = diffDays(document.getElementById('resCheckin').value, document.getElementById('resCheckout').value);
     const payload = {
-      solicitacao_id: state.selected.solicitacao_id, hotel_id: hotelId, nome_hotel: document.getElementById('resHotelNome').value.trim() || opt?.dataset?.nome || state.selected.hotel || null,
-      cidade_hotel: opt?.dataset?.cidade || null, uf_hotel: opt?.dataset?.uf || null, valor_diaria: diaria, quantidade_diarias: diarias, quantidade_quartos: quartos,
+      solicitacao_id: state.selected.solicitacao_id, hotel_id: hotelId, nome_hotel: hotelManual || opt?.dataset?.nome || state.selected.hotel || null,
+      cidade_hotel: opt?.dataset?.cidade || state.selected.cidade || null, uf_hotel: opt?.dataset?.uf || state.selected.uf || null, valor_diaria: diaria, quantidade_diarias: diarias, quantidade_quartos: quartos,
       tipo_quarto: document.getElementById('resTipo').value, valor_total_previsto: diaria * diarias * quartos, data_checkin: document.getElementById('resCheckin').value, data_checkout: document.getElementById('resCheckout').value,
       confirmado_com: document.getElementById('resConfirmado').value.trim() || null, contato_confirmacao: document.getElementById('resContato').value.trim() || null, status_hospedagem: document.getElementById('resStatus').value,
       observacao_hospedagem: document.getElementById('resObs').value.trim() || null, atualizado_por: userContext?.user?.id || null
@@ -414,7 +418,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   document.getElementById('markAnalise').addEventListener('click', markAnalise);
   document.getElementById('modalClose').addEventListener('click', closeModal);
   ['resDiaria','resQuartos','resCheckin','resCheckout'].forEach((id) => document.getElementById(id).addEventListener('input', updateReservaTotals));
-  document.getElementById('resHotel').addEventListener('change', () => { const opt = document.getElementById('resHotel').selectedOptions[0]; if (opt?.dataset?.diaria && !document.getElementById('resDiaria').value) document.getElementById('resDiaria').value = opt.dataset.diaria; if (opt?.dataset?.nome) document.getElementById('resHotelNome').value = opt.dataset.nome; updateReservaTotals(); });
+  document.getElementById('resHotel').addEventListener('change', () => { const opt = document.getElementById('resHotel').selectedOptions[0]; if (opt?.dataset?.diaria) document.getElementById('resDiaria').value = opt.dataset.diaria; if (opt?.dataset?.nome) document.getElementById('resHotelNome').value = opt.dataset.nome; updateReservaTotals(); });
   document.getElementById('reservaModal').addEventListener('click', (ev) => { if (ev.target.id === 'reservaModal') closeModal(); });
   content.addEventListener('click', (ev) => {
     const btn = ev.target.closest('button[data-action]'); if (!btn) return;
