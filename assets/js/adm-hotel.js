@@ -294,7 +294,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
         <td>${esc(h.whatsapp || h.telefone || '-')}<span class="adm-hosp-row-note">${esc(h.cnpj_cpf || '')}</span></td>
         <td>${statusPill(h.status || 'ATIVO')}</td>
         <td>${statusPill(h.prioridade || 'NORMAL')}</td>
-        <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="edit-hotel" data-id="${esc(h.id)}" type="button">Editar</button></div></td>
+        <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="edit-hotel" data-id="${esc(h.id)}" type="button">Editar</button><button class="btn btn-secondary adm-hosp-small adm-hosp-danger" data-action="delete-hotel" data-id="${esc(h.id)}" type="button">Excluir</button></div></td>
       </tr>
     `).join('');
   }
@@ -345,6 +345,51 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     const result = state.editingHotel ? await supabase.from('hospedagem_hoteis').update(payload).eq('id', state.editingHotel) : await supabase.from('hospedagem_hoteis').insert({ ...payload, criado_por: userContext?.user?.id || null });
     if (result.error) { setFeedback('hotelFeedback', result.error.message, 'err'); return; }
     resetHotelForm(); setFeedback('hotelFeedback', 'Hotel salvo com sucesso.', 'ok'); await loadHoteis();
+  }
+
+
+  async function deleteHotel(id) {
+    const hotel = getHotelById(id);
+    if (!hotel) return;
+
+    const nome = hotel.nome || 'hotel selecionado';
+    const cidadeUf = [hotel.cidade, hotel.uf].filter(Boolean).join('/');
+    const ok = window.confirm(`Excluir o cadastro do hotel ${nome}${cidadeUf ? ` (${cidadeUf})` : ''}?
+
+Essa ação remove o hotel da base de Hospedagem e ele deixará de aparecer no Operacional.`);
+    if (!ok) return;
+
+    setFeedback('hotelFeedback', 'Excluindo hotel...');
+    const result = await supabase.from('hospedagem_hoteis').delete().eq('id', id);
+
+    if (result.error) {
+      const msg = String(result.error.message || '').toLowerCase();
+      const podeInativar = msg.includes('foreign key') || msg.includes('violates') || msg.includes('referenced') || msg.includes('constraint');
+
+      if (podeInativar) {
+        const inactive = await supabase
+          .from('hospedagem_hoteis')
+          .update({ status: 'INATIVO', atualizado_por: userContext?.user?.id || null })
+          .eq('id', id);
+
+        if (inactive.error) {
+          setFeedback('hotelFeedback', inactive.error.message, 'err');
+          return;
+        }
+
+        setFeedback('hotelFeedback', 'Hotel já possuía vínculo em reserva. Cadastro marcado como INATIVO.', 'ok');
+        if (state.editingHotel === id) resetHotelForm();
+        await loadHoteis();
+        return;
+      }
+
+      setFeedback('hotelFeedback', result.error.message, 'err');
+      return;
+    }
+
+    setFeedback('hotelFeedback', 'Hotel excluído com sucesso.', 'ok');
+    if (state.editingHotel === id) resetHotelForm();
+    await loadHoteis();
   }
 
   function openModal(row) {
@@ -509,6 +554,7 @@ function aplicarDiariaHotelSelecionado() {
     const btn = ev.target.closest('button[data-action]'); if (!btn) return;
     if (btn.dataset.action === 'open') { const row = state.rows.find((r) => r.solicitacao_id === btn.dataset.id); if (row) openModal(row); }
     if (btn.dataset.action === 'edit-hotel') { const h = state.hoteis.find((x) => x.id === btn.dataset.id); if (h) fillHotelForm(h); }
+    if (btn.dataset.action === 'delete-hotel') deleteHotel(btn.dataset.id);
   });
 
   (async function boot(){ await loadHoteis(); await loadRows(); })();
