@@ -407,25 +407,46 @@
       .toLowerCase();
   }
 
+  function isValidDateParts(year, month, day) {
+    const y = Number(year);
+    const m = Number(month);
+    const d = Number(day);
+    if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return false;
+    if (y < 1900 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return false;
+    const date = new Date(Date.UTC(y, m - 1, d));
+    return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+  }
+
+  function makeIsoDate(year, month, day) {
+    if (!isValidDateParts(year, month, day)) return null;
+    return `${Number(year)}-${String(Number(month)).padStart(2, '0')}-${String(Number(day)).padStart(2, '0')}`;
+  }
+
   function toIsoDate(value) {
     if (!value) return null;
     if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
     if (typeof value === 'number' && window.XLSX?.SSF?.parse_date_code) {
       const parsed = window.XLSX.SSF.parse_date_code(value);
-      if (parsed?.y && parsed?.m && parsed?.d) {
-        return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
-      }
+      return parsed?.y && parsed?.m && parsed?.d ? makeIsoDate(parsed.y, parsed.m, parsed.d) : null;
     }
     const s = String(value || '').trim();
     let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-    if (m) return `${m[3]}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+    if (m) {
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      const year = Number(m[3]);
+      // Padrão brasileiro primeiro. Se o mês ficaria inválido, aceita padrão Uber/EUA MM/DD/YYYY.
+      if (b <= 12) return makeIsoDate(year, b, a);
+      if (a <= 12) return makeIsoDate(year, a, b);
+      return null;
+    }
     m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
-    if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+    if (m) return makeIsoDate(m[1], m[2], m[3]);
     m = s.match(/^(\d{1,2})[\/\-.](\d{4})$/);
-    if (m) return `${m[2]}-${String(m[1]).padStart(2, '0')}-01`;
+    if (m) return makeIsoDate(m[2], m[1], 1);
     const MAP = {jan:1,fev:2,feb:2,mar:3,abr:4,apr:4,mai:5,may:5,jun:6,jul:7,ago:8,aug:8,set:9,sep:9,out:10,oct:10,nov:11,dez:12,dec:12};
     m = normalizeHeader(s).match(/^([a-z]{3,})[\/\-. ]+(\d{4})$/);
-    if (m && MAP[m[1].slice(0,3)]) return `${m[2]}-${String(MAP[m[1].slice(0,3)]).padStart(2,'0')}-01`;
+    if (m && MAP[m[1].slice(0,3)]) return makeIsoDate(m[2], MAP[m[1].slice(0,3)], 1);
     return null;
   }
 
@@ -570,24 +591,59 @@
     return dateInfo;
   }
 
-  function toIsoDateUber(value) {
+  function inferUberMonthFromFileName(fileName) {
+    const text = normalizeHeader(fileName || '');
+    const map = { jan: 1, fev: 2, feb: 2, mar: 3, abr: 4, apr: 4, mai: 5, may: 5, jun: 6, jul: 7, ago: 8, aug: 8, set: 9, sep: 9, out: 10, oct: 10, nov: 11, dez: 12, dec: 12 };
+    const monthKey = Object.keys(map).find((key) => text.includes(key));
+    return monthKey ? map[monthKey] : null;
+  }
+
+  function parseUberStringDate(value, fileName) {
+    const s = String(value || '').trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})(?:\s+.*)?$/);
+    if (m) {
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      const year = Number(m[3]);
+      const monthHint = inferUberMonthFromFileName(fileName);
+
+      // Relatórios Uber normalmente vêm em MM/DD/YYYY.
+      // Quando o arquivo tem mês no nome, usamos isso para desfazer ambiguidade.
+      if (monthHint && a === monthHint) return makeIsoDate(year, a, b);
+      if (monthHint && b === monthHint) return makeIsoDate(year, b, a);
+
+      if (a <= 12 && b > 12) return makeIsoDate(year, a, b); // MM/DD/YYYY
+      if (b <= 12 && a > 12) return makeIsoDate(year, b, a); // DD/MM/YYYY
+
+      // Na dúvida, prioriza padrão Uber/EUA para evitar mês 13 em datas como 03/13/2026.
+      return makeIsoDate(year, a, b) || makeIsoDate(year, b, a);
+    }
+
+    m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:\s+.*)?$/);
+    if (m) return makeIsoDate(m[1], m[2], m[3]);
+
+    return toIsoDate(value);
+  }
+
+  function toIsoDateUber(value, fileName) {
     if (value === null || value === undefined || value === '') return null;
     if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
     if (typeof value === 'number') {
       const date = excelSerialToDate(value);
       return date ? date.toISOString().slice(0, 10) : null;
     }
-    return toIsoDate(value);
+    return parseUberStringDate(value, fileName);
   }
 
-  function toTimestampUber(value) {
+  function toTimestampUber(value, fileName) {
     if (value === null || value === undefined || value === '') return null;
     if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
     if (typeof value === 'number') {
       const date = excelSerialToDate(value);
       return date ? date.toISOString() : null;
     }
-    const iso = toIsoDate(value);
+    const iso = parseUberStringDate(value, fileName);
     return iso ? `${iso}T00:00:00Z` : null;
   }
 
@@ -645,13 +701,13 @@
         if (!nome || (!enderecoPartida && !enderecoDestino)) return;
 
         const registro = {
-          data_hora_transacao_utc: toTimestampUber(pickValue(obj, ['Registro de data e hora da transação (UTC)', 'Registro de data e hora da transacao UTC'])),
+          data_hora_transacao_utc: toTimestampUber(pickValue(obj, ['Registro de data e hora da transação (UTC)', 'Registro de data e hora da transacao UTC']), file.name),
           hora_solicitacao_utc: normalizeUberTime(pickValue(obj, ['Hora da solicitação (UTC)', 'Hora da solicitacao UTC'])),
-          data_solicitacao_local: toIsoDateUber(pickValue(obj, ['Data da solicitação (local)', 'Data da solicitacao local'])),
+          data_solicitacao_local: toIsoDateUber(pickValue(obj, ['Data da solicitação (local)', 'Data da solicitacao local']), file.name),
           hora_solicitacao_local: normalizeUberTime(pickValue(obj, ['Hora da solicitação (local)', 'Hora da solicitacao local'])),
-          data_chegada_utc: toIsoDateUber(pickValue(obj, ['Data de chegada (UTC)', 'Data chegada UTC'])),
+          data_chegada_utc: toIsoDateUber(pickValue(obj, ['Data de chegada (UTC)', 'Data chegada UTC']), file.name),
           hora_chegada_utc: normalizeUberTime(pickValue(obj, ['Hora de chegada (UTC)', 'Hora chegada UTC'])),
-          data_chegada_local: toIsoDateUber(pickValue(obj, ['Data de chegada (local)', 'Data chegada local'])),
+          data_chegada_local: toIsoDateUber(pickValue(obj, ['Data de chegada (local)', 'Data chegada local']), file.name),
           hora_chegada_local: normalizeUberTime(pickValue(obj, ['Hora de chegada (local)', 'Hora chegada local'])),
           nome,
           coord: String(pickValue(obj, ['Coord', 'Coordenação', 'Coordenacao']) || '').trim() || null,
