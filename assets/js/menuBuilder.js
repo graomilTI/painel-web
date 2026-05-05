@@ -12,6 +12,12 @@ function normalizeCode(value = '') {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+function isGestorContext(userContext) {
+  const role = normalizeCode(userContext?.user?.role || userContext?.perfil_codigo || userContext?.perfil_nome || userContext?.role);
+  const department = normalizeCode(userContext?.department?.code || userContext?.department?.name || userContext?.setor);
+  return role === 'gestor' || department === 'gestor';
+}
+
 function prefetchUrl(url) {
   try {
     const absolute = new URL(url, window.location.href).toString();
@@ -100,6 +106,16 @@ export function buildAllowedMenu(userContext) {
 
   if (userContext.user?.is_master) {
     return ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext);
+  }
+
+  // Regra de segurança visual: perfil/setor GESTOR enxerga somente INÍCIO + GESTOR.
+  // Mesmo que algum contexto antigo/cache retorne módulos administrativos, eles não entram no menu.
+  if (isGestorContext(userContext)) {
+    const allowedSections = new Set(['inicio', 'gestor']);
+    return PANEL_MENU
+      .filter((section) => allowedSections.has(normalizeCode(section.section)))
+      .map((section) => ({ ...section, items: [...section.items] }))
+      .filter((section) => section.items.length > 0);
   }
 
   const allowedCodes = buildAllowedCodeSet(userContext);
