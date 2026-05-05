@@ -91,6 +91,16 @@ function asNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function coerceBool(value, fallback = false) {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  const norm = normalizeText(value);
+  if (['TRUE', 'T', 'SIM', 'S', 'YES', 'Y', '1'].includes(norm)) return true;
+  if (['FALSE', 'F', 'NAO', 'NÃO', 'NO', 'N', '0'].includes(norm)) return false;
+  return fallback;
+}
+
 function getStatus(row) {
   return normalizeText(row?.status_conferencia || row?.status || 'PENDENTE').replaceAll(' ', '_') || 'PENDENTE';
 }
@@ -575,6 +585,12 @@ function baseRow(programacao, colaboradorId, nomeColaborador = '') {
     programacao_status: programacao.status || 'rascunho',
     status_conferencia: 'PENDENTE',
     observacao_conferencia: '',
+    // Regra operacional: almoço nasce como SIM na programação.
+    // Se não existir linha em programacao_alimentacao, a conferência deve manter SIM.
+    cafe_valor: false,
+    almoco_valor: true,
+    janta_valor: false,
+    alimentacao_registrada: false,
     extras_total: 0,
     extras_itens: [],
   };
@@ -645,9 +661,10 @@ async function loadDespesas() {
 
   alimentacao.forEach((r) => {
     const row = getRow(r.programacao_id, r.colaborador_id, r.nome_colaborador);
-    row.cafe_valor = !!r.cafe;
-    row.almoco_valor = !!r.almoco;
-    row.janta_valor = !!r.janta;
+    row.alimentacao_registrada = true;
+    row.cafe_valor = coerceBool(r.cafe, false);
+    row.almoco_valor = coerceBool(r.almoco, true);
+    row.janta_valor = coerceBool(r.janta, false);
     row.alimentacao_obs = r.observacao || '';
   });
 
