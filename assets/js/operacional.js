@@ -136,18 +136,90 @@ import { supabase } from './supabaseClient.js';
     }
   }
 
+  async function selectAll(table, orderColumn, limit = 3000) {
+    try {
+      let query = supabase.from(table).select('*').limit(limit);
+      if (orderColumn) query = query.order(orderColumn, { ascending: true });
+      const { data, error } = await query;
+      if (error) throw error;
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      console.warn(`[Operacional] Falha ao carregar ${table}:`, err?.message || err);
+      return [];
+    }
+  }
+
+  function firstValue(row, fields) {
+    for (const field of fields) {
+      const value = row?.[field];
+      if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+    }
+    return null;
+  }
+
+  function parseLatLngFromMaps(value) {
+    const text = String(value || '');
+    if (!text) return { latitude: null, longitude: null };
+    const atMatch = text.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+    if (atMatch) return { latitude: Number(atMatch[1]), longitude: Number(atMatch[2]) };
+    const qMatch = text.match(/[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+    if (qMatch) return { latitude: Number(qMatch[1]), longitude: Number(qMatch[2]) };
+    const generic = text.match(/(-?\d{1,2}\.\d{4,})[,\s]+(-?\d{1,3}\.\d{4,})/);
+    if (generic) return { latitude: Number(generic[1]), longitude: Number(generic[2]) };
+    return { latitude: null, longitude: null };
+  }
+
+  function normalizeHotelRow(row, fonte = 'Hospedagem') {
+    const maps = parseLatLngFromMaps(firstValue(row, ['link_maps', 'maps', 'google_maps', 'url_maps']));
+    const latitude = firstValue(row, ['latitude', 'lat']) ?? maps.latitude;
+    const longitude = firstValue(row, ['longitude', 'lng', 'lon']) ?? maps.longitude;
+    const status = String(firstValue(row, ['status', 'situacao']) || '').trim().toUpperCase();
+    const ativo = row?.ativo !== false && !['INATIVO', 'INATIVA', 'CANCELADO', 'CANCELADA', 'BLOQUEADO', 'BLOQUEADA'].includes(status);
+    return {
+      id: row?.id,
+      nome: firstValue(row, ['nome', 'hotel', 'nome_hotel', 'razao_social']) || 'Hotel sem nome',
+      cidade: firstValue(row, ['cidade', 'cidade_hotel']) || '',
+      uf: String(firstValue(row, ['uf', 'estado', 'uf_hotel']) || '').trim().toUpperCase(),
+      latitude,
+      longitude,
+      diaria_individual: firstValue(row, ['valor_diaria_individual', 'diaria_individual', 'valor_individual', 'individual', 'valor_diaria_padrao', 'diaria_padrao']),
+      diaria_duplo: firstValue(row, ['valor_diaria_duplo', 'diaria_duplo', 'valor_duplo', 'duplo']),
+      diaria_triplo: firstValue(row, ['valor_diaria_triplo', 'diaria_triplo', 'valor_triplo', 'triplo']),
+      diaria_quadruplo: firstValue(row, ['valor_diaria_quadruplo', 'diaria_quadruplo', 'valor_quadruplo', 'quadruplo']),
+      prioridade: firstValue(row, ['prioridade']) || 'NORMAL',
+      status: status || 'ATIVO',
+      ativo,
+      fonte,
+      raw: row,
+    };
+  }
+
+  function dedupeHoteis(hoteis) {
+    const seen = new Set();
+    return hoteis.filter((h) => {
+      const key = normalize(`${h.nome}|${h.cidade}|${h.uf}|${h.fonte}`);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   async function loadData() {
-    const [pontos, colaboradores, hoteis, passagens, auditorias] = await Promise.all([
+    const [pontos, colaboradores, hoteisHospedagem, hoteisOperacional, passagens, auditorias] = await Promise.all([
       selectFrom('operacional_pontos_embarque', 'id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo', 'nome_local', 3000),
       selectFrom('operacional_colaborador_base', 'id,colaborador_id,nome,cpf,tipo_mao_obra,empresa,coordenacao,supervisao,cidade_base,uf_base,latitude,longitude,valor_diaria,valor_alimentacao,ativo', 'nome', 3000),
-      selectFrom('operacional_hoteis', 'id,nome,cidade,uf,latitude,longitude,diaria_individual,diaria_duplo,diaria_triplo,diaria_quadruplo,ativo', 'nome', 2000),
+      selectAll('hospedagem_hoteis', 'cidade', 3000),
+      selectAll('operacional_hoteis', 'nome', 2000),
       selectFrom('operacional_passagens_cache', 'origem_cidade,origem_uf,destino_cidade,destino_uf,valor_estimado,data_cotacao,validade_ate', 'data_cotacao', 5000),
       selectFrom('operacional_auditoria_colaborador', 'colaborador_id,nome_colaborador,nome_chave,score_impacto,severidade,data_evento,resultado,motivo_recusa,local_embarque,cidade_embarque,uf_destino,produto,desconto_kg,ativo', 'data_evento', 5000),
     ]);
 
     state.pontos = pontos.filter((p) => p.ativo !== false && Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude)));
     state.colaboradores = colaboradores.filter((c) => c.ativo !== false);
-    state.hoteis = hoteis.filter((h) => h.ativo !== false);
+    state.hoteis = dedupeHoteis([
+      ...hoteisHospedagem.map((h) => normalizeHotelRow(h, 'Hospedagem')),
+      ...hoteisOperacional.map((h) => normalizeHotelRow(h, 'Operacional')),
+    ]).filter((h) => h.ativo && h.nome && h.cidade && h.uf);
     state.passagens = passagens;
     state.auditorias = auditorias.filter((a) => a.ativo !== false);
     state.loaded = true;
@@ -170,17 +242,55 @@ import { supabase } from './supabaseClient.js';
     };
   }
 
-  function hotelMaisProximo(ponto) {
+  function hotelDiariaPorEquipe(hotel, qtdEquipe = 1) {
+    const qtd = Math.max(1, n(qtdEquipe, 1));
+    const individual = n(hotel?.diaria_individual, 0);
+    const duplo = n(hotel?.diaria_duplo, 0);
+    const triplo = n(hotel?.diaria_triplo, 0);
+    const quadruplo = n(hotel?.diaria_quadruplo, 0);
+    const fallback = individual || duplo || triplo || quadruplo || 0;
+
+    if (qtd <= 1) return { diaria: individual || fallback, tipo_quarto: 'individual', quartos: 1 };
+    if (qtd === 2) return { diaria: duplo || individual || fallback, tipo_quarto: 'duplo', quartos: 1 };
+    if (qtd === 3) return { diaria: triplo || duplo || individual || fallback, tipo_quarto: 'triplo', quartos: 1 };
+
+    const quartos = Math.ceil(qtd / 4);
+    return { diaria: (quadruplo || triplo || duplo || individual || fallback) * quartos, tipo_quarto: 'quádruplo', quartos };
+  }
+
+  function hotelMaisProximo(ponto, qtdEquipe = 1) {
     if (!ponto) return null;
+
+    const enrich = (h) => {
+      const distancia = distanciaKm(h.latitude, h.longitude, ponto.latitude, ponto.longitude);
+      const diariaInfo = hotelDiariaPorEquipe(h, qtdEquipe);
+      return {
+        ...h,
+        distancia,
+        diaria: diariaInfo.diaria,
+        tipo_quarto: diariaInfo.tipo_quarto,
+        quartos: diariaInfo.quartos,
+        mesma_cidade: normalize(h.cidade) === normalize(ponto.cidade) && normalize(h.uf) === normalize(ponto.uf),
+      };
+    };
+
     const daCidade = state.hoteis
       .filter((h) => normalize(h.cidade) === normalize(ponto.cidade) && normalize(h.uf) === normalize(ponto.uf))
-      .map((h) => ({
-        ...h,
-        distancia: distanciaKm(h.latitude, h.longitude, ponto.latitude, ponto.longitude),
-        diaria: n(h.diaria_individual || h.diaria_duplo || h.diaria_triplo || h.diaria_quadruplo, 0),
-      }))
+      .map(enrich)
+      .sort((a, b) => {
+        const prioridadeA = normalize(a.prioridade).includes('ALTA') ? 0 : 1;
+        const prioridadeB = normalize(b.prioridade).includes('ALTA') ? 0 : 1;
+        return prioridadeA - prioridadeB
+          || n(a.diaria, 999999) - n(b.diaria, 999999)
+          || n(a.distancia, 999999) - n(b.distancia, 999999);
+      });
+    if (daCidade[0]) return daCidade[0];
+
+    const comCoordenadas = state.hoteis
+      .map(enrich)
+      .filter((h) => Number.isFinite(Number(h.distancia)))
       .sort((a, b) => n(a.distancia, 999999) - n(b.distancia, 999999) || n(a.diaria, 999999) - n(b.diaria, 999999));
-    return daCidade[0] || null;
+    return comCoordenadas[0] || null;
   }
 
   function passagemPara(colab, ponto) {
@@ -238,7 +348,7 @@ import { supabase } from './supabaseClient.js';
       return [];
     }
 
-    const hotel = hotelMaisProximo(ponto);
+    const hotel = hotelMaisProximo(ponto, form.qtd);
     const candidatos = state.colaboradores.filter((c) => {
       if (!c.nome) return false;
       if (form.tipo !== 'todos' && normalize(c.tipo_mao_obra) !== normalize(form.tipo)) return false;
@@ -277,8 +387,11 @@ import { supabase } from './supabaseClient.js';
         ponto,
         distancia,
         semCoordenada,
-        hotel_nome: hotel?.nome || 'Sem hotel cadastrado na cidade/UF',
+        hotel_nome: hotel ? `${hotel.nome} · ${hotel.cidade}/${hotel.uf}` : 'Sem hotel cadastrado na cidade/UF',
         hotel_distancia: hotel?.distancia ?? null,
+        hotel_fonte: hotel?.fonte || null,
+        hotel_tipo_quarto: hotel?.tipo_quarto || null,
+        hotel_quartos: hotel?.quartos || 0,
         valor_hotel: valorHotel,
         valor_passagem: passagem,
         valor_mao_obra: maoObra,
@@ -355,7 +468,7 @@ import { supabase } from './supabaseClient.js';
           <table class="op-table">
             <thead>
               <tr>
-                <th>#</th><th>Colaborador</th><th>Tipo</th><th>Base</th><th>Distância</th><th>Hotel sugerido</th><th>Passagem</th><th>Hotel</th><th>Mão de obra</th><th>Alimentação</th><th>Total</th><th>Auditoria</th><th>Histórico</th><th>Score</th><th>Status</th>
+                <th>#</th><th>Colaborador</th><th>Tipo</th><th>Base</th><th>Distância</th><th>Hotel sugerido</th><th>Fonte hotel</th><th>Passagem</th><th>Hotel</th><th>Mão de obra</th><th>Alimentação</th><th>Total</th><th>Auditoria</th><th>Histórico</th><th>Score</th><th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -367,7 +480,8 @@ import { supabase } from './supabaseClient.js';
                   <td>${safeText(row.tipo_calculado)}</td>
                   <td>${safeText(`${row.cidade_base || '-'}${row.uf_base ? '/' + row.uf_base : ''}`)}</td>
                   <td>${row.distancia == null ? '-' : row.distancia + ' km'}</td>
-                  <td>${safeText(row.hotel_nome)}</td>
+                  <td>${safeText(row.hotel_nome)}${row.hotel_tipo_quarto ? `<br><small>${safeText(row.hotel_tipo_quarto)}${row.hotel_quartos > 1 ? ` · ${row.hotel_quartos} quartos` : ``}</small>` : ``}</td>
+                  <td>${row.hotel_fonte ? `<span class="op-pill ok">${safeText(row.hotel_fonte)}</span>` : `<span class="op-pill muted">Não localizado</span>`}</td>
                   <td>${money(row.valor_passagem)}</td>
                   <td>${money(row.valor_hotel)}</td>
                   <td>${money(row.valor_mao_obra)}</td>
@@ -430,11 +544,12 @@ import { supabase } from './supabaseClient.js';
     }).addTo(map).bindPopup(`<strong>${safeText(ponto.nome_local)}</strong><br>${safeText(ponto.cidade)}/${safeText(ponto.uf)}`);
     markers.push(pontoMarker);
 
-    const hotel = hotelMaisProximo(ponto);
+    const form = getForm(container);
+    const hotel = hotelMaisProximo(ponto, form.qtd);
     if (hotel && Number.isFinite(Number(hotel.latitude)) && Number.isFinite(Number(hotel.longitude))) {
       const hotelMarker = window.L.circleMarker([Number(hotel.latitude), Number(hotel.longitude)], {
         radius: 8, color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.86, weight: 2
-      }).addTo(map).bindPopup(`<strong>Hotel sugerido</strong><br>${safeText(hotel.nome)}<br>${money(hotel.diaria || 0)}`);
+      }).addTo(map).bindPopup(`<strong>Hotel sugerido</strong><br>${safeText(hotel.nome)}<br>${safeText(hotel.cidade)}/${safeText(hotel.uf)} · ${safeText(hotel.fonte || 'Hospedagem')}<br>${money(hotel.diaria || 0)}`);
       markers.push(hotelMarker);
       window.L.polyline([center, [Number(hotel.latitude), Number(hotel.longitude)]], { color: '#38bdf8', weight: 2, opacity: 0.65, dashArray: '6 6' }).addTo(map);
     }
@@ -498,7 +613,7 @@ import { supabase } from './supabaseClient.js';
             <div class="op-list" id="opRanking">${renderRanking(rows)}</div>
           </article>
           <article class="op-card">
-            <div class="op-card-head"><div><h3>Próxima etapa</h3><p>Para o ranking ficar 100% real, a base dos colaboradores precisa ter latitude/longitude e a base de hotéis precisa ter diária por tipo de quarto.</p></div></div>
+            <div class="op-card-head"><div><h3>Próxima etapa</h3><p>Para o ranking ficar 100% real, a base dos colaboradores precisa ter latitude/longitude e o módulo Hospedagem precisa manter hotéis com cidade/UF e diárias por tipo de quarto.</p></div></div>
             <div class="op-list">
               <div class="op-alert"><strong>Fluxo correto:</strong><br>1. Importar pontos pelo menu Relatórios.<br>2. Selecionar o ponto aqui no Operacional.<br>3. Informar volume/dias.<br>4. Gerar ranking e direcionar a equipe.</div>
             </div>
@@ -558,7 +673,7 @@ import { supabase } from './supabaseClient.js';
     ensureStyles();
     container.innerHTML = `
       <div class="op-shell">
-        <section class="op-hero"><span class="op-kicker">Operacional</span><h2>Carregando mapa de direcionamento...</h2><p>Buscando pontos de embarque, colaboradores, hotéis, passagens e auditoria no Supabase.</p></section>
+        <section class="op-hero"><span class="op-kicker">Operacional</span><h2>Carregando mapa de direcionamento...</h2><p>Buscando pontos de embarque, colaboradores, hotéis do módulo Hospedagem, passagens e auditoria no Supabase.</p></section>
       </div>
     `;
     await loadData();
