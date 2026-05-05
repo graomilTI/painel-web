@@ -647,7 +647,8 @@
         const cidade = String(pickValue(row, ['Cidade', 'Município', 'Municipio']) || '').trim();
         const uf = String(pickValue(row, ['UF', 'Estado']) || '').trim().toUpperCase().slice(0, 2);
         const pais = String(pickValue(row, ['Pais', 'País']) || 'Brasil').trim() || 'Brasil';
-        const tipoMaoObra = String(pickValue(row, ['Tipo', 'Tipo Mão de Obra', 'Tipo Mao de Obra']) || '').trim();
+        const tipoRaw = String(pickValue(row, ['Tipo', 'Tipo Mão de Obra', 'Tipo Mao de Obra', 'Mão de Obra', 'Mao de Obra']) || '').trim();
+        const tipoMaoObra = tipoRaw || 'EFETIVO';
         const valorDiaria = normalizeNumberBr(pickValue(row, ['Diária', 'Diaria', 'Valor Diária', 'Valor Diaria']));
         const valorAlimentacao = normalizeNumberBr(pickValue(row, ['Alimentação', 'Alimentacao', 'Almoço', 'Almoco']));
 
@@ -668,7 +669,10 @@
           cidade_base: cidade || null,
           uf_base: uf || null,
           pais: pais || 'Brasil',
-          tipo_mao_obra: tipoMaoObra || null,
+          // A planilha de GPS dos colaboradores não possui coluna de tipo.
+          // Para não quebrar o NOT NULL de bases antigas, assume EFETIVO como padrão.
+          // Depois o tipo real pode ser enriquecido pelo cadastro/base de colaboradores.
+          tipo_mao_obra: tipoMaoObra || 'EFETIVO',
           valor_diaria: valorDiaria,
           valor_alimentacao: valorAlimentacao ?? 30,
           origem: 'importar_relatorios_endereco_colaborador',
