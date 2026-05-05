@@ -26,6 +26,7 @@ const state = {
   conferenciaStatus: new Map(),
   auditoria: [],
   resultado: [],
+  uber: [],
   loading: false,
   sort: {
     despesas: { column: 'colaborador', direction: 'asc' },
@@ -233,7 +234,7 @@ function isPedidoDeslocamento(row) {
 }
 
 function getUniqueRegionais() {
-  const values = [...state.despesas, ...state.auditoria, ...state.resultado]
+  const values = [...state.despesas, ...state.auditoria, ...state.resultado, ...state.uber]
     .map((row) => row.supervisao || row.regional || row.coordenacao)
     .filter(Boolean);
   return [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
@@ -247,7 +248,7 @@ function applyLocalFilters(rows, kind) {
   return rows.filter((row) => {
     const rowRegional = normalizeText(row.supervisao || row.regional || row.coordenacao);
     const rowColaborador = normalizeText(row.colaborador || row.nome_colaborador || row.nome || row.funcionario || row.classificador);
-    const rowStatus = kind === 'despesas' ? getStatus(row) : normalizeText(row.status || row.severidade || row.resultado).replaceAll(' ', '_');
+    const rowStatus = kind === 'despesas' ? getStatus(row) : kind === 'uber' ? getUberClass(row) : normalizeText(row.status || row.severidade || row.resultado).replaceAll(' ', '_');
 
     if (regional && rowRegional !== regional) return false;
     if (colaborador && !rowColaborador.includes(colaborador)) return false;
@@ -260,6 +261,7 @@ function summarize() {
   const despesas = applyLocalFilters(state.despesas, 'despesas');
   const auditoria = applyLocalFilters(state.auditoria, 'auditoria');
   const resultado = applyLocalFilters(state.resultado, 'resultado');
+  const uber = applyLocalFilters(state.uber, 'uber');
 
   const pendentes = despesas.filter((row) => ['PENDENTE', 'EM_ANALISE', 'PENDENCIA'].includes(getStatus(row))).length;
   const valorExtras = despesas.reduce((sum, row) => sum + getDespesaValor(row), 0);
@@ -267,8 +269,9 @@ function summarize() {
   const deslocamentos = despesas.filter(isPedidoDeslocamento).length;
   const criticas = auditoria.filter((row) => ['ALTA', 'CRITICA', 'CRÍTICA'].includes(normalizeText(row.severidade))).length;
   const tons = resultado.reduce((sum, row) => sum + asNumber(row.toneladas || row.tons || row.embarcado), 0);
+  const uberAtencao = uber.filter((row) => ['ATENCAO', 'ATENÇÃO', 'CAIXA_COLABORADOR'].includes(normalizeText(row.classificacao || row.status_validacao))).length;
 
-  return { despesas, auditoria, resultado, pendentes, valorExtras, hoteis, deslocamentos, criticas, tons };
+  return { despesas, auditoria, resultado, uber, pendentes, valorExtras, hoteis, deslocamentos, criticas, tons, uberAtencao };
 }
 
 function renderStyles() {
@@ -277,7 +280,7 @@ function renderStyles() {
       .conf-hero{display:flex;justify-content:space-between;gap:18px;align-items:center;background:radial-gradient(circle at top right,rgba(34,197,94,.15),transparent 32%),linear-gradient(180deg,rgba(8,22,17,.95),rgba(6,19,14,.95));border:1px solid var(--line);border-radius:28px;padding:24px;box-shadow:var(--shadow)}
       .conf-hero h2{font-size:30px;margin:6px 0 10px}.conf-hero p{margin:0;color:var(--muted)}
       .conf-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.conf-btn{border:1px solid rgba(111,208,165,.22);background:rgba(15,23,42,.78);color:#eef7f2;border-radius:14px;padding:11px 14px;font-weight:800;cursor:pointer}.conf-btn:hover{background:rgba(22,101,52,.28)}.conf-btn-primary{background:#3fa878;color:#04130d}.conf-btn-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}
-      .conf-grid{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:14px;margin-top:16px}.conf-card{background:rgba(8,22,17,.68);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow-soft)}.conf-card h3{margin:0 0 10px;font-size:15px}.conf-metric{font-size:34px;line-height:1;font-weight:900;color:#dcfce7;margin:0 0 8px}.conf-card p{margin:0;color:var(--muted);font-size:13px}
+      .conf-grid{display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:14px;margin-top:16px}.conf-card{background:rgba(8,22,17,.68);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow-soft)}.conf-card h3{margin:0 0 10px;font-size:15px}.conf-metric{font-size:34px;line-height:1;font-weight:900;color:#dcfce7;margin:0 0 8px}.conf-card p{margin:0;color:var(--muted);font-size:13px}
       .conf-panel{margin-top:16px;background:rgba(8,22,17,.72);border:1px solid var(--line);border-radius:24px;padding:18px;box-shadow:var(--shadow-soft)}.conf-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.conf-panel-head h3{margin:0 0 6px}.conf-panel-head p{margin:0;color:var(--muted)}
       .conf-tabs{display:flex;gap:10px;flex-wrap:wrap}.conf-tab{border:1px solid rgba(111,208,165,.22);background:#0b1220;color:#e5e7eb;border-radius:999px;padding:10px 14px;font-weight:800;cursor:pointer}.conf-tab.active{background:rgba(34,197,94,.22);border-color:rgba(111,208,165,.45);color:#dcfce7}
       .conf-filters{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:12px}.conf-field label{display:block;font-size:12px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px}.conf-field input,.conf-field select{width:100%;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#0b1220;color:#e5e7eb;padding:12px 13px;color-scheme:dark}.conf-field option{background:#0f172a;color:#e5e7eb}.conf-filter-actions{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
@@ -362,6 +365,7 @@ function renderShell(content) {
           <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
           <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
           <button class="conf-tab" data-tab="resultado" type="button">Resultado diário</button>
+          <button class="conf-tab" data-tab="uber" type="button">Uber</button>
         </div>
       </div>
       <div id="conf-table"></div>
@@ -388,6 +392,7 @@ function renderMetrics() {
     ['Extras', money(s.valorExtras), 'Recarga, passagem e lavagem.'],
     ['Hotel/Desloc.', `${s.hoteis}/${s.deslocamentos}`, 'Hospedagens e deslocamentos solicitados.'],
     ['Auditoria crítica', s.criticas, 'Ocorrências alta/crítica no período.'],
+    ['Uber atenção', s.uberAtencao, 'Corridas fora da regra de 2 km.'],
   ].map(([title, metric, desc]) => `
     <article class="conf-card">
       <h3>${escapeHtml(title)}</h3>
@@ -409,11 +414,14 @@ function renderActiveTab() {
       ? 'Resumo por colaborador: alimentação, deslocamento e extras.'
       : state.tab === 'auditoria'
         ? 'Ocorrências e divergências registradas na auditoria.'
-        : 'Produção importada para comparação operacional.';
+        : state.tab === 'resultado'
+          ? 'Produção importada para comparação operacional.'
+          : 'Corridas corporativas com validação por ponto de embarque e casa do colaborador.';
   }
 
   if (state.tab === 'despesas') return renderDespesasTable();
   if (state.tab === 'auditoria') return renderAuditoriaTable();
+  if (state.tab === 'uber') return renderUberTable();
   return renderResultadoTable();
 }
 
@@ -499,6 +507,60 @@ function renderAuditoriaTable() {
               <td>${escapeHtml(row.tipo_evento || row.motivo_recusa || '-')}<small>${escapeHtml(row.descricao || row.observacoes || '')}</small></td>
               <td>${escapeHtml(row.resultado || row.resultado_auditoria || row.resultado_recusa || '-')}</td>
               <td>${statusChip(row.severidade || 'baixa')}<small>Score: ${escapeHtml(row.score_impacto ?? row.diferenca ?? 0)}</small></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+
+function getUberClass(row) {
+  const value = row.classificacao || row.status_validacao || 'ATENCAO';
+  const norm = normalizeText(value).replaceAll(' ', '_');
+  if (norm === 'VALIDADA' || norm === 'VALIDADO') return 'VALIDADA';
+  if (norm === 'CAIXA_COLABORADOR' || norm === 'CAIXA') return 'CAIXA_COLABORADOR';
+  return 'ATENCAO';
+}
+
+function uberClassChip(row) {
+  const key = getUberClass(row);
+  if (key === 'VALIDADA') return '<span class="conf-chip conf-chip-ok">Válida</span>';
+  if (key === 'CAIXA_COLABORADOR') return '<span class="conf-chip conf-chip-danger">Caixa colaborador</span>';
+  return '<span class="conf-chip conf-chip-warn">Atenção</span>';
+}
+
+function renderUberTable() {
+  const rows = applyLocalFilters(state.uber, 'uber');
+  const target = document.getElementById('conf-table');
+  if (!rows.length) {
+    target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma corrida Uber encontrada para os filtros selecionados. Importe o relatório na tabela conferencia_uber_corridas.</td></tr></tbody></table></div>`;
+    return;
+  }
+  target.innerHTML = `
+    <div class="conf-table-wrap">
+      <table class="conf-table" style="min-width:1450px">
+        <thead><tr><th>Data</th><th>Colaborador</th><th>Regional</th><th>Partida</th><th>Destino</th><th>Valor</th><th>Distância</th><th>Validação</th><th>Motivo</th><th>Ações</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${brDate(row.data_solicitacao_local || row.data_corrida || row.data)}</td>
+              <td><strong>${escapeHtml(row.nome_colaborador || row.nome || '-')}</strong><small>${escapeHtml(row.servico || row.grupo || '')}</small></td>
+              <td>${escapeHtml(row.supervisao || row.regional || '-')}<small>${escapeHtml(row.coordenacao || row.coord || '')}</small></td>
+              <td>${escapeHtml(row.endereco_partida || '-')}<small>Casa: ${escapeHtml(row.distancia_partida_casa_km ?? row.distancia_destino_casa_km ?? '-')} km</small></td>
+              <td>${escapeHtml(row.endereco_destino || '-')}<small>Embarque: ${escapeHtml(row.distancia_partida_embarque_km ?? row.distancia_destino_embarque_km ?? '-')} km</small></td>
+              <td><strong>${money(row.valor || row.preco_liquido || 0)}</strong></td>
+              <td>${escapeHtml(row.distancia_mi || row.distancia_km || '-')}<small>${escapeHtml(row.duracao_min ? `${row.duracao_min} min` : '')}</small></td>
+              <td>${uberClassChip(row)}</td>
+              <td>${escapeHtml(row.motivo_validacao || row.observacao_validacao || row.detalhamento_despesa || '-')}</td>
+              <td>
+                <div class="conf-row-actions">
+                  <button class="conf-btn conf-btn-primary" data-uber-action="VALIDADA" data-uber-id="${escapeHtml(row.id)}" type="button">Validar</button>
+                  <button class="conf-btn conf-btn-danger" data-uber-action="CAIXA_COLABORADOR" data-uber-id="${escapeHtml(row.id)}" type="button">Caixa</button>
+                  <button class="conf-btn" data-uber-action="ATENCAO" data-uber-id="${escapeHtml(row.id)}" type="button">Atenção</button>
+                </div>
+              </td>
             </tr>
           `).join('')}
         </tbody>
@@ -738,12 +800,59 @@ async function loadResultado() {
   state.resultado = data || [];
 }
 
+
+async function loadUber() {
+  let query = supabase
+    .from('vw_conferencia_uber_corridas')
+    .select('*')
+    .order('data_solicitacao_local', { ascending: false, nullsFirst: false })
+    .limit(1000);
+
+  if (state.filters.inicio) query = query.gte('data_solicitacao_local', state.filters.inicio);
+  if (state.filters.fim) query = query.lte('data_solicitacao_local', state.filters.fim);
+
+  const { data, error } = await query;
+  if (error) {
+    state.uber = [];
+    console.warn('[Conferência] Uber indisponível:', error.message);
+    return;
+  }
+  state.uber = data || [];
+}
+
+async function updateUberStatus(id, classificacao) {
+  const row = state.uber.find((item) => String(item.id) === String(id));
+  if (!row) return;
+  setFeedback('Salvando validação da corrida Uber...');
+
+  const { data, error } = await supabase
+    .from('conferencia_uber_corridas')
+    .update({
+      classificacao_manual: classificacao,
+      status_validacao: classificacao,
+      validado_em: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) {
+    setFeedback(`Não foi possível salvar validação Uber. Rode o SQL enviado no ZIP. Detalhe: ${error.message}`, true);
+    return;
+  }
+
+  Object.assign(row, data, { classificacao });
+  setFeedback('Validação da corrida Uber atualizada.');
+  await loadUber();
+  renderActiveTab();
+}
+
 async function loadAll() {
   if (state.loading) return;
   state.loading = true;
   setFeedback('Carregando dados da conferência...');
   try {
-    await Promise.all([loadDespesas(), loadAuditoria(), loadResultado()]);
+    await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber()]);
     setFeedback('Dados atualizados.');
   } catch (error) {
     console.error(error);
@@ -820,6 +929,18 @@ function exportCsv() {
       deslocamentoResumo(row),
       extrasResumo(row),
     ]);
+  } else if (state.tab === 'uber') {
+    headers = ['Data', 'Colaborador', 'Regional', 'Partida', 'Destino', 'Valor', 'Validação', 'Motivo'];
+    csvRows = rows.map((row) => [
+      row.data_solicitacao_local || row.data_corrida || '',
+      row.nome_colaborador || row.nome || '',
+      row.supervisao || row.regional || '',
+      row.endereco_partida || '',
+      row.endereco_destino || '',
+      row.valor || row.preco_liquido || 0,
+      getUberClass(row),
+      row.motivo_validacao || row.observacao_validacao || row.detalhamento_despesa || '',
+    ]);
   } else {
     headers = Object.keys(rows[0]);
     csvRows = rows.map((row) => headers.map((key) => row[key] ?? ''));
@@ -880,6 +1001,12 @@ function bindEvents() {
         direction: current.column === column && current.direction === 'asc' ? 'desc' : 'asc',
       };
       renderActiveTab();
+      return;
+    }
+
+    const uberBtn = event.target.closest('[data-uber-action][data-uber-id]');
+    if (uberBtn) {
+      updateUberStatus(uberBtn.dataset.uberId, uberBtn.dataset.uberAction);
       return;
     }
 
