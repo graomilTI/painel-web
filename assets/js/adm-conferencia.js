@@ -97,6 +97,38 @@ function statusChip(status) {
   return `<span class="conf-chip conf-chip-${STATUS_CLASS[key] || 'neutral'}">${escapeHtml(STATUS_LABELS[key] || status || 'Pendente')}</span>`;
 }
 
+
+function yesNoChip(value) {
+  return value
+    ? '<span class="conf-chip conf-chip-ok">Sim</span>'
+    : '<span class="conf-chip conf-chip-neutral">Não</span>';
+}
+
+function getRegional(row) {
+  return row.supervisao || row.regional || row.coordenacao || '-';
+}
+
+function deslocamentoResumo(row) {
+  const tipo = row.deslocamento_tipo || 'NÃO PRECISA';
+  const tipoNorm = normalizeText(tipo);
+  if (!tipo || ['NAO PRECISA', 'NÃO PRECISA'].includes(tipoNorm)) return 'Não precisa';
+  const parts = [tipo];
+  if (row.deslocamento_origem || row.deslocamento_destino) {
+    parts.push([row.deslocamento_origem, row.deslocamento_destino].filter(Boolean).join(' → '));
+  }
+  if (asNumber(row.deslocamento_valor) > 0) parts.push(money(row.deslocamento_valor));
+  return parts.filter(Boolean).join(' • ');
+}
+
+function extrasResumo(row) {
+  const total = getDespesaValor(row);
+  const itens = Array.isArray(row.extras_itens) ? row.extras_itens : [];
+  if (!itens.length && total <= 0) return 'Sem extras';
+  const tipos = [...new Set(itens.map((item) => item.tipo_despesa || item.descricao || 'Outro').filter(Boolean))];
+  const prefix = tipos.length ? tipos.join(' + ') : 'Extras';
+  return `${prefix} • ${money(total)}`;
+}
+
 function buildDespesaResumo(row) {
   const parts = [];
 
@@ -199,7 +231,7 @@ function renderStyles() {
       .conf-panel{margin-top:16px;background:rgba(8,22,17,.72);border:1px solid var(--line);border-radius:24px;padding:18px;box-shadow:var(--shadow-soft)}.conf-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.conf-panel-head h3{margin:0 0 6px}.conf-panel-head p{margin:0;color:var(--muted)}
       .conf-tabs{display:flex;gap:10px;flex-wrap:wrap}.conf-tab{border:1px solid rgba(111,208,165,.22);background:#0b1220;color:#e5e7eb;border-radius:999px;padding:10px 14px;font-weight:800;cursor:pointer}.conf-tab.active{background:rgba(34,197,94,.22);border-color:rgba(111,208,165,.45);color:#dcfce7}
       .conf-filters{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:12px}.conf-field label{display:block;font-size:12px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px}.conf-field input,.conf-field select{width:100%;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#0b1220;color:#e5e7eb;padding:12px 13px;color-scheme:dark}.conf-field option{background:#0f172a;color:#e5e7eb}.conf-filter-actions{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
-      .conf-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#081611}.conf-table{width:100%;border-collapse:collapse;min-width:1180px}.conf-table th,.conf-table td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;vertical-align:top}.conf-table th{background:rgba(15,23,42,.92);color:#dcfce7;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.conf-table td{color:#e5e7eb}.conf-table small{display:block;color:var(--muted);margin-top:4px}.conf-empty{text-align:center;color:var(--muted);padding:24px!important}.conf-row-actions{display:flex;gap:8px;flex-wrap:wrap}.conf-row-actions button{font-size:12px;padding:8px 10px;border-radius:12px}
+      .conf-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#081611}.conf-table{width:100%;border-collapse:collapse;min-width:1180px}.conf-table-despesas{min-width:1220px}.conf-table th,.conf-table td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;vertical-align:top}.conf-table th{background:rgba(15,23,42,.92);color:#dcfce7;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.conf-table td{color:#e5e7eb}.conf-table small{display:block;color:var(--muted);margin-top:4px}.conf-empty{text-align:center;color:var(--muted);padding:24px!important}.conf-row-actions{display:flex;gap:8px;flex-wrap:wrap}.conf-row-actions button{font-size:12px;padding:8px 10px;border-radius:12px}
       .conf-chip{display:inline-flex;align-items:center;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:900;border:1px solid rgba(148,163,184,.18)}.conf-chip-ok{background:rgba(34,197,94,.16);color:#bbf7d0;border-color:rgba(34,197,94,.28)}.conf-chip-warn{background:rgba(234,179,8,.14);color:#fde68a;border-color:rgba(234,179,8,.28)}.conf-chip-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}.conf-chip-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(96,165,250,.30)}.conf-chip-neutral{background:rgba(148,163,184,.12);color:#cbd5e1}
       .conf-note{width:100%;min-height:74px;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#0b1220;color:#e5e7eb;padding:12px;resize:vertical}.conf-feedback{min-height:20px;margin-top:10px;color:var(--muted)}
       @media(max-width:1200px){.conf-grid{grid-template-columns:repeat(2,1fr)}.conf-filters{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.conf-hero,.conf-panel-head{display:block}.conf-grid,.conf-filters{grid-template-columns:1fr}.conf-actions{justify-content:flex-start;margin-top:12px}}
@@ -274,7 +306,7 @@ function renderShell(content) {
       <div class="conf-panel-head">
         <div>
           <h3>Fila de conferência</h3>
-          <p id="conf-table-subtitle">Despesas solicitadas na programação.</p>
+          <p id="conf-table-subtitle">Resumo por colaborador: alimentação, deslocamento e extras.</p>
         </div>
         <div class="conf-tabs">
           <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
@@ -302,7 +334,7 @@ function renderMetrics() {
   const s = summarize();
   const html = [
     ['Pendentes', s.pendentes, 'Solicitações aguardando conferência.'],
-    ['Despesas', s.despesas.length, 'Itens da programação no período.'],
+    ['Colaboradores', s.despesas.length, 'Linhas carregadas para conferência.'],
     ['Extras', money(s.valorExtras), 'Recarga, passagem e lavagem.'],
     ['Hotel/Desloc.', `${s.hoteis}/${s.deslocamentos}`, 'Hospedagens e deslocamentos solicitados.'],
     ['Auditoria crítica', s.criticas, 'Ocorrências alta/crítica no período.'],
@@ -324,7 +356,7 @@ function renderActiveTab() {
   const subtitle = document.getElementById('conf-table-subtitle');
   if (subtitle) {
     subtitle.textContent = state.tab === 'despesas'
-      ? 'Despesas solicitadas na programação.'
+      ? 'Resumo por colaborador: alimentação, deslocamento e extras.'
       : state.tab === 'auditoria'
         ? 'Ocorrências e divergências registradas na auditoria.'
         : 'Produção importada para comparação operacional.';
@@ -345,22 +377,43 @@ function renderDespesasTable() {
 
   target.innerHTML = `
     <div class="conf-table-wrap">
-      <table class="conf-table">
+      <table class="conf-table conf-table-despesas">
         <thead>
           <tr>
-            <th>Data</th><th>Colaborador</th><th>Supervisão</th><th>Solicitação</th><th>Valor extra</th><th>Status</th><th>Observação ADM</th><th>Ações</th>
+            <th>Colaborador</th>
+            <th>Regional</th>
+            <th>Status</th>
+            <th>Café</th>
+            <th>Almoço</th>
+            <th>Janta</th>
+            <th>Deslocamento</th>
+            <th>Extras</th>
+            <th>Ações</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map((row) => `
             <tr>
-              <td>${brDate(row.data_referencia)}<small>${escapeHtml(row.queue_id || row.id || '')}</small></td>
-              <td><strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong><small>${escapeHtml(row.solicitante ? `Solicitante: ${row.solicitante}` : '')}</small></td>
-              <td>${escapeHtml(row.supervisao || '-')}<small>${escapeHtml(row.coordenacao || '')}</small></td>
-              <td>${escapeHtml(buildDespesaResumo(row))}<small>${escapeHtml(row.extras_obs || row.disponibilidade_obs || row.estadia_obs || row.deslocamento_obs || row.alimentacao_obs || '')}</small></td>
-              <td><strong>${money(getDespesaValor(row))}</strong></td>
+              <td>
+                <strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong>
+                <small>${brDate(row.data_referencia)}${row.cargo ? ` • ${escapeHtml(row.cargo)}` : ''}</small>
+              </td>
+              <td>
+                ${escapeHtml(getRegional(row))}
+                <small>${escapeHtml(row.coordenacao || '')}</small>
+              </td>
               <td>${statusChip(getStatus(row))}</td>
-              <td><textarea class="conf-note" data-note-id="${escapeHtml(row.id)}" placeholder="Observação da conferência...">${escapeHtml(row.observacao_conferencia || '')}</textarea></td>
+              <td>${yesNoChip(!!row.cafe_valor)}</td>
+              <td>${yesNoChip(!!row.almoco_valor)}</td>
+              <td>${yesNoChip(!!row.janta_valor)}</td>
+              <td>
+                ${escapeHtml(deslocamentoResumo(row))}
+                <small>${escapeHtml(row.deslocamento_obs || '')}</small>
+              </td>
+              <td>
+                <strong>${escapeHtml(extrasResumo(row))}</strong>
+                <small>${escapeHtml(row.extras_obs || '')}</small>
+              </td>
               <td>
                 <div class="conf-row-actions">
                   <button class="conf-btn" data-action="EM_ANALISE" data-id="${escapeHtml(row.id)}" type="button">Analisar</button>
@@ -648,7 +701,7 @@ async function updateDespesaStatus(id, status) {
   const row = state.despesas.find((item) => String(item.id) === String(id));
   if (!row) return;
 
-  const note = document.querySelector(`[data-note-id="${CSS.escape(id)}"]`)?.value || '';
+  const note = row.observacao_conferencia || '';
   setFeedback('Salvando conferência...');
 
   const payload = {
@@ -696,9 +749,26 @@ function exportCsv() {
     return;
   }
 
-  const headers = Object.keys(rows[0]);
+  let headers;
+  let csvRows;
+  if (state.tab === 'despesas') {
+    headers = ['Colaborador', 'Regional', 'Status', 'Café', 'Almoço', 'Janta', 'Deslocamento', 'Extras'];
+    csvRows = rows.map((row) => [
+      row.colaborador || row.nome_colaborador || '',
+      getRegional(row),
+      STATUS_LABELS[getStatus(row)] || getStatus(row),
+      row.cafe_valor ? 'Sim' : 'Não',
+      row.almoco_valor ? 'Sim' : 'Não',
+      row.janta_valor ? 'Sim' : 'Não',
+      deslocamentoResumo(row),
+      extrasResumo(row),
+    ]);
+  } else {
+    headers = Object.keys(rows[0]);
+    csvRows = rows.map((row) => headers.map((key) => row[key] ?? ''));
+  }
   const csv = [headers.join(';')]
-    .concat(rows.map((row) => headers.map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`).join(';')))
+    .concat(csvRows.map((values) => values.map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')))
     .join('\n');
 
   const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' });
