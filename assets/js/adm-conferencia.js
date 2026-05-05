@@ -3,6 +3,9 @@ import { supabase } from './supabaseClient.js';
 
 const DATE_FMT = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' });
 const MONEY_FMT = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const GEOCODING_DELAY_MS = 1200;
+const GEOCODING_MAX_BATCH = 15;
+
 
 const STATUS_LABELS = {
   PENDENTE: 'Pendente',
@@ -287,6 +290,7 @@ function renderStyles() {
       .conf-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#081611}.conf-table{width:100%;border-collapse:collapse;min-width:1180px}.conf-table-despesas{min-width:1220px}.conf-table th,.conf-table td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;vertical-align:top}.conf-table th{background:rgba(15,23,42,.92);color:#dcfce7;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.conf-sort-btn{width:100%;display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;color:#dcfce7;font:inherit;font-weight:900;text-transform:uppercase;letter-spacing:.06em;text-align:left;cursor:pointer;padding:0}.conf-sort-btn:hover{color:#86efac}.conf-sort-icon{font-size:13px;opacity:.55}.conf-sort-icon.active{opacity:1;color:#86efac}.conf-table td{color:#e5e7eb}.conf-table small{display:block;color:var(--muted);margin-top:4px}.conf-empty{text-align:center;color:var(--muted);padding:24px!important}.conf-row-actions{display:flex;gap:8px;flex-wrap:wrap}.conf-row-actions button{font-size:12px;padding:8px 10px;border-radius:12px}
       .conf-chip{display:inline-flex;align-items:center;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:900;border:1px solid rgba(148,163,184,.18)}.conf-chip-ok{background:rgba(34,197,94,.16);color:#bbf7d0;border-color:rgba(34,197,94,.28)}.conf-chip-warn{background:rgba(234,179,8,.14);color:#fde68a;border-color:rgba(234,179,8,.28)}.conf-chip-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}.conf-chip-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(96,165,250,.30)}.conf-chip-neutral{background:rgba(148,163,184,.12);color:#cbd5e1}
       .conf-note{width:100%;min-height:74px;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#0b1220;color:#e5e7eb;padding:12px;resize:vertical}.conf-feedback{min-height:20px;margin-top:10px;color:var(--muted)}
+      .conf-uber-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px;padding:12px 14px;border:1px solid rgba(111,208,165,.18);border-radius:18px;background:rgba(15,23,42,.48)}.conf-uber-tools p{margin:4px 0 0;color:var(--muted);font-size:12px}.conf-uber-actions{display:flex;gap:10px;flex-wrap:wrap}.conf-gps-ok{font-size:12px;color:#bbf7d0;font-weight:800}.conf-gps-missing{font-size:12px;color:#fde68a;font-weight:800}
       @media(max-width:1200px){.conf-grid{grid-template-columns:repeat(2,1fr)}.conf-filters{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.conf-hero,.conf-panel-head{display:block}.conf-grid,.conf-filters{grid-template-columns:1fr}.conf-actions{justify-content:flex-start;margin-top:12px}}
     </style>
   `;
@@ -516,7 +520,15 @@ function renderAuditoriaTable() {
 }
 
 
+function isUberUsoPessoal(row) {
+  const text = [row.detalhamento_despesa, row.observacao_validacao, row.motivo_validacao, row.observacao, row.observacoes]
+    .filter(Boolean)
+    .join(' ');
+  return normalizeText(text).includes('PESSOAL');
+}
+
 function getUberClass(row) {
+  if (isUberUsoPessoal(row)) return 'ATENCAO';
   const value = row.classificacao || row.status_validacao || 'ATENCAO';
   const norm = normalizeText(value).replaceAll(' ', '_');
   if (norm === 'VALIDADA' || norm === 'VALIDADO') return 'VALIDADA';
@@ -531,17 +543,193 @@ function uberClassChip(row) {
   return '<span class="conf-chip conf-chip-warn">Atenção</span>';
 }
 
+
+function hasUberCoordinates(row) {
+  return row.partida_latitude !== null && row.partida_latitude !== undefined && row.partida_latitude !== ''
+    && row.partida_longitude !== null && row.partida_longitude !== undefined && row.partida_longitude !== ''
+    && row.destino_latitude !== null && row.destino_latitude !== undefined && row.destino_latitude !== ''
+    && row.destino_longitude !== null && row.destino_longitude !== undefined && row.destino_longitude !== '';
+}
+
+function needsUberGeocoding(row) {
+  return !hasUberCoordinates(row) && (row.endereco_partida || row.endereco_destino);
+}
+
+function geocodingKey(address) {
+  return normalizeText(address).replace(/\s+/g, ' ').slice(0, 220);
+}
+
+function buildBrazilAddress(address) {
+  const text = String(address || '').trim();
+  if (!text) return '';
+  return /brasil|brazil/i.test(text) ? text : `${text}, Brasil`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getCachedGeocode(address) {
+  const addressKey = geocodingKey(address);
+  if (!addressKey) return null;
+
+  const { data, error } = await supabase
+    .from('conferencia_geocoding_cache')
+    .select('latitude,longitude,display_name')
+    .eq('address_key', addressKey)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[Conferência Uber] cache indisponível:', error.message);
+    return null;
+  }
+  if (!data) return null;
+  return { lat: Number(data.latitude), lon: Number(data.longitude), display_name: data.display_name || '' };
+}
+
+async function saveGeocodeCache(address, result, provider = 'nominatim') {
+  if (!address || !result || !Number.isFinite(result.lat) || !Number.isFinite(result.lon)) return;
+  const payload = {
+    address_key: geocodingKey(address),
+    endereco_original: address,
+    latitude: result.lat,
+    longitude: result.lon,
+    display_name: result.display_name || null,
+    provider,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from('conferencia_geocoding_cache')
+    .upsert(payload, { onConflict: 'address_key' });
+
+  if (error) console.warn('[Conferência Uber] não salvou cache:', error.message);
+}
+
+async function geocodeAddress(address) {
+  const query = buildBrazilAddress(address);
+  if (!query) return null;
+
+  const cached = await getCachedGeocode(address);
+  if (cached && Number.isFinite(cached.lat) && Number.isFinite(cached.lon)) return cached;
+
+  const params = new URLSearchParams({
+    q: query,
+    format: 'jsonv2',
+    addressdetails: '1',
+    limit: '1',
+    countrycodes: 'br',
+  });
+
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    headers: { 'Accept': 'application/json', 'Accept-Language': 'pt-BR,pt;q=0.9' },
+  });
+
+  if (!response.ok) throw new Error(`Geocoding retornou HTTP ${response.status}`);
+  const results = await response.json();
+  const first = Array.isArray(results) ? results[0] : null;
+  if (!first?.lat || !first?.lon) return null;
+
+  const parsed = {
+    lat: Number(first.lat),
+    lon: Number(first.lon),
+    display_name: first.display_name || '',
+  };
+  await saveGeocodeCache(address, parsed);
+  return parsed;
+}
+
+async function geocodeUberRow(row) {
+  if (!row?.id) return false;
+  const update = {};
+  let changed = false;
+
+  if ((!row.partida_latitude || !row.partida_longitude) && row.endereco_partida) {
+    const partida = await geocodeAddress(row.endereco_partida);
+    if (partida) {
+      update.partida_latitude = partida.lat;
+      update.partida_longitude = partida.lon;
+      changed = true;
+    }
+    await sleep(GEOCODING_DELAY_MS);
+  }
+
+  if ((!row.destino_latitude || !row.destino_longitude) && row.endereco_destino) {
+    const destino = await geocodeAddress(row.endereco_destino);
+    if (destino) {
+      update.destino_latitude = destino.lat;
+      update.destino_longitude = destino.lon;
+      changed = true;
+    }
+    await sleep(GEOCODING_DELAY_MS);
+  }
+
+  if (!changed) return false;
+
+  update.observacao_validacao = null;
+  update.updated_at = new Date().toISOString();
+
+  const { error } = await supabase
+    .from('conferencia_uber_corridas')
+    .update(update)
+    .eq('id', row.id);
+
+  if (error) throw new Error(`Não foi possível salvar coordenadas: ${error.message}`);
+  return true;
+}
+
+async function geocodeUberBatch(onlyId = null) {
+  const sourceRows = onlyId
+    ? state.uber.filter((row) => String(row.id) === String(onlyId))
+    : applyLocalFilters(state.uber, 'uber').filter(needsUberGeocoding).slice(0, GEOCODING_MAX_BATCH);
+
+  if (!sourceRows.length) {
+    setFeedback('Nenhuma corrida pendente de coordenadas nos filtros atuais.');
+    return;
+  }
+
+  setFeedback(`Convertendo endereços em GPS: 0/${sourceRows.length}. Aguarde a finalização antes de sair da tela.`);
+  let ok = 0;
+  let fail = 0;
+
+  for (const row of sourceRows) {
+    try {
+      const changed = await geocodeUberRow(row);
+      if (changed) ok += 1;
+      else fail += 1;
+    } catch (error) {
+      console.error(error);
+      fail += 1;
+    }
+    setFeedback(`Convertendo endereços em GPS: ${ok + fail}/${sourceRows.length}. Sucesso: ${ok}. Não localizados/erro: ${fail}.`);
+  }
+
+  await loadUber();
+  renderActiveTab();
+  setFeedback(`Conversão GPS concluída. Atualizadas: ${ok}. Não localizadas/erro: ${fail}.`);
+}
+
 function renderUberTable() {
   const rows = applyLocalFilters(state.uber, 'uber');
   const target = document.getElementById('conf-table');
+  const pendingGps = rows.filter(needsUberGeocoding).length;
   if (!rows.length) {
     target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma corrida Uber encontrada para os filtros selecionados. Importe o relatório na tabela conferencia_uber_corridas.</td></tr></tbody></table></div>`;
     return;
   }
   target.innerHTML = `
+    <div class="conf-uber-tools">
+      <div>
+        <strong>GPS das corridas</strong>
+        <p>${pendingGps ? `${pendingGps} corrida(s) sem coordenadas nos filtros atuais.` : 'Todas as corridas filtradas já possuem coordenadas de partida e destino.'} Fonte: OpenStreetMap/Nominatim.</p>
+      </div>
+      <div class="conf-uber-actions">
+        <button class="conf-btn conf-btn-primary" data-uber-geocode-pending="1" type="button" ${pendingGps ? '' : 'disabled'}>Converter GPS pendentes</button>
+      </div>
+    </div>
     <div class="conf-table-wrap">
-      <table class="conf-table" style="min-width:1450px">
-        <thead><tr><th>Data</th><th>Colaborador</th><th>Regional</th><th>Partida</th><th>Destino</th><th>Valor</th><th>Distância</th><th>Validação</th><th>Motivo</th><th>Ações</th></tr></thead>
+      <table class="conf-table" style="min-width:1540px">
+        <thead><tr><th>Data</th><th>Colaborador</th><th>Regional</th><th>Partida</th><th>Destino</th><th>Valor</th><th>Distância</th><th>GPS</th><th>Validação</th><th>Motivo</th><th>Ações</th></tr></thead>
         <tbody>
           ${rows.map((row) => `
             <tr>
@@ -552,10 +740,12 @@ function renderUberTable() {
               <td>${escapeHtml(row.endereco_destino || '-')}<small>Embarque: ${escapeHtml(row.distancia_partida_embarque_km ?? row.distancia_destino_embarque_km ?? '-')} km</small></td>
               <td><strong>${money(row.valor || row.preco_liquido || 0)}</strong></td>
               <td>${escapeHtml(row.distancia_mi || row.distancia_km || '-')}<small>${escapeHtml(row.duracao_min ? `${row.duracao_min} min` : '')}</small></td>
+              <td>${hasUberCoordinates(row) ? '<span class="conf-gps-ok">GPS ok</span>' : '<span class="conf-gps-missing">Sem GPS</span>'}</td>
               <td>${uberClassChip(row)}</td>
-              <td>${escapeHtml(row.motivo_validacao || row.observacao_validacao || row.detalhamento_despesa || '-')}</td>
+              <td>${escapeHtml(isUberUsoPessoal(row) ? 'Atenção: observação/detalhamento contém "Pessoal". Conferir antes de validar a corrida.' : (row.motivo_validacao || row.observacao_validacao || row.detalhamento_despesa || '-'))}</td>
               <td>
                 <div class="conf-row-actions">
+                  ${needsUberGeocoding(row) ? `<button class="conf-btn" data-uber-geocode-id="${escapeHtml(row.id)}" type="button">GPS</button>` : ''}
                   <button class="conf-btn conf-btn-primary" data-uber-action="VALIDADA" data-uber-id="${escapeHtml(row.id)}" type="button">Validar</button>
                   <button class="conf-btn conf-btn-danger" data-uber-action="CAIXA_COLABORADOR" data-uber-id="${escapeHtml(row.id)}" type="button">Caixa</button>
                   <button class="conf-btn" data-uber-action="ATENCAO" data-uber-id="${escapeHtml(row.id)}" type="button">Atenção</button>
@@ -908,7 +1098,9 @@ function exportCsv() {
     ? sortRows(applyLocalFilters(state.despesas, 'despesas'), 'despesas')
     : state.tab === 'auditoria'
       ? applyLocalFilters(state.auditoria, 'auditoria')
-      : applyLocalFilters(state.resultado, 'resultado');
+      : state.tab === 'uber'
+        ? applyLocalFilters(state.uber, 'uber')
+        : applyLocalFilters(state.resultado, 'resultado');
 
   if (!rows.length) {
     setFeedback('Não há dados para exportar.', true);
@@ -939,7 +1131,7 @@ function exportCsv() {
       row.endereco_destino || '',
       row.valor || row.preco_liquido || 0,
       getUberClass(row),
-      row.motivo_validacao || row.observacao_validacao || row.detalhamento_despesa || '',
+      isUberUsoPessoal(row) ? 'Atenção: observação/detalhamento contém "Pessoal".' : (row.motivo_validacao || row.observacao_validacao || row.detalhamento_despesa || ''),
     ]);
   } else {
     headers = Object.keys(rows[0]);
@@ -1001,6 +1193,18 @@ function bindEvents() {
         direction: current.column === column && current.direction === 'asc' ? 'desc' : 'asc',
       };
       renderActiveTab();
+      return;
+    }
+
+    const geocodePendingBtn = event.target.closest('[data-uber-geocode-pending]');
+    if (geocodePendingBtn) {
+      geocodeUberBatch();
+      return;
+    }
+
+    const geocodeBtn = event.target.closest('[data-uber-geocode-id]');
+    if (geocodeBtn) {
+      geocodeUberBatch(geocodeBtn.dataset.uberGeocodeId);
       return;
     }
 
