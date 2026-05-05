@@ -23,6 +23,7 @@ const STATUS_CLASS = {
 const state = {
   tab: 'despesas',
   despesas: [],
+  conferenciaStatus: new Map(),
   auditoria: [],
   resultado: [],
   loading: false,
@@ -99,6 +100,8 @@ function statusChip(status) {
 function buildDespesaResumo(row) {
   const parts = [];
 
+  if (row.programacao_status) parts.push(`Programação: ${row.programacao_status}`);
+
   if (row.disponibilidade_status && normalizeText(row.disponibilidade_status) !== 'OK') {
     parts.push(`Disponibilidade: ${row.disponibilidade_status}`);
   }
@@ -116,15 +119,35 @@ function buildDespesaResumo(row) {
     parts.push(`Deslocamento: ${row.deslocamento_tipo}`);
   }
 
-  const extras = asNumber(row.extras_recarga_valor) + asNumber(row.extras_passagem_valor) + asNumber(row.extras_lavagem_valor);
+  if (row.deslocamento_valor || row.valor_deslocamento) {
+    const valorDesloc = asNumber(row.deslocamento_valor || row.valor_deslocamento);
+    if (valorDesloc > 0) parts.push(`Valor deslocamento: ${money(valorDesloc)}`);
+  }
+
+  const extras = getDespesaValor(row);
   if (extras > 0) parts.push(`Extras: ${money(extras)}`);
+
+  if (Array.isArray(row.extras_itens) && row.extras_itens.length) {
+    parts.push(`Extras lançados: ${row.extras_itens.map((e) => e.tipo_despesa || e.descricao || 'Outro').join(', ')}`);
+  }
   if (row.manut_veic) parts.push(`Manutenção: ${row.manut_veic}`);
 
   return parts.length ? parts.join(' • ') : 'Sem despesa operacional marcada.';
 }
 
 function getDespesaValor(row) {
-  return asNumber(row.extras_recarga_valor) + asNumber(row.extras_passagem_valor) + asNumber(row.extras_lavagem_valor);
+  return asNumber(row.extras_total)
+    + asNumber(row.extras_recarga_valor)
+    + asNumber(row.extras_passagem_valor)
+    + asNumber(row.extras_lavagem_valor);
+}
+
+function isPedidoHospedagem(row) {
+  return row.estadia_tipo && !['NÃO PRECISA', 'NAO PRECISA', 'CASA'].includes(normalizeText(row.estadia_tipo));
+}
+
+function isPedidoDeslocamento(row) {
+  return row.deslocamento_tipo && !['NÃO PRECISA', 'NAO PRECISA'].includes(normalizeText(row.deslocamento_tipo));
 }
 
 function getUniqueRegionais() {
@@ -158,8 +181,8 @@ function summarize() {
 
   const pendentes = despesas.filter((row) => ['PENDENTE', 'EM_ANALISE', 'PENDENCIA'].includes(getStatus(row))).length;
   const valorExtras = despesas.reduce((sum, row) => sum + getDespesaValor(row), 0);
-  const hoteis = despesas.filter((row) => row.estadia_tipo && !['NÃO PRECISA', 'NAO PRECISA', 'CASA'].includes(normalizeText(row.estadia_tipo))).length;
-  const deslocamentos = despesas.filter((row) => row.deslocamento_tipo && !['NÃO PRECISA', 'NAO PRECISA'].includes(normalizeText(row.deslocamento_tipo))).length;
+  const hoteis = despesas.filter(isPedidoHospedagem).length;
+  const deslocamentos = despesas.filter(isPedidoDeslocamento).length;
   const criticas = auditoria.filter((row) => ['ALTA', 'CRITICA', 'CRÍTICA'].includes(normalizeText(row.severidade))).length;
   const tons = resultado.reduce((sum, row) => sum + asNumber(row.toneladas || row.tons || row.embarcado), 0);
 
@@ -332,9 +355,9 @@ function renderDespesasTable() {
           ${rows.map((row) => `
             <tr>
               <td>${brDate(row.data_referencia)}<small>${escapeHtml(row.queue_id || row.id || '')}</small></td>
-              <td><strong>${escapeHtml(row.colaborador)}</strong><small>${escapeHtml(row.solicitante ? `Solicitante: ${row.solicitante}` : '')}</small></td>
+              <td><strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong><small>${escapeHtml(row.solicitante ? `Solicitante: ${row.solicitante}` : '')}</small></td>
               <td>${escapeHtml(row.supervisao || '-')}<small>${escapeHtml(row.coordenacao || '')}</small></td>
-              <td>${escapeHtml(buildDespesaResumo(row))}<small>${escapeHtml(row.extras_obs || row.disponibilidade_obs || row.estadia_obs || row.deslocamento_obs || '')}</small></td>
+              <td>${escapeHtml(buildDespesaResumo(row))}<small>${escapeHtml(row.extras_obs || row.disponibilidade_obs || row.estadia_obs || row.deslocamento_obs || row.alimentacao_obs || '')}</small></td>
               <td><strong>${money(getDespesaValor(row))}</strong></td>
               <td>${statusChip(getStatus(row))}</td>
               <td><textarea class="conf-note" data-note-id="${escapeHtml(row.id)}" placeholder="Observação da conferência...">${escapeHtml(row.observacao_conferencia || '')}</textarea></td>
@@ -426,19 +449,145 @@ function setFeedback(message, isError = false) {
   el.style.color = isError ? '#fecaca' : 'var(--muted)';
 }
 
+async function selectByProgramacoes(table, columns, programacaoIds) {
+  if (!programacaoIds.length) return [];
+  const { data, error } = await supabase
+    .from(table)
+    .select(columns)
+    .in('programacao_id', programacaoIds)
+    .limit(5000);
+
+  if (error) {
+    console.warn(`[Conferência] ${table} indisponível:`, error.message);
+    return [];
+  }
+  return data || [];
+}
+
+function makeKey(programacaoId, colaboradorId) {
+  return `${programacaoId}::${colaboradorId}`;
+}
+
+function baseRow(programacao, colaboradorId, nomeColaborador = '') {
+  return {
+    id: makeKey(programacao.id, colaboradorId),
+    programacao_id: programacao.id,
+    colaborador_id: colaboradorId,
+    data_referencia: programacao.data_referencia,
+    coordenacao: programacao.coordenacao || '',
+    supervisao: programacao.supervisao || programacao.regional || '',
+    regional: programacao.regional || programacao.supervisao || '',
+    colaborador: nomeColaborador || 'Colaborador',
+    nome_colaborador: nomeColaborador || 'Colaborador',
+    programacao_status: programacao.status || 'rascunho',
+    status_conferencia: 'PENDENTE',
+    observacao_conferencia: '',
+    extras_total: 0,
+    extras_itens: [],
+  };
+}
+
 async function loadDespesas() {
-  let query = supabase
-    .from('programacao_despesas')
+  let progQuery = supabase
+    .from('programacao_dia')
     .select('*')
     .order('data_referencia', { ascending: false })
-    .limit(800);
+    .limit(500);
 
-  if (state.filters.inicio) query = query.gte('data_referencia', state.filters.inicio);
-  if (state.filters.fim) query = query.lte('data_referencia', state.filters.fim);
+  if (state.filters.inicio) progQuery = progQuery.gte('data_referencia', state.filters.inicio);
+  if (state.filters.fim) progQuery = progQuery.lte('data_referencia', state.filters.fim);
 
-  const { data, error } = await query;
-  if (error) throw new Error(`Despesas: ${error.message}`);
-  state.despesas = data || [];
+  const { data: programacoes, error: progError } = await progQuery;
+  if (progError) throw new Error(`Programações: ${progError.message}`);
+
+  const programacaoIds = (programacoes || []).map((p) => p.id).filter(Boolean);
+  if (!programacaoIds.length) {
+    state.despesas = [];
+    return;
+  }
+
+  const programacaoMap = new Map((programacoes || []).map((p) => [p.id, p]));
+
+  const [disp, estadia, alimentacao, deslocamento, extras, statusRows] = await Promise.all([
+    selectByProgramacoes('programacao_colaboradores', '*', programacaoIds),
+    selectByProgramacoes('programacao_estadia', '*', programacaoIds),
+    selectByProgramacoes('programacao_alimentacao', '*', programacaoIds),
+    selectByProgramacoes('programacao_deslocamento', '*', programacaoIds),
+    selectByProgramacoes('programacao_extras', '*', programacaoIds),
+    selectByProgramacoes('programacao_conferencia_status', '*', programacaoIds),
+  ]);
+
+  const rows = new Map();
+
+  const getRow = (programacaoId, colaboradorId, nomeColaborador = '') => {
+    const key = makeKey(programacaoId, colaboradorId);
+    if (!rows.has(key)) rows.set(key, baseRow(programacaoMap.get(programacaoId) || {}, colaboradorId, nomeColaborador));
+    const row = rows.get(key);
+    if (nomeColaborador && (!row.colaborador || row.colaborador === 'Colaborador')) {
+      row.colaborador = nomeColaborador;
+      row.nome_colaborador = nomeColaborador;
+    }
+    return row;
+  };
+
+  disp.forEach((r) => {
+    const row = getRow(r.programacao_id, r.colaborador_id, r.nome_colaborador);
+    row.disponibilidade_status = r.disponibilidade || 'OK';
+    row.disponibilidade_obs = r.observacao || '';
+    row.cargo = r.cargo || row.cargo || '';
+    row.coordenacao = r.coordenacao || row.coordenacao;
+    row.supervisao = r.supervisao || row.supervisao;
+  });
+
+  estadia.forEach((r) => {
+    const row = getRow(r.programacao_id, r.colaborador_id, r.nome_colaborador);
+    row.estadia_tipo = r.tipo_estadia || 'NÃO PRECISA';
+    row.estadia_obs = r.observacao || '';
+    row.hotel_dias = r.diarias || 0;
+    row.estadia_cidade = r.cidade || '';
+    row.estadia_uf = r.uf || '';
+    row.checkin = r.checkin || '';
+    row.checkout = r.checkout || '';
+  });
+
+  alimentacao.forEach((r) => {
+    const row = getRow(r.programacao_id, r.colaborador_id, r.nome_colaborador);
+    row.cafe_valor = !!r.cafe;
+    row.almoco_valor = !!r.almoco;
+    row.janta_valor = !!r.janta;
+    row.alimentacao_obs = r.observacao || '';
+  });
+
+  deslocamento.forEach((r) => {
+    const row = getRow(r.programacao_id, r.colaborador_id, r.nome_colaborador);
+    row.deslocamento_tipo = r.tipo_deslocamento || 'NÃO PRECISA';
+    row.deslocamento_obs = r.observacao || '';
+    row.deslocamento_origem = r.origem || '';
+    row.deslocamento_destino = r.destino || '';
+    row.deslocamento_km = r.km || 0;
+    row.deslocamento_valor = r.valor || 0;
+  });
+
+  extras.forEach((r) => {
+    const row = getRow(r.programacao_id, r.colaborador_id, r.nome_colaborador);
+    row.extras_itens.push(r);
+    row.extras_total += asNumber(r.valor);
+    row.extras_obs = [row.extras_obs, r.observacao, r.descricao].filter(Boolean).join(' | ');
+  });
+
+  statusRows.forEach((r) => {
+    const row = getRow(r.programacao_id, r.colaborador_id, r.nome_colaborador || '');
+    row.status_conferencia = r.status_conferencia || 'PENDENTE';
+    row.observacao_conferencia = r.observacao_conferencia || '';
+    row.conferencia_status_id = r.id;
+    row.conferido_em = r.conferido_em || null;
+  });
+
+  state.despesas = [...rows.values()].sort((a, b) => {
+    const d = String(b.data_referencia || '').localeCompare(String(a.data_referencia || ''));
+    if (d) return d;
+    return String(a.colaborador || '').localeCompare(String(b.colaborador || ''), 'pt-BR');
+  });
 }
 
 async function loadAuditoria() {
@@ -496,27 +645,41 @@ async function loadAll() {
 }
 
 async function updateDespesaStatus(id, status) {
+  const row = state.despesas.find((item) => String(item.id) === String(id));
+  if (!row) return;
+
   const note = document.querySelector(`[data-note-id="${CSS.escape(id)}"]`)?.value || '';
   setFeedback('Salvando conferência...');
 
   const payload = {
+    programacao_id: row.programacao_id,
+    colaborador_id: row.colaborador_id,
+    nome_colaborador: row.colaborador || row.nome_colaborador || null,
+    data_referencia: row.data_referencia,
+    coordenacao: row.coordenacao || null,
+    supervisao: row.supervisao || row.regional || null,
     status_conferencia: status,
     observacao_conferencia: note,
     conferido_em: new Date().toISOString(),
   };
 
-  const { error } = await supabase
-    .from('programacao_despesas')
-    .update(payload)
-    .eq('id', id);
+  const { data, error } = await supabase
+    .from('programacao_conferencia_status')
+    .upsert(payload, { onConflict: 'programacao_id,colaborador_id' })
+    .select('*')
+    .single();
 
   if (error) {
     setFeedback(`Não foi possível salvar. Rode o SQL de estrutura enviado no ZIP. Detalhe: ${error.message}`, true);
     return;
   }
 
-  const row = state.despesas.find((item) => String(item.id) === String(id));
-  if (row) Object.assign(row, payload);
+  Object.assign(row, {
+    status_conferencia: data.status_conferencia,
+    observacao_conferencia: data.observacao_conferencia,
+    conferencia_status_id: data.id,
+    conferido_em: data.conferido_em,
+  });
   setFeedback('Status da conferência atualizado.');
   renderActiveTab();
 }
