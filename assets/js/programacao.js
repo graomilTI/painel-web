@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { getCurrentUser } from './auth.js';
+import { getCurrentUser, getUserContext } from './auth.js';
 
 const STEPS = [
   { code: 'A', label: 'Disponibilidade' },
@@ -48,6 +48,79 @@ function toNumberBR(value) {
 
 function moneyBR(value) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+
+function normalizeAccessText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim();
+}
+
+function getDeepValue(source, path) {
+  return String(path || '').split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), source);
+}
+
+function parseSupervisoes(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return [...new Set(value.flatMap(parseSupervisoes))];
+  if (typeof value === 'object') {
+    return parseSupervisoes(value.supervisoes || value.supervisao || value.nome || value.name);
+  }
+
+  const text = String(value).trim();
+  if (!text) return [];
+
+  if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
+    try { return parseSupervisoes(JSON.parse(text)); } catch (_) {}
+  }
+
+  return [...new Set(text.split(/[,;|\n]+/).map((item) => item.trim()).filter(Boolean))];
+}
+
+function looksLikeGestor(value) {
+  const normalized = normalizeAccessText(value);
+  return normalized === 'GESTOR' || normalized.startsWith('GESTOR ');
+}
+
+function buildAccessTokens(access) {
+  const tokens = new Set();
+  const sources = [access?.setor, access?.departmentName, access?.departmentCode, access?.role, ...(access?.allowedSupervisoes || [])];
+
+  sources.forEach((source) => {
+    const normalized = normalizeAccessText(source);
+    if (!normalized) return;
+
+    tokens.add(normalized);
+    normalized
+      .replace(/^GESTOR\s+/, '')
+      .split(/\s+/)
+      .filter((part) => part.length >= 4 && !['GERAL', 'SETOR', 'ADM', 'ADMINISTRADOR'].includes(part))
+      .forEach((part) => tokens.add(part));
+  });
+
+  return [...tokens];
+}
+
+function filterAllowedSupervisoes(allSupervisoes, access) {
+  const all = [...new Set((allSupervisoes || []).map((item) => String(item || '').trim()).filter(Boolean))];
+  if (!access?.restricted) return all;
+
+  const allowed = [...new Set((access.allowedSupervisoes || []).map((item) => String(item || '').trim()).filter(Boolean))];
+  const allowedKeys = new Set(allowed.map(normalizeAccessText));
+  const tokens = buildAccessTokens(access).filter(Boolean);
+
+  let filtered = all.filter((sup) => {
+    const key = normalizeAccessText(sup);
+    if (allowedKeys.has(key)) return true;
+    return tokens.some((token) => token.length >= 4 && key.includes(token));
+  });
+
+  if (!filtered.length && allowed.length) filtered = allowed;
+  return [...new Set(filtered)].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
 function selectOptions(options, selected) {
@@ -183,6 +256,8 @@ initProtectedPage('Programação', (content) => {
 
   const state = {
     user: null,
+    userContext: null,
+    access: { restricted: false, allowedSupervisoes: [] },
     step: 'A',
     dataReferencia: todayIso(),
     supervisao: '',
@@ -203,6 +278,13 @@ initProtectedPage('Programação', (content) => {
 
   async function init() {
     state.user = await getCurrentUser();
+    try {
+      state.userContext = await getUserContext(state.user?.id);
+    } catch (error) {
+      console.warn('Não foi possível carregar o contexto completo do usuário.', error);
+      state.userContext = null;
+    }
+    state.access = await resolveProgramacaoAccess();
     bindEvents();
     await fillSupervisoes();
   }
@@ -224,26 +306,83 @@ initProtectedPage('Programação', (content) => {
     el.list.addEventListener('click', handleTableClick);
   }
 
+  async function resolveProgramacaoAccess() {
+    const context = state.userContext || {};
+    let appUser = null;
+
+    try {
+      const { data, error } = await supabase
+        .from('app_usuarios')
+        .select('id,nome,email,setor,empresa,coordenacao,supervisao,status')
+        .eq('auth_user_id', state.user?.id)
+        .maybeSingle();
+      if (!error) appUser = data || null;
+    } catch (error) {
+      console.warn('Não foi possível consultar app_usuarios para restrição de supervisão.', error);
+    }
+
+    const role = getDeepValue(context, 'user.role') || context.perfil_codigo || context.perfil_nome || context.role || appUser?.perfil_codigo || '';
+    const setor = appUser?.setor || context.setor || getDeepValue(context, 'user.setor') || getDeepValue(context, 'department.name') || '';
+    const departmentName = getDeepValue(context, 'department.name') || context.department_name || setor || '';
+    const departmentCode = getDeepValue(context, 'department.code') || context.department_code || '';
+    const isMaster = Boolean(getDeepValue(context, 'user.is_master') || context.is_master || normalizeAccessText(role) === 'MASTER');
+    const isGestor = looksLikeGestor(role) || looksLikeGestor(setor) || looksLikeGestor(departmentName) || looksLikeGestor(departmentCode);
+
+    const allowedSupervisoes = [
+      ...parseSupervisoes(appUser?.supervisao),
+      ...parseSupervisoes(context.supervisoes),
+      ...parseSupervisoes(context.supervisao),
+      ...parseSupervisoes(getDeepValue(context, 'user.supervisoes')),
+      ...parseSupervisoes(getDeepValue(context, 'user.supervisao')),
+    ];
+
+    return {
+      restricted: !isMaster && isGestor,
+      allowedSupervisoes: [...new Set(allowedSupervisoes)],
+      role,
+      setor,
+      departmentName,
+      departmentCode,
+    };
+  }
+
   async function fillSupervisoes() {
     el.sup.innerHTML = '<option value="">Selecione...</option>';
+    el.sup.disabled = false;
+
     const latest = await getLatestSnapshotDate();
     let query = supabase.from('colaborador_snapshot').select('supervisao, data_referencia').limit(10000);
     if (latest) query = query.eq('data_referencia', latest);
+
     const { data, error } = await query.order('supervisao', { ascending: true });
     if (error) {
       setFeedback(`Erro ao carregar supervisões: ${error.message}`, 'error');
       return;
     }
-    const supervisoes = [...new Set((data || []).map((r) => String(r.supervisao || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+    const todasSupervisoes = [...new Set((data || []).map((r) => String(r.supervisao || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const supervisoes = filterAllowedSupervisoes(todasSupervisoes, state.access);
+
+    if (state.access?.restricted && !supervisoes.length) {
+      el.sup.disabled = true;
+      setFeedback('Seu usuário está como Gestor, mas não possui supervisão liberada. Ajuste a supervisão no cadastro do usuário.', 'error');
+      return;
+    }
+
     supervisoes.forEach((sup) => {
       const option = document.createElement('option');
       option.value = sup;
       option.textContent = sup;
       el.sup.appendChild(option);
     });
+
     if (supervisoes.length === 1) {
       el.sup.value = supervisoes[0];
       el.sup.disabled = true;
+      setFeedback(`Supervisão limitada ao acesso do usuário: ${supervisoes[0]}.`, 'ok');
+    } else if (state.access?.restricted) {
+      setFeedback(`Supervisões liberadas para este gestor: ${supervisoes.length}.`, 'ok');
     }
   }
 
@@ -314,6 +453,12 @@ initProtectedPage('Programação', (content) => {
     const supervisao = el.sup.value;
     if (!dataReferencia || !supervisao) {
       setFeedback('Selecione a data e a supervisão.', 'warn');
+      return;
+    }
+
+    const allowedNow = filterAllowedSupervisoes([supervisao], state.access);
+    if (state.access?.restricted && !allowedNow.includes(supervisao)) {
+      setFeedback('Esta supervisão não está liberada para o seu usuário.', 'error');
       return;
     }
 
