@@ -142,14 +142,14 @@ import { supabase } from './supabaseClient.js';
       selectFrom('operacional_colaborador_base', 'id,colaborador_id,nome,cpf,tipo_mao_obra,empresa,coordenacao,supervisao,cidade_base,uf_base,latitude,longitude,valor_diaria,valor_alimentacao,ativo', 'nome', 3000),
       selectFrom('operacional_hoteis', 'id,nome,cidade,uf,latitude,longitude,diaria_individual,diaria_duplo,diaria_triplo,diaria_quadruplo,ativo', 'nome', 2000),
       selectFrom('operacional_passagens_cache', 'origem_cidade,origem_uf,destino_cidade,destino_uf,valor_estimado,data_cotacao,validade_ate', 'data_cotacao', 5000),
-      selectFrom('operacional_auditoria_colaborador', 'colaborador_id,nome_colaborador,score_impacto,severidade,data_evento', 'data_evento', 5000),
+      selectFrom('operacional_auditoria_colaborador', 'colaborador_id,nome_colaborador,nome_chave,score_impacto,severidade,data_evento,resultado,motivo_recusa,local_embarque,cidade_embarque,uf_destino,produto,desconto_kg,ativo', 'data_evento', 5000),
     ]);
 
     state.pontos = pontos.filter((p) => p.ativo !== false && Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude)));
     state.colaboradores = colaboradores.filter((c) => c.ativo !== false);
     state.hoteis = hoteis.filter((h) => h.ativo !== false);
     state.passagens = passagens;
-    state.auditorias = auditorias;
+    state.auditorias = auditorias.filter((a) => a.ativo !== false);
     state.loaded = true;
 
     if (!state.selectedPontoId && state.pontos[0]) state.selectedPontoId = state.pontos[0].id;
@@ -198,14 +198,29 @@ import { supabase } from './supabaseClient.js';
     return Math.round((45 + d * 0.42) * 100) / 100;
   }
 
-  function auditoriaScore(colab) {
+  function auditoriaResumo(colab) {
+    const nomeChave = normalize(`${colab.nome_chave || colab.nome || ''}`);
     const items = state.auditorias.filter((a) => {
       const sameId = colab.colaborador_id && a.colaborador_id && String(a.colaborador_id) === String(colab.colaborador_id);
+      const sameKey = a.nome_chave && nomeChave && normalize(a.nome_chave) === nomeChave;
       const sameName = normalize(a.nome_colaborador) === normalize(colab.nome);
-      return sameId || sameName;
+      return sameId || sameKey || sameName;
     });
     const impacto = items.reduce((sum, a) => sum + n(a.score_impacto, 0), 0);
-    return Math.max(0, Math.min(100, 100 - impacto));
+    const descontos = items.filter((a) => normalize(a.resultado || '').includes('DESCONTO') || n(a.desconto_kg, 0) > 0).length;
+    const altas = items.filter((a) => normalize(a.severidade || '').includes('ALTA')).length;
+    const ultima = items.slice().sort((a, b) => String(b.data_evento || '').localeCompare(String(a.data_evento || '')))[0] || null;
+    const score = Math.max(0, Math.min(100, 100 - impacto));
+    return {
+      score,
+      total: items.length,
+      descontos,
+      altas,
+      ultima_data: ultima?.data_evento || null,
+      ultima_resultado: ultima?.resultado || null,
+      ultima_motivo: ultima?.motivo_recusa || null,
+      impacto,
+    };
   }
 
   function scoreClass(score) {
@@ -244,7 +259,8 @@ import { supabase } from './supabaseClient.js';
       const precisaHotel = distancia == null ? true : distancia > 80;
       const valorHotel = precisaHotel ? n(hotel?.diaria, 0) * form.dias : 0;
       const custoTotal = passagem + valorHotel + maoObra + alimentacao;
-      const auditoria = auditoriaScore(c);
+      const audit = auditoriaResumo(c);
+      const auditoria = audit.score;
       const distanciaScore = distancia == null ? 35 : Math.max(0, 100 - (distancia / 8));
       const custoScore = Math.max(0, 100 - (custoTotal / 12));
       const volumePeso = form.volume >= 600 ? 0.32 : 0.24;
@@ -269,6 +285,12 @@ import { supabase } from './supabaseClient.js';
         valor_alimentacao: alimentacao,
         custo_total: custoTotal,
         score_auditoria: auditoria,
+        auditoria_total: audit.total,
+        auditoria_descontos: audit.descontos,
+        auditoria_altas: audit.altas,
+        auditoria_ultima_data: audit.ultima_data,
+        auditoria_ultima_resultado: audit.ultima_resultado,
+        auditoria_ultima_motivo: audit.ultima_motivo,
         score_final: Math.max(0, Math.min(100, score)),
         status: semCoordenada ? 'Falta coordenada' : (score >= 80 ? 'Recomendado' : score >= 62 ? 'Analisar' : 'Alto custo'),
       };
@@ -309,7 +331,7 @@ import { supabase } from './supabaseClient.js';
         <div class="op-rank-pos">${index + 1}</div>
         <div>
           <strong>${safeText(row.nome)}</strong>
-          <span>${safeText(row.tipo_calculado)} · ${row.distancia == null ? 'sem km' : `${row.distancia} km`} · ${money(row.custo_total)}</span>
+          <span>${safeText(row.tipo_calculado)} · ${row.distancia == null ? 'sem km' : `${row.distancia} km`} · ${money(row.custo_total)} · Aud: ${Math.round(row.score_auditoria)}%</span>
         </div>
         <div class="op-score">
           <strong>${row.score_final}</strong>
@@ -333,7 +355,7 @@ import { supabase } from './supabaseClient.js';
           <table class="op-table">
             <thead>
               <tr>
-                <th>#</th><th>Colaborador</th><th>Tipo</th><th>Base</th><th>Distância</th><th>Hotel sugerido</th><th>Passagem</th><th>Hotel</th><th>Mão de obra</th><th>Alimentação</th><th>Total</th><th>Auditoria</th><th>Score</th><th>Status</th>
+                <th>#</th><th>Colaborador</th><th>Tipo</th><th>Base</th><th>Distância</th><th>Hotel sugerido</th><th>Passagem</th><th>Hotel</th><th>Mão de obra</th><th>Alimentação</th><th>Total</th><th>Auditoria</th><th>Histórico</th><th>Score</th><th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -352,6 +374,7 @@ import { supabase } from './supabaseClient.js';
                   <td>${money(row.valor_alimentacao)}</td>
                   <td>${money(row.custo_total)}</td>
                   <td>${Math.round(row.score_auditoria)}%</td>
+                  <td>${row.auditoria_total ? `${row.auditoria_total} aud. · ${row.auditoria_descontos} desc.` : 'Sem histórico'}</td>
                   <td><span class="op-pill ${cls}">${row.score_final}</span></td>
                   <td><span class="op-pill ${cls}">${safeText(row.status)}</span></td>
                 </tr>`;
@@ -422,7 +445,7 @@ import { supabase } from './supabaseClient.js';
       const color = index === 0 ? '#facc15' : '#f59e0b';
       const marker = window.L.circleMarker(latlng, {
         radius: index === 0 ? 9 : 7, color, fillColor: color, fillOpacity: 0.85, weight: 2
-      }).addTo(map).bindPopup(`<strong>${safeText(row.nome)}</strong><br>${safeText(row.tipo_calculado)} · ${row.distancia ?? '-'} km<br>Total: ${money(row.custo_total)}<br>Score: ${row.score_final}`);
+      }).addTo(map).bindPopup(`<strong>${safeText(row.nome)}</strong><br>${safeText(row.tipo_calculado)} · ${row.distancia ?? '-'} km<br>Total: ${money(row.custo_total)}<br>Auditoria: ${Math.round(row.score_auditoria)}% (${row.auditoria_total || 0} aud.)<br>Score: ${row.score_final}`);
       markers.push(marker);
       window.L.polyline([latlng, center], { color: index === 0 ? '#22c55e' : '#64748b', weight: index === 0 ? 3 : 1.5, opacity: index === 0 ? 0.82 : 0.35 }).addTo(map);
     });

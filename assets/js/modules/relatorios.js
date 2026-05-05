@@ -710,6 +710,128 @@
     return { total_linhas: colaboradores.length, importados: total, cidades, ufs };
   }
 
+
+  function auditoriaImportHash(row) {
+    const base = [
+      pickValue(row, ['Classificador']),
+      pickValue(row, ['O.S', 'OS']),
+      pickValue(row, ['Placa']),
+      pickValue(row, ['Data Resultado', 'Data da Class.', 'Data da Classificacao', 'Data da Classificação']),
+      pickValue(row, ['Motivo da recusa', 'Motivo Recusa']),
+      pickValue(row, ['Resultado']),
+    ].map((v) => colaboradorNomeChave(v)).join('|');
+    return base || String(Date.now());
+  }
+
+  function inferAuditoriaImpacto(resultado, motivoRecusa, diferenca, descontoKg) {
+    const res = normalizeHeader(resultado || '');
+    const motivo = normalizeHeader(motivoRecusa || '');
+    const diff = Math.abs(Number(diferenca || 0));
+    const desconto = Math.abs(Number(descontoKg || 0));
+    if (res.includes('produto padrao') || res.includes('padrão')) return { impacto: 0, severidade: 'baixa', tipo: 'Produto padrão' };
+    if (res.includes('desconto') || desconto > 0) {
+      const impacto = Math.min(35, Math.max(8, 8 + diff * 2 + Math.min(desconto / 1500, 10)));
+      return { impacto: Math.round(impacto * 100) / 100, severidade: impacto >= 18 ? 'alta' : 'media', tipo: 'Desconto' };
+    }
+    if (motivo) return { impacto: 6, severidade: 'media', tipo: 'Apontamento' };
+    return { impacto: 0, severidade: 'baixa', tipo: 'Auditoria' };
+  }
+
+  async function readAuditoriasOperacionalFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const preferred = workbook.SheetNames.find((name) => normalizeHeader(name).includes('unificada'))
+      || workbook.SheetNames.find((name) => normalizeHeader(name).includes('descritiva'))
+      || workbook.SheetNames[0];
+    const sheet = workbook.Sheets[preferred];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+    const mapped = [];
+    const seen = new Set();
+
+    rows.forEach((row) => {
+      const nome = String(pickValue(row, ['Classificador', 'Colaborador', 'Funcionário', 'Funcionario']) || '').trim();
+      const nomeChave = colaboradorNomeChave(nome);
+      if (!nome || !nomeChave) return;
+
+      const resultado = String(pickValue(row, ['Resultado']) || '').trim();
+      const motivo = String(pickValue(row, ['Motivo da recusa', 'Motivo Recusa']) || '').trim();
+      const diferenca = normalizeNumberBr(pickValue(row, ['Diferença', 'Diferenca']));
+      const descontoKg = normalizeNumberBr(pickValue(row, ['Desconto Kg', 'Desconto'])) || 0;
+      const impacto = inferAuditoriaImpacto(resultado, motivo, diferenca, descontoKg);
+      const importHash = auditoriaImportHash(row);
+      if (seen.has(importHash)) return;
+      seen.add(importHash);
+
+      mapped.push({
+        import_hash: importHash,
+        nome_colaborador: nome,
+        nome_chave: nomeChave,
+        tipo_funcionario: String(pickValue(row, ['Tipo Funcionario', 'Tipo Funcionário']) || '').trim() || null,
+        data_evento: toIsoDate(pickValue(row, ['Data Resultado', 'Data Abertura', 'Data da Class.', 'Data da Classificacao', 'Data da Classificação'])),
+        data_classificacao: toIsoDate(pickValue(row, ['Data da Class.', 'Data da Classificacao', 'Data da Classificação'])),
+        referencia: String(pickValue(row, ['Referência', 'Referencia']) || '').trim() || null,
+        uf_destino: String(pickValue(row, ['UF Dest.', 'UF Dest', 'UF Destino']) || '').trim().toUpperCase().slice(0, 2) || null,
+        cidade_destino: String(pickValue(row, ['Cid. Dest.', 'Cid Dest', 'Cidade Destino']) || '').trim() || null,
+        destino: String(pickValue(row, ['Destino']) || '').trim() || null,
+        placa: String(pickValue(row, ['Placa']) || '').trim() || null,
+        os: String(pickValue(row, ['O.S', 'OS']) || '').trim() || null,
+        contrato: String(pickValue(row, ['Contrato']) || '').trim() || null,
+        nf: String(pickValue(row, ['N.F.', 'NF']) || '').trim() || null,
+        produto: String(pickValue(row, ['Produto']) || '').trim() || null,
+        servico: String(pickValue(row, ['Serviço', 'Servico']) || '').trim() || null,
+        peso_kg: normalizeNumberBr(pickValue(row, ['Peso (Kg)', 'Peso Kg', 'Peso'])),
+        cliente_nacional: String(pickValue(row, ['Cli. Nacional', 'Cliente Nacional']) || '').trim() || null,
+        cliente_regional: String(pickValue(row, ['Cli. Regional', 'Cliente Regional']) || '').trim() || null,
+        cliente_final: String(pickValue(row, ['Cli. Final', 'Cliente Final']) || '').trim() || null,
+        estado_embarque: String(pickValue(row, ['Est. Embarq', 'Estado Embarque']) || '').trim().toUpperCase().slice(0, 2) || null,
+        cidade_embarque: String(pickValue(row, ['Cid. Embarq', 'Cidade Embarque']) || '').trim() || null,
+        local_embarque: String(pickValue(row, ['Local Embarque']) || '').trim() || null,
+        coordenacao: String(pickValue(row, ['Coordenação', 'Coordenacao']) || '').trim() || null,
+        supervisao: String(pickValue(row, ['Supervisão', 'Supervisao']) || '').trim() || null,
+        auditor: String(pickValue(row, ['Auditor']) || '').trim() || null,
+        motivo_recusa: motivo || null,
+        resultado_origem: String(pickValue(row, ['Result. Origem', 'Resultado Origem']) || '').trim() || null,
+        resultado_recusa: String(pickValue(row, ['Result. Recusa', 'Resultado Recusa']) || '').trim() || null,
+        resultado_auditoria: String(pickValue(row, ['Result. Auditoria', 'Resultado Auditoria']) || '').trim() || null,
+        resultado: resultado || null,
+        diferenca,
+        desconto_kg: descontoKg,
+        tipo_evento: impacto.tipo,
+        severidade: impacto.severidade,
+        score_impacto: impacto.impacto,
+        descricao: [resultado, motivo].filter(Boolean).join(' · ') || null,
+        origem: 'importar_relatorios_auditoria',
+        ativo: true,
+      });
+    });
+
+    return mapped;
+  }
+
+  async function importarAuditoriasOperacionalDaPlanilha(file, opts) {
+    const auditorias = await readAuditoriasOperacionalFromFile(file);
+    if (!auditorias.length) {
+      throw new Error('A planilha de auditorias não possui linhas válidas. Cabeçalhos esperados: Classificador, Data Resultado, Resultado e campos de embarque/auditoria.');
+    }
+
+    const batchSize = 500;
+    let total = 0;
+    for (let i = 0; i < auditorias.length; i += batchSize) {
+      const batch = auditorias.slice(i, i + batchSize);
+      const { error } = await opts.supabase
+        .from('operacional_auditoria_colaborador')
+        .upsert(batch, { onConflict: 'import_hash' });
+      if (error) throw new Error(error.message || 'Falha ao gravar auditorias no Supabase.');
+      total += batch.length;
+    }
+
+    const colaboradores = new Set(auditorias.map((a) => a.nome_chave).filter(Boolean)).size;
+    const descontos = auditorias.filter((a) => normalizeHeader(a.resultado || '').includes('desconto') || Number(a.desconto_kg || 0) > 0).length;
+    const padrao = auditorias.filter((a) => normalizeHeader(a.resultado || '').includes('padrao')).length;
+    return { total_linhas: auditorias.length, importados: total, colaboradores, descontos, produto_padrao: padrao };
+  }
+
   async function importarHoteisDaPlanilha(file, opts) {
     const linhas = await readSpreadsheetAsObjects(file);
     if (!linhas.length) {
@@ -769,6 +891,10 @@
 
   function detectRelatorio(fileName) {
     const n = String(fileName || '').toLowerCase();
+
+    if ((n.includes('auditoria') || n.includes('auditorias')) && (n.includes('relatorio') || n.includes('relatório') || n.includes('lista') || n.includes('auditoria'))) {
+      return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
+    }
 
     if ((n.includes('endereco') || n.includes('endereço') || n.includes('gps')) && (n.includes('colaborador') || n.includes('colaboradores'))) {
       return { tipo: 'colaboradores_operacional', titulo: 'Endereços dos Colaboradores Operacional' };
@@ -1077,6 +1203,7 @@
     let hoteisResumo = null;
     let pontosResumo = null;
     let colaboradoresResumo = null;
+    let auditoriasResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -1092,9 +1219,14 @@
       setProgress(bar, 82);
       colaboradoresResumo = await importarColaboradoresBaseDaPlanilha(file, opts);
     }
+    if (detected.tipo === 'auditorias_operacional') {
+      status.textContent = 'Importando histórico de auditorias no módulo Operacional...';
+      setProgress(bar, 82);
+      auditoriasResumo = await importarAuditoriasOperacionalDaPlanilha(file, opts);
+    }
 
     const importMode = opts.importMode || 'auto';
-    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional'].includes(detected.tipo) ? null : (entry?.period || await detectFilePeriod(file, detected.tipo));
+    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'auditorias_operacional'].includes(detected.tipo) ? null : (entry?.period || await detectFilePeriod(file, detected.tipo));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -1112,9 +1244,11 @@
         ? 'Registrando upload dos pontos de embarque...'
         : (detected.tipo === 'colaboradores_operacional'
           ? 'Registrando upload dos endereços dos colaboradores...'
-          : (effectiveMode === 'replace'
+          : (detected.tipo === 'auditorias_operacional'
+            ? 'Registrando upload das auditorias operacionais...'
+            : (effectiveMode === 'replace'
             ? 'Registrando substituição inteligente...'
-            : 'Registrando complemento inteligente...')));
+            : 'Registrando complemento inteligente...'))));
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -1151,6 +1285,7 @@
           hoteis_importacao: hoteisResumo || null,
           pontos_embarque_importacao: pontosResumo || null,
           colaboradores_operacional_importacao: colaboradoresResumo || null,
+          auditorias_operacional_importacao: auditoriasResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -1177,12 +1312,14 @@
       status.textContent = `Pontos: ${pontosResumo.importados || 0} importados · ${pontosResumo.cidades || 0} cidades · ${pontosResumo.supervisoes || 0} supervisões`;
     } else if (detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) {
       status.textContent = `Colaboradores: ${colaboradoresResumo.importados || 0} endereços importados · ${colaboradoresResumo.cidades || 0} cidades · ${colaboradoresResumo.ufs || 0} UFs`;
+    } else if (detected.tipo === 'auditorias_operacional' && auditoriasResumo) {
+      status.textContent = `Auditorias: ${auditoriasResumo.importados || 0} registros · ${auditoriasResumo.colaboradores || 0} colaboradores · ${auditoriasResumo.descontos || 0} descontos`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -1354,6 +1491,9 @@
           }
           if (detected.tipo === 'colaboradores_operacional') {
             entry.message = 'Pendente · importará endereços dos colaboradores no Operacional';
+          }
+          if (detected.tipo === 'auditorias_operacional') {
+            entry.message = 'Pendente · importará auditorias no Operacional';
           } else {
             detectFilePeriod(file, detected.tipo).then((period) => {
               entry.period = period;
