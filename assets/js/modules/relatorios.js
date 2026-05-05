@@ -613,6 +613,95 @@
     return { total_linhas: pontos.length, importados: total, cidades, supervisoes };
   }
 
+
+  function colaboradorNomeChave(nome) {
+    return String(nome || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, ' ')
+      .trim()
+      .toUpperCase();
+  }
+
+  async function readColaboradoresBaseFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
+    const mapped = [];
+    const seen = new Set();
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+      if (!rows?.length) continue;
+
+      rows.forEach((row) => {
+        const nome = String(pickValue(row, ['Nome', 'Colaborador', 'Funcionário', 'Funcionario']) || '').trim();
+        const nomeChave = colaboradorNomeChave(nome);
+        const latitude = normalizeNumberBr(pickValue(row, ['Latitude', 'Lat']));
+        const longitude = normalizeNumberBr(pickValue(row, ['Longitude', 'Lng', 'Long']));
+        const telefone = String(pickValue(row, ['Telefone', 'Telefono', 'Whatsapp', 'WhatsApp']) || '').trim();
+        const email = String(pickValue(row, ['Email', 'E-mail', 'E-mail Pessoal', 'Email Pessoal']) || '').trim();
+        const rua = String(pickValue(row, ['Rua', 'Endereço', 'Endereco', 'Logradouro']) || '').trim();
+        const bairro = String(pickValue(row, ['Bairro']) || '').trim();
+        const cidade = String(pickValue(row, ['Cidade', 'Município', 'Municipio']) || '').trim();
+        const uf = String(pickValue(row, ['UF', 'Estado']) || '').trim().toUpperCase().slice(0, 2);
+        const pais = String(pickValue(row, ['Pais', 'País']) || 'Brasil').trim() || 'Brasil';
+        const tipoMaoObra = String(pickValue(row, ['Tipo', 'Tipo Mão de Obra', 'Tipo Mao de Obra']) || '').trim();
+        const valorDiaria = normalizeNumberBr(pickValue(row, ['Diária', 'Diaria', 'Valor Diária', 'Valor Diaria']));
+        const valorAlimentacao = normalizeNumberBr(pickValue(row, ['Alimentação', 'Alimentacao', 'Almoço', 'Almoco']));
+
+        if (!nome || !nomeChave) return;
+        if (!Number.isFinite(Number(latitude)) || !Number.isFinite(Number(longitude))) return;
+        if (seen.has(nomeChave)) return;
+        seen.add(nomeChave);
+
+        mapped.push({
+          nome,
+          nome_chave: nomeChave,
+          latitude,
+          longitude,
+          telefone: telefone || null,
+          email: email || null,
+          rua: rua || null,
+          bairro: bairro || null,
+          cidade_base: cidade || null,
+          uf_base: uf || null,
+          pais: pais || 'Brasil',
+          tipo_mao_obra: tipoMaoObra || null,
+          valor_diaria: valorDiaria,
+          valor_alimentacao: valorAlimentacao ?? 30,
+          origem: 'importar_relatorios_endereco_colaborador',
+          ativo: true,
+        });
+      });
+    }
+
+    return mapped;
+  }
+
+  async function importarColaboradoresBaseDaPlanilha(file, opts) {
+    const colaboradores = await readColaboradoresBaseFromFile(file);
+    if (!colaboradores.length) {
+      throw new Error('A planilha de endereço dos colaboradores não possui linhas válidas. Cabeçalhos esperados: Nome, Latitude, Longitude, Telefono/Telefone, Email, Rua, Bairro, Cidade, UF e Pais.');
+    }
+
+    const batchSize = 500;
+    let total = 0;
+    for (let i = 0; i < colaboradores.length; i += batchSize) {
+      const batch = colaboradores.slice(i, i + batchSize);
+      const { error } = await opts.supabase
+        .from('operacional_colaborador_base')
+        .upsert(batch, { onConflict: 'nome_chave' });
+      if (error) throw new Error(error.message || 'Falha ao gravar endereços dos colaboradores no Supabase.');
+      total += batch.length;
+    }
+
+    const cidades = new Set(colaboradores.map((c) => `${c.cidade_base || ''}/${c.uf_base || ''}`).filter((v) => v !== '/')).size;
+    const ufs = new Set(colaboradores.map((c) => c.uf_base).filter(Boolean)).size;
+    return { total_linhas: colaboradores.length, importados: total, cidades, ufs };
+  }
+
   async function importarHoteisDaPlanilha(file, opts) {
     const linhas = await readSpreadsheetAsObjects(file);
     if (!linhas.length) {
@@ -672,6 +761,10 @@
 
   function detectRelatorio(fileName) {
     const n = String(fileName || '').toLowerCase();
+
+    if ((n.includes('endereco') || n.includes('endereço') || n.includes('gps')) && (n.includes('colaborador') || n.includes('colaboradores'))) {
+      return { tipo: 'colaboradores_operacional', titulo: 'Endereços dos Colaboradores Operacional' };
+    }
 
     if ((n.includes('mapa') && n.includes('g1000')) || n.includes('ponto-embarque') || n.includes('pontos-embarque') || n.includes('pontos_de_embarque') || n.includes('pontos de embarque')) {
       return { tipo: 'pontos_embarque', titulo: 'Pontos de Embarque Operacional' };
@@ -975,6 +1068,7 @@
 
     let hoteisResumo = null;
     let pontosResumo = null;
+    let colaboradoresResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -985,9 +1079,14 @@
       setProgress(bar, 82);
       pontosResumo = await importarPontosEmbarqueDaPlanilha(file, opts);
     }
+    if (detected.tipo === 'colaboradores_operacional') {
+      status.textContent = 'Importando endereços dos colaboradores no módulo Operacional...';
+      setProgress(bar, 82);
+      colaboradoresResumo = await importarColaboradoresBaseDaPlanilha(file, opts);
+    }
 
     const importMode = opts.importMode || 'auto';
-    const period = ['hoteis', 'pontos_embarque'].includes(detected.tipo) ? null : (entry?.period || await detectFilePeriod(file, detected.tipo));
+    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional'].includes(detected.tipo) ? null : (entry?.period || await detectFilePeriod(file, detected.tipo));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -1003,9 +1102,11 @@
       ? 'Registrando upload da planilha de hotéis...'
       : (detected.tipo === 'pontos_embarque'
         ? 'Registrando upload dos pontos de embarque...'
-        : (effectiveMode === 'replace'
-          ? 'Registrando substituição inteligente...'
-          : 'Registrando complemento inteligente...'));
+        : (detected.tipo === 'colaboradores_operacional'
+          ? 'Registrando upload dos endereços dos colaboradores...'
+          : (effectiveMode === 'replace'
+            ? 'Registrando substituição inteligente...'
+            : 'Registrando complemento inteligente...')));
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -1041,6 +1142,7 @@
           periodo: period || null,
           hoteis_importacao: hoteisResumo || null,
           pontos_embarque_importacao: pontosResumo || null,
+          colaboradores_operacional_importacao: colaboradoresResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -1065,12 +1167,14 @@
       status.textContent = `Hotéis: ${hoteisResumo.inseridos || 0} novos · ${hoteisResumo.atualizados || 0} atualizados · ${hoteisResumo.ignorados || 0} ignorados`;
     } else if (detected.tipo === 'pontos_embarque' && pontosResumo) {
       status.textContent = `Pontos: ${pontosResumo.importados || 0} importados · ${pontosResumo.cidades || 0} cidades · ${pontosResumo.supervisoes || 0} supervisões`;
+    } else if (detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) {
+      status.textContent = `Colaboradores: ${colaboradoresResumo.importados || 0} endereços importados · ${colaboradoresResumo.cidades || 0} cidades · ${colaboradoresResumo.ufs || 0} UFs`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -1112,7 +1216,7 @@
                   </select>
                 </div>
                 <div class="import-intelligence-note" id="intelligenceNote">
-                  No automático, se o período já existir no banco, o painel substitui a versão anterior; planilhas de hotéis vão para Hospedagem e a planilha Mapa G1000 vai para Operacional.
+                  No automático, se o período já existir no banco, o painel substitui a versão anterior; planilhas de hotéis vão para Hospedagem, Mapa G1000 e Endereço Colaborador vão para Operacional.
                 </div>
               </div>
             </div>
@@ -1239,6 +1343,9 @@
             entry.message = 'Pendente · importará cadastro de hotéis';
           } else if (detected.tipo === 'pontos_embarque') {
             entry.message = 'Pendente · importará pontos de embarque operacional';
+          }
+          if (detected.tipo === 'colaboradores_operacional') {
+            entry.message = 'Pendente · importará endereços dos colaboradores no Operacional';
           } else {
             detectFilePeriod(file, detected.tipo).then((period) => {
               entry.period = period;
