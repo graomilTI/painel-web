@@ -3,6 +3,7 @@
   const DIRECT_UPLOAD_LIMIT = 45 * 1024 * 1024;
   const CHUNK_SIZE = 8 * 1024 * 1024;
   const MAX_ENTERPRISE_SIZE = 1024 * 1024 * 1024;
+  const MONEY_FMT = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
   const styles = `
     <style>
@@ -453,6 +454,16 @@
         const iso = toIsoDate(cell);
         if (iso) dates.push(iso);
       });
+    } else if (tipo === 'uber_corridas') {
+      const hrow = findHeaderRow(rows, ['NOME', 'Data da solicitação (local)', 'Endereço de partida']);
+      const header = rows[hrow] || [];
+      const idxData = header.findIndex((h) => ['data da solicitação local', 'data da solicitacao local', 'data solicitacao local', 'data'].includes(normalizeHeader(h)));
+      if (idxData >= 0) {
+        rows.slice(hrow + 1).forEach((row) => {
+          const iso = toIsoDate(row?.[idxData]);
+          if (iso) dates.push(iso);
+        });
+      }
     } else {
       const hrow = findHeaderRow(rows, ['Data']);
       const header = rows[hrow] || [];
@@ -546,6 +557,155 @@
     const normalized = raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw;
     const number = Number(normalized.replace(/[^0-9.-]/g, ''));
     return Number.isFinite(number) ? number : null;
+  }
+
+
+  function excelSerialToDate(serial) {
+    const n = Number(serial);
+    if (!Number.isFinite(n)) return null;
+    // Excel serial date, with 1899-12-30 base used by SheetJS/Excel interop.
+    const utcValue = (n - 25569) * 86400;
+    const dateInfo = new Date(Math.round(utcValue * 1000));
+    if (Number.isNaN(dateInfo.getTime())) return null;
+    return dateInfo;
+  }
+
+  function toIsoDateUber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+    if (typeof value === 'number') {
+      const date = excelSerialToDate(value);
+      return date ? date.toISOString().slice(0, 10) : null;
+    }
+    return toIsoDate(value);
+  }
+
+  function toTimestampUber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+    if (typeof value === 'number') {
+      const date = excelSerialToDate(value);
+      return date ? date.toISOString() : null;
+    }
+    const iso = toIsoDate(value);
+    return iso ? `${iso}T00:00:00Z` : null;
+  }
+
+  function normalizeUberTime(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+    }
+    return String(value).trim() || null;
+  }
+
+  function buildUberImportHash(row) {
+    const parts = [
+      row.data_solicitacao_local || '',
+      row.hora_solicitacao_local || '',
+      row.nome || '',
+      row.endereco_partida || '',
+      row.endereco_destino || '',
+      row.preco_liquido ?? '',
+    ].map((v) => normalizeHeader(String(v)));
+    return parts.join('|').slice(0, 500);
+  }
+
+  async function readUberCorridasFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const mapped = [];
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+      if (!rows?.length) continue;
+
+      const headerRow = findHeaderRow(rows, ['NOME', 'Endereço de partida', 'Endereço de destino', 'Preço líquido do parceiro (moeda local)']);
+      const rawHeader = rows[headerRow] || [];
+      const normalizedHeader = rawHeader.map(normalizeHeader);
+      const hasUberStructure = normalizedHeader.includes('nome')
+        && normalizedHeader.some((h) => h.includes('endereco de partida'))
+        && normalizedHeader.some((h) => h.includes('endereco de destino'))
+        && normalizedHeader.some((h) => h.includes('preco liquido'));
+      if (!hasUberStructure) continue;
+
+      const headers = rawHeader.map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+      rows.slice(headerRow + 1).forEach((row) => {
+        const obj = {};
+        headers.forEach((header, index) => {
+          if (!header) return;
+          obj[header] = row?.[index] ?? '';
+        });
+
+        const nome = String(pickValue(obj, ['NOME', 'Nome', 'Colaborador', 'Funcionário', 'Funcionario']) || '').trim();
+        const enderecoPartida = String(pickValue(obj, ['Endereço de partida', 'Endereco de partida', 'Partida']) || '').trim();
+        const enderecoDestino = String(pickValue(obj, ['Endereço de destino', 'Endereco de destino', 'Destino']) || '').trim();
+        if (!nome || (!enderecoPartida && !enderecoDestino)) return;
+
+        const registro = {
+          data_hora_transacao_utc: toTimestampUber(pickValue(obj, ['Registro de data e hora da transação (UTC)', 'Registro de data e hora da transacao UTC'])),
+          hora_solicitacao_utc: normalizeUberTime(pickValue(obj, ['Hora da solicitação (UTC)', 'Hora da solicitacao UTC'])),
+          data_solicitacao_local: toIsoDateUber(pickValue(obj, ['Data da solicitação (local)', 'Data da solicitacao local'])),
+          hora_solicitacao_local: normalizeUberTime(pickValue(obj, ['Hora da solicitação (local)', 'Hora da solicitacao local'])),
+          data_chegada_utc: toIsoDateUber(pickValue(obj, ['Data de chegada (UTC)', 'Data chegada UTC'])),
+          hora_chegada_utc: normalizeUberTime(pickValue(obj, ['Hora de chegada (UTC)', 'Hora chegada UTC'])),
+          data_chegada_local: toIsoDateUber(pickValue(obj, ['Data de chegada (local)', 'Data chegada local'])),
+          hora_chegada_local: normalizeUberTime(pickValue(obj, ['Hora de chegada (local)', 'Hora chegada local'])),
+          nome,
+          coord: String(pickValue(obj, ['Coord', 'Coordenação', 'Coordenacao']) || '').trim() || null,
+          supervisao: String(pickValue(obj, ['Superv', 'Supervisão', 'Supervisao']) || '').trim() || null,
+          grupo: String(pickValue(obj, ['Grupo']) || '').trim() || null,
+          servico: String(pickValue(obj, ['Serviço', 'Servico']) || '').trim() || null,
+          programa: String(pickValue(obj, ['Programa']) || '').trim() || null,
+          cidade: String(pickValue(obj, ['Cidade']) || '').trim() || null,
+          pais: String(pickValue(obj, ['País', 'Pais']) || '').trim() || null,
+          distancia_mi: normalizeNumberBr(pickValue(obj, ['Distância (mi)', 'Distancia (mi)', 'Distância', 'Distancia'])),
+          duracao_min: normalizeNumberBr(pickValue(obj, ['Duração (min)', 'Duracao (min)', 'Duração', 'Duracao'])),
+          endereco_partida: enderecoPartida || null,
+          endereco_destino: enderecoDestino || null,
+          detalhamento_despesa: String(pickValue(obj, ['Detalhamento da despesa', 'Detalhamento']) || '').trim() || null,
+          preco_liquido: normalizeNumberBr(pickValue(obj, ['Preço líquido do parceiro (moeda local)', 'Preco liquido do parceiro moeda local', 'Preço líquido', 'Preco liquido', 'Valor'])) || 0,
+          arquivo_nome: file.name,
+          status_validacao: 'ATENCAO',
+        };
+        registro.import_hash = buildUberImportHash(registro);
+        mapped.push(registro);
+      });
+    }
+
+    return mapped;
+  }
+
+  async function importarUberCorridasDaPlanilha(file, opts) {
+    const corridas = await readUberCorridasFromFile(file);
+    if (!corridas.length) {
+      throw new Error('A planilha Uber não possui linhas válidas. Cabeçalhos esperados: NOME, Data da solicitação (local), Endereço de partida, Endereço de destino e Preço líquido do parceiro.');
+    }
+
+    const batchSize = 500;
+    let total = 0;
+    for (let i = 0; i < corridas.length; i += batchSize) {
+      const batch = corridas.slice(i, i + batchSize);
+      const { error } = await opts.supabase
+        .from('conferencia_uber_corridas')
+        .upsert(batch, { onConflict: 'import_hash' });
+      if (error) throw new Error(error.message || 'Falha ao gravar corridas Uber no Supabase. Confira se rodou o SQL da Conferência Uber.');
+      total += batch.length;
+    }
+
+    const periodos = corridas.map((r) => r.data_solicitacao_local).filter(Boolean).sort();
+    const colaboradores = new Set(corridas.map((r) => normalizeHeader(r.nome)).filter(Boolean)).size;
+    const valorTotal = corridas.reduce((sum, r) => sum + Number(r.preco_liquido || 0), 0);
+    return {
+      total_linhas: corridas.length,
+      importados: total,
+      colaboradores,
+      valor_total: Math.round(valorTotal * 100) / 100,
+      periodo_inicio: periodos[0] || null,
+      periodo_fim: periodos[periodos.length - 1] || null,
+    };
   }
 
   async function readPontosEmbarqueFromFile(file) {
@@ -892,6 +1052,10 @@
   function detectRelatorio(fileName) {
     const n = String(fileName || '').toLowerCase();
 
+    if (n.includes('uber') || n.includes('corridas')) {
+      return { tipo: 'uber_corridas', titulo: 'Relatório Uber' };
+    }
+
     if ((n.includes('auditoria') || n.includes('auditorias')) && (n.includes('relatorio') || n.includes('relatório') || n.includes('lista') || n.includes('auditoria'))) {
       return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
     }
@@ -1204,6 +1368,7 @@
     let pontosResumo = null;
     let colaboradoresResumo = null;
     let auditoriasResumo = null;
+    let uberResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -1223,6 +1388,11 @@
       status.textContent = 'Importando histórico de auditorias no módulo Operacional...';
       setProgress(bar, 82);
       auditoriasResumo = await importarAuditoriasOperacionalDaPlanilha(file, opts);
+    }
+    if (detected.tipo === 'uber_corridas') {
+      status.textContent = 'Importando corridas Uber na Conferência...';
+      setProgress(bar, 82);
+      uberResumo = await importarUberCorridasDaPlanilha(file, opts);
     }
 
     const importMode = opts.importMode || 'auto';
@@ -1246,9 +1416,11 @@
           ? 'Registrando upload dos endereços dos colaboradores...'
           : (detected.tipo === 'auditorias_operacional'
             ? 'Registrando upload das auditorias operacionais...'
-            : (effectiveMode === 'replace'
+            : (detected.tipo === 'uber_corridas'
+              ? 'Registrando upload do relatório Uber...'
+              : (effectiveMode === 'replace'
             ? 'Registrando substituição inteligente...'
-            : 'Registrando complemento inteligente...'))));
+            : 'Registrando complemento inteligente...')))));
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -1286,6 +1458,7 @@
           pontos_embarque_importacao: pontosResumo || null,
           colaboradores_operacional_importacao: colaboradoresResumo || null,
           auditorias_operacional_importacao: auditoriasResumo || null,
+          uber_corridas_importacao: uberResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -1314,12 +1487,14 @@
       status.textContent = `Colaboradores: ${colaboradoresResumo.importados || 0} endereços importados · ${colaboradoresResumo.cidades || 0} cidades · ${colaboradoresResumo.ufs || 0} UFs`;
     } else if (detected.tipo === 'auditorias_operacional' && auditoriasResumo) {
       status.textContent = `Auditorias: ${auditoriasResumo.importados || 0} registros · ${auditoriasResumo.colaboradores || 0} colaboradores · ${auditoriasResumo.descontos || 0} descontos`;
+    } else if (detected.tipo === 'uber_corridas' && uberResumo) {
+      status.textContent = `Uber: ${uberResumo.importados || 0} corridas · ${uberResumo.colaboradores || 0} colaboradores · ${MONEY_FMT.format(uberResumo.valor_total || 0)}`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -1488,12 +1663,17 @@
             entry.message = 'Pendente · importará cadastro de hotéis';
           } else if (detected.tipo === 'pontos_embarque') {
             entry.message = 'Pendente · importará pontos de embarque operacional';
-          }
-          if (detected.tipo === 'colaboradores_operacional') {
+          } else if (detected.tipo === 'colaboradores_operacional') {
             entry.message = 'Pendente · importará endereços dos colaboradores no Operacional';
-          }
-          if (detected.tipo === 'auditorias_operacional') {
+          } else if (detected.tipo === 'auditorias_operacional') {
             entry.message = 'Pendente · importará auditorias no Operacional';
+          } else if (detected.tipo === 'uber_corridas') {
+            entry.message = 'Pendente · importará corridas Uber na Conferência';
+            detectFilePeriod(file, detected.tipo).then((period) => {
+              entry.period = period;
+              entry.message = period ? `Período: ${formatPeriod(period)} · importará corridas Uber` : 'Pendente · Uber sem período detectado';
+              renderFiles();
+            });
           } else {
             detectFilePeriod(file, detected.tipo).then((period) => {
               entry.period = period;
