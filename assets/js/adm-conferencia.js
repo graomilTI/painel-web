@@ -3,8 +3,9 @@ import { supabase } from './supabaseClient.js';
 
 const DATE_FMT = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' });
 const MONEY_FMT = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-const GEOCODING_DELAY_MS = 1200;
-const GEOCODING_MAX_BATCH = 15;
+const GEOCODING_DELAY_MS = 1300;
+const GEOCODING_RETRY_DELAY_MS = 3500;
+const GEOCODING_MAX_BATCH = 25;
 
 
 const STATUS_LABELS = {
@@ -565,6 +566,59 @@ function buildBrazilAddress(address) {
   return /brasil|brazil/i.test(text) ? text : `${text}, Brasil`;
 }
 
+function cleanUberAddress(address) {
+  return String(address || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+-\s+/g, ', ')
+    .replace(/,\s*,+/g, ',')
+    .replace(/\bBrasil\b,?\s*Brasil\b/gi, 'Brasil')
+    .trim();
+}
+
+function extractPostalCode(address) {
+  const match = String(address || '').match(/\b\d{5}-?\d{3}\b/);
+  return match ? match[0].replace(/\D/g, '') : '';
+}
+
+function withoutPostalCode(address) {
+  return String(address || '').replace(/\b\d{5}-?\d{3}\b/g, '').replace(/,\s*,+/g, ',').trim();
+}
+
+function buildGeocodeQueries(address) {
+  const raw = cleanUberAddress(address);
+  if (!raw) return [];
+
+  const noCep = cleanUberAddress(withoutPostalCode(raw));
+  const normalizedSeparators = cleanUberAddress(raw.replace(/\s+-\s+/g, ', '));
+  const noCepNormalized = cleanUberAddress(withoutPostalCode(normalizedSeparators));
+
+  const parts = raw.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+  const variants = [
+    raw,
+    normalizedSeparators,
+    noCep,
+    noCepNormalized,
+  ];
+
+  if (parts.length >= 2) variants.push(`${parts[0]}, ${parts.slice(-1)[0]}`);
+  if (parts.length >= 3) variants.push(`${parts[0]}, ${parts[parts.length - 2]}, ${parts[parts.length - 1]}`);
+
+  const cep = extractPostalCode(raw);
+  if (cep) variants.push(cep);
+
+  const unique = [];
+  const seen = new Set();
+  variants.forEach((variant) => {
+    const value = buildBrazilAddress(cleanUberAddress(variant));
+    const key = normalizeText(value);
+    if (value && !seen.has(key)) {
+      seen.add(key);
+      unique.push(value);
+    }
+  });
+  return unique.slice(0, 7);
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -606,18 +660,12 @@ async function saveGeocodeCache(address, result, provider = 'nominatim') {
   if (error) console.warn('[Conferência Uber] não salvou cache:', error.message);
 }
 
-async function geocodeAddress(address) {
-  const query = buildBrazilAddress(address);
-  if (!query) return null;
-
-  const cached = await getCachedGeocode(address);
-  if (cached && Number.isFinite(cached.lat) && Number.isFinite(cached.lon)) return cached;
-
+async function fetchNominatim(query) {
   const params = new URLSearchParams({
     q: query,
     format: 'jsonv2',
     addressdetails: '1',
-    limit: '1',
+    limit: '3',
     countrycodes: 'br',
   });
 
@@ -625,24 +673,55 @@ async function geocodeAddress(address) {
     headers: { 'Accept': 'application/json', 'Accept-Language': 'pt-BR,pt;q=0.9' },
   });
 
+  if (response.status === 429) {
+    await sleep(GEOCODING_RETRY_DELAY_MS);
+    throw new Error('Limite temporário do geocoding. Tente novamente em alguns segundos.');
+  }
   if (!response.ok) throw new Error(`Geocoding retornou HTTP ${response.status}`);
+
   const results = await response.json();
   const first = Array.isArray(results) ? results[0] : null;
   if (!first?.lat || !first?.lon) return null;
 
-  const parsed = {
+  return {
     lat: Number(first.lat),
     lon: Number(first.lon),
     display_name: first.display_name || '',
+    query_used: query,
   };
-  await saveGeocodeCache(address, parsed);
-  return parsed;
+}
+
+async function geocodeAddress(address) {
+  const original = cleanUberAddress(address);
+  if (!original) return null;
+
+  const cached = await getCachedGeocode(original);
+  if (cached && Number.isFinite(cached.lat) && Number.isFinite(cached.lon)) return cached;
+
+  const queries = buildGeocodeQueries(original);
+  for (let index = 0; index < queries.length; index += 1) {
+    const query = queries[index];
+    try {
+      const result = await fetchNominatim(query);
+      if (result && Number.isFinite(result.lat) && Number.isFinite(result.lon)) {
+        await saveGeocodeCache(original, result, 'nominatim');
+        return result;
+      }
+    } catch (error) {
+      console.warn('[Conferência Uber] falha no geocoding:', query, error.message);
+      if (/Limite temporário/i.test(error.message)) throw error;
+    }
+    if (index < queries.length - 1) await sleep(GEOCODING_DELAY_MS);
+  }
+
+  return null;
 }
 
 async function geocodeUberRow(row) {
   if (!row?.id) return false;
   const update = {};
   let changed = false;
+  const missing = [];
 
   if ((!row.partida_latitude || !row.partida_longitude) && row.endereco_partida) {
     const partida = await geocodeAddress(row.endereco_partida);
@@ -650,6 +729,8 @@ async function geocodeUberRow(row) {
       update.partida_latitude = partida.lat;
       update.partida_longitude = partida.lon;
       changed = true;
+    } else {
+      missing.push('partida');
     }
     await sleep(GEOCODING_DELAY_MS);
   }
@@ -660,13 +741,28 @@ async function geocodeUberRow(row) {
       update.destino_latitude = destino.lat;
       update.destino_longitude = destino.lon;
       changed = true;
+    } else {
+      missing.push('destino');
     }
     await sleep(GEOCODING_DELAY_MS);
   }
 
+  if (!changed && missing.length) {
+    update.observacao_validacao = `GPS não localizado automaticamente para ${missing.join(' e ')}. Conferir manualmente ou ajustar endereço.`;
+    update.updated_at = new Date().toISOString();
+    const { error } = await supabase
+      .from('conferencia_uber_corridas')
+      .update(update)
+      .eq('id', row.id);
+    if (error) throw new Error(`Não foi possível salvar retorno do GPS: ${error.message}`);
+    return false;
+  }
+
   if (!changed) return false;
 
-  update.observacao_validacao = null;
+  update.observacao_validacao = missing.length
+    ? `GPS convertido parcialmente. Ainda falta ${missing.join(' e ')}.`
+    : null;
   update.updated_at = new Date().toISOString();
 
   const { error } = await supabase
