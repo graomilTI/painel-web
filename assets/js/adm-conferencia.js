@@ -27,6 +27,9 @@ const state = {
   auditoria: [],
   resultado: [],
   loading: false,
+  sort: {
+    despesas: { column: 'colaborador', direction: 'asc' },
+  },
   filters: {
     inicio: '',
     fim: '',
@@ -95,6 +98,43 @@ function getStatus(row) {
 function statusChip(status) {
   const key = normalizeText(status || 'PENDENTE').replaceAll(' ', '_');
   return `<span class="conf-chip conf-chip-${STATUS_CLASS[key] || 'neutral'}">${escapeHtml(STATUS_LABELS[key] || status || 'Pendente')}</span>`;
+}
+
+function sortIcon(column) {
+  const current = state.sort.despesas;
+  if (current.column !== column) return '<span class="conf-sort-icon">↕</span>';
+  return `<span class="conf-sort-icon active">${current.direction === 'asc' ? '↑' : '↓'}</span>`;
+}
+
+function sortableTh(column, label) {
+  return `<th><button class="conf-sort-btn" type="button" data-sort-column="${escapeHtml(column)}">${escapeHtml(label)} ${sortIcon(column)}</button></th>`;
+}
+
+function getSortValue(row, column) {
+  if (column === 'colaborador') return row.colaborador || row.nome_colaborador || '';
+  if (column === 'regional') return getRegional(row);
+  if (column === 'status') return STATUS_LABELS[getStatus(row)] || getStatus(row);
+  return row[column] || '';
+}
+
+function sortRows(rows, kind = 'despesas') {
+  if (kind !== 'despesas') return rows;
+  const { column, direction } = state.sort.despesas;
+  const factor = direction === 'desc' ? -1 : 1;
+
+  return [...rows].sort((a, b) => {
+    const av = normalizeText(getSortValue(a, column));
+    const bv = normalizeText(getSortValue(b, column));
+    const result = av.localeCompare(bv, 'pt-BR', { numeric: true, sensitivity: 'base' });
+    if (result !== 0) return result * factor;
+
+    const ad = String(a.data_referencia || '');
+    const bd = String(b.data_referencia || '');
+    const dateResult = bd.localeCompare(ad);
+    if (dateResult !== 0) return dateResult;
+
+    return String(a.colaborador || '').localeCompare(String(b.colaborador || ''), 'pt-BR') * factor;
+  });
 }
 
 
@@ -231,7 +271,7 @@ function renderStyles() {
       .conf-panel{margin-top:16px;background:rgba(8,22,17,.72);border:1px solid var(--line);border-radius:24px;padding:18px;box-shadow:var(--shadow-soft)}.conf-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.conf-panel-head h3{margin:0 0 6px}.conf-panel-head p{margin:0;color:var(--muted)}
       .conf-tabs{display:flex;gap:10px;flex-wrap:wrap}.conf-tab{border:1px solid rgba(111,208,165,.22);background:#0b1220;color:#e5e7eb;border-radius:999px;padding:10px 14px;font-weight:800;cursor:pointer}.conf-tab.active{background:rgba(34,197,94,.22);border-color:rgba(111,208,165,.45);color:#dcfce7}
       .conf-filters{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:12px}.conf-field label{display:block;font-size:12px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px}.conf-field input,.conf-field select{width:100%;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#0b1220;color:#e5e7eb;padding:12px 13px;color-scheme:dark}.conf-field option{background:#0f172a;color:#e5e7eb}.conf-filter-actions{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
-      .conf-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#081611}.conf-table{width:100%;border-collapse:collapse;min-width:1180px}.conf-table-despesas{min-width:1220px}.conf-table th,.conf-table td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;vertical-align:top}.conf-table th{background:rgba(15,23,42,.92);color:#dcfce7;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.conf-table td{color:#e5e7eb}.conf-table small{display:block;color:var(--muted);margin-top:4px}.conf-empty{text-align:center;color:var(--muted);padding:24px!important}.conf-row-actions{display:flex;gap:8px;flex-wrap:wrap}.conf-row-actions button{font-size:12px;padding:8px 10px;border-radius:12px}
+      .conf-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#081611}.conf-table{width:100%;border-collapse:collapse;min-width:1180px}.conf-table-despesas{min-width:1220px}.conf-table th,.conf-table td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;vertical-align:top}.conf-table th{background:rgba(15,23,42,.92);color:#dcfce7;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.conf-sort-btn{width:100%;display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;color:#dcfce7;font:inherit;font-weight:900;text-transform:uppercase;letter-spacing:.06em;text-align:left;cursor:pointer;padding:0}.conf-sort-btn:hover{color:#86efac}.conf-sort-icon{font-size:13px;opacity:.55}.conf-sort-icon.active{opacity:1;color:#86efac}.conf-table td{color:#e5e7eb}.conf-table small{display:block;color:var(--muted);margin-top:4px}.conf-empty{text-align:center;color:var(--muted);padding:24px!important}.conf-row-actions{display:flex;gap:8px;flex-wrap:wrap}.conf-row-actions button{font-size:12px;padding:8px 10px;border-radius:12px}
       .conf-chip{display:inline-flex;align-items:center;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:900;border:1px solid rgba(148,163,184,.18)}.conf-chip-ok{background:rgba(34,197,94,.16);color:#bbf7d0;border-color:rgba(34,197,94,.28)}.conf-chip-warn{background:rgba(234,179,8,.14);color:#fde68a;border-color:rgba(234,179,8,.28)}.conf-chip-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}.conf-chip-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(96,165,250,.30)}.conf-chip-neutral{background:rgba(148,163,184,.12);color:#cbd5e1}
       .conf-note{width:100%;min-height:74px;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#0b1220;color:#e5e7eb;padding:12px;resize:vertical}.conf-feedback{min-height:20px;margin-top:10px;color:var(--muted)}
       @media(max-width:1200px){.conf-grid{grid-template-columns:repeat(2,1fr)}.conf-filters{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.conf-hero,.conf-panel-head{display:block}.conf-grid,.conf-filters{grid-template-columns:1fr}.conf-actions{justify-content:flex-start;margin-top:12px}}
@@ -368,7 +408,7 @@ function renderActiveTab() {
 }
 
 function renderDespesasTable() {
-  const rows = applyLocalFilters(state.despesas, 'despesas');
+  const rows = sortRows(applyLocalFilters(state.despesas, 'despesas'), 'despesas');
   const target = document.getElementById('conf-table');
   if (!rows.length) {
     target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma despesa encontrada para os filtros selecionados.</td></tr></tbody></table></div>`;
@@ -380,9 +420,9 @@ function renderDespesasTable() {
       <table class="conf-table conf-table-despesas">
         <thead>
           <tr>
-            <th>Colaborador</th>
-            <th>Regional</th>
-            <th>Status</th>
+            ${sortableTh('colaborador', 'Colaborador')}
+            ${sortableTh('regional', 'Regional')}
+            ${sortableTh('status', 'Status')}
             <th>Café</th>
             <th>Almoço</th>
             <th>Janta</th>
@@ -739,7 +779,7 @@ async function updateDespesaStatus(id, status) {
 
 function exportCsv() {
   const rows = state.tab === 'despesas'
-    ? applyLocalFilters(state.despesas, 'despesas')
+    ? sortRows(applyLocalFilters(state.despesas, 'despesas'), 'despesas')
     : state.tab === 'auditoria'
       ? applyLocalFilters(state.auditoria, 'auditoria')
       : applyLocalFilters(state.resultado, 'resultado');
@@ -814,6 +854,18 @@ function bindEvents() {
   });
 
   document.getElementById('conf-table')?.addEventListener('click', (event) => {
+    const sortBtn = event.target.closest('[data-sort-column]');
+    if (sortBtn) {
+      const column = sortBtn.dataset.sortColumn;
+      const current = state.sort.despesas;
+      state.sort.despesas = {
+        column,
+        direction: current.column === column && current.direction === 'asc' ? 'desc' : 'asc',
+      };
+      renderActiveTab();
+      return;
+    }
+
     const btn = event.target.closest('[data-action][data-id]');
     if (!btn) return;
     updateDespesaStatus(btn.dataset.id, btn.dataset.action);
