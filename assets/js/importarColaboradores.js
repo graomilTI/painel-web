@@ -167,9 +167,21 @@ function normalizeCurrency(value) {
 
 function computeAtivo(situacao, desligamento) {
   if (desligamento) return false;
-  const s = String(situacao || '').toLowerCase();
+  const s = String(situacao || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
   if (!s) return true;
-  return !s.includes('deslig');
+
+  return ![
+    'nao ativo',
+    'nao ativa',
+    'inativo',
+    'inativa',
+    'deslig',
+    'demit',
+  ].some((status) => s.includes(status));
 }
 
 function mapRow(row, dataReferencia, importacaoId) {

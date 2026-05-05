@@ -50,6 +50,26 @@ function moneyBR(value) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function isColaboradorAtivo(colab) {
+  if (!colab) return false;
+  if (colab.ativo === false) return false;
+
+  const situacao = normalizeAccessText(colab.situacao);
+  const desligamento = String(colab.desligamento || '').trim();
+  if (desligamento) return false;
+
+  return ![
+    'NAO ATIVO',
+    'NAO ATIVA',
+    'INATIVO',
+    'INATIVA',
+    'DESLIGADO',
+    'DESLIGADA',
+    'DEMITIDO',
+    'DEMITIDA',
+  ].some((status) => situacao.includes(status));
+}
+
 
 function normalizeAccessText(value) {
   return String(value ?? '')
@@ -481,11 +501,13 @@ initProtectedPage('Programação', (content) => {
 
       if (colabError) throw colabError;
 
-      const programacao = await ensureProgramacaoDia(dataReferencia, supervisao, colaboradores?.[0]?.coordenacao || '');
+      const colaboradoresAtivos = (colaboradores || []).filter(isColaboradorAtivo);
+
+      const programacao = await ensureProgramacaoDia(dataReferencia, supervisao, colaboradoresAtivos?.[0]?.coordenacao || '');
       state.programacaoId = programacao.id;
 
       const indisponibilidades = await loadIndisponibilidades(dataReferencia);
-      state.colaboradores = (colaboradores || []).map((colab) => {
+      state.colaboradores = colaboradoresAtivos.map((colab) => {
         const key = colaboradorKey(colab);
         const indis = indisponibilidades.get(normalizeCpf(colab.cpf));
         return {
