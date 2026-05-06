@@ -291,6 +291,7 @@ function renderStyles() {
       .conf-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#081611}.conf-table{width:100%;border-collapse:collapse;min-width:1180px}.conf-table-despesas{min-width:1220px}.conf-table th,.conf-table td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;vertical-align:top}.conf-table th{background:rgba(15,23,42,.92);color:#dcfce7;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.conf-sort-btn{width:100%;display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;color:#dcfce7;font:inherit;font-weight:900;text-transform:uppercase;letter-spacing:.06em;text-align:left;cursor:pointer;padding:0}.conf-sort-btn:hover{color:#86efac}.conf-sort-icon{font-size:13px;opacity:.55}.conf-sort-icon.active{opacity:1;color:#86efac}.conf-table td{color:#e5e7eb}.conf-table small{display:block;color:var(--muted);margin-top:4px}.conf-empty{text-align:center;color:var(--muted);padding:24px!important}.conf-row-actions{display:flex;gap:8px;flex-wrap:wrap}.conf-row-actions button{font-size:12px;padding:8px 10px;border-radius:12px}
       .conf-chip{display:inline-flex;align-items:center;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:900;border:1px solid rgba(148,163,184,.18)}.conf-chip-ok{background:rgba(34,197,94,.16);color:#bbf7d0;border-color:rgba(34,197,94,.28)}.conf-chip-warn{background:rgba(234,179,8,.14);color:#fde68a;border-color:rgba(234,179,8,.28)}.conf-chip-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}.conf-chip-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(96,165,250,.30)}.conf-chip-neutral{background:rgba(148,163,184,.12);color:#cbd5e1}
       .conf-note{width:100%;min-height:74px;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#0b1220;color:#e5e7eb;padding:12px;resize:vertical}.conf-feedback{min-height:20px;margin-top:10px;color:var(--muted)}
+      .conf-subsection-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin:0 0 12px}.conf-subsection-head h4{margin:0;color:#f8fafc;font-size:17px;font-weight:900}.conf-subsection-head p{margin:4px 0 0;color:var(--muted);font-size:13px}.conf-counter{display:inline-flex;align-items:center;white-space:nowrap;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#e5e7eb;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:900}.conf-counter-ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.30);color:#bbf7d0}.conf-conferidos-box{margin-top:22px;padding:16px;border:1px solid rgba(34,197,94,.22);border-radius:20px;background:rgba(4,24,18,.58)}.conf-table-wrap-conferidos{border-color:rgba(34,197,94,.24)}.conf-row-conferido{background:rgba(34,197,94,.045)}
       .conf-uber-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px;padding:12px 14px;border:1px solid rgba(111,208,165,.18);border-radius:18px;background:rgba(15,23,42,.48)}.conf-uber-tools p{margin:4px 0 0;color:var(--muted);font-size:12px}.conf-uber-actions{display:flex;gap:10px;flex-wrap:wrap}.conf-gps-ok{font-size:12px;color:#bbf7d0;font-weight:800}.conf-gps-missing{font-size:12px;color:#fde68a;font-weight:800}
       @media(max-width:1200px){.conf-grid{grid-template-columns:repeat(2,1fr)}.conf-filters{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.conf-hero,.conf-panel-head{display:block}.conf-grid,.conf-filters{grid-template-columns:1fr}.conf-actions{justify-content:flex-start;margin-top:12px}}
     </style>
@@ -430,64 +431,114 @@ function renderActiveTab() {
   return renderResultadoTable();
 }
 
+function despesasTableHead() {
+  return `
+    <thead>
+      <tr>
+        ${sortableTh('colaborador', 'Colaborador')}
+        ${sortableTh('regional', 'Regional')}
+        ${sortableTh('status', 'Status')}
+        <th>Café</th>
+        <th>Almoço</th>
+        <th>Janta</th>
+        <th>Deslocamento</th>
+        <th>Extras</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+  `;
+}
+
+function despesasRowHtml(row, mode = 'fila') {
+  const isConferido = mode === 'conferidos';
+  return `
+    <tr class="${isConferido ? 'conf-row-conferido' : ''}">
+      <td>
+        <strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong>
+        <small>${brDate(row.data_referencia)}${row.cargo ? ` • ${escapeHtml(row.cargo)}` : ''}</small>
+      </td>
+      <td>
+        ${escapeHtml(getRegional(row))}
+        <small>${escapeHtml(row.coordenacao || '')}</small>
+      </td>
+      <td>${statusChip(getStatus(row))}</td>
+      <td>${yesNoChip(!!row.cafe_valor)}</td>
+      <td>${yesNoChip(!!row.almoco_valor)}</td>
+      <td>${yesNoChip(!!row.janta_valor)}</td>
+      <td>
+        ${escapeHtml(deslocamentoResumo(row))}
+        <small>${escapeHtml(row.deslocamento_obs || '')}</small>
+      </td>
+      <td>
+        <strong>${escapeHtml(extrasResumo(row))}</strong>
+        <small>${escapeHtml(row.extras_obs || '')}</small>
+      </td>
+      <td>
+        <div class="conf-row-actions">
+          ${isConferido
+            ? `
+              <button class="conf-btn" data-action="EM_ANALISE" data-id="${escapeHtml(row.id)}" type="button">Reabrir</button>
+              <button class="conf-btn conf-btn-danger" data-action="PENDENCIA" data-id="${escapeHtml(row.id)}" type="button">Pendência</button>
+            `
+            : `
+              <button class="conf-btn" data-action="EM_ANALISE" data-id="${escapeHtml(row.id)}" type="button">Analisar</button>
+              <button class="conf-btn conf-btn-primary" data-action="CONFERIDO" data-id="${escapeHtml(row.id)}" type="button">Conferir</button>
+              <button class="conf-btn conf-btn-danger" data-action="PENDENCIA" data-id="${escapeHtml(row.id)}" type="button">Pendência</button>
+            `}
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 function renderDespesasTable() {
   const rows = sortRows(applyLocalFilters(state.despesas, 'despesas'), 'despesas');
   const target = document.getElementById('conf-table');
+  const filaRows = rows.filter((row) => getStatus(row) !== 'CONFERIDO');
+  const conferidosRows = rows.filter((row) => getStatus(row) === 'CONFERIDO');
+
   if (!rows.length) {
     target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma despesa encontrada para os filtros selecionados.</td></tr></tbody></table></div>`;
     return;
   }
 
   target.innerHTML = `
+    <div class="conf-subsection-head">
+      <div>
+        <h4>Itens para conferir</h4>
+        <p>Somente registros ainda não finalizados aparecem nesta fila.</p>
+      </div>
+      <span class="conf-counter">${filaRows.length} item(ns)</span>
+    </div>
     <div class="conf-table-wrap">
       <table class="conf-table conf-table-despesas">
-        <thead>
-          <tr>
-            ${sortableTh('colaborador', 'Colaborador')}
-            ${sortableTh('regional', 'Regional')}
-            ${sortableTh('status', 'Status')}
-            <th>Café</th>
-            <th>Almoço</th>
-            <th>Janta</th>
-            <th>Deslocamento</th>
-            <th>Extras</th>
-            <th>Ações</th>
-          </tr>
-        </thead>
+        ${despesasTableHead()}
         <tbody>
-          ${rows.map((row) => `
-            <tr>
-              <td>
-                <strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong>
-                <small>${brDate(row.data_referencia)}${row.cargo ? ` • ${escapeHtml(row.cargo)}` : ''}</small>
-              </td>
-              <td>
-                ${escapeHtml(getRegional(row))}
-                <small>${escapeHtml(row.coordenacao || '')}</small>
-              </td>
-              <td>${statusChip(getStatus(row))}</td>
-              <td>${yesNoChip(!!row.cafe_valor)}</td>
-              <td>${yesNoChip(!!row.almoco_valor)}</td>
-              <td>${yesNoChip(!!row.janta_valor)}</td>
-              <td>
-                ${escapeHtml(deslocamentoResumo(row))}
-                <small>${escapeHtml(row.deslocamento_obs || '')}</small>
-              </td>
-              <td>
-                <strong>${escapeHtml(extrasResumo(row))}</strong>
-                <small>${escapeHtml(row.extras_obs || '')}</small>
-              </td>
-              <td>
-                <div class="conf-row-actions">
-                  <button class="conf-btn" data-action="EM_ANALISE" data-id="${escapeHtml(row.id)}" type="button">Analisar</button>
-                  <button class="conf-btn conf-btn-primary" data-action="CONFERIDO" data-id="${escapeHtml(row.id)}" type="button">Conferir</button>
-                  <button class="conf-btn conf-btn-danger" data-action="PENDENCIA" data-id="${escapeHtml(row.id)}" type="button">Pendência</button>
-                </div>
-              </td>
-            </tr>
-          `).join('')}
+          ${filaRows.length
+            ? filaRows.map((row) => despesasRowHtml(row, 'fila')).join('')
+            : '<tr><td class="conf-empty" colspan="9">Nenhum item pendente. Os registros conferidos estão na tabela abaixo.</td></tr>'}
         </tbody>
       </table>
+    </div>
+
+    <div class="conf-conferidos-box">
+      <div class="conf-subsection-head">
+        <div>
+          <h4>Conferidos</h4>
+          <p>Registros finalizados ficam separados para facilitar a revisão do conferente.</p>
+        </div>
+        <span class="conf-counter conf-counter-ok">${conferidosRows.length} conferido(s)</span>
+      </div>
+      <div class="conf-table-wrap conf-table-wrap-conferidos">
+        <table class="conf-table conf-table-despesas">
+          ${despesasTableHead()}
+          <tbody>
+            ${conferidosRows.length
+              ? conferidosRows.map((row) => despesasRowHtml(row, 'conferidos')).join('')
+              : '<tr><td class="conf-empty" colspan="9">Nenhum registro conferido nos filtros atuais.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
     </div>
   `;
 }
