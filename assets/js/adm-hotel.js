@@ -39,7 +39,7 @@ function injectStyles() {
   style.id = 'admHospStyles';
   style.textContent = `
     .adm-hosp-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.adm-hosp-tab{width:auto!important;margin-top:0!important;border:1px solid var(--line-2);background:#0b1220;color:var(--text);border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:800}.adm-hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}.adm-hosp-panel{display:none}.adm-hosp-panel.active{display:block}.adm-hosp-btn{width:auto!important;margin-top:0!important}.adm-hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-hosp-table{width:100%;border-collapse:collapse;min-width:1180px;background:#0b1220}.adm-hosp-table th,.adm-hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-hosp-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.adm-hosp-table tr:hover td{background:rgba(111,208,165,.035)}.adm-hosp-actions{display:flex;gap:8px;flex-wrap:wrap}.adm-hosp-small{padding:8px 10px!important;border-radius:12px!important;font-size:12px}.adm-hosp-status{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:800;white-space:nowrap}.adm-hosp-status.solicitada,.adm-hosp-status.em_analise,.adm-hosp-status.em_cotacao,.adm-hosp-status.aguardando_pagamento,.adm-hosp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.adm-hosp-status.reservada,.adm-hosp-status.checkin_previsto,.adm-hosp-status.hospedado,.adm-hosp-status.enviado_ao_financeiro,.adm-hosp-status.nf_recebida{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.adm-hosp-status.concluida,.adm-hosp-status.pago,.adm-hosp-status.lancado,.adm-hosp-status.ativo,.adm-hosp-status.preferencial{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.adm-hosp-status.cancelada,.adm-hosp-status.bloqueado,.adm-hosp-status.evitar{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}.adm-hosp-status.checkout_hoje,.adm-hosp-status.renovacao_necessaria{color:#fed7aa;background:rgba(249,115,22,.11);border-color:rgba(249,115,22,.24)}
-    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-colab-list{display:grid;gap:7px}.adm-hosp-colab-item{display:grid;gap:2px;line-height:1.15}.adm-hosp-colab-name{font-weight:800;color:var(--text)}.adm-hosp-colab-regional{font-size:12px;color:#9ca3af}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}.adm-room-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.34);padding:14px}.adm-room-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-room-title strong{display:block;color:#e5e7eb}.adm-room-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-room-chip{display:inline-flex;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.16);color:#dcfce7;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}.adm-room-add{display:grid;grid-template-columns:1fr 1fr .65fr .9fr auto;gap:10px;align-items:end;margin-top:12px}.adm-room-add .adm-room-mini{display:flex;flex-direction:column;gap:6px}.adm-room-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:900}.adm-room-add select,.adm-room-add input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-list{display:grid;gap:8px;margin-top:12px}.adm-room-row{display:grid;grid-template-columns:1fr 1fr .65fr .9fr 1fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-room-row-pill{font-weight:900;color:#e5e7eb}.adm-room-row-type{color:#cbd5e1}.adm-room-row input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-row-subtotal{font-weight:900;color:#bbf7d0}.adm-room-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-room-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#94a3b8;font-size:12px}.adm-room-summary{margin-top:10px;color:#fde68a;font-size:12px;font-weight:800}.adm-hidden{display:none!important}@media(max-width:900px){.adm-room-add,.adm-room-row{grid-template-columns:1fr}.adm-room-row-subtotal{font-size:14px}}
+    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-colab-list{display:grid;gap:7px}.adm-hosp-colab-item{display:grid;gap:2px;line-height:1.15}.adm-hosp-colab-name{font-weight:800;color:var(--text)}.adm-hosp-colab-regional{font-size:12px;color:#9ca3af}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-status-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.adm-hosp-status-tab{border:1px solid var(--line-2);background:#0b1220;color:#cbd5e1;border-radius:999px;padding:9px 13px;cursor:pointer;font-weight:900}.adm-hosp-status-tab.active{background:rgba(22,101,52,.35);border-color:rgba(111,208,165,.45);color:#dcfce7}.adm-hosp-status-tab small{margin-left:6px;color:#fde68a}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}.adm-room-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.34);padding:14px}.adm-room-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-room-title strong{display:block;color:#e5e7eb}.adm-room-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-room-chip{display:inline-flex;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.16);color:#dcfce7;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}.adm-room-add{display:grid;grid-template-columns:1fr 1fr .65fr .9fr auto;gap:10px;align-items:end;margin-top:12px}.adm-room-add .adm-room-mini{display:flex;flex-direction:column;gap:6px}.adm-room-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:900}.adm-room-add select,.adm-room-add input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-list{display:grid;gap:8px;margin-top:12px}.adm-room-row{display:grid;grid-template-columns:1fr 1fr .65fr .9fr 1fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-room-row-pill{font-weight:900;color:#e5e7eb}.adm-room-row-type{color:#cbd5e1}.adm-room-row input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-row-subtotal{font-weight:900;color:#bbf7d0}.adm-room-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-room-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#94a3b8;font-size:12px}.adm-room-summary{margin-top:10px;color:#fde68a;font-size:12px;font-weight:800}.adm-occ-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.26);padding:14px}.adm-occ-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-occ-title strong{display:block;color:#e5e7eb}.adm-occ-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-occ-add{display:grid;grid-template-columns:1fr .8fr .8fr 1.4fr auto;gap:10px;align-items:end}.adm-occ-mini{display:flex;flex-direction:column;gap:6px}.adm-occ-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:900}.adm-occ-add select,.adm-occ-add input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-occ-list{display:grid;gap:8px;margin-top:12px}.adm-occ-row{display:grid;grid-template-columns:1fr .8fr .8fr 1.5fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-occ-row strong{color:#e5e7eb}.adm-occ-row small{color:#94a3b8}.adm-occ-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-occ-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#94a3b8;font-size:12px}.adm-hidden{display:none!important}@media(max-width:900px){.adm-room-add,.adm-room-row,.adm-occ-add,.adm-occ-row{grid-template-columns:1fr}.adm-room-row-subtotal{font-size:14px}}
     @media(max-width:900px){.adm-hosp-form,.adm-hosp-filters{grid-template-columns:1fr}.adm-hosp-search{min-width:0;width:100%}}
   `;
   document.head.appendChild(style);
@@ -47,7 +47,7 @@ function injectStyles() {
 
 initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   injectStyles();
-  const state = { rows: [], resumo: {}, hoteis: [], editingHotel: null, tab: 'painel', selected: null };
+  const state = { rows: [], resumo: {}, hoteis: [], editingHotel: null, tab: 'painel', selected: null, painelStatus: 'reservados' };
   function getHotelById(id) { return state.hoteis.find((h) => String(h.id) === String(id)); }
 
   content.innerHTML = `
@@ -75,7 +75,13 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
         <article class="card"><h3>Pendências de NF</h3><p class="metric adm-hosp-kpi-warn" id="kpiNf">0</p><p class="muted">Pago/encaminhado e sem nota concluída.</p></article>
       </section>
       <article class="card mt-16">
-        <div class="section-head"><div><h3>Fila operacional</h3><p class="muted">Principais solicitações e pendências em aberto.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshPainel" type="button">Atualizar</button></div>
+        <div class="section-head"><div><h3>Fila operacional</h3><p class="muted">Gerencie por etapa: reservas ativas, check-outs, pendências e pagamentos concluídos.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshPainel" type="button">Atualizar</button></div>
+        <div class="adm-hosp-status-tabs" id="painelStatusTabs">
+          <button class="adm-hosp-status-tab active" type="button" data-painel-status="reservados">Reservados <small id="countReservados">0</small></button>
+          <button class="adm-hosp-status-tab" type="button" data-painel-status="checkout">Check-out <small id="countCheckout">0</small></button>
+          <button class="adm-hosp-status-tab" type="button" data-painel-status="pendentes">Pendentes <small id="countPendentes">0</small></button>
+          <button class="adm-hosp-status-tab" type="button" data-painel-status="pagos">Pagos <small id="countPagos">0</small></button>
+        </div>
         <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Código</th><th>Colaboradores</th><th>Cidade</th><th>Período</th><th>Hotel</th><th>Status</th><th>Financeiro</th><th>NF</th><th>Ações</th></tr></thead><tbody id="painelTbody"><tr><td colspan="9" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
       </article>
     </section>
@@ -138,6 +144,18 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
             </div>
             <div class="adm-room-list" id="roomList"><div class="adm-room-empty">Nenhum quarto adicionado.</div></div>
             <div class="adm-room-summary" id="roomSummary">Adicione a composição dos quartos.</div>
+          </div>
+          <div class="adm-occ-wrap">
+            <div class="adm-occ-title"><div><strong>Ocupação por período</strong><span>Use quando houver troca de colaborador no mesmo quarto. Ex.: A+B de 01 a 03, B+C de 04 a 06.</span></div><span class="adm-room-chip">Histórico do quarto</span></div>
+            <div class="adm-occ-add">
+              <div class="adm-occ-mini"><label>Quarto</label><select id="occQuarto"><option value="">Adicione um quarto acima</option></select></div>
+              <div class="adm-occ-mini"><label>Check-in</label><input id="occInicio" type="date" /></div>
+              <div class="adm-occ-mini"><label>Check-out</label><input id="occFim" type="date" /></div>
+              <div class="adm-occ-mini"><label>Ocupantes</label><input id="occOcupantes" list="occColabList" placeholder="Ex.: ADEMIR, ALEXSANDRO" /><datalist id="occColabList"></datalist></div>
+              <button class="btn btn-secondary adm-hosp-btn" type="button" id="occAdd">Adicionar período</button>
+            </div>
+            <div class="adm-occ-list" id="occList"><div class="adm-occ-empty">Nenhum período específico adicionado.</div></div>
+            <span id="occFeedback" class="adm-hosp-feedback"></span>
           </div>
           <input id="resDiaria" class="adm-hidden" type="number" step="0.01" min="0" />
           <input id="resQuartos" class="adm-hidden" type="number" min="1" value="1" />
@@ -397,11 +415,39 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     renderSolicitacoes();
   }
 
+  function painelBucket(r) {
+    const fin = String(r.status_financeiro || 'NAO_INICIADO').toUpperCase();
+    const nf = String(r.status_nota || 'NAO_SOLICITADA').toUpperCase();
+    const hosp = String(r.status_hospedagem || '').toUpperCase();
+    const sol = String(r.status_solicitacao || '').toUpperCase();
+    if (fin === 'PAGO' || nf === 'LANCADO' || sol === 'CONCLUIDA') return 'pagos';
+    if (r.pendencia_financeira || r.pendencia_nf || ['AGUARDANDO_PAGAMENTO','ENVIADO_AO_FINANCEIRO'].includes(fin) || ['AGUARDANDO_NF','NF_RECEBIDA','ENVIADO_PARA_LANCAMENTO'].includes(nf)) return 'pendentes';
+    if (r.checkout_hoje || r.checkout_vencido || ['CHECKOUT_HOJE','RENOVACAO_NECESSARIA','CHECKOUT_REALIZADO'].includes(hosp)) return 'checkout';
+    if (sol === 'RESERVADA' || ['CHECKIN_PREVISTO','HOSPEDADO'].includes(hosp)) return 'reservados';
+    return 'pendentes';
+  }
+
+  function updatePainelStatusCounts() {
+    const counts = { reservados: 0, checkout: 0, pendentes: 0, pagos: 0 };
+    (state.rows || []).forEach((r) => { counts[painelBucket(r)] = (counts[painelBucket(r)] || 0) + 1; });
+    const map = { countReservados: counts.reservados, countCheckout: counts.checkout, countPendentes: counts.pendentes, countPagos: counts.pagos };
+    Object.entries(map).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.textContent = value; });
+  }
+
+  function setPainelStatus(status) {
+    state.painelStatus = status || 'reservados';
+    document.querySelectorAll('[data-painel-status]').forEach((btn) => btn.classList.toggle('active', btn.dataset.painelStatus === state.painelStatus));
+    renderPainel();
+  }
+
   function renderPainel() {
     const tbody = document.getElementById('painelTbody');
-    const priority = state.rows.filter((r) => ['SOLICITADA','EM_ANALISE','EM_COTACAO','RESERVADA'].includes(r.status_solicitacao) || r.checkout_hoje || r.checkout_vencido || r.pendencia_financeira || r.pendencia_nf).slice(0, 30);
-    if (!priority.length) { tbody.innerHTML = `<tr><td colspan="9" class="adm-hosp-empty">Nenhuma pendência operacional.</td></tr>`; return; }
-    tbody.innerHTML = priority.map(rowHtml).join('');
+    updatePainelStatusCounts();
+    let rows = state.rows.filter((r) => painelBucket(r) === state.painelStatus);
+    if (state.painelStatus !== 'pagos') rows = rows.slice(0, 50);
+    const emptyLabel = ({ reservados: 'Nenhuma reserva ativa.', checkout: 'Nenhum check-out pendente.', pendentes: 'Nenhuma pendência financeira/NF.', pagos: 'Nenhuma hospedagem paga/finalizada.' })[state.painelStatus] || 'Nenhum registro.';
+    if (!rows.length) { tbody.innerHTML = `<tr><td colspan="9" class="adm-hosp-empty">${emptyLabel}</td></tr>`; return; }
+    tbody.innerHTML = rows.map(rowHtml).join('');
   }
 
   function renderSolicitacoes() {
@@ -621,7 +667,9 @@ Essa ação remove o hotel da base de Hospedagem e ele deixará de aparecer no O
     document.getElementById('resStatus').value = row.status_hospedagem || 'CHECKIN_PREVISTO';
     document.getElementById('resHotelNome').value = row.hotel || '';
     fillHotelSelect(row);
-    const obsData = extrairComposicaoObservacao(row.observacao_hospedagem || '');
+    const obsComp = extrairComposicaoObservacao(row.observacao_hospedagem || '');
+    const obsOcc = extrairOcupacaoObservacao(obsComp.observacao || '');
+    const obsData = { observacao: obsOcc.observacao, composicao: obsComp.composicao, ocupacao: obsOcc.ocupacao || [] };
     document.getElementById('resConfirmado').value = row.confirmado_com || '';
     document.getElementById('resContato').value = row.contato_confirmacao || '';
     document.getElementById('resObs').value = obsData.observacao || '';
@@ -634,6 +682,11 @@ Essa ação remove o hotel da base de Hospedagem e ele deixará de aparecer no O
       compDefault[`MASCULINO_${tipoBase}`] = { qtd: Number(row.quantidade_quartos || 0), diaria: Number(row.valor_diaria || 0) };
       setComposicaoForm(compDefault);
     }
+    refreshOcupacaoQuartoSelect();
+    fillOcupantesDatalist(row);
+    setOcupacaoForm(obsData.ocupacao || []);
+    document.getElementById('occInicio').value = document.getElementById('resCheckin').value || '';
+    document.getElementById('occFim').value = document.getElementById('resCheckout').value || '';
     document.getElementById('resHotel').value = row.hotel_id || '';
     if (row.hotel_id && document.getElementById('resHotel').value !== row.hotel_id) {
       document.getElementById('resHotel').value = '';
@@ -681,6 +734,7 @@ function aplicarDiariaHotelSelecionado() {
     const resumo = formatComposicaoResumo(comp);
     const summary = document.getElementById('roomSummary');
     if (summary) summary.textContent = resumo ? `${calc.quartos} quarto(s) · ${money(calc.totalDia)} por dia · Total ${money(total)} · ${resumo}` : 'Informe a quantidade de quartos e o valor da diária.';
+    refreshOcupacaoQuartoSelect();
 
     const finValorEl = document.getElementById('finValor');
     const finStatusEl = document.getElementById('finStatus');
@@ -711,7 +765,7 @@ function aplicarDiariaHotelSelecionado() {
       cidade_hotel: opt?.dataset?.cidade || state.selected.cidade || null, uf_hotel: opt?.dataset?.uf || state.selected.uf || null, valor_diaria: diariaMedia, quantidade_diarias: diarias, quantidade_quartos: quartos,
       tipo_quarto: 'OUTRO', valor_total_previsto: totalPrevisto, data_checkin: document.getElementById('resCheckin').value, data_checkout: document.getElementById('resCheckout').value,
       confirmado_com: document.getElementById('resConfirmado').value.trim() || null, contato_confirmacao: document.getElementById('resContato').value.trim() || null, status_hospedagem: document.getElementById('resStatus').value,
-      observacao_hospedagem: montarObservacaoComComposicao(document.getElementById('resObs').value, composicao), atualizado_por: userContext?.user?.id || null
+      observacao_hospedagem: montarObservacaoComComposicao(document.getElementById('resObs').value, composicao, getOcupacaoFromForm()), atualizado_por: userContext?.user?.id || null
     };
     const result = state.selected.reserva_id ? await supabase.from('hospedagem_reservas').update(payload).eq('id', state.selected.reserva_id) : await supabase.from('hospedagem_reservas').insert({ ...payload, criado_por: userContext?.user?.id || null }).select('id').single();
     if (result.error) {
@@ -884,6 +938,7 @@ function aplicarDiariaHotelSelecionado() {
 
   document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
   document.getElementById('refreshPainel').addEventListener('click', loadRows);
+  document.getElementById('painelStatusTabs')?.addEventListener('click', (ev) => { const btn = ev.target.closest('[data-painel-status]'); if (btn) setPainelStatus(btn.dataset.painelStatus); });
   document.getElementById('applyFilters').addEventListener('click', renderSolicitacoes);
   document.getElementById('filterStatus').addEventListener('change', renderSolicitacoes);
   document.getElementById('filterSearch').addEventListener('input', renderSolicitacoes);
@@ -907,6 +962,15 @@ function aplicarDiariaHotelSelecionado() {
     const list = document.getElementById('roomList');
     if (list && !list.querySelector('[data-room-row]')) list.innerHTML = '<div class="adm-room-empty">Nenhum quarto adicionado.</div>';
     updateReservaTotals();
+  });
+  document.getElementById('occAdd')?.addEventListener('click', addOcupacaoFromDraft);
+  document.getElementById('occList')?.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-occ-remove]');
+    if (!btn) return;
+    btn.closest('[data-occ-row]')?.remove();
+    const list = document.getElementById('occList');
+    if (list && !list.querySelector('[data-occ-row]')) list.innerHTML = '<div class="adm-occ-empty">Nenhum período específico adicionado.</div>';
+    setFeedback('occFeedback', '');
   });
   ['roomGenero','roomTipo'].forEach((id) => document.getElementById(id)?.addEventListener('change', () => {
     const diariaEl = document.getElementById('roomDiaria');
