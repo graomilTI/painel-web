@@ -162,12 +162,10 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   function splitColaboradores(value) {
     return String(value || '')
-      .split(/[,;
-]+/)
+      .split(/[\n\r,;]+/)
       .map((nome) => nome.trim())
       .filter(Boolean);
   }
-
   function getRegionalColaborador(colab, fallback = '') {
     return colab?.supervisao || colab?.regional || colab?.supervisao_colaborador || colab?.regional_colaborador || fallback || '-';
   }
