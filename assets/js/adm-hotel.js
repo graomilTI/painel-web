@@ -39,7 +39,7 @@ function injectStyles() {
   style.id = 'admHospStyles';
   style.textContent = `
     .adm-hosp-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.adm-hosp-tab{width:auto!important;margin-top:0!important;border:1px solid var(--line-2);background:#0b1220;color:var(--text);border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:800}.adm-hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}.adm-hosp-panel{display:none}.adm-hosp-panel.active{display:block}.adm-hosp-btn{width:auto!important;margin-top:0!important}.adm-hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-hosp-table{width:100%;border-collapse:collapse;min-width:1180px;background:#0b1220}.adm-hosp-table th,.adm-hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-hosp-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.adm-hosp-table tr:hover td{background:rgba(111,208,165,.035)}.adm-hosp-actions{display:flex;gap:8px;flex-wrap:wrap}.adm-hosp-small{padding:8px 10px!important;border-radius:12px!important;font-size:12px}.adm-hosp-status{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:800;white-space:nowrap}.adm-hosp-status.solicitada,.adm-hosp-status.em_analise,.adm-hosp-status.em_cotacao,.adm-hosp-status.aguardando_pagamento,.adm-hosp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.adm-hosp-status.reservada,.adm-hosp-status.checkin_previsto,.adm-hosp-status.hospedado,.adm-hosp-status.enviado_ao_financeiro,.adm-hosp-status.nf_recebida{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.adm-hosp-status.concluida,.adm-hosp-status.pago,.adm-hosp-status.lancado,.adm-hosp-status.ativo,.adm-hosp-status.preferencial{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.adm-hosp-status.cancelada,.adm-hosp-status.bloqueado,.adm-hosp-status.evitar{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}.adm-hosp-status.checkout_hoje,.adm-hosp-status.renovacao_necessaria{color:#fed7aa;background:rgba(249,115,22,.11);border-color:rgba(249,115,22,.24)}
-    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}
+    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-colab-list{display:grid;gap:7px}.adm-hosp-colab-item{display:grid;gap:2px;line-height:1.15}.adm-hosp-colab-name{font-weight:800;color:var(--text)}.adm-hosp-colab-regional{font-size:12px;color:#9ca3af}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}
     @media(max-width:900px){.adm-hosp-form,.adm-hosp-filters{grid-template-columns:1fr}.adm-hosp-search{min-width:0;width:100%}}
   `;
   document.head.appendChild(style);
@@ -159,6 +159,57 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   function setFeedback(id, msg, type = '') { const el = document.getElementById(id); if (!el) return; el.textContent = msg || ''; el.className = `adm-hosp-feedback ${type}`.trim(); }
   function statusPill(value) { return `<span class="adm-hosp-status ${esc(slug(value))}">${esc(label(value))}</span>`; }
+
+  function splitColaboradores(value) {
+    return String(value || '')
+      .split(/[,;
+]+/)
+      .map((nome) => nome.trim())
+      .filter(Boolean);
+  }
+
+  function getRegionalColaborador(colab, fallback = '') {
+    return colab?.supervisao || colab?.regional || colab?.supervisao_colaborador || colab?.regional_colaborador || fallback || '-';
+  }
+
+  function getColaboradoresDetalhados(row) {
+    if (Array.isArray(row?._colaboradoresDetalhados) && row._colaboradoresDetalhados.length) return row._colaboradoresDetalhados;
+    return splitColaboradores(row?.colaboradores).map((nome) => ({ nome_colaborador: nome, supervisao: row?.supervisao_colaborador || row?.regional_colaborador || '' }));
+  }
+
+  function renderColaboradoresCell(row) {
+    const colaboradores = getColaboradoresDetalhados(row);
+    if (!colaboradores.length) return '-';
+    return `<div class="adm-hosp-colab-list">${colaboradores.map((colab) => {
+      const nome = colab.nome_colaborador || colab.nome || '-';
+      const regional = getRegionalColaborador(colab);
+      return `<div class="adm-hosp-colab-item"><span class="adm-hosp-colab-name">${esc(nome)}</span><span class="adm-hosp-colab-regional">${esc(regional)}</span></div>`;
+    }).join('')}</div>`;
+  }
+
+  async function enrichRowsWithColaboradores(rows) {
+    const ids = [...new Set((rows || []).map((row) => row.solicitacao_id).filter(Boolean))];
+    if (!ids.length) return rows || [];
+
+    const { data, error } = await supabase
+      .from('hospedagem_solicitacao_colaboradores')
+      .select('solicitacao_id,nome_colaborador,supervisao,regional,coordenacao,empresa,tipo_colaborador')
+      .in('solicitacao_id', ids);
+
+    if (error || !Array.isArray(data)) return rows || [];
+
+    const porSolicitacao = new Map();
+    data.forEach((colab) => {
+      const key = String(colab.solicitacao_id || '');
+      if (!porSolicitacao.has(key)) porSolicitacao.set(key, []);
+      porSolicitacao.get(key).push(colab);
+    });
+
+    return (rows || []).map((row) => ({
+      ...row,
+      _colaboradoresDetalhados: porSolicitacao.get(String(row.solicitacao_id || '')) || []
+    }));
+  }
   function setTab(tab) { state.tab = tab; document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab)); document.querySelectorAll('.adm-hosp-panel').forEach((p) => p.classList.remove('active')); document.getElementById(`tab-${tab}`).classList.add('active'); if (tab === 'hoteis') loadHoteis(); if (tab !== 'hoteis') loadRows(); }
 
   async function loadResumo() {
@@ -179,7 +230,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       document.getElementById('solTbody').innerHTML = `<tr><td colspan="9" class="adm-hosp-empty">${esc(error.message)}</td></tr>`;
       return;
     }
-    state.rows = data || [];
+    state.rows = await enrichRowsWithColaboradores(data || []);
     renderPainel();
     renderSolicitacoes();
   }
@@ -199,13 +250,13 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     let rows = [...state.rows];
     if (status) rows = rows.filter((r) => r.status_solicitacao === status);
     if (checkout) rows = rows.filter((r) => !r.data_checkout || r.data_checkout <= checkout || !r.reserva_id);
-    if (search) rows = rows.filter((r) => [r.codigo, r.solicitante_nome, r.colaboradores, r.cidade, r.uf, r.local_embarque, r.hotel, r.cliente].join(' ').toLowerCase().includes(search));
+    if (search) rows = rows.filter((r) => [r.codigo, r.solicitante_nome, r.colaboradores, ...(getColaboradoresDetalhados(r).flatMap((c) => [c.nome_colaborador, c.supervisao, c.regional, c.coordenacao])), r.cidade, r.uf, r.local_embarque, r.hotel, r.cliente].join(' ').toLowerCase().includes(search));
     if (!rows.length) { tbody.innerHTML = `<tr><td colspan="9" class="adm-hosp-empty">Nenhuma solicitação encontrada.</td></tr>`; return; }
     tbody.innerHTML = rows.map((r) => `
       <tr>
         <td><strong>${esc(r.codigo || '-')}</strong><span class="adm-hosp-row-note">${brDate(r.data_solicitacao)}</span></td>
-        <td>${esc(r.solicitante_nome || '-')}<span class="adm-hosp-row-note">${esc([r.supervisao, r.coordenacao].filter(Boolean).join(' · '))}</span></td>
-        <td>${esc(r.colaboradores || '-')}</td>
+        <td><strong>${esc(r.solicitante_nome || '-')}</strong></td>
+        <td>${renderColaboradoresCell(r)}</td>
         <td>${esc([r.cidade, r.uf].filter(Boolean).join('/'))}<span class="adm-hosp-row-note">${esc(r.cliente || '')}</span></td>
         <td>${esc(r.local_embarque || '-')}</td>
         <td>${brDate(r.data_checkin_prevista)} até ${brDate(r.data_checkout_prevista)}<span class="adm-hosp-row-note">${esc(r.quantidade_diarias_prevista || '-')} diária(s)</span></td>
@@ -220,7 +271,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     return `
       <tr>
         <td><strong>${esc(r.codigo || '-')}</strong><span class="adm-hosp-row-note">${brDate(r.data_solicitacao)}</span></td>
-        <td>${esc(r.colaboradores || '-')}</td>
+        <td>${renderColaboradoresCell(r)}</td>
         <td>${esc([r.cidade, r.uf].filter(Boolean).join('/'))}<span class="adm-hosp-row-note">${esc(r.local_embarque || '')}</span></td>
         <td>${brDate(r.data_checkin || r.data_checkin_prevista)} até ${brDate(r.data_checkout || r.data_checkout_prevista)}</td>
         <td>${esc(r.hotel || '-')}<span class="adm-hosp-row-note">${r.valor_total_previsto ? money(r.valor_total_previsto) : ''}</span></td>
@@ -394,9 +445,10 @@ Essa ação remove o hotel da base de Hospedagem e ele deixará de aparecer no O
 
   function openModal(row) {
     state.selected = row;
+    const colaboradoresResumo = getColaboradoresDetalhados(row).map((c) => `${c.nome_colaborador || c.nome || '-'} (${getRegionalColaborador(c)})`).join(', ') || row.colaboradores || '-';
     document.getElementById('modalTitle').textContent = `Reserva ${row.codigo || ''}`;
-    document.getElementById('modalSub').textContent = `${row.colaboradores || '-'} · ${[row.cidade, row.uf].filter(Boolean).join('/')}`;
-    document.getElementById('resInfo').value = `${row.codigo || '-'} · ${row.colaboradores || '-'} · ${[row.cidade, row.uf].filter(Boolean).join('/')}`;
+    document.getElementById('modalSub').textContent = `${colaboradoresResumo} · ${[row.cidade, row.uf].filter(Boolean).join('/')}`;
+    document.getElementById('resInfo').value = `${row.codigo || '-'} · ${colaboradoresResumo} · ${[row.cidade, row.uf].filter(Boolean).join('/')}`;
     document.getElementById('resCheckin').value = row.data_checkin || row.data_checkin_prevista || '';
     document.getElementById('resCheckout').value = row.data_checkout || row.data_checkout_prevista || '';
     document.getElementById('resDiaria').value = row.valor_diaria || '';
