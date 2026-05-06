@@ -619,7 +619,13 @@ function aplicarDiariaHotelSelecionado() {
     const resumo = formatComposicaoResumo(comp);
     const summary = document.getElementById('roomSummary');
     if (summary) summary.textContent = resumo ? `${calc.quartos} quarto(s) · ${money(calc.totalDia)} por dia · Total ${money(total)} · ${resumo}` : 'Informe a quantidade de quartos e o valor da diária.';
-    if (!document.getElementById('finValor').value) document.getElementById('finValor').value = total || '';
+
+    const finValorEl = document.getElementById('finValor');
+    const finStatusEl = document.getElementById('finStatus');
+    const statusFinanceiro = String(finStatusEl?.value || '').toUpperCase();
+    if (finValorEl && !['PAGO', 'SEM_COBRANCA', 'CANCELADO'].includes(statusFinanceiro)) {
+      finValorEl.value = total ? total.toFixed(2) : '';
+    }
   }
 
   async function saveReserva(ev) {
@@ -646,7 +652,14 @@ function aplicarDiariaHotelSelecionado() {
       observacao_hospedagem: montarObservacaoComComposicao(document.getElementById('resObs').value, composicao), atualizado_por: userContext?.user?.id || null
     };
     const result = state.selected.reserva_id ? await supabase.from('hospedagem_reservas').update(payload).eq('id', state.selected.reserva_id) : await supabase.from('hospedagem_reservas').insert({ ...payload, criado_por: userContext?.user?.id || null }).select('id').single();
-    if (result.error) { setFeedback('resFeedback', result.error.message, 'err'); return; }
+    if (result.error) {
+      const msg = String(result.error.message || '');
+      const detalhe = msg.toLowerCase().includes('row-level security')
+        ? 'Permissão RLS bloqueou o cadastro da reserva. Rode o SQL sql/hospedagem_rls_fix.sql no Supabase e tente novamente.'
+        : msg;
+      setFeedback('resFeedback', detalhe, 'err');
+      return;
+    }
     const reservaId = state.selected.reserva_id || result.data?.id;
     await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: payload.status_hospedagem === 'CANCELADA' ? 'CANCELADA' : 'RESERVADA' }).eq('id', state.selected.solicitacao_id);
     state.selected.reserva_id = reservaId;
