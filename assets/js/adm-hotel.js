@@ -151,7 +151,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
             <div class="adm-hosp-field"><label>Data emissão</label><input id="nfEmissao" type="date" /></div>
             <div class="adm-hosp-field full"><label>URL nota</label><input id="nfUrl" placeholder="Link da nota fiscal" /></div>
           </div>
-          <div class="adm-hosp-form-actions"><button class="btn btn-secondary adm-hosp-btn" type="button" id="saveFinNf">Salvar financeiro/NF</button><span id="finNfFeedback" class="adm-hosp-feedback"></span></div>
+          <div class="adm-hosp-form-actions"><button class="btn btn-secondary adm-hosp-btn" type="button" id="saveFinNf">Salvar financeiro/NF</button><button class="btn btn-primary adm-hosp-btn" type="button" id="sendToFinanceiro">Enviar cobrança ao financeiro</button><span id="finNfFeedback" class="adm-hosp-feedback"></span></div>
         </div>
       </div>
     </div>
@@ -166,6 +166,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       .map((nome) => nome.trim())
       .filter(Boolean);
   }
+
   function getRegionalColaborador(colab, fallback = '') {
     return colab?.supervisao || colab?.regional || colab?.supervisao_colaborador || colab?.regional_colaborador || fallback || '-';
   }
@@ -536,6 +537,96 @@ function aplicarDiariaHotelSelecionado() {
     await loadRows();
   }
 
+
+  async function enviarCobrancaFinanceiro() {
+    if (!state.selected?.reserva_id) {
+      setFeedback('finNfFeedback', 'Salve a reserva antes de enviar a cobrança ao financeiro.', 'err');
+      return;
+    }
+
+    const reservaId = state.selected.reserva_id;
+    const valor = Number(document.getElementById('finValor').value || state.selected.valor_financeiro || state.selected.valor_total_previsto || 0);
+    if (!valor) {
+      setFeedback('finNfFeedback', 'Informe o valor total antes de enviar ao financeiro.', 'err');
+      return;
+    }
+
+    setFeedback('finNfFeedback', 'Enviando cobrança ao financeiro...');
+
+    const hotelNome = document.getElementById('resHotelNome').value.trim() || state.selected.hotel || 'Hotel';
+    const checkin = document.getElementById('resCheckin').value || state.selected.data_checkin || state.selected.data_checkin_prevista || null;
+    const checkout = document.getElementById('resCheckout').value || state.selected.data_checkout || state.selected.data_checkout_prevista || null;
+    const colaboradores = getColaboradoresDetalhados(state.selected).map((c) => c.nome_colaborador || c.nome).filter(Boolean).join(', ');
+    const destino = [state.selected.cidade, state.selected.uf].filter(Boolean).join('/');
+
+    const pagamentoPayload = {
+      origem_setor: 'HOSPEDAGEM',
+      origem_tabela: 'hospedagem_reservas',
+      origem_id: reservaId,
+      origem_codigo: state.selected.codigo || null,
+      competencia: checkin,
+      descricao: `Hospedagem ${destino || ''}${checkin || checkout ? ` · ${brDate(checkin)} até ${brDate(checkout)}` : ''}${colaboradores ? ` · ${colaboradores}` : ''}`.trim(),
+      favorecido_nome: hotelNome,
+      forma_pagamento: 'PIX',
+      valor,
+      data_vencimento: document.getElementById('finVenc').value || null,
+      status: 'PENDENTE',
+      prioridade: 'NORMAL',
+      nf_status: ({
+        NAO_SOLICITADA: 'NAO_INFORMADA',
+        AGUARDANDO_NF: 'AGUARDANDO_NF',
+        NF_RECEBIDA: 'NF_RECEBIDA',
+        ENVIADO_PARA_LANCAMENTO: 'NF_RECEBIDA',
+        LANCADO: 'LANCADA',
+        DISPENSADO: 'DISPENSADA'
+      })[document.getElementById('nfStatus').value] || 'NAO_INFORMADA',
+      nf_numero: document.getElementById('nfNumero').value.trim() || null,
+      nf_url: document.getElementById('nfUrl').value.trim() || null,
+      comprovante_url: document.getElementById('finComp').value.trim() || null,
+      observacoes: state.selected.observacao_hospedagem || state.selected.observacao || null,
+      solicitado_por: userContext?.user?.id || null,
+      solicitado_por_nome: userContext?.user?.name || userContext?.profile?.nome || null,
+      atualizado_por: userContext?.user?.id || null,
+      atualizado_por_nome: userContext?.user?.name || userContext?.profile?.nome || null
+    };
+
+    const { error } = await supabase
+      .from('financeiro_pagamentos')
+      .upsert(pagamentoPayload, { onConflict: 'origem_tabela,origem_id' });
+
+    if (error) {
+      setFeedback('finNfFeedback', `${error.message}. Confira se o SQL do módulo financeiro já foi executado.`, 'err');
+      return;
+    }
+
+    const finPayload = {
+      reserva_id: reservaId,
+      status_financeiro: 'ENVIADO_AO_FINANCEIRO',
+      valor_total: valor,
+      data_vencimento: document.getElementById('finVenc').value || null,
+      data_pagamento: document.getElementById('finPag').value || null,
+      comprovante_pagamento_url: document.getElementById('finComp').value.trim() || null,
+      responsavel_pagamento_id: userContext?.user?.id || null,
+      responsavel_pagamento: userContext?.user?.name || null
+    };
+
+    let finResult;
+    if (state.selected.financeiro_id) {
+      finResult = await supabase.from('hospedagem_financeiro').update(finPayload).eq('id', state.selected.financeiro_id);
+    } else {
+      finResult = await supabase.from('hospedagem_financeiro').insert(finPayload).select('id').single();
+    }
+
+    if (finResult?.error) {
+      setFeedback('finNfFeedback', `Cobrança enviada, mas não atualizei o status da hospedagem: ${finResult.error.message}`, 'err');
+      return;
+    }
+
+    document.getElementById('finStatus').value = 'ENVIADO_AO_FINANCEIRO';
+    setFeedback('finNfFeedback', 'Cobrança enviada ao Financeiro com sucesso.', 'ok');
+    await loadRows();
+  }
+
   async function markAnalise() {
     if (!state.selected) return;
     await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: 'EM_ANALISE' }).eq('id', state.selected.solicitacao_id);
@@ -593,6 +684,7 @@ function aplicarDiariaHotelSelecionado() {
   document.getElementById('hotelClear').addEventListener('click', resetHotelForm);
   document.getElementById('reservaForm').addEventListener('submit', saveReserva);
   document.getElementById('saveFinNf').addEventListener('click', saveFinNf);
+  document.getElementById('sendToFinanceiro').addEventListener('click', enviarCobrancaFinanceiro);
   document.getElementById('markAnalise').addEventListener('click', markAnalise);
   document.getElementById('recusarSolicitacao').addEventListener('click', recusarSolicitacao);
   document.getElementById('modalClose').addEventListener('click', closeModal);
