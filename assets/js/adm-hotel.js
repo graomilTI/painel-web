@@ -39,7 +39,7 @@ function injectStyles() {
   style.id = 'admHospStyles';
   style.textContent = `
     .adm-hosp-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.adm-hosp-tab{width:auto!important;margin-top:0!important;border:1px solid var(--line-2);background:#0b1220;color:var(--text);border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:800}.adm-hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}.adm-hosp-panel{display:none}.adm-hosp-panel.active{display:block}.adm-hosp-btn{width:auto!important;margin-top:0!important}.adm-hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-hosp-table{width:100%;border-collapse:collapse;min-width:1180px;background:#0b1220}.adm-hosp-table th,.adm-hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-hosp-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.adm-hosp-table tr:hover td{background:rgba(111,208,165,.035)}.adm-hosp-actions{display:flex;gap:8px;flex-wrap:wrap}.adm-hosp-small{padding:8px 10px!important;border-radius:12px!important;font-size:12px}.adm-hosp-status{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:800;white-space:nowrap}.adm-hosp-status.solicitada,.adm-hosp-status.em_analise,.adm-hosp-status.em_cotacao,.adm-hosp-status.aguardando_pagamento,.adm-hosp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.adm-hosp-status.reservada,.adm-hosp-status.checkin_previsto,.adm-hosp-status.hospedado,.adm-hosp-status.enviado_ao_financeiro,.adm-hosp-status.nf_recebida{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.adm-hosp-status.concluida,.adm-hosp-status.pago,.adm-hosp-status.lancado,.adm-hosp-status.ativo,.adm-hosp-status.preferencial{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.adm-hosp-status.cancelada,.adm-hosp-status.bloqueado,.adm-hosp-status.evitar{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}.adm-hosp-status.checkout_hoje,.adm-hosp-status.renovacao_necessaria{color:#fed7aa;background:rgba(249,115,22,.11);border-color:rgba(249,115,22,.24)}
-    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-colab-list{display:grid;gap:7px}.adm-hosp-colab-item{display:grid;gap:2px;line-height:1.15}.adm-hosp-colab-name{font-weight:800;color:var(--text)}.adm-hosp-colab-regional{font-size:12px;color:#9ca3af}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}.adm-room-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.34);padding:14px}.adm-room-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-room-title strong{display:block;color:#e5e7eb}.adm-room-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-room-grid{display:grid;grid-template-columns:1.15fr 1fr .7fr 1fr 1fr;gap:8px;align-items:center}.adm-room-head{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:900}.adm-room-label{font-weight:800;color:#e5e7eb}.adm-room-chip{display:inline-flex;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.16);color:#dcfce7;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}.adm-room-grid input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-subtotal{font-weight:900;color:#bbf7d0}.adm-room-summary{margin-top:10px;color:#fde68a;font-size:12px;font-weight:800}.adm-hidden{display:none!important}
+    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-colab-list{display:grid;gap:7px}.adm-hosp-colab-item{display:grid;gap:2px;line-height:1.15}.adm-hosp-colab-name{font-weight:800;color:var(--text)}.adm-hosp-colab-regional{font-size:12px;color:#9ca3af}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}.adm-room-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.34);padding:14px}.adm-room-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-room-title strong{display:block;color:#e5e7eb}.adm-room-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-room-chip{display:inline-flex;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.16);color:#dcfce7;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}.adm-room-add{display:grid;grid-template-columns:1fr 1fr .65fr .9fr auto;gap:10px;align-items:end;margin-top:12px}.adm-room-add .adm-room-mini{display:flex;flex-direction:column;gap:6px}.adm-room-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:900}.adm-room-add select,.adm-room-add input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-list{display:grid;gap:8px;margin-top:12px}.adm-room-row{display:grid;grid-template-columns:1fr 1fr .65fr .9fr 1fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-room-row-pill{font-weight:900;color:#e5e7eb}.adm-room-row-type{color:#cbd5e1}.adm-room-row input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-row-subtotal{font-weight:900;color:#bbf7d0}.adm-room-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-room-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#94a3b8;font-size:12px}.adm-room-summary{margin-top:10px;color:#fde68a;font-size:12px;font-weight:800}.adm-hidden{display:none!important}@media(max-width:900px){.adm-room-add,.adm-room-row{grid-template-columns:1fr}.adm-room-row-subtotal{font-size:14px}}
     @media(max-width:900px){.adm-hosp-form,.adm-hosp-filters{grid-template-columns:1fr}.adm-hosp-search{min-width:0;width:100%}}
   `;
   document.head.appendChild(style);
@@ -128,19 +128,16 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
           <div class="adm-hosp-field"><label>Diárias</label><input id="resDiarias" readonly /></div>
           <div class="adm-hosp-field"><label>Total previsto</label><input id="resTotal" readonly /></div>
           <div class="adm-room-wrap">
-            <div class="adm-room-title"><div><strong>Composição dos quartos</strong><span>Mulheres e homens devem ficar em quartos separados. Ex.: 1 feminino individual + 1 masculino duplo.</span></div><span class="adm-room-chip">Separado por gênero</span></div>
-            <div class="adm-room-grid">
-              <div class="adm-room-head">Grupo</div><div class="adm-room-head">Tipo</div><div class="adm-room-head">Qtd.</div><div class="adm-room-head">Diária</div><div class="adm-room-head">Subtotal/dia</div>
-              <div class="adm-room-label">Feminino</div><div>Individual</div><input id="room_FEMININO_INDIVIDUAL_qtd" type="number" min="0" step="1" value="0" data-room-qtd data-room-key="FEMININO_INDIVIDUAL" /><input id="room_FEMININO_INDIVIDUAL_diaria" type="number" min="0" step="0.01" value="0" data-room-diaria data-room-key="FEMININO_INDIVIDUAL" /><div class="adm-room-subtotal" id="room_FEMININO_INDIVIDUAL_sub">R$ 0,00</div>
-              <div class="adm-room-label">Feminino</div><div>Duplo</div><input id="room_FEMININO_DUPLO_qtd" type="number" min="0" step="1" value="0" data-room-qtd data-room-key="FEMININO_DUPLO" /><input id="room_FEMININO_DUPLO_diaria" type="number" min="0" step="0.01" value="0" data-room-diaria data-room-key="FEMININO_DUPLO" /><div class="adm-room-subtotal" id="room_FEMININO_DUPLO_sub">R$ 0,00</div>
-              <div class="adm-room-label">Feminino</div><div>Triplo</div><input id="room_FEMININO_TRIPLO_qtd" type="number" min="0" step="1" value="0" data-room-qtd data-room-key="FEMININO_TRIPLO" /><input id="room_FEMININO_TRIPLO_diaria" type="number" min="0" step="0.01" value="0" data-room-diaria data-room-key="FEMININO_TRIPLO" /><div class="adm-room-subtotal" id="room_FEMININO_TRIPLO_sub">R$ 0,00</div>
-              <div class="adm-room-label">Feminino</div><div>Quádruplo</div><input id="room_FEMININO_QUADRUPLO_qtd" type="number" min="0" step="1" value="0" data-room-qtd data-room-key="FEMININO_QUADRUPLO" /><input id="room_FEMININO_QUADRUPLO_diaria" type="number" min="0" step="0.01" value="0" data-room-diaria data-room-key="FEMININO_QUADRUPLO" /><div class="adm-room-subtotal" id="room_FEMININO_QUADRUPLO_sub">R$ 0,00</div>
-              <div class="adm-room-label">Masculino</div><div>Individual</div><input id="room_MASCULINO_INDIVIDUAL_qtd" type="number" min="0" step="1" value="0" data-room-qtd data-room-key="MASCULINO_INDIVIDUAL" /><input id="room_MASCULINO_INDIVIDUAL_diaria" type="number" min="0" step="0.01" value="0" data-room-diaria data-room-key="MASCULINO_INDIVIDUAL" /><div class="adm-room-subtotal" id="room_MASCULINO_INDIVIDUAL_sub">R$ 0,00</div>
-              <div class="adm-room-label">Masculino</div><div>Duplo</div><input id="room_MASCULINO_DUPLO_qtd" type="number" min="0" step="1" value="0" data-room-qtd data-room-key="MASCULINO_DUPLO" /><input id="room_MASCULINO_DUPLO_diaria" type="number" min="0" step="0.01" value="0" data-room-diaria data-room-key="MASCULINO_DUPLO" /><div class="adm-room-subtotal" id="room_MASCULINO_DUPLO_sub">R$ 0,00</div>
-              <div class="adm-room-label">Masculino</div><div>Triplo</div><input id="room_MASCULINO_TRIPLO_qtd" type="number" min="0" step="1" value="0" data-room-qtd data-room-key="MASCULINO_TRIPLO" /><input id="room_MASCULINO_TRIPLO_diaria" type="number" min="0" step="0.01" value="0" data-room-diaria data-room-key="MASCULINO_TRIPLO" /><div class="adm-room-subtotal" id="room_MASCULINO_TRIPLO_sub">R$ 0,00</div>
-              <div class="adm-room-label">Masculino</div><div>Quádruplo</div><input id="room_MASCULINO_QUADRUPLO_qtd" type="number" min="0" step="1" value="0" data-room-qtd data-room-key="MASCULINO_QUADRUPLO" /><input id="room_MASCULINO_QUADRUPLO_diaria" type="number" min="0" step="0.01" value="0" data-room-diaria data-room-key="MASCULINO_QUADRUPLO" /><div class="adm-room-subtotal" id="room_MASCULINO_QUADRUPLO_sub">R$ 0,00</div>
+            <div class="adm-room-title"><div><strong>Composição dos quartos</strong><span>Adicione apenas os quartos necessários. Mulheres e homens devem ficar em quartos separados.</span></div><span class="adm-room-chip">Separado por gênero</span></div>
+            <div class="adm-room-add">
+              <div class="adm-room-mini"><label>Gênero</label><select id="roomGenero"><option value="FEMININO">Feminino</option><option value="MASCULINO">Masculino</option></select></div>
+              <div class="adm-room-mini"><label>Tipo de quarto</label><select id="roomTipo"><option value="INDIVIDUAL">Individual</option><option value="DUPLO">Duplo</option><option value="TRIPLO">Triplo</option><option value="QUADRUPLO">Quádruplo</option></select></div>
+              <div class="adm-room-mini"><label>Qtd.</label><input id="roomQtd" type="number" min="1" step="1" value="1" /></div>
+              <div class="adm-room-mini"><label>Diária</label><input id="roomDiaria" type="number" min="0" step="0.01" value="0" /></div>
+              <button class="btn btn-secondary adm-hosp-btn" type="button" id="roomAdd">Adicionar</button>
             </div>
-            <div class="adm-room-summary" id="roomSummary">Informe a quantidade de quartos e o valor da diária.</div>
+            <div class="adm-room-list" id="roomList"><div class="adm-room-empty">Nenhum quarto adicionado.</div></div>
+            <div class="adm-room-summary" id="roomSummary">Adicione a composição dos quartos.</div>
           </div>
           <input id="resDiaria" class="adm-hidden" type="number" step="0.01" min="0" />
           <input id="resQuartos" class="adm-hidden" type="number" min="1" value="1" />
@@ -220,25 +217,83 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     }, {});
   }
 
+  function getRoomKey(grupo, tipo) {
+    return `${String(grupo || '').toUpperCase()}_${String(tipo || '').toUpperCase()}`;
+  }
+
+  function getRoomMeta(key) {
+    return ROOM_KEYS.find((item) => item.key === key) || null;
+  }
+
   function getComposicaoFromForm() {
     const comp = emptyComposicaoQuartos();
-    ROOM_KEYS.forEach((item) => {
-      comp[item.key] = {
-        qtd: Math.max(0, Math.floor(Number(document.getElementById(`room_${item.key}_qtd`)?.value || 0))),
-        diaria: Math.max(0, Number(document.getElementById(`room_${item.key}_diaria`)?.value || 0))
+    document.querySelectorAll('#roomList [data-room-row]').forEach((row) => {
+      const key = row.dataset.roomKey;
+      if (!comp[key]) return;
+      comp[key] = {
+        qtd: Math.max(0, Math.floor(Number(row.querySelector('[data-room-qtd]')?.value || 0))),
+        diaria: Math.max(0, Number(row.querySelector('[data-room-diaria]')?.value || 0))
       };
     });
     return comp;
   }
 
+  function renderRoomRow(item, value = {}) {
+    const qtd = Math.max(0, Math.floor(Number(value.qtd || 0)));
+    const diaria = Math.max(0, Number(value.diaria || 0));
+    return `
+      <div class="adm-room-row" data-room-row data-room-key="${esc(item.key)}">
+        <div class="adm-room-row-pill">${esc(item.grupo)}</div>
+        <div class="adm-room-row-type">${esc(item.tipo.charAt(0) + item.tipo.slice(1).toLowerCase())}</div>
+        <input type="number" min="1" step="1" value="${qtd || 1}" data-room-qtd aria-label="Quantidade" />
+        <input type="number" min="0" step="0.01" value="${diaria}" data-room-diaria aria-label="Diária" />
+        <div class="adm-room-row-subtotal">${money(qtd * diaria)}</div>
+        <button class="adm-room-remove" type="button" data-room-remove title="Remover quarto">Remover</button>
+      </div>`;
+  }
+
   function setComposicaoForm(comp = {}) {
     const normalized = { ...emptyComposicaoQuartos(), ...(comp || {}) };
-    ROOM_KEYS.forEach((item) => {
-      const qtdEl = document.getElementById(`room_${item.key}_qtd`);
-      const diariaEl = document.getElementById(`room_${item.key}_diaria`);
-      if (qtdEl) qtdEl.value = Number(normalized[item.key]?.qtd || 0);
-      if (diariaEl) diariaEl.value = Number(normalized[item.key]?.diaria || 0);
-    });
+    const list = document.getElementById('roomList');
+    if (!list) return;
+    const rows = ROOM_KEYS
+      .filter((item) => Number(normalized[item.key]?.qtd || 0) > 0 || Number(normalized[item.key]?.diaria || 0) > 0)
+      .map((item) => renderRoomRow(item, normalized[item.key]));
+    list.innerHTML = rows.length ? rows.join('') : '<div class="adm-room-empty">Nenhum quarto adicionado.</div>';
+  }
+
+  function atualizarDiariaSugeridaQuarto() {
+    const hotel = getHotelById(document.getElementById('resHotel')?.value);
+    const tipo = document.getElementById('roomTipo')?.value || 'INDIVIDUAL';
+    const diariaEl = document.getElementById('roomDiaria');
+    if (!hotel || !diariaEl) return;
+    const diaria = getHotelDiariaPorTipo(hotel, tipo);
+    if (diaria && !Number(diariaEl.value || 0)) diariaEl.value = diaria;
+  }
+
+  function addRoomFromDraft() {
+    const grupo = document.getElementById('roomGenero')?.value || 'FEMININO';
+    const tipo = document.getElementById('roomTipo')?.value || 'INDIVIDUAL';
+    const key = getRoomKey(grupo, tipo);
+    const item = getRoomMeta(key);
+    if (!item) return;
+    const qtd = Math.max(1, Math.floor(Number(document.getElementById('roomQtd')?.value || 1)));
+    const diaria = Math.max(0, Number(document.getElementById('roomDiaria')?.value || 0));
+    const list = document.getElementById('roomList');
+    if (!list) return;
+    const empty = list.querySelector('.adm-room-empty');
+    if (empty) empty.remove();
+    const existing = list.querySelector(`[data-room-key="${key}"]`);
+    if (existing) {
+      const qtdEl = existing.querySelector('[data-room-qtd]');
+      const diariaEl = existing.querySelector('[data-room-diaria]');
+      if (qtdEl) qtdEl.value = Math.max(1, Math.floor(Number(qtdEl.value || 0))) + qtd;
+      if (diariaEl) diariaEl.value = diaria || Number(diariaEl.value || 0);
+    } else {
+      list.insertAdjacentHTML('beforeend', renderRoomRow(item, { qtd, diaria }));
+    }
+    document.getElementById('roomQtd').value = 1;
+    updateReservaTotals();
   }
 
   function calcularComposicao(comp = getComposicaoFromForm()) {
@@ -260,12 +315,17 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   function aplicarDiariasHotelNaComposicao(hotel, substituir = false) {
     if (!hotel) return;
-    ROOM_KEYS.forEach((item) => {
-      const diariaEl = document.getElementById(`room_${item.key}_diaria`);
-      if (!diariaEl) return;
+    document.querySelectorAll('#roomList [data-room-row]').forEach((row) => {
+      const item = getRoomMeta(row.dataset.roomKey);
+      const diariaEl = row.querySelector('[data-room-diaria]');
+      if (!item || !diariaEl) return;
       const diaria = getHotelDiariaPorTipo(hotel, item.tipo);
       if (diaria && (substituir || !Number(diariaEl.value || 0))) diariaEl.value = diaria;
     });
+    const tipoAtual = document.getElementById('roomTipo')?.value || 'INDIVIDUAL';
+    const diariaDraft = getHotelDiariaPorTipo(hotel, tipoAtual);
+    const draftEl = document.getElementById('roomDiaria');
+    if (draftEl && diariaDraft && (substituir || !Number(draftEl.value || 0))) draftEl.value = diariaDraft;
     updateReservaTotals();
   }
 
@@ -607,9 +667,11 @@ function aplicarDiariaHotelSelecionado() {
     const comp = getComposicaoFromForm();
     const calc = calcularComposicao(comp);
     const total = dias * calc.totalDia;
-    ROOM_KEYS.forEach((item) => {
-      const sub = document.getElementById(`room_${item.key}_sub`);
-      if (sub) sub.textContent = money(Number(comp[item.key]?.qtd || 0) * Number(comp[item.key]?.diaria || 0));
+    document.querySelectorAll('#roomList [data-room-row]').forEach((row) => {
+      const qtd = Number(row.querySelector('[data-room-qtd]')?.value || 0);
+      const diaria = Number(row.querySelector('[data-room-diaria]')?.value || 0);
+      const subtotal = row.querySelector('.adm-room-row-subtotal');
+      if (subtotal) subtotal.textContent = money(qtd * diaria);
     });
     document.getElementById('resDiarias').value = dias;
     document.getElementById('resTotal').value = money(total);
@@ -836,7 +898,21 @@ function aplicarDiariaHotelSelecionado() {
   document.getElementById('recusarSolicitacao').addEventListener('click', recusarSolicitacao);
   document.getElementById('modalClose').addEventListener('click', closeModal);
   ['resCheckin','resCheckout'].forEach((id) => document.getElementById(id).addEventListener('input', updateReservaTotals));
-  document.querySelectorAll('[data-room-qtd],[data-room-diaria]').forEach((el) => el.addEventListener('input', updateReservaTotals));
+  document.getElementById('roomAdd')?.addEventListener('click', addRoomFromDraft);
+  document.getElementById('roomList')?.addEventListener('input', updateReservaTotals);
+  document.getElementById('roomList')?.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-room-remove]');
+    if (!btn) return;
+    btn.closest('[data-room-row]')?.remove();
+    const list = document.getElementById('roomList');
+    if (list && !list.querySelector('[data-room-row]')) list.innerHTML = '<div class="adm-room-empty">Nenhum quarto adicionado.</div>';
+    updateReservaTotals();
+  });
+  ['roomGenero','roomTipo'].forEach((id) => document.getElementById(id)?.addEventListener('change', () => {
+    const diariaEl = document.getElementById('roomDiaria');
+    if (diariaEl) diariaEl.value = '';
+    atualizarDiariaSugeridaQuarto();
+  }));
   document.getElementById('resHotel').addEventListener('change', aplicarDiariaHotelSelecionado);
   document.getElementById('reservaModal').addEventListener('click', (ev) => { if (ev.target.id === 'reservaModal') closeModal(); });
   content.addEventListener('click', (ev) => {
