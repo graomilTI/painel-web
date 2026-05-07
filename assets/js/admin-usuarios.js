@@ -61,8 +61,10 @@ const state = {
   editingUser: null,
 };
 
+const FROTAS_MODULE_ID = '5f6ad9e7-ec4f-4fc2-a7f9-5f2a0b0f0a11';
+
 const FROTAS_MODULE_FALLBACK = {
-  id: 'frotas',
+  id: FROTAS_MODULE_ID,
   codigo: 'frotas',
   nome: 'Frotas',
   descricao: 'Módulo de gestão de frotas',
