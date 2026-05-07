@@ -101,11 +101,39 @@ function ensureOperationalSection(menuSections, userContext) {
   return sections;
 }
 
+const FROTAS_EXCESSO_FAILSAFE = {
+  code: 'frotas_excesso_velocidade',
+  label: 'Excesso de Velocidade',
+  path: 'frotas',
+  aliases: ['FROTAS', 'EXCESSO_VELOCIDADE', 'FROTAS_EXCESSO_VELOCIDADE']
+};
+
+function ensureFrotasSection(menuSections, userContext) {
+  const sections = Array.isArray(menuSections)
+    ? menuSections.map((section) => ({ ...section, items: [...(section.items || [])] }))
+    : [];
+
+  const canShow = Boolean(userContext?.user?.is_master) || isItemAllowed(FROTAS_EXCESSO_FAILSAFE, buildAllowedCodeSet(userContext));
+  if (!canShow) return sections;
+
+  const frotasIndex = sections.findIndex((section) => normalizeCode(section.section) === 'frotas');
+  if (frotasIndex >= 0) {
+    const exists = sections[frotasIndex].items.some((item) => normalizeCode(item.code) === normalizeCode(FROTAS_EXCESSO_FAILSAFE.code));
+    if (!exists) sections[frotasIndex].items.push(FROTAS_EXCESSO_FAILSAFE);
+    return sections;
+  }
+
+  const operacionalIndex = sections.findIndex((section) => normalizeCode(section.section) === 'operacional');
+  const insertAt = operacionalIndex >= 0 ? operacionalIndex + 1 : sections.length;
+  sections.splice(insertAt, 0, { section: 'FROTAS', items: [FROTAS_EXCESSO_FAILSAFE] });
+  return sections;
+}
+
 export function buildAllowedMenu(userContext) {
   if (!userContext) return [];
 
   if (userContext.user?.is_master) {
-    return ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext);
+    return ensureFrotasSection(ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext), userContext);
   }
 
   // Regra de segurança visual: perfil/setor GESTOR enxerga somente INÍCIO + GESTOR.
@@ -120,12 +148,12 @@ export function buildAllowedMenu(userContext) {
 
   const allowedCodes = buildAllowedCodeSet(userContext);
 
-  return ensureOperationalSection(PANEL_MENU
+  return ensureFrotasSection(ensureOperationalSection(PANEL_MENU
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => isItemAllowed(item, allowedCodes)),
     }))
-    .filter((section) => section.items.length > 0), userContext);
+    .filter((section) => section.items.length > 0), userContext), userContext);
 }
 
 export function flattenAllowedMenu(userContext) {
