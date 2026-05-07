@@ -927,6 +927,247 @@
   }
 
 
+  const FUNC_COL = {
+    cpf: ['CPF', 'Cpf'],
+    nome: ['Nome', 'NOME', 'Funcionário', 'Funcionario', 'Colaborador'],
+    situacao: ['Situação', 'Situacao', 'STATUS', 'Status'],
+    admissao: ['Admissão', 'Admissao', 'Data de Admissão', 'Data de Admissao', 'Admissao Data', 'Dt Admissao'],
+    desligamento: ['Desligamento', 'Data de Desligamento', 'Dt Desligamento'],
+    salario: ['Salário', 'Salario'],
+    contaBancaria: ['C. Banc. Despesas', 'C Banc. Despesas', 'C Banc Despesas', 'Conta Bancária', 'Conta Bancaria'],
+    empresa: ['Empresa'],
+    coordenacao: ['Coordenação', 'Coordenacao'],
+    supervisao: ['Supervisão', 'Supervisao'],
+    tipo: ['Tipo'],
+    cep: ['CEP', 'Cep'],
+    estado: ['Estado', 'UF'],
+    cidade: ['Cidade'],
+    bairro: ['Bairro'],
+    endereco: ['Endereço', 'Endereco'],
+    complemento: ['Complemento'],
+    dataNascimento: ['Data de Nascimento', 'Nascimento'],
+    cargo: ['Cargo'],
+    whatsapp: ['Whatsapp', 'WhatsApp', 'Celular', 'Telefone'],
+    emailPessoal: ['E-mail Pessoal', 'Email Pessoal'],
+    emailEmpresa: ['E-mail da Empresa', 'Email da Empresa', 'E-mail Empresa']
+  };
+
+  function normalizeKey(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
+  function normalizeText(value) {
+    if (value === null || value === undefined) return null;
+    const s = String(value).trim();
+    return s || null;
+  }
+
+  function getField(row, aliases = []) {
+    if (!row || typeof row !== 'object') return null;
+
+    for (const alias of aliases) {
+      if (Object.prototype.hasOwnProperty.call(row, alias)) return row[alias];
+    }
+
+    const normalizedMap = new Map();
+    for (const key of Object.keys(row)) normalizedMap.set(normalizeKey(key), row[key]);
+
+    for (const alias of aliases) {
+      const hit = normalizedMap.get(normalizeKey(alias));
+      if (hit !== undefined) return hit;
+    }
+    return null;
+  }
+
+  function hasAnyHeader(row, aliases = []) {
+    if (!row || typeof row !== 'object') return false;
+    const keys = Object.keys(row);
+    const normalized = new Set(keys.map(normalizeKey));
+    return aliases.some((alias) => keys.includes(alias) || normalized.has(normalizeKey(alias)));
+  }
+
+  function normalizeCPF(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const cpf = String(value).replace(/\D/g, '');
+    return cpf ? cpf.padStart(11, '0') : null;
+  }
+
+  function normalizePhone(value) {
+    if (!value) return null;
+    const s = String(value).replace(/\D/g, '');
+    return s || null;
+  }
+
+  function excelDateToISO(value) {
+    if (value === null || value === undefined || value === '') return null;
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+
+    if (typeof value === 'number') {
+      const parsed = window.XLSX?.SSF?.parse_date_code ? window.XLSX.SSF.parse_date_code(value) : null;
+      if (!parsed) return null;
+      return makeIsoDate(parsed.y, parsed.m, parsed.d);
+    }
+
+    const s = String(value).trim();
+    if (!s) return null;
+
+    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (m) return makeIsoDate(m[3], m[2], m[1]);
+
+    m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+    if (m) return makeIsoDate(m[1], m[2], m[3]);
+
+    return null;
+  }
+
+  function normalizeCurrency(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const raw = String(value).trim().replace(/\s/g, '');
+    const normalized = raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw;
+    const number = Number(normalized.replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function computeAtivo(situacao, desligamento) {
+    if (desligamento) return false;
+    const s = normalizeHeader(situacao);
+    if (!s) return true;
+    return !['nao ativo', 'nao ativa', 'inativo', 'inativa', 'deslig', 'demit'].some((status) => s.includes(status));
+  }
+
+  function mapFuncionarioRow(row, dataReferencia, importacaoId) {
+    const situacao = normalizeText(getField(row, FUNC_COL.situacao));
+    const desligamento = excelDateToISO(getField(row, FUNC_COL.desligamento));
+    const admissao = excelDateToISO(getField(row, FUNC_COL.admissao));
+
+    return {
+      importacao_id: importacaoId,
+      data_referencia: dataReferencia,
+      cpf: normalizeCPF(getField(row, FUNC_COL.cpf)),
+      nome: normalizeText(getField(row, FUNC_COL.nome)),
+      situacao,
+      admissao,
+      desligamento,
+      salario: normalizeCurrency(getField(row, FUNC_COL.salario)),
+      conta_bancaria: normalizeText(getField(row, FUNC_COL.contaBancaria)),
+      empresa: normalizeText(getField(row, FUNC_COL.empresa)),
+      coordenacao: normalizeText(getField(row, FUNC_COL.coordenacao)),
+      supervisao: normalizeText(getField(row, FUNC_COL.supervisao)),
+      tipo: normalizeText(getField(row, FUNC_COL.tipo)),
+      cep: normalizeText(getField(row, FUNC_COL.cep)),
+      estado: normalizeText(getField(row, FUNC_COL.estado)),
+      cidade: normalizeText(getField(row, FUNC_COL.cidade)),
+      bairro: normalizeText(getField(row, FUNC_COL.bairro)),
+      endereco: normalizeText(getField(row, FUNC_COL.endereco)),
+      complemento: normalizeText(getField(row, FUNC_COL.complemento)),
+      data_nascimento: excelDateToISO(getField(row, FUNC_COL.dataNascimento)),
+      cargo: normalizeText(getField(row, FUNC_COL.cargo)),
+      whatsapp: normalizePhone(getField(row, FUNC_COL.whatsapp)),
+      email_pessoal: normalizeText(getField(row, FUNC_COL.emailPessoal)),
+      email_empresa: normalizeText(getField(row, FUNC_COL.emailEmpresa)),
+      ativo: computeAtivo(situacao, desligamento)
+    };
+  }
+
+  function isFuncionarioReportHeaders(row) {
+    return hasAnyHeader(row, FUNC_COL.cpf)
+      && hasAnyHeader(row, FUNC_COL.nome)
+      && hasAnyHeader(row, FUNC_COL.admissao)
+      && hasAnyHeader(row, FUNC_COL.empresa)
+      && hasAnyHeader(row, FUNC_COL.supervisao)
+      && hasAnyHeader(row, FUNC_COL.tipo);
+  }
+
+  async function readFuncionariosSnapshotFromFile(file, dataReferencia, importacaoId) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
+    const sheetName = workbook.SheetNames.find((name) => normalizeHeader(name) === 'dados') || workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true });
+
+    if (!rows.length) throw new Error('A planilha de funcionários está vazia.');
+    if (!isFuncionarioReportHeaders(rows[0])) {
+      throw new Error('A planilha de funcionários não possui a estrutura esperada. Cabeçalhos mínimos: CPF, Nome, Admissão, Empresa, Supervisão e Tipo.');
+    }
+
+    return rows
+      .map((row) => mapFuncionarioRow(row, dataReferencia, importacaoId))
+      .filter((row) => row.nome || row.cpf);
+  }
+
+  async function insertFuncionariosBatches(opts, rows, batchSize = 300) {
+    let total = 0;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const { error } = await opts.supabase.from('colaborador_snapshot').insert(batch);
+      if (error) throw new Error(error.message || 'Falha ao gravar funcionários em colaborador_snapshot.');
+      total += batch.length;
+    }
+    return total;
+  }
+
+  async function importarFuncionariosDaPlanilha(file, opts, { user, userName } = {}) {
+    const today = new Date().toISOString().slice(0, 10);
+
+    const { data: importacao, error: impError } = await opts.supabase
+      .from('colaborador_importacoes')
+      .insert({
+        data_referencia: today,
+        arquivo_nome: file.name,
+        origem: 'relatorios_inteligentes',
+        importado_por: user?.id || null,
+        status: 'processando',
+        total_linhas: 0,
+        observacoes: 'Importado pelo menu Relatórios para atualizar a base global usada pelos painéis.'
+      })
+      .select()
+      .single();
+
+    if (impError) throw new Error(impError.message || 'Falha ao criar importação de funcionários.');
+
+    try {
+      const rows = await readFuncionariosSnapshotFromFile(file, today, importacao.id);
+      if (!rows.length) throw new Error('Nenhum funcionário válido foi encontrado na planilha.');
+
+      // Mantém uma única versão da base para a data atual, evitando duplicação nos painéis que leem o último snapshot.
+      const { error: delError } = await opts.supabase
+        .from('colaborador_snapshot')
+        .delete()
+        .eq('data_referencia', today);
+      if (delError) throw new Error(delError.message || 'Falha ao limpar snapshot anterior do dia.');
+
+      const total = await insertFuncionariosBatches(opts, rows, 300);
+
+      const { error: updError } = await opts.supabase
+        .from('colaborador_importacoes')
+        .update({
+          status: 'processado',
+          total_linhas: total,
+          observacoes: `Importado pelo menu Relatórios. Base global atualizada para ${today}. Responsável: ${userName || user?.email || 'não informado'}.`
+        })
+        .eq('id', importacao.id);
+      if (updError) throw new Error(updError.message || 'Falha ao finalizar importação de funcionários.');
+
+      const ativos = rows.filter((row) => row.ativo !== false).length;
+      const supervisoes = new Set(rows.map((row) => row.supervisao).filter(Boolean)).size;
+      return { total_linhas: rows.length, importados: total, ativos, supervisoes, data_referencia: today };
+    } catch (err) {
+      await opts.supabase
+        .from('colaborador_importacoes')
+        .update({ status: 'erro', observacoes: `Erro na importação via Relatórios: ${err.message || err}` })
+        .eq('id', importacao.id);
+      throw err;
+    }
+  }
+
+
   function auditoriaImportHash(row) {
     const base = [
       pickValue(row, ['Classificador']),
@@ -1106,8 +1347,8 @@
   }
 
   function detectRelatorio(fileName) {
-    const rawName = String(fileName || '');
-    const n = normalizeHeader(rawName).replace(/[_.-]+/g, ' ');
+    const rawName = String(fileName || '').toLowerCase();
+    const n = normalizeHeader(fileName);
 
     if (n.includes('uber') || n.includes('corridas')) {
       return { tipo: 'uber_corridas', titulo: 'Relatório Uber' };
@@ -1117,13 +1358,12 @@
       return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
     }
 
-    if ((n.includes('funcionario') || n.includes('funcionarios') || n.includes('colaborador') || n.includes('colaboradores'))
-      && (n.includes('relatorio') || n.includes('base') || n.includes('cadastro') || n.includes('lista') || n.includes('funcionario') || n.includes('funcionarios'))) {
-      return { tipo: 'funcionarios', titulo: 'Relatório de Funcionários' };
+    if ((n.includes('endereco') || n.includes('endereço') || n.includes('gps')) && (n.includes('colaborador') || n.includes('colaboradores'))) {
+      return { tipo: 'colaboradores_operacional', titulo: 'Endereços dos Colaboradores Operacional' };
     }
 
-    if ((n.includes('endereco') || n.includes('gps')) && (n.includes('colaborador') || n.includes('colaboradores') || n.includes('funcionario') || n.includes('funcionarios'))) {
-      return { tipo: 'colaboradores_operacional', titulo: 'Endereços dos Colaboradores Operacional' };
+    if (n.includes('funcionario') || n.includes('funcionarios') || n.includes('relatorio de funcionarios') || n.includes('relatorio-de-funcionarios')) {
+      return { tipo: 'funcionarios', titulo: 'Relatório de Funcionários' };
     }
 
     if ((n.includes('mapa') && n.includes('g1000')) || n.includes('ponto-embarque') || n.includes('pontos-embarque') || n.includes('pontos_de_embarque') || n.includes('pontos de embarque')) {
@@ -1431,6 +1671,7 @@
     let colaboradoresResumo = null;
     let auditoriasResumo = null;
     let uberResumo = null;
+    let funcionariosResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -1446,6 +1687,11 @@
       setProgress(bar, 82);
       colaboradoresResumo = await importarColaboradoresBaseDaPlanilha(file, opts);
     }
+    if (detected.tipo === 'funcionarios') {
+      status.textContent = 'Atualizando base global de funcionários...';
+      setProgress(bar, 82);
+      funcionariosResumo = await importarFuncionariosDaPlanilha(file, opts, { user, userName });
+    }
     if (detected.tipo === 'auditorias_operacional') {
       status.textContent = 'Importando histórico de auditorias no módulo Operacional...';
       setProgress(bar, 82);
@@ -1458,7 +1704,7 @@
     }
 
     const importMode = opts.importMode || 'auto';
-    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'auditorias_operacional'].includes(detected.tipo) ? null : (entry?.period || await detectFilePeriod(file, detected.tipo));
+    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'funcionarios', 'auditorias_operacional'].includes(detected.tipo) ? null : (entry?.period || await detectFilePeriod(file, detected.tipo));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -1476,13 +1722,15 @@
         ? 'Registrando upload dos pontos de embarque...'
         : (detected.tipo === 'colaboradores_operacional'
           ? 'Registrando upload dos endereços dos colaboradores...'
-          : (detected.tipo === 'auditorias_operacional'
+          : (detected.tipo === 'funcionarios'
+            ? 'Registrando upload da base de funcionários...'
+            : (detected.tipo === 'auditorias_operacional'
             ? 'Registrando upload das auditorias operacionais...'
-            : (detected.tipo === 'uber_corridas'
-              ? 'Registrando upload do relatório Uber...'
-              : (effectiveMode === 'replace'
-            ? 'Registrando substituição inteligente...'
-            : 'Registrando complemento inteligente...')))));
+              : (detected.tipo === 'uber_corridas'
+                ? 'Registrando upload do relatório Uber...'
+                : (effectiveMode === 'replace'
+              ? 'Registrando substituição inteligente...'
+              : 'Registrando complemento inteligente...'))))));
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -1519,6 +1767,7 @@
           hoteis_importacao: hoteisResumo || null,
           pontos_embarque_importacao: pontosResumo || null,
           colaboradores_operacional_importacao: colaboradoresResumo || null,
+          funcionarios_importacao: funcionariosResumo || null,
           auditorias_operacional_importacao: auditoriasResumo || null,
           uber_corridas_importacao: uberResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
@@ -1547,6 +1796,8 @@
       status.textContent = `Pontos: ${pontosResumo.importados || 0} importados · ${pontosResumo.cidades || 0} cidades · ${pontosResumo.supervisoes || 0} supervisões`;
     } else if (detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) {
       status.textContent = `Colaboradores: ${colaboradoresResumo.importados || 0} endereços importados · ${colaboradoresResumo.cidades || 0} cidades · ${colaboradoresResumo.ufs || 0} UFs`;
+    } else if (detected.tipo === 'funcionarios' && funcionariosResumo) {
+      status.textContent = `Funcionários: ${funcionariosResumo.importados || 0} atualizados · ${funcionariosResumo.ativos || 0} ativos · ${funcionariosResumo.supervisoes || 0} supervisões`;
     } else if (detected.tipo === 'auditorias_operacional' && auditoriasResumo) {
       status.textContent = `Auditorias: ${auditoriasResumo.importados || 0} registros · ${auditoriasResumo.colaboradores || 0} colaboradores · ${auditoriasResumo.descontos || 0} descontos`;
     } else if (detected.tipo === 'uber_corridas' && uberResumo) {
@@ -1556,7 +1807,7 @@
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'funcionarios' && funcionariosResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -1727,6 +1978,8 @@
             entry.message = 'Pendente · importará pontos de embarque operacional';
           } else if (detected.tipo === 'colaboradores_operacional') {
             entry.message = 'Pendente · importará endereços dos colaboradores no Operacional';
+          } else if (detected.tipo === 'funcionarios') {
+            entry.message = 'Pendente · atualizará a base global de funcionários dos painéis';
           } else if (detected.tipo === 'auditorias_operacional') {
             entry.message = 'Pendente · importará auditorias no Operacional';
           } else if (detected.tipo === 'uber_corridas') {
