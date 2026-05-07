@@ -61,6 +61,41 @@ const state = {
   editingUser: null,
 };
 
+const FROTAS_MODULE_FALLBACK = {
+  id: 'frotas',
+  codigo: 'frotas',
+  nome: 'Frotas',
+  descricao: 'Módulo de gestão de frotas',
+  ativo: true,
+};
+
+function normalizeModuleKey(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function ensureFrotasPermissionModule() {
+  const modules = Array.isArray(state.modules) ? state.modules : [];
+  const exists = modules.some((mod) => {
+    const keys = [mod?.id, mod?.codigo, mod?.code, mod?.chave, mod?.slug, mod?.nome, mod?.name]
+      .map(normalizeModuleKey)
+      .filter(Boolean);
+    return keys.includes('frotas') || keys.includes('frota') || keys.includes('gestao_de_frotas');
+  });
+
+  if (!exists) {
+    modules.push({ ...FROTAS_MODULE_FALLBACK });
+  }
+
+  state.modules = modules.sort((a, b) => String(a.nome || a.codigo || '').localeCompare(String(b.nome || b.codigo || ''), 'pt-BR'));
+}
+
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -781,6 +816,7 @@ async function loadAll(content, keepFeedback = false) {
 
     state.profiles = Array.isArray(profilesRes?.items) ? profilesRes.items : [];
     state.modules = Array.isArray(modulesRes?.items) ? modulesRes.items : [];
+    ensureFrotasPermissionModule();
     state.users = Array.isArray(usersRes?.items) ? usersRes.items : [];
   } catch (error) {
     setFeedback(error.message || 'Erro ao carregar usuários.', 'error');
