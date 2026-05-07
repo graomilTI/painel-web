@@ -647,6 +647,7 @@
           plate: onlyPlate(placa),
           notificationDate: formatDateBR(dataNotificacao),
           filePrefixDate: brDateToFilePrefix(dataNotificacao),
+          fileNamingPattern: 'ordinal_notification_year_driver',
           files
         })
       });
@@ -684,7 +685,7 @@
                 <h3>Dados da notificação</h3>
                 <div class="speed-field colab-autocomplete" data-colaborador-autocomplete><label>Colaborador / Motorista</label><input class="speed-input" type="text" autocomplete="off" placeholder="Digite para buscar o colaborador" data-speed-name><div class="colab-dropdown" data-colaborador-dropdown hidden></div><p class="speed-colab-status" data-colaborador-status>Carregando colaboradores da base...</p></div>
                 <div class="speed-field"><label>Placa do veículo</label><input class="speed-input" type="text" maxlength="8" placeholder="RVQ6J42" data-speed-plate></div>
-                <div class="speed-field"><label>Data da notificação</label><input class="speed-input" type="text" value="${escapeHtml(todayBRShort())}" data-notification-date><p class="speed-hint">Usada para renomear os prints: <code>DD-MM-AAAA - Excesso de velocidade...</code></p></div>
+                <div class="speed-field"><label>Data da notificação</label><input class="speed-input" type="text" value="${escapeHtml(todayBRShort())}" data-notification-date><p class="speed-hint">Usada para definir o ano da notificação. No Drive será salvo como: <code>Xº NOTIFICAÇÃO DE VELOCIDADE ANO NOME DO COLABORADOR</code></p></div>
                 <div class="speed-field"><label>Cidade e data da mensagem</label><input class="speed-input" type="text" value="Cascavel, ${escapeHtml(todayBRLong())}" data-speed-city-date></div>
                 <div class="speed-field"><label>Registros de velocidade</label><div data-speed-records></div><button class="speed-btn speed-btn-soft" type="button" data-add-record>+ Adicionar data e velocidade</button></div>
                 <div class="speed-actions"><button class="speed-btn speed-btn-primary" type="button" data-generate-speed-message>Gerar ✉️</button><p class="speed-hint">Este botão gera e copia somente a mensagem de notificação. Não depende dos prints.</p></div>
