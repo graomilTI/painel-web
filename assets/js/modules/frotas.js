@@ -206,6 +206,67 @@
     });
   }
 
+  function isColaboradorAtivo(row) {
+    if (!row) return false;
+    if (row.ativo === false) return false;
+
+    const situacao = String(row.situacao || row.Situação || '').trim().toLowerCase();
+    if (['não ativo', 'nao ativo', 'inativo', 'desligado', 'desligada'].includes(situacao)) return false;
+
+    return true;
+  }
+
+  function mergeColaboradores(rows) {
+    const byKey = new Map();
+
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      if (!row || !row.nome || !isColaboradorAtivo(row)) return;
+
+      const cpf = String(row.cpf || '').replace(/\D/g, '');
+      const key = cpf || normalizeName(row.nome);
+      const current = byKey.get(key);
+      const currentDate = String(current?.data_referencia || current?.updated_at || current?.created_at || '');
+      const nextDate = String(row.data_referencia || row.updated_at || row.created_at || '');
+
+      if (!current || nextDate >= currentDate) {
+        byKey.set(key, row);
+      }
+    });
+
+    return Array.from(byKey.values())
+      .map(mapColaborador)
+      .filter((row) => row.nome)
+      .sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+  }
+
+  async function fetchAllRows(supabase, table, select, orderColumn) {
+    const pageSize = 1000;
+    let from = 0;
+    const all = [];
+
+    while (from < 20000) {
+      let query = supabase
+        .from(table)
+        .select(select)
+        .range(from, from + pageSize - 1);
+
+      if (orderColumn) {
+        query = query.order(orderColumn, { ascending: true });
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const rows = Array.isArray(data) ? data : [];
+      all.push(...rows);
+
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return all;
+  }
+
   async function loadColaboradoresFromSupabase(root, opts = {}) {
     const fallback = getColaboradores(opts);
     if (fallback.length) {
@@ -227,25 +288,34 @@
     if (status) status.textContent = 'Carregando colaboradores da base...';
 
     try {
-      const { data, error } = await supabase
-        .from('colaborador_snapshot')
-        .select('id,nome,cpf,tipo,empresa,coordenacao,supervisao,ativo,data_referencia')
-        .order('nome', { ascending: true })
-        .limit(5000);
+      const snapshotRows = await fetchAllRows(
+        supabase,
+        'colaborador_snapshot',
+        'id,nome,cpf,situacao,tipo,empresa,coordenacao,supervisao,ativo,data_referencia,created_at',
+        'nome'
+      );
 
-      if (error) throw error;
+      const baseRows = await fetchAllRows(
+        supabase,
+        'colaboradores',
+        'id,nome,cpf,situacao,tipo,empresa,coordenacao,supervisao,created_at,updated_at',
+        'nome'
+      ).catch((err) => {
+        console.warn('[FROTAS] Tabela colaboradores não disponível para complemento:', err);
+        return [];
+      });
 
-      const rows = Array.isArray(data) ? data : [];
-      const latest = rows.reduce((max, row) => row.data_referencia && row.data_referencia > max ? row.data_referencia : max, '');
+      const merged = mergeColaboradores([...snapshotRows, ...baseRows]);
 
-      state.colaboradores = rows
-        .filter((row) => !latest || row.data_referencia === latest)
-        .filter((row) => row.ativo !== false)
-        .map(mapColaborador)
-        .filter((row) => row.nome);
-
+      state.colaboradores = merged;
       state.colaboradoresLoaded = true;
-      renderColaboradorStatus(root, opts);
+
+      if (status && merged.length < 300) {
+        status.textContent = `${merged.length} colaboradores carregados. Atenção: a base retornou poucos registros para este usuário/permissão.`;
+      } else {
+        renderColaboradorStatus(root, opts);
+      }
+
       updateColaboradorDropdown(root, opts);
     } catch (err) {
       console.warn('[FROTAS] Não foi possível carregar colaboradores:', err);
