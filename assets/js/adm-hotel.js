@@ -353,18 +353,128 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     if (!match) return { observacao: text, composicao: null };
     try {
       return {
-        observacao: text.replace(match[0], '').trim(),
+        observacao: text.replace(match[0], '').replace(/^Composição dos quartos:.*$/gmi, '').trim(),
         composicao: { ...emptyComposicaoQuartos(), ...JSON.parse(match[1]) }
       };
     } catch (err) {
-      return { observacao: text.replace(match[0], '').trim(), composicao: null };
+      return { observacao: text.replace(match[0], '').replace(/^Composição dos quartos:.*$/gmi, '').trim(), composicao: null };
     }
   }
 
-  function montarObservacaoComComposicao(observacao, comp) {
+  function extrairOcupacaoObservacao(value) {
+    const text = String(value || '');
+    const match = text.match(/\[OCUPACAO_QUARTOS\]([\s\S]*?)\[\/OCUPACAO_QUARTOS\]/);
+    if (!match) return { observacao: text, ocupacao: [] };
+    try {
+      const parsed = JSON.parse(match[1]);
+      return {
+        observacao: text.replace(match[0], '').replace(/^Ocupação por período:.*$/gmi, '').trim(),
+        ocupacao: Array.isArray(parsed) ? parsed : []
+      };
+    } catch (err) {
+      return { observacao: text.replace(match[0], '').replace(/^Ocupação por período:.*$/gmi, '').trim(), ocupacao: [] };
+    }
+  }
+
+  function montarObservacaoComComposicao(observacao, comp, ocupacao = []) {
     const resumo = formatComposicaoResumo(comp);
-    const bloco = `[COMPOSICAO_QUARTOS]${JSON.stringify(comp)}[/COMPOSICAO_QUARTOS]`;
-    return [String(observacao || '').trim(), resumo ? `Composição dos quartos: ${resumo}` : '', bloco].filter(Boolean).join('\n');
+    const ocupacaoLimpa = Array.isArray(ocupacao) ? ocupacao.filter((item) => item && (item.quarto || item.inicio || item.fim || item.ocupantes)) : [];
+    const blocoComposicao = `[COMPOSICAO_QUARTOS]${JSON.stringify(comp)}[/COMPOSICAO_QUARTOS]`;
+    const blocoOcupacao = ocupacaoLimpa.length ? `[OCUPACAO_QUARTOS]${JSON.stringify(ocupacaoLimpa)}[/OCUPACAO_QUARTOS]` : '';
+    const resumoOcupacao = ocupacaoLimpa.length
+      ? `Ocupação por período: ${ocupacaoLimpa.map((item) => `${item.quarto_label || item.quarto || 'Quarto'} · ${brDate(item.inicio)} até ${brDate(item.fim)} · ${item.ocupantes || '-'}`).join(' | ')}`
+      : '';
+    return [String(observacao || '').trim(), resumo ? `Composição dos quartos: ${resumo}` : '', resumoOcupacao, blocoComposicao, blocoOcupacao].filter(Boolean).join('\n');
+  }
+
+  function getQuartosDaComposicao() {
+    const comp = getComposicaoFromForm();
+    const quartos = [];
+    ROOM_KEYS.forEach((item) => {
+      const qtd = Math.max(0, Math.floor(Number(comp[item.key]?.qtd || 0)));
+      for (let i = 1; i <= qtd; i += 1) {
+        quartos.push({
+          value: `${item.key}__${i}`,
+          label: `${item.label} #${i}`
+        });
+      }
+    });
+    return quartos;
+  }
+
+  function refreshOcupacaoQuartoSelect() {
+    const select = document.getElementById('occQuarto');
+    if (!select) return;
+    const atual = select.value;
+    const quartos = getQuartosDaComposicao();
+    select.innerHTML = quartos.length
+      ? `<option value="">Selecionar quarto</option>${quartos.map((q) => `<option value="${esc(q.value)}">${esc(q.label)}</option>`).join('')}`
+      : '<option value="">Adicione um quarto acima</option>';
+    if (atual && quartos.some((q) => q.value === atual)) select.value = atual;
+  }
+
+  function fillOcupantesDatalist(row = state.selected) {
+    const list = document.getElementById('occColabList');
+    if (!list) return;
+    const nomes = getColaboradoresDetalhados(row).map((c) => c.nome_colaborador || c.nome).filter(Boolean);
+    list.innerHTML = [...new Set(nomes)].map((nome) => `<option value="${esc(nome)}"></option>`).join('');
+  }
+
+  function getQuartoLabel(value) {
+    const quartos = getQuartosDaComposicao();
+    return quartos.find((q) => q.value === value)?.label || value || 'Quarto';
+  }
+
+  function renderOcupacaoRow(item = {}) {
+    const quarto = item.quarto || '';
+    const quartoLabel = item.quarto_label || getQuartoLabel(quarto);
+    return `
+      <div class="adm-occ-row" data-occ-row>
+        <input type="hidden" data-occ-quarto value="${esc(quarto)}" />
+        <input type="hidden" data-occ-quarto-label value="${esc(quartoLabel)}" />
+        <div class="adm-occ-row-pill">${esc(quartoLabel)}</div>
+        <input type="date" data-occ-inicio value="${esc(item.inicio || '')}" aria-label="Check-in ocupação" />
+        <input type="date" data-occ-fim value="${esc(item.fim || '')}" aria-label="Check-out ocupação" />
+        <input type="text" data-occ-ocupantes value="${esc(item.ocupantes || '')}" aria-label="Ocupantes" />
+        <button class="adm-room-remove" type="button" data-occ-remove title="Remover período">Remover</button>
+      </div>`;
+  }
+
+  function setOcupacaoForm(ocupacao = []) {
+    const list = document.getElementById('occList');
+    if (!list) return;
+    const rows = Array.isArray(ocupacao) ? ocupacao.filter(Boolean).map(renderOcupacaoRow) : [];
+    list.innerHTML = rows.length ? rows.join('') : '<div class="adm-occ-empty">Nenhum período específico adicionado.</div>';
+    setFeedback('occFeedback', '');
+  }
+
+  function getOcupacaoFromForm() {
+    return Array.from(document.querySelectorAll('#occList [data-occ-row]')).map((row) => ({
+      quarto: row.querySelector('[data-occ-quarto]')?.value || '',
+      quarto_label: row.querySelector('[data-occ-quarto-label]')?.value || '',
+      inicio: row.querySelector('[data-occ-inicio]')?.value || '',
+      fim: row.querySelector('[data-occ-fim]')?.value || '',
+      ocupantes: String(row.querySelector('[data-occ-ocupantes]')?.value || '').trim()
+    })).filter((item) => item.quarto || item.inicio || item.fim || item.ocupantes);
+  }
+
+  function addOcupacaoFromDraft() {
+    const quarto = document.getElementById('occQuarto')?.value || '';
+    const inicio = document.getElementById('occInicio')?.value || document.getElementById('resCheckin')?.value || '';
+    const fim = document.getElementById('occFim')?.value || document.getElementById('resCheckout')?.value || '';
+    const ocupantes = String(document.getElementById('occOcupantes')?.value || '').trim();
+
+    if (!quarto) { setFeedback('occFeedback', 'Selecione o quarto antes de adicionar o período.', 'err'); return; }
+    if (!inicio || !fim) { setFeedback('occFeedback', 'Informe check-in e check-out do período.', 'err'); return; }
+    if (new Date(`${fim}T00:00:00`) <= new Date(`${inicio}T00:00:00`)) { setFeedback('occFeedback', 'O check-out precisa ser posterior ao check-in.', 'err'); return; }
+    if (!ocupantes) { setFeedback('occFeedback', 'Informe os ocupantes do período.', 'err'); return; }
+
+    const list = document.getElementById('occList');
+    if (!list) return;
+    list.querySelector('.adm-occ-empty')?.remove();
+    list.insertAdjacentHTML('beforeend', renderOcupacaoRow({ quarto, quarto_label: getQuartoLabel(quarto), inicio, fim, ocupantes }));
+    document.getElementById('occOcupantes').value = '';
+    setFeedback('occFeedback', 'Período adicionado.', 'ok');
   }
 
   async function enrichRowsWithColaboradores(rows) {
