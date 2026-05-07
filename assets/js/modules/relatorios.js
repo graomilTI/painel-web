@@ -581,6 +581,88 @@
   }
 
 
+  function normalizeText(value) {
+    if (value === null || value === undefined) return null;
+    const s = String(value).trim();
+    return s || null;
+  }
+
+  function normalizeKey(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
+  function normalizePlate(value) {
+    return String(value || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 7);
+  }
+
+  function extractPlateFromText(value) {
+    const text = String(value || '').toUpperCase();
+    const mercosul = text.match(/\b[A-Z]{3}[0-9][A-Z][0-9]{2}\b/);
+    if (mercosul) return normalizePlate(mercosul[0]);
+    const antigo = text.match(/\b[A-Z]{3}[0-9]{4}\b/);
+    if (antigo) return normalizePlate(antigo[0]);
+    return '';
+  }
+
+  function normalizeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
+    const n = Number(String(value).replace(/[^0-9-]/g, ''));
+    return Number.isFinite(n) ? Math.trunc(n) : null;
+  }
+
+  function normalizeDateTimeExcel(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+    if (typeof value === 'number' && window.XLSX?.SSF?.parse_date_code) {
+      const parsed = window.XLSX.SSF.parse_date_code(value);
+      if (!parsed) return null;
+      const mm = String(parsed.m).padStart(2, '0');
+      const dd = String(parsed.d).padStart(2, '0');
+      const hh = String(parsed.H || 0).padStart(2, '0');
+      const mi = String(parsed.M || 0).padStart(2, '0');
+      const ss = String(Math.floor(parsed.S || 0)).padStart(2, '0');
+      return `${parsed.y}-${mm}-${dd}T${hh}:${mi}:${ss}`;
+    }
+    const iso = toIsoDate(value);
+    if (iso) {
+      const s = String(value).trim();
+      const t = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      if (t) return `${iso}T${String(t[1]).padStart(2, '0')}:${t[2]}:${t[3] || '00'}`;
+      return `${iso}T00:00:00`;
+    }
+    return null;
+  }
+
+  function hasAnyHeader(row, aliases = []) {
+    if (!row || typeof row !== 'object') return false;
+    const keys = Object.keys(row);
+    const normalized = new Set(keys.map(normalizeKey));
+    return aliases.some((alias) => keys.includes(alias) || normalized.has(normalizeKey(alias)));
+  }
+
+  function parseTimeText(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}:${String(value.getSeconds()).padStart(2, '0')}`;
+    }
+    if (typeof value === 'number' && window.XLSX?.SSF?.parse_date_code) {
+      const parsed = window.XLSX.SSF.parse_date_code(value);
+      if (parsed) return `${String(parsed.H || 0).padStart(2, '0')}:${String(parsed.M || 0).padStart(2, '0')}:${String(Math.floor(parsed.S || 0)).padStart(2, '0')}`;
+    }
+    const s = String(value).trim();
+    const m = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    return m ? `${String(m[1]).padStart(2, '0')}:${m[2]}:${m[3] || '00'}` : (s || null);
+  }
+
+
   function excelSerialToDate(serial) {
     const n = Number(serial);
     if (!Number.isFinite(n)) return null;
@@ -927,247 +1009,6 @@
   }
 
 
-  const FUNC_COL = {
-    cpf: ['CPF', 'Cpf'],
-    nome: ['Nome', 'NOME', 'Funcionário', 'Funcionario', 'Colaborador'],
-    situacao: ['Situação', 'Situacao', 'STATUS', 'Status'],
-    admissao: ['Admissão', 'Admissao', 'Data de Admissão', 'Data de Admissao', 'Admissao Data', 'Dt Admissao'],
-    desligamento: ['Desligamento', 'Data de Desligamento', 'Dt Desligamento'],
-    salario: ['Salário', 'Salario'],
-    contaBancaria: ['C. Banc. Despesas', 'C Banc. Despesas', 'C Banc Despesas', 'Conta Bancária', 'Conta Bancaria'],
-    empresa: ['Empresa'],
-    coordenacao: ['Coordenação', 'Coordenacao'],
-    supervisao: ['Supervisão', 'Supervisao'],
-    tipo: ['Tipo'],
-    cep: ['CEP', 'Cep'],
-    estado: ['Estado', 'UF'],
-    cidade: ['Cidade'],
-    bairro: ['Bairro'],
-    endereco: ['Endereço', 'Endereco'],
-    complemento: ['Complemento'],
-    dataNascimento: ['Data de Nascimento', 'Nascimento'],
-    cargo: ['Cargo'],
-    whatsapp: ['Whatsapp', 'WhatsApp', 'Celular', 'Telefone'],
-    emailPessoal: ['E-mail Pessoal', 'Email Pessoal'],
-    emailEmpresa: ['E-mail da Empresa', 'Email da Empresa', 'E-mail Empresa']
-  };
-
-  function normalizeKey(value) {
-    return String(value || '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '');
-  }
-
-  function normalizeText(value) {
-    if (value === null || value === undefined) return null;
-    const s = String(value).trim();
-    return s || null;
-  }
-
-  function getField(row, aliases = []) {
-    if (!row || typeof row !== 'object') return null;
-
-    for (const alias of aliases) {
-      if (Object.prototype.hasOwnProperty.call(row, alias)) return row[alias];
-    }
-
-    const normalizedMap = new Map();
-    for (const key of Object.keys(row)) normalizedMap.set(normalizeKey(key), row[key]);
-
-    for (const alias of aliases) {
-      const hit = normalizedMap.get(normalizeKey(alias));
-      if (hit !== undefined) return hit;
-    }
-    return null;
-  }
-
-  function hasAnyHeader(row, aliases = []) {
-    if (!row || typeof row !== 'object') return false;
-    const keys = Object.keys(row);
-    const normalized = new Set(keys.map(normalizeKey));
-    return aliases.some((alias) => keys.includes(alias) || normalized.has(normalizeKey(alias)));
-  }
-
-  function normalizeCPF(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const cpf = String(value).replace(/\D/g, '');
-    return cpf ? cpf.padStart(11, '0') : null;
-  }
-
-  function normalizePhone(value) {
-    if (!value) return null;
-    const s = String(value).replace(/\D/g, '');
-    return s || null;
-  }
-
-  function excelDateToISO(value) {
-    if (value === null || value === undefined || value === '') return null;
-
-    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
-
-    if (typeof value === 'number') {
-      const parsed = window.XLSX?.SSF?.parse_date_code ? window.XLSX.SSF.parse_date_code(value) : null;
-      if (!parsed) return null;
-      return makeIsoDate(parsed.y, parsed.m, parsed.d);
-    }
-
-    const s = String(value).trim();
-    if (!s) return null;
-
-    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-    if (m) return makeIsoDate(m[3], m[2], m[1]);
-
-    m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
-    if (m) return makeIsoDate(m[1], m[2], m[3]);
-
-    return null;
-  }
-
-  function normalizeCurrency(value) {
-    if (value === null || value === undefined || value === '') return null;
-    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-    const raw = String(value).trim().replace(/\s/g, '');
-    const normalized = raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw;
-    const number = Number(normalized.replace(/[^0-9.-]/g, ''));
-    return Number.isFinite(number) ? number : null;
-  }
-
-  function computeAtivo(situacao, desligamento) {
-    if (desligamento) return false;
-    const s = normalizeHeader(situacao);
-    if (!s) return true;
-    return !['nao ativo', 'nao ativa', 'inativo', 'inativa', 'deslig', 'demit'].some((status) => s.includes(status));
-  }
-
-  function mapFuncionarioRow(row, dataReferencia, importacaoId) {
-    const situacao = normalizeText(getField(row, FUNC_COL.situacao));
-    const desligamento = excelDateToISO(getField(row, FUNC_COL.desligamento));
-    const admissao = excelDateToISO(getField(row, FUNC_COL.admissao));
-
-    return {
-      importacao_id: importacaoId,
-      data_referencia: dataReferencia,
-      cpf: normalizeCPF(getField(row, FUNC_COL.cpf)),
-      nome: normalizeText(getField(row, FUNC_COL.nome)),
-      situacao,
-      admissao,
-      desligamento,
-      salario: normalizeCurrency(getField(row, FUNC_COL.salario)),
-      conta_bancaria: normalizeText(getField(row, FUNC_COL.contaBancaria)),
-      empresa: normalizeText(getField(row, FUNC_COL.empresa)),
-      coordenacao: normalizeText(getField(row, FUNC_COL.coordenacao)),
-      supervisao: normalizeText(getField(row, FUNC_COL.supervisao)),
-      tipo: normalizeText(getField(row, FUNC_COL.tipo)),
-      cep: normalizeText(getField(row, FUNC_COL.cep)),
-      estado: normalizeText(getField(row, FUNC_COL.estado)),
-      cidade: normalizeText(getField(row, FUNC_COL.cidade)),
-      bairro: normalizeText(getField(row, FUNC_COL.bairro)),
-      endereco: normalizeText(getField(row, FUNC_COL.endereco)),
-      complemento: normalizeText(getField(row, FUNC_COL.complemento)),
-      data_nascimento: excelDateToISO(getField(row, FUNC_COL.dataNascimento)),
-      cargo: normalizeText(getField(row, FUNC_COL.cargo)),
-      whatsapp: normalizePhone(getField(row, FUNC_COL.whatsapp)),
-      email_pessoal: normalizeText(getField(row, FUNC_COL.emailPessoal)),
-      email_empresa: normalizeText(getField(row, FUNC_COL.emailEmpresa)),
-      ativo: computeAtivo(situacao, desligamento)
-    };
-  }
-
-  function isFuncionarioReportHeaders(row) {
-    return hasAnyHeader(row, FUNC_COL.cpf)
-      && hasAnyHeader(row, FUNC_COL.nome)
-      && hasAnyHeader(row, FUNC_COL.admissao)
-      && hasAnyHeader(row, FUNC_COL.empresa)
-      && hasAnyHeader(row, FUNC_COL.supervisao)
-      && hasAnyHeader(row, FUNC_COL.tipo);
-  }
-
-  async function readFuncionariosSnapshotFromFile(file, dataReferencia, importacaoId) {
-    const XLSX = await loadXlsx();
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
-    const sheetName = workbook.SheetNames.find((name) => normalizeHeader(name) === 'dados') || workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true });
-
-    if (!rows.length) throw new Error('A planilha de funcionários está vazia.');
-    if (!isFuncionarioReportHeaders(rows[0])) {
-      throw new Error('A planilha de funcionários não possui a estrutura esperada. Cabeçalhos mínimos: CPF, Nome, Admissão, Empresa, Supervisão e Tipo.');
-    }
-
-    return rows
-      .map((row) => mapFuncionarioRow(row, dataReferencia, importacaoId))
-      .filter((row) => row.nome || row.cpf);
-  }
-
-  async function insertFuncionariosBatches(opts, rows, batchSize = 300) {
-    let total = 0;
-    for (let i = 0; i < rows.length; i += batchSize) {
-      const batch = rows.slice(i, i + batchSize);
-      const { error } = await opts.supabase.from('colaborador_snapshot').insert(batch);
-      if (error) throw new Error(error.message || 'Falha ao gravar funcionários em colaborador_snapshot.');
-      total += batch.length;
-    }
-    return total;
-  }
-
-  async function importarFuncionariosDaPlanilha(file, opts, { user, userName } = {}) {
-    const today = new Date().toISOString().slice(0, 10);
-
-    const { data: importacao, error: impError } = await opts.supabase
-      .from('colaborador_importacoes')
-      .insert({
-        data_referencia: today,
-        arquivo_nome: file.name,
-        origem: 'relatorios_inteligentes',
-        importado_por: user?.id || null,
-        status: 'processando',
-        total_linhas: 0,
-        observacoes: 'Importado pelo menu Relatórios para atualizar a base global usada pelos painéis.'
-      })
-      .select()
-      .single();
-
-    if (impError) throw new Error(impError.message || 'Falha ao criar importação de funcionários.');
-
-    try {
-      const rows = await readFuncionariosSnapshotFromFile(file, today, importacao.id);
-      if (!rows.length) throw new Error('Nenhum funcionário válido foi encontrado na planilha.');
-
-      // Mantém uma única versão da base para a data atual, evitando duplicação nos painéis que leem o último snapshot.
-      const { error: delError } = await opts.supabase
-        .from('colaborador_snapshot')
-        .delete()
-        .eq('data_referencia', today);
-      if (delError) throw new Error(delError.message || 'Falha ao limpar snapshot anterior do dia.');
-
-      const total = await insertFuncionariosBatches(opts, rows, 300);
-
-      const { error: updError } = await opts.supabase
-        .from('colaborador_importacoes')
-        .update({
-          status: 'processado',
-          total_linhas: total,
-          observacoes: `Importado pelo menu Relatórios. Base global atualizada para ${today}. Responsável: ${userName || user?.email || 'não informado'}.`
-        })
-        .eq('id', importacao.id);
-      if (updError) throw new Error(updError.message || 'Falha ao finalizar importação de funcionários.');
-
-      const ativos = rows.filter((row) => row.ativo !== false).length;
-      const supervisoes = new Set(rows.map((row) => row.supervisao).filter(Boolean)).size;
-      return { total_linhas: rows.length, importados: total, ativos, supervisoes, data_referencia: today };
-    } catch (err) {
-      await opts.supabase
-        .from('colaborador_importacoes')
-        .update({ status: 'erro', observacoes: `Erro na importação via Relatórios: ${err.message || err}` })
-        .eq('id', importacao.id);
-      throw err;
-    }
-  }
-
-
   function auditoriaImportHash(row) {
     const base = [
       pickValue(row, ['Classificador']),
@@ -1289,6 +1130,251 @@
     return { total_linhas: auditorias.length, importados: total, colaboradores, descontos, produto_padrao: padrao };
   }
 
+
+  const PATRIMONIO_COL = {
+    patrimonioCodigo: ['Patrimônio', 'Patrimonio'],
+    coordenacao: ['Coordenação', 'Coordenacao'],
+    supervisao: ['Supervisão', 'Supervisao'],
+    funcionario: ['Funcionário', 'Funcionario'],
+    identificacao: ['Identificação', 'Identificacao'],
+    categoria: ['Categoria'],
+    marca: ['Marca'],
+    modelo: ['Modelo'],
+    dataAquisicao: ['Data de Aquisição', 'Data de Aquisicao'],
+    dataRegistro: ['Data de Registro'],
+    situacao: ['Situação', 'Situacao'],
+    ultimaLeitura: ['Ultima Leitura', 'Última Leitura'],
+    diasSemLeitura: ['Dias sem Leitura']
+  };
+
+  function mapPatrimonioRow(row, importacaoId) {
+    const patrimonioCodigo = normalizeText(pickValue(row, PATRIMONIO_COL.patrimonioCodigo));
+    return {
+      importacao_id: importacaoId,
+      patrimonio_codigo: patrimonioCodigo ? String(patrimonioCodigo).trim().toUpperCase() : null,
+      coordenacao: normalizeText(pickValue(row, PATRIMONIO_COL.coordenacao)),
+      supervisao: normalizeText(pickValue(row, PATRIMONIO_COL.supervisao)),
+      funcionario: normalizeText(pickValue(row, PATRIMONIO_COL.funcionario)),
+      identificacao: normalizeText(pickValue(row, PATRIMONIO_COL.identificacao)),
+      categoria: normalizeText(pickValue(row, PATRIMONIO_COL.categoria)),
+      marca: normalizeText(pickValue(row, PATRIMONIO_COL.marca)),
+      modelo: normalizeText(pickValue(row, PATRIMONIO_COL.modelo)),
+      data_aquisicao: normalizeDateTimeExcel(pickValue(row, PATRIMONIO_COL.dataAquisicao)),
+      data_registro: normalizeDateTimeExcel(pickValue(row, PATRIMONIO_COL.dataRegistro)),
+      situacao: normalizeText(pickValue(row, PATRIMONIO_COL.situacao)),
+      ultima_leitura: normalizeDateTimeExcel(pickValue(row, PATRIMONIO_COL.ultimaLeitura)),
+      dias_sem_leitura: normalizeInteger(pickValue(row, PATRIMONIO_COL.diasSemLeitura)),
+      hash_linha: patrimonioCodigo ? String(patrimonioCodigo).trim().toUpperCase() : null,
+    };
+  }
+
+  async function readPatrimoniosFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const sheetName = workbook.SheetNames.find((name) => normalizeHeader(name).includes('patrimonio')) || workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true });
+    if (!rows.length) throw new Error('A planilha de patrimônios está vazia.');
+    const first = rows[0] || {};
+    const missing = [];
+    if (!hasAnyHeader(first, PATRIMONIO_COL.patrimonioCodigo)) missing.push('Patrimônio');
+    if (!hasAnyHeader(first, PATRIMONIO_COL.funcionario)) missing.push('Funcionário');
+    if (!hasAnyHeader(first, PATRIMONIO_COL.situacao)) missing.push('Situação');
+    if (missing.length) throw new Error(`Planilha de patrimônios inválida. Cabeçalho(s) ausente(s): ${missing.join(', ')}.`);
+    return { rows, sheetName };
+  }
+
+  async function importarPatrimoniosDaPlanilha(file, opts) {
+    const { rows, sheetName } = await readPatrimoniosFromFile(file);
+    const user = opts.user || opts.auth?.user || null;
+    const userMeta = user?.user_metadata || {};
+    const userName = userMeta.full_name || userMeta.name || user?.email || null;
+
+    const { data: importacao, error: impError } = await opts.supabase
+      .from('patrimonios_importacoes')
+      .insert({
+        nome_arquivo: file.name,
+        origem: 'importar_relatorios',
+        status: 'processando',
+        total_linhas: rows.length,
+        total_importadas: 0,
+        total_erros: 0,
+        observacoes: `Importado pela Central de Importação · Aba: ${sheetName}`,
+        criado_por: user?.id || null,
+        criado_por_nome: userName,
+      })
+      .select('id')
+      .single();
+    if (impError) throw new Error(impError.message || 'Falha ao criar importação de patrimônios.');
+
+    const mappedRaw = rows.map((row) => mapPatrimonioRow(row, importacao.id)).filter((row) => row.patrimonio_codigo);
+    const unique = new Map();
+    mappedRaw.forEach((row) => unique.set(row.patrimonio_codigo, row));
+    const mapped = Array.from(unique.values());
+
+    if (!mapped.length) throw new Error('Nenhuma linha válida encontrada na planilha de patrimônios.');
+
+    const { error: limparError } = await opts.supabase.rpc('limpar_patrimonios_snapshot');
+    if (limparError) throw new Error(limparError.message || 'Falha ao limpar snapshot de patrimônios.');
+
+    const batchSize = 500;
+    let total = 0;
+    for (let i = 0; i < mapped.length; i += batchSize) {
+      const batch = mapped.slice(i, i + batchSize);
+      const { error } = await opts.supabase.from('patrimonios_snapshot').upsert(batch, { onConflict: 'patrimonio_codigo' });
+      if (error) throw new Error(error.message || 'Falha ao gravar patrimônios no Supabase.');
+      total += batch.length;
+    }
+
+    const { error: updError } = await opts.supabase
+      .from('patrimonios_importacoes')
+      .update({
+        status: 'concluido',
+        total_importadas: total,
+        total_erros: Math.max(rows.length - total, 0),
+        observacoes: `Central de Importação · Aba: ${sheetName}`,
+      })
+      .eq('id', importacao.id);
+    if (updError) throw new Error(updError.message || 'Falha ao concluir importação de patrimônios.');
+
+    const veiculos = mapped.filter((r) => normalizeHeader(r.categoria).includes('veiculo') || extractPlateFromText(r.identificacao)).length;
+    return { total_linhas: rows.length, importados: total, veiculos, aba: sheetName };
+  }
+
+  function buildFrotasExcessoHash(row) {
+    return [row.data_evento || '', row.hora_evento || '', row.placa || '', row.velocidade || '', row.latitude || '', row.longitude || '']
+      .map((v) => normalizeHeader(String(v)))
+      .join('|')
+      .slice(0, 500);
+  }
+
+  async function loadPatrimonioVeiculosMap(opts) {
+    const map = new Map();
+    const pageSize = 1000;
+    let from = 0;
+    while (from < 10000) {
+      const { data, error } = await opts.supabase
+        .from('patrimonios_snapshot')
+        .select('id,patrimonio_codigo,coordenacao,supervisao,funcionario,identificacao,categoria,situacao,ultima_leitura')
+        .range(from, from + pageSize - 1);
+      if (error) {
+        console.warn('[RELATORIOS] Não foi possível carregar patrimônios para cruzamento:', error);
+        break;
+      }
+      const rows = Array.isArray(data) ? data : [];
+      rows.forEach((r) => {
+        const plate = extractPlateFromText(r.identificacao);
+        if (!plate) return;
+        const categoria = normalizeHeader(r.categoria);
+        const situacao = normalizeHeader(r.situacao);
+        if (categoria && !categoria.includes('veiculo')) return;
+        if (situacao && !situacao.includes('ativo')) return;
+        map.set(plate, r);
+      });
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return map;
+  }
+
+  async function readFrotasExcessoFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const mapped = [];
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+      if (!rows?.length) continue;
+
+      const headerRow = findHeaderRow(rows, ['Data', 'Hora', 'Alerta', 'Placa', 'Velocidade']);
+      const headers = (rows[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+      const normalized = headers.map(normalizeHeader);
+      const hasStructure = normalized.includes('data') && normalized.includes('hora') && normalized.includes('placa') && normalized.includes('velocidade');
+      if (!hasStructure) continue;
+
+      rows.slice(headerRow + 1).forEach((row) => {
+        const obj = {};
+        headers.forEach((header, index) => { obj[header] = row?.[index] ?? ''; });
+        const placa = normalizePlate(pickValue(obj, ['Placa', 'Plate']));
+        const dataEvento = toIsoDate(pickValue(obj, ['Data', 'Date']));
+        const velocidade = normalizeNumberBr(pickValue(obj, ['Velocidade', 'Speed']));
+        if (!placa || !dataEvento || !velocidade) return;
+
+        const registro = {
+          data_evento: dataEvento,
+          hora_evento: parseTimeText(pickValue(obj, ['Hora', 'Time'])),
+          alerta: normalizeText(pickValue(obj, ['Alerta', 'Alert'])) || 'Excesso de velocidade',
+          ativo_rastreador: normalizeText(pickValue(obj, ['Ativo', 'Veículo', 'Veiculo', 'Vehicle'])),
+          placa,
+          motorista_planilha: normalizeText(pickValue(obj, ['Motorista', 'Condutor', 'Driver'])),
+          velocidade,
+          endereco: normalizeText(pickValue(obj, ['Endereco', 'Endereço', 'Address'])),
+          latitude: normalizeNumberBr(pickValue(obj, ['Latitude', 'Lat'])),
+          longitude: normalizeNumberBr(pickValue(obj, ['Longitude', 'Long', 'Lng'])),
+          mapa_url: normalizeText(pickValue(obj, ['Ver mapa', 'Mapa', 'Map'])),
+          arquivo_nome: file.name,
+          origem: 'importar_relatorios',
+          status_notificacao: 'PENDENTE',
+        };
+        registro.import_hash = buildFrotasExcessoHash(registro);
+        mapped.push(registro);
+      });
+    }
+
+    return mapped;
+  }
+
+  async function importarFrotasExcessoVelocidadeDaPlanilha(file, opts) {
+    const registros = await readFrotasExcessoFromFile(file);
+    if (!registros.length) {
+      throw new Error('A planilha de excesso de velocidade não possui linhas válidas. Cabeçalhos esperados: Data, Hora, Alerta, Ativo, Placa, Motorista, Velocidade, Endereço, Latitude e Longitude.');
+    }
+
+    const patrimonioMap = await loadPatrimonioVeiculosMap(opts);
+    const cruzados = registros.map((r) => {
+      const pat = patrimonioMap.get(r.placa);
+      return {
+        ...r,
+        patrimonio_id: pat?.id || null,
+        patrimonio_codigo: pat?.patrimonio_codigo || null,
+        patrimonio_funcionario: pat?.funcionario || null,
+        patrimonio_identificacao: pat?.identificacao || null,
+        coordenacao: pat?.coordenacao || null,
+        supervisao: pat?.supervisao || null,
+        status_cruzamento: pat?.funcionario ? 'MOTORISTA_IDENTIFICADO' : 'PENDENTE_CONFERENCIA',
+      };
+    });
+
+    const batchSize = 500;
+    let total = 0;
+    for (let i = 0; i < cruzados.length; i += batchSize) {
+      const batch = cruzados.slice(i, i + batchSize);
+      const { error } = await opts.supabase
+        .from('frotas_excesso_velocidade')
+        .upsert(batch, { onConflict: 'import_hash' });
+      if (error) throw new Error(error.message || 'Falha ao gravar excessos de velocidade. Rode o SQL do módulo Frotas antes.');
+      total += batch.length;
+    }
+
+    const identificados = cruzados.filter((r) => r.patrimonio_funcionario).length;
+    const placas = new Set(cruzados.map((r) => r.placa).filter(Boolean)).size;
+    const motoristas = new Set(cruzados.map((r) => normalizeHeader(r.patrimonio_funcionario || r.motorista_planilha || '')).filter(Boolean)).size;
+    const periodos = cruzados.map((r) => r.data_evento).filter(Boolean).sort();
+    return {
+      total_linhas: cruzados.length,
+      importados: total,
+      placas,
+      motoristas,
+      identificados,
+      pendentes: total - identificados,
+      periodo_inicio: periodos[0] || null,
+      periodo_fim: periodos[periodos.length - 1] || null,
+    };
+  }
+
   async function importarHoteisDaPlanilha(file, opts) {
     const linhas = await readSpreadsheetAsObjects(file);
     if (!linhas.length) {
@@ -1347,8 +1433,11 @@
   }
 
   function detectRelatorio(fileName) {
-    const rawName = String(fileName || '').toLowerCase();
-    const n = normalizeHeader(fileName);
+    const n = String(fileName || '').toLowerCase();
+
+    if ((n.includes('excesso') || n.includes('excesos') || n.includes('velocidade') || n.includes('velocidad')) && !n.includes('patrimonio') && !n.includes('patrimônio')) {
+      return { tipo: 'frotas_excesso_velocidade', titulo: 'Excesso de Velocidade - Frotas' };
+    }
 
     if (n.includes('uber') || n.includes('corridas')) {
       return { tipo: 'uber_corridas', titulo: 'Relatório Uber' };
@@ -1360,10 +1449,6 @@
 
     if ((n.includes('endereco') || n.includes('endereço') || n.includes('gps')) && (n.includes('colaborador') || n.includes('colaboradores'))) {
       return { tipo: 'colaboradores_operacional', titulo: 'Endereços dos Colaboradores Operacional' };
-    }
-
-    if (n.includes('funcionario') || n.includes('funcionarios') || n.includes('relatorio de funcionarios') || n.includes('relatorio-de-funcionarios')) {
-      return { tipo: 'funcionarios', titulo: 'Relatório de Funcionários' };
     }
 
     if ((n.includes('mapa') && n.includes('g1000')) || n.includes('ponto-embarque') || n.includes('pontos-embarque') || n.includes('pontos_de_embarque') || n.includes('pontos de embarque')) {
@@ -1671,7 +1756,8 @@
     let colaboradoresResumo = null;
     let auditoriasResumo = null;
     let uberResumo = null;
-    let funcionariosResumo = null;
+    let patrimoniosResumo = null;
+    let frotasExcessoResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -1687,11 +1773,6 @@
       setProgress(bar, 82);
       colaboradoresResumo = await importarColaboradoresBaseDaPlanilha(file, opts);
     }
-    if (detected.tipo === 'funcionarios') {
-      status.textContent = 'Atualizando base global de funcionários...';
-      setProgress(bar, 82);
-      funcionariosResumo = await importarFuncionariosDaPlanilha(file, opts, { user, userName });
-    }
     if (detected.tipo === 'auditorias_operacional') {
       status.textContent = 'Importando histórico de auditorias no módulo Operacional...';
       setProgress(bar, 82);
@@ -1702,9 +1783,21 @@
       setProgress(bar, 82);
       uberResumo = await importarUberCorridasDaPlanilha(file, opts);
     }
+    if (detected.tipo === 'patrimonios') {
+      status.textContent = 'Importando leitura de patrimônios para cruzamento de frota...';
+      setProgress(bar, 82);
+      patrimoniosResumo = await importarPatrimoniosDaPlanilha(file, opts);
+    }
+    if (detected.tipo === 'frotas_excesso_velocidade') {
+      status.textContent = 'Importando excessos de velocidade e cruzando com patrimônios...';
+      setProgress(bar, 82);
+      frotasExcessoResumo = await importarFrotasExcessoVelocidadeDaPlanilha(file, opts);
+    }
 
     const importMode = opts.importMode || 'auto';
-    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'funcionarios', 'auditorias_operacional'].includes(detected.tipo) ? null : (entry?.period || await detectFilePeriod(file, detected.tipo));
+    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'auditorias_operacional', 'patrimonios'].includes(detected.tipo)
+      ? null
+      : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo)));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -1722,15 +1815,13 @@
         ? 'Registrando upload dos pontos de embarque...'
         : (detected.tipo === 'colaboradores_operacional'
           ? 'Registrando upload dos endereços dos colaboradores...'
-          : (detected.tipo === 'funcionarios'
-            ? 'Registrando upload da base de funcionários...'
-            : (detected.tipo === 'auditorias_operacional'
+          : (detected.tipo === 'auditorias_operacional'
             ? 'Registrando upload das auditorias operacionais...'
-              : (detected.tipo === 'uber_corridas'
-                ? 'Registrando upload do relatório Uber...'
-                : (effectiveMode === 'replace'
-              ? 'Registrando substituição inteligente...'
-              : 'Registrando complemento inteligente...'))))));
+            : (detected.tipo === 'uber_corridas'
+              ? 'Registrando upload do relatório Uber...'
+              : (effectiveMode === 'replace'
+            ? 'Registrando substituição inteligente...'
+            : 'Registrando complemento inteligente...')))));
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -1767,9 +1858,10 @@
           hoteis_importacao: hoteisResumo || null,
           pontos_embarque_importacao: pontosResumo || null,
           colaboradores_operacional_importacao: colaboradoresResumo || null,
-          funcionarios_importacao: funcionariosResumo || null,
           auditorias_operacional_importacao: auditoriasResumo || null,
           uber_corridas_importacao: uberResumo || null,
+          patrimonios_importacao: patrimoniosResumo || null,
+          frotas_excesso_velocidade_importacao: frotasExcessoResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -1796,18 +1888,20 @@
       status.textContent = `Pontos: ${pontosResumo.importados || 0} importados · ${pontosResumo.cidades || 0} cidades · ${pontosResumo.supervisoes || 0} supervisões`;
     } else if (detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) {
       status.textContent = `Colaboradores: ${colaboradoresResumo.importados || 0} endereços importados · ${colaboradoresResumo.cidades || 0} cidades · ${colaboradoresResumo.ufs || 0} UFs`;
-    } else if (detected.tipo === 'funcionarios' && funcionariosResumo) {
-      status.textContent = `Funcionários: ${funcionariosResumo.importados || 0} atualizados · ${funcionariosResumo.ativos || 0} ativos · ${funcionariosResumo.supervisoes || 0} supervisões`;
     } else if (detected.tipo === 'auditorias_operacional' && auditoriasResumo) {
       status.textContent = `Auditorias: ${auditoriasResumo.importados || 0} registros · ${auditoriasResumo.colaboradores || 0} colaboradores · ${auditoriasResumo.descontos || 0} descontos`;
     } else if (detected.tipo === 'uber_corridas' && uberResumo) {
       status.textContent = `Uber: ${uberResumo.importados || 0} corridas · ${uberResumo.colaboradores || 0} colaboradores · ${MONEY_FMT.format(uberResumo.valor_total || 0)}`;
+    } else if (detected.tipo === 'patrimonios' && patrimoniosResumo) {
+      status.textContent = `Patrimônios: ${patrimoniosResumo.importados || 0} atualizados · ${patrimoniosResumo.veiculos || 0} veículos`;
+    } else if (detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) {
+      status.textContent = `Frotas: ${frotasExcessoResumo.importados || 0} excessos · ${frotasExcessoResumo.identificados || 0} identificados · ${frotasExcessoResumo.pendentes || 0} pendentes`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'funcionarios' && funcionariosResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -1849,7 +1943,7 @@
                   </select>
                 </div>
                 <div class="import-intelligence-note" id="intelligenceNote">
-                  No automático, se o período já existir no banco, o painel substitui a versão anterior; planilhas de hotéis vão para Hospedagem, Mapa G1000 e Endereço Colaborador vão para Operacional.
+                  No automático, se o período já existir no banco, o painel substitui a versão anterior; planilhas de hotéis vão para Hospedagem, Mapa G1000 e Endereço Colaborador vão para Operacional, Patrimônios atualiza a leitura e Excesso de Velocidade vai para Frotas com cruzamento automático por placa.
                 </div>
               </div>
             </div>
@@ -1978,8 +2072,6 @@
             entry.message = 'Pendente · importará pontos de embarque operacional';
           } else if (detected.tipo === 'colaboradores_operacional') {
             entry.message = 'Pendente · importará endereços dos colaboradores no Operacional';
-          } else if (detected.tipo === 'funcionarios') {
-            entry.message = 'Pendente · atualizará a base global de funcionários dos painéis';
           } else if (detected.tipo === 'auditorias_operacional') {
             entry.message = 'Pendente · importará auditorias no Operacional';
           } else if (detected.tipo === 'uber_corridas') {
@@ -1987,6 +2079,15 @@
             detectFilePeriod(file, detected.tipo).then((period) => {
               entry.period = period;
               entry.message = period ? `Período: ${formatPeriod(period)} · importará corridas Uber` : 'Pendente · Uber sem período detectado';
+              renderFiles();
+            });
+          } else if (detected.tipo === 'patrimonios') {
+            entry.message = 'Pendente · atualizará leitura de patrimônios';
+          } else if (detected.tipo === 'frotas_excesso_velocidade') {
+            entry.message = 'Pendente · cruzará excesso de velocidade com patrimônio';
+            detectFilePeriod(file, detected.tipo).then((period) => {
+              entry.period = period;
+              entry.message = period ? `Período: ${formatPeriod(period)} · importará Frotas` : 'Pendente · Frotas sem período detectado';
               renderFiles();
             });
           } else {
