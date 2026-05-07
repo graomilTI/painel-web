@@ -1106,7 +1106,8 @@
   }
 
   function detectRelatorio(fileName) {
-    const n = String(fileName || '').toLowerCase();
+    const rawName = String(fileName || '');
+    const n = normalizeHeader(rawName).replace(/[_.-]+/g, ' ');
 
     if (n.includes('uber') || n.includes('corridas')) {
       return { tipo: 'uber_corridas', titulo: 'Relatório Uber' };
@@ -1116,7 +1117,12 @@
       return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
     }
 
-    if ((n.includes('endereco') || n.includes('endereço') || n.includes('gps')) && (n.includes('colaborador') || n.includes('colaboradores'))) {
+    if ((n.includes('funcionario') || n.includes('funcionarios') || n.includes('colaborador') || n.includes('colaboradores'))
+      && (n.includes('relatorio') || n.includes('base') || n.includes('cadastro') || n.includes('lista') || n.includes('funcionario') || n.includes('funcionarios'))) {
+      return { tipo: 'funcionarios', titulo: 'Relatório de Funcionários' };
+    }
+
+    if ((n.includes('endereco') || n.includes('gps')) && (n.includes('colaborador') || n.includes('colaboradores') || n.includes('funcionario') || n.includes('funcionarios'))) {
       return { tipo: 'colaboradores_operacional', titulo: 'Endereços dos Colaboradores Operacional' };
     }
 
