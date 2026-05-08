@@ -8,12 +8,6 @@
   const GENERATED_GROUPS_KEY = 'FROTAS_EXCESSO_VELOCIDADE_GRUPOS_GERADOS';
   const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzDlhiUGilfA1afrunX3Jtc8LAG4DqMO9v0AJKveUxjUaccfJM_ynnKGRghp_K5AfjK/exec';
 
-  function toPanelUrl(slug) {
-    const clean = String(slug || '').replace(/^\/+|\/+$/g, '');
-    return `https://grao1000.com.br/painel/${clean}`;
-  }
-
-
   const state = {
     records: [{ data: '', velocidade: '' }],
     uploadedFiles: [],
@@ -27,6 +21,19 @@
     importedExcessos: [],
     importedExcessosLoaded: false
   };
+
+
+  function panelUrl(target = '') {
+    const normalized = String(target || '').replace(/^\/+/, '').replace(/\.html$/i, '');
+    const host = String(window.location.hostname || '').toLowerCase();
+    if (host === 'grao1000.com.br' || host === 'www.grao1000.com.br') {
+      return normalized ? `/painel/${normalized}`.replace(/([^:]\/)\/+/g, '$1') : '/painel';
+    }
+    if (String(window.location.pathname || '').includes('/painel')) {
+      return normalized ? `/painel/${normalized}`.replace(/([^:]\/)\/+/g, '$1') : '/painel';
+    }
+    return normalized ? `./${normalized}` : './';
+  }
 
   function todayBRShort() {
     return new Date().toLocaleDateString('pt-BR');
@@ -83,6 +90,95 @@
     return Math.round(n);
   }
 
+
+  function dedupeHighestSpeedByDate(records) {
+    const byDate = new Map();
+    (Array.isArray(records) ? records : []).forEach((record) => {
+      const inputDate = record?.data || record?.date || record?.data_evento || '';
+      const dateKey = normalizeDateForMatch(inputDate);
+      const speed = parseSpeed(record?.velocidade || record?.speed);
+      if (!dateKey || !speed) return;
+
+      const current = byDate.get(dateKey);
+      if (!current || speed > current.velocidade) {
+        byDate.set(dateKey, {
+          ...record,
+          data: record?.data || record?.date || formatDateBR(inputDate),
+          velocidade: speed
+        });
+      }
+    });
+
+    return Array.from(byDate.values()).sort((a, b) => normalizeDateForMatch(a.data || a.data_evento).localeCompare(normalizeDateForMatch(b.data || b.data_evento)));
+  }
+
+  function cloneFileWithName(file, name) {
+    try {
+      return new File([file], name, { type: file.type || 'image/png', lastModified: file.lastModified || Date.now() });
+    } catch (_) {
+      file.__displayName = name;
+      return file;
+    }
+  }
+
+
+  function clipboardImageFilesFromEvent(ev) {
+    const out = [];
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+    Array.from(ev?.clipboardData?.items || []).forEach((item, index) => {
+      if (!String(item.type || '').startsWith('image/')) return;
+      const blob = item.getAsFile && item.getAsFile();
+      if (!blob) return;
+      const ext = (String(blob.type || 'image/png').split('/')[1] || 'png').replace('jpeg', 'jpg');
+      const name = blob.name && !/^image\.(png|jpg|jpeg|webp)$/i.test(blob.name)
+        ? blob.name
+        : `print-colado-${stamp}-${index + 1}.${ext}`;
+      out.push(cloneFileWithName(blob, name));
+    });
+
+    if (!out.length) {
+      Array.from(ev?.clipboardData?.files || []).forEach((file, index) => {
+        if (!String(file.type || '').startsWith('image/')) return;
+        const ext = (String(file.type || 'image/png').split('/')[1] || 'png').replace('jpeg', 'jpg');
+        const name = file.name && !/^image\.(png|jpg|jpeg|webp)$/i.test(file.name)
+          ? file.name
+          : `print-colado-${stamp}-${index + 1}.${ext}`;
+        out.push(cloneFileWithName(file, name));
+      });
+    }
+
+    return out;
+  }
+
+  function addUploadedFiles(root, files, source = 'selecionado') {
+    const incoming = Array.from(files || []).filter((file) => String(file.type || '').startsWith('image/'));
+    if (!incoming.length) {
+      toast('Nenhuma imagem encontrada. Cole ou selecione prints em formato de imagem.', 'error');
+      return;
+    }
+
+    const prepared = incoming.map((file, index) => {
+      const hasUsefulName = file.name && !/^image\.(png|jpg|jpeg|webp)$/i.test(file.name);
+      const name = hasUsefulName ? file.name : `print-colado-${new Date().toISOString().replace(/[:.]/g, '-')}-${index + 1}.png`;
+      const next = hasUsefulName ? file : cloneFileWithName(file, name);
+      next.__source = source;
+      return next;
+    });
+
+    const seen = new Set(state.uploadedFiles.map((file) => `${file.name || file.__displayName}|${file.size}|${file.lastModified || ''}`));
+    prepared.forEach((file) => {
+      const key = `${file.name || file.__displayName}|${file.size}|${file.lastModified || ''}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        state.uploadedFiles.push(file);
+      }
+    });
+
+    renderUploadLists(root);
+    toast(`${prepared.length} print(s) adicionados para envio.`);
+  }
+
   function rememberGeneratedGroup(key) {
     if (!key) return;
     state.generatedImportedGroupKeys.add(key);
@@ -109,7 +205,7 @@
   function getStyles() {
     return `
       <style id="frotas-module-style">
-        .frotas-shell{width:100%;color:#e5e7eb}.frotas-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}.frotas-kicker{display:inline-flex;align-items:center;gap:8px;color:#86efac;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.frotas-title{margin:0;font-size:clamp(22px,2.2vw,32px);line-height:1.1;color:#f8fafc;letter-spacing:-.04em}.frotas-subtitle{max-width:860px;margin:10px 0 0;color:#94a3b8;font-size:14px;line-height:1.55}.frotas-card{background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.16);border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.frotas-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.frotas-tab{appearance:none;border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 14px;font-weight:900;font-size:13px;cursor:pointer;transition:.18s ease}.frotas-tab.active,.frotas-tab:hover{color:#f8fafc;border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35)}.frotas-body{padding:18px}.speed-grid{display:grid;grid-template-columns:minmax(300px,450px) minmax(320px,1fr);gap:18px;align-items:start}.speed-panel{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.14);border-radius:22px;padding:18px}.speed-panel h3{margin:0 0 14px;color:#f8fafc;font-size:16px;letter-spacing:-.02em}.speed-field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}.speed-field label{color:#cbd5e1;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.speed-input,.speed-select,.speed-textarea{width:100%;border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:12px 13px;outline:none;font-size:14px;transition:.16s ease;color-scheme:dark}.speed-select option{background:#0f172a;color:#e5e7eb}.speed-input:focus,.speed-select:focus,.speed-textarea:focus{border-color:rgba(34,197,94,.68);box-shadow:0 0 0 4px rgba(34,197,94,.10)}.speed-row{display:grid;grid-template-columns:1fr 130px 42px;gap:10px;align-items:end;margin-bottom:10px}.speed-row .speed-field{margin-bottom:0}.speed-btn{border:0;border-radius:14px;padding:12px 14px;font-weight:950;cursor:pointer;transition:.18s ease;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px}.speed-btn-primary{width:100%;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;box-shadow:0 14px 34px rgba(34,197,94,.22)}.speed-btn-primary:hover{transform:translateY(-1px);filter:brightness(1.05)}.speed-btn-primary:disabled{opacity:.55;cursor:not-allowed;transform:none}.speed-btn-soft{background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.24)}.speed-btn-danger{background:rgba(239,68,68,.10);color:#fca5a5;border:1px solid rgba(239,68,68,.20);padding:0;min-width:42px}.speed-actions{display:grid;gap:10px;margin-top:14px}.speed-message{min-height:520px;resize:vertical;line-height:1.55;white-space:pre-wrap}.speed-hint{margin:10px 0 0;color:#94a3b8;font-size:12px;line-height:1.45}.speed-hint code{color:#bbf7d0}.speed-colab-status{margin-top:-6px;color:#86efac;font-size:11px;font-weight:800;line-height:1.35}.colab-autocomplete{position:relative}.colab-dropdown{position:absolute;left:0;right:0;top:calc(100% - 4px);z-index:60;background:linear-gradient(180deg,#0f172a,#020617);border:1px solid rgba(34,197,94,.38);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.42);padding:6px;max-height:286px;overflow:auto}.colab-dropdown[hidden]{display:none}.colab-option{width:100%;border:0;background:transparent;color:#e5e7eb;text-align:left;border-radius:12px;padding:10px 11px;cursor:pointer;display:block}.colab-option:hover,.colab-option.active{background:rgba(22,101,52,.34)}.colab-option strong{display:block;font-size:12px;line-height:1.25;color:#f8fafc;letter-spacing:.02em}.colab-option span{display:block;margin-top:3px;font-size:11px;line-height:1.25;color:#94a3b8}.colab-empty{padding:10px 11px;color:#94a3b8;font-size:12px}.speed-divider{height:1px;background:rgba(148,163,184,.14);margin:16px 0}.speed-import-card{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;margin-bottom:16px}.speed-import-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.speed-import-head h3{margin:0}.speed-import-list{display:grid;gap:8px;max-height:260px;overflow:auto}.speed-import-empty{color:#94a3b8;font-size:12px;border:1px dashed rgba(148,163,184,.2);border-radius:14px;padding:12px}.speed-import-item{width:100%;text-align:left;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.72);color:#e5e7eb;border-radius:14px;padding:10px 12px;cursor:pointer}.speed-import-item:hover{border-color:rgba(34,197,94,.45);background:rgba(22,101,52,.18)}.speed-import-item.selected{border-color:rgba(34,197,94,.75);background:rgba(22,101,52,.24);box-shadow:inset 4px 0 0 rgba(34,197,94,.75)}.speed-import-item.generated{border-color:rgba(34,197,94,.36);background:rgba(20,83,45,.30);opacity:.74}.speed-import-item.generated strong::after{content:'  ✓ COPIADA';display:inline-flex;margin-left:6px;color:#86efac;font-size:10px;font-weight:950}.speed-import-item.generated .speed-import-badge{background:rgba(34,197,94,.22);border-color:rgba(34,197,94,.45);color:#dcfce7}.speed-import-item strong{display:block;color:#f8fafc;font-size:12px}.speed-import-item span{display:block;color:#94a3b8;font-size:11px;margin-top:3px}.speed-import-badge{display:inline-flex;border-radius:999px;padding:3px 7px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.22);color:#bbf7d0;font-size:10px;font-weight:900;margin-top:6px}.upload-box{border:1px dashed rgba(34,197,94,.35);border-radius:18px;padding:14px;background:rgba(2,6,23,.28)}.upload-list{display:grid;gap:8px;margin-top:10px}.upload-item{display:flex;justify-content:space-between;gap:10px;align-items:center;border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.66);border-radius:14px;padding:10px 12px;color:#cbd5e1;font-size:12px}.upload-item strong{color:#f8fafc}.saved-list{display:grid;gap:8px;margin-top:10px}.saved-item{border:1px solid rgba(34,197,94,.20);background:rgba(22,101,52,.12);border-radius:14px;padding:10px 12px;color:#dcfce7;font-size:12px}.saved-item a{color:#86efac;font-weight:900}.speed-toast{position:fixed;right:22px;bottom:22px;background:rgba(22,101,52,.96);color:#dcfce7;border:1px solid rgba(134,239,172,.32);border-radius:16px;padding:12px 14px;font-weight:900;box-shadow:0 16px 45px rgba(0,0,0,.35);z-index:99999;opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.speed-toast.show{opacity:1;transform:translateY(0)}@media(max-width:980px){.speed-grid{grid-template-columns:1fr}.speed-row{grid-template-columns:1fr 1fr 42px}}@media(max-width:560px){.frotas-header{display:block}.speed-row{grid-template-columns:1fr}.speed-btn-danger{width:100%}}
+        .frotas-shell{width:100%;color:#e5e7eb}.frotas-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}.frotas-kicker{display:inline-flex;align-items:center;gap:8px;color:#86efac;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.frotas-title{margin:0;font-size:clamp(22px,2.2vw,32px);line-height:1.1;color:#f8fafc;letter-spacing:-.04em}.frotas-subtitle{max-width:860px;margin:10px 0 0;color:#94a3b8;font-size:14px;line-height:1.55}.frotas-card{background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.16);border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.frotas-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.frotas-tab{appearance:none;border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 14px;font-weight:900;font-size:13px;cursor:pointer;transition:.18s ease}.frotas-tab.active,.frotas-tab:hover{color:#f8fafc;border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35)}.frotas-body{padding:18px}.speed-grid{display:grid;grid-template-columns:minmax(300px,450px) minmax(320px,1fr);gap:18px;align-items:start}.speed-panel{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.14);border-radius:22px;padding:18px}.speed-panel h3{margin:0 0 14px;color:#f8fafc;font-size:16px;letter-spacing:-.02em}.speed-field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}.speed-field label{color:#cbd5e1;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.speed-input,.speed-select,.speed-textarea{width:100%;border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:12px 13px;outline:none;font-size:14px;transition:.16s ease;color-scheme:dark}.speed-select option{background:#0f172a;color:#e5e7eb}.speed-input:focus,.speed-select:focus,.speed-textarea:focus{border-color:rgba(34,197,94,.68);box-shadow:0 0 0 4px rgba(34,197,94,.10)}.speed-row{display:grid;grid-template-columns:1fr 130px 42px;gap:10px;align-items:end;margin-bottom:10px}.speed-row .speed-field{margin-bottom:0}.speed-btn{border:0;border-radius:14px;padding:12px 14px;font-weight:950;cursor:pointer;transition:.18s ease;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px}.speed-btn-primary{width:100%;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;box-shadow:0 14px 34px rgba(34,197,94,.22)}.speed-btn-primary:hover{transform:translateY(-1px);filter:brightness(1.05)}.speed-btn-primary:disabled{opacity:.55;cursor:not-allowed;transform:none}.speed-btn-soft{background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.24)}.speed-btn-danger{background:rgba(239,68,68,.10);color:#fca5a5;border:1px solid rgba(239,68,68,.20);padding:0;min-width:42px}.speed-actions{display:grid;gap:10px;margin-top:14px}.speed-message{min-height:520px;resize:vertical;line-height:1.55;white-space:pre-wrap}.speed-hint{margin:10px 0 0;color:#94a3b8;font-size:12px;line-height:1.45}.speed-hint code{color:#bbf7d0}.speed-colab-status{margin-top:-6px;color:#86efac;font-size:11px;font-weight:800;line-height:1.35}.colab-autocomplete{position:relative}.colab-dropdown{position:absolute;left:0;right:0;top:calc(100% - 4px);z-index:60;background:linear-gradient(180deg,#0f172a,#020617);border:1px solid rgba(34,197,94,.38);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.42);padding:6px;max-height:286px;overflow:auto}.colab-dropdown[hidden]{display:none}.colab-option{width:100%;border:0;background:transparent;color:#e5e7eb;text-align:left;border-radius:12px;padding:10px 11px;cursor:pointer;display:block}.colab-option:hover,.colab-option.active{background:rgba(22,101,52,.34)}.colab-option strong{display:block;font-size:12px;line-height:1.25;color:#f8fafc;letter-spacing:.02em}.colab-option span{display:block;margin-top:3px;font-size:11px;line-height:1.25;color:#94a3b8}.colab-empty{padding:10px 11px;color:#94a3b8;font-size:12px}.speed-divider{height:1px;background:rgba(148,163,184,.14);margin:16px 0}.speed-import-card{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;margin-bottom:16px}.speed-import-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.speed-import-head h3{margin:0}.speed-import-list{display:grid;gap:8px;max-height:260px;overflow:auto}.speed-import-empty{color:#94a3b8;font-size:12px;border:1px dashed rgba(148,163,184,.2);border-radius:14px;padding:12px}.speed-import-item{width:100%;text-align:left;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.72);color:#e5e7eb;border-radius:14px;padding:10px 12px;cursor:pointer}.speed-import-item:hover{border-color:rgba(34,197,94,.45);background:rgba(22,101,52,.18)}.speed-import-item.selected{border-color:rgba(34,197,94,.75);background:rgba(22,101,52,.24);box-shadow:inset 4px 0 0 rgba(34,197,94,.75)}.speed-import-item.generated{border-color:rgba(34,197,94,.36);background:rgba(20,83,45,.30);opacity:.74}.speed-import-item.generated strong::after{content:'  ✓ COPIADA';display:inline-flex;margin-left:6px;color:#86efac;font-size:10px;font-weight:950}.speed-import-item.generated .speed-import-badge{background:rgba(34,197,94,.22);border-color:rgba(34,197,94,.45);color:#dcfce7}.speed-import-item strong{display:block;color:#f8fafc;font-size:12px}.speed-import-item span{display:block;color:#94a3b8;font-size:11px;margin-top:3px}.speed-import-badge{display:inline-flex;border-radius:999px;padding:3px 7px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.22);color:#bbf7d0;font-size:10px;font-weight:900;margin-top:6px}.upload-box{border:1px dashed rgba(34,197,94,.35);border-radius:18px;padding:14px;background:rgba(2,6,23,.28)}.upload-list{display:grid;gap:8px;margin-top:10px}.upload-item{display:flex;justify-content:space-between;gap:10px;align-items:center;border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.66);border-radius:14px;padding:10px 12px;color:#cbd5e1;font-size:12px}.upload-item strong{color:#f8fafc}.saved-list{display:grid;gap:8px;margin-top:10px}.saved-item{border:1px solid rgba(34,197,94,.20);background:rgba(22,101,52,.12);border-radius:14px;padding:10px 12px;color:#dcfce7;font-size:12px}.saved-item a{color:#86efac;font-weight:900}.speed-toast{position:fixed;right:22px;bottom:22px;background:rgba(22,101,52,.96);color:#dcfce7;border:1px solid rgba(134,239,172,.32);border-radius:16px;padding:12px 14px;font-weight:900;box-shadow:0 16px 45px rgba(0,0,0,.35);z-index:99999;opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.speed-toast.show{opacity:1;transform:translateY(0)}.speed-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:18px;align-items:start}.speed-step-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}.speed-step-title h3{margin:0}.speed-step-pill{display:inline-flex;align-items:center;border:1px solid rgba(34,197,94,.28);background:rgba(34,197,94,.12);color:#bbf7d0;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}.speed-message.small{min-height:280px}.paste-zone{border:1px dashed rgba(34,197,94,.42);border-radius:20px;background:radial-gradient(circle at top left,rgba(34,197,94,.14),transparent 32%),rgba(2,6,23,.36);padding:20px;text-align:center;outline:none;transition:.18s ease;cursor:pointer}.paste-zone:hover,.paste-zone:focus,.paste-zone.drag{border-color:rgba(134,239,172,.86);background:rgba(22,101,52,.16);box-shadow:0 0 0 4px rgba(34,197,94,.08)}.paste-zone strong{display:block;color:#f8fafc;font-size:15px;margin-bottom:6px}.paste-zone span{display:block;color:#94a3b8;font-size:12px;line-height:1.45}.paste-zone kbd{display:inline-flex;border:1px solid rgba(148,163,184,.24);background:#0f172a;color:#bbf7d0;border-radius:8px;padding:2px 6px;font-size:11px;font-weight:900}.upload-actions{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}.print-status-box{border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.52);border-radius:16px;padding:12px;margin-top:14px}.print-status-box strong{display:block;color:#f8fafc;font-size:12px;margin-bottom:5px}.print-status-box p{margin:0;color:#94a3b8;font-size:12px;line-height:1.45}@media(max-width:1100px){.speed-grid{grid-template-columns:1fr}.speed-row{grid-template-columns:1fr 1fr 42px}}@media(max-width:560px){.frotas-header{display:block}.speed-row{grid-template-columns:1fr}.speed-btn-danger{width:100%}.speed-step-title{display:block}.speed-step-pill{margin-top:8px}}
       </style>`;
   }
 
@@ -380,10 +476,12 @@
     });
 
     return Array.from(groups.values()).map((g) => {
-      g.registros.sort((a, b) => String(a.data_evento || '').localeCompare(String(b.data_evento || '')) || String(a.hora_evento || '').localeCompare(String(b.hora_evento || '')));
+      const ordered = (g.registros || []).sort((a, b) => String(a.data_evento || '').localeCompare(String(b.data_evento || '')) || String(a.hora_evento || '').localeCompare(String(b.hora_evento || '')));
+      g.totalRegistrosOriginais = ordered.length;
+      g.registros = dedupeHighestSpeedByDate(ordered.map((r) => ({ ...r, data: r.data_evento, velocidade: r.velocidade })));
       g.maxVelocidade = Math.max(...g.registros.map((r) => Number(r.velocidade || 0)));
-      g.periodoInicio = g.registros[0]?.data_evento || '';
-      g.periodoFim = g.registros[g.registros.length - 1]?.data_evento || '';
+      g.periodoInicio = g.registros[0]?.data || g.registros[0]?.data_evento || '';
+      g.periodoFim = g.registros[g.registros.length - 1]?.data || g.registros[g.registros.length - 1]?.data_evento || '';
       return g;
     }).sort((a, b) => String(a.motorista || a.placa).localeCompare(String(b.motorista || b.placa), 'pt-BR'));
   }
@@ -398,7 +496,7 @@
       supervisao: g.supervisao || '',
       registros: (g.registros || []).map((r) => ({
         id: r.id,
-        data: formatDateBR(r.data_evento),
+        data: formatDateBR(r.data || r.data_evento),
         velocidade: parseSpeed(r.velocidade)
       })).filter((r) => r.id && r.data && r.velocidade)
     })).filter((item) => item.plate && item.driverName);
@@ -431,7 +529,7 @@
       const badge = generated ? 'Mensagem copiada' : (g.status_cruzamento === 'MOTORISTA_IDENTIFICADO' ? 'Identificado pelo patrimônio' : 'Conferir motorista');
       return `<button class="speed-import-item ${selected ? 'selected' : ''} ${generated ? 'generated' : ''}" type="button" data-imported-excess-index="${index}">
         <strong>${escapeHtml(nome)} · ${escapeHtml(g.placa)}</strong>
-        <span>${escapeHtml(meta || 'Sem supervisão/coordenação')} · ${g.registros.length} registro(s) · ${escapeHtml(periodo)} · máx. ${escapeHtml(g.maxVelocidade)} km/h</span>
+        <span>${escapeHtml(meta || 'Sem supervisão/coordenação')} · ${g.registros.length} data(s) considerada(s) · ${g.totalRegistrosOriginais || g.registros.length} registro(s) importado(s) · ${escapeHtml(periodo)} · maior ${escapeHtml(g.maxVelocidade)} km/h</span>
         <em class="speed-import-badge">${escapeHtml(badge)}</em>
       </button>`;
     }).join('');
@@ -453,7 +551,7 @@
     if (placaInput) placaInput.value = onlyPlate(group.placa);
 
     const mapped = (group.registros || [])
-      .map((r) => ({ data: toInputDate(r.data_evento), velocidade: parseSpeed(r.velocidade) }))
+      .map((r) => ({ data: toInputDate(r.data || r.data_evento), velocidade: parseSpeed(r.velocidade) }))
       .filter((r) => r.data && r.velocidade);
     state.records = mapped.length ? mapped : [{ data: '', velocidade: '' }];
     renderRecords(root);
@@ -536,8 +634,8 @@
   function buildMessage({ nome, placa, registros, cidadeData }) {
     const nomeFinal = normalizeName(nome);
     const placaFinal = onlyPlate(placa);
-    const registrosValidos = registros.map((r) => ({ data: formatDateBR(r.data), velocidade: parseSpeed(r.velocidade) })).filter((r) => r.data && r.velocidade);
-    const linhas = registrosValidos.map((r) => `* ${r.data} – ${r.velocidade} km/h`).join('\n');
+    const registrosValidos = dedupeHighestSpeedByDate(registros.map((r) => ({ data: formatDateBR(r.data), velocidade: parseSpeed(r.velocidade) })).filter((r) => r.data && r.velocidade));
+    const linhas = registrosValidos.map((r) => `* ${formatDateBR(r.data)} – ${r.velocidade} km/h`).join('\n');
     return `${nomeFinal},\n\nConstatamos, por meio do sistema de rastreamento da frota, que V.S. excedeu de forma recorrente o limite máximo de velocidade permitido (120 km/h), conduzindo o veículo de placa ${placaFinal}, conforme registros abaixo:\n\n${linhas}\n\nOs registros demonstram reincidência contínua na prática de excesso de velocidade, ainda que com variações moderadas acima do limite permitido, evidenciando a necessidade de maior atenção e adequação imediata por parte do condutor.\n\nRessaltamos que o excesso de velocidade configura descumprimento das normas de trânsito e das diretrizes internas da empresa, podendo gerar riscos à segurança do próprio condutor, de terceiros e ao patrimônio da organização.\n\nDiante disso, reforçamos que é indispensável o cumprimento rigoroso dos limites estabelecidos e das políticas internas de condução segura.\n\nSolicitamos atenção redobrada quanto à condução do veículo, evitando novos registros e possíveis medidas administrativas futuras.\n\n${cidadeData}.`;
   }
 
@@ -599,7 +697,11 @@
   function renderUploadLists(root) {
     const selected = root.querySelector('[data-upload-list]');
     if (selected) {
-      selected.innerHTML = state.uploadedFiles.length ? state.uploadedFiles.map((f) => `<div class="upload-item"><span><strong>${escapeHtml(f.name)}</strong><br>${Math.round(f.size / 1024)} KB</span><span>print</span></div>`).join('') : '';
+      selected.innerHTML = state.uploadedFiles.length ? state.uploadedFiles.map((f, index) => `<div class="upload-item"><span><strong>${escapeHtml(f.name || f.__displayName || 'print.png')}</strong><br>${Math.round(f.size / 1024)} KB · ${escapeHtml(f.__source || 'selecionado')}</span><button class="speed-btn speed-btn-danger" type="button" data-remove-upload="${index}" title="Remover print">×</button></div>`).join('') : '<div class="speed-import-empty">Nenhum print adicionado ainda.</div>';
+      selected.querySelectorAll('[data-remove-upload]').forEach((btn) => btn.addEventListener('click', () => {
+        state.uploadedFiles.splice(Number(btn.getAttribute('data-remove-upload')), 1);
+        renderUploadLists(root);
+      }));
     }
     const saved = root.querySelector('[data-saved-list]');
     if (saved) {
@@ -620,7 +722,7 @@
     if (parsedRecords.length) {
       syncRecordsFromDom(root);
       const existing = state.records.filter((r) => r.data && r.velocidade);
-      state.records = [...existing, ...parsedRecords];
+      state.records = dedupeHighestSpeedByDate([...existing, ...parsedRecords]).map((r) => ({ data: toInputDate(r.data) || r.data, velocidade: r.velocidade }));
       renderRecords(root);
     }
 
@@ -645,6 +747,101 @@
     return Boolean(ocrDate && rowDate && ocrDate === rowDate && ocrSpeed && rowSpeed && ocrSpeed === rowSpeed);
   }
 
+
+  function normalizeTextForOcrMatch(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9\s/.-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function getOcrTextFromFileResult(file) {
+    return [
+      file?.ocrText,
+      file?.ocr_text,
+      file?.text,
+      file?.texto,
+      file?.rawText,
+      file?.raw_text,
+      file?.extractedText,
+      file?.extracted_text,
+      file?.messageText,
+      file?.mensagem,
+      file?.content
+    ].filter(Boolean).join('\n');
+  }
+
+  function extractOcrRecordsFromText(text) {
+    const normalized = normalizeTextForOcrMatch(text);
+    if (!normalized) return [];
+
+    const records = [];
+    const currentYear = String(new Date().getFullYear());
+    const pattern = /(\d{1,2}[\/.-]\d{1,2}(?:[\/.-]\d{2,4})?)[\s\S]{0,90}?(\d{2,3})\s*(?:KM\/?H|KMH|KM|K\/H|KPH)/g;
+    let match;
+    while ((match = pattern.exec(normalized))) {
+      let date = String(match[1] || '').replace(/[.-]/g, '/');
+      const parts = date.split('/');
+      if (parts.length === 2) date = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${currentYear}`;
+      if (parts.length === 3) {
+        const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+        date = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${year}`;
+      }
+      records.push({ data: date, velocidade: Number(match[2]) });
+    }
+    return records;
+  }
+
+  function getFileMatchedIds(file) {
+    const candidates = [
+      file?.matchedIds,
+      file?.matched_ids,
+      file?.recordIds,
+      file?.record_ids,
+      file?.notificacaoIds,
+      file?.notificationIds,
+      file?.archivedIds
+    ];
+    const out = [];
+    candidates.forEach((value) => {
+      if (Array.isArray(value)) out.push(...value);
+      else if (value) out.push(...String(value).split(/[;,\s]+/));
+    });
+    return out.map((id) => String(id || '').trim()).filter(Boolean);
+  }
+
+  function getPossibleFilePlate(file) {
+    const text = normalizeTextForOcrMatch(getOcrTextFromFileResult(file));
+    const direct = onlyPlate(file?.plate || file?.placa || file?.vehiclePlate || file?.vehicle_plate || '');
+    if (direct) return direct;
+    const match = text.match(/\b([A-Z]{3}\s*[0-9][A-Z0-9]\s*[0-9]{2})\b/);
+    return match ? onlyPlate(match[1]) : '';
+  }
+
+  function getGroupKeyFromRow(row) {
+    const placa = onlyPlate(row?.placa || '');
+    const motorista = getDriverFromExcesso(row);
+    return `${normalizeName(motorista) || 'SEM MOTORISTA'}|${placa}`;
+  }
+
+  function rowBelongsToGeneratedGroup(row) {
+    const status = String(row?.status_notificacao || '').toUpperCase();
+    return status === 'GERADA' || state.generatedImportedGroupKeys.has(getGroupKeyFromRow(row));
+  }
+
+  function fileMatchesRowByVehicleOrDriver(file, row) {
+    const filePlate = getPossibleFilePlate(file);
+    const fileDriver = normalizeName(file?.driverName || file?.driverFolderName || file?.motorista || file?.nomeMotorista || '');
+    const rowPlate = onlyPlate(row?.placa || '');
+    const rowDriver = normalizeName(getDriverFromExcesso(row));
+    if (filePlate && rowPlate && filePlate === rowPlate) return true;
+    if (fileDriver && rowDriver && (fileDriver === rowDriver || fileDriver.includes(rowDriver) || rowDriver.includes(fileDriver))) return true;
+    return false;
+  }
+
   async function archiveMatchedImportedRowsFromOcr(root, files) {
     const supabase = window.supabase;
     const savedFiles = Array.isArray(files) ? files : [];
@@ -656,33 +853,57 @@
       return status === 'PENDENTE' || status === 'GERADA';
     });
 
+    const addMatch = (row, file, reason) => {
+      if (!row?.id) return;
+      matched.set(row.id, {
+        id: row.id,
+        fileName: file?.fileName || file?.name || '',
+        fileUrl: file?.fileUrl || file?.url || '',
+        driverName: file?.driverName || file?.driverFolderName || getDriverFromExcesso(row) || '',
+        plate: getPossibleFilePlate(file) || onlyPlate(row.placa || ''),
+        reason
+      });
+    };
+
     savedFiles.forEach((file) => {
-      const filePlate = onlyPlate(file.plate || file.placa || '');
-      const fileDriver = normalizeName(file.driverName || file.driverFolderName || '');
-      const ocrRecords = Array.isArray(file.registros || file.extractedRegistros) ? (file.registros || file.extractedRegistros) : [];
-      if (!ocrRecords.length) return;
+      const explicitIds = new Set(getFileMatchedIds(file));
+      if (explicitIds.size) {
+        openRows.forEach((row) => {
+          if (explicitIds.has(String(row.id))) addMatch(row, file, 'ids_retornados_pelo_ocr');
+        });
+      }
+
+      const rawText = getOcrTextFromFileResult(file);
+      const structuredRecords = Array.isArray(file?.registros || file?.extractedRegistros || file?.records)
+        ? (file.registros || file.extractedRegistros || file.records)
+        : [];
+      const ocrRecords = [
+        ...structuredRecords,
+        ...extractOcrRecordsFromText(rawText)
+      ];
 
       openRows.forEach((row) => {
-        const rowPlate = onlyPlate(row.placa || '');
-        const rowDriver = normalizeName(getDriverFromExcesso(row));
-        const sameVehicleOrDriver = (filePlate && rowPlate && filePlate === rowPlate) || (!filePlate && fileDriver && rowDriver && fileDriver === rowDriver);
-        if (!sameVehicleOrDriver) return;
+        if (!fileMatchesRowByVehicleOrDriver(file, row)) return;
+
         const hasSameRecord = ocrRecords.some((ocr) => ocrRecordMatchesRow(ocr, row));
-        if (hasSameRecord && row.id) {
-          matched.set(row.id, {
-            id: row.id,
-            fileName: file.fileName || '',
-            fileUrl: file.fileUrl || '',
-            driverName: file.driverName || file.driverFolderName || '',
-            plate: filePlate || rowPlate
-          });
+        if (hasSameRecord) {
+          addMatch(row, file, 'placa_data_velocidade');
+          return;
+        }
+
+        // Fallback seguro para o fluxo real do painel:
+        // se a mensagem já foi GERADA/COPIADA para aquele motorista/placa e o print enviado
+        // foi identificado pelo OCR/Drive como daquele mesmo veículo ou motorista, arquiva a pendência.
+        // Isso evita que notificações já enviadas fiquem acumuladas quando o OCR não devolve data/velocidade estruturada.
+        if (rowBelongsToGeneratedGroup(row)) {
+          addMatch(row, file, 'mensagem_gerada_print_identificado');
         }
       });
     });
 
     const matches = Array.from(matched.values());
     if (!matches.length) {
-      toast('Prints salvos. Nenhum registro foi arquivado porque o OCR não encontrou data e velocidade iguais aos registros pendentes.', 'error');
+      toast('Prints salvos. Nenhuma pendência foi arquivada: o OCR não identificou placa/motorista correspondente a uma mensagem GERADA.', 'error');
       return;
     }
 
@@ -694,7 +915,7 @@
     const payload = {
       status_notificacao: 'NOTIFICADO',
       notificado_em: nowIso,
-      observacoes: `Arquivado automaticamente por OCR do print. Arquivo: ${firstFile.fileName || firstFile.fileUrl || 'print salvo no Drive'}`
+      observacoes: `Arquivado automaticamente após envio do print. Motivo: ${firstFile.reason || 'ocr'}. Arquivo: ${firstFile.fileName || firstFile.fileUrl || 'print salvo no Drive'}`
     };
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId || ''))) payload.notificado_por = userId;
     if (userName) payload.notificado_por_nome = userName;
@@ -710,9 +931,9 @@
         if (matched.has(row.id)) row.status_notificacao = 'NOTIFICADO';
       });
       renderImportedExcessos(root);
-      toast(`${ids.length} registro(s) arquivado(s) automaticamente pelo OCR do print.`);
+      toast(`${ids.length} registro(s) arquivado(s): print enviado e notificação identificada.`);
     } catch (err) {
-      console.warn('[FROTAS] Falha ao arquivar registros por OCR:', err);
+      console.warn('[FROTAS] Falha ao arquivar registros após envio do print:', err);
       toast('Prints salvos, mas não foi possível arquivar os registros no Supabase.', 'error');
     }
   }
@@ -743,7 +964,7 @@
     try {
       const files = [];
       for (const file of state.uploadedFiles) {
-        files.push({ name: file.name, mimeType: file.type || 'image/png', base64: await fileToBase64(file) });
+        files.push({ name: file.name || file.__displayName || `print-${Date.now()}.png`, mimeType: file.type || 'image/png', base64: await fileToBase64(file) });
       }
 
       const resp = await fetch(gasUrl, {
@@ -776,7 +997,7 @@
       console.error('[FROTAS] Upload/OCR:', err);
       toast(err.message || 'Erro ao enviar prints.', 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Enviar prints em lote e salvar no Drive'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Enviar prints e arquivar pendências'; }
     }
   }
 
@@ -790,10 +1011,12 @@
           <div class="frotas-body">
             <div class="speed-grid">
               <div class="speed-panel">
+                <div class="speed-step-title"><h3>Painel 1 · Copiar mensagem</h3><span class="speed-step-pill">maior velocidade por data</span></div>
                 <div class="speed-import-card">
                   <div class="speed-import-head"><h3>Registros importados</h3><button class="speed-btn speed-btn-soft" type="button" data-refresh-imported-excessos>Atualizar</button></div>
                   <p class="speed-hint" data-imported-excess-count>Nenhuma pendência carregada</p>
                   <div class="speed-import-list" data-imported-excess-list><div class="speed-import-empty">Carregando registros importados...</div></div>
+                  <p class="speed-hint">Ao clicar em uma sugestão, o painel considera automaticamente somente a maior velocidade de cada data.</p>
                 </div>
                 <h3>Dados da notificação</h3>
                 <div class="speed-field colab-autocomplete" data-colaborador-autocomplete><label>Colaborador / Motorista</label><input class="speed-input" type="text" autocomplete="off" placeholder="Digite para buscar o colaborador" data-speed-name><div class="colab-dropdown" data-colaborador-dropdown hidden></div><p class="speed-colab-status" data-colaborador-status>Carregando colaboradores da base...</p></div>
@@ -801,19 +1024,26 @@
                 <div class="speed-field"><label>Data da notificação</label><input class="speed-input" type="text" value="${escapeHtml(todayBRShort())}" data-notification-date><p class="speed-hint">Usada para definir o ano da notificação. No Drive será salvo como: <code>Xº NOTIFICAÇÃO DE VELOCIDADE ANO NOME DO COLABORADOR</code></p></div>
                 <div class="speed-field"><label>Cidade e data da mensagem</label><input class="speed-input" type="text" value="Cascavel, ${escapeHtml(todayBRLong())}" data-speed-city-date></div>
                 <div class="speed-field"><label>Registros de velocidade</label><div data-speed-records></div><button class="speed-btn speed-btn-soft" type="button" data-add-record>+ Adicionar data e velocidade</button></div>
-                <div class="speed-actions"><button class="speed-btn speed-btn-primary" type="button" data-generate-speed-message>Gerar ✉️</button><p class="speed-hint">Este botão gera e copia somente a mensagem de notificação. Não depende dos prints.</p></div>
+                <div class="speed-actions"><button class="speed-btn speed-btn-primary" type="button" data-generate-speed-message>Gerar e copiar mensagem</button><p class="speed-hint">Depois de gerar, a sugestão fica marcada como <strong>GERADA/COPIADA</strong> para não confundir na sequência.</p></div>
                 <div class="speed-divider"></div>
-                <h3>Prints do rastreador <span style="color:#94a3b8;font-size:12px;font-weight:800;letter-spacing:0;text-transform:none;">(etapa posterior)</span></h3>
+                <h3>Mensagem gerada</h3>
+                <textarea class="speed-input speed-textarea speed-message small" readonly data-speed-output placeholder="A mensagem será gerada aqui e copiada automaticamente."></textarea>
+              </div>
+              <div class="speed-panel">
+                <div class="speed-step-title"><h3>Painel 2 · Enviar prints</h3><span class="speed-step-pill">colar direto aqui</span></div>
                 <div class="upload-box">
-                  <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL é necessária para salvar no Google Drive e usar OCR. A pasta mãe configurada é <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
-                  <div class="speed-field"><label>Selecionar prints</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
+                  <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL fica salva no navegador e é usada para salvar no Drive/OCR. Pasta mãe: <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
+                  <div class="paste-zone" tabindex="0" data-paste-zone>
+                    <strong>Clique aqui e cole o print</strong>
+                    <span>Após clicar neste quadro, use <kbd>Ctrl</kbd> + <kbd>V</kbd>. Também funciona colando em qualquer campo desta tela, arrastando imagens ou selecionando em lote abaixo.</span>
+                  </div>
+                  <div class="speed-field" style="margin-top:14px"><label>Selecionar prints em lote</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
                   <div data-upload-list class="upload-list"></div>
-                  <button class="speed-btn speed-btn-soft" type="button" data-upload-prints>Enviar prints em lote e salvar no Drive</button>
-                  <p class="speed-hint">Envie vários prints de uma vez. Esta etapa não depende da sugestão selecionada acima; o sistema cruza pela placa/OCR e salva cada arquivo na pasta correta.</p>
+                  <div class="upload-actions"><button class="speed-btn speed-btn-primary" type="button" data-upload-prints>Enviar prints e arquivar pendências</button></div>
+                  <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>Após a mensagem estar GERADA/COPIADA, o envio do print identifica placa/motorista pelo OCR. Se bater com a pendência, o registro é marcado como NOTIFICADO e sai da lista automaticamente.</p></div>
                   <div data-saved-list class="saved-list"></div>
                 </div>
               </div>
-              <div class="speed-panel"><h3>Mensagem gerada</h3><textarea class="speed-input speed-textarea speed-message" readonly data-speed-output placeholder="A mensagem será gerada aqui e copiada automaticamente."></textarea><p class="speed-hint">Depois de gerar, basta colar no canal de envio ao colaborador.</p></div>
             </div>
           </div>
         </div>
@@ -828,14 +1058,45 @@
     fetchImportedExcessos(container, opts);
 
     container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
-    container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(toPanelUrl('frotas-veiculos')));
-    container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(toPanelUrl('frotas-multas')));
+    container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-veiculos')));
+    container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-multas')));
 
     const plate = container.querySelector('[data-speed-plate]');
     if (plate) plate.addEventListener('input', () => { plate.value = onlyPlate(plate.value); });
 
     container.querySelector('[data-add-record]')?.addEventListener('click', () => { syncRecordsFromDom(container); state.records.push({ data: '', velocidade: '' }); renderRecords(container); });
-    container.querySelector('[data-print-files]')?.addEventListener('change', (ev) => { state.uploadedFiles = Array.from(ev.target.files || []); renderUploadLists(container); });
+    container.querySelector('[data-print-files]')?.addEventListener('change', (ev) => { addUploadedFiles(container, ev.target.files || [], 'selecionado'); ev.target.value = ''; });
+
+    const pasteZone = container.querySelector('[data-paste-zone]');
+    const handlePrintPaste = (ev) => {
+      const files = clipboardImageFilesFromEvent(ev);
+      if (!files.length) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      addUploadedFiles(container, files, 'colado');
+      if (pasteZone) {
+        pasteZone.classList.add('drag');
+        setTimeout(() => pasteZone.classList.remove('drag'), 450);
+      }
+    };
+
+    container.addEventListener('paste', handlePrintPaste);
+
+    if (pasteZone) {
+      pasteZone.addEventListener('click', () => {
+        pasteZone.focus();
+        toast('Área de prints selecionada. Agora use Ctrl + V para colar o print.');
+      });
+      pasteZone.addEventListener('paste', handlePrintPaste);
+      pasteZone.addEventListener('dragover', (ev) => { ev.preventDefault(); pasteZone.classList.add('drag'); });
+      pasteZone.addEventListener('dragleave', () => pasteZone.classList.remove('drag'));
+      pasteZone.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        pasteZone.classList.remove('drag');
+        addUploadedFiles(container, ev.dataTransfer?.files || [], 'arrastado');
+      });
+    }
+
     container.querySelector('[data-gas-url]')?.addEventListener('input', (ev) => {
       state.gasUrl = String(ev.target.value || '').trim() || DEFAULT_GAS_URL;
       localStorage.setItem(GAS_URL_KEY, state.gasUrl);
