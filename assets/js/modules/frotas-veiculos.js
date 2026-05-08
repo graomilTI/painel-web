@@ -19,7 +19,7 @@
 
   function statusBadge(v){
     if (v?.detran_confirmado || String(v?.detran_status||'').toUpperCase()==='CONFIRMADO') return '<span class="fv-badge ok">✓ DETRAN</span>';
-    if (!v?.renavam || String(v.renavam).replace(/\D/g,'') === '0') return '<span class="fv-badge err">Sem RENAVAM</span>';
+    if (String(v?.detran_status||'').toUpperCase()==='DETRAN_VENDA') return '<span class="fv-badge warn">DETRAN Venda</span>';
     return '<span class="fv-badge warn">Pendente DETRAN</span>';
   }
 
@@ -86,17 +86,37 @@
     await loadVeiculos(root, opts);
   }
 
+  async function extractFunctionError(error){
+    if(!error) return '';
+    const base = error.message || '';
+    const ctx = error.context;
+    if(ctx && typeof ctx.clone === 'function'){
+      try{
+        const cloned = ctx.clone();
+        const payload = await cloned.json();
+        const msg = payload?.error || payload?.message || JSON.stringify(payload);
+        if(msg) return msg;
+      }catch(_){
+        try{
+          const text = await ctx.clone().text();
+          if(text) return text.slice(0, 800);
+        }catch(__){}
+      }
+    }
+    return base || 'Edge Function retornou erro.';
+  }
+
   async function callFunction(opts, name, body){
     const { data, error } = await opts.supabase.functions.invoke(name, { body });
-    if(error) throw new Error(error.message || `Falha na function ${name}`);
+    if(error) throw new Error(await extractFunctionError(error));
     if(data?.error) throw new Error(data.error);
     return data;
   }
 
   async function confirmarDetran(root, opts, v){
-    if(!v?.placa || !v?.renavam) return toast('Veículo sem placa ou RENAVAM.', true);
+    if(!v?.placa) return toast('Veículo sem placa.', true);
     try{
-      toast('Consultando DETRAN...');
+      toast('Validando veículo...');
       const data = await callFunction(opts, 'sync-veiculos-detran', { mode:'single', veiculo_id:v.id, placa:v.placa, renavam:v.renavam, empresa:v.empresa, cnpj:v.cnpj });
       if(!data?.updated){
         await opts.supabase.from('frotas_veiculos').update({ detran_confirmado:true, detran_status:'CONFIRMADO', detran_mensagem:'Confirmado via Edge Function', detran_ultima_consulta_em:new Date().toISOString(), detran_raw:data || {} }).eq('id', v.id);
@@ -121,7 +141,7 @@
       toast('Consultando multas...');
       await callFunction(opts, 'sync-multas-detran', { placa:v.placa, renavam:v.renavam, veiculo_id:v.id, empresa:v.empresa, cnpj:v.cnpj });
       toast('Consulta de multas concluída.');
-      window.location.assign(toPanelUrl('frotas-multas'));
+      window.location.assign('./frotas-multas.html');
     }catch(err){ toast(err.message || 'Falha ao consultar multas.', true); }
   }
 
@@ -160,9 +180,9 @@
   }
 
   function openHome(container, opts={}){
-    container.innerHTML=`${styles}<section class="fv-shell"><div class="fv-head"><div class="fv-kicker">Frotas · Cadastro</div><h1 class="fv-title">Veículos</h1><p class="fv-sub">Base de placas e RENAVAM usada para consultar multas no DETRAN. Veículos confirmados pela API aparecem com a marcação <strong>DETRAN</strong>.</p></div><div class="fv-card"><div class="fv-tabs"><button class="fv-tab" type="button" data-open-excesso>Excesso de Velocidade</button><button class="fv-tab active" type="button">Veículos</button><button class="fv-tab" type="button" data-open-multas>Multas</button></div><div class="fv-body"><form class="fv-form" data-veiculo-form><div class="fv-field"><label>Placa</label><input class="fv-input" name="placa" placeholder="ABC1D23" maxlength="8"></div><div class="fv-field"><label>RENAVAM</label><input class="fv-input" name="renavam" placeholder="somente números"></div><div class="fv-field"><label>Nome interno</label><input class="fv-input" name="nome" placeholder="Ex.: ABC1D23"></div><div class="fv-field"><label>Empresa</label><input class="fv-input" name="empresa"></div><div class="fv-field"><label>CNPJ</label><input class="fv-input" name="cnpj"></div><div class="fv-field"><label>Marca</label><input class="fv-input" name="marca"></div><div class="fv-field"><label>Modelo</label><input class="fv-input" name="modelo"></div><div class="fv-field"><label>Cor</label><input class="fv-input" name="cor"></div><div class="fv-field"><label>Ano</label><input class="fv-input" name="ano" type="number"></div><div class="fv-field"><label>Tipo</label><input class="fv-input" name="tipo" placeholder="Próprio/Locado"></div><div class="fv-field"><label>Coordenação</label><input class="fv-input" name="coordenacao"></div><div class="fv-field"><label>Supervisão</label><input class="fv-input" name="supervisao"></div><div class="fv-field"><label>Motorista atual</label><input class="fv-input" name="motorista_atual"></div><div class="fv-field"><label>Hodômetro</label><input class="fv-input" name="hodometro" type="number" step="0.01"></div><div class="fv-field"><label>Valor mensal</label><input class="fv-input" name="valor_mensal" type="number" step="0.01"></div><div class="fv-field"><label>Dia vencimento</label><input class="fv-input" name="dia_vencimento" type="number"></div><div class="fv-field"><label>R$/Km</label><input class="fv-input" name="valor_km" type="number" step="0.01"></div><div class="fv-field"><label>Status</label><select class="fv-select" name="status"><option>ATIVO</option><option>INATIVO</option><option>VENDIDO</option><option>MANUTENCAO</option></select></div><div class="fv-field full"><label>Observações</label><textarea name="observacoes" placeholder="Observações internas"></textarea></div><div class="fv-field full"><button class="fv-btn primary" type="button" data-save-veiculo>Salvar veículo</button></div></form><div class="fv-toolbar"><input class="fv-input" placeholder="Buscar por placa, RENAVAM, modelo, motorista..." data-search><select class="fv-select" data-filter><option value="todos">Todos</option><option value="detran">Confirmados DETRAN</option><option value="pendentes">Pendentes DETRAN</option><option value="sem_renavam">Sem RENAVAM</option></select><button class="fv-btn soft" type="button" data-refresh>Atualizar</button><button class="fv-btn primary" type="button" data-sync-detran>Sincronizar DETRAN</button></div><div class="fv-grid"><div class="fv-kpi"><span>Total</span><strong data-kpi-total>0</strong></div><div class="fv-kpi"><span>DETRAN OK</span><strong data-kpi-detran>0</strong></div><div class="fv-kpi"><span>Pendentes</span><strong data-kpi-pendentes>0</strong></div><div class="fv-kpi"><span>Sem RENAVAM</span><strong data-kpi-sem-renavam>0</strong></div></div><p class="fv-sub" data-count>0 veículo(s) encontrado(s)</p><div class="fv-table-wrap"><table class="fv-table"><thead><tr><th>Placa / Empresa</th><th>RENAVAM</th><th>Veículo</th><th>Motorista</th><th>Coordenação</th><th>Custo</th><th>Validação</th><th>Status</th><th>Ações</th></tr></thead><tbody data-veiculos-table></tbody></table></div><div class="fv-note">Ao fazer upload do relatório de veículos em <strong>Relatórios</strong>, o painel organiza automaticamente placa e RENAVAM nesta tela. Depois, a consulta no DETRAN confirma o cadastro e marca o veículo com o selo <strong>DETRAN</strong>.</div></div></div></section>`;
-    container.querySelector('[data-open-excesso]')?.addEventListener('click',()=>window.location.assign(toPanelUrl('frotas')));
-    container.querySelector('[data-open-multas]')?.addEventListener('click',()=>window.location.assign(toPanelUrl('frotas-multas')));
+    container.innerHTML=`${styles}<section class="fv-shell"><div class="fv-head"><div class="fv-kicker">Frotas · Cadastro</div><h1 class="fv-title">Veículos</h1><p class="fv-sub">Base de veículos puxada diretamente do DETRAN Frotista. O RENAVAM é preenchido pela própria API quando disponível; não é obrigatório para iniciar a sincronização.</p></div><div class="fv-card"><div class="fv-tabs"><button class="fv-tab" type="button" data-open-excesso>Excesso de Velocidade</button><button class="fv-tab active" type="button">Veículos</button><button class="fv-tab" type="button" data-open-multas>Multas</button></div><div class="fv-body"><form class="fv-form" data-veiculo-form><div class="fv-field"><label>Placa</label><input class="fv-input" name="placa" placeholder="ABC1D23" maxlength="8"></div><div class="fv-field"><label>RENAVAM</label><input class="fv-input" name="renavam" placeholder="somente números"></div><div class="fv-field"><label>Nome interno</label><input class="fv-input" name="nome" placeholder="Ex.: ABC1D23"></div><div class="fv-field"><label>Empresa</label><input class="fv-input" name="empresa"></div><div class="fv-field"><label>CNPJ</label><input class="fv-input" name="cnpj"></div><div class="fv-field"><label>Marca</label><input class="fv-input" name="marca"></div><div class="fv-field"><label>Modelo</label><input class="fv-input" name="modelo"></div><div class="fv-field"><label>Cor</label><input class="fv-input" name="cor"></div><div class="fv-field"><label>Ano</label><input class="fv-input" name="ano" type="number"></div><div class="fv-field"><label>Tipo</label><input class="fv-input" name="tipo" placeholder="Próprio/Locado"></div><div class="fv-field"><label>Coordenação</label><input class="fv-input" name="coordenacao"></div><div class="fv-field"><label>Supervisão</label><input class="fv-input" name="supervisao"></div><div class="fv-field"><label>Motorista atual</label><input class="fv-input" name="motorista_atual"></div><div class="fv-field"><label>Hodômetro</label><input class="fv-input" name="hodometro" type="number" step="0.01"></div><div class="fv-field"><label>Valor mensal</label><input class="fv-input" name="valor_mensal" type="number" step="0.01"></div><div class="fv-field"><label>Dia vencimento</label><input class="fv-input" name="dia_vencimento" type="number"></div><div class="fv-field"><label>R$/Km</label><input class="fv-input" name="valor_km" type="number" step="0.01"></div><div class="fv-field"><label>Status</label><select class="fv-select" name="status"><option>ATIVO</option><option>INATIVO</option><option>VENDIDO</option><option>MANUTENCAO</option></select></div><div class="fv-field full"><label>Observações</label><textarea name="observacoes" placeholder="Observações internas"></textarea></div><div class="fv-field full"><button class="fv-btn primary" type="button" data-save-veiculo>Salvar veículo</button></div></form><div class="fv-toolbar"><input class="fv-input" placeholder="Buscar por placa, RENAVAM, modelo, motorista..." data-search><select class="fv-select" data-filter><option value="todos">Todos</option><option value="detran">Confirmados DETRAN</option><option value="pendentes">Pendentes DETRAN</option><option value="sem_renavam">Sem RENAVAM</option></select><button class="fv-btn soft" type="button" data-refresh>Atualizar</button><button class="fv-btn primary" type="button" data-sync-detran>Puxar frota DETRAN</button></div><div class="fv-grid"><div class="fv-kpi"><span>Total</span><strong data-kpi-total>0</strong></div><div class="fv-kpi"><span>DETRAN OK</span><strong data-kpi-detran>0</strong></div><div class="fv-kpi"><span>Pendentes</span><strong data-kpi-pendentes>0</strong></div><div class="fv-kpi"><span>Sem RENAVAM</span><strong data-kpi-sem-renavam>0</strong></div></div><p class="fv-sub" data-count>0 veículo(s) encontrado(s)</p><div class="fv-table-wrap"><table class="fv-table"><thead><tr><th>Placa / Empresa</th><th>RENAVAM</th><th>Veículo</th><th>Motorista</th><th>Coordenação</th><th>Custo</th><th>Validação</th><th>Status</th><th>Ações</th></tr></thead><tbody data-veiculos-table></tbody></table></div><div class="fv-note">Use <strong>Puxar frota DETRAN</strong> para puxar a frota oficial diretamente da API. O upload em <strong>Relatórios</strong> continua disponível para complementar custos, motorista, coordenação e dados internos.</div></div></div></section>`;
+    container.querySelector('[data-open-excesso]')?.addEventListener('click',()=>window.location.assign('./frotas.html'));
+    container.querySelector('[data-open-multas]')?.addEventListener('click',()=>window.location.assign('./frotas-multas.html'));
     container.querySelector('[data-save-veiculo]')?.addEventListener('click',()=>saveVeiculo(container, opts));
     container.querySelector('[data-refresh]')?.addEventListener('click',()=>loadVeiculos(container, opts));
     container.querySelector('[data-sync-detran]')?.addEventListener('click',()=>sincronizarFrota(container, opts));
