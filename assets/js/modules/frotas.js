@@ -108,6 +108,36 @@
     }
   }
 
+
+  function clipboardImageFilesFromEvent(ev) {
+    const out = [];
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+    Array.from(ev?.clipboardData?.items || []).forEach((item, index) => {
+      if (!String(item.type || '').startsWith('image/')) return;
+      const blob = item.getAsFile && item.getAsFile();
+      if (!blob) return;
+      const ext = (String(blob.type || 'image/png').split('/')[1] || 'png').replace('jpeg', 'jpg');
+      const name = blob.name && !/^image\.(png|jpg|jpeg|webp)$/i.test(blob.name)
+        ? blob.name
+        : `print-colado-${stamp}-${index + 1}.${ext}`;
+      out.push(cloneFileWithName(blob, name));
+    });
+
+    if (!out.length) {
+      Array.from(ev?.clipboardData?.files || []).forEach((file, index) => {
+        if (!String(file.type || '').startsWith('image/')) return;
+        const ext = (String(file.type || 'image/png').split('/')[1] || 'png').replace('jpeg', 'jpg');
+        const name = file.name && !/^image\.(png|jpg|jpeg|webp)$/i.test(file.name)
+          ? file.name
+          : `print-colado-${stamp}-${index + 1}.${ext}`;
+        out.push(cloneFileWithName(file, name));
+      });
+    }
+
+    return out;
+  }
+
   function addUploadedFiles(root, files, source = 'selecionado') {
     const incoming = Array.from(files || []).filter((file) => String(file.type || '').startsWith('image/'));
     if (!incoming.length) {
@@ -872,8 +902,8 @@
                 <div class="upload-box">
                   <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL fica salva no navegador e é usada para salvar no Drive/OCR. Pasta mãe: <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
                   <div class="paste-zone" tabindex="0" data-paste-zone>
-                    <strong>Cole o print aqui</strong>
-                    <span>Use <kbd>Ctrl</kbd> + <kbd>V</kbd> depois de capturar/copiar a tela, ou arraste imagens para este quadro. Também pode selecionar em lote abaixo.</span>
+                    <strong>Clique aqui e cole o print</strong>
+                    <span>Após clicar neste quadro, use <kbd>Ctrl</kbd> + <kbd>V</kbd>. Também funciona colando em qualquer campo desta tela, arrastando imagens ou selecionando em lote abaixo.</span>
                   </div>
                   <div class="speed-field" style="margin-top:14px"><label>Selecionar prints em lote</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
                   <div data-upload-list class="upload-list"></div>
@@ -906,15 +936,26 @@
     container.querySelector('[data-print-files]')?.addEventListener('change', (ev) => { addUploadedFiles(container, ev.target.files || [], 'selecionado'); ev.target.value = ''; });
 
     const pasteZone = container.querySelector('[data-paste-zone]');
+    const handlePrintPaste = (ev) => {
+      const files = clipboardImageFilesFromEvent(ev);
+      if (!files.length) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      addUploadedFiles(container, files, 'colado');
+      if (pasteZone) {
+        pasteZone.classList.add('drag');
+        setTimeout(() => pasteZone.classList.remove('drag'), 450);
+      }
+    };
+
+    container.addEventListener('paste', handlePrintPaste);
+
     if (pasteZone) {
-      pasteZone.addEventListener('click', () => container.querySelector('[data-print-files]')?.click());
-      pasteZone.addEventListener('paste', (ev) => {
-        const files = Array.from(ev.clipboardData?.files || []);
-        if (files.length) {
-          ev.preventDefault();
-          addUploadedFiles(container, files, 'colado');
-        }
+      pasteZone.addEventListener('click', () => {
+        pasteZone.focus();
+        toast('Área de prints selecionada. Agora use Ctrl + V para colar o print.');
       });
+      pasteZone.addEventListener('paste', handlePrintPaste);
       pasteZone.addEventListener('dragover', (ev) => { ev.preventDefault(); pasteZone.classList.add('drag'); });
       pasteZone.addEventListener('dragleave', () => pasteZone.classList.remove('drag'));
       pasteZone.addEventListener('drop', (ev) => {
