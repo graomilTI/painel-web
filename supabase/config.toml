@@ -1,0 +1,13 @@
+project_id = ""
+
+[functions.sync-multas-detran]
+verify_jwt = true
+
+[functions.verificar-indicacao-condutor]
+verify_jwt = true
+
+[functions.gerar-guia-multa]
+verify_jwt = true
+
+[functions.notificar-multa]
+verify_jwt = true
