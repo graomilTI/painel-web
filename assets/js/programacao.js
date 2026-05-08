@@ -14,7 +14,7 @@ const DISPONIBILIDADES = ['OK', 'FÉRIAS', 'FOLGA', 'ATESTADO', 'FALTA', 'TRANSF
 const TIPOS_ESTADIA = ['NÃO PRECISA', 'CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
 const TIPOS_DESLOCAMENTO = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'ÔNIBUS', 'OUTRO'];
 const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
-const BLOQUEIOS = new Set(['FÉRIAS', 'FOLGA', 'ATESTADO', 'FALTA', 'INATIVO']);
+const DISPONIBILIDADES_LIBERADAS = new Set(['', 'OK', 'DISPONÍVEL', 'DISPONIVEL', 'LIBERADO']);
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -176,6 +176,11 @@ function injectProgramacaoStyles() {
     .prog-extra-card{display:grid;grid-template-columns:160px 1.2fr 120px 1.2fr 86px;gap:8px;align-items:center;margin-bottom:8px;padding:8px;border:1px solid rgba(148,163,184,.14);border-radius:14px;background:rgba(15,23,42,.38)}
     .prog-extra-total{font-weight:900;color:#bbf7d0;text-align:right;white-space:nowrap}
     .prog-feedback-ok{color:#bbf7d0}.prog-feedback-error{color:#fecaca}.prog-feedback-warn{color:#fde68a}
+    .prog-section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 10px}
+    .prog-section-title h4{margin:0;color:#f8fafc;font-size:15px;font-weight:950;letter-spacing:.02em}
+    .prog-section-title .badge{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:900;border:1px solid rgba(52,211,153,.22);background:rgba(22,101,52,.14);color:#bbf7d0}
+    .prog-section-title.blocked .badge{border-color:rgba(248,113,113,.22);background:rgba(127,29,29,.18);color:#fecaca}
+    .prog-empty-section{border:1px dashed rgba(148,163,184,.2);border-radius:16px;padding:14px;color:#94a3b8;background:rgba(15,23,42,.18)}
     @media(max-width:900px){.prog-extra-card{grid-template-columns:1fr}.prog-table{min-width:860px}}
   `;
   document.head.appendChild(style);
@@ -593,9 +598,25 @@ initProtectedPage('Programação', (content) => {
     renderRows();
   }
 
-  function isBlocked(colab) {
+  function disponibilidadeAtual(colab) {
     const row = state.maps.disponibilidade.get(String(colab.id));
-    return BLOQUEIOS.has(String(row?.disponibilidade || 'OK').toUpperCase());
+    return String(row?.disponibilidade || 'OK').trim().toUpperCase();
+  }
+
+  function isDisponibilidadeBloqueada(value) {
+    const normalized = String(value || '').trim().toUpperCase();
+    return !DISPONIBILIDADES_LIBERADAS.has(normalized);
+  }
+
+  function isBlocked(colab) {
+    return isDisponibilidadeBloqueada(disponibilidadeAtual(colab));
+  }
+
+  function splitByDisponibilidade(rows) {
+    const disponiveis = [];
+    const bloqueados = [];
+    (rows || []).forEach((colab) => (isBlocked(colab) ? bloqueados : disponiveis).push(colab));
+    return { disponiveis, bloqueados };
   }
 
   function updateStats() {
@@ -638,17 +659,55 @@ initProtectedPage('Programação', (content) => {
   }
 
   function renderDisponibilidade(rows) {
+    const { disponiveis, bloqueados } = splitByDisponibilidade(rows);
     el.list.innerHTML = `
+      ${renderDisponibilidadeTable('Disponíveis', disponiveis, false)}
+      ${renderDisponibilidadeTable('Bloqueados', bloqueados, true)}
+    `;
+  }
+
+  function renderDisponibilidadeTable(title, rows, blockedSection) {
+    return `
+      <div class="prog-section-title ${blockedSection ? 'blocked' : ''}">
+        <h4>${escapeHtml(title)}</h4>
+        <span class="badge">${rows.length}</span>
+      </div>
+      ${rows.length ? `
+        <div class="prog-table-wrap">
+          <table class="prog-table">
+            <thead><tr><th>Colaborador</th><th>Disponibilidade</th><th>Observação</th></tr></thead>
+            <tbody>
+              ${rows.map((colab) => {
+                const r = state.maps.disponibilidade.get(String(colab.id)) || {};
+                return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_colaboradores">
+                  <td>${colabCell(colab)}</td>
+                  <td><select data-field="disponibilidade">${selectOptions(DISPONIBILIDADES, r.disponibilidade || 'OK')}</select></td>
+                  <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" placeholder="Observação da disponibilidade" /></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>` : `<div class="prog-empty-section">Nenhum colaborador em ${blockedSection ? 'Bloqueados' : 'Disponíveis'}.</div>`}
+    `;
+  }
+
+  function renderBloqueadosResumo(rows) {
+    if (!rows.length) return '';
+    return `
+      <div class="prog-section-title blocked">
+        <h4>Bloqueados</h4>
+        <span class="badge">${rows.length}</span>
+      </div>
       <div class="prog-table-wrap">
         <table class="prog-table">
-          <thead><tr><th>Colaborador</th><th>Disponibilidade</th><th>Observação</th></tr></thead>
+          <thead><tr><th>Colaborador</th><th>Motivo</th><th>Observação</th></tr></thead>
           <tbody>
             ${rows.map((colab) => {
               const r = state.maps.disponibilidade.get(String(colab.id)) || {};
-              return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_colaboradores">
+              return `<tr data-colab-id="${escapeHtml(colab.id)}">
                 <td>${colabCell(colab)}</td>
-                <td><select data-field="disponibilidade">${selectOptions(DISPONIBILIDADES, r.disponibilidade || 'OK')}</select></td>
-                <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" placeholder="Observação da disponibilidade" /></td>
+                <td><span class="prog-status block">${escapeHtml(r.disponibilidade || 'BLOQUEADO')}</span></td>
+                <td>${escapeHtml(r.observacao || '-')}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -657,12 +716,17 @@ initProtectedPage('Programação', (content) => {
   }
 
   function renderEstadia(rows) {
+    const { disponiveis, bloqueados } = splitByDisponibilidade(rows);
     el.list.innerHTML = `
-      <div class="prog-table-wrap">
+      <div class="prog-section-title">
+        <h4>Disponíveis</h4>
+        <span class="badge">${disponiveis.length}</span>
+      </div>
+      ${disponiveis.length ? `<div class="prog-table-wrap">
         <table class="prog-table">
           <thead><tr><th>Colaborador</th><th>Tipo</th><th>Cidade</th><th>UF</th><th>Diárias</th><th>Check-in</th><th>Check-out</th><th>Observação</th></tr></thead>
           <tbody>
-            ${rows.map((colab) => {
+            ${disponiveis.map((colab) => {
               const r = state.maps.estadia.get(String(colab.id)) || {};
               const blocked = isBlocked(colab);
               return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_estadia">
@@ -678,16 +742,22 @@ initProtectedPage('Programação', (content) => {
             }).join('')}
           </tbody>
         </table>
-      </div>`;
+      </div>` : '<div class="prog-empty-section">Nenhum colaborador disponível para estadia.</div>'}
+      ${renderBloqueadosResumo(bloqueados)}`;
   }
 
   function renderAlimentacao(rows) {
+    const { disponiveis, bloqueados } = splitByDisponibilidade(rows);
     el.list.innerHTML = `
-      <div class="prog-table-wrap">
+      <div class="prog-section-title">
+        <h4>Disponíveis</h4>
+        <span class="badge">${disponiveis.length}</span>
+      </div>
+      ${disponiveis.length ? `<div class="prog-table-wrap">
         <table class="prog-table">
           <thead><tr><th>Colaborador</th><th>Café</th><th>Almoço</th><th>Janta</th><th>Observação</th></tr></thead>
           <tbody>
-            ${rows.map((colab) => {
+            ${disponiveis.map((colab) => {
               const r = state.maps.alimentacao.get(String(colab.id)) || { almoco: true };
               const blocked = isBlocked(colab);
               return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_alimentacao">
@@ -700,16 +770,22 @@ initProtectedPage('Programação', (content) => {
             }).join('')}
           </tbody>
         </table>
-      </div>`;
+      </div>` : '<div class="prog-empty-section">Nenhum colaborador disponível para alimentação.</div>'}
+      ${renderBloqueadosResumo(bloqueados)}`;
   }
 
   function renderDeslocamento(rows) {
+    const { disponiveis, bloqueados } = splitByDisponibilidade(rows);
     el.list.innerHTML = `
-      <div class="prog-table-wrap">
+      <div class="prog-section-title">
+        <h4>Disponíveis</h4>
+        <span class="badge">${disponiveis.length}</span>
+      </div>
+      ${disponiveis.length ? `<div class="prog-table-wrap">
         <table class="prog-table">
           <thead><tr><th>Colaborador</th><th>Deslocamento</th><th>Origem</th><th>Destino</th><th>KM</th><th>Valor</th><th>Observação</th></tr></thead>
           <tbody>
-            ${rows.map((colab) => {
+            ${disponiveis.map((colab) => {
               const r = state.maps.deslocamento.get(String(colab.id)) || {};
               const blocked = isBlocked(colab);
               return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_deslocamento">
@@ -724,16 +800,22 @@ initProtectedPage('Programação', (content) => {
             }).join('')}
           </tbody>
         </table>
-      </div>`;
+      </div>` : '<div class="prog-empty-section">Nenhum colaborador disponível para deslocamento.</div>'}
+      ${renderBloqueadosResumo(bloqueados)}`;
   }
 
   function renderExtras(rows) {
+    const { disponiveis, bloqueados } = splitByDisponibilidade(rows);
     el.list.innerHTML = `
-      <div class="prog-table-wrap">
+      <div class="prog-section-title">
+        <h4>Disponíveis</h4>
+        <span class="badge">${disponiveis.length}</span>
+      </div>
+      ${disponiveis.length ? `<div class="prog-table-wrap">
         <table class="prog-table">
           <thead><tr><th style="width:280px">Colaborador</th><th>Despesas extras</th><th style="width:130px">Total</th><th style="width:150px">Ação</th></tr></thead>
           <tbody>
-            ${rows.map((colab) => {
+            ${disponiveis.map((colab) => {
               const blocked = isBlocked(colab);
               const extras = state.maps.extras.get(String(colab.id)) || [];
               const total = extras.reduce((acc, r) => acc + Number(r.valor || 0), 0);
@@ -748,7 +830,8 @@ initProtectedPage('Programação', (content) => {
             }).join('')}
           </tbody>
         </table>
-      </div>`;
+      </div>` : '<div class="prog-empty-section">Nenhum colaborador disponível para extras.</div>'}
+      ${renderBloqueadosResumo(bloqueados)}`;
   }
 
   function extraCard(r, blocked) {
