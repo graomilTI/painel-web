@@ -101,31 +101,45 @@ function ensureOperationalSection(menuSections, userContext) {
   return sections;
 }
 
-const FROTAS_EXCESSO_FAILSAFE = {
-  code: 'frotas_excesso_velocidade',
-  label: 'Excesso de Velocidade',
-  path: 'frotas',
-  aliases: ['FROTAS', 'EXCESSO_VELOCIDADE', 'FROTAS_EXCESSO_VELOCIDADE']
-};
+const FROTAS_FAILSAFE_ITEMS = [
+  {
+    code: 'frotas_excesso_velocidade',
+    label: 'Excesso de Velocidade',
+    path: 'frotas',
+    aliases: ['FROTAS', 'EXCESSO_VELOCIDADE', 'FROTAS_EXCESSO_VELOCIDADE']
+  },
+  {
+    code: 'frotas_multas',
+    label: 'Multas',
+    path: 'frotas-multas',
+    aliases: ['MULTAS', 'FROTAS_MULTAS']
+  }
+];
 
 function ensureFrotasSection(menuSections, userContext) {
   const sections = Array.isArray(menuSections)
     ? menuSections.map((section) => ({ ...section, items: [...(section.items || [])] }))
     : [];
 
-  const canShow = Boolean(userContext?.user?.is_master) || isItemAllowed(FROTAS_EXCESSO_FAILSAFE, buildAllowedCodeSet(userContext));
-  if (!canShow) return sections;
+  const allowedCodes = buildAllowedCodeSet(userContext);
+  const fallbackItems = Boolean(userContext?.user?.is_master)
+    ? FROTAS_FAILSAFE_ITEMS
+    : FROTAS_FAILSAFE_ITEMS.filter((item) => isItemAllowed(item, allowedCodes));
+
+  if (!fallbackItems.length) return sections;
 
   const frotasIndex = sections.findIndex((section) => normalizeCode(section.section) === 'frotas');
   if (frotasIndex >= 0) {
-    const exists = sections[frotasIndex].items.some((item) => normalizeCode(item.code) === normalizeCode(FROTAS_EXCESSO_FAILSAFE.code));
-    if (!exists) sections[frotasIndex].items.push(FROTAS_EXCESSO_FAILSAFE);
+    fallbackItems.forEach((fallbackItem) => {
+      const exists = sections[frotasIndex].items.some((item) => normalizeCode(item.code) === normalizeCode(fallbackItem.code));
+      if (!exists) sections[frotasIndex].items.push(fallbackItem);
+    });
     return sections;
   }
 
   const operacionalIndex = sections.findIndex((section) => normalizeCode(section.section) === 'operacional');
   const insertAt = operacionalIndex >= 0 ? operacionalIndex + 1 : sections.length;
-  sections.splice(insertAt, 0, { section: 'FROTAS', items: [FROTAS_EXCESSO_FAILSAFE] });
+  sections.splice(insertAt, 0, { section: 'FROTAS', items: fallbackItems });
   return sections;
 }
 

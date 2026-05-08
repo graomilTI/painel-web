@@ -21,7 +21,12 @@
     colaboradoresLoaded: false,
     importedExcessos: [],
     importedExcessosLoaded: false,
-    activeView: localStorage.getItem(VIEW_KEY) || 'envio'
+    activeView: localStorage.getItem(VIEW_KEY) || 'envio',
+    multas: [],
+    multasArquivos: [],
+    multasLoaded: false,
+    multasFilter: 'abertas',
+    multasSearch: ''
   };
 
   function todayBRShort() {
@@ -753,7 +758,10 @@
       <section class="frotas-shell">
         <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Excesso de Velocidade</h1><p class="frotas-subtitle">Gere primeiro a notificação ao colaborador. Depois, em uma etapa separada, anexe os prints do rastreador para salvar na pasta do motorista no Drive.</p></div></div>
         <div class="frotas-card">
-          <div class="frotas-tabs"><button class="frotas-tab active" type="button">Excesso de Velocidade</button></div>
+          <div class="frotas-tabs">
+            <button class="frotas-tab active" type="button">Excesso de Velocidade</button>
+            <button class="frotas-tab" type="button" data-open-multas>Multas</button>
+          </div>
           <div class="frotas-body">
             <div class="speed-subtabs">
               <button class="speed-subtab ${state.activeView === 'envio' ? 'active' : ''}" type="button" data-speed-subtab="envio">Envio</button>
@@ -818,6 +826,7 @@
     loadColaboradoresFromSupabase(container, opts);
     fetchImportedExcessos(container, opts);
 
+    container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign('./frotas-multas.html'));
     container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
 
     const plate = container.querySelector('[data-speed-plate]');
@@ -857,9 +866,225 @@
     });
   }
 
+
+  function moneyBR(value) {
+    const n = Number(String(value ?? '').replace(/\./g, '').replace(',', '.'));
+    if (!Number.isFinite(n)) return String(value || '');
+    return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+
+  function dateOnlyBR(value) {
+    return value ? formatDateBR(String(value).slice(0, 10)) : '';
+  }
+
+  function multaKey(row) {
+    return row?.key || row?.chave_tecnica || [row?.placa, row?.cod_auto, row?.cod_orgao].filter(Boolean).join('|');
+  }
+
+  function getMultaStatus(row) {
+    return normalizeName(row?.status_multa || row?.tipo || row?.status || '').replace('À', 'A');
+  }
+
+  function isMultaAberta(row) {
+    const status = getMultaStatus(row);
+    const situacao = normalizeName(row?.situacao || '');
+    if (['PAGO', 'CANCELADO', 'FINALIZADO', 'CONCLUIDO', 'CONCLUÍDO'].includes(status)) return false;
+    if (['PAGO', 'CANCELADO', 'FINALIZADO', 'CONCLUIDO', 'CONCLUÍDO'].includes(situacao)) return false;
+    return true;
+  }
+
+  function filterMultasRows() {
+    const term = normalizeName(state.multasSearch);
+    return (state.multas || []).filter((row) => {
+      if (state.multasFilter === 'abertas' && !isMultaAberta(row)) return false;
+      if (state.multasFilter === 'vencidas') {
+        const limite = row.data_limite_defesa || row.data_vencimento || '';
+        const hoje = new Date().toISOString().slice(0, 10);
+        if (!limite || String(limite).slice(0, 10) >= hoje) return false;
+      }
+      if (state.multasFilter === 'indicacao' && !String(row.pode_indicar_condutor || '').toUpperCase().includes('SIM')) return false;
+      if (!term) return true;
+      const hay = normalizeName([row.placa, row.renavam, row.motorista, row.empresa, row.descricao, row.numero_auto_infracao, row.cod_auto].join(' '));
+      return hay.includes(term);
+    });
+  }
+
+  function buildMultaMessage(row) {
+    const placa = onlyPlate(row.placa);
+    const data = dateOnlyBR(row.data_infracao);
+    const hora = row.hora || '';
+    const local = row.local || '';
+    const descricao = row.descricao || '';
+    const auto = row.numero_auto_infracao || row.auto || row.cod_auto || '';
+    const valor = moneyBR(row.valor_original || row.valor || 0);
+    return `Olá, ${normalizeName(row.motorista || 'CONDUTOR')}.\n\nConsta uma multa vinculada ao veículo de placa ${placa}.\n\nData: ${data}${hora ? `\nHorário: ${hora}` : ''}\nLocal: ${local || 'Não informado'}\nDescrição: ${descricao || 'Não informada'}\nNº Auto de Infração: ${auto || 'Não informado'}\nValor: ${valor}\n\nPor favor, responda conforme orientação do setor de Frotas para darmos andamento ao tratamento da infração.`;
+  }
+
+  function renderMultasTable(root) {
+    const tbody = root.querySelector('[data-multas-tbody]');
+    const count = root.querySelector('[data-multas-count]');
+    const cards = root.querySelector('[data-multas-cards]');
+    if (!tbody) return;
+
+    const rows = filterMultasRows();
+    const abertas = (state.multas || []).filter(isMultaAberta).length;
+    const vencidas = (state.multas || []).filter((r) => {
+      const limite = String(r.data_limite_defesa || '').slice(0, 10);
+      return limite && limite < new Date().toISOString().slice(0, 10);
+    }).length;
+    const valorTotal = rows.reduce((sum, r) => sum + (Number(String(r.valor_original || r.valor || 0).replace(',', '.')) || 0), 0);
+
+    if (count) count.textContent = state.multasLoaded ? `${rows.length} multa(s) encontrada(s)` : 'Carregando multas...';
+    if (cards) {
+      cards.innerHTML = `
+        <div class="multa-kpi"><span>Abertas</span><strong>${abertas}</strong></div>
+        <div class="multa-kpi"><span>Vencidas</span><strong>${vencidas}</strong></div>
+        <div class="multa-kpi"><span>Valor filtrado</span><strong>${moneyBR(valorTotal)}</strong></div>
+        <div class="multa-kpi"><span>Guias/PDFs</span><strong>${state.multasArquivos.length}</strong></div>`;
+    }
+
+    if (!state.multasLoaded) {
+      tbody.innerHTML = `<tr><td colspan="8" class="multa-empty">Carregando base de multas...</td></tr>`;
+      return;
+    }
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="multa-empty">Nenhuma multa encontrada para o filtro selecionado.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = rows.slice(0, 300).map((row, index) => {
+      const badge = isMultaAberta(row) ? 'ABERTA' : (row.status_multa || row.situacao || 'REGISTRADA');
+      const pode = String(row.pode_indicar_condutor || '').toUpperCase().includes('SIM') ? 'Pode indicar' : 'Conferir';
+      return `<tr data-multa-row="${index}">
+        <td><strong>${escapeHtml(onlyPlate(row.placa))}</strong><small>${escapeHtml(row.empresa || '')}</small></td>
+        <td>${escapeHtml(dateOnlyBR(row.data_infracao))}<small>${escapeHtml(row.hora || '')}</small></td>
+        <td>${escapeHtml(row.motorista || 'Não informado')}</td>
+        <td>${escapeHtml(row.descricao || '')}<small>${escapeHtml(row.local || '')}</small></td>
+        <td>${escapeHtml(row.numero_auto_infracao || row.cod_auto || '')}</td>
+        <td>${escapeHtml(moneyBR(row.valor_original || row.valor || 0))}</td>
+        <td><span class="multa-badge">${escapeHtml(badge)}</span><small>${escapeHtml(pode)}</small></td>
+        <td><div class="multa-actions"><button type="button" data-copy-multa="${index}">Copiar msg</button><button type="button" data-multa-indicar="${index}">Indicar</button><button type="button" data-multa-dobrar="${index}">Dobrar</button></div></td>
+      </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('[data-copy-multa]').forEach((btn) => btn.addEventListener('click', async () => {
+      const row = rows[Number(btn.getAttribute('data-copy-multa'))];
+      try { await copyText(buildMultaMessage(row)); toast('Mensagem da multa copiada.'); }
+      catch (_) { toast('Não foi possível copiar a mensagem.', 'error'); }
+    }));
+
+    tbody.querySelectorAll('[data-multa-indicar]').forEach((btn) => btn.addEventListener('click', () => updateMultaSituacao(root, optsCache.get(root) || {}, rows[Number(btn.getAttribute('data-multa-indicar'))], 'INDICAR')));
+    tbody.querySelectorAll('[data-multa-dobrar]').forEach((btn) => btn.addEventListener('click', () => updateMultaSituacao(root, optsCache.get(root) || {}, rows[Number(btn.getAttribute('data-multa-dobrar'))], 'DOBRAR')));
+  }
+
+  const optsCache = new WeakMap();
+
+  async function fetchMultas(root, opts = {}) {
+    const supabase = opts?.supabase || window.supabase;
+    state.multasLoaded = false;
+    renderMultasTable(root);
+    if (!supabase || typeof supabase.from !== 'function') {
+      state.multas = [];
+      state.multasArquivos = [];
+      state.multasLoaded = true;
+      renderMultasTable(root);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('frotas_multas')
+        .select('*')
+        .order('data_infracao', { ascending: false })
+        .limit(2000);
+      if (error) throw error;
+      state.multas = Array.isArray(data) ? data : [];
+
+      const arq = await supabase
+        .from('frotas_multas_arquivos')
+        .select('*')
+        .order('criado_em', { ascending: false })
+        .limit(500);
+      state.multasArquivos = arq.error ? [] : (Array.isArray(arq.data) ? arq.data : []);
+    } catch (err) {
+      console.warn('[FROTAS][MULTAS] Falha ao carregar multas:', err);
+      state.multas = [];
+      state.multasArquivos = [];
+      toast('Não foi possível carregar a tabela frotas_multas. Rode o SQL enviado antes de usar.', 'error');
+    } finally {
+      state.multasLoaded = true;
+      renderMultasTable(root);
+    }
+  }
+
+  async function updateMultaSituacao(root, opts = {}, row, situacao) {
+    if (!row?.id) return toast('Multa sem ID para atualização.', 'error');
+    const supabase = opts?.supabase || window.supabase;
+    if (!supabase || typeof supabase.from !== 'function') return toast('Supabase indisponível.', 'error');
+    try {
+      const payload = { situacao, atualizado_em: new Date().toISOString() };
+      const { error } = await supabase.from('frotas_multas').update(payload).eq('id', row.id);
+      if (error) throw error;
+      row.situacao = situacao;
+      renderMultasTable(root);
+      toast(`Multa marcada como ${situacao}.`);
+    } catch (err) {
+      console.warn('[FROTAS][MULTAS] Falha ao atualizar multa:', err);
+      toast('Não foi possível atualizar a multa.', 'error');
+    }
+  }
+
+  function renderMultas(container, opts = {}) {
+    optsCache.set(container, opts || {});
+    container.innerHTML = `${getStyles()}
+      <style id="frotas-multas-style">
+        .multa-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:16px}.multa-toolbar-left{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.multa-filter{appearance:none;border:1px solid rgba(148,163,184,.16);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:11px 12px;font-weight:800;color-scheme:dark}.multa-search{min-width:min(420px,100%);border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:12px 13px;outline:none}.multa-kpis{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:12px;margin-bottom:16px}.multa-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px}.multa-kpi span{display:block;color:#94a3b8;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.multa-kpi strong{display:block;margin-top:6px;color:#f8fafc;font-size:22px;letter-spacing:-.04em}.multa-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.28)}.multa-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1040px}.multa-table th{position:sticky;top:0;background:#0b1220;color:#94a3b8;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;padding:12px;border-bottom:1px solid rgba(148,163,184,.14)}.multa-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.10);vertical-align:top;color:#e5e7eb;font-size:12px}.multa-table tr:hover td{background:rgba(34,197,94,.05)}.multa-table small{display:block;color:#94a3b8;margin-top:4px;line-height:1.35}.multa-badge{display:inline-flex;border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#bbf7d0;border-radius:999px;padding:4px 8px;font-weight:950;font-size:10px}.multa-actions{display:flex;gap:6px;flex-wrap:wrap}.multa-actions button{border:1px solid rgba(34,197,94,.2);background:rgba(34,197,94,.10);color:#86efac;border-radius:10px;padding:7px 9px;font-size:11px;font-weight:900;cursor:pointer}.multa-empty{text-align:center;color:#94a3b8;padding:24px!important}.multa-note{border:1px dashed rgba(34,197,94,.28);background:rgba(22,101,52,.08);border-radius:18px;padding:14px;color:#cbd5e1;font-size:12px;line-height:1.55;margin-top:14px}@media(max-width:980px){.multa-kpis{grid-template-columns:1fr 1fr}.multa-toolbar{align-items:stretch}.multa-search{min-width:100%}}@media(max-width:560px){.multa-kpis{grid-template-columns:1fr}}
+      </style>
+      <section class="frotas-shell">
+        <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Multas</h1><p class="frotas-subtitle">Base migrada do Apps Script para o painel: consulta, conferência, indicação/dobra, geração de mensagem e acompanhamento de guias/PDFs.</p></div></div>
+        <div class="frotas-card">
+          <div class="frotas-tabs">
+            <button class="frotas-tab" type="button" data-open-excesso>Excesso de Velocidade</button>
+            <button class="frotas-tab active" type="button">Multas</button>
+          </div>
+          <div class="frotas-body">
+            <div class="multa-toolbar">
+              <div class="multa-toolbar-left">
+                <select class="multa-filter" data-multas-filter>
+                  <option value="abertas">Abertas / a pagar</option>
+                  <option value="vencidas">Vencidas</option>
+                  <option value="indicacao">Pode indicar condutor</option>
+                  <option value="todas">Todas</option>
+                </select>
+                <input class="multa-search" type="search" placeholder="Buscar por placa, motorista, auto, renavam, empresa..." data-multas-search>
+              </div>
+              <button class="speed-btn speed-btn-soft" type="button" data-refresh-multas>Atualizar</button>
+            </div>
+            <div class="multa-kpis" data-multas-cards></div>
+            <p class="speed-hint" data-multas-count>Carregando multas...</p>
+            <div class="multa-table-wrap">
+              <table class="multa-table">
+                <thead><tr><th>Placa / Empresa</th><th>Infração</th><th>Motorista</th><th>Descrição / Local</th><th>Auto</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead>
+                <tbody data-multas-tbody><tr><td colspan="8" class="multa-empty">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+            <div class="multa-note"><strong>Observação:</strong> a integração direta com DETRAN/BotConversa não deve ficar no frontend por causa de token/segredo. O SQL enviado cria a base do painel; as consultas do DETRAN podem ser migradas depois para Supabase Edge Function/Worker ou mantidas temporariamente no Apps Script chamando essa tabela.</div>
+          </div>
+        </div>
+      </section>`;
+
+    container.querySelector('[data-open-excesso]')?.addEventListener('click', () => window.location.assign('./frotas.html'));
+    container.querySelector('[data-refresh-multas]')?.addEventListener('click', () => fetchMultas(container, opts));
+    container.querySelector('[data-multas-filter]')?.addEventListener('change', (ev) => { state.multasFilter = ev.target.value || 'abertas'; renderMultasTable(container); });
+    container.querySelector('[data-multas-search]')?.addEventListener('input', (ev) => { state.multasSearch = ev.target.value || ''; renderMultasTable(container); });
+
+    fetchMultas(container, opts);
+  }
+
   function renderHome(container, opts = {}) { renderExcessoVelocidade(container, opts); }
+  function renderOpenMultas(container, opts = {}) { renderMultas(container, opts); }
   window[MODULE_NAME] = window[MODULE_NAME] || {};
   window[MODULE_NAME].openHome = renderHome;
+  window[MODULE_NAME].openMultas = renderOpenMultas;
   window.ADM_MODULES = window.ADM_MODULES || {};
   window.ADM_MODULES.frotas = { mount: renderHome };
 })();
