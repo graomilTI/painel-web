@@ -102,10 +102,29 @@
   async function callFunction(opts, name, body){
     const { data, error } = await opts.supabase.functions.invoke(name, { body });
     if(error) {
-      const msg = error.context?.error || error.context?.message || error.message || `Falha na function ${name}`;
-      throw new Error(msg);
+      let msg = error.message || `Falha na function ${name}`;
+      const ctx = error.context;
+      try{
+        if(ctx && typeof ctx.text === 'function'){
+          const txt = await ctx.text();
+          if(txt){
+            try{
+              const parsed = JSON.parse(txt);
+              msg = parsed.error || parsed.message || parsed.details || txt;
+            }catch(_){
+              msg = txt;
+            }
+          }
+        }else if(ctx?.error || ctx?.message || ctx?.details){
+          msg = ctx.error || ctx.message || ctx.details;
+        }
+      }catch(_){}
+      throw new Error(String(msg).slice(0, 900));
     }
-    if(data?.error) throw new Error(data.error);
+    if(data?.error || data?.message || data?.details){
+      const msg = data.error || data.message || data.details;
+      if(data?.ok === false || data?.success === false || data?.error) throw new Error(String(msg).slice(0, 900));
+    }
     return data;
   }
 
@@ -152,7 +171,7 @@
       toast('Sincronizando BFleet...');
       const res = await callFunction(opts, 'sync-bfleet-veiculos', { mode:'sync' });
       const rastreadores = Number(res?.rastreadores || res?.matched || 0);
-      const total = Number(res?.total_bfleet || res?.total || res?.linhas_lidas_api || res?.placas_lidas || 0);
+      const total = Number(res?.total_bfleet || res?.total || 0);
       const divergencias = Number(res?.divergencias || 0);
       toast(`BFleet sincronizado: ${rastreadores} veículo(s) com rastreador de ${total || 'N'} registro(s) lido(s)${divergencias ? ` · ${divergencias} divergência(s)` : ''}.`, Boolean(res?.warning));
       await loadVeiculos(root, opts);
