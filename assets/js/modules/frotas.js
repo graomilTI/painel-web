@@ -77,6 +77,38 @@
     return Math.round(n);
   }
 
+  function extractYearFromDate(value) {
+    const br = formatDateBR(value || todayBRShort());
+    const m = br.match(/(\d{4})$/);
+    return m ? m[1] : String(new Date().getFullYear());
+  }
+
+  function collapseMaxSpeedByDate(registros) {
+    const byDate = new Map();
+
+    (Array.isArray(registros) ? registros : []).forEach((record) => {
+      const data = toInputDate(record.data || record.data_evento || record.date);
+      const velocidade = parseSpeed(record.velocidade || record.speed);
+      if (!data || !velocidade) return;
+
+      const current = byDate.get(data);
+      if (!current || velocidade > current.velocidade) {
+        byDate.set(data, { data, velocidade });
+      }
+    });
+
+    return Array.from(byDate.values())
+      .sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')));
+  }
+
+  function humanJoin(values) {
+    const clean = values.filter(Boolean);
+    if (!clean.length) return '';
+    if (clean.length === 1) return clean[0];
+    if (clean.length === 2) return `${clean[0]} e ${clean[1]}`;
+    return `${clean.slice(0, -1).join(', ')} e ${clean[clean.length - 1]}`;
+  }
+
   function rememberGeneratedGroup(key) {
     if (!key) return;
     state.generatedImportedGroupKeys.add(key);
@@ -103,7 +135,7 @@
   function getStyles() {
     return `
       <style id="frotas-module-style">
-        .frotas-shell{width:100%;color:#e5e7eb}.frotas-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}.frotas-kicker{display:inline-flex;align-items:center;gap:8px;color:#86efac;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.frotas-title{margin:0;font-size:clamp(22px,2.2vw,32px);line-height:1.1;color:#f8fafc;letter-spacing:-.04em}.frotas-subtitle{max-width:860px;margin:10px 0 0;color:#94a3b8;font-size:14px;line-height:1.55}.frotas-card{background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.16);border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.frotas-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.frotas-tab{appearance:none;border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 14px;font-weight:900;font-size:13px;cursor:pointer;transition:.18s ease}.frotas-tab.active,.frotas-tab:hover{color:#f8fafc;border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35)}.frotas-body{padding:18px}.speed-grid{display:grid;grid-template-columns:minmax(300px,450px) minmax(320px,1fr);gap:18px;align-items:start}.speed-panel{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.14);border-radius:22px;padding:18px}.speed-panel h3{margin:0 0 14px;color:#f8fafc;font-size:16px;letter-spacing:-.02em}.speed-field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}.speed-field label{color:#cbd5e1;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.speed-input,.speed-select,.speed-textarea{width:100%;border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:12px 13px;outline:none;font-size:14px;transition:.16s ease;color-scheme:dark}.speed-select option{background:#0f172a;color:#e5e7eb}.speed-input:focus,.speed-select:focus,.speed-textarea:focus{border-color:rgba(34,197,94,.68);box-shadow:0 0 0 4px rgba(34,197,94,.10)}.speed-row{display:grid;grid-template-columns:1fr 130px 42px;gap:10px;align-items:end;margin-bottom:10px}.speed-row .speed-field{margin-bottom:0}.speed-btn{border:0;border-radius:14px;padding:12px 14px;font-weight:950;cursor:pointer;transition:.18s ease;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px}.speed-btn-primary{width:100%;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;box-shadow:0 14px 34px rgba(34,197,94,.22)}.speed-btn-primary:hover{transform:translateY(-1px);filter:brightness(1.05)}.speed-btn-primary:disabled{opacity:.55;cursor:not-allowed;transform:none}.speed-btn-soft{background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.24)}.speed-btn-danger{background:rgba(239,68,68,.10);color:#fca5a5;border:1px solid rgba(239,68,68,.20);padding:0;min-width:42px}.speed-actions{display:grid;gap:10px;margin-top:14px}.speed-message{min-height:520px;resize:vertical;line-height:1.55;white-space:pre-wrap}.speed-hint{margin:10px 0 0;color:#94a3b8;font-size:12px;line-height:1.45}.speed-hint code{color:#bbf7d0}.speed-colab-status{margin-top:-6px;color:#86efac;font-size:11px;font-weight:800;line-height:1.35}.colab-autocomplete{position:relative}.colab-dropdown{position:absolute;left:0;right:0;top:calc(100% - 4px);z-index:60;background:linear-gradient(180deg,#0f172a,#020617);border:1px solid rgba(34,197,94,.38);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.42);padding:6px;max-height:286px;overflow:auto}.colab-dropdown[hidden]{display:none}.colab-option{width:100%;border:0;background:transparent;color:#e5e7eb;text-align:left;border-radius:12px;padding:10px 11px;cursor:pointer;display:block}.colab-option:hover,.colab-option.active{background:rgba(22,101,52,.34)}.colab-option strong{display:block;font-size:12px;line-height:1.25;color:#f8fafc;letter-spacing:.02em}.colab-option span{display:block;margin-top:3px;font-size:11px;line-height:1.25;color:#94a3b8}.colab-empty{padding:10px 11px;color:#94a3b8;font-size:12px}.speed-divider{height:1px;background:rgba(148,163,184,.14);margin:16px 0}.speed-import-card{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;margin-bottom:16px}.speed-import-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.speed-import-head h3{margin:0}.speed-import-list{display:grid;gap:8px;max-height:260px;overflow:auto}.speed-import-empty{color:#94a3b8;font-size:12px;border:1px dashed rgba(148,163,184,.2);border-radius:14px;padding:12px}.speed-import-item{width:100%;text-align:left;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.72);color:#e5e7eb;border-radius:14px;padding:10px 12px;cursor:pointer}.speed-import-item:hover{border-color:rgba(34,197,94,.45);background:rgba(22,101,52,.18)}.speed-import-item.selected{border-color:rgba(34,197,94,.75);background:rgba(22,101,52,.24);box-shadow:inset 4px 0 0 rgba(34,197,94,.75)}.speed-import-item.generated{border-color:rgba(34,197,94,.36);background:rgba(20,83,45,.30);opacity:.74}.speed-import-item.generated strong::after{content:'  ✓ COPIADA';display:inline-flex;margin-left:6px;color:#86efac;font-size:10px;font-weight:950}.speed-import-item.generated .speed-import-badge{background:rgba(34,197,94,.22);border-color:rgba(34,197,94,.45);color:#dcfce7}.speed-import-item strong{display:block;color:#f8fafc;font-size:12px}.speed-import-item span{display:block;color:#94a3b8;font-size:11px;margin-top:3px}.speed-import-badge{display:inline-flex;border-radius:999px;padding:3px 7px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.22);color:#bbf7d0;font-size:10px;font-weight:900;margin-top:6px}.upload-box{border:1px dashed rgba(34,197,94,.35);border-radius:18px;padding:14px;background:rgba(2,6,23,.28)}.upload-list{display:grid;gap:8px;margin-top:10px}.upload-item{display:flex;justify-content:space-between;gap:10px;align-items:center;border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.66);border-radius:14px;padding:10px 12px;color:#cbd5e1;font-size:12px}.upload-item strong{color:#f8fafc}.saved-list{display:grid;gap:8px;margin-top:10px}.saved-item{border:1px solid rgba(34,197,94,.20);background:rgba(22,101,52,.12);border-radius:14px;padding:10px 12px;color:#dcfce7;font-size:12px}.saved-item a{color:#86efac;font-weight:900}.speed-toast{position:fixed;right:22px;bottom:22px;background:rgba(22,101,52,.96);color:#dcfce7;border:1px solid rgba(134,239,172,.32);border-radius:16px;padding:12px 14px;font-weight:900;box-shadow:0 16px 45px rgba(0,0,0,.35);z-index:99999;opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.speed-toast.show{opacity:1;transform:translateY(0)}@media(max-width:980px){.speed-grid{grid-template-columns:1fr}.speed-row{grid-template-columns:1fr 1fr 42px}}@media(max-width:560px){.frotas-header{display:block}.speed-row{grid-template-columns:1fr}.speed-btn-danger{width:100%}}
+        .frotas-shell{width:100%;color:#e5e7eb}.frotas-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}.frotas-kicker{display:inline-flex;align-items:center;gap:8px;color:#86efac;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.frotas-title{margin:0;font-size:clamp(22px,2.2vw,32px);line-height:1.1;color:#f8fafc;letter-spacing:-.04em}.frotas-subtitle{max-width:860px;margin:10px 0 0;color:#94a3b8;font-size:14px;line-height:1.55}.frotas-card{background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.16);border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.frotas-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.frotas-tab{appearance:none;border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 14px;font-weight:900;font-size:13px;cursor:pointer;transition:.18s ease}.frotas-tab.active,.frotas-tab:hover{color:#f8fafc;border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35)}.frotas-body{padding:18px}.speed-grid{display:grid;grid-template-columns:minmax(300px,450px) minmax(320px,1fr);gap:18px;align-items:start}.speed-panel{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.14);border-radius:22px;padding:18px}.speed-panel h3{margin:0 0 14px;color:#f8fafc;font-size:16px;letter-spacing:-.02em}.speed-field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}.speed-field label{color:#cbd5e1;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.speed-input,.speed-select,.speed-textarea{width:100%;border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:12px 13px;outline:none;font-size:14px;transition:.16s ease;color-scheme:dark}.speed-select option{background:#0f172a;color:#e5e7eb}.speed-input:focus,.speed-select:focus,.speed-textarea:focus{border-color:rgba(34,197,94,.68);box-shadow:0 0 0 4px rgba(34,197,94,.10)}.speed-row{display:grid;grid-template-columns:1fr 130px 42px;gap:10px;align-items:end;margin-bottom:10px}.speed-row .speed-field{margin-bottom:0}.speed-btn{border:0;border-radius:14px;padding:12px 14px;font-weight:950;cursor:pointer;transition:.18s ease;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px}.speed-btn-primary{width:100%;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;box-shadow:0 14px 34px rgba(34,197,94,.22)}.speed-btn-primary:hover{transform:translateY(-1px);filter:brightness(1.05)}.speed-btn-primary:disabled{opacity:.55;cursor:not-allowed;transform:none}.speed-btn-soft{background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.24)}.speed-btn-danger{background:rgba(239,68,68,.10);color:#fca5a5;border:1px solid rgba(239,68,68,.20);padding:0;min-width:42px}.speed-actions{display:grid;gap:10px;margin-top:14px}.speed-message{min-height:520px;resize:vertical;line-height:1.55;white-space:pre-wrap}.speed-hint{margin:10px 0 0;color:#94a3b8;font-size:12px;line-height:1.45}.speed-hint code{color:#bbf7d0}.speed-check{display:flex;align-items:flex-start;gap:10px;margin:10px 0 14px;color:#cbd5e1;font-size:12px;line-height:1.4}.speed-check input{margin-top:2px;accent-color:#22c55e}.speed-check strong{color:#f8fafc}.speed-colab-status{margin-top:-6px;color:#86efac;font-size:11px;font-weight:800;line-height:1.35}.colab-autocomplete{position:relative}.colab-dropdown{position:absolute;left:0;right:0;top:calc(100% - 4px);z-index:60;background:linear-gradient(180deg,#0f172a,#020617);border:1px solid rgba(34,197,94,.38);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.42);padding:6px;max-height:286px;overflow:auto}.colab-dropdown[hidden]{display:none}.colab-option{width:100%;border:0;background:transparent;color:#e5e7eb;text-align:left;border-radius:12px;padding:10px 11px;cursor:pointer;display:block}.colab-option:hover,.colab-option.active{background:rgba(22,101,52,.34)}.colab-option strong{display:block;font-size:12px;line-height:1.25;color:#f8fafc;letter-spacing:.02em}.colab-option span{display:block;margin-top:3px;font-size:11px;line-height:1.25;color:#94a3b8}.colab-empty{padding:10px 11px;color:#94a3b8;font-size:12px}.speed-divider{height:1px;background:rgba(148,163,184,.14);margin:16px 0}.speed-import-card{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;margin-bottom:16px}.speed-import-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.speed-import-head h3{margin:0}.speed-import-list{display:grid;gap:8px;max-height:260px;overflow:auto}.speed-import-empty{color:#94a3b8;font-size:12px;border:1px dashed rgba(148,163,184,.2);border-radius:14px;padding:12px}.speed-import-item{width:100%;text-align:left;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.72);color:#e5e7eb;border-radius:14px;padding:10px 12px;cursor:pointer}.speed-import-item:hover{border-color:rgba(34,197,94,.45);background:rgba(22,101,52,.18)}.speed-import-item.selected{border-color:rgba(34,197,94,.75);background:rgba(22,101,52,.24);box-shadow:inset 4px 0 0 rgba(34,197,94,.75)}.speed-import-item.generated{border-color:rgba(34,197,94,.36);background:rgba(20,83,45,.30);opacity:.74}.speed-import-item.generated strong::after{content:'  ✓ COPIADA';display:inline-flex;margin-left:6px;color:#86efac;font-size:10px;font-weight:950}.speed-import-item.generated .speed-import-badge{background:rgba(34,197,94,.22);border-color:rgba(34,197,94,.45);color:#dcfce7}.speed-import-item strong{display:block;color:#f8fafc;font-size:12px}.speed-import-item span{display:block;color:#94a3b8;font-size:11px;margin-top:3px}.speed-import-badge{display:inline-flex;border-radius:999px;padding:3px 7px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.22);color:#bbf7d0;font-size:10px;font-weight:900;margin-top:6px}.upload-box{border:1px dashed rgba(34,197,94,.35);border-radius:18px;padding:14px;background:rgba(2,6,23,.28)}.upload-list{display:grid;gap:8px;margin-top:10px}.upload-item{display:flex;justify-content:space-between;gap:10px;align-items:center;border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.66);border-radius:14px;padding:10px 12px;color:#cbd5e1;font-size:12px}.upload-item strong{color:#f8fafc}.saved-list{display:grid;gap:8px;margin-top:10px}.saved-item{border:1px solid rgba(34,197,94,.20);background:rgba(22,101,52,.12);border-radius:14px;padding:10px 12px;color:#dcfce7;font-size:12px}.saved-item a{color:#86efac;font-weight:900}.speed-toast{position:fixed;right:22px;bottom:22px;background:rgba(22,101,52,.96);color:#dcfce7;border:1px solid rgba(134,239,172,.32);border-radius:16px;padding:12px 14px;font-weight:900;box-shadow:0 16px 45px rgba(0,0,0,.35);z-index:99999;opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.speed-toast.show{opacity:1;transform:translateY(0)}@media(max-width:980px){.speed-grid{grid-template-columns:1fr}.speed-row{grid-template-columns:1fr 1fr 42px}}@media(max-width:560px){.frotas-header{display:block}.speed-row{grid-template-columns:1fr}.speed-btn-danger{width:100%}}
       </style>`;
   }
 
@@ -373,9 +405,10 @@
 
     return Array.from(groups.values()).map((g) => {
       g.registros.sort((a, b) => String(a.data_evento || '').localeCompare(String(b.data_evento || '')) || String(a.hora_evento || '').localeCompare(String(b.hora_evento || '')));
-      g.maxVelocidade = Math.max(...g.registros.map((r) => Number(r.velocidade || 0)));
-      g.periodoInicio = g.registros[0]?.data_evento || '';
-      g.periodoFim = g.registros[g.registros.length - 1]?.data_evento || '';
+      g.registrosPorDia = collapseMaxSpeedByDate(g.registros.map((r) => ({ data: r.data_evento, velocidade: r.velocidade })));
+      g.maxVelocidade = Math.max(...g.registrosPorDia.map((r) => Number(r.velocidade || 0)), 0);
+      g.periodoInicio = g.registrosPorDia[0]?.data || g.registros[0]?.data_evento || '';
+      g.periodoFim = g.registrosPorDia[g.registrosPorDia.length - 1]?.data || g.registros[g.registros.length - 1]?.data_evento || '';
       return g;
     }).sort((a, b) => String(a.motorista || a.placa).localeCompare(String(b.motorista || b.placa), 'pt-BR'));
   }
@@ -407,7 +440,7 @@
       const badge = generated ? 'Mensagem copiada' : (g.status_cruzamento === 'MOTORISTA_IDENTIFICADO' ? 'Identificado pelo patrimônio' : 'Conferir motorista');
       return `<button class="speed-import-item ${selected ? 'selected' : ''} ${generated ? 'generated' : ''}" type="button" data-imported-excess-index="${index}">
         <strong>${escapeHtml(nome)} · ${escapeHtml(g.placa)}</strong>
-        <span>${escapeHtml(meta || 'Sem supervisão/coordenação')} · ${g.registros.length} registro(s) · ${escapeHtml(periodo)} · máx. ${escapeHtml(g.maxVelocidade)} km/h</span>
+        <span>${escapeHtml(meta || 'Sem supervisão/coordenação')} · ${g.registrosPorDia?.length || g.registros.length} dia(s) com excesso · ${g.registros.length} leitura(s) · ${escapeHtml(periodo)} · maior velocidade ${escapeHtml(g.maxVelocidade)} km/h</span>
         <em class="speed-import-badge">${escapeHtml(badge)}</em>
       </button>`;
     }).join('');
@@ -428,9 +461,7 @@
     if (nomeInput) nomeInput.value = group.motorista || '';
     if (placaInput) placaInput.value = onlyPlate(group.placa);
 
-    const mapped = (group.registros || [])
-      .map((r) => ({ data: toInputDate(r.data_evento), velocidade: parseSpeed(r.velocidade) }))
-      .filter((r) => r.data && r.velocidade);
+    const mapped = collapseMaxSpeedByDate((group.registros || []).map((r) => ({ data: r.data_evento, velocidade: r.velocidade })));
     state.records = mapped.length ? mapped : [{ data: '', velocidade: '' }];
     renderRecords(root);
     renderImportedExcessos(root);
@@ -509,25 +540,33 @@
     }
   }
 
-  function buildMessage({ nome, placa, registros, cidadeData }) {
+  function buildMessage({ nome, placa, registros, cidadeData, agruparDatas }) {
     const nomeFinal = normalizeName(nome);
     const placaFinal = onlyPlate(placa);
-    const registrosValidos = registros.map((r) => ({ data: formatDateBR(r.data), velocidade: parseSpeed(r.velocidade) })).filter((r) => r.data && r.velocidade);
-    const linhas = registrosValidos.map((r) => `* ${r.data} – ${r.velocidade} km/h`).join('\n');
-    return `${nomeFinal},\n\nConstatamos, por meio do sistema de rastreamento da frota, que V.S. excedeu de forma recorrente o limite máximo de velocidade permitido (120 km/h), conduzindo o veículo de placa ${placaFinal}, conforme registros abaixo:\n\n${linhas}\n\nOs registros demonstram reincidência contínua na prática de excesso de velocidade, ainda que com variações moderadas acima do limite permitido, evidenciando a necessidade de maior atenção e adequação imediata por parte do condutor.\n\nRessaltamos que o excesso de velocidade configura descumprimento das normas de trânsito e das diretrizes internas da empresa, podendo gerar riscos à segurança do próprio condutor, de terceiros e ao patrimônio da organização.\n\nDiante disso, reforçamos que é indispensável o cumprimento rigoroso dos limites estabelecidos e das políticas internas de condução segura.\n\nSolicitamos atenção redobrada quanto à condução do veículo, evitando novos registros e possíveis medidas administrativas futuras.\n\n${cidadeData}.`;
+    const registrosValidos = collapseMaxSpeedByDate(registros);
+    const linhas = registrosValidos.map((r) => `* ${formatDateBR(r.data)} – maior velocidade registrada no dia: ${r.velocidade} km/h`).join('\n');
+    const datasAgrupadas = humanJoin(registrosValidos.map((r) => formatDateBR(r.data)));
+    const maiorVelocidade = Math.max(...registrosValidos.map((r) => Number(r.velocidade || 0)), 0);
+    const blocoRegistros = agruparDatas
+      ? `Datas com registro de excesso: ${datasAgrupadas}.\nMaior velocidade apurada no período: ${maiorVelocidade} km/h.`
+      : linhas;
+
+    return `${nomeFinal},\n\nConstatamos, por meio do sistema de rastreamento da frota, que V.S. excedeu o limite máximo de velocidade permitido (120 km/h), conduzindo o veículo de placa ${placaFinal}, conforme registros abaixo:\n\n${blocoRegistros}\n\nPara evitar duplicidade de cobrança, foi considerada somente a maior velocidade registrada em cada dia com excesso.\n\nOs registros demonstram reincidência na prática de excesso de velocidade, evidenciando a necessidade de maior atenção e adequação imediata por parte do condutor.\n\nRessaltamos que o excesso de velocidade configura descumprimento das normas de trânsito e das diretrizes internas da empresa, podendo gerar riscos à segurança do próprio condutor, de terceiros e ao patrimônio da organização.\n\nDiante disso, reforçamos que é indispensável o cumprimento rigoroso dos limites estabelecidos e das políticas internas de condução segura.\n\nSolicitamos atenção redobrada quanto à condução do veículo, evitando novos registros e possíveis medidas administrativas futuras.\n\n${cidadeData}.`;
   }
+
 
   function validateForm(root) {
     const nome = root.querySelector('[data-speed-name]')?.value || '';
     const placa = root.querySelector('[data-speed-plate]')?.value || '';
     const cidadeData = root.querySelector('[data-speed-city-date]')?.value || '';
+    const agruparDatas = !!root.querySelector('[data-group-dates]')?.checked;
     const registros = Array.from(root.querySelectorAll('[data-speed-record]')).map((row) => ({ data: row.querySelector('[data-speed-date]')?.value || '', velocidade: row.querySelector('[data-speed-value]')?.value || '' }));
     if (!nome.trim()) return { ok: false, message: 'Selecione ou informe o colaborador.' };
     if (!onlyPlate(placa) || onlyPlate(placa).length < 7) return { ok: false, message: 'Preencha uma placa válida com 7 caracteres.' };
     if (!cidadeData.trim()) return { ok: false, message: 'Preencha a cidade e data do documento.' };
-    const validRecords = registros.filter((r) => r.data && parseSpeed(r.velocidade));
+    const validRecords = collapseMaxSpeedByDate(registros);
     if (!validRecords.length) return { ok: false, message: 'Informe pelo menos uma data e velocidade.' };
-    return { ok: true, payload: { nome, placa, cidadeData, registros: validRecords } };
+    return { ok: true, payload: { nome, placa, cidadeData, registros: validRecords, agruparDatas } };
   }
 
   async function copyText(text) {
@@ -592,11 +631,11 @@
     }
 
     const registros = Array.isArray(data.registros) ? data.registros : [];
-    const parsedRecords = registros.map((r) => ({ data: toInputDate(r.data || r.date), velocidade: parseSpeed(r.velocidade || r.speed) })).filter((r) => r.data && r.velocidade);
+    const parsedRecords = collapseMaxSpeedByDate(registros.map((r) => ({ data: r.data || r.date, velocidade: r.velocidade || r.speed })));
     if (parsedRecords.length) {
       syncRecordsFromDom(root);
       const existing = state.records.filter((r) => r.data && r.velocidade);
-      state.records = [...existing, ...parsedRecords];
+      state.records = collapseMaxSpeedByDate([...existing, ...parsedRecords]);
       renderRecords(root);
     }
 
@@ -618,16 +657,16 @@
     const nome = root.querySelector('[data-speed-name]')?.value || '';
     const placa = root.querySelector('[data-speed-plate]')?.value || '';
     const dataNotificacao = root.querySelector('[data-notification-date]')?.value || todayBRShort();
+    const anoNotificacao = extractYearFromDate(dataNotificacao);
 
     if (!gasUrl) return toast('Informe a URL do Web App do Apps Script.', 'error');
-    if (!nome.trim()) return toast('Selecione ou informe o motorista antes de salvar os prints.', 'error');
     if (!state.uploadedFiles.length) return toast('Selecione ao menos um print para enviar.', 'error');
 
     localStorage.setItem(GAS_URL_KEY, gasUrl);
     state.gasUrl = gasUrl;
 
     const btn = root.querySelector('[data-upload-prints]');
-    if (btn) { btn.disabled = true; btn.textContent = 'Enviando e interpretando...'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando, interpretando e organizando...'; }
 
     try {
       const files = [];
@@ -642,12 +681,16 @@
         body: JSON.stringify({
           action: 'upload_excesso_velocidade',
           parentFolderId: PASTA_MAE_DRIVE_ID,
-          driverName: normalizeName(nome),
-          driverFolderName: sanitizeFolderName(nome),
+          autoOrganizeByOcr: true,
+          printAssociationMode: 'OCR_RANDOM_PRINTS',
+          manualDriverName: nome.trim() ? normalizeName(nome) : '',
+          manualPlate: onlyPlate(placa),
           plate: onlyPlate(placa),
           notificationDate: formatDateBR(dataNotificacao),
-          filePrefixDate: brDateToFilePrefix(dataNotificacao),
+          notificationYear: anoNotificacao,
           fileNamingPattern: 'ordinal_notification_year_driver',
+          targetFileNamePattern: '(N)º NOTIFICAÇÃO DE VELOCIDADE YYYY CONDUTOR',
+          sequentialScope: 'driver_folder',
           files
         })
       });
@@ -663,7 +706,7 @@
       console.error('[FROTAS] Upload/OCR:', err);
       toast(err.message || 'Erro ao enviar prints.', 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Enviar prints, interpretar e salvar no Drive'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Enviar prints e organizar por OCR'; }
     }
   }
 
@@ -685,18 +728,19 @@
                 <h3>Dados da notificação</h3>
                 <div class="speed-field colab-autocomplete" data-colaborador-autocomplete><label>Colaborador / Motorista</label><input class="speed-input" type="text" autocomplete="off" placeholder="Digite para buscar o colaborador" data-speed-name><div class="colab-dropdown" data-colaborador-dropdown hidden></div><p class="speed-colab-status" data-colaborador-status>Carregando colaboradores da base...</p></div>
                 <div class="speed-field"><label>Placa do veículo</label><input class="speed-input" type="text" maxlength="8" placeholder="RVQ6J42" data-speed-plate></div>
-                <div class="speed-field"><label>Data da notificação</label><input class="speed-input" type="text" value="${escapeHtml(todayBRShort())}" data-notification-date><p class="speed-hint">Usada para definir o ano da notificação. No Drive será salvo como: <code>Xº NOTIFICAÇÃO DE VELOCIDADE ANO NOME DO COLABORADOR</code></p></div>
+                <div class="speed-field"><label>Data da notificação</label><input class="speed-input" type="text" value="${escapeHtml(todayBRShort())}" data-notification-date><p class="speed-hint">Usada para definir o ano da notificação. No Drive será salvo como: <code>Nº NOTIFICAÇÃO DE VELOCIDADE ANO CONDUTOR</code></p></div>
                 <div class="speed-field"><label>Cidade e data da mensagem</label><input class="speed-input" type="text" value="Cascavel, ${escapeHtml(todayBRLong())}" data-speed-city-date></div>
-                <div class="speed-field"><label>Registros de velocidade</label><div data-speed-records></div><button class="speed-btn speed-btn-soft" type="button" data-add-record>+ Adicionar data e velocidade</button></div>
+                <div class="speed-field"><label>Registros de velocidade</label><div data-speed-records></div><button class="speed-btn speed-btn-soft" type="button" data-add-record>+ Adicionar data e velocidade</button><p class="speed-hint">Quando houver mais de uma leitura no mesmo dia, a mensagem considera automaticamente somente a maior velocidade do dia.</p></div>
+                <label class="speed-check"><input type="checkbox" data-group-dates><span><strong>Agrupar datas na mensagem</strong><br>Usar um resumo com todas as datas e a maior velocidade do período, em vez de listar cada dia em linha separada.</span></label>
                 <div class="speed-actions"><button class="speed-btn speed-btn-primary" type="button" data-generate-speed-message>Gerar ✉️</button><p class="speed-hint">Este botão gera e copia somente a mensagem de notificação. Não depende dos prints.</p></div>
                 <div class="speed-divider"></div>
-                <h3>Prints do rastreador <span style="color:#94a3b8;font-size:12px;font-weight:800;letter-spacing:0;text-transform:none;">(etapa posterior)</span></h3>
+                <h3>Prints do rastreador <span style="color:#94a3b8;font-size:12px;font-weight:800;letter-spacing:0;text-transform:none;">(etapa posterior independente)</span></h3>
                 <div class="upload-box">
-                  <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL é necessária para salvar no Google Drive e usar OCR. A pasta mãe configurada é <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
+                  <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL fica fixa no navegador e é usada para salvar no Google Drive e usar OCR. A pasta mãe configurada é <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
                   <div class="speed-field"><label>Selecionar prints</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
                   <div data-upload-list class="upload-list"></div>
-                  <button class="speed-btn speed-btn-soft" type="button" data-upload-prints>Enviar prints, interpretar e salvar no Drive</button>
-                  <p class="speed-hint">Use esta etapa somente depois que o colaborador já foi notificado.</p>
+                  <button class="speed-btn speed-btn-soft" type="button" data-upload-prints>Enviar prints e organizar por OCR</button>
+                  <p class="speed-hint">Os prints não ficam associados ao colaborador selecionado acima. O Web App recebe os arquivos em lote e deve organizar cada print pelo OCR, usando o padrão: <code>Nº NOTIFICAÇÃO DE VELOCIDADE ${extractYearFromDate(todayBRShort())} CONDUTOR</code>.</p>
                   <div data-saved-list class="saved-list"></div>
                 </div>
               </div>
