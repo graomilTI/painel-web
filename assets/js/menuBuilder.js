@@ -116,6 +116,43 @@ const FROTAS_FAILSAFE_ITEMS = [
   }
 ];
 
+const TI_FAILSAFE_ITEMS = [
+  {
+    code: 'ti_integracoes',
+    label: 'Integrações',
+    path: 'ti-integracoes',
+    aliases: ['TI', 'INTEGRACOES', 'TI_INTEGRACOES', 'CONFIG_INTEGRACOES']
+  }
+];
+
+function ensureTiSection(menuSections, userContext) {
+  const sections = Array.isArray(menuSections)
+    ? menuSections.map((section) => ({ ...section, items: [...(section.items || [])] }))
+    : [];
+
+  const allowedCodes = buildAllowedCodeSet(userContext);
+  const fallbackItems = Boolean(userContext?.user?.is_master)
+    ? TI_FAILSAFE_ITEMS
+    : TI_FAILSAFE_ITEMS.filter((item) => isItemAllowed(item, allowedCodes));
+
+  if (!fallbackItems.length) return sections;
+
+  const tiIndex = sections.findIndex((section) => normalizeCode(section.section) === 'ti');
+  if (tiIndex >= 0) {
+    fallbackItems.forEach((fallbackItem) => {
+      const exists = sections[tiIndex].items.some((item) => normalizeCode(item.code) === normalizeCode(fallbackItem.code));
+      if (!exists) sections[tiIndex].items.push(fallbackItem);
+    });
+    return sections;
+  }
+
+  const frotasIndex = sections.findIndex((section) => normalizeCode(section.section) === 'frotas');
+  const insertAt = frotasIndex >= 0 ? frotasIndex + 1 : sections.length;
+  sections.splice(insertAt, 0, { section: 'TI', items: fallbackItems });
+  return sections;
+}
+
+
 function ensureFrotasSection(menuSections, userContext) {
   const sections = Array.isArray(menuSections)
     ? menuSections.map((section) => ({ ...section, items: [...(section.items || [])] }))
@@ -147,7 +184,7 @@ export function buildAllowedMenu(userContext) {
   if (!userContext) return [];
 
   if (userContext.user?.is_master) {
-    return ensureFrotasSection(ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext), userContext);
+    return ensureTiSection(ensureFrotasSection(ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext), userContext), userContext);
   }
 
   // Regra de segurança visual: perfil/setor GESTOR enxerga somente INÍCIO + GESTOR.
@@ -162,12 +199,12 @@ export function buildAllowedMenu(userContext) {
 
   const allowedCodes = buildAllowedCodeSet(userContext);
 
-  return ensureFrotasSection(ensureOperationalSection(PANEL_MENU
+  return ensureTiSection(ensureFrotasSection(ensureOperationalSection(PANEL_MENU
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => isItemAllowed(item, allowedCodes)),
     }))
-    .filter((section) => section.items.length > 0), userContext), userContext);
+    .filter((section) => section.items.length > 0), userContext), userContext), userContext);
 }
 
 export function flattenAllowedMenu(userContext) {
