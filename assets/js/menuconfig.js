@@ -7,11 +7,10 @@ window.MENU_CONFIG = {
     { nome: "RECURSOS HUMANOS", modulos: [] },
     { nome: "OPERACIONAL", modulos: ["Mapa de Direcionamento"] },
     { nome: "FROTAS", modulos: ["Excesso de Velocidade", "Multas"] },
-    { nome: "TI", modulos: ["Integrações"] },
     { nome: "LOGÍSTICA", modulos: [] },
     { nome: "TROCA DE NOTAS", modulos: [] },
     { nome: "AUDITORIA", modulos: ["Logs", "Relatórios"] },
-    { nome: "DIRETORIA", modulos: ["DRE", "Financeiro"] },
+    { nome: "DIRETORIA", modulos: ["DRE", "METAS", "Financeiro"] },
     { nome: "RELATÓRIOS", modulos: [
       "Importar Relatórios",
       "Caixa do Fornecedor",

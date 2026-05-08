@@ -498,6 +498,7 @@
   }
 
   function getSupabaseClient(api) {
+    if (api && typeof api.from === 'function') return api;
     if (api && api.supabase) return api.supabase;
     if (api && api.client) return api.client;
     if (window.supabaseClient) return window.supabaseClient;
@@ -1134,7 +1135,7 @@
     injectStyle();
 
     const options = opts || {};
-    const supabase = getSupabaseClient(options.api);
+    const supabase = getSupabaseClient(options.supabase || options.api);
 
     if (!container) {
       console.error('[METAS] Container não informado.');
