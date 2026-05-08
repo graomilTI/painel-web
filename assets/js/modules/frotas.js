@@ -6,7 +6,6 @@
   const PASTA_MAE_DRIVE_ID = '1q5Ba5qqNJEBUZYA8GNRZmXZZsJ8U0YIr';
   const GAS_URL_KEY = 'FROTAS_EXCESSO_VELOCIDADE_GAS_URL';
   const GENERATED_GROUPS_KEY = 'FROTAS_EXCESSO_VELOCIDADE_GRUPOS_GERADOS';
-  const VIEW_KEY = 'FROTAS_EXCESSO_VELOCIDADE_VIEW';
   const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzDlhiUGilfA1afrunX3Jtc8LAG4DqMO9v0AJKveUxjUaccfJM_ynnKGRghp_K5AfjK/exec';
 
   const state = {
@@ -20,13 +19,7 @@
     colaboradores: [],
     colaboradoresLoaded: false,
     importedExcessos: [],
-    importedExcessosLoaded: false,
-    activeView: localStorage.getItem(VIEW_KEY) || 'envio',
-    multas: [],
-    multasArquivos: [],
-    multasLoaded: false,
-    multasFilter: 'abertas',
-    multasSearch: ''
+    importedExcessosLoaded: false
   };
 
   function todayBRShort() {
@@ -110,7 +103,7 @@
   function getStyles() {
     return `
       <style id="frotas-module-style">
-        .frotas-shell{width:100%;color:#e5e7eb}.frotas-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}.frotas-kicker{display:inline-flex;align-items:center;gap:8px;color:#86efac;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.frotas-title{margin:0;font-size:clamp(22px,2.2vw,32px);line-height:1.1;color:#f8fafc;letter-spacing:-.04em}.frotas-subtitle{max-width:860px;margin:10px 0 0;color:#94a3b8;font-size:14px;line-height:1.55}.frotas-card{background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.16);border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.frotas-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.frotas-tab{appearance:none;border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 14px;font-weight:900;font-size:13px;cursor:pointer;transition:.18s ease}.frotas-tab.active,.frotas-tab:hover{color:#f8fafc;border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35)}.frotas-body{padding:18px}.speed-subtabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}.speed-subtab{appearance:none;border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:14px;padding:10px 14px;font-weight:900;font-size:13px;cursor:pointer;transition:.18s ease}.speed-subtab.active,.speed-subtab:hover{color:#f8fafc;border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35)}.speed-view[hidden]{display:none!important}.speed-grid{display:grid;grid-template-columns:minmax(300px,450px) minmax(320px,1fr);gap:18px;align-items:start}.speed-grid-archive{display:grid;grid-template-columns:minmax(320px,1fr) minmax(280px,.95fr);gap:18px;align-items:start}.speed-panel{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.14);border-radius:22px;padding:18px}.speed-panel h3{margin:0 0 14px;color:#f8fafc;font-size:16px;letter-spacing:-.02em}.speed-field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}.speed-field label{color:#cbd5e1;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.speed-inline-actions{display:flex;gap:10px;flex-wrap:wrap}.speed-input,.speed-select,.speed-textarea{width:100%;border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:12px 13px;outline:none;font-size:14px;transition:.16s ease;color-scheme:dark}.speed-select option{background:#0f172a;color:#e5e7eb}.speed-input:focus,.speed-select:focus,.speed-textarea:focus,.upload-paste-zone:focus{border-color:rgba(34,197,94,.68);box-shadow:0 0 0 4px rgba(34,197,94,.10)}.speed-row{display:grid;grid-template-columns:1fr 130px 42px;gap:10px;align-items:end;margin-bottom:10px}.speed-row .speed-field{margin-bottom:0}.speed-btn{border:0;border-radius:14px;padding:12px 14px;font-weight:950;cursor:pointer;transition:.18s ease;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px}.speed-btn-primary{width:100%;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;box-shadow:0 14px 34px rgba(34,197,94,.22)}.speed-btn-primary:hover{transform:translateY(-1px);filter:brightness(1.05)}.speed-btn-primary:disabled{opacity:.55;cursor:not-allowed;transform:none}.speed-btn-soft{background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.24)}.speed-btn-danger{background:rgba(239,68,68,.10);color:#fca5a5;border:1px solid rgba(239,68,68,.20);padding:0;min-width:42px}.speed-actions{display:grid;gap:10px;margin-top:14px}.speed-message{min-height:520px;resize:vertical;line-height:1.55;white-space:pre-wrap}.speed-hint{margin:10px 0 0;color:#94a3b8;font-size:12px;line-height:1.45}.speed-hint code{color:#bbf7d0}.speed-colab-status{margin-top:-6px;color:#86efac;font-size:11px;font-weight:800;line-height:1.35}.colab-autocomplete{position:relative}.colab-dropdown{position:absolute;left:0;right:0;top:calc(100% - 4px);z-index:60;background:linear-gradient(180deg,#0f172a,#020617);border:1px solid rgba(34,197,94,.38);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.42);padding:6px;max-height:286px;overflow:auto}.colab-dropdown[hidden]{display:none}.colab-option{width:100%;border:0;background:transparent;color:#e5e7eb;text-align:left;border-radius:12px;padding:10px 11px;cursor:pointer;display:block}.colab-option:hover,.colab-option.active{background:rgba(22,101,52,.34)}.colab-option strong{display:block;font-size:12px;line-height:1.25;color:#f8fafc;letter-spacing:.02em}.colab-option span{display:block;margin-top:3px;font-size:11px;line-height:1.25;color:#94a3b8}.colab-empty{padding:10px 11px;color:#94a3b8;font-size:12px}.speed-divider{height:1px;background:rgba(148,163,184,.14);margin:16px 0}.speed-import-card{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;margin-bottom:16px}.speed-import-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.speed-import-head h3{margin:0}.speed-import-list{display:grid;gap:8px;max-height:260px;overflow:auto}.speed-import-empty{color:#94a3b8;font-size:12px;border:1px dashed rgba(148,163,184,.2);border-radius:14px;padding:12px}.speed-import-item{width:100%;text-align:left;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.72);color:#e5e7eb;border-radius:14px;padding:10px 12px;cursor:pointer}.speed-import-item:hover{border-color:rgba(34,197,94,.45);background:rgba(22,101,52,.18)}.speed-import-item.selected{border-color:rgba(34,197,94,.75);background:rgba(22,101,52,.24);box-shadow:inset 4px 0 0 rgba(34,197,94,.75)}.speed-import-item.generated{border-color:rgba(34,197,94,.36);background:rgba(20,83,45,.30);opacity:.74}.speed-import-item.generated strong::after{content:'  ✓ COPIADA';display:inline-flex;margin-left:6px;color:#86efac;font-size:10px;font-weight:950}.speed-import-item.generated .speed-import-badge{background:rgba(34,197,94,.22);border-color:rgba(34,197,94,.45);color:#dcfce7}.speed-import-item strong{display:block;color:#f8fafc;font-size:12px}.speed-import-item span{display:block;color:#94a3b8;font-size:11px;margin-top:3px}.speed-import-badge{display:inline-flex;border-radius:999px;padding:3px 7px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.22);color:#bbf7d0;font-size:10px;font-weight:900;margin-top:6px}.upload-box{border:1px dashed rgba(34,197,94,.35);border-radius:18px;padding:14px;background:rgba(2,6,23,.28)}.upload-paste-zone{border:1px dashed rgba(34,197,94,.38);border-radius:18px;padding:22px 16px;background:rgba(2,6,23,.34);color:#cbd5e1;cursor:text;outline:none;transition:.18s ease}.upload-paste-zone:hover{border-color:rgba(34,197,94,.54);background:rgba(22,101,52,.10)}.upload-paste-zone strong{display:block;color:#f8fafc;font-size:14px;margin-bottom:6px}.upload-paste-zone span{display:block;color:#94a3b8;font-size:12px;line-height:1.55}.upload-list{display:grid;gap:8px;margin-top:10px}.upload-item{display:flex;justify-content:space-between;gap:10px;align-items:center;border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.66);border-radius:14px;padding:10px 12px;color:#cbd5e1;font-size:12px}.upload-item strong{color:#f8fafc}.saved-list{display:grid;gap:8px;margin-top:10px}.saved-item{border:1px solid rgba(34,197,94,.20);background:rgba(22,101,52,.12);border-radius:14px;padding:10px 12px;color:#dcfce7;font-size:12px}.saved-item a{color:#86efac;font-weight:900}.speed-toast{position:fixed;right:22px;bottom:22px;background:rgba(22,101,52,.96);color:#dcfce7;border:1px solid rgba(134,239,172,.32);border-radius:16px;padding:12px 14px;font-weight:900;box-shadow:0 16px 45px rgba(0,0,0,.35);z-index:99999;opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.speed-toast.show{opacity:1;transform:translateY(0)}@media(max-width:980px){.speed-grid,.speed-grid-archive{grid-template-columns:1fr}.speed-row{grid-template-columns:1fr 1fr 42px}}@media(max-width:560px){.frotas-header{display:block}.speed-row{grid-template-columns:1fr}.speed-btn-danger{width:100%}.speed-inline-actions{display:grid}}
+        .frotas-shell{width:100%;color:#e5e7eb}.frotas-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}.frotas-kicker{display:inline-flex;align-items:center;gap:8px;color:#86efac;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.frotas-title{margin:0;font-size:clamp(22px,2.2vw,32px);line-height:1.1;color:#f8fafc;letter-spacing:-.04em}.frotas-subtitle{max-width:860px;margin:10px 0 0;color:#94a3b8;font-size:14px;line-height:1.55}.frotas-card{background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.16);border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.frotas-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.frotas-tab{appearance:none;border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 14px;font-weight:900;font-size:13px;cursor:pointer;transition:.18s ease}.frotas-tab.active,.frotas-tab:hover{color:#f8fafc;border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35)}.frotas-body{padding:18px}.speed-grid{display:grid;grid-template-columns:minmax(300px,450px) minmax(320px,1fr);gap:18px;align-items:start}.speed-panel{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.14);border-radius:22px;padding:18px}.speed-panel h3{margin:0 0 14px;color:#f8fafc;font-size:16px;letter-spacing:-.02em}.speed-field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}.speed-field label{color:#cbd5e1;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.speed-input,.speed-select,.speed-textarea{width:100%;border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:12px 13px;outline:none;font-size:14px;transition:.16s ease;color-scheme:dark}.speed-select option{background:#0f172a;color:#e5e7eb}.speed-input:focus,.speed-select:focus,.speed-textarea:focus{border-color:rgba(34,197,94,.68);box-shadow:0 0 0 4px rgba(34,197,94,.10)}.speed-row{display:grid;grid-template-columns:1fr 130px 42px;gap:10px;align-items:end;margin-bottom:10px}.speed-row .speed-field{margin-bottom:0}.speed-btn{border:0;border-radius:14px;padding:12px 14px;font-weight:950;cursor:pointer;transition:.18s ease;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px}.speed-btn-primary{width:100%;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;box-shadow:0 14px 34px rgba(34,197,94,.22)}.speed-btn-primary:hover{transform:translateY(-1px);filter:brightness(1.05)}.speed-btn-primary:disabled{opacity:.55;cursor:not-allowed;transform:none}.speed-btn-soft{background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.24)}.speed-btn-danger{background:rgba(239,68,68,.10);color:#fca5a5;border:1px solid rgba(239,68,68,.20);padding:0;min-width:42px}.speed-actions{display:grid;gap:10px;margin-top:14px}.speed-message{min-height:520px;resize:vertical;line-height:1.55;white-space:pre-wrap}.speed-hint{margin:10px 0 0;color:#94a3b8;font-size:12px;line-height:1.45}.speed-hint code{color:#bbf7d0}.speed-colab-status{margin-top:-6px;color:#86efac;font-size:11px;font-weight:800;line-height:1.35}.colab-autocomplete{position:relative}.colab-dropdown{position:absolute;left:0;right:0;top:calc(100% - 4px);z-index:60;background:linear-gradient(180deg,#0f172a,#020617);border:1px solid rgba(34,197,94,.38);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.42);padding:6px;max-height:286px;overflow:auto}.colab-dropdown[hidden]{display:none}.colab-option{width:100%;border:0;background:transparent;color:#e5e7eb;text-align:left;border-radius:12px;padding:10px 11px;cursor:pointer;display:block}.colab-option:hover,.colab-option.active{background:rgba(22,101,52,.34)}.colab-option strong{display:block;font-size:12px;line-height:1.25;color:#f8fafc;letter-spacing:.02em}.colab-option span{display:block;margin-top:3px;font-size:11px;line-height:1.25;color:#94a3b8}.colab-empty{padding:10px 11px;color:#94a3b8;font-size:12px}.speed-divider{height:1px;background:rgba(148,163,184,.14);margin:16px 0}.speed-import-card{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;margin-bottom:16px}.speed-import-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.speed-import-head h3{margin:0}.speed-import-list{display:grid;gap:8px;max-height:260px;overflow:auto}.speed-import-empty{color:#94a3b8;font-size:12px;border:1px dashed rgba(148,163,184,.2);border-radius:14px;padding:12px}.speed-import-item{width:100%;text-align:left;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.72);color:#e5e7eb;border-radius:14px;padding:10px 12px;cursor:pointer}.speed-import-item:hover{border-color:rgba(34,197,94,.45);background:rgba(22,101,52,.18)}.speed-import-item.selected{border-color:rgba(34,197,94,.75);background:rgba(22,101,52,.24);box-shadow:inset 4px 0 0 rgba(34,197,94,.75)}.speed-import-item.generated{border-color:rgba(34,197,94,.36);background:rgba(20,83,45,.30);opacity:.74}.speed-import-item.generated strong::after{content:'  ✓ COPIADA';display:inline-flex;margin-left:6px;color:#86efac;font-size:10px;font-weight:950}.speed-import-item.generated .speed-import-badge{background:rgba(34,197,94,.22);border-color:rgba(34,197,94,.45);color:#dcfce7}.speed-import-item strong{display:block;color:#f8fafc;font-size:12px}.speed-import-item span{display:block;color:#94a3b8;font-size:11px;margin-top:3px}.speed-import-badge{display:inline-flex;border-radius:999px;padding:3px 7px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.22);color:#bbf7d0;font-size:10px;font-weight:900;margin-top:6px}.upload-box{border:1px dashed rgba(34,197,94,.35);border-radius:18px;padding:14px;background:rgba(2,6,23,.28)}.upload-list{display:grid;gap:8px;margin-top:10px}.upload-item{display:flex;justify-content:space-between;gap:10px;align-items:center;border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.66);border-radius:14px;padding:10px 12px;color:#cbd5e1;font-size:12px}.upload-item strong{color:#f8fafc}.saved-list{display:grid;gap:8px;margin-top:10px}.saved-item{border:1px solid rgba(34,197,94,.20);background:rgba(22,101,52,.12);border-radius:14px;padding:10px 12px;color:#dcfce7;font-size:12px}.saved-item a{color:#86efac;font-weight:900}.speed-toast{position:fixed;right:22px;bottom:22px;background:rgba(22,101,52,.96);color:#dcfce7;border:1px solid rgba(134,239,172,.32);border-radius:16px;padding:12px 14px;font-weight:900;box-shadow:0 16px 45px rgba(0,0,0,.35);z-index:99999;opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.speed-toast.show{opacity:1;transform:translateY(0)}@media(max-width:980px){.speed-grid{grid-template-columns:1fr}.speed-row{grid-template-columns:1fr 1fr 42px}}@media(max-width:560px){.frotas-header{display:block}.speed-row{grid-template-columns:1fr}.speed-btn-danger{width:100%}}
       </style>`;
   }
 
@@ -360,6 +353,8 @@
   function groupImportedExcessos(rows) {
     const groups = new Map();
     (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const status = String(row.status_notificacao || '').toUpperCase();
+      if (status === 'NOTIFICADO' || status === 'CANCELADO') return;
       const placa = onlyPlate(row.placa);
       if (!placa) return;
       const motorista = getDriverFromExcesso(row);
@@ -385,6 +380,22 @@
       g.periodoFim = g.registros[g.registros.length - 1]?.data_evento || '';
       return g;
     }).sort((a, b) => String(a.motorista || a.placa).localeCompare(String(b.motorista || b.placa), 'pt-BR'));
+  }
+
+  function buildPrintDriverMap() {
+    return groupImportedExcessos(state.importedExcessos).map((g) => ({
+      key: g.key || '',
+      plate: onlyPlate(g.placa),
+      driverName: normalizeName(g.motorista || ''),
+      driverFolderName: sanitizeFolderName(g.motorista || ''),
+      coordenacao: g.coordenacao || '',
+      supervisao: g.supervisao || '',
+      registros: (g.registros || []).map((r) => ({
+        id: r.id,
+        data: formatDateBR(r.data_evento),
+        velocidade: parseSpeed(r.velocidade)
+      })).filter((r) => r.id && r.data && r.velocidade)
+    })).filter((item) => item.plate && item.driverName);
   }
 
   function renderImportedExcessos(root) {
@@ -458,7 +469,7 @@
       const { data, error } = await supabase
         .from('frotas_excesso_velocidade')
         .select('id,data_evento,hora_evento,placa,velocidade,endereco,motorista_planilha,patrimonio_funcionario,patrimonio_codigo,coordenacao,supervisao,status_cruzamento,status_notificacao,created_at')
-        .eq('status_notificacao', 'PENDENTE')
+        .in('status_notificacao', ['PENDENTE', 'GERADA'])
         .order('data_evento', { ascending: false })
         .limit(1000);
       if (error) throw error;
@@ -579,86 +590,10 @@
     }));
   }
 
-  function setActiveView(root, view) {
-    const next = view === 'arquivo' ? 'arquivo' : 'envio';
-    state.activeView = next;
-    localStorage.setItem(VIEW_KEY, next);
-
-    root.querySelectorAll('[data-speed-subtab]').forEach((btn) => {
-      const active = btn.getAttribute('data-speed-subtab') === next;
-      btn.classList.toggle('active', active);
-    });
-
-    root.querySelectorAll('[data-speed-view]').forEach((section) => {
-      section.hidden = section.getAttribute('data-speed-view') !== next;
-    });
-
-    if (next === 'arquivo') {
-      const pasteZone = root.querySelector('[data-paste-zone]');
-      if (pasteZone) window.setTimeout(() => pasteZone.focus(), 50);
-    }
-  }
-
-  function appendUploadedFiles(files) {
-    const valid = Array.from(files || []).filter(Boolean);
-    if (!valid.length) return 0;
-    state.uploadedFiles = [...state.uploadedFiles, ...valid];
-    return valid.length;
-  }
-
-  function makePastedFile(blob, index = 0) {
-    const ext = (blob.type || 'image/png').split('/')[1] || 'png';
-    const stamp = new Date().toISOString().replace(/[.:TZ-]/g, '').slice(0, 14);
-    return new File([blob], `print-colado-${stamp}-${index + 1}.${ext}`, { type: blob.type || 'image/png', lastModified: Date.now() });
-  }
-
-  function handlePasteFiles(root, files) {
-    const added = appendUploadedFiles(files);
-    if (!added) {
-      toast('Nenhuma imagem foi encontrada na área de transferência.', 'error');
-      return;
-    }
-    renderUploadLists(root);
-    toast(`${added} print${added > 1 ? 's' : ''} adicionado${added > 1 ? 's' : ''} à fila.`);
-  }
-
-  function bindPasteArea(root) {
-    const zone = root.querySelector('[data-paste-zone]');
-    if (!zone || zone.dataset.bound === '1') return;
-    zone.dataset.bound = '1';
-
-    const onPaste = (ev) => {
-      const items = Array.from(ev.clipboardData?.items || []);
-      const blobs = items.filter((item) => item.kind === 'file' && /^image\//.test(item.type)).map((item, index) => makePastedFile(item.getAsFile(), index)).filter(Boolean);
-      if (!blobs.length) return;
-      ev.preventDefault();
-      handlePasteFiles(root, blobs);
-    };
-
-    zone.addEventListener('paste', onPaste);
-    zone.addEventListener('click', () => zone.focus());
-    zone.addEventListener('dragover', (ev) => { ev.preventDefault(); zone.style.borderColor = 'rgba(34,197,94,.7)'; });
-    zone.addEventListener('dragleave', () => { zone.style.borderColor = ''; });
-    zone.addEventListener('drop', (ev) => {
-      ev.preventDefault();
-      zone.style.borderColor = '';
-      const dropped = Array.from(ev.dataTransfer?.files || []).filter((file) => /^image\//.test(file.type || ''));
-      if (dropped.length) handlePasteFiles(root, dropped);
-    });
-
-    document.addEventListener('paste', (ev) => {
-      if (state.activeView !== 'arquivo') return;
-      const target = ev.target;
-      const tag = String(target?.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) return;
-      onPaste(ev);
-    });
-  }
-
   function renderUploadLists(root) {
     const selected = root.querySelector('[data-upload-list]');
     if (selected) {
-      selected.innerHTML = state.uploadedFiles.length ? state.uploadedFiles.map((f, index) => `<div class="upload-item"><span><strong>${escapeHtml(f.name)}</strong><br>${Math.max(1, Math.round((f.size || 0) / 1024))} KB</span><span>print ${index + 1}</span></div>`).join('') : '<div class="speed-import-empty">Nenhum print adicionado ainda. Você pode colar direto nesta tela ou selecionar arquivos.</div>';
+      selected.innerHTML = state.uploadedFiles.length ? state.uploadedFiles.map((f) => `<div class="upload-item"><span><strong>${escapeHtml(f.name)}</strong><br>${Math.round(f.size / 1024)} KB</span><span>print</span></div>`).join('') : '';
     }
     const saved = root.querySelector('[data-saved-list]');
     if (saved) {
@@ -689,6 +624,93 @@
     }
   }
 
+  function normalizeDateForMatch(value) {
+    const br = formatDateBR(value);
+    const m = br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : String(value || '').slice(0, 10);
+  }
+
+  function ocrRecordMatchesRow(ocrRecord, row) {
+    if (!ocrRecord || !row) return false;
+    const ocrDate = normalizeDateForMatch(ocrRecord.data || ocrRecord.date);
+    const rowDate = normalizeDateForMatch(row.data_evento);
+    const ocrSpeed = parseSpeed(ocrRecord.velocidade || ocrRecord.speed);
+    const rowSpeed = parseSpeed(row.velocidade);
+    return Boolean(ocrDate && rowDate && ocrDate === rowDate && ocrSpeed && rowSpeed && ocrSpeed === rowSpeed);
+  }
+
+  async function archiveMatchedImportedRowsFromOcr(root, files) {
+    const supabase = window.supabase;
+    const savedFiles = Array.isArray(files) ? files : [];
+    if (!savedFiles.length || !supabase || typeof supabase.from !== 'function') return;
+
+    const matched = new Map();
+    const openRows = (state.importedExcessos || []).filter((row) => {
+      const status = String(row.status_notificacao || '').toUpperCase();
+      return status === 'PENDENTE' || status === 'GERADA';
+    });
+
+    savedFiles.forEach((file) => {
+      const filePlate = onlyPlate(file.plate || file.placa || '');
+      const fileDriver = normalizeName(file.driverName || file.driverFolderName || '');
+      const ocrRecords = Array.isArray(file.registros || file.extractedRegistros) ? (file.registros || file.extractedRegistros) : [];
+      if (!ocrRecords.length) return;
+
+      openRows.forEach((row) => {
+        const rowPlate = onlyPlate(row.placa || '');
+        const rowDriver = normalizeName(getDriverFromExcesso(row));
+        const sameVehicleOrDriver = (filePlate && rowPlate && filePlate === rowPlate) || (!filePlate && fileDriver && rowDriver && fileDriver === rowDriver);
+        if (!sameVehicleOrDriver) return;
+        const hasSameRecord = ocrRecords.some((ocr) => ocrRecordMatchesRow(ocr, row));
+        if (hasSameRecord && row.id) {
+          matched.set(row.id, {
+            id: row.id,
+            fileName: file.fileName || '',
+            fileUrl: file.fileUrl || '',
+            driverName: file.driverName || file.driverFolderName || '',
+            plate: filePlate || rowPlate
+          });
+        }
+      });
+    });
+
+    const matches = Array.from(matched.values());
+    if (!matches.length) {
+      toast('Prints salvos. Nenhum registro foi arquivado porque o OCR não encontrou data e velocidade iguais aos registros pendentes.', 'error');
+      return;
+    }
+
+    const ids = matches.map((m) => m.id);
+    const nowIso = new Date().toISOString();
+    const userId = getCurrentUserId();
+    const userName = getCurrentUserName();
+    const firstFile = matches[0] || {};
+    const payload = {
+      status_notificacao: 'NOTIFICADO',
+      notificado_em: nowIso,
+      observacoes: `Arquivado automaticamente por OCR do print. Arquivo: ${firstFile.fileName || firstFile.fileUrl || 'print salvo no Drive'}`
+    };
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId || ''))) payload.notificado_por = userId;
+    if (userName) payload.notificado_por_nome = userName;
+
+    try {
+      const { error } = await supabase
+        .from('frotas_excesso_velocidade')
+        .update(payload)
+        .in('id', ids);
+      if (error) throw error;
+
+      state.importedExcessos.forEach((row) => {
+        if (matched.has(row.id)) row.status_notificacao = 'NOTIFICADO';
+      });
+      renderImportedExcessos(root);
+      toast(`${ids.length} registro(s) arquivado(s) automaticamente pelo OCR do print.`);
+    } catch (err) {
+      console.warn('[FROTAS] Falha ao arquivar registros por OCR:', err);
+      toast('Prints salvos, mas não foi possível arquivar os registros no Supabase.', 'error');
+    }
+  }
+
   function toInputDate(value) {
     const br = formatDateBR(value);
     const m = br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -701,15 +723,16 @@
     const nome = root.querySelector('[data-speed-name]')?.value || '';
     const placa = root.querySelector('[data-speed-plate]')?.value || '';
     const dataNotificacao = root.querySelector('[data-notification-date]')?.value || todayBRShort();
+    const driverMap = buildPrintDriverMap();
 
     if (!gasUrl) return toast('Informe a URL do Web App do Apps Script.', 'error');
-    if (!state.uploadedFiles.length) return toast('Selecione, cole ou arraste ao menos um print para enviar.', 'error');
+    if (!state.uploadedFiles.length) return toast('Selecione ao menos um print para enviar.', 'error');
 
     localStorage.setItem(GAS_URL_KEY, gasUrl);
     state.gasUrl = gasUrl;
 
     const btn = root.querySelector('[data-upload-prints]');
-    if (btn) { btn.disabled = true; btn.textContent = 'Enviando e interpretando...'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando prints em lote...'; }
 
     try {
       const files = [];
@@ -724,31 +747,30 @@
         body: JSON.stringify({
           action: 'upload_excesso_velocidade',
           parentFolderId: PASTA_MAE_DRIVE_ID,
-          driverName: normalizeName(nome),
-          driverFolderName: sanitizeFolderName(nome),
+          driverName: nome ? normalizeName(nome) : '',
+          driverFolderName: nome ? sanitizeFolderName(nome) : '',
           plate: onlyPlate(placa),
           notificationDate: formatDateBR(dataNotificacao),
           filePrefixDate: brDateToFilePrefix(dataNotificacao),
           fileNamingPattern: 'ordinal_notification_year_driver',
-          autoOrganizeByOcr: true,
-          printAssociationMode: 'OCR_RANDOM_PRINTS',
-          sequentialScope: 'driver_folder',
+          driverMap,
           files
         })
       });
       const json = await resp.json();
       if (!json.ok) throw new Error(json.message || 'Falha ao processar prints.');
       applyOcrResult(root, json);
+      await archiveMatchedImportedRowsFromOcr(root, json?.data?.files || []);
       state.uploadedFiles = [];
       const input = root.querySelector('[data-print-files]');
       if (input) input.value = '';
       renderUploadLists(root);
-      toast('Prints salvos no Drive e interpretados com sucesso.');
+      toast('Prints salvos no Drive. Cada print foi direcionado pela placa/OCR sem depender da sugestão selecionada.');
     } catch (err) {
       console.error('[FROTAS] Upload/OCR:', err);
       toast(err.message || 'Erro ao enviar prints.', 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Enviar prints, interpretar e salvar no Drive'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Enviar prints em lote e salvar no Drive'; }
     }
   }
 
@@ -756,62 +778,37 @@
     const colaboradores = getColaboradores(opts);
     container.innerHTML = `${getStyles()}
       <section class="frotas-shell">
-        <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Excesso de Velocidade</h1><p class="frotas-subtitle">Gere primeiro a notificação ao colaborador. Depois, em uma etapa separada, anexe os prints do rastreador para salvar na pasta do motorista no Drive.</p></div></div>
+        <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Excesso de Velocidade</h1><p class="frotas-subtitle">Gere as notificações aos colaboradores. Depois, envie os prints em lote: o sistema identifica a placa/OCR e salva cada arquivo na pasta do motorista correspondente no Drive.</p></div></div>
         <div class="frotas-card">
-          <div class="frotas-tabs">
-            <button class="frotas-tab active" type="button">Excesso de Velocidade</button>
-            <button class="frotas-tab" type="button" data-open-multas>Multas</button>
-          </div>
+          <div class="frotas-tabs"><button class="frotas-tab active" type="button">Excesso de Velocidade</button></div>
           <div class="frotas-body">
-            <div class="speed-subtabs">
-              <button class="speed-subtab ${state.activeView === 'envio' ? 'active' : ''}" type="button" data-speed-subtab="envio">Envio</button>
-              <button class="speed-subtab ${state.activeView === 'arquivo' ? 'active' : ''}" type="button" data-speed-subtab="arquivo">Arquivo</button>
-            </div>
-
-            <section data-speed-view="envio" ${state.activeView !== 'envio' ? 'hidden' : ''}>
-              <div class="speed-grid">
-                <div class="speed-panel">
-                  <div class="speed-import-card">
-                    <div class="speed-import-head"><h3>Registros importados</h3><button class="speed-btn speed-btn-soft" type="button" data-refresh-imported-excessos>Atualizar</button></div>
-                    <p class="speed-hint" data-imported-excess-count>Nenhuma pendência carregada</p>
-                    <div class="speed-import-list" data-imported-excess-list><div class="speed-import-empty">Carregando registros importados...</div></div>
-                  </div>
-                  <h3>Dados da notificação</h3>
-                  <div class="speed-field colab-autocomplete" data-colaborador-autocomplete><label>Colaborador / Motorista</label><input class="speed-input" type="text" autocomplete="off" placeholder="Digite para buscar o colaborador" data-speed-name><div class="colab-dropdown" data-colaborador-dropdown hidden></div><p class="speed-colab-status" data-colaborador-status>Carregando colaboradores da base...</p></div>
-                  <div class="speed-field"><label>Placa do veículo</label><input class="speed-input" type="text" maxlength="8" placeholder="RVQ6J42" data-speed-plate></div>
-                  <div class="speed-field"><label>Data da notificação</label><input class="speed-input" type="text" value="${escapeHtml(todayBRShort())}" data-notification-date><p class="speed-hint">Usada para definir o ano da notificação. No Drive será salvo como: <code>Xº NOTIFICAÇÃO DE VELOCIDADE ANO NOME DO COLABORADOR</code></p></div>
-                  <div class="speed-field"><label>Cidade e data da mensagem</label><input class="speed-input" type="text" value="Cascavel, ${escapeHtml(todayBRLong())}" data-speed-city-date></div>
-                  <div class="speed-field"><label>Registros de velocidade</label><div data-speed-records></div><button class="speed-btn speed-btn-soft" type="button" data-add-record>+ Adicionar data e velocidade</button></div>
-                  <div class="speed-actions"><button class="speed-btn speed-btn-primary" type="button" data-generate-speed-message>Gerar ✉️</button><p class="speed-hint">Este botão gera e copia somente a mensagem de notificação. Não depende dos prints.</p></div>
+            <div class="speed-grid">
+              <div class="speed-panel">
+                <div class="speed-import-card">
+                  <div class="speed-import-head"><h3>Registros importados</h3><button class="speed-btn speed-btn-soft" type="button" data-refresh-imported-excessos>Atualizar</button></div>
+                  <p class="speed-hint" data-imported-excess-count>Nenhuma pendência carregada</p>
+                  <div class="speed-import-list" data-imported-excess-list><div class="speed-import-empty">Carregando registros importados...</div></div>
                 </div>
-                <div class="speed-panel"><h3>Mensagem gerada</h3><textarea class="speed-input speed-textarea speed-message" readonly data-speed-output placeholder="A mensagem será gerada aqui e copiada automaticamente."></textarea><p class="speed-hint">Depois de gerar, basta colar no canal de envio ao colaborador.</p></div>
-              </div>
-            </section>
-
-            <section data-speed-view="arquivo" ${state.activeView !== 'arquivo' ? 'hidden' : ''}>
-              <div class="speed-grid-archive">
-                <div class="speed-panel">
-                  <h3>Arquivo / Prints do rastreador</h3>
-                  <div class="upload-box">
-                    <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL é necessária para salvar no Google Drive e usar OCR. A pasta mãe configurada é <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
-                    <div class="speed-field"><label>Colar print direto</label><div class="upload-paste-zone" tabindex="0" data-paste-zone><strong>Cole o print aqui com Ctrl + V</strong><span>Você também pode arrastar imagens para esta área. Os prints não ficam associados manualmente ao contato — o OCR organiza depois no Drive.</span></div></div>
-                    <div class="speed-field"><label>Ou selecionar prints</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
-                    <div class="speed-inline-actions">
-                      <button class="speed-btn speed-btn-soft" type="button" data-clear-uploaded-files>Limpar fila</button>
-                      <button class="speed-btn speed-btn-primary" type="button" data-upload-prints>Enviar prints, interpretar e salvar no Drive</button>
-                    </div>
-                    <p class="speed-hint">Use esta etapa somente depois que o colaborador já foi notificado. Aqui os prints podem ser enviados em lote, sem vínculo manual com o colaborador do formulário — o OCR faz a organização.</p>
-                  </div>
-                </div>
-                <div class="speed-panel">
-                  <h3>Fila de prints</h3>
+                <h3>Dados da notificação</h3>
+                <div class="speed-field colab-autocomplete" data-colaborador-autocomplete><label>Colaborador / Motorista</label><input class="speed-input" type="text" autocomplete="off" placeholder="Digite para buscar o colaborador" data-speed-name><div class="colab-dropdown" data-colaborador-dropdown hidden></div><p class="speed-colab-status" data-colaborador-status>Carregando colaboradores da base...</p></div>
+                <div class="speed-field"><label>Placa do veículo</label><input class="speed-input" type="text" maxlength="8" placeholder="RVQ6J42" data-speed-plate></div>
+                <div class="speed-field"><label>Data da notificação</label><input class="speed-input" type="text" value="${escapeHtml(todayBRShort())}" data-notification-date><p class="speed-hint">Usada para definir o ano da notificação. No Drive será salvo como: <code>Xº NOTIFICAÇÃO DE VELOCIDADE ANO NOME DO COLABORADOR</code></p></div>
+                <div class="speed-field"><label>Cidade e data da mensagem</label><input class="speed-input" type="text" value="Cascavel, ${escapeHtml(todayBRLong())}" data-speed-city-date></div>
+                <div class="speed-field"><label>Registros de velocidade</label><div data-speed-records></div><button class="speed-btn speed-btn-soft" type="button" data-add-record>+ Adicionar data e velocidade</button></div>
+                <div class="speed-actions"><button class="speed-btn speed-btn-primary" type="button" data-generate-speed-message>Gerar ✉️</button><p class="speed-hint">Este botão gera e copia somente a mensagem de notificação. Não depende dos prints.</p></div>
+                <div class="speed-divider"></div>
+                <h3>Prints do rastreador <span style="color:#94a3b8;font-size:12px;font-weight:800;letter-spacing:0;text-transform:none;">(etapa posterior)</span></h3>
+                <div class="upload-box">
+                  <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL é necessária para salvar no Google Drive e usar OCR. A pasta mãe configurada é <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
+                  <div class="speed-field"><label>Selecionar prints</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
                   <div data-upload-list class="upload-list"></div>
-                  <div class="speed-divider"></div>
-                  <h3>Salvos recentemente</h3>
+                  <button class="speed-btn speed-btn-soft" type="button" data-upload-prints>Enviar prints em lote e salvar no Drive</button>
+                  <p class="speed-hint">Envie vários prints de uma vez. Esta etapa não depende da sugestão selecionada acima; o sistema cruza pela placa/OCR e salva cada arquivo na pasta correta.</p>
                   <div data-saved-list class="saved-list"></div>
                 </div>
               </div>
-            </section>
+              <div class="speed-panel"><h3>Mensagem gerada</h3><textarea class="speed-input speed-textarea speed-message" readonly data-speed-output placeholder="A mensagem será gerada aqui e copiada automaticamente."></textarea><p class="speed-hint">Depois de gerar, basta colar no canal de envio ao colaborador.</p></div>
+            </div>
           </div>
         </div>
       </section>`;
@@ -821,36 +818,19 @@
     renderUploadLists(container);
     renderColaboradorStatus(container, opts);
     bindColaboradorAutocomplete(container, opts);
-    bindPasteArea(container);
-    setActiveView(container, state.activeView);
     loadColaboradoresFromSupabase(container, opts);
     fetchImportedExcessos(container, opts);
 
-    container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign('./frotas-multas.html'));
     container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
 
     const plate = container.querySelector('[data-speed-plate]');
     if (plate) plate.addEventListener('input', () => { plate.value = onlyPlate(plate.value); });
 
     container.querySelector('[data-add-record]')?.addEventListener('click', () => { syncRecordsFromDom(container); state.records.push({ data: '', velocidade: '' }); renderRecords(container); });
-    container.querySelectorAll('[data-speed-subtab]').forEach((btn) => btn.addEventListener('click', () => setActiveView(container, btn.getAttribute('data-speed-subtab'))));
-    container.querySelector('[data-print-files]')?.addEventListener('change', (ev) => {
-      const added = appendUploadedFiles(ev.target.files || []);
-      renderUploadLists(container);
-      if (added) toast(`${added} print${added > 1 ? 's' : ''} adicionado${added > 1 ? 's' : ''} à fila.`);
-      ev.target.value = '';
-    });
-    container.querySelectorAll('[data-gas-url]').forEach((input) => input.addEventListener('input', (ev) => {
+    container.querySelector('[data-print-files]')?.addEventListener('change', (ev) => { state.uploadedFiles = Array.from(ev.target.files || []); renderUploadLists(container); });
+    container.querySelector('[data-gas-url]')?.addEventListener('input', (ev) => {
       state.gasUrl = String(ev.target.value || '').trim() || DEFAULT_GAS_URL;
       localStorage.setItem(GAS_URL_KEY, state.gasUrl);
-      container.querySelectorAll('[data-gas-url]').forEach((other) => {
-        if (other !== ev.target) other.value = state.gasUrl;
-      });
-    }));
-    container.querySelector('[data-clear-uploaded-files]')?.addEventListener('click', () => {
-      state.uploadedFiles = [];
-      renderUploadLists(container);
-      toast('Fila de prints limpa.');
     });
     container.querySelector('[data-upload-prints]')?.addEventListener('click', () => uploadPrints(container));
     container.querySelector('[data-generate-speed-message]')?.addEventListener('click', async () => {
@@ -866,225 +846,9 @@
     });
   }
 
-
-  function moneyBR(value) {
-    const n = Number(String(value ?? '').replace(/\./g, '').replace(',', '.'));
-    if (!Number.isFinite(n)) return String(value || '');
-    return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  }
-
-  function dateOnlyBR(value) {
-    return value ? formatDateBR(String(value).slice(0, 10)) : '';
-  }
-
-  function multaKey(row) {
-    return row?.key || row?.chave_tecnica || [row?.placa, row?.cod_auto, row?.cod_orgao].filter(Boolean).join('|');
-  }
-
-  function getMultaStatus(row) {
-    return normalizeName(row?.status_multa || row?.tipo || row?.status || '').replace('À', 'A');
-  }
-
-  function isMultaAberta(row) {
-    const status = getMultaStatus(row);
-    const situacao = normalizeName(row?.situacao || '');
-    if (['PAGO', 'CANCELADO', 'FINALIZADO', 'CONCLUIDO', 'CONCLUÍDO'].includes(status)) return false;
-    if (['PAGO', 'CANCELADO', 'FINALIZADO', 'CONCLUIDO', 'CONCLUÍDO'].includes(situacao)) return false;
-    return true;
-  }
-
-  function filterMultasRows() {
-    const term = normalizeName(state.multasSearch);
-    return (state.multas || []).filter((row) => {
-      if (state.multasFilter === 'abertas' && !isMultaAberta(row)) return false;
-      if (state.multasFilter === 'vencidas') {
-        const limite = row.data_limite_defesa || row.data_vencimento || '';
-        const hoje = new Date().toISOString().slice(0, 10);
-        if (!limite || String(limite).slice(0, 10) >= hoje) return false;
-      }
-      if (state.multasFilter === 'indicacao' && !String(row.pode_indicar_condutor || '').toUpperCase().includes('SIM')) return false;
-      if (!term) return true;
-      const hay = normalizeName([row.placa, row.renavam, row.motorista, row.empresa, row.descricao, row.numero_auto_infracao, row.cod_auto].join(' '));
-      return hay.includes(term);
-    });
-  }
-
-  function buildMultaMessage(row) {
-    const placa = onlyPlate(row.placa);
-    const data = dateOnlyBR(row.data_infracao);
-    const hora = row.hora || '';
-    const local = row.local || '';
-    const descricao = row.descricao || '';
-    const auto = row.numero_auto_infracao || row.auto || row.cod_auto || '';
-    const valor = moneyBR(row.valor_original || row.valor || 0);
-    return `Olá, ${normalizeName(row.motorista || 'CONDUTOR')}.\n\nConsta uma multa vinculada ao veículo de placa ${placa}.\n\nData: ${data}${hora ? `\nHorário: ${hora}` : ''}\nLocal: ${local || 'Não informado'}\nDescrição: ${descricao || 'Não informada'}\nNº Auto de Infração: ${auto || 'Não informado'}\nValor: ${valor}\n\nPor favor, responda conforme orientação do setor de Frotas para darmos andamento ao tratamento da infração.`;
-  }
-
-  function renderMultasTable(root) {
-    const tbody = root.querySelector('[data-multas-tbody]');
-    const count = root.querySelector('[data-multas-count]');
-    const cards = root.querySelector('[data-multas-cards]');
-    if (!tbody) return;
-
-    const rows = filterMultasRows();
-    const abertas = (state.multas || []).filter(isMultaAberta).length;
-    const vencidas = (state.multas || []).filter((r) => {
-      const limite = String(r.data_limite_defesa || '').slice(0, 10);
-      return limite && limite < new Date().toISOString().slice(0, 10);
-    }).length;
-    const valorTotal = rows.reduce((sum, r) => sum + (Number(String(r.valor_original || r.valor || 0).replace(',', '.')) || 0), 0);
-
-    if (count) count.textContent = state.multasLoaded ? `${rows.length} multa(s) encontrada(s)` : 'Carregando multas...';
-    if (cards) {
-      cards.innerHTML = `
-        <div class="multa-kpi"><span>Abertas</span><strong>${abertas}</strong></div>
-        <div class="multa-kpi"><span>Vencidas</span><strong>${vencidas}</strong></div>
-        <div class="multa-kpi"><span>Valor filtrado</span><strong>${moneyBR(valorTotal)}</strong></div>
-        <div class="multa-kpi"><span>Guias/PDFs</span><strong>${state.multasArquivos.length}</strong></div>`;
-    }
-
-    if (!state.multasLoaded) {
-      tbody.innerHTML = `<tr><td colspan="8" class="multa-empty">Carregando base de multas...</td></tr>`;
-      return;
-    }
-    if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="8" class="multa-empty">Nenhuma multa encontrada para o filtro selecionado.</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = rows.slice(0, 300).map((row, index) => {
-      const badge = isMultaAberta(row) ? 'ABERTA' : (row.status_multa || row.situacao || 'REGISTRADA');
-      const pode = String(row.pode_indicar_condutor || '').toUpperCase().includes('SIM') ? 'Pode indicar' : 'Conferir';
-      return `<tr data-multa-row="${index}">
-        <td><strong>${escapeHtml(onlyPlate(row.placa))}</strong><small>${escapeHtml(row.empresa || '')}</small></td>
-        <td>${escapeHtml(dateOnlyBR(row.data_infracao))}<small>${escapeHtml(row.hora || '')}</small></td>
-        <td>${escapeHtml(row.motorista || 'Não informado')}</td>
-        <td>${escapeHtml(row.descricao || '')}<small>${escapeHtml(row.local || '')}</small></td>
-        <td>${escapeHtml(row.numero_auto_infracao || row.cod_auto || '')}</td>
-        <td>${escapeHtml(moneyBR(row.valor_original || row.valor || 0))}</td>
-        <td><span class="multa-badge">${escapeHtml(badge)}</span><small>${escapeHtml(pode)}</small></td>
-        <td><div class="multa-actions"><button type="button" data-copy-multa="${index}">Copiar msg</button><button type="button" data-multa-indicar="${index}">Indicar</button><button type="button" data-multa-dobrar="${index}">Dobrar</button></div></td>
-      </tr>`;
-    }).join('');
-
-    tbody.querySelectorAll('[data-copy-multa]').forEach((btn) => btn.addEventListener('click', async () => {
-      const row = rows[Number(btn.getAttribute('data-copy-multa'))];
-      try { await copyText(buildMultaMessage(row)); toast('Mensagem da multa copiada.'); }
-      catch (_) { toast('Não foi possível copiar a mensagem.', 'error'); }
-    }));
-
-    tbody.querySelectorAll('[data-multa-indicar]').forEach((btn) => btn.addEventListener('click', () => updateMultaSituacao(root, optsCache.get(root) || {}, rows[Number(btn.getAttribute('data-multa-indicar'))], 'INDICAR')));
-    tbody.querySelectorAll('[data-multa-dobrar]').forEach((btn) => btn.addEventListener('click', () => updateMultaSituacao(root, optsCache.get(root) || {}, rows[Number(btn.getAttribute('data-multa-dobrar'))], 'DOBRAR')));
-  }
-
-  const optsCache = new WeakMap();
-
-  async function fetchMultas(root, opts = {}) {
-    const supabase = opts?.supabase || window.supabase;
-    state.multasLoaded = false;
-    renderMultasTable(root);
-    if (!supabase || typeof supabase.from !== 'function') {
-      state.multas = [];
-      state.multasArquivos = [];
-      state.multasLoaded = true;
-      renderMultasTable(root);
-      return;
-    }
-    try {
-      const { data, error } = await supabase
-        .from('frotas_multas')
-        .select('*')
-        .order('data_infracao', { ascending: false })
-        .limit(2000);
-      if (error) throw error;
-      state.multas = Array.isArray(data) ? data : [];
-
-      const arq = await supabase
-        .from('frotas_multas_arquivos')
-        .select('*')
-        .order('criado_em', { ascending: false })
-        .limit(500);
-      state.multasArquivos = arq.error ? [] : (Array.isArray(arq.data) ? arq.data : []);
-    } catch (err) {
-      console.warn('[FROTAS][MULTAS] Falha ao carregar multas:', err);
-      state.multas = [];
-      state.multasArquivos = [];
-      toast('Não foi possível carregar a tabela frotas_multas. Rode o SQL enviado antes de usar.', 'error');
-    } finally {
-      state.multasLoaded = true;
-      renderMultasTable(root);
-    }
-  }
-
-  async function updateMultaSituacao(root, opts = {}, row, situacao) {
-    if (!row?.id) return toast('Multa sem ID para atualização.', 'error');
-    const supabase = opts?.supabase || window.supabase;
-    if (!supabase || typeof supabase.from !== 'function') return toast('Supabase indisponível.', 'error');
-    try {
-      const payload = { situacao, atualizado_em: new Date().toISOString() };
-      const { error } = await supabase.from('frotas_multas').update(payload).eq('id', row.id);
-      if (error) throw error;
-      row.situacao = situacao;
-      renderMultasTable(root);
-      toast(`Multa marcada como ${situacao}.`);
-    } catch (err) {
-      console.warn('[FROTAS][MULTAS] Falha ao atualizar multa:', err);
-      toast('Não foi possível atualizar a multa.', 'error');
-    }
-  }
-
-  function renderMultas(container, opts = {}) {
-    optsCache.set(container, opts || {});
-    container.innerHTML = `${getStyles()}
-      <style id="frotas-multas-style">
-        .multa-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:16px}.multa-toolbar-left{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.multa-filter{appearance:none;border:1px solid rgba(148,163,184,.16);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:11px 12px;font-weight:800;color-scheme:dark}.multa-search{min-width:min(420px,100%);border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:12px 13px;outline:none}.multa-kpis{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:12px;margin-bottom:16px}.multa-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px}.multa-kpi span{display:block;color:#94a3b8;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.multa-kpi strong{display:block;margin-top:6px;color:#f8fafc;font-size:22px;letter-spacing:-.04em}.multa-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.28)}.multa-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1040px}.multa-table th{position:sticky;top:0;background:#0b1220;color:#94a3b8;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;padding:12px;border-bottom:1px solid rgba(148,163,184,.14)}.multa-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.10);vertical-align:top;color:#e5e7eb;font-size:12px}.multa-table tr:hover td{background:rgba(34,197,94,.05)}.multa-table small{display:block;color:#94a3b8;margin-top:4px;line-height:1.35}.multa-badge{display:inline-flex;border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#bbf7d0;border-radius:999px;padding:4px 8px;font-weight:950;font-size:10px}.multa-actions{display:flex;gap:6px;flex-wrap:wrap}.multa-actions button{border:1px solid rgba(34,197,94,.2);background:rgba(34,197,94,.10);color:#86efac;border-radius:10px;padding:7px 9px;font-size:11px;font-weight:900;cursor:pointer}.multa-empty{text-align:center;color:#94a3b8;padding:24px!important}.multa-note{border:1px dashed rgba(34,197,94,.28);background:rgba(22,101,52,.08);border-radius:18px;padding:14px;color:#cbd5e1;font-size:12px;line-height:1.55;margin-top:14px}@media(max-width:980px){.multa-kpis{grid-template-columns:1fr 1fr}.multa-toolbar{align-items:stretch}.multa-search{min-width:100%}}@media(max-width:560px){.multa-kpis{grid-template-columns:1fr}}
-      </style>
-      <section class="frotas-shell">
-        <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Multas</h1><p class="frotas-subtitle">Base migrada do Apps Script para o painel: consulta, conferência, indicação/dobra, geração de mensagem e acompanhamento de guias/PDFs.</p></div></div>
-        <div class="frotas-card">
-          <div class="frotas-tabs">
-            <button class="frotas-tab" type="button" data-open-excesso>Excesso de Velocidade</button>
-            <button class="frotas-tab active" type="button">Multas</button>
-          </div>
-          <div class="frotas-body">
-            <div class="multa-toolbar">
-              <div class="multa-toolbar-left">
-                <select class="multa-filter" data-multas-filter>
-                  <option value="abertas">Abertas / a pagar</option>
-                  <option value="vencidas">Vencidas</option>
-                  <option value="indicacao">Pode indicar condutor</option>
-                  <option value="todas">Todas</option>
-                </select>
-                <input class="multa-search" type="search" placeholder="Buscar por placa, motorista, auto, renavam, empresa..." data-multas-search>
-              </div>
-              <button class="speed-btn speed-btn-soft" type="button" data-refresh-multas>Atualizar</button>
-            </div>
-            <div class="multa-kpis" data-multas-cards></div>
-            <p class="speed-hint" data-multas-count>Carregando multas...</p>
-            <div class="multa-table-wrap">
-              <table class="multa-table">
-                <thead><tr><th>Placa / Empresa</th><th>Infração</th><th>Motorista</th><th>Descrição / Local</th><th>Auto</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead>
-                <tbody data-multas-tbody><tr><td colspan="8" class="multa-empty">Carregando...</td></tr></tbody>
-              </table>
-            </div>
-            <div class="multa-note"><strong>Observação:</strong> a integração direta com DETRAN/BotConversa não deve ficar no frontend por causa de token/segredo. O SQL enviado cria a base do painel; as consultas do DETRAN podem ser migradas depois para Supabase Edge Function/Worker ou mantidas temporariamente no Apps Script chamando essa tabela.</div>
-          </div>
-        </div>
-      </section>`;
-
-    container.querySelector('[data-open-excesso]')?.addEventListener('click', () => window.location.assign('./frotas.html'));
-    container.querySelector('[data-refresh-multas]')?.addEventListener('click', () => fetchMultas(container, opts));
-    container.querySelector('[data-multas-filter]')?.addEventListener('change', (ev) => { state.multasFilter = ev.target.value || 'abertas'; renderMultasTable(container); });
-    container.querySelector('[data-multas-search]')?.addEventListener('input', (ev) => { state.multasSearch = ev.target.value || ''; renderMultasTable(container); });
-
-    fetchMultas(container, opts);
-  }
-
   function renderHome(container, opts = {}) { renderExcessoVelocidade(container, opts); }
-  function renderOpenMultas(container, opts = {}) { renderMultas(container, opts); }
   window[MODULE_NAME] = window[MODULE_NAME] || {};
   window[MODULE_NAME].openHome = renderHome;
-  window[MODULE_NAME].openMultas = renderOpenMultas;
   window.ADM_MODULES = window.ADM_MODULES || {};
   window.ADM_MODULES.frotas = { mount: renderHome };
 })();
