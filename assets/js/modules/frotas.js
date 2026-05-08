@@ -8,6 +8,18 @@
   const GENERATED_GROUPS_KEY = 'FROTAS_EXCESSO_VELOCIDADE_GRUPOS_GERADOS';
   const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzDlhiUGilfA1afrunX3Jtc8LAG4DqMO9v0AJKveUxjUaccfJM_ynnKGRghp_K5AfjK/exec';
 
+
+  function toPanelRoute(target) {
+    const normalized = String(target || '').replace(/^\/+/, '').replace(/\.html$/i, '');
+    const current = String(window.location.pathname || '');
+    const origin = String(window.location.origin || '').toLowerCase();
+    const isPrimaryDomain = origin.includes('grao1000.com.br') || origin.includes('www.grao1000.com.br');
+    const painelIndex = current.toLowerCase().indexOf('/painel');
+    const base = painelIndex >= 0 ? current.slice(0, painelIndex + 7) : (isPrimaryDomain ? '/painel' : '.');
+    if (base === '.') return `./${normalized}.html`;
+    return `${base}/${normalized}`.replace(/\/+/g, '/');
+  }
+
   const state = {
     records: [{ data: '', velocidade: '' }],
     uploadedFiles: [],
@@ -822,8 +834,8 @@
     fetchImportedExcessos(container, opts);
 
     container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
-    container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign('./frotas-veiculos.html'));
-    container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign('./frotas-multas.html'));
+    container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(toPanelRoute('frotas-veiculos')));
+    container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(toPanelRoute('frotas-multas')));
 
     const plate = container.querySelector('[data-speed-plate]');
     if (plate) plate.addEventListener('input', () => { plate.value = onlyPlate(plate.value); });
