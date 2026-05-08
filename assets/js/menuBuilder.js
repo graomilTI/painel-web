@@ -109,6 +109,12 @@ const FROTAS_FAILSAFE_ITEMS = [
     aliases: ['FROTAS', 'EXCESSO_VELOCIDADE', 'FROTAS_EXCESSO_VELOCIDADE']
   },
   {
+    code: 'frotas_veiculos',
+    label: 'Veículos',
+    path: 'frotas-veiculos',
+    aliases: ['FROTAS_VEICULOS', 'VEICULOS', 'VEÍCULOS', 'FROTA_VEICULOS']
+  },
+  {
     code: 'frotas_multas',
     label: 'Multas',
     path: 'frotas-multas',

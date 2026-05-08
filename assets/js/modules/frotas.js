@@ -780,7 +780,7 @@
       <section class="frotas-shell">
         <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Excesso de Velocidade</h1><p class="frotas-subtitle">Gere as notificações aos colaboradores. Depois, envie os prints em lote: o sistema identifica a placa/OCR e salva cada arquivo na pasta do motorista correspondente no Drive.</p></div></div>
         <div class="frotas-card">
-          <div class="frotas-tabs"><button class="frotas-tab active" type="button">Excesso de Velocidade</button><button class="frotas-tab" type="button" data-open-multas>Multas</button></div>
+          <div class="frotas-tabs"><button class="frotas-tab active" type="button">Excesso de Velocidade</button><button class="frotas-tab" type="button" data-open-veiculos>Veículos</button><button class="frotas-tab" type="button" data-open-multas>Multas</button></div>
           <div class="frotas-body">
             <div class="speed-grid">
               <div class="speed-panel">
@@ -822,6 +822,7 @@
     fetchImportedExcessos(container, opts);
 
     container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
+    container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign('./frotas-veiculos.html'));
     container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign('./frotas-multas.html'));
 
     const plate = container.querySelector('[data-speed-plate]');

@@ -1399,6 +1399,91 @@
     return period.inicio === period.fim ? br(period.inicio) : `${br(period.inicio)} a ${br(period.fim)}`;
   }
 
+
+  function normalizeRenavam(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    return digits || null;
+  }
+
+  function buildVeiculoImportHash(row) {
+    return [row.placa || '', row.renavam || '', row.empresa || '', row.modelo || '']
+      .map((v) => normalizeHeader(String(v || '')))
+      .join('|')
+      .slice(0, 500);
+  }
+
+  async function readVeiculosFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const mapped = [];
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+      if (!rows?.length) continue;
+
+      const headerRow = findHeaderRow(rows, ['Placa', 'Renavam']);
+      const headersNorm = (rows[headerRow] || []).map(normalizeHeader);
+      if (!headersNorm.includes('placa') || !headersNorm.some((h) => h.includes('renavam'))) continue;
+
+      const headers = (rows[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+      rows.slice(headerRow + 1).forEach((line) => {
+        const obj = { __aba: sheetName };
+        headers.forEach((header, index) => { if (header) obj[header] = line?.[index] ?? ''; });
+        const placa = normalizePlate(pickValue(obj, ['Placa', 'Nome', 'Veículo', 'Veiculo']));
+        if (!placa) return;
+        const renavam = normalizeRenavam(pickValue(obj, ['Renavam', 'RENAVAM']));
+        const registro = {
+          placa,
+          nome: normalizeText(pickValue(obj, ['Nome', 'Veículo', 'Veiculo'])) || placa,
+          marca: normalizeText(pickValue(obj, ['Marca'])),
+          modelo: normalizeText(pickValue(obj, ['Modelo'])),
+          cor: normalizeText(pickValue(obj, ['Cor'])),
+          ano: normalizeInteger(pickValue(obj, ['Ano', 'Ano Modelo', 'Ano/Modelo'])),
+          tipo: normalizeText(pickValue(obj, ['Tipo'])),
+          coordenacao: normalizeText(pickValue(obj, ['Coordenação', 'Coordenacao', 'Regional'])),
+          supervisao: normalizeText(pickValue(obj, ['Supervisão', 'Supervisao'])),
+          motorista_atual: normalizeText(pickValue(obj, ['Funcionário', 'Funcionario', 'Motorista', 'Condutor'])),
+          hodometro: normalizeNumberBr(pickValue(obj, ['Hodômetro', 'Hodometro', 'Km', 'KM'])),
+          renavam,
+          valor_mensal: normalizeNumberBr(pickValue(obj, ['Valor Mensal', 'Mensalidade'])),
+          dia_vencimento: normalizeInteger(pickValue(obj, ['Dia de Vencimento', 'Vencimento'])),
+          valor_km: normalizeNumberBr(pickValue(obj, ['R$/Km', 'R$ Km', 'Valor KM', 'Valor por KM'])),
+          status: 'ATIVO',
+          detran_confirmado: false,
+          detran_status: renavam && renavam !== '0' ? 'PENDENTE' : 'SEM_RENAVAM',
+          detran_mensagem: renavam && renavam !== '0' ? 'Aguardando confirmação pela API do DETRAN' : 'RENAVAM não informado no relatório',
+          origem_importacao: 'relatorios_veiculos',
+          arquivo_nome: file.name,
+          raw: obj,
+        };
+        registro.import_hash = buildVeiculoImportHash(registro);
+        mapped.push(registro);
+      });
+    }
+    return mapped;
+  }
+
+  async function importarFrotasVeiculosDaPlanilha(file, opts) {
+    const veiculos = await readVeiculosFromFile(file);
+    if (!veiculos.length) throw new Error('A planilha de veículos não possui colunas válidas de Placa e RENAVAM.');
+
+    let total = 0;
+    for (let i = 0; i < veiculos.length; i += 500) {
+      const batch = veiculos.slice(i, i + 500);
+      const { error } = await opts.supabase
+        .from('frotas_veiculos')
+        .upsert(batch, { onConflict: 'placa' });
+      if (error) throw new Error(error.message || 'Falha ao importar veículos para Frotas.');
+      total += batch.length;
+    }
+
+    const comRenavam = veiculos.filter((v) => v.renavam && v.renavam !== '0').length;
+    const semRenavam = veiculos.length - comRenavam;
+    return { total_linhas: veiculos.length, importados: total, com_renavam: comRenavam, sem_renavam: semRenavam };
+  }
+
   async function checkExistingPeriod({ tipo, period, opts }) {
     if (!period?.inicio || !period?.fim) return { exists: false, total: 0, items: [] };
     const { data: sessionData } = await opts.supabase.auth.getSession();
@@ -1437,6 +1522,10 @@
 
     if ((n.includes('excesso') || n.includes('excesos') || n.includes('velocidade') || n.includes('velocidad')) && !n.includes('patrimonio') && !n.includes('patrimônio')) {
       return { tipo: 'frotas_excesso_velocidade', titulo: 'Excesso de Velocidade - Frotas' };
+    }
+
+    if ((n.includes('veiculo') || n.includes('veículo') || n.includes('veiculos') || n.includes('veículos') || n.includes('frota')) && !n.includes('multa') && !n.includes('excesso') && !n.includes('velocidade')) {
+      return { tipo: 'frotas_veiculos', titulo: 'Cadastro de Veículos - Frotas' };
     }
 
     if (n.includes('uber') || n.includes('corridas')) {
@@ -1758,6 +1847,7 @@
     let uberResumo = null;
     let patrimoniosResumo = null;
     let frotasExcessoResumo = null;
+    let frotasVeiculosResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -1793,9 +1883,14 @@
       setProgress(bar, 82);
       frotasExcessoResumo = await importarFrotasExcessoVelocidadeDaPlanilha(file, opts);
     }
+    if (detected.tipo === 'frotas_veiculos') {
+      status.textContent = 'Importando cadastro de veículos para Frotas...';
+      setProgress(bar, 82);
+      frotasVeiculosResumo = await importarFrotasVeiculosDaPlanilha(file, opts);
+    }
 
     const importMode = opts.importMode || 'auto';
-    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'auditorias_operacional', 'patrimonios'].includes(detected.tipo)
+    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'auditorias_operacional', 'patrimonios', 'frotas_veiculos'].includes(detected.tipo)
       ? null
       : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo)));
     let check = { exists: false, total: 0, items: [] };
@@ -1862,6 +1957,7 @@
           uber_corridas_importacao: uberResumo || null,
           patrimonios_importacao: patrimoniosResumo || null,
           frotas_excesso_velocidade_importacao: frotasExcessoResumo || null,
+          frotas_veiculos_importacao: frotasVeiculosResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -1896,12 +1992,14 @@
       status.textContent = `Patrimônios: ${patrimoniosResumo.importados || 0} atualizados · ${patrimoniosResumo.veiculos || 0} veículos`;
     } else if (detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) {
       status.textContent = `Frotas: ${frotasExcessoResumo.importados || 0} excessos · ${frotasExcessoResumo.identificados || 0} identificados · ${frotasExcessoResumo.pendentes || 0} pendentes`;
+    } else if (detected.tipo === 'frotas_veiculos' && frotasVeiculosResumo) {
+      status.textContent = `Veículos: ${frotasVeiculosResumo.importados || 0} importados · ${frotasVeiculosResumo.com_renavam || 0} com RENAVAM · ${frotasVeiculosResumo.sem_renavam || 0} sem RENAVAM`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'frotas_veiculos' && frotasVeiculosResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -2090,6 +2188,8 @@
               entry.message = period ? `Período: ${formatPeriod(period)} · importará Frotas` : 'Pendente · Frotas sem período detectado';
               renderFiles();
             });
+          } else if (detected.tipo === 'frotas_veiculos') {
+            entry.message = 'Pendente · organizará cadastro de veículos em Frotas';
           } else {
             detectFilePeriod(file, detected.tipo).then((period) => {
               entry.period = period;

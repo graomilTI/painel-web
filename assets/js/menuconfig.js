@@ -6,7 +6,7 @@ window.MENU_CONFIG = {
     { nome: "HOSPEDAGEM", modulos: ["Painel", "Solicitações", "Reservas", "Checkouts", "Financeiro", "Notas Fiscais", "Hotéis"] },
     { nome: "RECURSOS HUMANOS", modulos: [] },
     { nome: "OPERACIONAL", modulos: ["Mapa de Direcionamento"] },
-    { nome: "FROTAS", modulos: ["Excesso de Velocidade", "Multas"] },
+    { nome: "FROTAS", modulos: ["Excesso de Velocidade", "Veículos", "Multas"] },
     { nome: "TI", modulos: ["Integrações"] },
     { nome: "LOGÍSTICA", modulos: [] },
     { nome: "TROCA DE NOTAS", modulos: [] },
