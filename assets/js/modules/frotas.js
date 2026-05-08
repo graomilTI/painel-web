@@ -747,6 +747,101 @@
     return Boolean(ocrDate && rowDate && ocrDate === rowDate && ocrSpeed && rowSpeed && ocrSpeed === rowSpeed);
   }
 
+
+  function normalizeTextForOcrMatch(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9\s/.-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function getOcrTextFromFileResult(file) {
+    return [
+      file?.ocrText,
+      file?.ocr_text,
+      file?.text,
+      file?.texto,
+      file?.rawText,
+      file?.raw_text,
+      file?.extractedText,
+      file?.extracted_text,
+      file?.messageText,
+      file?.mensagem,
+      file?.content
+    ].filter(Boolean).join('\n');
+  }
+
+  function extractOcrRecordsFromText(text) {
+    const normalized = normalizeTextForOcrMatch(text);
+    if (!normalized) return [];
+
+    const records = [];
+    const currentYear = String(new Date().getFullYear());
+    const pattern = /(\d{1,2}[\/.-]\d{1,2}(?:[\/.-]\d{2,4})?)[\s\S]{0,90}?(\d{2,3})\s*(?:KM\/?H|KMH|KM|K\/H|KPH)/g;
+    let match;
+    while ((match = pattern.exec(normalized))) {
+      let date = String(match[1] || '').replace(/[.-]/g, '/');
+      const parts = date.split('/');
+      if (parts.length === 2) date = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${currentYear}`;
+      if (parts.length === 3) {
+        const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+        date = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${year}`;
+      }
+      records.push({ data: date, velocidade: Number(match[2]) });
+    }
+    return records;
+  }
+
+  function getFileMatchedIds(file) {
+    const candidates = [
+      file?.matchedIds,
+      file?.matched_ids,
+      file?.recordIds,
+      file?.record_ids,
+      file?.notificacaoIds,
+      file?.notificationIds,
+      file?.archivedIds
+    ];
+    const out = [];
+    candidates.forEach((value) => {
+      if (Array.isArray(value)) out.push(...value);
+      else if (value) out.push(...String(value).split(/[;,\s]+/));
+    });
+    return out.map((id) => String(id || '').trim()).filter(Boolean);
+  }
+
+  function getPossibleFilePlate(file) {
+    const text = normalizeTextForOcrMatch(getOcrTextFromFileResult(file));
+    const direct = onlyPlate(file?.plate || file?.placa || file?.vehiclePlate || file?.vehicle_plate || '');
+    if (direct) return direct;
+    const match = text.match(/\b([A-Z]{3}\s*[0-9][A-Z0-9]\s*[0-9]{2})\b/);
+    return match ? onlyPlate(match[1]) : '';
+  }
+
+  function getGroupKeyFromRow(row) {
+    const placa = onlyPlate(row?.placa || '');
+    const motorista = getDriverFromExcesso(row);
+    return `${normalizeName(motorista) || 'SEM MOTORISTA'}|${placa}`;
+  }
+
+  function rowBelongsToGeneratedGroup(row) {
+    const status = String(row?.status_notificacao || '').toUpperCase();
+    return status === 'GERADA' || state.generatedImportedGroupKeys.has(getGroupKeyFromRow(row));
+  }
+
+  function fileMatchesRowByVehicleOrDriver(file, row) {
+    const filePlate = getPossibleFilePlate(file);
+    const fileDriver = normalizeName(file?.driverName || file?.driverFolderName || file?.motorista || file?.nomeMotorista || '');
+    const rowPlate = onlyPlate(row?.placa || '');
+    const rowDriver = normalizeName(getDriverFromExcesso(row));
+    if (filePlate && rowPlate && filePlate === rowPlate) return true;
+    if (fileDriver && rowDriver && (fileDriver === rowDriver || fileDriver.includes(rowDriver) || rowDriver.includes(fileDriver))) return true;
+    return false;
+  }
+
   async function archiveMatchedImportedRowsFromOcr(root, files) {
     const supabase = window.supabase;
     const savedFiles = Array.isArray(files) ? files : [];
@@ -758,33 +853,57 @@
       return status === 'PENDENTE' || status === 'GERADA';
     });
 
+    const addMatch = (row, file, reason) => {
+      if (!row?.id) return;
+      matched.set(row.id, {
+        id: row.id,
+        fileName: file?.fileName || file?.name || '',
+        fileUrl: file?.fileUrl || file?.url || '',
+        driverName: file?.driverName || file?.driverFolderName || getDriverFromExcesso(row) || '',
+        plate: getPossibleFilePlate(file) || onlyPlate(row.placa || ''),
+        reason
+      });
+    };
+
     savedFiles.forEach((file) => {
-      const filePlate = onlyPlate(file.plate || file.placa || '');
-      const fileDriver = normalizeName(file.driverName || file.driverFolderName || '');
-      const ocrRecords = Array.isArray(file.registros || file.extractedRegistros) ? (file.registros || file.extractedRegistros) : [];
-      if (!ocrRecords.length) return;
+      const explicitIds = new Set(getFileMatchedIds(file));
+      if (explicitIds.size) {
+        openRows.forEach((row) => {
+          if (explicitIds.has(String(row.id))) addMatch(row, file, 'ids_retornados_pelo_ocr');
+        });
+      }
+
+      const rawText = getOcrTextFromFileResult(file);
+      const structuredRecords = Array.isArray(file?.registros || file?.extractedRegistros || file?.records)
+        ? (file.registros || file.extractedRegistros || file.records)
+        : [];
+      const ocrRecords = [
+        ...structuredRecords,
+        ...extractOcrRecordsFromText(rawText)
+      ];
 
       openRows.forEach((row) => {
-        const rowPlate = onlyPlate(row.placa || '');
-        const rowDriver = normalizeName(getDriverFromExcesso(row));
-        const sameVehicleOrDriver = (filePlate && rowPlate && filePlate === rowPlate) || (!filePlate && fileDriver && rowDriver && fileDriver === rowDriver);
-        if (!sameVehicleOrDriver) return;
+        if (!fileMatchesRowByVehicleOrDriver(file, row)) return;
+
         const hasSameRecord = ocrRecords.some((ocr) => ocrRecordMatchesRow(ocr, row));
-        if (hasSameRecord && row.id) {
-          matched.set(row.id, {
-            id: row.id,
-            fileName: file.fileName || '',
-            fileUrl: file.fileUrl || '',
-            driverName: file.driverName || file.driverFolderName || '',
-            plate: filePlate || rowPlate
-          });
+        if (hasSameRecord) {
+          addMatch(row, file, 'placa_data_velocidade');
+          return;
+        }
+
+        // Fallback seguro para o fluxo real do painel:
+        // se a mensagem já foi GERADA/COPIADA para aquele motorista/placa e o print enviado
+        // foi identificado pelo OCR/Drive como daquele mesmo veículo ou motorista, arquiva a pendência.
+        // Isso evita que notificações já enviadas fiquem acumuladas quando o OCR não devolve data/velocidade estruturada.
+        if (rowBelongsToGeneratedGroup(row)) {
+          addMatch(row, file, 'mensagem_gerada_print_identificado');
         }
       });
     });
 
     const matches = Array.from(matched.values());
     if (!matches.length) {
-      toast('Prints salvos. Nenhum registro foi arquivado porque o OCR não encontrou data e velocidade iguais aos registros pendentes.', 'error');
+      toast('Prints salvos. Nenhuma pendência foi arquivada: o OCR não identificou placa/motorista correspondente a uma mensagem GERADA.', 'error');
       return;
     }
 
@@ -796,7 +915,7 @@
     const payload = {
       status_notificacao: 'NOTIFICADO',
       notificado_em: nowIso,
-      observacoes: `Arquivado automaticamente por OCR do print. Arquivo: ${firstFile.fileName || firstFile.fileUrl || 'print salvo no Drive'}`
+      observacoes: `Arquivado automaticamente após envio do print. Motivo: ${firstFile.reason || 'ocr'}. Arquivo: ${firstFile.fileName || firstFile.fileUrl || 'print salvo no Drive'}`
     };
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId || ''))) payload.notificado_por = userId;
     if (userName) payload.notificado_por_nome = userName;
@@ -812,9 +931,9 @@
         if (matched.has(row.id)) row.status_notificacao = 'NOTIFICADO';
       });
       renderImportedExcessos(root);
-      toast(`${ids.length} registro(s) arquivado(s) automaticamente pelo OCR do print.`);
+      toast(`${ids.length} registro(s) arquivado(s): print enviado e notificação identificada.`);
     } catch (err) {
-      console.warn('[FROTAS] Falha ao arquivar registros por OCR:', err);
+      console.warn('[FROTAS] Falha ao arquivar registros após envio do print:', err);
       toast('Prints salvos, mas não foi possível arquivar os registros no Supabase.', 'error');
     }
   }
@@ -921,7 +1040,7 @@
                   <div class="speed-field" style="margin-top:14px"><label>Selecionar prints em lote</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
                   <div data-upload-list class="upload-list"></div>
                   <div class="upload-actions"><button class="speed-btn speed-btn-primary" type="button" data-upload-prints>Enviar prints e arquivar pendências</button></div>
-                  <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>Após a mensagem estar GERADA, o OCR do print compara placa, data e velocidade. Se bater com a pendência, o registro é marcado como NOTIFICADO e sai da lista.</p></div>
+                  <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>Após a mensagem estar GERADA/COPIADA, o envio do print identifica placa/motorista pelo OCR. Se bater com a pendência, o registro é marcado como NOTIFICADO e sai da lista automaticamente.</p></div>
                   <div data-saved-list class="saved-list"></div>
                 </div>
               </div>
