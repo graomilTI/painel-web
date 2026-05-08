@@ -8,6 +8,12 @@
   const GENERATED_GROUPS_KEY = 'FROTAS_EXCESSO_VELOCIDADE_GRUPOS_GERADOS';
   const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzDlhiUGilfA1afrunX3Jtc8LAG4DqMO9v0AJKveUxjUaccfJM_ynnKGRghp_K5AfjK/exec';
 
+  function toPanelUrl(slug) {
+    const clean = String(slug || '').replace(/^\/+|\/+$/g, '');
+    return `https://grao1000.com.br/painel/${clean}`;
+  }
+
+
   const state = {
     records: [{ data: '', velocidade: '' }],
     uploadedFiles: [],
@@ -484,32 +490,6 @@
   }
 
 
-
-
-  async function sincronizarBfleetExcessos(root, opts = {}) {
-    const supabase = opts?.supabase || window.supabase;
-    if (!supabase || !supabase.functions || typeof supabase.functions.invoke !== 'function') {
-      toast('Supabase não disponível para sincronizar BFleet.', 'error');
-      return;
-    }
-    const btn = root.querySelector('[data-sync-bfleet-excessos]');
-    const oldText = btn?.textContent || '';
-    try {
-      if (btn) { btn.disabled = true; btn.textContent = 'Importando BFleet...'; }
-      const { data, error } = await supabase.functions.invoke('sync-bfleet', { body: { action: 'sync_speed_alerts' } });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast(`BFleet importado: ${data?.inserted || 0} alerta(s), ${data?.updated || 0} atualizado(s).`);
-      await fetchImportedExcessos(root, opts);
-    } catch (err) {
-      console.error('[FROTAS] BFleet excessos:', err);
-      toast(err.message || 'Erro ao importar alertas BFleet.', 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = oldText || 'Importar BFleet'; }
-    }
-  }
-
-
   async function markSelectedImportedGroupAsGenerated(root, opts, message) {
     const key = state.selectedImportedGroupKey;
     if (!key) return;
@@ -811,7 +791,7 @@
             <div class="speed-grid">
               <div class="speed-panel">
                 <div class="speed-import-card">
-                  <div class="speed-import-head"><h3>Registros importados</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="speed-btn speed-btn-soft" type="button" data-sync-bfleet-excessos>Importar BFleet</button><button class="speed-btn speed-btn-soft" type="button" data-refresh-imported-excessos>Atualizar</button></div></div>
+                  <div class="speed-import-head"><h3>Registros importados</h3><button class="speed-btn speed-btn-soft" type="button" data-refresh-imported-excessos>Atualizar</button></div>
                   <p class="speed-hint" data-imported-excess-count>Nenhuma pendência carregada</p>
                   <div class="speed-import-list" data-imported-excess-list><div class="speed-import-empty">Carregando registros importados...</div></div>
                 </div>
@@ -848,7 +828,6 @@
     fetchImportedExcessos(container, opts);
 
     container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
-    container.querySelector('[data-sync-bfleet-excessos]')?.addEventListener('click', () => sincronizarBfleetExcessos(container, opts));
     container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(toPanelUrl('frotas-veiculos')));
     container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(toPanelUrl('frotas-multas')));
 
