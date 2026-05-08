@@ -1,17 +1,13 @@
 export function getPanelBasePath(pathname = window.location.pathname) {
   const clean = String(pathname || '').split('?')[0].split('#')[0];
-  const origin = String(window.location.origin || '').toLowerCase();
-  const isPrimaryDomain =
-    origin.includes('grao1000.com.br') ||
-    origin.includes('www.grao1000.com.br');
 
   const painelMatch = clean.match(/^(.*?)(\/painel)(?:\/.*)?$/i);
   if (painelMatch) return `${painelMatch[1]}${painelMatch[2]}`;
 
-  // Produção: todas as páginas do painel precisam permanecer abaixo de /painel.
-  // Evita navegação acidental para /frotas-veiculos, /frotas-multas etc. no domínio raiz,
-  // que cai no roteamento do site/host e gera Cloudflare 522.
-  if (isPrimaryDomain) return '/painel';
+  const host = String(window.location.hostname || '').toLowerCase();
+  if (host === 'grao1000.com.br' || host === 'www.grao1000.com.br') {
+    return '/painel';
+  }
 
   const lastSlash = clean.lastIndexOf('/');
   if (lastSlash <= 0) return '';
@@ -29,7 +25,7 @@ export function toPanelUrl(target = '') {
 
   if (!base) return `./${normalized}`;
 
-  return `${base}/${normalized}`.replace(/\/+/g, '/');
+  return `${base}/${normalized}`.replace(/([^:]\/)\/+/g, '$1');
 }
 
 export function getApiBaseUrl(origin = window.location.origin) {

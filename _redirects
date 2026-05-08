@@ -1,8 +1,2 @@
-/frotas /painel/frotas 301
-/frotas.html /painel/frotas 301
-/frotas-veiculos /painel/frotas-veiculos 301
-/frotas-veiculos.html /painel/frotas-veiculos 301
-/frotas-multas /painel/frotas-multas 301
-/frotas-multas.html /painel/frotas-multas 301
-/ti-integracoes /painel/ti-integracoes 301
-/ti-integracoes.html /painel/ti-integracoes 301
+# Rotas do painel são tratadas pelo Worker/roteador principal.
+# NÃO redirecionar /frotas* para /painel/frotas*, pois isso causa loop quando o Worker remove o prefixo /painel.
