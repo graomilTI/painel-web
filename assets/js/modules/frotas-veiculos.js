@@ -152,7 +152,7 @@
       toast('Sincronizando BFleet...');
       const res = await callFunction(opts, 'sync-bfleet-veiculos', { mode:'sync' });
       const rastreadores = Number(res?.rastreadores || res?.matched || 0);
-      const total = Number(res?.total_bfleet || res?.total || 0);
+      const total = Number(res?.total_bfleet || res?.total || res?.linhas_lidas_api || res?.placas_lidas || 0);
       const divergencias = Number(res?.divergencias || 0);
       toast(`BFleet sincronizado: ${rastreadores} veículo(s) com rastreador de ${total || 'N'} registro(s) lido(s)${divergencias ? ` · ${divergencias} divergência(s)` : ''}.`, Boolean(res?.warning));
       await loadVeiculos(root, opts);
