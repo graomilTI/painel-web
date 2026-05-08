@@ -22,6 +22,19 @@
     importedExcessosLoaded: false
   };
 
+
+  function panelUrl(target = '') {
+    const normalized = String(target || '').replace(/^\/+/, '').replace(/\.html$/i, '');
+    const host = String(window.location.hostname || '').toLowerCase();
+    if (host === 'grao1000.com.br' || host === 'www.grao1000.com.br') {
+      return normalized ? `/painel/${normalized}`.replace(/([^:]\/)\/+/g, '$1') : '/painel';
+    }
+    if (String(window.location.pathname || '').includes('/painel')) {
+      return normalized ? `/painel/${normalized}`.replace(/([^:]\/)\/+/g, '$1') : '/painel';
+    }
+    return normalized ? `./${normalized}` : './';
+  }
+
   function todayBRShort() {
     return new Date().toLocaleDateString('pt-BR');
   }
@@ -926,8 +939,8 @@
     fetchImportedExcessos(container, opts);
 
     container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
-    container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(toPanelUrl('frotas-veiculos')));
-    container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(toPanelUrl('frotas-multas')));
+    container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-veiculos')));
+    container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-multas')));
 
     const plate = container.querySelector('[data-speed-plate]');
     if (plate) plate.addEventListener('input', () => { plate.value = onlyPlate(plate.value); });

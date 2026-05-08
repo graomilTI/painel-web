@@ -59,6 +59,20 @@ function saveOpenSections(sectionNames) {
   } catch {}
 }
 
+
+function buildPanelHref(path = '') {
+  const target = String(path || '')
+    .replace(/^\/+/, '')
+    .replace(/\.html$/i, '');
+
+  const host = String(window.location.hostname || '').toLowerCase();
+  if (host === 'grao1000.com.br' || host === 'www.grao1000.com.br') {
+    return target ? `/painel/${target}`.replace(/([^:]\/)\/+/, '$1') : '/painel';
+  }
+
+  return toPanelUrl(target);
+}
+
 function normalizePath(value = '') {
   return ('/' + String(value || '').replace(/^\.\//, '').replace(/^\//, '')).replace(/\/+/g, '/');
 }
@@ -273,7 +287,7 @@ export function renderMenu(container, menuSections, currentPath = '') {
       section.items.forEach((item) => {
         const li = document.createElement('li');
         const link = document.createElement('a');
-        link.href = toPanelUrl(item.path);
+        link.href = buildPanelHref(item.path);
         link.textContent = item.label;
 
         const normalizedItemPath = normalizePath(item.path);
