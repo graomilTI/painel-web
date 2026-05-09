@@ -130,7 +130,7 @@ function normalizePatrimonioCodigo(value) {
   return normalizeText(value)?.trim().toUpperCase() || null;
 }
 
-function mapRow(row, importacaoId) {
+function mapRow(row, importacaoId, dataUploadISO) {
   const patrimonioCodigo = normalizePatrimonioCodigo(getField(row, COL.patrimonioCodigo));
   return {
     importacao_id: importacaoId,
@@ -147,16 +147,18 @@ function mapRow(row, importacaoId) {
     situacao: normalizeText(getField(row, COL.situacao)),
     ultima_leitura: excelDateTimeToISO(getField(row, COL.ultimaLeitura)),
     dias_sem_leitura: normalizeInteger(getField(row, COL.diasSemLeitura)),
-    hash_linha: patrimonioCodigo
+    hash_linha: patrimonioCodigo,
+    data_upload: dataUploadISO,
+    importado_em: dataUploadISO
   };
 }
 
-async function upsertBatches(table, rows, batchSize = 500, onProgress) {
+async function upsertBatches(table, rows, batchSize = 500, onProgress, onConflict = 'patrimonio_codigo') {
   const chunks = chunkArray(rows, batchSize);
 
   for (let i = 0; i < chunks.length; i += 1) {
     const chunk = chunks[i];
-    const { error } = await supabase.from(table).upsert(chunk, { onConflict: 'patrimonio_codigo' });
+    const { error } = await supabase.from(table).upsert(chunk, { onConflict });
     if (error) throw error;
 
     const done = Math.min((i + 1) * batchSize, rows.length);
@@ -267,6 +269,8 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       const file = fileInput.files?.[0];
       const origem = origemInput.value || 'upload_manual';
       const observacoes = obsInput.value?.trim() || null;
+      const dataUploadISO = new Date().toISOString();
+      const dataUploadBR = new Date(dataUploadISO).toLocaleString('pt-BR');
       const nomeAbaEsperada = normalizeText(nomeAbaInput.value) || 'Patrimônios';
 
       if (!file) throw new Error('Selecione o arquivo Excel.');
@@ -295,6 +299,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
           total_importadas: 0,
           total_erros: 0,
           observacoes,
+          data_upload: dataUploadISO,
           criado_por: ctx?.user?.id || null,
           criado_por_nome: ctx?.user?.name || ctx?.user?.email || null
         })
@@ -305,7 +310,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       importacaoId = importacao.id;
 
       const mappedRaw = rows
-        .map((row) => mapRow(row, importacaoId))
+        .map((row) => mapRow(row, importacaoId, dataUploadISO))
         .filter((row) => row.patrimonio_codigo);
 
       const uniqueMap = new Map();
@@ -324,6 +329,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       feedback.textContent = [
         'Importação criada.',
         `Aba usada: ${selectedSheetName}`,
+        `Data/hora do upload: ${dataUploadBR}`,
         `Duplicados ignorados no arquivo: ${duplicadosIgnorados}`,
         'Limpando snapshot atual...'
       ].join('\n');
@@ -332,11 +338,23 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       if (deleteError) throw deleteError;
 
       setSummary({ linhas: rows.length, validas: mapped.length, status: 'Importando snapshot' });
+      await upsertBatches('patrimonios_historico_leituras', mapped, 500, (done, total, loteAtual, totalLotes) => {
+        feedback.textContent = [
+          'Gravando histórico diário de patrimônios...',
+          `ID: ${importacaoId}`,
+          `Data/hora do upload: ${dataUploadBR}`,
+          `Lote: ${loteAtual}/${totalLotes}`,
+          `Progresso: ${done}/${total}`
+        ].join('\n');
+      }, 'importacao_id,patrimonio_codigo');
+
+      setSummary({ linhas: rows.length, validas: mapped.length, status: 'Importando snapshot' });
       await upsertBatches('patrimonios_snapshot', mapped, 500, (done, total, loteAtual, totalLotes) => {
         feedback.textContent = [
           'Importando snapshot de patrimônios...',
           `ID: ${importacaoId}`,
           `Aba usada: ${selectedSheetName}`,
+          `Data/hora do upload: ${dataUploadBR}`,
           `Lote: ${loteAtual}/${totalLotes}`,
           `Progresso: ${done}/${total}`
         ].join('\n');
@@ -364,6 +382,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
         `ID da importação: ${importacaoId}`,
         `Arquivo: ${file.name}`,
         `Aba usada: ${selectedSheetName}`,
+        `Data/hora do upload: ${dataUploadBR}`,
         `Linhas lidas: ${rows.length}`,
         `Linhas válidas: ${mapped.length}`,
         `Duplicados ignorados: ${duplicadosIgnorados}`
