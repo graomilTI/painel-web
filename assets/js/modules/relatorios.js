@@ -1147,7 +1147,7 @@
     diasSemLeitura: ['Dias sem Leitura']
   };
 
-  function mapPatrimonioRow(row, importacaoId, dataUploadISO) {
+  function mapPatrimonioRow(row, importacaoId) {
     const patrimonioCodigo = normalizeText(pickValue(row, PATRIMONIO_COL.patrimonioCodigo));
     return {
       importacao_id: importacaoId,
@@ -1165,8 +1165,6 @@
       ultima_leitura: normalizeDateTimeExcel(pickValue(row, PATRIMONIO_COL.ultimaLeitura)),
       dias_sem_leitura: normalizeInteger(pickValue(row, PATRIMONIO_COL.diasSemLeitura)),
       hash_linha: patrimonioCodigo ? String(patrimonioCodigo).trim().toUpperCase() : null,
-      data_upload: dataUploadISO,
-      importado_em: dataUploadISO,
     };
   }
 
@@ -1189,8 +1187,6 @@
 
   async function importarPatrimoniosDaPlanilha(file, opts) {
     const { rows, sheetName } = await readPatrimoniosFromFile(file);
-    const dataUploadISO = new Date().toISOString();
-    const dataUploadBR = new Date(dataUploadISO).toLocaleString('pt-BR');
     const user = opts.user || opts.auth?.user || null;
     const userMeta = user?.user_metadata || {};
     const userName = userMeta.full_name || userMeta.name || user?.email || null;
@@ -1204,8 +1200,7 @@
         total_linhas: rows.length,
         total_importadas: 0,
         total_erros: 0,
-        observacoes: `Importado pela Central de Importação · Aba: ${sheetName} · Upload: ${dataUploadBR}`,
-        data_upload: dataUploadISO,
+        observacoes: `Importado pela Central de Importação · Aba: ${sheetName}`,
         criado_por: user?.id || null,
         criado_por_nome: userName,
       })
@@ -1213,21 +1208,12 @@
       .single();
     if (impError) throw new Error(impError.message || 'Falha ao criar importação de patrimônios.');
 
-    const mappedRaw = rows.map((row) => mapPatrimonioRow(row, importacao.id, dataUploadISO)).filter((row) => row.patrimonio_codigo);
+    const mappedRaw = rows.map((row) => mapPatrimonioRow(row, importacao.id)).filter((row) => row.patrimonio_codigo);
     const unique = new Map();
     mappedRaw.forEach((row) => unique.set(row.patrimonio_codigo, row));
     const mapped = Array.from(unique.values());
 
     if (!mapped.length) throw new Error('Nenhuma linha válida encontrada na planilha de patrimônios.');
-
-    const histBatchSize = 500;
-    for (let i = 0; i < mapped.length; i += histBatchSize) {
-      const batch = mapped.slice(i, i + histBatchSize);
-      const { error } = await opts.supabase
-        .from('patrimonios_historico_leituras')
-        .upsert(batch, { onConflict: 'importacao_id,patrimonio_codigo' });
-      if (error) throw new Error(error.message || 'Falha ao gravar histórico de patrimônios no Supabase.');
-    }
 
     const { error: limparError } = await opts.supabase.rpc('limpar_patrimonios_snapshot');
     if (limparError) throw new Error(limparError.message || 'Falha ao limpar snapshot de patrimônios.');
@@ -1241,19 +1227,28 @@
       total += batch.length;
     }
 
+    let frotaPatrimonioSync = null;
+    try {
+      const { data: syncData, error: syncError } = await opts.supabase.rpc('sincronizar_frotas_veiculos_patrimonios');
+      if (syncError) console.warn('[RELATORIOS] Falha ao associar patrimônios aos veículos:', syncError);
+      else frotaPatrimonioSync = syncData || null;
+    } catch (syncErr) {
+      console.warn('[RELATORIOS] Falha ao associar patrimônios aos veículos:', syncErr);
+    }
+
     const { error: updError } = await opts.supabase
       .from('patrimonios_importacoes')
       .update({
         status: 'concluido',
         total_importadas: total,
         total_erros: Math.max(rows.length - total, 0),
-        observacoes: `Central de Importação · Aba: ${sheetName} · Upload: ${dataUploadBR}`,
+        observacoes: `Central de Importação · Aba: ${sheetName}`,
       })
       .eq('id', importacao.id);
     if (updError) throw new Error(updError.message || 'Falha ao concluir importação de patrimônios.');
 
     const veiculos = mapped.filter((r) => normalizeHeader(r.categoria).includes('veiculo') || extractPlateFromText(r.identificacao)).length;
-    return { total_linhas: rows.length, importados: total, veiculos, aba: sheetName };
+    return { total_linhas: rows.length, importados: total, veiculos, aba: sheetName, frotas_associadas: frotaPatrimonioSync };
   }
 
   function buildFrotasExcessoHash(row) {
@@ -1907,7 +1902,7 @@
     } else if (detected.tipo === 'uber_corridas' && uberResumo) {
       status.textContent = `Uber: ${uberResumo.importados || 0} corridas · ${uberResumo.colaboradores || 0} colaboradores · ${MONEY_FMT.format(uberResumo.valor_total || 0)}`;
     } else if (detected.tipo === 'patrimonios' && patrimoniosResumo) {
-      status.textContent = `Patrimônios: ${patrimoniosResumo.importados || 0} atualizados · ${patrimoniosResumo.veiculos || 0} veículos`;
+      status.textContent = `Patrimônios: ${patrimoniosResumo.importados || 0} atualizados · ${patrimoniosResumo.veiculos || 0} veículos · ${Number(patrimoniosResumo.frotas_associadas?.veiculos_atualizados || 0)} motorista(s) associados em Frotas`;
     } else if (detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) {
       status.textContent = `Frotas: ${frotasExcessoResumo.importados || 0} excessos · ${frotasExcessoResumo.identificados || 0} identificados · ${frotasExcessoResumo.pendentes || 0} pendentes`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
