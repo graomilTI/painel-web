@@ -198,7 +198,7 @@
   async function atualizarCondutoresBFleet(root, opts){
     try{
       toast('Atualizando condutores no BFleet...');
-      const res = await callFunction(opts, 'sync-bfleet-veiculos', { mode:'drivers' });
+      const res = await callFunction(opts, 'update-bfleet-condutores', { mode:'pending', limit: 50 });
       toast(`Condutores atualizados: ${Number(res?.updated || 0)} veículo(s)${res?.errors ? ` · ${res.errors} erro(s)` : ''}.`, Boolean(res?.errors));
       await loadVeiculos(root, opts);
     }catch(err){ toast(err.message || 'Falha ao atualizar condutores BFleet.', true); }
