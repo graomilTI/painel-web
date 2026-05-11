@@ -48,6 +48,15 @@
       base_url: 'https://api.correios.com.br',
       auth_url: 'https://api.correios.com.br/token/v1/autentica/cartaopostagem',
       segredos: ['CORREIOS_USUARIO', 'CORREIOS_SENHA', 'CORREIOS_CARTAO_POSTAGEM', 'CORREIOS_CONTRATO']
+    },
+    {
+      codigo: 'UBER_EMPRESAS',
+      nome: 'Uber Empresas',
+      categoria: 'CONFERENCIA',
+      ambiente: 'PRODUCAO',
+      base_url: 'https://api.uber.com',
+      auth_url: 'https://login.uber.com/oauth/v2/token',
+      segredos: ['UBER_CLIENT_ID', 'UBER_CLIENT_SECRET', 'UBER_ACCESS_TOKEN', 'UBER_REFRESH_TOKEN', 'UBER_ORGANIZATION_ID', 'UBER_SYNC_ENDPOINT']
     }
   ];
 

@@ -63,6 +63,7 @@ const state = {
 
 const FROTAS_MODULE_ID = '5f6ad9e7-ec4f-4fc2-a7f9-5f2a0b0f0a11';
 const FINANCEIRO_MODULE_ID = '6a4ce4ec-9df5-4c48-8c19-0e9a7d5f0f10';
+const UBER_MODULE_ID = '7b5d5c43-0e4a-4d0a-9f77-000000000001';
 
 const FROTAS_MODULE_FALLBACK = {
   id: FROTAS_MODULE_ID,
@@ -77,6 +78,14 @@ const FINANCEIRO_MODULE_FALLBACK = {
   codigo: 'financeiro',
   nome: 'Financeiro',
   descricao: 'Módulo financeiro com fluxo de caixa',
+  ativo: true,
+};
+
+const UBER_MODULE_FALLBACK = {
+  id: UBER_MODULE_ID,
+  codigo: 'conferencia_uber',
+  nome: 'Uber · Conferência',
+  descricao: 'Conferência diária de corridas Uber sincronizadas pela API',
   ativo: true,
 };
 
@@ -104,9 +113,16 @@ function ensureCorePermissionModules() {
       .filter(Boolean);
     return keys.includes('financeiro') || keys.includes('fluxo_de_caixa') || keys.includes('financeiro_fluxo_caixa');
   });
+  const hasUber = modules.some((mod) => {
+    const keys = [mod?.id, mod?.codigo, mod?.code, mod?.chave, mod?.slug, mod?.nome, mod?.name]
+      .map(normalizeModuleKey)
+      .filter(Boolean);
+    return keys.includes('conferencia_uber') || keys.includes('uber') || keys.includes('adm_uber');
+  });
 
   if (!hasFrotas) modules.push({ ...FROTAS_MODULE_FALLBACK });
   if (!hasFinanceiro) modules.push({ ...FINANCEIRO_MODULE_FALLBACK });
+  if (!hasUber) modules.push({ ...UBER_MODULE_FALLBACK });
 
   state.modules = modules.sort((a, b) => String(a.nome || a.codigo || '').localeCompare(String(b.nome || b.codigo || ''), 'pt-BR'));
 }

@@ -1,6 +1,6 @@
 window.MENU_CONFIG = {
   adm: [
-    { nome: "CONFERÊNCIA", modulos: ["Irregularidades", "Lançamentos"] },
+    { nome: "CONFERÊNCIA", modulos: ["Irregularidades", "Lançamentos", "Uber"] },
     { nome: "COMPRAS", modulos: ["Pedidos", "Fornecedores"] },
     { nome: "PATRIMÔNIOS", modulos: ["Painel de Patrimônios", "Relatórios de Patrimônios"] },
     { nome: "HOSPEDAGEM", modulos: ["Painel", "Solicitações", "Reservas", "Checkouts", "Financeiro", "Notas Fiscais", "Hotéis"] },
