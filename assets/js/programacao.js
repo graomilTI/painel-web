@@ -67,6 +67,32 @@ function onlyPlate(value) {
   return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
 }
 
+function firstFilled(...values) {
+  return values.map((value) => String(value ?? '').trim()).find(Boolean) || '';
+}
+
+function splitPossibleNames(value) {
+  return String(value || '')
+    .split(/[;,|\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function pessoaMatchesColaborador(pessoa, colab) {
+  if (!pessoa || !colab) return false;
+  const cpfPessoa = normalizeCpf(pessoa.cpf || pessoa.documento || pessoa.cpf_colaborador || pessoa.colaborador_cpf);
+  const cpfColab = normalizeCpf(colab.cpf);
+  if (cpfPessoa && cpfColab && cpfPessoa === cpfColab) return true;
+
+  const nomes = splitPossibleNames(firstFilled(pessoa.nome, pessoa.name, pessoa.motorista, pessoa.condutor, pessoa.colaborador, pessoa.responsavel));
+  const nomeColab = normalizeText(colab.nome);
+  if (!nomeColab) return false;
+  return nomes.some((nome) => {
+    const nomeNorm = normalizeText(nome);
+    return nomeNorm && (nomeNorm === nomeColab || nomeNorm.includes(nomeColab) || nomeColab.includes(nomeNorm));
+  });
+}
+
 function isColaboradorAtivo(colab) {
   if (!colab) return false;
   if (colab.ativo === false) return false;
@@ -193,6 +219,8 @@ function injectProgramacaoStyles() {
     .prog-extra-card{display:grid;grid-template-columns:160px 1.2fr 120px 1.2fr 86px;gap:8px;align-items:center;margin-bottom:8px;padding:8px;border:1px solid rgba(148,163,184,.14);border-radius:14px;background:rgba(15,23,42,.38)}
     .prog-extra-total{font-weight:900;color:#bbf7d0;text-align:right;white-space:nowrap}
     .prog-feedback-ok{color:#bbf7d0}.prog-feedback-error{color:#fecaca}.prog-feedback-warn{color:#fde68a}
+    .prog-patrimonio-alert{display:none;margin-top:6px;border:1px solid rgba(250,204,21,.24);background:rgba(113,63,18,.20);color:#fde68a;border-radius:10px;padding:7px 9px;font-size:11px;font-weight:800;line-height:1.35}
+    .prog-patrimonio-alert.show{display:block}
     .prog-section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 10px}
     .prog-section-title h4{margin:0;color:#f8fafc;font-size:15px;font-weight:950;letter-spacing:.02em}
     .prog-section-title .badge{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:900;border:1px solid rgba(52,211,153,.22);background:rgba(22,101,52,.14);color:#bbf7d0}
@@ -387,11 +415,36 @@ initProtectedPage('Programação', (content) => {
 
   async function loadVeiculosFrota() {
     const normalizeRows = (rows) => (rows || []).map((v) => {
-      const placa = onlyPlate(v.placa || v.identificacao || v.patrimonio_placa || v.veiculo_placa || v.codigo);
+      const placa = onlyPlate(v.placa || v.identificacao || v.patrimonio_placa || v.veiculo_placa || v.codigo || v.tombamento);
       if (!placa) return null;
+
+      const motoristaNome = firstFilled(
+        v.motorista_atual,
+        v.motorista,
+        v.condutor,
+        v.condutor_atual,
+        v.patrimonio_funcionario,
+        v.colaborador,
+        v.colaborador_nome,
+        v.funcionario,
+        v.responsavel,
+        v.nome_responsavel
+      );
+      const motoristaCpf = normalizeCpf(firstFilled(
+        v.motorista_cpf,
+        v.condutor_cpf,
+        v.colaborador_cpf,
+        v.funcionario_cpf,
+        v.responsavel_cpf,
+        v.cpf
+      ));
+
       return {
         placa,
-        label: [placa, v.modelo || v.nome || v.descricao || v.marca, v.cor, v.motorista_atual || v.patrimonio_funcionario || v.colaborador].filter(Boolean).join(' · '),
+        motoristaNome,
+        motoristaCpf,
+        raw: v,
+        label: [placa, v.modelo || v.nome || v.descricao || v.marca, v.cor, motoristaNome ? `Atual: ${motoristaNome}` : 'sem vínculo identificado'].filter(Boolean).join(' · '),
       };
     }).filter(Boolean);
     try {
@@ -453,6 +506,47 @@ initProtectedPage('Programação', (content) => {
       const label = `${a.nome} · ${a.cidade || '-'}/${a.uf || ''}${a.capacidade ? ` · Cap. ${a.capacidade}` : ''}`;
       return `<option value="${escapeHtml(a.id)}" ${String(selectedId || '') === String(a.id) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
     }).join('');
+  }
+
+  function findVeiculoByPlaca(placa) {
+    const normalized = onlyPlate(placa);
+    if (!normalized) return null;
+    return (state.veiculos || []).find((v) => onlyPlate(v.placa) === normalized) || null;
+  }
+
+  function patrimonioMessageForRow(colab, tipoDeslocamento, placa) {
+    const tipo = normalizeText(tipoDeslocamento);
+    const normalizedPlate = onlyPlate(placa);
+    if (tipo !== 'MOTORISTA FROTA' || !normalizedPlate || normalizedPlate.length < 7) return '';
+
+    const veiculo = findVeiculoByPlaca(normalizedPlate);
+    if (!veiculo) {
+      return `Placa ${normalizedPlate} não localizada na base de patrimônios/frota. Solicitar leitura do patrimônio para confirmar o veículo.`;
+    }
+
+    const pessoa = {
+      nome: veiculo.motoristaNome,
+      cpf: veiculo.motoristaCpf,
+      motorista: veiculo.motoristaNome,
+      ...((veiculo.raw && typeof veiculo.raw === 'object') ? veiculo.raw : {}),
+    };
+
+    if (pessoaMatchesColaborador(pessoa, colab)) return '';
+
+    const vinculo = veiculo.motoristaNome || 'sem colaborador vinculado identificado';
+    return `Atenção: o veículo ${normalizedPlate} está vinculado a ${vinculo}, não a ${colab?.nome || 'este motorista'}. Solicitar leitura do patrimônio.`;
+  }
+
+  function updatePatrimonioAlert(tr) {
+    if (!tr) return;
+    const alert = tr.querySelector('[data-patrimonio-alert]');
+    if (!alert) return;
+    const colab = colabById(tr.dataset.colabId);
+    const tipo = tr.querySelector('[data-field="tipo_deslocamento"]')?.value || '';
+    const placa = tr.querySelector('[data-field="placa_veiculo"]')?.value || '';
+    const message = patrimonioMessageForRow(colab, tipo, placa);
+    alert.textContent = message;
+    alert.classList.toggle('show', Boolean(message));
   }
 
   async function resolveProgramacaoAccess() {
@@ -917,7 +1011,13 @@ initProtectedPage('Programação', (content) => {
               return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_deslocamento">
                 <td>${colabCell(colab)}</td>
                 <td><select data-field="tipo_deslocamento" ${blocked ? 'disabled' : ''}>${selectOptions(TIPOS_DESLOCAMENTO, r.tipo_deslocamento || 'NÃO PRECISA')}</select></td>
-                <td><input data-field="placa_veiculo" list="progVeiculosFrotaList" type="text" value="${escapeHtml(r.placa_veiculo || '')}" placeholder="Placa" maxlength="7" ${blocked ? 'disabled' : ''}/></td>
+                <td>
+                  <input data-field="placa_veiculo" list="progVeiculosFrotaList" type="text" value="${escapeHtml(r.placa_veiculo || '')}" placeholder="Placa" maxlength="7" ${blocked ? 'disabled' : ''}/>
+                  ${(() => {
+                    const message = patrimonioMessageForRow(colab, r.tipo_deslocamento || 'NÃO PRECISA', r.placa_veiculo || '');
+                    return `<div data-patrimonio-alert class="prog-patrimonio-alert ${message ? 'show' : ''}">${escapeHtml(message)}</div>`;
+                  })()}
+                </td>
                 <td><input data-field="origem" type="text" value="${escapeHtml(r.origem || '')}" ${blocked ? 'disabled' : ''}/></td>
                 <td><input data-field="destino" type="text" value="${escapeHtml(r.destino || '')}" ${blocked ? 'disabled' : ''}/></td>
                 <td><input data-field="km" type="number" min="0" step="0.01" value="${escapeHtml(r.km || 0)}" ${blocked ? 'disabled' : ''}/></td>
@@ -1015,8 +1115,12 @@ initProtectedPage('Programação', (content) => {
   }
 
   function handleTableInput(event) {
-    if (event.target.matches('[data-field="placa_veiculo"]')) event.target.value = onlyPlate(event.target.value);
-    if (event.target.matches('[data-field]')) scheduleSaveRow(event.target.closest('tr'));
+    const tr = event.target.closest('tr');
+    if (event.target.matches('[data-field="placa_veiculo"]')) {
+      event.target.value = onlyPlate(event.target.value);
+      updatePatrimonioAlert(tr);
+    }
+    if (event.target.matches('[data-field]')) scheduleSaveRow(tr);
     if (event.target.matches('[data-extra-field]')) scheduleSaveExtra(event.target.closest('.prog-extra-card'));
   }
 
@@ -1026,6 +1130,7 @@ initProtectedPage('Programação', (content) => {
     if (event.target.matches('[data-field="uf"]')) event.target.value = normalizeUF(event.target.value);
     if (event.target.matches('[data-field="alojamento_id"]')) preencherAlojamentoSelecionado(tr);
     if (event.target.matches('[data-field="placa_veiculo"]')) event.target.value = onlyPlate(event.target.value);
+    if (event.target.matches('[data-field="tipo_deslocamento"], [data-field="placa_veiculo"]')) updatePatrimonioAlert(tr);
     if (event.target.matches('[data-field="tipo_estadia"]')) atualizarSugestaoAlojamento(tr);
     if (event.target.matches('[data-field]')) scheduleSaveRow(tr);
     if (event.target.matches('[data-extra-field]')) scheduleSaveExtra(event.target.closest('.prog-extra-card'));
