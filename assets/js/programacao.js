@@ -13,6 +13,8 @@ const STEPS = [
 const DISPONIBILIDADES = ['OK', 'FÉRIAS', 'FOLGA', 'ATESTADO', 'FALTA', 'TRANSFERIR', 'INATIVO'];
 const TIPOS_ESTADIA = ['NÃO PRECISA', 'CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
 const TIPOS_DESLOCAMENTO = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'ÔNIBUS', 'OUTRO'];
+const TIPOS_DESLOCAMENTO_FROTA = new Set(['MOTORISTA FROTA', 'CARONA FROTA']);
+const IBGE_MUNICIPIOS_URL = 'https://servicodados.ibge.gov.br/api/v1/localidades/municipios?orderBy=nome';
 const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
 const DISPONIBILIDADES_LIBERADAS = new Set(['', 'OK', 'DISPONÍVEL', 'DISPONIVEL', 'LIBERADO']);
 
@@ -163,6 +165,13 @@ function injectProgramacaoStyles() {
     .prog-table select option,.prog-context-grid select option{background:#0f172a;color:#e5e7eb}
     .prog-table input[type="checkbox"]{width:18px;min-height:18px;accent-color:#16a34a}
     .prog-table input:disabled,.prog-table select:disabled,.prog-table textarea:disabled{opacity:.58;cursor:not-allowed;background:#111827!important}
+    .prog-suggest-field{position:relative;min-width:150px}
+    .prog-suggestions{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;max-height:240px;overflow:auto;border:1px solid rgba(52,211,153,.28);border-radius:14px;background:#0f172a;box-shadow:0 18px 48px rgba(0,0,0,.42);padding:6px;display:none}
+    .prog-suggestions.open{display:block}
+    .prog-suggestion-item{width:100%;border:0;background:transparent;color:#e5e7eb;text-align:left;border-radius:10px;padding:9px 10px;cursor:pointer;font-weight:750}
+    .prog-suggestion-item small{display:block;color:#94a3b8;font-weight:600;margin-top:2px}
+    .prog-suggestion-item:hover,.prog-suggestion-item:focus{background:#166534;color:#f8fafc;outline:none}
+    .prog-required-missing{border-color:rgba(248,113,113,.75)!important;box-shadow:0 0 0 1px rgba(248,113,113,.22)}
     .prog-status{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;white-space:nowrap;border:1px solid rgba(148,163,184,.18)}
     .prog-status.ok{background:rgba(22,163,74,.14);color:#bbf7d0;border-color:rgba(34,197,94,.22)}
     .prog-status.block{background:rgba(239,68,68,.12);color:#fecaca;border-color:rgba(248,113,113,.22)}
@@ -289,6 +298,9 @@ initProtectedPage('Programação', (content) => {
     programacaoId: null,
     colaboradores: [],
     search: '',
+    municipios: [],
+    municipiosLoading: false,
+    veiculos: [],
     maps: {
       disponibilidade: new Map(),
       estadia: new Map(),
@@ -312,6 +324,7 @@ initProtectedPage('Programação', (content) => {
     state.access = await resolveProgramacaoAccess();
     bindEvents();
     await fillSupervisoes();
+    await loadVeiculos();
   }
 
   function bindEvents() {
@@ -329,6 +342,9 @@ initProtectedPage('Programação', (content) => {
     el.list.addEventListener('change', handleTableChange);
     el.list.addEventListener('input', handleTableInput);
     el.list.addEventListener('click', handleTableClick);
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.prog-suggest-field')) closeAllSuggestions();
+    });
   }
 
   async function resolveProgramacaoAccess() {
@@ -409,6 +425,106 @@ initProtectedPage('Programação', (content) => {
     } else if (state.access?.restricted) {
       setFeedback(`Supervisões liberadas para este gestor: ${supervisoes.length}.`, 'ok');
     }
+  }
+
+
+  async function loadVeiculos() {
+    const loaded = new Map();
+    try {
+      const { data, error } = await supabase
+        .from('frotas_veiculos')
+        .select('placa,nome,marca,modelo,cor,status,empresa,motorista_atual,coordenacao,supervisao')
+        .order('placa', { ascending: true })
+        .limit(2000);
+      if (!error) {
+        (data || []).forEach((v) => {
+          const placa = normalizePlate(v.placa);
+          if (!placa) return;
+          const status = normalizeAccessText(v.status || 'ATIVO');
+          if (status && ['INATIVO', 'VENDIDO', 'BAIXADO'].some((s) => status.includes(s))) return;
+          loaded.set(placa, {
+            placa,
+            label: `${placa} · ${[v.marca, v.modelo, v.cor].filter(Boolean).join(' ') || v.nome || 'Veículo'}`,
+            detalhe: [v.motorista_atual, v.supervisao || v.coordenacao, v.empresa].filter(Boolean).join(' · '),
+          });
+        });
+      }
+    } catch (error) {
+      console.warn('Não foi possível carregar frotas_veiculos para sugestões de placa.', error);
+    }
+
+    if (!loaded.size) {
+      try {
+        const { data, error } = await supabase
+          .from('patrimonios_snapshot')
+          .select('patrimonio_codigo,identificacao,marca,modelo,situacao,funcionario,coordenacao,supervisao,categoria')
+          .limit(3000);
+        if (!error) {
+          (data || []).forEach((p) => {
+            const text = [p.patrimonio_codigo, p.identificacao, p.marca, p.modelo].join(' ');
+            const placa = extractPlate(text);
+            if (!placa) return;
+            const categoria = normalizeAccessText(p.categoria || '');
+            const situacao = normalizeAccessText(p.situacao || '');
+            if (categoria && !categoria.includes('VEIC')) return;
+            if (situacao && ['INATIVO', 'VENDIDO', 'BAIXADO'].some((s) => situacao.includes(s))) return;
+            loaded.set(placa, {
+              placa,
+              label: `${placa} · ${[p.marca, p.modelo].filter(Boolean).join(' ') || p.identificacao || 'Patrimônio'}`,
+              detalhe: [p.funcionario, p.supervisao || p.coordenacao, p.patrimonio_codigo].filter(Boolean).join(' · '),
+            });
+          });
+        }
+      } catch (error) {
+        console.warn('Não foi possível carregar patrimonios_snapshot para sugestões de placa.', error);
+      }
+    }
+
+    state.veiculos = [...loaded.values()].sort((a, b) => a.placa.localeCompare(b.placa, 'pt-BR'));
+  }
+
+  function normalizePlate(value) {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
+  }
+
+  function extractPlate(value) {
+    const match = String(value || '').toUpperCase().match(/[A-Z]{3}[-\s]?[0-9][A-Z0-9][0-9]{2}/);
+    return match ? normalizePlate(match[0]) : '';
+  }
+
+  async function ensureMunicipiosLoaded() {
+    if (state.municipios.length || state.municipiosLoading) return;
+    state.municipiosLoading = true;
+    try {
+      const response = await fetch(IBGE_MUNICIPIOS_URL, { cache: 'force-cache' });
+      if (!response.ok) throw new Error(`IBGE HTTP ${response.status}`);
+      const data = await response.json();
+      state.municipios = (data || []).map((m) => {
+        const uf = m?.microrregiao?.mesorregiao?.UF?.sigla || '';
+        const estado = m?.microrregiao?.mesorregiao?.UF?.nome || '';
+        return { cidade: String(m.nome || '').trim(), uf, estado, search: normalizeSearch(`${m.nome} ${uf} ${estado}`) };
+      }).filter((m) => m.cidade && m.uf);
+    } catch (error) {
+      console.warn('Não foi possível carregar municípios do IBGE.', error);
+      state.municipios = [];
+      setFeedback('Não consegui carregar a lista de cidades do IBGE agora. Ainda é possível preencher cidade e UF manualmente.', 'warn');
+    } finally {
+      state.municipiosLoading = false;
+    }
+  }
+
+  function normalizeSearch(value) {
+    return String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  }
+
+  function closeAllSuggestions() {
+    el.list.querySelectorAll('.prog-suggestions.open').forEach((box) => box.classList.remove('open'));
+  }
+
+  function renderSuggestionBox(items, type) {
+    return `<div class="prog-suggestions" data-suggestions="${escapeHtml(type)}">
+      ${items.map((item) => `<button type="button" class="prog-suggestion-item" data-suggest-type="${escapeHtml(type)}" data-cidade="${escapeHtml(item.cidade || '')}" data-uf="${escapeHtml(item.uf || '')}" data-placa="${escapeHtml(item.placa || '')}">${escapeHtml(item.label || `${item.cidade} · ${item.uf}`)}${item.detalhe || item.estado ? `<small>${escapeHtml(item.detalhe || item.estado)}</small>` : ''}</button>`).join('')}
+    </div>`;
   }
 
   async function getLatestSnapshotDate() {
@@ -724,7 +840,7 @@ initProtectedPage('Programação', (content) => {
       </div>
       ${disponiveis.length ? `<div class="prog-table-wrap">
         <table class="prog-table">
-          <thead><tr><th>Colaborador</th><th>Tipo</th><th>Cidade</th><th>UF</th><th>Diárias</th><th>Check-in</th><th>Check-out</th><th>Observação</th></tr></thead>
+          <thead><tr><th>Colaborador</th><th>Tipo</th><th>Cidade</th><th>UF</th><th>Check-in</th><th>Check-out</th><th>Observação</th></tr></thead>
           <tbody>
             ${disponiveis.map((colab) => {
               const r = state.maps.estadia.get(String(colab.id)) || {};
@@ -732,9 +848,8 @@ initProtectedPage('Programação', (content) => {
               return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_estadia">
                 <td>${colabCell(colab)}</td>
                 <td><select data-field="tipo_estadia" ${blocked ? 'disabled' : ''}>${selectOptions(TIPOS_ESTADIA, r.tipo_estadia || 'NÃO PRECISA')}</select></td>
-                <td><input data-field="cidade" type="text" value="${escapeHtml(r.cidade || '')}" placeholder="Cidade" ${blocked ? 'disabled' : ''}/></td>
-                <td><input data-field="uf" type="text" value="${escapeHtml(r.uf || '')}" placeholder="UF" maxlength="2" ${blocked ? 'disabled' : ''}/></td>
-                <td><input data-field="diarias" type="number" min="0" step="1" value="${escapeHtml(r.diarias || 0)}" ${blocked ? 'disabled' : ''}/></td>
+                <td><div class="prog-suggest-field"><input data-field="cidade" data-city-input type="text" value="${escapeHtml(r.cidade || '')}" placeholder="Digite a cidade" autocomplete="off" ${blocked ? 'disabled' : ''}/>${renderSuggestionBox([], 'cidade')}</div></td>
+                <td><input data-field="uf" data-uf-input type="text" value="${escapeHtml(r.uf || '')}" placeholder="UF" maxlength="2" ${blocked ? 'disabled' : ''}/></td>
                 <td><input data-field="checkin" type="date" value="${escapeHtml(r.checkin || '')}" ${blocked ? 'disabled' : ''}/></td>
                 <td><input data-field="checkout" type="date" value="${escapeHtml(r.checkout || '')}" ${blocked ? 'disabled' : ''}/></td>
                 <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" ${blocked ? 'disabled' : ''}/></td>
@@ -783,14 +898,15 @@ initProtectedPage('Programação', (content) => {
       </div>
       ${disponiveis.length ? `<div class="prog-table-wrap">
         <table class="prog-table">
-          <thead><tr><th>Colaborador</th><th>Deslocamento</th><th>Origem</th><th>Destino</th><th>KM</th><th>Valor</th><th>Observação</th></tr></thead>
+          <thead><tr><th>Colaborador</th><th>Deslocamento</th><th>Placa</th><th>Origem</th><th>Destino</th><th>KM</th><th>Valor</th><th>Observação</th></tr></thead>
           <tbody>
             ${disponiveis.map((colab) => {
               const r = state.maps.deslocamento.get(String(colab.id)) || {};
               const blocked = isBlocked(colab);
               return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_deslocamento">
                 <td>${colabCell(colab)}</td>
-                <td><select data-field="tipo_deslocamento" ${blocked ? 'disabled' : ''}>${selectOptions(TIPOS_DESLOCAMENTO, r.tipo_deslocamento || 'NÃO PRECISA')}</select></td>
+                <td><select data-field="tipo_deslocamento" data-deslocamento-tipo ${blocked ? 'disabled' : ''}>${selectOptions(TIPOS_DESLOCAMENTO, r.tipo_deslocamento || 'NÃO PRECISA')}</select></td>
+                <td><div class="prog-suggest-field"><input data-field="placa_veiculo" data-vehicle-input type="text" value="${escapeHtml(r.placa_veiculo || '')}" placeholder="Placa" maxlength="8" autocomplete="off" ${blocked ? 'disabled' : ''}/>${renderSuggestionBox([], 'veiculo')}</div></td>
                 <td><input data-field="origem" type="text" value="${escapeHtml(r.origem || '')}" ${blocked ? 'disabled' : ''}/></td>
                 <td><input data-field="destino" type="text" value="${escapeHtml(r.destino || '')}" ${blocked ? 'disabled' : ''}/></td>
                 <td><input data-field="km" type="number" min="0" step="0.01" value="${escapeHtml(r.km || 0)}" ${blocked ? 'disabled' : ''}/></td>
@@ -845,16 +961,26 @@ initProtectedPage('Programação', (content) => {
   }
 
   function handleTableInput(event) {
+    if (event.target.matches('[data-city-input]')) handleCityInput(event.target);
+    if (event.target.matches('[data-vehicle-input]')) handleVehicleInput(event.target);
     if (event.target.matches('[data-field]')) scheduleSaveRow(event.target.closest('tr'));
     if (event.target.matches('[data-extra-field]')) scheduleSaveExtra(event.target.closest('.prog-extra-card'));
   }
 
   function handleTableChange(event) {
+    if (event.target.matches('[data-deslocamento-tipo]')) validateDeslocamentoRow(event.target.closest('tr'), false);
     if (event.target.matches('[data-field]')) scheduleSaveRow(event.target.closest('tr'));
     if (event.target.matches('[data-extra-field]')) scheduleSaveExtra(event.target.closest('.prog-extra-card'));
   }
 
   async function handleTableClick(event) {
+    const suggestBtn = event.target.closest('[data-suggest-type]');
+    if (suggestBtn) {
+      applySuggestion(suggestBtn);
+      return;
+    }
+    if (event.target.matches('[data-city-input]')) handleCityInput(event.target);
+    if (event.target.matches('[data-vehicle-input]')) handleVehicleInput(event.target);
     const addBtn = event.target.closest('[data-action="add-extra"]');
     if (addBtn) {
       const tr = addBtn.closest('tr');
@@ -866,6 +992,125 @@ initProtectedPage('Programação', (content) => {
       const card = delBtn.closest('.prog-extra-card');
       await deleteExtra(card?.dataset.extraId);
     }
+  }
+
+
+  async function handleCityInput(input) {
+    await ensureMunicipiosLoaded();
+    const box = input.closest('.prog-suggest-field')?.querySelector('[data-suggestions="cidade"]');
+    if (!box) return;
+    const term = normalizeSearch(input.value);
+    if (term.length < 2 || !state.municipios.length) {
+      box.classList.remove('open');
+      box.innerHTML = '';
+      return;
+    }
+    const starts = [];
+    const contains = [];
+    for (const item of state.municipios) {
+      if (item.search.startsWith(term)) starts.push(item);
+      else if (item.search.includes(term)) contains.push(item);
+      if (starts.length >= 8) break;
+    }
+    const items = [...starts, ...contains].slice(0, 10).map((m) => ({ ...m, label: `${m.cidade} · ${m.uf}` }));
+    box.innerHTML = items.length
+      ? items.map((item) => `<button type="button" class="prog-suggestion-item" data-suggest-type="cidade" data-cidade="${escapeHtml(item.cidade)}" data-uf="${escapeHtml(item.uf)}">${escapeHtml(item.label)}<small>${escapeHtml(item.estado)}</small></button>`).join('')
+      : '<button type="button" class="prog-suggestion-item" disabled>Nenhuma cidade encontrada</button>';
+    box.classList.toggle('open', !!items.length);
+  }
+
+  function handleVehicleInput(input) {
+    const box = input.closest('.prog-suggest-field')?.querySelector('[data-suggestions="veiculo"]');
+    if (!box) return;
+    const term = normalizeSearch(input.value);
+    if (!term.length || !state.veiculos.length) {
+      box.classList.remove('open');
+      box.innerHTML = '';
+      return;
+    }
+    const items = state.veiculos
+      .filter((v) => normalizeSearch(`${v.placa} ${v.label} ${v.detalhe}`).includes(term))
+      .slice(0, 10);
+    box.innerHTML = items.length
+      ? items.map((item) => `<button type="button" class="prog-suggestion-item" data-suggest-type="veiculo" data-placa="${escapeHtml(item.placa)}">${escapeHtml(item.label)}${item.detalhe ? `<small>${escapeHtml(item.detalhe)}</small>` : ''}</button>`).join('')
+      : '<button type="button" class="prog-suggestion-item" disabled>Nenhum veículo encontrado</button>';
+    box.classList.toggle('open', !!items.length);
+  }
+
+  function applySuggestion(button) {
+    const type = button.dataset.suggestType;
+    const tr = button.closest('tr');
+    if (type === 'cidade') {
+      const cidade = button.dataset.cidade || '';
+      const uf = button.dataset.uf || '';
+      const cidadeInput = tr?.querySelector('[data-city-input]');
+      const ufInput = tr?.querySelector('[data-uf-input]');
+      if (cidadeInput) cidadeInput.value = cidade;
+      if (ufInput) ufInput.value = uf;
+      cidadeInput?.classList.remove('prog-required-missing');
+      ufInput?.classList.remove('prog-required-missing');
+      closeAllSuggestions();
+      scheduleSaveRow(tr);
+      return;
+    }
+    if (type === 'veiculo') {
+      const placa = button.dataset.placa || '';
+      const input = tr?.querySelector('[data-vehicle-input]');
+      if (input) input.value = placa;
+      input?.classList.remove('prog-required-missing');
+      closeAllSuggestions();
+      scheduleSaveRow(tr);
+    }
+  }
+
+  function validateEstadiaRow(tr, showMessage = true) {
+    if (!tr) return true;
+    const tipo = String(tr.querySelector('[data-field="tipo_estadia"]')?.value || '').toUpperCase();
+    const precisaCidade = tipo === 'HOTEL';
+    const cidadeInput = tr.querySelector('[data-field="cidade"]');
+    const ufInput = tr.querySelector('[data-field="uf"]');
+    const ok = !precisaCidade || (String(cidadeInput?.value || '').trim() && String(ufInput?.value || '').trim().length === 2);
+    cidadeInput?.classList.toggle('prog-required-missing', !ok);
+    ufInput?.classList.toggle('prog-required-missing', !ok);
+    if (!ok && showMessage) setFeedback('Solicitação de HOTEL precisa ter cidade e UF selecionadas/preenchidas.', 'error');
+    return ok;
+  }
+
+  function validateDeslocamentoRow(tr, showMessage = true) {
+    if (!tr) return true;
+    const tipo = String(tr.querySelector('[data-deslocamento-tipo]')?.value || '').toUpperCase();
+    const precisaPlaca = TIPOS_DESLOCAMENTO_FROTA.has(tipo);
+    const placaInput = tr.querySelector('[data-vehicle-input]');
+    const placa = normalizePlate(placaInput?.value || '');
+    if (placaInput && placaInput.value) placaInput.value = placa;
+    const ok = !precisaPlaca || placa.length === 7;
+    placaInput?.classList.toggle('prog-required-missing', !ok);
+    if (!ok && showMessage) setFeedback('Deslocamento com MOTORISTA FROTA ou CARONA FROTA precisa ter a placa do veículo.', 'error');
+    return ok;
+  }
+
+  function validateRequiredBeforeSave() {
+    const invalid = [];
+    for (const [colabId, row] of state.maps.estadia.entries()) {
+      const tipo = String(row?.tipo_estadia || '').toUpperCase();
+      if (tipo === 'HOTEL' && (!String(row.cidade || '').trim() || String(row.uf || '').trim().length !== 2)) {
+        const colab = colabById(colabId);
+        invalid.push(`${colab?.nome || row.nome_colaborador || 'Colaborador'}: hotel sem cidade/UF`);
+      }
+    }
+    for (const [colabId, row] of state.maps.deslocamento.entries()) {
+      const tipo = String(row?.tipo_deslocamento || '').toUpperCase();
+      if (TIPOS_DESLOCAMENTO_FROTA.has(tipo) && normalizePlate(row.placa_veiculo || '').length !== 7) {
+        const colab = colabById(colabId);
+        invalid.push(`${colab?.nome || row.nome_colaborador || 'Colaborador'}: frota sem placa`);
+      }
+    }
+    const visibleRows = [...el.list.querySelectorAll('tr[data-table="programacao_estadia"],tr[data-table="programacao_deslocamento"]')];
+    for (const tr of visibleRows) {
+      if (tr.dataset.table === 'programacao_estadia' && !validateEstadiaRow(tr, false)) invalid.push('Há hotel visível sem cidade/UF.');
+      if (tr.dataset.table === 'programacao_deslocamento' && !validateDeslocamentoRow(tr, false)) invalid.push('Há frota visível sem placa.');
+    }
+    return [...new Set(invalid)];
   }
 
   function scheduleSaveRow(tr) {
@@ -891,7 +1136,9 @@ initProtectedPage('Programação', (content) => {
     container.querySelectorAll(`[${attr}]`).forEach((field) => {
       const key = field.getAttribute(attr);
       if (field.type === 'checkbox') payload[key] = !!field.checked;
-      else if (['km', 'valor', 'diarias'].includes(key)) payload[key] = toNumberBR(field.value);
+      else if (['km', 'valor'].includes(key)) payload[key] = toNumberBR(field.value);
+      else if (key === 'uf') payload[key] = String(field.value || '').trim().toUpperCase() || null;
+      else if (key === 'placa_veiculo') payload[key] = normalizePlate(field.value) || null;
       else payload[key] = field.value || null;
     });
     return payload;
@@ -902,6 +1149,9 @@ initProtectedPage('Programação', (content) => {
     const colab = colabById(tr.dataset.colabId);
     if (!table || !colab) return;
 
+    if (table === 'programacao_estadia' && !validateEstadiaRow(tr)) return;
+    if (table === 'programacao_deslocamento' && !validateDeslocamentoRow(tr)) return;
+
     const payload = {
       ...getFieldPayload(tr),
       programacao_id: state.programacaoId,
@@ -910,7 +1160,10 @@ initProtectedPage('Programação', (content) => {
       nome_colaborador: colab.nome,
     };
 
-    if (table === 'programacao_estadia') payload.tem_estadia = payload.tipo_estadia && payload.tipo_estadia !== 'NÃO PRECISA';
+    if (table === 'programacao_estadia') {
+      payload.tem_estadia = payload.tipo_estadia && payload.tipo_estadia !== 'NÃO PRECISA';
+      delete payload.diarias;
+    }
 
     const { data, error } = await supabase
       .from(table)
@@ -1029,6 +1282,11 @@ initProtectedPage('Programação', (content) => {
 
       const extraCards = [...el.list.querySelectorAll('.prog-extra-card[data-extra-id]')];
       for (const card of extraCards) await saveExtra(card, { silent: true });
+
+      const invalid = validateRequiredBeforeSave();
+      if (invalid.length) {
+        throw new Error(`Corrija antes de salvar: ${invalid.slice(0, 4).join(' | ')}${invalid.length > 4 ? '...' : ''}`);
+      }
 
       const { error } = await supabase
         .from('programacao_dia')
