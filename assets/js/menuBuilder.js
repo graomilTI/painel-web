@@ -115,6 +115,51 @@ function ensureOperationalSection(menuSections, userContext) {
   return sections;
 }
 
+
+const FINANCEIRO_FAILSAFE_ITEMS = [
+  {
+    code: 'financeiro',
+    label: 'Fluxo de Caixa',
+    path: 'financeiro',
+    aliases: ['FINANCEIRO', 'FLUXO_CAIXA', 'FINANCEIRO_FLUXO_CAIXA']
+  }
+];
+
+function ensureFinanceiroSection(menuSections, userContext) {
+  const sections = Array.isArray(menuSections)
+    ? menuSections.map((section) => ({
+        ...section,
+        items: (section.items || []).filter((item) => {
+          const itemCode = normalizeCode(item?.code || item?.label || item?.path);
+          const sectionCode = normalizeCode(section?.section);
+          return !(sectionCode === 'diretoria' && itemCode === 'financeiro');
+        }),
+      }))
+    : [];
+
+  const allowedCodes = buildAllowedCodeSet(userContext);
+  const fallbackItems = Boolean(userContext?.user?.is_master)
+    ? FINANCEIRO_FAILSAFE_ITEMS
+    : FINANCEIRO_FAILSAFE_ITEMS.filter((item) => isItemAllowed(item, allowedCodes));
+
+  if (!fallbackItems.length) return sections.filter((section) => section.items.length > 0);
+
+  const financeiroIndex = sections.findIndex((section) => normalizeCode(section.section) === 'financeiro');
+  if (financeiroIndex >= 0) {
+    fallbackItems.forEach((fallbackItem) => {
+      const exists = sections[financeiroIndex].items.some((item) => normalizeCode(item.code) === normalizeCode(fallbackItem.code));
+      if (!exists) sections[financeiroIndex].items.push(fallbackItem);
+    });
+    return sections.filter((section) => section.items.length > 0);
+  }
+
+  const relatoriosIndex = sections.findIndex((section) => normalizeCode(section.section) === 'relatorios');
+  const diretoriaIndex = sections.findIndex((section) => normalizeCode(section.section) === 'diretoria');
+  const insertAt = relatoriosIndex >= 0 ? relatoriosIndex + 1 : (diretoriaIndex >= 0 ? diretoriaIndex : sections.length);
+  sections.splice(insertAt, 0, { section: 'FINANCEIRO', items: fallbackItems });
+  return sections.filter((section) => section.items.length > 0);
+}
+
 const FROTAS_FAILSAFE_ITEMS = [
   {
     code: 'frotas_excesso_velocidade',
@@ -204,7 +249,7 @@ export function buildAllowedMenu(userContext) {
   if (!userContext) return [];
 
   if (userContext.user?.is_master) {
-    return ensureTiSection(ensureFrotasSection(ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext), userContext), userContext);
+    return ensureFinanceiroSection(ensureTiSection(ensureFrotasSection(ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext), userContext), userContext), userContext);
   }
 
   // Regra de segurança visual: perfil/setor GESTOR enxerga somente INÍCIO + GESTOR.
@@ -219,12 +264,12 @@ export function buildAllowedMenu(userContext) {
 
   const allowedCodes = buildAllowedCodeSet(userContext);
 
-  return ensureTiSection(ensureFrotasSection(ensureOperationalSection(PANEL_MENU
+  return ensureFinanceiroSection(ensureTiSection(ensureFrotasSection(ensureOperationalSection(PANEL_MENU
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => isItemAllowed(item, allowedCodes)),
     }))
-    .filter((section) => section.items.length > 0), userContext), userContext), userContext);
+    .filter((section) => section.items.length > 0), userContext), userContext), userContext), userContext);
 }
 
 export function flattenAllowedMenu(userContext) {
