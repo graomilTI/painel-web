@@ -467,16 +467,26 @@
     if (!placas.length) return list;
 
     try {
+      const desired = new Set(placas);
       const vehicleMap = new Map();
-      const chunkSize = 100;
-      for (let i = 0; i < placas.length; i += chunkSize) {
-        const chunk = placas.slice(i, i + chunkSize);
+      let from = 0;
+      const pageSize = 1000;
+
+      // Não filtra direto com .in('placa') porque a placa pode estar salva como ABC-1D23
+      // e o relatório vem como ABC1D23. A comparação é normalizada com onlyPlate().
+      while (from < 20000) {
         const { data, error } = await supabase
           .from('frotas_veiculos')
           .select('placa,motorista_atual,patrimonio_funcionario,coordenacao,supervisao,patrimonio_coordenacao,patrimonio_supervisao')
-          .in('placa', chunk);
+          .range(from, from + pageSize - 1);
         if (error) throw error;
-        (data || []).forEach((v) => vehicleMap.set(onlyPlate(v.placa), v));
+        const rowsPage = Array.isArray(data) ? data : [];
+        rowsPage.forEach((v) => {
+          const plate = onlyPlate(v.placa);
+          if (plate && desired.has(plate)) vehicleMap.set(plate, v);
+        });
+        if (rowsPage.length < pageSize) break;
+        from += pageSize;
       }
 
       return list.map((row) => {
