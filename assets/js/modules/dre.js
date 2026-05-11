@@ -14,7 +14,7 @@
     'TOTAL DESPESAS','TOTAL CUSTOS','CUSTO POR TONELADA','RECEITA POR TONELADA','MARGEM POR TONELADA',
     'CUSTO POR TONELADA DO VOLUME CLASSIFICADO','CUSTO POR TONELADA DO VOLUME TOTAL','RESULTADO POR TONELADA'
   ]);
-  const PERCENT_ROWS = new Set(['MARGEM BRUTA','MARGEM EBTIDA','EFICIÊNCIA OPERACIONAL','DESEMPENHO DA REGIONAL','DESEMPENHO GERAL DA EMPRESA']);
+  const PERCENT_ROWS = new Set(['MARGEM BRUTA','MARGEM EBTIDA','EFICIÊNCIA OPERACIONAL']);
   const VOLUME_ROWS = new Set(['VOLUME CLASSIFICADO (SEM CADÊNCIA)','VOLUME EMBARCADO + NHE + CAD','CARGAS']);
 
   const styles = `
@@ -321,7 +321,9 @@
       const date=p.data;
       const reg=mapReg(p.coordenacao);
       const m=monthFrom(date);
-      if(!date || !reg || !m || m.year!==year || isIgnored(reg) || isExcluded(reg)) continue;
+      // Produção por colaborador não deve considerar a coordenação GERAL.
+      // A conta fica: produzido ÷ (efetivos ativos + intermitentes/diaristas com produção).
+      if(!date || !reg || !m || m.year!==year || isIgnored(reg) || isExcluded(reg) || norm(reg)==='GERAL') continue;
       const key=`${date}|${reg}`;
       if(!prodByDateReg[key]) prodByDateReg[key]={date,reg,mi:m.month,tons:0,funcs:new Set()};
       prodByDateReg[key].tons += n(p.toneladas);
@@ -435,6 +437,7 @@
     const geralVolTotal=Array.from({length:12},(_,mi)=>sumMapMonth(prod.embarcado,mi));
     const cargas=reg?getArr(prod.cargas,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.cargas,mi));
     const prodColab=reg?getArr(prod.prodColab,reg):(prod.prodColabGeral || Array(12).fill(0));
+    const prodColabGeral=prod.prodColabGeral || Array(12).fill(0);
     const totalDesp=vals.despOp.map((_,mi)=>vals.despOp[mi]+vals.veic[mi]+vals.pessoal[mi]+vals.adm[mi]+vals.fin[mi]+vals.inv[mi]);
     const cptEmb=totalDesp.map((v,mi)=>div(v,volTotal[mi]));
     const cptClass=totalDesp.map((v,mi)=>div(v,volClass[mi]));
@@ -442,9 +445,12 @@
     const margemTon=vals.res.map((v,mi)=>div(v,volTotal[mi]));
     const resultadoTon=vals.res.map((v,mi)=>div(v,volTotal[mi]));
     const eficiencia=volTotal.map((v,mi)=>div(v,volClass[mi]));
-    const desempenhoRegional=volTotal.map((v,mi)=>div(v,volClass[mi]));
-    const desempenhoGeral=geralVolTotal.map((v,mi)=>div(v,geralVolClass[mi]));
-    return {main:rows, extras:{totalDesp,volClass,volEmb,volTotal,cargas,prodColab,cptEmb,cptClass,receitaTon,margemTon,resultadoTon,eficiencia,desempenhoRegional,desempenhoGeral}, vals};
+    // Desempenho por colaborador: toneladas produzidas ÷ pessoas consideradas.
+    // Regional = produzido da regional ÷ efetivos ativos + intermitentes/diaristas com produção.
+    // Geral = produzido total da empresa ÷ efetivos ativos + intermitentes/diaristas com produção, sem coordenação GERAL.
+    const desempenhoRegional=prodColab;
+    const desempenhoGeral=prodColabGeral;
+    return {main:rows, extras:{totalDesp,volClass,volEmb,volTotal,cargas,prodColab,prodColabGeral,cptEmb,cptClass,receitaTon,margemTon,resultadoTon,eficiencia,desempenhoRegional,desempenhoGeral}, vals};
   }
 
   function buildDre(){
@@ -843,13 +849,19 @@
       {label:'Custo por tonelada do volume Classificado', arr:ex.cptClass, type:'money', total:()=>div(total(ex.totalDesp),total(ex.volClass))},
       {label:'Volume Total (Class+CAD+FOB+CIF)', arr:volumeTotal, type:'num', total:()=>total(volumeTotal)},
       {label:'Custo por Tonelada do Volume Total', arr:ex.cptEmb, type:'money', total:()=>div(total(ex.totalDesp),total(volumeTotal))},
-      {label:'Resultado por Tonelada', arr:ex.resultadoTon || ex.margemTon, type:'money', total:()=>div(total(vals.res||[]),total(volumeTotal))},
-      {label:'Produção por Colaborador', arr:ex.prodColab, type:'avg', total:()=>avgNonZero(ex.prodColab)},
-      {label:'Desempenho da Regional', arr:ex.desempenhoRegional || ex.eficiencia, type:'pct', total:()=>div(total(volumeTotal),total(ex.volClass))},
-      {label:'Desempenho Geral da Empresa', arr:ex.desempenhoGeral || ex.eficiencia, type:'pct', total:()=>div(total(ex.desempenhoGeral || []), (ex.desempenhoGeral || []).filter(v=>n(v)>0).length || 1)}
+      {label:'Resultado por Tonelada', arr:ex.resultadoTon || ex.margemTon, type:'money', total:()=>div(total(vals.res||[]),total(volumeTotal))}
+    ];
+    const prodRows=[
+      {label:'Desempenho da Regional', arr:ex.desempenhoRegional || ex.prodColab || Array(12).fill(0), type:'num', total:()=>avgNonZero(ex.desempenhoRegional || ex.prodColab || [])},
+      {label:'Desempenho Geral da Empresa', arr:ex.desempenhoGeral || ex.prodColabGeral || Array(12).fill(0), type:'num', total:()=>avgNonZero(ex.desempenhoGeral || ex.prodColabGeral || [])}
     ];
     const format=(type,v)=> type==='money'?fmtMoney(v):type==='pct'?fmtPct(v):fmtNum(v);
-    return `<div class="dre-extra"><div class="dre-extra-box"><h4>INDICADORES OPERACIONAIS</h4><table><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL / MÉDIA</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${safe(row.label)}</td>${(row.arr||Array(12).fill(0)).map(v=>`<td>${format(row.type,v)}</td>`).join('')}<td>${format(row.type,row.total())}</td></tr>`).join('')}</tbody></table></div></div>`;
+    const tableRows=(list)=>list.map(row=>`<tr><td>${safe(row.label)}</td>${(row.arr||Array(12).fill(0)).map(v=>`<td>${format(row.type,v)}</td>`).join('')}<td>${format(row.type,row.total())}</td></tr>`).join('');
+    const head=`<thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL / MÉDIA</th></tr></thead>`;
+    return `<div class="dre-extra">
+      <div class="dre-extra-box"><h4>INDICADORES OPERACIONAIS</h4><table>${head}<tbody>${tableRows(rows)}</tbody></table></div>
+      <div class="dre-extra-box"><h4>PRODUÇÃO POR COLABORADOR</h4><table>${head}<tbody>${tableRows(prodRows)}</tbody></table></div>
+    </div>`;
   }
 
   function renderCharts(container, report){
