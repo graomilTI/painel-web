@@ -450,7 +450,52 @@
 
 
   function getDriverFromExcesso(row) {
-    return row?.patrimonio_funcionario || row?.motorista_planilha || '';
+    return row?.patrimonio_funcionario
+      || row?.motorista_atual
+      || row?.veiculo_motorista_atual
+      || row?.patrimonio_funcionario_veiculo
+      || row?.motorista_planilha
+      || '';
+  }
+
+  async function enrichExcessosWithVehicles(rows, opts = {}) {
+    const supabase = opts?.supabase || window.supabase;
+    if (!supabase || typeof supabase.from !== 'function') return Array.isArray(rows) ? rows : [];
+
+    const list = Array.isArray(rows) ? rows : [];
+    const placas = Array.from(new Set(list.map((r) => onlyPlate(r.placa)).filter(Boolean)));
+    if (!placas.length) return list;
+
+    try {
+      const vehicleMap = new Map();
+      const chunkSize = 100;
+      for (let i = 0; i < placas.length; i += chunkSize) {
+        const chunk = placas.slice(i, i + chunkSize);
+        const { data, error } = await supabase
+          .from('frotas_veiculos')
+          .select('placa,motorista_atual,patrimonio_funcionario,coordenacao,supervisao,patrimonio_coordenacao,patrimonio_supervisao')
+          .in('placa', chunk);
+        if (error) throw error;
+        (data || []).forEach((v) => vehicleMap.set(onlyPlate(v.placa), v));
+      }
+
+      return list.map((row) => {
+        const v = vehicleMap.get(onlyPlate(row.placa));
+        if (!v) return row;
+        const motorista = row.patrimonio_funcionario || v.patrimonio_funcionario || v.motorista_atual || row.motorista_planilha || '';
+        return {
+          ...row,
+          motorista_atual: v.motorista_atual || row.motorista_atual || '',
+          patrimonio_funcionario: motorista,
+          coordenacao: row.coordenacao || v.coordenacao || v.patrimonio_coordenacao || '',
+          supervisao: row.supervisao || v.supervisao || v.patrimonio_supervisao || '',
+          status_cruzamento: motorista ? 'MOTORISTA_IDENTIFICADO' : (row.status_cruzamento || 'PENDENTE_CONFERENCIA')
+        };
+      });
+    } catch (err) {
+      console.warn('[FROTAS] Não foi possível complementar excessos com frotas_veiculos:', err);
+      return list;
+    }
   }
 
   function groupImportedExcessos(rows) {
@@ -620,7 +665,7 @@
         .order('data_evento', { ascending: false })
         .limit(1000);
       if (error) throw error;
-      state.importedExcessos = Array.isArray(data) ? data : [];
+      state.importedExcessos = await enrichExcessosWithVehicles(Array.isArray(data) ? data : [], opts);
     } catch (err) {
       console.warn('[FROTAS] Não foi possível carregar excessos importados:', err);
       state.importedExcessos = [];
