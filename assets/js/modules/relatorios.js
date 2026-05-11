@@ -1477,7 +1477,7 @@
       const iObs = pickHeaderIndex(headers, ['Observações', 'Observacoes']);
 
       diagnostics.push({ sheetName, headerRow: headerRow + 1, headers: headers.slice(0, 40), indexes: { iData, iCoordenacao, iTon, iEmbarcado, iTotalEmbTeste, iCargas } });
-      if (iData < 0 || iCoordenacao < 0 || iTon < 0 || (iEmbarcado < 0 && iTotalEmbTeste < 0)) continue;
+      if (iData < 0 || iCoordenacao < 0 || iTon < 0 || iEmbarcado < 0) continue;
 
       rows.slice(headerRow + 1).forEach((row) => {
         const data = toIsoDate(row?.[iData]);
@@ -1509,7 +1509,11 @@
           valor_ton: iValorTon >= 0 ? normalizeNumberBr(row?.[iValorTon]) || 0 : 0,
           cadencia: iCadencia >= 0 ? normalizeNumberBr(row?.[iCadencia]) || 0 : 0,
           tons_cadencia: iTonsCad >= 0 ? normalizeNumberBr(row?.[iTonsCad]) || 0 : 0,
-          embarcado: embarcadoBase ?? totalEmbTeste ?? 0,
+          // Regra oficial do DRE:
+          // Toneladas = Tons sem cadência / Volume Classificado
+          // Embarcado = Tons com cadência / Volume Embarcado + NHE + cad
+          // Total Embarcado + Teste fica salvo apenas para auditoria, não alimenta o DRE.
+          embarcado: embarcadoBase ?? 0,
           valor_embarcado: iValorEmbarcado >= 0 ? normalizeNumberBr(row?.[iValorEmbarcado]) || 0 : 0,
           valor_afla: iValorAfla >= 0 ? normalizeNumberBr(row?.[iValorAfla]) || 0 : 0,
           total_afla: iTotalAfla >= 0 ? normalizeNumberBr(row?.[iTotalAfla]) || 0 : 0,
@@ -1544,7 +1548,7 @@
     const finalPeriod = period || periodFromEntry;
     if (!rows.length) {
       const detail = (diagnostics || []).map((d) => `${d.sheetName} linha ${d.headerRow}: ${d.headers.join(' | ')}`).join(' || ');
-      throw new Error(`A planilha de Resultado Diário não possui linhas válidas. Cabeçalhos esperados: Data, Coordenação, Toneladas e Embarcado/Total Embarcado + Teste. Detectado: ${detail || 'nenhum cabeçalho'}`);
+      throw new Error(`A planilha de Resultado Diário não possui linhas válidas. Cabeçalhos esperados: Data, Coordenação, Toneladas e Embarcado. Detectado: ${detail || 'nenhum cabeçalho'}`);
     }
 
     if (finalPeriod?.inicio && finalPeriod?.fim) {

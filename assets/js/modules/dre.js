@@ -548,6 +548,49 @@
     return target;
   }
 
+  function setArrVal(map, reg, mi, val){
+    if(!map[reg]) map[reg]=Array(12).fill(0);
+    map[reg][mi]=n(val);
+  }
+
+  function getArrVal(map, reg, mi){
+    return n(map?.[reg]?.[mi]);
+  }
+
+  // Resultado Diário é mensal. Regra oficial:
+  // - Toneladas = Volume Classificado (sem cadência)
+  // - Embarcado = Volume Embarcado + NHE + cad
+  // Se houver o mesmo mês em mais de uma fonte, usa a fonte mais completa
+  // por regional+mês, sem somar duplicado.
+  function mergeProducaoMelhorMes(target, source){
+    if(!source) return target;
+    const regs=new Set([
+      ...Object.keys(target.classificado||{}),
+      ...Object.keys(source.classificado||{}),
+      ...Object.keys(target.embarcado||{}),
+      ...Object.keys(source.embarcado||{})
+    ]);
+    for(const reg of regs){
+      for(let mi=0;mi<12;mi++){
+        const atualClass=getArrVal(target.classificado, reg, mi);
+        const novoClass=getArrVal(source.classificado, reg, mi);
+        const atualEmb=getArrVal(target.embarcado, reg, mi);
+        const novoEmb=getArrVal(source.embarcado, reg, mi);
+        const atualPontuacao=Math.abs(atualClass)+Math.abs(atualEmb);
+        const novoPontuacao=Math.abs(novoClass)+Math.abs(novoEmb);
+        if(novoPontuacao > atualPontuacao){
+          setArrVal(target.classificado, reg, mi, novoClass);
+          setArrVal(target.embarcado, reg, mi, novoEmb);
+          setArrVal(target.cargas, reg, mi, getArrVal(source.cargas, reg, mi));
+          setArrVal(target.valorEmbarcado, reg, mi, getArrVal(source.valorEmbarcado, reg, mi));
+          setArrVal(target.testes, reg, mi, getArrVal(source.testes, reg, mi));
+        }
+      }
+    }
+    mergeSet(target.regionais, source.regionais);
+    return target;
+  }
+
   async function processReports(opts,setStatus){
     state.busy=true; setStatus('Buscando relatórios ativos importados...');
     state.reports=await getLatestReports(opts.supabase);
@@ -563,16 +606,16 @@
 
     for(const report of state.reports){
       const nome=report.nome_arquivo||report.arquivo_nome_original||report.tipo;
-
-      // Resultado Diário agora é fonte oficial pela tabela relatorio_resultado_diario.
-      // Não baixamos mais o XLSX aqui, porque arquivos antigos no Storage podem estar indisponíveis
-      // e isso travava o DRE antes de ler o banco consolidado.
-      if(report.tipo==='resultado-diario') {
+      setStatus(`Processando ${nome}...`);
+      let wb=null;
+      try{
+        wb=await readWorkbook(opts.supabase,report);
+      }catch(err){
+        console.warn('DRE: falha ao baixar/processar relatório. Ignorando fonte e continuando.', nome, err);
+        if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
+        state.sourceAudit.ignored.push({tipo:report.tipo,nome,status:'falha_download',motivo:err?.message||String(err)});
         continue;
       }
-
-      setStatus(`Processando ${nome}...`);
-      const wb=await readWorkbook(opts.supabase,report);
 
       if(report.tipo==='despesas') {
         mergeDespesas(src.desp, parseDespesas(sheetRows(wb,['Despesas por Regional','Despesas','DESPESAS','Despesas_regionais'])));
@@ -583,7 +626,7 @@
       }
 
       if(report.tipo==='resultado-diario') {
-        mergeProducao(src.prod, parseResultadoDiario(sheetRows(wb,['Resultado Diário','Resultado Diario','Produção','Producao','Resultado'])));
+        mergeProducaoMelhorMes(src.prod, parseResultadoDiario(sheetRows(wb,['Resultado Diário','Resultado Diario','Produção','Producao','Resultado'])));
       }
 
       if(report.tipo==='caixa_fornecedor') {
@@ -595,15 +638,15 @@
     setStatus('Conferindo produção consolidada no banco de dados...');
     const prodDb = await loadResultadoDiarioFromDb(opts.supabase, state.year);
     if(prodDb.totalRows > 0){
-      // O Resultado Diário importado pelo painel é gravado na tabela relatorio_resultado_diario.
-      // Para evitar duplicidade com arquivos antigos em relatorios_importacoes, o banco vira a fonte oficial da produção.
-      src.prod = prodDb;
+      // Mescla mensal segura: se abril foi importado no banco agora, entra no DRE;
+      // se janeiro/fevereiro/março estão mais completos nos arquivos mensais antigos, mantém esses valores.
+      mergeProducaoMelhorMes(src.prod, prodDb);
       if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
       state.sourceAudit.used.push({
         tipo: 'resultado-diario-db',
         nome: `relatorio_resultado_diario (${prodDb.totalRows} linhas)`,
-        status: 'fonte_oficial',
-        modo: 'replace_producao',
+        status: 'fonte_mensal_segura',
+        modo: 'merge_best_month',
         created_at: new Date().toISOString()
       });
     }
