@@ -11,9 +11,10 @@
     'TOTAL DE DESPESAS OPERACIONAIS','DESP COM VEICULOS+COMBUSTIVEIS','TOTAL DESPESAS PESSOAL',
     'LUCRO BRUTO','DESP ADM + COMERCIAL','LUCRO OPERACIONAL (EBTIDA)','DESPESAS FINANCEIRAS',
     'LUCRO LÍQUIDO','EMPRESTIMOS TERCEIROS','ANTECIPAÇÕES A FORNECEDORES','INVESTIMENTOS','RESULTADO FINAL',
-    'TOTAL DESPESAS','CUSTO POR TONELADA','RECEITA POR TONELADA','MARGEM POR TONELADA'
+    'TOTAL DESPESAS','TOTAL CUSTOS','CUSTO POR TONELADA','RECEITA POR TONELADA','MARGEM POR TONELADA',
+    'CUSTO POR TONELADA DO VOLUME CLASSIFICADO','CUSTO POR TONELADA DO VOLUME TOTAL','RESULTADO POR TONELADA'
   ]);
-  const PERCENT_ROWS = new Set(['MARGEM BRUTA','MARGEM EBTIDA','EFICIÊNCIA OPERACIONAL']);
+  const PERCENT_ROWS = new Set(['MARGEM BRUTA','MARGEM EBTIDA','EFICIÊNCIA OPERACIONAL','DESEMPENHO DA REGIONAL','DESEMPENHO GERAL DA EMPRESA']);
   const VOLUME_ROWS = new Set(['VOLUME CLASSIFICADO (SEM CADÊNCIA)','VOLUME EMBARCADO + NHE + CAD','CARGAS']);
 
   const styles = `
@@ -427,16 +428,23 @@
     push('INVESTIMENTOS',vals.inv); push('RESULTADO FINAL',vals.res); rows.push({label:'MARGEM BRUTA',values:vals.mb,total:div(total(vals.lb),total(vals.rec))}); rows.push({label:'MARGEM EBTIDA',values:vals.me,total:div(total(vals.ebtida),total(vals.rec))});
 
     const volClass=reg?getArr(prod.classificado,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.classificado,mi));
-    const volEmb=reg?getArr(prod.embarcado,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.embarcado,mi));
+    // Volume Total no DRE: coluna Embarcado do Resultado Diário, que consolida Class + CAD + FOB + CIF.
+    const volTotal=reg?getArr(prod.embarcado,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.embarcado,mi));
+    const volEmb=volTotal; // compatibilidade com gráficos/exportações antigas
+    const geralVolClass=Array.from({length:12},(_,mi)=>sumMapMonth(prod.classificado,mi));
+    const geralVolTotal=Array.from({length:12},(_,mi)=>sumMapMonth(prod.embarcado,mi));
     const cargas=reg?getArr(prod.cargas,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.cargas,mi));
     const prodColab=reg?getArr(prod.prodColab,reg):(prod.prodColabGeral || Array(12).fill(0));
     const totalDesp=vals.despOp.map((_,mi)=>vals.despOp[mi]+vals.veic[mi]+vals.pessoal[mi]+vals.adm[mi]+vals.fin[mi]+vals.inv[mi]);
-    const cptEmb=totalDesp.map((v,mi)=>div(v,volEmb[mi]));
+    const cptEmb=totalDesp.map((v,mi)=>div(v,volTotal[mi]));
     const cptClass=totalDesp.map((v,mi)=>div(v,volClass[mi]));
-    const receitaTon=vals.rec.map((v,mi)=>div(v,volEmb[mi]));
-    const margemTon=vals.res.map((v,mi)=>div(v,volEmb[mi]));
-    const eficiencia=volEmb.map((v,mi)=>div(v,volClass[mi]));
-    return {main:rows, extras:{totalDesp,volClass,volEmb,cargas,prodColab,cptEmb,cptClass,receitaTon,margemTon,eficiencia}, vals};
+    const receitaTon=vals.rec.map((v,mi)=>div(v,volTotal[mi]));
+    const margemTon=vals.res.map((v,mi)=>div(v,volTotal[mi]));
+    const resultadoTon=vals.res.map((v,mi)=>div(v,volTotal[mi]));
+    const eficiencia=volTotal.map((v,mi)=>div(v,volClass[mi]));
+    const desempenhoRegional=volTotal.map((v,mi)=>div(v,volClass[mi]));
+    const desempenhoGeral=geralVolTotal.map((v,mi)=>div(v,geralVolClass[mi]));
+    return {main:rows, extras:{totalDesp,volClass,volEmb,volTotal,cargas,prodColab,cptEmb,cptClass,receitaTon,margemTon,resultadoTon,eficiencia,desempenhoRegional,desempenhoGeral}, vals};
   }
 
   function buildDre(){
@@ -706,7 +714,7 @@
 
   // Resultado Diário é mensal. Regra oficial:
   // - Toneladas = Volume Classificado (sem cadência)
-  // - Embarcado = Volume Embarcado + NHE + cad
+  // - Volume Total = Class + CAD + FOB + CIF
   // Se houver o mesmo mês em mais de uma fonte, usa a fonte mais completa
   // por regional+mês, sem somar duplicado.
   function mergeProducaoMelhorMes(target, source){
@@ -824,19 +832,24 @@
   }
   function renderExtras(ex, reportForTotals=null){
     if(!ex) return '';
+    const report = reportForTotals || activeReport() || {};
+    const vals = report.vals || {};
+    const volumeTotal = ex.volTotal || ex.volEmb || Array(12).fill(0);
     const rows=[
-      ['Total Despesas',ex.totalDesp,'money'],
-      ['Volume Classificado (sem cadência)',ex.volClass,'num'],
-      ['Volume Embarcado + NHE + cad',ex.volEmb,'num'],
-      ['Produzido por colaborador',ex.prodColab,'avg'],
-      ['Custo por tonelada - classificado',ex.cptClass,'money'],
-      ['Custo por tonelada - embarcado',ex.cptEmb,'money'],
-      ['Receita por tonelada',ex.receitaTon,'money'],
-      ['Margem por tonelada',ex.margemTon,'money'],
-      ['Cargas',ex.cargas,'num']
+      {label:'Receita Líquida', arr:vals.rec || Array(12).fill(0), type:'money', total:()=>total(vals.rec||[])},
+      {label:'Total Custos', arr:ex.totalDesp, type:'money', total:()=>total(ex.totalDesp)},
+      {label:'Resultado', arr:vals.res || Array(12).fill(0), type:'money', total:()=>total(vals.res||[])},
+      {label:'Volume Classificado', arr:ex.volClass, type:'num', total:()=>total(ex.volClass)},
+      {label:'Custo por tonelada do volume Classificado', arr:ex.cptClass, type:'money', total:()=>div(total(ex.totalDesp),total(ex.volClass))},
+      {label:'Volume Total (Class+CAD+FOB+CIF)', arr:volumeTotal, type:'num', total:()=>total(volumeTotal)},
+      {label:'Custo por Tolenada do Volume Total', arr:ex.cptEmb, type:'money', total:()=>div(total(ex.totalDesp),total(volumeTotal))},
+      {label:'Resultado por Tonelada', arr:ex.resultadoTon || ex.margemTon, type:'money', total:()=>div(total(vals.res||[]),total(volumeTotal))},
+      {label:'Produção por Colaborador', arr:ex.prodColab, type:'avg', total:()=>avgNonZero(ex.prodColab)},
+      {label:'Desempenho da Regional', arr:ex.desempenhoRegional || ex.eficiencia, type:'pct', total:()=>div(total(volumeTotal),total(ex.volClass))},
+      {label:'Desempenho Geral da Empresa', arr:ex.desempenhoGeral || ex.eficiencia, type:'pct', total:()=>div(total(ex.desempenhoGeral || []), (ex.desempenhoGeral || []).filter(v=>n(v)>0).length || 1)}
     ];
     const format=(type,v)=> type==='money'?fmtMoney(v):type==='pct'?fmtPct(v):fmtNum(v);
-    return `<div class="dre-extra"><div class="dre-extra-box"><h4>INDICADORES OPERACIONAIS</h4><table><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL / MÉDIA</th></tr></thead><tbody>${rows.map(([label,arr,type])=>{const totalVal=type==='avg'?avgNonZero(arr):type==='pct'?div(total(ex.volEmb),total(ex.volClass)):type==='money'&&label.includes('tonelada')?div(label.includes('Receita')?total((reportForTotals||activeReport())?.vals?.rec):label.includes('Margem')?total((reportForTotals||activeReport())?.vals?.res):total(ex.totalDesp), label.includes('classificado')?total(ex.volClass):total(ex.volEmb)):total(arr); return `<tr><td>${safe(label)}</td>${arr.map(v=>`<td>${format(type,v)}</td>`).join('')}<td>${format(type,totalVal)}</td></tr>`;}).join('')}</tbody></table></div></div>`;
+    return `<div class="dre-extra"><div class="dre-extra-box"><h4>INDICADORES OPERACIONAIS</h4><table><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL / MÉDIA</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${safe(row.label)}</td>${(row.arr||Array(12).fill(0)).map(v=>`<td>${format(row.type,v)}</td>`).join('')}<td>${format(row.type,row.total())}</td></tr>`).join('')}</tbody></table></div></div>`;
   }
 
   function renderCharts(container, report){
@@ -847,7 +860,7 @@
     const volClass=report.extras?.volClass||[]; const volEmb=report.extras?.volEmb||[]; const tClass=total(volClass); const tEmb=total(volEmb); const maxVol=Math.max(tClass,tEmb,1);
     container.querySelector('#dreCharts').innerHTML=`
       <div class="dre-chart"><h3>Resultado final mês a mês</h3><p>Visão rápida de lucro/prejuízo mensal.</p><div class="dre-bars">${bars}</div><div class="dre-chart-labels">${MESES.map(m=>`<span>${m.slice(0,3)}</span>`).join('')}</div></div>
-      <div class="dre-chart"><h3>Eficiência operacional</h3><p>Toneladas = volume classificado · Embarcado = produção efetiva.</p><div class="dre-volume-row"><strong>Classificado</strong><div class="dre-track"><div class="dre-fill secondary" style="width:${Math.min(100,tClass/maxVol*100)}%"></div></div></div><div class="dre-volume-row"><strong>Embarcado</strong><div class="dre-track"><div class="dre-fill" style="width:${Math.min(100,tEmb/maxVol*100)}%"></div></div></div><div class="dre-cards" style="grid-template-columns:repeat(2,1fr);margin:16px 0 0"><div class="dre-card"><span>Volume classificado</span><strong>${fmtNum(tClass)}</strong></div><div class="dre-card"><span>Volume embarcado</span><strong>${fmtNum(tEmb)}</strong><small>${fmtPct(div(tEmb,tClass))} de conversão</small></div></div></div>`;
+      <div class="dre-chart"><h3>Eficiência operacional</h3><p>Toneladas = volume classificado · Volume Total = Class + CAD + FOB + CIF.</p><div class="dre-volume-row"><strong>Classificado</strong><div class="dre-track"><div class="dre-fill secondary" style="width:${Math.min(100,tClass/maxVol*100)}%"></div></div></div><div class="dre-volume-row"><strong>Total</strong><div class="dre-track"><div class="dre-fill" style="width:${Math.min(100,tEmb/maxVol*100)}%"></div></div></div><div class="dre-cards" style="grid-template-columns:repeat(2,1fr);margin:16px 0 0"><div class="dre-card"><span>Volume classificado</span><strong>${fmtNum(tClass)}</strong></div><div class="dre-card"><span>Volume total</span><strong>${fmtNum(tEmb)}</strong><small>${fmtPct(div(tEmb,tClass))} de desempenho</small></div></div></div>`;
   }
 
   function renderReport(container){
@@ -856,11 +869,12 @@
     const rec=report?.main.find(r=>r.label==='RECEITA LÍQUIDA')?.total||0;
     const res=report?.main.find(r=>r.label==='RESULTADO FINAL')?.total||0;
     const eb=report?.main.find(r=>r.label==='LUCRO OPERACIONAL (EBTIDA)')?.total||0;
-    const volEmb=total(report?.extras?.volEmb||[]); const volClass=total(report?.extras?.volClass||[]);
-    const cpt=div(total(report?.extras?.totalDesp||[]),volEmb);
-    container.querySelector('#dreCards').innerHTML=`<div class="dre-card"><span>Receita Líquida</span><strong>${fmtMoney(rec)}</strong></div><div class="dre-card ${eb>=0?'positive':'negative'}"><span>EBTIDA</span><strong>${fmtMoney(eb)}</strong></div><div class="dre-card ${res>=0?'positive':'negative'}"><span>Resultado Final</span><strong>${fmtMoney(res)}</strong></div><div class="dre-card"><span>Volume Embarcado</span><strong>${fmtNum(volEmb)}</strong><small>Classificado: ${fmtNum(volClass)}</small></div><div class="dre-card"><span>Custo / Ton</span><strong>${fmtMoney(cpt)}</strong><small>Eficiência: ${fmtPct(div(volEmb,volClass))}</small></div>`;
+    const volEmb=total(report?.extras?.volTotal||report?.extras?.volEmb||[]); const volClass=total(report?.extras?.volClass||[]);
+    const totalCustos=total(report?.extras?.totalDesp||[]);
+    const cpt=div(totalCustos,volEmb);
+    container.querySelector('#dreCards').innerHTML=`<div class="dre-card"><span>Receita Líquida</span><strong>${fmtMoney(rec)}</strong></div><div class="dre-card"><span>Total Custos</span><strong>${fmtMoney(totalCustos)}</strong></div><div class="dre-card ${res>=0?'positive':'negative'}"><span>Resultado</span><strong>${fmtMoney(res)}</strong></div><div class="dre-card"><span>Volume Total</span><strong>${fmtNum(volEmb)}</strong><small>Classificado: ${fmtNum(volClass)}</small></div><div class="dre-card"><span>Custo / Ton Volume Total</span><strong>${fmtMoney(cpt)}</strong><small>Desempenho: ${fmtPct(div(volEmb,volClass))}</small></div>`;
     renderCharts(container,report);
-    container.querySelector('#dreReport').innerHTML=renderReportHtml(title, `Ano ${state.year} · Toneladas = Volume Classificado · Embarcado = Volume Embarcado + NHE + cad`, report);
+    container.querySelector('#dreReport').innerHTML=renderReportHtml(title, `Ano ${state.year} · Toneladas = Volume Classificado · Volume Total = Class + CAD + FOB + CIF`, report);
     const sel=container.querySelector('#regionalSelect');
     sel.innerHTML=(state.data?.regionais||[]).map(r=>`<option value="${safe(r)}" ${r===state.regional?'selected':''}>${safe(r)}</option>`).join('');
     sel.disabled=state.tab!=='regional';
@@ -917,7 +931,7 @@
         const report=state.data.regional[reg];
         const article=document.createElement('article');
         article.className='dre-report';
-        article.innerHTML=renderReportHtml(`DRE Regional - ${reg}`, `Ano ${state.year} · Despesas GERAL rateadas · Toneladas = Volume Classificado · Embarcado = Volume Embarcado + NHE + cad`, report);
+        article.innerHTML=renderReportHtml(`DRE Regional - ${reg}`, `Ano ${state.year} · Despesas GERAL rateadas · Toneladas = Volume Classificado · Volume Total = Class + CAD + FOB + CIF`, report);
         hidden.innerHTML='';
         hidden.appendChild(article);
         const blob=await reportNodeToPdfBlob(article);
