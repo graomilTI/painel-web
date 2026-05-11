@@ -473,7 +473,8 @@
       .limit(500);
     if(error) throw error;
 
-    const { chosen, ignored } = chooseReportsForDre(data || []);
+    state.allImports = data || [];
+    const { chosen, ignored } = chooseReportsForDre(state.allImports);
     state.sourceAudit = {
       used: chosen.map(r => ({
         id: r.id,
@@ -566,6 +567,54 @@
     mergeSet(target.regionais, source.regionais);
   }
 
+  function clearProducaoMonth(target, mi){
+    if(!target) return;
+    const maps=['classificado','embarcado','cargas','valorEmbarcado','testes'];
+    for(const mapName of maps){
+      for(const arr of Object.values(target[mapName] || {})){
+        if(Array.isArray(arr)) arr[mi] = 0;
+      }
+    }
+  }
+
+  function overlayProducaoMonth(target, source, mi){
+    if(!target || !source || producaoMonthTotal(source, mi) <= 0) return false;
+    clearProducaoMonth(target, mi);
+    copyProducaoMonth(target, source, mi);
+    return true;
+  }
+
+  function resultadoDiarioCandidates(){
+    return (state.allImports || [])
+      .filter(r => isActiveImport(r) && normalizeReportTipo(null, r) === 'resultado-diario')
+      .sort((a,b) => reportTime(a) - reportTime(b));
+  }
+
+  async function buildResultadoDiarioOverlay(opts, setStatus){
+    const out={classificado:{},embarcado:{},cargas:{},valorEmbarcado:{},testes:{},regionais:new Set()};
+    const candidates = resultadoDiarioCandidates();
+    const used=[];
+
+    for(const report of candidates){
+      const nome=reportLabel(report);
+      setStatus(`Conferindo produção importada: ${safe(nome)}...`);
+      try{
+        const wb=await readWorkbook(opts.supabase, { ...report, tipo:'resultado-diario' });
+        const parsed=parseResultadoDiario(sheetRows(wb,['Resultado Diário','Resultado Diario','Produção','Producao','Resultado']));
+        const meses=[];
+        for(let mi=0; mi<12; mi++){
+          if(overlayProducaoMonth(out, parsed, mi)) meses.push(MESES[mi]);
+        }
+        if(meses.length) used.push(`${nome} (${meses.join(', ')})`);
+      }catch(err){
+        console.warn('DRE: falha ao ler Resultado Diário importado.', nome, err);
+      }
+    }
+
+    out.usedReports = used;
+    return out;
+  }
+
   async function processReports(opts,setStatus){
     state.busy=true; setStatus('Buscando relatórios ativos importados...');
     state.reports=await getLatestReports(opts.supabase);
@@ -592,9 +641,8 @@
         mergeNF(src.nf, parseNF(sheetRows(wb,['Faturamento','Notas Fiscais','NF','NFe','NFSe'])));
       }
 
-      if(report.tipo==='resultado-diario') {
-        mergeProducao(src.prod, parseResultadoDiario(sheetRows(wb,['Resultado Diário','Resultado Diario','Produção','Producao','Resultado'])));
-      }
+      // Resultado Diário é tratado em uma etapa própria por mês, usando o upload mais recente de cada período.
+      // Isso evita duplicar meses antigos e garante que um novo upload de abril/maio substitua o mês correto.
 
       if(report.tipo==='caixa_fornecedor') {
         const ant = parseAntecipacoes(sheetRows(wb,['Antecipações','Antecipacoes','Caixa Fornecedor']));
@@ -602,32 +650,36 @@
       }
     }
 
-    setStatus('Conferindo produção consolidada no banco de dados...');
-    const prodFiles = src.prod;
+    setStatus('Conferindo produção consolidada no banco e nos uploads...');
+    const prodFiles = await buildResultadoDiarioOverlay(opts, setStatus);
     const prodDb = await loadResultadoDiarioFromDb(opts.supabase, state.year);
-    if(prodDb.totalRows > 0){
-      // O banco é a fonte principal, mas alguns uploads recentes podem ainda não estar gravados em relatorio_resultado_diario.
-      // Nesses casos, preenche somente os meses que estão zerados no banco com o Resultado Diário carregado dos relatórios.
-      const mesesPreenchidos=[];
-      for(let mi=0; mi<12; mi++){
-        const dbTotal = producaoMonthTotal(prodDb, mi);
-        const fileTotal = producaoMonthTotal(prodFiles, mi);
-        if(dbTotal <= 0 && fileTotal > 0){
-          copyProducaoMonth(prodDb, prodFiles, mi);
-          mesesPreenchidos.push(MESES[mi]);
-        }
-      }
 
-      src.prod = prodDb;
-      if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
-      state.sourceAudit.used.push({
-        tipo: 'resultado-diario-db',
-        nome: `relatorio_resultado_diario (${prodDb.totalRows} linhas)${mesesPreenchidos.length ? ' + relatório para ' + mesesPreenchidos.join(', ') : ''}`,
-        status: 'fonte_oficial',
-        modo: mesesPreenchidos.length ? 'banco_com_complemento_mes_zerado' : 'replace_producao',
-        created_at: new Date().toISOString()
-      });
+    // Base: banco consolidado. Overlay: último upload de Resultado Diário por mês.
+    // Preferimos o upload mensal quando ele existe, pois o usuário acabou de importar o arquivo pelo painel
+    // e nem sempre a rotina backend já materializou esse mês em relatorio_resultado_diario.
+    const prodFinal = prodDb.totalRows > 0 ? prodDb : {classificado:{},embarcado:{},cargas:{},valorEmbarcado:{},testes:{},regionais:new Set()};
+    const mesesUpload=[];
+    const mesesBanco=[];
+    for(let mi=0; mi<12; mi++){
+      const fileTotal = producaoMonthTotal(prodFiles, mi);
+      const dbTotal = producaoMonthTotal(prodDb, mi);
+      if(fileTotal > 0){
+        overlayProducaoMonth(prodFinal, prodFiles, mi);
+        mesesUpload.push(MESES[mi]);
+      }else if(dbTotal > 0){
+        mesesBanco.push(MESES[mi]);
+      }
     }
+    src.prod = prodFinal;
+
+    if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
+    state.sourceAudit.used.push({
+      tipo: 'resultado-diario-producao',
+      nome: `Produção: ${mesesUpload.length ? 'upload mensal em ' + mesesUpload.join(', ') : 'sem mês via upload'}${mesesBanco.length ? ' · banco em ' + mesesBanco.join(', ') : ''}${prodDb.totalRows ? ` · relatorio_resultado_diario ${prodDb.totalRows} linhas` : ''}`,
+      status: 'fonte_hibrida',
+      modo: 'upload_mensal_preferencial_com_banco_fallback',
+      created_at: new Date().toISOString()
+    });
 
     state.reportsData=src; buildDre(); state.busy=false;
   }
