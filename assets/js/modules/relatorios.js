@@ -540,6 +540,32 @@
       const XLSX = await loadXlsx();
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+
+      // Histórico diário vem com uma aba por data (ex.: 11052026, 10/05/2026).
+      // Para esse modelo, o período deve vir do nome das abas, não de colunas como
+      // admissão/nascimento, que podem gerar datas antigas e erradas.
+      if (tipo === 'historico_colaboradores_diario') {
+        const dates = (workbook.SheetNames || [])
+          .map((name) => parseDataFromSheetName(name))
+          .filter(Boolean)
+          .sort();
+        const unique = [...new Set(dates)];
+        if (!unique.length) return null;
+        return { inicio: unique[0], fim: unique[unique.length - 1], totalDatas: unique.length };
+      }
+
+      // Dias trabalhados possui a aba Acompanhar com datas no cabeçalho.
+      if (tipo === 'dias_trabalhados') {
+        const preferredDias = workbook.SheetNames.find((name) => normalizeHeader(name).includes('acompanhar')) || workbook.SheetNames[0];
+        const sheetDias = workbook.Sheets[preferredDias];
+        const rowsDias = XLSX.utils.sheet_to_json(sheetDias, { header: 1, defval: null, raw: true });
+        const header = rowsDias[0] || [];
+        const dates = header.map((cell) => toIsoDate(cell)).filter(Boolean).sort();
+        const unique = [...new Set(dates)];
+        if (!unique.length) return null;
+        return { inicio: unique[0], fim: unique[unique.length - 1], totalDatas: unique.length };
+      }
+
       const preferred = workbook.SheetNames.find((name) => normalizeHeader(name).includes('resultado')) || workbook.SheetNames[0];
       const sheet = workbook.Sheets[preferred];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
@@ -1585,6 +1611,155 @@
     };
   }
 
+  function isSafristaHistorico(tipo) {
+    const t = normalizeHeader(tipo || '');
+    return t.includes('diarista') || t.includes('intermitente') || t.includes('safrista');
+  }
+
+  function parseDataFromSheetName(name) {
+    const raw = String(name || '').trim();
+    let m = raw.match(/^(\d{2})(\d{2})(\d{4})$/);
+    if (m) return makeIsoDate(m[3], m[2], m[1]);
+    m = raw.match(/^(\d{1,2})[\.\/-](\d{1,2})[\.\/-](\d{4})$/);
+    if (m) return makeIsoDate(m[3], m[2], m[1]);
+    return toIsoDate(raw);
+  }
+
+  async function readHistoricoDiarioRowsFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const mapped = [];
+    const dates = [];
+    const diagnostics = [];
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const dataReferencia = parseDataFromSheetName(sheetName);
+      if (!dataReferencia) continue;
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+      if (!rows?.length) continue;
+
+      const headerRow = findHeaderRow(rows, ['Nome', 'Situação', 'Coordenação', 'Tipo']);
+      const headers = (rows[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+      const iCpf = pickHeaderIndex(headers, ['CPF', 'Cpf']);
+      const iNome = pickHeaderIndex(headers, ['Nome', 'Funcionário', 'Funcionario', 'Colaborador']);
+      const iSituacao = pickHeaderIndex(headers, ['Situação', 'Situacao', 'Status']);
+      const iAdmissao = pickHeaderIndex(headers, ['Admissão', 'Admissao']);
+      const iDesligamento = pickHeaderIndex(headers, ['Desligamento']);
+      const iSalario = pickHeaderIndex(headers, ['Salário', 'Salario']);
+      const iConta = pickHeaderIndex(headers, ['C. Banc. Despesas', 'Conta Bancaria Despesas', 'Conta Bancária Despesas']);
+      const iEmpresa = pickHeaderIndex(headers, ['Empresa']);
+      const iCoord = pickHeaderIndex(headers, ['Coordenação', 'Coordenacao', 'Regional']);
+      const iSupervisao = pickHeaderIndex(headers, ['Supervisão', 'Supervisao']);
+      const iTipo = pickHeaderIndex(headers, ['Tipo']);
+      const iCep = pickHeaderIndex(headers, ['CEP']);
+      const iEstado = pickHeaderIndex(headers, ['Estado', 'UF']);
+      const iCidade = pickHeaderIndex(headers, ['Cidade']);
+      const iBairro = pickHeaderIndex(headers, ['Bairro']);
+      const iEndereco = pickHeaderIndex(headers, ['Endereço', 'Endereco']);
+      const iComplemento = pickHeaderIndex(headers, ['Complemento']);
+      const iNascimento = pickHeaderIndex(headers, ['Data de Nascimento', 'Nascimento']);
+      const iCargo = pickHeaderIndex(headers, ['Cargo']);
+      const iWhatsapp = pickHeaderIndex(headers, ['Whatsapp', 'WhatsApp', 'Telefone']);
+      const iEmailPessoal = pickHeaderIndex(headers, ['E-mail Pessoal', 'Email Pessoal']);
+      const iEmailEmpresa = pickHeaderIndex(headers, ['E-mail da Empresa', 'Email da Empresa']);
+
+      diagnostics.push({ sheetName, dataReferencia, headerRow: headerRow + 1, headers: headers.slice(0, 40), indexes: { iNome, iSituacao, iCoord, iTipo } });
+      if (iNome < 0 || iSituacao < 0 || iCoord < 0 || iTipo < 0) continue;
+
+      rows.slice(headerRow + 1).forEach((row) => {
+        const nome = normalizeText(row?.[iNome]);
+        const coordenacao = normalizeText(row?.[iCoord]);
+        if (!nome || !coordenacao) return;
+        const situacao = normalizeText(row?.[iSituacao]);
+        const tipo = normalizeText(row?.[iTipo]);
+        dates.push(dataReferencia);
+        mapped.push({
+          data_referencia: dataReferencia,
+          cpf: iCpf >= 0 ? normalizeText(row?.[iCpf]) : null,
+          nome,
+          situacao,
+          admissao: iAdmissao >= 0 ? toIsoDate(row?.[iAdmissao]) : null,
+          desligamento: iDesligamento >= 0 ? toIsoDate(row?.[iDesligamento]) : null,
+          salario: iSalario >= 0 ? String(row?.[iSalario] ?? '').trim() || null : null,
+          conta_bancaria_despesas: iConta >= 0 ? normalizeText(row?.[iConta]) : null,
+          empresa: iEmpresa >= 0 ? normalizeText(row?.[iEmpresa]) : null,
+          coordenacao,
+          supervisao: iSupervisao >= 0 ? normalizeText(row?.[iSupervisao]) : null,
+          tipo,
+          cep: iCep >= 0 ? normalizeText(row?.[iCep]) : null,
+          estado: iEstado >= 0 ? normalizeText(row?.[iEstado]) : null,
+          cidade: iCidade >= 0 ? normalizeText(row?.[iCidade]) : null,
+          bairro: iBairro >= 0 ? normalizeText(row?.[iBairro]) : null,
+          endereco: iEndereco >= 0 ? normalizeText(row?.[iEndereco]) : null,
+          complemento: iComplemento >= 0 ? normalizeText(row?.[iComplemento]) : null,
+          data_nascimento: iNascimento >= 0 ? toIsoDate(row?.[iNascimento]) : null,
+          cargo: iCargo >= 0 ? normalizeText(row?.[iCargo]) : null,
+          whatsapp: iWhatsapp >= 0 ? normalizeText(row?.[iWhatsapp]) : null,
+          email_pessoal: iEmailPessoal >= 0 ? normalizeText(row?.[iEmailPessoal]) : null,
+          email_empresa: iEmailEmpresa >= 0 ? normalizeText(row?.[iEmailEmpresa]) : null,
+          origem: 'importar_relatorios_historico_diario',
+          snapshot_json: {
+            arquivo: file.name,
+            aba: sheetName,
+            ativo_para_cargas: !normalizeHeader(situacao || '').includes('nao ativo'),
+            safrista: isSafristaHistorico(tipo),
+          },
+        });
+      });
+    }
+
+    const uniqueDates = [...new Set(dates)].sort();
+    return {
+      rows: mapped,
+      period: uniqueDates.length ? { inicio: uniqueDates[0], fim: uniqueDates[uniqueDates.length - 1], totalDatas: uniqueDates.length } : null,
+      diagnostics,
+    };
+  }
+
+  async function importarHistoricoDiarioDaPlanilha(file, opts) {
+    const { rows, period, diagnostics } = await readHistoricoDiarioRowsFromFile(file);
+    if (!rows.length) {
+      const detail = (diagnostics || []).map((d) => `${d.sheetName} linha ${d.headerRow}: ${d.headers.join(' | ')}`).join(' || ');
+      throw new Error(`A planilha de Histórico Diário não possui linhas válidas. Cabeçalhos esperados: Nome, Situação, Coordenação e Tipo. Detectado: ${detail || 'nenhum cabeçalho'}`);
+    }
+
+    if (period?.inicio && period?.fim) {
+      const { error: delError } = await opts.supabase
+        .from('historico_colaboradores')
+        .delete()
+        .eq('origem', 'importar_relatorios_historico_diario')
+        .gte('data_referencia', period.inicio)
+        .lte('data_referencia', period.fim);
+      if (delError) throw new Error(delError.message || 'Falha ao limpar período anterior do Histórico Diário.');
+    }
+
+    const batchSize = 500;
+    let total = 0;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const { error } = await opts.supabase.from('historico_colaboradores').insert(batch);
+      if (error) throw new Error(error.message || 'Falha ao gravar Histórico Diário no Supabase.');
+      total += batch.length;
+    }
+
+    const ativos = rows.filter((r) => !normalizeHeader(r.situacao || '').includes('nao ativo')).length;
+    const inativos = rows.length - ativos;
+    const regionais = new Set(rows.map((r) => normalizeHeader(r.coordenacao)).filter(Boolean)).size;
+    return {
+      total_linhas: rows.length,
+      importados: total,
+      ativos,
+      inativos,
+      regionais,
+      periodo_inicio: period?.inicio || null,
+      periodo_fim: period?.fim || null,
+      total_datas: period?.totalDatas || null,
+    };
+  }
+
+
   async function importarHoteisDaPlanilha(file, opts) {
     const linhas = await readSpreadsheetAsObjects(file);
     if (!linhas.length) {
@@ -1643,60 +1818,76 @@
   }
 
   function detectRelatorio(fileName) {
-    const n = String(fileName || '').toLowerCase();
+    const rawName = String(fileName || '');
+    const n = normalizeHeader(rawName); // remove acentos, NBSP e variações Unicode
 
-    if ((n.includes('excesso') || n.includes('excesos') || n.includes('velocidade') || n.includes('velocidad')) && !n.includes('patrimonio') && !n.includes('patrimônio')) {
+    const hasAll = (...terms) => terms.every((term) => n.includes(normalizeHeader(term)));
+    const hasAny = (...terms) => terms.some((term) => n.includes(normalizeHeader(term)));
+
+    if (hasAny('excesso', 'excesos', 'velocidade', 'velocidad') && !hasAny('patrimonio', 'patrimônio')) {
       return { tipo: 'frotas_excesso_velocidade', titulo: 'Excesso de Velocidade - Frotas' };
     }
 
-    if (n.includes('uber') || n.includes('corridas')) {
+    if (hasAny('uber', 'corridas')) {
       return { tipo: 'uber_corridas', titulo: 'Relatório Uber' };
     }
 
-    if ((n.includes('auditoria') || n.includes('auditorias')) && (n.includes('relatorio') || n.includes('relatório') || n.includes('lista') || n.includes('auditoria'))) {
+    if (hasAny('auditoria', 'auditorias') && hasAny('relatorio', 'relatório', 'lista', 'auditoria')) {
       return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
     }
 
-    if ((n.includes('endereco') || n.includes('endereço') || n.includes('gps')) && (n.includes('colaborador') || n.includes('colaboradores'))) {
+    // Histórico diário de funcionários/colaboradores ativos.
+    // Detecta mesmo quando o arquivo vem com acentos em Unicode decomposto.
+    if (hasAny('historico', 'histórico') && hasAny('diario', 'diário') && hasAny('funcionario', 'funcionário', 'funcionarios', 'funcionários', 'colaborador', 'colaboradores', 'ativo', 'ativos')) {
+      return { tipo: 'historico_colaboradores_diario', titulo: 'Histórico Diário de Colaboradores' };
+    }
+
+    // Planilha auxiliar do modelo antigo. Ela não substitui o Resultado Diário nem o Histórico Diário,
+    // mas fica classificada corretamente para não cair como "Outros".
+    if (hasAll('dias', 'trabalhados')) {
+      return { tipo: 'dias_trabalhados', titulo: 'Dias Trabalhados' };
+    }
+
+    if (hasAny('endereco', 'endereço', 'gps') && hasAny('colaborador', 'colaboradores')) {
       return { tipo: 'colaboradores_operacional', titulo: 'Endereços dos Colaboradores Operacional' };
     }
 
-    if ((n.includes('mapa') && n.includes('g1000')) || n.includes('ponto-embarque') || n.includes('pontos-embarque') || n.includes('pontos_de_embarque') || n.includes('pontos de embarque')) {
+    if ((hasAll('mapa', 'g1000')) || hasAny('ponto-embarque', 'pontos-embarque', 'pontos_de_embarque', 'pontos de embarque')) {
       return { tipo: 'pontos_embarque', titulo: 'Pontos de Embarque Operacional' };
     }
 
-    if (n.includes('hotel') || n.includes('hoteis') || n.includes('hotéis') || n.includes('hospedagem') || n.includes('hospedagens')) {
+    if (hasAny('hotel', 'hoteis', 'hotéis', 'hospedagem', 'hospedagens')) {
       return { tipo: 'hoteis', titulo: 'Banco de Hotéis' };
     }
 
-    if (n.includes('nota') || n.includes('fiscal') || n.includes('nfse') || n.includes('nfe')) {
+    if (hasAny('nota', 'fiscal', 'nfse', 'nfe')) {
       return { tipo: 'notas_fiscais', titulo: 'Notas Fiscais' };
     }
-    if (n.includes('despesa')) {
+    if (hasAny('despesa')) {
       return { tipo: 'despesas', titulo: 'Relatório de Despesas' };
     }
-    if ((n.includes('resultado') && (n.includes('diario') || n.includes('diário'))) || n.includes('resultado-diario')) {
+    if ((hasAny('resultado') && hasAny('diario', 'diário')) || hasAny('resultado-diario')) {
       return { tipo: 'resultado-diario', titulo: 'Relatório Resultado Diário' };
     }
-    if (n.includes('gavilon')) {
+    if (hasAny('gavilon')) {
       return { tipo: 'resultado-diario-gavilon', titulo: 'Relatório Resultado Diário Gavilon' };
     }
-    if (n.includes('resultado')) {
+    if (hasAny('resultado')) {
       return { tipo: 'resultado-diario', titulo: 'Relatório Resultado Diário' };
     }
-    if (n.includes('producao') || n.includes('produção')) {
+    if (hasAny('producao', 'produção')) {
       return { tipo: 'producao', titulo: 'Relatório de Produção' };
     }
-    if (n.includes('patrimonio') || n.includes('patrimônio')) {
+    if (hasAny('patrimonio', 'patrimônio')) {
       return { tipo: 'patrimonios', titulo: 'Relatório de Patrimônios' };
     }
-    if (n.includes('caixa') || n.includes('fornecedor')) {
+    if (hasAny('caixa', 'fornecedor')) {
       return { tipo: 'caixa_fornecedor', titulo: 'Caixa Fornecedor' };
     }
-    if (n.includes('carga')) {
+    if (hasAny('carga')) {
       return { tipo: 'cargas', titulo: 'Relatório de Cargas' };
     }
-    if (n.includes('faturado') || n.includes('faturamento')) {
+    if (hasAny('faturado', 'faturamento')) {
       return { tipo: 'servicos_faturados', titulo: 'Serviços Faturados' };
     }
 
@@ -1969,6 +2160,7 @@
     let patrimoniosResumo = null;
     let frotasExcessoResumo = null;
     let resultadoDiarioResumo = null;
+    let historicoDiarioResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -2010,13 +2202,19 @@
       resultadoDiarioResumo = await importarResultadoDiarioDaPlanilha(file, opts, entry?.period || null);
       if (resultadoDiarioResumo?.periodo_inicio) entry.period = { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null };
     }
+    if (detected.tipo === 'historico_colaboradores_diario') {
+      status.textContent = 'Consolidando Histórico Diário de colaboradores para produzido por colaborador...';
+      setProgress(bar, 82);
+      historicoDiarioResumo = await importarHistoricoDiarioDaPlanilha(file, opts);
+      if (historicoDiarioResumo?.periodo_inicio) entry.period = { inicio: historicoDiarioResumo.periodo_inicio, fim: historicoDiarioResumo.periodo_fim, totalDatas: historicoDiarioResumo.total_datas || null };
+    }
 
     const importMode = opts.importMode || 'auto';
     const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'auditorias_operacional', 'patrimonios'].includes(detected.tipo)
       ? null
       : (resultadoDiarioResumo?.periodo_inicio
         ? { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null }
-        : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo))));
+        : (historicoDiarioResumo?.periodo_inicio ? { inicio: historicoDiarioResumo.periodo_inicio, fim: historicoDiarioResumo.periodo_fim, totalDatas: historicoDiarioResumo.total_datas || null } : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo)))));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -2028,19 +2226,18 @@
       ? (check.exists ? 'replace' : 'append')
       : importMode;
 
-    status.textContent = detected.tipo === 'hoteis'
-      ? 'Registrando upload da planilha de hotéis...'
-      : (detected.tipo === 'pontos_embarque'
-        ? 'Registrando upload dos pontos de embarque...'
-        : (detected.tipo === 'colaboradores_operacional'
-          ? 'Registrando upload dos endereços dos colaboradores...'
-          : (detected.tipo === 'auditorias_operacional'
-            ? 'Registrando upload das auditorias operacionais...'
-            : (detected.tipo === 'uber_corridas'
-              ? 'Registrando upload do relatório Uber...'
-              : (effectiveMode === 'replace'
-            ? 'Registrando substituição inteligente...'
-            : 'Registrando complemento inteligente...')))));
+    const statusRegistroMap = {
+      hoteis: 'Registrando upload da planilha de hotéis...',
+      pontos_embarque: 'Registrando upload dos pontos de embarque...',
+      colaboradores_operacional: 'Registrando upload dos endereços dos colaboradores...',
+      historico_colaboradores_diario: 'Registrando upload do histórico diário de colaboradores...',
+      dias_trabalhados: 'Registrando upload da planilha de dias trabalhados...',
+      auditorias_operacional: 'Registrando upload das auditorias operacionais...',
+      uber_corridas: 'Registrando upload do relatório Uber...',
+    };
+    status.textContent = statusRegistroMap[detected.tipo] || (effectiveMode === 'replace'
+      ? 'Registrando substituição inteligente...'
+      : 'Registrando complemento inteligente...');
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -2082,6 +2279,7 @@
           patrimonios_importacao: patrimoniosResumo || null,
           frotas_excesso_velocidade_importacao: frotasExcessoResumo || null,
           resultado_diario_importacao: resultadoDiarioResumo || null,
+          historico_colaboradores_diario_importacao: historicoDiarioResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -2118,12 +2316,14 @@
       status.textContent = `Frotas: ${frotasExcessoResumo.importados || 0} excessos · ${frotasExcessoResumo.identificados || 0} identificados · ${frotasExcessoResumo.pendentes || 0} pendentes`;
     } else if (detected.tipo === 'resultado-diario' && resultadoDiarioResumo) {
       status.textContent = `Resultado Diário: ${resultadoDiarioResumo.importados || 0} linhas consolidadas · ${Number(resultadoDiarioResumo.toneladas || 0).toLocaleString('pt-BR')} tons · DRE rápido`;
+    } else if (detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo) {
+      status.textContent = `Histórico Diário: ${historicoDiarioResumo.importados || 0} linhas · ${historicoDiarioResumo.ativos || 0} ativos · ${historicoDiarioResumo.total_datas || 0} dia(s) para produzido por colaborador`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -2310,6 +2510,21 @@
             detectFilePeriod(file, detected.tipo).then((period) => {
               entry.period = period;
               entry.message = period ? `Período: ${formatPeriod(period)} · importará Frotas` : 'Pendente · Frotas sem período detectado';
+              renderFiles();
+            });
+          } else if (detected.tipo === 'historico_colaboradores_diario') {
+            entry.message = 'Pendente · consolidará histórico diário para produzido por colaborador';
+            readHistoricoDiarioRowsFromFile(file).then((res) => {
+              const period = res?.period || null;
+              entry.period = period;
+              const total = Number(res?.rows?.length || 0);
+              entry.message = period
+                ? `Período: ${formatPeriod(period)} · ${total.toLocaleString('pt-BR')} linhas · consolidará Histórico Diário`
+                : 'Pendente · Histórico Diário sem período detectado';
+              renderFiles();
+            }).catch((err) => {
+              entry.period = null;
+              entry.message = `Pendente · não foi possível pré-validar Histórico Diário (${err?.message || 'erro de leitura'})`;
               renderFiles();
             });
           } else if (detected.tipo === 'resultado-diario') {
