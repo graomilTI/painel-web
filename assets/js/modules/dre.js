@@ -548,6 +548,24 @@
     return target;
   }
 
+
+  function producaoMonthTotal(source, mi){
+    if(!source) return 0;
+    return sumMapMonth(source.classificado, mi) + sumMapMonth(source.embarcado, mi) + sumMapMonth(source.cargas, mi);
+  }
+
+  function copyProducaoMonth(target, source, mi){
+    if(!target || !source) return;
+    const maps=['classificado','embarcado','cargas','valorEmbarcado','testes'];
+    for(const mapName of maps){
+      for(const [reg, arr] of Object.entries(source[mapName] || {})){
+        if(!target[mapName][reg]) target[mapName][reg] = Array(12).fill(0);
+        target[mapName][reg][mi] = n(arr?.[mi]);
+      }
+    }
+    mergeSet(target.regionais, source.regionais);
+  }
+
   async function processReports(opts,setStatus){
     state.busy=true; setStatus('Buscando relatórios ativos importados...');
     state.reports=await getLatestReports(opts.supabase);
@@ -585,17 +603,28 @@
     }
 
     setStatus('Conferindo produção consolidada no banco de dados...');
+    const prodFiles = src.prod;
     const prodDb = await loadResultadoDiarioFromDb(opts.supabase, state.year);
     if(prodDb.totalRows > 0){
-      // O Resultado Diário importado pelo painel é gravado na tabela relatorio_resultado_diario.
-      // Para evitar duplicidade com arquivos antigos em relatorios_importacoes, o banco vira a fonte oficial da produção.
+      // O banco é a fonte principal, mas alguns uploads recentes podem ainda não estar gravados em relatorio_resultado_diario.
+      // Nesses casos, preenche somente os meses que estão zerados no banco com o Resultado Diário carregado dos relatórios.
+      const mesesPreenchidos=[];
+      for(let mi=0; mi<12; mi++){
+        const dbTotal = producaoMonthTotal(prodDb, mi);
+        const fileTotal = producaoMonthTotal(prodFiles, mi);
+        if(dbTotal <= 0 && fileTotal > 0){
+          copyProducaoMonth(prodDb, prodFiles, mi);
+          mesesPreenchidos.push(MESES[mi]);
+        }
+      }
+
       src.prod = prodDb;
       if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
       state.sourceAudit.used.push({
         tipo: 'resultado-diario-db',
-        nome: `relatorio_resultado_diario (${prodDb.totalRows} linhas)`,
+        nome: `relatorio_resultado_diario (${prodDb.totalRows} linhas)${mesesPreenchidos.length ? ' + relatório para ' + mesesPreenchidos.join(', ') : ''}`,
         status: 'fonte_oficial',
-        modo: 'replace_producao',
+        modo: mesesPreenchidos.length ? 'banco_com_complemento_mes_zerado' : 'replace_producao',
         created_at: new Date().toISOString()
       });
     }
