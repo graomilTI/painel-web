@@ -842,7 +842,7 @@
       {label:'Volume Classificado', arr:ex.volClass, type:'num', total:()=>total(ex.volClass)},
       {label:'Custo por tonelada do volume Classificado', arr:ex.cptClass, type:'money', total:()=>div(total(ex.totalDesp),total(ex.volClass))},
       {label:'Volume Total (Class+CAD+FOB+CIF)', arr:volumeTotal, type:'num', total:()=>total(volumeTotal)},
-      {label:'Custo por Tolenada do Volume Total', arr:ex.cptEmb, type:'money', total:()=>div(total(ex.totalDesp),total(volumeTotal))},
+      {label:'Custo por Tonelada do Volume Total', arr:ex.cptEmb, type:'money', total:()=>div(total(ex.totalDesp),total(volumeTotal))},
       {label:'Resultado por Tonelada', arr:ex.resultadoTon || ex.margemTon, type:'money', total:()=>div(total(vals.res||[]),total(volumeTotal))},
       {label:'Produção por Colaborador', arr:ex.prodColab, type:'avg', total:()=>avgNonZero(ex.prodColab)},
       {label:'Desempenho da Regional', arr:ex.desempenhoRegional || ex.eficiencia, type:'pct', total:()=>div(total(volumeTotal),total(ex.volClass))},
