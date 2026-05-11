@@ -630,7 +630,7 @@
 
     for(const report of state.reports){
       const nome=report.nome_arquivo||report.arquivo_nome_original||report.tipo;
-      setStatus(`Processando ${nome}...`);
+      setStatus(`Lendo ${nome}...`);
       const wb=await readWorkbook(opts.supabase,report);
 
       if(report.tipo==='despesas') {
@@ -650,34 +650,16 @@
       }
     }
 
-    setStatus('Conferindo produção consolidada no banco e nos uploads...');
-    const prodFiles = await buildResultadoDiarioOverlay(opts, setStatus);
+    setStatus('Carregando produção consolidada do banco...');
     const prodDb = await loadResultadoDiarioFromDb(opts.supabase, state.year);
-
-    // Base: banco consolidado. Overlay: último upload de Resultado Diário por mês.
-    // Preferimos o upload mensal quando ele existe, pois o usuário acabou de importar o arquivo pelo painel
-    // e nem sempre a rotina backend já materializou esse mês em relatorio_resultado_diario.
-    const prodFinal = prodDb.totalRows > 0 ? prodDb : {classificado:{},embarcado:{},cargas:{},valorEmbarcado:{},testes:{},regionais:new Set()};
-    const mesesUpload=[];
-    const mesesBanco=[];
-    for(let mi=0; mi<12; mi++){
-      const fileTotal = producaoMonthTotal(prodFiles, mi);
-      const dbTotal = producaoMonthTotal(prodDb, mi);
-      if(fileTotal > 0){
-        overlayProducaoMonth(prodFinal, prodFiles, mi);
-        mesesUpload.push(MESES[mi]);
-      }else if(dbTotal > 0){
-        mesesBanco.push(MESES[mi]);
-      }
-    }
-    src.prod = prodFinal;
+    src.prod = prodDb;
 
     if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
     state.sourceAudit.used.push({
       tipo: 'resultado-diario-producao',
-      nome: `Produção: ${mesesUpload.length ? 'upload mensal em ' + mesesUpload.join(', ') : 'sem mês via upload'}${mesesBanco.length ? ' · banco em ' + mesesBanco.join(', ') : ''}${prodDb.totalRows ? ` · relatorio_resultado_diario ${prodDb.totalRows} linhas` : ''}`,
-      status: 'fonte_hibrida',
-      modo: 'upload_mensal_preferencial_com_banco_fallback',
+      nome: prodDb.totalRows ? `Produção via relatorio_resultado_diario · ${prodDb.totalRows} linhas` : 'Produção: sem linhas consolidadas em relatorio_resultado_diario',
+      status: prodDb.totalRows ? 'banco_consolidado' : 'sem_dados',
+      modo: 'banco_consolidado_rapido',
       created_at: new Date().toISOString()
     });
 

@@ -1384,6 +1384,164 @@
     };
   }
 
+
+  function pickHeaderIndex(headers, names) {
+    const normalized = (headers || []).map(normalizeHeader);
+    for (const name of names || []) {
+      const idx = normalized.indexOf(normalizeHeader(name));
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  }
+
+  async function readResultadoDiarioRowsFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const mapped = [];
+    const dates = [];
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+      if (!rows?.length) continue;
+
+      const headerRow = findHeaderRow(rows, ['O.S.', 'Data', 'Coordenação', 'Toneladas', 'Embarcado']);
+      const headers = (rows[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+      const iOs = pickHeaderIndex(headers, ['O.S.', 'OS', 'Ordem de Serviço']);
+      const iContrato = pickHeaderIndex(headers, ['Contrato']);
+      const iProduto = pickHeaderIndex(headers, ['Produto']);
+      const iData = pickHeaderIndex(headers, ['Data']);
+      const iFuncionario = pickHeaderIndex(headers, ['Funcionário', 'Funcionario', 'Classificador']);
+      const iCoordenacao = pickHeaderIndex(headers, ['Coordenação', 'Coordenacao', 'Regional']);
+      const iSupervisao = pickHeaderIndex(headers, ['Supervisão', 'Supervisao']);
+      const iCliNac = pickHeaderIndex(headers, ['Cliente Nacional', 'Cli. Nacional']);
+      const iCliReg = pickHeaderIndex(headers, ['Cliente Regional', 'Cli. Regional']);
+      const iCliFinal = pickHeaderIndex(headers, ['Cliente Final', 'Cli. Final']);
+      const iLocal = pickHeaderIndex(headers, ['Local de Embarque', 'Local Embarque']);
+      const iDestino = pickHeaderIndex(headers, ['Destino']);
+      const iCargas = pickHeaderIndex(headers, ['Cargas']);
+      const iTon = pickHeaderIndex(headers, ['Toneladas', 'Tons', 'Volume Classificado']);
+      const iValorTon = pickHeaderIndex(headers, ['R$/Ton', 'Valor Ton', 'Valor/Ton']);
+      const iCadencia = pickHeaderIndex(headers, ['Cadência', 'Cadencia']);
+      const iTonsCad = pickHeaderIndex(headers, ['Tons Cadência', 'Tons Cadencia']);
+      const iEmbarcado = pickHeaderIndex(headers, ['Embarcado']);
+      const iValorEmbarcado = pickHeaderIndex(headers, ['Valor Embarcado']);
+      const iValorAfla = pickHeaderIndex(headers, ['Valor Afla']);
+      const iTotalAfla = pickHeaderIndex(headers, ['Total Afla']);
+      const iValorVomitoxina = pickHeaderIndex(headers, ['Valor Vomitoxina']);
+      const iTotalVomitoxina = pickHeaderIndex(headers, ['Total Vomitoxina']);
+      const iValorFalling = pickHeaderIndex(headers, ['Valor Falling Number']);
+      const iTotalFalling = pickHeaderIndex(headers, ['Total Falling Number']);
+      const iValorIntacta = pickHeaderIndex(headers, ['Valor Intacta']);
+      const iTotalIntacta = pickHeaderIndex(headers, ['Total Intacta']);
+      const iValorGmo = pickHeaderIndex(headers, ['Valor GMO']);
+      const iTotalGmo = pickHeaderIndex(headers, ['Total GMO']);
+      const iTotalEmbTeste = pickHeaderIndex(headers, ['Total Embarcado + Teste', 'Total Embarcado Mais Teste']);
+      const iRemanescente = pickHeaderIndex(headers, ['Remanescente']);
+      const iMotivoNhe = pickHeaderIndex(headers, ['Motivo NHE']);
+      const iObsNhe = pickHeaderIndex(headers, ['Observações NHE', 'Observacoes NHE']);
+      const iSituacao = pickHeaderIndex(headers, ['Situação', 'Situacao']);
+      const iObs = pickHeaderIndex(headers, ['Observações', 'Observacoes']);
+
+      if (iData < 0 || iCoordenacao < 0 || iTon < 0 || iEmbarcado < 0) continue;
+
+      rows.slice(headerRow + 1).forEach((row) => {
+        const data = toIsoDate(row?.[iData]);
+        const coordenacao = normalizeText(row?.[iCoordenacao]);
+        if (!data || !coordenacao) return;
+        const hasMetric = [iTon, iEmbarcado, iCargas].some((idx) => idx >= 0 && normalizeNumberBr(row?.[idx]) !== null);
+        if (!hasMetric) return;
+        dates.push(data);
+        mapped.push({
+          file_name: file.name,
+          os: iOs >= 0 ? normalizeText(row?.[iOs]) : null,
+          contrato: iContrato >= 0 ? normalizeText(row?.[iContrato]) : null,
+          produto: iProduto >= 0 ? normalizeText(row?.[iProduto]) : null,
+          data,
+          funcionario: iFuncionario >= 0 ? normalizeText(row?.[iFuncionario]) : null,
+          coordenacao,
+          supervisao: iSupervisao >= 0 ? normalizeText(row?.[iSupervisao]) : null,
+          cliente_nacional: iCliNac >= 0 ? normalizeText(row?.[iCliNac]) : null,
+          cliente_regional: iCliReg >= 0 ? normalizeText(row?.[iCliReg]) : null,
+          cliente_final: iCliFinal >= 0 ? normalizeText(row?.[iCliFinal]) : null,
+          local_embarque: iLocal >= 0 ? normalizeText(row?.[iLocal]) : null,
+          destino: iDestino >= 0 ? normalizeText(row?.[iDestino]) : null,
+          cargas: iCargas >= 0 ? normalizeNumberBr(row?.[iCargas]) || 0 : 0,
+          toneladas: iTon >= 0 ? normalizeNumberBr(row?.[iTon]) || 0 : 0,
+          valor_ton: iValorTon >= 0 ? normalizeNumberBr(row?.[iValorTon]) || 0 : 0,
+          cadencia: iCadencia >= 0 ? normalizeNumberBr(row?.[iCadencia]) || 0 : 0,
+          tons_cadencia: iTonsCad >= 0 ? normalizeNumberBr(row?.[iTonsCad]) || 0 : 0,
+          embarcado: iEmbarcado >= 0 ? normalizeNumberBr(row?.[iEmbarcado]) || 0 : 0,
+          valor_embarcado: iValorEmbarcado >= 0 ? normalizeNumberBr(row?.[iValorEmbarcado]) || 0 : 0,
+          valor_afla: iValorAfla >= 0 ? normalizeNumberBr(row?.[iValorAfla]) || 0 : 0,
+          total_afla: iTotalAfla >= 0 ? normalizeNumberBr(row?.[iTotalAfla]) || 0 : 0,
+          valor_vomitoxina: iValorVomitoxina >= 0 ? normalizeNumberBr(row?.[iValorVomitoxina]) || 0 : 0,
+          total_vomitoxina: iTotalVomitoxina >= 0 ? normalizeNumberBr(row?.[iTotalVomitoxina]) || 0 : 0,
+          valor_falling_number: iValorFalling >= 0 ? normalizeNumberBr(row?.[iValorFalling]) || 0 : 0,
+          total_falling_number: iTotalFalling >= 0 ? normalizeNumberBr(row?.[iTotalFalling]) || 0 : 0,
+          valor_intacta: iValorIntacta >= 0 ? normalizeNumberBr(row?.[iValorIntacta]) || 0 : 0,
+          total_intacta: iTotalIntacta >= 0 ? normalizeNumberBr(row?.[iTotalIntacta]) || 0 : 0,
+          valor_gmo: iValorGmo >= 0 ? normalizeNumberBr(row?.[iValorGmo]) || 0 : 0,
+          total_gmo: iTotalGmo >= 0 ? normalizeNumberBr(row?.[iTotalGmo]) || 0 : 0,
+          total_embarcado_mais_teste: iTotalEmbTeste >= 0 ? normalizeNumberBr(row?.[iTotalEmbTeste]) || 0 : 0,
+          remanescente: iRemanescente >= 0 ? normalizeNumberBr(row?.[iRemanescente]) || 0 : 0,
+          motivo_nhe: iMotivoNhe >= 0 ? normalizeText(row?.[iMotivoNhe]) : null,
+          observacoes_nhe: iObsNhe >= 0 ? normalizeText(row?.[iObsNhe]) : null,
+          situacao: iSituacao >= 0 ? normalizeText(row?.[iSituacao]) : null,
+          observacoes: iObs >= 0 ? normalizeText(row?.[iObs]) : null,
+        });
+      });
+    }
+
+    const uniqueDates = [...new Set(dates)].sort();
+    return {
+      rows: mapped,
+      period: uniqueDates.length ? { inicio: uniqueDates[0], fim: uniqueDates[uniqueDates.length - 1], totalDatas: uniqueDates.length } : null,
+    };
+  }
+
+  async function importarResultadoDiarioDaPlanilha(file, opts, periodFromEntry = null) {
+    const { rows, period } = await readResultadoDiarioRowsFromFile(file);
+    const finalPeriod = period || periodFromEntry;
+    if (!rows.length) {
+      throw new Error('A planilha de Resultado Diário não possui linhas válidas. Cabeçalhos esperados: Data, Coordenação, Toneladas e Embarcado.');
+    }
+
+    if (finalPeriod?.inicio && finalPeriod?.fim) {
+      const { error: delError } = await opts.supabase
+        .from('relatorio_resultado_diario')
+        .delete()
+        .gte('data', finalPeriod.inicio)
+        .lte('data', finalPeriod.fim);
+      if (delError) throw new Error(delError.message || 'Falha ao limpar período anterior do Resultado Diário.');
+    }
+
+    const batchSize = 500;
+    let total = 0;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const { error } = await opts.supabase.from('relatorio_resultado_diario').insert(batch);
+      if (error) throw new Error(error.message || 'Falha ao gravar Resultado Diário no Supabase.');
+      total += batch.length;
+    }
+
+    const regionais = new Set(rows.map((r) => normalizeHeader(r.coordenacao)).filter(Boolean)).size;
+    const totalTons = rows.reduce((acc, r) => acc + Number(r.toneladas || 0), 0);
+    const totalEmbarcado = rows.reduce((acc, r) => acc + Number(r.embarcado || 0), 0);
+    const totalCargas = rows.reduce((acc, r) => acc + Number(r.cargas || 0), 0);
+    return {
+      total_linhas: rows.length,
+      importados: total,
+      regionais,
+      toneladas: totalTons,
+      embarcado: totalEmbarcado,
+      cargas: totalCargas,
+      periodo_inicio: finalPeriod?.inicio || null,
+      periodo_fim: finalPeriod?.fim || null,
+    };
+  }
+
   async function importarHoteisDaPlanilha(file, opts) {
     const linhas = await readSpreadsheetAsObjects(file);
     if (!linhas.length) {
@@ -1767,6 +1925,7 @@
     let uberResumo = null;
     let patrimoniosResumo = null;
     let frotasExcessoResumo = null;
+    let resultadoDiarioResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -1802,11 +1961,19 @@
       setProgress(bar, 82);
       frotasExcessoResumo = await importarFrotasExcessoVelocidadeDaPlanilha(file, opts);
     }
+    if (detected.tipo === 'resultado-diario') {
+      status.textContent = 'Consolidando Resultado Diário no banco para acelerar o DRE...';
+      setProgress(bar, 82);
+      resultadoDiarioResumo = await importarResultadoDiarioDaPlanilha(file, opts, entry?.period || null);
+      if (resultadoDiarioResumo?.periodo_inicio) entry.period = { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null };
+    }
 
     const importMode = opts.importMode || 'auto';
     const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'auditorias_operacional', 'patrimonios'].includes(detected.tipo)
       ? null
-      : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo)));
+      : (resultadoDiarioResumo?.periodo_inicio
+        ? { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null }
+        : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo))));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -1871,6 +2038,7 @@
           uber_corridas_importacao: uberResumo || null,
           patrimonios_importacao: patrimoniosResumo || null,
           frotas_excesso_velocidade_importacao: frotasExcessoResumo || null,
+          resultado_diario_importacao: resultadoDiarioResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -1905,12 +2073,14 @@
       status.textContent = `Patrimônios: ${patrimoniosResumo.importados || 0} atualizados · ${patrimoniosResumo.veiculos || 0} veículos · ${Number(patrimoniosResumo.frotas_associadas?.veiculos_atualizados || 0)} motorista(s) associados em Frotas`;
     } else if (detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) {
       status.textContent = `Frotas: ${frotasExcessoResumo.importados || 0} excessos · ${frotasExcessoResumo.identificados || 0} identificados · ${frotasExcessoResumo.pendentes || 0} pendentes`;
+    } else if (detected.tipo === 'resultado-diario' && resultadoDiarioResumo) {
+      status.textContent = `Resultado Diário: ${resultadoDiarioResumo.importados || 0} linhas consolidadas · ${Number(resultadoDiarioResumo.toneladas || 0).toLocaleString('pt-BR')} tons · DRE rápido`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -2097,6 +2267,13 @@
             detectFilePeriod(file, detected.tipo).then((period) => {
               entry.period = period;
               entry.message = period ? `Período: ${formatPeriod(period)} · importará Frotas` : 'Pendente · Frotas sem período detectado';
+              renderFiles();
+            });
+          } else if (detected.tipo === 'resultado-diario') {
+            entry.message = 'Pendente · consolidará produção para DRE rápido';
+            detectFilePeriod(file, detected.tipo).then((period) => {
+              entry.period = period;
+              entry.message = period ? `Período: ${formatPeriod(period)} · consolidará Resultado Diário` : 'Pendente · Resultado Diário sem período detectado';
               renderFiles();
             });
           } else {
