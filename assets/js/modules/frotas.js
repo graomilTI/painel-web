@@ -639,7 +639,7 @@
         btn.textContent = 'Sincronizando...';
       }
       toast('Sincronizando relatório de excesso de velocidade da BFleet...');
-      const res = await callEdgeFunction(opts, BFLEET_EXCESSO_FUNCTION, { mode: 'sync', rangeTimeVal: 'yesterday' });
+      const res = await callEdgeFunction(opts, BFLEET_EXCESSO_FUNCTION, { mode: 'sync', rangeTimeVal: 'yesterday', forceRefreshToken: true });
       const inserted = Number(res?.inserted || res?.inseridos || res?.created || res?.novos || 0);
       const updated = Number(res?.updated || res?.atualizados || 0);
       const total = Number(res?.total || res?.total_registros || res?.linhas || res?.linhas_lidas_api || inserted + updated || 0);
