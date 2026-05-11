@@ -563,6 +563,14 @@
 
     for(const report of state.reports){
       const nome=report.nome_arquivo||report.arquivo_nome_original||report.tipo;
+
+      // Resultado Diário agora é fonte oficial pela tabela relatorio_resultado_diario.
+      // Não baixamos mais o XLSX aqui, porque arquivos antigos no Storage podem estar indisponíveis
+      // e isso travava o DRE antes de ler o banco consolidado.
+      if(report.tipo==='resultado-diario') {
+        continue;
+      }
+
       setStatus(`Processando ${nome}...`);
       const wb=await readWorkbook(opts.supabase,report);
 
