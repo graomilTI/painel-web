@@ -38,6 +38,10 @@
   function isPool(r){return POOL.some(x=>norm(x)===norm(r));}
   function n(v){ if(v==null||v==='') return 0; if(typeof v==='number') return Number.isFinite(v)?v:0; const s=String(v).replace(/R\$\s*/gi,'').replace(/[^\d,.-]/g,''); const out=s.includes(',')&&s.includes('.')?s.replace(/\./g,'').replace(',','.'):s.replace(',','.'); const num=parseFloat(out); return Number.isFinite(num)?num:0; }
   function safe(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');}
+  function avgNonZero(arr){ const vals=(arr||[]).map(n).filter(v=>v>0); return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0; }
+  function nomeKey(v){ return String(v || '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' '); }
+  function isSafristaTipo(tipo){ const t=norm(tipo); return t.includes('DIARISTA') || t.includes('INTERMITENTE') || t.includes('SAFRISTA'); }
+  function isAtivoSituacao(situacao){ return !norm(situacao).includes('NAOATIVO') && !norm(situacao).includes('INATIVO'); }
   function fmtMoney(v){return n(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});} 
   function fmtNum(v){return n(v).toLocaleString('pt-BR',{maximumFractionDigits:2});}
   function fmtPct(v){return n(v).toLocaleString('pt-BR',{style:'percent',minimumFractionDigits:1,maximumFractionDigits:1});}
@@ -243,6 +247,126 @@
     return out;
   }
 
+
+  async function loadProduzidoColaboradorFromDb(supabase, year){
+    const out={porRegional:{}, geral:Array(12).fill(0), regionais:new Set(), totalProdRows:0, totalHistRows:0};
+    if(!supabase || !year) return out;
+    const start=`${year}-01-01`;
+    const end=`${year + 1}-01-01`;
+
+    let prodRows=[];
+    try{
+      const pageSize=1000;
+      let from=0;
+      while(true){
+        const {data,error}=await supabase
+          .from('relatorio_resultado_diario')
+          .select('data,coordenacao,funcionario,toneladas')
+          .gte('data', start)
+          .lt('data', end)
+          .range(from, from + pageSize - 1);
+        if(error) throw error;
+        const rows=data||[];
+        prodRows.push(...rows);
+        if(rows.length < pageSize) break;
+        from += pageSize;
+      }
+    }catch(error){
+      console.warn('DRE: não foi possível carregar produção diária para produzido por colaborador.', error);
+      return out;
+    }
+
+    let histRows=[];
+    try{
+      const pageSize=1000;
+      let from=0;
+      while(true){
+        const {data,error}=await supabase
+          .from('historico_colaboradores')
+          .select('data_referencia,nome,situacao,coordenacao,tipo,origem')
+          .eq('origem','importar_relatorios_historico_diario')
+          .gte('data_referencia', start)
+          .lt('data_referencia', end)
+          .range(from, from + pageSize - 1);
+        if(error) throw error;
+        const rows=data||[];
+        histRows.push(...rows);
+        if(rows.length < pageSize) break;
+        from += pageSize;
+      }
+    }catch(error){
+      console.warn('DRE: não foi possível carregar Histórico Diário para produzido por colaborador.', error);
+      return out;
+    }
+
+    out.totalProdRows=prodRows.length;
+    out.totalHistRows=histRows.length;
+
+    const histByDateReg={};
+    for(const h of histRows){
+      const date=h.data_referencia;
+      const reg=mapReg(h.coordenacao);
+      const nome=nomeKey(h.nome);
+      if(!date || !reg || !nome || isIgnored(reg)) continue;
+      const key=`${date}|${reg}`;
+      if(!histByDateReg[key]) histByDateReg[key]={efetivos:0, tipos:{}};
+      if(!isAtivoSituacao(h.situacao)) continue;
+      histByDateReg[key].tipos[nome]=h.tipo || '';
+      if(!isSafristaTipo(h.tipo)) histByDateReg[key].efetivos += 1;
+    }
+
+    const prodByDateReg={};
+    for(const p of prodRows){
+      const date=p.data;
+      const reg=mapReg(p.coordenacao);
+      const m=monthFrom(date);
+      if(!date || !reg || !m || m.year!==year || isIgnored(reg) || isExcluded(reg)) continue;
+      const key=`${date}|${reg}`;
+      if(!prodByDateReg[key]) prodByDateReg[key]={date,reg,mi:m.month,tons:0,funcs:new Set()};
+      prodByDateReg[key].tons += n(p.toneladas);
+      const func=nomeKey(p.funcionario);
+      if(func) prodByDateReg[key].funcs.add(func);
+      out.regionais.add(reg);
+    }
+
+    const monthRegional={};
+    const monthGeral=Array.from({length:12},()=>({soma:0,cont:0}));
+    const dailyGeral={};
+    for(const key of Object.keys(prodByDateReg)){
+      const st=prodByDateReg[key];
+      const hist=histByDateReg[key] || {efetivos:0, tipos:{}};
+      let safristas=0;
+      st.funcs.forEach(nome => { if(isSafristaTipo(hist.tipos[nome])) safristas += 1; });
+      const pessoas = hist.efetivos + safristas;
+      if(pessoas <= 0 || st.tons <= 0) continue;
+      if(!monthRegional[st.reg]) monthRegional[st.reg]=Array.from({length:12},()=>({soma:0,cont:0}));
+      monthRegional[st.reg][st.mi].soma += st.tons / pessoas;
+      monthRegional[st.reg][st.mi].cont += 1;
+      const dg=dailyGeral[st.date] || (dailyGeral[st.date]={mi:st.mi,tons:0,pessoas:0});
+      dg.tons += st.tons;
+      dg.pessoas += pessoas;
+    }
+
+    for(const reg of Object.keys(monthRegional)){
+      out.porRegional[reg]=Array(12).fill(0);
+      for(let mi=0; mi<12; mi++){
+        const m=monthRegional[reg][mi];
+        out.porRegional[reg][mi]=m.cont ? m.soma / m.cont : 0;
+      }
+    }
+
+    for(const d of Object.values(dailyGeral)){
+      if(d.pessoas > 0 && d.tons > 0){
+        monthGeral[d.mi].soma += d.tons / d.pessoas;
+        monthGeral[d.mi].cont += 1;
+      }
+    }
+    for(let mi=0; mi<12; mi++){
+      out.geral[mi]=monthGeral[mi].cont ? monthGeral[mi].soma / monthGeral[mi].cont : 0;
+    }
+    return out;
+  }
+
   function parseAntecipacoes(rows){
     const arr=Array(12).fill(0); if(!rows?.length) return arr;
     const hrow=findHeaderRow(rows,['Data','Credito']); const idx=indexByHeaders(rows[hrow]||[]);
@@ -305,13 +429,14 @@
     const volClass=reg?getArr(prod.classificado,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.classificado,mi));
     const volEmb=reg?getArr(prod.embarcado,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.embarcado,mi));
     const cargas=reg?getArr(prod.cargas,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.cargas,mi));
+    const prodColab=reg?getArr(prod.prodColab,reg):(prod.prodColabGeral || Array(12).fill(0));
     const totalDesp=vals.despOp.map((_,mi)=>vals.despOp[mi]+vals.veic[mi]+vals.pessoal[mi]+vals.adm[mi]+vals.fin[mi]+vals.inv[mi]);
     const cptEmb=totalDesp.map((v,mi)=>div(v,volEmb[mi]));
     const cptClass=totalDesp.map((v,mi)=>div(v,volClass[mi]));
     const receitaTon=vals.rec.map((v,mi)=>div(v,volEmb[mi]));
     const margemTon=vals.res.map((v,mi)=>div(v,volEmb[mi]));
     const eficiencia=volEmb.map((v,mi)=>div(v,volClass[mi]));
-    return {main:rows, extras:{totalDesp,volClass,volEmb,cargas,cptEmb,cptClass,receitaTon,margemTon,eficiencia}, vals};
+    return {main:rows, extras:{totalDesp,volClass,volEmb,cargas,prodColab,cptEmb,cptClass,receitaTon,margemTon,eficiencia}, vals};
   }
 
   function buildDre(){
@@ -399,6 +524,26 @@
     return row?.nome_arquivo || row?.arquivo_nome_original || row?.titulo_relatorio || row?.tipo || row?.id || 'sem nome';
   }
 
+  function reportPeriodKey(row){
+    const candidates = [
+      row?.periodo_inicio,
+      row?.periodo_fim,
+      row?.data_referencia,
+      row?.competencia
+    ].filter(Boolean);
+
+    for(const value of candidates){
+      const m = monthFrom(value);
+      if(m) return `${m.year}-${String(m.month + 1).padStart(2,'0')}`;
+    }
+
+    const path = String(row?.storage_path || row?.path || row?.arquivo_nome_storage || row?.nome_arquivo || '');
+    const pathMatch = path.match(/(?:^|\D)(20\d{2})[\/_-](0?[1-9]|1[0-2])(?:\D|$)/);
+    if(pathMatch) return `${pathMatch[1]}-${String(Number(pathMatch[2])).padStart(2,'0')}`;
+
+    return `sem-periodo-${row?.id || reportLabel(row)}`;
+  }
+
   function chooseReportsForDre(rows){
     const normalized = [];
     const ignored = [];
@@ -440,21 +585,23 @@
         continue;
       }
 
-      // Resultado Diário pode ser complementar, mas somente quando o modo veio marcado como append/complementar.
-      // Se não houver marcação clara, usa apenas o mais recente para evitar duplicidade silenciosa.
+      // Resultado Diário é mensal. Para não zerar meses anteriores, o DRE precisa
+      // considerar o último arquivo de cada competência/mês. Se o mesmo mês for
+      // importado duas vezes, usa somente o mais recente desse mês.
       if(tipo === 'resultado-diario'){
-        const appendList = list.filter(r => ['append','complementar','complemento'].includes(r.import_mode));
-        if(appendList.length >= 2){
-          chosen.push(...appendList.sort((a,b)=>reportTime(a)-reportTime(b)));
-          list.filter(r => !appendList.includes(r)).forEach(r => ignored.push({
+        const byPeriod = new Map();
+        for(const r of list){
+          const key = reportPeriodKey(r);
+          if(!byPeriod.has(key)) byPeriod.set(key, []);
+          byPeriod.get(key).push(r);
+        }
+
+        for(const [periodKey, periodReports] of byPeriod.entries()){
+          const ordered = [...periodReports].sort((a,b)=>reportTime(b)-reportTime(a));
+          chosen.push(ordered[0]);
+          ordered.slice(1).forEach(r => ignored.push({
             ...r,
-            dre_ignore_reason: 'resultado_diario_antigo_nao_complementar'
-          }));
-        } else {
-          chosen.push(list[0]);
-          list.slice(1).forEach(r => ignored.push({
-            ...r,
-            dre_ignore_reason: 'resultado_diario_duplicado_usando_mais_recente'
+            dre_ignore_reason: `resultado_diario_mes_${periodKey}_duplicado_usando_mais_recente`
           }));
         }
       }
@@ -600,7 +747,7 @@
     const src={
       desp:{base:{},geral:{},regionais:new Set()},
       nf:{bruto:{},descAcresc:{},impostos:{},regionais:new Set()},
-      prod:{classificado:{},embarcado:{},cargas:{},valorEmbarcado:{},testes:{},regionais:new Set()},
+      prod:{classificado:{},embarcado:{},cargas:{},valorEmbarcado:{},testes:{},prodColab:{},prodColabGeral:Array(12).fill(0),regionais:new Set()},
       antecipacoes:Array(12).fill(0)
     };
 
@@ -651,6 +798,21 @@
       });
     }
 
+    setStatus('Calculando produzido por colaborador com histórico diário de ativos...');
+    const prodColab = await loadProduzidoColaboradorFromDb(opts.supabase, state.year);
+    if(prodColab.totalProdRows > 0 && prodColab.totalHistRows > 0){
+      src.prod.prodColab = prodColab.porRegional;
+      src.prod.prodColabGeral = prodColab.geral;
+      mergeSet(src.prod.regionais, prodColab.regionais);
+      if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
+      state.sourceAudit.used.push({
+        tipo: 'historico-colaboradores-diario-db',
+        nome: `historico_colaboradores (${prodColab.totalHistRows} linhas)`,
+        status: 'produzido_por_colaborador',
+        created_at: new Date().toISOString()
+      });
+    }
+
     state.reportsData=src; buildDre(); state.busy=false;
   }
 
@@ -666,7 +828,7 @@
       ['Total Despesas',ex.totalDesp,'money'],
       ['Volume Classificado (sem cadência)',ex.volClass,'num'],
       ['Volume Embarcado + NHE + cad',ex.volEmb,'num'],
-      ['Eficiência Operacional',ex.eficiencia,'pct'],
+      ['Produzido por colaborador',ex.prodColab,'avg'],
       ['Custo por tonelada - classificado',ex.cptClass,'money'],
       ['Custo por tonelada - embarcado',ex.cptEmb,'money'],
       ['Receita por tonelada',ex.receitaTon,'money'],
@@ -674,7 +836,7 @@
       ['Cargas',ex.cargas,'num']
     ];
     const format=(type,v)=> type==='money'?fmtMoney(v):type==='pct'?fmtPct(v):fmtNum(v);
-    return `<div class="dre-extra"><div class="dre-extra-box"><h4>INDICADORES OPERACIONAIS</h4><table><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL / MÉDIA</th></tr></thead><tbody>${rows.map(([label,arr,type])=>{const totalVal=type==='pct'?div(total(ex.volEmb),total(ex.volClass)):type==='money'&&label.includes('tonelada')?div(label.includes('Receita')?total((reportForTotals||activeReport())?.vals?.rec):label.includes('Margem')?total((reportForTotals||activeReport())?.vals?.res):total(ex.totalDesp), label.includes('classificado')?total(ex.volClass):total(ex.volEmb)):total(arr); return `<tr><td>${safe(label)}</td>${arr.map(v=>`<td>${format(type,v)}</td>`).join('')}<td>${format(type,totalVal)}</td></tr>`;}).join('')}</tbody></table></div></div>`;
+    return `<div class="dre-extra"><div class="dre-extra-box"><h4>INDICADORES OPERACIONAIS</h4><table><thead><tr><th></th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>TOTAL / MÉDIA</th></tr></thead><tbody>${rows.map(([label,arr,type])=>{const totalVal=type==='avg'?avgNonZero(arr):type==='pct'?div(total(ex.volEmb),total(ex.volClass)):type==='money'&&label.includes('tonelada')?div(label.includes('Receita')?total((reportForTotals||activeReport())?.vals?.rec):label.includes('Margem')?total((reportForTotals||activeReport())?.vals?.res):total(ex.totalDesp), label.includes('classificado')?total(ex.volClass):total(ex.volEmb)):total(arr); return `<tr><td>${safe(label)}</td>${arr.map(v=>`<td>${format(type,v)}</td>`).join('')}<td>${format(type,totalVal)}</td></tr>`;}).join('')}</tbody></table></div></div>`;
   }
 
   function renderCharts(container, report){
