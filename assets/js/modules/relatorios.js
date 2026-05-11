@@ -503,6 +503,11 @@
         const iso = toIsoDate(cell);
         if (iso) dates.push(iso);
       });
+    } else if (tipo === 'financeiro_contas_receber' || tipo === 'financeiro_contas_pagar') {
+      const hrow = findHeaderRow(rows, ['Vencimento', 'Valor']);
+      const header = rows[hrow] || [];
+      const idxData = header.findIndex((h) => ['vencimento', 'data vencimento', 'dt vencimento'].some((alias) => headerMatches(h, alias)));
+      if (idxData >= 0) rows.slice(hrow + 1).forEach((row) => { const iso = toIsoDate(row?.[idxData]); if (iso) dates.push(iso); });
     } else if (tipo === 'uber_corridas') {
       const hrow = findHeaderRow(rows, ['NOME', 'Data da solicitação (local)', 'Endereço de partida']);
       const header = rows[hrow] || [];
@@ -540,32 +545,6 @@
       const XLSX = await loadXlsx();
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-
-      // Histórico diário vem com uma aba por data (ex.: 11052026, 10/05/2026).
-      // Para esse modelo, o período deve vir do nome das abas, não de colunas como
-      // admissão/nascimento, que podem gerar datas antigas e erradas.
-      if (tipo === 'historico_colaboradores_diario') {
-        const dates = (workbook.SheetNames || [])
-          .map((name) => parseDataFromSheetName(name))
-          .filter(Boolean)
-          .sort();
-        const unique = [...new Set(dates)];
-        if (!unique.length) return null;
-        return { inicio: unique[0], fim: unique[unique.length - 1], totalDatas: unique.length };
-      }
-
-      // Dias trabalhados possui a aba Acompanhar com datas no cabeçalho.
-      if (tipo === 'dias_trabalhados') {
-        const preferredDias = workbook.SheetNames.find((name) => normalizeHeader(name).includes('acompanhar')) || workbook.SheetNames[0];
-        const sheetDias = workbook.Sheets[preferredDias];
-        const rowsDias = XLSX.utils.sheet_to_json(sheetDias, { header: 1, defval: null, raw: true });
-        const header = rowsDias[0] || [];
-        const dates = header.map((cell) => toIsoDate(cell)).filter(Boolean).sort();
-        const unique = [...new Set(dates)];
-        if (!unique.length) return null;
-        return { inicio: unique[0], fim: unique[unique.length - 1], totalDatas: unique.length };
-      }
-
       const preferred = workbook.SheetNames.find((name) => normalizeHeader(name).includes('resultado')) || workbook.SheetNames[0];
       const sheet = workbook.Sheets[preferred];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
@@ -632,6 +611,126 @@
     const normalized = raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw;
     const number = Number(normalized.replace(/[^0-9.-]/g, ''));
     return Number.isFinite(number) ? number : null;
+  }
+
+
+  function financeiroHash(parts) {
+    const base = (parts || []).map((value) => normalizeHeader(value)).join('|');
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < base.length; i += 1) {
+      hash ^= base.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return `fin_${(hash >>> 0).toString(16)}_${base.length}`;
+  }
+
+  function financeiroRowValue(row, aliases) {
+    return pickValue(row, aliases);
+  }
+
+  async function readFinanceiroObjectsFromFile(file, requiredHeaders) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const allObjects = [];
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+      if (!rows?.length) continue;
+
+      const headerRow = findHeaderRow(rows, requiredHeaders);
+      const headerRaw = rows[headerRow] || [];
+      const header = headerRaw.map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+      const headerScore = (requiredHeaders || []).filter((name) => headerRaw.some((h) => headerMatches(h, name))).length;
+      if (headerScore < Math.min(4, requiredHeaders.length)) continue;
+
+      rows.slice(headerRow + 1).forEach((row) => {
+        const obj = { __aba: sheetName };
+        header.forEach((name, index) => {
+          if (!name) return;
+          obj[name] = row?.[index] ?? '';
+        });
+        const hasData = Object.entries(obj).some(([key, value]) => key !== '__aba' && String(value ?? '').trim() !== '');
+        if (hasData) allObjects.push(obj);
+      });
+    }
+
+    return allObjects;
+  }
+
+  function normalizeFinanceStatus(value) {
+    return normalizeText(value) || 'A Vencer';
+  }
+
+  function buildFinanceiroReceberPayload(row, fileName) {
+    const situacao = normalizeFinanceStatus(financeiroRowValue(row, ['Situação', 'Situacao', 'Status']));
+    const codigo = normalizeText(financeiroRowValue(row, ['Código', 'Codigo', 'Cod', 'Cód.']));
+    const fatura = normalizeText(financeiroRowValue(row, ['Fatura', 'Nº Fatura', 'Numero Fatura']));
+    const cliente = normalizeText(financeiroRowValue(row, ['Cliente', 'Razão Social', 'Razao Social']));
+    const conta = normalizeText(financeiroRowValue(row, ['Conta', 'Conta Bancária', 'Conta Bancaria']));
+    const emissao_nf = toIsoDate(financeiroRowValue(row, ['Emissão N.F', 'Emissao N.F', 'Emissão NF', 'Emissao NF', 'Data NF']));
+    const vencimento = toIsoDate(financeiroRowValue(row, ['Vencimento', 'Data Vencimento', 'Dt. Vencimento']));
+    const recebimento = toIsoDate(financeiroRowValue(row, ['Recebimento', 'Data Recebimento', 'Dt. Recebimento']));
+    const numero_nf = normalizeText(financeiroRowValue(row, ['N.F.', 'NF', 'Nº NF', 'Numero NF', 'Nota Fiscal']));
+    const valor = normalizeNumberBr(financeiroRowValue(row, ['Valor', 'Valor Título', 'Valor Titulo', 'Valor Bruto'])) || 0;
+    const desconto = normalizeNumberBr(financeiroRowValue(row, ['Desconto', 'Descontos'])) || 0;
+    const juros = normalizeNumberBr(financeiroRowValue(row, ['Juros', 'Juro'])) || 0;
+    const valor_pago = normalizeNumberBr(financeiroRowValue(row, ['Valor Pago', 'V. Pago', 'Pago'])) || 0;
+    if (!codigo && !fatura && !cliente && !vencimento && !valor) return null;
+    return { unique_hash: financeiroHash(['receber', codigo, fatura, cliente, vencimento, valor]), situacao, codigo, fatura, cliente, conta, emissao_nf, vencimento, recebimento, numero_nf, valor, desconto, juros, valor_pago, arquivo_origem: fileName, raw: row, updated_at: new Date().toISOString() };
+  }
+
+  function buildFinanceiroPagarPayload(row, fileName) {
+    const empresa = normalizeText(financeiroRowValue(row, ['Empresa']));
+    const situacao = normalizeFinanceStatus(financeiroRowValue(row, ['Situação', 'Situacao', 'Status']));
+    const cod_grupo = normalizeText(financeiroRowValue(row, ['COD/Grupo', 'Cod/Grupo', 'Código', 'Codigo', 'Grupo']));
+    const data_lancamento = toIsoDate(financeiroRowValue(row, ['Data', 'Data Lançamento', 'Data Lancamento']));
+    const coordenacao = normalizeText(financeiroRowValue(row, ['Coordenação', 'Coordenacao']));
+    const supervisao = normalizeText(financeiroRowValue(row, ['Supervisão', 'Supervisao']));
+    const favorecido = normalizeText(financeiroRowValue(row, ['Favorecido', 'Fornecedor', 'Nome']));
+    const cnpj_cpf = normalizeText(financeiroRowValue(row, ['CNPJ/CPF', 'CNPJ', 'CPF']));
+    const identificacao = normalizeText(financeiroRowValue(row, ['Identificação', 'Identificacao']));
+    const categoria = normalizeText(financeiroRowValue(row, ['Categoria']));
+    const doc = normalizeText(financeiroRowValue(row, ['Doc', 'Documento', 'Nº Doc', 'Numero Doc']));
+    const vencimento = toIsoDate(financeiroRowValue(row, ['Vencimento', 'Data Vencimento', 'Dt. Vencimento']));
+    const parcela = normalizeText(financeiroRowValue(row, ['Parcela']));
+    const valor_pago = normalizeNumberBr(financeiroRowValue(row, ['V. Pago', 'Valor Pago', 'Pago'])) || 0;
+    const valor = normalizeNumberBr(financeiroRowValue(row, ['Valor', 'Valor Título', 'Valor Titulo'])) || 0;
+    const usuario = normalizeText(financeiroRowValue(row, ['Usuário', 'Usuario']));
+    const data_cadastro = toIsoDate(financeiroRowValue(row, ['Data de Cadastro', 'Cadastro']));
+    if (!empresa && !cod_grupo && !favorecido && !doc && !vencimento && !valor) return null;
+    return { unique_hash: financeiroHash(['pagar', empresa, cod_grupo, favorecido, doc, vencimento, parcela, valor]), empresa, situacao, cod_grupo, data_lancamento, coordenacao, supervisao, favorecido, cnpj_cpf, identificacao, categoria, doc, vencimento, parcela, valor_pago, valor, usuario, data_cadastro, arquivo_origem: fileName, raw: row, updated_at: new Date().toISOString() };
+  }
+
+  async function upsertFinanceiroRows(tableName, payloads, opts) {
+    const supabase = opts.supabase;
+    let total = 0;
+    for (let i = 0; i < payloads.length; i += 500) {
+      const chunk = payloads.slice(i, i + 500);
+      const { error, data } = await supabase.from(tableName).upsert(chunk, { onConflict: 'unique_hash' }).select('id');
+      if (error) throw error;
+      total += data?.length || chunk.length;
+    }
+    return total;
+  }
+
+  async function importarFinanceiroReceberDaPlanilha(file, opts) {
+    const rows = await readFinanceiroObjectsFromFile(file, ['Situação', 'Código', 'Fatura', 'Cliente', 'Vencimento', 'Valor']);
+    const payloads = rows.map((row) => buildFinanceiroReceberPayload(row, file.name)).filter(Boolean);
+    if (!payloads.length) throw new Error('Não encontrei linhas válidas de Contas a Receber na planilha.');
+    const importados = await upsertFinanceiroRows('financeiro_contas_receber', payloads, opts);
+    const periodDates = payloads.map((row) => row.vencimento).filter(Boolean).sort();
+    return { importados, total_linhas: rows.length, periodo_inicio: periodDates[0] || null, periodo_fim: periodDates[periodDates.length - 1] || null, valor_total: payloads.reduce((sum, row) => sum + Number(row.valor || 0), 0) };
+  }
+
+  async function importarFinanceiroPagarDaPlanilha(file, opts) {
+    const rows = await readFinanceiroObjectsFromFile(file, ['Empresa', 'Situação', 'COD/Grupo', 'Favorecido', 'Vencimento', 'Valor']);
+    const payloads = rows.map((row) => buildFinanceiroPagarPayload(row, file.name)).filter(Boolean);
+    if (!payloads.length) throw new Error('Não encontrei linhas válidas de Contas a Pagar na planilha.');
+    const importados = await upsertFinanceiroRows('financeiro_contas_pagar', payloads, opts);
+    const periodDates = payloads.map((row) => row.vencimento).filter(Boolean).sort();
+    return { importados, total_linhas: rows.length, periodo_inicio: periodDates[0] || null, periodo_fim: periodDates[periodDates.length - 1] || null, valor_total: payloads.reduce((sum, row) => sum + Number(row.valor || 0), 0) };
   }
 
 
@@ -1611,155 +1710,6 @@
     };
   }
 
-  function isSafristaHistorico(tipo) {
-    const t = normalizeHeader(tipo || '');
-    return t.includes('diarista') || t.includes('intermitente') || t.includes('safrista');
-  }
-
-  function parseDataFromSheetName(name) {
-    const raw = String(name || '').trim();
-    let m = raw.match(/^(\d{2})(\d{2})(\d{4})$/);
-    if (m) return makeIsoDate(m[3], m[2], m[1]);
-    m = raw.match(/^(\d{1,2})[\.\/-](\d{1,2})[\.\/-](\d{4})$/);
-    if (m) return makeIsoDate(m[3], m[2], m[1]);
-    return toIsoDate(raw);
-  }
-
-  async function readHistoricoDiarioRowsFromFile(file) {
-    const XLSX = await loadXlsx();
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-    const mapped = [];
-    const dates = [];
-    const diagnostics = [];
-
-    for (const sheetName of workbook.SheetNames || []) {
-      const dataReferencia = parseDataFromSheetName(sheetName);
-      if (!dataReferencia) continue;
-      const sheet = workbook.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
-      if (!rows?.length) continue;
-
-      const headerRow = findHeaderRow(rows, ['Nome', 'Situação', 'Coordenação', 'Tipo']);
-      const headers = (rows[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
-      const iCpf = pickHeaderIndex(headers, ['CPF', 'Cpf']);
-      const iNome = pickHeaderIndex(headers, ['Nome', 'Funcionário', 'Funcionario', 'Colaborador']);
-      const iSituacao = pickHeaderIndex(headers, ['Situação', 'Situacao', 'Status']);
-      const iAdmissao = pickHeaderIndex(headers, ['Admissão', 'Admissao']);
-      const iDesligamento = pickHeaderIndex(headers, ['Desligamento']);
-      const iSalario = pickHeaderIndex(headers, ['Salário', 'Salario']);
-      const iConta = pickHeaderIndex(headers, ['C. Banc. Despesas', 'Conta Bancaria Despesas', 'Conta Bancária Despesas']);
-      const iEmpresa = pickHeaderIndex(headers, ['Empresa']);
-      const iCoord = pickHeaderIndex(headers, ['Coordenação', 'Coordenacao', 'Regional']);
-      const iSupervisao = pickHeaderIndex(headers, ['Supervisão', 'Supervisao']);
-      const iTipo = pickHeaderIndex(headers, ['Tipo']);
-      const iCep = pickHeaderIndex(headers, ['CEP']);
-      const iEstado = pickHeaderIndex(headers, ['Estado', 'UF']);
-      const iCidade = pickHeaderIndex(headers, ['Cidade']);
-      const iBairro = pickHeaderIndex(headers, ['Bairro']);
-      const iEndereco = pickHeaderIndex(headers, ['Endereço', 'Endereco']);
-      const iComplemento = pickHeaderIndex(headers, ['Complemento']);
-      const iNascimento = pickHeaderIndex(headers, ['Data de Nascimento', 'Nascimento']);
-      const iCargo = pickHeaderIndex(headers, ['Cargo']);
-      const iWhatsapp = pickHeaderIndex(headers, ['Whatsapp', 'WhatsApp', 'Telefone']);
-      const iEmailPessoal = pickHeaderIndex(headers, ['E-mail Pessoal', 'Email Pessoal']);
-      const iEmailEmpresa = pickHeaderIndex(headers, ['E-mail da Empresa', 'Email da Empresa']);
-
-      diagnostics.push({ sheetName, dataReferencia, headerRow: headerRow + 1, headers: headers.slice(0, 40), indexes: { iNome, iSituacao, iCoord, iTipo } });
-      if (iNome < 0 || iSituacao < 0 || iCoord < 0 || iTipo < 0) continue;
-
-      rows.slice(headerRow + 1).forEach((row) => {
-        const nome = normalizeText(row?.[iNome]);
-        const coordenacao = normalizeText(row?.[iCoord]);
-        if (!nome || !coordenacao) return;
-        const situacao = normalizeText(row?.[iSituacao]);
-        const tipo = normalizeText(row?.[iTipo]);
-        dates.push(dataReferencia);
-        mapped.push({
-          data_referencia: dataReferencia,
-          cpf: iCpf >= 0 ? normalizeText(row?.[iCpf]) : null,
-          nome,
-          situacao,
-          admissao: iAdmissao >= 0 ? toIsoDate(row?.[iAdmissao]) : null,
-          desligamento: iDesligamento >= 0 ? toIsoDate(row?.[iDesligamento]) : null,
-          salario: iSalario >= 0 ? String(row?.[iSalario] ?? '').trim() || null : null,
-          conta_bancaria_despesas: iConta >= 0 ? normalizeText(row?.[iConta]) : null,
-          empresa: iEmpresa >= 0 ? normalizeText(row?.[iEmpresa]) : null,
-          coordenacao,
-          supervisao: iSupervisao >= 0 ? normalizeText(row?.[iSupervisao]) : null,
-          tipo,
-          cep: iCep >= 0 ? normalizeText(row?.[iCep]) : null,
-          estado: iEstado >= 0 ? normalizeText(row?.[iEstado]) : null,
-          cidade: iCidade >= 0 ? normalizeText(row?.[iCidade]) : null,
-          bairro: iBairro >= 0 ? normalizeText(row?.[iBairro]) : null,
-          endereco: iEndereco >= 0 ? normalizeText(row?.[iEndereco]) : null,
-          complemento: iComplemento >= 0 ? normalizeText(row?.[iComplemento]) : null,
-          data_nascimento: iNascimento >= 0 ? toIsoDate(row?.[iNascimento]) : null,
-          cargo: iCargo >= 0 ? normalizeText(row?.[iCargo]) : null,
-          whatsapp: iWhatsapp >= 0 ? normalizeText(row?.[iWhatsapp]) : null,
-          email_pessoal: iEmailPessoal >= 0 ? normalizeText(row?.[iEmailPessoal]) : null,
-          email_empresa: iEmailEmpresa >= 0 ? normalizeText(row?.[iEmailEmpresa]) : null,
-          origem: 'importar_relatorios_historico_diario',
-          snapshot_json: {
-            arquivo: file.name,
-            aba: sheetName,
-            ativo_para_cargas: !normalizeHeader(situacao || '').includes('nao ativo'),
-            safrista: isSafristaHistorico(tipo),
-          },
-        });
-      });
-    }
-
-    const uniqueDates = [...new Set(dates)].sort();
-    return {
-      rows: mapped,
-      period: uniqueDates.length ? { inicio: uniqueDates[0], fim: uniqueDates[uniqueDates.length - 1], totalDatas: uniqueDates.length } : null,
-      diagnostics,
-    };
-  }
-
-  async function importarHistoricoDiarioDaPlanilha(file, opts) {
-    const { rows, period, diagnostics } = await readHistoricoDiarioRowsFromFile(file);
-    if (!rows.length) {
-      const detail = (diagnostics || []).map((d) => `${d.sheetName} linha ${d.headerRow}: ${d.headers.join(' | ')}`).join(' || ');
-      throw new Error(`A planilha de Histórico Diário não possui linhas válidas. Cabeçalhos esperados: Nome, Situação, Coordenação e Tipo. Detectado: ${detail || 'nenhum cabeçalho'}`);
-    }
-
-    if (period?.inicio && period?.fim) {
-      const { error: delError } = await opts.supabase
-        .from('historico_colaboradores')
-        .delete()
-        .eq('origem', 'importar_relatorios_historico_diario')
-        .gte('data_referencia', period.inicio)
-        .lte('data_referencia', period.fim);
-      if (delError) throw new Error(delError.message || 'Falha ao limpar período anterior do Histórico Diário.');
-    }
-
-    const batchSize = 500;
-    let total = 0;
-    for (let i = 0; i < rows.length; i += batchSize) {
-      const batch = rows.slice(i, i + batchSize);
-      const { error } = await opts.supabase.from('historico_colaboradores').insert(batch);
-      if (error) throw new Error(error.message || 'Falha ao gravar Histórico Diário no Supabase.');
-      total += batch.length;
-    }
-
-    const ativos = rows.filter((r) => !normalizeHeader(r.situacao || '').includes('nao ativo')).length;
-    const inativos = rows.length - ativos;
-    const regionais = new Set(rows.map((r) => normalizeHeader(r.coordenacao)).filter(Boolean)).size;
-    return {
-      total_linhas: rows.length,
-      importados: total,
-      ativos,
-      inativos,
-      regionais,
-      periodo_inicio: period?.inicio || null,
-      periodo_fim: period?.fim || null,
-      total_datas: period?.totalDatas || null,
-    };
-  }
-
-
   async function importarHoteisDaPlanilha(file, opts) {
     const linhas = await readSpreadsheetAsObjects(file);
     if (!linhas.length) {
@@ -1818,76 +1768,67 @@
   }
 
   function detectRelatorio(fileName) {
-    const rawName = String(fileName || '');
-    const n = normalizeHeader(rawName); // remove acentos, NBSP e variações Unicode
+    const n = String(fileName || '').toLowerCase();
 
-    const hasAll = (...terms) => terms.every((term) => n.includes(normalizeHeader(term)));
-    const hasAny = (...terms) => terms.some((term) => n.includes(normalizeHeader(term)));
-
-    if (hasAny('excesso', 'excesos', 'velocidade', 'velocidad') && !hasAny('patrimonio', 'patrimônio')) {
+    if ((n.includes('excesso') || n.includes('excesos') || n.includes('velocidade') || n.includes('velocidad')) && !n.includes('patrimonio') && !n.includes('patrimônio')) {
       return { tipo: 'frotas_excesso_velocidade', titulo: 'Excesso de Velocidade - Frotas' };
     }
 
-    if (hasAny('uber', 'corridas')) {
+    if (n.includes('uber') || n.includes('corridas')) {
       return { tipo: 'uber_corridas', titulo: 'Relatório Uber' };
     }
 
-    if (hasAny('auditoria', 'auditorias') && hasAny('relatorio', 'relatório', 'lista', 'auditoria')) {
+    if ((n.includes('auditoria') || n.includes('auditorias')) && (n.includes('relatorio') || n.includes('relatório') || n.includes('lista') || n.includes('auditoria'))) {
       return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
     }
 
-    // Histórico diário de funcionários/colaboradores ativos.
-    // Detecta mesmo quando o arquivo vem com acentos em Unicode decomposto.
-    if (hasAny('historico', 'histórico') && hasAny('diario', 'diário') && hasAny('funcionario', 'funcionário', 'funcionarios', 'funcionários', 'colaborador', 'colaboradores', 'ativo', 'ativos')) {
-      return { tipo: 'historico_colaboradores_diario', titulo: 'Histórico Diário de Colaboradores' };
-    }
-
-    // Planilha auxiliar do modelo antigo. Ela não substitui o Resultado Diário nem o Histórico Diário,
-    // mas fica classificada corretamente para não cair como "Outros".
-    if (hasAll('dias', 'trabalhados')) {
-      return { tipo: 'dias_trabalhados', titulo: 'Dias Trabalhados' };
-    }
-
-    if (hasAny('endereco', 'endereço', 'gps') && hasAny('colaborador', 'colaboradores')) {
+    if ((n.includes('endereco') || n.includes('endereço') || n.includes('gps')) && (n.includes('colaborador') || n.includes('colaboradores'))) {
       return { tipo: 'colaboradores_operacional', titulo: 'Endereços dos Colaboradores Operacional' };
     }
 
-    if ((hasAll('mapa', 'g1000')) || hasAny('ponto-embarque', 'pontos-embarque', 'pontos_de_embarque', 'pontos de embarque')) {
+    if ((n.includes('mapa') && n.includes('g1000')) || n.includes('ponto-embarque') || n.includes('pontos-embarque') || n.includes('pontos_de_embarque') || n.includes('pontos de embarque')) {
       return { tipo: 'pontos_embarque', titulo: 'Pontos de Embarque Operacional' };
     }
 
-    if (hasAny('hotel', 'hoteis', 'hotéis', 'hospedagem', 'hospedagens')) {
+    if (n.includes('hotel') || n.includes('hoteis') || n.includes('hotéis') || n.includes('hospedagem') || n.includes('hospedagens')) {
       return { tipo: 'hoteis', titulo: 'Banco de Hotéis' };
     }
 
-    if (hasAny('nota', 'fiscal', 'nfse', 'nfe')) {
+    if ((n.includes('contas') || n.includes('conta')) && n.includes('receber')) {
+      return { tipo: 'financeiro_contas_receber', titulo: 'Financeiro · Contas a Receber' };
+    }
+    if ((n.includes('contas') || n.includes('conta') || n.includes('lista')) && n.includes('pagar')) {
+      return { tipo: 'financeiro_contas_pagar', titulo: 'Financeiro · Contas a Pagar' };
+    }
+
+    if (n.includes('nota') || n.includes('fiscal') || n.includes('nfse') || n.includes('nfe')) {
       return { tipo: 'notas_fiscais', titulo: 'Notas Fiscais' };
     }
-    if (hasAny('despesa')) {
+    if (n.includes('despesa')) {
       return { tipo: 'despesas', titulo: 'Relatório de Despesas' };
     }
-    if ((hasAny('resultado') && hasAny('diario', 'diário')) || hasAny('resultado-diario')) {
+    if ((n.includes('resultado') && (n.includes('diario') || n.includes('diário'))) || n.includes('resultado-diario')) {
       return { tipo: 'resultado-diario', titulo: 'Relatório Resultado Diário' };
     }
-    if (hasAny('gavilon')) {
+    if (n.includes('gavilon')) {
       return { tipo: 'resultado-diario-gavilon', titulo: 'Relatório Resultado Diário Gavilon' };
     }
-    if (hasAny('resultado')) {
+    if (n.includes('resultado')) {
       return { tipo: 'resultado-diario', titulo: 'Relatório Resultado Diário' };
     }
-    if (hasAny('producao', 'produção')) {
+    if (n.includes('producao') || n.includes('produção')) {
       return { tipo: 'producao', titulo: 'Relatório de Produção' };
     }
-    if (hasAny('patrimonio', 'patrimônio')) {
+    if (n.includes('patrimonio') || n.includes('patrimônio')) {
       return { tipo: 'patrimonios', titulo: 'Relatório de Patrimônios' };
     }
-    if (hasAny('caixa', 'fornecedor')) {
+    if (n.includes('caixa') || n.includes('fornecedor')) {
       return { tipo: 'caixa_fornecedor', titulo: 'Caixa Fornecedor' };
     }
-    if (hasAny('carga')) {
+    if (n.includes('carga')) {
       return { tipo: 'cargas', titulo: 'Relatório de Cargas' };
     }
-    if (hasAny('faturado', 'faturamento')) {
+    if (n.includes('faturado') || n.includes('faturamento')) {
       return { tipo: 'servicos_faturados', titulo: 'Serviços Faturados' };
     }
 
@@ -2160,7 +2101,8 @@
     let patrimoniosResumo = null;
     let frotasExcessoResumo = null;
     let resultadoDiarioResumo = null;
-    let historicoDiarioResumo = null;
+    let financeiroReceberResumo = null;
+    let financeiroPagarResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -2202,11 +2144,17 @@
       resultadoDiarioResumo = await importarResultadoDiarioDaPlanilha(file, opts, entry?.period || null);
       if (resultadoDiarioResumo?.periodo_inicio) entry.period = { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null };
     }
-    if (detected.tipo === 'historico_colaboradores_diario') {
-      status.textContent = 'Consolidando Histórico Diário de colaboradores para produzido por colaborador...';
+    if (detected.tipo === 'financeiro_contas_receber') {
+      status.textContent = 'Importando Contas a Receber no módulo Financeiro...';
       setProgress(bar, 82);
-      historicoDiarioResumo = await importarHistoricoDiarioDaPlanilha(file, opts);
-      if (historicoDiarioResumo?.periodo_inicio) entry.period = { inicio: historicoDiarioResumo.periodo_inicio, fim: historicoDiarioResumo.periodo_fim, totalDatas: historicoDiarioResumo.total_datas || null };
+      financeiroReceberResumo = await importarFinanceiroReceberDaPlanilha(file, opts);
+      if (financeiroReceberResumo?.periodo_inicio) entry.period = { inicio: financeiroReceberResumo.periodo_inicio, fim: financeiroReceberResumo.periodo_fim, totalDatas: null };
+    }
+    if (detected.tipo === 'financeiro_contas_pagar') {
+      status.textContent = 'Importando Contas a Pagar no módulo Financeiro...';
+      setProgress(bar, 82);
+      financeiroPagarResumo = await importarFinanceiroPagarDaPlanilha(file, opts);
+      if (financeiroPagarResumo?.periodo_inicio) entry.period = { inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim, totalDatas: null };
     }
 
     const importMode = opts.importMode || 'auto';
@@ -2214,7 +2162,11 @@
       ? null
       : (resultadoDiarioResumo?.periodo_inicio
         ? { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null }
-        : (historicoDiarioResumo?.periodo_inicio ? { inicio: historicoDiarioResumo.periodo_inicio, fim: historicoDiarioResumo.periodo_fim, totalDatas: historicoDiarioResumo.total_datas || null } : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo)))));
+        : (financeiroReceberResumo?.periodo_inicio
+          ? { inicio: financeiroReceberResumo.periodo_inicio, fim: financeiroReceberResumo.periodo_fim, totalDatas: null }
+          : (financeiroPagarResumo?.periodo_inicio
+            ? { inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim, totalDatas: null }
+            : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo))))));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -2226,18 +2178,19 @@
       ? (check.exists ? 'replace' : 'append')
       : importMode;
 
-    const statusRegistroMap = {
-      hoteis: 'Registrando upload da planilha de hotéis...',
-      pontos_embarque: 'Registrando upload dos pontos de embarque...',
-      colaboradores_operacional: 'Registrando upload dos endereços dos colaboradores...',
-      historico_colaboradores_diario: 'Registrando upload do histórico diário de colaboradores...',
-      dias_trabalhados: 'Registrando upload da planilha de dias trabalhados...',
-      auditorias_operacional: 'Registrando upload das auditorias operacionais...',
-      uber_corridas: 'Registrando upload do relatório Uber...',
-    };
-    status.textContent = statusRegistroMap[detected.tipo] || (effectiveMode === 'replace'
-      ? 'Registrando substituição inteligente...'
-      : 'Registrando complemento inteligente...');
+    status.textContent = detected.tipo === 'hoteis'
+      ? 'Registrando upload da planilha de hotéis...'
+      : (detected.tipo === 'pontos_embarque'
+        ? 'Registrando upload dos pontos de embarque...'
+        : (detected.tipo === 'colaboradores_operacional'
+          ? 'Registrando upload dos endereços dos colaboradores...'
+          : (detected.tipo === 'auditorias_operacional'
+            ? 'Registrando upload das auditorias operacionais...'
+            : (detected.tipo === 'uber_corridas'
+              ? 'Registrando upload do relatório Uber...'
+              : (effectiveMode === 'replace'
+            ? 'Registrando substituição inteligente...'
+            : 'Registrando complemento inteligente...')))));
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -2279,7 +2232,8 @@
           patrimonios_importacao: patrimoniosResumo || null,
           frotas_excesso_velocidade_importacao: frotasExcessoResumo || null,
           resultado_diario_importacao: resultadoDiarioResumo || null,
-          historico_colaboradores_diario_importacao: historicoDiarioResumo || null,
+          financeiro_contas_receber_importacao: financeiroReceberResumo || null,
+          financeiro_contas_pagar_importacao: financeiroPagarResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -2316,14 +2270,16 @@
       status.textContent = `Frotas: ${frotasExcessoResumo.importados || 0} excessos · ${frotasExcessoResumo.identificados || 0} identificados · ${frotasExcessoResumo.pendentes || 0} pendentes`;
     } else if (detected.tipo === 'resultado-diario' && resultadoDiarioResumo) {
       status.textContent = `Resultado Diário: ${resultadoDiarioResumo.importados || 0} linhas consolidadas · ${Number(resultadoDiarioResumo.toneladas || 0).toLocaleString('pt-BR')} tons · DRE rápido`;
-    } else if (detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo) {
-      status.textContent = `Histórico Diário: ${historicoDiarioResumo.importados || 0} linhas · ${historicoDiarioResumo.ativos || 0} ativos · ${historicoDiarioResumo.total_datas || 0} dia(s) para produzido por colaborador`;
+    } else if (detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) {
+      status.textContent = `Financeiro Receber: ${financeiroReceberResumo.importados || 0} títulos atualizados · ${formatPeriod({ inicio: financeiroReceberResumo.periodo_inicio, fim: financeiroReceberResumo.periodo_fim })} · ${MONEY_FMT.format(financeiroReceberResumo.valor_total || 0)}`;
+    } else if (detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo) {
+      status.textContent = `Financeiro Pagar: ${financeiroPagarResumo.importados || 0} títulos atualizados · ${formatPeriod({ inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim })} · ${MONEY_FMT.format(financeiroPagarResumo.valor_total || 0)}`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -2512,21 +2468,6 @@
               entry.message = period ? `Período: ${formatPeriod(period)} · importará Frotas` : 'Pendente · Frotas sem período detectado';
               renderFiles();
             });
-          } else if (detected.tipo === 'historico_colaboradores_diario') {
-            entry.message = 'Pendente · consolidará histórico diário para produzido por colaborador';
-            readHistoricoDiarioRowsFromFile(file).then((res) => {
-              const period = res?.period || null;
-              entry.period = period;
-              const total = Number(res?.rows?.length || 0);
-              entry.message = period
-                ? `Período: ${formatPeriod(period)} · ${total.toLocaleString('pt-BR')} linhas · consolidará Histórico Diário`
-                : 'Pendente · Histórico Diário sem período detectado';
-              renderFiles();
-            }).catch((err) => {
-              entry.period = null;
-              entry.message = `Pendente · não foi possível pré-validar Histórico Diário (${err?.message || 'erro de leitura'})`;
-              renderFiles();
-            });
           } else if (detected.tipo === 'resultado-diario') {
             entry.message = 'Pendente · consolidará produção para DRE rápido';
             // Usa o próprio leitor do Resultado Diário para detectar o período.
@@ -2542,6 +2483,18 @@
             }).catch((err) => {
               entry.period = null;
               entry.message = `Pendente · não foi possível pré-validar Resultado Diário (${err?.message || 'erro de leitura'})`;
+              renderFiles();
+            });
+          } else if (detected.tipo === 'financeiro_contas_receber') {
+            detectFilePeriod(file, detected.tipo).then((period) => {
+              entry.period = period;
+              entry.message = period ? `Período: ${formatPeriod(period)} · importará Contas a Receber no Financeiro` : 'Pendente · Contas a Receber sem vencimento detectado';
+              renderFiles();
+            });
+          } else if (detected.tipo === 'financeiro_contas_pagar') {
+            detectFilePeriod(file, detected.tipo).then((period) => {
+              entry.period = period;
+              entry.message = period ? `Período: ${formatPeriod(period)} · importará Contas a Pagar no Financeiro` : 'Pendente · Contas a Pagar sem vencimento detectado';
               renderFiles();
             });
           } else {
