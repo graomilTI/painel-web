@@ -479,9 +479,11 @@
   function findHeaderRow(rows, required) {
     let best = 0;
     let score = -1;
-    const req = required.map(headerKey);
-    (rows || []).slice(0, 25).forEach((row, index) => {
-      const headers = (row || []).map(headerKey);
+    const req = (required || []).map(headerKey).filter(Boolean);
+    (rows || []).slice(0, 50).forEach((row, index) => {
+      // IMPORTANTE: ignora células vazias. Antes, name.includes('') fazia
+      // linhas de observação com colunas vazias serem confundidas com cabeçalho.
+      const headers = (row || []).map(headerKey).filter(Boolean);
       const current = req.filter((name) => headers.some((h) => h === name || h.includes(name) || name.includes(h))).length;
       if (current > score) {
         score = current;
@@ -2308,9 +2310,19 @@
             });
           } else if (detected.tipo === 'resultado-diario') {
             entry.message = 'Pendente · consolidará produção para DRE rápido';
-            detectFilePeriod(file, detected.tipo).then((period) => {
+            // Usa o próprio leitor do Resultado Diário para detectar o período.
+            // Assim a mesma regra que importa também valida Data/Coordenação/Toneladas.
+            readResultadoDiarioRowsFromFile(file).then((res) => {
+              const period = res?.period || null;
               entry.period = period;
-              entry.message = period ? `Período: ${formatPeriod(period)} · consolidará Resultado Diário` : 'Pendente · Resultado Diário sem período detectado';
+              const total = Number(res?.rows?.length || 0);
+              entry.message = period
+                ? `Período: ${formatPeriod(period)} · ${total.toLocaleString('pt-BR')} linhas · consolidará Resultado Diário`
+                : 'Pendente · Resultado Diário sem período detectado';
+              renderFiles();
+            }).catch((err) => {
+              entry.period = null;
+              entry.message = `Pendente · não foi possível pré-validar Resultado Diário (${err?.message || 'erro de leitura'})`;
               renderFiles();
             });
           } else {
