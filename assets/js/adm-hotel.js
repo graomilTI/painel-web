@@ -2,6 +2,7 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
 const LABELS = {
+  CASA: 'Casa', APARTAMENTO: 'Apartamento', POUSADA: 'Pousada', ESCRITORIO: 'Escritório',
   SOLICITADA: 'Solicitada', EM_ANALISE: 'Em análise', EM_COTACAO: 'Em cotação', RESERVADA: 'Reservada', CANCELADA: 'Cancelada', CONCLUIDA: 'Concluída',
   CHECKIN_PREVISTO: 'Check-in previsto', HOSPEDADO: 'Hospedado', CHECKOUT_HOJE: 'Checkout hoje', RENOVACAO_NECESSARIA: 'Renovação necessária', CHECKOUT_REALIZADO: 'Checkout realizado',
   NAO_INICIADO: 'Não iniciado', AGUARDANDO_PAGAMENTO: 'Aguardando pagamento', ENVIADO_AO_FINANCEIRO: 'Enviado ao financeiro', PAGO: 'Pago', SEM_COBRANCA: 'Sem cobrança',
@@ -47,7 +48,7 @@ function injectStyles() {
 
 initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   injectStyles();
-  const state = { rows: [], resumo: {}, hoteis: [], editingHotel: null, tab: 'painel', selected: null, painelStatus: 'reservados' };
+  const state = { rows: [], resumo: {}, hoteis: [], alojamentos: [], editingHotel: null, editingAlojamento: null, tab: 'painel', selected: null, painelStatus: 'reservados' };
   function getHotelById(id) { return state.hoteis.find((h) => String(h.id) === String(id)); }
 
   content.innerHTML = `
@@ -64,6 +65,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       <button class="adm-hosp-tab active" data-tab="painel" type="button">Painel</button>
       <button class="adm-hosp-tab" data-tab="solicitacoes" type="button">Solicitações</button>
       <button class="adm-hosp-tab" data-tab="hoteis" type="button">Hotéis</button>
+      <button class="adm-hosp-tab" data-tab="alojamentos" type="button">Alojamentos</button>
     </div>
 
     <section id="tab-painel" class="adm-hosp-panel active">
@@ -120,6 +122,43 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
         <div class="adm-hosp-form-actions"><button class="btn btn-primary adm-hosp-btn" type="submit" form="hotelForm" id="hotelSave">Salvar hotel</button><button class="btn btn-secondary adm-hosp-btn" type="button" id="hotelClear">Limpar</button><span id="hotelFeedback" class="adm-hosp-feedback"></span></div>
       </article>
       <article class="card mt-16"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Hotel</th><th>Cidade</th><th>Diárias</th><th>Contato</th><th>Status</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody id="hotelTbody"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article>
+    </section>
+
+
+    <section id="tab-alojamentos" class="adm-hosp-panel">
+      <article class="card">
+        <div class="adm-hosp-toolbar">
+          <div><h3>Cadastro de alojamentos</h3><p class="muted">Base de casas, apartamentos, pousadas e escritórios para sugerir na programação quando o gestor selecionar ALOJAMENTO.</p></div>
+          <input id="alojSearch" class="adm-hosp-search" placeholder="Buscar alojamento, cidade, responsável..." />
+        </div>
+        <form id="alojForm" class="adm-hosp-form">
+          <div class="adm-hosp-field"><label>Nome do alojamento *</label><input id="alojNome" required placeholder="Ex.: MT - Confresa" /></div>
+          <div class="adm-hosp-field"><label>Tipo</label><select id="alojTipo"><option value="CASA">Casa</option><option value="APARTAMENTO">Apartamento</option><option value="POUSADA">Pousada</option><option value="ESCRITORIO">Escritório</option><option value="OUTRO">Outro</option></select></div>
+          <div class="adm-hosp-field"><label>Cidade *</label><input id="alojCidade" required /></div>
+          <div class="adm-hosp-field"><label>UF *</label><input id="alojUf" required maxlength="2" /></div>
+          <div class="adm-hosp-field full"><label>Endereço</label><input id="alojEndereco" /></div>
+          <div class="adm-hosp-field"><label>Capacidade</label><input id="alojCapacidade" type="number" min="0" step="1" /></div>
+          <div class="adm-hosp-field"><label>Quartos</label><input id="alojQuartos" type="number" min="0" step="1" /></div>
+          <div class="adm-hosp-field"><label>Responsável</label><input id="alojResponsavel" /></div>
+          <div class="adm-hosp-field"><label>Contato</label><input id="alojContato" /></div>
+          <div class="adm-hosp-field"><label>Status</label><select id="alojStatus"><option value="ATIVO">Ativo</option><option value="INATIVO">Inativo</option><option value="BLOQUEADO">Bloqueado</option></select></div>
+          <div class="adm-hosp-field"><label>Prioridade</label><select id="alojPrioridade"><option value="NORMAL">Normal</option><option value="PREFERENCIAL">Preferencial</option><option value="EVITAR">Evitar</option></select></div>
+          <div class="adm-hosp-field"><label>Aluguel mensal</label><input id="alojAluguel" type="number" min="0" step="0.01" /></div>
+          <div class="adm-hosp-field"><label>Água</label><input id="alojAgua" placeholder="Conta, status ou valor" /></div>
+          <div class="adm-hosp-field"><label>Energia</label><input id="alojEnergia" placeholder="Conta, status ou valor" /></div>
+          <div class="adm-hosp-field"><label>Internet</label><input id="alojInternet" placeholder="Conta, status ou valor" /></div>
+          <div class="adm-hosp-field"><label>Empresa internet</label><input id="alojEmpresaNet" /></div>
+          <div class="adm-hosp-field"><label>Vencimento aluguel</label><input id="alojVencAluguel" type="number" min="1" max="31" /></div>
+          <div class="adm-hosp-field"><label>Vencimento água</label><input id="alojVencAgua" type="number" min="1" max="31" /></div>
+          <div class="adm-hosp-field"><label>Vencimento energia</label><input id="alojVencEnergia" type="number" min="1" max="31" /></div>
+          <div class="adm-hosp-field"><label>Vencimento internet</label><input id="alojVencInternet" type="number" min="1" max="31" /></div>
+          <div class="adm-hosp-field full"><label>Anexo comprovante/fatura</label><input id="alojAnexo" placeholder="Cole o link do Drive/Supabase Storage da fatura ou comprovante" /></div>
+          <div class="adm-hosp-field full"><label>Descrição da fatura</label><textarea id="alojDescricaoFatura" placeholder="Ex.: aluguel janeiro/26 lançado; energia solicitada; internet isenta..."></textarea></div>
+          <div class="adm-hosp-field full"><label>Observações</label><textarea id="alojObs"></textarea></div>
+        </form>
+        <div class="adm-hosp-form-actions"><button class="btn btn-primary adm-hosp-btn" type="submit" form="alojForm" id="alojSave">Salvar alojamento</button><button class="btn btn-secondary adm-hosp-btn" type="button" id="alojClear">Limpar</button><span id="alojFeedback" class="adm-hosp-feedback"></span></div>
+      </article>
+      <article class="card mt-16"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Alojamento</th><th>Cidade</th><th>Estrutura</th><th>Despesas</th><th>Fatura</th><th>Status</th><th>Ações</th></tr></thead><tbody id="alojTbody"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article>
     </section>
 
     <div id="reservaModal" class="adm-hosp-modal">
@@ -543,7 +582,15 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       _colaboradoresDetalhados: porSolicitacao.get(String(row.solicitacao_id || '')) || []
     }));
   }
-  function setTab(tab) { state.tab = tab; document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab)); document.querySelectorAll('.adm-hosp-panel').forEach((p) => p.classList.remove('active')); document.getElementById(`tab-${tab}`).classList.add('active'); if (tab === 'hoteis') loadHoteis(); if (tab !== 'hoteis') loadRows(); }
+  function setTab(tab) {
+    state.tab = tab;
+    document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.adm-hosp-panel').forEach((p) => p.classList.remove('active'));
+    document.getElementById(`tab-${tab}`)?.classList.add('active');
+    if (tab === 'hoteis') return loadHoteis();
+    if (tab === 'alojamentos') return loadAlojamentos();
+    loadRows();
+  }
 
   async function loadResumo() {
     const { data } = await supabase.from('hospedagem_dashboard_resumo').select('*').maybeSingle();
@@ -711,6 +758,141 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
         <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="edit-hotel" data-id="${esc(h.id)}" type="button">Editar</button><button class="btn btn-secondary adm-hosp-small adm-hosp-danger" data-action="delete-hotel" data-id="${esc(h.id)}" type="button">Excluir</button></div></td>
       </tr>
     `).join('');
+  }
+
+
+  async function loadAlojamentos() {
+    const tbody = document.getElementById('alojTbody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr>`;
+    const { data, error } = await supabase.from('hospedagem_alojamentos').select('*').order('cidade', { ascending: true }).order('nome', { ascending: true });
+    if (error) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}. Rode a migration de alojamentos no Supabase.</td></tr>`;
+      return;
+    }
+    state.alojamentos = data || [];
+    renderAlojamentos();
+  }
+
+  function renderAlojamentos() {
+    const tbody = document.getElementById('alojTbody');
+    if (!tbody) return;
+    const search = normalizeText(document.getElementById('alojSearch')?.value || '');
+    let rows = state.alojamentos || [];
+    if (search) rows = rows.filter((a) => normalizeText([a.nome, a.cidade, a.uf, a.responsavel, a.contato, a.empresa_internet, a.descricao_fatura].join(' ')).includes(search));
+    if (!rows.length) { tbody.innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">Nenhum alojamento encontrado.</td></tr>`; return; }
+    tbody.innerHTML = rows.map((a) => {
+      const despesas = [
+        a.valor_aluguel ? `Aluguel: ${money(a.valor_aluguel)}` : '',
+        a.agua ? `Água: ${esc(a.agua)}` : '',
+        a.energia ? `Energia: ${esc(a.energia)}` : '',
+        a.internet ? `Internet: ${esc(a.internet)}` : '',
+        a.empresa_internet ? `Empresa: ${esc(a.empresa_internet)}` : ''
+      ].filter(Boolean).join('<br>') || '-';
+      const vencs = [
+        a.vencimento_aluguel ? `Aluguel dia ${esc(a.vencimento_aluguel)}` : '',
+        a.vencimento_agua ? `Água dia ${esc(a.vencimento_agua)}` : '',
+        a.vencimento_energia ? `Energia dia ${esc(a.vencimento_energia)}` : '',
+        a.vencimento_internet ? `Internet dia ${esc(a.vencimento_internet)}` : ''
+      ].filter(Boolean).join(' · ');
+      return `<tr>
+        <td><strong>${esc(a.nome)}</strong><span class="adm-hosp-row-note">${esc(a.endereco || '')}</span></td>
+        <td>${esc([a.cidade, a.uf].filter(Boolean).join('/'))}</td>
+        <td>${statusPill(a.tipo || 'CASA')}<span class="adm-hosp-row-note">Cap.: ${esc(a.capacidade || '-')} · Quartos: ${esc(a.quartos || '-')}</span><span class="adm-hosp-row-note">${esc(a.responsavel || '')}${a.contato ? ` · ${esc(a.contato)}` : ''}</span></td>
+        <td>${despesas}<span class="adm-hosp-row-note">${esc(vencs)}</span></td>
+        <td>${a.anexo_url ? `<a href="${esc(a.anexo_url)}" target="_blank" rel="noopener">Abrir anexo</a>` : '-'}<span class="adm-hosp-row-note">${esc(a.descricao_fatura || '')}</span></td>
+        <td>${statusPill(a.status || 'ATIVO')}<br>${statusPill(a.prioridade || 'NORMAL')}</td>
+        <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="edit-alojamento" data-id="${esc(a.id)}" type="button">Editar</button><button class="btn btn-secondary adm-hosp-small adm-hosp-danger" data-action="delete-alojamento" data-id="${esc(a.id)}" type="button">Excluir</button></div></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function resetAlojamentoForm() {
+    state.editingAlojamento = null;
+    document.getElementById('alojForm')?.reset();
+    if (document.getElementById('alojStatus')) document.getElementById('alojStatus').value = 'ATIVO';
+    if (document.getElementById('alojPrioridade')) document.getElementById('alojPrioridade').value = 'NORMAL';
+    if (document.getElementById('alojSave')) document.getElementById('alojSave').textContent = 'Salvar alojamento';
+    setFeedback('alojFeedback', '');
+  }
+
+  function fillAlojamentoForm(a) {
+    state.editingAlojamento = a.id;
+    document.getElementById('alojNome').value = a.nome || '';
+    document.getElementById('alojTipo').value = a.tipo || 'CASA';
+    document.getElementById('alojCidade').value = a.cidade || '';
+    document.getElementById('alojUf').value = a.uf || '';
+    document.getElementById('alojEndereco').value = a.endereco || '';
+    document.getElementById('alojCapacidade').value = a.capacidade || '';
+    document.getElementById('alojQuartos').value = a.quartos || '';
+    document.getElementById('alojResponsavel').value = a.responsavel || '';
+    document.getElementById('alojContato').value = a.contato || '';
+    document.getElementById('alojStatus').value = a.status || 'ATIVO';
+    document.getElementById('alojPrioridade').value = a.prioridade || 'NORMAL';
+    document.getElementById('alojAluguel').value = a.valor_aluguel || '';
+    document.getElementById('alojAgua').value = a.agua || '';
+    document.getElementById('alojEnergia').value = a.energia || '';
+    document.getElementById('alojInternet').value = a.internet || '';
+    document.getElementById('alojEmpresaNet').value = a.empresa_internet || '';
+    document.getElementById('alojVencAluguel').value = a.vencimento_aluguel || '';
+    document.getElementById('alojVencAgua').value = a.vencimento_agua || '';
+    document.getElementById('alojVencEnergia').value = a.vencimento_energia || '';
+    document.getElementById('alojVencInternet').value = a.vencimento_internet || '';
+    document.getElementById('alojAnexo').value = a.anexo_url || '';
+    document.getElementById('alojDescricaoFatura').value = a.descricao_fatura || '';
+    document.getElementById('alojObs').value = a.observacoes || '';
+    document.getElementById('alojSave').textContent = 'Salvar alterações';
+    document.getElementById('alojNome').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  async function saveAlojamento(ev) {
+    ev.preventDefault();
+    setFeedback('alojFeedback', 'Salvando...');
+    const payload = {
+      nome: document.getElementById('alojNome').value.trim(),
+      tipo: document.getElementById('alojTipo').value || 'CASA',
+      cidade: document.getElementById('alojCidade').value.trim(),
+      uf: normalizeUF(document.getElementById('alojUf').value),
+      endereco: document.getElementById('alojEndereco').value.trim() || null,
+      capacidade: document.getElementById('alojCapacidade').value ? Number(document.getElementById('alojCapacidade').value) : null,
+      quartos: document.getElementById('alojQuartos').value ? Number(document.getElementById('alojQuartos').value) : null,
+      responsavel: document.getElementById('alojResponsavel').value.trim() || null,
+      contato: document.getElementById('alojContato').value.trim() || null,
+      status: document.getElementById('alojStatus').value,
+      prioridade: document.getElementById('alojPrioridade').value,
+      valor_aluguel: document.getElementById('alojAluguel').value ? Number(document.getElementById('alojAluguel').value) : null,
+      agua: document.getElementById('alojAgua').value.trim() || null,
+      energia: document.getElementById('alojEnergia').value.trim() || null,
+      internet: document.getElementById('alojInternet').value.trim() || null,
+      empresa_internet: document.getElementById('alojEmpresaNet').value.trim() || null,
+      vencimento_aluguel: document.getElementById('alojVencAluguel').value ? Number(document.getElementById('alojVencAluguel').value) : null,
+      vencimento_agua: document.getElementById('alojVencAgua').value ? Number(document.getElementById('alojVencAgua').value) : null,
+      vencimento_energia: document.getElementById('alojVencEnergia').value ? Number(document.getElementById('alojVencEnergia').value) : null,
+      vencimento_internet: document.getElementById('alojVencInternet').value ? Number(document.getElementById('alojVencInternet').value) : null,
+      anexo_url: document.getElementById('alojAnexo').value.trim() || null,
+      descricao_fatura: document.getElementById('alojDescricaoFatura').value.trim() || null,
+      observacoes: document.getElementById('alojObs').value.trim() || null,
+      atualizado_por: userContext?.user?.id || null
+    };
+    if (!payload.nome || !payload.cidade || !payload.uf) { setFeedback('alojFeedback', 'Informe nome, cidade e UF do alojamento.', 'err'); return; }
+    const result = state.editingAlojamento
+      ? await supabase.from('hospedagem_alojamentos').update(payload).eq('id', state.editingAlojamento)
+      : await supabase.from('hospedagem_alojamentos').insert({ ...payload, criado_por: userContext?.user?.id || null });
+    if (result.error) { setFeedback('alojFeedback', result.error.message, 'err'); return; }
+    resetAlojamentoForm();
+    setFeedback('alojFeedback', 'Alojamento salvo com sucesso.', 'ok');
+    await loadAlojamentos();
+  }
+
+  async function deleteAlojamento(id) {
+    const aloj = (state.alojamentos || []).find((a) => String(a.id) === String(id));
+    if (!aloj) return;
+    if (!window.confirm(`Excluir o alojamento ${aloj.nome}?`)) return;
+    setFeedback('alojFeedback', 'Excluindo alojamento...');
+    const { error } = await supabase.from('hospedagem_alojamentos').delete().eq('id', id);
+    if (error) { setFeedback('alojFeedback', error.message, 'err'); return; }
+    if (state.editingAlojamento === id) resetAlojamentoForm();
+    setFeedback('alojFeedback', 'Alojamento excluído com sucesso.', 'ok');
+    await loadAlojamentos();
   }
 
   function resetHotelForm() {
@@ -1280,6 +1462,9 @@ function aplicarDiariaHotelSelecionado() {
   document.getElementById('hotelSearch').addEventListener('input', renderHoteis);
   document.getElementById('hotelForm').addEventListener('submit', saveHotel);
   document.getElementById('hotelClear').addEventListener('click', resetHotelForm);
+  document.getElementById('alojSearch')?.addEventListener('input', renderAlojamentos);
+  document.getElementById('alojForm')?.addEventListener('submit', saveAlojamento);
+  document.getElementById('alojClear')?.addEventListener('click', resetAlojamentoForm);
   document.getElementById('reservaForm').addEventListener('submit', saveReserva);
   document.getElementById('saveFinNf').addEventListener('click', saveFinNf);
   document.getElementById('sendToFinanceiro').addEventListener('click', enviarCobrancaFinanceiro);
@@ -1328,7 +1513,9 @@ function aplicarDiariaHotelSelecionado() {
     if (btn.dataset.action === 'open-process') { const row = state.rows.find((r) => r.solicitacao_id === btn.dataset.id); if (row) { openModal(row); setProcess(btn.dataset.processTarget || 'config'); } }
     if (btn.dataset.action === 'edit-hotel') { const h = state.hoteis.find((x) => x.id === btn.dataset.id); if (h) fillHotelForm(h); }
     if (btn.dataset.action === 'delete-hotel') deleteHotel(btn.dataset.id);
+    if (btn.dataset.action === 'edit-alojamento') { const a = (state.alojamentos || []).find((x) => String(x.id) === String(btn.dataset.id)); if (a) fillAlojamentoForm(a); }
+    if (btn.dataset.action === 'delete-alojamento') deleteAlojamento(btn.dataset.id);
   });
 
-  (async function boot(){ await loadHoteis(); await loadRows(); })();
+  (async function boot(){ await loadHoteis(); await loadAlojamentos(); await loadRows(); })();
 });
