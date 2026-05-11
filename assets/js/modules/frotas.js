@@ -697,16 +697,44 @@
     return data || {};
   }
 
-  async function sincronizarRelatorioBFleet(root, opts = {}) {
-    const btn = root.querySelector('[data-sync-bfleet-excessos]');
-    const originalText = btn?.textContent || 'Sincronizar';
+  function readSyncReportPeriod(root) {
+    const start = root.querySelector('[data-sync-report-start]')?.value || '';
+    const end = root.querySelector('[data-sync-report-end]')?.value || '';
+    return { start, end };
+  }
+
+  async function sincronizarRelatorioBFleet(root, opts = {}, mode = 'yesterday') {
+    const isPeriod = mode === 'period';
+    const btn = root.querySelector(isPeriod ? '[data-sync-bfleet-period]' : '[data-sync-bfleet-excessos]');
+    const originalText = btn?.textContent || (isPeriod ? 'Sincronizar período' : 'Sincronizar ontem');
     try {
       if (btn) {
         btn.disabled = true;
         btn.textContent = 'Sincronizando...';
       }
+
       const body = { mode: 'sync', forceRefreshToken: true, preferWebReport: true, rangeTimeVal: 'yesterday' };
-      toast('Sincronizando relatório de excesso de velocidade da BFleet (yesterday)...');
+      let label = 'yesterday';
+
+      if (isPeriod) {
+        const { start, end } = readSyncReportPeriod(root);
+        if (!start || !end) {
+          toast('Informe a data inicial e a data final do relatório para sincronizar o período.', 'error');
+          return;
+        }
+        if (start > end) {
+          toast('A data inicial do relatório não pode ser maior que a data final.', 'error');
+          return;
+        }
+        body.dataInicial = start;
+        body.dataFinal = end;
+        body.startDate = start;
+        body.endDate = end;
+        delete body.rangeTimeVal;
+        label = `${formatDateBR(start)} a ${formatDateBR(end)}`;
+      }
+
+      toast(`Sincronizando relatório de excesso de velocidade da BFleet (${label})...`);
       const res = await callEdgeFunction(opts, BFLEET_EXCESSO_FUNCTION, body);
       const inserted = Number(res?.inserted || res?.inseridos || res?.created || res?.novos || 0);
       const updated = Number(res?.updated || res?.atualizados || 0);
@@ -1180,9 +1208,18 @@
               <div class="speed-panel">
                 <div class="speed-step-title"><h3>Painel 1 · Copiar mensagem</h3><span class="speed-step-pill">maior velocidade por data</span></div>
                 <div class="speed-import-card">
-                  <div class="speed-import-head"><h3>Registros importados</h3><div class="speed-import-actions"><button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-sync-bfleet-excessos>Sincronizar</button><button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-refresh-imported-excessos>Atualizar</button></div></div>
+                  <div class="speed-import-head"><h3>Registros importados</h3><div class="speed-import-actions"><button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-sync-bfleet-excessos>Sincronizar ontem</button><button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-refresh-imported-excessos>Atualizar</button></div></div>
                   <p class="speed-hint" data-imported-excess-count>Nenhuma pendência carregada</p>
-                  <p class="speed-hint">A sincronização busca o relatório padrão da BFleet com o marcador <strong>yesterday</strong>. As datas abaixo são usadas apenas para aplicar OK em lote nas pendências.</p>
+                  <div class="print-status-box">
+                    <strong>Sincronizar relatório da BFleet</strong>
+                    <p>Use <strong>Sincronizar ontem</strong> para o padrão diário. Para ajustar manualmente a data que vem da API, informe o período abaixo.</p>
+                    <div class="speed-sync-range">
+                      <div class="speed-field"><label>Data inicial do relatório</label><input class="speed-input" type="date" data-sync-report-start></div>
+                      <div class="speed-field"><label>Data final do relatório</label><input class="speed-input" type="date" data-sync-report-end></div>
+                    </div>
+                    <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-sync-bfleet-period>Sincronizar período</button>
+                  </div>
+                  <p class="speed-hint">As datas de OK em lote aparecem junto das pendências e servem apenas para limpar/arquivar registros já importados.</p>
                   <div class="speed-import-list" data-imported-excess-list><div class="speed-import-empty">Carregando registros importados...</div></div>
                   <p class="speed-hint">Ao clicar em uma sugestão, o painel considera automaticamente somente a maior velocidade de cada data.</p>
                 </div>
@@ -1225,7 +1262,8 @@
     loadColaboradoresFromSupabase(container, opts);
     fetchImportedExcessos(container, opts);
 
-    container.querySelector('[data-sync-bfleet-excessos]')?.addEventListener('click', () => sincronizarRelatorioBFleet(container, opts));
+    container.querySelector('[data-sync-bfleet-excessos]')?.addEventListener('click', () => sincronizarRelatorioBFleet(container, opts, 'yesterday'));
+    container.querySelector('[data-sync-bfleet-period]')?.addEventListener('click', () => sincronizarRelatorioBFleet(container, opts, 'period'));
     container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
     container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-veiculos')));
     container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-multas')));
