@@ -205,7 +205,7 @@
     while(true){
       const {data,error}=await supabase
         .from('relatorio_resultado_diario')
-        .select('data,coordenacao,cargas,toneladas,embarcado,valor_embarcado,total_afla,total_vomitoxina,total_falling_number,total_intacta,total_gmo')
+        .select('data,coordenacao,cargas,toneladas,embarcado,total_embarcado_mais_teste,valor_embarcado,total_afla,total_vomitoxina,total_falling_number,total_intacta,total_gmo')
         .gte('data', start)
         .lt('data', end)
         .range(from, from + pageSize - 1);
@@ -224,7 +224,7 @@
         if(!reg || !m || m.year!==year || isIgnored(reg)) continue;
         if(!isExcluded(reg)) out.regionais.add(reg);
         addArr(out.classificado,reg,m.month,row.toneladas);
-        addArr(out.embarcado,reg,m.month,row.embarcado);
+        addArr(out.embarcado,reg,m.month, n(row.total_embarcado_mais_teste) || row.embarcado);
         addArr(out.cargas,reg,m.month,row.cargas);
         addArr(out.valorEmbarcado,reg,m.month,row.valor_embarcado);
         addArr(out.testes,reg,m.month,
@@ -654,12 +654,29 @@
     const prodDb = await loadResultadoDiarioFromDb(opts.supabase, state.year);
     src.prod = prodDb;
 
+    const mesesZerados = [];
+    for(let mi=0; mi<12; mi++){
+      if(producaoMonthTotal(src.prod, mi) <= 0) mesesZerados.push(mi);
+    }
+
+    let overlayUsed = [];
+    if(mesesZerados.length){
+      setStatus(`Banco sem produção em ${mesesZerados.map(mi=>MESES[mi]).join(', ')}. Conferindo uploads do Resultado Diário...`);
+      const overlay = await buildResultadoDiarioOverlay(opts, setStatus);
+      for(const mi of mesesZerados){
+        if(overlayProducaoMonth(src.prod, overlay, mi)) overlayUsed.push(MESES[mi]);
+      }
+      if(overlayUsed.length){
+        mergeSet(src.prod.regionais, overlay.regionais);
+      }
+    }
+
     if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
     state.sourceAudit.used.push({
       tipo: 'resultado-diario-producao',
-      nome: prodDb.totalRows ? `Produção via relatorio_resultado_diario · ${prodDb.totalRows} linhas` : 'Produção: sem linhas consolidadas em relatorio_resultado_diario',
-      status: prodDb.totalRows ? 'banco_consolidado' : 'sem_dados',
-      modo: 'banco_consolidado_rapido',
+      nome: prodDb.totalRows ? `Produção via relatorio_resultado_diario · ${prodDb.totalRows} linhas${overlayUsed.length ? ` · complemento por upload: ${overlayUsed.join(', ')}` : ''}` : `Produção via upload Resultado Diário${overlayUsed.length ? ` · meses: ${overlayUsed.join(', ')}` : ' · sem dados'}`,
+      status: prodDb.totalRows || overlayUsed.length ? 'ok' : 'sem_dados',
+      modo: overlayUsed.length ? 'banco_consolidado_com_fallback_upload' : 'banco_consolidado_rapido',
       created_at: new Date().toISOString()
     });
 
