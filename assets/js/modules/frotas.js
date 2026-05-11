@@ -450,62 +450,7 @@
 
 
   function getDriverFromExcesso(row) {
-    return row?.patrimonio_funcionario
-      || row?.motorista_atual
-      || row?.veiculo_motorista_atual
-      || row?.patrimonio_funcionario_veiculo
-      || row?.motorista_planilha
-      || '';
-  }
-
-  async function enrichExcessosWithVehicles(rows, opts = {}) {
-    const supabase = opts?.supabase || window.supabase;
-    if (!supabase || typeof supabase.from !== 'function') return Array.isArray(rows) ? rows : [];
-
-    const list = Array.isArray(rows) ? rows : [];
-    const placas = Array.from(new Set(list.map((r) => onlyPlate(r.placa)).filter(Boolean)));
-    if (!placas.length) return list;
-
-    try {
-      const desired = new Set(placas);
-      const vehicleMap = new Map();
-      let from = 0;
-      const pageSize = 1000;
-
-      // Não filtra direto com .in('placa') porque a placa pode estar salva como ABC-1D23
-      // e o relatório vem como ABC1D23. A comparação é normalizada com onlyPlate().
-      while (from < 20000) {
-        const { data, error } = await supabase
-          .from('frotas_veiculos')
-          .select('placa,motorista_atual,patrimonio_funcionario,coordenacao,supervisao,patrimonio_coordenacao,patrimonio_supervisao')
-          .range(from, from + pageSize - 1);
-        if (error) throw error;
-        const rowsPage = Array.isArray(data) ? data : [];
-        rowsPage.forEach((v) => {
-          const plate = onlyPlate(v.placa);
-          if (plate && desired.has(plate)) vehicleMap.set(plate, v);
-        });
-        if (rowsPage.length < pageSize) break;
-        from += pageSize;
-      }
-
-      return list.map((row) => {
-        const v = vehicleMap.get(onlyPlate(row.placa));
-        if (!v) return row;
-        const motorista = row.patrimonio_funcionario || v.patrimonio_funcionario || v.motorista_atual || row.motorista_planilha || '';
-        return {
-          ...row,
-          motorista_atual: v.motorista_atual || row.motorista_atual || '',
-          patrimonio_funcionario: motorista,
-          coordenacao: row.coordenacao || v.coordenacao || v.patrimonio_coordenacao || '',
-          supervisao: row.supervisao || v.supervisao || v.patrimonio_supervisao || '',
-          status_cruzamento: motorista ? 'MOTORISTA_IDENTIFICADO' : (row.status_cruzamento || 'PENDENTE_CONFERENCIA')
-        };
-      });
-    } catch (err) {
-      console.warn('[FROTAS] Não foi possível complementar excessos com frotas_veiculos:', err);
-      return list;
-    }
+    return row?.patrimonio_funcionario || row?.motorista_planilha || '';
   }
 
   function groupImportedExcessos(rows) {
@@ -639,7 +584,7 @@
         btn.textContent = 'Sincronizando...';
       }
       toast('Sincronizando relatório de excesso de velocidade da BFleet...');
-      const res = await callEdgeFunction(opts, BFLEET_EXCESSO_FUNCTION, { mode: 'sync', rangeTimeVal: 'yesterday', forceRefreshToken: true });
+      const res = await callEdgeFunction(opts, BFLEET_EXCESSO_FUNCTION, { mode: 'sync', forceRefreshToken: true, preferWebReport: true });
       const inserted = Number(res?.inserted || res?.inseridos || res?.created || res?.novos || 0);
       const updated = Number(res?.updated || res?.atualizados || 0);
       const total = Number(res?.total || res?.total_registros || res?.linhas || res?.linhas_lidas_api || inserted + updated || 0);
@@ -675,7 +620,7 @@
         .order('data_evento', { ascending: false })
         .limit(1000);
       if (error) throw error;
-      state.importedExcessos = await enrichExcessosWithVehicles(Array.isArray(data) ? data : [], opts);
+      state.importedExcessos = Array.isArray(data) ? data : [];
     } catch (err) {
       console.warn('[FROTAS] Não foi possível carregar excessos importados:', err);
       state.importedExcessos = [];
