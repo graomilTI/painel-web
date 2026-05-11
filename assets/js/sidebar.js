@@ -14,7 +14,7 @@
           <div class="menu-setor">
             <div class="menu-title">${setor.nome}</div>
             <div class="submenu">
-              ${(setor.modulos || []).map(m => `<div class="submenu-item">${m}</div>`).join("")}
+              ${(setor.modulos || []).map(m => `<div class="submenu-item" data-modulo="${m}">${m}</div>`).join("")}
             </div>
           </div>
         `).join("")}

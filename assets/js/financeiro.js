@@ -1,22 +1,52 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
-const SETORES = ['RH', 'FROTAS', 'HOSPEDAGEM', 'COMPRAS'];
-const STATUS = {
-  PENDENTE: 'Pendente',
-  EM_ANALISE: 'Em análise',
-  APROVADO: 'Aprovado',
-  AGENDADO: 'Agendado',
-  PAGO: 'Pago',
-  RECUSADO: 'Recusado',
-  CANCELADO: 'Cancelado'
+const RECEBER_COLUMNS = {
+  situacao: ['situação', 'situacao'],
+  codigo: ['código', 'codigo'],
+  fatura: ['fatura'],
+  cliente: ['cliente'],
+  conta: ['conta'],
+  emissao_nf: ['emissão n.f', 'emissao n.f', 'emissão nf', 'emissao nf'],
+  vencimento: ['vencimento'],
+  recebimento: ['recebimento'],
+  numero_nf: ['n.f.', 'nf', 'n.f'],
+  valor: ['valor'],
+  desconto: ['desconto'],
+  juros: ['juros'],
+  valor_pago: ['valor pago']
 };
-const NF_STATUS = {
-  NAO_INFORMADA: 'Não informada',
-  AGUARDANDO_NF: 'Aguardando NF',
-  NF_RECEBIDA: 'NF recebida',
-  LANCADA: 'Lançada',
-  DISPENSADA: 'Dispensada'
+
+const PAGAR_COLUMNS = {
+  empresa: ['empresa'],
+  situacao: ['situação', 'situacao'],
+  cod_grupo: ['cod/grupo', 'código/grupo', 'codigo/grupo'],
+  data_lancamento: ['data'],
+  coordenacao: ['coordenação', 'coordenacao'],
+  supervisao: ['supervisão', 'supervisao'],
+  favorecido: ['favorecido'],
+  cnpj_cpf: ['cnpj/cpf'],
+  identificacao: ['identificação', 'identificacao'],
+  categoria: ['categoria'],
+  doc: ['doc'],
+  vencimento: ['vencimento'],
+  parcela: ['parcela'],
+  valor_pago: ['v. pago', 'valor pago'],
+  valor: ['valor'],
+  usuario: ['usuário', 'usuario'],
+  data_cadastro: ['data de cadastro']
+};
+
+const state = {
+  fluxo: [],
+  receber: [],
+  pagar: [],
+  currentDate: new Date().toISOString().slice(0, 10),
+  filters: {
+    inicio: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
+    fim: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+  }
 };
 
 function esc(value) {
@@ -27,306 +57,394 @@ function esc(value) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 }
+
+function normalize(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function money(value) {
+  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
 function brDate(value) {
   if (!value) return '-';
   const [y, m, d] = String(value).slice(0, 10).split('-');
   return y && m && d ? `${d}/${m}/${y}` : String(value);
 }
-function todayISO() { return new Date().toISOString().slice(0, 10); }
-function money(value) { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
-function slug(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_'); }
-function labelStatus(value) { return STATUS[value] || value || '-'; }
-function labelNf(value) { return NF_STATUS[value] || value || '-'; }
-function normalize(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
 
-function injectStyles() {
-  if (document.getElementById('financeiroStyles')) return;
-  const style = document.createElement('style');
-  style.id = 'financeiroStyles';
-  style.textContent = `
-    .fin-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.fin-tab{width:auto!important;margin-top:0!important;border:1px solid var(--line-2);background:#0b1220;color:var(--text);border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:800}.fin-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}
-    .fin-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}.fin-kpis .card{box-shadow:none}.fin-kpis .metric{font-size:28px;font-weight:900;margin:6px 0 0}.fin-warn{color:#fde68a}.fin-good{color:#bbf7d0}.fin-info{color:#bfdbfe}.fin-danger{color:#fecaca}
-    .fin-panel{display:none}.fin-panel.active{display:block}.fin-toolbar{display:grid;grid-template-columns:180px 180px 180px 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.fin-field{display:flex;flex-direction:column;gap:7px}.fin-field label{font-size:13px;color:#cbd5e1;font-weight:800}.fin-field input,.fin-field textarea,.fin-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.fin-field textarea{resize:vertical;min-height:78px}.fin-field input:focus,.fin-field textarea:focus,.fin-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}
-    .fin-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.fin-table{width:100%;border-collapse:collapse;min-width:1180px;background:#0b1220}.fin-table th,.fin-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.fin-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.fin-table tr:hover td{background:rgba(111,208,165,.035)}.fin-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.fin-actions{display:flex;gap:8px;flex-wrap:wrap}.fin-small{padding:8px 10px!important;border-radius:12px!important;font-size:12px;width:auto!important;margin-top:0!important}.fin-status{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:900;white-space:nowrap}.fin-status.pendente,.fin-status.em_analise,.fin-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.fin-status.aprovado,.fin-status.agendado,.fin-status.nf_recebida,.fin-status.lancada{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.fin-status.pago,.fin-status.dispensada{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.fin-status.recusado,.fin-status.cancelado{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}
-    .fin-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.fin-modal.open{display:flex}.fin-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.fin-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.fin-modal-head h3{margin:0}.fin-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.fin-field.full{grid-column:1/-1}.fin-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.fin-feedback{color:var(--muted);font-size:13px}.fin-feedback.ok{color:#bbf7d0}.fin-feedback.err{color:#fecaca}.fin-empty{padding:18px;text-align:center;color:var(--muted)}
-    @media(max-width:1100px){.fin-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.fin-toolbar{grid-template-columns:1fr 1fr}}@media(max-width:760px){.fin-kpis,.fin-toolbar,.fin-form{grid-template-columns:1fr}.fin-field.full{grid-column:auto}}
-  `;
-  document.head.appendChild(style);
+function toNumber(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const text = String(value)
+    .replace(/R\$/gi, '')
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .replace(/[^0-9.-]/g, '');
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toDateISO(value) {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  if (typeof value === 'number') {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed || !parsed.y || !parsed.m || !parsed.d) return null;
+    if (parsed.y < 2020 || parsed.y > 2100) return null;
+    return `${String(parsed.y).padStart(4, '0')}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+  }
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const br = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  if (br) {
+    let [, d, m, y] = br;
+    if (y.length === 2) y = `20${y}`;
+    const year = Number(y);
+    if (year < 2020 || year > 2100) return null;
+    return `${String(year).padStart(4, '0')}-${String(Number(m)).padStart(2, '0')}-${String(Number(d)).padStart(2, '0')}`;
+  }
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return null;
+  const year = dt.getFullYear();
+  if (year < 2020 || year > 2100) return null;
+  return dt.toISOString().slice(0, 10);
+}
+
+function hashText(value) {
+  let hash = 0;
+  const text = normalize(value);
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return `fin_${Math.abs(hash)}_${text.length}`;
+}
+
+function pick(row, map, key) {
+  const aliases = map[key] || [key];
+  const rowKeys = Object.keys(row || {});
+  const found = rowKeys.find((rk) => aliases.some((alias) => normalize(rk) === normalize(alias)));
+  return found ? row[found] : null;
+}
+
+async function upsertChunk(table, rows, onConflict = 'unique_hash') {
+  const chunkSize = 450;
+  let saved = 0;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const { error } = await supabase.from(table).upsert(chunk, { onConflict });
+    if (error) throw error;
+    saved += chunk.length;
+  }
+  return saved;
+}
+
+function readWorkbookRows(file) {
+  return file.arrayBuffer().then((buffer) => {
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const firstSheet = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[firstSheet];
+    return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+  });
+}
+
+function mapReceber(rows, fileName) {
+  return rows.map((row) => {
+    const payload = {
+      situacao: pick(row, RECEBER_COLUMNS, 'situacao') || null,
+      codigo: String(pick(row, RECEBER_COLUMNS, 'codigo') || '').trim() || null,
+      fatura: String(pick(row, RECEBER_COLUMNS, 'fatura') || '').trim() || null,
+      cliente: String(pick(row, RECEBER_COLUMNS, 'cliente') || '').trim() || null,
+      conta: String(pick(row, RECEBER_COLUMNS, 'conta') || '').trim() || null,
+      emissao_nf: toDateISO(pick(row, RECEBER_COLUMNS, 'emissao_nf')),
+      vencimento: toDateISO(pick(row, RECEBER_COLUMNS, 'vencimento')),
+      recebimento: toDateISO(pick(row, RECEBER_COLUMNS, 'recebimento')),
+      numero_nf: String(pick(row, RECEBER_COLUMNS, 'numero_nf') || '').trim() || null,
+      valor: toNumber(pick(row, RECEBER_COLUMNS, 'valor')),
+      desconto: toNumber(pick(row, RECEBER_COLUMNS, 'desconto')),
+      juros: toNumber(pick(row, RECEBER_COLUMNS, 'juros')),
+      valor_pago: toNumber(pick(row, RECEBER_COLUMNS, 'valor_pago')),
+      arquivo_origem: fileName,
+      raw: row
+    };
+    payload.unique_hash = hashText([payload.codigo, payload.fatura, payload.cliente, payload.vencimento, payload.valor].join('|'));
+    return payload;
+  }).filter((row) => row.vencimento && (row.codigo || row.fatura || row.cliente) && row.valor !== 0);
+}
+
+function mapPagar(rows, fileName) {
+  return rows.map((row) => {
+    const payload = {
+      empresa: String(pick(row, PAGAR_COLUMNS, 'empresa') || '').trim() || null,
+      situacao: pick(row, PAGAR_COLUMNS, 'situacao') || null,
+      cod_grupo: String(pick(row, PAGAR_COLUMNS, 'cod_grupo') || '').trim() || null,
+      data_lancamento: toDateISO(pick(row, PAGAR_COLUMNS, 'data_lancamento')),
+      coordenacao: String(pick(row, PAGAR_COLUMNS, 'coordenacao') || '').trim() || null,
+      supervisao: String(pick(row, PAGAR_COLUMNS, 'supervisao') || '').trim() || null,
+      favorecido: String(pick(row, PAGAR_COLUMNS, 'favorecido') || '').trim() || null,
+      cnpj_cpf: String(pick(row, PAGAR_COLUMNS, 'cnpj_cpf') || '').trim() || null,
+      identificacao: String(pick(row, PAGAR_COLUMNS, 'identificacao') || '').trim() || null,
+      categoria: String(pick(row, PAGAR_COLUMNS, 'categoria') || '').trim() || null,
+      doc: String(pick(row, PAGAR_COLUMNS, 'doc') || '').trim() || null,
+      vencimento: toDateISO(pick(row, PAGAR_COLUMNS, 'vencimento')),
+      parcela: String(pick(row, PAGAR_COLUMNS, 'parcela') || '').trim() || null,
+      valor_pago: toNumber(pick(row, PAGAR_COLUMNS, 'valor_pago')),
+      valor: toNumber(pick(row, PAGAR_COLUMNS, 'valor')),
+      usuario: String(pick(row, PAGAR_COLUMNS, 'usuario') || '').trim() || null,
+      data_cadastro: toDateISO(pick(row, PAGAR_COLUMNS, 'data_cadastro')),
+      arquivo_origem: fileName,
+      raw: row
+    };
+    payload.unique_hash = hashText([payload.empresa, payload.cod_grupo, payload.favorecido, payload.doc, payload.vencimento, payload.parcela, payload.valor].join('|'));
+    return payload;
+  }).filter((row) => row.vencimento && (row.favorecido || row.doc || row.cod_grupo) && row.valor !== 0);
+}
+
+function statusClass(value) {
+  return normalize(value).includes('atencao') || normalize(value).includes('atenção') ? 'danger' : 'ok';
 }
 
 initProtectedPage('Financeiro', (content, userContext) => {
-  injectStyles();
-  const state = { rows: [], selected: null, tab: 'pagamentos' };
-
   content.innerHTML = `
-    <section class="hero-card">
-      <div>
-        <div class="eyebrow">Diretoria</div>
-        <h2>Financeiro</h2>
-        <p>Centralize cobranças e pagamentos enviados por RH, Frotas, Hospedagem e Compras em um único painel de conferência.</p>
-      </div>
-      <div class="hero-badge-wrap"><span class="hero-badge">PAGAMENTOS</span></div>
-    </section>
-
-    <div class="fin-tabs">
-      <button class="fin-tab active" data-tab="pagamentos" type="button">Pagamentos</button>
-      <button class="fin-tab" data-tab="novo" type="button">Lançamento manual</button>
-    </div>
-
-    <section class="fin-panel active" id="tab-pagamentos">
-      <div class="fin-kpis">
-        <article class="card"><h3>Pendentes</h3><p class="metric fin-warn" id="kpiPendentes">0</p><p class="muted">Aguardando análise.</p></article>
-        <article class="card"><h3>Aprovados/Agendados</h3><p class="metric fin-info" id="kpiAprovados">0</p><p class="muted">Prontos para pagamento.</p></article>
-        <article class="card"><h3>Pagos</h3><p class="metric fin-good" id="kpiPagos">0</p><p class="muted">Concluídos no financeiro.</p></article>
-        <article class="card"><h3>Total aberto</h3><p class="metric fin-danger" id="kpiTotalAberto">R$ 0,00</p><p class="muted">Pendente + aprovado + agendado.</p></article>
-      </div>
-
-      <article class="card">
-        <div class="fin-toolbar">
-          <div class="fin-field"><label>Setor</label><select id="filterSetor"><option value="">Todos</option>${SETORES.map((s) => `<option value="${s}">${s}</option>`).join('')}</select></div>
-          <div class="fin-field"><label>Status</label><select id="filterStatus"><option value="">Todos</option>${Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-          <div class="fin-field"><label>Vencimento até</label><input id="filterVencimento" type="date" /></div>
-          <div class="fin-field"><label>Busca</label><input id="filterSearch" placeholder="Favorecido, descrição, código, setor..." /></div>
-          <button class="btn btn-secondary fin-small" id="refreshFinanceiro" type="button">Atualizar</button>
+    <style>
+      .fin-wrap{display:grid;gap:18px}.fin-hero{border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:22px;background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(22,101,52,.28));box-shadow:0 20px 50px rgba(2,6,23,.22)}
+      .fin-hero h2{margin:0 0 6px;font-size:28px;color:#f8fafc}.fin-hero p{margin:0;color:#cbd5e1}.fin-actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.fin-grid{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:12px}.fin-kpi{border:1px solid rgba(148,163,184,.16);border-radius:20px;padding:16px;background:rgba(15,23,42,.86)}.fin-kpi span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.fin-kpi strong{display:block;margin-top:8px;color:#f8fafc;font-size:22px}.fin-kpi small{color:#94a3b8}.fin-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(15,23,42,.82);padding:18px;box-shadow:0 18px 42px rgba(2,6,23,.18)}
+      .fin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.fin-head h3{margin:0;color:#f8fafc}.fin-head p{margin:4px 0 0;color:#94a3b8}.fin-tabs{display:flex;gap:8px;flex-wrap:wrap}.fin-tab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:9px 14px;cursor:pointer}.fin-tab.active{background:#166534;color:#fff;border-color:#22c55e}.fin-panel{display:none}.fin-panel.active{display:block}.fin-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.fin-field{display:grid;gap:6px}.fin-field.full{grid-column:1/-1}.fin-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.fin-field input,.fin-field select,.fin-field textarea{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0f172a;color:#e5e7eb;padding:10px 12px;color-scheme:dark}.fin-field textarea{min-height:78px;resize:vertical}.fin-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.fin-table{width:100%;border-collapse:collapse;min-width:860px}.fin-table th,.fin-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;color:#e5e7eb}.fin-table th{background:rgba(15,23,42,.96);color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.fin-table tr:hover td{background:rgba(34,197,94,.06)}.fin-muted{display:block;color:#94a3b8;font-size:12px;margin-top:3px}.fin-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.fin-status.ok{background:rgba(34,197,94,.14);color:#86efac}.fin-status.danger{background:rgba(239,68,68,.14);color:#fecaca}.fin-status.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}.fin-import-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}.fin-drop{border:1px dashed rgba(34,197,94,.45);border-radius:20px;padding:18px;background:rgba(22,101,52,.1)}.fin-feedback{color:#94a3b8;font-size:13px}.fin-feedback.ok{color:#86efac}.fin-feedback.err{color:#fecaca}.fin-empty{text-align:center;color:#94a3b8;padding:24px!important}.fin-small{padding:8px 12px!important;font-size:13px!important}@media(max-width:1100px){.fin-grid{grid-template-columns:repeat(2,1fr)}.fin-form,.fin-import-grid{grid-template-columns:1fr}}@media(max-width:700px){.fin-grid{grid-template-columns:1fr}.fin-head{display:grid}}
+    </style>
+    <section class="fin-wrap">
+      <div class="fin-hero">
+        <h2>Financeiro · Fluxo de Caixa</h2>
+        <p>Saldo manual do dia, contas a receber, contas a pagar e provisões consolidadas sem duplicar os relatórios importados.</p>
+        <div class="fin-actions-row">
+          <button class="btn btn-primary" id="btnReload" type="button">Atualizar fluxo</button>
+          <button class="btn btn-secondary" data-tab-target="importar" type="button">Importar relatórios</button>
+          <button class="btn btn-secondary" data-tab-target="config" type="button">Ajustar saldo/provisão</button>
         </div>
-        <div class="fin-table-wrap">
-          <table class="fin-table">
-            <thead><tr><th>Origem</th><th>Favorecido</th><th>Descrição</th><th>Valor</th><th>Vencimento</th><th>Status</th><th>NF</th><th>Ações</th></tr></thead>
-            <tbody id="financeiroTbody"><tr><td colspan="8" class="fin-empty">Carregando...</td></tr></tbody>
-          </table>
+      </div>
+
+      <div class="fin-grid">
+        <article class="fin-kpi"><span>Saldo do dia</span><strong id="kpiSaldo">R$ 0,00</strong><small>Manual</small></article>
+        <article class="fin-kpi"><span>Contas a receber</span><strong id="kpiReceber">R$ 0,00</strong><small>Relatório importado</small></article>
+        <article class="fin-kpi"><span>Contas a pagar</span><strong id="kpiPagar">R$ 0,00</strong><small>Relatório importado</small></article>
+        <article class="fin-kpi"><span>Provisão do dia</span><strong id="kpiProvisao">R$ 0,00</strong><small>Auto + ajuste</small></article>
+        <article class="fin-kpi"><span>Saldo projetado</span><strong id="kpiProjetado">R$ 0,00</strong><small id="kpiStatus">OK</small></article>
+      </div>
+
+      <article class="fin-card">
+        <div class="fin-head">
+          <div><h3>Visão diária</h3><p>Filtre o período do fluxo de caixa.</p></div>
+          <div class="fin-tabs">
+            <button class="fin-tab active" data-tab="fluxo" type="button">Fluxo</button>
+            <button class="fin-tab" data-tab="importar" type="button">Importar</button>
+            <button class="fin-tab" data-tab="config" type="button">Saldo e Provisão</button>
+            <button class="fin-tab" data-tab="detalhes" type="button">Detalhes</button>
+          </div>
+        </div>
+
+        <div class="fin-panel active" id="tab-fluxo">
+          <form class="fin-form" id="periodForm">
+            <div class="fin-field"><label>Data inicial</label><input id="filterInicio" type="date" value="${esc(state.filters.inicio)}"></div>
+            <div class="fin-field"><label>Data final</label><input id="filterFim" type="date" value="${esc(state.filters.fim)}"></div>
+            <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Aplicar período</button></div>
+          </form>
+          <br>
+          <div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Saldo do dia</th><th>Receber</th><th>Pagar</th><th>Provisão</th><th>Saldo projetado</th><th>Status</th><th>Ação</th></tr></thead><tbody id="fluxoTbody"><tr><td colspan="8" class="fin-empty">Carregando...</td></tr></tbody></table></div>
+        </div>
+
+        <div class="fin-panel" id="tab-importar">
+          <div class="fin-import-grid">
+            <div class="fin-drop">
+              <h3>Contas a Receber</h3>
+              <p class="fin-muted">Use o relatório com colunas Código, Fatura, Cliente, Vencimento, Valor e Valor Pago.</p><br>
+              <input id="fileReceber" type="file" accept=".xlsx,.xls,.csv">
+              <div class="fin-actions-row"><button class="btn btn-primary" id="btnImportReceber" type="button">Importar receber</button><span id="fbReceber" class="fin-feedback"></span></div>
+            </div>
+            <div class="fin-drop">
+              <h3>Contas a Pagar</h3>
+              <p class="fin-muted">Use o relatório com colunas Empresa, COD/Grupo, Favorecido, Doc, Vencimento, Parcela e Valor.</p><br>
+              <input id="filePagar" type="file" accept=".xlsx,.xls,.csv">
+              <div class="fin-actions-row"><button class="btn btn-primary" id="btnImportPagar" type="button">Importar pagar</button><span id="fbPagar" class="fin-feedback"></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="fin-panel" id="tab-config">
+          <form class="fin-form" id="configForm">
+            <div class="fin-field"><label>Data</label><input id="cfgData" type="date" value="${esc(state.currentDate)}" required></div>
+            <div class="fin-field"><label>Saldo do dia</label><input id="cfgSaldo" type="number" step="0.01" placeholder="0,00"></div>
+            <div class="fin-field"><label>Provisão automática</label><input id="cfgProvAuto" type="number" step="0.01" placeholder="0,00"></div>
+            <div class="fin-field"><label>Ajuste manual provisão</label><input id="cfgProvManual" type="number" step="0.01" placeholder="0,00"></div>
+            <div class="fin-field full"><label>Observações</label><textarea id="cfgObs" placeholder="Observações do financeiro"></textarea></div>
+            <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Salvar ajustes</button></div>
+            <div class="fin-field"><label>&nbsp;</label><span id="fbConfig" class="fin-feedback"></span></div>
+          </form>
+        </div>
+
+        <div class="fin-panel" id="tab-detalhes">
+          <div class="fin-head"><div><h3>Detalhes do dia selecionado</h3><p id="detalhesData">Selecione uma data no fluxo.</p></div></div>
+          <div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Tipo</th><th>Situação</th><th>Nome/Favorecido</th><th>Documento</th><th>Valor</th><th>Vencimento</th></tr></thead><tbody id="detalhesTbody"><tr><td colspan="6" class="fin-empty">Nenhuma data selecionada.</td></tr></tbody></table></div>
         </div>
       </article>
     </section>
-
-    <section class="fin-panel" id="tab-novo">
-      <article class="card">
-        <h3>Lançamento manual</h3>
-        <p class="muted">Use para testes ou despesas que ainda não nascem em outro módulo.</p>
-        <form id="manualForm" class="fin-form">
-          <div class="fin-field"><label>Setor</label><select id="manualSetor" required>${SETORES.map((s) => `<option value="${s}">${s}</option>`).join('')}</select></div>
-          <div class="fin-field"><label>Favorecido</label><input id="manualFavorecido" required /></div>
-          <div class="fin-field"><label>Valor</label><input id="manualValor" type="number" step="0.01" min="0" required /></div>
-          <div class="fin-field"><label>Vencimento</label><input id="manualVencimento" type="date" /></div>
-          <div class="fin-field"><label>Forma de pagamento</label><select id="manualForma"><option value="PIX">PIX</option><option value="BOLETO">Boleto</option><option value="TRANSFERENCIA">Transferência</option><option value="CARTAO">Cartão</option><option value="OUTRO">Outro</option></select></div>
-          <div class="fin-field"><label>Prioridade</label><select id="manualPrioridade"><option value="NORMAL">Normal</option><option value="ALTA">Alta</option><option value="BAIXA">Baixa</option></select></div>
-          <div class="fin-field full"><label>Descrição</label><textarea id="manualDescricao" required></textarea></div>
-          <div class="fin-field full"><label>Observações</label><textarea id="manualObs"></textarea></div>
-        </form>
-        <div class="fin-form-actions"><button class="btn btn-primary fin-small" type="submit" form="manualForm">Criar lançamento</button><span id="manualFeedback" class="fin-feedback"></span></div>
-      </article>
-    </section>
-
-    <div class="fin-modal" id="financeiroModal">
-      <div class="fin-modal-card">
-        <div class="fin-modal-head">
-          <div><h3 id="modalTitle">Pagamento</h3><p class="muted" id="modalSub">Conferência e baixa do financeiro.</p></div>
-          <button class="btn btn-secondary fin-small" id="modalClose" type="button">Fechar</button>
-        </div>
-        <form id="pagamentoForm" class="fin-form">
-          <div class="fin-field"><label>Setor</label><select id="pagSetor">${SETORES.map((s) => `<option value="${s}">${s}</option>`).join('')}</select></div>
-          <div class="fin-field"><label>Status</label><select id="pagStatus">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-          <div class="fin-field"><label>Favorecido</label><input id="pagFavorecido" /></div>
-          <div class="fin-field"><label>Valor</label><input id="pagValor" type="number" step="0.01" min="0" /></div>
-          <div class="fin-field"><label>Vencimento</label><input id="pagVencimento" type="date" /></div>
-          <div class="fin-field"><label>Data pagamento</label><input id="pagDataPagamento" type="date" /></div>
-          <div class="fin-field"><label>Forma de pagamento</label><select id="pagForma"><option value="PIX">PIX</option><option value="BOLETO">Boleto</option><option value="TRANSFERENCIA">Transferência</option><option value="CARTAO">Cartão</option><option value="OUTRO">Outro</option></select></div>
-          <div class="fin-field"><label>Status NF</label><select id="pagNfStatus">${Object.entries(NF_STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-          <div class="fin-field"><label>Número NF</label><input id="pagNfNumero" /></div>
-          <div class="fin-field"><label>URL NF</label><input id="pagNfUrl" /></div>
-          <div class="fin-field full"><label>Comprovante</label><input id="pagComprovante" placeholder="Link do comprovante" /></div>
-          <div class="fin-field full"><label>Descrição</label><textarea id="pagDescricao"></textarea></div>
-          <div class="fin-field full"><label>Observações</label><textarea id="pagObs"></textarea></div>
-        </form>
-        <div class="fin-form-actions">
-          <button class="btn btn-primary fin-small" type="submit" form="pagamentoForm">Salvar</button>
-          <button class="btn btn-secondary fin-small" type="button" data-fast-status="APROVADO">Aprovar</button>
-          <button class="btn btn-secondary fin-small" type="button" data-fast-status="PAGO">Marcar pago</button>
-          <button class="btn btn-secondary fin-small" type="button" data-fast-status="RECUSADO">Recusar</button>
-          <span id="pagFeedback" class="fin-feedback"></span>
-        </div>
-      </div>
-    </div>
   `;
 
-  function setFeedback(id, msg, type = '') {
+  function setFeedback(id, text, type = '') {
     const el = document.getElementById(id);
     if (!el) return;
-    el.textContent = msg || '';
+    el.textContent = text || '';
     el.className = `fin-feedback ${type}`.trim();
   }
-  function statusPill(value, nf = false) {
-    return `<span class="fin-status ${esc(slug(value))}">${esc(nf ? labelNf(value) : labelStatus(value))}</span>`;
-  }
+
   function setTab(tab) {
-    state.tab = tab;
-    document.querySelectorAll('.fin-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-    document.querySelectorAll('.fin-panel').forEach((p) => p.classList.remove('active'));
-    document.getElementById(`tab-${tab}`).classList.add('active');
+    document.querySelectorAll('.fin-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
+    document.querySelectorAll('.fin-panel').forEach((panel) => panel.classList.remove('active'));
+    document.getElementById(`tab-${tab}`)?.classList.add('active');
   }
 
-  async function loadRows() {
-    const { data, error } = await supabase.from('financeiro_pagamentos').select('*').order('created_at', { ascending: false });
+  async function loadFluxo() {
+    const { data, error } = await supabase
+      .from('financeiro_fluxo_caixa_diario')
+      .select('*')
+      .gte('data', state.filters.inicio)
+      .lte('data', state.filters.fim)
+      .order('data', { ascending: true });
+
     if (error) {
-      document.getElementById('financeiroTbody').innerHTML = `<tr><td colspan="8" class="fin-empty">${esc(error.message)}<br>Execute o SQL do módulo financeiro no Supabase antes de testar.</td></tr>`;
-      updateKpis([]);
+      document.getElementById('fluxoTbody').innerHTML = `<tr><td colspan="8" class="fin-empty">${esc(error.message)}<br>Execute a migration do módulo financeiro no Supabase.</td></tr>`;
       return;
     }
-    state.rows = data || [];
-    renderRows();
+    state.fluxo = data || [];
+    renderFluxo();
+    updateKpis();
   }
 
-  function getFilteredRows() {
-    const setor = document.getElementById('filterSetor').value;
-    const status = document.getElementById('filterStatus').value;
-    const venc = document.getElementById('filterVencimento').value;
-    const search = normalize(document.getElementById('filterSearch').value);
-    return state.rows.filter((r) => {
-      if (setor && r.origem_setor !== setor) return false;
-      if (status && r.status !== status) return false;
-      if (venc && r.data_vencimento && r.data_vencimento > venc) return false;
-      if (search) {
-        const text = normalize([r.origem_setor, r.origem_codigo, r.favorecido_nome, r.descricao, r.observacoes, r.status, r.nf_numero].join(' '));
-        if (!text.includes(search)) return false;
-      }
-      return true;
-    });
+  async function loadDetalhes(date) {
+    state.currentDate = date;
+    document.getElementById('detalhesData').textContent = `Data: ${brDate(date)}`;
+    const [receberRes, pagarRes, saldoRes, provisaoRes] = await Promise.all([
+      supabase.from('financeiro_contas_receber').select('*').eq('vencimento', date).order('cliente'),
+      supabase.from('financeiro_contas_pagar').select('*').eq('vencimento', date).order('favorecido'),
+      supabase.from('financeiro_saldos_dia').select('*').eq('data', date).maybeSingle(),
+      supabase.from('financeiro_provisoes').select('*').eq('data', date).maybeSingle()
+    ]);
+    state.receber = receberRes.data || [];
+    state.pagar = pagarRes.data || [];
+    document.getElementById('cfgData').value = date;
+    document.getElementById('cfgSaldo').value = saldoRes.data?.saldo_dia ?? '';
+    document.getElementById('cfgObs').value = saldoRes.data?.observacoes || provisaoRes.data?.observacoes || '';
+    document.getElementById('cfgProvAuto').value = provisaoRes.data?.valor_automatico ?? '';
+    document.getElementById('cfgProvManual').value = provisaoRes.data?.ajuste_manual ?? '';
+    renderDetalhes();
+    setTab('detalhes');
   }
 
-  function updateKpis(rows = state.rows) {
-    const pendentes = rows.filter((r) => r.status === 'PENDENTE' || r.status === 'EM_ANALISE');
-    const aprovados = rows.filter((r) => r.status === 'APROVADO' || r.status === 'AGENDADO');
-    const pagos = rows.filter((r) => r.status === 'PAGO');
-    const aberto = rows.filter((r) => ['PENDENTE', 'EM_ANALISE', 'APROVADO', 'AGENDADO'].includes(r.status)).reduce((sum, r) => sum + Number(r.valor || 0), 0);
-    document.getElementById('kpiPendentes').textContent = pendentes.length;
-    document.getElementById('kpiAprovados').textContent = aprovados.length;
-    document.getElementById('kpiPagos').textContent = pagos.length;
-    document.getElementById('kpiTotalAberto').textContent = money(aberto);
+  function updateKpis() {
+    const today = state.fluxo.find((row) => row.data === new Date().toISOString().slice(0, 10)) || state.fluxo[0] || {};
+    document.getElementById('kpiSaldo').textContent = money(today.saldo_dia);
+    document.getElementById('kpiReceber').textContent = money(today.contas_receber);
+    document.getElementById('kpiPagar').textContent = money(today.contas_pagar);
+    document.getElementById('kpiProvisao').textContent = money(today.provisoes_dia);
+    document.getElementById('kpiProjetado').textContent = money(today.saldo_projetado);
+    document.getElementById('kpiStatus').textContent = today.status || 'OK';
   }
 
-  function renderRows() {
-    updateKpis(state.rows);
-    const tbody = document.getElementById('financeiroTbody');
-    const rows = getFilteredRows();
-    if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="8" class="fin-empty">Nenhum pagamento encontrado.</td></tr>`;
+  function renderFluxo() {
+    const tbody = document.getElementById('fluxoTbody');
+    if (!state.fluxo.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="fin-empty">Nenhum dia encontrado no período.</td></tr>`;
       return;
     }
-    tbody.innerHTML = rows.map((r) => `
+    tbody.innerHTML = state.fluxo.map((row) => `
       <tr>
-        <td><strong>${esc(r.origem_setor || '-')}</strong><span class="fin-row-note">${esc(r.origem_codigo || r.origem_tabela || 'Manual')}</span></td>
-        <td><strong>${esc(r.favorecido_nome || '-')}</strong><span class="fin-row-note">${esc(r.favorecido_documento || '')}</span></td>
-        <td>${esc(r.descricao || '-')}<span class="fin-row-note">Solicitado por: ${esc(r.solicitado_por_nome || '-')}</span></td>
-        <td><strong>${money(r.valor)}</strong><span class="fin-row-note">${esc(r.forma_pagamento || '-')}</span></td>
-        <td>${brDate(r.data_vencimento)}<span class="fin-row-note">Pago: ${brDate(r.data_pagamento)}</span></td>
-        <td>${statusPill(r.status || 'PENDENTE')}</td>
-        <td>${statusPill(r.nf_status || 'NAO_INFORMADA', true)}<span class="fin-row-note">${esc(r.nf_numero || '')}</span></td>
-        <td><div class="fin-actions"><button class="btn btn-secondary fin-small" data-action="open" data-id="${esc(r.id)}" type="button">Abrir</button></div></td>
+        <td><strong>${brDate(row.data)}</strong></td>
+        <td>${money(row.saldo_dia)}</td>
+        <td>${money(row.contas_receber)}</td>
+        <td>${money(row.contas_pagar)}</td>
+        <td>${money(row.provisoes_dia)}</td>
+        <td><strong>${money(row.saldo_projetado)}</strong></td>
+        <td><span class="fin-status ${statusClass(row.status)}">${esc(row.status || 'OK')}</span></td>
+        <td><button class="btn btn-secondary fin-small" data-detail-date="${esc(row.data)}" type="button">Abrir</button></td>
       </tr>
     `).join('');
   }
 
-  function openModal(row) {
-    state.selected = row;
-    document.getElementById('modalTitle').textContent = `${row.origem_setor || 'Financeiro'} · ${row.favorecido_nome || '-'}`;
-    document.getElementById('modalSub').textContent = row.origem_codigo ? `Origem: ${row.origem_codigo}` : 'Lançamento financeiro';
-    document.getElementById('pagSetor').value = row.origem_setor || 'HOSPEDAGEM';
-    document.getElementById('pagStatus').value = row.status || 'PENDENTE';
-    document.getElementById('pagFavorecido').value = row.favorecido_nome || '';
-    document.getElementById('pagValor').value = row.valor || '';
-    document.getElementById('pagVencimento').value = row.data_vencimento || '';
-    document.getElementById('pagDataPagamento').value = row.data_pagamento || '';
-    document.getElementById('pagForma').value = row.forma_pagamento || 'PIX';
-    document.getElementById('pagNfStatus').value = row.nf_status || 'NAO_INFORMADA';
-    document.getElementById('pagNfNumero').value = row.nf_numero || '';
-    document.getElementById('pagNfUrl').value = row.nf_url || '';
-    document.getElementById('pagComprovante').value = row.comprovante_url || '';
-    document.getElementById('pagDescricao').value = row.descricao || '';
-    document.getElementById('pagObs').value = row.observacoes || '';
-    setFeedback('pagFeedback', '');
-    document.getElementById('financeiroModal').classList.add('open');
-  }
-  function closeModal() {
-    document.getElementById('financeiroModal').classList.remove('open');
-    state.selected = null;
+  function renderDetalhes() {
+    const tbody = document.getElementById('detalhesTbody');
+    const rows = [
+      ...state.receber.map((r) => ({ tipo: 'Receber', situacao: r.situacao, nome: r.cliente, doc: r.fatura || r.numero_nf || r.codigo, valor: Number(r.valor || 0) - Number(r.valor_pago || 0), vencimento: r.vencimento })),
+      ...state.pagar.map((r) => ({ tipo: 'Pagar', situacao: r.situacao, nome: r.favorecido, doc: r.doc || r.cod_grupo || r.parcela, valor: Number(r.valor || 0) - Number(r.valor_pago || 0), vencimento: r.vencimento }))
+    ];
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="fin-empty">Nenhum lançamento encontrado para esta data.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => `
+      <tr><td>${esc(r.tipo)}</td><td>${esc(r.situacao || '-')}</td><td><strong>${esc(r.nome || '-')}</strong></td><td>${esc(r.doc || '-')}</td><td>${money(r.valor)}</td><td>${brDate(r.vencimento)}</td></tr>
+    `).join('');
   }
 
-  function readModalPayload() {
-    return {
-      origem_setor: document.getElementById('pagSetor').value,
-      status: document.getElementById('pagStatus').value,
-      favorecido_nome: document.getElementById('pagFavorecido').value.trim() || null,
-      valor: Number(document.getElementById('pagValor').value || 0),
-      data_vencimento: document.getElementById('pagVencimento').value || null,
-      data_pagamento: document.getElementById('pagDataPagamento').value || null,
-      forma_pagamento: document.getElementById('pagForma').value,
-      nf_status: document.getElementById('pagNfStatus').value,
-      nf_numero: document.getElementById('pagNfNumero').value.trim() || null,
-      nf_url: document.getElementById('pagNfUrl').value.trim() || null,
-      comprovante_url: document.getElementById('pagComprovante').value.trim() || null,
-      descricao: document.getElementById('pagDescricao').value.trim() || null,
-      observacoes: document.getElementById('pagObs').value.trim() || null,
-      atualizado_por: userContext?.user?.id || null,
-      atualizado_por_nome: userContext?.user?.name || userContext?.profile?.nome || null
-    };
+  async function importFile(kind) {
+    const input = document.getElementById(kind === 'receber' ? 'fileReceber' : 'filePagar');
+    const fb = kind === 'receber' ? 'fbReceber' : 'fbPagar';
+    const file = input.files?.[0];
+    if (!file) return setFeedback(fb, 'Selecione uma planilha primeiro.', 'err');
+    try {
+      setFeedback(fb, 'Lendo planilha...');
+      const rows = await readWorkbookRows(file);
+      const mapped = kind === 'receber' ? mapReceber(rows, file.name) : mapPagar(rows, file.name);
+      if (!mapped.length) throw new Error('Nenhuma linha válida encontrada. Confira os cabeçalhos e as datas.');
+      setFeedback(fb, `Importando ${mapped.length} linhas...`);
+      const table = kind === 'receber' ? 'financeiro_contas_receber' : 'financeiro_contas_pagar';
+      const saved = await upsertChunk(table, mapped);
+      setFeedback(fb, `${saved} registros atualizados sem duplicar.`, 'ok');
+      await loadFluxo();
+    } catch (err) {
+      setFeedback(fb, err.message || 'Erro ao importar.', 'err');
+    }
   }
 
-  async function savePagamento(ev) {
-    ev.preventDefault();
-    if (!state.selected?.id) return;
-    setFeedback('pagFeedback', 'Salvando...');
-    const payload = readModalPayload();
-    if (payload.status === 'PAGO' && !payload.data_pagamento) payload.data_pagamento = todayISO();
-    const { error } = await supabase.from('financeiro_pagamentos').update(payload).eq('id', state.selected.id);
-    if (error) { setFeedback('pagFeedback', error.message, 'err'); return; }
-    setFeedback('pagFeedback', 'Pagamento atualizado.', 'ok');
-    await loadRows();
+  async function saveConfig(event) {
+    event.preventDefault();
+    const date = document.getElementById('cfgData').value;
+    const saldo = Number(document.getElementById('cfgSaldo').value || 0);
+    const provAuto = Number(document.getElementById('cfgProvAuto').value || 0);
+    const provManual = Number(document.getElementById('cfgProvManual').value || 0);
+    const obs = document.getElementById('cfgObs').value.trim() || null;
+    const responsavel = userContext?.user?.name || userContext?.user?.email || userContext?.email || null;
+    try {
+      setFeedback('fbConfig', 'Salvando...');
+      const saldoRes = await supabase.from('financeiro_saldos_dia').upsert({ data: date, saldo_dia: saldo, observacoes: obs, responsavel }, { onConflict: 'data' });
+      if (saldoRes.error) throw saldoRes.error;
+      const provRes = await supabase.from('financeiro_provisoes').upsert({ data: date, descricao: 'Provisão do dia', valor_automatico: provAuto, ajuste_manual: provManual, observacoes: obs, responsavel }, { onConflict: 'data' });
+      if (provRes.error) throw provRes.error;
+      setFeedback('fbConfig', 'Ajustes salvos.', 'ok');
+      await loadFluxo();
+    } catch (err) {
+      setFeedback('fbConfig', err.message || 'Erro ao salvar.', 'err');
+    }
   }
 
-  async function createManual(ev) {
-    ev.preventDefault();
-    setFeedback('manualFeedback', 'Criando lançamento...');
-    const payload = {
-      origem_setor: document.getElementById('manualSetor').value,
-      origem_tabela: 'manual',
-      origem_codigo: `MANUAL-${Date.now()}`,
-      descricao: document.getElementById('manualDescricao').value.trim(),
-      favorecido_nome: document.getElementById('manualFavorecido').value.trim(),
-      valor: Number(document.getElementById('manualValor').value || 0),
-      data_vencimento: document.getElementById('manualVencimento').value || null,
-      forma_pagamento: document.getElementById('manualForma').value,
-      prioridade: document.getElementById('manualPrioridade').value,
-      status: 'PENDENTE',
-      nf_status: 'NAO_INFORMADA',
-      observacoes: document.getElementById('manualObs').value.trim() || null,
-      solicitado_por: userContext?.user?.id || null,
-      solicitado_por_nome: userContext?.user?.name || userContext?.profile?.nome || null
-    };
-    const { error } = await supabase.from('financeiro_pagamentos').insert(payload);
-    if (error) { setFeedback('manualFeedback', error.message, 'err'); return; }
-    setFeedback('manualFeedback', 'Lançamento criado com sucesso.', 'ok');
-    document.getElementById('manualForm').reset();
-    await loadRows();
-    setTab('pagamentos');
-  }
-
-  document.querySelectorAll('.fin-tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
-  document.getElementById('refreshFinanceiro').addEventListener('click', loadRows);
-  ['filterSetor', 'filterStatus', 'filterVencimento', 'filterSearch'].forEach((id) => document.getElementById(id).addEventListener('input', renderRows));
-  document.getElementById('manualForm').addEventListener('submit', createManual);
-  document.getElementById('pagamentoForm').addEventListener('submit', savePagamento);
-  document.getElementById('modalClose').addEventListener('click', closeModal);
-  document.getElementById('financeiroModal').addEventListener('click', (ev) => { if (ev.target.id === 'financeiroModal') closeModal(); });
-  document.querySelectorAll('[data-fast-status]').forEach((btn) => btn.addEventListener('click', () => {
-    document.getElementById('pagStatus').value = btn.dataset.fastStatus;
-    if (btn.dataset.fastStatus === 'PAGO' && !document.getElementById('pagDataPagamento').value) document.getElementById('pagDataPagamento').value = todayISO();
-    document.getElementById('pagamentoForm').requestSubmit();
-  }));
-  content.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('button[data-action="open"]');
-    if (!btn) return;
-    const row = state.rows.find((item) => String(item.id) === String(btn.dataset.id));
-    if (row) openModal(row);
+  document.querySelectorAll('.fin-tab').forEach((btn) => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
+  document.querySelectorAll('[data-tab-target]').forEach((btn) => btn.addEventListener('click', () => setTab(btn.dataset.tabTarget)));
+  document.getElementById('btnReload').addEventListener('click', loadFluxo);
+  document.getElementById('btnImportReceber').addEventListener('click', () => importFile('receber'));
+  document.getElementById('btnImportPagar').addEventListener('click', () => importFile('pagar'));
+  document.getElementById('configForm').addEventListener('submit', saveConfig);
+  document.getElementById('periodForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    state.filters.inicio = document.getElementById('filterInicio').value;
+    state.filters.fim = document.getElementById('filterFim').value;
+    loadFluxo();
+  });
+  content.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-detail-date]');
+    if (btn) loadDetalhes(btn.dataset.detailDate);
   });
 
-  loadRows();
+  loadFluxo();
 });
