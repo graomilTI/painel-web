@@ -861,7 +861,18 @@ function renderUberTable() {
   const target = document.getElementById('conf-table');
   const pendingGps = rows.filter(needsUberGeocoding).length;
   if (!rows.length) {
-    target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma corrida Uber encontrada para os filtros selecionados. Importe o relatório na tabela conferencia_uber_corridas.</td></tr></tbody></table></div>`;
+    target.innerHTML = `
+      <div class="conf-uber-tools">
+        <div>
+          <strong>Sincronização Uber</strong>
+          <p>Nenhuma corrida encontrada nos filtros atuais. Sincronize pela API para buscar as corridas do período selecionado.</p>
+        </div>
+        <div class="conf-uber-actions">
+          <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar API</button>
+          <button class="conf-btn" data-uber-geocode-pending="1" type="button" disabled>Converter GPS pendentes</button>
+        </div>
+      </div>
+      <div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma corrida Uber encontrada para os filtros selecionados.</td></tr></tbody></table></div>`;
     return;
   }
   target.innerHTML = `
@@ -871,7 +882,8 @@ function renderUberTable() {
         <p>${pendingGps ? `${pendingGps} corrida(s) sem coordenadas nos filtros atuais.` : 'Todas as corridas filtradas já possuem coordenadas de partida e destino.'} Fonte: OpenStreetMap/Nominatim.</p>
       </div>
       <div class="conf-uber-actions">
-        <button class="conf-btn conf-btn-primary" data-uber-geocode-pending="1" type="button" ${pendingGps ? '' : 'disabled'}>Converter GPS pendentes</button>
+        <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar API</button>
+        <button class="conf-btn" data-uber-geocode-pending="1" type="button" ${pendingGps ? '' : 'disabled'}>Converter GPS pendentes</button>
       </div>
     </div>
     <div class="conf-table-wrap">
@@ -1157,6 +1169,36 @@ async function loadUber() {
   state.uber = data || [];
 }
 
+async function syncUberApi() {
+  if (state.loading) return;
+
+  const inicio = state.filters.inicio || todayISO();
+  const fim = state.filters.fim || inicio;
+
+  setFeedback(`Sincronizando corridas da API Uber de ${brDate(inicio)} até ${brDate(fim)}...`);
+
+  const { data, error } = await supabase.functions.invoke('sync-uber-corridas', {
+    body: {
+      inicio,
+      fim,
+      data_inicial: inicio,
+      data_final: fim,
+    },
+  });
+
+  if (error) {
+    console.error('[Conferência Uber] falha ao sincronizar API:', error);
+    setFeedback(`Falha ao sincronizar a API Uber. Confira a Edge Function sync-uber-corridas e a integração em TI > Integrações. Detalhe: ${error.message || 'erro desconhecido'}`, true);
+    return;
+  }
+
+  await loadUber();
+  renderActiveTab();
+
+  const total = data?.inserted ?? data?.upserted ?? data?.total ?? data?.count ?? data?.sincronizadas ?? 0;
+  setFeedback(`Sincronização Uber concluída. Corridas retornadas/gravadas: ${total}.`);
+}
+
 async function updateUberStatus(id, classificacao) {
   const row = state.uber.find((item) => String(item.id) === String(id));
   if (!row) return;
@@ -1340,6 +1382,12 @@ function bindEvents() {
         direction: current.column === column && current.direction === 'asc' ? 'desc' : 'asc',
       };
       renderActiveTab();
+      return;
+    }
+
+    const syncUberBtn = event.target.closest('[data-uber-sync-api]');
+    if (syncUberBtn) {
+      syncUberApi();
       return;
     }
 
