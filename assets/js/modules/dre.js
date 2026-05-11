@@ -192,6 +192,57 @@
     return out;
   }
 
+
+  async function loadResultadoDiarioFromDb(supabase, year){
+    const out={classificado:{}, embarcado:{}, cargas:{}, valorEmbarcado:{}, testes:{}, regionais:new Set(), totalRows:0};
+    if(!supabase || !year) return out;
+
+    const start=`${year}-01-01`;
+    const end=`${year + 1}-01-01`;
+    const pageSize=1000;
+    let from=0;
+
+    while(true){
+      const {data,error}=await supabase
+        .from('relatorio_resultado_diario')
+        .select('data,coordenacao,cargas,toneladas,embarcado,valor_embarcado,total_afla,total_vomitoxina,total_falling_number,total_intacta,total_gmo')
+        .gte('data', start)
+        .lt('data', end)
+        .range(from, from + pageSize - 1);
+
+      if(error){
+        console.warn('DRE: não foi possível carregar produção do banco relatorio_resultado_diario.', error);
+        break;
+      }
+
+      const rows=data || [];
+      out.totalRows += rows.length;
+
+      for(const row of rows){
+        const reg=mapReg(row.coordenacao);
+        const m=monthFrom(row.data);
+        if(!reg || !m || m.year!==year || isIgnored(reg)) continue;
+        if(!isExcluded(reg)) out.regionais.add(reg);
+        addArr(out.classificado,reg,m.month,row.toneladas);
+        addArr(out.embarcado,reg,m.month,row.embarcado);
+        addArr(out.cargas,reg,m.month,row.cargas);
+        addArr(out.valorEmbarcado,reg,m.month,row.valor_embarcado);
+        addArr(out.testes,reg,m.month,
+          n(row.total_afla) +
+          n(row.total_vomitoxina) +
+          n(row.total_falling_number) +
+          n(row.total_intacta) +
+          n(row.total_gmo)
+        );
+      }
+
+      if(rows.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return out;
+  }
+
   function parseAntecipacoes(rows){
     const arr=Array(12).fill(0); if(!rows?.length) return arr;
     const hrow=findHeaderRow(rows,['Data','Credito']); const idx=indexByHeaders(rows[hrow]||[]);
@@ -531,6 +582,22 @@
         const ant = parseAntecipacoes(sheetRows(wb,['Antecipações','Antecipacoes','Caixa Fornecedor']));
         for(let i=0;i<12;i++) src.antecipacoes[i] += n(ant[i]);
       }
+    }
+
+    setStatus('Conferindo produção consolidada no banco de dados...');
+    const prodDb = await loadResultadoDiarioFromDb(opts.supabase, state.year);
+    if(prodDb.totalRows > 0){
+      // O Resultado Diário importado pelo painel é gravado na tabela relatorio_resultado_diario.
+      // Para evitar duplicidade com arquivos antigos em relatorios_importacoes, o banco vira a fonte oficial da produção.
+      src.prod = prodDb;
+      if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
+      state.sourceAudit.used.push({
+        tipo: 'resultado-diario-db',
+        nome: `relatorio_resultado_diario (${prodDb.totalRows} linhas)`,
+        status: 'fonte_oficial',
+        modo: 'replace_producao',
+        created_at: new Date().toISOString()
+      });
     }
 
     state.reportsData=src; buildDre(); state.busy=false;
