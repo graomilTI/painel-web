@@ -56,7 +56,7 @@
       ambiente: 'PRODUCAO',
       base_url: 'https://api.uber.com',
       auth_url: 'https://login.uber.com/oauth/v2/token',
-      segredos: ['UBER_CLIENT_ID', 'UBER_CLIENT_SECRET', 'UBER_ACCESS_TOKEN', 'UBER_REFRESH_TOKEN', 'UBER_ORGANIZATION_ID', 'UBER_SYNC_ENDPOINT']
+      segredos: ['UBER_CLIENT_ID', 'UBER_CLIENT_SECRET', 'UBER_SCOPES', 'UBER_ORGANIZATION_ID', 'UBER_SYNC_ENDPOINT']
     }
   ];
 

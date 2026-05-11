@@ -1192,11 +1192,17 @@ async function syncUberApi() {
     return;
   }
 
+  if (data && data.ok === false) {
+    console.warn('[Conferência Uber] sincronização pendente:', data);
+    setFeedback(data.message || data.error || 'A sincronização Uber retornou pendência de configuração.', true);
+    return;
+  }
+
   await loadUber();
   renderActiveTab();
 
   const total = data?.inserted ?? data?.upserted ?? data?.total ?? data?.count ?? data?.sincronizadas ?? 0;
-  setFeedback(`Sincronização Uber concluída. Corridas retornadas/gravadas: ${total}.`);
+  setFeedback(data?.message || `Sincronização Uber concluída. Corridas retornadas/gravadas: ${total}.`);
 }
 
 async function updateUberStatus(id, classificacao) {
