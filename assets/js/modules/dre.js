@@ -32,6 +32,7 @@
   const state = { tab:'geral', year:new Date().getFullYear(), regional:'', data:null, reports:[], busy:false };
 
   function norm(s){return String(s??'').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]/g,'');}
+  function headerMatches(cell, expected){ const a=norm(cell); const b=norm(expected); return !!a && !!b && (a===b || a.includes(b) || b.includes(a)); }
   function mapReg(s){const raw=String(s??'').trim(); return ALIASES[norm(raw)] || raw;}
   function isIgnored(r){return IGNORED.some(x=>norm(x)===norm(r));}
   function isExcluded(r){return INDIVIDUAL_EXCLUDED.some(x=>norm(x)===norm(r));}
@@ -117,7 +118,12 @@
     return best;
   }
   function indexByHeaders(header){ const idx={}; (header||[]).forEach((h,i)=>{ const k=norm(h); if(k && idx[k]==null) idx[k]=i; }); return idx; }
-  function col(idx, names){ for(const name of names){ const k=norm(name); if(idx[k]!=null) return idx[k]; } return -1; }
+  function col(idx, names){
+    for(const name of names){ const k=norm(name); if(idx[k]!=null) return idx[k]; }
+    const entries=Object.entries(idx||{});
+    for(const name of names){ const found=entries.find(([k])=>headerMatches(k,name)); if(found) return found[1]; }
+    return -1;
+  }
 
   function parseDespesas(rows){
     const out={base:{}, geral:{}, regionais:new Set()};
@@ -169,339 +175,28 @@
   function parseResultadoDiario(rows){
     const out={classificado:{}, embarcado:{}, cargas:{}, valorEmbarcado:{}, testes:{}, regionais:new Set()};
     if(!rows?.length) return out;
-    const hrow=findHeaderRow(rows,['O.S.','Toneladas','Embarcado','Coordenação']);
+    const hrow=findHeaderRow(rows,['Data','Toneladas','Coordenação']);
     const header=rows[hrow]||[]; const idx=indexByHeaders(header);
     const iReg=col(idx,['Coordenação','Coordenacao','Regional']);
     const iData=col(idx,['Data']);
-    const iTon=col(idx,['Toneladas']);
-    const iEmb=col(idx,['Embarcado']);
-    const iCargas=col(idx,['Cargas']);
+    const iTon=col(idx,['Toneladas','Tons','Volume Classificado']);
+    const iEmb=col(idx,['Embarcado','Volume Embarcado']);
+    const iEmbTotal=col(idx,['Total Embarcado + Teste','Total Embarcado Mais Teste','Total Embarcado']);
+    const iCargas=col(idx,['Cargas','Carga']);
     const iValorEmb=col(idx,['Valor Embarcado']);
     const testCols=['Total Afla','Total Vomitoxina','Total Falling Number','Total Intacta','Total GMO'].map(x=>col(idx,[x])).filter(i=>i>=0);
-    if(iReg<0 || iData<0 || iTon<0 || iEmb<0) return out;
+    if(iReg<0 || iData<0 || iTon<0 || (iEmb<0 && iEmbTotal<0)) return out;
     for(const row of rows.slice(hrow+1)){
       const reg=mapReg(row[iReg]); const m=monthFrom(row[iData]);
       if(!reg || !m || m.year!==state.year || isIgnored(reg)) continue;
       if(!isExcluded(reg)) out.regionais.add(reg);
       addArr(out.classificado,reg,m.month,row[iTon]);
-      addArr(out.embarcado,reg,m.month,row[iEmb]);
+      addArr(out.embarcado,reg,m.month,n(row[iEmbTotal]) || row[iEmb]);
       addArr(out.cargas,reg,m.month,row[iCargas]);
       addArr(out.valorEmbarcado,reg,m.month,row[iValorEmb]);
       addArr(out.testes,reg,m.month,testCols.reduce((a,i)=>a+n(row[i]),0));
     }
     return out;
-  }
-
-
-  async function loadResultadoDiarioFromDb(supabase, year){
-    const out={classificado:{}, embarcado:{}, cargas:{}, valorEmbarcado:{}, testes:{}, regionais:new Set(), totalRows:0};
-    if(!supabase || !year) return out;
-
-    const start=`${year}-01-01`;
-    const end=`${year + 1}-01-01`;
-    const pageSize=1000;
-    let from=0;
-
-    while(true){
-      const {data,error}=await supabase
-        .from('relatorio_resultado_diario')
-        .select('data,coordenacao,cargas,toneladas,embarcado,total_embarcado_mais_teste,valor_embarcado,total_afla,total_vomitoxina,total_falling_number,total_intacta,total_gmo')
-        .gte('data', start)
-        .lt('data', end)
-        .range(from, from + pageSize - 1);
-
-      if(error){
-        console.warn('DRE: não foi possível carregar produção do banco relatorio_resultado_diario.', error);
-        break;
-      }
-
-      const rows=data || [];
-      out.totalRows += rows.length;
-
-      for(const row of rows){
-        const reg=mapReg(row.coordenacao);
-        const m=monthFrom(row.data);
-        if(!reg || !m || m.year!==year || isIgnored(reg)) continue;
-        if(!isExcluded(reg)) out.regionais.add(reg);
-        addArr(out.classificado,reg,m.month,row.toneladas);
-        addArr(out.embarcado,reg,m.month, n(row.total_embarcado_mais_teste) || row.embarcado);
-        addArr(out.cargas,reg,m.month,row.cargas);
-        addArr(out.valorEmbarcado,reg,m.month,row.valor_embarcado);
-        addArr(out.testes,reg,m.month,
-          n(row.total_afla) +
-          n(row.total_vomitoxina) +
-          n(row.total_falling_number) +
-          n(row.total_intacta) +
-          n(row.total_gmo)
-        );
-      }
-
-      if(rows.length < pageSize) break;
-      from += pageSize;
-    }
-
-    return out;
-  }
-
-  function parseAntecipacoes(rows){
-    const arr=Array(12).fill(0); if(!rows?.length) return arr;
-    const hrow=findHeaderRow(rows,['Data','Credito']); const idx=indexByHeaders(rows[hrow]||[]);
-    const iData=col(idx,['Data','Data da NF','Data Emissão']); const iCred=col(idx,['Credito','Crédito']);
-    if(iData<0 || iCred<0) return arr;
-    rows.slice(hrow+1).forEach(row=>{ const m=monthFrom(row[iData]); if(m && m.year===state.year) arr[m.month]+=n(row[iCred]); });
-    return arr;
-  }
-
-  function rateio(base,geral,reg,topics,mi){
-    const proprio=sumTopic(base,reg,topics,mi);
-    if(!proprio) return 0;
-    let totalSemPool=0;
-    for(const r of Object.keys(base||{})){ if(!isPool(r)) totalSemPool+=sumTopic(base,r,topics,mi); }
-    if(!totalSemPool) return 0;
-    let pool=geralTopic(geral,topics,mi);
-    for(const r of Object.keys(base||{})){ if(isPool(r)) pool+=sumTopic(base,r,topics,mi); }
-    return pool ? (proprio/totalSemPool)*pool : 0;
-  }
-
-  function buildForRegional(reg, source){
-    const {desp,nf,prod,antecipacoes}=source;
-    const rows=[];
-    const vals={notas:Array(12).fill(0),desc:Array(12).fill(0),imp:Array(12).fill(0),rec:Array(12).fill(0),despOp:Array(12).fill(0),veic:Array(12).fill(0),pessoal:Array(12).fill(0),lb:Array(12).fill(0),adm:Array(12).fill(0),ebtida:Array(12).fill(0),fin:Array(12).fill(0),ll:Array(12).fill(0),emp:Array(12).fill(0),antec:Array(12).fill(0),inv:Array(12).fill(0),res:Array(12).fill(0),mb:Array(12).fill(0),me:Array(12).fill(0)};
-    for(let mi=0;mi<12;mi++){
-      vals.notas[mi]=reg?n(getArr(nf.bruto,reg)[mi]):sumMapMonth(nf.bruto,mi);
-      vals.desc[mi]=reg?n(getArr(nf.descAcresc,reg)[mi]):sumMapMonth(nf.descAcresc,mi);
-      vals.imp[mi]=reg?n(getArr(nf.impostos,reg)[mi]):sumMapMonth(nf.impostos,mi);
-      vals.rec[mi]=vals.notas[mi]+vals.desc[mi]-vals.imp[mi];
-      if(reg){
-        vals.despOp[mi]=sumTopic(desp.base,reg,['DESPESAS OPERACIONAIS'],mi)+rateio(desp.base,desp.geral,reg,['DESPESAS OPERACIONAIS'],mi);
-        vals.veic[mi]=sumTopic(desp.base,reg,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi)+rateio(desp.base,desp.geral,reg,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi);
-        vals.pessoal[mi]=sumTopic(desp.base,reg,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi)+rateio(desp.base,desp.geral,reg,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi);
-        vals.adm[mi]=sumTopic(desp.base,reg,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi)+rateio(desp.base,desp.geral,reg,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi);
-        vals.fin[mi]=rateio(desp.base,desp.geral,reg,['DESPESAS FINANCEIRAS'],mi);
-        vals.inv[mi]=sumTopic(desp.base,reg,['PATRIMONIO'],mi)+rateio(desp.base,desp.geral,reg,['PATRIMONIO'],mi);
-      } else {
-        vals.despOp[mi]=sumTopicsAll(desp.base,['DESPESAS OPERACIONAIS'],mi)+geralTopic(desp.geral,['DESPESAS OPERACIONAIS'],mi);
-        vals.veic[mi]=sumTopicsAll(desp.base,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi)+geralTopic(desp.geral,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi);
-        vals.pessoal[mi]=sumTopicsAll(desp.base,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi)+geralTopic(desp.geral,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi);
-        vals.adm[mi]=sumTopicsAll(desp.base,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi)+geralTopic(desp.geral,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi);
-        vals.fin[mi]=sumTopicsAll(desp.base,['DESPESAS FINANCEIRAS','RETIRADA SÓCIOS','RETIRADA SOCIOS'],mi)+geralTopic(desp.geral,['DESPESAS FINANCEIRAS','RETIRADA SÓCIOS','RETIRADA SOCIOS'],mi);
-        vals.emp[mi]=sumTopicsAll(desp.base,['EMPRESTIMOS TERCEIROS'],mi)+geralTopic(desp.geral,['EMPRESTIMOS TERCEIROS'],mi);
-        vals.antec[mi]=n(antecipacoes[mi]);
-        vals.inv[mi]=sumTopicsAll(desp.base,['PATRIMONIO'],mi)+geralTopic(desp.geral,['PATRIMONIO'],mi);
-      }
-      vals.lb[mi]=vals.rec[mi]-vals.despOp[mi]-vals.veic[mi]-vals.pessoal[mi];
-      vals.ebtida[mi]=vals.lb[mi]-vals.adm[mi];
-      vals.ll[mi]=vals.ebtida[mi]-vals.fin[mi];
-      vals.res[mi]=vals.ll[mi]-vals.emp[mi]-vals.antec[mi]-vals.inv[mi];
-      vals.mb[mi]=div(vals.lb[mi],vals.rec[mi]); vals.me[mi]=div(vals.ebtida[mi],vals.rec[mi]);
-    }
-    const push=(label,arr)=>rows.push({label,values:arr,total:PERCENT_ROWS.has(label)?0:total(arr)});
-    push('NOTAS FISCAIS',vals.notas); push('DESCONTOS CONCEDIDOS+ACRÉSCIMOS',vals.desc); push('TOTAL DE IMPOSTOS',vals.imp); push('RECEITA LÍQUIDA',vals.rec);
-    push('TOTAL DE DESPESAS OPERACIONAIS',vals.despOp); push('DESP COM VEICULOS+COMBUSTIVEIS',vals.veic); push('TOTAL DESPESAS PESSOAL',vals.pessoal); push('LUCRO BRUTO',vals.lb);
-    push('DESP ADM + COMERCIAL',vals.adm); push('LUCRO OPERACIONAL (EBTIDA)',vals.ebtida); push('DESPESAS FINANCEIRAS',vals.fin); push('LUCRO LÍQUIDO',vals.ll);
-    if(!reg){ push('EMPRESTIMOS TERCEIROS',vals.emp); push('ANTECIPAÇÕES A FORNECEDORES',vals.antec); }
-    push('INVESTIMENTOS',vals.inv); push('RESULTADO FINAL',vals.res); rows.push({label:'MARGEM BRUTA',values:vals.mb,total:div(total(vals.lb),total(vals.rec))}); rows.push({label:'MARGEM EBTIDA',values:vals.me,total:div(total(vals.ebtida),total(vals.rec))});
-
-    const volClass=reg?getArr(prod.classificado,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.classificado,mi));
-    const volEmb=reg?getArr(prod.embarcado,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.embarcado,mi));
-    const cargas=reg?getArr(prod.cargas,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.cargas,mi));
-    const totalDesp=vals.despOp.map((_,mi)=>vals.despOp[mi]+vals.veic[mi]+vals.pessoal[mi]+vals.adm[mi]+vals.fin[mi]+vals.inv[mi]);
-    const cptEmb=totalDesp.map((v,mi)=>div(v,volEmb[mi]));
-    const cptClass=totalDesp.map((v,mi)=>div(v,volClass[mi]));
-    const receitaTon=vals.rec.map((v,mi)=>div(v,volEmb[mi]));
-    const margemTon=vals.res.map((v,mi)=>div(v,volEmb[mi]));
-    const eficiencia=volEmb.map((v,mi)=>div(v,volClass[mi]));
-    return {main:rows, extras:{totalDesp,volClass,volEmb,cargas,cptEmb,cptClass,receitaTon,margemTon,eficiencia}, vals};
-  }
-
-  function buildDre(){
-    const src=state.reportsData;
-    const regionais=[...new Set([...src.desp.regionais,...src.nf.regionais,...src.prod.regionais])]
-      .map(mapReg)
-      .filter(r => r && norm(r) !== 'GERAL' && !isExcluded(r) && !isIgnored(r))
-      .sort((a,b)=>a.localeCompare(b,'pt-BR'));
-    const regionalReports={}; regionais.forEach(r=>regionalReports[r]=buildForRegional(r,src));
-    state.data={regionais, geral:buildForRegional('',src), regional:regionalReports};
-    if(!state.regional && regionais.length) state.regional=regionais[0];
-  }
-
-  const STRICT_SINGLE_REPORT_TYPES = new Set(['despesas','notas_fiscais','caixa_fornecedor']);
-  const VALID_DRE_TYPES = new Set(['despesas','notas_fiscais','resultado-diario','caixa_fornecedor']);
-
-  function normalizeReportTipo(raw, row = null){
-    const candidates = [
-      row?.tipo,
-      row?.tipo_relatorio,
-      row?.titulo_relatorio,
-      row?.nome_arquivo,
-      row?.arquivo_nome_original,
-      raw
-    ].map(v => String(v || '').trim()).filter(Boolean);
-
-    const clean = (v) => String(v || '')
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g,'')
-      .replace(/_/g,'-')
-      .replace(/\s+/g,'-');
-
-    for (const original of candidates) {
-      const t = clean(original);
-
-      // Igualdade / aliases controlados primeiro.
-      if (['despesas','relatorio-de-despesas','despesas-por-regional'].includes(t)) return 'despesas';
-      if (['notas-fiscais','nota-fiscal','nfs','nf','nfe','nfse','faturamento','relatorio-de-notas-fiscais'].includes(t)) return 'notas_fiscais';
-      if (['resultado-diario','resultado-diario-gavilon','relatorio-resultado-diario','producao','producao-consolidada','relatorio-de-resultado-diario'].includes(t)) return 'resultado-diario';
-      if (['caixa-fornecedor','caixa-fornecedores','antecipacoes','antecipacao-fornecedores','relatorio-caixa-fornecedor'].includes(t)) return 'caixa_fornecedor';
-
-      // Fallback por nome do arquivo, mas restrito a padrões claros.
-      if (/resultado.*diario|diario.*resultado|gavilon|producao|produção/.test(original.toLowerCase())) return 'resultado-diario';
-      if (/notas?\s*fiscais?|nfe|nfse|faturamento/.test(original.toLowerCase())) return 'notas_fiscais';
-      if (/despesas?|despesas?\s*por\s*regional/.test(original.toLowerCase())) return 'despesas';
-      if (/caixa.*fornecedor|antecipac/.test(original.toLowerCase())) return 'caixa_fornecedor';
-    }
-
-    return clean(candidates[0] || 'outros');
-  }
-
-  function isActiveImport(row){
-    const status = norm(row?.status || 'enviado');
-    return !['SUBSTITUIDO','SUBSTITUÍDO','CANCELADO','ERRO','EXCLUIDO','EXCLUÍDO','REMOVIDO'].includes(status);
-  }
-
-  function parseObservacoesJson(row){
-    const raw = String(row?.observacoes || '').trim();
-    if(!raw || !raw.startsWith('{')) return {};
-    try { return JSON.parse(raw) || {}; } catch(_) { return {}; }
-  }
-
-  function importMode(row){
-    const obs = parseObservacoesJson(row);
-    return String(
-      row?.modo_importacao ||
-      row?.modo ||
-      row?.import_mode ||
-      row?.modoImportacao ||
-      obs?.modo_importacao ||
-      obs?.modo ||
-      obs?.import_mode ||
-      obs?.modoImportacao ||
-      ''
-    ).trim().toLowerCase();
-  }
-
-  function reportTime(row){
-    return Date.parse(row?.created_at || row?.updated_at || '') || 0;
-  }
-
-  function reportLabel(row){
-    return row?.nome_arquivo || row?.arquivo_nome_original || row?.titulo_relatorio || row?.tipo || row?.id || 'sem nome';
-  }
-
-  function chooseReportsForDre(rows){
-    const normalized = [];
-    const ignored = [];
-
-    for(const r of rows || []){
-      if(!isActiveImport(r)){
-        ignored.push({ ...r, dre_ignore_reason: 'status_inativo' });
-        continue;
-      }
-
-      const tipo = normalizeReportTipo(null, r);
-      if(!VALID_DRE_TYPES.has(tipo)){
-        ignored.push({ ...r, tipo, dre_ignore_reason: 'tipo_fora_dre' });
-        continue;
-      }
-
-      normalized.push({ ...r, tipo, import_mode: importMode(r) });
-    }
-
-    const byType = new Map();
-    for(const r of normalized){
-      if(!byType.has(r.tipo)) byType.set(r.tipo, []);
-      byType.get(r.tipo).push(r);
-    }
-
-    const chosen = [];
-
-    for(const [tipo, listRaw] of byType.entries()){
-      const list = [...listRaw].sort((a,b) => reportTime(b) - reportTime(a));
-
-      // Financeiro deve espelhar o script: 1 fonte ativa por tipo.
-      // Isso evita multiplicar NF/despesas quando existem uploads antigos ainda ativos.
-      if(STRICT_SINGLE_REPORT_TYPES.has(tipo)){
-        chosen.push(list[0]);
-        list.slice(1).forEach(r => ignored.push({
-          ...r,
-          dre_ignore_reason: `ignorado_por_blindagem_financeira_usando_mais_recente_${tipo}`
-        }));
-        continue;
-      }
-
-      // Resultado Diário pode ser complementar, mas somente quando o modo veio marcado como append/complementar.
-      // Se não houver marcação clara, usa apenas o mais recente para evitar duplicidade silenciosa.
-      if(tipo === 'resultado-diario'){
-        const appendList = list.filter(r => ['append','complementar','complemento'].includes(r.import_mode));
-        if(appendList.length >= 2){
-          chosen.push(...appendList.sort((a,b)=>reportTime(a)-reportTime(b)));
-          list.filter(r => !appendList.includes(r)).forEach(r => ignored.push({
-            ...r,
-            dre_ignore_reason: 'resultado_diario_antigo_nao_complementar'
-          }));
-        } else {
-          chosen.push(list[0]);
-          list.slice(1).forEach(r => ignored.push({
-            ...r,
-            dre_ignore_reason: 'resultado_diario_duplicado_usando_mais_recente'
-          }));
-        }
-      }
-    }
-
-    chosen.sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')));
-
-    return { chosen, ignored };
-  }
-
-  async function getLatestReports(supabase){
-    const {data,error}=await supabase
-      .from('relatorios_importacoes')
-      .select('*')
-      .order('created_at',{ascending:false})
-      .limit(500);
-    if(error) throw error;
-
-    state.allImports = data || [];
-    const { chosen, ignored } = chooseReportsForDre(state.allImports);
-    state.sourceAudit = {
-      used: chosen.map(r => ({
-        id: r.id,
-        tipo: r.tipo,
-        nome: reportLabel(r),
-        status: r.status,
-        modo: r.import_mode || '',
-        created_at: r.created_at
-      })),
-      ignored: ignored.map(r => ({
-        id: r.id,
-        tipo: r.tipo || normalizeReportTipo(null, r),
-        nome: reportLabel(r),
-        status: r.status,
-        motivo: r.dre_ignore_reason || '',
-        created_at: r.created_at
-      }))
-    };
-
-    return chosen;
-  }
-
-  function mergeArrMap(target, source){
-    for(const [reg, arr] of Object.entries(source || {})){
-      if(!target[reg]) target[reg] = Array(12).fill(0);
-      for(let i=0;i<12;i++) target[reg][i] += n(arr?.[i]);
-    }
   }
 
   function mergeNestedTopicMap(target, source){

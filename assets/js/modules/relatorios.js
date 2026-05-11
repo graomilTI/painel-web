@@ -422,13 +422,24 @@
     return `${Number(year)}-${String(Number(month)).padStart(2, '0')}-${String(Number(day)).padStart(2, '0')}`;
   }
 
-  function toIsoDate(value) {
-    if (!value) return null;
-    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
-    if (typeof value === 'number' && window.XLSX?.SSF?.parse_date_code) {
-      const parsed = window.XLSX.SSF.parse_date_code(value);
-      return parsed?.y && parsed?.m && parsed?.d ? makeIsoDate(parsed.y, parsed.m, parsed.d) : null;
+  function excelSerialToIsoDate(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < 1) return null;
+    if (window.XLSX?.SSF?.parse_date_code) {
+      const parsed = window.XLSX.SSF.parse_date_code(num);
+      if (parsed?.y && parsed?.m && parsed?.d) return makeIsoDate(parsed.y, parsed.m, parsed.d);
     }
+    // Fallback: serial do Excel/Sheets. Mantém a data correta mesmo se SSF não estiver disponível.
+    const utc = Math.round((num - 25569) * 86400 * 1000);
+    const d = new Date(utc);
+    if (Number.isNaN(d.getTime())) return null;
+    return makeIsoDate(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  }
+
+  function toIsoDate(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+    if (typeof value === 'number') return excelSerialToIsoDate(value);
     const s = String(value || '').trim();
     let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
     if (m) {
@@ -450,13 +461,28 @@
     return null;
   }
 
+  function headerKey(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
+  function headerMatches(cell, expected) {
+    const a = headerKey(cell);
+    const b = headerKey(expected);
+    if (!a || !b) return false;
+    return a === b || a.includes(b) || b.includes(a);
+  }
+
   function findHeaderRow(rows, required) {
     let best = 0;
     let score = -1;
-    const req = required.map(normalizeHeader);
-    (rows || []).slice(0, 12).forEach((row, index) => {
-      const headers = (row || []).map(normalizeHeader);
-      const current = req.filter((name) => headers.includes(name)).length;
+    const req = required.map(headerKey);
+    (rows || []).slice(0, 25).forEach((row, index) => {
+      const headers = (row || []).map(headerKey);
+      const current = req.filter((name) => headers.some((h) => h === name || h.includes(name) || name.includes(h))).length;
       if (current > score) {
         score = current;
         best = index;
@@ -478,7 +504,7 @@
     } else if (tipo === 'uber_corridas') {
       const hrow = findHeaderRow(rows, ['NOME', 'Data da solicitação (local)', 'Endereço de partida']);
       const header = rows[hrow] || [];
-      const idxData = header.findIndex((h) => ['data da solicitação local', 'data da solicitacao local', 'data solicitacao local', 'data'].includes(normalizeHeader(h)));
+      const idxData = header.findIndex((h) => ['data da solicitação local', 'data da solicitacao local', 'data solicitacao local', 'data'].some((alias) => headerMatches(h, alias)));
       if (idxData >= 0) {
         rows.slice(hrow + 1).forEach((row) => {
           const iso = toIsoDate(row?.[idxData]);
@@ -488,7 +514,7 @@
     } else {
       const hrow = findHeaderRow(rows, ['Data']);
       const header = rows[hrow] || [];
-      const idxData = header.findIndex((h) => ['data', 'data n.f.', 'data nf', 'data da nf', 'data nota'].includes(normalizeHeader(h)));
+      const idxData = header.findIndex((h) => ['data', 'data n.f.', 'data nf', 'data da nf', 'data nota'].some((alias) => headerMatches(h, alias)));
       if (idxData >= 0) {
         rows.slice(hrow + 1).forEach((row) => {
           const iso = toIsoDate(row?.[idxData]);
@@ -1386,10 +1412,13 @@
 
 
   function pickHeaderIndex(headers, names) {
-    const normalized = (headers || []).map(normalizeHeader);
     for (const name of names || []) {
-      const idx = normalized.indexOf(normalizeHeader(name));
-      if (idx >= 0) return idx;
+      const exact = (headers || []).findIndex((h) => headerKey(h) === headerKey(name));
+      if (exact >= 0) return exact;
+    }
+    for (const name of names || []) {
+      const fuzzy = (headers || []).findIndex((h) => headerMatches(h, name));
+      if (fuzzy >= 0) return fuzzy;
     }
     return -1;
   }
@@ -1400,18 +1429,19 @@
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
     const mapped = [];
     const dates = [];
+    const diagnostics = [];
 
     for (const sheetName of workbook.SheetNames || []) {
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
       if (!rows?.length) continue;
 
-      const headerRow = findHeaderRow(rows, ['O.S.', 'Data', 'Coordenação', 'Toneladas', 'Embarcado']);
+      const headerRow = findHeaderRow(rows, ['Data', 'Coordenação', 'Toneladas']);
       const headers = (rows[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
       const iOs = pickHeaderIndex(headers, ['O.S.', 'OS', 'Ordem de Serviço']);
       const iContrato = pickHeaderIndex(headers, ['Contrato']);
       const iProduto = pickHeaderIndex(headers, ['Produto']);
-      const iData = pickHeaderIndex(headers, ['Data']);
+      const iData = pickHeaderIndex(headers, ['Data', 'Dt Data']);
       const iFuncionario = pickHeaderIndex(headers, ['Funcionário', 'Funcionario', 'Classificador']);
       const iCoordenacao = pickHeaderIndex(headers, ['Coordenação', 'Coordenacao', 'Regional']);
       const iSupervisao = pickHeaderIndex(headers, ['Supervisão', 'Supervisao']);
@@ -1420,12 +1450,12 @@
       const iCliFinal = pickHeaderIndex(headers, ['Cliente Final', 'Cli. Final']);
       const iLocal = pickHeaderIndex(headers, ['Local de Embarque', 'Local Embarque']);
       const iDestino = pickHeaderIndex(headers, ['Destino']);
-      const iCargas = pickHeaderIndex(headers, ['Cargas']);
-      const iTon = pickHeaderIndex(headers, ['Toneladas', 'Tons', 'Volume Classificado']);
+      const iCargas = pickHeaderIndex(headers, ['Cargas', 'Carga']);
+      const iTon = pickHeaderIndex(headers, ['Toneladas', 'Tons', 'Volume Classificado', 'Peso Toneladas']);
       const iValorTon = pickHeaderIndex(headers, ['R$/Ton', 'Valor Ton', 'Valor/Ton']);
       const iCadencia = pickHeaderIndex(headers, ['Cadência', 'Cadencia']);
       const iTonsCad = pickHeaderIndex(headers, ['Tons Cadência', 'Tons Cadencia']);
-      const iEmbarcado = pickHeaderIndex(headers, ['Embarcado']);
+      const iEmbarcado = pickHeaderIndex(headers, ['Embarcado', 'Volume Embarcado']);
       const iValorEmbarcado = pickHeaderIndex(headers, ['Valor Embarcado']);
       const iValorAfla = pickHeaderIndex(headers, ['Valor Afla']);
       const iTotalAfla = pickHeaderIndex(headers, ['Total Afla']);
@@ -1437,20 +1467,25 @@
       const iTotalIntacta = pickHeaderIndex(headers, ['Total Intacta']);
       const iValorGmo = pickHeaderIndex(headers, ['Valor GMO']);
       const iTotalGmo = pickHeaderIndex(headers, ['Total GMO']);
-      const iTotalEmbTeste = pickHeaderIndex(headers, ['Total Embarcado + Teste', 'Total Embarcado Mais Teste']);
+      const iTotalEmbTeste = pickHeaderIndex(headers, ['Total Embarcado + Teste', 'Total Embarcado Mais Teste', 'Total Embarcado']);
       const iRemanescente = pickHeaderIndex(headers, ['Remanescente']);
       const iMotivoNhe = pickHeaderIndex(headers, ['Motivo NHE']);
       const iObsNhe = pickHeaderIndex(headers, ['Observações NHE', 'Observacoes NHE']);
       const iSituacao = pickHeaderIndex(headers, ['Situação', 'Situacao']);
       const iObs = pickHeaderIndex(headers, ['Observações', 'Observacoes']);
 
-      if (iData < 0 || iCoordenacao < 0 || iTon < 0 || iEmbarcado < 0) continue;
+      diagnostics.push({ sheetName, headerRow: headerRow + 1, headers: headers.slice(0, 40), indexes: { iData, iCoordenacao, iTon, iEmbarcado, iTotalEmbTeste, iCargas } });
+      if (iData < 0 || iCoordenacao < 0 || iTon < 0 || (iEmbarcado < 0 && iTotalEmbTeste < 0)) continue;
 
       rows.slice(headerRow + 1).forEach((row) => {
         const data = toIsoDate(row?.[iData]);
         const coordenacao = normalizeText(row?.[iCoordenacao]);
         if (!data || !coordenacao) return;
-        const hasMetric = [iTon, iEmbarcado, iCargas].some((idx) => idx >= 0 && normalizeNumberBr(row?.[idx]) !== null);
+        const tons = iTon >= 0 ? normalizeNumberBr(row?.[iTon]) : null;
+        const embarcadoBase = iEmbarcado >= 0 ? normalizeNumberBr(row?.[iEmbarcado]) : null;
+        const totalEmbTeste = iTotalEmbTeste >= 0 ? normalizeNumberBr(row?.[iTotalEmbTeste]) : null;
+        const cargas = iCargas >= 0 ? normalizeNumberBr(row?.[iCargas]) : null;
+        const hasMetric = [tons, embarcadoBase, totalEmbTeste, cargas].some((v) => v !== null);
         if (!hasMetric) return;
         dates.push(data);
         mapped.push({
@@ -1467,12 +1502,12 @@
           cliente_final: iCliFinal >= 0 ? normalizeText(row?.[iCliFinal]) : null,
           local_embarque: iLocal >= 0 ? normalizeText(row?.[iLocal]) : null,
           destino: iDestino >= 0 ? normalizeText(row?.[iDestino]) : null,
-          cargas: iCargas >= 0 ? normalizeNumberBr(row?.[iCargas]) || 0 : 0,
-          toneladas: iTon >= 0 ? normalizeNumberBr(row?.[iTon]) || 0 : 0,
+          cargas: cargas || 0,
+          toneladas: tons || 0,
           valor_ton: iValorTon >= 0 ? normalizeNumberBr(row?.[iValorTon]) || 0 : 0,
           cadencia: iCadencia >= 0 ? normalizeNumberBr(row?.[iCadencia]) || 0 : 0,
           tons_cadencia: iTonsCad >= 0 ? normalizeNumberBr(row?.[iTonsCad]) || 0 : 0,
-          embarcado: iEmbarcado >= 0 ? normalizeNumberBr(row?.[iEmbarcado]) || 0 : 0,
+          embarcado: embarcadoBase ?? totalEmbTeste ?? 0,
           valor_embarcado: iValorEmbarcado >= 0 ? normalizeNumberBr(row?.[iValorEmbarcado]) || 0 : 0,
           valor_afla: iValorAfla >= 0 ? normalizeNumberBr(row?.[iValorAfla]) || 0 : 0,
           total_afla: iTotalAfla >= 0 ? normalizeNumberBr(row?.[iTotalAfla]) || 0 : 0,
@@ -1484,7 +1519,7 @@
           total_intacta: iTotalIntacta >= 0 ? normalizeNumberBr(row?.[iTotalIntacta]) || 0 : 0,
           valor_gmo: iValorGmo >= 0 ? normalizeNumberBr(row?.[iValorGmo]) || 0 : 0,
           total_gmo: iTotalGmo >= 0 ? normalizeNumberBr(row?.[iTotalGmo]) || 0 : 0,
-          total_embarcado_mais_teste: iTotalEmbTeste >= 0 ? normalizeNumberBr(row?.[iTotalEmbTeste]) || 0 : 0,
+          total_embarcado_mais_teste: totalEmbTeste || 0,
           remanescente: iRemanescente >= 0 ? normalizeNumberBr(row?.[iRemanescente]) || 0 : 0,
           motivo_nhe: iMotivoNhe >= 0 ? normalizeText(row?.[iMotivoNhe]) : null,
           observacoes_nhe: iObsNhe >= 0 ? normalizeText(row?.[iObsNhe]) : null,
@@ -1498,14 +1533,16 @@
     return {
       rows: mapped,
       period: uniqueDates.length ? { inicio: uniqueDates[0], fim: uniqueDates[uniqueDates.length - 1], totalDatas: uniqueDates.length } : null,
+      diagnostics,
     };
   }
 
   async function importarResultadoDiarioDaPlanilha(file, opts, periodFromEntry = null) {
-    const { rows, period } = await readResultadoDiarioRowsFromFile(file);
+    const { rows, period, diagnostics } = await readResultadoDiarioRowsFromFile(file);
     const finalPeriod = period || periodFromEntry;
     if (!rows.length) {
-      throw new Error('A planilha de Resultado Diário não possui linhas válidas. Cabeçalhos esperados: Data, Coordenação, Toneladas e Embarcado.');
+      const detail = (diagnostics || []).map((d) => `${d.sheetName} linha ${d.headerRow}: ${d.headers.join(' | ')}`).join(' || ');
+      throw new Error(`A planilha de Resultado Diário não possui linhas válidas. Cabeçalhos esperados: Data, Coordenação, Toneladas e Embarcado/Total Embarcado + Teste. Detectado: ${detail || 'nenhum cabeçalho'}`);
     }
 
     if (finalPeriod?.inicio && finalPeriod?.fim) {
