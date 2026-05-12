@@ -87,7 +87,9 @@
       'NAO IDENTIFICADO',
       'NÃO IDENTIFICADO',
       'SEM MOTORISTA',
-      'INDEFINIDO'
+      'INDEFINIDO',
+      'OCR - CONFERIR',
+      'OCR CONFERIR'
     ].some((generic) => normalizeDriverNameForMatch(generic) === name);
   }
 
@@ -972,10 +974,12 @@
         const rawFolder = f.driverFolderName || f.folderName || '';
         const folderIsInvalid = isUnknownDriverName(rawFolder) || isNotificationTitleLike(rawFolder);
         const folderName = driverName || (folderIsInvalid ? 'OCR - CONFERIR' : rawFolder);
+        const notificationNumber = getFileNotificationNumber(f);
+        const notificationLine = notificationNumber ? `<br>Nº notificação: ${escapeHtml(notificationNumber)}` : '';
         const extra = driverName && folderIsInvalid
           ? '<br><small>Motorista identificado pelo OCR do print. A pasta exibida foi corrigida para o nome do motorista.</small>'
           : (folderIsInvalid ? '<br><small>OCR ainda não retornou motorista válido para este arquivo.</small>' : '');
-        return `<div class="saved-item"><strong>${escapeHtml(f.fileName || 'Print salvo')}</strong><br>Pasta: ${escapeHtml(folderName)}${extra}${f.fileUrl ? `<br><a href="${escapeHtml(f.fileUrl)}" target="_blank" rel="noopener">Abrir no Drive</a>` : ''}</div>`;
+        return `<div class="saved-item"><strong>${escapeHtml(f.fileName || 'Print salvo')}</strong><br>Pasta: ${escapeHtml(folderName)}${notificationLine}${extra}${f.fileUrl ? `<br><a href="${escapeHtml(f.fileUrl)}" target="_blank" rel="noopener">Abrir no Drive</a>` : ''}</div>`;
       }).join('') : '';
     }
   }
@@ -1184,15 +1188,17 @@
 
   function normalizeSavedPrintFileResult(file) {
     const driverName = getPossibleFileDriverName(file);
+    const notificationNumber = getFileNotificationNumber(file);
     const currentFolder = file?.driverFolderName || file?.driver_folder_name || file?.folderName || file?.folder_name || '';
     const folderIsInvalid = isUnknownDriverName(currentFolder) || isNotificationTitleLike(currentFolder);
     if (!driverName) {
       return folderIsInvalid
-        ? { ...file, driverFolderName: 'OCR - CONFERIR', folderName: 'OCR - CONFERIR' }
-        : file;
+        ? { ...file, notificationNumber, driverFolderName: 'OCR - CONFERIR', folderName: 'OCR - CONFERIR' }
+        : { ...file, notificationNumber };
     }
     return {
       ...file,
+      notificationNumber,
       driverName,
       driverFolderName: folderIsInvalid ? driverName : (file?.driverFolderName || file?.folderName || driverName),
       folderName: folderIsInvalid ? driverName : (file?.folderName || file?.driverFolderName || driverName)
@@ -1218,6 +1224,22 @@
       records.push({ data: date, velocidade: Number(match[2]) });
     }
     return records;
+  }
+
+  function getFileNotificationNumber(file) {
+    const direct = file?.notificationNumber || file?.notification_number || file?.originalNotificationNumber || file?.original_notification_number || file?.numeroNotificacao || file?.numero_notificacao || '';
+    const directMatch = String(direct || '').match(/\d{1,4}/);
+    if (directMatch) return String(Number(directMatch[0]));
+    const haystack = [file?.originalFileName, file?.fileName, file?.name, getOcrTextFromFileResult(file)].filter(Boolean).join(' ');
+    const normalized = normalizeTextForOcrMatch(haystack);
+    const m = normalized.match(/(?:^|\s)(\d{1,4})\s*(?:O|º|°)?\s+NOTIFICACAO\s+DE\s+VELOCIDADE/);
+    return m ? String(Number(m[1])) : '';
+  }
+
+  function rowNotificationNumber(row) {
+    const direct = row?.numero_notificacao || row?.numeroNotificacao || row?.notification_number || row?.notificationNumber || row?.notificacao_numero || '';
+    const m = String(direct || '').match(/\d{1,4}/);
+    return m ? String(Number(m[0])) : '';
   }
 
   function getFileMatchedIds(file) {
@@ -1264,6 +1286,9 @@
     const fileDriver = normalizeDriverNameForMatch(getPossibleFileDriverName(file));
     const rowPlate = onlyPlate(row?.placa || '');
     const rowDriver = normalizeDriverNameForMatch(getDriverFromExcesso(row));
+    const fileNotification = getFileNotificationNumber(file);
+    const rowNotification = rowNotificationNumber(row);
+    if (fileNotification && rowNotification && fileNotification === rowNotification) return true;
     if (filePlate && rowPlate && filePlate === rowPlate) return true;
     if (fileDriver && rowDriver && !isUnknownDriverName(rowDriver) && (fileDriver === rowDriver || fileDriver.includes(rowDriver) || rowDriver.includes(fileDriver))) return true;
     return false;
