@@ -153,6 +153,299 @@ function readWorkbookRows(file) {
   });
 }
 
+
+const PAGAMENTO_VALOR_ALMOCO = 30;
+const PAGAMENTO_IFOOD_CNPJ = '29.666.679/0001-34';
+const ALELO_SERIE_DIGITOS = 15;
+
+function onlyDigits(value) {
+  return String(value ?? '').replace(/\D/g, '');
+}
+
+function normalizeName(value) {
+  return normalize(value).replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function normConta(value) {
+  return normalize(value).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function dateRangeLabel(inicio, fim) {
+  if (!inicio && !fim) return 'período não informado';
+  if (inicio === fim) return brDate(inicio);
+  return `${brDate(inicio)} a ${brDate(fim)}`;
+}
+
+function compactDate(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function parseDateLoose(value) {
+  return toDateISO(value);
+}
+
+function formatDateForXlsx(value) {
+  return value ? brDate(value) : '';
+}
+
+function buildCpfToSerieMap(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const cpf = onlyDigits(row.CPF ?? row.Cpf ?? row.cpf);
+    const serie = row['N de Série'] ?? row['N de Serie'] ?? row['Nº de Série'] ?? row['Nº de Serie'] ?? row['Numero de Serie'] ?? row['Número de Série'] ?? '';
+    if (cpf) map.set(cpf, String(serie || '').trim());
+  });
+  return map;
+}
+
+function getAny(row, names = []) {
+  const keys = Object.keys(row || {});
+  for (const name of names) {
+    const found = keys.find((key) => normalize(key) === normalize(name));
+    if (found) return row[found];
+  }
+  return null;
+}
+
+function makeAleloRows(extratoRows, fonteRows) {
+  const mapCpfToSerie = buildCpfToSerieMap(fonteRows || []);
+  const alelo = [];
+  const ifood = [];
+  const flash = [];
+  const logs = [];
+
+  (extratoRows || []).forEach((row, index) => {
+    const conta = normConta(getAny(row, ['Conta']));
+    const cpf = onlyDigits(getAny(row, ['CPF']));
+    const valor = toNumber(getAny(row, ['Valor']));
+    const obs = String(getAny(row, ['Descrição', 'Descricao', 'Observacao', 'Observação']) || '').slice(0, 30);
+    const nome = String(getAny(row, ['Funcionário', 'Funcionario', 'Nome']) || '').trim();
+    const nasc = getAny(row, ['Data de Nascimento', 'Nascimento']);
+
+    if (!conta) return;
+    if (!cpf || cpf.length > 11) logs.push({ linha: index + 2, tipo: 'Atenção', mensagem: `CPF inválido ou ausente para ${nome || 'linha sem nome'}.` });
+
+    if (conta.includes('ALELO') && (conta.includes('BVGRAIN') || conta.includes('EXCELENCIA') || conta.includes('GRAOMIL'))) {
+      let serie = onlyDigits(mapCpfToSerie.get(cpf) || '');
+      if (serie.length < ALELO_SERIE_DIGITOS) serie = serie.padStart(ALELO_SERIE_DIGITOS, '0');
+      if (serie.length > ALELO_SERIE_DIGITOS) serie = serie.slice(0, ALELO_SERIE_DIGITOS);
+      if (!serie || /^0+$/.test(serie)) logs.push({ linha: index + 2, tipo: 'Alelo', mensagem: `Número de série não localizado para ${nome || cpf}.` });
+      alelo.push({ serie: `'${serie}`, cpf: `'${cpf.padStart(11, '0').slice(0, 11)}`, valor, observacao: obs, nome });
+      return;
+    }
+
+    if (conta.includes('IFOOD') && conta.includes('GRAOMIL')) {
+      ifood.push({ cnpj: PAGAMENTO_IFOOD_CNPJ, nome, cpf, nascimento: nasc, email: '', celular: '', centro_custo: '', livre: valor });
+      return;
+    }
+
+    if (conta.includes('FLASH') && conta.includes('GRAOMIL')) {
+      flash.push({ cpf, valor, nome });
+    }
+  });
+
+  return { alelo, ifood, flash, logs };
+}
+
+function buildLatestColaboradorMap(rows) {
+  const map = new Map();
+  (rows || []).forEach((row) => {
+    const key = normalizeName(row.nome);
+    if (!key || map.has(key)) return;
+    map.set(key, {
+      nome: row.nome,
+      cpf: onlyDigits(row.cpf).padStart(11, '0').slice(0, 11),
+      salario: toNumber(row.salario),
+      banco: row.conta_bancaria || row['C. Banc. Despesas'] || '',
+      empresa: row.empresa || '',
+      coordenacao: row.coordenacao || '',
+      supervisao: row.supervisao || '',
+      tipoRh: row.tipo || '',
+      nascimento: row.data_nascimento || row.nascimento || '',
+      whatsapp: row.whatsapp || '',
+      emailPessoal: row.email_pessoal || '',
+      emailEmpresa: row.email_empresa || ''
+    });
+  });
+  return map;
+}
+
+async function loadColaboradoresPagamento() {
+  const { data, error } = await supabase
+    .from('colaborador_snapshot')
+    .select('nome,cpf,salario,conta_bancaria,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,ativo')
+    .order('data_referencia', { ascending: false, nullsFirst: false })
+    .limit(10000);
+  if (error) throw error;
+  return buildLatestColaboradorMap(data || []);
+}
+
+async function loadProducaoPagamento(inicio, fim) {
+  let res = await supabase
+    .from('relatorio_resultado_diario')
+    .select('*')
+    .gte('data', inicio)
+    .lte('data', fim)
+    .order('data', { ascending: true })
+    .limit(10000);
+
+  if (!res.error && (res.data || []).length) {
+    return (res.data || []).map((row) => ({
+      data: row.data,
+      funcionario: row.funcionario,
+      tipo: row.tipo,
+      coordenacao: row.coordenacao,
+      supervisao: row.supervisao,
+      cliente: row.cliente || row.cliente_final || '',
+      os: row.os || '',
+      toneladas: row.toneladas,
+      cargas: row.cargas,
+      origem: 'relatorio_resultado_diario'
+    }));
+  }
+
+  res = await supabase
+    .from('producao_snapshot')
+    .select('data,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
+    .gte('data', inicio)
+    .lte('data', fim)
+    .order('data', { ascending: true })
+    .limit(10000);
+  if (res.error) throw res.error;
+  return (res.data || []).map((row) => ({ ...row, toneladas: row.tons, origem: 'producao_snapshot' }));
+}
+
+function apurarAlimentacaoRows(producaoRows, rhMap) {
+  const flashMap = new Map();
+  const ifoodMap = new Map();
+  const conferencia = [];
+  const logs = [];
+  const vistosDia = new Set();
+
+  (producaoRows || []).forEach((row) => {
+    const funcionario = String(row.funcionario || '').trim();
+    const dataRef = parseDateLoose(row.data);
+    if (!funcionario || !dataRef) return;
+
+    const chaveDia = `${dataRef}|${normalizeName(funcionario)}`;
+    if (vistosDia.has(chaveDia)) return;
+    vistosDia.add(chaveDia);
+
+    const rh = rhMap.get(normalizeName(funcionario));
+    if (!rh) {
+      logs.push({ data: dataRef, funcionario, status: 'ERRO', mensagem: 'Colaborador não localizado na base RH.' });
+      conferencia.push({ data: dataRef, funcionario, cpf: '', destino: 'Pendente', tipo: row.tipo || '', valor: 0, observacao: 'Colaborador não localizado na base RH.' });
+      return;
+    }
+    if (!rh.cpf || rh.cpf.length !== 11) {
+      logs.push({ data: dataRef, funcionario, status: 'ERRO', mensagem: 'CPF ausente ou inválido na base RH.' });
+      conferencia.push({ data: dataRef, funcionario: rh.nome || funcionario, cpf: rh.cpf || '', destino: 'Pendente', tipo: row.tipo || rh.tipoRh || '', valor: 0, observacao: 'CPF ausente ou inválido.' });
+      return;
+    }
+
+    const tipoProd = String(row.tipo || rh.tipoRh || '').trim();
+    const isDiarista = normalize(tipoProd).includes('diarista');
+    let valor = PAGAMENTO_VALOR_ALMOCO;
+    let composicao = `Almoço ${money(PAGAMENTO_VALOR_ALMOCO)}`;
+    if (isDiarista) {
+      if (!rh.salario || rh.salario <= 0) {
+        logs.push({ data: dataRef, funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: 'Tipo Diarista, mas salário/diária não encontrado no RH.' });
+        conferencia.push({ data: dataRef, funcionario: rh.nome || funcionario, cpf: rh.cpf, destino: 'Pendente', tipo: tipoProd, valor: 0, observacao: 'Diarista sem valor de diária no RH.' });
+        return;
+      }
+      valor += rh.salario;
+      composicao += ` + diária ${money(rh.salario)}`;
+    }
+
+    const bancoNorm = normalize(rh.banco).replace(/\s+/g, '');
+    let destino = 'Pendente';
+    if (bancoNorm.includes('graomilflash') || bancoNorm.includes('flash')) destino = 'Flash';
+    if (bancoNorm.includes('graomilifood') || bancoNorm.includes('ifood')) destino = 'iFood';
+
+    const confRow = {
+      data: dataRef,
+      funcionario: rh.nome || funcionario,
+      cpf: rh.cpf,
+      destino,
+      tipo: tipoProd,
+      valor: roundNumber(valor),
+      composicao,
+      coordenacao: rh.coordenacao || row.coordenacao || '',
+      supervisao: rh.supervisao || row.supervisao || '',
+      banco: rh.banco || '',
+      observacao: destino === 'Pendente' ? `C. Banc. Despesas sem destino reconhecido: ${rh.banco || '(vazio)'}` : 'OK'
+    };
+    conferencia.push(confRow);
+
+    if (destino === 'Flash') {
+      const key = rh.cpf;
+      if (!flashMap.has(key)) flashMap.set(key, { cpf: rh.cpf, nome: rh.nome, valor: 0 });
+      flashMap.get(key).valor = roundNumber(flashMap.get(key).valor + valor);
+    } else if (destino === 'iFood') {
+      const key = rh.cpf;
+      if (!ifoodMap.has(key)) {
+        ifoodMap.set(key, {
+          cnpj: PAGAMENTO_IFOOD_CNPJ,
+          nome: rh.nome,
+          cpf: rh.cpf,
+          nascimento: rh.nascimento || '',
+          email: rh.emailEmpresa || rh.emailPessoal || '',
+          celular: onlyDigits(rh.whatsapp),
+          centro_custo: rh.coordenacao || '',
+          livre: 0
+        });
+      }
+      ifoodMap.get(key).livre = roundNumber(ifoodMap.get(key).livre + valor);
+    } else {
+      logs.push({ data: dataRef, funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: confRow.observacao });
+    }
+  });
+
+  return {
+    conferencia: conferencia.sort((a, b) => `${a.data}|${a.funcionario}`.localeCompare(`${b.data}|${b.funcionario}`, 'pt-BR')),
+    flash: Array.from(flashMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
+    ifood: Array.from(ifoodMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
+    logs
+  };
+}
+
+function roundNumber(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function worksheetFromObjects(rows, columns) {
+  const data = [columns.map((c) => c.label)];
+  rows.forEach((row) => data.push(columns.map((c) => c.format ? c.format(row[c.key], row) : row[c.key])));
+  return XLSX.utils.aoa_to_sheet(data);
+}
+
+function downloadWorkbook(filename, sheets) {
+  const wb = XLSX.utils.book_new();
+  sheets.forEach((sheet) => {
+    XLSX.utils.book_append_sheet(wb, sheet.ws, sheet.name.slice(0, 31));
+  });
+  XLSX.writeFile(wb, filename);
+}
+
+function downloadCsv(filename, rows, columns) {
+  const sep = ';';
+  const escCsv = (value) => {
+    const text = String(value ?? '');
+    return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const lines = [columns.map((c) => escCsv(c.label)).join(sep)];
+  rows.forEach((row) => lines.push(columns.map((c) => escCsv(c.format ? c.format(row[c.key], row) : row[c.key])).join(sep)));
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function mapReceber(rows, fileName) {
   return rows.map((row) => {
     const payload = {
@@ -214,7 +507,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
     <style>
       .fin-wrap{display:grid;gap:18px}.fin-hero{border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:22px;background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(22,101,52,.28));box-shadow:0 20px 50px rgba(2,6,23,.22)}
       .fin-hero h2{margin:0 0 6px;font-size:28px;color:#f8fafc}.fin-hero p{margin:0;color:#cbd5e1}.fin-actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.fin-grid{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:12px}.fin-kpi{border:1px solid rgba(148,163,184,.16);border-radius:20px;padding:16px;background:rgba(15,23,42,.86)}.fin-kpi span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.fin-kpi strong{display:block;margin-top:8px;color:#f8fafc;font-size:22px}.fin-kpi small{color:#94a3b8}.fin-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(15,23,42,.82);padding:18px;box-shadow:0 18px 42px rgba(2,6,23,.18)}
-      .fin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.fin-head h3{margin:0;color:#f8fafc}.fin-head p{margin:4px 0 0;color:#94a3b8}.fin-tabs{display:flex;gap:8px;flex-wrap:wrap}.fin-tab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:9px 14px;cursor:pointer}.fin-tab.active{background:#166534;color:#fff;border-color:#22c55e}.fin-panel{display:none}.fin-panel.active{display:block}.fin-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.fin-field{display:grid;gap:6px}.fin-field.full{grid-column:1/-1}.fin-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.fin-field input,.fin-field select,.fin-field textarea{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0f172a;color:#e5e7eb;padding:10px 12px;color-scheme:dark}.fin-field textarea{min-height:78px;resize:vertical}.fin-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.fin-table{width:100%;border-collapse:collapse;min-width:860px}.fin-table th,.fin-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;color:#e5e7eb}.fin-table th{background:rgba(15,23,42,.96);color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.fin-table tr:hover td{background:rgba(34,197,94,.06)}.fin-muted{display:block;color:#94a3b8;font-size:12px;margin-top:3px}.fin-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.fin-status.ok{background:rgba(34,197,94,.14);color:#86efac}.fin-status.danger{background:rgba(239,68,68,.14);color:#fecaca}.fin-status.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}.fin-import-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}.fin-drop{border:1px dashed rgba(34,197,94,.45);border-radius:20px;padding:18px;background:rgba(22,101,52,.1)}.fin-feedback{color:#94a3b8;font-size:13px}.fin-feedback.ok{color:#86efac}.fin-feedback.err{color:#fecaca}.fin-empty{text-align:center;color:#94a3b8;padding:24px!important}.fin-small{padding:8px 12px!important;font-size:13px!important}@media(max-width:1100px){.fin-grid{grid-template-columns:repeat(2,1fr)}.fin-form,.fin-import-grid{grid-template-columns:1fr}}@media(max-width:700px){.fin-grid{grid-template-columns:1fr}.fin-head{display:grid}}
+      .fin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.fin-head h3{margin:0;color:#f8fafc}.fin-head p{margin:4px 0 0;color:#94a3b8}.pay-grid{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:14px}.pay-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(2,6,23,.34);padding:16px}.pay-card h4{margin:0 0 6px;color:#f8fafc;font-size:18px}.pay-card p{margin:0 0 14px;color:#94a3b8}.pay-summary{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:14px 0}.pay-mini{border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:12px;background:rgba(15,23,42,.7)}.pay-mini span{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.pay-mini strong{display:block;margin-top:5px;color:#f8fafc;font-size:18px}.pay-subtabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.pay-subtab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:8px 12px;cursor:pointer}.pay-subtab.active{background:#14532d;color:#fff;border-color:#22c55e}.pay-table{display:none}.pay-table.active{display:block}@media(max-width:1100px){.pay-grid,.pay-summary{grid-template-columns:1fr 1fr}}@media(max-width:700px){.pay-grid,.pay-summary{grid-template-columns:1fr}}.fin-tabs{display:flex;gap:8px;flex-wrap:wrap}.fin-tab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:9px 14px;cursor:pointer}.fin-tab.active{background:#166534;color:#fff;border-color:#22c55e}.fin-panel{display:none}.fin-panel.active{display:block}.fin-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.fin-field{display:grid;gap:6px}.fin-field.full{grid-column:1/-1}.fin-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.fin-field input,.fin-field select,.fin-field textarea{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0f172a;color:#e5e7eb;padding:10px 12px;color-scheme:dark}.fin-field textarea{min-height:78px;resize:vertical}.fin-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.fin-table{width:100%;border-collapse:collapse;min-width:860px}.fin-table th,.fin-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;color:#e5e7eb}.fin-table th{background:rgba(15,23,42,.96);color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.fin-table tr:hover td{background:rgba(34,197,94,.06)}.fin-muted{display:block;color:#94a3b8;font-size:12px;margin-top:3px}.fin-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.fin-status.ok{background:rgba(34,197,94,.14);color:#86efac}.fin-status.danger{background:rgba(239,68,68,.14);color:#fecaca}.fin-status.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}.fin-import-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}.fin-drop{border:1px dashed rgba(34,197,94,.45);border-radius:20px;padding:18px;background:rgba(22,101,52,.1)}.fin-feedback{color:#94a3b8;font-size:13px}.fin-feedback.ok{color:#86efac}.fin-feedback.err{color:#fecaca}.fin-empty{text-align:center;color:#94a3b8;padding:24px!important}.fin-small{padding:8px 12px!important;font-size:13px!important}@media(max-width:1100px){.fin-grid{grid-template-columns:repeat(2,1fr)}.fin-form,.fin-import-grid{grid-template-columns:1fr}}@media(max-width:700px){.fin-grid{grid-template-columns:1fr}.fin-head{display:grid}}
     </style>
     <section class="fin-wrap">
       <div class="fin-hero">
@@ -224,14 +517,15 @@ initProtectedPage('Financeiro', (content, userContext) => {
           <button class="btn btn-primary" id="btnReload" type="button">Atualizar fluxo</button>
           <button class="btn btn-secondary" data-tab-target="importar" type="button">Importar relatórios</button>
           <button class="btn btn-secondary" data-tab-target="config" type="button">Ajustar saldo/provisão</button>
+          <button class="btn btn-secondary" data-tab-target="pagamentos" type="button">Pagamentos</button>
         </div>
       </div>
 
       <div class="fin-grid">
-        <article class="fin-kpi"><span>Saldo do dia</span><strong id="kpiSaldo">R$ 0,00</strong><small id="kpiSaldoInfo">Soma do filtro</small></article>
-        <article class="fin-kpi"><span>Contas a receber</span><strong id="kpiReceber">R$ 0,00</strong><small id="kpiReceberInfo">Soma do filtro</small></article>
-        <article class="fin-kpi"><span>Contas a pagar</span><strong id="kpiPagar">R$ 0,00</strong><small id="kpiPagarInfo">Soma do filtro</small></article>
-        <article class="fin-kpi"><span>Provisão do dia</span><strong id="kpiProvisao">R$ 0,00</strong><small id="kpiProvisaoInfo">Soma do filtro</small></article>
+        <article class="fin-kpi"><span>Saldo do dia</span><strong id="kpiSaldo">R$ 0,00</strong><small>Manual</small></article>
+        <article class="fin-kpi"><span>Contas a receber</span><strong id="kpiReceber">R$ 0,00</strong><small>Relatório importado</small></article>
+        <article class="fin-kpi"><span>Contas a pagar</span><strong id="kpiPagar">R$ 0,00</strong><small>Relatório importado</small></article>
+        <article class="fin-kpi"><span>Provisão do dia</span><strong id="kpiProvisao">R$ 0,00</strong><small>Auto + ajuste</small></article>
         <article class="fin-kpi"><span>Saldo projetado</span><strong id="kpiProjetado">R$ 0,00</strong><small id="kpiStatus">OK</small></article>
       </div>
 
@@ -243,6 +537,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
             <button class="fin-tab" data-tab="importar" type="button">Importar</button>
             <button class="fin-tab" data-tab="config" type="button">Saldo e Provisão</button>
             <button class="fin-tab" data-tab="detalhes" type="button">Detalhes</button>
+            <button class="fin-tab" data-tab="pagamentos" type="button">Pagamentos</button>
           </div>
         </div>
 
@@ -288,6 +583,63 @@ initProtectedPage('Financeiro', (content, userContext) => {
         <div class="fin-panel" id="tab-detalhes">
           <div class="fin-head"><div><h3>Detalhes do dia selecionado</h3><p id="detalhesData">Selecione uma data no fluxo.</p></div></div>
           <div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Tipo</th><th>Situação</th><th>Nome/Favorecido</th><th>Documento</th><th>Valor</th><th>Vencimento</th></tr></thead><tbody id="detalhesTbody"><tr><td colspan="6" class="fin-empty">Nenhuma data selecionada.</td></tr></tbody></table></div>
+        </div>
+
+
+        <div class="fin-panel" id="tab-pagamentos">
+          <div class="fin-head">
+            <div><h3>Pagamentos</h3><p>Gere, confira em tela e exporte arquivos de pagamento.</p></div>
+          </div>
+          <div class="pay-grid">
+            <section class="pay-card">
+              <h4>ADIANTAMENTOS</h4>
+              <p>Importe o Extrato_Solicitações e a Fonte_ALELO para gerar PGTO_ALELO, PGTO_IFOOD e PGTO_FLASH com conferência na tela.</p>
+              <div class="fin-form">
+                <div class="fin-field"><label>Extrato_Solicitações</label><input id="adiantFileExtrato" type="file" accept=".xlsx,.xls,.csv"></div>
+                <div class="fin-field"><label>Fonte_ALELO</label><input id="adiantFileAlelo" type="file" accept=".xlsx,.xls,.csv"></div>
+                <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAdiantamentos" type="button">Gerar adiantamentos</button></div>
+                <div class="fin-field"><label>&nbsp;</label><span id="fbAdiantamentos" class="fin-feedback"></span></div>
+              </div>
+            </section>
+            <section class="pay-card">
+              <h4>ALIMENTAÇÃO</h4>
+              <p>Usa a produção diária já importada no painel, cruza com a base de colaboradores e gera Flash/iFood.</p>
+              <div class="fin-form">
+                <div class="fin-field"><label>Data inicial</label><input id="alimInicio" type="date" value="${esc(state.filters.inicio)}"></div>
+                <div class="fin-field"><label>Data final</label><input id="alimFim" type="date" value="${esc(state.currentDate)}"></div>
+                <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAlimentacao" type="button">Gerar alimentação</button></div>
+                <div class="fin-field"><label>&nbsp;</label><span id="fbAlimentacao" class="fin-feedback"></span></div>
+              </div>
+            </section>
+          </div>
+
+          <div class="pay-summary">
+            <div class="pay-mini"><span>Tipo</span><strong id="payTipo">-</strong></div>
+            <div class="pay-mini"><span>Período</span><strong id="payPeriodo">-</strong></div>
+            <div class="pay-mini"><span>Registros</span><strong id="payRegistros">0</strong></div>
+            <div class="pay-mini"><span>Total</span><strong id="payTotal">R$ 0,00</strong></div>
+          </div>
+
+          <div class="fin-actions-row">
+            <button class="btn btn-secondary" id="btnExportFlash" type="button">Baixar Flash XLSX</button>
+            <button class="btn btn-secondary" id="btnExportIfood" type="button">Baixar iFood XLSX</button>
+            <button class="btn btn-secondary" id="btnExportAlelo" type="button">Baixar Alelo CSV</button>
+            <button class="btn btn-secondary" id="btnExportConferencia" type="button">Baixar conferência XLSX</button>
+          </div>
+
+          <div class="pay-subtabs">
+            <button class="pay-subtab active" data-pay-tab="conferencia" type="button">Conferência</button>
+            <button class="pay-subtab" data-pay-tab="flash" type="button">Flash</button>
+            <button class="pay-subtab" data-pay-tab="ifood" type="button">iFood</button>
+            <button class="pay-subtab" data-pay-tab="alelo" type="button">Alelo</button>
+            <button class="pay-subtab" data-pay-tab="logs" type="button">Pendências</button>
+          </div>
+
+          <div class="pay-table active" id="pay-conferencia"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Colaborador</th><th>CPF</th><th>Destino</th><th>Tipo</th><th>Valor</th><th>Composição</th><th>Supervisão</th><th>Observação</th></tr></thead><tbody id="payConferenciaTbody"><tr><td colspan="9" class="fin-empty">Gere um pagamento para conferir.</td></tr></tbody></table></div></div>
+          <div class="pay-table" id="pay-flash"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CPF</th><th>Nome</th><th>Valor</th></tr></thead><tbody id="payFlashTbody"><tr><td colspan="3" class="fin-empty">Nenhum arquivo Flash gerado.</td></tr></tbody></table></div></div>
+          <div class="pay-table" id="pay-ifood"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CNPJ</th><th>Nome</th><th>CPF</th><th>Nascimento</th><th>Email</th><th>Celular</th><th>Centro de custo</th><th>Livre</th></tr></thead><tbody id="payIfoodTbody"><tr><td colspan="8" class="fin-empty">Nenhum arquivo iFood gerado.</td></tr></tbody></table></div></div>
+          <div class="pay-table" id="pay-alelo"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Número de Série</th><th>CPF</th><th>Valor da Carga</th><th>Observação</th><th>Nome</th></tr></thead><tbody id="payAleloTbody"><tr><td colspan="5" class="fin-empty">Nenhum arquivo Alelo gerado.</td></tr></tbody></table></div></div>
+          <div class="pay-table" id="pay-logs"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data/Linha</th><th>Colaborador</th><th>Status</th><th>Mensagem</th></tr></thead><tbody id="payLogsTbody"><tr><td colspan="4" class="fin-empty">Nenhuma pendência.</td></tr></tbody></table></div></div>
         </div>
       </article>
     </section>
@@ -345,34 +697,23 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
   function updateKpis() {
     const total = state.fluxo.reduce((acc, row) => {
-      acc.saldo_dia += Number(row.saldo_dia || 0);
-      acc.contas_receber += Number(row.contas_receber || 0);
-      acc.contas_pagar += Number(row.contas_pagar || 0);
-      acc.provisoes_dia += Number(row.provisoes_dia || 0);
-      acc.saldo_projetado += Number(row.saldo_projetado || 0);
+      acc.saldo += Number(row.saldo_dia || 0);
+      acc.receber += Number(row.contas_receber || 0);
+      acc.pagar += Number(row.contas_pagar || 0);
+      acc.provisao += Number(row.provisoes_dia || 0);
+      acc.projetado += Number(row.saldo_projetado || 0);
       return acc;
-    }, {
-      saldo_dia: 0,
-      contas_receber: 0,
-      contas_pagar: 0,
-      provisoes_dia: 0,
-      saldo_projetado: 0
+    }, { saldo: 0, receber: 0, pagar: 0, provisao: 0, projetado: 0 });
+    const hasAttention = state.fluxo.some((row) => statusClass(row.status) === 'danger') || total.projetado < 0;
+    document.getElementById('kpiSaldo').textContent = money(total.saldo);
+    document.getElementById('kpiReceber').textContent = money(total.receber);
+    document.getElementById('kpiPagar').textContent = money(total.pagar);
+    document.getElementById('kpiProvisao').textContent = money(total.provisao);
+    document.getElementById('kpiProjetado').textContent = money(total.projetado);
+    document.getElementById('kpiStatus').textContent = state.fluxo.length ? (hasAttention ? 'ATENÇÃO' : 'OK') : 'SEM DADOS';
+    document.querySelectorAll('.fin-kpi small').forEach((el, idx) => {
+      if (idx < 4) el.textContent = dateRangeLabel(state.filters.inicio, state.filters.fim);
     });
-
-    const labelPeriodo = state.filters.inicio === state.filters.fim
-      ? `Filtro: ${brDate(state.filters.inicio)}`
-      : `Filtro: ${brDate(state.filters.inicio)} a ${brDate(state.filters.fim)}`;
-
-    document.getElementById('kpiSaldo').textContent = money(total.saldo_dia);
-    document.getElementById('kpiReceber').textContent = money(total.contas_receber);
-    document.getElementById('kpiPagar').textContent = money(total.contas_pagar);
-    document.getElementById('kpiProvisao').textContent = money(total.provisoes_dia);
-    document.getElementById('kpiProjetado').textContent = money(total.saldo_projetado);
-    document.getElementById('kpiStatus').textContent = total.saldo_projetado < 0 ? 'ATENÇÃO' : 'OK';
-    document.getElementById('kpiSaldoInfo').textContent = labelPeriodo;
-    document.getElementById('kpiReceberInfo').textContent = labelPeriodo;
-    document.getElementById('kpiPagarInfo').textContent = labelPeriodo;
-    document.getElementById('kpiProvisaoInfo').textContent = labelPeriodo;
   }
 
   function renderFluxo() {
@@ -451,12 +792,149 @@ initProtectedPage('Financeiro', (content, userContext) => {
     }
   }
 
+
+
+  state.pagamentos = { tipo: null, periodo: '', conferencia: [], flash: [], ifood: [], alelo: [], logs: [] };
+
+  function paySetFeedback(id, text, type = '') {
+    setFeedback(id, text, type);
+  }
+
+  function setPayTab(tab) {
+    document.querySelectorAll('.pay-subtab').forEach((btn) => btn.classList.toggle('active', btn.dataset.payTab === tab));
+    document.querySelectorAll('.pay-table').forEach((panel) => panel.classList.remove('active'));
+    document.getElementById(`pay-${tab}`)?.classList.add('active');
+  }
+
+  function updatePaySummary() {
+    const p = state.pagamentos;
+    const total = [...(p.conferencia || []), ...(p.alelo || [])].reduce((sum, row) => sum + Number(row.valor || 0), 0);
+    const registros = (p.conferencia || []).length || ((p.flash || []).length + (p.ifood || []).length + (p.alelo || []).length);
+    document.getElementById('payTipo').textContent = p.tipo || '-';
+    document.getElementById('payPeriodo').textContent = p.periodo || '-';
+    document.getElementById('payRegistros').textContent = String(registros);
+    document.getElementById('payTotal').textContent = money(total);
+  }
+
+  function renderPayTables() {
+    const p = state.pagamentos;
+    document.getElementById('payConferenciaTbody').innerHTML = p.conferencia?.length ? p.conferencia.map((r) => `
+      <tr><td>${brDate(r.data)}</td><td><strong>${esc(r.funcionario || '-')}</strong></td><td>${esc(r.cpf || '-')}</td><td>${esc(r.destino || '-')}</td><td>${esc(r.tipo || '-')}</td><td>${money(r.valor)}</td><td>${esc(r.composicao || '-')}</td><td>${esc(r.supervisao || '-')}</td><td>${esc(r.observacao || '-')}</td></tr>
+    `).join('') : `<tr><td colspan="9" class="fin-empty">Nenhuma conferência gerada.</td></tr>`;
+
+    document.getElementById('payFlashTbody').innerHTML = p.flash?.length ? p.flash.map((r) => `
+      <tr><td>${esc(r.cpf || '-')}</td><td><strong>${esc(r.nome || '-')}</strong></td><td>${money(r.valor)}</td></tr>
+    `).join('') : `<tr><td colspan="3" class="fin-empty">Nenhum arquivo Flash gerado.</td></tr>`;
+
+    document.getElementById('payIfoodTbody').innerHTML = p.ifood?.length ? p.ifood.map((r) => `
+      <tr><td>${esc(r.cnpj || '-')}</td><td><strong>${esc(r.nome || '-')}</strong></td><td>${esc(r.cpf || '-')}</td><td>${esc(formatDateForXlsx(r.nascimento) || '-')}</td><td>${esc(r.email || '-')}</td><td>${esc(r.celular || '-')}</td><td>${esc(r.centro_custo || '-')}</td><td>${money(r.livre ?? r.valor)}</td></tr>
+    `).join('') : `<tr><td colspan="8" class="fin-empty">Nenhum arquivo iFood gerado.</td></tr>`;
+
+    document.getElementById('payAleloTbody').innerHTML = p.alelo?.length ? p.alelo.map((r) => `
+      <tr><td>${esc(r.serie || '-')}</td><td>${esc(r.cpf || '-')}</td><td>${money(r.valor)}</td><td>${esc(r.observacao || '-')}</td><td>${esc(r.nome || '-')}</td></tr>
+    `).join('') : `<tr><td colspan="5" class="fin-empty">Nenhum arquivo Alelo gerado.</td></tr>`;
+
+    document.getElementById('payLogsTbody').innerHTML = p.logs?.length ? p.logs.map((r) => `
+      <tr><td>${esc(r.data ? brDate(r.data) : (r.linha ? `Linha ${r.linha}` : '-'))}</td><td><strong>${esc(r.funcionario || '-')}</strong></td><td>${esc(r.status || r.tipo || '-')}</td><td>${esc(r.mensagem || '-')}</td></tr>
+    `).join('') : `<tr><td colspan="4" class="fin-empty">Nenhuma pendência.</td></tr>`;
+    updatePaySummary();
+  }
+
+  async function gerarAlimentacao() {
+    const inicio = document.getElementById('alimInicio').value;
+    const fim = document.getElementById('alimFim').value;
+    if (!inicio || !fim) return paySetFeedback('fbAlimentacao', 'Informe data inicial e final.', 'err');
+    if (inicio > fim) return paySetFeedback('fbAlimentacao', 'A data inicial não pode ser maior que a final.', 'err');
+    try {
+      paySetFeedback('fbAlimentacao', 'Buscando produção e colaboradores...');
+      const [rhMap, producao] = await Promise.all([loadColaboradoresPagamento(), loadProducaoPagamento(inicio, fim)]);
+      if (!producao.length) throw new Error('Nenhuma produção localizada no período.');
+      const apuracao = apurarAlimentacaoRows(producao, rhMap);
+      state.pagamentos = { tipo: 'Alimentação', periodo: dateRangeLabel(inicio, fim), ...apuracao };
+      renderPayTables();
+      setPayTab('conferencia');
+      paySetFeedback('fbAlimentacao', `Gerado: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências.`, 'ok');
+    } catch (err) {
+      console.error(err);
+      paySetFeedback('fbAlimentacao', err.message || 'Erro ao gerar alimentação.', 'err');
+    }
+  }
+
+  async function gerarAdiantamentos() {
+    const extratoFile = document.getElementById('adiantFileExtrato').files?.[0];
+    const aleloFile = document.getElementById('adiantFileAlelo').files?.[0];
+    if (!extratoFile) return paySetFeedback('fbAdiantamentos', 'Selecione o Extrato_Solicitações.', 'err');
+    try {
+      paySetFeedback('fbAdiantamentos', 'Lendo arquivos...');
+      const [extratoRows, fonteRows] = await Promise.all([readWorkbookRows(extratoFile), aleloFile ? readWorkbookRows(aleloFile) : Promise.resolve([])]);
+      const apuracao = makeAleloRows(extratoRows, fonteRows);
+      const conferencia = [
+        ...apuracao.alelo.map((r) => ({ data: '', funcionario: r.nome, cpf: String(r.cpf || '').replace(/^'/, ''), destino: 'Alelo', tipo: 'Adiantamento', valor: r.valor, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: r.serie ? 'OK' : 'Sem série' })),
+        ...apuracao.ifood.map((r) => ({ data: '', funcionario: r.nome, cpf: r.cpf, destino: 'iFood', tipo: 'Adiantamento', valor: r.livre, composicao: 'Adiantamento', supervisao: '', observacao: 'OK' })),
+        ...apuracao.flash.map((r) => ({ data: '', funcionario: r.nome, cpf: r.cpf, destino: 'Flash', tipo: 'Adiantamento', valor: r.valor, composicao: 'Adiantamento', supervisao: '', observacao: 'OK' }))
+      ];
+      state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, conferencia, flash: apuracao.flash, ifood: apuracao.ifood, alelo: apuracao.alelo, logs: apuracao.logs };
+      renderPayTables();
+      setPayTab('conferencia');
+      paySetFeedback('fbAdiantamentos', `Gerado: ${apuracao.alelo.length} Alelo, ${apuracao.ifood.length} iFood, ${apuracao.flash.length} Flash, ${apuracao.logs.length} pendências.`, 'ok');
+    } catch (err) {
+      console.error(err);
+      paySetFeedback('fbAdiantamentos', err.message || 'Erro ao gerar adiantamentos.', 'err');
+    }
+  }
+
+  const flashCols = [{ key: 'cpf', label: 'CPF' }, { key: 'valor', label: 'Valor' }];
+  const ifoodCols = [
+    { key: 'cnpj', label: 'CNPJ' }, { key: 'nome', label: 'Nome' }, { key: 'cpf', label: 'CPF' },
+    { key: 'nascimento', label: 'Data de nascimento', format: formatDateForXlsx }, { key: 'email', label: 'Email' },
+    { key: 'celular', label: 'Celular' }, { key: 'centro_custo', label: 'Centro de custo' }, { key: 'convencao', label: 'Convenção Coletiva' },
+    { key: 'grupo_entrega', label: 'Grupo de entrega' }, { key: 'matricula', label: 'Matricula' }, { key: 'filtro', label: 'Filtro para relatorio de recarga' },
+    { key: 'refeicao', label: 'Refeição (Aderente ao PAT)' }, { key: 'alimentacao', label: 'Alimentação (Aderente ao PAT)' }, { key: 'livre', label: 'Livre' }
+  ];
+  const aleloCols = [{ key: 'serie', label: 'Numero de Serie' }, { key: 'cpf', label: 'CPF' }, { key: 'valor', label: 'Valor da Carga' }, { key: 'observacao', label: 'Observacao' }];
+  const confCols = [
+    { key: 'data', label: 'Data', format: formatDateForXlsx }, { key: 'funcionario', label: 'Colaborador' }, { key: 'cpf', label: 'CPF' },
+    { key: 'destino', label: 'Destino' }, { key: 'tipo', label: 'Tipo' }, { key: 'valor', label: 'Valor' },
+    { key: 'composicao', label: 'Composição' }, { key: 'coordenacao', label: 'Coordenação' }, { key: 'supervisao', label: 'Supervisão' },
+    { key: 'banco', label: 'C. Banc. Despesas' }, { key: 'observacao', label: 'Observação' }
+  ];
+
+  function exportPagamento(kind) {
+    const p = state.pagamentos;
+    if (kind === 'flash') {
+      if (!p.flash?.length) return alert('Nenhum registro Flash para exportar.');
+      return downloadWorkbook(`PGTO_FLASH_${compactDate(p.periodo) || compactDate(new Date().toISOString())}.xlsx`, [{ name: 'PGTO_FLASH', ws: worksheetFromObjects(p.flash, flashCols) }]);
+    }
+    if (kind === 'ifood') {
+      if (!p.ifood?.length) return alert('Nenhum registro iFood para exportar.');
+      return downloadWorkbook(`PGTO_IFOOD_${compactDate(p.periodo) || compactDate(new Date().toISOString())}.xlsx`, [{ name: 'PGTO_IFOOD', ws: worksheetFromObjects(p.ifood, ifoodCols) }]);
+    }
+    if (kind === 'alelo') {
+      if (!p.alelo?.length) return alert('Nenhum registro Alelo para exportar.');
+      return downloadCsv(`PGTO_ALELO_${compactDate(new Date().toISOString())}.csv`, p.alelo, aleloCols);
+    }
+    if (!p.conferencia?.length) return alert('Nenhuma conferência para exportar.');
+    return downloadWorkbook(`CONFERENCIA_PAGAMENTOS_${compactDate(new Date().toISOString())}.xlsx`, [
+      { name: 'Conferencia', ws: worksheetFromObjects(p.conferencia, confCols) },
+      { name: 'Flash', ws: worksheetFromObjects(p.flash || [], flashCols) },
+      { name: 'iFood', ws: worksheetFromObjects(p.ifood || [], ifoodCols) },
+      { name: 'Alelo', ws: worksheetFromObjects(p.alelo || [], aleloCols) }
+    ]);
+  }
+
   document.querySelectorAll('.fin-tab').forEach((btn) => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
   document.querySelectorAll('[data-tab-target]').forEach((btn) => btn.addEventListener('click', () => setTab(btn.dataset.tabTarget)));
   document.getElementById('btnReload').addEventListener('click', loadFluxo);
   document.getElementById('btnImportReceber').addEventListener('click', () => importFile('receber'));
   document.getElementById('btnImportPagar').addEventListener('click', () => importFile('pagar'));
   document.getElementById('configForm').addEventListener('submit', saveConfig);
+  document.getElementById('btnGerarAlimentacao').addEventListener('click', gerarAlimentacao);
+  document.getElementById('btnGerarAdiantamentos').addEventListener('click', gerarAdiantamentos);
+  document.querySelectorAll('.pay-subtab').forEach((btn) => btn.addEventListener('click', () => setPayTab(btn.dataset.payTab)));
+  document.getElementById('btnExportFlash').addEventListener('click', () => exportPagamento('flash'));
+  document.getElementById('btnExportIfood').addEventListener('click', () => exportPagamento('ifood'));
+  document.getElementById('btnExportAlelo').addEventListener('click', () => exportPagamento('alelo'));
+  document.getElementById('btnExportConferencia').addEventListener('click', () => exportPagamento('conferencia'));
   document.getElementById('periodForm').addEventListener('submit', (event) => {
     event.preventDefault();
     state.filters.inicio = document.getElementById('filterInicio').value;
