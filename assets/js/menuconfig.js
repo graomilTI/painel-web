@@ -10,7 +10,7 @@ window.MENU_CONFIG = {
     { nome: "FROTAS", modulos: ["Excesso de Velocidade", "Veículos", "Multas", "Histórico"] },
     { nome: "TI", modulos: ["Integrações"] },
     { nome: "FINANCEIRO", modulos: ["Fluxo de Caixa"] },
-    { nome: "LOGÍSTICA", modulos: [] },
+    { nome: "LOGÍSTICA", modulos: ["Painel de Logística", "Finalização de O.S"] },
     { nome: "TROCA DE NOTAS", modulos: [] },
     { nome: "AUDITORIA", modulos: ["Logs", "Relatórios"] },
     { nome: "DIRETORIA", modulos: ["DRE", "METAS"] },

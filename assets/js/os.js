@@ -607,10 +607,30 @@ initProtectedPage('OS', async (content) => {
         const ok = await garantirColaboradorAntesDeAtender(row);
         if (!ok) return;
       }
-      const previous = { status_gestor: row.status_gestor, configurada_em: row.configurada_em };
-      Object.assign(row, { status_gestor: nextStatus, configurada_em: new Date().toISOString() });
+      const agoraIso = new Date().toISOString();
+      const previous = {
+        status_gestor: row.status_gestor,
+        configurada_em: row.configurada_em,
+        status_logistica: row.status_logistica,
+        enviado_logistica_em: row.enviado_logistica_em,
+        logistica_solicitado_por: row.logistica_solicitado_por,
+      };
+      const patch = {
+        status_gestor: nextStatus,
+        configurada_em: agoraIso,
+      };
+      if (nextStatus === 'FINALIZAR') {
+        patch.status_logistica = 'PENDENTE';
+        patch.enviado_logistica_em = row.enviado_logistica_em || agoraIso;
+        patch.logistica_solicitado_por = state.user?.id || null;
+      } else {
+        patch.status_logistica = null;
+        patch.enviado_logistica_em = null;
+        patch.logistica_solicitado_por = null;
+      }
+      Object.assign(row, patch);
       render();
-      const saved = await updateOs(tr.dataset.osId, { status_gestor: nextStatus, configurada_em: row.configurada_em }, true);
+      const saved = await updateOs(tr.dataset.osId, patch, true);
       if (!saved) {
         Object.assign(row, previous);
         render();
