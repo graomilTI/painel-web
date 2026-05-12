@@ -19,6 +19,7 @@ export const MENU_CONFIG = [
     grupo: "GESTOR",
     itens: [
       item("programacao", "Programação", "programacao", ["PROGRAMACAO"]),
+      item("os_gestor", "OS", "os", ["OS", "O.S", "OPERACIONAL_OS", "GESTOR_OS"]),
       item("hospedagem", "Hospedagem", "hospedagem", ["HOSPEDAGEM"]),
       item("compras_gestor", "Compras", "compras", ["COMPRAS"]),
       item("logistica_gestor", "Logística", "logistica", ["LOGISTICA"]),
@@ -30,7 +31,8 @@ export const MENU_CONFIG = [
   {
     grupo: "CONFERÊNCIA",
     itens: [
-      item("conferencia", "Painel de Conferência", "adm-conferencia", ["ADM_CONFERENCIA"])
+      item("conferencia", "Painel de Conferência", "adm-conferencia", ["ADM_CONFERENCIA"]),
+      item("distribuir_os", "Distribuir O.S", "distribuir-os", ["DISTRIBUIR_OS", "CONFERENCIA_DISTRIBUIR_OS"])
     ]
   },
 
