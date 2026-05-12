@@ -178,6 +178,40 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     return c.ativo === true || (!situacao.includes('nao ativo') && !situacao.includes('inativo'));
   }
 
+  function dedupeColaboradores(rows) {
+    const map = new Map();
+
+    function keyOf(c) {
+      const cpf = normalizeCpf(c?.cpf);
+      if (cpf) return `cpf:${cpf}`;
+      const tel = normalizePhone(c?.whatsapp).e164;
+      if (tel) return `tel:${tel}`;
+      const nome = normalize(c?.nome);
+      const admissao = String(c?.admissao || '').slice(0, 10);
+      return `nome:${nome}|adm:${admissao}`;
+    }
+
+    function score(c) {
+      let n = 0;
+      if (colaboradorAtivo(c)) n += 100;
+      ['cpf','nome','whatsapp','email_empresa','empresa','coordenacao','supervisao','cargo','cidade','endereco'].forEach((k) => {
+        if (String(c?.[k] || '').trim()) n += 1;
+      });
+      if (c?.updated_at) n += 2;
+      if (c?.created_at) n += 1;
+      return n;
+    }
+
+    (rows || []).forEach((c) => {
+      const k = keyOf(c);
+      if (!k || k === 'nome:|adm:') return;
+      const atual = map.get(k);
+      if (!atual || score(c) >= score(atual)) map.set(k, c);
+    });
+
+    return Array.from(map.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  }
+
   function applyFilters(rows) {
     const f = state.filtros;
     return (rows || []).filter((c) => {
@@ -233,19 +267,19 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
   async function loadLatestSnapshotColabs(supabase) {
     const { data: refs, error: refErr } = await supabase
       .from('colaborador_importacoes')
-      .select('data_referencia,status')
+      .select('id,data_referencia,status,created_at')
       .eq('status', 'processado')
-      .order('data_referencia', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(1);
     if (refErr) return { rows: [], error: refErr };
-    const ref = refs?.[0]?.data_referencia;
-    if (!ref) return { rows: [], error: null };
+    const importacaoId = refs?.[0]?.id;
+    if (!importacaoId) return { rows: [], error: null };
 
     return fetchAllRowsSupabase(
       supabase,
       'colaborador_snapshot',
-      'cpf,nome,situacao,admissao,desligamento,ativo,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cep,estado,cidade,bairro,endereco,complemento,data_nascimento,data_referencia',
-      (query) => query.eq('data_referencia', ref),
+      'cpf,nome,situacao,admissao,desligamento,ativo,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cep,estado,cidade,bairro,endereco,complemento,data_nascimento,data_referencia,importacao_id,created_at',
+      (query) => query.eq('importacao_id', importacaoId),
       'nome'
     );
   }
@@ -259,14 +293,15 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       loadLatestSnapshotColabs(supabase)
     ]);
 
-    const atuaisRows = atuais.rows || [];
-    const snapshotRows = snapshot.rows || [];
+    const atuaisRows = dedupeColaboradores(atuais.rows || []);
+    const snapshotRows = dedupeColaboradores(snapshot.rows || []);
 
     const ativosAtuais = atuaisRows.filter(colaboradorAtivo).length;
     const ativosSnapshot = snapshotRows.filter(colaboradorAtivo).length;
 
     // Se a última importação de Funcionários tem mais ativos que a tabela atual,
-    // usa o snapshot para evitar exportar só parte da base.
+    // usa o snapshot para evitar exportar só parte da base. Antes de comparar,
+    // deduplica por CPF/telefone/nome para não contar importações repetidas.
     if (snapshotRows.length && ativosSnapshot > ativosAtuais) return snapshotRows;
     if (atuaisRows.length) return atuaisRows;
     if (snapshotRows.length) return snapshotRows;
