@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
+import { cachedQuery, invalidateCacheByPrefix } from './painelCache.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -270,25 +271,27 @@ initProtectedPage('OS', async (content) => {
     el.supervisao.addEventListener('change', () => { state.filters.supervisao = el.supervisao.value; render(); });
     el.status.addEventListener('change', () => { state.filters.status = el.status.value; render(); });
     el.busca.addEventListener('input', () => { state.filters.busca = el.busca.value.trim(); render(); });
-    el.reload.addEventListener('click', loadAll);
+    el.reload.addEventListener('click', () => loadAll({ force: true }));
     el.list.addEventListener('click', onListClick);
     el.list.addEventListener('change', onListChange);
   }
 
-  async function loadAll() {
+  async function loadAll(options = {}) {
+    const force = Boolean(options.force);
     el.feedback.textContent = 'Carregando O.S. e colaboradores...';
     try {
-      await loadOs();
+      invalidateCacheByPrefix('os:');
+    await loadOs(true);
 
       try {
-        await loadPontosEmbarque();
+        await loadPontosEmbarque(force);
       } catch (pontoError) {
         console.warn('Não foi possível carregar pontos de embarque do mapa operacional.', pontoError);
         state.pontosEmbarque = [];
       }
 
       try {
-        await loadColaboradores();
+        await loadColaboradores(force);
       } catch (colabError) {
         console.warn('Não foi possível carregar colaboradores para sugestão. A lista de O.S. continuará funcionando.', colabError);
         state.colaboradores = [];
@@ -303,17 +306,15 @@ initProtectedPage('OS', async (content) => {
     }
   }
 
-  async function loadOs() {
-    // Consulta propositalmente simples para evitar Bad Request por schema cache/order.
-    // A ordenação é feita no front pelos cabeçalhos da tabela.
-    const { data, error } = await supabase
-      .from('operacional_os')
-      .select('*')
-      .limit(3000);
-
-    if (error) {
-      throw new Error(error.message || 'Falha ao consultar operacional_os.');
-    }
+  async function loadOs(force = false) {
+    const data = await cachedQuery('os:operacional_os:v3', async () => {
+      const { data, error } = await supabase
+        .from('operacional_os')
+        .select('*')
+        .limit(3000);
+      if (error) throw new Error(error.message || 'Falha ao consultar operacional_os.');
+      return safeArray(data);
+    }, { ttlMs: 6 * 60 * 60 * 1000, force });
 
     state.os = safeArray(data).filter((row) => isAllowedSupervisao(row.supervisao));
     const ids = state.os.map((row) => row.id).filter(Boolean);
@@ -323,35 +324,32 @@ initProtectedPage('OS', async (content) => {
     }
 
     try {
-      const atr = await supabase
-        .from('operacional_os_colaboradores')
-        .select('*')
-        .in('os_id', ids);
-
-      if (atr.error) {
-        console.warn('Falha ao carregar colaboradores vinculados às O.S.', atr.error);
-        state.atribuicoes = [];
-      } else {
-        state.atribuicoes = safeArray(atr.data);
-      }
+      const atrData = await cachedQuery('os:operacional_os_colaboradores:v2', async () => {
+        const atr = await supabase
+          .from('operacional_os_colaboradores')
+          .select('*')
+          .limit(10000);
+        if (atr.error) throw atr.error;
+        return safeArray(atr.data);
+      }, { ttlMs: 6 * 60 * 60 * 1000, force });
+      const idSet = new Set(ids.map(String));
+      state.atribuicoes = safeArray(atrData).filter((a) => idSet.has(String(a.os_id)));
     } catch (atrError) {
       console.warn('Falha ao carregar colaboradores vinculados às O.S.', atrError);
       state.atribuicoes = [];
     }
   }
 
-  async function loadPontosEmbarque() {
+  async function loadPontosEmbarque(force = false) {
     try {
-      let q = supabase
-        .from('operacional_pontos_embarque')
-        .select('id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo')
-        .limit(5000);
-      const { data, error } = await q;
-      if (error) {
-        console.warn('Falha ao consultar operacional_pontos_embarque.', error);
-        state.pontosEmbarque = [];
-        return;
-      }
+      const data = await cachedQuery('os:operacional_pontos_embarque:v2', async () => {
+        const { data, error } = await supabase
+          .from('operacional_pontos_embarque')
+          .select('id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo')
+          .limit(5000);
+        if (error) throw error;
+        return safeArray(data);
+      }, { ttlMs: 24 * 60 * 60 * 1000, force });
       state.pontosEmbarque = safeArray(data).filter((p) => p.ativo !== false && hasGeo(p.latitude, p.longitude));
     } catch (error) {
       console.warn('Falha ao consultar operacional_pontos_embarque.', error);
@@ -359,45 +357,39 @@ initProtectedPage('OS', async (content) => {
     }
   }
 
-  async function loadColaboradores() {
-    let rows = [];
-
-    try {
-      const { data, error } = await supabase
-        .from('operacional_colaborador_base')
-        .select('*')
-        .eq('ativo', true)
-        .limit(5000);
-
-      if (!error) rows = data || [];
-      else console.warn('Falha em operacional_colaborador_base; tentando colaborador_snapshot.', error);
-    } catch (error) {
-      console.warn('Falha em operacional_colaborador_base; tentando colaborador_snapshot.', error);
-    }
-
-    if (!rows.length) {
+  async function loadColaboradores(force = false) {
+    let rows = await cachedQuery('os:colaboradores_base:v3', async () => {
+      let result = [];
       try {
-        const latest = await supabase
-          .from('colaborador_snapshot')
-          .select('data_referencia')
-          .order('data_referencia', { ascending: false })
-          .limit(1);
-
-        const dt = latest.data?.[0]?.data_referencia;
-        let q = supabase.from('colaborador_snapshot').select('*').limit(5000);
-        if (dt) q = q.eq('data_referencia', dt);
-        const { data, error } = await q;
-        if (error) {
-          console.warn('Falha em colaborador_snapshot.', error);
-          rows = [];
-        } else {
-          rows = data || [];
-        }
+        const { data, error } = await supabase
+          .from('operacional_colaborador_base')
+          .select('*')
+          .eq('ativo', true)
+          .limit(5000);
+        if (!error) result = data || [];
+        else console.warn('Falha em operacional_colaborador_base; tentando colaborador_snapshot.', error);
       } catch (error) {
-        console.warn('Falha em colaborador_snapshot.', error);
-        rows = [];
+        console.warn('Falha em operacional_colaborador_base; tentando colaborador_snapshot.', error);
       }
-    }
+
+      if (!result.length) {
+        try {
+          const latest = await supabase
+            .from('colaborador_snapshot')
+            .select('data_referencia')
+            .order('data_referencia', { ascending: false })
+            .limit(1);
+          const dt = latest.data?.[0]?.data_referencia;
+          let q = supabase.from('colaborador_snapshot').select('*').limit(5000);
+          if (dt) q = q.eq('data_referencia', dt);
+          const { data, error } = await q;
+          result = error ? [] : (data || []);
+        } catch {
+          result = [];
+        }
+      }
+      return result;
+    }, { ttlMs: 24 * 60 * 60 * 1000, force });
 
     state.colaboradores = rows
       .filter(onlyActiveColab)
@@ -614,7 +606,8 @@ initProtectedPage('OS', async (content) => {
     if (removeBtn) {
       const { error } = await supabase.from('operacional_os_colaboradores').delete().eq('id', removeBtn.dataset.removeColab);
       if (error) return alert(error.message);
-      await loadOs(); render();
+      invalidateCacheByPrefix('os:');
+      await loadOs(true); render();
     }
   }
 
@@ -641,7 +634,8 @@ initProtectedPage('OS', async (content) => {
       alert(error.message || 'Não foi possível confirmar o colaborador sugerido.');
       return false;
     }
-    await loadOs();
+    invalidateCacheByPrefix('os:');
+    await loadOs(true);
     return true;
   }
 
@@ -659,7 +653,8 @@ initProtectedPage('OS', async (content) => {
         }
       }
       await updateOs(tr.dataset.osId, { permitir_mais_classificadores: checked, configurada_em: new Date().toISOString() }, true);
-      await loadOs(); render();
+      invalidateCacheByPrefix('os:');
+      await loadOs(true); render();
       return;
     }
     if ((event.target.matches('[data-assign-main]') || event.target.matches('[data-assign-extra]')) && event.target.value) {
@@ -706,13 +701,15 @@ initProtectedPage('OS', async (content) => {
       const { error } = await supabase.from('operacional_os_colaboradores').upsert(payload, { onConflict: 'os_id,colaborador_key' });
       if (error) return alert(error.message);
       await updateOs(row.id, { configurada_em: new Date().toISOString() }, true);
-      await loadOs(); render();
+      invalidateCacheByPrefix('os:');
+      await loadOs(true); render();
     }
   }
 
   async function updateOs(id, payload, silent = false) {
     const { error } = await supabase.from('operacional_os').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id);
     if (error) return alert(error.message);
+    invalidateCacheByPrefix('os:');
     const row = state.os.find((o) => String(o.id) === String(id));
     if (row) Object.assign(row, payload, { updated_at: new Date().toISOString() });
     if (!silent) render();
