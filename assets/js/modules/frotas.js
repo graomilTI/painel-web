@@ -248,6 +248,84 @@
     });
   }
 
+
+  function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
+      img.src = url;
+    });
+  }
+
+  function canvasToBase64(canvas, quality = 0.96) {
+    return String(canvas.toDataURL('image/png', quality) || '').split(',')[1] || '';
+  }
+
+  function drawOcrCanvas(img, opts = {}) {
+    const scale = opts.scale || 3;
+    const crop = opts.crop || null;
+    const sx = crop ? Math.max(0, Math.floor(crop.x * img.width)) : 0;
+    const sy = crop ? Math.max(0, Math.floor(crop.y * img.height)) : 0;
+    const sw = crop ? Math.min(img.width - sx, Math.floor(crop.w * img.width)) : img.width;
+    const sh = crop ? Math.min(img.height - sy, Math.floor(crop.h * img.height)) : img.height;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.floor(sw * scale));
+    canvas.height = Math.max(1, Math.floor(sh * scale));
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+    const mode = opts.mode || 'contrast';
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      let gray = (r * 0.299 + g * 0.587 + b * 0.114);
+      if (mode === 'invert') gray = 255 - gray;
+      if (mode === 'bw' || mode === 'invert') {
+        const threshold = opts.threshold || 135;
+        const v = gray >= threshold ? 255 : 0;
+        data[i] = v; data[i + 1] = v; data[i + 2] = v;
+      } else {
+        // Contraste simples: mantém tons, mas separa mais texto claro do fundo escuro.
+        const contrast = opts.contrast || 1.65;
+        const brightness = opts.brightness || 12;
+        const nr = Math.max(0, Math.min(255, (r - 128) * contrast + 128 + brightness));
+        const ng = Math.max(0, Math.min(255, (g - 128) * contrast + 128 + brightness));
+        const nb = Math.max(0, Math.min(255, (b - 128) * contrast + 128 + brightness));
+        data[i] = nr; data[i + 1] = ng; data[i + 2] = nb;
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
+  async function fileToOcrBase64Variants(file) {
+    try {
+      const img = await loadImageFromFile(file);
+      const variants = [];
+      const push = (name, canvas) => {
+        const base64 = canvasToBase64(canvas);
+        if (base64) variants.push({ name, mimeType: 'image/png', base64 });
+      };
+
+      push('ocr-zoom-contrast', drawOcrCanvas(img, { scale: 3, mode: 'contrast' }));
+      push('ocr-zoom-bw', drawOcrCanvas(img, { scale: 3, mode: 'bw', threshold: 132 }));
+      push('ocr-zoom-invert', drawOcrCanvas(img, { scale: 3, mode: 'invert', threshold: 120 }));
+
+      // Recorte central: ajuda quando o print vem dentro da visualização do Drive ou com muita área inútil.
+      push('ocr-crop-center-contrast', drawOcrCanvas(img, { scale: 3, mode: 'contrast', crop: { x: 0.12, y: 0.12, w: 0.76, h: 0.76 } }));
+      push('ocr-crop-center-bw', drawOcrCanvas(img, { scale: 3, mode: 'bw', threshold: 132, crop: { x: 0.12, y: 0.12, w: 0.76, h: 0.76 } }));
+
+      return variants.slice(0, 5);
+    } catch (err) {
+      console.warn('[FROTAS] Não foi possível preparar imagem para OCR:', err);
+      return [];
+    }
+  }
+
   function getStyles() {
     return `
       <style id="frotas-module-style">
@@ -1418,7 +1496,15 @@
       const knownDrivers = buildKnownDriversForOcr(currentRenderOpts);
       const files = [];
       for (const file of state.uploadedFiles) {
-        files.push({ name: file.name || file.__displayName || `print-${Date.now()}.png`, mimeType: file.type || 'image/png', base64: await fileToBase64(file) });
+        const originalBase64 = await fileToBase64(file);
+        const ocrVariants = await fileToOcrBase64Variants(file);
+        files.push({
+          name: file.name || file.__displayName || `print-${Date.now()}.png`,
+          mimeType: file.type || 'image/png',
+          base64: originalBase64,
+          ocrBase64: ocrVariants[0]?.base64 || '',
+          ocrVariants
+        });
       }
 
       const resp = await fetch(gasUrl, {
