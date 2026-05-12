@@ -16,6 +16,7 @@ const state = {
   access: { restricted: false, allowedSupervisoes: [] },
   os: [],
   colaboradores: [],
+  pontosEmbarque: [],
   atribuicoes: [],
   filters: { supervisao: '', status: '', busca: '' },
   sort: { field: 'numero_os', dir: 'desc' },
@@ -143,6 +144,53 @@ function colabKey(c) {
 
 function getOsKey(row) { return String(row.id || row.numero_os || ''); }
 
+function splitUfCidadeLocal(text) {
+  const raw = String(text || '').trim();
+  const match = raw.match(/^([A-Z]{2})\s*-\s*([^()]+?)(?:\s*\(([^)]+)\))?\s*$/i);
+  if (!match) return { uf: '', cidade: raw, local: '' };
+  return { uf: match[1].toUpperCase(), cidade: match[2].trim(), local: (match[3] || '').trim() };
+}
+
+function bestPontoForOs(row) {
+  const parsed = splitUfCidadeLocal(row.embarque || row.local_embarque || '');
+  const uf = normalize(parsed.uf);
+  const cidade = normalize(parsed.cidade);
+  const local = normalize(parsed.local);
+  const cliente = normalize(row.cliente);
+  const candidatos = state.pontosEmbarque
+    .filter((p) => hasGeo(p.latitude, p.longitude))
+    .map((p) => {
+      let score = 0;
+      const pUf = normalize(p.uf);
+      const pCidade = normalize(p.cidade);
+      const pNome = normalize(p.nome_local || p.tipo_local || '');
+      const pSup = normalize(p.supervisao || p.coordenacao || '');
+      if (uf && pUf === uf) score += 50;
+      if (cidade && (pCidade === cidade || pCidade.includes(cidade) || cidade.includes(pCidade))) score += 80;
+      if (local && (pNome.includes(local) || local.includes(pNome))) score += 120;
+      if (cliente && (pNome.includes(cliente) || cliente.includes(pNome))) score += 30;
+      if (row.supervisao && pSup && (pSup.includes(normalize(row.supervisao)) || normalize(row.supervisao).includes(pSup))) score += 15;
+      return { ponto: p, score };
+    })
+    .filter((x) => x.score >= 120)
+    .sort((a, b) => b.score - a.score);
+  return candidatos[0]?.ponto || null;
+}
+
+function osPoint(row) {
+  const ponto = bestPontoForOs(row);
+  if (ponto) {
+    return {
+      latitude: Number(ponto.latitude),
+      longitude: Number(ponto.longitude),
+      origem: 'MAPA_OPERACIONAL',
+      label: `${ponto.nome_local || 'Ponto operacional'} · ${ponto.cidade || ''}/${ponto.uf || ''}`,
+    };
+  }
+  return { latitude: null, longitude: null, origem: 'SEM_PONTO_MAPA', label: 'Sem ponto georreferenciado no mapa operacional' };
+}
+
+
 async function resolveAccess() {
   state.user = await getCurrentUser();
   try { state.context = await getUserContext(state.user?.id); } catch { state.context = null; }
@@ -181,10 +229,12 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'os-styles';
   style.textContent = `
-    .os-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:12px}.os-grid .field-span-2{grid-column:span 2}
+    .os-grid{display:grid;grid-template-columns:1fr 1fr 2fr;gap:12px}.os-grid .field-span-2{grid-column:span 1}
     .os-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:18px;background:rgba(2,6,23,.25)}
-    .os-table{width:100%;min-width:1180px;border-collapse:separate;border-spacing:0;color:#e5e7eb}.os-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:12px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1}.os-table th[data-sort]{cursor:pointer;user-select:none}.os-table th[data-sort]:hover{color:#fff;background:#0b2116}.os-table td{padding:11px 12px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:top;background:rgba(15,23,42,.24)}
-    .os-table tr:hover td{background:rgba(22,101,52,.1)}.os-title{font-weight:900;color:#f8fafc;font-size:15px;line-height:1.25}.os-num{font-size:15px;font-weight:950}.os-meta{font-size:12px;color:#94a3b8;margin-top:4px}.os-actions{display:flex;gap:7px;flex-wrap:wrap}.os-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.72);color:#dcfce7;border-radius:999px;padding:8px 11px;font-weight:900;cursor:pointer}.os-btn.active{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.os-btn.warn.active{background:#fde68a;color:#713f12}.os-btn.danger.active{background:#fecaca;color:#7f1d1d}.os-chip{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.os-chip.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.os-chip.warn{background:rgba(250,204,21,.14);color:#fde68a}.os-chip.info{background:rgba(59,130,246,.13);color:#bfdbfe}.os-chip.danger{background:rgba(239,68,68,.12);color:#fecaca}.os-zero{box-shadow:inset 4px 0 0 #facc15}.os-sug{border:1px solid rgba(52,211,153,.18);background:rgba(22,101,52,.12);border-radius:14px;padding:10px}.os-sug strong{color:#f8fafc}.os-sug .muted{font-size:12px}.os-select{width:100%;min-height:40px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0f172a;color:#e5e7eb;color-scheme:dark;padding:9px}.os-mini{font-size:12px;color:#a7f3d0}.os-warn-text{font-size:12px;color:#fde68a;margin-top:7px}.os-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#94a3b8;background:rgba(15,23,42,.16)}
+    .os-table{width:100%;min-width:980px;border-collapse:separate;border-spacing:0;table-layout:fixed;color:#e5e7eb}.os-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px 9px;font-size:11px;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1}.os-table th[data-sort]{cursor:pointer;user-select:none}.os-table th[data-sort]:hover{color:#fff;background:#0b2116}.os-table td{padding:10px 9px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:top;background:rgba(15,23,42,.24)}
+    .os-col-num{width:9.5%}.os-col-cliente{width:40%}.os-col-rem{width:12.5%}.os-col-ind{width:27%}.os-col-acao{width:11%}
+    .os-table tr:hover td{background:rgba(22,101,52,.1)}.os-title{font-weight:850;color:#f8fafc;font-size:13.5px;line-height:1.18}.os-num{font-size:13.5px;font-weight:950}.os-meta{font-size:11px;color:#94a3b8;margin-top:3px;line-height:1.25}.os-client-main{max-width:100%;font-size:13.5px;line-height:1.16}.os-route-line{display:block;white-space:normal;overflow-wrap:anywhere}.os-actions{display:flex;gap:6px;flex-wrap:wrap}.os-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.72);color:#dcfce7;border-radius:999px;padding:7px 10px;font-weight:900;cursor:pointer;font-size:12px}.os-btn.active{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.os-btn.warn.active{background:#fde68a;color:#713f12}.os-btn.danger.active{background:#fecaca;color:#7f1d1d}.os-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.os-chip.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.os-chip.warn{background:rgba(250,204,21,.14);color:#fde68a}.os-chip.info{background:rgba(59,130,246,.13);color:#bfdbfe}.os-chip.danger{background:rgba(239,68,68,.12);color:#fecaca}.os-zero{box-shadow:inset 4px 0 0 #facc15}.os-indbox{display:flex;gap:8px;align-items:flex-start;flex-direction:column}.os-select{width:100%;min-height:38px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0f172a;color:#e5e7eb;color-scheme:dark;padding:8px;font-size:12px}.os-mini{font-size:11px;color:#a7f3d0;line-height:1.25}.os-warn-text{font-size:11px;color:#fde68a;margin-top:6px;line-height:1.25}.os-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#94a3b8;background:rgba(15,23,42,.16)}
+    .os-rem-box{display:flex;flex-direction:column;gap:3px;align-items:flex-start}.os-rem-box .os-meta{margin-top:0}
     @media(max-width:900px){.os-grid{grid-template-columns:1fr}.os-grid .field-span-2{grid-column:span 1}}
   `;
   document.head.appendChild(style);
@@ -228,6 +278,13 @@ initProtectedPage('OS', async (content) => {
     el.feedback.textContent = 'Carregando O.S. e colaboradores...';
     try {
       await loadOs();
+
+      try {
+        await loadPontosEmbarque();
+      } catch (pontoError) {
+        console.warn('Não foi possível carregar pontos de embarque do mapa operacional.', pontoError);
+        state.pontosEmbarque = [];
+      }
 
       try {
         await loadColaboradores();
@@ -279,6 +336,25 @@ initProtectedPage('OS', async (content) => {
     } catch (atrError) {
       console.warn('Falha ao carregar colaboradores vinculados às O.S.', atrError);
       state.atribuicoes = [];
+    }
+  }
+
+  async function loadPontosEmbarque() {
+    try {
+      let q = supabase
+        .from('operacional_pontos_embarque')
+        .select('id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo')
+        .limit(5000);
+      const { data, error } = await q;
+      if (error) {
+        console.warn('Falha ao consultar operacional_pontos_embarque.', error);
+        state.pontosEmbarque = [];
+        return;
+      }
+      state.pontosEmbarque = safeArray(data).filter((p) => p.ativo !== false && hasGeo(p.latitude, p.longitude));
+    } catch (error) {
+      console.warn('Falha ao consultar operacional_pontos_embarque.', error);
+      state.pontosEmbarque = [];
     }
   }
 
@@ -386,26 +462,34 @@ initProtectedPage('OS', async (content) => {
 
   function sugestoesParaOs(row) {
     const supKey = normalize(row.supervisao);
-    const osTemCoordenada = hasGeo(row.ponto1_latitude, row.ponto1_longitude);
+    const ponto = osPoint(row);
+    const osTemCoordenada = hasGeo(ponto.latitude, ponto.longitude);
     const jaIndicadosNaOs = assignedKeysForOs(row.id);
     const cols = state.colaboradores.filter((c) => {
       const key = colabKey(c);
       if (key && colaboradorBloqueadoEmOsGrande(row, key) && !jaIndicadosNaOs.has(key)) return false;
       const colSup = normalize(c.supervisao || c.regional);
-      return !supKey || colSup.includes(supKey) || supKey.includes(colSup);
+      return !supKey || !colSup || colSup.includes(supKey) || supKey.includes(colSup);
     });
+
     return cols.map((c) => {
       const dist = osTemCoordenada && hasGeo(c.latitude, c.longitude)
-        ? haversineKm(row.ponto1_latitude, row.ponto1_longitude, c.latitude, c.longitude)
+        ? haversineKm(ponto.latitude, ponto.longitude, c.latitude, c.longitude)
         : null;
-      return { ...c, distancia_km: dist, os_tem_coordenada: osTemCoordenada };
+      return { ...c, distancia_km: dist, os_tem_coordenada: osTemCoordenada, ponto_origem: ponto.origem, ponto_label: ponto.label };
     }).sort((a, b) => {
       const aHas = a.distancia_km != null;
       const bHas = b.distancia_km != null;
       if (aHas !== bHas) return aHas ? -1 : 1;
       if (aHas && bHas && a.distancia_km !== b.distancia_km) return a.distancia_km - b.distancia_km;
       return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
-    }).slice(0, 8);
+    }).slice(0, 12);
+  }
+
+  function sugestaoValida(row, sugestoes) {
+    const primeira = sugestoes?.[0];
+    if (!primeira) return null;
+    return primeira.distancia_km == null ? null : primeira;
   }
 
 
@@ -435,35 +519,49 @@ initProtectedPage('OS', async (content) => {
       el.list.innerHTML = '<div class="os-empty">Nenhuma O.S. encontrada para o filtro atual.</div>';
       return;
     }
-    el.list.innerHTML = `<div class="os-table-wrap"><table class="os-table"><thead><tr><th data-sort="numero_os">O.S. ${sortLabel('numero_os')}</th><th data-sort="cliente">Cliente / rota ${sortLabel('cliente')}</th><th data-sort="remanescente">Remanescente ${sortLabel('remanescente')}</th><th>Sugestão operacional</th><th>Indicação</th><th>Ação gestor</th></tr></thead><tbody>${rows.map(rowHtml).join('')}</tbody></table></div>`;
+    el.list.innerHTML = `<div class="os-table-wrap"><table class="os-table"><colgroup><col class="os-col-num"><col class="os-col-cliente"><col class="os-col-rem"><col class="os-col-ind"><col class="os-col-acao"></colgroup><thead><tr><th data-sort="numero_os">O.S. ${sortLabel('numero_os')}</th><th data-sort="cliente">Cliente / rota ${sortLabel('cliente')}</th><th data-sort="remanescente">Remanescente ${sortLabel('remanescente')}</th><th>Indicação operacional</th><th>Ação gestor</th></tr></thead><tbody>${rows.map(rowHtml).join('')}</tbody></table></div>`;
   }
 
   function rowHtml(row) {
     const rem = num(row.remanescente);
     const zero = rem === 0;
     const sugestoes = sugestoesParaOs(row);
-    const principal = sugestoes[0];
+    const principal = sugestaoValida(row, sugestoes);
     const atr = atribuicoesDaOs(row.id);
+    const selectedKey = atr[0]?.colaborador_key || (principal ? colabKey(principal) : '');
+    const selectedNome = atr[0]?.colaborador_nome || principal?.nome || principal?.nome_colaborador || '';
     const maxPadrao = rem > 0 && rem <= LIMITE_UM_CLASSIFICADOR ? 1 : Math.max(1, atr.length || 1);
     const permitirMais = Boolean(row.permitir_mais_classificadores) || atr.length > maxPadrao;
     const status = normalize(row.status_gestor || 'AGUARDAR') || 'AGUARDAR';
     const compartilhavel = rem > 0 && rem <= LIMITE_COMPARTILHAR;
+    const ponto = osPoint(row);
+    const selectOptions = sugestoes.map((c, index) => {
+      const key = colabKey(c);
+      const distTxt = c.distancia_km == null ? 'sem distância' : `${KM.format(c.distancia_km)} km`;
+      const label = `${index === 0 && c.distancia_km != null ? '⭐ ' : ''}${c.nome || c.nome_colaborador || ''} • ${distTxt}`;
+      return `<option value="${escapeHtml(key)}" data-nome="${escapeHtml(c.nome || c.nome_colaborador || '')}" data-dist="${escapeHtml(c.distancia_km ?? '')}" ${String(key) === String(selectedKey) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    }).join('');
+
     return `<tr data-os-id="${escapeHtml(row.id)}" class="${zero ? 'os-zero' : ''}">
-      <td><div class="os-title os-num">${escapeHtml(row.numero_os)}</div><div class="os-meta">${brDate(row.data_os)} • ${escapeHtml(first(row.servico))}</div><div class="os-meta">${escapeHtml(first(row.supervisao))}</div>${zero ? '<div class="os-warn-text">Remanescente zerado</div>' : ''}</td>
-      <td><div class="os-title">${escapeHtml(first(row.cliente))}</div><div class="os-meta">Embarque: ${escapeHtml(first(row.embarque))}</div><div class="os-meta">Destino: ${escapeHtml(first(row.destino))}</div><div class="os-meta">Contrato ${escapeHtml(first(row.contrato))} • ${escapeHtml(first(row.produto))}</div></td>
-      <td><span class="os-chip ${zero ? 'warn' : rem <= LIMITE_UM_CLASSIFICADOR ? 'info' : 'ok'}">${fmtTon(rem)}</span><div class="os-meta">Lote: ${fmtTon(row.lote)} • Embarcado: ${fmtTon(row.embarcado)}</div>${compartilhavel ? `<div class="os-warn-text">Pode reaproveitar colaborador em outra O.S. até ${RAIO_COMPARTILHAR_KM} km do ponto 1.</div>` : ''}</td>
-      <td>${principal ? `<div class="os-sug"><strong>${escapeHtml(principal.nome || principal.nome_colaborador || 'Colaborador')}</strong><div class="muted">${principal.distancia_km == null ? 'Sem distância calculada' : `${KM.format(principal.distancia_km)} km do ponto 1`}</div><div class="os-mini">${principal.distancia_km == null ? 'Sem distância calculada: ponto de embarque ou colaborador sem latitude/longitude.' : 'Primeiro da listagem operacional por menor distância.'}</div></div>` : '<span class="muted">Sem colaborador disponível para sugestão.</span>'}</td>
+      <td><div class="os-title os-num">${escapeHtml(row.numero_os)}</div><div class="os-meta">${brDate(row.data_os)}</div><div class="os-meta">${escapeHtml(first(row.servico))}</div><div class="os-meta">${escapeHtml(first(row.supervisao))}</div>${zero ? '<div class="os-warn-text">Remanescente zerado</div>' : ''}</td>
+      <td><div class="os-title os-client-main">${escapeHtml(first(row.cliente))}</div><div class="os-meta os-route-line">Emb.: ${escapeHtml(first(row.embarque))}</div><div class="os-meta os-route-line">Dest.: ${escapeHtml(first(row.destino))}</div><div class="os-meta os-route-line">Contrato ${escapeHtml(first(row.contrato))} • ${escapeHtml(first(row.produto))}</div></td>
+      <td><div class="os-rem-box"><span class="os-chip ${zero ? 'warn' : rem <= LIMITE_UM_CLASSIFICADOR ? 'info' : 'ok'}">${fmtTon(rem)}</span><div class="os-meta">Lote ${fmtTon(row.lote)}</div><div class="os-meta">Emb. ${fmtTon(row.embarcado)}</div>${compartilhavel ? `<div class="os-warn-text">Pode reaproveitar em outra O.S. até ${RAIO_COMPARTILHAR_KM} km.</div>` : ''}</div></td>
       <td>
-        <select class="os-select" data-assign>
-          <option value="">${atr.length ? 'Adicionar outro colaborador' : 'Selecionar colaborador'}</option>
-          ${sugestoes.map((c, index) => `<option value="${escapeHtml(colabKey(c))}" data-nome="${escapeHtml(c.nome || c.nome_colaborador || '')}" data-dist="${escapeHtml(c.distancia_km ?? '')}">${index === 0 ? '⭐ ' : ''}${escapeHtml(c.nome || c.nome_colaborador || '')}${c.distancia_km == null ? '' : ` • ${KM.format(c.distancia_km)} km`}</option>`).join('')}
-        </select>
-        <div class="os-meta" style="margin-top:8px">${atr.length ? atr.map((a) => `<span class="os-chip ok">${escapeHtml(a.colaborador_nome)} <button class="os-btn" style="padding:2px 6px;margin-left:5px" data-remove-colab="${escapeHtml(a.id)}">×</button></span>`).join(' ') : `Padrão sugerido: ${maxPadrao} classificador${maxPadrao > 1 ? 'es' : ''}.`}</div>
-        ${rem > 0 && rem <= LIMITE_UM_CLASSIFICADOR ? `<label class="os-mini" style="display:block;margin-top:9px"><input type="checkbox" data-allow-more ${permitirMais ? 'checked' : ''}/> permitir 2 ou mais colaboradores</label>` : ''}
+        <div class="os-indbox">
+          <select class="os-select" data-assign>
+            <option value="">${principal ? 'Selecionar outro colaborador' : 'Selecionar colaborador'}</option>
+            ${selectOptions}
+          </select>
+          ${selectedNome ? `<div class="os-mini"><strong>Indicação:</strong> ${escapeHtml(selectedNome)}</div>` : '<div class="os-warn-text">Sem sugestão automática. Ponto de embarque ou colaborador sem coordenadas válidas.</div>'}
+          ${principal ? `<div class="os-mini">${KM.format(principal.distancia_km)} km do ponto operacional.</div>` : `<div class="os-mini">${escapeHtml(ponto.label)}</div>`}
+          ${atr.length > 1 ? `<div class="os-meta">${atr.slice(1).map((a) => `<span class="os-chip ok">${escapeHtml(a.colaborador_nome)} <button class="os-btn" style="padding:2px 6px;margin-left:5px" data-remove-colab="${escapeHtml(a.id)}">×</button></span>`).join(' ')}</div>` : ''}
+          ${rem > 0 && rem <= LIMITE_UM_CLASSIFICADOR ? `<label class="os-mini" style="display:block"><input type="checkbox" data-allow-more ${permitirMais ? 'checked' : ''}/> permitir 2 ou mais colaboradores</label>` : ''}
+        </div>
       </td>
-      <td><div class="os-actions">${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}">${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}</button>`).join('')}</div><div style="margin-top:10px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
+      <td><div class="os-actions">${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}">${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}</button>`).join('')}</div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
     </tr>`;
   }
+
 
   async function onListClick(event) {
     const sortTh = event.target.closest('[data-sort]');
@@ -502,9 +600,10 @@ initProtectedPage('OS', async (content) => {
     if (!row) return false;
     const current = atribuicoesDaOs(row.id);
     if (current.length > 0) return true;
-    const sugestao = sugestoesParaOs(row)[0];
+    const sugestoes = sugestoesParaOs(row);
+    const sugestao = sugestaoValida(row, sugestoes);
     if (!sugestao) {
-      alert('Não é possível enviar esta O.S. para Conferência sem colaborador. Cadastre coordenadas/base operacional ou selecione um colaborador antes de marcar Atender.');
+      alert('Não é possível enviar esta O.S. para Conferência sem colaborador válido. Alinhe o ponto de embarque no mapa operacional com latitude/longitude ou selecione um colaborador manualmente.');
       return false;
     }
     const payload = {
@@ -512,7 +611,7 @@ initProtectedPage('OS', async (content) => {
       colaborador_key: colabKey(sugestao),
       colaborador_nome: sugestao.nome || sugestao.nome_colaborador || 'Colaborador sugerido',
       distancia_km: sugestao.distancia_km == null ? null : Number(sugestao.distancia_km),
-      origem_sugestao: sugestao.distancia_km == null ? 'SUGESTAO_SEM_DISTANCIA' : 'DISTANCIA_OPERACIONAL',
+      origem_sugestao: 'DISTANCIA_OPERACIONAL',
       indicado_por: state.user?.id || null,
     };
     const { error } = await supabase.from('operacional_os_colaboradores').upsert(payload, { onConflict: 'os_id,colaborador_key' });
@@ -548,7 +647,7 @@ initProtectedPage('OS', async (content) => {
         colaborador_key: event.target.value,
         colaborador_nome: selected.dataset.nome || selected.textContent,
         distancia_km: selected.dataset.dist ? Number(selected.dataset.dist) : null,
-        origem_sugestao: selected.dataset.dist ? 'DISTANCIA_OPERACIONAL' : 'LISTAGEM_OPERACIONAL',
+        origem_sugestao: selected.dataset.dist ? 'DISTANCIA_OPERACIONAL' : 'MANUAL_SEM_DISTANCIA',
         indicado_por: state.user?.id || null,
       };
       const { error } = await supabase.from('operacional_os_colaboradores').upsert(payload, { onConflict: 'os_id,colaborador_key' });
