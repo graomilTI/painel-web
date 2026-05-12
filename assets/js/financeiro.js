@@ -247,6 +247,143 @@ function makeAleloRows(extratoRows, fonteRows) {
   return { alelo, ifood, flash, logs };
 }
 
+
+function isSolicitacaoDespesasFile(rows) {
+  const first = (rows || [])[0] || {};
+  const keys = Object.keys(first).map((key) => normalize(key));
+  return keys.includes('categoria') && keys.includes('funcionario') && keys.includes('data de solicitacao');
+}
+
+function buildSolicitacaoDespesasRows(solicitacaoRows, rhMap) {
+  const flashMap = new Map();
+  const ifoodMap = new Map();
+  const conferencia = [];
+  const logs = [];
+
+  (solicitacaoRows || []).forEach((row, index) => {
+    const categoria = String(getAny(row, ['Categoria']) || '').trim();
+    const categoriaNorm = normalize(categoria);
+    const status = String(getAny(row, ['Status']) || '').trim();
+    const statusNorm = normalize(status);
+    const funcionario = String(getAny(row, ['Funcionário', 'Funcionario', 'Colaborador', 'Nome']) || '').trim();
+    const dataRef = parseDateLoose(getAny(row, ['Data de Solicitação', 'Data de Solicitacao', 'Data']));
+    const valor = toNumber(getAny(row, ['Valor']));
+    const coordenacao = String(getAny(row, ['Coordenação', 'Coordenacao']) || '').trim();
+    const supervisao = String(getAny(row, ['Supervisão', 'Supervisao']) || '').trim();
+    const cidade = String(getAny(row, ['Cidade']) || '').trim();
+    const fornecedor = String(getAny(row, ['Fornecedor']) || '').trim();
+
+    if (!funcionario && !valor) return;
+
+    const isAdiantamento = categoriaNorm.includes('solicitacao de dinheiro') || categoriaNorm.includes('adiantamento');
+    const isPendente = !statusNorm || statusNorm.includes('pendente') || statusNorm.includes('aberto') || statusNorm.includes('aguardando');
+
+    if (!isAdiantamento) {
+      logs.push({ data: dataRef || '', funcionario: funcionario || '-', status: 'IGNORADO', mensagem: `Linha ${index + 2}: categoria não entra em Adiantamentos: ${categoria || '(vazio)'}.` });
+      return;
+    }
+    if (!isPendente) {
+      logs.push({ data: dataRef || '', funcionario: funcionario || '-', status: 'IGNORADO', mensagem: `Linha ${index + 2}: status não pendente: ${status || '(vazio)'}.` });
+      return;
+    }
+    if (!funcionario) {
+      logs.push({ data: dataRef || '', funcionario: '-', status: 'ERRO', mensagem: `Linha ${index + 2}: colaborador não informado.` });
+      return;
+    }
+    if (!valor || valor <= 0) {
+      logs.push({ data: dataRef || '', funcionario, status: 'ERRO', mensagem: `Linha ${index + 2}: valor ausente ou inválido.` });
+      return;
+    }
+
+    const rh = rhMap.get(normalizeName(funcionario));
+    if (!rh) {
+      logs.push({ data: dataRef || '', funcionario, status: 'ERRO', mensagem: 'Colaborador não localizado na base RH.' });
+      conferencia.push({ data: dataRef || '', funcionario, cpf: '', destino: 'Pendente', tipo: categoria || 'Adiantamento', valor, composicao: fornecedor || cidade || 'Solicitação de Despesas', coordenacao, supervisao, banco: '', observacao: 'Colaborador não localizado na base RH.' });
+      return;
+    }
+    if (!rh.cpf || rh.cpf.length !== 11) {
+      logs.push({ data: dataRef || '', funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: 'CPF ausente ou inválido na base RH.' });
+      conferencia.push({ data: dataRef || '', funcionario: rh.nome || funcionario, cpf: rh.cpf || '', destino: 'Pendente', tipo: categoria || 'Adiantamento', valor, composicao: fornecedor || cidade || 'Solicitação de Despesas', coordenacao: rh.coordenacao || coordenacao, supervisao: rh.supervisao || supervisao, banco: rh.banco || '', observacao: 'CPF ausente ou inválido.' });
+      return;
+    }
+
+    const bancoNorm = normalize(rh.banco).replace(/\s+/g, '');
+    let destino = 'Pendente';
+    if (bancoNorm.includes('graomilflash') || bancoNorm.includes('flash')) destino = 'Flash';
+    if (bancoNorm.includes('graomilifood') || bancoNorm.includes('ifood')) destino = 'iFood';
+
+    const confRow = {
+      data: dataRef || '',
+      funcionario: rh.nome || funcionario,
+      cpf: rh.cpf,
+      destino,
+      tipo: categoria || 'Adiantamento',
+      valor: roundNumber(valor),
+      composicao: [fornecedor, cidade].filter(Boolean).join(' · ') || 'Solicitação de Despesas',
+      coordenacao: rh.coordenacao || coordenacao,
+      supervisao: rh.supervisao || supervisao,
+      banco: rh.banco || '',
+      observacao: destino === 'Pendente' ? `C. Banc. Despesas sem destino reconhecido: ${rh.banco || '(vazio)'}` : 'OK'
+    };
+    conferencia.push(confRow);
+
+    if (destino === 'Flash') {
+      const key = rh.cpf;
+      if (!flashMap.has(key)) flashMap.set(key, { cpf: rh.cpf, nome: rh.nome, valor: 0 });
+      flashMap.get(key).valor = roundNumber(flashMap.get(key).valor + valor);
+    } else if (destino === 'iFood') {
+      const key = rh.cpf;
+      if (!ifoodMap.has(key)) {
+        ifoodMap.set(key, {
+          cnpj: PAGAMENTO_IFOOD_CNPJ,
+          nome: rh.nome,
+          cpf: rh.cpf,
+          nascimento: rh.nascimento || '',
+          email: rh.emailEmpresa || rh.emailPessoal || '',
+          celular: onlyDigits(rh.whatsapp),
+          centro_custo: rh.coordenacao || coordenacao || '',
+          livre: 0
+        });
+      }
+      ifoodMap.get(key).livre = roundNumber(ifoodMap.get(key).livre + valor);
+    } else {
+      logs.push({ data: dataRef || '', funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: confRow.observacao });
+    }
+  });
+
+  return {
+    conferencia: conferencia.sort((a, b) => `${a.data}|${a.funcionario}`.localeCompare(`${b.data}|${b.funcionario}`, 'pt-BR')),
+    flash: Array.from(flashMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
+    ifood: Array.from(ifoodMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
+    alelo: [],
+    logs
+  };
+}
+
+function mapProducaoDiariaFileRows(rows, origem = 'arquivo_producao_diaria') {
+  return (rows || []).map((row) => ({
+    data: getAny(row, ['Data', 'Data Produção', 'Data Producao', 'Data Referência', 'Data Referencia']),
+    data_referencia: getAny(row, ['Data', 'Data Produção', 'Data Producao', 'Data Referência', 'Data Referencia']),
+    funcionario: getAny(row, ['Funcionário', 'Funcionario', 'Colaborador', 'Nome']),
+    tipo: getAny(row, ['Tipo']) || '',
+    coordenacao: getAny(row, ['Coordenação', 'Coordenacao']) || '',
+    supervisao: getAny(row, ['Supervisão', 'Supervisao']) || '',
+    cliente: getAny(row, ['Cliente']) || '',
+    os: getAny(row, ['O.S.', 'O.S', 'OS', 'Ordem de Serviço', 'Ordem de Servico']) || '',
+    cargas: getAny(row, ['Cargas']) || '',
+    toneladas: getAny(row, ['Tons', 'Toneladas']) || 0,
+    origem
+  })).map((row) => ({ ...row, data: parseDateLoose(row.data), data_referencia: parseDateLoose(row.data_referencia) }))
+    .filter((row) => row.funcionario && (row.data || row.data_referencia));
+}
+
+function filterProducaoPeriodo(rows, inicio, fim) {
+  return (rows || []).filter((row) => {
+    const dataRef = parseDateLoose(row.data || row.data_referencia);
+    return dataRef && dataRef >= inicio && dataRef <= fim;
+  });
+}
+
 function buildLatestColaboradorMap(rows) {
   const map = new Map();
   (rows || []).forEach((row) => {
@@ -280,121 +417,63 @@ async function loadColaboradoresPagamento() {
   return buildLatestColaboradorMap(data || []);
 }
 
-function pickFirst(row, keys) {
-  for (const key of keys) {
-    if (row && row[key] !== undefined && row[key] !== null && row[key] !== '') return row[key];
-  }
-  return '';
-}
-
 function mapProducaoSnapshotRows(rows, origem) {
-  return (rows || []).map((row) => {
-    const data = pickFirst(row, ['data', 'data_referencia', 'data_producao', 'dt_data', 'periodo', 'dia']);
-    const funcionario = pickFirst(row, ['funcionario', 'Funcionário', 'Funcionario', 'colaborador', 'nome_colaborador', 'classificador', 'nome']);
-    return {
-      data,
-      data_referencia: pickFirst(row, ['data_referencia', 'data', 'data_producao', 'dt_data', 'periodo', 'dia']),
-      funcionario,
-      tipo: pickFirst(row, ['tipo', 'tipo_funcionario', 'tipoRh', 'tipo_rh']),
-      coordenacao: pickFirst(row, ['coordenacao', 'coordenação', 'regional']),
-      supervisao: pickFirst(row, ['supervisao', 'supervisão']),
-      cliente: pickFirst(row, ['cliente', 'cliente_final', 'cliente_regional', 'cliente_nacional']),
-      os: pickFirst(row, ['os', 'o_s', 'ordem_servico', 'O.S.']),
-      toneladas: pickFirst(row, ['toneladas', 'tons', 'volume_classificado']) || 0,
-      cargas: pickFirst(row, ['cargas', 'carga']) || 0,
-      origem
-    };
-  }).filter((row) => row.funcionario && row.data);
-}
-
-function addDaysIso(dateIso, days) {
-  const d = new Date(`${dateIso}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return dateIso;
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-async function fetchRowsPaged(table, select, dateColumn, inicio, fim, origem) {
-  const out = [];
-  const pageSize = 1000;
-  let from = 0;
-  const fimExclusivo = addDaysIso(fim, 1);
-  while (true) {
-    // Usa limite final exclusivo para funcionar tanto com colunas DATE quanto TIMESTAMP/TIMESTAMPTZ.
-    // Com .lte(fim) em TIMESTAMP, registros do próprio dia após 00:00 ficavam fora da busca.
-    let q = supabase
-      .from(table)
-      .select(select)
-      .gte(dateColumn, inicio)
-      .lt(dateColumn, fimExclusivo)
-      .range(from, from + pageSize - 1);
-
-    const { data, error } = await q;
-    if (error) {
-      return { rows: [], raw: 0, error, origem };
-    }
-    const batch = data || [];
-    out.push(...batch);
-    if (batch.length < pageSize) break;
-    from += pageSize;
-  }
-  return { rows: out, raw: out.length, error: null, origem };
-}
-
-async function fetchUltimasDatasProducaoPagamento() {
-  const fontes = [
-    ['producao_snapshot', 'data', 'producao_snapshot.data'],
-    ['producao_snapshot', 'data_referencia', 'producao_snapshot.data_referencia'],
-    ['relatorio_resultado_diario', 'data', 'relatorio_resultado_diario']
-  ];
-  const out = [];
-  for (const [table, dateColumn, origem] of fontes) {
-    const { data, error } = await supabase
-      .from(table)
-      .select(dateColumn)
-      .not(dateColumn, 'is', null)
-      .order(dateColumn, { ascending: false })
-      .limit(30);
-    if (error) {
-      out.push({ origem, erro: error.message || String(error), datas: [] });
-      continue;
-    }
-    const datas = [...new Set((data || []).map((row) => parseDateLoose(row?.[dateColumn])).filter(Boolean))].slice(0, 8);
-    out.push({ origem, datas });
-  }
-  return out;
-}
-
-function dedupeProducaoPagamento(rows) {
-  const seen = new Set();
-  const out = [];
-  (rows || []).forEach((row) => {
-    const key = [parseDateLoose(row.data), normalizeName(row.funcionario), row.os || '', row.toneladas || '', row.cargas || ''].join('|');
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(row);
-  });
-  return out;
+  return (rows || []).map((row) => ({
+    data: row.data || row.data_referencia,
+    data_referencia: row.data_referencia || row.data,
+    funcionario: row.funcionario,
+    tipo: row.tipo || row.tipoRh || '',
+    coordenacao: row.coordenacao,
+    supervisao: row.supervisao,
+    cliente: row.cliente || row.cliente_final || '',
+    os: row.os || '',
+    toneladas: row.toneladas ?? row.tons ?? 0,
+    cargas: row.cargas,
+    origem
+  })).filter((row) => row.funcionario && (row.data || row.data_referencia));
 }
 
 async function loadProducaoPagamento(inicio, fim) {
-  const attempts = [];
-  const mapped = [];
+  // Primeiro tenta a base oficial da produção diária importada pelo painel.
+  // Essa tabela pode guardar a data real em `data` ou somente a referência da importação em `data_referencia`.
+  let res = await supabase
+    .from('producao_snapshot')
+    .select('data,data_referencia,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
+    .gte('data', inicio)
+    .lte('data', fim)
+    .order('data', { ascending: true })
+    .limit(20000);
 
-  // Base oficial da Produção Diária importada pelo painel.
-  for (const [table, dateColumn, origem] of [
-    ['producao_snapshot', 'data', 'producao_snapshot.data'],
-    ['producao_snapshot', 'data_referencia', 'producao_snapshot.data_referencia'],
-    ['relatorio_resultado_diario', 'data', 'relatorio_resultado_diario']
-  ]) {
-    const res = await fetchRowsPaged(table, '*', dateColumn, inicio, fim, origem);
-    attempts.push({ origem, raw: res.raw, erro: res.error?.message || '' });
-    if (!res.error && res.rows.length) mapped.push(...mapProducaoSnapshotRows(res.rows, origem));
+  if (!res.error && (res.data || []).length) {
+    const rows = mapProducaoSnapshotRows(res.data, 'producao_snapshot.data');
+    if (rows.length) return rows;
   }
 
-  const finalRows = dedupeProducaoPagamento(mapped);
-  finalRows._diagnostics = attempts;
-  return finalRows;
+  res = await supabase
+    .from('producao_snapshot')
+    .select('data,data_referencia,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
+    .gte('data_referencia', inicio)
+    .lte('data_referencia', fim)
+    .order('data_referencia', { ascending: true })
+    .limit(20000);
+
+  if (!res.error && (res.data || []).length) {
+    const rows = mapProducaoSnapshotRows(res.data, 'producao_snapshot.data_referencia');
+    if (rows.length) return rows;
+  }
+
+  // Fallback: Resultado Diário mensal/histórico usado pelo DRE.
+  // Serve quando a produção diária ainda não foi importada pelo menu antigo.
+  res = await supabase
+    .from('relatorio_resultado_diario')
+    .select('data,funcionario,coordenacao,supervisao,cliente_final,os,toneladas,cargas')
+    .gte('data', inicio)
+    .lte('data', fim)
+    .order('data', { ascending: true })
+    .limit(20000);
+
+  if (res.error) throw res.error;
+  return mapProducaoSnapshotRows(res.data || [], 'relatorio_resultado_diario');
 }
 
 function apurarAlimentacaoRows(producaoRows, rhMap) {
@@ -675,18 +754,19 @@ initProtectedPage('Financeiro', (content, userContext) => {
           <div class="pay-grid">
             <section class="pay-card">
               <h4>ADIANTAMENTOS</h4>
-              <p>Importe o Extrato_Solicitações e a Fonte_ALELO para gerar PGTO_ALELO, PGTO_IFOOD e PGTO_FLASH com conferência na tela.</p>
+              <p>Importe a planilha Solicitação de Despesas. O painel usa as solicitações de dinheiro pendentes, cruza com a base de colaboradores e gera Flash/iFood para conferência.</p>
               <div class="fin-form">
-                <div class="fin-field"><label>Extrato_Solicitações</label><label class="pay-upload" for="adiantFileExtrato" data-drop-for="adiantFileExtrato"><input id="adiantFileExtrato" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileExtratoName">Nenhum arquivo selecionado</span></span></label></div>
-                <div class="fin-field"><label>Fonte_ALELO</label><label class="pay-upload" for="adiantFileAlelo" data-drop-for="adiantFileAlelo"><input id="adiantFileAlelo" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileAleloName">Nenhum arquivo selecionado</span></span></label></div>
+                <div class="fin-field"><label>Solicitação de Despesas</label><label class="pay-upload" for="adiantFileExtrato" data-drop-for="adiantFileExtrato"><input id="adiantFileExtrato" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileExtratoName">Nenhum arquivo selecionado</span></span></label></div>
+                <div class="fin-field"><label>Fonte_ALELO opcional</label><label class="pay-upload" for="adiantFileAlelo" data-drop-for="adiantFileAlelo"><input id="adiantFileAlelo" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileAleloName">Nenhum arquivo selecionado</span></span></label></div>
                 <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAdiantamentos" type="button">Gerar adiantamentos</button></div>
                 <div class="fin-field"><label>&nbsp;</label><span id="fbAdiantamentos" class="fin-feedback"></span></div>
               </div>
             </section>
             <section class="pay-card">
               <h4>ALIMENTAÇÃO</h4>
-              <p>Usa a produção diária já importada no painel, cruza com a base de colaboradores e gera Flash/iFood.</p>
+              <p>Importe a Produção Diária. O painel paga uma vez por colaborador/dia, soma almoço e diária quando o colaborador for diarista, e gera Flash/iFood.</p>
               <div class="fin-form">
+                <div class="fin-field full"><label>Produção Diária</label><label class="pay-upload" for="alimFileProducao" data-drop-for="alimFileProducao"><input id="alimFileProducao" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="alimFileProducaoName">Nenhum arquivo selecionado</span></span></label></div>
                 <div class="fin-field"><label>Data inicial</label><input id="alimInicio" type="date" value="${esc(state.filters.inicio)}"></div>
                 <div class="fin-field"><label>Data final</label><input id="alimFim" type="date" value="${esc(state.currentDate)}"></div>
                 <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAlimentacao" type="button">Gerar alimentação</button></div>
@@ -931,26 +1011,28 @@ initProtectedPage('Financeiro', (content, userContext) => {
   async function gerarAlimentacao() {
     const inicio = document.getElementById('alimInicio').value;
     const fim = document.getElementById('alimFim').value;
+    const producaoFile = document.getElementById('alimFileProducao')?.files?.[0];
     if (!inicio || !fim) return paySetFeedback('fbAlimentacao', 'Informe data inicial e final.', 'err');
     if (inicio > fim) return paySetFeedback('fbAlimentacao', 'A data inicial não pode ser maior que a final.', 'err');
+    if (!producaoFile) return paySetFeedback('fbAlimentacao', 'Arraste ou selecione a planilha de Produção Diária.', 'err');
     try {
-      paySetFeedback('fbAlimentacao', 'Buscando produção e colaboradores...');
-      const [rhMap, producao] = await Promise.all([loadColaboradoresPagamento(), loadProducaoPagamento(inicio, fim)]);
+      paySetFeedback('fbAlimentacao', 'Lendo Produção Diária e colaboradores...');
+      const [rhMap, arquivoRows] = await Promise.all([loadColaboradoresPagamento(), readWorkbookRows(producaoFile)]);
+      const producaoArquivo = mapProducaoDiariaFileRows(arquivoRows, producaoFile.name);
+      const producao = filterProducaoPeriodo(producaoArquivo, inicio, fim);
       if (!producao.length) {
-        const diag = (producao._diagnostics || [])
-          .map((d) => `${d.origem}: ${d.erro ? d.erro : `${d.raw || 0} registros brutos`}`)
-          .join(' | ');
-        const ultimas = await fetchUltimasDatasProducaoPagamento();
-        const datasMsg = ultimas
-          .map((d) => d.erro ? `${d.origem}: ${d.erro}` : `${d.origem}: ${d.datas.length ? d.datas.map(brDate).join(', ') : 'sem datas encontradas'}`)
-          .join(' | ');
-        throw new Error(`Nenhuma produção com colaborador localizada no período selecionado. ${diag ? `Diagnóstico do filtro: ${diag}. ` : ''}${datasMsg ? `Últimas datas disponíveis: ${datasMsg}` : ''}`);
+        const primeirasDatas = [...new Set(producaoArquivo.map((row) => row.data || row.data_referencia).filter(Boolean))].sort().slice(0, 3).map(brDate).join(', ');
+        const ultimasDatas = [...new Set(producaoArquivo.map((row) => row.data || row.data_referencia).filter(Boolean))].sort().slice(-3).map(brDate).join(', ');
+        throw new Error(`Nenhuma produção localizada no período informado dentro da planilha. Registros lidos: ${producaoArquivo.length}. Datas no arquivo: ${primeirasDatas || '-'}${ultimasDatas ? ' até ' + ultimasDatas : ''}.`);
       }
       const apuracao = apurarAlimentacaoRows(producao, rhMap);
+      if (!apuracao.conferencia.length && apuracao.logs.length) {
+        paySetFeedback('fbAlimentacao', `Produção lida, mas sem colaboradores válidos. Verifique Pendências: ${apuracao.logs.length}.`, 'err');
+      }
       state.pagamentos = { tipo: 'Alimentação', periodo: dateRangeLabel(inicio, fim), ...apuracao };
       renderPayTables();
       setPayTab('conferencia');
-      paySetFeedback('fbAlimentacao', `Gerado: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências.`, 'ok');
+      paySetFeedback('fbAlimentacao', `Gerado da planilha ${producaoFile.name}: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências.`, 'ok');
     } catch (err) {
       console.error(err);
       paySetFeedback('fbAlimentacao', err.message || 'Erro ao gerar alimentação.', 'err');
@@ -960,10 +1042,24 @@ initProtectedPage('Financeiro', (content, userContext) => {
   async function gerarAdiantamentos() {
     const extratoFile = document.getElementById('adiantFileExtrato').files?.[0];
     const aleloFile = document.getElementById('adiantFileAlelo').files?.[0];
-    if (!extratoFile) return paySetFeedback('fbAdiantamentos', 'Selecione o Extrato_Solicitações.', 'err');
+    if (!extratoFile) return paySetFeedback('fbAdiantamentos', 'Selecione ou arraste a planilha de Solicitação de Despesas.', 'err');
     try {
-      paySetFeedback('fbAdiantamentos', 'Lendo arquivos...');
-      const [extratoRows, fonteRows] = await Promise.all([readWorkbookRows(extratoFile), aleloFile ? readWorkbookRows(aleloFile) : Promise.resolve([])]);
+      paySetFeedback('fbAdiantamentos', 'Lendo arquivos e base de colaboradores...');
+      const [extratoRows, fonteRows, rhMap] = await Promise.all([
+        readWorkbookRows(extratoFile),
+        aleloFile ? readWorkbookRows(aleloFile) : Promise.resolve([]),
+        loadColaboradoresPagamento()
+      ]);
+
+      if (isSolicitacaoDespesasFile(extratoRows)) {
+        const apuracao = buildSolicitacaoDespesasRows(extratoRows, rhMap);
+        state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, ...apuracao };
+        renderPayTables();
+        setPayTab('conferencia');
+        paySetFeedback('fbAdiantamentos', `Gerado da Solicitação de Despesas: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências/ignorados.`, 'ok');
+        return;
+      }
+
       const apuracao = makeAleloRows(extratoRows, fonteRows);
       const conferencia = [
         ...apuracao.alelo.map((r) => ({ data: '', funcionario: r.nome, cpf: String(r.cpf || '').replace(/^'/, ''), destino: 'Alelo', tipo: 'Adiantamento', valor: r.valor, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: r.serie ? 'OK' : 'Sem série' })),
@@ -1076,6 +1172,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
   setupPagamentoDropzone('adiantFileExtrato');
   setupPagamentoDropzone('adiantFileAlelo');
+  setupPagamentoDropzone('alimFileProducao');
   document.getElementById('btnGerarAlimentacao').addEventListener('click', gerarAlimentacao);
   document.getElementById('btnGerarAdiantamentos').addEventListener('click', gerarAdiantamentos);
   document.querySelectorAll('.pay-subtab').forEach((btn) => btn.addEventListener('click', () => setPayTab(btn.dataset.payTab)));
