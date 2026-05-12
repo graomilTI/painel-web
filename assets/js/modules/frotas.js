@@ -302,6 +302,57 @@
     return canvas;
   }
 
+  function detectWhatsappMessageCrop(img) {
+    const sampleCanvas = document.createElement('canvas');
+    const maxW = 900;
+    const ratio = Math.min(1, maxW / Math.max(1, img.width));
+    sampleCanvas.width = Math.max(1, Math.round(img.width * ratio));
+    sampleCanvas.height = Math.max(1, Math.round(img.height * ratio));
+    const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, sampleCanvas.width, sampleCanvas.height);
+    const imageData = ctx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height);
+    const data = imageData.data;
+
+    // Detecta o balão verde do WhatsApp. Isso é essencial quando o print vem dentro
+    // da prévia do Drive: a mensagem fica pequena no centro e o OCR lê o fundo inteiro.
+    let minX = sampleCanvas.width, minY = sampleCanvas.height, maxX = 0, maxY = 0, count = 0;
+    for (let y = 0; y < sampleCanvas.height; y += 2) {
+      for (let x = 0; x < sampleCanvas.width; x += 2) {
+        const i = (y * sampleCanvas.width + x) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        const isGreenBubble = g > 55 && g > r * 1.12 && g > b * 1.08 && r < 120 && b < 120;
+        if (isGreenBubble) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+          count++;
+        }
+      }
+    }
+
+    const area = sampleCanvas.width * sampleCanvas.height;
+    const boxW = maxX - minX;
+    const boxH = maxY - minY;
+    if (count < area * 0.006 || boxW < sampleCanvas.width * 0.18 || boxH < sampleCanvas.height * 0.06) {
+      return null;
+    }
+
+    const padX = Math.round(boxW * 0.04);
+    const padY = Math.round(boxH * 0.08);
+    minX = Math.max(0, minX - padX);
+    minY = Math.max(0, minY - padY);
+    maxX = Math.min(sampleCanvas.width - 1, maxX + padX);
+    maxY = Math.min(sampleCanvas.height - 1, maxY + padY);
+
+    return {
+      x: minX / sampleCanvas.width,
+      y: minY / sampleCanvas.height,
+      w: Math.max(0.05, (maxX - minX) / sampleCanvas.width),
+      h: Math.max(0.05, (maxY - minY) / sampleCanvas.height)
+    };
+  }
+
   async function fileToOcrBase64Variants(file) {
     try {
       const img = await loadImageFromFile(file);
@@ -311,15 +362,22 @@
         if (base64) variants.push({ name, mimeType: 'image/png', base64 });
       };
 
+      const bubbleCrop = detectWhatsappMessageCrop(img);
+      if (bubbleCrop) {
+        push('ocr-whatsapp-balao-contrast', drawOcrCanvas(img, { scale: 4, mode: 'contrast', contrast: 2.1, brightness: 24, crop: bubbleCrop }));
+        push('ocr-whatsapp-balao-bw', drawOcrCanvas(img, { scale: 4, mode: 'bw', threshold: 118, crop: bubbleCrop }));
+        push('ocr-whatsapp-balao-invert', drawOcrCanvas(img, { scale: 4, mode: 'invert', threshold: 108, crop: bubbleCrop }));
+      }
+
       push('ocr-zoom-contrast', drawOcrCanvas(img, { scale: 3, mode: 'contrast' }));
       push('ocr-zoom-bw', drawOcrCanvas(img, { scale: 3, mode: 'bw', threshold: 132 }));
       push('ocr-zoom-invert', drawOcrCanvas(img, { scale: 3, mode: 'invert', threshold: 120 }));
 
       // Recorte central: ajuda quando o print vem dentro da visualização do Drive ou com muita área inútil.
-      push('ocr-crop-center-contrast', drawOcrCanvas(img, { scale: 3, mode: 'contrast', crop: { x: 0.12, y: 0.12, w: 0.76, h: 0.76 } }));
-      push('ocr-crop-center-bw', drawOcrCanvas(img, { scale: 3, mode: 'bw', threshold: 132, crop: { x: 0.12, y: 0.12, w: 0.76, h: 0.76 } }));
+      push('ocr-crop-center-contrast', drawOcrCanvas(img, { scale: 3, mode: 'contrast', crop: { x: 0.10, y: 0.08, w: 0.80, h: 0.82 } }));
+      push('ocr-crop-center-bw', drawOcrCanvas(img, { scale: 3, mode: 'bw', threshold: 132, crop: { x: 0.10, y: 0.08, w: 0.80, h: 0.82 } }));
 
-      return variants.slice(0, 5);
+      return variants.slice(0, 8);
     } catch (err) {
       console.warn('[FROTAS] Não foi possível preparar imagem para OCR:', err);
       return [];
@@ -1054,10 +1112,12 @@
         const folderName = driverName || (folderIsInvalid ? 'OCR - CONFERIR' : rawFolder);
         const notificationNumber = getFileNotificationNumber(f);
         const notificationLine = notificationNumber ? `<br>Nº notificação: ${escapeHtml(notificationNumber)}` : '';
+        const previewRaw = String(f.ocrPreview || f.ocrText || '').trim();
+        const preview = previewRaw ? `<br><small>OCR usado: ${escapeHtml(f.ocrVariantUsed || f.ocrVariant || 'imagem tratada')} · Prévia: ${escapeHtml(previewRaw.slice(0, 220))}${previewRaw.length > 220 ? '...' : ''}</small>` : '';
         const extra = driverName && folderIsInvalid
           ? '<br><small>Motorista identificado pelo OCR do print. A pasta exibida foi corrigida para o nome do motorista.</small>'
           : (folderIsInvalid ? '<br><small>OCR ainda não retornou motorista válido para este arquivo.</small>' : '');
-        return `<div class="saved-item"><strong>${escapeHtml(f.fileName || 'Print salvo')}</strong><br>Pasta: ${escapeHtml(folderName)}${notificationLine}${extra}${f.fileUrl ? `<br><a href="${escapeHtml(f.fileUrl)}" target="_blank" rel="noopener">Abrir no Drive</a>` : ''}</div>`;
+        return `<div class="saved-item"><strong>${escapeHtml(f.fileName || 'Print salvo')}</strong><br>Pasta: ${escapeHtml(folderName)}${notificationLine}${extra}${preview}${f.fileUrl ? `<br><a href="${escapeHtml(f.fileUrl)}" target="_blank" rel="noopener">Abrir no Drive</a>` : ''}</div>`;
       }).join('') : '';
     }
   }
