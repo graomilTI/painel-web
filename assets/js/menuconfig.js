@@ -4,7 +4,7 @@ window.MENU_CONFIG = {
     { nome: "COMPRAS", modulos: ["Pedidos", "Fornecedores"] },
     { nome: "PATRIMÔNIOS", modulos: ["Painel de Patrimônios", "Relatórios de Patrimônios"] },
     { nome: "HOSPEDAGEM", modulos: ["Painel", "Solicitações", "Reservas", "Checkouts", "Financeiro", "Notas Fiscais", "Hotéis", "Alojamentos"] },
-    { nome: "RECURSOS HUMANOS", modulos: [] },
+    { nome: "RECURSOS HUMANOS", modulos: ["Contatos e Cadastros"] },
     { nome: "OPERACIONAL", modulos: ["Mapa de Direcionamento"] },
     { nome: "FROTAS", modulos: ["Excesso de Velocidade", "Veículos", "Multas", "Histórico"] },
     { nome: "TI", modulos: ["Integrações"] },
