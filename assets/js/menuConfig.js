@@ -77,14 +77,28 @@ export const MENU_CONFIG = [
   {
     grupo: "FROTAS",
     itens: [
-      item("frotas_excesso_velocidade", "Excesso de Velocidade", "frotas", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE"])
+      item("frotas_excesso_velocidade", "Excesso de Velocidade", "frotas", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE"]),
+      item("frotas_veiculos", "Veículos", "frotas-veiculos", ["FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS"]),
+      item("frotas_multas", "Multas", "frotas-multas", ["MULTAS", "FROTAS_MULTAS"]),
+      item("frotas_historico", "Histórico", "frotas-historico", ["FROTAS_HISTORICO", "HISTORICO_FROTAS"])
+    ]
+  },
+
+  {
+    grupo: "FINANCEIRO",
+    itens: [
+      item("financeiro_fluxo_caixa", "Fluxo de Caixa", "financeiro", ["FINANCEIRO", "FLUXO_CAIXA", "FINANCEIRO_FLUXO_CAIXA"]),
+      item("financeiro_pagamentos", "Pagamentos", "financeiro#pagamentos", ["FINANCEIRO", "PAGAMENTOS", "FINANCEIRO_PAGAMENTOS"]),
+      item("financeiro_adiantamentos", "Adiantamentos", "financeiro#pagamentos", ["ADIANTAMENTOS", "FINANCEIRO_ADIANTAMENTOS"]),
+      item("financeiro_alimentacao", "Alimentação", "financeiro#pagamentos", ["ALIMENTACAO", "ALIMENTAÇÃO", "FINANCEIRO_ALIMENTACAO"])
     ]
   },
 
   {
     grupo: "LOGÍSTICA",
     itens: [
-      item("logistica_adm", "Painel de Logística", "adm-logistica", ["LOGISTICA_ADM"])
+      item("logistica_adm", "Painel de Logística", "adm-logistica", ["LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_finalizacao_os", "Finalização de O.S", "adm-logistica", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS"])
     ]
   },
 
@@ -114,7 +128,6 @@ export const MENU_CONFIG = [
     grupo: "DIRETORIA",
     itens: [
       item("diretoria_dre", "DRE", "dre", ["DRE", "DIRETORIA_DRE"]),
-      item("financeiro", "Financeiro", "financeiro", ["FINANCEIRO"]),
       item("usuarios_acessos", "Usuários e Acessos", "admin-usuarios", ["ADMIN_USUARIOS", "USUARIOS_E_ACESSOS"]),
       item("admin_config", "Configurações", "admin-configuracoes", ["ADMIN_CONFIG"])
     ]

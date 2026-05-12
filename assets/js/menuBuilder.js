@@ -128,7 +128,19 @@ const FINANCEIRO_FAILSAFE_ITEMS = [
     code: 'financeiro_pagamentos',
     label: 'Pagamentos',
     path: 'financeiro#pagamentos',
-    aliases: ['FINANCEIRO', 'PAGAMENTOS', 'FINANCEIRO_PAGAMENTOS', 'ADIANTAMENTOS', 'ALIMENTACAO']
+    aliases: ['FINANCEIRO', 'PAGAMENTOS', 'FINANCEIRO_PAGAMENTOS']
+  },
+  {
+    code: 'financeiro_adiantamentos',
+    label: 'Adiantamentos',
+    path: 'financeiro#pagamentos',
+    aliases: ['ADIANTAMENTOS', 'FINANCEIRO_ADIANTAMENTOS']
+  },
+  {
+    code: 'financeiro_alimentacao',
+    label: 'Alimentação',
+    path: 'financeiro#pagamentos',
+    aliases: ['ALIMENTACAO', 'ALIMENTAÇÃO', 'FINANCEIRO_ALIMENTACAO']
   }
 ];
 
@@ -185,6 +197,12 @@ const FROTAS_FAILSAFE_ITEMS = [
     label: 'Multas',
     path: 'frotas-multas',
     aliases: ['MULTAS', 'FROTAS_MULTAS']
+  },
+  {
+    code: 'frotas_historico',
+    label: 'Histórico',
+    path: 'frotas-historico',
+    aliases: ['FROTAS_HISTORICO', 'HISTORICO_FROTAS']
   }
 ];
 
