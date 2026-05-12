@@ -8,6 +8,7 @@ const STATUS_OPTIONS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
 const LIMITE_UM_CLASSIFICADOR = 555000;
 const LIMITE_COMPARTILHAR = 300000;
 const LIMITE_BLOQUEIO_COMPARTILHAMENTO = 500000;
+const LIMITE_MULTIPLOS_COLABORADORES = 500000;
 const RAIO_COMPARTILHAR_KM = 20;
 
 const state = {
@@ -530,8 +531,9 @@ initProtectedPage('OS', async (content) => {
     const atr = atribuicoesDaOs(row.id);
     const selectedKey = atr[0]?.colaborador_key || (principal ? colabKey(principal) : '');
     const selectedNome = atr[0]?.colaborador_nome || principal?.nome || principal?.nome_colaborador || '';
-    const maxPadrao = rem > 0 && rem <= LIMITE_UM_CLASSIFICADOR ? 1 : Math.max(1, atr.length || 1);
-    const permitirMais = Boolean(row.permitir_mais_classificadores) || atr.length > maxPadrao;
+    const podeTerMultiplos = rem >= LIMITE_MULTIPLOS_COLABORADORES;
+    const maxPadrao = 1;
+    const permitirMais = podeTerMultiplos && (Boolean(row.permitir_mais_classificadores) || atr.length > maxPadrao);
     const status = normalize(row.status_gestor || 'AGUARDAR') || 'AGUARDAR';
     const compartilhavel = rem > 0 && rem <= LIMITE_COMPARTILHAR;
     const ponto = osPoint(row);
@@ -574,7 +576,7 @@ initProtectedPage('OS', async (content) => {
           </select>
           ${selectedNome ? `<div class="os-mini"><strong>Indicação:</strong> ${escapeHtml(selectedNome)}</div>` : '<div class="os-warn-text">Sem sugestão automática. Ponto de embarque ou colaborador sem coordenadas válidas.</div>'}
           ${principal ? `<div class="os-mini">${KM.format(principal.distancia_km)} km do ponto operacional.</div>` : `<div class="os-mini">${escapeHtml(ponto.label)}</div>`}
-          ${rem > 0 && rem <= LIMITE_UM_CLASSIFICADOR ? `<label class="os-mini" style="display:block"><input type="checkbox" data-allow-more ${permitirMais ? 'checked' : ''}/> permitir 2 ou mais colaboradores</label>` : ''}
+          ${podeTerMultiplos ? `<label class="os-mini" style="display:block"><input type="checkbox" data-allow-more ${permitirMais ? 'checked' : ''}/> permitir 2 ou mais colaboradores</label>` : '<div class="os-mini">2º colaborador permitido somente para O.S. com remanescente de 500.000 ou mais.</div>'}
           ${extraSelectHtml}
         </div>
       </td>
@@ -666,9 +668,9 @@ initProtectedPage('OS', async (content) => {
       const current = atribuicoesDaOs(row.id);
       const rem = num(row.remanescente);
       const isExtra = event.target.matches('[data-assign-extra]');
-      const allowMore = Boolean(row.permitir_mais_classificadores) || rem > LIMITE_UM_CLASSIFICADOR;
+      const allowMore = rem >= LIMITE_MULTIPLOS_COLABORADORES && Boolean(row.permitir_mais_classificadores);
       if (isExtra && !allowMore) {
-        alert('Marque a opção para permitir 2 ou mais colaboradores antes de adicionar outro classificador.');
+        alert('Para adicionar 2º colaborador, a O.S. precisa ter remanescente de 500.000 ou mais e a opção deve estar marcada.');
         event.target.value = '';
         return;
       }
