@@ -76,21 +76,33 @@ initProtectedPage('Distribuir O.S', async (content) => {
 
   async function loadAll() {
     el.feedback.textContent = 'Carregando O.S...';
-    const { data, error } = await supabase.from('operacional_os').select('*').order('data_os', { ascending: false }).order('numero_os', { ascending: false }).limit(2500);
-    if (error) { el.feedback.textContent = error.message; return; }
-    state.rows = safe(data);
+    const { data, error } = await supabase
+      .from('operacional_os')
+      .select('*')
+      .limit(3000);
+
+    if (error) {
+      el.feedback.textContent = error.message || 'Falha ao consultar operacional_os.';
+      return;
+    }
+
+    state.rows = safe(data).sort((a, b) => num(b.numero_os) - num(a.numero_os));
     const ids = state.rows.map(r => r.id).filter(Boolean);
     if (ids.length) {
-      const atr = await supabase
-        .from('operacional_os_colaboradores')
-        .select('id,os_id,colaborador_key,colaborador_nome,distancia_km,origem_sugestao,created_at')
-        .in('os_id', ids)
-        .order('created_at', { ascending: true });
-      if (atr.error) {
-        console.warn('Falha ao carregar colaboradores vinculados à O.S.', atr.error);
+      try {
+        const atr = await supabase
+          .from('operacional_os_colaboradores')
+          .select('*')
+          .in('os_id', ids);
+        if (atr.error) {
+          console.warn('Falha ao carregar colaboradores vinculados à O.S.', atr.error);
+          state.atrib = [];
+        } else {
+          state.atrib = safe(atr.data).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+        }
+      } catch (atrError) {
+        console.warn('Falha ao carregar colaboradores vinculados à O.S.', atrError);
         state.atrib = [];
-      } else {
-        state.atrib = safe(atr.data);
       }
     } else state.atrib = [];
     fillSups(); render(); el.feedback.textContent = `Carregado: ${state.rows.length} O.S.`;
@@ -137,7 +149,7 @@ initProtectedPage('Distribuir O.S', async (content) => {
     const a = atrib(row.id);
     const zero = num(row.remanescente) === 0;
     const conf = row.status_conferencia || 'PENDENTE';
-    return `<tr class="${zero ? 'dist-zero' : ''}" data-id="${escapeHtml(row.id)}"><td><div class="dist-title">O.S. ${escapeHtml(row.numero_os)}</div><div class="dist-meta">${brDate(row.data_os)} • ${escapeHtml(row.servico || '-')}</div><div class="dist-meta">${escapeHtml(row.supervisao || '-')}</div></td><td><div class="dist-title">${escapeHtml(row.cliente || '-')}</div><div class="dist-meta">Embarque: ${escapeHtml(row.embarque || '-')}</div><div class="dist-meta">Destino: ${escapeHtml(row.destino || '-')}</div></td><td><span class="dist-chip ${zero ? 'warn' : 'info'}">${fmt(row.remanescente)}</span><div class="dist-meta">Lote ${fmt(row.lote)} • Embarcado ${fmt(row.embarcado)}</div>${zero ? '<div class="dist-meta" style="color:#fde68a">Remanescente zerado</div>' : ''}</td><td><div class="dist-list">${a.length ? a.map(x => `<span class="dist-chip ok">${escapeHtml(x.colaborador_nome)}${x.distancia_km ? ` • ${Number(x.distancia_km).toFixed(1).replace('.',',')} km` : ''}</span>`).join('') : '<span class="dist-chip warn">Sem colaborador indicado</span>'}</div></td><td><select class="dist-input" data-field="status_conferencia">${STATUS_CONF.map(s => `<option value="${s}" ${normalize(conf) === s ? 'selected' : ''}>${s}</option>`).join('')}</select><textarea class="dist-input" style="margin-top:8px;min-height:72px" data-field="observacao_conferencia" placeholder="Observação da conferência">${escapeHtml(row.observacao_conferencia || '')}</textarea></td></tr>`;
+    return `<tr class="${zero ? 'dist-zero' : ''}" data-id="${escapeHtml(row.id)}"><td><div class="dist-title">${escapeHtml(row.numero_os)}</div><div class="dist-meta">${brDate(row.data_os)} • ${escapeHtml(row.servico || '-')}</div><div class="dist-meta">${escapeHtml(row.supervisao || '-')}</div></td><td><div class="dist-title">${escapeHtml(row.cliente || '-')}</div><div class="dist-meta">Embarque: ${escapeHtml(row.embarque || '-')}</div><div class="dist-meta">Destino: ${escapeHtml(row.destino || '-')}</div></td><td><span class="dist-chip ${zero ? 'warn' : 'info'}">${fmt(row.remanescente)}</span><div class="dist-meta">Lote ${fmt(row.lote)} • Embarcado ${fmt(row.embarcado)}</div>${zero ? '<div class="dist-meta" style="color:#fde68a">Remanescente zerado</div>' : ''}</td><td><div class="dist-list">${a.length ? a.map(x => `<span class="dist-chip ok">${escapeHtml(x.colaborador_nome)}${x.distancia_km ? ` • ${Number(x.distancia_km).toFixed(1).replace('.',',')} km` : ''}</span>`).join('') : '<span class="dist-chip warn">Sem colaborador indicado</span>'}</div></td><td><select class="dist-input" data-field="status_conferencia">${STATUS_CONF.map(s => `<option value="${s}" ${normalize(conf) === s ? 'selected' : ''}>${s}</option>`).join('')}</select><textarea class="dist-input" style="margin-top:8px;min-height:72px" data-field="observacao_conferencia" placeholder="Observação da conferência">${escapeHtml(row.observacao_conferencia || '')}</textarea></td></tr>`;
   }
 
   async function onListChange(event) {

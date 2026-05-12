@@ -222,7 +222,15 @@ initProtectedPage('OS', async (content) => {
   async function loadAll() {
     el.feedback.textContent = 'Carregando O.S. e colaboradores...';
     try {
-      await Promise.all([loadOs(), loadColaboradores()]);
+      await loadOs();
+
+      try {
+        await loadColaboradores();
+      } catch (colabError) {
+        console.warn('Não foi possível carregar colaboradores para sugestão. A lista de O.S. continuará funcionando.', colabError);
+        state.colaboradores = [];
+      }
+
       fillSupervisoes();
       render();
       el.feedback.textContent = `Carregado: ${state.os.length} O.S.`;
@@ -233,33 +241,85 @@ initProtectedPage('OS', async (content) => {
   }
 
   async function loadOs() {
-    let query = supabase.from('operacional_os').select('*').order('data_os', { ascending: false }).order('numero_os', { ascending: false }).limit(2000);
-    const { data, error } = await query;
-    if (error) throw error;
+    // Consulta propositalmente simples para evitar Bad Request por schema cache/order.
+    // A ordenação é feita no front pelos cabeçalhos da tabela.
+    const { data, error } = await supabase
+      .from('operacional_os')
+      .select('*')
+      .limit(3000);
+
+    if (error) {
+      throw new Error(error.message || 'Falha ao consultar operacional_os.');
+    }
+
     state.os = safeArray(data).filter((row) => isAllowedSupervisao(row.supervisao));
     const ids = state.os.map((row) => row.id).filter(Boolean);
-    if (!ids.length) { state.atribuicoes = []; return; }
-    const atr = await supabase.from('operacional_os_colaboradores').select('*').in('os_id', ids);
-    if (atr.error) throw atr.error;
-    state.atribuicoes = safeArray(atr.data);
+    if (!ids.length) {
+      state.atribuicoes = [];
+      return;
+    }
+
+    try {
+      const atr = await supabase
+        .from('operacional_os_colaboradores')
+        .select('*')
+        .in('os_id', ids);
+
+      if (atr.error) {
+        console.warn('Falha ao carregar colaboradores vinculados às O.S.', atr.error);
+        state.atribuicoes = [];
+      } else {
+        state.atribuicoes = safeArray(atr.data);
+      }
+    } catch (atrError) {
+      console.warn('Falha ao carregar colaboradores vinculados às O.S.', atrError);
+      state.atribuicoes = [];
+    }
   }
 
   async function loadColaboradores() {
     let rows = [];
+
     try {
-      const { data, error } = await supabase.from('operacional_colaborador_base').select('*').eq('ativo', true).limit(5000);
+      const { data, error } = await supabase
+        .from('operacional_colaborador_base')
+        .select('*')
+        .eq('ativo', true)
+        .limit(5000);
+
       if (!error) rows = data || [];
-    } catch {}
-    if (!rows.length) {
-      const latest = await supabase.from('colaborador_snapshot').select('data_referencia').order('data_referencia', { ascending: false }).limit(1);
-      const dt = latest.data?.[0]?.data_referencia;
-      let q = supabase.from('colaborador_snapshot').select('*').limit(5000);
-      if (dt) q = q.eq('data_referencia', dt);
-      const { data, error } = await q;
-      if (error) throw error;
-      rows = data || [];
+      else console.warn('Falha em operacional_colaborador_base; tentando colaborador_snapshot.', error);
+    } catch (error) {
+      console.warn('Falha em operacional_colaborador_base; tentando colaborador_snapshot.', error);
     }
-    state.colaboradores = rows.filter(onlyActiveColab).filter((c) => !state.access.restricted || isAllowedSupervisao(c.supervisao || c.regional));
+
+    if (!rows.length) {
+      try {
+        const latest = await supabase
+          .from('colaborador_snapshot')
+          .select('data_referencia')
+          .order('data_referencia', { ascending: false })
+          .limit(1);
+
+        const dt = latest.data?.[0]?.data_referencia;
+        let q = supabase.from('colaborador_snapshot').select('*').limit(5000);
+        if (dt) q = q.eq('data_referencia', dt);
+        const { data, error } = await q;
+        if (error) {
+          console.warn('Falha em colaborador_snapshot.', error);
+          rows = [];
+        } else {
+          rows = data || [];
+        }
+      } catch (error) {
+        console.warn('Falha em colaborador_snapshot.', error);
+        rows = [];
+      }
+    }
+
+    state.colaboradores = rows
+      .filter(onlyActiveColab)
+      .filter((c) => !state.access.restricted || isAllowedSupervisao(c.supervisao || c.regional));
   }
 
   function fillSupervisoes() {
