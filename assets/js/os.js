@@ -198,8 +198,15 @@ initProtectedPage('OS', async (content) => {
     state.os = safeArray(data).filter((row) => isAllowedSupervisao(row.supervisao));
     const ids = state.os.map((row) => row.id).filter(Boolean);
     if (!ids.length) { state.atribuicoes = []; return; }
-    const atr = await supabase.from('operacional_os_colaboradores').select('*').in('os_id', ids);
-    if (atr.error) throw atr.error;
+    const atr = await supabase
+      .from('operacional_os_colaboradores')
+      .select('id,os_id,colaborador_key,colaborador_nome,distancia_km,origem_sugestao,created_at')
+      .in('os_id', ids);
+    if (atr.error) {
+      console.warn('Falha ao carregar colaboradores vinculados à O.S.', atr.error);
+      state.atribuicoes = [];
+      return;
+    }
     state.atribuicoes = safeArray(atr.data);
   }
 

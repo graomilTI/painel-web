@@ -81,8 +81,17 @@ initProtectedPage('Distribuir O.S', async (content) => {
     state.rows = safe(data);
     const ids = state.rows.map(r => r.id).filter(Boolean);
     if (ids.length) {
-      const atr = await supabase.from('operacional_os_colaboradores').select('*').in('os_id', ids).order('created_at', { ascending: true });
-      state.atrib = safe(atr.data);
+      const atr = await supabase
+        .from('operacional_os_colaboradores')
+        .select('id,os_id,colaborador_key,colaborador_nome,distancia_km,origem_sugestao,created_at')
+        .in('os_id', ids)
+        .order('created_at', { ascending: true });
+      if (atr.error) {
+        console.warn('Falha ao carregar colaboradores vinculados à O.S.', atr.error);
+        state.atrib = [];
+      } else {
+        state.atrib = safe(atr.data);
+      }
     } else state.atrib = [];
     fillSups(); render(); el.feedback.textContent = `Carregado: ${state.rows.length} O.S.`;
   }
