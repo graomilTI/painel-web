@@ -1,5 +1,6 @@
 import { toPanelUrl } from './paths.js';
 import { PANEL_MENU } from './menuConfig.js';
+import { supabase } from './supabaseClient.js';
 
 const MENU_STORAGE_KEY = 'painel_sidebar_open_sections';
 const PREFETCHED_URLS = new Set();
@@ -278,6 +279,61 @@ export function flattenAllowedMenu(userContext) {
   );
 }
 
+
+function ensureProgramacaoBlockStyle() {
+  if (document.getElementById('programacao-os-block-style')) return;
+  const style = document.createElement('style');
+  style.id = 'programacao-os-block-style';
+  style.textContent = `
+    .menu-list a.os-pending-blocked{
+      color:#fecaca !important;
+      border-color:rgba(239,68,68,.55) !important;
+      background:rgba(127,29,29,.28) !important;
+      box-shadow:inset 3px 0 0 #ef4444;
+    }
+    .menu-list a.os-pending-blocked::after{
+      content:'OS pendente';
+      display:inline-flex;
+      margin-left:8px;
+      padding:2px 6px;
+      border-radius:999px;
+      font-size:10px;
+      font-weight:900;
+      color:#7f1d1d;
+      background:#fecaca;
+      vertical-align:middle;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+async function markProgramacaoIfOsPending(container) {
+  try {
+    const programacaoLink = [...container.querySelectorAll('a')].find((link) => normalizePath(link.getAttribute('href') || '').includes('/programacao'));
+    if (!programacaoLink) return;
+    const { data, error } = await supabase
+      .from('operacional_os')
+      .select('id')
+      .is('configurada_em', null)
+      .limit(1);
+    if (error || !Array.isArray(data) || !data.length) return;
+    ensureProgramacaoBlockStyle();
+    programacaoLink.classList.add('os-pending-blocked');
+    programacaoLink.title = 'Existem O.S. pendentes. Ajuste o submenu OS antes de acessar Programação.';
+    if (!programacaoLink.dataset.osPendingBound) {
+      programacaoLink.addEventListener('click', (event) => {
+        if (!programacaoLink.classList.contains('os-pending-blocked')) return;
+        event.preventDefault();
+        alert('Antes de acessar Programação, ajuste as O.S. pendentes no submenu OS.');
+        window.location.href = buildPanelHref('os');
+      });
+      programacaoLink.dataset.osPendingBound = '1';
+    }
+  } catch (error) {
+    console.warn('Não foi possível validar pendências de O.S. para o menu.', error);
+  }
+}
+
 export function renderMenu(container, menuSections, currentPath = '') {
   if (!container) return;
 
@@ -378,4 +434,6 @@ export function renderMenu(container, menuSections, currentPath = '') {
     sectionEl.appendChild(listWrap);
     container.appendChild(sectionEl);
   });
+
+  markProgramacaoIfOsPending(container);
 }

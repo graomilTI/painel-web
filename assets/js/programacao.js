@@ -416,8 +416,6 @@ initProtectedPage('Programação', (content) => {
         query = query.eq('supervisao', selectedSup);
       } else if (state.access?.restricted && state.access.allowedSupervisoes?.length) {
         query = query.in('supervisao', state.access.allowedSupervisoes);
-      } else {
-        return;
       }
 
       const { data, error } = await query;
@@ -442,13 +440,13 @@ initProtectedPage('Programação', (content) => {
             <h3>Configurar O.S. antes da programação</h3>
             <p>Existem O.S. novas ou alteradas para a regional liberada. Configure atendimento, colaborador sugerido e distribuição antes de seguir com a programação.</p>
           </div>
-          <button class="prog-os-close" type="button" data-os-close>Fechar</button>
+          
         </div>
         <div class="prog-os-list">
           ${rows.map((row) => {
             const zero = Number(row.remanescente || 0) === 0;
             return `<div class="prog-os-card ${zero ? 'zero' : ''}">
-              <div class="prog-os-title">O.S. ${escapeHtml(row.numero_os)} • ${escapeHtml(row.supervisao || '-')}</div>
+              <div class="prog-os-title">${escapeHtml(row.numero_os)} • ${escapeHtml(row.supervisao || '-')}</div>
               <div class="prog-os-meta">${escapeHtml(row.cliente || '-')}</div>
               <div class="prog-os-meta">Embarque: ${escapeHtml(row.embarque || '-')}</div>
               <div class="prog-os-meta">Destino: ${escapeHtml(row.destino || '-')}</div>
@@ -457,12 +455,10 @@ initProtectedPage('Programação', (content) => {
           }).join('')}
         </div>
         <div class="prog-os-modal-actions">
-          <button class="prog-os-close" type="button" data-os-close>Continuar depois</button>
-          <button class="prog-os-go" type="button" data-os-open>Abrir submenu OS</button>
+          <button class="prog-os-go" type="button" data-os-open>Ajustar O.S. agora</button>
         </div>
       </div>`;
     wrap.addEventListener('click', (event) => {
-      if (event.target.matches('[data-os-close]') || event.target === wrap) wrap.remove();
       if (event.target.matches('[data-os-open]')) window.location.href = './os.html';
     });
     document.body.appendChild(wrap);
