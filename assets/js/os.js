@@ -101,7 +101,12 @@ function osById(id) {
 }
 
 function assignedKeysForOs(osId) {
-  return new Set(atribuicoesDaOs(osId).map((a) => String(a.colaborador_key || '').trim()).filter(Boolean));
+  return new Set(
+    state.atribuicoes
+      .filter((a) => String(a.os_id) === String(osId))
+      .map((a) => String(a.colaborador_key || '').trim())
+      .filter(Boolean)
+  );
 }
 
 function colaboradorBloqueadoEmOsGrande(row, colaboradorKey) {
