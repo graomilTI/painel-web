@@ -1973,6 +1973,89 @@
     };
   }
 
+
+  async function readOperacionalOsRowsFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const preferred = workbook.SheetNames.find((name) => {
+      const key = normalizeHeader(name);
+      return key.includes('os') || key.includes('lista');
+    }) || workbook.SheetNames[0];
+    const sheet = workbook.Sheets[preferred];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+    const mapped = [];
+    const datas = [];
+
+    rows.forEach((row) => {
+      const numero = String(pickValue(row, ['O.S.', 'O.S', 'OS', 'O S', 'Ordem de Serviço', 'Ordem de Servico']) || '').trim();
+      if (!numero) return;
+      const embarque = String(pickValue(row, ['Embarque', 'Ponto 1', 'Ponto1', 'Local Embarque', 'Local de Embarque']) || '').trim();
+      const dataOs = toIsoDate(pickValue(row, ['Data', 'Data OS', 'Data O.S.', 'Data O.S'])) || null;
+      if (dataOs) datas.push(dataOs);
+      mapped.push({
+        numero_os: numero,
+        situacao: normalizeText(pickValue(row, ['Situação', 'Situacao'])),
+        financeiro: normalizeText(pickValue(row, ['Financeiro'])),
+        data_os: dataOs,
+        servico: normalizeText(pickValue(row, ['Serviço', 'Servico'])),
+        cliente: normalizeText(pickValue(row, ['Cliente'])),
+        embarque: embarque || null,
+        destino: normalizeText(pickValue(row, ['Destino'])),
+        supervisao: normalizeText(pickValue(row, ['Supervisão', 'Supervisao', 'Regional'])),
+        contrato: normalizeText(pickValue(row, ['Contrato'])),
+        produto: normalizeText(pickValue(row, ['Produto'])),
+        lote: normalizeNumberBr(pickValue(row, ['Lote'])) || 0,
+        embarcado: normalizeNumberBr(pickValue(row, ['Embarcado'])) || 0,
+        remanescente: normalizeNumberBr(pickValue(row, ['Remanescente'])) || 0,
+        raw: row,
+        updated_at: new Date().toISOString(),
+      });
+    });
+
+    const uniqueDates = [...new Set(datas)].sort();
+    return {
+      rows: mapped,
+      period: uniqueDates.length ? { inicio: uniqueDates[0], fim: uniqueDates[uniqueDates.length - 1], totalDatas: uniqueDates.length } : null,
+    };
+  }
+
+  async function importarOperacionalOsDaPlanilha(file, opts) {
+    const result = await readOperacionalOsRowsFromFile(file);
+    const rows = result.rows || [];
+    if (!rows.length) {
+      throw new Error('A planilha de O.S. não possui linhas válidas. Cabeçalhos esperados: O.S., Data, Serviço, Cliente, Embarque, Destino, Supervisão, Contrato, Produto, Lote, Embarcado e Remanescente.');
+    }
+
+    const batchSize = 500;
+    let total = 0;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const { error } = await opts.supabase
+        .from('operacional_os')
+        .upsert(batch, { onConflict: 'numero_os' });
+      if (error) throw new Error(error.message || 'Falha ao gravar lista de O.S. no Supabase. Confira se rodou o SQL operacional_os.');
+      total += batch.length;
+    }
+
+    const supervisoes = new Set(rows.map((r) => normalizeHeader(r.supervisao)).filter(Boolean)).size;
+    const remanescenteZero = rows.filter((r) => Number(r.remanescente || 0) === 0).length;
+    const ate555 = rows.filter((r) => Number(r.remanescente || 0) > 0 && Number(r.remanescente || 0) <= 555000).length;
+    const ate300 = rows.filter((r) => Number(r.remanescente || 0) > 0 && Number(r.remanescente || 0) <= 300000).length;
+
+    return {
+      total_linhas: rows.length,
+      importados: total,
+      supervisoes,
+      remanescente_zero: remanescenteZero,
+      ate_555: ate555,
+      ate_300: ate300,
+      periodo_inicio: result.period?.inicio || null,
+      periodo_fim: result.period?.fim || null,
+      total_datas: result.period?.totalDatas || null,
+    };
+  }
+
   async function importarHoteisDaPlanilha(file, opts) {
     const linhas = await readSpreadsheetAsObjects(file);
     if (!linhas.length) {
@@ -2051,6 +2134,10 @@
     if ((n.includes('auditoria') || n.includes('auditorias')) && (n.includes('relatorio') || n.includes('relatório') || n.includes('lista') || n.includes('auditoria'))) {
       return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
     }
+    if (n.includes('lista de oss') || n.includes('lista-de-oss') || n.includes('lista_de_oss') || n.includes('lista de os') || n.includes('lista-de-os') || n.includes('lista_de_os') || n.includes('ordem de servico') || n.includes('ordem de serviço') || n.includes('relatorio os') || n.includes('relatório os') || n.includes('operacional os') || n.includes('o.s')) {
+      return { tipo: 'operacional_os', titulo: 'Lista de O.S. Operacional' };
+    }
+
 
     if ((n.includes('endereco') || n.includes('endereço') || n.includes('gps')) && (n.includes('colaborador') || n.includes('colaboradores'))) {
       return { tipo: 'colaboradores_operacional', titulo: 'Endereços dos Colaboradores Operacional' };

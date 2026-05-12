@@ -1734,6 +1734,89 @@
   }
 
 
+
+  async function readOperacionalOsRowsFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const preferred = workbook.SheetNames.find((name) => {
+      const key = normalizeHeader(name);
+      return key.includes('os') || key.includes('lista');
+    }) || workbook.SheetNames[0];
+    const sheet = workbook.Sheets[preferred];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+    const mapped = [];
+    const datas = [];
+
+    rows.forEach((row) => {
+      const numero = String(pickValue(row, ['O.S.', 'O.S', 'OS', 'O S', 'Ordem de Serviço', 'Ordem de Servico']) || '').trim();
+      if (!numero) return;
+      const embarque = String(pickValue(row, ['Embarque', 'Ponto 1', 'Ponto1', 'Local Embarque', 'Local de Embarque']) || '').trim();
+      const dataOs = toIsoDate(pickValue(row, ['Data', 'Data OS', 'Data O.S.', 'Data O.S'])) || null;
+      if (dataOs) datas.push(dataOs);
+      mapped.push({
+        numero_os: numero,
+        situacao: normalizeText(pickValue(row, ['Situação', 'Situacao'])),
+        financeiro: normalizeText(pickValue(row, ['Financeiro'])),
+        data_os: dataOs,
+        servico: normalizeText(pickValue(row, ['Serviço', 'Servico'])),
+        cliente: normalizeText(pickValue(row, ['Cliente'])),
+        embarque: embarque || null,
+        destino: normalizeText(pickValue(row, ['Destino'])),
+        supervisao: normalizeText(pickValue(row, ['Supervisão', 'Supervisao', 'Regional'])),
+        contrato: normalizeText(pickValue(row, ['Contrato'])),
+        produto: normalizeText(pickValue(row, ['Produto'])),
+        lote: normalizeNumberBr(pickValue(row, ['Lote'])) || 0,
+        embarcado: normalizeNumberBr(pickValue(row, ['Embarcado'])) || 0,
+        remanescente: normalizeNumberBr(pickValue(row, ['Remanescente'])) || 0,
+        raw: row,
+        updated_at: new Date().toISOString(),
+      });
+    });
+
+    const uniqueDates = [...new Set(datas)].sort();
+    return {
+      rows: mapped,
+      period: uniqueDates.length ? { inicio: uniqueDates[0], fim: uniqueDates[uniqueDates.length - 1], totalDatas: uniqueDates.length } : null,
+    };
+  }
+
+  async function importarOperacionalOsDaPlanilha(file, opts) {
+    const result = await readOperacionalOsRowsFromFile(file);
+    const rows = result.rows || [];
+    if (!rows.length) {
+      throw new Error('A planilha de O.S. não possui linhas válidas. Cabeçalhos esperados: O.S., Data, Serviço, Cliente, Embarque, Destino, Supervisão, Contrato, Produto, Lote, Embarcado e Remanescente.');
+    }
+
+    const batchSize = 500;
+    let total = 0;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const { error } = await opts.supabase
+        .from('operacional_os')
+        .upsert(batch, { onConflict: 'numero_os' });
+      if (error) throw new Error(error.message || 'Falha ao gravar lista de O.S. no Supabase. Confira se rodou o SQL operacional_os.');
+      total += batch.length;
+    }
+
+    const supervisoes = new Set(rows.map((r) => normalizeHeader(r.supervisao)).filter(Boolean)).size;
+    const remanescenteZero = rows.filter((r) => Number(r.remanescente || 0) === 0).length;
+    const ate555 = rows.filter((r) => Number(r.remanescente || 0) > 0 && Number(r.remanescente || 0) <= 555000).length;
+    const ate300 = rows.filter((r) => Number(r.remanescente || 0) > 0 && Number(r.remanescente || 0) <= 300000).length;
+
+    return {
+      total_linhas: rows.length,
+      importados: total,
+      supervisoes,
+      remanescente_zero: remanescenteZero,
+      ate_555: ate555,
+      ate_300: ate300,
+      periodo_inicio: result.period?.inicio || null,
+      periodo_fim: result.period?.fim || null,
+      total_datas: result.period?.totalDatas || null,
+    };
+  }
+
   async function importarHoteisDaPlanilha(file, opts) {
     const linhas = await readSpreadsheetAsObjects(file);
     if (!linhas.length) {
@@ -1805,6 +1888,10 @@
     if ((n.includes('auditoria') || n.includes('auditorias')) && (n.includes('relatorio') || n.includes('relatório') || n.includes('lista') || n.includes('auditoria'))) {
       return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
     }
+    if (n.includes('lista de oss') || n.includes('lista-de-oss') || n.includes('lista_de_oss') || n.includes('lista de os') || n.includes('lista-de-os') || n.includes('lista_de_os') || n.includes('ordem de servico') || n.includes('ordem de serviço') || n.includes('relatorio os') || n.includes('relatório os') || n.includes('operacional os') || n.includes('o.s')) {
+      return { tipo: 'operacional_os', titulo: 'Lista de O.S. Operacional' };
+    }
+
 
     if ((n.includes('historico') || n.includes('histórico')) && (n.includes('diario') || n.includes('diário')) && (n.includes('funcionario') || n.includes('funcionário') || n.includes('funcionarios') || n.includes('funcionários') || n.includes('colaborador') || n.includes('colaboradores') || n.includes('ativo'))) {
       return { tipo: 'historico_colaboradores_diario', titulo: 'Histórico Diário de Colaboradores' };
@@ -2123,6 +2210,7 @@
     let frotasExcessoResumo = null;
     let resultadoDiarioResumo = null;
     let historicoDiarioResumo = null;
+    let operacionalOsResumo = null;
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -2170,13 +2258,19 @@
       historicoDiarioResumo = await importarHistoricoDiarioDaPlanilha(file, opts);
       if (historicoDiarioResumo?.periodo_inicio) entry.period = { inicio: historicoDiarioResumo.periodo_inicio, fim: historicoDiarioResumo.periodo_fim, totalDatas: historicoDiarioResumo.total_datas || null };
     }
+    if (detected.tipo === 'operacional_os') {
+      status.textContent = 'Importando lista de O.S. para o módulo Gestor e Conferência...';
+      setProgress(bar, 82);
+      operacionalOsResumo = await importarOperacionalOsDaPlanilha(file, opts);
+      if (operacionalOsResumo?.periodo_inicio) entry.period = { inicio: operacionalOsResumo.periodo_inicio, fim: operacionalOsResumo.periodo_fim, totalDatas: operacionalOsResumo.total_datas || null };
+    }
 
     const importMode = opts.importMode || 'auto';
     const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'auditorias_operacional', 'patrimonios'].includes(detected.tipo)
       ? null
       : (resultadoDiarioResumo?.periodo_inicio
         ? { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null }
-        : (historicoDiarioResumo?.periodo_inicio ? { inicio: historicoDiarioResumo.periodo_inicio, fim: historicoDiarioResumo.periodo_fim, totalDatas: historicoDiarioResumo.total_datas || null } : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo)))));
+        : (historicoDiarioResumo?.periodo_inicio ? { inicio: historicoDiarioResumo.periodo_inicio, fim: historicoDiarioResumo.periodo_fim, totalDatas: historicoDiarioResumo.total_datas || null } : (operacionalOsResumo?.periodo_inicio ? { inicio: operacionalOsResumo.periodo_inicio, fim: operacionalOsResumo.periodo_fim, totalDatas: operacionalOsResumo.total_datas || null } : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo))))));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -2195,6 +2289,7 @@
       historico_colaboradores_diario: 'Registrando upload do histórico diário de colaboradores...',
       auditorias_operacional: 'Registrando upload das auditorias operacionais...',
       uber_corridas: 'Registrando upload do relatório Uber...',
+      operacional_os: 'Registrando upload da lista de O.S. operacional...',
     };
     status.textContent = statusRegistroMap[detected.tipo] || (effectiveMode === 'replace'
       ? 'Registrando substituição inteligente...'
@@ -2241,6 +2336,7 @@
           frotas_excesso_velocidade_importacao: frotasExcessoResumo || null,
           resultado_diario_importacao: resultadoDiarioResumo || null,
           historico_colaboradores_diario_importacao: historicoDiarioResumo || null,
+          operacional_os_importacao: operacionalOsResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -2279,12 +2375,14 @@
       status.textContent = `Resultado Diário: ${resultadoDiarioResumo.importados || 0} linhas consolidadas · ${Number(resultadoDiarioResumo.toneladas || 0).toLocaleString('pt-BR')} tons · DRE rápido`;
     } else if (detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo) {
       status.textContent = `Histórico Diário: ${historicoDiarioResumo.importados || 0} linhas · ${historicoDiarioResumo.ativos || 0} ativos · ${historicoDiarioResumo.total_datas || 0} dia(s) para produzido por colaborador`;
+    } else if (detected.tipo === 'operacional_os' && operacionalOsResumo) {
+      status.textContent = `O.S.: ${operacionalOsResumo.importados || 0} registros · ${operacionalOsResumo.supervisoes || 0} supervisões · ${operacionalOsResumo.remanescente_zero || 0} com remanescente zerado`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo) && !(detected.tipo === 'operacional_os' && operacionalOsResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -2486,6 +2584,21 @@
             }).catch((err) => {
               entry.period = null;
               entry.message = `Pendente · não foi possível pré-validar Histórico Diário (${err?.message || 'erro de leitura'})`;
+              renderFiles();
+            });
+          } else if (detected.tipo === 'operacional_os') {
+            entry.message = 'Pendente · importará lista de O.S. para Gestor e Conferência';
+            readOperacionalOsRowsFromFile(file).then((res) => {
+              const period = res?.period || null;
+              entry.period = period;
+              const total = Number(res?.rows?.length || 0);
+              entry.message = period
+                ? `Período: ${formatPeriod(period)} · ${total.toLocaleString('pt-BR')} O.S. · importará Operacional`
+                : `Pendente · ${total.toLocaleString('pt-BR')} O.S. · sem período detectado`;
+              renderFiles();
+            }).catch((err) => {
+              entry.period = null;
+              entry.message = `Pendente · não foi possível pré-validar O.S. (${err?.message || 'erro de leitura'})`;
               renderFiles();
             });
           } else if (detected.tipo === 'resultado-diario') {
