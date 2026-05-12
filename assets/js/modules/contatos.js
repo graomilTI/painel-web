@@ -5,6 +5,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     colaboradores: [],
     patrimoniosAtraso: new Set(),
     loading: false,
+    google: { connected: false, google_email: '', last_sync_at: '', mapped_contacts: 0, group: 'Painel - Colaboradores Grão 1000' },
     filtros: {
       situacao: 'Ativo',
       nome: '',
@@ -336,6 +337,131 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     return { headers, rows: out, filename: `Cadastro_Uber_${todayIso()}.csv` };
   }
 
+  async function googleContactsAction(action, payload = {}) {
+    const opts = window.CONTATOS.__opts || {};
+    const client = opts.supabase;
+    if (!client?.functions?.invoke) throw new Error('Supabase Functions não está disponível no painel.');
+    const { data, error } = await client.functions.invoke('google-contacts-sync', {
+      body: { action, ...payload }
+    });
+    if (error) throw error;
+    if (!data || data.ok === false) throw new Error(data?.error || 'Falha na comunicação com Google Contacts.');
+    return data;
+  }
+
+  async function loadGoogleStatus() {
+    try {
+      const data = await googleContactsAction('status');
+      state.google = {
+        connected: !!data.connected,
+        google_email: data.google_email || '',
+        last_sync_at: data.last_sync_at || '',
+        mapped_contacts: Number(data.mapped_contacts || 0),
+        group: data.group || 'Painel - Colaboradores Grão 1000'
+      };
+      return state.google;
+    } catch (err) {
+      state.google = { connected: false, google_email: '', last_sync_at: '', mapped_contacts: 0, group: 'Painel - Colaboradores Grão 1000', error: err?.message || String(err) };
+      return state.google;
+    }
+  }
+
+  async function conectarGoogleContacts(container) {
+    const btn = container.querySelector('#ct_google_connect');
+    if (btn) { btn.disabled = true; btn.textContent = 'Abrindo Google...'; }
+    try {
+      const data = await googleContactsAction('auth_url', { redirect_to: window.location.href });
+      if (!data.url) throw new Error('URL de conexão Google não retornada.');
+      window.open(data.url, 'google_contacts_oauth', 'width=720,height=780,menubar=no,toolbar=no,status=no');
+      setStatus(container, 'Conexão aberta em uma janela do Google. Após permitir o acesso, volte aqui e clique em Atualizar status.', 'ok');
+    } catch (err) {
+      setStatus(container, err?.message || 'Erro ao conectar Google.', 'err');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Conectar Google'; }
+    }
+  }
+
+  async function atualizarStatusGoogle(container) {
+    const btn = container.querySelector('#ct_google_status');
+    if (btn) { btn.disabled = true; btn.textContent = 'Atualizando...'; }
+    await loadGoogleStatus();
+    renderTab(container, 'google');
+    setStatus(container, state.google.connected ? `Conta conectada: ${state.google.google_email || 'Google'}.` : 'Conta Google ainda não conectada.', state.google.connected ? 'ok' : '');
+  }
+
+  async function sincronizarGoogleContacts(container) {
+    if (!state.google.connected) {
+      setStatus(container, 'Conecte uma conta Google antes de sincronizar.', 'err');
+      return;
+    }
+    const btn = container.querySelector('#ct_google_sync');
+    const progress = container.querySelector('#ct_google_progress');
+    let cursor = 0;
+    let total = 0;
+    const acumulado = { criados: 0, atualizados: 0, recriados: 0, ignorados: 0, erros: 0, removidos: 0 };
+    if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando...'; }
+    try {
+      do {
+        const resp = await googleContactsAction('sync', { cursor, batch_size: 80, cleanup_old: true });
+        cursor = Number(resp.cursor || cursor);
+        total = Number(resp.total || total || 0);
+        const r = resp.resumo || {};
+        acumulado.criados += Number(r.criados || 0);
+        acumulado.atualizados += Number(r.atualizados || 0);
+        acumulado.recriados += Number(r.recriados || 0);
+        acumulado.ignorados += Number(r.ignorados || 0);
+        acumulado.erros += Number(r.erros || 0);
+        acumulado.removidos += Number(resp.removidos || 0);
+        if (progress) {
+          const pct = total ? Math.min(100, Math.round((cursor / total) * 100)) : 0;
+          progress.innerHTML = `<div class="ct-alert ct-ok">Sincronizando Google Contacts: ${Math.min(cursor, total)} de ${total} (${pct}%). Criados: ${acumulado.criados} · Atualizados: ${acumulado.atualizados} · Ignorados: ${acumulado.ignorados} · Erros: ${acumulado.erros}</div>`;
+        }
+        if (!resp.has_more) break;
+      } while (true);
+      await loadGoogleStatus();
+      renderTab(container, 'google');
+      setStatus(container, `Google Contacts sincronizado. Criados: ${acumulado.criados} · Atualizados: ${acumulado.atualizados} · Ignorados: ${acumulado.ignorados} · Removidos antigos: ${acumulado.removidos} · Erros: ${acumulado.erros}.`, acumulado.erros ? 'err' : 'ok');
+    } catch (err) {
+      setStatus(container, err?.message || 'Erro ao sincronizar Google Contacts.', 'err');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar agora'; }
+    }
+  }
+
+  async function limparAntigosGoogle(container) {
+    if (!state.google.connected) {
+      setStatus(container, 'Conecte uma conta Google antes de limpar contatos antigos.', 'err');
+      return;
+    }
+    const ok = confirm('Limpar contatos antigos criados pelo painel que não estão mais ativos na base atual? Contatos pessoais do usuário não serão apagados.');
+    if (!ok) return;
+    const btn = container.querySelector('#ct_google_cleanup');
+    if (btn) { btn.disabled = true; btn.textContent = 'Limpando...'; }
+    try {
+      const resp = await googleContactsAction('cleanup_old');
+      await loadGoogleStatus();
+      renderTab(container, 'google');
+      setStatus(container, `Limpeza concluída. ${resp.removidos || 0} contato(s) antigo(s) removido(s) do Google.`, 'ok');
+    } catch (err) {
+      setStatus(container, err?.message || 'Erro ao limpar contatos antigos.', 'err');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Limpar antigos'; }
+    }
+  }
+
+  async function desconectarGoogle(container) {
+    const ok = confirm('Desconectar a conta Google deste painel? Os contatos já criados no Google não serão apagados.');
+    if (!ok) return;
+    try {
+      await googleContactsAction('disconnect');
+      await loadGoogleStatus();
+      renderTab(container, 'google');
+      setStatus(container, 'Conta Google desconectada.', 'ok');
+    } catch (err) {
+      setStatus(container, err?.message || 'Erro ao desconectar Google.', 'err');
+    }
+  }
+
   function styles() {
     return `<style>
       .ct-wrap{padding:16px;color:#e5e7eb;font-family:Arial,sans-serif}
@@ -345,7 +471,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       .ct-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.ct-card{background:#0f172a;border:1px solid #1e293b;border-radius:18px;padding:16px;box-shadow:0 12px 28px rgba(0,0,0,.22)}
       .ct-card h3{margin:0 0 8px;font-size:16px}.ct-card p{margin:0;color:#94a3b8;font-size:12px;line-height:1.45}.ct-card strong{color:#e5e7eb}
       .ct-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px}.ct-field label{display:block;font-size:12px;color:#94a3b8;margin-bottom:5px}.ct-field input,.ct-field select{width:100%;background:#0f172a;color:#e5e7eb;color-scheme:dark;border:1px solid #334155;border-radius:12px;padding:10px 12px;outline:none}.ct-field option{background:#0f172a;color:#e5e7eb}.ct-field input:focus,.ct-field select:focus{border-color:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
-      .ct-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.ct-btn{background:#166534;color:#fff;border:0;border-radius:12px;padding:10px 13px;font-weight:800;cursor:pointer}.ct-btn.sec{background:#1e293b}.ct-btn.warn{background:#92400e}.ct-btn:disabled{opacity:.6;cursor:not-allowed}
+      .ct-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.ct-btn{background:#166534;color:#fff;border:0;border-radius:12px;padding:10px 13px;font-weight:800;cursor:pointer}.ct-btn.sec{background:#1e293b}.ct-btn.warn{background:#92400e}.ct-btn.danger{background:#7f1d1d}.ct-btn:disabled{opacity:.6;cursor:not-allowed}
       .ct-alert{border:1px solid #1e293b;border-radius:14px;padding:12px;background:#020617;color:#cbd5e1;font-size:12px;line-height:1.5}.ct-ok{border-color:#166534;background:#052e16}.ct-err{border-color:#7f1d1d;background:#3f0d0d}.ct-preview{overflow:auto;max-height:360px;border:1px solid #1e293b;border-radius:14px;margin-top:12px}.ct-table{width:100%;border-collapse:collapse;font-size:12px}.ct-table th,.ct-table td{border-bottom:1px solid #1e293b;padding:9px;text-align:left;white-space:nowrap}.ct-table th{background:#111827;color:#cbd5e1;position:sticky;top:0}.ct-muted{color:#94a3b8;font-size:12px}.ct-kpi{font-size:24px;font-weight:900;color:#fff;margin-top:8px}
     </style>`;
   }
@@ -438,6 +564,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
         <div class="ct-tabs">
           <button class="ct-tab active" data-tab="exports">Exportações</button>
+          <button class="ct-tab" data-tab="google">Google Sync</button>
           <button class="ct-tab" data-tab="bot">BotConversa</button>
           <button class="ct-tab" data-tab="preview">Prévia</button>
         </div>
@@ -488,6 +615,51 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       return;
     }
 
+    if (tab === 'google') {
+      const g = state.google || {};
+      const conectado = !!g.connected;
+      content.innerHTML = `
+        <div class="ct-grid">
+          <div class="ct-card">
+            <h3>Google Contatos direto no e-mail</h3>
+            <p>${conectado ? `Conectado em <strong>${esc(g.google_email || 'Conta Google')}</strong>` : 'Conecte a conta Google do usuário para criar, atualizar e limpar contatos direto pela People API.'}</p>
+            <div class="ct-actions">
+              <button class="ct-btn" id="ct_google_connect">${conectado ? 'Reconectar Google' : 'Conectar Google'}</button>
+              <button class="ct-btn sec" id="ct_google_status">Atualizar status</button>
+              ${conectado ? '<button class="ct-btn danger" id="ct_google_disconnect">Desconectar</button>' : ''}
+            </div>
+          </div>
+          <div class="ct-card">
+            <h3>Sincronização segura</h3>
+            <p>O painel cria/atualiza contatos no grupo <strong>${esc(g.group || 'Painel - Colaboradores Grão 1000')}</strong>. A limpeza remove somente contatos mapeados pelo painel.</p>
+            <div class="ct-kpi">${Number(g.mapped_contacts || 0)}</div>
+            <p>Contatos controlados pelo painel</p>
+          </div>
+          <div class="ct-card">
+            <h3>Executar agora</h3>
+            <p>Sincroniza colaboradores ativos da tabela <strong>colaboradores</strong> e, ao final, limpa contatos antigos que saíram da base ou ficaram Não Ativo.</p>
+            <div class="ct-actions">
+              <button class="ct-btn" id="ct_google_sync" ${conectado ? '' : 'disabled'}>Sincronizar agora</button>
+              <button class="ct-btn warn" id="ct_google_cleanup" ${conectado ? '' : 'disabled'}>Limpar antigos</button>
+            </div>
+          </div>
+          <div class="ct-card">
+            <h3>Última sincronização</h3>
+            <p>${g.last_sync_at ? esc(new Date(g.last_sync_at).toLocaleString('pt-BR')) : 'Ainda não sincronizado.'}</p>
+            <p class="ct-muted" style="margin-top:8px">Permissão usada: gerenciar contatos da conta Google conectada.</p>
+          </div>
+        </div>
+        <div id="ct_google_progress" style="margin-top:12px"></div>
+      `;
+      content.querySelector('#ct_google_connect')?.addEventListener('click', () => conectarGoogleContacts(container));
+      content.querySelector('#ct_google_status')?.addEventListener('click', () => atualizarStatusGoogle(container));
+      content.querySelector('#ct_google_sync')?.addEventListener('click', () => sincronizarGoogleContacts(container));
+      content.querySelector('#ct_google_cleanup')?.addEventListener('click', () => limparAntigosGoogle(container));
+      content.querySelector('#ct_google_disconnect')?.addEventListener('click', () => desconectarGoogle(container));
+      setStatus(container, conectado ? 'Google Contacts conectado. Pronto para sincronizar.' : 'Google Contacts ainda não conectado.', conectado ? 'ok' : '');
+      return;
+    }
+
     if (tab === 'bot') {
       content.innerHTML = `
         <div class="ct-grid">
@@ -535,6 +707,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       container.innerHTML = `${styles()}<div class="ct-wrap"><div class="ct-alert">Carregando colaboradores e patrimônios...</div></div>`;
       state.colaboradores = await loadLatestColabs(opts.supabase);
       state.patrimoniosAtraso = await loadPatrimoniosAtraso(opts.supabase);
+      await loadGoogleStatus();
       renderBase(container);
     } catch (err) {
       container.innerHTML = `${styles()}<div class="ct-wrap"><div class="ct-alert ct-err">${esc(err?.message || err || 'Erro ao carregar contatos.')}</div></div>`;
