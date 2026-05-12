@@ -2459,6 +2459,7 @@
     let patrimoniosResumo = null;
     let frotasExcessoResumo = null;
     let resultadoDiarioResumo = null;
+    let operacionalOsResumo = null;
     let financeiroReceberResumo = null;
     let financeiroPagarResumo = null;
     if (detected.tipo === 'hoteis') {
@@ -2507,6 +2508,12 @@
       resultadoDiarioResumo = await importarResultadoDiarioDaPlanilha(file, opts, entry?.period || null);
       if (resultadoDiarioResumo?.periodo_inicio) entry.period = { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null };
     }
+    if (detected.tipo === 'operacional_os') {
+      status.textContent = 'Importando lista de O.S. para o módulo Gestor e Conferência...';
+      setProgress(bar, 82);
+      operacionalOsResumo = await importarOperacionalOsDaPlanilha(file, opts);
+      if (operacionalOsResumo?.periodo_inicio) entry.period = { inicio: operacionalOsResumo.periodo_inicio, fim: operacionalOsResumo.periodo_fim, totalDatas: operacionalOsResumo.total_datas || null };
+    }
     if (detected.tipo === 'financeiro_contas_receber') {
       status.textContent = 'Importando Contas a Receber no módulo Financeiro...';
       setProgress(bar, 82);
@@ -2525,11 +2532,13 @@
       ? null
       : (resultadoDiarioResumo?.periodo_inicio
         ? { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null }
-        : (financeiroReceberResumo?.periodo_inicio
-          ? { inicio: financeiroReceberResumo.periodo_inicio, fim: financeiroReceberResumo.periodo_fim, totalDatas: null }
-          : (financeiroPagarResumo?.periodo_inicio
-            ? { inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim, totalDatas: null }
-            : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo))))));
+        : (operacionalOsResumo?.periodo_inicio
+          ? { inicio: operacionalOsResumo.periodo_inicio, fim: operacionalOsResumo.periodo_fim, totalDatas: operacionalOsResumo.total_datas || null }
+          : (financeiroReceberResumo?.periodo_inicio
+            ? { inicio: financeiroReceberResumo.periodo_inicio, fim: financeiroReceberResumo.periodo_fim, totalDatas: null }
+            : (financeiroPagarResumo?.periodo_inicio
+              ? { inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim, totalDatas: null }
+              : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo)))))));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -2541,21 +2550,18 @@
       ? (check.exists ? 'replace' : 'append')
       : importMode;
 
-    status.textContent = detected.tipo === 'hoteis'
-      ? 'Registrando upload da planilha de hotéis...'
-      : (detected.tipo === 'pontos_embarque'
-        ? 'Registrando upload dos pontos de embarque...'
-        : (detected.tipo === 'colaboradores_operacional'
-          ? 'Registrando upload dos endereços dos colaboradores...'
-          : (detected.tipo === 'colaboradores_rh'
-            ? 'Registrando upload da base de funcionários...'
-            : (detected.tipo === 'auditorias_operacional'
-            ? 'Registrando upload das auditorias operacionais...'
-            : (detected.tipo === 'uber_corridas'
-              ? 'Registrando upload do relatório Uber...'
-              : (effectiveMode === 'replace'
-            ? 'Registrando substituição inteligente...'
-            : 'Registrando complemento inteligente...'))))));
+    const statusRegistroMap = {
+      hoteis: 'Registrando upload da planilha de hotéis...',
+      pontos_embarque: 'Registrando upload dos pontos de embarque...',
+      colaboradores_operacional: 'Registrando upload dos endereços dos colaboradores...',
+      colaboradores_rh: 'Registrando upload da base de funcionários...',
+      auditorias_operacional: 'Registrando upload das auditorias operacionais...',
+      uber_corridas: 'Registrando upload do relatório Uber...',
+      operacional_os: 'Registrando upload da lista de O.S. operacional...',
+    };
+    status.textContent = statusRegistroMap[detected.tipo] || (effectiveMode === 'replace'
+      ? 'Registrando substituição inteligente...'
+      : 'Registrando complemento inteligente...');
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -2598,6 +2604,7 @@
           patrimonios_importacao: patrimoniosResumo || null,
           frotas_excesso_velocidade_importacao: frotasExcessoResumo || null,
           resultado_diario_importacao: resultadoDiarioResumo || null,
+          operacional_os_importacao: operacionalOsResumo || null,
           financeiro_contas_receber_importacao: financeiroReceberResumo || null,
           financeiro_contas_pagar_importacao: financeiroPagarResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
@@ -2638,6 +2645,8 @@
       status.textContent = `Frotas: ${frotasExcessoResumo.importados || 0} excessos · ${frotasExcessoResumo.identificados || 0} identificados · ${frotasExcessoResumo.pendentes || 0} pendentes`;
     } else if (detected.tipo === 'resultado-diario' && resultadoDiarioResumo) {
       status.textContent = `Resultado Diário: ${resultadoDiarioResumo.importados || 0} linhas consolidadas · ${Number(resultadoDiarioResumo.toneladas || 0).toLocaleString('pt-BR')} tons · DRE rápido`;
+    } else if (detected.tipo === 'operacional_os' && operacionalOsResumo) {
+      status.textContent = `O.S.: ${operacionalOsResumo.importados || 0} registros · ${operacionalOsResumo.supervisoes || 0} supervisões · ${operacionalOsResumo.remanescente_zero || 0} com remanescente zerado`;
     } else if (detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) {
       status.textContent = `Financeiro Receber: ${financeiroReceberResumo.importados || 0} títulos atualizados · ${formatPeriod({ inicio: financeiroReceberResumo.periodo_inicio, fim: financeiroReceberResumo.periodo_fim })} · ${MONEY_FMT.format(financeiroReceberResumo.valor_total || 0)}`;
     } else if (detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo) {
@@ -2647,7 +2656,7 @@
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'operacional_os' && operacionalOsResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
