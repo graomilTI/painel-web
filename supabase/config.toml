@@ -1,4 +1,4 @@
-project_id = ""
+project_id = "xyzpnuumdqhegxakkyws"
 
 [functions.sync-multas-detran]
 verify_jwt = true
@@ -11,3 +11,6 @@ verify_jwt = true
 
 [functions.notificar-multa]
 verify_jwt = true
+
+[functions.google-contacts-sync]
+verify_jwt = false
