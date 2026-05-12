@@ -353,6 +353,86 @@
     };
   }
 
+
+  function loadScriptOnce(src, globalCheck) {
+    return new Promise((resolve, reject) => {
+      try {
+        if (globalCheck && globalCheck()) return resolve(true);
+        const existing = Array.from(document.scripts || []).find((script) => script.src === src);
+        if (existing) {
+          existing.addEventListener('load', () => resolve(true), { once: true });
+          existing.addEventListener('error', reject, { once: true });
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.onload = () => resolve(true);
+        script.onerror = () => reject(new Error('Falha ao carregar biblioteca OCR no navegador.'));
+        document.head.appendChild(script);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  function extractUsefulOcrText(text) {
+    return String(text || '')
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 5000);
+  }
+
+  function scoreBrowserOcrText(text) {
+    const normalized = normalizeDriverNameForMatch(text);
+    let score = 0;
+    if (/CONSTATAMOS|COMUNICAMOS|IDENTIFICAMOS/.test(normalized)) score += 60;
+    if (/NOTIFICACAO|VELOCIDADE|PLACA|KM H|KMH|KM/.test(normalized)) score += 20;
+    if (/\d{1,2}[\/.-]\d{1,2}(?:[\/.-]\d{2,4})?/.test(text)) score += 20;
+    if (/\b(12[1-9]|1[3-9]\d|2\d{2})\s*(KM\/H|KMH|KM|K\/H)?\b/i.test(text)) score += 20;
+    const maybeName = extractDriverNameFromOcrText(text);
+    if (maybeName) score += 100;
+    return score;
+  }
+
+  async function runBrowserOcrWithTesseract(file, variants = []) {
+    try {
+      await loadScriptOnce('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js', () => Boolean(window.Tesseract?.recognize));
+      if (!window.Tesseract?.recognize) return { text: '', source: '' };
+
+      const candidates = [];
+      const addBase64 = (name, base64) => {
+        if (!base64) return;
+        candidates.push({ name, dataUrl: `data:image/png;base64,${base64}` });
+      };
+      (variants || []).forEach((variant) => addBase64(variant.name || 'variante', variant.base64 || variant.ocrBase64 || ''));
+      candidates.push({ name: 'original-browser', dataUrl: URL.createObjectURL(file), revoke: true });
+
+      let best = { text: '', source: '', score: -1 };
+      for (const candidate of candidates.slice(0, 4)) {
+        try {
+          const result = await window.Tesseract.recognize(candidate.dataUrl, 'por+eng', {
+            logger: () => {}
+          });
+          const text = extractUsefulOcrText(result?.data?.text || '');
+          const score = scoreBrowserOcrText(text);
+          if (score > best.score || (!best.text && text)) best = { text, source: candidate.name, score };
+          if (candidate.revoke) URL.revokeObjectURL(candidate.dataUrl);
+          if (score >= 120) break;
+        } catch (err) {
+          if (candidate.revoke) URL.revokeObjectURL(candidate.dataUrl);
+        }
+      }
+      return best.score >= 0 ? best : { text: '', source: '' };
+    } catch (err) {
+      console.warn('[FROTAS] OCR do navegador indisponível:', err);
+      return { text: '', source: '' };
+    }
+  }
+
   async function fileToOcrBase64Variants(file) {
     try {
       const img = await loadImageFromFile(file);
@@ -1113,7 +1193,7 @@
         const notificationNumber = getFileNotificationNumber(f);
         const notificationLine = notificationNumber ? `<br>Nº notificação: ${escapeHtml(notificationNumber)}` : '';
         const previewRaw = String(f.ocrPreview || f.ocrText || '').trim();
-        const preview = previewRaw ? `<br><small>OCR usado: ${escapeHtml(f.ocrVariantUsed || f.ocrVariant || 'imagem tratada')} · Prévia: ${escapeHtml(previewRaw.slice(0, 220))}${previewRaw.length > 220 ? '...' : ''}</small>` : '';
+        const preview = previewRaw ? `<br><small>OCR usado: ${escapeHtml(f.ocrVariantUsed || f.ocrVariant || f.browserOcrSource || 'imagem tratada')} · Prévia: ${escapeHtml(previewRaw.slice(0, 320))}${previewRaw.length > 320 ? '...' : ''}</small>` : '<br><small>OCR vazio: nem o navegador nem o Drive retornaram texto útil.</small>';
         const extra = driverName && folderIsInvalid
           ? '<br><small>Motorista identificado pelo OCR do print. A pasta exibida foi corrigida para o nome do motorista.</small>'
           : (folderIsInvalid ? '<br><small>OCR ainda não retornou motorista válido para este arquivo.</small>' : '');
@@ -1546,7 +1626,7 @@
     state.gasUrl = gasUrl;
 
     const btn = root.querySelector('[data-upload-prints]');
-    if (btn) { btn.disabled = true; btn.textContent = 'Lendo prints por OCR...'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Lendo prints por OCR no navegador e Drive...'; }
 
     try {
       if (!state.colaboradoresLoaded) {
@@ -1558,12 +1638,16 @@
       for (const file of state.uploadedFiles) {
         const originalBase64 = await fileToBase64(file);
         const ocrVariants = await fileToOcrBase64Variants(file);
+        const browserOcr = await runBrowserOcrWithTesseract(file, ocrVariants);
         files.push({
           name: file.name || file.__displayName || `print-${Date.now()}.png`,
           mimeType: file.type || 'image/png',
           base64: originalBase64,
           ocrBase64: ocrVariants[0]?.base64 || '',
-          ocrVariants
+          ocrVariants,
+          browserOcrText: browserOcr.text || '',
+          browserOcrSource: browserOcr.source || '',
+          ocrTextHint: browserOcr.text || ''
         });
       }
 
