@@ -614,6 +614,269 @@
   }
 
 
+  const COLAB_RH_ALIASES = {
+    cpf: ['CPF', 'Cpf'],
+    nome: ['Nome', 'NOME', 'Funcionário', 'Funcionario', 'Colaborador'],
+    situacao: ['Situação', 'Situacao', 'STATUS', 'Status'],
+    admissao: ['Admissão', 'Admissao', 'Data de Admissão', 'Data de Admissao', 'Dt Admissao'],
+    desligamento: ['Desligamento', 'Data de Desligamento', 'Dt Desligamento'],
+    salario: ['Salário', 'Salario'],
+    conta_bancaria: ['C. Banc. Despesas', 'C Banc. Despesas', 'C Banc Despesas', 'Conta Bancária', 'Conta Bancaria'],
+    empresa: ['Empresa'],
+    coordenacao: ['Coordenação', 'Coordenacao'],
+    supervisao: ['Supervisão', 'Supervisao'],
+    tipo: ['Tipo'],
+    cep: ['CEP', 'Cep'],
+    estado: ['Estado', 'UF'],
+    cidade: ['Cidade'],
+    bairro: ['Bairro'],
+    endereco: ['Endereço', 'Endereco'],
+    complemento: ['Complemento'],
+    data_nascimento: ['Data de Nascimento', 'Nascimento', 'Dt Nascimento'],
+    cargo: ['Cargo', 'Função', 'Funcao'],
+    whatsapp: ['Whatsapp', 'WhatsApp', 'Celular', 'Telefone', 'Fone'],
+    email_pessoal: ['E-mail Pessoal', 'Email Pessoal'],
+    email_empresa: ['E-mail da Empresa', 'Email da Empresa', 'E-mail Empresa', 'Email Empresa']
+  };
+
+  function normalizeCpfColabRh(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const digits = String(value).replace(/\D/g, '');
+    if (!digits) return null;
+    return digits.length < 11 ? digits.padStart(11, '0') : digits.slice(-11);
+  }
+
+  function normalizePhoneColabRh(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const digits = String(value).replace(/\D/g, '').replace(/^0+/, '');
+    return digits || null;
+  }
+
+  function normalizeTextColabRh(value) {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    return text || null;
+  }
+
+  function computeAtivoColabRh(situacao, desligamento) {
+    if (desligamento) return false;
+    const s = normalizeHeader(situacao || '');
+    if (!s) return true;
+    return !['nao ativo', 'nao ativa', 'inativo', 'inativa', 'deslig', 'demit'].some((status) => s.includes(status));
+  }
+
+  function pickRowValueByIndex(row, headerIndexes, aliases) {
+    for (const alias of aliases || []) {
+      const idx = headerIndexes.get(headerKey(alias));
+      if (idx !== undefined) {
+        const value = row?.[idx];
+        if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+      }
+    }
+    return null;
+  }
+
+  function mapColaboradorRhRow(row, headerIndexes, dataReferencia, importacaoId) {
+    const get = (campo) => pickRowValueByIndex(row, headerIndexes, COLAB_RH_ALIASES[campo] || []);
+    const situacao = normalizeTextColabRh(get('situacao'));
+    const desligamento = toIsoDate(get('desligamento'));
+    const admissao = toIsoDate(get('admissao'));
+
+    return {
+      importacao_id: importacaoId,
+      data_referencia: dataReferencia,
+      cpf: normalizeCpfColabRh(get('cpf')),
+      nome: normalizeTextColabRh(get('nome')),
+      situacao,
+      admissao,
+      desligamento,
+      salario: normalizeNumberBr(get('salario')),
+      conta_bancaria: normalizeTextColabRh(get('conta_bancaria')),
+      empresa: normalizeTextColabRh(get('empresa')),
+      coordenacao: normalizeTextColabRh(get('coordenacao')),
+      supervisao: normalizeTextColabRh(get('supervisao')),
+      tipo: normalizeTextColabRh(get('tipo')),
+      cep: normalizeTextColabRh(get('cep')),
+      estado: normalizeTextColabRh(get('estado')),
+      cidade: normalizeTextColabRh(get('cidade')),
+      bairro: normalizeTextColabRh(get('bairro')),
+      endereco: normalizeTextColabRh(get('endereco')),
+      complemento: normalizeTextColabRh(get('complemento')),
+      data_nascimento: toIsoDate(get('data_nascimento')),
+      cargo: normalizeTextColabRh(get('cargo')),
+      whatsapp: normalizePhoneColabRh(get('whatsapp')),
+      email_pessoal: normalizeTextColabRh(get('email_pessoal')),
+      email_empresa: normalizeTextColabRh(get('email_empresa')),
+      ativo: computeAtivoColabRh(situacao, desligamento)
+    };
+  }
+
+  async function readColaboradoresRhFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+    if (!rows?.length) throw new Error('A planilha de funcionários está vazia.');
+
+    const headerRow = findHeaderRow(rows, ['CPF', 'Nome', 'Admissão']);
+    const header = rows[headerRow] || [];
+    const headerIndexes = new Map();
+    header.forEach((h, index) => {
+      const key = headerKey(h);
+      if (key) headerIndexes.set(key, index);
+    });
+
+    const obrigatorios = [
+      ['CPF', COLAB_RH_ALIASES.cpf],
+      ['Nome', COLAB_RH_ALIASES.nome],
+      ['Admissão', COLAB_RH_ALIASES.admissao],
+      ['Whatsapp', COLAB_RH_ALIASES.whatsapp]
+    ];
+    const faltantes = obrigatorios
+      .filter(([, aliases]) => !aliases.some((alias) => headerIndexes.has(headerKey(alias))))
+      .map(([label]) => label);
+
+    if (faltantes.length) {
+      throw new Error(`Cabeçalho(s) obrigatório(s) ausente(s) na planilha de funcionários: ${faltantes.join(', ')}`);
+    }
+
+    return rows
+      .slice(headerRow + 1)
+      .filter((row) => (row || []).some((cell) => cell !== null && cell !== undefined && String(cell).trim() !== ''));
+  }
+
+  async function insertBatchesSupabase_(supabase, table, rows, batchSize = 300, queryBuilder = 'insert') {
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const chunk = rows.slice(i, i + batchSize);
+      const query = queryBuilder === 'upsert'
+        ? supabase.from(table).upsert(chunk, { onConflict: 'cpf' })
+        : supabase.from(table).insert(chunk);
+      const { error } = await query;
+      if (error) throw new Error(error.message || `Falha ao gravar ${table}.`);
+    }
+  }
+
+  function mapColaboradorSnapshotToCurrent(row) {
+    return {
+      cpf: row.cpf,
+      nome: row.nome,
+      situacao: row.situacao,
+      admissao: row.admissao,
+      desligamento: row.desligamento,
+      salario: row.salario == null ? null : String(row.salario),
+      conta_bancaria_despesas: row.conta_bancaria,
+      empresa: row.empresa,
+      coordenacao: row.coordenacao,
+      supervisao: row.supervisao,
+      tipo: row.tipo,
+      cep: row.cep,
+      estado: row.estado,
+      cidade: row.cidade,
+      bairro: row.bairro,
+      endereco: row.endereco,
+      complemento: row.complemento,
+      data_nascimento: row.data_nascimento,
+      cargo: row.cargo,
+      whatsapp: row.whatsapp,
+      email_pessoal: row.email_pessoal,
+      email_empresa: row.email_empresa,
+      updated_at: new Date().toISOString()
+    };
+  }
+
+  async function importarColaboradoresRhDaPlanilha(file, opts) {
+    const supabase = opts.supabase;
+    const rawRows = await readColaboradoresRhFromFile(file);
+    const dataReferencia = new Date().toISOString().slice(0, 10);
+    const user = opts.user || opts.auth?.user || null;
+
+    const { data: importacao, error: impError } = await supabase
+      .from('colaborador_importacoes')
+      .insert({
+        data_referencia: dataReferencia,
+        arquivo_nome: file.name,
+        origem: 'importar_relatorios',
+        importado_por: user?.id || null,
+        status: 'processando',
+        total_linhas: rawRows.length,
+        observacoes: 'Importação automática pela Central de Importação'
+      })
+      .select()
+      .single();
+
+    if (impError) throw new Error(impError.message || 'Falha ao criar importação de colaboradores.');
+
+    try {
+      const XLSX = await loadXlsx();
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+      const headerRow = findHeaderRow(rows, ['CPF', 'Nome', 'Admissão']);
+      const header = rows[headerRow] || [];
+      const headerIndexes = new Map();
+      header.forEach((h, index) => {
+        const key = headerKey(h);
+        if (key) headerIndexes.set(key, index);
+      });
+
+      const mapped = rows
+        .slice(headerRow + 1)
+        .map((row) => mapColaboradorRhRow(row, headerIndexes, dataReferencia, importacao.id))
+        .filter((row) => row.nome);
+
+      if (!mapped.length) throw new Error('Nenhum funcionário válido encontrado para importar.');
+
+      await insertBatchesSupabase_(supabase, 'colaborador_snapshot', mapped, 300, 'insert');
+
+      const currentRows = mapped
+        .filter((row) => row.cpf)
+        .map(mapColaboradorSnapshotToCurrent);
+
+      if (currentRows.length) {
+        await insertBatchesSupabase_(supabase, 'colaboradores', currentRows, 300, 'upsert');
+      }
+
+      const ativos = mapped.filter((row) => row.ativo).length;
+      const inativos = mapped.length - ativos;
+      const coordenacoes = new Set(mapped.map((row) => row.coordenacao).filter(Boolean)).size;
+
+      const { error: updError } = await supabase
+        .from('colaborador_importacoes')
+        .update({
+          status: 'processado',
+          total_linhas: mapped.length,
+          observacoes: `Importação automática concluída. Ativos: ${ativos}. Inativos: ${inativos}.`
+        })
+        .eq('id', importacao.id);
+
+      if (updError) throw new Error(updError.message || 'Falha ao finalizar importação de colaboradores.');
+
+      return {
+        importacao_id: importacao.id,
+        data_referencia: dataReferencia,
+        total_linhas: mapped.length,
+        importados: mapped.length,
+        ativos,
+        inativos,
+        coordenacoes,
+        base_atualizada: currentRows.length
+      };
+    } catch (err) {
+      await supabase
+        .from('colaborador_importacoes')
+        .update({
+          status: 'erro',
+          observacoes: `Erro na importação automática: ${err?.message || err}`
+        })
+        .eq('id', importacao.id);
+      throw err;
+    }
+  }
+
+
   function financeiroHash(parts) {
     const base = (parts || []).map((value) => normalizeHeader(value)).join('|');
     let hash = 0x811c9dc5;
@@ -1778,6 +2041,13 @@
       return { tipo: 'uber_corridas', titulo: 'Relatório Uber' };
     }
 
+    if (
+      (n.includes('funcionario') || n.includes('funcionarios') || n.includes('funcionário') || n.includes('funcionários') || n.includes('colaboradores') || n.includes('colaborador')) &&
+      !(n.includes('endereco') || n.includes('endereço') || n.includes('gps') || n.includes('auditoria') || n.includes('auditorias'))
+    ) {
+      return { tipo: 'colaboradores_rh', titulo: 'Base de Funcionários / Colaboradores' };
+    }
+
     if ((n.includes('auditoria') || n.includes('auditorias')) && (n.includes('relatorio') || n.includes('relatório') || n.includes('lista') || n.includes('auditoria'))) {
       return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
     }
@@ -2096,6 +2366,7 @@
     let hoteisResumo = null;
     let pontosResumo = null;
     let colaboradoresResumo = null;
+    let colaboradoresRhResumo = null;
     let auditoriasResumo = null;
     let uberResumo = null;
     let patrimoniosResumo = null;
@@ -2117,6 +2388,11 @@
       status.textContent = 'Importando endereços dos colaboradores no módulo Operacional...';
       setProgress(bar, 82);
       colaboradoresResumo = await importarColaboradoresBaseDaPlanilha(file, opts);
+    }
+    if (detected.tipo === 'colaboradores_rh') {
+      status.textContent = 'Importando base de funcionários no RH...';
+      setProgress(bar, 82);
+      colaboradoresRhResumo = await importarColaboradoresRhDaPlanilha(file, opts);
     }
     if (detected.tipo === 'auditorias_operacional') {
       status.textContent = 'Importando histórico de auditorias no módulo Operacional...';
@@ -2158,7 +2434,7 @@
     }
 
     const importMode = opts.importMode || 'auto';
-    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'auditorias_operacional', 'patrimonios'].includes(detected.tipo)
+    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'colaboradores_rh', 'auditorias_operacional', 'patrimonios'].includes(detected.tipo)
       ? null
       : (resultadoDiarioResumo?.periodo_inicio
         ? { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null }
@@ -2184,13 +2460,15 @@
         ? 'Registrando upload dos pontos de embarque...'
         : (detected.tipo === 'colaboradores_operacional'
           ? 'Registrando upload dos endereços dos colaboradores...'
-          : (detected.tipo === 'auditorias_operacional'
+          : (detected.tipo === 'colaboradores_rh'
+            ? 'Registrando upload da base de funcionários...'
+            : (detected.tipo === 'auditorias_operacional'
             ? 'Registrando upload das auditorias operacionais...'
             : (detected.tipo === 'uber_corridas'
               ? 'Registrando upload do relatório Uber...'
               : (effectiveMode === 'replace'
             ? 'Registrando substituição inteligente...'
-            : 'Registrando complemento inteligente...')))));
+            : 'Registrando complemento inteligente...'))))));
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -2227,6 +2505,7 @@
           hoteis_importacao: hoteisResumo || null,
           pontos_embarque_importacao: pontosResumo || null,
           colaboradores_operacional_importacao: colaboradoresResumo || null,
+          colaboradores_rh_importacao: colaboradoresRhResumo || null,
           auditorias_operacional_importacao: auditoriasResumo || null,
           uber_corridas_importacao: uberResumo || null,
           patrimonios_importacao: patrimoniosResumo || null,
@@ -2260,6 +2539,8 @@
       status.textContent = `Pontos: ${pontosResumo.importados || 0} importados · ${pontosResumo.cidades || 0} cidades · ${pontosResumo.supervisoes || 0} supervisões`;
     } else if (detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) {
       status.textContent = `Colaboradores: ${colaboradoresResumo.importados || 0} endereços importados · ${colaboradoresResumo.cidades || 0} cidades · ${colaboradoresResumo.ufs || 0} UFs`;
+    } else if (detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) {
+      status.textContent = `Funcionários: ${colaboradoresRhResumo.importados || 0} importados · ${colaboradoresRhResumo.ativos || 0} ativos · base atualizada`;
     } else if (detected.tipo === 'auditorias_operacional' && auditoriasResumo) {
       status.textContent = `Auditorias: ${auditoriasResumo.importados || 0} registros · ${auditoriasResumo.colaboradores || 0} colaboradores · ${auditoriasResumo.descontos || 0} descontos`;
     } else if (detected.tipo === 'uber_corridas' && uberResumo) {
@@ -2279,7 +2560,7 @@
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -2450,6 +2731,8 @@
             entry.message = 'Pendente · importará pontos de embarque operacional';
           } else if (detected.tipo === 'colaboradores_operacional') {
             entry.message = 'Pendente · importará endereços dos colaboradores no Operacional';
+          } else if (detected.tipo === 'colaboradores_rh') {
+            entry.message = 'Pendente · atualizará base de funcionários/colaboradores no RH';
           } else if (detected.tipo === 'auditorias_operacional') {
             entry.message = 'Pendente · importará auditorias no Operacional';
           } else if (detected.tipo === 'uber_corridas') {
