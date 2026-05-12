@@ -652,6 +652,12 @@ initProtectedPage('Financeiro', (content, userContext) => {
     el.className = `fin-feedback ${type}`.trim();
   }
 
+
+  function tabFromHash() {
+    const tab = String(window.location.hash || '').replace(/^#/, '').toLowerCase();
+    return ['fluxo', 'importar', 'config', 'detalhes', 'pagamentos'].includes(tab) ? tab : 'fluxo';
+  }
+
   function setTab(tab) {
     document.querySelectorAll('.fin-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
     document.querySelectorAll('.fin-panel').forEach((panel) => panel.classList.remove('active'));
@@ -922,8 +928,8 @@ initProtectedPage('Financeiro', (content, userContext) => {
     ]);
   }
 
-  document.querySelectorAll('.fin-tab').forEach((btn) => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
-  document.querySelectorAll('[data-tab-target]').forEach((btn) => btn.addEventListener('click', () => setTab(btn.dataset.tabTarget)));
+  document.querySelectorAll('.fin-tab').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tab); if (btn.dataset.tab && btn.dataset.tab !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tab}`); }));
+  document.querySelectorAll('[data-tab-target]').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tabTarget); if (btn.dataset.tabTarget && btn.dataset.tabTarget !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tabTarget}`); }));
   document.getElementById('btnReload').addEventListener('click', loadFluxo);
   document.getElementById('btnImportReceber').addEventListener('click', () => importFile('receber'));
   document.getElementById('btnImportPagar').addEventListener('click', () => importFile('pagar'));
@@ -946,5 +952,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
     if (btn) loadDetalhes(btn.dataset.detailDate);
   });
 
+  window.addEventListener('hashchange', () => setTab(tabFromHash()));
+  setTab(tabFromHash());
   loadFluxo();
 });

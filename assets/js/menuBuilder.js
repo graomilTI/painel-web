@@ -119,10 +119,16 @@ function ensureOperationalSection(menuSections, userContext) {
 
 const FINANCEIRO_FAILSAFE_ITEMS = [
   {
-    code: 'financeiro',
+    code: 'financeiro_fluxo_caixa',
     label: 'Fluxo de Caixa',
     path: 'financeiro',
     aliases: ['FINANCEIRO', 'FLUXO_CAIXA', 'FINANCEIRO_FLUXO_CAIXA']
+  },
+  {
+    code: 'financeiro_pagamentos',
+    label: 'Pagamentos',
+    path: 'financeiro#pagamentos',
+    aliases: ['FINANCEIRO', 'PAGAMENTOS', 'FINANCEIRO_PAGAMENTOS', 'ADIANTAMENTOS', 'ALIMENTACAO']
   }
 ];
 
@@ -338,7 +344,7 @@ export function renderMenu(container, menuSections, currentPath = '') {
   if (!container) return;
 
   container.innerHTML = '';
-  const normalizedCurrent = normalizePath(currentPath);
+  const normalizedCurrent = normalizePath(`${currentPath || window.location.pathname}${window.location.hash || ''}`);
   const storedOpenSections = new Set(loadOpenSections());
 
   menuSections.forEach((section) => {
