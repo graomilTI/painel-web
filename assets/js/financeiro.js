@@ -280,63 +280,87 @@ async function loadColaboradoresPagamento() {
   return buildLatestColaboradorMap(data || []);
 }
 
+function pickFirst(row, keys) {
+  for (const key of keys) {
+    if (row && row[key] !== undefined && row[key] !== null && row[key] !== '') return row[key];
+  }
+  return '';
+}
+
 function mapProducaoSnapshotRows(rows, origem) {
-  return (rows || []).map((row) => ({
-    data: row.data || row.data_referencia,
-    data_referencia: row.data_referencia || row.data,
-    funcionario: row.funcionario,
-    tipo: row.tipo || row.tipoRh || '',
-    coordenacao: row.coordenacao,
-    supervisao: row.supervisao,
-    cliente: row.cliente || row.cliente_final || '',
-    os: row.os || '',
-    toneladas: row.toneladas ?? row.tons ?? 0,
-    cargas: row.cargas,
-    origem
-  })).filter((row) => row.funcionario && (row.data || row.data_referencia));
+  return (rows || []).map((row) => {
+    const data = pickFirst(row, ['data', 'data_referencia', 'data_producao', 'dt_data', 'periodo', 'dia']);
+    const funcionario = pickFirst(row, ['funcionario', 'Funcionário', 'Funcionario', 'colaborador', 'nome_colaborador', 'classificador', 'nome']);
+    return {
+      data,
+      data_referencia: pickFirst(row, ['data_referencia', 'data', 'data_producao', 'dt_data', 'periodo', 'dia']),
+      funcionario,
+      tipo: pickFirst(row, ['tipo', 'tipo_funcionario', 'tipoRh', 'tipo_rh']),
+      coordenacao: pickFirst(row, ['coordenacao', 'coordenação', 'regional']),
+      supervisao: pickFirst(row, ['supervisao', 'supervisão']),
+      cliente: pickFirst(row, ['cliente', 'cliente_final', 'cliente_regional', 'cliente_nacional']),
+      os: pickFirst(row, ['os', 'o_s', 'ordem_servico', 'O.S.']),
+      toneladas: pickFirst(row, ['toneladas', 'tons', 'volume_classificado']) || 0,
+      cargas: pickFirst(row, ['cargas', 'carga']) || 0,
+      origem
+    };
+  }).filter((row) => row.funcionario && row.data);
+}
+
+async function fetchRowsPaged(table, select, dateColumn, inicio, fim, origem) {
+  const out = [];
+  const pageSize = 1000;
+  let from = 0;
+  while (true) {
+    let q = supabase
+      .from(table)
+      .select(select)
+      .gte(dateColumn, inicio)
+      .lte(dateColumn, fim)
+      .range(from, from + pageSize - 1);
+
+    const { data, error } = await q;
+    if (error) {
+      return { rows: [], raw: 0, error, origem };
+    }
+    const batch = data || [];
+    out.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+  return { rows: out, raw: out.length, error: null, origem };
+}
+
+function dedupeProducaoPagamento(rows) {
+  const seen = new Set();
+  const out = [];
+  (rows || []).forEach((row) => {
+    const key = [parseDateLoose(row.data), normalizeName(row.funcionario), row.os || '', row.toneladas || '', row.cargas || ''].join('|');
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(row);
+  });
+  return out;
 }
 
 async function loadProducaoPagamento(inicio, fim) {
-  // Primeiro tenta a base oficial da produção diária importada pelo painel.
-  // Essa tabela pode guardar a data real em `data` ou somente a referência da importação em `data_referencia`.
-  let res = await supabase
-    .from('producao_snapshot')
-    .select('data,data_referencia,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
-    .gte('data', inicio)
-    .lte('data', fim)
-    .order('data', { ascending: true })
-    .limit(20000);
+  const attempts = [];
+  const mapped = [];
 
-  if (!res.error && (res.data || []).length) {
-    const rows = mapProducaoSnapshotRows(res.data, 'producao_snapshot.data');
-    if (rows.length) return rows;
+  // Base oficial da Produção Diária importada pelo painel.
+  for (const [table, dateColumn, origem] of [
+    ['producao_snapshot', 'data', 'producao_snapshot.data'],
+    ['producao_snapshot', 'data_referencia', 'producao_snapshot.data_referencia'],
+    ['relatorio_resultado_diario', 'data', 'relatorio_resultado_diario']
+  ]) {
+    const res = await fetchRowsPaged(table, '*', dateColumn, inicio, fim, origem);
+    attempts.push({ origem, raw: res.raw, erro: res.error?.message || '' });
+    if (!res.error && res.rows.length) mapped.push(...mapProducaoSnapshotRows(res.rows, origem));
   }
 
-  res = await supabase
-    .from('producao_snapshot')
-    .select('data,data_referencia,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
-    .gte('data_referencia', inicio)
-    .lte('data_referencia', fim)
-    .order('data_referencia', { ascending: true })
-    .limit(20000);
-
-  if (!res.error && (res.data || []).length) {
-    const rows = mapProducaoSnapshotRows(res.data, 'producao_snapshot.data_referencia');
-    if (rows.length) return rows;
-  }
-
-  // Fallback: Resultado Diário mensal/histórico usado pelo DRE.
-  // Serve quando a produção diária ainda não foi importada pelo menu antigo.
-  res = await supabase
-    .from('relatorio_resultado_diario')
-    .select('data,funcionario,coordenacao,supervisao,cliente_final,os,toneladas,cargas')
-    .gte('data', inicio)
-    .lte('data', fim)
-    .order('data', { ascending: true })
-    .limit(20000);
-
-  if (res.error) throw res.error;
-  return mapProducaoSnapshotRows(res.data || [], 'relatorio_resultado_diario');
+  const finalRows = dedupeProducaoPagamento(mapped);
+  finalRows._diagnostics = attempts;
+  return finalRows;
 }
 
 function apurarAlimentacaoRows(producaoRows, rhMap) {
@@ -878,7 +902,12 @@ initProtectedPage('Financeiro', (content, userContext) => {
     try {
       paySetFeedback('fbAlimentacao', 'Buscando produção e colaboradores...');
       const [rhMap, producao] = await Promise.all([loadColaboradoresPagamento(), loadProducaoPagamento(inicio, fim)]);
-      if (!producao.length) throw new Error('Nenhuma produção localizada no período.');
+      if (!producao.length) {
+        const diag = (producao._diagnostics || [])
+          .map((d) => `${d.origem}: ${d.erro ? d.erro : `${d.raw || 0} registros brutos`}`)
+          .join(' | ');
+        throw new Error(`Nenhuma produção com colaborador localizada no período. ${diag ? `Diagnóstico: ${diag}` : ''}`);
+      }
       const apuracao = apurarAlimentacaoRows(producao, rhMap);
       state.pagamentos = { tipo: 'Alimentação', periodo: dateRangeLabel(inicio, fim), ...apuracao };
       renderPayTables();
