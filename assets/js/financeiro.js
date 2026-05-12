@@ -307,16 +307,26 @@ function mapProducaoSnapshotRows(rows, origem) {
   }).filter((row) => row.funcionario && row.data);
 }
 
+function addDaysIso(dateIso, days) {
+  const d = new Date(`${dateIso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return dateIso;
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 async function fetchRowsPaged(table, select, dateColumn, inicio, fim, origem) {
   const out = [];
   const pageSize = 1000;
   let from = 0;
+  const fimExclusivo = addDaysIso(fim, 1);
   while (true) {
+    // Usa limite final exclusivo para funcionar tanto com colunas DATE quanto TIMESTAMP/TIMESTAMPTZ.
+    // Com .lte(fim) em TIMESTAMP, registros do próprio dia após 00:00 ficavam fora da busca.
     let q = supabase
       .from(table)
       .select(select)
       .gte(dateColumn, inicio)
-      .lte(dateColumn, fim)
+      .lt(dateColumn, fimExclusivo)
       .range(from, from + pageSize - 1);
 
     const { data, error } = await q;
@@ -329,6 +339,30 @@ async function fetchRowsPaged(table, select, dateColumn, inicio, fim, origem) {
     from += pageSize;
   }
   return { rows: out, raw: out.length, error: null, origem };
+}
+
+async function fetchUltimasDatasProducaoPagamento() {
+  const fontes = [
+    ['producao_snapshot', 'data', 'producao_snapshot.data'],
+    ['producao_snapshot', 'data_referencia', 'producao_snapshot.data_referencia'],
+    ['relatorio_resultado_diario', 'data', 'relatorio_resultado_diario']
+  ];
+  const out = [];
+  for (const [table, dateColumn, origem] of fontes) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(dateColumn)
+      .not(dateColumn, 'is', null)
+      .order(dateColumn, { ascending: false })
+      .limit(30);
+    if (error) {
+      out.push({ origem, erro: error.message || String(error), datas: [] });
+      continue;
+    }
+    const datas = [...new Set((data || []).map((row) => parseDateLoose(row?.[dateColumn])).filter(Boolean))].slice(0, 8);
+    out.push({ origem, datas });
+  }
+  return out;
 }
 
 function dedupeProducaoPagamento(rows) {
@@ -906,7 +940,11 @@ initProtectedPage('Financeiro', (content, userContext) => {
         const diag = (producao._diagnostics || [])
           .map((d) => `${d.origem}: ${d.erro ? d.erro : `${d.raw || 0} registros brutos`}`)
           .join(' | ');
-        throw new Error(`Nenhuma produção com colaborador localizada no período. ${diag ? `Diagnóstico: ${diag}` : ''}`);
+        const ultimas = await fetchUltimasDatasProducaoPagamento();
+        const datasMsg = ultimas
+          .map((d) => d.erro ? `${d.origem}: ${d.erro}` : `${d.origem}: ${d.datas.length ? d.datas.map(brDate).join(', ') : 'sem datas encontradas'}`)
+          .join(' | ');
+        throw new Error(`Nenhuma produção com colaborador localizada no período selecionado. ${diag ? `Diagnóstico do filtro: ${diag}. ` : ''}${datasMsg ? `Últimas datas disponíveis: ${datasMsg}` : ''}`);
       }
       const apuracao = apurarAlimentacaoRows(producao, rhMap);
       state.pagamentos = { tipo: 'Alimentação', periodo: dateRangeLabel(inicio, fim), ...apuracao };
