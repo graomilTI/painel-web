@@ -57,6 +57,15 @@
       base_url: 'https://api.uber.com',
       auth_url: 'https://login.uber.com/oauth/v2/token',
       segredos: ['UBER_CLIENT_ID', 'UBER_CLIENT_SECRET', 'UBER_SCOPES', 'UBER_ORGANIZATION_ID', 'UBER_SYNC_ENDPOINT']
+    },
+    {
+      codigo: 'GOOGLE_CONTACTS',
+      nome: 'Google Contatos',
+      categoria: 'GERAL',
+      ambiente: 'PRODUCAO',
+      base_url: 'https://people.googleapis.com',
+      auth_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+      segredos: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_CONTACTS_TOKEN_SECRET', 'GOOGLE_REDIRECT_URI']
     }
   ];
 
@@ -100,7 +109,7 @@
   function styles() {
     return `
       <style id="ti-integracoes-style">
-        .ti-shell{width:100%;color:#e5e7eb}.ti-header{margin-bottom:18px}.ti-kicker{display:inline-flex;align-items:center;gap:8px;color:#86efac;font-size:12px;font-weight:950;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.ti-title{margin:0;color:#f8fafc;font-size:clamp(22px,2.2vw,32px);line-height:1.1;letter-spacing:-.04em}.ti-subtitle{max-width:920px;margin:10px 0 0;color:#94a3b8;font-size:14px;line-height:1.55}.ti-card{background:radial-gradient(circle at top left,rgba(34,197,94,.12),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.16);border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.ti-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.ti-tab{appearance:none;border:1px solid rgba(34,197,94,.35);background:rgba(22,101,52,.30);color:#f8fafc;border-radius:999px;padding:10px 14px;font-weight:950;font-size:13px}.ti-body{padding:18px}.ti-grid{display:grid;grid-template-columns:minmax(300px,390px) minmax(440px,1fr);gap:18px;align-items:start}.ti-panel{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.14);border-radius:22px;padding:18px}.ti-panel h3{margin:0 0 14px;color:#f8fafc;font-size:16px;letter-spacing:-.02em}.ti-field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}.ti-field label{color:#cbd5e1;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.ti-input,.ti-select,.ti-textarea{width:100%;border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:12px 13px;outline:none;font-size:14px;transition:.16s ease;color-scheme:dark}.ti-select option{background:#0f172a;color:#e5e7eb}.ti-input:focus,.ti-select:focus,.ti-textarea:focus{border-color:rgba(34,197,94,.68);box-shadow:0 0 0 4px rgba(34,197,94,.10)}.ti-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.ti-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.ti-btn{border:0;border-radius:14px;padding:12px 14px;font-weight:950;cursor:pointer;transition:.18s ease;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px}.ti-btn-primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;box-shadow:0 14px 34px rgba(34,197,94,.20)}.ti-btn-soft{background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.24)}.ti-btn-danger{background:rgba(239,68,68,.12);color:#fecaca;border:1px solid rgba(239,68,68,.25)}.ti-btn:disabled{opacity:.55;cursor:not-allowed}.ti-list{display:grid;gap:10px;max-height:620px;overflow:auto;padding-right:2px}.ti-item{border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.68);border-radius:16px;padding:12px;cursor:pointer;text-align:left;color:#e5e7eb}.ti-item:hover,.ti-item.active{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.20)}.ti-item strong{display:block;color:#f8fafc;font-size:13px}.ti-item span{display:block;color:#94a3b8;font-size:12px;line-height:1.4;margin-top:4px}.ti-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.ti-badge{display:inline-flex;border-radius:999px;padding:4px 8px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.24);color:#bbf7d0;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.04em}.ti-badge.off{background:rgba(148,163,184,.08);border-color:rgba(148,163,184,.16);color:#94a3b8}.ti-secret-table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid rgba(148,163,184,.12);border-radius:16px;overflow:hidden}.ti-secret-table th,.ti-secret-table td{padding:12px 10px;border-bottom:1px solid rgba(148,163,184,.10);font-size:12px;text-align:left}.ti-secret-table th{color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em;background:rgba(2,6,23,.38)}.ti-secret-table td{color:#e5e7eb}.ti-secret-table tr:last-child td{border-bottom:0}.ti-mask{font-family:ui-monospace,Menlo,Consolas,monospace;color:#94a3b8}.ti-note{border:1px dashed rgba(34,197,94,.32);background:rgba(22,101,52,.12);border-radius:18px;padding:14px;color:#d1fae5;font-size:12px;line-height:1.55;margin-top:14px}.ti-empty{border:1px dashed rgba(148,163,184,.22);border-radius:16px;padding:14px;color:#94a3b8;font-size:13px}.ti-template-grid{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.ti-template{font-size:12px}.ti-quick-add{border:1px dashed rgba(125,211,252,.34);background:rgba(14,165,233,.10);border-radius:18px;padding:12px;margin-bottom:14px}.ti-quick-add-title{color:#bae6fd;font-size:12px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}.ti-chip-row{display:flex;gap:8px;flex-wrap:wrap}.ti-chip{appearance:none;border:1px solid rgba(148,163,184,.22);background:#0f172a;color:#dbeafe;border-radius:999px;padding:8px 10px;font-size:11px;font-weight:900;cursor:pointer}.ti-chip:hover{border-color:rgba(34,197,94,.55);color:#bbf7d0}.ti-toast{position:fixed;right:22px;bottom:22px;background:rgba(22,101,52,.96);color:#dcfce7;border:1px solid rgba(134,239,172,.32);border-radius:16px;padding:12px 14px;font-weight:900;box-shadow:0 16px 45px rgba(0,0,0,.35);z-index:99999;opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}@media(max-width:980px){.ti-grid{grid-template-columns:1fr}.ti-row{grid-template-columns:1fr}}.ti-toast.show{opacity:1;transform:translateY(0)}
+        .ti-shell{width:100%;color:#e5e7eb}.ti-header{margin-bottom:18px}.ti-kicker{display:inline-flex;align-items:center;gap:8px;color:#86efac;font-size:12px;font-weight:950;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.ti-title{margin:0;color:#f8fafc;font-size:clamp(22px,2.2vw,32px);line-height:1.1;letter-spacing:-.04em}.ti-subtitle{max-width:920px;margin:10px 0 0;color:#94a3b8;font-size:14px;line-height:1.55}.ti-card{background:radial-gradient(circle at top left,rgba(34,197,94,.12),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.16);border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.ti-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.ti-tab{appearance:none;border:1px solid rgba(34,197,94,.35);background:rgba(22,101,52,.30);color:#f8fafc;border-radius:999px;padding:10px 14px;font-weight:950;font-size:13px}.ti-body{padding:18px}.ti-grid{display:grid;grid-template-columns:minmax(300px,390px) minmax(440px,1fr);gap:18px;align-items:start}.ti-panel{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.14);border-radius:22px;padding:18px}.ti-panel h3{margin:0 0 14px;color:#f8fafc;font-size:16px;letter-spacing:-.02em}.ti-field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}.ti-field label{color:#cbd5e1;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.ti-input,.ti-select,.ti-textarea{width:100%;border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:14px;padding:12px 13px;outline:none;font-size:14px;transition:.16s ease;color-scheme:dark}.ti-select option{background:#0f172a;color:#e5e7eb}.ti-input:focus,.ti-select:focus,.ti-textarea:focus{border-color:rgba(34,197,94,.68);box-shadow:0 0 0 4px rgba(34,197,94,.10)}.ti-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.ti-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.ti-btn{border:0;border-radius:14px;padding:12px 14px;font-weight:950;cursor:pointer;transition:.18s ease;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px}.ti-btn-primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;box-shadow:0 14px 34px rgba(34,197,94,.20)}.ti-btn-soft{background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.24)}.ti-btn-danger{background:rgba(239,68,68,.12);color:#fecaca;border:1px solid rgba(239,68,68,.25)}.ti-btn:disabled{opacity:.55;cursor:not-allowed}.ti-list{display:grid;gap:10px;max-height:620px;overflow:auto;padding-right:2px}.ti-item{border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.68);border-radius:16px;padding:12px;cursor:pointer;text-align:left;color:#e5e7eb}.ti-item:hover,.ti-item.active{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.20)}.ti-item strong{display:block;color:#f8fafc;font-size:13px}.ti-item span{display:block;color:#94a3b8;font-size:12px;line-height:1.4;margin-top:4px}.ti-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.ti-badge{display:inline-flex;border-radius:999px;padding:4px 8px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.24);color:#bbf7d0;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.04em}.ti-badge.off{background:rgba(148,163,184,.08);border-color:rgba(148,163,184,.16);color:#94a3b8}.ti-secret-table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid rgba(148,163,184,.12);border-radius:16px;overflow:hidden}.ti-secret-table th,.ti-secret-table td{padding:12px 10px;border-bottom:1px solid rgba(148,163,184,.10);font-size:12px;text-align:left;vertical-align:middle}.ti-secret-table th{color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em;background:rgba(2,6,23,.38)}.ti-secret-table td{color:#e5e7eb}.ti-secret-table tr:last-child td{border-bottom:0}.ti-mask{font-family:ui-monospace,Menlo,Consolas,monospace;color:#94a3b8}.ti-move-wrap{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:260px}.ti-move-select{min-width:210px;border:1px solid rgba(148,163,184,.18);background:#0f172a;color:#e5e7eb;border-radius:12px;padding:10px 11px;outline:none;font-size:12px;color-scheme:dark}.ti-move-select option{background:#0f172a;color:#e5e7eb}.ti-btn-mini{min-height:38px;padding:9px 11px;border-radius:12px;font-size:12px}.ti-note{border:1px dashed rgba(34,197,94,.32);background:rgba(22,101,52,.12);border-radius:18px;padding:14px;color:#d1fae5;font-size:12px;line-height:1.55;margin-top:14px}.ti-empty{border:1px dashed rgba(148,163,184,.22);border-radius:16px;padding:14px;color:#94a3b8;font-size:13px}.ti-template-grid{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.ti-template{font-size:12px}.ti-quick-add{border:1px dashed rgba(125,211,252,.34);background:rgba(14,165,233,.10);border-radius:18px;padding:12px;margin-bottom:14px}.ti-quick-add-title{color:#bae6fd;font-size:12px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}.ti-chip-row{display:flex;gap:8px;flex-wrap:wrap}.ti-chip{appearance:none;border:1px solid rgba(148,163,184,.22);background:#0f172a;color:#dbeafe;border-radius:999px;padding:8px 10px;font-size:11px;font-weight:900;cursor:pointer}.ti-chip:hover{border-color:rgba(34,197,94,.55);color:#bbf7d0}.ti-toast{position:fixed;right:22px;bottom:22px;background:rgba(22,101,52,.96);color:#dcfce7;border:1px solid rgba(134,239,172,.32);border-radius:16px;padding:12px 14px;font-weight:900;box-shadow:0 16px 45px rgba(0,0,0,.35);z-index:99999;opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}@media(max-width:980px){.ti-grid{grid-template-columns:1fr}.ti-row{grid-template-columns:1fr}}.ti-toast.show{opacity:1;transform:translateY(0)}
       </style>`;
   }
 
@@ -183,17 +192,34 @@
       } else {
         secrets.innerHTML = `
           <table class="ti-secret-table">
-            <thead><tr><th>Chave</th><th>Valor</th><th>Status</th><th></th></tr></thead>
-            <tbody>${rows.map((s) => `
+            <thead><tr><th>Chave</th><th>Valor</th><th>Status</th><th>Mover para</th><th></th></tr></thead>
+            <tbody>${rows.map((s) => {
+              const current = selectedIntegration();
+              const destinos = state.integrations.filter((i) => i.id !== current?.id);
+              return `
               <tr>
                 <td><strong>${escapeHtml(s.chave)}</strong><br><span style="color:#94a3b8">${escapeHtml(s.descricao || '')}</span></td>
                 <td class="ti-mask">${s.sensivel ? '••••••••••••••••' : 'salvo'}</td>
                 <td><span class="ti-badge ${s.ativo ? '' : 'off'}">${s.ativo ? 'ATIVO' : 'INATIVO'}</span></td>
-                <td><button class="ti-btn ti-btn-danger" type="button" data-remove-secret="${escapeHtml(s.id)}">Remover</button></td>
-              </tr>`).join('')}</tbody>
+                <td>
+                  <div class="ti-move-wrap">
+                    <select class="ti-move-select" data-move-secret-target="${escapeHtml(s.id)}">
+                      <option value="">Selecionar integração...</option>
+                      ${destinos.map((i) => `<option value="${escapeHtml(i.id)}">${escapeHtml(i.nome || i.codigo)}</option>`).join('')}
+                    </select>
+                    <button class="ti-btn ti-btn-soft ti-btn-mini" type="button" data-move-secret="${escapeHtml(s.id)}">Mover</button>
+                  </div>
+                </td>
+                <td><button class="ti-btn ti-btn-danger ti-btn-mini" type="button" data-remove-secret="${escapeHtml(s.id)}">Remover</button></td>
+              </tr>`;}).join('')}</tbody>
           </table>`;
       }
       secrets.querySelectorAll('[data-remove-secret]').forEach((btn) => btn.addEventListener('click', () => removeSecret(root, opts, btn.getAttribute('data-remove-secret'))));
+      secrets.querySelectorAll('[data-move-secret]').forEach((btn) => btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-move-secret');
+        const targetId = secrets.querySelector(`[data-move-secret-target="${CSS.escape(id)}"]`)?.value || '';
+        moveSecret(root, opts, id, targetId);
+      }));
     }
   }
 
@@ -368,6 +394,68 @@
     } catch (err) {
       console.error('[TI] removeSecret:', err);
       toast(err.message || 'Erro ao remover token.', 'error');
+    }
+  }
+
+  async function moveSecret(root, opts = {}, id, targetId) {
+    const supabase = getSupabase(opts);
+    if (!id) return;
+    if (!targetId) return toast('Selecione a integração de destino.', 'error');
+
+    const origem = selectedIntegration();
+    const destino = state.integrations.find((i) => i.id === targetId);
+    if (!destino) return toast('Integração de destino não encontrada.', 'error');
+    if (origem?.id === targetId) return toast('O token já está nesta integração.', 'error');
+
+    try {
+      const { data: segredo, error: readErr } = await supabase
+        .from('ti_integracao_segredos')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (readErr) throw readErr;
+      if (!segredo) return toast('Token/chave não encontrado.', 'error');
+
+      const duplicado = state.secrets.find((s) => s.integracao_id === targetId && normalizeCode(s.chave) === normalizeCode(segredo.chave));
+      const nomeDestino = destino.nome || destino.codigo || 'destino';
+
+      if (duplicado) {
+        const ok = confirm(`A integração "${nomeDestino}" já possui a chave "${segredo.chave}". Deseja substituir o valor de destino e remover a chave da integração atual?`);
+        if (!ok) return;
+
+        const payloadDestino = {
+          valor: segredo.valor,
+          descricao: segredo.descricao,
+          sensivel: segredo.sensivel,
+          ativo: segredo.ativo,
+          updated_at: new Date().toISOString()
+        };
+
+        const { error: updErr } = await supabase
+          .from('ti_integracao_segredos')
+          .update(payloadDestino)
+          .eq('id', duplicado.id);
+        if (updErr) throw updErr;
+
+        const { error: delErr } = await supabase
+          .from('ti_integracao_segredos')
+          .delete()
+          .eq('id', id);
+        if (delErr) throw delErr;
+      } else {
+        const { error: moveErr } = await supabase
+          .from('ti_integracao_segredos')
+          .update({ integracao_id: targetId, updated_at: new Date().toISOString() })
+          .eq('id', id);
+        if (moveErr) throw moveErr;
+      }
+
+      state.selectedId = targetId;
+      toast(`Token/chave movido para ${nomeDestino}.`);
+      await loadData(root, opts);
+    } catch (err) {
+      console.error('[TI] moveSecret:', err);
+      toast(err.message || 'Erro ao mover token/chave.', 'error');
     }
   }
 
