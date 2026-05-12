@@ -181,16 +181,26 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     });
   }
 
-  async function loadLatestColabs(supabase) {
+  async function loadColaboradoresAtuais(supabase) {
+    const { data, error } = await supabase
+      .from('colaboradores')
+      .select('cpf,nome,situacao,admissao,desligamento,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cep,estado,cidade,bairro,endereco,complemento,data_nascimento')
+      .order('nome', { ascending: true })
+      .limit(10000);
+    if (error) return { rows: [], error };
+    return { rows: data || [], error: null };
+  }
+
+  async function loadLatestSnapshotColabs(supabase) {
     const { data: refs, error: refErr } = await supabase
       .from('colaborador_importacoes')
       .select('data_referencia,status')
       .eq('status', 'processado')
       .order('data_referencia', { ascending: false })
       .limit(1);
-    if (refErr) throw refErr;
+    if (refErr) return { rows: [], error: refErr };
     const ref = refs?.[0]?.data_referencia;
-    if (!ref) return [];
+    if (!ref) return { rows: [], error: null };
 
     const { data, error } = await supabase
       .from('colaborador_snapshot')
@@ -198,8 +208,27 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       .eq('data_referencia', ref)
       .order('nome', { ascending: true })
       .limit(10000);
-    if (error) throw error;
-    return data || [];
+    if (error) return { rows: [], error };
+    return { rows: data || [], error: null };
+  }
+
+  async function loadLatestColabs(supabase) {
+    // O Google Contacts da planilha antiga usava a aba DADOS completa.
+    // No painel, a tabela `colaboradores` representa essa base atual.
+    // O snapshot fica como apoio histórico, mas não pode limitar a exportação.
+    const [atuais, snapshot] = await Promise.all([
+      loadColaboradoresAtuais(supabase),
+      loadLatestSnapshotColabs(supabase)
+    ]);
+
+    const atuaisRows = atuais.rows || [];
+    const snapshotRows = snapshot.rows || [];
+
+    if (atuaisRows.length >= snapshotRows.length) return atuaisRows;
+    if (snapshotRows.length) return snapshotRows;
+    if (atuais.error) throw atuais.error;
+    if (snapshot.error) throw snapshot.error;
+    return [];
   }
 
   async function loadPatrimoniosAtraso(supabase) {
