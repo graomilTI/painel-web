@@ -228,10 +228,10 @@ initProtectedPage('Financeiro', (content, userContext) => {
       </div>
 
       <div class="fin-grid">
-        <article class="fin-kpi"><span>Saldo do dia</span><strong id="kpiSaldo">R$ 0,00</strong><small>Manual</small></article>
-        <article class="fin-kpi"><span>Contas a receber</span><strong id="kpiReceber">R$ 0,00</strong><small>Relatório importado</small></article>
-        <article class="fin-kpi"><span>Contas a pagar</span><strong id="kpiPagar">R$ 0,00</strong><small>Relatório importado</small></article>
-        <article class="fin-kpi"><span>Provisão do dia</span><strong id="kpiProvisao">R$ 0,00</strong><small>Auto + ajuste</small></article>
+        <article class="fin-kpi"><span>Saldo do dia</span><strong id="kpiSaldo">R$ 0,00</strong><small id="kpiSaldoInfo">Soma do filtro</small></article>
+        <article class="fin-kpi"><span>Contas a receber</span><strong id="kpiReceber">R$ 0,00</strong><small id="kpiReceberInfo">Soma do filtro</small></article>
+        <article class="fin-kpi"><span>Contas a pagar</span><strong id="kpiPagar">R$ 0,00</strong><small id="kpiPagarInfo">Soma do filtro</small></article>
+        <article class="fin-kpi"><span>Provisão do dia</span><strong id="kpiProvisao">R$ 0,00</strong><small id="kpiProvisaoInfo">Soma do filtro</small></article>
         <article class="fin-kpi"><span>Saldo projetado</span><strong id="kpiProjetado">R$ 0,00</strong><small id="kpiStatus">OK</small></article>
       </div>
 
@@ -344,13 +344,35 @@ initProtectedPage('Financeiro', (content, userContext) => {
   }
 
   function updateKpis() {
-    const today = state.fluxo.find((row) => row.data === new Date().toISOString().slice(0, 10)) || state.fluxo[0] || {};
-    document.getElementById('kpiSaldo').textContent = money(today.saldo_dia);
-    document.getElementById('kpiReceber').textContent = money(today.contas_receber);
-    document.getElementById('kpiPagar').textContent = money(today.contas_pagar);
-    document.getElementById('kpiProvisao').textContent = money(today.provisoes_dia);
-    document.getElementById('kpiProjetado').textContent = money(today.saldo_projetado);
-    document.getElementById('kpiStatus').textContent = today.status || 'OK';
+    const total = state.fluxo.reduce((acc, row) => {
+      acc.saldo_dia += Number(row.saldo_dia || 0);
+      acc.contas_receber += Number(row.contas_receber || 0);
+      acc.contas_pagar += Number(row.contas_pagar || 0);
+      acc.provisoes_dia += Number(row.provisoes_dia || 0);
+      acc.saldo_projetado += Number(row.saldo_projetado || 0);
+      return acc;
+    }, {
+      saldo_dia: 0,
+      contas_receber: 0,
+      contas_pagar: 0,
+      provisoes_dia: 0,
+      saldo_projetado: 0
+    });
+
+    const labelPeriodo = state.filters.inicio === state.filters.fim
+      ? `Filtro: ${brDate(state.filters.inicio)}`
+      : `Filtro: ${brDate(state.filters.inicio)} a ${brDate(state.filters.fim)}`;
+
+    document.getElementById('kpiSaldo').textContent = money(total.saldo_dia);
+    document.getElementById('kpiReceber').textContent = money(total.contas_receber);
+    document.getElementById('kpiPagar').textContent = money(total.contas_pagar);
+    document.getElementById('kpiProvisao').textContent = money(total.provisoes_dia);
+    document.getElementById('kpiProjetado').textContent = money(total.saldo_projetado);
+    document.getElementById('kpiStatus').textContent = total.saldo_projetado < 0 ? 'ATENÇÃO' : 'OK';
+    document.getElementById('kpiSaldoInfo').textContent = labelPeriodo;
+    document.getElementById('kpiReceberInfo').textContent = labelPeriodo;
+    document.getElementById('kpiPagarInfo').textContent = labelPeriodo;
+    document.getElementById('kpiProvisaoInfo').textContent = labelPeriodo;
   }
 
   function renderFluxo() {
