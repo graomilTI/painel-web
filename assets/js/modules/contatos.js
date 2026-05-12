@@ -194,14 +194,40 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     });
   }
 
+
+  async function fetchAllRowsSupabase(supabase, table, columns, configureQuery, orderBy) {
+    const pageSize = 1000;
+    let from = 0;
+    const rows = [];
+
+    while (true) {
+      let query = supabase.from(table).select(columns);
+      if (typeof configureQuery === 'function') query = configureQuery(query);
+      if (orderBy) query = query.order(orderBy, { ascending: true });
+      query = query.range(from, from + pageSize - 1);
+
+      const { data, error } = await query;
+      if (error) return { rows, error };
+
+      const chunk = data || [];
+      rows.push(...chunk);
+      if (chunk.length < pageSize) break;
+
+      from += pageSize;
+      if (from > 50000) break;
+    }
+
+    return { rows, error: null };
+  }
+
   async function loadColaboradoresAtuais(supabase) {
-    const { data, error } = await supabase
-      .from('colaboradores')
-      .select('cpf,nome,situacao,admissao,desligamento,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cep,estado,cidade,bairro,endereco,complemento,data_nascimento')
-      .order('nome', { ascending: true })
-      .limit(10000);
-    if (error) return { rows: [], error };
-    return { rows: data || [], error: null };
+    return fetchAllRowsSupabase(
+      supabase,
+      'colaboradores',
+      'cpf,nome,situacao,admissao,desligamento,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cep,estado,cidade,bairro,endereco,complemento,data_nascimento',
+      null,
+      'nome'
+    );
   }
 
   async function loadLatestSnapshotColabs(supabase) {
@@ -215,14 +241,13 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     const ref = refs?.[0]?.data_referencia;
     if (!ref) return { rows: [], error: null };
 
-    const { data, error } = await supabase
-      .from('colaborador_snapshot')
-      .select('cpf,nome,situacao,admissao,desligamento,ativo,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cep,estado,cidade,bairro,endereco,complemento,data_nascimento,data_referencia')
-      .eq('data_referencia', ref)
-      .order('nome', { ascending: true })
-      .limit(10000);
-    if (error) return { rows: [], error };
-    return { rows: data || [], error: null };
+    return fetchAllRowsSupabase(
+      supabase,
+      'colaborador_snapshot',
+      'cpf,nome,situacao,admissao,desligamento,ativo,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cep,estado,cidade,bairro,endereco,complemento,data_nascimento,data_referencia',
+      (query) => query.eq('data_referencia', ref),
+      'nome'
+    );
   }
 
   async function loadLatestColabs(supabase) {
@@ -237,7 +262,13 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     const atuaisRows = atuais.rows || [];
     const snapshotRows = snapshot.rows || [];
 
-    if (atuaisRows.length >= snapshotRows.length) return atuaisRows;
+    const ativosAtuais = atuaisRows.filter(colaboradorAtivo).length;
+    const ativosSnapshot = snapshotRows.filter(colaboradorAtivo).length;
+
+    // Se a última importação de Funcionários tem mais ativos que a tabela atual,
+    // usa o snapshot para evitar exportar só parte da base.
+    if (snapshotRows.length && ativosSnapshot > ativosAtuais) return snapshotRows;
+    if (atuaisRows.length) return atuaisRows;
     if (snapshotRows.length) return snapshotRows;
     if (atuais.error) throw atuais.error;
     if (snapshot.error) throw snapshot.error;
@@ -246,12 +277,15 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
   async function loadPatrimoniosAtraso(supabase) {
     const set = new Set();
-    const { data, error } = await supabase
-      .from('patrimonios_snapshot')
-      .select('funcionario,coordenacao,dias_sem_leitura')
-      .limit(10000);
+    const { rows, error } = await fetchAllRowsSupabase(
+      supabase,
+      'patrimonios_snapshot',
+      'funcionario,coordenacao,dias_sem_leitura',
+      null,
+      'funcionario'
+    );
     if (error) return set;
-    (data || []).forEach((p) => {
+    (rows || []).forEach((p) => {
       const nome = String(p.funcionario || '').trim();
       const dias = Number(p.dias_sem_leitura || 0);
       const limite = normalize(p.coordenacao).toUpperCase() === 'GERAL' ? 30 : 10;
