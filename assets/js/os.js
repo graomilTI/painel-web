@@ -234,7 +234,7 @@ function injectStyles() {
     .os-table{width:100%;min-width:980px;border-collapse:separate;border-spacing:0;table-layout:fixed;color:#e5e7eb}.os-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px 9px;font-size:11px;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1}.os-table th[data-sort]{cursor:pointer;user-select:none}.os-table th[data-sort]:hover{color:#fff;background:#0b2116}.os-table td{padding:10px 9px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:top;background:rgba(15,23,42,.24)}
     .os-col-num{width:9.5%}.os-col-cliente{width:40%}.os-col-rem{width:12.5%}.os-col-ind{width:27%}.os-col-acao{width:11%}
     .os-table tr:hover td{background:rgba(22,101,52,.1)}.os-title{font-weight:850;color:#f8fafc;font-size:13.5px;line-height:1.18}.os-num{font-size:13.5px;font-weight:950}.os-meta{font-size:11px;color:#94a3b8;margin-top:3px;line-height:1.25}.os-client-main{max-width:100%;font-size:13.5px;line-height:1.16}.os-route-line{display:block;white-space:normal;overflow-wrap:anywhere}.os-actions{display:flex;gap:6px;flex-wrap:wrap}.os-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.72);color:#dcfce7;border-radius:999px;padding:7px 10px;font-weight:900;cursor:pointer;font-size:12px}.os-btn.active{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.os-btn.warn.active{background:#fde68a;color:#713f12}.os-btn.danger.active{background:#fecaca;color:#7f1d1d}.os-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.os-chip.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.os-chip.warn{background:rgba(250,204,21,.14);color:#fde68a}.os-chip.info{background:rgba(59,130,246,.13);color:#bfdbfe}.os-chip.danger{background:rgba(239,68,68,.12);color:#fecaca}.os-zero{box-shadow:inset 4px 0 0 #facc15}.os-indbox{display:flex;gap:8px;align-items:flex-start;flex-direction:column}.os-select{width:100%;min-height:38px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0f172a;color:#e5e7eb;color-scheme:dark;padding:8px;font-size:12px}.os-mini{font-size:11px;color:#a7f3d0;line-height:1.25}.os-warn-text{font-size:11px;color:#fde68a;margin-top:6px;line-height:1.25}.os-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#94a3b8;background:rgba(15,23,42,.16)}
-    .os-rem-box{display:flex;flex-direction:column;gap:3px;align-items:flex-start}.os-rem-box .os-meta{margin-top:0}
+    .os-rem-box{display:flex;flex-direction:column;gap:3px;align-items:flex-start}.os-rem-box .os-meta{margin-top:0}.os-extra-box{width:100%;margin-top:6px;padding-top:7px;border-top:1px solid rgba(52,211,153,.16);display:flex;flex-direction:column;gap:6px}
     @media(max-width:900px){.os-grid{grid-template-columns:1fr}.os-grid .field-span-2{grid-column:span 1}}
   `;
   document.head.appendChild(style);
@@ -535,12 +535,32 @@ initProtectedPage('OS', async (content) => {
     const status = normalize(row.status_gestor || 'AGUARDAR') || 'AGUARDAR';
     const compartilhavel = rem > 0 && rem <= LIMITE_COMPARTILHAR;
     const ponto = osPoint(row);
-    const selectOptions = sugestoes.map((c, index) => {
-      const key = colabKey(c);
-      const distTxt = c.distancia_km == null ? 'sem distância' : `${KM.format(c.distancia_km)} km`;
-      const label = `${index === 0 && c.distancia_km != null ? '⭐ ' : ''}${c.nome || c.nome_colaborador || ''} • ${distTxt}`;
-      return `<option value="${escapeHtml(key)}" data-nome="${escapeHtml(c.nome || c.nome_colaborador || '')}" data-dist="${escapeHtml(c.distancia_km ?? '')}" ${String(key) === String(selectedKey) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
-    }).join('');
+    function optionList(selected, excludeKeys = new Set()) {
+      return sugestoes.map((c, index) => {
+        const key = colabKey(c);
+        if (excludeKeys.has(String(key)) && String(key) !== String(selected)) return '';
+        const distTxt = c.distancia_km == null ? 'sem distância' : `${KM.format(c.distancia_km)} km`;
+        const label = `${index === 0 && c.distancia_km != null ? '⭐ ' : ''}${c.nome || c.nome_colaborador || ''} • ${distTxt}`;
+        return `<option value="${escapeHtml(key)}" data-nome="${escapeHtml(c.nome || c.nome_colaborador || '')}" data-dist="${escapeHtml(c.distancia_km ?? '')}" ${String(key) === String(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+      }).join('');
+    }
+
+    const selectedKeys = new Set(atr.map((a) => String(a.colaborador_key || '').trim()).filter(Boolean));
+    const mainOptions = optionList(selectedKey, new Set([...selectedKeys].filter((key) => String(key) !== String(selectedKey))));
+    const extra = atr[1] || null;
+    const extraKey = extra?.colaborador_key || '';
+    const extraNome = extra?.colaborador_nome || '';
+    const extraOptions = optionList(extraKey, new Set([...selectedKeys, String(selectedKey)].filter((key) => key && String(key) !== String(extraKey))));
+    const extraSelectHtml = permitirMais ? `
+      <div class="os-extra-box">
+        <label class="os-mini"><strong>2º colaborador na mesma O.S.</strong></label>
+        <select class="os-select" data-assign-extra data-existing-id="${escapeHtml(extra?.id || '')}">
+          <option value="">${extraNome ? 'Trocar/remover 2º colaborador' : 'Selecionar 2º colaborador'}</option>
+          ${extraOptions}
+        </select>
+        ${extraNome ? `<div class="os-mini"><strong>Também indicado:</strong> ${escapeHtml(extraNome)} ${extra?.distancia_km != null ? `• ${KM.format(extra.distancia_km)} km` : ''}</div>` : '<div class="os-mini">Use este campo para indicar mais um classificador junto na mesma O.S.</div>'}
+        ${atr.length > 2 ? `<div class="os-meta">${atr.slice(2).map((a) => `<span class="os-chip ok">${escapeHtml(a.colaborador_nome)} <button class="os-btn" style="padding:2px 6px;margin-left:5px" data-remove-colab="${escapeHtml(a.id)}">×</button></span>`).join(' ')}</div>` : ''}
+      </div>` : '';
 
     return `<tr data-os-id="${escapeHtml(row.id)}" class="${zero ? 'os-zero' : ''}">
       <td><div class="os-title os-num">${escapeHtml(row.numero_os)}</div><div class="os-meta">${brDate(row.data_os)}</div><div class="os-meta">${escapeHtml(first(row.servico))}</div><div class="os-meta">${escapeHtml(first(row.supervisao))}</div>${zero ? '<div class="os-warn-text">Remanescente zerado</div>' : ''}</td>
@@ -548,14 +568,14 @@ initProtectedPage('OS', async (content) => {
       <td><div class="os-rem-box"><span class="os-chip ${zero ? 'warn' : rem <= LIMITE_UM_CLASSIFICADOR ? 'info' : 'ok'}">${fmtTon(rem)}</span><div class="os-meta">Lote ${fmtTon(row.lote)}</div><div class="os-meta">Emb. ${fmtTon(row.embarcado)}</div>${compartilhavel ? `<div class="os-warn-text">Pode reaproveitar em outra O.S. até ${RAIO_COMPARTILHAR_KM} km.</div>` : ''}</div></td>
       <td>
         <div class="os-indbox">
-          <select class="os-select" data-assign>
+          <select class="os-select" data-assign-main>
             <option value="">${principal ? 'Selecionar outro colaborador' : 'Selecionar colaborador'}</option>
-            ${selectOptions}
+            ${mainOptions}
           </select>
           ${selectedNome ? `<div class="os-mini"><strong>Indicação:</strong> ${escapeHtml(selectedNome)}</div>` : '<div class="os-warn-text">Sem sugestão automática. Ponto de embarque ou colaborador sem coordenadas válidas.</div>'}
           ${principal ? `<div class="os-mini">${KM.format(principal.distancia_km)} km do ponto operacional.</div>` : `<div class="os-mini">${escapeHtml(ponto.label)}</div>`}
-          ${atr.length > 1 ? `<div class="os-meta">${atr.slice(1).map((a) => `<span class="os-chip ok">${escapeHtml(a.colaborador_nome)} <button class="os-btn" style="padding:2px 6px;margin-left:5px" data-remove-colab="${escapeHtml(a.id)}">×</button></span>`).join(' ')}</div>` : ''}
           ${rem > 0 && rem <= LIMITE_UM_CLASSIFICADOR ? `<label class="os-mini" style="display:block"><input type="checkbox" data-allow-more ${permitirMais ? 'checked' : ''}/> permitir 2 ou mais colaboradores</label>` : ''}
+          ${extraSelectHtml}
         </div>
       </td>
       <td><div class="os-actions">${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}">${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}</button>`).join('')}</div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
@@ -628,19 +648,50 @@ initProtectedPage('OS', async (content) => {
     const tr = event.target.closest('[data-os-id]');
     if (!tr) return;
     if (event.target.matches('[data-allow-more]')) {
-      await updateOs(tr.dataset.osId, { permitir_mais_classificadores: event.target.checked, configurada_em: new Date().toISOString() });
+      const checked = event.target.checked;
+      if (!checked) {
+        const extras = atribuicoesDaOs(tr.dataset.osId).slice(1).map((a) => a.id).filter(Boolean);
+        if (extras.length) {
+          const del = await supabase.from('operacional_os_colaboradores').delete().in('id', extras);
+          if (del.error) return alert(del.error.message);
+        }
+      }
+      await updateOs(tr.dataset.osId, { permitir_mais_classificadores: checked, configurada_em: new Date().toISOString() }, true);
+      await loadOs(); render();
       return;
     }
-    if (event.target.matches('[data-assign]') && event.target.value) {
+    if ((event.target.matches('[data-assign-main]') || event.target.matches('[data-assign-extra]')) && event.target.value) {
       const row = state.os.find((o) => String(o.id) === String(tr.dataset.osId));
       const selected = event.target.selectedOptions[0];
       const current = atribuicoesDaOs(row.id);
       const rem = num(row.remanescente);
+      const isExtra = event.target.matches('[data-assign-extra]');
       const allowMore = Boolean(row.permitir_mais_classificadores) || rem > LIMITE_UM_CLASSIFICADOR;
-      if (rem > 0 && rem <= LIMITE_UM_CLASSIFICADOR && current.length >= 1 && !allowMore) {
-        alert('Esta O.S. tem até 555.000 de remanescente. O padrão é 1 classificador. Marque a opção para permitir 2 ou mais colaboradores.');
+      if (isExtra && !allowMore) {
+        alert('Marque a opção para permitir 2 ou mais colaboradores antes de adicionar outro classificador.');
         event.target.value = '';
         return;
+      }
+      if (!isExtra && rem > 0 && rem <= LIMITE_UM_CLASSIFICADOR && current.length >= 1 && !allowMore) {
+        // A seleção principal troca o classificador atual, não adiciona um segundo.
+        const atual = current[0];
+        if (atual?.id && String(atual.colaborador_key) !== String(event.target.value)) {
+          const del = await supabase.from('operacional_os_colaboradores').delete().eq('id', atual.id);
+          if (del.error) return alert(del.error.message);
+        }
+      }
+      if (isExtra) {
+        const mainKey = current[0]?.colaborador_key || '';
+        if (mainKey && String(mainKey) === String(event.target.value)) {
+          alert('Este colaborador já está como indicação principal desta O.S.');
+          event.target.value = '';
+          return;
+        }
+        const existingId = event.target.dataset.existingId;
+        if (existingId) {
+          const del = await supabase.from('operacional_os_colaboradores').delete().eq('id', existingId);
+          if (del.error) return alert(del.error.message);
+        }
       }
       const payload = {
         os_id: row.id,
