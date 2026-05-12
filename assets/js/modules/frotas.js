@@ -536,31 +536,20 @@
   function buildPrintDriverMap() {
     return groupImportedExcessos(state.importedExcessos).map((g) => {
       const driverName = isUnknownDriverName(g.motorista) ? '' : normalizeName(g.motorista || '');
-      const registrosBase = (g.originalRegistros && g.originalRegistros.length) ? g.originalRegistros : (g.registros || []);
-      const registros = registrosBase.map((r) => ({
-        id: r.id,
-        data: formatDateBR(r.data || r.data_evento),
-        data_evento: formatDateBR(r.data_evento || r.data),
-        velocidade: parseSpeed(r.velocidade),
-        notificationNumber: rowNotificationNumber(r),
-        numeroNotificacao: rowNotificationNumber(r),
-        numero_notificacao: rowNotificationNumber(r)
-      })).filter((r) => r.id && r.data && r.velocidade);
       return {
         key: g.key || '',
         plate: onlyPlate(g.placa),
-        placa: onlyPlate(g.placa),
         driverName,
-        motorista: driverName,
-        condutor: driverName,
         driverFolderName: driverName ? sanitizeFolderName(driverName) : '',
-        notificationNumber: registros.map((r) => r.notificationNumber).find(Boolean) || '',
         coordenacao: g.coordenacao || '',
         supervisao: g.supervisao || '',
-        registros,
-        records: registros
+        registros: (g.registros || []).map((r) => ({
+          id: r.id,
+          data: formatDateBR(r.data || r.data_evento),
+          velocidade: parseSpeed(r.velocidade)
+        })).filter((r) => r.id && r.data && r.velocidade)
       };
-    }).filter((item) => item.driverName || item.plate || (item.registros || []).length);
+    }).filter((item) => item.plate);
   }
 
   function buildKnownDriversForOcr(opts = currentRenderOpts) {
@@ -1313,7 +1302,7 @@
     const matched = new Map();
     const openRows = (state.importedExcessos || []).filter((row) => {
       const status = String(row.status_notificacao || '').toUpperCase();
-      return status !== 'NOTIFICADO' && status !== 'CANCELADO' && status !== 'OK';
+      return status === 'PENDENTE' || status === 'GERADA';
     });
 
     const addMatch = (row, file, reason) => {
@@ -1468,6 +1457,7 @@
           unknownDriverFolderName: 'OCR - CONFERIR',
           unknownFolderName: 'OCR - CONFERIR',
           ocrReviewFolderName: 'OCR - CONFERIR',
+          identifyDriverIndependentOfPanel1: true,
           blockFolderNames: ['MOTORISTA NAO IDENTIFICADO', 'MOTORISTA NÃO IDENTIFICADO'],
           forceUnknownToReviewFolder: true,
           driverNameRegexHints: [
@@ -1478,9 +1468,6 @@
           notificationDate: formatDateBR(dataNotificacao),
           filePrefixDate: brDateToFilePrefix(dataNotificacao),
           fileNamingPattern: 'ordinal_notification_year_driver',
-          autoOkByDriverDateSpeed: true,
-          autoOkByNotificationNumber: true,
-          matchOpenPendenciesByOcr: true,
           driverMap,
           knownDrivers,
           files
@@ -1834,7 +1821,7 @@
                   <div class="speed-field" style="margin-top:14px"><label>Selecionar prints em lote</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
                   <div data-upload-list class="upload-list"></div>
                   <div class="upload-actions"><button class="speed-btn speed-btn-primary" type="button" data-upload-prints>Enviar prints e conferir por OCR</button></div>
-                  <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>O Painel 1 apenas gera/copia a mensagem. O Painel 2 lê os prints por OCR em lote, identifica condutor, nº da notificação, data e velocidade, e marca OK automaticamente quando encontrar pendência correspondente. Ele não depende da sugestão selecionada nem da mensagem marcada como copiada.</p></div>
+                  <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>O Painel 1 apenas gera/copia a mensagem. O Painel 2 identifica o condutor pelo OCR e cruza número da notificação, motorista, placa, data e velocidade com as pendências abertas. Ele não depende da sugestão selecionada nem da mensagem marcada como copiada.</p></div>
                   <div data-saved-list class="saved-list"></div>
                 </div>
               </div>
