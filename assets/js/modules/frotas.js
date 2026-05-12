@@ -970,10 +970,11 @@
       saved.innerHTML = state.savedPrints.length ? state.savedPrints.map((f) => {
         const driverName = getPossibleFileDriverName(f);
         const rawFolder = f.driverFolderName || f.folderName || '';
-        const folderName = driverName || (isUnknownDriverName(rawFolder) ? 'OCR - CONFERIR' : rawFolder);
-        const extra = driverName && isUnknownDriverName(rawFolder)
-          ? '<br><small>Motorista identificado pelo OCR do print; conferir se o Apps Script moveu para a pasta correta.</small>'
-          : (isUnknownDriverName(rawFolder) ? '<br><small>OCR ainda não retornou motorista válido para este arquivo.</small>' : '');
+        const folderIsInvalid = isUnknownDriverName(rawFolder) || isNotificationTitleLike(rawFolder);
+        const folderName = driverName || (folderIsInvalid ? 'OCR - CONFERIR' : rawFolder);
+        const extra = driverName && folderIsInvalid
+          ? '<br><small>Motorista identificado pelo OCR do print. A pasta exibida foi corrigida para o nome do motorista.</small>'
+          : (folderIsInvalid ? '<br><small>OCR ainda não retornou motorista válido para este arquivo.</small>' : '');
         return `<div class="saved-item"><strong>${escapeHtml(f.fileName || 'Print salvo')}</strong><br>Pasta: ${escapeHtml(folderName)}${extra}${f.fileUrl ? `<br><a href="${escapeHtml(f.fileUrl)}" target="_blank" rel="noopener">Abrir no Drive</a>` : ''}</div>`;
       }).join('') : '';
     }
@@ -1087,13 +1088,29 @@
     return out.filter(Boolean).join('\n');
   }
 
-  function cleanPossibleDriverName(value) {
-    let name = normalizeName(value)
-      .replace(/\b(BOM DIA|BOA TARDE|BOA NOITE|ENCAMINHADA|LEIA MAIS|LER MAIS|ARQUIVO|PASTA)\b/g, ' ')
-      .replace(/\b(CONSTATAMOS|COMUNICAMOS|IDENTIFICAMOS|PREZADO|PREZADA|COLABORADOR|MOTORISTA)\b.*$/g, '')
+  function isNotificationTitleLike(value) {
+    const text = normalizeDriverNameForMatch(value)
+      .replace(/\b(PNG|JPG|JPEG|WEBP)\b/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    if (isUnknownDriverName(name)) return '';
+    if (!text) return false;
+    return /NOTIFICACAO\s+DE\s+VELOCIDADE/.test(text)
+      || /MOTORISTA\s+NAO\s+IDENTIFICADO/.test(text)
+      || /^\d+\s*(O|º|°)?\s*NOTIFICACAO/.test(text)
+      || /\bNOTIFICACAO\b/.test(text)
+      || /\bVELOCIDADE\b/.test(text);
+  }
+
+  function cleanPossibleDriverName(value) {
+    if (isNotificationTitleLike(value)) return '';
+    let name = normalizeName(value)
+      .replace(/\.[A-Z0-9]{2,5}$/g, ' ')
+      .replace(/\b(BOM DIA|BOA TARDE|BOA NOITE|ENCAMINHADA|LEIA MAIS|LER MAIS|ARQUIVO|PASTA)\b/g, ' ')
+      .replace(/\b(CONSTATAMOS|COMUNICAMOS|IDENTIFICAMOS|PREZADO|PREZADA|COLABORADOR|MOTORISTA|CONDUTOR)\b.*$/g, '')
+      .replace(/[^A-ZÀ-Ú' .-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (isUnknownDriverName(name) || isNotificationTitleLike(name)) return '';
     const parts = name.split(' ').filter(Boolean);
     if (parts.length < 2) return '';
     if (name.length < 6 || name.length > 80) return '';
@@ -1133,22 +1150,30 @@
   }
 
   function getPossibleFileDriverName(file) {
+    // Campos realmente ligados ao motorista. Não usar folderName/fileName como motorista,
+    // porque o Apps Script pode devolver "43ª NOTIFICAÇÃO..." como pasta temporária.
     const direct = cleanPossibleDriverName([
       file?.driverName,
       file?.driver_name,
-      file?.driverFolderName,
-      file?.driver_folder_name,
       file?.motorista,
       file?.nomeMotorista,
       file?.nome_motorista,
       file?.condutor,
-      file?.folderName,
-      file?.folder_name
+      file?.condutor_nome,
+      file?.driverOcrName,
+      file?.driver_ocr_name,
+      file?.ocrDriverName,
+      file?.ocr_driver_name
     ].find(Boolean) || '');
     if (direct) return direct;
 
     const fromOcr = extractDriverNameFromOcrText(getOcrTextFromFileResult(file));
     if (fromOcr) return fromOcr;
+
+    const folderCandidate = [file?.driverFolderName, file?.driver_folder_name, file?.folderName, file?.folder_name]
+      .find((value) => value && !isNotificationTitleLike(value));
+    const fromFolder = cleanPossibleDriverName(folderCandidate || '');
+    if (fromFolder) return fromFolder;
 
     const fromFileName = String(file?.fileName || file?.name || '')
       .replace(/\.[a-z0-9]{2,5}$/i, '')
@@ -1159,11 +1184,18 @@
 
   function normalizeSavedPrintFileResult(file) {
     const driverName = getPossibleFileDriverName(file);
-    if (!driverName) return file;
+    const currentFolder = file?.driverFolderName || file?.driver_folder_name || file?.folderName || file?.folder_name || '';
+    const folderIsInvalid = isUnknownDriverName(currentFolder) || isNotificationTitleLike(currentFolder);
+    if (!driverName) {
+      return folderIsInvalid
+        ? { ...file, driverFolderName: 'OCR - CONFERIR', folderName: 'OCR - CONFERIR' }
+        : file;
+    }
     return {
       ...file,
       driverName,
-      driverFolderName: isUnknownDriverName(file?.driverFolderName) ? driverName : (file?.driverFolderName || driverName)
+      driverFolderName: folderIsInvalid ? driverName : (file?.driverFolderName || file?.folderName || driverName),
+      folderName: folderIsInvalid ? driverName : (file?.folderName || file?.driverFolderName || driverName)
     };
   }
 
@@ -1373,17 +1405,40 @@
           parentFolderId: PASTA_MAE_DRIVE_ID,
           // Processo 2 100% independente do Painel 1:
           // não envia motorista/placa selecionados, para o print nunca ficar preso à mensagem copiada.
+          // Não deixar o Apps Script cair no fallback antigo "MOTORISTA NAO IDENTIFICADO".
+          // A pasta final deve ser definida pelo OCR; se não identificar, cai em conferência.
           driverName: '',
-          driverFolderName: '',
+          driverFolderName: 'OCR - CONFERIR',
+          folderName: 'OCR - CONFERIR',
+          targetFolderName: 'OCR - CONFERIR',
+          fallbackFolderName: 'OCR - CONFERIR',
+          defaultFolderName: 'OCR - CONFERIR',
           plate: '',
           selectedDriverName: '',
           selectedPlate: '',
           processMode: 'OCR_ONLY_INDEPENDENT',
           autoRouteByOcr: true,
+          routeByOcrDriverName: true,
+          ocrOnlyIndependent: true,
           ignoreSelectedSuggestion: true,
+          ignoreCopiedMessage: true,
+          ignoreFileNameAsDriver: true,
+          preventFolderFromFileName: true,
+          rejectGenericDriverName: true,
+          rejectNotificationTitleAsDriver: true,
           requireOcrBeforeFolder: true,
+          folderFallbackMode: 'OCR_CONFERIR_ONLY',
           saveUnknownDriverFolder: false,
           unknownDriverFolderName: 'OCR - CONFERIR',
+          unknownFolderName: 'OCR - CONFERIR',
+          ocrReviewFolderName: 'OCR - CONFERIR',
+          blockFolderNames: ['MOTORISTA NAO IDENTIFICADO', 'MOTORISTA NÃO IDENTIFICADO'],
+          forceUnknownToReviewFolder: true,
+          driverNameRegexHints: [
+            '^(.*?)\\s*,\\s*Constatamos',
+            '^(.*?)\\s*,\\s*comunicamos',
+            '^(.*?)\\s*,\\s*identificamos'
+          ],
           notificationDate: formatDateBR(dataNotificacao),
           filePrefixDate: brDateToFilePrefix(dataNotificacao),
           fileNamingPattern: 'ordinal_notification_year_driver',
