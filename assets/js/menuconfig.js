@@ -1,8 +1,6 @@
 window.MENU_CONFIG = {
-  gestor: [
-    { nome: "GESTOR", modulos: ["Programação", "OS", "Hospedagem", "Compras", "Logística", "Patrimônios", "Contato Cliente"] }
-  ],
   adm: [
+    { nome: "GESTOR", modulos: ["Programação", "OS", "Hospedagem", "Compras", "Logística", "Patrimônios", "Contato Cliente"] },
     { nome: "CONFERÊNCIA", modulos: ["Irregularidades", "Lançamentos", "Uber", "Distribuir O.S"] },
     { nome: "COMPRAS", modulos: ["Pedidos", "Fornecedores"] },
     { nome: "PATRIMÔNIOS", modulos: ["Painel de Patrimônios", "Relatórios de Patrimônios"] },
