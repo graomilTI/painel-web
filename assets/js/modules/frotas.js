@@ -1001,6 +1001,69 @@
       .trim();
   }
 
+  function normalizeNameForOcrMatch(value) {
+    return normalizeTextForOcrMatch(value)
+      .replace(/[^A-Z0-9\s]/g, ' ')
+      .replace(/\b(SR|SRA|SENHOR|SENHORA|MOTORISTA|CONDUTOR|CONDUTORA)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function getOcrTextLines(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .split(/\r?\n|\|/)
+      .map((line) => line.replace(/[^A-Z0-9\s/.,:-]/g, ' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+  }
+
+  function looksLikePersonNameFromOcr(value) {
+    const name = normalizeNameForOcrMatch(value);
+    if (!name) return false;
+    const parts = name.split(' ').filter(Boolean);
+    if (parts.length < 2 || parts.length > 7) return false;
+    const blocked = /\b(NOTIFICACAO|VELOCIDADE|MOTORISTA|IDENTIFICADO|CONSTATAMOS|SISTEMA|RASTREAMENTO|FROTA|VEICULO|PLACA|REGISTROS|ABAIXO|KM|HORA|ARQUIVO|GOOGLE|DRIVE|WHATSAPP|ENCAMINHADA|BOA|TARDE|LIMITE|PERMITIDO|CONDUTOR|EMPRESA|ORGANIZACAO|SEGURANCA|TERCEIROS|PATRIMONIO|ATENCAO)\b/;
+    if (blocked.test(name)) return false;
+    return parts.every((part) => part.length >= 2 && /^[A-Z]+$/.test(part));
+  }
+
+  function extractPossibleDriversFromOcrText(text) {
+    const raw = String(text || '');
+    const normalizedFull = normalizeTextForOcrMatch(raw);
+    const out = [];
+    const add = (value) => {
+      const name = normalizeNameForOcrMatch(value);
+      if (looksLikePersonNameFromOcr(name) && !out.includes(name)) out.push(name);
+    };
+
+    const patterns = [
+      /(?:BOM DIA|BOA TARDE|BOA NOITE)[\s\S]{0,140}?([A-ZÀ-Ý]{2,}(?:\s+[A-ZÀ-Ý]{2,}){1,6}),\s*(?:CONSTATAMOS|COMUNICAMOS|INFORMAMOS)/i,
+      /\b([A-ZÀ-Ý]{2,}(?:\s+[A-ZÀ-Ý]{2,}){1,6}),\s*(?:CONSTATAMOS|COMUNICAMOS|INFORMAMOS)/i,
+      /(?:^|\n|\r)([A-ZÀ-Ý][A-ZÀ-Ý\s]{5,80}?),\s*(?:CONSTATAMOS|COMUNICAMOS|INFORMAMOS)/i,
+      /(?:^|\n|\r)([A-ZÀ-Ý][A-ZÀ-Ý\s]{5,80}?)(?:,|\s+CONSTATAMOS)/i,
+      /(?:MOTORISTA|CONDUTOR|COLABORADOR|FUNCIONARIO)\s*[:\-]\s*([A-ZÀ-Ý][A-ZÀ-Ý\s]{5,80})/i,
+      /(?:NOME)\s*[:\-]\s*([A-ZÀ-Ý][A-ZÀ-Ý\s]{5,80})/i
+    ];
+    patterns.forEach((pattern) => {
+      const match = raw.match(pattern) || normalizedFull.match(pattern);
+      if (match?.[1]) add(match[1]);
+    });
+
+    const lines = getOcrTextLines(raw);
+    lines.forEach((line, index) => {
+      const clean = line.replace(/,$/, '').trim();
+      if (looksLikePersonNameFromOcr(clean)) {
+        const next = lines[index + 1] || '';
+        const prev = lines[index - 1] || '';
+        if (/\b(CONSTATAMOS|COMUNICAMOS|INFORMAMOS)\b/.test(next) || /\b(BOA TARDE|BOA NOITE|BOM DIA|ENCAMINHADA)\b/.test(prev) || clean.includes(' ')) add(clean);
+      }
+    });
+
+    return out;
+  }
+
   function getOcrTextFromFileResult(file) {
     return [
       file?.ocrText,
@@ -1057,11 +1120,26 @@
   }
 
   function getPossibleFilePlate(file) {
-    const text = normalizeTextForOcrMatch(getOcrTextFromFileResult(file));
+    const text = normalizeTextForOcrMatch([getOcrTextFromFileResult(file), file?.fileName, file?.name].filter(Boolean).join('\n'));
     const direct = onlyPlate(file?.plate || file?.placa || file?.vehiclePlate || file?.vehicle_plate || '');
     if (direct) return direct;
     const match = text.match(/\b([A-Z]{3}\s*[0-9][A-Z0-9]\s*[0-9]{2})\b/);
     return match ? onlyPlate(match[1]) : '';
+  }
+
+  function getPossibleFileDrivers(file) {
+    const direct = [
+      file?.driverName,
+      file?.driverFolderName,
+      file?.motorista,
+      file?.nomeMotorista,
+      file?.condutor,
+      file?.colaborador
+    ].map(normalizeNameForOcrMatch).filter(Boolean);
+
+    const text = [getOcrTextFromFileResult(file), file?.fileName, file?.name].filter(Boolean).join('\n');
+    const extracted = extractPossibleDriversFromOcrText(text);
+    return Array.from(new Set([...direct, ...extracted]));
   }
 
   function getGroupKeyFromRow(row) {
@@ -1077,11 +1155,16 @@
 
   function fileMatchesRowByVehicleOrDriver(file, row) {
     const filePlate = getPossibleFilePlate(file);
-    const fileDriver = normalizeName(file?.driverName || file?.driverFolderName || file?.motorista || file?.nomeMotorista || '');
+    const fileDrivers = getPossibleFileDrivers(file);
     const rowPlate = onlyPlate(row?.placa || '');
-    const rowDriver = normalizeName(getDriverFromExcesso(row));
+    const rowDriver = normalizeNameForOcrMatch(getDriverFromExcesso(row));
     if (filePlate && rowPlate && filePlate === rowPlate) return true;
-    if (fileDriver && rowDriver && (fileDriver === rowDriver || fileDriver.includes(rowDriver) || rowDriver.includes(fileDriver))) return true;
+    if (fileDrivers.length && rowDriver) {
+      return fileDrivers.some((fileDriver) => {
+        if (!fileDriver) return false;
+        return fileDriver === rowDriver || fileDriver.includes(rowDriver) || rowDriver.includes(fileDriver);
+      });
+    }
     return false;
   }
 
@@ -1102,7 +1185,7 @@
         id: row.id,
         fileName: file?.fileName || file?.name || '',
         fileUrl: file?.fileUrl || file?.url || '',
-        driverName: file?.driverName || file?.driverFolderName || getDriverFromExcesso(row) || '',
+        driverName: (getPossibleFileDrivers(file)[0] || file?.driverName || file?.driverFolderName || getDriverFromExcesso(row) || ''),
         plate: getPossibleFilePlate(file) || onlyPlate(row.placa || ''),
         reason
       });
