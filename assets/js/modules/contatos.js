@@ -430,6 +430,105 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     return data;
   }
 
+
+  async function googleContactsJobAction(action, payload = {}) {
+    const opts = window.CONTATOS.__opts || {};
+    const client = opts.supabase;
+    if (!client?.functions?.invoke) throw new Error('Supabase Functions não está disponível no painel.');
+    const { data, error } = await client.functions.invoke('google-contacts-job', {
+      body: { action, ...payload }
+    });
+    if (error) throw error;
+    if (!data || data.ok === false) throw new Error(data?.error || 'Falha no job de Google Contacts.');
+    return data;
+  }
+
+  function readGoogleJobId() {
+    try { return String(localStorage.getItem('contatos_google_sync_job_id') || '').trim(); }
+    catch (_) { return ''; }
+  }
+
+  function saveGoogleJobId(jobId) {
+    try {
+      if (jobId) localStorage.setItem('contatos_google_sync_job_id', String(jobId));
+      else localStorage.removeItem('contatos_google_sync_job_id');
+    } catch (_) {}
+  }
+
+  function googleJobIsRunning(job) {
+    const st = String(job?.status || '').toLowerCase();
+    return st === 'pendente' || st === 'processando' || st === 'running' || st === 'pending';
+  }
+
+  function googleJobSummary(job) {
+    const resumo = job?.resumo || job?.summary || {};
+    return {
+      criados: Number(resumo.criados || 0),
+      atualizados: Number(resumo.atualizados || 0),
+      recriados: Number(resumo.recriados || 0),
+      ignorados: Number(resumo.ignorados || 0),
+      erros: Number(resumo.erros || 0),
+      removidos: Number(resumo.removidos || 0),
+    };
+  }
+
+  function renderGoogleJobProgress(container, job) {
+    const progress = container.querySelector('#ct_google_progress');
+    const btn = container.querySelector('#ct_google_sync');
+    if (!progress) return;
+    if (!job) {
+      if (btn) { btn.disabled = !state.google.connected; btn.textContent = 'Iniciar job de sincronização'; }
+      progress.innerHTML = '';
+      return;
+    }
+    const cursor = Number(job.cursor || 0);
+    const total = Number(job.total || 0);
+    const pct = total ? Math.min(100, Math.round((cursor / total) * 100)) : 0;
+    const resumo = googleJobSummary(job);
+    const running = googleJobIsRunning(job);
+    const status = String(job.status || '').toUpperCase();
+    const cls = job.status === 'erro' ? 'ct-err' : 'ct-ok';
+    if (btn) {
+      btn.disabled = running || !state.google.connected;
+      btn.textContent = running ? 'Job em execução...' : 'Iniciar job de sincronização';
+    }
+    progress.innerHTML = `<div class="ct-alert ${cls}">
+      <strong>Job Google Contacts:</strong> ${esc(status)} · ${Math.min(cursor, total || cursor)} de ${total || '?'} (${pct}%).
+      Criados: ${resumo.criados} · Atualizados: ${resumo.atualizados} · Ignorados: ${resumo.ignorados} · Removidos: ${resumo.removidos} · Erros: ${resumo.erros}
+      ${job.error ? `<br><strong>Erro:</strong> ${esc(job.error)}` : ''}
+      ${running ? '<br>Processando no Supabase. Pode sair desta tela ou fechar o navegador.' : ''}
+    </div>`;
+  }
+
+  let googleJobPollTimer = null;
+
+  function stopGoogleJobPolling() {
+    if (googleJobPollTimer) clearTimeout(googleJobPollTimer);
+    googleJobPollTimer = null;
+  }
+
+  async function pollGoogleContactsJob(container, jobId = '', once = false) {
+    stopGoogleJobPolling();
+    try {
+      const payload = jobId ? { job_id: jobId } : {};
+      const resp = await googleContactsJobAction('status', payload);
+      const job = resp.job || null;
+      if (job) renderGoogleJobProgress(container, job);
+      if (job && googleJobIsRunning(job) && !once) {
+        googleJobPollTimer = setTimeout(() => pollGoogleContactsJob(container, jobId), 3000);
+      } else if (job && !googleJobIsRunning(job)) {
+        await loadGoogleStatus();
+        saveGoogleJobId('');
+        renderGoogleJobProgress(container, job);
+        setStatus(container, job.status === 'erro' ? (job.error || 'Job concluído com erro.') : 'Job concluído no Supabase.', job.status === 'erro' ? 'err' : 'ok');
+      }
+      return job;
+    } catch (err) {
+      renderGoogleJobProgress(container, { status: 'erro', error: err?.message || String(err), cursor: 0, total: 0, resumo: {} });
+      return null;
+    }
+  }
+
   async function loadGoogleStatus() {
     try {
       const data = await googleContactsAction('status');
@@ -478,78 +577,24 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     setStatus(container, state.google.connected ? `Conta conectada: ${state.google.google_email || 'Google'}.` : 'Conta Google ainda não conectada.', state.google.connected ? 'ok' : '');
   }
 
-  function formatJobStatus(job) {
-    if (!job) return 'Nenhuma sincronização em andamento.';
-    const cursor = Number(job.cursor || 0);
-    const total = Number(job.total || 0);
-    const pct = total ? Math.min(100, Math.round((cursor / total) * 100)) : Number(job.progresso || 0);
-    const statusLabel = {
-      pendente: 'Pendente',
-      processando: 'Processando',
-      concluido: 'Concluído',
-      parcial: 'Concluído com alertas',
-      erro: 'Erro',
-      cancelado: 'Cancelado'
-    }[String(job.status || '').toLowerCase()] || job.status || 'Processando';
-
-    return `${statusLabel}: ${Math.min(cursor, total || cursor)} de ${total || '...'} (${pct || 0}%). ` +
-      `Criados: ${Number(job.criados || 0)} · Atualizados: ${Number(job.atualizados || 0)} · ` +
-      `Ignorados: ${Number(job.ignorados || 0)} · Removidos: ${Number(job.removidos || 0)} · Erros: ${Number(job.erros || 0)}`;
-  }
-
-  async function pollGoogleJob(container, jobId) {
-    const progress = container.querySelector('#ct_google_progress');
-    const btn = container.querySelector('#ct_google_sync');
-    let tentativas = 0;
-
-    while (tentativas < 900) { // até 30 min, sem travar o painel
-      const resp = await googleContactsAction('job_status', { job_id: jobId });
-      const job = resp.job;
-      if (progress) {
-        const mode = ['concluido', 'parcial'].includes(String(job?.status || '')) ? 'ct-ok' : String(job?.status || '') === 'erro' ? 'ct-err' : 'ct-ok';
-        progress.innerHTML = `<div class="ct-alert ${mode}">${esc(formatJobStatus(job))}${job?.erro ? `<br><strong>Detalhe:</strong> ${esc(job.erro)}` : ''}</div>`;
-      }
-
-      if (['concluido', 'parcial', 'erro', 'cancelado'].includes(String(job?.status || '').toLowerCase())) {
-        await loadGoogleStatus();
-        const erro = String(job?.status || '').toLowerCase() === 'erro';
-        setStatus(container, formatJobStatus(job), erro ? 'err' : 'ok');
-        if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar em segundo plano'; }
-        return job;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      tentativas++;
-    }
-
-    if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar em segundo plano'; }
-    setStatus(container, 'A sincronização continua em segundo plano. Clique em Atualizar status para conferir depois.', 'ok');
-    return null;
-  }
-
   async function sincronizarGoogleContacts(container) {
     if (!state.google.connected) {
       setStatus(container, 'Conecte uma conta Google antes de sincronizar.', 'err');
       return;
     }
     const btn = container.querySelector('#ct_google_sync');
-    const progress = container.querySelector('#ct_google_progress');
-    if (btn) { btn.disabled = true; btn.textContent = 'Iniciando em segundo plano...'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Criando job...'; }
     try {
-      const resp = await googleContactsAction('start_sync', { batch_size: 80, cleanup_old: true });
-      if (!resp.job_id) throw new Error('Job de sincronização não foi criado.');
-      if (progress) {
-        progress.innerHTML = `<div class="ct-alert ct-ok">Sincronização enviada para segundo plano. Job: ${esc(resp.job_id)}. Você pode continuar usando o painel.</div>`;
-      }
-      setStatus(container, 'Sincronização iniciada em segundo plano. O painel não ficará travado.', 'ok');
-      if (btn) btn.textContent = 'Sincronizando em segundo plano...';
-      pollGoogleJob(container, resp.job_id).catch((err) => {
-        if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar em segundo plano'; }
-        setStatus(container, err?.message || 'Erro ao acompanhar sincronização.', 'err');
-      });
+      const resp = await googleContactsJobAction('start', { batch_size: 80, cleanup_old: true });
+      const jobId = resp.job_id || resp.job?.id;
+      if (!jobId) throw new Error('Job criado sem ID de acompanhamento.');
+      saveGoogleJobId(jobId);
+      setStatus(container, 'Sincronização iniciada como job real no Supabase. Pode sair da tela ou fechar o navegador.', 'ok');
+      renderGoogleJobProgress(container, resp.job || { id: jobId, status: 'pendente', cursor: 0, total: 0, resumo: {} });
+      await pollGoogleContactsJob(container, jobId);
     } catch (err) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar em segundo plano'; }
-      setStatus(container, err?.message || 'Erro ao iniciar sincronização em segundo plano.', 'err');
+      setStatus(container, err?.message || 'Erro ao iniciar job de Google Contacts.', 'err');
+      if (btn) { btn.disabled = false; btn.textContent = 'Iniciar job de sincronização'; }
     }
   }
 
@@ -770,9 +815,9 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
           </div>
           <div class="ct-card">
             <h3>Executar agora</h3>
-            <p>Inicia a sincronização em segundo plano para o painel não ficar travado. Você pode sair da tela e consultar o andamento pelo status.</p>
+            <p>Cria um job real no Supabase para sincronizar os colaboradores ativos. Pode sair da tela ou fechar o navegador sem interromper.</p>
             <div class="ct-actions">
-              <button class="ct-btn" id="ct_google_sync" ${conectado ? '' : 'disabled'}>Sincronizar em segundo plano</button>
+              <button class="ct-btn" id="ct_google_sync" ${conectado ? '' : 'disabled'}>Iniciar job de sincronização</button>
               <button class="ct-btn warn" id="ct_google_cleanup" ${conectado ? '' : 'disabled'}>Limpar antigos</button>
             </div>
           </div>
@@ -789,6 +834,9 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       content.querySelector('#ct_google_sync')?.addEventListener('click', () => sincronizarGoogleContacts(container));
       content.querySelector('#ct_google_cleanup')?.addEventListener('click', () => limparAntigosGoogle(container));
       content.querySelector('#ct_google_disconnect')?.addEventListener('click', () => desconectarGoogle(container));
+      const runningJobId = readGoogleJobId();
+      if (runningJobId) pollGoogleContactsJob(container, runningJobId, false);
+      else pollGoogleContactsJob(container, '', true);
       setStatus(container, conectado ? 'Google Contacts conectado. Pronto para sincronizar.' : 'Google Contacts ainda não conectado.', conectado ? 'ok' : '');
       return;
     }
