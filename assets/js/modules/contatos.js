@@ -6,6 +6,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     patrimoniosAtraso: new Set(),
     loading: false,
     google: { connected: false, google_email: '', last_sync_at: '', mapped_contacts: 0, group: 'Painel - Colaboradores Grão 1000' },
+    googleLoginEmail: '',
     filtros: {
       situacao: 'Ativo',
       nome: '',
@@ -27,6 +28,17 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;');
+  }
+
+
+  function readStoredGoogleEmail() {
+    try { return String(localStorage.getItem('contatos_google_login_email') || '').trim(); }
+    catch (_) { return ''; }
+  }
+
+  function saveStoredGoogleEmail(value) {
+    try { localStorage.setItem('contatos_google_login_email', String(value || '').trim()); }
+    catch (_) {}
   }
 
   function onlyDigits(v) {
@@ -368,12 +380,20 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
   async function conectarGoogleContacts(container) {
     const btn = container.querySelector('#ct_google_connect');
+    const emailInput = container.querySelector('#ct_google_email');
+    const loginHint = String(emailInput?.value || '').trim();
+    if (loginHint && !/^\S+@\S+\.\S+$/.test(loginHint)) {
+      setStatus(container, 'Informe um e-mail Google válido para sincronização, ou deixe o campo vazio e selecione a conta na tela do Google.', 'err');
+      return;
+    }
+    state.googleLoginEmail = loginHint;
+    saveStoredGoogleEmail(loginHint);
     if (btn) { btn.disabled = true; btn.textContent = 'Abrindo Google...'; }
     try {
-      const data = await googleContactsAction('auth_url', { redirect_to: window.location.href });
+      const data = await googleContactsAction('auth_url', { redirect_to: window.location.href, login_hint: loginHint });
       if (!data.url) throw new Error('URL de conexão Google não retornada.');
       window.open(data.url, 'google_contacts_oauth', 'width=720,height=780,menubar=no,toolbar=no,status=no');
-      setStatus(container, 'Conexão aberta em uma janela do Google. Após permitir o acesso, volte aqui e clique em Atualizar status.', 'ok');
+      setStatus(container, `Conexão aberta em uma janela do Google${loginHint ? ` para ${loginHint}` : ''}. Após permitir o acesso, volte aqui e clique em Atualizar status.`, 'ok');
     } catch (err) {
       setStatus(container, err?.message || 'Erro ao conectar Google.', 'err');
     } finally {
@@ -600,7 +620,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     if (tab === 'exports') {
       content.innerHTML = `
         <div class="ct-grid">
-          <div class="ct-card"><h3>Google Contatos</h3><p>CSV compatível com importação no Google Contacts.</p><div class="ct-actions"><button class="ct-btn" data-export="google">Gerar CSV</button></div></div>
+          <div class="ct-card"><h3>Google Contatos</h3><p>CSV compatível com importação ou sincronização direta no Google Contacts.</p><div class="ct-actions"><button class="ct-btn" data-export="google">Gerar CSV</button><button class="ct-btn sec" id="ct_open_google_sync">Sincronizar no Google</button></div></div>
           <div class="ct-card"><h3>Correios</h3><p>XLSX com cartão de postagem, malote N e endereço separado.</p><div class="ct-actions"><button class="ct-btn" data-export="correios">Gerar XLSX</button></div></div>
           <div class="ct-card"><h3>Flash</h3><p>XLSX para cadastro de pessoas Flash.</p><div class="ct-actions"><button class="ct-btn" data-export="flash">Gerar XLSX</button></div></div>
           <div class="ct-card"><h3>iFood</h3><p>XLSX para cadastro de pessoas iFood Benefícios.</p><div class="ct-actions"><button class="ct-btn" data-export="ifood">Gerar XLSX</button></div></div>
@@ -610,6 +630,10 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       `;
       content.querySelectorAll('[data-export]').forEach((btn) => {
         btn.onclick = () => exportByType(btn.dataset.export, container);
+      });
+      content.querySelector('#ct_open_google_sync')?.addEventListener('click', () => {
+        container.querySelectorAll('.ct-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === 'google'));
+        renderTab(container, 'google');
       });
       setStatus(container, `${rows.length} colaboradores prontos para exportação.`, '');
       return;
@@ -622,7 +646,11 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
         <div class="ct-grid">
           <div class="ct-card">
             <h3>Google Contatos direto no e-mail</h3>
-            <p>${conectado ? `Conectado em <strong>${esc(g.google_email || 'Conta Google')}</strong>` : 'Conecte a conta Google do usuário para criar, atualizar e limpar contatos direto pela People API.'}</p>
+            <p>${conectado ? `Conectado em <strong>${esc(g.google_email || 'Conta Google')}</strong>` : 'Informe o e-mail que vai receber os contatos e conecte essa conta Google pela People API.'}</p>
+            <div class="ct-field" style="margin-top:12px">
+              <label>E-mail Google para sincronização</label>
+              <input id="ct_google_email" type="email" placeholder="ex.: juliana@grao1000.com.br" value="${esc(state.googleLoginEmail || g.google_email || '')}">
+            </div>
             <div class="ct-actions">
               <button class="ct-btn" id="ct_google_connect">${conectado ? 'Reconectar Google' : 'Conectar Google'}</button>
               <button class="ct-btn sec" id="ct_google_status">Atualizar status</button>
@@ -705,9 +733,11 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     try {
       state.loading = true;
       container.innerHTML = `${styles()}<div class="ct-wrap"><div class="ct-alert">Carregando colaboradores e patrimônios...</div></div>`;
+      state.googleLoginEmail = readStoredGoogleEmail();
       state.colaboradores = await loadLatestColabs(opts.supabase);
       state.patrimoniosAtraso = await loadPatrimoniosAtraso(opts.supabase);
       await loadGoogleStatus();
+      if (!state.googleLoginEmail && state.google.google_email) state.googleLoginEmail = state.google.google_email;
       renderBase(container);
     } catch (err) {
       container.innerHTML = `${styles()}<div class="ct-wrap"><div class="ct-alert ct-err">${esc(err?.message || err || 'Erro ao carregar contatos.')}</div></div>`;
