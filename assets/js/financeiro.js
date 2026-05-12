@@ -285,7 +285,7 @@ function mapProducaoSnapshotRows(rows, origem) {
     data: row.data || row.data_referencia,
     data_referencia: row.data_referencia || row.data,
     funcionario: row.funcionario,
-    tipo: row.tipo,
+    tipo: row.tipo || row.tipoRh || '',
     coordenacao: row.coordenacao,
     supervisao: row.supervisao,
     cliente: row.cliente || row.cliente_final || '',
@@ -329,7 +329,7 @@ async function loadProducaoPagamento(inicio, fim) {
   // Serve quando a produção diária ainda não foi importada pelo menu antigo.
   res = await supabase
     .from('relatorio_resultado_diario')
-    .select('data,funcionario,tipo,coordenacao,supervisao,cliente_final,os,toneladas,cargas')
+    .select('data,funcionario,coordenacao,supervisao,cliente_final,os,toneladas,cargas')
     .gte('data', inicio)
     .lte('data', fim)
     .order('data', { ascending: true })
@@ -531,7 +531,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
     <style>
       .fin-wrap{display:grid;gap:18px}.fin-hero{border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:22px;background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(22,101,52,.28));box-shadow:0 20px 50px rgba(2,6,23,.22)}
       .fin-hero h2{margin:0 0 6px;font-size:28px;color:#f8fafc}.fin-hero p{margin:0;color:#cbd5e1}.fin-actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.fin-grid{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:12px}.fin-kpi{border:1px solid rgba(148,163,184,.16);border-radius:20px;padding:16px;background:rgba(15,23,42,.86)}.fin-kpi span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.fin-kpi strong{display:block;margin-top:8px;color:#f8fafc;font-size:22px}.fin-kpi small{color:#94a3b8}.fin-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(15,23,42,.82);padding:18px;box-shadow:0 18px 42px rgba(2,6,23,.18)}
-      .fin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.fin-head h3{margin:0;color:#f8fafc}.fin-head p{margin:4px 0 0;color:#94a3b8}.pay-grid{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:14px}.pay-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(2,6,23,.34);padding:16px}.pay-card h4{margin:0 0 6px;color:#f8fafc;font-size:18px}.pay-card p{margin:0 0 14px;color:#94a3b8}.pay-summary{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:14px 0}.pay-mini{border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:12px;background:rgba(15,23,42,.7)}.pay-mini span{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.pay-mini strong{display:block;margin-top:5px;color:#f8fafc;font-size:18px}.pay-subtabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.pay-subtab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:8px 12px;cursor:pointer}.pay-subtab.active{background:#14532d;color:#fff;border-color:#22c55e}.pay-table{display:none}.pay-table.active{display:block}@media(max-width:1100px){.pay-grid,.pay-summary{grid-template-columns:1fr 1fr}}@media(max-width:700px){.pay-grid,.pay-summary{grid-template-columns:1fr}}.fin-tabs{display:flex;gap:8px;flex-wrap:wrap}.fin-tab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:9px 14px;cursor:pointer}.fin-tab.active{background:#166534;color:#fff;border-color:#22c55e}.fin-panel{display:none}.fin-panel.active{display:block}.fin-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.fin-field{display:grid;gap:6px}.fin-field.full{grid-column:1/-1}.fin-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.fin-field input,.fin-field select,.fin-field textarea{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0f172a;color:#e5e7eb;padding:10px 12px;color-scheme:dark}.fin-field textarea{min-height:78px;resize:vertical}.fin-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.fin-table{width:100%;border-collapse:collapse;min-width:860px}.fin-table th,.fin-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;color:#e5e7eb}.fin-table th{background:rgba(15,23,42,.96);color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.fin-table tr:hover td{background:rgba(34,197,94,.06)}.fin-muted{display:block;color:#94a3b8;font-size:12px;margin-top:3px}.fin-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.fin-status.ok{background:rgba(34,197,94,.14);color:#86efac}.fin-status.danger{background:rgba(239,68,68,.14);color:#fecaca}.fin-status.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}.fin-import-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}.fin-drop{border:1px dashed rgba(34,197,94,.45);border-radius:20px;padding:18px;background:rgba(22,101,52,.1)}.fin-feedback{color:#94a3b8;font-size:13px}.fin-feedback.ok{color:#86efac}.fin-feedback.err{color:#fecaca}.fin-empty{text-align:center;color:#94a3b8;padding:24px!important}.fin-small{padding:8px 12px!important;font-size:13px!important}@media(max-width:1100px){.fin-grid{grid-template-columns:repeat(2,1fr)}.fin-form,.fin-import-grid{grid-template-columns:1fr}}@media(max-width:700px){.fin-grid{grid-template-columns:1fr}.fin-head{display:grid}}
+      .fin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.fin-head h3{margin:0;color:#f8fafc}.fin-head p{margin:4px 0 0;color:#94a3b8}.pay-grid{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:14px}.pay-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(2,6,23,.34);padding:16px}.pay-card h4{margin:0 0 6px;color:#f8fafc;font-size:18px}.pay-card p{margin:0 0 14px;color:#94a3b8}.pay-summary{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:14px 0}.pay-mini{border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:12px;background:rgba(15,23,42,.7)}.pay-mini span{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.pay-mini strong{display:block;margin-top:5px;color:#f8fafc;font-size:18px}.pay-subtabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.pay-subtab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:8px 12px;cursor:pointer}.pay-subtab.active{background:#14532d;color:#fff;border-color:#22c55e}.pay-table{display:none}.pay-table.active{display:block}@media(max-width:1100px){.pay-grid,.pay-summary{grid-template-columns:1fr 1fr}}@media(max-width:700px){.pay-grid,.pay-summary{grid-template-columns:1fr}}.fin-tabs{display:flex;gap:8px;flex-wrap:wrap}.fin-tab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:9px 14px;cursor:pointer}.fin-tab.active{background:#166534;color:#fff;border-color:#22c55e}.fin-panel{display:none}.fin-panel.active{display:block}.fin-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.fin-field{display:grid;gap:6px}.fin-field.full{grid-column:1/-1}.fin-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.fin-field input,.fin-field select,.fin-field textarea{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0f172a;color:#e5e7eb;padding:10px 12px;color-scheme:dark}.fin-field textarea{min-height:78px;resize:vertical}.fin-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.fin-table{width:100%;border-collapse:collapse;min-width:860px}.fin-table th,.fin-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;color:#e5e7eb}.fin-table th{background:rgba(15,23,42,.96);color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.fin-table tr:hover td{background:rgba(34,197,94,.06)}.fin-muted{display:block;color:#94a3b8;font-size:12px;margin-top:3px}.fin-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.fin-status.ok{background:rgba(34,197,94,.14);color:#86efac}.fin-status.danger{background:rgba(239,68,68,.14);color:#fecaca}.fin-status.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}.fin-import-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}.fin-drop{border:1px dashed rgba(34,197,94,.45);border-radius:20px;padding:18px;background:rgba(22,101,52,.1)}.pay-upload{border:1px dashed rgba(34,197,94,.45);border-radius:18px;background:rgba(22,101,52,.08);padding:14px;min-height:78px;display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;transition:.16s ease}.pay-upload:hover,.pay-upload.dragging{border-color:#22c55e;background:rgba(22,101,52,.18);transform:translateY(-1px)}.pay-upload input{display:none}.pay-upload strong{display:block;color:#e5e7eb;font-size:13px}.pay-upload span{display:block;color:#94a3b8;font-size:12px;margin-top:4px;word-break:break-word}.pay-upload.has-file{border-style:solid;background:rgba(34,197,94,.14)}.fin-feedback{color:#94a3b8;font-size:13px}.fin-feedback.ok{color:#86efac}.fin-feedback.err{color:#fecaca}.fin-empty{text-align:center;color:#94a3b8;padding:24px!important}.fin-small{padding:8px 12px!important;font-size:13px!important}@media(max-width:1100px){.fin-grid{grid-template-columns:repeat(2,1fr)}.fin-form,.fin-import-grid{grid-template-columns:1fr}}@media(max-width:700px){.fin-grid{grid-template-columns:1fr}.fin-head{display:grid}}
     </style>
     <section class="fin-wrap">
       <div class="fin-hero">
@@ -619,8 +619,8 @@ initProtectedPage('Financeiro', (content, userContext) => {
               <h4>ADIANTAMENTOS</h4>
               <p>Importe o Extrato_Solicitações e a Fonte_ALELO para gerar PGTO_ALELO, PGTO_IFOOD e PGTO_FLASH com conferência na tela.</p>
               <div class="fin-form">
-                <div class="fin-field"><label>Extrato_Solicitações</label><input id="adiantFileExtrato" type="file" accept=".xlsx,.xls,.csv"></div>
-                <div class="fin-field"><label>Fonte_ALELO</label><input id="adiantFileAlelo" type="file" accept=".xlsx,.xls,.csv"></div>
+                <div class="fin-field"><label>Extrato_Solicitações</label><label class="pay-upload" for="adiantFileExtrato" data-drop-for="adiantFileExtrato"><input id="adiantFileExtrato" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileExtratoName">Nenhum arquivo selecionado</span></span></label></div>
+                <div class="fin-field"><label>Fonte_ALELO</label><label class="pay-upload" for="adiantFileAlelo" data-drop-for="adiantFileAlelo"><input id="adiantFileAlelo" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileAleloName">Nenhum arquivo selecionado</span></span></label></div>
                 <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAdiantamentos" type="button">Gerar adiantamentos</button></div>
                 <div class="fin-field"><label>&nbsp;</label><span id="fbAdiantamentos" class="fin-feedback"></span></div>
               </div>
@@ -958,6 +958,57 @@ initProtectedPage('Financeiro', (content, userContext) => {
   document.getElementById('btnImportReceber').addEventListener('click', () => importFile('receber'));
   document.getElementById('btnImportPagar').addEventListener('click', () => importFile('pagar'));
   document.getElementById('configForm').addEventListener('submit', saveConfig);
+
+  function setupPagamentoDropzone(inputId) {
+    const input = document.getElementById(inputId);
+    const zone = document.querySelector(`[data-drop-for="${inputId}"]`);
+    const nameEl = document.getElementById(`${inputId}Name`);
+    if (!input || !zone || !nameEl) return;
+
+    const setFileLabel = () => {
+      const file = input.files && input.files[0];
+      nameEl.textContent = file ? file.name : 'Nenhum arquivo selecionado';
+      zone.classList.toggle('has-file', !!file);
+    };
+
+    input.addEventListener('change', setFileLabel);
+
+    ['dragenter', 'dragover'].forEach((evtName) => {
+      zone.addEventListener(evtName, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        zone.classList.add('dragging');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach((evtName) => {
+      zone.addEventListener(evtName, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        zone.classList.remove('dragging');
+      });
+    });
+
+    zone.addEventListener('drop', (event) => {
+      const file = event.dataTransfer?.files?.[0];
+      if (!file) return;
+      const ok = /\.(xlsx|xls|csv)$/i.test(file.name);
+      if (!ok) {
+        paySetFeedback('fbAdiantamentos', 'Arquivo inválido. Envie XLSX, XLS ou CSV.', 'err');
+        return;
+      }
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      setFileLabel();
+      paySetFeedback('fbAdiantamentos', `${file.name} carregado.`, 'ok');
+    });
+
+    setFileLabel();
+  }
+
+  setupPagamentoDropzone('adiantFileExtrato');
+  setupPagamentoDropzone('adiantFileAlelo');
   document.getElementById('btnGerarAlimentacao').addEventListener('click', gerarAlimentacao);
   document.getElementById('btnGerarAdiantamentos').addEventListener('click', gerarAdiantamentos);
   document.querySelectorAll('.pay-subtab').forEach((btn) => btn.addEventListener('click', () => setPayTab(btn.dataset.payTab)));
