@@ -1,0 +1,683 @@
+import { supabase } from './supabaseClient.js';
+import { getCurrentUser, getSession, getUserContext, signOut } from './auth.js';
+import { toPanelUrl } from './paths.js';
+
+const BR = new Intl.NumberFormat('pt-BR');
+const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+const CACHE_KEY = 'grao1000:gestor-app:v1';
+const CACHE_TTL = 1000 * 60 * 7;
+const LIMITE_MULTIPLOS = 500000;
+const STATUS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
+
+const app = document.getElementById('app');
+
+const state = {
+  user: null,
+  context: null,
+  appUser: null,
+  isMaster: false,
+  allowedSupervisoes: [],
+  currentTab: 'inicio',
+  loading: false,
+  os: [],
+  colaboradores: [],
+  pontos: [],
+  atribuicoes: [],
+  filters: { supervisao: '', status: '', busca: '' },
+  selections: new Map(),
+  extras: new Map(),
+  allowMulti: new Set(),
+  suggested: new Map(),
+  busy: new Set(),
+  installPrompt: null,
+};
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function normalize(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim();
+}
+
+function compactKey(value) {
+  return normalize(value).replace(/\s+/g, '');
+}
+
+function parseList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return [...new Set(value.flatMap(parseList))];
+  if (typeof value === 'object') return parseList(value.supervisao || value.supervisoes || value.nome || value.name);
+  const text = String(value).trim();
+  if (!text) return [];
+  try {
+    if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) return parseList(JSON.parse(text));
+  } catch {}
+  return [...new Set(text.split(/[,;|\n]+/).map((item) => item.trim()).filter(Boolean))];
+}
+
+function num(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const clean = String(value ?? '').replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+  const parsed = Number(clean);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function fmt(value) { return BR.format(num(value)); }
+
+function brDate(value) {
+  if (!value) return '-';
+  const raw = String(value).slice(0, 10);
+  const [y, m, d] = raw.split('-');
+  return y && m && d ? `${d}/${m}/${y}` : escapeHtml(value);
+}
+
+function toIsoDate(value) {
+  return String(value || '').slice(0, 10);
+}
+
+function first(value, fallback = '-') {
+  const text = String(value ?? '').trim();
+  return text || fallback;
+}
+
+function colabKey(c) {
+  return String(c?.colaborador_id || c?.cpf || c?.id || c?.nome || '')
+    .replace(/\D/g, '') || String(c?.id || c?.nome || '').trim();
+}
+
+function osId(row) { return String(row?.id || row?.numero_os || ''); }
+
+function isActiveColab(c) {
+  if (!c || c.ativo === false) return false;
+  const sit = normalize(c.situacao);
+  return !['NAO ATIVO', 'INATIVO', 'DESLIGADO', 'DEMITIDO'].some((s) => sit.includes(s));
+}
+
+function haversineKm(aLat, aLng, bLat, bLng) {
+  const lat1 = Number(aLat), lon1 = Number(aLng), lat2 = Number(bLat), lon2 = Number(bLng);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return null;
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const s1 = Math.sin(dLat / 2) ** 2;
+  const s2 = Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s1 + s2), Math.sqrt(1 - s1 - s2));
+}
+
+function saveCache(payload) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload })); } catch {}
+}
+
+function readCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ts || Date.now() - parsed.ts > CACHE_TTL) return null;
+    return parsed.payload || null;
+  } catch { return null; }
+}
+
+function clearCache() {
+  try { localStorage.removeItem(CACHE_KEY); } catch {}
+}
+
+function showToast(message, type = 'ok') {
+  let wrap = document.querySelector('.toast-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.className = 'toast-wrap';
+    document.body.appendChild(wrap);
+  }
+  const el = document.createElement('div');
+  el.className = `toast ${type === 'error' ? 'error' : ''}`;
+  el.textContent = message;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 4200);
+}
+
+function panelHref(path) { return toPanelUrl(path); }
+
+async function boot() {
+  const session = await getSession().catch(() => null);
+  if (!session?.user) {
+    window.location.replace(panelHref('login'));
+    return;
+  }
+
+  state.user = await getCurrentUser();
+  state.context = await getUserContext(state.user?.id).catch(() => null);
+  const { data: appUser } = await supabase
+    .from('app_usuarios')
+    .select('id,nome,email,setor,supervisao,coordenacao,empresa,status')
+    .eq('auth_user_id', state.user?.id)
+    .maybeSingle();
+  state.appUser = appUser || null;
+
+  const role = state.context?.user?.role || state.context?.perfil_codigo || state.context?.perfil_nome || state.context?.role || '';
+  const setor = appUser?.setor || state.context?.setor || state.context?.department?.name || '';
+  state.isMaster = Boolean(state.context?.user?.is_master || state.context?.is_master || normalize(role) === 'MASTER');
+  const isGestor = normalize(role) === 'GESTOR' || normalize(setor) === 'GESTOR' || normalize(state.context?.department?.code) === 'GESTOR';
+  state.allowedSupervisoes = [
+    ...parseList(appUser?.supervisao),
+    ...parseList(state.context?.user?.supervisao),
+    ...parseList(state.context?.user?.supervisoes),
+    ...parseList(state.context?.supervisao),
+    ...parseList(state.context?.supervisoes),
+  ];
+
+  if (!state.isMaster && !isGestor) {
+    renderShell();
+    document.getElementById('appMain').innerHTML = `<section class="section-card"><h2>Acesso restrito</h2><p class="help">Este app é exclusivo para usuários do módulo Gestor.</p></section>`;
+    return;
+  }
+
+  renderShell();
+  setupPwaInstall();
+  await loadData({ useCache: true });
+  renderCurrentTab();
+}
+
+function renderShell() {
+  const name = state.appUser?.nome || state.context?.user?.name || state.user?.email || 'Gestor';
+  app.className = 'gestor-app';
+  app.innerHTML = `
+    <header class="app-topbar">
+      <div class="brand">
+        <img src="./logo-grao1000.svg" alt="Grão 1000" />
+        <div>
+          <strong>App Gestor</strong>
+          <small>Olá, ${escapeHtml(name)}</small>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span class="pill">${state.isMaster ? 'MASTER' : 'GESTOR'}</span>
+        <button class="icon-btn" id="refreshBtn" type="button" title="Atualizar">↻</button>
+        <button class="icon-btn" id="logoutBtn" type="button" title="Sair">⎋</button>
+      </div>
+    </header>
+    <main class="app-main" id="appMain"></main>
+    <nav class="bottom-nav" id="bottomNav">
+      <button class="nav-btn is-active" data-tab="inicio" type="button">Início</button>
+      <button class="nav-btn" data-tab="os" type="button">OS</button>
+      <button class="nav-btn" data-tab="programacao" type="button">Programação</button>
+      <button class="nav-btn" data-tab="mais" type="button">Mais</button>
+    </nav>
+  `;
+
+  document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    await signOut().catch(() => null);
+    window.location.replace(panelHref('login'));
+  });
+  document.getElementById('refreshBtn')?.addEventListener('click', async () => {
+    clearCache();
+    await loadData({ useCache: false });
+    renderCurrentTab();
+    showToast('Dados atualizados.');
+  });
+  document.getElementById('bottomNav')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-tab]');
+    if (!btn) return;
+    state.currentTab = btn.dataset.tab;
+    document.querySelectorAll('.nav-btn').forEach((item) => item.classList.toggle('is-active', item === btn));
+    renderCurrentTab();
+  });
+}
+
+function setupPwaInstall() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./service-worker.js').catch(() => null);
+  }
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    state.installPrompt = event;
+    renderCurrentTab();
+  });
+}
+
+async function loadData({ useCache = true } = {}) {
+  if (state.loading) return;
+  state.loading = true;
+  const cached = useCache ? readCache() : null;
+  if (cached) {
+    Object.assign(state, {
+      os: cached.os || [],
+      colaboradores: cached.colaboradores || [],
+      pontos: cached.pontos || [],
+      atribuicoes: cached.atribuicoes || [],
+    });
+    hydrateSelections();
+    state.loading = false;
+    refreshSuggestions();
+    return;
+  }
+
+  try {
+    let osQuery = supabase.from('operacional_os').select('*').limit(1000);
+    if (!state.isMaster && state.allowedSupervisoes.length) osQuery = osQuery.in('supervisao', state.allowedSupervisoes);
+    const [osRes, atrRes, colabRes, pontosRes] = await Promise.all([
+      osQuery,
+      supabase.from('operacional_os_colaboradores').select('*').limit(5000),
+      supabase.from('operacional_colaborador_base').select('id,nome,cpf,tipo_mao_obra,empresa,coordenacao,supervisao,cidade_base,uf_base,latitude,longitude,ativo,nome_chave,telefone').eq('ativo', true).limit(5000),
+      supabase.from('operacional_pontos_embarque').select('id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo').eq('ativo', true).limit(8000),
+    ]);
+
+    if (osRes.error) throw osRes.error;
+    state.os = Array.isArray(osRes.data) ? osRes.data : [];
+    state.atribuicoes = Array.isArray(atrRes.data) ? atrRes.data : [];
+    state.colaboradores = Array.isArray(colabRes.data) ? colabRes.data.filter(isActiveColab) : [];
+    state.pontos = Array.isArray(pontosRes.data) ? pontosRes.data : [];
+    saveCache({ os: state.os, atribuicoes: state.atribuicoes, colaboradores: state.colaboradores, pontos: state.pontos });
+    hydrateSelections();
+    refreshSuggestions();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || 'Falha ao carregar dados do app.', 'error');
+  } finally {
+    state.loading = false;
+  }
+}
+
+function hydrateSelections() {
+  state.selections.clear();
+  state.extras.clear();
+  state.allowMulti.clear();
+  for (const os of state.os) if (os.permitir_mais_classificadores) state.allowMulti.add(osId(os));
+  for (const item of state.atribuicoes) {
+    const key = String(item.os_id || '');
+    if (!key) continue;
+    const current = state.selections.get(key);
+    if (!current) state.selections.set(key, item.colaborador_key || item.colaborador_cpf || item.colaborador_nome || '');
+    else {
+      const list = state.extras.get(key) || [];
+      list.push(item.colaborador_key || item.colaborador_cpf || item.colaborador_nome || '');
+      state.extras.set(key, list);
+      state.allowMulti.add(key);
+    }
+  }
+}
+
+function findPoint(os) {
+  if (Number.isFinite(Number(os.ponto1_latitude)) && Number.isFinite(Number(os.ponto1_longitude))) {
+    return { latitude: Number(os.ponto1_latitude), longitude: Number(os.ponto1_longitude), origem: 'O.S.' };
+  }
+
+  const emb = String(os.embarque || '').trim();
+  const ufMatch = emb.match(/^\s*([A-Z]{2})\s*[-–]\s*([^()]+?)(?:\(([^)]+)\))?\s*$/i);
+  const uf = normalize(ufMatch?.[1] || '');
+  const cidade = normalize(ufMatch?.[2] || '');
+  const local = normalize(ufMatch?.[3] || emb);
+
+  const candidates = state.pontos.filter((p) => {
+    if (uf && normalize(p.uf) !== uf) return false;
+    const pCidade = normalize(p.cidade);
+    const pLocal = normalize(p.nome_local);
+    if (cidade && pCidade && cidade !== pCidade) return false;
+    if (!local) return true;
+    return pLocal.includes(local) || local.includes(pLocal) || compactKey(pLocal).includes(compactKey(local)) || compactKey(local).includes(compactKey(pLocal));
+  }).filter((p) => Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude)));
+
+  return candidates[0] ? { ...candidates[0], origem: 'Mapa Operacional' } : null;
+}
+
+function assignedBigSet(exceptOsId = '') {
+  const set = new Set();
+  for (const os of state.os) {
+    const id = osId(os);
+    if (id === exceptOsId) continue;
+    if (toIsoDate(os.data_os) === '') continue;
+    if (String(os.status_gestor || '').toUpperCase() !== 'ATENDER') continue;
+    if (num(os.remanescente) < LIMITE_MULTIPLOS) continue;
+    for (const a of state.atribuicoes.filter((item) => String(item.os_id) === id)) {
+      if (a.colaborador_key) set.add(String(a.colaborador_key));
+    }
+  }
+  return set;
+}
+
+function suggestionsForOs(os) {
+  const point = findPoint(os);
+  if (!point) return { point: null, items: [], aviso: 'Ponto de embarque sem latitude/longitude no mapa operacional.' };
+  const blocked = num(os.remanescente) >= LIMITE_MULTIPLOS ? assignedBigSet(osId(os)) : new Set();
+  const items = state.colaboradores
+    .map((c) => {
+      const distancia = haversineKm(c.latitude, c.longitude, point.latitude, point.longitude);
+      return { c, distancia };
+    })
+    .filter((row) => Number.isFinite(row.distancia))
+    .filter((row) => !blocked.has(colabKey(row.c)))
+    .sort((a, b) => a.distancia - b.distancia)
+    .slice(0, 30);
+  return { point, items, aviso: items.length ? '' : 'Nenhum colaborador com coordenada disponível para este ponto.' };
+}
+
+function refreshSuggestions() {
+  state.suggested.clear();
+  for (const os of state.os) {
+    const id = osId(os);
+    const result = suggestionsForOs(os);
+    state.suggested.set(id, result);
+    if (!state.selections.get(id) && result.items[0]) state.selections.set(id, colabKey(result.items[0].c));
+  }
+}
+
+function filteredOs() {
+  const term = normalize(state.filters.busca);
+  const sup = state.filters.supervisao;
+  const status = state.filters.status;
+  return [...state.os]
+    .filter((row) => !sup || row.supervisao === sup)
+    .filter((row) => !status || String(row.status_gestor || 'AGUARDAR').toUpperCase() === status)
+    .filter((row) => !term || normalize(`${row.numero_os} ${row.cliente} ${row.embarque} ${row.destino} ${row.supervisao}`).includes(term))
+    .sort((a, b) => num(b.remanescente) - num(a.remanescente) || String(b.numero_os).localeCompare(String(a.numero_os)));
+}
+
+function renderCurrentTab() {
+  const main = document.getElementById('appMain');
+  if (!main) return;
+  if (state.currentTab === 'inicio') return renderInicio(main);
+  if (state.currentTab === 'os') return renderOs(main);
+  if (state.currentTab === 'programacao') return renderProgramacao(main);
+  return renderMais(main);
+}
+
+function renderInicio(main) {
+  const totalPend = state.os.filter((o) => !o.configurada_em || String(o.status_gestor || '').toUpperCase() === 'AGUARDAR').length;
+  const atender = state.os.filter((o) => String(o.status_gestor || '').toUpperCase() === 'ATENDER').length;
+  main.innerHTML = `
+    <section class="hero-card">
+      <h1>Gestor Grão 1000</h1>
+      <p>App rápido para ajustar O.S., acessar programação e executar rotinas do gestor pelo celular.</p>
+      <div class="install-banner ${state.installPrompt ? 'is-visible' : ''}" id="installBanner">
+        <div><b>Instalar app</b><br><span class="help">Adicione na tela inicial do celular.</span></div>
+        <button class="btn" id="installBtn" type="button">Instalar</button>
+      </div>
+      <div class="quick-grid">
+        <button class="quick-card is-primary" data-go="os" type="button"><b>OS</b><span>${totalPend} pendente(s) de ajuste</span></button>
+        <a class="quick-card" href="${panelHref('programacao')}"><b>Programação</b><span>Abrir módulo completo</span></a>
+        <a class="quick-card" href="${panelHref('hospedagem')}"><b>Hospedagem</b><span>Solicitações e reservas</span></a>
+        <a class="quick-card" href="${panelHref('compras')}"><b>Compras</b><span>Solicitações do gestor</span></a>
+      </div>
+    </section>
+    <section class="section-card">
+      <div class="section-title"><div><h2>Resumo</h2><p>Leitura cacheada para abrir mais rápido no celular.</p></div></div>
+      <div class="stat-grid">
+        <div class="stat"><b>${state.os.length}</b><span>O.S. carregadas</span></div>
+        <div class="stat"><b>${atender}</b><span>Para Conferência</span></div>
+        <div class="stat"><b>${state.os.filter((o) => num(o.remanescente) === 0).length}</b><span>Remanescente zero</span></div>
+        <div class="stat"><b>${state.colaboradores.length}</b><span>Colaboradores base</span></div>
+      </div>
+    </section>
+  `;
+  main.querySelector('[data-go="os"]')?.addEventListener('click', () => {
+    state.currentTab = 'os';
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'os'));
+    renderOs(main);
+  });
+  main.querySelector('#installBtn')?.addEventListener('click', async () => {
+    if (!state.installPrompt) return;
+    state.installPrompt.prompt();
+    await state.installPrompt.userChoice.catch(() => null);
+    state.installPrompt = null;
+    renderInicio(main);
+  });
+}
+
+function renderProgramacao(main) {
+  main.innerHTML = `
+    <section class="hero-card">
+      <h1>Programação</h1>
+      <p>Para a primeira versão do app, a edição completa da programação abre o módulo web atual.</p>
+      <div class="quick-grid">
+        <a class="quick-card is-primary" href="${panelHref('programacao')}"><b>Abrir Programação</b><span>Disponibilidade, estadia, alimentação e extras</span></a>
+        <button class="quick-card" data-go="os" type="button"><b>Voltar para OS</b><span>Ajustar O.S. pendentes</span></button>
+      </div>
+    </section>
+  `;
+  main.querySelector('[data-go="os"]')?.addEventListener('click', () => {
+    state.currentTab = 'os';
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'os'));
+    renderOs(main);
+  });
+}
+
+function renderMais(main) {
+  main.innerHTML = `
+    <section class="hero-card">
+      <h1>Mais módulos</h1>
+      <p>Acesso rápido aos módulos do gestor sem abrir a sidebar do painel.</p>
+      <div class="quick-grid">
+        <a class="quick-card" href="${panelHref('hospedagem')}"><b>Hospedagem</b><span>Solicitações e reservas</span></a>
+        <a class="quick-card" href="${panelHref('compras')}"><b>Compras</b><span>Solicitações</span></a>
+        <a class="quick-card" href="${panelHref('logistica')}"><b>Logística</b><span>Deslocamentos</span></a>
+        <a class="quick-card" href="${panelHref('patrimonios')}"><b>Patrimônios</b><span>Itens e solicitações</span></a>
+        <a class="quick-card" href="${panelHref('contato-cliente')}"><b>Contato Cliente</b><span>Registros</span></a>
+        <a class="quick-card" href="${panelHref('dashboard')}"><b>Painel Web</b><span>Versão completa</span></a>
+      </div>
+    </section>
+  `;
+}
+
+function renderOs(main) {
+  const supervisoes = [...new Set(state.os.map((o) => o.supervisao).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const rows = filteredOs();
+  main.innerHTML = `
+    <section class="section-card">
+      <div class="section-title"><div><h2>Ordens de Serviço</h2><p>Indique colaboradores e envie para Conferência direto pelo app.</p></div></div>
+      <div class="filter-grid">
+        <div class="field"><label>Supervisão</label><select id="filterSupervisao"><option value="">Todas liberadas</option>${supervisoes.map((s) => `<option value="${escapeHtml(s)}" ${state.filters.supervisao === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}</select></div>
+        <div class="field"><label>Status</label><select id="filterStatus"><option value="">Todos</option>${STATUS.map((s) => `<option value="${s}" ${state.filters.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+        <div class="field"><label>Buscar</label><input id="filterBusca" value="${escapeHtml(state.filters.busca)}" placeholder="OS, cliente, embarque..." /></div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><b>${rows.length}</b><span>Dentro do filtro</span></div>
+        <div class="stat"><b>${rows.filter((o) => String(o.status_gestor || '').toUpperCase() === 'ATENDER').length}</b><span>Para Conferência</span></div>
+      </div>
+    </section>
+    <section class="os-list" id="osList">${rows.length ? rows.map(renderOsCard).join('') : '<div class="empty">Nenhuma O.S. encontrada para o filtro atual.</div>'}</section>
+  `;
+  main.querySelector('#filterSupervisao')?.addEventListener('change', (e) => { state.filters.supervisao = e.target.value; renderOs(main); });
+  main.querySelector('#filterStatus')?.addEventListener('change', (e) => { state.filters.status = e.target.value; renderOs(main); });
+  main.querySelector('#filterBusca')?.addEventListener('input', debounce((e) => { state.filters.busca = e.target.value; renderOs(main); }, 220));
+  bindOsEvents(main);
+}
+
+function renderOsCard(os) {
+  const id = osId(os);
+  const status = String(os.status_gestor || 'AGUARDAR').toUpperCase();
+  const sugg = state.suggested.get(id) || { items: [], aviso: '' };
+  const selected = state.selections.get(id) || (sugg.items[0] ? colabKey(sugg.items[0].c) : '');
+  const selectedInfo = sugg.items.find((row) => colabKey(row.c) === selected) || null;
+  const canMulti = num(os.remanescente) >= LIMITE_MULTIPLOS;
+  const isMulti = state.allowMulti.has(id) && canMulti;
+  const extraValues = state.extras.get(id) || [];
+  return `
+    <article class="os-card ${num(os.remanescente) === 0 ? 'is-zero' : ''} ${state.busy.has(id) ? 'is-updating' : ''}" data-os-id="${escapeHtml(id)}">
+      <div class="os-head">
+        <div><div class="os-number">${escapeHtml(os.numero_os)}</div><div class="os-date">${brDate(os.data_os)} · ${escapeHtml(first(os.servico))}</div></div>
+        <span class="status-badge ${escapeHtml(status)}">${escapeHtml(status)}</span>
+      </div>
+      <div class="os-client">${escapeHtml(first(os.cliente))}</div>
+      <div class="os-route">
+        <span>Emb.: ${escapeHtml(first(os.embarque))}</span>
+        <span>Dest.: ${escapeHtml(first(os.destino))}</span>
+        <span>${escapeHtml(first(os.supervisao))} · Contrato ${escapeHtml(first(os.contrato))} · ${escapeHtml(first(os.produto))}</span>
+      </div>
+      <div class="os-metrics">
+        <div class="metric"><small>Rem.</small><b>${fmt(os.remanescente)}</b></div>
+        <div class="metric"><small>Lote</small><b>${fmt(os.lote)}</b></div>
+        <div class="metric"><small>Emb.</small><b>${fmt(os.embarcado)}</b></div>
+      </div>
+      <div class="indicacao-box">
+        <select data-role="main-colab">
+          <option value="">Selecionar colaborador</option>
+          ${sugg.items.map(({ c, distancia }, index) => `<option value="${escapeHtml(colabKey(c))}" ${selected === colabKey(c) ? 'selected' : ''}>${index === 0 ? '⭐ ' : ''}${escapeHtml(c.nome)}${Number.isFinite(distancia) ? ` • ${KM.format(distancia)} km` : ''}</option>`).join('')}
+        </select>
+        ${selectedInfo ? `<div class="help ok">Indicação: ${escapeHtml(selectedInfo.c.nome)} · ${KM.format(selectedInfo.distancia)} km do ponto operacional.</div>` : `<div class="help warn">${escapeHtml(sugg.aviso || 'Selecione um colaborador para enviar à Conferência.')}</div>`}
+        ${canMulti ? `<label class="multi-line"><input data-role="allow-multi" type="checkbox" ${isMulti ? 'checked' : ''} /> permitir 2 ou mais colaboradores</label>` : ''}
+        ${canMulti && isMulti ? renderExtraSelects(id, sugg.items, selected, extraValues) : ''}
+      </div>
+      <div class="action-grid">
+        <button class="btn warn" data-action="AGUARDAR" type="button">Aguardar</button>
+        <button class="btn" data-action="ATENDER" type="button">Atender</button>
+        <button class="btn secondary" data-action="FINALIZAR" type="button">Finalizar</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderExtraSelects(id, suggestions, selected, extraValues) {
+  const values = extraValues.length ? extraValues : [''];
+  return `<div class="indicacao-box" data-role="extras">${values.map((value, idx) => `
+    <select data-role="extra-colab" data-index="${idx}">
+      <option value="">${idx + 2}º colaborador na mesma O.S.</option>
+      ${suggestions.filter(({ c }) => colabKey(c) !== selected).map(({ c, distancia }) => `<option value="${escapeHtml(colabKey(c))}" ${value === colabKey(c) ? 'selected' : ''}>${escapeHtml(c.nome)}${Number.isFinite(distancia) ? ` • ${KM.format(distancia)} km` : ''}</option>`).join('')}
+    </select>`).join('')}
+    <button class="btn secondary" data-role="add-extra" type="button">+ outro colaborador</button>
+  </div>`;
+}
+
+function bindOsEvents(scope) {
+  scope.querySelectorAll('[data-role="main-colab"]').forEach((select) => {
+    select.addEventListener('change', (e) => {
+      const card = e.target.closest('[data-os-id]');
+      const id = card?.dataset.osId;
+      if (!id) return;
+      state.selections.set(id, e.target.value);
+      state.extras.set(id, (state.extras.get(id) || []).filter((v) => v && v !== e.target.value));
+      renderOs(document.getElementById('appMain'));
+    });
+  });
+  scope.querySelectorAll('[data-role="allow-multi"]').forEach((input) => {
+    input.addEventListener('change', (e) => {
+      const id = e.target.closest('[data-os-id]')?.dataset.osId;
+      if (!id) return;
+      if (e.target.checked) state.allowMulti.add(id);
+      else { state.allowMulti.delete(id); state.extras.delete(id); }
+      renderOs(document.getElementById('appMain'));
+    });
+  });
+  scope.querySelectorAll('[data-role="extra-colab"]').forEach((select) => {
+    select.addEventListener('change', (e) => {
+      const id = e.target.closest('[data-os-id]')?.dataset.osId;
+      if (!id) return;
+      const index = Number(e.target.dataset.index) || 0;
+      const list = state.extras.get(id) || [];
+      list[index] = e.target.value;
+      state.extras.set(id, [...new Set(list.filter(Boolean))]);
+      renderOs(document.getElementById('appMain'));
+    });
+  });
+  scope.querySelectorAll('[data-role="add-extra"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const id = e.target.closest('[data-os-id]')?.dataset.osId;
+      if (!id) return;
+      const list = state.extras.get(id) || [];
+      list.push('');
+      state.extras.set(id, list);
+      renderOs(document.getElementById('appMain'));
+    });
+  });
+  scope.querySelectorAll('[data-action]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.target.closest('[data-os-id]')?.dataset.osId;
+      const status = e.target.dataset.action;
+      if (!id || !status) return;
+      await saveOsStatus(id, status);
+    });
+  });
+}
+
+async function saveOsStatus(id, status) {
+  const os = state.os.find((row) => osId(row) === id);
+  if (!os) return;
+  const selected = state.selections.get(id) || '';
+  const suggestions = state.suggested.get(id)?.items || [];
+  const selectedInfo = suggestions.find((row) => colabKey(row.c) === selected) || suggestions[0] || null;
+
+  let colabKeys = [];
+  if (status === 'ATENDER') {
+    const main = selected || (selectedInfo ? colabKey(selectedInfo.c) : '');
+    if (!main) {
+      showToast('A O.S. não pode ir para Conferência sem colaborador indicado.', 'error');
+      return;
+    }
+    colabKeys = [main];
+    if (num(os.remanescente) >= LIMITE_MULTIPLOS && state.allowMulti.has(id)) {
+      colabKeys.push(...(state.extras.get(id) || []));
+    }
+    colabKeys = [...new Set(colabKeys.filter(Boolean))];
+  }
+
+  state.busy.add(id);
+  os.status_gestor = status;
+  os.configurada_em = new Date().toISOString();
+  os.permitir_mais_classificadores = state.allowMulti.has(id) && num(os.remanescente) >= LIMITE_MULTIPLOS;
+  renderOs(document.getElementById('appMain'));
+
+  try {
+    if (status === 'ATENDER') {
+      const rows = colabKeys.map((key) => {
+        const hit = suggestions.find((row) => colabKey(row.c) === key);
+        const c = hit?.c || state.colaboradores.find((row) => colabKey(row) === key) || {};
+        return {
+          os_id: id,
+          colaborador_key: key,
+          colaborador_nome: c.nome || key,
+          colaborador_cpf: c.cpf || null,
+          distancia_km: Number.isFinite(hit?.distancia) ? hit.distancia : null,
+          origem_sugestao: hit ? 'APP_GESTOR_DISTANCIA' : 'APP_GESTOR_MANUAL',
+          indicado_por: state.user?.id || null,
+          updated_at: new Date().toISOString(),
+        };
+      });
+      await supabase.from('operacional_os_colaboradores').delete().eq('os_id', id);
+      const { error: insError } = await supabase.from('operacional_os_colaboradores').insert(rows);
+      if (insError) throw insError;
+    }
+
+    const { error } = await supabase.from('operacional_os').update({
+      status_gestor: status,
+      permitir_mais_classificadores: os.permitir_mais_classificadores,
+      configurada_em: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) throw error;
+
+    clearCache();
+    await loadData({ useCache: false });
+    renderOs(document.getElementById('appMain'));
+    showToast(`O.S. ${os.numero_os} marcada como ${status}.`);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || 'Não foi possível salvar a O.S.', 'error');
+    await loadData({ useCache: false });
+    renderOs(document.getElementById('appMain'));
+  } finally {
+    state.busy.delete(id);
+  }
+}
+
+function debounce(fn, wait = 250) {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fn(...args), wait);
+  };
+}
+
+boot().catch((error) => {
+  console.error(error);
+  app.innerHTML = `<div class="app-loader"><strong>Erro ao abrir o app</strong><span>${escapeHtml(error.message || error)}</span></div>`;
+});
