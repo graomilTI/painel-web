@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/contatos.js?v=20260512-google-sync-v3';
+import './modules/contatos.js?v=20260512-google-bg-v1';
 
 initProtectedPage('Contatos', (content, ctx) => {
   window.CONTATOS.openHome(content, {

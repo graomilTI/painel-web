@@ -478,6 +478,55 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     setStatus(container, state.google.connected ? `Conta conectada: ${state.google.google_email || 'Google'}.` : 'Conta Google ainda não conectada.', state.google.connected ? 'ok' : '');
   }
 
+  function formatJobStatus(job) {
+    if (!job) return 'Nenhuma sincronização em andamento.';
+    const cursor = Number(job.cursor || 0);
+    const total = Number(job.total || 0);
+    const pct = total ? Math.min(100, Math.round((cursor / total) * 100)) : Number(job.progresso || 0);
+    const statusLabel = {
+      pendente: 'Pendente',
+      processando: 'Processando',
+      concluido: 'Concluído',
+      parcial: 'Concluído com alertas',
+      erro: 'Erro',
+      cancelado: 'Cancelado'
+    }[String(job.status || '').toLowerCase()] || job.status || 'Processando';
+
+    return `${statusLabel}: ${Math.min(cursor, total || cursor)} de ${total || '...'} (${pct || 0}%). ` +
+      `Criados: ${Number(job.criados || 0)} · Atualizados: ${Number(job.atualizados || 0)} · ` +
+      `Ignorados: ${Number(job.ignorados || 0)} · Removidos: ${Number(job.removidos || 0)} · Erros: ${Number(job.erros || 0)}`;
+  }
+
+  async function pollGoogleJob(container, jobId) {
+    const progress = container.querySelector('#ct_google_progress');
+    const btn = container.querySelector('#ct_google_sync');
+    let tentativas = 0;
+
+    while (tentativas < 900) { // até 30 min, sem travar o painel
+      const resp = await googleContactsAction('job_status', { job_id: jobId });
+      const job = resp.job;
+      if (progress) {
+        const mode = ['concluido', 'parcial'].includes(String(job?.status || '')) ? 'ct-ok' : String(job?.status || '') === 'erro' ? 'ct-err' : 'ct-ok';
+        progress.innerHTML = `<div class="ct-alert ${mode}">${esc(formatJobStatus(job))}${job?.erro ? `<br><strong>Detalhe:</strong> ${esc(job.erro)}` : ''}</div>`;
+      }
+
+      if (['concluido', 'parcial', 'erro', 'cancelado'].includes(String(job?.status || '').toLowerCase())) {
+        await loadGoogleStatus();
+        const erro = String(job?.status || '').toLowerCase() === 'erro';
+        setStatus(container, formatJobStatus(job), erro ? 'err' : 'ok');
+        if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar em segundo plano'; }
+        return job;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      tentativas++;
+    }
+
+    if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar em segundo plano'; }
+    setStatus(container, 'A sincronização continua em segundo plano. Clique em Atualizar status para conferir depois.', 'ok');
+    return null;
+  }
+
   async function sincronizarGoogleContacts(container) {
     if (!state.google.connected) {
       setStatus(container, 'Conecte uma conta Google antes de sincronizar.', 'err');
@@ -485,35 +534,22 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     }
     const btn = container.querySelector('#ct_google_sync');
     const progress = container.querySelector('#ct_google_progress');
-    let cursor = 0;
-    let total = 0;
-    const acumulado = { criados: 0, atualizados: 0, recriados: 0, ignorados: 0, erros: 0, removidos: 0 };
-    if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando...'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Iniciando em segundo plano...'; }
     try {
-      do {
-        const resp = await googleContactsAction('sync', { cursor, batch_size: 80, cleanup_old: true });
-        cursor = Number(resp.cursor || cursor);
-        total = Number(resp.total || total || 0);
-        const r = resp.resumo || {};
-        acumulado.criados += Number(r.criados || 0);
-        acumulado.atualizados += Number(r.atualizados || 0);
-        acumulado.recriados += Number(r.recriados || 0);
-        acumulado.ignorados += Number(r.ignorados || 0);
-        acumulado.erros += Number(r.erros || 0);
-        acumulado.removidos += Number(resp.removidos || 0);
-        if (progress) {
-          const pct = total ? Math.min(100, Math.round((cursor / total) * 100)) : 0;
-          progress.innerHTML = `<div class="ct-alert ct-ok">Sincronizando Google Contacts: ${Math.min(cursor, total)} de ${total} (${pct}%). Criados: ${acumulado.criados} · Atualizados: ${acumulado.atualizados} · Ignorados: ${acumulado.ignorados} · Erros: ${acumulado.erros}</div>`;
-        }
-        if (!resp.has_more) break;
-      } while (true);
-      await loadGoogleStatus();
-      renderTab(container, 'google');
-      setStatus(container, `Google Contacts sincronizado. Criados: ${acumulado.criados} · Atualizados: ${acumulado.atualizados} · Ignorados: ${acumulado.ignorados} · Removidos antigos: ${acumulado.removidos} · Erros: ${acumulado.erros}.`, acumulado.erros ? 'err' : 'ok');
+      const resp = await googleContactsAction('start_sync', { batch_size: 80, cleanup_old: true });
+      if (!resp.job_id) throw new Error('Job de sincronização não foi criado.');
+      if (progress) {
+        progress.innerHTML = `<div class="ct-alert ct-ok">Sincronização enviada para segundo plano. Job: ${esc(resp.job_id)}. Você pode continuar usando o painel.</div>`;
+      }
+      setStatus(container, 'Sincronização iniciada em segundo plano. O painel não ficará travado.', 'ok');
+      if (btn) btn.textContent = 'Sincronizando em segundo plano...';
+      pollGoogleJob(container, resp.job_id).catch((err) => {
+        if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar em segundo plano'; }
+        setStatus(container, err?.message || 'Erro ao acompanhar sincronização.', 'err');
+      });
     } catch (err) {
-      setStatus(container, err?.message || 'Erro ao sincronizar Google Contacts.', 'err');
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar agora'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar em segundo plano'; }
+      setStatus(container, err?.message || 'Erro ao iniciar sincronização em segundo plano.', 'err');
     }
   }
 
@@ -734,9 +770,9 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
           </div>
           <div class="ct-card">
             <h3>Executar agora</h3>
-            <p>Sincroniza colaboradores ativos da tabela <strong>colaboradores</strong> e, ao final, limpa contatos antigos que saíram da base ou ficaram Não Ativo.</p>
+            <p>Inicia a sincronização em segundo plano para o painel não ficar travado. Você pode sair da tela e consultar o andamento pelo status.</p>
             <div class="ct-actions">
-              <button class="ct-btn" id="ct_google_sync" ${conectado ? '' : 'disabled'}>Sincronizar agora</button>
+              <button class="ct-btn" id="ct_google_sync" ${conectado ? '' : 'disabled'}>Sincronizar em segundo plano</button>
               <button class="ct-btn warn" id="ct_google_cleanup" ${conectado ? '' : 'disabled'}>Limpar antigos</button>
             </div>
           </div>
