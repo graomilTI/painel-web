@@ -280,39 +280,63 @@ async function loadColaboradoresPagamento() {
   return buildLatestColaboradorMap(data || []);
 }
 
+function mapProducaoSnapshotRows(rows, origem) {
+  return (rows || []).map((row) => ({
+    data: row.data || row.data_referencia,
+    data_referencia: row.data_referencia || row.data,
+    funcionario: row.funcionario,
+    tipo: row.tipo,
+    coordenacao: row.coordenacao,
+    supervisao: row.supervisao,
+    cliente: row.cliente || row.cliente_final || '',
+    os: row.os || '',
+    toneladas: row.toneladas ?? row.tons ?? 0,
+    cargas: row.cargas,
+    origem
+  })).filter((row) => row.funcionario && (row.data || row.data_referencia));
+}
+
 async function loadProducaoPagamento(inicio, fim) {
+  // Primeiro tenta a base oficial da produção diária importada pelo painel.
+  // Essa tabela pode guardar a data real em `data` ou somente a referência da importação em `data_referencia`.
   let res = await supabase
-    .from('relatorio_resultado_diario')
-    .select('*')
+    .from('producao_snapshot')
+    .select('data,data_referencia,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
     .gte('data', inicio)
     .lte('data', fim)
     .order('data', { ascending: true })
-    .limit(10000);
+    .limit(20000);
 
   if (!res.error && (res.data || []).length) {
-    return (res.data || []).map((row) => ({
-      data: row.data,
-      funcionario: row.funcionario,
-      tipo: row.tipo,
-      coordenacao: row.coordenacao,
-      supervisao: row.supervisao,
-      cliente: row.cliente || row.cliente_final || '',
-      os: row.os || '',
-      toneladas: row.toneladas,
-      cargas: row.cargas,
-      origem: 'relatorio_resultado_diario'
-    }));
+    const rows = mapProducaoSnapshotRows(res.data, 'producao_snapshot.data');
+    if (rows.length) return rows;
   }
 
   res = await supabase
     .from('producao_snapshot')
-    .select('data,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
+    .select('data,data_referencia,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
+    .gte('data_referencia', inicio)
+    .lte('data_referencia', fim)
+    .order('data_referencia', { ascending: true })
+    .limit(20000);
+
+  if (!res.error && (res.data || []).length) {
+    const rows = mapProducaoSnapshotRows(res.data, 'producao_snapshot.data_referencia');
+    if (rows.length) return rows;
+  }
+
+  // Fallback: Resultado Diário mensal/histórico usado pelo DRE.
+  // Serve quando a produção diária ainda não foi importada pelo menu antigo.
+  res = await supabase
+    .from('relatorio_resultado_diario')
+    .select('data,funcionario,tipo,coordenacao,supervisao,cliente_final,os,toneladas,cargas')
     .gte('data', inicio)
     .lte('data', fim)
     .order('data', { ascending: true })
-    .limit(10000);
+    .limit(20000);
+
   if (res.error) throw res.error;
-  return (res.data || []).map((row) => ({ ...row, toneladas: row.tons, origem: 'producao_snapshot' }));
+  return mapProducaoSnapshotRows(res.data || [], 'relatorio_resultado_diario');
 }
 
 function apurarAlimentacaoRows(producaoRows, rhMap) {
