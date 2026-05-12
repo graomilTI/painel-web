@@ -550,6 +550,30 @@
     }).filter((item) => item.plate);
   }
 
+  function buildKnownDriversForOcr(opts = currentRenderOpts) {
+    const byName = new Map();
+
+    const addDriver = (nome, extra = {}) => {
+      const cleaned = cleanPossibleDriverName(nome);
+      if (!cleaned || isUnknownDriverName(cleaned)) return;
+      const key = normalizeDriverNameForMatch(cleaned);
+      if (!key || byName.has(key)) return;
+      byName.set(key, {
+        driverName: cleaned,
+        driverFolderName: sanitizeFolderName(cleaned),
+        normalized: key,
+        cpf: extra.cpf || '',
+        coordenacao: extra.coordenacao || '',
+        supervisao: extra.supervisao || ''
+      });
+    };
+
+    getColaboradores(opts).forEach((c) => addDriver(c.nome, c));
+    groupImportedExcessos(state.importedExcessos).forEach((g) => addDriver(g.motorista, g));
+
+    return Array.from(byName.values());
+  }
+
   function renderImportedExcessos(root) {
     const list = root.querySelector('[data-imported-excess-list]');
     const count = root.querySelector('[data-imported-excess-count]');
@@ -945,8 +969,11 @@
     if (saved) {
       saved.innerHTML = state.savedPrints.length ? state.savedPrints.map((f) => {
         const driverName = getPossibleFileDriverName(f);
-        const folderName = driverName || f.driverFolderName || '';
-        const extra = driverName && isUnknownDriverName(f.driverFolderName) ? '<br><small>Motorista identificado pelo OCR do print.</small>' : '';
+        const rawFolder = f.driverFolderName || f.folderName || '';
+        const folderName = driverName || (isUnknownDriverName(rawFolder) ? 'OCR - CONFERIR' : rawFolder);
+        const extra = driverName && isUnknownDriverName(rawFolder)
+          ? '<br><small>Motorista identificado pelo OCR do print; conferir se o Apps Script moveu para a pasta correta.</small>'
+          : (isUnknownDriverName(rawFolder) ? '<br><small>OCR ainda não retornou motorista válido para este arquivo.</small>' : '');
         return `<div class="saved-item"><strong>${escapeHtml(f.fileName || 'Print salvo')}</strong><br>Pasta: ${escapeHtml(folderName)}${extra}${f.fileUrl ? `<br><a href="${escapeHtml(f.fileUrl)}" target="_blank" rel="noopener">Abrir no Drive</a>` : ''}</div>`;
       }).join('') : '';
     }
@@ -1035,19 +1062,29 @@
   }
 
   function getOcrTextFromFileResult(file) {
-    return [
-      file?.ocrText,
-      file?.ocr_text,
-      file?.text,
-      file?.texto,
-      file?.rawText,
-      file?.raw_text,
-      file?.extractedText,
-      file?.extracted_text,
-      file?.messageText,
-      file?.mensagem,
-      file?.content
-    ].filter(Boolean).join('\n');
+    const out = [];
+    const seen = new Set();
+    const preferredKeys = /^(ocrText|ocr_text|text|texto|rawText|raw_text|extractedText|extracted_text|messageText|mensagem|content|body|description)$/i;
+
+    const walk = (value, depth = 0, key = '') => {
+      if (value == null || depth > 4) return;
+      if (typeof value === 'string') {
+        const text = value.trim();
+        if (text && (preferredKeys.test(key) || /CONSTATAMOS|VELOCIDADE|KM\/?H|PLACA|MOTORISTA|CONDUTOR/i.test(text))) out.push(text);
+        return;
+      }
+      if (typeof value !== 'object') return;
+      if (seen.has(value)) return;
+      seen.add(value);
+      if (Array.isArray(value)) {
+        value.forEach((item) => walk(item, depth + 1, key));
+        return;
+      }
+      Object.entries(value).forEach(([k, v]) => walk(v, depth + 1, k));
+    };
+
+    walk(file);
+    return out.filter(Boolean).join('\n');
   }
 
   function cleanPossibleDriverName(value) {
@@ -1068,8 +1105,8 @@
     if (!raw.trim()) return '';
 
     const directPatterns = [
-      /(?:^|\n)\s*([A-ZÀ-Ú][A-ZÀ-Ú' .-]{5,80}?)\s*,\s*(?:CONSTATAMOS|COMUNICAMOS|IDENTIFICAMOS|INFORMAMOS)\b/i,
-      /(?:^|\n)\s*(?:PREZADO|PREZADA|COLABORADOR|MOTORISTA)\s*[:,-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' .-]{5,80}?)\s*(?:,|\n)/i,
+      /(?:^|\n|\s)([A-ZÀ-Ú][A-ZÀ-Ú' .-]{5,80}?)\s*,\s*(?:CONSTATAMOS|COMUNICAMOS|IDENTIFICAMOS|INFORMAMOS)\b/i,
+      /(?:^|\n)\s*(?:PREZADO|PREZADA|COLABORADOR|MOTORISTA|CONDUTOR)\s*[:,-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' .-]{5,80}?)\s*(?:,|\n)/i,
       /(?:NOME|CONDUTOR|MOTORISTA)\s*[:,-]\s*([A-ZÀ-Ú][A-ZÀ-Ú' .-]{5,80}?)(?:\n|,|\s{2,}|$)/i
     ];
     for (const pattern of directPatterns) {
@@ -1078,13 +1115,21 @@
       if (cleaned) return cleaned;
     }
 
-    const lines = raw.split(/\n+/).map((line) => cleanPossibleDriverName(line)).filter(Boolean);
+    const normalizedLines = raw
+      .split(/\n+/)
+      .map((line) => line.replace(/\b\d{1,2}:\d{2}\b/g, ' ').replace(/[✓✔]/g, ' '))
+      .map((line) => cleanPossibleDriverName(line))
+      .filter(Boolean);
+
     const idx = raw.toUpperCase().search(/CONSTATAMOS|COMUNICAMOS|IDENTIFICAMOS|INFORMAMOS/);
     if (idx >= 0) {
-      const before = raw.slice(0, idx).split(/\n+/).map((line) => cleanPossibleDriverName(line)).filter(Boolean);
+      const before = raw.slice(Math.max(0, idx - 160), idx)
+        .split(/\n+/)
+        .map((line) => cleanPossibleDriverName(line))
+        .filter(Boolean);
       if (before.length) return before[before.length - 1];
     }
-    return lines[0] || '';
+    return normalizedLines[0] || '';
   }
 
   function getPossibleFileDriverName(file) {
@@ -1297,11 +1342,7 @@
   async function uploadPrints(root) {
     const urlInput = root.querySelector('[data-gas-url]');
     const gasUrl = String(urlInput?.value || state.gasUrl || DEFAULT_GAS_URL).trim();
-    const nomeRaw = root.querySelector('[data-speed-name]')?.value || '';
-    const nome = isUnknownDriverName(nomeRaw) ? '' : nomeRaw;
-    const placa = root.querySelector('[data-speed-plate]')?.value || '';
     const dataNotificacao = root.querySelector('[data-notification-date]')?.value || todayBRShort();
-    const driverMap = buildPrintDriverMap();
 
     if (!gasUrl) return toast('Informe a URL do Web App do Apps Script.', 'error');
     if (!state.uploadedFiles.length) return toast('Selecione ao menos um print para enviar.', 'error');
@@ -1310,9 +1351,14 @@
     state.gasUrl = gasUrl;
 
     const btn = root.querySelector('[data-upload-prints]');
-    if (btn) { btn.disabled = true; btn.textContent = 'Enviando prints em lote...'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Lendo prints por OCR...'; }
 
     try {
+      if (!state.colaboradoresLoaded) {
+        await loadColaboradoresFromSupabase(root, currentRenderOpts);
+      }
+      const driverMap = buildPrintDriverMap();
+      const knownDrivers = buildKnownDriversForOcr(currentRenderOpts);
       const files = [];
       for (const file of state.uploadedFiles) {
         files.push({ name: file.name || file.__displayName || `print-${Date.now()}.png`, mimeType: file.type || 'image/png', base64: await fileToBase64(file) });
@@ -1325,19 +1371,24 @@
         body: JSON.stringify({
           action: 'upload_excesso_velocidade',
           parentFolderId: PASTA_MAE_DRIVE_ID,
-          // Processo 2 independente: não amarra o print ao colaborador/placa selecionado no Painel 1.
-          // O Apps Script deve usar OCR + driverMap para identificar a pasta correta.
+          // Processo 2 100% independente do Painel 1:
+          // não envia motorista/placa selecionados, para o print nunca ficar preso à mensagem copiada.
           driverName: '',
           driverFolderName: '',
           plate: '',
-          selectedDriverName: nome ? normalizeName(nome) : '',
-          selectedPlate: onlyPlate(placa),
+          selectedDriverName: '',
+          selectedPlate: '',
+          processMode: 'OCR_ONLY_INDEPENDENT',
           autoRouteByOcr: true,
           ignoreSelectedSuggestion: true,
+          requireOcrBeforeFolder: true,
+          saveUnknownDriverFolder: false,
+          unknownDriverFolderName: 'OCR - CONFERIR',
           notificationDate: formatDateBR(dataNotificacao),
           filePrefixDate: brDateToFilePrefix(dataNotificacao),
           fileNamingPattern: 'ordinal_notification_year_driver',
           driverMap,
+          knownDrivers,
           files
         })
       });
@@ -1681,7 +1732,7 @@
               <div class="speed-panel">
                 <div class="speed-step-title"><h3>Painel 2 · Enviar prints</h3><span class="speed-step-pill">colar direto aqui</span></div>
                 <div class="upload-box">
-                  <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL fica salva no navegador e é usada para salvar no Drive/OCR. O envio dos prints não depende da sugestão selecionada no Painel 1. Pasta mãe: <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
+                  <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL fica salva no navegador e é usada para salvar no Drive/OCR. O envio dos prints é independente do Painel 1: não usa a mensagem copiada nem a sugestão selecionada. Pasta mãe: <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
                   <div class="paste-zone" tabindex="0" data-paste-zone>
                     <strong>Clique aqui e cole o print</strong>
                     <span>Após clicar neste quadro, use <kbd>Ctrl</kbd> + <kbd>V</kbd>. Também funciona colando em qualquer campo desta tela, arrastando imagens ou selecionando em lote abaixo.</span>
@@ -1689,7 +1740,7 @@
                   <div class="speed-field" style="margin-top:14px"><label>Selecionar prints em lote</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
                   <div data-upload-list class="upload-list"></div>
                   <div class="upload-actions"><button class="speed-btn speed-btn-primary" type="button" data-upload-prints>Enviar prints e conferir por OCR</button></div>
-                  <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>O envio dos prints é um processo independente do painel de mensagem copiada. O sistema lê o print por OCR, identifica motorista/placa/data/velocidade e arquiva as pendências correspondentes. Se precisar limpar manualmente, use OK na pendência ou OK por data.</p></div>
+                  <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>O Painel 1 apenas gera/copia a mensagem. O Painel 2 lê os prints por OCR em lote e cruza motorista/placa/data/velocidade com as pendências abertas. Ele não depende da sugestão selecionada nem da mensagem marcada como copiada.</p></div>
                   <div data-saved-list class="saved-list"></div>
                 </div>
               </div>
