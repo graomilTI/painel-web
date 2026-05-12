@@ -226,7 +226,12 @@ function injectProgramacaoStyles() {
     .prog-section-title .badge{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:900;border:1px solid rgba(52,211,153,.22);background:rgba(22,101,52,.14);color:#bbf7d0}
     .prog-section-title.blocked .badge{border-color:rgba(248,113,113,.22);background:rgba(127,29,29,.18);color:#fecaca}
     .prog-empty-section{border:1px dashed rgba(148,163,184,.2);border-radius:16px;padding:14px;color:#94a3b8;background:rgba(15,23,42,.18)}
-    @media(max-width:900px){.prog-extra-card{grid-template-columns:1fr}.prog-table{min-width:860px}}
+    .prog-os-modal-backdrop{position:fixed;inset:0;z-index:9990;background:rgba(2,6,23,.72);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:18px}
+    .prog-os-modal{width:min(920px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(52,211,153,.22);border-radius:24px;background:linear-gradient(180deg,#0f172a,#07130d);box-shadow:0 30px 90px rgba(0,0,0,.55);color:#e5e7eb;padding:22px}
+    .prog-os-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.prog-os-modal-head h3{margin:0;color:#f8fafc;font-size:22px}.prog-os-modal-head p{margin:6px 0 0;color:#94a3b8}
+    .prog-os-list{display:grid;gap:10px}.prog-os-card{border:1px solid rgba(52,211,153,.16);background:rgba(15,23,42,.62);border-radius:18px;padding:14px}.prog-os-card.zero{box-shadow:inset 4px 0 0 #facc15}.prog-os-title{font-weight:950;color:#f8fafc}.prog-os-meta{font-size:12px;color:#94a3b8;margin-top:4px}.prog-os-rem{display:inline-flex;border-radius:999px;padding:5px 10px;margin-top:8px;font-size:12px;font-weight:950;border:1px solid rgba(250,204,21,.25);color:#fde68a;background:rgba(113,63,18,.22)}
+    .prog-os-modal-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:18px}.prog-os-close{border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.72);color:#e5e7eb;border-radius:13px;padding:10px 14px;font-weight:900;cursor:pointer}.prog-os-go{border:1px solid rgba(187,247,208,.32);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;border-radius:13px;padding:10px 14px;font-weight:950;cursor:pointer}
+    @media(max-width:900px){.prog-extra-card{grid-template-columns:1fr}.prog-table{min-width:860px}.prog-os-modal{padding:16px}}
   `;
   document.head.appendChild(style);
 }
@@ -361,10 +366,12 @@ initProtectedPage('Programação', (content) => {
     bindEvents();
     await Promise.all([loadCidadesBrasil(), loadAlojamentos(), loadVeiculosFrota()]);
     await fillSupervisoes();
+    await checkOsPendingPopup();
   }
 
   function bindEvents() {
     el.loadBtn.addEventListener('click', loadContext);
+    el.sup.addEventListener('change', () => checkOsPendingPopup());
     el.saveBtn.addEventListener('click', saveProgramacao);
     el.search.addEventListener('input', () => {
       state.search = el.search.value.trim().toLowerCase();
@@ -378,6 +385,87 @@ initProtectedPage('Programação', (content) => {
     el.list.addEventListener('change', handleTableChange);
     el.list.addEventListener('input', handleTableInput);
     el.list.addEventListener('click', handleTableClick);
+  }
+
+
+  function osRemanescenteLabel(value) {
+    const number = Number(value || 0);
+    return Number.isFinite(number) ? number.toLocaleString('pt-BR') : '0';
+  }
+
+  function pendingOsFilter(row) {
+    if (!row) return false;
+    if (String(row.status_gestor || '').toUpperCase() === 'FINALIZAR') return false;
+    if (!row.configurada_em) return true;
+    const updated = new Date(row.updated_at || row.created_at || 0).getTime();
+    const configured = new Date(row.configurada_em || 0).getTime();
+    return Number.isFinite(updated) && Number.isFinite(configured) && updated > configured;
+  }
+
+  async function checkOsPendingPopup() {
+    try {
+      const selectedSup = el.sup?.value || '';
+      let query = supabase
+        .from('operacional_os')
+        .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,status_gestor,configurada_em,updated_at,created_at')
+        .neq('status_gestor', 'FINALIZAR')
+        .order('data_os', { ascending: false })
+        .limit(50);
+
+      if (selectedSup) {
+        query = query.eq('supervisao', selectedSup);
+      } else if (state.access?.restricted && state.access.allowedSupervisoes?.length) {
+        query = query.in('supervisao', state.access.allowedSupervisoes);
+      } else {
+        return;
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      const pending = (data || []).filter(pendingOsFilter).slice(0, 8);
+      if (pending.length) showOsPendingModal(pending);
+    } catch (error) {
+      console.warn('Não foi possível verificar O.S. pendentes para pop-up.', error);
+    }
+  }
+
+  function showOsPendingModal(rows) {
+    const old = document.getElementById('progOsPendingModal');
+    if (old) old.remove();
+    const wrap = document.createElement('div');
+    wrap.id = 'progOsPendingModal';
+    wrap.className = 'prog-os-modal-backdrop';
+    wrap.innerHTML = `
+      <div class="prog-os-modal" role="dialog" aria-modal="true" aria-label="Configuração de O.S.">
+        <div class="prog-os-modal-head">
+          <div>
+            <h3>Configurar O.S. antes da programação</h3>
+            <p>Existem O.S. novas ou alteradas para a regional liberada. Configure atendimento, colaborador sugerido e distribuição antes de seguir com a programação.</p>
+          </div>
+          <button class="prog-os-close" type="button" data-os-close>Fechar</button>
+        </div>
+        <div class="prog-os-list">
+          ${rows.map((row) => {
+            const zero = Number(row.remanescente || 0) === 0;
+            return `<div class="prog-os-card ${zero ? 'zero' : ''}">
+              <div class="prog-os-title">O.S. ${escapeHtml(row.numero_os)} • ${escapeHtml(row.supervisao || '-')}</div>
+              <div class="prog-os-meta">${escapeHtml(row.cliente || '-')}</div>
+              <div class="prog-os-meta">Embarque: ${escapeHtml(row.embarque || '-')}</div>
+              <div class="prog-os-meta">Destino: ${escapeHtml(row.destino || '-')}</div>
+              <span class="prog-os-rem">Remanescente: ${osRemanescenteLabel(row.remanescente)}${zero ? ' • zerada' : ''}</span>
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="prog-os-modal-actions">
+          <button class="prog-os-close" type="button" data-os-close>Continuar depois</button>
+          <button class="prog-os-go" type="button" data-os-open>Abrir submenu OS</button>
+        </div>
+      </div>`;
+    wrap.addEventListener('click', (event) => {
+      if (event.target.matches('[data-os-close]') || event.target === wrap) wrap.remove();
+      if (event.target.matches('[data-os-open]')) window.location.href = './os.html';
+    });
+    document.body.appendChild(wrap);
   }
 
 

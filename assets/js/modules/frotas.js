@@ -68,6 +68,29 @@
     return String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
   }
 
+  function normalizeDriverNameForMatch(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z\s'.-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function isUnknownDriverName(value) {
+    const name = normalizeDriverNameForMatch(value);
+    if (!name) return true;
+    return [
+      'MOTORISTA NAO IDENTIFICADO',
+      'MOTORISTA NÃO IDENTIFICADO',
+      'NAO IDENTIFICADO',
+      'NÃO IDENTIFICADO',
+      'SEM MOTORISTA',
+      'INDEFINIDO'
+    ].some((generic) => normalizeDriverNameForMatch(generic) === name);
+  }
+
   function sanitizeFolderName(value) {
     return normalizeName(value).replace(/[\\/:*?"<>|]/g, '-').slice(0, 120);
   }
@@ -509,19 +532,22 @@
   }
 
   function buildPrintDriverMap() {
-    return groupImportedExcessos(state.importedExcessos).map((g) => ({
-      key: g.key || '',
-      plate: onlyPlate(g.placa),
-      driverName: normalizeName(g.motorista || ''),
-      driverFolderName: sanitizeFolderName(g.motorista || ''),
-      coordenacao: g.coordenacao || '',
-      supervisao: g.supervisao || '',
-      registros: (g.registros || []).map((r) => ({
-        id: r.id,
-        data: formatDateBR(r.data || r.data_evento),
-        velocidade: parseSpeed(r.velocidade)
-      })).filter((r) => r.id && r.data && r.velocidade)
-    })).filter((item) => item.plate && item.driverName);
+    return groupImportedExcessos(state.importedExcessos).map((g) => {
+      const driverName = isUnknownDriverName(g.motorista) ? '' : normalizeName(g.motorista || '');
+      return {
+        key: g.key || '',
+        plate: onlyPlate(g.placa),
+        driverName,
+        driverFolderName: driverName ? sanitizeFolderName(driverName) : '',
+        coordenacao: g.coordenacao || '',
+        supervisao: g.supervisao || '',
+        registros: (g.registros || []).map((r) => ({
+          id: r.id,
+          data: formatDateBR(r.data || r.data_evento),
+          velocidade: parseSpeed(r.velocidade)
+        })).filter((r) => r.id && r.data && r.velocidade)
+      };
+    }).filter((item) => item.plate);
   }
 
   function renderImportedExcessos(root) {
@@ -851,7 +877,8 @@
   }
 
   function validateForm(root) {
-    const nome = root.querySelector('[data-speed-name]')?.value || '';
+    const nomeRaw = root.querySelector('[data-speed-name]')?.value || '';
+    const nome = isUnknownDriverName(nomeRaw) ? '' : nomeRaw;
     const placa = root.querySelector('[data-speed-plate]')?.value || '';
     const cidadeData = root.querySelector('[data-speed-city-date]')?.value || '';
     const registros = Array.from(root.querySelectorAll('[data-speed-record]')).map((row) => ({ data: row.querySelector('[data-speed-date]')?.value || '', velocidade: row.querySelector('[data-speed-value]')?.value || '' }));
@@ -916,7 +943,12 @@
     }
     const saved = root.querySelector('[data-saved-list]');
     if (saved) {
-      saved.innerHTML = state.savedPrints.length ? state.savedPrints.map((f) => `<div class="saved-item"><strong>${escapeHtml(f.fileName || 'Print salvo')}</strong><br>Pasta: ${escapeHtml(f.driverFolderName || '')}${f.fileUrl ? `<br><a href="${escapeHtml(f.fileUrl)}" target="_blank" rel="noopener">Abrir no Drive</a>` : ''}</div>`).join('') : '';
+      saved.innerHTML = state.savedPrints.length ? state.savedPrints.map((f) => {
+        const driverName = getPossibleFileDriverName(f);
+        const folderName = driverName || f.driverFolderName || '';
+        const extra = driverName && isUnknownDriverName(f.driverFolderName) ? '<br><small>Motorista identificado pelo OCR do print.</small>' : '';
+        return `<div class="saved-item"><strong>${escapeHtml(f.fileName || 'Print salvo')}</strong><br>Pasta: ${escapeHtml(folderName)}${extra}${f.fileUrl ? `<br><a href="${escapeHtml(f.fileUrl)}" target="_blank" rel="noopener">Abrir no Drive</a>` : ''}</div>`;
+      }).join('') : '';
     }
   }
 
@@ -938,7 +970,8 @@
     }
 
     if (Array.isArray(data.files)) {
-      state.savedPrints = [...data.files, ...state.savedPrints];
+      const normalizedFiles = data.files.map((file) => normalizeSavedPrintFileResult(file));
+      state.savedPrints = [...normalizedFiles, ...state.savedPrints];
       renderUploadLists(root);
     }
   }
@@ -1001,69 +1034,6 @@
       .trim();
   }
 
-  function normalizeNameForOcrMatch(value) {
-    return normalizeTextForOcrMatch(value)
-      .replace(/[^A-Z0-9\s]/g, ' ')
-      .replace(/\b(SR|SRA|SENHOR|SENHORA|MOTORISTA|CONDUTOR|CONDUTORA)\b/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  function getOcrTextLines(value) {
-    return String(value || '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toUpperCase()
-      .split(/\r?\n|\|/)
-      .map((line) => line.replace(/[^A-Z0-9\s/.,:-]/g, ' ').replace(/\s+/g, ' ').trim())
-      .filter(Boolean);
-  }
-
-  function looksLikePersonNameFromOcr(value) {
-    const name = normalizeNameForOcrMatch(value);
-    if (!name) return false;
-    const parts = name.split(' ').filter(Boolean);
-    if (parts.length < 2 || parts.length > 7) return false;
-    const blocked = /\b(NOTIFICACAO|VELOCIDADE|MOTORISTA|IDENTIFICADO|CONSTATAMOS|SISTEMA|RASTREAMENTO|FROTA|VEICULO|PLACA|REGISTROS|ABAIXO|KM|HORA|ARQUIVO|GOOGLE|DRIVE|WHATSAPP|ENCAMINHADA|BOA|TARDE|LIMITE|PERMITIDO|CONDUTOR|EMPRESA|ORGANIZACAO|SEGURANCA|TERCEIROS|PATRIMONIO|ATENCAO)\b/;
-    if (blocked.test(name)) return false;
-    return parts.every((part) => part.length >= 2 && /^[A-Z]+$/.test(part));
-  }
-
-  function extractPossibleDriversFromOcrText(text) {
-    const raw = String(text || '');
-    const normalizedFull = normalizeTextForOcrMatch(raw);
-    const out = [];
-    const add = (value) => {
-      const name = normalizeNameForOcrMatch(value);
-      if (looksLikePersonNameFromOcr(name) && !out.includes(name)) out.push(name);
-    };
-
-    const patterns = [
-      /(?:BOM DIA|BOA TARDE|BOA NOITE)[\s\S]{0,140}?([A-ZÀ-Ý]{2,}(?:\s+[A-ZÀ-Ý]{2,}){1,6}),\s*(?:CONSTATAMOS|COMUNICAMOS|INFORMAMOS)/i,
-      /\b([A-ZÀ-Ý]{2,}(?:\s+[A-ZÀ-Ý]{2,}){1,6}),\s*(?:CONSTATAMOS|COMUNICAMOS|INFORMAMOS)/i,
-      /(?:^|\n|\r)([A-ZÀ-Ý][A-ZÀ-Ý\s]{5,80}?),\s*(?:CONSTATAMOS|COMUNICAMOS|INFORMAMOS)/i,
-      /(?:^|\n|\r)([A-ZÀ-Ý][A-ZÀ-Ý\s]{5,80}?)(?:,|\s+CONSTATAMOS)/i,
-      /(?:MOTORISTA|CONDUTOR|COLABORADOR|FUNCIONARIO)\s*[:\-]\s*([A-ZÀ-Ý][A-ZÀ-Ý\s]{5,80})/i,
-      /(?:NOME)\s*[:\-]\s*([A-ZÀ-Ý][A-ZÀ-Ý\s]{5,80})/i
-    ];
-    patterns.forEach((pattern) => {
-      const match = raw.match(pattern) || normalizedFull.match(pattern);
-      if (match?.[1]) add(match[1]);
-    });
-
-    const lines = getOcrTextLines(raw);
-    lines.forEach((line, index) => {
-      const clean = line.replace(/,$/, '').trim();
-      if (looksLikePersonNameFromOcr(clean)) {
-        const next = lines[index + 1] || '';
-        const prev = lines[index - 1] || '';
-        if (/\b(CONSTATAMOS|COMUNICAMOS|INFORMAMOS)\b/.test(next) || /\b(BOA TARDE|BOA NOITE|BOM DIA|ENCAMINHADA)\b/.test(prev) || clean.includes(' ')) add(clean);
-      }
-    });
-
-    return out;
-  }
-
   function getOcrTextFromFileResult(file) {
     return [
       file?.ocrText,
@@ -1078,6 +1048,78 @@
       file?.mensagem,
       file?.content
     ].filter(Boolean).join('\n');
+  }
+
+  function cleanPossibleDriverName(value) {
+    let name = normalizeName(value)
+      .replace(/\b(BOM DIA|BOA TARDE|BOA NOITE|ENCAMINHADA|LEIA MAIS|LER MAIS|ARQUIVO|PASTA)\b/g, ' ')
+      .replace(/\b(CONSTATAMOS|COMUNICAMOS|IDENTIFICAMOS|PREZADO|PREZADA|COLABORADOR|MOTORISTA)\b.*$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (isUnknownDriverName(name)) return '';
+    const parts = name.split(' ').filter(Boolean);
+    if (parts.length < 2) return '';
+    if (name.length < 6 || name.length > 80) return '';
+    return name;
+  }
+
+  function extractDriverNameFromOcrText(text) {
+    const raw = String(text || '').replace(/\r/g, '\n');
+    if (!raw.trim()) return '';
+
+    const directPatterns = [
+      /(?:^|\n)\s*([A-ZÀ-Ú][A-ZÀ-Ú' .-]{5,80}?)\s*,\s*(?:CONSTATAMOS|COMUNICAMOS|IDENTIFICAMOS|INFORMAMOS)\b/i,
+      /(?:^|\n)\s*(?:PREZADO|PREZADA|COLABORADOR|MOTORISTA)\s*[:,-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' .-]{5,80}?)\s*(?:,|\n)/i,
+      /(?:NOME|CONDUTOR|MOTORISTA)\s*[:,-]\s*([A-ZÀ-Ú][A-ZÀ-Ú' .-]{5,80}?)(?:\n|,|\s{2,}|$)/i
+    ];
+    for (const pattern of directPatterns) {
+      const match = raw.match(pattern);
+      const cleaned = cleanPossibleDriverName(match?.[1] || '');
+      if (cleaned) return cleaned;
+    }
+
+    const lines = raw.split(/\n+/).map((line) => cleanPossibleDriverName(line)).filter(Boolean);
+    const idx = raw.toUpperCase().search(/CONSTATAMOS|COMUNICAMOS|IDENTIFICAMOS|INFORMAMOS/);
+    if (idx >= 0) {
+      const before = raw.slice(0, idx).split(/\n+/).map((line) => cleanPossibleDriverName(line)).filter(Boolean);
+      if (before.length) return before[before.length - 1];
+    }
+    return lines[0] || '';
+  }
+
+  function getPossibleFileDriverName(file) {
+    const direct = cleanPossibleDriverName([
+      file?.driverName,
+      file?.driver_name,
+      file?.driverFolderName,
+      file?.driver_folder_name,
+      file?.motorista,
+      file?.nomeMotorista,
+      file?.nome_motorista,
+      file?.condutor,
+      file?.folderName,
+      file?.folder_name
+    ].find(Boolean) || '');
+    if (direct) return direct;
+
+    const fromOcr = extractDriverNameFromOcrText(getOcrTextFromFileResult(file));
+    if (fromOcr) return fromOcr;
+
+    const fromFileName = String(file?.fileName || file?.name || '')
+      .replace(/\.[a-z0-9]{2,5}$/i, '')
+      .replace(/\d+\s*[º°]?\s*NOTIFICA(?:C|Ç)[AÃ]O\s+DE\s+VELOCIDADE\s+\d{4}/i, '')
+      .replace(/MOTORISTA\s+NAO\s+IDENTIFICADO|MOTORISTA\s+NÃO\s+IDENTIFICADO/i, '');
+    return cleanPossibleDriverName(fromFileName);
+  }
+
+  function normalizeSavedPrintFileResult(file) {
+    const driverName = getPossibleFileDriverName(file);
+    if (!driverName) return file;
+    return {
+      ...file,
+      driverName,
+      driverFolderName: isUnknownDriverName(file?.driverFolderName) ? driverName : (file?.driverFolderName || driverName)
+    };
   }
 
   function extractOcrRecordsFromText(text) {
@@ -1120,26 +1162,11 @@
   }
 
   function getPossibleFilePlate(file) {
-    const text = normalizeTextForOcrMatch([getOcrTextFromFileResult(file), file?.fileName, file?.name].filter(Boolean).join('\n'));
+    const text = normalizeTextForOcrMatch(getOcrTextFromFileResult(file));
     const direct = onlyPlate(file?.plate || file?.placa || file?.vehiclePlate || file?.vehicle_plate || '');
     if (direct) return direct;
     const match = text.match(/\b([A-Z]{3}\s*[0-9][A-Z0-9]\s*[0-9]{2})\b/);
     return match ? onlyPlate(match[1]) : '';
-  }
-
-  function getPossibleFileDrivers(file) {
-    const direct = [
-      file?.driverName,
-      file?.driverFolderName,
-      file?.motorista,
-      file?.nomeMotorista,
-      file?.condutor,
-      file?.colaborador
-    ].map(normalizeNameForOcrMatch).filter(Boolean);
-
-    const text = [getOcrTextFromFileResult(file), file?.fileName, file?.name].filter(Boolean).join('\n');
-    const extracted = extractPossibleDriversFromOcrText(text);
-    return Array.from(new Set([...direct, ...extracted]));
   }
 
   function getGroupKeyFromRow(row) {
@@ -1155,16 +1182,11 @@
 
   function fileMatchesRowByVehicleOrDriver(file, row) {
     const filePlate = getPossibleFilePlate(file);
-    const fileDrivers = getPossibleFileDrivers(file);
+    const fileDriver = normalizeDriverNameForMatch(getPossibleFileDriverName(file));
     const rowPlate = onlyPlate(row?.placa || '');
-    const rowDriver = normalizeNameForOcrMatch(getDriverFromExcesso(row));
+    const rowDriver = normalizeDriverNameForMatch(getDriverFromExcesso(row));
     if (filePlate && rowPlate && filePlate === rowPlate) return true;
-    if (fileDrivers.length && rowDriver) {
-      return fileDrivers.some((fileDriver) => {
-        if (!fileDriver) return false;
-        return fileDriver === rowDriver || fileDriver.includes(rowDriver) || rowDriver.includes(fileDriver);
-      });
-    }
+    if (fileDriver && rowDriver && !isUnknownDriverName(rowDriver) && (fileDriver === rowDriver || fileDriver.includes(rowDriver) || rowDriver.includes(fileDriver))) return true;
     return false;
   }
 
@@ -1185,7 +1207,7 @@
         id: row.id,
         fileName: file?.fileName || file?.name || '',
         fileUrl: file?.fileUrl || file?.url || '',
-        driverName: (getPossibleFileDrivers(file)[0] || file?.driverName || file?.driverFolderName || getDriverFromExcesso(row) || ''),
+        driverName: getPossibleFileDriverName(file) || file?.driverName || file?.driverFolderName || getDriverFromExcesso(row) || '',
         plate: getPossibleFilePlate(file) || onlyPlate(row.placa || ''),
         reason
       });
@@ -1273,7 +1295,8 @@
   async function uploadPrints(root) {
     const urlInput = root.querySelector('[data-gas-url]');
     const gasUrl = String(urlInput?.value || state.gasUrl || DEFAULT_GAS_URL).trim();
-    const nome = root.querySelector('[data-speed-name]')?.value || '';
+    const nomeRaw = root.querySelector('[data-speed-name]')?.value || '';
+    const nome = isUnknownDriverName(nomeRaw) ? '' : nomeRaw;
     const placa = root.querySelector('[data-speed-plate]')?.value || '';
     const dataNotificacao = root.querySelector('[data-notification-date]')?.value || todayBRShort();
     const driverMap = buildPrintDriverMap();
@@ -1313,7 +1336,7 @@
       const json = await resp.json();
       if (!json.ok) throw new Error(json.message || 'Falha ao processar prints.');
       applyOcrResult(root, json);
-      await archiveMatchedImportedRowsFromOcr(root, json?.data?.files || []);
+      await archiveMatchedImportedRowsFromOcr(root, (json?.data?.files || []).map((file) => normalizeSavedPrintFileResult(file)));
       state.uploadedFiles = [];
       const input = root.querySelector('[data-print-files]');
       if (input) input.value = '';
