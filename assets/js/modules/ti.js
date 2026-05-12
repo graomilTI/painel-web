@@ -14,6 +14,15 @@
 
   const TEMPLATES = [
     {
+      codigo: 'SMTP_RELATORIOS_LOGISTICA',
+      nome: 'Relatórios Logística · SMTP',
+      categoria: 'EMAIL',
+      ambiente: 'PRODUCAO',
+      base_url: 'smtp://mail.grao1000.com.br',
+      auth_url: '',
+      segredos: ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM', 'SMTP_FROM_NAME', 'SMTP_SECURE']
+    },
+    {
       codigo: 'DETRAN_PR_FROTISTA',
       nome: 'DETRAN PR · Frotista',
       categoria: 'FROTAS',

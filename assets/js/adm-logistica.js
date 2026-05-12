@@ -37,6 +37,7 @@ const state = {
   atribuicoes: [],
   alertas: [],
   producao: [],
+  destinatariosRelatorios: [],
   filters: {
     data: '',
     coordenacao: '',
@@ -303,14 +304,29 @@ initProtectedPage('Painel de Logística', async (content) => {
 
     <section class="card mt-16 log-section" id="section-relatorios">
       <div class="section-head"><div><h3>Relatórios ao cliente</h3><p class="muted">Gera e envia relatório por e-mail usando a integração <strong>SMTP_RELATORIOS_LOGISTICA</strong> cadastrada em TI &gt; Integrações.</p></div></div>
-      <div class="log-note">O envio roda em Supabase Edge Function. Os destinatários podem ser separados por vírgula, ponto e vírgula ou quebra de linha.</div>
+      <div class="log-note">O envio roda em Supabase Edge Function. A lista fixa abaixo é usada automaticamente em todo envio, sem precisar redigitar diariamente. Destinatários manuais continuam disponíveis para envios pontuais.</div>
       <div class="log-report-grid mt-16">
         <div class="field"><label>Cliente</label><input id="relCliente" class="log-input" type="text" placeholder="Ex.: LDC, COFCO, Sipal..."></div>
         <div class="field"><label>Data inicial</label><input id="relDataInicial" class="log-input" type="date"></div>
         <div class="field"><label>Data final</label><input id="relDataFinal" class="log-input" type="date"></div>
         <div class="field"><label>Formato</label><select id="relFormato" class="log-input"><option value="CSV">CSV</option><option value="HTML">HTML no corpo</option><option value="CSV_HTML">CSV + HTML</option></select></div>
-        <div class="field wide"><label>Destinatários</label><textarea id="relDestinatarios" class="log-input log-textarea" placeholder="cliente@empresa.com.br; outro@empresa.com.br"></textarea></div>
+        <div class="field wide"><label>Destinatários manuais / extras</label><textarea id="relDestinatarios" class="log-input log-textarea" placeholder="Use apenas para e-mails extras deste envio. A lista fixa é carregada automaticamente."></textarea></div>
         <div class="field wide"><label>Observação / mensagem</label><textarea id="relMensagem" class="log-input log-textarea" placeholder="Mensagem opcional para aparecer no e-mail"></textarea></div>
+      </div>
+
+      <div class="card mt-16 log-subcard">
+        <div class="section-head"><div><h4>Lista fixa de destinatários</h4><p class="muted">Cadastre aqui os e-mails que devem receber automaticamente os relatórios. Use cliente vazio para enviar em todos os relatórios.</p></div></div>
+        <div class="log-report-grid mt-16">
+          <div class="field"><label>Cliente / grupo</label><input id="relDestCliente" class="log-input" type="text" placeholder="Vazio = todos os clientes"></div>
+          <div class="field"><label>E-mail</label><input id="relDestEmail" class="log-input" type="email" placeholder="cliente@empresa.com.br"></div>
+          <div class="field"><label>Nome</label><input id="relDestNome" class="log-input" type="text" placeholder="Nome opcional"></div>
+          <div class="field"><label>Tipo</label><select id="relDestTipo" class="log-input"><option value="TO">Para</option><option value="CC">Cc</option></select></div>
+        </div>
+        <div class="log-inline-actions mt-16">
+          <button id="relSalvarDest" class="btn btn-secondary" type="button">Adicionar à lista fixa</button>
+          <button id="relAplicarClienteDest" class="btn btn-secondary" type="button">Usar cliente do relatório</button>
+        </div>
+        <div id="relDestinatariosFixos" class="log-report-history"></div>
       </div>
       <div class="log-inline-actions mt-16">
         <button id="relPreview" class="btn btn-secondary" type="button">Pré-visualizar</button>
@@ -341,6 +357,13 @@ initProtectedPage('Painel de Logística', async (content) => {
     relFormato: document.getElementById('relFormato'),
     relDestinatarios: document.getElementById('relDestinatarios'),
     relMensagem: document.getElementById('relMensagem'),
+    relDestCliente: document.getElementById('relDestCliente'),
+    relDestEmail: document.getElementById('relDestEmail'),
+    relDestNome: document.getElementById('relDestNome'),
+    relDestTipo: document.getElementById('relDestTipo'),
+    relSalvarDest: document.getElementById('relSalvarDest'),
+    relAplicarClienteDest: document.getElementById('relAplicarClienteDest'),
+    relDestinatariosFixos: document.getElementById('relDestinatariosFixos'),
     relPreview: document.getElementById('relPreview'),
     relEnviar: document.getElementById('relEnviar'),
     relPreviewBox: document.getElementById('relPreviewBox'),
@@ -364,6 +387,9 @@ initProtectedPage('Painel de Logística', async (content) => {
   el.clienteExportacao.addEventListener('change', () => { state.filters.clienteExportacao = el.clienteExportacao.value; render(); });
   el.relPreview.addEventListener('click', previewRelatorioCliente);
   el.relEnviar.addEventListener('click', enviarRelatorioCliente);
+  el.relSalvarDest.addEventListener('click', salvarDestinatarioFixo);
+  el.relAplicarClienteDest.addEventListener('click', () => { el.relDestCliente.value = el.relCliente.value.trim(); });
+  el.relCliente.addEventListener('change', () => { if (!el.relDestCliente.value) el.relDestCliente.value = el.relCliente.value.trim(); });
   el.reload.addEventListener('click', loadAll);
   content.addEventListener('click', onClick);
   content.addEventListener('change', onChange);
@@ -596,6 +622,7 @@ initProtectedPage('Painel de Logística', async (content) => {
       data_final: dataFinal,
       formato: el.relFormato.value || 'CSV',
       destinatarios,
+      incluir_lista_fixa: true,
       mensagem: el.relMensagem.value.trim(),
       solicitado_por: state.user?.id || null,
     };
@@ -617,6 +644,7 @@ initProtectedPage('Painel de Logística', async (content) => {
   function previewRelatorioCliente() {
     const payload = getRelatorioPayload();
     const rows = relatorioRowsPreview(payload);
+    const fixos = destinatariosFixosParaCliente(payload.cliente);
     if (!payload.cliente) {
       el.feedback.textContent = 'Informe o cliente para pré-visualizar o relatório.';
       return;
@@ -630,14 +658,14 @@ initProtectedPage('Painel de Logística', async (content) => {
     const totalCargas = rows.reduce((sum, r) => sum + numberBr(r.cargas), 0);
     const linhas = rows.slice(0, 20).map((r) => `${dateKey(r.data)} | OS ${r.os || r.numero_os || '-'} | ${clienteOf(r)} | ${origemOf(r)} → ${destinoOf(r)} | ${BR_NUM.format(numberBr(r.toneladas))} tons`).join('\n');
     el.relPreviewBox.style.display = 'block';
-    el.relPreviewBox.textContent = `Prévia do relatório\nCliente: ${payload.cliente}\nPeríodo: ${payload.data_inicial || '-'} até ${payload.data_final || '-'}\nDestinatários: ${payload.destinatarios.join(', ') || '-'}\nLinhas encontradas: ${rows.length}\nCargas: ${BR_INT.format(totalCargas)}\nToneladas: ${BR_NUM.format(totalTons)}\n\n${linhas}`;
+    el.relPreviewBox.textContent = `Prévia do relatório\nCliente: ${payload.cliente}\nPeríodo: ${payload.data_inicial || '-'} até ${payload.data_final || '-'}\nLista fixa: ${fixos.map((d) => d.email).join(', ') || '-'}\nDestinatários extras: ${payload.destinatarios.join(', ') || '-'}\nLinhas encontradas: ${rows.length}\nCargas: ${BR_INT.format(totalCargas)}\nToneladas: ${BR_NUM.format(totalTons)}\n\n${linhas}`;
   }
 
   async function enviarRelatorioCliente() {
     const payload = getRelatorioPayload();
     if (!payload.cliente) return el.feedback.textContent = 'Informe o cliente.';
     if (!payload.data_inicial || !payload.data_final) return el.feedback.textContent = 'Informe data inicial e final.';
-    if (!payload.destinatarios.length) return el.feedback.textContent = 'Informe pelo menos um destinatário.';
+    // Destinatários manuais são opcionais; a Edge Function também busca a lista fixa cadastrada.
     el.relEnviar.disabled = true;
     el.feedback.textContent = 'Gerando e enviando relatório...';
     try {
@@ -645,12 +673,74 @@ initProtectedPage('Painel de Logística', async (content) => {
       if (error) throw error;
       el.feedback.textContent = data?.message || 'Relatório enviado.';
       await carregarHistoricoRelatorios();
+      await carregarDestinatariosFixos();
     } catch (err) {
       console.error('[Logística] enviar relatório:', err);
       el.feedback.textContent = err?.message || 'Erro ao enviar relatório. Confira a Edge Function e a integração SMTP.';
     } finally {
       el.relEnviar.disabled = false;
     }
+  }
+
+
+  function destinatariosFixosParaCliente(cliente) {
+    const nCliente = normalize(cliente);
+    return (state.destinatariosRelatorios || []).filter((d) => {
+      if (d.ativo === false) return false;
+      const dc = normalize(d.cliente || '');
+      return !dc || dc === 'TODOS' || !nCliente || nCliente.includes(dc) || dc.includes(nCliente);
+    });
+  }
+
+  async function carregarDestinatariosFixos() {
+    if (!el.relDestinatariosFixos) return;
+    const { data, error } = await supabase
+      .from('logistica_relatorios_destinatarios')
+      .select('*')
+      .order('cliente', { ascending: true, nullsFirst: true })
+      .order('email', { ascending: true });
+    if (error) {
+      el.relDestinatariosFixos.innerHTML = '<div class="log-empty">Lista fixa indisponível. Rode o SQL atualizado de destinatários.</div>';
+      return;
+    }
+    state.destinatariosRelatorios = safeArray(data);
+    renderDestinatariosFixos();
+  }
+
+  function renderDestinatariosFixos() {
+    const list = state.destinatariosRelatorios || [];
+    if (!list.length) {
+      el.relDestinatariosFixos.innerHTML = '<div class="log-empty">Nenhum destinatário fixo cadastrado.</div>';
+      return;
+    }
+    el.relDestinatariosFixos.innerHTML = `<div class="log-table-wrap"><table class="log-table"><thead><tr><th>Cliente/grupo</th><th>E-mail</th><th>Nome</th><th>Tipo</th><th>Status</th><th>Ações</th></tr></thead><tbody>${list.map((r) => `<tr><td>${esc(!r.cliente || normalize(r.cliente) === 'TODOS' ? 'Todos' : r.cliente)}</td><td>${esc(r.email || '-')}</td><td>${esc(r.nome || '-')}</td><td>${esc(r.tipo || 'TO')}</td><td>${r.ativo === false ? statusBadge('INATIVO') : statusBadge('ATIVO')}</td><td><button class="btn btn-secondary btn-sm" data-dest-toggle="${esc(r.id)}" type="button">${r.ativo === false ? 'Ativar' : 'Inativar'}</button></td></tr>`).join('')}</tbody></table></div>`;
+  }
+
+  async function salvarDestinatarioFixo() {
+    const email = String(el.relDestEmail.value || '').trim();
+    if (!email || !email.includes('@')) {
+      el.feedback.textContent = 'Informe um e-mail válido para a lista fixa.';
+      return;
+    }
+    const payload = {
+      cliente: String(el.relDestCliente.value || '').trim() || 'TODOS',
+      email,
+      nome: String(el.relDestNome.value || '').trim() || null,
+      tipo: String(el.relDestTipo.value || 'TO').trim().toUpperCase(),
+      ativo: true,
+      atualizado_por: state.user?.id || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('logistica_relatorios_destinatarios').upsert(payload, { onConflict: 'cliente,email' });
+    if (error) {
+      console.error('[Logística] salvar destinatário fixo:', error);
+      el.feedback.textContent = error.message || 'Erro ao salvar destinatário fixo.';
+      return;
+    }
+    el.relDestEmail.value = '';
+    el.relDestNome.value = '';
+    el.feedback.textContent = 'Destinatário fixo salvo.';
+    await carregarDestinatariosFixos();
   }
 
   async function carregarHistoricoRelatorios() {
@@ -672,7 +762,10 @@ initProtectedPage('Painel de Logística', async (content) => {
   }
 
   function renderRelatorios() {
-    if (state.tab === 'relatorios') carregarHistoricoRelatorios();
+    if (state.tab === 'relatorios') {
+      carregarHistoricoRelatorios();
+      carregarDestinatariosFixos();
+    }
   }
 
   async function onClick(event) {
@@ -682,6 +775,18 @@ initProtectedPage('Painel de Logística', async (content) => {
       const text = tpl?.innerHTML ? tpl.innerHTML.replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>') : '';
       await navigator.clipboard?.writeText(text);
       el.feedback.textContent = 'Resumo copiado.';
+      return;
+    }
+
+    const destToggle = event.target.closest('[data-dest-toggle]');
+    if (destToggle) {
+      const id = destToggle.dataset.destToggle;
+      const row = (state.destinatariosRelatorios || []).find((d) => String(d.id) === String(id));
+      if (row) {
+        const { error } = await supabase.from('logistica_relatorios_destinatarios').update({ ativo: row.ativo === false, updated_at: new Date().toISOString() }).eq('id', id);
+        if (error) el.feedback.textContent = error.message || 'Erro ao alterar destinatário.';
+        else await carregarDestinatariosFixos();
+      }
       return;
     }
 
