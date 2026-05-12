@@ -1176,6 +1176,8 @@
   }
 
   function rowBelongsToGeneratedGroup(row) {
+    // Mantido apenas para compatibilidade visual com o status GERADA/COPIADA.
+    // O arquivamento por print NÃO depende mais deste status.
     const status = String(row?.status_notificacao || '').toUpperCase();
     return status === 'GERADA' || state.generatedImportedGroupKeys.has(getGroupKeyFromRow(row));
   }
@@ -1239,19 +1241,19 @@
           return;
         }
 
-        // Fallback seguro para o fluxo real do painel:
-        // se a mensagem já foi GERADA/COPIADA para aquele motorista/placa e o print enviado
-        // foi identificado pelo OCR/Drive como daquele mesmo veículo ou motorista, arquiva a pendência.
-        // Isso evita que notificações já enviadas fiquem acumuladas quando o OCR não devolve data/velocidade estruturada.
-        if (rowBelongsToGeneratedGroup(row)) {
-          addMatch(row, file, 'mensagem_gerada_print_identificado');
+        // Fluxo independente do painel de mensagem copiada:
+        // o print deve ser validado pelo OCR/Drive, usando placa/motorista e, quando disponível, data + velocidade.
+        // Não exigimos mais status GERADA/COPIADA, para o usuário poder enviar prints em lote sem ficar preso
+        // ao primeiro processo de geração/cópia da mensagem.
+        if (!ocrRecords.length) {
+          addMatch(row, file, 'ocr_motorista_ou_placa');
         }
       });
     });
 
     const matches = Array.from(matched.values());
     if (!matches.length) {
-      toast('Prints salvos. Nenhuma pendência foi arquivada: o OCR não identificou placa/motorista correspondente a uma mensagem GERADA.', 'error');
+      toast('Prints salvos. Nenhuma pendência foi arquivada: o OCR não identificou placa/motorista/data/velocidade correspondente às pendências abertas.', 'error');
       return;
     }
 
@@ -1263,7 +1265,7 @@
     const payload = {
       status_notificacao: 'NOTIFICADO',
       notificado_em: nowIso,
-      observacoes: `Arquivado automaticamente após envio do print. Motivo: ${firstFile.reason || 'ocr'}. Arquivo: ${firstFile.fileName || firstFile.fileUrl || 'print salvo no Drive'}`
+      observacoes: `Arquivado automaticamente após envio do print conferido por OCR. Motivo: ${firstFile.reason || 'ocr'}. Arquivo: ${firstFile.fileName || firstFile.fileUrl || 'print salvo no Drive'}`
     };
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId || ''))) payload.notificado_por = userId;
     if (userName) payload.notificado_por_nome = userName;
@@ -1279,7 +1281,7 @@
         if (matched.has(row.id)) row.status_notificacao = 'NOTIFICADO';
       });
       renderImportedExcessos(root);
-      toast(`${ids.length} registro(s) arquivado(s): print enviado e notificação identificada.`);
+      toast(`${ids.length} registro(s) arquivado(s): print enviado e conferido pelo OCR.`);
     } catch (err) {
       console.warn('[FROTAS] Falha ao arquivar registros após envio do print:', err);
       toast('Prints salvos, mas não foi possível arquivar os registros no Supabase.', 'error');
@@ -1323,9 +1325,15 @@
         body: JSON.stringify({
           action: 'upload_excesso_velocidade',
           parentFolderId: PASTA_MAE_DRIVE_ID,
-          driverName: nome ? normalizeName(nome) : '',
-          driverFolderName: nome ? sanitizeFolderName(nome) : '',
-          plate: onlyPlate(placa),
+          // Processo 2 independente: não amarra o print ao colaborador/placa selecionado no Painel 1.
+          // O Apps Script deve usar OCR + driverMap para identificar a pasta correta.
+          driverName: '',
+          driverFolderName: '',
+          plate: '',
+          selectedDriverName: nome ? normalizeName(nome) : '',
+          selectedPlate: onlyPlate(placa),
+          autoRouteByOcr: true,
+          ignoreSelectedSuggestion: true,
           notificationDate: formatDateBR(dataNotificacao),
           filePrefixDate: brDateToFilePrefix(dataNotificacao),
           fileNamingPattern: 'ordinal_notification_year_driver',
@@ -1341,12 +1349,12 @@
       const input = root.querySelector('[data-print-files]');
       if (input) input.value = '';
       renderUploadLists(root);
-      toast('Prints salvos no Drive. Cada print foi direcionado pela placa/OCR sem depender da sugestão selecionada.');
+      toast('Prints salvos no Drive. O arquivamento foi conferido por OCR, sem depender da mensagem copiada.');
     } catch (err) {
       console.error('[FROTAS] Upload/OCR:', err);
       toast(err.message || 'Erro ao enviar prints.', 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Enviar prints e arquivar pendências'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Enviar prints e conferir por OCR'; }
     }
   }
 
@@ -1673,15 +1681,15 @@
               <div class="speed-panel">
                 <div class="speed-step-title"><h3>Painel 2 · Enviar prints</h3><span class="speed-step-pill">colar direto aqui</span></div>
                 <div class="upload-box">
-                  <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL fica salva no navegador e é usada para salvar no Drive/OCR. Pasta mãe: <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
+                  <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL fica salva no navegador e é usada para salvar no Drive/OCR. O envio dos prints não depende da sugestão selecionada no Painel 1. Pasta mãe: <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
                   <div class="paste-zone" tabindex="0" data-paste-zone>
                     <strong>Clique aqui e cole o print</strong>
                     <span>Após clicar neste quadro, use <kbd>Ctrl</kbd> + <kbd>V</kbd>. Também funciona colando em qualquer campo desta tela, arrastando imagens ou selecionando em lote abaixo.</span>
                   </div>
                   <div class="speed-field" style="margin-top:14px"><label>Selecionar prints em lote</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
                   <div data-upload-list class="upload-list"></div>
-                  <div class="upload-actions"><button class="speed-btn speed-btn-primary" type="button" data-upload-prints>Enviar prints e arquivar pendências</button></div>
-                  <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>Após a mensagem estar GERADA/COPIADA, o envio do print identifica placa/motorista pelo OCR e arquiva automaticamente. Se precisar limpar manualmente, use OK na pendência ou OK por data.</p></div>
+                  <div class="upload-actions"><button class="speed-btn speed-btn-primary" type="button" data-upload-prints>Enviar prints e conferir por OCR</button></div>
+                  <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>O envio dos prints é um processo independente do painel de mensagem copiada. O sistema lê o print por OCR, identifica motorista/placa/data/velocidade e arquiva as pendências correspondentes. Se precisar limpar manualmente, use OK na pendência ou OK por data.</p></div>
                   <div data-saved-list class="saved-list"></div>
                 </div>
               </div>
