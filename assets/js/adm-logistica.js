@@ -44,6 +44,11 @@ const state = {
     busca: '',
     atrasoMin: '1',
     clienteExportacao: '',
+    relCliente: '',
+    relDataInicial: '',
+    relDataFinal: '',
+    relFormato: 'CSV',
+    relDestinatarios: '',
   },
 };
 
@@ -235,9 +240,9 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'adm-logistica-v2-styles';
   style.textContent = `
-    .log-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.log-tab{border:1px solid rgba(52,211,153,.2);background:#0f172a;color:#e5e7eb;border-radius:999px;padding:10px 14px;font-weight:900;cursor:pointer}.log-tab.active{background:rgba(22,101,52,.38);color:#dcfce7;border-color:rgba(74,222,128,.42)}
+    .log-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.log-report-grid{display:grid;grid-template-columns:repeat(4,minmax(170px,1fr));gap:12px}.log-report-grid .wide{grid-column:span 2}.log-report-history{margin-top:16px}.log-tab{border:1px solid rgba(52,211,153,.2);background:#0f172a;color:#e5e7eb;border-radius:999px;padding:10px 14px;font-weight:900;cursor:pointer}.log-tab.active{background:rgba(22,101,52,.38);color:#dcfce7;border-color:rgba(74,222,128,.42)}
     .log-grid{display:grid;grid-template-columns:170px 210px 210px 1fr 160px;gap:12px}.log-input{width:100%;min-height:40px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0f172a!important;color:#e5e7eb!important;color-scheme:dark;padding:9px}.log-input option{background:#0f172a;color:#e5e7eb}.log-textarea{min-height:70px;resize:vertical}.log-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:18px;background:rgba(2,6,23,.25)}.log-table{width:100%;min-width:1160px;border-collapse:separate;border-spacing:0;color:#e5e7eb}.log-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1}.log-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:top;background:rgba(15,23,42,.24)}.log-table tr:hover td{background:rgba(22,101,52,.1)}.log-title{font-weight:950;color:#f8fafc;font-size:14px;line-height:1.2}.log-meta{font-size:12px;color:#94a3b8;margin-top:4px;line-height:1.35}.log-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.log-badge.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.log-badge.warn{background:rgba(250,204,21,.14);color:#fde68a}.log-badge.info{background:rgba(59,130,246,.13);color:#bfdbfe}.log-badge.danger{background:rgba(239,68,68,.12);color:#fecaca}.log-badge.neutral{background:rgba(148,163,184,.12);color:#e2e8f0}.log-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#94a3b8;background:rgba(15,23,42,.16)}.log-actions{display:flex;flex-direction:column;gap:8px}.log-actions .btn{width:100%;justify-content:center}.log-kpi-warn{color:#fde68a!important}.log-kpi-danger{color:#fecaca!important}.log-kpi-ok{color:#bbf7d0!important}.log-section{display:none}.log-section.active{display:block}.log-note{border:1px solid rgba(59,130,246,.2);background:rgba(59,130,246,.08);color:#bfdbfe;border-radius:16px;padding:12px;margin-top:12px;font-size:13px}.log-mini-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.log-pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.log-inline-actions{display:flex;gap:8px;flex-wrap:wrap}.log-inline-actions .btn{width:auto!important;margin-top:0!important}.log-copy{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;background:rgba(15,23,42,.7);border:1px solid rgba(148,163,184,.2);border-radius:12px;padding:10px;font-size:12px;color:#e2e8f0;max-height:180px;overflow:auto}
-    @media(max-width:1100px){.log-grid{grid-template-columns:1fr 1fr}.log-mini-grid{grid-template-columns:1fr 1fr}.log-table{min-width:980px}}@media(max-width:720px){.log-grid,.log-mini-grid{grid-template-columns:1fr}.log-tabs{overflow:auto;flex-wrap:nowrap}.log-tab{white-space:nowrap}}
+    @media(max-width:1100px){.log-grid{grid-template-columns:1fr 1fr}.log-mini-grid,.log-report-grid{grid-template-columns:1fr 1fr}.log-table{min-width:980px}}@media(max-width:720px){.log-grid,.log-mini-grid,.log-report-grid{grid-template-columns:1fr}.log-report-grid .wide{grid-column:auto}.log-tabs{overflow:auto;flex-wrap:nowrap}.log-tab{white-space:nowrap}}
   `;
   document.head.appendChild(style);
 }
@@ -260,6 +265,7 @@ initProtectedPage('Painel de Logística', async (content) => {
         <button class="log-tab" data-tab="classificadores" type="button">Classificadores</button>
         <button class="log-tab" data-tab="conferencias" type="button">Conferências</button>
         <button class="log-tab" data-tab="exportacoes" type="button">Exportações clientes</button>
+        <button class="log-tab" data-tab="relatorios" type="button">Relatórios ao cliente</button>
       </div>
       <div class="filters-grid log-grid">
         <div class="field"><label>Data</label><input id="logData" class="log-input" type="date" /></div>
@@ -294,6 +300,25 @@ initProtectedPage('Painel de Logística', async (content) => {
       <div class="field" style="max-width:360px"><label>Cliente</label><select id="logClienteExportacao" class="log-input"><option value="">Clientes dos scripts</option>${CLIENTES_EXPORTACAO.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
       <div id="logExportacoesList" class="mt-16"></div>
     </section>
+
+    <section class="card mt-16 log-section" id="section-relatorios">
+      <div class="section-head"><div><h3>Relatórios ao cliente</h3><p class="muted">Gera e envia relatório por e-mail usando a integração <strong>SMTP_RELATORIOS_LOGISTICA</strong> cadastrada em TI &gt; Integrações.</p></div></div>
+      <div class="log-note">O envio roda em Supabase Edge Function. Os destinatários podem ser separados por vírgula, ponto e vírgula ou quebra de linha.</div>
+      <div class="log-report-grid mt-16">
+        <div class="field"><label>Cliente</label><input id="relCliente" class="log-input" type="text" placeholder="Ex.: LDC, COFCO, Sipal..."></div>
+        <div class="field"><label>Data inicial</label><input id="relDataInicial" class="log-input" type="date"></div>
+        <div class="field"><label>Data final</label><input id="relDataFinal" class="log-input" type="date"></div>
+        <div class="field"><label>Formato</label><select id="relFormato" class="log-input"><option value="CSV">CSV</option><option value="HTML">HTML no corpo</option><option value="CSV_HTML">CSV + HTML</option></select></div>
+        <div class="field wide"><label>Destinatários</label><textarea id="relDestinatarios" class="log-input log-textarea" placeholder="cliente@empresa.com.br; outro@empresa.com.br"></textarea></div>
+        <div class="field wide"><label>Observação / mensagem</label><textarea id="relMensagem" class="log-input log-textarea" placeholder="Mensagem opcional para aparecer no e-mail"></textarea></div>
+      </div>
+      <div class="log-inline-actions mt-16">
+        <button id="relPreview" class="btn btn-secondary" type="button">Pré-visualizar</button>
+        <button id="relEnviar" class="btn btn-primary" type="button">Gerar e enviar</button>
+      </div>
+      <div id="relPreviewBox" class="log-copy mt-16" style="display:none"></div>
+      <div id="relHistorico" class="log-report-history"></div>
+    </section>
   `;
 
   const el = {
@@ -310,6 +335,16 @@ initProtectedPage('Painel de Logística', async (content) => {
     classificadores: document.getElementById('logClassificadoresList'),
     conferencias: document.getElementById('logConferenciasList'),
     exportacoes: document.getElementById('logExportacoesList'),
+    relCliente: document.getElementById('relCliente'),
+    relDataInicial: document.getElementById('relDataInicial'),
+    relDataFinal: document.getElementById('relDataFinal'),
+    relFormato: document.getElementById('relFormato'),
+    relDestinatarios: document.getElementById('relDestinatarios'),
+    relMensagem: document.getElementById('relMensagem'),
+    relPreview: document.getElementById('relPreview'),
+    relEnviar: document.getElementById('relEnviar'),
+    relPreviewBox: document.getElementById('relPreviewBox'),
+    relHistorico: document.getElementById('relHistorico'),
     reload: document.getElementById('logReload'),
   };
 
@@ -327,6 +362,8 @@ initProtectedPage('Painel de Logística', async (content) => {
   el.busca.addEventListener('input', () => { state.filters.busca = el.busca.value; render(); });
   el.atraso.addEventListener('change', () => { state.filters.atrasoMin = el.atraso.value; render(); });
   el.clienteExportacao.addEventListener('change', () => { state.filters.clienteExportacao = el.clienteExportacao.value; render(); });
+  el.relPreview.addEventListener('click', previewRelatorioCliente);
+  el.relEnviar.addEventListener('click', enviarRelatorioCliente);
   el.reload.addEventListener('click', loadAll);
   content.addEventListener('click', onClick);
   content.addEventListener('change', onChange);
@@ -336,6 +373,8 @@ initProtectedPage('Painel de Logística', async (content) => {
   else if (hash.includes('CONFER')) state.tab = 'conferencias';
   else if (hash.includes('EXPORT')) state.tab = 'exportacoes';
   else state.tab = 'finalizacao';
+  renderTabs();
+  if (window.location.hash === '#relatorios') state.tab = 'relatorios';
   renderTabs();
   await loadAll();
 
@@ -383,7 +422,7 @@ initProtectedPage('Painel de Logística', async (content) => {
 
   function renderTabs() {
     [...el.tabs.querySelectorAll('.log-tab')].forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === state.tab));
-    ['finalizacao', 'classificadores', 'conferencias', 'exportacoes'].forEach((tab) => {
+    ['finalizacao', 'classificadores', 'conferencias', 'exportacoes', 'relatorios'].forEach((tab) => {
       document.getElementById(`section-${tab}`)?.classList.toggle('active', tab === state.tab);
     });
     el.status.closest('.field').style.display = state.tab === 'finalizacao' ? '' : 'none';
@@ -535,6 +574,105 @@ initProtectedPage('Painel de Logística', async (content) => {
     renderClassificadores();
     renderConferencias();
     renderExportacoes();
+    renderRelatorios();
+  }
+
+
+  function parseDestinatarios(value) {
+    return String(value || '')
+      .split(/[;,\n]+/g)
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }
+
+  function getRelatorioPayload() {
+    const cliente = el.relCliente.value.trim();
+    const dataInicial = el.relDataInicial.value || state.filters.data || '';
+    const dataFinal = el.relDataFinal.value || dataInicial || '';
+    const destinatarios = parseDestinatarios(el.relDestinatarios.value);
+    return {
+      cliente,
+      data_inicial: dataInicial,
+      data_final: dataFinal,
+      formato: el.relFormato.value || 'CSV',
+      destinatarios,
+      mensagem: el.relMensagem.value.trim(),
+      solicitado_por: state.user?.id || null,
+    };
+  }
+
+  function relatorioRowsPreview(payload) {
+    const clienteFiltro = normalize(payload.cliente);
+    const ini = payload.data_inicial;
+    const fim = payload.data_final;
+    return state.producao.filter((row) => {
+      const d = dateKey(row.data || row.data_os);
+      if (ini && d < ini) return false;
+      if (fim && d > fim) return false;
+      if (clienteFiltro && !normalize(clienteOf(row)).includes(clienteFiltro)) return false;
+      return true;
+    }).slice(0, 80);
+  }
+
+  function previewRelatorioCliente() {
+    const payload = getRelatorioPayload();
+    const rows = relatorioRowsPreview(payload);
+    if (!payload.cliente) {
+      el.feedback.textContent = 'Informe o cliente para pré-visualizar o relatório.';
+      return;
+    }
+    if (!rows.length) {
+      el.relPreviewBox.style.display = 'block';
+      el.relPreviewBox.textContent = 'Nenhum registro encontrado na base carregada para este cliente/período.';
+      return;
+    }
+    const totalTons = rows.reduce((sum, r) => sum + numberBr(r.toneladas), 0);
+    const totalCargas = rows.reduce((sum, r) => sum + numberBr(r.cargas), 0);
+    const linhas = rows.slice(0, 20).map((r) => `${dateKey(r.data)} | OS ${r.os || r.numero_os || '-'} | ${clienteOf(r)} | ${origemOf(r)} → ${destinoOf(r)} | ${BR_NUM.format(numberBr(r.toneladas))} tons`).join('\n');
+    el.relPreviewBox.style.display = 'block';
+    el.relPreviewBox.textContent = `Prévia do relatório\nCliente: ${payload.cliente}\nPeríodo: ${payload.data_inicial || '-'} até ${payload.data_final || '-'}\nDestinatários: ${payload.destinatarios.join(', ') || '-'}\nLinhas encontradas: ${rows.length}\nCargas: ${BR_INT.format(totalCargas)}\nToneladas: ${BR_NUM.format(totalTons)}\n\n${linhas}`;
+  }
+
+  async function enviarRelatorioCliente() {
+    const payload = getRelatorioPayload();
+    if (!payload.cliente) return el.feedback.textContent = 'Informe o cliente.';
+    if (!payload.data_inicial || !payload.data_final) return el.feedback.textContent = 'Informe data inicial e final.';
+    if (!payload.destinatarios.length) return el.feedback.textContent = 'Informe pelo menos um destinatário.';
+    el.relEnviar.disabled = true;
+    el.feedback.textContent = 'Gerando e enviando relatório...';
+    try {
+      const { data, error } = await supabase.functions.invoke('enviar-relatorio-cliente', { body: payload });
+      if (error) throw error;
+      el.feedback.textContent = data?.message || 'Relatório enviado.';
+      await carregarHistoricoRelatorios();
+    } catch (err) {
+      console.error('[Logística] enviar relatório:', err);
+      el.feedback.textContent = err?.message || 'Erro ao enviar relatório. Confira a Edge Function e a integração SMTP.';
+    } finally {
+      el.relEnviar.disabled = false;
+    }
+  }
+
+  async function carregarHistoricoRelatorios() {
+    if (!el.relHistorico) return;
+    const { data, error } = await supabase
+      .from('logistica_relatorios_envios')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(12);
+    if (error) {
+      el.relHistorico.innerHTML = '<div class="log-empty">Histórico indisponível. Rode o SQL do relatório ao cliente.</div>';
+      return;
+    }
+    if (!data?.length) {
+      el.relHistorico.innerHTML = '<div class="log-empty">Nenhum envio registrado ainda.</div>';
+      return;
+    }
+    el.relHistorico.innerHTML = `<div class="log-table-wrap"><table class="log-table"><thead><tr><th>Data</th><th>Cliente</th><th>Período</th><th>Destinatários</th><th>Status</th><th>Mensagem</th></tr></thead><tbody>${data.map((r) => `<tr><td>${brDate(r.created_at, true)}</td><td>${esc(r.cliente || '-')}</td><td>${brDate(r.data_inicial)} até ${brDate(r.data_final)}</td><td>${esc((r.destinatarios || []).join(', '))}</td><td>${statusBadge(r.status || '-')}</td><td><div class="log-meta">${esc(r.mensagem || r.erro || '-')}</div></td></tr>`).join('')}</tbody></table></div>`;
+  }
+
+  function renderRelatorios() {
+    if (state.tab === 'relatorios') carregarHistoricoRelatorios();
   }
 
   async function onClick(event) {
