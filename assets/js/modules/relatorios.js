@@ -2154,6 +2154,16 @@
       return { tipo: 'pontos_embarque', titulo: 'Pontos de Embarque Operacional' };
     }
 
+    if (
+      (n.includes('movimento') && n.includes('diario')) ||
+      (n.includes('mapa') && n.includes('embarque')) ||
+      (n.includes('embarque') && n.includes('laudo')) ||
+      n.includes('mapa_embarque') ||
+      n.includes('mapa-de-embarque')
+    ) {
+      return { tipo: 'logistica_mapa_embarque', titulo: 'Logística · Mapa de Embarque' };
+    }
+
     if (n.includes('hotel') || n.includes('hoteis') || n.includes('hotéis') || n.includes('hospedagem') || n.includes('hospedagens')) {
       return { tipo: 'hoteis', titulo: 'Banco de Hotéis' };
     }
@@ -2552,7 +2562,9 @@
       ? 'Registrando upload da planilha de hotéis...'
       : (detected.tipo === 'pontos_embarque'
         ? 'Registrando upload dos pontos de embarque...'
-        : (detected.tipo === 'colaboradores_operacional'
+        : (detected.tipo === 'logistica_mapa_embarque'
+          ? 'Registrando Mapa de Embarque para Logística...'
+          : (detected.tipo === 'colaboradores_operacional'
           ? 'Registrando upload dos endereços dos colaboradores...'
           : (detected.tipo === 'colaboradores_rh'
             ? 'Registrando upload da base de funcionários...'
@@ -2562,7 +2574,7 @@
               ? 'Registrando upload do relatório Uber...'
               : (effectiveMode === 'replace'
             ? 'Registrando substituição inteligente...'
-            : 'Registrando complemento inteligente...'))))));
+            : 'Registrando complemento inteligente...')))))));
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -2631,6 +2643,8 @@
       status.textContent = `Hotéis: ${hoteisResumo.inseridos || 0} novos · ${hoteisResumo.atualizados || 0} atualizados · ${hoteisResumo.ignorados || 0} ignorados`;
     } else if (detected.tipo === 'pontos_embarque' && pontosResumo) {
       status.textContent = `Pontos: ${pontosResumo.importados || 0} importados · ${pontosResumo.cidades || 0} cidades · ${pontosResumo.supervisoes || 0} supervisões`;
+    } else if (detected.tipo === 'logistica_mapa_embarque') {
+      status.textContent = `Mapa de Embarque importado · disponível para Logística${period?.inicio ? ` · ${formatPeriod(period)}` : ''}`;
     } else if (detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) {
       status.textContent = `Colaboradores: ${colaboradoresResumo.importados || 0} endereços importados · ${colaboradoresResumo.cidades || 0} cidades · ${colaboradoresResumo.ufs || 0} UFs`;
     } else if (detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) {
@@ -2654,7 +2668,7 @@
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -2823,6 +2837,15 @@
             entry.message = 'Pendente · importará cadastro de hotéis';
           } else if (detected.tipo === 'pontos_embarque') {
             entry.message = 'Pendente · importará pontos de embarque operacional';
+          } else if (detected.tipo === 'logistica_mapa_embarque') {
+            entry.message = 'Pendente · atualizará Mapa de Embarque para Logística/Laudos';
+            detectFilePeriod(file, detected.tipo).then((period) => {
+              entry.period = period;
+              entry.message = period
+                ? `Período: ${formatPeriod(period)} · atualizará Mapa de Embarque`
+                : 'Pendente · Mapa de Embarque sem período detectado';
+              renderFiles();
+            });
           } else if (detected.tipo === 'colaboradores_operacional') {
             entry.message = 'Pendente · importará endereços dos colaboradores no Operacional';
           } else if (detected.tipo === 'colaboradores_rh') {
