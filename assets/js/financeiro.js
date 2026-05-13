@@ -444,11 +444,12 @@ function buildLatestColaboradorMap(rows) {
   (rows || []).forEach((row) => {
     const key = normalizeName(row.nome);
     if (!key || map.has(key)) return;
+    const cpfDigits = onlyDigits(row.cpf);
     map.set(key, {
       nome: row.nome,
-      cpf: onlyDigits(row.cpf).padStart(11, '0').slice(0, 11),
+      cpf: cpfDigits ? cpfDigits.padStart(11, '0').slice(0, 11) : '',
       salario: toNumber(row.salario),
-      banco: row.conta_bancaria || row['C. Banc. Despesas'] || '',
+      banco: row.conta_bancaria || row.conta_bancaria_despesas || row['C. Banc. Despesas'] || '',
       empresa: row.empresa || '',
       coordenacao: row.coordenacao || '',
       supervisao: row.supervisao || '',
@@ -462,14 +463,61 @@ function buildLatestColaboradorMap(rows) {
   return map;
 }
 
-async function loadColaboradoresPagamento() {
-  const { data, error } = await supabase
-    .from('colaborador_snapshot')
-    .select('nome,cpf,salario,conta_bancaria,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,ativo')
-    .order('data_referencia', { ascending: false, nullsFirst: false })
-    .limit(10000);
-  if (error) throw error;
-  return buildLatestColaboradorMap(data || []);
+async function fetchAllPaged(table, selectColumns, applyQuery, pageSize = 1000) {
+  const allRows = [];
+  let from = 0;
+  while (true) {
+    let query = supabase.from(table).select(selectColumns);
+    if (typeof applyQuery === 'function') query = applyQuery(query);
+    const { data, error } = await query.range(from, from + pageSize - 1);
+    if (error) throw error;
+    const rows = data || [];
+    allRows.push(...rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+  return allRows;
+}
+
+async function loadColaboradoresPagamento(dataReferencia = state.currentDate) {
+  const ref = parseDateLoose(dataReferencia) || state.currentDate;
+
+  // Base oficial do histórico diário. Busca o snapshot mais recente até a data do Financeiro
+  // e pagina de 1000 em 1000 para não perder colaboradores depois do limite padrão do Supabase.
+  try {
+    const historicoRows = await fetchAllPaged(
+      'historico_colaboradores',
+      'nome,cpf,salario,conta_bancaria_despesas,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,situacao,desligamento',
+      (q) => q
+        .lte('data_referencia', ref)
+        .order('data_referencia', { ascending: false, nullsFirst: false })
+        .order('nome', { ascending: true, nullsFirst: false })
+    );
+    if (historicoRows.length) return buildLatestColaboradorMap(historicoRows);
+  } catch (error) {
+    console.warn('[FINANCEIRO] Histórico de colaboradores indisponível. Usando colaborador_snapshot como fallback.', error);
+  }
+
+  try {
+    const snapshotRows = await fetchAllPaged(
+      'colaborador_snapshot',
+      'nome,cpf,salario,conta_bancaria,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,ativo',
+      (q) => q
+        .lte('data_referencia', ref)
+        .order('data_referencia', { ascending: false, nullsFirst: false })
+        .order('nome', { ascending: true, nullsFirst: false })
+    );
+    if (snapshotRows.length) return buildLatestColaboradorMap(snapshotRows);
+  } catch (error) {
+    console.warn('[FINANCEIRO] Fallback por data falhou. Tentando leitura completa da base legada.', error);
+  }
+
+  const snapshotRows = await fetchAllPaged(
+    'colaborador_snapshot',
+    'nome,cpf,salario,conta_bancaria,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,ativo',
+    (q) => q.order('data_referencia', { ascending: false, nullsFirst: false }).order('nome', { ascending: true, nullsFirst: false })
+  );
+  return buildLatestColaboradorMap(snapshotRows || []);
 }
 
 function mapProducaoSnapshotRows(rows, origem) {
@@ -1105,7 +1153,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
     if (inicio > fim) return paySetFeedback('fbAlimentacao', 'A data inicial não pode ser maior que a final.', 'err');
     try {
       paySetFeedback('fbAlimentacao', `Consultando Produção Diária importada e colaboradores para ${label.toLowerCase()}...`);
-      const [rhMap, producao] = await Promise.all([loadColaboradoresPagamento(), loadProducaoPagamento(inicio, fim)]);
+      const [rhMap, producao] = await Promise.all([loadColaboradoresPagamento(fim), loadProducaoPagamento(inicio, fim)]);
       const apuracao = isDiarias ? apurarDiariasRows(producao, rhMap) : apurarAlimentacaoRows(producao, rhMap);
       if (!apuracao.conferencia.length && apuracao.logs.length) {
         paySetFeedback('fbAlimentacao', `Produção localizada, mas sem colaboradores válidos. Verifique Pendências: ${apuracao.logs.length}.`, 'err');
@@ -1141,7 +1189,8 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
       if (isSolicitacaoDespesasFile(extratoRows)) {
         paySetFeedback('fbAdiantamentos', 'Formato antigo detectado. Lendo base de colaboradores...');
-        const rhMap = await loadColaboradoresPagamento();
+        const datasAdiantamento = extratoRows.map((row) => parseDateLoose(getAny(row, ['Data de Solicitação', 'Data de Solicitacao', 'Data']))).filter(Boolean).sort();
+        const rhMap = await loadColaboradoresPagamento(datasAdiantamento[datasAdiantamento.length - 1] || state.currentDate);
         const apuracao = buildSolicitacaoDespesasRows(extratoRows, rhMap);
         state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, ...apuracao };
         renderPayTables();

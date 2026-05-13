@@ -1616,9 +1616,18 @@
     const dates = [];
     const diagnostics = [];
 
-    for (const sheetName of workbook.SheetNames || []) {
-      const dataReferencia = parseDataFromSheetName(sheetName);
-      if (!dataReferencia) continue;
+    const uploadDate = new Date().toISOString().slice(0, 10);
+    const sheetDateItems = (workbook.SheetNames || [])
+      .map((name) => ({ name, dataReferencia: parseDataFromSheetName(name) }))
+      .filter((item) => item.dataReferencia);
+    const sheetsToRead = sheetDateItems.length
+      ? sheetDateItems
+      : [{ name: workbook.SheetNames?.[0], dataReferencia: uploadDate }];
+
+    for (const item of sheetsToRead) {
+      const sheetName = item.name;
+      const dataReferencia = item.dataReferencia || uploadDate;
+      if (!sheetName || !dataReferencia) continue;
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
       if (!rows?.length) continue;
@@ -2048,7 +2057,11 @@
     }
 
 
-    if ((n.includes('historico') || n.includes('histórico')) && (n.includes('diario') || n.includes('diário')) && (n.includes('funcionario') || n.includes('funcionário') || n.includes('funcionarios') || n.includes('funcionários') || n.includes('colaborador') || n.includes('colaboradores') || n.includes('ativo'))) {
+    if (
+      ((n.includes('historico') || n.includes('histórico')) && (n.includes('diario') || n.includes('diário')) && (n.includes('funcionario') || n.includes('funcionário') || n.includes('funcionarios') || n.includes('funcionários') || n.includes('colaborador') || n.includes('colaboradores') || n.includes('ativo'))) ||
+      (n.includes('relatorio') && (n.includes('funcionario') || n.includes('funcionarios') || n.includes('colaborador') || n.includes('colaboradores'))) ||
+      (n.includes('relacao') && (n.includes('funcionario') || n.includes('funcionarios') || n.includes('colaborador') || n.includes('colaboradores')))
+    ) {
       return { tipo: 'historico_colaboradores_diario', titulo: 'Histórico Diário de Colaboradores' };
     }
 
