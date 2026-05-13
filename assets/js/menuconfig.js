@@ -4,7 +4,7 @@ window.MENU_CONFIG = {
     { nome: "CONFERÊNCIA", modulos: ["Irregularidades", "Lançamentos", "Uber", "Distribuir O.S"] },
     { nome: "COMPRAS", modulos: ["Pedidos", "Fornecedores"] },
     { nome: "PATRIMÔNIOS", modulos: ["Painel de Patrimônios", "Relatórios de Patrimônios"] },
-    { nome: "HOSPEDAGEM", modulos: ["Painel", "Solicitações", "Reservas", "Checkouts", "Financeiro", "Notas Fiscais", "Hotéis", "Alojamentos"] },
+    { nome: "HOSPEDAGEM", modulos: ["Hotéis", "Alojamentos"] },
     { nome: "RECURSOS HUMANOS", modulos: ["Contatos e Cadastros"] },
     { nome: "OPERACIONAL", modulos: ["Mapa de Direcionamento"] },
     { nome: "FROTAS", modulos: ["Excesso de Velocidade", "Veículos", "Multas", "Histórico"] },

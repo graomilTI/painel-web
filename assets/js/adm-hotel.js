@@ -40,7 +40,7 @@ function injectStyles() {
   style.id = 'admHospStyles';
   style.textContent = `
     .adm-hosp-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.adm-hosp-tab{width:auto!important;margin-top:0!important;border:1px solid var(--line-2);background:#0b1220;color:var(--text);border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:800}.adm-hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}.adm-hosp-panel{display:none}.adm-hosp-panel.active{display:block}.adm-hosp-btn{width:auto!important;margin-top:0!important}.adm-hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-hosp-table{width:100%;border-collapse:collapse;min-width:1180px;background:#0b1220}.adm-hosp-table th,.adm-hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-hosp-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.adm-hosp-table tr:hover td{background:rgba(111,208,165,.035)}.adm-hosp-actions{display:flex;gap:8px;flex-wrap:wrap}.adm-hosp-small{padding:8px 10px!important;border-radius:12px!important;font-size:12px}.adm-hosp-status{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:800;white-space:nowrap}.adm-hosp-status.solicitada,.adm-hosp-status.em_analise,.adm-hosp-status.em_cotacao,.adm-hosp-status.aguardando_pagamento,.adm-hosp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.adm-hosp-status.reservada,.adm-hosp-status.checkin_previsto,.adm-hosp-status.hospedado,.adm-hosp-status.enviado_ao_financeiro,.adm-hosp-status.nf_recebida{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.adm-hosp-status.concluida,.adm-hosp-status.pago,.adm-hosp-status.lancado,.adm-hosp-status.ativo,.adm-hosp-status.preferencial{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.adm-hosp-status.cancelada,.adm-hosp-status.bloqueado,.adm-hosp-status.evitar{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}.adm-hosp-status.checkout_hoje,.adm-hosp-status.renovacao_necessaria{color:#fed7aa;background:rgba(249,115,22,.11);border-color:rgba(249,115,22,.24)}
-    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-colab-list{display:grid;gap:7px}.adm-hosp-colab-item{display:grid;gap:2px;line-height:1.15}.adm-hosp-colab-name{font-weight:800;color:var(--text)}.adm-hosp-colab-regional{font-size:12px;color:#9ca3af}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-status-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.adm-hosp-status-tab{border:1px solid var(--line-2);background:#0b1220;color:#cbd5e1;border-radius:999px;padding:9px 13px;cursor:pointer;font-weight:900}.adm-hosp-status-tab.active{background:rgba(22,101,52,.35);border-color:rgba(111,208,165,.45);color:#dcfce7}.adm-hosp-status-tab small{margin-left:6px;color:#fde68a}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}.adm-room-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.34);padding:14px}.adm-room-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-room-title strong{display:block;color:#e5e7eb}.adm-room-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-room-chip{display:inline-flex;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.16);color:#dcfce7;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}.adm-room-add{display:grid;grid-template-columns:1fr 1fr .65fr .9fr auto;gap:10px;align-items:end;margin-top:12px}.adm-room-add .adm-room-mini{display:flex;flex-direction:column;gap:6px}.adm-room-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:900}.adm-room-add select,.adm-room-add input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-list{display:grid;gap:8px;margin-top:12px}.adm-room-row{display:grid;grid-template-columns:1fr 1fr .65fr .9fr 1fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-room-row-pill{font-weight:900;color:#e5e7eb}.adm-room-row-type{color:#cbd5e1}.adm-room-row input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-row-subtotal{font-weight:900;color:#bbf7d0}.adm-room-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-room-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#94a3b8;font-size:12px}.adm-room-summary{margin-top:10px;color:#fde68a;font-size:12px;font-weight:800}.adm-occ-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.26);padding:14px}.adm-occ-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-occ-title strong{display:block;color:#e5e7eb}.adm-occ-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-occ-add{display:grid;grid-template-columns:1fr .8fr .8fr 1.4fr auto;gap:10px;align-items:end}.adm-occ-mini{display:flex;flex-direction:column;gap:6px}.adm-occ-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:900}.adm-occ-add select,.adm-occ-add input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-occ-list{display:grid;gap:8px;margin-top:12px}.adm-occ-row{display:grid;grid-template-columns:1fr .8fr .8fr 1.5fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-occ-row strong{color:#e5e7eb}.adm-occ-row small{color:#94a3b8}.adm-occ-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-occ-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#94a3b8;font-size:12px}.adm-process-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 16px}.adm-process-tab{width:auto!important;border:1px solid var(--line-2);background:#0b1220;color:#cbd5e1;border-radius:999px;padding:9px 13px;font-weight:900;cursor:pointer}.adm-process-tab.active{background:rgba(22,101,52,.36);border-color:rgba(111,208,165,.42);color:#dcfce7}.adm-process-panel{display:none}.adm-process-panel.active{display:block}.adm-process-lock{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.09);color:#fde68a;border-radius:16px;padding:12px 14px;margin-bottom:14px;font-size:13px;font-weight:800}.adm-process-summary{display:grid;gap:7px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.28);border-radius:16px;padding:13px;margin-bottom:14px}.adm-process-summary strong{color:#e5e7eb}.adm-process-summary span{color:#cbd5e1}.adm-hosp-field select[multiple]{min-height:112px}.adm-hosp-help{font-size:12px;color:#94a3b8;margin-top:4px}.adm-hosp-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.adm-hosp-action-grid .btn{width:100%!important}@media(max-width:900px){.adm-hosp-action-grid{grid-template-columns:1fr}}.adm-hidden{display:none!important}@media(max-width:900px){.adm-room-add,.adm-room-row,.adm-occ-add,.adm-occ-row{grid-template-columns:1fr}.adm-room-row-subtotal{font-size:14px}}
+    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-colab-list{display:grid;gap:7px}.adm-hosp-colab-item{display:grid;gap:2px;line-height:1.15}.adm-hosp-colab-name{font-weight:800;color:var(--text)}.adm-hosp-colab-regional{font-size:12px;color:#9ca3af}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-status-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.adm-hosp-status-tab{border:1px solid var(--line-2);background:#0b1220;color:#cbd5e1;border-radius:999px;padding:9px 13px;cursor:pointer;font-weight:900}.adm-hosp-status-tab.active{background:rgba(22,101,52,.35);border-color:rgba(111,208,165,.45);color:#dcfce7}.adm-hosp-status-tab small{margin-left:6px;color:#fde68a}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}.adm-room-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.34);padding:14px}.adm-room-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-room-title strong{display:block;color:#e5e7eb}.adm-room-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-room-chip{display:inline-flex;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.16);color:#dcfce7;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}.adm-room-add{display:grid;grid-template-columns:1fr 1fr .65fr .9fr auto;gap:10px;align-items:end;margin-top:12px}.adm-room-add .adm-room-mini{display:flex;flex-direction:column;gap:6px}.adm-room-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:900}.adm-room-add select,.adm-room-add input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-list{display:grid;gap:8px;margin-top:12px}.adm-room-row{display:grid;grid-template-columns:1fr 1fr .65fr .9fr 1fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-room-row-pill{font-weight:900;color:#e5e7eb}.adm-room-row-type{color:#cbd5e1}.adm-room-row input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-row-subtotal{font-weight:900;color:#bbf7d0}.adm-room-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-room-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#94a3b8;font-size:12px}.adm-room-summary{margin-top:10px;color:#fde68a;font-size:12px;font-weight:800}.adm-occ-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.26);padding:14px}.adm-occ-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-occ-title strong{display:block;color:#e5e7eb}.adm-occ-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-occ-add{display:grid;grid-template-columns:1fr .8fr .8fr 1.4fr auto;gap:10px;align-items:end}.adm-occ-mini{display:flex;flex-direction:column;gap:6px}.adm-occ-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:900}.adm-occ-add select,.adm-occ-add input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-occ-list{display:grid;gap:8px;margin-top:12px}.adm-occ-row{display:grid;grid-template-columns:1fr .8fr .8fr 1.5fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-occ-row strong{color:#e5e7eb}.adm-occ-row small{color:#94a3b8}.adm-occ-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-occ-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#94a3b8;font-size:12px}.adm-process-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 16px}.adm-process-tab{width:auto!important;border:1px solid var(--line-2);background:#0b1220;color:#cbd5e1;border-radius:999px;padding:9px 13px;font-weight:900;cursor:pointer}.adm-process-tab.active{background:rgba(22,101,52,.36);border-color:rgba(111,208,165,.42);color:#dcfce7}.adm-process-panel{display:none}.adm-process-panel.active{display:block}.adm-process-lock{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.09);color:#fde68a;border-radius:16px;padding:12px 14px;margin-bottom:14px;font-size:13px;font-weight:800}.adm-process-summary{display:grid;gap:7px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.28);border-radius:16px;padding:13px;margin-bottom:14px}.adm-process-summary strong{color:#e5e7eb}.adm-process-summary span{color:#cbd5e1}.adm-hosp-field select[multiple]{min-height:112px}.adm-hosp-help{font-size:12px;color:#94a3b8;margin-top:4px}.adm-hosp-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.adm-hosp-action-grid .btn{width:100%!important}.adm-reserva-dates-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.adm-hidden-soft{display:none!important}.adm-extra-list{display:grid;gap:8px;margin-top:8px}.adm-extra-row{display:grid;grid-template-columns:1fr .45fr auto;gap:8px;align-items:end}.adm-extra-row input{border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:12px;padding:10px 11px;color-scheme:dark}.adm-payment-summary{border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.11);border-radius:18px;padding:14px;margin-top:14px}.adm-payment-summary h4{margin:0 0 8px;color:#dcfce7}.adm-payment-summary-line{display:grid;grid-template-columns:170px 1fr;gap:8px;color:#e5e7eb;font-size:13px}.adm-payment-files{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.adm-menu-mode-hoteis [data-tab="alojamentos"],.adm-menu-mode-alojamentos [data-tab="painel"],.adm-menu-mode-alojamentos [data-tab="solicitacoes"],.adm-menu-mode-alojamentos [data-tab="hoteis"]{display:none!important}@media(max-width:900px){.adm-hosp-action-grid{grid-template-columns:1fr}}.adm-hidden{display:none!important}@media(max-width:900px){.adm-room-add,.adm-room-row,.adm-occ-add,.adm-occ-row{grid-template-columns:1fr}.adm-room-row-subtotal{font-size:14px}}
     @media(max-width:900px){.adm-hosp-form,.adm-hosp-filters{grid-template-columns:1fr}.adm-hosp-search{min-width:0;width:100%}}
   `;
   document.head.appendChild(style);
@@ -165,10 +165,11 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       <div class="adm-hosp-modal-card">
         <div class="adm-hosp-modal-head"><div><h3 id="modalTitle">Reserva</h3><p class="muted" id="modalSub">Fluxo por etapa: configurar, estender, checkout e financeiro/NF.</p></div><button class="btn btn-secondary adm-hosp-btn" type="button" id="modalClose">Fechar</button></div>
         <div class="adm-process-tabs" id="hospProcessTabs">
-          <button class="adm-process-tab active" type="button" data-process="config">1. Configurar reserva</button>
-          <button class="adm-process-tab" type="button" data-process="extend">2. Estender reserva</button>
-          <button class="adm-process-tab" type="button" data-process="checkout">3. Solicitar checkout</button>
-          <button class="adm-process-tab" type="button" data-process="finance">4. Financeiro/NF</button>
+          <button class="adm-process-tab active" type="button" data-process="config">Configurar Reserva</button>
+          <button class="adm-process-tab" type="button" data-process="incluir">Incluir</button>
+          <button class="adm-process-tab" type="button" data-process="extend">Estender</button>
+          <button class="adm-process-tab" type="button" data-process="checkout">Checkout</button>
+          <button class="adm-process-tab" type="button" data-process="finance">Financeiro/NF</button>
         </div>
         <div id="hospLockNotice" class="adm-process-lock adm-hidden">Check-in já realizado. A reserva fica bloqueada para edição direta; use as etapas de estender reserva, solicitar checkout ou financeiro/NF.</div>
 
@@ -178,10 +179,12 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
             <div class="adm-hosp-field full"><label>Solicitação</label><input id="resInfo" readonly /></div>
             <div class="adm-hosp-field"><label>Hotel recomendado *</label><select id="resHotel"></select><span id="resHotelHint" class="adm-hosp-select-hint"></span></div>
             <div class="adm-hosp-field"><label>Nome do hotel manual</label><input id="resHotelNome" placeholder="Use caso ainda não esteja cadastrado" /></div>
-            <div class="adm-hosp-field"><label>Check-in *</label><input id="resCheckin" type="date" required /></div>
-            <div class="adm-hosp-field"><label>Check-out *</label><input id="resCheckout" type="date" required /></div>
-            <div class="adm-hosp-field"><label>Diárias</label><input id="resDiarias" readonly /></div>
-            <div class="adm-hosp-field"><label>Total previsto</label><input id="resTotal" readonly /></div>
+            <div class="adm-reserva-dates-row">
+              <div class="adm-hosp-field"><label>Check-in *</label><input id="resCheckin" type="date" required /></div>
+              <div class="adm-hosp-field"><label>Check-out *</label><input id="resCheckout" type="date" required /></div>
+              <div class="adm-hosp-field"><label>Diárias</label><input id="resDiarias" readonly /></div>
+            </div>
+            <div class="adm-hosp-field adm-hidden-soft"><label>Total previsto</label><input id="resTotal" readonly /></div>
             <div class="adm-room-wrap">
               <div class="adm-room-title"><div><strong>Configuração dos quartos, valor e hóspedes</strong><span>Informe o quarto, o tipo, o valor da diária e depois vincule os hóspedes em cada quarto. Ex.: Fulano e Ciclano no Quarto 1 duplo; Fulana no Quarto 2 individual.</span></div><span class="adm-room-chip">Separado por gênero</span></div>
               <div class="adm-room-add">
@@ -194,8 +197,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
               <div class="adm-room-list" id="roomList"><div class="adm-room-empty">Nenhum quarto adicionado.</div></div>
               <div class="adm-room-summary" id="roomSummary">Adicione a composição dos quartos.</div>
             </div>
-            <div class="adm-occ-wrap">
-              <div class="adm-occ-title"><div><strong>Hóspedes por quarto</strong><span>Use para registrar quem está em cada quarto e para trocas durante o período da reserva.</span></div><span class="adm-room-chip">Ocupação</span></div>
+            <div class="adm-occ-wrap adm-hidden-soft">
+              <div class="adm-occ-title"><div><strong>Hóspedes por quarto</strong><span>Removido da configuração: a entrada mantém os mesmos hóspedes da solicitação.</span></div><span class="adm-room-chip">Ocupação</span></div>
               <div class="adm-occ-add">
                 <div class="adm-occ-mini"><label>Quarto</label><select id="occQuarto"><option value="">Adicione um quarto acima</option></select></div>
                 <div class="adm-occ-mini"><label>Check-in</label><input id="occInicio" type="date" /></div>
@@ -211,10 +214,22 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
             <select id="resTipo" class="adm-hidden"><option value="OUTRO">Outro</option><option value="INDIVIDUAL">Individual</option><option value="DUPLO">Duplo</option><option value="TRIPLO">Triplo</option><option value="QUADRUPLO">Quádruplo</option></select>
             <div class="adm-hosp-field"><label>Confirmado com</label><input id="resConfirmado" /></div>
             <div class="adm-hosp-field"><label>Contato confirmação</label><input id="resContato" /></div>
-            <div class="adm-hosp-field"><label>Status hospedagem</label><select id="resStatus"><option value="CHECKIN_PREVISTO">Check-in previsto</option><option value="HOSPEDADO">Hospedado</option><option value="CHECKOUT_HOJE">Checkout hoje</option><option value="RENOVACAO_NECESSARIA">Renovação necessária</option><option value="CHECKOUT_REALIZADO">Checkout realizado</option><option value="CANCELADA">Cancelada</option></select></div>
+            <div class="adm-hosp-field adm-hidden-soft"><label>Status hospedagem</label><select id="resStatus"><option value="CHECKIN_PREVISTO">Reservado</option><option value="CANCELADA">Cancelada</option></select></div>
             <div class="adm-hosp-field full"><label>Observação hospedagem</label><textarea id="resObs"></textarea></div>
           </form>
           <div class="adm-hosp-form-actions" id="reservaConfigActions"><button class="btn btn-primary adm-hosp-btn" type="submit" form="reservaForm" id="resSave">Salvar reserva</button><button class="btn btn-secondary adm-hosp-btn" type="button" id="markAnalise">Marcar em análise</button><button class="btn btn-secondary adm-hosp-btn adm-hosp-danger" type="button" id="recusarSolicitacao">Recusar solicitação</button><span id="resFeedback" class="adm-hosp-feedback"></span></div>
+        </section>
+
+        <section class="adm-process-panel" data-process-panel="incluir" id="incluirPanel">
+          <div class="card" style="box-shadow:none;">
+            <h3>Incluir solicitação na mesma hospedagem</h3>
+            <p class="muted">Agrupe outra solicitação no mesmo hotel usando o mesmo período/base da reserva atual.</p>
+            <div class="adm-hosp-form">
+              <div class="adm-hosp-field full"><label>Solicitação para incluir</label><select id="incSolicitacao"><option value="">Selecione uma solicitação aberta</option></select><span class="adm-hosp-help">A lista prioriza solicitações ainda sem reserva. Depois de incluir, o status muda para RESERVADO.</span></div>
+              <div class="adm-hosp-field full"><label>Observação</label><textarea id="incObs" placeholder="Ex.: agrupada no mesmo hotel/quarto da reserva principal."></textarea></div>
+            </div>
+            <div class="adm-hosp-form-actions"><button class="btn btn-primary adm-hosp-btn" type="button" id="btnIncluirReserva">Incluir na reserva</button><span id="incFeedback" class="adm-hosp-feedback"></span></div>
+          </div>
         </section>
 
         <section class="adm-process-panel" data-process-panel="extend" id="extensaoPanel">
@@ -233,16 +248,29 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
         <section class="adm-process-panel" data-process-panel="checkout" id="checkoutPanel">
           <div class="card" style="box-shadow:none;">
-            <h3>Solicitar checkout</h3>
-            <p class="muted">Selecione quem vai sair do hotel e quem vai permanecer. A reserva original não é editada diretamente depois do check-in.</p>
+            <h3>Checkout</h3>
+            <p class="muted">Fechamento da hospedagem com valor automático de diárias, extras, pagamento ou envio ao financeiro.</p>
             <div class="adm-hosp-form">
-              <div class="adm-hosp-field"><label>Data do checkout *</label><input id="chkData" type="date" /></div>
-              <div class="adm-hosp-field"><label>Status após solicitação</label><select id="chkStatus"><option value="CHECKOUT_HOJE">Checkout solicitado/hoje</option><option value="CHECKOUT_REALIZADO">Checkout realizado</option><option value="RENOVACAO_NECESSARIA">Renovação necessária</option></select></div>
-              <div class="adm-hosp-field full"><label>Quem sai do hotel</label><select id="chkHospedesSaem" multiple></select></div>
-              <div class="adm-hosp-field full"><label>Quem fica no hotel</label><select id="chkHospedesFicam" multiple></select></div>
-              <div class="adm-hosp-field full"><label>Observação do checkout</label><textarea id="chkObs" placeholder="Ex.: Fulano sai hoje; Ciclano permanece para nova reserva."></textarea></div>
+              <div class="adm-hosp-field"><label>Data checkout *</label><input id="chkData" type="date" /></div>
+              <div class="adm-hosp-field"><label>Valor diárias</label><input id="chkValorDiarias" type="number" step="0.01" min="0" readonly /></div>
+              <div class="adm-hosp-field full"><label>Colaboradores que farão check-out</label><select id="chkHospedesSaem" multiple></select></div>
+              <div class="adm-hosp-field full adm-hidden-soft"><label>Quem fica no hotel</label><select id="chkHospedesFicam" multiple></select></div>
+              <div class="adm-hosp-field full"><label>Extras</label><div id="chkExtrasList" class="adm-extra-list"></div><button class="btn btn-secondary adm-hosp-btn" type="button" id="btnAddExtra">+ Adicionar extra</button></div>
+              <div class="adm-hosp-field full"><label>Observação do checkout</label><textarea id="chkObs" placeholder="Ex.: consumo frigobar, taxa adicional, saída parcial..."></textarea></div>
             </div>
-            <div class="adm-hosp-form-actions"><button class="btn btn-primary adm-hosp-btn" type="button" id="btnSolicitarCheckout">Salvar checkout</button><span id="chkFeedback" class="adm-hosp-feedback"></span></div>
+            <div class="adm-hosp-form-actions"><button class="btn btn-primary adm-hosp-btn" type="button" id="btnCheckoutPagar">Pagar</button><button class="btn btn-secondary adm-hosp-btn" type="button" id="btnCheckoutFinanceiro">Enviar pro financeiro</button><button class="btn btn-secondary adm-hosp-btn" type="button" id="btnSolicitarCheckout">Salvar checkout</button><span id="chkFeedback" class="adm-hosp-feedback"></span></div>
+            <div id="payConfirmBox" class="adm-payment-summary adm-hidden-soft">
+              <h4>Resumo da hospedagem</h4>
+              <div id="payResumo"></div>
+              <div class="adm-hosp-form-actions"><button class="btn btn-primary adm-hosp-btn" type="button" id="btnPayOk">OK</button><button class="btn btn-secondary adm-hosp-btn" type="button" id="btnPayRevisar">REVISAR</button></div>
+              <div id="payFilesBox" class="adm-hidden-soft">
+                <div class="adm-payment-files">
+                  <div class="adm-hosp-field"><label>Comprovante</label><input id="payCompFile" type="file" /><input id="payCompUrl" placeholder="ou cole o link do comprovante" /></div>
+                  <div class="adm-hosp-field"><label>Nota Fiscal</label><input id="payNfFile" type="file" /><input id="payNfUrl" placeholder="ou cole o link da NF" /></div>
+                </div>
+                <div class="adm-hosp-form-actions"><button class="btn btn-primary adm-hosp-btn" type="button" id="btnSalvarPagamentoLocal">Salvar pagamento</button><span id="payFeedback" class="adm-hosp-feedback"></span></div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -670,7 +698,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
         <td>${brDate(r.data_checkin_prevista)} até ${brDate(r.data_checkout_prevista)}<span class="adm-hosp-row-note">${esc(r.quantidade_diarias_prevista || '-')} diária(s)</span></td>
         <td>${esc(r.hotel || '-')}</td>
         <td>${statusPill(r.status_solicitacao)}</td>
-        <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="open" data-id="${esc(r.solicitacao_id)}" type="button">Abrir</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="extend" data-id="${esc(r.solicitacao_id)}" type="button">Estender</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="checkout" data-id="${esc(r.solicitacao_id)}" type="button">Checkout</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="finance" data-id="${esc(r.solicitacao_id)}" type="button">Financeiro</button></div></td>
+        <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="incluir" data-id="${esc(r.solicitacao_id)}" type="button">Incluir</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="extend" data-id="${esc(r.solicitacao_id)}" type="button">Estender</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="checkout" data-id="${esc(r.solicitacao_id)}" type="button">Checkout</button><button class="btn btn-secondary adm-hosp-small" data-action="open" data-id="${esc(r.solicitacao_id)}" type="button">Configurar</button></div></td>
       </tr>
     `).join('');
   }
@@ -686,7 +714,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
         <td>${statusPill(r.status_solicitacao)}<span class="adm-hosp-row-note">${r.status_hospedagem ? label(r.status_hospedagem) : ''}</span></td>
         <td>${statusPill(r.status_financeiro || 'NAO_INICIADO')}</td>
         <td>${statusPill(r.status_nota || 'NAO_SOLICITADA')}</td>
-        <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="open" data-id="${esc(r.solicitacao_id)}" type="button">Abrir</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="extend" data-id="${esc(r.solicitacao_id)}" type="button">Estender</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="checkout" data-id="${esc(r.solicitacao_id)}" type="button">Checkout</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="finance" data-id="${esc(r.solicitacao_id)}" type="button">Financeiro</button></div></td>
+        <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="incluir" data-id="${esc(r.solicitacao_id)}" type="button">Incluir</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="extend" data-id="${esc(r.solicitacao_id)}" type="button">Estender</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="checkout" data-id="${esc(r.solicitacao_id)}" type="button">Checkout</button><button class="btn btn-secondary adm-hosp-small" data-action="open" data-id="${esc(r.solicitacao_id)}" type="button">Configurar</button></div></td>
       </tr>`;
   }
 
@@ -1014,6 +1042,106 @@ Essa ação remove o hotel da base de Hospedagem e ele deixará de aparecer no O
     el.innerHTML = [...new Set(nomes)].map((nome) => `<option value="${esc(nome)}" ${selectedSet.has(String(nome)) ? 'selected' : ''}>${esc(nome)}</option>`).join('');
   }
 
+
+  function calcularValorDiariasCheckout(row = state.selected) {
+    const checkin = row?.data_checkin || row?.data_checkin_prevista || '';
+    const checkout = document.getElementById('chkData')?.value || row?.data_checkout || row?.data_checkout_prevista || '';
+    const diarias = diffDays(checkin, checkout);
+    const valorDia = Number(row?.valor_diaria || 0) * Number(row?.quantidade_quartos || 1);
+    const totalBase = Number(row?.valor_total_previsto || 0);
+    return valorDia ? valorDia * diarias : totalBase;
+  }
+
+  function getCheckoutExtras() {
+    return Array.from(document.querySelectorAll('#chkExtrasList [data-extra-row]')).map((row) => ({
+      descricao: row.querySelector('[data-extra-desc]')?.value?.trim() || '',
+      valor: Number(row.querySelector('[data-extra-valor]')?.value || 0)
+    })).filter((item) => item.descricao || item.valor);
+  }
+
+  function extrasTotal() { return getCheckoutExtras().reduce((sum, item) => sum + Number(item.valor || 0), 0); }
+
+  function addCheckoutExtra(desc = '', valor = '') {
+    const list = document.getElementById('chkExtrasList');
+    if (!list) return;
+    const row = document.createElement('div');
+    row.className = 'adm-extra-row';
+    row.dataset.extraRow = '1';
+    row.innerHTML = `<input data-extra-desc placeholder="Descrição do extra" value="${esc(desc)}" /><input data-extra-valor type="number" step="0.01" min="0" placeholder="Valor" value="${esc(valor)}" /><button class="btn btn-secondary adm-hosp-small" type="button" data-extra-remove>Remover</button>`;
+    list.appendChild(row);
+    row.querySelector('[data-extra-remove]')?.addEventListener('click', () => { row.remove(); updateCheckoutValor(); });
+    row.querySelector('[data-extra-valor]')?.addEventListener('input', updateCheckoutValor);
+  }
+
+  function updateCheckoutValor() {
+    const el = document.getElementById('chkValorDiarias');
+    if (el) el.value = calcularValorDiariasCheckout().toFixed(2);
+    const box = document.getElementById('payConfirmBox');
+    if (box && !box.classList.contains('adm-hidden-soft')) renderPaymentSummary();
+  }
+
+  function renderPaymentSummary() {
+    const diarias = calcularValorDiariasCheckout();
+    const extras = getCheckoutExtras();
+    const totalExtras = extrasTotal();
+    const total = diarias + totalExtras;
+    const nomes = getSelectedMultiValues('chkHospedesSaem');
+    const resumo = document.getElementById('payResumo');
+    if (!resumo) return;
+    resumo.innerHTML = `
+      <div class="adm-payment-summary-line"><b>Hotel</b><span>${esc(state.selected?.hotel || state.selected?.nome_hotel || '-')}</span></div>
+      <div class="adm-payment-summary-line"><b>Período</b><span>${brDate(state.selected?.data_checkin || state.selected?.data_checkin_prevista)} até ${brDate(document.getElementById('chkData')?.value || state.selected?.data_checkout || state.selected?.data_checkout_prevista)}</span></div>
+      <div class="adm-payment-summary-line"><b>Colaboradores</b><span>${esc(nomes.length ? nomes.join(', ') : (state.selected?.colaboradores || '-'))}</span></div>
+      <div class="adm-payment-summary-line"><b>Diárias</b><span>${money(diarias)}</span></div>
+      <div class="adm-payment-summary-line"><b>Extras</b><span>${esc(extras.map((e) => `${e.descricao || 'Extra'}: ${money(e.valor)}`).join(' | ') || 'Sem extras')}</span></div>
+      <div class="adm-payment-summary-line"><b>Total</b><span><strong>${money(total)}</strong></span></div>
+    `;
+  }
+
+  function populateIncluirOptions(row = state.selected) {
+    const select = document.getElementById('incSolicitacao');
+    if (!select) return;
+    const atual = String(row?.solicitacao_id || '');
+    const cidade = normalizeText(row?.cidade || '');
+    const disponiveis = (state.rows || []).filter((r) => String(r.solicitacao_id || '') !== atual && !r.reserva_id && ['SOLICITADA','EM_ANALISE','EM_COTACAO'].includes(String(r.status_solicitacao || '').toUpperCase()));
+    disponiveis.sort((a,b) => (normalizeText(b.cidade || '') === cidade ? 1 : 0) - (normalizeText(a.cidade || '') === cidade ? 1 : 0));
+    select.innerHTML = `<option value="">Selecione uma solicitação aberta</option>` + disponiveis.map((r) => `<option value="${esc(r.solicitacao_id)}">${esc(r.codigo || '-')} · ${esc(r.colaboradores || '-')} · ${esc([r.cidade,r.uf].filter(Boolean).join('/'))}</option>`).join('');
+  }
+
+  async function incluirNaReservaAtual() {
+    const solicitacaoId = document.getElementById('incSolicitacao')?.value || '';
+    if (!state.selected?.reserva_id) { setFeedback('incFeedback', 'Salve a reserva principal antes de incluir outra solicitação.', 'err'); return; }
+    if (!solicitacaoId) { setFeedback('incFeedback', 'Selecione uma solicitação para incluir.', 'err'); return; }
+    const obs = String(document.getElementById('incObs')?.value || '').trim();
+    const payload = {
+      solicitacao_id: solicitacaoId,
+      hotel_id: state.selected.hotel_id || null,
+      nome_hotel: state.selected.hotel || state.selected.nome_hotel || null,
+      cidade_hotel: state.selected.cidade_hotel || state.selected.cidade || null,
+      uf_hotel: state.selected.uf_hotel || state.selected.uf || null,
+      valor_diaria: Number(state.selected.valor_diaria || 0),
+      quantidade_diarias: Number(state.selected.quantidade_diarias || state.selected.quantidade_diarias_prevista || 1),
+      quantidade_quartos: Number(state.selected.quantidade_quartos || 1),
+      tipo_quarto: state.selected.tipo_quarto || 'OUTRO',
+      valor_total_previsto: Number(state.selected.valor_total_previsto || 0),
+      data_checkin: state.selected.data_checkin || state.selected.data_checkin_prevista || null,
+      data_checkout: state.selected.data_checkout || state.selected.data_checkout_prevista || null,
+      confirmado_com: state.selected.confirmado_com || null,
+      contato_confirmacao: state.selected.contato_confirmacao || null,
+      status_hospedagem: 'CHECKIN_PREVISTO',
+      observacao_hospedagem: appendObservacaoProcesso(state.selected, 'Solicitação incluída na mesma hospedagem', [obs]),
+      criado_por: userContext?.user?.id || null,
+      atualizado_por: userContext?.user?.id || null
+    };
+    setFeedback('incFeedback', 'Incluindo solicitação...');
+    const { error } = await supabase.from('hospedagem_reservas').insert(payload);
+    if (error) { setFeedback('incFeedback', error.message, 'err'); return; }
+    await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: 'RESERVADA' }).eq('id', solicitacaoId);
+    setFeedback('incFeedback', 'Solicitação incluída e marcada como RESERVADA.', 'ok');
+    await loadRows();
+    populateIncluirOptions(state.selected);
+  }
+
   function buildResumoReserva(row = state.selected) {
     const obsComp = extrairComposicaoObservacao(row?.observacao_hospedagem || '');
     const obsOcc = extrairOcupacaoObservacao(obsComp.observacao || '');
@@ -1067,17 +1195,26 @@ Essa ação remove o hotel da base de Hospedagem e ele deixará de aparecer no O
     if (extNovo) extNovo.value = checkoutAtual || '';
     const chkData = document.getElementById('chkData');
     if (chkData) chkData.value = checkoutAtual || hoje;
+    const extrasList = document.getElementById('chkExtrasList');
+    if (extrasList) extrasList.innerHTML = '';
+    document.getElementById('payConfirmBox')?.classList.add('adm-hidden-soft');
+    document.getElementById('payFilesBox')?.classList.add('adm-hidden-soft');
     document.getElementById('extObs') && (document.getElementById('extObs').value = '');
     document.getElementById('chkObs') && (document.getElementById('chkObs').value = '');
+    document.getElementById('incObs') && (document.getElementById('incObs').value = '');
+    populateIncluirOptions(row);
+    updateCheckoutValor();
     setFeedback('extFeedback', '');
     setFeedback('chkFeedback', '');
+    setFeedback('incFeedback', '');
+    setFeedback('payFeedback', '');
 
     let next = preferredProcess || 'config';
     if (!preferredProcess && locked) {
       const status = String(row?.status_hospedagem || '').toUpperCase();
       next = ['CHECKOUT_HOJE', 'CHECKOUT_REALIZADO'].includes(status) ? 'checkout' : 'extend';
     }
-    if (!row?.reserva_id && ['extend', 'checkout', 'finance'].includes(next)) next = 'config';
+    if (!row?.reserva_id && ['incluir', 'extend', 'checkout', 'finance'].includes(next)) next = 'config';
     setProcess(next);
   }
 
@@ -1131,25 +1268,36 @@ Essa ação remove o hotel da base de Hospedagem e ele deixará de aparecer no O
     }, 'extFeedback', 'Extensão salva. Confira o valor financeiro, se necessário.');
   }
 
-  async function solicitarCheckout() {
+  async function solicitarCheckout(destino = 'SALVAR') {
     const data = document.getElementById('chkData')?.value || '';
-    if (!data) { setFeedback('chkFeedback', 'Informe a data do checkout.', 'err'); return; }
-    const status = document.getElementById('chkStatus')?.value || 'CHECKOUT_HOJE';
+    if (!data) { setFeedback('chkFeedback', 'Informe a data do checkout.', 'err'); return false; }
     const saem = getSelectedMultiValues('chkHospedesSaem');
-    const ficam = getSelectedMultiValues('chkHospedesFicam');
     const obs = String(document.getElementById('chkObs')?.value || '').trim();
+    const extras = getCheckoutExtras();
+    const valorDiarias = calcularValorDiariasCheckout();
+    const valorTotal = valorDiarias + extrasTotal();
+    const status = destino === 'PAGAR' ? 'CHECKOUT_REALIZADO' : 'CHECKOUT_HOJE';
     setFeedback('chkFeedback', 'Salvando checkout...');
-    await atualizarReservaProcesso({
+    const ok = await atualizarReservaProcesso({
       data_checkout: data,
+      quantidade_diarias: diffDays(state.selected.data_checkin || state.selected.data_checkin_prevista, data),
+      valor_total_previsto: valorTotal,
       status_hospedagem: status,
-      observacao_hospedagem: appendObservacaoProcesso(state.selected, status === 'CHECKOUT_REALIZADO' ? 'Checkout realizado' : 'Checkout solicitado', [
+      observacao_hospedagem: appendObservacaoProcesso(state.selected, destino === 'PAGAR' ? 'Checkout para pagamento' : 'Checkout enviado/salvo', [
         `Data ${brDate(data)}`,
-        saem.length ? `Saem: ${saem.join(', ')}` : '',
-        ficam.length ? `Ficam: ${ficam.join(', ')}` : '',
+        saem.length ? `Check-out: ${saem.join(', ')}` : '',
+        `Diárias: ${money(valorDiarias)}`,
+        extras.length ? `Extras: ${extras.map((e) => `${e.descricao || 'Extra'} ${money(e.valor)}`).join('; ')}` : '',
         obs
       ])
-    }, 'chkFeedback', 'Checkout salvo com sucesso.');
+    }, 'chkFeedback', destino === 'PAGAR' ? 'Checkout conferido. Valide o resumo para pagamento.' : 'Checkout salvo com sucesso.');
+    if (ok) {
+      const finValor = document.getElementById('finValor');
+      if (finValor) finValor.value = valorTotal.toFixed(2);
+    }
+    return ok;
   }
+
 
   async function anexarComprovanteFinanceiro() {
     const url = String(document.getElementById('finComp')?.value || '').trim();
@@ -1176,7 +1324,7 @@ Essa ação remove o hotel da base de Hospedagem e ele deixará de aparecer no O
     document.getElementById('resDiaria').value = row.valor_diaria || '';
     document.getElementById('resQuartos').value = row.quantidade_quartos || 1;
     document.getElementById('resTipo').value = 'OUTRO';
-    document.getElementById('resStatus').value = row.status_hospedagem || 'CHECKIN_PREVISTO';
+    document.getElementById('resStatus').value = row.status_hospedagem === 'CANCELADA' ? 'CANCELADA' : 'CHECKIN_PREVISTO';
     document.getElementById('resHotelNome').value = row.hotel || '';
     fillHotelSelect(row);
     const obsComp = extrairComposicaoObservacao(row.observacao_hospedagem || '');
@@ -1278,7 +1426,7 @@ function aplicarDiariaHotelSelecionado() {
       solicitacao_id: state.selected.solicitacao_id, hotel_id: hotelId, nome_hotel: hotelManual || opt?.dataset?.nome || state.selected.hotel || null,
       cidade_hotel: opt?.dataset?.cidade || state.selected.cidade || null, uf_hotel: opt?.dataset?.uf || state.selected.uf || null, valor_diaria: diariaMedia, quantidade_diarias: diarias, quantidade_quartos: quartos,
       tipo_quarto: 'OUTRO', valor_total_previsto: totalPrevisto, data_checkin: document.getElementById('resCheckin').value, data_checkout: document.getElementById('resCheckout').value,
-      confirmado_com: document.getElementById('resConfirmado').value.trim() || null, contato_confirmacao: document.getElementById('resContato').value.trim() || null, status_hospedagem: document.getElementById('resStatus').value,
+      confirmado_com: document.getElementById('resConfirmado').value.trim() || null, contato_confirmacao: document.getElementById('resContato').value.trim() || null, status_hospedagem: 'CHECKIN_PREVISTO',
       observacao_hospedagem: montarObservacaoComComposicao(document.getElementById('resObs').value, composicao, getOcupacaoFromForm()), atualizado_por: userContext?.user?.id || null
     };
     const result = state.selected.reserva_id ? await supabase.from('hospedagem_reservas').update(payload).eq('id', state.selected.reserva_id) : await supabase.from('hospedagem_reservas').insert({ ...payload, criado_por: userContext?.user?.id || null }).select('id').single();
@@ -1452,6 +1600,83 @@ function aplicarDiariaHotelSelecionado() {
     setTimeout(closeModal, 450);
   }
 
+
+  async function checkoutPagar() {
+    const ok = await solicitarCheckout('PAGAR');
+    if (!ok) return;
+    renderPaymentSummary();
+    document.getElementById('payConfirmBox')?.classList.remove('adm-hidden-soft');
+    document.getElementById('payFilesBox')?.classList.add('adm-hidden-soft');
+  }
+
+  async function checkoutEnviarFinanceiro() {
+    const ok = await solicitarCheckout('FINANCEIRO');
+    if (!ok) return;
+    const valor = calcularValorDiariasCheckout() + extrasTotal();
+    const finValor = document.getElementById('finValor');
+    const finStatus = document.getElementById('finStatus');
+    if (finValor) finValor.value = valor.toFixed(2);
+    if (finStatus) finStatus.value = 'ENVIADO_AO_FINANCEIRO';
+    await enviarCobrancaFinanceiro();
+  }
+
+  async function uploadHospedagemFile(inputId, tipo) {
+    const input = document.getElementById(inputId);
+    const file = input?.files?.[0];
+    if (!file) return '';
+    const cleanName = String(file.name || 'arquivo').replace(/[^a-zA-Z0-9._-]+/g, '_');
+    const path = `hospedagem/${state.selected?.reserva_id || state.selected?.solicitacao_id || 'sem-reserva'}/${tipo}_${Date.now()}_${cleanName}`;
+    const { error } = await supabase.storage.from('relatorios-uploads').upload(path, file, { upsert: true });
+    if (error) throw error;
+    const { data } = supabase.storage.from('relatorios-uploads').getPublicUrl(path);
+    return data?.publicUrl || path;
+  }
+
+  async function salvarPagamentoLocal() {
+    if (!state.selected?.reserva_id) { setFeedback('payFeedback', 'Salve a reserva antes de anexar comprovante/NF.', 'err'); return; }
+    setFeedback('payFeedback', 'Salvando anexos...');
+    let compUrl = String(document.getElementById('payCompUrl')?.value || '').trim();
+    let nfUrl = String(document.getElementById('payNfUrl')?.value || '').trim();
+    try {
+      compUrl = compUrl || await uploadHospedagemFile('payCompFile', 'comprovante');
+      nfUrl = nfUrl || await uploadHospedagemFile('payNfFile', 'nf');
+    } catch (error) {
+      setFeedback('payFeedback', `Erro ao anexar arquivo: ${error.message || error}`, 'err');
+      return;
+    }
+    if (!compUrl) { setFeedback('payFeedback', 'Informe/anexe ao menos o comprovante.', 'err'); return; }
+    const valor = calcularValorDiariasCheckout() + extrasTotal();
+    document.getElementById('finStatus').value = 'PAGO';
+    document.getElementById('finValor').value = valor.toFixed(2);
+    document.getElementById('finPag').value = document.getElementById('chkData')?.value || getHojeIso();
+    document.getElementById('finComp').value = compUrl;
+    document.getElementById('nfStatus').value = nfUrl ? 'ENVIADO_PARA_LANCAMENTO' : 'AGUARDANDO_NF';
+    document.getElementById('nfUrl').value = nfUrl;
+    document.getElementById('nfValor').value = nfUrl ? valor.toFixed(2) : '';
+    await saveFinNf();
+    if (nfUrl) {
+      await supabase.from('financeiro_notas_fiscais_resumo').upsert({
+        data_pagamento: document.getElementById('finPag').value,
+        regional: state.selected.regional || state.selected.supervisao || state.selected.cidade || 'Hospedagem',
+        destino: 'Hospedagem',
+        quantidade: 1,
+        valor_total: valor,
+        modulo_origem: 'HOSPEDAGEM'
+      }, { onConflict: 'data_pagamento,regional,destino,modulo_origem' });
+      setFeedback('payFeedback', 'Comprovante e NF salvos. Enviado para Notas Fiscais.', 'ok');
+    } else {
+      setFeedback('payFeedback', 'Comprovante salvo. Hospedagem ficará PENDENTE aguardando NF.', 'ok');
+    }
+  }
+
+  function initialTabFromHash() {
+    const hash = normalizeText(window.location.hash.replace('#', ''));
+    const root = content.closest('main') || content;
+    if (hash.includes('aloj')) { root.classList.add('adm-menu-mode-alojamentos'); return 'alojamentos'; }
+    if (hash.includes('hotel') || hash.includes('hoteis')) { root.classList.add('adm-menu-mode-hoteis'); return 'painel'; }
+    return 'painel';
+  }
+
   document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
   document.getElementById('refreshPainel').addEventListener('click', loadRows);
   document.getElementById('painelStatusTabs')?.addEventListener('click', (ev) => { const btn = ev.target.closest('[data-painel-status]'); if (btn) setPainelStatus(btn.dataset.painelStatus); });
@@ -1471,7 +1696,14 @@ function aplicarDiariaHotelSelecionado() {
   document.getElementById('btnAnexarComprovante')?.addEventListener('click', anexarComprovanteFinanceiro);
   document.getElementById('btnAnexarNf')?.addEventListener('click', anexarNotaFiscal);
   document.getElementById('btnEstenderReserva')?.addEventListener('click', estenderReserva);
-  document.getElementById('btnSolicitarCheckout')?.addEventListener('click', solicitarCheckout);
+  document.getElementById('btnSolicitarCheckout')?.addEventListener('click', () => solicitarCheckout('SALVAR'));
+  document.getElementById('btnCheckoutPagar')?.addEventListener('click', checkoutPagar);
+  document.getElementById('btnCheckoutFinanceiro')?.addEventListener('click', checkoutEnviarFinanceiro);
+  document.getElementById('btnAddExtra')?.addEventListener('click', () => addCheckoutExtra());
+  document.getElementById('btnPayOk')?.addEventListener('click', () => document.getElementById('payFilesBox')?.classList.remove('adm-hidden-soft'));
+  document.getElementById('btnPayRevisar')?.addEventListener('click', () => document.getElementById('payConfirmBox')?.classList.add('adm-hidden-soft'));
+  document.getElementById('btnSalvarPagamentoLocal')?.addEventListener('click', salvarPagamentoLocal);
+  document.getElementById('btnIncluirReserva')?.addEventListener('click', incluirNaReservaAtual);
   document.getElementById('hospProcessTabs')?.addEventListener('click', (ev) => { const btn = ev.target.closest('[data-process]'); if (btn) setProcess(btn.dataset.process); });
   document.getElementById('markAnalise').addEventListener('click', markAnalise);
   document.getElementById('recusarSolicitacao').addEventListener('click', recusarSolicitacao);
@@ -1510,12 +1742,12 @@ function aplicarDiariaHotelSelecionado() {
   content.addEventListener('click', (ev) => {
     const btn = ev.target.closest('button[data-action]'); if (!btn) return;
     if (btn.dataset.action === 'open') { const row = state.rows.find((r) => r.solicitacao_id === btn.dataset.id); if (row) openModal(row); }
-    if (btn.dataset.action === 'open-process') { const row = state.rows.find((r) => r.solicitacao_id === btn.dataset.id); if (row) { openModal(row); setProcess(btn.dataset.processTarget || 'config'); } }
+    if (btn.dataset.action === 'open-process') { const row = state.rows.find((r) => r.solicitacao_id === btn.dataset.id); if (row) { openModal(row); configureProcessUI(row, btn.dataset.processTarget || 'config'); } }
     if (btn.dataset.action === 'edit-hotel') { const h = state.hoteis.find((x) => x.id === btn.dataset.id); if (h) fillHotelForm(h); }
     if (btn.dataset.action === 'delete-hotel') deleteHotel(btn.dataset.id);
     if (btn.dataset.action === 'edit-alojamento') { const a = (state.alojamentos || []).find((x) => String(x.id) === String(btn.dataset.id)); if (a) fillAlojamentoForm(a); }
     if (btn.dataset.action === 'delete-alojamento') deleteAlojamento(btn.dataset.id);
   });
 
-  (async function boot(){ await loadHoteis(); await loadAlojamentos(); await loadRows(); })();
+  (async function boot(){ await loadHoteis(); await loadAlojamentos(); await loadRows(); setTab(initialTabFromHash()); })();
 });
