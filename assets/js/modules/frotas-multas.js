@@ -11,6 +11,26 @@
   function esc(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));}
   function norm(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();}
   function first(...vals){return vals.find(v=>v!==undefined&&v!==null&&String(v).trim()!=='');}
+  function pick(obj, keys){
+    if(!obj) return undefined;
+    for(const k of keys){
+      if(Object.prototype.hasOwnProperty.call(obj,k) && obj[k]!==undefined && obj[k]!==null && String(obj[k]).trim()!=='') return obj[k];
+    }
+    return undefined;
+  }
+  function rawPayload(m){
+    const raw=first(m.raw,m.payload,m.dados_api,m.dados_detran,m.retorno_api,m.api_json,m.resposta_api,m.json_api,m.detran_json,m.detran_payload);
+    if(!raw) return null;
+    if(typeof raw==='object') return raw;
+    try{return JSON.parse(raw);}catch(_){return null;}
+  }
+  function apiPick(m, keys){
+    const direct=pick(m,keys);
+    if(direct!==undefined) return direct;
+    const raw=rawPayload(m);
+    if(Array.isArray(raw)) return pick(raw[0],keys);
+    return pick(raw,keys);
+  }
   function parseDate(v){
     if(!v) return null;
     if(v instanceof Date && !Number.isNaN(v.getTime())) return v;
@@ -21,8 +41,28 @@
   }
   function isoDate(d){return d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
   function fmtDate(v){const d=parseDate(v);return d?isoDate(d).split('-').reverse().join('/'):'';}
-  function dueDate(m){return first(m.data_vencimento,m.vencimento,m.data_venc,m.data_limite_pagamento,m.data_limite,m.data_pagamento_limite,m.data_infracao);}
-  function infractionDate(m){return first(m.data_infracao,m.data_auto,m.data_ocorrencia,m.data);}
+  function dueDate(m){
+    return first(
+      apiPick(m,['dataVencimentoAuto','data_vencimento_auto','dataLimitePagto','data_limite_pagto','dataLimitePagamento','data_limite_pagamento']),
+      m.data_vencimento_auto,
+      m.data_limite_pagto,
+      m.data_vencimento,
+      m.vencimento,
+      m.data_venc,
+      m.data_limite_pagamento,
+      m.data_pagamento_limite,
+      m.data_limite
+    );
+  }
+  function infractionDate(m){
+    return first(
+      apiPick(m,['dataInfracao','data_infracao','dataAuto','data_auto','dataOcorrencia','data_ocorrencia']),
+      m.data_infracao,
+      m.data_auto,
+      m.data_ocorrencia,
+      m.data
+    );
+  }
   function isArchived(m){return Boolean(m.arquivada_em||m.arquivado_em||m.ok_em||m.status_arquivo==='arquivada'||m.arquivada===true||m.ok===true);}
   function isIdentificar(m){return Boolean(m.identificar_solicitado_em||m.condutor_identificado_em||m.indicar_solicitado_em||norm(m.acao_status).includes('identific'));}
   function isDobrar(m){return Boolean(m.dobrar_solicitado_em||m.multa_dobrada_em||norm(m.acao_status).includes('dobr'));}
