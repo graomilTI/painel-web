@@ -152,12 +152,40 @@ async function upsertChunk(table, rows, onConflict = 'unique_hash') {
   return saved;
 }
 
+function rowToObjectsFromMatrix(matrix) {
+  const rows = matrix || [];
+  const headerCandidates = [
+    'situacao', 'data', 'conta', 'funcionario', 'cpf', 'data de nascimento', 'valor', 'descricao',
+    'categoria', 'status', 'data de solicitacao', 'coordenacao', 'supervisao', 'fornecedor', 'cidade',
+    'codigo', 'fatura', 'cliente', 'vencimento', 'valor pago', 'favorecido', 'doc'
+  ];
+
+  let headerIndex = 0;
+  let bestScore = -1;
+  rows.slice(0, 15).forEach((row, idx) => {
+    const normalizedCells = (row || []).map((cell) => normalize(cell));
+    const score = normalizedCells.filter((cell) => headerCandidates.includes(cell)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      headerIndex = idx;
+    }
+  });
+
+  const headers = (rows[headerIndex] || []).map((header, idx) => String(header || `Coluna ${idx + 1}`).trim() || `Coluna ${idx + 1}`);
+  return rows.slice(headerIndex + 1).map((row) => {
+    const obj = {};
+    headers.forEach((header, idx) => { obj[header] = row?.[idx] ?? ''; });
+    return obj;
+  }).filter((row) => Object.values(row).some((value) => String(value ?? '').trim() !== ''));
+}
+
 function readWorkbookRows(file) {
   return file.arrayBuffer().then((buffer) => {
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
     const firstSheet = workbook.SheetNames[0];
     const sheet = workbook.Sheets[firstSheet];
-    return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+    return rowToObjectsFromMatrix(matrix);
   });
 }
 
@@ -226,30 +254,49 @@ function makeAleloRows(extratoRows, fonteRows) {
     const conta = normConta(getAny(row, ['Conta']));
     const cpf = onlyDigits(getAny(row, ['CPF']));
     const valor = toNumber(getAny(row, ['Valor']));
-    const obs = String(getAny(row, ['Descrição', 'Descricao', 'Observacao', 'Observação']) || '').slice(0, 30);
+    const obsCompleta = String(getAny(row, ['Descrição', 'Descricao', 'Observacao', 'Observação']) || '').trim();
+    const obs = obsCompleta.slice(0, 30);
     const nome = String(getAny(row, ['Funcionário', 'Funcionario', 'Nome']) || '').trim();
     const nasc = getAny(row, ['Data de Nascimento', 'Nascimento']);
+    const data = parseDateLoose(getAny(row, ['Data', 'Data de Solicitação', 'Data de Solicitacao']));
+    const situacao = String(getAny(row, ['Situação', 'Situacao', 'Status']) || '').trim();
+    const situacaoNorm = normalize(situacao);
 
-    if (!conta) return;
-    if (!cpf || cpf.length > 11) logs.push({ linha: index + 2, tipo: 'Atenção', mensagem: `CPF inválido ou ausente para ${nome || 'linha sem nome'}.` });
+    if (!conta && !nome && !cpf && !valor) return;
+    if (situacaoNorm && !situacaoNorm.includes('aprovada') && !situacaoNorm.includes('aprovado')) {
+      logs.push({ data: data || '', funcionario: nome || '-', status: 'IGNORADO', mensagem: `Linha ${index + 2}: situação não aprovada: ${situacao || '(vazio)'}.` });
+      return;
+    }
+    if (!conta) {
+      logs.push({ data: data || '', funcionario: nome || '-', status: 'ERRO', mensagem: `Linha ${index + 2}: conta de pagamento não informada.` });
+      return;
+    }
+    if (!valor || valor <= 0) {
+      logs.push({ data: data || '', funcionario: nome || '-', status: 'ERRO', mensagem: `Linha ${index + 2}: valor ausente ou inválido.` });
+      return;
+    }
+    if (!cpf || cpf.length !== 11) logs.push({ data: data || '', funcionario: nome || '-', status: 'ATENÇÃO', mensagem: `Linha ${index + 2}: CPF inválido ou ausente para ${nome || 'linha sem nome'}.` });
 
     if (conta.includes('ALELO') && (conta.includes('BVGRAIN') || conta.includes('EXCELENCIA') || conta.includes('GRAOMIL'))) {
       let serie = onlyDigits(mapCpfToSerie.get(cpf) || '');
       if (serie.length < ALELO_SERIE_DIGITOS) serie = serie.padStart(ALELO_SERIE_DIGITOS, '0');
       if (serie.length > ALELO_SERIE_DIGITOS) serie = serie.slice(0, ALELO_SERIE_DIGITOS);
-      if (!serie || /^0+$/.test(serie)) logs.push({ linha: index + 2, tipo: 'Alelo', mensagem: `Número de série não localizado para ${nome || cpf}.` });
-      alelo.push({ serie: `'${serie}`, cpf: `'${cpf.padStart(11, '0').slice(0, 11)}`, valor, observacao: obs, nome });
+      if (!serie || /^0+$/.test(serie)) logs.push({ data: data || '', funcionario: nome || cpf, status: 'Alelo', mensagem: `Número de série não localizado para ${nome || cpf}.` });
+      alelo.push({ serie: `'${serie}`, cpf: `'${cpf.padStart(11, '0').slice(0, 11)}`, valor, observacao: obs, nome, data });
       return;
     }
 
     if (conta.includes('IFOOD') && conta.includes('GRAOMIL')) {
-      ifood.push({ cnpj: PAGAMENTO_IFOOD_CNPJ, nome, cpf, nascimento: nasc, email: '', celular: '', centro_custo: '', livre: valor });
+      ifood.push({ cnpj: PAGAMENTO_IFOOD_CNPJ, nome, cpf, nascimento: nasc, email: '', celular: '', centro_custo: '', livre: valor, data, observacao: obsCompleta });
       return;
     }
 
     if (conta.includes('FLASH') && conta.includes('GRAOMIL')) {
-      flash.push({ cpf, valor, nome });
+      flash.push({ cpf, valor, nome, data, observacao: obsCompleta });
+      return;
     }
+
+    logs.push({ data: data || '', funcionario: nome || '-', status: 'ERRO', mensagem: `Linha ${index + 2}: conta não reconhecida para pagamento: ${conta}.` });
   });
 
   return { alelo, ifood, flash, logs };
@@ -796,10 +843,9 @@ initProtectedPage('Financeiro', (content, userContext) => {
           <div class="pay-grid">
             <section class="pay-card">
               <h4>ADIANTAMENTOS</h4>
-              <p>Importe a planilha Solicitação de Despesas. O painel usa as solicitações de dinheiro pendentes, cruza com a base de colaboradores e gera Flash/iFood para conferência.</p>
+              <p>Importe a planilha Solicitações Caixa Operacional. O painel usa as linhas aprovadas, separa por conta GRAOMIL FLASH/iFood e gera os XLS de pagamento para conferência.</p>
               <div class="fin-form">
-                <div class="fin-field"><label>Solicitação de Despesas</label><label class="pay-upload" for="adiantFileExtrato" data-drop-for="adiantFileExtrato"><input id="adiantFileExtrato" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileExtratoName">Nenhum arquivo selecionado</span></span></label></div>
-                <div class="fin-field"><label>Fonte_ALELO opcional</label><label class="pay-upload" for="adiantFileAlelo" data-drop-for="adiantFileAlelo"><input id="adiantFileAlelo" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileAleloName">Nenhum arquivo selecionado</span></span></label></div>
+                <div class="fin-field wide"><label>Planilha de adiantamentos</label><label class="pay-upload" for="adiantFileExtrato" data-drop-for="adiantFileExtrato"><input id="adiantFileExtrato" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileExtratoName">Nenhum arquivo selecionado</span></span></label></div>
                 <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAdiantamentos" type="button">Gerar adiantamentos</button></div>
                 <div class="fin-field"><label>&nbsp;</label><span id="fbAdiantamentos" class="fin-feedback"></span></div>
               </div>
@@ -1088,17 +1134,14 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
   async function gerarAdiantamentos() {
     const extratoFile = document.getElementById('adiantFileExtrato').files?.[0];
-    const aleloFile = document.getElementById('adiantFileAlelo').files?.[0];
-    if (!extratoFile) return paySetFeedback('fbAdiantamentos', 'Selecione ou arraste a planilha de Solicitação de Despesas.', 'err');
+    if (!extratoFile) return paySetFeedback('fbAdiantamentos', 'Selecione ou arraste a planilha Solicitações Caixa Operacional.', 'err');
     try {
-      paySetFeedback('fbAdiantamentos', 'Lendo arquivos e base de colaboradores...');
-      const [extratoRows, fonteRows, rhMap] = await Promise.all([
-        readWorkbookRows(extratoFile),
-        aleloFile ? readWorkbookRows(aleloFile) : Promise.resolve([]),
-        loadColaboradoresPagamento()
-      ]);
+      paySetFeedback('fbAdiantamentos', 'Lendo planilha de adiantamentos...');
+      const extratoRows = await readWorkbookRows(extratoFile);
 
       if (isSolicitacaoDespesasFile(extratoRows)) {
+        paySetFeedback('fbAdiantamentos', 'Formato antigo detectado. Lendo base de colaboradores...');
+        const rhMap = await loadColaboradoresPagamento();
         const apuracao = buildSolicitacaoDespesasRows(extratoRows, rhMap);
         state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, ...apuracao };
         renderPayTables();
@@ -1107,16 +1150,16 @@ initProtectedPage('Financeiro', (content, userContext) => {
         return;
       }
 
-      const apuracao = makeAleloRows(extratoRows, fonteRows);
+      const apuracao = makeAleloRows(extratoRows, []);
       const conferencia = [
-        ...apuracao.alelo.map((r) => ({ data: '', funcionario: r.nome, cpf: String(r.cpf || '').replace(/^'/, ''), destino: 'Alelo', tipo: 'Adiantamento', valor: r.valor, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: r.serie ? 'OK' : 'Sem série' })),
-        ...apuracao.ifood.map((r) => ({ data: '', funcionario: r.nome, cpf: r.cpf, destino: 'iFood', tipo: 'Adiantamento', valor: r.livre, composicao: 'Adiantamento', supervisao: '', observacao: 'OK' })),
-        ...apuracao.flash.map((r) => ({ data: '', funcionario: r.nome, cpf: r.cpf, destino: 'Flash', tipo: 'Adiantamento', valor: r.valor, composicao: 'Adiantamento', supervisao: '', observacao: 'OK' }))
+        ...apuracao.alelo.map((r) => ({ data: r.data || '', funcionario: r.nome, cpf: String(r.cpf || '').replace(/^'/, ''), destino: 'Alelo', tipo: 'Adiantamento', valor: r.valor, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: r.serie ? 'OK' : 'Sem série' })),
+        ...apuracao.ifood.map((r) => ({ data: r.data || '', funcionario: r.nome, cpf: r.cpf, destino: 'iFood', tipo: 'Adiantamento', valor: r.livre, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: 'OK' })),
+        ...apuracao.flash.map((r) => ({ data: r.data || '', funcionario: r.nome, cpf: r.cpf, destino: 'Flash', tipo: 'Adiantamento', valor: r.valor, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: 'OK' }))
       ];
       state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, conferencia, flash: apuracao.flash, ifood: apuracao.ifood, alelo: apuracao.alelo, logs: apuracao.logs };
       renderPayTables();
       setPayTab('conferencia');
-      paySetFeedback('fbAdiantamentos', `Gerado: ${apuracao.alelo.length} Alelo, ${apuracao.ifood.length} iFood, ${apuracao.flash.length} Flash, ${apuracao.logs.length} pendências.`, 'ok');
+      paySetFeedback('fbAdiantamentos', `Gerado: ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.alelo.length} Alelo, ${apuracao.logs.length} pendências/ignorados.`, 'ok');
     } catch (err) {
       console.error(err);
       paySetFeedback('fbAdiantamentos', err.message || 'Erro ao gerar adiantamentos.', 'err');
@@ -1218,7 +1261,6 @@ initProtectedPage('Financeiro', (content, userContext) => {
   }
 
   setupPagamentoDropzone('adiantFileExtrato');
-  setupPagamentoDropzone('adiantFileAlelo');
   document.getElementById('btnGerarAlimentacao').addEventListener('click', gerarAlimentacao);
   document.getElementById('btnGerarDiarias').addEventListener('click', gerarDiarias);
   document.getElementById('btnGerarAdiantamentos').addEventListener('click', gerarAdiantamentos);
