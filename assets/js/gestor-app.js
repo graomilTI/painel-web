@@ -398,7 +398,7 @@ function renderInicio(main) {
   main.innerHTML = `
     <section class="hero-card">
       <h1>Gestor Grão 1000</h1>
-      <p>App rápido para ajustar O.S., acessar programação e executar rotinas do gestor pelo celular.</p>
+      <p>Escolha uma rotina abaixo. No celular, os módulos abrem sem sidebar e com botão de voltar para esta tela.</p>
       <div class="install-banner ${state.installPrompt ? 'is-visible' : ''}" id="installBanner">
         <div><b>Instalar app</b><br><span class="help">Adicione na tela inicial do celular.</span></div>
         <button class="btn" id="installBtn" type="button">Instalar</button>
@@ -408,6 +408,9 @@ function renderInicio(main) {
         <a class="quick-card" href="${panelHref('programacao')}"><b>Programação</b><span>Abrir módulo completo</span></a>
         <a class="quick-card" href="${panelHref('hospedagem')}"><b>Hospedagem</b><span>Solicitações e reservas</span></a>
         <a class="quick-card" href="${panelHref('compras')}"><b>Compras</b><span>Solicitações do gestor</span></a>
+        <a class="quick-card" href="${panelHref('logistica')}"><b>Logística</b><span>Distribuição e finalização</span></a>
+        <a class="quick-card" href="${panelHref('patrimonios')}"><b>Patrimônios</b><span>Veículos e vínculos</span></a>
+        <a class="quick-card" href="${panelHref('contato-cliente')}"><b>Contato Cliente</b><span>Visitas e registros</span></a>
       </div>
     </section>
     <section class="section-card">

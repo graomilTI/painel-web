@@ -147,3 +147,13 @@ select:focus, input:focus, textarea:focus { border-color: rgba(52, 211, 153, 0.8
   .os-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .quick-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+
+/* Ajuste home mobile com mais botões */
+.quick-card {
+  -webkit-tap-highlight-color: transparent;
+}
+@media (max-width: 430px) {
+  .quick-card { min-height: 106px; }
+  .quick-card b { font-size: 17px; }
+}

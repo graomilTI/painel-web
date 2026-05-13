@@ -5,6 +5,32 @@ import { clearUserContext } from './sessionStore.js';
 import { toPanelUrl } from './paths.js';
 
 const SIDEBAR_COLLAPSED_KEY = 'painel_sidebar_collapsed';
+const MOBILE_BREAKPOINT = 768;
+
+function isMobileViewport() {
+  return window.matchMedia?.(`(max-width: ${MOBILE_BREAKPOINT}px)`)?.matches || window.innerWidth <= MOBILE_BREAKPOINT;
+}
+
+function normalizeRoleValue(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim();
+}
+
+function isGestorContext(userContext) {
+  const role = normalizeRoleValue(userContext?.user?.role || userContext?.perfil_codigo || userContext?.perfil_nome || userContext?.role);
+  const department = normalizeRoleValue(userContext?.department?.name || userContext?.department?.code || userContext?.setor);
+  return role === 'GESTOR' || department === 'GESTOR';
+}
+
+function updateMobilePanelClass(userContext) {
+  const mobile = isMobileViewport();
+  document.body.classList.toggle('mobile-panel-mode', mobile);
+  document.body.classList.toggle('mobile-gestor-mode', mobile && isGestorContext(userContext));
+  return mobile;
+}
 
 function loadSidebarCollapsed() {
   try {
@@ -43,6 +69,36 @@ function ensureSidebarToggle() {
 }
 
 
+
+function ensureMobileBackButton() {
+  const topbar = document.querySelector('.topbar');
+  if (!topbar) return null;
+
+  let button = document.getElementById('mobilePanelBackBtn');
+  if (!button) {
+    button = document.createElement('button');
+    button.type = 'button';
+    button.id = 'mobilePanelBackBtn';
+    button.className = 'mobile-panel-back-btn';
+    button.innerHTML = '<span aria-hidden="true">←</span><span>Voltar</span>';
+    topbar.prepend(button);
+  }
+
+  return button;
+}
+
+function setupMobileBackButton(userContext) {
+  const button = ensureMobileBackButton();
+  if (!button) return;
+  const shouldShow = isMobileViewport() && isGestorContext(userContext) && !/gestor-app(?:\.html)?$/i.test(window.location.pathname);
+  button.hidden = !shouldShow;
+  if (!button.dataset.bound) {
+    button.addEventListener('click', () => {
+      window.location.href = toPanelUrl('gestor-app');
+    });
+    button.dataset.bound = '1';
+  }
+}
 
 function esc(v) {
   return String(v ?? '')
@@ -267,22 +323,44 @@ function syncSidebarToggle(collapsed) {
 }
 
 export function renderAppLayout({ userContext, currentPageTitle = 'Painel' }) {
-  const collapsed = loadSidebarCollapsed();
+  const mobile = updateMobilePanelClass(userContext);
+  const collapsed = mobile ? true : loadSidebarCollapsed();
   applySidebarCollapsed(collapsed);
   syncSidebarToggle(collapsed);
+  setupMobileBackButton(userContext);
 
   const menu = buildAllowedMenu(userContext);
   renderMenu(document.getElementById('sidebarMenu'), menu, window.location.pathname);
 
   const toggleBtn = ensureSidebarToggle();
+  if (toggleBtn) {
+    toggleBtn.hidden = mobile;
+  }
   if (toggleBtn && !toggleBtn.dataset.bound) {
     toggleBtn.addEventListener('click', () => {
+      if (isMobileViewport()) {
+        window.location.href = toPanelUrl('gestor-app');
+        return;
+      }
       const next = !document.body.classList.contains('sidebar-collapsed');
       applySidebarCollapsed(next);
       saveSidebarCollapsed(next);
       syncSidebarToggle(next);
     });
     toggleBtn.dataset.bound = '1';
+  }
+
+  if (!window.__painelMobileResizeBound) {
+    window.addEventListener('resize', () => {
+      const nowMobile = updateMobilePanelClass(userContext);
+      const nextCollapsed = nowMobile ? true : loadSidebarCollapsed();
+      applySidebarCollapsed(nextCollapsed);
+      syncSidebarToggle(nextCollapsed);
+      const btn = document.getElementById('sidebarToggleBtn');
+      if (btn) btn.hidden = nowMobile;
+      setupMobileBackButton(userContext);
+    });
+    window.__painelMobileResizeBound = true;
   }
 
   const welcome = document.getElementById('welcomeUser');
