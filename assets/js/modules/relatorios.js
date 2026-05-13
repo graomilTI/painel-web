@@ -2117,7 +2117,11 @@
   }
 
   function detectRelatorio(fileName) {
-    const n = String(fileName || '').toLowerCase();
+    const rawName = String(fileName || '').toLowerCase();
+    const n = rawName
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/ç/g, 'c');
 
     if ((n.includes('excesso') || n.includes('excesos') || n.includes('velocidade') || n.includes('velocidad')) && !n.includes('patrimonio') && !n.includes('patrimônio')) {
       return { tipo: 'frotas_excesso_velocidade', titulo: 'Excesso de Velocidade - Frotas' };
@@ -2176,8 +2180,8 @@
     if (n.includes('resultado')) {
       return { tipo: 'resultado-diario', titulo: 'Relatório Resultado Diário' };
     }
-    if (n.includes('producao') || n.includes('produção')) {
-      return { tipo: 'producao', titulo: 'Relatório de Produção' };
+    if (n.includes('producao')) {
+      return { tipo: 'producao', titulo: 'Produção Diária' };
     }
     if (n.includes('patrimonio') || n.includes('patrimônio')) {
       return { tipo: 'patrimonios', titulo: 'Relatório de Patrimônios' };
