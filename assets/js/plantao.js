@@ -1166,19 +1166,35 @@ function drawRoundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+
 function drawBackground(ctx) {
-  const grad = ctx.createLinearGradient(0, 0, IMG_W, IMG_H);
-  grad.addColorStop(0, '#06130e');
-  grad.addColorStop(.55, '#030906');
-  grad.addColorStop(1, '#0a1e17');
+  const grad = ctx.createLinearGradient(0, 0, 0, IMG_H);
+  grad.addColorStop(0, '#04110c');
+  grad.addColorStop(.55, '#071b14');
+  grad.addColorStop(1, '#0a241b');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, IMG_W, IMG_H);
 
-  ctx.globalAlpha = .15;
-  for (let i = 0; i < 42; i++) {
-    const x = (i * 97) % IMG_W - 80;
-    const y = (i * 151) % IMG_H - 40;
-    const r = 34 + (i % 5) * 12;
+  const glow1 = ctx.createRadialGradient(180, 170, 40, 180, 170, 280);
+  glow1.addColorStop(0, 'rgba(111,208,165,.18)');
+  glow1.addColorStop(1, 'rgba(111,208,165,0)');
+  ctx.fillStyle = glow1;
+  ctx.fillRect(0, 0, IMG_W, IMG_H);
+
+  const glow2 = ctx.createRadialGradient(960, 90, 20, 960, 90, 220);
+  glow2.addColorStop(0, 'rgba(63,168,120,.16)');
+  glow2.addColorStop(1, 'rgba(63,168,120,0)');
+  ctx.fillStyle = glow2;
+  ctx.fillRect(0, 0, IMG_W, IMG_H);
+
+  ctx.save();
+  ctx.globalAlpha = .08;
+  ctx.strokeStyle = '#6fd0a5';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 20; i++) {
+    const x = 50 + (i % 4) * 155 + (i % 2 ? 36 : 0);
+    const y = 110 + Math.floor(i / 4) * 185;
+    const r = 42;
     ctx.beginPath();
     for (let a = 0; a < 6; a++) {
       const px = x + r * Math.cos(Math.PI / 3 * a);
@@ -1187,18 +1203,9 @@ function drawBackground(ctx) {
       else ctx.lineTo(px, py);
     }
     ctx.closePath();
-    ctx.strokeStyle = i % 3 ? '#3fa878' : '#6fd0a5';
-    ctx.lineWidth = 2;
     ctx.stroke();
   }
-  ctx.globalAlpha = 1;
-
-  ctx.fillStyle = 'rgba(63,168,120,.13)';
-  for (let i = 0; i < 12; i++) {
-    ctx.beginPath();
-    ctx.arc(120 + (i * 83) % 330, 210 + i * 100, 56 + (i % 3) * 18, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  ctx.restore();
 }
 
 async function drawLogo(ctx) {
@@ -1210,86 +1217,122 @@ async function drawLogo(ctx) {
       img.onload = resolve;
       img.onerror = reject;
     });
-    ctx.drawImage(img, 105, 110, 280, 116);
+    ctx.drawImage(img, 70, 56, 248, 102);
   } catch {
     ctx.fillStyle = '#6fd0a5';
-    ctx.font = 'bold 58px Arial';
-    ctx.fillText('GRÃO 1000', 105, 175);
+    ctx.font = 'bold 50px Arial';
+    ctx.fillText('GRÃO 1000', 70, 118);
     ctx.font = '22px Arial';
-    ctx.fillText('Rastreabilidade e Logística', 110, 206);
+    ctx.fillText('Rastreabilidade e Logística', 72, 148);
   }
 }
 
-function drawVerticalTitle(ctx, title, dateText) {
+function drawRoundRectFilled(ctx, x, y, w, h, r, fillStyle, strokeStyle = '', lineWidth = 1) {
+  drawRoundRect(ctx, x, y, w, h, r);
+  if (fillStyle) {
+    ctx.fillStyle = fillStyle;
+    ctx.fill();
+  }
+  if (strokeStyle) {
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  }
+}
+
+function fitText(ctx, value, maxWidth) {
+  let text = String(value || '');
+  if (!text) return '';
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  while (text.length > 4 && ctx.measureText(`${text}…`).width > maxWidth) {
+    text = text.slice(0, -1);
+  }
+  return `${text}…`;
+}
+
+function drawPill(ctx, x, y, text, options = {}) {
+  const {
+    bg = 'rgba(22,101,52,.22)',
+    border = 'rgba(111,208,165,.28)',
+    color = '#dcfce7',
+    font = 'bold 22px Arial',
+    px = 16,
+    py = 10,
+    radius = 999,
+  } = options;
+
   ctx.save();
-  ctx.translate(118, 1210);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 70px Arial';
-  ctx.fillText(title, 0, 0);
-  ctx.font = 'bold 52px Arial';
-  ctx.fillText(dateText, 0, 88);
+  ctx.font = font;
+  const w = Math.ceil(ctx.measureText(text).width + px * 2);
+  const h = 22 + py * 2;
+  drawRoundRectFilled(ctx, x, y, w, h, radius, bg, border, 1.5);
+  ctx.fillStyle = color;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + px, y + h / 2 + 1);
   ctx.restore();
+  return { width: w, height: h };
 }
 
-function drawIconTag(ctx, x, y, text) {
-  ctx.fillStyle = '#3fa878';
-  drawRoundRect(ctx, x, y - 28, 84, 44, 8);
-  ctx.fill();
-  ctx.fillStyle = '#06130e';
-  ctx.font = 'bold 28px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText(text, x + 42, y + 3);
+function drawInfoBox(ctx, x, y, w, h, label, value) {
+  drawRoundRectFilled(ctx, x, y, w, h, 18, 'rgba(255,255,255,.03)', 'rgba(111,208,165,.12)', 1);
+  ctx.fillStyle = '#6fd0a5';
+  ctx.font = 'bold 16px Arial';
   ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(label, x + 16, y + 12);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 24px Arial';
+  const fitted = fitText(ctx, value || '-', w - 32);
+  ctx.fillText(fitted, x + 16, y + 34);
 }
 
-function drawPersonCard(ctx, row, x, y, maxW, showSector = true) {
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 48px Arial';
-  let name = row.nome || '';
-  while (ctx.measureText(name).width > maxW && name.length > 10) name = name.slice(0, -1);
-  if (name !== row.nome) name = `${name.slice(0, -1)}…`;
-  ctx.textAlign = 'right';
-  ctx.fillText(name, x + maxW, y);
+function drawCardHeader(ctx, row, x, y, w) {
+  const dateLabel = `${weekdayBR(row.data_plantao)} • ${formatDateBR(row.data_plantao)}`;
+  drawPill(ctx, x + 22, y + 18, dateLabel, {
+    bg: 'rgba(22,101,52,.18)',
+    border: 'rgba(111,208,165,.24)',
+    color: '#d8ffea',
+    font: 'bold 18px Arial',
+    px: 14,
+    py: 8,
+    radius: 999,
+  });
 
-  if (showSector) {
-    ctx.fillStyle = '#6fd0a5';
-    ctx.font = '34px Arial';
-    ctx.fillText(row.setor || '', x + maxW, y + 42);
-  }
+  const setorW = ctx.measureText(String(row.setor || '')).width + 30;
+  drawPill(ctx, x + w - setorW - 22, y + 18, row.setor || '', {
+    bg: 'rgba(63,168,120,.18)',
+    border: 'rgba(111,208,165,.30)',
+    color: '#6fd0a5',
+    font: 'bold 18px Arial',
+    px: 14,
+    py: 8,
+    radius: 999,
+  });
+}
+
+function drawPersonCard(ctx, row, x, y, maxW) {
+  const cardH = 190;
+  drawRoundRectFilled(ctx, x, y, maxW, cardH, 28, 'rgba(7,18,14,.88)', 'rgba(111,208,165,.14)', 1.2);
+  drawCardHeader(ctx, row, x, y, maxW);
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = '29px Arial';
+  ctx.font = 'bold 40px Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const nome = fitText(ctx, row.nome || '', maxW - 44);
+  ctx.fillText(nome, x + 22, y + 66);
+
   const phone = formatPhone(row.telefone) || '-';
-  ctx.fillText(phone, x + maxW - 92, y + 88);
-  drawIconTag(ctx, x + maxW - 75, y + 83, '☎');
+  const email = row.email_corporativo || row.email || '-';
+  const horario = buildHorario(row) || '-';
 
-  const email = row.email_corporativo || '';
-  if (email) {
-    ctx.font = '26px Arial';
-    let emailText = email;
-    while (ctx.measureText(emailText).width > maxW - 110 && emailText.length > 12) emailText = emailText.slice(0, -1);
-    if (emailText !== email) emailText = `${emailText.slice(0, -1)}…`;
-    ctx.fillText(emailText, x + maxW - 92, y + 130);
-    drawIconTag(ctx, x + maxW - 75, y + 125, '✉');
-  }
+  drawInfoBox(ctx, x + 22, y + 112, 220, 60, 'Contato', phone);
+  drawInfoBox(ctx, x + 258, y + 112, 356, 60, 'E-mail', email);
+  drawInfoBox(ctx, x + 630, y + 112, maxW - 652, 60, 'Horário', horario);
 
-  const horario = buildHorario(row);
-  if (horario) {
-    ctx.font = '26px Arial';
-    ctx.fillStyle = '#e5e7eb';
-    const parts = horario.split('|').map((s) => s.trim());
-    parts.forEach((part, idx) => ctx.fillText(part, x + maxW - 92, y + 174 + idx * 34));
-    drawIconTag(ctx, x + maxW - 75, y + 173, '◷');
-  }
-
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(x + 20, y + 230);
-  ctx.lineTo(x + maxW, y + 230);
-  ctx.stroke();
-  ctx.textAlign = 'left';
+  return cardH;
 }
 
 function getRowsForDivulgacao() {
@@ -1305,6 +1348,14 @@ function getRowsForDivulgacao() {
         rows.push({ ...p, setor, data_plantao: date });
       }
     });
+  });
+
+  rows.sort((a, b) => {
+    const byDate = String(a.data_plantao || '').localeCompare(String(b.data_plantao || ''));
+    if (byDate) return byDate;
+    const bySetor = String(a.setor || '').localeCompare(String(b.setor || ''));
+    if (bySetor) return bySetor;
+    return String(a.nome || '').localeCompare(String(b.nome || ''));
   });
   return rows;
 }
@@ -1324,45 +1375,84 @@ async function renderImagemPlantao() {
   const titleSetor = document.getElementById('plantaoImgSetor')?.value || 'todos';
   const rows = getRowsForDivulgacao();
 
-  const title = titleSetor === 'todos' ? 'Escala de Plantão' : `Plantão ${titleSetor}`;
-  const dateText = dataIni === dataFim ? formatDateBR(dataIni) : `${formatDateBR(dataIni)} e ${formatDateBR(dataFim)}`;
-
-  drawVerticalTitle(ctx, title, dateText);
+  const title = 'Escala de Plantão';
+  const subtitle = titleSetor === 'todos' ? 'Todos os setores' : `Setor: ${titleSetor}`;
+  const dateText = dataIni === dataFim ? formatDateBR(dataIni) : `${formatDateBR(dataIni)} a ${formatDateBR(dataFim)}`;
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 46px Arial';
-  ctx.textAlign = 'right';
-  ctx.fillText(titleSetor === 'todos' ? 'Plantão do final de semana' : titleSetor, 1000, 265);
-  ctx.fillStyle = '#6fd0a5';
-  ctx.font = '34px Arial';
-  ctx.fillText(dateText, 1000, 308);
   ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.font = 'bold 62px Arial';
+  ctx.fillText(title, 70, 188);
+
+  ctx.fillStyle = '#b7d8c9';
+  ctx.font = '28px Arial';
+  ctx.fillText('Relação de plantonistas escalados para atendimento no período informado.', 70, 252);
+
+  drawPill(ctx, 70, 286, subtitle, {
+    bg: 'rgba(255,255,255,.06)',
+    border: 'rgba(111,208,165,.18)',
+    color: '#ffffff',
+    font: 'bold 21px Arial',
+    px: 14,
+    py: 8,
+  });
+  drawPill(ctx, 70, 336, `Período: ${dateText}`, {
+    bg: 'rgba(22,101,52,.18)',
+    border: 'rgba(111,208,165,.28)',
+    color: '#dcfce7',
+    font: 'bold 21px Arial',
+    px: 14,
+    py: 8,
+  });
+
+  drawRoundRectFilled(ctx, 70, 400, 940, 2, 2, 'rgba(111,208,165,.18)');
 
   if (!rows.length) {
+    drawRoundRectFilled(ctx, 70, 475, 940, 220, 28, 'rgba(7,18,14,.88)', 'rgba(111,208,165,.14)', 1.2);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 42px Arial';
-    ctx.fillText('Nenhum plantonista cadastrado', 390, 650);
+    ctx.textAlign = 'center';
+    ctx.fillText('Nenhum plantonista cadastrado', IMG_W / 2, 560);
+    ctx.fillStyle = '#b7d8c9';
+    ctx.font = '28px Arial';
+    ctx.fillText('Ajuste os filtros e atualize a imagem.', IMG_W / 2, 620);
+    ctx.textAlign = 'left';
   } else {
-    let y = 410;
-    const max = Math.min(rows.length, 5);
+    let y = 430;
+    const gap = 18;
+    const cardW = 940;
+    const cardH = 190;
+    const availableHeight = 1320 - y;
+    const max = Math.max(1, Math.floor((availableHeight + gap) / (cardH + gap)));
+
     rows.slice(0, max).forEach((row) => {
-      drawPersonCard(ctx, row, 350, y, 650, titleSetor === 'todos');
-      y += 244;
+      drawPersonCard(ctx, row, 70, y, cardW);
+      y += cardH + gap;
     });
 
     if (rows.length > max) {
-      ctx.fillStyle = '#6fd0a5';
-      ctx.font = 'bold 32px Arial';
-      ctx.textAlign = 'right';
-      ctx.fillText(`+ ${rows.length - max} plantonista(s) na escala completa`, 1000, 1380);
-      ctx.textAlign = 'left';
+      drawPill(ctx, 70, 1332, `+ ${rows.length - max} plantonista(s) continuam na escala completa do painel`, {
+        bg: 'rgba(255,255,255,.05)',
+        border: 'rgba(111,208,165,.18)',
+        color: '#d8ffea',
+        font: 'bold 18px Arial',
+        px: 14,
+        py: 8,
+        radius: 14,
+      });
     }
   }
 
+  ctx.fillStyle = 'rgba(111,208,165,.18)';
+  ctx.fillRect(70, 1450, 940, 2);
+  ctx.fillStyle = '#e5e7eb';
+  ctx.font = '24px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText('Grão 1000 • Escala de Plantão', 70, 1472);
+  ctx.textAlign = 'right';
   ctx.fillStyle = '#6fd0a5';
-  ctx.font = '32px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('www.grao1000.com.br', IMG_W / 2, 1475);
+  ctx.fillText('www.grao1000.com.br', 1010, 1472);
   ctx.textAlign = 'left';
 }
 
