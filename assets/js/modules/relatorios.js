@@ -461,6 +461,15 @@
     return null;
   }
 
+  function parseDataFromSheetName(name) {
+    const raw = String(name || '').trim();
+    let m = raw.match(/^(\d{2})(\d{2})(\d{4})$/);
+    if (m) return makeIsoDate(m[3], m[2], m[1]);
+    m = raw.match(/^(\d{1,2})[\.\/-](\d{1,2})[\.\/-](\d{4})$/);
+    if (m) return makeIsoDate(m[3], m[2], m[1]);
+    return toIsoDate(raw);
+  }
+
   function headerKey(value) {
     return String(value || '')
       .normalize('NFD')
