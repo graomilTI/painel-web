@@ -43,11 +43,7 @@
   function nomeKey(v){ return String(v || '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' '); }
   function isSafristaTipo(tipo){ const t=norm(tipo); return t.includes('DIARISTA') || t.includes('INTERMITENTE') || t.includes('SAFRISTA'); }
   function isAtivoSituacao(situacao){ return !norm(situacao).includes('NAOATIVO') && !norm(situacao).includes('INATIVO'); }
-  function isClassificadorCargo(cargo){
-    const c=norm(cargo);
-    return c.includes('CLASSIFICADOR');
-  }
-  function fmtMoney(v){return n(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});} 
+    function fmtMoney(v){return n(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});} 
   function fmtNum(v){return n(v).toLocaleString('pt-BR',{maximumFractionDigits:2});}
   function fmtPct(v){return n(v).toLocaleString('pt-BR',{style:'percent',minimumFractionDigits:1,maximumFractionDigits:1});}
   function total(arr){return (arr||[]).reduce((a,b)=>a+n(b),0);}
@@ -77,14 +73,14 @@
   function totalPatrimonioMes(desp, mi){
     return sumTopicsAll(desp?.base || {}, ['PATRIMONIO'], mi) + geralTopic(desp?.geral || {}, ['PATRIMONIO'], mi);
   }
-  function investimentoRateadoPorClassificadores(desp, reg, mi){
-    const rateioInfo=desp?.classificadoresMedia || null;
+  function investimentoRateadoPorAtivos(desp, reg, mi){
+    const rateioInfo=desp?.ativosMedia || null;
     const mediaReg=n(rateioInfo?.porRegional?.[reg]?.[mi]);
     const totalMedia=n(rateioInfo?.total?.[mi]);
     if(mediaReg > 0 && totalMedia > 0){
       return totalPatrimonioMes(desp, mi) * (mediaReg / totalMedia);
     }
-    // Fallback seguro: mantém a regra antiga quando ainda não há histórico diário de cargos.
+    // Fallback seguro: mantém a regra antiga quando ainda não há histórico mensal de ativos.
     return sumTopic(desp.base,reg,['PATRIMONIO'],mi)+rateio(desp.base,desp.geral,reg,['PATRIMONIO'],mi);
   }
 
@@ -387,8 +383,8 @@
     return out;
   }
 
-  async function loadMediaClassificadoresAtivosFromDb(supabase, year){
-    const out={porRegional:{}, total:Array(12).fill(0), regionais:new Set(), totalHistRows:0, hasCargo:false};
+  async function loadMediaAtivosPorRegionalFromDb(supabase, year){
+    const out={porRegional:{}, total:Array(12).fill(0), regionais:new Set(), totalHistRows:0};
     if(!supabase || !year) return out;
     const start=`${year}-01-01`;
     const end=`${year + 1}-01-01`;
@@ -416,16 +412,10 @@
 
     let histRows=[];
     try{
-      histRows = await fetchRows('data_referencia,nome,situacao,coordenacao,cargo,origem');
-      out.hasCargo = true;
-    }catch(errorCargo){
-      console.warn('DRE: coluna cargo indisponível no histórico para rateio de investimentos. Tentando fallback sem cargo.', errorCargo);
-      try{
-        histRows = await fetchRows('data_referencia,nome,situacao,coordenacao,origem');
-      }catch(error){
-        console.warn('DRE: não foi possível carregar histórico diário para rateio de investimentos por classificadores ativos.', error);
-        return out;
-      }
+      histRows = await fetchRows('data_referencia,nome,situacao,coordenacao,origem');
+    }catch(error){
+      console.warn('DRE: não foi possível carregar histórico diário para rateio de investimentos por ativos.', error);
+      return out;
     }
 
     out.totalHistRows = histRows.length;
@@ -436,7 +426,6 @@
       const nome=nomeKey(h.nome);
       if(!date || !reg || !nome || isIgnored(reg) || isExcluded(reg) || norm(reg)==='GERAL' || isPool(reg)) continue;
       if(!isAtivoSituacao(h.situacao)) continue;
-      if(out.hasCargo && !isClassificadorCargo(h.cargo)) continue;
       const m=monthFrom(date);
       if(!m || m.year!==year) continue;
       const key=`${date}|${reg}`;
@@ -499,7 +488,7 @@
         vals.pessoal[mi]=sumTopic(desp.base,reg,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi)+rateio(desp.base,desp.geral,reg,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi);
         vals.adm[mi]=sumTopic(desp.base,reg,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi)+rateio(desp.base,desp.geral,reg,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi);
         vals.fin[mi]=rateio(desp.base,desp.geral,reg,['DESPESAS FINANCEIRAS'],mi);
-        vals.inv[mi]=investimentoRateadoPorClassificadores(desp,reg,mi);
+        vals.inv[mi]=investimentoRateadoPorAtivos(desp,reg,mi);
       } else {
         vals.despOp[mi]=sumTopicsAll(desp.base,['DESPESAS OPERACIONAIS'],mi)+geralTopic(desp.geral,['DESPESAS OPERACIONAIS'],mi);
         vals.veic[mi]=sumTopicsAll(desp.base,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi)+geralTopic(desp.geral,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi);
@@ -853,7 +842,7 @@
     const usedTxt = audit.used.map(r => `${r.tipo}: ${r.nome}`).join(' · ');
     setStatus(`<strong>DRE blindada:</strong> usando ${audit.used.length} fonte(s). ${audit.ignored.length ? `${audit.ignored.length} importação(ões) antiga(s)/duplicada(s) ignorada(s).` : 'Nenhuma duplicidade detectada.'}<br><span style="font-size:11px;color:#94a3b8">${safe(usedTxt)}</span>`);
     const src={
-      desp:{base:{},geral:{},regionais:new Set(),classificadoresMedia:null},
+      desp:{base:{},geral:{},regionais:new Set(),ativosMedia:null},
       nf:{bruto:{},descAcresc:{},impostos:{},regionais:new Set()},
       prod:{classificado:{},embarcado:{},cargas:{},valorEmbarcado:{},testes:{},prodColab:{},prodColabGeral:Array(12).fill(0),regionais:new Set()},
       antecipacoes:Array(12).fill(0)
@@ -921,16 +910,16 @@
       });
     }
 
-    setStatus('Calculando rateio de investimentos pela média mensal de classificadores ativos...');
-    const classifRateio = await loadMediaClassificadoresAtivosFromDb(opts.supabase, state.year);
-    if(classifRateio.totalHistRows > 0 && classifRateio.total.some(v => n(v) > 0)){
-      src.desp.classificadoresMedia = classifRateio;
-      mergeSet(src.desp.regionais, classifRateio.regionais);
+    setStatus('Calculando rateio de investimentos pela média mensal de colaboradores ativos por regional...');
+    const ativosRateio = await loadMediaAtivosPorRegionalFromDb(opts.supabase, state.year);
+    if(ativosRateio.totalHistRows > 0 && ativosRateio.total.some(v => n(v) > 0)){
+      src.desp.ativosMedia = ativosRateio;
+      mergeSet(src.desp.regionais, ativosRateio.regionais);
       if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
       state.sourceAudit.used.push({
-        tipo: 'rateio-investimentos-classificadores-db',
-        nome: `PATRIMONIO rateado pela média mensal de classificadores ativos (${classifRateio.totalHistRows} linhas)`,
-        status: classifRateio.hasCargo ? 'rateio_por_cargo_classificador' : 'fallback_sem_cargo',
+        tipo: 'rateio-investimentos-ativos-db',
+        nome: `PATRIMONIO rateado pela média mensal de colaboradores ativos por regional (${ativosRateio.totalHistRows} linhas)`,
+        status: 'rateio_por_ativos_regionais',
         created_at: new Date().toISOString()
       });
     }
