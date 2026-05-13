@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient.js';
 
 const DEFAULT_SETORES = ['RH', 'Caixas', 'Frotas', 'Logística', 'Troca de notas'];
 const STORAGE_KEY = 'painel_rh_plantao_setores_extra';
+const TEMPLATE_STORAGE_KEY = 'painel_rh_plantao_modelo_padrao';
 const IMG_W = 1080;
 const IMG_H = 1530;
 
@@ -10,6 +11,7 @@ let setores = [...DEFAULT_SETORES];
 let colaboradores = [];
 let contatosMap = new Map();
 let escala = {};
+let modeloPlantao = [];
 let currentUserContext = null;
 
 function esc(value) {
@@ -57,6 +59,20 @@ function addDaysISO(iso, days) {
   const date = new Date(y, m - 1, d);
   date.setDate(date.getDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function dateFromISO(iso) {
+  const [y, m, d] = String(iso || '').split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d, 12, 0, 0);
+}
+
+function isoFromDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function formatDateBR(iso) {
@@ -160,6 +176,8 @@ function injectPlantaoStyles() {
     .plantao-mini-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .plantao-mini-kpi{background:#0b1220;border:1px solid var(--line);border-radius:16px;padding:12px}
     .plantao-mini-kpi b{display:block;font-size:22px;margin-top:4px}
+    .plantao-radio-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .plantao-radio-row label{display:inline-flex;gap:8px;align-items:center;background:#0b1220;border:1px solid var(--line);border-radius:999px;padding:9px 12px;color:var(--text)}
     @media (max-width:980px){
       .plantao-field.third,.plantao-field.half,.plantao-field.quarter{grid-column:span 12}
       .plantao-add-grid,.plantao-person{grid-template-columns:1fr}
@@ -200,25 +218,44 @@ async function loadLatestReferenceDate() {
 
 async function loadColaboradores() {
   const latest = await loadLatestReferenceDate();
+  const pageSize = 1000;
+  let from = 0;
+  const allRows = [];
 
-  let query = supabase
-    .from('colaborador_snapshot')
-    .select('cpf,nome,situacao,empresa,coordenacao,supervisao,cargo,email_empresa,email_pessoal,whatsapp,tipo')
-    .order('nome', { ascending: true })
-    .limit(2500);
+  while (true) {
+    let query = supabase
+      .from('colaborador_snapshot')
+      .select('cpf,nome,situacao,empresa,coordenacao,supervisao,cargo,email_empresa,email_pessoal,whatsapp,tipo')
+      .order('nome', { ascending: true })
+      .range(from, from + pageSize - 1);
 
-  if (latest) query = query.eq('data_referencia', latest);
-  query = query.eq('situacao', 'Ativo');
+    if (latest) query = query.eq('data_referencia', latest);
+    query = query.eq('situacao', 'Ativo');
 
-  const { data, error } = await query;
-  if (error) throw error;
+    const { data, error } = await query;
+    if (error) throw error;
 
-  colaboradores = (data || []).map((r) => ({
-    ...r,
-    key: collaboratorKey(r),
-    telefone_base: r.whatsapp || '',
-    email_base: r.email_empresa || r.email_pessoal || '',
-  }));
+    const rows = data || [];
+    allRows.push(...rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
+
+    if (from > 20000) break;
+  }
+
+  const unique = new Map();
+  allRows.forEach((r) => {
+    const key = collaboratorKey(r);
+    if (!key) return;
+    unique.set(key, {
+      ...r,
+      key,
+      telefone_base: r.whatsapp || '',
+      email_base: r.email_empresa || r.email_pessoal || '',
+    });
+  });
+
+  colaboradores = Array.from(unique.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
 }
 
 async function loadContatos() {
@@ -268,6 +305,243 @@ function addEscalaRow(setor, row) {
     hora_inicio_2: row.hora_inicio_2 || '',
     hora_fim_2: row.hora_fim_2 || '',
     observacoes: row.observacoes || '',
+  });
+}
+
+function getAllEscalaRows() {
+  const rows = [];
+  Object.entries(escala).forEach(([setor, pessoas]) => {
+    pessoas.forEach((p, idx) => rows.push({ ...p, setor, ordem: idx + 1 }));
+  });
+  return rows;
+}
+
+function getSavedModeloLocal() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(TEMPLATE_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveModeloLocal(rows) {
+  try {
+    localStorage.setItem(TEMPLATE_STORAGE_KEY, JSON.stringify(rows || []));
+  } catch {}
+}
+
+async function loadModeloPlantao() {
+  modeloPlantao = getSavedModeloLocal();
+
+  const { data, error } = await supabase
+    .from('rh_plantao_modelos')
+    .select('*')
+    .eq('nome_modelo', 'Padrão')
+    .order('setor', { ascending: true })
+    .order('ordem', { ascending: true });
+
+  if (!error && Array.isArray(data) && data.length) {
+    modeloPlantao = data.map((row) => ({
+      setor: row.setor,
+      colaborador_key: row.colaborador_key,
+      cpf: row.cpf || '',
+      nome: row.nome || '',
+      telefone: row.telefone || '',
+      email_corporativo: row.email_corporativo || '',
+      hora_inicio: row.hora_inicio || '',
+      hora_fim: row.hora_fim || '',
+      hora_inicio_2: row.hora_inicio_2 || '',
+      hora_fim_2: row.hora_fim_2 || '',
+      dias_semana: Array.isArray(row.dias_semana) && row.dias_semana.length ? row.dias_semana : [6, 0],
+      ordem: row.ordem || 1,
+    }));
+    saveModeloLocal(modeloPlantao);
+  }
+}
+
+async function salvarModeloPlantao() {
+  const feedback = document.getElementById('plantaoProgramacaoFeedback');
+  const rows = getAllEscalaRows()
+    .filter((r) => r.nome && r.hora_inicio && r.hora_fim)
+    .map((r, idx) => ({
+      setor: r.setor,
+      colaborador_key: r.colaborador_key || collaboratorKey(r),
+      cpf: r.cpf || '',
+      nome: r.nome,
+      telefone: r.telefone || '',
+      email_corporativo: r.email_corporativo || '',
+      hora_inicio: r.hora_inicio || '',
+      hora_fim: r.hora_fim || '',
+      hora_inicio_2: r.hora_inicio_2 || '',
+      hora_fim_2: r.hora_fim_2 || '',
+      dias_semana: [6, 0],
+      ordem: idx + 1,
+    }));
+
+  if (!rows.length) {
+    alert('Monte pelo menos uma escala com horário antes de salvar como modelo.');
+    return;
+  }
+
+  modeloPlantao = rows;
+  saveModeloLocal(rows);
+  renderModeloTable();
+
+  if (feedback) {
+    feedback.classList.remove('error');
+    feedback.textContent = 'Modelo local salvo. Salvando também no Supabase...';
+  }
+
+  try {
+    const { error: delError } = await supabase
+      .from('rh_plantao_modelos')
+      .delete()
+      .eq('nome_modelo', 'Padrão');
+    if (delError) throw delError;
+
+    const payload = rows.map((r) => ({
+      nome_modelo: 'Padrão',
+      setor: r.setor,
+      colaborador_key: r.colaborador_key,
+      cpf: r.cpf || null,
+      nome: r.nome,
+      telefone: r.telefone || null,
+      email_corporativo: r.email_corporativo || null,
+      hora_inicio: r.hora_inicio || null,
+      hora_fim: r.hora_fim || null,
+      hora_inicio_2: r.hora_inicio_2 || null,
+      hora_fim_2: r.hora_fim_2 || null,
+      dias_semana: r.dias_semana || [6, 0],
+      ordem: r.ordem || 1,
+      created_by: currentUserContext?.user?.id || null,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const { error: insertError } = await supabase
+      .from('rh_plantao_modelos')
+      .insert(payload);
+    if (insertError) throw insertError;
+
+    if (feedback) feedback.textContent = `Modelo padrão salvo com ${rows.length} linha(s).`;
+  } catch (err) {
+    console.warn('Modelo salvo localmente, mas não foi possível salvar no banco:', err);
+    if (feedback) {
+      feedback.classList.add('error');
+      feedback.textContent = `Modelo salvo no navegador, mas o banco retornou erro: ${err.message || err}. Confira se a migration nova foi executada.`;
+    }
+  }
+}
+
+function getDiasSelecionadosProgramacao() {
+  const dias = [];
+  if (document.getElementById('progSabado')?.checked) dias.push(6);
+  if (document.getElementById('progDomingo')?.checked) dias.push(0);
+  if (document.getElementById('progSexta')?.checked) dias.push(5);
+  return dias.length ? dias : [6, 0];
+}
+
+function getDatasProgramadas() {
+  const inicio = dateFromISO(document.getElementById('progDataInicial')?.value || nextWeekendBase());
+  const semanas = Math.max(1, Math.min(52, Number(document.getElementById('progSemanas')?.value || 1)));
+  const dias = getDiasSelecionadosProgramacao();
+  const datas = [];
+  if (!inicio) return datas;
+
+  const base = new Date(inicio);
+  const currentDay = base.getDay();
+  const firstSaturday = new Date(base);
+  firstSaturday.setDate(base.getDate() + ((6 - currentDay + 7) % 7));
+
+  for (let w = 0; w < semanas; w++) {
+    dias.forEach((dia) => {
+      const d = new Date(firstSaturday);
+      const offset = dia === 0 ? 1 : dia - 6;
+      d.setDate(firstSaturday.getDate() + (w * 7) + offset);
+      datas.push(isoFromDate(d));
+    });
+  }
+
+  return [...new Set(datas)].sort();
+}
+
+function aplicarModeloNaEscala() {
+  const feedback = document.getElementById('plantaoProgramacaoFeedback');
+  if (!modeloPlantao.length) {
+    alert('Salve ou carregue um modelo antes de gerar a programação.');
+    return;
+  }
+
+  const datas = getDatasProgramadas();
+  if (!datas.length) {
+    alert('Informe uma data inicial válida.');
+    return;
+  }
+
+  const modo = document.querySelector('input[name="progModo"]:checked')?.value || 'substituir';
+  const evento = document.getElementById('progEvento')?.value?.trim() || document.getElementById('plantaoEvento')?.value?.trim() || 'Plantão programado';
+
+  if (modo === 'substituir') buildEmptyEscala();
+
+  datas.forEach((dataPlantao) => {
+    modeloPlantao.forEach((m) => {
+      if (!setores.includes(m.setor)) {
+        setores.push(m.setor);
+        if (!escala[m.setor]) escala[m.setor] = [];
+      }
+      addEscalaRow(m.setor, {
+        ...m,
+        data_plantao: dataPlantao,
+        evento,
+      });
+    });
+  });
+
+  document.getElementById('plantaoData').value = datas[0];
+  document.getElementById('plantaoDataFim').value = datas[datas.length - 1];
+  document.getElementById('plantaoEvento').value = evento;
+  document.getElementById('plantaoImgData').value = datas[0];
+  document.getElementById('plantaoImgDataFim').value = datas[datas.length - 1];
+
+  renderSetores();
+  updateKpis();
+  if (feedback) {
+    feedback.classList.remove('error');
+    feedback.textContent = `Programação gerada: ${datas.length} data(s), ${modeloPlantao.length} linha(s) por data. Clique em “Salvar plantão” para gravar no banco.`;
+  }
+}
+
+async function carregarModeloPadrao() {
+  const feedback = document.getElementById('plantaoProgramacaoFeedback');
+  if (feedback) {
+    feedback.classList.remove('error');
+    feedback.textContent = 'Carregando modelo padrão...';
+  }
+  await loadModeloPlantao();
+  renderModeloTable();
+  if (feedback) feedback.textContent = modeloPlantao.length ? `Modelo carregado com ${modeloPlantao.length} linha(s).` : 'Nenhum modelo salvo ainda. Monte uma escala e clique em “Salvar escala atual como modelo”.';
+}
+
+function renderModeloTable() {
+  const tbody = document.getElementById('plantaoModeloBody');
+  if (!tbody) return;
+  tbody.innerHTML = modeloPlantao.length ? modeloPlantao.map((row, idx) => `
+    <tr>
+      <td>${esc(row.setor)}</td>
+      <td><strong>${esc(row.nome)}</strong><div class="plantao-meta">${esc(row.cpf || row.colaborador_key || '')}</div></td>
+      <td>${esc(formatPhone(row.telefone) || '-')}</td>
+      <td>${esc(row.email_corporativo || '-')}</td>
+      <td>${esc(buildHorario(row) || '-')}</td>
+      <td><button type="button" class="plantao-btn danger" data-remove-modelo="${idx}">Remover</button></td>
+    </tr>
+  `).join('') : '<tr><td colspan="6">Nenhum modelo salvo. Monte um final de semana na aba Escala e salve como modelo.</td></tr>';
+
+  tbody.querySelectorAll('[data-remove-modelo]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      modeloPlantao.splice(Number(btn.dataset.removeModelo), 1);
+      saveModeloLocal(modeloPlantao);
+      renderModeloTable();
+    });
   });
 }
 
@@ -913,6 +1187,7 @@ function renderDivulgacaoControls() {
 function switchTab(tab) {
   document.querySelectorAll('.plantao-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
   document.querySelectorAll('.plantao-panel').forEach((panel) => panel.classList.toggle('active', panel.dataset.panel === tab));
+  if (tab === 'programacao') renderModeloTable();
   if (tab === 'contatos') renderContatosTable();
   if (tab === 'divulgacao') {
     renderDivulgacaoControls();
@@ -937,6 +1212,7 @@ function renderPage(content) {
 
       <div class="plantao-tabs">
         <button type="button" class="plantao-tab active" data-tab="escala">Escala</button>
+        <button type="button" class="plantao-tab" data-tab="programacao">Programar várias semanas</button>
         <button type="button" class="plantao-tab" data-tab="contatos">Contatos</button>
         <button type="button" class="plantao-tab" data-tab="divulgacao">Divulgação</button>
       </div>
@@ -972,6 +1248,77 @@ function renderPage(content) {
         </div>
 
         <div class="plantao-setores" id="plantaoSetores"></div>
+      </div>
+
+      <div class="plantao-panel" data-panel="programacao">
+        <div class="plantao-card">
+          <div class="section-heading">
+            <div>
+              <h3 style="margin:0 0 6px;">Programar escala por várias semanas</h3>
+              <p class="plantao-meta">Monte uma escala-base uma única vez, salve como modelo e gere automaticamente vários finais de semana.</p>
+            </div>
+          </div>
+
+          <div class="plantao-actions" style="margin-top:12px;">
+            <button type="button" class="plantao-btn secondary" id="btnSalvarModeloPlantao">Salvar escala atual como modelo</button>
+            <button type="button" class="plantao-btn secondary" id="btnCarregarModeloPlantao">Carregar modelo padrão</button>
+          </div>
+          <div class="plantao-feedback" id="plantaoProgramacaoFeedback"></div>
+
+          <div class="plantao-grid" style="margin-top:14px;">
+            <div class="plantao-field quarter">
+              <label class="plantao-label" for="progDataInicial">Primeiro final de semana</label>
+              <input class="plantao-input" type="date" id="progDataInicial" value="${dataIni}" />
+            </div>
+            <div class="plantao-field quarter">
+              <label class="plantao-label" for="progSemanas">Quantidade de semanas</label>
+              <input class="plantao-input" type="number" id="progSemanas" min="1" max="52" value="4" />
+            </div>
+            <div class="plantao-field half">
+              <label class="plantao-label" for="progEvento">Evento / descrição</label>
+              <input class="plantao-input" id="progEvento" placeholder="Ex.: Plantão final de semana" value="Plantão final de semana" />
+            </div>
+            <div class="plantao-field half">
+              <label class="plantao-label">Dias que entram na programação</label>
+              <div class="plantao-radio-row">
+                <label><input type="checkbox" id="progSexta" /> Sexta</label>
+                <label><input type="checkbox" id="progSabado" checked /> Sábado</label>
+                <label><input type="checkbox" id="progDomingo" checked /> Domingo</label>
+              </div>
+            </div>
+            <div class="plantao-field half">
+              <label class="plantao-label">Modo de geração</label>
+              <div class="plantao-radio-row">
+                <label><input type="radio" name="progModo" value="substituir" checked /> Substituir escala da tela</label>
+                <label><input type="radio" name="progModo" value="somar" /> Somar na escala atual</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="plantao-actions" style="margin-top:14px;">
+            <button type="button" class="plantao-btn primary" id="btnGerarProgramacaoPlantao">Gerar programação</button>
+            <button type="button" class="plantao-btn secondary" id="btnSalvarProgramacaoPlantao">Salvar programação gerada</button>
+          </div>
+        </div>
+
+        <div class="plantao-card" style="margin-top:14px;">
+          <h3 style="margin-top:0;">Modelo padrão salvo</h3>
+          <div class="plantao-table-wrap">
+            <table class="plantao-table">
+              <thead>
+                <tr>
+                  <th>Setor</th>
+                  <th>Colaborador</th>
+                  <th>Telefone</th>
+                  <th>E-mail</th>
+                  <th>Horário</th>
+                  <th>Ação</th>
+                </tr>
+              </thead>
+              <tbody id="plantaoModeloBody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <div class="plantao-panel" data-panel="contatos">
@@ -1034,6 +1381,10 @@ function renderPage(content) {
   document.querySelectorAll('.plantao-tab').forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
   document.getElementById('btnCarregarPlantao')?.addEventListener('click', () => loadEscalaFromDb().catch(showLoadError));
   document.getElementById('btnSalvarPlantao')?.addEventListener('click', saveEscala);
+  document.getElementById('btnSalvarModeloPlantao')?.addEventListener('click', salvarModeloPlantao);
+  document.getElementById('btnCarregarModeloPlantao')?.addEventListener('click', () => carregarModeloPadrao().catch(showLoadError));
+  document.getElementById('btnGerarProgramacaoPlantao')?.addEventListener('click', aplicarModeloNaEscala);
+  document.getElementById('btnSalvarProgramacaoPlantao')?.addEventListener('click', saveEscala);
   document.getElementById('btnAddSetor')?.addEventListener('click', addSetor);
   document.getElementById('plantaoContatoBusca')?.addEventListener('input', renderContatosTable);
   document.getElementById('btnAtualizarImagem')?.addEventListener('click', renderImagemPlantao);
@@ -1069,13 +1420,14 @@ initProtectedPage('Plantão', async (content, userContext) => {
   const feedback = document.getElementById('plantaoFeedback');
   try {
     feedback.textContent = 'Carregando colaboradores, contatos e setores...';
-    await Promise.all([loadSetores(), loadColaboradores(), loadContatos()]);
+    await Promise.all([loadSetores(), loadColaboradores(), loadContatos(), loadModeloPlantao()]);
     buildEmptyEscala();
     renderSetores();
     renderContatosTable();
+    renderModeloTable();
     renderDivulgacaoControls();
     updateKpis();
-    feedback.textContent = 'Base carregada. Preencha a escala ou carregue um período já salvo.';
+    feedback.textContent = `Base carregada com ${colaboradores.length} colaborador(es). Preencha a escala, carregue um período salvo ou programe várias semanas.`;
   } catch (err) {
     console.error(err);
     feedback.classList.add('error');

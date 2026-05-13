@@ -61,7 +61,6 @@ export const MENU_CONFIG = [
     grupo: "RECURSOS HUMANOS",
     itens: [
       item("ferias_atestados", "Férias e Atestados", "ferias-atestados", ["RH_FERIAS_ATESTADOS"]),
-      item("rh_plantao", "Plantão", "plantao", ["RH_PLANTAO", "PLANTAO", "PLANTÃO"]),
       item("historico_geral", "Histórico Geral", "historico", ["RH_HIST_INDISP"]),
       item("base_colab_consulta", "Consultar Base", "consultar-colaboradores", ["BASE_COLAB_CONSULTA"]),
       item("contatos_exportacoes", "Contatos e Cadastros", "contatos", ["CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"])
@@ -82,6 +81,13 @@ export const MENU_CONFIG = [
       item("frotas_veiculos", "Veículos", "frotas-veiculos", ["FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS"]),
       item("frotas_multas", "Multas", "frotas-multas", ["MULTAS", "FROTAS_MULTAS"]),
       item("frotas_historico", "Histórico", "frotas-historico", ["FROTAS_HISTORICO", "HISTORICO_FROTAS"])
+    ]
+  },
+
+  {
+    grupo: "NOTAS FISCAIS",
+    itens: [
+      item("notas_fiscais", "Painel de Notas Fiscais", "notas-fiscais", ["NOTAS_FISCAIS", "NF", "NFS", "FINANCEIRO_NOTAS_FISCAIS"])
     ]
   },
 

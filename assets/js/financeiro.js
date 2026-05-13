@@ -444,12 +444,11 @@ function buildLatestColaboradorMap(rows) {
   (rows || []).forEach((row) => {
     const key = normalizeName(row.nome);
     if (!key || map.has(key)) return;
-    const cpfDigits = onlyDigits(row.cpf);
     map.set(key, {
       nome: row.nome,
-      cpf: cpfDigits ? cpfDigits.padStart(11, '0').slice(0, 11) : '',
+      cpf: onlyDigits(row.cpf).padStart(11, '0').slice(0, 11),
       salario: toNumber(row.salario),
-      banco: row.conta_bancaria || row.conta_bancaria_despesas || row['C. Banc. Despesas'] || '',
+      banco: row.conta_bancaria || row['C. Banc. Despesas'] || '',
       empresa: row.empresa || '',
       coordenacao: row.coordenacao || '',
       supervisao: row.supervisao || '',
@@ -463,61 +462,29 @@ function buildLatestColaboradorMap(rows) {
   return map;
 }
 
-async function fetchAllPaged(table, selectColumns, applyQuery, pageSize = 1000) {
-  const allRows = [];
+async function loadColaboradoresPagamento(dataReferencia = null) {
+  const ref = dataReferencia || document.getElementById('alimFim')?.value || state.currentDate || new Date().toISOString().slice(0, 10);
+  const pageSize = 1000;
+  const rows = [];
   let from = 0;
+
   while (true) {
-    let query = supabase.from(table).select(selectColumns);
-    if (typeof applyQuery === 'function') query = applyQuery(query);
-    const { data, error } = await query.range(from, from + pageSize - 1);
+    let query = supabase
+      .from('colaborador_snapshot')
+      .select('nome,cpf,salario,conta_bancaria,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,ativo')
+      .lte('data_referencia', ref)
+      .order('data_referencia', { ascending: false, nullsFirst: false })
+      .range(from, from + pageSize - 1);
+
+    const { data, error } = await query;
     if (error) throw error;
-    const rows = data || [];
-    allRows.push(...rows);
-    if (rows.length < pageSize) break;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
     from += pageSize;
   }
-  return allRows;
-}
 
-async function loadColaboradoresPagamento(dataReferencia = state.currentDate) {
-  const ref = parseDateLoose(dataReferencia) || state.currentDate;
-
-  // Base oficial do histórico diário. Busca o snapshot mais recente até a data do Financeiro
-  // e pagina de 1000 em 1000 para não perder colaboradores depois do limite padrão do Supabase.
-  try {
-    const historicoRows = await fetchAllPaged(
-      'historico_colaboradores',
-      'nome,cpf,salario,conta_bancaria_despesas,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,situacao,desligamento',
-      (q) => q
-        .lte('data_referencia', ref)
-        .order('data_referencia', { ascending: false, nullsFirst: false })
-        .order('nome', { ascending: true, nullsFirst: false })
-    );
-    if (historicoRows.length) return buildLatestColaboradorMap(historicoRows);
-  } catch (error) {
-    console.warn('[FINANCEIRO] Histórico de colaboradores indisponível. Usando colaborador_snapshot como fallback.', error);
-  }
-
-  try {
-    const snapshotRows = await fetchAllPaged(
-      'colaborador_snapshot',
-      'nome,cpf,salario,conta_bancaria,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,ativo',
-      (q) => q
-        .lte('data_referencia', ref)
-        .order('data_referencia', { ascending: false, nullsFirst: false })
-        .order('nome', { ascending: true, nullsFirst: false })
-    );
-    if (snapshotRows.length) return buildLatestColaboradorMap(snapshotRows);
-  } catch (error) {
-    console.warn('[FINANCEIRO] Fallback por data falhou. Tentando leitura completa da base legada.', error);
-  }
-
-  const snapshotRows = await fetchAllPaged(
-    'colaborador_snapshot',
-    'nome,cpf,salario,conta_bancaria,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,ativo',
-    (q) => q.order('data_referencia', { ascending: false, nullsFirst: false }).order('nome', { ascending: true, nullsFirst: false })
-  );
-  return buildLatestColaboradorMap(snapshotRows || []);
+  return buildLatestColaboradorMap(rows || []);
 }
 
 function mapProducaoSnapshotRows(rows, origem) {
@@ -711,6 +678,121 @@ function roundNumber(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
 }
 
+
+function paymentStatusClass(value) {
+  const s = normalize(value || 'OK');
+  if (s === 'pago') return 'pago';
+  if (s === 'pendente') return 'pendente';
+  if (s.includes('erro')) return 'danger';
+  return 'ok';
+}
+
+function makePaymentHash(row) {
+  return hashText([
+    row.data || '', row.funcionario || '', row.cpf || '', row.destino || '', row.tipo || '', row.valor || 0, row.composicao || ''
+  ].join('|'));
+}
+
+function normalizePaymentRows(apuracao = {}, defaultStatus = 'OK') {
+  const status = ['OK', 'PENDENTE'].includes(String(defaultStatus || '').toUpperCase()) ? String(defaultStatus).toUpperCase() : 'OK';
+  const conferencia = (apuracao.conferencia || []).map((row) => ({
+    ...row,
+    unique_hash: row.unique_hash || makePaymentHash(row),
+    status_pagamento: row.status_pagamento || (normalize(row.observacao).includes('ok') ? status : status)
+  }));
+  return { ...apuracao, conferencia };
+}
+
+function buildPaymentOutputs(conferencia = []) {
+  const okRows = (conferencia || []).filter((row) => String(row.status_pagamento || 'OK').toUpperCase() === 'OK');
+  const flashMap = new Map();
+  const ifoodMap = new Map();
+  const alelo = [];
+
+  okRows.forEach((row) => {
+    const destinoNorm = normalize(row.destino);
+    const cpf = onlyDigits(row.cpf).padStart(11, '0').slice(0, 11);
+    const valor = roundNumber(row.valor);
+    if (!cpf || cpf.length !== 11 || !valor) return;
+    if (destinoNorm.includes('flash')) {
+      if (!flashMap.has(cpf)) flashMap.set(cpf, { cpf, nome: row.funcionario, valor: 0 });
+      flashMap.get(cpf).valor = roundNumber(flashMap.get(cpf).valor + valor);
+      return;
+    }
+    if (destinoNorm.includes('ifood')) {
+      if (!ifoodMap.has(cpf)) {
+        ifoodMap.set(cpf, {
+          cnpj: PAGAMENTO_IFOOD_CNPJ,
+          nome: row.funcionario,
+          cpf,
+          nascimento: row.nascimento || '',
+          email: row.email || '',
+          celular: row.celular || '',
+          centro_custo: row.coordenacao || row.supervisao || '',
+          livre: 0
+        });
+      }
+      ifoodMap.get(cpf).livre = roundNumber(ifoodMap.get(cpf).livre + valor);
+      return;
+    }
+    if (destinoNorm.includes('alelo')) {
+      alelo.push({ serie: row.serie || '', cpf, valor, observacao: row.composicao || row.observacao || '', nome: row.funcionario });
+    }
+  });
+
+  return {
+    flash: Array.from(flashMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
+    ifood: Array.from(ifoodMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
+    alelo,
+    okRows
+  };
+}
+
+async function fetchAlreadyPaidMap(hashes = []) {
+  const result = new Map();
+  const clean = [...new Set((hashes || []).filter(Boolean))];
+  if (!clean.length) return result;
+  for (let i = 0; i < clean.length; i += 500) {
+    const slice = clean.slice(i, i + 500);
+    const { data, error } = await supabase
+      .from('financeiro_pagamentos_linhas')
+      .select('unique_hash,status,pago_em')
+      .in('unique_hash', slice);
+    if (error) {
+      console.warn('[Financeiro] Tabela financeiro_pagamentos_linhas indisponível:', error.message);
+      return result;
+    }
+    (data || []).forEach((row) => {
+      if (String(row.status || '').toUpperCase() === 'PAGO') result.set(row.unique_hash, row);
+    });
+  }
+  return result;
+}
+
+async function syncPaidStatus(apuracao = {}) {
+  const rows = apuracao.conferencia || [];
+  const paid = await fetchAlreadyPaidMap(rows.map((row) => row.unique_hash));
+  if (!paid.size) return apuracao;
+  return {
+    ...apuracao,
+    conferencia: rows.map((row) => paid.has(row.unique_hash) ? { ...row, status_pagamento: 'PAGO', observacao: 'PAGO - bloqueado para evitar duplicidade' } : row)
+  };
+}
+
+function groupNotasFiscaisResumo(rows = [], execucaoId = null) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const regional = row.coordenacao || row.supervisao || 'Sem regional';
+    const destino = row.destino || 'Pagamento';
+    const key = `${regional}|${destino}`;
+    if (!map.has(key)) map.set(key, { pagamento_execucao_id: execucaoId, data_pagamento: new Date().toISOString().slice(0, 10), regional, destino, valor_total: 0, quantidade: 0, modulo_origem: 'FINANCEIRO' });
+    const item = map.get(key);
+    item.valor_total = roundNumber(item.valor_total + Number(row.valor || 0));
+    item.quantidade += 1;
+  });
+  return Array.from(map.values());
+}
+
 function worksheetFromObjects(rows, columns) {
   const data = [columns.map((c) => c.label)];
   rows.forEach((row) => data.push(columns.map((c) => c.format ? c.format(row[c.key], row) : row[c.key])));
@@ -806,6 +888,8 @@ initProtectedPage('Financeiro', (content, userContext) => {
       .fin-wrap{display:grid;gap:18px}.fin-hero{border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:22px;background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(22,101,52,.28));box-shadow:0 20px 50px rgba(2,6,23,.22)}
       .fin-hero h2{margin:0 0 6px;font-size:28px;color:#f8fafc}.fin-hero p{margin:0;color:#cbd5e1}.fin-actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.fin-grid{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:12px}.fin-kpi{border:1px solid rgba(148,163,184,.16);border-radius:20px;padding:16px;background:rgba(15,23,42,.86)}.fin-kpi span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.fin-kpi strong{display:block;margin-top:8px;color:#f8fafc;font-size:22px}.fin-kpi small{color:#94a3b8}.fin-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(15,23,42,.82);padding:18px;box-shadow:0 18px 42px rgba(2,6,23,.18)}
       .fin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.fin-head h3{margin:0;color:#f8fafc}.fin-head p{margin:4px 0 0;color:#94a3b8}.pay-grid{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:14px}.pay-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(2,6,23,.34);padding:16px}.pay-card h4{margin:0 0 6px;color:#f8fafc;font-size:18px}.pay-card p{margin:0 0 14px;color:#94a3b8}.pay-summary{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:14px 0}.pay-mini{border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:12px;background:rgba(15,23,42,.7)}.pay-mini span{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.pay-mini strong{display:block;margin-top:5px;color:#f8fafc;font-size:18px}.pay-subtabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.pay-subtab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:8px 12px;cursor:pointer}.pay-subtab.active{background:#14532d;color:#fff;border-color:#22c55e}.pay-table{display:none}.pay-table.active{display:block}@media(max-width:1100px){.pay-grid,.pay-summary{grid-template-columns:1fr 1fr}}@media(max-width:700px){.pay-grid,.pay-summary{grid-template-columns:1fr}}.fin-tabs{display:flex;gap:8px;flex-wrap:wrap}.fin-tab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:9px 14px;cursor:pointer}.fin-tab.active{background:#166534;color:#fff;border-color:#22c55e}.fin-panel{display:none}.fin-panel.active{display:block}.fin-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.fin-field{display:grid;gap:6px}.fin-field.full{grid-column:1/-1}.fin-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.fin-field input,.fin-field select,.fin-field textarea{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0f172a;color:#e5e7eb;padding:10px 12px;color-scheme:dark}.fin-field textarea{min-height:78px;resize:vertical}.fin-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.fin-table{width:100%;border-collapse:collapse;min-width:860px}.fin-table th,.fin-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;color:#e5e7eb}.fin-table th{background:rgba(15,23,42,.96);color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.fin-table tr:hover td{background:rgba(34,197,94,.06)}.fin-muted{display:block;color:#94a3b8;font-size:12px;margin-top:3px}.fin-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.fin-status.ok{background:rgba(34,197,94,.14);color:#86efac}.fin-status.danger{background:rgba(239,68,68,.14);color:#fecaca}.fin-status.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}.fin-import-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}.fin-drop{border:1px dashed rgba(34,197,94,.45);border-radius:20px;padding:18px;background:rgba(22,101,52,.1)}.pay-upload{border:1px dashed rgba(34,197,94,.45);border-radius:18px;background:rgba(22,101,52,.08);padding:14px;min-height:78px;display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;transition:.16s ease}.pay-upload:hover,.pay-upload.dragging{border-color:#22c55e;background:rgba(22,101,52,.18);transform:translateY(-1px)}.pay-upload input{display:none}.pay-upload strong{display:block;color:#e5e7eb;font-size:13px}.pay-upload span{display:block;color:#94a3b8;font-size:12px;margin-top:4px;word-break:break-word}.pay-upload.has-file{border-style:solid;background:rgba(34,197,94,.14)}.fin-feedback{color:#94a3b8;font-size:13px}.fin-feedback.ok{color:#86efac}.fin-feedback.err{color:#fecaca}.fin-empty{text-align:center;color:#94a3b8;padding:24px!important}.fin-small{padding:8px 12px!important;font-size:13px!important}@media(max-width:1100px){.fin-grid{grid-template-columns:repeat(2,1fr)}.fin-form,.fin-import-grid{grid-template-columns:1fr}}@media(max-width:700px){.fin-grid{grid-template-columns:1fr}.fin-head{display:grid}}
+
+      .pay-mode-switch{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}.pay-mode-btn{border:1px solid rgba(148,163,184,.22);background:#08111f;color:#cbd5e1;border-radius:16px;padding:13px 18px;font-weight:900;cursor:pointer}.pay-mode-btn.active{background:linear-gradient(135deg,#166534,#22c55e);color:#052e16;border-color:#22c55e}.pay-mode-panel{display:none}.pay-mode-panel.active{display:block}.pay-toolbar{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:14px 0}.pay-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;align-items:end}.pay-status-select{min-width:110px;border:1px solid rgba(148,163,184,.22);border-radius:12px;background:#0f172a;color:#e5e7eb;padding:8px;color-scheme:dark}.pay-footer{position:sticky;bottom:12px;z-index:2;margin-top:16px;border:1px solid rgba(34,197,94,.24);border-radius:20px;background:rgba(2,6,23,.94);backdrop-filter:blur(12px);padding:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 18px 45px rgba(2,6,23,.38)}.pay-footer strong{display:block;color:#f8fafc}.pay-footer span{display:block;color:#94a3b8;font-size:12px;margin-top:3px}.btn-pay-final{border:0;border-radius:16px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;font-weight:1000;padding:14px 28px;cursor:pointer}.btn-pay-final:disabled{opacity:.45;cursor:not-allowed}.pay-note{border:1px solid rgba(59,130,246,.24);background:rgba(37,99,235,.10);border-radius:16px;padding:12px;color:#bfdbfe;font-size:13px}.fin-status.pendente{background:rgba(245,158,11,.14);color:#fde68a}.fin-status.pago{background:rgba(59,130,246,.14);color:#bfdbfe}@media(max-width:900px){.pay-filter-grid{grid-template-columns:1fr 1fr}.pay-footer{position:static;display:grid}.btn-pay-final{width:100%}}@media(max-width:620px){.pay-filter-grid{grid-template-columns:1fr}}
     </style>
     <section class="fin-wrap">
       <div class="fin-hero">
@@ -886,58 +970,72 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
         <div class="fin-panel" id="tab-pagamentos">
           <div class="fin-head">
-            <div><h3>Pagamentos</h3><p>Gere, confira em tela e exporte arquivos de pagamento.</p></div>
+            <div><h3>Pagamentos</h3><p>Área única para gerar, conferir e pagar benefícios/adiantamentos sem duplicidade.</p></div>
           </div>
-          <div class="pay-grid">
-            <section class="pay-card">
-              <h4>ADIANTAMENTOS</h4>
-              <p>Importe a planilha Solicitações Caixa Operacional. O painel usa as linhas aprovadas, separa por conta GRAOMIL FLASH/iFood e gera os XLS de pagamento para conferência.</p>
-              <div class="fin-form">
-                <div class="fin-field wide"><label>Planilha de adiantamentos</label><label class="pay-upload" for="adiantFileExtrato" data-drop-for="adiantFileExtrato"><input id="adiantFileExtrato" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileExtratoName">Nenhum arquivo selecionado</span></span></label></div>
-                <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAdiantamentos" type="button">Gerar adiantamentos</button></div>
-                <div class="fin-field"><label>&nbsp;</label><span id="fbAdiantamentos" class="fin-feedback"></span></div>
-              </div>
-            </section>
-            <section class="pay-card">
-              <h4>ALIMENTAÇÃO</h4>
-              <p>Usa a Produção Diária já importada no menu Importar Relatórios. O painel paga somente o valor de alimentação por colaborador/dia. Para diária, use o botão Diárias, exclusivo para contrato Diarista.</p>
-              <div class="fin-form">
-                <div class="fin-field"><label>Data inicial</label><input id="alimInicio" type="date" value="${esc(state.filters.inicio)}"></div>
-                <div class="fin-field"><label>Data final</label><input id="alimFim" type="date" value="${esc(state.currentDate)}"></div>
-                <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAlimentacao" type="button">Gerar alimentação</button></div>
-                <div class="fin-field"><label>&nbsp;</label><button class="btn btn-secondary" id="btnGerarDiarias" type="button">Diárias</button></div>
-                <div class="fin-field"><label>&nbsp;</label><span id="fbAlimentacao" class="fin-feedback"></span></div>
-              </div>
-            </section>
+
+          <div class="pay-mode-switch">
+            <button class="pay-mode-btn active" data-pay-mode="adiantamentos" type="button">ADIANTAMENTOS</button>
+            <button class="pay-mode-btn" data-pay-mode="pagamentos" type="button">PAGAMENTOS</button>
           </div>
+
+          <section class="pay-card pay-mode-panel active" id="pay-mode-adiantamentos">
+            <h4>ADIANTAMENTOS</h4>
+            <p>Suba a planilha de adiantamentos. O painel separa Flash/iFood e prepara a conferência para pagamento.</p>
+            <div class="pay-filter-grid">
+              <div class="fin-field"><label>Planilha de adiantamentos</label><label class="pay-upload" for="adiantFileExtrato" data-drop-for="adiantFileExtrato"><input id="adiantFileExtrato" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileExtratoName">Nenhum arquivo selecionado</span></span></label></div>
+              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAdiantamentos" type="button">Gerar adiantamentos</button></div>
+              <div class="fin-field"><label>Status padrão</label><select id="payDefaultStatus"><option value="OK" selected>OK</option><option value="PENDENTE">PENDENTE</option></select></div>
+              <div class="fin-field"><label>&nbsp;</label><span id="fbAdiantamentos" class="fin-feedback"></span></div>
+            </div>
+          </section>
+
+          <section class="pay-card pay-mode-panel" id="pay-mode-pagamentos">
+            <h4>PAGAMENTOS</h4>
+            <p>Consulte a Produção Diária importada, gere alimentação ou diárias e marque cada linha como OK ou PENDENTE antes de pagar.</p>
+            <div class="pay-filter-grid">
+              <div class="fin-field"><label>Data inicial</label><input id="alimInicio" type="date" value="${esc(state.filters.inicio)}"></div>
+              <div class="fin-field"><label>Data final</label><input id="alimFim" type="date" value="${esc(state.currentDate)}"></div>
+              <div class="fin-field"><label>Tipo</label><select id="payTipoGeracao"><option value="alimentacao" selected>Alimentação</option><option value="diarias">Diárias</option></select></div>
+              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarPagamentoPeriodo" type="button">Consultar pagamentos</button></div>
+              <div class="fin-field full"><span id="fbAlimentacao" class="fin-feedback"></span></div>
+            </div>
+          </section>
 
           <div class="pay-summary">
             <div class="pay-mini"><span>Tipo</span><strong id="payTipo">-</strong></div>
             <div class="pay-mini"><span>Período</span><strong id="payPeriodo">-</strong></div>
-            <div class="pay-mini"><span>Registros</span><strong id="payRegistros">0</strong></div>
-            <div class="pay-mini"><span>Total</span><strong id="payTotal">R$ 0,00</strong></div>
+            <div class="pay-mini"><span>Registros OK</span><strong id="payRegistros">0</strong></div>
+            <div class="pay-mini"><span>Total OK</span><strong id="payTotal">R$ 0,00</strong></div>
           </div>
 
-          <div class="fin-actions-row">
-            <button class="btn btn-secondary" id="btnExportFlash" type="button">Baixar Flash XLSX</button>
-            <button class="btn btn-secondary" id="btnExportIfood" type="button">Baixar iFood XLSX</button>
-            <button class="btn btn-secondary" id="btnExportAlelo" type="button">Baixar Alelo CSV</button>
-            <button class="btn btn-secondary" id="btnExportConferencia" type="button">Baixar conferência XLSX</button>
+          <div class="pay-note">Somente linhas marcadas como <strong>OK</strong> entram no botão <strong>PAGAR</strong>. Linhas <strong>PENDENTES</strong> permanecem para o financeiro resolver depois. Linhas <strong>PAGO</strong> são bloqueadas para evitar duplicidade.</div>
+
+          <div class="pay-toolbar">
+            <div class="pay-subtabs">
+              <button class="pay-subtab active" data-pay-tab="conferencia" type="button">Conferência</button>
+              <button class="pay-subtab" data-pay-tab="flash" type="button">Flash</button>
+              <button class="pay-subtab" data-pay-tab="ifood" type="button">iFood</button>
+              <button class="pay-subtab" data-pay-tab="alelo" type="button">Alelo</button>
+              <button class="pay-subtab" data-pay-tab="logs" type="button">Pendências</button>
+            </div>
+            <div class="fin-actions-row">
+              <button class="btn btn-secondary fin-small" id="btnExportFlash" type="button">Baixar Flash XLSX</button>
+              <button class="btn btn-secondary fin-small" id="btnExportIfood" type="button">Baixar iFood XLSX</button>
+              <button class="btn btn-secondary fin-small" id="btnExportAlelo" type="button">Baixar Alelo CSV</button>
+              <button class="btn btn-secondary fin-small" id="btnExportConferencia" type="button">Baixar conferência XLSX</button>
+            </div>
           </div>
 
-          <div class="pay-subtabs">
-            <button class="pay-subtab active" data-pay-tab="conferencia" type="button">Conferência</button>
-            <button class="pay-subtab" data-pay-tab="flash" type="button">Flash</button>
-            <button class="pay-subtab" data-pay-tab="ifood" type="button">iFood</button>
-            <button class="pay-subtab" data-pay-tab="alelo" type="button">Alelo</button>
-            <button class="pay-subtab" data-pay-tab="logs" type="button">Pendências</button>
-          </div>
-
-          <div class="pay-table active" id="pay-conferencia"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Colaborador</th><th>CPF</th><th>Destino</th><th>Tipo</th><th>Valor</th><th>Composição</th><th>Supervisão</th><th>Observação</th></tr></thead><tbody id="payConferenciaTbody"><tr><td colspan="9" class="fin-empty">Gere um pagamento para conferir.</td></tr></tbody></table></div></div>
+          <div class="pay-table active" id="pay-conferencia"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Status</th><th>Data</th><th>Colaborador</th><th>CPF</th><th>Destino</th><th>Tipo</th><th>Valor</th><th>Composição</th><th>Supervisão</th><th>Observação</th></tr></thead><tbody id="payConferenciaTbody"><tr><td colspan="10" class="fin-empty">Gere um pagamento para conferir.</td></tr></tbody></table></div></div>
           <div class="pay-table" id="pay-flash"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CPF</th><th>Nome</th><th>Valor</th></tr></thead><tbody id="payFlashTbody"><tr><td colspan="3" class="fin-empty">Nenhum arquivo Flash gerado.</td></tr></tbody></table></div></div>
           <div class="pay-table" id="pay-ifood"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CNPJ</th><th>Nome</th><th>CPF</th><th>Nascimento</th><th>Email</th><th>Celular</th><th>Centro de custo</th><th>Livre</th></tr></thead><tbody id="payIfoodTbody"><tr><td colspan="8" class="fin-empty">Nenhum arquivo iFood gerado.</td></tr></tbody></table></div></div>
           <div class="pay-table" id="pay-alelo"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Número de Série</th><th>CPF</th><th>Valor da Carga</th><th>Observação</th><th>Nome</th></tr></thead><tbody id="payAleloTbody"><tr><td colspan="5" class="fin-empty">Nenhum arquivo Alelo gerado.</td></tr></tbody></table></div></div>
           <div class="pay-table" id="pay-logs"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data/Linha</th><th>Colaborador</th><th>Status</th><th>Mensagem</th></tr></thead><tbody id="payLogsTbody"><tr><td colspan="4" class="fin-empty">Nenhuma pendência.</td></tr></tbody></table></div></div>
+
+          <div class="pay-footer">
+            <div><strong id="payFooterTotal">Total pronto para pagar: R$ 0,00</strong><span id="payFooterHint">Gere ou importe pagamentos para liberar o botão.</span></div>
+            <button class="btn-pay-final" id="btnPagarBeneficios" type="button" disabled>PAGAR</button>
+          </div>
         </div>
       </article>
     </section>
@@ -1098,7 +1196,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
 
 
-  state.pagamentos = { tipo: null, periodo: '', conferencia: [], flash: [], ifood: [], alelo: [], logs: [] };
+  state.pagamentos = { tipo: null, periodo: '', conferencia: [], flash: [], ifood: [], alelo: [], logs: [], modo: 'adiantamentos' };
 
   function paySetFeedback(id, text, type = '') {
     setFeedback(id, text, type);
@@ -1112,34 +1210,51 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
   function updatePaySummary() {
     const p = state.pagamentos;
-    const total = [...(p.conferencia || []), ...(p.alelo || [])].reduce((sum, row) => sum + Number(row.valor || 0), 0);
-    const registros = (p.conferencia || []).length || ((p.flash || []).length + (p.ifood || []).length + (p.alelo || []).length);
-    document.getElementById('payTipo').textContent = p.tipo || '-';
-    document.getElementById('payPeriodo').textContent = p.periodo || '-';
-    document.getElementById('payRegistros').textContent = String(registros);
-    document.getElementById('payTotal').textContent = money(total);
+    const outputs = buildPaymentOutputs(p.conferencia || []);
+    const total = outputs.okRows.reduce((sum, row) => sum + Number(row.valor || 0), 0);
+    const registros = outputs.okRows.length;
+    if (document.getElementById('payTipo')) document.getElementById('payTipo').textContent = p.tipo || '-';
+    if (document.getElementById('payPeriodo')) document.getElementById('payPeriodo').textContent = p.periodo || '-';
+    if (document.getElementById('payRegistros')) document.getElementById('payRegistros').textContent = String(registros);
+    if (document.getElementById('payTotal')) document.getElementById('payTotal').textContent = money(total);
+    if (document.getElementById('payFooterTotal')) document.getElementById('payFooterTotal').textContent = `Total pronto para pagar: ${money(total)}`;
+    if (document.getElementById('payFooterHint')) {
+      const pendentes = (p.conferencia || []).filter((row) => String(row.status_pagamento || '').toUpperCase() === 'PENDENTE').length;
+      const pagos = (p.conferencia || []).filter((row) => String(row.status_pagamento || '').toUpperCase() === 'PAGO').length;
+      document.getElementById('payFooterHint').textContent = `${registros} OK · ${pendentes} pendente(s) · ${pagos} já pago(s)`;
+    }
+    if (document.getElementById('btnPagarBeneficios')) document.getElementById('btnPagarBeneficios').disabled = registros <= 0;
+    state.pagamentos.flash = outputs.flash;
+    state.pagamentos.ifood = outputs.ifood;
+    state.pagamentos.alelo = outputs.alelo;
   }
 
   function renderPayTables() {
     const p = state.pagamentos;
-    document.getElementById('payConferenciaTbody').innerHTML = p.conferencia?.length ? p.conferencia.map((r) => `
-      <tr><td>${brDate(r.data)}</td><td><strong>${esc(r.funcionario || '-')}</strong></td><td>${esc(r.cpf || '-')}</td><td>${esc(r.destino || '-')}</td><td>${esc(r.tipo || '-')}</td><td>${money(r.valor)}</td><td>${esc(r.composicao || '-')}</td><td>${esc(r.supervisao || '-')}</td><td>${esc(r.observacao || '-')}</td></tr>
-    `).join('') : `<tr><td colspan="9" class="fin-empty">Nenhuma conferência gerada.</td></tr>`;
+    updatePaySummary();
+    document.getElementById('payConferenciaTbody').innerHTML = p.conferencia?.length ? p.conferencia.map((r, idx) => {
+      const st = String(r.status_pagamento || 'OK').toUpperCase();
+      const disabled = st === 'PAGO' ? 'disabled' : '';
+      const statusCell = st === 'PAGO'
+        ? `<span class="fin-status pago">PAGO</span>`
+        : `<select class="pay-status-select" data-pay-status-index="${idx}" ${disabled}><option value="OK" ${st === 'OK' ? 'selected' : ''}>OK</option><option value="PENDENTE" ${st === 'PENDENTE' ? 'selected' : ''}>PENDENTE</option></select>`;
+      return `<tr><td>${statusCell}</td><td>${brDate(r.data)}</td><td><strong>${esc(r.funcionario || '-')}</strong></td><td>${esc(r.cpf || '-')}</td><td>${esc(r.destino || '-')}</td><td>${esc(r.tipo || '-')}</td><td>${money(r.valor)}</td><td>${esc(r.composicao || '-')}</td><td>${esc(r.supervisao || '-')}</td><td>${esc(r.observacao || '-')}</td></tr>`;
+    }).join('') : `<tr><td colspan="10" class="fin-empty">Nenhuma conferência gerada.</td></tr>`;
 
     document.getElementById('payFlashTbody').innerHTML = p.flash?.length ? p.flash.map((r) => `
       <tr><td>${esc(r.cpf || '-')}</td><td><strong>${esc(r.nome || '-')}</strong></td><td>${money(r.valor)}</td></tr>
-    `).join('') : `<tr><td colspan="3" class="fin-empty">Nenhum arquivo Flash gerado.</td></tr>`;
+    `).join('') : `<tr><td colspan="3" class="fin-empty">Nenhum pagamento Flash OK.</td></tr>`;
 
     document.getElementById('payIfoodTbody').innerHTML = p.ifood?.length ? p.ifood.map((r) => `
       <tr><td>${esc(r.cnpj || '-')}</td><td><strong>${esc(r.nome || '-')}</strong></td><td>${esc(r.cpf || '-')}</td><td>${esc(formatDateForXlsx(r.nascimento) || '-')}</td><td>${esc(r.email || '-')}</td><td>${esc(r.celular || '-')}</td><td>${esc(r.centro_custo || '-')}</td><td>${money(r.livre ?? r.valor)}</td></tr>
-    `).join('') : `<tr><td colspan="8" class="fin-empty">Nenhum arquivo iFood gerado.</td></tr>`;
+    `).join('') : `<tr><td colspan="8" class="fin-empty">Nenhum pagamento iFood OK.</td></tr>`;
 
     document.getElementById('payAleloTbody').innerHTML = p.alelo?.length ? p.alelo.map((r) => `
       <tr><td>${esc(r.serie || '-')}</td><td>${esc(r.cpf || '-')}</td><td>${money(r.valor)}</td><td>${esc(r.observacao || '-')}</td><td>${esc(r.nome || '-')}</td></tr>
-    `).join('') : `<tr><td colspan="5" class="fin-empty">Nenhum arquivo Alelo gerado.</td></tr>`;
+    `).join('') : `<tr><td colspan="5" class="fin-empty">Nenhum pagamento Alelo OK.</td></tr>`;
 
     document.getElementById('payLogsTbody').innerHTML = p.logs?.length ? p.logs.map((r) => `
-      <tr><td>${esc(r.data ? brDate(r.data) : (r.linha ? `Linha ${r.linha}` : '-'))}</td><td><strong>${esc(r.funcionario || '-')}</strong></td><td>${esc(r.status || r.tipo || '-')}</td><td>${esc(r.mensagem || '-')}</td></tr>
+      <tr><td>${esc(r.data ? brDate(r.data) : (r.linha ? `Linha ${r.linha}` : '-'))}</td><td><strong>${esc(r.funcionario || '-')}</strong></td><td><span class="fin-status ${paymentStatusClass(r.status || r.tipo)}">${esc(r.status || r.tipo || '-')}</span></td><td>${esc(r.mensagem || '-')}</td></tr>
     `).join('') : `<tr><td colspan="4" class="fin-empty">Nenhuma pendência.</td></tr>`;
     updatePaySummary();
   }
@@ -1154,14 +1269,15 @@ initProtectedPage('Financeiro', (content, userContext) => {
     try {
       paySetFeedback('fbAlimentacao', `Consultando Produção Diária importada e colaboradores para ${label.toLowerCase()}...`);
       const [rhMap, producao] = await Promise.all([loadColaboradoresPagamento(fim), loadProducaoPagamento(inicio, fim)]);
-      const apuracao = isDiarias ? apurarDiariasRows(producao, rhMap) : apurarAlimentacaoRows(producao, rhMap);
+      let apuracao = isDiarias ? apurarDiariasRows(producao, rhMap) : apurarAlimentacaoRows(producao, rhMap);
+      apuracao = await syncPaidStatus(normalizePaymentRows(apuracao, document.getElementById('payDefaultStatus')?.value || 'OK'));
       if (!apuracao.conferencia.length && apuracao.logs.length) {
         paySetFeedback('fbAlimentacao', `Produção localizada, mas sem colaboradores válidos. Verifique Pendências: ${apuracao.logs.length}.`, 'err');
       }
       if (!apuracao.conferencia.length && !apuracao.logs.length) {
         paySetFeedback('fbAlimentacao', isDiarias ? 'Nenhum colaborador com contrato Diarista localizado no período.' : 'Nenhuma alimentação gerada no período.', 'err');
       }
-      state.pagamentos = { tipo: label, periodo: dateRangeLabel(inicio, fim), ...apuracao };
+      state.pagamentos = { tipo: label, periodo: dateRangeLabel(inicio, fim), modo: 'pagamentos', ...apuracao };
       renderPayTables();
       setPayTab('conferencia');
       paySetFeedback('fbAlimentacao', `Gerado da Produção Diária importada: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências.`, 'ok');
@@ -1189,10 +1305,10 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
       if (isSolicitacaoDespesasFile(extratoRows)) {
         paySetFeedback('fbAdiantamentos', 'Formato antigo detectado. Lendo base de colaboradores...');
-        const datasAdiantamento = extratoRows.map((row) => parseDateLoose(getAny(row, ['Data de Solicitação', 'Data de Solicitacao', 'Data']))).filter(Boolean).sort();
-        const rhMap = await loadColaboradoresPagamento(datasAdiantamento[datasAdiantamento.length - 1] || state.currentDate);
-        const apuracao = buildSolicitacaoDespesasRows(extratoRows, rhMap);
-        state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, ...apuracao };
+        const rhMap = await loadColaboradoresPagamento(state.currentDate);
+        let apuracao = buildSolicitacaoDespesasRows(extratoRows, rhMap);
+        apuracao = await syncPaidStatus(normalizePaymentRows(apuracao, document.getElementById('payDefaultStatus')?.value || 'OK'));
+        state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, modo: 'adiantamentos', ...apuracao };
         renderPayTables();
         setPayTab('conferencia');
         paySetFeedback('fbAdiantamentos', `Gerado da Solicitação de Despesas: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências/ignorados.`, 'ok');
@@ -1205,13 +1321,119 @@ initProtectedPage('Financeiro', (content, userContext) => {
         ...apuracao.ifood.map((r) => ({ data: r.data || '', funcionario: r.nome, cpf: r.cpf, destino: 'iFood', tipo: 'Adiantamento', valor: r.livre, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: 'OK' })),
         ...apuracao.flash.map((r) => ({ data: r.data || '', funcionario: r.nome, cpf: r.cpf, destino: 'Flash', tipo: 'Adiantamento', valor: r.valor, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: 'OK' }))
       ];
-      state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, conferencia, flash: apuracao.flash, ifood: apuracao.ifood, alelo: apuracao.alelo, logs: apuracao.logs };
+      let mergedApuracao = await syncPaidStatus(normalizePaymentRows({ conferencia, flash: apuracao.flash, ifood: apuracao.ifood, alelo: apuracao.alelo, logs: apuracao.logs }, document.getElementById('payDefaultStatus')?.value || 'OK'));
+      state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, modo: 'adiantamentos', ...mergedApuracao };
       renderPayTables();
       setPayTab('conferencia');
       paySetFeedback('fbAdiantamentos', `Gerado: ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.alelo.length} Alelo, ${apuracao.logs.length} pendências/ignorados.`, 'ok');
     } catch (err) {
       console.error(err);
       paySetFeedback('fbAdiantamentos', err.message || 'Erro ao gerar adiantamentos.', 'err');
+    }
+  }
+
+
+  function setPayMode(mode) {
+    const clean = mode === 'pagamentos' ? 'pagamentos' : 'adiantamentos';
+    state.pagamentos.modo = clean;
+    document.querySelectorAll('.pay-mode-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.payMode === clean));
+    document.querySelectorAll('.pay-mode-panel').forEach((panel) => panel.classList.remove('active'));
+    document.getElementById(`pay-mode-${clean}`)?.classList.add('active');
+  }
+
+  async function gerarPagamentoPeriodo() {
+    const modo = document.getElementById('payTipoGeracao')?.value || 'alimentacao';
+    return gerarProducaoPagamento(modo);
+  }
+
+  async function salvarResumoNotasFiscais(rows, execucaoId = null) {
+    const resumo = groupNotasFiscaisResumo(rows, execucaoId);
+    if (!resumo.length) return;
+    const { error } = await supabase.from('financeiro_notas_fiscais_resumo').upsert(resumo, {
+      onConflict: 'data_pagamento,regional,destino,modulo_origem'
+    });
+    if (error) throw error;
+  }
+
+  async function registrarLinhasPagamento(rows, execucaoId, status = 'PAGO', apiRetorno = null) {
+    const payload = (rows || []).map((row) => ({
+      execucao_id: execucaoId,
+      unique_hash: row.unique_hash || makePaymentHash(row),
+      data: row.data || null,
+      funcionario: row.funcionario || null,
+      cpf: onlyDigits(row.cpf) || null,
+      destino: row.destino || null,
+      tipo: row.tipo || null,
+      valor: Number(row.valor || 0),
+      composicao: row.composicao || null,
+      coordenacao: row.coordenacao || null,
+      supervisao: row.supervisao || null,
+      banco: row.banco || null,
+      observacao: row.observacao || null,
+      status,
+      pago_em: status === 'PAGO' ? new Date().toISOString() : null,
+      api_retorno: apiRetorno
+    }));
+    if (!payload.length) return;
+    const { error } = await supabase.from('financeiro_pagamentos_linhas').upsert(payload, { onConflict: 'unique_hash' });
+    if (error) throw error;
+  }
+
+  async function pagarBeneficios() {
+    const outputs = buildPaymentOutputs(state.pagamentos.conferencia || []);
+    const rows = outputs.okRows.filter((row) => ['flash', 'ifood'].some((destino) => normalize(row.destino).includes(destino)));
+    if (!rows.length) return paySetFeedback('fbAlimentacao', 'Nenhuma linha OK de Flash/iFood para pagar.', 'err');
+
+    try {
+      document.getElementById('btnPagarBeneficios').disabled = true;
+      paySetFeedback('fbAlimentacao', 'Conferindo duplicidades e enviando pagamento para Flash/iFood...');
+
+      const paid = await fetchAlreadyPaidMap(rows.map((row) => row.unique_hash || makePaymentHash(row)));
+      const elegiveis = rows.filter((row) => !paid.has(row.unique_hash || makePaymentHash(row)));
+      if (!elegiveis.length) {
+        paySetFeedback('fbAlimentacao', 'Todos os registros OK já constam como PAGO. Nenhum pagamento duplicado foi enviado.', 'ok');
+        state.pagamentos.conferencia = state.pagamentos.conferencia.map((row) => paid.has(row.unique_hash) ? { ...row, status_pagamento: 'PAGO', observacao: 'PAGO - bloqueado para evitar duplicidade' } : row);
+        renderPayTables();
+        return;
+      }
+
+      const total = elegiveis.reduce((sum, row) => sum + Number(row.valor || 0), 0);
+      const { data: execucao, error: execError } = await supabase.from('financeiro_pagamentos_execucoes').insert({
+        tipo: state.pagamentos.tipo || 'Pagamento',
+        periodo: state.pagamentos.periodo || null,
+        status: 'PROCESSANDO',
+        total_valor: roundNumber(total),
+        total_linhas: elegiveis.length,
+        responsavel: userContext?.user?.name || userContext?.user?.email || null
+      }).select('id').single();
+      if (execError) throw execError;
+
+      const apiPayload = {
+        execucao_id: execucao.id,
+        tipo: state.pagamentos.tipo,
+        periodo: state.pagamentos.periodo,
+        flash: buildPaymentOutputs(elegiveis).flash,
+        ifood: buildPaymentOutputs(elegiveis).ifood,
+        linhas: elegiveis
+      };
+
+      const { data: apiData, error: apiError } = await supabase.functions.invoke('financeiro-pagar-beneficios', { body: apiPayload });
+      if (apiError) throw new Error(apiError.message || 'Falha na API de pagamento Flash/iFood.');
+      if (apiData?.ok === false) throw new Error(apiData?.error || 'API de pagamento retornou erro.');
+
+      await registrarLinhasPagamento(elegiveis, execucao.id, 'PAGO', apiData || null);
+      await salvarResumoNotasFiscais(elegiveis, execucao.id);
+      await supabase.from('financeiro_pagamentos_execucoes').update({ status: 'PAGO', api_retorno: apiData || null }).eq('id', execucao.id);
+
+      const paidHashes = new Set(elegiveis.map((row) => row.unique_hash || makePaymentHash(row)));
+      state.pagamentos.conferencia = state.pagamentos.conferencia.map((row) => paidHashes.has(row.unique_hash || makePaymentHash(row)) ? { ...row, status_pagamento: 'PAGO', observacao: 'PAGO - bloqueado para evitar duplicidade' } : row);
+      renderPayTables();
+      setPayTab('conferencia');
+      paySetFeedback('fbAlimentacao', `Pagamento enviado e registrado: ${elegiveis.length} linha(s), ${money(total)}. Resumo enviado para Notas Fiscais.`, 'ok');
+    } catch (err) {
+      console.error(err);
+      paySetFeedback('fbAlimentacao', err.message || 'Erro ao pagar.', 'err');
+      updatePaySummary();
     }
   }
 
@@ -1310,9 +1532,18 @@ initProtectedPage('Financeiro', (content, userContext) => {
   }
 
   setupPagamentoDropzone('adiantFileExtrato');
-  document.getElementById('btnGerarAlimentacao').addEventListener('click', gerarAlimentacao);
-  document.getElementById('btnGerarDiarias').addEventListener('click', gerarDiarias);
+  document.getElementById('btnGerarPagamentoPeriodo').addEventListener('click', gerarPagamentoPeriodo);
   document.getElementById('btnGerarAdiantamentos').addEventListener('click', gerarAdiantamentos);
+  document.querySelectorAll('.pay-mode-btn').forEach((btn) => btn.addEventListener('click', () => setPayMode(btn.dataset.payMode)));
+  document.getElementById('btnPagarBeneficios').addEventListener('click', pagarBeneficios);
+  content.addEventListener('change', (event) => {
+    const select = event.target.closest('[data-pay-status-index]');
+    if (!select) return;
+    const idx = Number(select.dataset.payStatusIndex);
+    if (!Number.isInteger(idx) || !state.pagamentos.conferencia?.[idx]) return;
+    state.pagamentos.conferencia[idx].status_pagamento = select.value;
+    renderPayTables();
+  });
   document.querySelectorAll('.pay-subtab').forEach((btn) => btn.addEventListener('click', () => setPayTab(btn.dataset.payTab)));
   document.getElementById('btnExportFlash').addEventListener('click', () => exportPagamento('flash'));
   document.getElementById('btnExportIfood').addEventListener('click', () => exportPagamento('ifood'));
@@ -1330,6 +1561,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
   });
 
   window.addEventListener('hashchange', () => setTab(tabFromHash()));
+  setPayMode('adiantamentos');
   setTab(tabFromHash());
   loadFluxo();
 });
