@@ -178,6 +178,12 @@ function injectPlantaoStyles() {
     .plantao-mini-kpi b{display:block;font-size:22px;margin-top:4px}
     .plantao-radio-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
     .plantao-radio-row label{display:inline-flex;gap:8px;align-items:center;background:#0b1220;border:1px solid var(--line);border-radius:999px;padding:9px 12px;color:var(--text)}
+    .plantao-date-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.14);color:#dcfce7;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:800;margin-bottom:5px}
+    .plantao-consulta-list{display:grid;gap:10px}
+    .plantao-consulta-item{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);background:#0b1220;border-radius:16px;padding:12px}
+    .plantao-consulta-title{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:900}
+    .plantao-consulta-tags{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+    .plantao-tag{display:inline-flex;border:1px solid #334155;background:#111827;border-radius:999px;padding:5px 8px;color:var(--muted);font-size:12px}
     @media (max-width:980px){
       .plantao-field.third,.plantao-field.half,.plantao-field.quarter{grid-column:span 12}
       .plantao-add-grid,.plantao-person{grid-template-columns:1fr}
@@ -576,6 +582,142 @@ async function loadEscalaFromDb() {
   if (feedback) feedback.textContent = `${data?.length || 0} plantonista(s) carregado(s).`;
 }
 
+async function loadEscalaSingleDate(dataPlantao) {
+  if (!dataPlantao) return;
+  const ini = document.getElementById('plantaoData');
+  const fim = document.getElementById('plantaoDataFim');
+  const imgIni = document.getElementById('plantaoImgData');
+  const imgFim = document.getElementById('plantaoImgDataFim');
+  if (ini) ini.value = dataPlantao;
+  if (fim) fim.value = dataPlantao;
+  if (imgIni) imgIni.value = dataPlantao;
+  if (imgFim) imgFim.value = dataPlantao;
+  await loadEscalaFromDb();
+  switchTab('escala');
+}
+
+async function abrirImagemSingleDate(dataPlantao) {
+  if (!dataPlantao) return;
+  const imgIni = document.getElementById('plantaoImgData');
+  const imgFim = document.getElementById('plantaoImgDataFim');
+  if (imgIni) imgIni.value = dataPlantao;
+  if (imgFim) imgFim.value = dataPlantao;
+  await loadEscalaSingleDate(dataPlantao);
+  switchTab('divulgacao');
+  renderDivulgacaoControls();
+  await renderImagemPlantao();
+}
+
+function aggregateEscalasByDate(rows) {
+  const map = new Map();
+  (rows || []).forEach((row) => {
+    const key = row.data_plantao;
+    if (!map.has(key)) {
+      map.set(key, {
+        data_plantao: key,
+        eventos: new Set(),
+        setores: new Set(),
+        total: 0,
+        nomes: [],
+      });
+    }
+    const item = map.get(key);
+    item.total += 1;
+    if (row.evento) item.eventos.add(row.evento);
+    if (row.setor) item.setores.add(row.setor);
+    if (row.nome && item.nomes.length < 8) item.nomes.push(row.nome);
+  });
+
+  return Array.from(map.values())
+    .sort((a, b) => String(a.data_plantao).localeCompare(String(b.data_plantao)))
+    .map((item) => ({
+      ...item,
+      eventos: Array.from(item.eventos),
+      setores: Array.from(item.setores).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    }));
+}
+
+async function consultarDatasPlantao() {
+  const holder = document.getElementById('plantaoConsultaLista');
+  const feedback = document.getElementById('plantaoConsultaFeedback');
+  if (!holder) return;
+
+  const dataIni = document.getElementById('consultaDataIni')?.value || todayISO();
+  const dataFim = document.getElementById('consultaDataFim')?.value || addDaysISO(dataIni, 45);
+  const setor = document.getElementById('consultaSetor')?.value || 'todos';
+  const busca = norm(document.getElementById('consultaBusca')?.value || '');
+
+  holder.innerHTML = '';
+  if (feedback) {
+    feedback.classList.remove('error');
+    feedback.textContent = 'Consultando plantões salvos...';
+  }
+
+  try {
+    let query = supabase
+      .from('rh_plantao_escalas')
+      .select('id,data_plantao,evento,setor,nome,colaborador_key,hora_inicio,hora_fim')
+      .gte('data_plantao', dataIni)
+      .lte('data_plantao', dataFim)
+      .order('data_plantao', { ascending: true })
+      .order('setor', { ascending: true })
+      .order('ordem', { ascending: true });
+
+    if (setor !== 'todos') query = query.eq('setor', setor);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const filtered = busca
+      ? (data || []).filter((r) => norm(`${r.data_plantao} ${r.evento} ${r.setor} ${r.nome}`).includes(busca))
+      : (data || []);
+
+    const grouped = aggregateEscalasByDate(filtered);
+
+    if (!grouped.length) {
+      holder.innerHTML = '<div class="plantao-meta">Nenhum plantão salvo encontrado para os filtros informados.</div>';
+      if (feedback) feedback.textContent = '0 data(s) localizada(s).';
+      return;
+    }
+
+    holder.innerHTML = grouped.map((item) => `
+      <article class="plantao-consulta-item">
+        <div>
+          <div class="plantao-consulta-title">
+            <span class="plantao-date-pill">${esc(weekdayBR(item.data_plantao))} · ${esc(formatDateBR(item.data_plantao))}</span>
+            <span>${esc(item.eventos[0] || 'Plantão')}</span>
+          </div>
+          <div class="plantao-meta">${item.total} plantonista(s) · ${item.setores.length} setor(es)</div>
+          <div class="plantao-consulta-tags">
+            ${item.setores.slice(0, 8).map((s) => `<span class="plantao-tag">${esc(s)}</span>`).join('')}
+            ${item.setores.length > 8 ? `<span class="plantao-tag">+${item.setores.length - 8}</span>` : ''}
+          </div>
+          <div class="plantao-meta" style="margin-top:8px;">${esc(item.nomes.join(', ') || '-')}</div>
+        </div>
+        <div class="plantao-actions" style="justify-content:flex-end;">
+          <button type="button" class="plantao-btn secondary" data-consulta-carregar="${esc(item.data_plantao)}">Carregar</button>
+          <button type="button" class="plantao-btn primary" data-consulta-imagem="${esc(item.data_plantao)}">Imagem</button>
+        </div>
+      </article>
+    `).join('');
+
+    holder.querySelectorAll('[data-consulta-carregar]').forEach((btn) => {
+      btn.addEventListener('click', () => loadEscalaSingleDate(btn.dataset.consultaCarregar).catch(showLoadError));
+    });
+    holder.querySelectorAll('[data-consulta-imagem]').forEach((btn) => {
+      btn.addEventListener('click', () => abrirImagemSingleDate(btn.dataset.consultaImagem).catch(showLoadError));
+    });
+
+    if (feedback) feedback.textContent = `${grouped.length} data(s) localizada(s), com ${filtered.length} plantonista(s).`;
+  } catch (err) {
+    console.error(err);
+    if (feedback) {
+      feedback.classList.add('error');
+      feedback.textContent = `Erro ao consultar datas: ${err.message || err}`;
+    }
+  }
+}
+
 function renderKpis() {
   return `
     <div class="plantao-mini-kpis">
@@ -691,6 +833,7 @@ function renderSetores() {
           ${rows.length ? rows.map((row, idx) => `
             <div class="plantao-person" data-row="${idx}" data-setor="${esc(setor)}">
               <div>
+                <span class="plantao-date-pill">${esc(weekdayBR(row.data_plantao))} · ${esc(formatDateBR(row.data_plantao))}</span>
                 <strong>${esc(row.nome)}</strong>
                 <span>${esc(row.cpf || row.colaborador_key || '')}</span>
               </div>
@@ -855,7 +998,8 @@ async function saveEscala() {
 
     if (insertError) throw insertError;
 
-    feedback.textContent = `Plantão salvo com ${rows.length} plantonista(s).`;
+    feedback.textContent = `Plantão salvo com ${rows.length} plantonista(s), separado por ${new Set(rows.map((r) => r.data_plantao)).size} data(s).`;
+    if (document.getElementById('plantaoConsultaLista')) consultarDatasPlantao().catch(() => null);
     await loadEscalaFromDb();
   } catch (err) {
     console.error(err);
@@ -1184,10 +1328,19 @@ function renderDivulgacaoControls() {
   select.innerHTML = `<option value="todos">Todos os setores</option>${setores.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}`;
 }
 
+function renderConsultaSetores() {
+  const select = document.getElementById('consultaSetor');
+  if (!select) return;
+  const current = select.value || 'todos';
+  select.innerHTML = `<option value="todos">Todos os setores</option>${setores.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}`;
+  select.value = setores.includes(current) ? current : 'todos';
+}
+
 function switchTab(tab) {
   document.querySelectorAll('.plantao-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
   document.querySelectorAll('.plantao-panel').forEach((panel) => panel.classList.toggle('active', panel.dataset.panel === tab));
   if (tab === 'programacao') renderModeloTable();
+  if (tab === 'consulta') { renderConsultaSetores(); consultarDatasPlantao(); }
   if (tab === 'contatos') renderContatosTable();
   if (tab === 'divulgacao') {
     renderDivulgacaoControls();
@@ -1204,7 +1357,7 @@ function renderPage(content) {
       <div class="section-heading">
         <div>
           <h2>Plantão</h2>
-          <p class="section-subtitle">Monte a escala de final de semana por setor, cadastre mais de um plantonista e gere a arte de divulgação com telefone, e-mail e horário.</p>
+          <p class="section-subtitle">Monte a escala por data, cadastre mais de um plantonista por setor, consulte plantões salvos e gere a arte de divulgação com telefone, e-mail e horário.</p>
         </div>
       </div>
 
@@ -1213,6 +1366,7 @@ function renderPage(content) {
       <div class="plantao-tabs">
         <button type="button" class="plantao-tab active" data-tab="escala">Escala</button>
         <button type="button" class="plantao-tab" data-tab="programacao">Programar várias semanas</button>
+        <button type="button" class="plantao-tab" data-tab="consulta">Consultar datas</button>
         <button type="button" class="plantao-tab" data-tab="contatos">Contatos</button>
         <button type="button" class="plantao-tab" data-tab="divulgacao">Divulgação</button>
       </div>
@@ -1321,6 +1475,47 @@ function renderPage(content) {
         </div>
       </div>
 
+
+      <div class="plantao-panel" data-panel="consulta">
+        <div class="plantao-card">
+          <div class="section-heading">
+            <div>
+              <h3 style="margin:0 0 6px;">Consultar plantões salvos por data</h3>
+              <p class="plantao-meta">Cada data fica salva separadamente. Use esta lista para localizar um plantão antigo, carregar para edição ou gerar a imagem de divulgação daquela data.</p>
+            </div>
+          </div>
+
+          <div class="plantao-grid" style="margin-top:12px;">
+            <div class="plantao-field quarter">
+              <label class="plantao-label" for="consultaDataIni">Data inicial</label>
+              <input class="plantao-input" type="date" id="consultaDataIni" value="${dataIni}" />
+            </div>
+            <div class="plantao-field quarter">
+              <label class="plantao-label" for="consultaDataFim">Data final</label>
+              <input class="plantao-input" type="date" id="consultaDataFim" value="${addDaysISO(dataIni, 60)}" />
+            </div>
+            <div class="plantao-field quarter">
+              <label class="plantao-label" for="consultaSetor">Setor</label>
+              <select class="plantao-select" id="consultaSetor"></select>
+            </div>
+            <div class="plantao-field quarter">
+              <label class="plantao-label" for="consultaBusca">Buscar</label>
+              <input class="plantao-input" id="consultaBusca" placeholder="Nome, setor ou evento" />
+            </div>
+          </div>
+
+          <div class="plantao-actions" style="margin-top:14px;">
+            <button type="button" class="plantao-btn primary" id="btnConsultarDatasPlantao">Consultar datas</button>
+            <button type="button" class="plantao-btn secondary" id="btnConsultaProximos90">Próximos 90 dias</button>
+          </div>
+          <div class="plantao-feedback" id="plantaoConsultaFeedback"></div>
+        </div>
+
+        <div class="plantao-card" style="margin-top:14px;">
+          <div id="plantaoConsultaLista" class="plantao-consulta-list"></div>
+        </div>
+      </div>
+
       <div class="plantao-panel" data-panel="contatos">
         <div class="plantao-card">
           <div class="section-heading">
@@ -1386,6 +1581,18 @@ function renderPage(content) {
   document.getElementById('btnGerarProgramacaoPlantao')?.addEventListener('click', aplicarModeloNaEscala);
   document.getElementById('btnSalvarProgramacaoPlantao')?.addEventListener('click', saveEscala);
   document.getElementById('btnAddSetor')?.addEventListener('click', addSetor);
+  document.getElementById('btnConsultarDatasPlantao')?.addEventListener('click', consultarDatasPlantao);
+  document.getElementById('btnConsultaProximos90')?.addEventListener('click', () => {
+    const ini = todayISO();
+    document.getElementById('consultaDataIni').value = ini;
+    document.getElementById('consultaDataFim').value = addDaysISO(ini, 90);
+    consultarDatasPlantao();
+  });
+  ['consultaDataIni','consultaDataFim','consultaSetor'].forEach((id) => document.getElementById(id)?.addEventListener('change', consultarDatasPlantao));
+  document.getElementById('consultaBusca')?.addEventListener('input', () => {
+    clearTimeout(window.__plantaoConsultaTimer);
+    window.__plantaoConsultaTimer = setTimeout(consultarDatasPlantao, 250);
+  });
   document.getElementById('plantaoContatoBusca')?.addEventListener('input', renderContatosTable);
   document.getElementById('btnAtualizarImagem')?.addEventListener('click', renderImagemPlantao);
   document.getElementById('btnBaixarImagem')?.addEventListener('click', baixarImagemPlantao);
@@ -1400,6 +1607,7 @@ function renderPage(content) {
 
   buildEmptyEscala();
   renderSetores();
+  renderConsultaSetores();
   renderDivulgacaoControls();
 }
 
@@ -1425,6 +1633,7 @@ initProtectedPage('Plantão', async (content, userContext) => {
     renderSetores();
     renderContatosTable();
     renderModeloTable();
+    renderConsultaSetores();
     renderDivulgacaoControls();
     updateKpis();
     feedback.textContent = `Base carregada com ${colaboradores.length} colaborador(es). Preencha a escala, carregue um período salvo ou programe várias semanas.`;
