@@ -1735,6 +1735,148 @@
 
 
 
+  async function readProducaoDiariaRowsFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const mapped = [];
+    const dates = [];
+    const diagnostics = [];
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+      if (!rows?.length) continue;
+
+      const headerRow = findHeaderRow(rows, ['Data', 'Funcionário', 'Tons']);
+      const headers = (rows[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+      const iData = pickHeaderIndex(headers, ['Data', 'Data Produção', 'Data Producao', 'Data Referência', 'Data Referencia']);
+      const iCoord = pickHeaderIndex(headers, ['Coordenação', 'Coordenacao', 'Regional']);
+      const iSupervisao = pickHeaderIndex(headers, ['Supervisão', 'Supervisao']);
+      const iFuncionario = pickHeaderIndex(headers, ['Funcionário', 'Funcionario', 'Colaborador', 'Nome']);
+      const iTipo = pickHeaderIndex(headers, ['Tipo']);
+      const iOs = pickHeaderIndex(headers, ['O.S.', 'O.S', 'OS', 'Ordem de Serviço', 'Ordem de Servico']);
+      const iCliente = pickHeaderIndex(headers, ['Cliente']);
+      const iServico = pickHeaderIndex(headers, ['Serviço', 'Servico']);
+      const iCidade = pickHeaderIndex(headers, ['Cidade']);
+      const iLocal = pickHeaderIndex(headers, ['Local de Embarque', 'Local Embarque', 'Embarque']);
+      const iCheckin = pickHeaderIndex(headers, ['Check-in', 'Checkin', 'Entrada']);
+      const iCheckout = pickHeaderIndex(headers, ['Check-out', 'Checkout', 'Saída', 'Saida']);
+      const iCargas = pickHeaderIndex(headers, ['Cargas', 'Carga']);
+      const iTons = pickHeaderIndex(headers, ['Tons', 'Toneladas', 'Tonelada']);
+
+      diagnostics.push({ sheetName, headerRow: headerRow + 1, headers: headers.slice(0, 40), indexes: { iData, iFuncionario, iTons, iCargas, iOs } });
+      if (iData < 0 || iFuncionario < 0 || (iTons < 0 && iCargas < 0)) continue;
+
+      rows.slice(headerRow + 1).forEach((row) => {
+        const data = toIsoDate(row?.[iData]) || parseDataFromSheetName(sheetName);
+        const funcionario = iFuncionario >= 0 ? normalizeText(row?.[iFuncionario]) : null;
+        if (!data || !funcionario) return;
+        const tons = iTons >= 0 ? normalizeNumberBr(row?.[iTons]) : null;
+        const cargas = iCargas >= 0 ? normalizeNumberBr(row?.[iCargas]) : null;
+        if (tons === null && cargas === null) return;
+        dates.push(data);
+        mapped.push({
+          data_referencia: data,
+          data,
+          coordenacao: iCoord >= 0 ? normalizeText(row?.[iCoord]) : null,
+          supervisao: iSupervisao >= 0 ? normalizeText(row?.[iSupervisao]) : null,
+          funcionario,
+          tipo: iTipo >= 0 ? normalizeText(row?.[iTipo]) : null,
+          os: iOs >= 0 ? normalizeText(row?.[iOs]) : null,
+          cliente: iCliente >= 0 ? normalizeText(row?.[iCliente]) : null,
+          servico: iServico >= 0 ? normalizeText(row?.[iServico]) : null,
+          cidade: iCidade >= 0 ? normalizeText(row?.[iCidade]) : null,
+          local_embarque: iLocal >= 0 ? normalizeText(row?.[iLocal]) : null,
+          checkin: iCheckin >= 0 ? normalizeText(row?.[iCheckin]) : null,
+          checkout: iCheckout >= 0 ? normalizeText(row?.[iCheckout]) : null,
+          cargas: cargas ?? 0,
+          tons: tons ?? 0,
+        });
+      });
+    }
+
+    const uniqueDates = [...new Set(dates)].sort();
+    return {
+      rows: mapped,
+      period: uniqueDates.length ? { inicio: uniqueDates[0], fim: uniqueDates[uniqueDates.length - 1], totalDatas: uniqueDates.length } : null,
+      diagnostics,
+    };
+  }
+
+  async function detectarProducaoDiariaPorConteudo(file, detected) {
+    if (!['outros', 'producao'].includes(detected?.tipo)) return detected;
+    try {
+      const res = await readProducaoDiariaRowsFromFile(file);
+      if (res?.rows?.length) return { tipo: 'producao', titulo: 'Produção Diária' };
+    } catch (_) {}
+    return detected;
+  }
+
+  async function importarProducaoDiariaDaPlanilha(file, opts) {
+    const { rows, period, diagnostics } = await readProducaoDiariaRowsFromFile(file);
+    if (!rows.length) {
+      const detail = (diagnostics || []).map((d) => `${d.sheetName} linha ${d.headerRow}: ${d.headers.join(' | ')}`).join(' || ');
+      throw new Error(`A planilha de Produção Diária não possui linhas válidas. Cabeçalhos esperados: Data, Funcionário e Tons ou Cargas. Detectado: ${detail || 'nenhum cabeçalho'}`);
+    }
+
+    if (period?.inicio && period?.fim) {
+      const { error: delError } = await opts.supabase
+        .from('producao_snapshot')
+        .delete()
+        .gte('data', period.inicio)
+        .lte('data', period.fim);
+      if (delError) throw new Error(delError.message || 'Falha ao limpar período anterior da Produção Diária.');
+    }
+
+    const user = opts.user || opts.auth?.user || null;
+    const { data: importacao, error: impError } = await opts.supabase
+      .from('producao_importacoes')
+      .insert({
+        data_referencia: period?.fim || rows[0]?.data || null,
+        arquivo_nome: file.name,
+        origem: 'importar_relatorios_producao_diaria',
+        importado_por: user?.id || null,
+        status: 'processando',
+        total_linhas: rows.length,
+        observacoes: `Importado pelo menu Importar Relatórios${period?.inicio ? ` · ${period.inicio} a ${period.fim}` : ''}`,
+      })
+      .select()
+      .single();
+    if (impError) throw new Error(impError.message || 'Falha ao criar importação da Produção Diária.');
+
+    const batchSize = 500;
+    let total = 0;
+    try {
+      const withImport = rows.map((row) => ({ ...row, importacao_id: importacao.id }));
+      for (let i = 0; i < withImport.length; i += batchSize) {
+        const batch = withImport.slice(i, i + batchSize);
+        const { error } = await opts.supabase.from('producao_snapshot').insert(batch);
+        if (error) throw new Error(error.message || 'Falha ao gravar Produção Diária no Supabase.');
+        total += batch.length;
+      }
+      await opts.supabase.from('producao_importacoes').update({ status: 'processado', total_linhas: total }).eq('id', importacao.id);
+    } catch (err) {
+      await opts.supabase.from('producao_importacoes').update({ status: 'erro' }).eq('id', importacao.id);
+      throw err;
+    }
+
+    const colaboradores = new Set(rows.map((r) => normalizeHeader(r.funcionario)).filter(Boolean)).size;
+    const totalTons = rows.reduce((acc, r) => acc + Number(r.tons || 0), 0);
+    const totalCargas = rows.reduce((acc, r) => acc + Number(r.cargas || 0), 0);
+    return {
+      total_linhas: rows.length,
+      importados: total,
+      colaboradores,
+      toneladas: totalTons,
+      cargas: totalCargas,
+      periodo_inicio: period?.inicio || null,
+      periodo_fim: period?.fim || null,
+      total_datas: period?.totalDatas || null,
+    };
+  }
+
+
   async function readOperacionalOsRowsFromFile(file) {
     const XLSX = await loadXlsx();
     const buffer = await file.arrayBuffer();
@@ -1919,6 +2061,10 @@
       return { tipo: 'logistica_mapa_embarque', titulo: 'Logística · Mapa de Embarque' };
     }
 
+    if ((n.includes('producao') || n.includes('produção')) && (n.includes('diaria') || n.includes('diária') || n.includes('diario') || n.includes('diário'))) {
+      return { tipo: 'producao', titulo: 'Produção Diária' };
+    }
+
     if (n.includes('hotel') || n.includes('hoteis') || n.includes('hotéis') || n.includes('hospedagem') || n.includes('hospedagens')) {
       return { tipo: 'hoteis', titulo: 'Banco de Hotéis' };
     }
@@ -1938,7 +2084,7 @@
     if (n.includes('resultado')) {
       return { tipo: 'resultado-diario', titulo: 'Relatório Resultado Diário' };
     }
-    if (n.includes('producao')) {
+    if (n.includes('producao') || n.includes('produção')) {
       return { tipo: 'producao', titulo: 'Produção Diária' };
     }
     if (n.includes('patrimonio') || n.includes('patrimônio')) {
@@ -2192,7 +2338,9 @@
 
   async function uploadAndRegister({ file, item, bar, status, entry }, opts) {
     const supabase = opts.supabase;
-    const detected = detectRelatorio(file.name);
+    let detected = entry?.detected || detectRelatorio(file.name);
+    detected = await detectarProducaoDiariaPorConteudo(file, detected);
+    if (entry) entry.detected = detected;
     const path = buildStoragePath(file);
     const user = opts.user || opts.auth?.user || null;
     const userMeta = user?.user_metadata || {};
@@ -2223,6 +2371,7 @@
     let patrimoniosResumo = null;
     let frotasExcessoResumo = null;
     let resultadoDiarioResumo = null;
+    let producaoDiariaResumo = null;
     let historicoDiarioResumo = null;
     let operacionalOsResumo = null;
     if (detected.tipo === 'hoteis') {
@@ -2266,6 +2415,12 @@
       resultadoDiarioResumo = await importarResultadoDiarioDaPlanilha(file, opts, entry?.period || null);
       if (resultadoDiarioResumo?.periodo_inicio) entry.period = { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null };
     }
+    if (detected.tipo === 'producao') {
+      status.textContent = 'Consolidando Produção Diária no banco para pagamentos do Financeiro...';
+      setProgress(bar, 82);
+      producaoDiariaResumo = await importarProducaoDiariaDaPlanilha(file, opts);
+      if (producaoDiariaResumo?.periodo_inicio) entry.period = { inicio: producaoDiariaResumo.periodo_inicio, fim: producaoDiariaResumo.periodo_fim, totalDatas: producaoDiariaResumo.total_datas || null };
+    }
     if (detected.tipo === 'historico_colaboradores_diario') {
       status.textContent = 'Consolidando Histórico Diário de colaboradores para produzido por colaborador...';
       setProgress(bar, 82);
@@ -2284,7 +2439,7 @@
       ? null
       : (resultadoDiarioResumo?.periodo_inicio
         ? { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null }
-        : (historicoDiarioResumo?.periodo_inicio ? { inicio: historicoDiarioResumo.periodo_inicio, fim: historicoDiarioResumo.periodo_fim, totalDatas: historicoDiarioResumo.total_datas || null } : (operacionalOsResumo?.periodo_inicio ? { inicio: operacionalOsResumo.periodo_inicio, fim: operacionalOsResumo.periodo_fim, totalDatas: operacionalOsResumo.total_datas || null } : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo))))));
+        : (producaoDiariaResumo?.periodo_inicio ? { inicio: producaoDiariaResumo.periodo_inicio, fim: producaoDiariaResumo.periodo_fim, totalDatas: producaoDiariaResumo.total_datas || null } : (historicoDiarioResumo?.periodo_inicio ? { inicio: historicoDiarioResumo.periodo_inicio, fim: historicoDiarioResumo.periodo_fim, totalDatas: historicoDiarioResumo.total_datas || null } : (operacionalOsResumo?.periodo_inicio ? { inicio: operacionalOsResumo.periodo_inicio, fim: operacionalOsResumo.periodo_fim, totalDatas: operacionalOsResumo.total_datas || null } : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo)))))));
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -2301,6 +2456,7 @@
       pontos_embarque: 'Registrando upload dos pontos de embarque...',
       colaboradores_operacional: 'Registrando upload dos endereços dos colaboradores...',
       historico_colaboradores_diario: 'Registrando upload do histórico diário de colaboradores...',
+      producao: 'Registrando upload da Produção Diária...',
       auditorias_operacional: 'Registrando upload das auditorias operacionais...',
       uber_corridas: 'Registrando upload do relatório Uber...',
       operacional_os: 'Registrando upload da lista de O.S. operacional...',
@@ -2349,6 +2505,7 @@
           patrimonios_importacao: patrimoniosResumo || null,
           frotas_excesso_velocidade_importacao: frotasExcessoResumo || null,
           resultado_diario_importacao: resultadoDiarioResumo || null,
+          producao_diaria_importacao: producaoDiariaResumo || null,
           historico_colaboradores_diario_importacao: historicoDiarioResumo || null,
           operacional_os_importacao: operacionalOsResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
@@ -2389,6 +2546,8 @@
       status.textContent = `Frotas: ${frotasExcessoResumo.importados || 0} excessos · ${frotasExcessoResumo.identificados || 0} identificados · ${frotasExcessoResumo.pendentes || 0} pendentes`;
     } else if (detected.tipo === 'resultado-diario' && resultadoDiarioResumo) {
       status.textContent = `Resultado Diário: ${resultadoDiarioResumo.importados || 0} linhas consolidadas · ${Number(resultadoDiarioResumo.toneladas || 0).toLocaleString('pt-BR')} tons · DRE rápido`;
+    } else if (detected.tipo === 'producao' && producaoDiariaResumo) {
+      status.textContent = `Produção Diária: ${producaoDiariaResumo.importados || 0} linhas · ${producaoDiariaResumo.colaboradores || 0} colaboradores · Financeiro liberado`;
     } else if (detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo) {
       status.textContent = `Histórico Diário: ${historicoDiarioResumo.importados || 0} linhas · ${historicoDiarioResumo.ativos || 0} ativos · ${historicoDiarioResumo.total_datas || 0} dia(s) para produzido por colaborador`;
     } else if (detected.tipo === 'operacional_os' && operacionalOsResumo) {
@@ -2398,7 +2557,7 @@
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo) && !(detected.tipo === 'operacional_os' && operacionalOsResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo) && !(detected.tipo === 'operacional_os' && operacionalOsResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -2494,7 +2653,7 @@
 
       list.innerHTML = '';
       state.files.forEach((entry, index) => {
-        const detected = detectRelatorio(entry.file.name);
+        const detected = entry.detected || detectRelatorio(entry.file.name);
         const item = document.createElement('div');
         item.className = 'file-item';
         if (isEnterpriseUpload(entry.file)) item.classList.add('is-enterprise');
@@ -2558,6 +2717,7 @@
           period: null,
           status: valid ? 'pendente' : 'erro',
           message: valid ? 'Detectando período...' : 'Use XLSX, XLS ou CSV até 1GB',
+          detected,
           elements: null,
         };
         state.files.push(entry);
@@ -2624,6 +2784,21 @@
             }).catch((err) => {
               entry.period = null;
               entry.message = `Pendente · não foi possível pré-validar O.S. (${err?.message || 'erro de leitura'})`;
+              renderFiles();
+            });
+          } else if (detected.tipo === 'producao') {
+            entry.message = 'Pendente · consolidará Produção Diária para pagamentos do Financeiro';
+            readProducaoDiariaRowsFromFile(file).then((res) => {
+              const period = res?.period || null;
+              entry.period = period;
+              const total = Number(res?.rows?.length || 0);
+              entry.message = period
+                ? `Período: ${formatPeriod(period)} · ${total.toLocaleString('pt-BR')} linhas · consolidará Produção Diária`
+                : 'Pendente · Produção Diária sem período detectado';
+              renderFiles();
+            }).catch((err) => {
+              entry.period = null;
+              entry.message = `Pendente · não foi possível pré-validar Produção Diária (${err?.message || 'erro de leitura'})`;
               renderFiles();
             });
           } else if (detected.tipo === 'resultado-diario') {
