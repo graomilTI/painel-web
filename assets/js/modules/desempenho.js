@@ -1,6 +1,6 @@
 /* assets/js/modules/desempenho.js
  * Módulo Diretoria > Desempenho
- * Volume por colaborador ativo com cargo Classificador.
+ * Volume por colaborador considerando efetivos + diaristas/intermitentes com produção no dia.
  * Fonte de produção: public.relatorio_resultado_diario
  * Base de pessoas: public.historico_colaboradores por data; fallback em colaborador_snapshot.
  */
@@ -16,12 +16,12 @@
     toneladas: {
       field: 'toneladas',
       label: 'Volume Classificado',
-      hint: 'Toneladas do Resultado Diário ÷ classificadores ativos por coordenação.'
+      hint: 'Toneladas do Resultado Diário ÷ classificadores considerados por dia: efetivos + diaristas/intermitentes com carga no dia.'
     },
     embarcado: {
       field: 'embarcado',
       label: 'Volume Embarcado',
-      hint: 'Embarcado do Resultado Diário ÷ classificadores ativos por coordenação.'
+      hint: 'Embarcado do Resultado Diário ÷ classificadores considerados por dia: efetivos + diaristas/intermitentes com carga no dia.'
     }
   };
 
@@ -138,6 +138,11 @@
     return keyText(row?.cargo).includes('CLASSIFICADOR');
   }
 
+  function isSafristaTipo(row) {
+    const t = keyText(row?.tipo);
+    return t.includes('DIARISTA') || t.includes('INTERMITENTE') || t.includes('SAFRISTA');
+  }
+
   function collaboratorKey(row) {
     return String(row?.cpf || '').replace(/\D/g, '') || keyText(row?.nome);
   }
@@ -164,7 +169,7 @@
     return fetchAllRows(
       supabase,
       'relatorio_resultado_diario',
-      'data,coordenacao,funcionario,toneladas,embarcado',
+      'data,coordenacao,funcionario,cargas,toneladas,embarcado',
       (q) => q.gte('data', start).lt('data', end).order('data', { ascending: true })
     );
   }
@@ -192,7 +197,23 @@
     }
   }
 
-  function buildActiveMapsByDay(colabRows, days) {
+  function buildProducedPeopleByDayRegional(prodRows) {
+    const produced = new Map();
+    for (const row of prodRows || []) {
+      const date = dateKey(row.data);
+      const reg = mapRegional(row.coordenacao || '');
+      const regKey = keyText(reg);
+      const person = keyText(row.funcionario || row.nome || row.colaborador || '');
+      const volume = Math.max(toNumber(row.toneladas), toNumber(row.embarcado), toNumber(row.cargas));
+      if (!date || !regKey || !person || volume <= 0) continue;
+      const key = `${date}|${regKey}`;
+      if (!produced.has(key)) produced.set(key, new Set());
+      produced.get(key).add(person);
+    }
+    return produced;
+  }
+
+  function buildActiveMapsByDay(colabRows, days, producedPeopleByDayRegional) {
     const rows = [...(colabRows || [])]
       .filter((row) => dateKey(row.data_referencia))
       .sort((a, b) => dateKey(a.data_referencia).localeCompare(dateKey(b.data_referencia)));
@@ -217,6 +238,14 @@
         const reg = mapRegional(row.coordenacao || row.supervisao || '');
         if (!reg || keyText(reg) === 'GERAL') return;
         const k = keyText(reg);
+
+        // Regra oficial: efetivos contam todos os dias; diaristas/intermitentes/safristas
+        // contam somente quando tiveram carga/produção lançada no Resultado Diário naquele dia.
+        if (isSafristaTipo(row)) {
+          const producedPeople = producedPeopleByDayRegional.get(`${day}|${k}`) || new Set();
+          if (!producedPeople.has(keyText(row.nome))) return;
+        }
+
         if (!byRegional.has(k)) byRegional.set(k, { regional: reg, count: 0 });
         byRegional.get(k).count += 1;
       });
@@ -247,7 +276,8 @@
     }
 
     const days = [...daysSet].sort();
-    const activeByDay = buildActiveMapsByDay(colabRows, days);
+    const producedPeopleByDayRegional = buildProducedPeopleByDayRegional(prodRows);
+    const activeByDay = buildActiveMapsByDay(colabRows, days, producedPeopleByDayRegional);
     const rows = [];
 
     for (const [regKey, prod] of prodByRegional.entries()) {

@@ -275,7 +275,7 @@
       while(true){
         const {data,error}=await supabase
           .from('relatorio_resultado_diario')
-          .select('data,coordenacao,toneladas')
+          .select('data,coordenacao,funcionario,cargas,toneladas')
           .gte('data', start)
           .lt('data', end)
           .range(from, from + pageSize - 1);
@@ -297,7 +297,7 @@
       while(true){
         const {data,error}=await supabase
           .from('historico_colaboradores')
-          .select('data_referencia,nome,situacao,coordenacao')
+          .select('data_referencia,nome,situacao,coordenacao,tipo')
           .gte('data_referencia', start)
           .lt('data_referencia', end)
           .range(from, from + pageSize - 1);
@@ -315,8 +315,30 @@
     out.totalProdRows=prodRows.length;
     out.totalHistRows=histRows.length;
 
-    // DRE: usar TODOS os colaboradores ativos por regional no dia, sem filtrar cargo.
-    // A conta mensal é a média diária: volume produzido do dia ÷ colaboradores ativos do dia.
+    const prodByDateReg={};
+    const pessoasComProducaoByDateReg={};
+    for(const p of prodRows){
+      const date=p.data;
+      const reg=mapReg(p.coordenacao);
+      const m=monthFrom(date);
+      // Produção por colaborador no DRE não deve considerar a coordenação GERAL.
+      if(!date || !reg || !m || m.year!==year || isIgnored(reg) || isExcluded(reg) || norm(reg)==='GERAL' || isPool(reg)) continue;
+      const key=`${date}|${reg}`;
+      if(!prodByDateReg[key]) prodByDateReg[key]={date,reg,mi:m.month,tons:0};
+      prodByDateReg[key].tons += n(p.toneladas);
+
+      const pessoa=nomeKey(p.funcionario);
+      const teveCarga = n(p.cargas) > 0 || n(p.toneladas) > 0;
+      if(pessoa && teveCarga){
+        if(!pessoasComProducaoByDateReg[key]) pessoasComProducaoByDateReg[key]=new Set();
+        pessoasComProducaoByDateReg[key].add(pessoa);
+      }
+      out.regionais.add(reg);
+    }
+
+    // Regra oficial: todos os efetivos ativos entram no denominador;
+    // diarista/intermitente/safrista entra somente se teve carga lançada no dia.
+    // No DRE não filtra cargo.
     const ativosByDateReg={};
     for(const h of histRows){
       const date=h.data_referencia;
@@ -327,21 +349,12 @@
       const m=monthFrom(date);
       if(!m || m.year!==year) continue;
       const key=`${date}|${reg}`;
+      if(isSafristaTipo(h.tipo)){
+        const pessoasComProd = pessoasComProducaoByDateReg[key] || new Set();
+        if(!pessoasComProd.has(nome)) continue;
+      }
       if(!ativosByDateReg[key]) ativosByDateReg[key]=new Set();
       ativosByDateReg[key].add(nome);
-      out.regionais.add(reg);
-    }
-
-    const prodByDateReg={};
-    for(const p of prodRows){
-      const date=p.data;
-      const reg=mapReg(p.coordenacao);
-      const m=monthFrom(date);
-      // Produção por colaborador no DRE não deve considerar a coordenação GERAL.
-      if(!date || !reg || !m || m.year!==year || isIgnored(reg) || isExcluded(reg) || norm(reg)==='GERAL' || isPool(reg)) continue;
-      const key=`${date}|${reg}`;
-      if(!prodByDateReg[key]) prodByDateReg[key]={date,reg,mi:m.month,tons:0};
-      prodByDateReg[key].tons += n(p.toneladas);
       out.regionais.add(reg);
     }
 
