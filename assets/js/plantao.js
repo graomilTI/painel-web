@@ -87,6 +87,49 @@ function weekdayBR(iso) {
   return ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'][date.getDay()];
 }
 
+function getPlantaoDatesInRange() {
+  const ini = document.getElementById('plantaoData')?.value || nextWeekendBase();
+  const fim = document.getElementById('plantaoDataFim')?.value || ini;
+  const start = dateFromISO(ini);
+  const end = dateFromISO(fim);
+  if (!start || !end) return [ini].filter(Boolean);
+
+  const datas = [];
+  const d = new Date(start);
+  let safety = 0;
+  while (d <= end && safety < 370) {
+    datas.push(isoFromDate(d));
+    d.setDate(d.getDate() + 1);
+    safety += 1;
+  }
+  return datas.length ? datas : [ini].filter(Boolean);
+}
+
+function buildDateOptions(selected = '') {
+  const datas = getPlantaoDatesInRange();
+  const value = selected || datas[0] || nextWeekendBase();
+  return datas.map((iso) => `<option value="${esc(iso)}" ${iso === value ? 'selected' : ''}>${esc(weekdayBR(iso))} · ${esc(formatDateBR(iso))}</option>`).join('');
+}
+
+function getHorarioPadrao() {
+  return {
+    hora_inicio: document.getElementById('plantaoPadraoInicio1')?.value || '08:00',
+    hora_fim: document.getElementById('plantaoPadraoFim1')?.value || '12:00',
+    hora_inicio_2: document.getElementById('plantaoPadraoInicio2')?.value || '13:30',
+    hora_fim_2: document.getElementById('plantaoPadraoFim2')?.value || '18:00',
+  };
+}
+
+function applyHorarioPadraoToForms() {
+  const horario = getHorarioPadrao();
+  document.querySelectorAll('.plantao-setor').forEach((section) => {
+    Object.entries(horario).forEach(([field, value]) => {
+      const input = section.querySelector(`[data-field="${field}"]`);
+      if (input) input.value = value || '';
+    });
+  });
+}
+
 function formatPhone(value) {
   const d = onlyDigits(value);
   if (!d) return '';
@@ -153,7 +196,7 @@ function injectPlantaoStyles() {
     .plantao-setor{border:1px solid var(--line);border-radius:18px;padding:14px;background:#0b1220}
     .plantao-setor-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
     .plantao-setor-head h3{margin:0}
-    .plantao-add-grid{display:grid;grid-template-columns:2fr repeat(4, minmax(92px, 1fr)) 120px;gap:10px;align-items:end}
+    .plantao-add-grid{display:grid;grid-template-columns:1.7fr minmax(150px, .9fr) repeat(4, minmax(92px, 1fr)) 120px;gap:10px;align-items:end}
     .plantao-person-list{display:grid;gap:8px;margin-top:12px}
     .plantao-person{display:grid;grid-template-columns:1.5fr 1fr 1fr auto;gap:10px;align-items:center;border:1px solid var(--line);background:#111827;border-radius:14px;padding:10px}
     .plantao-person strong{display:block}
@@ -811,20 +854,24 @@ function renderSetores() {
             <div class="plantao-suggestions"></div>
           </div>
           <div>
+            <label class="plantao-label">Dia</label>
+            <select class="plantao-select" data-field="data_plantao" data-setor="${esc(setor)}">${buildDateOptions()}</select>
+          </div>
+          <div>
             <label class="plantao-label">Início 1</label>
-            <input class="plantao-input" type="time" data-field="hora_inicio" data-setor="${esc(setor)}" />
+            <input class="plantao-input" type="time" data-field="hora_inicio" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio)}" />
           </div>
           <div>
             <label class="plantao-label">Fim 1</label>
-            <input class="plantao-input" type="time" data-field="hora_fim" data-setor="${esc(setor)}" />
+            <input class="plantao-input" type="time" data-field="hora_fim" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim)}" />
           </div>
           <div>
             <label class="plantao-label">Início 2</label>
-            <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" />
+            <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio_2)}" />
           </div>
           <div>
             <label class="plantao-label">Fim 2</label>
-            <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" />
+            <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim_2)}" />
           </div>
           <button type="button" class="plantao-btn primary" data-add="${esc(setor)}">Adicionar</button>
         </div>
@@ -918,10 +965,17 @@ function addFromSetorForm(setor) {
   }
 
   const getField = (name) => section.querySelector(`[data-field="${name}"]`)?.value || '';
-  const hora_inicio = getField('hora_inicio');
-  const hora_fim = getField('hora_fim');
-  const hora_inicio_2 = getField('hora_inicio_2');
-  const hora_fim_2 = getField('hora_fim_2');
+  const padrao = getHorarioPadrao();
+  const data_plantao = getField('data_plantao') || document.getElementById('plantaoData').value;
+  const hora_inicio = getField('hora_inicio') || padrao.hora_inicio;
+  const hora_fim = getField('hora_fim') || padrao.hora_fim;
+  const hora_inicio_2 = getField('hora_inicio_2') || padrao.hora_inicio_2;
+  const hora_fim_2 = getField('hora_fim_2') || padrao.hora_fim_2;
+
+  if (!data_plantao) {
+    alert('Selecione o dia do plantão antes de adicionar.');
+    return;
+  }
 
   if (!hora_inicio || !hora_fim) {
     alert('Informe pelo menos o primeiro horário trabalhado.');
@@ -930,7 +984,7 @@ function addFromSetorForm(setor) {
 
   addEscalaRow(setor, {
     ...selected,
-    data_plantao: document.getElementById('plantaoData').value,
+    data_plantao,
     evento: document.getElementById('plantaoEvento').value,
     hora_inicio,
     hora_fim,
@@ -1386,6 +1440,28 @@ function renderPage(content) {
               <label class="plantao-label" for="plantaoEvento">Evento / observação do final de semana</label>
               <input class="plantao-input" id="plantaoEvento" placeholder="Ex.: Sábado e domingo / feriado / plantão operação" />
             </div>
+            <div class="plantao-field quarter">
+              <label class="plantao-label" for="plantaoPadraoInicio1">Horário padrão · Início 1</label>
+              <input class="plantao-input" type="time" id="plantaoPadraoInicio1" value="08:00" />
+            </div>
+            <div class="plantao-field quarter">
+              <label class="plantao-label" for="plantaoPadraoFim1">Horário padrão · Fim 1</label>
+              <input class="plantao-input" type="time" id="plantaoPadraoFim1" value="12:00" />
+            </div>
+            <div class="plantao-field quarter">
+              <label class="plantao-label" for="plantaoPadraoInicio2">Horário padrão · Início 2</label>
+              <input class="plantao-input" type="time" id="plantaoPadraoInicio2" value="13:30" />
+            </div>
+            <div class="plantao-field quarter">
+              <label class="plantao-label" for="plantaoPadraoFim2">Horário padrão · Fim 2</label>
+              <input class="plantao-input" type="time" id="plantaoPadraoFim2" value="18:00" />
+            </div>
+            <div class="plantao-field">
+              <div class="plantao-actions">
+                <button type="button" class="plantao-btn secondary" id="btnAplicarHorarioPadrao">Aplicar horário padrão nos campos</button>
+                <span class="plantao-meta">Use este horário para preencher rápido os setores; depois ajuste individualmente quando precisar.</span>
+              </div>
+            </div>
             <div class="plantao-field">
               <label class="plantao-label" for="plantaoObs">Observações internas</label>
               <textarea class="plantao-textarea" id="plantaoObs" placeholder="Observações opcionais para controle interno"></textarea>
@@ -1576,6 +1652,7 @@ function renderPage(content) {
   document.querySelectorAll('.plantao-tab').forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
   document.getElementById('btnCarregarPlantao')?.addEventListener('click', () => loadEscalaFromDb().catch(showLoadError));
   document.getElementById('btnSalvarPlantao')?.addEventListener('click', saveEscala);
+  document.getElementById('btnAplicarHorarioPadrao')?.addEventListener('click', applyHorarioPadraoToForms);
   document.getElementById('btnSalvarModeloPlantao')?.addEventListener('click', salvarModeloPlantao);
   document.getElementById('btnCarregarModeloPlantao')?.addEventListener('click', () => carregarModeloPadrao().catch(showLoadError));
   document.getElementById('btnGerarProgramacaoPlantao')?.addEventListener('click', aplicarModeloNaEscala);
@@ -1601,9 +1678,17 @@ function renderPage(content) {
     document.getElementById('plantaoDataFim').value = addDaysISO(ini, 1);
     document.getElementById('plantaoImgData').value = ini;
     document.getElementById('plantaoImgDataFim').value = addDaysISO(ini, 1);
+    renderSetores();
     updateKpis();
   });
-  document.getElementById('plantaoDataFim')?.addEventListener('change', updateKpis);
+  document.getElementById('plantaoDataFim')?.addEventListener('change', () => {
+    document.getElementById('plantaoImgDataFim').value = document.getElementById('plantaoDataFim').value;
+    renderSetores();
+    updateKpis();
+  });
+  ['plantaoPadraoInicio1','plantaoPadraoFim1','plantaoPadraoInicio2','plantaoPadraoFim2'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', applyHorarioPadraoToForms);
+  });
 
   buildEmptyEscala();
   renderSetores();
