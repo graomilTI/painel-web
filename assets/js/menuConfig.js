@@ -124,16 +124,16 @@ export const MENU_CONFIG = [
     ]
   },
 
-{
-  grupo: "DIRETORIA",
-  itens: [
-    item("diretoria_dre", "DRE", "dre", ["DRE", "DIRETORIA_DRE"]),
-    item("diretoria_metas", "METAS", "metas", ["METAS", "DIRETORIA_METAS"]),
-    item("diretoria_desempenho", "Desempenho", "desempenho", ["DESEMPENHO", "DIRETORIA_DESEMPENHO"]),
-    item("usuarios_acessos", "Usuários e Acessos", "admin-usuarios", ["ADMIN_USUARIOS", "USUARIOS_E_ACESSOS"]),
-    item("admin_config", "Configurações", "admin-configuracoes", ["ADMIN_CONFIG"])
-  ]
-}
+  {
+    grupo: "DIRETORIA",
+    itens: [
+      item("diretoria_dre", "DRE", "dre", ["DRE", "DIRETORIA_DRE"]),
+      item("diretoria_metas", "METAS", "metas", ["METAS", "DIRETORIA_METAS"]),
+      item("diretoria_desempenho", "Desempenho", "desempenho", ["DESEMPENHO", "DIRETORIA_DESEMPENHO"]),
+      item("usuarios_acessos", "Usuários e Acessos", "admin-usuarios", ["ADMIN_USUARIOS", "USUARIOS_E_ACESSOS"]),
+      item("admin_config", "Configurações", "admin-configuracoes", ["ADMIN_CONFIG"])
+    ]
+  }
 ];
 
 export const PANEL_MENU = MENU_CONFIG.map((section) => ({

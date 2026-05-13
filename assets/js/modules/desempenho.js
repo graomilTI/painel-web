@@ -35,7 +35,10 @@
     days: [],
     totals: null,
     regionais: [],
-    error: null
+    error: null,
+    note: null,
+    latestProductionDate: null,
+    periodInitialized: false
   };
 
   function injectStyle() {
@@ -161,6 +164,31 @@
       'data,coordenacao,funcionario,toneladas,embarcado',
       (q) => q.gte('data', start).lt('data', end).order('data', { ascending: true })
     );
+  }
+
+  async function loadLatestProductionDate(supabase) {
+    const { data, error } = await supabase
+      .from('relatorio_resultado_diario')
+      .select('data')
+      .not('data', 'is', null)
+      .order('data', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.warn('[DESEMPENHO] Não foi possível localizar a última data com produção.', error);
+      return null;
+    }
+
+    const value = Array.isArray(data) && data[0] ? dateKey(data[0].data) : '';
+    return value || null;
+  }
+
+  function setPeriodFromIsoDate(iso) {
+    const [year, month] = String(iso || '').split('-').map(Number);
+    if (!year || !month) return false;
+    state.year = year;
+    state.month = month;
+    return true;
   }
 
   async function loadClassificadoresAtivos(supabase) {
@@ -398,7 +426,10 @@
 
   function render(container) {
     const volumeOptions = Object.entries(VOLUME_OPTIONS).map(([key, item]) => `<option value="${esc(key)}" ${state.volumeType === key ? 'selected' : ''}>${esc(item.label)}</option>`).join('');
-    const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
+    const years = Array.from(new Set([
+      ...Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i),
+      state.year
+    ])).sort((a, b) => a - b);
     container.innerHTML = `
       <section class="des-page">
         <div class="des-hero">
@@ -431,6 +462,7 @@
         </div>
 
         ${state.error ? `<div class="des-status err"><strong>Erro:</strong> ${esc(state.error)}</div>` : ''}
+        ${state.note ? `<div class="des-status"><strong>Observação:</strong> ${esc(state.note)}</div>` : ''}
         ${state.loading ? `<div class="des-status"><strong>Carregando dados...</strong> Consultando produção e colaboradores ativos.</div>` : ''}
         ${renderKpis()}
         ${renderTable()}
@@ -475,14 +507,32 @@
     try {
       state.loading = true;
       state.error = null;
+      state.note = null;
       render(container);
       const supabase = state.supabase;
       if (!supabase) throw new Error('Cliente Supabase não disponível.');
+
+      if (!state.periodInitialized) {
+        const latest = await loadLatestProductionDate(supabase);
+        state.latestProductionDate = latest;
+        state.periodInitialized = true;
+        if (latest && setPeriodFromIsoDate(latest)) {
+          state.note = `Exibindo automaticamente ${MONTHS[state.month - 1]}/${state.year}, que é o último mês com produção importada no Resultado Diário.`;
+        }
+      }
 
       const [prodRows, colabRows] = await Promise.all([
         loadProducao(supabase),
         loadClassificadoresAtivos(supabase)
       ]);
+
+      if (!prodRows.length && state.latestProductionDate) {
+        const [latestYear, latestMonth, latestDay] = state.latestProductionDate.split('-');
+        state.note = `Nenhuma produção localizada para ${MONTHS[state.month - 1]}/${state.year}. Última data com produção importada: ${latestDay}/${latestMonth}/${latestYear}.`;
+      } else if (!prodRows.length) {
+        state.note = 'Nenhuma produção foi localizada em relatorio_resultado_diario.';
+      }
+
       const dataset = buildDataset(prodRows, colabRows);
       state.rows = dataset.rows;
       state.days = dataset.days;
