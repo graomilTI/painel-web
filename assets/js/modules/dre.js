@@ -1010,16 +1010,76 @@
     return `<div class="dre-report-head"><div><h3>${safe(title)}</h3><p>${safe(subtitle)}</p></div><strong>Grão 1000</strong></div>${renderTable(report)}`;
   }
 
+  function createPdfReadyNode(node){
+    const clone=node.cloneNode(true);
+    clone.removeAttribute('id');
+    clone.classList.add('dre-pdf-ready');
+
+    const holder=document.createElement('div');
+    holder.className='dre-pdf-holder';
+    holder.style.position='fixed';
+    holder.style.left='-20000px';
+    holder.style.top='0';
+    holder.style.width='1750px';
+    holder.style.background='#ffffff';
+    holder.style.zIndex='-1';
+
+    const style=document.createElement('style');
+    style.textContent=`
+      .dre-pdf-holder, .dre-pdf-holder *{box-sizing:border-box!important}
+      .dre-pdf-holder .dre-report{width:1750px!important;max-width:1750px!important;border-radius:0!important;overflow:visible!important;border:1px solid #d1d5db!important}
+      .dre-pdf-holder .dre-report-head{padding:10px 14px!important}
+      .dre-pdf-holder .dre-report-head h3{font-size:18px!important;line-height:1.1!important}
+      .dre-pdf-holder .dre-report-head p{font-size:11px!important;line-height:1.1!important;margin-top:3px!important}
+      .dre-pdf-holder .dre-table-wrap{overflow:visible!important}
+      .dre-pdf-holder .dre-table{min-width:0!important;width:100%!important;font-size:10.2px!important;table-layout:fixed!important}
+      .dre-pdf-holder .dre-table th,.dre-pdf-holder .dre-table td{padding:5px 6px!important;line-height:1.08!important;white-space:nowrap!important}
+      .dre-pdf-holder .dre-table th:first-child,.dre-pdf-holder .dre-table td:first-child{width:260px!important;white-space:normal!important}
+      .dre-pdf-holder .dre-extra{gap:7px!important;padding:7px!important;display:grid!important;grid-template-columns:1fr!important}
+      .dre-pdf-holder .dre-extra-box{border-radius:0!important}
+      .dre-pdf-holder .dre-extra-box h4{font-size:11px!important;line-height:1!important;padding:6px 8px!important}
+      .dre-pdf-holder .dre-extra-box table{font-size:9.4px!important;table-layout:fixed!important}
+      .dre-pdf-holder .dre-extra-box td,.dre-pdf-holder .dre-extra-box th{padding:4px 5px!important;line-height:1.05!important;white-space:nowrap!important}
+      .dre-pdf-holder .dre-extra-box td:first-child,.dre-pdf-holder .dre-extra-box th:first-child{width:260px!important;white-space:normal!important}
+    `;
+    holder.appendChild(style);
+    holder.appendChild(clone);
+    document.body.appendChild(holder);
+    return { holder, clone };
+  }
+
   async function reportNodeToPdfBlob(node){
     const html2canvas=await loadHtml2Canvas();
     const JsPDF=await loadJsPdf();
-    const canvas=await html2canvas(node,{backgroundColor:'#ffffff',scale:2});
-    const img=canvas.toDataURL('image/png');
-    const pdf=new JsPDF('l','mm','a4');
-    const w=297;
-    const h=canvas.height*w/canvas.width;
-    pdf.addImage(img,'PNG',0,0,w,h);
-    return pdf.output('blob');
+    const {holder, clone}=createPdfReadyNode(node);
+
+    try{
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const canvas=await html2canvas(clone,{
+        backgroundColor:'#ffffff',
+        scale:2,
+        useCORS:true,
+        windowWidth:1750,
+        scrollX:0,
+        scrollY:0
+      });
+      const img=canvas.toDataURL('image/png');
+      const pdf=new JsPDF('l','mm','a4');
+      const pageW=297;
+      const pageH=210;
+      const margin=4;
+      const maxW=pageW-(margin*2);
+      const maxH=pageH-(margin*2);
+      const ratio=Math.min(maxW/canvas.width, maxH/canvas.height);
+      const w=canvas.width*ratio;
+      const h=canvas.height*ratio;
+      const x=(pageW-w)/2;
+      const y=(pageH-h)/2;
+      pdf.addImage(img,'PNG',x,y,w,h,undefined,'FAST');
+      return pdf.output('blob');
+    } finally {
+      holder.remove();
+    }
   }
 
   async function exportImage(){ const node=document.querySelector('#dreReport'); if(!node) return; const html2canvas=await loadHtml2Canvas(); const canvas=await html2canvas(node,{backgroundColor:'#ffffff',scale:2}); const a=document.createElement('a'); a.download=`${state.tab==='geral'?'DRE_Geral':'DRE_'+dreFileName(state.regional)}_${state.year}.png`; a.href=canvas.toDataURL('image/png'); a.click(); }
