@@ -275,7 +275,7 @@
       while(true){
         const {data,error}=await supabase
           .from('relatorio_resultado_diario')
-          .select('data,coordenacao,funcionario,toneladas')
+          .select('data,coordenacao,toneladas')
           .gte('data', start)
           .lt('data', end)
           .range(from, from + pageSize - 1);
@@ -286,7 +286,7 @@
         from += pageSize;
       }
     }catch(error){
-      console.warn('DRE: não foi possível carregar produção diária para produzido por colaborador.', error);
+      console.warn('DRE: não foi possível carregar produção diária para produção por colaborador.', error);
       return out;
     }
 
@@ -297,8 +297,7 @@
       while(true){
         const {data,error}=await supabase
           .from('historico_colaboradores')
-          .select('data_referencia,nome,situacao,coordenacao,tipo,origem')
-          .eq('origem','importar_relatorios_historico_diario')
+          .select('data_referencia,nome,situacao,coordenacao')
           .gte('data_referencia', start)
           .lt('data_referencia', end)
           .range(from, from + pageSize - 1);
@@ -309,24 +308,28 @@
         from += pageSize;
       }
     }catch(error){
-      console.warn('DRE: não foi possível carregar Histórico Diário para produzido por colaborador.', error);
+      console.warn('DRE: não foi possível carregar histórico diário de colaboradores para produção por colaborador.', error);
       return out;
     }
 
     out.totalProdRows=prodRows.length;
     out.totalHistRows=histRows.length;
 
-    const histByDateReg={};
+    // DRE: usar TODOS os colaboradores ativos por regional no dia, sem filtrar cargo.
+    // A conta mensal é a média diária: volume produzido do dia ÷ colaboradores ativos do dia.
+    const ativosByDateReg={};
     for(const h of histRows){
       const date=h.data_referencia;
       const reg=mapReg(h.coordenacao);
       const nome=nomeKey(h.nome);
-      if(!date || !reg || !nome || isIgnored(reg)) continue;
-      const key=`${date}|${reg}`;
-      if(!histByDateReg[key]) histByDateReg[key]={efetivos:0, tipos:{}};
+      if(!date || !reg || !nome || isIgnored(reg) || isExcluded(reg) || norm(reg)==='GERAL' || isPool(reg)) continue;
       if(!isAtivoSituacao(h.situacao)) continue;
-      histByDateReg[key].tipos[nome]=h.tipo || '';
-      if(!isSafristaTipo(h.tipo)) histByDateReg[key].efetivos += 1;
+      const m=monthFrom(date);
+      if(!m || m.year!==year) continue;
+      const key=`${date}|${reg}`;
+      if(!ativosByDateReg[key]) ativosByDateReg[key]=new Set();
+      ativosByDateReg[key].add(nome);
+      out.regionais.add(reg);
     }
 
     const prodByDateReg={};
@@ -334,26 +337,19 @@
       const date=p.data;
       const reg=mapReg(p.coordenacao);
       const m=monthFrom(date);
-      // Produção por colaborador não deve considerar a coordenação GERAL.
-      // A conta fica: produzido ÷ (efetivos ativos + intermitentes/diaristas com produção).
-      if(!date || !reg || !m || m.year!==year || isIgnored(reg) || isExcluded(reg) || norm(reg)==='GERAL') continue;
+      // Produção por colaborador no DRE não deve considerar a coordenação GERAL.
+      if(!date || !reg || !m || m.year!==year || isIgnored(reg) || isExcluded(reg) || norm(reg)==='GERAL' || isPool(reg)) continue;
       const key=`${date}|${reg}`;
-      if(!prodByDateReg[key]) prodByDateReg[key]={date,reg,mi:m.month,tons:0,funcs:new Set()};
+      if(!prodByDateReg[key]) prodByDateReg[key]={date,reg,mi:m.month,tons:0};
       prodByDateReg[key].tons += n(p.toneladas);
-      const func=nomeKey(p.funcionario);
-      if(func) prodByDateReg[key].funcs.add(func);
       out.regionais.add(reg);
     }
 
     const monthRegional={};
-    const monthGeral=Array.from({length:12},()=>({soma:0,cont:0}));
     const dailyGeral={};
     for(const key of Object.keys(prodByDateReg)){
       const st=prodByDateReg[key];
-      const hist=histByDateReg[key] || {efetivos:0, tipos:{}};
-      let safristas=0;
-      st.funcs.forEach(nome => { if(isSafristaTipo(hist.tipos[nome])) safristas += 1; });
-      const pessoas = hist.efetivos + safristas;
+      const pessoas = ativosByDateReg[key] ? ativosByDateReg[key].size : 0;
       if(pessoas <= 0 || st.tons <= 0) continue;
       if(!monthRegional[st.reg]) monthRegional[st.reg]=Array.from({length:12},()=>({soma:0,cont:0}));
       monthRegional[st.reg][st.mi].soma += st.tons / pessoas;
@@ -371,6 +367,7 @@
       }
     }
 
+    const monthGeral=Array.from({length:12},()=>({soma:0,cont:0}));
     for(const d of Object.values(dailyGeral)){
       if(d.pessoas > 0 && d.tons > 0){
         monthGeral[d.mi].soma += d.tons / d.pessoas;
@@ -397,7 +394,6 @@
         const {data,error}=await supabase
           .from('historico_colaboradores')
           .select(selectCols)
-          .eq('origem','importar_relatorios_historico_diario')
           .gte('data_referencia', start)
           .lt('data_referencia', end)
           .range(from, from + pageSize - 1);
