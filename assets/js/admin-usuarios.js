@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { getSession } from './auth.js';
+import { MENU_CONFIG } from './menuConfig.js';
 
 const SUPERVISOES_DISPONIVEIS = [
   "TOCANTINS - Geral",
@@ -46,6 +47,99 @@ const SUPERVISOES_DISPONIVEIS = [
   "AGROTRADER"
 ];
 
+
+const MODULE_GROUP_FALLBACKS = [
+  { group: 'GESTOR', terms: ['app gestor', 'gestor', 'programacao', 'programação', 'os gestor', 'o.s gestor'] },
+  { group: 'CONFERÊNCIA', terms: ['conferencia', 'conferência', 'conferencias', 'conferências', 'distribuir o.s', 'distribuir os', 'irregularidades', 'uber'] },
+  { group: 'COMPRAS', terms: ['compras adm', 'compras_adm', 'painel de compras', 'fornecedores', 'pedidos'] },
+  { group: 'GESTOR', terms: ['compras', 'compras gestor'] },
+  { group: 'HOSPEDAGEM', terms: ['hospedagem', 'hotel', 'hoteis', 'hotéis', 'alojamentos', 'reservas', 'checkouts'] },
+  { group: 'FROTAS', terms: ['frotas', 'excesso de velocidade', 'veiculos', 'veículos', 'multas', 'historico frotas', 'histórico frotas'] },
+  { group: 'FINANCEIRO', terms: ['financeiro', 'fluxo de caixa', 'pagamentos', 'adiantamentos', 'alimentacao', 'alimentação'] },
+  { group: 'LOGÍSTICA', terms: ['logistica', 'logística', 'finalizacao de o.s', 'finalização de o.s', 'finalizacao os', 'finalização os'] },
+  { group: 'DIRETORIA', terms: ['diretoria', 'dre', 'metas', 'desempenho'] },
+  { group: 'RELATÓRIOS', terms: ['importar relatorios', 'importar relatórios', 'relatorios', 'relatórios', 'resultado diario', 'resultado diário', 'producao', 'produção'] },
+  { group: 'RECURSOS HUMANOS', terms: ['contatos e cadastros', 'contatos', 'ferias', 'férias', 'atestados', 'classificadores'] },
+  { group: 'TI', terms: ['integracoes', 'integrações', 'ti'] },
+  { group: 'PATRIMÔNIOS', terms: ['patrimonio', 'patrimônio', 'patrimonios', 'patrimônios'] },
+  { group: 'AUDITORIA', terms: ['auditoria', 'logs'] },
+  { group: 'OPERACIONAL', terms: ['operacional', 'mapa de direcionamento'] },
+];
+
+function normalizeModuleText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function getModuleDisplayName(mod) {
+  return String(mod?.nome || mod?.label || mod?.codigo || mod?.code || '-').trim();
+}
+
+function getMenuGroupOrder() {
+  const groups = (Array.isArray(MENU_CONFIG) ? MENU_CONFIG : []).map((section) => section.grupo);
+  return [...groups, 'TI', 'OUTROS'].filter((item, index, arr) => item && arr.indexOf(item) === index);
+}
+
+function getModuleGroupInfo(mod) {
+  const code = normalizeModuleText(mod?.codigo || mod?.code || '');
+  const name = normalizeModuleText(getModuleDisplayName(mod));
+  const haystack = [code, name].filter(Boolean).join(' | ');
+
+  for (const section of Array.isArray(MENU_CONFIG) ? MENU_CONFIG : []) {
+    for (const item of section.itens || []) {
+      const candidates = [item.code, item.label, item.path, ...(item.aliases || [])]
+        .map(normalizeModuleText)
+        .filter(Boolean);
+      if (candidates.some((candidate) => candidate === code || candidate === name)) {
+        return { group: section.grupo, order: candidates.indexOf(name) >= 0 ? candidates.indexOf(name) : 0 };
+      }
+    }
+  }
+
+  for (const rule of MODULE_GROUP_FALLBACKS) {
+    const terms = (rule.terms || []).map(normalizeModuleText).filter(Boolean);
+    if (terms.some((term) => haystack.includes(term))) {
+      return { group: rule.group, order: 999 };
+    }
+  }
+
+  return { group: 'OUTROS', order: 9999 };
+}
+
+function compareModulesByGroup(a, b) {
+  const order = getMenuGroupOrder();
+  const ga = getModuleGroupInfo(a);
+  const gb = getModuleGroupInfo(b);
+  const groupDiff = (order.indexOf(ga.group) === -1 ? 999 : order.indexOf(ga.group)) - (order.indexOf(gb.group) === -1 ? 999 : order.indexOf(gb.group));
+  if (groupDiff !== 0) return groupDiff;
+  const itemDiff = ga.order - gb.order;
+  if (itemDiff !== 0) return itemDiff;
+  return getModuleDisplayName(a).localeCompare(getModuleDisplayName(b), 'pt-BR');
+}
+
+function groupModules(modules = []) {
+  const order = getMenuGroupOrder();
+  const map = new Map();
+  modules.forEach((mod) => {
+    const info = getModuleGroupInfo(mod);
+    if (!map.has(info.group)) map.set(info.group, []);
+    map.get(info.group).push(mod);
+  });
+  return [...map.entries()]
+    .map(([group, items]) => [group, items.sort(compareModulesByGroup)])
+    .sort(([a], [b]) => {
+      const ia = order.indexOf(a) === -1 ? 999 : order.indexOf(a);
+      const ib = order.indexOf(b) === -1 ? 999 : order.indexOf(b);
+      if (ia !== ib) return ia - ib;
+      return a.localeCompare(b, 'pt-BR');
+    });
+}
+
 const state = {
   profiles: [],
   modules: [],
@@ -69,7 +163,7 @@ function ensureCorePermissionModules() {
   // Se o painel enviar IDs inventados, o Supabase retorna erro de foreign key.
   state.modules = modules
     .filter((mod) => mod && mod.id)
-    .sort((a, b) => String(a.nome || a.codigo || '').localeCompare(String(b.nome || b.codigo || ''), 'pt-BR'));
+    .sort(compareModulesByGroup);
 }
 
 
@@ -178,9 +272,17 @@ function ensureStyles() {
     .au-switch{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:#cbd5e1}
     .au-check-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     .au-check-grid .au-switch{padding:10px 12px;border:1px solid rgba(51,65,85,.72);border-radius:14px;background:#020617}
+    .au-modules-groups{display:flex;flex-direction:column;gap:12px}
+    .au-module-group{border:1px solid rgba(51,65,85,.72);border-radius:18px;background:rgba(2,6,23,.55);overflow:hidden}
+    .au-module-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 13px;background:rgba(15,23,42,.9);border-bottom:1px solid rgba(51,65,85,.55)}
+    .au-module-group-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#93c5fd}
+    .au-module-group-count{font-size:11px;color:#94a3b8}
+    .au-module-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px}
+    .au-module-grid .au-switch{padding:10px 11px;border:1px solid rgba(51,65,85,.72);border-radius:14px;background:#020617;min-height:40px}
+    .au-module-grid .au-switch span{line-height:1.15}
     .au-section-tools{display:flex;justify-content:flex-end;margin:-4px 0 10px}
     .au-link-btn{background:none;border:none;color:#86efac;font-weight:700;cursor:pointer;padding:0;font-size:12px}
-    @media (max-width: 1100px){.au-grid,.au-filter-grid,.au-modal-body,.au-form-grid{grid-template-columns:1fr}.au-modal-body{display:block}.au-card + .au-card{margin-top:18px}}
+    @media (max-width: 1100px){.au-grid,.au-filter-grid,.au-modal-body,.au-form-grid,.au-module-grid{grid-template-columns:1fr}.au-modal-body{display:block}.au-card + .au-card{margin-top:18px}}
   `;
   document.head.appendChild(style);
 }
@@ -480,7 +582,10 @@ function ensureModal() {
           <section class="au-card">
             <h4>Módulos liberados</h4>
             <div class="au-section-note">Selecione os módulos que esse usuário pode acessar individualmente.</div>
-            <div class="au-check-grid" id="auModulesGrid"></div>
+            <div class="au-section-tools">
+              <button class="au-link-btn" type="button" id="auToggleAllModules">Marcar / desmarcar todos</button>
+            </div>
+            <div class="au-modules-groups" id="auModulesGrid"></div>
           </section>
         </div>
         <div class="au-feedback" id="auModalFeedback" style="margin:0 22px 18px"></div>
@@ -502,6 +607,14 @@ function ensureModal() {
     overlay.querySelector('#auModalSave')?.addEventListener('click', handleSaveModal);
     overlay.querySelector('#auToggleAllSupervisoes')?.addEventListener('click', () => {
       const boxes = [...overlay.querySelectorAll('#auSupervisoesGrid input[type="checkbox"]')];
+      if (!boxes.length) return;
+      const shouldCheck = boxes.some((box) => !box.checked);
+      boxes.forEach((box) => {
+        box.checked = shouldCheck;
+      });
+    });
+    overlay.querySelector('#auToggleAllModules')?.addEventListener('click', () => {
+      const boxes = [...overlay.querySelectorAll('#auModulesGrid input[type="checkbox"]')];
       if (!boxes.length) return;
       const shouldCheck = boxes.some((box) => !box.checked);
       boxes.forEach((box) => {
@@ -586,12 +699,24 @@ function renderModules(selectedIds = []) {
   const wrap = document.getElementById('auModulesGrid');
   if (!wrap) return;
   const selectedSet = new Set((selectedIds || []).map((id) => String(id)));
-  wrap.innerHTML = state.modules.length
-    ? state.modules.map((mod) => `
-      <label class="au-switch">
-        <input type="checkbox" value="${escapeHtml(mod.id)}" ${selectedSet.has(String(mod.id)) ? 'checked' : ''}>
-        <span>${escapeHtml(mod.nome || mod.codigo || '-')}</span>
-      </label>
+  const grouped = groupModules(state.modules || []);
+
+  wrap.innerHTML = grouped.length
+    ? grouped.map(([group, items]) => `
+      <section class="au-module-group">
+        <div class="au-module-group-head">
+          <span class="au-module-group-title">${escapeHtml(group)}</span>
+          <span class="au-module-group-count">${items.length} módulo(s)</span>
+        </div>
+        <div class="au-module-grid">
+          ${items.map((mod) => `
+            <label class="au-switch">
+              <input type="checkbox" value="${escapeHtml(mod.id)}" ${selectedSet.has(String(mod.id)) ? 'checked' : ''}>
+              <span>${escapeHtml(getModuleDisplayName(mod))}</span>
+            </label>
+          `).join('')}
+        </div>
+      </section>
     `).join('')
     : '<span class="au-sub">Nenhum módulo ativo encontrado.</span>';
 }
