@@ -77,6 +77,14 @@ function brDate(value) {
   return y && m && d ? `${d}/${m}/${y}` : String(value);
 }
 
+function nextDateISO(value) {
+  const iso = String(value || '').slice(0, 10);
+  const dt = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return iso;
+  dt.setDate(dt.getDate() + 1);
+  return dt.toISOString().slice(0, 10);
+}
+
 function toNumber(value) {
   if (value === null || value === undefined || value === '') return 0;
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -434,46 +442,65 @@ function mapProducaoSnapshotRows(rows, origem) {
 }
 
 async function loadProducaoPagamento(inicio, fim) {
-  // Primeiro tenta a base oficial da produção diária importada pelo painel.
-  // Essa tabela pode guardar a data real em `data` ou somente a referência da importação em `data_referencia`.
-  let res = await supabase
-    .from('producao_snapshot')
-    .select('data,data_referencia,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
-    .gte('data', inicio)
-    .lte('data', fim)
-    .order('data', { ascending: true })
-    .limit(20000);
+  // Produção Diária já importada pelo menu Importar Relatórios.
+  // Não usa Resultado Diário e não exige upload dentro do Financeiro.
+  const fimExclusivo = nextDateISO(fim);
+  const pageSize = 1000;
+  const allRows = [];
+  const diagnostics = [];
 
-  if (!res.error && (res.data || []).length) {
-    const rows = mapProducaoSnapshotRows(res.data, 'producao_snapshot.data');
-    if (rows.length) return rows;
+  async function fetchByColumn(columnName, origem) {
+    const collected = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('producao_snapshot')
+        .select('data,data_referencia,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
+        .gte(columnName, inicio)
+        .lt(columnName, fimExclusivo)
+        .order(columnName, { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      const rows = data || [];
+      collected.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    diagnostics.push(`${origem}: ${collected.length} registros brutos`);
+    return mapProducaoSnapshotRows(collected, origem);
   }
 
-  res = await supabase
-    .from('producao_snapshot')
-    .select('data,data_referencia,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
-    .gte('data_referencia', inicio)
-    .lte('data_referencia', fim)
-    .order('data_referencia', { ascending: true })
-    .limit(20000);
+  const byData = await fetchByColumn('data', 'producao_snapshot.data');
+  allRows.push(...byData);
 
-  if (!res.error && (res.data || []).length) {
-    const rows = mapProducaoSnapshotRows(res.data, 'producao_snapshot.data_referencia');
-    if (rows.length) return rows;
+  const byReferencia = await fetchByColumn('data_referencia', 'producao_snapshot.data_referencia');
+  allRows.push(...byReferencia);
+
+  const seen = new Set();
+  const unique = [];
+  for (const row of allRows) {
+    const dataRef = parseDateLoose(row.data || row.data_referencia);
+    const key = `${dataRef}|${normalizeName(row.funcionario)}|${row.os || ''}|${row.cliente || ''}`;
+    if (!dataRef || seen.has(key)) continue;
+    seen.add(key);
+    unique.push({ ...row, data: dataRef, data_referencia: row.data_referencia || dataRef });
   }
 
-  // Fallback: Resultado Diário mensal/histórico usado pelo DRE.
-  // Serve quando a produção diária ainda não foi importada pelo menu antigo.
-  res = await supabase
-    .from('relatorio_resultado_diario')
-    .select('data,funcionario,coordenacao,supervisao,cliente_final,os,toneladas,cargas')
-    .gte('data', inicio)
-    .lte('data', fim)
-    .order('data', { ascending: true })
-    .limit(20000);
+  if (!unique.length) {
+    let ultimaData = '-';
+    try {
+      const { data } = await supabase
+        .from('producao_snapshot')
+        .select('data,data_referencia')
+        .order('data_referencia', { ascending: false, nullsFirst: false })
+        .limit(1);
+      const row = (data || [])[0];
+      ultimaData = row ? `data: ${brDate(row.data)} | data_referencia: ${brDate(row.data_referencia)}` : '-';
+    } catch (_) {}
+    throw new Error(`Nenhuma Produção Diária importada localizada no período selecionado. Diagnóstico: ${diagnostics.join(' | ')}. Última referência disponível: ${ultimaData}.`);
+  }
 
-  if (res.error) throw res.error;
-  return mapProducaoSnapshotRows(res.data || [], 'relatorio_resultado_diario');
+  return unique;
 }
 
 function apurarAlimentacaoRows(producaoRows, rhMap) {
@@ -764,9 +791,8 @@ initProtectedPage('Financeiro', (content, userContext) => {
             </section>
             <section class="pay-card">
               <h4>ALIMENTAÇÃO</h4>
-              <p>Importe a Produção Diária. O painel paga uma vez por colaborador/dia, soma almoço e diária quando o colaborador for diarista, e gera Flash/iFood.</p>
+              <p>Usa a Produção Diária já importada no menu Importar Relatórios. O painel paga uma vez por colaborador/dia, soma almoço e diária quando o colaborador for diarista, e gera Flash/iFood.</p>
               <div class="fin-form">
-                <div class="fin-field full"><label>Produção Diária</label><label class="pay-upload" for="alimFileProducao" data-drop-for="alimFileProducao"><input id="alimFileProducao" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="alimFileProducaoName">Nenhum arquivo selecionado</span></span></label></div>
                 <div class="fin-field"><label>Data inicial</label><input id="alimInicio" type="date" value="${esc(state.filters.inicio)}"></div>
                 <div class="fin-field"><label>Data final</label><input id="alimFim" type="date" value="${esc(state.currentDate)}"></div>
                 <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAlimentacao" type="button">Gerar alimentação</button></div>
@@ -1011,33 +1037,25 @@ initProtectedPage('Financeiro', (content, userContext) => {
   async function gerarAlimentacao() {
     const inicio = document.getElementById('alimInicio').value;
     const fim = document.getElementById('alimFim').value;
-    const producaoFile = document.getElementById('alimFileProducao')?.files?.[0];
     if (!inicio || !fim) return paySetFeedback('fbAlimentacao', 'Informe data inicial e final.', 'err');
     if (inicio > fim) return paySetFeedback('fbAlimentacao', 'A data inicial não pode ser maior que a final.', 'err');
-    if (!producaoFile) return paySetFeedback('fbAlimentacao', 'Arraste ou selecione a planilha de Produção Diária.', 'err');
     try {
-      paySetFeedback('fbAlimentacao', 'Lendo Produção Diária e colaboradores...');
-      const [rhMap, arquivoRows] = await Promise.all([loadColaboradoresPagamento(), readWorkbookRows(producaoFile)]);
-      const producaoArquivo = mapProducaoDiariaFileRows(arquivoRows, producaoFile.name);
-      const producao = filterProducaoPeriodo(producaoArquivo, inicio, fim);
-      if (!producao.length) {
-        const primeirasDatas = [...new Set(producaoArquivo.map((row) => row.data || row.data_referencia).filter(Boolean))].sort().slice(0, 3).map(brDate).join(', ');
-        const ultimasDatas = [...new Set(producaoArquivo.map((row) => row.data || row.data_referencia).filter(Boolean))].sort().slice(-3).map(brDate).join(', ');
-        throw new Error(`Nenhuma produção localizada no período informado dentro da planilha. Registros lidos: ${producaoArquivo.length}. Datas no arquivo: ${primeirasDatas || '-'}${ultimasDatas ? ' até ' + ultimasDatas : ''}.`);
-      }
+      paySetFeedback('fbAlimentacao', 'Consultando Produção Diária importada e colaboradores...');
+      const [rhMap, producao] = await Promise.all([loadColaboradoresPagamento(), loadProducaoPagamento(inicio, fim)]);
       const apuracao = apurarAlimentacaoRows(producao, rhMap);
       if (!apuracao.conferencia.length && apuracao.logs.length) {
-        paySetFeedback('fbAlimentacao', `Produção lida, mas sem colaboradores válidos. Verifique Pendências: ${apuracao.logs.length}.`, 'err');
+        paySetFeedback('fbAlimentacao', `Produção localizada, mas sem colaboradores válidos. Verifique Pendências: ${apuracao.logs.length}.`, 'err');
       }
       state.pagamentos = { tipo: 'Alimentação', periodo: dateRangeLabel(inicio, fim), ...apuracao };
       renderPayTables();
       setPayTab('conferencia');
-      paySetFeedback('fbAlimentacao', `Gerado da planilha ${producaoFile.name}: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências.`, 'ok');
+      paySetFeedback('fbAlimentacao', `Gerado da Produção Diária importada: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências.`, 'ok');
     } catch (err) {
       console.error(err);
       paySetFeedback('fbAlimentacao', err.message || 'Erro ao gerar alimentação.', 'err');
     }
   }
+
 
   async function gerarAdiantamentos() {
     const extratoFile = document.getElementById('adiantFileExtrato').files?.[0];
@@ -1172,7 +1190,6 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
   setupPagamentoDropzone('adiantFileExtrato');
   setupPagamentoDropzone('adiantFileAlelo');
-  setupPagamentoDropzone('alimFileProducao');
   document.getElementById('btnGerarAlimentacao').addEventListener('click', gerarAlimentacao);
   document.getElementById('btnGerarAdiantamentos').addEventListener('click', gerarAdiantamentos);
   document.querySelectorAll('.pay-subtab').forEach((btn) => btn.addEventListener('click', () => setPayTab(btn.dataset.payTab)));
