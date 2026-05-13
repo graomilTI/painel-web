@@ -1175,10 +1175,11 @@
     diasSemLeitura: ['Dias sem Leitura']
   };
 
-  function mapPatrimonioRow(row, importacaoId) {
+  function mapPatrimonioRow(row, importacaoId, dataUpload = null) {
     const patrimonioCodigo = normalizeText(pickValue(row, PATRIMONIO_COL.patrimonioCodigo));
     return {
       importacao_id: importacaoId,
+      data_upload: dataUpload || null,
       patrimonio_codigo: patrimonioCodigo ? String(patrimonioCodigo).trim().toUpperCase() : null,
       coordenacao: normalizeText(pickValue(row, PATRIMONIO_COL.coordenacao)),
       supervisao: normalizeText(pickValue(row, PATRIMONIO_COL.supervisao)),
@@ -1218,11 +1219,13 @@
     const user = opts.user || opts.auth?.user || null;
     const userMeta = user?.user_metadata || {};
     const userName = userMeta.full_name || userMeta.name || user?.email || null;
+    const dataUpload = new Date().toISOString();
 
     const { data: importacao, error: impError } = await opts.supabase
       .from('patrimonios_importacoes')
       .insert({
         nome_arquivo: file.name,
+        data_upload: dataUpload,
         origem: 'importar_relatorios',
         status: 'processando',
         total_linhas: rows.length,
@@ -1236,7 +1239,7 @@
       .single();
     if (impError) throw new Error(impError.message || 'Falha ao criar importação de patrimônios.');
 
-    const mappedRaw = rows.map((row) => mapPatrimonioRow(row, importacao.id)).filter((row) => row.patrimonio_codigo);
+    const mappedRaw = rows.map((row) => mapPatrimonioRow(row, importacao.id, dataUpload)).filter((row) => row.patrimonio_codigo);
     const unique = new Map();
     mappedRaw.forEach((row) => unique.set(row.patrimonio_codigo, row));
     const mapped = Array.from(unique.values());
@@ -1253,6 +1256,12 @@
       const { error } = await opts.supabase.from('patrimonios_snapshot').upsert(batch, { onConflict: 'patrimonio_codigo' });
       if (error) throw new Error(error.message || 'Falha ao gravar patrimônios no Supabase.');
       total += batch.length;
+    }
+
+    for (let i = 0; i < mapped.length; i += batchSize) {
+      const batch = mapped.slice(i, i + batchSize);
+      const { error } = await opts.supabase.from('patrimonios_historico_leituras').insert(batch);
+      if (error) throw new Error(error.message || 'Falha ao gravar histórico de patrimônios no Supabase.');
     }
 
     let frotaPatrimonioSync = null;

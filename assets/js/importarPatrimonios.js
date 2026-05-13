@@ -130,10 +130,11 @@ function normalizePatrimonioCodigo(value) {
   return normalizeText(value)?.trim().toUpperCase() || null;
 }
 
-function mapRow(row, importacaoId) {
+function mapRow(row, importacaoId, dataUpload) {
   const patrimonioCodigo = normalizePatrimonioCodigo(getField(row, COL.patrimonioCodigo));
   return {
     importacao_id: importacaoId,
+    data_upload: dataUpload,
     patrimonio_codigo: patrimonioCodigo,
     coordenacao: normalizeText(getField(row, COL.coordenacao)),
     supervisao: normalizeText(getField(row, COL.supervisao)),
@@ -156,7 +157,10 @@ async function upsertBatches(table, rows, batchSize = 500, onProgress) {
 
   for (let i = 0; i < chunks.length; i += 1) {
     const chunk = chunks[i];
-    const { error } = await supabase.from(table).upsert(chunk, { onConflict: 'patrimonio_codigo' });
+    const query = table === 'patrimonios_historico_leituras'
+      ? supabase.from(table).insert(chunk)
+      : supabase.from(table).upsert(chunk, { onConflict: 'patrimonio_codigo' });
+    const { error } = await query;
     if (error) throw error;
 
     const done = Math.min((i + 1) * batchSize, rows.length);
@@ -236,7 +240,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       <div class="base-card">
         <h3 style="margin-top:0">Retorno da importação</h3>
         <div id="feedback" class="base-status">Selecione um arquivo e clique em "Importar patrimônios".</div>
-        <p style="margin:12px 0 0;opacity:.75;font-size:.95rem">Nesta versão, a importação limpa o snapshot atual e regrava a base para manter relatórios e status alinhados.</p>
+        <p style="margin:12px 0 0;opacity:.75;font-size:.95rem">A importação limpa o snapshot atual e também grava histórico pela data real do upload.</p>
       </div>
     </section>
   `;
@@ -268,6 +272,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       const origem = origemInput.value || 'upload_manual';
       const observacoes = obsInput.value?.trim() || null;
       const nomeAbaEsperada = normalizeText(nomeAbaInput.value) || 'Patrimônios';
+      const dataUpload = new Date().toISOString();
 
       if (!file) throw new Error('Selecione o arquivo Excel.');
 
@@ -289,6 +294,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
         .from('patrimonios_importacoes')
         .insert({
           nome_arquivo: file.name,
+          data_upload: dataUpload,
           origem,
           status: 'processando',
           total_linhas: rows.length,
@@ -305,7 +311,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       importacaoId = importacao.id;
 
       const mappedRaw = rows
-        .map((row) => mapRow(row, importacaoId))
+        .map((row) => mapRow(row, importacaoId, dataUpload))
         .filter((row) => row.patrimonio_codigo);
 
       const uniqueMap = new Map();
@@ -337,6 +343,17 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
           'Importando snapshot de patrimônios...',
           `ID: ${importacaoId}`,
           `Aba usada: ${selectedSheetName}`,
+          `Data do upload: ${dataUpload}`,
+          `Lote: ${loteAtual}/${totalLotes}`,
+          `Progresso: ${done}/${total}`
+        ].join('\n');
+      });
+
+      await upsertBatches('patrimonios_historico_leituras', mapped, 500, (done, total, loteAtual, totalLotes) => {
+        feedback.textContent = [
+          'Gravando histórico diário de patrimônios...',
+          `ID: ${importacaoId}`,
+          `Data do upload: ${dataUpload}`,
           `Lote: ${loteAtual}/${totalLotes}`,
           `Progresso: ${done}/${total}`
         ].join('\n');
@@ -379,6 +396,7 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
         `ID da importação: ${importacaoId}`,
         `Arquivo: ${file.name}`,
         `Aba usada: ${selectedSheetName}`,
+        `Data do upload: ${dataUpload}`,
         `Linhas lidas: ${rows.length}`,
         `Linhas válidas: ${mapped.length}`,
         `Duplicados ignorados: ${duplicadosIgnorados}`,

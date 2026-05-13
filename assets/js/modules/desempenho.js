@@ -2,7 +2,7 @@
  * Módulo Diretoria > Desempenho
  * Volume por colaborador ativo com cargo Classificador.
  * Fonte de produção: public.relatorio_resultado_diario
- * Base de pessoas: public.colaborador_snapshot, último registro de cada colaborador ativo.
+ * Base de pessoas: public.historico_colaboradores por data; fallback em colaborador_snapshot.
  */
 (function () {
   'use strict';
@@ -35,10 +35,7 @@
     days: [],
     totals: null,
     regionais: [],
-    error: null,
-    note: null,
-    latestProductionDate: null,
-    periodInitialized: false
+    error: null
   };
 
   function injectStyle() {
@@ -124,6 +121,12 @@
     return new Date(Date.UTC(year, month, 1));
   }
 
+  function addDays(date, days) {
+    const d = new Date(date.getTime());
+    d.setUTCDate(d.getUTCDate() + days);
+    return d;
+  }
+
   function isActive(row) {
     if (row?.ativo === true) return true;
     if (row?.ativo === false) return false;
@@ -166,62 +169,66 @@
     );
   }
 
-  async function loadLatestProductionDate(supabase) {
-    const { data, error } = await supabase
-      .from('relatorio_resultado_diario')
-      .select('data')
-      .not('data', 'is', null)
-      .order('data', { ascending: false })
-      .limit(1);
+  async function loadClassificadoresHistorico(supabase) {
+    const start = isoDate(addDays(firstDay(state.year, state.month), -45));
+    const end = isoDate(nextMonthDay(state.year, state.month));
+    const select = 'cpf,nome,situacao,ativo,coordenacao,supervisao,tipo,cargo,data_referencia';
 
-    if (error) {
-      console.warn('[DESEMPENHO] Não foi possível localizar a última data com produção.', error);
-      return null;
+    try {
+      return await fetchAllRows(
+        supabase,
+        'historico_colaboradores',
+        select,
+        (q) => q.gte('data_referencia', start).lt('data_referencia', end).order('data_referencia', { ascending: true })
+      );
+    } catch (error) {
+      console.warn('[DESEMPENHO] historico_colaboradores indisponível; usando colaborador_snapshot como fallback.', error);
+      return fetchAllRows(
+        supabase,
+        'colaborador_snapshot',
+        select,
+        (q) => q.gte('data_referencia', start).lt('data_referencia', end).order('data_referencia', { ascending: true })
+      );
     }
-
-    const value = Array.isArray(data) && data[0] ? dateKey(data[0].data) : '';
-    return value || null;
   }
 
-  function setPeriodFromIsoDate(iso) {
-    const [year, month] = String(iso || '').split('-').map(Number);
-    if (!year || !month) return false;
-    state.year = year;
-    state.month = month;
-    return true;
-  }
+  function buildActiveMapsByDay(colabRows, days) {
+    const rows = [...(colabRows || [])]
+      .filter((row) => dateKey(row.data_referencia))
+      .sort((a, b) => dateKey(a.data_referencia).localeCompare(dateKey(b.data_referencia)));
 
-  async function loadClassificadoresAtivos(supabase) {
-    const rows = await fetchAllRows(
-      supabase,
-      'colaborador_snapshot',
-      'cpf,nome,situacao,ativo,coordenacao,supervisao,tipo,cargo,data_referencia',
-      (q) => q.order('data_referencia', { ascending: false })
-    );
+    const activeByDay = new Map();
 
-    const latestByPerson = new Map();
-    for (const row of rows) {
-      const key = collaboratorKey(row);
-      if (!key) continue;
-      if (!latestByPerson.has(key)) latestByPerson.set(key, row);
+    for (const day of days) {
+      const latestByPerson = new Map();
+
+      for (const row of rows) {
+        const ref = dateKey(row.data_referencia);
+        if (!ref || ref > day) continue;
+        const key = collaboratorKey(row);
+        if (!key) continue;
+        const current = latestByPerson.get(key);
+        if (!current || ref >= dateKey(current.data_referencia)) latestByPerson.set(key, row);
+      }
+
+      const byRegional = new Map();
+      latestByPerson.forEach((row) => {
+        if (!isActive(row) || !isClassificador(row)) return;
+        const reg = mapRegional(row.coordenacao || row.supervisao || '');
+        if (!reg || keyText(reg) === 'GERAL') return;
+        const k = keyText(reg);
+        if (!byRegional.has(k)) byRegional.set(k, { regional: reg, count: 0 });
+        byRegional.get(k).count += 1;
+      });
+
+      activeByDay.set(day, byRegional);
     }
 
-    return [...latestByPerson.values()].filter((row) => isActive(row) && isClassificador(row));
+    return activeByDay;
   }
 
   function buildDataset(prodRows, colabRows) {
     const volumeField = VOLUME_OPTIONS[state.volumeType]?.field || 'toneladas';
-    const activeByRegional = new Map();
-    const activeTotal = { count: 0 };
-
-    for (const c of colabRows) {
-      const reg = mapRegional(c.coordenacao || c.supervisao || '');
-      if (!reg || keyText(reg) === 'GERAL') continue;
-      const k = keyText(reg);
-      if (!activeByRegional.has(k)) activeByRegional.set(k, { regional: reg, count: 0 });
-      activeByRegional.get(k).count += 1;
-      activeTotal.count += 1;
-    }
 
     const prodByRegional = new Map();
     const daysSet = new Set();
@@ -240,24 +247,32 @@
     }
 
     const days = [...daysSet].sort();
+    const activeByDay = buildActiveMapsByDay(colabRows, days);
     const rows = [];
+
     for (const [regKey, prod] of prodByRegional.entries()) {
-      const active = activeByRegional.get(regKey)?.count || 0;
       const values = {};
       let sumDailyAverage = 0;
       let countDailyAverage = 0;
+      let sumActive = 0;
+      let countActive = 0;
+
       for (const day of days) {
         const volume = toNumber(prod.days[day]);
+        const active = activeByDay.get(day)?.get(regKey)?.count || 0;
         const value = active > 0 && volume > 0 ? volume / active : 0;
         values[day] = value;
-        if (value > 0) {
+        if (volume > 0 && active > 0) {
           sumDailyAverage += value;
           countDailyAverage += 1;
+          sumActive += active;
+          countActive += 1;
         }
       }
+
       rows.push({
         regional: prod.regional,
-        active,
+        active: countActive ? sumActive / countActive : 0,
         totalVolume: prod.totalVolume,
         values,
         media: countDailyAverage ? sumDailyAverage / countDailyAverage : 0
@@ -266,47 +281,59 @@
 
     const totalByDay = {};
     let totalVolume = 0;
-    const regionaisComProducao = new Set(rows.map((r) => keyText(r.regional)));
-    let activeInRegionaisComProducao = 0;
-    activeByRegional.forEach((value, key) => {
-      if (regionaisComProducao.has(key)) activeInRegionaisComProducao += value.count;
-    });
+    let totalActiveSum = 0;
+    let totalActiveCount = 0;
 
-    for (const row of rows) {
-      totalVolume += row.totalVolume;
-      for (const day of days) {
-        totalByDay[day] = (totalByDay[day] || 0) + toNumber(row.values[day]) * row.active;
-      }
-    }
+    for (const row of rows) totalVolume += row.totalVolume;
 
     const totalValues = {};
     let totalMediaSum = 0;
     let totalMediaCount = 0;
     for (const day of days) {
       let activeOnDay = 0;
+      let volumeOnDay = 0;
       rows.forEach((row) => {
-        if (toNumber(row.values[day]) > 0) activeOnDay += row.active;
+        const regKey = keyText(row.regional);
+        const active = activeByDay.get(day)?.get(regKey)?.count || 0;
+        const dailyAvg = toNumber(row.values[day]);
+        if (active > 0 && dailyAvg > 0) {
+          activeOnDay += active;
+          volumeOnDay += dailyAvg * active;
+        }
       });
-      const value = activeOnDay > 0 ? totalByDay[day] / activeOnDay : 0;
+      totalByDay[day] = volumeOnDay;
+      const value = activeOnDay > 0 ? volumeOnDay / activeOnDay : 0;
       totalValues[day] = value;
       if (value > 0) {
         totalMediaSum += value;
         totalMediaCount += 1;
+        totalActiveSum += activeOnDay;
+        totalActiveCount += 1;
       }
     }
+
+    const regionais = [];
+    const seenRegionais = new Set();
+    activeByDay.forEach((map) => {
+      map.forEach((value, key) => {
+        if (seenRegionais.has(key)) return;
+        seenRegionais.add(key);
+        regionais.push(value);
+      });
+    });
 
     return {
       rows,
       days,
       totals: {
-        active: activeInRegionaisComProducao || activeTotal.count,
+        active: totalActiveCount ? totalActiveSum / totalActiveCount : 0,
         totalVolume,
         values: totalValues,
         media: totalMediaCount ? totalMediaSum / totalMediaCount : 0,
         regionais: rows.length,
-        activeTotal: activeTotal.count
+        activeTotal: totalActiveCount ? totalActiveSum / totalActiveCount : 0
       },
-      regionais: [...activeByRegional.values()].sort((a, b) => a.regional.localeCompare(b.regional, 'pt-BR'))
+      regionais: regionais.sort((a, b) => a.regional.localeCompare(b.regional, 'pt-BR'))
     };
   }
 
@@ -358,7 +385,7 @@
     return `
       <div class="des-kpis">
         <article class="des-card"><span>${esc(volumeOpt.label)}</span><strong>${fmtNumber(t.totalVolume, 2)}</strong><small>Total do mês no Resultado Diário</small></article>
-        <article class="des-card"><span>Classificadores ativos</span><strong>${fmtInt(t.active)}</strong><small>Cargo Classificador nas regionais com produção</small></article>
+        <article class="des-card"><span>Classificadores ativos</span><strong>${fmtNumber(t.active, 0)}</strong><small>Média diária histórica nas regionais com produção</small></article>
         <article class="des-card"><span>Média geral</span><strong>${fmtNumber(t.media, 2)}</strong><small>Volume por classificador/dia</small></article>
         <article class="des-card"><span>Coordenações</span><strong>${fmtInt(t.regionais)}</strong><small>Com produção no período</small></article>
       </div>
@@ -419,24 +446,21 @@
             <tbody>${body}${totalRow}</tbody>
           </table>
         </div>
-        <div class="des-footer-note">A cor é comparativa por coluna: vermelho para menor desempenho, verde para maior desempenho. A base de colaboradores usa apenas ativos com cargo Classificador.</div>
+        <div class="des-footer-note">A cor é comparativa por coluna: vermelho para menor desempenho, verde para maior desempenho. A base de colaboradores usa o histórico diário e somente ativos com cargo Classificador.</div>
       </section>
     `;
   }
 
   function render(container) {
     const volumeOptions = Object.entries(VOLUME_OPTIONS).map(([key, item]) => `<option value="${esc(key)}" ${state.volumeType === key ? 'selected' : ''}>${esc(item.label)}</option>`).join('');
-    const years = Array.from(new Set([
-      ...Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i),
-      state.year
-    ])).sort((a, b) => a - b);
+    const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
     container.innerHTML = `
       <section class="des-page">
         <div class="des-hero">
           <div>
             <div class="des-kicker">Diretoria · Desempenho</div>
             <h1>Desempenho por coordenação</h1>
-            <p>Comparativo diário e mensal de volume por colaborador, usando o Resultado Diário já importado no DRE e a base de colaboradores ativos com cargo <b>Classificador</b>.</p>
+            <p>Comparativo diário e mensal de volume por colaborador, usando o Resultado Diário já importado no DRE e o histórico diário de colaboradores ativos com cargo <b>Classificador</b>.</p>
           </div>
           <div class="des-actions">
             <button class="des-btn secondary" type="button" data-des-back>Voltar</button>
@@ -462,8 +486,7 @@
         </div>
 
         ${state.error ? `<div class="des-status err"><strong>Erro:</strong> ${esc(state.error)}</div>` : ''}
-        ${state.note ? `<div class="des-status"><strong>Observação:</strong> ${esc(state.note)}</div>` : ''}
-        ${state.loading ? `<div class="des-status"><strong>Carregando dados...</strong> Consultando produção e colaboradores ativos.</div>` : ''}
+        ${state.loading ? `<div class="des-status"><strong>Carregando dados...</strong> Consultando produção e histórico diário de colaboradores.</div>` : ''}
         ${renderKpis()}
         ${renderTable()}
       </section>
@@ -507,32 +530,14 @@
     try {
       state.loading = true;
       state.error = null;
-      state.note = null;
       render(container);
       const supabase = state.supabase;
       if (!supabase) throw new Error('Cliente Supabase não disponível.');
 
-      if (!state.periodInitialized) {
-        const latest = await loadLatestProductionDate(supabase);
-        state.latestProductionDate = latest;
-        state.periodInitialized = true;
-        if (latest && setPeriodFromIsoDate(latest)) {
-          state.note = `Exibindo automaticamente ${MONTHS[state.month - 1]}/${state.year}, que é o último mês com produção importada no Resultado Diário.`;
-        }
-      }
-
       const [prodRows, colabRows] = await Promise.all([
         loadProducao(supabase),
-        loadClassificadoresAtivos(supabase)
+        loadClassificadoresHistorico(supabase)
       ]);
-
-      if (!prodRows.length && state.latestProductionDate) {
-        const [latestYear, latestMonth, latestDay] = state.latestProductionDate.split('-');
-        state.note = `Nenhuma produção localizada para ${MONTHS[state.month - 1]}/${state.year}. Última data com produção importada: ${latestDay}/${latestMonth}/${latestYear}.`;
-      } else if (!prodRows.length) {
-        state.note = 'Nenhuma produção foi localizada em relatorio_resultado_diario.';
-      }
-
       const dataset = buildDataset(prodRows, colabRows);
       state.rows = dataset.rows;
       state.days = dataset.days;

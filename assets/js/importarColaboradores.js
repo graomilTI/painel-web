@@ -151,6 +151,17 @@ function excelDateToISO(value) {
   return null;
 }
 
+function sheetNameDateToISO(name) {
+  const s = String(name || '').trim();
+  let m = s.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = s.match(/^(\d{2})(\d{2})(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return s;
+  return null;
+}
+
 function normalizeCurrency(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number') return value;
@@ -224,10 +235,32 @@ function mapRow(row, dataReferencia, importacaoId) {
   };
 }
 
-async function insertBatches(table, rows, batchSize = 300, onProgress) {
+function mapToHistoricoColaborador(row) {
+  const { conta_bancaria, ...rest } = row;
+  return {
+    ...rest,
+    conta_bancaria_despesas: conta_bancaria ?? null
+  };
+}
+
+async function limparHistoricoColaboradoresPorDatas(datas = []) {
+  for (const data of datas) {
+    if (!data) continue;
+    const { error } = await supabase
+      .from('historico_colaboradores')
+      .delete()
+      .eq('data_referencia', data);
+    if (error) throw error;
+  }
+}
+
+async function writeBatches(table, rows, batchSize = 300, onProgress, options = {}) {
   for (let i = 0; i < rows.length; i += batchSize) {
     const chunk = rows.slice(i, i + batchSize);
-    const { error } = await supabase.from(table).insert(chunk);
+    const query = options.upsert
+      ? supabase.from(table).upsert(chunk, { onConflict: options.onConflict })
+      : supabase.from(table).insert(chunk);
+    const { error } = await query;
     if (error) throw error;
     if (onProgress) onProgress(Math.min(i + chunk.length, rows.length), rows.length);
   }
@@ -320,7 +353,8 @@ initProtectedPage('Importar Colaboradores', (content, ctx) => {
           <li>CPF é normalizado com 11 dígitos, preservando zeros à esquerda.</li>
           <li>Datas como Admissão, Desligamento e Data de Nascimento são convertidas para formato ISO.</li>
           <li>O campo <strong>ativo</strong> é calculado automaticamente com base em Situação e Desligamento.</li>
-          <li>Os registros são gravados em histórico por <strong>data de referência</strong>.</li>
+          <li>Os registros são gravados em <strong>historico_colaboradores</strong> por data de referência.</li>
+          <li>Se o arquivo tiver abas com nomes de data, como <strong>01/01/2026</strong>, o sistema importa todas como histórico diário.</li>
           <li>A importação é salva em lotes para reduzir risco de falha em arquivos maiores.</li>
         </ul>
       </div>
@@ -371,26 +405,34 @@ initProtectedPage('Importar Colaboradores', (content, ctx) => {
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: false });
       const firstSheet = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[firstSheet];
 
-      const rows = XLSX.utils.sheet_to_json(sheet, {
-        defval: null,
-        raw: true
-      });
+      const sheetDateNames = workbook.SheetNames
+        .map((name) => ({ name, dataReferencia: sheetNameDateToISO(name) }))
+        .filter((item) => item.dataReferencia);
 
-      if (!rows.length) throw new Error('A planilha está vazia.');
+      const sheetsToImport = sheetDateNames.length > 1
+        ? sheetDateNames
+        : [{ name: firstSheet, dataReferencia }];
 
+      const allRows = [];
+      const preparedRows = [];
+      const sheetSummaries = [];
+
+      for (const item of sheetsToImport) {
+        const currentSheet = workbook.Sheets[item.name];
+        const currentRows = XLSX.utils.sheet_to_json(currentSheet, { defval: null, raw: true });
+        if (!currentRows.length) continue;
+        validateRows(currentRows);
+        allRows.push(...currentRows);
+        preparedRows.push({ sheetName: item.name, dataReferencia: item.dataReferencia, rows: currentRows });
+      }
+
+      if (!preparedRows.length) throw new Error('A planilha está vazia.');
+
+      setSummary({ linhas: allRows.length, validas: 0, status: 'Criando importação' });
       setFeedback(`Arquivo lido com sucesso.
-Aba: ${firstSheet}
-Linhas encontradas: ${rows.length}
-Validando cabeçalhos e coluna de admissão...`);
-
-      validateRows(rows);
-
-      setSummary({ linhas: rows.length, validas: 0, status: 'Criando importação' });
-      setFeedback(`Arquivo lido com sucesso.
-Aba: ${firstSheet}
-Linhas encontradas: ${rows.length}
+Abas para importar: ${preparedRows.length}
+Linhas encontradas: ${allRows.length}
 Criando registro de importação...`);
 
       const { data: importacao, error: impError } = await supabase
@@ -401,8 +443,11 @@ Criando registro de importação...`);
           origem,
           importado_por: ctx.user.id,
           status: 'processando',
-          total_linhas: rows.length,
-          observacoes
+          total_linhas: allRows.length,
+          observacoes: [
+            observacoes,
+            preparedRows.length > 1 ? `Histórico multiabas: ${preparedRows.length} abas` : null
+          ].filter(Boolean).join(' | ') || null
         })
         .select()
         .single();
@@ -410,31 +455,61 @@ Criando registro de importação...`);
       if (impError) throw impError;
       importacaoId = importacao.id;
 
-      const mapped = rows
-        .map((row) => mapRow(row, dataReferencia, importacaoId))
-        .filter((row) => row.nome);
+      const mapped = [];
+      for (const item of preparedRows) {
+        const mappedSheet = item.rows
+          .map((row) => mapRow(row, item.dataReferencia, importacaoId))
+          .filter((row) => row.nome);
+        mapped.push(...mappedSheet);
+        sheetSummaries.push(`${item.sheetName}: ${mappedSheet.length} registro(s)`);
+      }
+
+      if (!mapped.length) throw new Error('Nenhum colaborador válido encontrado para importar.');
 
       const comAdmissao = mapped.filter((row) => row.admissao).length;
 
-      setSummary({ linhas: rows.length, validas: mapped.length, status: 'Importando' });
+      setSummary({ linhas: allRows.length, validas: mapped.length, status: 'Importando' });
       setFeedback(
         `Importação criada.
 ID: ${importacaoId}
-Linhas lidas: ${rows.length}
+Linhas lidas: ${allRows.length}
 Linhas válidas: ${mapped.length}
 Com admissão preenchida: ${comAdmissao}
 
-Enviando registros ao banco...`
+Gravando histórico diário...`
       );
 
-      await insertBatches('colaborador_snapshot', mapped, 300, (done, total) => {
+      const datasHistorico = [...new Set(mapped.map((row) => row.data_referencia).filter(Boolean))];
+      const historicoMapped = mapped.map(mapToHistoricoColaborador);
+
+      setFeedback(
+        `Importação criada.
+ID: ${importacaoId}
+Linhas lidas: ${allRows.length}
+Linhas válidas: ${mapped.length}
+
+Limpando histórico das datas importadas para evitar duplicidade...`
+      );
+      await limparHistoricoColaboradoresPorDatas(datasHistorico);
+
+      await writeBatches('historico_colaboradores', historicoMapped, 300, (done, total) => {
         setFeedback(
           `Importação criada.
 ID: ${importacaoId}
-Linhas lidas: ${rows.length}
+Linhas lidas: ${allRows.length}
 Linhas válidas: ${mapped.length}
 
-Enviando registros ao banco...
+Gravando histórico diário de colaboradores...
+Progresso: ${done}/${total}`
+        );
+      });
+
+      await writeBatches('colaborador_snapshot', mapped, 300, (done, total) => {
+        setFeedback(
+          `Histórico gravado.
+ID: ${importacaoId}
+
+Atualizando base legada colaborador_snapshot...
 Progresso: ${done}/${total}`
         );
       });
@@ -443,22 +518,29 @@ Progresso: ${done}/${total}`
         .from('colaborador_importacoes')
         .update({
           status: 'processado',
-          total_linhas: mapped.length
+          total_linhas: mapped.length,
+          observacoes: [
+            observacoes,
+            preparedRows.length > 1 ? `Histórico multiabas importado: ${preparedRows.length} abas.` : null,
+            `Com admissão preenchida: ${comAdmissao}`
+          ].filter(Boolean).join(' | ') || null
         })
         .eq('id', importacaoId);
 
       if (updError) throw updError;
 
-      setSummary({ linhas: rows.length, validas: mapped.length, status: 'Concluído' });
+      setSummary({ linhas: allRows.length, validas: mapped.length, status: 'Concluído' });
       setFeedback(
         `Importação concluída com sucesso.
 
 ID da importação: ${importacaoId}
 Arquivo: ${file.name}
-Linhas lidas: ${rows.length}
+Abas importadas: ${preparedRows.length}
+${sheetSummaries.slice(0, 12).join('\n')}
+Linhas lidas: ${allRows.length}
 Linhas válidas: ${mapped.length}
 Com admissão preenchida: ${comAdmissao}
-Data de referência: ${dataReferencia}`
+Data de referência da importação: ${dataReferencia}`
       );
 
       fileInput.value = '';
