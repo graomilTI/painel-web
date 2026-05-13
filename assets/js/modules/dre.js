@@ -43,6 +43,10 @@
   function nomeKey(v){ return String(v || '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' '); }
   function isSafristaTipo(tipo){ const t=norm(tipo); return t.includes('DIARISTA') || t.includes('INTERMITENTE') || t.includes('SAFRISTA'); }
   function isAtivoSituacao(situacao){ return !norm(situacao).includes('NAOATIVO') && !norm(situacao).includes('INATIVO'); }
+  function isClassificadorCargo(cargo){
+    const c=norm(cargo);
+    return c.includes('CLASSIFICADOR');
+  }
   function fmtMoney(v){return n(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});} 
   function fmtNum(v){return n(v).toLocaleString('pt-BR',{maximumFractionDigits:2});}
   function fmtPct(v){return n(v).toLocaleString('pt-BR',{style:'percent',minimumFractionDigits:1,maximumFractionDigits:1});}
@@ -70,6 +74,19 @@
   function sumTopic(base, reg, topics, mi){ const target=topics.map(norm); const obj=base[reg]||{}; return Object.entries(obj).reduce((acc,[tp,arr])=> target.includes(norm(tp)) ? acc+n(arr?.[mi]) : acc,0); }
   function sumTopicsAll(base, topics, mi){ return Object.keys(base||{}).reduce((acc,reg)=>acc+sumTopic(base,reg,topics,mi),0); }
   function geralTopic(geral, topics, mi){ return topics.reduce((a,tp)=>a+n(geral[tp]?.[mi]||geral[norm(tp)]?.[mi]),0); }
+  function totalPatrimonioMes(desp, mi){
+    return sumTopicsAll(desp?.base || {}, ['PATRIMONIO'], mi) + geralTopic(desp?.geral || {}, ['PATRIMONIO'], mi);
+  }
+  function investimentoRateadoPorClassificadores(desp, reg, mi){
+    const rateioInfo=desp?.classificadoresMedia || null;
+    const mediaReg=n(rateioInfo?.porRegional?.[reg]?.[mi]);
+    const totalMedia=n(rateioInfo?.total?.[mi]);
+    if(mediaReg > 0 && totalMedia > 0){
+      return totalPatrimonioMes(desp, mi) * (mediaReg / totalMedia);
+    }
+    // Fallback seguro: mantém a regra antiga quando ainda não há histórico diário de cargos.
+    return sumTopic(desp.base,reg,['PATRIMONIO'],mi)+rateio(desp.base,desp.geral,reg,['PATRIMONIO'],mi);
+  }
 
   async function loadScript(src, globalName){ if(window[globalName]) return window[globalName]; await new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);}); return window[globalName]; }
   async function loadXlsx(){return loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js','XLSX');}
@@ -370,6 +387,83 @@
     return out;
   }
 
+  async function loadMediaClassificadoresAtivosFromDb(supabase, year){
+    const out={porRegional:{}, total:Array(12).fill(0), regionais:new Set(), totalHistRows:0, hasCargo:false};
+    if(!supabase || !year) return out;
+    const start=`${year}-01-01`;
+    const end=`${year + 1}-01-01`;
+
+    async function fetchRows(selectCols){
+      const all=[];
+      const pageSize=1000;
+      let from=0;
+      while(true){
+        const {data,error}=await supabase
+          .from('historico_colaboradores')
+          .select(selectCols)
+          .eq('origem','importar_relatorios_historico_diario')
+          .gte('data_referencia', start)
+          .lt('data_referencia', end)
+          .range(from, from + pageSize - 1);
+        if(error) throw error;
+        const rows=data||[];
+        all.push(...rows);
+        if(rows.length < pageSize) break;
+        from += pageSize;
+      }
+      return all;
+    }
+
+    let histRows=[];
+    try{
+      histRows = await fetchRows('data_referencia,nome,situacao,coordenacao,cargo,origem');
+      out.hasCargo = true;
+    }catch(errorCargo){
+      console.warn('DRE: coluna cargo indisponível no histórico para rateio de investimentos. Tentando fallback sem cargo.', errorCargo);
+      try{
+        histRows = await fetchRows('data_referencia,nome,situacao,coordenacao,origem');
+      }catch(error){
+        console.warn('DRE: não foi possível carregar histórico diário para rateio de investimentos por classificadores ativos.', error);
+        return out;
+      }
+    }
+
+    out.totalHistRows = histRows.length;
+    const daily={};
+    for(const h of histRows){
+      const date=h.data_referencia;
+      const reg=mapReg(h.coordenacao);
+      const nome=nomeKey(h.nome);
+      if(!date || !reg || !nome || isIgnored(reg) || isExcluded(reg) || norm(reg)==='GERAL' || isPool(reg)) continue;
+      if(!isAtivoSituacao(h.situacao)) continue;
+      if(out.hasCargo && !isClassificadorCargo(h.cargo)) continue;
+      const m=monthFrom(date);
+      if(!m || m.year!==year) continue;
+      const key=`${date}|${reg}`;
+      if(!daily[key]) daily[key]={reg,mi:m.month,nomes:new Set()};
+      daily[key].nomes.add(nome);
+      out.regionais.add(reg);
+    }
+
+    const monthRegional={};
+    for(const st of Object.values(daily)){
+      if(!monthRegional[st.reg]) monthRegional[st.reg]=Array.from({length:12},()=>({soma:0,cont:0}));
+      monthRegional[st.reg][st.mi].soma += st.nomes.size;
+      monthRegional[st.reg][st.mi].cont += 1;
+    }
+
+    for(const reg of Object.keys(monthRegional)){
+      out.porRegional[reg]=Array(12).fill(0);
+      for(let mi=0; mi<12; mi++){
+        const item=monthRegional[reg][mi];
+        out.porRegional[reg][mi]=item.cont ? item.soma / item.cont : 0;
+        out.total[mi] += out.porRegional[reg][mi];
+      }
+    }
+
+    return out;
+  }
+
   function parseAntecipacoes(rows){
     const arr=Array(12).fill(0); if(!rows?.length) return arr;
     const hrow=findHeaderRow(rows,['Data','Credito']); const idx=indexByHeaders(rows[hrow]||[]);
@@ -405,7 +499,7 @@
         vals.pessoal[mi]=sumTopic(desp.base,reg,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi)+rateio(desp.base,desp.geral,reg,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi);
         vals.adm[mi]=sumTopic(desp.base,reg,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi)+rateio(desp.base,desp.geral,reg,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi);
         vals.fin[mi]=rateio(desp.base,desp.geral,reg,['DESPESAS FINANCEIRAS'],mi);
-        vals.inv[mi]=sumTopic(desp.base,reg,['PATRIMONIO'],mi)+rateio(desp.base,desp.geral,reg,['PATRIMONIO'],mi);
+        vals.inv[mi]=investimentoRateadoPorClassificadores(desp,reg,mi);
       } else {
         vals.despOp[mi]=sumTopicsAll(desp.base,['DESPESAS OPERACIONAIS'],mi)+geralTopic(desp.geral,['DESPESAS OPERACIONAIS'],mi);
         vals.veic[mi]=sumTopicsAll(desp.base,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi)+geralTopic(desp.geral,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi);
@@ -759,7 +853,7 @@
     const usedTxt = audit.used.map(r => `${r.tipo}: ${r.nome}`).join(' · ');
     setStatus(`<strong>DRE blindada:</strong> usando ${audit.used.length} fonte(s). ${audit.ignored.length ? `${audit.ignored.length} importação(ões) antiga(s)/duplicada(s) ignorada(s).` : 'Nenhuma duplicidade detectada.'}<br><span style="font-size:11px;color:#94a3b8">${safe(usedTxt)}</span>`);
     const src={
-      desp:{base:{},geral:{},regionais:new Set()},
+      desp:{base:{},geral:{},regionais:new Set(),classificadoresMedia:null},
       nf:{bruto:{},descAcresc:{},impostos:{},regionais:new Set()},
       prod:{classificado:{},embarcado:{},cargas:{},valorEmbarcado:{},testes:{},prodColab:{},prodColabGeral:Array(12).fill(0),regionais:new Set()},
       antecipacoes:Array(12).fill(0)
@@ -823,6 +917,20 @@
         tipo: 'historico-colaboradores-diario-db',
         nome: `historico_colaboradores (${prodColab.totalHistRows} linhas)`,
         status: 'produzido_por_colaborador',
+        created_at: new Date().toISOString()
+      });
+    }
+
+    setStatus('Calculando rateio de investimentos pela média mensal de classificadores ativos...');
+    const classifRateio = await loadMediaClassificadoresAtivosFromDb(opts.supabase, state.year);
+    if(classifRateio.totalHistRows > 0 && classifRateio.total.some(v => n(v) > 0)){
+      src.desp.classificadoresMedia = classifRateio;
+      mergeSet(src.desp.regionais, classifRateio.regionais);
+      if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
+      state.sourceAudit.used.push({
+        tipo: 'rateio-investimentos-classificadores-db',
+        nome: `PATRIMONIO rateado pela média mensal de classificadores ativos (${classifRateio.totalHistRows} linhas)`,
+        status: classifRateio.hasCargo ? 'rateio_por_cargo_classificador' : 'fallback_sem_cargo',
         created_at: new Date().toISOString()
       });
     }
