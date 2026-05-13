@@ -503,12 +503,13 @@ async function loadProducaoPagamento(inicio, fim) {
   return unique;
 }
 
-function apurarAlimentacaoRows(producaoRows, rhMap) {
+function apurarProducaoPagamentoRows(producaoRows, rhMap, modo = 'alimentacao') {
   const flashMap = new Map();
   const ifoodMap = new Map();
   const conferencia = [];
   const logs = [];
   const vistosDia = new Set();
+  const isModoDiarias = modo === 'diarias';
 
   (producaoRows || []).forEach((row) => {
     const funcionario = String(row.funcionario || '').trim();
@@ -531,18 +532,24 @@ function apurarAlimentacaoRows(producaoRows, rhMap) {
       return;
     }
 
-    const tipoProd = String(row.tipo || rh.tipoRh || '').trim();
+    const tipoProd = String(rh.tipoRh || row.tipo || '').trim();
     const isDiarista = normalize(tipoProd).includes('diarista');
-    let valor = PAGAMENTO_VALOR_ALMOCO;
-    let composicao = `Almoço ${money(PAGAMENTO_VALOR_ALMOCO)}`;
-    if (isDiarista) {
+
+    let valor = 0;
+    let composicao = '';
+
+    if (isModoDiarias) {
+      if (!isDiarista) return;
       if (!rh.salario || rh.salario <= 0) {
-        logs.push({ data: dataRef, funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: 'Tipo Diarista, mas salário/diária não encontrado no RH.' });
+        logs.push({ data: dataRef, funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: 'Contrato Diarista, mas salário/diária não encontrado no RH.' });
         conferencia.push({ data: dataRef, funcionario: rh.nome || funcionario, cpf: rh.cpf, destino: 'Pendente', tipo: tipoProd, valor: 0, observacao: 'Diarista sem valor de diária no RH.' });
         return;
       }
-      valor += rh.salario;
-      composicao += ` + diária ${money(rh.salario)}`;
+      valor = rh.salario;
+      composicao = `Diária ${money(rh.salario)}`;
+    } else {
+      valor = PAGAMENTO_VALOR_ALMOCO;
+      composicao = `Almoço ${money(PAGAMENTO_VALOR_ALMOCO)}`;
     }
 
     const bancoNorm = normalize(rh.banco).replace(/\s+/g, '');
@@ -595,6 +602,14 @@ function apurarAlimentacaoRows(producaoRows, rhMap) {
     ifood: Array.from(ifoodMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
     logs
   };
+}
+
+function apurarAlimentacaoRows(producaoRows, rhMap) {
+  return apurarProducaoPagamentoRows(producaoRows, rhMap, 'alimentacao');
+}
+
+function apurarDiariasRows(producaoRows, rhMap) {
+  return apurarProducaoPagamentoRows(producaoRows, rhMap, 'diarias');
 }
 
 function roundNumber(value) {
@@ -791,11 +806,12 @@ initProtectedPage('Financeiro', (content, userContext) => {
             </section>
             <section class="pay-card">
               <h4>ALIMENTAÇÃO</h4>
-              <p>Usa a Produção Diária já importada no menu Importar Relatórios. O painel paga uma vez por colaborador/dia, soma almoço e diária quando o colaborador for diarista, e gera Flash/iFood.</p>
+              <p>Usa a Produção Diária já importada no menu Importar Relatórios. O painel paga somente o valor de alimentação por colaborador/dia. Para diária, use o botão Diárias, exclusivo para contrato Diarista.</p>
               <div class="fin-form">
                 <div class="fin-field"><label>Data inicial</label><input id="alimInicio" type="date" value="${esc(state.filters.inicio)}"></div>
                 <div class="fin-field"><label>Data final</label><input id="alimFim" type="date" value="${esc(state.currentDate)}"></div>
                 <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAlimentacao" type="button">Gerar alimentação</button></div>
+                <div class="fin-field"><label>&nbsp;</label><button class="btn btn-secondary" id="btnGerarDiarias" type="button">Diárias</button></div>
                 <div class="fin-field"><label>&nbsp;</label><span id="fbAlimentacao" class="fin-feedback"></span></div>
               </div>
             </section>
@@ -1034,26 +1050,39 @@ initProtectedPage('Financeiro', (content, userContext) => {
     updatePaySummary();
   }
 
-  async function gerarAlimentacao() {
+  async function gerarProducaoPagamento(modo) {
     const inicio = document.getElementById('alimInicio').value;
     const fim = document.getElementById('alimFim').value;
+    const isDiarias = modo === 'diarias';
+    const label = isDiarias ? 'Diárias' : 'Alimentação';
     if (!inicio || !fim) return paySetFeedback('fbAlimentacao', 'Informe data inicial e final.', 'err');
     if (inicio > fim) return paySetFeedback('fbAlimentacao', 'A data inicial não pode ser maior que a final.', 'err');
     try {
-      paySetFeedback('fbAlimentacao', 'Consultando Produção Diária importada e colaboradores...');
+      paySetFeedback('fbAlimentacao', `Consultando Produção Diária importada e colaboradores para ${label.toLowerCase()}...`);
       const [rhMap, producao] = await Promise.all([loadColaboradoresPagamento(), loadProducaoPagamento(inicio, fim)]);
-      const apuracao = apurarAlimentacaoRows(producao, rhMap);
+      const apuracao = isDiarias ? apurarDiariasRows(producao, rhMap) : apurarAlimentacaoRows(producao, rhMap);
       if (!apuracao.conferencia.length && apuracao.logs.length) {
         paySetFeedback('fbAlimentacao', `Produção localizada, mas sem colaboradores válidos. Verifique Pendências: ${apuracao.logs.length}.`, 'err');
       }
-      state.pagamentos = { tipo: 'Alimentação', periodo: dateRangeLabel(inicio, fim), ...apuracao };
+      if (!apuracao.conferencia.length && !apuracao.logs.length) {
+        paySetFeedback('fbAlimentacao', isDiarias ? 'Nenhum colaborador com contrato Diarista localizado no período.' : 'Nenhuma alimentação gerada no período.', 'err');
+      }
+      state.pagamentos = { tipo: label, periodo: dateRangeLabel(inicio, fim), ...apuracao };
       renderPayTables();
       setPayTab('conferencia');
       paySetFeedback('fbAlimentacao', `Gerado da Produção Diária importada: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências.`, 'ok');
     } catch (err) {
       console.error(err);
-      paySetFeedback('fbAlimentacao', err.message || 'Erro ao gerar alimentação.', 'err');
+      paySetFeedback('fbAlimentacao', err.message || `Erro ao gerar ${label.toLowerCase()}.`, 'err');
     }
+  }
+
+  async function gerarAlimentacao() {
+    return gerarProducaoPagamento('alimentacao');
+  }
+
+  async function gerarDiarias() {
+    return gerarProducaoPagamento('diarias');
   }
 
 
@@ -1191,6 +1220,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
   setupPagamentoDropzone('adiantFileExtrato');
   setupPagamentoDropzone('adiantFileAlelo');
   document.getElementById('btnGerarAlimentacao').addEventListener('click', gerarAlimentacao);
+  document.getElementById('btnGerarDiarias').addEventListener('click', gerarDiarias);
   document.getElementById('btnGerarAdiantamentos').addEventListener('click', gerarAdiantamentos);
   document.querySelectorAll('.pay-subtab').forEach((btn) => btn.addEventListener('click', () => setPayTab(btn.dataset.payTab)));
   document.getElementById('btnExportFlash').addEventListener('click', () => exportPagamento('flash'));
