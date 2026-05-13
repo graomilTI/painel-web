@@ -13,7 +13,7 @@ window.MENU_CONFIG = {
     { nome: "LOGÍSTICA", modulos: ["Painel de Logística", "Finalização de O.S", "Relatórios ao Cliente"] },
     { nome: "TROCA DE NOTAS", modulos: [] },
     { nome: "AUDITORIA", modulos: ["Logs", "Relatórios"] },
-    { nome: "DIRETORIA", modulos: ["DRE", "METAS"] },
+    { nome: "DIRETORIA", modulos: ["DRE", "METAS", "Desempenho"] },
     { nome: "RELATÓRIOS", modulos: [
       "Importar Relatórios",
       "Caixa do Fornecedor",
