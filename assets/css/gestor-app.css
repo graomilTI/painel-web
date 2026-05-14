@@ -127,8 +127,11 @@ select:focus, input:focus, textarea:focus { border-color: rgba(52, 211, 153, 0.8
 .help.warn { color: var(--yellow); font-weight: 850; }
 .multi-line { display: flex; align-items: center; gap: 8px; color: var(--soft); font-size: 13px; font-weight: 850; }
 .multi-line input { width: 17px; height: 17px; accent-color: #22c55e; }
-.action-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
+.action-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
 .action-grid .btn { padding: 13px 6px; }
+.status-dot { display: flex; align-items: center; justify-content: center; border-radius: 16px; padding: 13px 6px; border: 2px solid rgba(148,163,184,.35); background: transparent; cursor: default; }
+.status-dot .dot { width: 14px; height: 14px; border-radius: 50%; background: rgba(148,163,184,.4); transition: background .2s; }
+.status-dot.is-active .dot { background: #94a3b8; box-shadow: 0 0 0 3px rgba(148,163,184,.25); }
 
 .toast-wrap { position: fixed; left: 12px; right: 12px; bottom: calc(78px + env(safe-area-inset-bottom)); z-index: 80; display: grid; gap: 8px; pointer-events: none; }
 .toast { background: rgba(15, 23, 42, .96); border: 1px solid rgba(110, 231, 183, .22); color: var(--text); border-radius: 18px; padding: 13px 14px; box-shadow: var(--shadow); font-weight: 850; }
