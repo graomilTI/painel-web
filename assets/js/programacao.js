@@ -808,7 +808,13 @@ initProtectedPage('Programação', (content) => {
 
       if (colabError) throw colabError;
 
-      const colaboradoresAtivos = (colaboradores || []).filter(isColaboradorAtivo);
+      const _seenColabs = new Set();
+      const colaboradoresAtivos = (colaboradores || []).filter(isColaboradorAtivo).filter((colab) => {
+        const key = colaboradorKey(colab);
+        if (_seenColabs.has(key)) return false;
+        _seenColabs.add(key);
+        return true;
+      });
 
       const programacao = await ensureProgramacaoDia(dataReferencia, supervisao, colaboradoresAtivos?.[0]?.coordenacao || '');
       state.programacaoId = programacao.id;
