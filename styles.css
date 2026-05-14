@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&display=swap');
+
 :root {
   color-scheme: dark;
   --bg: #06130e;
@@ -20,12 +22,49 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 a { color: inherit; }
+
+h1, h2, h3, h4, h5,
+.topbar h1,
+.section-heading h2,
+.hero-card h2,
+.op-hero h2,
+.sidebar-brand h2,
+.metric {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+h3, h4 {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.base-label,
+.users-label,
+.menu-section h4,
+.base-mini-label,
+.eyebrow,
+.brand-eyebrow {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.metric {
+  font-variant-numeric: tabular-nums;
+  font-size: 42px;
+}
 
 .auth-page {
   min-height: 100vh;
@@ -2060,4 +2099,205 @@ body.sidebar-collapsed .sidebar-toggle-btn {
   body.mobile-panel-mode #sidebarToggleBtn {
     display: none !important;
   }
+}
+
+
+/* ================================================
+   MODERNIZAÇÃO — micro-interações & refinamentos
+   ================================================ */
+
+/* ── Card hover elevation ── */
+.card,
+.mini-card,
+.base-card,
+.report-link-card {
+  transition: transform .20s ease, box-shadow .20s ease, border-color .20s ease !important;
+}
+
+.card:hover,
+.mini-card:hover,
+.base-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(111,208,165,.18) !important;
+  box-shadow:
+    0 24px 52px rgba(0,0,0,.22),
+    inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+
+/* ── Chips com hover ── */
+.chip {
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+  cursor: default;
+}
+
+.chip:hover {
+  background: rgba(63,168,120,.28);
+  border-color: rgba(111,208,165,.34);
+  transform: translateY(-1px);
+}
+
+/* ── Buttons: active press feedback ── */
+.btn:active,
+.base-button:active,
+.btn-primary:active,
+.base-button.primary:active,
+.inline-nav a:active,
+.stepbtn:active,
+.users-action-btn:active {
+  transform: scale(0.97) translateY(0) !important;
+  filter: brightness(0.96) !important;
+  transition-duration: .06s !important;
+}
+
+.btn-secondary:hover,
+.base-button.secondary:hover {
+  background: rgba(111,208,165,.10) !important;
+  border-color: rgba(111,208,165,.18) !important;
+  transform: translateY(-1px);
+}
+
+/* ── Users table rows ── */
+.users-table tbody tr {
+  transition: background-color .14s ease;
+}
+
+.users-table tbody tr:hover {
+  background: rgba(111,208,165,.04);
+}
+
+/* ── Status pills refinement ── */
+.users-status,
+.status-pill {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: .04em;
+  font-weight: 700;
+}
+
+/* ── Op-field inputs: alinha ao design system ── */
+.op-field input,
+.op-field select {
+  background: rgba(8,22,17,.58) !important;
+  border: 1px solid rgba(111,208,165,.10) !important;
+  color: var(--text) !important;
+  border-radius: 14px;
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.op-field input:focus,
+.op-field select:focus {
+  border-color: rgba(111,208,165,.22) !important;
+  box-shadow: 0 0 0 3px rgba(111,208,165,.08) !important;
+  background: rgba(9,24,18,.72) !important;
+}
+
+.op-field select option {
+  background: #071a10;
+  color: var(--text);
+}
+
+/* ── Sidebar toggle transition suave ── */
+.app-shell {
+  transition: grid-template-columns .24s cubic-bezier(.4,0,.2,1) !important;
+}
+
+.sidebar {
+  transition: transform .24s cubic-bezier(.4,0,.2,1),
+              opacity .20s ease,
+              width .24s ease !important;
+}
+
+/* ── Section heading h2 com font Syne ── */
+.section-heading h2,
+.op-hero h2 {
+  font-size: clamp(26px, 3.5vw, 36px);
+}
+
+/* ── Topbar h1 tamanho adaptável ── */
+.topbar h1 {
+  font-size: clamp(20px, 2.4vw, 27px);
+}
+
+/* ── Scrollbar universal no content-wrap ── */
+.content-wrap::-webkit-scrollbar,
+.page-main::-webkit-scrollbar {
+  width: 6px;
+}
+
+.content-wrap::-webkit-scrollbar-thumb,
+.page-main::-webkit-scrollbar-thumb {
+  background: rgba(111,208,165,.18);
+  border-radius: 999px;
+}
+
+/* ── Badge/role pill refinement ── */
+.badge {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* ── Inline-nav tab pill active state ── */
+.inline-nav a.active {
+  opacity: 1 !important;
+  font-weight: 700;
+}
+
+/* ── Hero card: gradient text no metric ── */
+.metric {
+  background: linear-gradient(135deg, #effaf4 30%, #6fd0a5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Prog-item (programação) hover ── */
+.prog-item {
+  transition: border-color .18s ease, background .18s ease;
+}
+
+.prog-item:hover {
+  border-color: rgba(111,208,165,.16) !important;
+  background: rgba(8,22,17,.72) !important;
+}
+
+/* ── Users-search-item refinement ── */
+.users-search-item {
+  transition: background .14s ease, border-color .14s ease;
+}
+
+/* ── Stepbtn (etapas) refinement ── */
+.stepbtn {
+  transition: background .16s ease, border-color .16s ease, transform .16s ease;
+}
+
+.stepbtn:hover {
+  background: rgba(111,208,165,.08);
+  border-color: rgba(111,208,165,.20);
+  transform: translateY(-1px);
+}
+
+/* ── Base-button hover states ── */
+.base-button:hover:not(.primary):not([disabled]) {
+  background: rgba(111,208,165,.10) !important;
+  border-color: rgba(111,208,165,.18) !important;
+  transform: translateY(-1px);
+}
+
+/* ── Foco acessível em inputs ── */
+:focus-visible {
+  outline: 2px solid rgba(111,208,165,.40);
+  outline-offset: 2px;
+}
+
+/* ── Smooth route transition melhorado ── */
+@keyframes routeFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+html.is-route-ready .app-shell {
+  animation: routeFadeIn .22s cubic-bezier(.4,0,.2,1);
 }
