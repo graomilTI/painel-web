@@ -459,7 +459,7 @@ initProtectedPage('Programação', (content) => {
         </div>
       </div>`;
     wrap.addEventListener('click', (event) => {
-      if (event.target.matches('[data-os-open]')) window.location.href = './os.html';
+      if (event.target.matches('[data-os-open]')) window.location.href = '/painel/os';
     });
     document.body.appendChild(wrap);
   }
