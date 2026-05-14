@@ -677,18 +677,18 @@ initProtectedPage('Programação', (content) => {
     el.sup.innerHTML = '<option value="">Selecione...</option>';
     el.sup.disabled = false;
 
-    const latest = await getLatestSnapshotDate();
-    let query = supabase.from('colaborador_snapshot').select('supervisao, data_referencia').limit(10000);
-    if (latest) query = query.eq('data_referencia', latest);
+    const { data, error } = await supabase
+      .from('supervisoes')
+      .select('nome')
+      .eq('ativo', true)
+      .order('nome', { ascending: true });
 
-    const { data, error } = await query.order('supervisao', { ascending: true });
     if (error) {
       setFeedback(`Erro ao carregar supervisões: ${error.message}`, 'error');
       return;
     }
 
-    const todasSupervisoes = [...new Set((data || []).map((r) => String(r.supervisao || '').trim()).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const todasSupervisoes = (data || []).map((r) => String(r.nome || '').trim()).filter(Boolean);
     const supervisoes = filterAllowedSupervisoes(todasSupervisoes, state.access);
 
     if (state.access?.restricted && !supervisoes.length) {
