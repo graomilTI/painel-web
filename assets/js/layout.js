@@ -330,7 +330,7 @@ export function renderAppLayout({ userContext, currentPageTitle = 'Painel' }) {
   setupMobileBackButton(userContext);
 
   const menu = buildAllowedMenu(userContext);
-  renderMenu(document.getElementById('sidebarMenu'), menu, window.location.pathname);
+  renderMenu(document.getElementById('sidebarMenu'), menu, window.location.pathname, userContext);
 
   const toggleBtn = ensureSidebarToggle();
   if (toggleBtn) {

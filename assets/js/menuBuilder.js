@@ -334,15 +334,30 @@ function ensureProgramacaoBlockStyle() {
   document.head.appendChild(style);
 }
 
-async function markProgramacaoIfOsPending(container) {
+async function markProgramacaoIfOsPending(container, userContext) {
   try {
     const programacaoLink = [...container.querySelectorAll('a')].find((link) => normalizePath(link.getAttribute('href') || '').includes('/programacao'));
     if (!programacaoLink) return;
-    const { data, error } = await supabase
+
+    const today = new Date().toISOString().slice(0, 10);
+    const supervisoes = Array.isArray(userContext?.user?.supervisoes) && userContext.user.supervisoes.length
+      ? userContext.user.supervisoes
+      : userContext?.user?.supervisao
+        ? [userContext.user.supervisao]
+        : null;
+
+    let query = supabase
       .from('operacional_os')
       .select('id')
       .is('configurada_em', null)
-      .limit(1);
+      .gte('data_os', today)
+      .lte('data_os', today);
+
+    if (supervisoes?.length) {
+      query = query.in('supervisao', supervisoes);
+    }
+
+    const { data, error } = await query.limit(1);
     if (error || !Array.isArray(data) || !data.length) return;
     ensureProgramacaoBlockStyle();
     programacaoLink.classList.add('os-pending-blocked');
@@ -361,7 +376,7 @@ async function markProgramacaoIfOsPending(container) {
   }
 }
 
-export function renderMenu(container, menuSections, currentPath = '') {
+export function renderMenu(container, menuSections, currentPath = '', userContext = null) {
   if (!container) return;
 
   container.innerHTML = '';
@@ -462,5 +477,5 @@ export function renderMenu(container, menuSections, currentPath = '') {
     container.appendChild(sectionEl);
   });
 
-  markProgramacaoIfOsPending(container);
+  markProgramacaoIfOsPending(container, userContext);
 }
