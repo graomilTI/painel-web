@@ -1209,25 +1209,102 @@ initProtectedPage('Financeiro', (content, userContext) => {
     });
   }
 
+
+  function compraItemToPagamento(row) {
+    const s = row.compras_solicitacoes || {};
+    const quantidade = row.quantidade || row.unidade || 1;
+    const partes = [
+      `Compra: ${quantidade} un ${row.material || '-'}`,
+      row.tamanho ? `Tamanho/Detalhe: ${row.tamanho}` : '',
+      row.tipo ? `Tipo: ${row.tipo}` : '',
+      row.forma_pagamento ? `Forma: ${row.forma_pagamento}` : '',
+      row.dados_pagamento ? `Dados: ${row.dados_pagamento}` : '',
+      s.solicitante ? `Gestor: ${s.solicitante}` : '',
+      s.coordenacao ? `Coordenação: ${s.coordenacao}` : ''
+    ].filter(Boolean);
+    return {
+      ...row,
+      id: `compra_${row.id}`,
+      _source_table: 'compras_itens',
+      origem: 'COMPRAS',
+      origem_id: row.id,
+      descricao: partes.join('\n'),
+      conteudo: partes.join('\n'),
+      fornecedor: row.fornecedor || row.favorecido || '',
+      favorecido: row.fornecedor || row.favorecido || '',
+      contato: row.contato || '',
+      valor: row.valor_total || 0,
+      status: row.status === 'aguardando_nf' ? 'AGUARDANDO NF' : 'PENDENTE',
+      created_at: row.updated_at || row.created_at || s.created_at || s.data_solicitacao,
+      data_solicitacao: s.data_solicitacao || row.created_at,
+      dados_pagamento: row.dados_pagamento || '',
+      forma_pagamento: row.forma_pagamento || '',
+      comprovante_url: row.comprovante_url || '',
+      _raw_compra_item_id: row.id
+    };
+  }
+
   async function loadSetorPagamentos() {
     const tbody = document.getElementById('setorPagamentosTbody');
     if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="fin-empty">Carregando pagamentos enviados pelos setores...</td></tr>';
-    const { data, error } = await supabase
-      .from('financeiro_pagamentos')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(500);
 
-    if (error) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="fin-empty">${esc(error.message)}<br>Execute a migration de pagamentos do financeiro no Supabase.</td></tr>`;
+    const [pagamentosRes, comprasRes] = await Promise.all([
+      supabase
+        .from('financeiro_pagamentos')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500),
+      supabase
+        .from('compras_itens')
+        .select('*, compras_solicitacoes(*)')
+        .in('status', ['pendente_pagamento', 'aguardando_nf'])
+        .order('updated_at', { ascending: false })
+        .limit(500)
+    ]);
+
+    const pagamentos = pagamentosRes.error ? [] : (pagamentosRes.data || []);
+    const compras = comprasRes.error ? [] : (comprasRes.data || []).map(compraItemToPagamento);
+
+    const financeiroCompraIds = new Set(
+      pagamentos
+        .filter((row) => normalize(row.origem || row.setor || row.modulo_origem).includes('compra'))
+        .map((row) => String(row.origem_id || row.compra_item_id || '').replace(/^compra_/, ''))
+        .filter(Boolean)
+    );
+
+    const comprasSemDuplicar = compras.filter((row) => !financeiroCompraIds.has(String(row._raw_compra_item_id || row.origem_id || '')));
+
+    if (pagamentosRes.error && comprasRes.error) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="fin-empty">${esc(pagamentosRes.error.message)}<br>${esc(comprasRes.error.message)}<br>Execute a migration de pagamentos do financeiro no Supabase.</td></tr>`;
       return;
     }
-    state.financeiroPagamentos = data || [];
+
+    state.financeiroPagamentos = [...comprasSemDuplicar, ...pagamentos].sort((a, b) => {
+      const da = new Date(a.created_at || a.data_solicitacao || 0).getTime();
+      const db = new Date(b.created_at || b.data_solicitacao || 0).getTime();
+      return db - da;
+    });
+
     renderSetorPagamentos();
   }
 
   async function marcarPagamentoSetorPago(id) {
     if (!id) return;
+    const key = String(id);
+    if (key.startsWith('compra_')) {
+      const compraId = key.replace(/^compra_/, '');
+      const { error } = await supabase
+        .from('compras_itens')
+        .update({ status: 'aguardando_nf', pago_em: new Date().toISOString() })
+        .eq('id', compraId);
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      await loadSetorPagamentos();
+      return;
+    }
+
     const { error } = await supabase
       .from('financeiro_pagamentos')
       .update({ status: 'PAGO', pago_em: new Date().toISOString() })

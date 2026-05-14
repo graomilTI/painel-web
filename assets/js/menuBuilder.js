@@ -144,8 +144,17 @@ function ensureFinanceiroSection(menuSections, userContext) {
         ...section,
         items: (section.items || []).filter((item) => {
           const itemCode = normalizeCode(item?.code || item?.label || item?.path);
+          const itemLabel = normalizeCode(item?.label || item?.nome || item?.modulo || '');
+          const itemPath = normalizeCode(item?.path || item?.rota || '');
           const sectionCode = normalizeCode(section?.section);
-          return !(sectionCode === 'diretoria' && itemCode === 'financeiro');
+          if (sectionCode === 'diretoria' && itemCode === 'financeiro') return false;
+          if (sectionCode === 'financeiro') {
+            const isOldAdiantamento = itemCode.includes('adiantamento') || itemLabel.includes('adiantamento');
+            const isOldAlimentacao = itemCode.includes('alimentacao') || itemLabel.includes('alimentacao');
+            const oldPointsToPayments = itemPath.includes('financeiro#pagamentos');
+            if ((isOldAdiantamento || isOldAlimentacao) && oldPointsToPayments) return false;
+          }
+          return true;
         }),
       }))
     : [];
