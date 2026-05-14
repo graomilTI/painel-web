@@ -289,6 +289,8 @@ function injectProgramacaoStyles() {
     .prog-tipo-selector{display:flex;gap:6px;flex-wrap:wrap}
     .prog-tipo-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.5);color:#94a3b8;border-radius:10px;padding:7px 11px;font-size:12px;font-weight:800;cursor:pointer;transition:all .15s}
     .prog-tipo-btn:hover{background:rgba(22,101,52,.25);color:#bbf7d0}
+    .prog-tipo-btn.disabled,.prog-tipo-btn:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.45)}
+    .prog-tipo-btn.disabled:hover,.prog-tipo-btn:disabled:hover{background:rgba(15,23,42,.5);color:#94a3b8}
     .prog-tipo-btn.active{background:rgba(22,101,52,.35);color:#bbf7d0;border-color:rgba(52,211,153,.55)}
     .prog-tipo-btn.active[data-tipo="SEM EMBARQUE"],.prog-tipo-btn.active[data-tipo="INDISPONIVEL"]{background:rgba(127,29,29,.30);color:#fecaca;border-color:rgba(248,113,113,.45)}
     .prog-indisponivel-wrap{display:flex;align-items:center;gap:8px;margin-top:8px;max-width:260px}
@@ -646,7 +648,9 @@ initProtectedPage('Programação', (content) => {
   }
 
   function kmEstimadoColaborador(colab) {
-    const os = state.osPorColaborador.get(String(colab?.id || '')) || state.osPorColaborador.get(normalizeCpf(colab?.cpf));
+    const os = state.osPorColaborador.get(String(colab?.id || '').trim())
+      || state.osPorColaborador.get(normalizeCpf(colab?.cpf))
+      || state.osPorColaborador.get(normalizeText(colab?.nome || '').trim().toUpperCase());
     if (!os) return { km: null, motivo: 'Sem O.S. vinculada ao colaborador.' };
     if (Number.isFinite(Number(os.distancia_km))) return { km: Number(os.distancia_km), motivo: 'Distância da indicação da O.S.' };
     const base = findOperacionalColab(colab);
@@ -788,22 +792,26 @@ initProtectedPage('Programação', (content) => {
       const { data: osRows } = await supabase
         .from('operacional_os')
         .select('*')
-        .eq('status_gestor', 'ATENDER')
         .eq('data_os', dataReferencia)
         .eq('supervisao', supervisao);
-      if (!osRows?.length) return set;
-      const osMap = new Map((osRows || []).map((r) => [String(r.id), r]));
+      const atenderRows = (osRows || []).filter((r) => normalizeText(r.status_gestor || r.status || '') === 'ATENDER');
+      if (!atenderRows.length) return set;
+      const osMap = new Map((atenderRows || []).map((r) => [String(r.id), r]));
       const { data: colabRows } = await supabase
         .from('operacional_os_colaboradores')
         .select('*')
-        .in('os_id', osRows.map((r) => r.id));
+        .in('os_id', atenderRows.map((r) => r.id));
       (colabRows || []).forEach((r) => {
         const os = { ...(osMap.get(String(r.os_id)) || {}), distancia_km: r.distancia_km };
-        if (r.colaborador_cpf) set.add(normalizeCpf(r.colaborador_cpf));
-        if (r.colaborador_key) set.add(String(r.colaborador_key).trim());
-        const cpf = normalizeCpf(r.colaborador_cpf);
+        const cpf = normalizeCpf(r.colaborador_cpf || r.cpf);
+        const key = String(r.colaborador_key || r.colaborador_id || '').trim();
+        const nomeKey = normalizeText(r.colaborador_nome || r.nome_colaborador || r.nome || '').trim().toUpperCase();
+        if (cpf) set.add(cpf);
+        if (key) set.add(key);
+        if (nomeKey) set.add(nomeKey);
         if (cpf) state.osPorColaborador.set(cpf, os);
-        if (r.colaborador_key) state.osPorColaborador.set(String(r.colaborador_key).trim(), os);
+        if (key) state.osPorColaborador.set(key, os);
+        if (nomeKey) state.osPorColaborador.set(nomeKey, os);
       });
     } catch (e) {
       console.warn('Não foi possível carregar OS ATENDER.', e);
@@ -815,7 +823,14 @@ initProtectedPage('Programação', (content) => {
     if (!state.colabsEmOsAtender.size) return false;
     const cpf = normalizeCpf(colab.cpf);
     if (cpf && state.colabsEmOsAtender.has(cpf)) return true;
-    return state.colabsEmOsAtender.has(String(colab.id || '').trim());
+    const id = String(colab.id || '').trim();
+    if (id && state.colabsEmOsAtender.has(id)) return true;
+    const nomeKey = normalizeText(colab.nome || '').trim().toUpperCase();
+    return Boolean(nomeKey && state.colabsEmOsAtender.has(nomeKey));
+  }
+
+  function colaboradorPodeFicarOk(colab) {
+    return colabEmOsAtender(colab);
   }
 
   function suggestVeiculoForColab(colab) {
@@ -1018,7 +1033,7 @@ initProtectedPage('Programação', (content) => {
       const motivo = disponibilidadeNorm(colab.indisponibilidade?.motivo || '');
       const disponibilidade = colab.indisponibilidade
         ? (INDISPONIBILIDADE_MOTIVOS.includes(motivo) ? motivo : 'ATESTADO')
-        : 'OK';
+        : (colaboradorPodeFicarOk(colab) ? 'OK' : 'SEM EMBARQUE');
       return {
         programacao_id: state.programacaoId,
         data_referencia: state.dataReferencia,
@@ -1084,6 +1099,8 @@ initProtectedPage('Programação', (content) => {
   }
 
   function isBlocked(colab) {
+    const disp = disponibilidadeCategoria(disponibilidadeAtual(colab));
+    if (disp === 'OK' && !colaboradorPodeFicarOk(colab)) return true;
     return isDisponibilidadeBloqueada(disponibilidadeAtual(colab));
   }
 
@@ -1131,6 +1148,7 @@ initProtectedPage('Programação', (content) => {
       <div class="colab-name">${escapeHtml(colab.nome)}</div>
       <div class="colab-meta">${escapeHtml(colab.cargo || 'Colaborador')} • ${escapeHtml(colab.supervisao || '-')}</div>
       ${colab.indisponibilidade ? `<div class="colab-meta">Indisponibilidade importada: ${escapeHtml(colab.indisponibilidade.motivo || 'Indisponível')}</div>` : ''}
+      ${!colaboradorPodeFicarOk(colab) ? '<div class="colab-meta">Sem O.S. em ATENDER vinculada para permitir OK.</div>' : ''}
       <div style="margin-top:6px"><span class="prog-status ${blocked ? 'block' : 'ok'}">${blocked ? 'Bloqueado' : 'Liberado'}</span></div>
     `;
   }
@@ -1162,13 +1180,18 @@ initProtectedPage('Programação', (content) => {
                 const sugestao = !placa ? suggestVeiculoForColab(colab) : null;
                 const placaSugerida = sugestao?.placa || '';
                 const alertMsg = placa ? patrimonioMessageForRow(colab, 'MOTORISTA FROTA', placa) : '';
+                const podeOk = colaboradorPodeFicarOk(colab);
                 return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_colaboradores">
                   <td>${colabCell(colab)}</td>
                   <td>
                     <div class="prog-tipo-selector">
-                      ${DISPONIBILIDADES_PRINCIPAIS.map((op) => `<button type="button" class="prog-tipo-btn${categoria === op ? ' active' : ''}" data-tipo="${escapeHtml(op)}">${escapeHtml(disponibilidadeLabel(op))}</button>`).join('')}
+                      ${DISPONIBILIDADES_PRINCIPAIS.map((op) => {
+                        const okBloqueado = op === 'OK' && !podeOk;
+                        return `<button type="button" class="prog-tipo-btn${categoria === op ? ' active' : ''}${okBloqueado ? ' disabled' : ''}" data-tipo="${escapeHtml(op)}" ${okBloqueado ? 'disabled title="OK só é liberado quando houver O.S. em ATENDER vinculada ao colaborador"' : ''}>${escapeHtml(disponibilidadeLabel(op))}</button>`;
+                      }).join('')}
                       <input type="hidden" data-field="disponibilidade" value="${escapeHtml(categoria === 'INDISPONIVEL' ? (motivo || 'ATESTADO') : categoria)}" />
                     </div>
+                    ${categoria === 'OK' && !podeOk ? `<div class="prog-placa-alert show">OK bloqueado: este colaborador não possui O.S. marcada como ATENDER no menu OS.</div>` : ''}
                     ${categoria === 'INDISPONIVEL' ? `<div class="prog-indisponivel-wrap">
                       <select data-indisponivel-motivo>${INDISPONIBILIDADE_MOTIVOS.map((op) => `<option value="${escapeHtml(op)}" ${String(motivo || 'ATESTADO') === op ? 'selected' : ''}>${escapeHtml(disponibilidadeLabel(op))}</option>`).join('')}</select>
                     </div>` : ''}
@@ -1455,10 +1478,16 @@ initProtectedPage('Programação', (content) => {
 
     const tipoBtn = event.target.closest('.prog-tipo-btn');
     if (tipoBtn) {
+      if (tipoBtn.disabled || tipoBtn.classList.contains('disabled')) return;
       const tipo = tipoBtn.dataset.tipo;
       const tr = tipoBtn.closest('tr');
       if (!tr) return;
       const colabId = tr.dataset.colabId;
+      const colab = colabById(colabId);
+      if (tipo === 'OK' && !colaboradorPodeFicarOk(colab)) {
+        setFeedback('OK só pode ser marcado quando o colaborador tiver O.S. com status ATENDER no menu OS.', 'warn');
+        return;
+      }
       const existing = state.maps.disponibilidade.get(colabId) || {};
       const valorDisponibilidade = tipo === 'INDISPONIVEL' ? (disponibilidadeMotivo(existing.disponibilidade) || 'ATESTADO') : tipo;
       state.maps.disponibilidade.set(colabId, { ...existing, disponibilidade: valorDisponibilidade });
@@ -1480,7 +1509,6 @@ initProtectedPage('Programação', (content) => {
         const td = tipoBtn.closest('td');
         placaWrap = document.createElement('div');
         placaWrap.className = 'prog-placa-wrap';
-        const colab = colabById(colabId);
         const sugestao = suggestVeiculoForColab(colab);
         placaWrap.innerHTML = `<input data-field="placa_veiculo" list="progVeiculosFrotaList" type="text" maxlength="8" value="" placeholder="${sugestao?.placa ? 'Sugestão: ' + sugestao.placa : 'Digite a placa'}" />${sugestao?.placa ? `<button type="button" class="prog-placa-suggest-btn" data-placa="${escapeHtml(sugestao.placa)}">Usar ${escapeHtml(sugestao.placa)}</button>` : ''}<div class="prog-placa-alert"></div>`;
         td.appendChild(placaWrap);
@@ -1491,7 +1519,7 @@ initProtectedPage('Programação', (content) => {
         }
       }
       const statusSpan = tr.querySelector('.prog-status');
-      const isNowBlocked = tipo === 'SEM EMBARQUE' || tipo === 'INDISPONIVEL';
+      const isNowBlocked = tipo === 'SEM EMBARQUE' || tipo === 'INDISPONIVEL' || (tipo === 'OK' && !colaboradorPodeFicarOk(colab));
       if (statusSpan) {
         statusSpan.className = `prog-status ${isNowBlocked ? 'block' : 'ok'}`;
         statusSpan.textContent = isNowBlocked ? 'Bloqueado' : 'Liberado';
@@ -1700,6 +1728,7 @@ initProtectedPage('Programação', (content) => {
       const dispRow = state.maps.disponibilidade.get(String(colab.id)) || {};
       const disp = disponibilidadeCategoria(dispRow.disponibilidade || 'OK');
       const placaLogistica = onlyPlate((draftValueFromDom('programacao_colaboradores', colab.id, 'placa_veiculo') ?? dispRow.placa_veiculo) || '');
+      if (disp === 'OK' && !colaboradorPodeFicarOk(colab)) problemas.push(`${colab.nome}: OK só é permitido quando existir O.S. com status ATENDER vinculada no menu OS.`);
       if (disp === 'LOGISTICA' && !placaLogistica) problemas.push(`${colab.nome}: informe ou selecione a placa na etapa A/Logística.`);
       if (disp === 'SEM EMBARQUE' || disp === 'INDISPONIVEL') return;
 
