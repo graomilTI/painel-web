@@ -979,26 +979,62 @@ initProtectedPage('Financeiro', (content, userContext) => {
       .fin-setor-filter{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.fin-setor-btn{border:1px solid rgba(148,163,184,.22);background:#08111f;color:#cbd5e1;border-radius:999px;padding:9px 14px;font-weight:900;cursor:pointer}.fin-setor-btn.active{background:#166534;color:#fff;border-color:#22c55e}.fin-text-block{white-space:pre-wrap;line-height:1.45}.fin-pay-actions{display:flex;gap:8px;flex-wrap:wrap}.fin-pay-actions a{text-decoration:none}
 
       .fin-pay-modal{position:fixed;inset:0;background:rgba(2,6,23,.72);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.fin-pay-modal.open{display:flex}.fin-pay-modal-card{width:min(820px,100%);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.22);border-radius:22px;background:#0b1220;color:#e5e7eb;padding:20px;box-shadow:0 24px 70px rgba(2,6,23,.45)}.fin-pay-preview{border:1px solid rgba(148,163,184,.16);border-radius:16px;background:rgba(15,23,42,.58);padding:14px}.mt-16{margin-top:16px}
+
+      .cf-header{display:grid;grid-template-columns:280px 1fr;gap:0;border:1px solid rgba(148,163,184,.18);border-radius:24px;overflow:hidden;background:linear-gradient(135deg,rgba(15,23,42,.98),rgba(22,101,52,.32));box-shadow:0 20px 50px rgba(2,6,23,.25)}
+      .cf-balance-block{display:flex;flex-direction:column;justify-content:center;gap:6px;padding:28px 28px 28px 28px;border-right:1px solid rgba(52,211,153,.15);background:linear-gradient(160deg,rgba(20,83,45,.38),transparent)}
+      .cf-balance-label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#6ee7b7}
+      .cf-balance-value{font-size:38px;font-weight:900;color:#f8fafc;line-height:1.1;letter-spacing:-.02em}
+      .cf-balance-sub{font-size:12px;color:#475569;margin-top:2px}
+      .cf-right-block{display:flex;flex-direction:column;gap:16px;padding:22px 24px}
+      .cf-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+      .cf-kpi-pill{border:1px solid rgba(148,163,184,.13) !important;border-radius:16px !important;padding:13px 14px !important;background:rgba(15,23,42,.65) !important;transition:border-color .16s}
+      .cf-kpi-pill:hover{border-color:rgba(52,211,153,.28) !important}
+      .cf-kpi-pill span{display:block;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.09em;font-weight:700}
+      .cf-kpi-pill strong{display:block;margin-top:5px;color:#f8fafc;font-size:17px;font-weight:900}
+      .cf-kpi-pill small{display:block;color:#475569;font-size:11px;margin-top:2px}
+      .cf-kpi-pill.cf-receber strong{color:#86efac}
+      .cf-kpi-pill.cf-pagar strong{color:#fca5a5}
+      .cf-kpi-pill.cf-projected small{font-weight:800;font-size:12px}
+      .cf-kpi-pill.cf-projected small.ok-label{color:#4ade80}
+      .cf-kpi-pill.cf-projected small.danger-label{color:#f87171}
+      .cf-actions-row{display:flex;gap:8px;flex-wrap:wrap}
+      .cf-flow-mini{display:grid;grid-template-columns:repeat(3,1fr) 2fr;gap:12px;margin-bottom:18px;padding:16px;border:1px solid rgba(148,163,184,.12);border-radius:18px;background:rgba(15,23,42,.5)}
+      .cf-flow-mini-item{display:flex;flex-direction:column;gap:4px}
+      .cf-flow-mini-item .cf-fm-label{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#64748b;font-weight:700}
+      .cf-flow-mini-item .cf-fm-val{font-size:20px;font-weight:900;color:#f8fafc}
+      .cf-flow-mini-item.cf-fm-receber .cf-fm-val{color:#86efac}
+      .cf-flow-mini-item.cf-fm-pagar .cf-fm-val{color:#fca5a5}
+      .cf-flow-mini-item.cf-fm-liquido .cf-fm-val{color:#93c5fd}
+      .cf-flow-bar-wrap{display:flex;flex-direction:column;justify-content:center;gap:6px}
+      .cf-flow-bar-label{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#64748b;font-weight:700}
+      .cf-flow-bar-track{height:10px;border-radius:999px;background:rgba(148,163,184,.12);overflow:hidden;display:flex}
+      .cf-flow-bar-recv{height:100%;background:linear-gradient(90deg,#16a34a,#4ade80);transition:width .4s ease}
+      .cf-flow-bar-pay{height:100%;background:linear-gradient(90deg,#dc2626,#f87171);transition:width .4s ease}
+      @media(max-width:1100px){.cf-header{grid-template-columns:1fr}.cf-balance-block{border-right:none;border-bottom:1px solid rgba(52,211,153,.12)}.cf-kpi-row{grid-template-columns:repeat(2,1fr)}.cf-flow-mini{grid-template-columns:repeat(2,1fr)}}
+      @media(max-width:640px){.cf-kpi-row{grid-template-columns:1fr 1fr}.cf-flow-mini{grid-template-columns:1fr 1fr}}
     </style>
     <section class="fin-wrap">
-      <div class="fin-hero">
-        <h2>Financeiro</h2>
-        <p>Fluxo de caixa, despesas operacionais e pagamentos enviados pelos setores em um único módulo.</p>
-        <div class="fin-actions-row">
-          <button class="btn btn-primary" id="btnReload" type="button">Atualizar fluxo</button>
-          <button class="btn btn-secondary" data-tab-target="importar" type="button">Importar relatórios</button>
-          <button class="btn btn-secondary" data-tab-target="config" type="button">Ajustar saldo/provisão</button>
-          <button class="btn btn-secondary" data-tab-target="despesas" type="button">Despesas</button>
-          <button class="btn btn-secondary" data-tab-target="pagamentos" type="button">Pagamentos</button>
+      <div class="cf-header">
+        <div class="cf-balance-block">
+          <div class="cf-balance-label">Saldo do dia</div>
+          <div class="cf-balance-value" id="kpiSaldo">R$ 0,00</div>
+          <div class="cf-balance-sub">Manual · hoje</div>
         </div>
-      </div>
-
-      <div class="fin-grid">
-        <article class="fin-kpi"><span>Saldo do dia</span><strong id="kpiSaldo">R$ 0,00</strong><small>Manual</small></article>
-        <article class="fin-kpi"><span>Contas a receber</span><strong id="kpiReceber">R$ 0,00</strong><small>Relatório importado</small></article>
-        <article class="fin-kpi"><span>Contas a pagar</span><strong id="kpiPagar">R$ 0,00</strong><small>Relatório importado</small></article>
-        <article class="fin-kpi"><span>Provisão do dia</span><strong id="kpiProvisao">R$ 0,00</strong><small>Auto + ajuste</small></article>
-        <article class="fin-kpi"><span>Saldo projetado</span><strong id="kpiProjetado">R$ 0,00</strong><small id="kpiStatus">OK</small></article>
+        <div class="cf-right-block">
+          <div class="cf-kpi-row">
+            <article class="fin-kpi cf-kpi-pill cf-receber"><span>A Receber</span><strong id="kpiReceber">R$ 0,00</strong><small>–</small></article>
+            <article class="fin-kpi cf-kpi-pill cf-pagar"><span>A Pagar</span><strong id="kpiPagar">R$ 0,00</strong><small>–</small></article>
+            <article class="fin-kpi cf-kpi-pill"><span>Provisão</span><strong id="kpiProvisao">R$ 0,00</strong><small>–</small></article>
+            <article class="fin-kpi cf-kpi-pill cf-projected"><span>Saldo Projetado</span><strong id="kpiProjetado">R$ 0,00</strong><small id="kpiStatus">OK</small></article>
+          </div>
+          <div class="cf-actions-row">
+            <button class="btn btn-primary" id="btnReload" type="button">Atualizar fluxo</button>
+            <button class="btn btn-secondary" data-tab-target="importar" type="button">Importar relatórios</button>
+            <button class="btn btn-secondary" data-tab-target="config" type="button">Saldo e Provisão</button>
+            <button class="btn btn-secondary" data-tab-target="despesas" type="button">Despesas</button>
+            <button class="btn btn-secondary" data-tab-target="pagamentos" type="button">Pagamentos</button>
+          </div>
+        </div>
       </div>
 
       <article class="fin-card">
@@ -1015,6 +1051,27 @@ initProtectedPage('Financeiro', (content, userContext) => {
         </div>
 
         <div class="fin-panel active" id="tab-fluxo">
+          <div class="cf-flow-mini" id="cfFlowMini" style="display:none">
+            <div class="cf-flow-mini-item cf-fm-receber">
+              <span class="cf-fm-label">Total Receber</span>
+              <span class="cf-fm-val" id="cfFmReceber">R$ 0,00</span>
+            </div>
+            <div class="cf-flow-mini-item cf-fm-pagar">
+              <span class="cf-fm-label">Total Pagar</span>
+              <span class="cf-fm-val" id="cfFmPagar">R$ 0,00</span>
+            </div>
+            <div class="cf-flow-mini-item cf-fm-liquido">
+              <span class="cf-fm-label">Fluxo Líquido</span>
+              <span class="cf-fm-val" id="cfFmLiquido">R$ 0,00</span>
+            </div>
+            <div class="cf-flow-bar-wrap">
+              <span class="cf-flow-bar-label">Receber vs Pagar</span>
+              <div class="cf-flow-bar-track">
+                <div class="cf-flow-bar-recv" id="cfBarRecv" style="width:50%"></div>
+                <div class="cf-flow-bar-pay" id="cfBarPay" style="width:50%"></div>
+              </div>
+            </div>
+          </div>
           <form class="fin-form" id="periodForm">
             <div class="fin-field"><label>Data inicial</label><input id="filterInicio" type="date" value="${esc(state.filters.inicio)}"></div>
             <div class="fin-field"><label>Data final</label><input id="filterFim" type="date" value="${esc(state.filters.fim)}"></div>
@@ -1544,10 +1601,25 @@ initProtectedPage('Financeiro', (content, userContext) => {
     document.getElementById('kpiPagar').textContent = money(total.pagar);
     document.getElementById('kpiProvisao').textContent = money(total.provisao);
     document.getElementById('kpiProjetado').textContent = money(total.projetado);
-    document.getElementById('kpiStatus').textContent = state.fluxo.length ? (hasAttention ? 'ATENÇÃO' : 'OK') : 'SEM DADOS';
+    const statusEl = document.getElementById('kpiStatus');
+    statusEl.textContent = state.fluxo.length ? (hasAttention ? 'ATENÇÃO' : 'OK') : 'SEM DADOS';
+    statusEl.className = hasAttention ? 'danger-label' : 'ok-label';
     document.querySelectorAll('.fin-kpi small').forEach((el, idx) => {
       if (idx < 4) el.textContent = dateRangeLabel(state.filters.inicio, state.filters.fim);
     });
+    const miniEl = document.getElementById('cfFlowMini');
+    if (miniEl && state.fluxo.length) {
+      miniEl.style.display = '';
+      const liquido = total.receber - total.pagar;
+      document.getElementById('cfFmReceber').textContent = money(total.receber);
+      document.getElementById('cfFmPagar').textContent = money(total.pagar);
+      document.getElementById('cfFmLiquido').textContent = money(liquido);
+      const sumBar = total.receber + total.pagar;
+      const recvPct = sumBar > 0 ? Math.round((total.receber / sumBar) * 100) : 50;
+      const payPct = 100 - recvPct;
+      document.getElementById('cfBarRecv').style.width = recvPct + '%';
+      document.getElementById('cfBarPay').style.width = payPct + '%';
+    }
   }
 
   function renderFluxo() {

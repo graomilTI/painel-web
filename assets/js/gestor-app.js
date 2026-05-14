@@ -7,10 +7,11 @@ const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const CACHE_KEY = 'grao1000:gestor-app:v1';
 const CACHE_TTL = 1000 * 60 * 7;
 const LIMITE_MULTIPLOS = 500000;
-const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
+const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR', 'AJUSTAR'];
 const ICO_AGUARDAR  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="pointer-events:none"><line x1="8" y1="5" x2="8" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>`;
 const ICO_ATENDER   = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg>`;
 const ICO_FINALIZAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`;
+const ICO_AJUSTAR   = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`;
 const ICO_SOMAR_KG  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
 
 const app = document.getElementById('app');
@@ -383,7 +384,14 @@ function filteredOs() {
   const status = state.filters.status;
   return [...state.os]
     .filter((row) => !sup || row.supervisao === sup)
-    .filter((row) => !status || (status === 'PENDENTE' ? !row.status_gestor : String(row.status_gestor || '').toUpperCase() === status))
+    .filter((row) => {
+      if (!status) return true;
+      const st = (row.status_gestor || 'AGUARDAR').toUpperCase();
+      const isCinza = st === 'AGUARDAR' && !row.configurada_em;
+      if (status === 'PENDENTE') return isCinza;
+      if (status === 'AGUARDAR') return st === 'AGUARDAR' && !isCinza;
+      return st === status;
+    })
     .filter((row) => !term || normalize(`${row.numero_os} ${row.cliente} ${row.embarque} ${row.destino} ${row.supervisao}`).includes(term))
     .sort((a, b) => num(b.remanescente) - num(a.remanescente) || String(b.numero_os).localeCompare(String(a.numero_os)));
 }
@@ -398,7 +406,7 @@ function renderCurrentTab() {
 }
 
 function renderInicio(main) {
-  const totalPend = state.os.filter((o) => !o.status_gestor).length;
+  const totalPend = state.os.filter((o) => (o.status_gestor || 'AGUARDAR').toUpperCase() === 'AGUARDAR' && !o.configurada_em).length;
   const atender = state.os.filter((o) => String(o.status_gestor || '').toUpperCase() === 'ATENDER').length;
   main.innerHTML = `
     <section class="hero-card">
@@ -479,7 +487,10 @@ function renderMais(main) {
 
 function isOsAjustada(os) {
   const st = String(os.status_gestor || '').toUpperCase();
-  return st === 'ATENDER' || st === 'FINALIZAR' || String(os.observacao_logistica || '').startsWith('KG solicitado');
+  if (st === 'ATENDER' || st === 'FINALIZAR' || st === 'AJUSTAR') return true;
+  if (String(os.observacao_logistica || '').startsWith('KG solicitado')) return true;
+  // Explicitly set AGUARDAR (has configurada_em) also counts as reviewed
+  return st === 'AGUARDAR' && !!os.configurada_em;
 }
 
 function renderOsList(rows) {
@@ -525,7 +536,8 @@ function renderOs(main) {
 
 function renderOsCard(os) {
   const id = osId(os);
-  const status = os.status_gestor ? String(os.status_gestor).toUpperCase() : 'PENDENTE';
+  const isCinza = (os.status_gestor || 'AGUARDAR').toUpperCase() === 'AGUARDAR' && !os.configurada_em;
+  const status = isCinza ? 'PENDENTE' : String(os.status_gestor).toUpperCase();
   const sugg = state.suggested.get(id) || { items: [], aviso: '' };
   const selected = state.selections.get(id) || (sugg.items[0] ? colabKey(sugg.items[0].c) : '');
   const selectedInfo = sugg.items.find((row) => colabKey(row.c) === selected) || null;
@@ -534,7 +546,7 @@ function renderOsCard(os) {
   const isMulti = state.allowMulti.has(id) && canMulti;
   const extraValues = state.extras.get(id) || [];
   const hasLaudo = String(os.observacao_logistica||'').startsWith('LAUDO:');
-  const rowColor = isNegativo ? 'row-kg' : os.observacao_logistica?.startsWith('KG solicitado') ? 'row-kg' : status === 'AGUARDAR' ? 'row-aguardar' : status === 'ATENDER' ? 'row-atender' : status === 'FINALIZAR' ? 'row-finalizar' : '';
+  const rowColor = isNegativo ? 'row-kg' : os.observacao_logistica?.startsWith('KG solicitado') ? 'row-kg' : status === 'AGUARDAR' ? 'row-aguardar' : status === 'ATENDER' ? 'row-atender' : status === 'FINALIZAR' ? 'row-finalizar' : status === 'AJUSTAR' ? 'row-ajustar' : '';
   return `
     <article class="os-card ${num(os.remanescente) === 0 ? 'is-zero' : ''} ${state.busy.has(id) ? 'is-updating' : ''} ${rowColor}" data-os-id="${escapeHtml(id)}">
       <div class="os-head">
@@ -563,11 +575,12 @@ function renderOsCard(os) {
       </div>
       <div class="action-grid">
         ${isNegativo
-          ? `<button class="btn secondary ${hasLaudo ? 'kg-active' : ''}" data-action-laudo="${escapeHtml(id)}" data-action-laudo-num="${escapeHtml(os.numero_os)}" type="button" title="Anexar laudo para conferência" style="color:#fca5a5;border-color:rgba(239,68,68,.4);grid-column:span 5;font-size:18px;font-weight:950">!</button>`
-          : `<div class="status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="dot"></span></div>
+          ? `<button class="btn secondary ${hasLaudo ? 'kg-active' : ''}" data-action-laudo="${escapeHtml(id)}" data-action-laudo-num="${escapeHtml(os.numero_os)}" type="button" title="Anexar laudo para conferência" style="color:#fca5a5;border-color:rgba(239,68,68,.4);grid-column:span 6;font-size:18px;font-weight:950">!</button>`
+          : `<div class="status-dot ${isCinza ? 'is-active' : ''}" title="Sem ação definida"><span class="dot"></span></div>
         <button class="btn ${status === 'AGUARDAR' ? 'warn' : 'secondary'}" data-action="AGUARDAR" type="button" title="Aguardar">${ICO_AGUARDAR}</button>
         <button class="btn ${status === 'ATENDER' ? '' : 'secondary'}" data-action="ATENDER" type="button" title="Atender">${ICO_ATENDER}</button>
         <button class="btn ${status === 'FINALIZAR' ? '' : 'secondary'}" data-action="FINALIZAR" type="button" title="Finalizar">${ICO_FINALIZAR}</button>
+        <button class="btn ${status === 'AJUSTAR' ? 'ajustar' : 'secondary'}" data-action="AJUSTAR" type="button" title="Ajustar saldo">${ICO_AJUSTAR}</button>
         <button class="btn secondary ${os.observacao_logistica?.startsWith('KG solicitado') ? 'kg-active' : ''}" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar KG para Logística" style="color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SOMAR_KG}</button>`
         }
       </div>
@@ -682,11 +695,11 @@ function openKgModal(recordId, osNumero) {
     btn.textContent = 'Enviando...';
     const kgText = `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`;
     const row = state.os.find((o) => osId(o) === recordId);
-    if (row) { row.observacao_logistica = kgText; row.status_gestor = null; row.configurada_em = null; }
+    if (row) { row.observacao_logistica = kgText; row.status_gestor = 'AGUARDAR'; row.configurada_em = null; }
     overlay.remove();
     renderOs(document.getElementById('appMain'));
     showToast('Solicitação enviada para a Logística.', 'success');
-    supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: null, updated_at: new Date().toISOString() }).eq('id', recordId);
+    supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: 'AGUARDAR', configurada_em: null, updated_at: new Date().toISOString() }).eq('id', recordId);
   });
 }
 

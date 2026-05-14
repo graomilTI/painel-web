@@ -350,7 +350,6 @@ async function markProgramacaoIfOsPending(container, userContext) {
       .from('operacional_os')
       .select('id')
       .is('status_gestor', null)
-      .is('observacao_logistica', null)
       .gte('data_os', today)
       .lte('data_os', today);
 
