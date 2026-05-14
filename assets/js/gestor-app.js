@@ -510,7 +510,7 @@ function renderOsCard(os) {
   const isMulti = state.allowMulti.has(id) && canMulti;
   const extraValues = state.extras.get(id) || [];
   return `
-    <article class="os-card ${num(os.remanescente) === 0 ? 'is-zero' : ''} ${state.busy.has(id) ? 'is-updating' : ''}" data-os-id="${escapeHtml(id)}">
+    <article class="os-card ${num(os.remanescente) === 0 ? 'is-zero' : ''} ${state.busy.has(id) ? 'is-updating' : ''} ${os.observacao_logistica?.startsWith('KG solicitado') ? 'row-kg' : status === 'AGUARDAR' ? 'row-aguardar' : status === 'ATENDER' ? 'row-atender' : status === 'FINALIZAR' ? 'row-finalizar' : ''}" data-os-id="${escapeHtml(id)}">
       <div class="os-head">
         <div><div class="os-number">${escapeHtml(os.numero_os)}</div><div class="os-date">${brDate(os.data_os)} · ${escapeHtml(first(os.servico))}</div></div>
         <span class="status-badge ${escapeHtml(status)}">${escapeHtml(status)}</span>
