@@ -639,16 +639,13 @@ function openKgModal(recordId, osNumero) {
     const btn = overlay.querySelector('#kgConfirmar');
     btn.disabled = true;
     btn.textContent = 'Enviando...';
-    const { error } = await supabase.from('operacional_os').update({
-      observacao_logistica: `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`,
-      updated_at: new Date().toISOString(),
-    }).eq('id', recordId);
-    if (error) { btn.disabled = false; btn.textContent = 'Confirmar'; showToast(error.message, 'error'); return; }
+    const kgText = `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`;
     const row = state.os.find((o) => osId(o) === recordId);
-    if (row) row.observacao_logistica = `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`;
+    if (row) { row.observacao_logistica = kgText; row.status_gestor = null; row.configurada_em = null; }
     overlay.remove();
     renderOs(document.getElementById('appMain'));
     showToast('Solicitação enviada para a Logística.', 'success');
+    supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: null, updated_at: new Date().toISOString() }).eq('id', recordId);
   });
 }
 
@@ -676,6 +673,7 @@ async function saveOsStatus(id, status) {
   state.busy.add(id);
   os.status_gestor = status;
   os.configurada_em = new Date().toISOString();
+  os.observacao_logistica = null;
   os.permitir_mais_classificadores = state.allowMulti.has(id) && num(os.remanescente) >= LIMITE_MULTIPLOS;
   renderOs(document.getElementById('appMain'));
 
@@ -702,6 +700,7 @@ async function saveOsStatus(id, status) {
 
     const { error } = await supabase.from('operacional_os').update({
       status_gestor: status,
+      observacao_logistica: null,
       permitir_mais_classificadores: os.permitir_mais_classificadores,
       configurada_em: new Date().toISOString(),
       updated_at: new Date().toISOString(),

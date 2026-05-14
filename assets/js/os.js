@@ -626,10 +626,12 @@ initProtectedPage('OS', async (content) => {
         status_logistica: row.status_logistica,
         enviado_logistica_em: row.enviado_logistica_em,
         logistica_solicitado_por: row.logistica_solicitado_por,
+        observacao_logistica: row.observacao_logistica,
       };
       const patch = {
         status_gestor: nextStatus,
         configurada_em: agoraIso,
+        observacao_logistica: null,
       };
       if (nextStatus === 'FINALIZAR') {
         patch.status_logistica = 'PENDENTE';
@@ -692,15 +694,12 @@ initProtectedPage('OS', async (content) => {
       const btn = overlay.querySelector('#kgConfirmar');
       btn.disabled = true;
       btn.textContent = 'Enviando...';
-      const { error } = await supabase.from('operacional_os').update({
-        observacao_logistica: `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`,
-        updated_at: new Date().toISOString(),
-      }).eq('id', osId);
-      if (error) { btn.disabled = false; btn.textContent = 'Confirmar'; alert(error.message); return; }
+      const kgText = `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`;
       const row = state.os.find((o) => String(o.id) === String(osId));
-      if (row) row.observacao_logistica = `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`;
+      if (row) { row.observacao_logistica = kgText; row.status_gestor = null; row.configurada_em = null; }
       overlay.remove();
       render();
+      supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: null, updated_at: new Date().toISOString() }).eq('id', osId);
     });
   }
 
