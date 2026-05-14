@@ -11,10 +11,11 @@ const STEPS = [
 ];
 
 const DISPONIBILIDADES = ['OK', 'FÉRIAS', 'FOLGA', 'ATESTADO', 'FALTA', 'TRANSFERIR', 'INATIVO'];
+const DISPONIBILIDADES_LOGISTICA = ['LOGISTICA', 'DESLOCAMENTO', 'SEM EMBARQUE'];
 const TIPOS_ESTADIA = ['NÃO PRECISA', 'CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
 const TIPOS_DESLOCAMENTO = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'ÔNIBUS', 'OUTRO'];
 const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
-const DISPONIBILIDADES_LIBERADAS = new Set(['', 'OK', 'DISPONÍVEL', 'DISPONIVEL', 'LIBERADO']);
+const DISPONIBILIDADES_LIBERADAS = new Set(['', 'OK', 'DISPONÍVEL', 'DISPONIVEL', 'LIBERADO', 'LOGISTICA', 'DESLOCAMENTO']);
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -227,6 +228,17 @@ function injectProgramacaoStyles() {
     .prog-section-title.blocked .badge{border-color:rgba(248,113,113,.22);background:rgba(127,29,29,.18);color:#fecaca}
     .prog-empty-section{border:1px dashed rgba(148,163,184,.2);border-radius:16px;padding:14px;color:#94a3b8;background:rgba(15,23,42,.18)}
     .prog-os-modal-backdrop{position:fixed;inset:0;z-index:9990;background:rgba(2,6,23,.72);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:18px}
+    .prog-tipo-selector{display:flex;gap:6px;flex-wrap:wrap}
+    .prog-tipo-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.5);color:#94a3b8;border-radius:10px;padding:7px 11px;font-size:12px;font-weight:800;cursor:pointer;transition:all .15s}
+    .prog-tipo-btn:hover{background:rgba(22,101,52,.25);color:#bbf7d0}
+    .prog-tipo-btn.active{background:rgba(22,101,52,.35);color:#bbf7d0;border-color:rgba(52,211,153,.55)}
+    .prog-tipo-btn.active[data-tipo="SEM EMBARQUE"]{background:rgba(127,29,29,.30);color:#fecaca;border-color:rgba(248,113,113,.45)}
+    .prog-placa-wrap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .prog-placa-wrap input{width:130px!important;font-family:monospace;text-transform:uppercase;min-height:32px!important;padding:5px 8px!important}
+    .prog-placa-suggest-btn{border:1px solid rgba(52,211,153,.28);background:rgba(22,101,52,.22);color:#dcfce7;border-radius:8px;padding:5px 9px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap}
+    .prog-placa-suggest-btn:hover{background:rgba(22,101,52,.42)}
+    .prog-placa-alert{display:none;margin-top:6px;border:1px solid rgba(250,204,21,.24);background:rgba(113,63,18,.20);color:#fde68a;border-radius:10px;padding:6px 8px;font-size:11px;font-weight:700;line-height:1.35;width:100%}
+    .prog-placa-alert.show{display:block}
     .prog-os-modal{width:min(920px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(52,211,153,.22);border-radius:24px;background:linear-gradient(180deg,#0f172a,#07130d);box-shadow:0 30px 90px rgba(0,0,0,.55);color:#e5e7eb;padding:22px}
     .prog-os-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.prog-os-modal-head h3{margin:0;color:#f8fafc;font-size:22px}.prog-os-modal-head p{margin:6px 0 0;color:#94a3b8}
     .prog-os-list{display:grid;gap:10px}.prog-os-card{border:1px solid rgba(52,211,153,.16);background:rgba(15,23,42,.62);border-radius:18px;padding:14px}.prog-os-card.zero{box-shadow:inset 4px 0 0 #facc15}.prog-os-title{font-weight:950;color:#f8fafc}.prog-os-meta{font-size:12px;color:#94a3b8;margin-top:4px}.prog-os-rem{display:inline-flex;border-radius:999px;padding:5px 10px;margin-top:8px;font-size:12px;font-weight:950;border:1px solid rgba(250,204,21,.25);color:#fde68a;background:rgba(113,63,18,.22)}
@@ -338,6 +350,7 @@ initProtectedPage('Programação', (content) => {
     supervisao: '',
     programacaoId: null,
     colaboradores: [],
+    colabsEmOsAtender: new Set(),
     cidades: [],
     alojamentos: [],
     veiculos: [],
@@ -673,6 +686,55 @@ initProtectedPage('Programação', (content) => {
     };
   }
 
+  async function loadOsAtender(dataReferencia, supervisao) {
+    const set = new Set();
+    try {
+      const { data: osRows } = await supabase
+        .from('operacional_os')
+        .select('id')
+        .eq('status_gestor', 'ATENDER')
+        .eq('data_os', dataReferencia)
+        .eq('supervisao', supervisao);
+      if (!osRows?.length) return set;
+      const { data: colabRows } = await supabase
+        .from('operacional_os_colaboradores')
+        .select('colaborador_key, colaborador_cpf')
+        .in('os_id', osRows.map((r) => r.id));
+      (colabRows || []).forEach((r) => {
+        if (r.colaborador_cpf) set.add(normalizeCpf(r.colaborador_cpf));
+        if (r.colaborador_key) set.add(String(r.colaborador_key).trim());
+      });
+    } catch (e) {
+      console.warn('Não foi possível carregar OS ATENDER.', e);
+    }
+    return set;
+  }
+
+  function colabEmOsAtender(colab) {
+    if (!state.colabsEmOsAtender.size) return false;
+    const cpf = normalizeCpf(colab.cpf);
+    if (cpf && state.colabsEmOsAtender.has(cpf)) return true;
+    return state.colabsEmOsAtender.has(String(colab.id || '').trim());
+  }
+
+  function suggestVeiculoForColab(colab) {
+    return (state.veiculos || []).find((v) => {
+      const pessoa = { nome: v.motoristaNome, cpf: v.motoristaCpf, motorista: v.motoristaNome, ...(v.raw && typeof v.raw === 'object' ? v.raw : {}) };
+      return pessoaMatchesColaborador(pessoa, colab);
+    });
+  }
+
+  function updatePlacaLogisticaAlert(tr) {
+    if (!tr) return;
+    const alert = tr.querySelector('.prog-placa-alert');
+    if (!alert) return;
+    const colab = colabById(tr.dataset.colabId);
+    const placa = tr.querySelector('[data-field="placa_veiculo"]')?.value || '';
+    const msg = placa ? patrimonioMessageForRow(colab, 'MOTORISTA FROTA', placa) : '';
+    alert.textContent = msg;
+    alert.classList.toggle('show', Boolean(msg));
+  }
+
   async function fillSupervisoes() {
     el.sup.innerHTML = '<option value="">Selecione...</option>';
     el.sup.disabled = false;
@@ -835,6 +897,7 @@ initProtectedPage('Programação', (content) => {
         };
       });
 
+      state.colabsEmOsAtender = await loadOsAtender(dataReferencia, supervisao);
       await ensureDefaultRows();
       await loadStageData();
       updateStats();
@@ -852,7 +915,10 @@ initProtectedPage('Programação', (content) => {
     if (!state.programacaoId || !state.colaboradores.length) return;
     const payload = state.colaboradores.map((colab) => {
       const motivo = String(colab.indisponibilidade?.motivo || '').toUpperCase();
-      const disponibilidade = DISPONIBILIDADES.includes(motivo) ? motivo : (colab.indisponibilidade ? 'ATESTADO' : 'OK');
+      const emOs = colabEmOsAtender(colab);
+      const disponibilidade = colab.indisponibilidade
+        ? (DISPONIBILIDADES.includes(motivo) ? motivo : 'ATESTADO')
+        : (emOs ? 'OK' : 'DESLOCAMENTO');
       return {
         programacao_id: state.programacaoId,
         data_referencia: state.dataReferencia,
@@ -990,10 +1056,32 @@ initProtectedPage('Programação', (content) => {
             <tbody>
               ${rows.map((colab) => {
                 const r = state.maps.disponibilidade.get(String(colab.id)) || {};
+                if (colabEmOsAtender(colab)) {
+                  return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_colaboradores">
+                    <td>${colabCell(colab)}</td>
+                    <td><select data-field="disponibilidade">${selectOptions(DISPONIBILIDADES, r.disponibilidade || 'OK')}</select></td>
+                    <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" placeholder="Observação da disponibilidade" /></td>
+                  </tr>`;
+                }
+                const disp = DISPONIBILIDADES_LOGISTICA.includes(r.disponibilidade) ? r.disponibilidade : 'DESLOCAMENTO';
+                const placa = r.placa_veiculo || '';
+                const sugestao = !placa ? suggestVeiculoForColab(colab) : null;
+                const placaSugerida = sugestao?.placa || '';
+                const alertMsg = placa ? patrimonioMessageForRow(colab, 'MOTORISTA FROTA', placa) : '';
                 return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_colaboradores">
                   <td>${colabCell(colab)}</td>
-                  <td><select data-field="disponibilidade">${selectOptions(DISPONIBILIDADES, r.disponibilidade || 'OK')}</select></td>
-                  <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" placeholder="Observação da disponibilidade" /></td>
+                  <td>
+                    <div class="prog-tipo-selector">
+                      ${DISPONIBILIDADES_LOGISTICA.map((op) => `<button type="button" class="prog-tipo-btn${disp === op ? ' active' : ''}" data-tipo="${escapeHtml(op)}">${op === 'LOGISTICA' ? 'Logística' : op === 'DESLOCAMENTO' ? 'Deslocamento' : 'Sem Embarque'}</button>`).join('')}
+                      <input type="hidden" data-field="disponibilidade" value="${escapeHtml(disp)}" />
+                    </div>
+                    ${disp === 'LOGISTICA' ? `<div class="prog-placa-wrap">
+                      <input data-field="placa_veiculo" type="text" maxlength="8" value="${escapeHtml(placa)}" placeholder="${placaSugerida ? 'Sugestão: ' + placaSugerida : 'Digite a placa'}" />
+                      ${placaSugerida && !placa ? `<button type="button" class="prog-placa-suggest-btn" data-placa="${escapeHtml(placaSugerida)}">Usar ${escapeHtml(placaSugerida)}</button>` : ''}
+                      <div class="prog-placa-alert${alertMsg ? ' show' : ''}">${escapeHtml(alertMsg)}</div>
+                    </div>` : ''}
+                  </td>
+                  <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" placeholder="Observação" /></td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -1209,7 +1297,8 @@ initProtectedPage('Programação', (content) => {
     const tr = event.target.closest('tr');
     if (event.target.matches('[data-field="placa_veiculo"]')) {
       event.target.value = onlyPlate(event.target.value);
-      updatePatrimonioAlert(tr);
+      if (tr?.dataset.table === 'programacao_colaboradores') updatePlacaLogisticaAlert(tr);
+      else updatePatrimonioAlert(tr);
     }
     if (event.target.matches('[data-field]')) scheduleSaveRow(tr);
     if (event.target.matches('[data-extra-field]')) scheduleSaveExtra(event.target.closest('.prog-extra-card'));
@@ -1220,14 +1309,67 @@ initProtectedPage('Programação', (content) => {
     if (event.target.matches('[data-field="cidade"]')) preencherUfPorCidade(tr);
     if (event.target.matches('[data-field="uf"]')) event.target.value = normalizeUF(event.target.value);
     if (event.target.matches('[data-field="alojamento_id"]')) preencherAlojamentoSelecionado(tr);
-    if (event.target.matches('[data-field="placa_veiculo"]')) event.target.value = onlyPlate(event.target.value);
-    if (event.target.matches('[data-field="tipo_deslocamento"], [data-field="placa_veiculo"]')) updatePatrimonioAlert(tr);
+    if (event.target.matches('[data-field="placa_veiculo"]')) {
+      event.target.value = onlyPlate(event.target.value);
+      if (tr?.dataset.table === 'programacao_colaboradores') updatePlacaLogisticaAlert(tr);
+    }
+    if (event.target.matches('[data-field="tipo_deslocamento"], [data-field="placa_veiculo"]') && tr?.dataset.table !== 'programacao_colaboradores') updatePatrimonioAlert(tr);
     if (event.target.matches('[data-field="tipo_estadia"]')) atualizarSugestaoAlojamento(tr);
     if (event.target.matches('[data-field]')) scheduleSaveRow(tr);
     if (event.target.matches('[data-extra-field]')) scheduleSaveExtra(event.target.closest('.prog-extra-card'));
   }
 
   async function handleTableClick(event) {
+    const tipoBtn = event.target.closest('.prog-tipo-btn');
+    if (tipoBtn) {
+      const tipo = tipoBtn.dataset.tipo;
+      const tr = tipoBtn.closest('tr');
+      if (!tr) return;
+      const colabId = tr.dataset.colabId;
+      const existing = state.maps.disponibilidade.get(colabId) || {};
+      state.maps.disponibilidade.set(colabId, { ...existing, disponibilidade: tipo });
+      const hiddenInput = tr.querySelector('[data-field="disponibilidade"]');
+      if (hiddenInput) hiddenInput.value = tipo;
+      tr.querySelectorAll('.prog-tipo-btn').forEach((b) => b.classList.toggle('active', b.dataset.tipo === tipo));
+      let placaWrap = tr.querySelector('.prog-placa-wrap');
+      if (tipo === 'LOGISTICA' && !placaWrap) {
+        const td = tipoBtn.closest('td');
+        placaWrap = document.createElement('div');
+        placaWrap.className = 'prog-placa-wrap';
+        const colab = colabById(colabId);
+        const sugestao = suggestVeiculoForColab(colab);
+        placaWrap.innerHTML = `<input data-field="placa_veiculo" type="text" maxlength="8" value="" placeholder="${sugestao?.placa ? 'Sugestão: ' + sugestao.placa : 'Digite a placa'}" />${sugestao?.placa ? `<button type="button" class="prog-placa-suggest-btn" data-placa="${escapeHtml(sugestao.placa)}">Usar ${escapeHtml(sugestao.placa)}</button>` : ''}<div class="prog-placa-alert"></div>`;
+        td.appendChild(placaWrap);
+      } else if (placaWrap && tipo !== 'LOGISTICA') {
+        placaWrap.remove();
+        if (existing.placa_veiculo) {
+          state.maps.disponibilidade.set(colabId, { ...state.maps.disponibilidade.get(colabId), placa_veiculo: null });
+        }
+      }
+      const statusSpan = tr.querySelector('.prog-status');
+      const isNowBlocked = tipo === 'SEM EMBARQUE';
+      if (statusSpan) {
+        statusSpan.className = `prog-status ${isNowBlocked ? 'block' : 'ok'}`;
+        statusSpan.textContent = isNowBlocked ? 'Bloqueado' : 'Liberado';
+      }
+      scheduleSaveRow(tr);
+      return;
+    }
+
+    const suggestBtn = event.target.closest('.prog-placa-suggest-btn');
+    if (suggestBtn) {
+      const tr = suggestBtn.closest('tr');
+      if (!tr) return;
+      const input = tr.querySelector('[data-field="placa_veiculo"]');
+      if (input) {
+        input.value = onlyPlate(suggestBtn.dataset.placa || '');
+        suggestBtn.remove();
+        updatePlacaLogisticaAlert(tr);
+        scheduleSaveRow(tr);
+      }
+      return;
+    }
+
     const addBtn = event.target.closest('[data-action="add-extra"]');
     if (addBtn) {
       const tr = addBtn.closest('tr');
@@ -1292,6 +1434,9 @@ initProtectedPage('Programação', (content) => {
       payload.tem_estadia = payload.tipo_estadia && payload.tipo_estadia !== 'NÃO PRECISA';
     }
     if (table === 'programacao_deslocamento') payload.placa_veiculo = onlyPlate(payload.placa_veiculo);
+    if (table === 'programacao_colaboradores') {
+      payload.placa_veiculo = payload.disponibilidade === 'LOGISTICA' ? onlyPlate(payload.placa_veiculo) : null;
+    }
 
     const { data, error } = await supabase
       .from(table)
