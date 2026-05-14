@@ -32,7 +32,9 @@ const CLIENTES_EXPORTACAO = [
 
 const state = {
   user: null,
-  tab: 'finalizacao',
+  tab: 'os',
+  osLog: [],
+  osLogLoaded: false,
   os: [],
   atribuicoes: [],
   alertas: [],
@@ -262,7 +264,11 @@ initProtectedPage('Painel de Logística', async (content) => {
         <button id="logReload" class="btn btn-secondary" type="button">Atualizar</button>
       </div>
       <div class="log-tabs" id="logTabs">
-        <button class="log-tab active" data-tab="finalizacao" type="button">Finalização de O.S.</button>
+        <button class="log-tab active" data-tab="os" type="button">O.S.</button>
+        <button class="log-tab" data-tab="fob" type="button">FOB</button>
+        <button class="log-tab" data-tab="report" type="button">Report</button>
+        <button class="log-tab" data-tab="conferir" type="button">Conferir</button>
+        <button class="log-tab" data-tab="finalizacao" type="button">Finalização ADM</button>
         <button class="log-tab" data-tab="classificadores" type="button">Classificadores</button>
         <button class="log-tab" data-tab="conferencias" type="button">Conferências</button>
         <button class="log-tab" data-tab="exportacoes" type="button">Exportações clientes</button>
@@ -280,7 +286,27 @@ initProtectedPage('Painel de Logística', async (content) => {
 
     <section class="grid-cards mt-16" id="logStats"></section>
 
-    <section class="card mt-16 log-section active" id="section-finalizacao">
+    <section class="card mt-16 log-section active" id="section-os">
+      <div class="section-head">
+        <div><h3>O.S. para Logística</h3><p class="muted" id="osLogMeta">Carregando...</p></div>
+        <button class="btn btn-secondary" id="osLogReload" type="button">Atualizar</button>
+      </div>
+      <div id="osLogList"></div>
+    </section>
+
+    <section class="card mt-16 log-section" id="section-fob">
+      <div class="log-empty">Módulo <strong>FOB</strong> em desenvolvimento.</div>
+    </section>
+
+    <section class="card mt-16 log-section" id="section-report">
+      <div class="log-empty">Módulo <strong>Report</strong> em desenvolvimento.</div>
+    </section>
+
+    <section class="card mt-16 log-section" id="section-conferir">
+      <div class="log-empty">Módulo <strong>Conferir</strong> em desenvolvimento.</div>
+    </section>
+
+    <section class="card mt-16 log-section" id="section-finalizacao">
       <div class="section-head"><div><h3>Fila de finalização</h3><p class="muted">O.S. enviadas pelo gestor com status <strong>Finalizar</strong>.</p></div></div>
       <div id="logFinalizacaoList"></div>
     </section>
@@ -396,12 +422,16 @@ initProtectedPage('Painel de Logística', async (content) => {
 
   const hash = normalize(location.hash.replace('#', ''));
   if (hash.includes('CLASSIFIC')) state.tab = 'classificadores';
-  else if (hash.includes('CONFER')) state.tab = 'conferencias';
+  else if (hash.includes('CONFER') && !hash.includes('CONFERIR')) state.tab = 'conferencias';
   else if (hash.includes('EXPORT')) state.tab = 'exportacoes';
-  else state.tab = 'finalizacao';
-  renderTabs();
+  else if (hash.includes('FINALIZACAO') || hash.includes('FINALIZ')) state.tab = 'finalizacao';
+  else if (hash.includes('FOB')) state.tab = 'fob';
+  else if (hash.includes('REPORT')) state.tab = 'report';
+  else if (hash.includes('CONFERIR')) state.tab = 'conferir';
+  else state.tab = 'os';
   if (window.location.hash === '#relatorios') state.tab = 'relatorios';
   renderTabs();
+  loadOsLog();
   await loadAll();
 
   async function loadAll() {
@@ -448,11 +478,14 @@ initProtectedPage('Painel de Logística', async (content) => {
 
   function renderTabs() {
     [...el.tabs.querySelectorAll('.log-tab')].forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === state.tab));
-    ['finalizacao', 'classificadores', 'conferencias', 'exportacoes', 'relatorios'].forEach((tab) => {
+    ['os', 'fob', 'report', 'conferir', 'finalizacao', 'classificadores', 'conferencias', 'exportacoes', 'relatorios'].forEach((tab) => {
       document.getElementById(`section-${tab}`)?.classList.toggle('active', tab === state.tab);
     });
+    const isAdmTab = ['finalizacao', 'classificadores', 'conferencias', 'exportacoes', 'relatorios'].includes(state.tab);
     el.status.closest('.field').style.display = state.tab === 'finalizacao' ? '' : 'none';
     el.atraso.closest('.field').style.display = state.tab === 'classificadores' ? '' : 'none';
+    document.querySelector('.filters-grid')?.style.setProperty('display', isAdmTab ? '' : 'none');
+    if (state.tab === 'os' && !state.osLogLoaded) loadOsLog();
   }
 
   function renderStats() {
@@ -769,6 +802,27 @@ initProtectedPage('Painel de Logística', async (content) => {
   }
 
   async function onClick(event) {
+    const oslogOk = event.target.closest('[data-oslog-ok]');
+    if (oslogOk) {
+      const id = oslogOk.dataset.oslogOk;
+      const type = oslogOk.dataset.oslogType;
+      oslogOk.disabled = true;
+      oslogOk.textContent = '...';
+      const now = new Date().toISOString();
+      const patch = type === 'kg'
+        ? { observacao_logistica: null, updated_at: now }
+        : { status_gestor: null, status_logistica: 'FINALIZADA', finalizado_em: now, updated_at: now };
+      const { error } = await supabase.from('operacional_os').update(patch).eq('id', id);
+      if (error) { alert(error.message); oslogOk.disabled = false; oslogOk.textContent = 'OK'; return; }
+      state.osLog = state.osLog.filter((r) => String(r.id) !== String(id));
+      renderOsLog();
+      const meta = document.getElementById('osLogMeta');
+      const f = state.osLog.filter((r) => String(r.status_gestor || '') === 'FINALIZAR').length;
+      const k = state.osLog.filter((r) => String(r.observacao_logistica || '').startsWith('KG solicitado')).length;
+      if (meta) meta.textContent = `${f} para finalizar · ${k} aumento de saldo`;
+      return;
+    }
+
     const copy = event.target.closest('[data-copy-export]');
     if (copy) {
       const tpl = content.querySelector(`template[data-export-text="${copy.dataset.copyExport}"]`);
@@ -878,6 +932,59 @@ initProtectedPage('Painel de Logística', async (content) => {
       return `🚨 EMBARQUE SUSPENSO\nOS: ${osNumber(row)}\nCliente: ${clienteOf(row)}\nLocal: ${origemOf(row)}\nClassificador: ${atribuicoes(row.id)[0]?.colaborador_nome || row.atualizado_por || '-'}`;
     }
     return `OS: ${osNumber(row)}\nCliente: ${clienteOf(row)}\nLocal: ${origemOf(row)}`;
+  }
+
+  async function loadOsLog() {
+    const meta = document.getElementById('osLogMeta');
+    const list = document.getElementById('osLogList');
+    if (meta) meta.textContent = 'Carregando...';
+    const { data, error } = await supabase
+      .from('operacional_os')
+      .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,embarcado,status_gestor,observacao_logistica')
+      .or('status_gestor.eq.FINALIZAR,observacao_logistica.ilike.KG solicitado*')
+      .order('data_os', { ascending: false })
+      .limit(1000);
+    state.osLog = safeArray(data);
+    state.osLogLoaded = true;
+    const finalizarCount = state.osLog.filter((r) => String(r.status_gestor || '') === 'FINALIZAR').length;
+    const kgCount = state.osLog.filter((r) => String(r.observacao_logistica || '').startsWith('KG solicitado')).length;
+    if (meta) meta.textContent = `${finalizarCount} para finalizar · ${kgCount} aumento de saldo`;
+    if (error) { if (list) list.innerHTML = `<div class="log-empty">${esc(error.message)}</div>`; return; }
+    renderOsLog();
+    document.getElementById('osLogReload')?.addEventListener('click', () => { state.osLogLoaded = false; loadOsLog(); });
+  }
+
+  function renderOsLog() {
+    const list = document.getElementById('osLogList');
+    if (!list) return;
+    if (!state.osLog.length) { list.innerHTML = '<div class="log-empty">Nenhuma O.S. pendente para a Logística.</div>'; return; }
+    const BR = new Intl.NumberFormat('pt-BR');
+    const fmt = (v) => BR.format(Number(v) || 0);
+    const brD = (v) => { if (!v) return '-'; const [y,m,d] = String(v).slice(0,10).split('-'); return `${d}/${m}/${y}`; };
+    list.innerHTML = `
+      <div class="log-table-wrap"><table class="log-table"><thead><tr>
+        <th style="width:10%">O.S.</th>
+        <th style="width:32%">Cliente / Rota</th>
+        <th style="width:13%">Remanescente</th>
+        <th style="width:30%">Solicitação</th>
+        <th style="width:15%">Ação</th>
+      </tr></thead><tbody>
+      ${state.osLog.map((row) => {
+        const isKg = String(row.observacao_logistica || '').startsWith('KG solicitado');
+        const type = isKg ? 'kg' : 'finalizar';
+        const badge = isKg
+          ? `<span class="log-badge danger">↑ KG</span><div class="log-meta" style="margin-top:4px">${esc(row.observacao_logistica)}</div>`
+          : `<span class="log-badge info">$ Finalizar</span>`;
+        const rem = Number(row.remanescente);
+        return `<tr>
+          <td><div class="log-title">${esc(row.numero_os || '-')}</div><div class="log-meta">${brD(row.data_os)}</div><div class="log-meta">${esc(row.supervisao || '-')}</div></td>
+          <td><div class="log-title">${esc(row.cliente || '-')}</div><div class="log-meta">Emb.: ${esc(row.embarque || '-')}</div><div class="log-meta">Dest.: ${esc(row.destino || '-')}</div></td>
+          <td><span class="log-badge ${rem <= 0 ? 'warn' : 'ok'}">${fmt(rem)}</span><div class="log-meta" style="margin-top:4px">Lote ${fmt(row.lote)}</div></td>
+          <td>${badge}</td>
+          <td><button class="btn btn-primary" data-oslog-ok="${esc(String(row.id))}" data-oslog-type="${type}" type="button">OK</button></td>
+        </tr>`;
+      }).join('')}
+      </tbody></table></div>`;
   }
 
   async function addLog(row, action, payload) {
