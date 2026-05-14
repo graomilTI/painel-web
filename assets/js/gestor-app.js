@@ -532,9 +532,9 @@ function renderOsCard(os) {
         ${canMulti && isMulti ? renderExtraSelects(id, sugg.items, selected, extraValues) : ''}
       </div>
       <div class="action-grid">
-        <button class="btn warn" data-action="AGUARDAR" type="button">Aguardar</button>
-        <button class="btn" data-action="ATENDER" type="button">Atender</button>
-        <button class="btn secondary" data-action="FINALIZAR" type="button">Finalizar</button>
+        <button class="btn ${status === 'AGUARDAR' ? 'warn' : 'secondary'}" data-action="AGUARDAR" type="button">Aguardar</button>
+        <button class="btn ${status === 'ATENDER' ? '' : 'secondary'}" data-action="ATENDER" type="button">Atender</button>
+        <button class="btn ${status === 'FINALIZAR' ? '' : 'secondary'}" data-action="FINALIZAR" type="button">Finalizar</button>
       </div>
     </article>
   `;
