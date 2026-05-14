@@ -1799,9 +1799,11 @@ initProtectedPage('Financeiro', (content, userContext) => {
       byMonth[mes].projetado = Math.max(byMonth[mes].projetado, Number(row.saldo_projetado || 0));
     });
 
-    const meses = Object.keys(byMonth).sort();
-    const atual = byMonth[meses[meses.length - 1]] || { receber: 0, pagar: 0, saldo: 0, projetado: 0 };
-    const anterior = meses.length >= 2 ? byMonth[meses[meses.length - 2]] : null;
+    const mesAtualKey = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    const mesAnteriorDate = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+    const mesAnteriorKey = `${mesAnteriorDate.getFullYear()}-${String(mesAnteriorDate.getMonth() + 1).padStart(2, '0')}`;
+    const atual = byMonth[mesAtualKey] || { receber: 0, pagar: 0, saldo: 0, projetado: 0 };
+    const anterior = byMonth[mesAnteriorKey] || null;
 
     function setChange(id, curr, prev, invertido) {
       const el = document.getElementById(id);
