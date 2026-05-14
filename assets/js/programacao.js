@@ -395,20 +395,20 @@ initProtectedPage('Programação', (content) => {
 
   function pendingOsFilter(row) {
     if (!row) return false;
-    if (String(row.status_gestor || '').toUpperCase() === 'FINALIZAR') return false;
-    if (!row.configurada_em) return true;
-    const updated = new Date(row.updated_at || row.created_at || 0).getTime();
-    const configured = new Date(row.configurada_em || 0).getTime();
-    return Number.isFinite(updated) && Number.isFinite(configured) && updated > configured;
+    return row.status_gestor === 'AGUARDAR' && !row.configurada_em;
   }
 
   async function checkOsPendingPopup() {
     try {
       const selectedSup = el.sup?.value || '';
+      const today = todayIso();
       let query = supabase
         .from('operacional_os')
         .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,status_gestor,configurada_em,updated_at,created_at')
-        .neq('status_gestor', 'FINALIZAR')
+        .eq('status_gestor', 'AGUARDAR')
+        .is('configurada_em', null)
+        .gte('data_os', today)
+        .lte('data_os', today)
         .order('data_os', { ascending: false })
         .limit(50);
 

@@ -259,7 +259,7 @@ initProtectedPage('OS', async (content) => {
       <div class="section-head"><div><h3>Ordens de Serviço da regional</h3><p class="muted">O gestor visualiza somente as O.S. liberadas para sua supervisão/regional e define se vai atender, finalizar ou aguardar.</p></div></div>
       <div class="filters-grid os-grid">
         <div class="field"><label>Supervisão</label><select id="osSupervisao" class="os-select"></select></div>
-        <div class="field"><label>Status gestor</label><select id="osStatus" class="os-select"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="ATENDER">Atender</option><option value="AGUARDAR">Aguardar</option><option value="FINALIZAR">Finalizar</option></select></div>
+        <div class="field"><label>Status gestor</label><select id="osStatus" class="os-select"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="AGUARDAR">Aguardar</option><option value="ATENDER">Atender</option><option value="FINALIZAR">Finalizar</option><option value="AJUSTAR">Ajustar</option></select></div>
         <div class="field field-span-2"><label>Buscar</label><input id="osBusca" class="os-select" type="text" placeholder="O.S., cliente, embarque, destino..." /></div>
       </div>
       <div class="feedback mt-16" id="osFeedback">Carregando...</div>
@@ -430,7 +430,15 @@ initProtectedPage('OS', async (content) => {
     const busca = normalize(state.filters.busca);
     const rows = state.os.filter((row) => {
       if (sup && normalize(row.supervisao) !== sup) return false;
-      if (status && normalize(row.status_gestor || 'PENDENTE') !== status) return false;
+      if (status) {
+        const st = (row.status_gestor || 'AGUARDAR').toUpperCase();
+        const isCinza = st === 'AGUARDAR' && !row.configurada_em;
+        if (status === 'pendente' && !isCinza) return false;
+        if (status === 'aguardar' && (isCinza || st !== 'AGUARDAR')) return false;
+        if (status === 'atender' && st !== 'ATENDER') return false;
+        if (status === 'finalizar' && st !== 'FINALIZAR') return false;
+        if (status === 'ajustar' && st !== 'AJUSTAR') return false;
+      }
       const hay = normalize(`${row.numero_os} ${row.cliente} ${row.embarque} ${row.destino} ${row.contrato} ${row.produto}`);
       return !busca || hay.includes(busca);
     });
@@ -705,10 +713,10 @@ initProtectedPage('OS', async (content) => {
       btn.textContent = 'Enviando...';
       const kgText = `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`;
       const row = state.os.find((o) => String(o.id) === String(osId));
-      if (row) { row.observacao_logistica = kgText; row.status_gestor = null; row.configurada_em = null; }
+      if (row) { row.observacao_logistica = kgText; row.status_gestor = 'AGUARDAR'; row.configurada_em = null; }
       overlay.remove();
       render();
-      supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: null, updated_at: new Date().toISOString() }).eq('id', osId);
+      supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: 'AGUARDAR', configurada_em: null, updated_at: new Date().toISOString() }).eq('id', osId);
     });
   }
 
