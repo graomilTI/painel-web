@@ -1789,6 +1789,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
   }
 
   function renderDashboard({ fluxo, categorias, receber, pagar }) {
+    const hoje = new Date();
     const byMonth = {};
     fluxo.forEach((row) => {
       const mes = String(row.data).slice(0, 7);
