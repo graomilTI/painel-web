@@ -76,6 +76,131 @@ function renderModalArea(r){ const area=document.getElementById('modalArea'); if
   area.querySelector('#mReprovar')?.addEventListener('click',async()=>{const motivo=area.querySelector('#mMotivo').value.trim(); if(!motivo){alert('Informe o motivo.');return;} await supabase.from('compras_itens').update({status:'recusado', recusado_por:area.querySelector('#mAprovador').value.trim()||null, motivo_recusa:motivo}).eq('id',r.id); await syncSolicitacoesStatus([r.solicitacao_id]); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
   area.querySelector('#mFinalizar')?.addEventListener('click',async()=>finalizarCompra(r));
 }
+
+function abrirCompraSelecionados(){
+  const rows = selectedRows();
+  if(!rows.length){ setMsg('Selecione pelo menos um item em COTAÇÕES para comprar.', true); return; }
+  const invalidos = rows.filter(r=>r.status!=='em_cotacao');
+  if(invalidos.length){ setMsg('Comprar em lote só está disponível para itens em COTAÇÕES.', true); return; }
+  openCompraLote(rows);
+}
+function openCompraLote(rows){
+  const modal=document.getElementById('admCmpModal');
+  const totalInicial = rows.reduce((s,r)=>s+(Number(r.valor_total||0)),0);
+  modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
+    <div class="section-head">
+      <div>
+        <h3>Comprar itens selecionados</h3>
+        <p class="muted">Informe o valor unitário de cada material. O painel calcula o total antes de enviar ao Financeiro.</p>
+      </div>
+      <button class="btn btn-secondary" id="mClose" type="button">Fechar</button>
+    </div>
+    <div class="adm-cmp-table-wrap mt-16">
+      <table class="adm-cmp-table adm-cmp-buy-table">
+        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th><th>Valor unitário</th><th>Total</th></tr></thead>
+        <tbody>
+          ${rows.map(r=>`<tr data-buy-row="${esc(r.id)}">
+            <td>${esc(r.quantidade||r.unidade||1)}</td>
+            <td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td>
+            <td>${esc(r.tipo||'-')}</td>
+            <td><input class="buy-unit" type="number" step="0.01" min="0" value="${esc(r.valor_unitario||'')}" placeholder="0,00"></td>
+            <td><input class="buy-total" type="number" step="0.01" readonly value="${esc(r.valor_total||'0')}"></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="adm-cmp-total-box mt-16">
+      <span>Total da compra</span>
+      <strong id="buyGrandTotal">${money(totalInicial)}</strong>
+    </div>
+    <div class="adm-cmp-actions mt-16">
+      <button class="btn btn-primary" id="buyContinue" type="button">COMPRAR</button>
+      <button class="btn btn-danger" id="buyCancel" type="button">CANCELAR</button>
+    </div>
+  </div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#buyCancel').onclick=()=>modal.classList.remove('open');
+
+  const recalc=()=>{
+    let grand=0;
+    rows.forEach(r=>{
+      const tr=modal.querySelector(`[data-buy-row="${CSS.escape(String(r.id))}"]`);
+      if(!tr) return;
+      const qtd=Number(r.quantidade||r.unidade||1);
+      const unit=Number(tr.querySelector('.buy-unit').value||0);
+      const total=unit*qtd;
+      tr.querySelector('.buy-total').value=total.toFixed(2);
+      grand += total;
+    });
+    modal.querySelector('#buyGrandTotal').textContent=money(grand);
+  };
+  modal.querySelectorAll('.buy-unit').forEach(inp=>inp.oninput=recalc);
+  recalc();
+  modal.querySelector('#buyContinue').onclick=()=>openPagamentoLote(rows);
+}
+function coletarValoresCompraLote(rows){
+  const modal=document.getElementById('admCmpModal');
+  return rows.map(r=>{
+    const tr=modal.querySelector(`[data-buy-row="${CSS.escape(String(r.id))}"]`);
+    const qtd=Number(r.quantidade||r.unidade||1);
+    const unit=Number(tr?.querySelector('.buy-unit')?.value||0);
+    return {...r, _valor_unitario:unit, _valor_total:unit*qtd};
+  });
+}
+function openPagamentoLote(rows){
+  const itens=coletarValoresCompraLote(rows);
+  const total=itens.reduce((s,r)=>s+Number(r._valor_total||0),0);
+  if(total<=0){ alert('Informe o valor unitário de pelo menos um item.'); return; }
+  const area=document.querySelector('#admCmpModal .adm-cmp-modal-card');
+  area.innerHTML=`<div class="section-head"><div><h3>Pagamento da compra</h3><p class="muted">Total da compra: <b>${money(total)}</b></p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="adm-cmp-table-wrap mt-16">
+      <table class="adm-cmp-table adm-cmp-buy-table">
+        <thead><tr><th>Un.</th><th>Material</th><th>Valor unitário</th><th>Total</th></tr></thead>
+        <tbody>${itens.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}</td><td>${money(r._valor_unitario)}</td><td>${money(r._valor_total)}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <div class="adm-cmp-tabs mt-16">
+      <button class="btn btn-secondary active" data-pay="BOLETO" type="button">BOLETO</button>
+      <button class="btn btn-secondary" data-pay="PIX" type="button">PIX</button>
+      <button class="btn btn-secondary" data-pay="LINK" type="button">LINK</button>
+    </div>
+    <div class="adm-cmp-grid mt-16"><label id="payLabel">Boleto / URL<input id="payData" placeholder="Anexe ou cole o link do boleto"></label></div>
+    <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="paySend" type="button">Enviar ao Financeiro</button><button class="btn btn-secondary" id="payBack" type="button">Voltar</button></div>`;
+  let forma='BOLETO';
+  area.querySelector('#mClose').onclick=()=>document.getElementById('admCmpModal').classList.remove('open');
+  area.querySelector('#payBack').onclick=()=>openCompraLote(rows);
+  area.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{
+    forma=b.dataset.pay;
+    area.querySelectorAll('[data-pay]').forEach(x=>x.classList.toggle('active',x===b));
+    area.querySelector('#payLabel').firstChild.textContent=forma==='PIX'?'Chave PIX':(forma==='LINK'?'Link de pagamento':'Boleto / URL');
+  });
+  area.querySelector('#paySend').onclick=async()=>enviarFinanceiroLote(itens,total,forma,area.querySelector('#payData').value.trim());
+}
+async function enviarFinanceiroLote(itens,total,forma,dados){
+  if(!dados){alert('Informe boleto, PIX ou link.');return;}
+  const descricao=`Compra: ${itens.map(r=>`${r.quantidade||r.unidade||1} un ${r.material}`).join(' | ')}`;
+  const payload={origem:'COMPRAS', origem_id:itens[0]?.id||null, descricao, favorecido:'Fornecedor a definir', valor:total, forma_pagamento:forma, dados_pagamento:dados, status:'PENDENTE', vencimento:null, created_at:new Date().toISOString()};
+  await safe(()=>supabase.from('financeiro_pagamentos').insert(payload), null);
+
+  for(const r of itens){
+    const {error}=await supabase.from('compras_itens').update({
+      status:'pendente_pagamento',
+      valor_unitario:r._valor_unitario,
+      valor_total:r._valor_total,
+      forma_pagamento:forma,
+      dados_pagamento:dados
+    }).eq('id',r.id);
+    if(error) throw error;
+  }
+
+  await syncSolicitacoesStatus(itens.map(r=>r.solicitacao_id));
+  await notifyByConfig('FINANCEIRO',`Pagamento de compras pendente\nItens: ${itens.length}\nValor total: ${money(total)}\nForma: ${forma}`);
+  document.getElementById('admCmpModal').classList.remove('open');
+  setMsg('Compra enviada ao Financeiro e movida para PENDENTES.');
+  await loadRows();
+}
+
 function openPagamento(r,total,unit){ const area=document.getElementById('modalArea'); area.innerHTML=`<h3>Pagamento</h3><p class="muted">Total da compra: <b>${money(total)}</b></p><div class="adm-cmp-tabs"><button class="btn btn-secondary active" data-pay="BOLETO" type="button">BOLETO</button><button class="btn btn-secondary" data-pay="PIX" type="button">PIX</button><button class="btn btn-secondary" data-pay="LINK" type="button">LINK</button></div><div class="adm-cmp-grid"><label id="payLabel">Boleto / URL<input id="payData" placeholder="Anexe ou cole o link do boleto"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="paySend" type="button">Enviar ao Financeiro</button></div>`; let forma='BOLETO'; area.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{forma=b.dataset.pay; area.querySelectorAll('[data-pay]').forEach(x=>x.classList.toggle('active',x===b)); area.querySelector('#payLabel').firstChild.textContent=forma==='PIX'?'Chave PIX':(forma==='LINK'?'Link de pagamento':'Boleto / URL');}); area.querySelector('#paySend').onclick=async()=>enviarFinanceiro(r,total,unit,forma,area.querySelector('#payData').value.trim()); }
 async function enviarFinanceiro(r,total,unit,forma,dados){
   if(!dados){alert('Informe boleto, PIX ou link.');return;}
@@ -86,10 +211,25 @@ async function enviarFinanceiro(r,total,unit,forma,dados){
   document.getElementById('admCmpModal').classList.remove('open'); setMsg('Compra enviada ao Financeiro e movida para PENDENTES.'); await loadRows();
 }
 async function finalizarCompra(r){ const nf=document.getElementById('mNf').value.trim(); if(!nf){alert('Informe a NF.');return;} const marca=document.getElementById('mMarca').value.trim(); await supabase.from('compras_itens').update({status:'comprado', nf_url:nf, marca, comprado_em:new Date().toISOString()}).eq('id',r.id); if(norm(r.tipo).includes('patrimonio')) await supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id, material:r.material, marca, coordenacao:r.compras_solicitacoes?.coordenacao||null, status:'aguardando_numero'}); await syncSolicitacoesStatus([r.solicitacao_id]); await notifyByConfig('GESTOR',`Compra concluída\nMaterial: ${r.material}\nNF: ${nf}`); document.getElementById('admCmpModal').classList.remove('open'); await loadRows(); }
-function styles(){return `<style>.adm-cmp-tabs,.adm-cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.adm-cmp-tabs .active{background:#166534!important;color:#fff!important}.adm-cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-cmp-table{width:100%;border-collapse:collapse;min-width:1060px}.adm-cmp-table th,.adm-cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-cmp-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.adm-cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-size:12px;font-weight:800}.adm-cmp-status.pendente,.adm-cmp-status.em_cotacao,.adm-cmp-status.em_analise,.adm-cmp-status.pendente_pagamento,.adm-cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.adm-cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.2)}.adm-cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.adm-cmp-empty{text-align:center;color:var(--muted)}.adm-cmp-feedback{font-weight:800}.adm-cmp-feedback.err{color:#fecaca}.adm-cmp-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.adm-cmp-modal.open{display:flex}.adm-cmp-modal-card{width:min(900px,100%);max-height:90vh;overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:22px;padding:20px;color:#e5e7eb}.adm-cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-cmp-grid input{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0f172a;color:#e5e7eb;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-full{grid-column:1/-1}@media(max-width:760px){.adm-cmp-grid{grid-template-columns:1fr}.adm-cmp-table{min-width:920px}}</style>`}
+function styles(){return `<style>.adm-cmp-tabs,.adm-cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.adm-cmp-tabs .active{background:#166534!important;color:#fff!important}.adm-cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-cmp-table{width:100%;border-collapse:collapse;min-width:1060px}.adm-cmp-table th,.adm-cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-cmp-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.adm-cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-size:12px;font-weight:800}.adm-cmp-status.pendente,.adm-cmp-status.em_cotacao,.adm-cmp-status.em_analise,.adm-cmp-status.pendente_pagamento,.adm-cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.adm-cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.2)}.adm-cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.adm-cmp-empty{text-align:center;color:var(--muted)}.adm-cmp-feedback{font-weight:800}.adm-cmp-feedback.err{color:#fecaca}.adm-cmp-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.adm-cmp-modal.open{display:flex}.adm-cmp-modal-card{width:min(900px,100%);max-height:90vh;overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:22px;padding:20px;color:#e5e7eb}.adm-cmp-modal-wide{width:min(1180px,100%)}.adm-cmp-buy-table input{width:160px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0f172a;color:#e5e7eb;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-total-box{display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid var(--line);border-radius:16px;padding:14px 16px;background:rgba(15,23,42,.55)}.adm-cmp-total-box strong{font-size:22px}.adm-cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-cmp-grid input{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0f172a;color:#e5e7eb;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-full{grid-column:1/-1}@media(max-width:760px){.adm-cmp-grid{grid-template-columns:1fr}.adm-cmp-table{min-width:920px}}</style>`}
+
+function updateActionButtons(){
+  const isCotacoes=state.tab==='cotacoes';
+  const isSolic=state.tab==='solicitacoes';
+  const btnCotar=document.getElementById('btnCotar');
+  const btnComprar=document.getElementById('btnComprar');
+  const btnAprovar=document.getElementById('btnAprovar');
+  const btnRecusar=document.getElementById('btnRecusar');
+  if(btnCotar) btnCotar.style.display=isSolic?'inline-flex':'none';
+  if(btnComprar) btnComprar.style.display=isCotacoes?'inline-flex':'none';
+  if(btnAprovar) btnAprovar.style.display=isSolic?'inline-flex':'none';
+  if(btnRecusar) btnRecusar.style.display=(isSolic||isCotacoes||state.tab==='analise')?'inline-flex':'none';
+  setMsg('');
+}
+
 initProtectedPage('Compras ADM', async (content)=>{
-  content.innerHTML=`${styles()}<section class="hero-card"><div><h2>Compras ADM</h2><p>Fluxo de solicitações, cotação, aprovação, pagamento, NF e encerramento das compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">ADM</span></div></section><section class="grid-cards mt-16"><article class="card"><h3>Itens na etapa</h3><p class="metric" id="kpiSol">0</p><p class="muted">Registros filtrados.</p></article><article class="card"><h3>Total cotado</h3><p class="metric" id="kpiTotal">R$ 0,00</p><p class="muted">Soma dos valores informados.</p></article><article class="card"><h3>Patrimônios</h3><p class="metric" id="kpiPat">0</p><p class="muted">Itens que exigem cadastro patrimonial.</p></article></section><section class="card mt-16"><div class="section-head"><div><h3>Fila de compras</h3><p class="muted">Selecione itens específicos. A compra pode ser parcial e por fornecedores diferentes.</p></div><button class="btn btn-secondary" id="admCmpRefresh" type="button">Atualizar</button></div><div class="adm-cmp-tabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="btnCotar" type="button">COTAR</button><button class="btn btn-secondary" id="btnAprovar" type="button">SOLICITAR APROVAÇÃO</button><button class="btn btn-danger" id="btnRecusar" type="button">RECUSAR</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); loadRows();});
-  document.getElementById('admCmpRefresh').onclick=loadRows; document.getElementById('btnCotar').onclick=()=>cotar().catch(e=>setMsg(e.message,true)); document.getElementById('btnAprovar').onclick=()=>solicitarAprovacao().catch(e=>setMsg(e.message,true)); document.getElementById('btnRecusar').onclick=()=>recusarSelecionados().catch(e=>setMsg(e.message,true));
+  content.innerHTML=`${styles()}<section class="hero-card"><div><h2>Compras ADM</h2><p>Fluxo de solicitações, cotação, aprovação, pagamento, NF e encerramento das compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">ADM</span></div></section><section class="grid-cards mt-16"><article class="card"><h3>Itens na etapa</h3><p class="metric" id="kpiSol">0</p><p class="muted">Registros filtrados.</p></article><article class="card"><h3>Total cotado</h3><p class="metric" id="kpiTotal">R$ 0,00</p><p class="muted">Soma dos valores informados.</p></article><article class="card"><h3>Patrimônios</h3><p class="metric" id="kpiPat">0</p><p class="muted">Itens que exigem cadastro patrimonial.</p></article></section><section class="card mt-16"><div class="section-head"><div><h3>Fila de compras</h3><p class="muted">Selecione itens específicos. A compra pode ser parcial e por fornecedores diferentes.</p></div><button class="btn btn-secondary" id="admCmpRefresh" type="button">Atualizar</button></div><div class="adm-cmp-tabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="btnCotar" type="button">COTAR</button><button class="btn btn-primary" id="btnComprar" type="button" style="display:none">COMPRAR</button><button class="btn btn-secondary" id="btnAprovar" type="button">SOLICITAR APROVAÇÃO</button><button class="btn btn-danger" id="btnRecusar" type="button">RECUSAR</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); updateActionButtons(); loadRows();});
+  document.getElementById('admCmpRefresh').onclick=loadRows; document.getElementById('btnCotar').onclick=()=>cotar().catch(e=>setMsg(e.message,true)); document.getElementById('btnComprar').onclick=()=>abrirCompraSelecionados(); document.getElementById('btnAprovar').onclick=()=>solicitarAprovacao().catch(e=>setMsg(e.message,true)); document.getElementById('btnRecusar').onclick=()=>recusarSelecionados().catch(e=>setMsg(e.message,true)); updateActionButtons();
   await loadRows();
 });
