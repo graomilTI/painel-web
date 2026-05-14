@@ -7,7 +7,7 @@ const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const CACHE_KEY = 'grao1000:gestor-app:v1';
 const CACHE_TTL = 1000 * 60 * 7;
 const LIMITE_MULTIPLOS = 500000;
-const STATUS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
+const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
 
 const app = document.getElementById('app');
 
@@ -378,7 +378,7 @@ function filteredOs() {
   const status = state.filters.status;
   return [...state.os]
     .filter((row) => !sup || row.supervisao === sup)
-    .filter((row) => !status || String(row.status_gestor || 'AGUARDAR').toUpperCase() === status)
+    .filter((row) => !status || (status === 'PENDENTE' ? !row.status_gestor : String(row.status_gestor || '').toUpperCase() === status))
     .filter((row) => !term || normalize(`${row.numero_os} ${row.cliente} ${row.embarque} ${row.destino} ${row.supervisao}`).includes(term))
     .sort((a, b) => num(b.remanescente) - num(a.remanescente) || String(b.numero_os).localeCompare(String(a.numero_os)));
 }
@@ -393,7 +393,7 @@ function renderCurrentTab() {
 }
 
 function renderInicio(main) {
-  const totalPend = state.os.filter((o) => !o.configurada_em || String(o.status_gestor || '').toUpperCase() === 'AGUARDAR').length;
+  const totalPend = state.os.filter((o) => !o.status_gestor).length;
   const atender = state.os.filter((o) => String(o.status_gestor || '').toUpperCase() === 'ATENDER').length;
   main.innerHTML = `
     <section class="hero-card">
@@ -498,7 +498,7 @@ function renderOs(main) {
 
 function renderOsCard(os) {
   const id = osId(os);
-  const status = String(os.status_gestor || 'AGUARDAR').toUpperCase();
+  const status = os.status_gestor ? String(os.status_gestor).toUpperCase() : 'PENDENTE';
   const sugg = state.suggested.get(id) || { items: [], aviso: '' };
   const selected = state.selections.get(id) || (sugg.items[0] ? colabKey(sugg.items[0].c) : '');
   const selectedInfo = sugg.items.find((row) => colabKey(row.c) === selected) || null;

@@ -111,6 +111,7 @@ select:focus, input:focus, textarea:focus { border-color: rgba(52, 211, 153, 0.8
 .os-date { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .status-badge { border: 1px solid rgba(110, 231, 183, .22); border-radius: 999px; padding: 8px 10px; font-size: 12px; font-weight: 950; white-space: nowrap; }
 .status-badge.ATENDER { color: #04130b; background: #86efac; border-color: transparent; }
+.status-badge.PENDENTE { color: #f8fafc; background: rgba(148, 163, 184, .25); border-color: rgba(148, 163, 184, .4); }
 .status-badge.AGUARDAR { color: #3b2f00; background: #fde68a; border-color: transparent; }
 .status-badge.FINALIZAR { color: #dbeafe; background: rgba(15, 23, 42, .88); }
 .os-client { margin: 12px 0 4px; font-weight: 950; font-size: 18px; line-height: 1.15; letter-spacing: -0.02em; }
