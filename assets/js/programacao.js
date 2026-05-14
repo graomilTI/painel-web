@@ -10,12 +10,13 @@ const STEPS = [
   { code: 'E', label: 'Extras' },
 ];
 
-const DISPONIBILIDADES = ['OK', 'FÉRIAS', 'FOLGA', 'ATESTADO', 'FALTA', 'TRANSFERIR', 'INATIVO'];
-const DISPONIBILIDADES_LOGISTICA = ['LOGISTICA', 'DESLOCAMENTO', 'SEM EMBARQUE'];
-const TIPOS_ESTADIA = ['NÃO PRECISA', 'CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
+const DISPONIBILIDADES = ['OK', 'LOGISTICA', 'DESLOCAMENTO', 'SEM EMBARQUE', 'INDISPONIVEL', 'ATESTADO', 'FALTA', 'FERIAS', 'FOLGA'];
+const DISPONIBILIDADES_PRINCIPAIS = ['OK', 'LOGISTICA', 'DESLOCAMENTO', 'SEM EMBARQUE', 'INDISPONIVEL'];
+const INDISPONIBILIDADE_MOTIVOS = ['ATESTADO', 'FALTA', 'FERIAS', 'FOLGA'];
+const TIPOS_ESTADIA = ['CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
 const TIPOS_DESLOCAMENTO = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'ÔNIBUS', 'OUTRO'];
 const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
-const DISPONIBILIDADES_LIBERADAS = new Set(['', 'OK', 'DISPONÍVEL', 'DISPONIVEL', 'LIBERADO', 'LOGISTICA', 'DESLOCAMENTO']);
+const DISPONIBILIDADES_LIBERADAS = new Set(['', 'OK', 'DISPONIVEL', 'LIBERADO', 'LOGISTICA', 'DESLOCAMENTO']);
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -191,6 +192,63 @@ function selectOptions(options, selected) {
   return options.map((opt) => `<option value="${escapeHtml(opt)}" ${String(selected || '') === opt ? 'selected' : ''}>${escapeHtml(opt)}</option>`).join('');
 }
 
+function disponibilidadeNorm(value) {
+  return normalizeText(value).replace('INDISPONIVEL', 'INDISPONIVEL').replace('FERIAS', 'FERIAS');
+}
+
+function disponibilidadeCategoria(value) {
+  const norm = disponibilidadeNorm(value);
+  if (INDISPONIBILIDADE_MOTIVOS.includes(norm) || norm === 'INDISPONIVEL') return 'INDISPONIVEL';
+  if (norm === 'SEM EMBARQUE') return 'SEM EMBARQUE';
+  if (norm === 'LOGISTICA') return 'LOGISTICA';
+  if (norm === 'DESLOCAMENTO') return 'DESLOCAMENTO';
+  return 'OK';
+}
+
+function disponibilidadeMotivo(value) {
+  const norm = disponibilidadeNorm(value);
+  return INDISPONIBILIDADE_MOTIVOS.includes(norm) ? norm : '';
+}
+
+function disponibilidadeLabel(value) {
+  const norm = disponibilidadeNorm(value);
+  const labels = {
+    OK: 'OK',
+    LOGISTICA: 'Logística',
+    DESLOCAMENTO: 'Deslocamento',
+    'SEM EMBARQUE': 'Sem Embarque',
+    INDISPONIVEL: 'Indisponível',
+    ATESTADO: 'Atestado',
+    FALTA: 'Falta',
+    FERIAS: 'Férias',
+    FOLGA: 'Folga',
+  };
+  return labels[norm] || String(value || 'OK');
+}
+
+function estadiaLabel(tipo) {
+  return ({ CASA: 'Casa', PERNOITE: 'Pernoite', ALOJAMENTO: 'Alojamento', HOTEL: 'Hotel' })[normalizeText(tipo)] || '';
+}
+
+function estadiaIcon(tipo) {
+  const key = normalizeText(tipo);
+  if (key === 'CASA') return '<svg viewBox="0 0 48 48"><path d="M7 24L24 10l17 14"/><path d="M13 22v17h22V22"/><path d="M20 39V28h8v11"/></svg>';
+  if (key === 'PERNOITE') return '<svg viewBox="0 0 48 48"><path d="M8 36h32"/><path d="M12 36V22l12-8 12 8v14"/><path d="M18 36v-9h12v9"/><path d="M6 26l18-12 18 12"/><path d="M36 12c4 2 6 5 6 9"/></svg>';
+  if (key === 'ALOJAMENTO') return '<svg viewBox="0 0 48 48"><circle cx="16" cy="16" r="5"/><circle cx="32" cy="16" r="5"/><path d="M8 36c1-7 5-11 8-11s7 4 8 11"/><path d="M24 36c1-7 5-11 8-11s7 4 8 11"/></svg>';
+  return '<svg viewBox="0 0 48 48"><path d="M12 40V10h24v30"/><path d="M8 40h32"/><path d="M18 16h4M26 16h4M18 23h4M26 23h4M18 30h4M26 30h4"/><path d="M22 40v-6h4v6"/></svg>';
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const a = Number(lat1), b = Number(lon1), c = Number(lat2), d = Number(lon2);
+  if (![a,b,c,d].every(Number.isFinite)) return null;
+  const R = 6371;
+  const toRad = (deg) => deg * Math.PI / 180;
+  const dLat = toRad(c - a);
+  const dLon = toRad(d - b);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a)) * Math.cos(toRad(c)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
 function injectProgramacaoStyles() {
   if (document.getElementById('programacao-table-styles')) return;
   const style = document.createElement('style');
@@ -232,7 +290,17 @@ function injectProgramacaoStyles() {
     .prog-tipo-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.5);color:#94a3b8;border-radius:10px;padding:7px 11px;font-size:12px;font-weight:800;cursor:pointer;transition:all .15s}
     .prog-tipo-btn:hover{background:rgba(22,101,52,.25);color:#bbf7d0}
     .prog-tipo-btn.active{background:rgba(22,101,52,.35);color:#bbf7d0;border-color:rgba(52,211,153,.55)}
-    .prog-tipo-btn.active[data-tipo="SEM EMBARQUE"]{background:rgba(127,29,29,.30);color:#fecaca;border-color:rgba(248,113,113,.45)}
+    .prog-tipo-btn.active[data-tipo="SEM EMBARQUE"],.prog-tipo-btn.active[data-tipo="INDISPONIVEL"]{background:rgba(127,29,29,.30);color:#fecaca;border-color:rgba(248,113,113,.45)}
+    .prog-indisponivel-wrap{display:flex;align-items:center;gap:8px;margin-top:8px;max-width:260px}
+    .prog-indisponivel-wrap select{min-height:34px!important;padding:6px 9px!important}
+    .prog-estadia-selector{display:grid;grid-template-columns:repeat(4,minmax(112px,1fr));gap:10px;min-width:520px}
+    .prog-estadia-card{border:1px solid rgba(52,211,153,.18);background:rgba(15,23,42,.56);color:#e5e7eb;border-radius:16px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;font-weight:900;transition:all .15s;min-height:92px}
+    .prog-estadia-card svg{width:34px;height:34px;stroke:#86efac;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+    .prog-estadia-card:hover{background:rgba(22,101,52,.22);transform:translateY(-1px)}
+    .prog-estadia-card.active{border-color:rgba(134,239,172,.70);background:rgba(22,101,52,.34);box-shadow:0 0 0 1px rgba(134,239,172,.16) inset}
+    .prog-estadia-card span{font-size:12px;letter-spacing:.02em;text-align:center}
+    .prog-required-note{margin-top:6px;font-size:11px;color:#fde68a;font-weight:800}
+    .prog-km-note{display:block;margin-top:4px;color:#94a3b8;font-size:11px;line-height:1.35}
     .prog-placa-wrap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
     .prog-placa-wrap input{width:130px!important;font-family:monospace;text-transform:uppercase;min-height:32px!important;padding:5px 8px!important}
     .prog-placa-suggest-btn{border:1px solid rgba(52,211,153,.28);background:rgba(22,101,52,.22);color:#dcfce7;border-radius:8px;padding:5px 9px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap}
@@ -243,7 +311,7 @@ function injectProgramacaoStyles() {
     .prog-os-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.prog-os-modal-head h3{margin:0;color:#f8fafc;font-size:22px}.prog-os-modal-head p{margin:6px 0 0;color:#94a3b8}
     .prog-os-list{display:grid;gap:10px}.prog-os-card{border:1px solid rgba(52,211,153,.16);background:rgba(15,23,42,.62);border-radius:18px;padding:14px}.prog-os-card.zero{box-shadow:inset 4px 0 0 #facc15}.prog-os-title{font-weight:950;color:#f8fafc}.prog-os-meta{font-size:12px;color:#94a3b8;margin-top:4px}.prog-os-rem{display:inline-flex;border-radius:999px;padding:5px 10px;margin-top:8px;font-size:12px;font-weight:950;border:1px solid rgba(250,204,21,.25);color:#fde68a;background:rgba(113,63,18,.22)}
     .prog-os-modal-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:18px}.prog-os-close{border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.72);color:#e5e7eb;border-radius:13px;padding:10px 14px;font-weight:900;cursor:pointer}.prog-os-go{border:1px solid rgba(187,247,208,.32);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;border-radius:13px;padding:10px 14px;font-weight:950;cursor:pointer}
-    @media(max-width:900px){.prog-extra-card{grid-template-columns:1fr}.prog-table{min-width:860px}.prog-os-modal{padding:16px}}
+    @media(max-width:900px){.prog-extra-card{grid-template-columns:1fr}.prog-table{min-width:860px}.prog-os-modal{padding:16px}.prog-estadia-selector{grid-template-columns:repeat(2,minmax(110px,1fr));min-width:320px}}
   `;
   document.head.appendChild(style);
 }
@@ -253,27 +321,20 @@ initProtectedPage('Programação', (content) => {
 
   content.innerHTML = `
     <section class="card mt-16">
-      <div class="section-head">
-        <div>
-          <h3>Contexto da programação</h3>
-          <p class="muted">Selecione a data e a supervisão. Todo colaborador da supervisão entra automaticamente na programação.</p>
-        </div>
-      </div>
-
       <div class="filters-grid prog-context-grid">
-        <div class="field">
-          <label for="progDataRef">Data de referência</label>
-          <input id="progDataRef" type="date" />
-        </div>
         <div class="field">
           <label for="progSup">Supervisão</label>
           <select id="progSup"></select>
         </div>
+        <div class="field">
+          <label for="progDataRef">Data</label>
+          <input id="progDataRef" type="date" />
+        </div>
         <div class="filter-actions prog-filter-actions">
-          <button class="btn btn-primary" type="button" id="progLoadContext">Carregar contexto</button>
+          <button class="btn btn-primary" type="button" id="progLoadContext">Carregar</button>
         </div>
       </div>
-      <div class="feedback mt-16" id="progCtxFeedback">Nenhum contexto carregado.</div>
+      <div class="feedback mt-16" id="progCtxFeedback">Nenhuma programação carregada.</div>
     </section>
 
     <section class="card mt-16">
@@ -286,24 +347,6 @@ initProtectedPage('Programação', (content) => {
       <div class="steps-wrap" id="progSteps">
         ${STEPS.map((step) => `<button type="button" class="stepbtn ${step.code === 'A' ? 'active' : ''}" data-step="${step.code}">${step.code} · ${step.label}</button>`).join('')}
       </div>
-    </section>
-
-    <section class="grid-cards mt-16">
-      <article class="card">
-        <h3>Colaboradores</h3>
-        <p class="metric" id="progStatTotal">0</p>
-        <p class="muted">Total carregado no contexto.</p>
-      </article>
-      <article class="card">
-        <h3>Bloqueados</h3>
-        <p class="metric" id="progStatBlocked">0</p>
-        <p class="muted">Férias, folga, atestado, falta ou inativo.</p>
-      </article>
-      <article class="card">
-        <h3>Etapa atual</h3>
-        <p class="metric" id="progCurrentStep">A</p>
-        <p class="muted" id="progCurrentStepLabel">Disponibilidade</p>
-      </article>
     </section>
 
     <section class="card mt-16">
@@ -354,6 +397,9 @@ initProtectedPage('Programação', (content) => {
     cidades: [],
     alojamentos: [],
     veiculos: [],
+    pontosEmbarque: [],
+    operacionalColabs: [],
+    osPorColaborador: new Map(),
     search: '',
     maps: {
       disponibilidade: new Map(),
@@ -377,7 +423,7 @@ initProtectedPage('Programação', (content) => {
     }
     state.access = await resolveProgramacaoAccess();
     bindEvents();
-    await Promise.all([loadCidadesBrasil(), loadAlojamentos(), loadVeiculosFrota()]);
+    await Promise.all([loadCidadesBrasil(), loadAlojamentos(), loadVeiculosFrota(), loadBaseOperacional()]);
     await fillSupervisoes();
     await checkOsPendingPopup();
   }
@@ -562,6 +608,55 @@ initProtectedPage('Programação', (content) => {
     }
   }
 
+  async function loadBaseOperacional() {
+    try {
+      const [colabs, pontos] = await Promise.all([
+        supabase.from('operacional_colaborador_base').select('id,colaborador_id,nome,cpf,latitude,longitude,ativo').eq('ativo', true).limit(5000),
+        supabase.from('operacional_pontos_embarque').select('id,nome_local,cidade,uf,latitude,longitude,ativo').eq('ativo', true).limit(8000),
+      ]);
+      if (!colabs.error) state.operacionalColabs = colabs.data || [];
+      if (!pontos.error) state.pontosEmbarque = pontos.data || [];
+    } catch (error) {
+      console.warn('Não foi possível carregar base operacional para cálculo de KM.', error);
+      state.operacionalColabs = [];
+      state.pontosEmbarque = [];
+    }
+  }
+
+  function findOperacionalColab(colab) {
+    const cpf = normalizeCpf(colab?.cpf);
+    const nome = normalizeText(colab?.nome);
+    return (state.operacionalColabs || []).find((row) => cpf && normalizeCpf(row.cpf) === cpf)
+      || (state.operacionalColabs || []).find((row) => nome && normalizeText(row.nome) === nome)
+      || null;
+  }
+
+  function findPontoFromOs(os) {
+    if (!os) return null;
+    if (Number.isFinite(Number(os.ponto1_latitude)) && Number.isFinite(Number(os.ponto1_longitude))) {
+      return { latitude: Number(os.ponto1_latitude), longitude: Number(os.ponto1_longitude), nome: os.embarque || 'Ponto da O.S.' };
+    }
+    const emb = normalizeText(os.embarque || os.local_embarque || '');
+    if (!emb) return null;
+    const candidates = (state.pontosEmbarque || []).filter((p) => {
+      const label = normalizeText(`${p.uf || ''} ${p.cidade || ''} ${p.nome_local || ''}`);
+      return label && (label.includes(emb) || emb.includes(label) || normalizeText(p.nome_local).includes(emb) || emb.includes(normalizeText(p.nome_local)));
+    }).filter((p) => Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude)));
+    return candidates[0] || null;
+  }
+
+  function kmEstimadoColaborador(colab) {
+    const os = state.osPorColaborador.get(String(colab?.id || '')) || state.osPorColaborador.get(normalizeCpf(colab?.cpf));
+    if (!os) return { km: null, motivo: 'Sem O.S. vinculada ao colaborador.' };
+    if (Number.isFinite(Number(os.distancia_km))) return { km: Number(os.distancia_km), motivo: 'Distância da indicação da O.S.' };
+    const base = findOperacionalColab(colab);
+    const ponto = findPontoFromOs(os);
+    if (!base || !Number.isFinite(Number(base.latitude)) || !Number.isFinite(Number(base.longitude))) return { km: null, motivo: 'Casa/base do colaborador sem coordenadas.' };
+    if (!ponto) return { km: null, motivo: 'Ponto de embarque sem coordenadas.' };
+    const km = haversineKm(base.latitude, base.longitude, ponto.latitude, ponto.longitude);
+    return Number.isFinite(km) ? { km, motivo: `Casa → ${ponto.nome_local || ponto.nome || 'ponto de embarque'}` } : { km: null, motivo: 'Coordenadas insuficientes.' };
+  }
+
   function ensureCidadeDatalist() {
     let list = document.getElementById('progCidadesBrasilList');
     if (!list) {
@@ -688,21 +783,27 @@ initProtectedPage('Programação', (content) => {
 
   async function loadOsAtender(dataReferencia, supervisao) {
     const set = new Set();
+    state.osPorColaborador = new Map();
     try {
       const { data: osRows } = await supabase
         .from('operacional_os')
-        .select('id')
+        .select('*')
         .eq('status_gestor', 'ATENDER')
         .eq('data_os', dataReferencia)
         .eq('supervisao', supervisao);
       if (!osRows?.length) return set;
+      const osMap = new Map((osRows || []).map((r) => [String(r.id), r]));
       const { data: colabRows } = await supabase
         .from('operacional_os_colaboradores')
-        .select('colaborador_key, colaborador_cpf')
+        .select('*')
         .in('os_id', osRows.map((r) => r.id));
       (colabRows || []).forEach((r) => {
+        const os = { ...(osMap.get(String(r.os_id)) || {}), distancia_km: r.distancia_km };
         if (r.colaborador_cpf) set.add(normalizeCpf(r.colaborador_cpf));
         if (r.colaborador_key) set.add(String(r.colaborador_key).trim());
+        const cpf = normalizeCpf(r.colaborador_cpf);
+        if (cpf) state.osPorColaborador.set(cpf, os);
+        if (r.colaborador_key) state.osPorColaborador.set(String(r.colaborador_key).trim(), os);
       });
     } catch (e) {
       console.warn('Não foi possível carregar OS ATENDER.', e);
@@ -914,11 +1015,10 @@ initProtectedPage('Programação', (content) => {
   async function ensureDefaultRows() {
     if (!state.programacaoId || !state.colaboradores.length) return;
     const payload = state.colaboradores.map((colab) => {
-      const motivo = String(colab.indisponibilidade?.motivo || '').toUpperCase();
-      const emOs = colabEmOsAtender(colab);
+      const motivo = disponibilidadeNorm(colab.indisponibilidade?.motivo || '');
       const disponibilidade = colab.indisponibilidade
-        ? (DISPONIBILIDADES.includes(motivo) ? motivo : 'ATESTADO')
-        : (emOs ? 'OK' : 'DESLOCAMENTO');
+        ? (INDISPONIBILIDADE_MOTIVOS.includes(motivo) ? motivo : 'ATESTADO')
+        : 'OK';
       return {
         programacao_id: state.programacaoId,
         data_referencia: state.dataReferencia,
@@ -967,19 +1067,19 @@ initProtectedPage('Programação', (content) => {
   function setStep(step) {
     state.step = step;
     const meta = STEPS.find((s) => s.code === step) || STEPS[0];
-    el.currentStep.textContent = meta.code;
-    el.currentStepLabel.textContent = meta.label;
+    if (el.currentStep) el.currentStep.textContent = meta.code;
+    if (el.currentStepLabel) el.currentStepLabel.textContent = meta.label;
     [...el.steps.querySelectorAll('.stepbtn')].forEach((btn) => btn.classList.toggle('active', btn.dataset.step === step));
     renderRows();
   }
 
   function disponibilidadeAtual(colab) {
     const row = state.maps.disponibilidade.get(String(colab.id));
-    return String(row?.disponibilidade || 'OK').trim().toUpperCase();
+    return disponibilidadeNorm(row?.disponibilidade || 'OK');
   }
 
   function isDisponibilidadeBloqueada(value) {
-    const normalized = String(value || '').trim().toUpperCase();
+    const normalized = disponibilidadeNorm(value);
     return !DISPONIBILIDADES_LIBERADAS.has(normalized);
   }
 
@@ -995,8 +1095,8 @@ initProtectedPage('Programação', (content) => {
   }
 
   function updateStats() {
-    el.statTotal.textContent = String(state.colaboradores.length);
-    el.statBlocked.textContent = String(state.colaboradores.filter(isBlocked).length);
+    if (el.statTotal) el.statTotal.textContent = String(state.colaboradores.length);
+    if (el.statBlocked) el.statBlocked.textContent = String(state.colaboradores.filter(isBlocked).length);
   }
 
   function filteredColaboradores() {
@@ -1056,14 +1156,8 @@ initProtectedPage('Programação', (content) => {
             <tbody>
               ${rows.map((colab) => {
                 const r = state.maps.disponibilidade.get(String(colab.id)) || {};
-                if (colabEmOsAtender(colab)) {
-                  return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_colaboradores">
-                    <td>${colabCell(colab)}</td>
-                    <td><select data-field="disponibilidade">${selectOptions(DISPONIBILIDADES, r.disponibilidade || 'OK')}</select></td>
-                    <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" placeholder="Observação da disponibilidade" /></td>
-                  </tr>`;
-                }
-                const disp = DISPONIBILIDADES_LOGISTICA.includes(r.disponibilidade) ? r.disponibilidade : 'DESLOCAMENTO';
+                const categoria = disponibilidadeCategoria(r.disponibilidade || 'OK');
+                const motivo = disponibilidadeMotivo(r.disponibilidade || '');
                 const placa = r.placa_veiculo || '';
                 const sugestao = !placa ? suggestVeiculoForColab(colab) : null;
                 const placaSugerida = sugestao?.placa || '';
@@ -1072,11 +1166,14 @@ initProtectedPage('Programação', (content) => {
                   <td>${colabCell(colab)}</td>
                   <td>
                     <div class="prog-tipo-selector">
-                      ${DISPONIBILIDADES_LOGISTICA.map((op) => `<button type="button" class="prog-tipo-btn${disp === op ? ' active' : ''}" data-tipo="${escapeHtml(op)}">${op === 'LOGISTICA' ? 'Logística' : op === 'DESLOCAMENTO' ? 'Deslocamento' : 'Sem Embarque'}</button>`).join('')}
-                      <input type="hidden" data-field="disponibilidade" value="${escapeHtml(disp)}" />
+                      ${DISPONIBILIDADES_PRINCIPAIS.map((op) => `<button type="button" class="prog-tipo-btn${categoria === op ? ' active' : ''}" data-tipo="${escapeHtml(op)}">${escapeHtml(disponibilidadeLabel(op))}</button>`).join('')}
+                      <input type="hidden" data-field="disponibilidade" value="${escapeHtml(categoria === 'INDISPONIVEL' ? (motivo || 'ATESTADO') : categoria)}" />
                     </div>
-                    ${disp === 'LOGISTICA' ? `<div class="prog-placa-wrap">
-                      <input data-field="placa_veiculo" type="text" maxlength="8" value="${escapeHtml(placa)}" placeholder="${placaSugerida ? 'Sugestão: ' + placaSugerida : 'Digite a placa'}" />
+                    ${categoria === 'INDISPONIVEL' ? `<div class="prog-indisponivel-wrap">
+                      <select data-indisponivel-motivo>${INDISPONIBILIDADE_MOTIVOS.map((op) => `<option value="${escapeHtml(op)}" ${String(motivo || 'ATESTADO') === op ? 'selected' : ''}>${escapeHtml(disponibilidadeLabel(op))}</option>`).join('')}</select>
+                    </div>` : ''}
+                    ${categoria === 'LOGISTICA' ? `<div class="prog-placa-wrap">
+                      <input data-field="placa_veiculo" list="progVeiculosFrotaList" type="text" maxlength="8" value="${escapeHtml(placa)}" placeholder="${placaSugerida ? 'Sugestão: ' + placaSugerida : 'Digite a placa'}" />
                       ${placaSugerida && !placa ? `<button type="button" class="prog-placa-suggest-btn" data-placa="${escapeHtml(placaSugerida)}">Usar ${escapeHtml(placaSugerida)}</button>` : ''}
                       <div class="prog-placa-alert${alertMsg ? ' show' : ''}">${escapeHtml(alertMsg)}</div>
                     </div>` : ''}
@@ -1105,7 +1202,7 @@ initProtectedPage('Programação', (content) => {
               const r = state.maps.disponibilidade.get(String(colab.id)) || {};
               return `<tr data-colab-id="${escapeHtml(colab.id)}">
                 <td>${colabCell(colab)}</td>
-                <td><span class="prog-status block">${escapeHtml(r.disponibilidade || 'BLOQUEADO')}</span></td>
+                <td><span class="prog-status block">${escapeHtml(disponibilidadeLabel(r.disponibilidade || 'BLOQUEADO'))}</span></td>
                 <td>${escapeHtml(r.observacao || '-')}</td>
               </tr>`;
             }).join('')}
@@ -1123,14 +1220,21 @@ initProtectedPage('Programação', (content) => {
       </div>
       ${disponiveis.length ? `<div class="prog-table-wrap">
         <table class="prog-table">
-          <thead><tr><th>Colaborador</th><th>Tipo</th><th>Cidade</th><th>UF</th><th>Alojamento sugerido</th><th>Check-in</th><th>Check-out</th><th>Observação</th></tr></thead>
+          <thead><tr><th>Colaborador</th><th>Tipo de hospedagem</th><th>Cidade</th><th>UF</th><th>Alojamento sugerido</th><th>Check-in</th><th>Check-out</th><th>Observação</th></tr></thead>
           <tbody>
             ${disponiveis.map((colab) => {
               const r = state.maps.estadia.get(String(colab.id)) || {};
               const blocked = isBlocked(colab);
+              const tipoAtual = normalizeText(r.tipo_estadia || '');
               return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_estadia">
                 <td>${colabCell(colab)}</td>
-                <td><select data-field="tipo_estadia" ${blocked ? 'disabled' : ''}>${selectOptions(TIPOS_ESTADIA, r.tipo_estadia || 'NÃO PRECISA')}</select></td>
+                <td>
+                  <div class="prog-estadia-selector" data-estadia-selector>
+                    ${TIPOS_ESTADIA.map((tipo) => `<button type="button" class="prog-estadia-card${tipoAtual === tipo ? ' active' : ''}" data-estadia-tipo="${escapeHtml(tipo)}" ${blocked ? 'disabled' : ''}>${estadiaIcon(tipo)}<span>${escapeHtml(estadiaLabel(tipo))}</span></button>`).join('')}
+                  </div>
+                  <input data-field="tipo_estadia" type="hidden" value="${escapeHtml(tipoAtual)}" />
+                  ${!tipoAtual ? '<div class="prog-required-note">Selecione uma opção para liberar o salvamento.</div>' : ''}
+                </td>
                 <td><input data-field="cidade" list="progCidadesBrasilList" type="text" value="${escapeHtml(r.cidade || '')}" placeholder="Digite e selecione a cidade" ${blocked ? 'disabled' : ''}/></td>
                 <td><input data-field="uf" type="text" value="${escapeHtml(r.uf || '')}" placeholder="UF" maxlength="2" ${blocked ? 'disabled' : ''}/></td>
                 <td><select data-field="alojamento_id" ${blocked ? 'disabled' : ''}>${alojamentoOptions(r.alojamento_id, r.cidade, r.uf)}</select><input data-field="alojamento_nome" type="hidden" value="${escapeHtml(r.alojamento_nome || '')}" /></td>
@@ -1182,24 +1286,32 @@ initProtectedPage('Programação', (content) => {
       </div>
       ${disponiveis.length ? `<div class="prog-table-wrap">
         <table class="prog-table">
-          <thead><tr><th>Colaborador</th><th>Deslocamento</th><th>Placa</th><th>Origem</th><th>Destino</th><th>KM</th><th>Valor</th><th>Observação</th></tr></thead>
+          <thead><tr><th>Colaborador</th><th>Deslocamento</th><th>Placa</th><th>KM estimado</th><th>Valor</th><th>Observação</th></tr></thead>
           <tbody>
             ${disponiveis.map((colab) => {
               const r = state.maps.deslocamento.get(String(colab.id)) || {};
+              const disp = state.maps.disponibilidade.get(String(colab.id)) || {};
+              const isLogistica = disponibilidadeCategoria(disp.disponibilidade) === 'LOGISTICA';
+              const kmInfo = kmEstimadoColaborador(colab);
+              const kmValue = r.km || (Number.isFinite(kmInfo.km) ? kmInfo.km.toFixed(2) : '');
+              const tipoDefault = isLogistica ? 'MOTORISTA FROTA' : 'NÃO PRECISA';
+              const tipoValue = r.tipo_deslocamento || tipoDefault;
+              const placaValue = r.placa_veiculo || (isLogistica ? disp.placa_veiculo || '' : '');
               const blocked = isBlocked(colab);
               return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_deslocamento">
                 <td>${colabCell(colab)}</td>
-                <td><select data-field="tipo_deslocamento" ${blocked ? 'disabled' : ''}>${selectOptions(TIPOS_DESLOCAMENTO, r.tipo_deslocamento || 'NÃO PRECISA')}</select></td>
+                <td><select data-field="tipo_deslocamento" ${blocked ? 'disabled' : ''}>${selectOptions(TIPOS_DESLOCAMENTO, tipoValue)}</select></td>
                 <td>
-                  <input data-field="placa_veiculo" list="progVeiculosFrotaList" type="text" value="${escapeHtml(r.placa_veiculo || '')}" placeholder="Placa" maxlength="7" ${blocked ? 'disabled' : ''}/>
+                  <input data-field="placa_veiculo" list="progVeiculosFrotaList" type="text" value="${escapeHtml(placaValue)}" placeholder="Placa" maxlength="7" ${blocked ? 'disabled' : ''}/>
                   ${(() => {
-                    const message = patrimonioMessageForRow(colab, r.tipo_deslocamento || 'NÃO PRECISA', r.placa_veiculo || '');
+                    const message = patrimonioMessageForRow(colab, tipoValue, placaValue);
                     return `<div data-patrimonio-alert class="prog-patrimonio-alert ${message ? 'show' : ''}">${escapeHtml(message)}</div>`;
                   })()}
                 </td>
-                <td><input data-field="origem" type="text" value="${escapeHtml(r.origem || '')}" ${blocked ? 'disabled' : ''}/></td>
-                <td><input data-field="destino" type="text" value="${escapeHtml(r.destino || '')}" ${blocked ? 'disabled' : ''}/></td>
-                <td><input data-field="km" type="number" min="0" step="0.01" value="${escapeHtml(r.km || 0)}" ${blocked ? 'disabled' : ''}/></td>
+                <td>
+                  <input data-field="km" type="number" min="0" step="0.01" value="${escapeHtml(kmValue)}" placeholder="" ${blocked ? 'disabled' : ''}/>
+                  <span class="prog-km-note">${escapeHtml(kmInfo.km == null ? kmInfo.motivo : kmInfo.motivo)}</span>
+                </td>
                 <td><input data-field="valor" type="text" value="${escapeHtml(r.valor || '')}" placeholder="R$ 0,00" ${blocked ? 'disabled' : ''}/></td>
                 <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" ${blocked ? 'disabled' : ''}/></td>
               </tr>`;
@@ -1314,12 +1426,33 @@ initProtectedPage('Programação', (content) => {
       if (tr?.dataset.table === 'programacao_colaboradores') updatePlacaLogisticaAlert(tr);
     }
     if (event.target.matches('[data-field="tipo_deslocamento"], [data-field="placa_veiculo"]') && tr?.dataset.table !== 'programacao_colaboradores') updatePatrimonioAlert(tr);
+    if (event.target.matches('[data-indisponivel-motivo]')) {
+      const hidden = tr?.querySelector('[data-field="disponibilidade"]');
+      if (hidden) hidden.value = event.target.value || 'ATESTADO';
+      scheduleSaveRow(tr);
+      return;
+    }
     if (event.target.matches('[data-field="tipo_estadia"]')) atualizarSugestaoAlojamento(tr);
     if (event.target.matches('[data-field]')) scheduleSaveRow(tr);
     if (event.target.matches('[data-extra-field]')) scheduleSaveExtra(event.target.closest('.prog-extra-card'));
   }
 
   async function handleTableClick(event) {
+    const estadiaBtn = event.target.closest('.prog-estadia-card');
+    if (estadiaBtn) {
+      const tr = estadiaBtn.closest('tr');
+      if (!tr || estadiaBtn.disabled) return;
+      const tipo = estadiaBtn.dataset.estadiaTipo || '';
+      const hidden = tr.querySelector('[data-field="tipo_estadia"]');
+      if (hidden) hidden.value = tipo;
+      tr.querySelectorAll('.prog-estadia-card').forEach((btn) => btn.classList.toggle('active', btn === estadiaBtn));
+      const note = tr.querySelector('.prog-required-note');
+      if (note) note.remove();
+      atualizarSugestaoAlojamento(tr);
+      scheduleSaveRow(tr);
+      return;
+    }
+
     const tipoBtn = event.target.closest('.prog-tipo-btn');
     if (tipoBtn) {
       const tipo = tipoBtn.dataset.tipo;
@@ -1327,18 +1460,29 @@ initProtectedPage('Programação', (content) => {
       if (!tr) return;
       const colabId = tr.dataset.colabId;
       const existing = state.maps.disponibilidade.get(colabId) || {};
-      state.maps.disponibilidade.set(colabId, { ...existing, disponibilidade: tipo });
+      const valorDisponibilidade = tipo === 'INDISPONIVEL' ? (disponibilidadeMotivo(existing.disponibilidade) || 'ATESTADO') : tipo;
+      state.maps.disponibilidade.set(colabId, { ...existing, disponibilidade: valorDisponibilidade });
       const hiddenInput = tr.querySelector('[data-field="disponibilidade"]');
-      if (hiddenInput) hiddenInput.value = tipo;
+      if (hiddenInput) hiddenInput.value = valorDisponibilidade;
       tr.querySelectorAll('.prog-tipo-btn').forEach((b) => b.classList.toggle('active', b.dataset.tipo === tipo));
       let placaWrap = tr.querySelector('.prog-placa-wrap');
+      let indisWrap = tr.querySelector('.prog-indisponivel-wrap');
+      if (indisWrap && tipo !== 'INDISPONIVEL') indisWrap.remove();
+      if (tipo === 'INDISPONIVEL' && !indisWrap) {
+        const td = tipoBtn.closest('td');
+        indisWrap = document.createElement('div');
+        indisWrap.className = 'prog-indisponivel-wrap';
+        indisWrap.innerHTML = `<select data-indisponivel-motivo>${INDISPONIBILIDADE_MOTIVOS.map((op) => `<option value="${escapeHtml(op)}" ${op === valorDisponibilidade ? 'selected' : ''}>${escapeHtml(disponibilidadeLabel(op))}</option>`).join('')}</select>`;
+        const before = td.querySelector('.prog-placa-wrap');
+        if (before) td.insertBefore(indisWrap, before); else td.appendChild(indisWrap);
+      }
       if (tipo === 'LOGISTICA' && !placaWrap) {
         const td = tipoBtn.closest('td');
         placaWrap = document.createElement('div');
         placaWrap.className = 'prog-placa-wrap';
         const colab = colabById(colabId);
         const sugestao = suggestVeiculoForColab(colab);
-        placaWrap.innerHTML = `<input data-field="placa_veiculo" type="text" maxlength="8" value="" placeholder="${sugestao?.placa ? 'Sugestão: ' + sugestao.placa : 'Digite a placa'}" />${sugestao?.placa ? `<button type="button" class="prog-placa-suggest-btn" data-placa="${escapeHtml(sugestao.placa)}">Usar ${escapeHtml(sugestao.placa)}</button>` : ''}<div class="prog-placa-alert"></div>`;
+        placaWrap.innerHTML = `<input data-field="placa_veiculo" list="progVeiculosFrotaList" type="text" maxlength="8" value="" placeholder="${sugestao?.placa ? 'Sugestão: ' + sugestao.placa : 'Digite a placa'}" />${sugestao?.placa ? `<button type="button" class="prog-placa-suggest-btn" data-placa="${escapeHtml(sugestao.placa)}">Usar ${escapeHtml(sugestao.placa)}</button>` : ''}<div class="prog-placa-alert"></div>`;
         td.appendChild(placaWrap);
       } else if (placaWrap && tipo !== 'LOGISTICA') {
         placaWrap.remove();
@@ -1347,7 +1491,7 @@ initProtectedPage('Programação', (content) => {
         }
       }
       const statusSpan = tr.querySelector('.prog-status');
-      const isNowBlocked = tipo === 'SEM EMBARQUE';
+      const isNowBlocked = tipo === 'SEM EMBARQUE' || tipo === 'INDISPONIVEL';
       if (statusSpan) {
         statusSpan.className = `prog-status ${isNowBlocked ? 'block' : 'ok'}`;
         statusSpan.textContent = isNowBlocked ? 'Bloqueado' : 'Liberado';
@@ -1431,9 +1575,17 @@ initProtectedPage('Programação', (content) => {
         const aloj = (state.alojamentos || []).find((a) => String(a.id) === String(payload.alojamento_id));
         payload.alojamento_nome = aloj?.nome || payload.alojamento_nome || null;
       }
-      payload.tem_estadia = payload.tipo_estadia && payload.tipo_estadia !== 'NÃO PRECISA';
+      payload.tipo_estadia = normalizeText(payload.tipo_estadia || '') || null;
+      payload.tem_estadia = Boolean(payload.tipo_estadia);
     }
-    if (table === 'programacao_deslocamento') payload.placa_veiculo = onlyPlate(payload.placa_veiculo);
+    if (table === 'programacao_deslocamento') {
+      const disp = state.maps.disponibilidade.get(String(colab.id)) || {};
+      if (disponibilidadeCategoria(disp.disponibilidade) === 'LOGISTICA') {
+        payload.tipo_deslocamento = payload.tipo_deslocamento || 'MOTORISTA FROTA';
+        payload.placa_veiculo = payload.placa_veiculo || disp.placa_veiculo || null;
+      }
+      payload.placa_veiculo = onlyPlate(payload.placa_veiculo);
+    }
     if (table === 'programacao_colaboradores') {
       payload.placa_veiculo = payload.disponibilidade === 'LOGISTICA' ? onlyPlate(payload.placa_veiculo) : null;
     }
@@ -1537,23 +1689,33 @@ initProtectedPage('Programação', (content) => {
   }
 
 
+  function draftValueFromDom(table, colabId, field) {
+    const tr = el.list.querySelector(`tr[data-table="${table}"][data-colab-id="${CSS.escape(String(colabId))}"]`);
+    return tr?.querySelector(`[data-field="${field}"]`)?.value ?? undefined;
+  }
+
   function validarProgramacaoAntesSalvar() {
     const problemas = [];
-    const estadias = [...el.list.querySelectorAll('tr[data-table="programacao_estadia"]')];
-    estadias.forEach((tr) => {
-      const nome = colabById(tr.dataset.colabId)?.nome || 'Colaborador';
-      const tipo = String(tr.querySelector('[data-field="tipo_estadia"]')?.value || '').toUpperCase();
-      const cidade = String(tr.querySelector('[data-field="cidade"]')?.value || '').trim();
-      const uf = normalizeUF(tr.querySelector('[data-field="uf"]')?.value || '');
-      if (['HOTEL', 'ALOJAMENTO', 'PERNOITE'].includes(tipo) && (!cidade || !uf)) problemas.push(`${nome}: informe cidade/UF da hospedagem.`);
-      if (tipo === 'ALOJAMENTO' && !tr.querySelector('[data-field="alojamento_id"]')?.value) problemas.push(`${nome}: selecione o alojamento sugerido/cadastrado.`);
-    });
-    const deslocamentos = [...el.list.querySelectorAll('tr[data-table="programacao_deslocamento"]')];
-    deslocamentos.forEach((tr) => {
-      const nome = colabById(tr.dataset.colabId)?.nome || 'Colaborador';
-      const tipo = String(tr.querySelector('[data-field="tipo_deslocamento"]')?.value || '').toUpperCase();
-      const placa = onlyPlate(tr.querySelector('[data-field="placa_veiculo"]')?.value || '');
-      if (['MOTORISTA FROTA', 'CARONA FROTA'].includes(tipo) && !placa) problemas.push(`${nome}: informe a placa do veículo.`);
+    state.colaboradores.forEach((colab) => {
+      const dispRow = state.maps.disponibilidade.get(String(colab.id)) || {};
+      const disp = disponibilidadeCategoria(dispRow.disponibilidade || 'OK');
+      const placaLogistica = onlyPlate((draftValueFromDom('programacao_colaboradores', colab.id, 'placa_veiculo') ?? dispRow.placa_veiculo) || '');
+      if (disp === 'LOGISTICA' && !placaLogistica) problemas.push(`${colab.nome}: informe ou selecione a placa na etapa A/Logística.`);
+      if (disp === 'SEM EMBARQUE' || disp === 'INDISPONIVEL') return;
+
+      const est = state.maps.estadia.get(String(colab.id)) || {};
+      const tipoEstadia = normalizeText((draftValueFromDom('programacao_estadia', colab.id, 'tipo_estadia') ?? est.tipo_estadia) || '');
+      if (!tipoEstadia) problemas.push(`${colab.nome}: selecione o tipo de hospedagem na etapa B.`);
+      const cidade = String((draftValueFromDom('programacao_estadia', colab.id, 'cidade') ?? est.cidade) || '').trim();
+      const uf = normalizeUF((draftValueFromDom('programacao_estadia', colab.id, 'uf') ?? est.uf) || '');
+      const alojamentoId = (draftValueFromDom('programacao_estadia', colab.id, 'alojamento_id') ?? est.alojamento_id) || '';
+      if (['HOTEL', 'ALOJAMENTO', 'PERNOITE'].includes(tipoEstadia) && (!cidade || !uf)) problemas.push(`${colab.nome}: informe cidade/UF da hospedagem.`);
+      if (tipoEstadia === 'ALOJAMENTO' && !alojamentoId) problemas.push(`${colab.nome}: selecione o alojamento sugerido/cadastrado.`);
+
+      const desl = state.maps.deslocamento.get(String(colab.id)) || {};
+      const tipoDeslocamento = String((draftValueFromDom('programacao_deslocamento', colab.id, 'tipo_deslocamento') ?? desl.tipo_deslocamento) || (disp === 'LOGISTICA' ? 'MOTORISTA FROTA' : '')).toUpperCase();
+      const placaDeslocamento = onlyPlate((draftValueFromDom('programacao_deslocamento', colab.id, 'placa_veiculo') ?? desl.placa_veiculo) || (disp === 'LOGISTICA' ? placaLogistica : ''));
+      if (['MOTORISTA FROTA', 'CARONA FROTA'].includes(tipoDeslocamento) && !placaDeslocamento) problemas.push(`${colab.nome}: informe a placa do veículo na etapa D.`);
     });
     return problemas;
   }
