@@ -349,8 +349,7 @@ async function markProgramacaoIfOsPending(container, userContext) {
     let query = supabase
       .from('operacional_os')
       .select('id')
-      .eq('status_gestor', 'AGUARDAR')
-      .is('configurada_em', null)
+      .is('status_gestor', null)
       .gte('data_os', today)
       .lte('data_os', today);
 
