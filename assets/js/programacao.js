@@ -810,8 +810,9 @@ initProtectedPage('Programação', (content) => {
 
       const _seenColabs = new Set();
       const colaboradoresAtivos = (colaboradores || []).filter(isColaboradorAtivo).filter((colab) => {
-        const key = colaboradorKey(colab);
-        if (_seenColabs.has(key)) return false;
+        const cpf = normalizeCpf(colab.cpf);
+        const key = cpf || normalizeText(String(colab.nome || '')).trim().toUpperCase();
+        if (!key || _seenColabs.has(key)) return false;
         _seenColabs.add(key);
         return true;
       });
