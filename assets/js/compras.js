@@ -167,10 +167,51 @@ function setupColabSearch(){
     box.querySelectorAll('[data-add-colab]').forEach(btn=>btn.onclick=()=>{ const c=state.colaboradores.find(x=>String(x.id||x.nome)===btn.dataset.addColab); if(c && !state.uniformes.some(x=>String(x.id||x.nome)===String(c.id||c.nome))) state.uniformes.push(c); input.value=''; box.innerHTML=''; renderUniformes(); });
   });
 }
+function isSchemaColumnError(error){
+  const msg=String(error?.message||error?.details||error?.hint||'').toLowerCase();
+  return msg.includes('schema cache') || msg.includes('could not find') || msg.includes('column') || error?.code==='PGRST204';
+}
+async function insertSolicitacaoComCompatibilidade(header){
+  let res = await supabase.from('compras_solicitacoes').insert(header).select('id').single();
+  if(!res.error) return res;
+
+  // Compatibilidade com bancos que ainda não têm todas as colunas novas da tela.
+  // Remove somente as colunas apontadas pelo erro e tenta novamente, sem travar a solicitação do gestor.
+  let limpo = {...header};
+  const msg = String(res.error?.message || '');
+  const possiveis = ['coordenacao','solicitante_id','created_by','observacoes','tipo_solicitacao'];
+  let removeu = false;
+
+  for(const col of possiveis){
+    if(msg.includes(`'${col}'`) || msg.includes(`"${col}"`) || msg.toLowerCase().includes(` ${col} `)){
+      delete limpo[col];
+      removeu = true;
+    }
+  }
+
+  if(!removeu && isSchemaColumnError(res.error)){
+    // Caso o PostgREST não informe claramente a coluna, remove as menos essenciais.
+    delete limpo.coordenacao;
+    delete limpo.solicitante_id;
+    delete limpo.created_by;
+  }
+
+  res = await supabase.from('compras_solicitacoes').insert(limpo).select('id').single();
+  return res;
+}
 async function salvarSolicitacao(ctx, tipo, itens){
   const u=usuario(ctx); const data=document.getElementById('cmpData').value || today();
-  const header={data_solicitacao:data, solicitante_id:u.id||null, solicitante:solicitanteNome(ctx), coordenacao:u.coordenacao||u.supervisao||null, tipo_solicitacao:tipo, status:'pendente', observacoes:document.getElementById('cmpObs').value.trim()||null, created_by:u.id||null};
-  const {data:sol,error}=await supabase.from('compras_solicitacoes').insert(header).select('id').single();
+  const header={
+    data_solicitacao:data,
+    solicitante_id:u.id||null,
+    solicitante:solicitanteNome(ctx),
+    coordenacao:u.coordenacao||u.supervisao||null,
+    tipo_solicitacao:tipo,
+    status:'pendente',
+    observacoes:document.getElementById('cmpObs').value.trim()||null,
+    created_by:u.id||null
+  };
+  const {data:sol,error}=await insertSolicitacaoComCompatibilidade(header);
   if(error) throw error;
   const payload=itens.map(i=>({...i, solicitacao_id:sol.id, status:'pendente'}));
   const {error:itemErr}=await supabase.from('compras_itens').insert(payload);
