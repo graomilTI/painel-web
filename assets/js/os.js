@@ -5,6 +5,9 @@ import { getCurrentUser, getUserContext } from './auth.js';
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const STATUS_OPTIONS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
+const ICO_AGUARDAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="8" y1="5" x2="8" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>`;
+const ICO_ATENDER  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+const ICO_FINALIZAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`;
 const LIMITE_UM_CLASSIFICADOR = 555000;
 const LIMITE_COMPARTILHAR = 300000;
 const LIMITE_BLOQUEIO_COMPARTILHAMENTO = 500000;
@@ -581,7 +584,7 @@ initProtectedPage('OS', async (content) => {
           ${extraSelectHtml}
         </div>
       </td>
-      <td><div class="os-actions"><div class="os-status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="os-dot"></span></div>${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}">${opt === 'AGUARDAR' ? '✋' : opt === 'ATENDER' ? '✅' : '💰'}</button>`).join('')}</div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
+      <td><div class="os-actions"><div class="os-status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="os-dot"></span></div>${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}" title="${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}">${opt === 'AGUARDAR' ? ICO_AGUARDAR : opt === 'ATENDER' ? ICO_ATENDER : ICO_FINALIZAR}</button>`).join('')}</div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
     </tr>`;
   }
 
