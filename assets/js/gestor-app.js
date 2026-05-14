@@ -506,11 +506,14 @@ function renderOsCard(os) {
   const sugg = state.suggested.get(id) || { items: [], aviso: '' };
   const selected = state.selections.get(id) || (sugg.items[0] ? colabKey(sugg.items[0].c) : '');
   const selectedInfo = sugg.items.find((row) => colabKey(row.c) === selected) || null;
+  const isNegativo = num(os.remanescente) < 0;
   const canMulti = num(os.remanescente) >= LIMITE_MULTIPLOS;
   const isMulti = state.allowMulti.has(id) && canMulti;
   const extraValues = state.extras.get(id) || [];
+  const hasLaudo = String(os.observacao_logistica||'').startsWith('LAUDO:');
+  const rowColor = isNegativo ? 'row-kg' : os.observacao_logistica?.startsWith('KG solicitado') ? 'row-kg' : status === 'AGUARDAR' ? 'row-aguardar' : status === 'ATENDER' ? 'row-atender' : status === 'FINALIZAR' ? 'row-finalizar' : '';
   return `
-    <article class="os-card ${num(os.remanescente) === 0 ? 'is-zero' : ''} ${state.busy.has(id) ? 'is-updating' : ''} ${os.observacao_logistica?.startsWith('KG solicitado') ? 'row-kg' : status === 'AGUARDAR' ? 'row-aguardar' : status === 'ATENDER' ? 'row-atender' : status === 'FINALIZAR' ? 'row-finalizar' : ''}" data-os-id="${escapeHtml(id)}">
+    <article class="os-card ${num(os.remanescente) === 0 ? 'is-zero' : ''} ${state.busy.has(id) ? 'is-updating' : ''} ${rowColor}" data-os-id="${escapeHtml(id)}">
       <div class="os-head">
         <div><div class="os-number">${escapeHtml(os.numero_os)}</div><div class="os-date">${brDate(os.data_os)} · ${escapeHtml(first(os.servico))}</div></div>
         <span class="status-badge ${escapeHtml(status)}">${escapeHtml(status)}</span>
@@ -536,11 +539,14 @@ function renderOsCard(os) {
         ${canMulti && isMulti ? renderExtraSelects(id, sugg.items, selected, extraValues) : ''}
       </div>
       <div class="action-grid">
-        <div class="status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="dot"></span></div>
+        ${isNegativo
+          ? `<button class="btn secondary ${hasLaudo ? 'kg-active' : ''}" data-action-laudo="${escapeHtml(id)}" data-action-laudo-num="${escapeHtml(os.numero_os)}" type="button" title="Anexar laudo para conferência" style="color:#fca5a5;border-color:rgba(239,68,68,.4);grid-column:span 5;font-size:18px;font-weight:950">!</button>`
+          : `<div class="status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="dot"></span></div>
         <button class="btn ${status === 'AGUARDAR' ? 'warn' : 'secondary'}" data-action="AGUARDAR" type="button" title="Aguardar">${ICO_AGUARDAR}</button>
         <button class="btn ${status === 'ATENDER' ? '' : 'secondary'}" data-action="ATENDER" type="button" title="Atender">${ICO_ATENDER}</button>
         <button class="btn ${status === 'FINALIZAR' ? '' : 'secondary'}" data-action="FINALIZAR" type="button" title="Finalizar">${ICO_FINALIZAR}</button>
-        <button class="btn secondary ${os.observacao_logistica?.startsWith('KG solicitado') ? 'kg-active' : ''}" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar KG para Logística" style="color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SOMAR_KG}</button>
+        <button class="btn secondary ${os.observacao_logistica?.startsWith('KG solicitado') ? 'kg-active' : ''}" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar KG para Logística" style="color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SOMAR_KG}</button>`
+        }
       </div>
     </article>
   `;
@@ -609,6 +615,9 @@ function bindOsEvents(scope) {
   scope.querySelectorAll('[data-action-kg]').forEach((btn) => {
     btn.addEventListener('click', () => openKgModal(btn.dataset.actionKg, btn.dataset.actionKgNum));
   });
+  scope.querySelectorAll('[data-action-laudo]').forEach((btn) => {
+    btn.addEventListener('click', () => openLaudoModal(btn.dataset.actionLaudo, btn.dataset.actionLaudoNum));
+  });
 }
 
 function openKgModal(recordId, osNumero) {
@@ -646,6 +655,80 @@ function openKgModal(recordId, osNumero) {
     renderOs(document.getElementById('appMain'));
     showToast('Solicitação enviada para a Logística.', 'success');
     supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: null, updated_at: new Date().toISOString() }).eq('id', recordId);
+  });
+}
+
+function openLaudoModal(recordId, osNumero) {
+  const existing = document.getElementById('kg-modal-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'kg-modal-overlay';
+  overlay.className = 'kg-overlay';
+  overlay.innerHTML = `
+    <div class="kg-modal">
+      <h3>Anexar laudo para O.S. ${escapeHtml(osNumero)}</h3>
+      <p style="margin:0;font-size:12px;color:#94a3b8">Remanescente negativo — anexe imagens, planilhas ou PDFs para conferência.</p>
+      <div id="laudo-dropzone" style="border:2px dashed rgba(239,68,68,.35);border-radius:14px;padding:28px 16px;text-align:center;color:#94a3b8;cursor:pointer;margin-top:8px;font-size:13px;transition:border-color .15s">
+        Clique ou arraste arquivos aqui<br><small style="font-size:11px">imagens, PDF, Excel, CSV</small>
+      </div>
+      <input id="laudo-file-input" type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.csv" style="display:none" />
+      <div id="laudo-file-list" style="margin-top:8px;font-size:12px;color:#bbf7d0;min-height:20px"></div>
+      <div class="kg-modal-actions">
+        <button class="kg-btn-cancel" id="laudoCancelar">Cancelar</button>
+        <button class="kg-btn-confirm" id="laudoEnviar">Enviar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const dropzone = overlay.querySelector('#laudo-dropzone');
+  const fileInput = overlay.querySelector('#laudo-file-input');
+  const fileList = overlay.querySelector('#laudo-file-list');
+  let selectedFiles = [];
+
+  function updateFileList() {
+    fileList.textContent = selectedFiles.map((f) => f.name).join(', ') || '';
+  }
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = 'rgba(239,68,68,.7)'; });
+  dropzone.addEventListener('dragleave', () => { dropzone.style.borderColor = 'rgba(239,68,68,.35)'; });
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.style.borderColor = 'rgba(239,68,68,.35)';
+    selectedFiles = [...(e.dataTransfer.files || [])];
+    updateFileList();
+  });
+  fileInput.addEventListener('change', () => {
+    selectedFiles = [...(fileInput.files || [])];
+    updateFileList();
+  });
+
+  overlay.querySelector('#laudoCancelar').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelector('#laudoEnviar').addEventListener('click', async () => {
+    if (!selectedFiles.length) { dropzone.style.borderColor = 'rgba(239,68,68,.9)'; return; }
+    const btn = overlay.querySelector('#laudoEnviar');
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
+    const urls = [];
+    for (const file of selectedFiles) {
+      const path = `${recordId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      const { data: upData, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
+      if (upErr) { alert(upErr.message); btn.disabled = false; btn.textContent = 'Enviar'; return; }
+      const { data: urlData } = supabase.storage.from('os-laudos').getPublicUrl(upData.path);
+      urls.push(urlData.publicUrl);
+    }
+
+    const laudoText = `LAUDO:${urls.join(',')}`;
+    const row = state.os.find((o) => osId(o) === recordId);
+    if (row) row.observacao_logistica = laudoText;
+    overlay.remove();
+    renderOs(document.getElementById('appMain'));
+    showToast('Laudo anexado com sucesso.', 'success');
+    supabase.from('operacional_os').update({ observacao_logistica: laudoText, updated_at: new Date().toISOString() }).eq('id', recordId);
   });
 }
 

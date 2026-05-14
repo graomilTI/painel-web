@@ -241,6 +241,7 @@ function injectStyles() {
     .os-table tr:hover td{background:rgba(22,101,52,.1)}.os-title{font-weight:850;color:#f8fafc;font-size:13.5px;line-height:1.18}.os-num{font-size:13.5px;font-weight:950}.os-meta{font-size:11px;color:#94a3b8;margin-top:3px;line-height:1.25}.os-client-main{max-width:100%;font-size:13.5px;line-height:1.16}.os-route-line{display:block;white-space:normal;overflow-wrap:anywhere}.os-actions{display:flex;gap:6px;flex-wrap:wrap}.os-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.72);color:#dcfce7;border-radius:999px;padding:7px 10px;font-weight:900;cursor:pointer;font-size:12px}.os-btn.active{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.os-btn.warn.active{background:#fde68a;color:#713f12}.os-btn.danger.active{background:#fecaca;color:#7f1d1d}.os-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.os-chip.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.os-chip.warn{background:rgba(250,204,21,.14);color:#fde68a}.os-chip.info{background:rgba(59,130,246,.13);color:#bfdbfe}.os-chip.danger{background:rgba(239,68,68,.12);color:#fecaca}.os-zero{box-shadow:inset 4px 0 0 #facc15}.os-indbox{display:flex;gap:8px;align-items:flex-start;flex-direction:column}.os-select{width:100%;min-height:38px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0f172a;color:#e5e7eb;color-scheme:dark;padding:8px;font-size:12px}.os-mini{font-size:11px;color:#a7f3d0;line-height:1.25}.os-warn-text{font-size:11px;color:#fde68a;margin-top:6px;line-height:1.25}.os-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#94a3b8;background:rgba(15,23,42,.16)}
     .os-rem-box{display:flex;flex-direction:column;gap:3px;align-items:flex-start}.os-rem-box .os-meta{margin-top:0}.os-extra-box{width:100%;margin-top:6px;padding-top:7px;border-top:1px solid rgba(52,211,153,.16);display:flex;flex-direction:column;gap:6px}.os-status-dot{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:7px 10px;border:1px solid rgba(148,163,184,.2);cursor:default;background:transparent}.os-dot{width:12px;height:12px;border-radius:50%;background:rgba(148,163,184,.25)}.os-status-dot.is-active .os-dot{background:#94a3b8;box-shadow:0 0 0 3px rgba(148,163,184,.2)}
     .os-btn-kg{border-color:rgba(99,179,237,.35);color:#90cdf4}.os-btn-kg:hover{background:rgba(59,130,246,.15)}.os-btn-kg.active{background:rgba(239,68,68,.2);border-color:rgba(239,68,68,.55);color:#fca5a5}
+    .os-btn-laudo{border-color:rgba(239,68,68,.45);color:#fca5a5;font-size:15px;font-weight:950;min-width:38px}.os-btn-laudo:hover{background:rgba(239,68,68,.15)}.os-btn-laudo.has-laudo{background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.6)}
     .os-row-aguardar td{background:rgba(250,204,21,.06)!important}.os-row-aguardar td:first-child{box-shadow:inset 3px 0 0 rgba(250,204,21,.55)}
     .os-row-atender td{background:rgba(34,197,94,.06)!important}.os-row-atender td:first-child{box-shadow:inset 3px 0 0 rgba(34,197,94,.55)}
     .os-row-finalizar td{background:rgba(59,130,246,.06)!important}.os-row-finalizar td:first-child{box-shadow:inset 3px 0 0 rgba(59,130,246,.55)}
@@ -575,7 +576,12 @@ initProtectedPage('OS', async (content) => {
         ${atr.length > 2 ? `<div class="os-meta">${atr.slice(2).map((a) => `<span class="os-chip ok">${escapeHtml(a.colaborador_nome)} <button class="os-btn" style="padding:2px 6px;margin-left:5px" data-remove-colab="${escapeHtml(a.id)}">×</button></span>`).join(' ')}</div>` : ''}
       </div>` : '';
 
-    const rowColorClass = row.observacao_logistica?.startsWith('KG solicitado') ? 'os-row-kg' : status === 'AGUARDAR' ? 'os-row-aguardar' : status === 'ATENDER' ? 'os-row-atender' : status === 'FINALIZAR' ? 'os-row-finalizar' : '';
+    const isNegativo = rem < 0;
+    const rowColorClass = isNegativo ? 'os-row-kg' : row.observacao_logistica?.startsWith('KG solicitado') ? 'os-row-kg' : status === 'AGUARDAR' ? 'os-row-aguardar' : status === 'ATENDER' ? 'os-row-atender' : status === 'FINALIZAR' ? 'os-row-finalizar' : '';
+    const hasLaudo = String(row.observacao_logistica||'').startsWith('LAUDO:');
+    const acaoCol = isNegativo
+      ? `<div class="os-actions"><button class="os-btn os-btn-laudo ${hasLaudo ? 'has-laudo' : ''}" data-laudo-id="${escapeHtml(String(row.id))}" data-laudo-num="${escapeHtml(row.numero_os)}" title="Anexar laudo para conferência">!</button></div><div style="margin-top:8px"><span class="os-chip danger" style="font-size:10px">REM. NEGATIVO</span></div>`
+      : `<div class="os-actions"><div class="os-status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="os-dot"></span></div>${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}" title="${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}">${opt === 'AGUARDAR' ? ICO_AGUARDAR : opt === 'ATENDER' ? ICO_ATENDER : ICO_FINALIZAR}</button>`).join('')}<button class="os-btn os-btn-kg ${row.observacao_logistica?.startsWith('KG solicitado') ? 'active' : ''}" data-kg-id="${escapeHtml(String(row.id))}" data-kg-num="${escapeHtml(row.numero_os)}" title="Solicitar KG para Logística">${ICO_SOMAR_KG}</button></div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div>`;
     return `<tr data-os-id="${escapeHtml(row.id)}" class="${zero ? 'os-zero' : ''} ${rowColorClass}">
       <td><div class="os-title os-num">${escapeHtml(row.numero_os)}</div><div class="os-meta">${brDate(row.data_os)}</div><div class="os-meta">${escapeHtml(first(row.servico))}</div><div class="os-meta">${escapeHtml(first(row.supervisao))}</div>${zero ? '<div class="os-warn-text">Remanescente zerado</div>' : ''}</td>
       <td><div class="os-title os-client-main">${escapeHtml(first(row.cliente))}</div><div class="os-meta os-route-line">Emb.: ${escapeHtml(first(row.embarque))}</div><div class="os-meta os-route-line">Dest.: ${escapeHtml(first(row.destino))}</div><div class="os-meta os-route-line">Contrato ${escapeHtml(first(row.contrato))} • ${escapeHtml(first(row.produto))}</div></td>
@@ -592,7 +598,7 @@ initProtectedPage('OS', async (content) => {
           ${extraSelectHtml}
         </div>
       </td>
-      <td><div class="os-actions"><div class="os-status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="os-dot"></span></div>${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}" title="${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}">${opt === 'AGUARDAR' ? ICO_AGUARDAR : opt === 'ATENDER' ? ICO_ATENDER : ICO_FINALIZAR}</button>`).join('')}<button class="os-btn os-btn-kg ${row.observacao_logistica?.startsWith('KG solicitado') ? 'active' : ''}" data-kg-id="${escapeHtml(String(row.id))}" data-kg-num="${escapeHtml(row.numero_os)}" title="Solicitar KG para Logística">${ICO_SOMAR_KG}</button></div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
+      <td>${acaoCol}</td>
     </tr>`;
   }
 
@@ -660,6 +666,9 @@ initProtectedPage('OS', async (content) => {
 
     const kgBtn = event.target.closest('[data-kg-id]');
     if (kgBtn) openKgModal(kgBtn.dataset.kgId, kgBtn.dataset.kgNum);
+
+    const laudoBtn = event.target.closest('[data-laudo-id]');
+    if (laudoBtn) openLaudoModal(laudoBtn.dataset.laudoId, laudoBtn.dataset.laudoNum);
   }
 
   function openKgModal(osId, osNumero) {
@@ -700,6 +709,71 @@ initProtectedPage('OS', async (content) => {
       overlay.remove();
       render();
       supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: null, updated_at: new Date().toISOString() }).eq('id', osId);
+    });
+  }
+
+  function openLaudoModal(osId, osNumero) {
+    const existing = document.getElementById('laudo-modal-overlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'laudo-modal-overlay';
+    overlay.className = 'kg-overlay';
+    overlay.innerHTML = `
+      <div class="kg-modal">
+        <h3>Anexar laudo para conferência</h3>
+        <p style="margin:0;font-size:12px;color:#94a3b8">O.S. <strong style="color:#fca5a5">${escapeHtml(osNumero)}</strong> — remanescente negativo.</p>
+        <div id="laudoDropzone" style="border:2px dashed rgba(239,68,68,.4);border-radius:12px;padding:22px;text-align:center;cursor:pointer;color:#94a3b8;font-size:13px;transition:border-color .2s">
+          <div style="font-size:22px;margin-bottom:6px">📎</div>
+          Clique ou arraste arquivos aqui<br><small>Imagens, PDF, planilhas (.xlsx, .csv)</small>
+          <input id="laudoInput" type="file" accept="image/*,.pdf,.xlsx,.xls,.csv" multiple style="display:none" />
+        </div>
+        <div id="laudoFileList" style="font-size:12px;color:#bbf7d0;min-height:18px"></div>
+        <div class="kg-modal-actions">
+          <button class="kg-btn-cancel" id="laudoCancelar">Cancelar</button>
+          <button class="kg-btn-confirm" id="laudoConfirmar">Enviar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector('#laudoInput');
+    const dropzone = overlay.querySelector('#laudoDropzone');
+    const fileList = overlay.querySelector('#laudoFileList');
+
+    dropzone.addEventListener('click', () => input.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = 'rgba(239,68,68,.8)'; });
+    dropzone.addEventListener('dragleave', () => { dropzone.style.borderColor = 'rgba(239,68,68,.4)'; });
+    dropzone.addEventListener('drop', (e) => { e.preventDefault(); dropzone.style.borderColor = 'rgba(239,68,68,.4)'; input.files = e.dataTransfer.files; updateFileList(); });
+    input.addEventListener('change', updateFileList);
+
+    function updateFileList() {
+      fileList.textContent = [...(input.files||[])].map(f => f.name).join(', ') || '';
+    }
+
+    overlay.querySelector('#laudoCancelar').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    overlay.querySelector('#laudoConfirmar').addEventListener('click', async () => {
+      const files = [...(input.files||[])];
+      if (!files.length) { input.click(); return; }
+      const btn = overlay.querySelector('#laudoConfirmar');
+      btn.disabled = true; btn.textContent = 'Enviando...';
+
+      const urls = [];
+      for (const file of files) {
+        const path = `os/${osId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+        const { data: up, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
+        if (upErr) { alert(`Erro ao enviar ${file.name}: ${upErr.message}`); btn.disabled = false; btn.textContent = 'Enviar'; return; }
+        const { data: pub } = supabase.storage.from('os-laudos').getPublicUrl(up.path);
+        urls.push(pub.publicUrl);
+      }
+
+      const laudoRef = `LAUDO:${urls.join(',')}`;
+      const row = state.os.find((o) => String(o.id) === String(osId));
+      if (row) row.observacao_logistica = laudoRef;
+      overlay.remove();
+      render();
+      supabase.from('operacional_os').update({ observacao_logistica: laudoRef, updated_at: new Date().toISOString() }).eq('id', osId);
     });
   }
 
