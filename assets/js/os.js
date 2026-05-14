@@ -433,11 +433,11 @@ initProtectedPage('OS', async (content) => {
       if (status) {
         const st = (row.status_gestor || 'AGUARDAR').toUpperCase();
         const isCinza = st === 'AGUARDAR' && !row.configurada_em;
-        if (status === 'pendente' && !isCinza) return false;
-        if (status === 'aguardar' && (isCinza || st !== 'AGUARDAR')) return false;
-        if (status === 'atender' && st !== 'ATENDER') return false;
-        if (status === 'finalizar' && st !== 'FINALIZAR') return false;
-        if (status === 'ajustar' && st !== 'AJUSTAR') return false;
+        if (status === 'PENDENTE' && !isCinza) return false;
+        if (status === 'AGUARDAR' && (isCinza || st !== 'AGUARDAR')) return false;
+        if (status === 'ATENDER' && st !== 'ATENDER') return false;
+        if (status === 'FINALIZAR' && st !== 'FINALIZAR') return false;
+        if (status === 'AJUSTAR' && st !== 'AJUSTAR') return false;
       }
       const hay = normalize(`${row.numero_os} ${row.cliente} ${row.embarque} ${row.destino} ${row.contrato} ${row.produto}`);
       return !busca || hay.includes(busca);
