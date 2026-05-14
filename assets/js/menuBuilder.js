@@ -125,22 +125,16 @@ const FINANCEIRO_FAILSAFE_ITEMS = [
     aliases: ['FINANCEIRO', 'FLUXO_CAIXA', 'FINANCEIRO_FLUXO_CAIXA']
   },
   {
+    code: 'financeiro_despesas',
+    label: 'Despesas',
+    path: 'financeiro#despesas',
+    aliases: ['DESPESAS', 'FINANCEIRO_DESPESAS', 'ADIANTAMENTOS', 'FINANCEIRO_ADIANTAMENTOS', 'ALIMENTACAO', 'ALIMENTAÇÃO', 'FINANCEIRO_ALIMENTACAO', 'DIARIAS', 'DIÁRIAS']
+  },
+  {
     code: 'financeiro_pagamentos',
     label: 'Pagamentos',
     path: 'financeiro#pagamentos',
     aliases: ['FINANCEIRO', 'PAGAMENTOS', 'FINANCEIRO_PAGAMENTOS']
-  },
-  {
-    code: 'financeiro_adiantamentos',
-    label: 'Adiantamentos',
-    path: 'financeiro#pagamentos',
-    aliases: ['ADIANTAMENTOS', 'FINANCEIRO_ADIANTAMENTOS']
-  },
-  {
-    code: 'financeiro_alimentacao',
-    label: 'Alimentação',
-    path: 'financeiro#pagamentos',
-    aliases: ['ALIMENTACAO', 'ALIMENTAÇÃO', 'FINANCEIRO_ALIMENTACAO']
   }
 ];
 

@@ -42,6 +42,8 @@ const state = {
   fluxo: [],
   receber: [],
   pagar: [],
+  financeiroPagamentos: [],
+  pagamentosSetorFilter: 'todos',
   currentDate: new Date().toISOString().slice(0, 10),
   filters: {
     inicio: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
@@ -76,6 +78,55 @@ function brDate(value) {
   const [y, m, d] = String(value).slice(0, 10).split('-');
   return y && m && d ? `${d}/${m}/${y}` : String(value);
 }
+
+function brDateTime(value) {
+  if (!value) return '-';
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return String(value || '-');
+  return dt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function origemPagamentoLabel(value) {
+  const raw = String(value || '').trim();
+  const key = normalize(raw);
+  if (key.includes('compra')) return 'Compras';
+  if (key.includes('hotel') || key.includes('hosped')) return 'Hospedagem';
+  if (key === 'rh' || key.includes('recursos humanos')) return 'RH';
+  if (key.includes('logistica')) return 'Logística';
+  if (key.includes('frota')) return 'Frotas';
+  return raw || '-';
+}
+
+function statusPagamentoClass(value) {
+  const key = normalize(value || '');
+  if (key.includes('pago') || key.includes('concluido') || key.includes('finalizado')) return 'pago';
+  if (key.includes('recus') || key.includes('cancel')) return 'danger';
+  if (key.includes('pend')) return 'pendente';
+  return 'neutral';
+}
+
+function parseConteudoPagamento(row) {
+  const origem = origemPagamentoLabel(row.origem || row.setor || row.modulo_origem);
+  const descricao = row.descricao || row.conteudo || row.observacao || row.detalhes || '';
+  const dados = row.dados_pagamento || row.link_pagamento || row.chave_pix || row.boleto_url || '';
+  const forma = row.forma_pagamento ? `Forma: ${row.forma_pagamento}` : '';
+  const fornecedor = row.fornecedor || row.favorecido || row.beneficiario || '';
+  const contato = row.contato || row.contato_fornecedor || '';
+  const partes = [];
+  if (descricao) partes.push(descricao);
+  if (fornecedor) partes.push(`Fornecedor: ${fornecedor}`);
+  if (contato) partes.push(`Contato: ${contato}`);
+  if (forma) partes.push(forma);
+  if (dados) partes.push(`Dados: ${dados}`);
+  if (!partes.length && origem !== '-') partes.push(`Solicitação de ${origem}`);
+  return partes.join('\n');
+}
+
+function pagamentoUrl(row) {
+  const value = row.dados_pagamento || row.boleto_url || row.link_pagamento || row.comprovante_url || '';
+  return /^https?:\/\//i.test(String(value)) ? String(value) : '';
+}
+
 
 function nextDateISO(value) {
   const iso = String(value || '').slice(0, 10);
@@ -890,15 +941,18 @@ initProtectedPage('Financeiro', (content, userContext) => {
       .fin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.fin-head h3{margin:0;color:#f8fafc}.fin-head p{margin:4px 0 0;color:#94a3b8}.pay-grid{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:14px}.pay-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(2,6,23,.34);padding:16px}.pay-card h4{margin:0 0 6px;color:#f8fafc;font-size:18px}.pay-card p{margin:0 0 14px;color:#94a3b8}.pay-summary{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:14px 0}.pay-mini{border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:12px;background:rgba(15,23,42,.7)}.pay-mini span{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.pay-mini strong{display:block;margin-top:5px;color:#f8fafc;font-size:18px}.pay-subtabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.pay-subtab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:8px 12px;cursor:pointer}.pay-subtab.active{background:#14532d;color:#fff;border-color:#22c55e}.pay-table{display:none}.pay-table.active{display:block}@media(max-width:1100px){.pay-grid,.pay-summary{grid-template-columns:1fr 1fr}}@media(max-width:700px){.pay-grid,.pay-summary{grid-template-columns:1fr}}.fin-tabs{display:flex;gap:8px;flex-wrap:wrap}.fin-tab{border:1px solid rgba(148,163,184,.2);background:#0f172a;color:#cbd5e1;border-radius:999px;padding:9px 14px;cursor:pointer}.fin-tab.active{background:#166534;color:#fff;border-color:#22c55e}.fin-panel{display:none}.fin-panel.active{display:block}.fin-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.fin-field{display:grid;gap:6px}.fin-field.full{grid-column:1/-1}.fin-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.fin-field input,.fin-field select,.fin-field textarea{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0f172a;color:#e5e7eb;padding:10px 12px;color-scheme:dark}.fin-field textarea{min-height:78px;resize:vertical}.fin-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.fin-table{width:100%;border-collapse:collapse;min-width:860px}.fin-table th,.fin-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;color:#e5e7eb}.fin-table th{background:rgba(15,23,42,.96);color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.fin-table tr:hover td{background:rgba(34,197,94,.06)}.fin-muted{display:block;color:#94a3b8;font-size:12px;margin-top:3px}.fin-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.fin-status.ok{background:rgba(34,197,94,.14);color:#86efac}.fin-status.danger{background:rgba(239,68,68,.14);color:#fecaca}.fin-status.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}.fin-import-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}.fin-drop{border:1px dashed rgba(34,197,94,.45);border-radius:20px;padding:18px;background:rgba(22,101,52,.1)}.pay-upload{border:1px dashed rgba(34,197,94,.45);border-radius:18px;background:rgba(22,101,52,.08);padding:14px;min-height:78px;display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;transition:.16s ease}.pay-upload:hover,.pay-upload.dragging{border-color:#22c55e;background:rgba(22,101,52,.18);transform:translateY(-1px)}.pay-upload input{display:none}.pay-upload strong{display:block;color:#e5e7eb;font-size:13px}.pay-upload span{display:block;color:#94a3b8;font-size:12px;margin-top:4px;word-break:break-word}.pay-upload.has-file{border-style:solid;background:rgba(34,197,94,.14)}.fin-feedback{color:#94a3b8;font-size:13px}.fin-feedback.ok{color:#86efac}.fin-feedback.err{color:#fecaca}.fin-empty{text-align:center;color:#94a3b8;padding:24px!important}.fin-small{padding:8px 12px!important;font-size:13px!important}@media(max-width:1100px){.fin-grid{grid-template-columns:repeat(2,1fr)}.fin-form,.fin-import-grid{grid-template-columns:1fr}}@media(max-width:700px){.fin-grid{grid-template-columns:1fr}.fin-head{display:grid}}
 
       .pay-mode-switch{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}.pay-mode-btn{border:1px solid rgba(148,163,184,.22);background:#08111f;color:#cbd5e1;border-radius:16px;padding:13px 18px;font-weight:900;cursor:pointer}.pay-mode-btn.active{background:linear-gradient(135deg,#166534,#22c55e);color:#052e16;border-color:#22c55e}.pay-mode-panel{display:none}.pay-mode-panel.active{display:block}.pay-toolbar{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:14px 0}.pay-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;align-items:end}.pay-status-toggle{display:inline-flex;align-items:stretch;min-width:168px;overflow:hidden;border:2px solid rgba(226,232,240,.78);border-radius:999px;background:#020617;box-shadow:inset 0 0 0 1px rgba(15,23,42,.75)}.pay-status-btn{flex:1;border:0;background:transparent;color:#e5e7eb;padding:9px 14px;font-weight:900;font-size:12px;letter-spacing:.02em;cursor:pointer;transition:background .16s ease,color .16s ease,transform .16s ease}.pay-status-btn + .pay-status-btn{border-left:2px solid rgba(226,232,240,.78)}.pay-status-btn:hover{filter:brightness(1.06)}.pay-status-btn.active-ok{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.pay-status-btn.active-pendente{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff7f7}.pay-status-btn.is-inactive{background:#0f172a;color:#cbd5e1}.pay-status-paid{display:inline-flex;align-items:center;justify-content:center;min-width:168px;padding:9px 14px;border-radius:999px;border:2px solid rgba(59,130,246,.4);background:linear-gradient(135deg,rgba(29,78,216,.25),rgba(59,130,246,.2));color:#bfdbfe;font-size:12px;font-weight:900;letter-spacing:.04em}.pay-footer{position:sticky;bottom:12px;z-index:2;margin-top:16px;border:1px solid rgba(34,197,94,.24);border-radius:20px;background:rgba(2,6,23,.94);backdrop-filter:blur(12px);padding:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 18px 45px rgba(2,6,23,.38)}.pay-footer strong{display:block;color:#f8fafc}.pay-footer span{display:block;color:#94a3b8;font-size:12px;margin-top:3px}.btn-pay-final{border:0;border-radius:16px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;font-weight:1000;padding:14px 28px;cursor:pointer}.btn-pay-final:disabled{opacity:.45;cursor:not-allowed}.pay-note{border:1px solid rgba(59,130,246,.24);background:rgba(37,99,235,.10);border-radius:16px;padding:12px;color:#bfdbfe;font-size:13px}.fin-status.pendente{background:rgba(245,158,11,.14);color:#fde68a}.fin-status.pago{background:rgba(59,130,246,.14);color:#bfdbfe}@media(max-width:900px){.pay-filter-grid{grid-template-columns:1fr 1fr}.pay-footer{position:static;display:grid}.btn-pay-final{width:100%}}@media(max-width:620px){.pay-filter-grid{grid-template-columns:1fr}.pay-status-toggle,.pay-status-paid{min-width:138px}}.pay-search-panel{margin:14px 0;display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:10px;align-items:end}.pay-search-field{display:grid;gap:6px}.pay-search-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.pay-search-input{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0f172a;color:#e5e7eb;padding:12px 14px;color-scheme:dark}.pay-search-count{color:#94a3b8;font-size:12px;margin-top:4px}@media(max-width:620px){.pay-search-panel{grid-template-columns:1fr}}
+
+      .fin-setor-filter{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.fin-setor-btn{border:1px solid rgba(148,163,184,.22);background:#08111f;color:#cbd5e1;border-radius:999px;padding:9px 14px;font-weight:900;cursor:pointer}.fin-setor-btn.active{background:#166534;color:#fff;border-color:#22c55e}.fin-text-block{white-space:pre-wrap;line-height:1.45}.fin-pay-actions{display:flex;gap:8px;flex-wrap:wrap}.fin-pay-actions a{text-decoration:none}
     </style>
     <section class="fin-wrap">
       <div class="fin-hero">
-        <h2>Financeiro · Fluxo de Caixa</h2>
-        <p>Saldo manual do dia, contas a receber, contas a pagar e provisões consolidadas sem duplicar os relatórios importados.</p>
+        <h2>Financeiro</h2>
+        <p>Fluxo de caixa, despesas operacionais e pagamentos enviados pelos setores em um único módulo.</p>
         <div class="fin-actions-row">
           <button class="btn btn-primary" id="btnReload" type="button">Atualizar fluxo</button>
           <button class="btn btn-secondary" data-tab-target="importar" type="button">Importar relatórios</button>
           <button class="btn btn-secondary" data-tab-target="config" type="button">Ajustar saldo/provisão</button>
+          <button class="btn btn-secondary" data-tab-target="despesas" type="button">Despesas</button>
           <button class="btn btn-secondary" data-tab-target="pagamentos" type="button">Pagamentos</button>
         </div>
       </div>
@@ -919,6 +973,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
             <button class="fin-tab" data-tab="importar" type="button">Importar</button>
             <button class="fin-tab" data-tab="config" type="button">Saldo e Provisão</button>
             <button class="fin-tab" data-tab="detalhes" type="button">Detalhes</button>
+            <button class="fin-tab" data-tab="despesas" type="button">Despesas</button>
             <button class="fin-tab" data-tab="pagamentos" type="button">Pagamentos</button>
           </div>
         </div>
@@ -968,14 +1023,14 @@ initProtectedPage('Financeiro', (content, userContext) => {
         </div>
 
 
-        <div class="fin-panel" id="tab-pagamentos">
+        <div class="fin-panel" id="tab-despesas">
           <div class="fin-head">
-            <div><h3>Pagamentos</h3><p>Área única para gerar, conferir e pagar benefícios/adiantamentos sem duplicidade.</p></div>
+            <div><h3>Despesas</h3><p>Adiantamentos e pagamentos de diária/almoço ficam concentrados aqui.</p></div>
           </div>
 
           <div class="pay-mode-switch">
             <button class="pay-mode-btn active" data-pay-mode="adiantamentos" type="button">ADIANTAMENTOS</button>
-            <button class="pay-mode-btn" data-pay-mode="pagamentos" type="button">PAGAMENTOS</button>
+            <button class="pay-mode-btn" data-pay-mode="pagamentos" type="button">DIÁRIAS E ALMOÇO</button>
           </div>
 
           <section class="pay-card pay-mode-panel active" id="pay-mode-adiantamentos">
@@ -990,7 +1045,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
           </section>
 
           <section class="pay-card pay-mode-panel" id="pay-mode-pagamentos">
-            <h4>PAGAMENTOS</h4>
+            <h4>DIÁRIAS E ALMOÇO</h4>
             <p>Consulte a Produção Diária importada, gere alimentação ou diárias e marque cada linha como OK ou PENDENTE antes de pagar.</p>
             <div class="pay-filter-grid">
               <div class="fin-field"><label>Data inicial</label><input id="alimInicio" type="date" value="${esc(state.filters.inicio)}"></div>
@@ -1046,6 +1101,42 @@ initProtectedPage('Financeiro', (content, userContext) => {
             <button class="btn-pay-final" id="btnPagarBeneficios" type="button" disabled>PAGAR</button>
           </div>
         </div>
+
+        <div class="fin-panel" id="tab-pagamentos">
+          <div class="fin-head">
+            <div>
+              <h3>Pagamentos solicitados pelos setores</h3>
+              <p>Fila de despesas enviadas por Compras, Hospedagem, RH e outros módulos para o financeiro realizar o pagamento.</p>
+            </div>
+            <button class="btn btn-secondary" id="btnReloadSetorPagamentos" type="button">Atualizar pagamentos</button>
+          </div>
+
+          <div class="fin-setor-filter" id="setorPagamentoFilter">
+            <button class="fin-setor-btn active" data-setor-pay="todos" type="button">Todos</button>
+            <button class="fin-setor-btn" data-setor-pay="COMPRAS" type="button">Compras</button>
+            <button class="fin-setor-btn" data-setor-pay="HOSPEDAGEM" type="button">Hospedagem</button>
+            <button class="fin-setor-btn" data-setor-pay="RH" type="button">RH</button>
+            <button class="fin-setor-btn" data-setor-pay="OUTROS" type="button">Outros</button>
+          </div>
+
+          <div class="fin-table-wrap">
+            <table class="fin-table">
+              <thead>
+                <tr>
+                  <th>Setor</th>
+                  <th>Data/hora solicitação</th>
+                  <th>Conteúdo do pagamento</th>
+                  <th>Valor</th>
+                  <th>Status</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="setorPagamentosTbody">
+                <tr><td colspan="6" class="fin-empty">Clique em Atualizar pagamentos.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </article>
     </section>
   `;
@@ -1060,13 +1151,92 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
   function tabFromHash() {
     const tab = String(window.location.hash || '').replace(/^#/, '').toLowerCase();
-    return ['fluxo', 'importar', 'config', 'detalhes', 'pagamentos'].includes(tab) ? tab : 'fluxo';
+    return ['fluxo', 'importar', 'config', 'detalhes', 'despesas', 'pagamentos'].includes(tab) ? tab : 'fluxo';
   }
 
   function setTab(tab) {
     document.querySelectorAll('.fin-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
     document.querySelectorAll('.fin-panel').forEach((panel) => panel.classList.remove('active'));
     document.getElementById(`tab-${tab}`)?.classList.add('active');
+    if (tab === 'pagamentos') loadSetorPagamentos();
+  }
+
+
+  function filteredSetorPagamentos() {
+    const filter = state.pagamentosSetorFilter || 'todos';
+    if (filter === 'todos') return state.financeiroPagamentos || [];
+    if (filter === 'OUTROS') {
+      return (state.financeiroPagamentos || []).filter((row) => {
+        const origem = normalize(row.origem || row.setor || row.modulo_origem);
+        return !origem.includes('compra') && !origem.includes('hotel') && !origem.includes('hosped') && origem !== 'rh' && !origem.includes('recursos humanos');
+      });
+    }
+    return (state.financeiroPagamentos || []).filter((row) => {
+      const origem = normalize(row.origem || row.setor || row.modulo_origem);
+      return normalize(filter).split(' ').every((part) => origem.includes(part)) ||
+        (filter === 'HOSPEDAGEM' && (origem.includes('hotel') || origem.includes('hosped'))) ||
+        (filter === 'RH' && (origem === 'rh' || origem.includes('recursos humanos')));
+    });
+  }
+
+  function renderSetorPagamentos() {
+    const tbody = document.getElementById('setorPagamentosTbody');
+    if (!tbody) return;
+    const rows = filteredSetorPagamentos();
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="fin-empty">Nenhum pagamento localizado para o filtro selecionado.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((row) => {
+      const url = pagamentoUrl(row);
+      const status = row.status || row.situacao || 'PENDENTE';
+      return `<tr>
+        <td><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></td>
+        <td>${brDateTime(row.created_at || row.data_solicitacao || row.solicitado_em || row.data_hora || row.data)}</td>
+        <td><div class="fin-text-block">${esc(parseConteudoPagamento(row))}</div></td>
+        <td>${money(row.valor || row.valor_total || row.total)}</td>
+        <td><span class="fin-status ${statusPagamentoClass(status)}">${esc(status)}</span></td>
+        <td>
+          <div class="fin-pay-actions">
+            ${url ? `<a class="btn btn-secondary fin-small" href="${esc(url)}" target="_blank" rel="noopener">Abrir</a>` : ''}
+            <button class="btn btn-primary fin-small" data-marcar-pago="${esc(row.id)}" type="button">Pago</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-marcar-pago]').forEach((btn) => {
+      btn.addEventListener('click', () => marcarPagamentoSetorPago(btn.dataset.marcarPago));
+    });
+  }
+
+  async function loadSetorPagamentos() {
+    const tbody = document.getElementById('setorPagamentosTbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="fin-empty">Carregando pagamentos enviados pelos setores...</td></tr>';
+    const { data, error } = await supabase
+      .from('financeiro_pagamentos')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (error) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="fin-empty">${esc(error.message)}<br>Execute a migration de pagamentos do financeiro no Supabase.</td></tr>`;
+      return;
+    }
+    state.financeiroPagamentos = data || [];
+    renderSetorPagamentos();
+  }
+
+  async function marcarPagamentoSetorPago(id) {
+    if (!id) return;
+    const { error } = await supabase
+      .from('financeiro_pagamentos')
+      .update({ status: 'PAGO', pago_em: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await loadSetorPagamentos();
   }
 
   async function loadFluxo() {
@@ -1516,6 +1686,12 @@ initProtectedPage('Financeiro', (content, userContext) => {
   document.querySelectorAll('.fin-tab').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tab); if (btn.dataset.tab && btn.dataset.tab !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tab}`); }));
   document.querySelectorAll('[data-tab-target]').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tabTarget); if (btn.dataset.tabTarget && btn.dataset.tabTarget !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tabTarget}`); }));
   document.getElementById('btnReload').addEventListener('click', loadFluxo);
+  document.getElementById('btnReloadSetorPagamentos')?.addEventListener('click', loadSetorPagamentos);
+  document.querySelectorAll('[data-setor-pay]').forEach((btn) => btn.addEventListener('click', () => {
+    state.pagamentosSetorFilter = btn.dataset.setorPay || 'todos';
+    document.querySelectorAll('[data-setor-pay]').forEach((item) => item.classList.toggle('active', item === btn));
+    renderSetorPagamentos();
+  }));
   document.getElementById('btnImportReceber').addEventListener('click', () => importFile('receber'));
   document.getElementById('btnImportPagar').addEventListener('click', () => importFile('pagar'));
   document.getElementById('configForm').addEventListener('submit', saveConfig);
