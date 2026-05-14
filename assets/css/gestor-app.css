@@ -127,6 +127,9 @@ select:focus, input:focus, textarea:focus { border-color: rgba(52, 211, 153, 0.8
 .help.warn { color: var(--yellow); font-weight: 850; }
 .multi-line { display: flex; align-items: center; gap: 8px; color: var(--soft); font-size: 13px; font-weight: 850; }
 .multi-line input { width: 17px; height: 17px; accent-color: #22c55e; }
+.tomorrow-label { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: #94a3b8; cursor: pointer; user-select: none; }
+.tomorrow-label input { width: 15px; height: 15px; accent-color: #f59e0b; cursor: pointer; }
+.tomorrow-label:has(input:checked) { color: #fde68a; }
 .action-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
 .action-grid .btn { padding: 13px 6px; }
 .status-dot { display: flex; align-items: center; justify-content: center; border-radius: 16px; padding: 13px 6px; border: 2px solid rgba(148,163,184,.35); background: transparent; cursor: default; }

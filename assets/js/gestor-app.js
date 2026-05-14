@@ -33,6 +33,7 @@ const state = {
   allowMulti: new Set(),
   suggested: new Map(),
   busy: new Set(),
+  tomorrow: new Set(),
   installPrompt: null,
 };
 
@@ -548,6 +549,7 @@ function renderOsCard(os) {
         <button class="btn secondary ${os.observacao_logistica?.startsWith('KG solicitado') ? 'kg-active' : ''}" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar KG para Logística" style="color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SOMAR_KG}</button>`
         }
       </div>
+      <label class="tomorrow-label"><input type="checkbox" data-toggle-tomorrow="${escapeHtml(id)}" ${state.tomorrow.has(id) ? 'checked' : ''} /> Salvar para amanhã</label>
     </article>
   `;
 }
@@ -617,6 +619,14 @@ function bindOsEvents(scope) {
   });
   scope.querySelectorAll('[data-action-laudo]').forEach((btn) => {
     btn.addEventListener('click', () => openLaudoModal(btn.dataset.actionLaudo, btn.dataset.actionLaudoNum));
+  });
+  scope.querySelectorAll('[data-toggle-tomorrow]').forEach((input) => {
+    input.addEventListener('change', (e) => {
+      const id = e.target.closest('[data-os-id]')?.dataset.osId;
+      if (!id) return;
+      if (e.target.checked) state.tomorrow.add(id);
+      else state.tomorrow.delete(id);
+    });
   });
 }
 
@@ -753,9 +763,14 @@ async function saveOsStatus(id, status) {
     colabKeys = [...new Set(colabKeys.filter(Boolean))];
   }
 
+  const isTomorrow = state.tomorrow.has(id);
+  const configuradaEm = isTomorrow
+    ? (() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(0, 0, 0, 0); return d.toISOString(); })()
+    : new Date().toISOString();
+
   state.busy.add(id);
   os.status_gestor = status;
-  os.configurada_em = new Date().toISOString();
+  os.configurada_em = configuradaEm;
   os.observacao_logistica = null;
   os.permitir_mais_classificadores = state.allowMulti.has(id) && num(os.remanescente) >= LIMITE_MULTIPLOS;
   renderOs(document.getElementById('appMain'));
@@ -785,7 +800,7 @@ async function saveOsStatus(id, status) {
       status_gestor: status,
       observacao_logistica: null,
       permitir_mais_classificadores: os.permitir_mais_classificadores,
-      configurada_em: new Date().toISOString(),
+      configurada_em: configuradaEm,
       updated_at: new Date().toISOString(),
     }).eq('id', id);
     if (error) throw error;

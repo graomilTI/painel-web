@@ -4,8 +4,7 @@ import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
-const STATUS_CONF = ['PENDENTE', 'DISTRIBUIDA', 'AJUSTAR', 'CONCLUIDA'];
-const state = { user: null, rows: [], atrib: [], filters: { data: '', coordenacao: '', busca: '' } };
+const state = { user: null, rows: [], ajustadas: [], atrib: [], filters: { data: '', coordenacao: '', busca: '' } };
 
 function escapeHtml(value) { return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;'); }
 function normalize(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim(); }
@@ -69,7 +68,7 @@ initProtectedPage('Distribuir O.S', async (content) => {
     el.reload.addEventListener('click', loadAll);
     el.pick.addEventListener('click', () => el.file.click());
     el.file.addEventListener('change', importFile);
-    el.list.addEventListener('change', onListChange);
+    el.list.addEventListener('click', onListClick);
   }
 
   async function loadAll() {
@@ -80,14 +79,16 @@ initProtectedPage('Distribuir O.S', async (content) => {
       .eq('status_gestor', 'ATENDER')
       .limit(3000);
     if (error) { el.feedback.textContent = error.message || 'Falha ao consultar operacional_os.'; return; }
-    state.rows = safe(data).sort((a, b) => String(b.data_os || '').localeCompare(String(a.data_os || '')) || num(b.numero_os) - num(a.numero_os));
+    const all = safe(data).sort((a, b) => String(b.configurada_em || b.data_os || '').localeCompare(String(a.configurada_em || a.data_os || '')) || num(b.numero_os) - num(a.numero_os));
+    state.rows = all.filter(r => r.status_conferencia !== 'AJUSTADA');
+    state.ajustadas = all.filter(r => r.status_conferencia === 'AJUSTADA');
     const ids = state.rows.map(r => r.id).filter(Boolean);
     if (ids.length) {
       const atr = await supabase.from('operacional_os_colaboradores').select('*').in('os_id', ids);
       if (atr.error) { console.warn('Falha ao carregar colaboradores indicados.', atr.error); state.atrib = []; }
       else state.atrib = safe(atr.data);
     } else state.atrib = [];
-    fillCoords(); render(); el.feedback.textContent = `Carregado: ${state.rows.length} O.S. para atender · ${state.atrib.length} indicação(ões).`;
+    fillCoords(); render(); el.feedback.textContent = `Carregado: ${state.rows.length} pendente(s) · ${state.ajustadas.length} ajustada(s) · ${state.atrib.length} indicação(ões).`;
   }
 
   function fillCoords() {
@@ -98,25 +99,26 @@ initProtectedPage('Distribuir O.S', async (content) => {
   }
 
   function atrib(osId) { return state.atrib.filter(a => String(a.os_id) === String(osId)); }
-  function groupRows() {
+  function groupRows(rows = state.rows) {
     const map = new Map();
     const dataFiltro = state.filters.data;
     const coordFiltro = normalize(state.filters.coordenacao);
     const busca = normalize(state.filters.busca);
-    for (const row of state.rows) {
-      if (dataFiltro && dateKey(row.data_os) !== dataFiltro) continue;
+    for (const row of rows) {
+      const confirmedDate = dateKey(row.configurada_em || row.data_os);
+      if (dataFiltro && confirmedDate !== dataFiltro) continue;
       const coord = coordOf(row);
       if (coordFiltro && normalize(coord) !== coordFiltro) continue;
       const vinculados = atrib(row.id);
       for (const a of vinculados) {
         const nome = a.colaborador_nome || 'Sem nome';
-        const key = `${dateKey(row.data_os)}|${normalize(nome)}|${normalize(coord)}`;
-        if (!map.has(key)) map.set(key, { data: dateKey(row.data_os), colaborador: nome, colaborador_key: a.colaborador_key, coordenacao: coord, os: [] });
+        const key = `${confirmedDate}|${normalize(nome)}|${normalize(coord)}`;
+        if (!map.has(key)) map.set(key, { data: confirmedDate, colaborador: nome, colaborador_key: a.colaborador_key, coordenacao: coord, os: [] });
         map.get(key).os.push({ ...row, distancia_km: a.distancia_km, atribuicao_id: a.id });
       }
     }
     let groups = [...map.values()];
-    if (busca) groups = groups.filter(g => normalize(`${g.data} ${g.colaborador} ${g.coordenacao} ${g.os.map(o => `${o.numero_os} ${o.cliente} ${o.embarque} ${o.destino}`).join(' ')}`).includes(busca));
+    if (busca) groups = groups.filter(g => normalize(`${g.data} ${g.colaborador} ${g.coordenacao} ${g.os.map(o => o.numero_os).join(' ')}`).includes(busca));
     return groups.sort((a,b) => String(a.data).localeCompare(String(b.data)) || String(a.coordenacao).localeCompare(String(b.coordenacao), 'pt-BR') || String(a.colaborador).localeCompare(String(b.colaborador), 'pt-BR'));
   }
   function rowsWithoutColab() { return state.rows.filter(r => !atrib(r.id).length); }
@@ -130,33 +132,51 @@ initProtectedPage('Distribuir O.S', async (content) => {
 
   function render() {
     const groups = groupRows(); renderStats(groups);
-    if (!groups.length) { el.list.innerHTML = '<div class="dist-empty">Nenhuma distribuição encontrada para o filtro atual.</div>'; return; }
-    el.list.innerHTML = `<div class="dist-table-wrap"><table class="dist-table"><colgroup><col class="dist-col-data"><col class="dist-col-colab"><col class="dist-col-os"><col class="dist-col-coord"><col class="dist-col-ajuste"></colgroup><thead><tr><th>Data</th><th>Nome do colaborador</th><th>O.S.</th><th>Coordenação</th><th>Ajuste</th></tr></thead><tbody>${groups.map(groupHtml).join('')}</tbody></table></div>`;
+    if (!groups.length) { el.list.innerHTML = '<div class="dist-empty">Nenhuma distribuição pendente.</div>'; }
+    else el.list.innerHTML = `<div class="dist-table-wrap"><table class="dist-table"><colgroup><col class="dist-col-data"><col class="dist-col-colab"><col class="dist-col-os"><col class="dist-col-coord"><col class="dist-col-ajuste"></colgroup><thead><tr><th>Data</th><th>Nome do colaborador</th><th>O.S.</th><th>Coordenação</th><th>Ajuste</th></tr></thead><tbody>${groups.map(groupHtml).join('')}</tbody></table></div>`;
+    renderAjustadas();
+  }
+
+  function renderAjustadas() {
+    let el2 = document.getElementById('distAjustadasSection');
+    if (!el2) {
+      el2 = document.createElement('section');
+      el2.id = 'distAjustadasSection';
+      el2.className = 'card mt-16';
+      el.list.parentElement.after(el2);
+    }
+    const groups = groupRows(state.ajustadas);
+    el2.innerHTML = `<div class="section-head"><div><h3>Ajustadas</h3><p class="muted">${state.ajustadas.length} O.S. concluídas nesta sessão.</p></div></div>` +
+      (!groups.length
+        ? '<div class="dist-empty">Nenhuma O.S. ajustada ainda.</div>'
+        : `<div class="dist-table-wrap"><table class="dist-table"><colgroup><col class="dist-col-data"><col class="dist-col-colab"><col class="dist-col-os"><col class="dist-col-coord"><col style="width:10%"></colgroup><thead><tr><th>Data</th><th>Colaborador</th><th>O.S.</th><th>Coordenação</th><th>Status</th></tr></thead><tbody>${groups.map(g => `<tr><td><div class="dist-title">${brDate(g.data)}</div></td><td><div class="dist-title">${escapeHtml(g.colaborador)}</div></td><td><div class="dist-title">${g.os.map(o => escapeHtml(o.numero_os)).join(' - ')}</div></td><td><span class="dist-chip info">${escapeHtml(g.coordenacao)}</span></td><td><span class="dist-chip ok">Ajustada</span></td></tr>`).join('')}</tbody></table></div>`);
   }
 
   function groupHtml(group) {
-    const statusBase = group.os[0]?.status_conferencia || 'PENDENTE';
-    return `<tr data-group="${escapeHtml(`${group.data}|${group.colaborador_key}|${group.coordenacao}`)}" data-ids="${escapeHtml(group.os.map(o => o.id).join(','))}"><td><div class="dist-title">${brDate(group.data)}</div></td><td><div class="dist-title">${escapeHtml(group.colaborador)}</div><div class="dist-meta">${group.os.length} O.S. vinculada(s)</div></td><td><div class="dist-os-list">${group.os.map(osCard).join('')}</div></td><td><span class="dist-chip info">${escapeHtml(group.coordenacao)}</span></td><td><div class="dist-actions"><select class="dist-input" data-field="status_conferencia">${STATUS_CONF.map(s => `<option value="${s}" ${normalize(statusBase) === s ? 'selected' : ''}>${s}</option>`).join('')}</select><input class="dist-input" data-field="observacao_conferencia" placeholder="Observação" /></div></td></tr>`;
-  }
-  function osCard(row) {
-    const zero = num(row.remanescente) === 0;
-    return `<div class="dist-os-card ${zero ? 'dist-zero' : ''}"><div><span class="dist-chip ${zero ? 'warn' : 'ok'}">${escapeHtml(row.numero_os)}</span> <strong>${escapeHtml(row.cliente || '-')}</strong></div><div class="dist-meta">Emb.: ${escapeHtml(row.embarque || '-')}</div><div class="dist-meta">Dest.: ${escapeHtml(row.destino || '-')}</div><div class="dist-meta">Rem.: ${fmt(row.remanescente)} · Lote ${fmt(row.lote)} · Emb. ${fmt(row.embarcado)}${row.distancia_km ? ` · ${Number(row.distancia_km).toFixed(1).replace('.', ',')} km` : ''}</div></div>`;
+    const ids = group.os.map(o => o.id).join(',');
+    const numeros = group.os.map(o => escapeHtml(o.numero_os)).join(' - ');
+    return `<tr data-group="${escapeHtml(`${group.data}|${group.colaborador_key}|${group.coordenacao}`)}" data-ids="${escapeHtml(ids)}">
+      <td><div class="dist-title">${brDate(group.data)}</div></td>
+      <td><div class="dist-title">${escapeHtml(group.colaborador)}</div><div class="dist-meta">${group.os.length} O.S. vinculada(s)</div></td>
+      <td><div class="dist-title" style="letter-spacing:.03em">${numeros}</div></td>
+      <td><span class="dist-chip info">${escapeHtml(group.coordenacao)}</span></td>
+      <td><button class="btn btn-primary dist-btn-ajustada" data-ajustar-ids="${escapeHtml(ids)}" type="button">Ajustada</button></td>
+    </tr>`;
   }
 
-  async function onListChange(event) {
-    const tr = event.target.closest('[data-ids]'); if (!tr) return;
-    const ids = tr.dataset.ids.split(',').filter(Boolean);
-    const status = tr.querySelector('[data-field="status_conferencia"]')?.value || 'PENDENTE';
-    const obs = tr.querySelector('[data-field="observacao_conferencia"]')?.value || null;
-    const payload = { status_conferencia: status, observacao_conferencia: obs, conferido_por: state.user?.id || null, conferido_em: new Date().toISOString(), updated_at: new Date().toISOString() };
-    const previous = state.rows.filter(r => ids.includes(String(r.id))).map(r => ({ id: r.id, status_conferencia: r.status_conferencia, observacao_conferencia: r.observacao_conferencia }));
-    state.rows.forEach(r => { if (ids.includes(String(r.id))) Object.assign(r, payload); });
+  function onListClick(event) {
+    const btn = event.target.closest('[data-ajustar-ids]');
+    if (!btn) return;
+    const ids = btn.dataset.ajustarIds.split(',').filter(Boolean);
+    btn.disabled = true;
+    btn.textContent = '...';
+    const now = new Date().toISOString();
+    const moved = state.rows.filter(r => ids.includes(String(r.id)));
+    moved.forEach(r => { r.status_conferencia = 'AJUSTADA'; });
+    state.rows = state.rows.filter(r => !ids.includes(String(r.id)));
+    state.ajustadas.push(...moved);
     render();
-    const { error } = await supabase.from('operacional_os').update(payload).in('id', ids);
-    if (error) {
-      previous.forEach(prev => { const row = state.rows.find(r => String(r.id) === String(prev.id)); if (row) Object.assign(row, prev); });
-      render(); alert(error.message);
-    }
+    supabase.from('operacional_os').update({ status_conferencia: 'AJUSTADA', conferido_por: state.user?.id || null, conferido_em: now, updated_at: now }).in('id', ids);
   }
 
   async function importFile() {
