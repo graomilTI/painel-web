@@ -8,9 +8,10 @@ const CACHE_KEY = 'grao1000:gestor-app:v1';
 const CACHE_TTL = 1000 * 60 * 7;
 const LIMITE_MULTIPLOS = 500000;
 const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
-const ICO_AGUARDAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="8" y1="5" x2="8" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>`;
-const ICO_ATENDER  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+const ICO_AGUARDAR  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="8" y1="5" x2="8" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>`;
+const ICO_ATENDER   = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 const ICO_FINALIZAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`;
+const ICO_SOMAR_KG  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
 
 const app = document.getElementById('app');
 
@@ -539,6 +540,7 @@ function renderOsCard(os) {
         <button class="btn ${status === 'AGUARDAR' ? 'warn' : 'secondary'}" data-action="AGUARDAR" type="button" title="Aguardar">${ICO_AGUARDAR}</button>
         <button class="btn ${status === 'ATENDER' ? '' : 'secondary'}" data-action="ATENDER" type="button" title="Atender">${ICO_ATENDER}</button>
         <button class="btn ${status === 'FINALIZAR' ? '' : 'secondary'}" data-action="FINALIZAR" type="button" title="Finalizar">${ICO_FINALIZAR}</button>
+        <button class="btn secondary" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar KG para Logística" style="color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SOMAR_KG}</button>
       </div>
     </article>
   `;
@@ -603,6 +605,49 @@ function bindOsEvents(scope) {
       if (!id || !status) return;
       await saveOsStatus(id, status);
     });
+  });
+  scope.querySelectorAll('[data-action-kg]').forEach((btn) => {
+    btn.addEventListener('click', () => openKgModal(btn.dataset.actionKg, btn.dataset.actionKgNum));
+  });
+}
+
+function openKgModal(recordId, osNumero) {
+  const existing = document.getElementById('kg-modal-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'kg-modal-overlay';
+  overlay.className = 'kg-overlay';
+  overlay.innerHTML = `
+    <div class="kg-modal">
+      <h3>Qual o valor precisa somar na O.S?</h3>
+      <p style="margin:0;font-size:12px;color:#94a3b8">O.S. <strong style="color:#bbf7d0">${escapeHtml(osNumero)}</strong> — valor será enviado para a Logística.</p>
+      <input id="kgInput" type="number" min="1" placeholder="Inserir KG" inputmode="numeric" />
+      <div class="kg-modal-actions">
+        <button class="kg-btn-cancel" id="kgCancelar">Cancelar</button>
+        <button class="kg-btn-confirm" id="kgConfirmar">Confirmar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector('#kgInput');
+  input.focus();
+  overlay.querySelector('#kgCancelar').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#kgConfirmar').addEventListener('click', async () => {
+    const kg = Number(input.value);
+    if (!kg || kg <= 0) { input.focus(); return; }
+    const btn = overlay.querySelector('#kgConfirmar');
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+    const { error } = await supabase.from('operacional_os').update({
+      observacao_logistica: `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`,
+      updated_at: new Date().toISOString(),
+    }).eq('id', recordId);
+    if (error) { btn.disabled = false; btn.textContent = 'Confirmar'; showToast(error.message, 'error'); return; }
+    const row = state.os.find((o) => osId(o) === recordId);
+    if (row) row.observacao_logistica = `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`;
+    overlay.remove();
+    showToast('Solicitação enviada para a Logística.', 'success');
   });
 }
 

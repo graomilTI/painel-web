@@ -5,9 +5,10 @@ import { getCurrentUser, getUserContext } from './auth.js';
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const STATUS_OPTIONS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
-const ICO_AGUARDAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="8" y1="5" x2="8" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>`;
-const ICO_ATENDER  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+const ICO_AGUARDAR  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="8" y1="5" x2="8" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>`;
+const ICO_ATENDER   = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 const ICO_FINALIZAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`;
+const ICO_SOMAR_KG  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
 const LIMITE_UM_CLASSIFICADOR = 555000;
 const LIMITE_COMPARTILHAR = 300000;
 const LIMITE_BLOQUEIO_COMPARTILHAMENTO = 500000;
@@ -239,6 +240,8 @@ function injectStyles() {
     .os-col-num{width:9.5%}.os-col-cliente{width:40%}.os-col-rem{width:12.5%}.os-col-ind{width:27%}.os-col-acao{width:11%}
     .os-table tr:hover td{background:rgba(22,101,52,.1)}.os-title{font-weight:850;color:#f8fafc;font-size:13.5px;line-height:1.18}.os-num{font-size:13.5px;font-weight:950}.os-meta{font-size:11px;color:#94a3b8;margin-top:3px;line-height:1.25}.os-client-main{max-width:100%;font-size:13.5px;line-height:1.16}.os-route-line{display:block;white-space:normal;overflow-wrap:anywhere}.os-actions{display:flex;gap:6px;flex-wrap:wrap}.os-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.72);color:#dcfce7;border-radius:999px;padding:7px 10px;font-weight:900;cursor:pointer;font-size:12px}.os-btn.active{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.os-btn.warn.active{background:#fde68a;color:#713f12}.os-btn.danger.active{background:#fecaca;color:#7f1d1d}.os-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.os-chip.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.os-chip.warn{background:rgba(250,204,21,.14);color:#fde68a}.os-chip.info{background:rgba(59,130,246,.13);color:#bfdbfe}.os-chip.danger{background:rgba(239,68,68,.12);color:#fecaca}.os-zero{box-shadow:inset 4px 0 0 #facc15}.os-indbox{display:flex;gap:8px;align-items:flex-start;flex-direction:column}.os-select{width:100%;min-height:38px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0f172a;color:#e5e7eb;color-scheme:dark;padding:8px;font-size:12px}.os-mini{font-size:11px;color:#a7f3d0;line-height:1.25}.os-warn-text{font-size:11px;color:#fde68a;margin-top:6px;line-height:1.25}.os-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#94a3b8;background:rgba(15,23,42,.16)}
     .os-rem-box{display:flex;flex-direction:column;gap:3px;align-items:flex-start}.os-rem-box .os-meta{margin-top:0}.os-extra-box{width:100%;margin-top:6px;padding-top:7px;border-top:1px solid rgba(52,211,153,.16);display:flex;flex-direction:column;gap:6px}.os-status-dot{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:7px 10px;border:1px solid rgba(148,163,184,.2);cursor:default;background:transparent}.os-dot{width:12px;height:12px;border-radius:50%;background:rgba(148,163,184,.25)}.os-status-dot.is-active .os-dot{background:#94a3b8;box-shadow:0 0 0 3px rgba(148,163,184,.2)}
+    .os-btn-kg{border-color:rgba(99,179,237,.35);color:#90cdf4}.os-btn-kg:hover{background:rgba(59,130,246,.15)}
+    .kg-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:9999}.kg-modal{background:#0f172a;border:1px solid rgba(52,211,153,.22);border-radius:20px;padding:28px 24px;width:100%;max-width:380px;display:flex;flex-direction:column;gap:16px}.kg-modal h3{margin:0;color:#f8fafc;font-size:16px;font-weight:950}.kg-modal input{width:100%;box-sizing:border-box;min-height:44px;border-radius:12px;border:1px solid rgba(52,211,153,.25);background:#020617;color:#e5e7eb;color-scheme:dark;padding:10px 14px;font-size:15px}.kg-modal input:focus{outline:none;border-color:#34d399}.kg-modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.kg-modal-actions button{min-height:44px;border-radius:12px;font-weight:950;cursor:pointer;border:0;font-size:14px}.kg-btn-confirm{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.kg-btn-cancel{background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2)!important;color:#e5e7eb}
     @media(max-width:900px){.os-grid{grid-template-columns:1fr}.os-grid .field-span-2{grid-column:span 1}}
   `;
   document.head.appendChild(style);
@@ -584,7 +587,7 @@ initProtectedPage('OS', async (content) => {
           ${extraSelectHtml}
         </div>
       </td>
-      <td><div class="os-actions"><div class="os-status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="os-dot"></span></div>${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}" title="${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}">${opt === 'AGUARDAR' ? ICO_AGUARDAR : opt === 'ATENDER' ? ICO_ATENDER : ICO_FINALIZAR}</button>`).join('')}</div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
+      <td><div class="os-actions"><div class="os-status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="os-dot"></span></div>${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}" title="${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}">${opt === 'AGUARDAR' ? ICO_AGUARDAR : opt === 'ATENDER' ? ICO_ATENDER : ICO_FINALIZAR}</button>`).join('')}<button class="os-btn os-btn-kg" data-kg-id="${escapeHtml(String(row.id))}" data-kg-num="${escapeHtml(row.numero_os)}" title="Solicitar KG para Logística">${ICO_SOMAR_KG}</button></div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
     </tr>`;
   }
 
@@ -647,6 +650,52 @@ initProtectedPage('OS', async (content) => {
       if (error) return alert(error.message);
       await loadOs(); render();
     }
+
+    const kgBtn = event.target.closest('[data-kg-id]');
+    if (kgBtn) openKgModal(kgBtn.dataset.kgId, kgBtn.dataset.kgNum);
+  }
+
+  function openKgModal(osId, osNumero) {
+    const existing = document.getElementById('kg-modal-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'kg-modal-overlay';
+    overlay.className = 'kg-overlay';
+    overlay.innerHTML = `
+      <div class="kg-modal">
+        <h3>Qual o valor precisa somar na O.S?</h3>
+        <p style="margin:0;font-size:12px;color:#94a3b8">O.S. <strong style="color:#bbf7d0">${escapeHtml(osNumero)}</strong> — valor será enviado para a Logística.</p>
+        <input id="kgInput" type="number" min="1" placeholder="Inserir KG" inputmode="numeric" />
+        <div class="kg-modal-actions">
+          <button class="kg-btn-cancel" id="kgCancelar">Cancelar</button>
+          <button class="kg-btn-confirm" id="kgConfirmar">Confirmar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector('#kgInput');
+    input.focus();
+
+    overlay.querySelector('#kgCancelar').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    overlay.querySelector('#kgConfirmar').addEventListener('click', async () => {
+      const kg = Number(input.value);
+      if (!kg || kg <= 0) { input.focus(); return; }
+      const btn = overlay.querySelector('#kgConfirmar');
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+      const { error } = await supabase.from('operacional_os').update({
+        observacao_logistica: `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`,
+        updated_at: new Date().toISOString(),
+      }).eq('id', osId);
+      if (error) { btn.disabled = false; btn.textContent = 'Confirmar'; alert(error.message); return; }
+      const row = state.os.find((o) => String(o.id) === String(osId));
+      if (row) row.observacao_logistica = `KG solicitado pelo gestor: ${new Intl.NumberFormat('pt-BR').format(kg)} kg`;
+      overlay.remove();
+    });
   }
 
   async function garantirColaboradorAntesDeAtender(row) {
