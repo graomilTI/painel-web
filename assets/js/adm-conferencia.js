@@ -869,6 +869,7 @@ function renderUberTable() {
         </div>
         <div class="conf-uber-actions">
           <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar API</button>
+          <label class="conf-btn" for="uber-csv-import-empty">Importar CSV Uber<input id="uber-csv-import-empty" data-uber-csv-import="1" type="file" accept=".csv,text/csv" hidden></label>
           <button class="conf-btn" data-uber-geocode-pending="1" type="button" disabled>Converter GPS pendentes</button>
         </div>
       </div>
@@ -883,6 +884,7 @@ function renderUberTable() {
       </div>
       <div class="conf-uber-actions">
         <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar API</button>
+        <label class="conf-btn" for="uber-csv-import">Importar CSV Uber<input id="uber-csv-import" data-uber-csv-import="1" type="file" accept=".csv,text/csv" hidden></label>
         <button class="conf-btn" data-uber-geocode-pending="1" type="button" ${pendingGps ? '' : 'disabled'}>Converter GPS pendentes</button>
       </div>
     </div>
@@ -1169,6 +1171,161 @@ async function loadUber() {
   state.uber = data || [];
 }
 
+
+function parseDelimitedLine(line, delimiter = ';') {
+  const values = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char === delimiter && !inQuotes) {
+      values.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  values.push(current);
+  return values.map((value) => String(value || '').trim());
+}
+
+function parseUberCsvText(text) {
+  const normalized = String(text || '').replace(/^\ufeff/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n').filter((line) => line.trim() !== '');
+  const headerIndex = lines.findIndex((line) => /^Data da solicitação/i.test(line.trim()));
+  if (headerIndex < 0) throw new Error('Cabeçalho do CSV Uber não localizado. O arquivo precisa conter a seção Transações.');
+
+  const headers = parseDelimitedLine(lines[headerIndex]).map((h) => h.trim());
+  const rows = [];
+  for (const line of lines.slice(headerIndex + 1)) {
+    const cols = parseDelimitedLine(line);
+    if (!cols.some(Boolean)) continue;
+    const obj = {};
+    headers.forEach((header, index) => { obj[header] = cols[index] ?? ''; });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function uberCsvDateToISO(value) {
+  const raw = String(value || '').trim();
+  const mdy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdy) {
+    const [, month, day, year] = mdy;
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  const dmy = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dmy) {
+    const [, day, month, year] = dmy;
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? todayISO() : date.toISOString().slice(0, 10);
+}
+
+function normalizeUberTime(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const match12 = raw.match(/^(\d{1,2}):(\d{2})\s*([AP]M)$/i);
+  if (match12) {
+    let hour = Number(match12[1]);
+    const minute = match12[2];
+    const suffix = match12[3].toUpperCase();
+    if (suffix === 'PM' && hour < 12) hour += 12;
+    if (suffix === 'AM' && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, '0')}:${minute}:00`;
+  }
+  const match24 = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (match24) return `${String(match24[1]).padStart(2, '0')}:${match24[2]}:${match24[3] || '00'}`;
+  return raw.slice(0, 20);
+}
+
+function makeUberImportHash(row) {
+  return [
+    row.data_solicitacao_local,
+    row.hora_solicitacao_local,
+    row.nome_colaborador,
+    row.servico,
+    row.endereco_partida,
+    row.endereco_destino,
+    row.valor,
+  ].map((v) => String(v ?? '').trim().toUpperCase()).join('|');
+}
+
+function mapUberCsvRow(row, fileName = '') {
+  const nome = String(row.Nome || '').trim();
+  const sobrenome = String(row.Sobrenome || '').trim();
+  const data = uberCsvDateToISO(row['Data da solicitação (UTC)']);
+  const hora = normalizeUberTime(row['Hora da solicitação (UTC)']);
+  const valor = asNumber(row['Valor total: BRL']);
+  const payload = {
+    external_id: null,
+    import_hash: null,
+    data_solicitacao_local: data,
+    hora_solicitacao_local: hora,
+    hora_solicitacao_utc: hora,
+    nome_colaborador: [nome, sobrenome].filter(Boolean).join(' ').trim(),
+    nome,
+    regional: row.Cidade || null,
+    supervisao: row.Cidade || null,
+    servico: row.Serviço || null,
+    grupo: row.Serviço || null,
+    categoria: 'UBER_EMPRESAS',
+    endereco_partida: row['Endereço de partida'] || null,
+    endereco_destino: row['Endereço de destino'] || null,
+    valor,
+    preco_liquido: valor,
+    detalhamento_despesa: row['Detalhamento da despesa'] || null,
+    observacao: row['Detalhamento da despesa'] || null,
+    status_validacao: /pessoal/i.test(String(row['Detalhamento da despesa'] || '')) ? 'ATENCAO' : 'PENDENTE',
+    origem: 'SFTP_CSV',
+    raw: { ...row, arquivo_origem: fileName, conta_sftp: 'a3f32dd9' },
+    updated_at: new Date().toISOString(),
+  };
+  payload.import_hash = makeUberImportHash(payload);
+  return payload;
+}
+
+async function importUberCsvFile(file) {
+  if (!file) return;
+  setFeedback(`Lendo CSV Uber: ${file.name}...`);
+  try {
+    const text = await file.text();
+    const rawRows = parseUberCsvText(text);
+    const rows = rawRows.map((row) => mapUberCsvRow(row, file.name)).filter((row) => row.import_hash && row.nome_colaborador);
+    if (!rows.length) throw new Error('Nenhuma transação válida localizada no CSV Uber.');
+
+    const chunkSize = 400;
+    let saved = 0;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      const { error } = await supabase
+        .from('conferencia_uber_corridas')
+        .upsert(chunk, { onConflict: 'import_hash' });
+      if (error) throw error;
+      saved += chunk.length;
+      setFeedback(`Importando CSV Uber: ${saved}/${rows.length} corrida(s)...`);
+    }
+
+    await loadUber();
+    renderActiveTab();
+    setFeedback(`CSV Uber importado. ${saved} corrida(s) inseridas/atualizadas.`);
+  } catch (error) {
+    console.error('[Conferência Uber] importação CSV:', error);
+    setFeedback(`Falha ao importar CSV Uber. Detalhe: ${error.message || 'erro desconhecido'}`, true);
+  }
+}
+
 async function syncUberApi() {
   if (state.loading) return;
 
@@ -1376,6 +1533,14 @@ function bindEvents() {
       state.tab = btn.dataset.tab;
       renderActiveTab();
     });
+  });
+
+  document.getElementById('conf-table')?.addEventListener('change', (event) => {
+    const input = event.target.closest('[data-uber-csv-import]');
+    if (!input) return;
+    const file = input.files && input.files[0];
+    input.value = '';
+    importUberCsvFile(file);
   });
 
   document.getElementById('conf-table')?.addEventListener('click', (event) => {
