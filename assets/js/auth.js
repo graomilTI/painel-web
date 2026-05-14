@@ -6,7 +6,11 @@ export async function signInWithPassword(email, password) {
   return data;
 }
 
+const CTX_CACHE_KEY = 'grao1000:user-ctx:v1';
+const CTX_CACHE_TTL = 1000 * 60 * 5;
+
 export async function signOut() {
+  try { sessionStorage.removeItem(CTX_CACHE_KEY); } catch {}
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }
@@ -154,11 +158,21 @@ function ensureContextShape(context) {
 }
 
 export async function getUserContext(_userId) {
+  try {
+    const cached = sessionStorage.getItem(CTX_CACHE_KEY);
+    if (cached) {
+      const { ts, raw } = JSON.parse(cached);
+      if (Date.now() - ts < CTX_CACHE_TTL) return ensureContextShape(raw);
+    }
+  } catch {}
+
   const { data, error } = await supabase.rpc('rpc_get_user_context');
   if (error) throw error;
 
-  const context = normalizeContextPayload(data);
-  return ensureContextShape(context);
+  const raw = normalizeContextPayload(data);
+  try { sessionStorage.setItem(CTX_CACHE_KEY, JSON.stringify({ ts: Date.now(), raw })); } catch {}
+
+  return ensureContextShape(raw);
 }
 
 export function onAuthStateChange(callback) {

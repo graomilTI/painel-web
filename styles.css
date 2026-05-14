@@ -1588,6 +1588,19 @@ body {
   transition: all .22s ease;
 }
 
+/* ── Boot: esconde layout até estar pronto, evita flash ── */
+html:not(.is-route-ready) .app-shell {
+  visibility: hidden;
+}
+html.is-route-ready .app-shell {
+  visibility: visible;
+  animation: routeFadeIn .18s ease;
+}
+@keyframes routeFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .sidebar-toggle-btn {
   width: 44px;
   height: 44px;
