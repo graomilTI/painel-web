@@ -477,6 +477,28 @@ function renderMais(main) {
   `;
 }
 
+function isOsAjustada(os) {
+  const st = String(os.status_gestor || '').toUpperCase();
+  return st === 'ATENDER' || st === 'FINALIZAR' || String(os.observacao_logistica || '').startsWith('KG solicitado');
+}
+
+function renderOsList(rows) {
+  if (!rows.length) return '<section class="os-list" id="osList"><div class="empty">Nenhuma O.S. encontrada para o filtro atual.</div></section>';
+  const pendentes = rows.filter((o) => !isOsAjustada(o));
+  const ajustadas = rows.filter((o) => isOsAjustada(o));
+  return `
+    <section class="os-list" id="osList">
+      ${pendentes.length ? pendentes.map(renderOsCard).join('') : '<div class="empty">Todas as O.S. do filtro foram ajustadas.</div>'}
+      ${ajustadas.length ? `
+        <div class="os-ajustadas-divider">
+          <span>AJUSTADAS (${ajustadas.length})</span>
+        </div>
+        ${ajustadas.map(renderOsCard).join('')}
+      ` : ''}
+    </section>
+  `;
+}
+
 function renderOs(main) {
   const supervisoes = [...new Set(state.os.map((o) => o.supervisao).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const rows = filteredOs();
@@ -493,7 +515,7 @@ function renderOs(main) {
         <div class="stat"><b>${rows.filter((o) => String(o.status_gestor || '').toUpperCase() === 'ATENDER').length}</b><span>Para Conferência</span></div>
       </div>
     </section>
-    <section class="os-list" id="osList">${rows.length ? rows.map(renderOsCard).join('') : '<div class="empty">Nenhuma O.S. encontrada para o filtro atual.</div>'}</section>
+    ${renderOsList(rows)}
   `;
   main.querySelector('#filterSupervisao')?.addEventListener('change', (e) => { state.filters.supervisao = e.target.value; renderOs(main); });
   main.querySelector('#filterStatus')?.addEventListener('change', (e) => { state.filters.status = e.target.value; renderOs(main); });
