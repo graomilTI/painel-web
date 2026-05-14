@@ -38,16 +38,61 @@ function buildMessage(ctx, tipo, itens){
   const nome=solicitanteNome(ctx); const data=brDate(document.getElementById('cmpData').value); const linhas=itens.map(i=>`• ${i.unidade||i.quantidade||1} un | ${i.material}${i.tamanho?` | Tam: ${i.tamanho}`:''}${i.colaborador_nome?` | ${i.colaborador_nome}`:''}`).join('\n');
   return `Nova solicitação de compras\nGestor: ${nome}\nData: ${data}\nTipo: ${tipo}\n\n${linhas}`;
 }
-function itemRow(){
-  const opts=CATALOGO.map(i=>`<option value="${esc(i.material)}">${esc(i.material)}</option>`).join('');
-  return `<tr data-row><td><input class="cmp-un" type="number" min="1" value="1"></td><td><select class="cmp-item"><option value="">Selecione...</option>${opts}</select></td><td><input class="cmp-tipo" readonly></td><td><input class="cmp-tam" placeholder="Tamanho / abertura" disabled></td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`;
+function currentItemForm(){
+  const material=document.getElementById('cmpNovoItem')?.value || '';
+  const found=CATALOGO.find(i=>i.material===material);
+  return {
+    unidade:Number(document.getElementById('cmpNovaUn')?.value||1),
+    material,
+    tipo:found?.tipo || document.getElementById('cmpNovoTipo')?.value || '',
+    tamanho:(document.getElementById('cmpNovoTam')?.value||'').trim() || null,
+    quantidade:Number(document.getElementById('cmpNovaUn')?.value||1)
+  };
 }
-function renderItemRows(){ document.getElementById('cmpItemBody').insertAdjacentHTML('beforeend', itemRow()); bindItemRows(); }
-function bindItemRows(){
-  document.querySelectorAll('[data-row]').forEach(tr=>{
-    const sel=tr.querySelector('.cmp-item'); const tipo=tr.querySelector('.cmp-tipo'); const tam=tr.querySelector('.cmp-tam');
-    sel.onchange=()=>{ const found=CATALOGO.find(i=>i.material===sel.value); tipo.value=found?.tipo||''; const needs=['BOTINA','PENEIRA INDIVIDUAL'].includes(sel.value); tam.disabled=!needs; tam.placeholder=sel.value==='BOTINA'?'Tamanho da botina':(sel.value==='PENEIRA INDIVIDUAL'?'Abertura/tamanho da peneira':'Tamanho'); if(!needs) tam.value=''; };
-    tr.querySelector('[data-del-item]').onclick=()=>{ if(document.querySelectorAll('[data-row]').length>1) tr.remove(); };
+function itemSelectOptions(){
+  return CATALOGO.map(i=>`<option value="${esc(i.material)}">${esc(i.material)}</option>`).join('');
+}
+function resetItemForm(){
+  document.getElementById('cmpNovaUn').value = 1;
+  document.getElementById('cmpNovoItem').value = '';
+  document.getElementById('cmpNovoTipo').value = '';
+  const tam=document.getElementById('cmpNovoTam');
+  tam.value=''; tam.disabled=true; tam.placeholder='Selecione Botina ou Peneira Individual';
+}
+function bindItemForm(){
+  const sel=document.getElementById('cmpNovoItem');
+  const tipo=document.getElementById('cmpNovoTipo');
+  const tam=document.getElementById('cmpNovoTam');
+  sel.onchange=()=>{
+    const found=CATALOGO.find(i=>i.material===sel.value);
+    tipo.value=found?.tipo||'';
+    const needs=['BOTINA','PENEIRA INDIVIDUAL'].includes(sel.value);
+    tam.disabled=!needs;
+    tam.placeholder=sel.value==='BOTINA'?'Tamanho da botina':(sel.value==='PENEIRA INDIVIDUAL'?'Abertura/tamanho da peneira':'Selecione Botina ou Peneira Individual');
+    if(!needs) tam.value='';
+  };
+  document.getElementById('cmpAddMaterial').onclick=()=>{
+    const item=currentItemForm();
+    if(!item.material){ setMsg('cmpFeedback','Selecione um material antes de adicionar na lista.',true); return; }
+    if(['BOTINA','PENEIRA INDIVIDUAL'].includes(item.material) && !item.tamanho){ setMsg('cmpFeedback','Informe o tamanho/detalhe antes de adicionar na lista.',true); return; }
+    state.itens.push({...item, _id:`${Date.now()}_${Math.random().toString(16).slice(2)}`});
+    resetItemForm();
+    renderItensList();
+    setMsg('cmpFeedback','Material adicionado na lista.');
+  };
+}
+function renderItensList(){
+  const body=document.getElementById('cmpItemBody');
+  if(!body) return;
+  if(!state.itens.length){
+    body.innerHTML='<tr><td colspan="5" class="cmp-empty">Nenhum material adicionado. Selecione o item acima e clique em <b>Adicionar material</b>.</td></tr>';
+    return;
+  }
+  body.innerHTML=state.itens.map(i=>`<tr data-item-id="${esc(i._id)}"><td>${esc(i.unidade||i.quantidade||1)}</td><td>${esc(i.material)}</td><td>${esc(i.tipo)}</td><td>${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`).join('');
+  body.querySelectorAll('[data-del-item]').forEach(btn=>btn.onclick=()=>{
+    const id=btn.closest('tr').dataset.itemId;
+    state.itens=state.itens.filter(i=>String(i._id)!==String(id));
+    renderItensList();
   });
 }
 function uniformRow(c){
@@ -85,8 +130,8 @@ async function salvarSolicitacao(ctx, tipo, itens){
   return sol.id;
 }
 async function submitItens(ctx){
-  const itens=[...document.querySelectorAll('[data-row]')].map(tr=>({ unidade:Number(tr.querySelector('.cmp-un').value||1), material:tr.querySelector('.cmp-item').value, tipo:tr.querySelector('.cmp-tipo').value, tamanho:tr.querySelector('.cmp-tam').value.trim()||null, quantidade:Number(tr.querySelector('.cmp-un').value||1)})).filter(i=>i.material);
-  if(!itens.length) throw new Error('Selecione pelo menos um item.');
+  const itens=state.itens.map(({_id,...i})=>i).filter(i=>i.material);
+  if(!itens.length) throw new Error('Adicione pelo menos um material na lista antes de solicitar.');
   await salvarSolicitacao(ctx,'itens',itens);
   return itens;
 }
@@ -104,7 +149,7 @@ async function loadMinhas(){
   body.innerHTML=data.map(r=>`<tr><td>${brDate(r.data_solicitacao)}</td><td>${esc(r.tipo_solicitacao)}</td><td>${(r.compras_itens||[]).map(i=>`${esc(i.quantidade||i.unidade||1)} un | ${esc(i.material)}${i.tamanho?` (${esc(i.tamanho)})`:''}`).join('<br>')}</td><td>${pill(r.status)}</td><td>${esc(r.motivo_recusa||'')}</td></tr>`).join('');
 }
 function styles(){return `<style>
-.cmp-tabs,.cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.cmp-tab{width:auto!important;margin:0!important}.cmp-tab.active{background:#166534!important;color:#fff!important}.cmp-panel{display:none}.cmp-panel.active{display:block}.cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px}.cmp-table{width:100%;border-collapse:collapse;min-width:760px}.cmp-table th,.cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.cmp-table th{font-size:12px;text-transform:uppercase;color:var(--muted)}.cmp-table input,.cmp-table select,.cmp-field input,.cmp-field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0f172a;color:#e5e7eb;border-radius:12px;padding:10px 12px;color-scheme:dark}.cmp-field{display:flex;flex-direction:column;gap:6px}.cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.cmp-full{grid-column:1/-1}.cmp-suggest{display:grid;gap:6px;margin-top:6px}.cmp-suggest button{text-align:left;border:1px solid rgba(148,163,184,.24);background:#0f172a;color:#e5e7eb;border-radius:12px;padding:9px;cursor:pointer}.cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-weight:800;font-size:12px}.cmp-status.pendente,.cmp-status.em_cotacao,.cmp-status.em_analise,.cmp-status.pendente_pagamento,.cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.18)}.cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.cmp-feedback{font-weight:700}.cmp-feedback.err{color:#fecaca}.cmp-empty{color:var(--muted);text-align:center}@media(max-width:760px){.cmp-grid{grid-template-columns:1fr}.cmp-table{min-width:680px}}
+.cmp-tabs,.cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.cmp-tab{width:auto!important;margin:0!important}.cmp-tab.active{background:#166534!important;color:#fff!important}.cmp-panel{display:none}.cmp-panel.active{display:block}.cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px}.cmp-table{width:100%;border-collapse:collapse;min-width:760px}.cmp-table th,.cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.cmp-table th{font-size:12px;text-transform:uppercase;color:var(--muted)}.cmp-table input,.cmp-table select,.cmp-field input,.cmp-field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0f172a;color:#e5e7eb;border-radius:12px;padding:10px 12px;color-scheme:dark}.cmp-field{display:flex;flex-direction:column;gap:6px}.cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.cmp-add-box{display:grid;grid-template-columns:110px 1.4fr 1fr 1fr auto;gap:12px;align-items:end}.cmp-add-action .btn{white-space:nowrap}.cmp-full{grid-column:1/-1}.cmp-suggest{display:grid;gap:6px;margin-top:6px}.cmp-suggest button{text-align:left;border:1px solid rgba(148,163,184,.24);background:#0f172a;color:#e5e7eb;border-radius:12px;padding:9px;cursor:pointer}.cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-weight:800;font-size:12px}.cmp-status.pendente,.cmp-status.em_cotacao,.cmp-status.em_analise,.cmp-status.pendente_pagamento,.cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.18)}.cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.cmp-feedback{font-weight:700}.cmp-feedback.err{color:#fecaca}.cmp-empty{color:var(--muted);text-align:center}@media(max-width:960px){.cmp-add-box{grid-template-columns:1fr 1fr}}@media(max-width:760px){.cmp-grid,.cmp-add-box{grid-template-columns:1fr}.cmp-table{min-width:680px}}
 </style>`}
 
 initProtectedPage('Compras', async (content, userContext)=>{
@@ -113,14 +158,24 @@ initProtectedPage('Compras', async (content, userContext)=>{
   <section class="hero-card"><div><div class="eyebrow">Gestor</div><h2>Compras</h2><p>Solicitação de materiais, EPIs, patrimônios e uniformes direcionada ao setor de compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">GESTOR</span></div></section>
   <section class="card mt-16"><div class="section-head"><div><h3>Nova solicitação</h3><p class="muted">Solicitante: <b>${esc(solicitanteNome(userContext))}</b>. O nome é preenchido automaticamente pelo usuário logado.</p></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">ITENS</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">UNIFORMES</button></div></div>
     <div class="cmp-grid"><div class="cmp-field"><label>Data da solicitação</label><input id="cmpData" type="date" value="${today()}"></div><div class="cmp-field"><label>Solicitante</label><input value="${esc(solicitanteNome(userContext))}" readonly></div><div class="cmp-field cmp-full"><label>Observações</label><textarea id="cmpObs" rows="2" placeholder="Informações adicionais, urgência ou destino."></textarea></div></div>
-    <div id="panel-itens" class="cmp-panel active mt-16"><div class="cmp-actions"><button class="btn btn-secondary" id="cmpAddItem" type="button">Adicionar item</button></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tipo</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div></div>
+    <div id="panel-itens" class="cmp-panel active mt-16">
+      <div class="cmp-add-box">
+        <div class="cmp-field"><label>Un.</label><input id="cmpNovaUn" type="number" min="1" value="1"></div>
+        <div class="cmp-field"><label>Item</label><select id="cmpNovoItem"><option value="">Selecione...</option>${itemSelectOptions()}</select></div>
+        <div class="cmp-field"><label>Tipo</label><input id="cmpNovoTipo" readonly></div>
+        <div class="cmp-field"><label>Tamanho/Detalhe</label><input id="cmpNovoTam" placeholder="Selecione Botina ou Peneira Individual" disabled></div>
+        <div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpAddMaterial" type="button">Adicionar material</button></div>
+      </div>
+      <p class="muted mt-12">Monte a lista abaixo antes de clicar em <b>SOLICITAR</b>.</p>
+      <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tipo</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
+    </div>
     <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-actions"><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos os colaboradores</button><div class="cmp-field" style="min-width:280px"><label>Adicionar colaborador</label><input id="cmpColabBusca" placeholder="Digite o nome"><div class="cmp-suggest" id="cmpColabSug"></div></div></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
     <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
   </section>
   <section class="card mt-16"><div class="section-head"><div><h3>Pendentes e histórico</h3><p class="muted">A solicitação fica pendente até compras concluir ou recusar.</p></div><button class="btn btn-secondary" id="cmpRefresh" type="button">Atualizar</button></div><div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div></section>`;
-  document.getElementById('cmpItemBody').innerHTML=itemRow(); bindItemRows(); renderUniformes(); setupColabSearch();
+  state.itens=[]; bindItemForm(); renderItensList(); renderUniformes(); setupColabSearch();
   document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
-  document.getElementById('cmpAddItem').onclick=renderItemRows; document.getElementById('cmpAddTodos').onclick=()=>addAllColaboradores(userContext); document.getElementById('cmpRefresh').onclick=loadMinhas;
-  document.getElementById('cmpSolicitar').onclick=async()=>{ const btn=document.getElementById('cmpSolicitar'); try{ btn.disabled=true; setMsg('cmpFeedback','Salvando solicitação...'); const itens=state.mode==='itens'?await submitItens(userContext):await submitUniformes(userContext); const n=await notifyCompras(buildMessage(userContext,state.mode,itens)); setMsg('cmpFeedback',`Solicitação enviada. ${n.msg}`,!n.ok); document.getElementById('cmpObs').value=''; document.getElementById('cmpItemBody').innerHTML=itemRow(); bindItemRows(); state.uniformes=[]; renderUniformes(); await loadMinhas(); }catch(e){ setMsg('cmpFeedback',e.message||'Erro ao solicitar.',true); }finally{ btn.disabled=false; } };
+  document.getElementById('cmpAddTodos').onclick=()=>addAllColaboradores(userContext); document.getElementById('cmpRefresh').onclick=loadMinhas;
+  document.getElementById('cmpSolicitar').onclick=async()=>{ const btn=document.getElementById('cmpSolicitar'); try{ btn.disabled=true; setMsg('cmpFeedback','Salvando solicitação...'); const itens=state.mode==='itens'?await submitItens(userContext):await submitUniformes(userContext); const n=await notifyCompras(buildMessage(userContext,state.mode,itens)); setMsg('cmpFeedback',`Solicitação enviada. ${n.msg}`,!n.ok); document.getElementById('cmpObs').value=''; state.itens=[]; renderItensList(); state.uniformes=[]; renderUniformes(); await loadMinhas(); }catch(e){ setMsg('cmpFeedback',e.message||'Erro ao solicitar.',true); }finally{ btn.disabled=false; } };
   await loadMinhas();
 });
