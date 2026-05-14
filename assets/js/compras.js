@@ -20,9 +20,29 @@ function setMsg(id,msg,err=false){ const el=document.getElementById(id); if(el){
 function pill(v){ return `<span class="cmp-status ${esc(v)}">${esc(STATUS[v]||v||'-')}</span>`; }
 async function safe(fn,fallback=[]){ try{ const {data,error}=await fn(); if(error) throw error; return data||fallback; }catch(e){ console.warn(e); return fallback; } }
 async function loadColaboradores(){
-  state.colaboradores = await safe(()=>supabase.from('colaborador_snapshot').select('id,nome,tipo,cargo,coordenacao,supervisao,ativo').order('nome',{ascending:true}).limit(3000));
+  const dados = await safe(()=>supabase.from('colaborador_snapshot').select('id,nome,cpf,tipo,cargo,coordenacao,supervisao,ativo').order('nome',{ascending:true}).limit(5000));
+  state.colaboradores = dedupeColaboradores(dados).filter(colaboradorAtivo);
 }
 function colaboradorAtivo(c){ const txt=norm(c.ativo ?? c.situacao ?? 'ativo'); return !['false','0','inativo','nao ativo','não ativo','desligado'].includes(txt); }
+function colaboradorKey(c){ return String(c?.cpf || c?.documento || c?.id || norm(c?.nome || '')).trim(); }
+function dedupeColaboradores(lista){
+  const map=new Map();
+  for(const c of (lista||[])){
+    const key=colaboradorKey(c);
+    if(!key) continue;
+    const atual=map.get(key);
+    // Mantém o registro mais completo quando houver duplicidade no snapshot/histórico.
+    if(!atual || Object.keys(c||{}).filter(k=>c[k]).length > Object.keys(atual||{}).filter(k=>atual[k]).length){
+      map.set(key,c);
+    }
+  }
+  return [...map.values()].sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'));
+}
+function pushUniforme(c){
+  const key=colaboradorKey(c);
+  if(!key) return;
+  if(!state.uniformes.some(x=>colaboradorKey(x)===key)) state.uniformes.push(c);
+}
 function isClassificador(c){ return norm(`${c.tipo||''} ${c.cargo||''}`).includes('classificador'); }
 async function notifyCompras(message){
   const cfgs = await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor','COMPRAS').eq('ativo',true).limit(10));
@@ -145,26 +165,26 @@ function renderItensList(){
 }
 function uniformRow(c){
   const cor=isClassificador(c)?'Verde':'Cinza';
-  return `<tr data-uniforme-id="${esc(c.id||c.nome)}"><td>${esc(c.nome)}</td><td>${esc(c.tipo||c.cargo||'-')}</td><td><b>${cor}</b></td><td><select class="uni-tam">${UNIFORME_TAMANHOS.map(t=>`<option>${t}</option>`).join('')}</select></td><td><input class="uni-qtd" type="number" min="1" max="2" value="1"></td><td><button class="btn btn-small btn-danger" type="button" data-del-uniforme>×</button></td></tr>`;
+  return `<tr data-uniforme-id="${esc(colaboradorKey(c))}"><td>${esc(c.nome)}</td><td>${esc(c.tipo||c.cargo||'-')}</td><td><b>${cor}</b></td><td><select class="uni-tam">${UNIFORME_TAMANHOS.map(t=>`<option>${t}</option>`).join('')}</select></td><td><input class="uni-qtd" type="number" min="1" max="2" value="1"></td><td><button class="btn btn-small btn-danger" type="button" data-del-uniforme>×</button></td></tr>`;
 }
 function renderUniformes(){
   const body=document.getElementById('cmpUniformeBody');
   body.innerHTML=state.uniformes.map(uniformRow).join('') || `<tr><td colspan="6" class="cmp-empty">Nenhum colaborador adicionado.</td></tr>`;
-  body.querySelectorAll('[data-del-uniforme]').forEach(btn=>btn.onclick=()=>{ const id=btn.closest('tr').dataset.uniformeId; state.uniformes=state.uniformes.filter(c=>String(c.id||c.nome)!==String(id)); renderUniformes(); });
+  body.querySelectorAll('[data-del-uniforme]').forEach(btn=>btn.onclick=()=>{ const id=btn.closest('tr').dataset.uniformeId; state.uniformes=state.uniformes.filter(c=>colaboradorKey(c)!==String(id)); renderUniformes(); });
 }
 function addAllColaboradores(ctx){
   const coord=norm(solicitanteCoord(ctx));
-  const base=state.colaboradores.filter(colaboradorAtivo).filter(c=>!coord || norm(c.coordenacao||c.supervisao).includes(coord) || coord.includes(norm(c.coordenacao||c.supervisao)));
-  state.uniformes = base.length ? base : state.colaboradores.filter(colaboradorAtivo);
+  const base=state.colaboradores.filter(c=>!coord || norm(c.coordenacao||c.supervisao).includes(coord) || coord.includes(norm(c.coordenacao||c.supervisao)));
+  state.uniformes = dedupeColaboradores(base.length ? base : state.colaboradores);
   renderUniformes();
 }
 function setupColabSearch(){
   const input=document.getElementById('cmpColabBusca'); const box=document.getElementById('cmpColabSug');
   input.addEventListener('input',()=>{
     const q=norm(input.value); if(q.length<2){box.innerHTML='';return;}
-    const list=state.colaboradores.filter(colaboradorAtivo).filter(c=>norm(c.nome).includes(q)).slice(0,10);
-    box.innerHTML=list.map(c=>`<button type="button" data-add-colab="${esc(c.id||c.nome)}">${esc(c.nome)} <small>${esc(c.tipo||c.cargo||'')}</small></button>`).join('');
-    box.querySelectorAll('[data-add-colab]').forEach(btn=>btn.onclick=()=>{ const c=state.colaboradores.find(x=>String(x.id||x.nome)===btn.dataset.addColab); if(c && !state.uniformes.some(x=>String(x.id||x.nome)===String(c.id||c.nome))) state.uniformes.push(c); input.value=''; box.innerHTML=''; renderUniformes(); });
+    const list=dedupeColaboradores(state.colaboradores.filter(c=>norm(c.nome).includes(q))).slice(0,10);
+    box.innerHTML=list.map(c=>`<button type="button" data-add-colab="${esc(colaboradorKey(c))}">${esc(c.nome)} <small>${esc(c.tipo||c.cargo||'')}</small></button>`).join('');
+    box.querySelectorAll('[data-add-colab]').forEach(btn=>btn.onclick=()=>{ const c=state.colaboradores.find(x=>colaboradorKey(x)===btn.dataset.addColab); if(c) pushUniforme(c); input.value=''; box.innerHTML=''; renderUniformes(); });
   });
 }
 function isSchemaColumnError(error){
@@ -226,7 +246,7 @@ async function submitItens(ctx){
 }
 async function submitUniformes(ctx){
   const rows=[...document.querySelectorAll('[data-uniforme-id]')];
-  const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>String(x.id||x.nome)===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:tr.querySelector('.uni-tam').value, colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:isClassificador(c)?'Verde':'Cinza'}; });
+  const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:tr.querySelector('.uni-tam').value, colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:isClassificador(c)?'Verde':'Cinza'}; });
   if(!itens.length) throw new Error('Adicione pelo menos um colaborador.');
   await salvarSolicitacao(ctx,'uniformes',itens);
   return itens;
