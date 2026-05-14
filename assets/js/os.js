@@ -235,7 +235,7 @@ function injectStyles() {
     .os-table{width:100%;min-width:980px;border-collapse:separate;border-spacing:0;table-layout:fixed;color:#e5e7eb}.os-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px 9px;font-size:11px;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1}.os-table th[data-sort]{cursor:pointer;user-select:none}.os-table th[data-sort]:hover{color:#fff;background:#0b2116}.os-table td{padding:10px 9px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:top;background:rgba(15,23,42,.24)}
     .os-col-num{width:9.5%}.os-col-cliente{width:40%}.os-col-rem{width:12.5%}.os-col-ind{width:27%}.os-col-acao{width:11%}
     .os-table tr:hover td{background:rgba(22,101,52,.1)}.os-title{font-weight:850;color:#f8fafc;font-size:13.5px;line-height:1.18}.os-num{font-size:13.5px;font-weight:950}.os-meta{font-size:11px;color:#94a3b8;margin-top:3px;line-height:1.25}.os-client-main{max-width:100%;font-size:13.5px;line-height:1.16}.os-route-line{display:block;white-space:normal;overflow-wrap:anywhere}.os-actions{display:flex;gap:6px;flex-wrap:wrap}.os-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.72);color:#dcfce7;border-radius:999px;padding:7px 10px;font-weight:900;cursor:pointer;font-size:12px}.os-btn.active{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.os-btn.warn.active{background:#fde68a;color:#713f12}.os-btn.danger.active{background:#fecaca;color:#7f1d1d}.os-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.os-chip.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.os-chip.warn{background:rgba(250,204,21,.14);color:#fde68a}.os-chip.info{background:rgba(59,130,246,.13);color:#bfdbfe}.os-chip.danger{background:rgba(239,68,68,.12);color:#fecaca}.os-zero{box-shadow:inset 4px 0 0 #facc15}.os-indbox{display:flex;gap:8px;align-items:flex-start;flex-direction:column}.os-select{width:100%;min-height:38px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0f172a;color:#e5e7eb;color-scheme:dark;padding:8px;font-size:12px}.os-mini{font-size:11px;color:#a7f3d0;line-height:1.25}.os-warn-text{font-size:11px;color:#fde68a;margin-top:6px;line-height:1.25}.os-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#94a3b8;background:rgba(15,23,42,.16)}
-    .os-rem-box{display:flex;flex-direction:column;gap:3px;align-items:flex-start}.os-rem-box .os-meta{margin-top:0}.os-extra-box{width:100%;margin-top:6px;padding-top:7px;border-top:1px solid rgba(52,211,153,.16);display:flex;flex-direction:column;gap:6px}
+    .os-rem-box{display:flex;flex-direction:column;gap:3px;align-items:flex-start}.os-rem-box .os-meta{margin-top:0}.os-extra-box{width:100%;margin-top:6px;padding-top:7px;border-top:1px solid rgba(52,211,153,.16);display:flex;flex-direction:column;gap:6px}.os-status-dot{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:7px 10px;border:1px solid rgba(148,163,184,.2);cursor:default;background:transparent}.os-dot{width:12px;height:12px;border-radius:50%;background:rgba(148,163,184,.25)}.os-status-dot.is-active .os-dot{background:#94a3b8;box-shadow:0 0 0 3px rgba(148,163,184,.2)}
     @media(max-width:900px){.os-grid{grid-template-columns:1fr}.os-grid .field-span-2{grid-column:span 1}}
   `;
   document.head.appendChild(style);
@@ -495,10 +495,11 @@ initProtectedPage('OS', async (content) => {
 
 
   function statusClass(row) {
-    const st = normalize(row.status_gestor || 'AGUARDAR');
+    const st = row.status_gestor ? normalize(row.status_gestor) : 'PENDENTE';
     if (st === 'ATENDER') return 'ok';
     if (st === 'FINALIZAR') return 'danger';
-    return 'warn';
+    if (st === 'AGUARDAR') return 'warn';
+    return '';
   }
 
   function renderStats(rows = filteredOs()) {
@@ -534,7 +535,7 @@ initProtectedPage('OS', async (content) => {
     const podeTerMultiplos = rem >= LIMITE_MULTIPLOS_COLABORADORES;
     const maxPadrao = 1;
     const permitirMais = podeTerMultiplos && (Boolean(row.permitir_mais_classificadores) || atr.length > maxPadrao);
-    const status = normalize(row.status_gestor || 'AGUARDAR') || 'AGUARDAR';
+    const status = row.status_gestor ? normalize(row.status_gestor) : 'PENDENTE';
     const compartilhavel = rem > 0 && rem <= LIMITE_COMPARTILHAR;
     const ponto = osPoint(row);
     function optionList(selected, excludeKeys = new Set()) {
@@ -580,7 +581,7 @@ initProtectedPage('OS', async (content) => {
           ${extraSelectHtml}
         </div>
       </td>
-      <td><div class="os-actions">${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}">${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}</button>`).join('')}</div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
+      <td><div class="os-actions"><div class="os-status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="os-dot"></span></div>${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}">${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}</button>`).join('')}</div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
     </tr>`;
   }
 
