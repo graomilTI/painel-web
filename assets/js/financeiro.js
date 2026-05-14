@@ -1800,6 +1800,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
       byMonth[mes].projetado = Math.max(byMonth[mes].projetado, Number(row.saldo_projetado || 0));
     });
 
+    const meses = Object.keys(byMonth).sort();
     const mesAtualKey = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
     const mesAnteriorDate = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
     const mesAnteriorKey = `${mesAnteriorDate.getFullYear()}-${String(mesAnteriorDate.getMonth() + 1).padStart(2, '0')}`;
