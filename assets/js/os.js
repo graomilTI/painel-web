@@ -259,7 +259,7 @@ initProtectedPage('OS', async (content) => {
       <div class="section-head"><div><h3>Ordens de Serviço da regional</h3><p class="muted">O gestor visualiza somente as O.S. liberadas para sua supervisão/regional e define se vai atender, finalizar ou aguardar.</p></div></div>
       <div class="filters-grid os-grid">
         <div class="field"><label>Supervisão</label><select id="osSupervisao" class="os-select"></select></div>
-        <div class="field"><label>Status gestor</label><select id="osStatus" class="os-select"><option value="">Todos</option><option value="ATENDER">Atender</option><option value="AGUARDAR">Aguardar</option><option value="FINALIZAR">Finalizar</option></select></div>
+        <div class="field"><label>Status gestor</label><select id="osStatus" class="os-select"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="ATENDER">Atender</option><option value="AGUARDAR">Aguardar</option><option value="FINALIZAR">Finalizar</option></select></div>
         <div class="field field-span-2"><label>Buscar</label><input id="osBusca" class="os-select" type="text" placeholder="O.S., cliente, embarque, destino..." /></div>
       </div>
       <div class="feedback mt-16" id="osFeedback">Carregando...</div>
@@ -430,7 +430,7 @@ initProtectedPage('OS', async (content) => {
     const busca = normalize(state.filters.busca);
     const rows = state.os.filter((row) => {
       if (sup && normalize(row.supervisao) !== sup) return false;
-      if (status && normalize(row.status_gestor || 'AGUARDAR') !== status) return false;
+      if (status && normalize(row.status_gestor || 'PENDENTE') !== status) return false;
       const hay = normalize(`${row.numero_os} ${row.cliente} ${row.embarque} ${row.destino} ${row.contrato} ${row.produto}`);
       return !busca || hay.includes(busca);
     });
