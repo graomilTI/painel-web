@@ -106,19 +106,26 @@ function statusPagamentoClass(value) {
 }
 
 function parseConteudoPagamento(row) {
-  const origem = origemPagamentoLabel(row.origem || row.setor || row.modulo_origem);
-  const descricao = row.descricao || row.conteudo || row.observacao || row.detalhes || '';
+  const descricaoBase = row.descricao || row.conteudo || row.observacao || row.detalhes || '';
+  const linhas = String(descricaoBase || '')
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^tipo\s*:/i.test(line))
+    .filter((line) => !/^forma\s*:/i.test(line))
+    .filter((line) => !/^dados\s*:/i.test(line));
+
   const dados = row.dados_pagamento || row.link_pagamento || row.chave_pix || row.boleto_url || '';
   const forma = row.forma_pagamento ? `Forma: ${row.forma_pagamento}` : '';
   const fornecedor = row.fornecedor || row.favorecido || row.beneficiario || '';
   const contato = row.contato || row.contato_fornecedor || '';
-  const partes = [];
-  if (descricao) partes.push(descricao);
-  if (fornecedor) partes.push(`Fornecedor: ${fornecedor}`);
-  if (contato) partes.push(`Contato: ${contato}`);
+
+  const partes = [...linhas];
+  if (fornecedor && !partes.some((p) => normalize(p).startsWith('fornecedor:'))) partes.push(`Fornecedor: ${fornecedor}`);
+  if (contato && !partes.some((p) => normalize(p).startsWith('contato:'))) partes.push(`Contato: ${contato}`);
   if (forma) partes.push(forma);
   if (dados) partes.push(`Dados: ${dados}`);
-  if (!partes.length && origem !== '-') partes.push(`Solicitação de ${origem}`);
+  if (!partes.length) partes.push(`Solicitação de ${origemPagamentoLabel(row.origem || row.setor || row.modulo_origem)}`);
   return partes.join('\n');
 }
 
@@ -126,6 +133,33 @@ function pagamentoUrl(row) {
   const value = row.dados_pagamento || row.boleto_url || row.link_pagamento || row.comprovante_url || '';
   return /^https?:\/\//i.test(String(value)) ? String(value) : '';
 }
+
+function safeStorageFileName(name) {
+  return String(name || 'comprovante')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .slice(0, 120);
+}
+
+async function uploadComprovantePagamento(file, row) {
+  if (!file) throw new Error('Anexe o comprovante do pagamento.');
+  const ano = new Date().getFullYear();
+  const origem = safeStorageFileName(origemPagamentoLabel(row?.origem || row?.setor || row?.modulo_origem || 'financeiro')).toLowerCase();
+  const path = `financeiro/comprovantes/${ano}/${origem}/${Date.now()}_${safeStorageFileName(file.name)}`;
+  const { error } = await supabase.storage
+    .from('notas-fiscais')
+    .upload(path, file, { upsert: false, contentType: file.type || 'application/octet-stream' });
+  if (error) throw new Error(`Falha ao enviar comprovante: ${error.message}`);
+  const { data } = supabase.storage.from('notas-fiscais').getPublicUrl(path);
+  return data?.publicUrl || path;
+}
+
+function isMissingColumnError(error) {
+  const msg = String(error?.message || error?.details || error?.hint || '').toLowerCase();
+  return error?.code === 'PGRST204' || msg.includes('schema cache') || msg.includes('could not find') || msg.includes('column');
+}
+
 
 
 function nextDateISO(value) {
@@ -943,6 +977,8 @@ initProtectedPage('Financeiro', (content, userContext) => {
       .pay-mode-switch{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}.pay-mode-btn{border:1px solid rgba(148,163,184,.22);background:#08111f;color:#cbd5e1;border-radius:16px;padding:13px 18px;font-weight:900;cursor:pointer}.pay-mode-btn.active{background:linear-gradient(135deg,#166534,#22c55e);color:#052e16;border-color:#22c55e}.pay-mode-panel{display:none}.pay-mode-panel.active{display:block}.pay-toolbar{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:14px 0}.pay-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;align-items:end}.pay-status-toggle{display:inline-flex;align-items:stretch;min-width:168px;overflow:hidden;border:2px solid rgba(226,232,240,.78);border-radius:999px;background:#020617;box-shadow:inset 0 0 0 1px rgba(15,23,42,.75)}.pay-status-btn{flex:1;border:0;background:transparent;color:#e5e7eb;padding:9px 14px;font-weight:900;font-size:12px;letter-spacing:.02em;cursor:pointer;transition:background .16s ease,color .16s ease,transform .16s ease}.pay-status-btn + .pay-status-btn{border-left:2px solid rgba(226,232,240,.78)}.pay-status-btn:hover{filter:brightness(1.06)}.pay-status-btn.active-ok{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.pay-status-btn.active-pendente{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff7f7}.pay-status-btn.is-inactive{background:#0f172a;color:#cbd5e1}.pay-status-paid{display:inline-flex;align-items:center;justify-content:center;min-width:168px;padding:9px 14px;border-radius:999px;border:2px solid rgba(59,130,246,.4);background:linear-gradient(135deg,rgba(29,78,216,.25),rgba(59,130,246,.2));color:#bfdbfe;font-size:12px;font-weight:900;letter-spacing:.04em}.pay-footer{position:sticky;bottom:12px;z-index:2;margin-top:16px;border:1px solid rgba(34,197,94,.24);border-radius:20px;background:rgba(2,6,23,.94);backdrop-filter:blur(12px);padding:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 18px 45px rgba(2,6,23,.38)}.pay-footer strong{display:block;color:#f8fafc}.pay-footer span{display:block;color:#94a3b8;font-size:12px;margin-top:3px}.btn-pay-final{border:0;border-radius:16px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;font-weight:1000;padding:14px 28px;cursor:pointer}.btn-pay-final:disabled{opacity:.45;cursor:not-allowed}.pay-note{border:1px solid rgba(59,130,246,.24);background:rgba(37,99,235,.10);border-radius:16px;padding:12px;color:#bfdbfe;font-size:13px}.fin-status.pendente{background:rgba(245,158,11,.14);color:#fde68a}.fin-status.pago{background:rgba(59,130,246,.14);color:#bfdbfe}@media(max-width:900px){.pay-filter-grid{grid-template-columns:1fr 1fr}.pay-footer{position:static;display:grid}.btn-pay-final{width:100%}}@media(max-width:620px){.pay-filter-grid{grid-template-columns:1fr}.pay-status-toggle,.pay-status-paid{min-width:138px}}.pay-search-panel{margin:14px 0;display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:10px;align-items:end}.pay-search-field{display:grid;gap:6px}.pay-search-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.pay-search-input{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0f172a;color:#e5e7eb;padding:12px 14px;color-scheme:dark}.pay-search-count{color:#94a3b8;font-size:12px;margin-top:4px}@media(max-width:620px){.pay-search-panel{grid-template-columns:1fr}}
 
       .fin-setor-filter{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.fin-setor-btn{border:1px solid rgba(148,163,184,.22);background:#08111f;color:#cbd5e1;border-radius:999px;padding:9px 14px;font-weight:900;cursor:pointer}.fin-setor-btn.active{background:#166534;color:#fff;border-color:#22c55e}.fin-text-block{white-space:pre-wrap;line-height:1.45}.fin-pay-actions{display:flex;gap:8px;flex-wrap:wrap}.fin-pay-actions a{text-decoration:none}
+
+      .fin-pay-modal{position:fixed;inset:0;background:rgba(2,6,23,.72);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.fin-pay-modal.open{display:flex}.fin-pay-modal-card{width:min(820px,100%);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.22);border-radius:22px;background:#0b1220;color:#e5e7eb;padding:20px;box-shadow:0 24px 70px rgba(2,6,23,.45)}.fin-pay-preview{border:1px solid rgba(148,163,184,.16);border-radius:16px;background:rgba(15,23,42,.58);padding:14px}.mt-16{margin-top:16px}
     </style>
     <section class="fin-wrap">
       <div class="fin-hero">
@@ -1199,13 +1235,13 @@ initProtectedPage('Financeiro', (content, userContext) => {
         <td>
           <div class="fin-pay-actions">
             ${url ? `<a class="btn btn-secondary fin-small" href="${esc(url)}" target="_blank" rel="noopener">Abrir</a>` : ''}
-            <button class="btn btn-primary fin-small" data-marcar-pago="${esc(row.id)}" type="button">Pago</button>
+            <button class="btn btn-primary fin-small" data-pagar-setor="${esc(row.id)}" type="button">PAGAR</button>
           </div>
         </td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-marcar-pago]').forEach((btn) => {
-      btn.addEventListener('click', () => marcarPagamentoSetorPago(btn.dataset.marcarPago));
+    tbody.querySelectorAll('[data-pagar-setor]').forEach((btn) => {
+      btn.addEventListener('click', () => abrirModalComprovantePagamento(btn.dataset.pagarSetor));
     });
   }
 
@@ -1214,13 +1250,9 @@ initProtectedPage('Financeiro', (content, userContext) => {
     const s = row.compras_solicitacoes || {};
     const quantidade = row.quantidade || row.unidade || 1;
     const partes = [
-      `Compra: ${quantidade} un ${row.material || '-'}`,
-      row.tamanho ? `Tamanho/Detalhe: ${row.tamanho}` : '',
-      row.tipo ? `Tipo: ${row.tipo}` : '',
-      row.forma_pagamento ? `Forma: ${row.forma_pagamento}` : '',
-      row.dados_pagamento ? `Dados: ${row.dados_pagamento}` : '',
-      s.solicitante ? `Gestor: ${s.solicitante}` : '',
-      s.coordenacao ? `Coordenação: ${s.coordenacao}` : ''
+      `- ${quantidade} un ${row.material || '-'}`,
+      row.tamanho ? `  Tamanho/Detalhe: ${row.tamanho}` : '',
+      row.colaborador_nome ? `  Colaborador: ${row.colaborador_nome}` : ''
     ].filter(Boolean);
     return {
       ...row,
@@ -1240,9 +1272,61 @@ initProtectedPage('Financeiro', (content, userContext) => {
       dados_pagamento: row.dados_pagamento || '',
       forma_pagamento: row.forma_pagamento || '',
       comprovante_url: row.comprovante_url || '',
-      _raw_compra_item_id: row.id
+      _raw_compra_item_id: row.id,
+      _compra_item_ids: [row.id],
+      _gestor: s.solicitante || '',
+      _coordenacao: s.coordenacao || ''
     };
   }
+
+  function groupCompraPagamentos(rows = []) {
+    const map = new Map();
+    rows.forEach((row) => {
+      const base = compraItemToPagamento(row);
+      const key = [
+        base.forma_pagamento || '',
+        base.dados_pagamento || '',
+        base._gestor || '',
+        base._coordenacao || '',
+        base.status || ''
+      ].map((v) => normalize(v)).join('|');
+
+      if (!map.has(key)) {
+        map.set(key, {
+          ...base,
+          id: `compra_grp_${Math.abs(hashText(key).replace('fin_', '').split('_')[0] || Date.now())}`,
+          origem_id: `grupo_${key}`,
+          descricao: 'Compra agrupada:',
+          conteudo: 'Compra agrupada:',
+          valor: 0,
+          _source_table: 'compras_itens_group',
+          _compra_item_ids: [],
+          _raw_compra_item_id: null
+        });
+      }
+
+      const group = map.get(key);
+      group.valor += Number(base.valor || 0);
+      group._compra_item_ids.push(...(base._compra_item_ids || []));
+      group.descricao += `\n${base.descricao}`;
+      group.conteudo = group.descricao;
+      if (new Date(base.created_at || 0).getTime() > new Date(group.created_at || 0).getTime()) {
+        group.created_at = base.created_at;
+      }
+    });
+
+    return [...map.values()].map((group) => {
+      const extras = [];
+      if (group._gestor) extras.push(`Gestor: ${group._gestor}`);
+      if (group._coordenacao) extras.push(`Coordenação: ${group._coordenacao}`);
+      return {
+        ...group,
+        descricao: `${group.descricao}${extras.length ? `\n${extras.join('\n')}` : ''}`,
+        conteudo: `${group.conteudo}${extras.length ? `\n${extras.join('\n')}` : ''}`
+      };
+    });
+  }
+
 
   async function loadSetorPagamentos() {
     const tbody = document.getElementById('setorPagamentosTbody');
@@ -1263,16 +1347,19 @@ initProtectedPage('Financeiro', (content, userContext) => {
     ]);
 
     const pagamentos = pagamentosRes.error ? [] : (pagamentosRes.data || []);
-    const compras = comprasRes.error ? [] : (comprasRes.data || []).map(compraItemToPagamento);
+    const comprasAgrupadas = comprasRes.error ? [] : groupCompraPagamentos(comprasRes.data || []);
 
-    const financeiroCompraIds = new Set(
+    const financeKeys = new Set(
       pagamentos
         .filter((row) => normalize(row.origem || row.setor || row.modulo_origem).includes('compra'))
-        .map((row) => String(row.origem_id || row.compra_item_id || '').replace(/^compra_/, ''))
-        .filter(Boolean)
+        .map((row) => `${normalize(row.forma_pagamento || '')}|${normalize(row.dados_pagamento || '')}`)
+        .filter((key) => key !== '|')
     );
 
-    const comprasSemDuplicar = compras.filter((row) => !financeiroCompraIds.has(String(row._raw_compra_item_id || row.origem_id || '')));
+    const comprasSemDuplicar = comprasAgrupadas.filter((row) => {
+      const key = `${normalize(row.forma_pagamento || '')}|${normalize(row.dados_pagamento || '')}`;
+      return key === '|' || !financeKeys.has(key);
+    });
 
     if (pagamentosRes.error && comprasRes.error) {
       if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="fin-empty">${esc(pagamentosRes.error.message)}<br>${esc(comprasRes.error.message)}<br>Execute a migration de pagamentos do financeiro no Supabase.</td></tr>`;
@@ -1288,33 +1375,122 @@ initProtectedPage('Financeiro', (content, userContext) => {
     renderSetorPagamentos();
   }
 
-  async function marcarPagamentoSetorPago(id) {
-    if (!id) return;
-    const key = String(id);
-    if (key.startsWith('compra_')) {
-      const compraId = key.replace(/^compra_/, '');
-      const { error } = await supabase
-        .from('compras_itens')
-        .update({ status: 'aguardando_nf', pago_em: new Date().toISOString() })
-        .eq('id', compraId);
-      if (error) {
-        alert(error.message);
-        return;
-      }
-      await loadSetorPagamentos();
+
+  function getPagamentoRowById(id) {
+    return (state.financeiroPagamentos || []).find((row) => String(row.id) === String(id));
+  }
+
+  function abrirModalComprovantePagamento(id) {
+    const row = getPagamentoRowById(id);
+    if (!row) return;
+    let modal = document.getElementById('finPagamentoModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'finPagamentoModal';
+      modal.className = 'fin-pay-modal';
+      document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `<div class="fin-pay-modal-card">
+      <div class="fin-head">
+        <div>
+          <h3>Anexar comprovante</h3>
+          <p>Após enviar, o comprovante retorna para o setor de origem.</p>
+        </div>
+        <button class="btn btn-secondary" id="finPayClose" type="button">Fechar</button>
+      </div>
+      <div class="pay-summary">
+        <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>
+        <div class="pay-mini"><span>Valor</span><strong>${money(row.valor || row.valor_total || row.total)}</strong></div>
+      </div>
+      <div class="fin-text-block fin-pay-preview">${esc(parseConteudoPagamento(row))}</div>
+      <div class="fin-field full mt-16">
+        <label>Comprovante de pagamento</label>
+        <input id="finPayComprovante" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx">
+      </div>
+      <div class="fin-actions-row mt-16">
+        <button class="btn btn-primary" id="finPaySend" type="button">ENVIAR</button>
+        <span id="finPayFeedback" class="fin-feedback"></span>
+      </div>
+    </div>`;
+    modal.classList.add('open');
+    modal.querySelector('#finPayClose').onclick = () => modal.classList.remove('open');
+    modal.querySelector('#finPaySend').onclick = () => enviarComprovantePagamento(row);
+  }
+
+  async function updateComprasComprovante(row, comprovanteUrl) {
+    const ids = (row._compra_item_ids || [])
+      .map((id) => String(id || '').replace(/^compra_/, ''))
+      .filter(Boolean);
+
+    const forma = row.forma_pagamento || '';
+    const dados = row.dados_pagamento || '';
+
+    let q = supabase.from('compras_itens');
+    if (ids.length) {
+      q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).in('id', ids);
+    } else if (dados) {
+      q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).eq('dados_pagamento', dados).eq('status', 'pendente_pagamento');
+      if (forma) q = q.eq('forma_pagamento', forma);
+    } else if (row.origem_id) {
+      q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).eq('id', String(row.origem_id).replace(/^compra_/, ''));
+    } else {
       return;
     }
 
-    const { error } = await supabase
-      .from('financeiro_pagamentos')
-      .update({ status: 'PAGO', pago_em: new Date().toISOString() })
-      .eq('id', id);
-    if (error) {
-      alert(error.message);
+    let { error } = await q;
+    if (!error) return;
+
+    if (isMissingColumnError(error)) {
+      let retry = supabase.from('compras_itens');
+      if (ids.length) retry = retry.update({ status: 'aguardando_nf' }).in('id', ids);
+      else if (dados) {
+        retry = retry.update({ status: 'aguardando_nf' }).eq('dados_pagamento', dados).eq('status', 'pendente_pagamento');
+        if (forma) retry = retry.eq('forma_pagamento', forma);
+      } else if (row.origem_id) retry = retry.update({ status: 'aguardando_nf' }).eq('id', String(row.origem_id).replace(/^compra_/, ''));
+      const res = await retry;
+      if (res.error) throw res.error;
       return;
     }
-    await loadSetorPagamentos();
+
+    throw error;
   }
+
+  async function enviarComprovantePagamento(row) {
+    const fb = document.getElementById('finPayFeedback');
+    const file = document.getElementById('finPayComprovante')?.files?.[0];
+    try {
+      if (fb) {
+        fb.textContent = 'Enviando comprovante...';
+        fb.className = 'fin-feedback';
+      }
+      const comprovanteUrl = await uploadComprovantePagamento(file, row);
+      const isCompras = normalize(row.origem || row.setor || row.modulo_origem).includes('compra') || String(row.id).startsWith('compra_');
+
+      if (String(row.id).startsWith('compra_grp_') || String(row.id).startsWith('compra_')) {
+        await updateComprasComprovante(row, comprovanteUrl);
+      } else {
+        const payload = { status: 'PAGO', pago_em: new Date().toISOString(), comprovante_url: comprovanteUrl };
+        let { error } = await supabase.from('financeiro_pagamentos').update(payload).eq('id', row.id);
+        if (error && isMissingColumnError(error)) {
+          const retry = await supabase.from('financeiro_pagamentos').update({ status: 'PAGO', comprovante_url: comprovanteUrl }).eq('id', row.id);
+          error = retry.error;
+        }
+        if (error) throw error;
+        if (isCompras) await updateComprasComprovante(row, comprovanteUrl);
+      }
+
+      document.getElementById('finPagamentoModal')?.classList.remove('open');
+      await loadSetorPagamentos();
+    } catch (error) {
+      if (fb) {
+        fb.textContent = error.message || 'Erro ao enviar comprovante.';
+        fb.className = 'fin-feedback err';
+      }
+      alert(error.message || 'Erro ao enviar comprovante.');
+    }
+  }
+
 
   async function loadFluxo() {
     const { data, error } = await supabase
