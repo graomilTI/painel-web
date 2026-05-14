@@ -540,7 +540,7 @@ function renderOsCard(os) {
         <button class="btn ${status === 'AGUARDAR' ? 'warn' : 'secondary'}" data-action="AGUARDAR" type="button" title="Aguardar">${ICO_AGUARDAR}</button>
         <button class="btn ${status === 'ATENDER' ? '' : 'secondary'}" data-action="ATENDER" type="button" title="Atender">${ICO_ATENDER}</button>
         <button class="btn ${status === 'FINALIZAR' ? '' : 'secondary'}" data-action="FINALIZAR" type="button" title="Finalizar">${ICO_FINALIZAR}</button>
-        <button class="btn secondary" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar KG para Logística" style="color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SOMAR_KG}</button>
+        <button class="btn secondary ${os.observacao_logistica?.startsWith('KG solicitado') ? 'kg-active' : ''}" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar KG para Logística" style="color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SOMAR_KG}</button>
       </div>
     </article>
   `;

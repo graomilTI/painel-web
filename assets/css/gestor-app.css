@@ -136,6 +136,7 @@ select:focus, input:focus, textarea:focus { border-color: rgba(52, 211, 153, 0.8
 .os-card.row-atender  { background: rgba(34,197,94,.06);  border-color: rgba(34,197,94,.28); }
 .os-card.row-finalizar{ background: rgba(59,130,246,.06); border-color: rgba(59,130,246,.28); }
 .os-card.row-kg       { background: rgba(239,68,68,.06);  border-color: rgba(239,68,68,.28); }
+.btn.kg-active { background: rgba(239,68,68,.2) !important; border-color: rgba(239,68,68,.55) !important; color: #fca5a5 !important; }
 
 .toast-wrap { position: fixed; left: 12px; right: 12px; bottom: calc(78px + env(safe-area-inset-bottom)); z-index: 80; display: grid; gap: 8px; pointer-events: none; }
 .toast { background: rgba(15, 23, 42, .96); border: 1px solid rgba(110, 231, 183, .22); color: var(--text); border-radius: 18px; padding: 13px 14px; box-shadow: var(--shadow); font-weight: 850; }
