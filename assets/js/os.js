@@ -581,7 +581,7 @@ initProtectedPage('OS', async (content) => {
           ${extraSelectHtml}
         </div>
       </td>
-      <td><div class="os-actions"><div class="os-status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="os-dot"></span></div>${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}">${opt === 'AGUARDAR' ? 'Aguardar' : opt === 'ATENDER' ? 'Atender' : 'Finalizar'}</button>`).join('')}</div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
+      <td><div class="os-actions"><div class="os-status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="os-dot"></span></div>${STATUS_OPTIONS.map((opt) => `<button class="os-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}">${opt === 'AGUARDAR' ? '✋' : opt === 'ATENDER' ? '✅' : '💰'}</button>`).join('')}</div><div style="margin-top:8px"><span class="os-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
     </tr>`;
   }
 

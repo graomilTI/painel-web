@@ -533,9 +533,9 @@ function renderOsCard(os) {
       </div>
       <div class="action-grid">
         <div class="status-dot ${status === 'PENDENTE' ? 'is-active' : ''}" title="Sem ação definida"><span class="dot"></span></div>
-        <button class="btn ${status === 'AGUARDAR' ? 'warn' : 'secondary'}" data-action="AGUARDAR" type="button">Aguardar</button>
-        <button class="btn ${status === 'ATENDER' ? '' : 'secondary'}" data-action="ATENDER" type="button">Atender</button>
-        <button class="btn ${status === 'FINALIZAR' ? '' : 'secondary'}" data-action="FINALIZAR" type="button">Finalizar</button>
+        <button class="btn ${status === 'AGUARDAR' ? 'warn' : 'secondary'}" data-action="AGUARDAR" type="button">✋</button>
+        <button class="btn ${status === 'ATENDER' ? '' : 'secondary'}" data-action="ATENDER" type="button">✅</button>
+        <button class="btn ${status === 'FINALIZAR' ? '' : 'secondary'}" data-action="FINALIZAR" type="button">💰</button>
       </div>
     </article>
   `;
