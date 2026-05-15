@@ -2936,6 +2936,26 @@
         state.files.push(entry);
 
         if (valid) {
+          detectarHospedagemHistoricoPorConteudo(file, detected).then((novoDetectado) => {
+            if (novoDetectado?.tipo !== 'hospedagem_historico') return;
+            entry.detected = novoDetectado;
+            entry.message = 'Pendente · importará histórico de hospedagem dos colaboradores';
+            renderFiles();
+            readHospedagemHistoricoRowsFromFile(file).then((res) => {
+              const period = res?.period || null;
+              entry.period = period;
+              const total = Number(res?.rows?.length || 0);
+              entry.message = period
+                ? `Período: ${formatPeriod(period)} · ${total.toLocaleString('pt-BR')} registros · importará Hospedagem`
+                : `Pendente · ${total.toLocaleString('pt-BR')} registros · sem período detectado`;
+              renderFiles();
+            }).catch((err) => {
+              entry.period = null;
+              entry.message = `Pendente · não foi possível pré-validar Hospedagem (${err?.message || 'erro de leitura'})`;
+              renderFiles();
+            });
+          }).catch(() => {});
+
           if (detected.tipo === 'hoteis') {
             entry.message = 'Pendente · importará cadastro de hotéis';
           } else if (detected.tipo === 'pontos_embarque') {
