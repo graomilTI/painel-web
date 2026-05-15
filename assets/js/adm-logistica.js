@@ -811,7 +811,7 @@ initProtectedPage('Painel de Logística', async (content) => {
       const now = new Date().toISOString();
       const patch = type === 'kg'
         ? { observacao_logistica: null, updated_at: now }
-        : { status_gestor: null, status_logistica: 'FINALIZADA', finalizado_em: now, updated_at: now };
+        : { status_gestor: '', status_logistica: 'FINALIZADA', finalizado_em: now, updated_at: now };
       const { error } = await supabase.from('operacional_os').update(patch).eq('id', id);
       if (error) { alert(error.message); oslogOk.disabled = false; oslogOk.textContent = 'OK'; return; }
       state.osLog = state.osLog.filter((r) => String(r.id) !== String(id));
