@@ -2316,3 +2316,347 @@ body.sidebar-collapsed .sidebar-toggle-btn {
 html.is-route-ready .app-shell {
   animation: routeFadeIn .22s cubic-bezier(.4,0,.2,1);
 }
+
+
+/* ================================================================
+   TOPBAR REDESIGN — Flowbite-inspired: search + icon actions + avatar
+   ================================================================ */
+
+.topbar {
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  padding: 10px 20px !important;
+}
+
+.topbar-title {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+/* --- Search bar --- */
+.topbar-search {
+  flex: 1 1 0;
+  max-width: 380px;
+  min-width: 0;
+  position: relative;
+}
+
+.topbar-search-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 14px 0 40px;
+  background: rgba(8, 22, 17, 0.62);
+  border: 1px solid rgba(111, 208, 165, 0.12);
+  border-radius: 12px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  backdrop-filter: blur(10px);
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.topbar-search-input:focus {
+  outline: none;
+  border-color: rgba(111, 208, 165, 0.28);
+  box-shadow: 0 0 0 3px rgba(111, 208, 165, 0.07);
+  background: rgba(9, 24, 18, 0.72);
+}
+
+.topbar-search-input::placeholder {
+  color: rgba(238, 247, 242, 0.30);
+}
+
+.topbar-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(238, 247, 242, 0.34);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+}
+
+.topbar-search-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- Topbar icon buttons --- */
+.topbar-icon-btn {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid rgba(111, 208, 165, 0.10);
+  background: rgba(8, 22, 17, 0.54);
+  color: rgba(238, 247, 242, 0.60);
+  cursor: pointer;
+  position: relative;
+  flex: 0 0 38px;
+  backdrop-filter: blur(8px);
+  transition: background .16s ease, border-color .16s ease, color .16s ease, transform .14s ease;
+}
+
+.topbar-icon-btn:hover {
+  background: rgba(111, 208, 165, 0.09);
+  border-color: rgba(111, 208, 165, 0.22);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.topbar-icon-btn:active {
+  transform: scale(0.95) !important;
+  transition-duration: .06s !important;
+}
+
+.topbar-icon-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.topbar-icon-btn.has-dot::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green-2);
+  border: 1.5px solid #04110c;
+  box-shadow: 0 0 6px rgba(111, 208, 165, 0.55);
+}
+
+/* Override existing settings gear to match new icon button design */
+.settings-gear-btn {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(111, 208, 165, 0.10) !important;
+  background: rgba(8, 22, 17, 0.54) !important;
+  color: rgba(238, 247, 242, 0.60) !important;
+  backdrop-filter: blur(8px) !important;
+  transition: background .16s ease, border-color .16s ease, color .16s ease, transform .14s ease !important;
+}
+
+.settings-gear-btn:hover {
+  background: rgba(111, 208, 165, 0.09) !important;
+  border-color: rgba(111, 208, 165, 0.22) !important;
+  color: var(--text) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* --- User avatar --- */
+.topbar-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1f6f4a 0%, #3fa878 65%, #6fd0a5 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #04150d;
+  border: 2px solid rgba(111, 208, 165, 0.30);
+  flex: 0 0 36px;
+  cursor: pointer;
+  position: relative;
+  transition: border-color .18s ease, transform .14s ease, box-shadow .18s ease;
+  font-family: 'Syne', system-ui, sans-serif;
+  box-shadow: 0 3px 12px rgba(63, 168, 120, 0.24);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.topbar-avatar::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--green);
+  border: 1.5px solid #04110c;
+  box-shadow: 0 0 5px rgba(63, 168, 120, 0.5);
+}
+
+.topbar-avatar:hover {
+  border-color: rgba(111, 208, 165, 0.52);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(63, 168, 120, 0.30);
+}
+
+/* Topbar actions layout */
+.topbar-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
+  flex-wrap: nowrap !important;
+}
+
+.topbar-actions #signOutBtn {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 10px;
+}
+
+/* Responsive: hide search + apps on small screens */
+@media (max-width: 1080px) {
+  .topbar-title .meta { display: none !important; }
+}
+
+@media (max-width: 860px) {
+  .topbar-search { display: none !important; }
+  #topbarAppsBtn { display: none !important; }
+}
+
+body.mobile-panel-mode .topbar-search { display: none !important; }
+body.mobile-panel-mode #topbarNotifBtn,
+body.mobile-panel-mode #topbarAppsBtn { display: none !important; }
+
+
+/* ================================================================
+   SIDEBAR FOOTER — quick-action bar at the bottom of sidebar
+   ================================================================ */
+
+.sidebar {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+#sidebarMenu {
+  flex: 1 1 auto;
+}
+
+.sidebar-footer {
+  flex: 0 0 auto;
+  position: sticky;
+  bottom: 0;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(111, 208, 165, 0.07);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(2, 9, 6, 0.98);
+  backdrop-filter: blur(8px);
+  z-index: 4;
+}
+
+.sidebar-footer-btn {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  border: 1px solid rgba(111, 208, 165, 0.08);
+  background: transparent;
+  color: rgba(238, 247, 242, 0.40);
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease, border-color .16s ease, transform .14s ease;
+}
+
+.sidebar-footer-btn:hover {
+  background: rgba(111, 208, 165, 0.09);
+  border-color: rgba(111, 208, 165, 0.16);
+  color: rgba(238, 247, 242, 0.86);
+}
+
+.sidebar-footer-btn:active { transform: scale(0.93); }
+
+.sidebar-footer-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sidebar-footer-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(111, 208, 165, 0.08);
+  margin: 0 2px;
+  flex: 0 0 auto;
+}
+
+.sidebar-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  margin-left: auto;
+  flex: 0 0 8px;
+  box-shadow: 0 0 7px rgba(63, 168, 120, 0.55);
+  animation: sidebar-status-pulse 2.8s ease-in-out infinite;
+}
+
+@keyframes sidebar-status-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 7px rgba(63, 168, 120, 0.55); }
+  50% { opacity: 0.72; box-shadow: 0 0 13px rgba(63, 168, 120, 0.82); }
+}
+
+body.sidebar-collapsed .sidebar-footer { display: none !important; }
+
+
+/* ================================================================
+   CARD TABS & TREND INDICATORS (Flowbite-style extras)
+   ================================================================ */
+
+.card-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  border: 1px solid rgba(111, 208, 165, 0.08);
+}
+
+.card-tab-btn {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.card-tab-btn.active {
+  background: rgba(63, 168, 120, 0.22);
+  color: #dcfce7;
+  font-weight: 700;
+}
+
+.card-tab-btn:hover:not(.active) {
+  background: rgba(111, 208, 165, 0.06);
+  color: var(--text);
+}
+
+.trend-up   { color: var(--green-2); font-weight: 700; font-size: 13px; }
+.trend-down { color: #f87171; font-weight: 700; font-size: 13px; }
+.trend-neutral { color: var(--muted); font-weight: 600; font-size: 13px; }
