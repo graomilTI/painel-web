@@ -44,8 +44,9 @@ async function loadOs() {
   state.loading = true;
   const { data } = await supabase
     .from('operacional_os')
-    .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,embarcado,status_gestor,observacao_logistica')
-    .or('status_gestor.eq.FINALIZAR,observacao_logistica.ilike.KG solicitado*')
+    .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,embarcado,status_gestor,status_logistica,observacao_logistica')
+    .or('status_gestor.eq.FINALIZAR,observacao_logistica.ilike.KG solicitado*,remanescente.eq.0')
+    .or('status_logistica.is.null,status_logistica.neq.FINALIZADA')
     .order('data_os', { ascending: false })
     .limit(1000);
   state.rows = safe(data);
@@ -63,14 +64,15 @@ function renderOsTab() {
   if (state.loading) return `<section class="card mt-16"><p class="muted" style="padding:16px">Carregando...</p></section>`;
   if (!state.rows.length) return `<section class="card mt-16"><div class="log-empty">Nenhuma O.S. pendente para a Logística.</div></section>`;
 
-  const finalizarRows = state.rows.filter(r => String(r.status_gestor||'') === 'FINALIZAR');
   const kgRows = state.rows.filter(r => String(r.observacao_logistica||'').startsWith('KG solicitado'));
+  const finalizarRows = state.rows.filter(r => !String(r.observacao_logistica||'').startsWith('KG solicitado') && String(r.status_gestor||'') === 'FINALIZAR');
+  const saldoZeroRows = state.rows.filter(r => !String(r.observacao_logistica||'').startsWith('KG solicitado') && String(r.status_gestor||'') !== 'FINALIZAR' && Number(r.remanescente) === 0);
 
   return `
     <section class="card mt-16">
       <div class="section-head">
         <div><h3>O.S. para Logística</h3>
-          <p class="muted">${finalizarRows.length} para finalizar · ${kgRows.length} aumento de saldo</p>
+          <p class="muted">${finalizarRows.length} para finalizar · ${kgRows.length} aumento de saldo · ${saldoZeroRows.length} saldo zerado</p>
         </div>
         <button class="btn btn-secondary" id="logReload" type="button">Atualizar</button>
       </div>
@@ -92,10 +94,14 @@ function renderOsTab() {
 
 function rowHtml(row) {
   const isKg = String(row.observacao_logistica||'').startsWith('KG solicitado');
-  const type = isKg ? 'kg' : 'finalizar';
+  const isFinalizar = !isKg && String(row.status_gestor||'') === 'FINALIZAR';
+  const isSaldoZero = !isKg && !isFinalizar && Number(row.remanescente) === 0;
+  const type = isKg ? 'kg' : isSaldoZero ? 'saldo_zero' : 'finalizar';
   const badge = isKg
     ? `<span class="log-chip red">↑ KG</span><div class="log-obs">${esc(row.observacao_logistica)}</div>`
-    : `<span class="log-chip blue">$ Finalizar</span>`;
+    : isSaldoZero
+      ? `<span class="log-chip warn">Saldo zerado</span>`
+      : `<span class="log-chip blue">$ Finalizar</span>`;
   const rem = Number(row.remanescente);
   return `<tr data-log-row="${esc(String(row.id))}">
     <td><strong>${esc(row.numero_os)}</strong><br><small class="muted">${brDate(row.data_os)}</small><br><small class="muted">${esc(row.supervisao||'-')}</small></td>
