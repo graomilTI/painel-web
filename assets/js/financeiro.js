@@ -48,7 +48,9 @@ const state = {
   filters: {
     inicio: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
     fim: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
-  }
+  },
+  detSort: { col: null, dir: 1 },
+  detFilter: { tipo: '', situacao: '', favorecido: '', doc: '' }
 };
 
 function esc(value) {
@@ -1021,6 +1023,14 @@ initProtectedPage('Financeiro', (content, userContext) => {
       .spay-empty{color:#64748b;font-size:13px}
       .fin-btn-recusar{border:1px solid rgba(220,38,38,.3);background:rgba(220,38,38,.1);color:#fca5a5;border-radius:10px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;transition:all .14s;white-space:nowrap}
       .fin-btn-recusar:hover{background:rgba(220,38,38,.22);border-color:rgba(220,38,38,.5);color:#fecaca}
+      .fin-det-filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+      .fin-det-filters select,.fin-det-filters input{border:1px solid rgba(148,163,184,.18);border-radius:10px;background:rgba(15,23,42,.8);color:#e5e7eb;padding:8px 12px;font-size:13px;color-scheme:dark;transition:border-color .14s;outline:0}
+      .fin-det-filters select:focus,.fin-det-filters input:focus{border-color:rgba(52,211,153,.45);box-shadow:0 0 0 3px rgba(52,211,153,.08)}
+      .det-th-sort{cursor:pointer;user-select:none;white-space:nowrap;transition:color .14s}
+      .det-th-sort:hover{color:#e2e8f0!important}
+      .det-th-active{color:#34d399!important}
+      .det-sort-icon{margin-left:4px;opacity:.6;font-size:10px}
+      .det-th-active .det-sort-icon{opacity:1;color:#34d399}
     </style>
     <section class="fin-wrap">
       <div class="cf-header">
@@ -1180,7 +1190,20 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
         <div class="fin-panel" id="tab-detalhes">
           <div class="fin-head"><div><h3>Detalhes do dia selecionado</h3><p id="detalhesData">Selecione uma data no fluxo.</p></div></div>
-          <div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Tipo</th><th>Situação</th><th>Nome/Favorecido</th><th>Documento</th><th>Valor</th><th>Vencimento</th></tr></thead><tbody id="detalhesTbody"><tr><td colspan="6" class="fin-empty">Nenhuma data selecionada.</td></tr></tbody></table></div>
+          <div class="fin-det-filters">
+            <select id="detFiltroTipo"><option value="">Tipo</option><option value="Receber">Receber</option><option value="Pagar">Pagar</option></select>
+            <select id="detFiltroSituacao"><option value="">Situação</option><option value="Recebida">Recebida</option><option value="A vencer">A vencer</option><option value="Vencida">Vencida</option><option value="Paga">Paga</option></select>
+            <input type="text" id="detFiltroFavorecido" placeholder="Favorecido...">
+            <input type="text" id="detFiltroDoc" placeholder="Documento...">
+          </div>
+          <div class="fin-table-wrap"><table class="fin-table"><thead><tr>
+            <th data-det-sort="tipo" class="det-th-sort">Tipo <span class="det-sort-icon">↕</span></th>
+            <th data-det-sort="situacao" class="det-th-sort">Situação <span class="det-sort-icon">↕</span></th>
+            <th data-det-sort="nome" class="det-th-sort">Nome/Favorecido <span class="det-sort-icon">↕</span></th>
+            <th data-det-sort="doc" class="det-th-sort">Documento <span class="det-sort-icon">↕</span></th>
+            <th data-det-sort="valor" class="det-th-sort">Valor <span class="det-sort-icon">↕</span></th>
+            <th data-det-sort="vencimento" class="det-th-sort">Vencimento <span class="det-sort-icon">↕</span></th>
+          </tr></thead><tbody id="detalhesTbody"><tr><td colspan="6" class="fin-empty">Nenhuma data selecionada.</td></tr></tbody></table></div>
         </div>
 
 
@@ -2025,12 +2048,35 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
   function renderDetalhes() {
     const tbody = document.getElementById('detalhesTbody');
-    const rows = [
+    let rows = [
       ...state.receber.map((r) => ({ tipo: 'Receber', situacao: r.situacao, nome: r.cliente, doc: r.fatura || r.numero_nf || r.codigo, valor: Number(r.valor || 0) - Number(r.valor_pago || 0), vencimento: r.vencimento })),
       ...state.pagar.map((r) => ({ tipo: 'Pagar', situacao: r.situacao, nome: r.favorecido, doc: r.doc || r.cod_grupo || r.parcela, valor: Number(r.valor || 0) - Number(r.valor_pago || 0), vencimento: r.vencimento }))
     ];
+
+    const { tipo, situacao, favorecido, doc } = state.detFilter;
+    if (tipo) rows = rows.filter((r) => r.tipo === tipo);
+    if (situacao) rows = rows.filter((r) => (r.situacao || '').toLowerCase() === situacao.toLowerCase());
+    if (favorecido) rows = rows.filter((r) => (r.nome || '').toLowerCase().includes(favorecido.toLowerCase()));
+    if (doc) rows = rows.filter((r) => (r.doc || '').toLowerCase().includes(doc.toLowerCase()));
+
+    const { col, dir } = state.detSort;
+    if (col) {
+      rows = [...rows].sort((a, b) => {
+        const av = col === 'valor' ? a[col] : (a[col] || '');
+        const bv = col === 'valor' ? b[col] : (b[col] || '');
+        return col === 'valor' ? (av - bv) * dir : String(av).localeCompare(String(bv)) * dir;
+      });
+    }
+
+    document.querySelectorAll('.det-th-sort').forEach((th) => {
+      const c = th.dataset.detSort;
+      const icon = th.querySelector('.det-sort-icon');
+      if (icon) icon.textContent = c === col ? (dir === 1 ? '▲' : '▼') : '↕';
+      th.classList.toggle('det-th-active', c === col);
+    });
+
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="fin-empty">Nenhum lançamento encontrado para esta data.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="fin-empty">Nenhum lançamento encontrado.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((r) => `
@@ -2401,6 +2447,19 @@ initProtectedPage('Financeiro', (content, userContext) => {
   document.getElementById('btnImportReceber').addEventListener('click', () => importFile('receber'));
   document.getElementById('btnImportPagar').addEventListener('click', () => importFile('pagar'));
   document.getElementById('configForm').addEventListener('submit', saveConfig);
+
+  document.querySelectorAll('.det-th-sort').forEach((th) => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const col = th.dataset.detSort;
+      if (state.detSort.col === col) { state.detSort.dir *= -1; } else { state.detSort.col = col; state.detSort.dir = 1; }
+      renderDetalhes();
+    });
+  });
+  document.getElementById('detFiltroTipo')?.addEventListener('change', (e) => { state.detFilter.tipo = e.target.value; renderDetalhes(); });
+  document.getElementById('detFiltroSituacao')?.addEventListener('change', (e) => { state.detFilter.situacao = e.target.value; renderDetalhes(); });
+  document.getElementById('detFiltroFavorecido')?.addEventListener('input', (e) => { state.detFilter.favorecido = e.target.value; renderDetalhes(); });
+  document.getElementById('detFiltroDoc')?.addEventListener('input', (e) => { state.detFilter.doc = e.target.value; renderDetalhes(); });
 
   function setupPagamentoDropzone(inputId) {
     const input = document.getElementById(inputId);
