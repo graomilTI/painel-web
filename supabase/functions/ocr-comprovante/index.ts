@@ -13,17 +13,16 @@ function json(payload: unknown, status = 200) {
   });
 }
 
-// ─── Tipagem ──────────────────────────────────────────────────────────────────
 interface Extracted {
-  valor:      number | null;
-  valorRaw:   string;
-  data:       string | null;
-  favorecido: string | null;
-  cnpj:       string | null;
-  cpf:        string | null;
-  pixKey:     string | null;
-  idTransacao:string | null;
-  rawText:    string;
+  valor:       number | null;
+  valorRaw:    string;
+  data:        string | null;
+  favorecido:  string | null;
+  cnpj:        string | null;
+  cpf:         string | null;
+  pixKey:      string | null;
+  idTransacao: string | null;
+  rawText:     string;
 }
 
 interface Match {
@@ -33,62 +32,55 @@ interface Match {
   reasons:    string[];
 }
 
-// ─── Parser de recibos brasileiros ───────────────────────────────────────────
-function parseBRL(raw: string): number | null {
-  const s = raw.replace(/\s/g, "");
-  // 1.234,56 → tem ponto como milhar e vírgula decimal
-  if (/^\d{1,3}(\.\d{3})+,\d{2}$/.test(s)) return parseFloat(s.replace(/\./g, "").replace(",", "."));
-  // 1234,56
-  if (/^\d+,\d{2}$/.test(s)) return parseFloat(s.replace(",", "."));
-  // 1234.56
-  if (/^\d+\.\d{2}$/.test(s)) return parseFloat(s);
-  return null;
+// ─── Groq Vision OCR ──────────────────────────────────────────────────────────
+async function callGroq(imageBase64: string, mimeType: string, apiKey: string): Promise<Extracted> {
+  const prompt = `Você é um especialista em comprovantes de pagamento brasileiros (PIX, TED, DOC, boleto).
+Analise a imagem e extraia as informações retornando APENAS um JSON válido com estes campos:
+{
+  "valor": número decimal (ex: 1234.56) ou null,
+  "valorRaw": string do valor como aparece (ex: "1.234,56") ou "",
+  "data": "DD/MM/YYYY" ou null,
+  "favorecido": nome do recebedor/beneficiário ou null,
+  "cnpj": "XX.XXX.XXX/XXXX-XX" ou null,
+  "cpf": "XXX.XXX.XXX-XX" ou null,
+  "pixKey": chave pix usada (email, CPF, CNPJ, telefone ou chave aleatória) ou null,
+  "idTransacao": ID/protocolo/código E2E da transação ou null,
+  "rawText": todo o texto visível no comprovante concatenado
 }
+Responda SOMENTE com o JSON, sem markdown, sem explicações.`;
 
-function extractData(text: string): Extracted {
-  const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+        ],
+      }],
+      temperature: 0,
+      response_format: { type: "json_object" },
+      max_tokens: 1024,
+    }),
+  });
 
-  // Valor — procura padrão R$ X.XXX,XX ou só o número maior perto de "valor"/"total"
-  let valor: number | null = null;
-  let valorRaw = "";
-  const valorMatches = [...text.matchAll(/R\$\s*([\d.,]+)/gi)];
-  for (const m of valorMatches) {
-    const v = parseBRL(m[1]);
-    if (v !== null && v > 0 && (valor === null || v > valor)) { valor = v; valorRaw = m[1]; }
+  if (!res.ok) throw new Error(`Groq API error ${res.status}: ${await res.text()}`);
+
+  const body = await res.json();
+  const text = body?.choices?.[0]?.message?.content ?? "";
+  if (!text) throw new Error("Groq não retornou conteúdo.");
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("Resposta do Groq não é JSON válido: " + text.slice(0, 300));
   }
-  // Fallback: maior número decimal encontrado no texto
-  if (valor === null) {
-    const nums = [...text.matchAll(/\b(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})\b/g)].map((m) => ({ raw: m[1], v: parseBRL(m[1]) })).filter((x) => x.v !== null && x.v! > 0);
-    if (nums.length) { const biggest = nums.reduce((a, b) => (b.v! > a.v! ? b : a)); valor = biggest.v; valorRaw = biggest.raw; }
-  }
-
-  // Data DD/MM/YYYY ou DD/MM/YY
-  const dataMatch = text.match(/(\d{2})[\/.-](\d{2})[\/.-](\d{2,4})/);
-  const data = dataMatch ? `${dataMatch[1]}/${dataMatch[2]}/${dataMatch[3].length === 2 ? "20" + dataMatch[3] : dataMatch[3]}` : null;
-
-  // CNPJ XX.XXX.XXX/XXXX-XX
-  const cnpjMatch = text.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/);
-
-  // CPF XXX.XXX.XXX-XX (excluindo CNPJ)
-  const cpfMatch = text.replace(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g, "").match(/\d{3}\.\d{3}\.\d{3}-\d{2}/);
-
-  // Favorecido — busca linha após label comum
-  let favorecido: string | null = null;
-  const favLabels = /(?:favorecido|benefici[aá]rio|para|destinat[aá]rio|recebedor|nome)\s*[:\-]?\s*(.+)/i;
-  const favMatch = text.match(favLabels);
-  if (favMatch) favorecido = favMatch[1].trim().slice(0, 80);
-
-  // Chave PIX
-  let pixKey: string | null = null;
-  const pixMatch = text.match(/(?:chave\s+pix|chave)\s*[:\-]?\s*([^\n]{5,})/i);
-  if (pixMatch) pixKey = pixMatch[1].trim().slice(0, 100);
-
-  // ID transação (E2E ou código longo)
-  let idTransacao: string | null = null;
-  const idMatch = text.match(/(?:id\s+(?:da\s+)?transa[çc][aã]o|id\s+do\s+pagamento|protocolo|e2e|c[oó]digo)\s*[:\-]?\s*([A-Za-z0-9]{15,})/i);
-  if (idMatch) idTransacao = idMatch[1].trim();
-
-  return { valor, valorRaw, data, favorecido, cnpj: cnpjMatch?.[0] ?? null, cpf: cpfMatch?.[0] ?? null, pixKey, idTransacao, rawText: text };
 }
 
 // ─── Normalização para comparação ─────────────────────────────────────────────
@@ -104,117 +96,96 @@ function onlyDigits(s: unknown): string {
 function scorePayment(row: Record<string, unknown>, ex: Extracted): { score: number; reasons: string[] } {
   let score = 0;
   const reasons: string[] = [];
-  const payVal = Number(row.valor ?? row.valor_total ?? row.total ?? 0);
+  const payVal = Number(row.valor ?? 0);
 
-  // Valor (peso 60)
   if (ex.valor !== null && payVal > 0) {
     const diff = Math.abs(ex.valor - payVal);
     const pct  = diff / payVal;
-    if (diff < 0.01)       { score += 60; reasons.push("valor exato"); }
-    else if (pct < 0.005)  { score += 50; reasons.push("valor ≈ exato"); }
-    else if (pct < 0.02)   { score += 35; reasons.push("valor próximo"); }
-    else if (pct < 0.10)   { score += 15; reasons.push("valor aproximado"); }
+    if (diff < 0.01)      { score += 60; reasons.push("valor exato"); }
+    else if (pct < 0.005) { score += 50; reasons.push("valor ≈ exato"); }
+    else if (pct < 0.02)  { score += 35; reasons.push("valor próximo"); }
+    else if (pct < 0.10)  { score += 15; reasons.push("valor aproximado"); }
   }
 
-  // CNPJ (peso 30)
-  if (ex.cnpj && row.cnpj_cpf) {
-    if (onlyDigits(ex.cnpj) === onlyDigits(row.cnpj_cpf as string)) { score += 30; reasons.push("CNPJ idêntico"); }
-  }
-  // CPF (peso 25)
-  if (ex.cpf && row.cnpj_cpf && !ex.cnpj) {
-    if (onlyDigits(ex.cpf) === onlyDigits(row.cnpj_cpf as string)) { score += 25; reasons.push("CPF idêntico"); }
-  }
+  const doc = String(row.favorecido_documento ?? "");
+  if (ex.cnpj && doc && onlyDigits(ex.cnpj) === onlyDigits(doc)) { score += 30; reasons.push("CNPJ idêntico"); }
+  else if (ex.cpf && doc && !ex.cnpj && onlyDigits(ex.cpf) === onlyDigits(doc)) { score += 25; reasons.push("CPF idêntico"); }
 
-  // Favorecido (peso 20)
   if (ex.favorecido) {
     const extFav = norm(ex.favorecido);
-    const payFav = norm(String(row.favorecido ?? row.fornecedor ?? ""));
+    const payFav = norm(String(row.favorecido_nome ?? row.favorecido ?? row.fornecedor ?? ""));
     if (payFav && extFav.includes(payFav.slice(0, 6))) { score += 20; reasons.push("favorecido coincide"); }
     else if (payFav && payFav.includes(extFav.slice(0, 6))) { score += 15; reasons.push("favorecido parcial"); }
   }
 
-  // Chave PIX (peso 20)
-  if (ex.pixKey && row.dados_pagamento) {
+  if (ex.pixKey) {
     const ekn = norm(ex.pixKey);
-    const pkn = norm(row.dados_pagamento as string);
-    if (ekn === pkn || ekn.includes(pkn) || pkn.includes(ekn)) { score += 20; reasons.push("chave PIX idêntica"); }
+    const chavePix = norm(String(row.chave_pix ?? ""));
+    const dadosPag = norm(String(row.dados_pagamento ?? ""));
+    if ((chavePix && (ekn === chavePix || ekn.includes(chavePix) || chavePix.includes(ekn))) ||
+        (dadosPag && (ekn === dadosPag || ekn.includes(dadosPag) || dadosPag.includes(ekn)))) {
+      score += 20; reasons.push("chave PIX idêntica");
+    }
   }
 
   return { score: Math.min(100, score), reasons };
-}
-
-// ─── Google Vision ────────────────────────────────────────────────────────────
-async function callVision(imageUrl: string, apiKey: string): Promise<string> {
-  const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      requests: [{
-        image: { source: { imageUri: imageUrl } },
-        features: [{ type: "DOCUMENT_TEXT_DETECTION", maxResults: 1 }],
-        imageContext: { languageHints: ["pt-BR"] },
-      }],
-    }),
-  });
-  if (!res.ok) throw new Error(`Vision API error ${res.status}: ${await res.text()}`);
-  const body = await res.json();
-  const text = body?.responses?.[0]?.fullTextAnnotation?.text ?? body?.responses?.[0]?.textAnnotations?.[0]?.description ?? "";
-  if (!text) throw new Error("OCR não retornou texto. Verifique se a imagem está legível.");
-  return text;
 }
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
-  const GOOGLE_VISION_KEY = Deno.env.get("GOOGLE_VISION_KEY") ?? "";
-  const SUPABASE_URL       = Deno.env.get("SUPABASE_URL") ?? "";
-  const SUPABASE_SERVICE   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const GROQ_API_KEY     = Deno.env.get("GROQ_API_KEY") ?? "";
+  const SUPABASE_URL     = Deno.env.get("SUPABASE_URL") ?? "";
+  const SUPABASE_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-  if (!GOOGLE_VISION_KEY) return json({ error: "GOOGLE_VISION_KEY não configurada nas env vars da Edge Function." }, 500);
+  if (!GROQ_API_KEY) return json({ error: "GROQ_API_KEY não configurada." }, 500);
 
-  let imageUrl: string;
+  const authHeader = req.headers.get("Authorization") ?? "";
+  if (!authHeader.startsWith("Bearer ")) return json({ error: "Token de autenticação ausente." }, 401);
+
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE);
+  const { error: authErr } = await sb.auth.getUser(authHeader.slice(7));
+  if (authErr) return json({ error: "Não autenticado." }, 401);
+
+  let imageBase64: string;
+  let mimeType = "image/jpeg";
   try {
     const body = await req.json();
-    imageUrl = String(body?.imageUrl ?? "").trim();
-    if (!imageUrl) return json({ error: "Campo imageUrl é obrigatório." }, 400);
+    if (body.imageBase64) {
+      imageBase64 = String(body.imageBase64).replace(/^data:image\/\w+;base64,/, "");
+      mimeType = body.mimeType ?? "image/jpeg";
+    } else if (body.imageUrl) {
+      const imgRes = await fetch(body.imageUrl);
+      if (!imgRes.ok) return json({ error: `Não foi possível buscar a imagem: ${imgRes.status}` }, 400);
+      mimeType = imgRes.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+      const bytes = new Uint8Array(await imgRes.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      imageBase64 = btoa(binary);
+    } else {
+      return json({ error: "Envie imageUrl ou imageBase64." }, 400);
+    }
   } catch {
     return json({ error: "Body JSON inválido." }, 400);
   }
 
-  // Autenticação: valida o JWT do usuário
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE);
-  if (authHeader.startsWith("Bearer ")) {
-    const token = authHeader.slice(7);
-    const { error } = await sb.auth.getUser(token);
-    if (error) return json({ error: "Não autenticado." }, 401);
-  } else {
-    return json({ error: "Token de autenticação ausente." }, 401);
-  }
-
-  // 1. OCR via Google Vision
-  let rawText: string;
+  let extracted: Extracted;
   try {
-    rawText = await callVision(imageUrl, GOOGLE_VISION_KEY);
+    extracted = await callGroq(imageBase64, mimeType, GROQ_API_KEY);
   } catch (err) {
     return json({ error: (err as Error).message }, 502);
   }
 
-  // 2. Extrair dados
-  const extracted = extractData(rawText);
-
-  // 3. Buscar pagamentos pendentes
   const { data: payments, error: dbErr } = await sb
     .from("financeiro_pagamentos")
-    .select("id,origem,setor,modulo_origem,descricao,conteudo,valor,valor_total,total,forma_pagamento,dados_pagamento,fornecedor,favorecido,cnpj_cpf,status,created_at")
+    .select("id,origem,setor,origem_setor,descricao,conteudo,valor,forma_pagamento,dados_pagamento,chave_pix,fornecedor,favorecido,favorecido_nome,favorecido_documento,status,created_at")
     .in("status", ["PENDENTE", "pendente", "Pendente"])
     .order("created_at", { ascending: false })
     .limit(300);
 
   if (dbErr) return json({ error: dbErr.message }, 500);
 
-  // 4. Score e rank
   const scored: Match[] = (payments ?? [])
     .map((row) => {
       const { score, reasons } = scorePayment(row as Record<string, unknown>, extracted);

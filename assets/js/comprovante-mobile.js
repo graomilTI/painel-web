@@ -126,10 +126,10 @@ function renderOcrResult(extracted, matches) {
 
   list.innerHTML = matches.map((m) => {
     const row   = m.row;
-    const valor = row.valor || row.valor_total || row.total || 0;
-    const orig  = row.origem || row.setor || row.modulo_origem || 'Financeiro';
+    const valor = row.valor || 0;
+    const orig  = row.origem_setor || row.origem || row.setor || 'Financeiro';
     const desc  = (String(row.descricao || row.conteudo || '')).split('\n')[0].slice(0, 60);
-    const fav   = row.fornecedor || row.favorecido || '';
+    const fav   = row.favorecido_nome || row.favorecido || row.fornecedor || '';
     const conf  = m.confidence;
     const confLabel = conf === 'alta' ? '✓ Alta' : conf === 'media' ? '~ Média' : '? Baixa';
     const confCls   = conf === 'alta' ? 'badge-alta' : conf === 'media' ? 'badge-media' : 'badge-baixa';
@@ -170,10 +170,10 @@ function renderPaymentList(rows) {
   const list = document.getElementById('payment-list');
   if (!rows.length) { list.innerHTML = '<div class="empty-state">Nenhum pagamento pendente encontrado.</div>'; return; }
   list.innerHTML = rows.map((row) => {
-    const valor = row.valor || row.valor_total || row.total || 0;
-    const orig  = row.origem || row.setor || row.modulo_origem || 'Financeiro';
+    const valor = row.valor || 0;
+    const orig  = row.origem_setor || row.origem || row.setor || 'Financeiro';
     const desc  = (String(row.descricao || row.conteudo || '')).split('\n')[0].slice(0, 60);
-    const fav   = row.fornecedor || row.favorecido || '';
+    const fav   = row.favorecido_nome || row.favorecido || row.fornecedor || '';
     return `<div class="pay-card" data-id="${esc(String(row.id))}">
       <div class="pay-card-top"><span class="pay-tag">${esc(orig)}</span><span class="pay-value">${money(valor)}</span></div>
       ${desc ? `<div class="pay-desc">${esc(desc)}</div>` : ''}
