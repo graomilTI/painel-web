@@ -1,4 +1,4 @@
-import { initProtectedPage } from './pageInit.js';
+﻿import { initProtectedPage } from './pageInit.js';
 import { getSession } from './auth.js';
 import { MENU_CONFIG } from './menuConfig.js';
 
@@ -202,58 +202,58 @@ function ensureStyles() {
     .au-shell{display:grid;gap:18px}
     .au-hero{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap}
     .au-hero-copy h3{margin:0 0 6px;font-size:26px}
-    .au-hero-copy p{margin:0;color:#94a3b8}
+    .au-hero-copy p{margin:0;color:#6b7280}
     .au-actions{display:flex;gap:10px;flex-wrap:wrap}
     .au-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
     .au-kpi{background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.92));border:1px solid rgba(51,65,85,.8);border-radius:20px;padding:16px 18px;box-shadow:0 12px 28px rgba(2,6,23,.28)}
-    .au-kpi-label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8}
+    .au-kpi-label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#6b7280}
     .au-kpi-value{margin-top:10px;font-size:28px;font-weight:800;color:#f8fafc}
     .au-panel{background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.92));border:1px solid rgba(51,65,85,.8);border-radius:24px;box-shadow:0 18px 34px rgba(2,6,23,.26)}
     .au-panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:20px 20px 0;flex-wrap:wrap}
     .au-panel-title{display:flex;flex-direction:column;gap:4px}
     .au-panel-title h3{margin:0;font-size:20px}
-    .au-panel-title p{margin:0;color:#94a3b8;font-size:14px}
+    .au-panel-title p{margin:0;color:#6b7280;font-size:14px}
     .au-filter-grid{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:12px;padding:20px}
     .au-field{display:flex;flex-direction:column;gap:6px}
-    .au-field label{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8}
-    .au-input,.au-select,.au-textarea{width:100%;box-sizing:border-box;border-radius:14px;border:1px solid #334155;background:#0f172a;color:#e5e7eb;padding:12px 14px;outline:none;transition:.18s ease}
+    .au-field label{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280}
+    .au-input,.au-select,.au-textarea{width:100%;box-sizing:border-box;border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:#0d0d18;color:#e2e2f0;padding:12px 14px;outline:none;transition:.18s ease}
     .au-textarea{min-height:92px;resize:vertical}
     .au-input:focus,.au-select:focus,.au-textarea:focus{border-color:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,.18)}
     .au-btn{border:1px solid transparent;border-radius:14px;padding:12px 16px;font-weight:700;cursor:pointer;transition:.18s ease}
     .au-btn:hover{transform:translateY(-1px)}
     .au-btn-primary{background:#166534;color:#fff}
-    .au-btn-secondary{background:#0f172a;border-color:#334155;color:#e5e7eb}
+    .au-btn-secondary{background:#0d0d18;border-color:rgba(255,255,255,0.08);color:#e2e2f0}
     .au-btn-danger{background:#7f1d1d;color:#fff}
-    .au-btn-ghost{background:transparent;border-color:#334155;color:#cbd5e1}
+    .au-btn-ghost{background:transparent;border-color:rgba(255,255,255,0.08);color:#cbd5e1}
     .au-btn-inline{padding:9px 12px;border-radius:12px;font-size:13px}
     .au-table-wrap{padding:0 20px 20px;overflow:auto}
     .au-table{width:100%;border-collapse:collapse;min-width:1040px}
     .au-table th,.au-table td{padding:14px 12px;border-bottom:1px solid rgba(51,65,85,.45);vertical-align:top;text-align:left}
-    .au-table th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;background:rgba(15,23,42,.9);position:sticky;top:0}
+    .au-table th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;background:rgba(15,23,42,.9);position:sticky;top:0}
     .au-table tbody tr:hover{background:rgba(15,23,42,.56)}
     .au-name{display:flex;flex-direction:column;gap:4px}
     .au-name strong{font-size:14px;color:#f8fafc}
-    .au-sub{font-size:12px;color:#94a3b8}
+    .au-sub{font-size:12px;color:#6b7280}
     .au-badges,.au-actions-row,.au-check-grid,.au-chip-wrap{display:flex;flex-wrap:wrap;gap:8px}
-    .au-chip{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid rgba(51,65,85,.8);background:#111827;color:#e5e7eb;font-size:12px}
+    .au-chip{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid rgba(51,65,85,.8);background:#10101e;color:#e2e2f0;font-size:12px}
     .au-chip-soft{background:rgba(22,101,52,.16);border-color:rgba(22,163,74,.3)}
     .au-chip-neutral{background:rgba(30,41,59,.72)}
     .au-chip-danger{background:rgba(127,29,29,.18);border-color:rgba(239,68,68,.28)}
     .au-status{font-weight:700;text-transform:capitalize}
-    .au-feedback{display:none;margin:0 20px 20px;padding:12px 14px;border-radius:14px;border:1px solid #334155;background:#0f172a}
+    .au-feedback{display:none;margin:0 20px 20px;padding:12px 14px;border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:#0d0d18}
     .au-feedback.is-visible{display:block}
     .au-feedback.is-error{border-color:rgba(239,68,68,.35);background:rgba(127,29,29,.12)}
     .au-feedback.is-success{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.12)}
-    .au-empty{padding:26px 20px;color:#94a3b8}
+    .au-empty{padding:26px 20px;color:#6b7280}
     .au-overlay{position:fixed;inset:0;background:rgba(2,6,23,.72);display:none;align-items:center;justify-content:center;padding:20px;z-index:99999}
     .au-overlay.is-open{display:flex}
     .au-modal{width:min(1080px,100%);max-height:92vh;overflow:auto;background:#020617;border:1px solid rgba(51,65,85,.85);border-radius:26px;box-shadow:0 28px 60px rgba(0,0,0,.45)}
     .au-modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:22px 22px 0}
     .au-modal-head h3{margin:0;font-size:24px}
-    .au-modal-head p{margin:6px 0 0;color:#94a3b8}
-    .au-close{width:42px;height:42px;border-radius:14px;border:1px solid #334155;background:#0f172a;color:#fff;font-size:20px;cursor:pointer}
+    .au-modal-head p{margin:6px 0 0;color:#6b7280}
+    .au-close{width:42px;height:42px;border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:#0d0d18;color:#fff;font-size:20px;cursor:pointer}
     .au-modal-body{padding:22px;display:grid;grid-template-columns:1.3fr .7fr;gap:20px}
-    .au-card{border:1px solid rgba(51,65,85,.72);border-radius:20px;padding:18px;background:#0f172a}
+    .au-card{border:1px solid rgba(51,65,85,.72);border-radius:20px;padding:18px;background:#0d0d18}
     .au-card h4{margin:0 0 14px;font-size:16px}
     .au-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
     .au-form-grid .full{grid-column:1 / -1}
@@ -264,11 +264,11 @@ function ensureStyles() {
     .au-result:last-child{border-bottom:none}
     .au-result:hover{background:rgba(15,23,42,.9)}
     .au-result strong{display:block;font-size:14px;color:#f8fafc}
-    .au-result span{display:block;font-size:12px;color:#94a3b8;margin-top:3px}
+    .au-result span{display:block;font-size:12px;color:#6b7280;margin-top:3px}
     .au-selected-colab{margin-top:10px;padding:12px;border-radius:16px;background:rgba(22,101,52,.14);border:1px solid rgba(34,197,94,.25)}
     .au-modal-actions{display:flex;justify-content:flex-end;gap:10px;padding:0 22px 22px}
     .au-loading{opacity:.7;pointer-events:none}
-    .au-section-note{font-size:12px;color:#94a3b8;margin-top:-4px;margin-bottom:12px}
+    .au-section-note{font-size:12px;color:#6b7280;margin-top:-4px;margin-bottom:12px}
     .au-switch{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:#cbd5e1}
     .au-check-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     .au-check-grid .au-switch{padding:10px 12px;border:1px solid rgba(51,65,85,.72);border-radius:14px;background:#020617}
@@ -276,7 +276,7 @@ function ensureStyles() {
     .au-module-group{border:1px solid rgba(51,65,85,.72);border-radius:18px;background:rgba(2,6,23,.55);overflow:hidden}
     .au-module-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 13px;background:rgba(15,23,42,.9);border-bottom:1px solid rgba(51,65,85,.55)}
     .au-module-group-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#93c5fd}
-    .au-module-group-count{font-size:11px;color:#94a3b8}
+    .au-module-group-count{font-size:11px;color:#6b7280}
     .au-module-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px}
     .au-module-grid .au-switch{padding:10px 11px;border:1px solid rgba(51,65,85,.72);border-radius:14px;background:#020617;min-height:40px}
     .au-module-grid .au-switch span{line-height:1.15}

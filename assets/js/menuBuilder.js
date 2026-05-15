@@ -376,6 +376,35 @@ async function markProgramacaoIfOsPending(container, userContext) {
   }
 }
 
+const SECTION_ICONS = {
+  'INÍCIO':            `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M3 12L5 10M5 10L12 3L19 10M5 10V20a1 1 0 001 1h3M19 10V20a1 1 0 01-1 1h-3M9 21V15a1 1 0 011-1h4a1 1 0 011 1v6M9 21h6"/></svg>`,
+  'GESTOR':            `<svg class="menu-section-icon" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>`,
+  'CONFERÊNCIA':       `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
+  'COMPRAS':           `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 2.3c-.6.6-.2 1.7.7 1.7H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>`,
+  'PATRIMÔNIOS':       `<svg class="menu-section-icon" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
+  'HOSPEDAGEM':        `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M3 22V9l9-7 9 7v13M9 22V12h6v10"/></svg>`,
+  'RECURSOS HUMANOS':  `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>`,
+  'OPERACIONAL':       `<svg class="menu-section-icon" viewBox="0 0 24 24"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>`,
+  'FROTAS':            `<svg class="menu-section-icon" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+  'FINANCEIRO':        `<svg class="menu-section-icon" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 100 7h5a3.5 3.5 0 110 7H6"/></svg>`,
+  'NOTAS FISCAIS':     `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
+  'LOGÍSTICA':         `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11a2 2 0 012 2v3M9 21H5a2 2 0 01-2-2v-4a2 2 0 012-2h4a2 2 0 012 2v4a2 2 0 01-2 2zm8-8h4a2 2 0 012 2v4a2 2 0 01-2 2h-4a2 2 0 01-2-2v-4a2 2 0 012-2z"/></svg>`,
+  'AUDITORIA':         `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+  'RELATÓRIOS':        `<svg class="menu-section-icon" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6"  y1="20" x2="6"  y2="14"/></svg>`,
+  'TI':                `<svg class="menu-section-icon" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
+  'DIRETORIA':         `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`,
+  'ADMINISTRAÇÃO':     `<svg class="menu-section-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06-.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
+  'TROCA DE NOTAS':    `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>`,
+};
+
+function getSectionIcon(sectionName = '') {
+  const key = sectionName.toUpperCase().trim();
+  for (const [k, v] of Object.entries(SECTION_ICONS)) {
+    if (key === k || key.startsWith(k)) return v;
+  }
+  return `<svg class="menu-section-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg>`;
+}
+
 export function renderMenu(container, menuSections, currentPath = '', userContext = null) {
   if (!container) return;
 
@@ -402,13 +431,18 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
     titleBtn.className = 'menu-section-toggle';
     if (hasActiveItem) titleBtn.classList.add('is-active');
 
+    const iconEl = document.createElement('span');
+    iconEl.innerHTML = getSectionIcon(section.section);
+
     const titleText = document.createElement('span');
+    titleText.className = 'menu-section-toggle-text';
     titleText.textContent = section.section;
 
     const caret = document.createElement('span');
     caret.className = 'menu-section-caret';
     caret.textContent = hasItems ? '▾' : '•';
 
+    titleBtn.appendChild(iconEl);
     titleBtn.appendChild(titleText);
     titleBtn.appendChild(caret);
     sectionEl.appendChild(titleBtn);
@@ -431,7 +465,13 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
         const li = document.createElement('li');
         const link = document.createElement('a');
         link.href = buildPanelHref(item.path);
-        link.textContent = item.label;
+
+        const dot = document.createElement('span');
+        dot.className = 'menu-item-dot';
+        const label = document.createElement('span');
+        label.textContent = item.label;
+        link.appendChild(dot);
+        link.appendChild(label);
 
         const normalizedItemPath = normalizePath(item.path);
         if (

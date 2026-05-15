@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const BUCKET = 'relatorios-uploads';
   const DIRECT_UPLOAD_LIMIT = 45 * 1024 * 1024;
   const CHUNK_SIZE = 8 * 1024 * 1024;
@@ -13,8 +13,8 @@
         --ri-card-2: rgba(2, 6, 23, .78);
         --ri-border: rgba(34, 197, 94, .25);
         --ri-border-soft: rgba(148, 163, 184, .16);
-        --ri-text: #e5e7eb;
-        --ri-muted: #94a3b8;
+        --ri-text: #e2e2f0;
+        --ri-muted: #6b7280;
         --ri-green: #22c55e;
         --ri-green-2: #16a34a;
         --ri-red: #ef4444;
@@ -304,8 +304,8 @@
         border: 1px solid rgba(148, 163, 184, .22);
         border-radius: 12px;
         padding: 0 12px;
-        color: #e5e7eb;
-        background: #0f172a;
+        color: #e2e2f0;
+        background: #0d0d18;
         color-scheme: dark;
         outline: none;
       }

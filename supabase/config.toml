@@ -14,3 +14,9 @@ verify_jwt = true
 
 [functions.google-contacts-sync]
 verify_jwt = false
+
+[functions.ocr-documento]
+verify_jwt = true
+
+[functions.ocr-comprovante]
+verify_jwt = false

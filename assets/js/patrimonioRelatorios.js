@@ -1,4 +1,4 @@
-import { initProtectedPage } from './pageInit.js';
+﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 
@@ -119,7 +119,7 @@ function injectVisualStyles() {
     .legend-dot { width: 9px; height: 9px; border-radius: 999px; display: inline-block; }
     .legend-dot.ok { background: #22c55e; }
     .legend-dot.atraso { background: #ef4444; }
-    .legend-dot.neutro { background: #94a3b8; }
+    .legend-dot.neutro { background: #6b7280; }
     .table-shell {
       border: 1px solid rgba(148, 163, 184, 0.14);
       border-radius: 18px;
@@ -168,7 +168,7 @@ function injectVisualStyles() {
     }
     .pat-secondary {
       font-size: .82rem;
-      color: #94a3b8;
+      color: #6b7280;
       overflow-wrap: anywhere;
     }
     .pat-tag {
@@ -340,7 +340,7 @@ function ensureStyles() {
       box-sizing: border-box;
       padding: 38px 42px;
       background: #f8fafc;
-      color: #0f172a;
+      color: #0d0d18;
       font-family: Arial, Helvetica, sans-serif;
     }
     .g1000-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
@@ -352,7 +352,7 @@ function ensureStyles() {
     .glabel { color: #475569; margin-right: 6px; }
     .gtable-wrap { background: #fff; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); }
     .gtable { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .gtable thead th { background: #0f172a; color: #fff; font-size: 13px; letter-spacing: .04em; text-align: left; padding: 14px 10px; border-right: 1px solid rgba(255,255,255,.15); }
+    .gtable thead th { background: #0d0d18; color: #fff; font-size: 13px; letter-spacing: .04em; text-align: left; padding: 14px 10px; border-right: 1px solid rgba(255,255,255,.15); }
     .gtable tbody td { font-size: 14px; padding: 10px 10px; border: 1px solid #dbe4ef; vertical-align: top; word-break: break-word; }
     .gtable tbody tr.is-atrasado td.col-dias { color: #b91c1c; font-weight: 700; }
     .gtable tbody tr.is-ok td.col-dias { color: #166534; font-weight: 700; }
