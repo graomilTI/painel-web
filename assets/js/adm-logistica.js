@@ -811,7 +811,7 @@ initProtectedPage('Painel de Logística', async (content) => {
       const now = new Date().toISOString();
       const patch = type === 'kg'
         ? { observacao_logistica: null, updated_at: now }
-        : { status_gestor: '', status_logistica: 'FINALIZADA', finalizado_em: now, updated_at: now };
+        : { status_gestor: 'AGUARDAR', status_logistica: 'FINALIZADA', finalizado_em: now, updated_at: now };
       const { error } = await supabase.from('operacional_os').update(patch).eq('id', id);
       if (error) { alert(error.message); oslogOk.disabled = false; oslogOk.textContent = 'OK'; return; }
       state.osLog = state.osLog.filter((r) => String(r.id) !== String(id));
@@ -877,7 +877,7 @@ initProtectedPage('Painel de Logística', async (content) => {
     if (action === 'assumir') Object.assign(patch, { status_logistica: 'EM_ANDAMENTO', logistica_responsavel_id: state.user?.id || null, logistica_assumido_em: now });
     if (action === 'finalizar') Object.assign(patch, { status_logistica: 'FINALIZADA', finalizado_por: state.user?.id || null, finalizado_em: now });
     if (action === 'devolver') Object.assign(patch, { status_logistica: 'DEVOLVIDA', status_gestor: 'AGUARDAR', logistica_devolvido_em: now });
-    if (action === 'reabrir') Object.assign(patch, { status_logistica: 'PENDENTE', finalizado_por: null, finalizado_em: null, logistica_devolvido_em: null });
+    if (action === 'reabrir') Object.assign(patch, { status_logistica: 'PENDENTE', status_gestor: 'AGUARDAR', finalizado_por: null, finalizado_em: null, logistica_devolvido_em: null });
 
     const previous = { ...row };
     Object.assign(row, patch);
