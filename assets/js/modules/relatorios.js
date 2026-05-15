@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const BUCKET = 'relatorios-uploads';
   const DIRECT_UPLOAD_LIMIT = 45 * 1024 * 1024;
   const CHUNK_SIZE = 8 * 1024 * 1024;
@@ -2250,6 +2250,177 @@
     };
   }
 
+
+  function splitCidadeUfHospedagem(value) {
+    const text = String(value || '').trim().replace(/\s+/g, ' ');
+    if (!text) return { cidade: null, uf: null };
+    const ufs = new Set(['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']);
+    const parts = text.split(' ');
+    const last = String(parts[parts.length - 1] || '').toUpperCase();
+    if (ufs.has(last) && parts.length > 1) return { cidade: parts.slice(0, -1).join(' ').trim() || text, uf: last };
+    return { cidade: text, uf: null };
+  }
+
+  function normalizeHospedagemStatus(value, observacao) {
+    const raw = normalizeHeader(value || observacao || '');
+    if (raw.includes('checkout') || raw.includes('check out') || raw.includes('saida')) return 'CHECKOUT_REALIZADO';
+    if (raw.includes('cancel')) return 'CANCELADA';
+    if (raw.includes('stay') || raw.includes('ativo') || raw.includes('hospedado') || raw.includes('reservado') || raw.includes('checkin')) return 'HOSPEDADO';
+    return 'HOSPEDADO';
+  }
+
+  function findDuplicateHeaderIndex(headers, label, afterIndex) {
+    const target = headerKey(label);
+    for (let i = Math.max(0, Number(afterIndex || 0) + 1); i < (headers || []).length; i += 1) {
+      if (headerKey(headers[i]) === target) return i;
+    }
+    return -1;
+  }
+
+  async function readHospedagemHistoricoRowsFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const mapped = [];
+    const dates = [];
+    const diagnostics = [];
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+      if (!rows?.length) continue;
+
+      const headerRow = findHeaderRow(rows, ['DATA', 'REGIONAL', 'CIDADE', 'HOTEL', 'VALOR']);
+      const headers = (rows[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+      const iData = pickHeaderIndex(headers, ['DATA', 'Data']);
+      const iRegional = pickHeaderIndex(headers, ['REGIONAL', 'Coordenação', 'Coordenacao']);
+      const iCidade = pickHeaderIndex(headers, ['CIDADE', 'Cidade']);
+      const iColaborador = pickHeaderIndex(headers, ['FUNCIONÁRIO', 'Funcionario', 'Funcionário', 'Colaborador', 'Nome']);
+      const explicitStatus = pickHeaderIndex(headers, ['Status Hospedagem', 'Status da Hospedagem', 'Movimento', 'Tipo Movimento', 'Check']);
+      const iStatusHosp = explicitStatus >= 0 ? explicitStatus : findDuplicateHeaderIndex(headers, 'FUNCIONÁRIO', iColaborador);
+      const iHotel = pickHeaderIndex(headers, ['HOTEL', 'Hotel', 'Nome Hotel']);
+      const iLocalizacao = pickHeaderIndex(headers, ['LOCALIZAÇÃO', 'Localização', 'Link', 'Mapa']);
+      const iTipoQuarto = pickHeaderIndex(headers, ['DIÁRIA', 'Diaria', 'Tipo de Quarto', 'Tipo Quarto', 'Quarto']);
+      const iValorDiaria = pickHeaderIndex(headers, ['VALOR', 'Valor', 'Valor Diária', 'Valor Diaria', 'Vlr Diária']);
+      const iLocal = pickHeaderIndex(headers, ['LOCAL', 'Local Embarque', 'Local de Embarque']);
+      const iCliente = pickHeaderIndex(headers, ['CLIENTE', 'Cliente']);
+      const iSaldo = pickHeaderIndex(headers, ['SALDO', 'Saldo']);
+      const iSituacaoPagamento = pickHeaderIndex(headers, ['SITUAÇÃO', 'Situacao', 'Situação Pagamento', 'Pagamento']);
+      const iNfs = pickHeaderIndex(headers, ['NFS', 'NF', 'Nota Fiscal', 'Nº NF', 'Numero NF']);
+      const iObs = pickHeaderIndex(headers, ['OBSERVAÇÃO', 'Observação', 'Observacao', 'Obs']);
+
+      const missing = [];
+      if (iData < 0) missing.push('DATA');
+      if (iColaborador < 0) missing.push('FUNCIONÁRIO');
+      if (iHotel < 0) missing.push('HOTEL');
+      if (iValorDiaria < 0) missing.push('VALOR');
+      if (missing.length) {
+        diagnostics.push(`${sheetName}: cabeçalhos ausentes (${missing.join(', ')})`);
+        continue;
+      }
+
+      rows.slice(headerRow + 1).forEach((row, idx) => {
+        if (!(row || []).some((cell) => cell !== null && cell !== undefined && String(cell).trim() !== '')) return;
+        const data = toIsoDate(row?.[iData]);
+        const colaborador = String(row?.[iColaborador] || '').trim();
+        const hotel = String(row?.[iHotel] || '').trim();
+        if (!data || !colaborador || !hotel) return;
+
+        const cidadeUf = splitCidadeUfHospedagem(row?.[iCidade]);
+        const statusRaw = iStatusHosp >= 0 ? String(row?.[iStatusHosp] || '').trim() : '';
+        const obs = iObs >= 0 ? String(row?.[iObs] || '').trim() : '';
+        const tipoQuarto = iTipoQuarto >= 0 ? String(row?.[iTipoQuarto] || '').trim() : '';
+        const valorDiaria = iValorDiaria >= 0 ? normalizeNumberBr(row?.[iValorDiaria]) : null;
+        const nfRaw = iNfs >= 0 ? row?.[iNfs] : null;
+        const nf = nfRaw === null || nfRaw === undefined || String(nfRaw).trim() === '' ? null : String(nfRaw).trim();
+        const regional = iRegional >= 0 ? String(row?.[iRegional] || '').trim() : '';
+        const local = iLocal >= 0 ? String(row?.[iLocal] || '').trim() : '';
+        const cliente = iCliente >= 0 ? String(row?.[iCliente] || '').trim() : '';
+        const localizacao = iLocalizacao >= 0 ? String(row?.[iLocalizacao] || '').trim() : '';
+        const situacaoPagamento = iSituacaoPagamento >= 0 ? String(row?.[iSituacaoPagamento] || '').trim() : '';
+
+        dates.push(data);
+        mapped.push({
+          unique_hash: financeiroHash(['hospedagem_historico', data, regional, cidadeUf.cidade, colaborador, hotel, statusRaw, tipoQuarto, valorDiaria, nf]),
+          data,
+          regional: regional || null,
+          cidade: cidadeUf.cidade || null,
+          uf: cidadeUf.uf || null,
+          colaborador,
+          status_planilha: statusRaw || null,
+          status_hospedagem: normalizeHospedagemStatus(statusRaw, obs),
+          hotel,
+          localizacao: localizacao || null,
+          tipo_quarto: tipoQuarto || null,
+          valor_diaria: valorDiaria,
+          local_embarque: local || null,
+          cliente: cliente || null,
+          saldo: iSaldo >= 0 ? normalizeNumberBr(row?.[iSaldo]) : null,
+          situacao_pagamento: situacaoPagamento || null,
+          nfs: nf,
+          observacao: obs || null,
+          arquivo_origem: file.name,
+          aba_origem: sheetName,
+          linha_origem: headerRow + 2 + idx,
+          raw: { data_original: row?.[iData] ?? null, status_original: statusRaw || null, cidade_original: row?.[iCidade] ?? null },
+          updated_at: new Date().toISOString(),
+        });
+      });
+    }
+
+    const uniqueDates = [...new Set(dates)].sort();
+    return { rows: mapped, period: uniqueDates.length ? { inicio: uniqueDates[0], fim: uniqueDates[uniqueDates.length - 1], totalDatas: uniqueDates.length } : null, diagnostics };
+  }
+
+  async function importarHospedagemHistoricoDaPlanilha(file, opts) {
+    const result = await readHospedagemHistoricoRowsFromFile(file);
+    const rows = result.rows || [];
+    if (!rows.length) throw new Error(`Nenhum histórico de hospedagem válido encontrado.${result.diagnostics?.length ? ' Diagnóstico: ' + result.diagnostics.join(' | ') : ''}`);
+
+    let total = 0;
+    for (let i = 0; i < rows.length; i += 300) {
+      const batch = rows.slice(i, i + 300);
+      const { error } = await opts.supabase.from('hospedagem_historico_colaboradores').upsert(batch, { onConflict: 'unique_hash' });
+      if (error) throw new Error(`${error.message}. Verifique se a migration hospedagem_historico_colaboradores foi aplicada no Supabase.`);
+      total += batch.length;
+    }
+
+    const colaboradores = new Set(rows.map((r) => normalizeHeader(r.colaborador)).filter(Boolean)).size;
+    const hoteis = new Set(rows.map((r) => normalizeHeader(r.hotel)).filter(Boolean)).size;
+    const ativos = rows.filter((r) => r.status_hospedagem === 'HOSPEDADO').length;
+    const checkouts = rows.filter((r) => r.status_hospedagem === 'CHECKOUT_REALIZADO').length;
+    const valorTotal = rows.reduce((acc, r) => acc + Number(r.valor_diaria || 0), 0);
+    return { total_linhas: rows.length, importados: total, colaboradores, hoteis, ativos, checkouts, valor_total: valorTotal, periodo_inicio: result.period?.inicio || null, periodo_fim: result.period?.fim || null, total_datas: result.period?.totalDatas || null };
+  }
+
+  async function detectarHospedagemHistoricoPorConteudo(file, detected) {
+    if (detected?.tipo !== 'outros' && detected?.tipo !== 'hoteis' && detected?.tipo !== 'producao') return detected;
+    if (!/\.(xlsx|xls|csv)$/i.test(file?.name || '')) return detected;
+    try {
+      const XLSX = await loadXlsx();
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      for (const sheetName of workbook.SheetNames || []) {
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+        if (!rows?.length) continue;
+        const headerRow = findHeaderRow(rows, ['DATA', 'REGIONAL', 'CIDADE', 'HOTEL', 'VALOR']);
+        const headers = (rows[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+        const hasData = pickHeaderIndex(headers, ['DATA']) >= 0;
+        const hasRegional = pickHeaderIndex(headers, ['REGIONAL']) >= 0;
+        const hasCidade = pickHeaderIndex(headers, ['CIDADE']) >= 0;
+        const hasHotel = pickHeaderIndex(headers, ['HOTEL']) >= 0;
+        const hasValor = pickHeaderIndex(headers, ['VALOR']) >= 0;
+        const iFuncionario = pickHeaderIndex(headers, ['FUNCIONÁRIO', 'Funcionario', 'Colaborador']);
+        const hasStatusDuplicado = iFuncionario >= 0 && findDuplicateHeaderIndex(headers, 'FUNCIONÁRIO', iFuncionario) >= 0;
+        const sample = rows.slice(headerRow + 1, headerRow + 25).flat().map((v) => normalizeHeader(v)).join(' | ');
+        const hasStayCheckout = sample.includes('checkout') || sample.includes('stay');
+        if (hasData && hasRegional && hasCidade && hasHotel && hasValor && iFuncionario >= 0 && (hasStatusDuplicado || hasStayCheckout)) return { tipo: 'hospedagem_historico', titulo: 'Hospedagem · Histórico de Colaboradores' };
+      }
+    } catch (err) { console.warn('[RELATORIOS] Não foi possível detectar histórico de hospedagem:', err); }
+    return detected;
+  }
+
   async function importarHoteisDaPlanilha(file, opts) {
     const linhas = await readSpreadsheetAsObjects(file);
     if (!linhas.length) {
@@ -2357,6 +2528,10 @@
 
     if ((n.includes('producao') || n.includes('produção')) && (n.includes('diaria') || n.includes('diária') || n.includes('diario') || n.includes('diário'))) {
       return { tipo: 'producao', titulo: 'Produção Diária' };
+    }
+
+    if ((n.includes('historico') || n.includes('histórico') || n.includes('producao') || n.includes('produção') || n.includes('planilha')) && (n.includes('hospedagem') || n.includes('hospedagens') || n.includes('hotel') || n.includes('hoteis') || n.includes('hotéis'))) {
+      return { tipo: 'hospedagem_historico', titulo: 'Hospedagem · Histórico de Colaboradores' };
     }
 
     if (n.includes('hotel') || n.includes('hoteis') || n.includes('hotéis') || n.includes('hospedagem') || n.includes('hospedagens')) {
@@ -2641,6 +2816,7 @@
     const supabase = opts.supabase;
     let detected = entry?.detected || detectRelatorio(file.name);
     detected = await detectarProducaoDiariaPorConteudo(file, detected);
+    detected = await detectarHospedagemHistoricoPorConteudo(file, detected);
     detected = await detectarHoteisPorConteudo(file, detected);
     if (entry) entry.detected = detected;
     const path = buildStoragePath(file);
@@ -2666,6 +2842,7 @@
     }
 
     let hoteisResumo = null;
+    let hospedagemHistoricoResumo = null;
     let pontosResumo = null;
     let colaboradoresResumo = null;
     let colaboradoresRhResumo = null;
@@ -2677,6 +2854,12 @@
     let producaoDiariaResumo = null;
     let financeiroReceberResumo = null;
     let financeiroPagarResumo = null;
+    if (detected.tipo === 'hospedagem_historico') {
+      status.textContent = 'Importando histórico de hospedagem dos colaboradores...';
+      setProgress(bar, 82);
+      hospedagemHistoricoResumo = await importarHospedagemHistoricoDaPlanilha(file, opts);
+      if (hospedagemHistoricoResumo?.periodo_inicio) entry.period = { inicio: hospedagemHistoricoResumo.periodo_inicio, fim: hospedagemHistoricoResumo.periodo_fim, totalDatas: hospedagemHistoricoResumo.total_datas || null };
+    }
     if (detected.tipo === 'hoteis') {
       status.textContent = 'Importando hotéis no módulo Hospedagem...';
       setProgress(bar, 82);
@@ -2743,17 +2926,16 @@
     }
 
     const importMode = opts.importMode || 'auto';
-    const period = ['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'colaboradores_rh', 'auditorias_operacional', 'patrimonios'].includes(detected.tipo)
-      ? null
-      : (resultadoDiarioResumo?.periodo_inicio
-        ? { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null }
-        : (producaoDiariaResumo?.periodo_inicio
-          ? { inicio: producaoDiariaResumo.periodo_inicio, fim: producaoDiariaResumo.periodo_fim, totalDatas: producaoDiariaResumo.total_datas || null }
-          : (financeiroReceberResumo?.periodo_inicio
-            ? { inicio: financeiroReceberResumo.periodo_inicio, fim: financeiroReceberResumo.periodo_fim, totalDatas: null }
-            : (financeiroPagarResumo?.periodo_inicio
-              ? { inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim, totalDatas: null }
-              : (frotasExcessoResumo?.periodo_inicio ? { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null } : (entry?.period || await detectFilePeriod(file, detected.tipo)))))));
+    let period = null;
+    if (!['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'colaboradores_rh', 'auditorias_operacional', 'patrimonios'].includes(detected.tipo)) {
+      if (hospedagemHistoricoResumo?.periodo_inicio) period = { inicio: hospedagemHistoricoResumo.periodo_inicio, fim: hospedagemHistoricoResumo.periodo_fim, totalDatas: hospedagemHistoricoResumo.total_datas || null };
+      else if (resultadoDiarioResumo?.periodo_inicio) period = { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null };
+      else if (producaoDiariaResumo?.periodo_inicio) period = { inicio: producaoDiariaResumo.periodo_inicio, fim: producaoDiariaResumo.periodo_fim, totalDatas: producaoDiariaResumo.total_datas || null };
+      else if (financeiroReceberResumo?.periodo_inicio) period = { inicio: financeiroReceberResumo.periodo_inicio, fim: financeiroReceberResumo.periodo_fim, totalDatas: null };
+      else if (financeiroPagarResumo?.periodo_inicio) period = { inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim, totalDatas: null };
+      else if (frotasExcessoResumo?.periodo_inicio) period = { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null };
+      else period = entry?.period || await detectFilePeriod(file, detected.tipo);
+    }
     let check = { exists: false, total: 0, items: [] };
 
     if (period?.inicio && period?.fim) {
@@ -2765,23 +2947,15 @@
       ? (check.exists ? 'replace' : 'append')
       : importMode;
 
-    status.textContent = detected.tipo === 'hoteis'
-      ? 'Registrando upload da planilha de hotéis...'
-      : (detected.tipo === 'pontos_embarque'
-        ? 'Registrando upload dos pontos de embarque...'
-        : (detected.tipo === 'logistica_mapa_embarque'
-          ? 'Registrando Mapa de Embarque para Logística...'
-          : (detected.tipo === 'colaboradores_operacional'
-          ? 'Registrando upload dos endereços dos colaboradores...'
-          : (detected.tipo === 'colaboradores_rh'
-            ? 'Registrando upload da base de funcionários...'
-            : (detected.tipo === 'auditorias_operacional'
-            ? 'Registrando upload das auditorias operacionais...'
-            : (detected.tipo === 'uber_corridas'
-              ? 'Registrando upload do relatório Uber...'
-              : (effectiveMode === 'replace'
-            ? 'Registrando substituição inteligente...'
-            : 'Registrando complemento inteligente...')))))));
+    if (detected.tipo === 'hospedagem_historico') status.textContent = 'Registrando upload do histórico de hospedagem...';
+    else if (detected.tipo === 'hoteis') status.textContent = 'Registrando upload da planilha de hotéis...';
+    else if (detected.tipo === 'pontos_embarque') status.textContent = 'Registrando upload dos pontos de embarque...';
+    else if (detected.tipo === 'logistica_mapa_embarque') status.textContent = 'Registrando Mapa de Embarque para Logística...';
+    else if (detected.tipo === 'colaboradores_operacional') status.textContent = 'Registrando upload dos endereços dos colaboradores...';
+    else if (detected.tipo === 'colaboradores_rh') status.textContent = 'Registrando upload da base de funcionários...';
+    else if (detected.tipo === 'auditorias_operacional') status.textContent = 'Registrando upload das auditorias operacionais...';
+    else if (detected.tipo === 'uber_corridas') status.textContent = 'Registrando upload do relatório Uber...';
+    else status.textContent = effectiveMode === 'replace' ? 'Registrando substituição inteligente...' : 'Registrando complemento inteligente...';
 
     const observacoesPayload = uploadResult.mode === 'chunked'
       ? {
@@ -2816,6 +2990,7 @@
           import_mode_effective: effectiveMode,
           periodo: period || null,
           hoteis_importacao: hoteisResumo || null,
+          hospedagem_historico_importacao: hospedagemHistoricoResumo || null,
           pontos_embarque_importacao: pontosResumo || null,
           colaboradores_operacional_importacao: colaboradoresResumo || null,
           colaboradores_rh_importacao: colaboradoresRhResumo || null,
@@ -2847,7 +3022,9 @@
     };
 
     const result = await registerSmartImport(payload, opts);
-    if (detected.tipo === 'hoteis' && hoteisResumo) {
+    if (detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) {
+      status.textContent = `Hospedagem: ${hospedagemHistoricoResumo.importados || 0} registros · ${hospedagemHistoricoResumo.colaboradores || 0} colaboradores · ${hospedagemHistoricoResumo.checkouts || 0} checkout(s)`;
+    } else if (detected.tipo === 'hoteis' && hoteisResumo) {
       status.textContent = `Hotéis: ${hoteisResumo.inseridos || 0} novos · ${hoteisResumo.atualizados || 0} atualizados · ${hoteisResumo.ignorados || 0} ignorados`;
     } else if (detected.tipo === 'pontos_embarque' && pontosResumo) {
       status.textContent = `Pontos: ${pontosResumo.importados || 0} importados · ${pontosResumo.cidades || 0} cidades · ${pontosResumo.supervisoes || 0} supervisões`;
@@ -2878,7 +3055,7 @@
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) && !(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
