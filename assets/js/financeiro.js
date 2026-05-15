@@ -1097,8 +1097,8 @@ initProtectedPage('Financeiro', (content, userContext) => {
           </div>
           <div class="dash-charts-row">
             <div class="dash-chart-card">
-              <h3>Receitas vs Despesas</h3>
-              <p>Últimos 6 meses</p>
+              <h3>Despesas Diárias</h3>
+              <p>Próximos 15 dias</p>
               <div class="dash-chart-inner"><canvas id="dashLineChart"></canvas></div>
             </div>
             <div class="dash-chart-card">
@@ -1110,7 +1110,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
           <div class="dash-bottom-row">
             <div class="dash-transactions-card">
               <div class="dash-section-head">
-                <h3>Últimos Lançamentos</h3>
+                <h3>Vencimentos de Hoje</h3>
                 <button class="btn btn-secondary fin-small" data-tab-target="fluxo" type="button">Ver todos</button>
               </div>
               <div id="dashTransactions" class="dash-tx-list"><div class="dash-loading">Carregando...</div></div>
@@ -1757,38 +1757,50 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
   async function loadDashboardData() {
     const hoje = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const hojeStr = `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}-${pad(hoje.getDate())}`;
     const seisMesesAtras = new Date(hoje);
     seisMesesAtras.setMonth(seisMesesAtras.getMonth() - 5);
     const inicioPeriodo = `${seisMesesAtras.getFullYear()}-${String(seisMesesAtras.getMonth() + 1).padStart(2, '0')}-01`;
     const novDiasAtras = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    const quinzeDias = new Date(hoje);
+    quinzeDias.setDate(quinzeDias.getDate() + 14);
+    const fimPeriodo = `${quinzeDias.getFullYear()}-${pad(quinzeDias.getMonth() + 1)}-${pad(quinzeDias.getDate())}`;
 
-    const [fluxoRes, categoriaRes, receberRes, pagarRes] = await Promise.all([
+    const [fluxoRes, fluxoDiarioRes, categoriaRes, receberRes, pagarRes] = await Promise.all([
       supabase.from('financeiro_fluxo_caixa_diario')
         .select('data,contas_receber,contas_pagar,saldo_dia,saldo_projetado')
         .gte('data', inicioPeriodo)
+        .order('data', { ascending: true }),
+      supabase.from('financeiro_fluxo_caixa_diario')
+        .select('data,contas_pagar')
+        .gte('data', hojeStr)
+        .lte('data', fimPeriodo)
         .order('data', { ascending: true }),
       supabase.from('financeiro_contas_pagar')
         .select('categoria,valor')
         .gte('vencimento', novDiasAtras),
       supabase.from('financeiro_contas_receber')
         .select('cliente,valor,vencimento,situacao')
-        .order('vencimento', { ascending: false })
-        .limit(8),
+        .eq('vencimento', hojeStr)
+        .order('cliente'),
       supabase.from('financeiro_contas_pagar')
         .select('favorecido,valor,vencimento,situacao')
-        .order('vencimento', { ascending: false })
-        .limit(8)
+        .eq('vencimento', hojeStr)
+        .order('favorecido')
     ]);
 
     renderDashboard({
       fluxo: fluxoRes.data || [],
+      fluxoDiario: fluxoDiarioRes.data || [],
       categorias: (categoriaRes.data || []).filter((r) => r.categoria),
       receber: receberRes.data || [],
-      pagar: pagarRes.data || []
+      pagar: pagarRes.data || [],
+      hojeStr
     });
   }
 
-  function renderDashboard({ fluxo, categorias, receber, pagar }) {
+  function renderDashboard({ fluxo, fluxoDiario, categorias, receber, pagar, hojeStr }) {
     const hoje = new Date();
     const byMonth = {};
     fluxo.forEach((row) => {
@@ -1827,21 +1839,27 @@ initProtectedPage('Financeiro', (content, userContext) => {
     setChange('dKpiPagarChange', atual.pagar, anterior?.pagar, true);
     setChange('dKpiProjetadoChange', atual.projetado, anterior?.projetado, false);
 
-    const mesLabels = meses.map((m) => {
-      const [y, mo] = m.split('-');
-      return `${['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][Number(mo) - 1]}/${y.slice(2)}`;
+    const byDay = {};
+    fluxoDiario.forEach((row) => {
+      const dia = String(row.data).slice(0, 10);
+      byDay[dia] = Number(row.contas_pagar || 0);
+    });
+    const dias = Object.keys(byDay).sort();
+
+    const diaLabels = dias.map((d) => {
+      const [, mo, dy] = d.split('-');
+      return `${dy}/${mo}`;
     });
 
     const lineCtx = document.getElementById('dashLineChart');
     if (lineCtx && typeof Chart !== 'undefined') {
       if (dashCharts.line) { dashCharts.line.destroy(); dashCharts.line = null; }
       dashCharts.line = new Chart(lineCtx, {
-        type: 'line',
+        type: 'bar',
         data: {
-          labels: mesLabels,
+          labels: diaLabels,
           datasets: [
-            { label: 'A Receber', data: meses.map((m) => byMonth[m].receber), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.1)', borderWidth: 2.5, pointBackgroundColor: '#34d399', pointRadius: 4, fill: true, tension: 0.35 },
-            { label: 'A Pagar', data: meses.map((m) => byMonth[m].pagar), borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,.07)', borderWidth: 2.5, pointBackgroundColor: '#f87171', pointRadius: 4, fill: true, tension: 0.35 }
+            { label: 'Despesas', data: dias.map((d) => byDay[d] || 0), backgroundColor: 'rgba(248,113,113,.65)', borderColor: '#f87171', borderWidth: 1.5, borderRadius: 4, borderSkipped: false }
           ]
         },
         options: {
@@ -1892,10 +1910,10 @@ initProtectedPage('Financeiro', (content, userContext) => {
     const combined = [
       ...receber.map((r) => ({ tipo: 'receber', nome: r.cliente, valor: Number(r.valor || 0), data: r.vencimento, situacao: r.situacao })),
       ...pagar.map((r) => ({ tipo: 'pagar', nome: r.favorecido, valor: Number(r.valor || 0), data: r.vencimento, situacao: r.situacao }))
-    ].sort((a, b) => (b.data || '').localeCompare(a.data || '')).slice(0, 10);
+    ].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
 
     if (!combined.length) {
-      txEl.innerHTML = '<div class="dash-loading">Nenhum lançamento encontrado.</div>';
+      txEl.innerHTML = '<div class="dash-loading">Nenhum vencimento para hoje.</div>';
       return;
     }
     txEl.innerHTML = combined.map((tx) => `
