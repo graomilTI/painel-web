@@ -1188,7 +1188,7 @@ initProtectedPage('Programação', (content) => {
                 const categoria = disponibilidadeCategoria(r.disponibilidade || 'OK');
                 const motivo = disponibilidadeMotivo(r.disponibilidade || '');
                 const placa = r.placa_veiculo || '';
-                const sugestao = !placa ? suggestVeiculoForColab(colab) : null;
+                const sugestao = categoria === 'LOGISTICA' && !placa ? suggestVeiculoForColab(colab) : null;
                 const placaSugerida = sugestao?.placa || '';
                 const alertMsg = placa ? patrimonioMessageForRow(colab, 'MOTORISTA FROTA', placa) : '';
                 const podeOk = colaboradorPodeFicarOk(colab);
@@ -1212,7 +1212,7 @@ initProtectedPage('Programação', (content) => {
                       <div class="prog-placa-alert${alertMsg ? ' show' : ''}">${escapeHtml(alertMsg)}</div>
                     </div>` : ''}
                   </td>
-                  <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" placeholder="Observação" /></td>
+                  <td><input data-field="observacao" type="text" value="${escapeHtml(r.observacao || '')}" placeholder="Observação da disponibilidade" /></td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -1455,6 +1455,32 @@ initProtectedPage('Programação', (content) => {
     if (event.target.matches('[data-field="cidade"]')) preencherUfPorCidade(tr);
     if (event.target.matches('[data-field="uf"]')) event.target.value = normalizeUF(event.target.value);
     if (event.target.matches('[data-field="alojamento_id"]')) preencherAlojamentoSelecionado(tr);
+    if (event.target.matches('[data-field="disponibilidade"]') && tr?.dataset.table === 'programacao_colaboradores') {
+      const disp = event.target.value;
+      const td = event.target.closest('td');
+      let placaWrap = td?.querySelector('.prog-placa-wrap');
+      if (disp === 'LOGISTICA') {
+        if (!placaWrap) {
+          const colab = colabById(tr.dataset.colabId);
+          const sugestao = suggestVeiculoForColab(colab);
+          placaWrap = document.createElement('div');
+          placaWrap.className = 'prog-placa-wrap';
+          placaWrap.innerHTML = `<input data-field="placa_veiculo" type="text" maxlength="8" value="" placeholder="${sugestao?.placa ? 'Sugestão: ' + sugestao.placa : 'Digite a placa'}" />${sugestao?.placa ? `<button type="button" class="prog-placa-suggest-btn" data-placa="${escapeHtml(sugestao.placa)}">Usar ${escapeHtml(sugestao.placa)}</button>` : ''}<div class="prog-placa-alert"></div>`;
+          td.appendChild(placaWrap);
+        }
+      } else if (placaWrap) {
+        placaWrap.remove();
+      }
+      const colabId = tr.dataset.colabId;
+      const existing = state.maps.disponibilidade.get(colabId) || {};
+      state.maps.disponibilidade.set(colabId, { ...existing, disponibilidade: disp });
+      const statusSpan = tr.querySelector('.prog-status');
+      const isNowBlocked = !DISPONIBILIDADES_LIBERADAS.has(disp.trim().toUpperCase());
+      if (statusSpan) {
+        statusSpan.className = `prog-status ${isNowBlocked ? 'block' : 'ok'}`;
+        statusSpan.textContent = isNowBlocked ? 'Bloqueado' : 'Liberado';
+      }
+    }
     if (event.target.matches('[data-field="placa_veiculo"]')) {
       event.target.value = onlyPlate(event.target.value);
       if (tr?.dataset.table === 'programacao_colaboradores') updatePlacaLogisticaAlert(tr);
