@@ -322,6 +322,122 @@ function syncSidebarToggle(collapsed) {
   button.classList.toggle('is-collapsed', collapsed);
 }
 
+function ensureTopbarTitleClass() {
+  const topbar = document.querySelector('.topbar');
+  if (!topbar) return;
+  const titleDiv = topbar.querySelector('div:not(.topbar-actions):not(.topbar-search)');
+  if (titleDiv && !titleDiv.classList.contains('topbar-title')) {
+    titleDiv.classList.add('topbar-title');
+  }
+}
+
+function ensureSearchBar() {
+  const topbar = document.querySelector('.topbar');
+  if (!topbar || document.getElementById('topbarSearch')) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'topbar-search';
+  wrap.innerHTML = `
+    <span class="topbar-search-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </span>
+    <input type="search" id="topbarSearch" class="topbar-search-input" placeholder="Pesquisar..." autocomplete="off" />
+  `;
+
+  const actions = topbar.querySelector('.topbar-actions');
+  if (actions) topbar.insertBefore(wrap, actions);
+  else topbar.appendChild(wrap);
+}
+
+function ensureTopbarIconButtons() {
+  const actions = document.querySelector('.topbar-actions');
+  if (!actions || document.getElementById('topbarNotifBtn')) return;
+
+  const notifBtn = document.createElement('button');
+  notifBtn.type = 'button';
+  notifBtn.id = 'topbarNotifBtn';
+  notifBtn.className = 'topbar-icon-btn';
+  notifBtn.setAttribute('aria-label', 'Notificações');
+  notifBtn.setAttribute('title', 'Notificações');
+  notifBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
+
+  const appsBtn = document.createElement('button');
+  appsBtn.type = 'button';
+  appsBtn.id = 'topbarAppsBtn';
+  appsBtn.className = 'topbar-icon-btn';
+  appsBtn.setAttribute('aria-label', 'Aplicativos');
+  appsBtn.setAttribute('title', 'Aplicativos');
+  appsBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
+
+  actions.prepend(appsBtn);
+  actions.prepend(notifBtn);
+}
+
+function ensureUserAvatar(userContext) {
+  const actions = document.querySelector('.topbar-actions');
+  if (!actions || document.getElementById('topbarUserAvatar')) return;
+
+  const name = userContext?.user?.name || '';
+  const parts = name.trim().split(/\s+/);
+  const initials = parts.length >= 2
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : (name[0] || '?').toUpperCase();
+
+  const avatar = document.createElement('button');
+  avatar.type = 'button';
+  avatar.id = 'topbarUserAvatar';
+  avatar.className = 'topbar-avatar';
+  avatar.setAttribute('title', name || 'Usuário');
+  avatar.textContent = initials;
+
+  avatar.addEventListener('click', () => {
+    const settingsBtn = document.getElementById('userSettingsBtn');
+    if (settingsBtn) settingsBtn.click();
+  });
+
+  const signOutBtn = document.getElementById('signOutBtn');
+  if (signOutBtn) actions.insertBefore(avatar, signOutBtn);
+  else actions.appendChild(avatar);
+}
+
+function ensureSidebarFooter() {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar || document.getElementById('sidebarFooter')) return;
+
+  const footer = document.createElement('div');
+  footer.id = 'sidebarFooter';
+  footer.className = 'sidebar-footer';
+  footer.innerHTML = `
+    <button type="button" class="sidebar-footer-btn" id="sidebarFooterCollapseBtn" aria-label="Recolher menu" title="Recolher menu">
+      <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="sidebar-footer-divider"></div>
+    <button type="button" class="sidebar-footer-btn" id="sidebarFooterSettingsBtn" aria-label="Configurações" title="Configurações">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33A1.65 1.65 0 0 0 10.5 4V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82A1.65 1.65 0 0 0 21 9.5V10.5a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <div class="sidebar-status-dot" title="Online"></div>
+  `;
+
+  sidebar.appendChild(footer);
+
+  footer.querySelector('#sidebarFooterCollapseBtn').addEventListener('click', () => {
+    const next = !document.body.classList.contains('sidebar-collapsed');
+    document.body.classList.toggle('sidebar-collapsed', next);
+    try { localStorage.setItem('painel_sidebar_collapsed', next ? '1' : '0'); } catch {}
+    const mainToggle = document.getElementById('sidebarToggleBtn');
+    if (mainToggle) {
+      mainToggle.setAttribute('aria-expanded', String(!next));
+      mainToggle.setAttribute('aria-label', next ? 'Expandir menu lateral' : 'Minimizar menu lateral');
+      mainToggle.classList.toggle('is-collapsed', next);
+    }
+  });
+
+  footer.querySelector('#sidebarFooterSettingsBtn').addEventListener('click', () => {
+    const btn = document.getElementById('userSettingsBtn');
+    if (btn) btn.click();
+  });
+}
+
 export function renderAppLayout({ userContext, currentPageTitle = 'Painel' }) {
   const mobile = updateMobilePanelClass(userContext);
   const collapsed = mobile ? true : loadSidebarCollapsed();
@@ -377,6 +493,13 @@ export function renderAppLayout({ userContext, currentPageTitle = 'Painel' }) {
   }
 
   bindSettingsButton(userContext);
+
+  // Flowbite-style topbar & sidebar enhancements
+  ensureTopbarTitleClass();
+  ensureSearchBar();
+  ensureTopbarIconButtons();
+  ensureUserAvatar(userContext);
+  ensureSidebarFooter();
 
   const signOutBtn = document.getElementById('signOutBtn');
   if (signOutBtn && !signOutBtn.dataset.bound) {
