@@ -792,9 +792,9 @@ initProtectedPage('Programação', (content) => {
       const { data: osRows } = await supabase
         .from('operacional_os')
         .select('*')
-        .eq('data_os', dataReferencia)
-        .eq('supervisao', supervisao);
-      const atenderRows = (osRows || []).filter((r) => normalizeText(r.status_gestor || r.status || '') === 'ATENDER');
+        .eq('supervisao', supervisao)
+        .eq('status_gestor', 'ATENDER');
+      const atenderRows = osRows || [];
       if (!atenderRows.length) return set;
       const osMap = new Map((atenderRows || []).map((r) => [String(r.id), r]));
       const { data: colabRows } = await supabase
