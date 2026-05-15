@@ -5,6 +5,7 @@ const LABELS = {
   CASA: 'Casa', APARTAMENTO: 'Apartamento', POUSADA: 'Pousada', ESCRITORIO: 'Escritório',
   SOLICITADA: 'Solicitada', EM_ANALISE: 'Em análise', EM_COTACAO: 'Em cotação', RESERVADA: 'Reservada', CANCELADA: 'Cancelada', CONCLUIDA: 'Concluída',
   CHECKIN_PREVISTO: 'Check-in previsto', HOSPEDADO: 'Hospedado', CHECKOUT_HOJE: 'Checkout hoje', RENOVACAO_NECESSARIA: 'Renovação necessária', CHECKOUT_REALIZADO: 'Checkout realizado',
+  HISTORICO_ATIVO: 'Ativo', HISTORICO_CHECKOUT: 'Checkout',
   NAO_INICIADO: 'Não iniciado', AGUARDANDO_PAGAMENTO: 'Aguardando pagamento', ENVIADO_AO_FINANCEIRO: 'Enviado ao financeiro', PAGO: 'Pago', SEM_COBRANCA: 'Sem cobrança',
   NAO_SOLICITADA: 'Não solicitada', AGUARDANDO_NF: 'Aguardando NF', NF_RECEBIDA: 'NF recebida', ENVIADO_PARA_LANCAMENTO: 'Enviado p/ lançamento', LANCADO: 'Lançado', DISPENSADO: 'Dispensado',
   ATIVO: 'Ativo', INATIVO: 'Inativo', BLOQUEADO: 'Bloqueado', PREFERENCIAL: 'Preferencial', NORMAL: 'Normal', EVITAR: 'Evitar'
@@ -87,7 +88,7 @@ function injectStyles() {
 initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   injectStyles();
   const state = {
-    rows: [], resumo: {}, hoteis: [], alojamentos: [],
+    rows: [], resumo: {}, hoteis: [], alojamentos: [], historicoRows: [], historicoAtual: [], historicoErro: null,
     editingHotel: null, editingAlojamento: null,
     tab: 'dashboard', selected: null,
     reservarColabs: [], estenderColabs: [],
@@ -169,6 +170,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
     <div class="adm-hosp-tabs">
       <button class="adm-hosp-tab active" data-tab="dashboard" type="button">Dashboard</button>
+      <button class="adm-hosp-tab" data-tab="historico" type="button">Histórico <small id="cntHistorico">0</small></button>
       <button class="adm-hosp-tab" data-tab="solicitadas" type="button">Solicitado <small id="cntSolicitadas">0</small></button>
       <button class="adm-hosp-tab" data-tab="reservados" type="button">Reservado <small id="cntReservados">0</small></button>
       <button class="adm-hosp-tab" data-tab="checkout" type="button">Checkout <small id="cntCheckout">0</small></button>
@@ -180,6 +182,16 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
     <section id="tab-dashboard" class="adm-hosp-panel active">
       <div style="padding:10px 0;color:var(--muted);font-size:13px">Carregando dashboard...</div>
+    </section>
+
+    <section id="tab-historico" class="adm-hosp-panel">
+      <article class="card">
+        <div class="section-head">
+          <div><h3>Histórico importado de hospedagem</h3><p class="muted">Base vinda da Central de Importação com status, checkout, quarto e valor da diária por colaborador.</p></div>
+          <div class="adm-hosp-actions"><input id="historicoSearch" class="adm-hosp-search" placeholder="Buscar colaborador, hotel, cidade..." /><button class="btn btn-secondary adm-hosp-btn" id="refreshHistorico" type="button">Atualizar</button></div>
+        </div>
+        <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Hotel</th><th>Cidade / UF</th><th>Status</th><th>Quarto</th><th>Diária</th><th>Situação</th></tr></thead><tbody id="tbodyHistorico"><tr><td colspan="8" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
+      </article>
     </section>
 
     <section id="tab-solicitadas" class="adm-hosp-panel">
@@ -523,16 +535,81 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     return `<svg viewBox="0 0 800 796" width="100%" style="max-height:290px;display:block">${els}${noData}</svg>`;
   }
 
+
+  function normalizeHistoricoStatus(row) {
+    const raw = String(row?.status_hospedagem || row?.status_planilha || '').trim().toUpperCase();
+    if (raw.includes('CHECKOUT') || raw === 'CHECK OUT') return 'CHECKOUT_REALIZADO';
+    if (raw === 'STAY' || raw === 'CHECK' || raw.includes('HOSPED') || raw.includes('ATIVO')) return 'HOSPEDADO';
+    return raw || 'HOSPEDADO';
+  }
+
+  function historicoIsAtivo(row) {
+    const st = normalizeHistoricoStatus(row);
+    return !['CHECKOUT_REALIZADO','CONCLUIDA','CANCELADA'].includes(st);
+  }
+
+  function mapHistoricoToDashboardRow(row) {
+    const st = normalizeHistoricoStatus(row);
+    const data = String(row?.data || row?.created_at || '').slice(0, 10);
+    return {
+      _origem: 'historico_hospedagem',
+      codigo: 'HIST',
+      solicitacao_id: row?.id || `hist-${data}-${row?.colaborador || ''}`,
+      data_solicitacao: data,
+      data_checkin: st === 'CHECKOUT_REALIZADO' ? null : data,
+      data_checkout: st === 'CHECKOUT_REALIZADO' ? data : null,
+      data_checkin_prevista: data,
+      data_checkout_prevista: st === 'CHECKOUT_REALIZADO' ? data : null,
+      status_hospedagem: st,
+      status_solicitacao: st === 'CHECKOUT_REALIZADO' ? 'CONCLUIDA' : 'RESERVADA',
+      status_financeiro: String(row?.situacao_pagamento || '').toUpperCase().includes('PAGO') ? 'PAGO' : 'NAO_INICIADO',
+      status_nota: row?.nfs ? 'NF_RECEBIDA' : 'NAO_SOLICITADA',
+      colaborador: row?.colaborador || '',
+      hotel: row?.hotel || '',
+      cidade: row?.cidade || '',
+      uf: row?.uf || '',
+      regional: row?.regional || '',
+      tipo_quarto: row?.tipo_quarto || '',
+      valor_financeiro: toNumber(row?.valor_diaria || row?.saldo),
+      valor_total_previsto: toNumber(row?.valor_diaria || row?.saldo),
+      situacao_pagamento: row?.situacao_pagamento || '',
+      observacao_hospedagem: row?.observacao || '',
+      _colaboradoresDetalhados: [{
+        nome_colaborador: row?.colaborador || '-',
+        regional: row?.regional || '',
+        supervisao: '',
+        coordenacao: '',
+        empresa: '',
+        tipo_colaborador: ''
+      }]
+    };
+  }
+
+  function getDashboardRows() {
+    return [
+      ...(state.rows || []),
+      ...(state.historicoRows || []).map(mapHistoricoToDashboardRow)
+    ];
+  }
+
+  function getHospedadosAgoraRows(baseRows) {
+    const fluxoAtivo = (baseRows || []).filter(r => r._origem !== 'historico_hospedagem' && ['HOSPEDADO','CHECKIN_PREVISTO','CHECKOUT_HOJE','RENOVACAO_NECESSARIA'].includes(String(r.status_hospedagem || '').toUpperCase()));
+    const histAtivo = (state.historicoAtual || []).filter(historicoIsAtivo).map(mapHistoricoToDashboardRow);
+    return [...fluxoAtivo, ...histAtivo];
+  }
+
   function renderTabDashboard() {
     const section=document.getElementById('tab-dashboard');
     if (!section) return;
     const today=new Date().toISOString().slice(0,10);
     const todayPlus7=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
     const cutoff=state.dashPeriod?new Date(Date.now()-state.dashPeriod*86400000).toISOString().slice(0,10):'';
-    const periodRows=cutoff?state.rows.filter(r=>(r.data_solicitacao||'')>=cutoff):state.rows;
+    const dashboardRows=getDashboardRows();
+    const periodRows=cutoff?dashboardRows.filter(r=>(r.data_solicitacao||'')>=cutoff):dashboardRows;
     const rows=state.dashUF?periodRows.filter(r=>normalizeUF(r.uf)===state.dashUF):periodRows;
+    const ativosAgora=state.dashUF?getHospedadosAgoraRows(dashboardRows).filter(r=>normalizeUF(r.uf)===state.dashUF):getHospedadosAgoraRows(dashboardRows);
     // KPIs
-    const hospedados=rows.filter(r=>['HOSPEDADO','CHECKIN_PREVISTO','CHECKOUT_HOJE','RENOVACAO_NECESSARIA'].includes(String(r.status_hospedagem||'').toUpperCase())).length;
+    const hospedados=ativosAgora.length;
     const solicitadas=rows.filter(r=>painelBucket(r)==='solicitadas').length;
     const checkinsHoje=rows.filter(r=>{const d=r.data_checkin||r.data_checkin_prevista;return d&&d.slice(0,10)===today;}).length;
     const checkoutsHoje=rows.filter(r=>{const d=r.data_checkout||r.data_checkout_prevista;return d&&d.slice(0,10)===today;}).length;
@@ -547,7 +624,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     const months=[];
     for(let i=11;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);months.push([`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,{count:0,value:0}]);}
     const monthMap=new Map(months);
-    state.rows.forEach(r=>{const k=(r.data_solicitacao||r.created_at||'').slice(0,7);if(monthMap.has(k)){const m=monthMap.get(k);m.count++;m.value+=toNumber(r.valor_financeiro||r.valor_total_previsto);}});
+    dashboardRows.forEach(r=>{const k=(r.data_solicitacao||r.created_at||'').slice(0,7);if(monthMap.has(k)){const m=monthMap.get(k);m.count++;m.value+=toNumber(r.valor_financeiro||r.valor_total_previsto);}});
     const maxMonth=Math.max(1,...months.map(([,v])=>v.count));
     const currentMonthKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     const mNames=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -664,6 +741,86 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     return (rows||[]).map((row) => ({...row,_colaboradoresDetalhados:porSolicitacao.get(String(row.solicitacao_id||''))||[]}));
   }
 
+
+  async function loadHistoricoRows() {
+    state.historicoErro = null;
+    const hist = await supabase
+      .from('hospedagem_historico_colaboradores')
+      .select('id,data,regional,cidade,uf,colaborador,status_planilha,status_hospedagem,hotel,localizacao,tipo_quarto,valor_diaria,local_embarque,cliente,saldo,situacao_pagamento,nfs,observacao,updated_at')
+      .order('data', { ascending: false })
+      .limit(5000);
+
+    if (hist.error) {
+      state.historicoErro = hist.error.message;
+      state.historicoRows = [];
+      state.historicoAtual = [];
+      updateHistoricoCount();
+      renderHistorico();
+      return;
+    }
+
+    state.historicoRows = hist.data || [];
+
+    const atual = await supabase
+      .from('hospedagem_historico_atual_colaboradores')
+      .select('id,data,regional,cidade,uf,colaborador,status_planilha,status_hospedagem,hotel,localizacao,tipo_quarto,valor_diaria,local_embarque,cliente,saldo,situacao_pagamento,nfs,observacao,updated_at')
+      .limit(5000);
+
+    if (!atual.error) state.historicoAtual = atual.data || [];
+    else state.historicoAtual = dedupeHistoricoAtual(state.historicoRows);
+
+    updateHistoricoCount();
+    renderHistorico();
+  }
+
+  function dedupeHistoricoAtual(rows) {
+    const map = new Map();
+    (rows || []).forEach((r) => {
+      const key = normalizeText(r.colaborador || '');
+      if (!key) return;
+      const prev = map.get(key);
+      const currDate = String(r.data || '').slice(0,10);
+      const prevDate = String(prev?.data || '').slice(0,10);
+      if (!prev || currDate >= prevDate) map.set(key, r);
+    });
+    return [...map.values()];
+  }
+
+  function updateHistoricoCount() {
+    const el = document.getElementById('cntHistorico');
+    if (el) el.textContent = (state.historicoRows || []).length;
+  }
+
+  function renderHistorico() {
+    const tbody = document.getElementById('tbodyHistorico');
+    if (!tbody) return;
+    if (state.historicoErro) {
+      tbody.innerHTML = `<tr><td colspan="8" class="adm-hosp-empty">${esc(state.historicoErro)}. Verifique se a migration do histórico de hospedagem foi aplicada.</td></tr>`;
+      return;
+    }
+    const q = normalizeText(document.getElementById('historicoSearch')?.value || '');
+    let rows = state.historicoRows || [];
+    if (q) rows = rows.filter((r) => normalizeText([r.colaborador,r.hotel,r.cidade,r.uf,r.regional,r.status_planilha,r.tipo_quarto,r.situacao_pagamento].filter(Boolean).join(' ')).includes(q));
+    rows = rows.slice(0, 250);
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="adm-hosp-empty">Nenhum histórico importado localizado.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => {
+      const st = normalizeHistoricoStatus(r);
+      return `<tr>
+        <td><strong>${brDate(r.data)}</strong><span class="adm-hosp-row-note">${esc(r.regional || '')}</span></td>
+        <td><strong>${esc(r.colaborador || '-')}</strong><span class="adm-hosp-row-note">${esc(r.cliente || '')}</span></td>
+        <td>${esc(r.hotel || '-')}<span class="adm-hosp-row-note">${esc(r.localizacao || '')}</span></td>
+        <td>${esc([r.cidade,r.uf].filter(Boolean).join('/'))}</td>
+        <td>${statusPill(st)}</td>
+        <td>${esc(r.tipo_quarto || '-')}</td>
+        <td>${r.valor_diaria != null ? money(r.valor_diaria) : '-'}</td>
+        <td>${esc(r.situacao_pagamento || '-')}<span class="adm-hosp-row-note">${esc(r.nfs ? `NFS: ${r.nfs}` : '')}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
   async function loadRows() {
     const {data,error}=await supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao',{ascending:false});
     if (error) { ['tbodySolicitadas','tbodyReservados','tbodyCheckout','tbodyFinanceiro','tbodyConcluidos'].forEach((id) => { const el=document.getElementById(id); if (el) el.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; }); return; }
@@ -693,7 +850,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   function renderCurrentTab() {
     if (['hoteis','alojamentos'].includes(state.tab)) return;
-    const fns={dashboard:renderTabDashboard,solicitadas:renderTabSolicitadas,reservados:renderTabReservados,checkout:renderTabCheckout,financeiro:renderTabFinanceiro,concluidos:renderTabConcluidos};
+    const fns={dashboard:renderTabDashboard,historico:renderHistorico,solicitadas:renderTabSolicitadas,reservados:renderTabReservados,checkout:renderTabCheckout,financeiro:renderTabFinanceiro,concluidos:renderTabConcluidos};
     (fns[state.tab]||renderTabDashboard)();
   }
 
@@ -774,7 +931,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   // ─── Tab navigation ────────────────────────────────────────────────────────
 
   function setTab(tab) {
-    const valid=['dashboard','solicitadas','reservados','checkout','financeiro','concluidos','hoteis','alojamentos'];
+    const valid=['dashboard','historico','solicitadas','reservados','checkout','financeiro','concluidos','hoteis','alojamentos'];
     const t=valid.includes(tab)?tab:'dashboard';
     state.tab=t;
     document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active',b.dataset.tab===t));
@@ -782,7 +939,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     document.getElementById(`tab-${t}`)?.classList.add('active');
     if (t==='hoteis') return loadHoteis();
     if (t==='alojamentos') return loadAlojamentos();
-    loadRows();
+    if (t==='historico') return loadHistoricoRows();
+    Promise.all([loadRows(), loadHistoricoRows()]).catch(() => loadRows());
   }
 
   // ─── Hotels ────────────────────────────────────────────────────────────────
@@ -1266,6 +1424,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   function initialTabFromHash() {
     const hash=normalizeText(window.location.hash.replace('#',''));
     const root=content.closest('main')||content;
+    if (hash.includes('hist')) return 'historico';
     if (hash.includes('aloj')) { root.classList.add('adm-menu-mode-alojamentos'); return 'alojamentos'; }
     if (hash.includes('hotel')||hash.includes('hoteis')) { root.classList.add('adm-menu-mode-hoteis'); return 'hoteis'; }
     return 'dashboard';
@@ -1275,6 +1434,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
   ['refreshPainel','refreshReservados','refreshCheckout','refreshFinanceiro'].forEach((id) => document.getElementById(id)?.addEventListener('click',loadRows));
+  document.getElementById('refreshHistorico')?.addEventListener('click',loadHistoricoRows);
+  document.getElementById('historicoSearch')?.addEventListener('input',renderHistorico);
 
   // Hotel/Alojamento management
   document.getElementById('hotelSearch')?.addEventListener('input',renderHoteis);
@@ -1344,5 +1505,5 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   // ─── Boot ──────────────────────────────────────────────────────────────────
 
-  (async function boot() { await loadHoteis(); await loadAlojamentos(); await loadRows(); setTab(initialTabFromHash()); })();
+  (async function boot() { await loadHoteis(); await loadAlojamentos(); await Promise.all([loadRows(), loadHistoricoRows()]); setTab(initialTabFromHash()); })();
 });
