@@ -1773,7 +1773,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
         .gte('data', inicioPeriodo)
         .order('data', { ascending: true }),
       supabase.from('financeiro_fluxo_caixa_diario')
-        .select('data,contas_pagar')
+        .select('data,contas_pagar,contas_receber')
         .gte('data', hojeStr)
         .lte('data', fimPeriodo)
         .order('data', { ascending: true }),
@@ -1842,7 +1842,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
     const byDay = {};
     fluxoDiario.forEach((row) => {
       const dia = String(row.data).slice(0, 10);
-      byDay[dia] = Number(row.contas_pagar || 0);
+      byDay[dia] = { pagar: Number(row.contas_pagar || 0), receber: Number(row.contas_receber || 0) };
     });
     const dias = Object.keys(byDay).sort();
 
@@ -1855,11 +1855,12 @@ initProtectedPage('Financeiro', (content, userContext) => {
     if (lineCtx && typeof Chart !== 'undefined') {
       if (dashCharts.line) { dashCharts.line.destroy(); dashCharts.line = null; }
       dashCharts.line = new Chart(lineCtx, {
-        type: 'bar',
+        type: 'line',
         data: {
           labels: diaLabels,
           datasets: [
-            { label: 'Despesas', data: dias.map((d) => byDay[d] || 0), backgroundColor: 'rgba(248,113,113,.65)', borderColor: '#f87171', borderWidth: 1.5, borderRadius: 4, borderSkipped: false }
+            { label: 'A Receber', data: dias.map((d) => byDay[d].receber), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.1)', borderWidth: 2.5, pointBackgroundColor: '#34d399', pointRadius: 4, fill: true, tension: 0.35 },
+            { label: 'A Pagar', data: dias.map((d) => byDay[d].pagar), borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,.07)', borderWidth: 2.5, pointBackgroundColor: '#f87171', pointRadius: 4, fill: true, tension: 0.35 }
           ]
         },
         options: {
