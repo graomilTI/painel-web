@@ -136,6 +136,14 @@ function pagamentoUrl(row) {
   return /^https?:\/\//i.test(String(value)) ? String(value) : '';
 }
 
+function ensureHttps(url) {
+  const s = String(url || '').trim();
+  return /^https?:\/\//i.test(s) ? s : `https://${s}`;
+}
+
+function isBoleto(row) { return /boleto/i.test(row.forma_pagamento || ''); }
+function isPix(row) { return /^pix$/i.test((row.forma_pagamento || '').trim()); }
+
 function safeStorageFileName(name) {
   return String(name || 'comprovante')
     .normalize('NFD')
@@ -1401,7 +1409,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
     if (forma) parts.push(`<div class="spay-meta"><span class="spay-meta-label">Forma:</span> ${esc(forma)}</div>`);
     if (dados) {
       const dadosHtml = isLinkDados(dados)
-        ? `<a class="spay-link" href="${esc(dados)}" target="_blank" rel="noopener">${esc(dados)}</a>`
+        ? `<a class="spay-link" href="${esc(ensureHttps(dados))}" target="_blank" rel="noopener">${esc(dados)}</a>`
         : esc(dados);
       parts.push(`<div class="spay-meta"><span class="spay-meta-label">Dados:</span> ${dadosHtml}</div>`);
     }
@@ -1434,7 +1442,9 @@ initProtectedPage('Financeiro', (content, userContext) => {
         <td><span class="fin-status ${statusPagamentoClass(status)}">${esc(status)}</span></td>
         <td>
           <div class="fin-pay-actions" style="flex-wrap:wrap;gap:4px">
-            <button class="btn btn-primary fin-small" data-pagar-setor="${esc(row.id)}" type="button">PAGAR</button>
+            ${isBoleto(row)
+              ? `<button class="btn btn-secondary fin-small" data-ok-setor="${esc(row.id)}" type="button">OK</button>`
+              : `<button class="btn btn-primary fin-small" data-pagar-setor="${esc(row.id)}" type="button">PAGAR</button>`}
             <button class="btn fin-small fin-btn-recusar" data-recusar-setor="${esc(row.id)}" type="button">RECUSAR</button>
           </div>
         </td>
@@ -1442,6 +1452,9 @@ initProtectedPage('Financeiro', (content, userContext) => {
     }).join('');
     tbody.querySelectorAll('[data-pagar-setor]').forEach((btn) => {
       btn.addEventListener('click', () => abrirModalComprovantePagamento(btn.dataset.pagarSetor));
+    });
+    tbody.querySelectorAll('[data-ok-setor]').forEach((btn) => {
+      btn.addEventListener('click', () => abrirModalCienteBoleto(btn.dataset.okSetor));
     });
     tbody.querySelectorAll('[data-recusar-setor]').forEach((btn) => {
       btn.addEventListener('click', () => recusarPagamento(btn.dataset.recusarSetor));
@@ -1574,6 +1587,30 @@ initProtectedPage('Financeiro', (content, userContext) => {
     return (state.financeiroPagamentos || []).find((row) => String(row.id) === String(id));
   }
 
+  function renderConteudoModal(row) {
+    const descricaoBase = row.descricao || row.conteudo || row.observacao || row.detalhes || '';
+    const linhas = String(descricaoBase).split(/\n+/).map((l) => l.trim()).filter(Boolean)
+      .filter((l) => !/^tipo\s*:/i.test(l))
+      .filter((l) => !/^forma\s*:/i.test(l))
+      .filter((l) => !/^dados\s*:/i.test(l));
+    const dados = row.dados_pagamento || row.link_pagamento || row.chave_pix || row.boleto_url || '';
+    const forma = row.forma_pagamento || '';
+    const fornecedor = row.fornecedor || row.favorecido || row.beneficiario || '';
+    const contato = row.contato || row.contato_fornecedor || '';
+    const parts = [];
+    if (linhas.length) parts.push(linhas.map((l) => esc(l)).join('<br>'));
+    if (fornecedor) parts.push(`Fornecedor: ${esc(fornecedor)}`);
+    if (contato) parts.push(`Contato: ${esc(contato)}`);
+    if (forma) parts.push(`Forma: <strong>${esc(forma)}</strong>`);
+    if (dados) {
+      const dadosDisplay = isLinkDados(dados)
+        ? `<a href="${esc(ensureHttps(dados))}" target="_blank" rel="noopener" style="color:#34d399;word-break:break-all">${esc(dados)}</a>`
+        : `<strong style="word-break:break-all">${esc(dados)}</strong>`;
+      parts.push(`Dados: ${dadosDisplay}`);
+    }
+    return parts.join('<br>') || `Solicitação de ${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}`;
+  }
+
   function abrirModalComprovantePagamento(id) {
     const row = getPagamentoRowById(id);
     if (!row) return;
@@ -1584,6 +1621,14 @@ initProtectedPage('Financeiro', (content, userContext) => {
       modal.className = 'fin-pay-modal';
       document.body.appendChild(modal);
     }
+
+    const dados = row.dados_pagamento || row.link_pagamento || row.chave_pix || row.boleto_url || '';
+    const pixSection = isPix(row) && dados ? `
+      <div style="text-align:center;margin:16px 0;padding:16px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);border-radius:14px">
+        <p style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px">QR Code PIX</p>
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(dados)}" alt="QR Code PIX" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:6px;display:block;margin:0 auto">
+        <p style="color:#e2e8f0;font-size:13px;margin:10px 0 0;word-break:break-all">${esc(dados)}</p>
+      </div>` : '';
 
     modal.innerHTML = `<div class="fin-pay-modal-card">
       <div class="fin-head">
@@ -1597,7 +1642,8 @@ initProtectedPage('Financeiro', (content, userContext) => {
         <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>
         <div class="pay-mini"><span>Valor</span><strong>${money(row.valor || row.valor_total || row.total)}</strong></div>
       </div>
-      <div class="fin-text-block fin-pay-preview">${esc(parseConteudoPagamento(row))}</div>
+      <div class="fin-pay-preview" style="line-height:1.7;padding:14px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(15,23,42,.5);color:#e2e8f0;font-size:14px">${renderConteudoModal(row)}</div>
+      ${pixSection}
       <div class="fin-field full mt-16">
         <label>Comprovante de pagamento</label>
         <input id="finPayComprovante" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx">
@@ -1610,6 +1656,41 @@ initProtectedPage('Financeiro', (content, userContext) => {
     modal.classList.add('open');
     modal.querySelector('#finPayClose').onclick = () => modal.classList.remove('open');
     modal.querySelector('#finPaySend').onclick = () => enviarComprovantePagamento(row);
+  }
+
+  function abrirModalCienteBoleto(id) {
+    const row = getPagamentoRowById(id);
+    if (!row) return;
+    let modal = document.getElementById('finBoletoModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'finBoletoModal';
+      modal.className = 'fin-pay-modal';
+      document.body.appendChild(modal);
+    }
+    const dados = row.dados_pagamento || row.link_pagamento || row.boleto_url || '';
+    const dadosHtml = isLinkDados(dados)
+      ? `<a href="${esc(ensureHttps(dados))}" target="_blank" rel="noopener" style="color:#34d399;word-break:break-all">${esc(dados)}</a>`
+      : `<strong style="word-break:break-all">${esc(dados)}</strong>`;
+    modal.innerHTML = `<div class="fin-pay-modal-card">
+      <div class="fin-head">
+        <div><h3>Boleto registrado</h3><p>Pagamento via boleto — será quitado na data de vencimento.</p></div>
+        <button class="btn btn-secondary" id="finBoletoClose" type="button">Fechar</button>
+      </div>
+      <div class="pay-summary">
+        <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>
+        <div class="pay-mini"><span>Valor</span><strong>${money(row.valor || row.valor_total || row.total)}</strong></div>
+      </div>
+      <div class="fin-pay-preview" style="line-height:1.7;padding:14px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(15,23,42,.5);color:#e2e8f0;font-size:14px">${renderConteudoModal(row)}</div>
+      ${dados ? `<div style="margin-top:14px;padding:12px 14px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.24);border-radius:12px;font-size:14px;color:#bfdbfe">Boleto: ${dadosHtml}</div>` : ''}
+      <div class="fin-actions-row mt-16">
+        <button class="btn btn-secondary" id="finBoletoOk" type="button">OK — Ciente</button>
+        <span id="finBoletoFeedback" class="fin-feedback"></span>
+      </div>
+    </div>`;
+    modal.classList.add('open');
+    modal.querySelector('#finBoletoClose').onclick = () => modal.classList.remove('open');
+    modal.querySelector('#finBoletoOk').onclick = () => modal.classList.remove('open');
   }
 
   async function updateComprasComprovante(row, comprovanteUrl) {
