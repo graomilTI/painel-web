@@ -461,37 +461,54 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   // ─── Dashboard ─────────────────────────────────────────────────────────────
 
-  const BRAZIL_STATES={
-    RR:{x:197,y:65,name:'Roraima'},AP:{x:305,y:65,name:'Amapá'},
-    AM:{x:165,y:150,name:'Amazonas'},PA:{x:293,y:162,name:'Pará'},
-    AC:{x:95,y:248,name:'Acre'},RO:{x:175,y:265,name:'Rondônia'},
-    TO:{x:336,y:230,name:'Tocantins'},MA:{x:372,y:168,name:'Maranhão'},
-    PI:{x:408,y:198,name:'Piauí'},CE:{x:444,y:150,name:'Ceará'},
-    RN:{x:471,y:163,name:'R.G.Norte'},PB:{x:476,y:182,name:'Paraíba'},
-    PE:{x:462,y:200,name:'Pernambuco'},AL:{x:476,y:218,name:'Alagoas'},
-    SE:{x:465,y:234,name:'Sergipe'},BA:{x:418,y:268,name:'Bahia'},
-    MT:{x:252,y:290,name:'Mato Grosso'},GO:{x:328,y:314,name:'Goiás'},
-    DF:{x:342,y:304,name:'D.F.'},MS:{x:272,y:365,name:'M.G.Sul'},
-    MG:{x:384,y:336,name:'Minas Gerais'},ES:{x:420,y:352,name:'Esp. Santo'},
-    RJ:{x:398,y:376,name:'Rio de Janeiro'},SP:{x:332,y:396,name:'São Paulo'},
-    PR:{x:310,y:436,name:'Paraná'},SC:{x:320,y:472,name:'Sta. Catarina'},
-    RS:{x:288,y:516,name:'Rio Grande do Sul'}
-  };
-
   function renderBrazilMap(stateData,maxVal) {
-    const outline=`<path d="M250,62 C280,57 330,56 395,66 C435,73 470,91 495,119 C510,136 515,159 510,183 C505,206 490,231 488,253 C482,279 465,296 450,316 C435,333 425,353 425,373 C422,391 405,411 380,429 C358,446 335,466 326,489 C316,511 308,533 295,541 C278,536 260,521 245,499 C228,477 215,457 200,439 C183,421 168,409 155,391 C140,371 122,349 108,319 C95,291 86,259 90,226 C93,199 100,171 110,149 C122,127 138,109 160,91 C182,73 212,63 250,62Z" fill="rgba(74,222,128,0.025)" stroke="rgba(74,222,128,0.1)" stroke-width="1.5"/>`;
-    const dots=Object.entries(BRAZIL_STATES).map(([uf,pos])=>{
-      const d=stateData[uf]||{count:0,value:0};
+    // Polígonos simplificados dos 27 estados (coordenada: x=(lon+74)*20, y=(5.5-lat)*22, viewBox 0 0 800 880)
+    // Ordenados do maior para o menor para sobreposição correta no SVG
+    const STATES=[
+      {uf:'AM',name:'Amazonas',pts:'20,66 130,66 178,77 198,88 278,88 328,121 328,165 278,165 198,231 198,319 10,275 10,101'},
+      {uf:'PA',name:'Pará',pts:'328,121 480,77 480,121 550,143 550,231 520,231 520,319 500,341 278,341 278,165 328,165'},
+      {uf:'MT',name:'Mato Grosso',pts:'148,319 278,275 278,341 460,341 460,429 440,517 318,517 278,451 148,418'},
+      {uf:'BA',name:'Bahia',pts:'550,319 730,319 730,374 710,517 600,517 540,451'},
+      {uf:'MG',name:'Minas Gerais',pts:'460,407 560,385 680,451 710,517 680,616 600,616 540,605 460,517'},
+      {uf:'GO',name:'Goiás',pts:'440,385 560,385 560,517 480,561 440,517'},
+      {uf:'MS',name:'M.G.Sul',pts:'318,517 460,506 460,649 378,649 318,561'},
+      {uf:'SP',name:'São Paulo',pts:'460,561 600,561 600,649 418,649'},
+      {uf:'PR',name:'Paraná',pts:'400,616 520,616 520,704 400,704'},
+      {uf:'SC',name:'Sta.Catarina',pts:'400,704 520,704 520,770 400,770'},
+      {uf:'RS',name:'R.G.Sul',pts:'400,770 520,770 460,858 420,858'},
+      {uf:'MA',name:'Maranhão',pts:'550,143 650,143 650,286 600,341 550,319'},
+      {uf:'PI',name:'Piauí',pts:'650,187 710,187 680,341 650,341'},
+      {uf:'CE',name:'Ceará',pts:'660,187 784,209 740,297 680,275'},
+      {uf:'PE',name:'Pernambuco',pts:'650,286 784,297 784,341 650,341'},
+      {uf:'AC',name:'Acre',pts:'10,275 148,275 165,319 145,363 10,363'},
+      {uf:'RO',name:'Rondônia',pts:'148,275 278,275 278,418 148,418'},
+      {uf:'TO',name:'Tocantins',pts:'520,231 570,231 570,407 520,407'},
+      {uf:'RR',name:'Roraima',pts:'190,88 284,88 284,7 215,7 178,35 188,66'},
+      {uf:'AP',name:'Amapá',pts:'440,26 480,26 480,121 440,121'},
+      {uf:'ES',name:'Esp.Santo',pts:'660,495 712,495 712,583 682,583'},
+      {uf:'RJ',name:'Rio de Janeiro',pts:'600,616 660,605 660,638 620,627'},
+      {uf:'RN',name:'R.G.Norte',pts:'740,231 784,231 784,275 740,275'},
+      {uf:'PB',name:'Paraíba',pts:'720,264 780,264 780,308 720,308'},
+      {uf:'AL',name:'Alagoas',pts:'730,319 782,319 782,352 730,352'},
+      {uf:'SE',name:'Sergipe',pts:'730,341 760,341 760,374 730,374'},
+      {uf:'DF',name:'D.F.',pts:'524,463 542,463 542,484 524,484'},
+    ];
+    const TINY=new Set(['AP','ES','RJ','DF','AL','SE','RN','PB']);
+    function ctr(pts){const p=pts.split(' ').map(s=>s.split(',').map(Number));return{x:Math.round(p.reduce((s,v)=>s+v[0],0)/p.length),y:Math.round(p.reduce((s,v)=>s+v[1],0)/p.length)};}
+    const polys=STATES.map(s=>{
+      const d=stateData[s.uf]||{count:0,value:0};
       const has=d.count>0;
-      const ratio=maxVal>0&&has?Math.min(1,(d.value||d.count)/maxVal):0;
-      const r=has?Math.max(8,Math.min(18,8+ratio*11)):5;
-      const fa=(has?0.18+ratio*0.65:0.04).toFixed(2);
-      const sa=(has?0.35+ratio*0.55:0.1).toFixed(2);
-      const tip=esc(has?`${pos.name}: ${d.count} hospedagem(s) · ${money(d.value)}`:pos.name);
-      return `<g><circle cx="${pos.x}" cy="${pos.y}" r="${r}" fill="rgba(74,222,128,${fa})" stroke="rgba(74,222,128,${sa})" stroke-width="1.5" style="cursor:pointer"><title>${tip}</title></circle><text x="${pos.x}" y="${pos.y+0.5}" text-anchor="middle" dominant-baseline="central" font-size="${has?8:7}" font-weight="800" fill="${has?'#e2e8f0':'#374151'}" style="pointer-events:none;user-select:none">${uf}</text></g>`;
+      const r=maxVal>0&&has?Math.min(1,(d.value||d.count)/maxVal):0;
+      const fill=`rgba(74,222,128,${(has?0.13+r*0.75:0.05).toFixed(2)})`;
+      const stroke=has?`rgba(74,222,128,${(0.4+r*0.5).toFixed(2)})`:'rgba(111,208,165,0.18)';
+      const {x,y}=ctr(s.pts);
+      const tip=esc(has?`${s.name}: ${d.count} hospedagem(s) · ${money(d.value)}`:s.name);
+      const fs=TINY.has(s.uf)?6:8;
+      const txtFill=has?'#ecfdf5':'#4b5563';
+      return `<polygon points="${s.pts}" fill="${fill}" stroke="${stroke}" stroke-width="1" stroke-linejoin="round" style="cursor:pointer"><title>${tip}</title></polygon><text x="${x}" y="${y+0.5}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="900" fill="${txtFill}" stroke="#0d1b12" stroke-width="2.5" paint-order="stroke fill" style="pointer-events:none;user-select:none">${s.uf}</text>`;
     }).join('');
-    const noData=Object.keys(stateData).length===0?`<text x="275" y="295" text-anchor="middle" fill="#374151" font-size="12" font-weight="800">Sem dados no período</text>`:'';
-    return `<svg viewBox="50 42 450 510" width="100%" style="max-height:280px;display:block">${outline}${dots}${noData}</svg>`;
+    const noData=Object.keys(stateData).length===0?`<text x="400" y="440" text-anchor="middle" fill="#4b5563" font-size="13" font-weight="800">Sem dados no período</text>`:'';
+    return `<svg viewBox="0 0 800 880" width="100%" style="max-height:290px;display:block">${polys}${noData}</svg>`;
   }
 
   function renderTabDashboard() {
