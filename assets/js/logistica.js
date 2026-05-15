@@ -1,4 +1,4 @@
-import { initProtectedPage } from './pageInit.js';
+﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
@@ -132,11 +132,11 @@ function injectStyles() {
   s.id = 'log-styles';
   s.textContent = `
     .log-tab-bar{display:flex;gap:8px;flex-wrap:wrap}
-    .log-tab{background:rgba(15,23,42,.6);border:1px solid rgba(52,211,153,.18);color:#94a3b8;border-radius:12px;padding:10px 22px;font-weight:900;cursor:pointer;font-size:14px;transition:background .15s}
+    .log-tab{background:rgba(15,23,42,.6);border:1px solid rgba(52,211,153,.18);color:#6b7280;border-radius:12px;padding:10px 22px;font-weight:900;cursor:pointer;font-size:14px;transition:background .15s}
     .log-tab.active{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;border-color:transparent}
     .log-tab:hover:not(.active){background:rgba(22,101,52,.15);color:#bbf7d0}
     .log-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:18px;background:rgba(2,6,23,.25);margin-top:16px}
-    .log-table{width:100%;min-width:720px;border-collapse:separate;border-spacing:0;color:#e5e7eb}
+    .log-table{width:100%;min-width:720px;border-collapse:separate;border-spacing:0;color:#e2e2f0}
     .log-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:11px 13px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1}
     .log-table td{padding:11px 13px;border-bottom:1px solid rgba(148,163,184,.1);vertical-align:middle}
     .log-table tr:last-child td{border-bottom:0}
@@ -146,11 +146,11 @@ function injectStyles() {
     .log-chip.warn{background:rgba(250,204,21,.14);color:#fde68a;border:1px solid rgba(250,204,21,.2)}
     .log-chip.red{background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.2)}
     .log-chip.blue{background:rgba(59,130,246,.12);color:#bfdbfe;border:1px solid rgba(59,130,246,.2)}
-    .log-obs{font-size:11px;color:#94a3b8;margin-top:4px;line-height:1.3}
+    .log-obs{font-size:11px;color:#6b7280;margin-top:4px;line-height:1.3}
     .log-btn-ok{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;border:0;border-radius:12px;padding:9px 22px;font-weight:950;cursor:pointer;font-size:13px;transition:opacity .15s}
     .log-btn-ok:hover{opacity:.88}
     .log-btn-ok:disabled{opacity:.45;cursor:wait}
-    .log-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:32px;color:#94a3b8;text-align:center}
+    .log-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:32px;color:#6b7280;text-align:center}
   `;
   document.head.appendChild(s);
 }

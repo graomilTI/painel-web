@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js';
+﻿import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getSession, getUserContext, signOut } from './auth.js';
 import { toPanelUrl } from './paths.js';
 
@@ -674,7 +674,7 @@ function openKgModal(recordId, osNumero) {
   overlay.innerHTML = `
     <div class="kg-modal">
       <h3>Qual o valor precisa somar na O.S?</h3>
-      <p style="margin:0;font-size:12px;color:#94a3b8">O.S. <strong style="color:#bbf7d0">${escapeHtml(osNumero)}</strong> — valor será enviado para a Logística.</p>
+      <p style="margin:0;font-size:12px;color:#6b7280">O.S. <strong style="color:#bbf7d0">${escapeHtml(osNumero)}</strong> — valor será enviado para a Logística.</p>
       <input id="kgInput" type="number" min="1" placeholder="Inserir KG" inputmode="numeric" />
       <div class="kg-modal-actions">
         <button class="kg-btn-cancel" id="kgCancelar">Cancelar</button>
@@ -712,8 +712,8 @@ function openLaudoModal(recordId, osNumero) {
   overlay.innerHTML = `
     <div class="kg-modal">
       <h3>Anexar laudo para O.S. ${escapeHtml(osNumero)}</h3>
-      <p style="margin:0;font-size:12px;color:#94a3b8">Remanescente negativo — anexe imagens, planilhas ou PDFs para conferência.</p>
-      <div id="laudo-dropzone" style="border:2px dashed rgba(239,68,68,.35);border-radius:14px;padding:28px 16px;text-align:center;color:#94a3b8;cursor:pointer;margin-top:8px;font-size:13px;transition:border-color .15s">
+      <p style="margin:0;font-size:12px;color:#6b7280">Remanescente negativo — anexe imagens, planilhas ou PDFs para conferência.</p>
+      <div id="laudo-dropzone" style="border:2px dashed rgba(239,68,68,.35);border-radius:14px;padding:28px 16px;text-align:center;color:#6b7280;cursor:pointer;margin-top:8px;font-size:13px;transition:border-color .15s">
         Clique ou arraste arquivos aqui<br><small style="font-size:11px">imagens, PDF, Excel, CSV</small>
       </div>
       <input id="laudo-file-input" type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.csv" style="display:none" />

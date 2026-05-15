@@ -1,4 +1,4 @@
-/* assets/js/modules/metas.js
+﻿/* assets/js/modules/metas.js
  * Módulo Diretoria > METAS
  * Padrão do projeto: IIFE + window.METAS.openHome(container, { auth, api, onBack })
  *
@@ -56,8 +56,8 @@
         --metas-card: rgba(15, 23, 42, .92);
         --metas-card-2: rgba(17, 24, 39, .82);
         --metas-border: rgba(148, 163, 184, .18);
-        --metas-text: #e5e7eb;
-        --metas-muted: #94a3b8;
+        --metas-text: #e2e2f0;
+        --metas-muted: #6b7280;
         --metas-green: #22c55e;
         --metas-green-2: #166534;
         --metas-yellow: #facc15;
@@ -161,16 +161,16 @@
         width: 100%;
         border: 1px solid var(--metas-border);
         border-radius: 14px;
-        background: #0f172a;
-        color: #e5e7eb;
+        background: #0d0d18;
+        color: #e2e2f0;
         padding: 10px 11px;
         outline: none;
         color-scheme: dark;
       }
 
       .metas-field select option {
-        background: #0f172a;
-        color: #e5e7eb;
+        background: #0d0d18;
+        color: #e2e2f0;
       }
 
       .metas-field select option:checked {
