@@ -2092,6 +2092,15 @@
     return detected;
   }
 
+  async function detectarHoteisPorConteudo(file, detected) {
+    if (detected?.tipo !== 'outros') return detected;
+    try {
+      const linhas = await readSpreadsheetAsObjects(file);
+      if (linhas.length) return { tipo: 'hoteis', titulo: 'Banco de Hotéis' };
+    } catch (_) {}
+    return detected;
+  }
+
   async function importarProducaoDiariaDaPlanilha(file, opts) {
     const { rows, period, diagnostics } = await readProducaoDiariaRowsFromFile(file);
     if (!rows.length) {
@@ -2632,6 +2641,7 @@
     const supabase = opts.supabase;
     let detected = entry?.detected || detectRelatorio(file.name);
     detected = await detectarProducaoDiariaPorConteudo(file, detected);
+    detected = await detectarHoteisPorConteudo(file, detected);
     if (entry) entry.detected = detected;
     const path = buildStoragePath(file);
     const user = opts.user || opts.auth?.user || null;
@@ -3114,10 +3124,18 @@
               renderFiles();
             });
           } else {
-            detectFilePeriod(file, detected.tipo).then((period) => {
-              entry.period = period;
-              entry.message = period ? `Período: ${formatPeriod(period)}` : 'Pendente · período não detectado';
-              renderFiles();
+            detectarHoteisPorConteudo(file, detected).then((newDetected) => {
+              if (newDetected.tipo === 'hoteis') {
+                entry.detected = newDetected;
+                entry.message = 'Pendente · importará cadastro de hotéis';
+                renderFiles();
+              } else {
+                detectFilePeriod(file, detected.tipo).then((period) => {
+                  entry.period = period;
+                  entry.message = period ? `Período: ${formatPeriod(period)}` : 'Pendente · período não detectado';
+                  renderFiles();
+                });
+              }
             });
           }
         }
