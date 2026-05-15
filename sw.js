@@ -3,7 +3,11 @@ const SHARE_CACHE = 'g1000-shared-file';
 const STATIC = ['/painel/comprovante-mobile.html'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(STATIC)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((c) => c.addAll(STATIC).catch(() => {}))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
