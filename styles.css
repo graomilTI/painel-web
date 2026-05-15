@@ -2867,3 +2867,614 @@ h3 {
     font-size: 15px !important;
   }
 }
+
+
+/* ════════════════════════════════════════════════════════════════════
+   V3 — MODERN DARK GREEN THEME
+   Paleta mais vibrante, aurora de fundo, glows neon,
+   micro-interações refinadas e consistência visual total.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Tokens atualizados ── */
+:root {
+  --green:        #00c87a;
+  --green-2:      #2dd4a0;
+  --green-3:      #065f46;
+  --green-soft:   rgba(45, 212, 160, 0.12);
+  --line:         rgba(45, 212, 160, 0.10);
+  --line-2:       rgba(45, 212, 160, 0.22);
+  --glow-xs:      0 0 10px rgba(0, 200, 122, 0.16);
+  --glow-sm:      0 0 20px rgba(0, 200, 122, 0.20);
+  --glow-md:      0 0 38px rgba(0, 200, 122, 0.18);
+  --glow-lg:      0 0 64px rgba(0, 200, 122, 0.14);
+  --bg:           #020c07;
+  --bg-soft:      #051209;
+  --bg-card:      rgba(5, 16, 11, 0.74);
+  --muted:        #6aad8e;
+  --text:         #e6f4ec;
+  --shadow:       0 20px 56px rgba(0, 0, 0, 0.32);
+  --shadow-soft:  0 10px 30px rgba(0, 0, 0, 0.20);
+  --trans:        all .18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Seleção de texto ── */
+::selection {
+  background: rgba(45, 212, 160, 0.26);
+  color: #e6f4ec;
+}
+
+/* ── Background aurora multicamadas ── */
+html, body,
+.auth-page,
+.app-shell {
+  background:
+    radial-gradient(ellipse 60% 40% at 10% 0%,   rgba(0, 200, 122, 0.18), transparent),
+    radial-gradient(ellipse 50% 35% at 90% 5%,   rgba(45, 212, 160, 0.12), transparent),
+    radial-gradient(ellipse 70% 50% at 50% 95%,  rgba(0, 100, 60, 0.16),  transparent),
+    radial-gradient(ellipse 40% 30% at 80% 60%,  rgba(0, 200, 122, 0.07), transparent),
+    linear-gradient(180deg, #010905 0%, #020c07 45%, #041208 100%) !important;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  background:
+    radial-gradient(ellipse 80% 25% at 50% 0%, rgba(0, 200, 122, 0.07), transparent),
+    linear-gradient(180deg, #010704 0%, #020a06 100%) !important;
+  border-right: 1px solid rgba(45, 212, 160, 0.08) !important;
+  box-shadow: 8px 0 40px rgba(0, 0, 0, 0.24), inset -1px 0 0 rgba(255,255,255,0.01) !important;
+}
+
+/* ── Sidebar brand ── */
+.sidebar-brand {
+  border-bottom: 1px solid rgba(45, 212, 160, 0.07) !important;
+}
+
+/* ── Menu links ── */
+.menu-list a {
+  color: rgba(230, 244, 236, 0.70) !important;
+  border-radius: 10px !important;
+  transition: background .13s ease, color .13s ease, opacity .13s ease, box-shadow .13s ease !important;
+}
+
+.menu-list a:hover {
+  background: rgba(45, 212, 160, 0.07) !important;
+  color: rgba(230, 244, 236, 0.92) !important;
+  border-color: rgba(45, 212, 160, 0.09) !important;
+}
+
+.menu-list a.active {
+  background: linear-gradient(135deg, rgba(0, 200, 122, 0.26), rgba(45, 212, 160, 0.16)) !important;
+  border-color: rgba(45, 212, 160, 0.20) !important;
+  color: #d0f7e8 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18), var(--glow-xs) !important;
+  font-weight: 500 !important;
+}
+
+.menu-list a.active::before {
+  background: linear-gradient(180deg, #2dd4a0, #00c87a) !important;
+  box-shadow: 0 0 8px rgba(0, 200, 122, 0.60) !important;
+}
+
+/* ── Section toggles ── */
+.menu-section-toggle:hover {
+  background: rgba(45, 212, 160, 0.06) !important;
+  color: rgba(230, 244, 236, 0.80) !important;
+}
+
+.menu-section-toggle.is-active {
+  background: rgba(45, 212, 160, 0.08) !important;
+  color: rgba(230, 244, 236, 0.84) !important;
+}
+
+/* ── Sidebar footer ── */
+.sidebar-footer {
+  background: rgba(1, 7, 4, 0.98) !important;
+  border-top: 1px solid rgba(45, 212, 160, 0.07) !important;
+}
+
+.sidebar-footer-btn:hover {
+  background: rgba(45, 212, 160, 0.08) !important;
+  border-color: rgba(45, 212, 160, 0.14) !important;
+}
+
+.sidebar-status-dot {
+  background: var(--green) !important;
+  box-shadow: 0 0 8px rgba(0, 200, 122, 0.65) !important;
+}
+
+@keyframes sidebar-status-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(0, 200, 122, 0.65); }
+  50%       { opacity: 0.70; box-shadow: 0 0 16px rgba(0, 200, 122, 0.90); }
+}
+
+/* ── Topbar ── */
+.topbar {
+  background: linear-gradient(180deg, rgba(2, 10, 6, 0.84), rgba(2, 10, 6, 0.68)) !important;
+  border-bottom: 1px solid rgba(45, 212, 160, 0.08) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.20) !important;
+  backdrop-filter: blur(18px) !important;
+}
+
+/* ── Topbar search ── */
+.topbar-search-input {
+  background: rgba(5, 16, 11, 0.68) !important;
+  border: 1px solid rgba(45, 212, 160, 0.10) !important;
+}
+
+.topbar-search-input:focus {
+  border-color: rgba(45, 212, 160, 0.26) !important;
+  box-shadow: 0 0 0 3px rgba(45, 212, 160, 0.08) !important;
+  background: rgba(5, 18, 12, 0.80) !important;
+}
+
+/* ── Topbar icon buttons ── */
+.topbar-icon-btn,
+.settings-gear-btn {
+  background: rgba(5, 16, 11, 0.60) !important;
+  border: 1px solid rgba(45, 212, 160, 0.09) !important;
+}
+
+.topbar-icon-btn:hover,
+.settings-gear-btn:hover {
+  background: rgba(45, 212, 160, 0.09) !important;
+  border-color: rgba(45, 212, 160, 0.20) !important;
+  box-shadow: var(--glow-xs) !important;
+}
+
+/* ── Notification dot ── */
+.topbar-icon-btn.has-dot::after {
+  background: var(--green) !important;
+  box-shadow: 0 0 7px rgba(0, 200, 122, 0.70) !important;
+}
+
+/* ── Avatar ── */
+.topbar-avatar {
+  background: linear-gradient(135deg, #065f46 0%, #00c87a 60%, #2dd4a0 100%) !important;
+  border: 2px solid rgba(45, 212, 160, 0.28) !important;
+  box-shadow: 0 3px 14px rgba(0, 200, 122, 0.26) !important;
+}
+
+.topbar-avatar:hover {
+  border-color: rgba(45, 212, 160, 0.52) !important;
+  box-shadow: 0 6px 22px rgba(0, 200, 122, 0.36) !important;
+}
+
+.topbar-avatar::after {
+  background: var(--green) !important;
+  box-shadow: 0 0 6px rgba(0, 200, 122, 0.65) !important;
+}
+
+/* ── Badge role pill ── */
+.badge,
+.hero-badge {
+  background: linear-gradient(135deg, rgba(0, 200, 122, 0.18), rgba(45, 212, 160, 0.12)) !important;
+  color: #b0f0d8 !important;
+  border: 1px solid rgba(45, 212, 160, 0.16) !important;
+  text-shadow: 0 0 12px rgba(0, 200, 122, 0.35) !important;
+}
+
+/* ── Eyebrow / brand-eyebrow ── */
+.eyebrow,
+.brand-eyebrow {
+  color: #2dd4a0 !important;
+  text-shadow: 0 0 20px rgba(45, 212, 160, 0.45) !important;
+}
+
+/* ── Section heading H2: gradient text ── */
+.section-heading h2,
+.hero-card h2,
+.op-hero h2 {
+  background: linear-gradient(135deg, #e6f4ec 30%, #2dd4a0 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+/* ── Metric: gradient verde brilhante ── */
+.metric {
+  background: linear-gradient(135deg, #f0faf4 20%, #2dd4a0 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+  text-shadow: none !important;
+}
+
+/* ── Cards: glassmorphism com borda esverdeada + glow hover ── */
+.card, .base-card, .hero-card, .mini-card, .auth-card {
+  background: rgba(5, 16, 11, 0.74) !important;
+  border: 1px solid rgba(45, 212, 160, 0.09) !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24),
+              inset 0 1px 0 rgba(255,255,255,0.025) !important;
+}
+
+.card:hover,
+.base-card:hover,
+.mini-card:hover {
+  border-color: rgba(45, 212, 160, 0.18) !important;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.28),
+              var(--glow-xs),
+              inset 0 1px 0 rgba(255,255,255,0.03) !important;
+  transform: translateY(-3px) !important;
+}
+
+/* ── Hero card ── */
+.hero-card {
+  background:
+    radial-gradient(ellipse 60% 50% at top right, rgba(0, 200, 122, 0.11), transparent),
+    rgba(5, 16, 11, 0.78) !important;
+}
+
+/* ── Auth card ── */
+.auth-card {
+  background: rgba(4, 13, 9, 0.84) !important;
+  border: 1px solid rgba(45, 212, 160, 0.12) !important;
+  box-shadow: 0 0 70px rgba(0, 200, 122, 0.08),
+              0 28px 72px rgba(0, 0, 0, 0.30),
+              inset 0 1px 0 rgba(255,255,255,0.03) !important;
+}
+
+/* ── Botão primário: verde neon com glow ── */
+.btn-primary,
+.base-button.primary,
+.inline-nav a.active {
+  background: linear-gradient(135deg, #00c87a 0%, #2dd4a0 100%) !important;
+  color: #011a0d !important;
+  border: 1px solid rgba(45, 212, 160, 0.28) !important;
+  box-shadow: 0 8px 26px rgba(0, 200, 122, 0.30),
+              inset 0 1px 0 rgba(255,255,255,0.22) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.01em !important;
+}
+
+.btn-primary:hover,
+.base-button.primary:hover {
+  filter: brightness(1.07) !important;
+  box-shadow: 0 12px 34px rgba(0, 200, 122, 0.38),
+              inset 0 1px 0 rgba(255,255,255,0.22) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ── Botão secundário ── */
+.btn-secondary,
+.base-button.secondary {
+  background: rgba(5, 16, 11, 0.62) !important;
+  border: 1px solid rgba(45, 212, 160, 0.11) !important;
+  color: var(--text) !important;
+}
+
+.btn-secondary:hover,
+.base-button.secondary:hover {
+  background: rgba(45, 212, 160, 0.07) !important;
+  border-color: rgba(45, 212, 160, 0.20) !important;
+  box-shadow: var(--glow-xs) !important;
+}
+
+/* ── Sidebar toggle ── */
+.sidebar-toggle-btn {
+  background: linear-gradient(180deg, rgba(0, 200, 122, 0.16), rgba(0, 100, 60, 0.09)) !important;
+  border: 1px solid rgba(45, 212, 160, 0.16) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), var(--glow-xs) !important;
+}
+
+.sidebar-toggle-btn:hover {
+  background: linear-gradient(180deg, rgba(0, 200, 122, 0.24), rgba(0, 100, 60, 0.14)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), var(--glow-sm) !important;
+}
+
+/* ── Inputs e selects ── */
+.base-input,
+.base-select,
+.base-textarea,
+.field input,
+.users-input,
+.users-select {
+  background: rgba(4, 13, 9, 0.64) !important;
+  border: 1px solid rgba(45, 212, 160, 0.10) !important;
+  color: var(--text) !important;
+}
+
+.base-input:focus,
+.base-select:focus,
+.base-textarea:focus,
+.field input:focus,
+.users-input:focus,
+.users-select:focus {
+  border-color: rgba(45, 212, 160, 0.28) !important;
+  box-shadow: 0 0 0 3px rgba(45, 212, 160, 0.09),
+              inset 0 1px 0 rgba(255,255,255,0.025) !important;
+  background: rgba(5, 17, 11, 0.76) !important;
+  outline: none !important;
+}
+
+/* ── op-field inputs (legado) ── */
+.op-field input,
+.op-field select {
+  background: rgba(4, 13, 9, 0.68) !important;
+  border: 1px solid rgba(45, 212, 160, 0.11) !important;
+  color: var(--text) !important;
+  border-radius: 14px !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.op-field input:focus,
+.op-field select:focus {
+  border-color: rgba(45, 212, 160, 0.28) !important;
+  box-shadow: 0 0 0 3px rgba(45, 212, 160, 0.09) !important;
+  background: rgba(5, 17, 11, 0.78) !important;
+  outline: none !important;
+}
+
+.op-field select option { background: #041008 !important; color: var(--text) !important; }
+
+/* ── Foco acessível ── */
+:focus-visible {
+  outline: 2px solid rgba(45, 212, 160, 0.40) !important;
+  outline-offset: 2px !important;
+}
+
+/* ── Tabelas ── */
+.base-table {
+  background: rgba(4, 13, 9, 0.64) !important;
+}
+
+.base-table th {
+  background: rgba(255,255,255,0.012) !important;
+  color: rgba(230, 244, 236, 0.68) !important;
+}
+
+.base-table th,
+.base-table td {
+  border-bottom: 1px solid rgba(45, 212, 160, 0.07) !important;
+}
+
+.base-table tbody tr:hover,
+.users-table tbody tr:hover {
+  background: rgba(45, 212, 160, 0.05) !important;
+}
+
+.base-table-wrap,
+.users-table-wrap {
+  border: 1px solid rgba(45, 212, 160, 0.09) !important;
+  background: rgba(255,255,255,0.012) !important;
+}
+
+/* ── Pills e status ── */
+.base-pill, .pill {
+  background: rgba(4, 13, 9, 0.64) !important;
+  border: 1px solid rgba(45, 212, 160, 0.11) !important;
+  color: #b0f0d8 !important;
+}
+
+.users-status.is-active,
+.status-pill.success {
+  background: rgba(0, 200, 122, 0.14) !important;
+  color: #a0eccc !important;
+}
+
+/* ── Chips ── */
+.chip {
+  background: rgba(0, 200, 122, 0.12) !important;
+  border: 1px solid rgba(45, 212, 160, 0.20) !important;
+  color: #b0f0d8 !important;
+}
+
+.chip:hover {
+  background: rgba(0, 200, 122, 0.22) !important;
+  border-color: rgba(45, 212, 160, 0.32) !important;
+}
+
+/* ── Inline nav ── */
+.inline-nav a {
+  background: rgba(4, 13, 9, 0.56) !important;
+  border: 1px solid rgba(45, 212, 160, 0.09) !important;
+}
+
+.inline-nav a:hover {
+  background: rgba(45, 212, 160, 0.07) !important;
+  border-color: rgba(45, 212, 160, 0.16) !important;
+  color: #e6f4ec !important;
+}
+
+/* ── Card tabs ── */
+.card-tabs {
+  background: rgba(255,255,255,0.02) !important;
+  border: 1px solid rgba(45, 212, 160, 0.08) !important;
+}
+
+.card-tab-btn.active {
+  background: rgba(0, 200, 122, 0.20) !important;
+  color: #c8f5e4 !important;
+}
+
+.card-tab-btn:hover:not(.active) {
+  background: rgba(45, 212, 160, 0.07) !important;
+}
+
+/* ── Trend indicators ── */
+.trend-up { color: #2dd4a0 !important; }
+
+/* ── Stepbtn ── */
+.stepbtn.active {
+  background: rgba(0, 200, 122, 0.20) !important;
+  border-color: rgba(45, 212, 160, 0.28) !important;
+  color: #b0f0d8 !important;
+  box-shadow: var(--glow-xs) !important;
+}
+
+.stepbtn:hover {
+  background: rgba(45, 212, 160, 0.08) !important;
+  border-color: rgba(45, 212, 160, 0.18) !important;
+}
+
+/* ── Operacional hero ── */
+.op-hero {
+  background:
+    radial-gradient(ellipse 55% 50% at top right, rgba(0, 200, 122, 0.14), transparent),
+    linear-gradient(135deg, rgba(4, 13, 9, 0.96), rgba(2, 9, 6, 0.98)) !important;
+  border: 1px solid rgba(45, 212, 160, 0.11) !important;
+}
+
+.op-hero-score {
+  border: 1px solid rgba(45, 212, 160, 0.38) !important;
+  background: rgba(0, 200, 122, 0.16) !important;
+  box-shadow: var(--glow-sm) !important;
+}
+
+/* ── Mapa operacional ── */
+.op-map-bg {
+  background:
+    linear-gradient(90deg, rgba(45,212,160,.05) 1px, transparent 1px),
+    linear-gradient(0deg,  rgba(45,212,160,.05) 1px, transparent 1px),
+    radial-gradient(ellipse 30% 30% at 62% 43%, rgba(45,212,160,.18), transparent),
+    radial-gradient(ellipse 25% 25% at 22% 58%, rgba(0,200,122,.14), transparent),
+    radial-gradient(ellipse 28% 28% at 76% 70%, rgba(245,158,11,.11), transparent),
+    #020c07 !important;
+  background-size: 44px 44px, 44px 44px, auto, auto, auto, auto !important;
+}
+
+/* ── op-rank item ── */
+.op-rank-item.is-best {
+  border-color: rgba(45, 212, 160, 0.40) !important;
+  background: rgba(0, 200, 122, 0.12) !important;
+  box-shadow: var(--glow-xs) !important;
+}
+
+/* ── Report cards ── */
+.report-link-card {
+  background: rgba(255,255,255,0.022) !important;
+  border: 1px solid rgba(45, 212, 160, 0.10) !important;
+}
+
+.report-link-card:hover {
+  border-color: rgba(45, 212, 160, 0.26) !important;
+  background: rgba(45, 212, 160, 0.05) !important;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.18), var(--glow-xs) !important;
+}
+
+/* ── Prog-item ── */
+.prog-item {
+  background: rgba(4, 13, 9, 0.72) !important;
+  border: 1px solid rgba(45, 212, 160, 0.08) !important;
+}
+
+.prog-item:hover {
+  border-color: rgba(45, 212, 160, 0.16) !important;
+}
+
+/* ── Base-mini ── */
+.base-mini {
+  background: rgba(4, 13, 9, 0.58) !important;
+  border: 1px solid rgba(45, 212, 160, 0.09) !important;
+}
+
+/* ── Base-status (log output) ── */
+.base-status {
+  background: rgba(4, 13, 9, 0.58) !important;
+  border: 1px dashed rgba(45, 212, 160, 0.12) !important;
+}
+
+/* ── Users modules ── */
+.users-module-group {
+  background: rgba(4, 13, 9, 0.72) !important;
+  border: 1px solid rgba(45, 212, 160, 0.08) !important;
+}
+
+.users-module-item {
+  background: rgba(6, 18, 12, 0.80) !important;
+  border: 1px solid rgba(45, 212, 160, 0.08) !important;
+}
+
+.users-module-item input { accent-color: #00c87a !important; }
+
+/* ── Users modal ── */
+.users-modal {
+  background: rgba(4, 13, 9, 0.92) !important;
+  border: 1px solid rgba(45, 212, 160, 0.11) !important;
+}
+
+.users-modal-backdrop {
+  background: rgba(1, 5, 3, 0.78) !important;
+}
+
+.users-search-results {
+  background: rgba(4, 13, 9, 0.88) !important;
+  border: 1px solid rgba(45, 212, 160, 0.10) !important;
+}
+
+.users-search-item {
+  background: rgba(6, 18, 12, 0.70) !important;
+  border: 1px solid rgba(45, 212, 160, 0.08) !important;
+}
+
+.users-search-item:hover {
+  background: rgba(45, 212, 160, 0.10) !important;
+  border-color: rgba(45, 212, 160, 0.18) !important;
+}
+
+/* ── Users table ── */
+.users-table {
+  background: rgba(4, 13, 9, 0.68) !important;
+}
+
+.users-table th,
+.users-table td {
+  border-bottom: 1px solid rgba(45, 212, 160, 0.07) !important;
+}
+
+.users-input[readonly] {
+  background: rgba(6, 18, 12, 0.52) !important;
+  opacity: 0.84 !important;
+}
+
+/* ── Scrollbars universais ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(45, 212, 160, 0.22) rgba(255,255,255,0.02);
+}
+
+*::-webkit-scrollbar { width: 5px; height: 5px; }
+*::-webkit-scrollbar-track { background: rgba(255,255,255,0.018); }
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(45,212,160,0.28), rgba(0,200,122,0.20));
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(45,212,160,0.44), rgba(0,200,122,0.32));
+}
+
+/* ── Op-table ── */
+.op-table th {
+  background: rgba(4, 13, 9, 0.88) !important;
+  color: #c0e8d4 !important;
+}
+
+.op-table th,
+.op-table td {
+  border-bottom: 1px solid rgba(45, 212, 160, 0.07) !important;
+}
+
+.op-table-wrap {
+  border: 1px solid rgba(45, 212, 160, 0.09) !important;
+}
+
+/* ── Mobile panel mode topbar ── */
+body.mobile-panel-mode .topbar {
+  background: rgba(1, 7, 4, 0.96) !important;
+}
+
+/* ── Mobile back button ── */
+.mobile-panel-back-btn {
+  background: linear-gradient(180deg, rgba(0,200,122,0.20), rgba(0,100,60,0.12)) !important;
+  border: 1px solid rgba(45,212,160,0.18) !important;
+  box-shadow: var(--glow-xs) !important;
+}
+
+/* ── Page transition ── */
+@keyframes routeFadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+html.is-route-ready .app-shell {
+  animation: routeFadeIn .22s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
