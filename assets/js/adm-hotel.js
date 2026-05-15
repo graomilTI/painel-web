@@ -69,6 +69,17 @@ function injectStyles() {
     .dash-upcoming-name{flex:1;font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .dash-upcoming-city{font-size:10px;color:var(--muted);flex-shrink:0}
     @media(max-width:900px){.adm-hosp-form{grid-template-columns:1fr}.adm-room-add,.adm-room-row{grid-template-columns:1fr}.adm-extra-row{grid-template-columns:1fr 1fr auto}.adm-hosp-search{min-width:0;width:100%}.adm-hosp-action-grid{grid-template-columns:1fr}.dash-main-grid,.dash-bottom-grid{grid-template-columns:1fr}.dash-kpi-grid{grid-template-columns:repeat(2,1fr)}}
+    .br-state{transition:filter .12s,opacity .12s;cursor:pointer}
+    .br-state:hover{filter:brightness(1.7) saturate(1.2)}
+    .br-state.br-selected{stroke:#fde68a!important;stroke-width:2.5!important;filter:brightness(1.4)}
+    .dash-map-tooltip{position:fixed;z-index:9999;background:#0a1208;border:1px solid rgba(111,208,165,.28);border-radius:10px;padding:8px 12px;pointer-events:none;display:none;font-size:12px;max-width:210px;box-shadow:0 8px 32px rgba(0,0,0,.6);line-height:1.45}
+    .dash-map-tooltip .dmt-name{font-weight:900;color:#e2e8f0;margin-bottom:3px}
+    .dash-map-tooltip .dmt-val{color:#4ade80;font-weight:900;font-size:13px}
+    .dash-map-tooltip .dmt-cnt{color:#6b7280;font-size:11px;margin-top:2px}
+    .dash-map-tooltip .dmt-hint{color:#fde68a;font-size:10px;margin-top:5px;opacity:.8}
+    .dash-uf-filter{display:inline-flex;align-items:center;gap:6px;background:rgba(253,230,138,.09);border:1px solid rgba(253,230,138,.28);border-radius:999px;padding:4px 8px 4px 11px;font-size:11px;font-weight:900;color:#fde68a}
+    .dash-uf-filter button{background:none;border:none;color:#fde68a;cursor:pointer;font-size:14px;line-height:1;padding:0 2px;opacity:.65}
+    .dash-uf-filter button:hover{opacity:1}
   `;
   document.head.appendChild(style);
 }
@@ -80,7 +91,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     editingHotel: null, editingAlojamento: null,
     tab: 'dashboard', selected: null,
     reservarColabs: [], estenderColabs: [],
-    dashPeriod: 30
+    dashPeriod: 30, dashUF: null
   };
   function getHotelById(id) { return state.hoteis.find((h) => String(h.id) === String(id)); }
 
@@ -497,15 +508,16 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     const els=STATES.map(s=>{
       const d=stateData[s.uf]||{count:0,value:0};
       const has=d.count>0;
+      const isSelected=state.dashUF===s.uf;
       const ratio=maxVal>0&&has?Math.min(1,(d.value||d.count)/maxVal):0;
       const fill=has?`rgba(74,222,128,${(0.15+ratio*0.75).toFixed(2)})`:'rgba(255,255,255,0.04)';
-      const stroke=has?`rgba(74,222,128,${(0.45+ratio*0.45).toFixed(2)})`:'rgba(111,208,165,0.2)';
-      const sw=has?1.5:1.2;
-      const tip=esc(has?`${s.name}: ${d.count} hospedagem(s) · ${money(d.value)}`:s.name);
+      const stroke=isSelected?'#fde68a':(has?`rgba(74,222,128,${(0.45+ratio*0.45).toFixed(2)})`:'rgba(111,208,165,0.2)');
+      const sw=isSelected?2.5:(has?1.5:1.2);
+      const cls=`br-state${isSelected?' br-selected':''}`;
       const c=CENTROIDS[s.uf]||{x:400,y:400};
       const fs=TINY.has(s.uf)?6:8;
       const txtFill=has?'#ecfdf5':'#64748b';
-      return `<path d="${s.d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round" style="cursor:pointer"><title>${tip}</title></path><text x="${c.x}" y="${c.y}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="900" fill="${txtFill}" stroke="#0a1208" stroke-width="2.5" paint-order="stroke fill" style="pointer-events:none;user-select:none">${s.uf}</text>`;
+      return `<path class="${cls}" d="${s.d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round" data-uf="${s.uf}" data-name="${esc(s.name)}" data-count="${d.count}" data-value="${d.value.toFixed(2)}"></path><text x="${c.x}" y="${c.y}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="900" fill="${txtFill}" stroke="#0a1208" stroke-width="2.5" paint-order="stroke fill" style="pointer-events:none;user-select:none">${s.uf}</text>`;
     }).join('');
     const noData=Object.keys(stateData).length===0?`<text x="400" y="398" text-anchor="middle" fill="#4b5563" font-size="13" font-weight="800">Sem dados no período</text>`:'';
     return `<svg viewBox="0 0 800 796" width="100%" style="max-height:290px;display:block">${els}${noData}</svg>`;
@@ -517,7 +529,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     const today=new Date().toISOString().slice(0,10);
     const todayPlus7=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
     const cutoff=state.dashPeriod?new Date(Date.now()-state.dashPeriod*86400000).toISOString().slice(0,10):'';
-    const rows=cutoff?state.rows.filter(r=>(r.data_solicitacao||'')>=cutoff):state.rows;
+    const periodRows=cutoff?state.rows.filter(r=>(r.data_solicitacao||'')>=cutoff):state.rows;
+    const rows=state.dashUF?periodRows.filter(r=>normalizeUF(r.uf)===state.dashUF):periodRows;
     // KPIs
     const hospedados=rows.filter(r=>['HOSPEDADO','CHECKIN_PREVISTO','CHECKOUT_HOJE','RENOVACAO_NECESSARIA'].includes(String(r.status_hospedagem||'').toUpperCase())).length;
     const solicitadas=rows.filter(r=>painelBucket(r)==='solicitadas').length;
@@ -557,6 +570,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       <div class="dash-period-bar">
         <span style="font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">Período</span>
         ${[7,30,90,0].map(p=>`<button class="dash-period-btn${state.dashPeriod===p?' active':''}" data-dash-period="${p}" type="button">${p?p+'d':'Tudo'}</button>`).join('')}
+        ${state.dashUF?`<div class="dash-uf-filter"><span>Estado: ${state.dashUF}</span><button data-clear-uf type="button" title="Limpar filtro">×</button></div>`:''}
         <span style="margin-left:auto;font-size:11px;color:var(--muted);font-weight:800">${rows.length} registro(s)</span>
       </div>
       <div class="dash-kpi-grid">
@@ -615,6 +629,26 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       </div>`;
     section.querySelectorAll('[data-dash-period]').forEach(btn=>{
       btn.addEventListener('click',()=>{state.dashPeriod=Number(btn.dataset.dashPeriod);renderTabDashboard();});
+    });
+    section.querySelector('[data-clear-uf]')?.addEventListener('click',()=>{state.dashUF=null;renderTabDashboard();});
+    // Map interactivity
+    let tt=document.getElementById('dashMapTooltip');
+    if(!tt){tt=document.createElement('div');tt.id='dashMapTooltip';tt.className='dash-map-tooltip';document.body.appendChild(tt);}
+    section.querySelectorAll('.br-state').forEach(path=>{
+      path.addEventListener('mouseenter',()=>{
+        const cnt=+path.dataset.count;const val=+path.dataset.value;const name=path.dataset.name;const uf=path.dataset.uf;
+        const isActive=state.dashUF===uf;
+        tt.innerHTML=`<div class="dmt-name">${name}</div>${cnt>0?`<div class="dmt-val">${money(val)}</div><div class="dmt-cnt">${cnt} hospedagem(s)</div><div class="dmt-hint">${isActive?'Clique para remover filtro':'Clique para filtrar'}</div>`:'<div class="dmt-cnt" style="color:#4b5563">Sem hospedagens</div>'}`;
+        tt.style.display='block';
+      });
+      path.addEventListener('mousemove',e=>{tt.style.left=(e.clientX+16)+'px';tt.style.top=(e.clientY-12)+'px';});
+      path.addEventListener('mouseleave',()=>{tt.style.display='none';});
+      path.addEventListener('click',()=>{
+        if(+path.dataset.count===0)return;
+        state.dashUF=state.dashUF===path.dataset.uf?null:path.dataset.uf;
+        tt.style.display='none';
+        renderTabDashboard();
+      });
     });
   }
 
