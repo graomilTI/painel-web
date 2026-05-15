@@ -39,16 +39,18 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'admHospStyles';
   style.textContent = `
-    .adm-hosp-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.adm-hosp-tab{width:auto!important;margin-top:0!important;border:1px solid var(--line-2);background:#15152a;color:var(--text);border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:800}.adm-hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}.adm-hosp-panel{display:none}.adm-hosp-panel.active{display:block}.adm-hosp-btn{width:auto!important;margin-top:0!important}.adm-hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-hosp-table{width:100%;border-collapse:collapse;min-width:1180px;background:#15152a}.adm-hosp-table th,.adm-hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-hosp-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.adm-hosp-table tr:hover td{background:rgba(111,208,165,.035)}.adm-hosp-actions{display:flex;gap:8px;flex-wrap:wrap}.adm-hosp-small{padding:8px 10px!important;border-radius:12px!important;font-size:12px}.adm-hosp-status{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:800;white-space:nowrap}.adm-hosp-status.solicitada,.adm-hosp-status.em_analise,.adm-hosp-status.em_cotacao,.adm-hosp-status.aguardando_pagamento,.adm-hosp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.adm-hosp-status.reservada,.adm-hosp-status.checkin_previsto,.adm-hosp-status.hospedado,.adm-hosp-status.enviado_ao_financeiro,.adm-hosp-status.nf_recebida{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.adm-hosp-status.concluida,.adm-hosp-status.pago,.adm-hosp-status.lancado,.adm-hosp-status.ativo,.adm-hosp-status.preferencial{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.adm-hosp-status.cancelada,.adm-hosp-status.bloqueado,.adm-hosp-status.evitar{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}.adm-hosp-status.checkout_hoje,.adm-hosp-status.renovacao_necessaria{color:#fed7aa;background:rgba(249,115,22,.11);border-color:rgba(249,115,22,.24)}
-    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.75);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:20px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px}.adm-hosp-empty{padding:18px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-colab-list{display:grid;gap:7px}.adm-hosp-colab-item{display:grid;gap:2px;line-height:1.15}.adm-hosp-colab-name{font-weight:800;color:var(--text)}.adm-hosp-colab-regional{font-size:12px;color:#9ca3af}.adm-hosp-card-line{display:grid;gap:8px}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-status-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.adm-hosp-status-tab{border:1px solid var(--line-2);background:#15152a;color:#cbd5e1;border-radius:999px;padding:9px 13px;cursor:pointer;font-weight:900}.adm-hosp-status-tab.active{background:rgba(22,101,52,.35);border-color:rgba(111,208,165,.45);color:#dcfce7}.adm-hosp-status-tab small{margin-left:6px;color:#fde68a}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:260px;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:12px 13px;color-scheme:dark}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}.adm-room-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.34);padding:14px}.adm-room-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-room-title strong{display:block;color:#e2e2f0}.adm-room-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-room-chip{display:inline-flex;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.16);color:#dcfce7;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}.adm-room-add{display:grid;grid-template-columns:1fr 1fr .65fr .9fr auto;gap:10px;align-items:end;margin-top:12px}.adm-room-add .adm-room-mini{display:flex;flex-direction:column;gap:6px}.adm-room-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:900}.adm-room-add select,.adm-room-add input{border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-list{display:grid;gap:8px;margin-top:12px}.adm-room-row{display:grid;grid-template-columns:1fr 1fr .65fr .9fr 1fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-room-row-pill{font-weight:900;color:#e2e2f0}.adm-room-row-type{color:#cbd5e1}.adm-room-row input{border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-row-subtotal{font-weight:900;color:#bbf7d0}.adm-room-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-room-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#6b7280;font-size:12px}.adm-room-summary{margin-top:10px;color:#fde68a;font-size:12px;font-weight:800}.adm-occ-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.26);padding:14px}.adm-occ-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-occ-title strong{display:block;color:#e2e2f0}.adm-occ-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-occ-add{display:grid;grid-template-columns:1fr .8fr .8fr 1.4fr auto;gap:10px;align-items:end}.adm-occ-mini{display:flex;flex-direction:column;gap:6px}.adm-occ-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:900}.adm-occ-add select,.adm-occ-add input{border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-occ-list{display:grid;gap:8px;margin-top:12px}.adm-occ-row{display:grid;grid-template-columns:1fr .8fr .8fr 1.5fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-occ-row strong{color:#e2e2f0}.adm-occ-row small{color:#6b7280}.adm-occ-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-occ-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#6b7280;font-size:12px}.adm-process-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 16px}.adm-process-tab{width:auto!important;border:1px solid var(--line-2);background:#15152a;color:#cbd5e1;border-radius:999px;padding:9px 13px;font-weight:900;cursor:pointer}.adm-process-tab.active{background:rgba(22,101,52,.36);border-color:rgba(111,208,165,.42);color:#dcfce7}.adm-process-panel{display:none}.adm-process-panel.active{display:block}.adm-process-lock{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.09);color:#fde68a;border-radius:16px;padding:12px 14px;margin-bottom:14px;font-size:13px;font-weight:800}.adm-process-summary{display:grid;gap:7px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.28);border-radius:16px;padding:13px;margin-bottom:14px}.adm-process-summary strong{color:#e2e2f0}.adm-process-summary span{color:#cbd5e1}.adm-hosp-field select[multiple]{min-height:112px}.adm-hosp-help{font-size:12px;color:#6b7280;margin-top:4px}.adm-hosp-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.adm-hosp-action-grid .btn{width:100%!important}.adm-reserva-dates-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.adm-hidden-soft{display:none!important}.adm-extra-list{display:grid;gap:8px;margin-top:8px}.adm-extra-row{display:grid;grid-template-columns:1fr .45fr auto;gap:8px;align-items:end}.adm-extra-row input{border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 11px;color-scheme:dark}.adm-payment-summary{border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.11);border-radius:18px;padding:14px;margin-top:14px}.adm-payment-summary h4{margin:0 0 8px;color:#dcfce7}.adm-payment-summary-line{display:grid;grid-template-columns:170px 1fr;gap:8px;color:#e2e2f0;font-size:13px}.adm-payment-files{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.adm-menu-mode-hoteis [data-tab="alojamentos"],.adm-menu-mode-alojamentos [data-tab="painel"],.adm-menu-mode-alojamentos [data-tab="solicitacoes"],.adm-menu-mode-alojamentos [data-tab="hoteis"]{display:none!important}@media(max-width:900px){.adm-hosp-action-grid{grid-template-columns:1fr}}.adm-hidden{display:none!important}@media(max-width:900px){.adm-room-add,.adm-room-row,.adm-occ-add,.adm-occ-row{grid-template-columns:1fr}.adm-room-row-subtotal{font-size:14px}}
-    @media(max-width:900px){.adm-hosp-form,.adm-hosp-filters{grid-template-columns:1fr}.adm-hosp-search{min-width:0;width:100%}}
+    .adm-hosp-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.adm-hosp-tab{width:auto!important;margin-top:0!important;border:1px solid var(--line-2);background:#15152a;color:var(--text);border-radius:999px;padding:10px 18px;cursor:pointer;font-weight:800;font-size:13px}.adm-hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}.adm-hosp-panel{display:none}.adm-hosp-panel.active{display:block}.adm-hosp-btn{width:auto!important;margin-top:0!important}.adm-hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-hosp-table{width:100%;border-collapse:collapse;min-width:860px;background:#15152a}.adm-hosp-table th,.adm-hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-hosp-table th{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.adm-hosp-table tr:hover td{background:rgba(111,208,165,.035)}.adm-hosp-actions{display:flex;gap:8px;flex-wrap:wrap}.adm-hosp-small{padding:8px 12px!important;border-radius:12px!important;font-size:12px;font-weight:800!important}.adm-hosp-status{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:11px;font-weight:800;white-space:nowrap}.adm-hosp-status.solicitada,.adm-hosp-status.em_analise,.adm-hosp-status.em_cotacao,.adm-hosp-status.aguardando_pagamento,.adm-hosp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.adm-hosp-status.reservada,.adm-hosp-status.checkin_previsto,.adm-hosp-status.hospedado,.adm-hosp-status.enviado_ao_financeiro,.adm-hosp-status.nf_recebida{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.adm-hosp-status.concluida,.adm-hosp-status.pago,.adm-hosp-status.lancado,.adm-hosp-status.ativo,.adm-hosp-status.preferencial{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.adm-hosp-status.cancelada,.adm-hosp-status.bloqueado,.adm-hosp-status.evitar{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}.adm-hosp-status.checkout_hoje,.adm-hosp-status.renovacao_necessaria{color:#fed7aa;background:rgba(249,115,22,.11);border-color:rgba(249,115,22,.24)}
+    .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:76px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(2,6,23,.8);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(1000px,100%);max-height:94vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:24px}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:0}.adm-hosp-modal-head h3{margin:0}.adm-hosp-muted{color:var(--muted);font-size:13px}.adm-hosp-empty{padding:20px;text-align:center;color:var(--muted)}.adm-hosp-kpi-alert{color:#fecaca}.adm-hosp-kpi-warn{color:#fde68a}.adm-hosp-kpi-good{color:#bbf7d0}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-row-fin{display:inline-flex;gap:4px;margin-top:4px;flex-wrap:wrap}.adm-hosp-fin-badge{font-size:10px;font-weight:900;padding:2px 6px;border-radius:999px;background:rgba(245,158,11,.12);color:#fde68a;border:1px solid rgba(245,158,11,.24)}.adm-hosp-colab-list{display:grid;gap:5px}.adm-hosp-colab-item{display:grid;gap:1px;line-height:1.2}.adm-hosp-colab-name{font-weight:800;color:var(--text);font-size:13px}.adm-hosp-colab-regional{font-size:11px;color:#9ca3af}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-status-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 10px}.adm-hosp-status-tab{border:1px solid var(--line-2);background:#15152a;color:#cbd5e1;border-radius:999px;padding:8px 14px;cursor:pointer;font-weight:900;font-size:12px}.adm-hosp-status-tab.active{background:rgba(22,101,52,.35);border-color:rgba(111,208,165,.45);color:#dcfce7}.adm-hosp-status-tab small{margin-left:5px;color:#fde68a;font-weight:900}.adm-painel-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.adm-hosp-search{min-width:240px;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:10px 13px;color-scheme:dark;font-size:13px}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}.adm-room-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.34);padding:14px}.adm-room-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-room-title strong{display:block;color:#e2e2f0}.adm-room-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-room-chip{display:inline-flex;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.16);color:#dcfce7;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}.adm-room-add{display:grid;grid-template-columns:1fr 1fr .65fr .9fr auto;gap:10px;align-items:end;margin-top:12px}.adm-room-add .adm-room-mini{display:flex;flex-direction:column;gap:6px}.adm-room-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:900}.adm-room-add select,.adm-room-add input{border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-list{display:grid;gap:8px;margin-top:12px}.adm-room-row{display:grid;grid-template-columns:1fr 1fr .65fr .9fr 1fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-room-row-pill{font-weight:900;color:#e2e2f0}.adm-room-row-type{color:#cbd5e1}.adm-room-row input{border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-room-row-subtotal{font-weight:900;color:#bbf7d0}.adm-room-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-room-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#6b7280;font-size:12px}.adm-room-summary{margin-top:10px;color:#fde68a;font-size:12px;font-weight:800}.adm-occ-wrap{grid-column:1/-1;border:1px solid var(--line);border-radius:18px;background:rgba(15,23,42,.26);padding:14px}.adm-occ-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.adm-occ-title strong{display:block;color:#e2e2f0}.adm-occ-title span{display:block;color:#9ca3af;font-size:12px;margin-top:3px}.adm-occ-add{display:grid;grid-template-columns:1fr .8fr .8fr 1.4fr auto;gap:10px;align-items:end}.adm-occ-mini{display:flex;flex-direction:column;gap:6px}.adm-occ-add label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:900}.adm-occ-add select,.adm-occ-add input{border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 11px;outline:none;color-scheme:dark}.adm-occ-list{display:grid;gap:8px;margin-top:12px}.adm-occ-row{display:grid;grid-template-columns:1fr .8fr .8fr 1.5fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:14px;padding:10px}.adm-occ-row strong{color:#e2e2f0}.adm-occ-row small{color:#6b7280}.adm-occ-remove{border:1px solid rgba(220,38,38,.24);background:rgba(127,29,29,.36);color:#fecaca;border-radius:12px;padding:9px 11px;font-weight:900;cursor:pointer}.adm-occ-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:12px;color:#6b7280;font-size:12px}
+    .adm-wizard{display:flex;align-items:center;margin:20px 0;padding:16px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.adm-wizard-step{display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:none;cursor:pointer;padding:0 6px;flex-shrink:0;transition:opacity .15s}.adm-wizard-num{width:30px;height:30px;border-radius:50%;border:2px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#6b7280;font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center;transition:all .2s}.adm-wizard-label{font-size:11px;color:#6b7280;font-weight:800;white-space:nowrap}.adm-wizard-step.active .adm-wizard-num{background:rgba(22,101,52,.45);border-color:rgba(111,208,165,.65);color:#dcfce7}.adm-wizard-step.active .adm-wizard-label{color:#dcfce7}.adm-wizard-step.done .adm-wizard-num{background:rgba(22,101,52,.25);border-color:rgba(111,208,165,.4);color:#86efac}.adm-wizard-step.done .adm-wizard-label{color:#86efac}.adm-wizard-step.locked{opacity:.35;cursor:default;pointer-events:none}.adm-wizard-conn{flex:1;height:2px;background:rgba(255,255,255,.07);min-width:12px;transition:background .2s}.adm-wizard-conn.done{background:rgba(111,208,165,.28)}
+    .adm-process-panel{display:none}.adm-process-panel.active{display:block}.adm-process-lock{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;border-radius:14px;padding:10px 14px;margin-bottom:14px;font-size:13px;font-weight:800}.adm-process-summary{display:grid;gap:7px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.28);border-radius:16px;padding:13px;margin-bottom:14px}.adm-process-summary strong{color:#e2e2f0}.adm-process-summary span{color:#cbd5e1}.adm-hosp-field select[multiple]{min-height:112px}.adm-hosp-help{font-size:12px;color:#6b7280;margin-top:4px}.adm-hosp-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.adm-hosp-action-grid .btn{width:100%!important}.adm-reserva-dates-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.adm-hidden-soft{display:none!important}.adm-extra-list{display:grid;gap:8px;margin-top:8px}.adm-extra-row{display:grid;grid-template-columns:1fr .45fr auto;gap:8px;align-items:end}.adm-extra-row input{border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 11px;color-scheme:dark}.adm-payment-summary{border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.11);border-radius:18px;padding:14px;margin-top:14px}.adm-payment-summary h4{margin:0 0 8px;color:#dcfce7}.adm-payment-summary-line{display:grid;grid-template-columns:170px 1fr;gap:8px;color:#e2e2f0;font-size:13px}.adm-payment-files{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.adm-menu-mode-hoteis [data-tab="alojamentos"],.adm-menu-mode-alojamentos [data-tab="painel"],.adm-menu-mode-alojamentos [data-tab="hoteis"]{display:none!important}.adm-hidden{display:none!important}.adm-kpi-card{cursor:pointer;transition:border-color .15s,transform .1s}.adm-kpi-card:hover{border-color:rgba(111,208,165,.28)!important}
+    @media(max-width:900px){.adm-hosp-action-grid{grid-template-columns:1fr}.adm-room-add,.adm-room-row,.adm-occ-add,.adm-occ-row{grid-template-columns:1fr}.adm-room-row-subtotal{font-size:14px}.adm-hosp-form{grid-template-columns:1fr}.adm-hosp-search{min-width:0;width:100%}.adm-wizard{gap:0}.adm-wizard-label{display:none}.adm-wizard-conn{min-width:8px}}
   `;
   document.head.appendChild(style);
 }
 
 initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   injectStyles();
-  const state = { rows: [], resumo: {}, hoteis: [], alojamentos: [], editingHotel: null, editingAlojamento: null, tab: 'painel', selected: null, painelStatus: 'reservados' };
+  const state = { rows: [], resumo: {}, hoteis: [], alojamentos: [], editingHotel: null, editingAlojamento: null, tab: 'painel', selected: null, painelStatus: 'solicitadas', painelSearch: '' };
   function getHotelById(id) { return state.hoteis.find((h) => String(h.id) === String(id)); }
 
   content.innerHTML = `
@@ -56,47 +58,41 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       <div>
         <div class="eyebrow">Operação</div>
         <h2>Hospedagem</h2>
-        <p>Controle solicitações, reservas, checkouts, pagamentos, notas fiscais e cadastro de hotéis em um fluxo único.</p>
+        <p>Gerencie reservas, checkouts, financeiro e hotéis em um fluxo único por etapas.</p>
       </div>
       <div class="hero-badge-wrap"><span class="hero-badge">HOTELARIA</span></div>
     </section>
 
     <div class="adm-hosp-tabs">
-      <button class="adm-hosp-tab active" data-tab="painel" type="button">Painel</button>
-      <button class="adm-hosp-tab" data-tab="solicitacoes" type="button">Solicitações</button>
+      <button class="adm-hosp-tab active" data-tab="painel" type="button">Operacional</button>
       <button class="adm-hosp-tab" data-tab="hoteis" type="button">Hotéis</button>
       <button class="adm-hosp-tab" data-tab="alojamentos" type="button">Alojamentos</button>
     </div>
 
     <section id="tab-painel" class="adm-hosp-panel active">
       <section class="grid-cards compact-grid">
-        <article class="card"><h3>Solicitações abertas</h3><p class="metric adm-hosp-kpi-warn" id="kpiAbertas">0</p><p class="muted">Aguardando análise/cotação.</p></article>
-        <article class="card"><h3>Checkouts hoje</h3><p class="metric" id="kpiHoje">0</p><p class="muted">Reservas com saída prevista hoje.</p></article>
-        <article class="card"><h3>Checkouts vencidos</h3><p class="metric adm-hosp-kpi-alert" id="kpiVencidos">0</p><p class="muted">Precisam de ação ou renovação.</p></article>
-        <article class="card"><h3>Pendências financeiras</h3><p class="metric adm-hosp-kpi-warn" id="kpiFin">0</p><p class="muted">Aguardando pagamento/financeiro.</p></article>
-        <article class="card"><h3>Pendências de NF</h3><p class="metric adm-hosp-kpi-warn" id="kpiNf">0</p><p class="muted">Pago/encaminhado e sem nota concluída.</p></article>
+        <article class="card adm-kpi-card" data-kpi-status="solicitadas"><h3>Aguardando reserva</h3><p class="metric adm-hosp-kpi-warn" id="kpiAbertas">0</p><p class="muted">Solicitações sem reserva definida.</p></article>
+        <article class="card adm-kpi-card" data-kpi-status="checkout"><h3>Checkouts hoje</h3><p class="metric" id="kpiHoje">0</p><p class="muted">Saída prevista para hoje.</p></article>
+        <article class="card adm-kpi-card" data-kpi-status="checkout"><h3>Checkouts vencidos</h3><p class="metric adm-hosp-kpi-alert" id="kpiVencidos">0</p><p class="muted">Exigem ação imediata.</p></article>
+        <article class="card adm-kpi-card" data-kpi-status="pendentes"><h3>Pend. financeiro</h3><p class="metric adm-hosp-kpi-warn" id="kpiFin">0</p><p class="muted">Aguardando pagamento.</p></article>
+        <article class="card adm-kpi-card" data-kpi-status="pendentes"><h3>Pend. NF</h3><p class="metric adm-hosp-kpi-warn" id="kpiNf">0</p><p class="muted">Nota fiscal pendente.</p></article>
       </section>
       <article class="card mt-16">
-        <div class="section-head"><div><h3>Fila operacional</h3><p class="muted">Gerencie por etapa: reservas ativas, check-outs, pendências e pagamentos concluídos.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshPainel" type="button">Atualizar</button></div>
+        <div class="section-head">
+          <div><h3>Fila operacional</h3><p class="muted">Filtre por etapa e busque pelo que precisa.</p></div>
+          <div class="adm-painel-controls">
+            <input id="painelSearch" class="adm-hosp-search" placeholder="Código, colaborador, cidade, hotel..." />
+            <button class="btn btn-secondary adm-hosp-btn" id="refreshPainel" type="button">Atualizar</button>
+          </div>
+        </div>
         <div class="adm-hosp-status-tabs" id="painelStatusTabs">
-          <button class="adm-hosp-status-tab active" type="button" data-painel-status="reservados">Reservados <small id="countReservados">0</small></button>
-          <button class="adm-hosp-status-tab" type="button" data-painel-status="checkout">Check-out <small id="countCheckout">0</small></button>
-          <button class="adm-hosp-status-tab" type="button" data-painel-status="pendentes">Pendentes <small id="countPendentes">0</small></button>
-          <button class="adm-hosp-status-tab" type="button" data-painel-status="pagos">Pagos <small id="countPagos">0</small></button>
+          <button class="adm-hosp-status-tab active" type="button" data-painel-status="solicitadas">Aguardando <small id="countSolicitadas">0</small></button>
+          <button class="adm-hosp-status-tab" type="button" data-painel-status="reservados">Reservados <small id="countReservados">0</small></button>
+          <button class="adm-hosp-status-tab" type="button" data-painel-status="checkout">Checkout <small id="countCheckout">0</small></button>
+          <button class="adm-hosp-status-tab" type="button" data-painel-status="pendentes">Financeiro <small id="countPendentes">0</small></button>
+          <button class="adm-hosp-status-tab" type="button" data-painel-status="pagos">Concluídos <small id="countPagos">0</small></button>
         </div>
-        <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Código</th><th>Colaboradores</th><th>Cidade</th><th>Período</th><th>Hotel</th><th>Status</th><th>Financeiro</th><th>NF</th><th>Ações</th></tr></thead><tbody id="painelTbody"><tr><td colspan="9" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
-      </article>
-    </section>
-
-    <section id="tab-solicitacoes" class="adm-hosp-panel">
-      <article class="card">
-        <div class="adm-hosp-filters">
-          <div class="adm-hosp-field"><label>Status</label><select id="filterStatus"><option value="">Todos</option><option value="SOLICITADA">Solicitada</option><option value="EM_ANALISE">Em análise</option><option value="EM_COTACAO">Em cotação</option><option value="RESERVADA">Reservada</option><option value="CONCLUIDA">Concluída</option><option value="CANCELADA">Cancelada</option></select></div>
-          <div class="adm-hosp-field"><label>Busca</label><input id="filterSearch" placeholder="Código, colaborador, cidade, hotel..." /></div>
-          <div class="adm-hosp-field"><label>Checkout até</label><input id="filterCheckout" type="date" /></div>
-          <button class="btn btn-secondary adm-hosp-btn" type="button" id="applyFilters">Filtrar</button>
-        </div>
-        <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Código</th><th>Solicitante</th><th>Colaboradores</th><th>Destino</th><th>Embarque</th><th>Período</th><th>Hotel</th><th>Status</th><th>Ações</th></tr></thead><tbody id="solTbody"><tr><td colspan="9" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
+        <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Código</th><th>Colaboradores</th><th>Destino</th><th>Período</th><th>Hotel</th><th>Status</th><th>Ação</th></tr></thead><tbody id="painelTbody"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
       </article>
     </section>
 
@@ -164,12 +160,16 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     <div id="reservaModal" class="adm-hosp-modal">
       <div class="adm-hosp-modal-card">
         <div class="adm-hosp-modal-head"><div><h3 id="modalTitle">Reserva</h3><p class="muted" id="modalSub">Fluxo por etapa: configurar, estender, checkout e financeiro/NF.</p></div><button class="btn btn-secondary adm-hosp-btn" type="button" id="modalClose">Fechar</button></div>
-        <div class="adm-process-tabs" id="hospProcessTabs">
-          <button class="adm-process-tab active" type="button" data-process="config">Configurar Reserva</button>
-          <button class="adm-process-tab" type="button" data-process="incluir">Incluir</button>
-          <button class="adm-process-tab" type="button" data-process="extend">Estender</button>
-          <button class="adm-process-tab" type="button" data-process="checkout">Checkout</button>
-          <button class="adm-process-tab" type="button" data-process="finance">Financeiro/NF</button>
+        <div class="adm-wizard" id="hospProcessTabs">
+          <button class="adm-wizard-step active" type="button" data-process="config"><span class="adm-wizard-num">1</span><span class="adm-wizard-label">Reserva</span></button>
+          <span class="adm-wizard-conn"></span>
+          <button class="adm-wizard-step locked" type="button" data-process="incluir"><span class="adm-wizard-num">2</span><span class="adm-wizard-label">Incluir</span></button>
+          <span class="adm-wizard-conn"></span>
+          <button class="adm-wizard-step locked" type="button" data-process="extend"><span class="adm-wizard-num">3</span><span class="adm-wizard-label">Estender</span></button>
+          <span class="adm-wizard-conn"></span>
+          <button class="adm-wizard-step locked" type="button" data-process="checkout"><span class="adm-wizard-num">4</span><span class="adm-wizard-label">Checkout</span></button>
+          <span class="adm-wizard-conn"></span>
+          <button class="adm-wizard-step locked" type="button" data-process="finance"><span class="adm-wizard-num">5</span><span class="adm-wizard-label">Financeiro</span></button>
         </div>
         <div id="hospLockNotice" class="adm-process-lock adm-hidden">Check-in já realizado. A reserva fica bloqueada para edição direta; use as etapas de estender reserva, solicitar checkout ou financeiro/NF.</div>
 
@@ -611,12 +611,13 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     }));
   }
   function setTab(tab) {
-    state.tab = tab;
-    document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    const validTab = ['painel','hoteis','alojamentos'].includes(tab) ? tab : 'painel';
+    state.tab = validTab;
+    document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === validTab));
     document.querySelectorAll('.adm-hosp-panel').forEach((p) => p.classList.remove('active'));
-    document.getElementById(`tab-${tab}`)?.classList.add('active');
-    if (tab === 'hoteis') return loadHoteis();
-    if (tab === 'alojamentos') return loadAlojamentos();
+    document.getElementById(`tab-${validTab}`)?.classList.add('active');
+    if (validTab === 'hoteis') return loadHoteis();
+    if (validTab === 'alojamentos') return loadAlojamentos();
     loadRows();
   }
 
@@ -634,13 +635,11 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     await loadResumo();
     const { data, error } = await supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao', { ascending: false });
     if (error) {
-      document.getElementById('painelTbody').innerHTML = `<tr><td colspan="9" class="adm-hosp-empty">${esc(error.message)}</td></tr>`;
-      document.getElementById('solTbody').innerHTML = `<tr><td colspan="9" class="adm-hosp-empty">${esc(error.message)}</td></tr>`;
+      document.getElementById('painelTbody').innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`;
       return;
     }
     state.rows = await enrichRowsWithColaboradores(data || []);
     renderPainel();
-    renderSolicitacoes();
   }
 
   function painelBucket(r) {
@@ -652,13 +651,14 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     if (r.pendencia_financeira || r.pendencia_nf || ['AGUARDANDO_PAGAMENTO','ENVIADO_AO_FINANCEIRO'].includes(fin) || ['AGUARDANDO_NF','NF_RECEBIDA','ENVIADO_PARA_LANCAMENTO'].includes(nf)) return 'pendentes';
     if (r.checkout_hoje || r.checkout_vencido || ['CHECKOUT_HOJE','RENOVACAO_NECESSARIA','CHECKOUT_REALIZADO'].includes(hosp)) return 'checkout';
     if (sol === 'RESERVADA' || ['CHECKIN_PREVISTO','HOSPEDADO'].includes(hosp)) return 'reservados';
+    if (['SOLICITADA','EM_ANALISE','EM_COTACAO'].includes(sol)) return 'solicitadas';
     return 'pendentes';
   }
 
   function updatePainelStatusCounts() {
-    const counts = { reservados: 0, checkout: 0, pendentes: 0, pagos: 0 };
-    (state.rows || []).forEach((r) => { counts[painelBucket(r)] = (counts[painelBucket(r)] || 0) + 1; });
-    const map = { countReservados: counts.reservados, countCheckout: counts.checkout, countPendentes: counts.pendentes, countPagos: counts.pagos };
+    const counts = { solicitadas: 0, reservados: 0, checkout: 0, pendentes: 0, pagos: 0 };
+    (state.rows || []).forEach((r) => { const b = painelBucket(r); counts[b] = (counts[b] || 0) + 1; });
+    const map = { countSolicitadas: counts.solicitadas, countReservados: counts.reservados, countCheckout: counts.checkout, countPendentes: counts.pendentes, countPagos: counts.pagos };
     Object.entries(map).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.textContent = value; });
   }
 
@@ -671,39 +671,32 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   function renderPainel() {
     const tbody = document.getElementById('painelTbody');
     updatePainelStatusCounts();
+    const search = normalizeText(document.getElementById('painelSearch')?.value || '');
     let rows = state.rows.filter((r) => painelBucket(r) === state.painelStatus);
+    if (search) rows = rows.filter((r) => normalizeText([r.codigo, r.solicitante_nome, r.colaboradores, ...getColaboradoresDetalhados(r).flatMap((c) => [c.nome_colaborador, c.supervisao, c.regional, c.coordenacao]), r.cidade, r.uf, r.local_embarque, r.hotel, r.cliente].join(' ')).includes(search));
     if (state.painelStatus !== 'pagos') rows = rows.slice(0, 50);
-    const emptyLabel = ({ reservados: 'Nenhuma reserva ativa.', checkout: 'Nenhum check-out pendente.', pendentes: 'Nenhuma pendência financeira/NF.', pagos: 'Nenhuma hospedagem paga/finalizada.' })[state.painelStatus] || 'Nenhum registro.';
-    if (!rows.length) { tbody.innerHTML = `<tr><td colspan="9" class="adm-hosp-empty">${emptyLabel}</td></tr>`; return; }
+    const emptyLabels = { solicitadas: 'Nenhuma solicitação aguardando reserva.', reservados: 'Nenhuma reserva ativa.', checkout: 'Nenhum check-out pendente.', pendentes: 'Nenhuma pendência financeira/NF.', pagos: 'Nenhuma hospedagem concluída.' };
+    if (!rows.length) { tbody.innerHTML = `<tr><td colspan="7" class="adm-hosp-empty">${emptyLabels[state.painelStatus] || 'Nenhum registro.'}</td></tr>`; return; }
     tbody.innerHTML = rows.map(rowHtml).join('');
   }
 
-  function renderSolicitacoes() {
-    const tbody = document.getElementById('solTbody');
-    const status = document.getElementById('filterStatus').value;
-    const search = String(document.getElementById('filterSearch').value || '').toLowerCase().trim();
-    const checkout = document.getElementById('filterCheckout').value;
-    let rows = [...state.rows];
-    if (status) rows = rows.filter((r) => r.status_solicitacao === status);
-    if (checkout) rows = rows.filter((r) => !r.data_checkout || r.data_checkout <= checkout || !r.reserva_id);
-    if (search) rows = rows.filter((r) => [r.codigo, r.solicitante_nome, r.colaboradores, ...(getColaboradoresDetalhados(r).flatMap((c) => [c.nome_colaborador, c.supervisao, c.regional, c.coordenacao])), r.cidade, r.uf, r.local_embarque, r.hotel, r.cliente].join(' ').toLowerCase().includes(search));
-    if (!rows.length) { tbody.innerHTML = `<tr><td colspan="9" class="adm-hosp-empty">Nenhuma solicitação encontrada.</td></tr>`; return; }
-    tbody.innerHTML = rows.map((r) => `
-      <tr>
-        <td><strong>${esc(r.codigo || '-')}</strong><span class="adm-hosp-row-note">${brDate(r.data_solicitacao)}</span></td>
-        <td><strong>${esc(r.solicitante_nome || '-')}</strong></td>
-        <td>${renderColaboradoresCell(r)}</td>
-        <td>${esc([r.cidade, r.uf].filter(Boolean).join('/'))}<span class="adm-hosp-row-note">${esc(r.cliente || '')}</span></td>
-        <td>${esc(r.local_embarque || '-')}</td>
-        <td>${brDate(r.data_checkin_prevista)} até ${brDate(r.data_checkout_prevista)}<span class="adm-hosp-row-note">${esc(r.quantidade_diarias_prevista || '-')} diária(s)</span></td>
-        <td>${esc(r.hotel || '-')}</td>
-        <td>${statusPill(r.status_solicitacao)}</td>
-        <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="incluir" data-id="${esc(r.solicitacao_id)}" type="button">Incluir</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="extend" data-id="${esc(r.solicitacao_id)}" type="button">Estender</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="checkout" data-id="${esc(r.solicitacao_id)}" type="button">Checkout</button><button class="btn btn-secondary adm-hosp-small" data-action="open" data-id="${esc(r.solicitacao_id)}" type="button">Configurar</button></div></td>
-      </tr>
-    `).join('');
+
+  function getContextualAction(r) {
+    const hosp = String(r.status_hospedagem || '').toUpperCase();
+    const fin = String(r.status_financeiro || '').toUpperCase();
+    if (!r.reserva_id) return { label: 'Reservar', process: 'config' };
+    if (['CHECKOUT_HOJE','CHECKOUT_REALIZADO','RENOVACAO_NECESSARIA'].includes(hosp)) return { label: 'Checkout', process: 'checkout' };
+    if (hosp === 'HOSPEDADO') return { label: 'Estender', process: 'extend' };
+    if (['AGUARDANDO_PAGAMENTO','ENVIADO_AO_FINANCEIRO'].includes(fin) || r.pendencia_financeira || r.pendencia_nf) return { label: 'Financeiro', process: 'finance' };
+    return { label: 'Abrir', process: 'config' };
   }
 
   function rowHtml(r) {
+    const action = getContextualAction(r);
+    const finBadges = [
+      ['AGUARDANDO_PAGAMENTO','ENVIADO_AO_FINANCEIRO'].includes(r.status_financeiro) ? `<span class="adm-hosp-fin-badge">$ ${label(r.status_financeiro)}</span>` : '',
+      ['AGUARDANDO_NF','NF_RECEBIDA','ENVIADO_PARA_LANCAMENTO'].includes(r.status_nota) ? `<span class="adm-hosp-fin-badge">NF pend.</span>` : ''
+    ].filter(Boolean).join('');
     return `
       <tr>
         <td><strong>${esc(r.codigo || '-')}</strong><span class="adm-hosp-row-note">${brDate(r.data_solicitacao)}</span></td>
@@ -711,10 +704,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
         <td>${esc([r.cidade, r.uf].filter(Boolean).join('/'))}<span class="adm-hosp-row-note">${esc(r.local_embarque || '')}</span></td>
         <td>${brDate(r.data_checkin || r.data_checkin_prevista)} até ${brDate(r.data_checkout || r.data_checkout_prevista)}</td>
         <td>${esc(r.hotel || '-')}<span class="adm-hosp-row-note">${r.valor_total_previsto ? money(r.valor_total_previsto) : ''}</span></td>
-        <td>${statusPill(r.status_solicitacao)}<span class="adm-hosp-row-note">${r.status_hospedagem ? label(r.status_hospedagem) : ''}</span></td>
-        <td>${statusPill(r.status_financeiro || 'NAO_INICIADO')}</td>
-        <td>${statusPill(r.status_nota || 'NAO_SOLICITADA')}</td>
-        <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="incluir" data-id="${esc(r.solicitacao_id)}" type="button">Incluir</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="extend" data-id="${esc(r.solicitacao_id)}" type="button">Estender</button><button class="btn btn-secondary adm-hosp-small" data-action="open-process" data-process-target="checkout" data-id="${esc(r.solicitacao_id)}" type="button">Checkout</button><button class="btn btn-secondary adm-hosp-small" data-action="open" data-id="${esc(r.solicitacao_id)}" type="button">Configurar</button></div></td>
+        <td>${statusPill(r.status_solicitacao)}<span class="adm-hosp-row-note">${r.status_hospedagem ? label(r.status_hospedagem) : ''}</span>${finBadges ? `<div class="adm-hosp-row-fin">${finBadges}</div>` : ''}</td>
+        <td><button class="btn btn-primary adm-hosp-small" data-action="open-process" data-process-target="${esc(action.process)}" data-id="${esc(r.solicitacao_id)}" type="button">${esc(action.label)}</button></td>
       </tr>`;
   }
 
@@ -1169,10 +1160,33 @@ Essa ação remove o hotel da base de Hospedagem e ele deixará de aparecer no O
     document.getElementById('reservaResumoBloqueada')?.classList.toggle('adm-hidden', !locked);
   }
 
+  const WIZARD_STEPS = ['config', 'incluir', 'extend', 'checkout', 'finance'];
+
   function setProcess(process = 'config') {
     const target = process || 'config';
-    document.querySelectorAll('#hospProcessTabs [data-process]').forEach((btn) => btn.classList.toggle('active', btn.dataset.process === target));
+    const activeIdx = WIZARD_STEPS.indexOf(target);
+    document.querySelectorAll('#hospProcessTabs [data-process]').forEach((btn, i) => {
+      btn.classList.remove('active', 'done');
+      if (!btn.classList.contains('locked')) {
+        if (i < activeIdx) btn.classList.add('done');
+        else if (i === activeIdx) btn.classList.add('active');
+      }
+    });
+    document.querySelectorAll('.adm-wizard-conn').forEach((conn, i) => {
+      conn.classList.toggle('done', i < activeIdx);
+    });
     document.querySelectorAll('[data-process-panel]').forEach((panel) => panel.classList.toggle('active', panel.dataset.processPanel === target));
+  }
+
+  function updateWizardLocked(row = state.selected) {
+    const hasReserva = Boolean(row?.reserva_id);
+    document.querySelectorAll('#hospProcessTabs [data-process]').forEach((btn, i) => {
+      if (i === 0) { btn.classList.remove('locked'); return; }
+      btn.classList.toggle('locked', !hasReserva);
+    });
+    document.querySelectorAll('.adm-wizard-conn').forEach((conn) => {
+      conn.classList.toggle('locked', !hasReserva);
+    });
   }
 
   function configureProcessUI(row = state.selected, preferredProcess = '') {
@@ -1215,6 +1229,7 @@ Essa ação remove o hotel da base de Hospedagem e ele deixará de aparecer no O
       next = ['CHECKOUT_HOJE', 'CHECKOUT_REALIZADO'].includes(status) ? 'checkout' : 'extend';
     }
     if (!row?.reserva_id && ['incluir', 'extend', 'checkout', 'finance'].includes(next)) next = 'config';
+    updateWizardLocked(row);
     setProcess(next);
   }
 
@@ -1673,17 +1688,15 @@ function aplicarDiariaHotelSelecionado() {
     const hash = normalizeText(window.location.hash.replace('#', ''));
     const root = content.closest('main') || content;
     if (hash.includes('aloj')) { root.classList.add('adm-menu-mode-alojamentos'); return 'alojamentos'; }
-    if (hash.includes('hotel') || hash.includes('hoteis')) { root.classList.add('adm-menu-mode-hoteis'); return 'painel'; }
+    if (hash.includes('hotel') || hash.includes('hoteis')) { root.classList.add('adm-menu-mode-hoteis'); return 'hoteis'; }
     return 'painel';
   }
 
   document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
   document.getElementById('refreshPainel').addEventListener('click', loadRows);
   document.getElementById('painelStatusTabs')?.addEventListener('click', (ev) => { const btn = ev.target.closest('[data-painel-status]'); if (btn) setPainelStatus(btn.dataset.painelStatus); });
-  document.getElementById('applyFilters').addEventListener('click', renderSolicitacoes);
-  document.getElementById('filterStatus').addEventListener('change', renderSolicitacoes);
-  document.getElementById('filterSearch').addEventListener('input', renderSolicitacoes);
-  document.getElementById('filterCheckout').addEventListener('change', renderSolicitacoes);
+  document.getElementById('painelSearch')?.addEventListener('input', renderPainel);
+  content.querySelectorAll('[data-kpi-status]').forEach((card) => card.addEventListener('click', () => setPainelStatus(card.dataset.kpiStatus)));
   document.getElementById('hotelSearch').addEventListener('input', renderHoteis);
   document.getElementById('hotelForm').addEventListener('submit', saveHotel);
   document.getElementById('hotelClear').addEventListener('click', resetHotelForm);
