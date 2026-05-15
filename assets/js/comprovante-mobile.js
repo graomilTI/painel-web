@@ -4,38 +4,51 @@ const SUPABASE_URL  = 'https://xyzpnuumdqhegxakkyws.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_YDjKfceWqANbNVMaHte2Kw_Dy4_i471';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true, autoRefreshToken: true } });
 
-const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const BRL   = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const money = (v) => BRL.format(Number(v) || 0);
-const esc = (v) => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const esc   = (v) => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-let sharedFile  = null;
-let uploadedUrl = null;
-let selectedRow = null;
+let sharedFile     = null;
+let uploadedUrl    = null;
+let selectedRow    = null;
 let pendingPayments = [];
+let ocrMatches     = [];
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 async function checkAuth() {
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user) {
-    window.location.replace('/painel/login.html');
-    return false;
-  }
-  return true;
+  if (!session?.user) { window.location.replace('/painel/login.html'); return null; }
+  return session;
 }
 
 // ─── Upload ──────────────────────────────────────────────────────────────────
 async function uploadFile(file) {
-  const ano    = new Date().getFullYear();
-  const ts     = Date.now();
-  const safe   = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const path   = `financeiro/comprovantes/${ano}/mobile/${ts}_${safe}`;
+  const ano  = new Date().getFullYear();
+  const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = `financeiro/comprovantes/${ano}/mobile/${Date.now()}_${safe}`;
   const { error } = await supabase.storage.from('notas-fiscais').upload(path, file, { upsert: false, contentType: file.type || 'image/jpeg' });
   if (error) throw new Error(`Falha no upload: ${error.message}`);
   const { data } = supabase.storage.from('notas-fiscais').getPublicUrl(path);
   return data?.publicUrl || path;
 }
 
-// ─── Pagamentos pendentes ─────────────────────────────────────────────────────
+// ─── OCR via Edge Function ────────────────────────────────────────────────────
+async function runOcr(imageUrl, session) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/ocr-comprovante`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': SUPABASE_ANON,
+    },
+    body: JSON.stringify({ imageUrl }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.error || `Erro OCR ${res.status}`);
+  return body; // { extracted, matches }
+}
+
+// ─── Pagamentos pendentes (fallback sem OCR) ──────────────────────────────────
 async function loadPendingPayments() {
   const { data, error } = await supabase
     .from('financeiro_pagamentos')
@@ -49,8 +62,7 @@ async function loadPendingPayments() {
 
 // ─── Vincular comprovante ─────────────────────────────────────────────────────
 async function linkComprovante(row, url) {
-  const isCompra = String(row.id || '').startsWith('compra_');
-  if (isCompra) {
+  if (String(row.id || '').startsWith('compra_')) {
     const rawId = String(row.id).replace('compra_', '');
     const { error } = await supabase.from('compras_itens').update({ status: 'aguardando_nf', comprovante_url: url }).eq('id', rawId);
     if (error) throw new Error(error.message);
@@ -73,67 +85,141 @@ function setFile(file) {
   sharedFile = file;
   const reader = new FileReader();
   reader.onload = (e) => {
-    const preview = document.getElementById('preview-img');
-    if (preview) { preview.src = e.target.result; preview.style.display = 'block'; }
-    const pdfBadge = document.getElementById('pdf-badge');
-    if (pdfBadge) pdfBadge.style.display = file.type === 'application/pdf' ? 'block' : 'none';
+    const img = document.getElementById('preview-img');
+    if (img) { img.src = e.target.result; img.style.display = 'block'; }
+    const badge = document.getElementById('pdf-badge');
+    if (badge) badge.style.display = file.type === 'application/pdf' ? 'block' : 'none';
   };
-  if (file.type === 'application/pdf') {
-    reader.readAsDataURL(file);
-  } else {
-    reader.readAsDataURL(file);
-  }
+  reader.readAsDataURL(file);
   document.getElementById('file-name').textContent = file.name;
   show('step-preview');
 }
 
-function renderPaymentList() {
-  const list = document.getElementById('payment-list');
-  if (!pendingPayments.length) {
-    list.innerHTML = '<div class="empty-state">Nenhum pagamento pendente encontrado.</div>';
+// ─── Render: resultado OCR ────────────────────────────────────────────────────
+function renderOcrResult(extracted, matches) {
+  // Campos extraídos
+  const fields = [
+    extracted.valor   != null ? { label: 'Valor',      value: money(extracted.valor), highlight: true } : null,
+    extracted.data              ? { label: 'Data',       value: extracted.data } : null,
+    extracted.favorecido        ? { label: 'Favorecido', value: extracted.favorecido } : null,
+    extracted.cnpj              ? { label: 'CNPJ',       value: extracted.cnpj } : null,
+    extracted.cpf               ? { label: 'CPF',        value: extracted.cpf } : null,
+    extracted.pixKey            ? { label: 'Chave PIX',  value: extracted.pixKey } : null,
+    extracted.idTransacao       ? { label: 'ID transação', value: extracted.idTransacao } : null,
+  ].filter(Boolean);
+
+  document.getElementById('ocr-fields').innerHTML = fields.length
+    ? fields.map((f) => `
+        <div class="ocr-field">
+          <span class="ocr-label">${esc(f.label)}</span>
+          <span class="ocr-value${f.highlight ? ' ocr-value-hl' : ''}">${esc(f.value)}</span>
+        </div>`).join('')
+    : '<p class="ocr-warn">Não foi possível extrair dados do comprovante.</p>';
+
+  // Lista de matches
+  const list = document.getElementById('ocr-matches');
+  if (!matches.length) {
+    list.innerHTML = '<div class="empty-state">Nenhum pagamento correspondente encontrado.</div>';
+    document.getElementById('btn-ocr-confirm').style.display = 'none';
     return;
   }
-  list.innerHTML = pendingPayments.map((row) => {
+
+  list.innerHTML = matches.map((m) => {
+    const row   = m.row;
     const valor = row.valor || row.valor_total || row.total || 0;
-    const origem = row.origem || row.setor || row.modulo_origem || 'Financeiro';
-    const desc = (row.descricao || row.conteudo || '').split('\n')[0].slice(0, 60);
-    const fav = row.fornecedor || row.favorecido || '';
-    return `<div class="pay-card" data-id="${esc(String(row.id))}">
+    const orig  = row.origem || row.setor || row.modulo_origem || 'Financeiro';
+    const desc  = (String(row.descricao || row.conteudo || '')).split('\n')[0].slice(0, 60);
+    const fav   = row.fornecedor || row.favorecido || '';
+    const conf  = m.confidence;
+    const confLabel = conf === 'alta' ? '✓ Alta' : conf === 'media' ? '~ Média' : '? Baixa';
+    const confCls   = conf === 'alta' ? 'badge-alta' : conf === 'media' ? 'badge-media' : 'badge-baixa';
+    return `<div class="pay-card" data-id="${esc(String(row.id))}" data-score="${m.score}">
       <div class="pay-card-top">
-        <span class="pay-tag">${esc(origem)}</span>
+        <span class="pay-tag">${esc(orig)}</span>
         <span class="pay-value">${money(valor)}</span>
       </div>
       ${desc ? `<div class="pay-desc">${esc(desc)}</div>` : ''}
-      ${fav ? `<div class="pay-fav">${esc(fav)}</div>` : ''}
+      ${fav  ? `<div class="pay-fav">${esc(fav)}</div>` : ''}
+      <div class="match-bar">
+        <span class="conf-badge ${confCls}">${confLabel}</span>
+        <span class="match-reasons">${m.reasons.join(' · ')}</span>
+      </div>
     </div>`;
   }).join('');
+
+  // Seleciona automaticamente o primeiro se confiança for alta
+  const first = matches[0];
+  if (first.confidence === 'alta') {
+    list.querySelector('.pay-card')?.classList.add('selected');
+    selectedRow = first.row;
+  }
+  document.getElementById('btn-ocr-confirm').disabled = !selectedRow;
 
   list.querySelectorAll('.pay-card').forEach((card) => {
     card.addEventListener('click', () => {
       list.querySelectorAll('.pay-card').forEach((c) => c.classList.remove('selected'));
       card.classList.add('selected');
-      selectedRow = pendingPayments.find((r) => String(r.id) === card.dataset.id) || null;
+      selectedRow = (matches.find((m) => String(m.row.id) === card.dataset.id) || {}).row || null;
+      document.getElementById('btn-ocr-confirm').disabled = !selectedRow;
+    });
+  });
+}
+
+// ─── Render: lista manual ────────────────────────────────────────────────────
+function renderPaymentList(rows) {
+  const list = document.getElementById('payment-list');
+  if (!rows.length) { list.innerHTML = '<div class="empty-state">Nenhum pagamento pendente encontrado.</div>'; return; }
+  list.innerHTML = rows.map((row) => {
+    const valor = row.valor || row.valor_total || row.total || 0;
+    const orig  = row.origem || row.setor || row.modulo_origem || 'Financeiro';
+    const desc  = (String(row.descricao || row.conteudo || '')).split('\n')[0].slice(0, 60);
+    const fav   = row.fornecedor || row.favorecido || '';
+    return `<div class="pay-card" data-id="${esc(String(row.id))}">
+      <div class="pay-card-top"><span class="pay-tag">${esc(orig)}</span><span class="pay-value">${money(valor)}</span></div>
+      ${desc ? `<div class="pay-desc">${esc(desc)}</div>` : ''}
+      ${fav  ? `<div class="pay-fav">${esc(fav)}</div>`  : ''}
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.pay-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      list.querySelectorAll('.pay-card').forEach((c) => c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedRow = rows.find((r) => String(r.id) === card.dataset.id) || null;
       document.getElementById('btn-confirm').disabled = !selectedRow;
     });
   });
 }
 
+// ─── Confirmar vínculo ────────────────────────────────────────────────────────
+async function confirm(fromOcr = false) {
+  if (!selectedRow || !uploadedUrl) return;
+  show('step-loading');
+  document.getElementById('loading-msg').textContent = 'Vinculando comprovante...';
+  try {
+    await linkComprovante(selectedRow, uploadedUrl);
+    document.getElementById('success-value').textContent  = money(selectedRow.valor || selectedRow.valor_total || selectedRow.total || 0);
+    document.getElementById('success-origin').textContent = selectedRow.origem || selectedRow.setor || 'Financeiro';
+    show('step-success');
+  } catch (err) {
+    show(fromOcr ? 'step-ocr' : 'step-select');
+    alert('Erro ao vincular: ' + err.message);
+  }
+}
+
 // ─── Fluxo principal ──────────────────────────────────────────────────────────
 async function init() {
-  const ok = await checkAuth();
-  if (!ok) return;
+  const session = await checkAuth();
+  if (!session) return;
 
-  // Registrar Service Worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/painel/sw.js', { scope: '/painel/' }).catch(() => {});
   }
 
-  // Verificar se veio via Web Share Target
-  const params = new URLSearchParams(location.search);
-  if (params.get('shared') === '1') {
+  // Web Share Target
+  if (new URLSearchParams(location.search).get('shared') === '1') {
     try {
       const cache = await caches.open('g1000-shared-file');
-      const resp = await cache.match('/g1000-shared-file');
+      const resp  = await cache.match('/g1000-shared-file');
       if (resp) {
         const blob = await resp.blob();
         const name = decodeURIComponent(resp.headers.get('X-File-Name') || 'comprovante.jpg');
@@ -147,71 +233,83 @@ async function init() {
 
   show('step-capture');
 
-  // Câmera / galeria
+  // Captura
   const inputCamera  = document.getElementById('input-camera');
   const inputGallery = document.getElementById('input-gallery');
-  document.getElementById('btn-camera').addEventListener('click', () => inputCamera.click());
+  document.getElementById('btn-camera').addEventListener('click',  () => inputCamera.click());
   document.getElementById('btn-gallery').addEventListener('click', () => inputGallery.click());
   inputCamera.addEventListener('change',  (e) => { if (e.target.files[0]) setFile(e.target.files[0]); });
   inputGallery.addEventListener('change', (e) => { if (e.target.files[0]) setFile(e.target.files[0]); });
 
   // Refazer
   document.getElementById('btn-retry').addEventListener('click', () => {
-    sharedFile = null; uploadedUrl = null; selectedRow = null;
-    document.getElementById('input-camera').value = '';
-    document.getElementById('input-gallery').value = '';
+    sharedFile = uploadedUrl = selectedRow = null; pendingPayments = []; ocrMatches = [];
+    inputCamera.value = ''; inputGallery.value = '';
     show('step-capture');
   });
 
-  // Continuar → upload + lista
+  // Continuar → upload → OCR → resultado
   document.getElementById('btn-continue').addEventListener('click', async () => {
     if (!sharedFile) return;
     show('step-loading');
-    document.getElementById('loading-msg').textContent = 'Enviando comprovante...';
     try {
+      document.getElementById('loading-msg').textContent = 'Enviando comprovante...';
       uploadedUrl = await uploadFile(sharedFile);
-      document.getElementById('loading-msg').textContent = 'Buscando pagamentos pendentes...';
-      pendingPayments = await loadPendingPayments();
-      renderPaymentList();
-      show('step-select');
+
+      document.getElementById('loading-msg').textContent = 'Analisando com OCR...';
+      const { extracted, matches } = await runOcr(uploadedUrl, session);
+      ocrMatches = matches || [];
+      renderOcrResult(extracted, ocrMatches);
+      show('step-ocr');
     } catch (err) {
-      show('step-preview');
-      alert('Erro: ' + err.message);
+      // Fallback: OCR falhou → lista manual
+      try {
+        document.getElementById('loading-msg').textContent = 'Buscando pagamentos pendentes...';
+        pendingPayments = await loadPendingPayments();
+        renderPaymentList(pendingPayments);
+        show('step-select');
+      } catch (err2) {
+        show('step-preview');
+        alert('Erro: ' + (err2.message || err.message));
+      }
     }
   });
 
-  // Confirmar vínculo
-  document.getElementById('btn-confirm').addEventListener('click', async () => {
-    if (!selectedRow || !uploadedUrl) return;
+  // Confirmar a partir do OCR
+  document.getElementById('btn-ocr-confirm').addEventListener('click', () => confirm(true));
+
+  // Ignorar OCR → lista manual
+  document.getElementById('btn-ocr-skip').addEventListener('click', async () => {
     show('step-loading');
-    document.getElementById('loading-msg').textContent = 'Vinculando comprovante...';
+    document.getElementById('loading-msg').textContent = 'Buscando pagamentos pendentes...';
     try {
-      await linkComprovante(selectedRow, uploadedUrl);
-      const valor = selectedRow.valor || selectedRow.valor_total || selectedRow.total || 0;
-      document.getElementById('success-value').textContent = money(valor);
-      document.getElementById('success-origin').textContent = selectedRow.origem || selectedRow.setor || 'Financeiro';
-      show('step-success');
-    } catch (err) {
+      if (ocrMatches.length) {
+        // Reusa os matches já retornados pelo OCR como lista manual
+        pendingPayments = ocrMatches.map((m) => m.row);
+      } else {
+        pendingPayments = await loadPendingPayments();
+      }
+      renderPaymentList(pendingPayments);
       show('step-select');
-      alert('Erro ao vincular: ' + err.message);
-    }
+    } catch (err) { show('step-ocr'); alert(err.message); }
   });
+
+  // Confirmar da lista manual
+  document.getElementById('btn-confirm').addEventListener('click', () => confirm(false));
 
   // Salvar sem vincular
   document.getElementById('link-sem-vinculo')?.addEventListener('click', (e) => {
     e.preventDefault();
     if (!uploadedUrl) return;
-    const origem = 'Salvo sem vínculo';
-    document.getElementById('success-value').textContent = '—';
-    document.getElementById('success-origin').textContent = origem;
+    document.getElementById('success-value').textContent  = '—';
+    document.getElementById('success-origin').textContent = 'Salvo sem vínculo';
     show('step-success');
   });
 
   // Novo comprovante
   document.getElementById('btn-new').addEventListener('click', () => {
-    sharedFile = null; uploadedUrl = null; selectedRow = null; pendingPayments = [];
-    document.getElementById('input-camera').value = '';
-    document.getElementById('input-gallery').value = '';
+    sharedFile = uploadedUrl = selectedRow = null; pendingPayments = []; ocrMatches = [];
+    inputCamera.value = ''; inputGallery.value = '';
     show('step-capture');
   });
 }
