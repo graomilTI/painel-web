@@ -1666,7 +1666,7 @@ html.is-route-ready .app-shell {
 }
 
 body.sidebar-collapsed .app-shell {
-  grid-template-columns: 0 1fr;
+  grid-template-columns: 0 1fr !important;
 }
 
 body.sidebar-collapsed .sidebar {
@@ -1696,7 +1696,7 @@ body.sidebar-collapsed .sidebar-toggle-btn {
   }
 
   body.sidebar-collapsed .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
   }
 
   body.sidebar-collapsed .sidebar {
