@@ -52,7 +52,7 @@ async function runOcr(imageUrl, session) {
 async function loadPendingPayments() {
   const { data, error } = await supabase
     .from('financeiro_pagamentos')
-    .select('id,origem,setor,modulo_origem,descricao,conteudo,valor,valor_total,total,forma_pagamento,dados_pagamento,status,created_at,fornecedor,favorecido')
+    .select('id,origem,setor,origem_setor,descricao,conteudo,valor,forma_pagamento,dados_pagamento,chave_pix,fornecedor,favorecido,favorecido_nome,favorecido_documento,status,created_at')
     .in('status', ['PENDENTE', 'pendente', 'Pendente'])
     .order('created_at', { ascending: false })
     .limit(200);
