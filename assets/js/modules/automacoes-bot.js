@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   async function api(url, opts = {}) {
     const res = await fetch(url, {
       ...opts,
@@ -11,12 +11,12 @@
 
   function styles() {
     return `<style>
-      .ab-wrap{padding:16px;color:#e5e7eb;font-family:Arial,sans-serif}
+      .ab-wrap{padding:16px;color:#e2e2f0;font-family:Arial,sans-serif}
       .ab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
-      .ab-card{background:#0f172a;border:1px solid #1e293b;border-radius:18px;padding:16px}
+      .ab-card{background:#0d0d18;border:1px solid #15152a;border-radius:18px;padding:16px}
       .ab-btn{background:#166534;color:#fff;border:none;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer}
       .ab-table{width:100%;border-collapse:collapse;font-size:12px}
-      .ab-table th,.ab-table td{padding:8px;border-bottom:1px solid #1e293b;text-align:left}
+      .ab-table th,.ab-table td{padding:8px;border-bottom:1px solid #15152a;text-align:left}
     </style>`;
   }
 

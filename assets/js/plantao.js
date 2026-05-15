@@ -1,4 +1,4 @@
-import { initProtectedPage } from './pageInit.js';
+﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
 const DEFAULT_SETORES = ['RH', 'Caixas', 'Frotas', 'Logística', 'Troca de notas'];
@@ -172,7 +172,7 @@ function injectPlantaoStyles() {
   style.textContent = `
     .plantao-page{display:grid;gap:18px}
     .plantao-tabs{display:flex;gap:10px;flex-wrap:wrap}
-    .plantao-tab{border:1px solid var(--line);background:#0b1220;color:var(--text);border-radius:14px;padding:10px 14px;font-weight:800;cursor:pointer}
+    .plantao-tab{border:1px solid var(--line);background:#15152a;color:var(--text);border-radius:14px;padding:10px 14px;font-weight:800;cursor:pointer}
     .plantao-tab.active{background:rgba(22,101,52,.28);color:#dcfce7;border-color:rgba(111,208,165,.28)}
     .plantao-panel{display:none}
     .plantao-panel.active{display:block}
@@ -182,27 +182,27 @@ function injectPlantaoStyles() {
     .plantao-field.half{grid-column:span 6}
     .plantao-field.quarter{grid-column:span 3}
     .plantao-label{display:block;font-size:13px;color:var(--muted);font-weight:800;margin-bottom:7px}
-    .plantao-input,.plantao-select,.plantao-textarea{width:100%;background:#0b1220;color:var(--text);border:1px solid #334155;border-radius:13px;padding:11px 12px;outline:none}
+    .plantao-input,.plantao-select,.plantao-textarea{width:100%;background:#15152a;color:var(--text);border:1px solid rgba(255,255,255,0.08);border-radius:13px;padding:11px 12px;outline:none}
     .plantao-input:focus,.plantao-select:focus,.plantao-textarea:focus{border-color:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,.15)}
     .plantao-textarea{min-height:82px;resize:vertical}
     .plantao-card{background:var(--bg-card);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow-soft)}
     .plantao-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .plantao-btn{border:0;border-radius:13px;padding:11px 14px;font-weight:800;cursor:pointer}
     .plantao-btn.primary{background:#15803d;color:#fff}
-    .plantao-btn.secondary{background:#1e293b;color:var(--text);border:1px solid #334155}
+    .plantao-btn.secondary{background:#15152a;color:var(--text);border:1px solid rgba(255,255,255,0.08)}
     .plantao-btn.danger{background:rgba(220,38,38,.18);color:#fecaca;border:1px solid rgba(220,38,38,.28)}
     .plantao-btn:disabled{opacity:.55;cursor:not-allowed}
     .plantao-setores{display:grid;gap:16px}
-    .plantao-setor{border:1px solid var(--line);border-radius:18px;padding:14px;background:#0b1220}
+    .plantao-setor{border:1px solid var(--line);border-radius:18px;padding:14px;background:#15152a}
     .plantao-setor-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
     .plantao-setor-head h3{margin:0}
     .plantao-add-grid{display:grid;grid-template-columns:1.7fr minmax(150px, .9fr) repeat(4, minmax(92px, 1fr)) 120px;gap:10px;align-items:end}
     .plantao-person-list{display:grid;gap:8px;margin-top:12px}
-    .plantao-person{display:grid;grid-template-columns:1.5fr 1fr 1fr auto;gap:10px;align-items:center;border:1px solid var(--line);background:#111827;border-radius:14px;padding:10px}
+    .plantao-person{display:grid;grid-template-columns:1.5fr 1fr 1fr auto;gap:10px;align-items:center;border:1px solid var(--line);background:#10101e;border-radius:14px;padding:10px}
     .plantao-person strong{display:block}
     .plantao-person span{color:var(--muted);font-size:13px}
     .plantao-suggest-wrap{position:relative}
-    .plantao-suggestions{position:absolute;top:calc(100% + 6px);left:0;right:0;background:#0b1220;border:1px solid #334155;border-radius:14px;box-shadow:0 20px 45px rgba(0,0,0,.35);z-index:20;max-height:260px;overflow:auto;display:none}
+    .plantao-suggestions{position:absolute;top:calc(100% + 6px);left:0;right:0;background:#15152a;border:1px solid rgba(255,255,255,0.08);border-radius:14px;box-shadow:0 20px 45px rgba(0,0,0,.35);z-index:20;max-height:260px;overflow:auto;display:none}
     .plantao-suggestions.show{display:block}
     .plantao-suggestion{width:100%;display:block;text-align:left;border:0;background:transparent;color:var(--text);padding:10px 12px;cursor:pointer;border-bottom:1px solid rgba(51,65,85,.4)}
     .plantao-suggestion:hover{background:rgba(22,101,52,.22)}
@@ -211,22 +211,22 @@ function injectPlantaoStyles() {
     .plantao-feedback{min-height:22px;color:#bbf7d0;font-size:14px}
     .plantao-feedback.error{color:#fecaca}
     .plantao-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px}
-    .plantao-table{width:100%;min-width:920px;border-collapse:collapse;background:#0b1220}
+    .plantao-table{width:100%;min-width:920px;border-collapse:collapse;background:#15152a}
     .plantao-table th,.plantao-table td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
     .plantao-table th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
     .plantao-canvas-wrap{display:grid;gap:12px;justify-items:start}
     #plantaoCanvas{max-width:100%;background:#050c09;border:1px solid var(--line);border-radius:18px}
     .plantao-mini-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-    .plantao-mini-kpi{background:#0b1220;border:1px solid var(--line);border-radius:16px;padding:12px}
+    .plantao-mini-kpi{background:#15152a;border:1px solid var(--line);border-radius:16px;padding:12px}
     .plantao-mini-kpi b{display:block;font-size:22px;margin-top:4px}
     .plantao-radio-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-    .plantao-radio-row label{display:inline-flex;gap:8px;align-items:center;background:#0b1220;border:1px solid var(--line);border-radius:999px;padding:9px 12px;color:var(--text)}
+    .plantao-radio-row label{display:inline-flex;gap:8px;align-items:center;background:#15152a;border:1px solid var(--line);border-radius:999px;padding:9px 12px;color:var(--text)}
     .plantao-date-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.14);color:#dcfce7;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:800;margin-bottom:5px}
     .plantao-consulta-list{display:grid;gap:10px}
-    .plantao-consulta-item{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);background:#0b1220;border-radius:16px;padding:12px}
+    .plantao-consulta-item{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);background:#15152a;border-radius:16px;padding:12px}
     .plantao-consulta-title{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:900}
     .plantao-consulta-tags{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
-    .plantao-tag{display:inline-flex;border:1px solid #334155;background:#111827;border-radius:999px;padding:5px 8px;color:var(--muted);font-size:12px}
+    .plantao-tag{display:inline-flex;border:1px solid rgba(255,255,255,0.08);background:#10101e;border-radius:999px;padding:5px 8px;color:var(--muted);font-size:12px}
     @media (max-width:980px){
       .plantao-field.third,.plantao-field.half,.plantao-field.quarter{grid-column:span 12}
       .plantao-add-grid,.plantao-person{grid-template-columns:1fr}
@@ -1446,7 +1446,7 @@ async function renderImagemPlantao() {
 
   ctx.fillStyle = 'rgba(111,208,165,.18)';
   ctx.fillRect(70, 1450, 940, 2);
-  ctx.fillStyle = '#e5e7eb';
+  ctx.fillStyle = '#e2e2f0';
   ctx.font = '24px Arial';
   ctx.textAlign = 'left';
   ctx.fillText('Grão 1000 • Escala de Plantão', 70, 1472);

@@ -1,4 +1,4 @@
-import { initProtectedPage } from './pageInit.js';
+﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 
@@ -110,7 +110,7 @@ function generateImage(rows, dataReferencia) {
   ctx.fillStyle = '#07152f';
   ctx.fillRect(0, 0, width, height);
 
-  ctx.fillStyle = '#e5e7eb';
+  ctx.fillStyle = '#e2e2f0';
   ctx.font = 'bold 44px Arial';
   ctx.fillText('EFETIVOS SEM PRODUÇÃO', margin, 70);
 
@@ -148,7 +148,7 @@ function generateImage(rows, dataReferencia) {
       ctx.fillStyle = 'rgba(255,255,255,0.03)';
       ctx.fillRect(margin - 12, y - 24, width - margin * 2 + 24, rowHeight);
     }
-    ctx.fillStyle = '#e5e7eb';
+    ctx.fillStyle = '#e2e2f0';
     const line1 = wrapText(ctx, row.colaborador, 800)[0] || '';
     ctx.fillText(line1, col1, y);
     ctx.fillText(row.coordenacao || '', col2, y);

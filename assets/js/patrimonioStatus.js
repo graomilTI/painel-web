@@ -1,4 +1,4 @@
-import { initProtectedPage } from './pageInit.js';
+﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 
@@ -102,7 +102,7 @@ function injectStatusStyles() {
     }
     .status-secondary {
       font-size: .82rem;
-      color: #94a3b8;
+      color: #6b7280;
     }
     .progress-wrap {
       min-width: 220px;

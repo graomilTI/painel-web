@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   function el(tag, cls, html) {
     const node = document.createElement(tag);
     if (cls) node.className = cls;
@@ -22,19 +22,19 @@
   function styles() {
     return `
       <style>
-        .hc-wrap{padding:16px;color:#e5e7eb;font-family:Arial,sans-serif}
-        .hc-card{background:#0f172a;border:1px solid #1e293b;border-radius:18px;padding:16px;box-shadow:0 8px 20px rgba(0,0,0,.25)}
+        .hc-wrap{padding:16px;color:#e2e2f0;font-family:Arial,sans-serif}
+        .hc-card{background:#0d0d18;border:1px solid #15152a;border-radius:18px;padding:16px;box-shadow:0 8px 20px rgba(0,0,0,.25)}
         .hc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:12px}
         .hc-row{display:grid;gap:8px}
-        .hc-row label{font-size:12px;color:#94a3b8}
+        .hc-row label{font-size:12px;color:#6b7280}
         .hc-row input,.hc-row select,.hc-row textarea{
-          width:100%;padding:10px 12px;border-radius:12px;border:1px solid #334155;
-          background:#0f172a;color:#e5e7eb;outline:none;color-scheme:dark;
+          width:100%;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);
+          background:#0d0d18;color:#e2e2f0;outline:none;color-scheme:dark;
         }
         .hc-btn{background:#166534;color:#fff;border:none;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer}
-        .hc-table-wrap{overflow:auto;border:1px solid #1e293b;border-radius:14px}
+        .hc-table-wrap{overflow:auto;border:1px solid #15152a;border-radius:14px}
         .hc-table{width:100%;border-collapse:collapse;font-size:12px}
-        .hc-table th,.hc-table td{padding:10px;border-bottom:1px solid #1e293b;text-align:left;vertical-align:top}
+        .hc-table th,.hc-table td{padding:10px;border-bottom:1px solid #15152a;text-align:left;vertical-align:top}
       </style>
     `;
   }
