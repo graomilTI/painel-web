@@ -43,7 +43,32 @@ function injectStyles() {
     .adm-hosp-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.adm-hosp-action-grid .btn{width:100%!important}
     .adm-hidden-soft{display:none!important}.adm-hidden{display:none!important}.adm-hosp-help{font-size:12px;color:#6b7280;margin-top:4px}.mt-16{margin-top:16px!important}
     .adm-menu-mode-hoteis [data-tab="alojamentos"],.adm-menu-mode-alojamentos [data-tab="solicitadas"],.adm-menu-mode-alojamentos [data-tab="reservados"],.adm-menu-mode-alojamentos [data-tab="checkout"],.adm-menu-mode-alojamentos [data-tab="financeiro"],.adm-menu-mode-alojamentos [data-tab="concluidos"],.adm-menu-mode-alojamentos [data-tab="hoteis"]{display:none!important}
-    @media(max-width:900px){.adm-hosp-form{grid-template-columns:1fr}.adm-room-add,.adm-room-row{grid-template-columns:1fr}.adm-extra-row{grid-template-columns:1fr 1fr auto}.adm-hosp-search{min-width:0;width:100%}.adm-hosp-action-grid{grid-template-columns:1fr}}
+    .dash-period-bar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+    .dash-period-btn{padding:6px 14px;border-radius:999px;border:1px solid var(--line-2);background:transparent;color:var(--muted);font-size:12px;font-weight:800;cursor:pointer;transition:all .15s}
+    .dash-period-btn.active{background:rgba(22,101,52,.28);color:#dcfce7;border-color:rgba(111,208,165,.3)}
+    .dash-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+    .dash-kpi{background:#0d1b12;border:1px solid rgba(111,208,165,.12);border-radius:18px;padding:16px 18px;position:relative;overflow:hidden}
+    .dash-kpi::before{content:'';position:absolute;inset:0;background:var(--kpi-glow,transparent);pointer-events:none}
+    .dash-kpi-value{font-size:30px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--kpi-color,#e2e8f0);line-height:1;position:relative}
+    .dash-kpi-label{font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:8px;position:relative}
+    .dash-kpi-sub{font-size:11px;color:var(--muted);margin-top:3px;opacity:.7;position:relative}
+    .dash-main-grid{display:grid;grid-template-columns:1fr 1.5fr;gap:14px;margin-bottom:14px}
+    .dash-bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .dash-card{background:#0d1b12;border:1px solid rgba(111,208,165,.1);border-radius:18px;padding:16px 18px}
+    .dash-card-title{font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:12px}
+    .dash-rank-list{display:flex;flex-direction:column;gap:6px}
+    .dash-rank-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05)}
+    .dash-rank-num{font-size:10px;font-weight:900;color:#4b5563;width:16px;flex-shrink:0;text-align:center}
+    .dash-rank-name{flex:1;font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dash-rank-bar-wrap{width:70px;height:5px;background:rgba(255,255,255,.07);border-radius:3px;flex-shrink:0}
+    .dash-rank-bar{height:100%;border-radius:3px;background:linear-gradient(90deg,#4ade80,#22d3ee)}
+    .dash-rank-value{font-size:11px;font-weight:900;color:#4ade80;min-width:68px;text-align:right;flex-shrink:0}
+    .dash-upcoming-list{display:flex;flex-direction:column;gap:6px}
+    .dash-upcoming-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05)}
+    .dash-upcoming-date{font-size:11px;font-weight:900;color:#fde68a;flex-shrink:0;min-width:46px}
+    .dash-upcoming-name{flex:1;font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dash-upcoming-city{font-size:10px;color:var(--muted);flex-shrink:0}
+    @media(max-width:900px){.adm-hosp-form{grid-template-columns:1fr}.adm-room-add,.adm-room-row{grid-template-columns:1fr}.adm-extra-row{grid-template-columns:1fr 1fr auto}.adm-hosp-search{min-width:0;width:100%}.adm-hosp-action-grid{grid-template-columns:1fr}.dash-main-grid,.dash-bottom-grid{grid-template-columns:1fr}.dash-kpi-grid{grid-template-columns:repeat(2,1fr)}}
   `;
   document.head.appendChild(style);
 }
@@ -53,8 +78,9 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   const state = {
     rows: [], resumo: {}, hoteis: [], alojamentos: [],
     editingHotel: null, editingAlojamento: null,
-    tab: 'solicitadas', selected: null,
-    reservarColabs: [], estenderColabs: []
+    tab: 'dashboard', selected: null,
+    reservarColabs: [], estenderColabs: [],
+    dashPeriod: 30
   };
   function getHotelById(id) { return state.hoteis.find((h) => String(h.id) === String(id)); }
 
@@ -131,7 +157,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     </section>
 
     <div class="adm-hosp-tabs">
-      <button class="adm-hosp-tab active" data-tab="solicitadas" type="button">Solicitado <small id="cntSolicitadas">0</small></button>
+      <button class="adm-hosp-tab active" data-tab="dashboard" type="button">Dashboard</button>
+      <button class="adm-hosp-tab" data-tab="solicitadas" type="button">Solicitado <small id="cntSolicitadas">0</small></button>
       <button class="adm-hosp-tab" data-tab="reservados" type="button">Reservado <small id="cntReservados">0</small></button>
       <button class="adm-hosp-tab" data-tab="checkout" type="button">Checkout <small id="cntCheckout">0</small></button>
       <button class="adm-hosp-tab" data-tab="financeiro" type="button">Financeiro <small id="cntFinanceiro">0</small></button>
@@ -140,7 +167,11 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       <button class="adm-hosp-tab" data-tab="alojamentos" type="button">Alojamentos</button>
     </div>
 
-    <section id="tab-solicitadas" class="adm-hosp-panel active">
+    <section id="tab-dashboard" class="adm-hosp-panel active">
+      <div style="padding:10px 0;color:var(--muted);font-size:13px">Carregando dashboard...</div>
+    </section>
+
+    <section id="tab-solicitadas" class="adm-hosp-panel">
       <article class="card">
         <div class="section-head"><div><h3>Aguardando reserva</h3><p class="muted">Solicitações abertas sem reserva definida.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshPainel" type="button">Atualizar</button></div>
         <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data / Código</th><th>Colaboradores</th><th>Gestor</th><th>Cidade / UF</th><th>Período</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbodySolicitadas"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
@@ -428,6 +459,148 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     aplicarDiariasHotelNaComposicao(hotel,true);
   }
 
+  // ─── Dashboard ─────────────────────────────────────────────────────────────
+
+  const BRAZIL_STATES={
+    RR:{x:197,y:65,name:'Roraima'},AP:{x:305,y:65,name:'Amapá'},
+    AM:{x:165,y:150,name:'Amazonas'},PA:{x:293,y:162,name:'Pará'},
+    AC:{x:95,y:248,name:'Acre'},RO:{x:175,y:265,name:'Rondônia'},
+    TO:{x:336,y:230,name:'Tocantins'},MA:{x:372,y:168,name:'Maranhão'},
+    PI:{x:408,y:198,name:'Piauí'},CE:{x:444,y:150,name:'Ceará'},
+    RN:{x:471,y:163,name:'R.G.Norte'},PB:{x:476,y:182,name:'Paraíba'},
+    PE:{x:462,y:200,name:'Pernambuco'},AL:{x:476,y:218,name:'Alagoas'},
+    SE:{x:465,y:234,name:'Sergipe'},BA:{x:418,y:268,name:'Bahia'},
+    MT:{x:252,y:290,name:'Mato Grosso'},GO:{x:328,y:314,name:'Goiás'},
+    DF:{x:342,y:304,name:'D.F.'},MS:{x:272,y:365,name:'M.G.Sul'},
+    MG:{x:384,y:336,name:'Minas Gerais'},ES:{x:420,y:352,name:'Esp. Santo'},
+    RJ:{x:398,y:376,name:'Rio de Janeiro'},SP:{x:332,y:396,name:'São Paulo'},
+    PR:{x:310,y:436,name:'Paraná'},SC:{x:320,y:472,name:'Sta. Catarina'},
+    RS:{x:288,y:516,name:'Rio Grande do Sul'}
+  };
+
+  function renderBrazilMap(stateData,maxVal) {
+    const outline=`<path d="M250,62 C280,57 330,56 395,66 C435,73 470,91 495,119 C510,136 515,159 510,183 C505,206 490,231 488,253 C482,279 465,296 450,316 C435,333 425,353 425,373 C422,391 405,411 380,429 C358,446 335,466 326,489 C316,511 308,533 295,541 C278,536 260,521 245,499 C228,477 215,457 200,439 C183,421 168,409 155,391 C140,371 122,349 108,319 C95,291 86,259 90,226 C93,199 100,171 110,149 C122,127 138,109 160,91 C182,73 212,63 250,62Z" fill="rgba(74,222,128,0.025)" stroke="rgba(74,222,128,0.1)" stroke-width="1.5"/>`;
+    const dots=Object.entries(BRAZIL_STATES).map(([uf,pos])=>{
+      const d=stateData[uf]||{count:0,value:0};
+      const has=d.count>0;
+      const ratio=maxVal>0&&has?Math.min(1,(d.value||d.count)/maxVal):0;
+      const r=has?Math.max(8,Math.min(18,8+ratio*11)):5;
+      const fa=(has?0.18+ratio*0.65:0.04).toFixed(2);
+      const sa=(has?0.35+ratio*0.55:0.1).toFixed(2);
+      const tip=esc(has?`${pos.name}: ${d.count} hospedagem(s) · ${money(d.value)}`:pos.name);
+      return `<g><circle cx="${pos.x}" cy="${pos.y}" r="${r}" fill="rgba(74,222,128,${fa})" stroke="rgba(74,222,128,${sa})" stroke-width="1.5" style="cursor:pointer"><title>${tip}</title></circle><text x="${pos.x}" y="${pos.y+0.5}" text-anchor="middle" dominant-baseline="central" font-size="${has?8:7}" font-weight="800" fill="${has?'#e2e8f0':'#374151'}" style="pointer-events:none;user-select:none">${uf}</text></g>`;
+    }).join('');
+    const noData=Object.keys(stateData).length===0?`<text x="275" y="295" text-anchor="middle" fill="#374151" font-size="12" font-weight="800">Sem dados no período</text>`:'';
+    return `<svg viewBox="50 42 450 510" width="100%" style="max-height:280px;display:block">${outline}${dots}${noData}</svg>`;
+  }
+
+  function renderTabDashboard() {
+    const section=document.getElementById('tab-dashboard');
+    if (!section) return;
+    const today=new Date().toISOString().slice(0,10);
+    const todayPlus7=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+    const cutoff=state.dashPeriod?new Date(Date.now()-state.dashPeriod*86400000).toISOString().slice(0,10):'';
+    const rows=cutoff?state.rows.filter(r=>(r.data_solicitacao||'')>=cutoff):state.rows;
+    // KPIs
+    const hospedados=rows.filter(r=>['HOSPEDADO','CHECKIN_PREVISTO','CHECKOUT_HOJE','RENOVACAO_NECESSARIA'].includes(String(r.status_hospedagem||'').toUpperCase())).length;
+    const solicitadas=rows.filter(r=>painelBucket(r)==='solicitadas').length;
+    const checkinsHoje=rows.filter(r=>{const d=r.data_checkin||r.data_checkin_prevista;return d&&d.slice(0,10)===today;}).length;
+    const checkoutsHoje=rows.filter(r=>{const d=r.data_checkout||r.data_checkout_prevista;return d&&d.slice(0,10)===today;}).length;
+    const valorTotal=rows.reduce((a,r)=>a+toNumber(r.valor_financeiro||r.valor_total_previsto),0);
+    const pendFinanceiro=rows.filter(r=>painelBucket(r)==='financeiro').length;
+    // Mapa: agrupar por UF
+    const stateData={};
+    rows.forEach(r=>{const uf=normalizeUF(r.uf);if(!uf||uf.length!==2)return;if(!stateData[uf])stateData[uf]={count:0,value:0};stateData[uf].count++;stateData[uf].value+=toNumber(r.valor_financeiro||r.valor_total_previsto);});
+    const maxStateVal=Math.max(1,...Object.values(stateData).map(d=>d.value||d.count));
+    // Gráfico mensal (sempre últimos 12 meses de state.rows completo)
+    const now=new Date();
+    const months=[];
+    for(let i=11;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);months.push([`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,{count:0,value:0}]);}
+    const monthMap=new Map(months);
+    state.rows.forEach(r=>{const k=(r.data_solicitacao||r.created_at||'').slice(0,7);if(monthMap.has(k)){const m=monthMap.get(k);m.count++;m.value+=toNumber(r.valor_financeiro||r.valor_total_previsto);}});
+    const maxMonth=Math.max(1,...months.map(([,v])=>v.count));
+    const currentMonthKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const mNames=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    // Top hotéis
+    const hotelMap={};
+    rows.forEach(r=>{if(!r.hotel)return;if(!hotelMap[r.hotel])hotelMap[r.hotel]={value:0,count:0};hotelMap[r.hotel].value+=toNumber(r.valor_financeiro||r.valor_total_previsto);hotelMap[r.hotel].count++;});
+    const topHoteis=Object.entries(hotelMap).sort((a,b)=>b[1].value-a[1].value).slice(0,5);
+    const maxHotelVal=Math.max(1,topHoteis[0]?.[1]?.value||1);
+    // Próximos check-ins
+    const upcoming=rows.filter(r=>{const d=r.data_checkin||r.data_checkin_prevista;return d&&d.slice(0,10)>=today&&d.slice(0,10)<=todayPlus7&&painelBucket(r)!=='concluidos';}).sort((a,b)=>{const da=a.data_checkin||a.data_checkin_prevista||'';const db=b.data_checkin||b.data_checkin_prevista||'';return da<db?-1:da>db?1:0;}).slice(0,6);
+    const kpiCards=[
+      {val:hospedados,label:'Hospedados agora',sub:'Ativos ou check-in previsto',color:'#4ade80',glow:'rgba(74,222,128,.07)'},
+      {val:solicitadas,label:'Aguardando reserva',sub:'Solicitações abertas',color:'#fde68a',glow:'rgba(253,230,138,.07)'},
+      {val:checkinsHoje,label:'Check-ins hoje',sub:brDate(today),color:'#93c5fd',glow:'rgba(147,197,253,.07)'},
+      {val:checkoutsHoje,label:'Checkouts hoje',sub:brDate(today),color:'#c4b5fd',glow:'rgba(196,181,253,.07)'},
+      {val:money(valorTotal),label:'Valor total',sub:'Período selecionado',color:'#4ade80',glow:'rgba(74,222,128,.07)',small:true},
+      {val:pendFinanceiro,label:'Aguardando financeiro',sub:'A processar',color:'#fca5a5',glow:'rgba(252,165,165,.07)'}
+    ];
+    section.innerHTML=`
+      <div class="dash-period-bar">
+        <span style="font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">Período</span>
+        ${[7,30,90,0].map(p=>`<button class="dash-period-btn${state.dashPeriod===p?' active':''}" data-dash-period="${p}" type="button">${p?p+'d':'Tudo'}</button>`).join('')}
+        <span style="margin-left:auto;font-size:11px;color:var(--muted);font-weight:800">${rows.length} registro(s)</span>
+      </div>
+      <div class="dash-kpi-grid">
+        ${kpiCards.map(k=>`<div class="dash-kpi" style="--kpi-color:${k.color};--kpi-glow:radial-gradient(ellipse at top left,${k.glow},transparent 65%)">
+          <div class="dash-kpi-value"${k.small?` style="font-size:${String(k.val).length>10?'16px':'22px'}"`:''}>${k.val}</div>
+          <div class="dash-kpi-label">${k.label}</div>
+          <div class="dash-kpi-sub">${k.sub}</div>
+        </div>`).join('')}
+      </div>
+      <div class="dash-main-grid">
+        <div class="dash-card">
+          <div class="dash-card-title">Distribuição por estado — <span style="color:#4ade80">${Object.keys(stateData).length} estado(s)</span></div>
+          ${renderBrazilMap(stateData,maxStateVal)}
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-title">Reservas mensais <span style="color:var(--muted);font-weight:700;text-transform:none;letter-spacing:0">(últimos 12 meses)</span></div>
+          <div style="display:flex;align-items:flex-end;gap:4px;height:155px">
+            ${months.map(([key,v])=>{
+              const h=maxMonth>0?Math.max(3,Math.round((v.count/maxMonth)*105)):3;
+              const isCur=key===currentMonthKey;
+              const mName=mNames[parseInt(key.split('-')[1],10)-1];
+              return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+                <span style="font-size:8px;font-weight:900;color:${v.count>0?(isCur?'#4ade80':'rgba(111,208,165,.6)'):'transparent'}">${v.count||0}</span>
+                <div style="width:80%;height:${h}px;border-radius:3px 3px 0 0;background:${isCur?'#4ade80':'rgba(111,208,165,.25)'}" title="${mName}: ${v.count} reservas · ${money(v.value)}"></div>
+                <span style="font-size:7px;color:var(--muted);font-weight:800">${mName}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="dash-bottom-grid">
+        <div class="dash-card">
+          <div class="dash-card-title">Próximos check-ins — <span style="color:var(--muted);font-weight:700;text-transform:none;letter-spacing:0">7 dias</span></div>
+          ${upcoming.length===0
+            ?`<div style="color:var(--muted);font-size:13px;padding:6px 0">Nenhum check-in nos próximos 7 dias.</div>`
+            :`<div class="dash-upcoming-list">${upcoming.map(r=>{
+              const d=r.data_checkin||r.data_checkin_prevista;
+              const colabs=getColaboradoresDetalhados(r);
+              const nome=colabs.length?colabs[0].nome_colaborador||'-':(String(r.colaboradores||'-').split('\n')[0]);
+              const extra=colabs.length>1?`<span style="color:var(--muted)"> +${colabs.length-1}</span>`:'';
+              return `<div class="dash-upcoming-row"><div class="dash-upcoming-date">${brDate(d)}</div><div class="dash-upcoming-name">${esc(nome)}${extra}</div><div class="dash-upcoming-city">${esc([r.cidade,r.uf].filter(Boolean).join('/'))}</div></div>`;
+            }).join('')}</div>`}
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-title">Top hotéis por valor</div>
+          ${topHoteis.length===0
+            ?`<div style="color:var(--muted);font-size:13px;padding:6px 0">Sem dados de hotéis no período.</div>`
+            :`<div class="dash-rank-list">${topHoteis.map(([name,d],i)=>`
+              <div class="dash-rank-row">
+                <div class="dash-rank-num">${i+1}</div>
+                <div class="dash-rank-name" title="${esc(name)}">${esc(name)}</div>
+                <div class="dash-rank-bar-wrap"><div class="dash-rank-bar" style="width:${Math.round(d.value/maxHotelVal*100)}%"></div></div>
+                <div class="dash-rank-value">${money(d.value)}</div>
+              </div>`).join('')}</div>`}
+        </div>
+      </div>`;
+    section.querySelectorAll('[data-dash-period]').forEach(btn=>{
+      btn.addEventListener('click',()=>{state.dashPeriod=Number(btn.dataset.dashPeriod);renderTabDashboard();});
+    });
+  }
+
   // ─── Data loading ──────────────────────────────────────────────────────────
 
   async function enrichRowsWithColaboradores(rows) {
@@ -469,8 +642,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   function renderCurrentTab() {
     if (['hoteis','alojamentos'].includes(state.tab)) return;
-    const fns={solicitadas:renderTabSolicitadas,reservados:renderTabReservados,checkout:renderTabCheckout,financeiro:renderTabFinanceiro,concluidos:renderTabConcluidos};
-    (fns[state.tab]||renderTabSolicitadas)();
+    const fns={dashboard:renderTabDashboard,solicitadas:renderTabSolicitadas,reservados:renderTabReservados,checkout:renderTabCheckout,financeiro:renderTabFinanceiro,concluidos:renderTabConcluidos};
+    (fns[state.tab]||renderTabDashboard)();
   }
 
   function renderTabSolicitadas() {
@@ -550,8 +723,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   // ─── Tab navigation ────────────────────────────────────────────────────────
 
   function setTab(tab) {
-    const valid=['solicitadas','reservados','checkout','financeiro','concluidos','hoteis','alojamentos'];
-    const t=valid.includes(tab)?tab:'solicitadas';
+    const valid=['dashboard','solicitadas','reservados','checkout','financeiro','concluidos','hoteis','alojamentos'];
+    const t=valid.includes(tab)?tab:'dashboard';
     state.tab=t;
     document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active',b.dataset.tab===t));
     document.querySelectorAll('.adm-hosp-panel').forEach((p) => p.classList.remove('active'));
@@ -1044,7 +1217,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     const root=content.closest('main')||content;
     if (hash.includes('aloj')) { root.classList.add('adm-menu-mode-alojamentos'); return 'alojamentos'; }
     if (hash.includes('hotel')||hash.includes('hoteis')) { root.classList.add('adm-menu-mode-hoteis'); return 'hoteis'; }
-    return 'solicitadas';
+    return 'dashboard';
   }
 
   // ─── Event listeners ───────────────────────────────────────────────────────

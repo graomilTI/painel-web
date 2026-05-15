@@ -1050,6 +1050,17 @@ initProtectedPage('Programação', (content) => {
       .from('programacao_colaboradores')
       .upsert(payload, { onConflict: 'programacao_id,colaborador_id', ignoreDuplicates: true });
     if (error) throw error;
+
+    // Promove SEM EMBARQUE → OK para colaboradores que agora têm OS em ATENDER
+    const idsParaOk = payload.filter((p) => p.disponibilidade === 'OK').map((p) => p.colaborador_id);
+    if (idsParaOk.length) {
+      await supabase
+        .from('programacao_colaboradores')
+        .update({ disponibilidade: 'OK' })
+        .eq('programacao_id', state.programacaoId)
+        .in('colaborador_id', idsParaOk)
+        .eq('disponibilidade', 'SEM EMBARQUE');
+    }
   }
 
   async function loadStageData() {

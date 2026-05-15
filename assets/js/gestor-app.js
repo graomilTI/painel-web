@@ -282,7 +282,10 @@ async function loadData({ useCache = true } = {}) {
     if (osRes.error) throw osRes.error;
     state.os = Array.isArray(osRes.data) ? osRes.data : [];
     state.atribuicoes = Array.isArray(atrRes.data) ? atrRes.data : [];
-    state.colaboradores = Array.isArray(colabRes.data) ? colabRes.data.filter(isActiveColab) : [];
+    state.colaboradores = Array.isArray(colabRes.data)
+      ? colabRes.data.filter(isActiveColab).filter((c) =>
+          state.isMaster || !state.allowedSupervisoes.length || state.allowedSupervisoes.includes(c.supervisao))
+      : [];
     state.pontos = Array.isArray(pontosRes.data) ? pontosRes.data : [];
     saveCache({ os: state.os, atribuicoes: state.atribuicoes, colaboradores: state.colaboradores, pontos: state.pontos });
     hydrateSelections();
