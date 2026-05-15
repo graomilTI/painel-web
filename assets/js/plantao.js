@@ -1469,42 +1469,48 @@ function groupRowsForDivulgacao(rows) {
 
 function getDivulgacaoSetores(titleSetor) {
   if (titleSetor !== 'todos') return [titleSetor];
-  const extras = setores.filter((s) => !SETORES_DIVULGACAO_PADRAO.some((base) => norm(base) === norm(s)));
-  return [...SETORES_DIVULGACAO_PADRAO, ...extras];
+  return [...SETORES_DIVULGACAO_PADRAO];
+}
+
+function shortDisplayName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1]}`;
 }
 
 function drawInfoLine(ctx, icon, label, value, x, y, maxW, compact = false) {
-  const iconSize = compact ? 26 : 32;
-  drawRoundRectFilled(ctx, x, y - 2, iconSize + 10, iconSize + 10, 14, 'rgba(34,197,94,.14)', 'rgba(111,208,165,.18)', 1);
-  drawCanvasIcon(ctx, icon, x + 5, y + 3, iconSize, '#66e36f');
-  ctx.fillStyle = '#a7cdbd';
-  ctx.font = `bold ${compact ? 12 : 14}px Arial`;
+  const iconSize = compact ? 24 : 28;
+  drawRoundRectFilled(ctx, x, y - 2, iconSize + 12, iconSize + 12, 13, 'rgba(255,255,255,.04)', 'rgba(132,184,158,.16)', 1);
+  drawCanvasIcon(ctx, icon, x + 6, y + 4, iconSize, '#72c99a');
+  ctx.fillStyle = '#98b4a8';
+  ctx.font = `bold ${compact ? 12 : 13}px Arial`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText(label, x + iconSize + 24, y);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${compact ? 17 : 19}px Arial`;
-  ctx.fillText(fitText(ctx, value || '-', maxW - iconSize - 24), x + iconSize + 24, y + (compact ? 15 : 18));
+  ctx.fillText(label, x + iconSize + 26, y + 1);
+  ctx.fillStyle = '#e6efea';
+  ctx.font = `bold ${compact ? 16 : 18}px Arial`;
+  ctx.fillText(fitText(ctx, value || '-', maxW - iconSize - 28), x + iconSize + 26, y + (compact ? 15 : 17));
 }
 
 function drawSectorCard(ctx, card, x, y, w, h, dateFallback) {
-  drawRoundRectFilled(ctx, x, y, w, h, 22, 'rgba(3,15,11,.92)', 'rgba(78,222,97,.62)', 1.4);
+  drawRoundRectFilled(ctx, x, y, w, h, 22, 'rgba(10,22,18,.82)', 'rgba(109,180,141,.34)', 1.2);
 
   const dateLabel = formatCardDateLabel(card.people.flatMap((p) => p.dates || [])) || dateFallback;
-  drawCanvasIcon(ctx, 'calendar', x + 28, y + 22, 26, '#66e36f');
-  ctx.fillStyle = '#66e36f';
-  ctx.font = 'bold 18px Arial';
+  drawCanvasIcon(ctx, 'calendar', x + 26, y + 20, 24, '#72c99a');
+  ctx.fillStyle = '#77cfa1';
+  ctx.font = 'bold 17px Arial';
   ctx.textBaseline = 'top';
-  ctx.fillText(fitText(ctx, dateLabel, w - 58), x + 62, y + 25);
+  ctx.fillText(fitText(ctx, dateLabel, w - 58), x + 58, y + 23);
 
-  const badgeY = y + 62;
-  drawRoundRectFilled(ctx, x + 28, badgeY, 58, 58, 12, 'rgba(34,197,94,.13)', 'rgba(78,222,97,.58)', 1.4);
-  drawCanvasIcon(ctx, sectorIcon(card.setor), x + 41, badgeY + 13, 32, '#66e36f');
-  drawPill(ctx, x + 100, badgeY + 9, card.setor, {
-    bg: 'rgba(22,101,52,.34)',
-    border: 'rgba(111,208,165,.34)',
-    color: '#76ef82',
-    font: 'bold 25px Arial',
+  const badgeY = y + 58;
+  drawRoundRectFilled(ctx, x + 28, badgeY, 56, 56, 12, 'rgba(26,72,54,.22)', 'rgba(109,180,141,.24)', 1.2);
+  drawCanvasIcon(ctx, sectorIcon(card.setor), x + 40, badgeY + 12, 31, '#77cfa1');
+  drawPill(ctx, x + 96, badgeY + 9, card.setor, {
+    bg: 'rgba(26,72,54,.28)',
+    border: 'rgba(109,180,141,.26)',
+    color: '#9fe0b8',
+    font: 'bold 24px Arial',
     px: 18,
     py: 8,
     radius: 10,
@@ -1513,37 +1519,38 @@ function drawSectorCard(ctx, card, x, y, w, h, dateFallback) {
   const people = card.people.length ? card.people : [{ nome: 'Sem plantonista cadastrado', telefone: '', email: '', email_corporativo: '', dates: [] }];
   const compact = people.length > 1;
   const maxPeople = compact ? 2 : 1;
-  let py = y + 135;
+  let py = y + 132;
   people.slice(0, maxPeople).forEach((person, idx) => {
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${compact ? 25 : 33}px Arial`;
+    ctx.fillStyle = '#edf3ef';
+    ctx.font = `bold ${compact ? 22 : 29}px Arial`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(fitText(ctx, person.nome || '-', w - 56), x + 28, py);
+    const displayName = shortDisplayName(person.nome || '-') || '-';
+    ctx.fillText(fitText(ctx, displayName, w - 56), x + 28, py);
 
-    ctx.fillStyle = 'rgba(111,208,165,.18)';
-    ctx.fillRect(x + 28, py + (compact ? 34 : 44), w - 56, 1.2);
+    ctx.fillStyle = 'rgba(109,180,141,.16)';
+    ctx.fillRect(x + 28, py + (compact ? 31 : 38), w - 56, 1.2);
 
-    const infoY = py + (compact ? 48 : 60);
+    const infoY = py + (compact ? 42 : 51);
     const phone = formatPhone(person.telefone) || '-';
     const email = person.email_corporativo || person.email || '-';
     const horario = buildHorario(person) || '-';
     drawInfoLine(ctx, 'phone', 'Contato', phone, x + 28, infoY, w - 56, compact);
-    drawInfoLine(ctx, 'mail', 'E-mail', email, x + 28, infoY + (compact ? 43 : 53), w - 56, compact);
-    drawInfoLine(ctx, 'clock', 'Horário', horario, x + 28, infoY + (compact ? 86 : 106), w - 56, compact);
-    py += compact ? 178 : 0;
+    drawInfoLine(ctx, 'mail', 'E-mail', email, x + 28, infoY + (compact ? 42 : 49), w - 56, compact);
+    drawInfoLine(ctx, 'clock', 'Horário', horario, x + 28, infoY + (compact ? 84 : 98), w - 56, compact);
+    py += compact ? 173 : 0;
     if (compact && idx === 0) {
-      ctx.fillStyle = 'rgba(111,208,165,.12)';
-      ctx.fillRect(x + 28, py - 12, w - 56, 1);
+      ctx.fillStyle = 'rgba(109,180,141,.10)';
+      ctx.fillRect(x + 28, py - 10, w - 56, 1);
     }
   });
 
   if (people.length > maxPeople) {
-    drawPill(ctx, x + 28, y + h - 43, `+ ${people.length - maxPeople} plantonista(s) na escala completa`, {
-      bg: 'rgba(255,255,255,.05)',
-      border: 'rgba(111,208,165,.18)',
-      color: '#d8ffea',
-      font: 'bold 14px Arial',
+    drawPill(ctx, x + 28, y + h - 42, `+ ${people.length - maxPeople} plantonista(s) na escala completa`, {
+      bg: 'rgba(255,255,255,.04)',
+      border: 'rgba(109,180,141,.16)',
+      color: '#d8e9df',
+      font: 'bold 13px Arial',
       px: 12,
       py: 5,
       radius: 999,
@@ -1605,34 +1612,34 @@ async function renderImagemPlantao() {
     : `${weekdayBR(dataIni)} e ${weekdayBR(dataFim)} • ${formatDateBR(dataIni)} e ${formatDateBR(dataFim)}`;
 
   const mainX = 342;
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#e8efea';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.font = 'bold 70px Arial';
+  ctx.font = 'bold 66px Arial';
   ctx.fillText('Escala de Plantão', mainX, 62);
 
-  ctx.fillStyle = '#e5eee9';
-  ctx.font = '25px Arial';
+  ctx.fillStyle = '#bfd1c8';
+  ctx.font = '23px Arial';
   ctx.fillText('Relação de plantonistas escalados para atendimento no período informado.', mainX + 2, 147);
 
   const chip = drawPill(ctx, mainX + 2, 198, titleSetor === 'todos' ? 'Todos os setores' : `Setor: ${titleSetor}`, {
-    bg: 'rgba(22,101,52,.28)',
-    border: 'rgba(111,208,165,.32)',
-    color: '#76ef82',
-    font: 'bold 22px Arial',
+    bg: 'rgba(26,72,54,.26)',
+    border: 'rgba(109,180,141,.22)',
+    color: '#a6deb9',
+    font: 'bold 21px Arial',
     px: 18,
     py: 9,
   });
-  ctx.fillStyle = 'rgba(255,255,255,.35)';
+  ctx.fillStyle = 'rgba(222,235,228,.22)';
   ctx.fillRect(mainX + chip.width + 25, 202, 2, 42);
-  drawCanvasIcon(ctx, 'calendar', mainX + chip.width + 50, 202, 36, '#66e36f');
-  ctx.fillStyle = '#e5eee9';
-  ctx.font = 'bold 25px Arial';
+  drawCanvasIcon(ctx, 'calendar', mainX + chip.width + 50, 202, 36, '#72c99a');
+  ctx.fillStyle = '#dbe7e1';
+  ctx.font = 'bold 24px Arial';
   ctx.fillText('Período:', mainX + chip.width + 94, 205);
-  ctx.fillStyle = '#76ef82';
+  ctx.fillStyle = '#97d6b0';
   ctx.fillText(dateText, mainX + chip.width + 205, 205);
 
-  ctx.fillStyle = 'rgba(111,208,165,.20)';
+  ctx.fillStyle = 'rgba(109,180,141,.14)';
   ctx.fillRect(mainX - 18, 268, IMG_W - mainX - 68, 1.4);
 
   if (!rows.length) {
@@ -1655,43 +1662,31 @@ async function renderImagemPlantao() {
       const y = gridY + Math.floor(idx / 2) * (cardH + 18);
       drawSectorCard(ctx, card, x, y, cardW, cardH, dateFallback);
     });
-
-    if (cards.length > 4) {
-      drawPill(ctx, gridX, gridY + 2 * (cardH + 18) + 4, `+ ${cards.length - 4} setor(es) continuam na escala completa do painel`, {
-        bg: 'rgba(255,255,255,.05)',
-        border: 'rgba(111,208,165,.18)',
-        color: '#d8ffea',
-        font: 'bold 16px Arial',
-        px: 14,
-        py: 7,
-        radius: 14,
-      });
-    }
   }
 
-  drawRoundRectFilled(ctx, 72, 792, 92, 92, 22, 'rgba(4,18,13,.62)', 'rgba(78,222,97,.36)', 1.5);
-  drawCanvasIcon(ctx, 'headset', 90, 810, 56, '#76ef82');
-  ctx.fillStyle = '#76ef82';
+  drawRoundRectFilled(ctx, 72, 792, 92, 92, 22, 'rgba(12,24,20,.54)', 'rgba(109,180,141,.24)', 1.3);
+  drawCanvasIcon(ctx, 'headset', 90, 810, 56, '#72c99a');
+  ctx.fillStyle = '#97d6b0';
   ctx.font = 'bold 22px Arial';
   ctx.fillText('ATENDIMENTO', 54, 905);
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#e7efea';
   ctx.font = 'bold 20px Arial';
   ctx.fillText('QUE MOVE', 54, 934);
   ctx.fillText('O AGRO.', 54, 963);
 
   const footerY = 1032;
-  ctx.fillStyle = 'rgba(111,208,165,.22)';
+  ctx.fillStyle = 'rgba(109,180,141,.16)';
   ctx.fillRect(mainX - 18, footerY - 20, IMG_W - mainX - 68, 1.4);
-  drawCanvasIcon(ctx, 'box', mainX, footerY - 10, 34, '#76ef82');
-  ctx.fillStyle = '#dfeee6';
-  ctx.font = '19px Arial';
+  drawCanvasIcon(ctx, 'box', mainX, footerY - 10, 34, '#72c99a');
+  ctx.fillStyle = '#d7e5df';
+  ctx.font = '18px Arial';
   ctx.textAlign = 'left';
   ctx.fillText('Compromisso, agilidade e confiança para manter o agro sempre em movimento.', mainX + 54, footerY - 2);
-  ctx.fillStyle = 'rgba(255,255,255,.35)';
+  ctx.fillStyle = 'rgba(222,235,228,.22)';
   ctx.fillRect(1082, footerY - 14, 1.5, 42);
-  drawCanvasIcon(ctx, 'leaf', 1112, footerY - 12, 36, '#76ef82');
-  ctx.fillStyle = '#76ef82';
-  ctx.font = 'bold 19px Arial';
+  drawCanvasIcon(ctx, 'leaf', 1112, footerY - 12, 36, '#72c99a');
+  ctx.fillStyle = '#97d6b0';
+  ctx.font = 'bold 18px Arial';
   ctx.textAlign = 'left';
   ctx.fillText('www.grao1000.com.br', 1162, footerY - 2);
 }
