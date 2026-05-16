@@ -747,8 +747,6 @@ import { supabase } from './supabaseClient.js';
       const color  = COLAB_COLORS[i];
       bounds.push(latlng);
 
-      // Linha até o ponto
-      L.polyline([latlng, pontoLL], { color, weight: 1.5, opacity: 0.45, dashArray: '5 4' }).addTo(state.colabLayer);
 
       // Marcador com nome
       const icon = L.divIcon({
