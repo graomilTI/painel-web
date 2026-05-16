@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Controle de Frotas</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:        #07100a;
+  --surface:   #0d1910;
+  --surface2:  #122015;
+  --surface3:  #182a1c;
+  --border:    rgba(34,197,94,0.12);
+  --border2:   rgba(34,197,94,0.22);
+  --green:     #22c55e;
+  --green-b:   #4ade80;
+  --green-n:   #00ff88;
+  --green-d:   rgba(34,197,94,0.35);
+  --teal:      #2dd4bf;
+  --amber:     #fbbf24;
+  --text:      #d1fae5;
+  --text-d:    rgba(209,250,229,0.5);
+  --text-m:    rgba(209,250,229,0.25);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+
+body{
+  font-family:'DM Sans',sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  display:flex;
+  height:100vh;
+  overflow:hidden;
+  font-size:13px;
+}
+
+/* ── SIDEBAR ──────────────────────────────── */
+.sidebar{
+  width:192px;
+  min-width:192px;
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  overflow-y:auto;
+  overflow-x:hidden;
+}
+.sb-logo{
+  padding:14px 12px;
+  border-bottom:1px solid var(--border);
+  display:flex;
+  align-items:center;
+  gap:9px;
+  flex-shrink:0;
+}
+.sb-logo .icon{
+  width:30px;height:30px;
+  background:linear-gradient(135deg,var(--green),var(--teal));
+  border-radius:7px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:15px;flex-shrink:0;
+}
+.sb-logo .brand{
+  font-family:'Chakra Petch',monospace;
+  font-size:10px;font-weight:700;
+  color:var(--green-b);
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  line-height:1.3;
+}
+
+.fs{padding:9px 10px 6px;flex-shrink:0}
+.fs-head{
+  display:flex;align-items:center;
+  justify-content:space-between;
+  margin-bottom:5px;padding:0 2px;
+}
+.fs-title{
+  font-family:'Chakra Petch',monospace;
+  font-size:8.5px;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;
+  color:var(--green);
+}
+.fs-btns{display:flex;gap:3px}
+.fs-btns button{
+  background:none;border:none;cursor:pointer;
+  color:var(--text-m);font-size:9px;padding:1px 3px;
+  border-radius:3px;transition:color .2s;
+}
+.fs-btns button:hover{color:var(--green)}
+
+.tags{display:flex;flex-wrap:wrap;gap:3px}
+.tags.col{flex-direction:column}
+.tag{
+  padding:3px 7px;border-radius:3px;
+  font-size:10px;font-weight:500;
+  cursor:pointer;transition:all .18s;
+  border:1px solid transparent;
+  user-select:none;
+}
+.tag.on{
+  background:rgba(34,197,94,.18);
+  border-color:rgba(34,197,94,.38);
+  color:var(--green-b);
+}
+.tag.off{
+  background:var(--surface2);
+  border-color:var(--surface3);
+  color:var(--text-m);
+}
+.tag:hover{border-color:var(--green-d);color:var(--green-b)}
+
+.sdiv{height:1px;background:var(--border);margin:4px 10px}
+
+/* ── MAIN ─────────────────────────────────── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── HEADER ───────────────────────────────── */
+.header{
+  background:linear-gradient(135deg,var(--surface) 0%,#0b1e10 100%);
+  border-bottom:1px solid var(--border);
+  padding:10px 18px;
+  display:flex;align-items:center;gap:14px;
+  position:relative;overflow:hidden;
+  flex-shrink:0;
+}
+.header::before{
+  content:'';position:absolute;
+  top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent 0%,var(--green) 40%,var(--teal) 60%,transparent 100%);
+  animation:scanh 4s ease-in-out infinite;
+}
+@keyframes scanh{
+  0%,100%{opacity:.6}50%{opacity:1}
+}
+.h-title{flex:1}
+.h-title h1{
+  font-family:'Chakra Petch',monospace;
+  font-size:16px;font-weight:700;
+  color:var(--green-b);
+  letter-spacing:.04em;text-transform:uppercase;
+}
+.h-title p{
+  font-size:10px;color:var(--text-m);margin-top:1px;
+  font-family:'Chakra Petch',monospace;letter-spacing:.06em;
+}
+
+.kpi{
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:9px 14px;
+  display:flex;align-items:center;gap:11px;
+  min-width:152px;
+  position:relative;overflow:hidden;
+  transition:border-color .3s,box-shadow .3s;
+}
+.kpi::after{
+  content:'';position:absolute;
+  bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--green-d),transparent);
+}
+.kpi:hover{
+  border-color:var(--border2);
+  box-shadow:0 0 20px rgba(34,197,94,.12);
+}
+.kpi .ico{font-size:22px;line-height:1;flex-shrink:0}
+.kpi-info{display:flex;flex-direction:column}
+.kpi-lbl{
+  font-family:'Chakra Petch',monospace;
+  font-size:8px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;
+  color:var(--text-m);
+}
+.kpi-val{
+  font-family:'Chakra Petch',monospace;
+  font-size:24px;font-weight:700;
+  color:#fff;line-height:1.1;
+}
+.kpi-val.g{color:var(--green-b)}
+.kpi-val.t{color:var(--teal)}
+.kpi-sub{font-size:9px;color:var(--text-m)}
+
+.up-btn{
+  display:flex;align-items:center;gap:6px;
+  padding:8px 14px;
+  background:linear-gradient(135deg,rgba(34,197,94,.18),rgba(45,212,191,.08));
+  border:1px solid rgba(34,197,94,.38);
+  border-radius:7px;
+  color:var(--green-b);
+  font-family:'Chakra Petch',monospace;
+  font-size:10px;font-weight:700;
+  letter-spacing:.06em;cursor:pointer;
+  transition:all .25s;text-transform:uppercase;
+}
+.up-btn:hover{
+  background:linear-gradient(135deg,rgba(34,197,94,.32),rgba(45,212,191,.16));
+  border-color:var(--green);
+  box-shadow:0 0 18px rgba(34,197,94,.3);
+  transform:translateY(-1px);
+}
+.up-btn svg{width:14px;height:14px;flex-shrink:0}
+
+/* ── CHART GRID ───────────────────────────── */
+.grid{
+  flex:1;
+  padding:10px;
+  display:grid;
+  grid-template-columns:1.65fr 1.2fr 1fr;
+  grid-template-rows:1fr 1fr;
+  gap:9px;
+  overflow:hidden;
+  min-height:0;
+}
+.card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:11px 13px 10px;
+  display:flex;flex-direction:column;
+  position:relative;overflow:hidden;
+  transition:border-color .3s,box-shadow .3s;
+}
+.card::before{
+  content:'';position:absolute;
+  top:0;left:16px;right:16px;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(34,197,94,.25),transparent);
+}
+.card:hover{
+  border-color:var(--border2);
+  box-shadow:0 0 24px rgba(34,197,94,.08);
+}
+.c-title{
+  font-family:'Chakra Petch',monospace;
+  font-size:8.5px;font-weight:700;
+  letter-spacing:.13em;text-transform:uppercase;
+  color:var(--text-d);
+  margin-bottom:7px;
+  display:flex;align-items:center;gap:5px;
+  flex-shrink:0;
+}
+.c-title .dot{
+  width:5px;height:5px;border-radius:50%;
+  background:var(--green);flex-shrink:0;
+}
+.cw{flex:1;position:relative;min-height:0}
+.cw canvas{max-height:100%}
+
+/* ── MAP LEGEND ───────────────────────────── */
+.map-legend{
+  display:flex;align-items:center;gap:6px;
+  margin-top:4px;flex-shrink:0;
+}
+.legend-bar{
+  height:5px;flex:1;border-radius:3px;
+  background:linear-gradient(90deg,rgba(34,197,94,.15),rgba(34,197,94,.9));
+}
+.legend-lbl{font-size:9px;color:var(--text-m);white-space:nowrap}
+
+/* ── UPLOAD MODAL ─────────────────────────── */
+.overlay{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,.82);
+  z-index:200;
+  align-items:center;justify-content:center;
+  backdrop-filter:blur(4px);
+}
+.overlay.on{display:flex}
+.modal{
+  background:var(--surface);
+  border:1px solid var(--border2);
+  border-radius:12px;
+  padding:26px 28px;
+  width:460px;
+  position:relative;
+  box-shadow:0 0 60px rgba(34,197,94,.12);
+}
+.modal::before{
+  content:'';position:absolute;
+  top:0;left:20%;right:20%;height:1px;
+  background:linear-gradient(90deg,transparent,var(--green),transparent);
+}
+.modal h3{
+  font-family:'Chakra Petch',monospace;
+  font-size:13px;font-weight:700;
+  color:var(--green-b);text-transform:uppercase;
+  letter-spacing:.08em;margin-bottom:5px;
+}
+.modal p{font-size:11px;color:var(--text-d);margin-bottom:18px}
+.drop{
+  border:2px dashed rgba(34,197,94,.28);
+  border-radius:8px;padding:30px;
+  text-align:center;cursor:pointer;
+  transition:all .25s;
+}
+.drop:hover{
+  border-color:var(--green);
+  background:rgba(34,197,94,.04);
+}
+.drop .di{font-size:34px;margin-bottom:10px}
+.drop .dt{font-size:12px;color:var(--text-d)}
+.drop .ds{font-size:10px;color:var(--text-m);margin-top:4px}
+
+.modal-formats{
+  display:flex;gap:8px;margin-top:16px;
+}
+.fmt-chip{
+  padding:4px 10px;border-radius:4px;
+  background:var(--surface3);
+  font-family:'Chakra Petch',monospace;
+  font-size:9px;font-weight:600;
+  color:var(--green);
+  letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid rgba(34,197,94,.2);
+}
+.m-close{
+  position:absolute;top:14px;right:14px;
+  background:none;border:none;
+  color:var(--text-m);font-size:16px;cursor:pointer;
+  padding:3px 6px;border-radius:4px;transition:color .2s;
+}
+.m-close:hover{color:var(--text)}
+
+/* ── SCROLLBAR ────────────────────────────── */
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--green-d)}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ SIDEBAR ═══════════════ -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="icon">🚛</div>
+    <div class="brand">Frotas<br>Control</div>
+  </div>
+
+  <div class="fs">
+    <div class="fs-head">
+      <span class="fs-title">Ano</span>
+      <div class="fs-btns">
+        <button title="Selecionar todos">▦</button>
+        <button title="Limpar">✕</button>
+      </div>
+    </div>
+    <div class="tags">
+      <span class="tag off">2021</span>
+      <span class="tag off">2022</span>
+      <span class="tag on">2023</span>
+      <span class="tag on">2024</span>
+    </div>
+  </div>
+  <div class="sdiv"></div>
+
+  <div class="fs">
+    <div class="fs-head">
+      <span class="fs-title">Mês</span>
+      <div class="fs-btns">
+        <button title="Selecionar todos">▦</button>
+        <button title="Limpar">✕</button>
+      </div>
+    </div>
+    <div class="tags">
+      <span class="tag on">Jan</span><span class="tag on">Fev</span>
+      <span class="tag on">Mar</span><span class="tag on">Abr</span>
+      <span class="tag on">Mai</span><span class="tag on">Jun</span>
+      <span class="tag on">Jul</span><span class="tag on">Ago</span>
+      <span class="tag on">Set</span><span class="tag on">Out</span>
+      <span class="tag on">Nov</span><span class="tag on">Dez</span>
+    </div>
+  </div>
+  <div class="sdiv"></div>
+
+  <div class="fs">
+    <div class="fs-head">
+      <span class="fs-title">Transportadora</span>
+      <div class="fs-btns">
+        <button>▦</button><button>✕</button>
+      </div>
+    </div>
+    <div class="tags col">
+      <span class="tag on">Carreta</span>
+      <span class="tag on">Leve</span>
+      <span class="tag on">Toco</span>
+      <span class="tag on">Truck</span>
+    </div>
+  </div>
+  <div class="sdiv"></div>
+
+  <div class="fs">
+    <div class="fs-head">
+      <span class="fs-title">Estados</span>
+      <div class="fs-btns">
+        <button>▦</button><button>✕</button>
+      </div>
+    </div>
+    <div class="tags col" style="max-height:108px;overflow-y:auto">
+      <span class="tag on">Amapá</span>
+      <span class="tag on">Amazonas</span>
+      <span class="tag on">Bahia</span>
+      <span class="tag on">Ceará</span>
+      <span class="tag on">Distrito Federal</span>
+      <span class="tag on">Espírito Santo</span>
+      <span class="tag on">Goiás</span>
+      <span class="tag on">Minas Gerais</span>
+      <span class="tag on">Pará</span>
+      <span class="tag on">Paraná</span>
+      <span class="tag on">São Paulo</span>
+    </div>
+  </div>
+  <div class="sdiv"></div>
+
+  <div class="fs">
+    <div class="fs-head">
+      <span class="fs-title">Fornecedor</span>
+      <div class="fs-btns">
+        <button>▦</button><button>✕</button>
+      </div>
+    </div>
+    <div class="tags col">
+      <span class="tag on">Aparecido</span>
+      <span class="tag on">Davi</span>
+      <span class="tag on">Gilmar</span>
+      <span class="tag on">Heber</span>
+      <span class="tag on">NR</span>
+      <span class="tag on">artesian</span>
+      <span class="tag on">Roger</span>
+    </div>
+  </div>
+  <div class="sdiv"></div>
+</aside>
+
+<!-- ═══════════════ MAIN ═══════════════ -->
+<main class="main">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="h-title">
+      <h1>Dashboard QTD — Controle de Frotas</h1>
+      <p>Módulo de Frotas • Dados demonstrativos • 16 Mai 2026</p>
+    </div>
+
+    <div class="kpi">
+      <div class="ico">🚛</div>
+      <div class="kpi-info">
+        <span class="kpi-lbl">Qtd de Fretes</span>
+        <span class="kpi-val g" data-target="737">0</span>
+        <span class="kpi-sub">Total acumulado</span>
+      </div>
+    </div>
+
+    <div class="kpi">
+      <div class="ico">💰</div>
+      <div class="kpi-info">
+        <span class="kpi-lbl">Faturamento de Fretes</span>
+        <span class="kpi-val t" data-prefix="R$&nbsp;" data-target="284" data-suffix="K">R$&nbsp;0K</span>
+        <span class="kpi-sub">Receita bruta estimada</span>
+      </div>
+    </div>
+
+    <button class="up-btn" id="openUpload">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      Importar Planilha
+    </button>
+  </header>
+
+  <!-- CHART GRID -->
+  <div class="grid">
+
+    <!-- Monthly Line -->
+    <div class="card">
+      <div class="c-title"><span class="dot"></span>Qtd de Fretes por Mês</div>
+      <div class="cw"><canvas id="cMonth"></canvas></div>
+    </div>
+
+    <!-- Carrier H-Bar -->
+    <div class="card">
+      <div class="c-title"><span class="dot"></span>Qtd de Fretes por Transportadora</div>
+      <div class="cw"><canvas id="cCarrier"></canvas></div>
+    </div>
+
+    <!-- Supplier Donut -->
+    <div class="card">
+      <div class="c-title"><span class="dot"></span>Qtd de Fretes por Fornecedor</div>
+      <div class="cw"><canvas id="cSupplier"></canvas></div>
+    </div>
+
+    <!-- Annual Bar -->
+    <div class="card">
+      <div class="c-title"><span class="dot"></span>Qtd de Fretes por Ano</div>
+      <div class="cw"><canvas id="cAnnual"></canvas></div>
+    </div>
+
+    <!-- Products H-Bar -->
+    <div class="card">
+      <div class="c-title"><span class="dot"></span>Qtd de Fretes por Produtos</div>
+      <div class="cw"><canvas id="cProducts"></canvas></div>
+    </div>
+
+    <!-- Brazil Map -->
+    <div class="card">
+      <div class="c-title"><span class="dot"></span>Quantidade de Fretes por Estado</div>
+      <div class="cw"><canvas id="cMap"></canvas></div>
+      <div class="map-legend">
+        <span class="legend-lbl">3</span>
+        <div class="legend-bar"></div>
+        <span class="legend-lbl">41</span>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- ═══════════════ UPLOAD MODAL ═══════════════ -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <button class="m-close" id="closeModal">✕</button>
+    <h3>Importar Planilha de Despesas</h3>
+    <p>Faça upload da planilha de despesas dos veículos para atualizar o dashboard automaticamente.</p>
+    <div class="drop" id="dropZone">
+      <div class="di">📊</div>
+      <div class="dt">Arraste o arquivo aqui ou clique para selecionar</div>
+      <div class="ds">Suporta .xlsx e .csv • Máximo 10 MB</div>
+    </div>
+    <div class="modal-formats">
+      <span class="fmt-chip">xlsx</span>
+      <span class="fmt-chip">csv</span>
+      <span class="fmt-chip">xls</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Global Chart.js defaults ──────────────────
+Chart.defaults.color = 'rgba(209,250,229,0.48)';
+Chart.defaults.borderColor = 'rgba(34,197,94,0.09)';
+Chart.defaults.font.family = "'DM Sans', sans-serif";
+Chart.defaults.font.size = 11;
+
+const G  = '#22c55e';
+const GB = '#4ade80';
+const GD = 'rgba(34,197,94,';
+const T  = '#2dd4bf';
+
+// ── Monthly Line ──────────────────────────────
+new Chart(document.getElementById('cMonth'),{
+  type:'line',
+  data:{
+    labels:['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'],
+    datasets:[{
+      data:[59,53,57,57,65,78,65,56,58,71,61,57],
+      borderColor:G,
+      backgroundColor: ctx => {
+        const gradient = ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height);
+        gradient.addColorStop(0,'rgba(34,197,94,0.22)');
+        gradient.addColorStop(1,'rgba(34,197,94,0)');
+        return gradient;
+      },
+      fill:true,tension:.42,
+      pointRadius:4,pointHoverRadius:6,
+      pointBackgroundColor:GB,
+      pointBorderColor:'#0d1910',pointBorderWidth:2,
+      borderWidth:2,
+    }]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    animation:{duration:1200,easing:'easeOutQuart'},
+    plugins:{legend:{display:false},tooltip:{
+      backgroundColor:'#122015',
+      borderColor:GD+'.4)',borderWidth:1,
+      titleFont:{family:"'Chakra Petch',monospace",size:10},
+      bodyFont:{size:11},padding:10,
+    }},
+    scales:{
+      x:{grid:{color:GD+'.06)'},ticks:{font:{size:10}}},
+      y:{min:40,grid:{color:GD+'.06)'},ticks:{font:{size:10}}}
+    }
+  }
+});
+
+// ── Carrier H-Bar ─────────────────────────────
+new Chart(document.getElementById('cCarrier'),{
+  type:'bar',
+  data:{
+    labels:['Truck','Toco','Carreta','Leve'],
+    datasets:[{
+      data:[192,185,185,175],
+      backgroundColor:[GD+'.85)',GD+'.65)',GD+'.48)',GD+'.33)'],
+      borderColor:'transparent',
+      borderRadius:4,borderSkipped:false,
+    }]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    indexAxis:'y',
+    animation:{duration:1200,easing:'easeOutQuart'},
+    plugins:{legend:{display:false},tooltip:{
+      backgroundColor:'#122015',borderColor:GD+'.4)',borderWidth:1,
+      titleFont:{family:"'Chakra Petch',monospace",size:10},padding:10,
+    }},
+    scales:{
+      x:{grid:{color:GD+'.06)'},ticks:{font:{size:10}}},
+      y:{grid:{display:false},ticks:{font:{size:11},color:GD+'.7)'}},
+    }
+  }
+});
+
+// ── Supplier Donut ────────────────────────────
+new Chart(document.getElementById('cSupplier'),{
+  type:'doughnut',
+  data:{
+    labels:['Roger','Davi','Aparecido','Gilmar','NR','Heber','artesian'],
+    datasets:[{
+      data:[22,16,15,13,13,11,10],
+      backgroundColor:['#22c55e','#16a34a','#4ade80','#86efac','#2dd4bf','#14b8a6','#a3e635'],
+      borderColor:'#0d1910',borderWidth:2,hoverOffset:6,
+    }]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    cutout:'52%',
+    animation:{duration:1400,easing:'easeOutQuart'},
+    plugins:{
+      legend:{
+        position:'right',
+        labels:{font:{size:9.5},boxWidth:9,padding:7,color:'rgba(209,250,229,0.6)'}
+      },
+      tooltip:{
+        backgroundColor:'#122015',borderColor:GD+'.4)',borderWidth:1,
+        titleFont:{family:"'Chakra Petch',monospace",size:10},padding:10,
+        callbacks:{label:ctx=>`  ${ctx.label}: ${ctx.parsed}%`}
+      }
+    }
+  }
+});
+
+// ── Annual Bar ────────────────────────────────
+new Chart(document.getElementById('cAnnual'),{
+  type:'bar',
+  data:{
+    labels:['2021','2022','2023','2024'],
+    datasets:[{
+      data:[1,218,276,340],
+      backgroundColor:[GD+'.22)',GD+'.45)',GD+'.68)',GD+'.9)'],
+      borderRadius:5,borderSkipped:false,
+    }]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    animation:{duration:1300,easing:'easeOutQuart'},
+    plugins:{legend:{display:false},tooltip:{
+      backgroundColor:'#122015',borderColor:GD+'.4)',borderWidth:1,
+      titleFont:{family:"'Chakra Petch',monospace",size:10},padding:10,
+    }},
+    scales:{
+      x:{grid:{display:false},ticks:{font:{size:11},color:GD+'.7)'}},
+      y:{grid:{color:GD+'.06)'},ticks:{font:{size:10}}}
+    }
+  }
+});
+
+// ── Products H-Bar ────────────────────────────
+new Chart(document.getElementById('cProducts'),{
+  type:'bar',
+  data:{
+    labels:['Coleta','Transferência','Devolução'],
+    datasets:[{
+      data:[305,202,100],
+      backgroundColor:[GD+'.85)',T+'aa',GD+'.4)'],
+      borderColor:'transparent',
+      borderRadius:4,borderSkipped:false,
+    }]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    indexAxis:'y',
+    animation:{duration:1200,easing:'easeOutQuart'},
+    plugins:{legend:{display:false},tooltip:{
+      backgroundColor:'#122015',borderColor:GD+'.4)',borderWidth:1,
+      titleFont:{family:"'Chakra Petch',monospace",size:10},padding:10,
+    }},
+    scales:{
+      x:{grid:{color:GD+'.06)'},ticks:{font:{size:10}}},
+      y:{grid:{display:false},ticks:{font:{size:11},color:GD+'.7)'}},
+    }
+  }
+});
+
+// ── Brazil Bubble Map ─────────────────────────
+// Coordinates: x=0(W)→100(E), y=0(S)→100(N)
+const stateData=[
+  {l:'SP',x:56.6,y:29.4,v:41},{l:'MG',x:64.9,y:39.1,v:38},
+  {l:'PR',x:50.4,y:21.8,v:35},{l:'RS',x:46.2,y:9.6,v:25},
+  {l:'RJ',x:69.0,y:29.0,v:28},{l:'SC',x:52.1,y:15.9,v:22},
+  {l:'BA',x:71.4,y:54.5,v:24},{l:'GO',x:53.9,y:45.1,v:20},
+  {l:'MT',x:40.2,y:54.5,v:18},{l:'MS',x:42.8,y:34.0,v:17},
+  {l:'PE',x:80.0,y:65.9,v:15},{l:'CE',x:76.9,y:74.2,v:12},
+  {l:'TO',x:57.0,y:60.3,v:10},{l:'ES',x:74.4,y:37.2,v:9},
+  {l:'MA',x:63.4,y:73.2,v:8},{l:'DF',x:57.6,y:45.6,v:8},
+  {l:'PA',x:47.6,y:76.9,v:7},{l:'RO',x:23.1,y:57.7,v:5},
+  {l:'AM',x:31.0,y:78.7,v:6},{l:'PI',x:71.0,y:67.0,v:5},
+  {l:'AL',x:83.7,y:61.8,v:4},{l:'SE',x:81.0,y:59.5,v:4},
+  {l:'PB',x:82.5,y:68.7,v:4},{l:'RN',x:83.1,y:72.1,v:3},
+  {l:'AC',x:7.1, y:63.5,v:3},{l:'RR',x:28.7,y:92.4,v:3},
+  {l:'AP',x:49.1,y:89.4,v:3},{l:'RO',x:23.1,y:57.7,v:3},
+];
+
+const minV=3,maxV=41,minR=7,maxR=19;
+const getR=v=>minR+(v-minV)/(maxV-minV)*(maxR-minR);
+const getAlpha=v=>(0.22+(v-minV)/(maxV-minV)*0.72).toFixed(2);
+
+const labelPlugin={
+  id:'stateLabels',
+  afterDatasetsDraw(chart){
+    const {ctx}=chart;
+    ctx.save();
+    const meta=chart.getDatasetMeta(0);
+    meta.data.forEach((el,i)=>{
+      const {x,y}=el;
+      const s=stateData[i];
+      const r=getR(s.v);
+      ctx.font=`600 ${r>11?9:7.5}px 'Chakra Petch',monospace`;
+      ctx.fillStyle=s.v>15?'#fff':'rgba(209,250,229,0.9)';
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.shadowColor='rgba(0,0,0,0.7)';ctx.shadowBlur=3;
+      ctx.fillText(s.l,x,y);
+      ctx.shadowBlur=0;
+    });
+    ctx.restore();
+  }
+};
+
+new Chart(document.getElementById('cMap'),{
+  type:'bubble',
+  data:{
+    datasets:[{
+      data:stateData.map(s=>({x:s.x,y:s.y,r:getR(s.v)})),
+      backgroundColor:stateData.map(s=>`rgba(34,197,94,${getAlpha(s.v)})`),
+      borderColor:stateData.map(s=>`rgba(74,222,128,${Math.min(1,+getAlpha(s.v)+0.2)})`),
+      borderWidth:1,
+    }]
+  },
+  plugins:[labelPlugin],
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    animation:{duration:1400,easing:'easeOutQuart'},
+    plugins:{
+      legend:{display:false},
+      tooltip:{
+        backgroundColor:'#122015',
+        borderColor:GD+'.4)',borderWidth:1,
+        titleFont:{family:"'Chakra Petch',monospace",size:10},
+        padding:10,
+        callbacks:{
+          label:ctx=>{
+            const s=stateData[ctx.dataIndex];
+            return `${s.l}: ${s.v} fretes`;
+          },
+          title:()=>''
+        }
+      }
+    },
+    scales:{
+      x:{min:0,max:100,grid:{color:GD+'.04)'},ticks:{display:false},border:{display:false}},
+      y:{min:0,max:100,grid:{color:GD+'.04)'},ticks:{display:false},border:{display:false}}
+    }
+  }
+});
+
+// ── KPI Counter Animation ─────────────────────
+document.querySelectorAll('[data-target]').forEach(el=>{
+  const target=+el.getAttribute('data-target');
+  const prefix=el.getAttribute('data-prefix')||'';
+  const suffix=el.getAttribute('data-suffix')||'';
+  const duration=1400,steps=60;
+  let current=0,step=0;
+  const timer=setInterval(()=>{
+    step++;
+    current=Math.round(target*(step/steps));
+    el.innerHTML=prefix+current+suffix;
+    if(step>=steps){el.innerHTML=prefix+target+suffix;clearInterval(timer)}
+  },duration/steps);
+});
+
+// ── Filter tag toggle ──────────────────────────
+document.querySelectorAll('.tag').forEach(t=>{
+  t.addEventListener('click',()=>{
+    t.classList.toggle('on');
+    t.classList.toggle('off');
+  });
+});
+
+// ── Upload modal ───────────────────────────────
+const overlay=document.getElementById('overlay');
+document.getElementById('openUpload').onclick=()=>overlay.classList.add('on');
+document.getElementById('closeModal').onclick=()=>overlay.classList.remove('on');
+overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.classList.remove('on')});
+
+const drop=document.getElementById('dropZone');
+drop.addEventListener('dragover',e=>{e.preventDefault();drop.style.borderColor=G});
+drop.addEventListener('dragleave',()=>drop.style.borderColor='');
+drop.addEventListener('drop',e=>{
+  e.preventDefault();drop.style.borderColor='';
+  const file=e.dataTransfer.files[0];
+  if(file)alert(`Arquivo recebido: ${file.name}\n\nEm breve esta planilha será processada e os dados do dashboard serão atualizados.`);
+});
+drop.addEventListener('click',()=>{
+  const input=document.createElement('input');
+  input.type='file';input.accept='.xlsx,.xls,.csv';
+  input.onchange=e=>{
+    const file=e.target.files[0];
+    if(file)alert(`Arquivo selecionado: ${file.name}\n\nEm breve esta planilha será processada e os dados do dashboard serão atualizados.`);
+  };
+  input.click();
+});
+</script>
+</body>
+</html>
