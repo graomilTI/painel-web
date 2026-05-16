@@ -1,14 +1,35 @@
 import { initProtectedPage } from './pageInit.js';
-import { supabase } from './supabaseClient.js';
+import { supabase as sbDefault } from './supabaseClient.js';
 
-function panelUrl(t = '') {
-  const n = String(t || '').replace(/^\/+/, '').replace(/\.html$/i, '');
-  const h = String(window.location.hostname || '').toLowerCase();
-  if (h === 'grao1000.com.br' || h === 'www.grao1000.com.br') return n ? `/painel/${n}` : '/painel';
-  if (String(window.location.pathname || '').includes('/painel')) return n ? `/painel/${n}` : '/painel';
-  return n ? `./${n}` : './';
-}
+/* ── Coordenação → UF (para mapa regional) ── */
+const COORD_TO_UF = {
+  'SÃO PAULO': 'SP', 'SAO PAULO': 'SP',
+  'GOIAS': 'GO', 'GOIÁS': 'GO',
+  'MATO GROSSO MT1': 'MT', 'MATO GROSSO MT2': 'MT',
+  'MATO GROSSO MT3 - QUERENCIA': 'MT', 'MATO GROSSO MT3 - CONFRESA': 'MT',
+  'MATO GROSSO MT4': 'MT', 'MATO GROSSO': 'MT',
+  'CASCAVEL': 'PR', 'LONDRINA': 'PR',
+  'PONTA GROSSA': 'PR', 'MARINGA E TERMINAIS': 'PR', 'MARINGÁ': 'PR',
+  'RIO GRANDE DO SUL': 'RS',
+  'MINAS GERAIS': 'MG',
+  'MATO GROSSO DO SUL': 'MS',
+  'TOCANTINS': 'TO',
+  'BAHIA': 'BA',
+  'MARANHAO': 'MA', 'MARANHÃO': 'MA',
+  'PARA': 'PA', 'PARÁ': 'PA',
+  'ESPIRITO SANTO': 'ES', 'ESPÍRITO SANTO': 'ES',
+  'CEARA': 'CE', 'CEARÁ': 'CE',
+  'RIO DE JANEIRO': 'RJ',
+  'PARANA': 'PR', 'PARANÁ': 'PR',
+  'PERNAMBUCO': 'PE', 'RONDONIA': 'RO', 'RONDÔNIA': 'RO',
+  'RORAIMA': 'RR', 'AMAPA': 'AP', 'AMAPÁ': 'AP',
+  'AMAZONAS': 'AM', 'ACRE': 'AC', 'PIAUÍ': 'PI', 'PIAUI': 'PI',
+  'RIO GRANDE DO NORTE': 'RN', 'PARAÍBA': 'PB', 'PARAIBA': 'PB',
+  'ALAGOAS': 'AL', 'SERGIPE': 'SE',
+  'DISTRITO FEDERAL': 'DF',
+};
 
+/* ── Mapa SVG — 27 estados ── */
 const STATES = [
   {uf:'AC',name:'Acre',d:'M23.34,259.60L90.84,279.56L159.17,312.07L163.20,313.66L125.50,337.17L85.14,335.06L85.44,305.72L73.05,316.00L55.50,315.17L51.39,304.44L35.13,303.98L41.05,297.40L29.27,282.74L24.71,274.57L24.64,272.08L20.08,268.67L20.00,263.83L23.72,263.83Z'},
   {uf:'AL',name:'Alagoas',d:'M774.15,293.93L769.66,301.03L762.06,309.50L756.06,317.29L751.27,321.45L751.35,322.35L749.37,325.23L748.30,323.41L746.10,323.64L746.02,321.90L744.66,320.54L743.52,321.14L738.65,317.44L738.50,315.78L718.36,305.95L713.87,302.47L722.31,293.40L738.65,303.76L739.72,301.56L743.67,301.64L745.11,303.07L757.81,293.32L762.75,294.61L766.24,292.72Z'},
@@ -50,18 +71,133 @@ const CENTROIDS = {
 };
 const TINY = new Set(['AP','ES','RJ','DF','AL','SE','PB','RN','AC','RR','SC','PR']);
 
-const STATE_VALUES = {
-  SP:41,MG:38,PR:35,RS:25,RJ:28,SC:22,
-  BA:24,GO:20,MT:18,MS:17,PE:15,CE:12,
-  TO:10,ES:9,MA:8,DF:8,PA:7,
-  AM:6,PI:5,RO:5,AL:4,SE:4,
-  PB:4,RN:3,AC:3,RR:3,AP:3
-};
+/* ── Helpers ── */
+function panelUrl(t = '') {
+  const n = String(t || '').replace(/^\/+/, '').replace(/\.html$/i, '');
+  const h = String(window.location.hostname || '').toLowerCase();
+  if (h === 'grao1000.com.br' || h === 'www.grao1000.com.br') return n ? `/painel/${n}` : '/painel';
+  if (String(window.location.pathname || '').includes('/painel')) return n ? `/painel/${n}` : '/painel';
+  return n ? `./${n}` : './';
+}
 
-function buildMapSvg() {
-  const maxVal = Math.max(...Object.values(STATE_VALUES));
+function fmtBRL(v) {
+  return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+/* ── CSS ── */
+const CSS = `
+:root{
+  --fd-bg:#06130e;--fd-sb:#0b1220;--fd-green:#3fa878;--fd-green2:#6fd0a5;
+  --fd-line:rgba(111,208,165,.12);--fd-line2:rgba(111,208,165,.22);
+  --fd-text:#eef7f2;--fd-muted:#9fb7aa;--fd-card:rgba(8,22,17,.72);
+  --fd-gd:rgba(111,208,165,;
+}
+.fd-host{padding:0!important;overflow:hidden!important;display:flex!important;flex-direction:column;height:100%}
+.fd-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden;font-family:"DM Sans",system-ui,sans-serif;font-size:13px;color:var(--fd-text)}
+
+/* TABS */
+.fd-tabs{background:var(--fd-sb);border-bottom:1px solid var(--fd-line);padding:0 20px;display:flex;align-items:center;gap:2px;flex-shrink:0}
+.fd-tab{padding:11px 14px;border:none;background:none;cursor:pointer;font-family:"DM Sans",system-ui,sans-serif;font-size:12px;font-weight:600;color:var(--fd-muted);border-bottom:2px solid transparent;transition:all .18s;white-space:nowrap}
+.fd-tab:hover{color:var(--fd-green2)}
+.fd-tab.active{color:var(--fd-green2);border-bottom-color:var(--fd-green)}
+
+/* SCROLLABLE BODY */
+.fd-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px;min-height:0}
+.fd-body::-webkit-scrollbar{width:3px}
+.fd-body::-webkit-scrollbar-thumb{background:rgba(111,208,165,.15);border-radius:4px}
+
+/* PAGE HEADER */
+.fd-hdr{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.fd-hdr-title{flex:1}
+.fd-hdr-title h1{font-family:"Syne",system-ui,sans-serif;font-size:20px;font-weight:800;letter-spacing:-.03em;color:var(--fd-text);line-height:1.1}
+.fd-hdr-title p{font-size:11px;color:var(--fd-muted);margin-top:3px}
+.fd-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;background:rgba(63,168,120,.15);border:1px solid rgba(111,208,165,.22);font-size:11px;font-weight:700;color:var(--fd-green2)}
+.fd-upbtn{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--fd-green);border:none;border-radius:12px;color:#fff;font-family:"DM Sans",system-ui,sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;white-space:nowrap}
+.fd-upbtn:hover{background:var(--fd-green2);box-shadow:0 6px 20px rgba(63,168,120,.35);transform:translateY(-1px)}
+.fd-upbtn svg{width:13px;height:13px;flex-shrink:0}
+
+/* STATUS CARDS */
+.fd-status-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.fd-scard{background:var(--fd-card);border:1px solid var(--fd-line);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;transition:border-color .3s,box-shadow .3s;position:relative;overflow:hidden}
+.fd-scard::before{content:'';position:absolute;inset:0 0 auto 0;height:2px;background:var(--fd-scard-accent,var(--fd-green));opacity:.6}
+.fd-scard:hover{border-color:var(--fd-line2);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.fd-scard-label{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fd-muted)}
+.fd-scard-val{font-family:"Syne",system-ui,sans-serif;font-size:32px;font-weight:800;letter-spacing:-.03em;color:var(--fd-text);line-height:1}
+.fd-scard-val.loading{color:rgba(159,183,170,.3)}
+.fd-scard-sub{font-size:10px;color:var(--fd-muted)}
+.fd-scard-icon{position:absolute;right:14px;top:14px;font-size:22px;opacity:.35}
+
+/* CHART GRID */
+.fd-row{display:grid;gap:10px}
+.fd-row-2{grid-template-columns:3fr 2fr}
+.fd-row-3{grid-template-columns:1.8fr 1fr 1.2fr}
+.fd-card{background:var(--fd-card);border:1px solid var(--fd-line);border-radius:16px;padding:14px 16px 12px;display:flex;flex-direction:column;transition:border-color .3s,box-shadow .3s}
+.fd-card:hover{border-color:var(--fd-line2);box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.fd-card-title{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fd-muted);margin-bottom:10px;display:flex;align-items:center;gap:5px;flex-shrink:0}
+.fd-card-title .dot{width:5px;height:5px;border-radius:50%;background:var(--fd-green);flex-shrink:0}
+.fd-cw{flex:1;position:relative;min-height:120px}
+.fd-cw canvas{max-height:100%}
+
+/* DESPESAS EMPTY STATE */
+.fd-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px 12px;text-align:center;flex:1}
+.fd-empty-icon{font-size:28px;opacity:.4}
+.fd-empty-title{font-size:12px;font-weight:700;color:var(--fd-muted)}
+.fd-empty-sub{font-size:10px;color:rgba(159,183,170,.55);line-height:1.5}
+.fd-categories{display:flex;flex-direction:column;gap:5px;margin-top:6px;width:100%}
+.fd-cat-row{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--fd-muted)}
+.fd-cat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* MAP */
+.fd-br-state{transition:filter .14s;cursor:pointer}
+.fd-br-state:hover{filter:brightness(1.6) saturate(1.15)}
+.fd-map-tip{position:fixed;z-index:9999;background:#0b1220;border:1px solid rgba(111,208,165,.28);border-radius:10px;padding:8px 12px;pointer-events:none;display:none;font-size:12px;max-width:220px;box-shadow:0 8px 32px rgba(0,0,0,.6);line-height:1.45;font-family:"DM Sans",system-ui,sans-serif}
+.fd-map-tip .tn{font-weight:700;color:var(--fd-text);font-family:"Syne",system-ui,sans-serif;font-size:13px;margin-bottom:2px}
+.fd-map-tip .tv{color:var(--fd-green2);font-weight:700}
+.fd-map-tip .ts{color:var(--fd-muted);font-size:10px;margin-top:2px}
+.fd-map-legend{display:flex;align-items:center;gap:6px;margin-top:6px;flex-shrink:0}
+.fd-legend-bar{height:3px;flex:1;border-radius:3px;background:linear-gradient(90deg,rgba(63,168,120,.15),rgba(111,208,165,.9))}
+.fd-legend-lbl{font-size:9px;color:rgba(159,183,170,.55)}
+
+/* COORD LIST (when chart not available) */
+.fd-coord-list{display:flex;flex-direction:column;gap:5px;flex:1;overflow-y:auto}
+.fd-coord-row{display:flex;align-items:center;gap:8px}
+.fd-coord-name{font-size:10px;color:var(--fd-muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.fd-coord-bar-wrap{flex:2;height:6px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden}
+.fd-coord-bar{height:100%;border-radius:4px;background:var(--fd-green);transition:width .8s ease}
+.fd-coord-count{font-size:10px;font-weight:700;color:var(--fd-green2);min-width:24px;text-align:right}
+
+/* UPLOAD MODAL */
+.fd-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
+.fd-overlay.on{display:flex}
+.fd-modal{background:#0b1220;border:1px solid var(--fd-line2);border-radius:24px;padding:28px 30px;width:460px;position:relative;box-shadow:0 24px 60px rgba(0,0,0,.3)}
+.fd-modal h3{font-family:"Syne",system-ui,sans-serif;font-size:18px;font-weight:800;color:var(--fd-text);letter-spacing:-.02em;margin-bottom:6px}
+.fd-modal p{font-size:12px;color:var(--fd-muted);margin-bottom:20px}
+.fd-drop{border:2px dashed rgba(111,208,165,.25);border-radius:16px;padding:30px;text-align:center;cursor:pointer;transition:all .25s}
+.fd-drop:hover{border-color:var(--fd-green);background:rgba(111,208,165,.08)}
+.fd-mclose{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--fd-muted);font-size:16px;cursor:pointer;padding:3px 6px;border-radius:8px;transition:color .2s}
+.fd-mclose:hover{color:var(--fd-text)}
+`;
+
+/* ── Expense categories (for donut) ── */
+const EXPENSE_CATS = [
+  { label: 'Combustíveis e Troca de Óleo', color: '#3fa878', pct: 42 },
+  { label: 'Manutenção', color: '#6fd0a5', pct: 28 },
+  { label: 'Pedágios', color: '#2d7a58', pct: 12 },
+  { label: 'Impostos e Taxas', color: '#9fe8c8', pct: 9 },
+  { label: 'Seguros e Franquias', color: '#1f6f4a', pct: 6 },
+  { label: 'Outros', color: '#5db898', pct: 3 },
+];
+
+/* ── Monthly demo data (invest. values) ── */
+const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+const MONTHLY_DEMO = [48200,52400,45800,61000,58700,67300,63100,70500,55900,72800,68400,74200];
+
+/* ── Build SVG map ── */
+function buildMapSvg(stateVals) {
+  const vals = Object.values(stateVals).filter(v => v > 0);
+  const maxVal = vals.length ? Math.max(...vals) : 1;
   const paths = STATES.map(s => {
-    const v = STATE_VALUES[s.uf] || 0;
+    const v = stateVals[s.uf] || 0;
     const has = v > 0;
     const ratio = has ? v / maxVal : 0;
     const alpha = has ? (0.15 + ratio * 0.75).toFixed(2) : '0.04';
@@ -69,513 +205,340 @@ function buildMapSvg() {
     const sAlpha = has ? Math.min(1, 0.35 + ratio * 0.55).toFixed(2) : '0.15';
     const stroke = has ? `rgba(111,208,165,${sAlpha})` : 'rgba(111,208,165,0.15)';
     const sw = has ? 1.5 : 1;
-    const c = CENTROIDS[s.uf] || {x:400,y:400};
+    const c = CENTROIDS[s.uf] || { x: 400, y: 400 };
     const fs = TINY.has(s.uf) ? 6 : 8;
     const txtFill = has ? '#ecfdf5' : '#4b5563';
-    return `<path class="fd-br-state" d="${s.d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round" data-uf="${s.uf}" data-name="${s.name}" data-value="${v}"></path>`
-      + `<text x="${c.x}" y="${c.y}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="700" fill="${txtFill}" stroke="#06130e" stroke-width="2.5" paint-order="stroke fill" style="pointer-events:none;user-select:none">${s.uf}</text>`;
+    return (
+      `<path class="fd-br-state" d="${s.d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round" data-uf="${s.uf}" data-name="${s.name}" data-value="${v}"></path>` +
+      `<text x="${c.x}" y="${c.y}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="700" fill="${txtFill}" stroke="#06130e" stroke-width="2.5" paint-order="stroke fill" style="pointer-events:none;user-select:none">${s.uf}</text>`
+    );
   }).join('');
   return `<svg viewBox="0 0 800 796" width="100%" height="100%" style="display:block;overflow:visible">${paths}</svg>`;
 }
 
-function renderFrotasDashboard(container) {
-  container.style.cssText = 'padding:0;overflow:hidden;display:flex;flex-direction:column;height:100%;';
+/* ── Render ── */
+function renderFrotasDashboard(container, opts = {}) {
+  const sb = opts.supabase || sbDefault;
 
-  container.innerHTML = `
-<style>
-.fd-wrap{display:flex;height:100%;overflow:hidden;font-family:"DM Sans",system-ui,sans-serif;font-size:13px}
+  container.classList.add('fd-host');
 
-/* ── FILTER SIDEBAR ── */
-.fd-sidebar{
-  width:192px;min-width:192px;
-  background:#0b1220;
-  border-right:1px solid rgba(111,208,165,0.12);
-  display:flex;flex-direction:column;
-  overflow-y:auto;overflow-x:hidden;
-}
-.fd-fs{padding:9px 10px 6px;flex-shrink:0}
-.fd-fs-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;padding:0 2px}
-.fd-fs-title{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9fb7aa}
-.fd-fs-btns{display:flex;gap:3px}
-.fd-fs-btns button{background:none;border:none;cursor:pointer;color:rgba(159,183,170,0.55);font-size:9px;padding:1px 3px;border-radius:3px;transition:color .2s}
-.fd-fs-btns button:hover{color:#6fd0a5}
-.fd-tags{display:flex;flex-wrap:wrap;gap:3px}
-.fd-tags.col{flex-direction:column}
-.fd-tag{padding:3px 8px;border-radius:8px;font-size:10px;font-weight:500;cursor:pointer;transition:all .18s;border:1px solid transparent;user-select:none}
-.fd-tag.on{background:rgba(22,101,52,.22);border-color:rgba(111,208,165,.28);color:#dcfce7}
-.fd-tag.off{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.06);color:rgba(159,183,170,0.55)}
-.fd-tag:hover{border-color:rgba(111,208,165,0.32);color:#6fd0a5}
-.fd-sdiv{height:1px;background:rgba(111,208,165,0.12);margin:4px 10px}
+  const style = document.createElement('style');
+  style.textContent = CSS;
+  container.appendChild(style);
 
-/* ── MAIN AREA ── */
-.fd-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-
-/* ── TAB STRIP ── */
-.fd-tabs{
-  background:#0b1220;
-  border-bottom:1px solid rgba(111,208,165,0.12);
-  padding:0 18px;
-  display:flex;align-items:center;gap:4px;
-  flex-shrink:0;overflow-x:auto;
-}
-.fd-tab{
-  display:inline-flex;align-items:center;
-  padding:11px 14px;border:none;background:none;cursor:pointer;
-  font-family:"DM Sans",system-ui,sans-serif;font-size:12px;font-weight:600;
-  color:#9fb7aa;border-bottom:2px solid transparent;
-  transition:all .18s;white-space:nowrap;
-}
-.fd-tab:hover{color:#6fd0a5}
-.fd-tab.active{color:#6fd0a5;border-bottom-color:#3fa878}
-
-/* ── HEADER ── */
-.fd-header{
-  background:rgba(15,23,42,.92);
-  border-bottom:1px solid rgba(111,208,165,0.12);
-  padding:10px 18px;
-  display:flex;align-items:center;gap:14px;
-  position:relative;overflow:hidden;flex-shrink:0;
-}
-.fd-header::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,transparent 0%,#3fa878 40%,#6fd0a5 65%,transparent 100%);
-  opacity:.7;
-}
-.fd-htitle{flex:1}
-.fd-htitle h1{font-family:"Syne",system-ui,sans-serif;font-size:18px;font-weight:800;color:#eef7f2;letter-spacing:-0.03em;line-height:1.1}
-.fd-htitle p{font-size:11px;color:#9fb7aa;margin-top:3px}
-.fd-kpi{
-  background:rgba(8,22,17,0.72);border:1px solid rgba(111,208,165,0.12);
-  border-radius:16px;padding:9px 14px;
-  display:flex;align-items:center;gap:11px;min-width:152px;
-  position:relative;overflow:hidden;transition:border-color .3s,box-shadow .3s;
-}
-.fd-kpi:hover{border-color:rgba(111,208,165,0.22);box-shadow:0 0 20px rgba(111,208,165,.1)}
-.fd-kpi .ico{font-size:20px;line-height:1;flex-shrink:0}
-.fd-kpi-info{display:flex;flex-direction:column}
-.fd-kpi-lbl{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9fb7aa}
-.fd-kpi-val{font-family:"Syne",system-ui,sans-serif;font-size:22px;font-weight:800;color:#eef7f2;line-height:1.1;letter-spacing:-0.02em}
-.fd-kpi-val.g{color:#6fd0a5}
-.fd-kpi-sub{font-size:9px;color:rgba(159,183,170,0.55)}
-.fd-upbtn{
-  display:flex;align-items:center;gap:7px;padding:9px 16px;
-  background:#3fa878;border:none;border-radius:14px;
-  color:#fff;font-family:"DM Sans",system-ui,sans-serif;
-  font-size:12px;font-weight:700;cursor:pointer;transition:all .22s;
-}
-.fd-upbtn:hover{background:#6fd0a5;box-shadow:0 8px 24px rgba(63,168,120,.35);transform:translateY(-1px)}
-.fd-upbtn svg{width:14px;height:14px;flex-shrink:0}
-
-/* ── CHART GRID ── */
-.fd-grid{
-  flex:1;padding:10px;
-  display:grid;
-  grid-template-columns:1.65fr 1.2fr 1fr;
-  grid-template-rows:1fr 1fr;
-  gap:9px;overflow:hidden;min-height:0;
-}
-.fd-card{
-  background:rgba(8,22,17,0.72);border:1px solid rgba(111,208,165,0.12);border-radius:16px;
-  padding:12px 14px 10px;display:flex;flex-direction:column;
-  position:relative;overflow:hidden;transition:border-color .3s,box-shadow .3s;
-}
-.fd-card:hover{border-color:rgba(111,208,165,0.22);box-shadow:0 8px 32px rgba(0,0,0,.22)}
-.fd-ctitle{
-  font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
-  color:#9fb7aa;margin-bottom:7px;
-  display:flex;align-items:center;gap:5px;flex-shrink:0;
-}
-.fd-ctitle .dot{width:5px;height:5px;border-radius:50%;background:#3fa878;flex-shrink:0}
-.fd-cw{flex:1;position:relative;min-height:0;overflow:hidden}
-.fd-cw canvas{max-height:100%}
-.fd-map-legend{display:flex;align-items:center;gap:6px;margin-top:4px;flex-shrink:0}
-.fd-legend-bar{height:4px;flex:1;border-radius:3px;background:linear-gradient(90deg,rgba(63,168,120,.18),rgba(111,208,165,.9))}
-.fd-legend-lbl{font-size:9px;color:rgba(159,183,170,0.55);white-space:nowrap}
-
-/* ── BR STATE ── */
-.fd-br-state{transition:filter .14s,opacity .14s;cursor:pointer}
-.fd-br-state:hover{filter:brightness(1.65) saturate(1.15)}
-
-/* ── MAP TOOLTIP ── */
-.fd-map-tip{
-  position:fixed;z-index:9999;
-  background:#0b1220;border:1px solid rgba(111,208,165,.28);
-  border-radius:10px;padding:8px 12px;
-  pointer-events:none;display:none;
-  font-size:12px;max-width:200px;
-  box-shadow:0 8px 32px rgba(0,0,0,.6);line-height:1.45;
-  font-family:"DM Sans",system-ui,sans-serif;
-}
-.fd-map-tip .tip-name{font-weight:700;color:#eef7f2;margin-bottom:2px;font-family:"Syne",system-ui,sans-serif;font-size:13px}
-.fd-map-tip .tip-val{color:#6fd0a5;font-weight:700}
-.fd-map-tip .tip-sub{color:#9fb7aa;font-size:11px;margin-top:2px}
-
-/* ── UPLOAD MODAL ── */
-.fd-overlay{
-  display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);
-  z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(6px);
-}
-.fd-overlay.on{display:flex}
-.fd-modal{
-  background:#0b1220;border:1px solid rgba(111,208,165,0.22);
-  border-radius:24px;padding:28px 30px;width:460px;
-  position:relative;box-shadow:0 24px 60px rgba(0,0,0,0.28);
-}
-.fd-modal h3{font-family:"Syne",system-ui,sans-serif;font-size:18px;font-weight:800;color:#eef7f2;letter-spacing:-0.02em;margin-bottom:6px}
-.fd-modal p{font-size:12px;color:#9fb7aa;margin-bottom:20px}
-.fd-drop{border:2px dashed rgba(111,208,165,.25);border-radius:16px;padding:30px;text-align:center;cursor:pointer;transition:all .25s}
-.fd-drop:hover{border-color:#3fa878;background:rgba(111,208,165,0.14)}
-.fd-drop .di{font-size:32px;margin-bottom:10px}
-.fd-drop .dt{font-size:12px;color:#9fb7aa}
-.fd-drop .ds{font-size:10px;color:rgba(159,183,170,0.55);margin-top:4px}
-.fd-modal-formats{display:flex;gap:8px;margin-top:16px}
-.fd-fmt-chip{padding:4px 11px;border-radius:8px;background:rgba(63,168,120,.15);font-size:10px;font-weight:700;color:#6fd0a5;letter-spacing:.05em;text-transform:uppercase;border:1px solid rgba(111,208,165,.2)}
-.fd-mclose{position:absolute;top:16px;right:16px;background:none;border:none;color:#9fb7aa;font-size:16px;cursor:pointer;padding:3px 6px;border-radius:8px;transition:color .2s}
-.fd-mclose:hover{color:#eef7f2}
-
-.fd-sidebar::-webkit-scrollbar{width:3px}
-.fd-sidebar::-webkit-scrollbar-track{background:transparent}
-.fd-sidebar::-webkit-scrollbar-thumb{background:rgba(111,208,165,.15);border-radius:4px}
-</style>
-
+  container.insertAdjacentHTML('beforeend', `
 <div class="fd-wrap">
 
-  <!-- FILTER SIDEBAR -->
-  <aside class="fd-sidebar">
-    <div class="fd-fs">
-      <div class="fd-fs-head">
-        <span class="fd-fs-title">Ano</span>
-        <div class="fd-fs-btns"><button title="Todos">▦</button><button title="Limpar">✕</button></div>
-      </div>
-      <div class="fd-tags">
-        <span class="fd-tag off">2021</span><span class="fd-tag off">2022</span>
-        <span class="fd-tag on">2023</span><span class="fd-tag on">2024</span>
-      </div>
-    </div>
-    <div class="fd-sdiv"></div>
+  <!-- TABS -->
+  <nav class="fd-tabs">
+    <button class="fd-tab active">Dashboard</button>
+    <button class="fd-tab" data-nav="frotas">Excesso de Velocidade</button>
+    <button class="fd-tab" data-nav="frotas-veiculos">Veículos</button>
+    <button class="fd-tab" data-nav="frotas-multas">Multas</button>
+    <button class="fd-tab" data-nav="frotas-historico">Histórico</button>
+  </nav>
 
-    <div class="fd-fs">
-      <div class="fd-fs-head">
-        <span class="fd-fs-title">Mês</span>
-        <div class="fd-fs-btns"><button title="Todos">▦</button><button title="Limpar">✕</button></div>
-      </div>
-      <div class="fd-tags">
-        <span class="fd-tag on">Jan</span><span class="fd-tag on">Fev</span>
-        <span class="fd-tag on">Mar</span><span class="fd-tag on">Abr</span>
-        <span class="fd-tag on">Mai</span><span class="fd-tag on">Jun</span>
-        <span class="fd-tag on">Jul</span><span class="fd-tag on">Ago</span>
-        <span class="fd-tag on">Set</span><span class="fd-tag on">Out</span>
-        <span class="fd-tag on">Nov</span><span class="fd-tag on">Dez</span>
-      </div>
-    </div>
-    <div class="fd-sdiv"></div>
-
-    <div class="fd-fs">
-      <div class="fd-fs-head">
-        <span class="fd-fs-title">Transportadora</span>
-        <div class="fd-fs-btns"><button>▦</button><button>✕</button></div>
-      </div>
-      <div class="fd-tags col">
-        <span class="fd-tag on">Carreta</span><span class="fd-tag on">Leve</span>
-        <span class="fd-tag on">Toco</span><span class="fd-tag on">Truck</span>
-      </div>
-    </div>
-    <div class="fd-sdiv"></div>
-
-    <div class="fd-fs">
-      <div class="fd-fs-head">
-        <span class="fd-fs-title">Estados</span>
-        <div class="fd-fs-btns"><button>▦</button><button>✕</button></div>
-      </div>
-      <div class="fd-tags col" style="max-height:110px;overflow-y:auto">
-        <span class="fd-tag on">Amapá</span><span class="fd-tag on">Amazonas</span>
-        <span class="fd-tag on">Bahia</span><span class="fd-tag on">Ceará</span>
-        <span class="fd-tag on">Distrito Federal</span><span class="fd-tag on">Espírito Santo</span>
-        <span class="fd-tag on">Goiás</span><span class="fd-tag on">Minas Gerais</span>
-        <span class="fd-tag on">Pará</span><span class="fd-tag on">Paraná</span>
-        <span class="fd-tag on">São Paulo</span>
-      </div>
-    </div>
-    <div class="fd-sdiv"></div>
-
-    <div class="fd-fs">
-      <div class="fd-fs-head">
-        <span class="fd-fs-title">Fornecedor</span>
-        <div class="fd-fs-btns"><button>▦</button><button>✕</button></div>
-      </div>
-      <div class="fd-tags col">
-        <span class="fd-tag on">Aparecido</span><span class="fd-tag on">Davi</span>
-        <span class="fd-tag on">Gilmar</span><span class="fd-tag on">Heber</span>
-        <span class="fd-tag on">NR</span><span class="fd-tag on">artesian</span>
-        <span class="fd-tag on">Roger</span>
-      </div>
-    </div>
-    <div class="fd-sdiv"></div>
-  </aside>
-
-  <!-- MAIN -->
-  <div class="fd-main">
-
-    <!-- TAB STRIP -->
-    <nav class="fd-tabs">
-      <button class="fd-tab active">Dashboard</button>
-      <button class="fd-tab" data-nav="frotas">Excesso de Velocidade</button>
-      <button class="fd-tab" data-nav="frotas-veiculos">Veículos</button>
-      <button class="fd-tab" data-nav="frotas-multas">Multas</button>
-      <button class="fd-tab" data-nav="frotas-historico">Histórico</button>
-    </nav>
+  <!-- BODY -->
+  <div class="fd-body">
 
     <!-- HEADER -->
-    <header class="fd-header">
-      <div class="fd-htitle">
-        <h1>Dashboard — Controle de Frotas</h1>
-        <p id="fd-subtitle">Módulo de Frotas · Dados demonstrativos</p>
+    <div class="fd-hdr">
+      <div class="fd-hdr-title">
+        <h1>Dashboard de Frotas</h1>
+        <p id="fd-sub">Módulo de Frotas · ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'})}</p>
       </div>
-      <div class="fd-kpi">
-        <div class="ico">🚛</div>
-        <div class="fd-kpi-info">
-          <span class="fd-kpi-lbl">Qtd de Fretes</span>
-          <span class="fd-kpi-val g" data-target="737">0</span>
-          <span class="fd-kpi-sub">Total acumulado</span>
-        </div>
-      </div>
-      <div class="fd-kpi">
-        <div class="ico">💰</div>
-        <div class="fd-kpi-info">
-          <span class="fd-kpi-lbl">Faturamento de Fretes</span>
-          <span class="fd-kpi-val" data-prefix="R$&nbsp;" data-target="284" data-suffix="K">R$&nbsp;0K</span>
-          <span class="fd-kpi-sub">Receita bruta estimada</span>
-        </div>
-      </div>
-      <button class="fd-upbtn" id="fd-openUpload">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-          <polyline points="17 8 12 3 7 8"/>
-          <line x1="12" y1="3" x2="12" y2="15"/>
-        </svg>
+      <div class="fd-badge" id="fd-total-badge">⋯ carregando</div>
+      <button class="fd-upbtn" id="fd-open-upload">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Importar Planilha
       </button>
-    </header>
+    </div>
 
-    <!-- CHART GRID -->
-    <div class="fd-grid">
-      <div class="fd-card">
-        <div class="fd-ctitle"><span class="dot"></span>Qtd de Fretes por Mês</div>
-        <div class="fd-cw"><canvas id="fd-cMonth"></canvas></div>
+    <!-- STATUS CARDS -->
+    <div class="fd-status-grid">
+      <div class="fd-scard" style="--fd-scard-accent:#3fa878">
+        <span class="fd-scard-icon">📡</span>
+        <span class="fd-scard-label">Ativo com Rastreador</span>
+        <span class="fd-scard-val loading" id="fd-s-rastreador">—</span>
+        <span class="fd-scard-sub" id="fd-s-rastreador-sub">veículos monitorados</span>
       </div>
-      <div class="fd-card">
-        <div class="fd-ctitle"><span class="dot"></span>Qtd de Fretes por Transportadora</div>
-        <div class="fd-cw"><canvas id="fd-cCarrier"></canvas></div>
+      <div class="fd-scard" style="--fd-scard-accent:#6fd0a5">
+        <span class="fd-scard-icon">🚗</span>
+        <span class="fd-scard-label">Ativo sem Rastreador</span>
+        <span class="fd-scard-val loading" id="fd-s-sem">—</span>
+        <span class="fd-scard-sub">veículos sem monitoramento</span>
       </div>
-      <div class="fd-card">
-        <div class="fd-ctitle"><span class="dot"></span>Qtd de Fretes por Fornecedor</div>
-        <div class="fd-cw"><canvas id="fd-cSupplier"></canvas></div>
+      <div class="fd-scard" style="--fd-scard-accent:#f59e0b">
+        <span class="fd-scard-icon">🔧</span>
+        <span class="fd-scard-label">Em Manutenção</span>
+        <span class="fd-scard-val loading" id="fd-s-manut">—</span>
+        <span class="fd-scard-sub">em reparo / aguardando</span>
       </div>
-      <div class="fd-card">
-        <div class="fd-ctitle"><span class="dot"></span>Qtd de Fretes por Ano</div>
-        <div class="fd-cw"><canvas id="fd-cAnnual"></canvas></div>
+      <div class="fd-scard" style="--fd-scard-accent:#ef4444">
+        <span class="fd-scard-icon">⚠️</span>
+        <span class="fd-scard-label">Outras Pendências</span>
+        <span class="fd-scard-val loading" id="fd-s-outras">—</span>
+        <span class="fd-scard-sub">situações diversas</span>
       </div>
-      <div class="fd-card">
-        <div class="fd-ctitle"><span class="dot"></span>Qtd de Fretes por Produtos</div>
-        <div class="fd-cw"><canvas id="fd-cProducts"></canvas></div>
+    </div>
+
+    <!-- ROW 1: coordenação + mapa despesas -->
+    <div class="fd-row fd-row-2">
+      <div class="fd-card" style="min-height:220px">
+        <div class="fd-card-title"><span class="dot"></span>Veículos por Coordenação</div>
+        <div class="fd-cw" id="fd-coord-wrap">
+          <div class="fd-coord-list" id="fd-coord-list"></div>
+        </div>
       </div>
-      <div class="fd-card">
-        <div class="fd-ctitle"><span class="dot"></span>Quantidade de Fretes por Estado</div>
-        <div class="fd-cw" id="fd-mapWrap"></div>
-        <div class="fd-map-legend">
-          <span class="fd-legend-lbl">3</span>
-          <div class="fd-legend-bar"></div>
-          <span class="fd-legend-lbl">41</span>
+      <div class="fd-card" style="min-height:220px">
+        <div class="fd-card-title"><span class="dot"></span>Mapa de Despesas · Categorias</div>
+        <div class="fd-cw" id="fd-expense-wrap">
+          <div class="fd-empty">
+            <div class="fd-empty-icon">📊</div>
+            <div class="fd-empty-title">Aguardando importação de dados</div>
+            <div class="fd-empty-sub">Use "Importar Planilha" para carregar as despesas da frota. As categorias abaixo serão preenchidas automaticamente.</div>
+            <div class="fd-categories">
+              ${EXPENSE_CATS.map(c=>`<div class="fd-cat-row"><span class="fd-cat-dot" style="background:${c.color}"></span><span>${c.label}</span></div>`).join('')}
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+
+    <!-- ROW 2: linha + mapa regional -->
+    <div class="fd-row fd-row-2">
+      <div class="fd-card" style="min-height:200px">
+        <div class="fd-card-title"><span class="dot"></span>Valores Investidos por Mês · Demo</div>
+        <div class="fd-cw"><canvas id="fd-line-chart"></canvas></div>
+      </div>
+      <div class="fd-card" style="min-height:200px">
+        <div class="fd-card-title"><span class="dot"></span>Veículos por Regional</div>
+        <div class="fd-cw" id="fd-map-wrap" style="overflow:hidden"></div>
+        <div class="fd-map-legend">
+          <span class="fd-legend-lbl" id="fd-map-min">0</span>
+          <div class="fd-legend-bar"></div>
+          <span class="fd-legend-lbl" id="fd-map-max">—</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /fd-body -->
+</div><!-- /fd-wrap -->
+
+<!-- TOOLTIP -->
+<div class="fd-map-tip" id="fd-tip">
+  <div class="tn" id="fd-tip-name"></div>
+  <div class="tv" id="fd-tip-val"></div>
+  <div class="ts" id="fd-tip-sub"></div>
 </div>
 
 <!-- UPLOAD MODAL -->
 <div class="fd-overlay" id="fd-overlay">
   <div class="fd-modal">
-    <button class="fd-mclose" id="fd-closeModal">✕</button>
-    <h3>Importar Planilha</h3>
-    <p>Faça upload da planilha de despesas dos veículos para atualizar o dashboard automaticamente.</p>
-    <div class="fd-drop" id="fd-dropZone">
-      <div class="di">📊</div>
-      <div class="dt">Arraste o arquivo aqui ou clique para selecionar</div>
-      <div class="ds">Suporta .xlsx e .csv · Máximo 10 MB</div>
+    <button class="fd-mclose" id="fd-close-modal">✕</button>
+    <h3>Importar Planilha de Despesas</h3>
+    <p>Faça upload da planilha com as despesas da frota (combustível, manutenção, pedágios, impostos, seguros). O dashboard será atualizado automaticamente com os dados reais.</p>
+    <div class="fd-drop" id="fd-drop">
+      <div style="font-size:32px;margin-bottom:10px">📊</div>
+      <div style="font-size:12px;color:#9fb7aa">Arraste o arquivo ou clique para selecionar</div>
+      <div style="font-size:10px;color:rgba(159,183,170,.55);margin-top:4px">Suporta .xlsx, .xls e .csv · Máx 10 MB</div>
     </div>
-    <div class="fd-modal-formats">
-      <span class="fd-fmt-chip">xlsx</span>
-      <span class="fd-fmt-chip">csv</span>
-      <span class="fd-fmt-chip">xls</span>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      ${['xlsx','xls','csv'].map(f=>`<span style="padding:4px 11px;border-radius:8px;background:rgba(63,168,120,.15);font-size:10px;font-weight:700;color:#6fd0a5;letter-spacing:.05em;text-transform:uppercase;border:1px solid rgba(111,208,165,.2)">${f}</span>`).join('')}
     </div>
   </div>
 </div>
-`;
+`);
 
-  // Date subtitle
-  const sub = container.querySelector('#fd-subtitle');
-  if (sub) sub.textContent = 'Módulo de Frotas · Dados demonstrativos · ' + new Date().toLocaleDateString('pt-BR', {day:'2-digit',month:'short',year:'numeric'});
-
-  // Tab navigation
+  /* ── Tab navigation ── */
   container.querySelectorAll('.fd-tab[data-nav]').forEach(btn => {
     btn.addEventListener('click', () => window.location.assign(panelUrl(btn.dataset.nav)));
   });
 
-  // Filter tags
-  container.querySelectorAll('.fd-tag').forEach(t => {
-    t.addEventListener('click', () => { t.classList.toggle('on'); t.classList.toggle('off'); });
-  });
-
-  // Upload modal
+  /* ── Upload modal ── */
   const overlay = container.querySelector('#fd-overlay');
-  container.querySelector('#fd-openUpload').onclick = () => overlay.classList.add('on');
-  container.querySelector('#fd-closeModal').onclick  = () => overlay.classList.remove('on');
+  container.querySelector('#fd-open-upload').onclick = () => overlay.classList.add('on');
+  container.querySelector('#fd-close-modal').onclick = () => overlay.classList.remove('on');
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('on'); });
-  const drop = container.querySelector('#fd-dropZone');
+  const drop = container.querySelector('#fd-drop');
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = '#3fa878'; });
   drop.addEventListener('dragleave', () => { drop.style.borderColor = ''; });
   drop.addEventListener('drop', e => {
     e.preventDefault(); drop.style.borderColor = '';
-    const file = e.dataTransfer.files[0];
-    if (file) alert(`Arquivo recebido: ${file.name}\n\nEm breve será processado e o dashboard será atualizado.`);
+    const f = e.dataTransfer.files[0];
+    if (f) { overlay.classList.remove('on'); alert(`Arquivo recebido: ${f.name}`); }
   });
   drop.addEventListener('click', () => {
     const inp = document.createElement('input');
     inp.type = 'file'; inp.accept = '.xlsx,.xls,.csv';
-    inp.onchange = e => {
-      const file = e.target.files[0];
-      if (file) alert(`Arquivo selecionado: ${file.name}\n\nEm breve será processado e o dashboard será atualizado.`);
-    };
+    inp.onchange = ev => { const f = ev.target.files[0]; if (f) { overlay.classList.remove('on'); alert(`Arquivo selecionado: ${f.name}`); } };
     inp.click();
   });
 
-  // KPI counters
-  container.querySelectorAll('[data-target]').forEach(el => {
-    const target = +el.getAttribute('data-target');
-    const prefix = el.getAttribute('data-prefix') || '';
-    const suffix = el.getAttribute('data-suffix') || '';
-    const steps  = 60;
-    let step = 0;
-    const timer = setInterval(() => {
-      step++;
-      el.innerHTML = prefix + Math.round(target * (step / steps)) + suffix;
-      if (step >= steps) { el.innerHTML = prefix + target + suffix; clearInterval(timer); }
-    }, 1400 / steps);
-  });
+  /* ── Line chart (demo) ── */
+  if (typeof Chart !== 'undefined') {
+    const G = '#3fa878', G2 = '#6fd0a5';
+    const GRID_C = 'rgba(111,208,165,0.07)';
+    const TT = { backgroundColor:'#0b1220', borderColor:'rgba(111,208,165,.28)', borderWidth:1, titleFont:{family:"'Syne',system-ui",size:11,weight:'700'}, bodyFont:{size:11}, padding:10 };
+    Chart.defaults.color = '#9fb7aa';
+    Chart.defaults.borderColor = GRID_C;
+    Chart.defaults.font.family = "'DM Sans',system-ui,sans-serif";
+    Chart.defaults.font.size = 11;
 
-  // Chart.js
-  if (typeof Chart === 'undefined') { console.warn('[frotas-dashboard] Chart.js não carregado'); return; }
-
-  Chart.defaults.color = '#9fb7aa';
-  Chart.defaults.borderColor = 'rgba(111,208,165,0.09)';
-  Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
-  Chart.defaults.font.size = 11;
-
-  const G = '#3fa878', G2 = '#6fd0a5';
-  const GD = 'rgba(111,208,165,';
-  const GRID_C = 'rgba(111,208,165,0.07)';
-  const TT = {
-    backgroundColor:'#0b1220', borderColor:GD+'0.28)', borderWidth:1,
-    titleFont:{family:"'Syne',system-ui,sans-serif",size:11,weight:'700'},
-    bodyFont:{size:11}, padding:10
-  };
-
-  new Chart(container.querySelector('#fd-cMonth'), {
-    type:'line',
-    data:{
-      labels:['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'],
-      datasets:[{
-        data:[59,53,57,57,65,78,65,56,58,71,61,57],
-        borderColor:G,
-        backgroundColor:ctx=>{const gr=ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height);gr.addColorStop(0,'rgba(63,168,120,0.2)');gr.addColorStop(1,'rgba(63,168,120,0)');return gr},
-        fill:true,tension:.42,pointRadius:4,pointHoverRadius:6,
-        pointBackgroundColor:G2,pointBorderColor:'#0a1e17',pointBorderWidth:2,borderWidth:2
-      }]
-    },
-    options:{responsive:true,maintainAspectRatio:false,animation:{duration:1200,easing:'easeOutQuart'},
-      plugins:{legend:{display:false},tooltip:TT},
-      scales:{x:{grid:{color:GRID_C},ticks:{font:{size:10}}},y:{min:40,grid:{color:GRID_C},ticks:{font:{size:10}}}}}
-  });
-
-  new Chart(container.querySelector('#fd-cCarrier'), {
-    type:'bar',
-    data:{
-      labels:['Truck','Toco','Carreta','Leve'],
-      datasets:[{data:[192,185,185,175],backgroundColor:[GD+'.88)',GD+'.66)',GD+'.46)',GD+'.3)'],borderColor:'transparent',borderRadius:6,borderSkipped:false}]
-    },
-    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',animation:{duration:1200,easing:'easeOutQuart'},
-      plugins:{legend:{display:false},tooltip:TT},
-      scales:{x:{grid:{color:GRID_C},ticks:{font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:11},color:'#9fb7aa'}}}}
-  });
-
-  new Chart(container.querySelector('#fd-cSupplier'), {
-    type:'doughnut',
-    data:{
-      labels:['Roger','Davi','Aparecido','Gilmar','NR','Heber','artesian'],
-      datasets:[{data:[22,16,15,13,13,11,10],
-        backgroundColor:['#3fa878','#2d7a58','#6fd0a5','#9fe8c8','#1f6f4a','#5db898','#a8e6cb'],
-        borderColor:'#0a1e17',borderWidth:2,hoverOffset:6}]
-    },
-    options:{responsive:true,maintainAspectRatio:false,cutout:'52%',animation:{duration:1400,easing:'easeOutQuart'},
-      plugins:{legend:{position:'right',labels:{font:{size:9.5},boxWidth:9,padding:7,color:'#9fb7aa'}},
-        tooltip:{...TT,callbacks:{label:ctx=>`  ${ctx.label}: ${ctx.parsed}%`}}}}
-  });
-
-  new Chart(container.querySelector('#fd-cAnnual'), {
-    type:'bar',
-    data:{
-      labels:['2021','2022','2023','2024'],
-      datasets:[{data:[1,218,276,340],backgroundColor:[GD+'.2)',GD+'.42)',GD+'.65)',GD+'.88)'],borderRadius:6,borderSkipped:false}]
-    },
-    options:{responsive:true,maintainAspectRatio:false,animation:{duration:1300,easing:'easeOutQuart'},
-      plugins:{legend:{display:false},tooltip:TT},
-      scales:{x:{grid:{display:false},ticks:{font:{size:11},color:'#9fb7aa'}},y:{grid:{color:GRID_C},ticks:{font:{size:10}}}}}
-  });
-
-  new Chart(container.querySelector('#fd-cProducts'), {
-    type:'bar',
-    data:{
-      labels:['Coleta','Transferência','Devolução'],
-      datasets:[{data:[305,202,100],backgroundColor:[GD+'.88)',GD+'.55)',GD+'.3)'],borderColor:'transparent',borderRadius:6,borderSkipped:false}]
-    },
-    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',animation:{duration:1200,easing:'easeOutQuart'},
-      plugins:{legend:{display:false},tooltip:TT},
-      scales:{x:{grid:{color:GRID_C},ticks:{font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:11},color:'#9fb7aa'}}}}
-  });
-
-  // Brazil SVG map
-  const mapWrap = container.querySelector('#fd-mapWrap');
-  mapWrap.innerHTML = buildMapSvg();
-
-  // Tooltip (attached to body so it escapes any overflow clipping)
-  let tip = document.getElementById('fd-map-tip');
-  if (!tip) {
-    tip = document.createElement('div');
-    tip.id = 'fd-map-tip';
-    tip.className = 'fd-map-tip';
-    tip.innerHTML = '<div class="tip-name" id="fd-tipName"></div><div class="tip-val" id="fd-tipVal"></div><div class="tip-sub" id="fd-tipSub"></div>';
-    document.body.appendChild(tip);
+    new Chart(container.querySelector('#fd-line-chart'), {
+      type: 'line',
+      data: {
+        labels: MONTHS,
+        datasets: [{
+          label: 'Despesas (R$)',
+          data: MONTHLY_DEMO,
+          borderColor: G,
+          backgroundColor: ctx => {
+            const gr = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
+            gr.addColorStop(0, 'rgba(63,168,120,0.22)');
+            gr.addColorStop(1, 'rgba(63,168,120,0)');
+            return gr;
+          },
+          fill: true, tension: .42, pointRadius: 4, pointHoverRadius: 6,
+          pointBackgroundColor: G2, pointBorderColor: '#0a1e17', pointBorderWidth: 2, borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 1200, easing: 'easeOutQuart' },
+        plugins: {
+          legend: { display: false }, tooltip: { ...TT, callbacks: { label: ctx => '  ' + fmtBRL(ctx.parsed.y) } }
+        },
+        scales: {
+          x: { grid: { color: GRID_C }, ticks: { font: { size: 10 } } },
+          y: { grid: { color: GRID_C }, ticks: { font: { size: 10 }, callback: v => 'R$' + (v/1000).toFixed(0) + 'k' } }
+        }
+      }
+    });
   }
-  const tipName = tip.querySelector('#fd-tipName');
-  const tipVal  = tip.querySelector('#fd-tipVal');
-  const tipSub  = tip.querySelector('#fd-tipSub');
 
-  mapWrap.querySelectorAll('.fd-br-state').forEach(path => {
-    path.addEventListener('mouseenter', () => {
-      const v = parseInt(path.dataset.value) || 0;
-      tipName.textContent = path.dataset.name + ' (' + path.dataset.uf + ')';
-      tipVal.textContent  = v ? v + ' fretes' : 'Sem dados';
-      tipSub.textContent  = v ? ((v / 737 * 100).toFixed(1) + '% do total') : '';
-      tip.style.display = 'block';
-    });
-    path.addEventListener('mousemove', e => {
-      tip.style.left = (e.clientX + 14) + 'px';
-      tip.style.top  = (e.clientY - 36) + 'px';
-    });
-    path.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
-  });
+  /* ── Load live data ── */
+  loadVehicleData(container, sb);
 }
 
-initProtectedPage('Dashboard de Frotas', (content) => {
-  renderFrotasDashboard(content);
+async function loadVehicleData(container, sb) {
+  try {
+    const { data: vehicles, error } = await sb
+      .from('frotas_veiculos')
+      .select('status, possui_rastreador, bfleet_rastreador, patrimonio_coordenacao');
+
+    if (error || !vehicles) throw error || new Error('sem dados');
+
+    /* Status breakdown */
+    let comRastreador = 0, semRastreador = 0, manutencao = 0, outras = 0;
+    const coordMap = {};
+
+    for (const v of vehicles) {
+      const hasTracker = v.possui_rastreador || v.bfleet_rastreador;
+      const st = (v.status || '').toUpperCase();
+      if (st === 'ATIVO' && hasTracker) comRastreador++;
+      else if (st === 'ATIVO' && !hasTracker) semRastreador++;
+      else if (st.includes('MANUT')) manutencao++;
+      else outras++;
+
+      /* Coordenação count */
+      const coord = (v.patrimonio_coordenacao || '').trim();
+      if (coord) coordMap[coord] = (coordMap[coord] || 0) + 1;
+    }
+
+    const total = vehicles.length;
+
+    /* Update KPI cards */
+    setCard(container, '#fd-s-rastreador', comRastreador);
+    setCard(container, '#fd-s-sem', semRastreador);
+    setCard(container, '#fd-s-manut', manutencao);
+    setCard(container, '#fd-s-outras', outras);
+    const badge = container.querySelector('#fd-total-badge');
+    if (badge) badge.textContent = `🚗 ${total} veículos cadastrados`;
+
+    /* Coordenação list */
+    const sorted = Object.entries(coordMap).sort((a, b) => b[1] - a[1]);
+    const maxCoord = sorted.length ? sorted[0][1] : 1;
+    const listEl = container.querySelector('#fd-coord-list');
+    if (listEl && sorted.length) {
+      listEl.innerHTML = sorted.map(([name, cnt]) => `
+        <div class="fd-coord-row">
+          <span class="fd-coord-name" title="${name}">${name}</span>
+          <div class="fd-coord-bar-wrap"><div class="fd-coord-bar" style="width:${(cnt/maxCoord*100).toFixed(1)}%"></div></div>
+          <span class="fd-coord-count">${cnt}</span>
+        </div>
+      `).join('');
+    }
+
+    /* Aggregate by state for map */
+    const stateVals = {};
+    for (const [coord, cnt] of Object.entries(coordMap)) {
+      const key = coord.toUpperCase().trim();
+      let uf = COORD_TO_UF[key];
+      if (!uf) {
+        /* Fuzzy: try if any key starts with the coord or vice versa */
+        for (const [k, u] of Object.entries(COORD_TO_UF)) {
+          if (key.startsWith(k) || k.startsWith(key.split(' ')[0])) { uf = u; break; }
+        }
+      }
+      if (uf) stateVals[uf] = (stateVals[uf] || 0) + cnt;
+    }
+
+    /* Render map */
+    const mapWrap = container.querySelector('#fd-map-wrap');
+    if (mapWrap) {
+      mapWrap.innerHTML = buildMapSvg(stateVals);
+      const vals = Object.values(stateVals).filter(v => v > 0);
+      const mapMax = container.querySelector('#fd-map-max');
+      const mapMin = container.querySelector('#fd-map-min');
+      if (mapMax) mapMax.textContent = vals.length ? String(Math.max(...vals)) : '—';
+      if (mapMin) mapMin.textContent = vals.length ? String(Math.min(...vals)) : '0';
+
+      /* Tooltip */
+      let tip = document.getElementById('fd-tip');
+      if (!tip) {
+        tip = document.createElement('div');
+        tip.id = 'fd-tip';
+        tip.className = 'fd-map-tip';
+        tip.innerHTML = '<div class="tn" id="fd-tip-name"></div><div class="tv" id="fd-tip-val"></div><div class="ts" id="fd-tip-sub"></div>';
+        document.body.appendChild(tip);
+      }
+      const tipName = document.getElementById('fd-tip-name');
+      const tipVal  = document.getElementById('fd-tip-val');
+      const tipSub  = document.getElementById('fd-tip-sub');
+
+      mapWrap.querySelectorAll('.fd-br-state').forEach(path => {
+        path.addEventListener('mouseenter', () => {
+          const v = parseInt(path.dataset.value) || 0;
+          tipName.textContent = path.dataset.name + ' (' + path.dataset.uf + ')';
+          tipVal.textContent  = v ? `${v} veículo${v > 1 ? 's' : ''}` : 'Sem veículos';
+          tipSub.textContent  = v ? `${(v / total * 100).toFixed(1)}% da frota` : '';
+          tip.style.display = 'block';
+        });
+        path.addEventListener('mousemove', e => {
+          tip.style.left = (e.clientX + 14) + 'px';
+          tip.style.top  = (e.clientY - 36) + 'px';
+        });
+        path.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+      });
+    }
+
+  } catch (err) {
+    console.error('[frotas-dashboard] Erro ao carregar dados:', err);
+    ['#fd-s-rastreador','#fd-s-sem','#fd-s-manut','#fd-s-outras'].forEach(id => {
+      const el = container.querySelector(id);
+      if (el) { el.textContent = '—'; el.classList.remove('loading'); }
+    });
+  }
+}
+
+function setCard(container, selector, value) {
+  const el = container.querySelector(selector);
+  if (!el) return;
+  el.classList.remove('loading');
+  el.textContent = value;
+}
+
+initProtectedPage('Dashboard de Frotas', (content, ctx) => {
+  renderFrotasDashboard(content, { supabase: sbDefault, auth: ctx });
 });
