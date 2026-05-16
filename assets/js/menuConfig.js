@@ -1,8 +1,8 @@
 // assets/js/menuConfig.js
 // Menu alinhado com os códigos reais do Supabase, mantendo compatibilidade com IDs legados.
 
-function item(code, label, path, aliases = []) {
-  return { code, label, path, aliases };
+function item(code, label, path, aliases = [], opts = {}) {
+  return { code, label, path, aliases, ...opts };
 }
 
 export const MENU_CONFIG = [
@@ -78,7 +78,7 @@ export const MENU_CONFIG = [
   {
     grupo: "FROTAS",
     itens: [
-      item("frotas_dashboard", "Dashboard", "frotas-dashboard", ["FROTAS_DASHBOARD", "DASHBOARD-FROTAS"]),
+      item("frotas_dashboard", "Dashboard de Frotas", "frotas-dashboard", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE", "FROTAS_VEICULOS", "VEICULOS", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS"], { hidden: true }),
       item("frotas_excesso_velocidade", "Excesso de Velocidade", "frotas", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE"]),
       item("frotas_veiculos", "Veículos", "frotas-veiculos", ["FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS"]),
       item("frotas_multas", "Multas", "frotas-multas", ["MULTAS", "FROTAS_MULTAS"]),
@@ -151,6 +151,7 @@ export const PANEL_MENU = MENU_CONFIG.map((section) => ({
     code: item.code,
     label: item.label,
     path: item.path,
-    aliases: item.aliases || []
+    aliases: item.aliases || [],
+    hidden: item.hidden || false
   }))
 }));
