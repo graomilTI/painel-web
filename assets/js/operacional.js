@@ -1,4 +1,4 @@
-﻿import { supabase } from './supabaseClient.js';
+import { supabase } from './supabaseClient.js';
 
 (function () {
   'use strict';
@@ -6,6 +6,12 @@
   const styleId = 'operacional-direcionamento-styles';
   const leafletCssId = 'leaflet-css-operacional';
   const leafletJsId = 'leaflet-js-operacional';
+  const INDICACOES_KEY = 'operacional_indicacoes_v1';
+
+  const BRAZIL_LAT_MIN = -33.77;
+  const BRAZIL_LAT_MAX = 5.28;
+  const BRAZIL_LNG_MIN = -73.99;
+  const BRAZIL_LNG_MAX = -28.84;
 
   const state = {
     pontos: [],
@@ -18,6 +24,8 @@
     map: null,
     layers: [],
     loaded: false,
+    indicacoes: {},
+    foraDoMapa: { colaboradores: [], pontos: [] },
   };
 
   function safeText(value) {
@@ -37,7 +45,7 @@
 
   function normalize(value) {
     return String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
       .trim().toUpperCase();
   }
 
@@ -57,6 +65,55 @@
     const x = Math.sin(dLat / 2) ** 2
       + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
     return Math.round((R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x))) * 100) / 100;
+  }
+
+  function isInsideBrazil(lat, lng) {
+    const la = Number(lat);
+    const lo = Number(lng);
+    return Number.isFinite(la) && Number.isFinite(lo)
+      && la >= BRAZIL_LAT_MIN && la <= BRAZIL_LAT_MAX
+      && lo >= BRAZIL_LNG_MIN && lo <= BRAZIL_LNG_MAX;
+  }
+
+  function loadIndicacoesFromStorage() {
+    try {
+      const raw = localStorage.getItem(INDICACOES_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  }
+
+  function saveIndicacoes() {
+    try {
+      localStorage.setItem(INDICACOES_KEY, JSON.stringify(state.indicacoes));
+    } catch {}
+  }
+
+  function indicarColab(pontoId, colabId) {
+    const pId = String(pontoId);
+    const cId = String(colabId);
+    if (!state.indicacoes[pId]) state.indicacoes[pId] = [];
+    if (!state.indicacoes[pId].includes(cId)) state.indicacoes[pId].push(cId);
+    saveIndicacoes();
+  }
+
+  function removerIndicacao(pontoId, colabId) {
+    const pId = String(pontoId);
+    if (!state.indicacoes[pId]) return;
+    state.indicacoes[pId] = state.indicacoes[pId].filter(id => id !== String(colabId));
+    if (!state.indicacoes[pId].length) delete state.indicacoes[pId];
+    saveIndicacoes();
+  }
+
+  function isIndicadoNoPonto(pontoId, colabId) {
+    return (state.indicacoes[String(pontoId)] || []).includes(String(colabId));
+  }
+
+  function getAssignedElsewhere(currentPontoId) {
+    const assigned = new Set();
+    Object.entries(state.indicacoes).forEach(([pId, ids]) => {
+      if (String(pId) !== String(currentPontoId)) ids.forEach(id => assigned.add(id));
+    });
+    return assigned;
   }
 
   function ensureStyles() {
@@ -81,8 +138,11 @@
       .op-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(360px,.65fr);gap:18px;align-items:stretch}.op-map{height:560px;margin:18px;border-radius:22px;overflow:hidden;border:1px solid rgba(51,65,85,.7);background:#052e24;position:relative}.op-map .leaflet-control-attribution{background:rgba(2,6,23,.68);color:#6b7280}.op-map .leaflet-control-attribution a{color:#bbf7d0}.op-map-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#cbd5e1;background:radial-gradient(circle at center,rgba(34,197,94,.18),transparent 38%),#052e24;z-index:1}.op-map-empty strong{display:block;color:#f8fafc;font-size:18px;margin-bottom:6px}
       .op-list{display:flex;flex-direction:column;gap:10px;padding:18px;max-height:560px;overflow:auto}.op-point,.op-rank{border:1px solid rgba(51,65,85,.72);background:rgba(15,23,42,.74);border-radius:18px;padding:13px;cursor:pointer;transition:.18s ease}.op-point:hover,.op-rank:hover{border-color:rgba(34,197,94,.5);transform:translateY(-1px)}.op-point.active{border-color:#22c55e;background:rgba(22,101,52,.20)}.op-point strong,.op-rank strong{display:block;color:#f8fafc}.op-point span,.op-rank span{display:block;margin-top:4px;color:#6b7280;font-size:12px;line-height:1.35}
       .op-rank{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;cursor:default}.op-rank-pos{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:rgba(22,101,52,.75);color:#dcfce7;font-weight:900}.op-score{text-align:right}.op-score strong{font-size:20px;color:#bbf7d0}.op-score span{text-transform:uppercase;font-weight:900}
+      .op-rank.indicado{border-color:rgba(34,197,94,.5);background:rgba(22,101,52,.12)}
       .op-table-wrap{overflow:auto;padding:0 18px 18px}.op-table{width:100%;border-collapse:separate;border-spacing:0 10px;min-width:1120px}.op-table th{text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;padding:0 12px 2px}.op-table td{background:rgba(15,23,42,.78);border-top:1px solid rgba(51,65,85,.7);border-bottom:1px solid rgba(51,65,85,.7);padding:13px 12px;color:#e2e2f0}.op-table td:first-child{border-left:1px solid rgba(51,65,85,.7);border-radius:14px 0 0 14px;font-weight:900;color:#f8fafc}.op-table td:last-child{border-right:1px solid rgba(51,65,85,.7);border-radius:0 14px 14px 0}.op-pill{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.7);white-space:nowrap}.op-pill.ok{color:#bbf7d0;background:rgba(22,101,52,.22)}.op-pill.warn{color:#fde68a;background:rgba(120,53,15,.22)}.op-pill.bad{color:#fecaca;background:rgba(127,29,29,.22)}.op-pill.muted{color:#cbd5e1;background:rgba(51,65,85,.32)}
-      .op-alert{border:1px solid rgba(251,191,36,.3);border-radius:18px;background:rgba(120,53,15,.14);color:#fde68a;padding:14px 16px;line-height:1.45}.op-alert strong{color:#fef3c7}.op-actions{display:flex;gap:10px;flex-wrap:wrap}.op-loading{opacity:.72;pointer-events:none}.op-select-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.op-select-line .op-pill{cursor:pointer}
+      .op-alert{border:1px solid rgba(251,191,36,.3);border-radius:18px;background:rgba(120,53,15,.14);color:#fde68a;padding:14px 16px;line-height:1.45}.op-alert strong{color:#fef3c7}.op-alert.danger{border-color:rgba(239,68,68,.3);background:rgba(127,29,29,.14);color:#fecaca}.op-alert.danger strong{color:#fee2e2}
+      .op-actions{display:flex;gap:10px;flex-wrap:wrap}.op-loading{opacity:.72;pointer-events:none}.op-select-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.op-select-line .op-pill{cursor:pointer}
+      .op-direcionar-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(51,65,85,.35)}.op-direcionar-row:last-child{border-bottom:none}
       @media(max-width:1180px){.op-layout{grid-template-columns:1fr}.op-form{grid-template-columns:repeat(2,minmax(0,1fr))}.op-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.op-form .op-actions{grid-column:1/-1}}
       @media(max-width:680px){.op-form,.op-summary{grid-template-columns:1fr}.op-map{height:430px;margin:12px}.op-card-head{padding:14px 14px 0}.op-list{padding:14px;max-height:420px}.op-table-wrap{padding:0 14px 14px}}
     `;
@@ -214,8 +274,29 @@
       selectFrom('operacional_auditoria_colaborador', 'colaborador_id,nome_colaborador,nome_chave,score_impacto,severidade,data_evento,resultado,motivo_recusa,local_embarque,cidade_embarque,uf_destino,produto,desconto_kg,ativo', 'data_evento', 5000),
     ]);
 
-    state.pontos = pontos.filter((p) => p.ativo !== false && Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude)));
-    state.colaboradores = colaboradores.filter((c) => c.ativo !== false);
+    // Detect out-of-Brazil coordinates before filtering
+    const foraColab = colaboradores.filter(c =>
+      c.ativo !== false
+      && Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude))
+      && !isInsideBrazil(c.latitude, c.longitude)
+    );
+    const foraPontos = pontos.filter(p =>
+      p.ativo !== false
+      && Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))
+      && !isInsideBrazil(p.latitude, p.longitude)
+    );
+    state.foraDoMapa = { colaboradores: foraColab, pontos: foraPontos };
+
+    // Pontos fora do Brasil são excluídos (coordenada inválida = ponto inutilizável)
+    state.pontos = pontos.filter((p) =>
+      p.ativo !== false && isInsideBrazil(p.latitude, p.longitude)
+    );
+
+    // Colaboradores fora do Brasil têm coordenadas zeradas (aparecem no ranking sem km)
+    state.colaboradores = colaboradores.filter((c) => c.ativo !== false).map((c) =>
+      isInsideBrazil(c.latitude, c.longitude) ? c : { ...c, latitude: null, longitude: null }
+    );
+
     state.hoteis = dedupeHoteis([
       ...hoteisHospedagem.map((h) => normalizeHotelRow(h, 'Hospedagem')),
       ...hoteisOperacional.map((h) => normalizeHotelRow(h, 'Operacional')),
@@ -349,8 +430,11 @@
     }
 
     const hotel = hotelMaisProximo(ponto, form.qtd);
+    const assignedElsewhere = getAssignedElsewhere(form.pontoId);
+
     const candidatos = state.colaboradores.filter((c) => {
       if (!c.nome) return false;
+      if (assignedElsewhere.has(String(c.id))) return false;
       if (form.tipo !== 'todos' && normalize(c.tipo_mao_obra) !== normalize(form.tipo)) return false;
       if (form.busca) {
         const blob = normalize(`${c.nome} ${c.cidade_base} ${c.uf_base} ${c.supervisao} ${c.coordenacao}`);
@@ -381,12 +465,14 @@
         + (custoScore * 0.30)
         + ((tipo === 'Efetivo' ? 88 : 72) * volumePeso * 0.35)
       );
+      const indicado = isIndicadoNoPonto(form.pontoId, c.id);
       return {
         ...c,
         tipo_calculado: tipo,
         ponto,
         distancia,
         semCoordenada,
+        indicado,
         hotel_nome: hotel ? `${hotel.nome} · ${hotel.cidade}/${hotel.uf}` : 'Sem hotel cadastrado na cidade/UF',
         hotel_distancia: hotel?.distancia ?? null,
         hotel_fonte: hotel?.fonte || null,
@@ -426,12 +512,13 @@
     const valid = rows.filter((r) => !r.semCoordenada);
     const best = rows[0];
     const avg = rows.length ? rows.reduce((s, r) => s + r.custo_total, 0) / rows.length : 0;
+    const totalIndicados = Object.values(state.indicacoes).reduce((s, arr) => s + arr.length, 0);
     return `
       <section class="op-summary">
         <div class="op-metric"><span>Ponto selecionado</span><strong>${ponto ? safeText(ponto.cidade + '/' + ponto.uf) : '-'}</strong></div>
         <div class="op-metric"><span>Colaboradores avaliados</span><strong>${rows.length}</strong></div>
         <div class="op-metric"><span>Melhor indicação</span><strong>${best ? safeText(best.nome) : '-'}</strong></div>
-        <div class="op-metric"><span>Custo médio</span><strong>${money(avg)}</strong></div>
+        <div class="op-metric"><span>Direcionados (total)</span><strong>${totalIndicados}</strong></div>
       </section>
       ${rows.length && !valid.length ? '<div class="op-alert"><strong>Atenção:</strong> os colaboradores carregados não possuem latitude/longitude. Para ranking real por distância, alimente a tabela <code>operacional_colaborador_base</code> com coordenadas da base/residência.</div>' : ''}
     `;
@@ -439,76 +526,156 @@
 
   function renderRanking(rows) {
     if (!rows.length) return '<div class="op-alert"><strong>Nenhum colaborador encontrado.</strong><br>Cadastre/importe a base operacional de colaboradores para gerar a relação de custo-benefício.</div>';
-    return rows.slice(0, 10).map((row, index) => `
-      <div class="op-rank">
-        <div class="op-rank-pos">${index + 1}</div>
-        <div>
-          <strong>${safeText(row.nome)}</strong>
-          <span>${safeText(row.tipo_calculado)} · ${row.distancia == null ? 'sem km' : `${row.distancia} km`} · ${money(row.custo_total)} · Aud: ${Math.round(row.score_auditoria)}%</span>
-        </div>
-        <div class="op-score">
-          <strong>${row.score_final}</strong>
-          <span>score</span>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  function renderTable(rows) {
-    if (!rows.length) return '';
-    return `
-      <article class="op-card">
-        <div class="op-card-head">
+    const pontoId = state.selectedPontoId;
+    return rows.slice(0, 10).map((row, index) => {
+      const indicado = isIndicadoNoPonto(pontoId, row.id);
+      return `
+        <div class="op-rank${indicado ? ' indicado' : ''}">
+          <div class="op-rank-pos">${index + 1}</div>
           <div>
-            <h3>Relação de custo-benefício por colaborador</h3>
-            <p>Ranking gerado com base no ponto de embarque selecionado, custos, distância e histórico de auditoria.</p>
+            <strong>${safeText(row.nome)}</strong>
+            <span>${safeText(row.tipo_calculado)} · ${row.distancia == null ? 'sem km' : `${row.distancia} km`} · ${money(row.custo_total)} · Aud: ${Math.round(row.score_auditoria)}%</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+            <div class="op-score">
+              <strong>${row.score_final}</strong>
+              <span>score</span>
+            </div>
+            <button
+              class="op-btn${indicado ? '' : ' secondary'}"
+              style="padding:5px 12px;min-height:unset;font-size:11px"
+              data-toggle-indicacao="${safeText(row.id)}"
+              data-indicado="${indicado}">
+              ${indicado ? '✓ Indicado' : 'Indicar'}
+            </button>
           </div>
         </div>
-        <div class="op-table-wrap">
-          <table class="op-table">
-            <thead>
-              <tr>
-                <th>#</th><th>Colaborador</th><th>Tipo</th><th>Base</th><th>Distância</th><th>Hotel sugerido</th><th>Fonte hotel</th><th>Passagem</th><th>Hotel</th><th>Mão de obra</th><th>Alimentação</th><th>Total</th><th>Auditoria</th><th>Histórico</th><th>Score</th><th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map((row, index) => {
-                const cls = row.semCoordenada ? 'muted' : scoreClass(row.score_final);
-                return `<tr>
-                  <td>${index + 1}</td>
-                  <td>${safeText(row.nome)}</td>
-                  <td>${safeText(row.tipo_calculado)}</td>
-                  <td>${safeText(`${row.cidade_base || '-'}${row.uf_base ? '/' + row.uf_base : ''}`)}</td>
-                  <td>${row.distancia == null ? '-' : row.distancia + ' km'}</td>
-                  <td>${safeText(row.hotel_nome)}${row.hotel_tipo_quarto ? `<br><small>${safeText(row.hotel_tipo_quarto)}${row.hotel_quartos > 1 ? ` · ${row.hotel_quartos} quartos` : ``}</small>` : ``}</td>
-                  <td>${row.hotel_fonte ? `<span class="op-pill ok">${safeText(row.hotel_fonte)}</span>` : `<span class="op-pill muted">Não localizado</span>`}</td>
-                  <td>${money(row.valor_passagem)}</td>
-                  <td>${money(row.valor_hotel)}</td>
-                  <td>${money(row.valor_mao_obra)}</td>
-                  <td>${money(row.valor_alimentacao)}</td>
-                  <td>${money(row.custo_total)}</td>
-                  <td>${Math.round(row.score_auditoria)}%</td>
-                  <td>${row.auditoria_total ? `${row.auditoria_total} aud. · ${row.auditoria_descontos} desc.` : 'Sem histórico'}</td>
-                  <td><span class="op-pill ${cls}">${row.score_final}</span></td>
-                  <td><span class="op-pill ${cls}">${safeText(row.status)}</span></td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      </article>
-    `;
+      `;
+    }).join('');
   }
 
   function renderPontosList() {
     const pontos = state.pontos.slice(0, 12);
     if (!pontos.length) return '<div class="op-alert"><strong>Nenhum ponto importado.</strong><br>Importe a planilha de pontos pelo menu Relatórios.</div>';
-    return pontos.map((p) => `
-      <div class="op-point ${String(p.id) === String(state.selectedPontoId) ? 'active' : ''}" data-ponto-id="${safeText(p.id)}">
-        <strong>${safeText(p.nome_local)}</strong>
-        <span>${safeText(p.tipo_local || 'Ponto')} · ${safeText(p.cidade)}/${safeText(p.uf)} · ${safeText(p.supervisao || 'Sem supervisão')}</span>
+    return pontos.map((p) => {
+      const qtdIndicados = (state.indicacoes[String(p.id)] || []).length;
+      return `
+        <div class="op-point ${String(p.id) === String(state.selectedPontoId) ? 'active' : ''}" data-ponto-id="${safeText(p.id)}">
+          <strong>${safeText(p.nome_local)}${qtdIndicados ? ` <span class="op-pill ok" style="font-size:10px;padding:2px 7px">${qtdIndicados} dir.</span>` : ''}</strong>
+          <span>${safeText(p.tipo_local || 'Ponto')} · ${safeText(p.cidade)}/${safeText(p.uf)} · ${safeText(p.supervisao || 'Sem supervisão')}</span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderDirecionamentoPanel() {
+    const entries = Object.entries(state.indicacoes)
+      .map(([pId, colabIds]) => ({
+        ponto: state.pontos.find(p => String(p.id) === String(pId)),
+        colabIds,
+      }))
+      .filter(({ ponto, colabIds }) => ponto && colabIds.length);
+
+    if (!entries.length) return '';
+
+    const items = entries.map(({ ponto, colabIds }) => {
+      const colabs = colabIds
+        .map(cId => state.colaboradores.find(c => String(c.id) === String(cId)))
+        .filter(Boolean);
+      if (!colabs.length) return '';
+      return `
+        <div class="op-rank" style="flex-direction:column;gap:8px;cursor:default">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div>
+              <strong>${safeText(ponto.nome_local)}</strong>
+              <span>${safeText(ponto.cidade)}/${safeText(ponto.uf)} · ${safeText(ponto.supervisao || '')}</span>
+            </div>
+            <span class="op-pill ok">${colabs.length} indicado${colabs.length > 1 ? 's' : ''}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            ${colabs.map(c => `
+              <div class="op-direcionar-row">
+                <span style="color:#f8fafc;font-size:13px">${safeText(c.nome)}</span>
+                <button class="op-btn secondary" style="padding:3px 10px;min-height:unset;font-size:11px"
+                        data-remover-indicacao="${safeText(ponto.id)}"
+                        data-remover-colab="${safeText(c.id)}">
+                  Remover
+                </button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }).filter(Boolean);
+
+    if (!items.length) return '';
+
+    return `
+      <article class="op-card">
+        <div class="op-card-head">
+          <div>
+            <h3>Mapa de direcionamento</h3>
+            <p>Colaboradores indicados por ponto de embarque. Indicados em outro ponto são ocultados dos demais rankings.</p>
+          </div>
+          <button class="op-btn secondary" id="opLimparIndicacoes" type="button" style="white-space:nowrap;margin-top:4px;flex-shrink:0">
+            Limpar tudo
+          </button>
+        </div>
+        <div class="op-list" style="max-height:none">${items.join('')}</div>
+      </article>
+    `;
+  }
+
+  function renderOutOfBrazilWarning() {
+    const { colaboradores: fC, pontos: fP } = state.foraDoMapa;
+    const total = fC.length + fP.length;
+    if (!total) return '';
+    const partes = [
+      fC.length ? `${fC.length} colaborador(es) (ex.: ${fC.slice(0, 2).map(c => safeText(c.nome)).join(', ')}${fC.length > 2 ? '...' : ''})` : '',
+      fP.length ? `${fP.length} ponto(s) de embarque` : '',
+    ].filter(Boolean).join(' e ');
+    return `
+      <div class="op-alert danger">
+        <strong>Coordenadas fora do Brasil detectadas</strong> — ${partes}.<br>
+        Esses registros foram desconsiderados no mapa e no ranking de distância.
+        Corrija as coordenadas manualmente ou limpe-as pelo botão abaixo para ajuste posterior.<br>
+        <button class="op-btn" id="opLimparCoords" type="button"
+                style="margin-top:10px;font-size:12px;padding:8px 14px">
+          Limpar coordenadas inválidas no banco
+        </button>
       </div>
-    `).join('');
+    `;
+  }
+
+  async function limparCoordenadasForaDoBrasil(container) {
+    const { colaboradores: fC, pontos: fP } = state.foraDoMapa;
+    if (!fC.length && !fP.length) return;
+    const btn = container.querySelector('#opLimparCoords');
+    if (btn) { btn.disabled = true; btn.textContent = 'Limpando...'; }
+    try {
+      const ops = [];
+      if (fC.length) {
+        ops.push(supabase.from('operacional_colaborador_base')
+          .update({ latitude: null, longitude: null })
+          .in('id', fC.map(c => c.id)));
+      }
+      if (fP.length) {
+        ops.push(supabase.from('operacional_pontos_embarque')
+          .update({ latitude: null, longitude: null })
+          .in('id', fP.map(p => p.id)));
+      }
+      const results = await Promise.all(ops);
+      const erros = results.filter(r => r.error);
+      if (erros.length) throw erros[0].error;
+      state.foraDoMapa = { colaboradores: [], pontos: [] };
+      container.classList.add('op-loading');
+      await loadData();
+      container.classList.remove('op-loading');
+      renderShell(container);
+    } catch (err) {
+      console.error('[Operacional] Erro ao limpar coordenadas:', err);
+      if (btn) { btn.disabled = false; btn.textContent = 'Limpar coordenadas inválidas no banco'; }
+    }
   }
 
   async function renderMap(container, rows) {
@@ -557,12 +724,13 @@
     rows.slice(0, 8).forEach((row, index) => {
       if (!Number.isFinite(Number(row.latitude)) || !Number.isFinite(Number(row.longitude))) return;
       const latlng = [Number(row.latitude), Number(row.longitude)];
-      const color = index === 0 ? '#facc15' : '#f59e0b';
+      const isIndicado = isIndicadoNoPonto(state.selectedPontoId, row.id);
+      const color = isIndicado ? '#22c55e' : (index === 0 ? '#facc15' : '#f59e0b');
       const marker = window.L.circleMarker(latlng, {
-        radius: index === 0 ? 9 : 7, color, fillColor: color, fillOpacity: 0.85, weight: 2
-      }).addTo(map).bindPopup(`<strong>${safeText(row.nome)}</strong><br>${safeText(row.tipo_calculado)} · ${row.distancia ?? '-'} km<br>Total: ${money(row.custo_total)}<br>Auditoria: ${Math.round(row.score_auditoria)}% (${row.auditoria_total || 0} aud.)<br>Score: ${row.score_final}`);
+        radius: isIndicado ? 10 : (index === 0 ? 9 : 7), color, fillColor: color, fillOpacity: 0.85, weight: isIndicado ? 3 : 2
+      }).addTo(map).bindPopup(`<strong>${safeText(row.nome)}</strong>${isIndicado ? ' ✓ Indicado' : ''}<br>${safeText(row.tipo_calculado)} · ${row.distancia ?? '-'} km<br>Total: ${money(row.custo_total)}<br>Auditoria: ${Math.round(row.score_auditoria)}% (${row.auditoria_total || 0} aud.)<br>Score: ${row.score_final}`);
       markers.push(marker);
-      window.L.polyline([latlng, center], { color: index === 0 ? '#22c55e' : '#64748b', weight: index === 0 ? 3 : 1.5, opacity: index === 0 ? 0.82 : 0.35 }).addTo(map);
+      window.L.polyline([latlng, center], { color: isIndicado ? '#22c55e' : (index === 0 ? '#22c55e' : '#64748b'), weight: isIndicado ? 3 : (index === 0 ? 3 : 1.5), opacity: isIndicado ? 0.9 : (index === 0 ? 0.82 : 0.35) }).addTo(map);
     });
 
     if (markers.length > 1) {
@@ -573,6 +741,62 @@
     setTimeout(() => map.invalidateSize(), 80);
   }
 
+  function renderTable(rows) {
+    if (!rows.length) return '';
+    const pontoId = state.selectedPontoId;
+    return `
+      <article class="op-card">
+        <div class="op-card-head">
+          <div>
+            <h3>Relação de custo-benefício por colaborador</h3>
+            <p>Ranking gerado com base no ponto de embarque selecionado, custos, distância e histórico de auditoria.</p>
+          </div>
+        </div>
+        <div class="op-table-wrap">
+          <table class="op-table">
+            <thead>
+              <tr>
+                <th>#</th><th>Colaborador</th><th>Tipo</th><th>Base</th><th>Distância</th><th>Hotel sugerido</th><th>Fonte hotel</th><th>Passagem</th><th>Hotel</th><th>Mão de obra</th><th>Alimentação</th><th>Total</th><th>Auditoria</th><th>Histórico</th><th>Score</th><th>Status</th><th>Direcionamento</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((row, index) => {
+                const cls = row.semCoordenada ? 'muted' : scoreClass(row.score_final);
+                const indicado = isIndicadoNoPonto(pontoId, row.id);
+                return `<tr>
+                  <td>${index + 1}</td>
+                  <td>${safeText(row.nome)}</td>
+                  <td>${safeText(row.tipo_calculado)}</td>
+                  <td>${safeText(`${row.cidade_base || '-'}${row.uf_base ? '/' + row.uf_base : ''}`)}</td>
+                  <td>${row.distancia == null ? '-' : row.distancia + ' km'}</td>
+                  <td>${safeText(row.hotel_nome)}${row.hotel_tipo_quarto ? `<br><small>${safeText(row.hotel_tipo_quarto)}${row.hotel_quartos > 1 ? ` · ${row.hotel_quartos} quartos` : ``}</small>` : ``}</td>
+                  <td>${row.hotel_fonte ? `<span class="op-pill ok">${safeText(row.hotel_fonte)}</span>` : `<span class="op-pill muted">Não localizado</span>`}</td>
+                  <td>${money(row.valor_passagem)}</td>
+                  <td>${money(row.valor_hotel)}</td>
+                  <td>${money(row.valor_mao_obra)}</td>
+                  <td>${money(row.valor_alimentacao)}</td>
+                  <td>${money(row.custo_total)}</td>
+                  <td>${Math.round(row.score_auditoria)}%</td>
+                  <td>${row.auditoria_total ? `${row.auditoria_total} aud. · ${row.auditoria_descontos} desc.` : 'Sem histórico'}</td>
+                  <td><span class="op-pill ${cls}">${row.score_final}</span></td>
+                  <td><span class="op-pill ${cls}">${safeText(row.status)}</span></td>
+                  <td>
+                    <button class="op-btn${indicado ? '' : ' secondary'}"
+                            style="padding:5px 12px;min-height:unset;font-size:11px"
+                            data-toggle-indicacao="${safeText(row.id)}"
+                            data-indicado="${indicado}">
+                      ${indicado ? '✓ Indicado' : 'Indicar'}
+                    </button>
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    `;
+  }
+
   function renderShell(container) {
     const rows = calcRanking(container);
     container.innerHTML = `
@@ -580,7 +804,7 @@
         <section class="op-hero">
           <span class="op-kicker">Operacional · Direcionamento de embarque</span>
           <h2>Selecione o ponto de embarque e gere o custo-benefício da equipe</h2>
-          <p>Escolha o local onde surgiu o embarque. O painel compara colaboradores por distância, passagem, hotel, tipo de mão de obra, alimentação e histórico de auditoria.</p>
+          <p>Escolha o local onde surgiu o embarque. O painel compara colaboradores por distância, passagem, hotel, tipo de mão de obra, alimentação e histórico de auditoria. Clique em <strong>Indicar</strong> para direcionar um colaborador ao ponto — ele deixa de aparecer nos demais rankings.</p>
           <div class="op-form">
             <div class="op-field">
               <label>Ponto de embarque</label>
@@ -596,10 +820,11 @@
             <div class="op-field"><label>Buscar colaborador, cidade ou supervisão</label><input id="opBusca" placeholder="Ex.: Carlos, Cascavel, Bahia..." /></div>
           </div>
         </section>
+        <div id="opForaBrasilPlaceholder">${renderOutOfBrazilWarning()}</div>
         <div id="opMetrics">${renderMetrics(rows)}</div>
         <section class="op-layout">
           <article class="op-card">
-            <div class="op-card-head"><div><h3>Mapa real do embarque</h3><p>Mostra ponto selecionado, hotel mais próximo cadastrado e os melhores colaboradores com coordenadas.</p></div></div>
+            <div class="op-card-head"><div><h3>Mapa real do embarque</h3><p>Mostra ponto selecionado, hotel mais próximo e os melhores colaboradores. Indicados aparecem em verde.</p></div></div>
             <div class="op-map" id="opMap"><div class="op-map-empty"><div><strong>Carregando mapa...</strong><span>Aguarde alguns segundos.</span></div></div></div>
           </article>
           <article class="op-card">
@@ -609,16 +834,17 @@
         </section>
         <section class="op-layout">
           <article class="op-card">
-            <div class="op-card-head"><div><h3>Ranking recomendado</h3><p>Ordenado pelo score operacional.</p></div></div>
+            <div class="op-card-head"><div><h3>Ranking recomendado</h3><p>Ordenado pelo score operacional. Colaboradores já direcionados a outro ponto não aparecem aqui.</p></div></div>
             <div class="op-list" id="opRanking">${renderRanking(rows)}</div>
           </article>
           <article class="op-card">
             <div class="op-card-head"><div><h3>Próxima etapa</h3><p>Para o ranking ficar 100% real, a base dos colaboradores precisa ter latitude/longitude e o módulo Hospedagem precisa manter hotéis com cidade/UF e diárias por tipo de quarto.</p></div></div>
             <div class="op-list">
-              <div class="op-alert"><strong>Fluxo correto:</strong><br>1. Importar pontos pelo menu Relatórios.<br>2. Selecionar o ponto aqui no Operacional.<br>3. Informar volume/dias.<br>4. Gerar ranking e direcionar a equipe.</div>
+              <div class="op-alert"><strong>Fluxo correto:</strong><br>1. Importar pontos pelo menu Relatórios.<br>2. Selecionar o ponto aqui no Operacional.<br>3. Informar volume/dias.<br>4. Gerar ranking, clicar em <strong>Indicar</strong> para direcionar a equipe.<br>5. Repetir para cada ponto — o painel distribui automaticamente.</div>
             </div>
           </article>
         </section>
+        <div id="opDirecionamentoPlaceholder">${renderDirecionamentoPanel()}</div>
         <div id="opTable">${renderTable(rows)}</div>
       </div>
     `;
@@ -634,15 +860,53 @@
     container.querySelector('#opMetrics').innerHTML = renderMetrics(rows);
     container.querySelector('#opRanking').innerHTML = renderRanking(rows);
     container.querySelector('#opTable').innerHTML = renderTable(rows);
+    const dirPanel = container.querySelector('#opDirecionamentoPlaceholder');
+    if (dirPanel) dirPanel.innerHTML = renderDirecionamentoPanel();
+    const pontosListEl = container.querySelector('#opPontosList');
+    if (pontosListEl) {
+      pontosListEl.innerHTML = renderPontosList();
+      bindPointClicks(container);
+    }
+    bindIndicacaoClicks(container);
     renderMap(container, rows);
+  }
+
+  function bindIndicacaoClicks(container) {
+    container.querySelectorAll('[data-toggle-indicacao]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const colabId = btn.dataset.toggleIndicacao;
+        const pontoId = state.selectedPontoId;
+        if (btn.dataset.indicado === 'true') {
+          removerIndicacao(pontoId, colabId);
+        } else {
+          indicarColab(pontoId, colabId);
+        }
+        refreshComputed(container);
+      });
+    });
+
+    container.querySelectorAll('[data-remover-indicacao]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        removerIndicacao(btn.dataset.removerIndicacao, btn.dataset.removerColab);
+        refreshComputed(container);
+      });
+    });
+
+    container.querySelector('#opLimparIndicacoes')?.addEventListener('click', () => {
+      state.indicacoes = {};
+      saveIndicacoes();
+      refreshComputed(container);
+    });
+
+    container.querySelector('#opLimparCoords')?.addEventListener('click', () => {
+      limparCoordenadasForaDoBrasil(container);
+    });
   }
 
   function bindEvents(container) {
     container.querySelector('#opPonto')?.addEventListener('change', (ev) => {
       state.selectedPontoId = ev.target.value;
       refreshComputed(container);
-      container.querySelector('#opPontosList').innerHTML = renderPontosList();
-      bindPointClicks(container);
     });
     container.querySelector('#opGerar')?.addEventListener('click', () => refreshComputed(container));
     container.querySelector('#opBusca')?.addEventListener('input', () => refreshComputed(container));
@@ -654,6 +918,7 @@
       renderShell(container);
     });
     bindPointClicks(container);
+    bindIndicacaoClicks(container);
   }
 
   function bindPointClicks(container) {
@@ -663,14 +928,13 @@
         const select = container.querySelector('#opPonto');
         if (select) select.value = state.selectedPontoId;
         refreshComputed(container);
-        container.querySelector('#opPontosList').innerHTML = renderPontosList();
-        bindPointClicks(container);
       });
     });
   }
 
   async function openHome(container) {
     ensureStyles();
+    state.indicacoes = loadIndicacoesFromStorage();
     container.innerHTML = `
       <div class="op-shell">
         <section class="op-hero"><span class="op-kicker">Operacional</span><h2>Carregando mapa de direcionamento...</h2><p>Buscando pontos de embarque, colaboradores, hotéis do módulo Hospedagem, passagens e auditoria no Supabase.</p></section>
