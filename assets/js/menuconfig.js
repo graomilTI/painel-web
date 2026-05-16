@@ -78,6 +78,7 @@ export const MENU_CONFIG = [
   {
     grupo: "FROTAS",
     itens: [
+      item("frotas_dashboard", "Dashboard", "frotas-dashboard", ["FROTAS_DASHBOARD", "DASHBOARD-FROTAS"]),
       item("frotas_excesso_velocidade", "Excesso de Velocidade", "frotas", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE"]),
       item("frotas_veiculos", "Veículos", "frotas-veiculos", ["FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS"]),
       item("frotas_multas", "Multas", "frotas-multas", ["MULTAS", "FROTAS_MULTAS"]),
