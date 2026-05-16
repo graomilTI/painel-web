@@ -462,6 +462,7 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
       list.className = 'menu-list';
 
       section.items.forEach((item) => {
+        if (item.hidden) return;
         const li = document.createElement('li');
         const link = document.createElement('a');
         link.href = buildPanelHref(item.path);
