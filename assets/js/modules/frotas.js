@@ -1971,7 +1971,7 @@
       <section class="frotas-shell">
         <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Histórico</div><h1 class="frotas-title">Histórico do Colaborador</h1><p class="frotas-subtitle">Agrupa automaticamente multas, manutenções e excessos de velocidade pelo colaborador atualmente registrado em cada ocorrência. Se o ADM alterar o colaborador em uma multa, manutenção ou excesso, o histórico passa a aparecer no novo colaborador no próximo carregamento.</p></div></div>
         <div class="frotas-card">
-          <div class="frotas-tabs"><button class="frotas-tab" type="button" data-open-excesso>Excesso de Velocidade</button><button class="frotas-tab" type="button" data-open-veiculos>Veículos</button><button class="frotas-tab" type="button" data-open-multas>Multas</button><button class="frotas-tab active" type="button">Histórico</button></div>
+          <div class="frotas-tabs"><button class="frotas-tab" type="button" data-open-dashboard>Dashboard</button><button class="frotas-tab" type="button" data-open-excesso>Excesso de Velocidade</button><button class="frotas-tab" type="button" data-open-veiculos>Veículos</button><button class="frotas-tab" type="button" data-open-multas>Multas</button><button class="frotas-tab active" type="button">Histórico</button></div>
           <div class="frotas-body">
             <div class="hist-toolbar">
               <input class="speed-input" data-historico-search placeholder="Buscar por colaborador, placa, tipo, status...">
@@ -1987,6 +1987,7 @@
         </div>
       </section>`;
 
+    container.querySelector('[data-open-dashboard]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-dashboard')));
     container.querySelector('[data-open-excesso]')?.addEventListener('click', () => renderExcessoVelocidade(container, opts));
     container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-veiculos')));
     container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-multas')));
@@ -2008,7 +2009,7 @@
       <section class="frotas-shell">
         <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Excesso de Velocidade</h1><p class="frotas-subtitle">Gere as notificações aos colaboradores. Depois, envie os prints em lote: o sistema identifica a placa/OCR e salva cada arquivo na pasta do motorista correspondente no Drive.</p></div></div>
         <div class="frotas-card">
-          <div class="frotas-tabs"><button class="frotas-tab active" type="button">Excesso de Velocidade</button><button class="frotas-tab" type="button" data-open-veiculos>Veículos</button><button class="frotas-tab" type="button" data-open-multas>Multas</button><button class="frotas-tab" type="button" data-open-historico>Histórico</button></div>
+          <div class="frotas-tabs"><button class="frotas-tab" type="button" data-open-dashboard>Dashboard</button><button class="frotas-tab active" type="button">Excesso de Velocidade</button><button class="frotas-tab" type="button" data-open-veiculos>Veículos</button><button class="frotas-tab" type="button" data-open-multas>Multas</button><button class="frotas-tab" type="button" data-open-historico>Histórico</button></div>
           <div class="frotas-body">
             <div class="speed-grid">
               <div class="speed-panel">
@@ -2071,6 +2072,7 @@
     container.querySelector('[data-sync-bfleet-excessos]')?.addEventListener('click', () => sincronizarRelatorioBFleet(container, opts, 'yesterday'));
     container.querySelector('[data-sync-bfleet-period]')?.addEventListener('click', () => sincronizarRelatorioBFleet(container, opts, 'period'));
     container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
+    container.querySelector('[data-open-dashboard]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-dashboard')));
     container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-veiculos')));
     container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-multas')));
     container.querySelector('[data-open-historico]')?.addEventListener('click', () => renderHistoricoFrotas(container, opts));
