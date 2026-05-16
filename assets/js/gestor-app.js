@@ -843,6 +843,28 @@ async function saveOsStatus(id, status) {
     }).eq('id', id);
     if (error) throw error;
 
+    if (status === 'ATENDER' && colabKeys.length) {
+      const dataOs = String(os.data_os || '').slice(0, 10);
+      if (dataOs && os.supervisao) {
+        try {
+          const { data: progDia } = await supabase
+            .from('programacao_dia')
+            .select('id')
+            .eq('data_referencia', dataOs)
+            .eq('supervisao', os.supervisao)
+            .maybeSingle();
+          if (progDia?.id) {
+            await supabase
+              .from('programacao_colaboradores')
+              .update({ disponibilidade: 'OK' })
+              .eq('programacao_id', progDia.id)
+              .in('colaborador_id', colabKeys)
+              .eq('disponibilidade', 'SEM EMBARQUE');
+          }
+        } catch (_) {}
+      }
+    }
+
     clearCache();
     await loadData({ useCache: false });
     renderOs(document.getElementById('appMain'));
