@@ -139,6 +139,7 @@ export const MENU_CONFIG = [
       item("diretoria_dre", "DRE", "dre", ["DRE", "DIRETORIA_DRE"]),
       item("diretoria_metas", "METAS", "metas", ["METAS", "DIRETORIA_METAS"]),
       item("diretoria_desempenho", "Desempenho", "desempenho", ["DESEMPENHO", "DIRETORIA_DESEMPENHO"]),
+      item("diretoria_contato_cliente", "Contato Cliente", "contato-cliente", ["DIRETORIA_CONTATO_CLIENTE"]),
       item("usuarios_acessos", "Usuários e Acessos", "admin-usuarios", ["ADMIN_USUARIOS", "USUARIOS_E_ACESSOS"]),
       item("admin_config", "Configurações", "admin-configuracoes", ["ADMIN_CONFIG"])
     ]
