@@ -146,7 +146,9 @@ initProtectedPage('Notificações', async (content, userContext) => {
   let engine;
 
   try {
-    engine = await initNotificacoesEngine(userContext);
+    // Reutiliza o engine já inicializado pelo layout, se disponível
+    engine = window.__painelNotifEngine || await initNotificacoesEngine(userContext);
+    if (!window.__painelNotifEngine) window.__painelNotifEngine = engine;
   } catch (err) {
     document.getElementById('pnList').innerHTML = `<div class="pn-empty">Erro ao carregar notificações: ${esc(err?.message)}</div>`;
     return;
