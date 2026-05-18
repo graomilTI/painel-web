@@ -319,7 +319,7 @@ function ensureProgramacaoBlockStyle() {
       box-shadow:inset 3px 0 0 #ef4444;
     }
     .menu-list a.os-pending-blocked::after{
-      content:'OS pendente';
+      content:attr(data-block-label);
       display:inline-flex;
       margin-left:8px;
       padding:2px 6px;
@@ -358,16 +358,37 @@ async function markProgramacaoIfOsPending(container, userContext) {
     }
 
     const { data, error } = await query.limit(1);
-    if (error || !Array.isArray(data) || !data.length) return;
-    ensureProgramacaoBlockStyle();
-    programacaoLink.classList.add('os-pending-blocked');
-    programacaoLink.title = 'Existem O.S. pendentes. Ajuste o submenu OS antes de acessar Programação.';
-    if (!programacaoLink.dataset.osPendingBound) {
+    if (!error && Array.isArray(data) && data.length) {
+      ensureProgramacaoBlockStyle();
+      programacaoLink.classList.add('os-pending-blocked');
+      programacaoLink.dataset.blockLabel = 'OS pendente';
+      programacaoLink.dataset.blockTarget = 'os';
+      programacaoLink.title = 'Existem O.S. pendentes. Ajuste o submenu OS antes de acessar Programação.';
+    }
+
+    const { data: fobData, error: fobError } = await supabase
+      .from('logistica_fob')
+      .select('id')
+      .eq('status', 'PENDENTE')
+      .lt('data_referencia', today)
+      .limit(1);
+    if (!fobError && Array.isArray(fobData) && fobData.length) {
+      ensureProgramacaoBlockStyle();
+      programacaoLink.classList.add('os-pending-blocked');
+      programacaoLink.dataset.blockLabel = 'FOB pendente';
+      programacaoLink.dataset.blockTarget = 'adm-logistica#fob';
+      programacaoLink.title = 'Existem FOBs anteriores sem validação. Valide no menu Logística > FOB antes de acessar Programação.';
+    }
+
+    if (programacaoLink.classList.contains('os-pending-blocked') && !programacaoLink.dataset.osPendingBound) {
       programacaoLink.addEventListener('click', (event) => {
         if (!programacaoLink.classList.contains('os-pending-blocked')) return;
         event.preventDefault();
-        alert('Antes de acessar Programação, ajuste as O.S. pendentes no submenu OS.');
-        window.location.href = buildPanelHref('os');
+        const isFob = (programacaoLink.dataset.blockTarget || '').includes('logistica');
+        alert(isFob
+          ? 'Antes de acessar Programação, valide todos os FOBs pendentes no menu Logística > FOB.'
+          : 'Antes de acessar Programação, ajuste as O.S. pendentes no submenu OS.');
+        window.location.href = isFob ? buildPanelHref('adm-logistica#fob') : buildPanelHref('os');
       });
       programacaoLink.dataset.osPendingBound = '1';
     }

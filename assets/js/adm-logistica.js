@@ -41,6 +41,7 @@ const state = {
   fobReportRows: [],
   fobReportStats: null,
   fobReportFiles: { uploads: [], movimento: null, producao: null, nhe: null },
+  colaboradoresFob: [],
   os: [],
   atribuicoes: [],
   alertas: [],
@@ -322,31 +323,33 @@ initProtectedPage('Painel de Logística', async (content) => {
         </div>
         <div id="fobDetectedFiles" class="log-note" style="margin-top:12px">Nenhum arquivo selecionado.</div>
         <div class="log-inline-actions mt-16">
-          <button id="fobGerarRelatorio" class="btn btn-primary" type="button">Gerar relatório FOB</button>
-          <button id="fobSalvarPendentes" class="btn btn-secondary" type="button" disabled>Salvar pendentes no painel</button>
+          <button id="fobGerarRelatorio" class="btn btn-primary" type="button">Gerar e salvar FOB</button>
+          <button id="fobSalvarPendentes" class="btn btn-secondary" type="button" disabled>Salvar/atualizar no painel</button>
           <button id="fobExportCsv" class="btn btn-secondary" type="button" disabled>Baixar CSV</button>
           <button id="fobLimparImportacao" class="btn btn-secondary" type="button">Limpar importação</button>
         </div>
-        <div class="log-note">Regra aplicada: entra no FOB toda O.S. do mapa com <strong>Tons Hoje = 0</strong>. Status <strong>OK</strong> quando há NHE por O.S./data ou Produção com Cargas = NHE; <strong>DOIS EMBARQUES</strong> quando a mesma combinação Cliente + Cidade + Local + Data aparece 2+ vezes no mapa ou também no NHE; senão fica <strong>PENDENTE</strong>.</div>
+        <div class="log-note">Regra aplicada: entra no FOB toda O.S. do mapa com <strong>Tons Hoje = 0</strong>. Status <strong>OK</strong> somente quando há NHE na mesma O.S. e mesma Data, ou Produção na mesma O.S. e mesma Data com Cargas = NHE; <strong>DOIS EMBARQUES</strong> quando a mesma combinação Cliente + Cidade + Local + Data aparece 2+ vezes no mapa ou também no NHE na mesma data; senão fica <strong>PENDENTE</strong>.</div>
       </div>
 
       <div id="fobReportResult" class="mt-16"></div>
 
-      <details class="card mt-16 log-subcard">
-        <summary style="cursor:pointer;font-weight:950;color:#bbf7d0">Lançamento manual / histórico de validação</summary>
+      <details class="card mt-16 log-subcard" open>
+        <summary style="cursor:pointer;font-weight:950;color:#bbf7d0">Histórico de FOB / validação do gestor</summary>
         <div class="card mt-16">
-          <h4 style="margin:0 0 14px;color:#bbf7d0">Registrar FOB 0 manualmente</h4>
+          <h4 style="margin:0 0 14px;color:#bbf7d0">Adicionar FOB manualmente</h4>
           <div class="filters-grid log-grid" style="grid-template-columns:repeat(3,minmax(140px,1fr))">
             <div class="field"><label>Data *</label><input id="fobData" class="log-input" type="date" /></div>
-            <div class="field"><label>O.S. (opcional)</label><input id="fobOs" class="log-input" type="text" placeholder="Número da OS" /></div>
-            <div class="field"><label>Supervisão</label><input id="fobSup" class="log-input" type="text" placeholder="Regional" /></div>
-            <div class="field"><label>Cliente</label><input id="fobCliente" class="log-input" type="text" placeholder="Nome do cliente" /></div>
-            <div class="field"><label>Tons mov. diária</label><input id="fobMov" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
-            <div class="field"><label>Tons prod. diária</label><input id="fobProd" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
-            <div class="field"><label>Tons NH</label><input id="fobNh" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
-            <div class="field" style="grid-column:span 2"><label>Observação</label><textarea id="fobObs" class="log-input log-textarea" placeholder="Motivo do FOB 0, referência do NH, detalhes da comparação..."></textarea></div>
+            <div class="field"><label>O.S. *</label><input id="fobOs" class="log-input" type="text" placeholder="Número da OS" /></div>
+            <div class="field" style="align-self:end"><button id="fobBuscarOs" class="btn btn-secondary" type="button">Buscar OS</button></div>
+            <div class="field"><label>Supervisão</label><input id="fobSup" class="log-input" type="text" placeholder="Puxado da OS" /></div>
+            <div class="field"><label>Cliente</label><input id="fobCliente" class="log-input" type="text" placeholder="Puxado da OS" /></div>
+            <div class="field"><label>Local / Embarque</label><input id="fobLocal" class="log-input" type="text" placeholder="Puxado da OS" /></div>
+            <div class="field"><label>Colaborador *</label><input id="fobFuncionario" class="log-input" list="fobColaboradoresList" type="text" placeholder="Digite para localizar" /></div>
+            <div class="field"><label>Motivo *</label><input id="fobMotivo" class="log-input" type="text" placeholder="Motivo do FOB" /></div>
+            <div class="field" style="grid-column:span 3"><label>Observação</label><textarea id="fobObs" class="log-input log-textarea" placeholder="Detalhes adicionais..."></textarea></div>
           </div>
-          <div class="mt-16"><button id="fobSalvar" class="btn btn-primary" type="button">Registrar FOB 0</button></div>
+          <datalist id="fobColaboradoresList"></datalist>
+          <div class="mt-16"><button id="fobSalvar" class="btn btn-primary" type="button">+ Adicionar FOB</button></div>
         </div>
         <div id="fobList" class="mt-16"></div>
       </details>
@@ -698,6 +701,7 @@ initProtectedPage('Painel de Logística', async (content) => {
   const ICO_X     = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 
   async function loadFob() {
+    await loadColaboradoresFob().catch(() => null);
     const list = document.getElementById('fobList');
     if (list) list.innerHTML = '<div class="log-empty">Carregando...</div>';
     const { data, error } = await supabase
@@ -716,32 +720,40 @@ initProtectedPage('Painel de Logística', async (content) => {
     const list = document.getElementById('fobList');
     if (!list) return;
 
-    const pendentes  = state.fob.filter((r) => r.status === 'PENDENTE');
-    const historico  = state.fob.filter((r) => r.status !== 'PENDENTE');
+    const pendentes = state.fob.filter((r) => r.status === 'PENDENTE');
+    const historico = state.fob.filter((r) => r.status !== 'PENDENTE');
+
+    function compBadge(r) {
+      const st = r.status_comparacao || r.status_origem || 'PENDENTE';
+      if (st === 'OK') return badge('Comparação OK', 'ok');
+      if (st === 'DOIS EMBARQUES') return badge('Dois embarques', 'warn');
+      return badge('Comparação pendente', 'danger');
+    }
 
     function fobRow(r) {
       const isPendente = r.status === 'PENDENTE';
+      const novo = r.visualizado === false || r.visualizado == null;
       const stBadge = isPendente
-        ? badge('Pendente', 'warn')
+        ? badge(novo ? 'Não visualizado' : 'Pendente', 'warn')
         : r.status === 'VALIDO'
-          ? badge('Válido', 'ok')
-          : badge('Inválido', 'danger');
-      return `<tr data-fob-id="${esc(r.id)}">
+          ? badge('FOB válida', 'ok')
+          : badge('FOB inválida', 'danger');
+      const motivo = r.motivo || r.observacao || r.observacao_logistica || '-';
+      return `<tr data-fob-id="${esc(r.id)}" class="${novo && isPendente ? 'log-fob-unread' : ''}" style="${novo && isPendente ? 'background:rgba(148,163,184,.10)' : ''}">
         <td><div class="log-title">${brDate(r.data_referencia)}</div><div class="log-meta">${esc(r.supervisao || '-')}</div></td>
-        <td><div class="log-title">${esc(r.cliente || '-')}</div><div class="log-meta">OS: ${esc(r.numero_os || '-')}</div></td>
+        <td><div class="log-title">${esc(r.cliente || '-')}</div><div class="log-meta">OS: ${esc(r.numero_os || '-')}</div><div class="log-meta">Local: ${esc(r.local_embarque || r.cidade || '-')}</div></td>
+        <td><div class="log-title">${esc(r.funcionario || '-')}</div><div class="log-meta">${esc(motivo)}</div></td>
         <td>
-          <div class="log-meta">Mov.: <b>${BR_NUM.format(numberBr(r.tons_movimento))}</b></div>
-          <div class="log-meta">Prod.: <b>${BR_NUM.format(numberBr(r.tons_producao))}</b></div>
-          <div class="log-meta">NH: <b>${BR_NUM.format(numberBr(r.tons_nh))}</b></div>
+          ${compBadge(r)}
+          <div class="log-meta">Mov.: <b>${BR_NUM.format(numberBr(r.tons_movimento))}</b> · Prod.: <b>${BR_NUM.format(numberBr(r.tons_producao))}</b> · NHE: <b>${BR_NUM.format(numberBr(r.tons_nh))}</b></div>
         </td>
-        <td><div class="log-meta" style="max-width:220px">${esc(r.observacao || '-')}</div></td>
         <td>${stBadge}${r.observacao_gestor ? `<div class="log-meta" style="margin-top:4px">${esc(r.observacao_gestor)}</div>` : ''}${!isPendente && r.validado_em ? `<div class="log-meta">${brDate(r.validado_em, true)}</div>` : ''}</td>
         <td>
           ${isPendente ? `
-            <textarea class="log-input log-textarea" data-fob-obs-gestor style="min-height:46px;font-size:12px;margin-bottom:6px" placeholder="Observação (opcional)"></textarea>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-primary" data-fob-valido="${esc(r.id)}" title="Válido — FOB 0 confirmado" type="button">${ICO_CHECK}</button>
-              <button class="btn" style="background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.45);color:#fca5a5" data-fob-invalido="${esc(r.id)}" title="Inválido — houve embarque" type="button">${ICO_X}</button>
+            <textarea class="log-input log-textarea" data-fob-obs-gestor style="min-height:46px;font-size:12px;margin-bottom:6px" placeholder="Observação do gestor (opcional)"></textarea>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-primary" data-fob-valido="${esc(r.id)}" title="Check — FOB válida" type="button">${ICO_CHECK}</button>
+              <button class="btn" style="background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.45);color:#fca5a5" data-fob-invalido="${esc(r.id)}" title="X — FOB inválida" type="button">${ICO_X}</button>
             </div>
           ` : '—'}
         </td>
@@ -749,25 +761,25 @@ initProtectedPage('Painel de Logística', async (content) => {
     }
 
     if (!state.fob.length) {
-      list.innerHTML = '<div class="log-empty">Nenhum FOB 0 registrado ainda.</div>';
+      list.innerHTML = '<div class="log-empty">Nenhum FOB registrado ainda.</div>';
       return;
     }
 
     list.innerHTML = `
       ${pendentes.length ? `
-        <h4 style="color:#fde68a;margin:0 0 10px">Pendentes de validação (${pendentes.length})</h4>
+        <h4 style="color:#fde68a;margin:0 0 10px">FOBs aguardando validação do gestor (${pendentes.length})</h4>
         <div class="log-table-wrap">
           <table class="log-table">
-            <thead><tr><th>Data</th><th>Cliente / OS</th><th>Toneladas</th><th>Observação log.</th><th>Status</th><th>Ação gestor</th></tr></thead>
+            <thead><tr><th>Data</th><th>Cliente / OS</th><th>Colaborador / Motivo</th><th>Comparação</th><th>Status gestor</th><th>Ação</th></tr></thead>
             <tbody>${pendentes.map(fobRow).join('')}</tbody>
           </table>
         </div>
-      ` : '<div class="log-empty">Nenhum FOB 0 pendente de validação.</div>'}
+      ` : '<div class="log-empty">Nenhum FOB pendente de validação.</div>'}
       ${historico.length ? `
         <h4 style="margin:24px 0 10px">Histórico validado (${historico.length})</h4>
         <div class="log-table-wrap">
           <table class="log-table">
-            <thead><tr><th>Data</th><th>Cliente / OS</th><th>Toneladas</th><th>Observação log.</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Data</th><th>Cliente / OS</th><th>Colaborador / Motivo</th><th>Comparação</th><th>Status gestor</th><th></th></tr></thead>
             <tbody>${historico.map(fobRow).join('')}</tbody>
           </table>
         </div>
@@ -775,30 +787,84 @@ initProtectedPage('Painel de Logística', async (content) => {
     `;
   }
 
+  async function loadColaboradoresFob() {
+    if (state.colaboradoresFob?.length) return state.colaboradoresFob;
+    const { data } = await supabase
+      .from('colaborador_snapshot')
+      .select('nome,cpf,supervisao,coordenacao,data_referencia')
+      .order('data_referencia', { ascending: false })
+      .limit(2000);
+    const seen = new Set();
+    state.colaboradoresFob = safeArray(data).filter((r) => {
+      const key = normalize(r.cpf || r.nome);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const dl = document.getElementById('fobColaboradoresList');
+    if (dl) dl.innerHTML = state.colaboradoresFob.map((c) => `<option value="${esc(c.nome)}">${esc([c.cpf, c.supervisao].filter(Boolean).join(' · '))}</option>`).join('');
+    return state.colaboradoresFob;
+  }
+
+  async function buscarOsParaFob() {
+    const os = document.getElementById('fobOs')?.value?.trim();
+    if (!os) { el.feedback.textContent = 'Informe a O.S. para buscar.'; return; }
+    const btn = document.getElementById('fobBuscarOs');
+    if (btn) { btn.disabled = true; btn.textContent = 'Buscando...'; }
+    try {
+      const { data, error } = await supabase
+        .from('operacional_os')
+        .select('numero_os,data_os,cliente,supervisao,embarque,destino,remanescente,servico,produto')
+        .eq('numero_os', os)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) { el.feedback.textContent = 'O.S. não encontrada no banco operacional.'; return; }
+      const set = (id, value) => { const node = document.getElementById(id); if (node && !node.value) node.value = value || ''; };
+      set('fobData', data.data_os || new Date().toISOString().slice(0, 10));
+      set('fobSup', data.supervisao || '');
+      set('fobCliente', data.cliente || '');
+      set('fobLocal', data.embarque || data.destino || '');
+      el.feedback.textContent = `O.S. ${os} carregada para lançamento de FOB.`;
+    } catch (error) {
+      el.feedback.textContent = error.message || 'Erro ao buscar O.S.';
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Buscar OS'; }
+    }
+  }
+
   async function salvarFob() {
+    await loadColaboradoresFob();
     const dataVal = document.getElementById('fobData')?.value;
-    if (!dataVal) { el.feedback.textContent = 'Informe a data do FOB 0.'; return; }
+    const numeroOs = document.getElementById('fobOs')?.value?.trim();
+    const funcionario = document.getElementById('fobFuncionario')?.value?.trim();
+    const motivo = document.getElementById('fobMotivo')?.value?.trim();
+    if (!dataVal) { el.feedback.textContent = 'Informe a data do FOB.'; return; }
+    if (!numeroOs) { el.feedback.textContent = 'Informe a O.S. do FOB.'; return; }
+    if (!funcionario) { el.feedback.textContent = 'Informe o colaborador do FOB.'; return; }
+    if (!motivo) { el.feedback.textContent = 'Informe o motivo do FOB.'; return; }
     const btn = document.getElementById('fobSalvar');
     btn.disabled = true; btn.textContent = 'Salvando...';
-    const { error } = await supabase.from('logistica_fob').insert({
-      data_referencia: dataVal,
-      numero_os:   document.getElementById('fobOs')?.value?.trim()    || null,
-      supervisao:  document.getElementById('fobSup')?.value?.trim()   || null,
-      cliente:     document.getElementById('fobCliente')?.value?.trim() || null,
-      tons_movimento: Number(document.getElementById('fobMov')?.value)  || 0,
-      tons_producao:  Number(document.getElementById('fobProd')?.value) || 0,
-      tons_nh:        Number(document.getElementById('fobNh')?.value)   || 0,
-      observacao:  document.getElementById('fobObs')?.value?.trim()   || null,
-      status:      'PENDENTE',
-      criado_por:  state.user?.id || null,
-    });
-    btn.disabled = false; btn.textContent = 'Registrar FOB 0';
+    const payload = [{
+      data: dataVal,
+      os: numeroOs,
+      supervisao: document.getElementById('fobSup')?.value?.trim() || null,
+      cliente: document.getElementById('fobCliente')?.value?.trim() || null,
+      funcionario,
+      cidade: null,
+      local: document.getElementById('fobLocal')?.value?.trim() || null,
+      status: 'PENDENTE',
+      motivo,
+      observacao: document.getElementById('fobObs')?.value?.trim() || motivo,
+      origem: 'MANUAL_GESTOR',
+    }];
+    const { error } = await supabase.rpc('salvar_logistica_fob_importacao', { p_linhas: payload });
+    btn.disabled = false; btn.textContent = '+ Adicionar FOB';
     if (error) { el.feedback.textContent = error.message; return; }
-    ['fobOs','fobSup','fobCliente','fobMov','fobProd','fobNh','fobObs'].forEach((id) => {
+    ['fobOs','fobSup','fobCliente','fobLocal','fobFuncionario','fobMotivo','fobObs'].forEach((id) => {
       const inp = document.getElementById(id);
       if (inp) inp.value = '';
     });
-    el.feedback.textContent = 'FOB 0 registrado. Aguardando validação do gestor.';
+    el.feedback.textContent = 'FOB registrado. Aguardando validação do gestor.';
     state.fobLoaded = false;
     await loadFob();
   }
@@ -814,11 +880,12 @@ initProtectedPage('Painel de Logística', async (content) => {
       observacao_gestor,
       validado_por: state.user?.id || null,
       validado_em:  now,
+      visualizado: true,
       updated_at:   now,
     }).eq('id', id);
     if (error) { el.feedback.textContent = error.message; triggerBtn.disabled = false; return; }
     const idx = state.fob.findIndex((r) => String(r.id) === String(id));
-    if (idx !== -1) Object.assign(state.fob[idx], { status, observacao_gestor, validado_em: now });
+    if (idx !== -1) Object.assign(state.fob[idx], { status, observacao_gestor, validado_em: now, visualizado: true });
     renderFob();
     el.feedback.textContent = `FOB 0 marcado como ${status === 'VALIDO' ? 'Válido ✓' : 'Inválido ✗'}.`;
   }
@@ -1042,12 +1109,10 @@ initProtectedPage('Painel de Logística', async (content) => {
       const nheData = classified.nhe.detected;
 
       const setNheOsData = new Set();
-      const setNheOsOnly = new Set();
       const setNheCcld = new Set();
       nheData.rows.forEach((row) => {
         const os = normOs(pickValue(row, ['O.S.', 'OS', 'O.S', 'O S']));
         const data = ymd(pickValue(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
-        if (os) setNheOsOnly.add(os);
         if (os && data) setNheOsData.add(`${os}|${data}`);
         const cli = pickValue(row, ['Cliente']);
         const cid = pickValue(row, ['Cidade de Embarque', 'Cidade']);
@@ -1056,13 +1121,11 @@ initProtectedPage('Painel de Logística', async (content) => {
       });
 
       const setProdNheOsData = new Set();
-      const setProdNheOsOnly = new Set();
       prodData.rows.forEach((row) => {
         const os = normOs(pickValue(row, ['O.S.', 'OS']));
         const data = ymd(pickValue(row, ['Data']));
         const cargas = normText(pickValue(row, ['Cargas']));
         if (!os || cargas !== 'NHE') return;
-        setProdNheOsOnly.add(os);
         if (data) setProdNheOsData.add(`${os}|${data}`);
       });
 
@@ -1089,8 +1152,9 @@ initProtectedPage('Painel de Logística', async (content) => {
         const local = pickValue(row, ['Local', 'Local de Embarque']);
         const keyOsData = `${os}|${data}`;
         let status = 'PENDENTE';
-        const okNhe = setNheOsData.has(keyOsData) || setNheOsOnly.has(os);
-        const okProd = setProdNheOsData.has(keyOsData) || setProdNheOsOnly.has(os);
+        // Correspondência obrigatória por DATA: não usa mais fallback apenas por OS.
+        const okNhe = setNheOsData.has(keyOsData);
+        const okProd = setProdNheOsData.has(keyOsData);
         if (okNhe || okProd) {
           status = 'OK';
         } else {
@@ -1133,7 +1197,8 @@ initProtectedPage('Painel de Logística', async (content) => {
         dois: rows.filter((r) => r.status === 'DOIS EMBARQUES').length,
       };
       renderFobReport();
-      el.feedback.textContent = `Relatório FOB gerado: ${rows.length} linha(s), ${state.fobReportStats.pendentes} pendente(s).`;
+      await salvarPendentesFobImportado({ silent: true });
+      el.feedback.textContent = `Relatório FOB gerado e salvo no histórico: ${rows.length} linha(s), ${state.fobReportStats.pendentes} pendente(s).`;
     } catch (error) {
       console.error('[FOB comparação]', error);
       el.feedback.textContent = `Falha ao gerar FOB: ${error.message || 'erro desconhecido'}`;
@@ -1150,9 +1215,9 @@ initProtectedPage('Painel de Logística', async (content) => {
     const btnCsv = document.getElementById('fobExportCsv');
     const btnSave = document.getElementById('fobSalvarPendentes');
     if (btnCsv) btnCsv.disabled = !rows.length;
-    if (btnSave) btnSave.disabled = !rows.some((r) => r.status === 'PENDENTE');
+    if (btnSave) btnSave.disabled = !rows.length;
     if (!rows.length) {
-      box.innerHTML = '<div class="log-empty">Anexe os arquivos e clique em <strong>Gerar relatório FOB</strong> para visualizar a comparação.</div>';
+      box.innerHTML = '<div class="log-empty">Anexe os arquivos e clique em <strong>Gerar e salvar FOB</strong> para gravar a comparação no histórico.</div>';
       return;
     }
     const preview = rows.slice(0, 250);
@@ -1163,6 +1228,7 @@ initProtectedPage('Painel de Logística', async (content) => {
             <h3>Resultado da comparação FOB</h3>
             <p class="muted">Arquivos identificados: Mov./Mapa <b>${esc(stats?.arquivoMovimento || '-')}</b> · Produção <b>${esc(stats?.arquivoProducao || '-')}</b> · NHE <b>${esc(stats?.arquivoNhe || '-')}</b></p>
             <p class="muted">Abas usadas: Mov./Mapa <b>${esc(stats?.abaMovimento || '-')}</b> · Produção <b>${esc(stats?.abaProducao || '-')}</b> · NHE <b>${esc(stats?.abaNhe || '-')}</b></p>
+            <p class="muted"><strong>Comparação por data:</strong> a O.S. só fica OK quando a confirmação estiver na mesma data do mapa.</p>
           </div>
         </div>
         <div class="log-mini-grid mt-16">
@@ -1208,14 +1274,14 @@ initProtectedPage('Painel de Logística', async (content) => {
     URL.revokeObjectURL(url);
   }
 
-  async function salvarPendentesFobImportado() {
-    const pendentes = (state.fobReportRows || []).filter((r) => r.status === 'PENDENTE');
-    if (!pendentes.length) { el.feedback.textContent = 'Nenhuma pendência para salvar.'; return; }
+  async function salvarPendentesFobImportado(options = {}) {
+    const rows = state.fobReportRows || [];
+    if (!rows.length) { el.feedback.textContent = 'Nenhum FOB para salvar.'; return; }
     const btn = document.getElementById('fobSalvarPendentes');
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
     try {
       const stats = state.fobReportStats || {};
-      const payloadRpc = pendentes.map((r) => ({
+      const payloadRpc = rows.map((r) => ({
         data: r.data,
         os: r.os || null,
         cliente: r.cliente || null,
@@ -1224,6 +1290,7 @@ initProtectedPage('Painel de Logística', async (content) => {
         cidade: r.cidade || null,
         local: r.local || null,
         status: r.status || 'PENDENTE',
+        motivo: r.status === 'OK' ? 'FOB confirmado por NHE/Produção na mesma data' : r.status === 'DOIS EMBARQUES' ? 'Possível dois embarques na mesma data' : 'FOB pendente sem confirmação na mesma data',
         observacao: r.observacao || null,
         tons_movimento: r.tons_movimento || 0,
         tons_producao: 0,
@@ -1231,37 +1298,19 @@ initProtectedPage('Painel de Logística', async (content) => {
         arquivo_movimentacao: stats.arquivoMovimento || null,
         arquivo_producao: stats.arquivoProducao || null,
         arquivo_nhe: stats.arquivoNhe || null,
+        origem: 'IMPORTACAO_FOB',
       }));
       const { data: rpcData, error: rpcError } = await supabase.rpc('salvar_logistica_fob_importacao', { p_linhas: payloadRpc });
-      if (rpcError) {
-        console.warn('[FOB RPC fallback]', rpcError);
-        const payloadFallback = pendentes.map((r) => ({
-          data_referencia: r.data,
-          numero_os: r.os || null,
-          supervisao: r.supervisao || null,
-          cliente: r.cliente || null,
-          tons_movimento: r.tons_movimento || 0,
-          tons_producao: 0,
-          tons_nh: 0,
-          observacao: [r.observacao, `Gerado por importação FOB. Local: ${r.cidade || '-'} / ${r.local || '-'}`].filter(Boolean).join(' | '),
-          status: 'PENDENTE',
-          criado_por: state.user?.id || null,
-        }));
-        for (let i = 0; i < payloadFallback.length; i += 300) {
-          const chunk = payloadFallback.slice(i, i + 300);
-          const { error } = await supabase.from('logistica_fob').insert(chunk);
-          if (error) throw error;
-        }
-      }
-      const saved = Number(rpcData?.total_salvo || pendentes.length);
-      el.feedback.textContent = `${saved} pendência(s) FOB salvas no painel.`;
+      if (rpcError) throw rpcError;
+      const saved = Number(rpcData?.total_salvo || rows.length);
+      if (!options.silent) el.feedback.textContent = `${saved} FOB(s) salvos/atualizados no painel.`;
       state.fobLoaded = false;
       await loadFob();
     } catch (error) {
-      console.error('[FOB salvar pendentes]', error);
-      el.feedback.textContent = `Falha ao salvar pendências: ${error.message || 'erro desconhecido'}`;
+      console.error('[FOB salvar]', error);
+      el.feedback.textContent = `Falha ao salvar FOB: ${error.message || 'erro desconhecido'}`;
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Salvar pendentes no painel'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Salvar/atualizar no painel'; }
     }
   }
 
@@ -1444,6 +1493,7 @@ initProtectedPage('Painel de Logística', async (content) => {
   async function onClick(event) {
     // FOB 0 — form salvar
     if (event.target.closest('#fobSalvar')) { await salvarFob(); return; }
+    if (event.target.closest('#fobBuscarOs')) { await buscarOsParaFob(); return; }
     if (event.target.closest('#fobReload')) { state.fobLoaded = false; await loadFob(); return; }
     if (event.target.closest('#fobGerarRelatorio')) { await gerarRelatorioFobPorPlanilhas(); return; }
     if (event.target.closest('#fobSalvarPendentes')) { await salvarPendentesFobImportado(); return; }

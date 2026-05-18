@@ -459,6 +459,30 @@ initProtectedPage('Programação', (content) => {
     return row.status_gestor === 'AGUARDAR' && !row.configurada_em;
   }
 
+  async function checkFobPendenciasBloqueantes(dataReferencia, supervisao) {
+    if (!dataReferencia) return [];
+    let query = supabase
+      .from('logistica_fob')
+      .select('id,data_referencia,numero_os,cliente,supervisao,funcionario,motivo,observacao,status')
+      .eq('status', 'PENDENTE')
+      .lt('data_referencia', dataReferencia)
+      .order('data_referencia', { ascending: false })
+      .limit(50);
+    if (supervisao) query = query.eq('supervisao', supervisao);
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Não foi possível validar pendências de FOB.', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  function showFobBlockedMessage(rows) {
+    const detalhes = rows.slice(0, 5).map((r) => `OS ${r.numero_os || '-'} • ${brDate(r.data_referencia)} • ${r.cliente || '-'}`).join(' | ');
+    setFeedback(`Programação bloqueada: existem ${rows.length} FOB(s) anteriores sem validação do gestor. Valide na aba Logística > FOB. ${detalhes}`, 'error');
+    el.list.innerHTML = `<div class="table-empty">Programação bloqueada por FOB pendente de validação.<br>Abra <strong>Logística &gt; FOB</strong>, marque todos como válidos ou inválidos e carregue novamente.</div>`;
+  }
+
   async function checkOsPendingPopup() {
     try {
       const selectedSup = el.sup?.value || '';
@@ -964,6 +988,13 @@ initProtectedPage('Programação', (content) => {
     const allowedNow = filterAllowedSupervisoes([supervisao], state.access);
     if (state.access?.restricted && !allowedNow.includes(supervisao)) {
       setFeedback('Esta supervisão não está liberada para o seu usuário.', 'error');
+      return;
+    }
+
+    const fobsPendentes = await checkFobPendenciasBloqueantes(dataReferencia, supervisao);
+    if (fobsPendentes.length) {
+      showFobBlockedMessage(fobsPendentes);
+      el.saveBtn.disabled = true;
       return;
     }
 
@@ -1789,6 +1820,12 @@ initProtectedPage('Programação', (content) => {
   async function saveProgramacao() {
     if (!state.programacaoId) {
       setFeedback('Carregue um contexto antes de salvar a programação.', 'warn');
+      return;
+    }
+
+    const fobsPendentes = await checkFobPendenciasBloqueantes(state.dataReferencia, state.supervisao);
+    if (fobsPendentes.length) {
+      showFobBlockedMessage(fobsPendentes);
       return;
     }
 
