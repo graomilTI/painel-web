@@ -7,27 +7,6 @@ function brDate(v) { if (!v) return '-'; const [y,m,d] = String(v).slice(0,10).s
 function esc(v) { return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
 function safe(d) { return Array.isArray(d) ? d : []; }
 function todayISO() { return new Date().toISOString().slice(0,10); }
-function splitSupervisoes(value) {
-  if (Array.isArray(value)) return value.flatMap(splitSupervisoes);
-  return String(value ?? '')
-    .split(/[;,|]/)
-    .map(v => v.trim())
-    .filter(Boolean);
-}
-function uniqueList(list) {
-  const seen = new Set();
-  return list.filter((item) => {
-    const key = normalizeText(item);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-function matchesAllowedSupervisao(value, allowed) {
-  if (!allowed?.length) return false;
-  const n = normalizeText(value);
-  return allowed.some((s) => normalizeText(s) === n);
-}
 function normalizeText(v) { return String(v ?? '').trim().toUpperCase(); }
 function dateFromTomorrowLock() {
   const d = new Date();
@@ -35,25 +14,26 @@ function dateFromTomorrowLock() {
   return d.toISOString().slice(0,10);
 }
 
-const TABS = ['os','fob','report','conferir'];
-const TAB_LABELS = { os: 'O.S.', fob: 'FOB', report: 'Report', conferir: 'Conferir' };
+const TABS = ['os','abrir_os','fob','report','conferir'];
+const TAB_LABELS = { os: 'O.S.', abrir_os: 'Abrir OS', fob: 'FOB', report: 'Report', conferir: 'Conferir' };
 
 const state = {
   tab: location.hash.replace('#','') || 'os',
   rows: [],
   fobRows: [],
+  aberturaRows: [],
+  aberturaRefs: { clientes: [], filiais: [], armazens: [], destinos: [], locaisDestino: [], regionais: [] },
+  aberturaLoading: false,
+  aberturaSaving: false,
   colaboradores: [],
   fobLoading: false,
   fobSaving: false,
   fobSearchOs: null,
   fobSearchError: '',
-  fobAccess: null,
-  userContext: null,
   loading: false
 };
 
-initProtectedPage('Logística', async (content, userContext) => {
-  state.userContext = userContext || {};
+initProtectedPage('Logística', async (content) => {
   injectStyles();
   content.innerHTML = `
     <section class="card mt-16">
@@ -69,6 +49,7 @@ initProtectedPage('Logística', async (content, userContext) => {
     location.hash = state.tab;
     content.querySelectorAll('.log-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
     if (state.tab === 'os' && !state.rows.length) await loadOs();
+    if (state.tab === 'abrir_os' && !state.aberturaRows.length) await loadAberturaOs();
     if (state.tab === 'fob' && !state.fobRows.length) await loadFob();
     render(content);
   });
@@ -81,6 +62,7 @@ initProtectedPage('Logística', async (content, userContext) => {
     if (e.target.closest('#fobReload')) { await loadFob(); render(content); return; }
     if (e.target.closest('#fobSearchOsBtn')) { await handleBuscarOsFob(content); return; }
     if (e.target.closest('#fobAddManualBtn')) { await handleAdicionarFobManual(content); return; }
+    if (e.target.closest('#abrirOsSalvarBtn')) { await handleSalvarAberturaOs(content); return; }
 
     const validBtn = e.target.closest('[data-fob-action]');
     if (validBtn) {
@@ -90,6 +72,7 @@ initProtectedPage('Logística', async (content, userContext) => {
   });
 
   if (state.tab === 'fob') await loadFob();
+  else if (state.tab === 'abrir_os') await loadAberturaOs();
   else await loadOs();
   render(content);
 });
@@ -107,67 +90,17 @@ async function loadOs() {
   state.loading = false;
 }
 
-async function resolveFobAccess() {
-  if (state.fobAccess) return state.fobAccess;
-
-  const ctx = state.userContext || {};
-  let appUser = null;
-
-  try {
-    const auth = await supabase.auth.getUser();
-    const authId = auth?.data?.user?.id;
-    if (authId) {
-      const { data } = await supabase
-        .from('app_usuarios')
-        .select('id,nome,email,setor,empresa,coordenacao,supervisao,status')
-        .eq('auth_user_id', authId)
-        .maybeSingle();
-      appUser = data || null;
-    }
-  } catch (error) {
-    console.warn('Não foi possível consultar app_usuarios para filtrar FOB do gestor.', error);
-  }
-
-  const isMaster = Boolean(ctx?.user?.is_master || ctx?.is_master);
-  const allowedSupervisoes = uniqueList([
-    ...splitSupervisoes(appUser?.supervisao),
-    ...splitSupervisoes(ctx?.user?.supervisao),
-    ...splitSupervisoes(ctx?.user?.supervisoes),
-    ...splitSupervisoes(ctx?.supervisao),
-    ...splitSupervisoes(ctx?.supervisoes),
-  ]);
-
-  state.fobAccess = {
-    restricted: !isMaster,
-    allowedSupervisoes,
-    appUser,
-  };
-  return state.fobAccess;
-}
-
 async function loadFob() {
   state.fobLoading = true;
   state.fobSearchError = '';
   await ensureColaboradores();
 
-  const access = await resolveFobAccess();
-  if (access.restricted && !access.allowedSupervisoes.length) {
-    state.fobRows = [];
-    state.fobSearchError = 'Seu usuário não tem regional/supervisão vinculada para carregar os FOBs.';
-    state.fobLoading = false;
-    return;
-  }
-
-  let query = supabase
+  const { data, error } = await supabase
     .from('logistica_fob')
     .select('id,data_referencia,numero_os,cliente,supervisao,funcionario,cidade,local_embarque,motivo,status_comparacao,status,visualizado,tons_movimento,tons_producao,tons_nh,observacao,observacao_gestor,origem,criado_em,validado_em,updated_at')
     .order('data_referencia', { ascending: false })
     .order('criado_em', { ascending: false })
     .limit(1500);
-
-  if (access.restricted) query = query.in('supervisao', access.allowedSupervisoes);
-
-  const { data, error } = await query;
 
   if (error) {
     console.error(error);
@@ -177,6 +110,59 @@ async function loadFob() {
     state.fobRows = safe(data);
   }
   state.fobLoading = false;
+}
+
+
+async function loadAberturaRefs() {
+  const refs = { clientes: [], filiais: [], armazens: [], destinos: [], locaisDestino: [], regionais: [] };
+
+  const [prod, os, sup] = await Promise.all([
+    supabase.from('relatorio_resultado_diario').select('cliente_nacional,cliente_regional,cliente_final,local_embarque,destino').limit(5000),
+    supabase.from('operacional_os').select('cliente,embarque,destino,supervisao').limit(5000),
+    supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome', { ascending: true }).limit(1000),
+  ]);
+
+  const add = (arr, v) => {
+    const txt = String(v ?? '').trim();
+    if (!txt) return;
+    if (!arr.some(x => normalizeText(x) === normalizeText(txt))) arr.push(txt);
+  };
+
+  safe(prod.data).forEach(r => {
+    add(refs.clientes, r.cliente_nacional);
+    add(refs.clientes, r.cliente_regional);
+    add(refs.filiais, r.cliente_final);
+    add(refs.armazens, r.local_embarque);
+    add(refs.locaisDestino, r.destino);
+  });
+  safe(os.data).forEach(r => {
+    add(refs.clientes, r.cliente);
+    add(refs.armazens, r.embarque);
+    add(refs.locaisDestino, r.destino);
+    add(refs.regionais, r.supervisao);
+  });
+  safe(sup.data).forEach(r => add(refs.regionais, r.nome));
+
+  Object.keys(refs).forEach(k => refs[k].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
+  state.aberturaRefs = refs;
+}
+
+async function loadAberturaOs() {
+  state.aberturaLoading = true;
+  await loadAberturaRefs();
+  const { data, error } = await supabase
+    .from('logistica_abertura_os')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  if (error) {
+    console.error(error);
+    state.aberturaRows = [];
+  } else {
+    state.aberturaRows = safe(data);
+  }
+  state.aberturaLoading = false;
 }
 
 async function ensureColaboradores() {
@@ -212,6 +198,7 @@ function render(content) {
   const el = content.querySelector('#logContent');
   if (!el) return;
   if (state.tab === 'os') { el.innerHTML = renderOsTab(); return; }
+  if (state.tab === 'abrir_os') { el.innerHTML = renderAbrirOsTab(); return; }
   if (state.tab === 'fob') { el.innerHTML = renderFobTab(); return; }
   el.innerHTML = `<section class="card mt-16"><div class="log-empty">Módulo <strong>${TAB_LABELS[state.tab]}</strong> em desenvolvimento.</div></section>`;
 }
@@ -248,13 +235,86 @@ function renderOsTab() {
   `;
 }
 
+
+function renderAbrirOsTab() {
+  if (state.aberturaLoading) return `<section class="card mt-16"><p class="muted" style="padding:16px">Carregando abertura de O.S...</p></section>`;
+
+  const opts = (arr) => arr.map(v => `<option value="${esc(v)}"></option>`).join('');
+  const pendentes = state.aberturaRows.filter(r => String(r.status || 'PENDENTE') === 'PENDENTE').length;
+  const cadastradas = state.aberturaRows.filter(r => String(r.status || '') === 'CADASTRADO').length;
+
+  return `
+    <section class="card mt-16">
+      <div class="section-head">
+        <div>
+          <h3>Abrir OS</h3>
+          <p class="muted">Solicite a abertura de uma nova O.S. para a Logística ADM cadastrar e devolver o número da O.S.</p>
+        </div>
+        <button class="btn btn-secondary" id="abrirOsReload" type="button" onclick="location.reload()">Atualizar</button>
+      </div>
+
+      <div class="fob-kpis">
+        <div class="fob-kpi"><strong>${pendentes}</strong><span>Aguardando ADM</span></div>
+        <div class="fob-kpi ok"><strong>${cadastradas}</strong><span>Cadastradas</span></div>
+      </div>
+
+      <datalist id="abrirOsClientes">${opts(state.aberturaRefs.clientes)}</datalist>
+      <datalist id="abrirOsFiliais">${opts(state.aberturaRefs.filiais)}</datalist>
+      <datalist id="abrirOsArmazens">${opts(state.aberturaRefs.armazens)}</datalist>
+      <datalist id="abrirOsLocaisDestino">${opts(state.aberturaRefs.locaisDestino)}</datalist>
+      <datalist id="abrirOsRegionais">${opts(state.aberturaRefs.regionais)}</datalist>
+      <datalist id="abrirOsProdutos"><option value="Soja"></option><option value="Trigo"></option><option value="Milho"></option><option value="Sorgo"></option></datalist>
+
+      <div class="abrir-os-card">
+        <h4>Dados da solicitação</h4>
+        <div class="abrir-os-grid">
+          <label>Contratante / Cliente *<input id="osContratante" class="log-input" list="abrirOsClientes" placeholder="Digite o cliente"></label>
+          <label>Filial pagadora *<input id="osFilialPagadora" class="log-input" list="abrirOsFiliais" placeholder="Cliente final / filial"></label>
+          <label>Produtor<input id="osProdutor" class="log-input" placeholder="Opcional"></label>
+          <label>Armazém de embarque *<input id="osArmazemEmbarque" class="log-input" list="abrirOsArmazens" placeholder="Armazém/local de embarque"></label>
+          <label>Cidade de embarque *<input id="osCidadeEmbarque" class="log-input" placeholder="Cidade-UF"></label>
+          <label>Cidade destino *<input id="osCidadeDestino" class="log-input" placeholder="Cidade-UF"></label>
+          <label>Local de destino *<input id="osLocalDestino" class="log-input" list="abrirOsLocaisDestino" placeholder="Local de destino"></label>
+          <label>Número contrato *<input id="osNumeroContrato" class="log-input" placeholder="Aceita letras, números e símbolos"></label>
+          <label>Produto *<input id="osProduto" class="log-input" list="abrirOsProdutos" placeholder="Soja, trigo, milho, sorgo..."></label>
+          <label>Tipo de produto *
+            <select id="osTipoProduto" class="log-input">
+              <option value="">Selecione</option>
+              <option>Aflatoxina Negativo</option><option>Convencional</option><option>Declarado Intacta</option><option>Intacta Negativo</option><option>Intacta Positivo</option><option>Não Definido</option><option>OS com teste</option><option>Participante</option><option>Transgênico</option>
+            </select>
+          </label>
+          <label>Volume inicial (Tons) *<input id="osVolumeInicial" class="log-input" type="number" step="0.001" min="0" placeholder="0,000"></label>
+          <label>Regional *<input id="osRegional" class="log-input" list="abrirOsRegionais" placeholder="Supervisão"></label>
+          <label>Troca de notas *
+            <select id="osTrocaNotas" class="log-input"><option value="">Selecione</option><option value="SIM">Sim</option><option value="NAO">Não</option></select>
+          </label>
+        </div>
+        <div class="mt-16"><button id="abrirOsSalvarBtn" class="log-btn-ok" type="button">Confirmar e enviar para Logística ADM</button></div>
+      </div>
+
+      <div class="mt-16">
+        <h4 class="log-subtitle">Minhas solicitações</h4>
+        ${renderAberturaOsHistorico()}
+      </div>
+    </section>
+  `;
+}
+
+function renderAberturaOsHistorico() {
+  if (!state.aberturaRows.length) return `<div class="log-empty">Nenhuma solicitação de abertura de O.S. encontrada.</div>`;
+  return `<div class="log-table-wrap"><table class="log-table"><thead><tr><th>Data</th><th>Cliente / contrato</th><th>Origem / destino</th><th>Produto</th><th>Status</th></tr></thead><tbody>${state.aberturaRows.map(r => `
+    <tr>
+      <td>${brDate(r.created_at)}<br><small class="muted">Regional: ${esc(r.regional || '-')}</small></td>
+      <td><strong>${esc(r.contratante_cliente || '-')}</strong><br><small class="muted">Filial: ${esc(r.filial_pagadora || '-')}</small><br><small class="muted">Contrato: ${esc(r.numero_contrato || '-')}</small></td>
+      <td><strong>${esc(r.armazem_embarque || '-')}</strong><br><small class="muted">${esc(r.cidade_embarque || '-')} → ${esc(r.cidade_destino || '-')}</small><br><small class="muted">Destino: ${esc(r.local_destino || '-')}</small></td>
+      <td>${esc(r.produto || '-')}<br><small class="muted">${esc(r.tipo_produto || '-')} · ${fmt(r.volume_inicial)} tons</small></td>
+      <td><span class="log-chip ${String(r.status)==='CADASTRADO'?'ok':String(r.status)==='RECUSADO'?'red':'warn'}">${String(r.status)==='CADASTRADO' ? `OS ${esc(r.numero_os_cadastrada || '')}` : esc(r.status || 'PENDENTE')}</span>${r.observacao_adm ? `<div class="log-obs">${esc(r.observacao_adm)}</div>` : ''}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
 function renderFobTab() {
   if (state.fobLoading) return `<section class="card mt-16"><p class="muted" style="padding:16px">Carregando FOB...</p></section>`;
 
-  const access = state.fobAccess || {};
-  const regionalLabel = access.restricted
-    ? (access.allowedSupervisoes?.length ? access.allowedSupervisoes.join(', ') : 'sem regional vinculada')
-    : 'todas as regionais';
   const pendentes = state.fobRows.filter(r => String(r.status || 'PENDENTE') === 'PENDENTE');
   const naoVisualizados = state.fobRows.filter(r => r.visualizado === false && String(r.status || 'PENDENTE') === 'PENDENTE');
   const validos = state.fobRows.filter(r => String(r.status || '') === 'VALIDO').length;
@@ -265,7 +325,7 @@ function renderFobTab() {
       <div class="section-head">
         <div>
           <h3>FOB do Gestor</h3>
-          <p class="muted">Histórico permanente dos FOBs da sua regional: <strong>${esc(regionalLabel)}</strong>. Confira se o lançamento está correto e valide os pendentes.</p>
+          <p class="muted">Histórico permanente de FOB. Valide todos os pendentes para liberar a programação do dia seguinte.</p>
         </div>
         <button class="btn btn-secondary" id="fobReload" type="button">Atualizar</button>
       </div>
@@ -361,6 +421,49 @@ function rowHtml(row) {
   </tr>`;
 }
 
+
+function valById(content, id) { return content.querySelector(`#${id}`)?.value?.trim() || ''; }
+function parseNum(v) { return Number(String(v ?? '').replace(/\./g,'').replace(',','.')) || 0; }
+
+async function handleSalvarAberturaOs(content) {
+  if (state.aberturaSaving) return;
+  const payload = {
+    contratante_cliente: valById(content, 'osContratante'),
+    filial_pagadora: valById(content, 'osFilialPagadora'),
+    produtor: valById(content, 'osProdutor') || null,
+    armazem_embarque: valById(content, 'osArmazemEmbarque'),
+    cidade_embarque: valById(content, 'osCidadeEmbarque'),
+    cidade_destino: valById(content, 'osCidadeDestino'),
+    local_destino: valById(content, 'osLocalDestino'),
+    numero_contrato: valById(content, 'osNumeroContrato'),
+    produto: valById(content, 'osProduto'),
+    tipo_produto: valById(content, 'osTipoProduto'),
+    volume_inicial: parseNum(valById(content, 'osVolumeInicial')),
+    regional: valById(content, 'osRegional'),
+    troca_notas: valById(content, 'osTrocaNotas'),
+    status: 'PENDENTE',
+    raw: {}
+  };
+
+  const obrigatorios = [
+    ['Contratante/Cliente', payload.contratante_cliente], ['Filial pagadora', payload.filial_pagadora],
+    ['Armazém de embarque', payload.armazem_embarque], ['Cidade de embarque', payload.cidade_embarque],
+    ['Cidade destino', payload.cidade_destino], ['Local de destino', payload.local_destino],
+    ['Número contrato', payload.numero_contrato], ['Produto', payload.produto], ['Tipo de produto', payload.tipo_produto],
+    ['Volume inicial', payload.volume_inicial], ['Regional', payload.regional], ['Troca de notas', payload.troca_notas]
+  ];
+  const faltando = obrigatorios.filter(([,v]) => !v || Number(v) === 0 && typeof v === 'number').map(([k]) => k);
+  if (faltando.length) { alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`); return; }
+
+  state.aberturaSaving = true;
+  const { error } = await supabase.from('logistica_abertura_os').insert(payload);
+  state.aberturaSaving = false;
+  if (error) { alert(`${error.message}. Rode o SQL de abertura de OS no Supabase.`); return; }
+  await loadAberturaOs();
+  render(content);
+  alert('Solicitação enviada para a Logística ADM.');
+}
+
 async function handleBuscarOsFob(content) {
   const os = content.querySelector('#fobOsInput')?.value?.trim();
   if (!os) { alert('Digite a O.S. para buscar.'); return; }
@@ -398,12 +501,6 @@ async function handleAdicionarFobManual(content) {
 
   state.fobSaving = true;
   const os = state.fobSearchOs || {};
-  const access = await resolveFobAccess();
-  if (access.restricted && os?.supervisao && !matchesAllowedSupervisao(os.supervisao, access.allowedSupervisoes)) {
-    alert('Essa O.S. pertence a outra regional e não pode ser lançada neste perfil.');
-    state.fobSaving = false;
-    return;
-  }
   const row = {
     data: dataRef,
     os: numeroOs,
@@ -529,9 +626,10 @@ function injectStyles() {
     .fob-kpi strong{display:block;font-size:28px;color:#e5e7eb;line-height:1}.fob-kpi span{color:#8fa1b5;font-size:12px;font-weight:800}.fob-kpi.ok strong{color:#86efac}.fob-kpi.bad strong{color:#fca5a5}.fob-kpi.gray strong{color:#cbd5e1}
     .fob-add{border:1px solid rgba(52,211,153,.14);border-radius:18px;background:rgba(2,6,23,.18);padding:14px;margin-bottom:16px}.fob-add summary{cursor:pointer;color:#bbf7d0;font-weight:950}.fob-add-grid{display:grid;grid-template-columns:1.2fr .7fr 1fr 1.5fr;gap:12px;margin:14px 0}.fob-add label{font-size:12px;color:#8fa1b5;font-weight:900}.fob-os-line{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:6px}.fob-add label>.log-input,.fob-add label textarea,.fob-add label input[list]{margin-top:6px}
     .fob-os-found{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;border:1px solid rgba(34,197,94,.18);background:rgba(22,101,52,.12);border-radius:16px;padding:12px;margin:12px 0}.fob-os-found small{display:block;color:#8fa1b5;font-size:11px}.fob-os-found strong{display:block;color:#e5e7eb;margin-top:3px}
+    .abrir-os-card{border:1px solid rgba(52,211,153,.14);border-radius:18px;background:rgba(2,6,23,.18);padding:16px;margin-top:16px}.abrir-os-card h4{margin:0 0 14px;color:#bbf7d0}.abrir-os-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px}.abrir-os-grid label{font-size:12px;color:#8fa1b5;font-weight:900}.abrir-os-grid .log-input{margin-top:6px}.log-subtitle{color:#bbf7d0;margin:0 0 12px;font-weight:950}
     .fob-list{display:flex;flex-direction:column;gap:10px}.fob-row{display:grid;grid-template-columns:1fr 1.7fr 1.4fr 1.2fr .9fr 1.5fr;gap:12px;align-items:center;border:1px solid rgba(52,211,153,.12);background:rgba(15,23,42,.26);border-radius:18px;padding:14px}.fob-row.unseen{background:linear-gradient(90deg,rgba(148,163,184,.14),rgba(15,23,42,.25));border-color:rgba(148,163,184,.22)}.fob-row.valid{border-color:rgba(34,197,94,.26)}.fob-row.invalid{border-color:rgba(239,68,68,.26)}.fob-cell strong{display:block;color:#e5e7eb;font-weight:950}.fob-cell span{display:block;color:#8fa1b5;font-size:12px;margin-top:3px;line-height:1.35}.fob-cell.status .log-chip,.fob-cell.view .log-chip{display:inline-flex}.fob-tons{font-weight:800}.fob-cell.actions{display:grid;grid-template-columns:1fr 52px 52px;gap:8px}.fob-obs{min-width:170px}.fob-icon{border:0;border-radius:14px;min-height:44px;font-size:22px;font-weight:950;cursor:pointer}.fob-icon.ok{background:linear-gradient(135deg,#16a34a,#34d399);color:#052e16}.fob-icon.bad{background:rgba(127,29,29,.9);color:#fecaca}.fob-icon:hover{opacity:.88}
-    @media(max-width:1100px){.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr 1fr}.fob-row{grid-template-columns:1fr}.fob-cell.actions{grid-template-columns:1fr 52px 52px}}
-    @media(max-width:680px){.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr}.fob-os-line{grid-template-columns:1fr}.log-tab{flex:1}.fob-cell.actions{grid-template-columns:1fr 48px 48px}}
+    @media(max-width:1100px){.abrir-os-grid{grid-template-columns:1fr 1fr}.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr 1fr}.fob-row{grid-template-columns:1fr}.fob-cell.actions{grid-template-columns:1fr 52px 52px}}
+    @media(max-width:680px){.abrir-os-grid{grid-template-columns:1fr}.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr}.fob-os-line{grid-template-columns:1fr}.log-tab{flex:1}.fob-cell.actions{grid-template-columns:1fr 48px 48px}}
   `;
   document.head.appendChild(s);
 }
