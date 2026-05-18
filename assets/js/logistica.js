@@ -290,6 +290,8 @@ function renderAbrirOsTab() {
               <option value="CIF">CIF</option>
               <option value="AUDITORIA">AUDITORIA</option>
               <option value="CLASSIFICAÇÃO TRANSB. SAÍDA">CLASSIFICAÇÃO TRANSB. SAÍDA</option>
+              <option value="ACOMPANHAMENTO DE EMBARQUE">ACOMPANHAMENTO DE EMBARQUE</option>
+              <option value="CLASSIFICAÇÃO TRANSB. ENTRADA">CLASSIFICAÇÃO TRANSB. ENTRADA</option>
             </select>
           </label>
           <label>Volume inicial (Tons) *<input id="osVolumeInicial" class="log-input" type="number" step="0.001" min="0" placeholder="0,000"></label>
