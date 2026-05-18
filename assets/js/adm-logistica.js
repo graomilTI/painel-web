@@ -40,7 +40,7 @@ const state = {
   fobLoaded: false,
   fobReportRows: [],
   fobReportStats: null,
-  fobReportFiles: { movimento: null, producao: null, nhe: null },
+  fobReportFiles: { uploads: [], movimento: null, producao: null, nhe: null },
   os: [],
   atribuicoes: [],
   alertas: [],
@@ -312,26 +312,15 @@ initProtectedPage('Painel de Logística', async (content) => {
 
       <div class="card mt-16 log-subcard">
         <h4 style="margin:0 0 14px;color:#bbf7d0">Importar arquivos para comparação</h4>
-        <div class="log-upload-grid">
-          <label class="log-upload-card" for="fobMovimentoFile">
-            <span>Mapa de embarque / Movimentação Diária *</span>
-            <small>Colunas: Data, OS, Cliente, Supervisão, Cidade, Local, Tons Hoje...</small>
-            <input id="fobMovimentoFile" data-fob-file="movimento" type="file" accept=".xlsx,.xls,.csv" hidden />
-            <b id="fobMovimentoName">Selecionar arquivo</b>
-          </label>
-          <label class="log-upload-card" for="fobProducaoFile">
-            <span>Produção Diária *</span>
-            <small>Colunas: Data, O.S./OS e Cargas. Cargas = NHE confirma OK.</small>
-            <input id="fobProducaoFile" data-fob-file="producao" type="file" accept=".xlsx,.xls,.csv" hidden />
-            <b id="fobProducaoName">Selecionar arquivo</b>
-          </label>
-          <label class="log-upload-card" for="fobNheFile">
-            <span>NHE *</span>
-            <small>Colunas: O.S./OS, Data, Cliente, Cidade de Embarque e Embarque.</small>
-            <input id="fobNheFile" data-fob-file="nhe" type="file" accept=".xlsx,.xls,.csv" hidden />
-            <b id="fobNheName">Selecionar arquivo</b>
+        <div class="log-upload-grid" style="grid-template-columns:1fr">
+          <label class="log-upload-card" for="fobFiles" style="min-height:132px">
+            <span>Anexar relatórios juntos *</span>
+            <small>Selecione Produção Diária, NHE e Mapa/Movimentação de Embarque no mesmo envio. O painel identifica cada arquivo automaticamente pelo cabeçalho.</small>
+            <input id="fobFiles" type="file" accept=".xlsx,.xls,.csv" multiple hidden />
+            <b id="fobFilesName">Selecionar arquivos</b>
           </label>
         </div>
+        <div id="fobDetectedFiles" class="log-note" style="margin-top:12px">Nenhum arquivo selecionado.</div>
         <div class="log-inline-actions mt-16">
           <button id="fobGerarRelatorio" class="btn btn-primary" type="button">Gerar relatório FOB</button>
           <button id="fobSalvarPendentes" class="btn btn-secondary" type="button" disabled>Salvar pendentes no painel</button>
@@ -941,7 +930,79 @@ initProtectedPage('Painel de Logística', async (content) => {
     if (best.score < requiredMin) {
       throw new Error(`Não encontrei uma aba compatível. Colunas localizadas insuficientes (${best.score}/${requiredAliases.length}).`);
     }
-    return best;
+    return { ...best, requiredMin, requiredTotal: requiredAliases.length };
+  }
+
+  const FOB_DETECT_CONFIGS = {
+    movimento: {
+      label: 'Mapa / Movimentação Diária',
+      required: [['Data', 'Última Atualização'], ['OS', 'O.S.'], ['Cliente'], ['Supervisão'], ['Cidade'], ['Local', 'Local de Embarque'], ['Tons Hoje']],
+      preferred: ['Movimentação Diária', 'Movimentacao Diaria', 'Movimento Diário', 'Movimento Diario', 'Movimentação_hoje', 'Mapa'],
+    },
+    producao: {
+      label: 'Produção Diária',
+      required: [['Data'], ['O.S.', 'OS'], ['Cargas']],
+      preferred: ['Produção Diária', 'Producao Diaria', 'Resultado_diario', 'Resultado Diário', 'Lista'],
+    },
+    nhe: {
+      label: 'NHE',
+      required: [['O.S.', 'OS'], ['Data'], ['Cliente'], ['Cidade de Embarque', 'Cidade'], ['Embarque', 'Local']],
+      preferred: ['NHE', 'Lista'],
+    },
+  };
+
+  function fileNameBoostForType(fileName, tipo) {
+    const n = normalize(fileName || '');
+    if (tipo === 'nhe' && n.includes('NHE')) return 3;
+    if (tipo === 'producao' && (n.includes('PRODUCAO') || n.includes('PRODUCAO DIARIA') || n.includes('RESULTADO'))) return 3;
+    if (tipo === 'movimento' && (n.includes('MOVIMENTO') || n.includes('MOVIMENTACAO') || n.includes('MAPA') || n.includes('EMBARQUE'))) return 3;
+    return 0;
+  }
+
+  function classificarArquivosFob(items) {
+    const classified = {};
+    Object.entries(FOB_DETECT_CONFIGS).forEach(([tipo, cfg]) => {
+      let best = null;
+      items.forEach((item) => {
+        try {
+          const detected = detectSheetRows(item.workbook, cfg.required, cfg.preferred);
+          const score = (detected.score || 0) + fileNameBoostForType(item.file.name, tipo);
+          if (!best || score > best.score) best = { ...item, detected, score };
+        } catch (_error) {
+          // Esse arquivo não parece ser deste tipo de relatório.
+        }
+      });
+      if (best) classified[tipo] = best;
+    });
+    const missing = Object.entries(FOB_DETECT_CONFIGS)
+      .filter(([tipo]) => !classified[tipo])
+      .map(([, cfg]) => cfg.label);
+    if (missing.length) {
+      throw new Error(`Não consegui identificar automaticamente: ${missing.join(', ')}. Confira se os relatórios foram anexados juntos e se os cabeçalhos estão no modelo esperado.`);
+    }
+    return classified;
+  }
+
+  function renderFobFileDetection(classified = null) {
+    const box = document.getElementById('fobDetectedFiles');
+    const label = document.getElementById('fobFilesName');
+    const uploads = safeArray(state.fobReportFiles?.uploads);
+    if (label) label.textContent = uploads.length ? `${uploads.length} arquivo(s) selecionado(s)` : 'Selecionar arquivos';
+    if (!box) return;
+    if (!uploads.length) {
+      box.innerHTML = 'Nenhum arquivo selecionado.';
+      return;
+    }
+    const selected = uploads.map((file) => `<div>• ${esc(file.name)}</div>`).join('');
+    if (!classified) {
+      box.innerHTML = `<strong>Arquivos anexados:</strong>${selected}<div class="log-meta" style="margin-top:6px">A identificação automática será feita ao clicar em <strong>Gerar relatório FOB</strong>.</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <strong>Identificação automática:</strong>
+      <div>• Mapa/Movimentação: <b>${esc(classified.movimento.file.name)}</b> — aba ${esc(classified.movimento.detected.sheetName)}</div>
+      <div>• Produção Diária: <b>${esc(classified.producao.file.name)}</b> — aba ${esc(classified.producao.detected.sheetName)}</div>
+      <div>• NHE: <b>${esc(classified.nhe.file.name)}</b> — aba ${esc(classified.nhe.detected.sheetName)}</div>`;
   }
 
   async function readWorkbookFile(file) {
@@ -952,28 +1013,33 @@ initProtectedPage('Painel de Logística', async (content) => {
 
   async function gerarRelatorioFobPorPlanilhas() {
     const files = state.fobReportFiles || {};
-    if (!files.movimento || !files.producao || !files.nhe) {
-      el.feedback.textContent = 'Anexe os 3 arquivos: Mapa/Movimentação, Produção Diária e NHE.';
+    const uploadFiles = safeArray(files.uploads).length
+      ? safeArray(files.uploads)
+      : [files.movimento, files.producao, files.nhe].filter(Boolean);
+    if (!uploadFiles.length) {
+      el.feedback.textContent = 'Anexe os relatórios de Produção Diária, NHE e Mapa/Movimentação de Embarque no mesmo envio.';
       return;
     }
     const btn = document.getElementById('fobGerarRelatorio');
-    if (btn) { btn.disabled = true; btn.textContent = 'Comparando...'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Identificando...'; }
     try {
-      const [wbMov, wbProd, wbNhe] = await Promise.all([
-        readWorkbookFile(files.movimento),
-        readWorkbookFile(files.producao),
-        readWorkbookFile(files.nhe),
-      ]);
+      const workbookItems = await Promise.all(uploadFiles.map(async (file) => ({
+        file,
+        workbook: await readWorkbookFile(file),
+      })));
+      const classified = classificarArquivosFob(workbookItems);
+      state.fobReportFiles = {
+        uploads: uploadFiles,
+        movimento: classified.movimento.file,
+        producao: classified.producao.file,
+        nhe: classified.nhe.file,
+      };
+      renderFobFileDetection(classified);
+      if (btn) btn.textContent = 'Comparando...';
 
-      const movData = detectSheetRows(wbMov, [
-        ['Data', 'Última Atualização'], ['OS', 'O.S.'], ['Cliente'], ['Supervisão'], ['Cidade'], ['Local', 'Local de Embarque'], ['Tons Hoje'],
-      ], ['Movimentação Diária', 'Movimentacao Diaria', 'Movimentação_hoje', 'Mapa']);
-      const prodData = detectSheetRows(wbProd, [
-        ['Data'], ['O.S.', 'OS'], ['Cargas'],
-      ], ['Produção Diária', 'Resultado_diario', 'Resultado Diário']);
-      const nheData = detectSheetRows(wbNhe, [
-        ['O.S.', 'OS'], ['Data'], ['Cliente'], ['Cidade de Embarque', 'Cidade'], ['Embarque', 'Local'],
-      ], ['NHE']);
+      const movData = classified.movimento.detected;
+      const prodData = classified.producao.detected;
+      const nheData = classified.nhe.detected;
 
       const setNheOsData = new Set();
       const setNheOsOnly = new Set();
@@ -1059,6 +1125,9 @@ initProtectedPage('Painel de Logística', async (content) => {
         abaMovimento: movData.sheetName,
         abaProducao: prodData.sheetName,
         abaNhe: nheData.sheetName,
+        arquivoMovimento: classified.movimento.file.name,
+        arquivoProducao: classified.producao.file.name,
+        arquivoNhe: classified.nhe.file.name,
         pendentes: rows.filter((r) => r.status === 'PENDENTE').length,
         ok: rows.filter((r) => r.status === 'OK').length,
         dois: rows.filter((r) => r.status === 'DOIS EMBARQUES').length,
@@ -1092,6 +1161,7 @@ initProtectedPage('Painel de Logística', async (content) => {
         <div class="section-head">
           <div>
             <h3>Resultado da comparação FOB</h3>
+            <p class="muted">Arquivos identificados: Mov./Mapa <b>${esc(stats?.arquivoMovimento || '-')}</b> · Produção <b>${esc(stats?.arquivoProducao || '-')}</b> · NHE <b>${esc(stats?.arquivoNhe || '-')}</b></p>
             <p class="muted">Abas usadas: Mov./Mapa <b>${esc(stats?.abaMovimento || '-')}</b> · Produção <b>${esc(stats?.abaProducao || '-')}</b> · NHE <b>${esc(stats?.abaNhe || '-')}</b></p>
           </div>
         </div>
@@ -1144,25 +1214,46 @@ initProtectedPage('Painel de Logística', async (content) => {
     const btn = document.getElementById('fobSalvarPendentes');
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
     try {
-      const payload = pendentes.map((r) => ({
-        data_referencia: r.data,
-        numero_os: r.os || null,
-        supervisao: r.supervisao || null,
+      const stats = state.fobReportStats || {};
+      const payloadRpc = pendentes.map((r) => ({
+        data: r.data,
+        os: r.os || null,
         cliente: r.cliente || null,
+        supervisao: r.supervisao || null,
+        funcionario: r.funcionario || null,
+        cidade: r.cidade || null,
+        local: r.local || null,
+        status: r.status || 'PENDENTE',
+        observacao: r.observacao || null,
         tons_movimento: r.tons_movimento || 0,
         tons_producao: 0,
         tons_nh: 0,
-        observacao: [r.observacao, `Gerado por importação FOB. Local: ${r.cidade || '-'} / ${r.local || '-'}`].filter(Boolean).join(' | '),
-        status: 'PENDENTE',
-        criado_por: state.user?.id || null,
+        arquivo_movimentacao: stats.arquivoMovimento || null,
+        arquivo_producao: stats.arquivoProducao || null,
+        arquivo_nhe: stats.arquivoNhe || null,
       }));
-      let saved = 0;
-      for (let i = 0; i < payload.length; i += 300) {
-        const chunk = payload.slice(i, i + 300);
-        const { error } = await supabase.from('logistica_fob').insert(chunk);
-        if (error) throw error;
-        saved += chunk.length;
+      const { data: rpcData, error: rpcError } = await supabase.rpc('salvar_logistica_fob_importacao', { p_linhas: payloadRpc });
+      if (rpcError) {
+        console.warn('[FOB RPC fallback]', rpcError);
+        const payloadFallback = pendentes.map((r) => ({
+          data_referencia: r.data,
+          numero_os: r.os || null,
+          supervisao: r.supervisao || null,
+          cliente: r.cliente || null,
+          tons_movimento: r.tons_movimento || 0,
+          tons_producao: 0,
+          tons_nh: 0,
+          observacao: [r.observacao, `Gerado por importação FOB. Local: ${r.cidade || '-'} / ${r.local || '-'}`].filter(Boolean).join(' | '),
+          status: 'PENDENTE',
+          criado_por: state.user?.id || null,
+        }));
+        for (let i = 0; i < payloadFallback.length; i += 300) {
+          const chunk = payloadFallback.slice(i, i + 300);
+          const { error } = await supabase.from('logistica_fob').insert(chunk);
+          if (error) throw error;
+        }
       }
+      const saved = Number(rpcData?.total_salvo || pendentes.length);
       el.feedback.textContent = `${saved} pendência(s) FOB salvas no painel.`;
       state.fobLoaded = false;
       await loadFob();
@@ -1177,9 +1268,10 @@ initProtectedPage('Painel de Logística', async (content) => {
   function limparImportacaoFob() {
     state.fobReportRows = [];
     state.fobReportStats = null;
-    state.fobReportFiles = { movimento: null, producao: null, nhe: null };
-    ['fobMovimentoFile', 'fobProducaoFile', 'fobNheFile'].forEach((id) => { const input = document.getElementById(id); if (input) input.value = ''; });
+    state.fobReportFiles = { uploads: [], movimento: null, producao: null, nhe: null };
+    ['fobFiles', 'fobMovimentoFile', 'fobProducaoFile', 'fobNheFile'].forEach((id) => { const input = document.getElementById(id); if (input) input.value = ''; });
     ['fobMovimentoName', 'fobProducaoName', 'fobNheName'].forEach((id) => { const node = document.getElementById(id); if (node) node.textContent = 'Selecionar arquivo'; });
+    renderFobFileDetection();
     renderFobReport();
     el.feedback.textContent = 'Importação FOB limpa.';
   }
@@ -1424,14 +1516,27 @@ initProtectedPage('Painel de Logística', async (content) => {
   }
 
   async function onChange(event) {
+    const fobFilesInput = event.target.closest('#fobFiles');
+    if (fobFilesInput) {
+      const uploads = Array.from(fobFilesInput.files || []);
+      state.fobReportFiles = { uploads, movimento: null, producao: null, nhe: null };
+      state.fobReportRows = [];
+      state.fobReportStats = null;
+      renderFobFileDetection();
+      renderFobReport();
+      return;
+    }
+
     const fobFileInput = event.target.closest('[data-fob-file]');
     if (fobFileInput) {
       const tipo = fobFileInput.dataset.fobFile;
       const file = fobFileInput.files?.[0] || null;
       state.fobReportFiles[tipo] = file;
+      state.fobReportFiles.uploads = [state.fobReportFiles.movimento, state.fobReportFiles.producao, state.fobReportFiles.nhe].filter(Boolean);
       const labelId = tipo === 'movimento' ? 'fobMovimentoName' : tipo === 'producao' ? 'fobProducaoName' : 'fobNheName';
       const label = document.getElementById(labelId);
       if (label) label.textContent = file ? file.name : 'Selecionar arquivo';
+      renderFobFileDetection();
       renderFobReport();
       return;
     }
