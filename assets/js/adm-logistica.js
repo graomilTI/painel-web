@@ -306,7 +306,7 @@ initProtectedPage('Painel de Logística', async (content) => {
       <div class="section-head">
         <div>
           <h3>FOB — Comparação automática</h3>
-          <p class="muted">Anexe Produção Diária, NHE e Mapa/Movimentação de Embarque para gerar o relatório igual à aba FOB da planilha modelo.</p>
+          <p class="muted">Anexe Produção Diária, NHE e Mapa/Movimentação de Embarque. O ADM gera e salva a base geral; cada gestor confere apenas os FOBs da sua regional no menu Logística > FOB.</p>
         </div>
         <button id="fobReload" class="btn btn-secondary" type="button">Atualizar histórico</button>
       </div>
@@ -334,9 +334,9 @@ initProtectedPage('Painel de Logística', async (content) => {
       <div id="fobReportResult" class="mt-16"></div>
 
       <details class="card mt-16 log-subcard" open>
-        <summary style="cursor:pointer;font-weight:950;color:#bbf7d0">Histórico de FOB / validação do gestor</summary>
+        <summary style="cursor:pointer;font-weight:950;color:#bbf7d0">Histórico geral de FOB — ADM (todas as regionais)</summary>
         <div class="card mt-16">
-          <h4 style="margin:0 0 14px;color:#bbf7d0">Adicionar FOB manualmente</h4>
+          <h4 style="margin:0 0 14px;color:#bbf7d0">Adicionar FOB manualmente pelo ADM</h4>
           <div class="filters-grid log-grid" style="grid-template-columns:repeat(3,minmax(140px,1fr))">
             <div class="field"><label>Data *</label><input id="fobData" class="log-input" type="date" /></div>
             <div class="field"><label>O.S. *</label><input id="fobOs" class="log-input" type="text" placeholder="Número da OS" /></div>
@@ -767,7 +767,7 @@ initProtectedPage('Painel de Logística', async (content) => {
 
     list.innerHTML = `
       ${pendentes.length ? `
-        <h4 style="color:#fde68a;margin:0 0 10px">FOBs aguardando validação do gestor (${pendentes.length})</h4>
+        <h4 style="color:#fde68a;margin:0 0 10px">FOBs aguardando validação pelos gestores (${pendentes.length})</h4>
         <div class="log-table-wrap">
           <table class="log-table">
             <thead><tr><th>Data</th><th>Cliente / OS</th><th>Colaborador / Motivo</th><th>Comparação</th><th>Status gestor</th><th>Ação</th></tr></thead>
@@ -776,7 +776,7 @@ initProtectedPage('Painel de Logística', async (content) => {
         </div>
       ` : '<div class="log-empty">Nenhum FOB pendente de validação.</div>'}
       ${historico.length ? `
-        <h4 style="margin:24px 0 10px">Histórico validado (${historico.length})</h4>
+        <h4 style="margin:24px 0 10px">Histórico geral validado (${historico.length})</h4>
         <div class="log-table-wrap">
           <table class="log-table">
             <thead><tr><th>Data</th><th>Cliente / OS</th><th>Colaborador / Motivo</th><th>Comparação</th><th>Status gestor</th><th></th></tr></thead>

@@ -7,6 +7,27 @@ function brDate(v) { if (!v) return '-'; const [y,m,d] = String(v).slice(0,10).s
 function esc(v) { return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
 function safe(d) { return Array.isArray(d) ? d : []; }
 function todayISO() { return new Date().toISOString().slice(0,10); }
+function splitSupervisoes(value) {
+  if (Array.isArray(value)) return value.flatMap(splitSupervisoes);
+  return String(value ?? '')
+    .split(/[;,|]/)
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+function uniqueList(list) {
+  const seen = new Set();
+  return list.filter((item) => {
+    const key = normalizeText(item);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function matchesAllowedSupervisao(value, allowed) {
+  if (!allowed?.length) return false;
+  const n = normalizeText(value);
+  return allowed.some((s) => normalizeText(s) === n);
+}
 function normalizeText(v) { return String(v ?? '').trim().toUpperCase(); }
 function dateFromTomorrowLock() {
   const d = new Date();
@@ -26,10 +47,13 @@ const state = {
   fobSaving: false,
   fobSearchOs: null,
   fobSearchError: '',
+  fobAccess: null,
+  userContext: null,
   loading: false
 };
 
-initProtectedPage('Logística', async (content) => {
+initProtectedPage('Logística', async (content, userContext) => {
+  state.userContext = userContext || {};
   injectStyles();
   content.innerHTML = `
     <section class="card mt-16">
@@ -83,17 +107,67 @@ async function loadOs() {
   state.loading = false;
 }
 
+async function resolveFobAccess() {
+  if (state.fobAccess) return state.fobAccess;
+
+  const ctx = state.userContext || {};
+  let appUser = null;
+
+  try {
+    const auth = await supabase.auth.getUser();
+    const authId = auth?.data?.user?.id;
+    if (authId) {
+      const { data } = await supabase
+        .from('app_usuarios')
+        .select('id,nome,email,setor,empresa,coordenacao,supervisao,status')
+        .eq('auth_user_id', authId)
+        .maybeSingle();
+      appUser = data || null;
+    }
+  } catch (error) {
+    console.warn('Não foi possível consultar app_usuarios para filtrar FOB do gestor.', error);
+  }
+
+  const isMaster = Boolean(ctx?.user?.is_master || ctx?.is_master);
+  const allowedSupervisoes = uniqueList([
+    ...splitSupervisoes(appUser?.supervisao),
+    ...splitSupervisoes(ctx?.user?.supervisao),
+    ...splitSupervisoes(ctx?.user?.supervisoes),
+    ...splitSupervisoes(ctx?.supervisao),
+    ...splitSupervisoes(ctx?.supervisoes),
+  ]);
+
+  state.fobAccess = {
+    restricted: !isMaster,
+    allowedSupervisoes,
+    appUser,
+  };
+  return state.fobAccess;
+}
+
 async function loadFob() {
   state.fobLoading = true;
   state.fobSearchError = '';
   await ensureColaboradores();
 
-  const { data, error } = await supabase
+  const access = await resolveFobAccess();
+  if (access.restricted && !access.allowedSupervisoes.length) {
+    state.fobRows = [];
+    state.fobSearchError = 'Seu usuário não tem regional/supervisão vinculada para carregar os FOBs.';
+    state.fobLoading = false;
+    return;
+  }
+
+  let query = supabase
     .from('logistica_fob')
     .select('id,data_referencia,numero_os,cliente,supervisao,funcionario,cidade,local_embarque,motivo,status_comparacao,status,visualizado,tons_movimento,tons_producao,tons_nh,observacao,observacao_gestor,origem,criado_em,validado_em,updated_at')
     .order('data_referencia', { ascending: false })
     .order('criado_em', { ascending: false })
     .limit(1500);
+
+  if (access.restricted) query = query.in('supervisao', access.allowedSupervisoes);
+
+  const { data, error } = await query;
 
   if (error) {
     console.error(error);
@@ -177,6 +251,10 @@ function renderOsTab() {
 function renderFobTab() {
   if (state.fobLoading) return `<section class="card mt-16"><p class="muted" style="padding:16px">Carregando FOB...</p></section>`;
 
+  const access = state.fobAccess || {};
+  const regionalLabel = access.restricted
+    ? (access.allowedSupervisoes?.length ? access.allowedSupervisoes.join(', ') : 'sem regional vinculada')
+    : 'todas as regionais';
   const pendentes = state.fobRows.filter(r => String(r.status || 'PENDENTE') === 'PENDENTE');
   const naoVisualizados = state.fobRows.filter(r => r.visualizado === false && String(r.status || 'PENDENTE') === 'PENDENTE');
   const validos = state.fobRows.filter(r => String(r.status || '') === 'VALIDO').length;
@@ -187,7 +265,7 @@ function renderFobTab() {
       <div class="section-head">
         <div>
           <h3>FOB do Gestor</h3>
-          <p class="muted">Histórico permanente de FOB. Valide todos os pendentes para liberar a programação do dia seguinte.</p>
+          <p class="muted">Histórico permanente dos FOBs da sua regional: <strong>${esc(regionalLabel)}</strong>. Confira se o lançamento está correto e valide os pendentes.</p>
         </div>
         <button class="btn btn-secondary" id="fobReload" type="button">Atualizar</button>
       </div>
@@ -320,6 +398,12 @@ async function handleAdicionarFobManual(content) {
 
   state.fobSaving = true;
   const os = state.fobSearchOs || {};
+  const access = await resolveFobAccess();
+  if (access.restricted && os?.supervisao && !matchesAllowedSupervisao(os.supervisao, access.allowedSupervisoes)) {
+    alert('Essa O.S. pertence a outra regional e não pode ser lançada neste perfil.');
+    state.fobSaving = false;
+    return;
+  }
   const row = {
     data: dataRef,
     os: numeroOs,
