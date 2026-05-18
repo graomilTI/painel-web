@@ -1,4 +1,5 @@
-﻿import { initProtectedPage } from './pageInit.js';
+import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
 
@@ -37,6 +38,9 @@ const state = {
   osLogLoaded: false,
   fob: [],
   fobLoaded: false,
+  fobReportRows: [],
+  fobReportStats: null,
+  fobReportFiles: { movimento: null, producao: null, nhe: null },
   os: [],
   atribuicoes: [],
   alertas: [],
@@ -247,7 +251,8 @@ function injectStyles() {
   style.textContent = `
     .log-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.log-report-grid{display:grid;grid-template-columns:repeat(4,minmax(170px,1fr));gap:12px}.log-report-grid .wide{grid-column:span 2}.log-report-history{margin-top:16px}.log-tab{border:1px solid rgba(52,211,153,.2);background:#0d0d18;color:#e2e2f0;border-radius:999px;padding:10px 14px;font-weight:900;cursor:pointer}.log-tab.active{background:rgba(22,101,52,.38);color:#dcfce7;border-color:rgba(74,222,128,.42)}
     .log-grid{display:grid;grid-template-columns:170px 210px 210px 1fr 160px;gap:12px}.log-input{width:100%;min-height:40px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0d0d18!important;color:#e2e2f0!important;color-scheme:dark;padding:9px}.log-input option{background:#0d0d18;color:#e2e2f0}.log-textarea{min-height:70px;resize:vertical}.log-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:18px;background:rgba(2,6,23,.25)}.log-table{width:100%;min-width:1160px;border-collapse:separate;border-spacing:0;color:#e2e2f0}.log-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1}.log-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:top;background:rgba(15,23,42,.24)}.log-table tr:hover td{background:rgba(22,101,52,.1)}.log-title{font-weight:950;color:#f8fafc;font-size:14px;line-height:1.2}.log-meta{font-size:12px;color:#6b7280;margin-top:4px;line-height:1.35}.log-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.log-badge.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.log-badge.warn{background:rgba(250,204,21,.14);color:#fde68a}.log-badge.info{background:rgba(59,130,246,.13);color:#bfdbfe}.log-badge.danger{background:rgba(239,68,68,.12);color:#fecaca}.log-badge.neutral{background:rgba(148,163,184,.12);color:#e2e8f0}.log-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#6b7280;background:rgba(15,23,42,.16)}.log-actions{display:flex;flex-direction:column;gap:8px}.log-actions .btn{width:100%;justify-content:center}.log-kpi-warn{color:#fde68a!important}.log-kpi-danger{color:#fecaca!important}.log-kpi-ok{color:#bbf7d0!important}.log-section{display:none}.log-section.active{display:block}.log-note{border:1px solid rgba(59,130,246,.2);background:rgba(59,130,246,.08);color:#bfdbfe;border-radius:16px;padding:12px;margin-top:12px;font-size:13px}.log-mini-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.log-pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.log-inline-actions{display:flex;gap:8px;flex-wrap:wrap}.log-inline-actions .btn{width:auto!important;margin-top:0!important}.log-copy{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;background:rgba(15,23,42,.7);border:1px solid rgba(148,163,184,.2);border-radius:12px;padding:10px;font-size:12px;color:#e2e8f0;max-height:180px;overflow:auto}
-    @media(max-width:1100px){.log-grid{grid-template-columns:1fr 1fr}.log-mini-grid,.log-report-grid{grid-template-columns:1fr 1fr}.log-table{min-width:980px}}@media(max-width:720px){.log-grid,.log-mini-grid,.log-report-grid{grid-template-columns:1fr}.log-report-grid .wide{grid-column:auto}.log-tabs{overflow:auto;flex-wrap:nowrap}.log-tab{white-space:nowrap}}
+    .log-upload-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.log-upload-card{display:flex;flex-direction:column;gap:7px;border:1px dashed rgba(52,211,153,.28);border-radius:18px;background:rgba(15,23,42,.36);padding:14px;cursor:pointer;min-height:118px}.log-upload-card:hover{border-color:rgba(134,239,172,.55);background:rgba(22,101,52,.13)}.log-upload-card span{font-weight:950;color:#f8fafc}.log-upload-card small{color:#94a3b8;line-height:1.35}.log-upload-card b{margin-top:auto;color:#86efac;font-size:12px;word-break:break-word}.log-status-pendente{color:#fecaca!important}.log-status-ok{color:#bbf7d0!important}.log-status-dois{color:#fde68a!important}.log-report-actions{display:flex;gap:8px;flex-wrap:wrap}.log-subcard summary::marker{color:#86efac}
+    @media(max-width:1100px){.log-grid{grid-template-columns:1fr 1fr}.log-mini-grid,.log-report-grid{grid-template-columns:1fr 1fr}.log-table{min-width:980px}}@media(max-width:720px){.log-grid,.log-mini-grid,.log-report-grid,.log-upload-grid{grid-template-columns:1fr}.log-report-grid .wide{grid-column:auto}.log-tabs{overflow:auto;flex-wrap:nowrap}.log-tab{white-space:nowrap}}
   `;
   document.head.appendChild(style);
 }
@@ -298,24 +303,64 @@ initProtectedPage('Painel de Logística', async (content) => {
 
     <section class="card mt-16 log-section" id="section-fob">
       <div class="section-head">
-        <div><h3>FOB 0 — Embarques zerados</h3><p class="muted">Registre datas com NH ativo mas embarque zero na movimentação. O gestor valida (✓) ou rejeita (✗) cada ocorrência.</p></div>
-        <button id="fobReload" class="btn btn-secondary" type="button">Atualizar</button>
-      </div>
-      <div class="card mt-16">
-        <h4 style="margin:0 0 14px;color:#bbf7d0">Registrar FOB 0</h4>
-        <div class="filters-grid log-grid" style="grid-template-columns:repeat(3,minmax(140px,1fr))">
-          <div class="field"><label>Data *</label><input id="fobData" class="log-input" type="date" /></div>
-          <div class="field"><label>O.S. (opcional)</label><input id="fobOs" class="log-input" type="text" placeholder="Número da OS" /></div>
-          <div class="field"><label>Supervisão</label><input id="fobSup" class="log-input" type="text" placeholder="Regional" /></div>
-          <div class="field"><label>Cliente</label><input id="fobCliente" class="log-input" type="text" placeholder="Nome do cliente" /></div>
-          <div class="field"><label>Tons mov. diária</label><input id="fobMov" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
-          <div class="field"><label>Tons prod. diária</label><input id="fobProd" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
-          <div class="field"><label>Tons NH</label><input id="fobNh" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
-          <div class="field" style="grid-column:span 2"><label>Observação</label><textarea id="fobObs" class="log-input log-textarea" placeholder="Motivo do FOB 0, referência do NH, detalhes da comparação..."></textarea></div>
+        <div>
+          <h3>FOB — Comparação automática</h3>
+          <p class="muted">Anexe Produção Diária, NHE e Mapa/Movimentação de Embarque para gerar o relatório igual à aba FOB da planilha modelo.</p>
         </div>
-        <div class="mt-16"><button id="fobSalvar" class="btn btn-primary" type="button">Registrar FOB 0</button></div>
+        <button id="fobReload" class="btn btn-secondary" type="button">Atualizar histórico</button>
       </div>
-      <div id="fobList" class="mt-16"></div>
+
+      <div class="card mt-16 log-subcard">
+        <h4 style="margin:0 0 14px;color:#bbf7d0">Importar arquivos para comparação</h4>
+        <div class="log-upload-grid">
+          <label class="log-upload-card" for="fobMovimentoFile">
+            <span>Mapa de embarque / Movimentação Diária *</span>
+            <small>Colunas: Data, OS, Cliente, Supervisão, Cidade, Local, Tons Hoje...</small>
+            <input id="fobMovimentoFile" data-fob-file="movimento" type="file" accept=".xlsx,.xls,.csv" hidden />
+            <b id="fobMovimentoName">Selecionar arquivo</b>
+          </label>
+          <label class="log-upload-card" for="fobProducaoFile">
+            <span>Produção Diária *</span>
+            <small>Colunas: Data, O.S./OS e Cargas. Cargas = NHE confirma OK.</small>
+            <input id="fobProducaoFile" data-fob-file="producao" type="file" accept=".xlsx,.xls,.csv" hidden />
+            <b id="fobProducaoName">Selecionar arquivo</b>
+          </label>
+          <label class="log-upload-card" for="fobNheFile">
+            <span>NHE *</span>
+            <small>Colunas: O.S./OS, Data, Cliente, Cidade de Embarque e Embarque.</small>
+            <input id="fobNheFile" data-fob-file="nhe" type="file" accept=".xlsx,.xls,.csv" hidden />
+            <b id="fobNheName">Selecionar arquivo</b>
+          </label>
+        </div>
+        <div class="log-inline-actions mt-16">
+          <button id="fobGerarRelatorio" class="btn btn-primary" type="button">Gerar relatório FOB</button>
+          <button id="fobSalvarPendentes" class="btn btn-secondary" type="button" disabled>Salvar pendentes no painel</button>
+          <button id="fobExportCsv" class="btn btn-secondary" type="button" disabled>Baixar CSV</button>
+          <button id="fobLimparImportacao" class="btn btn-secondary" type="button">Limpar importação</button>
+        </div>
+        <div class="log-note">Regra aplicada: entra no FOB toda O.S. do mapa com <strong>Tons Hoje = 0</strong>. Status <strong>OK</strong> quando há NHE por O.S./data ou Produção com Cargas = NHE; <strong>DOIS EMBARQUES</strong> quando a mesma combinação Cliente + Cidade + Local + Data aparece 2+ vezes no mapa ou também no NHE; senão fica <strong>PENDENTE</strong>.</div>
+      </div>
+
+      <div id="fobReportResult" class="mt-16"></div>
+
+      <details class="card mt-16 log-subcard">
+        <summary style="cursor:pointer;font-weight:950;color:#bbf7d0">Lançamento manual / histórico de validação</summary>
+        <div class="card mt-16">
+          <h4 style="margin:0 0 14px;color:#bbf7d0">Registrar FOB 0 manualmente</h4>
+          <div class="filters-grid log-grid" style="grid-template-columns:repeat(3,minmax(140px,1fr))">
+            <div class="field"><label>Data *</label><input id="fobData" class="log-input" type="date" /></div>
+            <div class="field"><label>O.S. (opcional)</label><input id="fobOs" class="log-input" type="text" placeholder="Número da OS" /></div>
+            <div class="field"><label>Supervisão</label><input id="fobSup" class="log-input" type="text" placeholder="Regional" /></div>
+            <div class="field"><label>Cliente</label><input id="fobCliente" class="log-input" type="text" placeholder="Nome do cliente" /></div>
+            <div class="field"><label>Tons mov. diária</label><input id="fobMov" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
+            <div class="field"><label>Tons prod. diária</label><input id="fobProd" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
+            <div class="field"><label>Tons NH</label><input id="fobNh" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
+            <div class="field" style="grid-column:span 2"><label>Observação</label><textarea id="fobObs" class="log-input log-textarea" placeholder="Motivo do FOB 0, referência do NH, detalhes da comparação..."></textarea></div>
+          </div>
+          <div class="mt-16"><button id="fobSalvar" class="btn btn-primary" type="button">Registrar FOB 0</button></div>
+        </div>
+        <div id="fobList" class="mt-16"></div>
+      </details>
     </section>
 
     <section class="card mt-16 log-section" id="section-report">
@@ -655,7 +700,7 @@ initProtectedPage('Painel de Logística', async (content) => {
     renderConferencias();
     renderExportacoes();
     renderRelatorios();
-    if (state.tab === 'fob') renderFob();
+    if (state.tab === 'fob') { renderFob(); renderFobReport(); }
   }
 
   // ── FOB 0 ────────────────────────────────────────────────────────────────
@@ -787,6 +832,356 @@ initProtectedPage('Painel de Logística', async (content) => {
     if (idx !== -1) Object.assign(state.fob[idx], { status, observacao_gestor, validado_em: now });
     renderFob();
     el.feedback.textContent = `FOB 0 marcado como ${status === 'VALIDO' ? 'Válido ✓' : 'Inválido ✗'}.`;
+  }
+
+
+  // ── Importação e comparação FOB por planilhas ────────────────────────────
+
+  function stripAccents(value) {
+    return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function normHeader(value) {
+    return stripAccents(value).replace(/\u00A0/g, ' ').replace(/[^a-zA-Z0-9]+/g, ' ').trim().toUpperCase();
+  }
+
+  function normText(value) {
+    return stripAccents(value).replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase();
+  }
+
+  function normOs(value) {
+    let s = String(value ?? '').trim();
+    if (!s) return '';
+    if (/^\d+(\.0+)?$/.test(s)) s = s.replace(/\.0+$/, '');
+    if (s.includes('/')) s = s.split('/')[0].trim();
+    return s.replace(/\s+/g, ' ').trim();
+  }
+
+  function excelSerialToDate(serial) {
+    const n = Number(serial);
+    if (!Number.isFinite(n)) return null;
+    const utc = Math.round((n - 25569) * 86400 * 1000);
+    const d = new Date(utc);
+    return Number.isNaN(d.getTime()) ? null : new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+
+  function parseDateOnly(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    }
+    if (typeof value === 'number') return excelSerialToDate(value);
+    const s = String(value ?? '').trim();
+    if (!s) return null;
+    if (/^\d+(\.\d+)?$/.test(s)) return excelSerialToDate(Number(s));
+    let m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+
+  function ymd(value) {
+    const d = parseDateOnly(value);
+    if (!d) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function brDateFromAny(value) {
+    const d = parseDateOnly(value);
+    if (!d) return '-';
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  }
+
+  function toNumberLoose(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    const s = String(value ?? '').trim();
+    if (!s || s === '--') return 0;
+    const cleaned = s.replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function pickValue(row, aliases) {
+    const keys = aliases.map(normHeader);
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(row, key)) return row[key];
+    }
+    return '';
+  }
+
+  function detectSheetRows(workbook, requiredAliases, preferredNames = []) {
+    const preferred = workbook.SheetNames
+      .map((name) => ({ name, n: normHeader(name) }))
+      .sort((a, b) => {
+        const ai = preferredNames.findIndex((p) => a.n.includes(normHeader(p)));
+        const bi = preferredNames.findIndex((p) => b.n.includes(normHeader(p)));
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      });
+
+    let best = { rows: [], sheetName: '', score: -1 };
+    for (const item of preferred) {
+      const sheet = workbook.Sheets[item.name];
+      if (!sheet) continue;
+      const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+      for (let i = 0; i < Math.min(matrix.length, 8); i += 1) {
+        const header = (matrix[i] || []).map(normHeader);
+        const score = requiredAliases.reduce((sum, aliases) => sum + (aliases.some((a) => header.includes(normHeader(a))) ? 1 : 0), 0);
+        if (score > best.score) {
+          const rows = matrix.slice(i + 1).map((line) => {
+            const obj = {};
+            header.forEach((h, idx) => { if (h) obj[h] = line[idx] ?? ''; });
+            return obj;
+          }).filter((obj) => Object.values(obj).some((v) => String(v ?? '').trim()));
+          best = { rows, sheetName: item.name, score };
+        }
+      }
+    }
+    const requiredMin = Math.max(2, Math.min(requiredAliases.length, Math.ceil(requiredAliases.length * 0.55)));
+    if (best.score < requiredMin) {
+      throw new Error(`Não encontrei uma aba compatível. Colunas localizadas insuficientes (${best.score}/${requiredAliases.length}).`);
+    }
+    return best;
+  }
+
+  async function readWorkbookFile(file) {
+    if (!file) throw new Error('Arquivo não informado.');
+    const buffer = await file.arrayBuffer();
+    return XLSX.read(buffer, { type: 'array', cellDates: true });
+  }
+
+  async function gerarRelatorioFobPorPlanilhas() {
+    const files = state.fobReportFiles || {};
+    if (!files.movimento || !files.producao || !files.nhe) {
+      el.feedback.textContent = 'Anexe os 3 arquivos: Mapa/Movimentação, Produção Diária e NHE.';
+      return;
+    }
+    const btn = document.getElementById('fobGerarRelatorio');
+    if (btn) { btn.disabled = true; btn.textContent = 'Comparando...'; }
+    try {
+      const [wbMov, wbProd, wbNhe] = await Promise.all([
+        readWorkbookFile(files.movimento),
+        readWorkbookFile(files.producao),
+        readWorkbookFile(files.nhe),
+      ]);
+
+      const movData = detectSheetRows(wbMov, [
+        ['Data', 'Última Atualização'], ['OS', 'O.S.'], ['Cliente'], ['Supervisão'], ['Cidade'], ['Local', 'Local de Embarque'], ['Tons Hoje'],
+      ], ['Movimentação Diária', 'Movimentacao Diaria', 'Movimentação_hoje', 'Mapa']);
+      const prodData = detectSheetRows(wbProd, [
+        ['Data'], ['O.S.', 'OS'], ['Cargas'],
+      ], ['Produção Diária', 'Resultado_diario', 'Resultado Diário']);
+      const nheData = detectSheetRows(wbNhe, [
+        ['O.S.', 'OS'], ['Data'], ['Cliente'], ['Cidade de Embarque', 'Cidade'], ['Embarque', 'Local'],
+      ], ['NHE']);
+
+      const setNheOsData = new Set();
+      const setNheOsOnly = new Set();
+      const setNheCcld = new Set();
+      nheData.rows.forEach((row) => {
+        const os = normOs(pickValue(row, ['O.S.', 'OS', 'O.S', 'O S']));
+        const data = ymd(pickValue(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
+        if (os) setNheOsOnly.add(os);
+        if (os && data) setNheOsData.add(`${os}|${data}`);
+        const cli = pickValue(row, ['Cliente']);
+        const cid = pickValue(row, ['Cidade de Embarque', 'Cidade']);
+        const loc = pickValue(row, ['Embarque', 'Local', 'Local de Embarque']);
+        if (cli && cid && loc && data) setNheCcld.add(`${normText(cli)}|${normText(cid)}|${normText(loc)}|${data}`);
+      });
+
+      const setProdNheOsData = new Set();
+      const setProdNheOsOnly = new Set();
+      prodData.rows.forEach((row) => {
+        const os = normOs(pickValue(row, ['O.S.', 'OS']));
+        const data = ymd(pickValue(row, ['Data']));
+        const cargas = normText(pickValue(row, ['Cargas']));
+        if (!os || cargas !== 'NHE') return;
+        setProdNheOsOnly.add(os);
+        if (data) setProdNheOsData.add(`${os}|${data}`);
+      });
+
+      const movCcldCount = new Map();
+      movData.rows.forEach((row) => {
+        const data = ymd(pickValue(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
+        const cli = pickValue(row, ['Cliente']);
+        const cid = pickValue(row, ['Cidade']);
+        const loc = pickValue(row, ['Local', 'Local de Embarque']);
+        if (!data || !cli || !cid || !loc) return;
+        const key = `${normText(cli)}|${normText(cid)}|${normText(loc)}|${data}`;
+        movCcldCount.set(key, (movCcldCount.get(key) || 0) + 1);
+      });
+
+      const rows = [];
+      movData.rows.forEach((row) => {
+        const os = normOs(pickValue(row, ['OS', 'O.S.', 'O.S']));
+        const data = ymd(pickValue(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
+        if (!os || !data) return;
+        const tonsHoje = toNumberLoose(pickValue(row, ['Tons Hoje', 'TonsHoje', 'Tons']));
+        if (tonsHoje !== 0) return;
+        const cliente = pickValue(row, ['Cliente']);
+        const cidade = pickValue(row, ['Cidade']);
+        const local = pickValue(row, ['Local', 'Local de Embarque']);
+        const keyOsData = `${os}|${data}`;
+        let status = 'PENDENTE';
+        const okNhe = setNheOsData.has(keyOsData) || setNheOsOnly.has(os);
+        const okProd = setProdNheOsData.has(keyOsData) || setProdNheOsOnly.has(os);
+        if (okNhe || okProd) {
+          status = 'OK';
+        } else {
+          const keyCcld = `${normText(cliente)}|${normText(cidade)}|${normText(local)}|${data}`;
+          if ((movCcldCount.get(keyCcld) || 0) >= 2 || setNheCcld.has(keyCcld)) status = 'DOIS EMBARQUES';
+        }
+        rows.push({
+          data,
+          data_br: brDateFromAny(data),
+          os,
+          supervisao: pickValue(row, ['Supervisão', 'Supervisao']),
+          funcionario: pickValue(row, ['Atualizado por', 'Atualizado Por', 'Classificador', 'Funcionário', 'Funcionario']),
+          cliente,
+          cidade,
+          local,
+          tons_movimento: tonsHoje,
+          status,
+          observacao: pickValue(row, ['Observações', 'Observacoes', 'Obs']),
+        });
+      });
+
+      const rank = { PENDENTE: 0, 'DOIS EMBARQUES': 1, OK: 2 };
+      rows.sort((a, b) => (rank[a.status] ?? 99) - (rank[b.status] ?? 99)
+        || String(a.data).localeCompare(String(b.data))
+        || String(a.supervisao || '').localeCompare(String(b.supervisao || ''), 'pt-BR'));
+
+      state.fobReportRows = rows;
+      state.fobReportStats = {
+        movimento: movData.rows.length,
+        producao: prodData.rows.length,
+        nhe: nheData.rows.length,
+        abaMovimento: movData.sheetName,
+        abaProducao: prodData.sheetName,
+        abaNhe: nheData.sheetName,
+        pendentes: rows.filter((r) => r.status === 'PENDENTE').length,
+        ok: rows.filter((r) => r.status === 'OK').length,
+        dois: rows.filter((r) => r.status === 'DOIS EMBARQUES').length,
+      };
+      renderFobReport();
+      el.feedback.textContent = `Relatório FOB gerado: ${rows.length} linha(s), ${state.fobReportStats.pendentes} pendente(s).`;
+    } catch (error) {
+      console.error('[FOB comparação]', error);
+      el.feedback.textContent = `Falha ao gerar FOB: ${error.message || 'erro desconhecido'}`;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Gerar relatório FOB'; }
+    }
+  }
+
+  function renderFobReport() {
+    const box = document.getElementById('fobReportResult');
+    if (!box) return;
+    const rows = state.fobReportRows || [];
+    const stats = state.fobReportStats;
+    const btnCsv = document.getElementById('fobExportCsv');
+    const btnSave = document.getElementById('fobSalvarPendentes');
+    if (btnCsv) btnCsv.disabled = !rows.length;
+    if (btnSave) btnSave.disabled = !rows.some((r) => r.status === 'PENDENTE');
+    if (!rows.length) {
+      box.innerHTML = '<div class="log-empty">Anexe os arquivos e clique em <strong>Gerar relatório FOB</strong> para visualizar a comparação.</div>';
+      return;
+    }
+    const preview = rows.slice(0, 250);
+    box.innerHTML = `
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h3>Resultado da comparação FOB</h3>
+            <p class="muted">Abas usadas: Mov./Mapa <b>${esc(stats?.abaMovimento || '-')}</b> · Produção <b>${esc(stats?.abaProducao || '-')}</b> · NHE <b>${esc(stats?.abaNhe || '-')}</b></p>
+          </div>
+        </div>
+        <div class="log-mini-grid mt-16">
+          <article class="card"><h3>Pendentes</h3><p class="metric log-kpi-danger">${BR_INT.format(stats?.pendentes || 0)}</p></article>
+          <article class="card"><h3>Dois embarques</h3><p class="metric log-kpi-warn">${BR_INT.format(stats?.dois || 0)}</p></article>
+          <article class="card"><h3>OK</h3><p class="metric log-kpi-ok">${BR_INT.format(stats?.ok || 0)}</p></article>
+          <article class="card"><h3>Total FOB</h3><p class="metric">${BR_INT.format(rows.length)}</p></article>
+        </div>
+        <div class="log-table-wrap mt-16">
+          <table class="log-table">
+            <thead><tr><th>DATA</th><th>OS</th><th>SUPERVISÃO</th><th>FUNCIONÁRIO</th><th>STATUS</th><th>OBS</th></tr></thead>
+            <tbody>${preview.map((r) => `<tr>
+              <td>${esc(r.data_br)}</td>
+              <td><div class="log-title">${esc(r.os)}</div><div class="log-meta">${esc(r.cliente || '-')}</div></td>
+              <td>${esc(r.supervisao || '-')}</td>
+              <td>${esc(r.funcionario || '-')}</td>
+              <td><strong class="${r.status === 'OK' ? 'log-status-ok' : r.status === 'DOIS EMBARQUES' ? 'log-status-dois' : 'log-status-pendente'}">${esc(r.status)}</strong></td>
+              <td><div class="log-meta">${esc(r.observacao || '')}</div></td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+        ${rows.length > preview.length ? `<div class="log-note">Prévia limitada a ${preview.length} linhas no painel. Use Baixar CSV para o relatório completo.</div>` : ''}
+      </section>`;
+  }
+
+  function fobRowsToCsv(rows) {
+    const header = ['DATA', 'OS', 'SUPERVISÃO', 'FUNCIONÁRIO', 'STATUS', 'OBS'];
+    const lines = [header, ...rows.map((r) => [r.data_br, r.os, r.supervisao, r.funcionario, r.status, r.observacao])];
+    return lines.map((line) => line.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
+  }
+
+  function exportarCsvFob() {
+    const rows = state.fobReportRows || [];
+    if (!rows.length) return;
+    const blob = new Blob(['\ufeff' + fobRowsToCsv(rows)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `FOB_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function salvarPendentesFobImportado() {
+    const pendentes = (state.fobReportRows || []).filter((r) => r.status === 'PENDENTE');
+    if (!pendentes.length) { el.feedback.textContent = 'Nenhuma pendência para salvar.'; return; }
+    const btn = document.getElementById('fobSalvarPendentes');
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+    try {
+      const payload = pendentes.map((r) => ({
+        data_referencia: r.data,
+        numero_os: r.os || null,
+        supervisao: r.supervisao || null,
+        cliente: r.cliente || null,
+        tons_movimento: r.tons_movimento || 0,
+        tons_producao: 0,
+        tons_nh: 0,
+        observacao: [r.observacao, `Gerado por importação FOB. Local: ${r.cidade || '-'} / ${r.local || '-'}`].filter(Boolean).join(' | '),
+        status: 'PENDENTE',
+        criado_por: state.user?.id || null,
+      }));
+      let saved = 0;
+      for (let i = 0; i < payload.length; i += 300) {
+        const chunk = payload.slice(i, i + 300);
+        const { error } = await supabase.from('logistica_fob').insert(chunk);
+        if (error) throw error;
+        saved += chunk.length;
+      }
+      el.feedback.textContent = `${saved} pendência(s) FOB salvas no painel.`;
+      state.fobLoaded = false;
+      await loadFob();
+    } catch (error) {
+      console.error('[FOB salvar pendentes]', error);
+      el.feedback.textContent = `Falha ao salvar pendências: ${error.message || 'erro desconhecido'}`;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Salvar pendentes no painel'; }
+    }
+  }
+
+  function limparImportacaoFob() {
+    state.fobReportRows = [];
+    state.fobReportStats = null;
+    state.fobReportFiles = { movimento: null, producao: null, nhe: null };
+    ['fobMovimentoFile', 'fobProducaoFile', 'fobNheFile'].forEach((id) => { const input = document.getElementById(id); if (input) input.value = ''; });
+    ['fobMovimentoName', 'fobProducaoName', 'fobNheName'].forEach((id) => { const node = document.getElementById(id); if (node) node.textContent = 'Selecionar arquivo'; });
+    renderFobReport();
+    el.feedback.textContent = 'Importação FOB limpa.';
   }
 
 
@@ -958,6 +1353,10 @@ initProtectedPage('Painel de Logística', async (content) => {
     // FOB 0 — form salvar
     if (event.target.closest('#fobSalvar')) { await salvarFob(); return; }
     if (event.target.closest('#fobReload')) { state.fobLoaded = false; await loadFob(); return; }
+    if (event.target.closest('#fobGerarRelatorio')) { await gerarRelatorioFobPorPlanilhas(); return; }
+    if (event.target.closest('#fobSalvarPendentes')) { await salvarPendentesFobImportado(); return; }
+    if (event.target.closest('#fobExportCsv')) { exportarCsvFob(); return; }
+    if (event.target.closest('#fobLimparImportacao')) { limparImportacaoFob(); return; }
 
     // FOB 0 — validar / invalidar
     const fobValido = event.target.closest('[data-fob-valido]');
@@ -1025,6 +1424,17 @@ initProtectedPage('Painel de Logística', async (content) => {
   }
 
   async function onChange(event) {
+    const fobFileInput = event.target.closest('[data-fob-file]');
+    if (fobFileInput) {
+      const tipo = fobFileInput.dataset.fobFile;
+      const file = fobFileInput.files?.[0] || null;
+      state.fobReportFiles[tipo] = file;
+      const labelId = tipo === 'movimento' ? 'fobMovimentoName' : tipo === 'producao' ? 'fobProducaoName' : 'fobNheName';
+      const label = document.getElementById(labelId);
+      if (label) label.textContent = file ? file.name : 'Selecionar arquivo';
+      renderFobReport();
+      return;
+    }
     const obs = event.target.closest('[data-obs-logistica]');
     if (!obs) return;
     const row = state.os.find((r) => String(r.id) === String(obs.closest('[data-os-id]')?.dataset.osId));
