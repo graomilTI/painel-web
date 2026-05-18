@@ -167,12 +167,8 @@ function deslocamentoResumo(row) {
   const tipo = row.deslocamento_tipo || 'NÃO PRECISA';
   const tipoNorm = normalizeText(tipo);
   if (!tipo || ['NAO PRECISA', 'NÃO PRECISA'].includes(tipoNorm)) return 'Não precisa';
-  const parts = [tipo];
-  if (row.deslocamento_origem || row.deslocamento_destino) {
-    parts.push([row.deslocamento_origem, row.deslocamento_destino].filter(Boolean).join(' → '));
-  }
-  if (asNumber(row.deslocamento_valor) > 0) parts.push(money(row.deslocamento_valor));
-  return parts.filter(Boolean).join(' • ');
+  const valor = asNumber(row.deslocamento_valor);
+  return valor > 0 ? `${tipo} • ${money(valor)}` : tipo;
 }
 
 function extrasResumo(row) {
@@ -287,19 +283,19 @@ function renderStyles() {
       .conf-grid{display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:14px;margin-top:16px}.conf-card{background:rgba(8,22,17,.68);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow-soft)}.conf-card h3{margin:0 0 10px;font-size:15px}.conf-metric{font-size:34px;line-height:1;font-weight:900;color:#dcfce7;margin:0 0 8px}.conf-card p{margin:0;color:var(--muted);font-size:13px}
       .conf-panel{margin-top:16px;background:rgba(8,22,17,.72);border:1px solid var(--line);border-radius:24px;padding:18px;box-shadow:var(--shadow-soft)}.conf-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.conf-panel-head h3{margin:0 0 6px}.conf-panel-head p{margin:0;color:var(--muted)}
       .conf-tabs{display:flex;gap:10px;flex-wrap:wrap}.conf-tab{border:1px solid rgba(111,208,165,.22);background:#15152a;color:#e2e2f0;border-radius:999px;padding:10px 14px;font-weight:800;cursor:pointer}.conf-tab.active{background:rgba(34,197,94,.22);border-color:rgba(111,208,165,.45);color:#dcfce7}
-      .conf-filters{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:12px}.conf-field label{display:block;font-size:12px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px}.conf-field input,.conf-field select{width:100%;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#15152a;color:#e2e2f0;padding:12px 13px;color-scheme:dark}.conf-field option{background:#0d0d18;color:#e2e2f0}.conf-filter-actions{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
-      .conf-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#081611}.conf-table{width:100%;border-collapse:collapse;min-width:1180px}.conf-table-despesas{min-width:1220px}.conf-table th,.conf-table td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;vertical-align:top}.conf-table th{background:rgba(15,23,42,.92);color:#dcfce7;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.conf-sort-btn{width:100%;display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;color:#dcfce7;font:inherit;font-weight:900;text-transform:uppercase;letter-spacing:.06em;text-align:left;cursor:pointer;padding:0}.conf-sort-btn:hover{color:#86efac}.conf-sort-icon{font-size:13px;opacity:.55}.conf-sort-icon.active{opacity:1;color:#86efac}.conf-table td{color:#e2e2f0}.conf-table small{display:block;color:var(--muted);margin-top:4px}.conf-empty{text-align:center;color:var(--muted);padding:24px!important}.conf-row-actions{display:flex;gap:8px;flex-wrap:wrap}.conf-row-actions button{font-size:12px;padding:8px 10px;border-radius:12px}
+      .conf-filters{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}.conf-field{flex:1;min-width:120px}.conf-field-sm{flex:0 0 130px}.conf-field label{display:block;font-size:12px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px}.conf-field input,.conf-field select{width:100%;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#15152a;color:#e2e2f0;padding:10px 11px;color-scheme:dark;box-sizing:border-box}.conf-field option{background:#0d0d18;color:#e2e2f0}.conf-filter-actions{display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
+      .conf-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#081611}.conf-table{width:100%;border-collapse:collapse;min-width:1180px}.conf-table-despesas{min-width:1220px}.conf-table th,.conf-table td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;vertical-align:top}.conf-table th{background:rgba(15,23,42,.92);color:#dcfce7;font-size:12px;text-transform:uppercase;letter-spacing:.06em}.conf-sort-btn{width:100%;display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;color:#dcfce7;font:inherit;font-weight:900;text-transform:uppercase;letter-spacing:.06em;text-align:left;cursor:pointer;padding:0}.conf-sort-btn:hover{color:#86efac}.conf-sort-icon{font-size:13px;opacity:.55}.conf-sort-icon.active{opacity:1;color:#86efac}.conf-table td{color:#e2e2f0}.conf-table small{display:block;color:var(--muted);margin-top:4px}.conf-empty{text-align:center;color:var(--muted);padding:24px!important}.conf-row-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.conf-row-actions button{font-size:12px;padding:8px 10px;border-radius:12px}.conf-row-icon-btn{display:inline-flex;align-items:center;justify-content:center;padding:8px!important;border-radius:10px!important;line-height:1}
       .conf-chip{display:inline-flex;align-items:center;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:900;border:1px solid rgba(148,163,184,.18)}.conf-chip-ok{background:rgba(34,197,94,.16);color:#bbf7d0;border-color:rgba(34,197,94,.28)}.conf-chip-warn{background:rgba(234,179,8,.14);color:#fde68a;border-color:rgba(234,179,8,.28)}.conf-chip-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}.conf-chip-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(96,165,250,.30)}.conf-chip-neutral{background:rgba(148,163,184,.12);color:#cbd5e1}
       .conf-note{width:100%;min-height:74px;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#15152a;color:#e2e2f0;padding:12px;resize:vertical}.conf-feedback{min-height:20px;margin-top:10px;color:var(--muted)}
       .conf-subsection-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin:0 0 12px}.conf-subsection-head h4{margin:0;color:#f8fafc;font-size:17px;font-weight:900}.conf-subsection-head p{margin:4px 0 0;color:var(--muted);font-size:13px}.conf-counter{display:inline-flex;align-items:center;white-space:nowrap;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#e2e2f0;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:900}.conf-counter-ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.30);color:#bbf7d0}.conf-conferidos-box{margin-top:22px;padding:16px;border:1px solid rgba(34,197,94,.22);border-radius:20px;background:rgba(4,24,18,.58)}.conf-table-wrap-conferidos{border-color:rgba(34,197,94,.24)}.conf-row-conferido{background:rgba(34,197,94,.045)}
       .conf-uber-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px;padding:12px 14px;border:1px solid rgba(111,208,165,.18);border-radius:18px;background:rgba(15,23,42,.48)}.conf-uber-tools p{margin:4px 0 0;color:var(--muted);font-size:12px}.conf-uber-actions{display:flex;gap:10px;flex-wrap:wrap}.conf-gps-ok{font-size:12px;color:#bbf7d0;font-weight:800}.conf-gps-missing{font-size:12px;color:#fde68a;font-weight:800}
-      @media(max-width:1200px){.conf-grid{grid-template-columns:repeat(2,1fr)}.conf-filters{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.conf-hero,.conf-panel-head{display:block}.conf-grid,.conf-filters{grid-template-columns:1fr}.conf-actions{justify-content:flex-start;margin-top:12px}}
+      @media(max-width:760px){.conf-hero,.conf-panel-head{display:block}.conf-filters{flex-direction:column}.conf-field,.conf-field-sm{flex:1 1 100%}.conf-actions{justify-content:flex-start;margin-top:12px}}
     </style>
   `;
 }
 
 function renderShell(content) {
-  state.filters.inicio = state.filters.inicio || firstDayOfMonthISO();
+  state.filters.inicio = state.filters.inicio || todayISO();
   state.filters.fim = state.filters.fim || todayISO();
 
   content.innerHTML = `
@@ -317,8 +313,6 @@ function renderShell(content) {
       </div>
     </section>
 
-    <section class="conf-grid" id="conf-metrics"></section>
-
     <section class="conf-panel">
       <div class="conf-panel-head">
         <div>
@@ -327,12 +321,12 @@ function renderShell(content) {
         </div>
       </div>
       <form class="conf-filters" id="conf-filters">
-        <div class="conf-field">
-          <label for="conf-inicio">Data inicial</label>
+        <div class="conf-field conf-field-sm">
+          <label for="conf-inicio">De</label>
           <input id="conf-inicio" type="date" value="${escapeHtml(state.filters.inicio)}" />
         </div>
-        <div class="conf-field">
-          <label for="conf-fim">Data final</label>
+        <div class="conf-field conf-field-sm">
+          <label for="conf-fim">Até</label>
           <input id="conf-fim" type="date" value="${escapeHtml(state.filters.fim)}" />
         </div>
         <div class="conf-field">
@@ -341,9 +335,9 @@ function renderShell(content) {
         </div>
         <div class="conf-field">
           <label for="conf-colaborador">Colaborador</label>
-          <input id="conf-colaborador" type="search" placeholder="Nome do colaborador" value="${escapeHtml(state.filters.colaborador)}" />
+          <input id="conf-colaborador" type="search" placeholder="Nome..." value="${escapeHtml(state.filters.colaborador)}" />
         </div>
-        <div class="conf-field">
+        <div class="conf-field conf-field-sm">
           <label for="conf-status">Status</label>
           <select id="conf-status">
             <option value="">Todos</option>
@@ -412,7 +406,6 @@ function renderMetrics() {
 
 function renderActiveTab() {
   document.querySelectorAll('.conf-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === state.tab));
-  renderMetrics();
   renderRegionalOptions();
 
   const subtitle = document.getElementById('conf-table-subtitle');
@@ -478,13 +471,13 @@ function despesasRowHtml(row, mode = 'fila') {
         <div class="conf-row-actions">
           ${isConferido
             ? `
-              <button class="conf-btn" data-action="EM_ANALISE" data-id="${escapeHtml(row.id)}" type="button">Reabrir</button>
-              <button class="conf-btn conf-btn-danger" data-action="PENDENCIA" data-id="${escapeHtml(row.id)}" type="button">Pendência</button>
+              <button class="conf-btn conf-row-icon-btn" data-action="EM_ANALISE" data-id="${escapeHtml(row.id)}" type="button" title="Reabrir"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.41"/></svg></button>
+              <button class="conf-btn conf-btn-danger conf-row-icon-btn" data-action="PENDENCIA" data-id="${escapeHtml(row.id)}" type="button" title="Pendência"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m10.29 3.86-8.73 15A1 1 0 0 0 2.43 20h17.14a1 1 0 0 0 .87-1.5l-8.57-15a1 1 0 0 0-1.74 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
             `
             : `
-              <button class="conf-btn" data-action="EM_ANALISE" data-id="${escapeHtml(row.id)}" type="button">Analisar</button>
-              <button class="conf-btn conf-btn-primary" data-action="CONFERIDO" data-id="${escapeHtml(row.id)}" type="button">Conferir</button>
-              <button class="conf-btn conf-btn-danger" data-action="PENDENCIA" data-id="${escapeHtml(row.id)}" type="button">Pendência</button>
+              <button class="conf-btn conf-row-icon-btn" data-action="EM_ANALISE" data-id="${escapeHtml(row.id)}" type="button" title="Analisar"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></button>
+              <button class="conf-btn conf-btn-primary conf-row-icon-btn" data-action="CONFERIDO" data-id="${escapeHtml(row.id)}" type="button" title="Conferir"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+              <button class="conf-btn conf-btn-danger conf-row-icon-btn" data-action="PENDENCIA" data-id="${escapeHtml(row.id)}" type="button" title="Pendência"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m10.29 3.86-8.73 15A1 1 0 0 0 2.43 20h17.14a1 1 0 0 0 .87-1.5l-8.57-15a1 1 0 0 0-1.74 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
             `}
         </div>
       </td>
@@ -1522,7 +1515,7 @@ function bindEvents() {
   });
 
   document.getElementById('conf-clear')?.addEventListener('click', () => {
-    state.filters = { inicio: firstDayOfMonthISO(), fim: todayISO(), regional: '', colaborador: '', status: '' };
+    state.filters = { inicio: todayISO(), fim: todayISO(), regional: '', colaborador: '', status: '' };
     document.getElementById('conf-inicio').value = state.filters.inicio;
     document.getElementById('conf-fim').value = state.filters.fim;
     document.getElementById('conf-colaborador').value = '';

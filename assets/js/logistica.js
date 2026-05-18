@@ -17,9 +17,14 @@ function dateFromTomorrowLock() {
 const TABS = ['os','abrir_os','fob','report','conferir'];
 const TAB_LABELS = { os: 'O.S.', abrir_os: 'Abrir OS', fob: 'FOB', report: 'Report', conferir: 'Conferir' };
 
+const OS_STATUS_LABELS = { PENDENTE: 'Pendente', AGUARDAR: 'Aguardar', ATENDER: 'Atender', FINALIZAR: 'Finalizar', AJUSTAR: 'Ajustar' };
+
 const state = {
   tab: location.hash.replace('#','') || 'os',
   rows: [],
+  allOs: [],
+  allOsFilter: 'TODAS',
+  allOsLoading: false,
   fobRows: [],
   aberturaRows: [],
   aberturaRefs: { clientes: [], filiais: [], armazens: [], destinos: [], locaisDestino: [], regionais: [] },
@@ -48,7 +53,7 @@ initProtectedPage('Logística', async (content) => {
     state.tab = btn.dataset.tab;
     location.hash = state.tab;
     content.querySelectorAll('.log-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
-    if (state.tab === 'os' && !state.rows.length) await loadOs();
+    if (state.tab === 'os' && !state.rows.length) await Promise.all([loadOs(), loadAllOs()]);
     if (state.tab === 'abrir_os' && !state.aberturaRows.length) await loadAberturaOs();
     if (state.tab === 'fob' && !state.fobRows.length) await loadFob();
     render(content);
@@ -58,7 +63,13 @@ initProtectedPage('Logística', async (content) => {
     const okBtn = e.target.closest('[data-ok-id]');
     if (okBtn) { await handleOk(okBtn.dataset.okId, okBtn.dataset.okType, content); return; }
 
-    if (e.target.closest('#logReload')) { await loadOs(); render(content); return; }
+    const osStatusBtn = e.target.closest('[data-os-status][data-os-id]');
+    if (osStatusBtn) { await handleOsStatusChange(osStatusBtn.dataset.osId, osStatusBtn.dataset.osStatus, content); return; }
+
+    const osFilterBtn = e.target.closest('[data-os-filter]');
+    if (osFilterBtn) { state.allOsFilter = osFilterBtn.dataset.osFilter; render(content); return; }
+
+    if (e.target.closest('#logReload')) { await Promise.all([loadOs(), loadAllOs()]); render(content); return; }
     if (e.target.closest('#fobReload')) { await loadFob(); render(content); return; }
     if (e.target.closest('#fobSearchOsBtn')) { await handleBuscarOsFob(content); return; }
     if (e.target.closest('#fobAddManualBtn')) { await handleAdicionarFobManual(content); return; }
@@ -73,7 +84,7 @@ initProtectedPage('Logística', async (content) => {
 
   if (state.tab === 'fob') await loadFob();
   else if (state.tab === 'abrir_os') await loadAberturaOs();
-  else await loadOs();
+  else await Promise.all([loadOs(), loadAllOs()]);
   render(content);
 });
 
@@ -88,6 +99,20 @@ async function loadOs() {
     .limit(1000);
   state.rows = safe(data);
   state.loading = false;
+}
+
+async function loadAllOs() {
+  state.allOsLoading = true;
+  const cutoff = (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString().slice(0,10); })();
+  const { data } = await supabase
+    .from('operacional_os')
+    .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,embarcado,status_gestor,status_logistica')
+    .gte('data_os', cutoff)
+    .not('status_logistica', 'eq', 'FINALIZADA')
+    .order('data_os', { ascending: false })
+    .limit(500);
+  state.allOs = safe(data);
+  state.allOsLoading = false;
 }
 
 async function loadFob() {
@@ -204,34 +229,91 @@ function render(content) {
 }
 
 function renderOsTab() {
-  if (state.loading) return `<section class="card mt-16"><p class="muted" style="padding:16px">Carregando...</p></section>`;
-  if (!state.rows.length) return `<section class="card mt-16"><div class="log-empty">Nenhuma O.S. pendente para a Logística.</div></section>`;
+  const loading = state.loading || state.allOsLoading;
+  if (loading) return `<section class="card mt-16"><p class="muted" style="padding:16px">Carregando...</p></section>`;
+
+  const allFiltered = (() => {
+    const f = state.allOsFilter;
+    if (f === 'TODAS') return state.allOs;
+    if (f === 'PENDENTE') return state.allOs.filter(r => !r.status_gestor);
+    return state.allOs.filter(r => String(r.status_gestor || '') === f);
+  })();
+
+  const counts = {
+    TODAS: state.allOs.length,
+    PENDENTE: state.allOs.filter(r => !r.status_gestor).length,
+    AGUARDAR: state.allOs.filter(r => r.status_gestor === 'AGUARDAR').length,
+    ATENDER: state.allOs.filter(r => r.status_gestor === 'ATENDER').length,
+    FINALIZAR: state.allOs.filter(r => r.status_gestor === 'FINALIZAR').length,
+  };
 
   const kgRows = state.rows.filter(r => String(r.observacao_logistica||'').startsWith('KG solicitado'));
-  const finalizarRows = state.rows.filter(r => !String(r.observacao_logistica||'').startsWith('KG solicitado') && String(r.status_gestor||'') === 'FINALIZAR');
-  const saldoZeroRows = state.rows.filter(r => !String(r.observacao_logistica||'').startsWith('KG solicitado') && String(r.status_gestor||'') !== 'FINALIZAR' && Number(r.remanescente) === 0);
+  const logQueue = state.rows.filter(r => !String(r.observacao_logistica||'').startsWith('KG solicitado'));
+
+  const ICO_AGUARDAR = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+  const ICO_ATENDER = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+  const ICO_FINALIZAR = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+  const statusBtn = (id, status, ico, cls, active) =>
+    `<button class="log-os-status-btn ${cls}${active ? ' active' : ''}" data-os-id="${esc(String(id))}" data-os-status="${status}" type="button" title="${OS_STATUS_LABELS[status]}">${ico}</button>`;
+
+  const osRow = (r) => {
+    const st = r.status_gestor || null;
+    const rem = Number(r.remanescente);
+    const zero = rem === 0;
+    return `<tr>
+      <td><strong>${esc(r.numero_os)}</strong><br><small class="muted">${brDate(r.data_os)}</small><br><small class="muted">${esc(r.supervisao||'-')}</small></td>
+      <td><strong>${esc(r.cliente||'-')}</strong><div class="muted" style="font-size:11px;margin-top:2px">Emb: ${esc(r.embarque||'-')} → ${esc(r.destino||'-')}</div></td>
+      <td><span class="log-chip ${rem<=0?'warn':'ok'}">${fmt(rem)}</span></td>
+      <td><span class="log-chip ${!st?'gray':st==='AGUARDAR'?'warn':st==='ATENDER'?'blue':st==='FINALIZAR'?'ok':'gray'}">${OS_STATUS_LABELS[st||'PENDENTE']||st||'Pendente'}</span></td>
+      <td>
+        <div class="log-os-actions">
+          ${zero
+            ? statusBtn(r.id,'FINALIZAR',ICO_FINALIZAR,'green',st==='FINALIZAR')
+            : `${statusBtn(r.id,'AGUARDAR',ICO_AGUARDAR,'yellow',st==='AGUARDAR')}${statusBtn(r.id,'ATENDER',ICO_ATENDER,'blue',st==='ATENDER')}${statusBtn(r.id,'FINALIZAR',ICO_FINALIZAR,'green',st==='FINALIZAR')}`}
+        </div>
+      </td>
+    </tr>`;
+  };
+
+  const FILTERS = ['TODAS','PENDENTE','AGUARDAR','ATENDER','FINALIZAR'];
+  const filterBar = `<div class="log-os-filter-bar">${FILTERS.map(f =>
+    `<button class="log-os-filter-btn${state.allOsFilter===f?' active':''}" data-os-filter="${f}" type="button">${f==='TODAS'?'Todas':OS_STATUS_LABELS[f]} <span class="log-os-count">${counts[f]}</span></button>`
+  ).join('')}</div>`;
 
   return `
     <section class="card mt-16">
       <div class="section-head">
-        <div><h3>O.S. para Logística</h3>
-          <p class="muted">${finalizarRows.length} para finalizar · ${kgRows.length} aumento de saldo · ${saldoZeroRows.length} saldo zerado</p>
-        </div>
+        <div><h3>Distribuição de O.S.</h3><p class="muted">Gerencie o status das ordens de serviço ativas.</p></div>
         <button class="btn btn-secondary" id="logReload" type="button">Atualizar</button>
+      </div>
+      ${filterBar}
+      <div class="log-table-wrap">
+        <table class="log-table">
+          <thead><tr><th>O.S.</th><th>Cliente / Rota</th><th>Remanescente</th><th>Status</th><th>Ação</th></tr></thead>
+          <tbody>
+            ${allFiltered.length
+              ? allFiltered.map(osRow).join('')
+              : `<tr><td class="log-empty" colspan="5" style="text-align:center;padding:24px">Nenhuma O.S. encontrada para este filtro.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    ${(kgRows.length || logQueue.length) ? `
+    <section class="card mt-16">
+      <div class="section-head">
+        <div><h3>Fila Logística</h3><p class="muted">${logQueue.length} para concluir · ${kgRows.length} aumento de saldo</p></div>
       </div>
       <div class="log-table-wrap">
         <table class="log-table">
           <thead><tr>
-            <th style="width:10%">O.S.</th>
-            <th style="width:32%">Cliente / Rota</th>
-            <th style="width:13%">Remanescente</th>
-            <th style="width:30%">Solicitação</th>
-            <th style="width:15%">Ação</th>
+            <th>O.S.</th><th>Cliente / Rota</th><th>Remanescente</th><th>Solicitação</th><th>Ação</th>
           </tr></thead>
           <tbody>${state.rows.map(rowHtml).join('')}</tbody>
         </table>
       </div>
-    </section>
+    </section>` : ''}
   `;
 }
 
@@ -584,6 +666,27 @@ async function handleValidarFob(id, action, content) {
   render(content);
 }
 
+async function handleOsStatusChange(id, newStatus, content) {
+  const row = state.allOs.find(r => String(r.id) === String(id));
+  if (!row) return;
+  const currentStatus = row.status_gestor || null;
+  const patch = currentStatus === newStatus
+    ? { status_gestor: null, updated_at: new Date().toISOString() }
+    : { status_gestor: newStatus, updated_at: new Date().toISOString() };
+
+  const { error } = await supabase.from('operacional_os').update(patch).eq('id', id);
+  if (error) { alert(error.message); return; }
+  Object.assign(row, patch);
+
+  if (newStatus === 'FINALIZAR' && patch.status_gestor === 'FINALIZAR') {
+    if (!state.rows.find(r => String(r.id) === String(id))) await loadOs();
+  } else if (patch.status_gestor === null) {
+    state.rows = state.rows.filter(r => String(r.id) !== String(id));
+  }
+
+  render(content);
+}
+
 async function handleOk(id, type, content) {
   const row = state.rows.find(r => String(r.id) === String(id));
   if (!row) return;
@@ -641,6 +744,8 @@ function injectStyles() {
     .fob-os-found{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;border:1px solid rgba(34,197,94,.18);background:rgba(22,101,52,.12);border-radius:16px;padding:12px;margin:12px 0}.fob-os-found small{display:block;color:#8fa1b5;font-size:11px}.fob-os-found strong{display:block;color:#e5e7eb;margin-top:3px}
     .abrir-os-card{border:1px solid rgba(52,211,153,.14);border-radius:18px;background:rgba(2,6,23,.18);padding:16px;margin-top:16px}.abrir-os-card h4{margin:0 0 14px;color:#bbf7d0}.abrir-os-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px}.abrir-os-grid label{font-size:12px;color:#8fa1b5;font-weight:900}.abrir-os-grid .log-input{margin-top:6px}.log-subtitle{color:#bbf7d0;margin:0 0 12px;font-weight:950}
     .fob-list{display:flex;flex-direction:column;gap:10px}.fob-row{display:grid;grid-template-columns:1fr 1.7fr 1.4fr 1.2fr .9fr 1.5fr;gap:12px;align-items:center;border:1px solid rgba(52,211,153,.12);background:rgba(15,23,42,.26);border-radius:18px;padding:14px}.fob-row.unseen{background:linear-gradient(90deg,rgba(148,163,184,.14),rgba(15,23,42,.25));border-color:rgba(148,163,184,.22)}.fob-row.valid{border-color:rgba(34,197,94,.26)}.fob-row.invalid{border-color:rgba(239,68,68,.26)}.fob-cell strong{display:block;color:#e5e7eb;font-weight:950}.fob-cell span{display:block;color:#8fa1b5;font-size:12px;margin-top:3px;line-height:1.35}.fob-cell.status .log-chip,.fob-cell.view .log-chip{display:inline-flex}.fob-tons{font-weight:800}.fob-cell.actions{display:grid;grid-template-columns:1fr 52px 52px;gap:8px}.fob-obs{min-width:170px}.fob-icon{border:0;border-radius:14px;min-height:44px;font-size:22px;font-weight:950;cursor:pointer}.fob-icon.ok{background:linear-gradient(135deg,#16a34a,#34d399);color:#052e16}.fob-icon.bad{background:rgba(127,29,29,.9);color:#fecaca}.fob-icon:hover{opacity:.88}
+    .log-os-filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.log-os-filter-btn{border:1px solid rgba(52,211,153,.18);background:rgba(15,23,42,.5);color:#8fa1b5;border-radius:10px;padding:7px 14px;font-size:12px;font-weight:900;cursor:pointer}.log-os-filter-btn.active{background:rgba(22,101,52,.32);border-color:rgba(34,197,94,.4);color:#bbf7d0}.log-os-count{display:inline-flex;align-items:center;justify-content:center;background:rgba(148,163,184,.14);border-radius:999px;padding:2px 7px;font-size:11px;margin-left:4px}
+    .log-os-actions{display:flex;gap:6px}.log-os-status-btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(52,211,153,.2);background:rgba(15,23,42,.6);color:#8fa1b5;border-radius:10px;width:36px;height:36px;cursor:pointer;transition:background .15s}.log-os-status-btn.yellow.active,.log-os-status-btn.yellow:hover{background:rgba(250,204,21,.18);border-color:rgba(250,204,21,.35);color:#fde68a}.log-os-status-btn.blue.active,.log-os-status-btn.blue:hover{background:rgba(59,130,246,.18);border-color:rgba(96,165,250,.35);color:#bfdbfe}.log-os-status-btn.green.active,.log-os-status-btn.green:hover{background:rgba(22,163,74,.22);border-color:rgba(34,197,94,.4);color:#bbf7d0}
     @media(max-width:1100px){.abrir-os-grid{grid-template-columns:1fr 1fr}.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr 1fr}.fob-row{grid-template-columns:1fr}.fob-cell.actions{grid-template-columns:1fr 52px 52px}}
     @media(max-width:680px){.abrir-os-grid{grid-template-columns:1fr}.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr}.fob-os-line{grid-template-columns:1fr}.log-tab{flex:1}.fob-cell.actions{grid-template-columns:1fr 48px 48px}}
   `;
