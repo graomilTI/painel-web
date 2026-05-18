@@ -31,6 +31,28 @@ const CLIENTES_EXPORTACAO = [
   'AGRÍCOLA ALVORADA',
 ];
 
+
+const ICO_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg>`;
+const ICO_X = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+const FOB_DETECT_CONFIGS = {
+  movimento: {
+    label: 'Mapa / Movimentação Diária',
+    required: [['Data', 'Última Atualização'], ['OS', 'O.S.'], ['Cliente'], ['Supervisão'], ['Cidade'], ['Local', 'Local de Embarque'], ['Tons Hoje']],
+    preferred: ['Movimentação Diária', 'Movimentacao Diaria', 'Movimento Diário', 'Movimento Diario', 'Movimentação_hoje', 'Mapa'],
+  },
+  producao: {
+    label: 'Produção Diária',
+    required: [['Data'], ['O.S.', 'OS'], ['Cargas']],
+    preferred: ['Produção Diária', 'Producao Diaria', 'Resultado_diario', 'Resultado Diário', 'Lista'],
+  },
+  nhe: {
+    label: 'NHE',
+    required: [['O.S.', 'OS'], ['Data'], ['Cliente'], ['Cidade de Embarque', 'Cidade'], ['Embarque', 'Local']],
+    preferred: ['NHE', 'Lista'],
+  },
+};
+
 const state = {
   user: null,
   tab: 'os',
@@ -697,9 +719,6 @@ initProtectedPage('Painel de Logística', async (content) => {
 
   // ── FOB 0 ────────────────────────────────────────────────────────────────
 
-  const ICO_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg>`;
-  const ICO_X     = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-
   async function loadFob() {
     await loadColaboradoresFob().catch(() => null);
     const list = document.getElementById('fobList');
@@ -999,24 +1018,6 @@ initProtectedPage('Painel de Logística', async (content) => {
     }
     return { ...best, requiredMin, requiredTotal: requiredAliases.length };
   }
-
-  const FOB_DETECT_CONFIGS = {
-    movimento: {
-      label: 'Mapa / Movimentação Diária',
-      required: [['Data', 'Última Atualização'], ['OS', 'O.S.'], ['Cliente'], ['Supervisão'], ['Cidade'], ['Local', 'Local de Embarque'], ['Tons Hoje']],
-      preferred: ['Movimentação Diária', 'Movimentacao Diaria', 'Movimento Diário', 'Movimento Diario', 'Movimentação_hoje', 'Mapa'],
-    },
-    producao: {
-      label: 'Produção Diária',
-      required: [['Data'], ['O.S.', 'OS'], ['Cargas']],
-      preferred: ['Produção Diária', 'Producao Diaria', 'Resultado_diario', 'Resultado Diário', 'Lista'],
-    },
-    nhe: {
-      label: 'NHE',
-      required: [['O.S.', 'OS'], ['Data'], ['Cliente'], ['Cidade de Embarque', 'Cidade'], ['Embarque', 'Local']],
-      preferred: ['NHE', 'Lista'],
-    },
-  };
 
   function fileNameBoostForType(fileName, tipo) {
     const n = normalize(fileName || '');
