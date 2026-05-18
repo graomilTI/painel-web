@@ -54,8 +54,12 @@ function injectStyles() {
     .cc-btn-danger:hover{background:rgba(127,29,29,.45)!important}
     .cc-participants-wrap{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
     .cc-participant-row{display:flex;gap:8px;align-items:center}
-    .cc-participant-row input{flex:1;padding:10px 13px;border:1px solid rgba(45,212,160,.18);border-radius:12px;background:rgba(4,13,9,.6);color:var(--text);outline:none;font-size:14px;font-family:inherit;color-scheme:dark}
-    .cc-participant-row input:focus{border-color:rgba(45,212,160,.38);box-shadow:0 0 0 3px rgba(45,212,160,.08)}
+    .cc-participant-row input{flex:1;padding:12px 14px;border:1px solid rgba(45,212,160,.12)!important;border-radius:14px!important;background:rgba(8,22,17,.58)!important;color:var(--text)!important;outline:none;font:inherit;color-scheme:dark}
+    .cc-participant-row input:focus{border-color:rgba(45,212,160,.28)!important;box-shadow:0 0 0 3px rgba(45,212,160,.07)!important}
+    .cc-ac-wrap{position:relative;flex:1}
+    .cc-ac-drop{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:200;list-style:none;margin:0;padding:4px 0;border:1px solid rgba(45,212,160,.22);border-radius:13px;background:#0d0d18;box-shadow:0 8px 28px rgba(0,0,0,.55);max-height:220px;overflow-y:auto}
+    .cc-ac-item{padding:9px 14px;cursor:pointer;font-size:13px;color:var(--text);list-style:none}
+    .cc-ac-item:hover{background:rgba(45,212,160,.11);color:#b0f0d8}
     .cc-remove-part{width:32px;height:32px;border:1px solid rgba(248,113,113,.22);background:rgba(127,29,29,.20);color:#fecaca;border-radius:9px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:inherit}
     .cc-remove-part:hover{background:rgba(127,29,29,.40)}
     .cc-add-part{background:transparent;border:1px dashed rgba(45,212,160,.30);color:rgba(45,212,160,.75);border-radius:11px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;width:fit-content;font-family:inherit}
@@ -126,7 +130,6 @@ initProtectedPage('Contato Cliente', async (content) => {
           <div class="field field-span-2">
             <label>Participantes Grão 1000</label>
             <div id="${KEY}-part-grao-wrap" class="cc-participants-wrap"></div>
-            <datalist id="${KEY}-colab-list"></datalist>
             <button type="button" id="${KEY}-add-grao" class="cc-add-part">+ Adicionar participante</button>
           </div>
 
@@ -214,6 +217,7 @@ initProtectedPage('Contato Cliente', async (content) => {
   const state = {
     editingId: null,
     currentUser: null,
+    colaboradores: [],
     rows: [],
     pendingFiles: [],
     existingAnexos: []
@@ -227,7 +231,6 @@ initProtectedPage('Contato Cliente', async (content) => {
   const feedback = document.getElementById(`${KEY}-feedback`);
   const cliWrap = document.getElementById(`${KEY}-part-cli-wrap`);
   const graoWrap = document.getElementById(`${KEY}-part-grao-wrap`);
-  const datalist = document.getElementById(`${KEY}-colab-list`);
   const fileInput = document.getElementById(`${KEY}-file-input`);
   const filesPreview = document.getElementById(`${KEY}-files-preview`);
   const uploadZone = document.getElementById(`${KEY}-upload-zone`);
@@ -245,25 +248,60 @@ initProtectedPage('Contato Cliente', async (content) => {
       let q = supabase.from('colaborador_snapshot').select('nome').order('nome').limit(3000);
       if (latest?.data_referencia) q = q.eq('data_referencia', latest.data_referencia);
       const { data } = await q;
-      const names = [...new Set((data || []).map(c => c.nome).filter(Boolean))];
-      datalist.innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
+      state.colaboradores = [...new Set((data || []).map(c => c.nome).filter(Boolean))];
     } catch {}
   }
 
   function mkParticipantRow(value, isGrao) {
     const row = document.createElement('div');
     row.className = 'cc-participant-row';
+
     const inp = document.createElement('input');
     inp.type = 'text';
     inp.value = value || '';
     inp.placeholder = isGrao ? 'Nome do colaborador' : 'Nome do participante';
-    if (isGrao) inp.setAttribute('list', `${KEY}-colab-list`);
+    inp.autocomplete = 'off';
+
     const rm = document.createElement('button');
     rm.type = 'button';
     rm.className = 'cc-remove-part';
     rm.textContent = '×';
     rm.addEventListener('click', () => row.remove());
-    row.appendChild(inp);
+
+    if (isGrao) {
+      const acWrap = document.createElement('div');
+      acWrap.className = 'cc-ac-wrap';
+
+      const drop = document.createElement('ul');
+      drop.className = 'cc-ac-drop';
+
+      inp.addEventListener('input', () => {
+        const q = inp.value.trim().toLowerCase();
+        if (!q) { drop.style.display = 'none'; return; }
+        const matches = state.colaboradores.filter(n => n.toLowerCase().includes(q)).slice(0, 25);
+        if (!matches.length) { drop.style.display = 'none'; return; }
+        drop.innerHTML = matches.map(n => `<li class="cc-ac-item">${esc(n)}</li>`).join('');
+        drop.style.display = 'block';
+      });
+
+      inp.addEventListener('blur', () => {
+        setTimeout(() => { drop.style.display = 'none'; }, 160);
+      });
+
+      drop.addEventListener('mousedown', e => {
+        const item = e.target.closest('.cc-ac-item');
+        if (!item) return;
+        inp.value = item.textContent;
+        drop.style.display = 'none';
+      });
+
+      acWrap.appendChild(inp);
+      acWrap.appendChild(drop);
+      row.appendChild(acWrap);
+    } else {
+      row.appendChild(inp);
+    }
+
     row.appendChild(rm);
     return row;
   }
