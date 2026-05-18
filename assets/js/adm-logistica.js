@@ -35,6 +35,8 @@ const state = {
   tab: 'os',
   osLog: [],
   osLogLoaded: false,
+  fob: [],
+  fobLoaded: false,
   os: [],
   atribuicoes: [],
   alertas: [],
@@ -295,7 +297,25 @@ initProtectedPage('Painel de Logística', async (content) => {
     </section>
 
     <section class="card mt-16 log-section" id="section-fob">
-      <div class="log-empty">Módulo <strong>FOB</strong> em desenvolvimento.</div>
+      <div class="section-head">
+        <div><h3>FOB 0 — Embarques zerados</h3><p class="muted">Registre datas com NH ativo mas embarque zero na movimentação. O gestor valida (✓) ou rejeita (✗) cada ocorrência.</p></div>
+        <button id="fobReload" class="btn btn-secondary" type="button">Atualizar</button>
+      </div>
+      <div class="card mt-16">
+        <h4 style="margin:0 0 14px;color:#bbf7d0">Registrar FOB 0</h4>
+        <div class="filters-grid log-grid" style="grid-template-columns:repeat(3,minmax(140px,1fr))">
+          <div class="field"><label>Data *</label><input id="fobData" class="log-input" type="date" /></div>
+          <div class="field"><label>O.S. (opcional)</label><input id="fobOs" class="log-input" type="text" placeholder="Número da OS" /></div>
+          <div class="field"><label>Supervisão</label><input id="fobSup" class="log-input" type="text" placeholder="Regional" /></div>
+          <div class="field"><label>Cliente</label><input id="fobCliente" class="log-input" type="text" placeholder="Nome do cliente" /></div>
+          <div class="field"><label>Tons mov. diária</label><input id="fobMov" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
+          <div class="field"><label>Tons prod. diária</label><input id="fobProd" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
+          <div class="field"><label>Tons NH</label><input id="fobNh" class="log-input" type="number" step="0.01" placeholder="0,00" /></div>
+          <div class="field" style="grid-column:span 2"><label>Observação</label><textarea id="fobObs" class="log-input log-textarea" placeholder="Motivo do FOB 0, referência do NH, detalhes da comparação..."></textarea></div>
+        </div>
+        <div class="mt-16"><button id="fobSalvar" class="btn btn-primary" type="button">Registrar FOB 0</button></div>
+      </div>
+      <div id="fobList" class="mt-16"></div>
     </section>
 
     <section class="card mt-16 log-section" id="section-report">
@@ -486,6 +506,7 @@ initProtectedPage('Painel de Logística', async (content) => {
     el.atraso.closest('.field').style.display = state.tab === 'classificadores' ? '' : 'none';
     document.querySelector('.filters-grid')?.style.setProperty('display', isAdmTab ? '' : 'none');
     if (state.tab === 'os' && !state.osLogLoaded) loadOsLog();
+    if (state.tab === 'fob' && !state.fobLoaded) loadFob();
   }
 
   function renderStats() {
@@ -634,6 +655,138 @@ initProtectedPage('Painel de Logística', async (content) => {
     renderConferencias();
     renderExportacoes();
     renderRelatorios();
+    if (state.tab === 'fob') renderFob();
+  }
+
+  // ── FOB 0 ────────────────────────────────────────────────────────────────
+
+  const ICO_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const ICO_X     = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+  async function loadFob() {
+    const list = document.getElementById('fobList');
+    if (list) list.innerHTML = '<div class="log-empty">Carregando...</div>';
+    const { data, error } = await supabase
+      .from('logistica_fob')
+      .select('*')
+      .order('data_referencia', { ascending: false })
+      .order('criado_em', { ascending: false })
+      .limit(300);
+    state.fob = safeArray(data);
+    state.fobLoaded = true;
+    if (error) console.warn('[FOB]', error);
+    renderFob();
+  }
+
+  function renderFob() {
+    const list = document.getElementById('fobList');
+    if (!list) return;
+
+    const pendentes  = state.fob.filter((r) => r.status === 'PENDENTE');
+    const historico  = state.fob.filter((r) => r.status !== 'PENDENTE');
+
+    function fobRow(r) {
+      const isPendente = r.status === 'PENDENTE';
+      const stBadge = isPendente
+        ? badge('Pendente', 'warn')
+        : r.status === 'VALIDO'
+          ? badge('Válido', 'ok')
+          : badge('Inválido', 'danger');
+      return `<tr data-fob-id="${esc(r.id)}">
+        <td><div class="log-title">${brDate(r.data_referencia)}</div><div class="log-meta">${esc(r.supervisao || '-')}</div></td>
+        <td><div class="log-title">${esc(r.cliente || '-')}</div><div class="log-meta">OS: ${esc(r.numero_os || '-')}</div></td>
+        <td>
+          <div class="log-meta">Mov.: <b>${BR_NUM.format(numberBr(r.tons_movimento))}</b></div>
+          <div class="log-meta">Prod.: <b>${BR_NUM.format(numberBr(r.tons_producao))}</b></div>
+          <div class="log-meta">NH: <b>${BR_NUM.format(numberBr(r.tons_nh))}</b></div>
+        </td>
+        <td><div class="log-meta" style="max-width:220px">${esc(r.observacao || '-')}</div></td>
+        <td>${stBadge}${r.observacao_gestor ? `<div class="log-meta" style="margin-top:4px">${esc(r.observacao_gestor)}</div>` : ''}${!isPendente && r.validado_em ? `<div class="log-meta">${brDate(r.validado_em, true)}</div>` : ''}</td>
+        <td>
+          ${isPendente ? `
+            <textarea class="log-input log-textarea" data-fob-obs-gestor style="min-height:46px;font-size:12px;margin-bottom:6px" placeholder="Observação (opcional)"></textarea>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary" data-fob-valido="${esc(r.id)}" title="Válido — FOB 0 confirmado" type="button">${ICO_CHECK}</button>
+              <button class="btn" style="background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.45);color:#fca5a5" data-fob-invalido="${esc(r.id)}" title="Inválido — houve embarque" type="button">${ICO_X}</button>
+            </div>
+          ` : '—'}
+        </td>
+      </tr>`;
+    }
+
+    if (!state.fob.length) {
+      list.innerHTML = '<div class="log-empty">Nenhum FOB 0 registrado ainda.</div>';
+      return;
+    }
+
+    list.innerHTML = `
+      ${pendentes.length ? `
+        <h4 style="color:#fde68a;margin:0 0 10px">Pendentes de validação (${pendentes.length})</h4>
+        <div class="log-table-wrap">
+          <table class="log-table">
+            <thead><tr><th>Data</th><th>Cliente / OS</th><th>Toneladas</th><th>Observação log.</th><th>Status</th><th>Ação gestor</th></tr></thead>
+            <tbody>${pendentes.map(fobRow).join('')}</tbody>
+          </table>
+        </div>
+      ` : '<div class="log-empty">Nenhum FOB 0 pendente de validação.</div>'}
+      ${historico.length ? `
+        <h4 style="margin:24px 0 10px">Histórico validado (${historico.length})</h4>
+        <div class="log-table-wrap">
+          <table class="log-table">
+            <thead><tr><th>Data</th><th>Cliente / OS</th><th>Toneladas</th><th>Observação log.</th><th>Status</th><th></th></tr></thead>
+            <tbody>${historico.map(fobRow).join('')}</tbody>
+          </table>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  async function salvarFob() {
+    const dataVal = document.getElementById('fobData')?.value;
+    if (!dataVal) { el.feedback.textContent = 'Informe a data do FOB 0.'; return; }
+    const btn = document.getElementById('fobSalvar');
+    btn.disabled = true; btn.textContent = 'Salvando...';
+    const { error } = await supabase.from('logistica_fob').insert({
+      data_referencia: dataVal,
+      numero_os:   document.getElementById('fobOs')?.value?.trim()    || null,
+      supervisao:  document.getElementById('fobSup')?.value?.trim()   || null,
+      cliente:     document.getElementById('fobCliente')?.value?.trim() || null,
+      tons_movimento: Number(document.getElementById('fobMov')?.value)  || 0,
+      tons_producao:  Number(document.getElementById('fobProd')?.value) || 0,
+      tons_nh:        Number(document.getElementById('fobNh')?.value)   || 0,
+      observacao:  document.getElementById('fobObs')?.value?.trim()   || null,
+      status:      'PENDENTE',
+      criado_por:  state.user?.id || null,
+    });
+    btn.disabled = false; btn.textContent = 'Registrar FOB 0';
+    if (error) { el.feedback.textContent = error.message; return; }
+    ['fobOs','fobSup','fobCliente','fobMov','fobProd','fobNh','fobObs'].forEach((id) => {
+      const inp = document.getElementById(id);
+      if (inp) inp.value = '';
+    });
+    el.feedback.textContent = 'FOB 0 registrado. Aguardando validação do gestor.';
+    state.fobLoaded = false;
+    await loadFob();
+  }
+
+  async function validarFob(id, status, triggerBtn) {
+    const tr = triggerBtn.closest('[data-fob-id]');
+    const obsEl = tr?.querySelector('[data-fob-obs-gestor]');
+    const observacao_gestor = obsEl?.value?.trim() || null;
+    triggerBtn.disabled = true;
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('logistica_fob').update({
+      status,
+      observacao_gestor,
+      validado_por: state.user?.id || null,
+      validado_em:  now,
+      updated_at:   now,
+    }).eq('id', id);
+    if (error) { el.feedback.textContent = error.message; triggerBtn.disabled = false; return; }
+    const idx = state.fob.findIndex((r) => String(r.id) === String(id));
+    if (idx !== -1) Object.assign(state.fob[idx], { status, observacao_gestor, validado_em: now });
+    renderFob();
+    el.feedback.textContent = `FOB 0 marcado como ${status === 'VALIDO' ? 'Válido ✓' : 'Inválido ✗'}.`;
   }
 
 
@@ -802,6 +955,16 @@ initProtectedPage('Painel de Logística', async (content) => {
   }
 
   async function onClick(event) {
+    // FOB 0 — form salvar
+    if (event.target.closest('#fobSalvar')) { await salvarFob(); return; }
+    if (event.target.closest('#fobReload')) { state.fobLoaded = false; await loadFob(); return; }
+
+    // FOB 0 — validar / invalidar
+    const fobValido = event.target.closest('[data-fob-valido]');
+    if (fobValido) { await validarFob(fobValido.dataset.fobValido, 'VALIDO', fobValido); return; }
+    const fobInvalido = event.target.closest('[data-fob-invalido]');
+    if (fobInvalido) { await validarFob(fobInvalido.dataset.fobInvalido, 'INVALIDO', fobInvalido); return; }
+
     const oslogOk = event.target.closest('[data-oslog-ok]');
     if (oslogOk) {
       const id = oslogOk.dataset.oslogOk;
