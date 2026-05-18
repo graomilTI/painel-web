@@ -227,14 +227,15 @@ function ensureStyles() {
     .au-btn-ghost{background:transparent;border-color:rgba(255,255,255,0.08);color:#cbd5e1}
     .au-btn-inline{padding:9px 12px;border-radius:12px;font-size:13px}
     .au-table-wrap{padding:0 20px 20px;overflow:auto}
-    .au-table{width:100%;border-collapse:collapse;min-width:1040px}
+    .au-table{width:100%;border-collapse:collapse;min-width:660px}
     .au-table th,.au-table td{padding:14px 12px;border-bottom:1px solid rgba(51,65,85,.45);vertical-align:top;text-align:left}
     .au-table th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;background:rgba(15,23,42,.9);position:sticky;top:0}
     .au-table tbody tr:hover{background:rgba(15,23,42,.56)}
     .au-name{display:flex;flex-direction:column;gap:4px}
     .au-name strong{font-size:14px;color:#f8fafc}
     .au-sub{font-size:12px;color:#6b7280}
-    .au-badges,.au-actions-row,.au-check-grid,.au-chip-wrap{display:flex;flex-wrap:wrap;gap:8px}
+    .au-badges,.au-check-grid,.au-chip-wrap{display:flex;flex-wrap:wrap;gap:8px}
+    .au-actions-row{display:flex;flex-wrap:nowrap;gap:6px;align-items:center}
     .au-chip{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid rgba(51,65,85,.8);background:#10101e;color:#e2e2f0;font-size:12px}
     .au-chip-soft{background:rgba(22,101,52,.16);border-color:rgba(22,163,74,.3)}
     .au-chip-neutral{background:rgba(30,41,59,.72)}
@@ -399,10 +400,8 @@ function renderPage(content) {
                   <th>Usuário</th>
                   <th>Perfil</th>
                   <th>Setor</th>
-                  <th>Supervisões</th>
-                  <th>Módulos</th>
                   <th>Status</th>
-                  <th>Ações</th>
+                  <th style="white-space:nowrap">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -426,25 +425,11 @@ function renderPage(content) {
                         <span class="au-sub">Último login: ${escapeHtml(formatDateTime(user.ultimo_login_em) || '—')}</span>
                       </div>
                     </td>
-                    <td>
-                      <div class="au-chip-wrap">
-                        ${Array.isArray(user.supervisoes) && user.supervisoes.length
-                          ? user.supervisoes.map((sup) => `<span class="au-chip">${escapeHtml(sup)}</span>`).join('')
-                          : '<span class="au-sub">Sem supervisão definida</span>'}
-                      </div>
-                    </td>
-                    <td>
-                      <div class="au-chip-wrap">
-                        ${Array.isArray(user.modulos) && user.modulos.length
-                          ? user.modulos.slice(0, 4).map((mod) => `<span class="au-chip">${escapeHtml(mod.nome || mod.codigo || '-')}</span>`).join('') + (user.modulos.length > 4 ? `<span class="au-chip au-chip-neutral">+${user.modulos.length - 4}</span>` : '')
-                          : '<span class="au-sub">Sem módulos específicos</span>'}
-                      </div>
-                    </td>
                     <td><span class="${badgeStatus(user.status)} au-status">${escapeHtml(user.status || '-')}</span></td>
-                    <td>
+                    <td style="white-space:nowrap">
                       <div class="au-actions-row">
                         <button class="au-btn au-btn-inline au-btn-secondary" type="button" data-action="edit" data-id="${escapeHtml(user.id)}">Editar</button>
-                        <button class="au-btn au-btn-inline au-btn-ghost" type="button" data-action="password" data-id="${escapeHtml(user.id)}">Redefinir senha</button>
+                        <button class="au-btn au-btn-inline au-btn-ghost" type="button" data-action="password" data-id="${escapeHtml(user.id)}">Senha</button>
                         <button class="au-btn au-btn-inline ${String(user.status || '').toLowerCase() === 'ativo' ? 'au-btn-danger' : 'au-btn-primary'}" type="button" data-action="toggle" data-id="${escapeHtml(user.id)}">${String(user.status || '').toLowerCase() === 'ativo' ? 'Inativar' : 'Ativar'}</button>
                       </div>
                     </td>
