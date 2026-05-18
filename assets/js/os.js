@@ -662,6 +662,23 @@ initProtectedPage('OS', async (content) => {
       if (!saved) {
         Object.assign(row, previous);
         render();
+      } else if (nextStatus === 'ATENDER') {
+        // Notifica conferência que há OS para distribuir
+        try {
+          const engine = window.__painelNotifEngine;
+          if (engine) {
+            await engine.criarNotificacao({
+              tipo: 'os_atender',
+              titulo: `OS ${esc(row.numero_os)} pronta para conferência`,
+              descricao: `${esc(row.supervisao || '')} — ${esc(row.cliente || '')} — ${esc(row.data_os || '')}`,
+              destinatario_modulo: 'distribuir_os',
+              supervisao: row.supervisao || null,
+              referencia_tabela: 'operacional_os',
+              referencia_id: String(row.id),
+              chave_dedup: `os_atender:${row.id}`,
+            });
+          }
+        } catch (_) {}
       }
       return;
     }

@@ -313,6 +313,7 @@ function renderShell(content) {
       <div class="conf-actions">
         <button class="conf-btn" id="conf-export-csv" type="button">Exportar CSV</button>
         <button class="conf-btn conf-btn-primary" id="conf-refresh" type="button">Atualizar</button>
+        <button class="conf-btn" id="conf-lancar-despesa" type="button" style="background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.35);color:#fde68a">⚡ Conferir despesa</button>
       </div>
     </section>
 
@@ -1512,6 +1513,8 @@ function bindEvents() {
 
   document.getElementById('conf-export-csv')?.addEventListener('click', exportCsv);
 
+  document.getElementById('conf-lancar-despesa')?.addEventListener('click', () => abrirModalDespesa());
+
   document.getElementById('conf-filters')?.addEventListener('submit', (event) => {
     event.preventDefault();
     getFilterValues();
@@ -1583,6 +1586,159 @@ function bindEvents() {
     const btn = event.target.closest('[data-action][data-id]');
     if (!btn) return;
     updateDespesaStatus(btn.dataset.id, btn.dataset.action);
+  });
+}
+
+// ---------- Modal "Conferir despesa" ----------
+const DESPESA_TIPOS = [
+  { value: 'auditoria',          label: 'Auditoria',            setor: 'admin_auditoria' },
+  { value: 'manutencao_veiculo', label: 'Manutenção de Veículo', setor: 'frotas_dashboard' },
+  { value: 'hospedagem',         label: 'Hospedagem',           setor: 'hotel' },
+  { value: 'abastecimento',      label: 'Abastecimento',        setor: 'frotas_dashboard' },
+  { value: 'compras',            label: 'Compras',              setor: 'compras_adm' },
+];
+
+function injectDespesaModalStyles() {
+  if (document.getElementById('cdmStyles')) return;
+  const s = document.createElement('style');
+  s.id = 'cdmStyles';
+  s.textContent = `
+    .cdm-overlay{position:fixed;inset:0;background:rgba(2,6,23,.78);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
+    .cdm-overlay.open{display:flex}
+    .cdm-card{width:min(560px,100%);background:#15152a;border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:22px;color:#e2e2f0;max-height:90vh;overflow:auto}
+    .cdm-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}
+    .cdm-head h3{margin:0;font-size:18px}
+    .cdm-close{border:1px solid rgba(255,255,255,.08);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 12px;cursor:pointer}
+    .cdm-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+    .cdm-field{display:flex;flex-direction:column;gap:7px}
+    .cdm-field.full{grid-column:1/-1}
+    .cdm-field label{font-size:12px;color:#94a3b8;font-weight:700}
+    .cdm-field input,.cdm-field select,.cdm-field textarea{border:1px solid rgba(255,255,255,.08);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:11px 13px;color-scheme:dark;width:100%;box-sizing:border-box}
+    .cdm-field textarea{resize:vertical;min-height:72px}
+    .cdm-field input:focus,.cdm-field select:focus,.cdm-field textarea:focus{border-color:rgba(45,212,160,.35);box-shadow:0 0 0 3px rgba(45,212,160,.1);outline:none}
+    .cdm-actions{display:flex;gap:10px;justify-content:flex-end}
+    .cdm-btn{border:0;border-radius:12px;padding:11px 16px;cursor:pointer;font-weight:800}
+    .cdm-btn-primary{background:#00c87a;color:#011a0d}
+    .cdm-btn-secondary{background:#15152a;border:1px solid rgba(255,255,255,.08);color:#e2e2f0}
+    .cdm-feedback{font-size:13px;margin-top:12px;font-weight:700}
+    .cdm-feedback.ok{color:#bbf7d0}.cdm-feedback.err{color:#fecaca}
+    @media(max-width:540px){.cdm-grid{grid-template-columns:1fr}}
+  `;
+  document.head.appendChild(s);
+}
+
+function abrirModalDespesa() {
+  injectDespesaModalStyles();
+
+  let overlay = document.getElementById('cdmOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'cdmOverlay';
+    overlay.className = 'cdm-overlay';
+    document.body.appendChild(overlay);
+  }
+
+  const hoje = todayISO();
+  overlay.innerHTML = `
+    <div class="cdm-card">
+      <div class="cdm-head">
+        <div>
+          <h3>Conferir despesa</h3>
+          <p style="margin:4px 0 0;color:#64748b;font-size:13px">Registre uma despesa para validação pelo setor responsável.</p>
+        </div>
+        <button type="button" class="cdm-close" id="cdmClose">Fechar</button>
+      </div>
+      <div class="cdm-grid">
+        <div class="cdm-field">
+          <label for="cdmData">Data de referência</label>
+          <input id="cdmData" type="date" value="${escapeHtml(hoje)}" />
+        </div>
+        <div class="cdm-field">
+          <label for="cdmTipo">Tipo de despesa</label>
+          <select id="cdmTipo">
+            ${DESPESA_TIPOS.map((t) => `<option value="${escapeHtml(t.value)}">${escapeHtml(t.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="cdm-field">
+          <label for="cdmValor">Valor (R$)</label>
+          <input id="cdmValor" type="number" step="0.01" min="0" placeholder="0,00" />
+        </div>
+        <div class="cdm-field full">
+          <label for="cdmDescricao">Descrição / Observação</label>
+          <textarea id="cdmDescricao" placeholder="Descreva os detalhes da despesa..."></textarea>
+        </div>
+      </div>
+      <div class="cdm-actions">
+        <button type="button" class="cdm-btn cdm-btn-secondary" id="cdmCancelar">Cancelar</button>
+        <button type="button" class="cdm-btn cdm-btn-primary" id="cdmSalvar">Enviar para o setor</button>
+      </div>
+      <div class="cdm-feedback" id="cdmFeedback" style="display:none"></div>
+    </div>
+  `;
+
+  overlay.classList.add('open');
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('open'); });
+  overlay.querySelector('#cdmClose').onclick = () => overlay.classList.remove('open');
+  overlay.querySelector('#cdmCancelar').onclick = () => overlay.classList.remove('open');
+
+  const fbEl = overlay.querySelector('#cdmFeedback');
+  const showFb = (msg, isErr = false) => {
+    fbEl.style.display = 'block';
+    fbEl.textContent = msg;
+    fbEl.className = `cdm-feedback ${isErr ? 'err' : 'ok'}`;
+  };
+
+  overlay.querySelector('#cdmSalvar').addEventListener('click', async () => {
+    const data = overlay.querySelector('#cdmData').value;
+    const tipo = overlay.querySelector('#cdmTipo').value;
+    const valor = Number(overlay.querySelector('#cdmValor').value || 0);
+    const descricao = overlay.querySelector('#cdmDescricao').value.trim();
+
+    if (!data) { showFb('Informe a data de referência.', true); return; }
+    if (valor <= 0) { showFb('Informe o valor da despesa.', true); return; }
+
+    const tipoMeta = DESPESA_TIPOS.find((t) => t.value === tipo) || DESPESA_TIPOS[0];
+    const btn = overlay.querySelector('#cdmSalvar');
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
+    try {
+      let notifId = null;
+      const engine = window.__painelNotifEngine;
+      if (engine) {
+        const notif = await engine.criarNotificacao({
+          tipo: 'despesa_conferencia',
+          titulo: `Despesa de ${tipoMeta.label} para conferir`,
+          descricao: `Valor: R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${descricao ? ` — ${descricao}` : ''}`,
+          destinatario_modulo: tipoMeta.setor,
+          referencia_tabela: 'conferencia_despesas',
+          meta: { tipo_despesa: tipo, valor, data_referencia: data },
+        });
+        if (notif) notifId = notif.id;
+      }
+
+      const { error } = await supabase
+        .from('conferencia_despesas')
+        .insert({
+          data_referencia: data,
+          tipo_despesa: tipo,
+          valor,
+          descricao: descricao || null,
+          setor_destino: tipoMeta.setor,
+          status: 'pendente',
+          notificacao_id: notifId,
+        });
+
+      if (error) throw error;
+
+      showFb(`Despesa enviada para o setor de ${tipoMeta.label}.`);
+      setTimeout(() => overlay.classList.remove('open'), 2000);
+    } catch (err) {
+      showFb(err?.message || 'Erro ao registrar despesa.', true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Enviar para o setor';
+    }
   });
 }
 

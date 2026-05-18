@@ -3,6 +3,7 @@ import { signOut, getSession } from './auth.js';
 import { supabase } from './supabaseClient.js';
 import { clearUserContext } from './sessionStore.js';
 import { toPanelUrl } from './paths.js';
+import { initNotificacoesEngine } from './notificacoes-engine.js';
 
 const SIDEBAR_COLLAPSED_KEY = 'painel_sidebar_collapsed';
 const MOBILE_BREAKPOINT = 768;
@@ -349,9 +350,133 @@ function ensureSearchBar() {
   else topbar.appendChild(wrap);
 }
 
+// ---------- ícones SVG das notificações ----------
+const NOTIF_ICONS = {
+  'clipboard-alert': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><line x1="12" y1="11" x2="12" y2="15"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>`,
+  'calendar-clock':  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="16" cy="16" r="3"/><polyline points="16 14.5 16 16 17 17"/></svg>`,
+  'package-alert':   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><line x1="12" y1="11" x2="12" y2="15"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>`,
+  'hotel-alert':     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M3 7V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2M3 21V7m18 14V7M3 7h18M9 21v-4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4"/><line x1="15" y1="3" x2="15" y2="7"/><line x1="9" y1="3" x2="9" y2="7"/></svg>`,
+  'check-circle':    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>`,
+  'clipboard-check': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><polyline points="9 12 11 14 15 10"/></svg>`,
+  'shopping-bag':    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`,
+  'receipt':         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8H8m6 4H8m2 4H8"/></svg>`,
+  'bell':            `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`,
+};
+
+const PRIORIDADE_COLOR = {
+  urgente:     { bg: 'rgba(239,68,68,.15)',    border: 'rgba(239,68,68,.35)',   dot: '#ef4444' },
+  atencao:     { bg: 'rgba(245,158,11,.13)',   border: 'rgba(245,158,11,.30)',  dot: '#f59e0b' },
+  normal:      { bg: 'rgba(59,130,246,.12)',   border: 'rgba(59,130,246,.28)',  dot: '#3b82f6' },
+  informativo: { bg: 'rgba(100,116,139,.11)',  border: 'rgba(100,116,139,.25)', dot: '#64748b' },
+};
+
+function fmtRelTime(isoStr) {
+  if (!isoStr) return '';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `há ${h}h`;
+  const d = Math.floor(h / 24);
+  return `há ${d} dia${d > 1 ? 's' : ''}`;
+}
+
+function injectNotifStyles() {
+  if (document.getElementById('painelNotifStyles')) return;
+  const s = document.createElement('style');
+  s.id = 'painelNotifStyles';
+  s.textContent = `
+    .topbar-notif-wrap{position:relative;display:inline-flex}
+    .topbar-icon-btn{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:#0d0d18;color:#e2e2f0;cursor:pointer;transition:.2s ease;flex-shrink:0}
+    .topbar-icon-btn svg{width:18px;height:18px;stroke:currentColor;fill:none}
+    .topbar-icon-btn:hover{background:rgba(0,200,122,0.15);border-color:rgba(45,212,160,0.28)}
+    .topbar-notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:999px;background:#ef4444;color:#fff;font-size:11px;font-weight:900;display:flex;align-items:center;justify-content:center;padding:0 4px;pointer-events:none;border:2px solid #0d0d18;line-height:1}
+    .topbar-notif-badge.hidden{display:none}
+    .notif-dropdown{position:absolute;top:calc(100% + 10px);right:0;width:360px;max-width:calc(100vw - 20px);background:#15152a;border:1px solid rgba(255,255,255,0.08);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,12,.45);z-index:9000;overflow:hidden;display:none}
+    .notif-dropdown.open{display:block}
+    .notif-dd-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.06)}
+    .notif-dd-head h4{margin:0;font-size:14px;font-weight:900;color:#e2e2f0}
+    .notif-dd-ver-todas{font-size:12px;color:#6dffbc;text-decoration:none;font-weight:700;opacity:.85}
+    .notif-dd-ver-todas:hover{opacity:1}
+    .notif-dd-list{max-height:380px;overflow-y:auto}
+    .notif-dd-empty{padding:24px 16px;text-align:center;color:#64748b;font-size:13px}
+    .notif-dd-item{display:flex;gap:11px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;transition:.15s;text-decoration:none;color:inherit}
+    .notif-dd-item:last-child{border-bottom:none}
+    .notif-dd-item:hover{background:rgba(255,255,255,.04)}
+    .notif-dd-item.nao-lida{background:rgba(45,212,160,.04)}
+    .notif-dd-icon{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid}
+    .notif-dd-icon svg{width:16px;height:16px}
+    .notif-dd-body{flex:1;min-width:0}
+    .notif-dd-titulo{font-size:13px;font-weight:800;color:#e2e2f0;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .notif-dd-desc{font-size:12px;color:#94a3b8;margin-top:2px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .notif-dd-meta{display:flex;align-items:center;gap:6px;margin-top:4px}
+    .notif-dd-time{font-size:11px;color:#475569}
+    .notif-dd-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+    .notif-dd-footer{padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);text-align:center}
+    .notif-dd-footer a{font-size:12px;color:#6dffbc;text-decoration:none;font-weight:700;opacity:.8}
+    .notif-dd-footer a:hover{opacity:1}
+    @media(max-width:480px){.notif-dropdown{right:-8px;width:calc(100vw - 16px)}}
+  `;
+  document.head.appendChild(s);
+}
+
+function notifIconHtml(icone, prioridade) {
+  const c = PRIORIDADE_COLOR[prioridade] || PRIORIDADE_COLOR.normal;
+  const svg = NOTIF_ICONS[icone] || NOTIF_ICONS.bell;
+  return `<div class="notif-dd-icon" style="background:${c.bg};border-color:${c.border};color:${c.dot}">${svg}</div>`;
+}
+
+function renderNotifDropdown(list, container, engine) {
+  const top5 = list.slice(0, 5);
+  if (!top5.length) {
+    container.innerHTML = '<div class="notif-dd-empty">Nenhuma notificação pendente</div>';
+    return;
+  }
+
+  container.innerHTML = top5.map((n) => {
+    const c = PRIORIDADE_COLOR[n.prioridade] || PRIORIDADE_COLOR.normal;
+    const url = n.modulo_url ? toPanelUrl(n.modulo_url) : toPanelUrl('notificacoes');
+    const naoLida = n.computed || !n.lida;
+    return `
+      <a class="notif-dd-item${naoLida ? ' nao-lida' : ''}" href="${url}" data-notif-id="${n.id}" data-computed="${!!n.computed}">
+        ${notifIconHtml(n.icone, n.prioridade)}
+        <div class="notif-dd-body">
+          <div class="notif-dd-titulo">${esc(n.titulo)}</div>
+          ${n.descricao ? `<div class="notif-dd-desc">${esc(n.descricao)}</div>` : ''}
+          <div class="notif-dd-meta">
+            <span class="notif-dd-dot" style="background:${c.dot}"></span>
+            <span class="notif-dd-time">${fmtRelTime(n.created_at)}</span>
+          </div>
+        </div>
+      </a>`;
+  }).join('');
+
+  // Marca como lida ao clicar
+  container.querySelectorAll('[data-notif-id]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.notifId;
+      if (id && el.dataset.computed !== 'true') {
+        engine.marcarLida(id);
+      }
+    });
+  });
+}
+
+function esc(v) {
+  return String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+}
+
 function ensureTopbarIconButtons() {
   const actions = document.querySelector('.topbar-actions');
   if (!actions || document.getElementById('topbarNotifBtn')) return;
+
+  injectNotifStyles();
+
+  // Wrap da campainha com badge e dropdown
+  const wrap = document.createElement('div');
+  wrap.className = 'topbar-notif-wrap';
+  wrap.id = 'topbarNotifWrap';
 
   const notifBtn = document.createElement('button');
   notifBtn.type = 'button';
@@ -360,6 +485,27 @@ function ensureTopbarIconButtons() {
   notifBtn.setAttribute('aria-label', 'Notificações');
   notifBtn.setAttribute('title', 'Notificações');
   notifBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
+
+  const badge = document.createElement('span');
+  badge.id = 'topbarNotifBadge';
+  badge.className = 'topbar-notif-badge hidden';
+  badge.setAttribute('aria-live', 'polite');
+
+  const dropdown = document.createElement('div');
+  dropdown.id = 'topbarNotifDropdown';
+  dropdown.className = 'notif-dropdown';
+  dropdown.innerHTML = `
+    <div class="notif-dd-head">
+      <h4>Notificações</h4>
+      <a href="${toPanelUrl('notificacoes')}" class="notif-dd-ver-todas">Ver todas</a>
+    </div>
+    <div id="topbarNotifList" class="notif-dd-list"></div>
+    <div class="notif-dd-footer"><a href="${toPanelUrl('notificacoes')}">Central de notificações →</a></div>
+  `;
+
+  wrap.appendChild(notifBtn);
+  wrap.appendChild(badge);
+  wrap.appendChild(dropdown);
 
   const appsBtn = document.createElement('button');
   appsBtn.type = 'button';
@@ -370,7 +516,45 @@ function ensureTopbarIconButtons() {
   appsBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
 
   actions.prepend(appsBtn);
-  actions.prepend(notifBtn);
+  actions.prepend(wrap);
+
+  // Toggle dropdown ao clicar no sino
+  notifBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.classList.toggle('open');
+  });
+
+  // Fecha ao clicar fora
+  document.addEventListener('click', (e) => {
+    if (!wrap.contains(e.target)) dropdown.classList.remove('open');
+  });
+}
+
+function updateNotifBell(list, count, engine) {
+  const badge = document.getElementById('topbarNotifBadge');
+  const listEl = document.getElementById('topbarNotifList');
+  if (badge) {
+    if (count > 0) {
+      badge.textContent = count > 99 ? '99+' : String(count);
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+  if (listEl) renderNotifDropdown(list, listEl, engine);
+}
+
+async function initNotifBell(userContext) {
+  try {
+    const engine = await initNotificacoesEngine(userContext);
+    const list = engine.getNotificacoes();
+    updateNotifBell(list, engine.getBadgeCount(), engine);
+    engine.onUpdate((newList, newCount) => updateNotifBell(newList, newCount, engine));
+    // Expõe o engine globalmente para uso pelos módulos
+    window.__painelNotifEngine = engine;
+  } catch (err) {
+    console.error('[notif bell]', err);
+  }
 }
 
 function ensureUserAvatar(userContext) {
@@ -500,6 +684,12 @@ export function renderAppLayout({ userContext, currentPageTitle = 'Painel' }) {
   ensureTopbarIconButtons();
   ensureUserAvatar(userContext);
   ensureSidebarFooter();
+
+  // Motor de notificações (apenas na primeira renderização por página)
+  if (!window.__painelNotifEngineInited) {
+    window.__painelNotifEngineInited = true;
+    initNotifBell(userContext);
+  }
 
   const signOutBtn = document.getElementById('signOutBtn');
   if (signOutBtn && !signOutBtn.dataset.bound) {

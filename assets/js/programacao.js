@@ -1820,6 +1820,28 @@ initProtectedPage('Programação', (content) => {
       if (error) throw error;
 
       setFeedback(`Programação salva com sucesso em ${new Date().toLocaleTimeString('pt-BR')}.`, 'ok');
+
+      // Notifica o setor de Conferência
+      try {
+        const engine = window.__painelNotifEngine;
+        const ctx = state.userContext || {};
+        const criador = firstFilled(ctx?.user?.name, ctx?.user?.email, 'Gestor');
+        const supervisao = firstFilled(ctx?.supervisao, ctx?.user?.supervisao, '');
+        const hoje = new Date().toISOString().slice(0, 10);
+        if (engine) {
+          await engine.criarNotificacao({
+            tipo: 'programacao_salva',
+            titulo: `Programação realizada — ${criador}`,
+            descricao: `Gestor ${criador} salvou a programação de despesas${supervisao ? ` (${supervisao})` : ''}.`,
+            destinatario_modulo: 'conferencia',
+            supervisao: supervisao || null,
+            referencia_tabela: 'programacao_dia',
+            referencia_id: state.programacaoId,
+            chave_dedup: `programacao_salva:${state.programacaoId}:${hoje}`,
+          });
+        }
+      } catch (_) {}
+
     } catch (error) {
       console.error(error);
       setFeedback(error.message || 'Falha ao salvar programação.', 'error');
