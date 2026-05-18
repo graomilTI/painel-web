@@ -74,10 +74,240 @@ function injectStyles() {
     .cc-file-name{font-size:11px;color:var(--muted);word-break:break-all;text-align:center;width:100%}
     .cc-file-remove{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:rgba(127,29,29,.90);color:#fecaca;border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;line-height:1;font-family:inherit}
     .cc-file-remove:hover{background:rgba(185,28,28,1)}
+    .cc-btn-pdf{border-color:rgba(0,200,122,.32)!important;background:rgba(0,200,122,.12)!important;color:#b0f0d8!important}
+    .cc-btn-pdf:hover{background:rgba(0,200,122,.22)!important}
     .cc-hidden{display:none!important}
     @media(max-width:780px){.cc-form-grid{grid-template-columns:1fr}.cc-form-grid .field-span-2{grid-column:span 1}.cc-filters-grid{grid-template-columns:1fr 1fr}}
   `;
   document.head.appendChild(s);
+}
+
+async function loadJsPdf() {
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return window.jspdf.jsPDF;
+}
+
+async function logoToBase64() {
+  try {
+    const res = await fetch('./logo-grao1000.svg');
+    const svgText = await res.text();
+    const blob = new Blob([svgText], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    return await new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const W = 600, H = Math.round(img.naturalHeight / img.naturalWidth * W) || 160;
+        const c = document.createElement('canvas');
+        c.width = W; c.height = H;
+        c.getContext('2d').drawImage(img, 0, 0, W, H);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/png'));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  } catch { return null; }
+}
+
+async function imgUrlToBase64(url) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await new Promise(resolve => {
+      const fr = new FileReader();
+      fr.onload = e => resolve(e.target.result);
+      fr.onerror = () => resolve(null);
+      fr.readAsDataURL(blob);
+    });
+  } catch { return null; }
+}
+
+async function gerarPdf(row) {
+  const btn = document.querySelector(`button[data-act="pdf"][data-id="${row.id}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+
+  try {
+    const JsPDF = await loadJsPdf();
+    const doc = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    const PW = 210, PH = 297, M = 15, CW = PW - M * 2;
+    const GREEN = [0, 200, 122];
+    const DARK = [20, 20, 30];
+    const MUTED = [110, 110, 130];
+    const LIGHT = [240, 240, 245];
+    let y = M;
+
+    // ── Header ────────────────────────────────────────────
+    const logoData = await logoToBase64();
+    if (logoData) {
+      const lH = 12, lW = 48;
+      doc.addImage(logoData, 'PNG', M, y, lW, lH);
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(17);
+    doc.setTextColor(...DARK);
+    doc.text('Relatório de Visita', PW - M, y + 5, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
+    doc.text(`Emitido em ${brDate(todayIso())}`, PW - M, y + 11, { align: 'right' });
+    y += 18;
+
+    // Green rule
+    doc.setDrawColor(...GREEN);
+    doc.setLineWidth(0.7);
+    doc.line(M, y, PW - M, y);
+    y += 8;
+
+    // ── Dados do contato ──────────────────────────────────
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...GREEN);
+    doc.text('DADOS DO CONTATO', M, y);
+    y += 7;
+
+    const field = (label, value) => {
+      if (!value) return;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...MUTED);
+      doc.text(label, M, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...DARK);
+      const lines = doc.splitTextToSize(String(value), CW - 38);
+      doc.text(lines, M + 38, y);
+      y += lines.length * 5 + 1.5;
+    };
+
+    field('Data:', brDate(row.data_contato));
+    field('Cliente:', row.cliente);
+    field('Contato:', row.contato);
+    field('Assunto:', row.assunto);
+    y += 3;
+
+    // ── Participantes ─────────────────────────────────────
+    const partCli = parseArr(row.participantes_cliente);
+    const partGrao = parseArr(row.participantes_grao1000);
+
+    if (partCli.length || partGrao.length) {
+      doc.setDrawColor(...LIGHT);
+      doc.setLineWidth(0.25);
+      doc.line(M, y, PW - M, y);
+      y += 6;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(...GREEN);
+      doc.text('PARTICIPANTES', M, y);
+      y += 7;
+
+      if (partCli.length) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...MUTED);
+        doc.text('Participantes do Cliente', M, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...DARK);
+        partCli.forEach(p => { doc.text(`• ${p}`, M + 4, y); y += 5; });
+        y += 2;
+      }
+
+      if (partGrao.length) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...MUTED);
+        doc.text('Participantes Grão 1000', M, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...DARK);
+        partGrao.forEach(p => { doc.text(`• ${p}`, M + 4, y); y += 5; });
+        y += 2;
+      }
+    }
+
+    // ── Imagens ───────────────────────────────────────────
+    const imgs = parseArr(row.anexos).filter(a => /\.(jpg|jpeg|png|gif|webp|bmp)/i.test(a.name || ''));
+
+    if (imgs.length) {
+      doc.setDrawColor(...LIGHT);
+      doc.setLineWidth(0.25);
+      doc.line(M, y, PW - M, y);
+      y += 6;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(...GREEN);
+      doc.text('IMAGENS ANEXADAS', M, y);
+      y += 8;
+
+      const cols = 2;
+      const gap = 6;
+      const imgW = (CW - gap * (cols - 1)) / cols;
+      const imgH = Math.round(imgW * 0.62);
+      let col = 0;
+
+      for (const anexo of imgs) {
+        if (y + imgH + 16 > PH - 14) {
+          doc.addPage();
+          y = M;
+        }
+
+        const b64 = await imgUrlToBase64(anexo.url);
+        if (!b64) continue;
+
+        const x = M + col * (imgW + gap);
+        try {
+          const fmt = b64.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+          doc.addImage(b64, fmt, x, y, imgW, imgH);
+
+          // Thin border around image
+          doc.setDrawColor(220, 220, 228);
+          doc.setLineWidth(0.2);
+          doc.rect(x, y, imgW, imgH);
+        } catch {}
+
+        // Caption
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...MUTED);
+        doc.text(doc.splitTextToSize(anexo.name, imgW)[0], x, y + imgH + 4);
+
+        col++;
+        if (col >= cols) { col = 0; y += imgH + 10; }
+      }
+      if (col !== 0) y += imgH + 10;
+    }
+
+    // ── Footer em todas as páginas ────────────────────────
+    const total = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= total; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(...LIGHT);
+      doc.setLineWidth(0.25);
+      doc.line(M, PH - 10, PW - M, PH - 10);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...MUTED);
+      doc.text('Grão 1000 — Relatório de Visita ao Cliente', M, PH - 6);
+      doc.text(`${i} / ${total}`, PW - M, PH - 6, { align: 'right' });
+    }
+
+    const nomeArq = `Visita_${(row.cliente || 'cliente').replace(/[^a-zA-Z0-9]/g, '_')}_${(row.data_contato || todayIso()).replace(/-/g, '')}.pdf`;
+    doc.save(nomeArq);
+
+  } catch (err) {
+    alert('Erro ao gerar PDF: ' + (err.message || err));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'PDF'; }
+  }
 }
 
 initProtectedPage('Contato Cliente', async (content) => {
@@ -462,6 +692,7 @@ initProtectedPage('Contato Cliente', async (content) => {
           <td>${nAnexos ? `${nAnexos} arquivo(s)` : '-'}</td>
           <td>
             <div class="cc-row-actions">
+              <button class="cc-btn-sm cc-btn-pdf" type="button" data-act="pdf" data-id="${esc(row.id)}">PDF</button>
               <button class="cc-btn-sm" type="button" data-act="edit" data-id="${esc(row.id)}">Editar</button>
               <button class="cc-btn-sm cc-btn-danger" type="button" data-act="delete" data-id="${esc(row.id)}">Excluir</button>
             </div>
@@ -540,7 +771,9 @@ initProtectedPage('Contato Cliente', async (content) => {
     if (!btn) return;
     const row = state.rows.find(r => r.id === btn.dataset.id);
     if (!row) return;
-    if (btn.dataset.act === 'edit') {
+    if (btn.dataset.act === 'pdf') {
+      gerarPdf(row);
+    } else if (btn.dataset.act === 'edit') {
       fillForm(row);
     } else if (btn.dataset.act === 'delete') {
       if (!confirm('Deseja excluir este registro?')) return;
