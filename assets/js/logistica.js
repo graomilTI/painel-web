@@ -283,6 +283,15 @@ function renderAbrirOsTab() {
               <option>Aflatoxina Negativo</option><option>Convencional</option><option>Declarado Intacta</option><option>Intacta Negativo</option><option>Intacta Positivo</option><option>Não Definido</option><option>OS com teste</option><option>Participante</option><option>Transgênico</option>
             </select>
           </label>
+          <label>Serviço *
+            <select id="osServico" class="log-input">
+              <option value="">Selecione</option>
+              <option value="FOB">FOB</option>
+              <option value="CIF">CIF</option>
+              <option value="AUDITORIA">AUDITORIA</option>
+              <option value="CLASSIFICAÇÃO TRANSB. SAÍDA">CLASSIFICAÇÃO TRANSB. SAÍDA</option>
+            </select>
+          </label>
           <label>Volume inicial (Tons) *<input id="osVolumeInicial" class="log-input" type="number" step="0.001" min="0" placeholder="0,000"></label>
           <label>Regional *<input id="osRegional" class="log-input" list="abrirOsRegionais" placeholder="Supervisão"></label>
           <label>Troca de notas *
@@ -307,7 +316,7 @@ function renderAberturaOsHistorico() {
       <td>${brDate(r.created_at)}<br><small class="muted">Regional: ${esc(r.regional || '-')}</small></td>
       <td><strong>${esc(r.contratante_cliente || '-')}</strong><br><small class="muted">Filial: ${esc(r.filial_pagadora || '-')}</small><br><small class="muted">Contrato: ${esc(r.numero_contrato || '-')}</small></td>
       <td><strong>${esc(r.armazem_embarque || '-')}</strong><br><small class="muted">${esc(r.cidade_embarque || '-')} → ${esc(r.cidade_destino || '-')}</small><br><small class="muted">Destino: ${esc(r.local_destino || '-')}</small></td>
-      <td>${esc(r.produto || '-')}<br><small class="muted">${esc(r.tipo_produto || '-')} · ${fmt(r.volume_inicial)} tons</small></td>
+      <td>${esc(r.produto || '-')}<br><small class="muted">${esc(r.tipo_produto || '-')} · ${fmt(r.volume_inicial)} tons</small><br><small class="muted">${esc(r.servico || '-')}</small></td>
       <td><span class="log-chip ${String(r.status)==='CADASTRADO'?'ok':String(r.status)==='RECUSADO'?'red':'warn'}">${String(r.status)==='CADASTRADO' ? `OS ${esc(r.numero_os_cadastrada || '')}` : esc(r.status || 'PENDENTE')}</span>${r.observacao_adm ? `<div class="log-obs">${esc(r.observacao_adm)}</div>` : ''}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
@@ -441,6 +450,7 @@ async function handleSalvarAberturaOs(content) {
     volume_inicial: parseNum(valById(content, 'osVolumeInicial')),
     regional: valById(content, 'osRegional'),
     troca_notas: valById(content, 'osTrocaNotas'),
+    servico: valById(content, 'osServico'),
     status: 'PENDENTE',
     raw: {}
   };
@@ -450,7 +460,8 @@ async function handleSalvarAberturaOs(content) {
     ['Armazém de embarque', payload.armazem_embarque], ['Cidade de embarque', payload.cidade_embarque],
     ['Cidade destino', payload.cidade_destino], ['Local de destino', payload.local_destino],
     ['Número contrato', payload.numero_contrato], ['Produto', payload.produto], ['Tipo de produto', payload.tipo_produto],
-    ['Volume inicial', payload.volume_inicial], ['Regional', payload.regional], ['Troca de notas', payload.troca_notas]
+    ['Volume inicial', payload.volume_inicial], ['Regional', payload.regional], ['Troca de notas', payload.troca_notas],
+    ['Serviço', payload.servico]
   ];
   const faltando = obrigatorios.filter(([,v]) => !v || Number(v) === 0 && typeof v === 'number').map(([k]) => k);
   if (faltando.length) { alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`); return; }
