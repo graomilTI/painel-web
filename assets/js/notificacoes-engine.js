@@ -100,10 +100,12 @@ async function loadComputedOsPendente() {
   const sups = getSupervisoes();
   if (!isMaster() && !sups.length) return [];
 
+  // "Cinza" = OS sem ação do gestor: status_gestor AGUARDAR sem configurada_em, OU status null
   let q = supabase
     .from('operacional_os')
-    .select('id,numero_os,data_os,supervisao,status_gestor')
-    .eq('status_gestor', 'AGUARDAR');
+    .select('id,numero_os,data_os,supervisao,status_gestor,configurada_em')
+    .is('configurada_em', null)
+    .or('status_gestor.is.null,status_gestor.eq.AGUARDAR');
 
   if (!isMaster() && sups.length) {
     q = q.in('supervisao', sups);
@@ -115,8 +117,8 @@ async function loadComputedOsPendente() {
   return [{
     id: 'computed:os_pendente',
     tipo: 'os_pendente',
-    titulo: `${data.length} OS pendente${data.length > 1 ? 's' : ''} na sua regional`,
-    descricao: `${data.length} ordem${data.length > 1 ? 's' : ''} com status AGUARDAR precisam de ação`,
+    titulo: `${data.length} OS sem definição na sua regional`,
+    descricao: `${data.length} ordem${data.length > 1 ? 's' : ''} ainda em cinza (sem status definido pelo gestor)`,
     prioridade: 'urgente',
     icone: 'clipboard-alert',
     modulo_url: 'os',
