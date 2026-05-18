@@ -2,7 +2,7 @@
  * Motor de notificações do painel.
  *
  * Notificações COMPUTADAS (derivadas em tempo real de tabelas existentes):
- *   os_pendente         — OS com status AGUARDAR na regional do gestor
+ *   os_pendente         — OS sem status definido (status_gestor IS NULL) na regional do gestor
  *   programacao_pendente — programacao_dia sem status "salvo" para hoje
  *   patrimonio_atrasado — patrimônios com dias_sem_leitura >= 7
  *   checkout_hoje       — hospedagem com checkout_prevista = hoje e status RESERVADA
@@ -100,12 +100,11 @@ async function loadComputedOsPendente() {
   const sups = getSupervisoes();
   if (!isMaster() && !sups.length) return [];
 
-  // "Cinza" = OS sem ação do gestor: status_gestor AGUARDAR sem configurada_em, OU status null
+  // "Cinza" = OS sem ação do gestor: status_gestor IS NULL (não definiu nenhum status ainda)
   let q = supabase
     .from('operacional_os')
-    .select('id,numero_os,data_os,supervisao,status_gestor,configurada_em')
-    .is('configurada_em', null)
-    .or('status_gestor.is.null,status_gestor.eq.AGUARDAR');
+    .select('id,numero_os,data_os,supervisao,status_gestor')
+    .is('status_gestor', null);
 
   if (!isMaster() && sups.length) {
     q = q.in('supervisao', sups);

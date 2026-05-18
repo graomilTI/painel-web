@@ -431,10 +431,9 @@ initProtectedPage('OS', async (content) => {
     const rows = state.os.filter((row) => {
       if (sup && normalize(row.supervisao) !== sup) return false;
       if (status) {
-        const st = (row.status_gestor || 'AGUARDAR').toUpperCase();
-        const isCinza = st === 'AGUARDAR' && !row.configurada_em;
-        if (status === 'PENDENTE' && !isCinza) return false;
-        if (status === 'AGUARDAR' && (isCinza || st !== 'AGUARDAR')) return false;
+        const st = row.status_gestor ? row.status_gestor.toUpperCase() : null;
+        if (status === 'PENDENTE' && st !== null) return false;
+        if (status === 'AGUARDAR' && st !== 'AGUARDAR') return false;
         if (status === 'ATENDER' && st !== 'ATENDER') return false;
         if (status === 'FINALIZAR' && st !== 'FINALIZAR') return false;
         if (status === 'AJUSTAR' && st !== 'AJUSTAR') return false;
