@@ -463,10 +463,6 @@ function renderNotifDropdown(list, container, engine) {
   });
 }
 
-function esc(v) {
-  return String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
-}
-
 function ensureTopbarIconButtons() {
   const actions = document.querySelector('.topbar-actions');
   if (!actions || document.getElementById('topbarNotifBtn')) return;
