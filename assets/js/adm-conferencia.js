@@ -871,7 +871,7 @@ function renderUberTable() {
           <p>Nenhuma corrida encontrada nos filtros atuais. Sincronize pela API para buscar as corridas do período selecionado.</p>
         </div>
         <div class="conf-uber-actions">
-          <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar API</button>
+          <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar</button>
           <label class="conf-btn" for="uber-csv-import-empty">Importar CSV Uber<input id="uber-csv-import-empty" data-uber-csv-import="1" type="file" accept=".csv,text/csv" hidden></label>
           <button class="conf-btn" data-uber-geocode-pending="1" type="button" disabled>Converter GPS pendentes</button>
         </div>
@@ -886,7 +886,7 @@ function renderUberTable() {
         <p>${pendingGps ? `${pendingGps} corrida(s) sem coordenadas nos filtros atuais.` : 'Todas as corridas filtradas já possuem coordenadas de partida e destino.'} Fonte: OpenStreetMap/Nominatim.</p>
       </div>
       <div class="conf-uber-actions">
-        <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar API</button>
+        <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar</button>
         <label class="conf-btn" for="uber-csv-import">Importar CSV Uber<input id="uber-csv-import" data-uber-csv-import="1" type="file" accept=".csv,text/csv" hidden></label>
         <button class="conf-btn" data-uber-geocode-pending="1" type="button" ${pendingGps ? '' : 'disabled'}>Converter GPS pendentes</button>
       </div>
@@ -1332,8 +1332,8 @@ async function importUberCsvFile(file) {
 async function syncUberApi() {
   if (state.loading) return;
 
-  const inicio = state.filters.inicio || todayISO();
-  const fim = state.filters.fim || inicio;
+  const inicio = document.getElementById('conf-inicio')?.value || state.filters.inicio || todayISO();
+  const fim = document.getElementById('conf-fim')?.value || state.filters.fim || inicio;
 
   setFeedback(`Sincronizando corridas da API Uber de ${brDate(inicio)} até ${brDate(fim)}...`);
 
