@@ -1,4 +1,4 @@
-﻿import { initProtectedPage } from './pageInit.js';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
 const DATE_FMT = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' });
@@ -556,16 +556,17 @@ function renderAuditoriaTable() {
   target.innerHTML = `
     <div class="conf-table-wrap">
       <table class="conf-table">
-        <thead><tr><th>Data</th><th>Colaborador</th><th>Supervisão</th><th>Ocorrência</th><th>Resultado</th><th>Impacto</th></tr></thead>
+        <thead><tr><th>Data da Auditoria</th><th>Placa</th><th>Nome do Auditor</th><th>Classificador</th><th>Cliente / OS</th><th>Resultado</th><th>Origem/Impacto</th></tr></thead>
         <tbody>
           ${rows.map((row) => `
             <tr>
-              <td>${brDate(row.data_evento || row.data_classificacao)}</td>
-              <td><strong>${escapeHtml(row.nome_colaborador)}</strong><small>${escapeHtml(row.tipo_funcionario || '')}</small></td>
-              <td>${escapeHtml(row.supervisao || '-')}<small>${escapeHtml(row.coordenacao || '')}</small></td>
-              <td>${escapeHtml(row.tipo_evento || row.motivo_recusa || '-')}<small>${escapeHtml(row.descricao || row.observacoes || '')}</small></td>
-              <td>${escapeHtml(row.resultado || row.resultado_auditoria || row.resultado_recusa || '-')}</td>
-              <td>${statusChip(row.severidade || 'baixa')}<small>Score: ${escapeHtml(row.score_impacto ?? row.diferenca ?? 0)}</small></td>
+              <td>${brDate(row.data_auditoria || row.data_evento || row.data_classificacao)}</td>
+              <td><strong>${escapeHtml(row.placa || '-')}</strong><small>Class.: ${brDate(row.data_classificacao)}</small></td>
+              <td><strong>${escapeHtml(row.auditor || '-')}</strong><small>${row.auditor_colaborador ? 'Auditor do banco de colaboradores' : escapeHtml(row.pix || '')}</small></td>
+              <td>${escapeHtml(row.nome_colaborador || row.classificador || '-')}<small>${escapeHtml(row.tipo_funcionario || '')}</small></td>
+              <td>${escapeHtml(row.cliente || row.cliente_final || row.cliente_regional || row.cliente_nacional || '-')}<small>OS: ${escapeHtml(row.os || '-')}</small></td>
+              <td>${escapeHtml(row.resultado || row.resultado_auditoria || row.resultado_recusa || row.motivo_recusa || '-')}</td>
+              <td>${row.origem ? statusChip(row.origem) : statusChip(row.severidade || 'baixa')}<small>Score: ${escapeHtml(row.score_impacto ?? row.diferenca ?? 0)}</small></td>
             </tr>
           `).join('')}
         </tbody>
@@ -1128,13 +1129,25 @@ async function loadAuditoria() {
   if (state.filters.inicio) query = query.gte('data_evento', state.filters.inicio);
   if (state.filters.fim) query = query.lte('data_evento', state.filters.fim);
 
-  const { data, error } = await query;
-  if (error) {
+  let solicitacoesQuery = supabase
+    .from('auditoria_solicitacoes')
+    .select('*')
+    .order('data_auditoria', { ascending: false, nullsFirst: false })
+    .limit(500);
+
+  if (state.filters.inicio) solicitacoesQuery = solicitacoesQuery.gte('data_auditoria', state.filters.inicio);
+  if (state.filters.fim) solicitacoesQuery = solicitacoesQuery.lte('data_auditoria', state.filters.fim);
+
+  const [historicoRes, solicitacoesRes] = await Promise.all([query, solicitacoesQuery]);
+  if (historicoRes.error && solicitacoesRes.error) {
     state.auditoria = [];
-    console.warn('[Conferência] Auditoria indisponível:', error.message);
+    console.warn('[Conferência] Auditoria indisponível:', historicoRes.error.message, solicitacoesRes.error.message);
     return;
   }
-  state.auditoria = data || [];
+  state.auditoria = [
+    ...(solicitacoesRes.error ? [] : (solicitacoesRes.data || [])),
+    ...(historicoRes.error ? [] : (historicoRes.data || [])),
+  ].sort((a, b) => String(b.data_auditoria || b.data_evento || b.data_classificacao || '').localeCompare(String(a.data_auditoria || a.data_evento || a.data_classificacao || '')));
 }
 
 async function loadResultado() {

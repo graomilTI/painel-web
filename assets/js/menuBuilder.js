@@ -440,10 +440,13 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
     const hasItems = Array.isArray(section.items) && section.items.length > 0;
     const hasActiveItem = (section.items || []).some((item) => {
       const normalizedItemPath = normalizePath(item.path);
+      const normalizedItemNoHash = normalizePath(String(item.path || '').split('#')[0]);
       return (
         normalizedCurrent.endsWith(normalizedItemPath) ||
         normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, '')) ||
-        normalizedCurrent.endsWith(normalizedItemPath + '.html')
+        normalizedCurrent.endsWith(normalizedItemPath + '.html') ||
+        normalizedCurrent.endsWith(normalizedItemNoHash) ||
+        normalizedCurrent.endsWith(normalizedItemNoHash + '.html')
       );
     });
 
@@ -496,10 +499,13 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
         link.appendChild(label);
 
         const normalizedItemPath = normalizePath(item.path);
+        const normalizedItemNoHash = normalizePath(String(item.path || '').split('#')[0]);
         if (
           normalizedCurrent.endsWith(normalizedItemPath) ||
           normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, '')) ||
-          normalizedCurrent.endsWith(normalizedItemPath + '.html')
+          normalizedCurrent.endsWith(normalizedItemPath + '.html') ||
+          normalizedCurrent.endsWith(normalizedItemNoHash) ||
+          normalizedCurrent.endsWith(normalizedItemNoHash + '.html')
         ) {
           link.classList.add('active');
         }
