@@ -114,28 +114,30 @@ async function importarDestinatariosColaboradores() {
     if (!data || data.length < PAGE) break;
   }
 
-  const existentes = new Set(state.destinatarios.filter(d => d.origem === 'colaborador').map(d => d.nome));
-  const novos = colabs.filter(c => c.nome && !existentes.has(c.nome));
+  const rows = colabs
+    .filter(c => c.nome)
+    .map(c => ({
+      nome: c.nome,
+      email: c.email ?? null,
+      telefone: c.telefone ?? null,
+      logradouro: c.rua || '-',
+      numero: 'S/N',
+      bairro: c.bairro || '-',
+      cidade: c.cidade_base || '-',
+      uf: c.uf_base || 'PR',
+      cep: '00000-000',
+      origem: 'colaborador',
+      ativo: true,
+    }));
 
-  if (!novos.length) { setFeedback('Nenhum colaborador novo para importar.'); return; }
+  if (!rows.length) { setFeedback('Nenhum colaborador encontrado.'); return; }
 
-  const rows = novos.map(c => ({
-    nome: c.nome,
-    email: c.email ?? null,
-    telefone: c.telefone ?? null,
-    logradouro: c.rua || '-',
-    numero: 'S/N',
-    bairro: c.bairro || '-',
-    cidade: c.cidade_base || '-',
-    uf: c.uf_base || 'PR',
-    cep: '00000-000',
-    origem: 'colaborador',
-    ativo: true,
-  }));
-
-  const { error: iErr } = await supabase.from('envios_destinatarios').insert(rows);
+  // Upsert por nome+origem — atualiza existentes e insere novos
+  const { error: iErr } = await supabase
+    .from('envios_destinatarios')
+    .upsert(rows, { onConflict: 'nome,origem', ignoreDuplicates: false });
   if (iErr) { setFeedback('Erro ao importar: ' + iErr.message, true); return; }
-  setFeedback(`${rows.length} destinatário(s) importado(s) dos colaboradores.`);
+  setFeedback(`${rows.length} destinatário(s) sincronizados (novos e atualizados).`);
   await loadAll();
   renderTab();
 }
