@@ -252,7 +252,7 @@ function applyLocalFilters(rows, kind) {
 
     if (regional && rowRegional !== regional) return false;
     if (colaborador && !rowColaborador.includes(colaborador)) return false;
-    if (status && kind === 'despesas' && rowStatus !== status) return false;
+    if (status && (kind === 'despesas' || kind === 'uber') && rowStatus !== status) return false;
     return true;
   });
 }
@@ -874,6 +874,7 @@ function renderUberTable() {
           <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar</button>
           <label class="conf-btn" for="uber-csv-import-empty">Importar CSV Uber<input id="uber-csv-import-empty" data-uber-csv-import="1" type="file" accept=".csv,text/csv" hidden></label>
           <button class="conf-btn" data-uber-geocode-pending="1" type="button" disabled>Converter GPS pendentes</button>
+          <button class="conf-btn conf-btn-success" data-uber-validar-laudo="1" type="button">Validar por laudo</button>
         </div>
       </div>
       <div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma corrida Uber encontrada para os filtros selecionados.</td></tr></tbody></table></div>`;
@@ -889,6 +890,7 @@ function renderUberTable() {
         <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar</button>
         <label class="conf-btn" for="uber-csv-import">Importar CSV Uber<input id="uber-csv-import" data-uber-csv-import="1" type="file" accept=".csv,text/csv" hidden></label>
         <button class="conf-btn" data-uber-geocode-pending="1" type="button" ${pendingGps ? '' : 'disabled'}>Converter GPS pendentes</button>
+        <button class="conf-btn conf-btn-success" data-uber-validar-laudo="1" type="button">Validar por laudo</button>
       </div>
     </div>
     <div class="conf-table-wrap">
@@ -1362,7 +1364,36 @@ async function syncUberApi() {
   renderActiveTab();
 
   const total = data?.inserted ?? data?.upserted ?? data?.total ?? data?.count ?? data?.sincronizadas ?? 0;
-  setFeedback(data?.message || `Sincronização Uber concluída. Corridas retornadas/gravadas: ${total}.`);
+  const baseMsg = data?.message || `Sincronização Uber concluída. Corridas retornadas/gravadas: ${total}.`;
+
+  try {
+    const { data: vd } = await supabase.rpc('auto_validar_uber_por_laudo', { p_inicio: inicio, p_fim: fim });
+    if (vd?.validados > 0) {
+      await loadUber();
+      renderActiveTab();
+      setFeedback(`${baseMsg} ${vd.validados} corrida(s) validadas automaticamente por laudo.`);
+      return;
+    }
+  } catch (e) {
+    console.warn('[Uber] auto-validação por laudo falhou:', e);
+  }
+
+  setFeedback(baseMsg);
+}
+
+async function validarUberPorLaudo() {
+  const inicio = document.getElementById('conf-inicio')?.value || state.filters.inicio || firstDayOfMonthISO();
+  const fim = document.getElementById('conf-fim')?.value || state.filters.fim || todayISO();
+  setFeedback('Validando corridas Uber por laudo de produção...');
+  try {
+    const { data, error } = await supabase.rpc('auto_validar_uber_por_laudo', { p_inicio: inicio, p_fim: fim });
+    if (error) throw error;
+    await loadUber();
+    renderActiveTab();
+    setFeedback(`${data?.validados ?? 0} corrida(s) validadas automaticamente por laudo de produção.`);
+  } catch (e) {
+    setFeedback(`Falha ao validar por laudo: ${e.message}`, true);
+  }
 }
 
 async function updateUberStatus(id, classificacao) {
@@ -1582,6 +1613,12 @@ function bindEvents() {
     const uberBtn = event.target.closest('[data-uber-action][data-uber-id]');
     if (uberBtn) {
       updateUberStatus(uberBtn.dataset.uberId, uberBtn.dataset.uberAction);
+      return;
+    }
+
+    const laudoBtn = event.target.closest('[data-uber-validar-laudo]');
+    if (laudoBtn) {
+      validarUberPorLaudo();
       return;
     }
 
