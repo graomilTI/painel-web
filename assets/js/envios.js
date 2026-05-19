@@ -99,20 +99,28 @@ async function loadAll() {
 
 async function importarDestinatariosColaboradores() {
   setFeedback('Importando colaboradores...');
-  const { data: colabs, error } = await supabase
-    .from('operacional_colaborador_base')
-    .select('nome, cpf, email, rua, bairro, cidade_base, uf_base, telefone, supervisao')
-    .eq('ativo', true);
-  if (error) { setFeedback('Erro ao buscar colaboradores: ' + error.message, true); return; }
+
+  // Pagina para passar o limite padrão de 1000 do Supabase
+  let colabs = [];
+  const PAGE = 1000;
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase
+      .from('operacional_colaborador_base')
+      .select('nome, email, rua, bairro, cidade_base, uf_base, telefone')
+      .eq('ativo', true)
+      .range(offset, offset + PAGE - 1);
+    if (error) { setFeedback('Erro ao buscar colaboradores: ' + error.message, true); return; }
+    colabs = colabs.concat(data ?? []);
+    if (!data || data.length < PAGE) break;
+  }
 
   const existentes = new Set(state.destinatarios.filter(d => d.origem === 'colaborador').map(d => d.nome));
-  const novos = (colabs ?? []).filter(c => c.nome && !existentes.has(c.nome));
+  const novos = colabs.filter(c => c.nome && !existentes.has(c.nome));
 
   if (!novos.length) { setFeedback('Nenhum colaborador novo para importar.'); return; }
 
   const rows = novos.map(c => ({
     nome: c.nome,
-    cpf_cnpj: c.cpf ?? null,
     email: c.email ?? null,
     telefone: c.telefone ?? null,
     logradouro: c.rua || '-',
