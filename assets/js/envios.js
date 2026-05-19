@@ -716,12 +716,18 @@ function bindFormDestinatario(area) {
 initProtectedPage('Envios', async (content) => {
   $root = content;
   content.innerHTML = `
+    <style>
+      .envios-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+      .envios-tab{border:1px solid rgba(111,208,165,.22);background:#15152a;color:#e2e2f0;border-radius:999px;padding:10px 18px;font-weight:800;cursor:pointer;font-size:.85rem;transition:background .15s,border-color .15s}
+      .envios-tab:hover{background:rgba(111,208,165,.08);border-color:rgba(111,208,165,.35)}
+      .envios-tab.active{background:rgba(34,197,94,.22);border-color:rgba(111,208,165,.45);color:#dcfce7}
+    </style>
     <div id="envios-feedback" class="feedback-bar" style="display:none"></div>
-    <nav class="tab-nav" style="margin-bottom:16px">
-      <button class="tab-btn${state.tab === 'postagens' ? ' active' : ''}" data-tab-main="postagens">Postagens</button>
-      <button class="tab-btn${state.tab === 'cotacao' ? ' active' : ''}" data-tab-main="cotacao">Cotação</button>
-      <button class="tab-btn${state.tab === 'remetentes' ? ' active' : ''}" data-tab-main="remetentes">Remetentes</button>
-      <button class="tab-btn${state.tab === 'destinatarios' ? ' active' : ''}" data-tab-main="destinatarios">Destinatários</button>
+    <nav class="envios-tabs">
+      <button class="envios-tab${state.tab === 'postagens' ? ' active' : ''}" data-tab-main="postagens">Postagens</button>
+      <button class="envios-tab${state.tab === 'cotacao' ? ' active' : ''}" data-tab-main="cotacao">Cotação</button>
+      <button class="envios-tab${state.tab === 'remetentes' ? ' active' : ''}" data-tab-main="remetentes">Remetentes</button>
+      <button class="envios-tab${state.tab === 'destinatarios' ? ' active' : ''}" data-tab-main="destinatarios">Destinatários</button>
     </nav>
     <div id="envios-tab-content"><p>Carregando...</p></div>`;
 
