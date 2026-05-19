@@ -114,9 +114,11 @@ async function importarDestinatariosColaboradores() {
     if (!data || data.length < PAGE) break;
   }
 
-  const rows = colabs
-    .filter(c => c.nome)
-    .map(c => ({
+  // Deduplica por nome (mantém último registro de cada nome)
+  const byNome = new Map();
+  for (const c of colabs) {
+    if (!c.nome) continue;
+    byNome.set(c.nome, {
       nome: c.nome,
       email: c.email ?? null,
       telefone: c.telefone ?? null,
@@ -128,16 +130,24 @@ async function importarDestinatariosColaboradores() {
       cep: '00000-000',
       origem: 'colaborador',
       ativo: true,
-    }));
+    });
+  }
+  const rows = [...byNome.values()];
 
   if (!rows.length) { setFeedback('Nenhum colaborador encontrado.'); return; }
 
-  // Upsert por nome+origem — atualiza existentes e insere novos
-  const { error: iErr } = await supabase
-    .from('envios_destinatarios')
-    .upsert(rows, { onConflict: 'nome,origem', ignoreDuplicates: false });
-  if (iErr) { setFeedback('Erro ao importar: ' + iErr.message, true); return; }
-  setFeedback(`${rows.length} destinatário(s) sincronizados (novos e atualizados).`);
+  // Upsert em lotes de 500 para evitar timeout
+  let total = 0;
+  for (let i = 0; i < rows.length; i += 500) {
+    const lote = rows.slice(i, i + 500);
+    const { error: iErr } = await supabase
+      .from('envios_destinatarios')
+      .upsert(lote, { onConflict: 'nome,origem', ignoreDuplicates: false });
+    if (iErr) { setFeedback('Erro ao importar: ' + iErr.message, true); return; }
+    total += lote.length;
+    setFeedback(`Importando... ${total}/${rows.length}`);
+  }
+  setFeedback(`${total} destinatário(s) sincronizados (novos e atualizados).`);
   await loadAll();
   renderTab();
 }
