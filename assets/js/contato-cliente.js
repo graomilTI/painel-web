@@ -447,7 +447,7 @@ initProtectedPage('Contato Cliente', async (content) => {
   const state = {
     editingId: null,
     currentUser: null,
-    colaboradores: [],
+    latestDataRef: null,
     rows: [],
     pendingFiles: [],
     existingAnexos: []
@@ -474,11 +474,7 @@ initProtectedPage('Contato Cliente', async (content) => {
         .order('data_referencia', { ascending: false })
         .limit(1)
         .maybeSingle();
-
-      let q = supabase.from('colaborador_snapshot').select('nome').order('nome').limit(3000);
-      if (latest?.data_referencia) q = q.eq('data_referencia', latest.data_referencia);
-      const { data } = await q;
-      state.colaboradores = [...new Set((data || []).map(c => c.nome).filter(Boolean))];
+      state.latestDataRef = latest?.data_referencia || null;
     } catch {}
   }
 
@@ -505,13 +501,26 @@ initProtectedPage('Contato Cliente', async (content) => {
       const drop = document.createElement('ul');
       drop.className = 'cc-ac-drop';
 
+      let acTimer = null;
+
       inp.addEventListener('input', () => {
-        const q = inp.value.trim().toLowerCase();
-        if (!q) { drop.style.display = 'none'; return; }
-        const matches = state.colaboradores.filter(n => n.toLowerCase().includes(q)).slice(0, 25);
-        if (!matches.length) { drop.style.display = 'none'; return; }
-        drop.innerHTML = matches.map(n => `<li class="cc-ac-item">${esc(n)}</li>`).join('');
-        drop.style.display = 'block';
+        const q = inp.value.trim();
+        clearTimeout(acTimer);
+        if (q.length < 2) { drop.style.display = 'none'; return; }
+        acTimer = setTimeout(async () => {
+          let query = supabase
+            .from('colaborador_snapshot')
+            .select('nome')
+            .ilike('nome', `%${q}%`)
+            .order('nome')
+            .limit(25);
+          if (state.latestDataRef) query = query.eq('data_referencia', state.latestDataRef);
+          const { data } = await query;
+          const matches = [...new Set((data || []).map(c => c.nome).filter(Boolean))];
+          if (!matches.length) { drop.style.display = 'none'; return; }
+          drop.innerHTML = matches.map(n => `<li class="cc-ac-item">${esc(n)}</li>`).join('');
+          drop.style.display = 'block';
+        }, 200);
       });
 
       inp.addEventListener('blur', () => {
