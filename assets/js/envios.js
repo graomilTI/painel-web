@@ -101,24 +101,25 @@ async function importarDestinatariosColaboradores() {
   setFeedback('Importando colaboradores...');
   const { data: colabs, error } = await supabase
     .from('operacional_colaborador_base')
-    .select('nome, matricula, regional, email')
+    .select('nome, cpf, email, rua, bairro, cidade_base, uf_base, telefone, supervisao')
     .eq('ativo', true);
   if (error) { setFeedback('Erro ao buscar colaboradores: ' + error.message, true); return; }
 
-  const existentes = new Set(state.destinatarios.filter(d => d.origem === 'colaborador').map(d => d.matricula));
-  const novos = (colabs ?? []).filter(c => c.matricula && !existentes.has(c.matricula));
+  const existentes = new Set(state.destinatarios.filter(d => d.origem === 'colaborador').map(d => d.nome));
+  const novos = (colabs ?? []).filter(c => c.nome && !existentes.has(c.nome));
 
   if (!novos.length) { setFeedback('Nenhum colaborador novo para importar.'); return; }
 
   const rows = novos.map(c => ({
     nome: c.nome,
-    matricula: c.matricula,
+    cpf_cnpj: c.cpf ?? null,
     email: c.email ?? null,
-    logradouro: '-',
+    telefone: c.telefone ?? null,
+    logradouro: c.rua || '-',
     numero: 'S/N',
-    bairro: '-',
-    cidade: c.regional ?? '-',
-    uf: 'PR',
+    bairro: c.bairro || '-',
+    cidade: c.cidade_base || '-',
+    uf: c.uf_base || 'PR',
     cep: '00000-000',
     origem: 'colaborador',
     ativo: true,
