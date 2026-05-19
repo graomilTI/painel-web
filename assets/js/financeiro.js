@@ -93,6 +93,7 @@ function origemPagamentoLabel(value) {
   const key = normalize(raw);
   if (key.includes('compra')) return 'Compras';
   if (key.includes('hotel') || key.includes('hosped')) return 'Hospedagem';
+  if (key.includes('auditoria')) return 'Auditoria';
   if (key === 'rh' || key.includes('recursos humanos')) return 'RH';
   if (key.includes('logistica')) return 'Logística';
   if (key.includes('frota')) return 'Frotas';
@@ -1308,6 +1309,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
             <button class="fin-setor-btn" data-setor-pay="COMPRAS" type="button">Compras</button>
             <button class="fin-setor-btn" data-setor-pay="HOSPEDAGEM" type="button">Hospedagem</button>
             <button class="fin-setor-btn" data-setor-pay="RH" type="button">RH</button>
+            <button class="fin-setor-btn" data-setor-pay="AUDITORIA" type="button">Auditoria</button>
             <button class="fin-setor-btn" data-setor-pay="OUTROS" type="button">Outros</button>
           </div>
 
@@ -1363,14 +1365,15 @@ initProtectedPage('Financeiro', (content, userContext) => {
     if (filter === 'OUTROS') {
       return (state.financeiroPagamentos || []).filter((row) => {
         const origem = normalize(row.origem || row.setor || row.modulo_origem);
-        return !origem.includes('compra') && !origem.includes('hotel') && !origem.includes('hosped') && origem !== 'rh' && !origem.includes('recursos humanos');
+        return !origem.includes('compra') && !origem.includes('hotel') && !origem.includes('hosped') && !origem.includes('auditoria') && origem !== 'rh' && !origem.includes('recursos humanos');
       });
     }
     return (state.financeiroPagamentos || []).filter((row) => {
       const origem = normalize(row.origem || row.setor || row.modulo_origem);
       return normalize(filter).split(' ').every((part) => origem.includes(part)) ||
         (filter === 'HOSPEDAGEM' && (origem.includes('hotel') || origem.includes('hosped'))) ||
-        (filter === 'RH' && (origem === 'rh' || origem.includes('recursos humanos')));
+        (filter === 'RH' && (origem === 'rh' || origem.includes('recursos humanos'))) ||
+        (filter === 'AUDITORIA' && origem.includes('auditoria')); 
     });
   }
 

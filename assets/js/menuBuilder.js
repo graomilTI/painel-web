@@ -117,6 +117,47 @@ function ensureOperationalSection(menuSections, userContext) {
 }
 
 
+
+const GESTOR_FAILSAFE_ITEMS = [
+  {
+    code: 'auditoria_gestor',
+    label: 'Auditoria',
+    path: 'auditoria',
+    aliases: ['AUDITORIA_GESTOR', 'GESTOR_AUDITORIA', 'AUDITORIA']
+  }
+];
+
+function ensureGestorSection(menuSections, userContext) {
+  const sections = Array.isArray(menuSections)
+    ? menuSections.map((section) => ({ ...section, items: [...(section.items || [])] }))
+    : [];
+
+  const allowedCodes = buildAllowedCodeSet(userContext);
+  const fallbackItems = (Boolean(userContext?.user?.is_master) || isGestorContext(userContext))
+    ? GESTOR_FAILSAFE_ITEMS
+    : GESTOR_FAILSAFE_ITEMS.filter((item) => isItemAllowed(item, allowedCodes));
+
+  if (!fallbackItems.length) return sections;
+
+  const gestorIndex = sections.findIndex((section) => normalizeCode(section.section) === 'gestor');
+  if (gestorIndex >= 0) {
+    fallbackItems.forEach((fallbackItem) => {
+      const exists = sections[gestorIndex].items.some((item) => {
+        const code = normalizeCode(item.code || item.label || item.path);
+        const path = normalizeCode(item.path || '');
+        return code === normalizeCode(fallbackItem.code) || path === normalizeCode(fallbackItem.path);
+      });
+      if (!exists) sections[gestorIndex].items.push(fallbackItem);
+    });
+    return sections;
+  }
+
+  const inicioIndex = sections.findIndex((section) => normalizeCode(section.section) === 'inicio');
+  const insertAt = inicioIndex >= 0 ? inicioIndex + 1 : 0;
+  sections.splice(insertAt, 0, { section: 'GESTOR', items: fallbackItems });
+  return sections;
+}
+
 const FINANCEIRO_FAILSAFE_ITEMS = [
   {
     code: 'financeiro_fluxo_caixa',
@@ -277,27 +318,27 @@ export function buildAllowedMenu(userContext) {
   if (!userContext) return [];
 
   if (userContext.user?.is_master) {
-    return ensureFinanceiroSection(ensureTiSection(ensureFrotasSection(ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext), userContext), userContext), userContext);
+    return ensureFinanceiroSection(ensureTiSection(ensureFrotasSection(ensureGestorSection(ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext), userContext), userContext), userContext), userContext);
   }
 
   // Regra de segurança visual: perfil/setor GESTOR enxerga somente INÍCIO + GESTOR.
   // Mesmo que algum contexto antigo/cache retorne módulos administrativos, eles não entram no menu.
   if (isGestorContext(userContext)) {
     const allowedSections = new Set(['inicio', 'gestor']);
-    return PANEL_MENU
+    return ensureGestorSection(PANEL_MENU
       .filter((section) => allowedSections.has(normalizeCode(section.section)))
       .map((section) => ({ ...section, items: [...section.items] }))
-      .filter((section) => section.items.length > 0);
+      .filter((section) => section.items.length > 0), userContext);
   }
 
   const allowedCodes = buildAllowedCodeSet(userContext);
 
-  return ensureFinanceiroSection(ensureTiSection(ensureFrotasSection(ensureOperationalSection(PANEL_MENU
+  return ensureFinanceiroSection(ensureTiSection(ensureFrotasSection(ensureGestorSection(ensureOperationalSection(PANEL_MENU
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => isItemAllowed(item, allowedCodes)),
     }))
-    .filter((section) => section.items.length > 0), userContext), userContext), userContext), userContext);
+    .filter((section) => section.items.length > 0), userContext), userContext), userContext), userContext), userContext);
 }
 
 export function flattenAllowedMenu(userContext) {
@@ -440,10 +481,13 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
     const hasItems = Array.isArray(section.items) && section.items.length > 0;
     const hasActiveItem = (section.items || []).some((item) => {
       const normalizedItemPath = normalizePath(item.path);
+      const normalizedItemNoHash = normalizePath(String(item.path || '').split('#')[0]);
       return (
         normalizedCurrent.endsWith(normalizedItemPath) ||
         normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, '')) ||
-        normalizedCurrent.endsWith(normalizedItemPath + '.html')
+        normalizedCurrent.endsWith(normalizedItemPath + '.html') ||
+        normalizedCurrent.endsWith(normalizedItemNoHash) ||
+        normalizedCurrent.endsWith(normalizedItemNoHash + '.html')
       );
     });
 
@@ -496,10 +540,13 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
         link.appendChild(label);
 
         const normalizedItemPath = normalizePath(item.path);
+        const normalizedItemNoHash = normalizePath(String(item.path || '').split('#')[0]);
         if (
           normalizedCurrent.endsWith(normalizedItemPath) ||
           normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, '')) ||
-          normalizedCurrent.endsWith(normalizedItemPath + '.html')
+          normalizedCurrent.endsWith(normalizedItemPath + '.html') ||
+          normalizedCurrent.endsWith(normalizedItemNoHash) ||
+          normalizedCurrent.endsWith(normalizedItemNoHash + '.html')
         ) {
           link.classList.add('active');
         }
