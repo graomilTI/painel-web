@@ -1,8 +1,5 @@
 import { initProtectedPage } from './pageInit.js';
-import { supabase } from './supabaseClient.js';
-
-const SUPABASE_URL = (await import('./supabaseClient.js').then(m => m.supabase)).supabaseUrl
-  ?? document.querySelector('script[src*="supabaseClient"]')?.src ?? '';
+import { supabase, SUPABASE_URL } from './supabaseClient.js';
 
 const SERVICOS = {
   '03220': 'PAC Contrato',
@@ -80,8 +77,7 @@ async function callFn(name, body) {
 }
 
 function getSupabaseUrl() {
-  // Extract from supabase client
-  return supabase.supabaseUrl ?? supabase._url ?? 'https://xyzpnuumdqhegxakkyws.supabase.co';
+  return SUPABASE_URL;
 }
 
 // ── Data loaders ──────────────────────────────────────────────────────────────
