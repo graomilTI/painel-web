@@ -149,7 +149,7 @@ async function importarDestinatariosColaboradores() {
     const lote = rows.slice(i, i + 500);
     const { error: iErr } = await supabase
       .from('envios_destinatarios')
-      .upsert(lote, { onConflict: 'nome,origem', ignoreDuplicates: false });
+      .upsert(lote, { onConflict: 'nome', ignoreDuplicates: false });
     if (iErr) { setFeedback('Erro ao importar: ' + iErr.message, true); return; }
     total += lote.length;
     setFeedback(`Importando... ${total}/${rows.length}`);
@@ -236,7 +236,7 @@ async function importarDestinatariosPlanilha(file) {
     const lote = rows.slice(i, i + 500);
     const { error } = await supabase
       .from('envios_destinatarios')
-      .upsert(lote, { onConflict: 'nome,origem', ignoreDuplicates: false });
+      .upsert(lote, { onConflict: 'nome', ignoreDuplicates: false });
     if (error) { setFeedback('Erro ao importar: ' + error.message, true); return; }
     total += lote.length;
     setFeedback(`Importando... ${total}/${rows.length}`);
