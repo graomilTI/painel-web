@@ -334,9 +334,202 @@ initProtectedPage('Notas Fiscais', (content) => {
         fornecedor: q('emit xNome'),
         cnpj: q('emit CNPJ'),
         numero: q('nNF'),
+        origem: 'xml',
       };
     } catch {
       return null;
+    }
+  }
+
+  function loadExternalScript(src, globalName) {
+    if (globalName && window[globalName]) return Promise.resolve(window[globalName]);
+    return new Promise((resolve, reject) => {
+      const existing = [...document.scripts].find((s) => s.src === src);
+      if (existing) {
+        existing.addEventListener('load', () => resolve(globalName ? window[globalName] : true), { once: true });
+        existing.addEventListener('error', reject, { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = () => resolve(globalName ? window[globalName] : true);
+      script.onerror = () => reject(new Error(`Falha ao carregar biblioteca OCR: ${src}`));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function blobFromUrl(url) {
+    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok) throw new Error(`Falha ao baixar NF (${res.status})`);
+    return await res.blob();
+  }
+
+  function fileLooksPdf(url, blob) {
+    return String(blob?.type || '').includes('pdf') || /\.pdf(\?|$)/i.test(String(url || ''));
+  }
+
+  async function readPdfText(blob) {
+    const pdfjs = await loadExternalScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', 'pdfjsLib');
+    pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const data = await blob.arrayBuffer();
+    const pdf = await pdfjs.getDocument({ data }).promise;
+    const parts = [];
+    const maxPages = Math.min(pdf.numPages || 1, 2);
+    for (let i = 1; i <= maxPages; i += 1) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      parts.push(textContent.items.map((item) => item.str || '').join(' '));
+    }
+    return parts.join('\n');
+  }
+
+  async function renderPdfFirstPage(blob) {
+    const pdfjs = await loadExternalScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', 'pdfjsLib');
+    pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const data = await blob.arrayBuffer();
+    const pdf = await pdfjs.getDocument({ data }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 2.4 });
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return canvas;
+  }
+
+  async function imageElementFromBlob(blob) {
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = url;
+      await img.decode();
+      return img;
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    }
+  }
+
+  async function runOcr(target) {
+    const Tesseract = await loadExternalScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js', 'Tesseract');
+    const result = await Tesseract.recognize(target, 'por+eng', {
+      logger: () => {},
+    });
+    return result?.data?.text || '';
+  }
+
+  function normalizeOcrText(text) {
+    return String(text || '')
+      .replace(/[|]/g, ' ')
+      .replace(/[º°]/g, 'º')
+      .replace(/\r/g, '\n')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function onlyDigits(value) {
+    return String(value || '').replace(/\D/g, '');
+  }
+
+  function cleanFornecedorName(value) {
+    return String(value || '')
+      .replace(/\s+/g, ' ')
+      .replace(/\b(CNPJ|CPF|INSCRI[CÇ][AÃ]O|ENDERE[CÇ]O|FONE|TELEFONE|DANFE|DOCUMENTO AUXILIAR).*$/i, '')
+      .replace(/[,:;.-]+$/g, '')
+      .trim();
+  }
+
+  function parseNfText(rawText) {
+    const text = normalizeOcrText(rawText);
+    const upper = text.toUpperCase();
+    const beforeDest = text.split(/DESTINAT[ÁA]RIO\/?REMETENTE/i)[0] || text;
+    const beforeDestUpper = beforeDest.toUpperCase();
+
+    let numero = null;
+    const numeroPatterns = [
+      /NF\s*-?\s*E\s*(?:N[ºO°]|NO|NÚMERO|NUMERO)?\s*[:\-]?\s*([0-9]{3,})/i,
+      /DANFE[\s\S]{0,220}?(?:N[ºO°]|NO|NÚMERO|NUMERO)\s*[:\-]?\s*([0-9]{3,})/i,
+      /(?:N[ºO°]|NO|NÚMERO|NUMERO)\s*[:\-]?\s*([0-9]{3,})\s*(?:S[ÉE]RIE|SERIE)/i,
+    ];
+    for (const pattern of numeroPatterns) {
+      const match = text.match(pattern);
+      if (match?.[1]) { numero = match[1].replace(/^0+(?=\d)/, '') || match[1]; break; }
+    }
+
+    let cnpj = null;
+    const cnpjCandidates = [...beforeDest.matchAll(/\b\d{2}[\.\s]?\d{3}[\.\s]?\d{3}[\/\s]?\d{4}[-\s]?\d{2}\b/g)]
+      .map((m) => onlyDigits(m[0]))
+      .filter((d) => d.length === 14);
+    if (cnpjCandidates.length) cnpj = cnpjCandidates[cnpjCandidates.length - 1];
+    if (!cnpj) {
+      const cnpjLabel = beforeDest.match(/CNPJ\s*(?:DO FORNECEDOR)?\s*[:\-]?\s*(\d{2}[\.\s]?\d{3}[\.\s]?\d{3}[\/\s]?\d{4}[-\s]?\d{2})/i);
+      if (cnpjLabel?.[1]) cnpj = onlyDigits(cnpjLabel[1]);
+    }
+
+    let fornecedor = null;
+    const recebemos = text.match(/RECEBEMOS\s+DE\s+([\s\S]{6,160}?)\s+OS\s+(?:PRODUTOS|SERVI[CÇ]OS)/i);
+    if (recebemos?.[1]) fornecedor = cleanFornecedorName(recebemos[1]);
+
+    if (!fornecedor) {
+      const lines = beforeDest.split('\\n').map((line) => cleanFornecedorName(line)).filter(Boolean);
+      const bad = /^(DANFE|DOCUMENTO|AUXILIAR|NOTA FISCAL|ELETR[ÔO]NICA|CHAVE|PROTOCOLO|NATUREZA|INSCRI|DATA|FONE|WWW|HTTP|CONTATO|AVENIDA|RUA|CEP|S[ÉE]RIE|P[ÁA]GINA|SA[IÍ]DA|ENTRADA|CONTROLE|CONSULTA)$/i;
+      const candidates = lines
+        .filter((line) => line.length >= 8 && /[A-ZÁÉÍÓÚÃÕÇ]{3}/i.test(line) && !bad.test(line))
+        .filter((line) => !/\d{2}\.\d{3}|\d{2}\/\d{2}\/\d{4}|^\d+$/.test(line))
+        .filter((line) => !/GRAOMIL\s+LTDA/i.test(line));
+      fornecedor = candidates.find((line) => /LTDA|EIRELI|ME|EPP|S\/A|SA\b/i.test(line)) || candidates[0] || null;
+    }
+
+    return {
+      fornecedor: fornecedor || null,
+      cnpj: cnpj ? formatCnpj(cnpj) : null,
+      numero: numero || null,
+      rawText: text,
+      origem: text ? 'ocr' : null,
+    };
+  }
+
+  async function extractFromNfFile(url) {
+    const xml = await extractFromXml(url);
+    if (xml?.fornecedor || xml?.cnpj || xml?.numero) return xml;
+
+    try {
+      const blob = await blobFromUrl(url);
+      let text = '';
+      if (fileLooksPdf(url, blob)) {
+        try { text = await readPdfText(blob); } catch { text = ''; }
+        if (!text || text.replace(/\s/g, '').length < 80) {
+          const canvas = await renderPdfFirstPage(blob);
+          text = await runOcr(canvas);
+        }
+      } else {
+        const img = await imageElementFromBlob(blob);
+        text = await runOcr(img);
+      }
+      return parseNfText(text);
+    } catch (error) {
+      console.warn('[Notas Fiscais] OCR NF indisponível:', error);
+      return null;
+    }
+  }
+
+  async function saveExtractedNfData(group, extracted) {
+    if (!extracted || (!extracted.fornecedor && !extracted.cnpj && !extracted.numero)) return;
+    const payload = {};
+    if (extracted.fornecedor) payload.fornecedor = extracted.fornecedor;
+    if (extracted.cnpj) payload.favorecido_documento = extracted.cnpj;
+    if (extracted.numero) payload.nf_numero = extracted.numero;
+    if (!Object.keys(payload).length) return;
+
+    const ids = group.ids || [];
+    for (const id of ids) {
+      try {
+        await supabase.from('financeiro_pagamentos').update(payload).eq('origem', 'COMPRAS').eq('origem_id', id);
+      } catch (_) {}
+      state.pagamentos[id] = { ...(state.pagamentos[id] || {}), ...payload };
     }
   }
 
@@ -364,13 +557,18 @@ initProtectedPage('Notas Fiscais', (content) => {
     let cnpj = group.cnpj;
     let numero = group.numero || '-';
 
+    let ocrStatus = '';
     if (isUrl(group.nf_url)) {
-      const extracted = await extractFromXml(group.nf_url);
+      const extracted = await extractFromNfFile(group.nf_url);
       if (!modal.classList.contains('open')) return;
       if (extracted) {
         if (extracted.fornecedor) fornecedor = extracted.fornecedor;
         if (extracted.cnpj) cnpj = formatCnpj(extracted.cnpj);
         if (extracted.numero) numero = extracted.numero;
+        await saveExtractedNfData(group, extracted);
+        ocrStatus = extracted.origem === 'xml' ? 'Lido pelo XML da NF' : 'Lido por OCR da NF';
+      } else {
+        ocrStatus = 'OCR não conseguiu identificar todos os campos';
       }
     }
 
@@ -379,6 +577,7 @@ initProtectedPage('Notas Fiscais', (content) => {
         <div>
           <h3 style="margin:0 0 4px;color:#f8fafc">Detalhes da compra</h3>
           <p style="margin:0;color:#6b7280;font-size:13px">${brDate(group.comprado_em)}</p>
+          ${ocrStatus ? `<p style="margin:6px 0 0;color:#94a3b8;font-size:12px">${esc(ocrStatus)}</p>` : ''}
         </div>
         <button class="btn btn-secondary" id="nfModalClose" type="button" style="flex-shrink:0">Fechar</button>
       </div>
