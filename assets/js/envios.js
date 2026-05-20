@@ -100,34 +100,42 @@ async function loadAll() {
 async function importarDestinatariosColaboradores() {
   setFeedback('Importando colaboradores...');
 
-  // Pagina para passar o limite padrão de 1000 do Supabase
+  const formatCep = raw => {
+    const d = (raw ?? '').toString().replace(/\D/g, '');
+    return d.length === 8 ? `${d.slice(0,5)}-${d.slice(5)}` : '00000-000';
+  };
+
+  // Busca historico_colaboradores (tem cep, estado, cidade, bairro, endereco, complemento)
+  // ORDER BY data_referencia DESC => registro mais recente vence na deduplicação por nome
   let colabs = [];
   const PAGE = 1000;
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await supabase
-      .from('operacional_colaborador_base')
-      .select('nome, email, rua, bairro, cidade_base, uf_base, telefone')
+      .from('historico_colaboradores')
+      .select('nome, email_pessoal, whatsapp, cep, estado, cidade, bairro, endereco, complemento')
       .eq('ativo', true)
+      .order('data_referencia', { ascending: false })
       .range(offset, offset + PAGE - 1);
     if (error) { setFeedback('Erro ao buscar colaboradores: ' + error.message, true); return; }
     colabs = colabs.concat(data ?? []);
     if (!data || data.length < PAGE) break;
   }
 
-  // Deduplica por nome (mantém último registro de cada nome)
+  // Deduplica por nome — primeiro encontrado vence (mais recente por ORDER BY DESC)
   const byNome = new Map();
   for (const c of colabs) {
-    if (!c.nome) continue;
+    if (!c.nome || byNome.has(c.nome)) continue;
     byNome.set(c.nome, {
       nome: c.nome,
-      email: c.email ?? null,
-      telefone: c.telefone ?? null,
-      logradouro: c.rua || '-',
+      email: c.email_pessoal || null,
+      telefone: c.whatsapp || null,
+      cep: formatCep(c.cep),
+      logradouro: c.endereco || '-',
       numero: 'S/N',
+      complemento: c.complemento || null,
       bairro: c.bairro || '-',
-      cidade: c.cidade_base || '-',
-      uf: c.uf_base || 'PR',
-      cep: '00000-000',
+      cidade: c.cidade || '-',
+      uf: (c.estado || 'PR').toString().trim().toUpperCase().slice(0, 2),
       origem: 'colaborador',
       ativo: true,
     });
@@ -136,7 +144,6 @@ async function importarDestinatariosColaboradores() {
 
   if (!rows.length) { setFeedback('Nenhum colaborador encontrado.'); return; }
 
-  // Upsert em lotes de 500 para evitar timeout
   let total = 0;
   for (let i = 0; i < rows.length; i += 500) {
     const lote = rows.slice(i, i + 500);
@@ -147,7 +154,7 @@ async function importarDestinatariosColaboradores() {
     total += lote.length;
     setFeedback(`Importando... ${total}/${rows.length}`);
   }
-  setFeedback(`${total} destinatário(s) sincronizados (novos e atualizados).`);
+  setFeedback(`${total} destinatário(s) sincronizados com endereço atualizado.`);
   await loadAll();
   renderTab();
 }
