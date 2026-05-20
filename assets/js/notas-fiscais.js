@@ -6,6 +6,7 @@ const state = {
   fim: new Date().toISOString().slice(0, 10),
   rows: [],
   kpiRows: [],
+  pagamentos: {},
   kpiFilter: 'pendentes',
   tab: 'resumo'
 };
@@ -217,6 +218,7 @@ initProtectedPage('Notas Fiscais', (content) => {
       const first = itens[0];
       const sol0 = first.compras_solicitacoes || {};
       const lancadoEm = itens.filter((r) => r.nf_lancado_em).map((r) => r.nf_lancado_em).sort().pop() || null;
+      const pag = itens.reduce((found, r) => found || state.pagamentos[r.id] || null, null);
       return {
         key: first.nf_url,
         ids: itens.map((r) => r.id),
@@ -226,6 +228,8 @@ initProtectedPage('Notas Fiscais', (content) => {
         comprado_em: itens.map((r) => r.comprado_em || '').sort().pop() || sol0.data_solicitacao || '',
         regional: sol0.coordenacao || '-',
         solicitante: [...new Set(itens.map((r) => (r.compras_solicitacoes || {}).solicitante).filter(Boolean))].join(', ') || '-',
+        fornecedor: pag?.fornecedor || pag?.favorecido_nome || '-',
+        cnpj: pag?.favorecido_documento || '-',
         nf_lancado: itens.every((r) => r.nf_lancado),
         nf_lancado_em: lancadoEm,
         itens,
@@ -252,6 +256,20 @@ initProtectedPage('Notas Fiscais', (content) => {
     }
 
     state.kpiRows = data || [];
+
+    state.pagamentos = {};
+    const ids = state.kpiRows.map((r) => r.id).filter(Boolean);
+    if (ids.length) {
+      const { data: pags } = await supabase
+        .from('financeiro_pagamentos')
+        .select('origem_id, fornecedor, favorecido_nome, favorecido_documento')
+        .eq('origem', 'COMPRAS')
+        .in('origem_id', ids);
+      for (const p of (pags || [])) {
+        if (p.origem_id) state.pagamentos[p.origem_id] = p;
+      }
+    }
+
     updateKpiCounters();
     renderKpis();
   }
@@ -297,73 +315,64 @@ initProtectedPage('Notas Fiscais', (content) => {
     tbody.querySelectorAll('[data-lancar]').forEach((b) => b.addEventListener('click', () => lancarGrupo(b.dataset.lancar, b)));
   }
 
+  function descricaoItens(itens) {
+    return itens.map((r) => {
+      const qtd = r.quantidade || r.unidade || 1;
+      let s = `${qtd} un ${r.material}`;
+      if (r.tamanho) s += ` (${r.tamanho})`;
+      if (r.marca) s += ` — ${r.marca}`;
+      return s;
+    }).join(' · ');
+  }
+
   function openKpiModal(nfUrl) {
     const group = groupByNf(state.kpiRows).find((g) => g.key === nfUrl);
     if (!group) return;
     const modal = document.getElementById('nfModal');
     const card = document.getElementById('nfModalCard');
-    const titulo = group.itens.length === 1 ? esc(group.itens[0].material || 'Compra') : `${group.itens.length} itens`;
 
     card.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px">
         <div>
-          <h3 style="margin:0 0 4px;color:#f8fafc">${titulo}</h3>
-          <p style="margin:0;color:#6b7280;font-size:13px">${esc(group.solicitante)} · ${brDate(group.comprado_em)}</p>
+          <h3 style="margin:0 0 4px;color:#f8fafc">Detalhes da compra</h3>
+          <p style="margin:0;color:#6b7280;font-size:13px">${brDate(group.comprado_em)}</p>
         </div>
         <button class="btn btn-secondary" id="nfModalClose" type="button" style="flex-shrink:0">Fechar</button>
       </div>
       <div class="nf-modal-grid">
         <div>
-          <div class="nf-modal-label">Regional / Coordenação</div>
-          <div class="nf-modal-value">${esc(group.regional)}</div>
-        </div>
-        <div>
-          <div class="nf-modal-label">Data da compra</div>
+          <div class="nf-modal-label">Data</div>
           <div class="nf-modal-value">${brDate(group.comprado_em)}</div>
         </div>
         <div>
-          <div class="nf-modal-label">Valor total</div>
-          <div class="nf-modal-value" style="font-size:18px;font-weight:700;color:#bbf7d0">${money(group.valor_total)}</div>
+          <div class="nf-modal-label">Regional</div>
+          <div class="nf-modal-value">${esc(group.regional)}</div>
         </div>
         <div>
-          <div class="nf-modal-label">Status NF</div>
-          <div class="nf-modal-value">
-            ${group.nf_lancado
-              ? `<span class="nf-badge lancado">Lançado ${brDate(group.nf_lancado_em)}</span>`
-              : `<span class="nf-badge pendente">Aguardando lançamento</span>`}
-          </div>
+          <div class="nf-modal-label">Solicitante</div>
+          <div class="nf-modal-value">${esc(group.solicitante)}</div>
         </div>
-      </div>
-      ${group.itens.length > 1 ? `
-      <div style="margin-top:16px">
-        <div class="nf-modal-label" style="margin-bottom:8px">Itens desta NF (${group.itens.length})</div>
-        <div class="nf-table-wrap">
-          <table class="nf-table" style="min-width:0">
-            <thead><tr><th>Material</th><th>Tipo</th><th>Qtd</th><th>Valor</th></tr></thead>
-            <tbody>
-              ${group.itens.map((r) => `<tr>
-                <td>${esc(r.material)}${r.marca ? `<br><small style="color:#6b7280">${esc(r.marca)}</small>` : ''}</td>
-                <td>${esc(r.tipo || '-')}</td>
-                <td>${esc(r.quantidade || r.unidade || '1')}</td>
-                <td>${money(r.valor_total)}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
+        <div>
+          <div class="nf-modal-label">Fornecedor</div>
+          <div class="nf-modal-value">${esc(group.fornecedor)}</div>
         </div>
-      </div>` : (() => {
-        const r0 = group.itens[0];
-        const obs = (r0.compras_solicitacoes || {}).observacoes;
-        return `<div class="nf-modal-grid" style="margin-top:0">
-          <div><div class="nf-modal-label">Tipo</div><div class="nf-modal-value">${esc(r0.tipo || '-')}</div></div>
-          <div><div class="nf-modal-label">Quantidade</div><div class="nf-modal-value">${esc(r0.quantidade || r0.unidade || '1')}</div></div>
-          ${r0.marca ? `<div><div class="nf-modal-label">Marca</div><div class="nf-modal-value">${esc(r0.marca)}</div></div>` : ''}
-          ${obs ? `<div class="nf-modal-full"><div class="nf-modal-label">Observações</div><div class="nf-modal-value">${esc(obs)}</div></div>` : ''}
-        </div>`;
-      })()}
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
-        ${isUrl(group.nf_url) ? `<a class="btn btn-secondary" href="${esc(group.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : `<span style="color:#6b7280;font-size:13px">NF: ${esc(group.nf_url || '-')}</span>`}
-        ${isUrl(group.comprovante_url) ? `<a class="btn btn-secondary" href="${esc(group.comprovante_url)}" target="_blank" rel="noopener">Baixar Comprovante</a>` : ''}
-        ${!group.nf_lancado ? `<button class="btn btn-primary" data-lancar-modal="${esc(group.key)}" type="button">Lançado</button>` : ''}
+        <div>
+          <div class="nf-modal-label">CNPJ do Fornecedor</div>
+          <div class="nf-modal-value">${esc(group.cnpj)}</div>
+        </div>
+        <div>
+          <div class="nf-modal-label">Valor</div>
+          <div class="nf-modal-value" style="font-size:18px;font-weight:700;color:#bbf7d0">${money(group.valor_total)}</div>
+        </div>
+        <div class="nf-modal-full">
+          <div class="nf-modal-label">Descrição</div>
+          <div class="nf-modal-value">${esc(descricaoItens(group.itens))}</div>
+        </div>
+        <div class="nf-modal-full" style="display:flex;gap:10px;flex-wrap:wrap;padding-top:4px">
+          ${isUrl(group.nf_url) ? `<a class="btn btn-secondary" href="${esc(group.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : `<span style="color:#6b7280;font-size:13px">NF: ${esc(group.nf_url || '-')}</span>`}
+          ${isUrl(group.comprovante_url) ? `<a class="btn btn-secondary" href="${esc(group.comprovante_url)}" target="_blank" rel="noopener">Baixar Comprovante</a>` : ''}
+          ${!group.nf_lancado ? `<button class="btn btn-primary" data-lancar-modal="${esc(group.key)}" type="button">Lançado</button>` : `<span class="nf-badge lancado">Lançado ${brDate(group.nf_lancado_em)}</span>`}
+        </div>
       </div>
     `;
 
