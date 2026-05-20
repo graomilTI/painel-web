@@ -153,6 +153,92 @@ async function importarDestinatariosColaboradores() {
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
+
+async function importarDestinatariosPlanilha(file) {
+  setFeedback('Lendo planilha...');
+  const XLSX = window.XLSX;
+  if (!XLSX) { setFeedback('Biblioteca XLSX não carregada. Recarregue a página.', true); return; }
+
+  let data;
+  try {
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    data = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  } catch (err) { setFeedback('Erro ao ler planilha: ' + err.message, true); return; }
+
+  if (!data.length) { setFeedback('Planilha vazia ou inválida.', true); return; }
+
+  const norm = s => (s ?? '').toString().trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  const COL_MAP = {
+    nome:        ['nome'],
+    cep:         ['cep'],
+    uf:          ['estado', 'uf'],
+    cidade:      ['cidade'],
+    bairro:      ['bairro'],
+    logradouro:  ['endereco', 'endereço', 'logradouro', 'rua', 'address'],
+    complemento: ['complemento'],
+    email:       ['email'],
+    telefone:    ['telefone', 'celular', 'fone'],
+    matricula:   ['matricula', 'matricula'],
+    cpf_cnpj:    ['cpf', 'cnpj', 'cpf_cnpj', 'documento'],
+  };
+
+  const headers = Object.keys(data[0]);
+  const fieldMap = {};
+  for (const [field, aliases] of Object.entries(COL_MAP)) {
+    for (const h of headers) {
+      if (aliases.includes(norm(h))) { fieldMap[field] = h; break; }
+    }
+  }
+
+  if (!fieldMap.nome) { setFeedback('Coluna "Nome" não encontrada na planilha.', true); return; }
+
+  const formatCep = raw => {
+    const d = (raw ?? '').toString().replace(/\D/g, '');
+    return d.length === 8 ? `${d.slice(0,5)}-${d.slice(5)}` : '00000-000';
+  };
+
+  const get = (row, field) => fieldMap[field] ? (row[fieldMap[field]] ?? '').toString().trim() : '';
+
+  const rows = data
+    .filter(r => get(r, 'nome'))
+    .map(r => ({
+      nome:        get(r, 'nome'),
+      cep:         formatCep(get(r, 'cep')),
+      uf:          get(r, 'uf').toUpperCase().slice(0, 2) || 'PR',
+      cidade:      get(r, 'cidade') || '-',
+      bairro:      get(r, 'bairro') || '-',
+      logradouro:  get(r, 'logradouro') || '-',
+      complemento: get(r, 'complemento') || null,
+      email:       get(r, 'email') || null,
+      telefone:    get(r, 'telefone') || null,
+      matricula:   get(r, 'matricula') || null,
+      cpf_cnpj:    get(r, 'cpf_cnpj') || null,
+      numero:      'S/N',
+      origem:      'planilha',
+      ativo:       true,
+    }));
+
+  if (!rows.length) { setFeedback('Nenhuma linha válida encontrada.', true); return; }
+
+  let total = 0;
+  for (let i = 0; i < rows.length; i += 500) {
+    const lote = rows.slice(i, i + 500);
+    const { error } = await supabase
+      .from('envios_destinatarios')
+      .upsert(lote, { onConflict: 'nome,origem', ignoreDuplicates: false });
+    if (error) { setFeedback('Erro ao importar: ' + error.message, true); return; }
+    total += lote.length;
+    setFeedback(`Importando... ${total}/${rows.length}`);
+  }
+  setFeedback(`${total} destinatário(s) importados da planilha.`);
+  await loadAll();
+  renderTab();
+}
+
 function renderTab() {
   const area = $root?.querySelector('#envios-tab-content');
   if (!area) return;
@@ -356,6 +442,8 @@ function renderDestinatarios() {
     <div class="toolbar" style="margin-bottom:12px">
       <button class="btn btn-primary" id="btn-novo-dest">+ Novo Destinatário</button>
       <button class="btn btn-secondary" id="btn-importar-colabs">Importar de Colaboradores</button>
+      <button class="btn btn-secondary" id="btn-importar-planilha">Importar Planilha (.xlsx/.csv)</button>
+      <input type="file" id="input-planilha-dest" accept=".xlsx,.xls,.csv" style="display:none" />
     </div>
     <div id="form-dest-wrap"></div>
     ${state.destinatarios.length === 0
@@ -611,6 +699,12 @@ function bindTabEvents() {
 
   // Importar colaboradores
   area.querySelector('#btn-importar-colabs')?.addEventListener('click', importarDestinatariosColaboradores);
+  area.querySelector('#btn-importar-planilha')?.addEventListener('click', () => area.querySelector('#input-planilha-dest')?.click());
+  area.querySelector('#input-planilha-dest')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (file) await importarDestinatariosPlanilha(file);
+    e.target.value = '';
+  });
 
   // Remetente: excluir / padrão
   area.querySelectorAll('[data-rem-excluir]').forEach(btn => {
