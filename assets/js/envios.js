@@ -595,10 +595,12 @@ function bindTabEvents() {
     const envBtn = area.querySelector('#btn-enviar-pendentes');
     if (envBtn) envBtn.disabled = true;
     let ok = 0, fail = 0;
+    const erros = [];
     for (const p of pending) {
       setFeedback(`Enviando ${ok + fail + 1}/${pending.length}: ${p.destinatario?.nome ?? ''}...`);
       const result = await callFn('correios-prepostagem', { postagem_id: p.id });
-      if (result.ok) ok++; else fail++;
+      if (result.ok) ok++;
+      else { fail++; erros.push(`${p.destinatario?.nome ?? p.id}: ${result.error ?? 'erro desconhecido'}`); }
     }
     await loadAll();
     if (fail === 0) {
@@ -606,7 +608,7 @@ function bindTabEvents() {
       state.tab = 'enviados';
       $root?.querySelectorAll('[data-tab-main]').forEach(b => b.classList.toggle('active', b.dataset.tabMain === state.tab));
     } else {
-      setFeedback(`${ok} enviada(s), ${fail} com erro. Corrija as pendentes e tente novamente.`, true);
+      setFeedback(`${ok} enviada(s), ${fail} com erro — ${erros[0] ?? ''}`, true);
     }
     renderTab();
   });
