@@ -363,6 +363,13 @@ function renderCotacao() {
           <label>CEP de Origem *</label>
           <input type="text" name="cep_origem" placeholder="00000-000" maxlength="9" required />
         </div>
+        <div class="form-group full-width">
+          <label>Destinatário (preenche CEP de Destino)</label>
+          <select id="select-dest-cotacao">
+            <option value="">— selecione para preencher o CEP —</option>
+            ${state.destinatarios.filter(d => d.cep && d.cep !== '00000-000').map(d => `<option value="${esc(d.cep)}">${esc(d.nome)}${d.cidade ? ` — ${esc(d.cidade)}/${esc(d.uf)}` : ''} (${esc(d.cep)})</option>`).join('')}
+          </select>
+        </div>
         <div class="form-group">
           <label>CEP de Destino *</label>
           <input type="text" name="cep_destino" placeholder="00000-000" maxlength="9" required />
@@ -607,6 +614,13 @@ function bindTabEvents() {
     await loadAll();
     state.tab = 'postagens';
     renderTab();
+  });
+
+  // Destinatário → preenche CEP destino na cotação
+  area.querySelector('#select-dest-cotacao')?.addEventListener('change', e => {
+    if (!e.target.value) return;
+    const inp = area.querySelector('[name=cep_destino]');
+    if (inp) inp.value = e.target.value;
   });
 
   // Cotação form
