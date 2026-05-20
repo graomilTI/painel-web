@@ -118,6 +118,14 @@ export const MENU_CONFIG = [
     itens: []
   },
 
+
+  {
+    grupo: 'ENVIOS',
+    itens: [
+      item('envios', 'Envios', 'envios', ['ENVIOS', 'CORREIOS', 'PREPOSTAGEM']),
+    ]
+  },
+
   {
     grupo: "AUDITORIA",
     itens: [
@@ -158,3 +166,4 @@ export const PANEL_MENU = MENU_CONFIG.map((section) => ({
     hidden: item.hidden || false
   }))
 }));
+
