@@ -370,14 +370,14 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
 }
 
 async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato=''){
-  if(!dados){alert('Informe boleto, PIX ou link.');return;}
   const descricao=`Compra: ${itens.map(r=>`${r.quantidade||r.unidade||1} un ${r.material}`).join(' | ')}`;
-  const payload={origem:'COMPRAS',origem_id:itens[0]?.id||null,descricao,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:total,forma_pagamento:forma,dados_pagamento:dados,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
+  const payload={origem:'COMPRAS',origem_id:itens[0]?.id||null,descricao,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:total,forma_pagamento:forma,dados_pagamento:dados||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
   await safe(()=>supabase.from('financeiro_pagamentos').insert(payload),null);
   for(const r of itens){
-    const upd={status:'pendente_pagamento',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dados};
+    const upd={status:'pendente_pagamento',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dados||null};
     if(r._ca||r.ca) upd.ca=r._ca||r.ca;
-    await supabase.from('compras_itens').update(upd).eq('id',r.id);
+    const {error:updErr}=await supabase.from('compras_itens').update(upd).eq('id',r.id);
+    if(updErr) throw new Error(`Erro ao atualizar item ${r.material}: ${updErr.message}`);
   }
   await syncSolicitacoesStatus(itens.map(r=>r.solicitacao_id));
   // Registra EPIs com colaborador no módulo RH
@@ -404,10 +404,10 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
 
 function openPagamento(r,total,unit){ const area=document.getElementById('modalArea'); area.innerHTML=`<h3>Pagamento</h3><p class="muted">Total da compra: <b>${money(total)}</b></p><div class="adm-cmp-grid mt-16"><label>Fornecedor<input id="payFornecedor" placeholder="Nome do fornecedor"></label><label>Valor total<input id="payValorTotal" readonly value="${money(total)}"></label><label class="adm-cmp-full">Contato<input id="payContato" placeholder="Telefone, WhatsApp, e-mail ou observação de contato"></label></div><div class="adm-cmp-tabs mt-16"><button class="btn btn-secondary active" data-pay="BOLETO" type="button">BOLETO</button><button class="btn btn-secondary" data-pay="PIX" type="button">PIX</button><button class="btn btn-secondary" data-pay="LINK" type="button">LINK</button></div><div class="adm-cmp-grid"><label id="payLabel">Boleto / URL<input id="payData" placeholder="Cole o link do boleto ou anexe abaixo"></label><label id="payFileWrap">Arquivo do boleto<input id="payFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="paySend" type="button">Enviar ao Financeiro</button></div>`; let forma='BOLETO'; area.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{forma=b.dataset.pay; area.querySelectorAll('[data-pay]').forEach(x=>x.classList.toggle('active',x===b)); updatePagamentoFields(area,forma);}); updatePagamentoFields(area,forma); area.querySelector('#paySend').onclick=async()=>{ try{ const dados=await coletarDadosPagamento(forma,area); const fornecedor=area.querySelector('#payFornecedor')?.value?.trim()||''; const contato=area.querySelector('#payContato')?.value?.trim()||''; await enviarFinanceiro(r,total,unit,forma,dados,fornecedor,contato); }catch(e){ setMsg(e.message,true); alert(e.message); } }; }
 async function enviarFinanceiro(r,total,unit,forma,dados,fornecedor='',contato=''){
-  if(!dados){alert('Informe boleto, PIX ou link.');return;}
-  const payload={origem:'COMPRAS',origem_id:r.id,descricao:`Compra: ${r.material}`,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:total,forma_pagamento:forma,dados_pagamento:dados,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
+  const payload={origem:'COMPRAS',origem_id:r.id,descricao:`Compra: ${r.material}`,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:total,forma_pagamento:forma,dados_pagamento:dados||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
   await safe(()=>supabase.from('financeiro_pagamentos').insert(payload),null);
-  await supabase.from('compras_itens').update({status:'pendente_pagamento',valor_unitario:unit,valor_total:total,forma_pagamento:forma,dados_pagamento:dados}).eq('id',r.id);
+  const {error:updErr}=await supabase.from('compras_itens').update({status:'pendente_pagamento',valor_unitario:unit,valor_total:total,forma_pagamento:forma,dados_pagamento:dados||null}).eq('id',r.id);
+  if(updErr) throw new Error(`Erro ao atualizar item: ${updErr.message}`);
   if(isEPI(r)&&(r.colaborador_id||r.colaborador_nome)){
     await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:r.ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'pendente',created_at:new Date().toISOString()}]),null);
   }
