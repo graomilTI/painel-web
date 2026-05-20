@@ -230,6 +230,7 @@ initProtectedPage('Notas Fiscais', (content) => {
         solicitante: [...new Set(itens.map((r) => (r.compras_solicitacoes || {}).solicitante).filter(Boolean))].join(', ') || '-',
         fornecedor: pag?.fornecedor || pag?.favorecido_nome || '-',
         cnpj: pag?.favorecido_documento || '-',
+        numero: pag?.nf_numero || null,
         nf_lancado: itens.every((r) => r.nf_lancado),
         nf_lancado_em: lancadoEm,
         itens,
@@ -262,7 +263,7 @@ initProtectedPage('Notas Fiscais', (content) => {
     if (ids.length) {
       const { data: pags } = await supabase
         .from('financeiro_pagamentos')
-        .select('origem_id, fornecedor, favorecido_nome, favorecido_documento')
+        .select('origem_id, fornecedor, favorecido_nome, favorecido_documento, nf_numero')
         .eq('origem', 'COMPRAS')
         .in('origem_id', ids);
       for (const p of (pags || [])) {
@@ -315,6 +316,30 @@ initProtectedPage('Notas Fiscais', (content) => {
     tbody.querySelectorAll('[data-lancar]').forEach((b) => b.addEventListener('click', () => lancarGrupo(b.dataset.lancar, b)));
   }
 
+  function formatCnpj(v) {
+    const d = String(v || '').replace(/\D/g, '');
+    if (d.length !== 14) return v || '-';
+    return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+  }
+
+  async function extractFromXml(url) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('xml') && !/\.xml(\?|$)/i.test(url)) return null;
+      const text = await res.text();
+      const doc = new DOMParser().parseFromString(text, 'application/xml');
+      const q = (sel) => doc.querySelector(sel)?.textContent?.trim() || null;
+      return {
+        fornecedor: q('emit xNome'),
+        cnpj: q('emit CNPJ'),
+        numero: q('nNF'),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   function descricaoItens(itens) {
     return itens.map((r) => {
       const qtd = r.quantidade || r.unidade || 1;
@@ -325,11 +350,29 @@ initProtectedPage('Notas Fiscais', (content) => {
     }).join(' · ');
   }
 
-  function openKpiModal(nfUrl) {
+  async function openKpiModal(nfUrl) {
     const group = groupByNf(state.kpiRows).find((g) => g.key === nfUrl);
     if (!group) return;
     const modal = document.getElementById('nfModal');
     const card = document.getElementById('nfModalCard');
+
+    card.innerHTML = `<div style="padding:32px;text-align:center;color:#6b7280">Lendo arquivo da NF...</div>`;
+    modal.classList.add('open');
+    card.querySelector && modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); }, { once: true });
+
+    let fornecedor = group.fornecedor;
+    let cnpj = group.cnpj;
+    let numero = group.numero || '-';
+
+    if (isUrl(group.nf_url)) {
+      const extracted = await extractFromXml(group.nf_url);
+      if (!modal.classList.contains('open')) return;
+      if (extracted) {
+        if (extracted.fornecedor) fornecedor = extracted.fornecedor;
+        if (extracted.cnpj) cnpj = formatCnpj(extracted.cnpj);
+        if (extracted.numero) numero = extracted.numero;
+      }
+    }
 
     card.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px">
@@ -354,11 +397,15 @@ initProtectedPage('Notas Fiscais', (content) => {
         </div>
         <div>
           <div class="nf-modal-label">Fornecedor</div>
-          <div class="nf-modal-value">${esc(group.fornecedor)}</div>
+          <div class="nf-modal-value">${esc(fornecedor)}</div>
         </div>
         <div>
           <div class="nf-modal-label">CNPJ do Fornecedor</div>
-          <div class="nf-modal-value">${esc(group.cnpj)}</div>
+          <div class="nf-modal-value">${esc(cnpj)}</div>
+        </div>
+        <div>
+          <div class="nf-modal-label">Número do Documento</div>
+          <div class="nf-modal-value">${esc(numero)}</div>
         </div>
         <div>
           <div class="nf-modal-label">Valor</div>
@@ -376,10 +423,7 @@ initProtectedPage('Notas Fiscais', (content) => {
       </div>
     `;
 
-    modal.classList.add('open');
     card.querySelector('#nfModalClose').addEventListener('click', () => modal.classList.remove('open'));
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); }, { once: true });
-
     const btnLancar = card.querySelector('[data-lancar-modal]');
     if (btnLancar) btnLancar.addEventListener('click', () => lancarGrupo(btnLancar.dataset.lancarModal, btnLancar));
   }
