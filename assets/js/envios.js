@@ -83,17 +83,30 @@ function getSupabaseUrl() {
 // ── Data loaders ──────────────────────────────────────────────────────────────
 async function loadAll() {
   state.loading = true;
-  const [{ data: posts }, { data: rems }, { data: dests }] = await Promise.all([
+  const [{ data: posts }, { data: rems }] = await Promise.all([
     supabase.from('envios_postagens')
       .select('*, remetente:envios_remetentes(nome, cidade, uf), destinatario:envios_destinatarios(nome, cidade, uf)')
       .order('created_at', { ascending: false })
       .limit(200),
     supabase.from('envios_remetentes').select('*').eq('ativo', true).order('nome'),
-    supabase.from('envios_destinatarios').select('*').eq('ativo', true).order('nome'),
   ]);
+
+  // Pagina destinatários — pode ultrapassar 1000
+  let dests = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data } = await supabase
+      .from('envios_destinatarios')
+      .select('id, nome, cidade, uf, cep, matricula')
+      .eq('ativo', true)
+      .order('nome')
+      .range(offset, offset + 999);
+    dests = dests.concat(data ?? []);
+    if (!data || data.length < 1000) break;
+  }
+
   state.postagens = posts ?? [];
   state.remetentes = rems ?? [];
-  state.destinatarios = dests ?? [];
+  state.destinatarios = dests;
   state.loading = false;
 }
 
@@ -304,7 +317,11 @@ function renderNovaPostagem() {
         </div>
         <div class="form-group">
           <label>Destinatário *</label>
-          <select name="destinatario_id" required>${optDest || '<option value="">— nenhum cadastrado —</option>'}</select>
+          <div class="dest-ac-wrap">
+            <input type="text" id="search-dest-post" placeholder="Digite o nome..." autocomplete="off" />
+            <input type="hidden" name="destinatario_id" id="hidden-dest-post-id" />
+            <ul class="dest-ac-drop" id="dest-ac-drop-post"></ul>
+          </div>
         </div>
         <div class="form-group">
           <label>Serviço *</label>
@@ -591,6 +608,7 @@ function bindTabEvents() {
   area.querySelector('#form-nova-postagem')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
+    if (!fd.get('destinatario_id')) { setFeedback('Selecione um destinatário.', true); return; }
     const row = {
       remetente_id: fd.get('remetente_id'),
       destinatario_id: fd.get('destinatario_id'),
@@ -614,6 +632,37 @@ function bindTabEvents() {
     state.tab = 'postagens';
     renderTab();
   });
+
+  // Autocomplete destinatário na nova postagem
+  const _postAcInp = area.querySelector('#search-dest-post');
+  const _postAcDrop = area.querySelector('#dest-ac-drop-post');
+  const _postAcHidden = area.querySelector('#hidden-dest-post-id');
+  function _postAcShow(matches) {
+    if (!_postAcDrop) return;
+    if (!matches.length) { _postAcDrop.classList.remove('open'); return; }
+    _postAcDrop.innerHTML = matches.slice(0, 25).map(d =>
+      `<li class="dest-ac-item" data-id="${esc(d.id)}" data-nome="${esc(d.nome)}"><span>${esc(d.nome)}</span><small>${d.cidade ? `${esc(d.cidade)}/${esc(d.uf)}` : ''}${d.cep && d.cep !== '00000-000' ? ` — ${esc(d.cep)}` : ''}</small></li>`
+    ).join('');
+    _postAcDrop.classList.add('open');
+  }
+  _postAcInp?.addEventListener('input', () => {
+    const q = _postAcInp.value.toLowerCase().trim();
+    if (_postAcHidden) _postAcHidden.value = '';
+    _postAcShow(q ? state.destinatarios.filter(d => d.nome.toLowerCase().includes(q)) : []);
+  });
+  _postAcInp?.addEventListener('focus', () => {
+    const q = _postAcInp.value.toLowerCase().trim();
+    if (q) _postAcShow(state.destinatarios.filter(d => d.nome.toLowerCase().includes(q)));
+  });
+  _postAcDrop?.addEventListener('mousedown', e => {
+    const item = e.target.closest('.dest-ac-item');
+    if (!item) return;
+    e.preventDefault();
+    if (_postAcInp) _postAcInp.value = item.dataset.nome;
+    if (_postAcHidden) _postAcHidden.value = item.dataset.id;
+    _postAcDrop.classList.remove('open');
+  });
+  _postAcInp?.addEventListener('blur', () => _postAcDrop?.classList.remove('open'));
 
   // Autocomplete destinatário na cotação
   const _acInp = area.querySelector('#search-dest-cotacao');
