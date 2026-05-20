@@ -84,7 +84,7 @@ initProtectedPage('Notas Fiscais', (content) => {
 
       <div class="nf-tabs">
         <button class="nf-tab active" data-tab="resumo" type="button">Resumo Financeiro</button>
-        <button class="nf-tab" data-tab="kpis" type="button">KPIs de Compras</button>
+        <button class="nf-tab" data-tab="kpis" type="button">Lançamentos</button>
       </div>
 
       <!-- PAINEL RESUMO -->
