@@ -145,6 +145,20 @@ function ensureHttps(url) {
 function isBoleto(row) { return /boleto/i.test(row.forma_pagamento || ''); }
 function isPix(row) { return /^pix$/i.test((row.forma_pagamento || '').trim()); }
 
+// Builds a valid PIX BR Code (EMV) payload for use in QR Codes.
+// CRC-16/CCITT-FALSE: poly=0x1021, init=0xFFFF, no reflection.
+function buildPixPayload(key, name, city, valor) {
+  const f = (id, v) => { const s = String(v); return id + s.length.toString().padStart(2, '0') + s; };
+  const toAscii = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim();
+  const mai = f('00', 'BR.GOV.BCB.PIX') + f('01', key.trim());
+  let p = f('00', '01') + f('26', mai) + f('52', '0000') + f('53', '986');
+  const v = parseFloat(valor); if (v > 0) p += f('54', v.toFixed(2));
+  p += f('58', 'BR') + f('59', (toAscii(name) || 'Pagamento').slice(0, 25)) + f('60', (toAscii(city) || 'BRASIL').slice(0, 15)) + f('62', f('05', '***')) + '6304';
+  let crc = 0xFFFF;
+  for (let i = 0; i < p.length; i++) { crc ^= p.charCodeAt(i) << 8; for (let j = 0; j < 8; j++) { crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1); crc &= 0xFFFF; } }
+  return p + crc.toString(16).toUpperCase().padStart(4, '0');
+}
+
 function safeStorageFileName(name) {
   return String(name || 'comprovante')
     .normalize('NFD')
@@ -1626,10 +1640,11 @@ initProtectedPage('Financeiro', (content, userContext) => {
     }
 
     const dados = row.dados_pagamento || row.link_pagamento || row.chave_pix || row.boleto_url || '';
+    const pixPayload = isPix(row) && dados ? buildPixPayload(dados, row.favorecido || row.fornecedor || row.beneficiario || '', 'BRASIL', row.valor || row.valor_total || row.total) : '';
     const pixSection = isPix(row) && dados ? `
       <div style="text-align:center;margin:16px 0;padding:16px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);border-radius:14px">
         <p style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px">QR Code PIX</p>
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(dados)}" alt="QR Code PIX" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:6px;display:block;margin:0 auto">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixPayload)}" alt="QR Code PIX" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:6px;display:block;margin:0 auto">
         <p style="color:#e2e8f0;font-size:13px;margin:10px 0 0;word-break:break-all">${esc(dados)}</p>
       </div>` : '';
 
