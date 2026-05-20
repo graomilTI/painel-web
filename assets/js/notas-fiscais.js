@@ -58,6 +58,7 @@ initProtectedPage('Notas Fiscais', (content) => {
       .nf-empty{text-align:center;color:#6b7280;padding:24px!important}
       .nf-act{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
       .nf-act .btn{padding:6px 12px!important;font-size:12px!important;white-space:nowrap}
+      .nf-btn-xs{padding:4px 8px!important;font-size:11px!important}
       .nf-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700}
       .nf-badge.lancado{background:rgba(22,101,52,.22);color:#bbf7d0;border:1px solid rgba(22,101,52,.34)}
       .nf-badge.pendente{background:rgba(245,158,11,.1);color:#fde68a;border:1px solid rgba(245,158,11,.24)}
@@ -205,6 +206,33 @@ initProtectedPage('Notas Fiscais', (content) => {
   });
 
   // ─── KPIs COMPRAS ────────────────────────────────────────────────────────────
+  function groupByNf(rows) {
+    const map = new Map();
+    for (const r of rows) {
+      const key = r.nf_url;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(r);
+    }
+    return [...map.values()].map((itens) => {
+      const first = itens[0];
+      const sol0 = first.compras_solicitacoes || {};
+      const lancadoEm = itens.filter((r) => r.nf_lancado_em).map((r) => r.nf_lancado_em).sort().pop() || null;
+      return {
+        key: first.nf_url,
+        ids: itens.map((r) => r.id),
+        nf_url: first.nf_url,
+        comprovante_url: itens.find((r) => r.comprovante_url)?.comprovante_url || null,
+        valor_total: itens.reduce((s, r) => s + Number(r.valor_total || 0), 0),
+        comprado_em: itens.map((r) => r.comprado_em || '').sort().pop() || sol0.data_solicitacao || '',
+        regional: sol0.coordenacao || '-',
+        solicitante: [...new Set(itens.map((r) => (r.compras_solicitacoes || {}).solicitante).filter(Boolean))].join(', ') || '-',
+        nf_lancado: itens.every((r) => r.nf_lancado),
+        nf_lancado_em: lancadoEm,
+        itens,
+      };
+    }).sort((a, b) => (b.comprado_em > a.comprado_em ? 1 : -1));
+  }
+
   async function loadKpis() {
     const tbody = document.getElementById('nfKpiTbody');
     tbody.innerHTML = `<tr><td colspan="5" class="nf-empty">Carregando...</td></tr>`;
@@ -229,100 +257,113 @@ initProtectedPage('Notas Fiscais', (content) => {
   }
 
   function updateKpiCounters() {
-    const pendentes = state.kpiRows.filter((r) => !r.nf_lancado);
-    const lancados = state.kpiRows.filter((r) => r.nf_lancado);
+    const groups = groupByNf(state.kpiRows);
+    const pendentes = groups.filter((g) => !g.nf_lancado);
+    const lancados = groups.filter((g) => g.nf_lancado);
     document.getElementById('kpiNfPendentes').textContent = String(pendentes.length);
-    document.getElementById('kpiNfTotalPend').textContent = money(pendentes.reduce((s, r) => s + Number(r.valor_total || 0), 0));
-    document.getElementById('kpiNfTotalLanc').textContent = money(lancados.reduce((s, r) => s + Number(r.valor_total || 0), 0));
+    document.getElementById('kpiNfTotalPend').textContent = money(pendentes.reduce((s, g) => s + g.valor_total, 0));
+    document.getElementById('kpiNfTotalLanc').textContent = money(lancados.reduce((s, g) => s + g.valor_total, 0));
   }
 
   function renderKpis() {
     const tbody = document.getElementById('nfKpiTbody');
-    const rows = state.kpiRows.filter((r) => state.kpiFilter === 'lancados' ? r.nf_lancado : !r.nf_lancado);
+    const groups = groupByNf(state.kpiRows).filter((g) => state.kpiFilter === 'lancados' ? g.nf_lancado : !g.nf_lancado);
 
-    if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="nf-empty">${state.kpiFilter === 'lancados' ? 'Nenhum item lançado ainda.' : 'Nenhum item aguardando lançamento.'}</td></tr>`;
+    if (!groups.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="nf-empty">${state.kpiFilter === 'lancados' ? 'Nenhuma NF lançada ainda.' : 'Nenhuma NF aguardando lançamento.'}</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = rows.map((r) => {
-      const sol = r.compras_solicitacoes || {};
-      const regional = sol.coordenacao || '-';
-      const data = brDate(r.comprado_em || sol.data_solicitacao);
-      const lancadoBadge = r.nf_lancado
-        ? `<span class="nf-badge lancado">Lançado ${brDate(r.nf_lancado_em)}</span>`
-        : '';
+    tbody.innerHTML = groups.map((g) => {
+      const lancadoBadge = g.nf_lancado ? `<span class="nf-badge lancado">Lançado ${brDate(g.nf_lancado_em)}</span>` : '';
+      const itemLabel = g.itens.length > 1 ? `<br><small style="color:#6b7280">${g.itens.length} itens</small>` : '';
       return `<tr>
-        <td>${data}</td>
-        <td><strong>${esc(regional)}</strong></td>
-        <td>${esc(sol.solicitante || '-')}</td>
-        <td>${money(r.valor_total)}</td>
+        <td>${brDate(g.comprado_em)}${itemLabel}</td>
+        <td><strong>${esc(g.regional)}</strong></td>
+        <td>${esc(g.solicitante)}</td>
+        <td>${money(g.valor_total)}</td>
         <td>
           <div class="nf-act">
-            <button class="btn btn-secondary" data-open-kpi="${esc(r.id)}" type="button">Abrir KPI</button>
-            ${isUrl(r.nf_url) ? `<a class="btn btn-secondary" href="${esc(r.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : ''}
-            ${isUrl(r.comprovante_url) ? `<a class="btn btn-secondary" href="${esc(r.comprovante_url)}" target="_blank" rel="noopener">Baixar Comprovante</a>` : ''}
-            ${!r.nf_lancado ? `<button class="btn btn-primary" data-lancar="${esc(r.id)}" type="button">Lançado</button>` : lancadoBadge}
+            <button class="btn btn-secondary" data-consultar="${esc(g.key)}" type="button">Consultar</button>
+            ${isUrl(g.nf_url) ? `<a class="btn btn-secondary" href="${esc(g.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : ''}
+            ${isUrl(g.comprovante_url) ? `<a class="btn btn-secondary" href="${esc(g.comprovante_url)}" target="_blank" rel="noopener">Baixar Comprovante</a>` : ''}
+            ${!g.nf_lancado ? `<button class="btn btn-primary nf-btn-xs" data-lancar="${esc(g.key)}" type="button">Lançado</button>` : lancadoBadge}
           </div>
         </td>
       </tr>`;
     }).join('');
 
-    tbody.querySelectorAll('[data-open-kpi]').forEach((b) => b.addEventListener('click', () => openKpiModal(b.dataset.openKpi)));
-    tbody.querySelectorAll('[data-lancar]').forEach((b) => b.addEventListener('click', () => lancarItem(b.dataset.lancar, b)));
+    tbody.querySelectorAll('[data-consultar]').forEach((b) => b.addEventListener('click', () => openKpiModal(b.dataset.consultar)));
+    tbody.querySelectorAll('[data-lancar]').forEach((b) => b.addEventListener('click', () => lancarGrupo(b.dataset.lancar, b)));
   }
 
-  function openKpiModal(id) {
-    const r = state.kpiRows.find((x) => String(x.id) === String(id));
-    if (!r) return;
-    const sol = r.compras_solicitacoes || {};
+  function openKpiModal(nfUrl) {
+    const group = groupByNf(state.kpiRows).find((g) => g.key === nfUrl);
+    if (!group) return;
     const modal = document.getElementById('nfModal');
     const card = document.getElementById('nfModalCard');
+    const titulo = group.itens.length === 1 ? esc(group.itens[0].material || 'Compra') : `${group.itens.length} itens`;
 
     card.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
         <div>
-          <h3 style="margin:0 0 4px;color:#f8fafc">${esc(r.material || 'Compra')}</h3>
-          <p style="margin:0;color:#6b7280;font-size:13px">${esc(sol.solicitante || '-')} · ${brDate(r.comprado_em)}</p>
+          <h3 style="margin:0 0 4px;color:#f8fafc">${titulo}</h3>
+          <p style="margin:0;color:#6b7280;font-size:13px">${esc(group.solicitante)} · ${brDate(group.comprado_em)}</p>
         </div>
         <button class="btn btn-secondary" id="nfModalClose" type="button" style="flex-shrink:0">Fechar</button>
       </div>
       <div class="nf-modal-grid">
         <div>
           <div class="nf-modal-label">Regional / Coordenação</div>
-          <div class="nf-modal-value">${esc(sol.coordenacao || '-')}</div>
+          <div class="nf-modal-value">${esc(group.regional)}</div>
         </div>
         <div>
           <div class="nf-modal-label">Data da compra</div>
-          <div class="nf-modal-value">${brDate(r.comprado_em)}</div>
+          <div class="nf-modal-value">${brDate(group.comprado_em)}</div>
         </div>
-        <div>
-          <div class="nf-modal-label">Tipo</div>
-          <div class="nf-modal-value">${esc(r.tipo || '-')}</div>
-        </div>
-        <div>
-          <div class="nf-modal-label">Quantidade</div>
-          <div class="nf-modal-value">${esc(r.quantidade || r.unidade || '1')}</div>
-        </div>
-        ${r.marca ? `<div><div class="nf-modal-label">Marca</div><div class="nf-modal-value">${esc(r.marca)}</div></div>` : ''}
         <div>
           <div class="nf-modal-label">Valor total</div>
-          <div class="nf-modal-value" style="font-size:18px;font-weight:700;color:#bbf7d0">${money(r.valor_total)}</div>
+          <div class="nf-modal-value" style="font-size:18px;font-weight:700;color:#bbf7d0">${money(group.valor_total)}</div>
         </div>
         <div>
           <div class="nf-modal-label">Status NF</div>
           <div class="nf-modal-value">
-            ${r.nf_lancado
-              ? `<span class="nf-badge lancado">Lançado ${brDate(r.nf_lancado_em)}</span>`
+            ${group.nf_lancado
+              ? `<span class="nf-badge lancado">Lançado ${brDate(group.nf_lancado_em)}</span>`
               : `<span class="nf-badge pendente">Aguardando lançamento</span>`}
           </div>
         </div>
-        ${sol.observacoes ? `<div class="nf-modal-full"><div class="nf-modal-label">Observações</div><div class="nf-modal-value">${esc(sol.observacoes)}</div></div>` : ''}
-        <div class="nf-modal-full" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
-          ${isUrl(r.nf_url) ? `<a class="btn btn-secondary" href="${esc(r.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : `<span style="color:#6b7280;font-size:13px">NF: ${esc(r.nf_url || '-')}</span>`}
-          ${isUrl(r.comprovante_url) ? `<a class="btn btn-secondary" href="${esc(r.comprovante_url)}" target="_blank" rel="noopener">Baixar Comprovante</a>` : ''}
-          ${!r.nf_lancado ? `<button class="btn btn-primary" data-lancar-modal="${esc(r.id)}" type="button">Lançado</button>` : ''}
+      </div>
+      ${group.itens.length > 1 ? `
+      <div style="margin-top:16px">
+        <div class="nf-modal-label" style="margin-bottom:8px">Itens desta NF (${group.itens.length})</div>
+        <div class="nf-table-wrap">
+          <table class="nf-table" style="min-width:0">
+            <thead><tr><th>Material</th><th>Tipo</th><th>Qtd</th><th>Valor</th></tr></thead>
+            <tbody>
+              ${group.itens.map((r) => `<tr>
+                <td>${esc(r.material)}${r.marca ? `<br><small style="color:#6b7280">${esc(r.marca)}</small>` : ''}</td>
+                <td>${esc(r.tipo || '-')}</td>
+                <td>${esc(r.quantidade || r.unidade || '1')}</td>
+                <td>${money(r.valor_total)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
         </div>
+      </div>` : (() => {
+        const r0 = group.itens[0];
+        const obs = (r0.compras_solicitacoes || {}).observacoes;
+        return `<div class="nf-modal-grid" style="margin-top:0">
+          <div><div class="nf-modal-label">Tipo</div><div class="nf-modal-value">${esc(r0.tipo || '-')}</div></div>
+          <div><div class="nf-modal-label">Quantidade</div><div class="nf-modal-value">${esc(r0.quantidade || r0.unidade || '1')}</div></div>
+          ${r0.marca ? `<div><div class="nf-modal-label">Marca</div><div class="nf-modal-value">${esc(r0.marca)}</div></div>` : ''}
+          ${obs ? `<div class="nf-modal-full"><div class="nf-modal-label">Observações</div><div class="nf-modal-value">${esc(obs)}</div></div>` : ''}
+        </div>`;
+      })()}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+        ${isUrl(group.nf_url) ? `<a class="btn btn-secondary" href="${esc(group.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : `<span style="color:#6b7280;font-size:13px">NF: ${esc(group.nf_url || '-')}</span>`}
+        ${isUrl(group.comprovante_url) ? `<a class="btn btn-secondary" href="${esc(group.comprovante_url)}" target="_blank" rel="noopener">Baixar Comprovante</a>` : ''}
+        ${!group.nf_lancado ? `<button class="btn btn-primary" data-lancar-modal="${esc(group.key)}" type="button">Lançado</button>` : ''}
       </div>
     `;
 
@@ -331,19 +372,22 @@ initProtectedPage('Notas Fiscais', (content) => {
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); }, { once: true });
 
     const btnLancar = card.querySelector('[data-lancar-modal]');
-    if (btnLancar) btnLancar.addEventListener('click', () => lancarItem(btnLancar.dataset.lancarModal, btnLancar));
+    if (btnLancar) btnLancar.addEventListener('click', () => lancarGrupo(btnLancar.dataset.lancarModal, btnLancar));
   }
 
-  async function lancarItem(id, btn) {
+  async function lancarGrupo(nfUrl, btn) {
     if (!confirm('Confirmar lançamento desta NF?')) return;
     const original = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Salvando...';
 
+    const ids = state.kpiRows.filter((r) => r.nf_url === nfUrl).map((r) => r.id);
+    const now = new Date().toISOString();
+
     const { error } = await supabase
       .from('compras_itens')
-      .update({ nf_lancado: true, nf_lancado_em: new Date().toISOString() })
-      .eq('id', id);
+      .update({ nf_lancado: true, nf_lancado_em: now })
+      .in('id', ids);
 
     if (error) {
       alert(`Erro ao lançar: ${error.message}`);
@@ -352,11 +396,10 @@ initProtectedPage('Notas Fiscais', (content) => {
       return;
     }
 
-    const item = state.kpiRows.find((r) => String(r.id) === String(id));
-    if (item) {
-      item.nf_lancado = true;
-      item.nf_lancado_em = new Date().toISOString();
-    }
+    state.kpiRows.filter((r) => r.nf_url === nfUrl).forEach((r) => {
+      r.nf_lancado = true;
+      r.nf_lancado_em = now;
+    });
 
     document.getElementById('nfModal').classList.remove('open');
     updateKpiCounters();
