@@ -36,7 +36,8 @@ function updateKpis(){
 }
 function rowLabel(r){return `${r.quantidade||r.unidade||1} un | ${r.material}${r.tamanho?` (${r.tamanho})`:''}${r.colaborador_nome?` | ${r.colaborador_nome}`:''}`;}
 
-function groupKey(r){
+function groupKey(r, useNf=false){
+  if(useNf){ const nf=norm(r.nf_url||''); if(nf) return `nf:${nf}`; }
   const fn=norm(r.fornecedor||'');
   const dp=norm(r.dados_pagamento||'');
   const fp=norm(r.forma_pagamento||'');
@@ -83,6 +84,37 @@ function renderTable(){
     body.querySelectorAll('[data-check-group]').forEach(c=>c.onchange=()=>{c.dataset.checkGroup.split(',').forEach(id=>c.checked?state.selected.add(id):state.selected.delete(id));});
     body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
     body.querySelectorAll('[data-open-grupo]').forEach(b=>b.onclick=()=>openGrupoModal(b.dataset.openGrupo));
+    return;
+  }
+
+  if(state.tab==='comprados'){
+    const groups=new Map();
+    rows.forEach(r=>{const k=groupKey(r,true); if(!groups.has(k))groups.set(k,[]); groups.get(k).push(r);});
+    body.innerHTML=[...groups.values()].map(itens=>{
+      if(itens.length===1) return singleRowHtml(itens[0]);
+      const totalGrp=itens.reduce((s,r)=>s+Number(r.valor_total||0),0);
+      const s0=itens[0].compras_solicitacoes||{};
+      const nfUrl=itens[0].nf_url||'';
+      const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
+      const comprado_em=itens[0].comprado_em||itens[0].created_at||'';
+      const gids=itens.map(r=>r.id).join(',');
+      const nfLabel=nfUrl?(/^https?:\/\//i.test(nfUrl)?`<a href="${esc(nfUrl)}" target="_blank" rel="noopener" style="color:#86efac;font-size:12px">Ver NF</a>`:`<small class="muted">${esc(nfUrl)}</small>`):'';
+      return `<tr class="adm-cmp-group-row">
+        <td><input type="checkbox" data-check-group="${esc(gids)}"></td>
+        <td>${brDate(comprado_em)}</td>
+        <td>${esc(s0.solicitante||'-')}<br><small>${esc(s0.coordenacao||'')}</small></td>
+        <td>${itens.length}&nbsp;itens</td>
+        <td><b style="color:#bbf7d0">${esc(fn||'Mesmo fornecedor')}</b><br><small class="muted">${itens.map(r=>esc(r.material)).join(' · ')}</small></td>
+        <td>-</td>
+        <td>${pill('comprado')}${nfLabel?`<br>${nfLabel}`:''}</td>
+        <td>${money(totalGrp)}</td>
+        <td><button class="btn btn-small btn-secondary" data-ver-grupo="${esc(gids)}" type="button">Ver grupo</button></td>
+      </tr>`;
+    }).join('');
+    body.querySelectorAll('[data-check]').forEach(c=>c.onchange=()=>{c.checked?state.selected.add(c.dataset.check):state.selected.delete(c.dataset.check)});
+    body.querySelectorAll('[data-check-group]').forEach(c=>c.onchange=()=>{c.dataset.checkGroup.split(',').forEach(id=>c.checked?state.selected.add(id):state.selected.delete(id));});
+    body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
+    body.querySelectorAll('[data-ver-grupo]').forEach(b=>b.onclick=()=>verGrupoCompradoModal(b.dataset.verGrupo));
     return;
   }
 
@@ -538,6 +570,34 @@ async function finalizarCompraGrupo(itens,nf){
   document.getElementById('admCmpModal').classList.remove('open');
   setMsg(`${itens.length} item(ns) finalizado(s).`);
   await loadRows();
+}
+
+function verGrupoCompradoModal(gids){
+  const ids=gids.split(',').map(id=>id.trim());
+  const itens=state.rows.filter(r=>ids.includes(String(r.id)));
+  if(!itens.length) return;
+  const modal=document.getElementById('admCmpModal');
+  const total=itens.reduce((s,r)=>s+Number(r.valor_total||0),0);
+  const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
+  const nfUrl=itens[0].nf_url||'';
+  const comprado_em=itens[0].comprado_em||'';
+  const nfHtml=nfUrl?(/^https?:\/\//i.test(nfUrl)?`<a class="btn btn-secondary" href="${esc(nfUrl)}" target="_blank" rel="noopener">Abrir NF</a>`:`<span style="color:#e2e2f0;font-size:14px">${esc(nfUrl)}</span>`):'<span class="muted">NF não informada</span>';
+  modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
+    <div class="section-head">
+      <div><h3>Grupo comprado</h3><p class="muted">${esc(fn||'Mesmo fornecedor')} · ${money(total)}${comprado_em?` · ${brDate(comprado_em)}`:''}</p></div>
+      <button class="btn btn-secondary" id="mClose" type="button">Fechar</button>
+    </div>
+    <div class="adm-cmp-table-wrap mt-16">
+      <table class="adm-cmp-table">
+        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th><th>Marca</th><th>Valor</th></tr></thead>
+        <tbody>${itens.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${esc(r.marca||'-')}</td><td>${money(r.valor_total||0)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="4" style="text-align:right;font-weight:700;padding:10px 12px">Total</td><td style="font-weight:800;color:#bbf7d0;padding:10px 12px">${money(total)}</td></tr></tfoot>
+      </table>
+    </div>
+    <div class="adm-cmp-actions mt-16">${nfHtml}</div>
+  </div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
 }
 
 function styles(){return `<style>
