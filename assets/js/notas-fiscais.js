@@ -113,8 +113,8 @@ initProtectedPage('Notas Fiscais', (content) => {
       <!-- PAINEL KPIs COMPRAS -->
       <div class="nf-panel" id="nfPanelKpis">
         <div class="nf-filter-tabs">
-          <button class="nf-filter-tab active" data-kpi-filter="pendentes" type="button">Aguardando lançamento</button>
-          <button class="nf-filter-tab" data-kpi-filter="lancados" type="button">Já lançados</button>
+          <button class="nf-filter-tab active" data-kpi-filter="pendentes" type="button">Pendentes</button>
+          <button class="nf-filter-tab" data-kpi-filter="lancados" type="button">Lançados</button>
         </div>
         <div class="nf-kpis">
           <div class="nf-kpi"><span>Itens pendentes</span><strong id="kpiNfPendentes">0</strong></div>
@@ -211,7 +211,7 @@ initProtectedPage('Notas Fiscais', (content) => {
 
     const { data, error } = await supabase
       .from('compras_itens')
-      .select('id, material, tipo, quantidade, unidade, valor_total, comprado_em, nf_url, comprovante_url, nf_lancado, nf_lancado_em, marca, fornecedor, compras_solicitacoes(solicitante, coordenacao, supervisao, data_solicitacao, observacoes)')
+      .select('id, material, tipo, quantidade, unidade, valor_total, comprado_em, nf_url, comprovante_url, nf_lancado, nf_lancado_em, marca, fornecedor, compras_solicitacoes(solicitante, coordenacao, data_solicitacao, observacoes)')
       .eq('status', 'comprado')
       .not('nf_url', 'is', null)
       .not('comprovante_url', 'is', null)
@@ -247,7 +247,7 @@ initProtectedPage('Notas Fiscais', (content) => {
 
     tbody.innerHTML = rows.map((r) => {
       const sol = r.compras_solicitacoes || {};
-      const regional = sol.coordenacao || sol.supervisao || '-';
+      const regional = sol.coordenacao || '-';
       const data = brDate(r.comprado_em || sol.data_solicitacao);
       const lancadoBadge = r.nf_lancado
         ? `<span class="nf-badge lancado">Lançado ${brDate(r.nf_lancado_em)}</span>`
@@ -290,7 +290,7 @@ initProtectedPage('Notas Fiscais', (content) => {
       <div class="nf-modal-grid">
         <div>
           <div class="nf-modal-label">Regional / Coordenação</div>
-          <div class="nf-modal-value">${esc(sol.coordenacao || sol.supervisao || '-')}</div>
+          <div class="nf-modal-value">${esc(sol.coordenacao || '-')}</div>
         </div>
         <div>
           <div class="nf-modal-label">Data da compra</div>
