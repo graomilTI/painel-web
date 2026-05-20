@@ -267,11 +267,40 @@ function renderTab() {
   else if (state.tab === 'cotacao') area.innerHTML = renderCotacao();
   else if (state.tab === 'remetentes') area.innerHTML = renderRemetentes();
   else if (state.tab === 'destinatarios') area.innerHTML = renderDestinatarios();
+  else if (state.tab === 'enviados') area.innerHTML = renderEnviados();
   bindTabEvents();
 }
 
 function renderPostagens() {
-  const rows = state.postagens.map(p => `
+  const pending = state.postagens.filter(p => p.status === 'RASCUNHO');
+  const rows = pending.map(p => `
+    <tr>
+      <td>${esc(p.destinatario?.nome ?? '-')}</td>
+      <td>${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}</td>
+      <td>${p.peso_gramas ? p.peso_gramas + 'g' : '-'}</td>
+      <td class="td-actions">
+        <button class="btn btn-sm btn-danger" data-excluir-postagem="${p.id}">Excluir</button>
+      </td>
+    </tr>`).join('');
+
+  return `
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="btn btn-primary" data-tab="nova">+ Nova Postagem</button>
+      ${pending.length > 0 ? `<button class="btn btn-success" id="btn-enviar-pendentes">Enviar ${pending.length} Pendente${pending.length > 1 ? 's' : ''}</button>` : ''}
+      <button class="btn btn-secondary" id="btn-refresh-postagens">Atualizar</button>
+    </div>
+    ${pending.length === 0
+      ? '<p class="empty-state">Nenhuma postagem pendente. As enviadas aparecem em <strong>Enviados</strong>.</p>'
+      : `<div class="table-wrapper">
+          <table class="data-table">
+            <thead><tr><th>Destinatário</th><th>Serviço</th><th>Peso</th><th>Ações</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table></div>`}`;
+}
+
+function renderEnviados() {
+  const sent = state.postagens.filter(p => p.status !== 'RASCUNHO');
+  const rows = sent.map(p => `
     <tr>
       <td>${badge(p.status)}</td>
       <td>${esc(p.destinatario?.nome ?? '-')}</td>
@@ -280,25 +309,21 @@ function renderPostagens() {
       <td>${p.valor_postagem ? MONEY.format(p.valor_postagem) : '-'}</td>
       <td>${p.confirmado_em ? new Date(p.confirmado_em).toLocaleString('pt-BR') : '-'}</td>
       <td class="td-actions">
-        ${p.status === 'RASCUNHO' ? `<button class="btn btn-sm btn-primary" data-confirmar="${p.id}">Confirmar</button>` : ''}
         ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
-        ${p.status === 'RASCUNHO' ? `<button class="btn btn-sm btn-danger" data-excluir-postagem="${p.id}">Excluir</button>` : ''}
       </td>
     </tr>`).join('');
 
   return `
     <div class="toolbar" style="margin-bottom:12px">
-      <button class="btn btn-primary" data-tab="nova">+ Nova Postagem</button>
-      <button class="btn btn-secondary" id="btn-refresh-postagens">Atualizar</button>
+      <button class="btn btn-secondary" id="btn-refresh-enviados">Atualizar</button>
     </div>
-    ${state.postagens.length === 0
-      ? '<p class="empty-state">Nenhuma postagem cadastrada.</p>'
+    ${sent.length === 0
+      ? '<p class="empty-state">Nenhuma postagem enviada ainda.</p>'
       : `<div class="table-wrapper">
           <table class="data-table">
-            <thead><tr><th>Status</th><th>Destinatário</th><th>Serviço</th><th>Código de Rastreio</th><th>Valor</th><th>Confirmado em</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Status</th><th>Destinatário</th><th>Serviço</th><th>Código de Rastreio</th><th>Valor</th><th>Enviado em</th><th>Ações</th></tr></thead>
             <tbody>${rows}</tbody>
-          </table>
-        </div>`}
+          </table></div>`}
     <div id="rastreio-resultado" style="margin-top:16px"></div>`;
 }
 
@@ -364,12 +389,13 @@ function renderNovaPostagem() {
           <textarea name="observacoes" rows="2"></textarea>
         </div>
         <div class="form-actions full-width">
-          <button type="submit" class="btn btn-primary">Salvar como Rascunho</button>
+          <button type="submit" class="btn btn-primary">Adicionar</button>
           <button type="button" class="btn btn-secondary" data-tab="postagens">Cancelar</button>
         </div>
       </form>
     </div>`;
 }
+
 
 function renderCotacao() {
   return `
@@ -561,22 +587,34 @@ function bindTabEvents() {
     renderTab();
   });
 
-  // Confirmar postagem
-  area.querySelectorAll('[data-confirmar]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.confirmar;
-      btn.disabled = true;
-      setFeedback('Enviando pré-postagem ao Correios...');
-      const result = await callFn('correios-prepostagem', { postagem_id: id });
-      if (result.ok) {
-        setFeedback(`Confirmado! Código de rastreio: ${result.numero_objeto}`);
-        await loadAll();
-        renderTab();
-      } else {
-        setFeedback('Erro ao confirmar: ' + result.error, true);
-        btn.disabled = false;
-      }
-    });
+  // Enviar todos pendentes (bulk prepostagem)
+  area.querySelector('#btn-enviar-pendentes')?.addEventListener('click', async () => {
+    const pending = state.postagens.filter(p => p.status === 'RASCUNHO');
+    if (!pending.length) return;
+    if (!confirm(`Enviar ${pending.length} postagem(ns) ao Correios agora?`)) return;
+    const envBtn = area.querySelector('#btn-enviar-pendentes');
+    if (envBtn) envBtn.disabled = true;
+    let ok = 0, fail = 0;
+    for (const p of pending) {
+      setFeedback(`Enviando ${ok + fail + 1}/${pending.length}: ${p.destinatario?.nome ?? ''}...`);
+      const result = await callFn('correios-prepostagem', { postagem_id: p.id });
+      if (result.ok) ok++; else fail++;
+    }
+    await loadAll();
+    if (fail === 0) {
+      setFeedback(`${ok} postagem(ns) enviada(s) com sucesso!`);
+      state.tab = 'enviados';
+      $root?.querySelectorAll('[data-tab-main]').forEach(b => b.classList.toggle('active', b.dataset.tabMain === state.tab));
+    } else {
+      setFeedback(`${ok} enviada(s), ${fail} com erro. Corrija as pendentes e tente novamente.`, true);
+    }
+    renderTab();
+  });
+
+  // Refresh enviados
+  area.querySelector('#btn-refresh-enviados')?.addEventListener('click', async () => {
+    await loadAll();
+    renderTab();
   });
 
   // Rastrear
@@ -634,7 +672,7 @@ function bindTabEvents() {
     };
     const { error } = await supabase.from('envios_postagens').insert(row);
     if (error) { setFeedback('Erro ao salvar: ' + error.message, true); return; }
-    setFeedback('Postagem salva como rascunho.');
+    setFeedback('Postagem adicionada.');
     await loadAll();
     state.tab = 'postagens';
     renderTab();
@@ -1009,6 +1047,7 @@ initProtectedPage('Envios', async (content) => {
       <button class="envios-tab${state.tab === 'cotacao' ? ' active' : ''}" data-tab-main="cotacao">Cotação</button>
       <button class="envios-tab${state.tab === 'remetentes' ? ' active' : ''}" data-tab-main="remetentes">Remetentes</button>
       <button class="envios-tab${state.tab === 'destinatarios' ? ' active' : ''}" data-tab-main="destinatarios">Destinatários</button>
+      <button class="envios-tab${state.tab === 'enviados' ? ' active' : ''}" data-tab-main="enviados">Enviados</button>
     </nav>
     <div id="envios-tab-content"><p>Carregando...</p></div>`;
 
