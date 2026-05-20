@@ -24,7 +24,8 @@ export const MENU_CONFIG = [
       item("compras_gestor", "Compras", "compras", ["COMPRAS"]),
       item("logistica_gestor", "Logística", "logistica", ["LOGISTICA"]),
       item("patrimonios_gestor", "Patrimônios", "patrimonios", ["PATRIMONIOS"]),
-      item("contato_cliente", "Contato Cliente", "contato-cliente", ["CONTATO_CLIENTE"])
+      item("contato_cliente", "Contato Cliente", "contato-cliente", ["CONTATO_CLIENTE"]),
+      item("auditoria_gestor", "Auditoria", "auditoria", ["AUDITORIA_GESTOR", "GESTOR_AUDITORIA", "AUDITORIA"])
     ]
   },
 
@@ -118,18 +119,14 @@ export const MENU_CONFIG = [
     itens: []
   },
 
-
-  {
-    grupo: 'ENVIOS',
-    itens: [
-      item('envios', 'Envios', 'envios', ['ENVIOS', 'CORREIOS', 'PREPOSTAGEM']),
-    ]
-  },
-
   {
     grupo: "AUDITORIA",
     itens: [
-      item("admin_auditoria", "Auditoria do Sistema", "admin-auditoria", ["ADMIN_AUDITORIA"])
+      item("auditoria_solicitadas", "Solicitadas", "admin-auditoria#solicitadas", ["ADMIN_AUDITORIA", "AUDITORIA_SOLICITADAS"]),
+      item("auditoria_abertas", "Abertas", "admin-auditoria#abertas", ["ADMIN_AUDITORIA", "AUDITORIA_ABERTAS"]),
+      item("auditoria_agrupadas", "Agrupadas", "admin-auditoria#agrupadas", ["ADMIN_AUDITORIA", "AUDITORIA_AGRUPADAS"]),
+      item("auditoria_lancadas", "Lançadas", "admin-auditoria#lancadas", ["ADMIN_AUDITORIA", "AUDITORIA_LANCADAS"]),
+      item("auditoria_historico", "Histórico", "admin-auditoria#historico", ["ADMIN_AUDITORIA", "AUDITORIA_HISTORICO"])
     ]
   },
 
@@ -166,4 +163,3 @@ export const PANEL_MENU = MENU_CONFIG.map((section) => ({
     hidden: item.hidden || false
   }))
 }));
-

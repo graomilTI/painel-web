@@ -96,7 +96,7 @@ async function loadAll() {
   for (let offset = 0; ; offset += 1000) {
     const { data } = await supabase
       .from('envios_destinatarios')
-      .select('id, nome, cidade, uf, cep, matricula')
+      .select('id, nome, cidade, uf, cep, matricula, logradouro, numero, complemento, bairro, email, telefone, cpf_cnpj, origem')
       .eq('ativo', true)
       .order('nome')
       .range(offset, offset + 999);
@@ -464,7 +464,7 @@ function renderDestinatarios() {
       <td>${esc(d.cep)}</td>
       <td><span class="badge badge-neutral">${esc(d.origem ?? 'manual')}</span></td>
       <td class="td-actions">
-        <button class="btn btn-sm btn-danger" data-dest-excluir="${d.id}">Excluir</button>
+        <button class="btn btn-sm btn-secondary" data-dest-editar="${d.id}">Editar</button> <button class="btn btn-sm btn-danger" data-dest-excluir="${d.id}">Excluir</button>
       </td>
     </tr>`).join('');
 
@@ -823,6 +823,30 @@ function bindTabEvents() {
       await loadAll(); renderTab();
     });
   });
+
+  // Destinatário: editar
+  area.querySelectorAll('[data-dest-editar]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const d = state.destinatarios.find(x => x.id === btn.dataset.destEditar);
+      if (!d) return;
+      const wrap = area.querySelector('#form-dest-wrap');
+      if (!wrap) return;
+      wrap.innerHTML = `<div class="form-section"><h4 style="margin:0 0 16px;font-size:1rem;font-weight:800">Editar Destinatário</h4>
+        <form id="form-dest" class="form-grid" data-edit-id="${d.id}">
+          ${formEndereco('dest', d)}
+          <div class="form-group">
+            <label>Matrícula</label>
+            <input type="text" name="matricula" value="${esc(d.matricula ?? '')}" />
+          </div>
+          <div class="form-actions full-width">
+            <button type="submit" class="btn btn-primary">Salvar</button>
+            <button type="button" class="btn btn-secondary" id="btn-cancel-dest">Cancelar</button>
+          </div>
+        </form></div>`;
+      wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      bindFormDestinatario(area);
+    });
+  });
 }
 
 function bindFormRemetente(area) {
@@ -889,9 +913,16 @@ function bindFormDestinatario(area) {
       matricula: fd.get('matricula') || null,
       origem: 'manual',
     };
-    const { error } = await supabase.from('envios_destinatarios').insert(row);
-    if (error) { setFeedback('Erro: ' + error.message, true); return; }
-    setFeedback('Destinatário cadastrado.');
+    const editId = e.target.dataset.editId;
+    if (editId) {
+      const { error } = await supabase.from('envios_destinatarios').update(row).eq('id', editId);
+      if (error) { setFeedback('Erro: ' + error.message, true); return; }
+      setFeedback('Destinatário atualizado.');
+    } else {
+      const { error } = await supabase.from('envios_destinatarios').insert(row);
+      if (error) { setFeedback('Erro: ' + error.message, true); return; }
+      setFeedback('Destinatário cadastrado.');
+    }
     await loadAll(); renderTab();
   });
   area.querySelectorAll('[data-busca-cep]').forEach(btn => {
