@@ -166,7 +166,7 @@ async function confirmarCotacao(rows, fornecedores){
       const melhor=Math.min(...vals.filter(v=>v>0));
       update.valor_unitario=melhor; update.valor_total=melhor*qtd;
     }
-    await supabase.from('compras_itens').update(update).eq('id',r.id);
+    {const {error:caErr}=await supabase.from('compras_itens').update(update).eq('id',r.id); if(caErr&&(caErr.message?.includes("'ca'")||caErr.code==='PGRST204')){delete update.ca; await supabase.from('compras_itens').update(update).eq('id',r.id);}}
   }
   await supabase.from('compras_cotacoes').insert({status:'em_cotacao', itens_ids:rows.map(r=>r.id), titulo:`Cotação ${new Date().toLocaleString('pt-BR')}`});
   await syncSolicitacoesStatus(rows.map(r=>r.solicitacao_id));
@@ -377,7 +377,10 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
     const upd={status:'pendente_pagamento',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dados||null};
     if(r._ca||r.ca) upd.ca=r._ca||r.ca;
     const {error:updErr}=await supabase.from('compras_itens').update(upd).eq('id',r.id);
-    if(updErr) throw new Error(`Erro ao atualizar item ${r.material}: ${updErr.message}`);
+    if(updErr){
+      if(updErr.message?.includes("'ca'")||updErr.code==='PGRST204'){delete upd.ca; const {error:r2}=await supabase.from('compras_itens').update(upd).eq('id',r.id); if(r2) throw new Error(`Erro ao atualizar item ${r.material}: ${r2.message}`);}
+      else throw new Error(`Erro ao atualizar item ${r.material}: ${updErr.message}`);
+    }
   }
   await syncSolicitacoesStatus(itens.map(r=>r.solicitacao_id));
   // Registra EPIs com colaborador no módulo RH
