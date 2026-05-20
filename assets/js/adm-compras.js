@@ -236,14 +236,23 @@ function openItem(id){ const r=state.rows.find(x=>String(x.id)===String(id)); if
 function renderModalArea(r){ const area=document.getElementById('modalArea'); if(!area)return;
   if(r.status==='em_cotacao') area.innerHTML=`<h3>Cotação</h3><div class="adm-cmp-grid"><label>Valor unitário<input id="mValor" type="number" step="0.01" value="${esc(r.valor_unitario||'')}"></label><label>Total<input id="mTotal" readonly value="${esc(r.valor_total||'')}"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mComprar" type="button">COMPRAR</button><button class="btn btn-danger" id="mCancelar" type="button">CANCELAR</button></div>`;
   else if(r.status==='em_analise') area.innerHTML=`<h3>Análise</h3><div class="adm-cmp-grid"><label>Quem aprovou/recusou<input id="mAprovador" list="aprovadores" placeholder="Nome do colaborador"></label><label>Motivo/observação<input id="mMotivo" placeholder="Obrigatório se recusar"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mAprovar" type="button">APROVADO</button><button class="btn btn-danger" id="mReprovar" type="button">RECUSADO</button></div>`;
-  else if(r.status==='aguardando_nf') area.innerHTML=`<h3>Anexar NF</h3><div class="adm-cmp-grid"><label>URL da NF<input id="mNf" placeholder="Cole o link da NF"></label><label>Marca<input id="mMarca" placeholder="Marca do item, se patrimônio"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mFinalizar" type="button">Finalizar compra</button>${r.comprovante_url?`<a class="btn btn-secondary" href="${esc(r.comprovante_url)}" target="_blank">Abrir comprovante</a>`:''}</div>`;
+  else if(r.status==='aguardando_nf') area.innerHTML=`<h3>Anexar NF</h3><div class="adm-cmp-grid"><label>URL ou número da NF<input id="mNf" placeholder="Cole o link ou número da NF"></label><label>Marca<input id="mMarca" placeholder="Marca do item, se patrimônio"></label><label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mFinalizar" type="button">Finalizar compra</button>${r.comprovante_url?`<a class="btn btn-secondary" href="${esc(r.comprovante_url)}" target="_blank">Abrir comprovante</a>`:''}</div><span class="adm-cmp-feedback mt-8" id="nfFeedback"></span>`;
   else area.innerHTML=`<p class="muted">Use os botões da tela principal para movimentar este item.</p>`;
   const valor=area.querySelector('#mValor'), total=area.querySelector('#mTotal'); if(valor) valor.oninput=()=>{ total.value=(Number(valor.value||0)*Number(r.quantidade||r.unidade||1)).toFixed(2); };
   area.querySelector('#mComprar')?.addEventListener('click',()=>openPagamento(r, Number(total.value||0), Number(valor.value||0)));
   area.querySelector('#mCancelar')?.addEventListener('click',async()=>{await supabase.from('compras_itens').update({status:'pendente'}).eq('id',r.id); await syncSolicitacoesStatus([r.solicitacao_id]); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
   area.querySelector('#mAprovar')?.addEventListener('click',async()=>{await supabase.from('compras_itens').update({status:'pendente', aprovado_por:area.querySelector('#mAprovador').value.trim()||null, aprovado_em:new Date().toISOString()}).eq('id',r.id); await syncSolicitacoesStatus([r.solicitacao_id]); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
   area.querySelector('#mReprovar')?.addEventListener('click',async()=>{const motivo=area.querySelector('#mMotivo').value.trim(); if(!motivo){alert('Informe o motivo.');return;} await supabase.from('compras_itens').update({status:'recusado', recusado_por:area.querySelector('#mAprovador').value.trim()||null, motivo_recusa:motivo}).eq('id',r.id); await syncSolicitacoesStatus([r.solicitacao_id]); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
-  area.querySelector('#mFinalizar')?.addEventListener('click',async()=>finalizarCompra(r));
+  area.querySelector('#mFinalizar')?.addEventListener('click',async()=>{
+    const btn=area.querySelector('#mFinalizar'); const fb=area.querySelector('#nfFeedback');
+    btn.disabled=true; if(fb) fb.textContent='';
+    try{
+      const file=area.querySelector('#mNfFile')?.files?.[0]||null;
+      if(file){if(fb)fb.textContent='Enviando arquivo...'; const url=await uploadArquivoNotasFiscais(file,'compras/nf'); area.querySelector('#mNf').value=url;}
+      await finalizarCompra(r);
+    }catch(e){if(fb){fb.textContent=e.message;fb.classList.add('err');}}
+    finally{btn.disabled=false;}
+  });
 }
 
 // ─── MODAL COMPRAR (lote) ─────────────────────────────────────────────────────
@@ -465,7 +474,7 @@ async function enviarFinanceiro(r,total,unit,forma,dados,fornecedor='',contato='
   await syncSolicitacoesStatus([r.solicitacao_id]); await notifyByConfig('FINANCEIRO',`Pagamento de compras pendente\nFornecedor: ${fornecedor||'Não informado'}\nContato: ${contato||'Não informado'}\nMaterial: ${r.material}\nValor: ${money(total)}\nForma: ${forma}`);
   document.getElementById('admCmpModal').classList.remove('open'); setMsg('Compra enviada ao Financeiro e movida para PENDENTES.'); await loadRows();
 }
-async function finalizarCompra(r){ const nf=document.getElementById('mNf').value.trim(); if(!nf){alert('Informe a NF.');return;} const marca=document.getElementById('mMarca').value.trim(); await supabase.from('compras_itens').update({status:'comprado',nf_url:nf,marca,comprado_em:new Date().toISOString()}).eq('id',r.id); if(norm(r.tipo).includes('patrimonio')) await supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id,material:r.material,marca,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'}); await syncSolicitacoesStatus([r.solicitacao_id]); await notifyByConfig('GESTOR',`Compra concluída\nMaterial: ${r.material}\nNF: ${nf}`);
+async function finalizarCompra(r){ const nf=document.getElementById('mNf')?.value?.trim()||''; if(!nf){alert('Informe a NF ou anexe um arquivo.');return;} const marca=document.getElementById('mMarca').value.trim(); await supabase.from('compras_itens').update({status:'comprado',nf_url:nf,marca,comprado_em:new Date().toISOString()}).eq('id',r.id); if(norm(r.tipo).includes('patrimonio')) await supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id,material:r.material,marca,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'}); await syncSolicitacoesStatus([r.solicitacao_id]); await notifyByConfig('GESTOR',`Compra concluída\nMaterial: ${r.material}\nNF: ${nf}`);
   try { const engine=window.__painelNotifEngine; const s=r.compras_solicitacoes||{}; const destinatarioId=s.solicitante_id||s.created_by||null; if(engine&&destinatarioId){ await engine.criarNotificacao({tipo:'compra_realizada',titulo:`Compra realizada: ${r.material}`,descricao:`Solicitação de ${s.solicitante||'Gestor'} foi concluída. NF disponível.`,destinatario_usuario_id:destinatarioId,referencia_tabela:'compras_itens',referencia_id:String(r.id),chave_dedup:`compra_realizada:${r.id}`}); } } catch(_){}
   document.getElementById('admCmpModal').classList.remove('open'); await loadRows(); }
 
@@ -494,7 +503,8 @@ function openGrupoModal(gids){
     </div>
     ${comprovante?`<div class="mt-16"><a class="btn btn-secondary" href="${esc(comprovante)}" target="_blank" rel="noopener">Ver comprovante de pagamento</a></div>`:''}
     ${allAguardando?`<div class="adm-cmp-grid mt-16">
-      <label class="adm-cmp-full">Nota Fiscal (URL ou número)<input id="mNfGrp" placeholder="Cole o link da NF ou informe o número"></label>
+      <label class="adm-cmp-full">URL ou número da NF<input id="mNfGrp" placeholder="Cole o link da NF ou informe o número"></label>
+      <label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfGrpFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label>
     </div>
     <div class="adm-cmp-actions mt-16">
       <button class="btn btn-primary" id="mFinalizarGrp" type="button">Finalizar grupo (${itens.length} itens)</button>
@@ -505,11 +515,15 @@ function openGrupoModal(gids){
   modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
   const btn=modal.querySelector('#mFinalizarGrp');
   if(btn) btn.onclick=async()=>{
-    const nf=modal.querySelector('#mNfGrp')?.value?.trim();
-    if(!nf){alert('Informe a NF.');return;}
-    btn.disabled=true; btn.textContent='Finalizando...';
-    try{await finalizarCompraGrupo(itens,nf);}
-    catch(e){const fb=modal.querySelector('#grpFeedback'); if(fb)fb.textContent=e.message; btn.disabled=false; btn.textContent=`Finalizar grupo (${itens.length} itens)`;}
+    const fb=modal.querySelector('#grpFeedback');
+    btn.disabled=true; btn.textContent='Finalizando...'; if(fb)fb.textContent='';
+    try{
+      const file=modal.querySelector('#mNfGrpFile')?.files?.[0]||null;
+      let nf=modal.querySelector('#mNfGrp')?.value?.trim()||'';
+      if(file){if(fb)fb.textContent='Enviando arquivo...'; nf=await uploadArquivoNotasFiscais(file,'compras/nf');}
+      if(!nf){alert('Informe a NF ou anexe um arquivo.');btn.disabled=false;btn.textContent=`Finalizar grupo (${itens.length} itens)`;return;}
+      await finalizarCompraGrupo(itens,nf);
+    }catch(e){if(fb)fb.textContent=e.message; btn.disabled=false; btn.textContent=`Finalizar grupo (${itens.length} itens)`;}
   };
 }
 
