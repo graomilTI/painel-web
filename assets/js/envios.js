@@ -455,8 +455,9 @@ function renderRemetentes() {
         </div>`}`;
 }
 
-function renderDestinatarios() {
-  const rows = state.destinatarios.map(d => `
+function renderDestRows(lista) {
+  if (!lista.length) return '<tr><td colspan="6" style="text-align:center;color:rgba(200,230,210,.4);padding:20px">Nenhum resultado encontrado.</td></tr>';
+  return lista.map(d => `
     <tr>
       <td>${esc(d.nome)}</td>
       <td>${d.matricula ? esc(d.matricula) : '-'}</td>
@@ -467,7 +468,9 @@ function renderDestinatarios() {
         <button class="btn btn-sm btn-secondary" data-dest-editar="${d.id}">Editar</button> <button class="btn btn-sm btn-danger" data-dest-excluir="${d.id}">Excluir</button>
       </td>
     </tr>`).join('');
+}
 
+function renderDestinatarios() {
   return `
     <div class="toolbar" style="margin-bottom:12px">
       <button class="btn btn-primary" id="btn-novo-dest">+ Novo Destinatário</button>
@@ -475,13 +478,17 @@ function renderDestinatarios() {
       <button class="btn btn-secondary" id="btn-importar-planilha">Importar Planilha (.xlsx/.csv)</button>
       <input type="file" id="input-planilha-dest" accept=".xlsx,.xls,.csv" style="display:none" />
     </div>
+    <div style="margin-bottom:12px">
+      <input type="search" id="dest-search" placeholder="Pesquisar por nome, matrícula ou cidade..." autocomplete="off"
+        style="width:100%;padding:10px 14px;border:1px solid rgba(45,212,160,.18);border-radius:12px;background:rgba(8,22,17,.58);color:var(--text);font:inherit;font-size:.92rem;outline:none;box-sizing:border-box" />
+    </div>
     <div id="form-dest-wrap"></div>
     ${state.destinatarios.length === 0
       ? '<p class="empty-state">Nenhum destinatário cadastrado.</p>'
       : `<div class="table-wrapper">
           <table class="data-table">
             <thead><tr><th>Nome</th><th>Matrícula</th><th>Cidade/UF</th><th>CEP</th><th>Origem</th><th>Ações</th></tr></thead>
-            <tbody>${rows}</tbody>
+            <tbody id="dest-tbody">${renderDestRows(state.destinatarios)}</tbody>
           </table>
         </div>`}`;
 }
@@ -822,6 +829,20 @@ function bindTabEvents() {
       await supabase.from('envios_destinatarios').update({ ativo: false }).eq('id', btn.dataset.destExcluir);
       await loadAll(); renderTab();
     });
+  });
+
+  // Destinatário: pesquisa
+  area.querySelector('#dest-search')?.addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    const lista = q
+      ? state.destinatarios.filter(d =>
+          d.nome.toLowerCase().includes(q) ||
+          (d.matricula ?? '').toLowerCase().includes(q) ||
+          (d.cidade ?? '').toLowerCase().includes(q))
+      : state.destinatarios;
+    const tbody = area.querySelector('#dest-tbody');
+    if (tbody) tbody.innerHTML = renderDestRows(lista);
+    bindTabEvents();
   });
 
   // Destinatário: editar
