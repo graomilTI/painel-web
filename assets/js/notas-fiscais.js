@@ -211,7 +211,7 @@ initProtectedPage('Notas Fiscais', (content) => {
 
     const { data, error } = await supabase
       .from('compras_itens')
-      .select('id, material, tipo, quantidade, unidade, valor_total, comprado_em, nf_url, comprovante_url, nf_lancado, nf_lancado_em, marca, fornecedor, compras_solicitacoes(solicitante, coordenacao, data_solicitacao, observacoes)')
+      .select('id, material, tipo, quantidade, unidade, valor_total, comprado_em, nf_url, comprovante_url, nf_lancado, nf_lancado_em, marca, compras_solicitacoes(solicitante, coordenacao, data_solicitacao, observacoes)')
       .eq('status', 'comprado')
       .not('nf_url', 'is', null)
       .not('comprovante_url', 'is', null)
@@ -305,7 +305,6 @@ initProtectedPage('Notas Fiscais', (content) => {
           <div class="nf-modal-value">${esc(r.quantidade || r.unidade || '1')}</div>
         </div>
         ${r.marca ? `<div><div class="nf-modal-label">Marca</div><div class="nf-modal-value">${esc(r.marca)}</div></div>` : ''}
-        ${r.fornecedor ? `<div><div class="nf-modal-label">Fornecedor</div><div class="nf-modal-value">${esc(r.fornecedor)}</div></div>` : ''}
         <div>
           <div class="nf-modal-label">Valor total</div>
           <div class="nf-modal-value" style="font-size:18px;font-weight:700;color:#bbf7d0">${money(r.valor_total)}</div>
