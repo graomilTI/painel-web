@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient.js';
 
 const CATALOGO = [
-  ['ALICATE DE CORTE','Outros'],['BALANÇA DE PRECISÃO','Patrimonio'],['CAIXA DE BOBINAS','Outros'],['CAIXA DE SULFITE A4','Outros'],['CALADOR','Patrimonio'],['CELULAR','Patrimonio'],['ESTILETE','Outros'],['HOMOGENEIZADOR','Patrimonio'],['IMPRESSORA A4','Patrimonio'],['IMPRESSORA TÉRMICA BLUETOOTH','Patrimonio'],['JOGO DE PENEIRAS','Patrimonio'],['LIQUIDIFICADOR','Patrimonio'],['LUMINÁRIA','Patrimonio'],['MICROPIPETA','Patrimonio'],['PENEIRA INDIVIDUAL','Patrimonio'],['QUARTEADOR','Patrimonio'],['CAPACETE','EPI'],['COLETE REFLETIVO','EPI'],['LUVA MULTITATO','EPI'],['PROTETOR AURICULAR','EPI'],['MASCARA PFF2','EPI'],['OCULOS DE PROTEÇÃO','EPI'],['BOTINA','EPI']
+  ['ALICATE DE CORTE','Outros'],['BALANÇA DE PRECISÃO','Patrimonio'],['CAIXA DE BOBINAS','Outros'],['CAIXA DE SULFITE A4','Outros'],['CALADOR','Patrimonio'],['CELULAR','Outros'],['ESTILETE','Outros'],['HOMOGENEIZADOR','Patrimonio'],['IMPRESSORA A4','Patrimonio'],['IMPRESSORA TÉRMICA BLUETOOTH','Patrimonio'],['JOGO DE PENEIRAS','Patrimonio'],['LIQUIDIFICADOR','Patrimonio'],['LUMINÁRIA','Patrimonio'],['MICROPIPETA','Patrimonio'],['PENEIRA INDIVIDUAL','Patrimonio'],['QUARTEADOR','Patrimonio'],['CAPACETE','EPI'],['COLETE REFLETIVO','EPI'],['LUVA MULTITATO','EPI'],['PROTETOR AURICULAR','EPI'],['MASCARA PFF2','EPI'],['OCULOS DE PROTEÇÃO','EPI'],['BOTINA','EPI']
 ].map(([material,tipo])=>({material,tipo}));
 const UNIFORME_TAMANHOS = ['PP','P','M','G','GG','XG','EXG'];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', comprado:'Comprado', recusado:'Recusado' };
@@ -124,6 +124,70 @@ function resetItemForm(){
   const tam=document.getElementById('cmpNovoTam');
   tam.value=''; tam.disabled=true; tam.placeholder='Selecione Botina ou Peneira Individual';
 }
+function openCelularModal(baseItem){
+  const modal=document.getElementById('cmpCelularModal');
+  modal.innerHTML=`<div class="cmp-cel-card">
+    <div class="section-head">
+      <div><h3>Compra de Celular</h3><p class="muted">Preencha os dados do colaborador e condição de pagamento.</p></div>
+      <button class="btn btn-secondary" id="celClose" type="button">Fechar</button>
+    </div>
+    <div class="cmp-grid mt-16">
+      <div class="cmp-field cmp-full cmp-autocomplete-wrap">
+        <label>Colaborador</label>
+        <input id="celColab" type="text" placeholder="Digite para pesquisar..." autocomplete="off">
+        <div class="cmp-suggest cmp-item-suggest" id="celColabSug"></div>
+      </div>
+      <div class="cmp-field">
+        <label>Método de pagamento</label>
+        <select id="celMetodo">
+          <option value="a_vista">À vista</option>
+          <option value="parcelado">Parcelado</option>
+        </select>
+      </div>
+      <div class="cmp-field" id="celParcelasWrap" style="display:none">
+        <label>Parcelas</label>
+        <select id="celParcelas">
+          ${[1,2,3,4,5].map(n=>`<option value="${n}">${n}x</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="cmp-actions mt-16">
+      <button class="btn btn-primary" id="celConfirmar" type="button">Adicionar à lista</button>
+      <button class="btn btn-secondary" id="celCancelar" type="button">Cancelar</button>
+    </div>
+    <span class="cmp-feedback" id="celFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  modal.querySelector('#celClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#celCancelar').onclick=()=>modal.classList.remove('open');
+  const metodo=modal.querySelector('#celMetodo');
+  const parcelasWrap=modal.querySelector('#celParcelasWrap');
+  metodo.onchange=()=>{ parcelasWrap.style.display=metodo.value==='parcelado'?'flex':'none'; };
+  const colabInput=modal.querySelector('#celColab');
+  const colabSug=modal.querySelector('#celColabSug');
+  let selectedColab=null;
+  colabInput.addEventListener('input',()=>{
+    selectedColab=null;
+    const q=norm(colabInput.value); if(q.length<2){colabSug.innerHTML='';return;}
+    const list=state.colaboradores.filter(c=>norm(c.nome).includes(q)).slice(0,10);
+    colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
+    colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
+  });
+  colabInput.addEventListener('blur',()=>setTimeout(()=>{colabSug.innerHTML='';},160));
+  modal.querySelector('#celConfirmar').onclick=()=>{
+    const fb=modal.querySelector('#celFeedback');
+    if(!selectedColab&&!colabInput.value.trim()){fb.textContent='Informe o colaborador.'; fb.classList.add('err'); return;}
+    const colab=selectedColab||{id:null,nome:colabInput.value.trim()};
+    const metodoVal=metodo.value;
+    const parcelasVal=metodoVal==='parcelado'?Number(modal.querySelector('#celParcelas')?.value||1):1;
+    state.itens.push({...baseItem,_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,_metodo:metodoVal,_parcelas:parcelasVal});
+    resetItemForm();
+    renderItensList();
+    setMsg('cmpFeedback',`Celular adicionado: ${colab.nome}.`);
+    modal.classList.remove('open');
+  };
+}
+
 function bindItemForm(){
   const input=document.getElementById('cmpNovoItem');
   const box=document.getElementById('cmpItemSug');
@@ -143,6 +207,7 @@ function bindItemForm(){
     if(!item.material){ setMsg('cmpFeedback','Digite o nome do material antes de adicionar.',true); return; }
     if(!item.tipo){ setMsg('cmpFeedback','Selecione o tipo do material antes de adicionar.',true); return; }
     if(found && itemNeedsDetail(found.material) && !item.tamanho){ setMsg('cmpFeedback','Informe o tamanho/detalhe antes de adicionar na lista.',true); return; }
+    if(norm(item.material)==='celular'){ openCelularModal(item); return; }
     state.itens.push({...item, _id:`${Date.now()}_${Math.random().toString(16).slice(2)}`});
     resetItemForm();
     renderItensList();
@@ -156,7 +221,11 @@ function renderItensList(){
     body.innerHTML='<tr><td colspan="5" class="cmp-empty">Nenhum material adicionado. Selecione o item acima e clique em <b>Adicionar material</b>.</td></tr>';
     return;
   }
-  body.innerHTML=state.itens.map(i=>`<tr data-item-id="${esc(i._id)}"><td>${esc(i.unidade||i.quantidade||1)}</td><td>${esc(i.material)}</td><td>${esc(i.tipo)}</td><td>${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`).join('');
+  body.innerHTML=state.itens.map(i=>{
+    const isCelular=norm(i.material)==='celular';
+    const matLabel=isCelular&&i.colaborador_nome?`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)} · ${i._metodo==='parcelado'?`${i._parcelas||1}x`:'À vista'}</small>`:esc(i.material);
+    return `<tr data-item-id="${esc(i._id)}"><td>${esc(i.unidade||i.quantidade||1)}</td><td>${matLabel}</td><td>${esc(i.tipo)}</td><td>${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`;
+  }).join('');
   body.querySelectorAll('[data-del-item]').forEach(btn=>btn.onclick=()=>{
     const id=btn.closest('tr').dataset.itemId;
     state.itens=state.itens.filter(i=>String(i._id)!==String(id));
@@ -234,15 +303,33 @@ async function salvarSolicitacao(ctx, tipo, itens){
   const {data:sol,error}=await insertSolicitacaoComCompatibilidade(header);
   if(error) throw error;
   const payload=itens.map(i=>({...i, solicitacao_id:sol.id, status:'pendente'}));
-  const {error:itemErr}=await supabase.from('compras_itens').insert(payload);
+  const {data:insertedItems,error:itemErr}=await supabase.from('compras_itens').insert(payload).select('id,material,colaborador_id,colaborador_nome');
   if(itemErr) throw itemErr;
-  return sol.id;
+  return {sol_id:sol.id, insertedItems:insertedItems||[]};
 }
 async function submitItens(ctx){
-  const itens=state.itens.map(({_id,...i})=>i).filter(i=>i.material);
-  if(!itens.length) throw new Error('Adicione pelo menos um material na lista antes de solicitar.');
-  await salvarSolicitacao(ctx,'itens',itens);
-  return itens;
+  const raw=state.itens.filter(i=>i.material);
+  if(!raw.length) throw new Error('Adicione pelo menos um material na lista antes de solicitar.');
+  const dbItens=raw.map(({_id,_metodo,_parcelas,...i})=>i);
+  const {insertedItems}=await salvarSolicitacao(ctx,'itens',dbItens);
+  // Insert termos_celular for CELULAR items
+  const celularPairs=raw.reduce((acc,orig,idx)=>{
+    if(norm(orig.material)==='celular'&&insertedItems?.[idx]) acc.push({orig,inserted:insertedItems[idx]});
+    return acc;
+  },[]);
+  if(celularPairs.length){
+    const termos=celularPairs.map(({orig,inserted})=>({
+      compra_item_id:inserted.id,
+      colaborador_id:orig.colaborador_id||null,
+      colaborador_nome:orig.colaborador_nome||null,
+      metodo_pagamento:orig._metodo||'a_vista',
+      parcelas:orig._parcelas||1,
+      status:'aguardando_termo',
+      created_at:new Date().toISOString()
+    }));
+    await safe(()=>supabase.from('termos_celular').insert(termos));
+  }
+  return dbItens;
 }
 async function submitUniformes(ctx){
   const rows=[...document.querySelectorAll('[data-uniforme-id]')];
@@ -258,7 +345,9 @@ async function loadMinhas(){
   body.innerHTML=data.map(r=>`<tr><td>${brDate(r.data_solicitacao)}</td><td>${esc(r.tipo_solicitacao)}</td><td>${(r.compras_itens||[]).map(i=>`${esc(i.quantidade||i.unidade||1)} un | ${esc(i.material)}${i.tamanho?` (${esc(i.tamanho)})`:''}`).join('<br>')}</td><td>${pill(r.status)}</td><td>${esc(r.motivo_recusa||'')}</td></tr>`).join('');
 }
 function styles(){return `<style>
-.cmp-tabs,.cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.cmp-tab{width:auto!important;margin:0!important}.cmp-tab.active{background:#166534!important;color:#fff!important}.cmp-panel{display:none}.cmp-panel.active{display:block}.cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px}.cmp-table{width:100%;border-collapse:collapse;min-width:760px}.cmp-table th,.cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.cmp-table th{font-size:12px;text-transform:uppercase;color:var(--muted)}.cmp-table input,.cmp-table select,.cmp-field input,.cmp-field select,.cmp-field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;min-height:46px}.cmp-field select{appearance:none;-webkit-appearance:none;-moz-appearance:none;padding-right:42px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23cbd5e1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:14px}.cmp-field select:disabled,.cmp-table select:disabled,.cmp-field input:disabled,.cmp-table input:disabled,.cmp-field textarea:disabled{opacity:.72;cursor:not-allowed}.cmp-field{display:flex;flex-direction:column;gap:6px}.cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.cmp-add-box{display:grid;grid-template-columns:110px 1.4fr 1fr 1fr auto;gap:12px;align-items:end}.cmp-add-action .btn{white-space:nowrap}.cmp-full{grid-column:1/-1}.cmp-autocomplete-wrap{position:relative}.cmp-suggest{display:grid;gap:6px;margin-top:6px}.cmp-suggest button{text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px;cursor:pointer}.cmp-item-suggest{position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.38);max-height:260px;overflow:auto}.cmp-item-suggest:empty{display:none}.cmp-item-suggest button{display:flex;justify-content:space-between;align-items:center;gap:10px}.cmp-item-suggest small{color:var(--muted);font-weight:800}.cmp-no-sug{color:var(--muted);padding:10px 12px;font-weight:700}.cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-weight:800;font-size:12px}.cmp-status.pendente,.cmp-status.em_cotacao,.cmp-status.em_analise,.cmp-status.pendente_pagamento,.cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.18)}.cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.cmp-feedback{font-weight:700}.cmp-feedback.err{color:#fecaca}.cmp-empty{color:var(--muted);text-align:center}@media(max-width:960px){.cmp-add-box{grid-template-columns:1fr 1fr}}@media(max-width:760px){.cmp-grid,.cmp-add-box{grid-template-columns:1fr}.cmp-table{min-width:680px}}
+.cmp-tabs,.cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.cmp-tab{width:auto!important;margin:0!important}.cmp-tab.active{background:#166534!important;color:#fff!important}.cmp-panel{display:none}.cmp-panel.active{display:block}.cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px}.cmp-table{width:100%;border-collapse:collapse;min-width:760px}.cmp-table th,.cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.cmp-table th{font-size:12px;text-transform:uppercase;color:var(--muted)}.cmp-table input,.cmp-table select,.cmp-field input,.cmp-field select,.cmp-field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;min-height:46px}.cmp-field select{appearance:none;-webkit-appearance:none;-moz-appearance:none;padding-right:42px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23cbd5e1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:14px}.cmp-field select:disabled,.cmp-table select:disabled,.cmp-field input:disabled,.cmp-table input:disabled,.cmp-field textarea:disabled{opacity:.72;cursor:not-allowed}.cmp-field{display:flex;flex-direction:column;gap:6px}.cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.cmp-add-box{display:grid;grid-template-columns:110px 1.4fr 1fr 1fr auto;gap:12px;align-items:end}.cmp-add-action .btn{white-space:nowrap}.cmp-full{grid-column:1/-1}.cmp-autocomplete-wrap{position:relative}.cmp-suggest{display:grid;gap:6px;margin-top:6px}.cmp-suggest button{text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px;cursor:pointer}.cmp-item-suggest{position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.38);max-height:260px;overflow:auto}.cmp-item-suggest:empty{display:none}.cmp-item-suggest button{display:flex;justify-content:space-between;align-items:center;gap:10px}.cmp-item-suggest small{color:var(--muted);font-weight:800}.cmp-no-sug{color:var(--muted);padding:10px 12px;font-weight:700}.cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-weight:800;font-size:12px}.cmp-status.pendente,.cmp-status.em_cotacao,.cmp-status.em_analise,.cmp-status.pendente_pagamento,.cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.18)}.cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.cmp-feedback{font-weight:700}.cmp-feedback.err{color:#fecaca}.cmp-empty{color:var(--muted);text-align:center}.cmp-actions{display:flex;gap:10px;flex-wrap:wrap}
+.cmp-cel-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.cmp-cel-modal.open{display:flex}.cmp-cel-card{width:min(600px,100%);max-height:90vh;overflow:auto;background:#15152a;border:1px solid rgba(255,255,255,.06);border-radius:22px;padding:24px;color:#e2e2f0}
+@media(max-width:960px){.cmp-add-box{grid-template-columns:1fr 1fr}}@media(max-width:760px){.cmp-grid,.cmp-add-box{grid-template-columns:1fr}.cmp-table{min-width:680px}}
 </style>`}
 
 initProtectedPage('Compras', async (content, userContext)=>{
@@ -281,6 +370,7 @@ initProtectedPage('Compras', async (content, userContext)=>{
     <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-actions"><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos os colaboradores</button><div class="cmp-field" style="min-width:280px"><label>Adicionar colaborador</label><input id="cmpColabBusca" placeholder="Digite o nome"><div class="cmp-suggest" id="cmpColabSug"></div></div></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
     <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
   </section>
+  <div class="cmp-cel-modal" id="cmpCelularModal"></div>
   <section class="card mt-16"><div class="section-head"><div><h3>Pendentes e histórico</h3><p class="muted">A solicitação fica pendente até compras concluir ou recusar.</p></div><button class="btn btn-secondary" id="cmpRefresh" type="button">Atualizar</button></div><div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div></section>`;
   state.itens=[]; bindItemForm(); renderItensList(); renderUniformes(); setupColabSearch();
   document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
