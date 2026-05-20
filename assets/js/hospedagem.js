@@ -75,11 +75,11 @@ function injectStyles() {
   style.id = 'hospedagemGestorStyles';
   style.textContent = `
     .hosp-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.hosp-tab{width:auto;margin-top:0;border:1px solid var(--line-2);background:#15152a;color:var(--text);border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:800}.hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}
-    .hosp-panel{display:none}.hosp-panel.active{display:block}.hosp-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.hosp-field{display:flex;flex-direction:column;gap:7px}.hosp-field.full{grid-column:1/-1}.hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.hosp-field input,.hosp-field textarea,.hosp-field select{width:100%;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.hosp-field textarea{resize:vertical;min-height:86px}.hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.hosp-help{font-size:12px;color:var(--muted)}
+    .hosp-panel{display:none}.hosp-panel.active{display:block}.hosp-form-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}.hosp-field{display:flex;flex-direction:column;gap:7px}.hosp-field.full{grid-column:1/-1}.hosp-field.col-2{grid-column:span 2}.hosp-field.col-3{grid-column:span 3}.hosp-field.col-5{grid-column:span 5}.hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.hosp-field input,.hosp-field textarea,.hosp-field select{width:100%;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.hosp-field textarea{resize:vertical;min-height:86px}.hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.hosp-help{font-size:12px;color:var(--muted)}
     .hosp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.hosp-btn{width:auto!important;margin-top:0!important}.hosp-feedback{color:var(--muted);font-size:13px}.hosp-feedback.ok{color:#bbf7d0}.hosp-feedback.err{color:#fecaca}.hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.hosp-table{width:100%;border-collapse:collapse;min-width:1040px;background:#15152a}.hosp-table th,.hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.hosp-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.hosp-table tr:hover td{background:rgba(111,208,165,.035)}
     .hosp-status{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:800;white-space:nowrap}.hosp-status.solicitada,.hosp-status.em_analise,.hosp-status.em_cotacao{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.hosp-status.reservada{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.hosp-status.concluida{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.hosp-status.cancelada{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}
     .hosp-mini-list{display:grid;gap:10px}.hosp-mini-item{border:1px solid var(--line);border-radius:16px;padding:12px;background:#15152a}.hosp-mini-item strong{display:block}.hosp-mini-item span{color:var(--muted);font-size:13px}.hosp-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px}.hosp-summary div{border:1px solid var(--line);border-radius:16px;padding:12px;background:rgba(11,18,32,.8)}.hosp-summary strong{display:block;font-size:20px;color:#dcfce7}.hosp-summary span{display:block;color:var(--muted);font-size:12px;margin-top:4px}.hosp-colab-box{display:grid;gap:10px}.hosp-colab-row{display:grid;grid-template-columns:1.2fr .6fr auto;gap:10px;align-items:end}.hosp-remove{width:auto!important;margin-top:0!important;padding:10px 12px!important}.hosp-empty{padding:18px;color:var(--muted);text-align:center}.hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;border-radius:16px;padding:12px 14px;margin-top:12px}
-    @media(max-width:850px){.hosp-form-grid,.hosp-colab-row{grid-template-columns:1fr}.hosp-remove{justify-self:flex-start}}
+    @media(max-width:850px){.hosp-form-grid,.hosp-colab-row{grid-template-columns:1fr}.hosp-form-grid .hosp-field{grid-column:1/-1}.hosp-remove{justify-self:flex-start}}
   `;
   document.head.appendChild(style);
 }
@@ -114,43 +114,43 @@ initProtectedPage('Hospedagem', (content, userContext) => {
 
         <form id="hospForm">
           <div class="hosp-form-grid">
-            <div class="hosp-field">
+            <div class="hosp-field col-5">
               <label for="cidade">Cidade da reserva *</label>
               <input id="cidade" required placeholder="Ex.: Araguapaz" />
             </div>
-            <div class="hosp-field">
-              <label for="uf">UF</label>
-              <input id="uf" maxlength="2" placeholder="GO" />
+            <div class="hosp-field col-2">
+              <label for="uf">UF *</label>
+              <input id="uf" required maxlength="2" placeholder="GO" />
             </div>
-            <div class="hosp-field">
-              <label for="cliente">Cliente</label>
-              <input id="cliente" placeholder="Cliente / unidade / fazenda" />
+            <div class="hosp-field col-5">
+              <label for="cliente">Cliente *</label>
+              <input id="cliente" required placeholder="Cliente / unidade / fazenda" />
             </div>
-            <div class="hosp-field">
-              <label for="saldo">Saldo ou limite informado</label>
-              <input id="saldo" type="number" step="0.01" min="0" placeholder="1000,00" />
-            </div>
-            <div class="hosp-field full">
+            <div class="hosp-field col-5">
               <label for="localEmbarque">Local de embarque *</label>
               <input id="localEmbarque" required placeholder="Ex.: Fazenda Claite" />
             </div>
-            <div class="hosp-field full">
-              <label for="linkLocal">Link/localização do embarque</label>
+            <div class="hosp-field col-5">
+              <label for="linkLocal">Localização do embarque</label>
               <input id="linkLocal" placeholder="Cole o link do Google Maps ou referência de localização" />
             </div>
-            <div class="hosp-field">
+            <div class="hosp-field col-2">
+              <label for="saldo">Saldo informado</label>
+              <input id="saldo" type="number" step="0.01" min="0" placeholder="0,00" />
+            </div>
+            <div class="hosp-field col-3">
               <label for="checkin">Check-in previsto *</label>
               <input id="checkin" type="date" required />
             </div>
-            <div class="hosp-field">
+            <div class="hosp-field col-3">
               <label for="checkout">Check-out previsto *</label>
               <input id="checkout" type="date" required />
             </div>
-            <div class="hosp-field">
+            <div class="hosp-field col-3">
               <label for="horario">Horário previsto de chegada</label>
               <input id="horario" type="time" />
             </div>
-            <div class="hosp-field">
+            <div class="hosp-field col-3">
               <label>Diárias previstas</label>
               <input id="diarias" readonly />
             </div>
