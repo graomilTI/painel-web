@@ -35,10 +35,57 @@ function updateKpis(){
   document.getElementById('kpiPat').textContent=state.rows.filter(r=>norm(r.tipo).includes('patrimonio')).length;
 }
 function rowLabel(r){return `${r.quantidade||r.unidade||1} un | ${r.material}${r.tamanho?` (${r.tamanho})`:''}${r.colaborador_nome?` | ${r.colaborador_nome}`:''}`;}
+
+function groupKey(r){
+  const fn=norm(r.fornecedor||'');
+  const dp=norm(r.dados_pagamento||'');
+  const fp=norm(r.forma_pagamento||'');
+  if(fn) return `fn:${fn}`;
+  if(dp) return `dp:${fp}:${dp}`;
+  return `solo:${r.id}`;
+}
+
+function singleRowHtml(r){
+  const s=r.compras_solicitacoes||{};
+  return `<tr>
+    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td><button class="btn btn-small btn-secondary" data-open="${esc(r.id)}" type="button">Abrir</button></td>
+  </tr>`;
+}
+
 function renderTable(){
   const body=document.getElementById('admCmpBody');
   const rows=state.rows;
   if(!rows.length){body.innerHTML='<tr><td colspan="9" class="adm-cmp-empty">Nenhum item nesta etapa.</td></tr>'; return;}
+
+  if(state.tab==='pendentes'){
+    const groups=new Map();
+    rows.forEach(r=>{const k=groupKey(r); if(!groups.has(k))groups.set(k,[]); groups.get(k).push(r);});
+    body.innerHTML=[...groups.values()].map(itens=>{
+      if(itens.length===1) return singleRowHtml(itens[0]);
+      const totalGrp=itens.reduce((s,r)=>s+Number(r.valor_total||0),0);
+      const s0=itens[0].compras_solicitacoes||{};
+      const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
+      const stGrp=itens.some(r=>r.status==='aguardando_nf')?'aguardando_nf':'pendente_pagamento';
+      const gids=itens.map(r=>r.id).join(',');
+      return `<tr class="adm-cmp-group-row">
+        <td><input type="checkbox" data-check-group="${esc(gids)}"></td>
+        <td>${brDate(s0.data_solicitacao)}</td>
+        <td>${esc(s0.solicitante||'-')}<br><small>${esc(s0.coordenacao||'')}</small></td>
+        <td>${itens.length}&nbsp;itens</td>
+        <td><b style="color:#bbf7d0">${esc(fn||'Mesmo fornecedor')}</b><br><small class="muted">${itens.map(r=>esc(r.material)).join(' · ')}</small></td>
+        <td>-</td>
+        <td>${pill(stGrp)}</td>
+        <td>${money(totalGrp)}</td>
+        <td><button class="btn btn-small btn-secondary" data-open-grupo="${esc(gids)}" type="button">Abrir grupo</button></td>
+      </tr>`;
+    }).join('');
+    body.querySelectorAll('[data-check]').forEach(c=>c.onchange=()=>{c.checked?state.selected.add(c.dataset.check):state.selected.delete(c.dataset.check)});
+    body.querySelectorAll('[data-check-group]').forEach(c=>c.onchange=()=>{c.dataset.checkGroup.split(',').forEach(id=>c.checked?state.selected.add(id):state.selected.delete(id));});
+    body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
+    body.querySelectorAll('[data-open-grupo]').forEach(b=>b.onclick=()=>openGrupoModal(b.dataset.openGrupo));
+    return;
+  }
+
   body.innerHTML=rows.map(r=>{const s=r.compras_solicitacoes||{}; return `<tr>
     <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td><button class="btn btn-small btn-secondary" data-open="${esc(r.id)}" type="button">Abrir</button></td>
   </tr>`}).join('');
@@ -376,9 +423,10 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
   for(const r of itens){
     const upd={status:'pendente_pagamento',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dados||null};
     if(r._ca||r.ca) upd.ca=r._ca||r.ca;
+    if(fornecedor) upd.fornecedor=fornecedor;
     const {error:updErr}=await supabase.from('compras_itens').update(upd).eq('id',r.id);
     if(updErr){
-      if(updErr.message?.includes("'ca'")||updErr.code==='PGRST204'){delete upd.ca; const {error:r2}=await supabase.from('compras_itens').update(upd).eq('id',r.id); if(r2) throw new Error(`Erro ao atualizar item ${r.material}: ${r2.message}`);}
+      if(updErr.message?.includes("'ca'")||updErr.message?.includes("'fornecedor'")||updErr.code==='PGRST204'){delete upd.ca; delete upd.fornecedor; const {error:r2}=await supabase.from('compras_itens').update(upd).eq('id',r.id); if(r2) throw new Error(`Erro ao atualizar item ${r.material}: ${r2.message}`);}
       else throw new Error(`Erro ao atualizar item ${r.material}: ${updErr.message}`);
     }
   }
@@ -421,10 +469,68 @@ async function finalizarCompra(r){ const nf=document.getElementById('mNf').value
   try { const engine=window.__painelNotifEngine; const s=r.compras_solicitacoes||{}; const destinatarioId=s.solicitante_id||s.created_by||null; if(engine&&destinatarioId){ await engine.criarNotificacao({tipo:'compra_realizada',titulo:`Compra realizada: ${r.material}`,descricao:`Solicitação de ${s.solicitante||'Gestor'} foi concluída. NF disponível.`,destinatario_usuario_id:destinatarioId,referencia_tabela:'compras_itens',referencia_id:String(r.id),chave_dedup:`compra_realizada:${r.id}`}); } } catch(_){}
   document.getElementById('admCmpModal').classList.remove('open'); await loadRows(); }
 
+// ─── GRUPO PENDENTES ──────────────────────────────────────────────────────────
+function openGrupoModal(gids){
+  const ids=gids.split(',').map(id=>id.trim());
+  const itens=state.rows.filter(r=>ids.includes(String(r.id)));
+  if(!itens.length) return;
+  const modal=document.getElementById('admCmpModal');
+  const total=itens.reduce((s,r)=>s+Number(r.valor_total||0),0);
+  const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
+  const comprovante=itens.find(r=>r.comprovante_url)?.comprovante_url||'';
+  const stGrp=itens.some(r=>r.status==='aguardando_nf')?'aguardando_nf':'pendente_pagamento';
+  const allAguardando=itens.every(r=>r.status==='aguardando_nf');
+  modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
+    <div class="section-head">
+      <div><h3>Grupo de compras</h3><p class="muted">${esc(fn||'Mesmo fornecedor')} · ${money(total)} · ${pill(stGrp)}</p></div>
+      <button class="btn btn-secondary" id="mClose" type="button">Fechar</button>
+    </div>
+    <div class="adm-cmp-table-wrap mt-16">
+      <table class="adm-cmp-table">
+        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th><th>Valor</th><th>Status</th></tr></thead>
+        <tbody>${itens.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${money(r.valor_total||0)}</td><td>${pill(r.status)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="3" style="text-align:right;font-weight:700;padding:10px 12px">Total do grupo</td><td colspan="2" style="font-weight:800;color:#bbf7d0;padding:10px 12px">${money(total)}</td></tr></tfoot>
+      </table>
+    </div>
+    ${comprovante?`<div class="mt-16"><a class="btn btn-secondary" href="${esc(comprovante)}" target="_blank" rel="noopener">Ver comprovante de pagamento</a></div>`:''}
+    ${allAguardando?`<div class="adm-cmp-grid mt-16">
+      <label class="adm-cmp-full">Nota Fiscal (URL ou número)<input id="mNfGrp" placeholder="Cole o link da NF ou informe o número"></label>
+    </div>
+    <div class="adm-cmp-actions mt-16">
+      <button class="btn btn-primary" id="mFinalizarGrp" type="button">Finalizar grupo (${itens.length} itens)</button>
+    </div>`:`<p class="muted mt-16">Aguardando pagamento — o financeiro precisa anexar o comprovante antes da NF.</p>`}
+    <span class="adm-cmp-feedback mt-8" id="grpFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  const btn=modal.querySelector('#mFinalizarGrp');
+  if(btn) btn.onclick=async()=>{
+    const nf=modal.querySelector('#mNfGrp')?.value?.trim();
+    if(!nf){alert('Informe a NF.');return;}
+    btn.disabled=true; btn.textContent='Finalizando...';
+    try{await finalizarCompraGrupo(itens,nf);}
+    catch(e){const fb=modal.querySelector('#grpFeedback'); if(fb)fb.textContent=e.message; btn.disabled=false; btn.textContent=`Finalizar grupo (${itens.length} itens)`;}
+  };
+}
+
+async function finalizarCompraGrupo(itens,nf){
+  for(const r of itens){
+    await supabase.from('compras_itens').update({status:'comprado',nf_url:nf,comprado_em:new Date().toISOString()}).eq('id',r.id);
+    if(norm(r.tipo).includes('patrimonio')) await supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id,material:r.material,marca:r.marca||null,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'});
+  }
+  await syncSolicitacoesStatus(itens.map(r=>r.solicitacao_id));
+  try{const engine=window.__painelNotifEngine; for(const r of itens){const s=r.compras_solicitacoes||{}; const did=s.solicitante_id||s.created_by||null; if(engine&&did) await engine.criarNotificacao({tipo:'compra_realizada',titulo:`Compra realizada: ${r.material}`,descricao:`Solicitação de ${s.solicitante||'Gestor'} concluída. NF disponível.`,destinatario_usuario_id:did,referencia_tabela:'compras_itens',referencia_id:String(r.id),chave_dedup:`compra_realizada:${r.id}`});}}catch(_){}
+  await notifyByConfig('GESTOR',`Compras concluídas\n${itens.length} itens finalizados\nNF: ${nf}\nTotal: ${money(itens.reduce((s,r)=>s+Number(r.valor_total||0),0))}`);
+  document.getElementById('admCmpModal').classList.remove('open');
+  setMsg(`${itens.length} item(ns) finalizado(s).`);
+  await loadRows();
+}
+
 function styles(){return `<style>
 .adm-cmp-tabs,.adm-cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.adm-cmp-tabs .active{background:#166534!important;color:#fff!important}.adm-cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-cmp-table{width:100%;border-collapse:collapse;min-width:1060px}.adm-cmp-table th,.adm-cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-cmp-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.adm-cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-size:12px;font-weight:800}.adm-cmp-status.pendente,.adm-cmp-status.em_cotacao,.adm-cmp-status.em_analise,.adm-cmp-status.pendente_pagamento,.adm-cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.adm-cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.2)}.adm-cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.adm-cmp-empty{text-align:center;color:var(--muted)}.adm-cmp-feedback{font-weight:800}.adm-cmp-feedback.err{color:#fecaca}.adm-cmp-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.adm-cmp-modal.open{display:flex}.adm-cmp-modal-card{width:min(900px,100%);max-height:90vh;overflow:auto;background:#15152a;border:1px solid rgba(255,255,255,0.06);border-radius:22px;padding:20px;color:#e2e2f0}.adm-cmp-modal-wide{width:min(1260px,100%)}.adm-cmp-buy-table input{width:160px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-total-box{display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid var(--line);border-radius:16px;padding:14px 16px;background:rgba(15,23,42,.55)}.adm-cmp-total-box strong{font-size:22px}.adm-cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-cmp-grid input,.adm-cmp-grid select{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-grid input[type=file]{padding:9px 12px;cursor:pointer}.adm-cmp-full{grid-column:1/-1}
 .adm-cot-forn-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.adm-cot-forn-cell{display:flex;flex-direction:column;gap:4px}.adm-cot-forn-cell label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.adm-cot-forn-cell input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px 12px;min-width:180px}.adm-cot-table input{width:120px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;color-scheme:dark}.adm-cot-melhor{font-weight:700;color:#bbf7d0}.adm-cot-forn-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}.adm-cot-forn-opt{border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;text-align:center}.adm-cot-forn-total{font-size:22px;font-weight:800;color:#bbf7d0}
 .cot-colab-wrap{position:relative}.cot-colab-sug{position:absolute;top:100%;left:0;right:0;z-index:60;background:#071b13;border:1px solid var(--line);border-radius:12px;padding:4px;max-height:200px;overflow:auto;box-shadow:0 12px 30px rgba(0,0,0,.38)}.cot-colab-sug:empty{display:none}.cot-colab-sug button{display:block;width:100%;text-align:left;border:none;background:transparent;color:#e2e2f0;padding:8px 10px;border-radius:8px;cursor:pointer}.cot-colab-sug button:hover{background:rgba(255,255,255,.06)}.cot-colab-input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;width:160px;box-sizing:border-box;color-scheme:dark}
+.adm-cmp-group-row{background:rgba(34,197,94,.04)}.adm-cmp-group-row>td:first-child{border-left:3px solid rgba(34,197,94,.5)}
 @media(max-width:760px){.adm-cmp-grid{grid-template-columns:1fr}.adm-cmp-table{min-width:920px}}
 </style>`}
 
