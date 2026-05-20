@@ -96,7 +96,7 @@ async function loadAll() {
   for (let offset = 0; ; offset += 1000) {
     const { data } = await supabase
       .from('envios_destinatarios')
-      .select('id, nome, cidade, uf, cep, matricula')
+      .select('id, nome, cidade, uf, cep, matricula, logradouro, numero, complemento, bairro, email, telefone, cpf_cnpj, origem')
       .eq('ativo', true)
       .order('nome')
       .range(offset, offset + 999);
@@ -455,8 +455,9 @@ function renderRemetentes() {
         </div>`}`;
 }
 
-function renderDestinatarios() {
-  const rows = state.destinatarios.map(d => `
+function renderDestRows(lista) {
+  if (!lista.length) return '<tr><td colspan="6" style="text-align:center;color:rgba(200,230,210,.4);padding:20px">Nenhum resultado encontrado.</td></tr>';
+  return lista.map(d => `
     <tr>
       <td>${esc(d.nome)}</td>
       <td>${d.matricula ? esc(d.matricula) : '-'}</td>
@@ -464,10 +465,12 @@ function renderDestinatarios() {
       <td>${esc(d.cep)}</td>
       <td><span class="badge badge-neutral">${esc(d.origem ?? 'manual')}</span></td>
       <td class="td-actions">
-        <button class="btn btn-sm btn-danger" data-dest-excluir="${d.id}">Excluir</button>
+        <button class="btn btn-sm btn-secondary" data-dest-editar="${d.id}">Editar</button> <button class="btn btn-sm btn-danger" data-dest-excluir="${d.id}">Excluir</button>
       </td>
     </tr>`).join('');
+}
 
+function renderDestinatarios() {
   return `
     <div class="toolbar" style="margin-bottom:12px">
       <button class="btn btn-primary" id="btn-novo-dest">+ Novo Destinatário</button>
@@ -475,13 +478,17 @@ function renderDestinatarios() {
       <button class="btn btn-secondary" id="btn-importar-planilha">Importar Planilha (.xlsx/.csv)</button>
       <input type="file" id="input-planilha-dest" accept=".xlsx,.xls,.csv" style="display:none" />
     </div>
+    <div style="margin-bottom:12px">
+      <input type="search" id="dest-search" placeholder="Pesquisar por nome, matrícula ou cidade..." autocomplete="off"
+        style="width:100%;padding:10px 14px;border:1px solid rgba(45,212,160,.18);border-radius:12px;background:rgba(8,22,17,.58);color:var(--text);font:inherit;font-size:.92rem;outline:none;box-sizing:border-box" />
+    </div>
     <div id="form-dest-wrap"></div>
     ${state.destinatarios.length === 0
       ? '<p class="empty-state">Nenhum destinatário cadastrado.</p>'
       : `<div class="table-wrapper">
           <table class="data-table">
             <thead><tr><th>Nome</th><th>Matrícula</th><th>Cidade/UF</th><th>CEP</th><th>Origem</th><th>Ações</th></tr></thead>
-            <tbody>${rows}</tbody>
+            <tbody id="dest-tbody">${renderDestRows(state.destinatarios)}</tbody>
           </table>
         </div>`}`;
 }
@@ -823,6 +830,44 @@ function bindTabEvents() {
       await loadAll(); renderTab();
     });
   });
+
+  // Destinatário: pesquisa
+  area.querySelector('#dest-search')?.addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    const lista = q
+      ? state.destinatarios.filter(d =>
+          d.nome.toLowerCase().includes(q) ||
+          (d.matricula ?? '').toLowerCase().includes(q) ||
+          (d.cidade ?? '').toLowerCase().includes(q))
+      : state.destinatarios;
+    const tbody = area.querySelector('#dest-tbody');
+    if (tbody) tbody.innerHTML = renderDestRows(lista);
+    bindTabEvents();
+  });
+
+  // Destinatário: editar
+  area.querySelectorAll('[data-dest-editar]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const d = state.destinatarios.find(x => x.id === btn.dataset.destEditar);
+      if (!d) return;
+      const wrap = area.querySelector('#form-dest-wrap');
+      if (!wrap) return;
+      wrap.innerHTML = `<div class="form-section"><h4 style="margin:0 0 16px;font-size:1rem;font-weight:800">Editar Destinatário</h4>
+        <form id="form-dest" class="form-grid" data-edit-id="${d.id}">
+          ${formEndereco('dest', d)}
+          <div class="form-group">
+            <label>Matrícula</label>
+            <input type="text" name="matricula" value="${esc(d.matricula ?? '')}" />
+          </div>
+          <div class="form-actions full-width">
+            <button type="submit" class="btn btn-primary">Salvar</button>
+            <button type="button" class="btn btn-secondary" id="btn-cancel-dest">Cancelar</button>
+          </div>
+        </form></div>`;
+      wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      bindFormDestinatario(area);
+    });
+  });
 }
 
 function bindFormRemetente(area) {
@@ -889,9 +934,16 @@ function bindFormDestinatario(area) {
       matricula: fd.get('matricula') || null,
       origem: 'manual',
     };
-    const { error } = await supabase.from('envios_destinatarios').insert(row);
-    if (error) { setFeedback('Erro: ' + error.message, true); return; }
-    setFeedback('Destinatário cadastrado.');
+    const editId = e.target.dataset.editId;
+    if (editId) {
+      const { error } = await supabase.from('envios_destinatarios').update(row).eq('id', editId);
+      if (error) { setFeedback('Erro: ' + error.message, true); return; }
+      setFeedback('Destinatário atualizado.');
+    } else {
+      const { error } = await supabase.from('envios_destinatarios').insert(row);
+      if (error) { setFeedback('Erro: ' + error.message, true); return; }
+      setFeedback('Destinatário cadastrado.');
+    }
     await loadAll(); renderTab();
   });
   area.querySelectorAll('[data-busca-cep]').forEach(btn => {

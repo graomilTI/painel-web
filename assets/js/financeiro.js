@@ -145,20 +145,6 @@ function ensureHttps(url) {
 function isBoleto(row) { return /boleto/i.test(row.forma_pagamento || ''); }
 function isPix(row) { return /^pix$/i.test((row.forma_pagamento || '').trim()); }
 
-// Builds a valid PIX BR Code (EMV) payload for use in QR Codes.
-// CRC-16/CCITT-FALSE: poly=0x1021, init=0xFFFF, no reflection.
-function buildPixPayload(key, name, city, valor) {
-  const f = (id, v) => { const s = String(v); return id + s.length.toString().padStart(2, '0') + s; };
-  const toAscii = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim();
-  const mai = f('00', 'BR.GOV.BCB.PIX') + f('01', key.trim());
-  let p = f('00', '01') + f('26', mai) + f('52', '0000') + f('53', '986');
-  const v = parseFloat(valor); if (v > 0) p += f('54', v.toFixed(2));
-  p += f('58', 'BR') + f('59', (toAscii(name) || 'Pagamento').slice(0, 25)) + f('60', (toAscii(city) || 'BRASIL').slice(0, 15)) + f('62', f('05', '***')) + '6304';
-  let crc = 0xFFFF;
-  for (let i = 0; i < p.length; i++) { crc ^= p.charCodeAt(i) << 8; for (let j = 0; j < 8; j++) { crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1); crc &= 0xFFFF; } }
-  return p + crc.toString(16).toUpperCase().padStart(4, '0');
-}
-
 function safeStorageFileName(name) {
   return String(name || 'comprovante')
     .normalize('NFD')
@@ -1001,7 +987,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
       .pay-mode-switch{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}.pay-mode-btn{border:1px solid rgba(148,163,184,.15);background:rgba(15,23,42,.6);color:#6b7280;border-radius:12px;padding:11px 18px;font-weight:700;font-size:13px;cursor:pointer;transition:all .14s;letter-spacing:.02em}.pay-mode-btn:hover{color:#e2e8f0;background:rgba(15,23,42,.9)}.pay-mode-btn.active{background:linear-gradient(135deg,#166534,#16a34a);color:#fff;border-color:transparent;box-shadow:0 3px 12px rgba(22,101,52,.35)}.pay-mode-panel{display:none}.pay-mode-panel.active{display:block}.pay-toolbar{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:14px 0}.pay-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;align-items:end}.pay-status-toggle{display:inline-flex;align-items:stretch;min-width:168px;overflow:hidden;border:2px solid rgba(226,232,240,.78);border-radius:999px;background:#020617;box-shadow:inset 0 0 0 1px rgba(15,23,42,.75)}.pay-status-btn{flex:1;border:0;background:transparent;color:#e2e2f0;padding:9px 14px;font-weight:900;font-size:12px;letter-spacing:.02em;cursor:pointer;transition:background .16s ease,color .16s ease,transform .16s ease}.pay-status-btn + .pay-status-btn{border-left:2px solid rgba(226,232,240,.78)}.pay-status-btn:hover{filter:brightness(1.06)}.pay-status-btn.active-ok{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.pay-status-btn.active-pendente{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff7f7}.pay-status-btn.is-inactive{background:#0d0d18;color:#cbd5e1}.pay-status-paid{display:inline-flex;align-items:center;justify-content:center;min-width:168px;padding:9px 14px;border-radius:999px;border:2px solid rgba(59,130,246,.4);background:linear-gradient(135deg,rgba(29,78,216,.25),rgba(59,130,246,.2));color:#bfdbfe;font-size:12px;font-weight:900;letter-spacing:.04em}.pay-footer{position:sticky;bottom:12px;z-index:2;margin-top:16px;border:1px solid rgba(34,197,94,.24);border-radius:20px;background:rgba(2,6,23,.94);backdrop-filter:blur(12px);padding:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 18px 45px rgba(2,6,23,.38)}.pay-footer strong{display:block;color:#f8fafc}.pay-footer span{display:block;color:#6b7280;font-size:12px;margin-top:3px}.btn-pay-final{border:0;border-radius:16px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;font-weight:1000;padding:14px 28px;cursor:pointer}.btn-pay-final:disabled{opacity:.45;cursor:not-allowed}.pay-note{border:1px solid rgba(59,130,246,.24);background:rgba(37,99,235,.10);border-radius:16px;padding:12px;color:#bfdbfe;font-size:13px}.fin-status.pendente{background:rgba(245,158,11,.14);color:#fde68a}.fin-status.pago{background:rgba(59,130,246,.14);color:#bfdbfe}@media(max-width:900px){.pay-filter-grid{grid-template-columns:1fr 1fr}.pay-footer{position:static;display:grid}.btn-pay-final{width:100%}}@media(max-width:620px){.pay-filter-grid{grid-template-columns:1fr}.pay-status-toggle,.pay-status-paid{min-width:138px}}.pay-search-panel{margin:14px 0;display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:10px;align-items:end}.pay-search-field{display:grid;gap:6px}.pay-search-field label{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}.pay-search-input{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px 14px;color-scheme:dark}.pay-search-count{color:#6b7280;font-size:12px;margin-top:4px}@media(max-width:620px){.pay-search-panel{grid-template-columns:1fr}}
 
-      .fin-setor-filter{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.fin-setor-btn{border:1px solid rgba(148,163,184,.22);background:#08111f;color:#cbd5e1;border-radius:999px;padding:9px 14px;font-weight:900;cursor:pointer}.fin-setor-btn.active{background:#166534;color:#fff;border-color:#22c55e}.fin-setor-btn.fin-setor-pago{border-color:rgba(34,197,94,.4);color:#4ade80}.fin-setor-btn.fin-setor-pago.active{background:#14532d;color:#4ade80;border-color:#4ade80}.fin-text-block{white-space:pre-wrap;line-height:1.45}.fin-pay-actions{display:flex;gap:8px;flex-wrap:wrap}.fin-pay-actions a{text-decoration:none}
+      .fin-setor-filter{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.fin-setor-btn{border:1px solid rgba(148,163,184,.22);background:#08111f;color:#cbd5e1;border-radius:999px;padding:9px 14px;font-weight:900;cursor:pointer}.fin-setor-btn.active{background:#166534;color:#fff;border-color:#22c55e}.fin-text-block{white-space:pre-wrap;line-height:1.45}.fin-pay-actions{display:flex;gap:8px;flex-wrap:wrap}.fin-pay-actions a{text-decoration:none}
 
       .fin-pay-modal{position:fixed;inset:0;background:rgba(2,6,23,.72);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.fin-pay-modal.open{display:flex}.fin-pay-modal-card{width:min(820px,100%);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.22);border-radius:22px;background:#15152a;color:#e2e2f0;padding:20px;box-shadow:0 24px 70px rgba(2,6,23,.45)}.fin-pay-preview{border:1px solid rgba(148,163,184,.16);border-radius:16px;background:rgba(15,23,42,.58);padding:14px}.mt-16{margin-top:16px}
 
@@ -1325,7 +1311,6 @@ initProtectedPage('Financeiro', (content, userContext) => {
             <button class="fin-setor-btn" data-setor-pay="RH" type="button">RH</button>
             <button class="fin-setor-btn" data-setor-pay="AUDITORIA" type="button">Auditoria</button>
             <button class="fin-setor-btn" data-setor-pay="OUTROS" type="button">Outros</button>
-            <button class="fin-setor-btn fin-setor-pago" data-setor-pay="PAGO" type="button">Pagos</button>
           </div>
 
           <div class="fin-table-wrap">
@@ -1374,29 +1359,21 @@ initProtectedPage('Financeiro', (content, userContext) => {
   }
 
 
-  function isRowPago(row) {
-    const s = String(row.status || '').toUpperCase();
-    return s === 'PAGO' || row.status === 'aguardando_nf';
-  }
-
   function filteredSetorPagamentos() {
     const filter = state.pagamentosSetorFilter || 'todos';
-    const all = state.financeiroPagamentos || [];
-    if (filter === 'PAGO') return all.filter(isRowPago);
-    const pendentes = all.filter((row) => !isRowPago(row));
-    if (filter === 'todos') return pendentes;
+    if (filter === 'todos') return state.financeiroPagamentos || [];
     if (filter === 'OUTROS') {
-      return pendentes.filter((row) => {
+      return (state.financeiroPagamentos || []).filter((row) => {
         const origem = normalize(row.origem || row.setor || row.modulo_origem);
         return !origem.includes('compra') && !origem.includes('hotel') && !origem.includes('hosped') && !origem.includes('auditoria') && origem !== 'rh' && !origem.includes('recursos humanos');
       });
     }
-    return pendentes.filter((row) => {
+    return (state.financeiroPagamentos || []).filter((row) => {
       const origem = normalize(row.origem || row.setor || row.modulo_origem);
       return normalize(filter).split(' ').every((part) => origem.includes(part)) ||
         (filter === 'HOSPEDAGEM' && (origem.includes('hotel') || origem.includes('hosped'))) ||
         (filter === 'RH' && (origem === 'rh' || origem.includes('recursos humanos'))) ||
-        (filter === 'AUDITORIA' && origem.includes('auditoria'));
+        (filter === 'AUDITORIA' && origem.includes('auditoria')); 
     });
   }
 
@@ -1468,14 +1445,10 @@ initProtectedPage('Financeiro', (content, userContext) => {
         <td><span class="fin-status ${statusPagamentoClass(status)}">${esc(status)}</span></td>
         <td>
           <div class="fin-pay-actions" style="flex-wrap:wrap;gap:4px">
-            ${isRowPago(row)
-              ? (row.comprovante_url
-                  ? `<a class="btn btn-secondary fin-small" href="${esc(row.comprovante_url)}" target="_blank" rel="noopener">Comprovante</a>`
-                  : `<span style="color:#4ade80;font-size:13px;font-weight:700">✓ Pago</span>`)
-              : isBoleto(row)
-                ? `<button class="btn btn-secondary fin-small" data-ok-setor="${esc(row.id)}" type="button">OK</button>`
-                : `<button class="btn btn-primary fin-small" data-pagar-setor="${esc(row.id)}" type="button">PAGAR</button>`}
-            ${isRowPago(row) ? '' : `<button class="btn fin-small fin-btn-recusar" data-recusar-setor="${esc(row.id)}" type="button">RECUSAR</button>`}
+            ${isBoleto(row)
+              ? `<button class="btn btn-secondary fin-small" data-ok-setor="${esc(row.id)}" type="button">OK</button>`
+              : `<button class="btn btn-primary fin-small" data-pagar-setor="${esc(row.id)}" type="button">PAGAR</button>`}
+            <button class="btn fin-small fin-btn-recusar" data-recusar-setor="${esc(row.id)}" type="button">RECUSAR</button>
           </div>
         </td>
       </tr>`;
@@ -1653,11 +1626,10 @@ initProtectedPage('Financeiro', (content, userContext) => {
     }
 
     const dados = row.dados_pagamento || row.link_pagamento || row.chave_pix || row.boleto_url || '';
-    const pixPayload = isPix(row) && dados ? buildPixPayload(dados, row.favorecido || row.fornecedor || row.beneficiario || '', 'BRASIL', row.valor || row.valor_total || row.total) : '';
     const pixSection = isPix(row) && dados ? `
       <div style="text-align:center;margin:16px 0;padding:16px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);border-radius:14px">
         <p style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px">QR Code PIX</p>
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixPayload)}" alt="QR Code PIX" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:6px;display:block;margin:0 auto">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(dados)}" alt="QR Code PIX" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:6px;display:block;margin:0 auto">
         <p style="color:#e2e8f0;font-size:13px;margin:10px 0 0;word-break:break-all">${esc(dados)}</p>
       </div>` : '';
 
