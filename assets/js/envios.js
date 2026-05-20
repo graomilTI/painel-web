@@ -365,10 +365,10 @@ function renderCotacao() {
         </div>
         <div class="form-group full-width">
           <label>Destinatário (preenche CEP de Destino)</label>
-          <select id="select-dest-cotacao">
-            <option value="">— selecione para preencher o CEP —</option>
-            ${state.destinatarios.filter(d => d.cep && d.cep !== '00000-000').map(d => `<option value="${esc(d.cep)}">${esc(d.nome)}${d.cidade ? ` — ${esc(d.cidade)}/${esc(d.uf)}` : ''} (${esc(d.cep)})</option>`).join('')}
-          </select>
+          <div class="dest-ac-wrap">
+            <input type="text" id="search-dest-cotacao" placeholder="Digite o nome do destinatário..." autocomplete="off" />
+            <ul class="dest-ac-drop" id="dest-ac-drop"></ul>
+          </div>
         </div>
         <div class="form-group">
           <label>CEP de Destino *</label>
@@ -409,7 +409,6 @@ function renderCotacao() {
       <div id="cotacao-resultado" style="margin-top:20px"></div>
     </div>`;
 }
-
 function renderRemetentes() {
   const rows = state.remetentes.map(r => `
     <tr>
@@ -616,12 +615,36 @@ function bindTabEvents() {
     renderTab();
   });
 
-  // Destinatário → preenche CEP destino na cotação
-  area.querySelector('#select-dest-cotacao')?.addEventListener('change', e => {
-    if (!e.target.value) return;
-    const inp = area.querySelector('[name=cep_destino]');
-    if (inp) inp.value = e.target.value;
+  // Autocomplete destinatário na cotação
+  const _acInp = area.querySelector('#search-dest-cotacao');
+  const _acDrop = area.querySelector('#dest-ac-drop');
+  const _acDests = state.destinatarios.filter(d => d.cep && d.cep !== '00000-000');
+  function _acShow(matches) {
+    if (!_acDrop) return;
+    if (!matches.length) { _acDrop.classList.remove('open'); return; }
+    _acDrop.innerHTML = matches.slice(0, 25).map(d =>
+      `<li class="dest-ac-item" data-cep="${esc(d.cep)}" data-nome="${esc(d.nome)}"><span>${esc(d.nome)}</span><small>${d.cidade ? `${esc(d.cidade)}/${esc(d.uf)} — ` : ''}${esc(d.cep)}</small></li>`
+    ).join('');
+    _acDrop.classList.add('open');
+  }
+  _acInp?.addEventListener('input', () => {
+    const q = _acInp.value.toLowerCase().trim();
+    _acShow(q ? _acDests.filter(d => d.nome.toLowerCase().includes(q)) : []);
   });
+  _acInp?.addEventListener('focus', () => {
+    const q = _acInp.value.toLowerCase().trim();
+    if (q) _acShow(_acDests.filter(d => d.nome.toLowerCase().includes(q)));
+  });
+  _acDrop?.addEventListener('mousedown', e => {
+    const item = e.target.closest('.dest-ac-item');
+    if (!item) return;
+    e.preventDefault();
+    if (_acInp) _acInp.value = item.dataset.nome;
+    const cepInp = area.querySelector('[name=cep_destino]');
+    if (cepInp) cepInp.value = item.dataset.cep;
+    _acDrop.classList.remove('open');
+  });
+  _acInp?.addEventListener('blur', () => _acDrop?.classList.remove('open'));
 
   // Cotação form
   area.querySelector('#form-cotacao')?.addEventListener('submit', async (e) => {
@@ -857,6 +880,27 @@ initProtectedPage('Envios', async (content) => {
       .envios-tab{border:1px solid rgba(111,208,165,.22);background:#15152a;color:#e2e2f0;border-radius:999px;padding:10px 18px;font-weight:800;cursor:pointer;font-size:.85rem;transition:background .15s,border-color .15s}
       .envios-tab:hover{background:rgba(111,208,165,.08);border-color:rgba(111,208,165,.35)}
       .envios-tab.active{background:rgba(34,197,94,.22);border-color:rgba(111,208,165,.45);color:#dcfce7}
+      .form-section{background:rgba(4,13,9,.42);border:1px solid rgba(45,212,160,.10);border-radius:18px;padding:24px 28px;margin-bottom:16px}
+      .form-section h3{margin:0 0 20px;font-size:1.05rem;font-weight:800;color:var(--text);letter-spacing:.01em}
+      .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px}
+      .form-group{display:flex;flex-direction:column;gap:6px}
+      .form-group.full-width{grid-column:span 2}
+      .form-group label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(200,230,210,.50)}
+      .form-group input,.form-group select,.form-group textarea{padding:11px 14px;border:1px solid rgba(45,212,160,.12);border-radius:14px;background:rgba(8,22,17,.58);color:var(--text);outline:none;font:inherit;font-size:.92rem;color-scheme:dark;transition:border-color .15s,box-shadow .15s;width:100%;box-sizing:border-box}
+      .form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:rgba(45,212,160,.30);box-shadow:0 0 0 3px rgba(45,212,160,.08);background:rgba(5,17,11,.72)}
+      .form-group input::placeholder{color:rgba(200,230,210,.30)}
+      .form-group select option{background:#0d1a12;color:var(--text)}
+      .form-actions{display:flex;gap:10px;align-items:center;grid-column:span 2;padding-top:6px}
+      .dest-ac-wrap{position:relative}
+      .dest-ac-wrap input{width:100%;box-sizing:border-box}
+      .dest-ac-drop{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:300;list-style:none;margin:0;padding:4px 0;border:1px solid rgba(45,212,160,.22);border-radius:13px;background:#0b1a11;box-shadow:0 8px 32px rgba(0,0,0,.55);max-height:240px;overflow-y:auto}
+      .dest-ac-drop.open{display:block}
+      .dest-ac-item{padding:9px 14px;cursor:pointer;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid rgba(45,212,160,.06);list-style:none}
+      .dest-ac-item:last-child{border-bottom:none}
+      .dest-ac-item:hover{background:rgba(45,212,160,.10)}
+      .dest-ac-item span{font-size:13px;color:var(--text);font-weight:600}
+      .dest-ac-item small{font-size:11px;color:rgba(180,220,195,.50)}
+      @media(max-width:720px){.form-grid{grid-template-columns:1fr}.form-group.full-width,.form-actions{grid-column:span 1}}
     </style>
     <div id="envios-feedback" class="feedback-bar" style="display:none"></div>
     <nav class="envios-tabs">
