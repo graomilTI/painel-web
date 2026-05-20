@@ -310,6 +310,7 @@ function renderEnviados() {
       <td>${p.confirmado_em ? new Date(p.confirmado_em).toLocaleString('pt-BR') : '-'}</td>
       <td class="td-actions">
         ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
+        ${p.status === 'ERRO' ? `<button class="btn btn-sm btn-warn" data-retentar="${p.id}">Retentar</button>` : ''}
       </td>
     </tr>`).join('');
 
@@ -617,6 +618,25 @@ function bindTabEvents() {
   area.querySelector('#btn-refresh-enviados')?.addEventListener('click', async () => {
     await loadAll();
     renderTab();
+  });
+
+  // Retentar postagem com ERRO
+  area.querySelectorAll('[data-retentar]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.retentar;
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+      await supabase.from('envios_postagens').update({ status: 'RASCUNHO', observacoes: null }).eq('id', id);
+      const result = await callFn('correios-prepostagem', { postagem_id: id });
+      if (result.ok) {
+        setFeedback(`Enviado! Rastreio: ${result.numero_objeto}`);
+      } else {
+        setFeedback('Erro: ' + result.error, true);
+        await supabase.from('envios_postagens').update({ status: 'ERRO', observacoes: result.error }).eq('id', id);
+      }
+      await loadAll();
+      renderTab();
+    });
   });
 
   // Rastrear
