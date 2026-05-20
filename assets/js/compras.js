@@ -103,13 +103,13 @@ function renderItemSugestoes(){
   if(!input || !box) return;
   const q=norm(input.value);
   const exact=findCatalogoItem(input.value);
-  if(tipo) tipo.value=exact?.tipo || '';
+  if(tipo && exact) tipo.value=exact.tipo;
   updateDetalheState(exact?.material || '');
   if(q.length<1){ box.innerHTML=''; return; }
   const list=CATALOGO.filter(i=>norm(i.material).includes(q)).slice(0,10);
   box.innerHTML=list.length
     ? list.map(i=>`<button type="button" data-item-sug="${esc(i.material)}"><span>${esc(i.material)}</span><small>${esc(i.tipo)}</small></button>`).join('')
-    : '<div class="cmp-no-sug">Nenhuma sugestão encontrada.</div>';
+    : '<div class="cmp-no-sug">Não está no catálogo — selecione o tipo e adicione como novo material.</div>';
   box.querySelectorAll('[data-item-sug]').forEach(btn=>btn.onmousedown=(ev)=>{
     ev.preventDefault();
     selectCatalogoItem(btn.dataset.itemSug);
@@ -140,10 +140,10 @@ function bindItemForm(){
   document.getElementById('cmpAddMaterial').onclick=()=>{
     const found=findCatalogoItem(document.getElementById('cmpNovoItem')?.value || '');
     const item=currentItemForm();
-    if(!item.material){ setMsg('cmpFeedback','Digite o material e selecione uma sugestão antes de adicionar.',true); return; }
-    if(!found){ setMsg('cmpFeedback','Selecione uma sugestão de compra válida antes de adicionar.',true); return; }
-    if(itemNeedsDetail(found.material) && !item.tamanho){ setMsg('cmpFeedback','Informe o tamanho/detalhe antes de adicionar na lista.',true); return; }
-    state.itens.push({...item, material:found.material, tipo:found.tipo, _id:`${Date.now()}_${Math.random().toString(16).slice(2)}`});
+    if(!item.material){ setMsg('cmpFeedback','Digite o nome do material antes de adicionar.',true); return; }
+    if(!item.tipo){ setMsg('cmpFeedback','Selecione o tipo do material antes de adicionar.',true); return; }
+    if(found && itemNeedsDetail(found.material) && !item.tamanho){ setMsg('cmpFeedback','Informe o tamanho/detalhe antes de adicionar na lista.',true); return; }
+    state.itens.push({...item, _id:`${Date.now()}_${Math.random().toString(16).slice(2)}`});
     resetItemForm();
     renderItensList();
     setMsg('cmpFeedback','Material adicionado na lista.');
@@ -271,7 +271,7 @@ initProtectedPage('Compras', async (content, userContext)=>{
       <div class="cmp-add-box">
         <div class="cmp-field"><label>Un.</label><input id="cmpNovaUn" type="number" min="1" value="1"></div>
         <div class="cmp-field cmp-autocomplete-wrap"><label>Item</label><input id="cmpNovoItem" type="text" placeholder="Comece a digitar o material..." autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpItemSug"></div></div>
-        <div class="cmp-field"><label>Tipo</label><input id="cmpNovoTipo" readonly></div>
+        <div class="cmp-field"><label>Tipo</label><select id="cmpNovoTipo"><option value="">-- Tipo --</option><option value="EPI">EPI</option><option value="Patrimonio">Patrimônio</option><option value="Outros">Outros</option></select></div>
         <div class="cmp-field"><label>Tamanho/Detalhe</label><input id="cmpNovoTam" placeholder="Selecione Botina ou Peneira Individual" disabled></div>
         <div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpAddMaterial" type="button">Adicionar material</button></div>
       </div>
