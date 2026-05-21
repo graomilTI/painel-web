@@ -38,6 +38,23 @@ function badge(status) {
   return `<span class="badge badge-${cls}">${esc(STATUS_LABEL[status] ?? status)}</span>`;
 }
 
+function printPdf(b64) {
+  const bytes = atob(b64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  const blob = new Blob([arr], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  let frame = document.getElementById('pdf-print-frame');
+  if (!frame) {
+    frame = document.createElement('iframe');
+    frame.id = 'pdf-print-frame';
+    frame.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;border:none;';
+    document.body.appendChild(frame);
+  }
+  frame.onload = () => setTimeout(() => { frame.contentWindow.print(); URL.revokeObjectURL(url); }, 500);
+  frame.src = url;
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 const state = {
   tab: 'postagens',
@@ -299,8 +316,15 @@ function renderPostagens() {
 
 function renderEnviados() {
   const sent = state.postagens.filter(p => p.status !== 'RASCUNHO');
+  const canEtiqueta = p => !!(p.id_prepostagem && ['CONFIRMADO','POSTADO','EM_TRANSITO','ENTREGUE'].includes(p.status));
   const rows = sent.map(p => `
     <tr>
+      <td style="width:32px;text-align:center">
+        <input type="checkbox" class="row-sel-enviado"
+          data-id="${p.id}"
+          data-status="${p.status}"
+          data-haspp="${canEtiqueta(p) ? '1' : '0'}" />
+      </td>
       <td>${badge(p.status)}</td>
       <td>${esc(p.destinatario?.nome ?? '-')}</td>
       <td>${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}</td>
@@ -309,21 +333,29 @@ function renderEnviados() {
       <td>${p.confirmado_em ? new Date(p.confirmado_em).toLocaleString('pt-BR') : '-'}</td>
       <td class="td-actions">
         ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
-        ${p.id_prepostagem && ['CONFIRMADO','POSTADO','EM_TRANSITO','ENTREGUE'].includes(p.status) ? `<button class="btn btn-sm btn-primary" data-etiqueta="${p.id}">Etiqueta</button>` : ''}
+        ${canEtiqueta(p) ? `<button class="btn btn-sm btn-primary" data-etiqueta="${p.id}">Etiqueta</button>` : ''}
         ${p.status === 'ERRO' ? `<button class="btn btn-sm btn-secondary" data-retentar="${p.id}">Retentar</button>` : ''}
         ${p.status === 'ERRO' ? `<button class="btn btn-sm btn-danger" data-excluir-enviado="${p.id}">Excluir</button>` : ''}
       </td>
     </tr>`).join('');
 
   return `
-    <div class="toolbar" style="margin-bottom:12px">
+    <div class="toolbar" style="margin-bottom:8px">
       <button class="btn btn-secondary" id="btn-refresh-enviados">Atualizar</button>
+    </div>
+    <div id="bulk-bar" style="display:none;margin-bottom:12px;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0">
+      <span id="bulk-count" style="font-size:13px"></span>
+      <button class="btn btn-sm btn-primary" id="btn-etiqueta-lote">Etiqueta em lote</button>
+      <button class="btn btn-sm btn-danger" id="btn-excluir-lote">Excluir selecionados</button>
     </div>
     ${sent.length === 0
       ? '<p class="empty-state">Nenhuma postagem enviada ainda.</p>'
       : `<div class="table-wrapper">
           <table class="data-table">
-            <thead><tr><th>Status</th><th>Destinatário</th><th>Serviço</th><th>Código de Rastreio</th><th>Valor</th><th>Enviado em</th><th>Ações</th></tr></thead>
+            <thead><tr>
+              <th style="width:32px"><input type="checkbox" id="sel-all-enviados" title="Selecionar todos" /></th>
+              <th>Status</th><th>Destinatário</th><th>Serviço</th><th>Código de Rastreio</th><th>Valor</th><th>Enviado em</th><th>Ações</th>
+            </tr></thead>
             <tbody>${rows}</tbody>
           </table></div>`}
     <div id="rastreio-resultado" style="margin-top:16px"></div>`;
@@ -621,6 +653,71 @@ function bindTabEvents() {
     renderTab();
   });
 
+  // ── Seleção em lote ────────────────────────────────────────────────────────
+  function getCheckedEnviados() {
+    return [...area.querySelectorAll('.row-sel-enviado:checked')];
+  }
+  function updateBulkBar() {
+    const checked = getCheckedEnviados();
+    const bar = area.querySelector('#bulk-bar');
+    const countEl = area.querySelector('#bulk-count');
+    const btnEt = area.querySelector('#btn-etiqueta-lote');
+    const btnEx = area.querySelector('#btn-excluir-lote');
+    if (!bar) return;
+    if (!checked.length) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    const withPP = checked.filter(c => c.dataset.haspp === '1').length;
+    const isErro = checked.filter(c => c.dataset.status === 'ERRO').length;
+    if (countEl) countEl.textContent = `${checked.length} selecionado(s)`;
+    if (btnEt) btnEt.textContent = withPP ? `Etiqueta em lote (${withPP})` : 'Etiqueta em lote';
+    if (btnEt) btnEt.disabled = withPP === 0;
+    if (btnEx) btnEx.textContent = isErro ? `Excluir ERRO (${isErro})` : 'Excluir selecionados';
+    if (btnEx) btnEx.disabled = isErro === 0;
+  }
+
+  area.querySelector('#sel-all-enviados')?.addEventListener('change', e => {
+    area.querySelectorAll('.row-sel-enviado').forEach(c => { c.checked = e.target.checked; });
+    updateBulkBar();
+  });
+  area.querySelectorAll('.row-sel-enviado').forEach(c => {
+    c.addEventListener('change', () => {
+      const all = area.querySelector('#sel-all-enviados');
+      const cbs = area.querySelectorAll('.row-sel-enviado');
+      if (all) all.checked = [...cbs].every(cb => cb.checked);
+      updateBulkBar();
+    });
+  });
+
+  // Excluir em lote (somente ERRO)
+  area.querySelector('#btn-excluir-lote')?.addEventListener('click', async () => {
+    const toDelete = getCheckedEnviados().filter(c => c.dataset.status === 'ERRO').map(c => c.dataset.id);
+    if (!toDelete.length) return;
+    if (!confirm(`Excluir ${toDelete.length} postagem(ns) com ERRO? Esta ação não pode ser desfeita.`)) return;
+    const btn = area.querySelector('#btn-excluir-lote');
+    if (btn) btn.disabled = true;
+    const { error } = await supabase.from('envios_postagens').delete().in('id', toDelete);
+    if (error) { setFeedback('Erro ao excluir: ' + error.message, true); if (btn) btn.disabled = false; return; }
+    await loadAll(); renderTab();
+  });
+
+  // Etiqueta em lote
+  area.querySelector('#btn-etiqueta-lote')?.addEventListener('click', async () => {
+    const ids = getCheckedEnviados().filter(c => c.dataset.haspp === '1').map(c => c.dataset.id);
+    if (!ids.length) return;
+    const btn = area.querySelector('#btn-etiqueta-lote');
+    const orig = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
+    try {
+      const result = await callFn('correios-etiqueta', { postagem_ids: ids });
+      if (result.ok && result.pdf_base64) {
+        printPdf(result.pdf_base64);
+      } else {
+        setFeedback('Erro ao gerar etiqueta em lote: ' + (result.error ?? 'desconhecido'), true);
+      }
+    } catch (e) { setFeedback('Erro: ' + e.message, true); }
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  });
+
   // Retentar postagem com ERRO
   area.querySelectorAll('[data-retentar]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -653,7 +750,7 @@ function bindTabEvents() {
     });
   });
 
-  // Gerar etiqueta PDF
+  // Gerar etiqueta PDF (individual)
   area.querySelectorAll('[data-etiqueta]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.etiqueta;
@@ -661,15 +758,9 @@ function bindTabEvents() {
       btn.disabled = true;
       btn.textContent = 'Gerando...';
       try {
-        const result = await callFn('correios-etiqueta', { postagem_id: id });
+        const result = await callFn('correios-etiqueta', { postagem_ids: [id] });
         if (result.ok && result.pdf_base64) {
-          const bytes = atob(result.pdf_base64);
-          const arr = new Uint8Array(bytes.length);
-          for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-          const blob = new Blob([arr], { type: 'application/pdf' });
-          window.open(URL.createObjectURL(blob), '_blank');
-        } else if (result.ok && result.url) {
-          window.open(result.url, '_blank');
+          printPdf(result.pdf_base64);
         } else {
           setFeedback('Erro ao gerar etiqueta: ' + (result.error ?? 'desconhecido'), true);
         }
