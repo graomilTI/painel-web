@@ -465,24 +465,41 @@ function renderEtiquetar() {
 function renderEnviados() {
   const sent = state.postagens.filter(p => ['POSTADO', 'EM_TRANSITO'].includes(p.status));
 
-  const cards = sent.map(p => {
-    const dt = p.confirmado_em
-      ? new Date(p.confirmado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-      : '';
+  const header = `<div class="envios-row-header">
+    <span>Data</span><span>Destinatário</span><span>Código de Rastreio</span><span>Status</span><span>Previsão</span>
+  </div>`;
+
+  const rows = sent.map(p => {
     const dest = p.destinatario ?? {};
     const localidade = [dest.cidade, dest.uf].filter(Boolean).join('/');
+    const dt = p.confirmado_em ? new Date(p.confirmado_em) : null;
+    const dtStr = dt ? dt.toLocaleDateString('pt-BR') : '-';
+    const hrStr = dt ? dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    const prazo = p.prazo_entrega
+      ? new Date(p.prazo_entrega).toLocaleDateString('pt-BR')
+      : (p.prazo_dias && dt)
+        ? new Date(dt.getTime() + p.prazo_dias * 86_400_000).toLocaleDateString('pt-BR')
+        : '-';
     return `
-    <div class="envios-card">
-      <div class="envios-card-status">${badge(p.status)}</div>
-      <div class="envios-card-body">
-        <div class="envios-card-nome">${esc(dest.nome ?? '-')}</div>
-        <div class="envios-card-servico">${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}${localidade ? ' &nbsp;·&nbsp; ' + esc(localidade) : ''}${p.peso_gramas ? ' &nbsp;·&nbsp; ' + p.peso_gramas + 'g' : ''}</div>
-        ${p.numero_objeto ? `<div class="envios-card-rastreio">${esc(p.numero_objeto)}</div>` : '<div class="envios-card-meta" style="margin-top:2px">Sem código de rastreio</div>'}
+    <div class="envios-row">
+      <div class="envios-col-data">
+        <span class="envios-data-main">${dtStr}</span>
+        ${hrStr ? `<span class="envios-data-sub">${hrStr}</span>` : ''}
       </div>
-      <div class="envios-card-aside">
-        ${p.valor_postagem ? `<span class="envios-card-valor">${MONEY.format(p.valor_postagem)}</span>` : ''}
-        ${dt ? `<span class="envios-card-meta">${dt}</span>` : ''}
-        ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
+      <div>
+        <div class="envios-nome" title="${esc(dest.nome ?? '')}">${esc(dest.nome ?? '-')}</div>
+        <div class="envios-sub">${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}${localidade ? ' · ' + esc(localidade) : ''}</div>
+        ${p.valor_postagem ? `<div class="envios-sub">${MONEY.format(p.valor_postagem)}</div>` : ''}
+      </div>
+      <div>
+        ${p.numero_objeto
+          ? `<span class="envios-rastreio-code">${esc(p.numero_objeto)}</span>`
+          : '<span class="envios-sub">—</span>'}
+      </div>
+      <div>${badge(p.status)}</div>
+      <div class="envios-col-prev">
+        <span class="envios-data-main">${prazo}</span>
+        ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" style="margin-top:6px;align-self:flex-start" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -494,7 +511,7 @@ function renderEnviados() {
     </div>
     ${sent.length === 0
       ? '<p class="empty-state">Nenhum envio em trânsito. Gere etiquetas na aba <strong>Etiquetar</strong>.</p>'
-      : `<div class="envios-card-list">${cards}</div>`}
+      : header + `<div class="envios-row-list">${rows}</div>`}
     <div id="rastreio-resultado" style="margin-top:16px"></div>`;
 }
 
@@ -503,28 +520,46 @@ function renderHistorico() {
   const entregues = hist.filter(p => p.status === 'ENTREGUE').length;
   const devolvidos = hist.filter(p => p.status === 'DEVOLVIDO').length;
 
-  const cards = hist.map(p => {
+  const header = `<div class="envios-row-header">
+    <span>Data</span><span>Destinatário</span><span>Código de Rastreio</span><span>Status</span><span>Previsão</span>
+  </div>`;
+
+  const rows = hist.map(p => {
     const dest = p.destinatario ?? {};
     const localidade = [dest.cidade, dest.uf].filter(Boolean).join('/');
-    const isDev = p.status === 'DEVOLVIDO';
-    const dt = p.confirmado_em ? new Date(p.confirmado_em).toLocaleDateString('pt-BR') : '';
+    const dt = p.confirmado_em ? new Date(p.confirmado_em) : null;
+    const dtStr = dt ? dt.toLocaleDateString('pt-BR') : '-';
+    const hrStr = dt ? dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    const prazo = p.prazo_entrega
+      ? new Date(p.prazo_entrega).toLocaleDateString('pt-BR')
+      : (p.prazo_dias && dt)
+        ? new Date(dt.getTime() + p.prazo_dias * 86_400_000).toLocaleDateString('pt-BR')
+        : '-';
     return `
-    <div class="envios-card${isDev ? ' envios-card-devolvido' : ''}">
-      <div class="envios-card-status">${badge(p.status)}</div>
-      <div class="envios-card-body">
-        <div class="envios-card-nome">${esc(dest.nome ?? '-')}</div>
-        <div class="envios-card-servico">${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}${localidade ? ' &nbsp;·&nbsp; ' + esc(localidade) : ''}</div>
-        ${p.numero_objeto ? `<div class="envios-card-rastreio">${esc(p.numero_objeto)}</div>` : ''}
+    <div class="envios-row${p.status === 'DEVOLVIDO' ? ' envios-row-devolvido' : ''}">
+      <div class="envios-col-data">
+        <span class="envios-data-main">${dtStr}</span>
+        ${hrStr ? `<span class="envios-data-sub">${hrStr}</span>` : ''}
       </div>
-      <div class="envios-card-aside">
-        ${p.valor_postagem ? `<span class="envios-card-valor">${MONEY.format(p.valor_postagem)}</span>` : ''}
-        ${dt ? `<span class="envios-card-meta">${dt}</span>` : ''}
+      <div>
+        <div class="envios-nome" title="${esc(dest.nome ?? '')}">${esc(dest.nome ?? '-')}</div>
+        <div class="envios-sub">${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}${localidade ? ' · ' + esc(localidade) : ''}</div>
+        ${p.valor_postagem ? `<div class="envios-sub">${MONEY.format(p.valor_postagem)}</div>` : ''}
+      </div>
+      <div>
+        ${p.numero_objeto
+          ? `<span class="envios-rastreio-code">${esc(p.numero_objeto)}</span>`
+          : '<span class="envios-sub">—</span>'}
+      </div>
+      <div>${badge(p.status)}</div>
+      <div class="envios-col-prev">
+        <span class="envios-data-main">${prazo}</span>
       </div>
     </div>`;
   }).join('');
 
   const summary = hist.length
-    ? `<span style="font-size:13px;color:rgba(180,220,195,.50)">${hist.length} registro(s)${entregues ? ' · ' + entregues + ' entregue(s)' : ''}${devolvidos ? ' · ' + devolvidos + ' devolvido(s)' : ''}</span>`
+    ? `<span style="font-size:13px;color:rgba(180,220,195,.48)">${hist.length} total${entregues ? ' · ' + entregues + ' entregue(s)' : ''}${devolvidos ? ' · ' + devolvidos + ' devolvido(s)' : ''}</span>`
     : '';
 
   return `
@@ -534,7 +569,7 @@ function renderHistorico() {
     </div>
     ${hist.length === 0
       ? '<p class="empty-state">Nenhum envio concluído ou devolvido ainda.</p>'
-      : `<div class="envios-card-list">${cards}</div>`}`;
+      : header + `<div class="envios-row-list">${rows}</div>`}`;
 }
 
 // (renderNovaPostagem removida — formulário integrado em renderPostagens)
@@ -1372,20 +1407,20 @@ initProtectedPage('Correios', async (content) => {
       .dest-ac-item span{font-size:13px;color:var(--text);font-weight:600}
       .dest-ac-item small{font-size:11px;color:rgba(180,220,195,.50)}
       .td-actions{white-space:nowrap;display:flex;gap:4px;align-items:center;flex-wrap:nowrap}
-      .envios-card-list{display:flex;flex-direction:column;gap:8px}
-      .envios-card{background:rgba(4,13,9,.42);border:1px solid rgba(45,212,160,.09);border-radius:14px;padding:14px 18px;display:grid;grid-template-columns:auto 1fr auto;gap:10px 18px;align-items:center;transition:border-color .15s,background .15s}
-      .envios-card:hover{border-color:rgba(45,212,160,.22);background:rgba(4,13,9,.60)}
-      .envios-card-devolvido{border-color:rgba(239,68,68,.14)}
-      .envios-card-devolvido:hover{border-color:rgba(239,68,68,.28)}
-      .envios-card-status{align-self:start;padding-top:2px}
-      .envios-card-body{display:flex;flex-direction:column;gap:4px;min-width:0}
-      .envios-card-nome{font-size:.95rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .envios-card-servico{font-size:.77rem;color:rgba(180,220,195,.48);line-height:1.4}
-      .envios-card-rastreio{font-family:ui-monospace,'Cascadia Code',Consolas,monospace;font-size:.76rem;letter-spacing:.07em;color:rgba(45,212,160,.82);background:rgba(45,212,160,.07);border:1px solid rgba(45,212,160,.12);padding:2px 8px;border-radius:6px;display:inline-block;margin-top:3px}
-      .envios-card-aside{display:flex;flex-direction:column;align-items:flex-end;gap:5px;min-width:90px}
-      .envios-card-valor{font-size:.85rem;font-weight:700;color:rgba(200,230,210,.85)}
-      .envios-card-meta{font-size:.74rem;color:rgba(180,220,195,.38);text-align:right;white-space:nowrap}
-      @media(max-width:720px){.form-grid{grid-template-columns:1fr}.form-group.full-width,.form-actions{grid-column:span 1}.envios-card{grid-template-columns:auto 1fr}.envios-card-aside{grid-column:2;flex-direction:row;align-items:center;flex-wrap:wrap;justify-content:flex-start}}
+      .envios-row-list{display:flex;flex-direction:column;gap:6px}
+      .envios-row-header{display:grid;grid-template-columns:110px 1fr 170px 120px 110px;gap:8px 14px;padding:0 18px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(180,220,195,.28)}
+      .envios-row{display:grid;grid-template-columns:110px 1fr 170px 120px 110px;gap:8px 14px;align-items:center;background:rgba(4,13,9,.42);border:1px solid rgba(45,212,160,.09);border-radius:12px;padding:12px 18px;transition:border-color .15s,background .15s}
+      .envios-row:hover{border-color:rgba(45,212,160,.20);background:rgba(4,13,9,.58)}
+      .envios-row-devolvido{border-color:rgba(239,68,68,.14)}
+      .envios-row-devolvido:hover{border-color:rgba(239,68,68,.28)}
+      .envios-col-data,.envios-col-prev{display:flex;flex-direction:column;gap:3px}
+      .envios-data-main{font-size:.82rem;color:rgba(200,230,210,.78);font-variant-numeric:tabular-nums;line-height:1.3}
+      .envios-data-sub{font-size:.70rem;color:rgba(180,220,195,.35)}
+      .envios-nome{font-size:.92rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .envios-sub{font-size:.73rem;color:rgba(180,220,195,.44);margin-top:2px;line-height:1.35}
+      .envios-rastreio-code{font-family:ui-monospace,'Cascadia Code',Consolas,monospace;font-size:.75rem;letter-spacing:.07em;color:rgba(45,212,160,.84);background:rgba(45,212,160,.07);border:1px solid rgba(45,212,160,.13);padding:3px 8px;border-radius:6px;display:inline-block;white-space:nowrap}
+      @media(max-width:960px){.envios-row,.envios-row-header{grid-template-columns:100px 1fr 150px 110px 100px}}
+      @media(max-width:720px){.form-grid{grid-template-columns:1fr}.form-group.full-width,.form-actions{grid-column:span 1}.envios-row,.envios-row-header{grid-template-columns:1fr 1fr}.envios-col-rastreio{grid-column:span 2}.envios-col-data{order:-1}}
     </style>
     <div id="envios-feedback" class="feedback-bar" style="display:none"></div>
     <nav class="envios-tabs">
