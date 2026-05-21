@@ -188,6 +188,48 @@ function openCelularModal(baseItem){
   };
 }
 
+function openEpiColabModal(baseItem){
+  const modal=document.getElementById('cmpCelularModal');
+  modal.innerHTML=`<div class="cmp-cel-card">
+    <div class="section-head">
+      <div><h3>${esc(baseItem.material)}</h3><p class="muted">Informe o colaborador destinatário deste EPI. Deixe em branco se for para estoque.</p></div>
+      <button class="btn btn-secondary" id="epiClose" type="button">Fechar</button>
+    </div>
+    <div class="cmp-field cmp-autocomplete-wrap mt-16">
+      <label>Colaborador (opcional)</label>
+      <input id="epiColab" type="text" placeholder="Digite o nome do colaborador..." autocomplete="off">
+      <div class="cmp-suggest cmp-item-suggest" id="epiColabSug"></div>
+    </div>
+    <div class="cmp-actions mt-16">
+      <button class="btn btn-primary" id="epiConfirmar" type="button">Adicionar à lista</button>
+      <button class="btn btn-secondary" id="epiCancelar" type="button">Cancelar</button>
+    </div>
+    <span class="cmp-feedback" id="epiColabFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  modal.querySelector('#epiClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#epiCancelar').onclick=()=>modal.classList.remove('open');
+  const colabInput=modal.querySelector('#epiColab');
+  const colabSug=modal.querySelector('#epiColabSug');
+  let selectedColab=null;
+  colabInput.addEventListener('input',()=>{
+    selectedColab=null;
+    const q=norm(colabInput.value); if(q.length<2){colabSug.innerHTML='';return;}
+    const list=state.colaboradores.filter(c=>norm(c.nome).includes(q)).slice(0,10);
+    colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
+    colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
+  });
+  colabInput.addEventListener('blur',()=>setTimeout(()=>{colabSug.innerHTML='';},160));
+  modal.querySelector('#epiConfirmar').onclick=()=>{
+    const colab=selectedColab||(colabInput.value.trim()?{id:null,nome:colabInput.value.trim()}:null);
+    state.itens.push({...baseItem,_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,colaborador_id:colab?.id||null,colaborador_nome:colab?.nome||null});
+    resetItemForm();
+    renderItensList();
+    setMsg('cmpFeedback',colab?`EPI adicionado para ${colab.nome}.`:'EPI adicionado (sem colaborador informado).');
+    modal.classList.remove('open');
+  };
+}
+
 function bindItemForm(){
   const input=document.getElementById('cmpNovoItem');
   const box=document.getElementById('cmpItemSug');
@@ -208,6 +250,7 @@ function bindItemForm(){
     if(!item.tipo){ setMsg('cmpFeedback','Selecione o tipo do material antes de adicionar.',true); return; }
     if(found && itemNeedsDetail(found.material) && !item.tamanho){ setMsg('cmpFeedback','Informe o tamanho/detalhe antes de adicionar na lista.',true); return; }
     if(norm(item.material)==='celular'){ openCelularModal(item); return; }
+    if(item.tipo==='EPI'){ openEpiColabModal(item); return; }
     state.itens.push({...item, _id:`${Date.now()}_${Math.random().toString(16).slice(2)}`});
     resetItemForm();
     renderItensList();
@@ -223,7 +266,11 @@ function renderItensList(){
   }
   body.innerHTML=state.itens.map(i=>{
     const isCelular=norm(i.material)==='celular';
-    const matLabel=isCelular&&i.colaborador_nome?`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)} · ${i._metodo==='parcelado'?`${i._parcelas||1}x`:'À vista'}</small>`:esc(i.material);
+    const isEpiItem=i.tipo==='EPI';
+    let matLabel;
+    if(isCelular&&i.colaborador_nome) matLabel=`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)} · ${i._metodo==='parcelado'?`${i._parcelas||1}x`:'À vista'}</small>`;
+    else if(isEpiItem&&i.colaborador_nome) matLabel=`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)}</small>`;
+    else matLabel=esc(i.material);
     return `<tr data-item-id="${esc(i._id)}"><td>${esc(i.unidade||i.quantidade||1)}</td><td>${matLabel}</td><td>${esc(i.tipo)}</td><td>${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`;
   }).join('');
   body.querySelectorAll('[data-del-item]').forEach(btn=>btn.onclick=()=>{
