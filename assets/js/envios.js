@@ -309,7 +309,9 @@ function renderEnviados() {
       <td>${p.confirmado_em ? new Date(p.confirmado_em).toLocaleString('pt-BR') : '-'}</td>
       <td class="td-actions">
         ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
+        ${p.id_prepostagem && ['CONFIRMADO','POSTADO','EM_TRANSITO','ENTREGUE'].includes(p.status) ? `<button class="btn btn-sm btn-primary" data-etiqueta="${p.id}">Etiqueta</button>` : ''}
         ${p.status === 'ERRO' ? `<button class="btn btn-sm btn-secondary" data-retentar="${p.id}">Retentar</button>` : ''}
+        ${p.status === 'ERRO' ? `<button class="btn btn-sm btn-danger" data-excluir-enviado="${p.id}">Excluir</button>` : ''}
       </td>
     </tr>`).join('');
 
@@ -636,6 +638,44 @@ function bindTabEvents() {
       }
       await loadAll();
       renderTab();
+    });
+  });
+
+  // Excluir postagem com ERRO
+  area.querySelectorAll('[data-excluir-enviado]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Excluir esta postagem? Esta ação não pode ser desfeita.')) return;
+      const id = btn.dataset.excluirEnviado;
+      btn.disabled = true;
+      const { error } = await supabase.from('envios_postagens').delete().eq('id', id);
+      if (error) { setFeedback('Erro ao excluir: ' + error.message, true); return; }
+      await loadAll(); renderTab();
+    });
+  });
+
+  // Gerar etiqueta PDF
+  area.querySelectorAll('[data-etiqueta]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.etiqueta;
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Gerando...';
+      try {
+        const result = await callFn('correios-etiqueta', { postagem_id: id });
+        if (result.ok && result.pdf_base64) {
+          const bytes = atob(result.pdf_base64);
+          const arr = new Uint8Array(bytes.length);
+          for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+          const blob = new Blob([arr], { type: 'application/pdf' });
+          window.open(URL.createObjectURL(blob), '_blank');
+        } else if (result.ok && result.url) {
+          window.open(result.url, '_blank');
+        } else {
+          setFeedback('Erro ao gerar etiqueta: ' + (result.error ?? 'desconhecido'), true);
+        }
+      } catch (e) { setFeedback('Erro: ' + e.message, true); }
+      btn.disabled = false;
+      btn.textContent = orig;
     });
   });
 
