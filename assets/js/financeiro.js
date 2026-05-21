@@ -1614,6 +1614,37 @@ initProtectedPage('Financeiro', (content, userContext) => {
     return parts.join('<br>') || `Solicitação de ${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}`;
   }
 
+  function crc16Pix(str) {
+    let crc = 0xFFFF;
+    for (const ch of str) {
+      crc ^= ch.charCodeAt(0) << 8;
+      for (let i = 0; i < 8; i++) crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+    }
+    return crc;
+  }
+
+  function gerarPayloadPix(chave, { valor, nome, cidade } = {}) {
+    const tlv = (id, v) => `${id}${String(v.length).padStart(2, '0')}${v}`;
+    const gui = tlv('00', 'BR.GOV.BCB.PIX') + tlv('01', chave);
+    const valorStr = valor ? String(parseFloat(valor).toFixed(2)) : '';
+    const nomeLimpo = (nome || 'Pagamento PIX').replace(/[^A-Za-z0-9 ]/g, ' ').trim().substring(0, 25);
+    const cidadeLimpa = (cidade || 'BRASIL').replace(/[^A-Za-z0-9 ]/g, ' ').trim().substring(0, 15);
+    const payload = [
+      tlv('00', '01'),
+      tlv('01', '12'),
+      tlv('26', gui),
+      tlv('52', '0000'),
+      tlv('53', '986'),
+      valorStr ? tlv('54', valorStr) : '',
+      tlv('58', 'BR'),
+      tlv('59', nomeLimpo),
+      tlv('60', cidadeLimpa),
+      tlv('62', tlv('05', '***')),
+      '6304',
+    ].join('');
+    return payload + crc16Pix(payload).toString(16).toUpperCase().padStart(4, '0');
+  }
+
   function abrirModalComprovantePagamento(id) {
     const row = getPagamentoRowById(id);
     if (!row) return;
@@ -1629,7 +1660,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
     const pixSection = isPix(row) && dados ? `
       <div style="text-align:center;margin:16px 0;padding:16px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);border-radius:14px">
         <p style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px">QR Code PIX</p>
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(dados)}" alt="QR Code PIX" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:6px;display:block;margin:0 auto">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(gerarPayloadPix(dados, { valor: row.valor || row.valor_total || row.total, nome: row.favorecido_nome || row.fornecedor || row.favorecido || row.beneficiario, cidade: 'BRASIL' }))}" alt="QR Code PIX" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:6px;display:block;margin:0 auto">
         <p style="color:#e2e8f0;font-size:13px;margin:10px 0 0;word-break:break-all">${esc(dados)}</p>
       </div>` : '';
 
