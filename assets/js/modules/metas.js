@@ -3,9 +3,10 @@
  * Padrão do projeto: IIFE + window.METAS.openHome(container, { auth, api, onBack })
  *
  * Regras oficiais:
- * - Produção usada para bater meta = producao_snapshot.tons (Produção Diária)
- * - Não usar Resultado Diário, embarcado nem total_embarcado_mais_teste
- * - Metas cadastradas em public.metas_producao
+ * - Produção usada para bater meta = Relatório de Produção Diária
+ * - Tabela: public.producao_snapshot
+ * - Coluna: tons
+ * - Não usar embarcado, total_embarcado_mais_teste nem views do Resultado Diário
  */
 
 (function () {
@@ -137,77 +138,6 @@
       .metas-filter-card {
         padding: 16px;
         margin-bottom: 16px;
-      }
-
-      .metas-period-banner {
-        margin: -2px 0 16px;
-        padding: 14px 16px;
-        border: 1px solid rgba(34, 197, 94, .28);
-        border-radius: 18px;
-        background: linear-gradient(135deg, rgba(22, 101, 52, .26), rgba(15, 23, 42, .78));
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: center;
-      }
-
-      .metas-period-banner strong {
-        display: block;
-        font-size: 18px;
-        letter-spacing: -.02em;
-        color: #dcfce7;
-      }
-
-      .metas-period-banner span {
-        display: block;
-        margin-top: 3px;
-        color: var(--metas-muted);
-        font-size: 12px;
-      }
-
-      .metas-period-chip {
-        border: 1px solid rgba(74, 222, 128, .36);
-        background: rgba(22, 101, 52, .42);
-        color: #ecfdf5;
-        border-radius: 999px;
-        padding: 8px 12px;
-        font-size: 12px;
-        font-weight: 900;
-        white-space: nowrap;
-      }
-
-      .metas-period-config {
-        margin-bottom: 16px;
-        padding: 16px;
-        border: 1px solid rgba(34, 197, 94, .28);
-        border-radius: 22px;
-        background: linear-gradient(135deg, rgba(22, 101, 52, .20), rgba(2, 6, 23, .82));
-      }
-
-      .metas-period-config-title {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: center;
-        margin-bottom: 12px;
-      }
-
-      .metas-period-config-title h2 {
-        margin: 0;
-        font-size: 18px;
-      }
-
-      .metas-period-config-title p {
-        margin: 4px 0 0;
-        color: var(--metas-muted);
-        font-size: 12px;
-      }
-
-      .metas-period-config-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr auto;
-        gap: 10px;
-        align-items: end;
       }
 
       .metas-filters {
@@ -587,8 +517,7 @@
         .metas-grid-2,
         .metas-form-grid,
         .metas-suggest-card,
-        .metas-close-panel,
-        .metas-period-config-grid {
+        .metas-close-panel {
           grid-template-columns: 1fr 1fr;
         }
       }
@@ -603,15 +532,8 @@
         .metas-grid-2,
         .metas-form-grid,
         .metas-suggest-card,
-        .metas-close-panel,
-        .metas-period-config-grid {
+        .metas-close-panel {
           grid-template-columns: 1fr;
-        }
-
-        .metas-period-banner,
-        .metas-period-config-title {
-          align-items: flex-start;
-          flex-direction: column;
         }
 
         .metas-actions {
@@ -822,7 +744,7 @@
         <div class="metas-card">
           <div class="metas-card-label">Produzido</div>
           <div class="metas-card-value">${fmtTons(total.produzido)}</div>
-          <div class="metas-card-sub">Base: Produção Diária</div>
+          <div class="metas-card-sub">Base: toneladas classificadas</div>
         </div>
         <div class="metas-card">
           <div class="metas-card-label">Restante</div>
@@ -901,31 +823,6 @@
 
   function renderRegionalTable(rows) {
     return `
-      <div class="metas-period-config">
-        <div class="metas-period-config-title">
-          <div>
-            <h2>Definir meta de ${getMonthName(state.mes)}/${state.ano}</h2>
-            <p>Esse é o mês que será gravado ao clicar em Salvar lista ou Fechar meta.</p>
-          </div>
-          <span class="metas-period-chip">Período ativo</span>
-        </div>
-        <div class="metas-period-config-grid">
-          <div class="metas-field">
-            <label>Mês da meta</label>
-            <select data-metas-config-period="mes">
-              ${MONTHS.map(m => `<option value="${m.value}" ${Number(state.mes) === Number(m.value) ? 'selected' : ''}>${m.label}</option>`).join('')}
-            </select>
-          </div>
-          <div class="metas-field">
-            <label>Ano da meta</label>
-            <select data-metas-config-period="ano">
-              ${years.map(y => `<option value="${y}" ${Number(state.ano) === y ? 'selected' : ''}>${y}</option>`).join('')}
-            </select>
-          </div>
-          <button class="metas-btn" type="button" data-metas-config-apply>Carregar mês</button>
-        </div>
-      </div>
-
       <div class="metas-table-card">
         <div class="metas-table-top">
           <h2>Metas por Regional</h2>
@@ -1081,7 +978,7 @@
             <label>Valor estimado do mês</label>
             <input class="metas-edit-input" data-metas-estimativa type="number" step="0.01" min="0" value="${escapeHtml(state.metaEstimativa)}" placeholder="Ex.: 1000000" ${fechado ? 'disabled' : ''} />
             <p class="metas-config-hint">
-              Informe a meta total do mês e clique em sugerir. A distribuição é proporcional à Produção Diária atual de cada coordenação; se ainda não houver produção, divide igualmente.
+              Informe a meta total do mês e clique em sugerir. A distribuição é proporcional à produção atual de cada coordenação; se ainda não houver produção, divide igualmente.
             </p>
           </div>
           <button class="metas-btn secondary" type="button" data-metas-suggest ${fechado ? 'disabled' : ''}>Sugerir distribuição</button>
@@ -1140,7 +1037,7 @@
                       </tr>
                     `;
                   }).join('')
-                  : `<tr><td colspan="6"><div class="metas-empty">Nenhuma coordenação encontrada. Importe a Produção Diária ou cadastre uma meta manualmente.</div></td></tr>`
+                  : `<tr><td colspan="6"><div class="metas-empty">Nenhuma coordenação encontrada. Importe o Relatório de Produção Diária ou cadastre uma meta manualmente.</div></td></tr>`
               }
             </tbody>
           </table>
@@ -1250,7 +1147,7 @@
             <h1>Metas de Produção</h1>
             <p>
               Acompanhamento mensal da meta por regional e estado.
-              Produção considerada: <strong>tons</strong> da Produção Diária.
+              Produção considerada: <strong>Relatório de Produção Diária</strong>, coluna <strong>Tons</strong>.
             </p>
           </div>
           <div class="metas-actions">
@@ -1293,12 +1190,12 @@
           </div>
         </div>
 
-        <div class="metas-period-banner">
+        <div class="metas-close-panel" style="margin: 0 0 16px;">
           <div>
-            <strong>Período selecionado: ${getMonthName(state.mes)}/${state.ano}</strong>
-            <span>As metas salvas, a produção atual e o fechamento serão sempre gravados nesse mês/ano.</span>
+            <div class="metas-close-title">Período selecionado: ${getMonthName(state.mes)}/${state.ano}</div>
+            <div class="metas-close-sub">As metas salvas, a progressão e o fechamento abaixo usam exatamente este mês/ano.</div>
           </div>
-          <div class="metas-period-chip">Meta de ${getMonthName(state.mes)}/${state.ano}</div>
+          <span class="metas-pill">Base: Produção Diária</span>
         </div>
 
         <div class="metas-tabs">
@@ -1316,156 +1213,27 @@
     `;
   }
 
-  function applyRegionalFilters(rows, state) {
-    return (rows || []).filter(row => {
-      if (state.regional && normalizarTexto(row.regional) !== normalizarTexto(state.regional)) return false;
-      if (state.estado && normalizarTexto(row.estado) !== normalizarTexto(state.estado)) return false;
-      return true;
-    });
-  }
-
-  function buildRegionalRowsFromProducaoDiaria(producaoRows, metasRows, state) {
-    const map = new Map();
-
-    (metasRows || []).forEach(meta => {
-      const regional = String(meta.regional || meta.coordenacao || '').trim();
-      const key = normalizarTexto(regional);
-      if (!key) return;
-      map.set(key, {
-        ...meta,
-        regional,
-        estado: meta.estado || '',
-        meta_tons: Number(meta.meta_tons || 0),
-        produzido_tons: 0,
-        ativo: meta.ativo ?? true,
-        fechado: meta.fechado ?? false,
-        status_fechamento: meta.status_fechamento ?? null,
-        fechado_em: meta.fechado_em ?? null
-      });
-    });
-
-    (producaoRows || []).forEach(row => {
-      const regional = String(row.coordenacao || row.regional || '').trim();
-      const key = normalizarTexto(regional);
-      if (!key) return;
-      const old = map.get(key) || { regional, estado: '', meta_tons: 0, produzido_tons: 0, ativo: true };
-      old.produzido_tons = Number(old.produzido_tons || 0) + Number(row.tons || 0);
-      map.set(key, old);
-    });
-
-    return applyRegionalFilters(Array.from(map.values()), state)
-      .map(row => {
-        const meta = Number(row.meta_tons || 0);
-        const produzido = Number(row.produzido_tons || 0);
-        const restante = Math.max(0, meta - produzido);
-        const percentual = meta > 0 ? (produzido / meta) * 100 : 0;
-        return {
-          ...row,
-          meta_tons: meta,
-          produzido_tons: produzido,
-          restante_tons: restante,
-          percentual_atingido: percentual
-        };
-      })
-      .sort((a, b) => Number(b.produzido_tons || 0) - Number(a.produzido_tons || 0));
-  }
-
-  function buildEstadoRowsFromRegionais(rows) {
-    const map = new Map();
-    (rows || []).forEach(row => {
-      const estado = String(row.estado || 'Sem estado').trim() || 'Sem estado';
-      const old = map.get(estado) || { estado, meta_tons: 0, produzido_tons: 0 };
-      old.meta_tons += Number(row.meta_tons || 0);
-      old.produzido_tons += Number(row.produzido_tons || 0);
-      map.set(estado, old);
-    });
-
-    return Array.from(map.values())
-      .map(row => {
-        const restante = Math.max(0, Number(row.meta_tons || 0) - Number(row.produzido_tons || 0));
-        const percentual = Number(row.meta_tons || 0) > 0 ? (Number(row.produzido_tons || 0) / Number(row.meta_tons || 0)) * 100 : 0;
-        return { ...row, restante_tons: restante, percentual_atingido: percentual };
-      })
-      .sort((a, b) => Number(b.produzido_tons || 0) - Number(a.produzido_tons || 0));
-  }
-
-  function buildMensalRowsFromProducaoDiaria(producaoAnoRows, metasAnoRows, state) {
-    const metaStateByRegional = new Map();
-    (metasAnoRows || []).forEach(row => {
-      const key = rowKey(row);
-      if (key && row.estado) metaStateByRegional.set(key, row.estado);
-    });
-
-    const months = new Map();
-    for (let mes = 1; mes <= 12; mes++) {
-      months.set(mes, { ano: Number(state.ano), mes, meta_total_tons: 0, produzido_total_tons: 0 });
-    }
-
-    (metasAnoRows || []).forEach(row => {
-      if (state.estado && normalizarTexto(row.estado) !== normalizarTexto(state.estado)) return;
-      if (state.regional && rowKey(row) !== normalizarTexto(state.regional)) return;
-      const mes = Number(row.mes || 0);
-      if (!months.has(mes)) return;
-      const old = months.get(mes);
-      old.meta_total_tons += Number(row.meta_tons || 0);
-    });
-
-    (producaoAnoRows || []).forEach(row => {
-      const regionalKey = normalizarTexto(row.coordenacao || row.regional || '');
-      if (!regionalKey) return;
-      if (state.regional && regionalKey !== normalizarTexto(state.regional)) return;
-      const estado = metaStateByRegional.get(regionalKey) || '';
-      if (state.estado && normalizarTexto(estado) !== normalizarTexto(state.estado)) return;
-
-      const date = new Date(`${String(row.data || '').slice(0, 10)}T00:00:00`);
-      const mes = date.getMonth() + 1;
-      if (!months.has(mes)) return;
-      const old = months.get(mes);
-      old.produzido_total_tons += Number(row.tons || 0);
-    });
-
-    return Array.from(months.values())
-      .map(row => {
-        const restante = Math.max(0, Number(row.meta_total_tons || 0) - Number(row.produzido_total_tons || 0));
-        const percentual = Number(row.meta_total_tons || 0) > 0 ? (Number(row.produzido_total_tons || 0) / Number(row.meta_total_tons || 0)) * 100 : 0;
-        return { ...row, restante_total_tons: restante, percentual_atingido: percentual };
-      })
-      .filter(row => Number(row.meta_total_tons || 0) > 0 || Number(row.produzido_total_tons || 0) > 0);
-  }
-
   async function loadData(state, supabase) {
     state.loading = true;
     state.erro = null;
 
     try {
+      const mes = Number(state.mes);
+      const ano = Number(state.ano);
+      const range = getMonthRange(ano, mes);
+      const yearStart = `${ano}-01-01`;
+      const yearNext = `${ano + 1}-01-01`;
+
       let metasQuery = supabase
         .from('metas_producao')
         .select('*')
-        .eq('ano', Number(state.ano))
-        .eq('mes', Number(state.mes))
+        .eq('ano', ano)
+        .eq('mes', mes)
         .order('estado', { ascending: true })
         .order('regional', { ascending: true });
 
-      let metasAnoQuery = supabase
-        .from('metas_producao')
-        .select('*')
-        .eq('ano', Number(state.ano))
-        .order('mes', { ascending: true })
-        .order('regional', { ascending: true });
-
-      if (state.estado) {
-        metasQuery = metasQuery.eq('estado', state.estado);
-        metasAnoQuery = metasAnoQuery.eq('estado', state.estado);
-      }
-
-      if (state.regional) {
-        metasQuery = metasQuery.eq('regional', state.regional);
-        metasAnoQuery = metasAnoQuery.eq('regional', state.regional);
-      }
-
-      const range = getMonthRange(Number(state.ano), Number(state.mes));
-      const yearStart = `${Number(state.ano)}-01-01`;
-      const yearNext = `${Number(state.ano) + 1}-01-01`;
+      if (state.estado) metasQuery = metasQuery.eq('estado', state.estado);
+      if (state.regional) metasQuery = metasQuery.eq('regional', state.regional);
 
       const producaoMesQuery = supabase
         .from('producao_snapshot')
@@ -1481,20 +1249,124 @@
         .lt('data', yearNext)
         .limit(50000);
 
-      const [metasCadastro, metasAno, producaoMesRows, producaoAnoRows] = await Promise.all([
+      const metasAnoQuery = supabase
+        .from('metas_producao')
+        .select('*')
+        .eq('ano', ano);
+
+      const [metasCadastro, producaoRows, producaoAnoRows, metasAnoRows] = await Promise.all([
         fetchAllRows(metasQuery),
-        fetchAllRows(metasAnoQuery),
         fetchAllRows(producaoMesQuery),
-        fetchAllRows(producaoAnoQuery)
+        fetchAllRows(producaoAnoQuery),
+        fetchAllRows(metasAnoQuery)
       ]);
 
-      const regionais = buildRegionalRowsFromProducaoDiaria(producaoMesRows, metasCadastro, state);
+      const metaMap = new Map();
+      metasCadastro.forEach(row => {
+        const key = rowKey(row);
+        if (key) metaMap.set(key, row);
+      });
+
+      const producaoMap = producaoRows.reduce((map, row) => {
+        const regional = String(row.coordenacao || '').trim();
+        const key = normalizarTexto(regional);
+        if (!key) return map;
+        const metaRow = metaMap.get(key) || {};
+        const old = map.get(key) || {
+          estado: metaRow.estado || '',
+          regional,
+          produzido_tons: 0
+        };
+        old.produzido_tons += Number(row.tons || 0);
+        map.set(key, old);
+        return map;
+      }, new Map());
+
+      metasCadastro.forEach(metaRow => {
+        const key = rowKey(metaRow);
+        if (!key) return;
+        const old = producaoMap.get(key) || {
+          estado: metaRow.estado || '',
+          regional: metaRow.regional || metaRow.coordenacao || '',
+          produzido_tons: 0
+        };
+        old.estado = metaRow.estado || old.estado || '';
+        old.regional = metaRow.regional || metaRow.coordenacao || old.regional || '';
+        producaoMap.set(key, old);
+      });
+
+      let regionais = Array.from(producaoMap.values()).map(row => {
+        const metaRow = metaMap.get(rowKey(row)) || {};
+        const meta = Number(metaRow.meta_tons || 0);
+        const produzido = Number(row.produzido_tons || 0);
+        return {
+          ...row,
+          estado: row.estado || metaRow.estado || '',
+          regional: row.regional || metaRow.regional || '',
+          meta_tons: meta,
+          produzido_tons: produzido,
+          restante_tons: Math.max(0, meta - produzido),
+          percentual_atingido: meta > 0 ? (produzido / meta) * 100 : 0,
+          ativo: metaRow.ativo ?? true,
+          fechado: metaRow.fechado ?? false,
+          status_fechamento: metaRow.status_fechamento ?? null,
+          fechado_em: metaRow.fechado_em ?? null
+        };
+      });
+
+      if (state.estado) regionais = regionais.filter(row => String(row.estado || '') === String(state.estado));
+      if (state.regional) regionais = regionais.filter(row => String(row.regional || '') === String(state.regional));
+
+      regionais.sort((a, b) => Number(b.produzido_tons || 0) - Number(a.produzido_tons || 0));
+
+      const estadoMap = regionais.reduce((map, row) => {
+        const estado = row.estado || 'Sem estado';
+        const old = map.get(estado) || { estado, meta_tons: 0, produzido_tons: 0 };
+        old.meta_tons += Number(row.meta_tons || 0);
+        old.produzido_tons += Number(row.produzido_tons || 0);
+        map.set(estado, old);
+        return map;
+      }, new Map());
+
+      const estados = Array.from(estadoMap.values()).map(row => ({
+        ...row,
+        restante_tons: Math.max(0, Number(row.meta_tons || 0) - Number(row.produzido_tons || 0)),
+        percentual_atingido: Number(row.meta_tons || 0) > 0 ? (Number(row.produzido_tons || 0) / Number(row.meta_tons || 0)) * 100 : 0
+      })).sort((a, b) => Number(b.produzido_tons || 0) - Number(a.produzido_tons || 0));
+
+      const mensalMap = new Map();
+      producaoAnoRows.forEach(row => {
+        const d = String(row.data || '').slice(0, 10);
+        const m = Number(d.slice(5, 7));
+        if (!m) return;
+        const old = mensalMap.get(m) || { ano, mes: m, meta_total_tons: 0, produzido_total_tons: 0 };
+        old.produzido_total_tons += Number(row.tons || 0);
+        mensalMap.set(m, old);
+      });
+
+      metasAnoRows.forEach(row => {
+        const m = Number(row.mes || 0);
+        if (!m) return;
+        const old = mensalMap.get(m) || { ano, mes: m, meta_total_tons: 0, produzido_total_tons: 0 };
+        old.meta_total_tons += Number(row.meta_tons || 0);
+        mensalMap.set(m, old);
+      });
+
+      const mensal = Array.from(mensalMap.values()).map(row => ({
+        ...row,
+        restante_total_tons: Math.max(0, Number(row.meta_total_tons || 0) - Number(row.produzido_total_tons || 0)),
+        percentual_atingido: Number(row.meta_total_tons || 0) > 0 ? (Number(row.produzido_total_tons || 0) / Number(row.meta_total_tons || 0)) * 100 : 0
+      })).sort((a, b) => (Number(a.ano) - Number(b.ano)) || (Number(a.mes) - Number(b.mes)));
 
       state.regionais = regionais;
-      state.estados = buildEstadoRowsFromRegionais(regionais);
+      state.estados = estados;
       state.metasCadastro = metasCadastro;
-      state.mensal = buildMensalRowsFromProducaoDiaria(producaoAnoRows, metasAno, state);
-      state.producaoCoordenacoes = buildRegionalRowsFromProducaoDiaria(producaoMesRows, metasCadastro, { ...state, estado: '', regional: '' });
+      state.mensal = mensal;
+      state.producaoCoordenacoes = regionais.map(row => ({
+        estado: row.estado,
+        regional: row.regional,
+        produzido_tons: row.produzido_tons
+      }));
     } catch (err) {
       console.error('[METAS] Erro ao carregar dados:', err);
       state.erro = err && err.message ? err.message : String(err);
@@ -1680,20 +1552,6 @@
         rerender();
       });
     });
-
-    const configApplyBtn = container.querySelector('[data-metas-config-apply]');
-    if (configApplyBtn) {
-      configApplyBtn.addEventListener('click', async () => {
-        const mes = container.querySelector('[data-metas-config-period="mes"]');
-        const ano = container.querySelector('[data-metas-config-period="ano"]');
-        state.mes = Number(mes && mes.value ? mes.value : state.mes);
-        state.ano = Number(ano && ano.value ? ano.value : state.ano);
-        state.estado = '';
-        state.regional = '';
-        state.metaEstimativa = '';
-        await reload();
-      });
-    }
 
     const estimativa = container.querySelector('[data-metas-estimativa]');
     if (estimativa) {
