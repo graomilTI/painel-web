@@ -139,6 +139,77 @@
         margin-bottom: 16px;
       }
 
+      .metas-period-banner {
+        margin: -2px 0 16px;
+        padding: 14px 16px;
+        border: 1px solid rgba(34, 197, 94, .28);
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(22, 101, 52, .26), rgba(15, 23, 42, .78));
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .metas-period-banner strong {
+        display: block;
+        font-size: 18px;
+        letter-spacing: -.02em;
+        color: #dcfce7;
+      }
+
+      .metas-period-banner span {
+        display: block;
+        margin-top: 3px;
+        color: var(--metas-muted);
+        font-size: 12px;
+      }
+
+      .metas-period-chip {
+        border: 1px solid rgba(74, 222, 128, .36);
+        background: rgba(22, 101, 52, .42);
+        color: #ecfdf5;
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 900;
+        white-space: nowrap;
+      }
+
+      .metas-period-config {
+        margin-bottom: 16px;
+        padding: 16px;
+        border: 1px solid rgba(34, 197, 94, .28);
+        border-radius: 22px;
+        background: linear-gradient(135deg, rgba(22, 101, 52, .20), rgba(2, 6, 23, .82));
+      }
+
+      .metas-period-config-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .metas-period-config-title h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .metas-period-config-title p {
+        margin: 4px 0 0;
+        color: var(--metas-muted);
+        font-size: 12px;
+      }
+
+      .metas-period-config-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 10px;
+        align-items: end;
+      }
+
       .metas-filters {
         display: grid;
         grid-template-columns: repeat(5, minmax(120px, 1fr));
@@ -516,7 +587,8 @@
         .metas-grid-2,
         .metas-form-grid,
         .metas-suggest-card,
-        .metas-close-panel {
+        .metas-close-panel,
+        .metas-period-config-grid {
           grid-template-columns: 1fr 1fr;
         }
       }
@@ -531,8 +603,15 @@
         .metas-grid-2,
         .metas-form-grid,
         .metas-suggest-card,
-        .metas-close-panel {
+        .metas-close-panel,
+        .metas-period-config-grid {
           grid-template-columns: 1fr;
+        }
+
+        .metas-period-banner,
+        .metas-period-config-title {
+          align-items: flex-start;
+          flex-direction: column;
         }
 
         .metas-actions {
@@ -822,6 +901,31 @@
 
   function renderRegionalTable(rows) {
     return `
+      <div class="metas-period-config">
+        <div class="metas-period-config-title">
+          <div>
+            <h2>Definir meta de ${getMonthName(state.mes)}/${state.ano}</h2>
+            <p>Esse é o mês que será gravado ao clicar em Salvar lista ou Fechar meta.</p>
+          </div>
+          <span class="metas-period-chip">Período ativo</span>
+        </div>
+        <div class="metas-period-config-grid">
+          <div class="metas-field">
+            <label>Mês da meta</label>
+            <select data-metas-config-period="mes">
+              ${MONTHS.map(m => `<option value="${m.value}" ${Number(state.mes) === Number(m.value) ? 'selected' : ''}>${m.label}</option>`).join('')}
+            </select>
+          </div>
+          <div class="metas-field">
+            <label>Ano da meta</label>
+            <select data-metas-config-period="ano">
+              ${years.map(y => `<option value="${y}" ${Number(state.ano) === y ? 'selected' : ''}>${y}</option>`).join('')}
+            </select>
+          </div>
+          <button class="metas-btn" type="button" data-metas-config-apply>Carregar mês</button>
+        </div>
+      </div>
+
       <div class="metas-table-card">
         <div class="metas-table-top">
           <h2>Metas por Regional</h2>
@@ -1158,14 +1262,14 @@
         <div class="metas-filter-card">
           <div class="metas-filters">
             <div class="metas-field">
-              <label>Mês</label>
+              <label>Mês da meta</label>
               <select data-metas-filter="mes">
                 ${MONTHS.map(m => `<option value="${m.value}" ${Number(state.mes) === Number(m.value) ? 'selected' : ''}>${m.label}</option>`).join('')}
               </select>
             </div>
 
             <div class="metas-field">
-              <label>Ano</label>
+              <label>Ano da meta</label>
               <select data-metas-filter="ano">
                 ${years.map(y => `<option value="${y}" ${Number(state.ano) === y ? 'selected' : ''}>${y}</option>`).join('')}
               </select>
@@ -1187,6 +1291,14 @@
 
             <button class="metas-btn" type="button" data-metas-apply>Aplicar filtros</button>
           </div>
+        </div>
+
+        <div class="metas-period-banner">
+          <div>
+            <strong>Período selecionado: ${getMonthName(state.mes)}/${state.ano}</strong>
+            <span>As metas salvas, a produção atual e o fechamento serão sempre gravados nesse mês/ano.</span>
+          </div>
+          <div class="metas-period-chip">Meta de ${getMonthName(state.mes)}/${state.ano}</div>
         </div>
 
         <div class="metas-tabs">
@@ -1568,6 +1680,20 @@
         rerender();
       });
     });
+
+    const configApplyBtn = container.querySelector('[data-metas-config-apply]');
+    if (configApplyBtn) {
+      configApplyBtn.addEventListener('click', async () => {
+        const mes = container.querySelector('[data-metas-config-period="mes"]');
+        const ano = container.querySelector('[data-metas-config-period="ano"]');
+        state.mes = Number(mes && mes.value ? mes.value : state.mes);
+        state.ano = Number(ano && ano.value ? ano.value : state.ano);
+        state.estado = '';
+        state.regional = '';
+        state.metaEstimativa = '';
+        await reload();
+      });
+    }
 
     const estimativa = container.querySelector('[data-metas-estimativa]');
     if (estimativa) {
