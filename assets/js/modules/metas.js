@@ -1,4 +1,4 @@
-﻿/* assets/js/modules/metas.js
+/* assets/js/modules/metas.js
  * Módulo Diretoria > METAS
  * Padrão do projeto: IIFE + window.METAS.openHome(container, { auth, api, onBack })
  *
@@ -42,6 +42,8 @@
     estados: [],
     mensal: [],
     metasCadastro: [],
+    producaoCoordenacoes: [],
+    metaEstimativa: '',
     erro: null
   };
 
@@ -433,6 +435,79 @@
         align-items: end;
       }
 
+
+
+      .metas-suggest-card {
+        padding: 16px;
+        border-bottom: 1px solid var(--metas-border);
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) auto auto;
+        gap: 12px;
+        align-items: end;
+      }
+
+      .metas-config-hint {
+        margin: 0;
+        color: var(--metas-muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .metas-edit-input {
+        width: 100%;
+        min-width: 110px;
+        border: 1px solid var(--metas-border);
+        border-radius: 12px;
+        background: #0d0d18;
+        color: #e2e2f0;
+        padding: 9px 10px;
+        outline: none;
+        color-scheme: dark;
+      }
+
+      .metas-edit-input:disabled {
+        opacity: .65;
+        cursor: not-allowed;
+      }
+
+      .metas-close-panel {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--metas-border);
+        display: grid;
+        grid-template-columns: minmax(260px, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .metas-close-title {
+        font-weight: 900;
+        margin-bottom: 5px;
+      }
+
+      .metas-close-sub {
+        color: var(--metas-muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .metas-row-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 14px 16px;
+        border-top: 1px solid var(--metas-border);
+      }
+
+      .metas-mini {
+        font-size: 11px;
+        color: var(--metas-muted);
+        margin-top: 4px;
+      }
+
+      .metas-section-spacer {
+        margin-top: 16px;
+      }
+
       .metas-loading {
         opacity: .65;
         pointer-events: none;
@@ -442,7 +517,9 @@
         .metas-filters,
         .metas-kpis,
         .metas-grid-2,
-        .metas-form-grid {
+        .metas-form-grid,
+        .metas-suggest-card,
+        .metas-close-panel {
           grid-template-columns: 1fr 1fr;
         }
       }
@@ -455,7 +532,9 @@
         .metas-filters,
         .metas-kpis,
         .metas-grid-2,
-        .metas-form-grid {
+        .metas-form-grid,
+        .metas-suggest-card,
+        .metas-close-panel {
           grid-template-columns: 1fr;
         }
 
@@ -528,6 +607,114 @@
       `<option value="">${escapeHtml(allLabel)}</option>`,
       ...items.map(item => `<option value="${escapeHtml(item)}" ${String(item) === String(current) ? 'selected' : ''}>${escapeHtml(item)}</option>`)
     ].join('');
+  }
+
+
+  function normalizarTexto(value) {
+    return String(value || '')
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .toUpperCase();
+  }
+
+  function toInputNumber(value) {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    return String(Math.round(n * 100) / 100);
+  }
+
+  function getMonthRange(ano, mes) {
+    const start = `${ano}-${String(mes).padStart(2, '0')}-01`;
+    const nextDate = new Date(Number(ano), Number(mes), 1);
+    const next = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-01`;
+    return { start, next };
+  }
+
+  function rowKey(row) {
+    return normalizarTexto(row.regional || row.coordenacao || row.coordenação || '');
+  }
+
+  function isClosedRow(row) {
+    return Boolean(row && (row.fechado || row.status_fechamento));
+  }
+
+  function isMonthClosed(state) {
+    return state.metasCadastro.some(isClosedRow);
+  }
+
+  function getRowStatus(row) {
+    const explicit = normalizarTexto(row.status_fechamento || '');
+    if (explicit === 'ATINGIU' || explicit === 'OK') return 'ATINGIU';
+    if (explicit === 'NAO_ATINGIU' || explicit === 'NÃO ATINGIU' || explicit === 'PENDENTE') return 'NAO_ATINGIU';
+
+    const meta = Number(row.meta_tons || 0);
+    const produzido = Number(row.produzido_tons || row.produzido_fechamento || 0);
+    if (meta <= 0) return 'SEM_META';
+    return produzido >= meta ? 'ATINGIU' : 'NAO_ATINGIU';
+  }
+
+  function mergeCoordenacoes(state) {
+    const map = new Map();
+
+    function put(row, source) {
+      const key = rowKey(row);
+      if (!key) return;
+      const old = map.get(key) || {};
+      map.set(key, {
+        ...old,
+        ...row,
+        source: old.source || source,
+        estado: row.estado || old.estado || '',
+        regional: row.regional || row.coordenacao || old.regional || '',
+        meta_tons: row.meta_tons ?? old.meta_tons ?? 0,
+        produzido_tons: row.produzido_tons ?? old.produzido_tons ?? 0,
+        restante_tons: row.restante_tons ?? old.restante_tons ?? Math.max(0, Number(row.meta_tons || old.meta_tons || 0) - Number(row.produzido_tons || old.produzido_tons || 0)),
+        percentual_atingido: row.percentual_atingido ?? old.percentual_atingido ?? 0,
+        ativo: row.ativo ?? old.ativo ?? true,
+        fechado: row.fechado ?? old.fechado ?? false,
+        status_fechamento: row.status_fechamento ?? old.status_fechamento ?? null,
+        fechado_em: row.fechado_em ?? old.fechado_em ?? null
+      });
+    }
+
+    state.producaoCoordenacoes.forEach(row => put(row, 'producao'));
+    state.regionais.forEach(row => put(row, 'view'));
+    state.metasCadastro.forEach(row => put(row, 'meta'));
+
+    return Array.from(map.values()).sort((a, b) => String(a.regional || '').localeCompare(String(b.regional || ''), 'pt-BR'));
+  }
+
+  function calcularSugestoesDistribuicao(rows, totalEstimado) {
+    const total = Number(totalEstimado || 0);
+    if (!rows.length || !total) return new Map();
+
+    const producaoTotal = rows.reduce((acc, row) => acc + Number(row.produzido_tons || 0), 0);
+    const pesoIgual = 1 / rows.length;
+    const out = new Map();
+
+    rows.forEach(row => {
+      const peso = producaoTotal > 0 ? Number(row.produzido_tons || 0) / producaoTotal : pesoIgual;
+      out.set(rowKey(row), Math.round(total * peso * 100) / 100);
+    });
+
+    return out;
+  }
+
+  function fechamentoResumo(rows) {
+    const atingiram = [];
+    const naoAtingiram = [];
+    const semMeta = [];
+
+    rows.forEach(row => {
+      const status = getRowStatus(row);
+      if (status === 'ATINGIU') atingiram.push(row);
+      else if (status === 'NAO_ATINGIU') naoAtingiram.push(row);
+      else semMeta.push(row);
+    });
+
+    return { atingiram, naoAtingiram, semMeta };
   }
 
   function totalsFromRegional(rows) {
@@ -776,71 +963,117 @@
     const currentYear = new Date().getFullYear();
     for (let y = currentYear - 2; y <= currentYear + 2; y++) years.push(y);
 
+    const rows = mergeCoordenacoes(state);
+    const fechado = isMonthClosed(state);
+    const sugestoes = calcularSugestoesDistribuicao(rows, state.metaEstimativa);
+    const resumo = fechamentoResumo(rows.filter(row => Number(row.meta_tons || 0) > 0));
+
     return `
       <div class="metas-table-card">
         <div class="metas-table-top">
-          <h2>Configurar Metas</h2>
-          <span class="metas-pill">Cadastro por mês/regional</span>
+          <h2>Configurar Metas por Coordenação</h2>
+          <span class="metas-pill ${fechado ? 'good' : ''}">${fechado ? 'Mês fechado' : 'Cadastro em lista'}</span>
         </div>
 
-        <form class="metas-form-grid" data-metas-form>
+        <div class="metas-suggest-card">
           <div class="metas-field">
-            <label>Ano</label>
-            <select name="ano">
-              ${years.map(y => `<option value="${y}" ${Number(state.ano) === y ? 'selected' : ''}>${y}</option>`).join('')}
-            </select>
+            <label>Valor estimado do mês</label>
+            <input class="metas-edit-input" data-metas-estimativa type="number" step="0.01" min="0" value="${escapeHtml(state.metaEstimativa)}" placeholder="Ex.: 1000000" ${fechado ? 'disabled' : ''} />
+            <p class="metas-config-hint">
+              Informe a meta total do mês e clique em sugerir. A distribuição é proporcional à produção atual de cada coordenação; se ainda não houver produção, divide igualmente.
+            </p>
           </div>
+          <button class="metas-btn secondary" type="button" data-metas-suggest ${fechado ? 'disabled' : ''}>Sugerir distribuição</button>
+          <button class="metas-btn" type="button" data-metas-save-list ${fechado ? 'disabled' : ''}>Salvar lista</button>
+        </div>
 
-          <div class="metas-field">
-            <label>Mês</label>
-            <select name="mes">
-              ${MONTHS.map(m => `<option value="${m.value}" ${Number(state.mes) === Number(m.value) ? 'selected' : ''}>${m.label}</option>`).join('')}
-            </select>
+        <div class="metas-close-panel">
+          <div>
+            <div class="metas-close-title">Fechamento da meta de ${getMonthName(state.mes)}/${state.ano}</div>
+            <div class="metas-close-sub">
+              Ao fechar, o painel marca cada coordenação como <strong>atingiu</strong> ou <strong>não atingiu</strong> e bloqueia novas alterações da meta cadastrada para o mês selecionado.
+            </div>
           </div>
-
-          <div class="metas-field">
-            <label>Estado</label>
-            <input name="estado" maxlength="80" placeholder="Ex.: PR" required />
-          </div>
-
-          <div class="metas-field">
-            <label>Regional</label>
-            <input name="regional" maxlength="160" placeholder="Nome da regional" required />
-          </div>
-
-          <div class="metas-field">
-            <label>Meta em toneladas</label>
-            <input name="meta_tons" type="number" step="0.01" min="0" placeholder="0,00" required />
-          </div>
-
-          <button class="metas-btn" type="submit">Salvar meta</button>
-        </form>
+          <button class="metas-btn ${fechado ? 'secondary' : ''}" type="button" data-metas-close ${fechado ? 'disabled' : ''}>
+            ${fechado ? 'Meta fechada' : 'Fechar meta'}
+          </button>
+        </div>
 
         <div class="metas-table-wrap">
           <table class="metas-table">
             <thead>
               <tr>
-                <th>Ano/Mês</th>
                 <th>Estado</th>
-                <th>Regional</th>
-                <th class="num">Meta</th>
+                <th>Coordenação</th>
+                <th class="num">Produção atual</th>
+                <th class="num">Sugestão</th>
+                <th class="num">Meta cadastrada</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
               ${
-                state.metasCadastro.length
-                  ? state.metasCadastro.map(row => `
-                    <tr>
-                      <td><strong>${getMonthName(row.mes)}/${row.ano}</strong></td>
-                      <td>${escapeHtml(row.estado)}</td>
-                      <td>${escapeHtml(row.regional)}</td>
-                      <td class="num">${fmtTons(row.meta_tons)}</td>
-                      <td><span class="metas-pill ${row.ativo ? 'good' : 'bad'}">${row.ativo ? 'Ativa' : 'Inativa'}</span></td>
-                    </tr>
-                  `).join('')
-                  : `<tr><td colspan="5"><div class="metas-empty">Nenhuma meta cadastrada para o período selecionado.</div></td></tr>`
+                rows.length
+                  ? rows.map(row => {
+                    const key = rowKey(row);
+                    const sugestao = sugestoes.get(key) || 0;
+                    const metaAtual = Number(row.meta_tons || 0);
+                    const inputValue = state.metaEstimativa ? toInputNumber(sugestao) : toInputNumber(metaAtual);
+                    const status = getRowStatus(row);
+                    return `
+                      <tr data-metas-meta-row data-key="${escapeHtml(key)}">
+                        <td>
+                          <input class="metas-edit-input" data-meta-field="estado" value="${escapeHtml(row.estado || '')}" placeholder="UF/Estado" ${fechado ? 'disabled' : ''} />
+                        </td>
+                        <td>
+                          <strong>${escapeHtml(row.regional || '')}</strong>
+                          <input type="hidden" data-meta-field="regional" value="${escapeHtml(row.regional || '')}" />
+                          <div class="metas-mini">Base: Resultado Diário</div>
+                        </td>
+                        <td class="num">${fmtTons(row.produzido_tons)}</td>
+                        <td class="num">${state.metaEstimativa ? fmtTons(sugestao) : '—'}</td>
+                        <td class="num">
+                          <input class="metas-edit-input" data-meta-field="meta_tons" type="number" step="0.01" min="0" value="${escapeHtml(inputValue)}" ${fechado ? 'disabled' : ''} />
+                        </td>
+                        <td><span class="metas-pill ${status === 'ATINGIU' ? 'good' : status === 'NAO_ATINGIU' ? 'bad' : 'warn'}">${status === 'ATINGIU' ? 'Atingiu' : status === 'NAO_ATINGIU' ? 'Não atingiu' : 'Sem meta'}</span></td>
+                      </tr>
+                    `;
+                  }).join('')
+                  : `<tr><td colspan="6"><div class="metas-empty">Nenhuma coordenação encontrada. Importe o Resultado Diário ou cadastre uma meta manualmente.</div></td></tr>`
               }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="metas-table-card metas-section-spacer">
+        <div class="metas-table-top">
+          <h2>Resumo do Fechamento</h2>
+          <span class="metas-pill">${resumo.atingiram.length} atingiram · ${resumo.naoAtingiram.length} não atingiram</span>
+        </div>
+        <div class="metas-table-wrap">
+          <table class="metas-table">
+            <thead>
+              <tr>
+                <th>Situação</th>
+                <th>Coordenação</th>
+                <th class="num">Meta</th>
+                <th class="num">Produzido</th>
+                <th class="num">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${[...resumo.atingiram, ...resumo.naoAtingiram].length
+                ? [...resumo.atingiram.map(row => ({ ...row, label: 'Atingiu' })), ...resumo.naoAtingiram.map(row => ({ ...row, label: 'Não atingiu' }))].map(row => `
+                  <tr>
+                    <td><span class="metas-pill ${row.label === 'Atingiu' ? 'good' : 'bad'}">${row.label}</span></td>
+                    <td><strong>${escapeHtml(row.regional)}</strong></td>
+                    <td class="num">${fmtTons(row.meta_tons)}</td>
+                    <td class="num">${fmtTons(row.produzido_tons || row.produzido_fechamento)}</td>
+                    <td class="num">${fmtPct(row.percentual_atingido || row.percentual_fechamento)}</td>
+                  </tr>
+                `).join('')
+                : `<tr><td colspan="5"><div class="metas-empty">Ainda não há metas cadastradas para gerar o resumo de fechamento.</div></td></tr>`}
             </tbody>
           </table>
         </div>
@@ -964,7 +1197,7 @@
           <button type="button" class="metas-tab ${state.tab === 'regionais' ? 'active' : ''}" data-metas-tab="regionais">Regionais</button>
           <button type="button" class="metas-tab ${state.tab === 'estados' ? 'active' : ''}" data-metas-tab="estados">Estados</button>
           <button type="button" class="metas-tab ${state.tab === 'historico' ? 'active' : ''}" data-metas-tab="historico">Histórico Mensal</button>
-          <button type="button" class="metas-tab ${state.tab === 'configurar' ? 'active' : ''}" data-metas-tab="configurar">Configurar Metas</button>
+          <button type="button" class="metas-tab ${state.tab === 'configurar' ? 'active' : ''}" data-metas-tab="configurar">Configurar / Fechar</button>
         </div>
 
         <div data-metas-content>
@@ -1012,7 +1245,15 @@
         metasQuery = metasQuery.eq('regional', state.regional);
       }
 
-      const [regionais, estados, metasCadastro, mensal] = await Promise.all([
+      const range = getMonthRange(Number(state.ano), Number(state.mes));
+      const producaoQuery = supabase
+        .from('relatorio_resultado_diario')
+        .select('data,coordenacao,toneladas')
+        .gte('data', range.start)
+        .lt('data', range.next)
+        .limit(20000);
+
+      const [regionais, estados, metasCadastro, mensal, producaoRows] = await Promise.all([
         fetchAllRows(regionalQuery),
         fetchAllRows(estadoQuery),
         fetchAllRows(metasQuery),
@@ -1023,13 +1264,31 @@
             .eq('ano', Number(state.ano))
             .order('ano', { ascending: true })
             .order('mes', { ascending: true })
-        )
+        ),
+        fetchAllRows(producaoQuery).catch(err => {
+          console.warn('[METAS] Não foi possível carregar coordenações direto do Resultado Diário:', err);
+          return [];
+        })
       ]);
 
-      state.regionais = regionais;
+      const producaoMap = producaoRows.reduce((map, row) => {
+        const regional = String(row.coordenacao || '').trim();
+        const key = normalizarTexto(regional);
+        if (!key) return map;
+        const old = map.get(key) || { regional, produzido_tons: 0 };
+        old.produzido_tons += Number(row.toneladas || 0);
+        map.set(key, old);
+        return map;
+      }, new Map());
+
+      state.regionais = regionais.map(row => {
+        const metaRow = metasCadastro.find(m => rowKey(m) === rowKey(row));
+        return { ...row, ...(metaRow ? { fechado: metaRow.fechado, status_fechamento: metaRow.status_fechamento, fechado_em: metaRow.fechado_em } : {}) };
+      });
       state.estados = estados;
       state.metasCadastro = metasCadastro;
       state.mensal = mensal;
+      state.producaoCoordenacoes = Array.from(producaoMap.values());
     } catch (err) {
       console.error('[METAS] Erro ao carregar dados:', err);
       state.erro = err && err.message ? err.message : String(err);
@@ -1074,6 +1333,100 @@
     await loadData(state, supabase);
     rerender();
   }
+
+  async function salvarListaMetas(container, state, supabase, rerender) {
+    if (isMonthClosed(state)) {
+      alert('Esta meta já foi fechada. Não é possível alterar a lista do mês selecionado.');
+      return;
+    }
+
+    const rows = Array.from(container.querySelectorAll('[data-metas-meta-row]'));
+    const payloads = rows.map(tr => {
+      const estado = tr.querySelector('[data-meta-field="estado"]');
+      const regional = tr.querySelector('[data-meta-field="regional"]');
+      const meta = tr.querySelector('[data-meta-field="meta_tons"]');
+      return {
+        ano: Number(state.ano),
+        mes: Number(state.mes),
+        estado: String(estado && estado.value ? estado.value : '').trim().toUpperCase(),
+        regional: String(regional && regional.value ? regional.value : '').trim(),
+        meta_tons: Number(meta && meta.value ? meta.value : 0),
+        ativo: true,
+        updated_at: new Date().toISOString()
+      };
+    }).filter(row => row.regional && row.meta_tons > 0);
+
+    if (!payloads.length) {
+      alert('Informe ao menos uma coordenação com meta maior que zero.');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('metas_producao')
+      .upsert(payloads, { onConflict: 'ano,mes,regional' });
+
+    if (error) {
+      console.error('[METAS] Erro ao salvar lista de metas:', error);
+      alert('Erro ao salvar lista de metas: ' + error.message);
+      return;
+    }
+
+    state.estado = '';
+    state.regional = '';
+    await loadData(state, supabase);
+    rerender();
+  }
+
+  async function fecharMetaMes(state, supabase, rerender) {
+    if (isMonthClosed(state)) {
+      alert('A meta deste mês já está fechada.');
+      return;
+    }
+
+    const rows = mergeCoordenacoes(state).filter(row => Number(row.meta_tons || 0) > 0);
+    if (!rows.length) {
+      alert('Cadastre as metas do mês antes de fechar.');
+      return;
+    }
+
+    const confirmado = window.confirm(`Fechar a meta de ${getMonthName(state.mes)}/${state.ano}? Depois disso, a lista ficará bloqueada para edição.`);
+    if (!confirmado) return;
+
+    const now = new Date().toISOString();
+    const payloads = rows.map(row => {
+      const meta = Number(row.meta_tons || 0);
+      const produzido = Number(row.produzido_tons || 0);
+      const percentual = meta > 0 ? (produzido / meta) * 100 : 0;
+      return {
+        ano: Number(state.ano),
+        mes: Number(state.mes),
+        estado: String(row.estado || '').trim().toUpperCase(),
+        regional: String(row.regional || '').trim(),
+        meta_tons: meta,
+        ativo: true,
+        fechado: true,
+        fechado_em: now,
+        status_fechamento: produzido >= meta ? 'ATINGIU' : 'NAO_ATINGIU',
+        produzido_fechamento: produzido,
+        percentual_fechamento: percentual,
+        updated_at: now
+      };
+    });
+
+    const { error } = await supabase
+      .from('metas_producao')
+      .upsert(payloads, { onConflict: 'ano,mes,regional' });
+
+    if (error) {
+      console.error('[METAS] Erro ao fechar meta:', error);
+      alert('Erro ao fechar meta: ' + error.message + '\n\nSe aparecer coluna inexistente, execute primeiro o SQL enviado junto com o ZIP.');
+      return;
+    }
+
+    await loadData(state, supabase);
+    rerender();
+  }
+
 
   function bindEvents(container, state, supabase, opts) {
     const rerender = () => {
@@ -1121,6 +1474,40 @@
         rerender();
       });
     });
+
+    const estimativa = container.querySelector('[data-metas-estimativa]');
+    if (estimativa) {
+      estimativa.addEventListener('input', () => {
+        state.metaEstimativa = estimativa.value;
+      });
+    }
+
+    const suggestBtn = container.querySelector('[data-metas-suggest]');
+    if (suggestBtn) {
+      suggestBtn.addEventListener('click', () => {
+        const input = container.querySelector('[data-metas-estimativa]');
+        state.metaEstimativa = input ? input.value : state.metaEstimativa;
+        if (!Number(state.metaEstimativa || 0)) {
+          alert('Informe o valor estimado do mês para sugerir a distribuição.');
+          return;
+        }
+        rerender();
+      });
+    }
+
+    const saveListBtn = container.querySelector('[data-metas-save-list]');
+    if (saveListBtn) {
+      saveListBtn.addEventListener('click', async () => {
+        await salvarListaMetas(container, state, supabase, rerender);
+      });
+    }
+
+    const closeBtn = container.querySelector('[data-metas-close]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', async () => {
+        await fecharMetaMes(state, supabase, rerender);
+      });
+    }
 
     const form = container.querySelector('[data-metas-form]');
     if (form) {
