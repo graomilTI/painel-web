@@ -44,15 +44,21 @@ function printPdf(b64) {
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
   const blob = new Blob([arr], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
-  let frame = document.getElementById('pdf-print-frame');
-  if (!frame) {
-    frame = document.createElement('iframe');
-    frame.id = 'pdf-print-frame';
-    frame.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;border:none;';
-    document.body.appendChild(frame);
+  const win = window.open('', '_blank');
+  if (!win) {
+    const a = document.createElement('a');
+    a.href = url; a.target = '_blank'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return;
   }
-  frame.onload = () => setTimeout(() => { frame.contentWindow.print(); URL.revokeObjectURL(url); }, 500);
-  frame.src = url;
+  win.document.write(
+    '<!DOCTYPE html><html><head><title>Etiqueta Correios</title>' +
+    '<style>*{margin:0;padding:0}html,body,iframe{width:100%;height:100%;border:none;display:block}</style></head><body>' +
+    '<iframe src="' + url + '" onload="setTimeout(function(){window.print()},300)"></iframe>' +
+    '</body></html>'
+  );
+  win.document.close();
+  win.addEventListener('afterprint', () => URL.revokeObjectURL(url));
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -317,6 +323,8 @@ function renderPostagens() {
 function renderEnviados() {
   const sent = state.postagens.filter(p => p.status !== 'RASCUNHO');
   const canEtiqueta = p => !!(p.id_prepostagem && ['CONFIRMADO','POSTADO','EM_TRANSITO','ENTREGUE'].includes(p.status));
+  const erroCount = sent.filter(p => p.status === 'ERRO').length;
+  const etiquetaCount = sent.filter(canEtiqueta).length;
   const rows = sent.map(p => `
     <tr>
       <td style="width:32px;text-align:center">
@@ -342,6 +350,8 @@ function renderEnviados() {
   return `
     <div class="toolbar" style="margin-bottom:8px">
       <button class="btn btn-secondary" id="btn-refresh-enviados">Atualizar</button>
+      ${etiquetaCount > 0 ? `<button class="btn btn-primary" id="btn-etiqueta-todos">Gerar todas etiquetas (${etiquetaCount})</button>` : ''}
+      ${erroCount > 0 ? `<button class="btn btn-danger" id="btn-excluir-erros">Excluir todos ERROs (${erroCount})</button>` : ''}
     </div>
     <div id="bulk-bar" style="display:none;margin-bottom:12px;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0">
       <span id="bulk-count" style="font-size:13px"></span>
@@ -651,6 +661,37 @@ function bindTabEvents() {
   area.querySelector('#btn-refresh-enviados')?.addEventListener('click', async () => {
     await loadAll();
     renderTab();
+  });
+
+  // Excluir todos ERROs de uma vez
+  area.querySelector('#btn-excluir-erros')?.addEventListener('click', async () => {
+    const erros = state.postagens.filter(p => p.status === 'ERRO');
+    if (!erros.length) return;
+    if (!confirm(`Excluir ${erros.length} postagem(ns) com ERRO? Esta ação não pode ser desfeita.`)) return;
+    const btn = area.querySelector('#btn-excluir-erros');
+    if (btn) { btn.disabled = true; btn.textContent = 'Excluindo...'; }
+    const { error } = await supabase.from('envios_postagens').delete().in('id', erros.map(p => p.id));
+    if (error) { setFeedback('Erro ao excluir: ' + error.message, true); if (btn) btn.disabled = false; return; }
+    setFeedback(`${erros.length} postagem(ns) com ERRO excluída(s).`);
+    await loadAll(); renderTab();
+  });
+
+  // Gerar todas etiquetas em um único PDF
+  area.querySelector('#btn-etiqueta-todos')?.addEventListener('click', async () => {
+    const canEt = p => !!(p.id_prepostagem && ['CONFIRMADO','POSTADO','EM_TRANSITO','ENTREGUE'].includes(p.status));
+    const ids = state.postagens.filter(canEt).map(p => p.id);
+    if (!ids.length) return;
+    const btn = area.querySelector('#btn-etiqueta-todos');
+    if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
+    try {
+      const result = await callFn('correios-etiqueta', { postagem_ids: ids });
+      if (result.ok && result.pdf_base64) {
+        printPdf(result.pdf_base64);
+      } else {
+        setFeedback('Erro ao gerar etiquetas: ' + (result.error ?? 'desconhecido'), true);
+      }
+    } catch (e) { setFeedback('Erro: ' + e.message, true); }
+    if (btn) { btn.disabled = false; btn.textContent = `Gerar todas etiquetas (${ids.length})`; }
   });
 
   // ── Seleção em lote ────────────────────────────────────────────────────────
