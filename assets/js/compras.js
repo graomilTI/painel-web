@@ -188,46 +188,110 @@ function openCelularModal(baseItem){
   };
 }
 
-function openEpiColabModal(baseItem){
+function openDistribModal(onConfirm){
+  const epiItens=state.itens.filter(i=>i.tipo==='EPI');
   const modal=document.getElementById('cmpCelularModal');
-  modal.innerHTML=`<div class="cmp-cel-card">
-    <div class="section-head">
-      <div><h3>${esc(baseItem.material)}</h3><p class="muted">Informe o colaborador destinatário deste EPI. Deixe em branco se for para estoque.</p></div>
-      <button class="btn btn-secondary" id="epiClose" type="button">Fechar</button>
-    </div>
-    <div class="cmp-field cmp-autocomplete-wrap mt-16">
-      <label>Colaborador (opcional)</label>
-      <input id="epiColab" type="text" placeholder="Digite o nome do colaborador..." autocomplete="off">
-      <div class="cmp-suggest cmp-item-suggest" id="epiColabSug"></div>
-    </div>
-    <div class="cmp-actions mt-16">
-      <button class="btn btn-primary" id="epiConfirmar" type="button">Adicionar à lista</button>
-      <button class="btn btn-secondary" id="epiCancelar" type="button">Cancelar</button>
-    </div>
-    <span class="cmp-feedback" id="epiColabFeedback"></span>
-  </div>`;
-  modal.classList.add('open');
-  modal.querySelector('#epiClose').onclick=()=>modal.classList.remove('open');
-  modal.querySelector('#epiCancelar').onclick=()=>modal.classList.remove('open');
-  const colabInput=modal.querySelector('#epiColab');
-  const colabSug=modal.querySelector('#epiColabSug');
-  let selectedColab=null;
-  colabInput.addEventListener('input',()=>{
-    selectedColab=null;
-    const q=norm(colabInput.value); if(q.length<2){colabSug.innerHTML='';return;}
-    const list=state.colaboradores.filter(c=>norm(c.nome).includes(q)).slice(0,10);
-    colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
-    colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
-  });
-  colabInput.addEventListener('blur',()=>setTimeout(()=>{colabSug.innerHTML='';},160));
-  modal.querySelector('#epiConfirmar').onclick=()=>{
-    const colab=selectedColab||(colabInput.value.trim()?{id:null,nome:colabInput.value.trim()}:null);
-    state.itens.push({...baseItem,_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,colaborador_id:colab?.id||null,colaborador_nome:colab?.nome||null});
-    resetItemForm();
-    renderItensList();
-    setMsg('cmpFeedback',colab?`EPI adicionado para ${colab.nome}.`:'EPI adicionado (sem colaborador informado).');
-    modal.classList.remove('open');
-  };
+  const distribucoes=[];
+  const totalItem=i=>Number(i.unidade||i.quantidade||1);
+  const distribTotal=id=>distribucoes.filter(d=>d.epi_id===id).reduce((s,d)=>s+d.quantidade,0);
+  const restante=i=>totalItem(i)-distribTotal(i._id);
+
+  function renderModal(){
+    modal.innerHTML=`<div class="cmp-cel-card" style="width:min(720px,100%);max-height:90vh;overflow:auto">
+      <div class="section-head">
+        <div><h3>Informar colaboradores</h3><p class="muted">Distribua os EPIs por colaborador. O restante vai sem destinatário específico.</p></div>
+        <button class="btn btn-secondary" id="dcClose" type="button">Fechar</button>
+      </div>
+      <div class="mt-16">
+        <p style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:8px">EPIs solicitados</p>
+        <div style="display:grid;gap:6px;margin-bottom:16px">
+          ${epiItens.map(i=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid rgba(148,163,184,.2);border-radius:12px;font-size:14px">
+            <span><b>${esc(i.material)}</b>${i.tamanho?` <small class="muted">Tam: ${esc(i.tamanho)}</small>`:''}</span>
+            <span><b>${totalItem(i)}</b> un &nbsp;·&nbsp; <span style="color:${restante(i)>0?'#fde68a':'#86efac'}">${restante(i)} restante${restante(i)!==1?'s':''}</span></span>
+          </div>`).join('')}
+        </div>
+        <div style="background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.18);border-radius:14px;padding:16px;margin-bottom:16px">
+          <p style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:12px">Adicionar distribuição</p>
+          <div class="cmp-grid" style="gap:12px">
+            <div class="cmp-field cmp-autocomplete-wrap cmp-full">
+              <label>Colaborador</label>
+              <input id="dcColab" type="text" placeholder="Digite o nome do colaborador..." autocomplete="off">
+              <div class="cmp-suggest cmp-item-suggest" id="dcColabSug"></div>
+            </div>
+            <div class="cmp-field">
+              <label>EPI</label>
+              <select id="dcEpi">
+                ${epiItens.map(i=>`<option value="${esc(i._id)}">${esc(i.material)}${i.tamanho?` (${esc(i.tamanho)})`:''} — ${restante(i)} un disponíveis</option>`).join('')}
+              </select>
+            </div>
+            <div class="cmp-field">
+              <label>Quantidade</label>
+              <input id="dcQtd" type="number" min="1" value="1" style="max-width:120px">
+            </div>
+          </div>
+          <div class="cmp-actions mt-12">
+            <button class="btn btn-secondary" id="dcAdd" type="button">Adicionar</button>
+          </div>
+          <span class="cmp-feedback" id="dcFeedback"></span>
+        </div>
+        ${distribucoes.length?`<p style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:8px">Distribuições informadas</p>
+        <div style="display:grid;gap:6px;margin-bottom:16px">
+          ${distribucoes.map((d,idx)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid rgba(148,163,184,.2);border-radius:12px;font-size:14px">
+            <span><b>${esc(d.colaborador_nome)}</b> &nbsp;·&nbsp; ${esc(d.material)} &nbsp;·&nbsp; ${d.quantidade} un</span>
+            <button class="btn btn-small btn-danger" data-rem="${idx}" type="button">×</button>
+          </div>`).join('')}
+        </div>`:''}
+      </div>
+      <div class="cmp-actions mt-16">
+        <button class="btn btn-primary" id="dcConfirmar" type="button">Solicitar com esta distribuição</button>
+        <button class="btn btn-secondary" id="dcSemColab" type="button">Solicitar sem distribuição</button>
+      </div>
+    </div>`;
+    modal.classList.add('open');
+    modal.querySelector('#dcClose').onclick=()=>modal.classList.remove('open');
+    modal.querySelector('#dcSemColab').onclick=()=>{ modal.classList.remove('open'); onConfirm(null); };
+    modal.querySelector('#dcConfirmar').onclick=()=>{
+      modal.classList.remove('open');
+      const finalItens=[];
+      state.itens.filter(i=>i.tipo!=='EPI').forEach(i=>finalItens.push({...i}));
+      epiItens.forEach(item=>{
+        const itemDistribs=distribucoes.filter(d=>d.epi_id===item._id);
+        const totalDistrib=itemDistribs.reduce((s,d)=>s+d.quantidade,0);
+        const rem=totalItem(item)-totalDistrib;
+        itemDistribs.forEach(d=>finalItens.push({...item,_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,unidade:d.quantidade,quantidade:d.quantidade,colaborador_id:d.colaborador_id||null,colaborador_nome:d.colaborador_nome}));
+        if(rem>0) finalItens.push({...item,_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,unidade:rem,quantidade:rem,colaborador_id:null,colaborador_nome:null});
+        if(itemDistribs.length===0) finalItens.push({...item});
+      });
+      onConfirm(finalItens);
+    };
+    modal.querySelectorAll('[data-rem]').forEach(btn=>btn.onclick=()=>{ distribucoes.splice(Number(btn.dataset.rem),1); renderModal(); });
+    const colabInput=modal.querySelector('#dcColab');
+    const colabSug=modal.querySelector('#dcColabSug');
+    let selectedColab=null;
+    colabInput.addEventListener('input',()=>{
+      selectedColab=null;
+      const q=norm(colabInput.value); if(q.length<2){colabSug.innerHTML='';return;}
+      const list=state.colaboradores.filter(c=>norm(c.nome).includes(q)).slice(0,10);
+      colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
+      colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
+    });
+    colabInput.addEventListener('blur',()=>setTimeout(()=>{colabSug.innerHTML='';},160));
+    modal.querySelector('#dcAdd').onclick=()=>{
+      const fb=modal.querySelector('#dcFeedback');
+      const colab=selectedColab||(colabInput.value.trim()?{id:null,nome:colabInput.value.trim()}:null);
+      if(!colab){fb.textContent='Informe o colaborador.';fb.classList.add('err');return;}
+      const epiSelect=modal.querySelector('#dcEpi');
+      const epiItem=epiItens.find(i=>i._id===epiSelect.value);
+      if(!epiItem){fb.textContent='Selecione o EPI.';fb.classList.add('err');return;}
+      const qtd=Number(modal.querySelector('#dcQtd').value||0);
+      if(qtd<1){fb.textContent='Informe a quantidade.';fb.classList.add('err');return;}
+      const rem=restante(epiItem);
+      if(qtd>rem){fb.textContent=`Quantidade excede o disponível (${rem} un restantes).`;fb.classList.add('err');return;}
+      distribucoes.push({epi_id:epiItem._id,colaborador_id:colab.id||null,colaborador_nome:colab.nome,quantidade:qtd,material:epiItem.material});
+      renderModal();
+    };
+  }
+  renderModal();
 }
 
 function bindItemForm(){
@@ -250,7 +314,6 @@ function bindItemForm(){
     if(!item.tipo){ setMsg('cmpFeedback','Selecione o tipo do material antes de adicionar.',true); return; }
     if(found && itemNeedsDetail(found.material) && !item.tamanho){ setMsg('cmpFeedback','Informe o tamanho/detalhe antes de adicionar na lista.',true); return; }
     if(norm(item.material)==='celular'){ openCelularModal(item); return; }
-    if(item.tipo==='EPI'){ openEpiColabModal(item); return; }
     state.itens.push({...item, _id:`${Date.now()}_${Math.random().toString(16).slice(2)}`});
     resetItemForm();
     renderItensList();
@@ -266,11 +329,7 @@ function renderItensList(){
   }
   body.innerHTML=state.itens.map(i=>{
     const isCelular=norm(i.material)==='celular';
-    const isEpiItem=i.tipo==='EPI';
-    let matLabel;
-    if(isCelular&&i.colaborador_nome) matLabel=`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)} · ${i._metodo==='parcelado'?`${i._parcelas||1}x`:'À vista'}</small>`;
-    else if(isEpiItem&&i.colaborador_nome) matLabel=`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)}</small>`;
-    else matLabel=esc(i.material);
+    const matLabel=isCelular&&i.colaborador_nome?`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)} · ${i._metodo==='parcelado'?`${i._parcelas||1}x`:'À vista'}</small>`:esc(i.material);
     return `<tr data-item-id="${esc(i._id)}"><td>${esc(i.unidade||i.quantidade||1)}</td><td>${matLabel}</td><td>${esc(i.tipo)}</td><td>${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`;
   }).join('');
   body.querySelectorAll('[data-del-item]').forEach(btn=>btn.onclick=()=>{
@@ -354,8 +413,8 @@ async function salvarSolicitacao(ctx, tipo, itens){
   if(itemErr) throw itemErr;
   return {sol_id:sol.id, insertedItems:insertedItems||[]};
 }
-async function submitItens(ctx){
-  const raw=state.itens.filter(i=>i.material);
+async function submitItens(ctx, overrideItems=null){
+  const raw=(overrideItems||state.itens).filter(i=>i.material);
   if(!raw.length) throw new Error('Adicione pelo menos um material na lista antes de solicitar.');
   const dbItens=raw.map(({_id,_metodo,_parcelas,...i})=>i);
   const {insertedItems}=await salvarSolicitacao(ctx,'itens',dbItens);
@@ -422,6 +481,28 @@ initProtectedPage('Compras', async (content, userContext)=>{
   state.itens=[]; bindItemForm(); renderItensList(); renderUniformes(); setupColabSearch();
   document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
   document.getElementById('cmpAddTodos').onclick=()=>addAllColaboradores(userContext); document.getElementById('cmpRefresh').onclick=loadMinhas;
-  document.getElementById('cmpSolicitar').onclick=async()=>{ const btn=document.getElementById('cmpSolicitar'); try{ btn.disabled=true; setMsg('cmpFeedback','Salvando solicitação...'); const itens=state.mode==='itens'?await submitItens(userContext):await submitUniformes(userContext); const n=await notifyCompras(buildMessage(userContext,state.mode,itens)); setMsg('cmpFeedback',`Solicitação enviada. ${n.msg}`,!n.ok); document.getElementById('cmpObs').value=''; state.itens=[]; renderItensList(); state.uniformes=[]; renderUniformes(); await loadMinhas(); }catch(e){ setMsg('cmpFeedback',e.message||'Erro ao solicitar.',true); }finally{ btn.disabled=false; } };
+  async function doSolicitar(overrideItems=null){
+    const btn=document.getElementById('cmpSolicitar');
+    btn.disabled=true;
+    try{
+      setMsg('cmpFeedback','Salvando solicitação...');
+      const itens=state.mode==='itens'?await submitItens(userContext,overrideItems):await submitUniformes(userContext);
+      const n=await notifyCompras(buildMessage(userContext,state.mode,itens));
+      setMsg('cmpFeedback',`Solicitação enviada. ${n.msg}`,!n.ok);
+      document.getElementById('cmpObs').value='';
+      state.itens=[]; renderItensList();
+      state.uniformes=[]; renderUniformes();
+      await loadMinhas();
+    }catch(e){ setMsg('cmpFeedback',e.message||'Erro ao solicitar.',true); }
+    finally{ btn.disabled=false; }
+  }
+  document.getElementById('cmpSolicitar').onclick=()=>{
+    const raw=state.itens.filter(i=>i.material);
+    if(state.mode==='itens'&&raw.some(i=>i.tipo==='EPI')){
+      openDistribModal(finalItens=>doSolicitar(finalItens));
+      return;
+    }
+    doSolicitar();
+  };
   await loadMinhas();
 });
