@@ -70,6 +70,7 @@ const state = {
   loading: false,
   feedback: '',
   feedbackErr: false,
+  rastreioInterval: null,
 };
 
 let $root = null;
@@ -130,6 +131,24 @@ async function loadAll() {
   state.remetentes = rems ?? [];
   state.destinatarios = dests;
   state.loading = false;
+}
+
+async function autoRastrear() {
+  const targets = state.postagens.filter(p => ['POSTADO', 'EM_TRANSITO'].includes(p.status) && p.numero_objeto);
+  if (!targets.length) return;
+  for (const p of targets) {
+    try { await callFn('correios-rastrear', { postagem_id: p.id, numeros: [p.numero_objeto] }); } catch {}
+  }
+  await loadAll();
+  if (state.tab === 'enviados') renderTab();
+  const el = $root?.querySelector('#rastreio-auto-status');
+  if (el) el.textContent = `Atualizado às ${new Date().toLocaleTimeString('pt-BR')}`;
+}
+
+function startRastreioAuto() {
+  autoRastrear();
+  if (state.rastreioInterval) clearInterval(state.rastreioInterval);
+  state.rastreioInterval = setInterval(autoRastrear, 3_600_000);
 }
 
 async function importarDestinatariosColaboradores() {
@@ -285,17 +304,27 @@ function renderTab() {
   const area = $root?.querySelector('#envios-tab-content');
   if (!area) return;
   if (state.tab === 'postagens') area.innerHTML = renderPostagens();
-  else if (state.tab === 'nova') area.innerHTML = renderNovaPostagem();
+  else if (state.tab === 'etiquetar') area.innerHTML = renderEtiquetar();
+  else if (state.tab === 'enviados') area.innerHTML = renderEnviados();
+  else if (state.tab === 'historico') area.innerHTML = renderHistorico();
   else if (state.tab === 'cotacao') area.innerHTML = renderCotacao();
   else if (state.tab === 'remetentes') area.innerHTML = renderRemetentes();
   else if (state.tab === 'destinatarios') area.innerHTML = renderDestinatarios();
-  else if (state.tab === 'enviados') area.innerHTML = renderEnviados();
   bindTabEvents();
 }
 
 function renderPostagens() {
+  const remPadrao = state.remetentes.find(r => r.padrao)
+    ?? state.remetentes.find(r => r.nome?.toUpperCase().includes('GRAOMIL'))
+    ?? state.remetentes[0];
+  const optRem = state.remetentes.map(r =>
+    `<option value="${r.id}"${r.id === remPadrao?.id ? ' selected' : ''}>${esc(r.nome)} — ${esc(r.cidade)}/${esc(r.uf)}</option>`
+  ).join('');
+  const optServ = Object.entries(SERVICOS).map(([cod, nome]) => `<option value="${cod}">${esc(nome)}</option>`).join('');
   const pending = state.postagens.filter(p => p.status === 'RASCUNHO');
-  const rows = pending.map(p => `
+  const erros = state.postagens.filter(p => p.status === 'ERRO');
+
+  const rowsPending = pending.map(p => `
     <tr>
       <td>${esc(p.destinatario?.nome ?? '-')}</td>
       <td>${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}</td>
@@ -305,34 +334,138 @@ function renderPostagens() {
       </td>
     </tr>`).join('');
 
+  const rowsErro = erros.map(p => `
+    <tr>
+      <td>${esc(p.destinatario?.nome ?? '-')}</td>
+      <td>${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}</td>
+      <td style="max-width:260px;font-size:12px;color:rgba(255,100,100,.8)">${esc(p.observacoes ?? 'Erro desconhecido')}</td>
+      <td class="td-actions">
+        <button class="btn btn-sm btn-secondary" data-retentar="${p.id}">Retentar</button>
+        <button class="btn btn-sm btn-danger" data-excluir-enviado="${p.id}">Excluir</button>
+      </td>
+    </tr>`).join('');
+
+  return `
+    <div class="form-section">
+      <h3 style="margin:0 0 16px">Nova Postagem</h3>
+      <form id="form-nova-postagem" class="form-grid">
+        <div class="form-group">
+          <label>Remetente *</label>
+          <select name="remetente_id" required>${optRem || '<option value="">— cadastre um remetente primeiro —</option>'}</select>
+        </div>
+        <div class="form-group">
+          <label>Destinatário *</label>
+          <div class="dest-ac-wrap">
+            <input type="text" id="search-dest-post" placeholder="Digite o nome..." autocomplete="off" />
+            <input type="hidden" name="destinatario_id" id="hidden-dest-post-id" />
+            <ul class="dest-ac-drop" id="dest-ac-drop-post"></ul>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Serviço *</label>
+          <select name="servico_codigo" required>${optServ}</select>
+        </div>
+        <div class="form-group">
+          <label>Peso (gramas) *</label>
+          <input type="number" name="peso_gramas" min="1" value="100" required />
+        </div>
+        <div class="form-group">
+          <label>Formato</label>
+          <select name="formato" id="sel-formato">
+            <option value="caixa">Caixa/Pacote</option>
+            <option value="envelope">Envelope</option>
+            <option value="rolo">Rolo/Prisma</option>
+          </select>
+        </div>
+        <div class="form-group" id="grupo-altura">
+          <label>Altura (cm)</label>
+          <input type="number" name="altura_cm" id="inp-altura" min="0" step="0.1" value="0" />
+        </div>
+        <div class="form-group">
+          <label>Largura (cm)</label>
+          <input type="number" name="largura_cm" min="0" step="0.1" value="0" />
+        </div>
+        <div class="form-group">
+          <label>Comprimento (cm)</label>
+          <input type="number" name="comprimento_cm" min="0" step="0.1" value="0" />
+        </div>
+        <div class="form-group">
+          <label>Valor declarado (R$)</label>
+          <input type="number" name="valor_declarado" min="0" step="0.01" value="0" />
+        </div>
+        <div class="form-group">
+          <label>Conteúdo</label>
+          <input type="text" name="conteudo" placeholder="Documentos, correspondência..." />
+        </div>
+        <div class="form-group full-width">
+          <label>Observações</label>
+          <textarea name="observacoes" rows="2"></textarea>
+        </div>
+        <div class="form-actions full-width">
+          <button type="submit" class="btn btn-primary">Adicionar à fila</button>
+        </div>
+      </form>
+    </div>
+    ${pending.length > 0 ? `
+    <div class="form-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <h3 style="margin:0">${pending.length} postagem(ns) na fila</h3>
+        <button class="btn btn-success" id="btn-enviar-pendentes">Enviar ${pending.length} ao Correios</button>
+      </div>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Destinatário</th><th>Serviço</th><th>Peso</th><th>Ações</th></tr></thead>
+          <tbody>${rowsPending}</tbody>
+        </table>
+      </div>
+    </div>` : ''}
+    ${erros.length > 0 ? `
+    <div class="form-section" style="border-color:rgba(239,68,68,.20)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <h3 style="margin:0;color:rgba(255,130,130,.85)">${erros.length} postagem(ns) com ERRO</h3>
+        <button class="btn btn-danger" id="btn-excluir-erros">Excluir todos ERROs</button>
+      </div>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Destinatário</th><th>Serviço</th><th>Motivo</th><th>Ações</th></tr></thead>
+          <tbody>${rowsErro}</tbody>
+        </table>
+      </div>
+    </div>` : ''}`;
+}
+
+function renderEtiquetar() {
+  const items = state.postagens.filter(p => p.status === 'CONFIRMADO' && p.id_prepostagem);
+  const rows = items.map(p => `
+    <tr>
+      <td>${esc(p.destinatario?.nome ?? '-')}</td>
+      <td>${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}</td>
+      <td>${esc(p.numero_objeto ?? '-')}</td>
+      <td>${p.confirmado_em ? new Date(p.confirmado_em).toLocaleString('pt-BR') : '-'}</td>
+      <td class="td-actions">
+        <button class="btn btn-sm btn-primary" data-etiqueta-etiquetar="${p.id}">Etiqueta</button>
+      </td>
+    </tr>`).join('');
+
   return `
     <div class="toolbar" style="margin-bottom:12px">
-      <button class="btn btn-primary" data-tab="nova">+ Nova Postagem</button>
-      ${pending.length > 0 ? `<button class="btn btn-success" id="btn-enviar-pendentes">Enviar ${pending.length} Pendente${pending.length > 1 ? 's' : ''}</button>` : ''}
-      <button class="btn btn-secondary" id="btn-refresh-postagens">Atualizar</button>
+      <button class="btn btn-secondary" id="btn-refresh-etiquetar">Atualizar</button>
+      ${items.length > 1 ? `<button class="btn btn-primary" id="btn-etiqueta-lote-etiquetar">Gerar todas (${items.length}) em lote</button>` : ''}
     </div>
-    ${pending.length === 0
-      ? '<p class="empty-state">Nenhuma postagem pendente. As enviadas aparecem em <strong>Enviados</strong>.</p>'
+    ${items.length === 0
+      ? '<p class="empty-state">Nenhuma postagem aguardando etiqueta. Envie postagens pela aba <strong>Postagens</strong>.</p>'
       : `<div class="table-wrapper">
           <table class="data-table">
-            <thead><tr><th>Destinatário</th><th>Serviço</th><th>Peso</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Destinatário</th><th>Serviço</th><th>Código de Rastreio</th><th>Confirmado em</th><th>Ações</th></tr></thead>
             <tbody>${rows}</tbody>
-          </table></div>`}`;
+          </table>
+        </div>`}`;
 }
 
 function renderEnviados() {
-  const sent = state.postagens.filter(p => p.status !== 'RASCUNHO');
-  const canEtiqueta = p => !!(p.id_prepostagem && ['CONFIRMADO','POSTADO','EM_TRANSITO','ENTREGUE'].includes(p.status));
-  const erroCount = sent.filter(p => p.status === 'ERRO').length;
-  const etiquetaCount = sent.filter(canEtiqueta).length;
+  const sent = state.postagens.filter(p => ['POSTADO', 'EM_TRANSITO'].includes(p.status));
   const rows = sent.map(p => `
     <tr>
-      <td style="width:32px;text-align:center">
-        <input type="checkbox" class="row-sel-enviado"
-          data-id="${p.id}"
-          data-status="${p.status}"
-          data-haspp="${canEtiqueta(p) ? '1' : '0'}" />
-      </td>
       <td>${badge(p.status)}</td>
       <td>${esc(p.destinatario?.nome ?? '-')}</td>
       <td>${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}</td>
@@ -341,39 +474,55 @@ function renderEnviados() {
       <td>${p.confirmado_em ? new Date(p.confirmado_em).toLocaleString('pt-BR') : '-'}</td>
       <td class="td-actions">
         ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
-        ${canEtiqueta(p) ? `<button class="btn btn-sm btn-primary" data-etiqueta="${p.id}">Etiqueta</button>` : ''}
-        ${p.status === 'ERRO' ? `<button class="btn btn-sm btn-secondary" data-retentar="${p.id}">Retentar</button>` : ''}
-        ${p.status === 'ERRO' ? `<button class="btn btn-sm btn-danger" data-excluir-enviado="${p.id}">Excluir</button>` : ''}
       </td>
     </tr>`).join('');
 
   return `
-    <div class="toolbar" style="margin-bottom:8px">
+    <div class="toolbar" style="margin-bottom:8px;align-items:center">
       <button class="btn btn-secondary" id="btn-refresh-enviados">Atualizar</button>
-      ${etiquetaCount > 0 ? `<button class="btn btn-primary" id="btn-etiqueta-todos">Gerar todas etiquetas (${etiquetaCount})</button>` : ''}
-      ${erroCount > 0 ? `<button class="btn btn-danger" id="btn-excluir-erros">Excluir todos ERROs (${erroCount})</button>` : ''}
-    </div>
-    <div id="bulk-bar" style="display:none;margin-bottom:12px;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0">
-      <span id="bulk-count" style="font-size:13px"></span>
-      <button class="btn btn-sm btn-primary" id="btn-etiqueta-lote">Etiqueta em lote</button>
-      <button class="btn btn-sm btn-danger" id="btn-excluir-lote">Excluir selecionados</button>
+      <span id="rastreio-auto-status" style="font-size:12px;color:rgba(180,220,195,.45);margin-left:4px"></span>
     </div>
     ${sent.length === 0
-      ? '<p class="empty-state">Nenhuma postagem enviada ainda.</p>'
+      ? '<p class="empty-state">Nenhum envio em trânsito. Gere etiquetas na aba <strong>Etiquetar</strong>.</p>'
       : `<div class="table-wrapper">
           <table class="data-table">
-            <thead><tr>
-              <th style="width:32px"><input type="checkbox" id="sel-all-enviados" title="Selecionar todos" /></th>
-              <th>Status</th><th>Destinatário</th><th>Serviço</th><th>Código de Rastreio</th><th>Valor</th><th>Enviado em</th><th>Ações</th>
-            </tr></thead>
+            <thead><tr><th>Status</th><th>Destinatário</th><th>Serviço</th><th>Código de Rastreio</th><th>Valor</th><th>Enviado em</th><th>Ações</th></tr></thead>
             <tbody>${rows}</tbody>
-          </table></div>`}
+          </table>
+        </div>`}
     <div id="rastreio-resultado" style="margin-top:16px"></div>`;
 }
 
-function renderNovaPostagem() {
-  const optRem = state.remetentes.map(r => `<option value="${r.id}">${esc(r.nome)} — ${esc(r.cidade)}/${esc(r.uf)}</option>`).join('');
-  const optDest = state.destinatarios.map(d => `<option value="${d.id}">${esc(d.nome)}${d.matricula ? ' (' + esc(d.matricula) + ')' : ''} — ${esc(d.cidade)}/${esc(d.uf)}</option>`).join('');
+function renderHistorico() {
+  const hist = state.postagens.filter(p => ['ENTREGUE', 'DEVOLVIDO'].includes(p.status));
+  const rows = hist.map(p => `
+    <tr>
+      <td>${badge(p.status)}</td>
+      <td>${esc(p.destinatario?.nome ?? '-')}</td>
+      <td>${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}</td>
+      <td>${esc(p.numero_objeto ?? '-')}</td>
+      <td>${p.valor_postagem ? MONEY.format(p.valor_postagem) : '-'}</td>
+      <td>${p.confirmado_em ? new Date(p.confirmado_em).toLocaleDateString('pt-BR') : '-'}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="btn btn-secondary" id="btn-refresh-historico">Atualizar</button>
+    </div>
+    ${hist.length === 0
+      ? '<p class="empty-state">Nenhum envio concluído ou devolvido ainda.</p>'
+      : `<div class="table-wrapper">
+          <table class="data-table">
+            <thead><tr><th>Status</th><th>Destinatário</th><th>Serviço</th><th>Código de Rastreio</th><th>Valor</th><th>Data</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`}`;
+}
+
+// (renderNovaPostagem removida — formulário integrado em renderPostagens)
+function _unused_renderNovaPostagem() {
+  const optRem = '';
+  const optDest = '';
   const optServ = Object.entries(SERVICOS).map(([cod, nome]) => `<option value="${cod}">${esc(nome)}</option>`).join('');
 
   return `
@@ -617,21 +766,23 @@ function bindTabEvents() {
   const area = $root?.querySelector('#envios-tab-content');
   if (!area) return;
 
-  // Tab switches via data-tab
-  area.querySelectorAll('[data-tab]').forEach(el => {
-    el.addEventListener('click', () => {
-      state.tab = el.dataset.tab;
-      renderTab();
-    });
-  });
+  // Formato envelope → bloqueia campo altura
+  const selFormato = area.querySelector('#sel-formato');
+  const inpAltura = area.querySelector('#inp-altura');
+  const grupoAltura = area.querySelector('#grupo-altura');
+  function toggleAltura(val) {
+    const isEnv = val === 'envelope';
+    if (inpAltura) { inpAltura.disabled = isEnv; if (isEnv) inpAltura.value = '0'; }
+    if (grupoAltura) grupoAltura.style.opacity = isEnv ? '0.38' : '1';
+  }
+  if (selFormato) { toggleAltura(selFormato.value); selFormato.addEventListener('change', () => toggleAltura(selFormato.value)); }
 
-  // Refresh
+  // Refresh postagens
   area.querySelector('#btn-refresh-postagens')?.addEventListener('click', async () => {
-    await loadAll();
-    renderTab();
+    await loadAll(); renderTab();
   });
 
-  // Enviar todos pendentes (bulk prepostagem)
+  // Enviar todos pendentes → vá para ETIQUETAR após sucesso
   area.querySelector('#btn-enviar-pendentes')?.addEventListener('click', async () => {
     const pending = state.postagens.filter(p => p.status === 'RASCUNHO');
     if (!pending.length) return;
@@ -647,23 +798,17 @@ function bindTabEvents() {
       else { fail++; erros.push(`${p.destinatario?.nome ?? p.id}: ${result.error ?? 'erro desconhecido'}`); }
     }
     await loadAll();
-    if (fail === 0) {
-      setFeedback(`${ok} postagem(ns) enviada(s) com sucesso!`);
-      state.tab = 'enviados';
+    if (ok > 0) {
+      setFeedback(fail === 0 ? `${ok} postagem(ns) enviada(s)! Gere as etiquetas.` : `${ok} enviada(s), ${fail} com erro.`, fail > 0);
+      state.tab = 'etiquetar';
       $root?.querySelectorAll('[data-tab-main]').forEach(b => b.classList.toggle('active', b.dataset.tabMain === state.tab));
     } else {
-      setFeedback(`${ok} enviada(s), ${fail} com erro — ${erros[0] ?? ''}`, true);
+      setFeedback(`Falha ao enviar — ${erros[0] ?? ''}`, true);
     }
     renderTab();
   });
 
-  // Refresh enviados
-  area.querySelector('#btn-refresh-enviados')?.addEventListener('click', async () => {
-    await loadAll();
-    renderTab();
-  });
-
-  // Excluir todos ERROs de uma vez
+  // Excluir todos ERROs (aba Postagens)
   area.querySelector('#btn-excluir-erros')?.addEventListener('click', async () => {
     const erros = state.postagens.filter(p => p.status === 'ERRO');
     if (!erros.length) return;
@@ -676,87 +821,53 @@ function bindTabEvents() {
     await loadAll(); renderTab();
   });
 
-  // Gerar todas etiquetas em um único PDF
-  area.querySelector('#btn-etiqueta-todos')?.addEventListener('click', async () => {
-    const canEt = p => !!(p.id_prepostagem && ['CONFIRMADO','POSTADO','EM_TRANSITO','ENTREGUE'].includes(p.status));
-    const ids = state.postagens.filter(canEt).map(p => p.id);
-    if (!ids.length) return;
-    const btn = area.querySelector('#btn-etiqueta-todos');
-    if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
-    try {
-      const result = await callFn('correios-etiqueta', { postagem_ids: ids });
-      if (result.ok && result.pdf_base64) {
-        printPdf(result.pdf_base64);
-      } else {
-        setFeedback('Erro ao gerar etiquetas: ' + (result.error ?? 'desconhecido'), true);
-      }
-    } catch (e) { setFeedback('Erro: ' + e.message, true); }
-    if (btn) { btn.disabled = false; btn.textContent = `Gerar todas etiquetas (${ids.length})`; }
-  });
-
-  // ── Seleção em lote ────────────────────────────────────────────────────────
-  function getCheckedEnviados() {
-    return [...area.querySelectorAll('.row-sel-enviado:checked')];
-  }
-  function updateBulkBar() {
-    const checked = getCheckedEnviados();
-    const bar = area.querySelector('#bulk-bar');
-    const countEl = area.querySelector('#bulk-count');
-    const btnEt = area.querySelector('#btn-etiqueta-lote');
-    const btnEx = area.querySelector('#btn-excluir-lote');
-    if (!bar) return;
-    if (!checked.length) { bar.style.display = 'none'; return; }
-    bar.style.display = 'flex';
-    const withPP = checked.filter(c => c.dataset.haspp === '1').length;
-    const isErro = checked.filter(c => c.dataset.status === 'ERRO').length;
-    if (countEl) countEl.textContent = `${checked.length} selecionado(s)`;
-    if (btnEt) btnEt.textContent = withPP ? `Etiqueta em lote (${withPP})` : 'Etiqueta em lote';
-    if (btnEt) btnEt.disabled = withPP === 0;
-    if (btnEx) btnEx.textContent = isErro ? `Excluir ERRO (${isErro})` : 'Excluir selecionados';
-    if (btnEx) btnEx.disabled = isErro === 0;
-  }
-
-  area.querySelector('#sel-all-enviados')?.addEventListener('change', e => {
-    area.querySelectorAll('.row-sel-enviado').forEach(c => { c.checked = e.target.checked; });
-    updateBulkBar();
-  });
-  area.querySelectorAll('.row-sel-enviado').forEach(c => {
-    c.addEventListener('change', () => {
-      const all = area.querySelector('#sel-all-enviados');
-      const cbs = area.querySelectorAll('.row-sel-enviado');
-      if (all) all.checked = [...cbs].every(cb => cb.checked);
-      updateBulkBar();
-    });
-  });
-
-  // Excluir em lote (somente ERRO)
-  area.querySelector('#btn-excluir-lote')?.addEventListener('click', async () => {
-    const toDelete = getCheckedEnviados().filter(c => c.dataset.status === 'ERRO').map(c => c.dataset.id);
-    if (!toDelete.length) return;
-    if (!confirm(`Excluir ${toDelete.length} postagem(ns) com ERRO? Esta ação não pode ser desfeita.`)) return;
-    const btn = area.querySelector('#btn-excluir-lote');
-    if (btn) btn.disabled = true;
-    const { error } = await supabase.from('envios_postagens').delete().in('id', toDelete);
-    if (error) { setFeedback('Erro ao excluir: ' + error.message, true); if (btn) btn.disabled = false; return; }
+  // ── Aba ETIQUETAR ──────────────────────────────────────────────────────────
+  area.querySelector('#btn-refresh-etiquetar')?.addEventListener('click', async () => {
     await loadAll(); renderTab();
   });
 
-  // Etiqueta em lote
-  area.querySelector('#btn-etiqueta-lote')?.addEventListener('click', async () => {
-    const ids = getCheckedEnviados().filter(c => c.dataset.haspp === '1').map(c => c.dataset.id);
+  async function gerarEtiquetas(ids) {
     if (!ids.length) return;
-    const btn = area.querySelector('#btn-etiqueta-lote');
-    const orig = btn?.textContent;
-    if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
     try {
       const result = await callFn('correios-etiqueta', { postagem_ids: ids });
       if (result.ok && result.pdf_base64) {
         printPdf(result.pdf_base64);
+        await supabase.from('envios_postagens').update({ status: 'POSTADO' }).in('id', ids);
+        await loadAll();
+        if (state.tab === 'etiquetar') renderTab();
+        else {
+          state.tab = 'enviados';
+          $root?.querySelectorAll('[data-tab-main]').forEach(b => b.classList.toggle('active', b.dataset.tabMain === 'enviados'));
+          renderTab();
+          startRastreioAuto();
+        }
       } else {
-        setFeedback('Erro ao gerar etiqueta em lote: ' + (result.error ?? 'desconhecido'), true);
+        setFeedback('Erro ao gerar etiqueta: ' + (result.error ?? 'desconhecido'), true);
       }
     } catch (e) { setFeedback('Erro: ' + e.message, true); }
-    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+
+  area.querySelectorAll('[data-etiqueta-etiquetar]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.etiquetaEtiquetar;
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Gerando...';
+      await gerarEtiquetas([id]);
+      btn.disabled = false; btn.textContent = orig;
+    });
+  });
+
+  area.querySelector('#btn-etiqueta-lote-etiquetar')?.addEventListener('click', async () => {
+    const ids = state.postagens.filter(p => p.status === 'CONFIRMADO' && p.id_prepostagem).map(p => p.id);
+    const btn = area.querySelector('#btn-etiqueta-lote-etiquetar');
+    if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
+    await gerarEtiquetas(ids);
+    if (btn) { btn.disabled = false; btn.textContent = `Gerar todas (${ids.length}) em lote`; }
+  });
+
+  // ── Aba ENVIADOS ───────────────────────────────────────────────────────────
+  area.querySelector('#btn-refresh-enviados')?.addEventListener('click', async () => {
+    await loadAll(); renderTab();
   });
 
   // Retentar postagem com ERRO
@@ -833,6 +944,11 @@ function bindTabEvents() {
     });
   });
 
+  // Refresh histórico
+  area.querySelector('#btn-refresh-historico')?.addEventListener('click', async () => {
+    await loadAll(); renderTab();
+  });
+
   // Excluir postagem
   area.querySelectorAll('[data-excluir-postagem]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -866,9 +982,13 @@ function bindTabEvents() {
     };
     const { error } = await supabase.from('envios_postagens').insert(row);
     if (error) { setFeedback('Erro ao salvar: ' + error.message, true); return; }
-    setFeedback('Postagem adicionada.');
+    setFeedback('Postagem adicionada à fila.');
+    e.target.reset();
+    const hiddenDest = area.querySelector('#hidden-dest-post-id');
+    const searchDest = area.querySelector('#search-dest-post');
+    if (hiddenDest) hiddenDest.value = '';
+    if (searchDest) searchDest.value = '';
     await loadAll();
-    state.tab = 'postagens';
     renderTab();
   });
 
@@ -1233,23 +1353,28 @@ initProtectedPage('Correios', async (content) => {
       .dest-ac-item:hover{background:rgba(45,212,160,.10)}
       .dest-ac-item span{font-size:13px;color:var(--text);font-weight:600}
       .dest-ac-item small{font-size:11px;color:rgba(180,220,195,.50)}
+      .td-actions{white-space:nowrap;display:flex;gap:4px;align-items:center;flex-wrap:nowrap}
       @media(max-width:720px){.form-grid{grid-template-columns:1fr}.form-group.full-width,.form-actions{grid-column:span 1}}
     </style>
     <div id="envios-feedback" class="feedback-bar" style="display:none"></div>
     <nav class="envios-tabs">
       <button class="envios-tab${state.tab === 'postagens' ? ' active' : ''}" data-tab-main="postagens">Postagens</button>
+      <button class="envios-tab${state.tab === 'etiquetar' ? ' active' : ''}" data-tab-main="etiquetar">Etiquetar</button>
+      <button class="envios-tab${state.tab === 'enviados' ? ' active' : ''}" data-tab-main="enviados">Enviados</button>
+      <button class="envios-tab${state.tab === 'historico' ? ' active' : ''}" data-tab-main="historico">Histórico</button>
       <button class="envios-tab${state.tab === 'cotacao' ? ' active' : ''}" data-tab-main="cotacao">Cotação</button>
       <button class="envios-tab${state.tab === 'remetentes' ? ' active' : ''}" data-tab-main="remetentes">Remetentes</button>
       <button class="envios-tab${state.tab === 'destinatarios' ? ' active' : ''}" data-tab-main="destinatarios">Destinatários</button>
-      <button class="envios-tab${state.tab === 'enviados' ? ' active' : ''}" data-tab-main="enviados">Enviados</button>
     </nav>
     <div id="envios-tab-content"><p>Carregando...</p></div>`;
 
   content.querySelectorAll('[data-tab-main]').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (state.rastreioInterval) { clearInterval(state.rastreioInterval); state.rastreioInterval = null; }
       state.tab = btn.dataset.tabMain;
       content.querySelectorAll('[data-tab-main]').forEach(b => b.classList.toggle('active', b.dataset.tabMain === state.tab));
       renderTab();
+      if (state.tab === 'enviados') startRastreioAuto();
     });
   });
 
