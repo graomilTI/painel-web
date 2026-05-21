@@ -275,8 +275,9 @@ function openDistribModal(onConfirm){
       if(q.length<2){colabSug.innerHTML='';return;}
       clearTimeout(dcDebounce);
       dcDebounce=setTimeout(async()=>{
-        const {data}=await supabase.from('colaborador_snapshot').select('id,nome,cargo,tipo,ativo').ilike('nome',`%${q}%`).order('nome',{ascending:true}).limit(12);
-        const list=(data||[]).filter(c=>{const t=norm(c.ativo??'ativo');return !['false','0','inativo','desligado'].includes(t);});
+        const {data}=await supabase.from('colaborador_snapshot').select('id,nome,cargo,tipo,ativo').ilike('nome',`%${q}%`).order('nome',{ascending:true}).limit(60);
+        const seen=new Set();
+        const list=(data||[]).filter(c=>{const t=norm(c.ativo??'ativo');if(['false','0','inativo','desligado'].includes(t))return false;const k=norm(c.nome||'');if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
         colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
         colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
       },250);
