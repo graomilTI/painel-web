@@ -37,6 +37,14 @@ export const MENU_CONFIG = [
   },
 
   {
+    grupo: "TERMOS",
+    itens: [
+      item("termos_celular", "Desconto em Caixa", "termos#celular", ["TERMOS_CELULAR", "TERMOS"]),
+      item("termos_veiculos", "Veículos", "termos#veiculos", ["TERMOS_VEICULOS", "TERMOS"])
+    ]
+  },
+
+  {
     grupo: "COMPRAS",
     itens: [
       item("compras_adm", "Painel de Compras", "adm-compras", ["COMPRAS_ADM"])
@@ -64,6 +72,7 @@ export const MENU_CONFIG = [
     itens: [
       item("ferias_atestados", "Férias e Atestados", "ferias-atestados", ["RH_FERIAS_ATESTADOS"]),
       item("rh_plantao", "Plantão", "plantao", ["RH_PLANTAO", "PLANTAO", "PLANTÃO"]),
+      item("rh_epi", "EPI", "epi-rh", ["RH_EPI"]),
       item("historico_geral", "Histórico Geral", "historico", ["RH_HIST_INDISP"]),
       item("base_colab_consulta", "Consultar Base", "consultar-colaboradores", ["BASE_COLAB_CONSULTA"]),
       item("contatos_exportacoes", "Contatos e Cadastros", "contatos", ["CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"])
@@ -120,9 +129,9 @@ export const MENU_CONFIG = [
 
 
   {
-    grupo: 'ENVIOS',
+    grupo: 'CORREIOS',
     itens: [
-      item('envios', 'Envios', 'envios', ['ENVIOS', 'CORREIOS', 'PREPOSTAGEM']),
+      item('envios', 'Correios', 'envios', ['ENVIOS', 'CORREIOS', 'PREPOSTAGEM']),
     ]
   },
 
