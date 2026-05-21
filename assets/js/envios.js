@@ -1073,7 +1073,7 @@ function bindFormDestinatario(area) {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-initProtectedPage('Envios', async (content) => {
+initProtectedPage('Correios', async (content) => {
   $root = content;
   content.innerHTML = `
     <style>
