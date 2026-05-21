@@ -268,12 +268,18 @@ function openDistribModal(onConfirm){
     const colabInput=modal.querySelector('#dcColab');
     const colabSug=modal.querySelector('#dcColabSug');
     let selectedColab=null;
+    let dcDebounce=null;
     colabInput.addEventListener('input',()=>{
       selectedColab=null;
-      const q=norm(colabInput.value); if(q.length<2){colabSug.innerHTML='';return;}
-      const list=state.colaboradores.filter(c=>norm(c.nome).includes(q)).slice(0,10);
-      colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
-      colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
+      const q=colabInput.value.trim();
+      if(q.length<2){colabSug.innerHTML='';return;}
+      clearTimeout(dcDebounce);
+      dcDebounce=setTimeout(async()=>{
+        const {data}=await supabase.from('colaborador_snapshot').select('id,nome,cargo,tipo,ativo').ilike('nome',`%${q}%`).order('nome',{ascending:true}).limit(12);
+        const list=(data||[]).filter(c=>{const t=norm(c.ativo??'ativo');return !['false','0','inativo','desligado'].includes(t);});
+        colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
+        colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
+      },250);
     });
     colabInput.addEventListener('blur',()=>setTimeout(()=>{colabSug.innerHTML='';},160));
     modal.querySelector('#dcAdd').onclick=()=>{
