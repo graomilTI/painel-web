@@ -166,12 +166,18 @@ function openCelularModal(baseItem){
   const colabInput=modal.querySelector('#celColab');
   const colabSug=modal.querySelector('#celColabSug');
   let selectedColab=null;
+  let celDebounce=null;
   colabInput.addEventListener('input',()=>{
     selectedColab=null;
-    const q=norm(colabInput.value); if(q.length<2){colabSug.innerHTML='';return;}
-    const list=state.colaboradores.filter(c=>norm(c.nome).includes(q)).slice(0,10);
-    colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
-    colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
+    const q=colabInput.value.trim(); if(q.length<2){colabSug.innerHTML='';return;}
+    clearTimeout(celDebounce);
+    celDebounce=setTimeout(async()=>{
+      const {data}=await supabase.from('colaborador_snapshot').select('id,nome,cargo,tipo,ativo').ilike('nome',`%${q}%`).order('nome',{ascending:true}).limit(60);
+      const seen=new Set();
+      const list=(data||[]).filter(c=>{const t=norm(c.ativo??'ativo');if(['false','0','inativo','desligado'].includes(t))return false;const k=norm(c.nome||'');if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
+      colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
+      colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
+    },250);
   });
   colabInput.addEventListener('blur',()=>setTimeout(()=>{colabSug.innerHTML='';},160));
   modal.querySelector('#celConfirmar').onclick=()=>{
