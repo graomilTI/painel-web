@@ -464,59 +464,77 @@ function renderEtiquetar() {
 
 function renderEnviados() {
   const sent = state.postagens.filter(p => ['POSTADO', 'EM_TRANSITO'].includes(p.status));
-  const rows = sent.map(p => `
-    <tr>
-      <td>${badge(p.status)}</td>
-      <td>${esc(p.destinatario?.nome ?? '-')}</td>
-      <td>${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}</td>
-      <td>${esc(p.numero_objeto ?? '-')}</td>
-      <td>${p.valor_postagem ? MONEY.format(p.valor_postagem) : '-'}</td>
-      <td>${p.confirmado_em ? new Date(p.confirmado_em).toLocaleString('pt-BR') : '-'}</td>
-      <td class="td-actions">
+
+  const cards = sent.map(p => {
+    const dt = p.confirmado_em
+      ? new Date(p.confirmado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : '';
+    const dest = p.destinatario ?? {};
+    const localidade = [dest.cidade, dest.uf].filter(Boolean).join('/');
+    return `
+    <div class="envios-card">
+      <div class="envios-card-status">${badge(p.status)}</div>
+      <div class="envios-card-body">
+        <div class="envios-card-nome">${esc(dest.nome ?? '-')}</div>
+        <div class="envios-card-servico">${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}${localidade ? ' &nbsp;·&nbsp; ' + esc(localidade) : ''}${p.peso_gramas ? ' &nbsp;·&nbsp; ' + p.peso_gramas + 'g' : ''}</div>
+        ${p.numero_objeto ? `<div class="envios-card-rastreio">${esc(p.numero_objeto)}</div>` : '<div class="envios-card-meta" style="margin-top:2px">Sem código de rastreio</div>'}
+      </div>
+      <div class="envios-card-aside">
+        ${p.valor_postagem ? `<span class="envios-card-valor">${MONEY.format(p.valor_postagem)}</span>` : ''}
+        ${dt ? `<span class="envios-card-meta">${dt}</span>` : ''}
         ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
-      </td>
-    </tr>`).join('');
+      </div>
+    </div>`;
+  }).join('');
 
   return `
-    <div class="toolbar" style="margin-bottom:8px;align-items:center">
+    <div class="toolbar" style="margin-bottom:14px;align-items:center">
       <button class="btn btn-secondary" id="btn-refresh-enviados">Atualizar</button>
-      <span id="rastreio-auto-status" style="font-size:12px;color:rgba(180,220,195,.45);margin-left:4px"></span>
+      <span id="rastreio-auto-status" style="font-size:12px;color:rgba(180,220,195,.40)"></span>
     </div>
     ${sent.length === 0
       ? '<p class="empty-state">Nenhum envio em trânsito. Gere etiquetas na aba <strong>Etiquetar</strong>.</p>'
-      : `<div class="table-wrapper">
-          <table class="data-table">
-            <thead><tr><th>Status</th><th>Destinatário</th><th>Serviço</th><th>Código de Rastreio</th><th>Valor</th><th>Enviado em</th><th>Ações</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>`}
+      : `<div class="envios-card-list">${cards}</div>`}
     <div id="rastreio-resultado" style="margin-top:16px"></div>`;
 }
 
 function renderHistorico() {
   const hist = state.postagens.filter(p => ['ENTREGUE', 'DEVOLVIDO'].includes(p.status));
-  const rows = hist.map(p => `
-    <tr>
-      <td>${badge(p.status)}</td>
-      <td>${esc(p.destinatario?.nome ?? '-')}</td>
-      <td>${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}</td>
-      <td>${esc(p.numero_objeto ?? '-')}</td>
-      <td>${p.valor_postagem ? MONEY.format(p.valor_postagem) : '-'}</td>
-      <td>${p.confirmado_em ? new Date(p.confirmado_em).toLocaleDateString('pt-BR') : '-'}</td>
-    </tr>`).join('');
+  const entregues = hist.filter(p => p.status === 'ENTREGUE').length;
+  const devolvidos = hist.filter(p => p.status === 'DEVOLVIDO').length;
+
+  const cards = hist.map(p => {
+    const dest = p.destinatario ?? {};
+    const localidade = [dest.cidade, dest.uf].filter(Boolean).join('/');
+    const isDev = p.status === 'DEVOLVIDO';
+    const dt = p.confirmado_em ? new Date(p.confirmado_em).toLocaleDateString('pt-BR') : '';
+    return `
+    <div class="envios-card${isDev ? ' envios-card-devolvido' : ''}">
+      <div class="envios-card-status">${badge(p.status)}</div>
+      <div class="envios-card-body">
+        <div class="envios-card-nome">${esc(dest.nome ?? '-')}</div>
+        <div class="envios-card-servico">${esc(SERVICOS[p.servico_codigo] ?? p.servico_nome)}${localidade ? ' &nbsp;·&nbsp; ' + esc(localidade) : ''}</div>
+        ${p.numero_objeto ? `<div class="envios-card-rastreio">${esc(p.numero_objeto)}</div>` : ''}
+      </div>
+      <div class="envios-card-aside">
+        ${p.valor_postagem ? `<span class="envios-card-valor">${MONEY.format(p.valor_postagem)}</span>` : ''}
+        ${dt ? `<span class="envios-card-meta">${dt}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  const summary = hist.length
+    ? `<span style="font-size:13px;color:rgba(180,220,195,.50)">${hist.length} registro(s)${entregues ? ' · ' + entregues + ' entregue(s)' : ''}${devolvidos ? ' · ' + devolvidos + ' devolvido(s)' : ''}</span>`
+    : '';
 
   return `
-    <div class="toolbar" style="margin-bottom:12px">
+    <div class="toolbar" style="margin-bottom:14px;align-items:center">
       <button class="btn btn-secondary" id="btn-refresh-historico">Atualizar</button>
+      ${summary}
     </div>
     ${hist.length === 0
       ? '<p class="empty-state">Nenhum envio concluído ou devolvido ainda.</p>'
-      : `<div class="table-wrapper">
-          <table class="data-table">
-            <thead><tr><th>Status</th><th>Destinatário</th><th>Serviço</th><th>Código de Rastreio</th><th>Valor</th><th>Data</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>`}`;
+      : `<div class="envios-card-list">${cards}</div>`}`;
 }
 
 // (renderNovaPostagem removida — formulário integrado em renderPostagens)
@@ -1354,7 +1372,20 @@ initProtectedPage('Correios', async (content) => {
       .dest-ac-item span{font-size:13px;color:var(--text);font-weight:600}
       .dest-ac-item small{font-size:11px;color:rgba(180,220,195,.50)}
       .td-actions{white-space:nowrap;display:flex;gap:4px;align-items:center;flex-wrap:nowrap}
-      @media(max-width:720px){.form-grid{grid-template-columns:1fr}.form-group.full-width,.form-actions{grid-column:span 1}}
+      .envios-card-list{display:flex;flex-direction:column;gap:8px}
+      .envios-card{background:rgba(4,13,9,.42);border:1px solid rgba(45,212,160,.09);border-radius:14px;padding:14px 18px;display:grid;grid-template-columns:auto 1fr auto;gap:10px 18px;align-items:center;transition:border-color .15s,background .15s}
+      .envios-card:hover{border-color:rgba(45,212,160,.22);background:rgba(4,13,9,.60)}
+      .envios-card-devolvido{border-color:rgba(239,68,68,.14)}
+      .envios-card-devolvido:hover{border-color:rgba(239,68,68,.28)}
+      .envios-card-status{align-self:start;padding-top:2px}
+      .envios-card-body{display:flex;flex-direction:column;gap:4px;min-width:0}
+      .envios-card-nome{font-size:.95rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .envios-card-servico{font-size:.77rem;color:rgba(180,220,195,.48);line-height:1.4}
+      .envios-card-rastreio{font-family:ui-monospace,'Cascadia Code',Consolas,monospace;font-size:.76rem;letter-spacing:.07em;color:rgba(45,212,160,.82);background:rgba(45,212,160,.07);border:1px solid rgba(45,212,160,.12);padding:2px 8px;border-radius:6px;display:inline-block;margin-top:3px}
+      .envios-card-aside{display:flex;flex-direction:column;align-items:flex-end;gap:5px;min-width:90px}
+      .envios-card-valor{font-size:.85rem;font-weight:700;color:rgba(200,230,210,.85)}
+      .envios-card-meta{font-size:.74rem;color:rgba(180,220,195,.38);text-align:right;white-space:nowrap}
+      @media(max-width:720px){.form-grid{grid-template-columns:1fr}.form-group.full-width,.form-actions{grid-column:span 1}.envios-card{grid-template-columns:auto 1fr}.envios-card-aside{grid-column:2;flex-direction:row;align-items:center;flex-wrap:wrap;justify-content:flex-start}}
     </style>
     <div id="envios-feedback" class="feedback-bar" style="display:none"></div>
     <nav class="envios-tabs">
