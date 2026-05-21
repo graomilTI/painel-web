@@ -4,8 +4,7 @@ import { supabase, SUPABASE_URL } from './supabaseClient.js';
 const SERVICOS = {
   '03220': 'PAC Contrato',
   '03298': 'SEDEX Contrato',
-  '61124': 'Carta Registrada AR Digital',
-  '65130': 'Telegrama',
+  '80900': 'Carta Registrada c/ AR',
 };
 
 const STATUS_LABEL = {
@@ -310,7 +309,7 @@ function renderEnviados() {
       <td>${p.confirmado_em ? new Date(p.confirmado_em).toLocaleString('pt-BR') : '-'}</td>
       <td class="td-actions">
         ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
-        ${p.status === 'ERRO' ? `<button class="btn btn-sm btn-warn" data-retentar="${p.id}">Retentar</button>` : ''}
+        ${p.status === 'ERRO' ? `<button class="btn btn-sm btn-secondary" data-retentar="${p.id}">Retentar</button>` : ''}
       </td>
     </tr>`).join('');
 
@@ -623,6 +622,7 @@ function bindTabEvents() {
   // Retentar postagem com ERRO
   area.querySelectorAll('[data-retentar]').forEach(btn => {
     btn.addEventListener('click', async () => {
+      if (!confirm('Reenviar esta postagem ao Correios?')) return;
       const id = btn.dataset.retentar;
       btn.disabled = true;
       btn.textContent = 'Enviando...';
