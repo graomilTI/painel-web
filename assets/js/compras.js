@@ -192,6 +192,7 @@ function openDistribModal(onConfirm){
   const epiItens=state.itens.filter(i=>i.tipo==='EPI');
   const modal=document.getElementById('cmpCelularModal');
   const distribucoes=[];
+  let persistColab=null;
   const totalItem=i=>Number(i.unidade||i.quantidade||1);
   const distribTotal=id=>distribucoes.filter(d=>d.epi_id===id).reduce((s,d)=>s+d.quantidade,0);
   const restante=i=>totalItem(i)-distribTotal(i._id);
@@ -267,10 +268,12 @@ function openDistribModal(onConfirm){
     modal.querySelectorAll('[data-rem]').forEach(btn=>btn.onclick=()=>{ distribucoes.splice(Number(btn.dataset.rem),1); renderModal(); });
     const colabInput=modal.querySelector('#dcColab');
     const colabSug=modal.querySelector('#dcColabSug');
-    let selectedColab=null;
+    let selectedColab=persistColab;
+    if(persistColab) colabInput.value=persistColab.nome;
     let dcDebounce=null;
     colabInput.addEventListener('input',()=>{
       selectedColab=null;
+      persistColab=null;
       const q=colabInput.value.trim();
       if(q.length<2){colabSug.innerHTML='';return;}
       clearTimeout(dcDebounce);
@@ -295,6 +298,7 @@ function openDistribModal(onConfirm){
       const rem=restante(epiItem);
       if(qtd>rem){fb.textContent=`Quantidade excede o disponível (${rem} un restantes).`;fb.classList.add('err');return;}
       distribucoes.push({epi_id:epiItem._id,colaborador_id:colab.id||null,colaborador_nome:colab.nome,quantidade:qtd,material:epiItem.material});
+      persistColab=colab;
       renderModal();
     };
   }
