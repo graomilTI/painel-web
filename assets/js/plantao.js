@@ -1,8 +1,8 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
-const DEFAULT_SETORES = ['Caixas', 'Frotas', 'RH', 'Logística'];
-const SETORES_DIVULGACAO_PADRAO = ['Caixas', 'Frotas', 'RH', 'Logística'];
+const DEFAULT_SETORES = ['RH', 'Logística', 'Frotas', 'Caixas', 'Troca de Notas'];
+const SETORES_DIVULGACAO_PADRAO = ['RH', 'Logística', 'Frotas', 'Caixas', 'Troca de Notas'];
 const STORAGE_KEY = 'painel_rh_plantao_setores_extra';
 const TEMPLATE_STORAGE_KEY = 'painel_rh_plantao_modelo_padrao';
 const IMG_W = 1448;
@@ -14,6 +14,7 @@ let contatosMap = new Map();
 let escala = {};
 let modeloPlantao = [];
 let currentUserContext = null;
+let setorAtivo = DEFAULT_SETORES[0];
 
 function esc(value) {
   return String(value ?? '')
@@ -177,6 +178,12 @@ function injectPlantaoStyles() {
     .plantao-tab.active{background:rgba(22,101,52,.28);color:#dcfce7;border-color:rgba(111,208,165,.28)}
     .plantao-panel{display:none}
     .plantao-panel.active{display:block}
+    .plantao-sector-nav{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:10px;margin:0 0 14px}
+    .plantao-sector-btn{border:1px solid rgba(255,255,255,.08);background:#15152a;color:var(--text);border-radius:18px;padding:14px 16px;font-weight:900;cursor:pointer;text-align:left;box-shadow:0 14px 30px rgba(0,0,0,.12);transition:.16s ease}
+    .plantao-sector-btn:hover{border-color:rgba(111,208,165,.22);transform:translateY(-1px)}
+    .plantao-sector-btn.active{background:linear-gradient(135deg,rgba(22,101,52,.34),rgba(15,23,42,.74));color:#dcfce7;border-color:rgba(111,208,165,.38)}
+    .plantao-sector-btn small{display:block;color:var(--muted);font-weight:700;margin-top:5px}
+    .plantao-sector-btn.active small{color:#bbf7d0}
     .plantao-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
     .plantao-field{grid-column:span 12}
     .plantao-field.third{grid-column:span 4}
@@ -197,7 +204,7 @@ function injectPlantaoStyles() {
     .plantao-setor{border:1px solid var(--line);border-radius:18px;padding:14px;background:#15152a}
     .plantao-setor-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
     .plantao-setor-head h3{margin:0}
-    .plantao-add-grid{display:grid;grid-template-columns:1.7fr minmax(150px, .9fr) repeat(4, minmax(92px, 1fr)) 120px;gap:10px;align-items:end}
+    .plantao-add-grid{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(155px,.75fr) repeat(4,minmax(92px,.65fr)) 120px;gap:10px;align-items:end}
     .plantao-person-list{display:grid;gap:8px;margin-top:12px}
     .plantao-person{display:grid;grid-template-columns:1.5fr 1fr 1fr auto;gap:10px;align-items:center;border:1px solid var(--line);background:#10101e;border-radius:14px;padding:10px}
     .plantao-person strong{display:block}
@@ -230,6 +237,7 @@ function injectPlantaoStyles() {
     .plantao-tag{display:inline-flex;border:1px solid rgba(255,255,255,0.08);background:#10101e;border-radius:999px;padding:5px 8px;color:var(--muted);font-size:12px}
     @media (max-width:980px){
       .plantao-field.third,.plantao-field.half,.plantao-field.quarter{grid-column:span 12}
+      .plantao-sector-nav{grid-template-columns:1fr 1fr}
       .plantao-add-grid,.plantao-person{grid-template-columns:1fr}
       .plantao-mini-kpis{grid-template-columns:1fr 1fr}
     }
@@ -836,68 +844,100 @@ function setupSuggest(input, onSelect) {
 function renderSetores() {
   const holder = document.getElementById('plantaoSetores');
   if (!holder) return;
-  holder.innerHTML = setores.map((setor) => {
-    const rows = escala[setor] || [];
-    return `
-      <section class="plantao-setor" data-setor="${esc(setor)}">
-        <div class="plantao-setor-head">
-          <div>
-            <h3>${esc(setor)}</h3>
-            <div class="plantao-meta">${rows.length} plantonista(s) cadastrado(s)</div>
-          </div>
-          ${DEFAULT_SETORES.includes(setor) ? '' : `<button type="button" class="plantao-btn danger" data-remove-setor="${esc(setor)}">Remover setor</button>`}
-        </div>
 
-        <div class="plantao-add-grid">
-          <div class="plantao-suggest-wrap">
-            <label class="plantao-label">Colaborador</label>
-            <input class="plantao-input plantao-colab-input" data-setor="${esc(setor)}" placeholder="Digite o nome do colaborador" autocomplete="off" />
-            <div class="plantao-suggestions"></div>
-          </div>
-          <div>
-            <label class="plantao-label">Dia</label>
-            <select class="plantao-select" data-field="data_plantao" data-setor="${esc(setor)}">${buildDateOptions()}</select>
-          </div>
-          <div>
-            <label class="plantao-label">Início 1</label>
-            <input class="plantao-input" type="time" data-field="hora_inicio" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio)}" />
-          </div>
-          <div>
-            <label class="plantao-label">Fim 1</label>
-            <input class="plantao-input" type="time" data-field="hora_fim" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim)}" />
-          </div>
-          <div>
-            <label class="plantao-label">Início 2</label>
-            <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio_2)}" />
-          </div>
-          <div>
-            <label class="plantao-label">Fim 2</label>
-            <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim_2)}" />
-          </div>
-          <button type="button" class="plantao-btn primary" data-add="${esc(setor)}">Adicionar</button>
-        </div>
+  const setoresOrdenados = [...setores].sort((a, b) => {
+    const ia = DEFAULT_SETORES.indexOf(a);
+    const ib = DEFAULT_SETORES.indexOf(b);
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0) return -1;
+    if (ib >= 0) return 1;
+    return a.localeCompare(b, 'pt-BR');
+  });
 
-        <div class="plantao-person-list">
-          ${rows.length ? rows.map((row, idx) => `
-            <div class="plantao-person" data-row="${idx}" data-setor="${esc(setor)}">
-              <div>
-                <span class="plantao-date-pill">${esc(weekdayBR(row.data_plantao))} · ${esc(formatDateBR(row.data_plantao))}</span>
-                <strong>${esc(row.nome)}</strong>
-                <span>${esc(row.cpf || row.colaborador_key || '')}</span>
-              </div>
-              <div><span>Contato</span><br>${esc(formatPhone(row.telefone) || '-')}</div>
-              <div><span>Horário</span><br>${esc(buildHorario(row) || '-')}</div>
-              <button type="button" class="plantao-btn danger" data-remove-row="${idx}" data-setor="${esc(setor)}">Remover</button>
+  if (!setoresOrdenados.includes(setorAtivo)) setorAtivo = setoresOrdenados[0] || DEFAULT_SETORES[0];
+  if (!escala[setorAtivo]) escala[setorAtivo] = [];
+
+  const navHtml = `
+    <div class="plantao-sector-nav" aria-label="Setores do plantão">
+      ${setoresOrdenados.map((setor) => {
+        const rows = escala[setor] || [];
+        return `
+          <button type="button" class="plantao-sector-btn ${setor === setorAtivo ? 'active' : ''}" data-setor-tab="${esc(setor)}">
+            ${esc(setor)}
+            <small>${rows.length} plantonista(s)</small>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  const setor = setorAtivo;
+  const rows = escala[setor] || [];
+  holder.innerHTML = navHtml + `
+    <section class="plantao-setor" data-setor="${esc(setor)}">
+      <div class="plantao-setor-head">
+        <div>
+          <h3>${esc(setor)}</h3>
+          <div class="plantao-meta">Selecione a data, o colaborador e o horário do responsável por este setor.</div>
+        </div>
+        ${DEFAULT_SETORES.includes(setor) ? '' : `<button type="button" class="plantao-btn danger" data-remove-setor="${esc(setor)}">Remover setor</button>`}
+      </div>
+
+      <div class="plantao-add-grid">
+        <div class="plantao-suggest-wrap">
+          <label class="plantao-label">Colaborador</label>
+          <input class="plantao-input plantao-colab-input" data-setor="${esc(setor)}" placeholder="Digite o nome do colaborador" autocomplete="off" />
+          <div class="plantao-suggestions"></div>
+        </div>
+        <div>
+          <label class="plantao-label">Data</label>
+          <select class="plantao-select" data-field="data_plantao" data-setor="${esc(setor)}">${buildDateOptions()}</select>
+        </div>
+        <div>
+          <label class="plantao-label">Início 1</label>
+          <input class="plantao-input" type="time" data-field="hora_inicio" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio)}" />
+        </div>
+        <div>
+          <label class="plantao-label">Fim 1</label>
+          <input class="plantao-input" type="time" data-field="hora_fim" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim)}" />
+        </div>
+        <div>
+          <label class="plantao-label">Início 2</label>
+          <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio_2)}" />
+        </div>
+        <div>
+          <label class="plantao-label">Fim 2</label>
+          <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim_2)}" />
+        </div>
+        <button type="button" class="plantao-btn primary" data-add="${esc(setor)}">Adicionar</button>
+      </div>
+
+      <div class="plantao-person-list">
+        ${rows.length ? rows.map((row, idx) => `
+          <div class="plantao-person" data-row="${idx}" data-setor="${esc(setor)}">
+            <div>
+              <span class="plantao-date-pill">${esc(weekdayBR(row.data_plantao))} · ${esc(formatDateBR(row.data_plantao))}</span>
+              <strong>${esc(row.nome)}</strong>
+              <span>${esc(row.cpf || row.colaborador_key || '')}</span>
             </div>
-          `).join('') : '<div class="plantao-meta">Nenhum plantonista adicionado neste setor.</div>'}
-        </div>
-      </section>
-    `;
-  }).join('');
+            <div><span>Contato</span><br>${esc(formatPhone(row.telefone) || '-')}</div>
+            <div><span>Horário</span><br>${esc(buildHorario(row) || '-')}</div>
+            <button type="button" class="plantao-btn danger" data-remove-row="${idx}" data-setor="${esc(setor)}">Remover</button>
+          </div>
+        `).join('') : '<div class="plantao-meta">Nenhum plantonista adicionado neste setor.</div>'}
+      </div>
+    </section>
+  `;
+
+  holder.querySelectorAll('[data-setor-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setorAtivo = btn.dataset.setorTab;
+      renderSetores();
+    });
+  });
 
   holder.querySelectorAll('.plantao-colab-input').forEach((input) => {
     setupSuggest(input, (selected) => {
-      const setor = input.dataset.setor;
       const section = input.closest('.plantao-setor');
       const contact = getContactForKey(selected.key, selected);
       section.dataset.selected = JSON.stringify({
@@ -928,6 +968,7 @@ function renderSetores() {
       const setor = btn.dataset.removeSetor;
       setores = setores.filter((s) => s !== setor);
       delete escala[setor];
+      if (setorAtivo === setor) setorAtivo = DEFAULT_SETORES[0];
       saveExtraSetores(setores.filter((s) => !DEFAULT_SETORES.includes(s)));
       renderSetores();
       updateKpis();
@@ -1422,6 +1463,8 @@ function sectorIcon(setor) {
   if (n.includes('FROTA')) return 'truck';
   if (n === 'RH' || n.includes('RECURSOS')) return 'people';
   if (n.includes('LOGIST')) return 'box';
+  if (n.includes('TROCA') || n.includes('NOTA')) return 'mail';
+  if (n.includes('CAIXA')) return 'cash';
   return 'cash';
 }
 
@@ -1736,7 +1779,7 @@ function renderPage(content) {
       <div class="section-heading">
         <div>
           <h2>Plantão</h2>
-          <p class="section-subtitle">Monte a escala por data, cadastre mais de um plantonista por setor, consulte plantões salvos e gere a arte de divulgação com telefone, e-mail e horário.</p>
+          <p class="section-subtitle">Escolha o setor no topo, informe data, colaborador e horário do responsável, consulte plantões salvos e gere a arte de divulgação.</p>
         </div>
       </div>
 
@@ -1802,6 +1845,7 @@ function renderPage(content) {
           <div class="plantao-feedback" id="plantaoFeedback"></div>
         </div>
 
+        <div class="plantao-card" style="padding:14px 16px;"><div class="plantao-meta">Setores fixos conforme controle atual: RH, Logística, Frotas, Caixas e Troca de Notas. Clique em um botão para preencher a escala do setor.</div></div>
         <div class="plantao-setores" id="plantaoSetores"></div>
       </div>
 
