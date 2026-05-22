@@ -1192,6 +1192,11 @@ initProtectedPage('Financeiro', (content, userContext) => {
             <div class="fin-field"><label>Provisão automática</label><input id="cfgProvAuto" type="number" step="0.01" placeholder="0,00"></div>
             <div class="fin-field"><label>Ajuste manual provisão</label><input id="cfgProvManual" type="number" step="0.01" placeholder="0,00"></div>
             <div class="fin-field full"><label>Observações</label><textarea id="cfgObs" placeholder="Observações do financeiro"></textarea></div>
+            <div class="fin-field full" style="border-top:1px solid rgba(148,163,184,.12);margin-top:8px;padding-top:16px">
+              <label>Chave API BotConversa</label>
+              <input id="cfgBotconversaKey" type="password" placeholder="Cole aqui a chave de integração do BotConversa" autocomplete="off">
+              <small style="color:#6b7280;margin-top:4px;display:block">Salva localmente no navegador. Usada para enviar comprovantes por WhatsApp ao fornecedor.</small>
+            </div>
             <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Salvar ajustes</button></div>
             <div class="fin-field"><label>&nbsp;</label><span id="fbConfig" class="fin-feedback"></span></div>
           </form>
@@ -1648,6 +1653,45 @@ initProtectedPage('Financeiro', (content, userContext) => {
     return payload + crc16Pix(payload).toString(16).toUpperCase().padStart(4, '0');
   }
 
+  async function sendComprovanteViaBotConversa(phone, comprovanteUrl, fornecedor) {
+    const apiKey = localStorage.getItem('botconversa_api_key') || '';
+    if (!apiKey) return { ok: false, error: 'Chave API BotConversa não configurada (Saldo e Provisão).' };
+    const tel = String(phone).replace(/\D/g, '');
+    if (!tel) return { ok: false, error: 'Telefone inválido.' };
+    const base = 'https://backend.botconversa.com.br/api/v1/webhook';
+    const headers = { 'api-key': apiKey, accept: 'application/json' };
+
+    let subscriberId = null;
+    try {
+      const getRes = await fetch(`${base}/subscriber/${tel}/`, { headers });
+      if (getRes.ok) {
+        const data = await getRes.json();
+        subscriberId = data?.id ?? null;
+      }
+      if (!subscriberId) {
+        const body = new FormData();
+        body.append('phone', tel);
+        if (fornecedor) body.append('name', String(fornecedor).substring(0, 60));
+        const createRes = await fetch(`${base}/subscriber/`, { method: 'POST', headers, body });
+        if (createRes.ok) subscriberId = (await createRes.json())?.id ?? null;
+      }
+      if (!subscriberId) return { ok: false, error: 'Contato não encontrado no BotConversa.' };
+
+      const msgBody = new FormData();
+      msgBody.append('type', 'text');
+      msgBody.append('value', `Olá${fornecedor ? `, ${fornecedor}` : ''}! Segue o comprovante de pagamento referente à sua solicitação.`);
+      await fetch(`${base}/subscriber/${subscriberId}/send_message/`, { method: 'POST', headers, body: msgBody });
+
+      const fileBody = new FormData();
+      fileBody.append('type', 'file');
+      fileBody.append('value', comprovanteUrl);
+      const sendRes = await fetch(`${base}/subscriber/${subscriberId}/send_message/`, { method: 'POST', headers, body: fileBody });
+      return sendRes.ok ? { ok: true } : { ok: false, error: 'Erro ao enviar arquivo via WhatsApp.' };
+    } catch (e) {
+      return { ok: false, error: e.message || 'Erro ao conectar ao BotConversa.' };
+    }
+  }
+
   function abrirModalComprovantePagamento(id) {
     const row = getPagamentoRowById(id);
     if (!row) return;
@@ -1685,6 +1729,14 @@ initProtectedPage('Financeiro', (content, userContext) => {
         <label>Comprovante de pagamento</label>
         <input id="finPayComprovante" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx">
       </div>
+      ${localStorage.getItem('botconversa_api_key') ? `
+      <div class="fin-field full mt-16" style="padding:12px 14px;background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.16);border-radius:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px">
+          <input id="finPaySendWpp" type="checkbox" ${(row.contato || row.contato_fornecedor) ? 'checked' : ''}>
+          <span>Enviar comprovante por WhatsApp ao fornecedor</span>
+        </label>
+        <input id="finPayWppPhone" type="tel" placeholder="WhatsApp do fornecedor (ex: 5511999999999)" value="${esc(row.contato || row.contato_fornecedor || '')}" style="width:100%;background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:14px">
+      </div>` : ''}
       <div class="fin-actions-row mt-16">
         <button class="btn btn-primary" id="finPaySend" type="button">ENVIAR</button>
         <span id="finPayFeedback" class="fin-feedback"></span>
@@ -1880,6 +1932,20 @@ initProtectedPage('Financeiro', (content, userContext) => {
         }
         if (error) throw error;
         if (isCompras) await updateComprasComprovante(row, comprovanteUrl);
+      }
+
+      const sendWpp = document.getElementById('finPaySendWpp')?.checked;
+      const wppPhone = document.getElementById('finPayWppPhone')?.value?.trim();
+      if (sendWpp && wppPhone) {
+        if (fb) { fb.textContent = 'Enviando por WhatsApp...'; fb.className = 'fin-feedback'; }
+        const fornecedor = row.favorecido || row.fornecedor || row.beneficiario || '';
+        const wppResult = await sendComprovanteViaBotConversa(wppPhone, comprovanteUrl, fornecedor);
+        if (!wppResult.ok && fb) {
+          fb.textContent = `Comprovante salvo, mas WhatsApp falhou: ${wppResult.error}`;
+          fb.className = 'fin-feedback err';
+          await loadSetorPagamentos();
+          return;
+        }
       }
 
       document.getElementById('finPagamentoModal')?.classList.remove('open');
@@ -2104,6 +2170,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
     document.getElementById('cfgObs').value = saldoRes.data?.observacoes || provisaoRes.data?.observacoes || '';
     document.getElementById('cfgProvAuto').value = provisaoRes.data?.valor_automatico ?? '';
     document.getElementById('cfgProvManual').value = provisaoRes.data?.ajuste_manual ?? '';
+    document.getElementById('cfgBotconversaKey').value = localStorage.getItem('botconversa_api_key') || '';
     renderDetalhes();
     setTab('detalhes');
   }
@@ -2230,6 +2297,9 @@ initProtectedPage('Financeiro', (content, userContext) => {
     const provManual = Number(document.getElementById('cfgProvManual').value || 0);
     const obs = document.getElementById('cfgObs').value.trim() || null;
     const responsavel = userContext?.user?.name || userContext?.user?.email || userContext?.email || null;
+    const botconversaKey = document.getElementById('cfgBotconversaKey').value.trim();
+    if (botconversaKey) localStorage.setItem('botconversa_api_key', botconversaKey);
+    else localStorage.removeItem('botconversa_api_key');
     try {
       setFeedback('fbConfig', 'Salvando...');
       const saldoRes = await supabase.from('financeiro_saldos_dia').upsert({ data: date, saldo_dia: saldo, observacoes: obs, responsavel }, { onConflict: 'data' });
