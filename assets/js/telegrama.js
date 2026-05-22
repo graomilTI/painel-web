@@ -35,6 +35,8 @@ const state = {
   telegramas: [],
   remetentes: [],
   destinatarios: [],
+  clinicas: [],
+  clinicaSelecionada: null,
   loading: false,
   feedback: '',
   feedbackErr: false,
@@ -87,9 +89,22 @@ async function loadAll() {
     if (!data || data.length < 1000) break;
   }
 
-  state.telegramas   = tels ?? [];
-  state.remetentes   = rems ?? [];
+  let clinicas = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data } = await supabase
+      .from('rh_clinicas_sst')
+      .select('id,nome,cidade,estado,endereco,telefone,celular,observacoes')
+      .eq('ativo', true)
+      .order('estado').order('cidade').order('nome')
+      .range(offset, offset + 999);
+    clinicas = clinicas.concat(data ?? []);
+    if (!data || data.length < 1000) break;
+  }
+
+  state.telegramas    = tels ?? [];
+  state.remetentes    = rems ?? [];
   state.destinatarios = dests;
+  state.clinicas      = clinicas;
   state.loading = false;
 }
 
@@ -176,6 +191,19 @@ function renderEnviar() {
           <textarea name="mensagem" rows="5" maxlength="2000" placeholder="Texto do telegrama (máx. 2000 caracteres)..." required
             style="resize:vertical;font-family:ui-monospace,'Cascadia Code',monospace;font-size:.88rem;line-height:1.55"></textarea>
           <div style="font-size:11px;color:rgba(180,220,195,.35);margin-top:4px">O texto será transmitido exatamente como digitado.</div>
+        </div>
+
+        <div class="form-group full-width">
+          <label>Clínica — Exame Demissional (opcional)</label>
+          <div class="dest-ac-wrap">
+            <input type="text" id="search-clinica-tel"
+              placeholder="Digite o nome da clínica ou cidade…" autocomplete="off" />
+            <input type="hidden" name="clinica_sst_id" id="hidden-clinica-id" />
+            <ul class="dest-ac-drop" id="clinica-ac-drop"></ul>
+          </div>
+          <div id="clinica-selecionada-card"
+            style="display:none;margin-top:10px;padding:12px 14px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.18);border-radius:12px;font-size:.84rem;color:rgba(200,230,210,.80);line-height:1.55">
+          </div>
         </div>
 
         <div class="form-group">
@@ -370,6 +398,89 @@ function bindEvents() {
     acInp.addEventListener('blur', () => acDrop.classList.remove('open'));
   }
 
+  // Autocomplete clínica SST
+  const clInp    = area.querySelector('#search-clinica-tel');
+  const clDrop   = area.querySelector('#clinica-ac-drop');
+  const clHidden = area.querySelector('#hidden-clinica-id');
+  const clCard   = area.querySelector('#clinica-selecionada-card');
+
+  function normQ(v) { return String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
+
+  function renderClinicaCard(c) {
+    if (!clCard) return;
+    const enderInfo = [c.endereco, c.cidade && c.estado ? `${c.cidade}/${c.estado}` : (c.cidade||c.estado||'')].filter(Boolean).join(' — ');
+    const contato = [c.telefone, c.celular].filter(Boolean).join(' · ');
+    const obs = c.observacoes ? `<div style="margin-top:4px;font-size:.78rem;color:rgba(180,220,195,.45)">${esc(c.observacoes)}</div>` : '';
+    clCard.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:800;color:#e2e2f0;font-size:.92rem">${esc(c.nome)}</div>
+          ${enderInfo ? `<div style="margin-top:3px">${esc(enderInfo)}</div>` : ''}
+          ${contato   ? `<div style="margin-top:3px">${esc(contato)}</div>`   : ''}
+          ${obs}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-sm btn-secondary" id="btn-inserir-clinica"
+            style="white-space:nowrap;font-size:.78rem">Inserir parágrafo ↓</button>
+          <button type="button" class="btn btn-sm" id="btn-limpar-clinica"
+            style="font-size:.78rem;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.22);color:#fca5a5">Limpar</button>
+        </div>
+      </div>`;
+    clCard.style.display = 'block';
+
+    clCard.querySelector('#btn-inserir-clinica')?.addEventListener('click', () => {
+      const ta = area.querySelector('textarea[name=mensagem]');
+      if (!ta) return;
+      const loc = [c.endereco, c.cidade && c.estado ? `${c.cidade}/${c.estado}` : (c.cidade||c.estado||'')].filter(Boolean).join(' - ');
+      const frase = `Solicitamos que compareça até a ${c.nome}${loc ? ` que fica na ${loc}` : ''}, até o dia __/__/____ a partir das ____h para fazer seu exame demissional.`;
+      ta.value = ta.value ? ta.value + '\n\n' + frase : frase;
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    });
+
+    clCard.querySelector('#btn-limpar-clinica')?.addEventListener('click', () => {
+      state.clinicaSelecionada = null;
+      if (clHidden) clHidden.value = '';
+      if (clInp)    clInp.value = '';
+      clCard.style.display = 'none';
+      clCard.innerHTML = '';
+    });
+  }
+
+  if (clInp && clDrop) {
+    function clShow(matches) {
+      if (!matches.length) { clDrop.classList.remove('open'); return; }
+      clDrop.innerHTML = matches.slice(0, 30).map(c => `
+        <li class="dest-ac-item" data-cl-id="${esc(c.id)}" data-cl-nome="${esc(c.nome)}">
+          <span>${esc(c.nome)}</span>
+          <small>${[c.cidade, c.estado].filter(Boolean).join('/')}${c.endereco ? ' · ' + esc(c.endereco.slice(0,50)) : ''}</small>
+        </li>`).join('');
+      clDrop.classList.add('open');
+    }
+    clInp.addEventListener('input', () => {
+      const q = normQ(clInp.value);
+      if (clHidden) clHidden.value = '';
+      clDrop.classList.remove('open');
+      if (!q) return;
+      clShow(state.clinicas.filter(c => normQ(c.nome).includes(q) || normQ(c.cidade).includes(q) || normQ(c.estado).includes(q)));
+    });
+    clInp.addEventListener('focus', () => {
+      const q = normQ(clInp.value);
+      if (q) clShow(state.clinicas.filter(c => normQ(c.nome).includes(q) || normQ(c.cidade).includes(q)));
+    });
+    clDrop.addEventListener('mousedown', e => {
+      const item = e.target.closest('.dest-ac-item');
+      if (!item) return;
+      e.preventDefault();
+      clInp.value = item.dataset.clNome;
+      if (clHidden) clHidden.value = item.dataset.clId;
+      clDrop.classList.remove('open');
+      const clinica = state.clinicas.find(c => c.id === item.dataset.clId);
+      if (clinica) { state.clinicaSelecionada = clinica; renderClinicaCard(clinica); }
+    });
+    clInp.addEventListener('blur', () => clDrop.classList.remove('open'));
+  }
+
   // Submit novo telegrama
   area.querySelector('#form-novo-telegrama')?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -399,6 +510,7 @@ function bindEvents() {
       tem_pc: fd.get('tem_pc') === '1',
       tem_cc: fd.get('tem_cc') === '1',
       agendamento: fd.get('agendamento') || null,
+      clinica_sst_id: fd.get('clinica_sst_id') || null,
       status: 'RASCUNHO',
     };
 
@@ -420,12 +532,20 @@ function bindEvents() {
       e.target.reset();
       if (acInp)    acInp.value = '';
       if (acHidden) acHidden.value = '';
+      if (clInp)    clInp.value = '';
+      if (clHidden) clHidden.value = '';
+      if (clCard)   { clCard.style.display = 'none'; clCard.innerHTML = ''; }
+      state.clinicaSelecionada = null;
       state.tab = 'enviados';
     } else if (result.portal_required) {
       setFeedback('Telegrama salvo. API indisponível — use o portal Correios para enviar.', true);
       e.target.reset();
       if (acInp)    acInp.value = '';
       if (acHidden) acHidden.value = '';
+      if (clInp)    clInp.value = '';
+      if (clHidden) clHidden.value = '';
+      if (clCard)   { clCard.style.display = 'none'; clCard.innerHTML = ''; }
+      state.clinicaSelecionada = null;
       state.tab = 'enviados';
     } else {
       setFeedback('Erro ao enviar: ' + (result.error ?? 'desconhecido'), true);
