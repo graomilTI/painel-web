@@ -2129,7 +2129,7 @@
           patrimonio_funcionario: motoristaCruzado,
           coordenacao: v?.coordenacao || null,
           supervisao:  v?.supervisao  || null,
-          status_cruzamento:   motoristaCruzado ? 'MOTORISTA_IDENTIFICADO' : 'PLACA_SEM_FUNCIONARIO',
+          status_cruzamento:   motoristaCruzado ? 'MOTORISTA_IDENTIFICADO' : 'PENDENTE_CONFERENCIA',
           status_notificacao: 'PENDENTE'
         };
       });
