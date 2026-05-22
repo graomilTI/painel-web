@@ -131,7 +131,8 @@ export const MENU_CONFIG = [
   {
     grupo: 'CORREIOS',
     itens: [
-      item('envios', 'Correios', 'envios', ['ENVIOS', 'CORREIOS', 'PREPOSTAGEM']),
+      item('envios',    'Correios',  'envios',    ['ENVIOS', 'CORREIOS', 'PREPOSTAGEM']),
+      item('telegrama', 'Telegrama', 'telegrama', ['TELEGRAMA', 'SMT']),
     ]
   },
 

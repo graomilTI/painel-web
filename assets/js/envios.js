@@ -7,6 +7,11 @@ const SERVICOS = {
   '80900': 'Carta Registrada c/ AR',
 };
 
+const SERVICOS_REVERSA = {
+  '03312': 'PAC Reversa',
+  '03280': 'SEDEX Reversa',
+};
+
 const STATUS_LABEL = {
   RASCUNHO: 'Rascunho',
   CONFIRMADO: 'Confirmado',
@@ -67,6 +72,7 @@ const state = {
   postagens: [],
   remetentes: [],
   destinatarios: [],
+  reversa: [],
   loading: false,
   feedback: '',
   feedbackErr: false,
@@ -106,12 +112,16 @@ function getSupabaseUrl() {
 // ── Data loaders ──────────────────────────────────────────────────────────────
 async function loadAll() {
   state.loading = true;
-  const [{ data: posts }, { data: rems }] = await Promise.all([
+  const [{ data: posts }, { data: rems }, { data: rev }] = await Promise.all([
     supabase.from('envios_postagens')
       .select('*, remetente:envios_remetentes(nome, cidade, uf), destinatario:envios_destinatarios(nome, cidade, uf)')
       .order('created_at', { ascending: false })
       .limit(200),
     supabase.from('envios_remetentes').select('*').eq('ativo', true).order('nome'),
+    supabase.from('envios_reversa')
+      .select('*, cliente:envios_destinatarios(nome, cidade, uf), empresa:envios_remetentes(nome)')
+      .order('created_at', { ascending: false })
+      .limit(200),
   ]);
 
   // Pagina destinatários — pode ultrapassar 1000
@@ -130,6 +140,7 @@ async function loadAll() {
   state.postagens = posts ?? [];
   state.remetentes = rems ?? [];
   state.destinatarios = dests;
+  state.reversa = rev ?? [];
   state.loading = false;
 }
 
@@ -308,6 +319,7 @@ function renderTab() {
   else if (state.tab === 'enviados') area.innerHTML = renderEnviados();
   else if (state.tab === 'historico') area.innerHTML = renderHistorico();
   else if (state.tab === 'cotacao') area.innerHTML = renderCotacao();
+  else if (state.tab === 'reversa') area.innerHTML = renderReversa();
   else if (state.tab === 'remetentes') area.innerHTML = renderRemetentes();
   else if (state.tab === 'destinatarios') area.innerHTML = renderDestinatarios();
   bindTabEvents();
@@ -698,6 +710,97 @@ function renderCotacao() {
       <div id="cotacao-resultado" style="margin-top:20px"></div>
     </div>`;
 }
+
+function renderReversa() {
+  const remPadrao = state.remetentes.find(r => r.padrao) ?? state.remetentes[0];
+  const optEmpresa = state.remetentes.map(r =>
+    `<option value="${r.id}"${r.id === remPadrao?.id ? ' selected' : ''}>${esc(r.nome)} — ${esc(r.cidade)}/${esc(r.uf)}</option>`
+  ).join('');
+  const optServico = Object.entries(SERVICOS_REVERSA).map(([cod, nome]) =>
+    `<option value="${cod}">${esc(nome)}</option>`
+  ).join('');
+
+  const aguardando = state.reversa.filter(r => r.status === 'CONFIRMADO' && r.id_prepostagem);
+  const enviadas   = state.reversa.filter(r => r.status === 'POSTADO');
+  const erros      = state.reversa.filter(r => r.status === 'ERRO');
+  const rascunhos  = state.reversa.filter(r => r.status === 'RASCUNHO');
+
+  const STATUS_REV = { RASCUNHO: 'Rascunho', CONFIRMADO: 'Confirmado', POSTADO: 'Enviado', ERRO: 'Erro' };
+  const STATUS_CLS = { RASCUNHO: 'neutral', CONFIRMADO: 'info', POSTADO: 'ok', ERRO: 'danger' };
+
+  function revRow(r) {
+    const st = r.status ?? 'RASCUNHO';
+    const svc = SERVICOS_REVERSA[r.servico_codigo] ?? r.servico_nome ?? r.servico_codigo;
+    return `<tr>
+      <td>${esc(r.cliente?.nome ?? '—')}</td>
+      <td>${esc(svc)}</td>
+      <td>${r.peso_gramas ? r.peso_gramas + 'g' : '—'}</td>
+      <td>${r.numero_objeto ? `<span class="envios-rastreio-code">${esc(r.numero_objeto)}</span>` : '—'}</td>
+      <td><span class="badge badge-${STATUS_CLS[st] ?? 'neutral'}">${STATUS_REV[st] ?? st}</span></td>
+      <td style="font-size:11px;max-width:200px;color:rgba(255,100,100,.7)">${r.status === 'ERRO' ? esc(r.observacoes ?? '') : ''}</td>
+      <td class="td-actions">
+        ${st === 'CONFIRMADO' ? `<button class="btn btn-sm btn-primary" data-rev-etiqueta="${r.id}">Etiqueta</button>` : ''}
+        ${st === 'ERRO' ? `<button class="btn btn-sm btn-secondary" data-rev-retentar="${r.id}">Retentar</button>` : ''}
+        ${['RASCUNHO','ERRO'].includes(st) ? `<button class="btn btn-sm btn-danger" data-rev-excluir="${r.id}">Excluir</button>` : ''}
+      </td>
+    </tr>`;
+  }
+
+  const allRows = state.reversa.map(revRow).join('');
+
+  return `
+    <div class="form-section">
+      <div style="background:rgba(45,212,160,.07);border:1px solid rgba(45,212,160,.18);border-radius:12px;padding:12px 16px;margin-bottom:20px;font-size:.84rem;color:rgba(180,220,195,.72)">
+        <strong style="color:rgba(45,212,160,.9)">Logística Reversa</strong> — Gere etiquetas pré-pagas para que clientes devolvam mercadorias.
+        A etiqueta tem o cliente como <em>remetente</em> e a empresa como <em>destinatária</em>.
+        Serviços disponíveis: PAC Reversa (03312) e SEDEX Reversa (03280) — sujeito à contratação.
+      </div>
+      <h3 style="margin:0 0 16px">Nova Etiqueta Reversa</h3>
+      <form id="form-nova-reversa" class="form-grid">
+        <div class="form-group">
+          <label>Quem devolve (cliente) *</label>
+          <div class="dest-ac-wrap">
+            <input type="text" id="search-dest-rev" placeholder="Digite o nome do cliente..." autocomplete="off" />
+            <input type="hidden" name="cliente_id" id="hidden-dest-rev-id" />
+            <ul class="dest-ac-drop" id="dest-ac-drop-rev"></ul>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Receber em (empresa) *</label>
+          <select name="empresa_id" required>${optEmpresa || '<option value="">— cadastre um remetente primeiro —</option>'}</select>
+        </div>
+        <div class="form-group">
+          <label>Serviço *</label>
+          <select name="servico_codigo" required>${optServico}</select>
+        </div>
+        <div class="form-group">
+          <label>Peso estimado (gramas)</label>
+          <input type="number" name="peso_gramas" min="1" value="300" />
+        </div>
+        <div class="form-group full-width">
+          <label>Conteúdo da devolução</label>
+          <input type="text" name="conteudo" placeholder="Ex: Produto com defeito, Troca..." />
+        </div>
+        <div class="form-actions full-width">
+          <button type="submit" class="btn btn-primary">Criar Etiqueta Reversa</button>
+        </div>
+      </form>
+    </div>
+    ${state.reversa.length > 0 ? `
+    <div class="form-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="margin:0">Etiquetas (${state.reversa.length})</h3>
+        <button class="btn btn-secondary" id="btn-refresh-reversa">Atualizar</button>
+      </div>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Cliente</th><th>Serviço</th><th>Peso</th><th>Rastreio</th><th>Status</th><th>Erro</th><th>Ações</th></tr></thead>
+          <tbody>${allRows}</tbody>
+        </table>
+      </div>
+    </div>` : ''}`;
+}
+
 function renderRemetentes() {
   const rows = state.remetentes.map(r => `
     <tr>
@@ -1001,6 +1104,124 @@ function bindTabEvents() {
   area.querySelector('#btn-refresh-historico')?.addEventListener('click', async () => {
     await loadAll(); renderTab();
   });
+
+  // ── Aba REVERSA ────────────────────────────────────────────────────────────
+  area.querySelector('#btn-refresh-reversa')?.addEventListener('click', async () => {
+    await loadAll(); renderTab();
+  });
+
+  // Criar nova etiqueta reversa
+  area.querySelector('#form-nova-reversa')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const clienteId = fd.get('cliente_id');
+    if (!clienteId) { setFeedback('Selecione o cliente que devolve.', true); return; }
+    const cod = fd.get('servico_codigo');
+    const row = {
+      cliente_id: clienteId,
+      empresa_id: fd.get('empresa_id'),
+      servico_codigo: cod,
+      servico_nome: SERVICOS_REVERSA[cod] ?? cod,
+      peso_gramas: parseInt(fd.get('peso_gramas')) || 300,
+      conteudo: fd.get('conteudo') || null,
+      status: 'RASCUNHO',
+    };
+    const btnSub = e.target.querySelector('[type=submit]');
+    if (btnSub) { btnSub.disabled = true; btnSub.textContent = 'Criando...'; }
+    const { data: created, error: insErr } = await supabase.from('envios_reversa').insert(row).select().single();
+    if (insErr) { setFeedback('Erro ao salvar: ' + insErr.message, true); if (btnSub) { btnSub.disabled = false; btnSub.textContent = 'Criar Etiqueta Reversa'; } return; }
+    setFeedback('Gerando pré-postagem...');
+    const result = await callFn('correios-logistica-reversa', { reversa_id: created.id });
+    if (result.ok) {
+      setFeedback(`Pré-postagem criada! Rastreio: ${result.numero_objeto ?? '—'}. Agora gere a etiqueta.`);
+      e.target.reset();
+      const inp = area.querySelector('#search-dest-rev');
+      const hid = area.querySelector('#hidden-dest-rev-id');
+      if (inp) inp.value = '';
+      if (hid) hid.value = '';
+    } else if (result.portal_required) {
+      setFeedback('API SMT indisponível. Consulte o portal Correios.', true);
+    } else {
+      setFeedback('Erro: ' + (result.error ?? 'desconhecido'), true);
+    }
+    if (btnSub) { btnSub.disabled = false; btnSub.textContent = 'Criar Etiqueta Reversa'; }
+    await loadAll(); renderTab();
+  });
+
+  // Gerar etiqueta reversa
+  area.querySelectorAll('[data-rev-etiqueta]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.revEtiqueta;
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Gerando...';
+      const result = await callFn('correios-etiqueta-reversa', { reversa_id: id });
+      if (result.ok && result.pdf_base64) {
+        printPdf(result.pdf_base64);
+        await loadAll(); renderTab();
+      } else if (result.retry) {
+        setFeedback(result.error, true);
+      } else {
+        setFeedback('Erro: ' + (result.error ?? 'desconhecido'), true);
+      }
+      btn.disabled = false; btn.textContent = orig;
+    });
+  });
+
+  // Retentar reversa
+  area.querySelectorAll('[data-rev-retentar]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Retentar envio ao Correios?')) return;
+      const id = btn.dataset.revRetentar;
+      btn.disabled = true; btn.textContent = 'Enviando...';
+      await supabase.from('envios_reversa').update({ status: 'RASCUNHO', observacoes: null }).eq('id', id);
+      const result = await callFn('correios-logistica-reversa', { reversa_id: id });
+      if (result.ok) setFeedback('Enviado! Rastreio: ' + (result.numero_objeto ?? '—'));
+      else setFeedback('Erro: ' + result.error, true);
+      await loadAll(); renderTab();
+    });
+  });
+
+  // Excluir reversa
+  area.querySelectorAll('[data-rev-excluir]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Excluir esta etiqueta reversa?')) return;
+      const { error } = await supabase.from('envios_reversa').delete().eq('id', btn.dataset.revExcluir);
+      if (error) { setFeedback('Erro: ' + error.message, true); return; }
+      await loadAll(); renderTab();
+    });
+  });
+
+  // Autocomplete cliente reversa
+  const _revInp    = area.querySelector('#search-dest-rev');
+  const _revDrop   = area.querySelector('#dest-ac-drop-rev');
+  const _revHidden = area.querySelector('#hidden-dest-rev-id');
+  if (_revInp && _revDrop) {
+    function _revShow(matches) {
+      if (!matches.length) { _revDrop.classList.remove('open'); return; }
+      _revDrop.innerHTML = matches.slice(0, 25).map(d =>
+        `<li class="dest-ac-item" data-id="${esc(d.id)}" data-nome="${esc(d.nome)}"><span>${esc(d.nome)}</span><small>${d.cidade ? `${esc(d.cidade)}/${esc(d.uf)}` : ''}</small></li>`
+      ).join('');
+      _revDrop.classList.add('open');
+    }
+    _revInp.addEventListener('input', () => {
+      const q = _revInp.value.toLowerCase().trim();
+      if (_revHidden) _revHidden.value = '';
+      _revShow(q ? state.destinatarios.filter(d => d.nome.toLowerCase().includes(q)) : []);
+    });
+    _revInp.addEventListener('focus', () => {
+      const q = _revInp.value.toLowerCase().trim();
+      if (q) _revShow(state.destinatarios.filter(d => d.nome.toLowerCase().includes(q)));
+    });
+    _revDrop.addEventListener('mousedown', e => {
+      const item = e.target.closest('.dest-ac-item');
+      if (!item) return;
+      e.preventDefault();
+      _revInp.value = item.dataset.nome;
+      if (_revHidden) _revHidden.value = item.dataset.id;
+      _revDrop.classList.remove('open');
+    });
+    _revInp.addEventListener('blur', () => _revDrop.classList.remove('open'));
+  }
 
   // Excluir postagem
   area.querySelectorAll('[data-excluir-postagem]').forEach(btn => {
@@ -1429,6 +1650,7 @@ initProtectedPage('Correios', async (content) => {
       <button class="envios-tab${state.tab === 'enviados' ? ' active' : ''}" data-tab-main="enviados">Enviados</button>
       <button class="envios-tab${state.tab === 'historico' ? ' active' : ''}" data-tab-main="historico">Histórico</button>
       <button class="envios-tab${state.tab === 'cotacao' ? ' active' : ''}" data-tab-main="cotacao">Cotação</button>
+      <button class="envios-tab${state.tab === 'reversa' ? ' active' : ''}" data-tab-main="reversa">Log. Reversa</button>
       <button class="envios-tab${state.tab === 'remetentes' ? ' active' : ''}" data-tab-main="remetentes">Remetentes</button>
       <button class="envios-tab${state.tab === 'destinatarios' ? ' active' : ''}" data-tab-main="destinatarios">Destinatários</button>
     </nav>
