@@ -1907,17 +1907,24 @@
     if (!rows.length) {
       throw new Error('A planilha de clínicas não possui linhas válidas. Cabeçalhos esperados: ESTADO, CIDADE, NOME, TELEFONE, CELULAR, Endereço, DADOS DO MÉDICO, E-mail, OBSERVAÇÕES, Chave PIX, EXAMES.');
     }
+    // Deduplica por (nome, cidade, estado) — planilha pode ter entradas repetidas
+    const seen = new Map();
+    rows.forEach((r) => {
+      const key = `${r.nome || ''}|${r.cidade || ''}|${r.estado || ''}`;
+      if (!seen.has(key)) seen.set(key, r);
+    });
+    const deduped = Array.from(seen.values());
     let total = 0;
-    for (let i = 0; i < rows.length; i += 300) {
-      const batch = rows.slice(i, i + 300);
+    for (let i = 0; i < deduped.length; i += 300) {
+      const batch = deduped.slice(i, i + 300);
       const { error } = await opts.supabase
         .from('rh_clinicas_sst')
         .upsert(batch, { onConflict: 'nome,cidade,estado' });
       if (error) throw new Error(error.message || 'Falha ao gravar clínicas SST no Supabase.');
       total += batch.length;
     }
-    const estados = new Set(rows.map((r) => r.estado).filter(Boolean)).size;
-    const cidades = new Set(rows.map((r) => `${r.cidade || ''}/${r.estado || ''}`).filter((v) => v !== '/')).size;
+    const estados = new Set(deduped.map((r) => r.estado).filter(Boolean)).size;
+    const cidades = new Set(deduped.map((r) => `${r.cidade || ''}/${r.estado || ''}`).filter((v) => v !== '/')).size;
     return { total_linhas: rows.length, importados: total, estados, cidades };
   }
 
