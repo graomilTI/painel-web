@@ -1546,12 +1546,15 @@ initProtectedPage('Financeiro', (content, userContext) => {
       supabase
         .from('financeiro_pagamentos')
         .select('*')
+        .neq('status', 'PAGO')
+        .is('comprovante_url', null)
         .order('created_at', { ascending: false })
         .limit(500),
       supabase
         .from('compras_itens')
         .select('*, compras_solicitacoes(*)')
-        .in('status', ['pendente_pagamento', 'aguardando_nf'])
+        .in('status', ['pendente_pagamento'])
+        .is('comprovante_url', null)
         .order('updated_at', { ascending: false })
         .limit(500)
     ]);
