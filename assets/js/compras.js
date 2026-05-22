@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient.js';
 
 const CATALOGO = [
-  ['ALICATE DE CORTE','Outros'],['BALANÇA DE PRECISÃO','Patrimonio'],['CAIXA DE BOBINAS','Outros'],['CAIXA DE SULFITE A4','Outros'],['CALADOR','Patrimonio'],['CELULAR','Outros'],['ESTILETE','Outros'],['HOMOGENEIZADOR','Patrimonio'],['IMPRESSORA A4','Patrimonio'],['IMPRESSORA TÉRMICA BLUETOOTH','Patrimonio'],['JOGO DE PENEIRAS','Patrimonio'],['LIQUIDIFICADOR','Patrimonio'],['LUMINÁRIA','Patrimonio'],['MICROPIPETA','Patrimonio'],['PENEIRA INDIVIDUAL','Patrimonio'],['QUARTEADOR','Patrimonio'],['CAPACETE','EPI'],['COLETE REFLETIVO','EPI'],['LUVA MULTITATO','EPI'],['PROTETOR AURICULAR','EPI'],['MASCARA PFF2','EPI'],['OCULOS DE PROTEÇÃO','EPI'],['BOTINA','EPI']
+  ['ALICATE DE CORTE','Outros'],['BALANÇA DE PRECISÃO','Patrimonio'],['CAIXA DE BOBINAS','Outros'],['CAIXA DE SULFITE A4','Outros'],['CALADOR','Patrimonio'],['CELULAR',''],['ESTILETE','Outros'],['HOMOGENEIZADOR','Patrimonio'],['IMPRESSORA A4','Patrimonio'],['IMPRESSORA TÉRMICA BLUETOOTH','Patrimonio'],['JOGO DE PENEIRAS','Patrimonio'],['LIQUIDIFICADOR','Patrimonio'],['LUMINÁRIA','Patrimonio'],['MICROPIPETA','Patrimonio'],['PENEIRA INDIVIDUAL','Patrimonio'],['QUARTEADOR','Patrimonio'],['CAPACETE','EPI'],['COLETE REFLETIVO','EPI'],['LUVA MULTITATO','EPI'],['PROTETOR AURICULAR','EPI'],['MASCARA PFF2','EPI'],['OCULOS DE PROTEÇÃO','EPI'],['BOTINA','EPI']
 ].map(([material,tipo])=>({material,tipo}));
 const UNIFORME_TAMANHOS = ['PP','P','M','G','GG','XG','EXG'];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', comprado:'Comprado', recusado:'Recusado' };
