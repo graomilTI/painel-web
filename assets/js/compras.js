@@ -426,6 +426,8 @@ async function salvarSolicitacao(ctx, tipo, itens){
     tipo_solicitacao:tipo,
     status:'pendente',
     observacoes:document.getElementById('cmpObs').value.trim()||null,
+    fornecedor:document.getElementById('cmpFornecedor')?.value.trim()||null,
+    telefone_fornecedor:document.getElementById('cmpTelFornecedor')?.value.replace(/\D/g,'')||null,
     created_by:u.id||null
   };
   const {data:sol,error}=await insertSolicitacaoComCompatibilidade(header);
@@ -483,7 +485,7 @@ initProtectedPage('Compras', async (content, userContext)=>{
   content.innerHTML=`${styles()}
   <section class="hero-card"><div><div class="eyebrow">Gestor</div><h2>Compras</h2><p>Solicitação de materiais, EPIs, patrimônios e uniformes direcionada ao setor de compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">GESTOR</span></div></section>
   <section class="card mt-16"><div class="section-head"><div><h3>Nova solicitação</h3><p class="muted">Solicitante: <b>${esc(solicitanteNome(userContext))}</b>. O nome é preenchido automaticamente pelo usuário logado.</p></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">ITENS</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">UNIFORMES</button></div></div>
-    <div class="cmp-grid"><div class="cmp-field"><label>Data da solicitação</label><input id="cmpData" type="date" value="${today()}"></div><div class="cmp-field"><label>Solicitante</label><input value="${esc(solicitanteNome(userContext))}" readonly></div><div class="cmp-field cmp-full"><label>Observações</label><textarea id="cmpObs" rows="2" placeholder="Informações adicionais, urgência ou destino."></textarea></div></div>
+    <div class="cmp-grid"><div class="cmp-field"><label>Data da solicitação</label><input id="cmpData" type="date" value="${today()}"></div><div class="cmp-field"><label>Solicitante</label><input value="${esc(solicitanteNome(userContext))}" readonly></div><div class="cmp-field cmp-full"><label>Observações</label><textarea id="cmpObs" rows="2" placeholder="Informações adicionais, urgência ou destino."></textarea></div><div class="cmp-field"><label>Fornecedor</label><input id="cmpFornecedor" type="text" placeholder="Nome do fornecedor (opcional)"></div><div class="cmp-field"><label>WhatsApp do Fornecedor</label><input id="cmpTelFornecedor" type="tel" placeholder="Ex: 5545999999999 (opcional)"></div></div>
     <div id="panel-itens" class="cmp-panel active mt-16">
       <div class="cmp-add-box">
         <div class="cmp-field"><label>Un.</label><input id="cmpNovaUn" type="number" min="1" value="1"></div>
