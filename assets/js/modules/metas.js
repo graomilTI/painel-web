@@ -377,6 +377,87 @@
         font-size: 12px;
       }
 
+      .metas-stack-wrap {
+        margin-top: 12px;
+      }
+
+      .metas-stack-area {
+        display: flex;
+        gap: 24px;
+        height: 160px;
+        align-items: flex-end;
+        padding: 0 48px;
+      }
+
+      .metas-stack-bar {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        border-radius: 8px 8px 0 0;
+        overflow: hidden;
+      }
+
+      .metas-stack-seg {
+        width: 100%;
+        min-height: 3px;
+        transition: height .4s ease;
+      }
+
+      .metas-stack-axis {
+        height: 1px;
+        background: rgba(148,163,184,.22);
+        margin: 0 48px;
+      }
+
+      .metas-stack-col-labels {
+        display: flex;
+        gap: 24px;
+        padding: 10px 48px 0;
+      }
+
+      .metas-stack-col-label {
+        flex: 1;
+        text-align: center;
+      }
+
+      .metas-stack-lbl {
+        font-size: 11px;
+        color: var(--metas-muted);
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        font-weight: 700;
+      }
+
+      .metas-stack-val {
+        font-size: 13px;
+        font-weight: 800;
+        margin-top: 3px;
+      }
+
+      .metas-stack-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        margin-top: 14px;
+        padding: 12px 0;
+        border-top: 1px solid var(--metas-border);
+      }
+
+      .metas-stack-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--metas-muted);
+      }
+
+      .metas-stack-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
       .metas-bars {
         display: flex;
         flex-direction: column;
@@ -868,41 +949,68 @@
   function renderProgress(rows) {
     const total = totalsFromRegional(rows);
     const cls = pctClass(total.percentual);
-    const barH = total.meta > 0 ? Math.min(100, (total.produzido / total.meta) * 100) : 0;
-    const statusMsg = total.produzido >= total.meta
-      ? 'Meta atingida!'
-      : `Faltam ${fmtTons(total.restante)}`;
+    const withData = rows.filter(r => Number(r.meta_tons || 0) > 0 || Number(r.produzido_tons || 0) > 0);
+    const sorted = [...withData].sort((a, b) => Number(b.meta_tons || 0) - Number(a.meta_tons || 0));
+
+    const PALETTE = [
+      'rgba(56,189,248,.85)',
+      'rgba(34,197,94,.85)',
+      'rgba(250,204,21,.85)',
+      'rgba(167,139,250,.85)',
+      'rgba(251,146,60,.85)',
+      'rgba(52,211,153,.85)',
+      'rgba(251,113,133,.85)',
+      'rgba(239,68,68,.85)',
+    ];
+
+    const prodBarH = total.meta > 0 ? Math.min(100, (total.produzido / total.meta) * 100) : 0;
+    const statusMsg = total.produzido >= total.meta ? 'Meta atingida!' : `Faltam ${fmtTons(total.restante)}`;
+
+    function stackedBar(valueKey, totalVal, barH) {
+      const segs = sorted.map((row, i) => {
+        const val = Number(row[valueKey] || 0);
+        const pct = totalVal > 0 ? (val / totalVal) * 100 : 0;
+        return `<div class="metas-stack-seg" style="height:${pct.toFixed(2)}%;background:${PALETTE[i % PALETTE.length]};" title="${escapeHtml(row.regional)}: ${fmtTons(val)}"></div>`;
+      }).join('');
+      return `<div class="metas-stack-bar" style="height:${Math.max(2, barH)}%">${segs}</div>`;
+    }
 
     return `
       <div class="metas-card">
         <div class="metas-section-title">
-          <h2>Meta vs Realizado</h2>
-          <span>${fmtPct(total.percentual)} atingido</span>
+          <h2>Meta vs Realizado por Regional</h2>
+          <span class="metas-pill ${cls}">${fmtPct(total.percentual)}</span>
         </div>
 
-        <div class="metas-compare-wrap">
-          <div class="metas-compare-chart-area">
-            <div class="metas-compare-col-bar">
-              <div class="metas-compare-bar bar-meta" style="height:100%"></div>
+        <div class="metas-stack-wrap">
+          <div class="metas-stack-area">
+            ${stackedBar('meta_tons', total.meta, 100)}
+            ${stackedBar('produzido_tons', total.produzido, prodBarH)}
+          </div>
+          <div class="metas-stack-axis"></div>
+          <div class="metas-stack-col-labels">
+            <div class="metas-stack-col-label">
+              <div class="metas-stack-lbl">Meta definida</div>
+              <div class="metas-stack-val">${fmtTons(total.meta)}</div>
             </div>
-            <div class="metas-compare-col-bar">
-              <div class="metas-compare-bar bar-prod ${cls}" style="height:${Math.max(2, barH)}%"></div>
+            <div class="metas-stack-col-label">
+              <div class="metas-stack-lbl">Realizado</div>
+              <div class="metas-stack-val">${fmtTons(total.produzido)}</div>
             </div>
           </div>
-          <div class="metas-compare-x-axis"></div>
-          <div class="metas-compare-labels">
-            <div class="metas-compare-col-label">
-              <div class="metas-compare-lbl">Meta definida</div>
-              <div class="metas-compare-val">${fmtTons(total.meta)}</div>
-            </div>
-            <div class="metas-compare-col-label">
-              <div class="metas-compare-lbl">Realizado</div>
-              <div class="metas-compare-val">${fmtTons(total.produzido)}</div>
-            </div>
+
+          <div class="metas-stack-legend">
+            ${sorted.map((row, i) => `
+              <div class="metas-stack-legend-item">
+                <span class="metas-stack-dot" style="background:${PALETTE[i % PALETTE.length]}"></span>
+                <span>${escapeHtml(row.regional)}</span>
+              </div>
+            `).join('')}
           </div>
+
           <div class="metas-compare-footer">
             <span>${statusMsg}</span>
-            <span class="metas-pill ${cls}">${fmtPct(total.percentual)}</span>
+            <span class="metas-pill ${cls}">${fmtPct(total.percentual)} atingido</span>
           </div>
         </div>
       </div>
