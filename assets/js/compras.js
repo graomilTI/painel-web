@@ -138,21 +138,21 @@ function openCelularModal(baseItem){
     </div>
     <div class="cmp-grid mt-16">
       <div class="cmp-field cmp-full cmp-autocomplete-wrap">
-        <label>Colaborador</label>
+        <label>Colaborador que receberá o celular</label>
         <input id="celColab" type="text" placeholder="Digite para pesquisar..." autocomplete="off">
         <div class="cmp-suggest cmp-item-suggest" id="celColabSug"></div>
       </div>
       <div class="cmp-field">
-        <label>Método de pagamento</label>
+        <label>Tipo de desconto em folha</label>
         <select id="celMetodo">
           <option value="a_vista">À vista</option>
           <option value="parcelado">Parcelado</option>
         </select>
       </div>
       <div class="cmp-field" id="celParcelasWrap" style="display:none">
-        <label>Parcelas</label>
+        <label>Número de parcelas (máx. 5x)</label>
         <select id="celParcelas">
-          ${[1,2,3,4,5].map(n=>`<option value="${n}">${n}x</option>`).join('')}
+          ${[2,3,4,5].map(n=>`<option value="${n}">${n}x</option>`).join('')}
         </select>
       </div>
     </div>
@@ -335,7 +335,7 @@ function bindItemForm(){
     if(!item.material){ setMsg('cmpFeedback','Digite o nome do material antes de adicionar.',true); return; }
     if(!item.tipo){ setMsg('cmpFeedback','Selecione o tipo do material antes de adicionar.',true); return; }
     if(found && itemNeedsDetail(found.material) && !item.tamanho){ setMsg('cmpFeedback','Informe o tamanho/detalhe antes de adicionar na lista.',true); return; }
-    if(norm(item.material)==='celular'){ openCelularModal(item); return; }
+    if(norm(item.material)==='celular' && norm(item.tipo)==='outros'){ openCelularModal(item); return; }
     state.itens.push({...item, _id:`${Date.now()}_${Math.random().toString(16).slice(2)}`});
     resetItemForm();
     renderItensList();
