@@ -1753,6 +1753,20 @@ initProtectedPage('Financeiro', (content, userContext) => {
     modal.querySelector('#finBoletoOk').onclick = () => modal.classList.remove('open');
   }
 
+  async function ativarEpiRegistros(row) {
+    const ids = (row._compra_item_ids || [])
+      .map((id) => String(id || '').replace(/^compra_/, ''))
+      .filter(Boolean);
+    const seedId = ids[0] || (row.origem_id ? String(row.origem_id).replace(/^compra_/, '') : null);
+    if (!seedId) return;
+    const { data: seedItem } = await supabase.from('compras_itens').select('solicitacao_id').eq('id', seedId).maybeSingle();
+    if (!seedItem?.solicitacao_id) return;
+    const { data: solItens } = await supabase.from('compras_itens').select('id').eq('solicitacao_id', seedItem.solicitacao_id);
+    const allIds = (solItens || []).map((i) => i.id);
+    if (!allIds.length) return;
+    await safe(() => supabase.from('rh_epi_registros').update({ status: 'pendente' }).in('compra_item_id', allIds).eq('status', 'aguardando_pagamento'), null);
+  }
+
   async function updateComprasComprovante(row, comprovanteUrl) {
     const ids = (row._compra_item_ids || [])
       .map((id) => String(id || '').replace(/^compra_/, ''))
@@ -1894,6 +1908,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
       if (String(row.id).startsWith('compra_grp_') || String(row.id).startsWith('compra_')) {
         await updateComprasComprovante(row, comprovanteUrl);
+        await ativarEpiRegistros(row);
       } else {
         const payload = { status: 'PAGO', pago_em: new Date().toISOString(), comprovante_url: comprovanteUrl };
         let { error } = await supabase.from('financeiro_pagamentos').update(payload).eq('id', row.id);
@@ -1902,7 +1917,10 @@ initProtectedPage('Financeiro', (content, userContext) => {
           error = retry.error;
         }
         if (error) throw error;
-        if (isCompras) await updateComprasComprovante(row, comprovanteUrl);
+        if (isCompras) {
+          await updateComprasComprovante(row, comprovanteUrl);
+          await ativarEpiRegistros(row);
+        }
       }
 
       const sendWpp = document.getElementById('finPaySendWpp')?.checked;
