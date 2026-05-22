@@ -144,7 +144,7 @@ async function loadAll() {
   for (let offset = 0; ; offset += 1000) {
     const { data } = await supabase
       .from('envios_destinatarios')
-      .select('id, nome, cidade, uf, cep, logradouro, numero, complemento, bairro')
+      .select('id, nome, cpf_cnpj, cidade, uf, cep, logradouro, numero, complemento, bairro')
       .eq('ativo', true)
       .order('nome')
       .range(offset, offset + 999);
@@ -189,6 +189,14 @@ function renderEnviar() {
 
   const isRescisao = state.modeloAtivo === 'rescisao';
   const rf = state.rescisaoFields;
+
+  if (isRescisao) {
+    if (!rf.data_carta)    rf.data_carta    = new Date().toISOString().slice(0, 10);
+    if (!rf.cidade_empresa) {
+      const rem = state.remetentes.find(r => r.padrao) ?? state.remetentes[0];
+      if (rem?.cidade) rf.cidade_empresa = rem.cidade;
+    }
+  }
 
   const rfield = (id, label, type, val, opts = {}) => {
     const ph = opts.placeholder ? ` placeholder="${esc(opts.placeholder)}"` : '';
@@ -495,6 +503,11 @@ function bindEvents() {
       const resNome = area.querySelector('#res-nome');
       if (resNome) resNome.value = d.nome;
     }
+    if (d.cpf_cnpj) {
+      state.rescisaoFields.cpf = d.cpf_cnpj;
+      const resCpf = area.querySelector('#res-cpf');
+      if (resCpf) resCpf.value = d.cpf_cnpj;
+    }
   }
 
   if (acInp && acDrop) {
@@ -618,6 +631,16 @@ function bindEvents() {
   area.querySelector('#btn-modelo-rescisao')?.addEventListener('click', () => {
     state.modeloAtivo = 'rescisao';
     renderTab();
+  });
+
+  // Remetente change → update cidade_empresa
+  area.querySelector('select[name=remetente_id]')?.addEventListener('change', (e) => {
+    if (state.modeloAtivo !== 'rescisao') return;
+    const rem = state.remetentes.find(r => r.id === e.target.value);
+    if (!rem?.cidade) return;
+    state.rescisaoFields.cidade_empresa = rem.cidade;
+    const el = area.querySelector('#res-cidade-emp');
+    if (el) el.value = rem.cidade;
   });
 
   // Rescisão panel — persist fields to state
