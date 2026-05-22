@@ -285,6 +285,98 @@
         margin-top: 8px;
       }
 
+      .metas-compare-wrap {
+        margin-top: 12px;
+      }
+
+      .metas-compare-chart-area {
+        display: flex;
+        gap: 20px;
+        height: 130px;
+        align-items: flex-end;
+        padding: 0 32px;
+      }
+
+      .metas-compare-col-bar {
+        flex: 1;
+        display: flex;
+        align-items: flex-end;
+        height: 100%;
+      }
+
+      .metas-compare-bar {
+        width: 100%;
+        border-radius: 8px 8px 0 0;
+        min-height: 4px;
+        transition: height .4s ease;
+      }
+
+      .metas-compare-bar.bar-meta {
+        background: linear-gradient(180deg, rgba(56,189,248,.72), rgba(14,165,233,.48));
+        border: 1px solid rgba(56,189,248,.28);
+        border-bottom: none;
+      }
+
+      .metas-compare-bar.bar-prod.good {
+        background: linear-gradient(180deg, rgba(34,197,94,.84), rgba(22,163,74,.60));
+        border: 1px solid rgba(34,197,94,.32);
+        border-bottom: none;
+      }
+
+      .metas-compare-bar.bar-prod.warn {
+        background: linear-gradient(180deg, rgba(250,204,21,.84), rgba(234,179,8,.60));
+        border: 1px solid rgba(250,204,21,.32);
+        border-bottom: none;
+      }
+
+      .metas-compare-bar.bar-prod.bad {
+        background: linear-gradient(180deg, rgba(239,68,68,.84), rgba(220,38,38,.60));
+        border: 1px solid rgba(239,68,68,.32);
+        border-bottom: none;
+      }
+
+      .metas-compare-x-axis {
+        height: 1px;
+        background: rgba(148,163,184,.22);
+        margin: 0 32px;
+      }
+
+      .metas-compare-labels {
+        display: flex;
+        gap: 20px;
+        padding: 10px 32px 0;
+      }
+
+      .metas-compare-col-label {
+        flex: 1;
+        text-align: center;
+      }
+
+      .metas-compare-lbl {
+        font-size: 11px;
+        color: var(--metas-muted);
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        font-weight: 700;
+      }
+
+      .metas-compare-val {
+        font-size: 14px;
+        font-weight: 800;
+        margin-top: 3px;
+      }
+
+      .metas-compare-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--metas-border);
+        color: var(--metas-muted);
+        font-size: 12px;
+      }
+
       .metas-bars {
         display: flex;
         flex-direction: column;
@@ -775,22 +867,42 @@
 
   function renderProgress(rows) {
     const total = totalsFromRegional(rows);
-    const pct = clampPct(total.percentual);
+    const cls = pctClass(total.percentual);
+    const barH = total.meta > 0 ? Math.min(100, (total.produzido / total.meta) * 100) : 0;
+    const statusMsg = total.produzido >= total.meta
+      ? 'Meta atingida!'
+      : `Faltam ${fmtTons(total.restante)}`;
 
     return `
       <div class="metas-card">
         <div class="metas-section-title">
-          <h2>Comparativo Produzido x Restante</h2>
+          <h2>Meta vs Realizado</h2>
           <span>${fmtPct(total.percentual)} atingido</span>
         </div>
 
-        <div class="metas-progress-wrap">
-          <div class="metas-progress" title="${fmtPct(total.percentual)}">
-            <div class="metas-progress-fill" style="width:${pct}%"></div>
+        <div class="metas-compare-wrap">
+          <div class="metas-compare-chart-area">
+            <div class="metas-compare-col-bar">
+              <div class="metas-compare-bar bar-meta" style="height:100%"></div>
+            </div>
+            <div class="metas-compare-col-bar">
+              <div class="metas-compare-bar bar-prod ${cls}" style="height:${Math.max(2, barH)}%"></div>
+            </div>
           </div>
-          <div class="metas-progress-meta">
-            <span>Produzido: ${fmtTons(total.produzido)}</span>
-            <span>Restante: ${fmtTons(total.restante)}</span>
+          <div class="metas-compare-x-axis"></div>
+          <div class="metas-compare-labels">
+            <div class="metas-compare-col-label">
+              <div class="metas-compare-lbl">Meta definida</div>
+              <div class="metas-compare-val">${fmtTons(total.meta)}</div>
+            </div>
+            <div class="metas-compare-col-label">
+              <div class="metas-compare-lbl">Realizado</div>
+              <div class="metas-compare-val">${fmtTons(total.produzido)}</div>
+            </div>
+          </div>
+          <div class="metas-compare-footer">
+            <span>${statusMsg}</span>
+            <span class="metas-pill ${cls}">${fmtPct(total.percentual)}</span>
           </div>
         </div>
       </div>
