@@ -2002,6 +2002,186 @@
     loadHistoricoFrotas(container, opts);
   }
 
+  // ── INFLEET IMPORT ────────────────────────────────────────────────────────
+
+  async function loadSheetJs() {
+    if (window.XLSX && typeof window.XLSX.read === 'function') return true;
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-sheetjs]');
+      if (existing) { existing.addEventListener('load', () => resolve(Boolean(window.XLSX?.read)), { once: true }); return; }
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      script.dataset.sheetjs = '1';
+      script.onload = () => resolve(Boolean(window.XLSX?.read));
+      script.onerror = () => reject(new Error('Falha ao carregar SheetJS. Verifique a conexão e tente novamente.'));
+      document.head.appendChild(script);
+    });
+  }
+
+  function infleetBrDateToISO(value) {
+    const s = String(value || '').trim();
+    const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : s.slice(0, 10);
+  }
+
+  function makeInfleetHash(placa, dataEvento, horaEvento, velocidade) {
+    return `INFLEET|${onlyPlate(placa)}|${String(dataEvento || '').slice(0, 10)}|${String(horaEvento || '').slice(0, 8)}|${Math.round(Number(velocidade) || 0)}`;
+  }
+
+  function parseInfleetSheet(workbook) {
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const raw = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+    let headerRow = -1;
+    for (let i = 0; i < Math.min(raw.length, 6); i++) {
+      if ((raw[i] || []).some((cell) => /velocidade/i.test(String(cell || '')))) {
+        headerRow = i;
+        break;
+      }
+    }
+    if (headerRow < 0) return { rows: [], skipped: 0, error: 'Cabeçalho não encontrado. Verifique se o arquivo é uma planilha Infleet válida.' };
+
+    const headers = (raw[headerRow] || []).map((h) => String(h || '').trim());
+    const idx = (pattern) => headers.findIndex((h) => pattern.test(h));
+
+    const idxVeiculo    = idx(/ve.culo/i);
+    const idxDia        = idx(/^dia$/i);
+    const idxHora       = idx(/^hora$/i);
+    const idxVelocidade = idx(/velocidade\s*km/i);
+    const idxMotorista  = idx(/^motorista$/i);
+    const idxEndereco   = idx(/endere.o/i);
+
+    if (idxVeiculo < 0 || idxDia < 0 || idxVelocidade < 0) {
+      return { rows: [], skipped: 0, error: 'Colunas obrigatórias (Veículo, Dia, Velocidade Km/h) não encontradas. Confirme que é a planilha Infleet correta.' };
+    }
+
+    const result = [];
+    let skipped = 0;
+
+    for (let i = headerRow + 1; i < raw.length; i++) {
+      const row = raw[i] || [];
+      const placa = onlyPlate(String(row[idxVeiculo] || ''));
+      if (!placa) continue;
+
+      const velRaw = Number(String(row[idxVelocidade] || '0').replace(',', '.'));
+      if (!Number.isFinite(velRaw) || velRaw <= 120) { skipped++; continue; }
+
+      const dataEvento = infleetBrDateToISO(String(row[idxDia] || ''));
+      if (!dataEvento || dataEvento.length < 10) continue;
+
+      const horaEvento  = String(row[idxHora] || '').trim();
+      const velocidade  = Math.round(velRaw);
+      const motorista   = idxMotorista  >= 0 ? (String(row[idxMotorista]  || '').trim() || null) : null;
+      const endereco    = idxEndereco   >= 0 ? (String(row[idxEndereco]   || '').trim() || null) : null;
+
+      result.push({
+        placa,
+        data_evento:       dataEvento,
+        hora_evento:       horaEvento || null,
+        velocidade,
+        motorista_planilha: motorista,
+        endereco,
+        import_hash: makeInfleetHash(placa, dataEvento, horaEvento, velocidade)
+      });
+    }
+
+    return { rows: result, skipped, error: null };
+  }
+
+  async function importInfleetExcel(root, file, opts = {}) {
+    const sb = resolveSupabase(opts);
+    const btn = root.querySelector('[data-infleet-import-btn]');
+    const originalText = btn?.textContent || 'Importar Infleet';
+
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = 'Carregando SheetJS...'; }
+      await loadSheetJs();
+
+      if (btn) btn.textContent = 'Lendo planilha...';
+      const buffer = await file.arrayBuffer();
+      const workbook = window.XLSX.read(new Uint8Array(buffer), { type: 'array' });
+      const { rows, skipped, error } = parseInfleetSheet(workbook);
+
+      if (error) { toast(error, 'error'); return; }
+      if (!rows.length) {
+        toast(`Nenhum registro com velocidade > 120 km/h encontrado.${skipped ? ` (${skipped} linha(s) ignoradas ≤ 120 km/h)` : ''}`, 'error');
+        return;
+      }
+
+      if (btn) btn.textContent = 'Cruzando placas com patrimônios...';
+      const uniquePlates = [...new Set(rows.map((r) => r.placa))];
+      const veiculosMap = new Map();
+
+      if (sb && typeof sb.from === 'function') {
+        const { data: veiculos } = await sb
+          .from('frotas_veiculos')
+          .select('placa,motorista_atual,patrimonio_funcionario,coordenacao,supervisao')
+          .in('placa', uniquePlates);
+        (veiculos || []).forEach((v) => veiculosMap.set(onlyPlate(v.placa), v));
+      }
+
+      const enriched = rows.map((row) => {
+        const v = veiculosMap.get(row.placa) || null;
+        const motoristaCruzado = v?.motorista_atual || v?.patrimonio_funcionario || null;
+        return {
+          ...row,
+          patrimonio_funcionario: motoristaCruzado,
+          coordenacao: v?.coordenacao || null,
+          supervisao:  v?.supervisao  || null,
+          status_cruzamento:   motoristaCruzado ? 'MOTORISTA_IDENTIFICADO' : 'PLACA_SEM_FUNCIONARIO',
+          status_notificacao: 'PENDENTE'
+        };
+      });
+
+      if (!sb || typeof sb.from !== 'function') {
+        toast('Supabase não encontrado. Verifique a conexão.', 'error');
+        return;
+      }
+
+      const CHUNK = 200;
+      let totalOk = 0;
+      let totalErr = 0;
+
+      if (btn) btn.textContent = `Importando ${enriched.length} registro(s)...`;
+
+      for (let i = 0; i < enriched.length; i += CHUNK) {
+        const chunk = enriched.slice(i, i + CHUNK);
+        const { error: upsertError } = await sb
+          .from('frotas_excesso_velocidade')
+          .upsert(chunk, { onConflict: 'import_hash', ignoreDuplicates: true });
+
+        if (upsertError) {
+          // import_hash pode não existir — tenta insert simples sem esse campo
+          const sem = chunk.map(({ import_hash: _h, ...rest }) => rest);
+          const { error: insertError } = await sb.from('frotas_excesso_velocidade').insert(sem);
+          if (insertError) { console.warn('[FROTAS] Infleet insert fallback:', insertError); totalErr += chunk.length; }
+          else totalOk += chunk.length;
+        } else {
+          totalOk += chunk.length;
+        }
+      }
+
+      const identified = enriched.filter((r) => r.status_cruzamento === 'MOTORISTA_IDENTIFICADO').length;
+      const msg = [
+        `Infleet: ${rows.length} registro(s) acima de 120 km/h importado(s).`,
+        `${identified} colaborador(es) identificado(s) pela placa.`,
+        skipped  ? `${skipped} linha(s) ignoradas (≤ 120 km/h).`  : '',
+        totalErr ? `${totalErr} registro(s) com erro ao salvar.`   : ''
+      ].filter(Boolean).join(' ');
+
+      toast(msg, totalErr ? 'error' : 'success');
+      await fetchImportedExcessos(root, opts);
+    } catch (err) {
+      console.error('[FROTAS] Importar Infleet:', err);
+      toast(err.message || 'Erro ao importar planilha Infleet.', 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    }
+  }
+
+  // ── FIM INFLEET IMPORT ─────────────────────────────────────────────────────
+
   function renderExcessoVelocidade(container, opts = {}) {
     currentRenderOpts = opts || {};
     const colaboradores = getColaboradores(opts);
@@ -2015,7 +2195,8 @@
               <div class="speed-panel">
                 <div class="speed-step-title"><h3>Painel 1 · Copiar mensagem</h3><span class="speed-step-pill">maior velocidade por data</span></div>
                 <div class="speed-import-card">
-                  <div class="speed-import-head"><h3>Registros importados</h3><div class="speed-import-actions"><button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-sync-bfleet-excessos>Sincronizar ontem</button><button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-refresh-imported-excessos>Atualizar</button></div></div>
+                  <div class="speed-import-head"><h3>Registros importados</h3><div class="speed-import-actions"><button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-sync-bfleet-excessos>Sincronizar ontem</button><button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-infleet-import-btn>Importar Infleet</button><button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-refresh-imported-excessos>Atualizar</button></div></div>
+                  <input type="file" accept=".xlsx,.xls" data-infleet-file hidden>
                   <p class="speed-hint" data-imported-excess-count>Nenhuma pendência carregada</p>
                   <div class="print-status-box">
                     <strong>Sincronizar relatório da BFleet</strong>
@@ -2025,6 +2206,10 @@
                       <div class="speed-field"><label>Data final do relatório</label><input class="speed-input" type="date" data-sync-report-end></div>
                     </div>
                     <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-sync-bfleet-period>Sincronizar período</button>
+                  </div>
+                  <div class="print-status-box">
+                    <strong>Importar planilha Infleet</strong>
+                    <p>Clique em <strong>Importar Infleet</strong> para selecionar o arquivo .xlsx exportado da Infleet. O sistema filtra automaticamente os registros com <strong>Velocidade Km/h &gt; 120</strong>, cruza a placa com os patrimônios para identificar o colaborador e insere as pendências nesta lista.</p>
                   </div>
                   <p class="speed-hint">As datas de OK em lote aparecem junto das pendências e servem apenas para limpar/arquivar registros já importados.</p>
                   <div class="speed-import-list" data-imported-excess-list><div class="speed-import-empty">Carregando registros importados...</div></div>
@@ -2072,6 +2257,14 @@
     container.querySelector('[data-sync-bfleet-excessos]')?.addEventListener('click', () => sincronizarRelatorioBFleet(container, opts, 'yesterday'));
     container.querySelector('[data-sync-bfleet-period]')?.addEventListener('click', () => sincronizarRelatorioBFleet(container, opts, 'period'));
     container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
+
+    const infleetFileInput = container.querySelector('[data-infleet-file]');
+    container.querySelector('[data-infleet-import-btn]')?.addEventListener('click', () => infleetFileInput?.click());
+    infleetFileInput?.addEventListener('change', (ev) => {
+      const file = ev.target.files?.[0];
+      if (file) importInfleetExcel(container, file, opts);
+      ev.target.value = '';
+    });
     container.querySelector('[data-open-dashboard]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-dashboard')));
     container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-veiculos')));
     container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-multas')));
