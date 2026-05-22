@@ -47,28 +47,13 @@ function isClassificador(c){ return norm(`${c.tipo||''} ${c.cargo||''}`).include
 async function notifyCompras(message){
   const cfgs = await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor','COMPRAS').eq('ativo',true).limit(10));
   if(!cfgs.length) return {ok:false,msg:'Solicitação salva. Nenhum responsável configurado em compras_notificacoes_config.'};
-  const keyRow = await safe(()=>supabase.from('ti_integracao_segredos').select('valor').eq('chave','BOTCONVERSA_API_KEY').eq('ativo',true).maybeSingle(),null);
-  const apiKey = keyRow?.valor || '';
-  if(!apiKey) return {ok:false,msg:'Solicitação salva. Configure BOTCONVERSA_API_KEY em TI > Integrações.'};
-  const base='https://backend.botconversa.com.br/api/v1/webhook';
-  const headers={'api-key':apiKey,accept:'application/json'};
   let ok=0;
   for(const cfg of cfgs){
     if(!cfg.telefone) continue;
     try{
       const tel=String(cfg.telefone).replace(/\D/g,'');
-      let subscriberId=null;
-      const getRes=await fetch(`${base}/subscriber/${tel}/`,{headers});
-      if(getRes.ok) subscriberId=(await getRes.json())?.id??null;
-      if(!subscriberId){
-        const body=new FormData(); body.append('phone',tel); if(cfg.nome) body.append('name',cfg.nome);
-        const createRes=await fetch(`${base}/subscriber/`,{method:'POST',headers,body});
-        if(createRes.ok) subscriberId=(await createRes.json())?.id??null;
-      }
-      if(!subscriberId) continue;
-      const msgBody=new FormData(); msgBody.append('type','text'); msgBody.append('value',message);
-      const sendRes=await fetch(`${base}/subscriber/${subscriberId}/send_message/`,{method:'POST',headers,body:msgBody});
-      if(sendRes.ok) ok++;
+      const {data,error}=await supabase.functions.invoke('botconversa-send',{body:{phone:tel,message,nome:cfg.nome||''}});
+      if(!error && data?.ok) ok++;
     }catch(e){ console.warn('[notifyCompras]',e); }
   }
   return {ok:ok>0,msg:ok?`BotConversa enviado para ${ok} responsável(is).`:'Solicitação salva, mas não foi possível enviar pelo BotConversa.'};

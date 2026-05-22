@@ -1649,47 +1649,17 @@ initProtectedPage('Financeiro', (content, userContext) => {
   }
 
   async function sendComprovanteViaBotConversa(phone, comprovanteUrl, fornecedor) {
-    const { data: secretRow } = await supabase
-      .from('ti_integracao_segredos')
-      .select('valor')
-      .eq('chave', 'BOTCONVERSA_API_KEY')
-      .eq('ativo', true)
-      .maybeSingle();
-    const apiKey = secretRow?.valor || '';
-    if (!apiKey) return { ok: false, error: 'Chave BOTCONVERSA_API_KEY não configurada em TI > Integrações.' };
-    const tel = String(phone).replace(/\D/g, '');
+    const tel = String(phone || '').replace(/\D/g, '');
     if (!tel) return { ok: false, error: 'Telefone inválido.' };
-    const base = 'https://backend.botconversa.com.br/api/v1/webhook';
-    const headers = { 'api-key': apiKey, accept: 'application/json' };
-
-    let subscriberId = null;
     try {
-      const getRes = await fetch(`${base}/subscriber/${tel}/`, { headers });
-      if (getRes.ok) {
-        const data = await getRes.json();
-        subscriberId = data?.id ?? null;
-      }
-      if (!subscriberId) {
-        const body = new FormData();
-        body.append('phone', tel);
-        if (fornecedor) body.append('name', String(fornecedor).substring(0, 60));
-        const createRes = await fetch(`${base}/subscriber/`, { method: 'POST', headers, body });
-        if (createRes.ok) subscriberId = (await createRes.json())?.id ?? null;
-      }
-      if (!subscriberId) return { ok: false, error: 'Contato não encontrado no BotConversa.' };
-
-      const msgBody = new FormData();
-      msgBody.append('type', 'text');
-      msgBody.append('value', `Olá${fornecedor ? `, ${fornecedor}` : ''}! Segue o comprovante de pagamento referente à sua solicitação.`);
-      await fetch(`${base}/subscriber/${subscriberId}/send_message/`, { method: 'POST', headers, body: msgBody });
-
-      const fileBody = new FormData();
-      fileBody.append('type', 'file');
-      fileBody.append('value', comprovanteUrl);
-      const sendRes = await fetch(`${base}/subscriber/${subscriberId}/send_message/`, { method: 'POST', headers, body: fileBody });
-      return sendRes.ok ? { ok: true } : { ok: false, error: 'Erro ao enviar arquivo via WhatsApp.' };
+      const mensagem = `Olá${fornecedor ? `, ${fornecedor}` : ''}! Segue o comprovante de pagamento referente à sua solicitação.`;
+      const { data, error } = await supabase.functions.invoke('botconversa-send', {
+        body: { phone: tel, message: mensagem, fileUrl: comprovanteUrl, nome: fornecedor || '' }
+      });
+      if (error) return { ok: false, error: error.message || 'Erro na Edge Function.' };
+      return data?.ok ? { ok: true } : { ok: false, error: data?.error || 'Falha ao enviar.' };
     } catch (e) {
-      return { ok: false, error: e.message || 'Erro ao conectar ao BotConversa.' };
+      return { ok: false, error: e.message || 'Erro ao conectar.' };
     }
   }
 
