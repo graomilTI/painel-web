@@ -70,51 +70,76 @@ function fmtDataPt(v) {
   return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-function gerarTextoRescisao(f, clinica) {
+function formatEnderecoPessoa(p, incluirCep = true) {
+  const cidadeUf = p?.cidade && p?.uf ? `${p.cidade}-${String(p.uf).toUpperCase()}` : (p?.cidade || p?.uf || '');
+  return [
+    p?.logradouro,
+    p?.numero,
+    p?.complemento,
+    p?.bairro ? `Bairro: ${p.bairro}` : null,
+    cidadeUf ? `Cidade: ${cidadeUf}` : null,
+    incluirCep && p?.cep ? `CEP: ${p.cep}` : null,
+  ].filter(Boolean).join(', ');
+}
+
+function formatEmpregador(rem) {
+  if (!rem) {
+    return '_______________, pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº _______________, com sede em _______________,';
+  }
+  const doc = rem.cpf_cnpj ? `, inscrita no CNPJ/MF sob nº ${rem.cpf_cnpj}` : '';
+  const sede = formatEnderecoPessoa(rem, true);
+  return `${rem.nome || '_______________'}, pessoa jurídica de direito privado${doc}${sede ? `, com sede na ${sede}` : ''},`;
+}
+
+function formatClinicaLocal(clinica) {
+  if (!clinica) return '';
+  const cidadeUf = clinica.cidade && clinica.estado
+    ? `${clinica.cidade}-${String(clinica.estado).toUpperCase()}`
+    : (clinica.cidade || clinica.estado || '');
+  return [clinica.endereco, cidadeUf].filter(Boolean).join(' - ');
+}
+
+function gerarTextoRescisao(f, clinica, remetente) {
   const sexoM    = (f.sexo || 'M') !== 'F';
   const portador = sexoM ? 'portador' : 'portadora';
   const prezado  = sexoM ? 'Sr' : 'Sra';
-  const senhor   = sexoM ? 'senhor' : 'senhor(a)';
+  const senhor   = sexoM ? 'senhor' : 'senhora';
   const primeiroNome = (f.nome || '').trim().split(/\s+/)[0];
 
-  const partsEnd = [
-    f.dest_logradouro,
-    f.dest_numero,
-    f.dest_bairro  ? `Bairro: ${f.dest_bairro}`                                                    : null,
-    f.dest_cidade && f.dest_uf ? `Cidade: ${f.dest_cidade}-${f.dest_uf}` : (f.dest_cidade || null),
-    f.dest_cep     ? `CEP: ${f.dest_cep}`                                                          : null,
-  ].filter(Boolean);
-  const enderecoEmp = partsEnd.join(', ');
+  const enderecoEmpregado = formatEnderecoPessoa({
+    logradouro: f.dest_logradouro,
+    numero: f.dest_numero,
+    complemento: f.dest_complemento,
+    bairro: f.dest_bairro,
+    cidade: f.dest_cidade,
+    uf: f.dest_uf,
+    cep: f.dest_cep,
+  }, true);
 
+  const dtFgts  = f.data_fgts  ? fmtDate(f.data_fgts)  : '__/__/____';
   const dtExame = f.data_exame ? fmtDate(f.data_exame) : '__/__/____';
-  const hrExame = f.hora_exame ? (f.hora_exame.replace(/^0+/, '') || '0') : '____';
+  const hrExame = f.hora_exame ? String(f.hora_exame).replace(/^0+/, '') : '____';
   const dtCtps  = f.data_ctps  ? fmtDate(f.data_ctps)  : '__/__/____';
 
-  let clinicaBloco;
-  if (clinica) {
-    const loc = [clinica.endereco, clinica.cidade && clinica.estado ? `${clinica.cidade}/${clinica.estado}` : (clinica.cidade || clinica.estado || '')].filter(Boolean).join(' - ');
-    clinicaBloco = `Solicitamos que o ${senhor} compareça até a ${clinica.nome}${loc ? ` que fica na ${loc}` : ''}, até o dia ${dtExame} a partir das ${hrExame}h para fazer seu exame demissional. A baixa na CTPS será dada no dia ${dtCtps}.\n\n`;
-  } else {
-    clinicaBloco = `Solicitamos que compareça até a _______________, até o dia ${dtExame} a partir das ${hrExame}h para fazer seu exame demissional. A baixa na CTPS será dada no dia ${dtCtps}.\n\n`;
-  }
+  const clinicaNome = clinica?.nome || '_______________';
+  const clinicaLoc  = formatClinicaLocal(clinica);
+  const clinicaTrecho = `Solicitamos que o ${senhor} compareça até a ${clinicaNome}${clinicaLoc ? ` que fica na ${clinicaLoc}` : ''}, até o dia ${dtExame} a partir das ${hrExame}h para fazer seu exame demissional.`;
 
   const rhParts   = [f.contato_rh_nome, f.contato_rh_cargo].filter(Boolean).join(', ');
   const contatoRh = [f.telefone_rh, rhParts ? `(${rhParts})` : ''].filter(Boolean).join(' ');
 
   return `COMUNICADO DE RESCISÃO DO CONTRATO DE TRABALHO
 
-EMPREGADOR: GRAOMIL LTDA, pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº 29.666.679/0001-34, com sede na Avenida BRASIL, 2732, APT 01, SAO CRISTOVAO, CASCAVEL, PR,
 
-EMPREGADO(A): ${f.nome || '_______________'} ${f.nacionalidade || 'brasileiro(a)'}, ${f.estado_civil || 'solteiro(a)'}, ${f.cargo || '_______________'} ${portador} da cédula de identidade R.G nº ${f.rg || '_______________'}, ${portador} do CPF: ${f.cpf || '___.___.___-__'}
-Endereço: ${enderecoEmp || '_______________'}.
+EMPREGADOR: ${formatEmpregador(remetente)}
 
-Prezado ${prezado} ${primeiroNome || '_______________'}, comunicamos que o seu contrato de trabalho na modalidade intermitente fica rescindido com as seguintes condições:
+EMPREGADO(A): ${f.nome || '_______________'} ${f.nacionalidade || (sexoM ? 'brasileiro' : 'brasileira')}, ${f.estado_civil || 'solteiro(a)'}, ${f.cargo || '_______________'} ${portador} da cédula de identidade R.G nº ${f.rg || '_______________'}, ${portador} do CPF: ${f.cpf || '___.___.___-__'}
+Endereço: ${enderecoEmpregado || '_______________'}.
 
-A multa de 40% sob o saldo de FGTS pagaremos via GFD até o dia ${f.data_fgts ? fmtDate(f.data_fgts) : '__/__/____'}.
+Prezado ${prezado} ${primeiroNome || '_______________'}, comunicamos que o seu contrato de trabalho na modalidade intermitente (conforme artigo 443 e seu parágrafo 3o, e artigo 452-A até artigo 452-G e seus parágrafos, da CLT), está sendo rescindido neste momento e de forma imediata sem justa causa por iniciativa da empresa, conforme previsto no artigo 477 da CLT. A multa de 40% sob o saldo de FGTS pagaremos via GFD até o dia ${dtFgts} e o ${senhor} terá acesso ao saldo pelo aplicativo FGTS da Caixa Econômica Federal, também poderá dar entrada no seguro-desemprego, se estiver dentro das normas da Lei Número 7.998, Artigo 3º das Leis Trabalhistas.
+${clinicaTrecho} A baixa na CTPS será dada no dia ${dtCtps} para que possam ser cumpridas as demais obrigações rescisórias, na forma da lei. Quando receber este telegrama, favor entrar em contato com o número ${contatoRh || '___________'} para maiores informações. 
 
-${clinicaBloco}Em caso de dúvidas, favor entrar em contato com o número ${contatoRh || '___________'} para maiores informações.
-
-${f.cidade_empresa || 'Cascavel'}, ${f.data_carta ? fmtDataPt(f.data_carta) : '____ de ________ de _____'}.`;
+${f.cidade_empresa || remetente?.cidade || 'Cascavel'}, ${f.data_carta ? fmtDataPt(f.data_carta) : '____ de ________ de _____'}.`;
 }
 
 async function callFn(name, body) {
@@ -221,6 +246,20 @@ function renderEnviar() {
         background:${active ? 'rgba(45,212,160,.18)' : 'rgba(8,22,17,.58)'};
         color:${active ? '#dcfce7' : 'rgba(200,230,210,.55)'}">${label}</button>`;
 
+  const clinicSearchBlock = `
+    <div class="form-group full-width" id="grupo-clinica-rescisao" style="margin-top:4px">
+      <label>Clínica — Exame Demissional *</label>
+      <div class="dest-ac-wrap">
+        <input type="text" id="search-clinica-tel"
+          placeholder="Digite o nome da clínica ou cidade…" autocomplete="off" />
+        <input type="hidden" name="clinica_sst_id" id="hidden-clinica-id" />
+        <ul class="dest-ac-drop" id="clinica-ac-drop"></ul>
+      </div>
+      <div id="clinica-selecionada-card"
+        style="display:none;margin-top:10px;padding:12px 14px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.18);border-radius:12px;font-size:.84rem;color:rgba(200,230,210,.80);line-height:1.55">
+      </div>
+    </div>`;
+
   return `
     <div class="form-section">
       <div style="background:rgba(45,212,160,.07);border:1px solid rgba(45,212,160,.18);border-radius:12px;padding:12px 16px;margin-bottom:20px;font-size:.84rem;color:rgba(180,220,195,.72);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
@@ -313,6 +352,7 @@ function renderEnviar() {
               ${rfield('res-cidade-emp', 'Cidade da Empresa',     'text', rf.cidade_empresa   || 'Cascavel')}
               ${rfield('res-data-carta', 'Data da Carta',         'date', rf.data_carta       || '')}
             </div>
+            ${clinicSearchBlock}
             <button type="button" id="btn-gerar-texto" class="btn btn-primary"
               style="margin-top:16px;width:100%;font-size:.88rem">Gerar Texto →</button>
           </div>
@@ -325,18 +365,6 @@ function renderEnviar() {
           <div style="font-size:11px;color:rgba(180,220,195,.35);margin-top:4px">O texto será transmitido exatamente como digitado.</div>
         </div>
 
-        <div class="form-group full-width">
-          <label>Clínica — Exame Demissional (opcional)</label>
-          <div class="dest-ac-wrap">
-            <input type="text" id="search-clinica-tel"
-              placeholder="Digite o nome da clínica ou cidade…" autocomplete="off" />
-            <input type="hidden" name="clinica_sst_id" id="hidden-clinica-id" />
-            <ul class="dest-ac-drop" id="clinica-ac-drop"></ul>
-          </div>
-          <div id="clinica-selecionada-card"
-            style="display:none;margin-top:10px;padding:12px 14px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.18);border-radius:12px;font-size:.84rem;color:rgba(200,230,210,.80);line-height:1.55">
-          </div>
-        </div>
 
         <div class="form-group">
           <label>Serviços adicionais</label>
@@ -563,7 +591,7 @@ function bindEvents() {
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button type="button" class="btn btn-sm btn-secondary" id="btn-inserir-clinica"
-            style="white-space:nowrap;font-size:.78rem">Inserir parágrafo ↓</button>
+            style="white-space:nowrap;font-size:.78rem">Usar no texto</button>
           <button type="button" class="btn btn-sm" id="btn-limpar-clinica"
             style="font-size:.78rem;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.22);color:#fca5a5">Limpar</button>
         </div>
@@ -692,13 +720,17 @@ function bindEvents() {
       data_carta:       get('#res-data-carta') || state.rescisaoFields.data_carta       || '',
       dest_logradouro:  get('#inp-dest-log'),
       dest_numero:      get('#inp-dest-num'),
+      dest_complemento: get('#inp-dest-comp'),
       dest_bairro:      get('#inp-dest-bairro'),
       dest_cidade:      get('#inp-dest-cidade'),
       dest_uf:          get('#inp-dest-uf'),
       dest_cep:         get('#inp-dest-cep'),
     };
+    const remetenteSelecionado = state.remetentes.find(r => r.id === area.querySelector('select[name=remetente_id]')?.value)
+      ?? state.remetentes.find(r => r.padrao)
+      ?? state.remetentes[0];
     const ta = area.querySelector('textarea[name=mensagem]');
-    if (ta) ta.value = gerarTextoRescisao(f, state.clinicaSelecionada);
+    if (ta) ta.value = gerarTextoRescisao(f, state.clinicaSelecionada, remetenteSelecionado);
   });
 
   // Submit novo telegrama
