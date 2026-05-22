@@ -32,15 +32,8 @@ export const MENU_CONFIG = [
     grupo: "CONFERÊNCIA",
     itens: [
       item("conferencia", "Painel de Conferência", "adm-conferencia", ["ADM_CONFERENCIA"]),
-      item("distribuir_os", "Distribuir O.S", "distribuir-os", ["DISTRIBUIR_OS", "CONFERENCIA_DISTRIBUIR_OS"])
-    ]
-  },
-
-  {
-    grupo: "TERMOS",
-    itens: [
-      item("termos_celular", "Desconto em Caixa", "termos#celular", ["TERMOS_CELULAR", "TERMOS"]),
-      item("termos_veiculos", "Veículos", "termos#veiculos", ["TERMOS_VEICULOS", "TERMOS"])
+      item("distribuir_os", "Distribuir O.S", "distribuir-os", ["DISTRIBUIR_OS", "CONFERENCIA_DISTRIBUIR_OS"]),
+      item("termos_celular", "Termo", "termos#celular", ["TERMOS_CELULAR", "TERMOS"])
     ]
   },
 
