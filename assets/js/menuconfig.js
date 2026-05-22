@@ -67,6 +67,7 @@ export const MENU_CONFIG = [
       item("rh_plantao", "Plantão", "plantao", ["RH_PLANTAO", "PLANTAO", "PLANTÃO"]),
       item("rh_epi", "EPI", "epi-rh", ["RH_EPI"]),
       item("historico_geral", "Histórico Geral", "historico", ["RH_HIST_INDISP"]),
+      item("rh_clinicas_sst", "Clínicas SST", "clinicas-sst", ["RH_CLINICAS", "CLINICAS_SST"]),
       item("base_colab_consulta", "Consultar Base", "consultar-colaboradores", ["BASE_COLAB_CONSULTA"]),
       item("contatos_exportacoes", "Contatos e Cadastros", "contatos", ["CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"])
     ]

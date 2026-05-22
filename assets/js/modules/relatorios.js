@@ -1841,6 +1841,86 @@
   }
 
 
+  async function readClinicasSstFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
+    const sheetName = workbook.SheetNames.find((n) => normalizeHeader(n).includes('clinica')) || workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+    if (!raw?.length) throw new Error('A planilha de clínicas está vazia.');
+
+    const headerRow = findHeaderRow(raw, ['NOME', 'ESTADO', 'CIDADE']);
+    const header = (raw[headerRow] || []).map((h) => normalizeHeader(String(h || '')));
+    const idx = (aliases) => {
+      for (const alias of aliases) {
+        const i = header.findIndex((h) => headerMatches(h, alias));
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+
+    const iNome   = idx(['NOME', 'nome']);
+    const iEstado = idx(['ESTADO', 'estado', 'UF', 'uf']);
+    const iCidade = idx(['CIDADE', 'cidade']);
+    const iTel    = idx(['TELEFONE', 'telefone']);
+    const iCel    = idx(['CELULAR', 'celular']);
+    const iEnd    = idx(['Endereço', 'ENDEREÇO', 'ENDERECO', 'endereco']);
+    const iCep    = idx(['CEP', 'cep']);
+    const iMed    = idx(['DADOS DO MÉDICO', 'dados do medico', 'dados medico', 'medico']);
+    const iEmail  = idx(['E-mail', 'E-MAIL', 'email', 'EMAIL']);
+    const iObs    = idx(['OBSERVAÇÕES', 'OBSERVACOES', 'observacoes', 'observações']);
+    const iPix    = idx(['Chave PIX', 'CHAVE PIX', 'chave pix', 'pix']);
+    const iExm    = idx(['EXAMES', 'exames']);
+
+    const get = (row, i) => i >= 0 ? (String(row[i] || '').trim() || null) : null;
+    const ts  = new Date().toISOString();
+
+    const rows = raw.slice(headerRow + 1)
+      .map((row) => {
+        const nome = get(row, iNome);
+        if (!nome) return null;
+        return {
+          nome,
+          estado:      get(row, iEstado),
+          cidade:      get(row, iCidade),
+          telefone:    get(row, iTel),
+          celular:     get(row, iCel),
+          endereco:    get(row, iEnd),
+          cep:         get(row, iCep),
+          dados_medico: get(row, iMed),
+          email:       get(row, iEmail),
+          observacoes: get(row, iObs),
+          chave_pix:   get(row, iPix),
+          exames:      get(row, iExm),
+          ativo:       true,
+          updated_at:  ts,
+        };
+      })
+      .filter(Boolean);
+
+    return { rows, sheetName };
+  }
+
+  async function importarClinicasSstDaPlanilha(file, opts) {
+    const { rows } = await readClinicasSstFromFile(file);
+    if (!rows.length) {
+      throw new Error('A planilha de clínicas não possui linhas válidas. Cabeçalhos esperados: ESTADO, CIDADE, NOME, TELEFONE, CELULAR, Endereço, DADOS DO MÉDICO, E-mail, OBSERVAÇÕES, Chave PIX, EXAMES.');
+    }
+    let total = 0;
+    for (let i = 0; i < rows.length; i += 300) {
+      const batch = rows.slice(i, i + 300);
+      const { error } = await opts.supabase
+        .from('rh_clinicas_sst')
+        .upsert(batch, { onConflict: 'nome,cidade,estado' });
+      if (error) throw new Error(error.message || 'Falha ao gravar clínicas SST no Supabase.');
+      total += batch.length;
+    }
+    const estados = new Set(rows.map((r) => r.estado).filter(Boolean)).size;
+    const cidades = new Set(rows.map((r) => `${r.cidade || ''}/${r.estado || ''}`).filter((v) => v !== '/')).size;
+    return { total_linhas: rows.length, importados: total, estados, cidades };
+  }
+
   function pickHeaderIndex(headers, names) {
     for (const name of names || []) {
       const exact = (headers || []).findIndex((h) => headerKey(h) === headerKey(name));
@@ -2575,13 +2655,16 @@
     if (n.includes('faturado') || n.includes('faturamento')) {
       return { tipo: 'servicos_faturados', titulo: 'Serviços Faturados' };
     }
+    if (n.includes('clinica') || n.includes('clínica')) {
+      return { tipo: 'clinicas_sst', titulo: 'Clínicas SST (Segurança do Trabalho)' };
+    }
 
     return { tipo: 'outros', titulo: 'Outros Relatórios' };
   }
 
   function isAllowedFile(file) {
     const name = String(file?.name || '').toLowerCase();
-    if (!/\.(xlsx|xls|csv)$/i.test(name)) return false;
+    if (!/\.(xlsx|xls|xlsm|csv)$/i.test(name)) return false;
     return Number(file?.size || 0) <= MAX_ENTERPRISE_SIZE;
   }
 
@@ -2854,6 +2937,7 @@
     let producaoDiariaResumo = null;
     let financeiroReceberResumo = null;
     let financeiroPagarResumo = null;
+    let clinicasResumo = null;
     if (detected.tipo === 'hospedagem_historico') {
       status.textContent = 'Importando histórico de hospedagem dos colaboradores...';
       setProgress(bar, 82);
@@ -2924,10 +3008,15 @@
       financeiroPagarResumo = await importarFinanceiroPagarDaPlanilha(file, opts);
       if (financeiroPagarResumo?.periodo_inicio) entry.period = { inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim, totalDatas: null };
     }
+    if (detected.tipo === 'clinicas_sst') {
+      status.textContent = 'Importando clínicas SST no módulo RH...';
+      setProgress(bar, 82);
+      clinicasResumo = await importarClinicasSstDaPlanilha(file, opts);
+    }
 
     const importMode = opts.importMode || 'auto';
     let period = null;
-    if (!['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'colaboradores_rh', 'auditorias_operacional', 'patrimonios'].includes(detected.tipo)) {
+    if (!['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'colaboradores_rh', 'auditorias_operacional', 'patrimonios', 'clinicas_sst'].includes(detected.tipo)) {
       if (hospedagemHistoricoResumo?.periodo_inicio) period = { inicio: hospedagemHistoricoResumo.periodo_inicio, fim: hospedagemHistoricoResumo.periodo_fim, totalDatas: hospedagemHistoricoResumo.total_datas || null };
       else if (resultadoDiarioResumo?.periodo_inicio) period = { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null };
       else if (producaoDiariaResumo?.periodo_inicio) period = { inicio: producaoDiariaResumo.periodo_inicio, fim: producaoDiariaResumo.periodo_fim, totalDatas: producaoDiariaResumo.total_datas || null };
@@ -3002,6 +3091,7 @@
           producao_diaria_importacao: producaoDiariaResumo || null,
           financeiro_contas_receber_importacao: financeiroReceberResumo || null,
           financeiro_contas_pagar_importacao: financeiroPagarResumo || null,
+          clinicas_sst_importacao: clinicasResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -3050,12 +3140,14 @@
       status.textContent = `Financeiro Receber: ${financeiroReceberResumo.importados || 0} títulos atualizados · ${formatPeriod({ inicio: financeiroReceberResumo.periodo_inicio, fim: financeiroReceberResumo.periodo_fim })} · ${MONEY_FMT.format(financeiroReceberResumo.valor_total || 0)}`;
     } else if (detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo) {
       status.textContent = `Financeiro Pagar: ${financeiroPagarResumo.importados || 0} títulos atualizados · ${formatPeriod({ inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim })} · ${MONEY_FMT.format(financeiroPagarResumo.valor_total || 0)}`;
+    } else if (detected.tipo === 'clinicas_sst' && clinicasResumo) {
+      status.textContent = `Clínicas SST: ${clinicasResumo.importados || 0} clínicas · ${clinicasResumo.estados || 0} estado(s) · ${clinicasResumo.cidades || 0} cidade(s)`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) && !(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) && !(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo) && !(detected.tipo === 'clinicas_sst' && clinicasResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -3079,7 +3171,7 @@
             </div>
 
             <div class="dropzone" id="dropzone" role="button" tabindex="0">
-              <input type="file" id="fileInput" multiple hidden accept=".xlsx,.xls,.csv" />
+              <input type="file" id="fileInput" multiple hidden accept=".xlsx,.xls,.xlsm,.csv" />
               <div>
                 <div class="dropzone-main">Arraste arquivos aqui ou clique para selecionar</div>
                 <div class="dropzone-hint">A importação só será enviada após confirmar no botão abaixo.</div>
@@ -3320,6 +3412,8 @@
               entry.message = period ? `Período: ${formatPeriod(period)} · importará Contas a Pagar no Financeiro` : 'Pendente · Contas a Pagar sem vencimento detectado';
               renderFiles();
             });
+          } else if (detected.tipo === 'clinicas_sst') {
+            entry.message = 'Pendente · atualizará cadastro de Clínicas SST no RH';
           } else {
             detectarHoteisPorConteudo(file, detected).then((newDetected) => {
               if (newDetected.tipo === 'hoteis') {

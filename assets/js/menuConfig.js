@@ -32,15 +32,8 @@ export const MENU_CONFIG = [
     grupo: "CONFERÊNCIA",
     itens: [
       item("conferencia", "Painel de Conferência", "adm-conferencia", ["ADM_CONFERENCIA"]),
-      item("distribuir_os", "Distribuir O.S", "distribuir-os", ["DISTRIBUIR_OS", "CONFERENCIA_DISTRIBUIR_OS"])
-    ]
-  },
-
-  {
-    grupo: "TERMOS",
-    itens: [
-      item("termos_celular", "Desconto em Caixa", "termos#celular", ["TERMOS_CELULAR", "TERMOS"]),
-      item("termos_veiculos", "Veículos", "termos#veiculos", ["TERMOS_VEICULOS", "TERMOS"])
+      item("distribuir_os", "Distribuir O.S", "distribuir-os", ["DISTRIBUIR_OS", "CONFERENCIA_DISTRIBUIR_OS"]),
+      item("termos_celular", "Termo", "termos#celular", ["TERMOS_CELULAR", "TERMOS"])
     ]
   },
 
@@ -74,6 +67,7 @@ export const MENU_CONFIG = [
       item("rh_plantao", "Plantão", "plantao", ["RH_PLANTAO", "PLANTAO", "PLANTÃO"]),
       item("rh_epi", "EPI", "epi-rh", ["RH_EPI"]),
       item("historico_geral", "Histórico Geral", "historico", ["RH_HIST_INDISP"]),
+      item("rh_clinicas_sst", "Clínicas SST", "clinicas-sst", ["RH_CLINICAS", "CLINICAS_SST"]),
       item("base_colab_consulta", "Consultar Base", "consultar-colaboradores", ["BASE_COLAB_CONSULTA"]),
       item("contatos_exportacoes", "Contatos e Cadastros", "contatos", ["CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"])
     ]
