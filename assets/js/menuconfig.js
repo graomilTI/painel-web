@@ -92,6 +92,14 @@ export const MENU_CONFIG = [
   },
 
   {
+    grupo: "TI",
+    itens: [
+      item("ti_integracoes", "Integrações", "ti-integracoes", ["TI", "INTEGRACOES", "TI_INTEGRACOES", "CONFIG_INTEGRACOES"]),
+      item("ti_contatos", "Contatos de Notificação", "ti-contatos", ["TI_CONTATOS", "TI"])
+    ]
+  },
+
+  {
     grupo: "NOTAS FISCAIS",
     itens: [
       item("notas_fiscais", "Painel de Notas Fiscais", "notas-fiscais", ["NOTAS_FISCAIS", "NF", "NFS", "FINANCEIRO_NOTAS_FISCAIS"])

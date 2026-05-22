@@ -256,6 +256,12 @@ const TI_FAILSAFE_ITEMS = [
     label: 'Integrações',
     path: 'ti-integracoes',
     aliases: ['TI', 'INTEGRACOES', 'TI_INTEGRACOES', 'CONFIG_INTEGRACOES']
+  },
+  {
+    code: 'ti_contatos',
+    label: 'Contatos de Notificação',
+    path: 'ti-contatos',
+    aliases: ['TI_CONTATOS', 'TI']
   }
 ];
 

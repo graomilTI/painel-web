@@ -37,6 +37,8 @@ const state = {
   destinatarios: [],
   clinicas: [],
   clinicaSelecionada: null,
+  rescisaoFields: {},
+  modeloAtivo: 'manual',
   loading: false,
   feedback: '',
   feedbackErr: false,
@@ -52,6 +54,67 @@ function setFeedback(msg, isErr = false) {
   el.textContent = msg;
   el.className = 'feedback-bar' + (isErr ? ' feedback-err' : ' feedback-ok');
   el.style.display = msg ? 'block' : 'none';
+}
+
+function fmtDate(v) {
+  if (!v) return '';
+  const d = new Date(v + 'T12:00:00');
+  if (isNaN(d)) return v;
+  return d.toLocaleDateString('pt-BR');
+}
+
+function fmtDataPt(v) {
+  if (!v) return '';
+  const d = new Date(v + 'T12:00:00');
+  if (isNaN(d)) return v;
+  return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function gerarTextoRescisao(f, clinica) {
+  const sexoM    = (f.sexo || 'M') !== 'F';
+  const portador = sexoM ? 'portador' : 'portadora';
+  const prezado  = sexoM ? 'Sr' : 'Sra';
+  const senhor   = sexoM ? 'senhor' : 'senhor(a)';
+  const primeiroNome = (f.nome || '').trim().split(/\s+/)[0];
+
+  const partsEnd = [
+    f.dest_logradouro,
+    f.dest_numero,
+    f.dest_bairro  ? `Bairro: ${f.dest_bairro}`                                                    : null,
+    f.dest_cidade && f.dest_uf ? `Cidade: ${f.dest_cidade}-${f.dest_uf}` : (f.dest_cidade || null),
+    f.dest_cep     ? `CEP: ${f.dest_cep}`                                                          : null,
+  ].filter(Boolean);
+  const enderecoEmp = partsEnd.join(', ');
+
+  const dtExame = f.data_exame ? fmtDate(f.data_exame) : '__/__/____';
+  const hrExame = f.hora_exame ? (f.hora_exame.replace(/^0+/, '') || '0') : '____';
+  const dtCtps  = f.data_ctps  ? fmtDate(f.data_ctps)  : '__/__/____';
+
+  let clinicaBloco;
+  if (clinica) {
+    const loc = [clinica.endereco, clinica.cidade && clinica.estado ? `${clinica.cidade}/${clinica.estado}` : (clinica.cidade || clinica.estado || '')].filter(Boolean).join(' - ');
+    clinicaBloco = `Solicitamos que o ${senhor} compareça até a ${clinica.nome}${loc ? ` que fica na ${loc}` : ''}, até o dia ${dtExame} a partir das ${hrExame}h para fazer seu exame demissional. A baixa na CTPS será dada no dia ${dtCtps}.\n\n`;
+  } else {
+    clinicaBloco = `Solicitamos que compareça até a _______________, até o dia ${dtExame} a partir das ${hrExame}h para fazer seu exame demissional. A baixa na CTPS será dada no dia ${dtCtps}.\n\n`;
+  }
+
+  const rhParts   = [f.contato_rh_nome, f.contato_rh_cargo].filter(Boolean).join(', ');
+  const contatoRh = [f.telefone_rh, rhParts ? `(${rhParts})` : ''].filter(Boolean).join(' ');
+
+  return `COMUNICADO DE RESCISÃO DO CONTRATO DE TRABALHO
+
+EMPREGADOR: GRAOMIL LTDA, pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº 29.666.679/0001-34, com sede na Avenida BRASIL, 2732, APT 01, SAO CRISTOVAO, CASCAVEL, PR,
+
+EMPREGADO(A): ${f.nome || '_______________'} ${f.nacionalidade || 'brasileiro(a)'}, ${f.estado_civil || 'solteiro(a)'}, ${f.cargo || '_______________'} ${portador} da cédula de identidade R.G nº ${f.rg || '_______________'}, ${portador} do CPF: ${f.cpf || '___.___.___-__'}
+Endereço: ${enderecoEmp || '_______________'}.
+
+Prezado ${prezado} ${primeiroNome || '_______________'}, comunicamos que o seu contrato de trabalho na modalidade intermitente fica rescindido com as seguintes condições:
+
+A multa de 40% sob o saldo de FGTS pagaremos via GFD até o dia ${f.data_fgts ? fmtDate(f.data_fgts) : '__/__/____'}.
+
+${clinicaBloco}Em caso de dúvidas, favor entrar em contato com o número ${contatoRh || '___________'} para maiores informações.
+
+${f.cidade_empresa || 'Cascavel'}, ${f.data_carta ? fmtDataPt(f.data_carta) : '____ de ________ de _____'}.`;
 }
 
 async function callFn(name, body) {
@@ -124,6 +187,32 @@ function renderEnviar() {
     `<option value="${r.id}"${r.id === remPadrao?.id ? ' selected' : ''}>${esc(r.nome)} — ${esc(r.cidade)}/${esc(r.uf)}</option>`
   ).join('');
 
+  const isRescisao = state.modeloAtivo === 'rescisao';
+  const rf = state.rescisaoFields;
+
+  const rfield = (id, label, type, val, opts = {}) => {
+    const ph = opts.placeholder ? ` placeholder="${esc(opts.placeholder)}"` : '';
+    return `<div style="display:flex;flex-direction:column;gap:5px">
+      <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(200,230,210,.50)">${label}</label>
+      <input id="${id}" type="${type}" value="${esc(val)}"${ph}
+        style="padding:9px 12px;border:1px solid rgba(45,212,160,.12);border-radius:12px;background:rgba(8,22,17,.58);color:var(--text);outline:none;font:inherit;font-size:.88rem;color-scheme:dark;width:100%;box-sizing:border-box" />
+    </div>`;
+  };
+  const rsexo = (val) => `<div style="display:flex;flex-direction:column;gap:5px">
+    <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(200,230,210,.50)">Sexo</label>
+    <select id="res-sexo"
+      style="padding:9px 12px;border:1px solid rgba(45,212,160,.12);border-radius:12px;background:rgba(8,22,17,.58);color:var(--text);outline:none;font:inherit;font-size:.88rem;color-scheme:dark;width:100%;box-sizing:border-box">
+      <option value="M"${(val || 'M') === 'M' ? ' selected' : ''}>Masculino</option>
+      <option value="F"${val === 'F' ? ' selected' : ''}>Feminino</option>
+    </select>
+  </div>`;
+  const mBtn = (id, label, active) =>
+    `<button type="button" id="${id}"
+      style="padding:8px 16px;border-radius:12px;font-size:.80rem;font-weight:700;cursor:pointer;
+        border:1px solid ${active ? 'rgba(45,212,160,.45)' : 'rgba(45,212,160,.18)'};
+        background:${active ? 'rgba(45,212,160,.18)' : 'rgba(8,22,17,.58)'};
+        color:${active ? '#dcfce7' : 'rgba(200,230,210,.55)'}">${label}</button>`;
+
   return `
     <div class="form-section">
       <div style="background:rgba(45,212,160,.07);border:1px solid rgba(45,212,160,.18);border-radius:12px;padding:12px 16px;margin-bottom:20px;font-size:.84rem;color:rgba(180,220,195,.72);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
@@ -185,6 +274,41 @@ function renderEnviar() {
           <label>UF *</label>
           <input type="text" name="dest_uf" id="inp-dest-uf" maxlength="2" style="text-transform:uppercase" />
         </div>
+
+        <div class="form-group full-width" style="border-top:1px solid rgba(45,212,160,.07);padding-top:14px;margin-top:2px">
+          <label>Modelo de Mensagem</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+            ${mBtn('btn-modelo-manual', 'Redigir manualmente', !isRescisao)}
+            ${mBtn('btn-modelo-rescisao', 'Rescisão de Contrato de Trabalho', isRescisao)}
+          </div>
+        </div>
+
+        ${isRescisao ? `
+        <div id="rescisao-panel" class="form-group full-width">
+          <div style="background:rgba(45,212,160,.04);border:1px solid rgba(45,212,160,.15);border-radius:14px;padding:16px 18px">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(200,230,210,.50);margin-bottom:14px">Dados para Rescisão de Contrato</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 18px">
+              ${rfield('res-nome',       'Nome do Funcionário',   'text', rf.nome             || '')}
+              ${rsexo(rf.sexo || 'M')}
+              ${rfield('res-nac',        'Nacionalidade',         'text', rf.nacionalidade     || 'brasileiro')}
+              ${rfield('res-estcivil',   'Estado Civil',          'text', rf.estado_civil      || 'solteiro')}
+              ${rfield('res-cargo',      'Cargo',                 'text', rf.cargo             || '')}
+              ${rfield('res-rg',         'RG',                    'text', rf.rg               || '')}
+              ${rfield('res-cpf',        'CPF',                   'text', rf.cpf              || '')}
+              ${rfield('res-dtfgts',     'Data FGTS / GFD',       'date', rf.data_fgts        || '')}
+              ${rfield('res-dtexame',    'Data do Exame',         'date', rf.data_exame       || '')}
+              ${rfield('res-hrexame',    'Hora do Exame',         'text', rf.hora_exame       || '', { placeholder: 'ex: 8:00' })}
+              ${rfield('res-dtctps',     'Data Baixa CTPS',       'date', rf.data_ctps        || '')}
+              ${rfield('res-rh-nome',    'Contato RH (Nome)',     'text', rf.contato_rh_nome  || 'Andrezza')}
+              ${rfield('res-rh-cargo',   'Cargo RH',              'text', rf.contato_rh_cargo || 'Assistente de RH')}
+              ${rfield('res-rh-tel',     'Telefone RH',           'text', rf.telefone_rh      || '45 9824-0100')}
+              ${rfield('res-cidade-emp', 'Cidade da Empresa',     'text', rf.cidade_empresa   || 'Cascavel')}
+              ${rfield('res-data-carta', 'Data da Carta',         'date', rf.data_carta       || '')}
+            </div>
+            <button type="button" id="btn-gerar-texto" class="btn btn-primary"
+              style="margin-top:16px;width:100%;font-size:.88rem">Gerar Texto →</button>
+          </div>
+        </div>` : ''}
 
         <div class="form-group full-width">
           <label>Mensagem *</label>
@@ -366,6 +490,11 @@ function bindEvents() {
     set('#inp-dest-bairro', d.bairro);
     set('#inp-dest-cidade', d.cidade);
     set('#inp-dest-uf',     d.uf);
+    if (d.nome) {
+      state.rescisaoFields.nome = d.nome;
+      const resNome = area.querySelector('#res-nome');
+      if (resNome) resNome.value = d.nome;
+    }
   }
 
   if (acInp && acDrop) {
@@ -481,6 +610,74 @@ function bindEvents() {
     clInp.addEventListener('blur', () => clDrop.classList.remove('open'));
   }
 
+  // Modelo selector
+  area.querySelector('#btn-modelo-manual')?.addEventListener('click', () => {
+    state.modeloAtivo = 'manual';
+    renderTab();
+  });
+  area.querySelector('#btn-modelo-rescisao')?.addEventListener('click', () => {
+    state.modeloAtivo = 'rescisao';
+    renderTab();
+  });
+
+  // Rescisão panel — persist fields to state
+  const saveResField = (e) => {
+    const keyMap = {
+      'res-nome':       'nome',
+      'res-sexo':       'sexo',
+      'res-nac':        'nacionalidade',
+      'res-estcivil':   'estado_civil',
+      'res-cargo':      'cargo',
+      'res-rg':         'rg',
+      'res-cpf':        'cpf',
+      'res-dtfgts':     'data_fgts',
+      'res-dtexame':    'data_exame',
+      'res-hrexame':    'hora_exame',
+      'res-dtctps':     'data_ctps',
+      'res-rh-nome':    'contato_rh_nome',
+      'res-rh-cargo':   'contato_rh_cargo',
+      'res-rh-tel':     'telefone_rh',
+      'res-cidade-emp': 'cidade_empresa',
+      'res-data-carta': 'data_carta',
+    };
+    const key = keyMap[e.target.id];
+    if (key) state.rescisaoFields[key] = e.target.value;
+  };
+  const resPanel = area.querySelector('#rescisao-panel');
+  resPanel?.addEventListener('input',  saveResField);
+  resPanel?.addEventListener('change', saveResField);
+
+  // Gerar Texto a partir dos dados de rescisão
+  area.querySelector('#btn-gerar-texto')?.addEventListener('click', () => {
+    const get = (id) => area.querySelector(id)?.value ?? '';
+    const f = {
+      nome:             get('#res-nome')       || state.rescisaoFields.nome             || '',
+      sexo:             get('#res-sexo')       || state.rescisaoFields.sexo             || 'M',
+      nacionalidade:    get('#res-nac')        || state.rescisaoFields.nacionalidade    || 'brasileiro',
+      estado_civil:     get('#res-estcivil')   || state.rescisaoFields.estado_civil     || 'solteiro',
+      cargo:            get('#res-cargo')      || state.rescisaoFields.cargo            || '',
+      rg:               get('#res-rg')         || state.rescisaoFields.rg              || '',
+      cpf:              get('#res-cpf')        || state.rescisaoFields.cpf             || '',
+      data_fgts:        get('#res-dtfgts')     || state.rescisaoFields.data_fgts       || '',
+      data_exame:       get('#res-dtexame')    || state.rescisaoFields.data_exame      || '',
+      hora_exame:       get('#res-hrexame')    || state.rescisaoFields.hora_exame      || '',
+      data_ctps:        get('#res-dtctps')     || state.rescisaoFields.data_ctps       || '',
+      contato_rh_nome:  get('#res-rh-nome')    || state.rescisaoFields.contato_rh_nome  || 'Andrezza',
+      contato_rh_cargo: get('#res-rh-cargo')   || state.rescisaoFields.contato_rh_cargo || 'Assistente de RH',
+      telefone_rh:      get('#res-rh-tel')     || state.rescisaoFields.telefone_rh      || '45 9824-0100',
+      cidade_empresa:   get('#res-cidade-emp') || state.rescisaoFields.cidade_empresa   || 'Cascavel',
+      data_carta:       get('#res-data-carta') || state.rescisaoFields.data_carta       || '',
+      dest_logradouro:  get('#inp-dest-log'),
+      dest_numero:      get('#inp-dest-num'),
+      dest_bairro:      get('#inp-dest-bairro'),
+      dest_cidade:      get('#inp-dest-cidade'),
+      dest_uf:          get('#inp-dest-uf'),
+      dest_cep:         get('#inp-dest-cep'),
+    };
+    const ta = area.querySelector('textarea[name=mensagem]');
+    if (ta) ta.value = gerarTextoRescisao(f, state.clinicaSelecionada);
+  });
+
   // Submit novo telegrama
   area.querySelector('#form-novo-telegrama')?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -527,8 +724,7 @@ function bindEvents() {
     setFeedback('Tentando enviar via API...');
     const result = await callFn('correios-telegrama', { telegrama_id: created.id });
 
-    if (result.ok) {
-      setFeedback(`Telegrama enviado com sucesso! ID: ${result.id_telegrama ?? '—'}`);
+    const resetForm = () => {
       e.target.reset();
       if (acInp)    acInp.value = '';
       if (acHidden) acHidden.value = '';
@@ -536,16 +732,19 @@ function bindEvents() {
       if (clHidden) clHidden.value = '';
       if (clCard)   { clCard.style.display = 'none'; clCard.innerHTML = ''; }
       state.clinicaSelecionada = null;
+      const keep = ['contato_rh_nome', 'contato_rh_cargo', 'telefone_rh', 'cidade_empresa'];
+      const keptRF = {};
+      keep.forEach(k => { if (state.rescisaoFields[k]) keptRF[k] = state.rescisaoFields[k]; });
+      state.rescisaoFields = keptRF;
+    };
+
+    if (result.ok) {
+      setFeedback(`Telegrama enviado com sucesso! ID: ${result.id_telegrama ?? '—'}`);
+      resetForm();
       state.tab = 'enviados';
     } else if (result.portal_required) {
       setFeedback('Telegrama salvo. API indisponível — use o portal Correios para enviar.', true);
-      e.target.reset();
-      if (acInp)    acInp.value = '';
-      if (acHidden) acHidden.value = '';
-      if (clInp)    clInp.value = '';
-      if (clHidden) clHidden.value = '';
-      if (clCard)   { clCard.style.display = 'none'; clCard.innerHTML = ''; }
-      state.clinicaSelecionada = null;
+      resetForm();
       state.tab = 'enviados';
     } else {
       setFeedback('Erro ao enviar: ' + (result.error ?? 'desconhecido'), true);
