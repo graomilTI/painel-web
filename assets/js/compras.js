@@ -53,6 +53,7 @@ async function notifyCompras(message){
     try{
       const tel=String(cfg.telefone).replace(/\D/g,'');
       const {data,error}=await supabase.functions.invoke('botconversa-send',{body:{phone:tel,message,nome:cfg.nome||''}});
+      if(error || !data?.ok) console.warn('[notifyCompras] falha botconversa:', error, data);
       if(!error && data?.ok) ok++;
     }catch(e){ console.warn('[notifyCompras]',e); }
   }
