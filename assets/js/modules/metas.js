@@ -377,73 +377,14 @@
         font-size: 12px;
       }
 
-      .metas-stack-wrap {
-        margin-top: 12px;
-      }
-
-      .metas-stack-area {
+      .metas-rc-legend {
         display: flex;
-        gap: 24px;
-        height: 160px;
-        align-items: flex-end;
-        padding: 0 48px;
+        gap: 18px;
+        justify-content: center;
+        margin-bottom: 10px;
       }
 
-      .metas-stack-bar {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        border-radius: 8px 8px 0 0;
-        overflow: hidden;
-      }
-
-      .metas-stack-seg {
-        width: 100%;
-        min-height: 3px;
-        transition: height .4s ease;
-      }
-
-      .metas-stack-axis {
-        height: 1px;
-        background: rgba(148,163,184,.22);
-        margin: 0 48px;
-      }
-
-      .metas-stack-col-labels {
-        display: flex;
-        gap: 24px;
-        padding: 10px 48px 0;
-      }
-
-      .metas-stack-col-label {
-        flex: 1;
-        text-align: center;
-      }
-
-      .metas-stack-lbl {
-        font-size: 11px;
-        color: var(--metas-muted);
-        text-transform: uppercase;
-        letter-spacing: .08em;
-        font-weight: 700;
-      }
-
-      .metas-stack-val {
-        font-size: 13px;
-        font-weight: 800;
-        margin-top: 3px;
-      }
-
-      .metas-stack-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 16px;
-        margin-top: 14px;
-        padding: 12px 0;
-        border-top: 1px solid var(--metas-border);
-      }
-
-      .metas-stack-legend-item {
+      .metas-rc-legend-item {
         display: flex;
         align-items: center;
         gap: 6px;
@@ -451,11 +392,131 @@
         color: var(--metas-muted);
       }
 
-      .metas-stack-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
+      .metas-rc-legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
         flex-shrink: 0;
+      }
+
+      .metas-rc-legend-dot.restante {
+        background: rgba(187,247,208,.45);
+        border: 1px solid rgba(134,239,172,.5);
+      }
+
+      .metas-rc-legend-dot.atual {
+        background: rgba(22,163,74,.9);
+        border: 1px solid rgba(74,222,128,.4);
+      }
+
+      .metas-rc-scroll {
+        overflow-x: auto;
+        overflow-y: visible;
+        padding-bottom: 4px;
+      }
+
+      .metas-rc-inner {
+        display: flex;
+        gap: 5px;
+        height: 300px;
+        align-items: stretch;
+        min-width: max-content;
+      }
+
+      .metas-rc-col {
+        width: 54px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .metas-rc-top-val {
+        height: 22px;
+        font-size: 8.5px;
+        color: var(--metas-muted);
+        font-weight: 700;
+        text-align: center;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding-bottom: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        max-width: 54px;
+        text-overflow: ellipsis;
+      }
+
+      .metas-rc-bar {
+        flex: 1;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        border-radius: 4px 4px 0 0;
+        overflow: hidden;
+        cursor: default;
+      }
+
+      .metas-rc-restante {
+        width: 100%;
+        background: rgba(187,247,208,.42);
+        border: 1px solid rgba(134,239,172,.35);
+        border-bottom: none;
+        box-sizing: border-box;
+        flex-shrink: 0;
+      }
+
+      .metas-rc-atual {
+        width: 100%;
+        background: linear-gradient(180deg, rgba(34,197,94,.92), rgba(21,128,61,.97));
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .metas-rc-label {
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        transform: rotate(180deg);
+        font-size: 9.5px;
+        font-weight: 800;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-height: 100%;
+        text-shadow: 0 1px 3px rgba(0,0,0,.55);
+        padding: 3px 0;
+        letter-spacing: .01em;
+      }
+
+      .metas-rc-uf {
+        height: 18px;
+        font-size: 9.5px;
+        font-weight: 800;
+        color: var(--metas-muted);
+        text-align: center;
+        margin-top: 3px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .metas-rc-bot-val {
+        height: 18px;
+        font-size: 8.5px;
+        color: var(--metas-text);
+        font-weight: 700;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        white-space: nowrap;
+        max-width: 54px;
+        overflow: hidden;
       }
 
       .metas-bars {
@@ -949,69 +1010,56 @@
   function renderProgress(rows) {
     const total = totalsFromRegional(rows);
     const cls = pctClass(total.percentual);
-    const withData = rows.filter(r => Number(r.meta_tons || 0) > 0 || Number(r.produzido_tons || 0) > 0);
-    const sorted = [...withData].sort((a, b) => Number(b.meta_tons || 0) - Number(a.meta_tons || 0));
-
-    const PALETTE = [
-      'rgba(56,189,248,.85)',
-      'rgba(34,197,94,.85)',
-      'rgba(250,204,21,.85)',
-      'rgba(167,139,250,.85)',
-      'rgba(251,146,60,.85)',
-      'rgba(52,211,153,.85)',
-      'rgba(251,113,133,.85)',
-      'rgba(239,68,68,.85)',
-    ];
-
-    const prodBarH = total.meta > 0 ? Math.min(100, (total.produzido / total.meta) * 100) : 0;
+    const withMeta = rows.filter(r => Number(r.meta_tons || 0) > 0);
+    const sorted = [...withMeta].sort((a, b) => String(a.regional || '').localeCompare(String(b.regional || ''), 'pt-BR'));
     const statusMsg = total.produzido >= total.meta ? 'Meta atingida!' : `Faltam ${fmtTons(total.restante)}`;
 
-    function stackedBar(valueKey, totalVal, barH) {
-      const segs = sorted.map((row, i) => {
-        const val = Number(row[valueKey] || 0);
-        const pct = totalVal > 0 ? (val / totalVal) * 100 : 0;
-        return `<div class="metas-stack-seg" style="height:${pct.toFixed(2)}%;background:${PALETTE[i % PALETTE.length]};" title="${escapeHtml(row.regional)}: ${fmtTons(val)}"></div>`;
-      }).join('');
-      return `<div class="metas-stack-bar" style="height:${Math.max(2, barH)}%">${segs}</div>`;
-    }
+    const cols = sorted.map(row => {
+      const meta = Number(row.meta_tons || 0);
+      const prod = Number(row.produzido_tons || 0);
+      const prodPct = Math.min(100, meta > 0 ? (prod / meta) * 100 : 0);
+      const restPct = 100 - prodPct;
+
+      return `
+        <div class="metas-rc-col">
+          <div class="metas-rc-top-val" title="${fmtTons(meta)}">${fmtTons(meta)}</div>
+          <div class="metas-rc-bar" title="${escapeHtml(row.regional)}: ${fmtPct(prodPct)} atingido">
+            <div class="metas-rc-restante" style="height:${restPct.toFixed(2)}%"></div>
+            <div class="metas-rc-atual" style="height:${Math.max(prodPct, 0).toFixed(2)}%">
+              <span class="metas-rc-label">${escapeHtml(row.regional)}</span>
+            </div>
+          </div>
+          <div class="metas-rc-uf">${escapeHtml(row.estado || '')}</div>
+          <div class="metas-rc-bot-val" title="${fmtTons(prod)}">${fmtTons(prod)}</div>
+        </div>
+      `;
+    }).join('');
 
     return `
       <div class="metas-card">
         <div class="metas-section-title">
           <h2>Meta vs Realizado por Regional</h2>
-          <span class="metas-pill ${cls}">${fmtPct(total.percentual)}</span>
+          <span class="metas-pill ${cls}">${fmtPct(total.percentual)} atingido</span>
         </div>
 
-        <div class="metas-stack-wrap">
-          <div class="metas-stack-area">
-            ${stackedBar('meta_tons', total.meta, 100)}
-            ${stackedBar('produzido_tons', total.produzido, prodBarH)}
-          </div>
-          <div class="metas-stack-axis"></div>
-          <div class="metas-stack-col-labels">
-            <div class="metas-stack-col-label">
-              <div class="metas-stack-lbl">Meta definida</div>
-              <div class="metas-stack-val">${fmtTons(total.meta)}</div>
-            </div>
-            <div class="metas-stack-col-label">
-              <div class="metas-stack-lbl">Realizado</div>
-              <div class="metas-stack-val">${fmtTons(total.produzido)}</div>
-            </div>
-          </div>
+        <div class="metas-rc-legend">
+          <span class="metas-rc-legend-item">
+            <span class="metas-rc-legend-dot restante"></span>Restante
+          </span>
+          <span class="metas-rc-legend-item">
+            <span class="metas-rc-legend-dot atual"></span>Atual
+          </span>
+        </div>
 
-          <div class="metas-stack-legend">
-            ${sorted.map((row, i) => `
-              <div class="metas-stack-legend-item">
-                <span class="metas-stack-dot" style="background:${PALETTE[i % PALETTE.length]}"></span>
-                <span>${escapeHtml(row.regional)}</span>
-              </div>
-            `).join('')}
+        <div class="metas-rc-scroll">
+          <div class="metas-rc-inner">
+            ${cols || '<div style="color:var(--metas-muted);font-size:13px;padding:16px;">Nenhuma meta cadastrada para o período.</div>'}
           </div>
+        </div>
 
-          <div class="metas-compare-footer">
-            <span>${statusMsg}</span>
-            <span class="metas-pill ${cls}">${fmtPct(total.percentual)} atingido</span>
-          </div>
+        <div class="metas-compare-footer">
+          <span>${statusMsg}</span>
+          <span class="metas-pill ${cls}">${fmtPct(total.percentual)} atingido</span>
         </div>
       </div>
     `;
