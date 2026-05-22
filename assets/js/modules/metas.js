@@ -420,20 +420,20 @@
         gap: 5px;
         height: 300px;
         align-items: stretch;
-        min-width: max-content;
+        width: 100%;
       }
 
       .metas-rc-col {
-        width: 54px;
-        flex-shrink: 0;
+        flex: 1;
+        min-width: 46px;
         display: flex;
         flex-direction: column;
         align-items: center;
       }
 
       .metas-rc-top-val {
-        height: 22px;
-        font-size: 8.5px;
+        height: 20px;
+        font-size: 8px;
         color: var(--metas-muted);
         font-weight: 700;
         text-align: center;
@@ -443,7 +443,7 @@
         padding-bottom: 2px;
         white-space: nowrap;
         overflow: hidden;
-        max-width: 54px;
+        width: 100%;
         text-overflow: ellipsis;
       }
 
@@ -455,6 +455,7 @@
         border-radius: 4px 4px 0 0;
         overflow: hidden;
         cursor: default;
+        position: relative;
       }
 
       .metas-rc-restante {
@@ -470,44 +471,31 @@
         width: 100%;
         background: linear-gradient(180deg, rgba(34,197,94,.92), rgba(21,128,61,.97));
         flex-shrink: 0;
+      }
+
+      .metas-rc-label-wrap {
+        position: absolute;
+        inset: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        overflow: hidden;
-        position: relative;
+        pointer-events: none;
       }
 
       .metas-rc-label {
         writing-mode: vertical-rl;
-        text-orientation: mixed;
         transform: rotate(180deg);
-        font-size: 9.5px;
+        font-size: 10px;
         font-weight: 800;
         color: #fff;
         white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-height: 100%;
-        text-shadow: 0 1px 3px rgba(0,0,0,.55);
-        padding: 3px 0;
-        letter-spacing: .01em;
-      }
-
-      .metas-rc-uf {
-        height: 18px;
-        font-size: 9.5px;
-        font-weight: 800;
-        color: var(--metas-muted);
-        text-align: center;
-        margin-top: 3px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        text-shadow: 0 1px 4px rgba(0,0,0,.75), 0 0 10px rgba(0,0,0,.45);
+        letter-spacing: .02em;
       }
 
       .metas-rc-bot-val {
         height: 18px;
-        font-size: 8.5px;
+        font-size: 8px;
         color: var(--metas-text);
         font-weight: 700;
         text-align: center;
@@ -515,7 +503,7 @@
         align-items: center;
         justify-content: center;
         white-space: nowrap;
-        max-width: 54px;
+        width: 100%;
         overflow: hidden;
       }
 
@@ -1025,11 +1013,11 @@
           <div class="metas-rc-top-val" title="${fmtTons(meta)}">${fmtTons(meta)}</div>
           <div class="metas-rc-bar" title="${escapeHtml(row.regional)}: ${fmtPct(prodPct)} atingido">
             <div class="metas-rc-restante" style="height:${restPct.toFixed(2)}%"></div>
-            <div class="metas-rc-atual" style="height:${Math.max(prodPct, 0).toFixed(2)}%">
+            <div class="metas-rc-atual" style="height:${Math.max(prodPct, 0).toFixed(2)}%"></div>
+            <div class="metas-rc-label-wrap">
               <span class="metas-rc-label">${escapeHtml(row.regional)}</span>
             </div>
           </div>
-          <div class="metas-rc-uf">${escapeHtml(row.estado || '')}</div>
           <div class="metas-rc-bot-val" title="${fmtTons(prod)}">${fmtTons(prod)}</div>
         </div>
       `;
@@ -1390,17 +1378,8 @@
 
     return `
       ${renderKpis(state.regionais)}
-      <div class="metas-grid-2">
-        ${renderProgress(state.regionais)}
-        ${renderBars('Corrida de produção', 'Top regionais do mês', state.regionais, 'regional', 'produzido_tons', 8)}
-      </div>
-      <div class="metas-grid-2">
-        ${renderBars('Comparativo por Estado', 'Produção consolidada', state.estados, 'estado', 'produzido_tons', 8)}
-        ${renderBars('Histórico recente', 'Produção mensal', [...state.mensal].sort((a, b) => (Number(a.ano) - Number(b.ano)) || (Number(a.mes) - Number(b.mes))).map(r => ({
-          label: `${getMonthName(r.mes).slice(0, 3)}/${r.ano}`,
-          produzido_total_tons: r.produzido_total_tons
-        })), 'label', 'produzido_total_tons', 8)}
-      </div>
+      ${renderProgress(state.regionais)}
+      ${renderBars('Produção por Estado', 'Produção consolidada por estado', state.estados, 'estado', 'produzido_tons', 20)}
       ${renderRegionalTable(state.regionais)}
     `;
   }
