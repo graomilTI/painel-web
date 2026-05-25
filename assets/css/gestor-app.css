@@ -205,3 +205,113 @@ select:focus, input:focus, textarea:focus {
   .quick-card { min-height: 106px; }
   .quick-card b { font-size: 17px; }
 }
+
+/* ── Dashboard do Gestor ─────────────────────────────────────────── */
+.dash-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.dash-period {
+  font-size: 13px; font-weight: 900; letter-spacing: .10em;
+  color: var(--soft); text-transform: uppercase;
+}
+.dash-regional {
+  font-size: 12px; font-weight: 900; letter-spacing: .06em;
+  color: var(--muted); text-transform: uppercase;
+  border: 1px solid rgba(45,212,160,.22); border-radius: 999px;
+  padding: 5px 12px;
+}
+
+.dash-card {
+  background: rgba(18, 18, 32, 0.88);
+  border: 1px solid rgba(255,255,255,.058); border-radius: 24px;
+  padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow);
+}
+.dash-card-title {
+  font-size: 11px; font-weight: 900; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 14px;
+}
+.dash-card-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 12px;
+}
+
+.dash-row {
+  display: flex; align-items: stretch; justify-content: space-around;
+  gap: 4px; margin-bottom: 14px;
+}
+.dash-kpi { flex: 1; text-align: center; }
+.dash-kpi-label {
+  font-size: 10px; font-weight: 900; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+}
+.dash-kpi-value {
+  font-size: clamp(18px, 5vw, 24px); font-weight: 1000;
+  letter-spacing: -0.04em; line-height: 1; color: var(--text);
+}
+.dash-kpi-value.is-green  { color: var(--green); }
+.dash-kpi-value.is-yellow { color: var(--yellow); }
+.dash-kpi-value.is-danger { color: var(--danger); }
+
+.dash-divider {
+  width: 1px; background: rgba(255,255,255,.07);
+  align-self: stretch; flex-shrink: 0; margin: 4px 0;
+}
+
+.dash-progress-wrap { margin-bottom: 10px; }
+.dash-progress-bar {
+  position: relative; height: 8px; border-radius: 999px;
+  background: rgba(255,255,255,.08); overflow: visible;
+}
+.dash-progress-fill {
+  height: 100%; border-radius: 999px; max-width: 100%;
+  background: linear-gradient(90deg, #00c87a, #2dd4a0);
+  transition: width .4s ease;
+}
+.dash-progress-fill.is-warn {
+  background: linear-gradient(90deg, #d97706, #fde68a);
+}
+.dash-progress-cursor {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  width: 3px; height: 16px; border-radius: 3px;
+  background: rgba(255,255,255,.70); pointer-events: none;
+}
+.dash-progress-labels {
+  display: flex; justify-content: space-between;
+  margin-top: 6px; font-size: 10px; color: var(--muted); font-weight: 800;
+}
+
+.dash-track-badge {
+  display: inline-block; border-radius: 999px;
+  padding: 6px 14px; font-size: 11px; font-weight: 950;
+  letter-spacing: .04em; margin-top: 2px;
+}
+.dash-track-badge.is-ok   { background: rgba(0,200,122,.16); color: var(--green); border: 1px solid rgba(0,200,122,.30); }
+.dash-track-badge.is-late { background: rgba(253,230,138,.12); color: var(--yellow); border: 1px solid rgba(253,230,138,.30); }
+
+.dash-badge-ok {
+  font-size: 11px; font-weight: 950; border-radius: 999px;
+  padding: 5px 12px; color: var(--green);
+  border: 1px solid rgba(0,200,122,.30); background: rgba(0,200,122,.12);
+}
+.dash-badge-danger {
+  font-size: 11px; font-weight: 950; border-radius: 999px;
+  padding: 5px 12px; color: var(--danger);
+  border: 1px solid rgba(248,113,113,.30); background: rgba(248,113,113,.12);
+}
+
+.dash-patri-bar {
+  display: flex; height: 10px; border-radius: 999px;
+  overflow: hidden; background: rgba(255,255,255,.07);
+  margin-bottom: 8px;
+}
+.dash-patri-ok   { background: var(--green); transition: width .4s ease; }
+.dash-patri-late { background: var(--danger); transition: width .4s ease; }
+
+.dash-patri-labels {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 11px; font-weight: 850;
+}
+.dash-patri-label-ok    { color: var(--green); }
+.dash-patri-label-late  { color: var(--danger); }
+.dash-patri-label-total { color: var(--muted); margin-left: auto; }

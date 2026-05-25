@@ -36,6 +36,7 @@ const state = {
   busy: new Set(),
   tomorrow: new Set(),
   installPrompt: null,
+  dashboard: null,
 };
 
 function escapeHtml(value) {
@@ -191,7 +192,7 @@ async function boot() {
 
   renderShell();
   setupPwaInstall();
-  await loadData({ useCache: true });
+  await Promise.all([loadData({ useCache: true }), loadDashboard()]);
   renderCurrentTab();
 }
 
@@ -297,6 +298,54 @@ async function loadData({ useCache = true } = {}) {
     showToast(error.message || 'Falha ao carregar dados do app.', 'error');
   } finally {
     state.loading = false;
+  }
+}
+
+async function loadDashboard() {
+  const now = new Date();
+  const ano = now.getFullYear();
+  const mes = now.getMonth() + 1;
+  const coordenacao = state.appUser?.coordenacao || '';
+  const dataIni = `${ano}-${String(mes).padStart(2, '0')}-01`;
+  const dataFim = mes === 12 ? `${ano + 1}-01-01` : `${ano}-${String(mes + 1).padStart(2, '0')}-01`;
+
+  state.dashboard = { loading: true, coordenacao, ano, mes, meta: null, produzido: 0, patrimonios: { total: 0, atrasados: 0 } };
+
+  try {
+    let prodQuery = supabase.from('relatorio_resultado_diario').select('toneladas').gte('data', dataIni).lt('data', dataFim);
+    let patriQuery = supabase.from('patrimonios_snapshot').select('dias_sem_leitura').eq('situacao', 'Ativo');
+    if (!state.isMaster && coordenacao) {
+      prodQuery = prodQuery.eq('coordenacao', coordenacao);
+      patriQuery = patriQuery.eq('coordenacao', coordenacao);
+    }
+
+    const [metaRes, prodRes, patriRes] = await Promise.all([
+      supabase.from('metas_producao').select('meta_tons,regional').eq('ano', ano).eq('mes', mes).eq('ativo', true),
+      prodQuery,
+      patriQuery,
+    ]);
+
+    let meta = null;
+    if (metaRes.data?.length) {
+      if (state.isMaster) {
+        meta = metaRes.data.reduce((s, r) => s + Number(r.meta_tons || 0), 0);
+      } else {
+        const hit = metaRes.data.find((r) =>
+          normalize(r.regional) === normalize(coordenacao) ||
+          normalize(coordenacao).startsWith(normalize(r.regional)) ||
+          normalize(r.regional).startsWith(normalize(coordenacao))
+        );
+        meta = hit ? Number(hit.meta_tons) : null;
+      }
+    }
+
+    const produzido = (prodRes.data || []).reduce((s, r) => s + Number(r.toneladas || 0), 0);
+    const total = patriRes.data?.length || 0;
+    const atrasados = (patriRes.data || []).filter((p) => (p.dias_sem_leitura || 0) > 7).length;
+    state.dashboard = { loading: false, coordenacao, ano, mes, meta, produzido, patrimonios: { total, atrasados } };
+  } catch (e) {
+    console.warn('loadDashboard:', e);
+    state.dashboard = { loading: false, coordenacao, ano, mes, meta: null, produzido: 0, patrimonios: { total: 0, atrasados: 0 } };
   }
 }
 
@@ -414,32 +463,112 @@ function renderCurrentTab() {
 function renderInicio(main) {
   const totalPend = state.os.filter((o) => (o.status_gestor || 'AGUARDAR').toUpperCase() === 'AGUARDAR' && !o.configurada_em).length;
   const atender = state.os.filter((o) => String(o.status_gestor || '').toUpperCase() === 'ATENDER').length;
+
+  const dash = state.dashboard;
+  const now = new Date();
+  const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const mesNome = MESES[now.getMonth()];
+  const diaAtual = now.getDate();
+  const diasNoMes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+  const meta = dash?.meta || 0;
+  const produzido = dash?.produzido || 0;
+  const pct = meta > 0 ? Math.min(100, produzido / meta * 100) : 0;
+  const ritmoEsperado = meta > 0 ? meta * diaAtual / diasNoMes : 0;
+  const onTrack = produzido >= ritmoEsperado;
+  const projetado = diaAtual > 0 ? produzido / diaAtual * diasNoMes : 0;
+
+  const patri = dash?.patrimonios || { total: 0, atrasados: 0 };
+  const patriOk = patri.total - patri.atrasados;
+  const patriPct = patri.total > 0 ? patriOk / patri.total * 100 : 100;
+  const patriAtrPct = patri.total > 0 ? patri.atrasados / patri.total * 100 : 0;
+
+  function fmtTons(val) {
+    const v = Number(val) || 0;
+    return v >= 1000 ? (v / 1000).toFixed(1).replace('.', ',') + ' kt' : BR.format(Math.round(v)) + ' t';
+  }
+
+  const cursorLeft = (diaAtual / diasNoMes * 100).toFixed(1);
+
   main.innerHTML = `
-    <section class="hero-card">
-      <h1>Gestor Grão 1000</h1>
-      <p>Escolha uma rotina abaixo. No celular, os módulos abrem sem sidebar e com botão de voltar para esta tela.</p>
-      <div class="install-banner ${state.installPrompt ? 'is-visible' : ''}" id="installBanner">
-        <div><b>Instalar app</b><br><span class="help">Adicione na tela inicial do celular.</span></div>
-        <button class="btn" id="installBtn" type="button">Instalar</button>
+    <div class="dash-header">
+      <span class="dash-period">${mesNome.toUpperCase()} / ${now.getFullYear()}</span>
+      <span class="dash-regional">${escapeHtml(dash?.coordenacao || 'REGIONAL')}</span>
+    </div>
+
+    <div class="dash-card dash-meta">
+      <div class="dash-card-title">Produtividade do Mês</div>
+      <div class="dash-row">
+        <div class="dash-kpi">
+          <div class="dash-kpi-label">Meta</div>
+          <div class="dash-kpi-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
+        </div>
+        <div class="dash-divider"></div>
+        <div class="dash-kpi">
+          <div class="dash-kpi-label">Realizado</div>
+          <div class="dash-kpi-value ${onTrack ? 'is-green' : 'is-yellow'}">${fmtTons(produzido)}</div>
+        </div>
+        <div class="dash-divider"></div>
+        <div class="dash-kpi">
+          <div class="dash-kpi-label">Projeção</div>
+          <div class="dash-kpi-value ${projetado >= meta && meta > 0 ? 'is-green' : 'is-danger'}">${meta > 0 ? fmtTons(projetado) : '—'}</div>
+        </div>
       </div>
-      <div class="quick-grid">
-        <button class="quick-card is-primary" data-go="os" type="button"><b>OS</b><span>${totalPend} pendente(s) de ajuste</span></button>
-        <a class="quick-card" href="${panelHref('programacao')}"><b>Programação</b><span>Abrir módulo completo</span></a>
-        <a class="quick-card" href="${panelHref('hospedagem')}"><b>Hospedagem</b><span>Solicitações e reservas</span></a>
-        <a class="quick-card" href="${panelHref('compras')}"><b>Compras</b><span>Solicitações do gestor</span></a>
-        <a class="quick-card" href="${panelHref('logistica')}"><b>Logística</b><span>Distribuição e finalização</span></a>
-        <button class="quick-card" data-go="patrimonio" type="button"><b>Patrimônios</b><span>Cadastrar e Leitura</span></button>
-        <a class="quick-card" href="${panelHref('contato-cliente')}"><b>Contato Cliente</b><span>Visitas e registros</span></a>
+      <div class="dash-progress-wrap">
+        <div class="dash-progress-bar">
+          <div class="dash-progress-fill ${onTrack ? '' : 'is-warn'}" style="width:${pct.toFixed(1)}%"></div>
+          ${meta > 0 ? `<div class="dash-progress-cursor" style="left:${cursorLeft}%" title="Dia ${diaAtual}/${diasNoMes}"></div>` : ''}
+        </div>
+        <div class="dash-progress-labels">
+          <span>${pct.toFixed(1)}% da meta</span>
+          <span>Dia ${diaAtual} / ${diasNoMes}</span>
+        </div>
       </div>
-    </section>
+      <div class="dash-track-badge ${onTrack ? 'is-ok' : 'is-late'}">${onTrack ? '▲ No ritmo' : '▼ Abaixo do ritmo esperado'}</div>
+    </div>
+
+    <div class="dash-card">
+      <div class="dash-card-row">
+        <div class="dash-card-title" style="margin:0">Leitura de Patrimônios</div>
+        ${patri.atrasados > 0
+          ? `<div class="dash-badge-danger">${patri.atrasados} em atraso</div>`
+          : '<div class="dash-badge-ok">Tudo em dia</div>'}
+      </div>
+      <div class="dash-patri-bar">
+        <div class="dash-patri-ok" style="width:${patriPct.toFixed(1)}%"></div>
+        <div class="dash-patri-late" style="width:${patriAtrPct.toFixed(1)}%"></div>
+      </div>
+      <div class="dash-patri-labels">
+        <span class="dash-patri-label-ok">✓ ${patriOk} em dia</span>
+        <span class="dash-patri-label-late">⚑ ${patri.atrasados} atraso &gt;7d</span>
+        <span class="dash-patri-label-total">${patri.total} total</span>
+      </div>
+    </div>
+
     <div class="kpi-strip">
-      <div class="kpi-item"><b>${totalPend}</b><span>Pendentes</span></div>
+      <div class="kpi-item"><b>${totalPend}</b><span>OS Pendentes</span></div>
       <div class="kpi-sep"></div>
       <div class="kpi-item kpi-green"><b>${atender}</b><span>Conferência</span></div>
       <div class="kpi-sep"></div>
       <div class="kpi-item"><b>${state.os.length}</b><span>Total OS</span></div>
     </div>
+
+    <div class="install-banner ${state.installPrompt ? 'is-visible' : ''}" id="installBanner">
+      <div><b>Instalar app</b><br><span class="help">Adicione na tela inicial do celular.</span></div>
+      <button class="btn" id="installBtn" type="button">Instalar</button>
+    </div>
+
+    <div class="quick-grid">
+      <button class="quick-card is-primary" data-go="os" type="button"><b>OS</b><span>${totalPend} pendente(s) de ajuste</span></button>
+      <a class="quick-card" href="${panelHref('programacao')}"><b>Programação</b><span>Abrir módulo</span></a>
+      <a class="quick-card" href="${panelHref('hospedagem')}"><b>Hospedagem</b><span>Solicitações e reservas</span></a>
+      <a class="quick-card" href="${panelHref('compras')}"><b>Compras</b><span>Solicitações do gestor</span></a>
+      <a class="quick-card" href="${panelHref('logistica')}"><b>Logística</b><span>Distribuição e finalização</span></a>
+      <a class="quick-card" href="${panelHref('patrimonios')}"><b>Patrimônios</b><span>Veículos e vínculos</span></a>
+      <a class="quick-card" href="${panelHref('contato-cliente')}"><b>Contato Cliente</b><span>Visitas e registros</span></a>
+    </div>
   `;
+
   main.querySelector('[data-go="os"]')?.addEventListener('click', () => {
     state.currentTab = 'os';
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'os'));
