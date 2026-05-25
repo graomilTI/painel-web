@@ -7,11 +7,10 @@ const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const CACHE_KEY = 'grao1000:gestor-app:v1';
 const CACHE_TTL = 1000 * 60 * 7;
 const LIMITE_MULTIPLOS = 500000;
-const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR', 'AJUSTAR'];
+const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
 const ICO_AGUARDAR  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="pointer-events:none"><line x1="8" y1="5" x2="8" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>`;
 const ICO_ATENDER   = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg>`;
 const ICO_FINALIZAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`;
-const ICO_AJUSTAR   = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`;
 const ICO_SOMAR_KG  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
 
 const app = document.getElementById('app');
@@ -488,7 +487,7 @@ function renderMais(main) {
 
 function isOsAjustada(os) {
   const st = String(os.status_gestor || '').toUpperCase();
-  if (st === 'ATENDER' || st === 'FINALIZAR' || st === 'AJUSTAR') return true;
+  if (st === 'ATENDER' || st === 'FINALIZAR') return true;
   if (String(os.observacao_logistica || '').startsWith('KG solicitado')) return true;
   // Explicitly set AGUARDAR (has configurada_em) also counts as reviewed
   return st === 'AGUARDAR' && !!os.configurada_em;
@@ -547,7 +546,7 @@ function renderOsCard(os) {
   const isMulti = state.allowMulti.has(id) && canMulti;
   const extraValues = state.extras.get(id) || [];
   const hasLaudo = String(os.observacao_logistica||'').startsWith('LAUDO:');
-  const rowColor = isNegativo ? 'row-kg' : os.observacao_logistica?.startsWith('KG solicitado') ? 'row-kg' : status === 'AGUARDAR' ? 'row-aguardar' : status === 'ATENDER' ? 'row-atender' : status === 'FINALIZAR' ? 'row-finalizar' : status === 'AJUSTAR' ? 'row-ajustar' : '';
+  const rowColor = isNegativo ? 'row-kg' : os.observacao_logistica?.startsWith('KG solicitado') ? 'row-kg' : status === 'AGUARDAR' ? 'row-aguardar' : status === 'ATENDER' ? 'row-atender' : status === 'FINALIZAR' ? 'row-finalizar' : '';
   return `
     <article class="os-card ${num(os.remanescente) === 0 ? 'is-zero' : ''} ${state.busy.has(id) ? 'is-updating' : ''} ${rowColor}" data-os-id="${escapeHtml(id)}">
       <div class="os-head">
@@ -585,7 +584,6 @@ function renderOsCard(os) {
         <button class="btn ${status === 'AGUARDAR' ? 'warn' : 'secondary'}" data-action="AGUARDAR" type="button" title="Aguardar">${ICO_AGUARDAR}</button>
         <button class="btn ${status === 'ATENDER' ? '' : 'secondary'}" data-action="ATENDER" type="button" title="Atender">${ICO_ATENDER}</button>
         <button class="btn ${status === 'FINALIZAR' ? '' : 'secondary'}" data-action="FINALIZAR" type="button" title="Finalizar">${ICO_FINALIZAR}</button>
-        <button class="btn ${status === 'AJUSTAR' ? 'ajustar' : 'secondary'}" data-action="AJUSTAR" type="button" title="Ajustar saldo">${ICO_AJUSTAR}</button>
         <button class="btn secondary ${os.observacao_logistica?.startsWith('KG solicitado') ? 'kg-active' : ''}" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar KG para Logística" style="color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SOMAR_KG}</button>`
         }
         </div>

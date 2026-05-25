@@ -150,10 +150,8 @@ select:focus, input:focus, textarea:focus {
 .os-card.row-aguardar { background: rgba(250,204,21,.05); border-color: rgba(250,204,21,.26); }
 .os-card.row-atender  { background: rgba(0,200,122,.05);  border-color: rgba(0,200,122,.26); }
 .os-card.row-finalizar{ background: rgba(59,130,246,.05); border-color: rgba(59,130,246,.26); }
-.os-card.row-ajustar  { background: rgba(167,139,250,.05); border-color: rgba(167,139,250,.26); }
 .os-card.row-kg       { background: rgba(239,68,68,.05);  border-color: rgba(239,68,68,.26); }
 .btn.kg-active  { background: rgba(239,68,68,.18) !important; border-color: rgba(239,68,68,.50) !important; color: #fca5a5 !important; }
-.btn.ajustar    { background: rgba(167,139,250,.20) !important; border-color: rgba(167,139,250,.50) !important; color: #c4b5fd !important; }
 
 .toast-wrap { position: fixed; left: 12px; right: 12px; bottom: calc(78px + env(safe-area-inset-bottom)); z-index: 80; display: grid; gap: 8px; pointer-events: none; }
 .toast { background: rgba(21, 21, 42, .96); border: 1px solid rgba(45, 212, 160, .22); color: var(--text); border-radius: 18px; padding: 13px 14px; box-shadow: var(--shadow); font-weight: 850; }

@@ -17,7 +17,7 @@ function dateFromTomorrowLock() {
 const TABS = ['os','abrir_os','fob','report','conferir'];
 const TAB_LABELS = { os: 'O.S.', abrir_os: 'Abrir OS', fob: 'FOB', report: 'Report', conferir: 'Conferir' };
 
-const OS_STATUS_LABELS = { PENDENTE: 'Pendente', AGUARDAR: 'Aguardar', ATENDER: 'Atender', FINALIZAR: 'Finalizar', AJUSTAR: 'Ajustar' };
+const OS_STATUS_LABELS = { PENDENTE: 'Pendente', AGUARDAR: 'Aguardar', ATENDER: 'Atender', FINALIZAR: 'Finalizar' };
 
 const state = {
   tab: location.hash.replace('#','') || 'os',
