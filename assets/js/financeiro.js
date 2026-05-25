@@ -2,6 +2,17 @@
 import { supabase } from './supabaseClient.js';
 import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
+async function safe(fn, fallback = []) {
+  try {
+    const { data, error } = await fn();
+    if (error) throw error;
+    return data || fallback;
+  } catch (e) {
+    console.warn(e);
+    return fallback;
+  }
+}
+
 const RECEBER_COLUMNS = {
   situacao: ['situação', 'situacao'],
   codigo: ['código', 'codigo'],
