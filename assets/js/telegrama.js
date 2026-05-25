@@ -42,6 +42,7 @@ const state = {
   loading: false,
   feedback: '',
   feedbackErr: false,
+  smtAuth: 'idle',
 };
 
 let $root = null;
@@ -54,6 +55,32 @@ function setFeedback(msg, isErr = false) {
   el.textContent = msg;
   el.className = 'feedback-bar' + (isErr ? ' feedback-err' : ' feedback-ok');
   el.style.display = msg ? 'block' : 'none';
+}
+function renderAuthBadge() {
+  const el = $root?.querySelector('#tel-auth-badge');
+  if (!el) return;
+  const map = {
+    idle:    { text: 'Correios: verificando',    cls: 'neutral' },
+    loading: { text: 'Autenticando Correios...', cls: 'info' },
+    ok:      { text: 'Correios: autenticado ✓',  cls: 'ok' },
+    error:   { text: 'Aut. Correios: falha ⚠',   cls: 'warn' },
+  };
+  const { text, cls } = map[state.smtAuth] ?? map.idle;
+  el.innerHTML = '<span class="badge badge-' + cls + '" style="font-size:.78rem">' + text + '</span>';
+}
+
+async function iniciarAuth() {
+  state.smtAuth = 'loading';
+  renderAuthBadge();
+  try {
+    const check = await callFn('correios-smt-auth', { action: 'check' });
+    if (check.ok) { state.smtAuth = 'ok'; renderAuthBadge(); return; }
+    const auth = await callFn('correios-smt-auth', {});
+    state.smtAuth = auth.ok ? 'ok' : 'error';
+  } catch {
+    state.smtAuth = 'error';
+  }
+  renderAuthBadge();
 }
 
 function fmtDate(v) {
@@ -910,8 +937,10 @@ initProtectedPage('Telegrama', async (content) => {
       .envios-nome{font-size:.92rem;font-weight:700;color:var(--text)}
       .td-actions{white-space:nowrap;display:flex;gap:4px;align-items:center}
       @media(max-width:720px){.form-grid{grid-template-columns:1fr}.form-group.full-width,.form-actions{grid-column:span 1}}
+      #tel-auth-badge{margin-bottom:10px;display:flex;align-items:center}
     </style>
     <div id="tel-feedback" class="feedback-bar" style="display:none"></div>
+    <div id="tel-auth-badge"></div>
     <nav class="tel-tabs">
       <button class="tel-tab active" data-tab-tel="enviar">Enviar</button>
       <button class="tel-tab" data-tab-tel="enviados">Enviados</button>
@@ -929,4 +958,5 @@ initProtectedPage('Telegrama', async (content) => {
 
   await loadAll();
   renderTab();
+  iniciarAuth();
 });
