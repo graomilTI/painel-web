@@ -1,6 +1,11 @@
 import { signInWithPassword, getUserContext, getSession } from './auth.js';
-import { saveUserContext } from './sessionStore.js';
+import { saveUserContext, loadUserContext } from './sessionStore.js';
 import { toPanelUrl } from './paths.js';
+
+function homeUrl(context) {
+  const role = String(context?.user?.role ?? context?.role ?? '').toLowerCase();
+  return toPanelUrl(role === 'gestor' ? 'gestor-app' : 'dashboard');
+}
 
 const form = document.getElementById('loginForm');
 const emailInput = document.getElementById('email');
@@ -21,7 +26,8 @@ async function redirectIfSessionExists() {
     const session = await getSession();
     if (session?.user) {
       feedback.textContent = 'Sessão ativa encontrada. Redirecionando...';
-      window.location.replace(toPanelUrl('dashboard'));
+      const saved = loadUserContext();
+      window.location.replace(homeUrl(saved));
     }
   } catch (err) {
     console.error(err);
@@ -46,7 +52,7 @@ form?.addEventListener('submit', async (e) => {
 
     saveUserContext(context);
     feedback.textContent = 'Login realizado com sucesso.';
-    window.location.replace(toPanelUrl('dashboard'));
+    window.location.replace(homeUrl(context));
   } catch (err) {
     console.error(err);
     feedback.textContent = err.message || 'Erro ao realizar login.';
