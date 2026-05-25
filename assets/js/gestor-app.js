@@ -312,21 +312,32 @@ async function loadDashboard() {
   state.dashboard = { loading: true, coordenacao, ano, mes, meta: null, produzido: 0, patrimonios: { total: 0, atrasados: 0 } };
 
   try {
-    let prodQuery = supabase.from('relatorio_resultado_diario').select('toneladas').gte('data', dataIni).lt('data', dataFim);
     let patriBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo');
     let patriLateBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo').gt('dias_sem_leitura', 7);
+    let prodBase = supabase.from('relatorio_resultado_diario').select('toneladas').gte('data', dataIni).lt('data', dataFim);
     if (!state.isMaster && coordenacao) {
-      prodQuery = prodQuery.eq('coordenacao', coordenacao);
+      prodBase = prodBase.eq('coordenacao', coordenacao);
       patriBase = patriBase.eq('coordenacao', coordenacao);
       patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
     }
 
-    const [metaRes, prodRes, patriTotalRes, patriLateRes] = await Promise.all([
+    const [metaRes, patriTotalRes, patriLateRes] = await Promise.all([
       supabase.from('metas_producao').select('meta_tons,regional').eq('ano', ano).eq('mes', mes).eq('ativo', true),
-      prodQuery,
       patriBase,
       patriLateBase,
     ]);
+
+    const PAGE = 1000;
+    let produzido = 0;
+    let page = 0;
+    while (true) {
+      const { data, error } = await prodBase.range(page * PAGE, (page + 1) * PAGE - 1);
+      if (error) throw error;
+      if (!data?.length) break;
+      produzido += data.reduce((s, r) => s + Number(r.toneladas || 0), 0);
+      if (data.length < PAGE) break;
+      page++;
+    }
 
     let meta = null;
     if (metaRes.data?.length) {
@@ -341,8 +352,6 @@ async function loadDashboard() {
         meta = hit ? Number(hit.meta_tons) : null;
       }
     }
-
-    const produzido = (prodRes.data || []).reduce((s, r) => s + Number(r.toneladas || 0), 0);
     const total = patriTotalRes.count ?? 0;
     const atrasados = patriLateRes.count ?? 0;
     state.dashboard = { loading: false, coordenacao, ano, mes, meta, produzido, patrimonios: { total, atrasados } };
