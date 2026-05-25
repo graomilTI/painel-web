@@ -313,16 +313,19 @@ async function loadDashboard() {
 
   try {
     let prodQuery = supabase.from('relatorio_resultado_diario').select('toneladas').gte('data', dataIni).lt('data', dataFim);
-    let patriQuery = supabase.from('patrimonios_snapshot').select('dias_sem_leitura').eq('situacao', 'Ativo');
+    let patriBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo');
+    let patriLateBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo').gt('dias_sem_leitura', 7);
     if (!state.isMaster && coordenacao) {
       prodQuery = prodQuery.eq('coordenacao', coordenacao);
-      patriQuery = patriQuery.eq('coordenacao', coordenacao);
+      patriBase = patriBase.eq('coordenacao', coordenacao);
+      patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
     }
 
-    const [metaRes, prodRes, patriRes] = await Promise.all([
+    const [metaRes, prodRes, patriTotalRes, patriLateRes] = await Promise.all([
       supabase.from('metas_producao').select('meta_tons,regional').eq('ano', ano).eq('mes', mes).eq('ativo', true),
       prodQuery,
-      patriQuery,
+      patriBase,
+      patriLateBase,
     ]);
 
     let meta = null;
@@ -340,8 +343,8 @@ async function loadDashboard() {
     }
 
     const produzido = (prodRes.data || []).reduce((s, r) => s + Number(r.toneladas || 0), 0);
-    const total = patriRes.data?.length || 0;
-    const atrasados = (patriRes.data || []).filter((p) => (p.dias_sem_leitura || 0) > 7).length;
+    const total = patriTotalRes.count ?? 0;
+    const atrasados = patriLateRes.count ?? 0;
     state.dashboard = { loading: false, coordenacao, ano, mes, meta, produzido, patrimonios: { total, atrasados } };
   } catch (e) {
     console.warn('loadDashboard:', e);
