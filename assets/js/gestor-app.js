@@ -920,12 +920,20 @@ function patBack(main) {
 async function renderPatrimonioLeitura(main) {
   main.innerHTML = `<div class="section-card"><p class="help">Carregando patrimônios...</p></div>`;
   const sups = state.isMaster ? [] : state.allowedSupervisoes;
-  let query = supabase.from('vw_patrimonios_atual')
-    .select('patrimonio_codigo,funcionario,identificacao,dias_sem_leitura,supervisao,situacao')
-    .order('dias_sem_leitura', { ascending: false });
-  if (sups.length) query = query.in('supervisao', sups);
-  const { data, error } = await query;
-  const rows = data || [];
+  const PAGE = 1000;
+  let rows = [], page = 0, error = null;
+  while (true) {
+    let q = supabase.from('vw_patrimonios_atual')
+      .select('patrimonio_codigo,funcionario,identificacao,dias_sem_leitura,supervisao,situacao')
+      .order('dias_sem_leitura', { ascending: false })
+      .range(page * PAGE, (page + 1) * PAGE - 1);
+    if (sups.length) q = q.in('supervisao', sups);
+    const { data, error: err } = await q;
+    if (err) { error = err; break; }
+    rows = rows.concat(data || []);
+    if (!data || data.length < PAGE) break;
+    page++;
+  }
   main.innerHTML = `
     <section class="hero-card pat-header">
       <button class="btn secondary" data-pat-back type="button">← Voltar</button>
