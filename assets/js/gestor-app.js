@@ -28,6 +28,7 @@ const state = {
   pontos: [],
   atribuicoes: [],
   filters: { supervisao: '', status: '', busca: '' },
+  patrimonioSubview: null,
   selections: new Map(),
   extras: new Map(),
   allowMulti: new Set(),
@@ -217,6 +218,7 @@ function renderShell() {
       <button class="nav-btn is-active" data-tab="inicio" type="button">Início</button>
       <button class="nav-btn" data-tab="os" type="button">OS</button>
       <button class="nav-btn" data-tab="programacao" type="button">Programação</button>
+      <button class="nav-btn" data-tab="patrimonio" type="button">Patrimônio</button>
       <button class="nav-btn" data-tab="mais" type="button">Mais</button>
     </nav>
   `;
@@ -235,6 +237,7 @@ function renderShell() {
     const btn = event.target.closest('[data-tab]');
     if (!btn) return;
     state.currentTab = btn.dataset.tab;
+    if (btn.dataset.tab !== 'patrimonio') state.patrimonioSubview = null;
     document.querySelectorAll('.nav-btn').forEach((item) => item.classList.toggle('is-active', item === btn));
     renderCurrentTab();
   });
@@ -404,6 +407,7 @@ function renderCurrentTab() {
   if (state.currentTab === 'inicio') return renderInicio(main);
   if (state.currentTab === 'os') return renderOs(main);
   if (state.currentTab === 'programacao') return renderProgramacao(main);
+  if (state.currentTab === 'patrimonio') return renderPatrimonio(main);
   return renderMais(main);
 }
 
@@ -424,7 +428,7 @@ function renderInicio(main) {
         <a class="quick-card" href="${panelHref('hospedagem')}"><b>Hospedagem</b><span>Solicitações e reservas</span></a>
         <a class="quick-card" href="${panelHref('compras')}"><b>Compras</b><span>Solicitações do gestor</span></a>
         <a class="quick-card" href="${panelHref('logistica')}"><b>Logística</b><span>Distribuição e finalização</span></a>
-        <a class="quick-card" href="${panelHref('patrimonios')}"><b>Patrimônios</b><span>Veículos e vínculos</span></a>
+        <button class="quick-card" data-go="patrimonio" type="button"><b>Patrimônios</b><span>Cadastrar e Leitura</span></button>
         <a class="quick-card" href="${panelHref('contato-cliente')}"><b>Contato Cliente</b><span>Visitas e registros</span></a>
       </div>
     </section>
@@ -440,6 +444,12 @@ function renderInicio(main) {
     state.currentTab = 'os';
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'os'));
     renderOs(main);
+  });
+  main.querySelector('[data-go="patrimonio"]')?.addEventListener('click', () => {
+    state.currentTab = 'patrimonio';
+    state.patrimonioSubview = null;
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'patrimonio'));
+    renderPatrimonio(main);
   });
   main.querySelector('#installBtn')?.addEventListener('click', async () => {
     if (!state.installPrompt) return;
@@ -477,7 +487,6 @@ function renderMais(main) {
         <a class="quick-card" href="${panelHref('hospedagem')}"><b>Hospedagem</b><span>Solicitações e reservas</span></a>
         <a class="quick-card" href="${panelHref('compras')}"><b>Compras</b><span>Solicitações</span></a>
         <a class="quick-card" href="${panelHref('logistica')}"><b>Logística</b><span>Deslocamentos</span></a>
-        <a class="quick-card" href="${panelHref('patrimonios')}"><b>Patrimônios</b><span>Itens e solicitações</span></a>
         <a class="quick-card" href="${panelHref('contato-cliente')}"><b>Contato Cliente</b><span>Registros</span></a>
         <a class="quick-card" href="${panelHref('dashboard')}"><b>Painel Web</b><span>Versão completa</span></a>
       </div>
@@ -878,6 +887,101 @@ async function saveOsStatus(id, status) {
   } finally {
     state.busy.delete(id);
   }
+}
+
+function renderPatrimonio(main) {
+  if (state.patrimonioSubview === 'leitura') return renderPatrimonioLeitura(main);
+  if (state.patrimonioSubview === 'cadastrar') return renderPatrimonioCadastrar(main);
+  main.innerHTML = `
+    <section class="hero-card">
+      <h1>Patrimônio</h1>
+      <p>Gerencie os patrimônios da sua regional.</p>
+      <div class="quick-grid">
+        <button class="quick-card is-primary" data-pat="cadastrar" type="button"><b>Cadastrar</b><span>Solicitações do setor de Compras</span></button>
+        <button class="quick-card" data-pat="leitura" type="button"><b>Leitura</b><span>Patrimônios cadastrados da regional</span></button>
+      </div>
+    </section>
+  `;
+  main.querySelector('[data-pat="cadastrar"]')?.addEventListener('click', () => {
+    state.patrimonioSubview = 'cadastrar';
+    renderPatrimonioCadastrar(main);
+  });
+  main.querySelector('[data-pat="leitura"]')?.addEventListener('click', () => {
+    state.patrimonioSubview = 'leitura';
+    renderPatrimonioLeitura(main);
+  });
+}
+
+function patBack(main) {
+  state.patrimonioSubview = null;
+  renderPatrimonio(main);
+}
+
+async function renderPatrimonioLeitura(main) {
+  main.innerHTML = `<div class="section-card"><p class="help">Carregando patrimônios...</p></div>`;
+  const sups = state.isMaster ? [] : state.allowedSupervisoes;
+  let query = supabase.from('vw_patrimonios_atual')
+    .select('patrimonio_codigo,funcionario,identificacao,dias_sem_leitura,supervisao')
+    .order('dias_sem_leitura', { ascending: false });
+  if (sups.length) query = query.in('supervisao', sups);
+  const { data, error } = await query;
+  const rows = data || [];
+  main.innerHTML = `
+    <section class="hero-card pat-header">
+      <button class="btn secondary" data-pat-back type="button">← Voltar</button>
+      <h1>Leitura de Patrimônios</h1>
+      <p>${rows.length} patrimônio(s) encontrado(s)${error ? ' — erro ao carregar' : ''}.</p>
+    </section>
+    <section class="section-card">
+      ${error ? `<p class="help error-text">Erro: ${escapeHtml(error.message)}</p>` : rows.length === 0 ? '<p class="help">Nenhum patrimônio encontrado para a regional.</p>' : `
+      <div class="pat-table-wrap">
+        <table class="pat-table">
+          <thead><tr><th>Nº</th><th>Colaborador</th><th>Material</th><th>Dias s/ Leitura</th></tr></thead>
+          <tbody>
+            ${rows.map((r) => `<tr>
+              <td>${escapeHtml(r.patrimonio_codigo || '-')}</td>
+              <td>${escapeHtml(r.funcionario || '-')}</td>
+              <td>${escapeHtml(r.identificacao || '-')}</td>
+              <td class="${(r.dias_sem_leitura ?? 0) > 30 ? 'dias-alerta' : ''}">${r.dias_sem_leitura ?? '-'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`}
+    </section>
+  `;
+  main.querySelector('[data-pat-back]')?.addEventListener('click', () => patBack(main));
+}
+
+async function renderPatrimonioCadastrar(main) {
+  main.innerHTML = `<div class="section-card"><p class="help">Carregando solicitações...</p></div>`;
+  let query = supabase.from('compras_patrimonios_cadastro')
+    .select('id,numero_patrimonio,material,marca,coordenacao,status,informado_em')
+    .order('informado_em', { ascending: false });
+  if (!state.isMaster && state.appUser?.coordenacao) query = query.eq('coordenacao', state.appUser.coordenacao);
+  const { data, error } = await query;
+  const rows = data || [];
+  main.innerHTML = `
+    <section class="hero-card pat-header">
+      <button class="btn secondary" data-pat-back type="button">← Voltar</button>
+      <h1>Cadastrar Patrimônio</h1>
+      <p>${rows.length} solicitação(ões) de cadastro${error ? ' — erro ao carregar' : ''}.</p>
+    </section>
+    <section class="section-card">
+      ${error ? `<p class="help error-text">Erro: ${escapeHtml(error.message)}</p>` : rows.length === 0 ? '<p class="help">Nenhuma solicitação de cadastro encontrada.</p>' : rows.map((r) => `
+        <div class="pat-card ${r.status === 'CONFERIDO' ? 'pat-conferido' : ''}">
+          <div class="pat-card-row">
+            <span class="pat-num">${escapeHtml(r.numero_patrimonio || 'S/N')}</span>
+            <span class="pat-status-pill">${escapeHtml(r.status || 'PENDENTE')}</span>
+          </div>
+          <b>${escapeHtml(r.material || '-')}</b>
+          ${r.marca ? `<span class="help">${escapeHtml(r.marca)}</span>` : ''}
+          ${r.coordenacao ? `<span class="help">${escapeHtml(r.coordenacao)}</span>` : ''}
+          ${r.informado_em ? `<span class="help">Informado: ${brDate(r.informado_em)}</span>` : ''}
+        </div>
+      `).join('')}
+    </section>
+  `;
+  main.querySelector('[data-pat-back]')?.addEventListener('click', () => patBack(main));
 }
 
 function debounce(fn, wait = 250) {
