@@ -104,7 +104,7 @@ p{text-align:justify;margin:0 0 14px}
 }
 
 async function loadCelular(){
-  const data=await safe(()=>supabase.from('termos_celular').select('*, compras_itens(id, material, valor_total, forma_pagamento, dados_pagamento, fornecedor, contato, compras_solicitacoes(solicitante, data_solicitacao))').order('created_at',{ascending:false}).limit(300));
+  const data=await safe(()=>supabase.from('termos_celular').select('*, compras_itens(id, material, valor_total, forma_pagamento, dados_pagamento, compras_solicitacoes(solicitante, data_solicitacao, fornecedor, telefone_fornecedor))').order('created_at',{ascending:false}).limit(300));
   state.celular=data;
   renderKpis();
   renderCelular();
@@ -247,13 +247,14 @@ async function confirmarTermo(tc){
     if(file){if(fb)fb.textContent='Enviando arquivo...';termoUrl=await uploadTermo(file);}
 
     const ci=tc.compras_itens||{};
+    const sol=ci.compras_solicitacoes||{};
     const payload={
       origem:'COMPRAS',
       origem_id:tc.compra_item_id||null,
       descricao:`Compra: CELULAR | ${tc.colaborador_nome||''}`,
-      favorecido:ci.fornecedor||'Fornecedor a definir',
-      fornecedor:ci.fornecedor||null,
-      contato:ci.contato||null,
+      favorecido:sol.fornecedor||'Fornecedor a definir',
+      fornecedor:sol.fornecedor||null,
+      contato:sol.telefone_fornecedor||null,
       valor:tc.valor||ci.valor_total||0,
       forma_pagamento:ci.forma_pagamento||'BOLETO',
       dados_pagamento:ci.dados_pagamento||null,
