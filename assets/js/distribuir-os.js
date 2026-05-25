@@ -189,12 +189,15 @@ initProtectedPage('Distribuir O.S', async (content) => {
       const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
       const rows = json.map(mapImportRow).filter(r => r.numero_os);
       if (!rows.length) throw new Error('Nenhuma O.S. encontrada na planilha.');
+      el.feedback.textContent = 'Substituindo lista anterior...';
+      const { error: delError } = await supabase.from('operacional_os').delete().neq('numero_os', '');
+      if (delError) throw delError;
       for (let i = 0; i < rows.length; i += 500) {
         const batch = rows.slice(i, i + 500);
-        const { error } = await supabase.from('operacional_os').upsert(batch, { onConflict: 'numero_os' });
+        const { error } = await supabase.from('operacional_os').insert(batch);
         if (error) throw error;
       }
-      el.feedback.textContent = `Importação concluída: ${rows.length} O.S. atualizadas.`;
+      el.feedback.textContent = `Importação concluída: ${rows.length} O.S. importadas (lista anterior substituída).`;
       el.file.value = '';
       await loadAll();
     } catch (error) { console.error(error); el.feedback.textContent = error.message || 'Falha ao importar planilha.'; }
