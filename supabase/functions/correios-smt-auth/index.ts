@@ -1,0 +1,1 @@
+// Deployado via Supabase MCP v1 2026-05-25\n// Autentica no ID Correios (apps.correios.com.br/smt) via form POST\n// Armazena sessao em envios_correios_token_cache (id=2, TTL 6h)\n// Ver deploy no dashboard Supabase: correios-smt-auth
