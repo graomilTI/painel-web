@@ -420,6 +420,7 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
   const total=rows.reduce((s,r)=>s+Number(r._valor_total||0),0);
   if(total<=0){alert('Informe o valor unitário de pelo menos um item.');return;}
   const fornecedorInicial=rows[0]?._fornecedor||'';
+  const hasCelular=rows.some(r=>norm(r.material)==='celular');
   const area=document.querySelector('#admCmpModal .adm-cmp-modal-card');
   area.innerHTML=`<div class="section-head"><div><h3>Pagamento da compra</h3><p class="muted">Total da compra: <b>${money(total)}</b></p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="adm-cmp-table-wrap mt-16">
@@ -442,6 +443,7 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
       <label id="payLabel">Boleto / URL<input id="payData" placeholder="Cole o link do boleto ou anexe abaixo"></label>
       <label id="payFileWrap">Arquivo do boleto<input id="payFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"></label>
     </div>
+    ${hasCelular?`<label style="display:flex;align-items:center;gap:8px;margin-top:14px;cursor:pointer;color:#e2e2f0"><input type="checkbox" id="payPatrimonio" style="width:16px;height:16px;cursor:pointer"> <span>Celular como patrimônio (sem termo de desconto em folha)</span></label>`:''}
     <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="paySend" type="button">Enviar ao Financeiro</button><button class="btn btn-secondary" id="payBack" type="button">Voltar</button></div>`;
   let forma='BOLETO';
   area.querySelector('#mClose').onclick=()=>document.getElementById('admCmpModal').classList.remove('open');
@@ -453,14 +455,22 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
       const dados=await coletarDadosPagamento(forma,area);
       const fornecedor=area.querySelector('#payFornecedor')?.value?.trim()||'';
       const contato=area.querySelector('#payContato')?.value?.trim()||'';
-      await enviarFinanceiroLote(rows,total,forma,dados,fornecedor,contato);
+      const isPatrimonio=hasCelular&&!!area.querySelector('#payPatrimonio')?.checked;
+      await enviarFinanceiroLote(rows,total,forma,dados,fornecedor,contato,isPatrimonio);
     }catch(e){setMsg(e.message,true);alert(e.message);}
   };
 }
 
-async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato=''){
-  const celularItens=itens.filter(r=>norm(r.material)==='celular');
-  const normalItens=itens.filter(r=>norm(r.material)!=='celular');
+async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false){
+  if(celularAsPatrimonio){
+    const celRows=itens.filter(r=>norm(r.material)==='celular');
+    for(const r of celRows){
+      await safe(()=>supabase.from('termos_celular').delete().eq('compra_item_id',r.id));
+      await safe(()=>supabase.from('compras_itens').update({tipo:'Patrimonio'}).eq('id',r.id));
+    }
+  }
+  const celularItens=celularAsPatrimonio?[]:itens.filter(r=>norm(r.material)==='celular');
+  const normalItens=celularAsPatrimonio?itens:itens.filter(r=>norm(r.material)!=='celular');
 
   // Normal items → Financeiro
   if(normalItens.length){
@@ -503,8 +513,23 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
   await loadRows();
 }
 
-function openPagamento(r,total,unit){ const area=document.getElementById('modalArea'); area.innerHTML=`<h3>Pagamento</h3><p class="muted">Total da compra: <b>${money(total)}</b></p><div class="adm-cmp-grid mt-16"><label>Fornecedor<input id="payFornecedor" placeholder="Nome do fornecedor"></label><label>Valor total<input id="payValorTotal" readonly value="${money(total)}"></label><label class="adm-cmp-full">Contato<input id="payContato" placeholder="Telefone, WhatsApp, e-mail ou observação de contato"></label></div><div class="adm-cmp-tabs mt-16"><button class="btn btn-secondary active" data-pay="BOLETO" type="button">BOLETO</button><button class="btn btn-secondary" data-pay="PIX" type="button">PIX</button><button class="btn btn-secondary" data-pay="LINK" type="button">LINK</button></div><div class="adm-cmp-grid"><label id="payLabel">Boleto / URL<input id="payData" placeholder="Cole o link do boleto ou anexe abaixo"></label><label id="payFileWrap">Arquivo do boleto<input id="payFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="paySend" type="button">Enviar ao Financeiro</button></div>`; let forma='BOLETO'; area.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{forma=b.dataset.pay; area.querySelectorAll('[data-pay]').forEach(x=>x.classList.toggle('active',x===b)); updatePagamentoFields(area,forma);}); updatePagamentoFields(area,forma); area.querySelector('#paySend').onclick=async()=>{ try{ const dados=await coletarDadosPagamento(forma,area); const fornecedor=area.querySelector('#payFornecedor')?.value?.trim()||''; const contato=area.querySelector('#payContato')?.value?.trim()||''; await enviarFinanceiro(r,total,unit,forma,dados,fornecedor,contato); }catch(e){ setMsg(e.message,true); alert(e.message); } }; }
-async function enviarFinanceiro(r,total,unit,forma,dados,fornecedor='',contato=''){
+function openPagamento(r,total,unit){ const area=document.getElementById('modalArea'); area.innerHTML=`<h3>Pagamento</h3><p class="muted">Total da compra: <b>${money(total)}</b></p><div class="adm-cmp-grid mt-16"><label>Fornecedor<input id="payFornecedor" placeholder="Nome do fornecedor"></label><label>Valor total<input id="payValorTotal" readonly value="${money(total)}"></label><label class="adm-cmp-full">Contato<input id="payContato" placeholder="Telefone, WhatsApp, e-mail ou observação de contato"></label></div><div class="adm-cmp-tabs mt-16"><button class="btn btn-secondary active" data-pay="BOLETO" type="button">BOLETO</button><button class="btn btn-secondary" data-pay="PIX" type="button">PIX</button><button class="btn btn-secondary" data-pay="LINK" type="button">LINK</button></div><div class="adm-cmp-grid"><label id="payLabel">Boleto / URL<input id="payData" placeholder="Cole o link do boleto ou anexe abaixo"></label><label id="payFileWrap">Arquivo do boleto<input id="payFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"></label></div>${norm(r.material)==='celular'?`<label style="display:flex;align-items:center;gap:8px;margin-top:14px;cursor:pointer;color:#e2e2f0"><input type="checkbox" id="payPatrimonio" style="width:16px;height:16px;cursor:pointer"> <span>Celular como patrimônio (sem termo de desconto em folha)</span></label>`:''}<div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="paySend" type="button">Enviar ao Financeiro</button></div>`; let forma='BOLETO'; area.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{forma=b.dataset.pay; area.querySelectorAll('[data-pay]').forEach(x=>x.classList.toggle('active',x===b)); updatePagamentoFields(area,forma);}); updatePagamentoFields(area,forma); area.querySelector('#paySend').onclick=async()=>{ try{ const dados=await coletarDadosPagamento(forma,area); const fornecedor=area.querySelector('#payFornecedor')?.value?.trim()||''; const contato=area.querySelector('#payContato')?.value?.trim()||''; const isPatrimonio=norm(r.material)==='celular'&&!!area.querySelector('#payPatrimonio')?.checked; await enviarFinanceiro(r,total,unit,forma,dados,fornecedor,contato,isPatrimonio); }catch(e){ setMsg(e.message,true); alert(e.message); } }; }
+async function enviarFinanceiro(r,total,unit,forma,dados,fornecedor='',contato='',isPatrimonio=false){
+  if(norm(r.material)==='celular'&&isPatrimonio){
+    await safe(()=>supabase.from('termos_celular').delete().eq('compra_item_id',r.id));
+    const updPat={status:'pendente_pagamento',tipo:'Patrimonio',valor_unitario:unit,valor_total:total,forma_pagamento:forma,dados_pagamento:dados||null};
+    if(fornecedor) updPat.fornecedor=fornecedor;
+    const {error:patErr}=await supabase.from('compras_itens').update(updPat).eq('id',r.id);
+    if(patErr&&(patErr.message?.includes("'fornecedor'")||patErr.code==='PGRST204')){delete updPat.fornecedor; await supabase.from('compras_itens').update(updPat).eq('id',r.id);}
+    const payPat={origem:'COMPRAS',origem_id:r.id,descricao:`Compra: CELULAR (patrimônio)`,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:total,forma_pagamento:forma,dados_pagamento:dados||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
+    await safe(()=>supabase.from('financeiro_pagamentos').insert(payPat),null);
+    await syncSolicitacoesStatus([r.solicitacao_id]);
+    await notifyByConfig('FINANCEIRO',`Pagamento de compras pendente\nFornecedor: ${fornecedor||'Não informado'}\nContato: ${contato||'Não informado'}\nMaterial: CELULAR (patrimônio)\nValor: ${money(total)}\nForma: ${forma}`);
+    document.getElementById('admCmpModal').classList.remove('open');
+    setMsg('Celular (patrimônio) enviado ao Financeiro. Será etiquetado após a NF.');
+    await loadRows();
+    return;
+  }
   if(norm(r.material)==='celular'){
     const upd={status:'aguardando_termo',valor_unitario:unit,valor_total:total,forma_pagamento:forma,dados_pagamento:dados||null};
     if(fornecedor) upd.fornecedor=fornecedor;

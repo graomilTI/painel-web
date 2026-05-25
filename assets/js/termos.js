@@ -143,7 +143,8 @@ function renderCelular(){
       <td>${tc.metodo_pagamento==='parcelado'?`${tc.parcelas||1}x`:'À vista'}</td>
       <td>${statusPill(tc.status)}</td>
       <td class="termos-acoes">
-        ${!isSigned?`<button class="btn btn-small btn-primary" data-confirmar="${esc(tc.id)}" type="button">Criar Termo</button>`:''}
+        ${!isSigned?(tc.valor?`<button class="btn btn-small btn-primary" data-confirmar="${esc(tc.id)}" type="button">Criar Termo</button>`:`<span style="font-size:12px;color:#fde68a;font-weight:700">Aguardando valor</span>`):''}
+
         ${tc.termo_url?`<a class="btn btn-small btn-secondary" href="${esc(tc.termo_url)}" target="_blank" rel="noopener">Ver Termo</a>`:''}
       </td>
     </tr>`;
