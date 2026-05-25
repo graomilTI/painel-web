@@ -38,7 +38,7 @@ const state = {
   clinicas: [],
   clinicaSelecionada: null,
   rescisaoFields: {},
-  modeloAtivo: 'manual',
+  modeloAtivo: 'rescisao',
   loading: false,
   feedback: '',
   feedbackErr: false,
