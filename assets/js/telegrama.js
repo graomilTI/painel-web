@@ -160,7 +160,7 @@ async function loadAll() {
   state.loading = true;
   const [{ data: tels }, { data: rems }] = await Promise.all([
     supabase.from('envios_telegramas')
-      .select('*, remetente:envios_remetentes(nome), destinatario:envios_destinatarios(nome, cidade, uf)')
+      .select('*, remetente:envios_remetentes(nome,cep,logradouro,numero,bairro,cidade,uf), destinatario:envios_destinatarios(nome,cpf_cnpj,cep,logradouro,numero,bairro,cidade,uf)')
       .order('created_at', { ascending: false })
       .limit(300),
     supabase.from('envios_remetentes').select('*').eq('ativo', true).order('nome'),
@@ -327,6 +327,7 @@ function renderEnviar() {
               ${rfield('res-estcivil',   'Estado Civil',          'text', rf.estado_civil      || 'solteiro')}
               ${rfield('res-cargo',      'Cargo',                 'text', rf.cargo             || '')}
               ${rfield('res-rg',         'RG',                    'text', rf.rg               || '')}
+              ${rfield('res-cpf',        'CPF',                   'text', rf.cpf              || '')}
               ${rfield('res-dtfgts',     'Data FGTS / GFD',       'date', rf.data_fgts        || '')}
               ${rfield('res-dtexame',    'Data do Exame',         'date', rf.data_exame       || '')}
               ${rfield('res-hrexame',    'Hora do Exame',         'text', rf.hora_exame       || '', { placeholder: 'ex: 8:00' })}
@@ -422,7 +423,7 @@ function renderEnviados() {
       </div>
       <div>
         <div style="font-size:.80rem;color:rgba(180,220,195,.55);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.mensagem)}">${esc(t.mensagem.slice(0, 80))}${t.mensagem.length > 80 ? '…' : ''}</div>
-        ${isPendente ? `<a href="${SMT_PORTAL}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="margin-top:6px;font-size:.75rem">Enviar no Portal ↗</a>` : ''}
+        ${isPendente ? `<button type="button" class="btn btn-sm btn-secondary" data-tel-portal="${esc(t.id)}" style="margin-top:6px;font-size:.75rem">Ver dados / Enviar no Portal ↗</button>` : ''}
         ${t.observacoes && t.status === 'ERRO' ? `<div style="font-size:11px;color:rgba(255,100,100,.7);margin-top:4px">${esc(t.observacoes.slice(0,120))}</div>` : ''}
       </div>
       <div>${badge(t.status)}${t.valor_postagem ? `<div class="envios-sub">${MONEY.format(t.valor_postagem)}</div>` : ''}</div>
@@ -523,7 +524,8 @@ function bindEvents() {
     set('#inp-dest-bairro', d.bairro);
     set('#inp-dest-cidade', d.cidade);
     set('#inp-dest-uf',     d.uf);
-    // No modelo de Rescisão, o funcionário é sempre o próprio destinatário selecionado.
+    set('#res-cpf',         d.cpf_cnpj);
+    state.rescisaoFields.cpf = d.cpf_cnpj || '';
   }
 
   if (acInp && acDrop) {
@@ -667,6 +669,7 @@ function bindEvents() {
       'res-estcivil':   'estado_civil',
       'res-cargo':      'cargo',
       'res-rg':         'rg',
+      'res-cpf':        'cpf',
       'res-dtfgts':     'data_fgts',
       'res-dtexame':    'data_exame',
       'res-hrexame':    'hora_exame',
@@ -697,7 +700,7 @@ function bindEvents() {
       estado_civil:     get('#res-estcivil')   || state.rescisaoFields.estado_civil     || 'solteiro',
       cargo:            get('#res-cargo')      || state.rescisaoFields.cargo            || '',
       rg:               get('#res-rg')         || state.rescisaoFields.rg              || '',
-      cpf:              destAgenda?.cpf_cnpj || '',
+      cpf:              get('#res-cpf') || state.rescisaoFields.cpf || destAgenda?.cpf_cnpj || '',
       data_fgts:        get('#res-dtfgts')     || state.rescisaoFields.data_fgts       || '',
       data_exame:       get('#res-dtexame')    || state.rescisaoFields.data_exame      || '',
       hora_exame:       get('#res-hrexame')    || state.rescisaoFields.hora_exame      || '',
@@ -720,6 +723,73 @@ function bindEvents() {
     }
     const ta = area.querySelector('textarea[name=mensagem]');
     if (ta) ta.value = gerarTextoRescisao(f, state.clinicaSelecionada, remetente);
+  });
+
+  // Modal "Ver dados / Enviar no Portal"
+  area.querySelectorAll('[data-tel-portal]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = state.telegramas.find(x => x.id === btn.dataset.telPortal);
+      if (!t) return;
+      const rem = t.remetente ?? {};
+      const dest = t.destinatario ?? {};
+      const destNome   = dest.nome   ?? t.dest_nome   ?? '—';
+      const destCep    = dest.cep    ?? t.dest_cep    ?? '';
+      const destLog    = dest.logradouro ?? t.dest_logradouro ?? '';
+      const destNum    = dest.numero ?? t.dest_numero ?? '';
+      const destComp   = dest.complemento ?? t.dest_complemento ?? '';
+      const destBairro = dest.bairro ?? t.dest_bairro ?? '';
+      const destCidade = dest.cidade ?? t.dest_cidade ?? '';
+      const destUf     = dest.uf     ?? t.dest_uf     ?? '';
+      const remEnd = [rem.logradouro, rem.numero, rem.complemento, rem.bairro, [rem.cidade,rem.uf].filter(Boolean).join('/'), rem.cep].filter(Boolean).join(' — ');
+      const destEnd = [destLog, destNum, destComp, destBairro, [destCidade, destUf].filter(Boolean).join('/'), destCep].filter(Boolean).join(' — ');
+
+      const existing = document.getElementById('tel-portal-modal');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'tel-portal-modal';
+      modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);padding:20px;box-sizing:border-box';
+      modal.innerHTML = `
+        <div style="background:#0d1a12;border:1px solid rgba(45,212,160,.22);border-radius:18px;padding:28px 30px;max-width:580px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.6)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+            <h3 style="margin:0;font-size:1rem;font-weight:800;color:#e2e2f0">Dados para envio no portal Correios</h3>
+            <button id="tel-modal-close" style="background:none;border:none;color:rgba(200,230,210,.5);font-size:1.4rem;cursor:pointer;line-height:1">×</button>
+          </div>
+          <div style="font-size:.84rem;color:rgba(180,220,195,.75);line-height:1.7;display:flex;flex-direction:column;gap:14px">
+            <div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(45,212,160,.6);margin-bottom:4px">Remetente</div>
+              <div style="color:#e2e2f0;font-weight:700">${esc(rem.nome ?? '—')}</div>
+              <div>${esc(remEnd || '—')}</div>
+            </div>
+            <div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(45,212,160,.6);margin-bottom:4px">Destinatário</div>
+              <div style="color:#e2e2f0;font-weight:700">${esc(destNome)}</div>
+              <div>${esc(destEnd || '—')}</div>
+            </div>
+            <div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(45,212,160,.6);margin-bottom:4px">Mensagem</div>
+              <pre id="tel-modal-msg" style="white-space:pre-wrap;word-break:break-word;background:rgba(4,13,9,.6);border:1px solid rgba(45,212,160,.10);border-radius:10px;padding:12px 14px;margin:0;font-family:ui-monospace,monospace;font-size:.82rem;color:#d4f7e5;max-height:220px;overflow-y:auto">${esc(t.mensagem)}</pre>
+              <button id="tel-modal-copiar" class="btn btn-sm btn-secondary" style="margin-top:8px;font-size:.78rem">Copiar mensagem</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
+            <a href="${SMT_PORTAL}" target="_blank" rel="noopener" class="btn btn-primary" style="font-size:.85rem">Abrir Portal SMT ↗</a>
+            <button id="tel-modal-close2" class="btn btn-secondary" style="font-size:.85rem">Fechar</button>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+
+      const close = () => modal.remove();
+      modal.querySelector('#tel-modal-close')?.addEventListener('click', close);
+      modal.querySelector('#tel-modal-close2')?.addEventListener('click', close);
+      modal.addEventListener('click', e => { if (e.target === modal) close(); });
+      modal.querySelector('#tel-modal-copiar')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(t.mensagem).then(() => {
+          const b = modal.querySelector('#tel-modal-copiar');
+          if (b) { b.textContent = 'Copiado!'; setTimeout(() => { b.textContent = 'Copiar mensagem'; }, 2000); }
+        });
+      });
+    });
   });
 
   // Submit novo telegrama
