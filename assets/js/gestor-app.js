@@ -488,7 +488,7 @@ function renderInicio(main) {
 
   function fmtTons(val) {
     const v = Number(val) || 0;
-    return v >= 1000 ? (v / 1000).toFixed(1).replace('.', ',') + ' kt' : BR.format(Math.round(v)) + ' t';
+    return BR.format(Math.round(v)) + ' t';
   }
   function fmtDelta(val) {
     const v = Number(val) || 0;
