@@ -315,18 +315,25 @@ initProtectedPage('OS', async (content) => {
   }
 
   async function loadOs() {
-    // Consulta propositalmente simples para evitar Bad Request por schema cache/order.
+    // Busca em páginas de 1000 para contornar o max-rows do PostgREST (padrão 1000).
     // A ordenação é feita no front pelos cabeçalhos da tabela.
-    const { data, error } = await supabase
-      .from('operacional_os')
-      .select('*')
-      .limit(3000);
-
-    if (error) {
-      throw new Error(error.message || 'Falha ao consultar operacional_os.');
+    const PAGE = 1000;
+    let all = [];
+    for (let page = 0; ; page++) {
+      const from = page * PAGE;
+      const to = from + PAGE - 1;
+      const { data, error } = await supabase
+        .from('operacional_os')
+        .select('*')
+        .range(from, to);
+      if (error) throw new Error(error.message || 'Falha ao consultar operacional_os.');
+      const chunk = safeArray(data);
+      all = all.concat(chunk);
+      if (chunk.length < PAGE) break;
+      if (all.length >= 6000) break; // teto de segurança
     }
 
-    state.os = safeArray(data).filter((row) => isAllowedSupervisao(row.supervisao));
+    state.os = all.filter((row) => isAllowedSupervisao(row.supervisao));
     const ids = state.os.map((row) => row.id).filter(Boolean);
     if (!ids.length) {
       state.atribuicoes = [];
