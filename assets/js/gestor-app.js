@@ -21,7 +21,7 @@ const state = {
   appUser: null,
   isMaster: false,
   allowedSupervisoes: [],
-  currentTab: 'inicio',
+  currentTab: 'dashboard',
   loading: false,
   os: [],
   colaboradores: [],
@@ -216,7 +216,7 @@ function renderShell() {
     </header>
     <main class="app-main" id="appMain"></main>
     <nav class="bottom-nav" id="bottomNav">
-      <button class="nav-btn is-active" data-tab="inicio" type="button">Início</button>
+      <button class="nav-btn is-active" data-tab="dashboard" type="button">Dashboard</button>
       <button class="nav-btn" data-tab="os" type="button">OS</button>
       <button class="nav-btn" data-tab="programacao" type="button">Programação</button>
       <button class="nav-btn" data-tab="patrimonio" type="button">Patrimônio</button>
@@ -453,7 +453,7 @@ function filteredOs() {
 function renderCurrentTab() {
   const main = document.getElementById('appMain');
   if (!main) return;
-  if (state.currentTab === 'inicio') return renderInicio(main);
+  if (state.currentTab === 'dashboard') return renderInicio(main);
   if (state.currentTab === 'os') return renderOs(main);
   if (state.currentTab === 'programacao') return renderProgramacao(main);
   if (state.currentTab === 'patrimonio') return renderPatrimonio(main);
@@ -467,7 +467,9 @@ function renderInicio(main) {
   const dash = state.dashboard;
   const now = new Date();
   const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const mesNome = MESES[now.getMonth()];
+  const mesFull = MESES_FULL[now.getMonth()];
   const diaAtual = now.getDate();
   const diasNoMes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
@@ -477,6 +479,7 @@ function renderInicio(main) {
   const ritmoEsperado = meta > 0 ? meta * diaAtual / diasNoMes : 0;
   const onTrack = produzido >= ritmoEsperado;
   const projetado = diaAtual > 0 ? produzido / diaAtual * diasNoMes : 0;
+  const delta = produzido - ritmoEsperado;
 
   const patri = dash?.patrimonios || { total: 0, atrasados: 0 };
   const patriOk = patri.total - patri.atrasados;
@@ -487,70 +490,105 @@ function renderInicio(main) {
     const v = Number(val) || 0;
     return v >= 1000 ? (v / 1000).toFixed(1).replace('.', ',') + ' kt' : BR.format(Math.round(v)) + ' t';
   }
+  function fmtDelta(val) {
+    const v = Number(val) || 0;
+    const abs = Math.abs(v);
+    const sign = v >= 0 ? '+' : '−';
+    return sign + (abs >= 1000 ? (abs / 1000).toFixed(1).replace('.', ',') + ' kt' : BR.format(Math.round(abs)) + ' t');
+  }
 
   const cursorLeft = (diaAtual / diasNoMes * 100).toFixed(1);
+  const loading = dash?.loading !== false && !dash;
 
   main.innerHTML = `
-    <div class="dash-header">
-      <span class="dash-period">${mesNome.toUpperCase()} / ${now.getFullYear()}</span>
-      <span class="dash-regional">${escapeHtml(dash?.coordenacao || 'REGIONAL')}</span>
+    <div class="db-topbar">
+      <div class="db-period">
+        <span class="db-period-month">${mesFull.toUpperCase()}</span>
+        <span class="db-period-year">${now.getFullYear()}</span>
+      </div>
+      <div class="db-region">${escapeHtml(dash?.coordenacao || (state.isMaster ? 'TODAS AS REGIONAIS' : 'REGIONAL'))}</div>
     </div>
 
-    <div class="dash-card dash-meta">
-      <div class="dash-card-title">Produtividade do Mês</div>
-      <div class="dash-row">
-        <div class="dash-kpi">
-          <div class="dash-kpi-label">Meta</div>
-          <div class="dash-kpi-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
-        </div>
-        <div class="dash-divider"></div>
-        <div class="dash-kpi">
-          <div class="dash-kpi-label">Realizado</div>
-          <div class="dash-kpi-value ${onTrack ? 'is-green' : 'is-yellow'}">${fmtTons(produzido)}</div>
-        </div>
-        <div class="dash-divider"></div>
-        <div class="dash-kpi">
-          <div class="dash-kpi-label">Projeção</div>
-          <div class="dash-kpi-value ${projetado >= meta && meta > 0 ? 'is-green' : 'is-danger'}">${meta > 0 ? fmtTons(projetado) : '—'}</div>
-        </div>
-      </div>
-      <div class="dash-progress-wrap">
-        <div class="dash-progress-bar">
-          <div class="dash-progress-fill ${onTrack ? '' : 'is-warn'}" style="width:${pct.toFixed(1)}%"></div>
-          ${meta > 0 ? `<div class="dash-progress-cursor" style="left:${cursorLeft}%" title="Dia ${diaAtual}/${diasNoMes}"></div>` : ''}
-        </div>
-        <div class="dash-progress-labels">
-          <span>${pct.toFixed(1)}% da meta</span>
-          <span>Dia ${diaAtual} / ${diasNoMes}</span>
-        </div>
-      </div>
-      <div class="dash-track-badge ${onTrack ? 'is-ok' : 'is-late'}">${onTrack ? '▲ No ritmo' : '▼ Abaixo do ritmo esperado'}</div>
-    </div>
+    <div class="db-prod-card ${onTrack ? 'is-on-track' : 'is-off-track'}">
+      <div class="db-prod-eyebrow">Produtividade</div>
 
-    <div class="dash-card">
-      <div class="dash-card-row">
-        <div class="dash-card-title" style="margin:0">Leitura de Patrimônios</div>
-        ${patri.atrasados > 0
-          ? `<div class="dash-badge-danger">${patri.atrasados} em atraso</div>`
-          : '<div class="dash-badge-ok">Tudo em dia</div>'}
+      <div class="db-prod-hero">
+        <div class="db-prod-main">
+          <div class="db-prod-value ${onTrack ? 'is-green' : 'is-amber'}">${loading ? '—' : fmtTons(produzido)}</div>
+          <div class="db-prod-label">REALIZADO</div>
+        </div>
+        <div class="db-prod-aside">
+          <div class="db-aside-block">
+            <div class="db-aside-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
+            <div class="db-aside-label">META</div>
+          </div>
+          <div class="db-aside-sep"></div>
+          <div class="db-aside-block">
+            <div class="db-aside-value ${meta > 0 && projetado >= meta ? 'is-green' : meta > 0 ? 'is-red' : ''}">${meta > 0 ? fmtTons(projetado) : '—'}</div>
+            <div class="db-aside-label">PROJEÇÃO</div>
+          </div>
+        </div>
       </div>
-      <div class="dash-patri-bar">
-        <div class="dash-patri-ok" style="width:${patriPct.toFixed(1)}%"></div>
-        <div class="dash-patri-late" style="width:${patriAtrPct.toFixed(1)}%"></div>
+
+      <div class="db-meter-wrap">
+        <div class="db-meter">
+          <div class="db-meter-track"></div>
+          <div class="db-meter-fill ${onTrack ? '' : 'is-warn'}" style="width:${pct.toFixed(2)}%"></div>
+          ${meta > 0 ? `<div class="db-meter-cursor" style="left:${cursorLeft}%" title="Dia ${diaAtual} de ${diasNoMes}"></div>` : ''}
+        </div>
+        <div class="db-meter-meta">
+          <span class="db-meter-pct">${pct.toFixed(0)}<small>%</small></span>
+          <span class="db-meter-day">DIA ${diaAtual} / ${diasNoMes}</span>
+        </div>
       </div>
-      <div class="dash-patri-labels">
-        <span class="dash-patri-label-ok">✓ ${patriOk} em dia</span>
-        <span class="dash-patri-label-late">⚑ ${patri.atrasados} atraso &gt;7d</span>
-        <span class="dash-patri-label-total">${patri.total} total</span>
+
+      <div class="db-pace-row">
+        <div class="db-pace-badge ${onTrack ? 'is-ok' : 'is-late'}">
+          <span class="db-pace-dot"></span>
+          <span>${onTrack ? 'No ritmo esperado' : 'Abaixo do ritmo'}</span>
+        </div>
+        ${meta > 0 ? `<div class="db-delta ${onTrack ? 'is-pos' : 'is-neg'}">${fmtDelta(delta)} vs meta do dia</div>` : ''}
       </div>
     </div>
 
-    <div class="kpi-strip">
-      <div class="kpi-item"><b>${totalPend}</b><span>OS Pendentes</span></div>
-      <div class="kpi-sep"></div>
-      <div class="kpi-item kpi-green"><b>${atender}</b><span>Conferência</span></div>
-      <div class="kpi-sep"></div>
-      <div class="kpi-item"><b>${state.os.length}</b><span>Total OS</span></div>
+    <div class="db-row-2">
+      <div class="db-patri-card">
+        <div class="db-card-eyebrow">Patrimônios</div>
+        <div class="db-patri-hero">
+          <span class="db-patri-num ${patri.atrasados === 0 ? 'is-green' : ''}">${patriOk}</span>
+          <span class="db-patri-den">/ ${patri.total}</span>
+        </div>
+        <div class="db-seg">
+          <div class="db-seg-ok" style="width:${patriPct.toFixed(1)}%"></div>
+          <div class="db-seg-late" style="width:${patriAtrPct.toFixed(1)}%"></div>
+        </div>
+        <div class="db-patri-status">
+          ${patri.atrasados > 0
+            ? `<span class="db-status-late">${patri.atrasados} em atraso &gt;7d</span>`
+            : '<span class="db-status-ok">Tudo em dia ✓</span>'}
+        </div>
+      </div>
+
+      <div class="db-os-card">
+        <div class="db-card-eyebrow">OS</div>
+        <div class="db-os-row">
+          <div class="db-os-block">
+            <div class="db-os-num ${totalPend > 0 ? 'is-amber' : ''}">${totalPend}</div>
+            <div class="db-os-label">Pendentes</div>
+          </div>
+          <div class="db-os-sep"></div>
+          <div class="db-os-block">
+            <div class="db-os-num ${atender > 0 ? 'is-green' : ''}">${atender}</div>
+            <div class="db-os-label">Conferência</div>
+          </div>
+          <div class="db-os-sep"></div>
+          <div class="db-os-block">
+            <div class="db-os-num">${state.os.length}</div>
+            <div class="db-os-label">Total</div>
+          </div>
+        </div>
+        <button class="db-os-btn" data-go="os" type="button">Ver OS →</button>
+      </div>
     </div>
 
     <div class="install-banner ${state.installPrompt ? 'is-visible' : ''}" id="installBanner">
@@ -558,6 +596,7 @@ function renderInicio(main) {
       <button class="btn" id="installBtn" type="button">Instalar</button>
     </div>
 
+    <div class="db-actions-label">Ações Rápidas</div>
     <div class="quick-grid">
       <button class="quick-card is-primary" data-go="os" type="button"><b>OS</b><span>${totalPend} pendente(s) de ajuste</span></button>
       <a class="quick-card" href="${panelHref('programacao')}"><b>Programação</b><span>Abrir módulo</span></a>
