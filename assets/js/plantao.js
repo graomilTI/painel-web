@@ -1601,10 +1601,10 @@ function drawSectorCard(ctx, card, x, y, w, h, dateFallback) {
   }
 }
 
-function getRowsForDivulgacao() {
+function getRowsForDivulgacao(sectorOverride) {
   const dataIni = document.getElementById('plantaoImgData')?.value || document.getElementById('plantaoData')?.value || '';
   const dataFim = document.getElementById('plantaoImgDataFim')?.value || document.getElementById('plantaoDataFim')?.value || dataIni;
-  const setorFiltro = document.getElementById('plantaoImgSetor')?.value || 'todos';
+  const setorFiltro = sectorOverride !== undefined ? sectorOverride : 'todos';
 
   const rows = [];
   Object.entries(escala).forEach(([setor, pessoas]) => {
