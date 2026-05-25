@@ -331,9 +331,16 @@ export function buildAllowedMenu(userContext) {
   // Mesmo que algum contexto antigo/cache retorne módulos administrativos, eles não entram no menu.
   if (isGestorContext(userContext)) {
     const allowedSections = new Set(['inicio', 'gestor']);
+    const allowedCodes = buildAllowedCodeSet(userContext);
+    const hasModules = allowedCodes.size > 0;
     return ensureGestorSection(PANEL_MENU
       .filter((section) => allowedSections.has(normalizeCode(section.section)))
-      .map((section) => ({ ...section, items: [...section.items] }))
+      .map((section) => ({
+        ...section,
+        items: hasModules
+          ? section.items.filter((item) => isItemAllowed(item, allowedCodes))
+          : [...section.items],
+      }))
       .filter((section) => section.items.length > 0), userContext);
   }
 
