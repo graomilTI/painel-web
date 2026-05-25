@@ -565,7 +565,7 @@ function renderOsCard(os) {
           <div class="metric"><small>Lote</small><b>${fmt(os.lote)}</b></div>
           <div class="metric"><small>Emb.</small><b>${fmt(os.embarcado)}</b></div>
         </div>
-        ${!isZero ? `<div class="indicacao-box">
+        ${!isZero && !isNegativo ? `<div class="indicacao-box">
           <select data-role="main-colab">
             <option value="">Selecionar colaborador</option>
             ${sugg.items.map(({ c, distancia }, index) => `<option value="${escapeHtml(colabKey(c))}" ${selected === colabKey(c) ? 'selected' : ''}>${index === 0 ? '⭐ ' : ''}${escapeHtml(c.nome)}${Number.isFinite(distancia) ? ` • ${KM.format(distancia)} km` : ''}</option>`).join('')}
