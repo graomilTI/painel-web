@@ -559,21 +559,22 @@ function renderOsCard(os) {
         <span>Dest.: ${escapeHtml(first(os.destino))}</span>
         <span>${escapeHtml(first(os.supervisao))} · Contrato ${escapeHtml(first(os.contrato))} · ${escapeHtml(first(os.produto))}</span>
       </div>
-      <div class="os-metrics">
-        <div class="metric"><small>Rem.</small><b>${fmt(os.remanescente)}</b></div>
-        <div class="metric"><small>Lote</small><b>${fmt(os.lote)}</b></div>
-        <div class="metric"><small>Emb.</small><b>${fmt(os.embarcado)}</b></div>
-      </div>
-      <div class="indicacao-box">
-        <select data-role="main-colab">
-          <option value="">Selecionar colaborador</option>
-          ${sugg.items.map(({ c, distancia }, index) => `<option value="${escapeHtml(colabKey(c))}" ${selected === colabKey(c) ? 'selected' : ''}>${index === 0 ? '⭐ ' : ''}${escapeHtml(c.nome)}${Number.isFinite(distancia) ? ` • ${KM.format(distancia)} km` : ''}</option>`).join('')}
-        </select>
-        ${selectedInfo ? `<div class="help ok">Indicação: ${escapeHtml(selectedInfo.c.nome)} · ${KM.format(selectedInfo.distancia)} km do ponto operacional.</div>` : `<div class="help warn">${escapeHtml(sugg.aviso || 'Selecione um colaborador para enviar à Conferência.')}</div>`}
-        ${canMulti ? `<label class="multi-line"><input data-role="allow-multi" type="checkbox" ${isMulti ? 'checked' : ''} /> permitir 2 ou mais colaboradores</label>` : ''}
-        ${canMulti && isMulti ? renderExtraSelects(id, sugg.items, selected, extraValues) : ''}
-      </div>
-      <div class="action-grid">
+      <div class="os-body">
+        <div class="os-metrics">
+          <div class="metric"><small>Rem.</small><b>${fmt(os.remanescente)}</b></div>
+          <div class="metric"><small>Lote</small><b>${fmt(os.lote)}</b></div>
+          <div class="metric"><small>Emb.</small><b>${fmt(os.embarcado)}</b></div>
+        </div>
+        <div class="indicacao-box">
+          <select data-role="main-colab">
+            <option value="">Selecionar colaborador</option>
+            ${sugg.items.map(({ c, distancia }, index) => `<option value="${escapeHtml(colabKey(c))}" ${selected === colabKey(c) ? 'selected' : ''}>${index === 0 ? '⭐ ' : ''}${escapeHtml(c.nome)}${Number.isFinite(distancia) ? ` • ${KM.format(distancia)} km` : ''}</option>`).join('')}
+          </select>
+          ${selectedInfo ? `<div class="help ok">Indicação: ${escapeHtml(selectedInfo.c.nome)} · ${KM.format(selectedInfo.distancia)} km do ponto operacional.</div>` : `<div class="help warn">${escapeHtml(sugg.aviso || 'Selecione um colaborador para enviar à Conferência.')}</div>`}
+          ${canMulti ? `<label class="multi-line"><input data-role="allow-multi" type="checkbox" ${isMulti ? 'checked' : ''} /> permitir 2 ou mais colaboradores</label>` : ''}
+          ${canMulti && isMulti ? renderExtraSelects(id, sugg.items, selected, extraValues) : ''}
+        </div>
+        <div class="action-grid">
         ${isNegativo
           ? `<button class="btn secondary ${hasLaudo ? 'kg-active' : ''}" data-action-laudo="${escapeHtml(id)}" data-action-laudo-num="${escapeHtml(os.numero_os)}" type="button" title="Anexar laudo para conferência" style="color:#fca5a5;border-color:rgba(239,68,68,.4);grid-column:span 6;font-size:18px;font-weight:950">!</button>`
           : `<div class="status-dot ${isCinza ? 'is-active' : ''}" title="Sem ação definida"><span class="dot"></span></div>
@@ -583,6 +584,7 @@ function renderOsCard(os) {
         <button class="btn ${status === 'AJUSTAR' ? 'ajustar' : 'secondary'}" data-action="AJUSTAR" type="button" title="Ajustar saldo">${ICO_AJUSTAR}</button>
         <button class="btn secondary ${os.observacao_logistica?.startsWith('KG solicitado') ? 'kg-active' : ''}" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar KG para Logística" style="color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SOMAR_KG}</button>`
         }
+        </div>
       </div>
       <label class="tomorrow-label"><input type="checkbox" data-toggle-tomorrow="${escapeHtml(id)}" ${state.tomorrow.has(id) ? 'checked' : ''} /> Salvar para amanhã</label>
     </article>
