@@ -921,7 +921,7 @@ async function renderPatrimonioLeitura(main) {
   main.innerHTML = `<div class="section-card"><p class="help">Carregando patrimônios...</p></div>`;
   const sups = state.isMaster ? [] : state.allowedSupervisoes;
   let query = supabase.from('vw_patrimonios_atual')
-    .select('patrimonio_codigo,funcionario,identificacao,dias_sem_leitura,supervisao')
+    .select('patrimonio_codigo,funcionario,identificacao,dias_sem_leitura,supervisao,situacao')
     .order('dias_sem_leitura', { ascending: false });
   if (sups.length) query = query.in('supervisao', sups);
   const { data, error } = await query;
@@ -938,12 +938,15 @@ async function renderPatrimonioLeitura(main) {
         <table class="pat-table">
           <thead><tr><th>Nº</th><th>Colaborador</th><th>Material</th><th>Dias s/ Leitura</th></tr></thead>
           <tbody>
-            ${rows.map((r) => `<tr>
+            ${rows.map((r) => {
+              const inativo = /n.o\s*ativo|inativo|desligado|demitido/i.test(normalize(r.situacao || ''));
+              return `<tr class="${inativo ? 'pat-row-inativo' : ''}">
               <td>${escapeHtml(r.patrimonio_codigo || '-')}</td>
               <td>${escapeHtml(r.funcionario || '-')}</td>
               <td>${escapeHtml(r.identificacao || '-')}</td>
-              <td class="${(r.dias_sem_leitura ?? 0) > 30 ? 'dias-alerta' : ''}">${r.dias_sem_leitura ?? '-'}</td>
-            </tr>`).join('')}
+              <td class="${(r.dias_sem_leitura ?? 0) > 30 && !inativo ? 'dias-alerta' : ''}">${r.dias_sem_leitura ?? '-'}</td>
+            </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>`}

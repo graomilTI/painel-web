@@ -172,6 +172,7 @@ select:focus, input:focus, textarea:focus {
 .pat-table td { padding: 8px 8px; border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: top; }
 .pat-table tr:last-child td { border-bottom: none; }
 .dias-alerta { color: #fca5a5; font-weight: 950; }
+.pat-row-inativo td { color: #f87171; }
 .pat-card { background: rgba(21,21,42,.56); border: 1px solid rgba(255,255,255,.07); border-radius: 18px; padding: 14px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
 .pat-card.pat-conferido { border-color: rgba(45,212,160,.25); opacity: .7; }
 .pat-card-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
