@@ -542,6 +542,7 @@ function renderOsCard(os) {
   const selected = state.selections.get(id) || (sugg.items[0] ? colabKey(sugg.items[0].c) : '');
   const selectedInfo = sugg.items.find((row) => colabKey(row.c) === selected) || null;
   const isNegativo = num(os.remanescente) < 0;
+  const isZero = num(os.remanescente) === 0;
   const canMulti = num(os.remanescente) >= LIMITE_MULTIPLOS;
   const isMulti = state.allowMulti.has(id) && canMulti;
   const extraValues = state.extras.get(id) || [];
@@ -565,7 +566,7 @@ function renderOsCard(os) {
           <div class="metric"><small>Lote</small><b>${fmt(os.lote)}</b></div>
           <div class="metric"><small>Emb.</small><b>${fmt(os.embarcado)}</b></div>
         </div>
-        <div class="indicacao-box">
+        ${!isZero ? `<div class="indicacao-box">
           <select data-role="main-colab">
             <option value="">Selecionar colaborador</option>
             ${sugg.items.map(({ c, distancia }, index) => `<option value="${escapeHtml(colabKey(c))}" ${selected === colabKey(c) ? 'selected' : ''}>${index === 0 ? '⭐ ' : ''}${escapeHtml(c.nome)}${Number.isFinite(distancia) ? ` • ${KM.format(distancia)} km` : ''}</option>`).join('')}
@@ -573,10 +574,13 @@ function renderOsCard(os) {
           ${selectedInfo ? `<div class="help ok">Indicação: ${escapeHtml(selectedInfo.c.nome)} · ${KM.format(selectedInfo.distancia)} km do ponto operacional.</div>` : `<div class="help warn">${escapeHtml(sugg.aviso || 'Selecione um colaborador para enviar à Conferência.')}</div>`}
           ${canMulti ? `<label class="multi-line"><input data-role="allow-multi" type="checkbox" ${isMulti ? 'checked' : ''} /> permitir 2 ou mais colaboradores</label>` : ''}
           ${canMulti && isMulti ? renderExtraSelects(id, sugg.items, selected, extraValues) : ''}
-        </div>
+        </div>` : ''}
         <div class="action-grid">
         ${isNegativo
           ? `<button class="btn secondary ${hasLaudo ? 'kg-active' : ''}" data-action-laudo="${escapeHtml(id)}" data-action-laudo-num="${escapeHtml(os.numero_os)}" type="button" title="Anexar laudo para conferência" style="color:#fca5a5;border-color:rgba(239,68,68,.4);grid-column:span 6;font-size:18px;font-weight:950">!</button>`
+          : isZero
+          ? `<button class="btn ${status === 'FINALIZAR' ? '' : 'secondary'}" data-action="FINALIZAR" type="button" title="Finalizar OS" style="grid-column:span 3">${ICO_FINALIZAR} Finalizar OS</button>
+             <button class="btn secondary ${os.observacao_logistica?.startsWith('KG solicitado') ? 'kg-active' : ''}" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar mais saldo" style="grid-column:span 3;color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SOMAR_KG} Mais saldo</button>`
           : `<div class="status-dot ${isCinza ? 'is-active' : ''}" title="Sem ação definida"><span class="dot"></span></div>
         <button class="btn ${status === 'AGUARDAR' ? 'warn' : 'secondary'}" data-action="AGUARDAR" type="button" title="Aguardar">${ICO_AGUARDAR}</button>
         <button class="btn ${status === 'ATENDER' ? '' : 'secondary'}" data-action="ATENDER" type="button" title="Atender">${ICO_ATENDER}</button>
