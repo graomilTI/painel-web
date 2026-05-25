@@ -95,10 +95,13 @@ select:focus, input:focus, textarea:focus {
 .field { display: grid; gap: 6px; }
 .field label { color: var(--soft); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; }
 .field input, .field select { width: 100%; padding: 13px 14px; }
-.stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
-.stat { border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 20px; background: rgba(21, 21, 42, 0.62); padding: 14px; }
-.stat b { display: block; font-size: 28px; letter-spacing: -0.05em; }
-.stat span { color: var(--muted); font-size: 12px; }
+.kpi-strip { display: flex; align-items: stretch; margin-top: 14px; background: rgba(21, 21, 42, 0.55); border: 1px solid rgba(255,255,255,0.07); border-radius: 22px; overflow: hidden; }
+.kpi-item { flex: 1; padding: 16px 10px; text-align: center; }
+.kpi-item b { display: block; font-size: 26px; font-weight: 1000; letter-spacing: -0.05em; line-height: 1; }
+.kpi-item span { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.kpi-item.kpi-green b { color: var(--green-2); }
+.kpi-sep { width: 1px; background: rgba(255,255,255,0.06); align-self: stretch; flex-shrink: 0; }
+.os-count-badge { display: flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; border-radius: 14px; background: rgba(21,21,42,0.80); border: 1px solid rgba(255,255,255,0.08); font-size: 20px; font-weight: 1000; letter-spacing: -0.04em; flex-shrink: 0; color: var(--text); }
 
 .btn { border: 0; border-radius: 16px; padding: 13px 16px; font-weight: 950; cursor: pointer; color: #011a0d; background: linear-gradient(135deg, #00c87a, #2dd4a0); }
 .btn.secondary { color: var(--text); background: rgba(21, 21, 42, 0.80); border: 1px solid rgba(255, 255, 255, 0.08); }

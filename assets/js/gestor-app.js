@@ -429,15 +429,13 @@ function renderInicio(main) {
         <a class="quick-card" href="${panelHref('contato-cliente')}"><b>Contato Cliente</b><span>Visitas e registros</span></a>
       </div>
     </section>
-    <section class="section-card">
-      <div class="section-title"><div><h2>Resumo</h2><p>Leitura cacheada para abrir mais rápido no celular.</p></div></div>
-      <div class="stat-grid">
-        <div class="stat"><b>${state.os.length}</b><span>O.S. carregadas</span></div>
-        <div class="stat"><b>${atender}</b><span>Para Conferência</span></div>
-        <div class="stat"><b>${state.os.filter((o) => num(o.remanescente) === 0).length}</b><span>Remanescente zero</span></div>
-        <div class="stat"><b>${state.colaboradores.length}</b><span>Colaboradores base</span></div>
-      </div>
-    </section>
+    <div class="kpi-strip">
+      <div class="kpi-item"><b>${totalPend}</b><span>Pendentes</span></div>
+      <div class="kpi-sep"></div>
+      <div class="kpi-item kpi-green"><b>${atender}</b><span>Conferência</span></div>
+      <div class="kpi-sep"></div>
+      <div class="kpi-item"><b>${state.os.length}</b><span>Total OS</span></div>
+    </div>
   `;
   main.querySelector('[data-go="os"]')?.addEventListener('click', () => {
     state.currentTab = 'os';
@@ -518,15 +516,14 @@ function renderOs(main) {
   const rows = filteredOs();
   main.innerHTML = `
     <section class="section-card">
-      <div class="section-title"><div><h2>Ordens de Serviço</h2><p>Indique colaboradores e envie para Conferência direto pelo app.</p></div></div>
+      <div class="section-title">
+        <div><h2>Ordens de Serviço</h2><p>Indique colaboradores e envie para Conferência.</p></div>
+        <div class="os-count-badge">${rows.length}</div>
+      </div>
       <div class="filter-grid">
         <div class="field"><label>Supervisão</label><select id="filterSupervisao"><option value="">Todas liberadas</option>${supervisoes.map((s) => `<option value="${escapeHtml(s)}" ${state.filters.supervisao === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}</select></div>
         <div class="field"><label>Status</label><select id="filterStatus"><option value="">Todos</option>${STATUS.map((s) => `<option value="${s}" ${state.filters.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
         <div class="field"><label>Buscar</label><input id="filterBusca" value="${escapeHtml(state.filters.busca)}" placeholder="OS, cliente, embarque..." /></div>
-      </div>
-      <div class="stat-grid">
-        <div class="stat"><b>${rows.length}</b><span>Dentro do filtro</span></div>
-        <div class="stat"><b>${rows.filter((o) => String(o.status_gestor || '').toUpperCase() === 'ATENDER').length}</b><span>Para Conferência</span></div>
       </div>
     </section>
     ${renderOsList(rows)}
