@@ -4,7 +4,11 @@ import { toPanelUrl } from './paths.js';
 
 function homeUrl(context) {
   const role = String(context?.user?.role ?? context?.role ?? '').toLowerCase();
-  return toPanelUrl(role === 'gestor' ? 'gestor-app' : 'dashboard');
+  if (role === 'gestor') {
+    const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+    return toPanelUrl(isMobile ? 'gestor-app' : 'programacao');
+  }
+  return toPanelUrl('dashboard');
 }
 
 const form = document.getElementById('loginForm');
