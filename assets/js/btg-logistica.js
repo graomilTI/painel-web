@@ -257,7 +257,7 @@ function rowHtml(r) {
     <td><span class="btg-os-num">${esc(r.os || '—')}</span></td>
     <td><span class="btg-contrato"${title}>${esc(r.contrato)}</span></td>
     <td><span class="btg-sup">${esc(r.tipoSolicitacao || r.fonte || '—')}</span></td>
-    <td><span class="btg-colab">${esc(r.colaborador || '—')}</span></td>
+    <td><span class="btg-colab ${r.colaboradorAlterado ? 'is-updated' : ''}">${esc(r.colaborador || '—')}</span></td>
     <td><span class="btg-sup">${esc(r.supervisao || '—')}</span></td>
     <td><span class="btg-val">${esc(fmt(r.lote || r.qtde))}</span></td>
     <td><span class="btg-chip ${chip}">${esc(fmt(r.remanescente || r.qtde))}</span></td>
@@ -282,11 +282,11 @@ async function loadDbData(el) {
     if (ids.length) {
       const { data: cd } = await supabase
         .from('operacional_os_colaboradores')
-        .select('os_id, colaborador_nome')
+        .select('os_id, colaborador_nome, origem_sugestao, updated_at')
         .in('os_id', ids);
       for (const c of (cd || [])) {
         if (!colabMap[c.os_id]) colabMap[c.os_id] = [];
-        colabMap[c.os_id].push(c.colaborador_nome);
+        colabMap[c.os_id].push(c);
       }
     }
 
@@ -294,14 +294,18 @@ async function loadDbData(el) {
     for (const r of (osData || [])) {
       const original = contratoNorm(r.contrato || '');
       const statusBase = isContratoBtg(original) ? 'OK' : 'CORRIGIR CONTRATO';
-      const colaboradores = uniqBy(colabMap[r.id] || [], v => norm(v));
-      const nomes = colaboradores.length ? colaboradores : ['—'];
-      for (const nome of nomes) {
+      const colaboradores = uniqBy(colabMap[r.id] || [], v => norm(v.colaborador_nome));
+      const nomes = colaboradores.length ? colaboradores : [{ colaborador_nome: '—', origem_sugestao: '' }];
+      for (const item of nomes) {
+        const nome = item.colaborador_nome || '—';
+        const origemColab = String(item.origem_sugestao || '').toUpperCase();
         const base = {
           os: r.numero_os,
           contrato: contratoLabel(original),
           contratoOriginal: original,
           colaborador: nome || '—',
+          colaboradorOrigem: origemColab,
+          colaboradorAlterado: !!origemColab && origemColab !== 'DISTRIBUICAO_OS',
           supervisao: r.supervisao || '—',
           tipoSolicitacao: 'BASE OS',
           lote: r.lote,
@@ -486,9 +490,7 @@ async function reconcile(el) {
   state.mode = 'xlsx';
   el.feedback.textContent = 'Reconciliando relatórios com a lista de O.S...';
 
-  const { byOs, byContrato, contratoSet } = dbIndexes();
-  const { byOs: distByOs } = distIndexes();
-  const usedDist = new Set();
+  const { byContrato, contratoSet } = dbIndexes();
   const out = [];
 
   // O relatório da BTG é a fonte primária: TODAS as solicitações entram na tela.
@@ -496,31 +498,28 @@ async function reconcile(el) {
   for (const btg of (state.btgRows || [])) {
     const c = contratoNorm(btg.contratoOriginal);
     const dbRows = isContratoBtg(c) ? (byContrato.get(c) || []) : [];
-    const distRows = btg.os ? (distByOs.get(String(btg.os)) || []) : [];
-    for (const dist of distRows) usedDist.add(rowKey({ ...dist, fonte: 'Distribuição OS' }));
-
     let status = 'OK';
     if (!isContratoBtg(c)) status = 'CORRIGIR CONTRATO';
     else if (!contratoSet.has(c)) status = 'VERIFICAR';
 
     const pessoas = [];
     for (const db of dbRows) pushUnique(pessoas, db.colaborador);
-    for (const dist of distRows) pushUnique(pessoas, dist.colaborador);
     if (!pessoas.length) pessoas.push('—');
 
     for (const pessoa of pessoas) {
       const db = dbRows.find(x => norm(x.colaborador) === norm(pessoa)) || dbRows[0] || null;
-      const dist = distRows.find(x => norm(x.colaborador) === norm(pessoa)) || distRows[0] || null;
       const row = applyAdjusted({
         status,
-        os: db?.os || btg.os || dist?.os || '—',
+        os: db?.os || btg.os || '—',
         contrato: contratoLabel(c),
         contratoOriginal: c,
         tipoSolicitacao: btg.tipoSolicitacao || 'Relatório BTG',
-        colaborador: pessoa || db?.colaborador || dist?.colaborador || '—',
-        supervisao: db?.supervisao || dist?.supervisao || '—',
-        lote: db?.lote || dist?.lote || btg.qtde,
-        remanescente: db?.remanescente || dist?.remanescente || btg.qtde,
+        colaborador: pessoa || db?.colaborador || '—',
+        colaboradorOrigem: db?.colaboradorOrigem || '',
+        colaboradorAlterado: !!db?.colaboradorAlterado,
+        supervisao: db?.supervisao || '—',
+        lote: db?.lote || btg.qtde,
+        remanescente: db?.remanescente || btg.qtde,
         qtde: btg.qtde,
         fonte: 'Relatório BTG',
         sheet: btg.sheet,
@@ -530,30 +529,8 @@ async function reconcile(el) {
     }
   }
 
-  // Complementa com colaboradores/O.S. da Distribuição que não foram cobertos pelo relatório BTG carregado.
-  for (const dist of (state.distRows || [])) {
-    const distKey = rowKey({ ...dist, fonte: 'Distribuição OS' });
-    if (usedDist.has(distKey)) continue;
-    const dbRows = byOs.get(String(dist.os)) || [];
-    const db = dbRows.find(x => norm(x.colaborador) === norm(dist.colaborador)) || dbRows[0] || null;
-    const c = contratoNorm(db?.contratoOriginal || db?.contrato || '');
-    const hasBtg = isContratoBtg(c) && !!state.btgMap?.[c];
-    let status = isContratoBtg(c) ? 'OK' : 'CORRIGIR CONTRATO';
-    if (state.btgRows?.length && isContratoBtg(c) && !hasBtg) status = 'VERIFICAR';
-
-    out.push(applyAdjusted({
-      status,
-      os: dist.os,
-      contrato: contratoLabel(c),
-      contratoOriginal: c,
-      tipoSolicitacao: 'Distribuição OS',
-      colaborador: dist.colaborador || db?.colaborador || '—',
-      supervisao: db?.supervisao || dist.supervisao,
-      lote: db?.lote || dist.lote,
-      remanescente: db?.remanescente || dist.remanescente,
-      fonte: 'Distribuição OS',
-    }));
-  }
+  // A Distribuição de O.S. não cria linhas no BTG: ela apenas identifica colaboradores
+  // para O.S. que já existem na Lista de O.S.
 
   state.finalRows = out;
   render(el);
@@ -629,6 +606,7 @@ function injectStyles() {
     .btg-contrato{font-size:12px;font-weight:800;color:#a7f3d0;font-family:monospace}
     .btg-row.status-danger .btg-contrato{color:#fecaca}
     .btg-colab{font-size:12px;color:#e2e2f0;line-height:1.3}
+    .btg-colab.is-updated{color:#22c55e;font-weight:800}
     .btg-sup{font-size:11px;color:#94a3b8}
     .btg-val{font-size:12px;font-weight:700;color:#e2e2f0}
     .btg-chip,.btg-status{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}
