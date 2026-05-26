@@ -2350,108 +2350,145 @@
   }
 
 
-  async function readOperacionalOsDistribuicaoRowsFromFile(file) {
-    const workbook = await readWorkbook(file);
+  // ── BTG / Distribuição de O.S. persistidos para conferência da equipe ─────────
+  const CONTRATO_BTG_IMPORT_RE = /^P\d{5}\.\d{3}$/i;
+  function btgNormImport(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').trim(); }
+  function btgCleanImport(value) { return String(value ?? '').trim(); }
+  function btgContratoNormImport(value) { return btgCleanImport(value).toUpperCase().replace(/\s+/g, ''); }
+  function btgContratoValidoImport(value) { return CONTRATO_BTG_IMPORT_RE.test(btgContratoNormImport(value)); }
+  function btgContratoLabelImport(value) { const c = btgContratoNormImport(value); return CONTRATO_BTG_IMPORT_RE.test(c) ? c : ''; }
+  function btgFindHeaderRowImport(raw, checks, maxRows = 25) {
+    for (let i = 0; i < Math.min(maxRows, raw.length); i += 1) {
+      const text = btgNormImport((raw[i] || []).map((c) => String(c ?? '')).join(' '));
+      if (checks.every((check) => text.includes(check))) return i;
+    }
+    return 0;
+  }
+  function btgColIndexImport(header, matchers) {
+    const normalized = (header || []).map((cell) => btgNormImport(cell));
+    for (const matcher of matchers) { const idx = normalized.findIndex(matcher); if (idx >= 0) return idx; }
+    return -1;
+  }
+  async function readBtgLogisticaRowsFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
     const rows = [];
-    for (const sheetName of workbook.SheetNames) {
-      const sheet = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
-      data.forEach((row) => {
-        const numero = String(pickValue(row, ['O.S.', 'O.S', 'OS', 'O S', 'Ordem de Serviço', 'Ordem de Servico']) || '').trim();
-        const colaborador = normalizeText(pickValue(row, ['Funcionário', 'Funcionario', 'Colaborador', 'Classificador', 'Nome']));
-        if (!numero || !colaborador) return;
+    for (const sheetName of workbook.SheetNames || []) {
+      const raw = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: true });
+      if (!raw.length) continue;
+      const headerIndex = btgFindHeaderRowImport(raw, ['CONTRATO']);
+      const header = raw[headerIndex] || [];
+      const ci = {
+        contrato: btgColIndexImport(header, [c => c === 'CONTRATO' || c.includes('CONTRATO')]),
+        os: btgColIndexImport(header, [c => c.includes('ORDEM') && (c.includes('SERVI') || c.includes('FRETE') || c.includes('OS')), c => c === 'OS' || c === 'O S']),
+        tipo: btgColIndexImport(header, [c => c.includes('TIPO'), c => c.includes('SOLICITACAO'), c => c.includes('OPERACAO'), c => c.includes('MOVIMENTO')]),
+        cliente: btgColIndexImport(header, [c => c.includes('CLIENTE'), c => c.includes('COMPRADOR'), c => c.includes('TOMADOR')]),
+        commodity: btgColIndexImport(header, [c => c.includes('COMMODITY'), c => c.includes('PRODUTO')]),
+        quantidade: btgColIndexImport(header, [c => c.includes('QTDE'), c => c.includes('QUANTIDADE'), c => c.includes('VOLUME'), c => c.includes('TON')]),
+        cidade: btgColIndexImport(header, [c => c.includes('CIDADE'), c => c.includes('ORIGEM'), c => c.includes('DESTINO')]),
+      };
+      if (ci.contrato < 0) continue;
+      raw.slice(headerIndex + 1).forEach((line, idx) => {
+        if (!line?.some?.(Boolean)) return;
+        const contratoOriginal = btgContratoNormImport(line[ci.contrato]);
+        // Contratos fora do padrão BTG (P33004.000) são ignorados na conferência.
+        if (!btgContratoValidoImport(contratoOriginal)) return;
+        const tipoSolicitacao = btgCleanImport(line[ci.tipo]) || btgCleanImport(line[ci.commodity]) || btgCleanImport(line[ci.cidade]) || 'Relatório BTG';
         rows.push({
-          numero_os: numero,
-          colaborador_nome: colaborador,
-          colaborador_key: normalizeHeader(colaborador),
-          supervisao: normalizeText(pickValue(row, ['Supervisão', 'Supervisao', 'Regional', 'Coordenação', 'Coordenacao'])),
-          cliente: normalizeText(pickValue(row, ['Cliente'])),
-          raw: row,
+          contrato_original: contratoOriginal,
+          contrato_status: btgContratoLabelImport(contratoOriginal),
+          numero_os_relatorio: btgCleanImport(line[ci.os]) || null,
+          tipo_solicitacao: tipoSolicitacao,
+          cliente: btgCleanImport(line[ci.cliente]) || null,
+          commodity: btgCleanImport(line[ci.commodity]) || null,
+          quantidade: normalizeNumberBr(line[ci.quantidade]) || 0,
+          aba: sheetName,
+          linha: headerIndex + idx + 2,
+          raw: line,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         });
       });
     }
-    const seen = new Set();
-    const unique = [];
-    rows.forEach((row) => {
-      const key = `${normalizeHeader(row.numero_os)}|${row.colaborador_key}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      unique.push(row);
-    });
-    return { rows: unique };
+    return { rows, period: null };
   }
-
-  async function importarOperacionalOsDistribuicaoDaPlanilha(file, opts) {
-    const result = await readOperacionalOsDistribuicaoRowsFromFile(file);
+  async function importarBtgLogisticaDaPlanilha(file, opts) {
+    const result = await readBtgLogisticaRowsFromFile(file);
     const rows = result.rows || [];
-    if (!rows.length) {
-      throw new Error('A Distribuição de O.S. não possui vínculos válidos. Cabeçalhos esperados: O.S. e Funcionário/Colaborador.');
-    }
-
-    const numeros = [...new Set(rows.map((r) => String(r.numero_os || '').trim()).filter(Boolean))];
-    const osRows = [];
-    const chunkSize = 500;
-    for (let i = 0; i < numeros.length; i += chunkSize) {
-      const chunk = numeros.slice(i, i + chunkSize);
-      const { data, error } = await opts.supabase
-        .from('operacional_os')
-        .select('id, numero_os')
-        .in('numero_os', chunk);
-      if (error) throw new Error('Falha ao consultar Lista de O.S. antes de importar a Distribuição: ' + (error.message || ''));
-      osRows.push(...(data || []));
-    }
-
-    const osByNumero = new Map(osRows.map((row) => [String(row.numero_os || '').trim(), row]));
-    const matched = [];
-    const ignoradas = [];
-    rows.forEach((row) => {
-      const os = osByNumero.get(String(row.numero_os || '').trim());
-      if (!os?.id) {
-        ignoradas.push(row);
-        return;
-      }
-      matched.push({
-        os_id: os.id,
-        colaborador_key: row.colaborador_key || normalizeHeader(row.colaborador_nome),
-        colaborador_nome: row.colaborador_nome,
-        origem_sugestao: 'DISTRIBUICAO_OS',
-        updated_at: new Date().toISOString(),
-      });
-    });
-
-    if (!matched.length) {
-      throw new Error('Nenhuma O.S. da Distribuição foi encontrada na Lista de O.S. atual. Importe primeiro o relatório Lista de O.S.');
-    }
-
-    const osIds = [...new Set(matched.map((row) => row.os_id))];
-    for (let i = 0; i < osIds.length; i += chunkSize) {
-      const chunk = osIds.slice(i, i + chunkSize);
-      const { error } = await opts.supabase
-        .from('operacional_os_colaboradores')
-        .delete()
-        .in('os_id', chunk);
-      if (error) throw new Error('Falha ao limpar vínculos anteriores da Distribuição de O.S.: ' + (error.message || ''));
-    }
-
+    if (!rows.length) throw new Error('O relatório BTG não possui solicitações válidas para gravar.');
+    const { error: clearError } = await opts.supabase.from('logistica_btg_solicitacoes').delete().not('id', 'is', null);
+    if (clearError) throw new Error('Falha ao limpar solicitações BTG anteriores: ' + (clearError.message || ''));
     let total = 0;
-    for (let i = 0; i < matched.length; i += chunkSize) {
-      const batch = matched.slice(i, i + chunkSize);
-      const { error } = await opts.supabase
-        .from('operacional_os_colaboradores')
-        .upsert(batch, { onConflict: 'os_id,colaborador_key' });
-      if (error) throw new Error(error.message || 'Falha ao gravar colaboradores da Distribuição de O.S.');
-      total += batch.length;
+    for (let i = 0; i < rows.length; i += 500) {
+      const { error } = await opts.supabase.from('logistica_btg_solicitacoes').insert(rows.slice(i, i + 500));
+      if (error) throw new Error(error.message || 'Falha ao salvar solicitações BTG no Supabase. Rode o SQL logistica_btg_conferencia.sql.');
+      total += rows.slice(i, i + 500).length;
     }
-
+    opts.cache?.bumpPainelCache?.('importacao_btg_logistica');
+    return { total_linhas: rows.length, importados: total, ignorados_contrato_invalido: 0 };
+  }
+  async function readDistribuicaoOsRowsFromFile(file) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const rows = [];
+    for (const sheetName of workbook.SheetNames || []) {
+      const raw = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: true });
+      if (!raw.length) continue;
+      const headerIndex = btgFindHeaderRowImport(raw, ['FUNCION', 'REMANESCENTE']);
+      const header = raw[headerIndex] || [];
+      const ci = {
+        os: btgColIndexImport(header, [c => c === 'O S' || c === 'OS' || c.includes('ORDEM')]),
+        colaborador: btgColIndexImport(header, [c => c.includes('FUNCION'), c => c.includes('COLABORADOR')]),
+        supervisao: btgColIndexImport(header, [c => c.includes('SUPERVIS'), c => c.includes('COORDENA'), c => c.includes('REGIONAL')]),
+        cliente: btgColIndexImport(header, [c => c.includes('CLIENTE')]),
+        lote: btgColIndexImport(header, [c => c === 'LOTE']),
+        remanescente: btgColIndexImport(header, [c => c.includes('REMANESCENTE')]),
+      };
+      if (ci.os < 0 || ci.colaborador < 0) continue;
+      raw.slice(headerIndex + 1).forEach((line) => {
+        if (!line?.some?.(Boolean)) return;
+        const numeroOs = btgCleanImport(line[ci.os]);
+        const colaborador = btgCleanImport(line[ci.colaborador]);
+        if (!numeroOs || !colaborador) return;
+        rows.push({ numero_os: numeroOs, colaborador_nome: colaborador, supervisao: btgCleanImport(line[ci.supervisao]) || null, cliente: btgCleanImport(line[ci.cliente]) || null, lote: normalizeNumberBr(line[ci.lote]) || 0, remanescente: normalizeNumberBr(line[ci.remanescente]) || 0 });
+      });
+    }
+    return { rows, period: null };
+  }
+  async function importarDistribuicaoOsDaPlanilha(file, opts) {
+    const result = await readDistribuicaoOsRowsFromFile(file);
+    const rows = result.rows || [];
+    if (!rows.length) throw new Error('A Distribuição de O.S. não possui vínculos válidos de O.S. x colaborador.');
+    const numeros = [...new Set(rows.map((r) => String(r.numero_os || '').trim()).filter(Boolean))];
+    const osMap = new Map();
+    for (let i = 0; i < numeros.length; i += 800) {
+      const { data, error } = await opts.supabase.from('operacional_os').select('id, numero_os').in('numero_os', numeros.slice(i, i + 800));
+      if (error) throw new Error('Falha ao consultar Lista de O.S. antes de vincular colaboradores: ' + (error.message || ''));
+      (data || []).forEach((item) => osMap.set(String(item.numero_os), item.id));
+    }
+    const payload = [];
+    const seen = new Set();
+    for (const row of rows) {
+      const osId = osMap.get(String(row.numero_os));
+      if (!osId) continue;
+      const key = `${osId}|${btgNormImport(row.colaborador_nome)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      payload.push({ os_id: osId, colaborador_nome: row.colaborador_nome });
+    }
+    const { error: clearError } = await opts.supabase.from('operacional_os_colaboradores').delete().not('id', 'is', null);
+    if (clearError) throw new Error('Falha ao limpar Distribuição de O.S. anterior: ' + (clearError.message || ''));
+    let total = 0;
+    for (let i = 0; i < payload.length; i += 500) {
+      const { error } = await opts.supabase.from('operacional_os_colaboradores').insert(payload.slice(i, i + 500));
+      if (error) throw new Error(error.message || 'Falha ao salvar Distribuição de O.S. no Supabase.');
+      total += payload.slice(i, i + 500).length;
+    }
     opts.cache?.invalidateCacheByPrefix?.('os:');
-    opts.cache?.bumpPainelCache?.('importacao_operacional_os_distribuicao');
-
-    return {
-      total_linhas: rows.length,
-      importados: total,
-      os_encontradas: osIds.length,
-      ignoradas_sem_lista_os: ignoradas.length,
-    };
+    opts.cache?.bumpPainelCache?.('importacao_distribuicao_os');
+    return { total_linhas: rows.length, importados: total, ignorados_sem_lista_os: rows.length - total, colaboradores: new Set(payload.map((r) => btgNormImport(r.colaborador_nome))).size };
   }
 
 
@@ -2704,14 +2741,18 @@
       return { tipo: 'colaboradores_rh', titulo: 'Base de Funcionários / Colaboradores' };
     }
 
+
+    if (n.includes('btg') || n.includes('pactual') || n.includes('sertrading')) {
+      return { tipo: 'logistica_btg', titulo: 'Logística BTG · Solicitações' };
+    }
+    if ((n.includes('distribuicao') || n.includes('distribuição')) && (n.includes('os') || n.includes('o.s') || n.includes('ordem'))) {
+      return { tipo: 'operacional_os_distribuicao', titulo: 'Distribuição de O.S. · Colaboradores' };
+    }
+
     if ((n.includes('auditoria') || n.includes('auditorias')) && (n.includes('relatorio') || n.includes('relatório') || n.includes('lista') || n.includes('auditoria'))) {
       return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
     }
-    if ((n.includes('distribuicao') || n.includes('distribuir')) && (n.includes(' os') || n.includes('o.s') || n.includes('ordem'))) {
-      return { tipo: 'operacional_os_distribuicao', titulo: 'Distribuição de O.S. Operacional' };
-    }
-
-    if (!n.includes('distribuicao') && (n.includes('lista de oss') || n.includes('lista-de-oss') || n.includes('lista_de_oss') || n.includes('lista de os') || n.includes('lista-de-os') || n.includes('lista_de_os') || n.includes('ordem de servico') || n.includes('ordem de serviço') || n.includes('relatorio os') || n.includes('relatório os') || n.includes('operacional os') || n.includes('o.s'))) {
+    if (n.includes('lista de oss') || n.includes('lista-de-oss') || n.includes('lista_de_oss') || n.includes('lista de os') || n.includes('lista-de-os') || n.includes('lista_de_os') || n.includes('ordem de servico') || n.includes('ordem de serviço') || n.includes('relatorio os') || n.includes('relatório os') || n.includes('operacional os') || n.includes('o.s')) {
       return { tipo: 'operacional_os', titulo: 'Lista de O.S. Operacional' };
     }
 
@@ -3097,8 +3138,8 @@
     let financeiroReceberResumo = null;
     let financeiroPagarResumo = null;
     let clinicasResumo = null;
-    let operacionalOsResumo = null;
-    let operacionalOsDistribuicaoResumo = null;
+    let distribuicaoOsResumo = null;
+    let btgLogisticaResumo = null;
     if (detected.tipo === 'hospedagem_historico') {
       status.textContent = 'Importando histórico de hospedagem dos colaboradores...';
       setProgress(bar, 82);
@@ -3174,21 +3215,21 @@
       setProgress(bar, 82);
       clinicasResumo = await importarClinicasSstDaPlanilha(file, opts);
     }
-    if (detected.tipo === 'operacional_os') {
-      status.textContent = 'Importando lista de O.S. para o módulo Gestor e Conferência...';
-      setProgress(bar, 82);
-      operacionalOsResumo = await importarOperacionalOsDaPlanilha(file, opts);
-      if (operacionalOsResumo?.periodo_inicio) entry.period = { inicio: operacionalOsResumo.periodo_inicio, fim: operacionalOsResumo.periodo_fim, totalDatas: operacionalOsResumo.total_datas || null };
-    }
+
     if (detected.tipo === 'operacional_os_distribuicao') {
-      status.textContent = 'Importando Distribuição de O.S. sem alterar a Lista de O.S....';
+      status.textContent = 'Salvando Distribuição de O.S. para conferência no BTG...';
       setProgress(bar, 82);
-      operacionalOsDistribuicaoResumo = await importarOperacionalOsDistribuicaoDaPlanilha(file, opts);
+      distribuicaoOsResumo = await importarDistribuicaoOsDaPlanilha(file, opts);
+    }
+    if (detected.tipo === 'logistica_btg') {
+      status.textContent = 'Salvando solicitações BTG para conferência da equipe...';
+      setProgress(bar, 82);
+      btgLogisticaResumo = await importarBtgLogisticaDaPlanilha(file, opts);
     }
 
     const importMode = opts.importMode || 'auto';
     let period = null;
-    if (!['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'colaboradores_rh', 'auditorias_operacional', 'patrimonios', 'clinicas_sst'].includes(detected.tipo)) {
+    if (!['hoteis', 'pontos_embarque', 'colaboradores_operacional', 'colaboradores_rh', 'auditorias_operacional', 'patrimonios', 'clinicas_sst', 'operacional_os_distribuicao', 'logistica_btg'].includes(detected.tipo)) {
       if (hospedagemHistoricoResumo?.periodo_inicio) period = { inicio: hospedagemHistoricoResumo.periodo_inicio, fim: hospedagemHistoricoResumo.periodo_fim, totalDatas: hospedagemHistoricoResumo.total_datas || null };
       else if (resultadoDiarioResumo?.periodo_inicio) period = { inicio: resultadoDiarioResumo.periodo_inicio, fim: resultadoDiarioResumo.periodo_fim, totalDatas: null };
       else if (producaoDiariaResumo?.periodo_inicio) period = { inicio: producaoDiariaResumo.periodo_inicio, fim: producaoDiariaResumo.periodo_fim, totalDatas: producaoDiariaResumo.total_datas || null };
@@ -3215,6 +3256,8 @@
     else if (detected.tipo === 'colaboradores_operacional') status.textContent = 'Registrando upload dos endereços dos colaboradores...';
     else if (detected.tipo === 'colaboradores_rh') status.textContent = 'Registrando upload da base de funcionários...';
     else if (detected.tipo === 'auditorias_operacional') status.textContent = 'Registrando upload das auditorias operacionais...';
+    else if (detected.tipo === 'operacional_os_distribuicao') status.textContent = 'Registrando upload da Distribuição de O.S....';
+    else if (detected.tipo === 'logistica_btg') status.textContent = 'Registrando upload das solicitações BTG...';
     else if (detected.tipo === 'uber_corridas') status.textContent = 'Registrando upload do relatório Uber...';
     else status.textContent = effectiveMode === 'replace' ? 'Registrando substituição inteligente...' : 'Registrando complemento inteligente...';
 
@@ -3264,7 +3307,8 @@
           financeiro_contas_receber_importacao: financeiroReceberResumo || null,
           financeiro_contas_pagar_importacao: financeiroPagarResumo || null,
           clinicas_sst_importacao: clinicasResumo || null,
-          operacional_os_distribuicao_importacao: operacionalOsDistribuicaoResumo || null,
+          distribuicao_os_importacao: distribuicaoOsResumo || null,
+          btg_logistica_importacao: btgLogisticaResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -3315,12 +3359,16 @@
       status.textContent = `Financeiro Pagar: ${financeiroPagarResumo.importados || 0} títulos atualizados · ${formatPeriod({ inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim })} · ${MONEY_FMT.format(financeiroPagarResumo.valor_total || 0)}`;
     } else if (detected.tipo === 'clinicas_sst' && clinicasResumo) {
       status.textContent = `Clínicas SST: ${clinicasResumo.importados || 0} clínicas · ${clinicasResumo.estados || 0} estado(s) · ${clinicasResumo.cidades || 0} cidade(s)`;
+    } else if (detected.tipo === 'operacional_os_distribuicao' && distribuicaoOsResumo) {
+      status.textContent = `Distribuição de O.S.: ${distribuicaoOsResumo.importados || 0} vínculos salvos · ${distribuicaoOsResumo.ignorados_sem_lista_os || 0} ignorados sem Lista de O.S.`;
+    } else if (detected.tipo === 'logistica_btg' && btgLogisticaResumo) {
+      status.textContent = `BTG: ${btgLogisticaResumo.importados || 0} solicitações com contrato válido salvas`;
     } else if (result?.mode === 'replace' && result?.replaced_count) {
       status.textContent = `Importado · substituiu ${result.replaced_count} versão(ões)`;
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) && !(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo) && !(detected.tipo === 'clinicas_sst' && clinicasResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) && !(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo) && !(detected.tipo === 'clinicas_sst' && clinicasResumo) && !(detected.tipo === 'operacional_os_distribuicao' && distribuicaoOsResumo) && !(detected.tipo === 'logistica_btg' && btgLogisticaResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -3541,6 +3589,20 @@
               entry.message = period ? `Período: ${formatPeriod(period)} · importará Frotas` : 'Pendente · Frotas sem período detectado';
               renderFiles();
             });
+          } else if (detected.tipo === 'operacional_os_distribuicao') {
+            entry.message = 'Pendente · salvará Distribuição de O.S. para conferência BTG';
+            readDistribuicaoOsRowsFromFile(file).then((res) => {
+              const total = Number(res?.rows?.length || 0);
+              entry.message = `Pendente · ${total.toLocaleString('pt-BR')} vínculo(s) O.S. x colaborador · salvará Distribuição`;
+              renderFiles();
+            }).catch((err) => { entry.message = `Pendente · não foi possível pré-validar Distribuição (${err?.message || 'erro de leitura'})`; renderFiles(); });
+          } else if (detected.tipo === 'logistica_btg') {
+            entry.message = 'Pendente · salvará solicitações BTG para conferência';
+            readBtgLogisticaRowsFromFile(file).then((res) => {
+              const total = Number(res?.rows?.length || 0);
+              entry.message = `Pendente · ${total.toLocaleString('pt-BR')} solicitação(ões) BTG · salvará para conferência`;
+              renderFiles();
+            }).catch((err) => { entry.message = `Pendente · não foi possível pré-validar BTG (${err?.message || 'erro de leitura'})`; renderFiles(); });
           } else if (detected.tipo === 'producao') {
             entry.message = 'Pendente · consolidará Produção Diária para pagamentos do Financeiro';
             readProducaoDiariaRowsFromFile(file).then((res) => {
