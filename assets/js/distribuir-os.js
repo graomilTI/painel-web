@@ -1,4 +1,4 @@
-﻿import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
+import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
@@ -288,6 +288,26 @@ initProtectedPage('Distribuir O.S', async (content) => {
     setTimeout(() => { const d = ac.querySelector('.dist-ac-list'); if (d) d.hidden = true; }, 180);
   }
 
+  async function limparDistribuicaoAnterior() {
+    // A Distribuição de O.S. é uma lista auxiliar: cada novo relatório substitui 100% da lista anterior.
+    // Primeiro remove os vínculos com colaboradores para evitar sobras/orfãos e bloqueios de FK.
+    const { error: delAtribError } = await supabase
+      .from('operacional_os_colaboradores')
+      .delete()
+      .not('id', 'is', null);
+    if (delAtribError) throw delAtribError;
+
+    const { error: delOsError } = await supabase
+      .from('operacional_os')
+      .delete()
+      .not('id', 'is', null);
+    if (delOsError) throw delOsError;
+
+    state.rows = [];
+    state.ajustadas = [];
+    state.atrib = [];
+  }
+
   async function importFile() {
     const file = el.file.files?.[0]; if (!file) return;
     el.feedback.textContent = 'Lendo planilha...';
@@ -298,9 +318,9 @@ initProtectedPage('Distribuir O.S', async (content) => {
       const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
       const rows = json.map(mapImportRow).filter(r => r.numero_os);
       if (!rows.length) throw new Error('Nenhuma O.S. encontrada na planilha.');
-      el.feedback.textContent = 'Substituindo lista anterior...';
-      const { error: delError } = await supabase.from('operacional_os').delete().neq('numero_os', '');
-      if (delError) throw delError;
+      el.feedback.textContent = 'Limpando Distribuição de O.S. anterior...';
+      await limparDistribuicaoAnterior();
+      el.feedback.textContent = 'Gravando nova Distribuição de O.S...';
       for (let i = 0; i < rows.length; i += 500) {
         const batch = rows.slice(i, i + 500);
         const { error } = await supabase.from('operacional_os').insert(batch);
