@@ -373,6 +373,58 @@ select:focus, input:focus, textarea:focus {
 .db-delta.is-pos { color: var(--green); }
 .db-delta.is-neg { color: var(--yellow); }
 
+/* ── State map + 2-col production body ── */
+@keyframes db-wave { to { transform: translateX(60px); } }
+@keyframes db-state-rise { from { transform: scaleY(0); } }
+
+.db-prod-body {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  align-items: center; margin-bottom: 14px;
+}
+.db-prod-left { }
+.db-prod-right { display: flex; flex-direction: column; gap: 10px; }
+
+.db-stat-block { }
+.db-stat-label {
+  font-size: 9px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 4px;
+}
+.db-stat-value {
+  font-size: clamp(18px, 5.5vw, 26px); font-weight: 1000;
+  letter-spacing: -.04em; font-variant-numeric: tabular-nums;
+  color: var(--text); line-height: 1;
+}
+.db-stat-value.is-green { color: var(--green); }
+.db-stat-value.is-amber { color: var(--yellow); }
+.db-stat-sub {
+  font-size: 10px; font-weight: 700; color: var(--muted); margin-top: 3px;
+}
+.db-stat-sub.is-pos { color: var(--green); }
+.db-stat-sub.is-neg { color: var(--yellow); }
+.db-stat-sep { height: 1px; background: rgba(255,255,255,.06); }
+.db-chart-label {
+  font-size: 9px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 5px;
+}
+
+.db-state-wrap { margin: 0; }
+.db-state-svg { width: 100%; height: auto; max-height: 280px; display: block; overflow: visible; }
+.db-state-fill-rect {
+  transform: scaleY(0);
+  transition: transform 1s cubic-bezier(.22,1,.36,1);
+}
+.db-state-wave-path { animation: db-wave 3s linear infinite; }
+.db-state-pct {
+  font-size: 28px; font-weight: 1000; letter-spacing: -.04em;
+  fill: #fff; text-anchor: middle; dominant-baseline: central;
+  paint-order: stroke fill; stroke: rgba(0,0,0,.6); stroke-width: 6px;
+}
+.db-state-abbr {
+  font-size: 12px; font-weight: 950; letter-spacing: .10em;
+  fill: rgba(255,255,255,.7); text-anchor: middle; dominant-baseline: central;
+  paint-order: stroke fill; stroke: rgba(0,0,0,.5); stroke-width: 4px;
+}
+
 /* ── 2-col secondary row ── */
 .db-row-2 {
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px;

@@ -208,11 +208,27 @@ function injectDashStyles() {
 
     .db-loading { padding:32px; text-align:center; color:#6b7280; font-size:13px; }
 
+    .db-prod-body { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:center; margin-bottom:18px; }
+    @media(max-width:640px) { .db-prod-body { grid-template-columns:1fr; } }
+    .db-prod-left { }
+    .db-prod-right { display:flex; flex-direction:column; gap:12px; }
+    .db-stat-block { }
+    .db-stat-label { font-size:9px; font-weight:950; letter-spacing:.12em; text-transform:uppercase; color:#6b7280; margin-bottom:5px; }
+    .db-stat-value { font-size:clamp(20px,2.4vw,28px); font-weight:1000; letter-spacing:-.04em; font-variant-numeric:tabular-nums; color:#e2e2f0; line-height:1; }
+    .db-stat-value.is-green { color:#00c87a; }
+    .db-stat-value.is-amber { color:#fde68a; }
+    .db-stat-sub { font-size:10px; font-weight:700; color:#6b7280; margin-top:4px; }
+    .db-stat-sub.is-pos { color:#00c87a; }
+    .db-stat-sub.is-neg { color:#fde68a; }
+    .db-delta-inline { }
+    .db-stat-sep { height:1px; background:rgba(255,255,255,.06); }
+    .db-chart-label { font-size:9px; font-weight:950; letter-spacing:.12em; text-transform:uppercase; color:#6b7280; margin-bottom:6px; }
+
     .db-state-wrap {
-      margin: 8px -4px 12px;
+      margin: 0;
     }
     .db-state-svg {
-      width: 100%; max-height: 210px; display: block; overflow: visible;
+      width: 100%; height: auto; max-height: 380px; display: block; overflow: visible;
     }
     .db-state-fill-rect {
       transform: scaleY(0);
@@ -245,23 +261,29 @@ async function fetchGestorData(ctx) {
   const mes = now.getMonth() + 1;
   const dataIni = `${ano}-${String(mes).padStart(2,'0')}-01`;
   const dataFim = mes === 12 ? `${ano+1}-01-01` : `${ano}-${String(mes+1).padStart(2,'0')}-01`;
+  const d7 = new Date(now); d7.setDate(d7.getDate() - 6);
+  const dataD7   = `${d7.getFullYear()}-${String(d7.getMonth()+1).padStart(2,'0')}-${String(d7.getDate()).padStart(2,'0')}`;
+  const dataHoje = `${ano}-${String(mes).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
-  let prodBase      = supabase.from('relatorio_resultado_diario').select('toneladas').gte('data',dataIni).lt('data',dataFim);
+  let prodBase      = supabase.from('producao_snapshot').select('tons').gte('data',dataIni).lt('data',dataFim);
+  let daily7Base    = supabase.from('producao_snapshot').select('data,tons').gte('data',dataD7).lte('data',dataHoje);
   let patriBase     = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo');
   let patriLateBase = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo').gt('dias_sem_leitura',7);
   let osBase        = supabase.from('operacional_os').select('status_gestor,configurada_em');
 
   if (!isMaster && coordenacao) {
     prodBase      = prodBase.eq('coordenacao', coordenacao);
+    daily7Base    = daily7Base.eq('coordenacao', coordenacao);
     patriBase     = patriBase.eq('coordenacao', coordenacao);
     patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
     osBase        = osBase.eq('coordenacao', coordenacao);
   }
 
-  const [metaRes, patriTotalRes, patriLateRes] = await Promise.all([
+  const [metaRes, patriTotalRes, patriLateRes, d7Res] = await Promise.all([
     supabase.from('metas_producao').select('meta_tons,regional').eq('ano',ano).eq('mes',mes).eq('ativo',true),
     patriBase,
     patriLateBase,
+    daily7Base,
   ]);
 
   const PAGE = 1000;
@@ -270,7 +292,7 @@ async function fetchGestorData(ctx) {
     const { data, error } = await prodBase.range(page * PAGE, (page+1) * PAGE - 1);
     if (error) throw error;
     if (!data?.length) break;
-    produzido += data.reduce((s,r) => s + Number(r.toneladas||0), 0);
+    produzido += data.reduce((s,r) => s + Number(r.tons||0), 0);
     if (data.length < PAGE) break;
   }
 
@@ -281,6 +303,17 @@ async function fetchGestorData(ctx) {
     allOs = allOs.concat(data);
     if (data.length < PAGE) break;
   }
+
+  const d7map = {};
+  for (const r of (d7Res.data || [])) {
+    const k = String(r.data || '').slice(0,10);
+    if (k) d7map[k] = (d7map[k] || 0) + Number(r.tons || 0);
+  }
+  const daily7 = Array.from({length:7}, (_,i) => {
+    const d = new Date(now); d.setDate(d.getDate() - (6-i));
+    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    return { date: k, tons: d7map[k] || 0 };
+  });
 
   let meta = null;
   if (metaRes.data?.length) {
@@ -298,7 +331,7 @@ async function fetchGestorData(ctx) {
 
   return {
     ano, mes, coordenacao, isMaster,
-    produzido, meta,
+    produzido, meta, daily7,
     patriTotal: patriTotalRes.count ?? 0,
     patriAtrasados: patriLateRes.count ?? 0,
     osPendentes: allOs.filter(o => (o.status_gestor||'AGUARDAR').toUpperCase()==='AGUARDAR' && !o.configurada_em).length,
@@ -376,15 +409,28 @@ function renderStateFill({ pct, onTrack, estado, diaAtual, diasNoMes }) {
         `}
       </svg>
     </div>
-    <div class="db-meter-meta">
-      <span class="db-meter-pct">${pct.toFixed(0)}<small>%</small></span>
-      <span class="db-meter-day">DIA ${diaAtual} / ${diasNoMes}</span>
-    </div>
   `;
 }
 
+function renderMiniChart(daily7) {
+  if (!daily7?.length) return '<div style="height:56px"></div>';
+  const maxT = Math.max(...daily7.map(d => d.tons), 1);
+  const W = 180, H = 46, bw = 18, gap = 6;
+  const totalW = daily7.length * bw + (daily7.length - 1) * gap;
+  const ox = (W - totalW) / 2;
+  const bars = daily7.map((d, i) => {
+    const h = Math.max(2, Math.round((d.tons / maxT) * H));
+    const x = ox + i * (bw + gap);
+    const dd = String(d.date || '').slice(8);
+    const fill = i === 6 ? 'rgba(0,200,122,.90)' : 'rgba(0,200,122,.35)';
+    return `<rect x="${x}" y="${H-h}" width="${bw}" height="${h}" rx="3" fill="${fill}"/>
+            <text x="${x + bw/2}" y="${H+11}" text-anchor="middle" fill="rgba(255,255,255,.35)" style="font-size:7px;font-family:monospace;font-weight:700">${dd}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H+14}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:62px;display:block;overflow:visible">${bars}</svg>`;
+}
+
 function renderGestorDashboard(container, data) {
-  const { ano, mes, coordenacao, isMaster, produzido, meta, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal } = data;
+  const { ano, mes, coordenacao, isMaster, produzido, meta, daily7, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal } = data;
   const now = new Date();
   const diaAtual   = now.getDate();
   const diasNoMes  = new Date(ano, mes, 0).getDate();
@@ -414,24 +460,29 @@ function renderGestorDashboard(container, data) {
 
       <div class="db-prod-card ${onTrack ? 'is-on-track' : 'is-off-track'}">
         <div class="db-prod-eyebrow">Produtividade do Mês</div>
-        <div class="db-prod-hero">
-          <div class="db-prod-main">
-            <div class="db-prod-value ${onTrack ? 'is-green' : 'is-amber'}">${fmtTons(produzido)}</div>
-            <div class="db-prod-sublabel">Realizado</div>
+        <div class="db-prod-body">
+          <div class="db-prod-left">
+            ${renderStateFill({ pct, onTrack, estado, diaAtual, diasNoMes })}
           </div>
-          <div class="db-prod-aside">
-            <div class="db-aside-block">
-              <div class="db-aside-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
-              <div class="db-aside-label">Meta</div>
+          <div class="db-prod-right">
+            <div class="db-stat-block">
+              <div class="db-stat-label">Meta do mês</div>
+              <div class="db-stat-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
             </div>
-            <div class="db-aside-sep"></div>
-            <div class="db-aside-block">
-              <div class="db-aside-value ${meta>0 && projetado>=meta ? 'is-green' : meta>0 ? 'is-red' : ''}">${meta > 0 ? fmtTons(projetado) : '—'}</div>
-              <div class="db-aside-label">Projeção</div>
+            <div class="db-stat-sep"></div>
+            <div class="db-stat-block">
+              <div class="db-stat-label">Produção atual</div>
+              <div class="db-stat-value ${onTrack ? 'is-green' : 'is-amber'}">${fmtTons(produzido)}</div>
+              <div class="db-stat-sub">${pct.toFixed(0)}% da meta &middot; DIA ${diaAtual}/${diasNoMes}</div>
+              ${meta > 0 ? `<div class="db-stat-sub db-delta-inline ${onTrack ? 'is-pos' : 'is-neg'}">${fmtDelta(delta)} vs ritmo do dia</div>` : ''}
+            </div>
+            <div class="db-stat-sep"></div>
+            <div>
+              <div class="db-chart-label">Últimos 7 dias</div>
+              ${renderMiniChart(daily7)}
             </div>
           </div>
         </div>
-        ${renderStateFill({ pct, onTrack, estado, diaAtual, diasNoMes, meta, delta })}
         <div class="db-pace-row">
           <div class="db-pace-badge ${onTrack ? 'is-ok' : 'is-late'}">
             <span class="db-pace-dot"></span>
