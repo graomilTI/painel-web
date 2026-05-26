@@ -1,4 +1,4 @@
-﻿import { supabase } from './supabaseClient.js';
+import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getSession, getUserContext, signOut } from './auth.js';
 import { toPanelUrl } from './paths.js';
 
@@ -6,7 +6,7 @@ const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const CACHE_KEY      = 'grao1000:gestor-app:v1';
 const CACHE_TTL      = 1000 * 60 * 7;
-const DASH_CACHE_KEY = 'grao1000:gestor-dash:v1';
+const DASH_CACHE_KEY = 'grao1000:gestor-dash:v3-producao-diaria';
 const DASH_CACHE_TTL = 1000 * 60 * 5;
 const LIMITE_MULTIPLOS = 500000;
 const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
@@ -303,6 +303,114 @@ async function loadData({ useCache = true } = {}) {
   }
 }
 
+function matchesRegionalScope(row, regional) {
+  if (!regional) return true;
+  const target = normalize(regional);
+  const fields = [row?.regional, row?.coordenacao, row?.supervisao].map(normalize).filter(Boolean);
+  return fields.some((field) => field === target || field.startsWith(target) || target.startsWith(field));
+}
+
+function findMetaForRegional(rows, regional) {
+  const target = normalize(regional);
+  if (!target) return null;
+  return (rows || []).find((r) => {
+    const reg = normalize(r.regional);
+    return reg === target || reg.startsWith(target) || target.startsWith(reg);
+  }) || null;
+}
+
+function getProducaoTons(row) {
+  return Number(row?.tons ?? row?.toneladas ?? 0) || 0;
+}
+
+function getProducaoDate(row) {
+  return String(row?.data || row?.data_referencia || '').slice(0, 10);
+}
+
+async function fetchProducaoDiariaMes(dataIni, dataFim) {
+  // Base correta: Produção Diária importada em producao_snapshot.
+  // É a mesma origem usada pelo Financeiro para pagamentos, não o Resultado Diário.
+  const pageSize = 1000;
+
+  async function fetchByColumn(columnName) {
+    const collected = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('producao_snapshot')
+        .select('data,data_referencia,tons,coordenacao,supervisao,funcionario,os,cliente')
+        .gte(columnName, dataIni)
+        .lt(columnName, dataFim)
+        .order(columnName, { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      const rows = data || [];
+      collected.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return collected;
+  }
+
+  const [byData, byReferencia] = await Promise.all([
+    fetchByColumn('data'),
+    fetchByColumn('data_referencia'),
+  ]);
+
+  const seen = new Set();
+  const unique = [];
+  for (const row of [...byData, ...byReferencia]) {
+    const dataRef = getProducaoDate(row);
+    const key = [
+      dataRef,
+      normalize(row.funcionario),
+      normalize(row.os),
+      normalize(row.cliente),
+      normalize(row.coordenacao),
+      getProducaoTons(row),
+    ].join('|');
+    if (!dataRef || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+  }
+  return unique;
+}
+
+function buildStateProgressFromRegionals(metaRows, producaoRows) {
+  const byRegional = new Map();
+  for (const row of (producaoRows || [])) {
+    const reg = normalize(row.coordenacao || row.regional || row.supervisao);
+    if (!reg) continue;
+    byRegional.set(reg, (byRegional.get(reg) || 0) + getProducaoTons(row));
+  }
+
+  const byUf = new Map();
+  for (const metaRow of (metaRows || [])) {
+    const regional = metaRow.regional || '';
+    const uf = estadoFromRegional(regional);
+    if (!uf) continue;
+    const meta = Number(metaRow.meta_tons || 0);
+    if (meta <= 0) continue;
+    const key = normalize(regional);
+    let produzido = byRegional.get(key) || 0;
+    if (!produzido) {
+      for (const [prodKey, tons] of byRegional.entries()) {
+        if (prodKey === key || prodKey.startsWith(key) || key.startsWith(prodKey)) produzido += tons;
+      }
+    }
+    const current = byUf.get(uf) || { meta: 0, produzido: 0 };
+    current.meta += meta;
+    current.produzido += produzido;
+    byUf.set(uf, current);
+  }
+
+  const result = {};
+  for (const [uf, item] of byUf.entries()) {
+    result[uf] = item.meta > 0 ? Math.min(100, (item.produzido / item.meta) * 100) : 0;
+  }
+  return result;
+}
+
 async function fetchDashData() {
   const now = new Date();
   const ano = now.getFullYear();
@@ -314,32 +422,34 @@ async function fetchDashData() {
   const dataD7   = `${d7.getFullYear()}-${String(d7.getMonth()+1).padStart(2,'0')}-${String(d7.getDate()).padStart(2,'0')}`;
   const dataHoje = `${ano}-${String(mes).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
-  let prodBase      = supabase.from('producao_snapshot').select('tons.sum()').gte('data', dataIni).lt('data', dataFim);
-  let daily7Base    = supabase.from('producao_snapshot').select('data,tons').gte('data', dataD7).lte('data', dataHoje);
   let patriBase     = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo');
   let patriLateBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo').gt('dias_sem_leitura', 7);
 
   if (!state.isMaster && coordenacao) {
-    prodBase      = prodBase.eq('coordenacao', coordenacao);
-    daily7Base    = daily7Base.eq('coordenacao', coordenacao);
     patriBase     = patriBase.eq('coordenacao', coordenacao);
     patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
   }
 
-  const [metaRes, patriTotalRes, patriLateRes, d7Res, prodRes] = await Promise.all([
-    supabase.from('metas_producao').select('meta_tons,regional').eq('ano', ano).eq('mes', mes).eq('ativo', true),
+  const [metaRes, patriTotalRes, patriLateRes, prodRes] = await Promise.all([
+    supabase.from('metas_producao').select('meta_tons,regional,estado').eq('ano', ano).eq('mes', mes).eq('ativo', true),
     patriBase,
     patriLateBase,
-    daily7Base,
-    prodBase,
+    fetchProducaoDiariaMes(dataIni, dataFim),
   ]);
 
-  const produzido = Number(prodRes.data?.[0]?.sum || 0);
+  if (metaRes.error) throw metaRes.error;
+
+  const producaoMes = Array.isArray(prodRes) ? prodRes : [];
+  const producaoFiltrada = state.isMaster || !coordenacao
+    ? producaoMes
+    : producaoMes.filter((row) => matchesRegionalScope(row, coordenacao));
+
+  const produzido = producaoFiltrada.reduce((sum, row) => sum + getProducaoTons(row), 0);
 
   const d7map = {};
-  for (const r of (d7Res.data || [])) {
-    const k = String(r.data || '').slice(0, 10);
-    if (k) d7map[k] = (d7map[k] || 0) + Number(r.tons || 0);
+  for (const r of producaoFiltrada) {
+    const k = getProducaoDate(r);
+    if (k && k >= dataD7 && k <= dataHoje) d7map[k] = (d7map[k] || 0) + getProducaoTons(r);
   }
   const daily7 = Array.from({length: 7}, (_, i) => {
     const d = new Date(now); d.setDate(d.getDate() - (6 - i));
@@ -348,21 +458,25 @@ async function fetchDashData() {
   });
 
   let meta = null;
-  if (metaRes.data?.length) {
+  const metas = Array.isArray(metaRes.data) ? metaRes.data : [];
+  if (metas.length) {
     if (state.isMaster) {
-      meta = metaRes.data.reduce((s, r) => s + Number(r.meta_tons || 0), 0);
+      meta = metas.reduce((s, r) => s + Number(r.meta_tons || 0), 0);
     } else {
-      const hit = metaRes.data.find((r) =>
-        normalize(r.regional) === normalize(coordenacao) ||
-        normalize(coordenacao).startsWith(normalize(r.regional)) ||
-        normalize(r.regional).startsWith(normalize(coordenacao))
-      );
+      const hit = findMetaForRegional(metas, coordenacao);
       meta = hit ? Number(hit.meta_tons) : null;
     }
   }
 
   return {
-    loading: false, coordenacao, ano, mes, meta, produzido, daily7,
+    loading: false,
+    coordenacao,
+    ano,
+    mes,
+    meta,
+    produzido,
+    daily7,
+    stateProgress: buildStateProgressFromRegionals(metas, producaoMes),
     patrimonios: { total: patriTotalRes.count ?? 0, atrasados: patriLateRes.count ?? 0 },
   };
 }
@@ -573,12 +687,31 @@ const STATE_FROM_COORD_APP = {
   'MATO GROSSO MT1': 'MT', 'MATO GROSSO MT2': 'MT',
   'MATO GROSSO MT3 CONFRESA': 'MT', 'MATO GROSSO MT3 QUERENCIA': 'MT',
   'MATO GROSSO MT4': 'MT',
+  'MT SUL': 'MT', 'MT NORTE': 'MT', 'LUCAS DO RIO VERDE NOVA MUTUM': 'MT',
+  'LUCAS DO RIO VERDE': 'MT', 'NOVA MUTUM': 'MT',
   'PARA': 'PA',
   'CASCAVEL': 'PR', 'LONDRINA': 'PR', 'MARINGA E TERMINAIS': 'PR', 'PONTA GROSSA': 'PR',
-  'RIO GRANDE DO SUL': 'RS', 'SAO PAULO': 'SP', 'TOCANTINS': 'TO',
+  'RIO GRANDE DO SUL': 'RS', 'SAO PAULO': 'SP', 'TOCANTINS': 'TO', 'SUL TO': 'TO',
+  'MA PI': 'MA',
 };
 
-function appRenderStateFill({ pct, onTrack, estado }) {
+function estadoFromRegional(value) {
+  const key = normalize(value);
+  if (!key) return null;
+  if (STATE_FROM_COORD_APP[key]) return STATE_FROM_COORD_APP[key];
+  const aliases = [
+    ['MATO GROSSO DO SUL', 'MS'], ['MATO GROSSO', 'MT'], ['MINAS GERAIS', 'MG'],
+    ['RIO GRANDE DO SUL', 'RS'], ['SAO PAULO', 'SP'], ['TOCANTINS', 'TO'],
+    ['GOIAS', 'GO'], ['BAHIA', 'BA'], ['MARANHAO', 'MA'], ['PARA', 'PA'],
+    ['PARANA', 'PR'], ['CASCAVEL', 'PR'], ['LONDRINA', 'PR'], ['MARINGA', 'PR'], ['PONTA GROSSA', 'PR'],
+    ['LUCAS', 'MT'], ['NOVA MUTUM', 'MT'], ['CONFRESA', 'MT'], ['QUERENCIA', 'MT'],
+    ['SUL TO', 'TO'], ['MA PI', 'MA'],
+  ];
+  const hit = aliases.find(([term]) => key.includes(term));
+  return hit ? hit[1] : null;
+}
+
+function appRenderStateFill({ pct, onTrack, estado, stateProgress }) {
   const uf       = estado && estado !== 'BR' ? estado : null;
   const isBR     = !uf;
   const target   = uf ? BR_STATES.find(s => s.uf === uf) : null;
@@ -601,9 +734,19 @@ function appRenderStateFill({ pct, onTrack, estado }) {
   }
   const wavePath = `M ${-period},${fillY} ${waveSegs.join(' ')} L 1000,${bounds.max+30} L ${-period},${bounds.max+30} Z`;
 
+  const progressByUf = stateProgress && typeof stateProgress === 'object' ? stateProgress : null;
   const bgStates = BR_STATES
     .filter(s => s.uf !== uf)
-    .map(s => `<path d="${s.d}" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.10)" stroke-width="0.9" stroke-linejoin="round"/>`)
+    .map((s) => {
+      const stPct = Number(progressByUf?.[s.uf] ?? 0);
+      if (isBR && progressByUf && stPct > 0) {
+        const stOnTrack = stPct >= pct;
+        const fill = stOnTrack ? 'rgba(0,200,122,.35)' : 'rgba(253,230,138,.24)';
+        const stroke = stOnTrack ? 'rgba(45,212,160,.36)' : 'rgba(253,230,138,.34)';
+        return `<path d="${s.d}" fill="${fill}" stroke="${stroke}" stroke-width="0.9" stroke-linejoin="round"><title>${s.uf} ${stPct.toFixed(0)}%</title></path>`;
+      }
+      return `<path d="${s.d}" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.10)" stroke-width="0.9" stroke-linejoin="round"/>`;
+    })
     .join('');
 
   const clipPaths = isBR
@@ -726,7 +869,7 @@ function renderInicio(main) {
 
       <div class="db-prod-body">
         <div class="db-prod-left">
-          ${appRenderStateFill({ pct, onTrack, estado: estadoApp })}
+          ${appRenderStateFill({ pct, onTrack, estado: estadoApp, stateProgress: dash?.stateProgress })}
         </div>
         <div class="db-prod-right">
           <div class="db-stat-block">
