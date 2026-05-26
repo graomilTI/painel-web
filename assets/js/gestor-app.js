@@ -847,13 +847,14 @@ function renderInicio(main) {
     </div>
 
     <div class="db-row-2">
-      <div class="db-patri-card">
+      <div class="db-patri-card is-clickable" data-go="patrimonio-leitura" role="button" tabindex="0" title="Abrir Leitura de Patrimônios">
         <div class="db-card-eyebrow">Patrimônios</div>
         <div class="db-patri-hero">
           <span class="db-patri-num ${patri.atrasados === 0 ? 'is-green' : ''}">${patriOk}</span>
           <span class="db-patri-den">/ ${patri.total}</span>
         </div>
-        <div class="db-seg">
+        <div class="db-patri-read-row"><span>Leitura regularizada</span><strong>${patriPct.toFixed(0)}%</strong></div>
+        <div class="db-seg" aria-label="${patriPct.toFixed(0)}% de leitura regularizada">
           <div class="db-seg-ok" style="width:${patriPct.toFixed(1)}%"></div>
           <div class="db-seg-late" style="width:${patriAtrPct.toFixed(1)}%"></div>
         </div>
@@ -913,6 +914,16 @@ function renderInicio(main) {
     state.patrimonioSubview = null;
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'patrimonio'));
     renderPatrimonio(main);
+  });
+  const openPatrimonioLeitura = () => {
+    state.currentTab = 'patrimonio';
+    state.patrimonioSubview = 'leitura';
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'patrimonio'));
+    renderPatrimonio(main);
+  };
+  main.querySelector('[data-go="patrimonio-leitura"]')?.addEventListener('click', openPatrimonioLeitura);
+  main.querySelector('[data-go="patrimonio-leitura"]')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPatrimonioLeitura(); }
   });
   main.querySelector('#installBtn')?.addEventListener('click', async () => {
     if (!state.installPrompt) return;
