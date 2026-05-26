@@ -246,6 +246,12 @@ function injectStyles() {
     .os-row-atender td{background:rgba(34,197,94,.06)!important}.os-row-atender td:first-child{box-shadow:inset 3px 0 0 rgba(34,197,94,.55)}
     .os-row-finalizar td{background:rgba(59,130,246,.06)!important}.os-row-finalizar td:first-child{box-shadow:inset 3px 0 0 rgba(59,130,246,.55)}
     .os-row-kg td{background:rgba(239,68,68,.06)!important}.os-row-kg td:first-child{box-shadow:inset 3px 0 0 rgba(239,68,68,.55)}
+    .os-ac{position:relative;width:100%}
+    .os-ac-list{position:absolute;top:calc(100% + 4px);left:0;right:0;min-width:200px;background:#0d0d18;border:1px solid rgba(52,211,153,.28);border-radius:12px;overflow:hidden;z-index:200;max-height:220px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.55)}
+    .os-ac-item{padding:8px 12px;cursor:pointer;font-size:12px;color:#e2e2f0;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid rgba(52,211,153,.08)}
+    .os-ac-item:last-child{border-bottom:0}.os-ac-item:hover{background:rgba(52,211,153,.13);color:#f8fafc}
+    .os-ac-dist{font-size:10px;color:#6b7280;white-space:nowrap;flex-shrink:0}.os-ac-star{margin-right:3px}
+    .os-ac-empty{padding:10px 12px;font-size:12px;color:#6b7280;text-align:center}.os-ac-input{cursor:text}
     .kg-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:9999}.kg-modal{background:#0d0d18;border:1px solid rgba(52,211,153,.22);border-radius:20px;padding:28px 24px;width:100%;max-width:380px;display:flex;flex-direction:column;gap:16px}.kg-modal h3{margin:0;color:#f8fafc;font-size:16px;font-weight:950}.kg-modal input{width:100%;box-sizing:border-box;min-height:44px;border-radius:12px;border:1px solid rgba(52,211,153,.25);background:#020617;color:#e2e2f0;color-scheme:dark;padding:10px 14px;font-size:15px}.kg-modal input:focus{outline:none;border-color:#34d399}.kg-modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.kg-modal-actions button{min-height:44px;border-radius:12px;font-weight:950;cursor:pointer;border:0;font-size:14px}.kg-btn-confirm{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.kg-btn-cancel{background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2)!important;color:#e2e2f0}
     @media(max-width:900px){.os-grid{grid-template-columns:1fr}.os-grid .field-span-2{grid-column:span 1}}
   `;
@@ -284,6 +290,9 @@ initProtectedPage('OS', async (content) => {
     el.reload.addEventListener('click', loadAll);
     el.list.addEventListener('click', onListClick);
     el.list.addEventListener('change', onListChange);
+    el.list.addEventListener('input', onListInput);
+    el.list.addEventListener('focusin', onListFocusin);
+    el.list.addEventListener('focusout', onListFocusout);
   }
 
   async function loadAll() {
@@ -511,6 +520,30 @@ initProtectedPage('OS', async (content) => {
     }).slice(0, 12);
   }
 
+  function buscarColaboradorAc(query, row, excludeKeys = new Set()) {
+    const q = normalize(query);
+    const ponto = osPoint(row);
+    const osTemCoordenada = hasGeo(ponto.latitude, ponto.longitude);
+    return state.colaboradores.filter((c) => {
+      if (!onlyActiveColab(c)) return false;
+      const key = colabKey(c);
+      if (key && excludeKeys.has(String(key))) return false;
+      if (q.length >= 2) return normalize(c.nome || c.nome_colaborador || '').includes(q);
+      return true;
+    }).map((c) => {
+      const dist = osTemCoordenada && hasGeo(c.latitude, c.longitude)
+        ? haversineKm(ponto.latitude, ponto.longitude, c.latitude, c.longitude)
+        : null;
+      return { ...c, distancia_km: dist };
+    }).sort((a, b) => {
+      const aHas = a.distancia_km != null;
+      const bHas = b.distancia_km != null;
+      if (aHas !== bHas) return aHas ? -1 : 1;
+      if (aHas && bHas && a.distancia_km !== b.distancia_km) return a.distancia_km - b.distancia_km;
+      return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+    }).slice(0, 15);
+  }
+
   function sugestaoValida(row, sugestoes) {
     const primeira = sugestoes?.[0];
     if (!primeira) return null;
@@ -562,29 +595,16 @@ initProtectedPage('OS', async (content) => {
     const status = row.status_gestor ? normalize(row.status_gestor) : 'PENDENTE';
     const compartilhavel = rem > 0 && rem <= LIMITE_COMPARTILHAR;
     const ponto = osPoint(row);
-    function optionList(selected, excludeKeys = new Set()) {
-      return sugestoes.map((c, index) => {
-        const key = colabKey(c);
-        if (excludeKeys.has(String(key)) && String(key) !== String(selected)) return '';
-        const distTxt = c.distancia_km == null ? 'sem distância' : `${KM.format(c.distancia_km)} km`;
-        const label = `${index === 0 && c.distancia_km != null ? '⭐ ' : ''}${c.nome || c.nome_colaborador || ''} • ${distTxt}`;
-        return `<option value="${escapeHtml(key)}" data-nome="${escapeHtml(c.nome || c.nome_colaborador || '')}" data-dist="${escapeHtml(c.distancia_km ?? '')}" ${String(key) === String(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
-      }).join('');
-    }
-
-    const selectedKeys = new Set(atr.map((a) => String(a.colaborador_key || '').trim()).filter(Boolean));
-    const mainOptions = optionList(selectedKey, new Set([...selectedKeys].filter((key) => String(key) !== String(selectedKey))));
     const extra = atr[1] || null;
     const extraKey = extra?.colaborador_key || '';
     const extraNome = extra?.colaborador_nome || '';
-    const extraOptions = optionList(extraKey, new Set([...selectedKeys, String(selectedKey)].filter((key) => key && String(key) !== String(extraKey))));
     const extraSelectHtml = permitirMais ? `
       <div class="os-extra-box">
         <label class="os-mini"><strong>2º colaborador na mesma O.S.</strong></label>
-        <select class="os-select" data-assign-extra data-existing-id="${escapeHtml(extra?.id || '')}">
-          <option value="">${extraNome ? 'Trocar/remover 2º colaborador' : 'Selecionar 2º colaborador'}</option>
-          ${extraOptions}
-        </select>
+        <div class="os-ac" data-assign-extra-wrap data-existing-id="${escapeHtml(extra?.id || '')}">
+          <input type="text" class="os-select os-ac-input" placeholder="${extraNome ? 'Trocar 2º colaborador...' : 'Digitar nome do 2º colaborador...'}" value="${escapeHtml(extraNome)}" data-ac-key="${escapeHtml(extraKey)}" autocomplete="off" spellcheck="false" />
+          <div class="os-ac-list" hidden></div>
+        </div>
         ${extraNome ? `<div class="os-mini"><strong>Também indicado:</strong> ${escapeHtml(extraNome)} ${extra?.distancia_km != null ? `• ${KM.format(extra.distancia_km)} km` : ''}</div>` : '<div class="os-mini">Use este campo para indicar mais um classificador junto na mesma O.S.</div>'}
         ${atr.length > 2 ? `<div class="os-meta">${atr.slice(2).map((a) => `<span class="os-chip ok">${escapeHtml(a.colaborador_nome)} <button class="os-btn" style="padding:2px 6px;margin-left:5px" data-remove-colab="${escapeHtml(a.id)}">×</button></span>`).join(' ')}</div>` : ''}
       </div>` : '';
@@ -603,10 +623,10 @@ initProtectedPage('OS', async (content) => {
       <td><div class="os-rem-box"><span class="os-chip ${zero ? 'warn' : rem <= LIMITE_UM_CLASSIFICADOR ? 'info' : 'ok'}">${fmtTon(rem)}</span><div class="os-meta">Lote ${fmtTon(row.lote)}</div><div class="os-meta">Emb. ${fmtTon(row.embarcado)}</div>${compartilhavel ? `<div class="os-warn-text">Pode reaproveitar em outra O.S. até ${RAIO_COMPARTILHAR_KM} km.</div>` : ''}</div></td>
       <td>
         <div class="os-indbox">
-          <select class="os-select" data-assign-main>
-            <option value="">${principal ? 'Selecionar outro colaborador' : 'Selecionar colaborador'}</option>
-            ${mainOptions}
-          </select>
+          <div class="os-ac" data-assign-main-wrap>
+            <input type="text" class="os-select os-ac-input" placeholder="${principal ? 'Selecionar outro colaborador...' : 'Digitar nome do colaborador...'}" value="${escapeHtml(selectedNome)}" data-ac-key="${escapeHtml(selectedKey)}" autocomplete="off" spellcheck="false" />
+            <div class="os-ac-list" hidden></div>
+          </div>
           ${selectedNome ? `<div class="os-mini"><strong>Indicação:</strong> ${escapeHtml(selectedNome)}</div>` : '<div class="os-warn-text">Sem sugestão automática. Ponto de embarque ou colaborador sem coordenadas válidas.</div>'}
           ${principal ? `<div class="os-mini">${KM.format(principal.distancia_km)} km do ponto operacional.</div>` : `<div class="os-mini">${escapeHtml(ponto.label)}</div>`}
           ${podeTerMultiplos ? `<label class="os-mini" style="display:block"><input type="checkbox" data-allow-more ${permitirMais ? 'checked' : ''}/> permitir 2 ou mais colaboradores</label>` : '<div class="os-mini">2º colaborador permitido somente para O.S. com remanescente de 500.000 ou mais.</div>'}
@@ -619,6 +639,21 @@ initProtectedPage('OS', async (content) => {
 
 
   async function onListClick(event) {
+    const acItem = event.target.closest('.os-ac-item');
+    if (acItem) {
+      const ac = acItem.closest('[data-assign-main-wrap], [data-assign-extra-wrap]');
+      const tr = acItem.closest('[data-os-id]');
+      if (!ac || !tr) return;
+      const isExtra = ac.hasAttribute('data-assign-extra-wrap');
+      const existingId = ac.dataset.existingId || '';
+      const key = acItem.dataset.key;
+      const nome = acItem.dataset.nome;
+      const dist = acItem.dataset.dist !== '' ? Number(acItem.dataset.dist) : null;
+      const ok = await salvarColaboradorNaOs(tr.dataset.osId, key, nome, dist, isExtra, existingId);
+      if (ok) render();
+      return;
+    }
+
     const sortTh = event.target.closest('[data-sort]');
     if (sortTh) {
       const field = sortTh.dataset.sort;
@@ -862,63 +897,6 @@ initProtectedPage('OS', async (content) => {
       render();
       return;
     }
-    if ((event.target.matches('[data-assign-main]') || event.target.matches('[data-assign-extra]')) && event.target.value) {
-      const row = state.os.find((o) => String(o.id) === String(tr.dataset.osId));
-      const selected = event.target.selectedOptions[0];
-      const current = atribuicoesDaOs(row.id);
-      const rem = num(row.remanescente);
-      const isExtra = event.target.matches('[data-assign-extra]');
-      const allowMore = rem >= LIMITE_MULTIPLOS_COLABORADORES && Boolean(row.permitir_mais_classificadores);
-      if (isExtra && !allowMore) {
-        alert('Para adicionar 2º colaborador, a O.S. precisa ter remanescente de 500.000 ou mais e a opção deve estar marcada.');
-        event.target.value = '';
-        return;
-      }
-      if (!isExtra && rem > 0 && rem <= LIMITE_UM_CLASSIFICADOR && current.length >= 1 && !allowMore) {
-        // A seleção principal troca o classificador atual, não adiciona um segundo.
-        const atual = current[0];
-        if (atual?.id && String(atual.colaborador_key) !== String(event.target.value)) {
-          const del = await supabase.from('operacional_os_colaboradores').delete().eq('id', atual.id);
-          if (del.error) return alert(del.error.message);
-          state.atribuicoes = state.atribuicoes.filter((a) => a.id !== atual.id);
-        }
-      }
-      if (isExtra) {
-        const mainKey = current[0]?.colaborador_key || '';
-        if (mainKey && String(mainKey) === String(event.target.value)) {
-          alert('Este colaborador já está como indicação principal desta O.S.');
-          event.target.value = '';
-          return;
-        }
-        const existingId = event.target.dataset.existingId;
-        if (existingId) {
-          const del = await supabase.from('operacional_os_colaboradores').delete().eq('id', existingId);
-          if (del.error) return alert(del.error.message);
-          state.atribuicoes = state.atribuicoes.filter((a) => String(a.id) !== String(existingId));
-        }
-      }
-      const payload = {
-        os_id: row.id,
-        colaborador_key: event.target.value,
-        colaborador_nome: selected.dataset.nome || selected.textContent,
-        distancia_km: selected.dataset.dist ? Number(selected.dataset.dist) : null,
-        origem_sugestao: selected.dataset.dist ? 'DISTANCIA_OPERACIONAL' : 'MANUAL_SEM_DISTANCIA',
-        indicado_por: state.user?.id || null,
-      };
-      const { data, error } = await supabase
-        .from('operacional_os_colaboradores')
-        .upsert(payload, { onConflict: 'os_id,colaborador_key' })
-        .select('*')
-        .maybeSingle();
-      if (error) return alert(error.message);
-      const saved = data || { ...payload, id: `local-${Date.now()}`, created_at: new Date().toISOString() };
-      state.atribuicoes = [
-        ...state.atribuicoes.filter((a) => !(String(a.os_id) === String(row.id) && String(a.colaborador_key) === String(payload.colaborador_key))),
-        saved,
-      ];
-      await updateOs(row.id, { configurada_em: new Date().toISOString() }, true);
-      render();
-    }
   }
 
   async function updateOs(id, payload, silent = false) {
@@ -932,5 +910,116 @@ initProtectedPage('OS', async (content) => {
     if (row) Object.assign(row, payload, { updated_at: updatedAt });
     if (!silent) render();
     return true;
+  }
+
+  async function salvarColaboradorNaOs(osId, key, nome, dist, isExtra, existingId) {
+    const row = state.os.find((o) => String(o.id) === String(osId));
+    if (!row) return false;
+    const current = atribuicoesDaOs(row.id);
+    const rem = num(row.remanescente);
+    const allowMore = rem >= LIMITE_MULTIPLOS_COLABORADORES && Boolean(row.permitir_mais_classificadores);
+    if (isExtra && !allowMore) {
+      alert('Para adicionar 2º colaborador, a O.S. precisa ter remanescente de 500.000 ou mais e a opção deve estar marcada.');
+      return false;
+    }
+    if (!isExtra && rem > 0 && rem <= LIMITE_UM_CLASSIFICADOR && current.length >= 1 && !allowMore) {
+      const atual = current[0];
+      if (atual?.id && String(atual.colaborador_key) !== String(key)) {
+        const del = await supabase.from('operacional_os_colaboradores').delete().eq('id', atual.id);
+        if (del.error) { alert(del.error.message); return false; }
+        state.atribuicoes = state.atribuicoes.filter((a) => a.id !== atual.id);
+      }
+    }
+    if (isExtra) {
+      const mainKey = current[0]?.colaborador_key || '';
+      if (mainKey && String(mainKey) === String(key)) {
+        alert('Este colaborador já está como indicação principal desta O.S.');
+        return false;
+      }
+      if (existingId) {
+        const del = await supabase.from('operacional_os_colaboradores').delete().eq('id', existingId);
+        if (del.error) { alert(del.error.message); return false; }
+        state.atribuicoes = state.atribuicoes.filter((a) => String(a.id) !== String(existingId));
+      }
+    }
+    const payload = {
+      os_id: row.id,
+      colaborador_key: key,
+      colaborador_nome: nome,
+      distancia_km: dist != null && dist !== '' ? Number(dist) : null,
+      origem_sugestao: dist != null && dist !== '' ? 'DISTANCIA_OPERACIONAL' : 'MANUAL_SEM_DISTANCIA',
+      indicado_por: state.user?.id || null,
+    };
+    const { data, error } = await supabase
+      .from('operacional_os_colaboradores')
+      .upsert(payload, { onConflict: 'os_id,colaborador_key' })
+      .select('*')
+      .maybeSingle();
+    if (error) { alert(error.message); return false; }
+    const saved = data || { ...payload, id: `local-${Date.now()}`, created_at: new Date().toISOString() };
+    state.atribuicoes = [
+      ...state.atribuicoes.filter((a) => !(String(a.os_id) === String(row.id) && String(a.colaborador_key) === String(payload.colaborador_key))),
+      saved,
+    ];
+    await updateOs(row.id, { configurada_em: new Date().toISOString() }, true);
+    return true;
+  }
+
+  function renderAcDropdown(dropdown, row, query, excludeKeys) {
+    const results = buscarColaboradorAc(query, row, excludeKeys);
+    if (!results.length) {
+      dropdown.innerHTML = `<div class="os-ac-empty">${query.length >= 2 ? 'Nenhum colaborador encontrado' : 'Digite para buscar ou clique para ver sugestões'}</div>`;
+    } else {
+      dropdown.innerHTML = results.map((c, i) => {
+        const key = colabKey(c);
+        const distTxt = c.distancia_km == null ? '' : `${KM.format(c.distancia_km)} km`;
+        const star = i === 0 && c.distancia_km != null ? '<span class="os-ac-star">⭐</span>' : '';
+        return `<div class="os-ac-item" data-key="${escapeHtml(String(key))}" data-nome="${escapeHtml(c.nome || c.nome_colaborador || '')}" data-dist="${escapeHtml(String(c.distancia_km ?? ''))}"><span>${star}${escapeHtml(c.nome || c.nome_colaborador || '')}</span>${distTxt ? `<span class="os-ac-dist">${escapeHtml(distTxt)}</span>` : ''}</div>`;
+      }).join('');
+    }
+    dropdown.hidden = false;
+  }
+
+  function getAcContext(inputEl) {
+    const tr = inputEl.closest('[data-os-id]');
+    if (!tr) return null;
+    const row = state.os.find((o) => String(o.id) === String(tr.dataset.osId));
+    if (!row) return null;
+    const ac = inputEl.closest('[data-assign-main-wrap], [data-assign-extra-wrap]');
+    if (!ac) return null;
+    const isExtra = ac.hasAttribute('data-assign-extra-wrap');
+    const atr = atribuicoesDaOs(row.id);
+    const assignedKeys = new Set(atr.map((a) => String(a.colaborador_key || '').trim()).filter(Boolean));
+    const excludeKeys = isExtra
+      ? assignedKeys
+      : new Set([...assignedKeys].filter((k) => String(atr[0]?.colaborador_key || '') !== k));
+    return { row, ac, isExtra, excludeKeys, dropdown: ac.querySelector('.os-ac-list') };
+  }
+
+  function onListInput(event) {
+    const input = event.target;
+    if (!input.matches('.os-ac-input')) return;
+    const ctx = getAcContext(input);
+    if (!ctx) return;
+    renderAcDropdown(ctx.dropdown, ctx.row, input.value.trim(), ctx.excludeKeys);
+  }
+
+  function onListFocusin(event) {
+    const input = event.target;
+    if (!input.matches('.os-ac-input')) return;
+    const ctx = getAcContext(input);
+    if (!ctx) return;
+    renderAcDropdown(ctx.dropdown, ctx.row, input.value.trim(), ctx.excludeKeys);
+  }
+
+  function onListFocusout(event) {
+    const input = event.target;
+    if (!input.matches('.os-ac-input')) return;
+    const ac = input.closest('[data-assign-main-wrap], [data-assign-extra-wrap]');
+    if (!ac) return;
+    setTimeout(() => {
+      const dropdown = ac.querySelector('.os-ac-list');
+      if (dropdown) dropdown.hidden = true;
+    }, 180);
   }
 });

@@ -1948,13 +1948,25 @@
       throw new Error('A planilha de O.S. não possui linhas válidas. Cabeçalhos esperados: O.S., Data, Serviço, Cliente, Embarque, Destino, Supervisão, Contrato, Produto, Lote, Embarcado e Remanescente.');
     }
 
+    const { error: errColab } = await opts.supabase
+      .from('operacional_os_colaboradores')
+      .delete()
+      .not('id', 'is', null);
+    if (errColab) throw new Error('Falha ao limpar colaboradores das O.S. anteriores: ' + (errColab.message || ''));
+
+    const { error: errOs } = await opts.supabase
+      .from('operacional_os')
+      .delete()
+      .not('id', 'is', null);
+    if (errOs) throw new Error('Falha ao limpar O.S. anteriores: ' + (errOs.message || ''));
+
     const batchSize = 500;
     let total = 0;
     for (let i = 0; i < rows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize);
       const { error } = await opts.supabase
         .from('operacional_os')
-        .upsert(batch, { onConflict: 'numero_os' });
+        .insert(batch);
       if (error) throw new Error(error.message || 'Falha ao gravar lista de O.S. no Supabase. Confira se rodou o SQL operacional_os.');
       total += batch.length;
     }
