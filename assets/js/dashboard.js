@@ -11,6 +11,32 @@ const ICON_STATUS  = `<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1
 const BR = new Intl.NumberFormat('pt-BR');
 const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
+const STATE_PATHS = {
+  'GO': 'M 26,9 L 70,9 L 84,30 L 80,73 L 54,84 L 21,70 L 16,33 Z',
+  'BA': 'M 18,5 L 83,5 L 92,40 L 82,84 L 52,94 L 14,77 L 4,38 Z',
+  'MA': 'M 8,9 L 85,6 L 93,50 L 70,88 L 16,87 L 4,46 Z',
+  'MG': 'M 14,9 L 84,6 L 92,40 L 83,78 L 56,88 L 17,79 L 5,52 L 11,22 Z',
+  'MS': 'M 10,10 L 86,8 L 90,54 L 83,90 L 11,90 L 7,54 Z',
+  'MT': 'M 7,6 L 88,5 L 95,28 L 91,88 L 52,92 L 7,78 Z',
+  'PQ': 'M 5,6 L 90,5 L 95,40 L 74,88 L 32,94 L 5,65 Z',
+  'PR': 'M 4,10 L 90,10 L 92,72 L 44,88 L 4,72 Z',
+  'RS': 'M 9,5 L 88,6 L 94,52 L 62,94 L 16,87 L 5,52 Z',
+  'SP': 'M 7,16 L 79,10 L 93,44 L 82,78 L 44,88 L 7,72 Z',
+  'TO': 'M 28,5 L 72,5 L 80,28 L 75,88 L 25,88 L 20,28 Z',
+  'BR': 'M 20,5 L 75,5 L 95,25 L 90,55 L 70,88 L 45,95 L 25,90 L 5,65 L 5,30 Z',
+};
+
+const STATE_FROM_COORD = {
+  'GOIAS': 'GO', 'BAHIA': 'BA', 'MARANHAO': 'MA', 'MINAS GERAIS': 'MG',
+  'MATO GROSSO DO SUL': 'MS',
+  'MATO GROSSO MT1': 'MT', 'MATO GROSSO MT2': 'MT',
+  'MATO GROSSO MT3 CONFRESA': 'MT', 'MATO GROSSO MT3 QUERENCIA': 'MT',
+  'MATO GROSSO MT4': 'MT',
+  'PARA': 'PQ',
+  'CASCAVEL': 'PR', 'LONDRINA': 'PR', 'MARINGA E TERMINAIS': 'PR', 'PONTA GROSSA': 'PR',
+  'RIO GRANDE DO SUL': 'RS', 'SAO PAULO': 'SP', 'TOCANTINS': 'TO',
+};
+
 function esc(v) {
   return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 }
@@ -40,6 +66,9 @@ function injectDashStyles() {
     @keyframes db-fill-in { from { width: 0 !important; } }
     @keyframes db-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.45;transform:scale(.65)} }
     @keyframes db-fade-up { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes db-wave { to { transform: translateX(60px); } }
+    @keyframes db-state-rise { from { transform: scaleY(0); } }
+    @keyframes db-glow-pulse { 0%,100%{opacity:.55} 50%{opacity:1} }
 
     .db-section { margin-bottom: 24px; animation: db-fade-up .35s ease both; }
     .db-section-head {
@@ -145,6 +174,45 @@ function injectDashStyles() {
     .db-os-link:hover { background:rgba(0,200,122,.18); }
 
     .db-loading { padding:32px; text-align:center; color:#6b7280; font-size:13px; }
+
+    .db-state-wrap {
+      display: flex; justify-content: center; align-items: center;
+      margin: 4px 0 10px; position: relative;
+    }
+    .db-state-svg {
+      width: 168px; height: 168px; overflow: visible;
+      filter: drop-shadow(0 0 18px rgba(0,200,122,.18));
+    }
+    .db-state-bg {
+      fill: rgba(255,255,255,.04);
+      stroke: rgba(255,255,255,.10); stroke-width: .8;
+    }
+    .db-state-border {
+      fill: none;
+      stroke-width: 1.2; stroke-linejoin: round;
+    }
+    .is-on-track  .db-state-border { stroke: rgba(0,200,122,.55); }
+    .is-off-track .db-state-border { stroke: rgba(253,230,138,.45); }
+    .db-state-fill-rect {
+      transform-origin: 50px 105px;
+      transform: scaleY(0);
+      transition: transform .9s cubic-bezier(.22,1,.36,1);
+    }
+    .db-state-wave-path {
+      animation: db-wave 2.8s linear infinite;
+    }
+    .db-state-pct {
+      font-size: 22px; font-weight: 1000; letter-spacing: -.04em;
+      fill: #fff; text-anchor: middle; dominant-baseline: central;
+      filter: drop-shadow(0 1px 3px rgba(0,0,0,.7));
+    }
+    .db-state-abbr {
+      font-size: 8.5px; font-weight: 950; letter-spacing: .14em;
+      fill: rgba(255,255,255,.65); text-anchor: middle; dominant-baseline: central;
+    }
+    .db-state-glow {
+      animation: db-glow-pulse 2.5s ease-in-out infinite;
+    }
   `;
   document.head.appendChild(s);
 }
@@ -219,6 +287,62 @@ async function fetchGestorData(ctx) {
   };
 }
 
+function renderStateFill({ pct, onTrack, estado, diaAtual, diasNoMes, meta, delta }) {
+  const path    = STATE_PATHS[estado] || STATE_PATHS['BR'];
+  const fillY   = 100 - pct;
+  const waveAmp = 4;
+  const wY      = fillY;
+  const wUp     = wY - waveAmp;
+  const wDn     = wY + waveAmp;
+  const gradTop = onTrack ? '#2dd4a0' : '#fde68a';
+  const gradBot = onTrack ? '#064e3b' : '#78350f';
+  const glowC   = onTrack ? 'rgba(0,200,122,.35)' : 'rgba(253,230,138,.30)';
+  const pctText = pct.toFixed(0) + '%';
+  const wavePath = `M -60,${wY} Q -30,${wUp} 0,${wY} Q 30,${wDn} 60,${wY} Q 90,${wUp} 120,${wY} Q 150,${wDn} 180,${wY} L 180,110 L -60,110 Z`;
+  const scaleVal = (pct / 100).toFixed(4);
+  const textY   = Math.min(Math.max(fillY - 12, 30), 60);
+
+  return `
+    <div class="db-state-wrap">
+      <svg class="db-state-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <clipPath id="dbStateClip"><path d="${path}"/></clipPath>
+          <linearGradient id="dbFillGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${gradTop}"/>
+            <stop offset="100%" stop-color="${gradBot}"/>
+          </linearGradient>
+          <filter id="dbStateGlow">
+            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+            <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+          </filter>
+        </defs>
+
+        <path d="${path}" class="db-state-bg"/>
+
+        <g clip-path="url(#dbStateClip)">
+          <rect class="db-state-fill-rect" data-scale="${scaleVal}"
+                x="-5" y="0" width="110" height="105"
+                fill="url(#dbFillGrad)"/>
+          <path class="db-state-wave-path"
+                d="${wavePath}"
+                fill="${gradTop}" opacity=".55"/>
+          <rect x="-5" y="${wY - 1}" width="110" height="2"
+                fill="${gradTop}" opacity=".22"/>
+        </g>
+
+        <path d="${path}" class="db-state-border"/>
+
+        <text x="50" y="${textY}" class="db-state-pct">${pctText}</text>
+        ${estado ? `<text x="50" y="${textY + 11}" class="db-state-abbr">${estado}</text>` : ''}
+      </svg>
+    </div>
+    <div class="db-meter-meta">
+      <span class="db-meter-pct">${pct.toFixed(0)}<small>%</small></span>
+      <span class="db-meter-day">DIA ${diaAtual} / ${diasNoMes}</span>
+    </div>
+  `;
+}
+
 function renderGestorDashboard(container, data) {
   const { ano, mes, coordenacao, isMaster, produzido, meta, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal } = data;
   const now = new Date();
@@ -232,8 +356,8 @@ function renderGestorDashboard(container, data) {
   const patriOk     = patriTotal - patriAtrasados;
   const patriPct    = patriTotal > 0 ? (patriOk / patriTotal * 100) : 100;
   const patriAtrPct = patriTotal > 0 ? (patriAtrasados / patriTotal * 100) : 0;
-  const cursorLeft  = (diaAtual / diasNoMes * 100).toFixed(1);
   const regionLabel = isMaster ? 'TODAS AS REGIONAIS' : (coordenacao || 'REGIONAL');
+  const estado      = isMaster ? 'BR' : (STATE_FROM_COORD[normalizeStr(coordenacao)] || null);
 
   container.innerHTML = `
     <div class="db-section">
@@ -267,14 +391,7 @@ function renderGestorDashboard(container, data) {
             </div>
           </div>
         </div>
-        <div class="db-meter">
-          <div class="db-meter-fill ${onTrack ? '' : 'is-warn'}" style="width:${pct.toFixed(2)}%"></div>
-          ${meta > 0 ? `<div class="db-meter-cursor" style="left:${cursorLeft}%" title="Dia ${diaAtual} de ${diasNoMes}"></div>` : ''}
-        </div>
-        <div class="db-meter-meta">
-          <span class="db-meter-pct">${pct.toFixed(0)}<small>%</small></span>
-          <span class="db-meter-day">DIA ${diaAtual} / ${diasNoMes}</span>
-        </div>
+        ${renderStateFill({ pct, onTrack, estado, diaAtual, diasNoMes, meta, delta })}
         <div class="db-pace-row">
           <div class="db-pace-badge ${onTrack ? 'is-ok' : 'is-late'}">
             <span class="db-pace-dot"></span>
@@ -447,6 +564,13 @@ initProtectedPage('Dashboard', async (content, userContext) => {
       const data = await fetchGestorData(userContext);
       renderGestorDashboard(gestorSection, data);
       document.getElementById('dbRefreshBtn')?.addEventListener('click', loadGestorData);
+      requestAnimationFrame(() => {
+        const fillRect = gestorSection.querySelector('.db-state-fill-rect');
+        if (fillRect) {
+          const s = fillRect.dataset.scale || '0';
+          requestAnimationFrame(() => { fillRect.style.transform = `scaleY(${s})`; });
+        }
+      });
     } catch (e) {
       gestorSection.innerHTML = `<div class="db-loading" style="color:#f87171">Erro ao carregar: ${esc(e?.message || 'Tente novamente.')}</div>`;
       console.error('dashboard gestor:', e);
