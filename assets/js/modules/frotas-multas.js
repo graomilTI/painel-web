@@ -191,7 +191,16 @@
     return norm(first(m[key],''));
   }
   function compareRows(a,b){const av=sortValue(a,state.sortKey), bv=sortValue(b,state.sortKey);let r=0;if(typeof av==='number'||typeof bv==='number')r=Number(av)-Number(bv);else r=String(av).localeCompare(String(bv),'pt-BR');return state.sortDir==='asc'?r:-r;}
-  function markFor(key){if(state.sortKey!==key)return '';return `<span class="fm-sort-mark">${state.sortDir==='asc'?'▲':'▼'}</span>`;}
+  function markFor(key){if(state.sortKey!==key)return '';return `<span class="fm-sort-mark" title="${state.sortDir==='asc'?'Crescente':'Decrescente'}">${state.sortDir==='asc'?'▲':'▼'}</span>`;}
+  function toggleSort(key){
+    if(!key) return;
+    if(state.sortKey===key){
+      state.sortDir=state.sortDir==='asc'?'desc':'asc';
+    }else{
+      state.sortKey=key;
+      state.sortDir='asc';
+    }
+  }
   function stats(root){const rows=filtered();root.querySelector('[data-kpi-abertas]').textContent=rows.filter(m=>statusKind(m)==='aberta').length;root.querySelector('[data-kpi-vencidas]').textContent=rows.filter(m=>statusKind(m)==='vencida').length;root.querySelector('[data-kpi-valor]').textContent=MONEY_FMT.format(rows.reduce((s,m)=>s+moneyValue(first(m.valor_original,m.valor,m.valor_multa)),0));root.querySelector('[data-kpi-guias]').textContent=rows.filter(m=>m.arquivo_pdf_url||m.guia_url).length;root.querySelector('[data-count]').textContent=`${rows.length} multa(s) encontrada(s) · últimos 180 dias`;}
 
   function render(root,opts){
@@ -219,10 +228,8 @@
         </div></td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-motorista]').forEach(btn=>btn.addEventListener('click',()=>openMotoristaModal(root, opts, state.multas.find(x=>String(x.id)===String(btn.dataset.motorista)))));
-    tbody.querySelectorAll('[data-identificar]').forEach(btn=>btn.addEventListener('click',()=>toggleAction(root, opts, state.multas.find(x=>String(x.id)===String(btn.dataset.identificar)), 'identificar')));
-    tbody.querySelectorAll('[data-dobrar]').forEach(btn=>btn.addEventListener('click',()=>toggleAction(root, opts, state.multas.find(x=>String(x.id)===String(btn.dataset.dobrar)), 'dobrar')));
-    tbody.querySelectorAll('[data-ok]').forEach(btn=>btn.addEventListener('click',()=>archiveMulta(root, opts, state.multas.find(x=>String(x.id)===String(btn.dataset.ok)))));
+    // Os cliques da tabela são tratados por delegação em bindTableActions(),
+    // evitando recriar centenas de listeners a cada ordenação/filtro.
   }
 
   async function safeUpdate(opts,id,payload){
@@ -365,10 +372,41 @@
   }
 
   function bindSort(container,opts){
-    container.querySelectorAll('[data-sort]').forEach(btn=>btn.addEventListener('click',()=>{const key=btn.dataset.sort;if(state.sortKey===key)state.sortDir=state.sortDir==='asc'?'desc':'asc';else{state.sortKey=key;state.sortDir=(key==='valor'||key==='vencimento')?'desc':'asc';}render(container,opts);bindSort(container,opts);}));
+    const head=container.querySelector('.fm-table thead');
+    if(!head||head.dataset.sortBound==='1') return;
+    head.dataset.sortBound='1';
+    head.addEventListener('click',(ev)=>{
+      const btn=ev.target.closest('[data-sort]');
+      if(!btn||!head.contains(btn)) return;
+      toggleSort(btn.dataset.sort);
+      render(container,opts);
+    });
+  }
+  function bindTableActions(container,opts){
+    const tbody=container.querySelector('[data-multas-table]');
+    if(!tbody||tbody.dataset.actionBound==='1') return;
+    tbody.dataset.actionBound='1';
+    tbody.addEventListener('click',(ev)=>{
+      const btn=ev.target.closest('button');
+      if(!btn||!tbody.contains(btn)) return;
+      const id=btn.dataset.motorista||btn.dataset.identificar||btn.dataset.dobrar||btn.dataset.ok;
+      if(!id) return;
+      const multa=state.multas.find(x=>String(x.id)===String(id));
+      if(btn.dataset.motorista) return openMotoristaModal(container, opts, multa);
+      if(btn.dataset.identificar) return toggleAction(container, opts, multa, 'identificar');
+      if(btn.dataset.dobrar) return toggleAction(container, opts, multa, 'dobrar');
+      if(btn.dataset.ok) return archiveMulta(container, opts, multa);
+    });
   }
   function refreshSortHeaders(container){
-    container.querySelectorAll('[data-sort]').forEach(btn=>{const key=btn.dataset.sort;btn.innerHTML=`${btn.dataset.label} ${markFor(key)}`;});
+    container.querySelectorAll('[data-sort]').forEach(btn=>{
+      const key=btn.dataset.sort;
+      btn.innerHTML=`${btn.dataset.label} ${markFor(key)}`;
+      btn.title=state.sortKey===key
+        ? (state.sortDir==='asc'?'Clique para ordenar de Z a A / maior para menor':'Clique para ordenar de A a Z / menor para maior')
+        : 'Clique para ordenar de A a Z / menor para maior';
+      btn.setAttribute('aria-sort', state.sortKey===key ? (state.sortDir==='asc'?'ascending':'descending') : 'none');
+    });
   }
   const originalRender=render;
   render=function(root,opts){ originalRender(root,opts); refreshSortHeaders(root); };
@@ -384,8 +422,9 @@
     container.querySelector('[data-search]')?.addEventListener('input',e=>{state.busca=e.target.value;render(container,opts);});
     container.querySelector('[data-filter]')?.addEventListener('change',e=>{state.filtro=e.target.value;render(container,opts);});
     container.querySelector('[data-filter2]')?.addEventListener('change',e=>{state.filtro2=e.target.value;render(container,opts);});
-    container.querySelector('[data-archive-filter]')?.addEventListener('change',e=>{state.arquivo=e.target.value;render(container,opts);});
+    container.querySelector('[data-archive-filter]')?.addEventListener('change',e=>{state.arquivo=e.target.value;load(container,opts,{skipAutoArchive:true});});
     bindSort(container,opts);
+    bindTableActions(container,opts);
     load(container,opts);
   }
   window[MODULE_NAME]=window[MODULE_NAME]||{};window[MODULE_NAME].openHome=openHome;
