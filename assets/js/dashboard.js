@@ -245,12 +245,18 @@ function injectDashStyles() {
     @media(max-width:700px) { .db-secondary-grid{grid-template-columns:1fr} }
 
     .db-mini-card { border:1px solid rgba(255,255,255,.07); border-radius:18px; padding:18px 16px; background:rgba(13,13,24,.88); }
+    .db-mini-card.is-clickable { cursor:pointer; transition:border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+    .db-mini-card.is-clickable:hover { border-color:rgba(0,200,122,.44); box-shadow:0 0 0 1px rgba(0,200,122,.12), 0 16px 44px rgba(0,0,0,.24); transform:translateY(-1px); }
+    .db-mini-card.is-clickable:focus-visible { outline:2px solid rgba(45,212,160,.85); outline-offset:3px; }
     .db-mini-eyebrow { font-size:9px; font-weight:950; letter-spacing:.14em; text-transform:uppercase; color:#6b7280; margin-bottom:12px; }
     .db-patri-hero { display:flex; align-items:baseline; gap:5px; margin-bottom:12px; }
     .db-patri-num { font-size:40px; font-weight:1000; letter-spacing:-.05em; line-height:1; font-variant-numeric:tabular-nums; color:#e2e2f0; }
     .db-patri-num.is-green { color:#00c87a; }
     .db-patri-den { font-size:14px; font-weight:700; color:#6b7280; }
     .db-seg { display:flex; height:7px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.06); margin-bottom:8px; gap:2px; }
+    .db-patri-read-row { display:flex; justify-content:space-between; align-items:center; gap:10px; margin:8px 0 9px; color:#7c8aa0; font-size:10px; font-weight:950; letter-spacing:.08em; text-transform:uppercase; }
+    .db-patri-read-row strong { color:#27e0a2; font-size:15px; letter-spacing:0; }
+    .db-mini-card.is-clickable:hover .db-seg-ok { filter:brightness(1.16); }
     .db-seg-ok   { background:#00c87a; border-radius:999px; transition:width .6s ease; }
     .db-seg-late { background:#f87171; border-radius:999px; transition:width .6s ease; }
     .db-patri-status { font-size:11px; font-weight:900; }
@@ -533,6 +539,7 @@ function renderGestorDashboard(container, data) {
   const patriAtrPct = patriTotal > 0 ? (patriAtrasados / patriTotal * 100) : 0;
   const regionLabel = isMaster ? 'TODAS AS REGIONAIS' : (coordenacao || 'REGIONAL');
   const estado      = isMaster ? 'BR' : (resolveStateFromRegionalName(coordenacao) || null);
+  const patrimonioLeituraUrl = toPanelUrl('patrimonio-status');
 
   container.innerHTML = `
     <div class="db-section">
@@ -582,13 +589,14 @@ function renderGestorDashboard(container, data) {
       </div>
 
       <div class="db-secondary-grid">
-        <div class="db-mini-card">
+        <div class="db-mini-card is-clickable" role="button" tabindex="0" title="Abrir painel Leitura de Patrimônios" onclick="window.location.href='${patrimonioLeituraUrl}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${patrimonioLeituraUrl}';}">
           <div class="db-mini-eyebrow">Leitura de Patrimônios</div>
           <div class="db-patri-hero">
             <span class="db-patri-num ${patriAtrasados===0 ? 'is-green' : ''}">${patriOk}</span>
             <span class="db-patri-den">/ ${patriTotal}</span>
           </div>
-          <div class="db-seg">
+          <div class="db-patri-read-row"><span>Leitura regularizada</span><strong>${patriPct.toFixed(0)}%</strong></div>
+          <div class="db-seg" aria-label="${patriPct.toFixed(0)}% de leitura regularizada">
             <div class="db-seg-ok"   style="width:${patriPct.toFixed(1)}%"></div>
             <div class="db-seg-late" style="width:${patriAtrPct.toFixed(1)}%"></div>
           </div>
