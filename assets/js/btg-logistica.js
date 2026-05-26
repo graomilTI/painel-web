@@ -4,7 +4,6 @@ import { supabase } from './supabaseClient.js';
 
 const BTG_RE = /BTG\s+PACTUAL\s+COMMODITIES\s+SERTRADING/i;
 const BR = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const BR_INT = new Intl.NumberFormat('pt-BR');
 
 function esc(v) {
   return String(v ?? '')
@@ -30,30 +29,50 @@ function fmt(v) {
   return n === 0 ? '0' : BR.format(n);
 }
 
+// ── Detecção automática de tipo de relatório ──────────────────────────────────
+// Retorna 'distribuicao' | 'smart' | 'unknown'
+function detectFileType(wb) {
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', range: 5 });
+    for (const row of raw) {
+      const r = norm(row.map(c => String(c ?? '')).join(' '));
+      // Distribuição: colunas O.S., Funcionário, Remanescente, Cliente
+      if (r.includes('FUNCION') && r.includes('REMANESCENTE') && (r.includes('O S') || r.includes('OS'))) {
+        return 'distribuicao';
+      }
+      // Smart/BTG: colunas Contrato, Ordem de Frete, Commodity
+      if (r.includes('ORDEM') && r.includes('FRETE') && r.includes('CONTRATO')) {
+        return 'smart';
+      }
+      if (r.includes('CONTRATO') && r.includes('COMMODITY')) {
+        return 'smart';
+      }
+    }
+  }
+  return 'unknown';
+}
+
+// ── Estado ────────────────────────────────────────────────────────────────────
 const state = {
-  // DB source
-  dbRows: [],
-  // xlsx sources (parsed)
-  distRows: null,   // [{os,colaborador,supervisao,lote,remanescente}] from Distribuição
-  smartMap: null,   // {contrato: {os_btg,qtde}} from smart.xlsx
-  // reconciled view
+  dbRows:    [],
+  distRows:  null,
+  smartMap:  null,
   finalRows: [],
-  mode: 'db',       // 'db' | 'xlsx'
-  busca: '',
-  sort: { col: 'os', dir: 'asc' },
+  mode:      'db',
+  busca:     '',
+  sort:      { col: 'os', dir: 'asc' },
+  loaded:    { dist: null, smart: null },  // nomes dos arquivos carregados
 };
 
+// ── Ordenação / filtro ────────────────────────────────────────────────────────
 function sorted(rows) {
   const { col, dir } = state.sort;
-  const factor = dir === 'asc' ? 1 : -1;
+  const f = dir === 'asc' ? 1 : -1;
   return [...rows].sort((a, b) => {
-    if (col === 'lote' || col === 'remanescente') {
-      return (fnum(a[col]) - fnum(b[col])) * factor;
-    }
-    if (col === 'os') {
-      return (fnum(a.os) - fnum(b.os)) * factor;
-    }
-    return String(a[col] ?? '').localeCompare(String(b[col] ?? ''), 'pt-BR') * factor;
+    if (col === 'lote' || col === 'remanescente' || col === 'os')
+      return (fnum(a[col]) - fnum(b[col])) * f;
+    return String(a[col] ?? '').localeCompare(String(b[col] ?? ''), 'pt-BR') * f;
   });
 }
 
@@ -61,115 +80,116 @@ function filtered() {
   const q = norm(state.busca);
   return sorted(state.finalRows.filter(r => {
     if (!q) return true;
-    const hay = norm(`${r.os} ${r.contrato} ${r.colaborador} ${r.supervisao}`);
-    return q.split(' ').filter(Boolean).every(t => hay.includes(t));
+    return q.split(' ').filter(Boolean)
+      .every(t => norm(`${r.os} ${r.contrato} ${r.colaborador} ${r.supervisao}`).includes(t));
   }));
 }
 
-function sortArrow(col) {
-  if (state.sort.col !== col) return '<span style="opacity:.3">↕</span>';
-  return state.sort.dir === 'asc' ? '↑' : '↓';
+// ── Render ────────────────────────────────────────────────────────────────────
+function thHtml(col, label) {
+  const arr = state.sort.col !== col
+    ? '<span style="opacity:.3">↕</span>'
+    : state.sort.dir === 'asc' ? '↑' : '↓';
+  return `<th data-sort="${esc(col)}" style="cursor:pointer;user-select:none">${esc(label)} ${arr}</th>`;
 }
 
-function thHtml(col, label) {
-  return `<th data-sort="${esc(col)}" style="cursor:pointer;user-select:none">${esc(label)} ${sortArrow(col)}</th>`;
+function renderChips(el) {
+  const distLoaded = !!state.loaded.dist;
+  const smartLoaded = !!state.loaded.smart;
+  el.chipDist.className  = `btg-chip-file ${distLoaded  ? 'loaded' : ''}`;
+  el.chipSmart.className = `btg-chip-file ${smartLoaded ? 'loaded' : ''}`;
+  el.chipDist.textContent  = distLoaded
+    ? `Distribuição: ${state.loaded.dist}`
+    : 'Distribuição de O.S. — aguardando';
+  el.chipSmart.textContent = smartLoaded
+    ? `BTG smart: ${state.loaded.smart}`
+    : 'Relatório BTG (smart) — aguardando';
 }
 
 function render(el) {
   const rows = filtered();
-  const modeLabel = state.mode === 'xlsx' ? 'RELATÓRIOS' : 'BASE DE DADOS';
-  el.modeTag.textContent = modeLabel;
-  el.modeTag.className = `badge ${state.mode === 'xlsx' ? 'badge-info' : ''}`;
-  el.count.textContent = `${rows.length}`;
-  el.tableTitle.textContent = `Lista BTG (${rows.length})`;
+  el.modeTag.textContent = state.mode === 'xlsx' ? 'RELATÓRIOS' : 'BASE DE DADOS';
+  el.modeTag.className   = `badge${state.mode === 'xlsx' ? ' badge-info' : ''}`;
+  el.count.textContent   = `${rows.length}`;
+  el.tableTitle.textContent    = `Lista BTG (${rows.length})`;
   el.tableSubtitle.textContent = state.mode === 'xlsx'
     ? 'Dados reconciliados: Distribuição de OS + Relatório BTG'
     : 'Dados do banco de dados (operacional_os)';
 
-  if (state.mode === 'db' && state.dbRows.length === 0) {
-    el.feedback.textContent = 'Nenhuma O.S. BTG encontrada no banco de dados.';
-    el.tableWrap.innerHTML = '<div class="btg-empty">Nenhum registro encontrado. Carregue os relatórios xlsx para visualizar os dados.</div>';
-    return;
-  }
+  renderChips(el);
 
-  if (rows.length === 0) {
-    el.feedback.textContent = `Nenhum resultado para o filtro atual.`;
-    el.tableWrap.innerHTML = '<div class="btg-empty">Nenhum resultado para o filtro atual.</div>';
+  if (!rows.length) {
+    const msg = state.mode === 'db' && !state.dbRows.length
+      ? 'Nenhuma O.S. BTG encontrada no banco. Carregue os relatórios xlsx.'
+      : 'Nenhum resultado para o filtro atual.';
+    el.feedback.textContent = msg;
+    el.tableWrap.innerHTML = `<div class="btg-empty">${msg}</div>`;
     return;
   }
 
   el.feedback.textContent = `${rows.length} registro${rows.length !== 1 ? 's' : ''} BTG${state.mode === 'xlsx' ? ' reconciliados' : ''}.`;
-
   el.tableWrap.innerHTML = `
     <div class="btg-table-wrap">
       <table class="btg-table">
-        <thead>
-          <tr>
-            ${thHtml('os', 'O.S.')}
-            ${thHtml('contrato', 'Contrato')}
-            ${thHtml('colaborador', 'Colaborador')}
-            ${thHtml('supervisao', 'Supervisão')}
-            ${thHtml('lote', 'Lote')}
-            ${thHtml('remanescente', 'Remanescente')}
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map(rowHtml).join('')}
-        </tbody>
+        <thead><tr>
+          ${thHtml('os', 'O.S.')}
+          ${thHtml('contrato', 'Contrato')}
+          ${thHtml('colaborador', 'Colaborador')}
+          ${thHtml('supervisao', 'Supervisão')}
+          ${thHtml('lote', 'Lote')}
+          ${thHtml('remanescente', 'Remanescente')}
+        </tr></thead>
+        <tbody>${rows.map(rowHtml).join('')}</tbody>
       </table>
-    </div>
-  `;
+    </div>`;
 }
 
 function rowHtml(r) {
   const rem = fnum(r.remanescente);
   const lote = fnum(r.lote);
-  const percRem = lote > 0 ? Math.min(100, (rem / lote) * 100) : 0;
-  const remClass = rem <= 0 ? 'btg-chip danger' : percRem < 20 ? 'btg-chip warn' : 'btg-chip ok';
-  const hasSmart = r.smartValid === true;
+  const pct = lote > 0 ? Math.min(100, (rem / lote) * 100) : 0;
+  const chip = rem <= 0 ? 'danger' : pct < 20 ? 'warn' : 'ok';
   const smartIcon = state.smartMap != null
-    ? hasSmart
-      ? '<span title="Encontrado no relatório BTG" style="color:#86efac;font-size:11px">✓</span>'
-      : '<span title="Não encontrado no relatório BTG" style="color:#f87171;font-size:11px">!</span>'
+    ? r.smartValid
+      ? ' <span title="Contrato confirmado no relatório BTG" style="color:#86efac;font-size:10px">✓</span>'
+      : ' <span title="Contrato não encontrado no relatório BTG" style="color:#f87171;font-size:10px">!</span>'
     : '';
-
   return `<tr class="btg-row">
     <td><span class="btg-os-num">${esc(r.os)}</span></td>
     <td><span class="btg-contrato">${esc(r.contrato)}</span>${smartIcon}</td>
     <td><span class="btg-colab">${esc(r.colaborador)}</span></td>
     <td><span class="btg-sup">${esc(r.supervisao)}</span></td>
     <td><span class="btg-val">${esc(fmt(r.lote))}</span></td>
-    <td><span class="${remClass}">${esc(fmt(r.remanescente))}</span></td>
+    <td><span class="btg-chip ${chip}">${esc(fmt(r.remanescente))}</span></td>
   </tr>`;
 }
 
+// ── Carga do banco ────────────────────────────────────────────────────────────
 async function loadDbData(el) {
   el.feedback.textContent = 'Carregando dados BTG...';
   try {
-    const { data: osData, error: osErr } = await supabase
+    const { data: osData, error } = await supabase
       .from('operacional_os')
       .select('id, numero_os, contrato, supervisao, lote, remanescente')
       .ilike('cliente', 'BTG PACTUAL COMMODITIES SERTRADING%')
       .order('numero_os', { ascending: false })
       .limit(2000);
+    if (error) throw new Error(error.message);
 
-    if (osErr) throw new Error(osErr.message);
-    const osRows = osData || [];
-
-    let colabMap = {};
-    if (osRows.length) {
-      const ids = osRows.map(r => r.id);
-      const { data: colabData } = await supabase
+    const ids = (osData || []).map(r => r.id);
+    const colabMap = {};
+    if (ids.length) {
+      const { data: cd } = await supabase
         .from('operacional_os_colaboradores')
         .select('os_id, colaborador_nome')
         .in('os_id', ids);
-      for (const c of (colabData || [])) {
+      for (const c of (cd || [])) {
         if (!colabMap[c.os_id]) colabMap[c.os_id] = [];
         colabMap[c.os_id].push(c.colaborador_nome);
       }
     }
 
-    state.dbRows = osRows.map(r => ({
+    state.dbRows = (osData || []).map(r => ({
       os: r.numero_os,
       contrato: r.contrato || '—',
       colaborador: (colabMap[r.id] || []).join(', ') || '—',
@@ -180,98 +200,99 @@ async function loadDbData(el) {
       fonte: 'db',
     }));
   } catch (err) {
-    console.error('Erro ao carregar BTG:', err);
+    console.error(err);
     state.dbRows = [];
-    el.feedback.textContent = `Erro ao carregar: ${err.message}`;
+    el.feedback.textContent = `Erro: ${err.message}`;
   }
+  if (state.mode === 'db') state.finalRows = state.dbRows;
+}
 
-  if (state.mode === 'db') {
-    state.finalRows = state.dbRows;
+// ── Parsers dos relatórios ────────────────────────────────────────────────────
+function parseDistribuicao(wb) {
+  const wsName = wb.SheetNames.find(n => /embarque/i.test(n)) || wb.SheetNames[0];
+  const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
+
+  let hIdx = 0;
+  for (let i = 0; i < Math.min(6, raw.length); i++) {
+    if (raw[i].some(c => /O\.S\.|funcion/i.test(String(c)))) { hIdx = i; break; }
+  }
+  const h = raw[hIdx];
+  const ci = {
+    os:          h.findIndex(c => /^o\.s\.$/i.test(String(c).trim())),
+    colaborador: h.findIndex(c => /funcion/i.test(String(c))),
+    supervisao:  h.findIndex(c => /supervis/i.test(String(c))),
+    coordenacao: h.findIndex(c => /coordena/i.test(String(c))),
+    cliente:     h.findIndex(c => /cliente/i.test(String(c))),
+    lote:        h.findIndex(c => /^lote$/i.test(String(c).trim())),
+    remanescente:h.findIndex(c => /remanescente/i.test(String(c))),
+  };
+
+  return raw.slice(hIdx + 1)
+    .filter(r => BTG_RE.test(String(r[ci.cliente] ?? '')))
+    .map(r => ({
+      os:          r[ci.os],
+      colaborador: String(r[ci.colaborador] ?? '').trim() || '—',
+      supervisao:  String(r[ci.supervisao] ?? r[ci.coordenacao] ?? '').trim() || '—',
+      lote:        r[ci.lote],
+      remanescente:r[ci.remanescente],
+    }));
+}
+
+function parseSmart(wb) {
+  const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+  const h = raw[0];
+  const ci = {
+    contrato: h.findIndex(c => /^contrato$/i.test(String(c).trim())),
+    os:       h.findIndex(c => /ordem.*servi/i.test(String(c))),
+    qtde:     h.findIndex(c => /qtde/i.test(String(c))),
+  };
+  const map = {};
+  for (const r of raw.slice(1)) {
+    const contrato = String(r[ci.contrato] ?? '').trim();
+    if (contrato) map[contrato] = { contrato, os_btg: r[ci.os], qtde: r[ci.qtde] };
+  }
+  return map;
+}
+
+// ── Processamento de arquivo(s) ───────────────────────────────────────────────
+async function processFile(file, el) {
+  const buf = await file.arrayBuffer();
+  const wb  = XLSX.read(buf, { type: 'array' });
+  const tipo = detectFileType(wb);
+
+  if (tipo === 'distribuicao') {
+    state.distRows    = parseDistribuicao(wb);
+    state.loaded.dist = `${file.name} (${state.distRows.length} linhas BTG)`;
+  } else if (tipo === 'smart') {
+    state.smartMap    = parseSmart(wb);
+    state.loaded.smart = `${file.name} (${Object.keys(state.smartMap).length} contratos)`;
+  } else {
+    throw new Error(`Arquivo "${file.name}" não reconhecido. Envie a Distribuição de OS ou o relatório BTG (smart).`);
   }
 }
 
-async function handleDistFile(file, el) {
-  if (!file) return;
-  el.distStatus.textContent = 'Processando...';
-  el.distStatus.style.color = '#94a3b8';
+async function handleFiles(files, el) {
+  if (!files?.length) return;
+
+  el.feedback.textContent = 'Processando...';
+  el.dropZone.classList.add('btg-loading');
+
   try {
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array' });
-    const wsName = wb.SheetNames.find(n => /embarque/i.test(n)) || wb.SheetNames[0];
-    const ws = wb.Sheets[wsName];
-    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
-    // Localizar linha de cabeçalho (contém 'O.S.' ou 'Funcionário')
-    let hIdx = 0;
-    for (let i = 0; i < Math.min(6, raw.length); i++) {
-      if (raw[i].some(c => /O\.S\.|funcion/i.test(String(c)))) { hIdx = i; break; }
+    for (const file of files) {
+      await processFile(file, el);
     }
-    const hdrs = raw[hIdx];
-    const ci = {
-      os:          hdrs.findIndex(h => /^o\.s\.$/i.test(String(h).trim())),
-      colaborador: hdrs.findIndex(h => /funcion/i.test(String(h))),
-      supervisao:  hdrs.findIndex(h => /supervis/i.test(String(h))),
-      coordenacao: hdrs.findIndex(h => /coordena/i.test(String(h))),
-      cliente:     hdrs.findIndex(h => /cliente/i.test(String(h))),
-      lote:        hdrs.findIndex(h => /^lote$/i.test(String(h).trim())),
-      remanescente:hdrs.findIndex(h => /remanescente/i.test(String(h))),
-    };
-
-    const btgRows = raw.slice(hIdx + 1)
-      .filter(r => BTG_RE.test(String(r[ci.cliente] ?? '')))
-      .map(r => ({
-        os: r[ci.os],
-        colaborador: String(r[ci.colaborador] ?? '').trim() || '—',
-        supervisao: String(r[ci.supervisao] ?? r[ci.coordenacao] ?? '').trim() || '—',
-        lote: r[ci.lote],
-        remanescente: r[ci.remanescente],
-      }));
-
-    state.distRows = btgRows;
-    el.distStatus.textContent = `${btgRows.length} linhas BTG carregadas`;
-    el.distStatus.style.color = '#86efac';
   } catch (err) {
-    console.error('Erro no arquivo Distribuição:', err);
-    el.distStatus.textContent = 'Erro ao processar arquivo';
-    el.distStatus.style.color = '#f87171';
-    state.distRows = null;
+    el.feedback.textContent = err.message;
+    el.dropZone.classList.remove('btg-loading');
+    renderChips(el);
+    return;
   }
+
+  el.dropZone.classList.remove('btg-loading');
+  await reconcile(el);
 }
 
-async function handleSmartFile(file, el) {
-  if (!file) return;
-  el.smartStatus.textContent = 'Processando...';
-  el.smartStatus.style.color = '#94a3b8';
-  try {
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
-    const hdrs = raw[0];
-    const ci = {
-      contrato: hdrs.findIndex(h => /^contrato$/i.test(String(h).trim())),
-      os:       hdrs.findIndex(h => /ordem.*servi/i.test(String(h))),
-      qtde:     hdrs.findIndex(h => /qtde/i.test(String(h))),
-    };
-
-    const map = {};
-    for (const r of raw.slice(1)) {
-      const contrato = String(r[ci.contrato] ?? '').trim();
-      if (contrato) map[contrato] = { contrato, os_btg: r[ci.os], qtde: r[ci.qtde] };
-    }
-
-    state.smartMap = map;
-    el.smartStatus.textContent = `${Object.keys(map).length} contratos BTG carregados`;
-    el.smartStatus.style.color = '#86efac';
-  } catch (err) {
-    console.error('Erro no arquivo smart:', err);
-    el.smartStatus.textContent = 'Erro ao processar arquivo';
-    el.smartStatus.style.color = '#f87171';
-    state.smartMap = null;
-  }
-}
-
+// ── Reconciliação ─────────────────────────────────────────────────────────────
 async function reconcile(el) {
   if (!state.distRows?.length) {
     state.mode = 'db';
@@ -284,7 +305,6 @@ async function reconcile(el) {
   el.feedback.textContent = 'Reconciliando com banco de dados...';
 
   try {
-    // Buscar contrato por numero_os no banco
     const osNumbers = [...new Set(state.distRows.map(r => r.os).filter(Boolean))];
     const { data: dbOs } = await supabase
       .from('operacional_os')
@@ -295,23 +315,16 @@ async function reconcile(el) {
     for (const r of (dbOs || [])) contratoMap[r.numero_os] = r.contrato;
 
     state.finalRows = state.distRows.map(r => {
-      const contrato = contratoMap[r.os] || '—';
+      const contrato   = contratoMap[r.os] || '—';
       const smartValid = state.smartMap != null
         ? (contrato !== '—' && contrato in state.smartMap)
         : undefined;
-      return {
-        os: r.os,
-        contrato,
-        colaborador: r.colaborador,
-        supervisao: r.supervisao,
-        lote: r.lote,
-        remanescente: r.remanescente,
-        smartValid,
-        fonte: 'xlsx',
-      };
+      return { os: r.os, contrato, colaborador: r.colaborador,
+               supervisao: r.supervisao, lote: r.lote, remanescente: r.remanescente,
+               smartValid, fonte: 'xlsx' };
     });
   } catch (err) {
-    console.error('Erro na reconciliação:', err);
+    console.error(err);
     state.finalRows = state.distRows.map(r => ({
       os: r.os, contrato: '—', colaborador: r.colaborador,
       supervisao: r.supervisao, lote: r.lote, remanescente: r.remanescente,
@@ -322,35 +335,36 @@ async function reconcile(el) {
   render(el);
 }
 
-function setupDragDrop(dropZone, inputEl) {
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('btg-drag-over'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('btg-drag-over'));
-  dropZone.addEventListener('drop', e => {
+// ── Drag-and-drop ─────────────────────────────────────────────────────────────
+function setupDragDrop(zone, input, el) {
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('btg-drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('btg-drag-over'));
+  zone.addEventListener('drop', async e => {
     e.preventDefault();
-    dropZone.classList.remove('btg-drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      inputEl.files = dt.files;
-      inputEl.dispatchEvent(new Event('change'));
-    }
+    zone.classList.remove('btg-drag-over');
+    await handleFiles(e.dataTransfer.files, el);
+  });
+  input.addEventListener('change', async () => {
+    await handleFiles(input.files, el);
+    input.value = '';
   });
 }
 
+// ── Estilos ───────────────────────────────────────────────────────────────────
 function injectStyles() {
   if (document.getElementById('btg-styles')) return;
   const s = document.createElement('style');
   s.id = 'btg-styles';
   s.textContent = `
-    .btg-upload-area{border:1px solid rgba(52,211,153,.15);border-radius:16px;padding:18px 20px;background:rgba(2,6,23,.25);margin-top:16px}
-    .btg-upload-title{font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:14px}
-    .btg-upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    .btg-upload-item{border:1.5px dashed rgba(52,211,153,.22);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:8px;transition:border-color .2s;cursor:default}
-    .btg-upload-item.btg-drag-over{border-color:#34d399;background:rgba(52,211,153,.06)}
-    .btg-upload-label{font-size:12px;font-weight:700;color:#a7f3d0;text-transform:uppercase;letter-spacing:.04em}
-    .btg-file-label{display:inline-flex;align-items:center;cursor:pointer;font-size:12px}
-    .btg-upload-status{font-size:11px;color:#6b7280;min-height:16px}
+    .btg-upload-area{border:1px solid rgba(52,211,153,.18);border-radius:16px;padding:20px;background:rgba(2,6,23,.28);margin-top:16px;transition:border-color .2s}
+    .btg-upload-area.btg-drag-over{border-color:#34d399;background:rgba(52,211,153,.06)}
+    .btg-upload-area.btg-loading{opacity:.7;pointer-events:none}
+    .btg-upload-inner{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+    .btg-upload-hint{font-size:12px;color:#6b7280}
+    .btg-file-chips{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+    .btg-chip-file{font-size:11px;padding:5px 11px;border-radius:999px;border:1px solid rgba(148,163,184,.2);color:#6b7280;background:rgba(15,23,42,.3);transition:.2s}
+    .btg-chip-file.loaded{color:#86efac;border-color:rgba(52,211,153,.35);background:rgba(22,163,74,.1)}
+    .btg-file-label{display:inline-flex;align-items:center;cursor:pointer;font-size:12px;white-space:nowrap}
     .btg-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.15);border-radius:16px;background:rgba(2,6,23,.25)}
     .btg-table{width:100%;min-width:780px;border-collapse:separate;border-spacing:0;table-layout:fixed;color:#e2e2f0}
     .btg-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1;white-space:nowrap}
@@ -369,11 +383,12 @@ function injectStyles() {
     .btg-chip.danger{background:rgba(239,68,68,.11);color:#fca5a5;border-color:rgba(239,68,68,.25)}
     .btg-empty{border:1px dashed rgba(148,163,184,.2);border-radius:16px;padding:24px;color:#6b7280;text-align:center}
     .badge-info{background:rgba(59,130,246,.18);color:#93c5fd;border-color:rgba(59,130,246,.3)}
-    @media(max-width:700px){.btg-upload-grid{grid-template-columns:1fr}.btg-table{min-width:580px}}
+    @media(max-width:700px){.btg-table{min-width:580px}}
   `;
   document.head.appendChild(s);
 }
 
+// ── Init ──────────────────────────────────────────────────────────────────────
 initProtectedPage('BTG — Logística', async (content) => {
   injectStyles();
 
@@ -390,35 +405,27 @@ initProtectedPage('BTG — Logística', async (content) => {
         </div>
       </div>
 
-      <div class="btg-upload-area">
-        <div class="btg-upload-title">Carregar relatórios para reconciliação</div>
-        <div class="btg-upload-grid">
-          <div class="btg-upload-item" id="btgDropDist">
-            <div class="btg-upload-label">Distribuição de O.S. (.xlsx)</div>
-            <label class="btn btn-secondary btg-file-label">
-              <input type="file" id="btgFileDist" accept=".xlsx,.xls" hidden />
-              Selecionar arquivo
-            </label>
-            <div class="btg-upload-status" id="btgDistStatus">Arraste ou selecione o arquivo Distribuição de OS</div>
-          </div>
-          <div class="btg-upload-item" id="btgDropSmart">
-            <div class="btg-upload-label">Relatório BTG (smart.xlsx)</div>
-            <label class="btn btn-secondary btg-file-label">
-              <input type="file" id="btgFileSmart" accept=".xlsx,.xls" hidden />
-              Selecionar arquivo
-            </label>
-            <div class="btg-upload-status" id="btgSmartStatus">Arraste ou selecione o relatório BTG</div>
-          </div>
+      <div class="btg-upload-area" id="btgDropZone">
+        <div class="btg-upload-inner">
+          <label class="btn btn-secondary btg-file-label">
+            <input type="file" id="btgFileInput" accept=".xlsx,.xls" multiple hidden />
+            Carregar relatório(s)
+          </label>
+          <span class="btg-upload-hint">Arraste um ou dois arquivos — o painel identifica automaticamente cada relatório</span>
+        </div>
+        <div class="btg-file-chips">
+          <div class="btg-chip-file" id="btgChipDist">Distribuição de O.S. — aguardando</div>
+          <div class="btg-chip-file" id="btgChipSmart">Relatório BTG (smart) — aguardando</div>
         </div>
       </div>
 
       <div class="filters-grid" style="margin-top:16px">
         <div class="field">
           <label>Buscar</label>
-          <input id="btgBusca" class="input-field" type="text" placeholder="O.S., contrato, colaborador, supervisão..." style="min-height:38px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0d0d18;color:#e2e2f0;padding:8px 12px;font-size:13px;width:100%;box-sizing:border-box" />
+          <input id="btgBusca" type="text" placeholder="O.S., contrato, colaborador, supervisão..."
+            style="min-height:38px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0d0d18;color:#e2e2f0;padding:8px 12px;font-size:13px;width:100%;box-sizing:border-box" />
         </div>
       </div>
-
       <div id="btgFeedback" class="feedback mt-16">Carregando...</div>
     </section>
 
@@ -437,12 +444,10 @@ initProtectedPage('BTG — Logística', async (content) => {
   const el = {
     modeTag:      document.getElementById('btgModeTag'),
     recarregar:   document.getElementById('btgRecarregar'),
-    fileDist:     document.getElementById('btgFileDist'),
-    fileSmart:    document.getElementById('btgFileSmart'),
-    dropDist:     document.getElementById('btgDropDist'),
-    dropSmart:    document.getElementById('btgDropSmart'),
-    distStatus:   document.getElementById('btgDistStatus'),
-    smartStatus:  document.getElementById('btgSmartStatus'),
+    dropZone:     document.getElementById('btgDropZone'),
+    fileInput:    document.getElementById('btgFileInput'),
+    chipDist:     document.getElementById('btgChipDist'),
+    chipSmart:    document.getElementById('btgChipSmart'),
     busca:        document.getElementById('btgBusca'),
     feedback:     document.getElementById('btgFeedback'),
     tableWrap:    document.getElementById('btgTableWrap'),
@@ -451,43 +456,23 @@ initProtectedPage('BTG — Logística', async (content) => {
     tableSubtitle:document.getElementById('btgTableSubtitle'),
   };
 
-  // Eventos de busca e ordenação
   el.busca.addEventListener('input', () => { state.busca = el.busca.value.trim(); render(el); });
+
   el.tableWrap.addEventListener('click', e => {
     const th = e.target.closest('[data-sort]');
     if (!th) return;
     const col = th.dataset.sort;
-    state.sort = {
-      col,
-      dir: state.sort.col === col && state.sort.dir === 'asc' ? 'desc' : 'asc',
-    };
+    state.sort = { col, dir: state.sort.col === col && state.sort.dir === 'asc' ? 'desc' : 'asc' };
     render(el);
   });
 
-  // Atualizar banco de dados
   el.recarregar.addEventListener('click', async () => {
     await loadDbData(el);
-    if (state.mode === 'db') render(el);
-    else await reconcile(el);
+    state.mode === 'db' ? render(el) : await reconcile(el);
   });
 
-  // Upload Distribuição
-  el.fileDist.addEventListener('change', async () => {
-    await handleDistFile(el.fileDist.files[0], el);
-    await reconcile(el);
-  });
+  setupDragDrop(el.dropZone, el.fileInput, el);
 
-  // Upload smart.xlsx
-  el.fileSmart.addEventListener('change', async () => {
-    await handleSmartFile(el.fileSmart.files[0], el);
-    await reconcile(el);
-  });
-
-  // Drag-and-drop
-  setupDragDrop(el.dropDist, el.fileDist);
-  setupDragDrop(el.dropSmart, el.fileSmart);
-
-  // Carga inicial
   await loadDbData(el);
   state.finalRows = state.dbRows;
   render(el);
