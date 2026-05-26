@@ -109,11 +109,29 @@ import { supabase } from './supabaseClient.js';
     return (state.indicacoes[String(pontoId)] || []).includes(String(colabId));
   }
 
-  function getAssignedElsewhere(currentPontoId) {
-    const out = new Set();
+  function countOsElsewhere(currentPontoId) {
+    const count = {};
     Object.entries(state.indicacoes).forEach(([pId, ids]) => {
-      if (String(pId) !== String(currentPontoId)) ids.forEach(id => out.add(id));
+      if (String(pId) !== String(currentPontoId)) {
+        ids.forEach(id => { count[id] = (count[id] || 0) + 1; });
+      }
     });
+    return count;
+  }
+
+  function totalOsCount() {
+    const count = {};
+    Object.values(state.indicacoes).forEach(ids => {
+      ids.forEach(id => { count[id] = (count[id] || 0) + 1; });
+    });
+    return count;
+  }
+
+  // Exclui do ranking apenas quem já atingiu 2 OS em outros pontos
+  function getAssignedElsewhere(currentPontoId) {
+    const count = countOsElsewhere(currentPontoId);
+    const out = new Set();
+    Object.entries(count).forEach(([id, c]) => { if (c >= 2) out.add(id); });
     return out;
   }
 
@@ -469,6 +487,7 @@ import { supabase } from './supabaseClient.js';
 
     const hotel = hotelMaisProximo(ponto, form.qtd);
     const assignedElsewhere = getAssignedElsewhere(form.pontoId);
+    const osElsewhereCount  = countOsElsewhere(form.pontoId);
 
     const rows = state.colaboradores.filter(c => {
       if (!c.nome) return false;
@@ -494,6 +513,7 @@ import { supabase } from './supabaseClient.js';
       const custoScore     = Math.max(0, 100 - (custoTotal / 12));
       const volumePeso     = form.volume >= 600 ? 0.32 : 0.24;
       const auditoriaPeso  = form.volume >= 600 ? 0.36 : 0.28;
+      const osElsewhere = osElsewhereCount[String(c.id)] || 0;
       const score = Math.round(
         (audit.score * auditoriaPeso) + (distanciaScore * 0.22) + (custoScore * 0.30)
         + ((tipo === 'Efetivo' ? 88 : 72) * volumePeso * 0.35)
@@ -511,7 +531,8 @@ import { supabase } from './supabaseClient.js';
         auditoria_descontos: audit.descontos, auditoria_altas: audit.altas,
         auditoria_ultima_data: audit.ultima_data, auditoria_ultima_resultado: audit.ultima_resultado,
         auditoria_ultima_motivo: audit.ultima_motivo,
-        score_final: Math.max(0, Math.min(100, score)),
+        osElsewhere,
+        score_final: Math.max(0, Math.min(100, score - osElsewhere * 6)),
         status: semCoordenada ? 'Falta coordenada' : (score >= 80 ? 'Recomendado' : score >= 62 ? 'Analisar' : 'Alto custo'),
       };
     }).sort((a, b) => b.score_final - a.score_final || a.custo_total - b.custo_total);
@@ -533,14 +554,14 @@ import { supabase } from './supabaseClient.js';
   function renderMetrics(rows) {
     const ponto = selectedPonto();
     const best  = rows[0];
-    const avg   = rows.length ? rows.reduce((s, r) => s + r.custo_total, 0) / rows.length : 0;
     const totalIndicados = Object.values(state.indicacoes).reduce((s, arr) => s + arr.length, 0);
+    const saturados = Object.values(totalOsCount()).filter(c => c >= 2).length;
     return `
       <section class="op-summary">
         <div class="op-metric"><span>Ponto</span><strong>${ponto ? safeText(`${ponto.cidade}/${ponto.uf}`) : '—'}</strong></div>
-        <div class="op-metric"><span>Avaliados</span><strong>${rows.length}</strong></div>
+        <div class="op-metric"><span>No ranking</span><strong>${rows.length}</strong></div>
         <div class="op-metric"><span>Melhor indicação</span><strong style="font-size:15px">${best ? safeText(shortName(best.nome)) : '—'}</strong></div>
-        <div class="op-metric"><span>Direcionados</span><strong>${totalIndicados}</strong></div>
+        <div class="op-metric"><span>Direcionados</span><strong>${totalIndicados}${saturados ? `<small style="font-size:12px;color:#fde68a;display:block">${saturados} no limite</small>` : ''}</strong></div>
       </section>`;
   }
 
@@ -554,7 +575,7 @@ import { supabase } from './supabaseClient.js';
           <div class="op-rank-pos">${i + 1}</div>
           <div>
             <strong>${safeText(row.nome)}</strong>
-            <span>${safeText(row.tipo_calculado)} · ${row.distancia == null ? 'sem km' : row.distancia + ' km'} · ${money(row.custo_total)} · Aud: ${Math.round(row.score_auditoria)}%</span>
+            <span>${safeText(row.tipo_calculado)} · ${row.distancia == null ? 'sem km' : row.distancia + ' km'} · ${money(row.custo_total)} · Aud: ${Math.round(row.score_auditoria)}%${row.osElsewhere > 0 ? ` · <span class="op-pill warn" style="font-size:10px;padding:2px 6px">Em ${row.osElsewhere} OS</span>` : ''}</span>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
             <div class="op-score"><strong>${row.score_final}</strong><span>score</span></div>
@@ -576,14 +597,14 @@ import { supabase } from './supabaseClient.js';
         <div class="op-table-wrap">
           <table class="op-table">
             <thead><tr>
-              <th>#</th><th>Colaborador</th><th>Tipo</th><th>Base</th><th>Distância</th><th>Hotel sugerido</th><th>Fonte</th><th>Passagem</th><th>Hotel</th><th>Mão de obra</th><th>Alimentação</th><th>Total</th><th>Auditoria</th><th>Score</th><th>Status</th><th>Direcionamento</th>
+              <th>#</th><th>Colaborador</th><th>OS</th><th>Tipo</th><th>Base</th><th>Distância</th><th>Hotel sugerido</th><th>Fonte</th><th>Passagem</th><th>Hotel</th><th>Mão de obra</th><th>Alimentação</th><th>Total</th><th>Auditoria</th><th>Score</th><th>Status</th><th>Direcionamento</th>
             </tr></thead>
             <tbody>
               ${rows.map((row, i) => {
                 const cls = row.semCoordenada ? 'muted' : scoreClass(row.score_final);
                 const ind = isIndicadoNoPonto(pontoId, row.id);
                 return `<tr>
-                  <td>${i + 1}</td><td>${safeText(row.nome)}</td><td>${safeText(row.tipo_calculado)}</td>
+                  <td>${i + 1}</td><td>${safeText(row.nome)}</td><td>${row.osElsewhere > 0 ? `<span class="op-pill warn">${row.osElsewhere}/2</span>` : '<span class="op-pill ok">livre</span>'}</td><td>${safeText(row.tipo_calculado)}</td>
                   <td>${safeText(`${row.cidade_base || '-'}${row.uf_base ? '/' + row.uf_base : ''}`)}</td>
                   <td>${row.distancia == null ? '-' : row.distancia + ' km'}</td>
                   <td>${safeText(row.hotel_nome)}${row.hotel_tipo_quarto ? `<br><small>${safeText(row.hotel_tipo_quarto)}</small>` : ''}</td>
@@ -616,6 +637,18 @@ import { supabase } from './supabaseClient.js';
     const items = entries.map(({ ponto, colabIds }) => {
       const colabs = colabIds.map(cId => state.colaboradores.find(c => String(c.id) === String(cId))).filter(Boolean);
       if (!colabs.length) return '';
+      const allCounts = totalOsCount();
+      const colabRows = colabs.map(c => {
+        const totOs = allCounts[String(c.id)] || 0;
+        return `
+              <div class="op-direcionar-row">
+                <span style="color:#f8fafc;font-size:13px">${safeText(c.nome)}${totOs > 1 ? ` <span class="op-pill warn" style="font-size:10px;padding:2px 5px">${totOs}/2 OS</span>` : ''}</span>
+                <button class="op-btn secondary" style="padding:3px 10px;min-height:unset;font-size:11px"
+                        data-remover-indicacao="${safeText(ponto.id)}" data-remover-colab="${safeText(c.id)}">
+                  Remover
+                </button>
+              </div>`;
+      }).join('');
       return `
         <div class="op-rank" style="flex-direction:column;gap:8px;cursor:default">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
@@ -626,14 +659,7 @@ import { supabase } from './supabaseClient.js';
             <span class="op-pill ok">${colabs.length} indicado${colabs.length > 1 ? 's' : ''}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:4px">
-            ${colabs.map(c => `
-              <div class="op-direcionar-row">
-                <span style="color:#f8fafc;font-size:13px">${safeText(c.nome)}</span>
-                <button class="op-btn secondary" style="padding:3px 10px;min-height:unset;font-size:11px"
-                        data-remover-indicacao="${safeText(ponto.id)}" data-remover-colab="${safeText(c.id)}">
-                  Remover
-                </button>
-              </div>`).join('')}
+            ${colabRows}
           </div>
         </div>`;
     }).filter(Boolean);
@@ -937,7 +963,9 @@ import { supabase } from './supabaseClient.js';
                   1. Clique num ponto no mapa ou na lista lateral.<br>
                   2. Os 5 melhores colaboradores aparecem no mapa com nome.<br>
                   3. Clique <strong>Indicar</strong> para direcionar o colaborador.<br>
-                  4. Ele desaparece dos rankings dos demais pontos.
+                  4. Cada colaborador pode ser indicado para até <strong>2 OS</strong>.<br>
+                  5. Quem já está em 1 OS aparece com badge <em>Em 1 OS</em> e score reduzido.<br>
+                  6. Ao atingir 2 OS, sai de todos os rankings.
                 </div>
               </div>
             </article>
