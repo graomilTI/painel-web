@@ -426,9 +426,7 @@ initProtectedPage('OS', async (content) => {
       }
     }
 
-    state.colaboradores = rows
-      .filter(onlyActiveColab)
-      .filter((c) => !state.access.restricted || isAllowedSupervisao(c.supervisao || c.regional));
+    state.colaboradores = rows.filter(onlyActiveColab);
   }
 
   function fillSupervisoes() {

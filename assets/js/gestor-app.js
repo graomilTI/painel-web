@@ -287,10 +287,7 @@ async function loadData({ useCache = true } = {}) {
     if (osRes.error) throw osRes.error;
     state.os = Array.isArray(osRes.data) ? osRes.data : [];
     state.atribuicoes = Array.isArray(atrRes.data) ? atrRes.data : [];
-    state.colaboradores = Array.isArray(colabRes.data)
-      ? colabRes.data.filter(isActiveColab).filter((c) =>
-          state.isMaster || !state.allowedSupervisoes.length || state.allowedSupervisoes.includes(c.supervisao))
-      : [];
+    state.colaboradores = Array.isArray(colabRes.data) ? colabRes.data.filter(isActiveColab) : [];
     state.pontos = Array.isArray(pontosRes.data) ? pontosRes.data : [];
     saveCache({ os: state.os, atribuicoes: state.atribuicoes, colaboradores: state.colaboradores, pontos: state.pontos });
     hydrateSelections();
@@ -1087,6 +1084,63 @@ function renderOs(main) {
   bindOsEvents(main);
 }
 
+function injectGacStyles() {
+  if (document.getElementById('gac-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'gac-styles';
+  s.textContent = `
+.gac{position:relative;width:100%}
+.gac-input{width:100%;box-sizing:border-box;padding:7px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:13px;outline:none}
+.gac-input:focus{border-color:#4ade80}
+.gac-list{position:absolute;top:calc(100% + 2px);left:0;right:0;background:#1e2d3e;border:1px solid #334155;border-radius:8px;max-height:220px;overflow-y:auto;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+.gac-item{padding:8px 12px;cursor:pointer;font-size:13px;color:#f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.gac-item:hover{background:rgba(74,222,128,.12)}
+.gac-dist{font-size:11px;color:#94a3b8;white-space:nowrap;flex-shrink:0}
+.gac-empty{padding:10px 12px;font-size:13px;color:#94a3b8;font-style:italic}
+`;
+  document.head.appendChild(s);
+}
+
+function getColabDisplayName(key) {
+  if (!key) return '';
+  return state.colaboradores.find((c) => colabKey(c) === key)?.nome || '';
+}
+
+function buscarColabGac(query, osId, excludeKeys = new Set()) {
+  const point = state.suggested.get(osId)?.point || (() => {
+    const os = state.os.find((row) => String(row.id || row.numero_os) === osId);
+    return os ? findPoint(os) : null;
+  })();
+  const norm = normalize(query);
+  const hasQuery = norm.length >= 2;
+  return state.colaboradores
+    .filter((c) => !excludeKeys.has(colabKey(c)))
+    .filter((c) => !hasQuery || normalize(c.nome).includes(norm))
+    .map((c) => ({ c, distancia: point ? haversineKm(c.latitude, c.longitude, point.latitude, point.longitude) : null }))
+    .sort((a, b) => {
+      if (Number.isFinite(a.distancia) && Number.isFinite(b.distancia)) return a.distancia - b.distancia;
+      if (Number.isFinite(a.distancia)) return -1;
+      if (Number.isFinite(b.distancia)) return 1;
+      return 0;
+    })
+    .slice(0, 15);
+}
+
+function renderGacDropdown(dropdown, query, osId, excludeKeys) {
+  const results = buscarColabGac(query, osId, excludeKeys);
+  if (!results.length) {
+    dropdown.innerHTML = '<div class="gac-empty">Nenhum colaborador encontrado.</div>';
+  } else {
+    dropdown.innerHTML = results.map(({ c, distancia }, idx) => {
+      const key = colabKey(c);
+      const star = idx === 0 && !normalize(query) ? '⭐ ' : '';
+      const dist = Number.isFinite(distancia) ? ` <span class="gac-dist">${KM.format(distancia)} km</span>` : '';
+      return `<div class="gac-item" data-key="${escapeHtml(key)}" data-nome="${escapeHtml(c.nome)}">${star}${escapeHtml(c.nome)}${dist}</div>`;
+    }).join('');
+  }
+  dropdown.hidden = false;
+}
+
 function renderOsCard(os) {
   const id = osId(os);
   const isCinza = (os.status_gestor || 'AGUARDAR').toUpperCase() === 'AGUARDAR' && !os.configurada_em;
@@ -1094,6 +1148,8 @@ function renderOsCard(os) {
   const sugg = state.suggested.get(id) || { items: [], aviso: '' };
   const selected = state.selections.get(id) || (sugg.items[0] ? colabKey(sugg.items[0].c) : '');
   const selectedInfo = sugg.items.find((row) => colabKey(row.c) === selected) || null;
+  const selectedColab = selectedInfo?.c || state.colaboradores.find((c) => colabKey(c) === selected) || null;
+  const selectedDist = selectedInfo?.distancia ?? null;
   const isNegativo = num(os.remanescente) < 0;
   const isZero = num(os.remanescente) === 0;
   const canMulti = num(os.remanescente) >= LIMITE_MULTIPLOS;
