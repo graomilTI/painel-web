@@ -34,8 +34,9 @@ function fmt(v) {
 function detectFileType(wb) {
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
-    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', range: 5 });
-    for (const row of raw) {
+    // Lê todas as linhas mas inspeciona apenas as 6 primeiras (inclui linha 0)
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    for (const row of raw.slice(0, 6)) {
       const r = norm(row.map(c => String(c ?? '')).join(' '));
       // Distribuição: colunas O.S., Funcionário, Remanescente, Cliente
       if (r.includes('FUNCION') && r.includes('REMANESCENTE') && (r.includes('O S') || r.includes('OS'))) {
