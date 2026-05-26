@@ -159,6 +159,7 @@ function showToast(message, type = 'ok') {
 function panelHref(path) { return toPanelUrl(path); }
 
 async function boot() {
+  injectGacStyles();
   const session = await getSession().catch(() => null);
   if (!session?.user) {
     window.location.replace(panelHref('login'));
@@ -1176,13 +1177,13 @@ function renderOsCard(os) {
           <div class="metric"><small>Emb.</small><b>${fmt(os.embarcado)}</b></div>
         </div>
         ${!isZero && !isNegativo ? `<div class="indicacao-box">
-          <select data-role="main-colab">
-            <option value="">Selecionar colaborador</option>
-            ${sugg.items.map(({ c, distancia }, index) => `<option value="${escapeHtml(colabKey(c))}" ${selected === colabKey(c) ? 'selected' : ''}>${index === 0 ? '⭐ ' : ''}${escapeHtml(c.nome)}${Number.isFinite(distancia) ? ` • ${KM.format(distancia)} km` : ''}</option>`).join('')}
-          </select>
-          ${selectedInfo ? `<div class="help ok">Indicação: ${escapeHtml(selectedInfo.c.nome)} · ${KM.format(selectedInfo.distancia)} km do ponto operacional.</div>` : `<div class="help warn">${escapeHtml(sugg.aviso || 'Selecione um colaborador para enviar à Conferência.')}</div>`}
+          <div class="gac">
+            <input type="text" class="gac-input" value="${escapeHtml(getColabDisplayName(selected))}" placeholder="Digitar colaborador..." autocomplete="off" spellcheck="false" data-ac-os-id="${escapeHtml(id)}" data-ac-type="main" />
+            <div class="gac-list" hidden></div>
+          </div>
+          ${selectedColab ? `<div class="help ok">Indicação: ${escapeHtml(selectedColab.nome)}${Number.isFinite(selectedDist) ? ` · ${KM.format(selectedDist)} km do ponto operacional.` : ''}</div>` : `<div class="help warn">${escapeHtml(sugg.aviso || 'Selecione um colaborador para enviar à Conferência.')}</div>`}
           ${canMulti ? `<label class="multi-line"><input data-role="allow-multi" type="checkbox" ${isMulti ? 'checked' : ''} /> permitir 2 ou mais colaboradores</label>` : ''}
-          ${canMulti && isMulti ? renderExtraSelects(id, sugg.items, selected, extraValues) : ''}
+          ${canMulti && isMulti ? renderExtraSelects(id, selected, extraValues) : ''}
         </div>` : ''}
         <div class="action-grid">
         ${isNegativo
@@ -1203,45 +1204,24 @@ function renderOsCard(os) {
   `;
 }
 
-function renderExtraSelects(id, suggestions, selected, extraValues) {
+function renderExtraSelects(id, selected, extraValues) {
   const values = extraValues.length ? extraValues : [''];
   return `<div class="indicacao-box" data-role="extras">${values.map((value, idx) => `
-    <select data-role="extra-colab" data-index="${idx}">
-      <option value="">${idx + 2}º colaborador na mesma O.S.</option>
-      ${suggestions.filter(({ c }) => colabKey(c) !== selected).map(({ c, distancia }) => `<option value="${escapeHtml(colabKey(c))}" ${value === colabKey(c) ? 'selected' : ''}>${escapeHtml(c.nome)}${Number.isFinite(distancia) ? ` • ${KM.format(distancia)} km` : ''}</option>`).join('')}
-    </select>`).join('')}
+    <div class="gac">
+      <input type="text" class="gac-input" value="${escapeHtml(getColabDisplayName(value))}" placeholder="${idx + 2}º colaborador na mesma O.S." autocomplete="off" spellcheck="false" data-ac-os-id="${escapeHtml(id)}" data-ac-type="extra" data-ac-index="${idx}" data-ac-exclude="${escapeHtml(selected)}" />
+      <div class="gac-list" hidden></div>
+    </div>`).join('')}
     <button class="btn secondary" data-role="add-extra" type="button">+ outro colaborador</button>
   </div>`;
 }
 
 function bindOsEvents(scope) {
-  scope.querySelectorAll('[data-role="main-colab"]').forEach((select) => {
-    select.addEventListener('change', (e) => {
-      const card = e.target.closest('[data-os-id]');
-      const id = card?.dataset.osId;
-      if (!id) return;
-      state.selections.set(id, e.target.value);
-      state.extras.set(id, (state.extras.get(id) || []).filter((v) => v && v !== e.target.value));
-      renderOs(document.getElementById('appMain'));
-    });
-  });
   scope.querySelectorAll('[data-role="allow-multi"]').forEach((input) => {
     input.addEventListener('change', (e) => {
       const id = e.target.closest('[data-os-id]')?.dataset.osId;
       if (!id) return;
       if (e.target.checked) state.allowMulti.add(id);
       else { state.allowMulti.delete(id); state.extras.delete(id); }
-      renderOs(document.getElementById('appMain'));
-    });
-  });
-  scope.querySelectorAll('[data-role="extra-colab"]').forEach((select) => {
-    select.addEventListener('change', (e) => {
-      const id = e.target.closest('[data-os-id]')?.dataset.osId;
-      if (!id) return;
-      const index = Number(e.target.dataset.index) || 0;
-      const list = state.extras.get(id) || [];
-      list[index] = e.target.value;
-      state.extras.set(id, [...new Set(list.filter(Boolean))]);
       renderOs(document.getElementById('appMain'));
     });
   });
@@ -1254,6 +1234,71 @@ function bindOsEvents(scope) {
       state.extras.set(id, list);
       renderOs(document.getElementById('appMain'));
     });
+  });
+
+  const debouncedInput = debounce((e) => {
+    const input = e.target.closest('.gac-input');
+    if (!input) return;
+    const dropdown = input.closest('.gac')?.querySelector('.gac-list');
+    if (!dropdown) return;
+    const osId = input.dataset.acOsId;
+    const excludeKeys = new Set();
+    if (input.dataset.acType === 'extra') {
+      if (input.dataset.acExclude) excludeKeys.add(input.dataset.acExclude);
+      const myIdx = Number(input.dataset.acIndex) || 0;
+      (state.extras.get(osId) || []).forEach((k, i) => { if (i !== myIdx && k) excludeKeys.add(k); });
+    } else {
+      (state.extras.get(osId) || []).forEach((k) => { if (k) excludeKeys.add(k); });
+    }
+    renderGacDropdown(dropdown, input.value, osId, excludeKeys);
+  }, 180);
+
+  scope.addEventListener('input', debouncedInput);
+
+  scope.addEventListener('focusin', (e) => {
+    const input = e.target.closest('.gac-input');
+    if (!input) return;
+    const dropdown = input.closest('.gac')?.querySelector('.gac-list');
+    if (!dropdown) return;
+    const osId = input.dataset.acOsId;
+    const excludeKeys = new Set();
+    if (input.dataset.acType === 'extra') {
+      if (input.dataset.acExclude) excludeKeys.add(input.dataset.acExclude);
+    } else {
+      (state.extras.get(osId) || []).forEach((k) => { if (k) excludeKeys.add(k); });
+    }
+    renderGacDropdown(dropdown, input.value, osId, excludeKeys);
+  });
+
+  scope.addEventListener('focusout', (e) => {
+    const input = e.target.closest('.gac-input');
+    if (!input) return;
+    const dropdown = input.closest('.gac')?.querySelector('.gac-list');
+    if (dropdown) setTimeout(() => { dropdown.hidden = true; }, 180);
+  });
+
+  scope.addEventListener('click', (e) => {
+    const item = e.target.closest('.gac-item');
+    if (!item) return;
+    const gac = item.closest('.gac');
+    const input = gac?.querySelector('.gac-input');
+    if (!input) return;
+    const key = item.dataset.key;
+    const nome = item.dataset.nome;
+    const osId = input.dataset.acOsId;
+    const type = input.dataset.acType;
+    if (!osId || !key) return;
+    gac.querySelector('.gac-list').hidden = true;
+    if (type === 'main') {
+      state.selections.set(osId, key);
+      state.extras.set(osId, (state.extras.get(osId) || []).filter((v) => v && v !== key));
+    } else {
+      const index = Number(input.dataset.acIndex) || 0;
+      const list = state.extras.get(osId) || [];
+      list[index] = key;
+      state.extras.set(osId, [...new Set(list.filter(Boolean))]);
+    }
+    renderOs(document.getElementById('appMain'));
   });
   scope.querySelectorAll('[data-action]').forEach((btn) => {
     btn.addEventListener('click', async (e) => {
