@@ -571,6 +571,20 @@ function buildLatestColaboradorMap(rows) {
 
 async function loadColaboradoresPagamento(dataReferencia = null) {
   const ref = dataReferencia || document.getElementById('alimFim')?.value || state.currentDate || new Date().toISOString().slice(0, 10);
+
+  // Resolve a data de importação mais recente ≤ ref (evita baixar todas as datas do snapshot)
+  let latestDate = null;
+  try {
+    const { data } = await supabase
+      .from('colaborador_importacoes')
+      .select('data_referencia')
+      .lte('data_referencia', ref)
+      .order('data_referencia', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    latestDate = data?.data_referencia || null;
+  } catch {}
+
   const pageSize = 1000;
   const rows = [];
   let from = 0;
@@ -578,11 +592,15 @@ async function loadColaboradoresPagamento(dataReferencia = null) {
   while (true) {
     let query = supabase
       .from('colaborador_snapshot')
-      .select('nome,cpf,salario,conta_bancaria,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,ativo')
-      .lte('data_referencia', ref)
-      .order('data_referencia', { ascending: false, nullsFirst: false })
-      .range(from, from + pageSize - 1);
+      .select('nome,cpf,salario,conta_bancaria,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,ativo');
 
+    if (latestDate) {
+      query = query.eq('data_referencia', latestDate);
+    } else {
+      query = query.lte('data_referencia', ref).order('data_referencia', { ascending: false, nullsFirst: false });
+    }
+
+    query = query.range(from, from + pageSize - 1);
     const { data, error } = await query;
     if (error) throw error;
     const page = data || [];

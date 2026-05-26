@@ -90,6 +90,19 @@
   async function loadJsPdf(){await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js','jspdf'); return window.jspdf.jsPDF;}
   async function loadJsZip(){return loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js','JSZip');}
 
+  const DRE_CACHE_TTL = 2 * 60 * 60 * 1000;
+  function dreCache(key, out){
+    try{ sessionStorage.setItem(key, JSON.stringify({ ts:Date.now(), out:{ ...out, regionais:[...out.regionais] } })); }catch{}
+  }
+  function dreFromCache(key){
+    try{
+      const raw=sessionStorage.getItem(key); if(!raw) return null;
+      const {ts,out}=JSON.parse(raw);
+      if(Date.now()-ts > DRE_CACHE_TTL) return null;
+      return {...out, regionais:new Set(out.regionais)};
+    }catch{ return null; }
+  }
+
   function parseManifest(report){
     const raw=String(report?.observacoes||'').trim();
     if(!raw.startsWith('{')) return null;
@@ -212,6 +225,8 @@
 
 
   async function loadResultadoDiarioFromDb(supabase, year){
+    const cached=dreFromCache(`grao1000:dre-diario:${year}`);
+    if(cached) return cached;
     const out={classificado:{}, embarcado:{}, cargas:{}, valorEmbarcado:{}, testes:{}, regionais:new Set(), totalRows:0};
     if(!supabase || !year) return out;
 
@@ -258,11 +273,14 @@
       from += pageSize;
     }
 
+    dreCache(`grao1000:dre-diario:${year}`, out);
     return out;
   }
 
 
   async function loadProduzidoColaboradorFromDb(supabase, year){
+    const cached=dreFromCache(`grao1000:dre-colab:${year}`);
+    if(cached) return cached;
     const out={porRegional:{}, geral:Array(12).fill(0), regionais:new Set(), totalProdRows:0, totalHistRows:0};
     if(!supabase || !year) return out;
     const start=`${year}-01-01`;
@@ -385,10 +403,13 @@
     for(let mi=0; mi<12; mi++){
       out.geral[mi]=monthGeral[mi].cont ? monthGeral[mi].soma / monthGeral[mi].cont : 0;
     }
+    dreCache(`grao1000:dre-colab:${year}`, out);
     return out;
   }
 
   async function loadMediaAtivosPorRegionalFromDb(supabase, year){
+    const cached=dreFromCache(`grao1000:dre-ativos:${year}`);
+    if(cached) return cached;
     const out={porRegional:{}, total:Array(12).fill(0), regionais:new Set(), totalHistRows:0};
     if(!supabase || !year) return out;
     const start=`${year}-01-01`;
@@ -454,6 +475,7 @@
       }
     }
 
+    dreCache(`grao1000:dre-ativos:${year}`, out);
     return out;
   }
 

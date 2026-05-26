@@ -5,6 +5,7 @@ const DEFAULT_SETORES = ['RH', 'Logística', 'Frotas', 'Caixas', 'Troca de Notas
 const SETORES_DIVULGACAO_PADRAO = ['RH', 'Logística', 'Frotas', 'Caixas', 'Troca de Notas'];
 const STORAGE_KEY = 'painel_rh_plantao_setores_extra';
 const TEMPLATE_STORAGE_KEY = 'painel_rh_plantao_modelo_padrao';
+const COLAB_CACHE_KEY = 'grao1000:plantao-colab:v1';
 const IMG_W = 1448;
 const IMG_H = 1086;
 
@@ -276,6 +277,16 @@ async function loadLatestReferenceDate() {
 
 async function loadColaboradores() {
   const latest = await loadLatestReferenceDate();
+
+  // Cache por data de importação — dados não mudam até a próxima importação
+  try {
+    const raw = sessionStorage.getItem(COLAB_CACHE_KEY);
+    if (raw) {
+      const { date, data } = JSON.parse(raw);
+      if (date === latest && Array.isArray(data)) { colaboradores = data; return; }
+    }
+  } catch {}
+
   const pageSize = 1000;
   let from = 0;
   const allRows = [];
@@ -314,6 +325,7 @@ async function loadColaboradores() {
   });
 
   colaboradores = Array.from(unique.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  try { sessionStorage.setItem(COLAB_CACHE_KEY, JSON.stringify({ date: latest, data: colaboradores })); } catch {}
 }
 
 async function loadContatos() {

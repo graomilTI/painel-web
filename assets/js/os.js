@@ -313,22 +313,24 @@ initProtectedPage('OS', async (content) => {
   }
 
   async function loadOs() {
-    // Busca em páginas de 1000 para contornar o max-rows do PostgREST (padrão 1000).
-    // A ordenação é feita no front pelos cabeçalhos da tabela.
     const PAGE = 1000;
     let all = [];
+    // Gestores restritos: filtra supervisão no servidor para evitar baixar OS irrelevantes
+    if (state.access.restricted && !state.access.allowedSupervisoes.length) {
+      state.os = [];
+      return;
+    }
     for (let page = 0; ; page++) {
       const from = page * PAGE;
       const to = from + PAGE - 1;
-      const { data, error } = await supabase
-        .from('operacional_os')
-        .select('*')
-        .range(from, to);
+      let q = supabase.from('operacional_os').select('*').range(from, to);
+      if (state.access.restricted) q = q.in('supervisao', state.access.allowedSupervisoes);
+      const { data, error } = await q;
       if (error) throw new Error(error.message || 'Falha ao consultar operacional_os.');
       const chunk = safeArray(data);
       all = all.concat(chunk);
       if (chunk.length < PAGE) break;
-      if (all.length >= 6000) break; // teto de segurança
+      if (all.length >= 6000) break;
     }
 
     state.os = all.filter((row) => isAllowedSupervisao(row.supervisao));
