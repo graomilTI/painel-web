@@ -605,7 +605,7 @@ function renderGestorDashboard(container, data) {
   const diasNoMes   = new Date(ano, mes, 0).getDate();
   const metaDiaria  = meta > 0 ? meta / diasNoMes : 0;
   const mediaDiaria = diasComDados > 0 ? produzido / diasComDados : 0;
-  const pct         = metaDiaria > 0 ? Math.min(100, mediaDiaria / metaDiaria * 100) : 0;
+  const pct         = meta > 0 ? Math.min(100, produzido / meta * 100) : 0;
   const ritmo       = metaDiaria * diasComDados;
   const onTrack     = produzido >= ritmo;
   const projetado   = diasComDados > 0 ? produzido / diasComDados * diasNoMes : 0;
