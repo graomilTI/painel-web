@@ -1,4 +1,4 @@
-﻿(function(){
+(function(){
   const MODULE_NAME='FROTAS_MULTAS';
   const MONEY_FMT=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
   const DAY_MS=24*60*60*1000;
@@ -11,12 +11,40 @@
   function esc(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));}
   function norm(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();}
   function first(...vals){return vals.find(v=>v!==undefined&&v!==null&&String(v).trim()!=='');}
+  function isFilled(v){return v!==undefined&&v!==null&&String(v).trim()!=='';}
   function pick(obj, keys){
     if(!obj) return undefined;
     for(const k of keys){
-      if(Object.prototype.hasOwnProperty.call(obj,k) && obj[k]!==undefined && obj[k]!==null && String(obj[k]).trim()!=='') return obj[k];
+      if(Object.prototype.hasOwnProperty.call(obj,k) && isFilled(obj[k])) return obj[k];
     }
     return undefined;
+  }
+  function deepPick(obj, keys, maxDepth=5){
+    if(!obj||maxDepth<0) return undefined;
+    const wanted=new Set((keys||[]).map(k=>norm(k).replace(/[^a-z0-9]/g,'')));
+    const seen=new WeakSet();
+    function walk(cur,depth){
+      if(!cur||depth<0) return undefined;
+      if(typeof cur!=='object') return undefined;
+      if(seen.has(cur)) return undefined;
+      seen.add(cur);
+      if(Array.isArray(cur)){
+        for(const item of cur){const v=walk(item,depth-1);if(isFilled(v))return v;}
+        return undefined;
+      }
+      for(const [k,v] of Object.entries(cur)){
+        const key=norm(k).replace(/[^a-z0-9]/g,'');
+        if(wanted.has(key)&&isFilled(v)) return v;
+      }
+      for(const v of Object.values(cur)){
+        if(v&&typeof v==='object'){
+          const found=walk(v,depth-1);
+          if(isFilled(found)) return found;
+        }
+      }
+      return undefined;
+    }
+    return walk(obj,maxDepth);
   }
   function rawPayload(m){
     const raw=first(m.raw,m.payload,m.dados_api,m.dados_detran,m.retorno_api,m.api_json,m.resposta_api,m.json_api,m.detran_json,m.detran_payload);
@@ -28,8 +56,9 @@
     const direct=pick(m,keys);
     if(direct!==undefined) return direct;
     const raw=rawPayload(m);
-    if(Array.isArray(raw)) return pick(raw[0],keys);
-    return pick(raw,keys);
+    const shallow=Array.isArray(raw)?pick(raw[0],keys):pick(raw,keys);
+    if(shallow!==undefined) return shallow;
+    return deepPick(raw,keys);
   }
   function parseDate(v){
     if(!v) return null;
@@ -41,9 +70,15 @@
   }
   function isoDate(d){return d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
   function fmtDate(v){const d=parseDate(v);return d?isoDate(d).split('-').reverse().join('/'):'';}
+  const DETRAN_DUE_KEYS=[
+    'dataVencimentoAuto','data_vencimento_auto','dataVencimento','data_vencimento','vencimento','dataVenc','data_venc',
+    'dataLimitePagto','data_limite_pagto','dataLimitePagamento','data_limite_pagamento','dataPagamentoLimite','data_pagamento_limite',
+    'dataVencimentoBoleto','data_vencimento_boleto','vencimentoBoleto','vencimento_boleto','dataVencimentoGuia','data_vencimento_guia',
+    'dataValidadeGuia','data_validade_guia','dataValidade','data_validade','dataLimite','data_limite','dataLimiteDefesa','data_limite_defesa'
+  ];
   function dueDate(m){
     return first(
-      apiPick(m,['dataVencimentoAuto','data_vencimento_auto','dataLimitePagto','data_limite_pagto','dataLimitePagamento','data_limite_pagamento']),
+      apiPick(m,DETRAN_DUE_KEYS),
       m.data_vencimento_auto,
       m.data_limite_pagto,
       m.data_vencimento,
@@ -51,6 +86,8 @@
       m.data_venc,
       m.data_limite_pagamento,
       m.data_pagamento_limite,
+      m.data_validade_guia,
+      m.data_limite_defesa,
       m.data_limite
     );
   }
