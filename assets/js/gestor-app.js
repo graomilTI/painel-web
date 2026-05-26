@@ -556,10 +556,11 @@ const STATE_FROM_COORD_APP = {
 };
 
 function appRenderStateFill({ pct, onTrack, estado }) {
-  const uf       = estado || null;
+  const uf       = estado && estado !== 'BR' ? estado : null;
+  const isBR     = !uf;
   const target   = uf ? BR_STATES.find(s => s.uf === uf) : null;
-  const centroid = (uf && BR_CENTROIDS_APP[uf]) || {x:400, y:400};
-  const bounds   = (uf && BR_YBOUNDS_APP[uf]) || {min:100, max:700};
+  const centroid = (uf && BR_CENTROIDS_APP[uf]) || {x:400, y:398};
+  const bounds   = (uf && BR_YBOUNDS_APP[uf]) || (isBR ? {min:20, max:776} : {min:100, max:700});
 
   const gradTop = onTrack ? '#2dd4a0' : '#fde68a';
   const gradBot = onTrack ? '#065f46' : '#78350f';
@@ -568,7 +569,7 @@ function appRenderStateFill({ pct, onTrack, estado }) {
   const stH   = bounds.max - bounds.min;
   const fillH = Math.max(0, stH * pct / 100);
   const fillY = bounds.max - fillH;
-  const amp   = Math.max(4, stH * 0.035);
+  const amp   = Math.max(4, stH * 0.025);
   const period = 200;
   const waveSegs = [];
   for (let x = -period; x <= 1000 + period; x += period) {
@@ -582,7 +583,10 @@ function appRenderStateFill({ pct, onTrack, estado }) {
     .map(s => `<path d="${s.d}" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.10)" stroke-width="0.9" stroke-linejoin="round"/>`)
     .join('');
 
-  const targetD = target ? target.d : '';
+  const clipPaths = isBR
+    ? BR_STATES.map(s => `<path d="${s.d}"/>`).join('')
+    : `<path d="${target ? target.d : ''}"/>`;
+
   const cx = centroid.x;
   const cy = centroid.y;
 
@@ -590,7 +594,7 @@ function appRenderStateFill({ pct, onTrack, estado }) {
     <div class="db-state-wrap">
       <svg class="db-state-svg" viewBox="0 0 800 796" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <clipPath id="appStateClip"><path d="${targetD}"/></clipPath>
+          <clipPath id="appStateClip">${clipPaths}</clipPath>
           <linearGradient id="appFillGrad" x1="0" y1="${fillY}" x2="0" y2="${bounds.max}" gradientUnits="userSpaceOnUse">
             <stop offset="0%" stop-color="${gradTop}"/>
             <stop offset="100%" stop-color="${gradBot}"/>
@@ -603,21 +607,22 @@ function appRenderStateFill({ pct, onTrack, estado }) {
 
         ${bgStates}
 
-        ${target ? `
-          <path d="${targetD}" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.15)" stroke-width="1.2" stroke-linejoin="round"/>
-          <g clip-path="url(#appStateClip)">
-            <rect class="db-state-fill-rect"
-                  x="-10" y="${fillY}" width="820" height="${fillH + 30}"
-                  fill="url(#appFillGrad)"/>
-            <path class="db-state-wave-path" d="${wavePath}" fill="${gradTop}" opacity=".40"/>
-          </g>
-          <path d="${targetD}" fill="none" stroke="${glowClr}" stroke-width="2" stroke-linejoin="round"
+        <g clip-path="url(#appStateClip)">
+          <rect class="db-state-fill-rect"
+                x="-10" y="${fillY}" width="820" height="${fillH + 30}"
+                fill="url(#appFillGrad)"/>
+          <path class="db-state-wave-path" d="${wavePath}" fill="${gradTop}" opacity=".35"/>
+        </g>
+
+        ${!isBR && target ? `
+          <path d="${target.d}" fill="none" stroke="${glowClr}" stroke-width="2" stroke-linejoin="round"
                 filter="url(#appGlowFilter)" opacity=".7"/>
-          <path d="${targetD}" fill="none" stroke="${glowClr}" stroke-width="1.4" stroke-linejoin="round"/>
+          <path d="${target.d}" fill="none" stroke="${glowClr}" stroke-width="1.4" stroke-linejoin="round"/>
           <text x="${cx}" y="${cy - 14}" class="db-state-pct">${pct.toFixed(0)}%</text>
           <text x="${cx}" y="${cy + 16}" class="db-state-abbr">${uf}</text>
         ` : `
-          <text x="400" y="400" class="db-state-pct" style="font-size:32px">${pct.toFixed(0)}%</text>
+          ${isBR ? BR_STATES.map(s => `<path d="${s.d}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="0.8" stroke-linejoin="round"/>`).join('') : ''}
+          <text x="400" y="398" class="db-state-pct">${pct.toFixed(0)}%</text>
         `}
       </svg>
     </div>
