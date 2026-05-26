@@ -10,8 +10,8 @@ const ICON_STATUS  = `<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1
 
 const BR = new Intl.NumberFormat('pt-BR');
 const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const GESTOR_CACHE_KEY = 'grao1000:gestor-dash:v4';
-const GESTOR_CACHE_TTL = 5 * 60 * 1000;
+const GESTOR_CACHE_KEY = 'grao1000:gestor-dash:v5-segmentado';
+const GESTOR_CACHE_TTL = 1000 * 60 * 60 * 24 * 30;
 
 /* Brazil state SVG paths — viewBox 0 0 800 796, sourced from adm-hotel.js */
 const BR_STATES = [
@@ -323,7 +323,80 @@ function injectDashStyles() {
   document.head.appendChild(s);
 }
 
-async function fetchGestorData(ctx) {
+
+function dashPeriodKey(ano, mes) {
+  return `${ano}-${String(mes).padStart(2, '0')}`;
+}
+
+function dashCacheReference({ isMaster, coordenacao, ano, mes }) {
+  const period = dashPeriodKey(ano, mes);
+  if (isMaster) return `master:${period}`;
+  return `regional:${normalizeStr(coordenacao) || 'sem_regional'}:${period}`;
+}
+
+function dashLocalCacheKey(ref) {
+  return `${GESTOR_CACHE_KEY}:${ref}`;
+}
+
+async function readDashboardCacheSegment(ref) {
+  try {
+    const { data, error } = await supabase
+      .from('dashboard_cache')
+      .select('dados_json,atualizado_em')
+      .eq('modulo', 'dashboard')
+      .eq('referencia', ref)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data?.dados_json) return null;
+    return {
+      ...data.dados_json,
+      cache_atualizado_em: data.atualizado_em,
+      cache_ref: ref,
+      cache_source: 'supabase',
+    };
+  } catch (error) {
+    console.warn('[dashboard] cache remoto indisponível:', error?.message || error);
+    return null;
+  }
+}
+
+async function saveDashboardCacheSegment(ref, payload, { isMaster, ano, mes } = {}) {
+  try {
+    await supabase.from('dashboard_cache').upsert({
+      modulo: 'dashboard',
+      referencia: ref,
+      escopo: isMaster ? 'master' : 'regional',
+      ano,
+      mes,
+      dados_json: payload,
+      origem_importacao: 'dashboard_auto',
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'modulo,referencia' });
+  } catch (error) {
+    console.warn('[dashboard] não foi possível salvar cache remoto:', error?.message || error);
+  }
+}
+
+async function fetchGestorData(ctx, { force = false } = {}) {
+  const isMaster = !!ctx?.user?.is_master;
+  const coordenacao = ctx?.user?.coordenacao || '';
+  const now = new Date();
+  const ano = now.getFullYear();
+  const mes = now.getMonth() + 1;
+  const ref = dashCacheReference({ isMaster, coordenacao, ano, mes });
+
+  if (!force) {
+    const cached = await readDashboardCacheSegment(ref);
+    if (cached) return cached;
+  }
+
+  const fresh = await fetchGestorDataLive(ctx);
+  const payload = { ...fresh, cache_ref: ref, cache_source: 'live', cache_atualizado_em: new Date().toISOString() };
+  saveDashboardCacheSegment(ref, payload, { isMaster, ano, mes });
+  return payload;
+}
+
+async function fetchGestorDataLive(ctx) {
   const isMaster = !!ctx?.user?.is_master;
   const coordenacao = ctx?.user?.coordenacao || '';
   const now = new Date();
@@ -745,39 +818,48 @@ initProtectedPage('Dashboard', async (content, userContext) => {
   injectDashStyles();
   const gestorSection = document.getElementById('dbGestorSection');
 
-  async function loadGestorData() {
+  async function loadGestorData({ force = false } = {}) {
     const btn = document.getElementById('dbRefreshBtn');
     if (btn) { btn.classList.add('loading'); btn.disabled = true; }
 
     const renderAndAnimate = (data) => {
       renderGestorDashboard(gestorSection, data);
-      document.getElementById('dbRefreshBtn')?.addEventListener('click', loadGestorData);
+      document.getElementById('dbRefreshBtn')?.addEventListener('click', () => loadGestorData({ force: true }));
       requestAnimationFrame(() => {
         const fillRect = gestorSection.querySelector('.db-state-fill-rect');
         if (fillRect) requestAnimationFrame(() => { fillRect.style.transform = 'scaleY(1)'; });
       });
     };
 
-    try {
-      const raw = localStorage.getItem(GESTOR_CACHE_KEY);
-      if (raw) {
-        const { ts, data } = JSON.parse(raw);
-        if (Date.now() - ts < GESTOR_CACHE_TTL) {
-          renderAndAnimate(data);
-          const b = document.getElementById('dbRefreshBtn');
-          if (b) { b.classList.remove('loading'); b.disabled = false; }
-          fetchGestorData(userContext).then(fresh => {
-            try { localStorage.setItem(GESTOR_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
-            renderAndAnimate(fresh);
-          }).catch(() => {});
-          return;
+    const now = new Date();
+    const ano = now.getFullYear();
+    const mes = now.getMonth() + 1;
+    const ref = dashCacheReference({
+      isMaster: !!userContext?.user?.is_master,
+      coordenacao: userContext?.user?.coordenacao || '',
+      ano,
+      mes,
+    });
+    const localKey = dashLocalCacheKey(ref);
+
+    if (!force) {
+      try {
+        const raw = localStorage.getItem(localKey);
+        if (raw) {
+          const { ts, data } = JSON.parse(raw);
+          if (Date.now() - ts < GESTOR_CACHE_TTL && data) {
+            renderAndAnimate(data);
+            const b = document.getElementById('dbRefreshBtn');
+            if (b) { b.classList.remove('loading'); b.disabled = false; }
+            return;
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
     try {
-      const data = await fetchGestorData(userContext);
-      try { localStorage.setItem(GESTOR_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
+      const data = await fetchGestorData(userContext, { force });
+      try { localStorage.setItem(localKey, JSON.stringify({ ts: Date.now(), data })); } catch {}
       renderAndAnimate(data);
     } catch (e) {
       gestorSection.innerHTML = `<div class="db-loading" style="color:#f87171">Erro ao carregar: ${esc(e?.message || 'Tente novamente.')}</div>`;
