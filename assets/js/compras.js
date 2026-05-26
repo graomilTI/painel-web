@@ -6,7 +6,7 @@ const CATALOGO = [
 ].map(([material,tipo])=>({material,tipo}));
 const UNIFORME_TAMANHOS = ['PP','P','M','G','GG','XG','EXG'];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando termo', comprado:'Comprado', recusado:'Recusado' };
-const state = { mode:'itens', rows:[], itens:[], colaboradores:[], uniformes:[] };
+const state = { mode:'itens', rows:[], itens:[], itensInterno:[], colaboradores:[], uniformes:[] };
 
 const esc = (v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate = (v)=>{ const [y,m,d]=String(v||'').slice(0,10).split('-'); return y&&m&&d?`${d}/${m}/${y}`:'-'; };
@@ -384,6 +384,102 @@ function setupColabSearch(){
     box.querySelectorAll('[data-add-colab]').forEach(btn=>btn.onclick=()=>{ const c=state.colaboradores.find(x=>colaboradorKey(x)===btn.dataset.addColab); if(c) pushUniforme(c); input.value=''; box.innerHTML=''; renderUniformes(); });
   });
 }
+function bindInternoForm(){
+  const input=document.getElementById('cmpIntItem');
+  const box=document.getElementById('cmpIntItemSug');
+  if(!input||!box) return;
+  function renderIntSug(){
+    const q=norm(input.value);
+    const exact=findCatalogoItem(input.value);
+    const ts=document.getElementById('cmpIntTipo');
+    if(ts&&exact) ts.value=exact.tipo;
+    if(q.length<1){box.innerHTML='';return;}
+    const list=CATALOGO.filter(i=>norm(i.material).includes(q)).slice(0,10);
+    box.innerHTML=list.length
+      ?list.map(i=>`<button type="button" data-int-sug="${esc(i.material)}"><span>${esc(i.material)}</span><small>${esc(i.tipo)}</small></button>`).join('')
+      :'<div class="cmp-no-sug">Não está no catálogo — selecione o tipo e adicione.</div>';
+    box.querySelectorAll('[data-int-sug]').forEach(btn=>btn.onmousedown=(ev)=>{
+      ev.preventDefault();
+      const found=findCatalogoItem(btn.dataset.intSug);
+      input.value=found?.material||btn.dataset.intSug;
+      const ts=document.getElementById('cmpIntTipo');
+      if(ts&&found) ts.value=found.tipo;
+      box.innerHTML='';
+    });
+  }
+  input.addEventListener('input',renderIntSug);
+  input.addEventListener('focus',renderIntSug);
+  input.addEventListener('blur',()=>setTimeout(()=>{if(box) box.innerHTML='';},160));
+  document.getElementById('cmpIntAddItem').onclick=()=>{
+    const raw=(input.value||'').trim();
+    const found=findCatalogoItem(raw);
+    const qtd=Number(document.getElementById('cmpIntUn')?.value||1);
+    const tipo=document.getElementById('cmpIntTipo')?.value||'';
+    const material=found?.material||raw.toUpperCase();
+    if(!material){setMsg('cmpFeedback','Digite o nome do item antes de adicionar.',true);return;}
+    if(!tipo){setMsg('cmpFeedback','Selecione o tipo antes de adicionar.',true);return;}
+    state.itensInterno.push({_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,unidade:qtd,quantidade:qtd,material,tipo});
+    input.value=''; document.getElementById('cmpIntUn').value=1; document.getElementById('cmpIntTipo').value=''; box.innerHTML='';
+    renderInternoList();
+    setMsg('cmpFeedback','Item adicionado na lista.');
+  };
+}
+function renderInternoList(){
+  const body=document.getElementById('cmpInternoBody');
+  if(!body) return;
+  if(!state.itensInterno.length){
+    body.innerHTML='<tr><td colspan="4" class="cmp-empty">Nenhum item adicionado. Use o formulário acima e clique em <b>Adicionar item</b>.</td></tr>';
+    return;
+  }
+  body.innerHTML=state.itensInterno.map(i=>`<tr data-interno-id="${esc(i._id)}"><td>${esc(i.unidade||1)}</td><td>${esc(i.material)}</td><td>${esc(i.tipo||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-interno>Remover</button></td></tr>`).join('');
+  body.querySelectorAll('[data-del-interno]').forEach(btn=>btn.onclick=()=>{
+    const id=btn.closest('tr').dataset.internoId;
+    state.itensInterno=state.itensInterno.filter(i=>String(i._id)!==String(id));
+    renderInternoList();
+  });
+}
+async function submitInterno(ctx){
+  const raw=state.itensInterno.filter(i=>i.material);
+  if(!raw.length) throw new Error('Adicione pelo menos um item na lista antes de solicitar.');
+  const u=usuario(ctx); const data=document.getElementById('cmpData').value||today();
+  const header={
+    data_solicitacao:data,
+    solicitante_id:u.id||null,
+    solicitante:solicitanteNome(ctx),
+    coordenacao:u.coordenacao||u.supervisao||null,
+    tipo_solicitacao:'interno',
+    status:'pendente',
+    observacoes:document.getElementById('cmpObsInterno')?.value.trim()||null,
+    created_by:u.id||null
+  };
+  const {data:sol,error}=await insertSolicitacaoComCompatibilidade(header);
+  if(error) throw error;
+  const dbItens=raw.map(({_id,...i})=>({...i,solicitacao_id:sol.id,status:'pendente'}));
+  const {error:itemErr}=await supabase.from('compras_itens').insert(dbItens);
+  if(itemErr) throw itemErr;
+  return dbItens;
+}
+async function notifyInterno(message){
+  let cfgs=await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor','ESTOQUE').eq('ativo',true).limit(10));
+  if(!cfgs.length) cfgs=await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor','COMPRAS').eq('ativo',true).limit(10));
+  if(!cfgs.length) return {ok:false,msg:'Solicitação salva. Nenhum responsável configurado em compras_notificacoes_config.'};
+  let ok=0;
+  for(const cfg of cfgs){
+    if(!cfg.telefone) continue;
+    try{
+      const tel=String(cfg.telefone).replace(/\D/g,'');
+      const {data,error}=await supabase.functions.invoke('botconversa-send',{body:{phone:tel,message,nome:cfg.nome||''}});
+      if(!error&&data?.ok) ok++;
+    }catch(e){ console.warn('[notifyInterno]',e); }
+  }
+  return {ok:ok>0,msg:ok?`Notificação enviada para ${ok} responsável(is).`:'Solicitação salva, mas não foi possível enviar notificação.'};
+}
+function buildMessageInterno(ctx,itens){
+  const nome=solicitanteNome(ctx); const data=brDate(document.getElementById('cmpData').value);
+  const obs=document.getElementById('cmpObsInterno')?.value.trim()||'';
+  const linhas=itens.map(i=>`• ${i.unidade||i.quantidade||1} un | ${i.material}`).join('\n');
+  return `Solicitação Interna — Estoque Matriz\nGestor: ${nome}\nData: ${data}${obs?`\nJustificativa: ${obs}`:''}\n\n${linhas}`;
+}
 function isSchemaColumnError(error){
   const msg=String(error?.message||error?.details||error?.hint||'').toLowerCase();
   return msg.includes('schema cache') || msg.includes('could not find') || msg.includes('column') || error?.code==='PGRST204';
@@ -484,7 +580,7 @@ initProtectedPage('Compras', async (content, userContext)=>{
   await loadColaboradores();
   content.innerHTML=`${styles()}
   <section class="hero-card"><div><div class="eyebrow">Gestor</div><h2>Compras</h2><p>Solicitação de materiais, EPIs, patrimônios e uniformes direcionada ao setor de compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">GESTOR</span></div></section>
-  <section class="card mt-16"><div class="section-head"><div><h3>Nova solicitação</h3><p class="muted">Solicitante: <b>${esc(solicitanteNome(userContext))}</b>. O nome é preenchido automaticamente pelo usuário logado.</p></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">ITENS</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">UNIFORMES</button></div></div>
+  <section class="card mt-16"><div class="section-head"><div><h3>Nova solicitação</h3><p class="muted">Solicitante: <b>${esc(solicitanteNome(userContext))}</b>. O nome é preenchido automaticamente pelo usuário logado.</p></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">ITENS</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">UNIFORMES</button><button class="btn btn-secondary cmp-tab" data-mode="interno" type="button">INTERNO</button></div></div>
     <div class="cmp-grid"><div class="cmp-field"><label>Data da solicitação</label><input id="cmpData" type="date" value="${today()}"></div><div class="cmp-field"><label>Solicitante</label><input value="${esc(solicitanteNome(userContext))}" readonly></div><div class="cmp-field cmp-full"><label>Observações</label><textarea id="cmpObs" rows="2" placeholder="Informações adicionais, urgência ou destino."></textarea></div><div class="cmp-field"><label>Fornecedor</label><input id="cmpFornecedor" type="text" placeholder="Nome do fornecedor (opcional)"></div><div class="cmp-field"><label>WhatsApp do Fornecedor</label><input id="cmpTelFornecedor" type="tel" placeholder="Ex: 5545999999999 (opcional)"></div></div>
     <div id="panel-itens" class="cmp-panel active mt-16">
       <div class="cmp-add-box">
@@ -498,11 +594,12 @@ initProtectedPage('Compras', async (content, userContext)=>{
       <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tipo</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
     </div>
     <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-actions"><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos os colaboradores</button><div class="cmp-field" style="min-width:280px"><label>Adicionar colaborador</label><input id="cmpColabBusca" placeholder="Digite o nome"><div class="cmp-suggest" id="cmpColabSug"></div></div></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
+    <div id="panel-interno" class="cmp-panel mt-16"><div style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.22);border-radius:14px;padding:14px 16px;margin-bottom:16px"><b style="color:#a5b4fc">Solicitação Interna — Estoque Matriz</b><p class="muted" style="margin:4px 0 0">Solicite itens disponíveis no estoque da matriz. Sem necessidade de fornecedor ou cotação.</p></div><div class="cmp-add-box" style="grid-template-columns:110px 1.4fr 1fr auto"><div class="cmp-field"><label>Un.</label><input id="cmpIntUn" type="number" min="1" value="1"></div><div class="cmp-field cmp-autocomplete-wrap"><label>Item</label><input id="cmpIntItem" type="text" placeholder="Comece a digitar o item..." autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpIntItemSug"></div></div><div class="cmp-field"><label>Tipo</label><select id="cmpIntTipo"><option value="">-- Tipo --</option><option value="EPI">EPI</option><option value="Patrimonio">Patrimônio</option><option value="Outros">Outros</option></select></div><div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpIntAddItem" type="button">Adicionar item</button></div></div><div class="cmp-field mt-12"><label>Justificativa / Observações</label><textarea id="cmpObsInterno" rows="2" placeholder="Motivo da solicitação, destino ou urgência."></textarea></div><p class="muted mt-12">Monte a lista abaixo antes de clicar em <b>SOLICITAR</b>.</p><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tipo</th><th></th></tr></thead><tbody id="cmpInternoBody"></tbody></table></div></div>
     <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
   </section>
   <div class="cmp-cel-modal" id="cmpCelularModal"></div>
   <section class="card mt-16"><div class="section-head"><div><h3>Pendentes e histórico</h3><p class="muted">A solicitação fica pendente até compras concluir ou recusar.</p></div><button class="btn btn-secondary" id="cmpRefresh" type="button">Atualizar</button></div><div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div></section>`;
-  state.itens=[]; bindItemForm(); renderItensList(); renderUniformes(); setupColabSearch();
+  state.itens=[]; state.itensInterno=[]; bindItemForm(); bindInternoForm(); renderItensList(); renderInternoList(); renderUniformes(); setupColabSearch();
   document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
   document.getElementById('cmpAddTodos').onclick=()=>addAllColaboradores(userContext); document.getElementById('cmpRefresh').onclick=loadMinhas;
   async function doSolicitar(overrideItems=null){
@@ -510,12 +607,14 @@ initProtectedPage('Compras', async (content, userContext)=>{
     btn.disabled=true;
     try{
       setMsg('cmpFeedback','Salvando solicitação...');
-      const itens=state.mode==='itens'?await submitItens(userContext,overrideItems):await submitUniformes(userContext);
-      const n=await notifyCompras(buildMessage(userContext,state.mode,itens));
+      const itens=state.mode==='itens'?await submitItens(userContext,overrideItems):state.mode==='uniformes'?await submitUniformes(userContext):await submitInterno(userContext);
+      const n=state.mode==='interno'?await notifyInterno(buildMessageInterno(userContext,itens)):await notifyCompras(buildMessage(userContext,state.mode,itens));
       setMsg('cmpFeedback',`Solicitação enviada. ${n.msg}`,!n.ok);
       document.getElementById('cmpObs').value='';
       state.itens=[]; renderItensList();
       state.uniformes=[]; renderUniformes();
+      state.itensInterno=[]; renderInternoList();
+      if(document.getElementById('cmpObsInterno')) document.getElementById('cmpObsInterno').value='';
       await loadMinhas();
     }catch(e){ setMsg('cmpFeedback',e.message||'Erro ao solicitar.',true); }
     finally{ btn.disabled=false; }
