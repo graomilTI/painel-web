@@ -1,0 +1,71 @@
+import { signInWithPassword, getUserContext, getSession } from './auth.js';
+import { saveUserContext, loadUserContext } from './sessionStore.js';
+import { toPanelUrl } from './paths.js';
+
+function homeUrl(context) {
+  const role = String(context?.user?.role ?? context?.role ?? '').toLowerCase();
+  if (role === 'gestor') {
+    const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+    return toPanelUrl(isMobile ? 'gestor-app' : 'programacao');
+  }
+  return toPanelUrl('dashboard');
+}
+
+const form = document.getElementById('loginForm');
+const emailInput = document.getElementById('email');
+const passwordInput = document.getElementById('password');
+const feedback = document.getElementById('loginFeedback');
+const togglePassword = document.getElementById('togglePassword');
+const submitBtn = form?.querySelector('button[type="submit"]');
+
+if (togglePassword) {
+  togglePassword.addEventListener('click', () => {
+    passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
+    togglePassword.textContent = passwordInput.type === 'password' ? 'Mostrar' : 'Ocultar';
+  });
+}
+
+async function redirectIfSessionExists() {
+  try {
+    const session = await getSession();
+    if (session?.user) {
+      feedback.textContent = 'Sessão ativa encontrada. Redirecionando...';
+      const saved = loadUserContext();
+      window.location.replace(homeUrl(saved));
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+form?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  feedback.textContent = 'Entrando...';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Entrando...';
+  }
+
+  try {
+    const authData = await signInWithPassword(emailInput.value.trim(), passwordInput.value);
+    const userId = authData.user?.id;
+    if (!userId) throw new Error('Usuário não encontrado após login.');
+
+    const context = await getUserContext(userId);
+    if (!context?.user?.active) throw new Error('Usuário inativo.');
+
+    saveUserContext(context);
+    feedback.textContent = 'Login realizado com sucesso.';
+    window.location.replace(homeUrl(context));
+  } catch (err) {
+    console.error(err);
+    feedback.textContent = err.message || 'Erro ao realizar login.';
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Entrar';
+    }
+  }
+});
+
+redirectIfSessionExists();
