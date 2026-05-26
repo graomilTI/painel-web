@@ -39,6 +39,11 @@ let _lidas = new Set();       // notificacao_id lidas pelo usuário atual
 let _executadas = new Set();  // notificacao_id executadas pelo usuário atual
 let _listeners = [];
 let _realtimeCh = null;
+let _computedChs = [];
+let _computedPollInterval = null;
+let _computedMidnightTimeout = null;
+let _initPromise = null;
+let _initialized = false;
 
 // ---------- helpers de contexto ----------
 function normalize(v) {
@@ -409,68 +414,117 @@ export async function criarNotificacao(payload) {
 }
 
 // ---------- tempo real ----------
-function setupRealtime() {
-  if (_realtimeCh) supabase.removeChannel(_realtimeCh);
+async function setupRealtime() {
+  try {
+    if (_realtimeCh) {
+      await supabase.removeChannel(_realtimeCh);
+      _realtimeCh = null;
+    }
 
-  _realtimeCh = supabase
-    .channel('painel_notificacoes_rt')
-    .on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'painel_notificacoes',
-    }, async () => {
-      await loadEventos();
-      await loadMinhasLeituras();
-      notify();
-    })
-    .subscribe();
+    _realtimeCh = supabase
+      .channel('painel_notificacoes_rt')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'painel_notificacoes',
+      }, async () => {
+        await loadEventos();
+        await loadMinhasLeituras();
+        notify();
+      })
+      .subscribe((status, err) => {
+        if (err) console.warn('[notif] realtime painel_notificacoes:', err);
+        console.debug?.('[notif] realtime painel_notificacoes:', status);
+      });
+  } catch (err) {
+    console.warn('[notif] realtime painel_notificacoes indisponível:', err);
+  }
 }
 
 function setupComputedPolling() {
+  if (_computedPollInterval) clearInterval(_computedPollInterval);
+  if (_computedMidnightTimeout) clearTimeout(_computedMidnightTimeout);
+
   // Atualiza computed a cada 5 minutos
-  setInterval(async () => {
+  _computedPollInterval = setInterval(async () => {
     await refreshComputed();
     notify();
   }, 5 * 60 * 1000);
 
-  // Atualiza no início de cada dia
-  const now = new Date();
-  const meianoite = new Date(now);
-  meianoite.setHours(24, 0, 30, 0);
-  setTimeout(async () => {
-    await refreshComputed();
-    notify();
-  }, meianoite - now);
+  // Atualiza no início de cada dia e recria o agendamento do próximo dia
+  const scheduleMidnightRefresh = () => {
+    const now = new Date();
+    const meianoite = new Date(now);
+    meianoite.setHours(24, 0, 30, 0);
+    _computedMidnightTimeout = setTimeout(async () => {
+      await refreshComputed();
+      notify();
+      scheduleMidnightRefresh();
+    }, meianoite - now);
+  };
+
+  scheduleMidnightRefresh();
 }
 
 // ---------- subscriptions para tabelas de computed ----------
-function setupComputedRealtime() {
-  const tables = ['operacional_os', 'programacao_dia', 'hospedagem_solicitacoes'];
-  tables.forEach((table) => {
-    supabase
-      .channel(`notif_computed_${table}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table }, async () => {
-        await refreshComputed();
-        notify();
-      })
-      .subscribe();
-  });
+async function setupComputedRealtime() {
+  const tables = ['operacional_os', 'programacao_dia', 'hospedagem_solicitacoes', 'patrimonios_historico_leituras'];
+
+  try {
+    if (_computedChs.length) {
+      await Promise.allSettled(_computedChs.map((ch) => supabase.removeChannel(ch)));
+      _computedChs = [];
+    }
+
+    for (const table of tables) {
+      const channel = supabase
+        .channel(`notif_computed_${table}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table }, async () => {
+          await refreshComputed();
+          notify();
+        });
+
+      _computedChs.push(channel);
+      channel.subscribe((status, err) => {
+        if (err) console.warn(`[notif] realtime computed ${table}:`, err);
+        console.debug?.(`[notif] realtime computed ${table}:`, status);
+      });
+    }
+  } catch (err) {
+    // O painel não pode quebrar se o realtime não estiver disponível.
+    // O polling de 5 minutos continua mantendo os números atualizados.
+    console.warn('[notif] realtime computed indisponível:', err);
+  }
 }
 
 // ---------- init ----------
 export async function initNotificacoesEngine(userContext) {
-  _ctx = userContext;
-  _lidas.clear();
-  _executadas.clear();
+  if (_initPromise) return _initPromise;
 
-  await Promise.all([refreshComputed(), loadEventos()]);
-  await loadMinhasLeituras();
+  _initPromise = (async () => {
+    _ctx = userContext;
+    _lidas.clear();
+    _executadas.clear();
 
-  setupRealtime();
-  setupComputedRealtime();
-  setupComputedPolling();
+    await Promise.all([refreshComputed(), loadEventos()]);
+    await loadMinhasLeituras();
 
-  return { getNotificacoes, getBadgeCount, onUpdate, marcarLida, marcarExecutada, criarNotificacao };
+    if (!_initialized) {
+      _initialized = true;
+      setupComputedPolling();
+    }
+
+    await setupRealtime();
+    await setupComputedRealtime();
+
+    return { getNotificacoes, getBadgeCount, onUpdate, marcarLida, marcarExecutada, criarNotificacao };
+  })().catch((err) => {
+    _initPromise = null;
+    _initialized = false;
+    throw err;
+  });
+
+  return _initPromise;
 }
 
 // ---------- para módulos externos ----------
