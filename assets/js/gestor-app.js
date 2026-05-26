@@ -6,7 +6,7 @@ const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const CACHE_KEY      = 'grao1000:gestor-app:v1';
 const CACHE_TTL      = 1000 * 60 * 7;
-const DASH_CACHE_KEY = 'grao1000:gestor-dash:v2';
+const DASH_CACHE_KEY = 'grao1000:gestor-dash:v3';
 const DASH_CACHE_TTL = 1000 * 60 * 5;
 const LIMITE_MULTIPLOS = 500000;
 const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
@@ -316,36 +316,38 @@ async function fetchDashData() {
   const dataD7   = `${d7.getFullYear()}-${String(d7.getMonth()+1).padStart(2,'0')}-${String(d7.getDate()).padStart(2,'0')}`;
   const dataHoje = `${ano}-${String(mes).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
-  let prodBase      = supabase.from('producao_snapshot').select('tons.sum()').gte('data', dataIni).lt('data', dataFim);
-  let daily7Base    = supabase.from('producao_snapshot').select('data,tons').gte('data', dataD7).lte('data', dataHoje);
+  const makeProdQuery = () => {
+    let q = supabase
+      .from('producao_snapshot')
+      .select('data,coordenacao,tons')
+      .gte('data', dataIni)
+      .lt('data', dataFim)
+      .order('data', { ascending: true });
+    if (!state.isMaster && coordenacao) q = q.eq('coordenacao', coordenacao);
+    return q;
+  };
+
   let patriBase     = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo');
   let patriLateBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo').gt('dias_sem_leitura', 7);
-  const prodStatePromise = state.isMaster
-    ? supabase.from('producao_snapshot').select('coordenacao, tons.sum()').gte('data', dataIni).lt('data', dataFim)
-    : Promise.resolve({ data: [] });
 
   if (!state.isMaster && coordenacao) {
-    prodBase      = prodBase.eq('coordenacao', coordenacao);
-    daily7Base    = daily7Base.eq('coordenacao', coordenacao);
     patriBase     = patriBase.eq('coordenacao', coordenacao);
     patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
   }
 
-  const [metaRes, patriTotalRes, patriLateRes, d7Res, prodRes, prodStateRes] = await Promise.all([
+  const [metaRes, prodRows, patriTotalRes, patriLateRes] = await Promise.all([
     supabase.from('metas_producao').select('meta_tons,regional').eq('ano', ano).eq('mes', mes).eq('ativo', true),
+    appFetchAllRows(makeProdQuery),
     patriBase,
     patriLateBase,
-    daily7Base,
-    prodBase,
-    prodStatePromise,
   ]);
 
-  const produzido = Number(prodRes.data?.[0]?.sum || 0);
+  const produzido = prodRows.reduce((s, r) => s + Number(r.tons || 0), 0);
 
   const d7map = {};
-  for (const r of (d7Res.data || [])) {
+  for (const r of prodRows) {
     const k = String(r.data || '').slice(0, 10);
-    if (k) d7map[k] = (d7map[k] || 0) + Number(r.tons || 0);
+    if (k >= dataD7 && k <= dataHoje) d7map[k] = (d7map[k] || 0) + Number(r.tons || 0);
   }
   const daily7 = Array.from({length: 7}, (_, i) => {
     const d = new Date(now); d.setDate(d.getDate() - (6 - i));
@@ -368,7 +370,7 @@ async function fetchDashData() {
   }
 
   const mapaEstados = state.isMaster
-    ? buildStatePerfMapApp(metaRes.data || [], prodStateRes.data || [], diaAtual, diasNoMes)
+    ? buildStatePerfMapApp(metaRes.data || [], prodRows, diaAtual, diasNoMes)
     : {};
 
   return {
@@ -632,6 +634,20 @@ function getStatePaletteApp(pct, onTrack) {
   }
   const alpha = (0.26 + (p / 100) * 0.42).toFixed(2);
   return { fill: `rgba(253,230,138,${alpha})`, stroke: 'rgba(253,230,138,.85)', text: 'rgba(255,248,220,.95)' };
+}
+
+async function appFetchAllRows(makeQuery, pageSize = 1000, maxPages = 30) {
+  const rows = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+    const { data, error } = await makeQuery().range(from, to);
+    if (error) throw error;
+    const chunk = data || [];
+    rows.push(...chunk);
+    if (chunk.length < pageSize) break;
+  }
+  return rows;
 }
 
 function appRenderStateFill({ pct, onTrack, estado, mapaEstados }) {
