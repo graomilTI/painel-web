@@ -4,8 +4,10 @@ import { toPanelUrl } from './paths.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
-const CACHE_KEY = 'grao1000:gestor-app:v1';
-const CACHE_TTL = 1000 * 60 * 7;
+const CACHE_KEY      = 'grao1000:gestor-app:v1';
+const CACHE_TTL      = 1000 * 60 * 7;
+const DASH_CACHE_KEY = 'grao1000:gestor-dash:v1';
+const DASH_CACHE_TTL = 1000 * 60 * 5;
 const LIMITE_MULTIPLOS = 500000;
 const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
 const ICO_AGUARDAR  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="pointer-events:none"><line x1="8" y1="5" x2="8" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>`;
@@ -301,7 +303,7 @@ async function loadData({ useCache = true } = {}) {
   }
 }
 
-async function loadDashboard() {
+async function fetchDashData() {
   const now = new Date();
   const ano = now.getFullYear();
   const mes = now.getMonth() + 1;
@@ -312,69 +314,90 @@ async function loadDashboard() {
   const dataD7   = `${d7.getFullYear()}-${String(d7.getMonth()+1).padStart(2,'0')}-${String(d7.getDate()).padStart(2,'0')}`;
   const dataHoje = `${ano}-${String(mes).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
-  state.dashboard = { loading: true, coordenacao, ano, mes, meta: null, produzido: 0, daily7: [], patrimonios: { total: 0, atrasados: 0 } };
+  let prodBase      = supabase.from('producao_snapshot').select('tons.sum()').gte('data', dataIni).lt('data', dataFim);
+  let daily7Base    = supabase.from('producao_snapshot').select('data,tons').gte('data', dataD7).lte('data', dataHoje);
+  let patriBase     = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo');
+  let patriLateBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo').gt('dias_sem_leitura', 7);
+
+  if (!state.isMaster && coordenacao) {
+    prodBase      = prodBase.eq('coordenacao', coordenacao);
+    daily7Base    = daily7Base.eq('coordenacao', coordenacao);
+    patriBase     = patriBase.eq('coordenacao', coordenacao);
+    patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
+  }
+
+  const [metaRes, patriTotalRes, patriLateRes, d7Res, prodRes] = await Promise.all([
+    supabase.from('metas_producao').select('meta_tons,regional').eq('ano', ano).eq('mes', mes).eq('ativo', true),
+    patriBase,
+    patriLateBase,
+    daily7Base,
+    prodBase,
+  ]);
+
+  const produzido = Number(prodRes.data?.[0]?.sum || 0);
+
+  const d7map = {};
+  for (const r of (d7Res.data || [])) {
+    const k = String(r.data || '').slice(0, 10);
+    if (k) d7map[k] = (d7map[k] || 0) + Number(r.tons || 0);
+  }
+  const daily7 = Array.from({length: 7}, (_, i) => {
+    const d = new Date(now); d.setDate(d.getDate() - (6 - i));
+    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    return { date: k, tons: d7map[k] || 0 };
+  });
+
+  let meta = null;
+  if (metaRes.data?.length) {
+    if (state.isMaster) {
+      meta = metaRes.data.reduce((s, r) => s + Number(r.meta_tons || 0), 0);
+    } else {
+      const hit = metaRes.data.find((r) =>
+        normalize(r.regional) === normalize(coordenacao) ||
+        normalize(coordenacao).startsWith(normalize(r.regional)) ||
+        normalize(r.regional).startsWith(normalize(coordenacao))
+      );
+      meta = hit ? Number(hit.meta_tons) : null;
+    }
+  }
+
+  return {
+    loading: false, coordenacao, ano, mes, meta, produzido, daily7,
+    patrimonios: { total: patriTotalRes.count ?? 0, atrasados: patriLateRes.count ?? 0 },
+  };
+}
+
+async function loadDashboard() {
+  const coordenacao = state.appUser?.coordenacao || '';
+  const now = new Date();
+  const ano = now.getFullYear();
+  const mes = now.getMonth() + 1;
+  const empty = { loading: false, coordenacao, ano, mes, meta: null, produzido: 0, daily7: [], patrimonios: { total: 0, atrasados: 0 } };
 
   try {
-    let patriBase     = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo');
-    let patriLateBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo').gt('dias_sem_leitura', 7);
-    let prodBase      = supabase.from('producao_snapshot').select('tons').gte('data', dataIni).lt('data', dataFim);
-    let daily7Base    = supabase.from('producao_snapshot').select('data,tons').gte('data', dataD7).lte('data', dataHoje);
-    if (!state.isMaster && coordenacao) {
-      prodBase      = prodBase.eq('coordenacao', coordenacao);
-      daily7Base    = daily7Base.eq('coordenacao', coordenacao);
-      patriBase     = patriBase.eq('coordenacao', coordenacao);
-      patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
-    }
-
-    const [metaRes, patriTotalRes, patriLateRes, d7Res] = await Promise.all([
-      supabase.from('metas_producao').select('meta_tons,regional').eq('ano', ano).eq('mes', mes).eq('ativo', true),
-      patriBase,
-      patriLateBase,
-      daily7Base,
-    ]);
-
-    const PAGE = 1000;
-    let produzido = 0;
-    let page = 0;
-    while (true) {
-      const { data, error } = await prodBase.range(page * PAGE, (page + 1) * PAGE - 1);
-      if (error) throw error;
-      if (!data?.length) break;
-      produzido += data.reduce((s, r) => s + Number(r.tons || 0), 0);
-      if (data.length < PAGE) break;
-      page++;
-    }
-
-    const d7map = {};
-    for (const r of (d7Res.data || [])) {
-      const k = String(r.data || '').slice(0, 10);
-      if (k) d7map[k] = (d7map[k] || 0) + Number(r.tons || 0);
-    }
-    const daily7 = Array.from({length: 7}, (_, i) => {
-      const d = new Date(now); d.setDate(d.getDate() - (6 - i));
-      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      return { date: k, tons: d7map[k] || 0 };
-    });
-
-    let meta = null;
-    if (metaRes.data?.length) {
-      if (state.isMaster) {
-        meta = metaRes.data.reduce((s, r) => s + Number(r.meta_tons || 0), 0);
-      } else {
-        const hit = metaRes.data.find((r) =>
-          normalize(r.regional) === normalize(coordenacao) ||
-          normalize(coordenacao).startsWith(normalize(r.regional)) ||
-          normalize(r.regional).startsWith(normalize(coordenacao))
-        );
-        meta = hit ? Number(hit.meta_tons) : null;
+    const raw = localStorage.getItem(DASH_CACHE_KEY);
+    if (raw) {
+      const { ts, data } = JSON.parse(raw);
+      if (Date.now() - ts < DASH_CACHE_TTL) {
+        state.dashboard = data;
+        // Background refresh — update state and re-render when done
+        fetchDashData().then(fresh => {
+          try { localStorage.setItem(DASH_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
+          state.dashboard = fresh;
+          if (state.currentTab === 'dashboard') { renderCurrentTab(); }
+        }).catch(() => {});
+        return;
       }
     }
-    const total = patriTotalRes.count ?? 0;
-    const atrasados = patriLateRes.count ?? 0;
-    state.dashboard = { loading: false, coordenacao, ano, mes, meta, produzido, daily7, patrimonios: { total, atrasados } };
+  } catch {}
+
+  try {
+    const data = await fetchDashData();
+    try { localStorage.setItem(DASH_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
+    state.dashboard = data;
   } catch (e) {
     console.warn('loadDashboard:', e);
-    state.dashboard = { loading: false, coordenacao, ano, mes, meta: null, produzido: 0, daily7: [], patrimonios: { total: 0, atrasados: 0 } };
+    state.dashboard = empty;
   }
 }
 

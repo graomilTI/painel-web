@@ -10,6 +10,8 @@ const ICON_STATUS  = `<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1
 
 const BR = new Intl.NumberFormat('pt-BR');
 const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const GESTOR_CACHE_KEY = 'grao1000:gestor-dash:v2';
+const GESTOR_CACHE_TTL = 5 * 60 * 1000;
 
 /* Brazil state SVG paths — viewBox 0 0 800 796, sourced from adm-hotel.js */
 const BR_STATES = [
@@ -267,44 +269,38 @@ async function fetchGestorData(ctx) {
   const dataD7   = `${d7.getFullYear()}-${String(d7.getMonth()+1).padStart(2,'0')}-${String(d7.getDate()).padStart(2,'0')}`;
   const dataHoje = `${ano}-${String(mes).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
-  let prodBase      = supabase.from('producao_snapshot').select('tons').gte('data',dataIni).lt('data',dataFim);
+  let prodBase      = supabase.from('producao_snapshot').select('tons.sum()').gte('data',dataIni).lt('data',dataFim);
   let daily7Base    = supabase.from('producao_snapshot').select('data,tons').gte('data',dataD7).lte('data',dataHoje);
   let patriBase     = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo');
   let patriLateBase = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo').gt('dias_sem_leitura',7);
-  let osBase        = supabase.from('operacional_os').select('status_gestor,configurada_em');
+  let osPendBase    = supabase.from('operacional_os').select('*',{count:'exact',head:true})
+                        .or('status_gestor.is.null,status_gestor.eq.AGUARDAR').is('configurada_em',null);
+  let osAtendBase   = supabase.from('operacional_os').select('*',{count:'exact',head:true}).eq('status_gestor','ATENDER');
+  let osTotalBase   = supabase.from('operacional_os').select('*',{count:'exact',head:true});
 
   if (!isMaster && coordenacao) {
     prodBase      = prodBase.eq('coordenacao', coordenacao);
     daily7Base    = daily7Base.eq('coordenacao', coordenacao);
     patriBase     = patriBase.eq('coordenacao', coordenacao);
     patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
-    osBase        = osBase.eq('coordenacao', coordenacao);
+    osPendBase    = osPendBase.eq('coordenacao', coordenacao);
+    osAtendBase   = osAtendBase.eq('coordenacao', coordenacao);
+    osTotalBase   = osTotalBase.eq('coordenacao', coordenacao);
   }
 
-  const [metaRes, patriTotalRes, patriLateRes, d7Res] = await Promise.all([
-    supabase.from('metas_producao').select('meta_tons,regional').eq('ano',ano).eq('mes',mes).eq('ativo',true),
-    patriBase,
-    patriLateBase,
-    daily7Base,
-  ]);
+  const [metaRes, patriTotalRes, patriLateRes, d7Res, prodRes, osPendRes, osAtendRes, osTotalRes] =
+    await Promise.all([
+      supabase.from('metas_producao').select('meta_tons,regional').eq('ano',ano).eq('mes',mes).eq('ativo',true),
+      patriBase,
+      patriLateBase,
+      daily7Base,
+      prodBase,
+      osPendBase,
+      osAtendBase,
+      osTotalBase,
+    ]);
 
-  const PAGE = 1000;
-  let produzido = 0;
-  for (let page = 0; ; page++) {
-    const { data, error } = await prodBase.range(page * PAGE, (page+1) * PAGE - 1);
-    if (error) throw error;
-    if (!data?.length) break;
-    produzido += data.reduce((s,r) => s + Number(r.tons||0), 0);
-    if (data.length < PAGE) break;
-  }
-
-  let allOs = [];
-  for (let page = 0; ; page++) {
-    const { data } = await osBase.range(page * PAGE, (page+1) * PAGE - 1);
-    if (!data?.length) break;
-    allOs = allOs.concat(data);
-    if (data.length < PAGE) break;
-  }
+  const produzido = Number(prodRes.data?.[0]?.sum || 0);
 
   const d7map = {};
   for (const r of (d7Res.data || [])) {
@@ -336,9 +332,9 @@ async function fetchGestorData(ctx) {
     produzido, meta, daily7,
     patriTotal: patriTotalRes.count ?? 0,
     patriAtrasados: patriLateRes.count ?? 0,
-    osPendentes: allOs.filter(o => (o.status_gestor||'AGUARDAR').toUpperCase()==='AGUARDAR' && !o.configurada_em).length,
-    osAtender:   allOs.filter(o => String(o.status_gestor||'').toUpperCase()==='ATENDER').length,
-    osTotal:     allOs.length,
+    osPendentes: osPendRes.count ?? 0,
+    osAtender:   osAtendRes.count ?? 0,
+    osTotal:     osTotalRes.count ?? 0,
   };
 }
 
@@ -655,14 +651,37 @@ initProtectedPage('Dashboard', async (content, userContext) => {
   async function loadGestorData() {
     const btn = document.getElementById('dbRefreshBtn');
     if (btn) { btn.classList.add('loading'); btn.disabled = true; }
-    try {
-      const data = await fetchGestorData(userContext);
+
+    const renderAndAnimate = (data) => {
       renderGestorDashboard(gestorSection, data);
       document.getElementById('dbRefreshBtn')?.addEventListener('click', loadGestorData);
       requestAnimationFrame(() => {
         const fillRect = gestorSection.querySelector('.db-state-fill-rect');
         if (fillRect) requestAnimationFrame(() => { fillRect.style.transform = 'scaleY(1)'; });
       });
+    };
+
+    try {
+      const raw = localStorage.getItem(GESTOR_CACHE_KEY);
+      if (raw) {
+        const { ts, data } = JSON.parse(raw);
+        if (Date.now() - ts < GESTOR_CACHE_TTL) {
+          renderAndAnimate(data);
+          const b = document.getElementById('dbRefreshBtn');
+          if (b) { b.classList.remove('loading'); b.disabled = false; }
+          fetchGestorData(userContext).then(fresh => {
+            try { localStorage.setItem(GESTOR_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
+            renderAndAnimate(fresh);
+          }).catch(() => {});
+          return;
+        }
+      }
+    } catch {}
+
+    try {
+      const data = await fetchGestorData(userContext);
+      try { localStorage.setItem(GESTOR_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
+      renderAndAnimate(data);
     } catch (e) {
       gestorSection.innerHTML = `<div class="db-loading" style="color:#f87171">Erro ao carregar: ${esc(e?.message || 'Tente novamente.')}</div>`;
       console.error('dashboard gestor:', e);
