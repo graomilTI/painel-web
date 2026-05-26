@@ -249,11 +249,9 @@ function rowHtml(r) {
   const chip = rem <= 0 ? 'danger' : pct < 20 ? 'warn' : 'ok';
   const original = contratoNorm(r.contratoOriginal);
   const title = !isContratoBtg(original) && original ? ` title="Valor recebido: ${esc(original)}"` : '';
-  const okBtn = r.status === 'VERIFICAR'
-    ? `<button class="btg-ok-btn" data-ok="${esc(r.key)}">OK</button>`
-    : r.status === 'AJUSTADO'
-      ? `<span class="btg-small-ok">Ajustado</span>`
-      : '—';
+  const okBtn = r.status === 'AJUSTADO'
+    ? `<button class="btg-ok-btn is-adjusted" data-ok="${esc(r.key)}" title="Linha já ajustada">Ajustado</button>`
+    : `<button class="btg-ok-btn" data-ok="${esc(r.key)}" title="Marcar esta linha como ajustada">OK</button>`;
   return `<tr class="btg-row ${statusClass(r.status)}">
     <td><span class="btg-status ${statusClass(r.status)}">${esc(r.status || 'OK')}</span></td>
     <td><span class="btg-os-num">${esc(r.os || '—')}</span></td>
@@ -473,7 +471,7 @@ function distIndexes() {
 
 function applyAdjusted(row) {
   row.key = row.key || rowKey(row);
-  if (row.status === 'VERIFICAR' && state.ajustados.has(row.key)) row.status = 'AJUSTADO';
+  if (state.ajustados.has(row.key)) row.status = 'AJUSTADO';
   return row;
 }
 
@@ -618,6 +616,7 @@ function injectStyles() {
     .btg-status-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
     .btg-filter-btn,.btg-ok-btn{border:1px solid rgba(52,211,153,.18);border-radius:999px;background:rgba(15,23,42,.62);color:#d1d5db;padding:7px 11px;font-size:12px;font-weight:800;cursor:pointer;transition:.15s}
     .btg-filter-btn:hover,.btg-filter-btn.active,.btg-ok-btn:hover{border-color:rgba(52,211,153,.45);background:rgba(22,163,74,.18);color:#ecfdf5}
+    .btg-ok-btn.is-adjusted{border-color:rgba(59,130,246,.28);background:rgba(59,130,246,.14);color:#93c5fd}
     .btg-filter-btn b{margin-left:5px;color:#86efac}
     .btg-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.15);border-radius:16px;background:rgba(2,6,23,.25)}
     .btg-table{width:100%;min-width:1120px;border-collapse:separate;border-spacing:0;table-layout:fixed;color:#e2e2f0}
@@ -742,7 +741,7 @@ initProtectedPage('BTG — Logística', async (content) => {
       state.ajustados.add(ok.dataset.ok);
       saveAjustados(state.ajustados);
       const row = state.finalRows.find(r => r.key === ok.dataset.ok);
-      if (row && row.status === 'VERIFICAR') row.status = 'AJUSTADO';
+      if (row) row.status = 'AJUSTADO';
       render(el);
     }
   });
