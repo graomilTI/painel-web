@@ -14,10 +14,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Deploy
-        uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
-          publish_branch: gh-pages
+          fetch-depth: 0
+
+      - name: Deploy to gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          mkdir /tmp/deploy
+          cp -r . /tmp/deploy/
+          rm -rf /tmp/deploy/.git
+
+          git checkout gh-pages 2>/dev/null || git checkout --orphan gh-pages
+          git rm -rf . 2>/dev/null || true
+          cp -r /tmp/deploy/. .
+
+          git add -A
+          git commit -m "Deploy $(date '+%Y-%m-%d %H:%M:%S')" --allow-empty
+          git push origin gh-pages --force
