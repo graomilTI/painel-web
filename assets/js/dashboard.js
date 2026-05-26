@@ -10,7 +10,7 @@ const ICON_STATUS  = `<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1
 
 const BR = new Intl.NumberFormat('pt-BR');
 const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const GESTOR_CACHE_KEY = 'grao1000:gestor-dash:v3-producao-diaria-dashboard';
+const GESTOR_CACHE_KEY = 'grao1000:gestor-dash:v3';
 const GESTOR_CACHE_TTL = 5 * 60 * 1000;
 
 /* Brazil state SVG paths — viewBox 0 0 800 796, sourced from adm-hotel.js */
@@ -67,13 +67,56 @@ const STATE_FROM_COORD = {
   'MATO GROSSO MT1': 'MT', 'MATO GROSSO MT2': 'MT',
   'MATO GROSSO MT3 CONFRESA': 'MT', 'MATO GROSSO MT3 QUERENCIA': 'MT',
   'MATO GROSSO MT4': 'MT',
-  'MT SUL': 'MT', 'MT NORTE': 'MT', 'LUCAS DO RIO VERDE NOVA MUTUM': 'MT',
-  'LUCAS DO RIO VERDE': 'MT', 'NOVA MUTUM': 'MT',
   'PARA': 'PA',
   'CASCAVEL': 'PR', 'LONDRINA': 'PR', 'MARINGA E TERMINAIS': 'PR', 'PONTA GROSSA': 'PR',
-  'RIO GRANDE DO SUL': 'RS', 'SAO PAULO': 'SP', 'TOCANTINS': 'TO', 'SUL TO': 'TO',
-  'MA PI': 'MA',
+  'RIO GRANDE DO SUL': 'RS', 'SAO PAULO': 'SP', 'TOCANTINS': 'TO',
 };
+
+function resolveStateFromRegionalName(value) {
+  const norm = normalizeStr(value);
+  if (!norm) return null;
+  if (STATE_FROM_COORD[norm]) return STATE_FROM_COORD[norm];
+  const key = Object.keys(STATE_FROM_COORD).find((k) => norm === k || norm.startsWith(k) || k.startsWith(norm));
+  return key ? STATE_FROM_COORD[key] : null;
+}
+
+function buildStatePerfMap(metaRows, prodRows, diaAtual, diasNoMes) {
+  const map = {};
+  const ensure = (uf) => {
+    if (!uf) return null;
+    if (!map[uf]) map[uf] = { meta: 0, produzido: 0, pct: 0, ritmo: 0, onTrack: false };
+    return map[uf];
+  };
+
+  for (const row of (metaRows || [])) {
+    const uf = resolveStateFromRegionalName(row?.regional);
+    const item = ensure(uf);
+    if (item) item.meta += Number(row?.meta_tons || 0);
+  }
+  for (const row of (prodRows || [])) {
+    const uf = resolveStateFromRegionalName(row?.coordenacao);
+    const item = ensure(uf);
+    if (item) item.produzido += Number(row?.sum || row?.tons || 0);
+  }
+
+  Object.values(map).forEach((item) => {
+    item.pct = item.meta > 0 ? Math.min(100, (item.produzido / item.meta) * 100) : 0;
+    item.ritmo = item.meta > 0 ? (item.meta * diaAtual / diasNoMes) : 0;
+    item.onTrack = item.produzido >= item.ritmo;
+  });
+  return map;
+}
+
+function getStatePalette(pct, onTrack) {
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  if (p <= 0) return { fill: 'rgba(255,255,255,0.04)', stroke: 'rgba(255,255,255,0.10)', text: 'rgba(255,255,255,0.55)' };
+  if (onTrack || p >= 100) {
+    const alpha = (0.28 + (p / 100) * 0.52).toFixed(2);
+    return { fill: `rgba(0,200,122,${alpha})`, stroke: 'rgba(45,212,160,.95)', text: 'rgba(230,255,244,.95)' };
+  }
+  const alpha = (0.26 + (p / 100) * 0.42).toFixed(2);
+  return { fill: `rgba(253,230,138,${alpha})`, stroke: 'rgba(253,230,138,.85)', text: 'rgba(255,248,220,.95)' };
+}
 
 function esc(v) {
   return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
@@ -81,130 +124,6 @@ function esc(v) {
 
 function normalizeStr(value) {
   return String(value ?? '').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
-}
-
-function estadoFromRegional(value) {
-  const key = normalizeStr(value);
-  if (!key) return null;
-  if (STATE_FROM_COORD[key]) return STATE_FROM_COORD[key];
-  const aliases = [
-    ['MATO GROSSO DO SUL', 'MS'], ['MATO GROSSO', 'MT'], ['MINAS GERAIS', 'MG'],
-    ['RIO GRANDE DO SUL', 'RS'], ['SAO PAULO', 'SP'], ['TOCANTINS', 'TO'],
-    ['GOIAS', 'GO'], ['BAHIA', 'BA'], ['MARANHAO', 'MA'], ['PARA', 'PA'],
-    ['PARANA', 'PR'], ['CASCAVEL', 'PR'], ['LONDRINA', 'PR'], ['MARINGA', 'PR'], ['PONTA GROSSA', 'PR'],
-    ['LUCAS', 'MT'], ['NOVA MUTUM', 'MT'], ['CONFRESA', 'MT'], ['QUERENCIA', 'MT'],
-    ['SUL TO', 'TO'], ['MA PI', 'MA'],
-  ];
-  const hit = aliases.find(([term]) => key.includes(term));
-  return hit ? hit[1] : null;
-}
-
-function matchesRegionalScope(row, regional) {
-  if (!regional) return true;
-  const target = normalizeStr(regional);
-  const fields = [row?.regional, row?.coordenacao, row?.supervisao].map(normalizeStr).filter(Boolean);
-  return fields.some((field) => field === target || field.startsWith(target) || target.startsWith(field));
-}
-
-function findMetaForRegional(rows, regional) {
-  const target = normalizeStr(regional);
-  if (!target) return null;
-  return (rows || []).find((r) => {
-    const reg = normalizeStr(r.regional);
-    return reg === target || reg.startsWith(target) || target.startsWith(reg);
-  }) || null;
-}
-
-function getProducaoTons(row) {
-  return Number(row?.tons ?? row?.toneladas ?? 0) || 0;
-}
-
-function getProducaoDate(row) {
-  return String(row?.data || row?.data_referencia || '').slice(0, 10);
-}
-
-async function fetchProducaoDiariaMes(dataIni, dataFim) {
-  // Base correta: Produção Diária importada em producao_snapshot.
-  // É a mesma origem usada pelo Financeiro para pagamentos, não o Resultado Diário.
-  const pageSize = 1000;
-
-  async function fetchByColumn(columnName) {
-    const collected = [];
-    let from = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from('producao_snapshot')
-        .select('data,data_referencia,tons,coordenacao,supervisao,funcionario,os,cliente')
-        .gte(columnName, dataIni)
-        .lt(columnName, dataFim)
-        .order(columnName, { ascending: true })
-        .range(from, from + pageSize - 1);
-      if (error) throw error;
-      const rows = data || [];
-      collected.push(...rows);
-      if (rows.length < pageSize) break;
-      from += pageSize;
-    }
-    return collected;
-  }
-
-  const [byData, byReferencia] = await Promise.all([
-    fetchByColumn('data'),
-    fetchByColumn('data_referencia'),
-  ]);
-
-  const seen = new Set();
-  const unique = [];
-  for (const row of [...byData, ...byReferencia]) {
-    const dataRef = getProducaoDate(row);
-    const key = [
-      dataRef,
-      normalizeStr(row.funcionario),
-      normalizeStr(row.os),
-      normalizeStr(row.cliente),
-      normalizeStr(row.coordenacao),
-      getProducaoTons(row),
-    ].join('|');
-    if (!dataRef || seen.has(key)) continue;
-    seen.add(key);
-    unique.push(row);
-  }
-  return unique;
-}
-
-function buildStateProgressFromRegionals(metaRows, producaoRows) {
-  const byRegional = new Map();
-  for (const row of (producaoRows || [])) {
-    const reg = normalizeStr(row.coordenacao || row.regional || row.supervisao);
-    if (!reg) continue;
-    byRegional.set(reg, (byRegional.get(reg) || 0) + getProducaoTons(row));
-  }
-
-  const byUf = new Map();
-  for (const metaRow of (metaRows || [])) {
-    const regional = metaRow.regional || '';
-    const uf = estadoFromRegional(regional);
-    if (!uf) continue;
-    const meta = Number(metaRow.meta_tons || 0);
-    if (meta <= 0) continue;
-    const key = normalizeStr(regional);
-    let produzido = byRegional.get(key) || 0;
-    if (!produzido) {
-      for (const [prodKey, tons] of byRegional.entries()) {
-        if (prodKey === key || prodKey.startsWith(key) || key.startsWith(prodKey)) produzido += tons;
-      }
-    }
-    const current = byUf.get(uf) || { meta: 0, produzido: 0 };
-    current.meta += meta;
-    current.produzido += produzido;
-    byUf.set(uf, current);
-  }
-
-  const result = {};
-  for (const [uf, item] of byUf.entries()) {
-    result[uf] = item.meta > 0 ? Math.min(100, (item.produzido / item.meta) * 100) : 0;
-  }
-  return result;
 }
 
 function fmtTons(val) { return BR.format(Math.round(Number(val) || 0)) + ' t'; }
@@ -390,20 +309,29 @@ async function fetchGestorData(ctx) {
   const now = new Date();
   const ano = now.getFullYear();
   const mes = now.getMonth() + 1;
+  const diaAtual = now.getDate();
+  const diasNoMes = new Date(ano, mes, 0).getDate();
   const dataIni = `${ano}-${String(mes).padStart(2,'0')}-01`;
   const dataFim = mes === 12 ? `${ano+1}-01-01` : `${ano}-${String(mes+1).padStart(2,'0')}-01`;
   const d7 = new Date(now); d7.setDate(d7.getDate() - 6);
   const dataD7   = `${d7.getFullYear()}-${String(d7.getMonth()+1).padStart(2,'0')}-${String(d7.getDate()).padStart(2,'0')}`;
   const dataHoje = `${ano}-${String(mes).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
+  let prodBase      = supabase.from('producao_snapshot').select('tons.sum()').gte('data',dataIni).lt('data',dataFim);
+  let daily7Base    = supabase.from('producao_snapshot').select('data,tons').gte('data',dataD7).lte('data',dataHoje);
   let patriBase     = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo');
   let patriLateBase = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo').gt('dias_sem_leitura',7);
   let osPendBase    = supabase.from('operacional_os').select('*',{count:'exact',head:true})
                         .or('status_gestor.is.null,status_gestor.eq.AGUARDAR').is('configurada_em',null);
   let osAtendBase   = supabase.from('operacional_os').select('*',{count:'exact',head:true}).eq('status_gestor','ATENDER');
   let osTotalBase   = supabase.from('operacional_os').select('*',{count:'exact',head:true});
+  const prodStatePromise = isMaster
+    ? supabase.from('producao_snapshot').select('coordenacao, tons.sum()').gte('data',dataIni).lt('data',dataFim)
+    : Promise.resolve({ data: [] });
 
   if (!isMaster && coordenacao) {
+    prodBase      = prodBase.eq('coordenacao', coordenacao);
+    daily7Base    = daily7Base.eq('coordenacao', coordenacao);
     patriBase     = patriBase.eq('coordenacao', coordenacao);
     patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
     osPendBase    = osPendBase.eq('coordenacao', coordenacao);
@@ -411,29 +339,25 @@ async function fetchGestorData(ctx) {
     osTotalBase   = osTotalBase.eq('coordenacao', coordenacao);
   }
 
-  const [metaRes, patriTotalRes, patriLateRes, producaoMes, osPendRes, osAtendRes, osTotalRes] =
+  const [metaRes, patriTotalRes, patriLateRes, d7Res, prodRes, osPendRes, osAtendRes, osTotalRes, prodStateRes] =
     await Promise.all([
-      supabase.from('metas_producao').select('meta_tons,regional,estado').eq('ano',ano).eq('mes',mes).eq('ativo',true),
+      supabase.from('metas_producao').select('meta_tons,regional').eq('ano',ano).eq('mes',mes).eq('ativo',true),
       patriBase,
       patriLateBase,
-      fetchProducaoDiariaMes(dataIni, dataFim),
+      daily7Base,
+      prodBase,
       osPendBase,
       osAtendBase,
       osTotalBase,
+      prodStatePromise,
     ]);
 
-  if (metaRes.error) throw metaRes.error;
-
-  const producaoFiltrada = isMaster || !coordenacao
-    ? (producaoMes || [])
-    : (producaoMes || []).filter((row) => matchesRegionalScope(row, coordenacao));
-
-  const produzido = producaoFiltrada.reduce((sum, row) => sum + getProducaoTons(row), 0);
+  const produzido = Number(prodRes.data?.[0]?.sum || 0);
 
   const d7map = {};
-  for (const r of producaoFiltrada) {
-    const k = getProducaoDate(r);
-    if (k && k >= dataD7 && k <= dataHoje) d7map[k] = (d7map[k] || 0) + getProducaoTons(r);
+  for (const r of (d7Res.data || [])) {
+    const k = String(r.data || '').slice(0,10);
+    if (k) d7map[k] = (d7map[k] || 0) + Number(r.tons || 0);
   }
   const daily7 = Array.from({length:7}, (_,i) => {
     const d = new Date(now); d.setDate(d.getDate() - (6-i));
@@ -442,20 +366,26 @@ async function fetchGestorData(ctx) {
   });
 
   let meta = null;
-  const metas = Array.isArray(metaRes.data) ? metaRes.data : [];
-  if (metas.length) {
+  if (metaRes.data?.length) {
     if (isMaster) {
-      meta = metas.reduce((s,r) => s + Number(r.meta_tons||0), 0);
+      meta = metaRes.data.reduce((s,r) => s + Number(r.meta_tons||0), 0);
     } else {
-      const hit = findMetaForRegional(metas, coordenacao);
+      const hit = metaRes.data.find(r =>
+        normalizeStr(r.regional) === normalizeStr(coordenacao) ||
+        normalizeStr(coordenacao).startsWith(normalizeStr(r.regional)) ||
+        normalizeStr(r.regional).startsWith(normalizeStr(coordenacao))
+      );
       meta = hit ? Number(hit.meta_tons) : null;
     }
   }
 
+  const mapaEstados = isMaster
+    ? buildStatePerfMap(metaRes.data || [], prodStateRes.data || [], diaAtual, diasNoMes)
+    : {};
+
   return {
     ano, mes, coordenacao, isMaster,
-    produzido, meta, daily7,
-    stateProgress: buildStateProgressFromRegionals(metas, producaoMes || []),
+    produzido, meta, daily7, mapaEstados,
     patriTotal: patriTotalRes.count ?? 0,
     patriAtrasados: patriLateRes.count ?? 0,
     osPendentes: osPendRes.count ?? 0,
@@ -464,12 +394,35 @@ async function fetchGestorData(ctx) {
   };
 }
 
-function renderStateFill({ pct, onTrack, estado, stateProgress }) {
+function renderStateFill({ pct, onTrack, estado, mapaEstados }) {
   const uf       = estado && estado !== 'BR' ? estado : null;
   const isBR     = !uf;
   const target   = uf ? BR_STATES.find(s => s.uf === uf) : null;
   const centroid = (uf && BR_CENTROIDS[uf]) || {x:400, y:398};
-  const bounds   = (uf && BR_YBOUNDS[uf]) || (isBR ? {min:20, max:776} : {min:100, max:700});
+  const bounds   = (uf && BR_YBOUNDS[uf]) || {min:20, max:776};
+
+  if (isBR) {
+    const groups = BR_STATES.map((state) => {
+      const info = mapaEstados?.[state.uf] || null;
+      const palette = getStatePalette(info?.pct || 0, info?.onTrack);
+      const cx = BR_CENTROIDS[state.uf]?.x;
+      const cy = BR_CENTROIDS[state.uf]?.y;
+      const hasData = !!info && (info.meta > 0 || info.produzido > 0);
+      return `
+        <g>
+          <path d="${state.d}" fill="${palette.fill}" stroke="${palette.stroke}" stroke-width="1.1" stroke-linejoin="round"/>
+          ${hasData && cx && cy ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" style="font-size:9px;font-weight:900;letter-spacing:.04em;fill:${palette.text};paint-order:stroke fill;stroke:rgba(0,0,0,.45);stroke-width:3px">${Math.round(info.pct)}%</text>` : ''}
+        </g>`;
+    }).join('');
+
+    return `
+      <div class="db-state-wrap">
+        <svg class="db-state-svg" viewBox="0 0 800 796" xmlns="http://www.w3.org/2000/svg">
+          ${groups}
+        </svg>
+      </div>
+    `;
+  }
 
   const gradTop = onTrack ? '#2dd4a0' : '#fde68a';
   const gradBot = onTrack ? '#065f46' : '#78350f';
@@ -487,25 +440,12 @@ function renderStateFill({ pct, onTrack, estado, stateProgress }) {
   }
   const wavePath = `M ${-period},${fillY} ${waveSegs.join(' ')} L 1000,${bounds.max+30} L ${-period},${bounds.max+30} Z`;
 
-  const progressByUf = stateProgress && typeof stateProgress === 'object' ? stateProgress : null;
   const bgStates = BR_STATES
     .filter(s => s.uf !== uf)
-    .map((s) => {
-      const stPct = Number(progressByUf?.[s.uf] ?? 0);
-      if (isBR && progressByUf && stPct > 0) {
-        const stOnTrack = stPct >= pct;
-        const fill = stOnTrack ? 'rgba(0,200,122,.35)' : 'rgba(253,230,138,.24)';
-        const stroke = stOnTrack ? 'rgba(45,212,160,.36)' : 'rgba(253,230,138,.34)';
-        return `<path d="${s.d}" fill="${fill}" stroke="${stroke}" stroke-width="0.9" stroke-linejoin="round"><title>${s.uf} ${stPct.toFixed(0)}%</title></path>`;
-      }
-      return `<path d="${s.d}" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.10)" stroke-width="0.9" stroke-linejoin="round"/>`;
-    })
+    .map(s => `<path d="${s.d}" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.10)" stroke-width="0.9" stroke-linejoin="round"/>`)
     .join('');
 
-  const clipPaths = isBR
-    ? BR_STATES.map(s => `<path d="${s.d}"/>`).join('')
-    : `<path d="${target ? target.d : ''}"/>`;
-
+  const clipPaths = `<path d="${target ? target.d : ''}"/>`;
   const cx = centroid.x;
   const cy = centroid.y;
 
@@ -533,16 +473,13 @@ function renderStateFill({ pct, onTrack, estado, stateProgress }) {
           <path class="db-state-wave-path" d="${wavePath}" fill="${gradTop}" opacity=".35"/>
         </g>
 
-        ${!isBR && target ? `
+        ${target ? `
           <path d="${target.d}" fill="none" stroke="${glowClr}" stroke-width="2" stroke-linejoin="round"
                 filter="url(#dbGlowFilter)" opacity=".7"/>
           <path d="${target.d}" fill="none" stroke="${glowClr}" stroke-width="1.4" stroke-linejoin="round"/>
           <text x="${cx}" y="${cy - 14}" class="db-state-pct">${pct.toFixed(0)}%</text>
           <text x="${cx}" y="${cy + 16}" class="db-state-abbr">${uf}</text>
-        ` : `
-          ${isBR ? BR_STATES.map(s => `<path d="${s.d}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="0.8" stroke-linejoin="round"/>`).join('') : ''}
-          <text x="400" y="398" class="db-state-pct">${pct.toFixed(0)}%</text>
-        `}
+        ` : ''}
       </svg>
     </div>
   `;
@@ -566,7 +503,7 @@ function renderMiniChart(daily7) {
 }
 
 function renderGestorDashboard(container, data) {
-  const { ano, mes, coordenacao, isMaster, produzido, meta, daily7, stateProgress, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal } = data;
+  const { ano, mes, coordenacao, isMaster, produzido, meta, daily7, mapaEstados, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal } = data;
   const now = new Date();
   const diaAtual   = now.getDate();
   const diasNoMes  = new Date(ano, mes, 0).getDate();
@@ -579,7 +516,7 @@ function renderGestorDashboard(container, data) {
   const patriPct    = patriTotal > 0 ? (patriOk / patriTotal * 100) : 100;
   const patriAtrPct = patriTotal > 0 ? (patriAtrasados / patriTotal * 100) : 0;
   const regionLabel = isMaster ? 'TODAS AS REGIONAIS' : (coordenacao || 'REGIONAL');
-  const estado      = isMaster ? 'BR' : estadoFromRegional(coordenacao);
+  const estado      = isMaster ? 'BR' : (resolveStateFromRegionalName(coordenacao) || null);
 
   container.innerHTML = `
     <div class="db-section">
@@ -598,7 +535,7 @@ function renderGestorDashboard(container, data) {
         <div class="db-prod-eyebrow">Produtividade do Mês</div>
         <div class="db-prod-body">
           <div class="db-prod-left">
-            ${renderStateFill({ pct, onTrack, estado, stateProgress })}
+            ${renderStateFill({ pct, onTrack, estado, mapaEstados })}
           </div>
           <div class="db-prod-right">
             <div class="db-stat-block">
