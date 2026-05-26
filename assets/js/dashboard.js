@@ -230,6 +230,12 @@ function injectDashStyles() {
     .db-state-svg {
       width: 100%; height: auto; max-height: 380px; display: block; overflow: visible;
     }
+    .db-state-fill-rect {
+      transform-box: fill-box;
+      transform-origin: bottom center;
+      transform: scaleY(0);
+      transition: transform .9s cubic-bezier(.22,1,.36,1);
+    }
     .db-state-wave-path {
       animation: db-wave 3s linear infinite;
     }
@@ -372,13 +378,7 @@ function renderStateFill({ pct, onTrack, estado }) {
       <svg class="db-state-svg" viewBox="0 0 800 796" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <clipPath id="dbStateClip"><path d="${targetD}"/></clipPath>
-          <clipPath id="dbFillClip">
-            <rect x="-10" y="${bounds.max}" width="820" height="0">
-              <animate attributeName="y"      from="${bounds.max}" to="${fillY}"      dur=".9s" begin="0.05s" calcMode="spline" keySplines="0.22 1 0.36 1" fill="freeze"/>
-              <animate attributeName="height" from="0"            to="${fillH + 30}" dur=".9s" begin="0.05s" calcMode="spline" keySplines="0.22 1 0.36 1" fill="freeze"/>
-            </rect>
-          </clipPath>
-          <linearGradient id="dbFillGrad" x1="0" y1="${bounds.min}" x2="0" y2="${bounds.max}" gradientUnits="userSpaceOnUse">
+          <linearGradient id="dbFillGrad" x1="0" y1="${fillY}" x2="0" y2="${bounds.max}" gradientUnits="userSpaceOnUse">
             <stop offset="0%" stop-color="${gradTop}"/>
             <stop offset="100%" stop-color="${gradBot}"/>
           </linearGradient>
@@ -393,10 +393,10 @@ function renderStateFill({ pct, onTrack, estado }) {
         ${target ? `
           <path d="${targetD}" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.15)" stroke-width="1.2" stroke-linejoin="round"/>
           <g clip-path="url(#dbStateClip)">
-            <g clip-path="url(#dbFillClip)">
-              <rect x="-10" y="${bounds.min}" width="820" height="${stH + 30}" fill="url(#dbFillGrad)"/>
-              <path class="db-state-wave-path" d="${wavePath}" fill="${gradTop}" opacity=".40"/>
-            </g>
+            <rect class="db-state-fill-rect"
+                  x="-10" y="${fillY}" width="820" height="${fillH + 30}"
+                  fill="url(#dbFillGrad)"/>
+            <path class="db-state-wave-path" d="${wavePath}" fill="${gradTop}" opacity=".40"/>
           </g>
           <path d="${targetD}" fill="none" stroke="${glowClr}" stroke-width="2" stroke-linejoin="round"
                 filter="url(#dbGlowFilter)" opacity=".7"/>
@@ -654,6 +654,10 @@ initProtectedPage('Dashboard', async (content, userContext) => {
       const data = await fetchGestorData(userContext);
       renderGestorDashboard(gestorSection, data);
       document.getElementById('dbRefreshBtn')?.addEventListener('click', loadGestorData);
+      requestAnimationFrame(() => {
+        const fillRect = gestorSection.querySelector('.db-state-fill-rect');
+        if (fillRect) requestAnimationFrame(() => { fillRect.style.transform = 'scaleY(1)'; });
+      });
     } catch (e) {
       gestorSection.innerHTML = `<div class="db-loading" style="color:#f87171">Erro ao carregar: ${esc(e?.message || 'Tente novamente.')}</div>`;
       console.error('dashboard gestor:', e);

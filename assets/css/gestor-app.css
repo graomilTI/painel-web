@@ -409,6 +409,12 @@ select:focus, input:focus, textarea:focus {
 
 .db-state-wrap { margin: 0; }
 .db-state-svg { width: 100%; height: auto; max-height: 280px; display: block; overflow: visible; }
+.db-state-fill-rect {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  transform: scaleY(0);
+  transition: transform .9s cubic-bezier(.22,1,.36,1);
+}
 .db-state-wave-path { animation: db-wave 3s linear infinite; }
 .db-state-pct {
   font-size: 28px; font-weight: 1000; letter-spacing: -.04em;
