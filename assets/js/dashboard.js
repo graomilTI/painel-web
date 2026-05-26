@@ -302,13 +302,13 @@ function injectDashStyles() {
       animation: db-wave 3s linear infinite;
     }
     .db-state-pct {
-      font-size: 28px; font-weight: 1000; letter-spacing: -.04em;
+      font-size: 34px; font-weight: 1000; letter-spacing: -.04em;
       fill: #fff; text-anchor: middle; dominant-baseline: central;
       paint-order: stroke fill;
       stroke: rgba(0,0,0,.6); stroke-width: 6px;
     }
     .db-state-abbr {
-      font-size: 12px; font-weight: 950; letter-spacing: .10em;
+      font-size: 15px; font-weight: 950; letter-spacing: .10em;
       fill: rgba(255,255,255,.7); text-anchor: middle; dominant-baseline: central;
       paint-order: stroke fill;
       stroke: rgba(0,0,0,.5); stroke-width: 4px;
@@ -427,7 +427,7 @@ function renderStateFill({ pct, onTrack, estado, mapaEstados }) {
       return `
         <g>
           <path d="${state.d}" fill="${palette.fill}" stroke="${palette.stroke}" stroke-width="1.1" stroke-linejoin="round"/>
-          ${hasData && cx && cy ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" style="font-size:9px;font-weight:900;letter-spacing:.04em;fill:${palette.text};paint-order:stroke fill;stroke:rgba(0,0,0,.45);stroke-width:3px">${Math.round(info.pct)}%</text>` : ''}
+          ${hasData && cx && cy ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" style="font-size:14px;font-weight:1000;letter-spacing:.02em;fill:${palette.text};paint-order:stroke fill;stroke:rgba(0,0,0,.55);stroke-width:4.5px">${Math.round(info.pct)}%</text>` : ''}
         </g>`;
     }).join('');
 
