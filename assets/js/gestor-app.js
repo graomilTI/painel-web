@@ -567,22 +567,22 @@ function appRenderStateFill({ pct, onTrack, estado }) {
   const centroid = (uf && BR_CENTROIDS_APP[uf]) || {x:400, y:400};
   const bounds   = (uf && BR_YBOUNDS_APP[uf]) || {min:100, max:700};
 
-  const gradTop  = onTrack ? '#2dd4a0' : '#fde68a';
-  const gradBot  = onTrack ? '#065f46' : '#78350f';
-  const glowClr  = onTrack ? 'rgba(0,200,122,.9)' : 'rgba(253,230,138,.8)';
-  const glowBlur = onTrack ? 'rgba(0,200,122,.35)' : 'rgba(253,230,138,.28)';
+  const gradTop = onTrack ? '#2dd4a0' : '#fde68a';
+  const gradBot = onTrack ? '#065f46' : '#78350f';
+  const glowClr = onTrack ? 'rgba(0,200,122,.9)' : 'rgba(253,230,138,.8)';
 
-  const stH       = bounds.max - bounds.min;
-  const fillLineY = bounds.max - stH * (pct / 100);
-  const amp       = Math.max(4, stH * 0.035);
-  const period    = 200;
-  const waveSegs  = [];
+  const stH   = bounds.max - bounds.min;
+  const fillH = Math.max(0, stH * pct / 100);
+  const fillY = bounds.max - fillH;
+  const amp   = Math.max(4, stH * 0.035);
+  const period = 200;
+  const waveSegs = [];
   for (let x = -period; x <= 1000 + period; x += period) {
-    waveSegs.push(`Q ${x + period/4},${fillLineY - amp} ${x + period/2},${fillLineY}`);
-    waveSegs.push(`Q ${x + 3*period/4},${fillLineY + amp} ${x + period},${fillLineY}`);
+    waveSegs.push(`Q ${x + period/4},${fillY - amp} ${x + period/2},${fillY}`);
+    waveSegs.push(`Q ${x + 3*period/4},${fillY + amp} ${x + period},${fillY}`);
   }
-  const wavePath = `M ${-period},${fillLineY} ${waveSegs.join(' ')} L 1000,${bounds.max+30} L ${-period},${bounds.max+30} Z`;
-  const scaleVal = (pct / 100).toFixed(4);
+  const wavePath = `M ${-period},${fillY} ${waveSegs.join(' ')} L 1000,${bounds.max+30} L ${-period},${bounds.max+30} Z`;
+
   const bgStates = BR_STATES
     .filter(s => s.uf !== uf)
     .map(s => `<path d="${s.d}" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.10)" stroke-width="0.9" stroke-linejoin="round"/>`)
@@ -597,6 +597,12 @@ function appRenderStateFill({ pct, onTrack, estado }) {
       <svg class="db-state-svg" viewBox="0 0 800 796" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <clipPath id="appStateClip"><path d="${targetD}"/></clipPath>
+          <clipPath id="appFillClip">
+            <rect x="-10" y="${bounds.max}" width="820" height="0">
+              <animate attributeName="y"      from="${bounds.max}" to="${fillY}"      dur=".9s" begin="0.05s" calcMode="spline" keySplines="0.22 1 0.36 1" fill="freeze"/>
+              <animate attributeName="height" from="0"            to="${fillH + 30}" dur=".9s" begin="0.05s" calcMode="spline" keySplines="0.22 1 0.36 1" fill="freeze"/>
+            </rect>
+          </clipPath>
           <linearGradient id="appFillGrad" x1="0" y1="${bounds.min}" x2="0" y2="${bounds.max}" gradientUnits="userSpaceOnUse">
             <stop offset="0%" stop-color="${gradTop}"/>
             <stop offset="100%" stop-color="${gradBot}"/>
@@ -612,13 +618,10 @@ function appRenderStateFill({ pct, onTrack, estado }) {
         ${target ? `
           <path d="${targetD}" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.15)" stroke-width="1.2" stroke-linejoin="round"/>
           <g clip-path="url(#appStateClip)">
-            <rect class="db-state-fill-rect"
-                  data-scale="${scaleVal}"
-                  data-ox="${cx}" data-oy="${bounds.max}"
-                  x="-10" y="${bounds.min}" width="820" height="${stH + 30}"
-                  fill="url(#appFillGrad)"/>
-            <path class="db-state-wave-path" d="${wavePath}"
-                  fill="${gradTop}" opacity=".40"/>
+            <g clip-path="url(#appFillClip)">
+              <rect x="-10" y="${bounds.min}" width="820" height="${stH + 30}" fill="url(#appFillGrad)"/>
+              <path class="db-state-wave-path" d="${wavePath}" fill="${gradTop}" opacity=".40"/>
+            </g>
           </g>
           <path d="${targetD}" fill="none" stroke="${glowClr}" stroke-width="2" stroke-linejoin="round"
                 filter="url(#appGlowFilter)" opacity=".7"/>
