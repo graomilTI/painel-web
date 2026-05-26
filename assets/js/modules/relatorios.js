@@ -2675,6 +2675,37 @@
     return Number(file?.size || 0) <= MAX_ENTERPRISE_SIZE;
   }
 
+
+  function clearLocalDashboardCaches() {
+    try {
+      Object.keys(localStorage || {}).forEach((key) => {
+        if (key.startsWith('grao1000:gestor-dash')) localStorage.removeItem(key);
+      });
+    } catch {}
+  }
+
+  async function invalidateDashboardCacheAfterImport(opts) {
+    clearLocalDashboardCaches();
+    try {
+      const { error } = await opts.supabase.rpc('invalidar_dashboard_cache_segmentado', {
+        p_origem: 'importar_relatorios',
+      });
+      if (!error) return;
+      console.warn('[RELATORIOS] RPC de cache indisponível:', error.message || error);
+    } catch (error) {
+      console.warn('[RELATORIOS] Falha na RPC de cache:', error?.message || error);
+    }
+
+    try {
+      await opts.supabase
+        .from('dashboard_cache')
+        .delete()
+        .in('modulo', ['dashboard', 'gestor_app']);
+    } catch (error) {
+      console.warn('[RELATORIOS] Não foi possível invalidar dashboard_cache:', error?.message || error);
+    }
+  }
+
   function buildStoragePath(file) {
     const now = new Date();
     const yyyy = now.getFullYear();
@@ -3503,6 +3534,7 @@
       state.running = false;
       if (state.imported > 0) {
         opts.cache?.bumpPainelCache?.('importacao_relatorios');
+        await invalidateDashboardCacheAfterImport(opts);
       }
       updateSummary();
 

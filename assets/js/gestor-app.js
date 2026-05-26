@@ -6,8 +6,8 @@ const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const CACHE_KEY      = 'grao1000:gestor-app:v1';
 const CACHE_TTL      = 1000 * 60 * 7;
-const DASH_CACHE_KEY = 'grao1000:gestor-dash:v3';
-const DASH_CACHE_TTL = 1000 * 60 * 5;
+const DASH_CACHE_KEY = 'grao1000:gestor-dash:v4-segmentado';
+const DASH_CACHE_TTL = 1000 * 60 * 60 * 24 * 30;
 const LIMITE_MULTIPLOS = 500000;
 const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
 const ICO_AGUARDAR  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="pointer-events:none"><line x1="8" y1="5" x2="8" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>`;
@@ -232,7 +232,7 @@ function renderShell() {
   });
   document.getElementById('refreshBtn')?.addEventListener('click', async () => {
     clearCache();
-    await loadData({ useCache: false });
+    await Promise.all([loadData({ useCache: false }), loadDashboard({ force: true })]);
     renderCurrentTab();
     showToast('Dados atualizados.');
   });
@@ -303,7 +303,79 @@ async function loadData({ useCache = true } = {}) {
   }
 }
 
-async function fetchDashData() {
+
+function appDashPeriodKey(ano, mes) {
+  return `${ano}-${String(mes).padStart(2, '0')}`;
+}
+
+function appDashCacheReference({ isMaster, coordenacao, ano, mes }) {
+  const period = appDashPeriodKey(ano, mes);
+  if (isMaster) return `master:${period}`;
+  return `regional:${normalize(coordenacao) || 'sem_regional'}:${period}`;
+}
+
+function appDashLocalCacheKey(ref) {
+  return `${DASH_CACHE_KEY}:${ref}`;
+}
+
+async function readAppDashboardCacheSegment(ref) {
+  try {
+    const { data, error } = await supabase
+      .from('dashboard_cache')
+      .select('dados_json,atualizado_em')
+      .eq('modulo', 'dashboard')
+      .eq('referencia', ref)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data?.dados_json) return null;
+    return {
+      ...data.dados_json,
+      cache_atualizado_em: data.atualizado_em,
+      cache_ref: ref,
+      cache_source: 'supabase',
+    };
+  } catch (error) {
+    console.warn('[gestor-app] cache remoto indisponível:', error?.message || error);
+    return null;
+  }
+}
+
+async function saveAppDashboardCacheSegment(ref, payload, { isMaster, ano, mes } = {}) {
+  try {
+    await supabase.from('dashboard_cache').upsert({
+      modulo: 'dashboard',
+      referencia: ref,
+      escopo: isMaster ? 'master' : 'regional',
+      ano,
+      mes,
+      dados_json: payload,
+      origem_importacao: 'gestor_app_auto',
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'modulo,referencia' });
+  } catch (error) {
+    console.warn('[gestor-app] não foi possível salvar cache remoto:', error?.message || error);
+  }
+}
+
+async function fetchDashData({ force = false } = {}) {
+  const now = new Date();
+  const ano = now.getFullYear();
+  const mes = now.getMonth() + 1;
+  const coordenacao = state.appUser?.coordenacao || '';
+  const ref = appDashCacheReference({ isMaster: state.isMaster, coordenacao, ano, mes });
+
+  if (!force) {
+    const cached = await readAppDashboardCacheSegment(ref);
+    if (cached) return cached;
+  }
+
+  const fresh = await fetchDashDataLive();
+  const payload = { ...fresh, cache_ref: ref, cache_source: 'live', cache_atualizado_em: new Date().toISOString() };
+  saveAppDashboardCacheSegment(ref, payload, { isMaster: state.isMaster, ano, mes });
+  return payload;
+}
+
+async function fetchDashDataLive() {
   const now = new Date();
   const ano = now.getFullYear();
   const mes = now.getMonth() + 1;
@@ -379,33 +451,32 @@ async function fetchDashData() {
   };
 }
 
-async function loadDashboard() {
+async function loadDashboard({ force = false } = {}) {
   const coordenacao = state.appUser?.coordenacao || '';
   const now = new Date();
   const ano = now.getFullYear();
   const mes = now.getMonth() + 1;
   const empty = { loading: false, coordenacao, ano, mes, meta: null, produzido: 0, daily7: [], patrimonios: { total: 0, atrasados: 0 } };
 
-  try {
-    const raw = localStorage.getItem(DASH_CACHE_KEY);
-    if (raw) {
-      const { ts, data } = JSON.parse(raw);
-      if (Date.now() - ts < DASH_CACHE_TTL) {
-        state.dashboard = data;
-        // Background refresh — update state and re-render when done
-        fetchDashData().then(fresh => {
-          try { localStorage.setItem(DASH_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
-          state.dashboard = fresh;
-          if (state.currentTab === 'dashboard') { renderCurrentTab(); }
-        }).catch(() => {});
-        return;
+  const ref = appDashCacheReference({ isMaster: state.isMaster, coordenacao, ano, mes });
+  const localKey = appDashLocalCacheKey(ref);
+
+  if (!force) {
+    try {
+      const raw = localStorage.getItem(localKey);
+      if (raw) {
+        const { ts, data } = JSON.parse(raw);
+        if (Date.now() - ts < DASH_CACHE_TTL && data) {
+          state.dashboard = data;
+          return;
+        }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   try {
-    const data = await fetchDashData();
-    try { localStorage.setItem(DASH_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
+    const data = await fetchDashData({ force });
+    try { localStorage.setItem(localKey, JSON.stringify({ ts: Date.now(), data })); } catch {}
     state.dashboard = data;
   } catch (e) {
     console.warn('loadDashboard:', e);
