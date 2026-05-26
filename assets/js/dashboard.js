@@ -447,7 +447,8 @@ async function fetchGestorDataLive(ctx) {
       osTotalBase,
     ]);
 
-  const produzido = prodRows.reduce((s, r) => s + Number(r.tons || 0), 0);
+  const produzido    = prodRows.reduce((s, r) => s + Number(r.tons || 0), 0);
+  const diasComDados = new Set(prodRows.map(r => r.data)).size || 1;
 
   const d7map = {};
   for (const r of prodRows) {
@@ -480,7 +481,7 @@ async function fetchGestorDataLive(ctx) {
 
   return {
     ano, mes, coordenacao, isMaster,
-    produzido, meta, daily7, mapaEstados,
+    produzido, diasComDados, meta, daily7, mapaEstados,
     patriTotal: patriTotalRes.count ?? 0,
     patriAtrasados: patriLateRes.count ?? 0,
     osPendentes: osPendRes.count ?? 0,
@@ -598,14 +599,16 @@ function renderMiniChart(daily7) {
 }
 
 function renderGestorDashboard(container, data) {
-  const { ano, mes, coordenacao, isMaster, produzido, meta, daily7, mapaEstados, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal } = data;
+  const { ano, mes, coordenacao, isMaster, produzido, diasComDados, meta, daily7, mapaEstados, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal } = data;
   const now = new Date();
-  const diaAtual   = now.getDate();
-  const diasNoMes  = new Date(ano, mes, 0).getDate();
-  const pct         = meta > 0 ? Math.min(100, produzido / meta * 100) : 0;
-  const ritmo       = meta > 0 ? meta * diaAtual / diasNoMes : 0;
+  const diaAtual    = now.getDate();
+  const diasNoMes   = new Date(ano, mes, 0).getDate();
+  const metaDiaria  = meta > 0 ? meta / diasNoMes : 0;
+  const mediaDiaria = diasComDados > 0 ? produzido / diasComDados : 0;
+  const pct         = metaDiaria > 0 ? Math.min(100, mediaDiaria / metaDiaria * 100) : 0;
+  const ritmo       = metaDiaria * diasComDados;
   const onTrack     = produzido >= ritmo;
-  const projetado   = diaAtual > 0 ? produzido / diaAtual * diasNoMes : 0;
+  const projetado   = diasComDados > 0 ? produzido / diasComDados * diasNoMes : 0;
   const delta       = produzido - ritmo;
   const patriOk     = patriTotal - patriAtrasados;
   const patriPct    = patriTotal > 0 ? (patriOk / patriTotal * 100) : 100;
