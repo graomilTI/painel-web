@@ -120,7 +120,8 @@ export const MENU_CONFIG = [
     grupo: "LOGÍSTICA",
     itens: [
       item("logistica_adm", "Painel de Logística", "adm-logistica", ["LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_finalizacao_os", "Finalização de O.S", "adm-logistica", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS"])
+      item("logistica_finalizacao_os", "Finalização de O.S", "adm-logistica", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS"]),
+      item("logistica_btg", "BTG", "btg-logistica", ["LOGISTICA_BTG", "BTG_LOGISTICA", "BTG", "LOGISTICA_ADM"])
     ]
   },
 
