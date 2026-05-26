@@ -639,11 +639,11 @@ async function loadProducaoPagamento(inicio, fim) {
     return mapProducaoSnapshotRows(collected, origem);
   }
 
-  const byData = await fetchByColumn('data', 'producao_snapshot.data');
-  allRows.push(...byData);
-
-  const byReferencia = await fetchByColumn('data_referencia', 'producao_snapshot.data_referencia');
-  allRows.push(...byReferencia);
+  const [byData, byReferencia] = await Promise.all([
+    fetchByColumn('data', 'producao_snapshot.data'),
+    fetchByColumn('data_referencia', 'producao_snapshot.data_referencia'),
+  ]);
+  allRows.push(...byData, ...byReferencia);
 
   const seen = new Set();
   const unique = [];

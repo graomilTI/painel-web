@@ -4,6 +4,8 @@ import { toPanelUrl } from './paths.js';
 
 const FETCH_BATCH_SIZE = 1000;
 const ROWS_PER_PAGE = 30;
+const SNAP_CACHE_KEY = 'grao1000:patrimonio-status:v1';
+const SNAP_CACHE_TTL = 30 * 60 * 1000;
 
 function normalizeText(value) {
   return String(value || '').trim();
@@ -446,7 +448,18 @@ initProtectedPage('Status de Patrimônios', (content) => {
 
   (async () => {
     try {
-      const snapshotRows = await loadSnapshotRows();
+      let snapshotRows;
+      try {
+        const raw = localStorage.getItem(SNAP_CACHE_KEY);
+        if (raw) {
+          const { ts, rows } = JSON.parse(raw);
+          if (Date.now() - ts < SNAP_CACHE_TTL) snapshotRows = rows;
+        }
+      } catch {}
+      if (!snapshotRows) {
+        snapshotRows = await loadSnapshotRows();
+        try { localStorage.setItem(SNAP_CACHE_KEY, JSON.stringify({ ts: Date.now(), rows: snapshotRows })); } catch {}
+      }
       state.allRows = buildStatusRows(snapshotRows);
       const regionais = [...new Set(state.allRows.map((row) => row.coordenacao))].sort((a, b) => a.localeCompare(b));
       const select = document.getElementById('fRegional');

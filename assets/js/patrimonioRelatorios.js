@@ -9,6 +9,8 @@ const DEFAULT_ROWS_PER_PAGE = 18;
 const TABLE_ROWS_PER_PAGE = 50;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
 const FETCH_BATCH_SIZE = 1000;
+const RELAT_CACHE_KEY = 'grao1000:patrimonio-relat:v1';
+const RELAT_CACHE_TTL = 30 * 60 * 1000;
 
 function escapeHtml(v) {
   return String(v ?? '')
@@ -866,7 +868,19 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
 
   (async () => {
     try {
-      state.allRows = await loadSnapshotRows();
+      let cachedRows;
+      try {
+        const raw = localStorage.getItem(RELAT_CACHE_KEY);
+        if (raw) {
+          const { ts, rows } = JSON.parse(raw);
+          if (Date.now() - ts < RELAT_CACHE_TTL) cachedRows = rows;
+        }
+      } catch {}
+      state.allRows = cachedRows ?? await (async () => {
+        const fresh = await loadSnapshotRows();
+        try { localStorage.setItem(RELAT_CACHE_KEY, JSON.stringify({ ts: Date.now(), rows: fresh })); } catch {}
+        return fresh;
+      })();
       const coordenacoes = [...new Set(state.allRows.map((row) => getRegional(row)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       fillSelectOptions('fCoordenacao', coordenacoes, 'Todas');
       refreshSupervisoes();

@@ -191,23 +191,25 @@ async function processDay() {
   setSummary(dataReferencia, 0, 'Processando');
   document.getElementById('metaResultado').textContent = 'Carregando bases...';
 
-  const { data: colaboradores, error: errCol } = await supabase
-    .from('colaborador_snapshot')
-    .select('*')
-    .eq('data_referencia', dataReferencia)
-    .eq('ativo', true);
+  const [
+    { data: colaboradores, error: errCol },
+    { data: producao, error: errProd },
+    excecoes,
+    indisponibilidades,
+  ] = await Promise.all([
+    supabase.from('colaborador_snapshot')
+      .select('nome,tipo,cargo,coordenacao,supervisao')
+      .eq('data_referencia', dataReferencia)
+      .eq('ativo', true),
+    supabase.from('producao_snapshot')
+      .select('funcionario')
+      .eq('data_referencia', dataReferencia),
+    fetchOptional('excecoes', null, null),
+    fetchOptional('indisponibilidades', null, null),
+  ]);
 
   if (errCol) throw errCol;
-
-  const { data: producao, error: errProd } = await supabase
-    .from('producao_snapshot')
-    .select('*')
-    .eq('data_referencia', dataReferencia);
-
   if (errProd) throw errProd;
-
-  const excecoes = await fetchOptional('excecoes', null, null);
-  const indisponibilidades = await fetchOptional('indisponibilidades', null, null);
 
   const producedNames = new Set((producao || []).map((r) => normalizeName(r.funcionario)).filter(Boolean));
   const excludedCoordenacoes = new Set(['GERAL', 'MATRIZ GERAL', 'MATRIZ', 'ADMINISTRATIVO', 'DIRETORIA']);

@@ -289,22 +289,20 @@ initProtectedPage('OS', async (content) => {
   async function loadAll() {
     el.feedback.textContent = 'Carregando O.S. e colaboradores...';
     try {
-      await loadOs();
-
-      try {
-        await loadPontosEmbarque();
-      } catch (pontoError) {
-        console.warn('Não foi possível carregar pontos de embarque do mapa operacional.', pontoError);
+      const [osResult, pontoResult, colabResult] = await Promise.allSettled([
+        loadOs(),
+        loadPontosEmbarque(),
+        loadColaboradores(),
+      ]);
+      if (osResult.status === 'rejected') throw osResult.reason;
+      if (pontoResult.status === 'rejected') {
+        console.warn('Não foi possível carregar pontos de embarque do mapa operacional.', pontoResult.reason);
         state.pontosEmbarque = [];
       }
-
-      try {
-        await loadColaboradores();
-      } catch (colabError) {
-        console.warn('Não foi possível carregar colaboradores para sugestão. A lista de O.S. continuará funcionando.', colabError);
+      if (colabResult.status === 'rejected') {
+        console.warn('Não foi possível carregar colaboradores para sugestão. A lista de O.S. continuará funcionando.', colabResult.reason);
         state.colaboradores = [];
       }
-
       fillSupervisoes();
       render();
       el.feedback.textContent = `Carregado: ${state.os.length} O.S.`;

@@ -268,47 +268,42 @@
     const start=`${year}-01-01`;
     const end=`${year + 1}-01-01`;
 
-    let prodRows=[];
+    let prodRows=[], histRows=[];
     try{
       const pageSize=1000;
-      let from=0;
-      while(true){
-        const {data,error}=await supabase
-          .from('relatorio_resultado_diario')
-          .select('data,coordenacao,funcionario,cargas,toneladas')
-          .gte('data', start)
-          .lt('data', end)
-          .range(from, from + pageSize - 1);
-        if(error) throw error;
-        const rows=data||[];
-        prodRows.push(...rows);
-        if(rows.length < pageSize) break;
-        from += pageSize;
+      async function fetchProdColabRows(){
+        const all=[]; let from=0;
+        while(true){
+          const {data,error}=await supabase
+            .from('relatorio_resultado_diario')
+            .select('data,coordenacao,funcionario,cargas,toneladas')
+            .gte('data', start).lt('data', end)
+            .range(from, from + pageSize - 1);
+          if(error) throw error;
+          const rows=data||[]; all.push(...rows);
+          if(rows.length < pageSize) break;
+          from += pageSize;
+        }
+        return all;
       }
-    }catch(error){
-      console.warn('DRE: não foi possível carregar produção diária para produção por colaborador.', error);
-      return out;
-    }
-
-    let histRows=[];
-    try{
-      const pageSize=1000;
-      let from=0;
-      while(true){
-        const {data,error}=await supabase
-          .from('historico_colaboradores')
-          .select('data_referencia,nome,situacao,coordenacao,tipo')
-          .gte('data_referencia', start)
-          .lt('data_referencia', end)
-          .range(from, from + pageSize - 1);
-        if(error) throw error;
-        const rows=data||[];
-        histRows.push(...rows);
-        if(rows.length < pageSize) break;
-        from += pageSize;
+      async function fetchHistColabRows(){
+        const all=[]; let from=0;
+        while(true){
+          const {data,error}=await supabase
+            .from('historico_colaboradores')
+            .select('data_referencia,nome,situacao,coordenacao,tipo')
+            .gte('data_referencia', start).lt('data_referencia', end)
+            .range(from, from + pageSize - 1);
+          if(error) throw error;
+          const rows=data||[]; all.push(...rows);
+          if(rows.length < pageSize) break;
+          from += pageSize;
+        }
+        return all;
       }
+      [prodRows, histRows] = await Promise.all([fetchProdColabRows(), fetchHistColabRows()]);
     }catch(error){
-      console.warn('DRE: não foi possível carregar histórico diário de colaboradores para produção por colaborador.', error);
+      console.warn('DRE: não foi possível carregar dados para produção por colaborador.', error);
       return out;
     }
 
@@ -904,8 +899,11 @@
       });
     }
 
-    setStatus('Calculando produzido por colaborador com histórico diário de ativos...');
-    const prodColab = await loadProduzidoColaboradorFromDb(opts.supabase, state.year);
+    setStatus('Calculando produzido por colaborador e rateio de investimentos...');
+    const [prodColab, ativosRateio] = await Promise.all([
+      loadProduzidoColaboradorFromDb(opts.supabase, state.year),
+      loadMediaAtivosPorRegionalFromDb(opts.supabase, state.year),
+    ]);
     if(prodColab.totalProdRows > 0 && prodColab.totalHistRows > 0){
       src.prod.prodColab = prodColab.porRegional;
       src.prod.prodColabGeral = prodColab.geral;
@@ -918,9 +916,6 @@
         created_at: new Date().toISOString()
       });
     }
-
-    setStatus('Calculando rateio de investimentos pela média mensal de colaboradores ativos por regional...');
-    const ativosRateio = await loadMediaAtivosPorRegionalFromDb(opts.supabase, state.year);
     if(ativosRateio.totalHistRows > 0 && ativosRateio.total.some(v => n(v) > 0)){
       src.desp.ativosMedia = ativosRateio;
       mergeSet(src.desp.regionais, ativosRateio.regionais);

@@ -155,6 +155,9 @@ const state = {
   loading: false,
 };
 
+const CLINICAS_CACHE_KEY = 'grao1000:clinicas-sst:v1';
+const CLINICAS_CACHE_TTL = 2 * 60 * 60 * 1000;
+
 function norm(v) {
   return String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
@@ -299,6 +302,20 @@ async function loadClinicas(container) {
   state.loading = true;
   renderGrid(container);
 
+  try {
+    const raw = localStorage.getItem(CLINICAS_CACHE_KEY);
+    if (raw) {
+      const { ts, clinicas } = JSON.parse(raw);
+      if (Date.now() - ts < CLINICAS_CACHE_TTL) {
+        state.clinicas = clinicas;
+        state.loading = false;
+        renderCidadeSelect(container);
+        renderGrid(container);
+        return;
+      }
+    }
+  } catch {}
+
   let all = [];
   const pageSize = 1000;
   let from = 0;
@@ -320,6 +337,7 @@ async function loadClinicas(container) {
     from += pageSize;
   }
 
+  try { localStorage.setItem(CLINICAS_CACHE_KEY, JSON.stringify({ ts: Date.now(), clinicas: all })); } catch {}
   state.clinicas = all;
   state.loading = false;
   renderCidadeSelect(container);
