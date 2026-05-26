@@ -302,16 +302,16 @@ function injectDashStyles() {
       animation: db-wave 3s linear infinite;
     }
     .db-state-pct {
-      font-size: 34px; font-weight: 1000; letter-spacing: -.04em;
+      font-size: 44px; font-weight: 1000; letter-spacing: -.04em;
       fill: #fff; text-anchor: middle; dominant-baseline: central;
       paint-order: stroke fill;
-      stroke: rgba(0,0,0,.6); stroke-width: 6px;
+      stroke: rgba(0,0,0,.75); stroke-width: 8px;
     }
     .db-state-abbr {
-      font-size: 15px; font-weight: 950; letter-spacing: .10em;
+      font-size: 18px; font-weight: 950; letter-spacing: .08em;
       fill: rgba(255,255,255,.7); text-anchor: middle; dominant-baseline: central;
       paint-order: stroke fill;
-      stroke: rgba(0,0,0,.5); stroke-width: 4px;
+      stroke: rgba(0,0,0,.65); stroke-width: 5px;
     }
   `;
   document.head.appendChild(s);
@@ -427,7 +427,7 @@ function renderStateFill({ pct, onTrack, estado, mapaEstados }) {
       return `
         <g>
           <path d="${state.d}" fill="${palette.fill}" stroke="${palette.stroke}" stroke-width="1.1" stroke-linejoin="round"/>
-          ${hasData && cx && cy ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" style="font-size:14px;font-weight:1000;letter-spacing:.02em;fill:${palette.text};paint-order:stroke fill;stroke:rgba(0,0,0,.55);stroke-width:4.5px">${Math.round(info.pct)}%</text>` : ''}
+          ${hasData && cx && cy ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" style="font-size:20px;font-weight:1000;letter-spacing:0;fill:${palette.text};paint-order:stroke fill;stroke:rgba(0,0,0,.75);stroke-width:6px">${Math.round(info.pct)}%</text>` : ''}
         </g>`;
     }).join('');
 

@@ -667,7 +667,7 @@ function appRenderStateFill({ pct, onTrack, estado, mapaEstados }) {
       return `
         <g>
           <path d="${stateItem.d}" fill="${palette.fill}" stroke="${palette.stroke}" stroke-width="1.1" stroke-linejoin="round"/>
-          ${hasData && cx && cy ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" style="font-size:14px;font-weight:1000;letter-spacing:.02em;fill:${palette.text};paint-order:stroke fill;stroke:rgba(0,0,0,.55);stroke-width:4.5px">${Math.round(info.pct)}%</text>` : ''}
+          ${hasData && cx && cy ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" style="font-size:20px;font-weight:1000;letter-spacing:0;fill:${palette.text};paint-order:stroke fill;stroke:rgba(0,0,0,.75);stroke-width:6px">${Math.round(info.pct)}%</text>` : ''}
         </g>`;
     }).join('');
 
