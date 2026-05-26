@@ -41,6 +41,7 @@ function injectStyles() {
     .adm-checkout-totals{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:14px;padding:12px}.adm-checkout-line{display:flex;justify-content:space-between;align-items:center;color:#cbd5e1;font-size:14px}.adm-checkout-total-box{display:flex;justify-content:space-between;align-items:center;background:rgba(22,101,52,.12);border:1px solid rgba(111,208,165,.22);border-radius:14px;padding:12px 16px;font-size:15px;color:#dcfce7;margin-top:12px}.adm-checkout-total-box strong{font-size:18px;font-weight:900}
     .adm-extra-list{display:grid;gap:8px;margin-top:8px}.adm-extra-row{display:grid;grid-template-columns:1fr .4fr .5fr auto;gap:8px;align-items:end}.adm-extra-row input,.adm-extra-row select{border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 11px;color-scheme:dark}
     .adm-pix-placeholder{border:1px dashed rgba(111,208,165,.28);border-radius:14px;padding:20px;text-align:center;color:#6b7280;font-size:13px;margin-top:8px}
+    .adm-pix-box{display:none;grid-template-columns:220px 1fr;gap:14px;align-items:start;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.08);border-radius:18px;padding:14px;margin-top:12px}.adm-pix-box.open{display:grid}.adm-pix-qr{width:220px;height:220px;border-radius:14px;background:#fff;padding:10px;object-fit:contain}.adm-pix-copy{width:100%;min-height:126px;border:1px solid rgba(255,255,255,.08);background:#15152a;color:#dcfce7;border-radius:14px;padding:12px;font-size:12px;line-height:1.45;resize:vertical;outline:none}.adm-pix-hint{font-size:12px;color:#9ca3af;margin:0 0 8px}.adm-hotel-register-card{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.adm-hotel-register-card h3{margin:0}.adm-hotel-register-card p{margin:4px 0 0}
     .adm-hosp-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.adm-hosp-action-grid .btn{width:100%!important}
     .adm-hidden-soft{display:none!important}.adm-hidden{display:none!important}.adm-hosp-help{font-size:12px;color:#6b7280;margin-top:4px}.mt-16{margin-top:16px!important}
     .adm-menu-mode-hoteis [data-tab="alojamentos"],.adm-menu-mode-alojamentos [data-tab="solicitadas"],.adm-menu-mode-alojamentos [data-tab="reservados"],.adm-menu-mode-alojamentos [data-tab="checkout"],.adm-menu-mode-alojamentos [data-tab="financeiro"],.adm-menu-mode-alojamentos [data-tab="concluidos"],.adm-menu-mode-alojamentos [data-tab="hoteis"]{display:none!important}
@@ -98,9 +99,24 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   const HOTEIS_HTML = `
     <section id="tab-hoteis" class="adm-hosp-panel">
-      <article class="card">
-        <div class="adm-hosp-toolbar"><div><h3>Cadastro de hotéis</h3><p class="muted">Base usada pela equipe de hospedagem e pelo futuro mapa de custos.</p></div><input id="hotelSearch" class="adm-hosp-search" placeholder="Buscar hotel, cidade, CNPJ..." /></div>
-        <form id="hotelForm" class="adm-hosp-form">
+      <article class="card adm-hotel-register-card">
+        <div><h3>Hotéis cadastrados</h3><p class="muted">Consulte a base e abra o cadastro somente quando precisar incluir ou editar um hotel.</p></div>
+        <button class="btn btn-primary adm-hosp-btn" type="button" id="btnAbrirCadastroHotel">Cadastrar Hotel</button>
+      </article>
+      <article class="card mt-16">
+        <div class="adm-hosp-toolbar"><div><h3>Base de hotéis</h3><p class="muted">Base usada pela equipe de hospedagem e pelo mapa de custos.</p></div><input id="hotelSearch" class="adm-hosp-search" placeholder="Buscar hotel, cidade, CNPJ..." /></div>
+        <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Hotel</th><th>Cidade</th><th>Diárias</th><th>Contato</th><th>Status</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody id="hotelTbody"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
+      </article>
+    </section>`;
+
+  const HOTEL_MODAL_HTML = `
+    <div id="modalHotelCadastro" class="adm-hosp-modal">
+      <div class="adm-hosp-modal-card">
+        <div class="adm-hosp-modal-head">
+          <div><h3 id="hotelModalTitle">Cadastrar Hotel</h3><p class="muted">Preencha apenas quando for cadastrar ou editar um hotel.</p></div>
+          <button class="btn btn-secondary adm-hosp-btn" type="button" id="modalHotelClose">Fechar</button>
+        </div>
+        <form id="hotelForm" class="adm-hosp-form mt-16">
           <div class="adm-hosp-field"><label>Nome do hotel *</label><input id="hotelNome" required /></div>
           <div class="adm-hosp-field"><label>Cidade *</label><input id="hotelCidade" required /></div>
           <div class="adm-hosp-field"><label>UF *</label><input id="hotelUf" required maxlength="2" /></div>
@@ -117,9 +133,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
           <div class="adm-hosp-field full"><label>Observações</label><textarea id="hotelObs"></textarea></div>
         </form>
         <div class="adm-hosp-form-actions"><button class="btn btn-primary adm-hosp-btn" type="submit" form="hotelForm" id="hotelSave">Salvar hotel</button><button class="btn btn-secondary adm-hosp-btn" type="button" id="hotelClear">Limpar</button><span id="hotelFeedback" class="adm-hosp-feedback"></span></div>
-      </article>
-      <article class="card mt-16"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Hotel</th><th>Cidade</th><th>Diárias</th><th>Contato</th><th>Status</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody id="hotelTbody"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article>
-    </section>`;
+      </div>
+    </div>`;
 
   const ALOJAMENTOS_HTML = `
     <section id="tab-alojamentos" class="adm-hosp-panel">
@@ -231,6 +246,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
     ${HOTEIS_HTML}
     ${ALOJAMENTOS_HTML}
+    ${HOTEL_MODAL_HTML}
 
     <!-- Modal: Reservar -->
     <div id="modalReservar" class="adm-hosp-modal">
@@ -322,12 +338,17 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
         <div class="adm-hosp-form mt-16">
           <div class="adm-hosp-field"><label>CNPJ/CPF do fornecedor</label><input id="pagarCnpj" placeholder="Ex.: 00.000.000/0001-00" /></div>
           <div class="adm-hosp-field"><label>Nome do fornecedor</label><input id="pagarFornecedor" /></div>
-          <div class="adm-hosp-field full"><label>Valor (R$)</label><input id="pagarValor" type="number" step="0.01" min="0" /></div>
+          <div class="adm-hosp-field"><label>Valor (R$)</label><input id="pagarValor" type="number" step="0.01" min="0" /></div>
+          <div class="adm-hosp-field"><label>PIX</label><input id="pagarPix" placeholder="Chave PIX do hotel/fornecedor" /></div>
         </div>
-        <div class="adm-pix-placeholder">QR Code PIX será gerado em breve.</div>
         <div class="adm-hosp-form-actions mt-16">
+          <button class="btn btn-secondary" type="button" id="btnGerarPix">GERAR QR CODE</button>
           <button class="btn btn-primary" type="button" id="btnConfirmarPagamento">PAGAR</button>
           <span id="pagarFeedback" class="adm-hosp-feedback"></span>
+        </div>
+        <div id="pixQrBox" class="adm-pix-box">
+          <img id="pixQrImg" class="adm-pix-qr" alt="QR Code PIX" />
+          <div><p class="adm-pix-hint">QR Code PIX real gerado a partir da chave, fornecedor e valor informados. Use também o copia e cola abaixo.</p><textarea id="pixCopiaCola" class="adm-pix-copy" readonly></textarea></div>
         </div>
       </div>
     </div>
@@ -999,12 +1020,20 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     </tr>`).join('');
   }
 
+  function openHotelModal(editing=false) {
+    document.getElementById('hotelModalTitle').textContent = editing ? 'Editar Hotel' : 'Cadastrar Hotel';
+    document.getElementById('modalHotelCadastro')?.classList.add('open');
+    setTimeout(() => document.getElementById('hotelNome')?.focus(), 50);
+  }
+  function closeHotelModal() { document.getElementById('modalHotelCadastro')?.classList.remove('open'); }
+
   function resetHotelForm() {
     state.editingHotel=null;
     document.getElementById('hotelForm')?.reset();
     document.getElementById('hotelStatus').value='ATIVO';
     document.getElementById('hotelPrioridade').value='NORMAL';
     document.getElementById('hotelSave').textContent='Salvar hotel';
+    document.getElementById('hotelModalTitle').textContent='Cadastrar Hotel';
     setFeedback('hotelFeedback','');
   }
   function fillHotelForm(h) {
@@ -1024,7 +1053,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     document.getElementById('hotelPrioridade').value=h.prioridade||'NORMAL';
     document.getElementById('hotelObs').value=h.observacoes||'';
     document.getElementById('hotelSave').textContent='Salvar alterações';
-    window.scrollTo({top:0,behavior:'smooth'});
+    openHotelModal(true);
   }
   async function saveHotel(ev) {
     ev.preventDefault();
@@ -1043,7 +1072,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     };
     const result=state.editingHotel?await supabase.from('hospedagem_hoteis').update(payload).eq('id',state.editingHotel):await supabase.from('hospedagem_hoteis').insert({...payload,criado_por:userContext?.user?.id||null});
     if (result.error) { setFeedback('hotelFeedback',result.error.message,'err'); return; }
-    resetHotelForm(); setFeedback('hotelFeedback','Hotel salvo com sucesso.','ok'); await loadHoteis();
+    resetHotelForm(); setFeedback('hotelFeedback','Hotel salvo com sucesso.','ok'); closeHotelModal(); await loadHoteis();
   }
   async function deleteHotel(id) {
     const hotel=getHotelById(id);
@@ -1368,6 +1397,69 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     setTimeout(() => document.getElementById('modalCheckout').classList.remove('open'),800);
   }
 
+  // ─── PIX helpers ───────────────────────────────────────────────────────────
+
+  function onlyPixText(value, max) {
+    return String(value || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase().replace(/[^A-Z0-9 $%*+\-.\/]/g, '')
+      .slice(0, max);
+  }
+  function emv(id, value) {
+    const v = String(value ?? '');
+    const len = new TextEncoder().encode(v).length;
+    return `${id}${String(len).padStart(2, '0')}${v}`;
+  }
+  function crc16Pix(payload) {
+    let crc = 0xffff;
+    for (let i = 0; i < payload.length; i += 1) {
+      crc ^= payload.charCodeAt(i) << 8;
+      for (let bit = 0; bit < 8; bit += 1) crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+    }
+    return crc.toString(16).toUpperCase().padStart(4, '0');
+  }
+  function buildPixPayload({ pixKey, amount, merchantName, city, txid }) {
+    const key = String(pixKey || '').trim();
+    if (!key) throw new Error('Informe a chave PIX.');
+    const name = onlyPixText(merchantName || 'GRAO 1000', 25) || 'GRAO 1000';
+    const cityName = onlyPixText(city || 'CASCAVEL', 15) || 'CASCAVEL';
+    const idTx = onlyPixText(txid || 'HOSPEDAGEM', 25) || 'HOSPEDAGEM';
+    const merchantInfo = emv('00', 'br.gov.bcb.pix') + emv('01', key);
+    const valor = Number(amount || 0);
+    const payload = [
+      emv('00', '01'),
+      emv('26', merchantInfo),
+      emv('52', '0000'),
+      emv('53', '986'),
+      valor > 0 ? emv('54', valor.toFixed(2)) : '',
+      emv('58', 'BR'),
+      emv('59', name),
+      emv('60', cityName),
+      emv('62', emv('05', idTx))
+    ].join('') + '6304';
+    return payload + crc16Pix(payload);
+  }
+  function gerarPixQr() {
+    try {
+      const payload = buildPixPayload({
+        pixKey: document.getElementById('pagarPix')?.value,
+        amount: Number(document.getElementById('pagarValor')?.value || 0),
+        merchantName: document.getElementById('pagarFornecedor')?.value || 'Hotel',
+        city: state.selected?.cidade || 'Cascavel',
+        txid: String(state.selected?.codigo || state.selected?.reserva_id || 'HOSPEDAGEM').replace(/[^a-zA-Z0-9]/g, '').slice(0,25) || 'HOSPEDAGEM'
+      });
+      const box = document.getElementById('pixQrBox');
+      const img = document.getElementById('pixQrImg');
+      const copia = document.getElementById('pixCopiaCola');
+      if (img) img.src = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=10&data=${encodeURIComponent(payload)}`;
+      if (copia) copia.value = payload;
+      box?.classList.add('open');
+      setFeedback('pagarFeedback','QR Code PIX gerado.','ok');
+    } catch (err) {
+      setFeedback('pagarFeedback', err?.message || 'Não foi possível gerar o QR Code PIX.', 'err');
+    }
+  }
+
   // ─── Modal: Pagar ──────────────────────────────────────────────────────────
 
   function openModalPagar() {
@@ -1377,6 +1469,13 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     document.getElementById('pagarCnpj').value=hotel?.cnpj_cpf||'';
     document.getElementById('pagarFornecedor').value=state.selected?.hotel||'';
     document.getElementById('pagarValor').value=total.toFixed(2);
+    document.getElementById('pagarPix').value='';
+    const pixBox=document.getElementById('pixQrBox');
+    pixBox?.classList.remove('open');
+    const pixCopia=document.getElementById('pixCopiaCola');
+    if (pixCopia) pixCopia.value='';
+    const pixImg=document.getElementById('pixQrImg');
+    if (pixImg) pixImg.removeAttribute('src');
     setFeedback('pagarFeedback','');
     document.getElementById('modalPagar').classList.add('open');
   }
@@ -1394,7 +1493,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       status_hospedagem:'CHECKOUT_REALIZADO',valor_total_previsto:valor,
       atualizado_por:userContext?.user?.id||null
     }).eq('id',state.selected.reserva_id);
-    setFeedback('pagarFeedback','Pagamento registrado. QR Code PIX será implementado em breve.','ok');
+    setFeedback('pagarFeedback','Pagamento registrado.','ok');
     await loadRows();
     setTimeout(() => { document.getElementById('modalPagar').classList.remove('open'); document.getElementById('modalCheckout').classList.remove('open'); },1200);
   }
@@ -1426,7 +1525,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     const root=content.closest('main')||content;
     if (hash.includes('hist')) return 'historico';
     if (hash.includes('aloj')) { root.classList.add('adm-menu-mode-alojamentos'); return 'alojamentos'; }
-    if (hash.includes('hotel')||hash.includes('hoteis')) { root.classList.add('adm-menu-mode-hoteis'); return 'hoteis'; }
+    if (hash.includes('hotel')||hash.includes('hoteis')) { root.classList.add('adm-menu-mode-hoteis'); return 'dashboard'; }
     return 'dashboard';
   }
 
@@ -1439,6 +1538,9 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   // Hotel/Alojamento management
   document.getElementById('hotelSearch')?.addEventListener('input',renderHoteis);
+  document.getElementById('btnAbrirCadastroHotel')?.addEventListener('click',() => { resetHotelForm(); openHotelModal(false); });
+  document.getElementById('modalHotelClose')?.addEventListener('click',closeHotelModal);
+  document.getElementById('modalHotelCadastro')?.addEventListener('click',(ev) => { if (ev.target.id==='modalHotelCadastro') closeHotelModal(); });
   document.getElementById('hotelForm')?.addEventListener('submit',saveHotel);
   document.getElementById('hotelClear')?.addEventListener('click',resetHotelForm);
   document.getElementById('alojSearch')?.addEventListener('input',renderAlojamentos);
@@ -1486,6 +1588,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   // Modal: Pagar
   document.getElementById('modalPagarClose')?.addEventListener('click',() => document.getElementById('modalPagar').classList.remove('open'));
   document.getElementById('modalPagar')?.addEventListener('click',(ev) => { if (ev.target.id==='modalPagar') document.getElementById('modalPagar').classList.remove('open'); });
+  document.getElementById('btnGerarPix')?.addEventListener('click',gerarPixQr);
   document.getElementById('btnConfirmarPagamento')?.addEventListener('click',confirmarPagamento);
 
   // Table delegation
