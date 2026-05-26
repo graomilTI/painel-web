@@ -2988,6 +2988,13 @@
     let financeiroReceberResumo = null;
     let financeiroPagarResumo = null;
     let clinicasResumo = null;
+    let operacionalOsResumo = null;
+    if (detected.tipo === 'operacional_os') {
+      status.textContent = 'Substituindo Distribuição de O.S. no banco...';
+      setProgress(bar, 82);
+      operacionalOsResumo = await importarOperacionalOsDaPlanilha(file, opts);
+      if (operacionalOsResumo?.periodo_inicio) entry.period = { inicio: operacionalOsResumo.periodo_inicio, fim: operacionalOsResumo.periodo_fim, totalDatas: operacionalOsResumo.total_datas || null };
+    }
     if (detected.tipo === 'hospedagem_historico') {
       status.textContent = 'Importando histórico de hospedagem dos colaboradores...';
       setProgress(bar, 82);
@@ -3073,6 +3080,7 @@
       else if (financeiroReceberResumo?.periodo_inicio) period = { inicio: financeiroReceberResumo.periodo_inicio, fim: financeiroReceberResumo.periodo_fim, totalDatas: null };
       else if (financeiroPagarResumo?.periodo_inicio) period = { inicio: financeiroPagarResumo.periodo_inicio, fim: financeiroPagarResumo.periodo_fim, totalDatas: null };
       else if (frotasExcessoResumo?.periodo_inicio) period = { inicio: frotasExcessoResumo.periodo_inicio, fim: frotasExcessoResumo.periodo_fim, totalDatas: null };
+      else if (operacionalOsResumo?.periodo_inicio) period = { inicio: operacionalOsResumo.periodo_inicio, fim: operacionalOsResumo.periodo_fim, totalDatas: operacionalOsResumo.total_datas || null };
       else period = entry?.period || await detectFilePeriod(file, detected.tipo);
     }
     let check = { exists: false, total: 0, items: [] };
@@ -3094,6 +3102,7 @@
     else if (detected.tipo === 'colaboradores_rh') status.textContent = 'Registrando upload da base de funcionários...';
     else if (detected.tipo === 'auditorias_operacional') status.textContent = 'Registrando upload das auditorias operacionais...';
     else if (detected.tipo === 'uber_corridas') status.textContent = 'Registrando upload do relatório Uber...';
+    else if (detected.tipo === 'operacional_os') status.textContent = 'Registrando upload da Distribuição de O.S....';
     else status.textContent = effectiveMode === 'replace' ? 'Registrando substituição inteligente...' : 'Registrando complemento inteligente...';
 
     const observacoesPayload = uploadResult.mode === 'chunked'
@@ -3142,6 +3151,7 @@
           financeiro_contas_receber_importacao: financeiroReceberResumo || null,
           financeiro_contas_pagar_importacao: financeiroPagarResumo || null,
           clinicas_sst_importacao: clinicasResumo || null,
+          operacional_os_importacao: operacionalOsResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -3162,7 +3172,9 @@
     };
 
     const result = await registerSmartImport(payload, opts);
-    if (detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) {
+    if (detected.tipo === 'operacional_os' && operacionalOsResumo) {
+      status.textContent = `Distribuição de O.S.: lista anterior limpa · ${operacionalOsResumo.importados || 0} O.S. importadas · ${operacionalOsResumo.supervisoes || 0} supervisão(ões)`;
+    } else if (detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) {
       status.textContent = `Hospedagem: ${hospedagemHistoricoResumo.importados || 0} registros · ${hospedagemHistoricoResumo.colaboradores || 0} colaboradores · ${hospedagemHistoricoResumo.checkouts || 0} checkout(s)`;
     } else if (detected.tipo === 'hoteis' && hoteisResumo) {
       status.textContent = `Hotéis: ${hoteisResumo.inseridos || 0} novos · ${hoteisResumo.atualizados || 0} atualizados · ${hoteisResumo.ignorados || 0} ignorados`;
@@ -3197,7 +3209,7 @@
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) && !(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo) && !(detected.tipo === 'clinicas_sst' && clinicasResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'operacional_os' && operacionalOsResumo) && !(detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) && !(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'colaboradores_rh' && colaboradoresRhResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'financeiro_contas_receber' && financeiroReceberResumo) && !(detected.tipo === 'financeiro_contas_pagar' && financeiroPagarResumo) && !(detected.tipo === 'clinicas_sst' && clinicasResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
