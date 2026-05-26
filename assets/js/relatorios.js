@@ -1989,6 +1989,111 @@
     };
   }
 
+  async function readOperacionalOsDistribuicaoRowsFromFile(file) {
+    const workbook = await readWorkbook(file);
+    const rows = [];
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+      data.forEach((row) => {
+        const numero = String(pickValue(row, ['O.S.', 'O.S', 'OS', 'O S', 'Ordem de Serviço', 'Ordem de Servico']) || '').trim();
+        const colaborador = normalizeText(pickValue(row, ['Funcionário', 'Funcionario', 'Colaborador', 'Classificador', 'Nome']));
+        if (!numero || !colaborador) return;
+        rows.push({
+          numero_os: numero,
+          colaborador_nome: colaborador,
+          colaborador_key: normalizeHeader(colaborador),
+          supervisao: normalizeText(pickValue(row, ['Supervisão', 'Supervisao', 'Regional', 'Coordenação', 'Coordenacao'])),
+          cliente: normalizeText(pickValue(row, ['Cliente'])),
+          raw: row,
+        });
+      });
+    }
+    const seen = new Set();
+    const unique = [];
+    rows.forEach((row) => {
+      const key = `${normalizeHeader(row.numero_os)}|${row.colaborador_key}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      unique.push(row);
+    });
+    return { rows: unique };
+  }
+
+  async function importarOperacionalOsDistribuicaoDaPlanilha(file, opts) {
+    const result = await readOperacionalOsDistribuicaoRowsFromFile(file);
+    const rows = result.rows || [];
+    if (!rows.length) {
+      throw new Error('A Distribuição de O.S. não possui vínculos válidos. Cabeçalhos esperados: O.S. e Funcionário/Colaborador.');
+    }
+
+    const numeros = [...new Set(rows.map((r) => String(r.numero_os || '').trim()).filter(Boolean))];
+    const osRows = [];
+    const chunkSize = 500;
+    for (let i = 0; i < numeros.length; i += chunkSize) {
+      const chunk = numeros.slice(i, i + chunkSize);
+      const { data, error } = await opts.supabase
+        .from('operacional_os')
+        .select('id, numero_os')
+        .in('numero_os', chunk);
+      if (error) throw new Error('Falha ao consultar Lista de O.S. antes de importar a Distribuição: ' + (error.message || ''));
+      osRows.push(...(data || []));
+    }
+
+    const osByNumero = new Map(osRows.map((row) => [String(row.numero_os || '').trim(), row]));
+    const matched = [];
+    const ignoradas = [];
+    rows.forEach((row) => {
+      const os = osByNumero.get(String(row.numero_os || '').trim());
+      if (!os?.id) {
+        ignoradas.push(row);
+        return;
+      }
+      matched.push({
+        os_id: os.id,
+        colaborador_key: row.colaborador_key || normalizeHeader(row.colaborador_nome),
+        colaborador_nome: row.colaborador_nome,
+        origem_sugestao: 'DISTRIBUICAO_OS',
+        updated_at: new Date().toISOString(),
+      });
+    });
+
+    if (!matched.length) {
+      throw new Error('Nenhuma O.S. da Distribuição foi encontrada na Lista de O.S. atual. Importe primeiro o relatório Lista de O.S.');
+    }
+
+    const osIds = [...new Set(matched.map((row) => row.os_id))];
+    for (let i = 0; i < osIds.length; i += chunkSize) {
+      const chunk = osIds.slice(i, i + chunkSize);
+      const { error } = await opts.supabase
+        .from('operacional_os_colaboradores')
+        .delete()
+        .in('os_id', chunk);
+      if (error) throw new Error('Falha ao limpar vínculos anteriores da Distribuição de O.S.: ' + (error.message || ''));
+    }
+
+    let total = 0;
+    for (let i = 0; i < matched.length; i += chunkSize) {
+      const batch = matched.slice(i, i + chunkSize);
+      const { error } = await opts.supabase
+        .from('operacional_os_colaboradores')
+        .upsert(batch, { onConflict: 'os_id,colaborador_key' });
+      if (error) throw new Error(error.message || 'Falha ao gravar colaboradores da Distribuição de O.S.');
+      total += batch.length;
+    }
+
+    opts.cache?.invalidateCacheByPrefix?.('os:');
+    opts.cache?.bumpPainelCache?.('importacao_operacional_os_distribuicao');
+
+    return {
+      total_linhas: rows.length,
+      importados: total,
+      os_encontradas: osIds.length,
+      ignoradas_sem_lista_os: ignoradas.length,
+    };
+  }
+
+
   function splitCidadeUfHospedagem(value) {
     const text = String(value || '').trim().replace(/\s+/g, ' ');
     if (!text) return { cidade: null, uf: null };
@@ -2234,7 +2339,11 @@
     if ((n.includes('auditoria') || n.includes('auditorias')) && (n.includes('relatorio') || n.includes('relatório') || n.includes('lista') || n.includes('auditoria'))) {
       return { tipo: 'auditorias_operacional', titulo: 'Auditorias Operacionais por Colaborador' };
     }
-    if (n.includes('lista de oss') || n.includes('lista-de-oss') || n.includes('lista_de_oss') || n.includes('lista de os') || n.includes('lista-de-os') || n.includes('lista_de_os') || n.includes('ordem de servico') || n.includes('ordem de serviço') || n.includes('relatorio os') || n.includes('relatório os') || n.includes('operacional os') || n.includes('o.s')) {
+    if ((n.includes('distribuicao') || n.includes('distribuir')) && (n.includes(' os') || n.includes('o.s') || n.includes('ordem'))) {
+      return { tipo: 'operacional_os_distribuicao', titulo: 'Distribuição de O.S. Operacional' };
+    }
+
+    if (!n.includes('distribuicao') && (n.includes('lista de oss') || n.includes('lista-de-oss') || n.includes('lista_de_oss') || n.includes('lista de os') || n.includes('lista-de-os') || n.includes('lista_de_os') || n.includes('ordem de servico') || n.includes('ordem de serviço') || n.includes('relatorio os') || n.includes('relatório os') || n.includes('operacional os') || n.includes('o.s'))) {
       return { tipo: 'operacional_os', titulo: 'Lista de O.S. Operacional' };
     }
 
@@ -2584,6 +2693,7 @@
     let producaoDiariaResumo = null;
     let historicoDiarioResumo = null;
     let operacionalOsResumo = null;
+    let operacionalOsDistribuicaoResumo = null;
     if (detected.tipo === 'hospedagem_historico') {
       status.textContent = 'Importando histórico de hospedagem dos colaboradores...';
       setProgress(bar, 82);
@@ -2649,6 +2759,11 @@
       operacionalOsResumo = await importarOperacionalOsDaPlanilha(file, opts);
       if (operacionalOsResumo?.periodo_inicio) entry.period = { inicio: operacionalOsResumo.periodo_inicio, fim: operacionalOsResumo.periodo_fim, totalDatas: operacionalOsResumo.total_datas || null };
     }
+    if (detected.tipo === 'operacional_os_distribuicao') {
+      status.textContent = 'Importando Distribuição de O.S. sem alterar a Lista de O.S....';
+      setProgress(bar, 82);
+      operacionalOsDistribuicaoResumo = await importarOperacionalOsDistribuicaoDaPlanilha(file, opts);
+    }
 
     const importMode = opts.importMode || 'auto';
     let period = null;
@@ -2682,6 +2797,7 @@
       auditorias_operacional: 'Registrando upload das auditorias operacionais...',
       uber_corridas: 'Registrando upload do relatório Uber...',
       operacional_os: 'Registrando upload da lista de O.S. operacional...',
+      operacional_os_distribuicao: 'Registrando upload da distribuição de O.S. operacional...',
     };
     status.textContent = statusRegistroMap[detected.tipo] || (effectiveMode === 'replace'
       ? 'Registrando substituição inteligente...'
@@ -2731,6 +2847,7 @@
           producao_diaria_importacao: producaoDiariaResumo || null,
           historico_colaboradores_diario_importacao: historicoDiarioResumo || null,
           operacional_os_importacao: operacionalOsResumo || null,
+          operacional_os_distribuicao_importacao: operacionalOsDistribuicaoResumo || null,
           replaced_count: effectiveMode === 'replace' ? Number(check.total || 0) : 0,
         }),
         importado_por: user?.id || null,
@@ -2782,7 +2899,7 @@
     }
 
     setProgress(bar, 100);
-    if (!(detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) && !(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo) && !(detected.tipo === 'operacional_os' && operacionalOsResumo)) status.textContent = 'Importado';
+    if (!(detected.tipo === 'hospedagem_historico' && hospedagemHistoricoResumo) && !(detected.tipo === 'hoteis' && hoteisResumo) && !(detected.tipo === 'pontos_embarque' && pontosResumo) && detected.tipo !== 'logistica_mapa_embarque' && !(detected.tipo === 'colaboradores_operacional' && colaboradoresResumo) && !(detected.tipo === 'auditorias_operacional' && auditoriasResumo) && !(detected.tipo === 'uber_corridas' && uberResumo) && !(detected.tipo === 'patrimonios' && patrimoniosResumo) && !(detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) && !(detected.tipo === 'resultado-diario' && resultadoDiarioResumo) && !(detected.tipo === 'producao' && producaoDiariaResumo) && !(detected.tipo === 'historico_colaboradores_diario' && historicoDiarioResumo) && !(detected.tipo === 'operacional_os' && operacionalOsResumo) && !(detected.tipo === 'operacional_os_distribuicao' && operacionalOsDistribuicaoResumo)) status.textContent = 'Importado';
     item.classList.add('is-success');
   }
 
@@ -3014,6 +3131,17 @@
             }).catch((err) => {
               entry.period = null;
               entry.message = `Pendente · não foi possível pré-validar Histórico Diário (${err?.message || 'erro de leitura'})`;
+              renderFiles();
+            });
+          } else if (detected.tipo === 'operacional_os_distribuicao') {
+            entry.message = 'Pendente · importará Distribuição de O.S. sem alterar a Lista de O.S.';
+            readOperacionalOsDistribuicaoRowsFromFile(file).then((res) => {
+              const total = Number(res?.rows?.length || 0);
+              entry.message = `Pendente · ${total.toLocaleString('pt-BR')} vínculos · atualizará colaboradores das O.S. já existentes`;
+              renderFiles();
+            }).catch((err) => {
+              entry.period = null;
+              entry.message = `Pendente · não foi possível pré-validar Distribuição de O.S. (${err?.message || 'erro de leitura'})`;
               renderFiles();
             });
           } else if (detected.tipo === 'operacional_os') {
