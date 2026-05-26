@@ -4,12 +4,104 @@
 
   const styles = `
     <style>
-      .fv-shell{color:#e2e2f0}.fv-head{margin-bottom:18px}.fv-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fv-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fv-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fv-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fv-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.fv-tab{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 14px;font-weight:950;cursor:pointer}.fv-tab.active,.fv-tab:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35);color:#f8fafc}.fv-body{padding:18px}.fv-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 180px auto auto;gap:10px;margin-bottom:14px}.fv-toolbar.extra{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:-4px}.fv-input,.fv-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fv-select option{background:#0d0d18;color:#e2e2f0}.fv-btn{border:0;border-radius:14px;min-height:42px;padding:0 14px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}.fv-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fv-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fv-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fv-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0}.fv-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px}.fv-kpi span{display:block;color:#93c5fd;font-size:11px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.fv-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.fv-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fv-table{width:100%;border-collapse:collapse;min-width:1120px}.fv-table th{padding:12px 11px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38)}.fv-table td{padding:12px 11px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:top}.fv-table tr:hover td{background:rgba(22,101,52,.08)}.fv-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fv-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fv-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fv-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fv-actions{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}.fv-actions .fv-btn{white-space:nowrap}.fv-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fv-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px;padding:14px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px}.fv-field label{display:block;margin:0 0 6px;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fv-field.full{grid-column:1/-1}.fv-field textarea{width:100%;min-height:68px;resize:vertical;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px;outline:none}.fv-note{margin-top:12px;padding:12px 14px;border:1px dashed rgba(34,197,94,.28);border-radius:16px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}.fv-empty{text-align:center;color:#f8fafc;padding:26px!important;font-weight:850}.fv-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.72);display:flex;align-items:center;justify-content:center;padding:22px}.fv-modal{width:min(1120px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fv-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px;border-bottom:1px solid rgba(148,163,184,.16)}.fv-modal-head h3{margin:0;color:#fff;font-size:20px}.fv-modal-head p{margin:6px 0 0;color:#6b7280;line-height:1.45}.fv-modal-body{padding:18px}.fv-diag-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}.fv-diag-card{border:1px solid rgba(34,197,94,.18);border-radius:16px;background:rgba(2,6,23,.36);padding:12px}.fv-diag-card span{display:block;color:#93c5fd;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.1em}.fv-diag-card strong{display:block;margin-top:6px;color:#fff;font-size:22px}.fv-diag-section{margin-top:14px}.fv-diag-section h4{margin:0 0 8px;color:#bbf7d0}.fv-diag-table{width:100%;border-collapse:collapse;min-width:900px}.fv-diag-table th,.fv-diag-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);font-size:12px;text-align:left;vertical-align:top}.fv-diag-table th{color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em;font-size:10px;background:rgba(2,6,23,.32)}.fv-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 14px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fv-toast.show{opacity:1;transform:translateY(0)}@media(max-width:1100px){.fv-toolbar{grid-template-columns:1fr 1fr}.fv-grid{grid-template-columns:repeat(2,1fr)}.fv-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fv-toolbar,.fv-grid,.fv-form{grid-template-columns:1fr}}
+      .fv-shell{color:#e2e2f0}.fv-head{margin-bottom:18px}.fv-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fv-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fv-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fv-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fv-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.fv-tab{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 14px;font-weight:950;cursor:pointer}.fv-tab.active,.fv-tab:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35);color:#f8fafc}.fv-body{padding:18px}.fv-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 180px auto auto;gap:10px;margin-bottom:14px}.fv-toolbar.extra{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:-4px}.fv-input,.fv-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fv-select option{background:#0d0d18;color:#e2e2f0}.fv-btn{border:0;border-radius:14px;min-height:42px;padding:0 14px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}.fv-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fv-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fv-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fv-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0}.fv-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px}.fv-kpi span{display:block;color:#93c5fd;font-size:11px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.fv-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.fv-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fv-table{width:100%;border-collapse:collapse;min-width:1120px}.fv-table th{padding:12px 11px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38)}.fv-table td{padding:12px 11px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:top}.fv-table tr:hover td{background:rgba(22,101,52,.08)}.fv-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fv-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fv-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fv-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fv-actions{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}.fv-actions .fv-btn{white-space:nowrap}.fv-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fv-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px;padding:14px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px}.fv-field label{display:block;margin:0 0 6px;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fv-field.full{grid-column:1/-1}.fv-field textarea{width:100%;min-height:68px;resize:vertical;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px;outline:none}.fv-note{margin-top:12px;padding:12px 14px;border:1px dashed rgba(34,197,94,.28);border-radius:16px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}.fv-empty{text-align:center;color:#f8fafc;padding:26px!important;font-weight:850}.fv-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.72);display:flex;align-items:center;justify-content:center;padding:22px}.fv-modal{width:min(1120px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fv-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px;border-bottom:1px solid rgba(148,163,184,.16)}.fv-modal-head h3{margin:0;color:#fff;font-size:20px}.fv-modal-head p{margin:6px 0 0;color:#6b7280;line-height:1.45}.fv-modal-body{padding:18px}.fv-diag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}.fv-diag-card{border:1px solid rgba(34,197,94,.18);border-radius:16px;background:rgba(2,6,23,.36);padding:12px}.fv-diag-card span{display:block;color:#93c5fd;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.1em}.fv-diag-card strong{display:block;margin-top:6px;color:#fff;font-size:22px}.fv-diag-section{margin-top:14px}.fv-diag-section h4{margin:0 0 8px;color:#bbf7d0}.fv-diag-table{width:100%;border-collapse:collapse;min-width:900px}.fv-diag-table th,.fv-diag-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);font-size:12px;text-align:left;vertical-align:top}.fv-diag-table th{color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em;font-size:10px;background:rgba(2,6,23,.32)}.fv-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 14px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fv-toast.show{opacity:1;transform:translateY(0)}@media(max-width:1100px){.fv-toolbar{grid-template-columns:1fr 1fr}.fv-grid{grid-template-columns:repeat(2,1fr)}.fv-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fv-toolbar,.fv-grid,.fv-form{grid-template-columns:1fr}}
     </style>`;
 
   const state = { veiculos: [], loading: false, filtro: 'todos', busca: '' };
 
   function onlyPlate(v){ return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,7); }
+
+  function normalizarPlaca(v){
+    return String(v||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]/g,'').slice(0,7);
+  }
+
+  function placaEquivalenteVisual(placa){
+    const p = normalizarPlaca(placa);
+    if(p.length !== 7) return p;
+    const chars = p.split('');
+    // Posições 1,2,3 e 5 são letras; posições 4,6,7 são números no padrão Mercosul.
+    const letterMap = { '0':'O', '1':'I', '2':'Z', '3':'B', '4':'A', '5':'S', '6':'G', '7':'T', '8':'B' };
+    const digitMap = { 'O':'0', 'Q':'0', 'D':'0', 'I':'1', 'L':'1', 'Z':'2', 'S':'5', 'B':'8', 'G':'6', 'T':'7' };
+    [0,1,2,4].forEach(i => { chars[i] = letterMap[chars[i]] || chars[i]; });
+    [3,5,6].forEach(i => { chars[i] = digitMap[chars[i]] || chars[i]; });
+    return chars.join('');
+  }
+
+  function extrairPlacasTexto(...valores){
+    const texto = valores.filter(Boolean).join(' ').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,' ');
+    const limpo = texto.replace(/[^A-Z0-9]/g, ' ');
+    const colado = limpo.replace(/\s+/g, '');
+    const candidatos = new Set();
+    const add = (v) => { const p = normalizarPlaca(v); if(p.length === 7) { candidatos.add(p); candidatos.add(placaEquivalenteVisual(p)); } };
+    for (const m of texto.matchAll(/[A-Z]{3}[-\s]?[0-9][A-Z0-9][0-9]{2}/g)) add(m[0]);
+    for (const m of texto.matchAll(/[A-Z]{3}[-\s]?[0-9]{4}/g)) add(m[0]);
+    for (const m of colado.matchAll(/[A-Z]{3}[0-9A-Z][0-9A-Z]{3}/g)) add(m[0]);
+    return Array.from(candidatos).filter(Boolean);
+  }
+
+  function getBfleetPlacas(row){
+    const campos = [row?.placa, row?.plate, row?.patente, row?.license_plate, row?.vehicle_plate, row?.nome, row?.name, row?.vehicleName, row?.vehicle, row?.label, row?.descricao];
+    const candidatos = new Set();
+    campos.forEach(v => { const p = normalizarPlaca(v); if(p.length === 7) { candidatos.add(p); candidatos.add(placaEquivalenteVisual(p)); } });
+    extrairPlacasTexto(...campos).forEach(p => candidatos.add(p));
+    return Array.from(candidatos).filter(Boolean);
+  }
+
+  function getBfleetNome(row){
+    return String(row?.nome || row?.name || row?.vehicleName || row?.vehicle || row?.label || row?.descricao || '').trim();
+  }
+
+  function getBfleetIdGps(row){
+    return String(row?.idgps || row?.id_gps || row?.gps_id || row?.device_id || row?.id || row?.tracker_id || '').trim();
+  }
+
+  function buildPlacaIndex(veiculos){
+    const index = new Map();
+    for(const v of veiculos || []){
+      const candidatos = new Set([normalizarPlaca(v?.placa), placaEquivalenteVisual(v?.placa), ...extrairPlacasTexto(v?.placa, v?.nome, v?.modelo, v?.observacoes, v?.raw?.nome, v?.raw?.name)]);
+      candidatos.forEach(p => { if(p && !index.has(p)) index.set(p, v); });
+    }
+    return index;
+  }
+
+  function getBfleetRowsFromResponse(data){
+    const out = [];
+    const keys = ['bfleet_nao_encontrados_no_painel','veiculos_bfleet','bfleet','items','registros','data','content','lista'];
+    for(const key of keys){
+      const list = data?.[key];
+      if(Array.isArray(list)) out.push(...list);
+    }
+    if(Array.isArray(data)) out.push(...data);
+    const seen = new Set();
+    return out.filter(r => {
+      const key = `${getBfleetPlacas(r)[0] || ''}|${getBfleetIdGps(r)}|${getBfleetNome(r)}`;
+      if(!key.trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function reconciliarDiagnosticoBfleet(data){
+    const clone = { ...(data || {}) };
+    const index = buildPlacaIndex(state.veiculos);
+    const fora = Array.isArray(clone.bfleet_nao_encontrados_no_painel) ? clone.bfleet_nao_encontrados_no_painel : [];
+    const corrigidos = [];
+    const aindaFora = [];
+    for(const row of fora){
+      const placas = getBfleetPlacas(row);
+      const match = placas.map(p => index.get(p)).find(Boolean);
+      if(match){
+        corrigidos.push({ ...row, placa_painel: match.placa, veiculo_id: match.id, motivo: 'Cruzamento corrigido por normalização de placa/nome BFleet.' });
+      }else{
+        aindaFora.push({ ...row, placa: placas[0] || row?.placa || row?.plate || '', motivo: row?.motivo || 'Placa BFleet não encontrada no painel após normalização.' });
+      }
+    }
+    clone.bfleet_corrigidos_por_normalizacao = corrigidos;
+    clone.bfleet_nao_encontrados_no_painel = aindaFora;
+    clone.matched = Number(clone.matched || clone.rastreadores || 0) + corrigidos.length;
+    return clone;
+  }
+
   function onlyDigits(v){ return String(v||'').replace(/\D/g,''); }
   function norm(v){ return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
   function esc(v){ return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
@@ -43,7 +135,7 @@
       if(state.filtro==='sem_rastreador' && hasTracker(v)) return false;
       if(state.filtro==='divergencias' && !v.bfleet_divergencia) return false;
       if(!busca) return true;
-      return norm([v.placa,v.renavam,v.marca,v.modelo,v.empresa,v.motorista_atual,v.patrimonio_funcionario,v.coordenacao,v.supervisao].join(' ')).includes(busca);
+      return norm([v.placa,v.renavam,v.nome,v.marca,v.modelo,v.empresa,v.motorista_atual,v.patrimonio_funcionario,v.coordenacao,v.supervisao,v.bfleet_nome,v.bfleet_idgps].join(' ')).includes(busca);
     });
   }
 
@@ -59,7 +151,7 @@
     const form=root.querySelector('[data-veiculo-form]');
     const get=(k)=>form?.querySelector(`[name="${k}"]`)?.value ?? '';
     return {
-      placa: onlyPlate(get('placa')),
+      placa: normalizarPlaca(get('placa')),
       renavam: onlyDigits(get('renavam')) || null,
       nome: get('nome').trim() || null,
       empresa: get('empresa').trim() || null,
@@ -147,14 +239,75 @@
   }
 
 
+  async function aplicarCorrecaoBfleetLocal(root, opts, data, criarAusentes = false){
+    const rows = getBfleetRowsFromResponse(data);
+    if(!rows.length) return { atualizados: 0, criados: 0, ignorados: 0 };
+
+    const index = buildPlacaIndex(state.veiculos);
+    let atualizados = 0, criados = 0, ignorados = 0;
+
+    for(const row of rows){
+      const placas = getBfleetPlacas(row);
+      const placa = placas[0];
+      if(!placa){ ignorados++; continue; }
+      const existente = placas.map(p => index.get(p)).find(Boolean);
+      const payloadCompleto = {
+        placa,
+        nome: getBfleetNome(row) || placa,
+        status: 'ATIVO',
+        origem_importacao: existente?.origem_importacao || 'bfleet',
+        rastreador_bfleet: true,
+        bfleet_rastreador: true,
+        bfleet_confirmado: true,
+        bfleet_status: 'OK',
+        bfleet_placa: placa,
+        bfleet_nome: getBfleetNome(row) || null,
+        bfleet_idgps: getBfleetIdGps(row) || null,
+        bfleet_grupo: row?.grupo || row?.group || row?.groupName || row?.grupo_nome || null,
+        bfleet_mensagem: existente ? 'Cruzado com BFleet por placa normalizada.' : 'Cadastrado automaticamente pela BFleet para corrigir cruzamento.',
+        bfleet_ultima_sync_em: new Date().toISOString(),
+        raw: { ...(existente?.raw || {}), bfleet: row }
+      };
+      const payloadMinimo = {
+        placa,
+        nome: payloadCompleto.nome,
+        status: 'ATIVO',
+        origem_importacao: existente?.origem_importacao || 'bfleet',
+        raw: payloadCompleto.raw
+      };
+
+      if(existente?.id){
+        const { error } = await opts.supabase.from('frotas_veiculos').update(payloadCompleto).eq('id', existente.id);
+        if(error){
+          const fallback = await opts.supabase.from('frotas_veiculos').update(payloadMinimo).eq('id', existente.id);
+          if(fallback.error){ ignorados++; continue; }
+        }
+        atualizados++;
+      }else if(criarAusentes){
+        const { error } = await opts.supabase.from('frotas_veiculos').upsert(payloadCompleto, { onConflict: 'placa' });
+        if(error){
+          const fallback = await opts.supabase.from('frotas_veiculos').upsert(payloadMinimo, { onConflict: 'placa' });
+          if(fallback.error){ ignorados++; continue; }
+        }
+        criados++;
+      }else{
+        ignorados++;
+      }
+    }
+    if(atualizados || criados) await loadVeiculos(root, opts);
+    return { atualizados, criados, ignorados };
+  }
+
   async function sincronizarBFleet(root, opts){
     try{
       toast('Sincronizando BFleet...');
-      const res = await callFunction(opts, 'sync-bfleet-veiculos', { mode:'sync' });
-      const rastreadores = Number(res?.rastreadores || res?.matched || 0);
+      const res = await callFunction(opts, 'sync-bfleet-veiculos', { mode:'sync', normalizacao_placa:'robusta', criar_ausentes:true });
+      const correcao = await aplicarCorrecaoBfleetLocal(root, opts, res, true);
+      const rastreadores = Number(res?.rastreadores || res?.matched || 0) + correcao.atualizados + correcao.criados;
       const total = Number(res?.total_bfleet || res?.total || res?.linhas_lidas_api || res?.placas_lidas || 0);
       const divergencias = Number(res?.divergencias || 0);
-      toast(`BFleet sincronizado: ${rastreadores} veículo(s) com rastreador de ${total || 'N'} registro(s) lido(s)${divergencias ? ` · ${divergencias} divergência(s)` : ''}.`, Boolean(res?.warning));
+      const extra = (correcao.atualizados || correcao.criados) ? ` · ${correcao.atualizados} corrigido(s) · ${correcao.criados} cadastrado(s) BFleet` : '';
+      toast(`BFleet sincronizado: ${rastreadores} veículo(s) com rastreador de ${total || 'N'} registro(s) lido(s)${divergencias ? ` · ${divergencias} divergência(s)` : ''}${extra}.`, Boolean(res?.warning));
       await loadVeiculos(root, opts);
     }catch(err){ toast(err.message || 'Falha ao sincronizar BFleet.', true); }
   }
@@ -162,16 +315,23 @@
 
   function closeBfleetDiagnostic(){ document.querySelector('[data-bfleet-diagnostic-modal]')?.remove(); }
 
-  function renderBfleetDiagnosticModal(data){
+  function renderBfleetDiagnosticModal(data, root, opts){
+    data = reconciliarDiagnosticoBfleet(data);
     closeBfleetDiagnostic();
     const bfleetFora = Array.isArray(data?.bfleet_nao_encontrados_no_painel) ? data.bfleet_nao_encontrados_no_painel : [];
     const painelSem = Array.isArray(data?.painel_nao_encontrados_na_bfleet) ? data.painel_nao_encontrados_na_bfleet : [];
     const semIdgps = Array.isArray(data?.bfleet_sem_idgps) ? data.bfleet_sem_idgps : [];
+    const corrigidos = Array.isArray(data?.bfleet_corrigidos_por_normalizacao) ? data.bfleet_corrigidos_por_normalizacao : [];
     const modal=document.createElement('div');
     modal.className='fv-modal-backdrop';
     modal.dataset.bfleetDiagnosticModal='1';
-    modal.innerHTML=`<div class="fv-modal"><div class="fv-modal-head"><div><h3>Diagnóstico BFleet</h3><p>Mostra por que alguns rastreadores não cruzaram com a frota do painel. O cruzamento é feito por placa normalizada: <strong>BFleet patente</strong> x <strong>frotas_veiculos.placa</strong>.</p></div><button class="fv-btn ghost" type="button" data-close-diag>Fechar</button></div><div class="fv-modal-body"><div class="fv-diag-grid"><div class="fv-diag-card"><span>Registros BFleet</span><strong>${Number(data?.total_bfleet||0)}</strong></div><div class="fv-diag-card"><span>Com idgps</span><strong>${Number(data?.total_com_idgps||0)}</strong></div><div class="fv-diag-card"><span>Cruzados</span><strong>${Number(data?.matched||data?.rastreadores||0)}</strong></div><div class="fv-diag-card"><span>BFleet fora do painel</span><strong>${bfleetFora.length}</strong></div></div><div class="fv-note">Se aparecer em <strong>BFleet fora do painel</strong>, o rastreador existe na BFleet, mas a placa não existe exatamente na base <strong>frotas_veiculos</strong>. Normalmente é veículo fora da frota oficial/DETRAN, placa digitada diferente, veículo inativo ou duplicidade.</div><div class="fv-diag-section"><h4>BFleet com rastreador, mas sem cruzamento no painel</h4><div class="fv-table-wrap"><table class="fv-diag-table"><thead><tr><th>Placa BFleet</th><th>Nome BFleet</th><th>ID GPS</th><th>Grupo</th><th>Motivo provável</th></tr></thead><tbody>${bfleetFora.length?bfleetFora.map(r=>`<tr><td><strong>${esc(r.placa||'')}</strong></td><td>${esc(r.nome||'')}</td><td>${esc(r.idgps||'')}</td><td>${esc(r.grupo||'')}</td><td>${esc(r.motivo||'Placa BFleet não encontrada no painel.')}</td></tr>`).join(''):'<tr><td colspan="5" class="fv-empty">Nenhum registro nesta categoria.</td></tr>'}</tbody></table></div></div><div class="fv-diag-section"><h4>Veículos do painel sem rastreador BFleet</h4><div class="fv-table-wrap"><table class="fv-diag-table"><thead><tr><th>Placa Painel</th><th>Empresa</th><th>RENAVAM</th><th>Motivo provável</th></tr></thead><tbody>${painelSem.length?painelSem.slice(0,120).map(r=>`<tr><td><strong>${esc(r.placa||'')}</strong></td><td>${esc(r.empresa||'')}</td><td>${esc(r.renavam||'')}</td><td>${esc(r.motivo||'Placa do painel não aparece no vehicleGetAll da BFleet.')}</td></tr>`).join(''):'<tr><td colspan="4" class="fv-empty">Nenhum registro nesta categoria.</td></tr>'}</tbody></table></div></div><div class="fv-diag-section"><h4>BFleet sem idgps válido</h4><div class="fv-table-wrap"><table class="fv-diag-table"><thead><tr><th>Placa</th><th>Nome</th><th>ID GPS</th><th>Grupo</th></tr></thead><tbody>${semIdgps.length?semIdgps.map(r=>`<tr><td><strong>${esc(r.placa||'')}</strong></td><td>${esc(r.nome||'')}</td><td>${esc(r.idgps||'')}</td><td>${esc(r.grupo||'')}</td></tr>`).join(''):'<tr><td colspan="4" class="fv-empty">Nenhum registro nesta categoria.</td></tr>'}</tbody></table></div></div></div></div>`;
+    modal.innerHTML=`<div class="fv-modal"><div class="fv-modal-head"><div><h3>Diagnóstico BFleet</h3><p>Mostra por que alguns rastreadores não cruzaram com a frota do painel. O cruzamento é feito por placa normalizada: <strong>BFleet patente</strong> x <strong>frotas_veiculos.placa</strong>.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="fv-btn soft" type="button" data-fix-diag>Cruzamento automático</button><button class="fv-btn ghost" type="button" data-close-diag>Fechar</button></div></div><div class="fv-modal-body"><div class="fv-diag-grid"><div class="fv-diag-card"><span>Registros BFleet</span><strong>${Number(data?.total_bfleet||0)}</strong></div><div class="fv-diag-card"><span>Com idgps</span><strong>${Number(data?.total_com_idgps||0)}</strong></div><div class="fv-diag-card"><span>Cruzados</span><strong>${Number(data?.matched||data?.rastreadores||0)}</strong></div><div class="fv-diag-card"><span>BFleet fora do painel</span><strong>${bfleetFora.length}</strong></div><div class="fv-diag-card"><span>Corrigidos localmente</span><strong>${corrigidos.length}</strong></div></div><div class="fv-note">Se aparecer em <strong>BFleet fora do painel</strong>, o rastreador existe na BFleet, mas a placa não existe exatamente na base <strong>frotas_veiculos</strong>. Quando clicar em <strong>Cruzamento automático</strong>, o painel corrige placas com diferença de hífen/espaço e cadastra como origem BFleet as placas com rastreador que ainda não existem na base.</div><div class="fv-diag-section"><h4>BFleet com rastreador, mas sem cruzamento no painel</h4><div class="fv-table-wrap"><table class="fv-diag-table"><thead><tr><th>Placa BFleet</th><th>Nome BFleet</th><th>ID GPS</th><th>Grupo</th><th>Motivo provável</th></tr></thead><tbody>${bfleetFora.length?bfleetFora.map(r=>`<tr><td><strong>${esc(r.placa||'')}</strong></td><td>${esc(r.nome||'')}</td><td>${esc(r.idgps||'')}</td><td>${esc(r.grupo||'')}</td><td>${esc(r.motivo||'Placa BFleet não encontrada no painel.')}</td></tr>`).join(''):'<tr><td colspan="5" class="fv-empty">Nenhum registro nesta categoria.</td></tr>'}</tbody></table></div></div><div class="fv-diag-section"><h4>Veículos do painel sem rastreador BFleet</h4><div class="fv-table-wrap"><table class="fv-diag-table"><thead><tr><th>Placa Painel</th><th>Empresa</th><th>RENAVAM</th><th>Motivo provável</th></tr></thead><tbody>${painelSem.length?painelSem.slice(0,120).map(r=>`<tr><td><strong>${esc(r.placa||'')}</strong></td><td>${esc(r.empresa||'')}</td><td>${esc(r.renavam||'')}</td><td>${esc(r.motivo||'Placa do painel não aparece no vehicleGetAll da BFleet.')}</td></tr>`).join(''):'<tr><td colspan="4" class="fv-empty">Nenhum registro nesta categoria.</td></tr>'}</tbody></table></div></div><div class="fv-diag-section"><h4>BFleet sem idgps válido</h4><div class="fv-table-wrap"><table class="fv-diag-table"><thead><tr><th>Placa</th><th>Nome</th><th>ID GPS</th><th>Grupo</th></tr></thead><tbody>${semIdgps.length?semIdgps.map(r=>`<tr><td><strong>${esc(r.placa||'')}</strong></td><td>${esc(r.nome||'')}</td><td>${esc(r.idgps||'')}</td><td>${esc(r.grupo||'')}</td></tr>`).join(''):'<tr><td colspan="4" class="fv-empty">Nenhum registro nesta categoria.</td></tr>'}</tbody></table></div></div></div></div>`;
     modal.querySelector('[data-close-diag]')?.addEventListener('click', closeBfleetDiagnostic);
+    modal.querySelector('[data-fix-diag]')?.addEventListener('click', async () => {
+      const r = await aplicarCorrecaoBfleetLocal(root, opts, data, true);
+      toast(`Cruzamento BFleet corrigido: ${r.atualizados} atualizado(s), ${r.criados} cadastrado(s).`, false);
+      closeBfleetDiagnostic();
+    });
     modal.addEventListener('click',(e)=>{ if(e.target===modal) closeBfleetDiagnostic(); });
     document.body.appendChild(modal);
   }
@@ -180,8 +340,9 @@
     try{
       toast('Gerando diagnóstico BFleet...');
       const res = await callFunction(opts, 'sync-bfleet-veiculos', { mode:'diagnostic' });
-      renderBfleetDiagnosticModal(res);
-      toast(`Diagnóstico BFleet: ${Number(res?.matched||0)} cruzados, ${Number(res?.bfleet_nao_encontrados_no_painel?.length||0)} fora do painel.`);
+      renderBfleetDiagnosticModal(res, root, opts);
+      const diag = reconciliarDiagnosticoBfleet(res);
+      toast(`Diagnóstico BFleet: ${Number(diag?.matched||0)} cruzados, ${Number(diag?.bfleet_nao_encontrados_no_painel?.length||0)} fora do painel.`);
     }catch(err){ toast(err.message || 'Falha ao gerar diagnóstico BFleet.', true); }
   }
 
@@ -264,7 +425,7 @@
     container.querySelector('[data-sync-drivers]')?.addEventListener('click',()=>atualizarCondutoresBFleet(container, opts));
     container.querySelector('[data-search]')?.addEventListener('input',(e)=>{state.busca=e.target.value; renderTable(container, opts);});
     container.querySelector('[data-filter]')?.addEventListener('change',(e)=>{state.filtro=e.target.value; renderStats(container); renderTable(container, opts);});
-    container.querySelector('input[name="placa"]')?.addEventListener('input',(e)=>{e.target.value=onlyPlate(e.target.value);});
+    container.querySelector('input[name="placa"]')?.addEventListener('input',(e)=>{e.target.value=normalizarPlaca(e.target.value);});
     container.querySelector('input[name="renavam"]')?.addEventListener('input',(e)=>{e.target.value=onlyDigits(e.target.value);});
     loadVeiculos(container, opts);
   }
