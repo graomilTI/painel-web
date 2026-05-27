@@ -116,7 +116,7 @@ function findHeaderRow(raw, checks, maxRows = 50) {
     const txt = norm(raw[i].map(c => String(c ?? '')).join(' '));
     if (checks.every(ch => txt.includes(ch))) return i;
   }
-  return 0;
+  return -1;
 }
 
 function colIndex(header, matchers) {
@@ -478,7 +478,10 @@ function parseDistribuicao(wb) {
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
     if (!raw.length) continue;
 
-    const hIdx = findHeaderRow(raw, ['FUNCION', 'REMANESCENTE']);
+    let hIdx = findHeaderRow(raw, ['FUNCION', 'REMANESCENTE']);
+    if (hIdx < 0) hIdx = findHeaderRow(raw, ['FUNCION', 'CLIENTE']);
+    if (hIdx < 0) hIdx = findHeaderRow(raw, ['FUNCION']);
+    if (hIdx < 0) { console.warn(`[parseDist] Cabeçalho não encontrado em "${wsName}"`); continue; }
     const h = raw[hIdx] || [];
     const ci = {
       os:          colIndex(h, [
@@ -556,12 +559,26 @@ function parseBtg(wb) {
   const rows = [];
   for (const wsName of wb.SheetNames) {
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
-    if (!raw.length) continue;
+    if (!raw.length) { console.log(`[parseBtg] Sheet "${wsName}": vazia`); continue; }
 
-    const hIdx = findHeaderRow(raw, ['CONTRATO']);
-    const h = raw[hIdx] || [];
+    // Tenta encontrar cabeçalho com checks progressivamente menos restritivos
+    let hIdx = findHeaderRow(raw, ['CONTRATO', 'COMMODITY']);
+    if (hIdx < 0) hIdx = findHeaderRow(raw, ['CONTRATO', 'CLASSIFICADOR']);
+    if (hIdx < 0) hIdx = findHeaderRow(raw, ['CONTRATO', 'ORDEM']);
+    if (hIdx < 0) hIdx = findHeaderRow(raw, ['CONTRATO']);
+
+    const h = hIdx >= 0 ? (raw[hIdx] || []) : [];
+    const hNorm = h.map(c => norm(c));
+    console.log(`[parseBtg] Sheet "${wsName}": ${raw.length} linhas, hIdx=${hIdx}, header=[${hNorm.slice(0,10).join(' | ')}]`);
+
+    if (hIdx < 0) { console.warn(`[parseBtg] Cabeçalho não encontrado em "${wsName}"`); continue; }
+
     const ci = {
-      contrato: colIndex(h, [c => c === 'CONTRATO' || c.includes('CONTRATO')]),
+      contrato: colIndex(h, [
+        c => c === 'CONTRATO',
+        c => c.includes('CONTRATO') && !c.includes('QTDE') && !c.includes('NUMERO') && !c.includes('NUM'),
+        c => c.includes('CONTRATO'),
+      ]),
       portal: colIndex(h, [
         c => c === 'ORDEM DE SERVICO' || c === 'ORDEM SERVICO',
         c => c.includes('ORDEM') && c.includes('SERVI'),
@@ -572,12 +589,21 @@ function parseBtg(wb) {
       tipo: colIndex(h, [c => c.includes('TIPO') || c.includes('SOLICITACAO') || c.includes('OPERACAO') || c.includes('MOVIMENTO')]),
       cliente: colIndex(h, [c => c.includes('CLIENTE') || c.includes('COMPRADOR') || c.includes('TOMADOR')]),
       commodity: colIndex(h, [c => c.includes('COMMODITY') || c.includes('PRODUTO')]),
-      qtde: colIndex(h, [c => c.includes('QTDE') || c.includes('QUANTIDADE') || c.includes('VOLUME') || c.includes('TON')]),
+      qtde: colIndex(h, [c => c.includes('QTDE') || c.includes('QUANTIDADE') || c.includes('VOLUME') || (c.includes('TON') && !c.includes('CONTRATO'))]),
       cidade: colIndex(h, [c => c.includes('CIDADE') || c.includes('ORIGEM') || c.includes('DESTINO')]),
     };
-    if (ci.contrato < 0) continue;
 
-    raw.slice(hIdx + 1).forEach((r, idx) => {
+    console.log(`[parseBtg] ci=${JSON.stringify(ci)}`);
+
+    if (ci.contrato < 0) {
+      console.warn(`[parseBtg] Coluna CONTRATO não encontrada em "${wsName}". Header: ${hNorm.join(' | ')}`);
+      continue;
+    }
+
+    const dataRows = raw.slice(hIdx + 1);
+    console.log(`[parseBtg] ${dataRows.length} linhas de dados. Primeira linha:`, dataRows[0]);
+
+    dataRows.forEach((r, idx) => {
       const contratoOriginal = contratoNorm(r[ci.contrato]);
       if (!contratoOriginal && !r.some(Boolean)) return;
       const tipoSolicitacao = clean(r[ci.tipo]) || clean(r[ci.commodity]) || clean(r[ci.cidade]) || 'Relatório BTG';
@@ -595,6 +621,8 @@ function parseBtg(wb) {
         fonte: 'Relatório BTG',
       });
     });
+
+    console.log(`[parseBtg] Sheet "${wsName}": ${rows.length} linhas extraídas até agora`);
   }
 
   const map = {};
