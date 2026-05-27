@@ -80,6 +80,20 @@ function contratoLabel(v) {
   return isContratoBtg(c) ? c : 'CORRIGIR CONTRATO';
 }
 
+function extractContratoFromRaw(raw) {
+  if (!raw || typeof raw !== 'object') return '';
+  const keys = Object.keys(raw);
+  for (const k of keys) {
+    if (norm(k).includes('CONTRATO')) {
+      const v = contratoNorm(raw[k]);
+      if (isContratoBtg(v)) return v;
+    }
+  }
+  const text = JSON.stringify(raw);
+  const m = text.match(/P\d{5}\.\d{3}/i);
+  return m ? contratoNorm(m[0]) : '';
+}
+
 function loadAjustados() {
   try { return new Set(JSON.parse(localStorage.getItem(AJUSTADOS_KEY) || '[]')); }
   catch { return new Set(); }
@@ -169,7 +183,7 @@ async function loadSavedBtgData() {
   try {
     const { data, error } = await supabase.from('logistica_btg_solicitacoes').select('contrato_original, contrato_status, numero_os_relatorio, tipo_solicitacao, cliente, commodity, quantidade, aba, linha').order('linha', { ascending: true }).limit(10000);
     if (error) throw error;
-    const rows = (data || []).map((item) => ({ os: clean(item.numero_os_relatorio), contratoOriginal: contratoNorm(item.contrato_original), contrato: item.contrato_status || contratoLabel(item.contrato_original), tipoSolicitacao: clean(item.tipo_solicitacao) || 'Relatório BTG', cliente: clean(item.cliente), commodity: clean(item.commodity), qtde: item.quantidade, sheet: item.aba, rowNumber: item.linha, fonte: 'Relatório BTG' }));
+    const rows = (data || []).map((item) => ({ portal: clean(item.numero_os_relatorio), contratoOriginal: contratoNorm(item.contrato_original), contrato: item.contrato_status || contratoLabel(item.contrato_original), tipoSolicitacao: clean(item.tipo_solicitacao) || 'Relatório BTG', cliente: clean(item.cliente), commodity: clean(item.commodity), qtde: item.quantidade, sheet: item.aba, rowNumber: item.linha, fonte: 'Relatório BTG' }));
     state.btgRows = rows.length ? rows : null;
     state.btgMap = {};
     for (const r of rows) { const c = contratoNorm(r.contratoOriginal); if (isContratoBtg(c)) state.btgMap[c] = r; }
@@ -215,32 +229,9 @@ async function persistDistribuicaoRows(rows) {
     }
   } catch (err) { console.warn('Não foi possível salvar Distribuição no banco:', err?.message || err); }
 
-  // 2. Atualiza operacional_os_colaboradores com os nomes da Distribuição
-  try {
-    const numeros = [...new Set(list.map(r => String(r.os || '').trim()).filter(Boolean))];
-    const osMap = new Map();
-    for (let i = 0; i < numeros.length; i += 800) {
-      const { data, error } = await supabase.from('operacional_os').select('id, numero_os').in('numero_os', numeros.slice(i, i + 800));
-      if (error) throw error;
-      (data || []).forEach(item => osMap.set(String(item.numero_os), item.id));
-    }
-    const payload = [];
-    const seen = new Set();
-    for (const row of list) {
-      const osId = osMap.get(String(row.os || '').trim());
-      if (!osId || !clean(row.colaborador) || row.colaborador === '—') continue;
-      const key = `${osId}|${norm(row.colaborador)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      payload.push({ os_id: osId, colaborador_key: norm(row.colaborador), colaborador_nome: row.colaborador });
-    }
-    const { error: clearError } = await supabase.from('operacional_os_colaboradores').delete().gte('created_at', '2000-01-01');
-    if (clearError) throw clearError;
-    for (let i = 0; i < payload.length; i += 500) {
-      const { error } = await supabase.from('operacional_os_colaboradores').insert(payload.slice(i, i + 500));
-      if (error) throw error;
-    }
-  } catch (err) { console.warn('Não foi possível salvar colaboradores no banco:', err?.message || err); }
+  // A Distribuição de OS não altera operacional_os nem operacional_os_colaboradores.
+  // Ela fica isolada em logistica_btg_distribuicao para o cruzamento do BTG.
+
 }
 
 async function loadSavedDistData() {
@@ -261,7 +252,7 @@ async function loadSavedDistData() {
     }));
     if (rows.length) {
       state.distRows = rows;
-      state.loaded.dist = `Banco de dados (${rows.length} linhas BTG)`;
+      state.loaded.dist = `Banco de dados (${rows.length} linhas)`;
       state.mode = 'xlsx';
     }
   } catch (err) { console.warn('Distribuição BTG salva ainda não disponível:', err?.message || err); }
@@ -272,7 +263,7 @@ async function persistBtgRows(rows) {
   try {
     const { error: clearError } = await supabase.from('logistica_btg_solicitacoes').delete().not('id', 'is', null);
     if (clearError) throw clearError;
-    const payload = list.map((r) => ({ contrato_original: contratoNorm(r.contratoOriginal), contrato_status: contratoLabel(r.contratoOriginal), numero_os_relatorio: clean(r.os) || null, tipo_solicitacao: clean(r.tipoSolicitacao) || 'Relatório BTG', cliente: clean(r.cliente) || null, commodity: clean(r.commodity) || null, quantidade: fnum(r.qtde), aba: r.sheet || null, linha: r.rowNumber || null, updated_at: new Date().toISOString() }));
+    const payload = list.map((r) => ({ contrato_original: contratoNorm(r.contratoOriginal), contrato_status: contratoLabel(r.contratoOriginal), numero_os_relatorio: clean(r.portal || r.os) || null, tipo_solicitacao: clean(r.tipoSolicitacao) || 'Relatório BTG', cliente: clean(r.cliente) || null, commodity: clean(r.commodity) || null, quantidade: fnum(r.qtde), aba: r.sheet || null, linha: r.rowNumber || null, updated_at: new Date().toISOString() }));
     for (let i = 0; i < payload.length; i += 500) {
       const { error } = await supabase.from('logistica_btg_solicitacoes').insert(payload.slice(i, i + 500));
       if (error) throw error;
@@ -333,7 +324,7 @@ function renderStatusButtons(el) {
     ['ok', 'OK'],
     ['pendencia cliente', 'Pendência Cliente'],
     ['verificar', 'Verificar'],
-    ['falta classificador', 'Falta Classificador'],
+    ['falta colaborador', 'Falta Colaborador'],
     ['ajustado', 'Ajustado'],
   ];
   el.statusFilters.innerHTML = items.map(([key, label]) => `
@@ -377,7 +368,6 @@ function render(el) {
           ${thHtml('os', 'O.S.')}
           ${thHtml('portal', 'Portal')}
           ${thHtml('contrato', 'Contrato')}
-          ${thHtml('tipoSolicitacao', 'Solicitação')}
           ${thHtml('colaborador', 'Colaborador')}
           ${thHtml('supervisao', 'Supervisão')}
           ${thHtml('lote', 'Lote')}
@@ -393,7 +383,7 @@ function statusClass(s) {
   const n = norm(s || '');
   if (n === 'VERIFICAR') return 'status-verificar';
   if (n === 'PENDENCIA CLIENTE') return 'status-pendencia';
-  if (n === 'FALTA CLASSIFICADOR') return 'status-falta';
+  if (n === 'FALTA COLABORADOR') return 'status-falta';
   if (n === 'AJUSTADO') return 'status-info';
   return 'status-ok';
 }
@@ -413,7 +403,6 @@ function rowHtml(r) {
     <td><span class="btg-os-num">${esc(r.os || '—')}</span></td>
     <td><span class="btg-os-num" style="color:#94a3b8">${esc(r.portal || '—')}</span></td>
     <td><span class="btg-contrato"${title}>${esc(r.contrato)}</span></td>
-    <td><span class="btg-sup">${esc(r.tipoSolicitacao || r.fonte || '—')}</span></td>
     <td><span class="btg-colab">${esc(r.colaborador || '—')}</span></td>
     <td><span class="btg-sup">${esc(r.supervisao || '—')}</span></td>
     <td><span class="btg-val">${esc(fmt(r.lote || r.qtde))}</span></td>
@@ -428,8 +417,8 @@ async function loadDbData(el) {
   try {
     const { data: osData, error } = await supabase
       .from('operacional_os')
-      .select('id, numero_os, contrato, supervisao, lote, remanescente')
-      .ilike('cliente', 'BTG PACTUAL COMMODITIES SERTRADING%')
+      .select('id, numero_os, cliente, contrato, supervisao, lote, remanescente, raw')
+      .ilike('cliente', '%BTG PACTUAL COMMODITIES SERTRADING%')
       .order('numero_os', { ascending: false })
       .limit(5000);
     if (error) throw new Error(error.message);
@@ -449,7 +438,7 @@ async function loadDbData(el) {
 
     state.dbRows = [];
     for (const r of (osData || [])) {
-      const original = contratoNorm(r.contrato || '');
+      const original = contratoNorm(r.contrato || extractContratoFromRaw(r.raw) || '');
       const statusBase = isContratoBtg(original) ? 'OK' : 'CORRIGIR CONTRATO';
       const colaboradores = uniqBy(colabMap[r.id] || [], v => norm(v));
       const nomes = colaboradores.length ? colaboradores : ['—'];
@@ -483,7 +472,7 @@ async function loadDbData(el) {
 
 // ── Parsers dos relatórios ────────────────────────────────────────────────────
 function parseDistribuicao(wb) {
-  const btgRows = [];
+  const distRows = [];
   const allOsRows = [];
   for (const wsName of wb.SheetNames) {
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
@@ -552,20 +541,18 @@ function parseDistribuicao(wb) {
         updated_at:         now,
       });
 
-      // Apenas BTG → logistica_btg_distribuicao
-      if (BTG_RE.test(clienteStr)) {
-        btgRows.push({
-          os:          osNum,
-          colaborador: clean(String(r[ci.colaborador] ?? '')) || '—',
-          supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
-          lote:        r[ci.lote],
-          remanescente:r[ci.remanescente],
-          fonte:       'Distribuição OS',
-        });
-      }
+      // A Distribuição é geral: não filtra cliente. Ela só identifica colaborador por O.S.
+      distRows.push({
+        os:          osNum,
+        colaborador: clean(String(r[ci.colaborador] ?? '')) || '—',
+        supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
+        lote:        r[ci.lote],
+        remanescente:r[ci.remanescente],
+        fonte:       'Distribuição OS',
+      });
     }
   }
-  return { btgRows, allOsRows };
+  return { distRows, allOsRows };
 }
 
 function parseBtg(wb) {
@@ -592,10 +579,12 @@ function parseBtg(wb) {
         c => c.includes('CONTRATO') && !c.includes('QTDE') && !c.includes('NUMERO') && !c.includes('NUM'),
         c => c.includes('CONTRATO'),
       ]),
-      os: colIndex(h, [
+      portal: colIndex(h, [
+        c => c === 'ORDEM DE SERVICO' || c === 'ORDEM SERVICO',
         c => c.includes('ORDEM') && c.includes('SERVI'),
-        c => c === 'OS' || c === 'N OS' || c === 'NO OS' || c === 'NUMERO OS',
-        c => c.includes('ORDEM') && c.includes('OS'),
+      ]),
+      ordemFrete: colIndex(h, [
+        c => c === 'ORDEM DE FRETE' || (c.includes('ORDEM') && c.includes('FRETE')),
       ]),
       tipo: colIndex(h, [c => c.includes('TIPO') || c.includes('SOLICITACAO') || c.includes('OPERACAO') || c.includes('MOVIMENTO')]),
       cliente: colIndex(h, [c => c.includes('CLIENTE') || c.includes('COMPRADOR') || c.includes('TOMADOR')]),
@@ -619,7 +608,8 @@ function parseBtg(wb) {
       if (!contratoOriginal && !r.some(Boolean)) return;
       const tipoSolicitacao = clean(r[ci.tipo]) || clean(r[ci.commodity]) || clean(r[ci.cidade]) || 'Relatório BTG';
       rows.push({
-        os: clean(r[ci.os]),
+        portal: clean(r[ci.portal]),
+        ordemFrete: clean(r[ci.ordemFrete]),
         contratoOriginal,
         contrato: contratoLabel(contratoOriginal),
         tipoSolicitacao,
@@ -652,13 +642,10 @@ async function processFile(file, el) {
 
   if (tipo === 'distribuicao') {
     const parsed = parseDistribuicao(wb);
-    console.log(`[BTG] Distribuição: ${parsed.btgRows.length} BTG, ${parsed.allOsRows.length} OS total`);
-    if (parsed.btgRows.length === 0 && parsed.allOsRows.length > 0) {
-      console.warn('[BTG] Atenção: nenhuma linha BTG encontrada. Verifique se o cliente na planilha contém "BTG PACTUAL COMMODITIES SERTRADING".');
-    }
-    state.distRows = parsed.btgRows;
+    console.log(`[BTG] Distribuição: ${parsed.distRows.length} vínculo(s) O.S./colaborador, ${parsed.allOsRows.length} OS total`);
+    state.distRows = parsed.distRows;
     state.allOsRows = parsed.allOsRows;
-    state.loaded.dist = `${file.name} (${parsed.btgRows.length} BTG / ${parsed.allOsRows.length} O.S. total)`;
+    state.loaded.dist = `${file.name} (${parsed.distRows.length} vínculo(s) O.S./colaborador)`;
   } else if (tipo === 'btg') {
     const parsed = parseBtg(wb);
     console.log(`[BTG] Relatório BTG: ${parsed.rows.length} solicitações`);
@@ -711,16 +698,8 @@ async function handleFiles(files, el) {
     el.feedback.textContent = 'Aviso: planilha de Distribuição carregada mas nenhuma O.S. foi lida. Verifique o formato do arquivo no console.';
   }
 
-  if (state.allOsRows?.length) {
-    el.feedback.textContent = `Atualizando lista de O.S. (${state.allOsRows.length} registros)...`;
-    try {
-      await persistAllOsRows(state.allOsRows);
-    } catch (err) {
-      el.feedback.textContent = `Falha ao salvar lista de O.S.: ${err.message}`;
-      el.dropZone.classList.remove('btg-loading');
-      return;
-    }
-  }
+  // Importante: este menu NÃO atualiza operacional_os.
+  // A Lista de OS vem do importador que alimenta a OS do Gestor.
   await persistDistribuicaoRows(state.distRows);
   await persistBtgRows(state.btgRows);
 
@@ -802,7 +781,7 @@ async function reconcile(el) {
 
   // ── 1. Relatório BTG é a fonte primária ───────────────────────────────────
   // OK               → na Lista de OS + no BTG + colaborador na Distribuição
-  // FALTA CLASSIFICADOR → na Lista de OS + no BTG, sem colaborador na Distribuição
+  // FALTA COLABORADOR → na Lista de OS + no BTG, sem colaborador na Distribuição
   // VERIFICAR        → no BTG mas NÃO na Lista de OS
   for (const btg of (state.btgRows || [])) {
     const c = contratoNorm(btg.contratoOriginal);
@@ -815,15 +794,12 @@ async function reconcile(el) {
     for (const db of dbRows) {
       for (const d of (distByOs.get(String(db.os)) || [])) distRows.push(d);
     }
-    if (btg.os) {
-      for (const d of (distByOs.get(String(btg.os)) || [])) distRows.push(d);
-    }
     const uniqDist = uniqBy(distRows, r => norm(r.colaborador));
     const hasColab = uniqDist.some(r => r.colaborador && r.colaborador !== '—');
 
     let status;
     if (!inListaOS)     status = 'VERIFICAR';
-    else if (!hasColab) status = 'FALTA CLASSIFICADOR';
+    else if (!hasColab) status = 'FALTA COLABORADOR';
     else                status = 'OK';
 
     const pessoas = [];
@@ -836,8 +812,8 @@ async function reconcile(el) {
       const dist = uniqDist.find(x => norm(x.colaborador) === norm(pessoa)) || uniqDist[0] || null;
       out.push(applyAdjusted({
         status,
-        os: db?.os || btg.os || dist?.os || '—',
-        portal: btg.os || '—',
+        os: db?.os || dist?.os || '—',
+        portal: btg.portal || '—',
         contrato: contratoLabel(c),
         contratoOriginal: c,
         tipoSolicitacao: btg.tipoSolicitacao || 'Relatório BTG',
@@ -889,9 +865,9 @@ function exportVerificar() {
   const data = rows.map(r => ({
     Status: r.status,
     OS: r.os || '',
+    Portal: r.portal || '',
     Contrato: r.contrato || '',
     'Contrato original': r.contratoOriginal || '',
-    Solicitação: r.tipoSolicitacao || '',
     Colaborador: r.colaborador || '',
     Supervisão: r.supervisao || '',
     Lote: fnum(r.lote || r.qtde),
@@ -948,7 +924,7 @@ function injectStyles() {
     .btg-table th:hover{color:#fff;background:#0b2116}
     .btg-table td{padding:9px 12px;border-bottom:1px solid rgba(148,163,184,.1);vertical-align:middle;background:rgba(15,23,42,.22)}
     .btg-row:hover td{background:rgba(22,101,52,.1)}
-    .btg-table td:nth-child(8),.btg-table td:nth-child(9),.btg-table th:nth-child(8),.btg-table th:nth-child(9){text-align:right}
+    .btg-table td:nth-child(7),.btg-table td:nth-child(8),.btg-table th:nth-child(7),.btg-table th:nth-child(8){text-align:right}
     .btg-os-num{font-size:13px;font-weight:950;color:#f8fafc}
     .btg-contrato{font-size:12px;font-weight:800;color:#a7f3d0;font-family:monospace}
     .btg-row.status-danger .btg-contrato{color:#fecaca}
