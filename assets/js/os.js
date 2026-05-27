@@ -252,6 +252,9 @@ function injectStyles() {
     .os-ac-item:last-child{border-bottom:0}.os-ac-item:hover{background:rgba(52,211,153,.13);color:#f8fafc}
     .os-ac-dist{font-size:10px;color:#6b7280;white-space:nowrap;flex-shrink:0}.os-ac-star{margin-right:3px}
     .os-ac-empty{padding:10px 12px;font-size:12px;color:#6b7280;text-align:center}.os-ac-input{cursor:text}
+    .os-ac-combo{display:flex;align-items:stretch}.os-ac-combo .os-select{flex:1;border-radius:12px 0 0 12px!important}
+    .os-ac-toggle{border:1px solid rgba(52,211,153,.18);border-left:none;background:rgba(15,23,42,.72);color:#86efac;border-radius:0 12px 12px 0;padding:0 11px;font-size:15px;cursor:pointer;min-height:38px;flex-shrink:0;line-height:1;transition:.15s}
+    .os-ac-toggle:hover{background:rgba(52,211,153,.15);color:#d1fae5;border-color:rgba(52,211,153,.4)}
     .kg-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:9999}.kg-modal{background:#0d0d18;border:1px solid rgba(52,211,153,.22);border-radius:20px;padding:28px 24px;width:100%;max-width:380px;display:flex;flex-direction:column;gap:16px}.kg-modal h3{margin:0;color:#f8fafc;font-size:16px;font-weight:950}.kg-modal input{width:100%;box-sizing:border-box;min-height:44px;border-radius:12px;border:1px solid rgba(52,211,153,.25);background:#020617;color:#e2e2f0;color-scheme:dark;padding:10px 14px;font-size:15px}.kg-modal input:focus{outline:none;border-color:#34d399}.kg-modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.kg-modal-actions button{min-height:44px;border-radius:12px;font-weight:950;cursor:pointer;border:0;font-size:14px}.kg-btn-confirm{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.kg-btn-cancel{background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2)!important;color:#e2e2f0}
     @media(max-width:900px){.os-grid{grid-template-columns:1fr}.os-grid .field-span-2{grid-column:span 1}}
   `;
@@ -618,7 +621,10 @@ initProtectedPage('OS', async (content) => {
       <div class="os-extra-box">
         <label class="os-mini"><strong>2º colaborador na mesma O.S.</strong></label>
         <div class="os-ac" data-assign-extra-wrap data-existing-id="${escapeHtml(extra?.id || '')}">
-          <input type="text" class="os-select os-ac-input" placeholder="${extraNome ? 'Trocar 2º colaborador...' : 'Digitar nome do 2º colaborador...'}" value="${escapeHtml(extraNome)}" data-ac-key="${escapeHtml(extraKey)}" autocomplete="off" spellcheck="false" />
+          <div class="os-ac-combo">
+            <input type="text" class="os-select os-ac-input" placeholder="${extraNome ? 'Trocar 2º colaborador...' : 'Digitar nome do 2º colaborador...'}" value="${escapeHtml(extraNome)}" data-ac-key="${escapeHtml(extraKey)}" autocomplete="off" spellcheck="false" />
+            <button class="os-ac-toggle" type="button" tabindex="-1" title="Ver lista completa">▾</button>
+          </div>
           <div class="os-ac-list" hidden></div>
         </div>
         ${extraNome ? `<div class="os-mini"><strong>Também indicado:</strong> ${escapeHtml(extraNome)} ${extra?.distancia_km != null ? `• ${KM.format(extra.distancia_km)} km` : ''}</div>` : '<div class="os-mini">Use este campo para indicar mais um classificador junto na mesma O.S.</div>'}
@@ -640,7 +646,10 @@ initProtectedPage('OS', async (content) => {
       <td>
         <div class="os-indbox">
           <div class="os-ac" data-assign-main-wrap>
-            <input type="text" class="os-select os-ac-input" placeholder="${principal ? 'Selecionar outro colaborador...' : 'Digitar nome do colaborador...'}" value="${escapeHtml(selectedNome)}" data-ac-key="${escapeHtml(selectedKey)}" autocomplete="off" spellcheck="false" />
+            <div class="os-ac-combo">
+              <input type="text" class="os-select os-ac-input" placeholder="${principal ? 'Selecionar outro colaborador...' : 'Digitar nome do colaborador...'}" value="${escapeHtml(selectedNome)}" data-ac-key="${escapeHtml(selectedKey)}" autocomplete="off" spellcheck="false" />
+              <button class="os-ac-toggle" type="button" tabindex="-1" title="Ver lista completa">▾</button>
+            </div>
             <div class="os-ac-list" hidden></div>
           </div>
           ${selectedNome ? `<div class="os-mini"><strong>Indicação:</strong> ${escapeHtml(selectedNome)}</div>` : '<div class="os-warn-text">Sem sugestão automática. Ponto de embarque ou colaborador sem coordenadas válidas.</div>'}
@@ -655,6 +664,20 @@ initProtectedPage('OS', async (content) => {
 
 
   async function onListClick(event) {
+    const toggleBtn = event.target.closest('.os-ac-toggle');
+    if (toggleBtn) {
+      const ac = toggleBtn.closest('[data-assign-main-wrap], [data-assign-extra-wrap]');
+      if (!ac) return;
+      const dropdown = ac.querySelector('.os-ac-list');
+      if (!dropdown.hidden) { dropdown.hidden = true; return; }
+      const input = ac.querySelector('.os-ac-input');
+      const ctx = input ? getAcContext(input) : null;
+      if (!ctx) return;
+      renderAcDropdown(dropdown, ctx.row, '', ctx.excludeKeys);
+      input.focus();
+      return;
+    }
+
     const acItem = event.target.closest('.os-ac-item');
     if (acItem) {
       const ac = acItem.closest('[data-assign-main-wrap], [data-assign-extra-wrap]');
