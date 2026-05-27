@@ -97,7 +97,7 @@ function rowKey(r) {
   return `linha:${norm(`${r.fonte}|${r.os}|${r.tipoSolicitacao}|${r.colaborador}|${r.lote}|${r.remanescente}`)}`;
 }
 
-function findHeaderRow(raw, checks, maxRows = 20) {
+function findHeaderRow(raw, checks, maxRows = 50) {
   for (let i = 0; i < Math.min(maxRows, raw.length); i++) {
     const txt = norm(raw[i].map(c => String(c ?? '')).join(' '));
     if (checks.every(ch => txt.includes(ch))) return i;
@@ -614,24 +614,43 @@ async function processFile(file, el) {
     state.loaded.dist = `${file.name} (${parsed.btgRows.length} BTG / ${parsed.allOsRows.length} O.S. total)`;
   } else if (tipo === 'btg') {
     const parsed = parseBtg(wb);
-    state.btgRows = parsed.rows;
-    state.btgMap = parsed.map;
-    state.loaded.btg = `${file.name} (${state.btgRows.length} solicitações)`;
+    if (!state.btgRows) {
+      state.btgRows = parsed.rows;
+      state.btgMap = parsed.map;
+      state.loaded.btg = `${file.name} (${parsed.rows.length} sol.)`;
+    } else {
+      state.btgRows = [...state.btgRows, ...parsed.rows];
+      for (const [k, v] of Object.entries(parsed.map)) state.btgMap[k] = v;
+      state.loaded.btg += ` + ${file.name} (${parsed.rows.length} sol.)`;
+    }
   } else {
-    throw new Error(`Arquivo "${file.name}" não reconhecido. Envie a Distribuição de OS ou o relatório BTG.`);
+    console.warn(`Arquivo não reconhecido: ${file.name}`);
+    throw new Error(`Arquivo "${file.name}" não reconhecido.`);
   }
 }
 
 async function handleFiles(files, el) {
   if (!files?.length) return;
 
+  // Reseta BTG para o novo lote (Distribuição é mantida)
+  state.btgRows = null;
+  state.btgMap = null;
+  state.loaded.btg = null;
+
   el.feedback.textContent = 'Processando relatórios...';
   el.dropZone.classList.add('btg-loading');
 
-  try {
-    for (const file of files) await processFile(file, el);
-  } catch (err) {
-    el.feedback.textContent = err.message;
+  const erros = [];
+  for (const file of files) {
+    try {
+      await processFile(file, el);
+    } catch (err) {
+      erros.push(file.name);
+    }
+  }
+
+  if (!state.btgRows && !state.distRows) {
+    el.feedback.textContent = `Arquivos não reconhecidos: ${erros.join(', ')}. Envie a Distribuição de OS ou o Relatório BTG.`;
     el.dropZone.classList.remove('btg-loading');
     renderChips(el);
     return;
