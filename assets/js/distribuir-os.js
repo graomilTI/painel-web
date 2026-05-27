@@ -309,8 +309,12 @@ initProtectedPage('Distribuir O.S', async (content) => {
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-      const rows = json.map(mapImportRow).filter(r => r.numero_os);
-      if (!rows.length) throw new Error('Nenhuma O.S. encontrada na planilha.');
+      const rawRows = json.map(mapImportRow).filter(r => r.numero_os);
+      if (!rawRows.length) throw new Error('Nenhuma O.S. encontrada na planilha.');
+      // Deduplica por numero_os (UNIQUE constraint) — mesma OS pode aparecer para vários colaboradores
+      const dedup = new Map();
+      for (const r of rawRows) dedup.set(r.numero_os, r);
+      const rows = [...dedup.values()];
       el.feedback.textContent = 'Limpando Distribuição de O.S. anterior...';
       await limparDistribuicaoAnterior();
       el.feedback.textContent = 'Gravando nova Distribuição de O.S...';
