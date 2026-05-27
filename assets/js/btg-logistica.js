@@ -492,13 +492,20 @@ function parseDistribuicao(wb) {
     const hIdx = findHeaderRow(raw, ['FUNCION', 'REMANESCENTE']);
     const h = raw[hIdx] || [];
     const ci = {
-      os:          colIndex(h, [c => c === 'O S' || c === 'OS']),
+      os:          colIndex(h, [
+        c => c === 'O S' || c === 'OS',
+        c => c === 'N OS' || c === 'NO OS' || c === 'NUMERO OS',
+        c => (c.endsWith('OS') || c.endsWith('O S')) && c.length <= 8,
+      ]),
       colaborador: colIndex(h, [c => c.includes('FUNCION')]),
       supervisao:  colIndex(h, [c => c.includes('SUPERVIS')]),
       coordenacao: colIndex(h, [c => c.includes('COORDENA')]),
       cliente:     colIndex(h, [c => c.includes('CLIENTE')]),
       lote:        colIndex(h, [c => c === 'LOTE']),
-      remanescente:colIndex(h, [c => c.includes('REMANESCENTE') && !c.includes('PROD')]),
+      remanescente:colIndex(h, [
+        c => c.includes('REMANESCENTE') && !c.includes('PROD'),
+        c => c.includes('REMANESCENTE'),
+      ]),
       situacao:    colIndex(h, [c => c.includes('SITUAC')]),
       financeiro:  colIndex(h, [c => c.includes('FINANC')]),
       data:        colIndex(h, [c => c === 'DATA' || c.startsWith('DATA')]),
@@ -612,13 +619,20 @@ async function processFile(file, el) {
   const wb = XLSX.read(buf, { type: 'array' });
   const tipo = detectFileType(wb);
 
+  console.log(`[BTG] "${file.name}" → tipo: ${tipo} | sheets: ${wb.SheetNames.join(', ')}`);
+
   if (tipo === 'distribuicao') {
     const parsed = parseDistribuicao(wb);
+    console.log(`[BTG] Distribuição: ${parsed.btgRows.length} BTG, ${parsed.allOsRows.length} OS total`);
+    if (parsed.btgRows.length === 0 && parsed.allOsRows.length > 0) {
+      console.warn('[BTG] Atenção: nenhuma linha BTG encontrada. Verifique se o cliente na planilha contém "BTG PACTUAL COMMODITIES SERTRADING".');
+    }
     state.distRows = parsed.btgRows;
     state.allOsRows = parsed.allOsRows;
     state.loaded.dist = `${file.name} (${parsed.btgRows.length} BTG / ${parsed.allOsRows.length} O.S. total)`;
   } else if (tipo === 'btg') {
     const parsed = parseBtg(wb);
+    console.log(`[BTG] Relatório BTG: ${parsed.rows.length} solicitações`);
     if (!state.btgRows) {
       state.btgRows = parsed.rows;
       state.btgMap = parsed.map;
@@ -629,7 +643,7 @@ async function processFile(file, el) {
       state.loaded.btg += ` + ${file.name} (${parsed.rows.length} sol.)`;
     }
   } else {
-    console.warn(`Arquivo não reconhecido: ${file.name}`);
+    console.warn(`[BTG] Arquivo não reconhecido: ${file.name} | sheets: ${wb.SheetNames.join(', ')}`);
     throw new Error(`Arquivo "${file.name}" não reconhecido.`);
   }
 }
