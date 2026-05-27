@@ -472,7 +472,7 @@ async function loadDbData(el) {
 
 // ── Parsers dos relatórios ────────────────────────────────────────────────────
 function parseDistribuicao(wb) {
-  const btgRows = [];
+  const distRows = [];
   const allOsRows = [];
   for (const wsName of wb.SheetNames) {
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
@@ -538,20 +538,18 @@ function parseDistribuicao(wb) {
         updated_at:         now,
       });
 
-      // Apenas BTG → logistica_btg_distribuicao
-      if (BTG_RE.test(clienteStr)) {
-        btgRows.push({
-          os:          osNum,
-          colaborador: clean(String(r[ci.colaborador] ?? '')) || '—',
-          supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
-          lote:        r[ci.lote],
-          remanescente:r[ci.remanescente],
-          fonte:       'Distribuição OS',
-        });
-      }
+      // A Distribuição é geral: não filtra cliente. Ela só identifica colaborador por O.S.
+      distRows.push({
+        os:          osNum,
+        colaborador: clean(String(r[ci.colaborador] ?? '')) || '—',
+        supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
+        lote:        r[ci.lote],
+        remanescente:r[ci.remanescente],
+        fonte:       'Distribuição OS',
+      });
     }
   }
-  return { btgRows, allOsRows };
+  return { distRows, allOsRows };
 }
 
 function parseBtg(wb) {
@@ -616,13 +614,10 @@ async function processFile(file, el) {
 
   if (tipo === 'distribuicao') {
     const parsed = parseDistribuicao(wb);
-    console.log(`[BTG] Distribuição: ${parsed.btgRows.length} BTG, ${parsed.allOsRows.length} OS total`);
-    if (parsed.btgRows.length === 0 && parsed.allOsRows.length > 0) {
-      console.warn('[BTG] Atenção: nenhuma linha BTG encontrada. Verifique se o cliente na planilha contém "BTG PACTUAL COMMODITIES SERTRADING".');
-    }
-    state.distRows = parsed.btgRows;
+    console.log(`[BTG] Distribuição: ${parsed.distRows.length} vínculo(s) O.S./colaborador, ${parsed.allOsRows.length} OS total`);
+    state.distRows = parsed.distRows;
     state.allOsRows = parsed.allOsRows;
-    state.loaded.dist = `${file.name} (${parsed.btgRows.length} BTG / ${parsed.allOsRows.length} O.S. total)`;
+    state.loaded.dist = `${file.name} (${parsed.distRows.length} vínculo(s) O.S./colaborador)`;
   } else if (tipo === 'btg') {
     const parsed = parseBtg(wb);
     console.log(`[BTG] Relatório BTG: ${parsed.rows.length} solicitações`);
