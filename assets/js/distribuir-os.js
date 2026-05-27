@@ -289,19 +289,12 @@ initProtectedPage('Distribuir O.S', async (content) => {
   }
 
   async function limparDistribuicaoAnterior() {
-    // A Distribuição de O.S. é uma lista auxiliar: cada novo relatório substitui 100% da lista anterior.
-    // Primeiro remove os vínculos com colaboradores para evitar sobras/orfãos e bloqueios de FK.
-    const { error: delAtribError } = await supabase
-      .from('operacional_os_colaboradores')
-      .delete()
-      .not('id', 'is', null);
-    if (delAtribError) throw delAtribError;
-
-    const { error: delOsError } = await supabase
+    // Deleta TODAS as OS — o CASCADE da FK apaga operacional_os_colaboradores automaticamente.
+    const { error } = await supabase
       .from('operacional_os')
       .delete()
-      .not('id', 'is', null);
-    if (delOsError) throw delOsError;
+      .gte('created_at', '2000-01-01');
+    if (error) throw new Error(`Falha ao limpar lista anterior: ${error.message}`);
 
     state.rows = [];
     state.ajustadas = [];
