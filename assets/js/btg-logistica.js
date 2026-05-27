@@ -494,8 +494,9 @@ function parseDistribuicao(wb) {
     const ci = {
       os:          colIndex(h, [
         c => c === 'O S' || c === 'OS',
-        c => c === 'N OS' || c === 'NO OS' || c === 'NUMERO OS',
-        c => (c.endsWith('OS') || c.endsWith('O S')) && c.length <= 8,
+        c => c === 'N OS' || c === 'NO OS' || c === 'NUMERO OS' || c === 'NR O S' || c === 'N O S',
+        c => c === 'ORDEM DE SERVICO' || c === 'ORDEM SERVICO',
+        c => (c.endsWith('OS') || c.endsWith('O S')) && c.length <= 12,
       ]),
       colaborador: colIndex(h, [c => c.includes('FUNCION')]),
       supervisao:  colIndex(h, [c => c.includes('SUPERVIS')]),
@@ -669,13 +670,17 @@ async function handleFiles(files, el) {
     }
   }
 
-  if (!state.btgRows?.length && !state.distRows?.length) {
+  if (!state.btgRows?.length && !state.distRows?.length && !state.allOsRows?.length) {
     el.feedback.textContent = erros.length
       ? `Arquivos não reconhecidos: ${erros.join(', ')}. Envie a Distribuição de OS ou o Relatório BTG.`
       : 'Nenhum dado encontrado nos arquivos enviados.';
     el.dropZone.classList.remove('btg-loading');
     renderChips(el);
     return;
+  }
+
+  if (state.distRows !== null && state.allOsRows?.length === 0) {
+    el.feedback.textContent = 'Aviso: planilha de Distribuição carregada mas nenhuma O.S. foi lida. Verifique o formato do arquivo no console.';
   }
 
   if (state.allOsRows?.length) {
