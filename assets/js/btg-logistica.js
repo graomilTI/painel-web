@@ -650,12 +650,15 @@ async function handleFiles(files, el) {
     try {
       await processFile(file, el);
     } catch (err) {
+      console.warn(`Erro ao processar "${file.name}":`, err);
       erros.push(file.name);
     }
   }
 
-  if (!state.btgRows && !state.distRows) {
-    el.feedback.textContent = `Arquivos não reconhecidos: ${erros.join(', ')}. Envie a Distribuição de OS ou o Relatório BTG.`;
+  if (!state.btgRows?.length && !state.distRows?.length) {
+    el.feedback.textContent = erros.length
+      ? `Arquivos não reconhecidos: ${erros.join(', ')}. Envie a Distribuição de OS ou o Relatório BTG.`
+      : 'Nenhum dado encontrado nos arquivos enviados.';
     el.dropZone.classList.remove('btg-loading');
     renderChips(el);
     return;
@@ -673,8 +676,27 @@ async function handleFiles(files, el) {
   }
   await persistDistribuicaoRows(state.distRows);
   await persistBtgRows(state.btgRows);
+
+  // Preserva estado do upload antes de recarregar o banco
+  const uploadBtgRows    = state.btgRows;
+  const uploadBtgMap     = state.btgMap;
+  const uploadBtgLoaded  = state.loaded.btg;
+  const uploadDistRows   = state.distRows;
+  const uploadDistLoaded = state.loaded.dist;
+
   el.dropZone.classList.remove('btg-loading');
   await loadDbData(el);
+
+  // Restaura se o banco voltou vazio (ex.: falha silenciosa na persistência)
+  if (uploadBtgRows?.length && !state.btgRows?.length) {
+    state.btgRows = uploadBtgRows;
+    state.btgMap  = uploadBtgMap;
+    state.mode    = 'xlsx';
+  }
+  if (uploadBtgLoaded)  state.loaded.btg  = uploadBtgLoaded;
+  if (uploadDistRows?.length && !state.distRows?.length) state.distRows = uploadDistRows;
+  if (uploadDistLoaded) state.loaded.dist = uploadDistLoaded;
+
   await reconcile(el);
 }
 
