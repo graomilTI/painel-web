@@ -480,7 +480,11 @@ function parseDistribuicao(wb) {
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
     if (!raw.length) continue;
 
-    const hIdx = findHeaderRow(raw, ['FUNCION', 'REMANESCENTE']);
+    // Aceita tanto a aba com "Funcionário" (formato antigo) quanto "Classificador" (Embarques)
+    let hIdx = findHeaderRow(raw, ['FUNCION', 'REMANESCENTE']);
+    if (raw[hIdx] && !norm(raw[hIdx].map(c => String(c ?? '')).join(' ')).includes('FUNCION')) {
+      hIdx = findHeaderRow(raw, ['CLASSIFICAD']);
+    }
     const h = raw[hIdx] || [];
     const ci = {
       os:          colIndex(h, [
@@ -489,7 +493,7 @@ function parseDistribuicao(wb) {
         c => c === 'ORDEM DE SERVICO' || c === 'ORDEM SERVICO',
         c => (c.endsWith('OS') || c.endsWith('O S')) && c.length <= 12,
       ]),
-      colaborador: colIndex(h, [c => c.includes('FUNCION')]),
+      colaborador: colIndex(h, [c => c.includes('CLASSIFICAD'), c => c.includes('FUNCION')]),
       supervisao:  colIndex(h, [c => c.includes('SUPERVIS')]),
       coordenacao: colIndex(h, [c => c.includes('COORDENA')]),
       cliente:     colIndex(h, [c => c.includes('CLIENTE')]),
@@ -508,7 +512,7 @@ function parseDistribuicao(wb) {
       produto:     colIndex(h, [c => c === 'PRODUTO' || c.includes('PROD REMANESCENTE') || (c.includes('PROD') && !c.includes('REMANESCENTE'))]),
       embarcado:   colIndex(h, [c => c === 'EMBARCADO']),
     };
-    if (ci.os < 0 || ci.cliente < 0) continue;
+    if (ci.os < 0) continue;
 
     const supIdx = ci.supervisao >= 0 ? ci.supervisao : ci.coordenacao;
     const now = new Date().toISOString();
@@ -559,10 +563,12 @@ function parseBtg(wb) {
   const rows = [];
   for (const wsName of wb.SheetNames) {
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
+    console.log(`[BTG parseBtg] sheet="${wsName}" totalRows=${raw.length}`);
     if (!raw.length) continue;
 
     const hIdx = findHeaderRow(raw, ['CONTRATO']);
     const h = raw[hIdx] || [];
+    console.log(`[BTG parseBtg] hIdx=${hIdx} header=${JSON.stringify(h.slice(0, 15))}`);
     const ci = {
       contrato: colIndex(h, [c => c === 'CONTRATO' || c.includes('CONTRATO')]),
       portal: colIndex(h, [
@@ -578,10 +584,12 @@ function parseBtg(wb) {
       qtde: colIndex(h, [c => c.includes('QTDE') || c.includes('QUANTIDADE') || c.includes('VOLUME') || c.includes('TON')]),
       cidade: colIndex(h, [c => c.includes('CIDADE') || c.includes('ORIGEM') || c.includes('DESTINO')]),
     };
-    if (ci.contrato < 0) continue;
+    console.log(`[BTG parseBtg] ci=${JSON.stringify(ci)} dataRows=${raw.slice(hIdx + 1).length}`);
+    if (ci.contrato < 0) { console.warn('[BTG parseBtg] contrato col not found, skipping sheet'); continue; }
 
     raw.slice(hIdx + 1).forEach((r, idx) => {
       const contratoOriginal = contratoNorm(r[ci.contrato]);
+      if (idx < 3) console.log(`[BTG parseBtg] row${idx} contrato="${contratoOriginal}" allEmpty=${!r.some(Boolean)}`);
       if (!contratoOriginal && !r.some(Boolean)) return;
       const tipoSolicitacao = clean(r[ci.tipo]) || clean(r[ci.commodity]) || clean(r[ci.cidade]) || 'Relatório BTG';
       rows.push({
