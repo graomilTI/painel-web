@@ -563,47 +563,48 @@ function parseBtg(wb) {
   const rows = [];
   for (const wsName of wb.SheetNames) {
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
-    console.log(`[BTG parseBtg] sheet="${wsName}" totalRows=${raw.length}`);
     if (!raw.length) continue;
 
     const hIdx = findHeaderRow(raw, ['CONTRATO']);
     const h = raw[hIdx] || [];
-    console.log(`[BTG parseBtg] hIdx=${hIdx} header=${JSON.stringify(h.slice(0, 15))}`);
     const ci = {
-      contrato: colIndex(h, [c => c === 'CONTRATO' || c.includes('CONTRATO')]),
-      portal: colIndex(h, [
+      contrato:          colIndex(h, [c => c === 'CONTRATO' || c.includes('CONTRATO')]),
+      portal:            colIndex(h, [
         c => c === 'ORDEM DE SERVICO' || c === 'ORDEM SERVICO',
         c => c.includes('ORDEM') && c.includes('SERVI'),
       ]),
-      ordemFrete: colIndex(h, [
-        c => c === 'ORDEM DE FRETE' || (c.includes('ORDEM') && c.includes('FRETE')),
-      ]),
-      tipo: colIndex(h, [c => c.includes('TIPO') || c.includes('SOLICITACAO') || c.includes('OPERACAO') || c.includes('MOVIMENTO')]),
-      cliente: colIndex(h, [c => c.includes('CLIENTE') || c.includes('COMPRADOR') || c.includes('TOMADOR')]),
-      commodity: colIndex(h, [c => c.includes('COMMODITY') || c.includes('PRODUTO')]),
-      qtde: colIndex(h, [c => c.includes('QTDE') || c.includes('QUANTIDADE') || c.includes('VOLUME') || c.includes('TON')]),
-      cidade: colIndex(h, [c => c.includes('CIDADE') || c.includes('ORIGEM') || c.includes('DESTINO')]),
+      ordemFrete:        colIndex(h, [c => c === 'ORDEM DE FRETE' || (c.includes('ORDEM') && c.includes('FRETE'))]),
+      qtde:              colIndex(h, [c => c.includes('QTDE') || c.includes('QUANTIDADE') || c.includes('VOLUME') || c.includes('TON')]),
+      commodity:         colIndex(h, [c => c.includes('COMMODITY') || c.includes('PRODUTO')]),
+      destino:           colIndex(h, [c => c.includes('DESTINO') || c.includes('CIDADE') || c.includes('ORIGEM')]),
+      rota:              colIndex(h, [c => c === 'ROTA' || c.includes('ROTA')]),
+      classificadorBtg:  colIndex(h, [c => c.includes('CLASSIFICAD')]),
+      statusBtg:         colIndex(h, [c => c === 'STATUS']),
+      tipo:              colIndex(h, [c => c.includes('TIPO') || c.includes('SOLICITACAO') || c.includes('OPERACAO') || c.includes('MOVIMENTO')]),
+      cliente:           colIndex(h, [c => c.includes('CLIENTE') || c.includes('COMPRADOR') || c.includes('TOMADOR')]),
     };
-    console.log(`[BTG parseBtg] ci=${JSON.stringify(ci)} dataRows=${raw.slice(hIdx + 1).length}`);
-    if (ci.contrato < 0) { console.warn('[BTG parseBtg] contrato col not found, skipping sheet'); continue; }
+    if (ci.contrato < 0) continue;
 
     raw.slice(hIdx + 1).forEach((r, idx) => {
       const contratoOriginal = contratoNorm(r[ci.contrato]);
-      if (idx < 3) console.log(`[BTG parseBtg] row${idx} contrato="${contratoOriginal}" allEmpty=${!r.some(Boolean)}`);
       if (!contratoOriginal && !r.some(Boolean)) return;
-      const tipoSolicitacao = clean(r[ci.tipo]) || clean(r[ci.commodity]) || clean(r[ci.cidade]) || 'Relatório BTG';
+      const tipoSolicitacao = clean(r[ci.tipo]) || clean(r[ci.commodity]) || 'Relatório BTG';
       rows.push({
-        portal: clean(r[ci.portal]),
-        ordemFrete: clean(r[ci.ordemFrete]),
+        portal:           clean(r[ci.portal]),
+        ordemFrete:       clean(r[ci.ordemFrete]),
         contratoOriginal,
-        contrato: contratoLabel(contratoOriginal),
+        contrato:         contratoLabel(contratoOriginal),
         tipoSolicitacao,
-        cliente: clean(r[ci.cliente]),
-        commodity: clean(r[ci.commodity]),
-        qtde: r[ci.qtde],
-        sheet: wsName,
-        rowNumber: hIdx + idx + 2,
-        fonte: 'Relatório BTG',
+        cliente:          clean(r[ci.cliente]),
+        commodity:        clean(r[ci.commodity]),
+        destino:          clean(r[ci.destino]),
+        rota:             clean(r[ci.rota]),
+        qtde:             r[ci.qtde],
+        classificadorBtg: clean(r[ci.classificadorBtg]),
+        statusBtg:        clean(r[ci.statusBtg]),
+        sheet:            wsName,
+        rowNumber:        hIdx + idx + 2,
+        fonte:            'Relatório BTG',
       });
     });
   }
@@ -615,10 +616,25 @@ function parseBtg(wb) {
   return { rows, map };
 }
 
+// Corrige o atributo dimension de planilhas exportadas com range errado (ex.: portal BTG).
+// Sem isso, sheet_to_json usa A1:C1 como limite e ignora o restante dos dados.
+function fixSheetDimensions(wb) {
+  for (const wsName of wb.SheetNames) {
+    const ws = wb.Sheets[wsName];
+    const cells = Object.keys(ws).filter(k => !k.startsWith('!'));
+    if (!cells.length) continue;
+    const decoded = cells.map(k => XLSX.utils.decode_cell(k));
+    const maxR = Math.max(...decoded.map(c => c.r));
+    const maxC = Math.max(...decoded.map(c => c.c));
+    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } });
+  }
+  return wb;
+}
+
 // ── Processamento de arquivo(s) ───────────────────────────────────────────────
 async function processFile(file, el) {
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: 'array' });
+  const wb = fixSheetDimensions(XLSX.read(buf, { type: 'array' }));
   const tipo = detectFileType(wb);
 
   console.log(`[BTG] "${file.name}" → tipo: ${tipo} | sheets: ${wb.SheetNames.join(', ')}`);
