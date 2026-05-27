@@ -102,9 +102,16 @@ initProtectedPage('Distribuir O.S', async (content) => {
     state.ajustadas = all.filter(r => r.status_conferencia === 'AJUSTADA');
     const ids = state.rows.map(r => r.id).filter(Boolean);
     if (ids.length) {
-      const atr = await supabase.from('operacional_os_colaboradores').select('*').in('os_id', ids);
-      if (atr.error) { console.warn('Falha ao carregar colaboradores indicados.', atr.error); state.atrib = []; }
-      else state.atrib = safe(atr.data);
+      const CHUNK = 200;
+      let allAtr = [];
+      let atrError = null;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const { data, error } = await supabase.from('operacional_os_colaboradores').select('*').in('os_id', ids.slice(i, i + CHUNK));
+        if (error) { atrError = error; allAtr = []; break; }
+        allAtr = allAtr.concat(safe(data));
+      }
+      if (atrError) { console.warn('Falha ao carregar colaboradores indicados.', atrError); state.atrib = []; }
+      else state.atrib = allAtr;
     } else state.atrib = [];
     fillCoords(); render(); el.feedback.textContent = `Carregado: ${state.rows.length} pendente(s) · ${state.ajustadas.length} ajustada(s) · ${state.atrib.length} indicação(ões).`;
   }
