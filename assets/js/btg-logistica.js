@@ -189,11 +189,7 @@ async function persistDistribuicaoRows(rows) {
   } catch (err) { console.warn('Não foi possível salvar Distribuição de O.S. no banco:', err?.message || err); }
 }
 async function persistBtgRows(rows) {
-<<<<<<< HEAD
-  const list = (rows || []).filter((r) => isContratoBtg(r.contratoOriginal));
-=======
   const list = rows || [];
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
   if (!list.length) return;
   try {
     const { error: clearError } = await supabase.from('logistica_btg_solicitacoes').delete().not('id', 'is', null);
@@ -255,16 +251,12 @@ function renderChips(el) {
 function renderStatusButtons(el) {
   const c = counts();
   const items = [
-<<<<<<< HEAD
-    ['todos', 'Todos'], ['verificar', 'Verificar'], ['ajustado', 'Ajustado'], ['ok', 'OK'],
-=======
     ['todos', 'Todos'],
     ['ok', 'OK'],
     ['pendencia cliente', 'Pendência Cliente'],
     ['verificar', 'Verificar'],
     ['falta classificador', 'Falta Classificador'],
     ['ajustado', 'Ajustado'],
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
   ];
   el.statusFilters.innerHTML = items.map(([key, label]) => `
     <button class="btg-filter-btn ${state.filtroStatus === key ? 'active' : ''}" data-status="${esc(key)}">
@@ -285,15 +277,9 @@ function render(el) {
   renderChips(el);
   renderStatusButtons(el);
 
-<<<<<<< HEAD
-  const verificarCount = state.finalRows.filter(r => r.status === 'VERIFICAR').length;
-  el.exportVerificar.disabled = !verificarCount;
-  el.exportVerificar.textContent = verificarCount ? `Gerar XLS VERIFICAR (${verificarCount})` : 'Gerar XLS VERIFICAR';
-=======
   const naoOkCount = state.finalRows.filter(r => r.status !== 'OK' && r.status !== 'AJUSTADO').length;
   el.exportVerificar.disabled = !naoOkCount;
   el.exportVerificar.textContent = naoOkCount ? `Gerar XLS pendências (${naoOkCount})` : 'Gerar XLS pendências';
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
 
   if (!rows.length) {
     const msg = state.mode === 'db' && !state.dbRows.length
@@ -325,16 +311,10 @@ function render(el) {
 }
 
 function statusClass(s) {
-<<<<<<< HEAD
-  const n = norm(s);
-  if (n === 'VERIFICAR') return 'status-warn';
-  if (n === 'CORRIGIR CONTRATO') return 'status-danger';
-=======
   const n = norm(s || '');
   if (n === 'VERIFICAR') return 'status-verificar';
   if (n === 'PENDENCIA CLIENTE') return 'status-pendencia';
   if (n === 'FALTA CLASSIFICADOR') return 'status-falta';
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
   if (n === 'AJUSTADO') return 'status-info';
   return 'status-ok';
 }
@@ -354,11 +334,7 @@ function rowHtml(r) {
     <td><span class="btg-os-num">${esc(r.os || '—')}</span></td>
     <td><span class="btg-contrato"${title}>${esc(r.contrato)}</span></td>
     <td><span class="btg-sup">${esc(r.tipoSolicitacao || r.fonte || '—')}</span></td>
-<<<<<<< HEAD
-    <td><span class="btg-colab ${r.colaboradorFonte === 'distribuicao' ? 'is-distribuicao' : ''}">${esc(r.colaborador || '—')}</span></td>
-=======
     <td><span class="btg-colab">${esc(r.colaborador || '—')}</span></td>
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
     <td><span class="btg-sup">${esc(r.supervisao || '—')}</span></td>
     <td><span class="btg-val">${esc(fmt(r.lote || r.qtde))}</span></td>
     <td><span class="btg-chip ${chip}">${esc(fmt(r.remanescente || r.qtde))}</span></td>
@@ -394,12 +370,7 @@ async function loadDbData(el) {
     state.dbRows = [];
     for (const r of (osData || [])) {
       const original = contratoNorm(r.contrato || '');
-<<<<<<< HEAD
-      if (!isContratoBtg(original)) continue;
-      const statusBase = 'OK';
-=======
       const statusBase = isContratoBtg(original) ? 'OK' : 'CORRIGIR CONTRATO';
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
       const colaboradores = uniqBy(colabMap[r.id] || [], v => norm(v));
       const nomes = colaboradores.length ? colaboradores : ['—'];
       for (const nome of nomes) {
@@ -484,12 +455,7 @@ function parseBtg(wb) {
 
     raw.slice(hIdx + 1).forEach((r, idx) => {
       const contratoOriginal = contratoNorm(r[ci.contrato]);
-<<<<<<< HEAD
-      // Contratos fora do padrão BTG (ex.: "SAÍDA VAGÕES" / "RECEBIMENTO") não entram na conferência.
-      if (!isContratoBtg(contratoOriginal)) return;
-=======
       if (!contratoOriginal && !r.some(Boolean)) return;
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
       const tipoSolicitacao = clean(r[ci.tipo]) || clean(r[ci.commodity]) || clean(r[ci.cidade]) || 'Relatório BTG';
       rows.push({
         os: clean(r[ci.os]),
@@ -592,11 +558,7 @@ function applyAdjusted(row) {
 }
 
 async function reconcile(el) {
-<<<<<<< HEAD
-  if (!state.btgRows?.length) {
-=======
   if (!state.distRows?.length && !state.btgRows?.length) {
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
     state.mode = 'db';
     state.finalRows = state.dbRows;
     render(el);
@@ -604,56 +566,17 @@ async function reconcile(el) {
   }
 
   state.mode = 'xlsx';
-<<<<<<< HEAD
-  el.feedback.textContent = 'Reconciliando relatório BTG com Lista de O.S. e Distribuição de O.S...';
-=======
   el.feedback.textContent = 'Reconciliando relatórios com a lista de O.S...';
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
 
   const { byOs, byContrato, contratoSet } = dbIndexes();
   const { byOs: distByOs } = distIndexes();
   const out = [];
-<<<<<<< HEAD
-
-  // Relatório BTG é a fonte primária da tabela.
-  // Contrato fora do padrão P33004.000 já foi ignorado no parser.
-  // A Distribuição de O.S. entra somente para identificar o colaborador da O.S.
-  for (const btg of (state.btgRows || [])) {
-    const c = contratoNorm(btg.contratoOriginal);
-    if (!isContratoBtg(c)) continue;
-
-    const dbRows = byContrato.get(c) || [];
-    const osLista = dbRows[0]?.os || '';
-    const osReferencia = osLista || clean(btg.os);
-    const distRows = osReferencia ? (distByOs.get(String(osReferencia)) || []) : [];
-    const status = contratoSet.has(c) ? 'OK' : 'VERIFICAR';
-
-    const pessoas = [];
-    // Prioridade: colaborador vindo da Distribuição de O.S.; depois vínculo atual da Lista/O.S.
-    for (const dist of distRows) pushUnique(pessoas, dist.colaborador);
-    for (const db of dbRows) pushUnique(pessoas, db.colaborador);
-    if (!pessoas.length) pessoas.push('—');
-
-    for (const pessoa of pessoas) {
-      const db = dbRows.find(x => norm(x.colaborador) === norm(pessoa)) || dbRows[0] || null;
-      const dist = distRows.find(x => norm(x.colaborador) === norm(pessoa)) || distRows[0] || null;
-      const veioDaDistribuicao = !!dist && norm(pessoa) === norm(dist.colaborador);
-      const row = applyAdjusted({
-        status,
-        os: osLista || btg.os || dist?.os || '—',
-        contrato: c,
-        contratoOriginal: c,
-        tipoSolicitacao: btg.tipoSolicitacao || 'Relatório BTG',
-        colaborador: pessoa || db?.colaborador || dist?.colaborador || '—',
-        colaboradorFonte: veioDaDistribuicao ? 'distribuicao' : 'lista_os',
-=======
   const coveredContratos = new Set();
 
   // ── 1. Relatório BTG é a fonte primária ───────────────────────────────────
-  // Regras de status:
-  //   OK               → está na Lista de OS + no BTG + tem colaborador na Distribuição
-  //   FALTA CLASSIFICADOR → está na Lista de OS + no BTG, mas sem colaborador na Distribuição
-  //   VERIFICAR        → está no BTG mas NÃO está na Lista de OS
+  // OK               → na Lista de OS + no BTG + colaborador na Distribuição
+  // FALTA CLASSIFICADOR → na Lista de OS + no BTG, sem colaborador na Distribuição
+  // VERIFICAR        → no BTG mas NÃO na Lista de OS
   for (const btg of (state.btgRows || [])) {
     const c = contratoNorm(btg.contratoOriginal);
     if (isContratoBtg(c)) coveredContratos.add(c);
@@ -661,7 +584,6 @@ async function reconcile(el) {
     const dbRows = isContratoBtg(c) ? (byContrato.get(c) || []) : [];
     const inListaOS = dbRows.length > 0;
 
-    // Coleta colaboradores da Distribuição para todos os OS vinculados a este contrato
     const distRows = [];
     for (const db of dbRows) {
       for (const d of (distByOs.get(String(db.os)) || [])) distRows.push(d);
@@ -692,7 +614,6 @@ async function reconcile(el) {
         contratoOriginal: c,
         tipoSolicitacao: btg.tipoSolicitacao || 'Relatório BTG',
         colaborador: pessoa || '—',
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
         supervisao: db?.supervisao || dist?.supervisao || '—',
         lote: db?.lote || dist?.lote || btg.qtde,
         remanescente: db?.remanescente || dist?.remanescente || btg.qtde,
@@ -700,13 +621,6 @@ async function reconcile(el) {
         fonte: 'Relatório BTG',
         sheet: btg.sheet,
         rowNumber: btg.rowNumber,
-<<<<<<< HEAD
-      });
-      out.push(row);
-    }
-  }
-
-=======
       }));
     }
   }
@@ -736,17 +650,12 @@ async function reconcile(el) {
     }
   }
 
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
   state.finalRows = out;
   render(el);
 }
 
 function exportVerificar() {
-<<<<<<< HEAD
-  const rows = state.finalRows.filter(r => r.status === 'VERIFICAR');
-=======
   const rows = state.finalRows.filter(r => r.status !== 'OK' && r.status !== 'AJUSTADO');
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
   if (!rows.length) return;
   const data = rows.map(r => ({
     Status: r.status,
@@ -815,16 +724,10 @@ function injectStyles() {
     .btg-contrato{font-size:12px;font-weight:800;color:#a7f3d0;font-family:monospace}
     .btg-row.status-danger .btg-contrato{color:#fecaca}
     .btg-colab{font-size:12px;color:#e2e2f0;line-height:1.3}
-    .btg-colab.is-distribuicao{color:#86efac;font-weight:800}
     .btg-sup{font-size:11px;color:#94a3b8}
     .btg-val{font-size:12px;font-weight:700;color:#e2e2f0}
     .btg-chip,.btg-status{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}
     .btg-chip.ok,.btg-status.status-ok{background:rgba(22,163,74,.14);color:#86efac;border-color:rgba(52,211,153,.2)}
-<<<<<<< HEAD
-    .btg-chip.warn,.btg-status.status-warn{background:rgba(250,204,21,.12);color:#fde68a;border-color:rgba(250,204,21,.25)}
-    .btg-chip.danger,.btg-status.status-danger{background:rgba(239,68,68,.11);color:#fca5a5;border-color:rgba(239,68,68,.25)}
-    .btg-status.status-info{background:rgba(59,130,246,.14);color:#93c5fd;border-color:rgba(59,130,246,.28)}
-=======
     .btg-chip.warn{background:rgba(250,204,21,.12);color:#fde68a;border-color:rgba(250,204,21,.25)}
     .btg-chip.danger{background:rgba(239,68,68,.11);color:#fca5a5;border-color:rgba(239,68,68,.25)}
     .btg-status.status-verificar{background:rgba(239,68,68,.13);color:#fca5a5;border-color:rgba(239,68,68,.3)}
@@ -834,7 +737,6 @@ function injectStyles() {
     .btg-row.status-verificar td{background:rgba(239,68,68,.04)}
     .btg-row.status-pendencia td{background:rgba(234,179,8,.04)}
     .btg-row.status-falta td{background:rgba(249,115,22,.04)}
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
     .btg-small-ok{font-size:11px;color:#93c5fd;font-weight:800}
     .btg-empty{border:1px dashed rgba(148,163,184,.2);border-radius:16px;padding:24px;color:#94a3b8;text-align:center}
     .badge-info{background:rgba(59,130,246,.18);color:#93c5fd;border-color:rgba(59,130,246,.3)}
@@ -852,11 +754,7 @@ initProtectedPage('BTG — Logística', async (content) => {
       <div class="section-head">
         <div>
           <h3>BTG — Ordens de Serviço</h3>
-<<<<<<< HEAD
-          <p class="muted">Importação unificada dos relatórios da BTG. O painel identifica cada arquivo, considera somente contratos no padrão P33004.000 e aponta o que precisa de conferência.</p>
-=======
           <p class="muted">Importação unificada dos relatórios da BTG. O painel identifica cada arquivo, valida contrato no padrão P33004.000 e aponta o que precisa de conferência.</p>
->>>>>>> af4703f (feat(btg): persistência de relatórios e novos status de conferência)
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span id="btgModeTag" class="badge">BASE DE DADOS</span>
