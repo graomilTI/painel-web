@@ -125,6 +125,8 @@ function detectFileType(wb) {
       if (r.includes('FUNCION') && r.includes('REMANESCENTE') && (r.includes('O S') || r.includes('OS'))) return 'distribuicao';
       if (r.includes('ORDEM') && r.includes('FRETE') && r.includes('CONTRATO')) return 'btg';
       if (r.includes('ORDEM') && r.includes('SERVIC') && r.includes('CONTRATO')) return 'btg';
+      if (r.includes('CLASSIFICADOR') && r.includes('DESIGNADO')) return 'btg';
+      if (r.includes('ORDEM') && r.includes('FRETE')) return 'btg';
       if (r.includes('CONTRATO') && (r.includes('COMMODITY') || r.includes('CLASSIFICADOR') || r.includes('SOLICITACAO') || r.includes('RECEBIMENTO'))) return 'btg';
     }
   }
@@ -176,16 +178,19 @@ async function loadSavedBtgData() {
   } catch (err) { console.warn('Solicitações BTG salvas ainda não disponíveis:', err?.message || err); }
 }
 async function persistAllOsRows(rows) {
-  const list = rows || [];
+  // Deduplica por numero_os (UNIQUE constraint) — mantém última ocorrência
+  const seen = new Map();
+  for (const row of (rows || [])) { if (row.numero_os) seen.set(row.numero_os, row); }
+  const list = [...seen.values()];
   if (!list.length) return;
-  try {
-    const { error: clearError } = await supabase.from('operacional_os').delete().gte('created_at', '2000-01-01');
-    if (clearError) throw clearError;
-    for (let i = 0; i < list.length; i += 500) {
-      const { error } = await supabase.from('operacional_os').insert(list.slice(i, i + 500));
-      if (error) throw error;
-    }
-  } catch (err) { console.warn('Não foi possível atualizar lista de O.S.:', err?.message || err); }
+
+  const { error: clearError } = await supabase.from('operacional_os').delete().gte('created_at', '2000-01-01');
+  if (clearError) throw new Error(`Erro ao limpar OS: ${clearError.message}`);
+
+  for (let i = 0; i < list.length; i += 500) {
+    const { error } = await supabase.from('operacional_os').insert(list.slice(i, i + 500));
+    if (error) throw new Error(`Erro ao inserir OS (lote ${i / 500 + 1}): ${error.message}`);
+  }
 }
 
 async function persistDistribuicaoRows(rows) {
@@ -658,7 +663,13 @@ async function handleFiles(files, el) {
 
   if (state.allOsRows?.length) {
     el.feedback.textContent = `Atualizando lista de O.S. (${state.allOsRows.length} registros)...`;
-    await persistAllOsRows(state.allOsRows);
+    try {
+      await persistAllOsRows(state.allOsRows);
+    } catch (err) {
+      el.feedback.textContent = `Falha ao salvar lista de O.S.: ${err.message}`;
+      el.dropZone.classList.remove('btg-loading');
+      return;
+    }
   }
   await persistDistribuicaoRows(state.distRows);
   await persistBtgRows(state.btgRows);
