@@ -217,6 +217,7 @@ async function persistDistribuicaoRows(rows) {
     if (clearError) throw clearError;
     const distPayload = list.map(r => ({
       numero_os:   clean(r.os) || null,
+      contrato:    contratoNorm(r.contrato || '') || null,
       colaborador: clean(r.colaborador) || null,
       supervisao:  clean(r.supervisao) || null,
       lote:        fnum(r.lote),
@@ -238,12 +239,13 @@ async function loadSavedDistData() {
   try {
     const { data, error } = await supabase
       .from('logistica_btg_distribuicao')
-      .select('numero_os, colaborador, supervisao, lote, remanescente')
+      .select('numero_os, contrato, colaborador, supervisao, lote, remanescente')
       .order('id', { ascending: true })
       .limit(20000);
     if (error) throw error;
     const rows = (data || []).map(item => ({
       os:          clean(item.numero_os),
+      contrato:    contratoNorm(item.contrato || ''),
       colaborador: clean(item.colaborador) || '—',
       supervisao:  clean(item.supervisao) || '—',
       lote:        item.lote,
@@ -541,6 +543,7 @@ function parseDistribuicao(wb) {
       // A Distribuição é geral: não filtra cliente. Ela só identifica colaborador por O.S.
       distRows.push({
         os:          osNum,
+        contrato:    ci.contrato >= 0 ? contratoNorm(clean(String(r[ci.contrato] ?? ''))) : '',
         colaborador: clean(String(r[ci.colaborador] ?? '')) || '—',
         supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
         lote:        r[ci.lote],
@@ -723,10 +726,12 @@ function dbIndexes() {
 
 function distIndexes() {
   const byOs = new Map();
+  const byContrato = new Map();
   for (const r of state.distRows || []) {
     if (r.os) addToMapArray(byOs, r.os, r);
+    if (r.contrato && isContratoBtg(r.contrato)) addToMapArray(byContrato, r.contrato, r);
   }
-  return { byOs };
+  return { byOs, byContrato };
 }
 
 function applyAdjusted(row) {
@@ -746,47 +751,56 @@ async function reconcile(el) {
   state.mode = 'xlsx';
   el.feedback.textContent = 'Reconciliando relatórios com a lista de O.S...';
 
-  const { byOs, byContrato, contratoSet } = dbIndexes();
-  const { byOs: distByOs } = distIndexes();
+  const { byOs, byContrato: dbByContrato } = dbIndexes();
+  const { byOs: distByOs, byContrato: distByContrato } = distIndexes();
   const out = [];
   const coveredContratos = new Set();
   const coveredOsSet = new Set();
 
   // ── 1. Relatório BTG é a fonte primária ───────────────────────────────────
-  // OK               → na Lista de OS + no BTG + colaborador na Distribuição
-  // FALTA COLABORADOR → na Lista de OS + no BTG, sem colaborador na Distribuição
-  // VERIFICAR        → no BTG mas NÃO na Lista de OS
+  // Lógica de join:
+  //   btg.contrato → distByContrato → distRows (colaborador + os)
+  //   distRow.os   → byOs           → operacional_os (lote, remanescente, supervisão)
+  // Fallbacks quando a coluna contrato da Distribuição está vazia:
+  //   btg.portal → distByOs          → distRows
+  //   btg.portal → byOs              → operacional_os
   for (const btg of (state.btgRows || [])) {
     const c = contratoNorm(btg.contratoOriginal);
     if (isContratoBtg(c)) coveredContratos.add(c);
 
-    // Tenta primeiro por contrato; fallback por número de OS (portal) quando contrato está null no banco
-    let dbRows = isContratoBtg(c) ? (byContrato.get(c) || []) : [];
-    if (!dbRows.length && btg.portal && btg.portal !== '—') {
-      dbRows = byOs.get(btg.portal) || [];
-    }
-    const inListaOS = dbRows.length > 0;
-    for (const db of dbRows) coveredOsSet.add(String(db.os));
-
-    const distRows = [];
-    for (const db of dbRows) {
-      for (const d of (distByOs.get(String(db.os)) || [])) distRows.push(d);
-    }
-    // Fallback dist direto pelo portal quando nenhum DB row foi encontrado
+    // Encontra linhas da Distribuição (colaborador) pelo contrato do relatório BTG
+    let distRows = isContratoBtg(c) ? (distByContrato.get(c) || []) : [];
     if (!distRows.length && btg.portal && btg.portal !== '—') {
-      for (const d of (distByOs.get(btg.portal) || [])) distRows.push(d);
+      distRows = distByOs.get(btg.portal) || [];
     }
     const uniqDist = uniqBy(distRows, r => norm(r.colaborador));
     const hasColab = uniqDist.some(r => r.colaborador && r.colaborador !== '—');
+
+    // Encontra linhas do banco (Lista de OS) via os números de OS obtidos da Distribuição
+    let dbRows = [];
+    for (const d of distRows) {
+      for (const db of (byOs.get(d.os) || [])) dbRows.push(db);
+    }
+    // Fallback: tenta pelo portal do relatório BTG (Ordem de Serviço)
+    if (!dbRows.length && btg.portal && btg.portal !== '—') {
+      dbRows = byOs.get(btg.portal) || [];
+    }
+    // Último fallback: contrato direto no banco (para casos onde o banco tem contrato)
+    if (!dbRows.length && isContratoBtg(c)) {
+      dbRows = dbByContrato.get(c) || [];
+    }
+    const inListaOS = dbRows.length > 0;
+    for (const db of dbRows) coveredOsSet.add(String(db.os));
 
     let status;
     if (!inListaOS)     status = 'VERIFICAR';
     else if (!hasColab) status = 'FALTA COLABORADOR';
     else                status = 'OK';
 
+    // Distribuição é a fonte primária do colaborador (classificador)
     const pessoas = [];
-    for (const db of dbRows) pushUnique(pessoas, db.colaborador);
     for (const dist of uniqDist) pushUnique(pessoas, dist.colaborador);
+    for (const db of dbRows) pushUnique(pessoas, db.colaborador);
     if (!pessoas.length) pessoas.push('—');
 
     for (const pessoa of pessoas) {
