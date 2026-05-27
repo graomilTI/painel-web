@@ -782,39 +782,24 @@ async function reconcile(el) {
   const coveredOsSet = new Set();
 
   // ── 1. Relatório BTG é a fonte primária ───────────────────────────────────
-  // Lógica de join:
-  //   btg.contrato → distByContrato → distRows (colaborador + os)
-  //   distRow.os   → byOs           → operacional_os (lote, remanescente, supervisão)
-  // Fallbacks quando a coluna contrato da Distribuição está vazia:
-  //   btg.portal → distByOs          → distRows
-  //   btg.portal → byOs              → operacional_os
+  // Lógica de join (cadeia correta):
+  //   btg.contrato → dbByContrato (Lista de OS) → db.os → distByOs (Distribuição) → colaborador
   for (const btg of (state.btgRows || [])) {
     const c = contratoNorm(btg.contratoOriginal);
     if (isContratoBtg(c)) coveredContratos.add(c);
 
-    // Encontra linhas da Distribuição (colaborador) pelo contrato do relatório BTG
-    let distRows = isContratoBtg(c) ? (distByContrato.get(c) || []) : [];
-    if (!distRows.length && btg.portal && btg.portal !== '—') {
-      distRows = distByOs.get(btg.portal) || [];
+    // 1a. Busca na Lista de OS pelo contrato do relatório BTG
+    const dbRows = isContratoBtg(c) ? (dbByContrato.get(c) || []) : [];
+    const inListaOS = dbRows.length > 0;
+    for (const db of dbRows) coveredOsSet.add(String(db.os));
+
+    // 1b. Busca na Distribuição pela OS encontrada na Lista de OS
+    const distRows = [];
+    for (const db of dbRows) {
+      for (const d of (distByOs.get(String(db.os)) || [])) distRows.push(d);
     }
     const uniqDist = uniqBy(distRows, r => norm(r.colaborador));
     const hasColab = uniqDist.some(r => r.colaborador && r.colaborador !== '—');
-
-    // Encontra linhas do banco (Lista de OS) via os números de OS obtidos da Distribuição
-    let dbRows = [];
-    for (const d of distRows) {
-      for (const db of (byOs.get(d.os) || [])) dbRows.push(db);
-    }
-    // Fallback: tenta pelo portal do relatório BTG (Ordem de Serviço)
-    if (!dbRows.length && btg.portal && btg.portal !== '—') {
-      dbRows = byOs.get(btg.portal) || [];
-    }
-    // Último fallback: contrato direto no banco (para casos onde o banco tem contrato)
-    if (!dbRows.length && isContratoBtg(c)) {
-      dbRows = dbByContrato.get(c) || [];
-    }
-    const inListaOS = dbRows.length > 0;
-    for (const db of dbRows) coveredOsSet.add(String(db.os));
 
     let status;
     if (!inListaOS)     status = 'VERIFICAR';
