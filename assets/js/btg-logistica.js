@@ -215,32 +215,8 @@ async function persistDistribuicaoRows(rows) {
     }
   } catch (err) { console.warn('Não foi possível salvar Distribuição no banco:', err?.message || err); }
 
-  // 2. Atualiza operacional_os_colaboradores com os nomes da Distribuição
-  try {
-    const numeros = [...new Set(list.map(r => String(r.os || '').trim()).filter(Boolean))];
-    const osMap = new Map();
-    for (let i = 0; i < numeros.length; i += 800) {
-      const { data, error } = await supabase.from('operacional_os').select('id, numero_os').in('numero_os', numeros.slice(i, i + 800));
-      if (error) throw error;
-      (data || []).forEach(item => osMap.set(String(item.numero_os), item.id));
-    }
-    const payload = [];
-    const seen = new Set();
-    for (const row of list) {
-      const osId = osMap.get(String(row.os || '').trim());
-      if (!osId || !clean(row.colaborador) || row.colaborador === '—') continue;
-      const key = `${osId}|${norm(row.colaborador)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      payload.push({ os_id: osId, colaborador_key: norm(row.colaborador), colaborador_nome: row.colaborador });
-    }
-    const { error: clearError } = await supabase.from('operacional_os_colaboradores').delete().gte('created_at', '2000-01-01');
-    if (clearError) throw clearError;
-    for (let i = 0; i < payload.length; i += 500) {
-      const { error } = await supabase.from('operacional_os_colaboradores').insert(payload.slice(i, i + 500));
-      if (error) throw error;
-    }
-  } catch (err) { console.warn('Não foi possível salvar colaboradores no banco:', err?.message || err); }
+  // Não atualiza operacional_os_colaboradores aqui.
+  // A Distribuição BTG deve ser uma referência auxiliar e não pode interferir na relação de OS do Gestor.
 }
 
 async function loadSavedDistData() {
@@ -261,7 +237,7 @@ async function loadSavedDistData() {
     }));
     if (rows.length) {
       state.distRows = rows;
-      state.loaded.dist = `Banco de dados (${rows.length} linhas BTG)`;
+      state.loaded.dist = `Banco de dados (${rows.length} vínculos O.S./colaborador)`;
       state.mode = 'xlsx';
     }
   } catch (err) { console.warn('Distribuição BTG salva ainda não disponível:', err?.message || err); }
@@ -333,7 +309,7 @@ function renderStatusButtons(el) {
     ['ok', 'OK'],
     ['pendencia cliente', 'Pendência Cliente'],
     ['verificar', 'Verificar'],
-    ['falta classificador', 'Falta Classificador'],
+    ['falta colaborador', 'Falta Colaborador'],
     ['ajustado', 'Ajustado'],
   ];
   el.statusFilters.innerHTML = items.map(([key, label]) => `
@@ -349,8 +325,8 @@ function render(el) {
   el.count.textContent = `${rows.length}`;
   el.tableTitle.textContent = `Lista BTG (${rows.length})`;
   el.tableSubtitle.textContent = state.mode === 'xlsx'
-    ? 'Importação unificada: Distribuição de OS + Relatório BTG com validação de contrato e OS'
-    : 'Dados do banco de dados (operacional_os)';
+    ? 'Cruzamento: Lista de OS do Gestor + Relatório BTG + colaborador da Distribuição de OS'
+    : 'Lista de OS BTG carregada em operacional_os';
 
   renderChips(el);
   renderStatusButtons(el);
@@ -377,7 +353,6 @@ function render(el) {
           ${thHtml('os', 'O.S.')}
           ${thHtml('portal', 'Portal')}
           ${thHtml('contrato', 'Contrato')}
-          ${thHtml('tipoSolicitacao', 'Solicitação')}
           ${thHtml('colaborador', 'Colaborador')}
           ${thHtml('supervisao', 'Supervisão')}
           ${thHtml('lote', 'Lote')}
@@ -393,7 +368,7 @@ function statusClass(s) {
   const n = norm(s || '');
   if (n === 'VERIFICAR') return 'status-verificar';
   if (n === 'PENDENCIA CLIENTE') return 'status-pendencia';
-  if (n === 'FALTA CLASSIFICADOR') return 'status-falta';
+  if (n === 'FALTA COLABORADOR') return 'status-falta';
   if (n === 'AJUSTADO') return 'status-info';
   return 'status-ok';
 }
@@ -413,7 +388,6 @@ function rowHtml(r) {
     <td><span class="btg-os-num">${esc(r.os || '—')}</span></td>
     <td><span class="btg-os-num" style="color:#94a3b8">${esc(r.portal || '—')}</span></td>
     <td><span class="btg-contrato"${title}>${esc(r.contrato)}</span></td>
-    <td><span class="btg-sup">${esc(r.tipoSolicitacao || r.fonte || '—')}</span></td>
     <td><span class="btg-colab">${esc(r.colaborador || '—')}</span></td>
     <td><span class="btg-sup">${esc(r.supervisao || '—')}</span></td>
     <td><span class="btg-val">${esc(fmt(r.lote || r.qtde))}</span></td>
@@ -429,7 +403,7 @@ async function loadDbData(el) {
     const { data: osData, error } = await supabase
       .from('operacional_os')
       .select('id, numero_os, contrato, supervisao, lote, remanescente')
-      .ilike('cliente', 'BTG PACTUAL COMMODITIES SERTRADING%')
+      .ilike('cliente', '%BTG PACTUAL COMMODITIES SERTRADING%')
       .order('numero_os', { ascending: false })
       .limit(5000);
     if (error) throw new Error(error.message);
@@ -450,7 +424,9 @@ async function loadDbData(el) {
     state.dbRows = [];
     for (const r of (osData || [])) {
       const original = contratoNorm(r.contrato || '');
-      const statusBase = isContratoBtg(original) ? 'OK' : 'CORRIGIR CONTRATO';
+      // Contratos fora do padrão BTG são ignorados no menu BTG.
+      if (!isContratoBtg(original)) continue;
+      const statusBase = 'OK';
       const colaboradores = uniqBy(colabMap[r.id] || [], v => norm(v));
       const nomes = colaboradores.length ? colaboradores : ['—'];
       for (const nome of nomes) {
@@ -549,17 +525,16 @@ function parseDistribuicao(wb) {
         updated_at:         now,
       });
 
-      // Apenas BTG → logistica_btg_distribuicao
-      if (BTG_RE.test(clienteStr)) {
-        btgRows.push({
-          os:          osNum,
-          colaborador: clean(String(r[ci.colaborador] ?? '')) || '—',
-          supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
-          lote:        r[ci.lote],
-          remanescente:r[ci.remanescente],
-          fonte:       'Distribuição OS',
-        });
-      }
+      // Distribuição de OS é uma base geral: NÃO filtrar por cliente.
+      // Ela serve apenas para identificar o colaborador/supervisão pela O.S. encontrada na Lista de OS.
+      btgRows.push({
+        os:          osNum,
+        colaborador: clean(String(r[ci.colaborador] ?? '')) || '—',
+        supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
+        lote:        r[ci.lote],
+        remanescente:r[ci.remanescente],
+        fonte:       'Distribuição OS',
+      });
     }
   }
   return { btgRows, allOsRows };
@@ -591,6 +566,8 @@ function parseBtg(wb) {
     raw.slice(hIdx + 1).forEach((r, idx) => {
       const contratoOriginal = contratoNorm(r[ci.contrato]);
       if (!contratoOriginal && !r.some(Boolean)) return;
+      // Se o contrato não estiver no padrão BTG (P00000.000), ignora a linha.
+      if (!isContratoBtg(contratoOriginal)) return;
       const tipoSolicitacao = clean(r[ci.tipo]) || clean(r[ci.commodity]) || clean(r[ci.cidade]) || 'Relatório BTG';
       rows.push({
         os: clean(r[ci.os]),
@@ -624,13 +601,10 @@ async function processFile(file, el) {
 
   if (tipo === 'distribuicao') {
     const parsed = parseDistribuicao(wb);
-    console.log(`[BTG] Distribuição: ${parsed.btgRows.length} BTG, ${parsed.allOsRows.length} OS total`);
-    if (parsed.btgRows.length === 0 && parsed.allOsRows.length > 0) {
-      console.warn('[BTG] Atenção: nenhuma linha BTG encontrada. Verifique se o cliente na planilha contém "BTG PACTUAL COMMODITIES SERTRADING".');
-    }
-    state.distRows = parsed.btgRows;
+    console.log(`[BTG] Distribuição: ${parsed.btgRows.length} linhas, ${parsed.allOsRows.length} linhas brutas lidas`);
+        state.distRows = parsed.btgRows;
     state.allOsRows = parsed.allOsRows;
-    state.loaded.dist = `${file.name} (${parsed.btgRows.length} BTG / ${parsed.allOsRows.length} O.S. total)`;
+    state.loaded.dist = `${file.name} (${parsed.btgRows.length} vínculos O.S./colaborador)`;
   } else if (tipo === 'btg') {
     const parsed = parseBtg(wb);
     console.log(`[BTG] Relatório BTG: ${parsed.rows.length} solicitações`);
@@ -683,16 +657,8 @@ async function handleFiles(files, el) {
     el.feedback.textContent = 'Aviso: planilha de Distribuição carregada mas nenhuma O.S. foi lida. Verifique o formato do arquivo no console.';
   }
 
-  if (state.allOsRows?.length) {
-    el.feedback.textContent = `Atualizando lista de O.S. (${state.allOsRows.length} registros)...`;
-    try {
-      await persistAllOsRows(state.allOsRows);
-    } catch (err) {
-      el.feedback.textContent = `Falha ao salvar lista de O.S.: ${err.message}`;
-      el.dropZone.classList.remove('btg-loading');
-      return;
-    }
-  }
+  // A Lista de OS vem de operacional_os (relatório que alimenta a OS do Gestor).
+  // A Distribuição de OS NÃO deve limpar nem substituir operacional_os; ela só identifica colaborador por O.S.
   await persistDistribuicaoRows(state.distRows);
   await persistBtgRows(state.btgRows);
 
@@ -774,7 +740,7 @@ async function reconcile(el) {
 
   // ── 1. Relatório BTG é a fonte primária ───────────────────────────────────
   // OK               → na Lista de OS + no BTG + colaborador na Distribuição
-  // FALTA CLASSIFICADOR → na Lista de OS + no BTG, sem colaborador na Distribuição
+  // FALTA COLABORADOR → na Lista de OS + no BTG, sem colaborador na Distribuição
   // VERIFICAR        → no BTG mas NÃO na Lista de OS
   for (const btg of (state.btgRows || [])) {
     const c = contratoNorm(btg.contratoOriginal);
@@ -795,7 +761,7 @@ async function reconcile(el) {
 
     let status;
     if (!inListaOS)     status = 'VERIFICAR';
-    else if (!hasColab) status = 'FALTA CLASSIFICADOR';
+    else if (!hasColab) status = 'FALTA COLABORADOR';
     else                status = 'OK';
 
     const pessoas = [];
@@ -835,6 +801,8 @@ async function reconcile(el) {
       if (seenOsContrato.has(dedupeKey)) continue;
       seenOsContrato.add(dedupeKey);
 
+      const distRows = distByOs.get(String(db.os)) || [];
+      const dist = distRows.find(x => x.colaborador && x.colaborador !== '—') || distRows[0] || null;
       out.push(applyAdjusted({
         status: 'PENDENCIA CLIENTE',
         os: db.os,
@@ -842,11 +810,11 @@ async function reconcile(el) {
         contrato: contratoLabel(c),
         contratoOriginal: c,
         tipoSolicitacao: 'BASE OS',
-        colaborador: db.colaborador || '—',
-        supervisao: db.supervisao || '—',
-        lote: db.lote,
-        remanescente: db.remanescente,
-        fonte: 'db',
+        colaborador: dist?.colaborador || db.colaborador || '—',
+        supervisao: db.supervisao || dist?.supervisao || '—',
+        lote: db.lote || dist?.lote,
+        remanescente: db.remanescente || dist?.remanescente,
+        fonte: 'Lista de OS',
       }));
     }
   }
@@ -860,10 +828,10 @@ function exportVerificar() {
   if (!rows.length) return;
   const data = rows.map(r => ({
     Status: r.status,
-    OS: r.os || '',
+    'O.S.': r.os || '',
+    Portal: r.portal || '',
     Contrato: r.contrato || '',
     'Contrato original': r.contratoOriginal || '',
-    Solicitação: r.tipoSolicitacao || '',
     Colaborador: r.colaborador || '',
     Supervisão: r.supervisao || '',
     Lote: fnum(r.lote || r.qtde),
@@ -920,7 +888,7 @@ function injectStyles() {
     .btg-table th:hover{color:#fff;background:#0b2116}
     .btg-table td{padding:9px 12px;border-bottom:1px solid rgba(148,163,184,.1);vertical-align:middle;background:rgba(15,23,42,.22)}
     .btg-row:hover td{background:rgba(22,101,52,.1)}
-    .btg-table td:nth-child(8),.btg-table td:nth-child(9),.btg-table th:nth-child(8),.btg-table th:nth-child(9){text-align:right}
+    .btg-table td:nth-child(7),.btg-table td:nth-child(8),.btg-table th:nth-child(7),.btg-table th:nth-child(8){text-align:right}
     .btg-os-num{font-size:13px;font-weight:950;color:#f8fafc}
     .btg-contrato{font-size:12px;font-weight:800;color:#a7f3d0;font-family:monospace}
     .btg-row.status-danger .btg-contrato{color:#fecaca}
@@ -955,7 +923,7 @@ initProtectedPage('BTG — Logística', async (content) => {
       <div class="section-head">
         <div>
           <h3>BTG — Ordens de Serviço</h3>
-          <p class="muted">Importação unificada dos relatórios da BTG. O painel identifica cada arquivo, valida contrato no padrão P33004.000 e aponta o que precisa de conferência.</p>
+          <p class="muted">Cruza o relatório BTG com a Lista de OS do Gestor pelo contrato e usa a Distribuição de OS apenas para identificar o colaborador pela O.S.</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span id="btgModeTag" class="badge">BASE DE DADOS</span>
@@ -969,14 +937,14 @@ initProtectedPage('BTG — Logística', async (content) => {
             <input type="file" id="btgFileInput" accept=".xlsx,.xls" multiple hidden />
             Carregar relatório(s)
           </label>
-          <span class="btg-upload-hint">Envie tudo no mesmo botão: Distribuição de O.S. e/ou Relatório BTG. O tipo é identificado automaticamente.</span>
+          <span class="btg-upload-hint">Envie o DataGrid BTG e/ou a Distribuição de O.S. A Lista de OS usada no cruzamento é a base que alimenta a OS do Gestor.</span>
         </div>
         <div class="btg-file-chips">
           <div class="btg-chip-file" id="btgChipDist">Distribuição de O.S. — aguardando</div>
           <div class="btg-chip-file" id="btgChipBtg">Relatório BTG — aguardando</div>
         </div>
         <div class="btg-actions">
-          <button class="btn btn-secondary" id="btgExportVerificar">Gerar XLS VERIFICAR</button>
+          <button class="btn btn-secondary" id="btgExportVerificar">Gerar XLS pendências</button>
         </div>
       </div>
 
