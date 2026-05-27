@@ -341,6 +341,7 @@ function render(el) {
         <thead><tr>
           ${thHtml('status', 'Status')}
           ${thHtml('os', 'O.S.')}
+          ${thHtml('portal', 'Portal')}
           ${thHtml('contrato', 'Contrato')}
           ${thHtml('tipoSolicitacao', 'Solicitação')}
           ${thHtml('colaborador', 'Colaborador')}
@@ -376,6 +377,7 @@ function rowHtml(r) {
   return `<tr class="btg-row ${statusClass(r.status)}">
     <td><span class="btg-status ${statusClass(r.status)}">${esc(r.status || 'OK')}</span></td>
     <td><span class="btg-os-num">${esc(r.os || '—')}</span></td>
+    <td><span class="btg-os-num" style="color:#94a3b8">${esc(r.portal || '—')}</span></td>
     <td><span class="btg-contrato"${title}>${esc(r.contrato)}</span></td>
     <td><span class="btg-sup">${esc(r.tipoSolicitacao || r.fonte || '—')}</span></td>
     <td><span class="btg-colab">${esc(r.colaborador || '—')}</span></td>
@@ -655,6 +657,7 @@ async function reconcile(el) {
       out.push(applyAdjusted({
         status,
         os: db?.os || btg.os || dist?.os || '—',
+        portal: btg.os || '—',
         contrato: contratoLabel(c),
         contratoOriginal: c,
         tipoSolicitacao: btg.tipoSolicitacao || 'Relatório BTG',
@@ -683,6 +686,7 @@ async function reconcile(el) {
       out.push(applyAdjusted({
         status: 'PENDENCIA CLIENTE',
         os: db.os,
+        portal: '—',
         contrato: contratoLabel(c),
         contratoOriginal: c,
         tipoSolicitacao: 'BASE OS',
@@ -764,7 +768,7 @@ function injectStyles() {
     .btg-table th:hover{color:#fff;background:#0b2116}
     .btg-table td{padding:9px 12px;border-bottom:1px solid rgba(148,163,184,.1);vertical-align:middle;background:rgba(15,23,42,.22)}
     .btg-row:hover td{background:rgba(22,101,52,.1)}
-    .btg-table td:nth-child(7),.btg-table td:nth-child(8),.btg-table th:nth-child(7),.btg-table th:nth-child(8){text-align:right}
+    .btg-table td:nth-child(8),.btg-table td:nth-child(9),.btg-table th:nth-child(8),.btg-table th:nth-child(9){text-align:right}
     .btg-os-num{font-size:13px;font-weight:950;color:#f8fafc}
     .btg-contrato{font-size:12px;font-weight:800;color:#a7f3d0;font-family:monospace}
     .btg-row.status-danger .btg-contrato{color:#fecaca}
