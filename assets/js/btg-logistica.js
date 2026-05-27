@@ -491,7 +491,11 @@ function parseBtg(wb) {
     const h = raw[hIdx] || [];
     const ci = {
       contrato: colIndex(h, [c => c === 'CONTRATO' || c.includes('CONTRATO')]),
-      os: colIndex(h, [c => c.includes('ORDEM') && (c.includes('SERVI') || c.includes('FRETE') || c.includes('OS'))]),
+      os: colIndex(h, [
+        c => c.includes('ORDEM') && c.includes('SERVI'),
+        c => c === 'OS' || c === 'N OS' || c === 'NO OS' || c === 'NUMERO OS',
+        c => c.includes('ORDEM') && c.includes('OS'),
+      ]),
       tipo: colIndex(h, [c => c.includes('TIPO') || c.includes('SOLICITACAO') || c.includes('OPERACAO') || c.includes('MOVIMENTO')]),
       cliente: colIndex(h, [c => c.includes('CLIENTE') || c.includes('COMPRADOR') || c.includes('TOMADOR')]),
       commodity: colIndex(h, [c => c.includes('COMMODITY') || c.includes('PRODUTO')]),
