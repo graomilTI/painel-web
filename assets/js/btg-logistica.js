@@ -169,7 +169,7 @@ async function loadSavedBtgData() {
   try {
     const { data, error } = await supabase.from('logistica_btg_solicitacoes').select('contrato_original, contrato_status, numero_os_relatorio, tipo_solicitacao, cliente, commodity, quantidade, aba, linha').order('linha', { ascending: true }).limit(10000);
     if (error) throw error;
-    const rows = (data || []).map((item) => ({ os: clean(item.numero_os_relatorio), contratoOriginal: contratoNorm(item.contrato_original), contrato: item.contrato_status || contratoLabel(item.contrato_original), tipoSolicitacao: clean(item.tipo_solicitacao) || 'Relatório BTG', cliente: clean(item.cliente), commodity: clean(item.commodity), qtde: item.quantidade, sheet: item.aba, rowNumber: item.linha, fonte: 'Relatório BTG' }));
+    const rows = (data || []).map((item) => ({ os: clean(item.numero_os_relatorio), portal: clean(item.numero_os_relatorio) || '—', contratoOriginal: contratoNorm(item.contrato_original), contrato: item.contrato_status || contratoLabel(item.contrato_original), tipoSolicitacao: clean(item.tipo_solicitacao) || 'Relatório BTG', cliente: clean(item.cliente), commodity: clean(item.commodity), qtde: item.quantidade, sheet: item.aba, rowNumber: item.linha, fonte: 'Relatório BTG' })).filter(r => isContratoBtg(r.contratoOriginal));
     state.btgRows = rows.length ? rows : null;
     state.btgMap = {};
     for (const r of rows) { const c = contratoNorm(r.contratoOriginal); if (isContratoBtg(c)) state.btgMap[c] = r; }
@@ -215,8 +215,32 @@ async function persistDistribuicaoRows(rows) {
     }
   } catch (err) { console.warn('Não foi possível salvar Distribuição no banco:', err?.message || err); }
 
-  // Não atualiza operacional_os_colaboradores aqui.
-  // A Distribuição BTG deve ser uma referência auxiliar e não pode interferir na relação de OS do Gestor.
+  // 2. Atualiza operacional_os_colaboradores com os nomes da Distribuição
+  try {
+    const numeros = [...new Set(list.map(r => String(r.os || '').trim()).filter(Boolean))];
+    const osMap = new Map();
+    for (let i = 0; i < numeros.length; i += 800) {
+      const { data, error } = await supabase.from('operacional_os').select('id, numero_os').in('numero_os', numeros.slice(i, i + 800));
+      if (error) throw error;
+      (data || []).forEach(item => osMap.set(String(item.numero_os), item.id));
+    }
+    const payload = [];
+    const seen = new Set();
+    for (const row of list) {
+      const osId = osMap.get(String(row.os || '').trim());
+      if (!osId || !clean(row.colaborador) || row.colaborador === '—') continue;
+      const key = `${osId}|${norm(row.colaborador)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      payload.push({ os_id: osId, colaborador_key: norm(row.colaborador), colaborador_nome: row.colaborador });
+    }
+    const { error: clearError } = await supabase.from('operacional_os_colaboradores').delete().gte('created_at', '2000-01-01');
+    if (clearError) throw clearError;
+    for (let i = 0; i < payload.length; i += 500) {
+      const { error } = await supabase.from('operacional_os_colaboradores').insert(payload.slice(i, i + 500));
+      if (error) throw error;
+    }
+  } catch (err) { console.warn('Não foi possível salvar colaboradores no banco:', err?.message || err); }
 }
 
 async function loadSavedDistData() {
@@ -237,7 +261,7 @@ async function loadSavedDistData() {
     }));
     if (rows.length) {
       state.distRows = rows;
-      state.loaded.dist = `Banco de dados (${rows.length} vínculos O.S./colaborador)`;
+      state.loaded.dist = `Banco de dados (${rows.length} linhas)`;
       state.mode = 'xlsx';
     }
   } catch (err) { console.warn('Distribuição BTG salva ainda não disponível:', err?.message || err); }
@@ -248,7 +272,7 @@ async function persistBtgRows(rows) {
   try {
     const { error: clearError } = await supabase.from('logistica_btg_solicitacoes').delete().not('id', 'is', null);
     if (clearError) throw clearError;
-    const payload = list.map((r) => ({ contrato_original: contratoNorm(r.contratoOriginal), contrato_status: contratoLabel(r.contratoOriginal), numero_os_relatorio: clean(r.os) || null, tipo_solicitacao: clean(r.tipoSolicitacao) || 'Relatório BTG', cliente: clean(r.cliente) || null, commodity: clean(r.commodity) || null, quantidade: fnum(r.qtde), aba: r.sheet || null, linha: r.rowNumber || null, updated_at: new Date().toISOString() }));
+    const payload = list.map((r) => ({ contrato_original: contratoNorm(r.contratoOriginal), contrato_status: contratoLabel(r.contratoOriginal), numero_os_relatorio: clean(r.portal || r.os) || null, tipo_solicitacao: clean(r.tipoSolicitacao) || 'Relatório BTG', cliente: clean(r.cliente) || null, commodity: clean(r.commodity) || null, quantidade: fnum(r.qtde), aba: r.sheet || null, linha: r.rowNumber || null, updated_at: new Date().toISOString() }));
     for (let i = 0; i < payload.length; i += 500) {
       const { error } = await supabase.from('logistica_btg_solicitacoes').insert(payload.slice(i, i + 500));
       if (error) throw error;
@@ -325,8 +349,8 @@ function render(el) {
   el.count.textContent = `${rows.length}`;
   el.tableTitle.textContent = `Lista BTG (${rows.length})`;
   el.tableSubtitle.textContent = state.mode === 'xlsx'
-    ? 'Cruzamento: Lista de OS do Gestor + Relatório BTG + colaborador da Distribuição de OS'
-    : 'Lista de OS BTG carregada em operacional_os';
+    ? 'Importação unificada: Distribuição de OS + Relatório BTG com validação de contrato e OS'
+    : 'Dados do banco de dados (operacional_os)';
 
   renderChips(el);
   renderStatusButtons(el);
@@ -402,49 +426,32 @@ async function loadDbData(el) {
   try {
     const { data: osData, error } = await supabase
       .from('operacional_os')
-      .select('id, numero_os, contrato, supervisao, lote, remanescente')
+      .select('id, numero_os, cliente, contrato, supervisao, lote, remanescente')
       .ilike('cliente', '%BTG PACTUAL COMMODITIES SERTRADING%')
       .order('numero_os', { ascending: false })
-      .limit(5000);
+      .limit(10000);
     if (error) throw new Error(error.message);
-
-    const ids = (osData || []).map(r => r.id);
-    const colabMap = {};
-    if (ids.length) {
-      const { data: cd } = await supabase
-        .from('operacional_os_colaboradores')
-        .select('os_id, colaborador_nome')
-        .in('os_id', ids);
-      for (const c of (cd || [])) {
-        if (!colabMap[c.os_id]) colabMap[c.os_id] = [];
-        colabMap[c.os_id].push(c.colaborador_nome);
-      }
-    }
 
     state.dbRows = [];
     for (const r of (osData || [])) {
       const original = contratoNorm(r.contrato || '');
-      // Contratos fora do padrão BTG são ignorados no menu BTG.
+      // Contratos fora do padrão BTG são ignorados para não gerar falso positivo.
       if (!isContratoBtg(original)) continue;
-      const statusBase = 'OK';
-      const colaboradores = uniqBy(colabMap[r.id] || [], v => norm(v));
-      const nomes = colaboradores.length ? colaboradores : ['—'];
-      for (const nome of nomes) {
-        const base = {
-          os: r.numero_os,
-          contrato: contratoLabel(original),
-          contratoOriginal: original,
-          colaborador: nome || '—',
-          supervisao: r.supervisao || '—',
-          tipoSolicitacao: 'BASE OS',
-          lote: r.lote,
-          remanescente: r.remanescente,
-          status: statusBase,
-          fonte: 'db',
-        };
-        base.key = rowKey(base);
-        state.dbRows.push(base);
-      }
+      const base = {
+        os: r.numero_os,
+        contrato: contratoLabel(original),
+        contratoOriginal: original,
+        portal: '—',
+        colaborador: '—',
+        supervisao: r.supervisao || '—',
+        tipoSolicitacao: 'LISTA OS',
+        lote: r.lote,
+        remanescente: r.remanescente,
+        status: 'PENDENCIA CLIENTE',
+        fonte: 'Lista de OS',
+      };
+      base.key = rowKey(base);
+      state.dbRows.push(base);
     }
   } catch (err) {
     console.error(err);
@@ -459,8 +466,7 @@ async function loadDbData(el) {
 
 // ── Parsers dos relatórios ────────────────────────────────────────────────────
 function parseDistribuicao(wb) {
-  const btgRows = [];
-  const allOsRows = [];
+  const rows = [];
   for (const wsName of wb.SheetNames) {
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
     if (!raw.length) continue;
@@ -468,76 +474,40 @@ function parseDistribuicao(wb) {
     const hIdx = findHeaderRow(raw, ['FUNCION', 'REMANESCENTE']);
     const h = raw[hIdx] || [];
     const ci = {
-      os:          colIndex(h, [
-        c => c === 'O S' || c === 'OS',
+      os: colIndex(h, [
+        c => c === 'O S' || c === 'OS' || c === 'O S',
+        c => c === 'O S.' || c === 'O.S.' || c === 'O.S',
         c => c === 'N OS' || c === 'NO OS' || c === 'NUMERO OS' || c === 'NR O S' || c === 'N O S',
         c => c === 'ORDEM DE SERVICO' || c === 'ORDEM SERVICO',
         c => (c.endsWith('OS') || c.endsWith('O S')) && c.length <= 12,
       ]),
-      colaborador: colIndex(h, [c => c.includes('FUNCION')]),
+      colaborador: colIndex(h, [c => c.includes('FUNCION') || c.includes('COLABORADOR') || c.includes('CLASSIFICADOR')]),
       supervisao:  colIndex(h, [c => c.includes('SUPERVIS')]),
       coordenacao: colIndex(h, [c => c.includes('COORDENA')]),
-      cliente:     colIndex(h, [c => c.includes('CLIENTE')]),
       lote:        colIndex(h, [c => c === 'LOTE']),
       remanescente:colIndex(h, [
         c => c.includes('REMANESCENTE') && !c.includes('PROD'),
+        c => c.includes('PROD') && c.includes('REMANESCENTE'),
         c => c.includes('REMANESCENTE'),
       ]),
-      situacao:    colIndex(h, [c => c.includes('SITUAC')]),
-      financeiro:  colIndex(h, [c => c.includes('FINANC')]),
-      data:        colIndex(h, [c => c === 'DATA' || c.startsWith('DATA')]),
-      servico:     colIndex(h, [c => c.includes('SERVIC')]),
-      embarque:    colIndex(h, [c => c.includes('EMBARQUE') || c.includes('PONTO 1') || c.includes('LOCAL EMBARQUE')]),
-      destino:     colIndex(h, [c => c.includes('DESTINO')]),
-      contrato:    colIndex(h, [c => c === 'CONTRATO']),
-      produto:     colIndex(h, [c => c === 'PRODUTO' || c.includes('PROD REMANESCENTE') || (c.includes('PROD') && !c.includes('REMANESCENTE'))]),
-      embarcado:   colIndex(h, [c => c === 'EMBARCADO']),
     };
-    if (ci.os < 0 || ci.cliente < 0) continue;
+    if (ci.os < 0 || ci.colaborador < 0) continue;
 
     const supIdx = ci.supervisao >= 0 ? ci.supervisao : ci.coordenacao;
-    const now = new Date().toISOString();
-
     for (const r of raw.slice(hIdx + 1)) {
       const osNum = clean(String(r[ci.os] ?? ''));
-      const clienteStr = String(r[ci.cliente] ?? '');
       if (!osNum) continue;
-
-      // Todas as OS → operacional_os
-      allOsRows.push({
-        numero_os:          osNum,
-        situacao:           ci.situacao >= 0   ? clean(String(r[ci.situacao]   ?? '')) || null : null,
-        financeiro:         ci.financeiro >= 0 ? clean(String(r[ci.financeiro] ?? '')) || null : null,
-        data_os:            ci.data >= 0       ? excelDateBtg(r[ci.data]) : null,
-        servico:            ci.servico >= 0    ? clean(String(r[ci.servico]    ?? '')) || null : null,
-        cliente:            clean(clienteStr) || null,
-        embarque:           ci.embarque >= 0   ? clean(String(r[ci.embarque]   ?? '')) || null : null,
-        destino:            ci.destino >= 0    ? clean(String(r[ci.destino]    ?? '')) || null : null,
-        supervisao:         supIdx >= 0        ? clean(String(r[supIdx]        ?? '')) || null : null,
-        contrato:           ci.contrato >= 0   ? clean(String(r[ci.contrato]   ?? '')) || null : null,
-        produto:            ci.produto >= 0    ? clean(String(r[ci.produto]    ?? '')) || null : null,
-        lote:               fnum(r[ci.lote]),
-        embarcado:          ci.embarcado >= 0  ? fnum(r[ci.embarcado]) : 0,
-        remanescente:       fnum(r[ci.remanescente]),
-        status_gestor:      null,
-        status_conferencia: 'PENDENTE',
-        raw:                {},
-        updated_at:         now,
-      });
-
-      // Distribuição de OS é uma base geral: NÃO filtrar por cliente.
-      // Ela serve apenas para identificar o colaborador/supervisão pela O.S. encontrada na Lista de OS.
-      btgRows.push({
-        os:          osNum,
+      rows.push({
+        os: osNum,
         colaborador: clean(String(r[ci.colaborador] ?? '')) || '—',
-        supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
-        lote:        r[ci.lote],
-        remanescente:r[ci.remanescente],
-        fonte:       'Distribuição OS',
+        supervisao: supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
+        lote: ci.lote >= 0 ? r[ci.lote] : 0,
+        remanescente: ci.remanescente >= 0 ? r[ci.remanescente] : 0,
+        fonte: 'Distribuição OS',
       });
     }
   }
-  return { btgRows, allOsRows };
+  return rows;
 }
 
 function parseBtg(wb) {
@@ -550,11 +520,12 @@ function parseBtg(wb) {
     const h = raw[hIdx] || [];
     const ci = {
       contrato: colIndex(h, [c => c === 'CONTRATO' || c.includes('CONTRATO')]),
-      os: colIndex(h, [
+      portal: colIndex(h, [
         c => c.includes('ORDEM') && c.includes('SERVI'),
         c => c === 'OS' || c === 'N OS' || c === 'NO OS' || c === 'NUMERO OS',
         c => c.includes('ORDEM') && c.includes('OS'),
       ]),
+      frete: colIndex(h, [c => c.includes('ORDEM') && c.includes('FRETE')]),
       tipo: colIndex(h, [c => c.includes('TIPO') || c.includes('SOLICITACAO') || c.includes('OPERACAO') || c.includes('MOVIMENTO')]),
       cliente: colIndex(h, [c => c.includes('CLIENTE') || c.includes('COMPRADOR') || c.includes('TOMADOR')]),
       commodity: colIndex(h, [c => c.includes('COMMODITY') || c.includes('PRODUTO')]),
@@ -566,17 +537,21 @@ function parseBtg(wb) {
     raw.slice(hIdx + 1).forEach((r, idx) => {
       const contratoOriginal = contratoNorm(r[ci.contrato]);
       if (!contratoOriginal && !r.some(Boolean)) return;
-      // Se o contrato não estiver no padrão BTG (P00000.000), ignora a linha.
+      // Contratos fora do padrão P00000.000 são ignorados.
       if (!isContratoBtg(contratoOriginal)) return;
+      const portal = ci.portal >= 0 ? clean(r[ci.portal]) : '';
+      const frete = ci.frete >= 0 ? clean(r[ci.frete]) : '';
       const tipoSolicitacao = clean(r[ci.tipo]) || clean(r[ci.commodity]) || clean(r[ci.cidade]) || 'Relatório BTG';
       rows.push({
-        os: clean(r[ci.os]),
+        os: portal,
+        portal: portal || frete || '—',
+        frete,
         contratoOriginal,
         contrato: contratoLabel(contratoOriginal),
         tipoSolicitacao,
         cliente: clean(r[ci.cliente]),
         commodity: clean(r[ci.commodity]),
-        qtde: r[ci.qtde],
+        qtde: ci.qtde >= 0 ? r[ci.qtde] : 0,
         sheet: wsName,
         rowNumber: hIdx + idx + 2,
         fonte: 'Relatório BTG',
@@ -601,10 +576,9 @@ async function processFile(file, el) {
 
   if (tipo === 'distribuicao') {
     const parsed = parseDistribuicao(wb);
-    console.log(`[BTG] Distribuição: ${parsed.btgRows.length} linhas, ${parsed.allOsRows.length} linhas brutas lidas`);
-        state.distRows = parsed.btgRows;
-    state.allOsRows = parsed.allOsRows;
-    state.loaded.dist = `${file.name} (${parsed.btgRows.length} vínculos O.S./colaborador)`;
+    console.log(`[BTG] Distribuição: ${parsed.length} linhas`);
+    state.distRows = parsed;
+    state.loaded.dist = `${file.name} (${parsed.length} linhas)`;
   } else if (tipo === 'btg') {
     const parsed = parseBtg(wb);
     console.log(`[BTG] Relatório BTG: ${parsed.rows.length} solicitações`);
@@ -644,7 +618,7 @@ async function handleFiles(files, el) {
     }
   }
 
-  if (!state.btgRows?.length && !state.distRows?.length && !state.allOsRows?.length) {
+  if (!state.btgRows?.length && !state.distRows?.length) {
     el.feedback.textContent = erros.length
       ? `Arquivos não reconhecidos: ${erros.join(', ')}. Envie a Distribuição de OS ou o Relatório BTG.`
       : 'Nenhum dado encontrado nos arquivos enviados.';
@@ -653,12 +627,7 @@ async function handleFiles(files, el) {
     return;
   }
 
-  if (state.distRows !== null && state.allOsRows?.length === 0) {
-    el.feedback.textContent = 'Aviso: planilha de Distribuição carregada mas nenhuma O.S. foi lida. Verifique o formato do arquivo no console.';
-  }
 
-  // A Lista de OS vem de operacional_os (relatório que alimenta a OS do Gestor).
-  // A Distribuição de OS NÃO deve limpar nem substituir operacional_os; ela só identifica colaborador por O.S.
   await persistDistribuicaoRows(state.distRows);
   await persistBtgRows(state.btgRows);
 
@@ -775,7 +744,7 @@ async function reconcile(el) {
       out.push(applyAdjusted({
         status,
         os: db?.os || btg.os || dist?.os || '—',
-        portal: btg.os || '—',
+        portal: btg.portal || btg.os || '—',
         contrato: contratoLabel(c),
         contratoOriginal: c,
         tipoSolicitacao: btg.tipoSolicitacao || 'Relatório BTG',
@@ -792,25 +761,30 @@ async function reconcile(el) {
   }
 
   // ── 2. OS da Lista de OS não cobertas pelo BTG → "PENDENCIA CLIENTE" ─────
-  if (state.btgRows?.length) {
-    const seenOsContrato = new Set();
-    for (const db of (state.dbRows || [])) {
-      const c = contratoNorm(db.contratoOriginal || db.contrato);
-      if (isContratoBtg(c) && coveredContratos.has(c)) continue;
-      const dedupeKey = `${db.os}|${c}`;
-      if (seenOsContrato.has(dedupeKey)) continue;
-      seenOsContrato.add(dedupeKey);
+  const seenOsContrato = new Set();
+  for (const db of (state.dbRows || [])) {
+    const c = contratoNorm(db.contratoOriginal || db.contrato);
+    if (!isContratoBtg(c)) continue;
+    if (coveredContratos.has(c)) continue;
+    const dedupeKey = `${db.os}|${c}`;
+    if (seenOsContrato.has(dedupeKey)) continue;
+    seenOsContrato.add(dedupeKey);
 
-      const distRows = distByOs.get(String(db.os)) || [];
-      const dist = distRows.find(x => x.colaborador && x.colaborador !== '—') || distRows[0] || null;
+    const distRows = distByOs.get(String(db.os)) || [];
+    const pessoas = [];
+    for (const dist of distRows) pushUnique(pessoas, dist.colaborador);
+    if (!pessoas.length) pessoas.push(db.colaborador || '—');
+
+    for (const pessoa of pessoas) {
+      const dist = distRows.find(x => norm(x.colaborador) === norm(pessoa)) || distRows[0] || null;
       out.push(applyAdjusted({
         status: 'PENDENCIA CLIENTE',
         os: db.os,
         portal: '—',
         contrato: contratoLabel(c),
         contratoOriginal: c,
-        tipoSolicitacao: 'BASE OS',
-        colaborador: dist?.colaborador || db.colaborador || '—',
+        tipoSolicitacao: 'LISTA OS',
+        colaborador: pessoa || '—',
         supervisao: db.supervisao || dist?.supervisao || '—',
         lote: db.lote || dist?.lote,
         remanescente: db.remanescente || dist?.remanescente,
@@ -828,7 +802,7 @@ function exportVerificar() {
   if (!rows.length) return;
   const data = rows.map(r => ({
     Status: r.status,
-    'O.S.': r.os || '',
+    OS: r.os || '',
     Portal: r.portal || '',
     Contrato: r.contrato || '',
     'Contrato original': r.contratoOriginal || '',
@@ -923,7 +897,7 @@ initProtectedPage('BTG — Logística', async (content) => {
       <div class="section-head">
         <div>
           <h3>BTG — Ordens de Serviço</h3>
-          <p class="muted">Cruza o relatório BTG com a Lista de OS do Gestor pelo contrato e usa a Distribuição de OS apenas para identificar o colaborador pela O.S.</p>
+          <p class="muted">Importação unificada dos relatórios da BTG. O painel identifica cada arquivo, valida contrato no padrão P33004.000 e aponta o que precisa de conferência.</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span id="btgModeTag" class="badge">BASE DE DADOS</span>
@@ -937,7 +911,7 @@ initProtectedPage('BTG — Logística', async (content) => {
             <input type="file" id="btgFileInput" accept=".xlsx,.xls" multiple hidden />
             Carregar relatório(s)
           </label>
-          <span class="btg-upload-hint">Envie o DataGrid BTG e/ou a Distribuição de O.S. A Lista de OS usada no cruzamento é a base que alimenta a OS do Gestor.</span>
+          <span class="btg-upload-hint">Envie tudo no mesmo botão: Distribuição de O.S. e/ou Relatório BTG. O tipo é identificado automaticamente.</span>
         </div>
         <div class="btg-file-chips">
           <div class="btg-chip-file" id="btgChipDist">Distribuição de O.S. — aguardando</div>
