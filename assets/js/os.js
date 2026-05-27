@@ -387,22 +387,26 @@ initProtectedPage('OS', async (content) => {
   }
 
   async function loadColaboradores() {
-    let rows = [];
-
-    try {
-      const { data, error } = await supabase
-        .from('operacional_colaborador_base')
-        .select('*')
-        .eq('ativo', true)
-        .limit(5000);
-
-      if (!error) rows = data || [];
-      else console.warn('Falha em operacional_colaborador_base; tentando colaborador_snapshot.', error);
-    } catch (error) {
-      console.warn('Falha em operacional_colaborador_base; tentando colaborador_snapshot.', error);
+    async function fromOperacionalBase() {
+      try {
+        const { data, error } = await supabase
+          .from('operacional_colaborador_base')
+          .select('*')
+          .eq('ativo', true)
+          .limit(5000);
+        if (error) throw error;
+        return safeArray(data).map((c) => ({
+          ...c,
+          nome: c.nome || c.nome_colaborador,
+          nome_colaborador: c.nome_colaborador || c.nome,
+        }));
+      } catch (error) {
+        console.warn('Falha em operacional_colaborador_base; tentando colaborador_snapshot.', error);
+        return [];
+      }
     }
 
-    if (!rows.length) {
+    async function fromColaboradorSnapshot() {
       try {
         const latest = await supabase
           .from('colaborador_snapshot')
@@ -414,20 +418,30 @@ initProtectedPage('OS', async (content) => {
         let q = supabase.from('colaborador_snapshot').select('*').limit(5000);
         if (dt) q = q.eq('data_referencia', dt);
         const { data, error } = await q;
-        if (error) {
-          console.warn('Falha em colaborador_snapshot.', error);
-          rows = [];
-        } else {
-          rows = data || [];
-        }
+        if (error) throw error;
+        return safeArray(data).map((c) => ({
+          ...c,
+          nome: c.nome || c.nome_colaborador,
+          nome_colaborador: c.nome_colaborador || c.nome,
+        }));
       } catch (error) {
         console.warn('Falha em colaborador_snapshot.', error);
-        rows = [];
+        return [];
       }
     }
 
-    state.colaboradores = rows.filter(onlyActiveColab);
+    let rows = await fromOperacionalBase();
+    let ativos = rows.filter(onlyActiveColab);
+
+    // Quando a base operacional existe, mas vem vazia/sem ativos, usa o último snapshot do RH.
+    if (!ativos.length) {
+      rows = await fromColaboradorSnapshot();
+      ativos = rows.filter(onlyActiveColab);
+    }
+
+    state.colaboradores = ativos;
   }
+
 
   function fillSupervisoes() {
     const sups = [...new Set(state.os.map((row) => row.supervisao).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));

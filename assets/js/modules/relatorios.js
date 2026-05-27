@@ -2252,6 +2252,27 @@
   }
 
 
+  function objectFromHeaderRow(headers, row, sheetName) {
+    const obj = { __aba: sheetName };
+    (headers || []).forEach((header, index) => {
+      const key = String(header || `COLUNA_${index + 1}`).trim() || `COLUNA_${index + 1}`;
+      obj[key] = row?.[index] ?? '';
+    });
+    return obj;
+  }
+
+  function findOperacionalOsHeaderRow(raw) {
+    for (let i = 0; i < Math.min(raw.length, 40); i += 1) {
+      const rowNorm = (raw[i] || []).map((c) => normalizeHeader(c));
+      const joined = rowNorm.join(' ');
+      const hasOs = rowNorm.some((h) => ['o s', 'os', 'o.s.', 'o.s', 'ordem de servico', 'ordem servico', 'numero os', 'n os'].includes(h)) || joined.includes('ordem de servico');
+      const hasCliente = rowNorm.some((h) => h === 'cliente' || h.includes('cliente'));
+      const hasRem = rowNorm.some((h) => h.includes('remanescente'));
+      if (hasOs && (hasCliente || hasRem)) return i;
+    }
+    return 0;
+  }
+
   async function readOperacionalOsRowsFromFile(file) {
     const XLSX = await loadXlsx();
     const buffer = await file.arrayBuffer();
@@ -2261,31 +2282,43 @@
       return key.includes('os') || key.includes('lista');
     }) || workbook.SheetNames[0];
     const sheet = workbook.Sheets[preferred];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+    const headerRow = findOperacionalOsHeaderRow(raw);
+    const headers = (raw[headerRow] || []).map((h, index) => String(h || `COLUNA_${index + 1}`).trim());
+    const rows = raw.slice(headerRow + 1).map((row) => objectFromHeaderRow(headers, row, preferred));
     const mapped = [];
     const datas = [];
 
     rows.forEach((row) => {
-      const numero = String(pickValue(row, ['O.S.', 'O.S', 'OS', 'O S', 'Ordem de Serviço', 'Ordem de Servico']) || '').trim();
-      if (!numero) return;
+      const numero = String(pickValue(row, [
+        'O.S.', 'O.S', 'OS', 'O S', 'Nº OS', 'N OS', 'Número OS', 'Numero OS', 'Ordem de Serviço', 'Ordem de Servico'
+      ]) || '').trim();
+      if (!numero || ['OS', 'O.S.', 'O.S', 'O S'].includes(normalizeHeader(numero).toUpperCase())) return;
+
       const embarque = String(pickValue(row, ['Embarque', 'Ponto 1', 'Ponto1', 'Local Embarque', 'Local de Embarque']) || '').trim();
       const dataOs = toIsoDate(pickValue(row, ['Data', 'Data OS', 'Data O.S.', 'Data O.S'])) || null;
       if (dataOs) datas.push(dataOs);
+
+      const contrato = normalizeText(pickValue(row, [
+        'Contrato', 'Nº Contrato', 'N° Contrato', 'N Contrato', 'Número Contrato', 'Numero Contrato',
+        'Contrato Cliente', 'Contrato BTG', 'Contrato Original', 'Contrato Origem', 'Nº Contrato Cliente'
+      ]));
+
       mapped.push({
         numero_os: numero,
         situacao: normalizeText(pickValue(row, ['Situação', 'Situacao'])),
         financeiro: normalizeText(pickValue(row, ['Financeiro'])),
         data_os: dataOs,
         servico: normalizeText(pickValue(row, ['Serviço', 'Servico'])),
-        cliente: normalizeText(pickValue(row, ['Cliente'])),
+        cliente: normalizeText(pickValue(row, ['Cliente', 'Cliente Nacional', 'Cliente Regional', 'Cliente Final'])),
         embarque: embarque || null,
-        destino: normalizeText(pickValue(row, ['Destino'])),
+        destino: normalizeText(pickValue(row, ['Destino', 'Local Destino', 'Local de Destino'])),
         supervisao: normalizeText(pickValue(row, ['Supervisão', 'Supervisao', 'Regional'])),
-        contrato: normalizeText(pickValue(row, ['Contrato'])),
-        produto: normalizeText(pickValue(row, ['Produto'])),
-        lote: normalizeNumberBr(pickValue(row, ['Lote'])) || 0,
+        contrato,
+        produto: normalizeText(pickValue(row, ['Produto', 'Commodity'])),
+        lote: normalizeNumberBr(pickValue(row, ['Lote', 'Qtde Contrato', 'Qtde. Contrato', 'Quantidade', 'Volume'])) || 0,
         embarcado: normalizeNumberBr(pickValue(row, ['Embarcado'])) || 0,
-        remanescente: normalizeNumberBr(pickValue(row, ['Remanescente'])) || 0,
+        remanescente: normalizeNumberBr(pickValue(row, ['Remanescente', 'Prod. Remanescente', 'Produto Remanescente'])) || 0,
         raw: row,
         updated_at: new Date().toISOString(),
       });
@@ -2332,6 +2365,7 @@
     const remanescenteZero = rows.filter((r) => Number(r.remanescente || 0) === 0).length;
     const ate555 = rows.filter((r) => Number(r.remanescente || 0) > 0 && Number(r.remanescente || 0) <= 555000).length;
     const ate300 = rows.filter((r) => Number(r.remanescente || 0) > 0 && Number(r.remanescente || 0) <= 300000).length;
+    const semContrato = rows.filter((r) => !String(r.contrato || '').trim()).length;
 
     opts.cache?.invalidateCacheByPrefix?.('os:');
     opts.cache?.bumpPainelCache?.('importacao_operacional_os');
@@ -2343,6 +2377,7 @@
       remanescente_zero: remanescenteZero,
       ate_555: ate555,
       ate_300: ate300,
+      sem_contrato: semContrato,
       periodo_inicio: result.period?.inicio || null,
       periodo_fim: result.period?.fim || null,
       total_datas: result.period?.totalDatas || null,
@@ -2381,7 +2416,11 @@
       const header = raw[headerIndex] || [];
       const ci = {
         contrato: btgColIndexImport(header, [c => c === 'CONTRATO' || c.includes('CONTRATO')]),
-        os: btgColIndexImport(header, [c => c.includes('ORDEM') && (c.includes('SERVI') || c.includes('FRETE') || c.includes('OS')), c => c === 'OS' || c === 'O S']),
+        portal: btgColIndexImport(header, [
+          c => c === 'ORDEM DE SERVICO' || c === 'ORDEM SERVICO',
+          c => c.includes('ORDEM') && c.includes('SERVI'),
+        ]),
+        ordemFrete: btgColIndexImport(header, [c => c === 'ORDEM DE FRETE' || (c.includes('ORDEM') && c.includes('FRETE'))]),
         tipo: btgColIndexImport(header, [c => c.includes('TIPO'), c => c.includes('SOLICITACAO'), c => c.includes('OPERACAO'), c => c.includes('MOVIMENTO')]),
         cliente: btgColIndexImport(header, [c => c.includes('CLIENTE'), c => c.includes('COMPRADOR'), c => c.includes('TOMADOR')]),
         commodity: btgColIndexImport(header, [c => c.includes('COMMODITY'), c => c.includes('PRODUTO')]),
@@ -2392,20 +2431,19 @@
       raw.slice(headerIndex + 1).forEach((line, idx) => {
         if (!line?.some?.(Boolean)) return;
         const contratoOriginal = btgContratoNormImport(line[ci.contrato]);
-        // Contratos fora do padrão BTG (P33004.000) são ignorados na conferência.
-        if (!btgContratoValidoImport(contratoOriginal)) return;
+        if (!contratoOriginal) return;
         const tipoSolicitacao = btgCleanImport(line[ci.tipo]) || btgCleanImport(line[ci.commodity]) || btgCleanImport(line[ci.cidade]) || 'Relatório BTG';
         rows.push({
           contrato_original: contratoOriginal,
-          contrato_status: btgContratoLabelImport(contratoOriginal),
-          numero_os_relatorio: btgCleanImport(line[ci.os]) || null,
+          contrato_status: btgContratoLabelImport(contratoOriginal) || 'CORRIGIR CONTRATO',
+          numero_os_relatorio: btgCleanImport(line[ci.portal]) || null,
           tipo_solicitacao: tipoSolicitacao,
           cliente: btgCleanImport(line[ci.cliente]) || null,
           commodity: btgCleanImport(line[ci.commodity]) || null,
           quantidade: normalizeNumberBr(line[ci.quantidade]) || 0,
           aba: sheetName,
           linha: headerIndex + idx + 2,
-          raw: line,
+          raw: { headers: header, values: line, ordem_frete: ci.ordemFrete >= 0 ? btgCleanImport(line[ci.ordemFrete]) : null },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
@@ -2416,7 +2454,7 @@
   async function importarBtgLogisticaDaPlanilha(file, opts) {
     const result = await readBtgLogisticaRowsFromFile(file);
     const rows = result.rows || [];
-    if (!rows.length) throw new Error('O relatório BTG não possui solicitações válidas para gravar.');
+    if (!rows.length) throw new Error('O relatório BTG não possui solicitações válidas para gravar. Confira se há linhas abaixo dos cabeçalhos Ordem de Serviço e Contrato.');
     const { error: clearError } = await opts.supabase.from('logistica_btg_solicitacoes').delete().not('id', 'is', null);
     if (clearError) throw new Error('Falha ao limpar solicitações BTG anteriores: ' + (clearError.message || ''));
     let total = 0;
@@ -2439,7 +2477,7 @@
       const headerIndex = btgFindHeaderRowImport(raw, ['FUNCION', 'REMANESCENTE']);
       const header = raw[headerIndex] || [];
       const ci = {
-        os: btgColIndexImport(header, [c => c === 'O S' || c === 'OS' || c.includes('ORDEM')]),
+        os: btgColIndexImport(header, [c => c === 'O S' || c === 'OS' || c === 'O S ' || c.includes('ORDEM')]),
         colaborador: btgColIndexImport(header, [c => c.includes('FUNCION'), c => c.includes('COLABORADOR')]),
         supervisao: btgColIndexImport(header, [c => c.includes('SUPERVIS'), c => c.includes('COORDENA'), c => c.includes('REGIONAL')]),
         cliente: btgColIndexImport(header, [c => c.includes('CLIENTE')]),
@@ -2451,8 +2489,15 @@
         if (!line?.some?.(Boolean)) return;
         const numeroOs = btgCleanImport(line[ci.os]);
         const colaborador = btgCleanImport(line[ci.colaborador]);
-        if (!numeroOs || !colaborador) return;
-        rows.push({ numero_os: numeroOs, colaborador_nome: colaborador, supervisao: btgCleanImport(line[ci.supervisao]) || null, cliente: btgCleanImport(line[ci.cliente]) || null, lote: normalizeNumberBr(line[ci.lote]) || 0, remanescente: normalizeNumberBr(line[ci.remanescente]) || 0 });
+        if (!numeroOs || !colaborador || normalizeHeader(numeroOs) === 'o s' || normalizeHeader(colaborador) === 'funcionario') return;
+        rows.push({
+          numero_os: numeroOs,
+          colaborador_nome: colaborador,
+          supervisao: btgCleanImport(line[ci.supervisao]) || null,
+          cliente: btgCleanImport(line[ci.cliente]) || null,
+          lote: normalizeNumberBr(line[ci.lote]) || 0,
+          remanescente: normalizeNumberBr(line[ci.remanescente]) || 0
+        });
       });
     }
     return { rows, period: null };
@@ -2461,6 +2506,22 @@
     const result = await readDistribuicaoOsRowsFromFile(file);
     const rows = result.rows || [];
     if (!rows.length) throw new Error('A Distribuição de O.S. não possui vínculos válidos de O.S. x colaborador.');
+
+    const distPayload = rows.map((row) => ({
+      numero_os: row.numero_os,
+      colaborador: row.colaborador_nome,
+      supervisao: row.supervisao,
+      lote: row.lote,
+      remanescente: row.remanescente,
+      updated_at: new Date().toISOString(),
+    }));
+    const { error: clearDist } = await opts.supabase.from('logistica_btg_distribuicao').delete().not('id', 'is', null);
+    if (clearDist) throw new Error('Falha ao limpar Distribuição BTG anterior: ' + (clearDist.message || ''));
+    for (let i = 0; i < distPayload.length; i += 500) {
+      const { error } = await opts.supabase.from('logistica_btg_distribuicao').insert(distPayload.slice(i, i + 500));
+      if (error) throw new Error(error.message || 'Falha ao salvar Distribuição BTG no Supabase.');
+    }
+
     const numeros = [...new Set(rows.map((r) => String(r.numero_os || '').trim()).filter(Boolean))];
     const osMap = new Map();
     for (let i = 0; i < numeros.length; i += 800) {
@@ -2473,13 +2534,29 @@
     for (const row of rows) {
       const osId = osMap.get(String(row.numero_os));
       if (!osId) continue;
-      const key = `${osId}|${btgNormImport(row.colaborador_nome)}`;
+      const colabKey = btgNormImport(row.colaborador_nome);
+      const key = `${osId}|${colabKey}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      payload.push({ os_id: osId, colaborador_nome: row.colaborador_nome });
+      payload.push({
+        os_id: osId,
+        colaborador_key: colabKey,
+        colaborador_nome: row.colaborador_nome,
+        origem_sugestao: 'DISTRIBUICAO_OS',
+        observacao: 'Importado pela Distribuição de O.S.',
+      });
     }
-    const { error: clearError } = await opts.supabase.from('operacional_os_colaboradores').delete().not('id', 'is', null);
-    if (clearError) throw new Error('Falha ao limpar Distribuição de O.S. anterior: ' + (clearError.message || ''));
+
+    const osIds = [...new Set(payload.map((r) => r.os_id))];
+    for (let i = 0; i < osIds.length; i += 800) {
+      const { error } = await opts.supabase
+        .from('operacional_os_colaboradores')
+        .delete()
+        .in('os_id', osIds.slice(i, i + 800))
+        .eq('origem_sugestao', 'DISTRIBUICAO_OS');
+      if (error) throw new Error('Falha ao substituir vínculos antigos da Distribuição de O.S.: ' + (error.message || ''));
+    }
+
     let total = 0;
     for (let i = 0; i < payload.length; i += 500) {
       const { error } = await opts.supabase.from('operacional_os_colaboradores').insert(payload.slice(i, i + 500));
