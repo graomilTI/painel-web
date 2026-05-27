@@ -53,6 +53,20 @@ function clean(v) {
   return String(v ?? '').trim();
 }
 
+function excelDateBtg(value) {
+  if (!value) return null;
+  if (value instanceof Date && !isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  if (typeof value === 'number') {
+    const date = XLSX.SSF.parse_date_code(value);
+    if (date) return `${date.y}-${String(date.m).padStart(2,'0')}-${String(date.d).padStart(2,'0')}`;
+  }
+  const text = String(value).trim();
+  const dm = text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  if (dm) return `${dm[3].length === 2 ? '20' + dm[3] : dm[3]}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`;
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : null;
+}
+
 function contratoNorm(v) {
   return clean(v).toUpperCase().replace(/\s+/g, '');
 }
@@ -106,11 +120,12 @@ function detectFileType(wb) {
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
     const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    for (const row of raw.slice(0, 20)) {
+    for (const row of raw.slice(0, 50)) {
       const r = norm(row.map(c => String(c ?? '')).join(' '));
       if (r.includes('FUNCION') && r.includes('REMANESCENTE') && (r.includes('O S') || r.includes('OS'))) return 'distribuicao';
       if (r.includes('ORDEM') && r.includes('FRETE') && r.includes('CONTRATO')) return 'btg';
-      if (r.includes('CONTRATO') && (r.includes('COMMODITY') || r.includes('SOLICITACAO') || r.includes('RECEBIMENTO'))) return 'btg';
+      if (r.includes('ORDEM') && r.includes('SERVIC') && r.includes('CONTRATO')) return 'btg';
+      if (r.includes('CONTRATO') && (r.includes('COMMODITY') || r.includes('CLASSIFICADOR') || r.includes('SOLICITACAO') || r.includes('RECEBIMENTO'))) return 'btg';
     }
   }
   return 'unknown';
@@ -120,6 +135,7 @@ function detectFileType(wb) {
 const state = {
   dbRows: [],
   distRows: null,
+  allOsRows: null,
   btgRows: null,
   btgMap: null,
   finalRows: [],
@@ -159,6 +175,19 @@ async function loadSavedBtgData() {
     if (rows.length) state.mode = 'xlsx';
   } catch (err) { console.warn('Solicitações BTG salvas ainda não disponíveis:', err?.message || err); }
 }
+async function persistAllOsRows(rows) {
+  const list = rows || [];
+  if (!list.length) return;
+  try {
+    const { error: clearError } = await supabase.from('operacional_os').delete().gte('created_at', '2000-01-01');
+    if (clearError) throw clearError;
+    for (let i = 0; i < list.length; i += 500) {
+      const { error } = await supabase.from('operacional_os').insert(list.slice(i, i + 500));
+      if (error) throw error;
+    }
+  } catch (err) { console.warn('Não foi possível atualizar lista de O.S.:', err?.message || err); }
+}
+
 async function persistDistribuicaoRows(rows) {
   const list = rows || [];
   if (!list.length) return;
@@ -449,7 +478,8 @@ async function loadDbData(el) {
 
 // ── Parsers dos relatórios ────────────────────────────────────────────────────
 function parseDistribuicao(wb) {
-  const all = [];
+  const btgRows = [];
+  const allOsRows = [];
   for (const wsName of wb.SheetNames) {
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
     if (!raw.length) continue;
@@ -457,28 +487,69 @@ function parseDistribuicao(wb) {
     const hIdx = findHeaderRow(raw, ['FUNCION', 'REMANESCENTE']);
     const h = raw[hIdx] || [];
     const ci = {
-      os: colIndex(h, [c => c === 'O S' || c === 'OS' || c === 'O S']),
+      os:          colIndex(h, [c => c === 'O S' || c === 'OS']),
       colaborador: colIndex(h, [c => c.includes('FUNCION')]),
-      supervisao: colIndex(h, [c => c.includes('SUPERVIS')]),
+      supervisao:  colIndex(h, [c => c.includes('SUPERVIS')]),
       coordenacao: colIndex(h, [c => c.includes('COORDENA')]),
-      cliente: colIndex(h, [c => c.includes('CLIENTE')]),
-      lote: colIndex(h, [c => c === 'LOTE']),
-      remanescente: colIndex(h, [c => c.includes('REMANESCENTE')]),
+      cliente:     colIndex(h, [c => c.includes('CLIENTE')]),
+      lote:        colIndex(h, [c => c === 'LOTE']),
+      remanescente:colIndex(h, [c => c.includes('REMANESCENTE') && !c.includes('PROD')]),
+      situacao:    colIndex(h, [c => c.includes('SITUAC')]),
+      financeiro:  colIndex(h, [c => c.includes('FINANC')]),
+      data:        colIndex(h, [c => c === 'DATA' || c.startsWith('DATA')]),
+      servico:     colIndex(h, [c => c.includes('SERVIC')]),
+      embarque:    colIndex(h, [c => c.includes('EMBARQUE') || c.includes('PONTO 1') || c.includes('LOCAL EMBARQUE')]),
+      destino:     colIndex(h, [c => c.includes('DESTINO')]),
+      contrato:    colIndex(h, [c => c === 'CONTRATO']),
+      produto:     colIndex(h, [c => c === 'PRODUTO' || c.includes('PROD REMANESCENTE') || (c.includes('PROD') && !c.includes('REMANESCENTE'))]),
+      embarcado:   colIndex(h, [c => c === 'EMBARCADO']),
     };
     if (ci.os < 0 || ci.cliente < 0) continue;
 
-    raw.slice(hIdx + 1)
-      .filter(r => BTG_RE.test(String(r[ci.cliente] ?? '')))
-      .forEach(r => all.push({
-        os: clean(r[ci.os]),
-        colaborador: clean(r[ci.colaborador]) || '—',
-        supervisao: clean(r[ci.supervisao] ?? r[ci.coordenacao]) || '—',
-        lote: r[ci.lote],
-        remanescente: r[ci.remanescente],
-        fonte: 'Distribuição OS',
-      }));
+    const supIdx = ci.supervisao >= 0 ? ci.supervisao : ci.coordenacao;
+    const now = new Date().toISOString();
+
+    for (const r of raw.slice(hIdx + 1)) {
+      const osNum = clean(String(r[ci.os] ?? ''));
+      const clienteStr = String(r[ci.cliente] ?? '');
+      if (!osNum) continue;
+
+      // Todas as OS → operacional_os
+      allOsRows.push({
+        numero_os:          osNum,
+        situacao:           ci.situacao >= 0   ? clean(String(r[ci.situacao]   ?? '')) || null : null,
+        financeiro:         ci.financeiro >= 0 ? clean(String(r[ci.financeiro] ?? '')) || null : null,
+        data_os:            ci.data >= 0       ? excelDateBtg(r[ci.data]) : null,
+        servico:            ci.servico >= 0    ? clean(String(r[ci.servico]    ?? '')) || null : null,
+        cliente:            clean(clienteStr) || null,
+        embarque:           ci.embarque >= 0   ? clean(String(r[ci.embarque]   ?? '')) || null : null,
+        destino:            ci.destino >= 0    ? clean(String(r[ci.destino]    ?? '')) || null : null,
+        supervisao:         supIdx >= 0        ? clean(String(r[supIdx]        ?? '')) || null : null,
+        contrato:           ci.contrato >= 0   ? clean(String(r[ci.contrato]   ?? '')) || null : null,
+        produto:            ci.produto >= 0    ? clean(String(r[ci.produto]    ?? '')) || null : null,
+        lote:               fnum(r[ci.lote]),
+        embarcado:          ci.embarcado >= 0  ? fnum(r[ci.embarcado]) : 0,
+        remanescente:       fnum(r[ci.remanescente]),
+        status_gestor:      null,
+        status_conferencia: 'PENDENTE',
+        raw:                {},
+        updated_at:         now,
+      });
+
+      // Apenas BTG → logistica_btg_distribuicao
+      if (BTG_RE.test(clienteStr)) {
+        btgRows.push({
+          os:          osNum,
+          colaborador: clean(String(r[ci.colaborador] ?? '')) || '—',
+          supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
+          lote:        r[ci.lote],
+          remanescente:r[ci.remanescente],
+          fonte:       'Distribuição OS',
+        });
+      }
+    }
   }
-  return all;
+  return { btgRows, allOsRows };
 }
 
 function parseBtg(wb) {
@@ -537,8 +608,10 @@ async function processFile(file, el) {
   const tipo = detectFileType(wb);
 
   if (tipo === 'distribuicao') {
-    state.distRows = parseDistribuicao(wb);
-    state.loaded.dist = `${file.name} (${state.distRows.length} linhas BTG)`;
+    const parsed = parseDistribuicao(wb);
+    state.distRows = parsed.btgRows;
+    state.allOsRows = parsed.allOsRows;
+    state.loaded.dist = `${file.name} (${parsed.btgRows.length} BTG / ${parsed.allOsRows.length} O.S. total)`;
   } else if (tipo === 'btg') {
     const parsed = parseBtg(wb);
     state.btgRows = parsed.rows;
@@ -564,6 +637,10 @@ async function handleFiles(files, el) {
     return;
   }
 
+  if (state.allOsRows?.length) {
+    el.feedback.textContent = `Atualizando lista de O.S. (${state.allOsRows.length} registros)...`;
+    await persistAllOsRows(state.allOsRows);
+  }
   await persistDistribuicaoRows(state.distRows);
   await persistBtgRows(state.btgRows);
   el.dropZone.classList.remove('btg-loading');
