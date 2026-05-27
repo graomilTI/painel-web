@@ -350,17 +350,21 @@ initProtectedPage('OS', async (content) => {
     }
 
     try {
-      const atr = await supabase
-        .from('operacional_os_colaboradores')
-        .select('*')
-        .in('os_id', ids);
-
-      if (atr.error) {
-        console.warn('Falha ao carregar colaboradores vinculados às O.S.', atr.error);
-        state.atribuicoes = [];
-      } else {
-        state.atribuicoes = safeArray(atr.data);
+      const CHUNK = 200;
+      let allAtr = [];
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const { data, error } = await supabase
+          .from('operacional_os_colaboradores')
+          .select('*')
+          .in('os_id', ids.slice(i, i + CHUNK));
+        if (error) {
+          console.warn('Falha ao carregar colaboradores vinculados às O.S.', error);
+          allAtr = [];
+          break;
+        }
+        allAtr = allAtr.concat(safeArray(data));
       }
+      state.atribuicoes = allAtr;
     } catch (atrError) {
       console.warn('Falha ao carregar colaboradores vinculados às O.S.', atrError);
       state.atribuicoes = [];
