@@ -198,9 +198,9 @@ async function persistDistribuicaoRows(rows) {
       const key = `${osId}|${norm(row.colaborador)}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      payload.push({ os_id: osId, colaborador_nome: row.colaborador });
+      payload.push({ os_id: osId, colaborador_key: norm(row.colaborador), colaborador_nome: row.colaborador });
     }
-    const { error: clearError } = await supabase.from('operacional_os_colaboradores').delete().not('id', 'is', null);
+    const { error: clearError } = await supabase.from('operacional_os_colaboradores').delete().gte('created_at', '2000-01-01');
     if (clearError) throw clearError;
     for (let i = 0; i < payload.length; i += 500) {
       const { error } = await supabase.from('operacional_os_colaboradores').insert(payload.slice(i, i + 500));
