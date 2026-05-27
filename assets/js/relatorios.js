@@ -1899,6 +1899,16 @@
     const XLSX = await loadXlsx();
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    // Corrige arquivos exportados com dimension errada (ex.: sistemas que geram A1:E1 mas têm 20 colunas)
+    for (const wsName of workbook.SheetNames) {
+      const ws = workbook.Sheets[wsName];
+      const cells = Object.keys(ws).filter(k => !k.startsWith('!'));
+      if (!cells.length) continue;
+      const decoded = cells.map(k => XLSX.utils.decode_cell(k));
+      const maxR = Math.max(...decoded.map(c => c.r));
+      const maxC = Math.max(...decoded.map(c => c.c));
+      ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } });
+    }
     const preferred = workbook.SheetNames.find((name) => {
       const key = normalizeHeader(name);
       return key.includes('os') || key.includes('lista');
