@@ -162,13 +162,33 @@ async function loadSavedBtgData() {
 async function persistDistribuicaoRows(rows) {
   const list = rows || [];
   if (!list.length) return;
+
+  // 1. Salva todas as linhas da Distribuição em logistica_btg_distribuicao
   try {
-    const numeros = [...new Set(list.map((r) => String(r.os || '').trim()).filter(Boolean))];
+    const { error: clearError } = await supabase.from('logistica_btg_distribuicao').delete().not('id', 'is', null);
+    if (clearError) throw clearError;
+    const distPayload = list.map(r => ({
+      numero_os:   clean(r.os) || null,
+      colaborador: clean(r.colaborador) || null,
+      supervisao:  clean(r.supervisao) || null,
+      lote:        fnum(r.lote),
+      remanescente:fnum(r.remanescente),
+      updated_at:  new Date().toISOString(),
+    }));
+    for (let i = 0; i < distPayload.length; i += 500) {
+      const { error } = await supabase.from('logistica_btg_distribuicao').insert(distPayload.slice(i, i + 500));
+      if (error) throw error;
+    }
+  } catch (err) { console.warn('Não foi possível salvar Distribuição no banco:', err?.message || err); }
+
+  // 2. Atualiza operacional_os_colaboradores com os nomes da Distribuição
+  try {
+    const numeros = [...new Set(list.map(r => String(r.os || '').trim()).filter(Boolean))];
     const osMap = new Map();
     for (let i = 0; i < numeros.length; i += 800) {
       const { data, error } = await supabase.from('operacional_os').select('id, numero_os').in('numero_os', numeros.slice(i, i + 800));
       if (error) throw error;
-      (data || []).forEach((item) => osMap.set(String(item.numero_os), item.id));
+      (data || []).forEach(item => osMap.set(String(item.numero_os), item.id));
     }
     const payload = [];
     const seen = new Set();
@@ -186,7 +206,31 @@ async function persistDistribuicaoRows(rows) {
       const { error } = await supabase.from('operacional_os_colaboradores').insert(payload.slice(i, i + 500));
       if (error) throw error;
     }
-  } catch (err) { console.warn('Não foi possível salvar Distribuição de O.S. no banco:', err?.message || err); }
+  } catch (err) { console.warn('Não foi possível salvar colaboradores no banco:', err?.message || err); }
+}
+
+async function loadSavedDistData() {
+  try {
+    const { data, error } = await supabase
+      .from('logistica_btg_distribuicao')
+      .select('numero_os, colaborador, supervisao, lote, remanescente')
+      .order('id', { ascending: true })
+      .limit(20000);
+    if (error) throw error;
+    const rows = (data || []).map(item => ({
+      os:          clean(item.numero_os),
+      colaborador: clean(item.colaborador) || '—',
+      supervisao:  clean(item.supervisao) || '—',
+      lote:        item.lote,
+      remanescente:item.remanescente,
+      fonte:       'Distribuição OS',
+    }));
+    if (rows.length) {
+      state.distRows = rows;
+      state.loaded.dist = `Banco de dados (${rows.length} linhas BTG)`;
+      state.mode = 'xlsx';
+    }
+  } catch (err) { console.warn('Distribuição BTG salva ainda não disponível:', err?.message || err); }
 }
 async function persistBtgRows(rows) {
   const list = rows || [];
@@ -397,6 +441,7 @@ async function loadDbData(el) {
   }
   await loadAjustadosDb();
   await loadSavedBtgData();
+  await loadSavedDistData();
   if (state.mode === 'db') state.finalRows = state.dbRows;
 }
 
