@@ -191,6 +191,15 @@ async function loadSavedBtgData() {
     if (rows.length) state.mode = 'xlsx';
   } catch (err) { console.warn('Solicitações BTG salvas ainda não disponíveis:', err?.message || err); }
 }
+async function upsertOperacionalOsAberta(rows) {
+  const list = (rows || []).filter(r => norm(r.situacao || '') === 'ABERTA');
+  if (!list.length) return;
+  for (let i = 0; i < list.length; i += 500) {
+    const { error } = await supabase.from('operacional_os').upsert(list.slice(i, i + 500), { onConflict: 'numero_os', ignoreDuplicates: false });
+    if (error) throw new Error(`Erro ao atualizar OS abertas: ${error.message}`);
+  }
+}
+
 async function persistAllOsRows(rows) {
   // Deduplica por numero_os (UNIQUE constraint) — mantém última ocorrência
   const seen = new Map();
@@ -222,6 +231,7 @@ async function persistDistribuicaoRows(rows) {
       supervisao:  clean(r.supervisao) || null,
       lote:        fnum(r.lote),
       remanescente:fnum(r.remanescente),
+      financeiro:  clean(r.financeiro) || null,
       updated_at:  new Date().toISOString(),
     }));
     for (let i = 0; i < distPayload.length; i += 500) {
@@ -239,7 +249,7 @@ async function loadSavedDistData() {
   try {
     const { data, error } = await supabase
       .from('logistica_btg_distribuicao')
-      .select('numero_os, contrato, colaborador, supervisao, lote, remanescente')
+      .select('numero_os, contrato, colaborador, supervisao, lote, remanescente, financeiro')
       .order('id', { ascending: true })
       .limit(20000);
     if (error) throw error;
@@ -250,6 +260,7 @@ async function loadSavedDistData() {
       supervisao:  clean(item.supervisao) || '—',
       lote:        item.lote,
       remanescente:item.remanescente,
+      financeiro:  clean(item.financeiro) || '',
       fonte:       'Distribuição OS',
     }));
     if (rows.length) {
@@ -324,6 +335,7 @@ function renderStatusButtons(el) {
   const items = [
     ['todos', 'Todos'],
     ['ok', 'OK'],
+    ['faturada', 'Faturada'],
     ['pendencia cliente', 'Pendência Cliente'],
     ['verificar', 'Verificar'],
     ['falta colaborador', 'Falta Colaborador'],
@@ -387,6 +399,7 @@ function statusClass(s) {
   if (n === 'PENDENCIA CLIENTE') return 'status-pendencia';
   if (n === 'FALTA COLABORADOR') return 'status-falta';
   if (n === 'AJUSTADO') return 'status-info';
+  if (n === 'FATURADA') return 'status-faturada';
   return 'status-ok';
 }
 
@@ -522,29 +535,38 @@ function parseDistribuicao(wb) {
       const clienteStr = String(r[ci.cliente] ?? '');
       if (!osNum) continue;
 
-      // Todas as OS → operacional_os
-      allOsRows.push({
-        numero_os:          osNum,
-        situacao:           ci.situacao >= 0   ? clean(String(r[ci.situacao]   ?? '')) || null : null,
-        financeiro:         ci.financeiro >= 0 ? clean(String(r[ci.financeiro] ?? '')) || null : null,
-        data_os:            ci.data >= 0       ? excelDateBtg(r[ci.data]) : null,
-        servico:            ci.servico >= 0    ? clean(String(r[ci.servico]    ?? '')) || null : null,
-        cliente:            clean(clienteStr) || null,
-        embarque:           ci.embarque >= 0   ? clean(String(r[ci.embarque]   ?? '')) || null : null,
-        destino:            ci.destino >= 0    ? clean(String(r[ci.destino]    ?? '')) || null : null,
-        supervisao:         supIdx >= 0        ? clean(String(r[supIdx]        ?? '')) || null : null,
-        contrato:           ci.contrato >= 0   ? clean(String(r[ci.contrato]   ?? '')) || null : null,
-        produto:            ci.produto >= 0    ? clean(String(r[ci.produto]    ?? '')) || null : null,
-        lote:               fnum(r[ci.lote]),
-        embarcado:          ci.embarcado >= 0  ? fnum(r[ci.embarcado]) : 0,
-        remanescente:       fnum(r[ci.remanescente]),
-        status_gestor:      null,
-        status_conferencia: 'PENDENTE',
-        raw:                {},
-        updated_at:         now,
-      });
+      const situacaoStr  = ci.situacao  >= 0 ? clean(String(r[ci.situacao]  ?? '')) : '';
+      const financeiroStr= ci.financeiro>= 0 ? clean(String(r[ci.financeiro]?? '')) : '';
+      const situacaoN    = norm(situacaoStr);
 
-      // A Distribuição é geral: não filtra cliente. Ela só identifica colaborador por O.S.
+      // Cancelada e Bonificada são desconsideradas completamente
+      if (situacaoN === 'CANCELADA' || situacaoN === 'BONIFICADA') continue;
+
+      // Apenas Aberta atualiza a lista de OS no banco
+      if (situacaoN === 'ABERTA') {
+        allOsRows.push({
+          numero_os:          osNum,
+          situacao:           situacaoStr || null,
+          financeiro:         financeiroStr || null,
+          data_os:            ci.data >= 0       ? excelDateBtg(r[ci.data]) : null,
+          servico:            ci.servico >= 0    ? clean(String(r[ci.servico]    ?? '')) || null : null,
+          cliente:            clean(clienteStr) || null,
+          embarque:           ci.embarque >= 0   ? clean(String(r[ci.embarque]   ?? '')) || null : null,
+          destino:            ci.destino >= 0    ? clean(String(r[ci.destino]    ?? '')) || null : null,
+          supervisao:         supIdx >= 0        ? clean(String(r[supIdx]        ?? '')) || null : null,
+          contrato:           ci.contrato >= 0   ? clean(String(r[ci.contrato]   ?? '')) || null : null,
+          produto:            ci.produto >= 0    ? clean(String(r[ci.produto]    ?? '')) || null : null,
+          lote:               fnum(r[ci.lote]),
+          embarcado:          ci.embarcado >= 0  ? fnum(r[ci.embarcado]) : 0,
+          remanescente:       fnum(r[ci.remanescente]),
+          status_gestor:      null,
+          status_conferencia: 'PENDENTE',
+          raw:                {},
+          updated_at:         now,
+        });
+      }
+
+      // Distribuição: todas as OS não canceladas/bonificadas, com financeiro para detectar Faturada
       distRows.push({
         os:          osNum,
         contrato:    ci.contrato >= 0 ? contratoNorm(clean(String(r[ci.contrato] ?? ''))) : '',
@@ -552,6 +574,7 @@ function parseDistribuicao(wb) {
         supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
         lote:        r[ci.lote],
         remanescente:r[ci.remanescente],
+        financeiro:  financeiroStr,
         fonte:       'Distribuição OS',
       });
     }
@@ -697,8 +720,7 @@ async function handleFiles(files, el) {
     el.feedback.textContent = 'Aviso: planilha de Distribuição carregada mas nenhuma O.S. foi lida. Verifique o formato do arquivo no console.';
   }
 
-  // Importante: este menu NÃO atualiza operacional_os.
-  // A Lista de OS vem do importador que alimenta a OS do Gestor.
+  await upsertOperacionalOsAberta(state.allOsRows);
   await persistDistribuicaoRows(state.distRows);
   await persistBtgRows(state.btgRows);
 
@@ -789,7 +811,11 @@ async function reconcile(el) {
     if (isContratoBtg(c)) coveredContratos.add(c);
 
     // 1a. Busca na Lista de OS pelo contrato do relatório BTG
-    const dbRows = isContratoBtg(c) ? (dbByContrato.get(c) || []) : [];
+    // Normalização: se último dígito = 1 (ex: P36259.001), tenta também com 0 (P36259.000)
+    let dbRows = isContratoBtg(c) ? (dbByContrato.get(c) || []) : [];
+    if (!dbRows.length && isContratoBtg(c) && c.charAt(c.length - 1) === '1') {
+      dbRows = dbByContrato.get(c.slice(0, -1) + '0') || [];
+    }
     const inListaOS = dbRows.length > 0;
     for (const db of dbRows) coveredOsSet.add(String(db.os));
 
@@ -800,11 +826,13 @@ async function reconcile(el) {
     }
     const uniqDist = uniqBy(distRows, r => norm(r.colaborador));
     const hasColab = uniqDist.some(r => r.colaborador && r.colaborador !== '—');
+    const isFaturada = uniqDist.some(r => norm(r.financeiro || '') === 'FATURADA');
 
     let status;
-    if (!inListaOS)     status = 'VERIFICAR';
-    else if (!hasColab) status = 'FALTA COLABORADOR';
-    else                status = 'OK';
+    if (!inListaOS)      status = 'VERIFICAR';
+    else if (isFaturada) status = 'FATURADA';
+    else if (!hasColab)  status = 'FALTA COLABORADOR';
+    else                 status = 'OK';
 
     // Distribuição é a fonte primária do colaborador (classificador)
     const pessoas = [];
@@ -945,6 +973,8 @@ function injectStyles() {
     .btg-status.status-pendencia{background:rgba(234,179,8,.12);color:#fde047;border-color:rgba(234,179,8,.3)}
     .btg-status.status-falta{background:rgba(249,115,22,.13);color:#fdba74;border-color:rgba(249,115,22,.3)}
     .btg-status.status-info{background:rgba(59,130,246,.14);color:#93c5fd;border-color:rgba(59,130,246,.28)}
+    .btg-status.status-faturada{background:rgba(139,92,246,.14);color:#c4b5fd;border-color:rgba(139,92,246,.28)}
+    .btg-row.status-faturada td{background:rgba(139,92,246,.04)}
     .btg-row.status-verificar td{background:rgba(239,68,68,.04)}
     .btg-row.status-pendencia td{background:rgba(234,179,8,.04)}
     .btg-row.status-falta td{background:rgba(249,115,22,.04)}
