@@ -194,8 +194,33 @@ async function loadSavedBtgData() {
 async function upsertOperacionalOsAberta(rows) {
   const list = (rows || []).filter(r => norm(r.situacao || '') === 'ABERTA');
   if (!list.length) return;
-  for (let i = 0; i < list.length; i += 500) {
-    const { error } = await supabase.from('operacional_os').upsert(list.slice(i, i + 500), { onConflict: 'numero_os', ignoreDuplicates: false });
+
+  // Busca quais OS já existem para fazer só UPDATE (evita violar NOT NULL de colunas não fornecidas)
+  const osNums = list.map(r => r.numero_os).filter(Boolean);
+  const { data: existing } = await supabase.from('operacional_os').select('numero_os').in('numero_os', osNums);
+  const existingSet = new Set((existing || []).map(r => r.numero_os));
+  const toUpdate = list.filter(r => existingSet.has(r.numero_os));
+  if (!toUpdate.length) return;
+
+  for (let i = 0; i < toUpdate.length; i += 500) {
+    const payload = toUpdate.slice(i, i + 500).map(r => ({
+      numero_os:    r.numero_os,
+      contrato:     r.contrato,
+      situacao:     r.situacao,
+      financeiro:   r.financeiro,
+      data_os:      r.data_os,
+      servico:      r.servico,
+      cliente:      r.cliente,
+      embarque:     r.embarque,
+      destino:      r.destino,
+      supervisao:   r.supervisao,
+      produto:      r.produto,
+      lote:         r.lote,
+      embarcado:    r.embarcado,
+      remanescente: r.remanescente,
+      updated_at:   r.updated_at,
+    }));
+    const { error } = await supabase.from('operacional_os').upsert(payload, { onConflict: 'numero_os', ignoreDuplicates: false });
     if (error) throw new Error(`Erro ao atualizar OS abertas: ${error.message}`);
   }
 }
@@ -720,7 +745,8 @@ async function handleFiles(files, el) {
     el.feedback.textContent = 'Aviso: planilha de Distribuição carregada mas nenhuma O.S. foi lida. Verifique o formato do arquivo no console.';
   }
 
-  await upsertOperacionalOsAberta(state.allOsRows);
+  try { await upsertOperacionalOsAberta(state.allOsRows); }
+  catch (err) { console.warn('upsertOperacionalOsAberta:', err?.message || err); }
   await persistDistribuicaoRows(state.distRows);
   await persistBtgRows(state.btgRows);
 
