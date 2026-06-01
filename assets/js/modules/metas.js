@@ -919,6 +919,30 @@
     return Array.from(map.values()).sort((a, b) => String(a.regional || '').localeCompare(String(b.regional || ''), 'pt-BR'));
   }
 
+  function contarDiasUteisAte(ano, mes, ateDia) {
+    let total = 0;
+    for (let d = 1; d <= ateDia; d++) {
+      const dow = new Date(ano, mes - 1, d).getDay();
+      if (dow !== 0 && dow !== 6) total++;
+    }
+    return total;
+  }
+
+  function projetarProducaoMes(rows, ano, mes) {
+    const hoje = new Date();
+    const ultimoDia = new Date(ano, mes, 0).getDate();
+    const ateDia = (ano === hoje.getFullYear() && mes === hoje.getMonth() + 1)
+      ? Math.min(hoje.getDate(), ultimoDia)
+      : ultimoDia;
+
+    const diasDecorridos = contarDiasUteisAte(ano, mes, ateDia);
+    const diasTotais = contarDiasUteisAte(ano, mes, ultimoDia);
+    const fator = diasDecorridos > 0 ? diasTotais / diasDecorridos : 1;
+
+    const producaoTotal = rows.reduce((acc, row) => acc + Number(row.produzido_tons || 0), 0);
+    return Math.round(producaoTotal * fator * 100) / 100;
+  }
+
   function calcularSugestoesDistribuicao(rows, totalEstimado) {
     const total = Number(totalEstimado || 0);
     if (!rows.length || !total) return new Map();
@@ -1247,7 +1271,7 @@
             <label>Valor estimado do mês</label>
             <input class="metas-edit-input" data-metas-estimativa type="number" step="0.01" min="0" value="${escapeHtml(state.metaEstimativa)}" placeholder="Ex.: 1000000" ${fechado ? 'disabled' : ''} />
             <p class="metas-config-hint">
-              Informe a meta total do mês e clique em sugerir. A distribuição é proporcional à produção atual de cada coordenação; se ainda não houver produção, divide igualmente.
+              Clique em "Sugerir distribuição" para projetar automaticamente a produção do mês com base nos dias úteis decorridos. O total calculado será preenchido aqui e distribuído proporcionalmente por coordenação. Você também pode informar um valor manualmente antes de clicar.
             </p>
           </div>
           <button class="metas-btn secondary" type="button" data-metas-suggest ${fechado ? 'disabled' : ''}>Sugerir distribuição</button>
@@ -1825,10 +1849,22 @@
       suggestBtn.addEventListener('click', () => {
         const input = container.querySelector('[data-metas-estimativa]');
         state.metaEstimativa = input ? input.value : state.metaEstimativa;
+
         if (!Number(state.metaEstimativa || 0)) {
-          alert('Informe o valor estimado do mês para sugerir a distribuição.');
-          return;
+          const rows = mergeCoordenacoes(state);
+          if (!rows.length) {
+            alert('Sem dados de produção disponíveis para gerar sugestão.');
+            return;
+          }
+          const projecao = projetarProducaoMes(rows, Number(state.ano), Number(state.mes));
+          if (!projecao) {
+            alert('Sem produção registrada no mês. Informe o valor estimado manualmente ou importe o Resultado Diário.');
+            return;
+          }
+          state.metaEstimativa = String(projecao);
+          if (input) input.value = state.metaEstimativa;
         }
+
         rerender();
       });
     }
