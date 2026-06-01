@@ -137,6 +137,7 @@ function detectFileType(wb) {
     for (const row of raw.slice(0, 50)) {
       const r = norm(row.map(c => String(c ?? '')).join(' '));
       if (r.includes('FUNCION') && r.includes('REMANESCENTE') && (r.includes('O S') || r.includes('OS'))) return 'distribuicao';
+      if (r.includes('SITUAC') && r.includes('CONTRATO') && r.includes('REMANESCENTE') && !r.includes('FUNCION') && !r.includes('CLASSIFICAD')) return 'listaOs';
       if (r.includes('ORDEM') && r.includes('FRETE') && r.includes('CONTRATO')) return 'btg';
       if (r.includes('ORDEM') && r.includes('SERVIC') && r.includes('CONTRATO')) return 'btg';
       if (r.includes('CLASSIFICADOR') && r.includes('DESIGNADO')) return 'btg';
@@ -152,6 +153,9 @@ const state = {
   dbRows: [],
   distRows: null,
   allOsRows: null,
+  listaOsRows: null,
+  listaOsMap: null,
+  listaOsMapByContrato: null,
   btgRows: null,
   btgMap: null,
   finalRows: [],
@@ -159,7 +163,7 @@ const state = {
   busca: '',
   filtroStatus: 'todos',
   sort: { col: 'os', dir: 'asc' },
-  loaded: { dist: null, btg: null },
+  loaded: { dist: null, btg: null, listaOs: null },
   ajustados: loadAjustados(),
 };
 
@@ -349,10 +353,13 @@ function thHtml(col, label) {
 function renderChips(el) {
   const distLoaded = !!state.loaded.dist;
   const btgLoaded = !!state.loaded.btg;
+  const listaOsLoaded = !!state.loaded.listaOs;
   el.chipDist.className = `btg-chip-file ${distLoaded ? 'loaded' : ''}`;
   el.chipBtg.className = `btg-chip-file ${btgLoaded ? 'loaded' : ''}`;
+  el.chipListaOs.className = `btg-chip-file ${listaOsLoaded ? 'loaded' : ''}`;
   el.chipDist.textContent = distLoaded ? `Distribuição: ${state.loaded.dist}` : 'Distribuição de O.S. — aguardando';
   el.chipBtg.textContent = btgLoaded ? `Relatório BTG: ${state.loaded.btg}` : 'Relatório BTG — aguardando';
+  el.chipListaOs.textContent = listaOsLoaded ? `Lista OS: ${state.loaded.listaOs}` : 'Lista de O.S. — aguardando';
 }
 
 function renderStatusButtons(el) {
@@ -361,8 +368,10 @@ function renderStatusButtons(el) {
     ['todos', 'Todos'],
     ['ok', 'OK'],
     ['faturada', 'Faturada'],
+    ['finalizada', 'Finalizada'],
     ['pendencia cliente', 'Pendência Cliente'],
     ['verificar', 'Verificar'],
+    ['cancelada', 'Cancelada'],
     ['falta colaborador', 'Falta Colaborador'],
     ['ajustado', 'Ajustado'],
   ];
@@ -425,6 +434,8 @@ function statusClass(s) {
   if (n === 'FALTA COLABORADOR') return 'status-falta';
   if (n === 'AJUSTADO') return 'status-info';
   if (n === 'FATURADA') return 'status-faturada';
+  if (n === 'CANCELADA') return 'status-cancelada';
+  if (n === 'FINALIZADA') return 'status-finalizada';
   return 'status-ok';
 }
 
@@ -664,6 +675,39 @@ function parseBtg(wb) {
   return { rows, map };
 }
 
+function parseListaOs(wb) {
+  const rows = [];
+  const byOs = new Map();
+  const byContrato = new Map();
+  for (const wsName of wb.SheetNames) {
+    const raw = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: '' });
+    if (!raw.length) continue;
+    const hIdx = findHeaderRow(raw, ['SITUAC', 'CONTRATO']);
+    const h = raw[hIdx] || [];
+    const ci = {
+      situacao:     colIndex(h, [c => c.includes('SITUAC')]),
+      financeiro:   colIndex(h, [c => c.includes('FINANC')]),
+      os:           colIndex(h, [c => c === 'O S' || c === 'OS', c => c.includes('O S')]),
+      contrato:     colIndex(h, [c => c === 'CONTRATO']),
+      supervisao:   colIndex(h, [c => c.includes('SUPERVIS')]),
+      lote:         colIndex(h, [c => c === 'LOTE']),
+      remanescente: colIndex(h, [c => c.includes('REMANESCENTE') && !c.includes('PROD'), c => c.includes('REMANESCENTE')]),
+    };
+    if (ci.situacao < 0 || ci.os < 0) continue;
+    for (const r of raw.slice(hIdx + 1)) {
+      const osNum = clean(String(r[ci.os] ?? ''));
+      const situacao = ci.situacao >= 0 ? clean(String(r[ci.situacao] ?? '')) : '';
+      if (!osNum || !situacao) continue;
+      const contrato = ci.contrato >= 0 ? contratoNorm(clean(String(r[ci.contrato] ?? ''))) : '';
+      const row = { os: osNum, contrato, situacao, financeiro: ci.financeiro >= 0 ? clean(String(r[ci.financeiro] ?? '')) : '', supervisao: ci.supervisao >= 0 ? clean(String(r[ci.supervisao] ?? '')) || '—' : '—', lote: ci.lote >= 0 ? r[ci.lote] : 0, remanescente: ci.remanescente >= 0 ? r[ci.remanescente] : 0, fonte: 'Lista OS' };
+      rows.push(row);
+      byOs.set(String(osNum), row);
+      if (contrato && isContratoBtg(contrato)) byContrato.set(contrato, row);
+    }
+  }
+  return { rows, byOs, byContrato };
+}
+
 // Corrige o atributo dimension de planilhas exportadas com range errado (ex.: portal BTG).
 // Sem isso, sheet_to_json usa A1:C1 como limite e ignora o restante dos dados.
 function fixSheetDimensions(wb) {
@@ -705,6 +749,13 @@ async function processFile(file, el) {
       for (const [k, v] of Object.entries(parsed.map)) state.btgMap[k] = v;
       state.loaded.btg += ` + ${file.name} (${parsed.rows.length} sol.)`;
     }
+  } else if (tipo === 'listaOs') {
+    const parsed = parseListaOs(wb);
+    console.log(`[BTG] Lista OS: ${parsed.rows.length} OS`);
+    state.listaOsRows = parsed.rows;
+    state.listaOsMap = parsed.byOs;
+    state.listaOsMapByContrato = parsed.byContrato;
+    state.loaded.listaOs = `${file.name} (${parsed.rows.length} OS)`;
   } else {
     console.warn(`[BTG] Arquivo não reconhecido: ${file.name} | sheets: ${wb.SheetNames.join(', ')}`);
     throw new Error(`Arquivo "${file.name}" não reconhecido.`);
@@ -756,6 +807,10 @@ async function handleFiles(files, el) {
   const uploadBtgLoaded  = state.loaded.btg;
   const uploadDistRows   = state.distRows;
   const uploadDistLoaded = state.loaded.dist;
+  const uploadListaOsRows = state.listaOsRows;
+  const uploadListaOsMap = state.listaOsMap;
+  const uploadListaOsMapByContrato = state.listaOsMapByContrato;
+  const uploadListaOsLoaded = state.loaded.listaOs;
 
   el.dropZone.classList.remove('btg-loading');
   await loadDbData(el);
@@ -769,6 +824,12 @@ async function handleFiles(files, el) {
   if (uploadBtgLoaded)  state.loaded.btg  = uploadBtgLoaded;
   if (uploadDistRows?.length && !state.distRows?.length) state.distRows = uploadDistRows;
   if (uploadDistLoaded) state.loaded.dist = uploadDistLoaded;
+  if (uploadListaOsRows?.length && !state.listaOsRows?.length) {
+    state.listaOsRows = uploadListaOsRows;
+    state.listaOsMap = uploadListaOsMap;
+    state.listaOsMapByContrato = uploadListaOsMapByContrato;
+  }
+  if (uploadListaOsLoaded) state.loaded.listaOs = uploadListaOsLoaded;
 
   await reconcile(el);
 }
@@ -860,6 +921,18 @@ async function reconcile(el) {
     else if (!hasColab)  status = 'FALTA COLABORADOR';
     else                 status = 'OK';
 
+    // Override com situação da Lista de OS (Cancelada / Finalizada / Bonificada)
+    if (state.listaOsMap || state.listaOsMapByContrato) {
+      const listaRow = (isContratoBtg(c) && state.listaOsMapByContrato?.get(c))
+                    || (dbRows[0]?.os != null && state.listaOsMap?.get(String(dbRows[0].os)));
+      if (listaRow) {
+        const sn = norm(listaRow.situacao);
+        if (sn === 'CANCELADA') status = 'CANCELADA';
+        else if (sn === 'FINALIZADA') status = 'FINALIZADA';
+        else if (sn === 'BONIFICADA') status = isContratoBtg(c) ? 'FINALIZADA' : 'VERIFICAR';
+      }
+    }
+
     // Distribuição é a fonte primária do colaborador (classificador)
     const pessoas = [];
     for (const dist of uniqDist) pushUnique(pessoas, dist.colaborador);
@@ -899,8 +972,20 @@ async function reconcile(el) {
       if (seenOsContrato.has(dedupeKey)) continue;
       seenOsContrato.add(dedupeKey);
 
+      let pendStatus = 'PENDENCIA CLIENTE';
+      if (state.listaOsMap || state.listaOsMapByContrato) {
+        const listaRow = (isContratoBtg(c) && state.listaOsMapByContrato?.get(c))
+                      || (db.os != null && state.listaOsMap?.get(String(db.os)));
+        if (listaRow) {
+          const sn = norm(listaRow.situacao);
+          if (sn === 'CANCELADA') pendStatus = 'CANCELADA';
+          else if (sn === 'FINALIZADA') pendStatus = 'FINALIZADA';
+          else if (sn === 'BONIFICADA') pendStatus = 'VERIFICAR';
+        }
+      }
+
       out.push(applyAdjusted({
-        status: 'PENDENCIA CLIENTE',
+        status: pendStatus,
         os: db.os,
         portal: '—',
         contrato: contratoLabel(c),
@@ -1001,6 +1086,10 @@ function injectStyles() {
     .btg-status.status-info{background:rgba(59,130,246,.14);color:#93c5fd;border-color:rgba(59,130,246,.28)}
     .btg-status.status-faturada{background:rgba(139,92,246,.14);color:#c4b5fd;border-color:rgba(139,92,246,.28)}
     .btg-row.status-faturada td{background:rgba(139,92,246,.04)}
+    .btg-status.status-cancelada{background:rgba(100,116,139,.14);color:#94a3b8;border-color:rgba(100,116,139,.3)}
+    .btg-row.status-cancelada td{background:rgba(100,116,139,.04)}
+    .btg-status.status-finalizada{background:rgba(34,197,94,.14);color:#86efac;border-color:rgba(34,197,94,.3)}
+    .btg-row.status-finalizada td{background:rgba(34,197,94,.04)}
     .btg-row.status-verificar td{background:rgba(239,68,68,.04)}
     .btg-row.status-pendencia td{background:rgba(234,179,8,.04)}
     .btg-row.status-falta td{background:rgba(249,115,22,.04)}
@@ -1040,6 +1129,7 @@ initProtectedPage('BTG — Logística', async (content) => {
         <div class="btg-file-chips">
           <div class="btg-chip-file" id="btgChipDist">Distribuição de O.S. — aguardando</div>
           <div class="btg-chip-file" id="btgChipBtg">Relatório BTG — aguardando</div>
+          <div class="btg-chip-file" id="btgChipListaOs">Lista de O.S. — aguardando</div>
         </div>
         <div class="btg-actions">
           <button class="btn btn-secondary" id="btgExportVerificar">Gerar XLS VERIFICAR</button>
@@ -1077,6 +1167,7 @@ initProtectedPage('BTG — Logística', async (content) => {
     fileInput: document.getElementById('btgFileInput'),
     chipDist: document.getElementById('btgChipDist'),
     chipBtg: document.getElementById('btgChipBtg'),
+    chipListaOs: document.getElementById('btgChipListaOs'),
     busca: document.getElementById('btgBusca'),
     statusFilters: document.getElementById('btgStatusFilters'),
     feedback: document.getElementById('btgFeedback'),
