@@ -972,20 +972,8 @@ async function reconcile(el) {
       if (seenOsContrato.has(dedupeKey)) continue;
       seenOsContrato.add(dedupeKey);
 
-      let pendStatus = 'PENDENCIA CLIENTE';
-      if (state.listaOsMap || state.listaOsMapByContrato) {
-        const listaRow = (isContratoBtg(c) && state.listaOsMapByContrato?.get(c))
-                      || (db.os != null && state.listaOsMap?.get(String(db.os)));
-        if (listaRow) {
-          const sn = norm(listaRow.situacao);
-          if (sn === 'CANCELADA') pendStatus = 'CANCELADA';
-          else if (sn === 'FINALIZADA') pendStatus = 'FINALIZADA';
-          else if (sn === 'BONIFICADA') pendStatus = 'VERIFICAR';
-        }
-      }
-
       out.push(applyAdjusted({
-        status: pendStatus,
+        status: 'PENDENCIA CLIENTE',
         os: db.os,
         portal: '—',
         contrato: contratoLabel(c),
