@@ -229,6 +229,7 @@ async function persistDistribuicaoRows(rows) {
       lote:        fnum(r.lote),
       remanescente:fnum(r.remanescente),
       financeiro:  clean(r.financeiro) || null,
+      prod_dia_os: r.prodDiaOs !== null && r.prodDiaOs !== undefined ? String(r.prodDiaOs) : null,
       updated_at:  new Date().toISOString(),
     }));
     for (let i = 0; i < distPayload.length; i += 500) {
@@ -276,7 +277,7 @@ async function loadSavedDistData() {
   try {
     const { data, error } = await supabase
       .from('logistica_btg_distribuicao')
-      .select('numero_os, contrato, colaborador, supervisao, lote, remanescente, financeiro')
+      .select('numero_os, contrato, colaborador, supervisao, lote, remanescente, financeiro, prod_dia_os')
       .order('id', { ascending: true })
       .limit(20000);
     if (error) throw error;
@@ -288,6 +289,9 @@ async function loadSavedDistData() {
       lote:        item.lote,
       remanescente:item.remanescente,
       financeiro:  clean(item.financeiro) || '',
+      prodDiaOs:   item.prod_dia_os !== null && item.prod_dia_os !== undefined
+                     ? (item.prod_dia_os === 'NHE' ? 'NHE' : fnum(item.prod_dia_os))
+                     : null,
       fonte:       'Distribuição OS',
     }));
     if (rows.length) {
@@ -861,7 +865,7 @@ async function handleFiles(files, el) {
     state.mode    = 'xlsx';
   }
   if (uploadBtgLoaded)  state.loaded.btg  = uploadBtgLoaded;
-  if (uploadDistRows?.length && !state.distRows?.length) state.distRows = uploadDistRows;
+  if (uploadDistRows?.length) state.distRows = uploadDistRows;
   if (uploadDistLoaded) state.loaded.dist = uploadDistLoaded;
   if (uploadListaOsRows?.length) {
     state.listaOsRows = uploadListaOsRows;
