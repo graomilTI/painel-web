@@ -147,6 +147,7 @@ const state = {
   filtroStatus: 'todos',
   sort: { col: 'os', dir: 'asc' },
   loaded: { dist: null, btg: null, listaOs: null },
+  uploadAfter17h: false,
 };
 
 
@@ -285,7 +286,7 @@ function sorted(rows) {
   const { col, dir } = state.sort;
   const f = dir === 'asc' ? 1 : -1;
   return [...rows].sort((a, b) => {
-    if (['lote', 'remanescente', 'os', 'qtde'].includes(col)) return (fnum(a[col]) - fnum(b[col])) * f;
+    if (['lote', 'remanescente', 'os', 'qtde', 'prodDiaOs'].includes(col)) return (fnum(a[col]) - fnum(b[col])) * f;
     return String(a[col] ?? '').localeCompare(String(b[col] ?? ''), 'pt-BR') * f;
   });
 }
@@ -340,6 +341,7 @@ function renderStatusButtons(el) {
     ['verificar', 'Verificar'],
     ['cancelada', 'Cancelada'],
     ['falta colaborador', 'Falta Colaborador'],
+    ['lançar nhe', 'Lançar NHE'],
   ];
   el.statusFilters.innerHTML = items.map(([key, label]) => `
     <button class="btg-filter-btn ${state.filtroStatus === key ? 'active' : ''}" data-status="${esc(key)}">
@@ -386,6 +388,7 @@ function render(el) {
           ${thHtml('supervisao', 'Supervisão')}
           ${thHtml('lote', 'Lote')}
           ${thHtml('remanescente', 'Remanescente')}
+          ${thHtml('prodDiaOs', 'Prod. Hoje')}
         </tr></thead>
         <tbody>${rows.map(rowHtml).join('')}</tbody>
       </table>
@@ -397,6 +400,7 @@ function statusClass(s) {
   if (n === 'VERIFICAR') return 'status-verificar';
   if (n === 'PENDENCIA CLIENTE') return 'status-pendencia';
   if (n === 'FALTA COLABORADOR') return 'status-falta';
+  if (n === 'LANCAR NHE') return 'status-nhe';
   if (n === 'FATURADA') return 'status-faturada';
   if (n === 'CANCELADA') return 'status-cancelada';
   if (n === 'FINALIZADA') return 'status-finalizada';
@@ -413,6 +417,9 @@ function rowHtml(r) {
   const checkinOff = norm(r.checkinDiario || '') === 'INEXISTENTE'
     ? `<span class="btg-checkin-off" title="Check-in diário: inexistente"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.657 16.657L13.414 20.9a2 2 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/><circle cx="12" cy="11" r="3"/><line x1="2" y1="2" x2="22" y2="22"/></svg></span>`
     : '';
+  const prodHoje = r.prodDiaOs !== null && r.prodDiaOs !== undefined
+    ? `<span class="btg-val" style="color:${fnum(r.prodDiaOs) <= 0 ? '#fca5a5' : '#86efac'}">${esc(fmt(r.prodDiaOs))}</span>`
+    : '<span style="color:#475569">—</span>';
   return `<tr class="btg-row ${statusClass(r.status)}">
     <td><span class="btg-status ${statusClass(r.status)}">${esc(r.status || 'OK')}</span></td>
     <td><span class="btg-os-num">${esc(r.os || '—')}</span>${checkinOff}</td>
@@ -422,6 +429,7 @@ function rowHtml(r) {
     <td><span class="btg-sup">${esc(r.supervisao || '—')}</span></td>
     <td><span class="btg-val">${esc(fmt(r.lote || r.qtde))}</span></td>
     <td><span class="btg-chip ${chip}">${esc(fmt(r.remanescente || r.qtde))}</span></td>
+    <td>${prodHoje}</td>
   </tr>`;
 }
 
@@ -521,6 +529,7 @@ function parseDistribuicao(wb) {
       contrato:    colIndex(h, [c => c === 'CONTRATO']),
       produto:     colIndex(h, [c => c === 'PRODUTO' || c.includes('PROD REMANESCENTE') || (c.includes('PROD') && !c.includes('REMANESCENTE'))]),
       embarcado:   colIndex(h, [c => c === 'EMBARCADO']),
+      prodDiaOs:   colIndex(h, [c => c === 'PROD DO DIA OS', c => c.includes('DIA') && c.endsWith('OS')]),
     };
     if (ci.os < 0) continue;
 
@@ -571,6 +580,7 @@ function parseDistribuicao(wb) {
         supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
         lote:        r[ci.lote],
         remanescente:r[ci.remanescente],
+        prodDiaOs:   ci.prodDiaOs >= 0 ? fnum(r[ci.prodDiaOs]) : null,
         financeiro:  financeiroStr,
         fonte:       'Distribuição OS',
       });
@@ -732,6 +742,7 @@ async function handleFiles(files, el) {
   state.btgRows = null;
   state.btgMap = null;
   state.loaded.btg = null;
+  state.uploadAfter17h = new Date().getHours() >= 17;
 
   el.feedback.textContent = 'Processando relatórios...';
   el.dropZone.classList.add('btg-loading');
@@ -891,6 +902,14 @@ async function reconcile(el) {
       }
     }
 
+    // LANÇAR NHE: prod hoje = 0 e upload após 17h
+    const allZeroProd1 = uniqDist.length > 0
+      && uniqDist.every(d => d.prodDiaOs !== null && d.prodDiaOs !== undefined && fnum(d.prodDiaOs) <= 0);
+    if (state.uploadAfter17h && allZeroProd1
+        && status !== 'CANCELADA' && status !== 'FINALIZADA' && status !== 'FATURADA') {
+      status = 'LANÇAR NHE';
+    }
+
     // Distribuição é a fonte primária do colaborador (classificador)
     const pessoas = [];
     for (const dist of uniqDist) pushUnique(pessoas, dist.colaborador);
@@ -912,6 +931,7 @@ async function reconcile(el) {
         lote: db?.lote || dist?.lote || btg.qtde,
         remanescente: db?.remanescente || dist?.remanescente || btg.qtde,
         qtde: btg.qtde,
+        prodDiaOs: dist?.prodDiaOs ?? null,
         checkinDiario: btg.checkinDiario || '',
         fonte: 'Relatório BTG',
         sheet: btg.sheet,
@@ -930,6 +950,7 @@ async function reconcile(el) {
       const dedupeKey = `${db.os}|${c}`;
       if (seenOsContrato.has(dedupeKey)) continue;
       seenOsContrato.add(dedupeKey);
+      coveredOsSet.add(String(db.os));
 
       out.push({
         status: 'PENDENCIA CLIENTE',
@@ -942,9 +963,60 @@ async function reconcile(el) {
         supervisao: db.supervisao || '—',
         lote: db.lote,
         remanescente: db.remanescente,
+        prodDiaOs: null,
         checkinDiario: '',
         fonte: 'db',
       });
+    }
+  }
+
+  // ── 3. OS da Distribuição não cobertas pelo BTG nem pelo banco ────────────
+  if (state.distRows?.length) {
+    const distOnlyByOs = new Map();
+    for (const dist of state.distRows) {
+      if (!dist.os || coveredOsSet.has(String(dist.os))) continue;
+      if (!distOnlyByOs.has(String(dist.os))) distOnlyByOs.set(String(dist.os), []);
+      distOnlyByOs.get(String(dist.os)).push(dist);
+    }
+    for (const [osNum, entries] of distOnlyByOs) {
+      const listaRow = state.listaOsMap?.get(String(osNum));
+      const contratoRaw = listaRow?.contrato && isContratoBtg(listaRow.contrato) ? listaRow.contrato : '';
+      const isFat = entries.some(d => norm(d.financeiro || '') === 'FATURADA');
+      const allZero3 = entries.length > 0
+        && entries.every(d => d.prodDiaOs !== null && d.prodDiaOs !== undefined && fnum(d.prodDiaOs) <= 0);
+      let baseStatus = 'VERIFICAR';
+      if (listaRow) {
+        const sn = norm(listaRow.situacao);
+        if (sn === 'CANCELADA') baseStatus = 'CANCELADA';
+        else if (sn === 'FINALIZADA' || sn === 'BONIFICADA') baseStatus = 'FINALIZADA';
+        else if (isFat) baseStatus = 'FATURADA';
+      }
+      const pessoas3 = [];
+      for (const d of entries) pushUnique(pessoas3, d.colaborador);
+      if (!pessoas3.length) pessoas3.push('—');
+      for (const pessoa of pessoas3) {
+        const d = entries.find(e => norm(e.colaborador) === norm(pessoa)) || entries[0];
+        let status3 = baseStatus;
+        if (state.uploadAfter17h && allZero3
+            && status3 !== 'CANCELADA' && status3 !== 'FINALIZADA' && status3 !== 'FATURADA') {
+          status3 = 'LANÇAR NHE';
+        }
+        out.push({
+          status: status3,
+          os: osNum,
+          portal: '—',
+          contrato: contratoRaw ? contratoLabel(contratoRaw) : '—',
+          contratoOriginal: contratoRaw,
+          tipoSolicitacao: 'DISTRIBUIÇÃO',
+          colaborador: pessoa || '—',
+          supervisao: d.supervisao || listaRow?.supervisao || '—',
+          lote: d.lote,
+          remanescente: d.remanescente,
+          prodDiaOs: d.prodDiaOs,
+          checkinDiario: '',
+          fonte: 'Distribuição OS',
+        });
+      }
     }
   }
 
@@ -965,6 +1037,7 @@ function exportVerificar() {
     Supervisão: r.supervisao || '',
     Lote: fnum(r.lote || r.qtde),
     Remanescente: fnum(r.remanescente || r.qtde),
+    'Prod. Hoje': r.prodDiaOs !== null && r.prodDiaOs !== undefined ? fnum(r.prodDiaOs) : '',
     Fonte: r.fonte || '',
     Aba: r.sheet || '',
     Linha: r.rowNumber || '',
@@ -1012,12 +1085,18 @@ function injectStyles() {
     .btg-checkin-off{display:inline-flex;align-items:center;color:#ef4444;margin-left:6px;vertical-align:middle;cursor:default}
     .btg-filter-btn b{margin-left:5px;color:#86efac}
     .btg-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.15);border-radius:16px;background:rgba(2,6,23,.25)}
-    .btg-table{width:100%;min-width:1120px;border-collapse:separate;border-spacing:0;table-layout:fixed;color:#e2e2f0}
-    .btg-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1;white-space:nowrap}
+    .btg-table{width:100%;min-width:860px;border-collapse:separate;border-spacing:0;table-layout:fixed;color:#e2e2f0}
+    .btg-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:7px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1;white-space:nowrap}
     .btg-table th:hover{color:#fff;background:#0b2116}
-    .btg-table td{padding:9px 12px;border-bottom:1px solid rgba(148,163,184,.1);vertical-align:middle;background:rgba(15,23,42,.22)}
+    .btg-table td{padding:6px 8px;border-bottom:1px solid rgba(148,163,184,.1);vertical-align:middle;background:rgba(15,23,42,.22)}
     .btg-row:hover td{background:rgba(22,101,52,.1)}
-    .btg-table td:nth-child(7),.btg-table td:nth-child(8),.btg-table th:nth-child(7),.btg-table th:nth-child(8){text-align:right}
+    .btg-table th:nth-child(1),.btg-table td:nth-child(1){width:112px}
+    .btg-table th:nth-child(2),.btg-table td:nth-child(2){width:72px}
+    .btg-table th:nth-child(3),.btg-table td:nth-child(3){width:66px}
+    .btg-table th:nth-child(4),.btg-table td:nth-child(4){width:100px}
+    .btg-table th:nth-child(5),.btg-table td:nth-child(5){width:150px}
+    .btg-table th:nth-child(6),.btg-table td:nth-child(6){width:118px}
+    .btg-table td:nth-child(7),.btg-table td:nth-child(8),.btg-table td:nth-child(9),.btg-table th:nth-child(7),.btg-table th:nth-child(8),.btg-table th:nth-child(9){text-align:right;width:72px}
     .btg-os-num{font-size:13px;font-weight:950;color:#f8fafc}
     .btg-contrato{font-size:12px;font-weight:800;color:#a7f3d0;font-family:monospace}
     .btg-row.status-danger .btg-contrato{color:#fecaca}
@@ -1040,10 +1119,12 @@ function injectStyles() {
     .btg-row.status-verificar td{background:rgba(239,68,68,.04)}
     .btg-row.status-pendencia td{background:rgba(234,179,8,.04)}
     .btg-row.status-falta td{background:rgba(249,115,22,.04)}
+    .btg-status.status-nhe{background:rgba(168,85,247,.14);color:#d8b4fe;border-color:rgba(168,85,247,.3)}
+    .btg-row.status-nhe td{background:rgba(168,85,247,.04)}
     .btg-small-ok{font-size:11px;color:#93c5fd;font-weight:800}
     .btg-empty{border:1px dashed rgba(148,163,184,.2);border-radius:16px;padding:24px;color:#94a3b8;text-align:center}
     .badge-info{background:rgba(59,130,246,.18);color:#93c5fd;border-color:rgba(59,130,246,.3)}
-    @media(max-width:700px){.btg-table{min-width:900px}}
+    @media(max-width:700px){.btg-table{min-width:800px}}
   `;
   document.head.appendChild(s);
 }
