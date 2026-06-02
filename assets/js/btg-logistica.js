@@ -368,6 +368,10 @@ function render(el) {
   el.exportVerificar.disabled = !naoOkCount;
   el.exportVerificar.textContent = naoOkCount ? `Gerar XLS pendências (${naoOkCount})` : 'Gerar XLS pendências';
 
+  const checkinCount = state.finalRows.filter(r => r.status === 'CHECK-IN').length;
+  el.enviarCheckin.disabled = !checkinCount;
+  el.enviarCheckin.textContent = checkinCount ? `Enviar Check-in (${checkinCount})` : 'Enviar Check-in';
+
   if (!rows.length) {
     const msg = state.mode === 'db' && !state.dbRows.length
       ? 'Nenhuma O.S. BTG encontrada no banco. Carregue os relatórios xlsx.'
@@ -992,6 +996,108 @@ function exportVerificar() {
   XLSX.writeFile(wb, `BTG_VERIFICAR_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
+// ── BotConversa Check-in ──────────────────────────────────────────────────────
+async function enviarCheckinBotConversa(el) {
+  const checkinRows = state.finalRows.filter(r => r.status === 'CHECK-IN');
+  if (!checkinRows.length) return;
+
+  const nomesUniq = [...new Set(
+    checkinRows.map(r => r.colaborador).filter(n => n && n !== '—')
+  )];
+
+  el.feedback.textContent = 'Buscando contatos no BotConversa...';
+  el.enviarCheckin.disabled = true;
+
+  const { data: contatos, error } = await supabase
+    .from('botconversa_contatos')
+    .select('nome, telefone, subscriber_id, cpf')
+    .eq('ativo', true);
+
+  el.enviarCheckin.disabled = false;
+
+  if (error) {
+    el.feedback.textContent = `Erro ao buscar contatos: ${error.message}`;
+    return;
+  }
+
+  const contatoMap = new Map();
+  for (const c of (contatos || [])) contatoMap.set(norm(c.nome || ''), c);
+
+  const encontrados = [];
+  const naoEncontrados = [];
+  for (const nome of nomesUniq) {
+    const c = contatoMap.get(norm(nome));
+    if (c && (c.subscriber_id || c.telefone)) encontrados.push({ nome, contato: c });
+    else naoEncontrados.push(nome);
+  }
+
+  showCheckinModal({ encontrados, naoEncontrados }, async () => {
+    if (!encontrados.length) return;
+    el.feedback.textContent = `Enfileirando ${encontrados.length} envio(s)...`;
+    try {
+      const payload = encontrados.map(({ contato }) => ({
+        tipo: 'flow',
+        nome: contato.nome,
+        cpf: contato.cpf || null,
+        telefone: contato.telefone || null,
+        subscriber_id: contato.subscriber_id || null,
+        flow_id: '8965976',
+        status: 'pendente',
+        origem: 'btg-logistica',
+      }));
+      const { error: filaErr } = await supabase.from('botconversa_fila').insert(payload);
+      if (filaErr) throw new Error(filaErr.message);
+      await supabase.functions.invoke('botconversa-send', {
+        body: { processar_fila: true, origem: 'btg-logistica' }
+      }).catch(() => {});
+      el.feedback.textContent =
+        `Check-in enviado para ${encontrados.length} colaborador(es).` +
+        (naoEncontrados.length ? ` Sem contato: ${naoEncontrados.join(', ')}.` : '');
+    } catch (err) {
+      el.feedback.textContent = `Erro ao enviar: ${err.message}`;
+    }
+  });
+}
+
+function showCheckinModal({ encontrados, naoEncontrados }, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.className = 'btg-modal-overlay';
+  overlay.innerHTML = `
+    <div class="btg-modal">
+      <h3 class="btg-modal-title">Enviar Check-in — BotConversa</h3>
+      <p class="btg-modal-sub">Fluxo <b>8965976</b> será disparado para os colaboradores com Check-in pendente.</p>
+      ${encontrados.length ? `
+        <div class="btg-modal-section">
+          <div class="btg-modal-label">Serão notificados (${encontrados.length})</div>
+          <div class="btg-modal-list">
+            ${encontrados.map(({ contato }) => `
+              <div class="btg-modal-item">
+                <span>${esc(contato.nome)}</span>
+                <span class="btg-modal-phone">${esc(contato.telefone || contato.subscriber_id || '—')}</span>
+              </div>`).join('')}
+          </div>
+        </div>` : ''}
+      ${naoEncontrados.length ? `
+        <div class="btg-modal-section">
+          <div class="btg-modal-label warn">Sem contato no BotConversa (${naoEncontrados.length})</div>
+          <div class="btg-modal-list warn">
+            ${naoEncontrados.map(n => `<div class="btg-modal-item warn">${esc(n)}</div>`).join('')}
+          </div>
+        </div>` : ''}
+      ${!encontrados.length ? `<div class="btg-modal-empty">Nenhum contato encontrado no BotConversa para os colaboradores com Check-in pendente.</div>` : ''}
+      <div class="btg-modal-actions">
+        <button class="btn btn-secondary btg-modal-cancel">Cancelar</button>
+        ${encontrados.length ? `<button class="btn btg-modal-confirm">Confirmar e Enviar</button>` : ''}
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  overlay.querySelector('.btg-modal-cancel').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  const confirmBtn = overlay.querySelector('.btg-modal-confirm');
+  if (confirmBtn) confirmBtn.onclick = () => { overlay.remove(); onConfirm(); };
+}
+
 // ── Drag-and-drop ─────────────────────────────────────────────────────────────
 function setupDragDrop(zone, input, el) {
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('btg-drag-over'); });
@@ -1069,6 +1175,26 @@ function injectStyles() {
     .btg-row.status-nhe td{background:rgba(168,85,247,.04)}
     .btg-status.status-nhe-ok{background:rgba(59,130,246,.14);color:#93c5fd;border-color:rgba(59,130,246,.28)}
     .btg-row.status-nhe-ok td{background:rgba(59,130,246,.04)}
+    .btg-btn-checkin{background:rgba(220,38,38,.15);color:#fca5a5;border:1px solid rgba(220,38,38,.35)}
+    .btg-btn-checkin:hover:not(:disabled){background:rgba(220,38,38,.3);color:#fff;border-color:rgba(220,38,38,.6)}
+    .btg-btn-checkin:disabled{opacity:.4;cursor:not-allowed}
+    .btg-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
+    .btg-modal{background:#0d0d18;border:1px solid rgba(52,211,153,.2);border-radius:20px;padding:24px;max-width:480px;width:100%;max-height:80vh;overflow-y:auto}
+    .btg-modal-title{font-size:16px;font-weight:800;color:#f1f5f9;margin:0 0 6px}
+    .btg-modal-sub{font-size:13px;color:#94a3b8;margin:0 0 16px}
+    .btg-modal-section{margin-bottom:14px}
+    .btg-modal-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#86efac;margin-bottom:6px}
+    .btg-modal-label.warn{color:#fbbf24}
+    .btg-modal-list{border:1px solid rgba(52,211,153,.12);border-radius:10px;overflow:hidden}
+    .btg-modal-list.warn{border-color:rgba(251,191,36,.2)}
+    .btg-modal-item{display:flex;justify-content:space-between;align-items:center;padding:7px 12px;font-size:12px;color:#e2e2f0;border-bottom:1px solid rgba(148,163,184,.07)}
+    .btg-modal-item:last-child{border-bottom:none}
+    .btg-modal-item.warn{color:#fde68a}
+    .btg-modal-phone{color:#94a3b8;font-size:11px;font-family:monospace}
+    .btg-modal-empty{padding:14px;color:#94a3b8;font-size:13px;text-align:center}
+    .btg-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+    .btg-modal-confirm{background:#dc2626;color:#fff;border-color:#dc2626}
+    .btg-modal-confirm:hover{background:#b91c1c}
     .btg-small-ok{font-size:11px;color:#93c5fd;font-weight:800}
     .btg-empty{border:1px dashed rgba(148,163,184,.2);border-radius:16px;padding:24px;color:#94a3b8;text-align:center}
     .badge-info{background:rgba(59,130,246,.18);color:#93c5fd;border-color:rgba(59,130,246,.3)}
@@ -1109,6 +1235,7 @@ initProtectedPage('BTG — Logística', async (content) => {
         </div>
         <div class="btg-actions">
           <button class="btn btn-secondary" id="btgExportVerificar">Gerar XLS VERIFICAR</button>
+          <button class="btn btn-secondary btg-btn-checkin" id="btgEnviarCheckin" disabled>Enviar Check-in</button>
         </div>
       </div>
 
@@ -1151,10 +1278,12 @@ initProtectedPage('BTG — Logística', async (content) => {
     count: document.getElementById('btgCount'),
     tableTitle: document.getElementById('btgTableTitle'),
     tableSubtitle: document.getElementById('btgTableSubtitle'),
+    enviarCheckin: document.getElementById('btgEnviarCheckin'),
   };
 
   el.busca.addEventListener('input', () => { state.busca = el.busca.value.trim(); render(el); });
   el.exportVerificar.addEventListener('click', exportVerificar);
+  el.enviarCheckin.addEventListener('click', () => enviarCheckinBotConversa(el));
 
   el.statusFilters.addEventListener('click', e => {
     const btn = e.target.closest('[data-status]');
