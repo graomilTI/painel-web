@@ -1054,7 +1054,12 @@ function exportVerificar() {
 // ── BotConversa Check-in ──────────────────────────────────────────────────────
 function fmtPhone(raw) {
   const d = String(raw || '').replace(/\D/g, '');
-  return (d.startsWith('55') && d.length >= 12) ? d : '55' + d;
+  if (!d) return '';
+  if (d.length === 13 && d.startsWith('55')) return d;   // já com DDI
+  if (d.length === 12 && d.startsWith('55')) return d;   // fixo com DDI
+  if (d.length === 11) return '55' + d;                   // DDD + celular
+  if (d.length === 10) return '55' + d;                   // DDD + fixo
+  return '55' + d;
 }
 
 async function enviarCheckinBotConversa(el) {
@@ -1097,26 +1102,24 @@ async function enviarCheckinBotConversa(el) {
 
   showCheckinModal({ encontrados, naoEncontrados }, async () => {
     if (!encontrados.length) return;
-    el.feedback.textContent = `Enfileirando ${encontrados.length} envio(s)...`;
+    el.feedback.textContent = `Enviando Check-in para ${encontrados.length} colaborador(es)...`;
     try {
-      const payload = encontrados.map(({ nomeReal, telefone }) => ({
-        tipo: 'flow',
-        nome: nomeReal,
-        cpf: null,
-        telefone,
-        subscriber_id: null,
-        flow_id: '8965976',
-        status: 'pendente',
-        origem: 'btg-logistica',
-      }));
-      const { error: filaErr } = await supabase.from('botconversa_fila').insert(payload);
-      if (filaErr) throw new Error(filaErr.message);
-      await supabase.functions.invoke('botconversa-send', {
-        body: { processar_fila: true, origem: 'btg-logistica' }
-      }).catch(() => {});
+      const { data, error } = await supabase.functions.invoke('btg-checkin-send', {
+        body: {
+          colaboradores: encontrados.map(({ nomeReal, telefone }) => ({
+            nome: nomeReal,
+            telefone,
+          })),
+        },
+      });
+      if (error) throw new Error(error.message);
+      const ok = data?.enviados ?? 0;
+      const total = data?.total ?? encontrados.length;
+      const falhas = (data?.results || []).filter(r => !r.ok).map(r => r.nome);
       el.feedback.textContent =
-        `Check-in enviado para ${encontrados.length} colaborador(es).` +
-        (naoEncontrados.length ? ` Sem cadastro: ${naoEncontrados.join(', ')}.` : '');
+        `Check-in enviado: ${ok}/${total} colaborador(es).` +
+        (naoEncontrados.length ? ` Sem cadastro: ${naoEncontrados.join(', ')}.` : '') +
+        (falhas.length ? ` Falhou: ${falhas.join(', ')}.` : '');
     } catch (err) {
       el.feedback.textContent = `Erro ao enviar: ${err.message}`;
     }
