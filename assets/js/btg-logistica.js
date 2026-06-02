@@ -4,7 +4,6 @@ import { supabase } from './supabaseClient.js';
 
 const BTG_RE = /BTG\s+PACTUAL\s+COMMODITIES\s+SERTRADING/i;
 const CONTRATO_BTG_RE = /^P\d{5}\.\d{3}$/i;
-const AJUSTADOS_KEY = 'btg_logistica_ajustados_v1';
 const BR = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function esc(v) {
@@ -94,22 +93,6 @@ function extractContratoFromRaw(raw) {
   return m ? contratoNorm(m[0]) : '';
 }
 
-function loadAjustados() {
-  try { return new Set(JSON.parse(localStorage.getItem(AJUSTADOS_KEY) || '[]')); }
-  catch { return new Set(); }
-}
-
-function saveAjustados(set) {
-  localStorage.setItem(AJUSTADOS_KEY, JSON.stringify([...set]));
-}
-
-function rowKey(r) {
-  const c = contratoNorm(r.contratoOriginal || r.contrato);
-  const pessoa = norm(r.colaborador || '');
-  const os = clean(r.os || '');
-  if (isContratoBtg(c)) return `contrato:${c}|os:${os}|colab:${pessoa}`;
-  return `linha:${norm(`${r.fonte}|${r.os}|${r.tipoSolicitacao}|${r.colaborador}|${r.lote}|${r.remanescente}`)}`;
-}
 
 function findHeaderRow(raw, checks, maxRows = 50) {
   for (let i = 0; i < Math.min(maxRows, raw.length); i++) {
@@ -164,25 +147,9 @@ const state = {
   filtroStatus: 'todos',
   sort: { col: 'os', dir: 'asc' },
   loaded: { dist: null, btg: null, listaOs: null },
-  ajustados: loadAjustados(),
 };
 
 
-async function loadAjustadosDb() {
-  try {
-    const { data, error } = await supabase.from('logistica_btg_ajustes').select('row_key, status').eq('status', 'AJUSTADO').limit(10000);
-    if (error) throw error;
-    for (const item of (data || [])) if (item?.row_key) state.ajustados.add(item.row_key);
-    saveAjustados(state.ajustados);
-  } catch (err) { console.warn('Ajustes BTG ainda não persistidos no banco:', err?.message || err); }
-}
-async function persistAjustado(rowKeyValue) {
-  if (!rowKeyValue) return;
-  try {
-    const { error } = await supabase.from('logistica_btg_ajustes').upsert({ row_key: rowKeyValue, status: 'AJUSTADO', updated_at: new Date().toISOString() }, { onConflict: 'row_key' });
-    if (error) throw error;
-  } catch (err) { console.warn('Não foi possível salvar OK/Ajustado no Supabase:', err?.message || err); }
-}
 async function loadSavedBtgData() {
   try {
     const { data, error } = await supabase.from('logistica_btg_solicitacoes').select('contrato_original, contrato_status, numero_os_relatorio, tipo_solicitacao, cliente, commodity, quantidade, aba, linha').order('linha', { ascending: true }).limit(10000);
@@ -373,7 +340,6 @@ function renderStatusButtons(el) {
     ['verificar', 'Verificar'],
     ['cancelada', 'Cancelada'],
     ['falta colaborador', 'Falta Colaborador'],
-    ['ajustado', 'Ajustado'],
   ];
   el.statusFilters.innerHTML = items.map(([key, label]) => `
     <button class="btg-filter-btn ${state.filtroStatus === key ? 'active' : ''}" data-status="${esc(key)}">
@@ -394,7 +360,7 @@ function render(el) {
   renderChips(el);
   renderStatusButtons(el);
 
-  const naoOkCount = state.finalRows.filter(r => r.status !== 'OK' && r.status !== 'AJUSTADO').length;
+  const naoOkCount = state.finalRows.filter(r => r.status !== 'OK').length;
   el.exportVerificar.disabled = !naoOkCount;
   el.exportVerificar.textContent = naoOkCount ? `Gerar XLS pendências (${naoOkCount})` : 'Gerar XLS pendências';
 
@@ -420,7 +386,6 @@ function render(el) {
           ${thHtml('supervisao', 'Supervisão')}
           ${thHtml('lote', 'Lote')}
           ${thHtml('remanescente', 'Remanescente')}
-          <th>Ações</th>
         </tr></thead>
         <tbody>${rows.map(rowHtml).join('')}</tbody>
       </table>
@@ -432,7 +397,6 @@ function statusClass(s) {
   if (n === 'VERIFICAR') return 'status-verificar';
   if (n === 'PENDENCIA CLIENTE') return 'status-pendencia';
   if (n === 'FALTA COLABORADOR') return 'status-falta';
-  if (n === 'AJUSTADO') return 'status-info';
   if (n === 'FATURADA') return 'status-faturada';
   if (n === 'CANCELADA') return 'status-cancelada';
   if (n === 'FINALIZADA') return 'status-finalizada';
@@ -446,19 +410,18 @@ function rowHtml(r) {
   const chip = rem <= 0 ? 'danger' : pct < 20 ? 'warn' : 'ok';
   const original = contratoNorm(r.contratoOriginal);
   const title = !isContratoBtg(original) && original ? ` title="Valor recebido: ${esc(original)}"` : '';
-  const okBtn = r.status === 'AJUSTADO'
-    ? `<button class="btg-ok-btn is-adjusted" data-ok="${esc(r.key)}" title="Linha já ajustada">Ajustado</button>`
-    : `<button class="btg-ok-btn" data-ok="${esc(r.key)}" title="Marcar esta linha como ajustada">OK</button>`;
+  const checkinOff = norm(r.checkinDiario || '') === 'INEXISTENTE'
+    ? `<span class="btg-checkin-off" title="Check-in diário: inexistente"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.657 16.657L13.414 20.9a2 2 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/><circle cx="12" cy="11" r="3"/><line x1="2" y1="2" x2="22" y2="22"/></svg></span>`
+    : '';
   return `<tr class="btg-row ${statusClass(r.status)}">
     <td><span class="btg-status ${statusClass(r.status)}">${esc(r.status || 'OK')}</span></td>
-    <td><span class="btg-os-num">${esc(r.os || '—')}</span></td>
+    <td><span class="btg-os-num">${esc(r.os || '—')}</span>${checkinOff}</td>
     <td><span class="btg-os-num" style="color:#94a3b8">${esc(r.portal || '—')}</span></td>
     <td><span class="btg-contrato"${title}>${esc(r.contrato)}</span></td>
     <td><span class="btg-colab">${esc(r.colaborador || '—')}</span></td>
     <td><span class="btg-sup">${esc(r.supervisao || '—')}</span></td>
     <td><span class="btg-val">${esc(fmt(r.lote || r.qtde))}</span></td>
     <td><span class="btg-chip ${chip}">${esc(fmt(r.remanescente || r.qtde))}</span></td>
-    <td>${okBtn}</td>
   </tr>`;
 }
 
@@ -506,7 +469,6 @@ async function loadDbData(el) {
           status: statusBase,
           fonte: 'db',
         };
-        base.key = rowKey(base);
         state.dbRows.push(base);
       }
     }
@@ -515,7 +477,6 @@ async function loadDbData(el) {
     state.dbRows = [];
     el.feedback.textContent = `Erro: ${err.message}`;
   }
-  await loadAjustadosDb();
   await loadSavedBtgData();
   await loadSavedDistData();
   if (state.mode === 'db') state.finalRows = state.dbRows;
@@ -641,6 +602,7 @@ function parseBtg(wb) {
       statusBtg:         colIndex(h, [c => c === 'STATUS']),
       tipo:              colIndex(h, [c => c.includes('TIPO') || c.includes('SOLICITACAO') || c.includes('OPERACAO') || c.includes('MOVIMENTO')]),
       cliente:           colIndex(h, [c => c.includes('CLIENTE') || c.includes('COMPRADOR') || c.includes('TOMADOR')]),
+      checkinDiario:     colIndex(h, [c => c.includes('CHECK') && c.includes('DIARI'), c => c === 'CHECK IN']),
     };
     if (ci.contrato < 0) continue;
 
@@ -661,6 +623,7 @@ function parseBtg(wb) {
         qtde:             r[ci.qtde],
         classificadorBtg: clean(r[ci.classificadorBtg]),
         statusBtg:        clean(r[ci.statusBtg]),
+        checkinDiario:    ci.checkinDiario >= 0 ? clean(r[ci.checkinDiario]).toLowerCase() : '',
         sheet:            wsName,
         rowNumber:        hIdx + idx + 2,
         fonte:            'Relatório BTG',
@@ -867,11 +830,6 @@ function distIndexes() {
   return { byOs, byContrato };
 }
 
-function applyAdjusted(row) {
-  row.key = row.key || rowKey(row);
-  if (state.ajustados.has(row.key)) row.status = 'AJUSTADO';
-  return row;
-}
 
 async function reconcile(el) {
   if (!state.distRows?.length && !state.btgRows?.length) {
@@ -942,7 +900,7 @@ async function reconcile(el) {
     for (const pessoa of pessoas) {
       const db   = dbRows.find(x => norm(x.colaborador) === norm(pessoa))   || dbRows[0]   || null;
       const dist = uniqDist.find(x => norm(x.colaborador) === norm(pessoa)) || uniqDist[0] || null;
-      out.push(applyAdjusted({
+      out.push({
         status,
         os: db?.os || dist?.os || '—',
         portal: btg.portal || '—',
@@ -954,10 +912,11 @@ async function reconcile(el) {
         lote: db?.lote || dist?.lote || btg.qtde,
         remanescente: db?.remanescente || dist?.remanescente || btg.qtde,
         qtde: btg.qtde,
+        checkinDiario: btg.checkinDiario || '',
         fonte: 'Relatório BTG',
         sheet: btg.sheet,
         rowNumber: btg.rowNumber,
-      }));
+      });
     }
   }
 
@@ -972,7 +931,7 @@ async function reconcile(el) {
       if (seenOsContrato.has(dedupeKey)) continue;
       seenOsContrato.add(dedupeKey);
 
-      out.push(applyAdjusted({
+      out.push({
         status: 'PENDENCIA CLIENTE',
         os: db.os,
         portal: '—',
@@ -983,8 +942,9 @@ async function reconcile(el) {
         supervisao: db.supervisao || '—',
         lote: db.lote,
         remanescente: db.remanescente,
+        checkinDiario: '',
         fonte: 'db',
-      }));
+      });
     }
   }
 
@@ -993,7 +953,7 @@ async function reconcile(el) {
 }
 
 function exportVerificar() {
-  const rows = state.finalRows.filter(r => r.status !== 'OK' && r.status !== 'AJUSTADO');
+  const rows = state.finalRows.filter(r => r.status !== 'OK');
   if (!rows.length) return;
   const data = rows.map(r => ({
     Status: r.status,
@@ -1047,9 +1007,9 @@ function injectStyles() {
     .btg-file-label{display:inline-flex;align-items:center;cursor:pointer;font-size:12px;white-space:nowrap}
     .btg-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
     .btg-status-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
-    .btg-filter-btn,.btg-ok-btn{border:1px solid rgba(52,211,153,.18);border-radius:999px;background:rgba(15,23,42,.62);color:#d1d5db;padding:7px 11px;font-size:12px;font-weight:800;cursor:pointer;transition:.15s}
-    .btg-filter-btn:hover,.btg-filter-btn.active,.btg-ok-btn:hover{border-color:rgba(52,211,153,.45);background:rgba(22,163,74,.18);color:#ecfdf5}
-    .btg-ok-btn.is-adjusted{border-color:rgba(59,130,246,.28);background:rgba(59,130,246,.14);color:#93c5fd}
+    .btg-filter-btn{border:1px solid rgba(52,211,153,.18);border-radius:999px;background:rgba(15,23,42,.62);color:#d1d5db;padding:7px 11px;font-size:12px;font-weight:800;cursor:pointer;transition:.15s}
+    .btg-filter-btn:hover,.btg-filter-btn.active{border-color:rgba(52,211,153,.45);background:rgba(22,163,74,.18);color:#ecfdf5}
+    .btg-checkin-off{display:inline-flex;align-items:center;color:#ef4444;margin-left:6px;vertical-align:middle;cursor:default}
     .btg-filter-btn b{margin-left:5px;color:#86efac}
     .btg-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.15);border-radius:16px;background:rgba(2,6,23,.25)}
     .btg-table{width:100%;min-width:1120px;border-collapse:separate;border-spacing:0;table-layout:fixed;color:#e2e2f0}
@@ -1071,7 +1031,6 @@ function injectStyles() {
     .btg-status.status-verificar{background:rgba(239,68,68,.13);color:#fca5a5;border-color:rgba(239,68,68,.3)}
     .btg-status.status-pendencia{background:rgba(234,179,8,.12);color:#fde047;border-color:rgba(234,179,8,.3)}
     .btg-status.status-falta{background:rgba(249,115,22,.13);color:#fdba74;border-color:rgba(249,115,22,.3)}
-    .btg-status.status-info{background:rgba(59,130,246,.14);color:#93c5fd;border-color:rgba(59,130,246,.28)}
     .btg-status.status-faturada{background:rgba(139,92,246,.14);color:#c4b5fd;border-color:rgba(139,92,246,.28)}
     .btg-row.status-faturada td{background:rgba(139,92,246,.04)}
     .btg-status.status-cancelada{background:rgba(100,116,139,.14);color:#94a3b8;border-color:rgba(100,116,139,.3)}
@@ -1183,15 +1142,7 @@ initProtectedPage('BTG — Logística', async (content) => {
       render(el);
       return;
     }
-    const ok = e.target.closest('[data-ok]');
-    if (ok) {
-      state.ajustados.add(ok.dataset.ok);
-      saveAjustados(state.ajustados);
-      await persistAjustado(ok.dataset.ok);
-      const row = state.finalRows.find(r => r.key === ok.dataset.ok);
-      if (row) row.status = 'AJUSTADO';
-      render(el);
-    }
+
   });
 
   el.recarregar.addEventListener('click', async () => {
