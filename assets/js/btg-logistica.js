@@ -339,6 +339,7 @@ function renderStatusButtons(el) {
     ['finalizada', 'Finalizada'],
     ['pendencia cliente', 'Pendência Cliente'],
     ['verificar', 'Verificar'],
+    ['check-in', 'Check-in'],
     ['cancelada', 'Cancelada'],
     ['falta colaborador', 'Falta Colaborador'],
     ['lançar nhe', 'Lançar NHE'],
@@ -401,6 +402,7 @@ function statusClass(s) {
   if (n === 'VERIFICAR') return 'status-verificar';
   if (n === 'PENDENCIA CLIENTE') return 'status-pendencia';
   if (n === 'FALTA COLABORADOR') return 'status-falta';
+  if (n === 'CHECK IN') return 'status-checkin';
   if (n === 'LANCAR NHE') return 'status-nhe';
   if (n === 'NHE OK') return 'status-nhe-ok';
   if (n === 'FATURADA') return 'status-faturada';
@@ -920,7 +922,7 @@ async function reconcile(el) {
       else if (situN === 'FINALIZADA' || situN === 'BONIFICADA') baseStatus = 'FINALIZADA';
       else if (financN === 'FATURADA')                           baseStatus = 'FATURADA';
       else if (situN === 'ABERTA' || situN === 'ATIVO' || situN === '')
-        baseStatus = !hasColab ? 'FALTA COLABORADOR' : checkinOk ? 'OK' : 'VERIFICAR';
+        baseStatus = !hasColab ? 'FALTA COLABORADOR' : checkinOk ? 'OK' : 'CHECK-IN';
       else                                                       baseStatus = 'VERIFICAR';
 
       const pessoas = [];
@@ -1050,6 +1052,8 @@ function injectStyles() {
     .btg-chip.warn{background:rgba(250,204,21,.12);color:#fde68a;border-color:rgba(250,204,21,.25)}
     .btg-chip.danger{background:rgba(239,68,68,.11);color:#fca5a5;border-color:rgba(239,68,68,.25)}
     .btg-status.status-verificar{background:rgba(239,68,68,.13);color:#fca5a5;border-color:rgba(239,68,68,.3)}
+    .btg-status.status-checkin{background:rgba(239,68,68,.18);color:#f87171;border-color:rgba(239,68,68,.45);font-weight:900}
+    .btg-row.status-checkin td{background:rgba(239,68,68,.06)}
     .btg-status.status-pendencia{background:rgba(234,179,8,.12);color:#fde047;border-color:rgba(234,179,8,.3)}
     .btg-status.status-falta{background:rgba(249,115,22,.13);color:#fdba74;border-color:rgba(249,115,22,.3)}
     .btg-status.status-faturada{background:rgba(139,92,246,.14);color:#c4b5fd;border-color:rgba(139,92,246,.28)}
