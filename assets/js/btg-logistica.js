@@ -242,6 +242,36 @@ async function persistDistribuicaoRows(rows) {
 
 }
 
+async function loadSavedListaOsData() {
+  try {
+    const { data, error } = await supabase
+      .from('logistica_btg_lista_os')
+      .select('numero_os, contrato, situacao, financeiro, supervisao, lote, remanescente')
+      .limit(20000);
+    if (error) throw error;
+    const rows = (data || []).map(item => ({
+      os:          clean(item.numero_os),
+      contrato:    contratoNorm(item.contrato || ''),
+      situacao:    clean(item.situacao)  || '',
+      financeiro:  clean(item.financeiro) || '',
+      supervisao:  clean(item.supervisao) || '—',
+      lote:        item.lote,
+      remanescente:item.remanescente,
+      fonte:       'Lista OS',
+    }));
+    if (rows.length) {
+      state.listaOsRows = rows;
+      state.listaOsMap = new Map(rows.map(r => [String(r.os), r]));
+      state.listaOsMapByContrato = new Map();
+      for (const r of rows) {
+        if (r.contrato && isContratoBtg(r.contrato)) state.listaOsMapByContrato.set(r.contrato, r);
+      }
+      state.loaded.listaOs = `Banco de dados (${rows.length} OS)`;
+      state.mode = 'xlsx';
+    }
+  } catch (err) { console.warn('Lista de OS BTG salva ainda não disponível:', err?.message || err); }
+}
+
 async function loadSavedDistData() {
   try {
     const { data, error } = await supabase
@@ -267,6 +297,29 @@ async function loadSavedDistData() {
     }
   } catch (err) { console.warn('Distribuição BTG salva ainda não disponível:', err?.message || err); }
 }
+async function persistListaOsRows(rows) {
+  const list = rows || [];
+  if (!list.length) return;
+  try {
+    const { error: clearError } = await supabase.from('logistica_btg_lista_os').delete().not('id', 'is', null);
+    if (clearError) throw clearError;
+    const payload = list.map(r => ({
+      numero_os:    clean(r.os)                     || null,
+      contrato:     contratoNorm(r.contrato || '')   || null,
+      situacao:     clean(r.situacao)               || null,
+      financeiro:   clean(r.financeiro)             || null,
+      supervisao:   clean(r.supervisao)             || null,
+      lote:         fnum(r.lote),
+      remanescente: fnum(r.remanescente),
+      updated_at:   new Date().toISOString(),
+    }));
+    for (let i = 0; i < payload.length; i += 500) {
+      const { error } = await supabase.from('logistica_btg_lista_os').insert(payload.slice(i, i + 500));
+      if (error) throw error;
+    }
+  } catch (err) { console.warn('Não foi possível salvar Lista de OS no banco:', err?.message || err); }
+}
+
 async function persistBtgRows(rows) {
   const list = rows || [];
   if (!list.length) return;
@@ -497,6 +550,7 @@ async function loadDbData(el) {
   }
   await loadSavedBtgData();
   await loadSavedDistData();
+  await loadSavedListaOsData();
   if (state.mode === 'db') state.finalRows = state.dbRows;
 }
 
@@ -784,6 +838,7 @@ async function handleFiles(files, el) {
   catch (err) { console.warn('upsertOperacionalOsAberta:', err?.message || err); }
   await persistDistribuicaoRows(state.distRows);
   await persistBtgRows(state.btgRows);
+  await persistListaOsRows(state.listaOsRows);
 
   // Preserva estado do upload antes de recarregar o banco
   const uploadBtgRows    = state.btgRows;
@@ -808,7 +863,7 @@ async function handleFiles(files, el) {
   if (uploadBtgLoaded)  state.loaded.btg  = uploadBtgLoaded;
   if (uploadDistRows?.length && !state.distRows?.length) state.distRows = uploadDistRows;
   if (uploadDistLoaded) state.loaded.dist = uploadDistLoaded;
-  if (uploadListaOsRows?.length && !state.listaOsRows?.length) {
+  if (uploadListaOsRows?.length) {
     state.listaOsRows = uploadListaOsRows;
     state.listaOsMap = uploadListaOsMap;
     state.listaOsMapByContrato = uploadListaOsMapByContrato;
