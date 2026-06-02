@@ -429,6 +429,10 @@ function render(el) {
   el.enviarCheckin.disabled = !checkinCount;
   el.enviarCheckin.textContent = checkinCount ? `Enviar Check-in (${checkinCount})` : 'Enviar Check-in';
 
+  const nheCount = state.finalRows.filter(r => r.status === 'LANÇAR NHE').length;
+  el.enviarNhe.disabled = !nheCount;
+  el.enviarNhe.textContent = nheCount ? `Enviar NHE (${nheCount})` : 'Enviar NHE';
+
   if (!rows.length) {
     const msg = state.mode === 'db' && !state.dbRows.length
       ? 'Nenhuma O.S. BTG encontrada no banco. Carregue os relatórios xlsx.'
@@ -1169,6 +1173,122 @@ function showCheckinModal({ encontrados, naoEncontrados }, onConfirm) {
   if (confirmBtn) confirmBtn.onclick = () => { overlay.remove(); onConfirm(); };
 }
 
+// ── BotConversa NHE ──────────────────────────────────────────────────────────
+async function enviarNheBotConversa(el) {
+  const nheRows = state.finalRows.filter(r => r.status === 'LANÇAR NHE');
+  if (!nheRows.length) return;
+
+  // Agrupa OS por colaborador
+  const colabMap = new Map();
+  for (const r of nheRows) {
+    const nome = r.colaborador;
+    if (!nome || nome === '—') continue;
+    if (!colabMap.has(nome)) colabMap.set(nome, new Set());
+    if (r.os && r.os !== '—') colabMap.get(nome).add(r.os);
+  }
+
+  const nomesUniq = [...colabMap.keys()];
+  el.feedback.textContent = 'Buscando telefones dos colaboradores...';
+  el.enviarNhe.disabled = true;
+
+  const { data: colab, error } = await supabase
+    .from('colaboradores')
+    .select('nome, whatsapp')
+    .not('whatsapp', 'is', null)
+    .neq('whatsapp', '');
+
+  el.enviarNhe.disabled = false;
+
+  if (error) {
+    el.feedback.textContent = `Erro ao buscar cadastros: ${error.message}`;
+    return;
+  }
+
+  const phoneMap = new Map();
+  for (const c of (colab || [])) {
+    const k = norm(c.nome || '');
+    if (!phoneMap.has(k)) phoneMap.set(k, c);
+  }
+
+  const encontrados = [];
+  const naoEncontrados = [];
+  for (const nome of nomesUniq) {
+    const c = phoneMap.get(norm(nome));
+    const osNums = [...colabMap.get(nome)];
+    if (c?.whatsapp) encontrados.push({ nome, nomeReal: c.nome, telefone: fmtPhone(c.whatsapp), os_numeros: osNums });
+    else naoEncontrados.push({ nome, os_numeros: osNums });
+  }
+
+  showNheModal({ encontrados, naoEncontrados }, async () => {
+    if (!encontrados.length) return;
+    el.feedback.textContent = `Enviando NHE para ${encontrados.length} colaborador(es)...`;
+    try {
+      const { data, error } = await supabase.functions.invoke('btg-nhe-send', {
+        body: {
+          colaboradores: encontrados.map(({ nomeReal, telefone, os_numeros }) => ({
+            nome: nomeReal,
+            telefone,
+            os_numeros,
+          })),
+        },
+      });
+      if (error) throw new Error(error.message);
+      const ok = data?.enviados ?? 0;
+      const total = data?.total ?? 0;
+      const falhas = (data?.results || []).filter(r => !r.ok).map(r => `${r.nome} (OS ${r.os})`);
+      el.feedback.textContent =
+        `NHE enviado: ${ok}/${total} mensagem(ns).` +
+        (naoEncontrados.length ? ` Sem cadastro: ${naoEncontrados.map(n => n.nome).join(', ')}.` : '') +
+        (falhas.length ? ` Falhou: ${falhas.join(', ')}.` : '');
+    } catch (err) {
+      el.feedback.textContent = `Erro ao enviar: ${err.message}`;
+    }
+  });
+}
+
+function showNheModal({ encontrados, naoEncontrados }, onConfirm) {
+  const totalMensagens = encontrados.reduce((s, c) => s + c.os_numeros.length, 0);
+  const overlay = document.createElement('div');
+  overlay.className = 'btg-modal-overlay';
+  overlay.innerHTML = `
+    <div class="btg-modal">
+      <h3 class="btg-modal-title">Enviar NHE — BotConversa</h3>
+      <p class="btg-modal-sub">Mensagem de NHE para colaboradores com OS sem lançamento de cargas.</p>
+      ${encontrados.length ? `
+        <div class="btg-modal-section">
+          <div class="btg-modal-label">Serão notificados (${encontrados.length} colaborador(es) · ${totalMensagens} mensagem(ns))</div>
+          <div class="btg-modal-list">
+            ${encontrados.map(({ nomeReal, telefone, os_numeros }) => `
+              <div class="btg-modal-item" style="flex-direction:column;align-items:flex-start;gap:2px">
+                <div style="display:flex;justify-content:space-between;width:100%">
+                  <span>${esc(nomeReal)}</span>
+                  <span class="btg-modal-phone">${esc(telefone)}</span>
+                </div>
+                <span style="font-size:10px;color:#6ee7b7">OS: ${os_numeros.map(esc).join(', ')}</span>
+              </div>`).join('')}
+          </div>
+        </div>` : ''}
+      ${naoEncontrados.length ? `
+        <div class="btg-modal-section">
+          <div class="btg-modal-label warn">Sem whatsapp no cadastro (${naoEncontrados.length})</div>
+          <div class="btg-modal-list warn">
+            ${naoEncontrados.map(n => `<div class="btg-modal-item warn">${esc(n.nome)} <span style="font-size:10px;color:#fbbf24">OS: ${n.os_numeros.map(esc).join(', ')}</span></div>`).join('')}
+          </div>
+        </div>` : ''}
+      ${!encontrados.length ? `<div class="btg-modal-empty">Nenhum telefone encontrado no cadastro para os colaboradores com NHE pendente.</div>` : ''}
+      <div class="btg-modal-actions">
+        <button class="btn btn-secondary btg-modal-cancel">Cancelar</button>
+        ${encontrados.length ? `<button class="btn btg-modal-confirm btg-modal-confirm-nhe">Confirmar e Enviar</button>` : ''}
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  overlay.querySelector('.btg-modal-cancel').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  const confirmBtn = overlay.querySelector('.btg-modal-confirm-nhe');
+  if (confirmBtn) confirmBtn.onclick = () => { overlay.remove(); onConfirm(); };
+}
+
 // ── Drag-and-drop ─────────────────────────────────────────────────────────────
 function setupDragDrop(zone, input, el) {
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('btg-drag-over'); });
@@ -1249,6 +1369,11 @@ function injectStyles() {
     .btg-btn-checkin{background:rgba(220,38,38,.15);color:#fca5a5;border:1px solid rgba(220,38,38,.35)}
     .btg-btn-checkin:hover:not(:disabled){background:rgba(220,38,38,.3);color:#fff;border-color:rgba(220,38,38,.6)}
     .btg-btn-checkin:disabled{opacity:.4;cursor:not-allowed}
+    .btg-btn-nhe{background:rgba(168,85,247,.15);color:#d8b4fe;border:1px solid rgba(168,85,247,.35)}
+    .btg-btn-nhe:hover:not(:disabled){background:rgba(168,85,247,.3);color:#fff;border-color:rgba(168,85,247,.6)}
+    .btg-btn-nhe:disabled{opacity:.4;cursor:not-allowed}
+    .btg-modal-confirm-nhe{background:#7c3aed;color:#fff;border-color:#7c3aed}
+    .btg-modal-confirm-nhe:hover{background:#6d28d9}
     .btg-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
     .btg-modal{background:#0d0d18;border:1px solid rgba(52,211,153,.2);border-radius:20px;padding:24px;max-width:480px;width:100%;max-height:80vh;overflow-y:auto}
     .btg-modal-title{font-size:16px;font-weight:800;color:#f1f5f9;margin:0 0 6px}
@@ -1307,6 +1432,7 @@ initProtectedPage('BTG — Logística', async (content) => {
         <div class="btg-actions">
           <button class="btn btn-secondary" id="btgExportVerificar">Gerar XLS VERIFICAR</button>
           <button class="btn btn-secondary btg-btn-checkin" id="btgEnviarCheckin" disabled>Enviar Check-in</button>
+          <button class="btn btn-secondary btg-btn-nhe" id="btgEnviarNhe" disabled>Enviar NHE</button>
         </div>
       </div>
 
@@ -1350,11 +1476,13 @@ initProtectedPage('BTG — Logística', async (content) => {
     tableTitle: document.getElementById('btgTableTitle'),
     tableSubtitle: document.getElementById('btgTableSubtitle'),
     enviarCheckin: document.getElementById('btgEnviarCheckin'),
+    enviarNhe: document.getElementById('btgEnviarNhe'),
   };
 
   el.busca.addEventListener('input', () => { state.busca = el.busca.value.trim(); render(el); });
   el.exportVerificar.addEventListener('click', exportVerificar);
   el.enviarCheckin.addEventListener('click', () => enviarCheckinBotConversa(el));
+  el.enviarNhe.addEventListener('click', () => enviarNheBotConversa(el));
 
   el.statusFilters.addEventListener('click', e => {
     const btn = e.target.closest('[data-status]');
