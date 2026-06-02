@@ -342,6 +342,7 @@ function renderStatusButtons(el) {
     ['cancelada', 'Cancelada'],
     ['falta colaborador', 'Falta Colaborador'],
     ['lançar nhe', 'Lançar NHE'],
+    ['nhe ok', 'NHE OK'],
   ];
   el.statusFilters.innerHTML = items.map(([key, label]) => `
     <button class="btg-filter-btn ${state.filtroStatus === key ? 'active' : ''}" data-status="${esc(key)}">
@@ -401,6 +402,7 @@ function statusClass(s) {
   if (n === 'PENDENCIA CLIENTE') return 'status-pendencia';
   if (n === 'FALTA COLABORADOR') return 'status-falta';
   if (n === 'LANCAR NHE') return 'status-nhe';
+  if (n === 'NHE OK') return 'status-nhe-ok';
   if (n === 'FATURADA') return 'status-faturada';
   if (n === 'CANCELADA') return 'status-cancelada';
   if (n === 'FINALIZADA') return 'status-finalizada';
@@ -418,7 +420,9 @@ function rowHtml(r) {
     ? `<span class="btg-checkin-off" title="Check-in diário: inexistente"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.657 16.657L13.414 20.9a2 2 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/><circle cx="12" cy="11" r="3"/><line x1="2" y1="2" x2="22" y2="22"/></svg></span>`
     : '';
   const prodHoje = r.prodDiaOs !== null && r.prodDiaOs !== undefined
-    ? `<span class="btg-val" style="color:${fnum(r.prodDiaOs) <= 0 ? '#fca5a5' : '#86efac'}">${esc(fmt(r.prodDiaOs))}</span>`
+    ? r.prodDiaOs === 'NHE'
+      ? `<span class="btg-val" style="color:#93c5fd">NHE</span>`
+      : `<span class="btg-val" style="color:${fnum(r.prodDiaOs) <= 0 ? '#fca5a5' : '#86efac'}">${esc(fmt(r.prodDiaOs))}</span>`
     : '<span style="color:#475569">—</span>';
   return `<tr class="btg-row ${statusClass(r.status)}">
     <td><span class="btg-status ${statusClass(r.status)}">${esc(r.status || 'OK')}</span></td>
@@ -580,7 +584,7 @@ function parseDistribuicao(wb) {
         supervisao:  supIdx >= 0 ? clean(String(r[supIdx] ?? '')) || '—' : '—',
         lote:        r[ci.lote],
         remanescente:r[ci.remanescente],
-        prodDiaOs:   ci.prodDiaOs >= 0 ? fnum(r[ci.prodDiaOs]) : null,
+        prodDiaOs:   (() => { if (ci.prodDiaOs < 0) return null; const raw = clean(String(r[ci.prodDiaOs] ?? '')); if (!raw) return null; return norm(raw) === 'NHE' ? 'NHE' : fnum(raw); })(),
         financeiro:  financeiroStr,
         fonte:       'Distribuição OS',
       });
@@ -843,7 +847,7 @@ function distIndexes() {
 
 
 async function reconcile(el) {
-  if (!state.distRows?.length && !state.btgRows?.length) {
+  if (!state.btgRows?.length) {
     state.mode = 'db';
     state.finalRows = state.dbRows;
     render(el);
@@ -851,170 +855,107 @@ async function reconcile(el) {
   }
 
   state.mode = 'xlsx';
-  el.feedback.textContent = 'Reconciliando relatórios com a lista de O.S...';
+  el.feedback.textContent = 'Reconciliando relatórios...';
 
-  const { byOs, byContrato: dbByContrato } = dbIndexes();
-  const { byOs: distByOs, byContrato: distByContrato } = distIndexes();
+  // Distribuição: OS → [rows]
+  const { byOs: distByOs } = distIndexes();
+
+  // Lista de OS: contrato → [rows] — usa arquivo carregado; fallback no banco
+  const listaByContrato = new Map();
+  if (state.listaOsRows?.length) {
+    for (const r of state.listaOsRows) {
+      const c = contratoNorm(r.contrato || '');
+      if (!isContratoBtg(c)) continue;
+      if (!listaByContrato.has(c)) listaByContrato.set(c, []);
+      listaByContrato.get(c).push(r);
+    }
+  } else {
+    for (const r of state.dbRows || []) {
+      const c = contratoNorm(r.contratoOriginal || r.contrato || '');
+      if (!isContratoBtg(c)) continue;
+      if (!listaByContrato.has(c)) listaByContrato.set(c, []);
+      listaByContrato.get(c).push({
+        os: r.os, situacao: 'ABERTA', financeiro: '',
+        supervisao: r.supervisao, lote: r.lote, remanescente: r.remanescente, contrato: c,
+      });
+    }
+  }
+
   const out = [];
-  const coveredContratos = new Set();
-  const coveredOsSet = new Set();
 
-  // ── 1. Relatório BTG é a fonte primária ───────────────────────────────────
-  // Lógica de join (cadeia correta):
-  //   btg.contrato → dbByContrato (Lista de OS) → db.os → distByOs (Distribuição) → colaborador
-  for (const btg of (state.btgRows || [])) {
+  for (const btg of state.btgRows) {
     const c = contratoNorm(btg.contratoOriginal);
-    if (isContratoBtg(c)) coveredContratos.add(c);
 
-    // 1a. Busca na Lista de OS pelo contrato do relatório BTG
-    // Normalização: se último dígito = 1 (ex: P36259.001), tenta também com 0 (P36259.000)
-    let dbRows = isContratoBtg(c) ? (dbByContrato.get(c) || []) : [];
-    if (!dbRows.length && isContratoBtg(c) && c.charAt(c.length - 1) === '1') {
-      dbRows = dbByContrato.get(c.slice(0, -1) + '0') || [];
-    }
-    const inListaOS = dbRows.length > 0;
-    for (const db of dbRows) coveredOsSet.add(String(db.os));
-
-    // 1b. Busca na Distribuição pela OS encontrada na Lista de OS
-    const distRows = [];
-    for (const db of dbRows) {
-      for (const d of (distByOs.get(String(db.os)) || [])) distRows.push(d);
-    }
-    const uniqDist = uniqBy(distRows, r => norm(r.colaborador));
-    const hasColab = uniqDist.some(r => r.colaborador && r.colaborador !== '—');
-    const isFaturada = uniqDist.some(r => norm(r.financeiro || '') === 'FATURADA');
-
-    let status;
-    if (!inListaOS)      status = 'VERIFICAR';
-    else if (isFaturada) status = 'FATURADA';
-    else if (!hasColab)  status = 'FALTA COLABORADOR';
-    else                 status = 'OK';
-
-    // Override com situação da Lista de OS (Cancelada / Finalizada / Bonificada)
-    if (state.listaOsMap || state.listaOsMapByContrato) {
-      const listaRow = (isContratoBtg(c) && state.listaOsMapByContrato?.get(c))
-                    || (dbRows[0]?.os != null && state.listaOsMap?.get(String(dbRows[0].os)));
-      if (listaRow) {
-        const sn = norm(listaRow.situacao);
-        if (sn === 'CANCELADA') status = 'CANCELADA';
-        else if (sn === 'FINALIZADA') status = 'FINALIZADA';
-        else if (sn === 'BONIFICADA') status = isContratoBtg(c) ? 'FINALIZADA' : 'VERIFICAR';
-      }
+    // Busca listaRows pelo contrato; tenta .001 → .000 como fallback
+    let listaRows = isContratoBtg(c) ? (listaByContrato.get(c) || []) : [];
+    if (!listaRows.length && isContratoBtg(c) && c.charAt(c.length - 1) === '1') {
+      listaRows = listaByContrato.get(c.slice(0, -1) + '0') || [];
     }
 
-    // LANÇAR NHE: prod hoje = 0 e upload após 17h
-    const allZeroProd1 = uniqDist.length > 0
-      && uniqDist.every(d => d.prodDiaOs !== null && d.prodDiaOs !== undefined && fnum(d.prodDiaOs) <= 0);
-    if (state.uploadAfter17h && allZeroProd1
-        && status !== 'CANCELADA' && status !== 'FINALIZADA' && status !== 'FATURADA') {
-      status = 'LANÇAR NHE';
-    }
-
-    // Distribuição é a fonte primária do colaborador (classificador)
-    const pessoas = [];
-    for (const dist of uniqDist) pushUnique(pessoas, dist.colaborador);
-    for (const db of dbRows) pushUnique(pessoas, db.colaborador);
-    if (!pessoas.length) pessoas.push('—');
-
-    for (const pessoa of pessoas) {
-      const db   = dbRows.find(x => norm(x.colaborador) === norm(pessoa))   || dbRows[0]   || null;
-      const dist = uniqDist.find(x => norm(x.colaborador) === norm(pessoa)) || uniqDist[0] || null;
+    if (!listaRows.length) {
       out.push({
-        status,
-        os: db?.os || dist?.os || '—',
-        portal: btg.portal || '—',
-        contrato: contratoLabel(c),
-        contratoOriginal: c,
+        status: 'VERIFICAR',
+        os: '—', portal: btg.portal || '—',
+        contrato: contratoLabel(c), contratoOriginal: c,
         tipoSolicitacao: btg.tipoSolicitacao || 'Relatório BTG',
-        colaborador: pessoa || '—',
-        supervisao: db?.supervisao || dist?.supervisao || '—',
-        lote: db?.lote || dist?.lote || btg.qtde,
-        remanescente: db?.remanescente || dist?.remanescente || btg.qtde,
-        qtde: btg.qtde,
-        prodDiaOs: dist?.prodDiaOs ?? null,
-        checkinDiario: btg.checkinDiario || '',
-        fonte: 'Relatório BTG',
-        sheet: btg.sheet,
-        rowNumber: btg.rowNumber,
+        colaborador: '—', supervisao: '—',
+        lote: null, remanescente: null, qtde: btg.qtde,
+        prodDiaOs: null, checkinDiario: btg.checkinDiario || '',
+        fonte: 'Relatório BTG', sheet: btg.sheet, rowNumber: btg.rowNumber,
       });
+      continue;
     }
-  }
 
-  // ── 2. OS da Lista de OS não cobertas pelo BTG → "PENDENCIA CLIENTE" ─────
-  if (state.btgRows?.length) {
-    const seenOsContrato = new Set();
-    for (const db of (state.dbRows || [])) {
-      const c = contratoNorm(db.contratoOriginal || db.contrato);
-      if (isContratoBtg(c) && coveredContratos.has(c)) continue;
-      if (coveredOsSet.has(String(db.os))) continue;
-      const dedupeKey = `${db.os}|${c}`;
-      if (seenOsContrato.has(dedupeKey)) continue;
-      seenOsContrato.add(dedupeKey);
-      coveredOsSet.add(String(db.os));
+    for (const lista of listaRows) {
+      const distEntries = distByOs.get(String(lista.os)) || [];
+      const uniqDist = uniqBy(distEntries, r => norm(r.colaborador));
+      const hasColab = uniqDist.some(r => r.colaborador && r.colaborador !== '—');
 
-      out.push({
-        status: 'PENDENCIA CLIENTE',
-        os: db.os,
-        portal: '—',
-        contrato: contratoLabel(c),
-        contratoOriginal: c,
-        tipoSolicitacao: 'BASE OS',
-        colaborador: db.colaborador || '—',
-        supervisao: db.supervisao || '—',
-        lote: db.lote,
-        remanescente: db.remanescente,
-        prodDiaOs: null,
-        checkinDiario: '',
-        fonte: 'db',
-      });
-    }
-  }
+      // Status base: Situação e Financeiro da Lista de OS
+      const situN  = norm(lista.situacao  || '');
+      const financN = norm(lista.financeiro || '');
+      let baseStatus;
+      if      (situN === 'CANCELADA')                          baseStatus = 'CANCELADA';
+      else if (situN === 'FINALIZADA' || situN === 'BONIFICADA') baseStatus = 'FINALIZADA';
+      else if (financN === 'FATURADA')                         baseStatus = 'FATURADA';
+      else if (situN === 'ABERTA' || situN === 'ATIVO' || situN === '')
+                                                               baseStatus = hasColab ? 'OK' : 'FALTA COLABORADOR';
+      else                                                     baseStatus = 'VERIFICAR';
 
-  // ── 3. OS da Distribuição não cobertas pelo BTG nem pelo banco ────────────
-  if (state.distRows?.length) {
-    const distOnlyByOs = new Map();
-    for (const dist of state.distRows) {
-      if (!dist.os || coveredOsSet.has(String(dist.os))) continue;
-      if (!distOnlyByOs.has(String(dist.os))) distOnlyByOs.set(String(dist.os), []);
-      distOnlyByOs.get(String(dist.os)).push(dist);
-    }
-    for (const [osNum, entries] of distOnlyByOs) {
-      const listaRow = state.listaOsMap?.get(String(osNum));
-      const contratoRaw = listaRow?.contrato && isContratoBtg(listaRow.contrato) ? listaRow.contrato : '';
-      const isFat = entries.some(d => norm(d.financeiro || '') === 'FATURADA');
-      const allZero3 = entries.length > 0
-        && entries.every(d => d.prodDiaOs !== null && d.prodDiaOs !== undefined && fnum(d.prodDiaOs) <= 0);
-      let baseStatus = 'VERIFICAR';
-      if (listaRow) {
-        const sn = norm(listaRow.situacao);
-        if (sn === 'CANCELADA') baseStatus = 'CANCELADA';
-        else if (sn === 'FINALIZADA' || sn === 'BONIFICADA') baseStatus = 'FINALIZADA';
-        else if (isFat) baseStatus = 'FATURADA';
-      }
-      const pessoas3 = [];
-      for (const d of entries) pushUnique(pessoas3, d.colaborador);
-      if (!pessoas3.length) pessoas3.push('—');
-      for (const pessoa of pessoas3) {
-        const d = entries.find(e => norm(e.colaborador) === norm(pessoa)) || entries[0];
-        let status3 = baseStatus;
-        if (state.uploadAfter17h && allZero3
-            && status3 !== 'CANCELADA' && status3 !== 'FINALIZADA' && status3 !== 'FATURADA') {
-          status3 = 'LANÇAR NHE';
+      const pessoas = [];
+      for (const d of uniqDist) pushUnique(pessoas, d.colaborador);
+      if (!pessoas.length) pessoas.push('—');
+
+      for (const pessoa of pessoas) {
+        const dist = uniqDist.find(d => norm(d.colaborador) === norm(pessoa)) || uniqDist[0] || null;
+        const prodDiaOs = dist?.prodDiaOs ?? null;
+
+        let status = baseStatus;
+        if (prodDiaOs === 'NHE') {
+          status = 'NHE OK';
+        } else if (typeof prodDiaOs === 'number' && prodDiaOs <= 0
+                   && state.uploadAfter17h
+                   && status !== 'CANCELADA' && status !== 'FINALIZADA' && status !== 'FATURADA') {
+          status = 'LANÇAR NHE';
         }
+
         out.push({
-          status: status3,
-          os: osNum,
-          portal: '—',
-          contrato: contratoRaw ? contratoLabel(contratoRaw) : '—',
-          contratoOriginal: contratoRaw,
-          tipoSolicitacao: 'DISTRIBUIÇÃO',
+          status,
+          os: lista.os || '—',
+          portal: btg.portal || '—',
+          contrato: contratoLabel(c),
+          contratoOriginal: c,
+          tipoSolicitacao: btg.tipoSolicitacao || 'Relatório BTG',
           colaborador: pessoa || '—',
-          supervisao: d.supervisao || listaRow?.supervisao || '—',
-          lote: d.lote,
-          remanescente: d.remanescente,
-          prodDiaOs: d.prodDiaOs,
-          checkinDiario: '',
-          fonte: 'Distribuição OS',
+          supervisao: lista.supervisao || dist?.supervisao || '—',
+          lote: lista.lote,
+          remanescente: lista.remanescente,
+          qtde: btg.qtde,
+          prodDiaOs,
+          checkinDiario: btg.checkinDiario || '',
+          fonte: 'Relatório BTG',
+          sheet: btg.sheet,
+          rowNumber: btg.rowNumber,
         });
       }
     }
@@ -1037,7 +978,7 @@ function exportVerificar() {
     Supervisão: r.supervisao || '',
     Lote: fnum(r.lote || r.qtde),
     Remanescente: fnum(r.remanescente || r.qtde),
-    'Prod. Hoje': r.prodDiaOs !== null && r.prodDiaOs !== undefined ? fnum(r.prodDiaOs) : '',
+    'Prod. Hoje': r.prodDiaOs === 'NHE' ? 'NHE' : (r.prodDiaOs !== null && r.prodDiaOs !== undefined ? fnum(r.prodDiaOs) : ''),
     Fonte: r.fonte || '',
     Aba: r.sheet || '',
     Linha: r.rowNumber || '',
@@ -1121,6 +1062,8 @@ function injectStyles() {
     .btg-row.status-falta td{background:rgba(249,115,22,.04)}
     .btg-status.status-nhe{background:rgba(168,85,247,.14);color:#d8b4fe;border-color:rgba(168,85,247,.3)}
     .btg-row.status-nhe td{background:rgba(168,85,247,.04)}
+    .btg-status.status-nhe-ok{background:rgba(59,130,246,.14);color:#93c5fd;border-color:rgba(59,130,246,.28)}
+    .btg-row.status-nhe-ok td{background:rgba(59,130,246,.04)}
     .btg-small-ok{font-size:11px;color:#93c5fd;font-weight:800}
     .btg-empty{border:1px dashed rgba(148,163,184,.2);border-radius:16px;padding:24px;color:#94a3b8;text-align:center}
     .badge-info{background:rgba(59,130,246,.18);color:#93c5fd;border-color:rgba(59,130,246,.3)}
