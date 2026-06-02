@@ -997,6 +997,11 @@ function exportVerificar() {
 }
 
 // ── BotConversa Check-in ──────────────────────────────────────────────────────
+function fmtPhone(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  return (d.startsWith('55') && d.length >= 12) ? d : '55' + d;
+}
+
 async function enviarCheckinBotConversa(el) {
   const checkinRows = state.finalRows.filter(r => r.status === 'CHECK-IN');
   if (!checkinRows.length) return;
@@ -1005,29 +1010,33 @@ async function enviarCheckinBotConversa(el) {
     checkinRows.map(r => r.colaborador).filter(n => n && n !== '—')
   )];
 
-  el.feedback.textContent = 'Buscando contatos no BotConversa...';
+  el.feedback.textContent = 'Buscando telefones dos colaboradores...';
   el.enviarCheckin.disabled = true;
 
-  const { data: contatos, error } = await supabase
-    .from('botconversa_contatos')
-    .select('nome, telefone, subscriber_id, cpf')
-    .eq('ativo', true);
+  const { data: colab, error } = await supabase
+    .from('colaboradores')
+    .select('nome, whatsapp')
+    .not('whatsapp', 'is', null)
+    .neq('whatsapp', '');
 
   el.enviarCheckin.disabled = false;
 
   if (error) {
-    el.feedback.textContent = `Erro ao buscar contatos: ${error.message}`;
+    el.feedback.textContent = `Erro ao buscar cadastros: ${error.message}`;
     return;
   }
 
-  const contatoMap = new Map();
-  for (const c of (contatos || [])) contatoMap.set(norm(c.nome || ''), c);
+  const colabMap = new Map();
+  for (const c of (colab || [])) {
+    const k = norm(c.nome || '');
+    if (!colabMap.has(k)) colabMap.set(k, c);
+  }
 
   const encontrados = [];
   const naoEncontrados = [];
   for (const nome of nomesUniq) {
-    const c = contatoMap.get(norm(nome));
-    if (c && (c.subscriber_id || c.telefone)) encontrados.push({ nome, contato: c });
+    const c = colabMap.get(norm(nome));
+    if (c?.whatsapp) encontrados.push({ nome, nomeReal: c.nome, telefone: fmtPhone(c.whatsapp) });
     else naoEncontrados.push(nome);
   }
 
@@ -1035,12 +1044,12 @@ async function enviarCheckinBotConversa(el) {
     if (!encontrados.length) return;
     el.feedback.textContent = `Enfileirando ${encontrados.length} envio(s)...`;
     try {
-      const payload = encontrados.map(({ contato }) => ({
+      const payload = encontrados.map(({ nomeReal, telefone }) => ({
         tipo: 'flow',
-        nome: contato.nome,
-        cpf: contato.cpf || null,
-        telefone: contato.telefone || null,
-        subscriber_id: contato.subscriber_id || null,
+        nome: nomeReal,
+        cpf: null,
+        telefone,
+        subscriber_id: null,
         flow_id: '8965976',
         status: 'pendente',
         origem: 'btg-logistica',
@@ -1052,7 +1061,7 @@ async function enviarCheckinBotConversa(el) {
       }).catch(() => {});
       el.feedback.textContent =
         `Check-in enviado para ${encontrados.length} colaborador(es).` +
-        (naoEncontrados.length ? ` Sem contato: ${naoEncontrados.join(', ')}.` : '');
+        (naoEncontrados.length ? ` Sem cadastro: ${naoEncontrados.join(', ')}.` : '');
     } catch (err) {
       el.feedback.textContent = `Erro ao enviar: ${err.message}`;
     }
@@ -1065,26 +1074,26 @@ function showCheckinModal({ encontrados, naoEncontrados }, onConfirm) {
   overlay.innerHTML = `
     <div class="btg-modal">
       <h3 class="btg-modal-title">Enviar Check-in — BotConversa</h3>
-      <p class="btg-modal-sub">Fluxo <b>8965976</b> será disparado para os colaboradores com Check-in pendente.</p>
+      <p class="btg-modal-sub">Fluxo <b>8965976</b> · Bot <b>171749</b> — colaboradores com Check-in pendente.</p>
       ${encontrados.length ? `
         <div class="btg-modal-section">
           <div class="btg-modal-label">Serão notificados (${encontrados.length})</div>
           <div class="btg-modal-list">
-            ${encontrados.map(({ contato }) => `
+            ${encontrados.map(({ nomeReal, telefone }) => `
               <div class="btg-modal-item">
-                <span>${esc(contato.nome)}</span>
-                <span class="btg-modal-phone">${esc(contato.telefone || contato.subscriber_id || '—')}</span>
+                <span>${esc(nomeReal)}</span>
+                <span class="btg-modal-phone">${esc(telefone)}</span>
               </div>`).join('')}
           </div>
         </div>` : ''}
       ${naoEncontrados.length ? `
         <div class="btg-modal-section">
-          <div class="btg-modal-label warn">Sem contato no BotConversa (${naoEncontrados.length})</div>
+          <div class="btg-modal-label warn">Sem whatsapp no cadastro (${naoEncontrados.length})</div>
           <div class="btg-modal-list warn">
             ${naoEncontrados.map(n => `<div class="btg-modal-item warn">${esc(n)}</div>`).join('')}
           </div>
         </div>` : ''}
-      ${!encontrados.length ? `<div class="btg-modal-empty">Nenhum contato encontrado no BotConversa para os colaboradores com Check-in pendente.</div>` : ''}
+      ${!encontrados.length ? `<div class="btg-modal-empty">Nenhum telefone encontrado no cadastro para os colaboradores com Check-in pendente.</div>` : ''}
       <div class="btg-modal-actions">
         <button class="btn btn-secondary btg-modal-cancel">Cancelar</button>
         ${encontrados.length ? `<button class="btn btg-modal-confirm">Confirmar e Enviar</button>` : ''}
