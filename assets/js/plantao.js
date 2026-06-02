@@ -1223,42 +1223,67 @@ function drawRoundRect(ctx, x, y, w, h, r) {
 
 
 function drawBackground(ctx) {
-  const grad = ctx.createLinearGradient(0, 0, IMG_W, IMG_H);
-  grad.addColorStop(0, '#020806');
-  grad.addColorStop(.42, '#06130f');
-  grad.addColorStop(1, '#071d15');
+  // Fundo principal — gradiente diagonal mais profundo
+  const grad = ctx.createLinearGradient(0, 0, IMG_W * .6, IMG_H);
+  grad.addColorStop(0,   '#010503');
+  grad.addColorStop(.30, '#050e08');
+  grad.addColorStop(.65, '#061410');
+  grad.addColorStop(1,   '#081e16');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, IMG_W, IMG_H);
 
+  // Sidebar escura
   const sidebarW = 286;
   const sideGrad = ctx.createLinearGradient(0, 0, sidebarW, 0);
-  sideGrad.addColorStop(0, '#030a08');
-  sideGrad.addColorStop(.7, '#071711');
-  sideGrad.addColorStop(1, '#03100b');
+  sideGrad.addColorStop(0,   '#020705');
+  sideGrad.addColorStop(.65, '#061008');
+  sideGrad.addColorStop(1,   '#030d07');
   ctx.fillStyle = sideGrad;
   ctx.fillRect(0, 0, sidebarW, IMG_H);
 
-  const sideGlow = ctx.createLinearGradient(sidebarW - 16, 0, sidebarW + 10, 0);
-  sideGlow.addColorStop(0, 'rgba(34,197,94,0)');
-  sideGlow.addColorStop(.55, 'rgba(34,197,94,.92)');
-  sideGlow.addColorStop(1, 'rgba(34,197,94,0)');
-  ctx.fillStyle = sideGlow;
-  ctx.fillRect(sidebarW - 16, 0, 32, IMG_H);
+  // Linha de separação verde nítida
+  const lineGrad = ctx.createLinearGradient(0, 60, 0, IMG_H - 60);
+  lineGrad.addColorStop(0,   'rgba(34,197,94,0)');
+  lineGrad.addColorStop(.12, 'rgba(34,197,94,.95)');
+  lineGrad.addColorStop(.88, 'rgba(34,197,94,.95)');
+  lineGrad.addColorStop(1,   'rgba(34,197,94,0)');
+  ctx.fillStyle = lineGrad;
+  ctx.fillRect(sidebarW - 2, 0, 3, IMG_H);
 
-  const glow1 = ctx.createRadialGradient(730, 260, 30, 730, 260, 520);
-  glow1.addColorStop(0, 'rgba(34,197,94,.16)');
-  glow1.addColorStop(1, 'rgba(34,197,94,0)');
+  // Halo ao redor da linha
+  const sideGlow = ctx.createLinearGradient(sidebarW - 22, 0, sidebarW + 18, 0);
+  sideGlow.addColorStop(0,  'rgba(34,197,94,0)');
+  sideGlow.addColorStop(.4, 'rgba(34,197,94,.07)');
+  sideGlow.addColorStop(.6, 'rgba(34,197,94,.07)');
+  sideGlow.addColorStop(1,  'rgba(34,197,94,0)');
+  ctx.fillStyle = sideGlow;
+  ctx.fillRect(sidebarW - 22, 0, 40, IMG_H);
+
+  // Glow atmosférico central-superior
+  const glow1 = ctx.createRadialGradient(860, 220, 20, 860, 220, 620);
+  glow1.addColorStop(0,   'rgba(34,197,94,.14)');
+  glow1.addColorStop(.5,  'rgba(34,197,94,.05)');
+  glow1.addColorStop(1,   'rgba(34,197,94,0)');
   ctx.fillStyle = glow1;
   ctx.fillRect(0, 0, IMG_W, IMG_H);
 
-  const glow2 = ctx.createRadialGradient(1240, 120, 20, 1240, 120, 360);
-  glow2.addColorStop(0, 'rgba(111,208,165,.14)');
+  // Glow topo-direita (acento frio)
+  const glow2 = ctx.createRadialGradient(1340, 90, 10, 1340, 90, 420);
+  glow2.addColorStop(0, 'rgba(111,208,165,.16)');
   glow2.addColorStop(1, 'rgba(111,208,165,0)');
   ctx.fillStyle = glow2;
   ctx.fillRect(0, 0, IMG_W, IMG_H);
 
-  drawHexPattern(ctx, 26, 210, 68, 6, 6, .09);
-  drawHexPattern(ctx, 930, -36, 92, 5, 3, .04);
+  // Glow baixo-esquerda (sidebar)
+  const glow3 = ctx.createRadialGradient(143, 920, 10, 143, 920, 260);
+  glow3.addColorStop(0, 'rgba(34,197,94,.09)');
+  glow3.addColorStop(1, 'rgba(34,197,94,0)');
+  ctx.fillStyle = glow3;
+  ctx.fillRect(0, 600, 286, IMG_H - 600);
+
+  // Padrões hexagonais
+  drawHexPattern(ctx, 16, 160, 70, 6, 7, .07);
+  drawHexPattern(ctx, 920, -44, 96, 6, 4, .032);
 }
 
 function drawHexPattern(ctx, startX, startY, r, cols, rows, alpha = .08) {
@@ -1549,66 +1574,130 @@ function drawInfoLine(ctx, icon, label, value, x, y, maxW, compact = false) {
 }
 
 function drawSectorCard(ctx, card, x, y, w, h, dateFallback) {
-  drawRoundRectFilled(ctx, x, y, w, h, 22, 'rgba(10,22,18,.82)', 'rgba(109,180,141,.34)', 1.2);
+  // Fundo com gradiente diagonal
+  ctx.save();
+  drawRoundRect(ctx, x, y, w, h, 22);
+  ctx.clip();
+  const bgGrad = ctx.createLinearGradient(x, y, x + w * .7, y + h);
+  bgGrad.addColorStop(0,   'rgba(14,32,24,.96)');
+  bgGrad.addColorStop(.5,  'rgba(9,22,17,.92)');
+  bgGrad.addColorStop(1,   'rgba(6,15,11,.94)');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(x, y, w, h);
+  // Highlight sutil no topo
+  const topHighlight = ctx.createLinearGradient(x, y, x, y + 90);
+  topHighlight.addColorStop(0, 'rgba(111,208,165,.07)');
+  topHighlight.addColorStop(1, 'rgba(111,208,165,0)');
+  ctx.fillStyle = topHighlight;
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
 
+  // Borda gradiente (canto superior-esquerdo mais brilhante)
+  ctx.save();
+  const borderGrad = ctx.createLinearGradient(x, y, x + w * .55, y + h * .55);
+  borderGrad.addColorStop(0,  'rgba(111,208,165,.65)');
+  borderGrad.addColorStop(.35,'rgba(111,208,165,.35)');
+  borderGrad.addColorStop(1,  'rgba(111,208,165,.08)');
+  ctx.strokeStyle = borderGrad;
+  ctx.lineWidth = 1.5;
+  drawRoundRect(ctx, x, y, w, h, 22);
+  ctx.stroke();
+  ctx.restore();
+
+  // Barra de acento esquerda
+  ctx.save();
+  const accentGrad = ctx.createLinearGradient(0, y + 30, 0, y + h - 30);
+  accentGrad.addColorStop(0,   'rgba(34,197,94,0)');
+  accentGrad.addColorStop(.15, 'rgba(34,197,94,.95)');
+  accentGrad.addColorStop(.85, 'rgba(34,197,94,.95)');
+  accentGrad.addColorStop(1,   'rgba(34,197,94,0)');
+  ctx.fillStyle = accentGrad;
+  ctx.beginPath();
+  ctx.roundRect(x, y + 22, 3, h - 44, [0, 2, 2, 0]);
+  ctx.fill();
+  ctx.restore();
+
+  // --- Cabeçalho: data ---
   const dateLabel = formatCardDateLabel(card.people.flatMap((p) => p.dates || [])) || dateFallback;
-  drawCanvasIcon(ctx, 'calendar', x + 26, y + 20, 24, '#72c99a');
-  ctx.fillStyle = '#77cfa1';
-  ctx.font = 'bold 17px Arial';
+  ctx.save();
+  ctx.font = 'bold 16px Arial';
+  const dateLabelW = ctx.measureText(dateLabel).width;
+  drawRoundRectFilled(ctx, x + 20, y + 16, dateLabelW + 52, 32, 8,
+    'rgba(34,197,94,.07)', 'rgba(34,197,94,.20)', 1);
+  drawCanvasIcon(ctx, 'calendar', x + 26, y + 19, 20, '#5ed490');
+  ctx.fillStyle = '#8fd9b5';
   ctx.textBaseline = 'top';
-  ctx.fillText(fitText(ctx, dateLabel, w - 58), x + 58, y + 23);
+  ctx.textAlign = 'left';
+  ctx.fillText(fitText(ctx, dateLabel, w - 56), x + 52, y + 22);
+  ctx.restore();
 
-  const badgeY = y + 58;
-  drawRoundRectFilled(ctx, x + 28, badgeY, 56, 56, 12, 'rgba(26,72,54,.22)', 'rgba(109,180,141,.24)', 1.2);
-  drawCanvasIcon(ctx, sectorIcon(card.setor), x + 40, badgeY + 12, 31, '#77cfa1');
-  drawPill(ctx, x + 96, badgeY + 9, card.setor, {
-    bg: 'rgba(26,72,54,.28)',
-    border: 'rgba(109,180,141,.26)',
-    color: '#9fe0b8',
-    font: 'bold 24px Arial',
-    px: 18,
-    py: 8,
-    radius: 10,
+  // --- Badge de setor ---
+  const badgeY = y + 62;
+  // Ícone com fundo brilhante
+  drawRoundRectFilled(ctx, x + 20, badgeY, 52, 52, 13,
+    'rgba(34,197,94,.10)', 'rgba(34,197,94,.28)', 1.5);
+  drawCanvasIcon(ctx, sectorIcon(card.setor), x + 30, badgeY + 10, 32, '#5ed490');
+  // Pill do setor
+  drawPill(ctx, x + 84, badgeY + 8, card.setor, {
+    bg: 'rgba(34,197,94,.10)',
+    border: 'rgba(34,197,94,.30)',
+    color: '#a8e8c4',
+    font: 'bold 23px Arial',
+    px: 16, py: 7, radius: 10,
   });
 
-  const people = card.people.length ? card.people : [{ nome: 'Sem plantonista cadastrado', telefone: '', email: '', email_corporativo: '', dates: [] }];
+  // Separador após badge
+  ctx.fillStyle = 'rgba(111,208,165,.12)';
+  ctx.fillRect(x + 20, badgeY + 60, w - 40, 1);
+
+  // --- Plantonistas ---
+  const people = card.people.length
+    ? card.people
+    : [{ nome: 'Sem plantonista cadastrado', telefone: '', email: '', email_corporativo: '', dates: [] }];
   const compact = people.length > 1;
   const maxPeople = compact ? 2 : 1;
-  let py = y + 132;
+  let personY = badgeY + 72;
+
   people.slice(0, maxPeople).forEach((person, idx) => {
-    ctx.fillStyle = '#edf3ef';
-    ctx.font = `bold ${compact ? 22 : 29}px Arial`;
+    // Nome — exibe nome completo, maior destaque
+    const displayName = (person.nome || '-').trim();
+    ctx.font = `bold ${compact ? 21 : 28}px Arial`;
+    ctx.fillStyle = '#f0f7f2';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    const displayName = shortDisplayName(person.nome || '-') || '-';
-    ctx.fillText(fitText(ctx, displayName, w - 56), x + 28, py);
+    ctx.fillText(fitText(ctx, displayName, w - 48), x + 20, personY);
 
-    ctx.fillStyle = 'rgba(109,180,141,.16)';
-    ctx.fillRect(x + 28, py + (compact ? 31 : 38), w - 56, 1.2);
+    // Linha divisória fina
+    const lineY = personY + (compact ? 29 : 37);
+    const lineGrad = ctx.createLinearGradient(x + 20, 0, x + w - 20, 0);
+    lineGrad.addColorStop(0, 'rgba(111,208,165,.22)');
+    lineGrad.addColorStop(.6, 'rgba(111,208,165,.10)');
+    lineGrad.addColorStop(1, 'rgba(111,208,165,0)');
+    ctx.fillStyle = lineGrad;
+    ctx.fillRect(x + 20, lineY, w - 40, 1);
 
-    const infoY = py + (compact ? 42 : 51);
-    const phone = formatPhone(person.telefone) || '-';
-    const email = person.email_corporativo || person.email || '-';
+    const infoY = lineY + 10;
+    const phone   = formatPhone(person.telefone) || '-';
+    const email   = person.email_corporativo || person.email || '-';
     const horario = buildHorario(person) || '-';
-    drawInfoLine(ctx, 'phone', 'Contato', phone, x + 28, infoY, w - 56, compact);
-    drawInfoLine(ctx, 'mail', 'E-mail', email, x + 28, infoY + (compact ? 42 : 49), w - 56, compact);
-    drawInfoLine(ctx, 'clock', 'Horário', horario, x + 28, infoY + (compact ? 84 : 98), w - 56, compact);
-    py += compact ? 173 : 0;
+    const spacing = compact ? 40 : 48;
+
+    drawInfoLine(ctx, 'phone', 'Contato', phone,   x + 20, infoY,             w - 40, compact);
+    drawInfoLine(ctx, 'mail',  'E-mail',  email,   x + 20, infoY + spacing,   w - 40, compact);
+    drawInfoLine(ctx, 'clock', 'Horário', horario, x + 20, infoY + spacing*2, w - 40, compact);
+
+    personY += compact ? 168 : 0;
+
     if (compact && idx === 0) {
-      ctx.fillStyle = 'rgba(109,180,141,.10)';
-      ctx.fillRect(x + 28, py - 10, w - 56, 1);
+      ctx.fillStyle = 'rgba(111,208,165,.08)';
+      ctx.fillRect(x + 20, personY - 8, w - 40, 1);
     }
   });
 
   if (people.length > maxPeople) {
-    drawPill(ctx, x + 28, y + h - 42, `+ ${people.length - maxPeople} plantonista(s) na escala completa`, {
-      bg: 'rgba(255,255,255,.04)',
-      border: 'rgba(109,180,141,.16)',
-      color: '#d8e9df',
-      font: 'bold 13px Arial',
-      px: 12,
-      py: 5,
-      radius: 999,
+    drawPill(ctx, x + 20, y + h - 38, `+ ${people.length - maxPeople} plantonista(s) na escala completa`, {
+      bg: 'rgba(255,255,255,.03)', border: 'rgba(111,208,165,.14)',
+      color: '#c4ddd1', font: 'bold 13px Arial', px: 12, py: 5, radius: 999,
     });
   }
 }
@@ -1667,35 +1756,61 @@ async function renderImagemPlantao() {
     : `${weekdayBR(dataIni)} e ${weekdayBR(dataFim)} • ${formatDateBR(dataIni)} e ${formatDateBR(dataFim)}`;
 
   const mainX = 342;
-  ctx.fillStyle = '#e8efea';
+
+  // Linha decorativa antes do título
+  const titleLineGrad = ctx.createLinearGradient(mainX - 18, 0, mainX + 340, 0);
+  titleLineGrad.addColorStop(0, 'rgba(34,197,94,.7)');
+  titleLineGrad.addColorStop(.5, 'rgba(34,197,94,.3)');
+  titleLineGrad.addColorStop(1, 'rgba(34,197,94,0)');
+  ctx.fillStyle = titleLineGrad;
+  ctx.fillRect(mainX - 18, 50, 320, 2);
+
+  // Título principal — maior, gradiente de cor
+  ctx.save();
+  const titleGrad = ctx.createLinearGradient(mainX, 62, mainX + 600, 62);
+  titleGrad.addColorStop(0,   '#f0f7f2');
+  titleGrad.addColorStop(.55, '#c8e8d6');
+  titleGrad.addColorStop(1,   '#8fd9b5');
+  ctx.fillStyle = titleGrad;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.font = 'bold 66px Arial';
-  ctx.fillText('Escala de Plantão', mainX, 62);
+  ctx.font = 'bold 72px Arial';
+  ctx.fillText('Escala de Plantão', mainX - 18, 60);
+  ctx.restore();
 
-  ctx.fillStyle = '#bfd1c8';
-  ctx.font = '23px Arial';
-  ctx.fillText('Relação de plantonistas escalados para atendimento no período informado.', mainX + 2, 147);
+  // Subtítulo
+  ctx.fillStyle = '#7fa898';
+  ctx.font = '20px Arial';
+  ctx.fillText('Relação de plantonistas escalados para atendimento no período informado.', mainX - 16, 152);
 
-  const chip = drawPill(ctx, mainX + 2, 198, titleSetor === 'todos' ? 'Todos os setores' : `Setor: ${titleSetor}`, {
-    bg: 'rgba(26,72,54,.26)',
-    border: 'rgba(109,180,141,.22)',
-    color: '#a6deb9',
-    font: 'bold 21px Arial',
-    px: 18,
-    py: 9,
+  // Chips de setor e período
+  const chipSetor = drawPill(ctx, mainX - 18, 196, titleSetor === 'todos' ? 'Todos os setores' : `Setor: ${titleSetor}`, {
+    bg: 'rgba(34,197,94,.09)',
+    border: 'rgba(34,197,94,.30)',
+    color: '#a8e8c4',
+    font: 'bold 20px Arial',
+    px: 16, py: 8,
   });
-  ctx.fillStyle = 'rgba(222,235,228,.22)';
-  ctx.fillRect(mainX + chip.width + 25, 202, 2, 42);
-  drawCanvasIcon(ctx, 'calendar', mainX + chip.width + 50, 202, 36, '#72c99a');
-  ctx.fillStyle = '#dbe7e1';
-  ctx.font = 'bold 24px Arial';
-  ctx.fillText('Período:', mainX + chip.width + 94, 205);
-  ctx.fillStyle = '#97d6b0';
-  ctx.fillText(dateText, mainX + chip.width + 205, 205);
+  // Separador vertical
+  ctx.fillStyle = 'rgba(111,208,165,.20)';
+  ctx.fillRect(mainX - 18 + chipSetor.width + 20, 200, 1.5, 36);
+  // Ícone + label período
+  drawCanvasIcon(ctx, 'calendar', mainX - 18 + chipSetor.width + 40, 198, 34, '#5ed490');
+  ctx.fillStyle = '#c0d8cc';
+  ctx.font = 'bold 20px Arial';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillText('Período:', mainX - 18 + chipSetor.width + 82, 200);
+  ctx.fillStyle = '#8fd9b5';
+  ctx.fillText(dateText, mainX - 18 + chipSetor.width + 194, 200);
 
-  ctx.fillStyle = 'rgba(109,180,141,.14)';
-  ctx.fillRect(mainX - 18, 268, IMG_W - mainX - 68, 1.4);
+  // Linha divisória principal
+  const divGrad = ctx.createLinearGradient(mainX - 18, 0, IMG_W - 68, 0);
+  divGrad.addColorStop(0,  'rgba(111,208,165,.28)');
+  divGrad.addColorStop(.5, 'rgba(111,208,165,.12)');
+  divGrad.addColorStop(1,  'rgba(111,208,165,0)');
+  ctx.fillStyle = divGrad;
+  ctx.fillRect(mainX - 18, 260, IMG_W - mainX - 50, 1.5);
 
   if (!rows.length) {
     drawRoundRectFilled(ctx, mainX - 18, 306, IMG_W - mainX - 68, 300, 26, 'rgba(7,18,14,.88)', 'rgba(111,208,165,.18)', 1.2);
@@ -1708,10 +1823,10 @@ async function renderImagemPlantao() {
     ctx.fillText('Ajuste os filtros e atualize a imagem.', mainX + (IMG_W - mainX - 68) / 2, 468);
   } else {
     const gridX = mainX - 18;
-    const gridY = 292;
-    const gap = 24;
-    const cardW = Math.floor((IMG_W - gridX - 68 - gap) / 2);
-    const cardH = 338;
+    const gridY = 284;
+    const gap = 20;
+    const cardW = Math.floor((IMG_W - gridX - 60 - gap) / 2);
+    const cardH = 344;
     cards.slice(0, 4).forEach((card, idx) => {
       const x = gridX + (idx % 2) * (cardW + gap);
       const y = gridY + Math.floor(idx / 2) * (cardH + 18);
@@ -1719,31 +1834,45 @@ async function renderImagemPlantao() {
     });
   }
 
-  drawRoundRectFilled(ctx, 72, 792, 92, 92, 22, 'rgba(12,24,20,.54)', 'rgba(109,180,141,.24)', 1.3);
-  drawCanvasIcon(ctx, 'headset', 90, 810, 56, '#72c99a');
-  ctx.fillStyle = '#97d6b0';
-  ctx.font = 'bold 22px Arial';
-  ctx.fillText('ATENDIMENTO', 54, 905);
-  ctx.fillStyle = '#e7efea';
-  ctx.font = 'bold 20px Arial';
-  ctx.fillText('QUE MOVE', 54, 934);
-  ctx.fillText('O AGRO.', 54, 963);
+  // Sidebar — ícone de headset com glow
+  const hsGlow = ctx.createRadialGradient(118, 838, 10, 118, 838, 70);
+  hsGlow.addColorStop(0, 'rgba(34,197,94,.18)');
+  hsGlow.addColorStop(1, 'rgba(34,197,94,0)');
+  ctx.fillStyle = hsGlow;
+  ctx.fillRect(48, 768, 140, 140);
+  drawRoundRectFilled(ctx, 68, 790, 100, 100, 24, 'rgba(14,34,26,.72)', 'rgba(34,197,94,.35)', 1.5);
+  drawCanvasIcon(ctx, 'headset', 84, 808, 62, '#4de090');
 
+  ctx.fillStyle = '#5ed490';
+  ctx.font = 'bold 21px Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('ATENDIMENTO', 50, 908);
+  ctx.fillStyle = '#dceee4';
+  ctx.font = 'bold 19px Arial';
+  ctx.fillText('QUE MOVE', 50, 936);
+  ctx.fillText('O AGRO.', 50, 962);
+
+  // Rodapé
   const footerY = 1032;
-  ctx.fillStyle = 'rgba(109,180,141,.16)';
-  ctx.fillRect(mainX - 18, footerY - 20, IMG_W - mainX - 68, 1.4);
-  drawCanvasIcon(ctx, 'box', mainX, footerY - 10, 34, '#72c99a');
-  ctx.fillStyle = '#d7e5df';
+  const footGrad = ctx.createLinearGradient(mainX - 18, 0, IMG_W - 68, 0);
+  footGrad.addColorStop(0,  'rgba(111,208,165,.24)');
+  footGrad.addColorStop(.5, 'rgba(111,208,165,.10)');
+  footGrad.addColorStop(1,  'rgba(111,208,165,0)');
+  ctx.fillStyle = footGrad;
+  ctx.fillRect(mainX - 18, footerY - 18, IMG_W - mainX - 50, 1.5);
+  drawCanvasIcon(ctx, 'box', mainX - 14, footerY - 10, 32, '#5ed490');
+  ctx.fillStyle = '#a0c4b4';
   ctx.font = '18px Arial';
   ctx.textAlign = 'left';
-  ctx.fillText('Compromisso, agilidade e confiança para manter o agro sempre em movimento.', mainX + 54, footerY - 2);
-  ctx.fillStyle = 'rgba(222,235,228,.22)';
-  ctx.fillRect(1082, footerY - 14, 1.5, 42);
-  drawCanvasIcon(ctx, 'leaf', 1112, footerY - 12, 36, '#72c99a');
-  ctx.fillStyle = '#97d6b0';
+  ctx.textBaseline = 'top';
+  ctx.fillText('Compromisso, agilidade e confiança para manter o agro sempre em movimento.', mainX + 28, footerY - 2);
+  ctx.fillStyle = 'rgba(111,208,165,.18)';
+  ctx.fillRect(1084, footerY - 12, 1.5, 40);
+  drawCanvasIcon(ctx, 'leaf', 1112, footerY - 10, 34, '#5ed490');
+  ctx.fillStyle = '#7fd4a8';
   ctx.font = 'bold 18px Arial';
-  ctx.textAlign = 'left';
-  ctx.fillText('www.grao1000.com.br', 1162, footerY - 2);
+  ctx.fillText('www.grao1000.com.br', 1160, footerY - 2);
 }
 
 function baixarImagemPlantao() {
