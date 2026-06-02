@@ -191,6 +191,7 @@ function injectPlantaoStyles() {
     .plantao-field.half{grid-column:span 6}
     .plantao-field.quarter{grid-column:span 3}
     .plantao-label{display:block;font-size:13px;color:var(--muted);font-weight:800;margin-bottom:7px}
+    .plantao-opt{font-weight:400;opacity:.65;font-size:11px}
     .plantao-input,.plantao-select,.plantao-textarea{width:100%;background:#15152a;color:var(--text);border:1px solid rgba(255,255,255,0.08);border-radius:13px;padding:11px 12px;outline:none}
     .plantao-input:focus,.plantao-select:focus,.plantao-textarea:focus{border-color:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,.15)}
     .plantao-textarea{min-height:82px;resize:vertical}
@@ -368,6 +369,7 @@ function addEscalaRow(setor, row) {
     colaborador_key: key,
     cpf: row.cpf || '',
     nome: row.nome || '',
+    apelido: row.apelido || '',
     telefone: row.telefone || '',
     email_corporativo: row.email_corporativo || '',
     hora_inicio: row.hora_inicio || '',
@@ -914,14 +916,20 @@ function renderSetores() {
           <input class="plantao-input" type="time" data-field="hora_fim" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim)}" />
         </div>
         <div>
-          <label class="plantao-label">Início 2</label>
-          <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio_2)}" />
+          <label class="plantao-label">Início 2 <span class="plantao-opt">(opcional)</span></label>
+          <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="" />
         </div>
         <div>
-          <label class="plantao-label">Fim 2</label>
-          <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim_2)}" />
+          <label class="plantao-label">Fim 2 <span class="plantao-opt">(opcional)</span></label>
+          <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="" />
         </div>
         <button type="button" class="plantao-btn primary" data-add="${esc(setor)}">Adicionar</button>
+      </div>
+      <div style="display:grid;grid-template-columns:minmax(220px,1.5fr) 1fr;gap:10px;margin-top:8px;">
+        <div>
+          <label class="plantao-label">Apelido / Nome social <span class="plantao-opt">(opcional — exibido na arte)</span></label>
+          <input class="plantao-input plantao-apelido-input" data-setor="${esc(setor)}" placeholder="Deixe vazio para usar o nome completo" />
+        </div>
       </div>
 
       <div class="plantao-person-list">
@@ -929,7 +937,8 @@ function renderSetores() {
           <div class="plantao-person" data-row="${idx}" data-setor="${esc(setor)}">
             <div>
               <span class="plantao-date-pill">${esc(weekdayBR(row.data_plantao))} · ${esc(formatDateBR(row.data_plantao))}</span>
-              <strong>${esc(row.nome)}</strong>
+              <strong>${esc(row.apelido || row.nome)}</strong>
+              ${row.apelido ? `<span class="plantao-meta" style="font-size:11px">${esc(row.nome)}</span>` : ''}
               <span>${esc(row.cpf || row.colaborador_key || '')}</span>
             </div>
             <div><span>Contato</span><br>${esc(formatPhone(row.telefone) || '-')}</div>
@@ -1019,12 +1028,15 @@ function addFromSetorForm(setor) {
   }
 
   const getField = (name) => section.querySelector(`[data-field="${name}"]`)?.value || '';
+  const getFieldRaw = (name) => section.querySelector(`[data-field="${name}"]`)?.value ?? '';
   const padrao = getHorarioPadrao();
-  const data_plantao = getField('data_plantao') || document.getElementById('plantaoData').value;
-  const hora_inicio = getField('hora_inicio') || padrao.hora_inicio;
-  const hora_fim = getField('hora_fim') || padrao.hora_fim;
-  const hora_inicio_2 = getField('hora_inicio_2') || padrao.hora_inicio_2;
-  const hora_fim_2 = getField('hora_fim_2') || padrao.hora_fim_2;
+  const data_plantao   = getField('data_plantao') || document.getElementById('plantaoData').value;
+  const hora_inicio    = getField('hora_inicio')   || padrao.hora_inicio;
+  const hora_fim       = getField('hora_fim')      || padrao.hora_fim;
+  // Segundo período: sem fallback — deixar vazio se o usuário não preencheu
+  const hora_inicio_2  = getFieldRaw('hora_inicio_2');
+  const hora_fim_2     = getFieldRaw('hora_fim_2');
+  const apelido        = section.querySelector('.plantao-apelido-input')?.value?.trim() || '';
 
   if (!data_plantao) {
     alert('Selecione o dia do plantão antes de adicionar.');
@@ -1038,6 +1050,7 @@ function addFromSetorForm(setor) {
 
   addEscalaRow(setor, {
     ...selected,
+    apelido,
     data_plantao,
     evento: document.getElementById('plantaoEvento').value,
     hora_inicio,
@@ -1068,6 +1081,7 @@ async function saveEscala() {
         colaborador_key: p.colaborador_key || collaboratorKey(p),
         cpf: p.cpf || null,
         nome: p.nome,
+        apelido: p.apelido || null,
         telefone: p.telefone || null,
         email_corporativo: p.email_corporativo || null,
         hora_inicio: p.hora_inicio || null,
@@ -1678,7 +1692,7 @@ function drawSectorCard(ctx, card, x, y, w, h, dateFallback) {
     ctx.fillStyle = '#f0f7f2';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(fitText(ctx, (person.nome || '-').trim(), w - 48), x + 20, personY);
+    ctx.fillText(fitText(ctx, (person.apelido || person.nome || '-').trim(), w - 48), x + 20, personY);
 
     const divY = personY + nameFontSz + 6;
     const dg   = ctx.createLinearGradient(x + 20, 0, x + w - 20, 0);
