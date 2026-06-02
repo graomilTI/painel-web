@@ -912,15 +912,16 @@ async function reconcile(el) {
       const hasColab = uniqDist.some(r => r.colaborador && r.colaborador !== '—');
 
       // Status base: Situação e Financeiro da Lista de OS
-      const situN  = norm(lista.situacao  || '');
+      const situN   = norm(lista.situacao   || '');
       const financN = norm(lista.financeiro || '');
+      const checkinOk = norm(btg.checkinDiario || '') === 'CONFIRMADO';
       let baseStatus;
-      if      (situN === 'CANCELADA')                          baseStatus = 'CANCELADA';
+      if      (situN === 'CANCELADA')                            baseStatus = 'CANCELADA';
       else if (situN === 'FINALIZADA' || situN === 'BONIFICADA') baseStatus = 'FINALIZADA';
-      else if (financN === 'FATURADA')                         baseStatus = 'FATURADA';
+      else if (financN === 'FATURADA')                           baseStatus = 'FATURADA';
       else if (situN === 'ABERTA' || situN === 'ATIVO' || situN === '')
-                                                               baseStatus = hasColab ? 'OK' : 'FALTA COLABORADOR';
-      else                                                     baseStatus = 'VERIFICAR';
+        baseStatus = !hasColab ? 'FALTA COLABORADOR' : checkinOk ? 'OK' : 'VERIFICAR';
+      else                                                       baseStatus = 'VERIFICAR';
 
       const pessoas = [];
       for (const d of uniqDist) pushUnique(pessoas, d.colaborador);
