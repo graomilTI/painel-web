@@ -153,9 +153,9 @@ const state = {
 
 async function loadSavedBtgData() {
   try {
-    const { data, error } = await supabase.from('logistica_btg_solicitacoes').select('contrato_original, contrato_status, numero_os_relatorio, tipo_solicitacao, cliente, commodity, quantidade, aba, linha').order('linha', { ascending: true }).limit(10000);
+    const { data, error } = await supabase.from('logistica_btg_solicitacoes').select('contrato_original, contrato_status, numero_os_relatorio, tipo_solicitacao, cliente, commodity, quantidade, aba, linha, checkin_diario').order('linha', { ascending: true }).limit(10000);
     if (error) throw error;
-    const rows = (data || []).map((item) => ({ portal: clean(item.numero_os_relatorio), contratoOriginal: contratoNorm(item.contrato_original), contrato: item.contrato_status || contratoLabel(item.contrato_original), tipoSolicitacao: clean(item.tipo_solicitacao) || 'Relatório BTG', cliente: clean(item.cliente), commodity: clean(item.commodity), qtde: item.quantidade, sheet: item.aba, rowNumber: item.linha, fonte: 'Relatório BTG' }));
+    const rows = (data || []).map((item) => ({ portal: clean(item.numero_os_relatorio), contratoOriginal: contratoNorm(item.contrato_original), contrato: item.contrato_status || contratoLabel(item.contrato_original), tipoSolicitacao: clean(item.tipo_solicitacao) || 'Relatório BTG', cliente: clean(item.cliente), commodity: clean(item.commodity), qtde: item.quantidade, sheet: item.aba, rowNumber: item.linha, checkinDiario: item.checkin_diario || '', fonte: 'Relatório BTG' }));
     state.btgRows = rows.length ? rows : null;
     state.btgMap = {};
     for (const r of rows) { const c = contratoNorm(r.contratoOriginal); if (isContratoBtg(c)) state.btgMap[c] = r; }
@@ -273,7 +273,7 @@ async function persistBtgRows(rows) {
   try {
     const { error: clearError } = await supabase.from('logistica_btg_solicitacoes').delete().not('id', 'is', null);
     if (clearError) throw clearError;
-    const payload = list.map((r) => ({ contrato_original: contratoNorm(r.contratoOriginal), contrato_status: contratoLabel(r.contratoOriginal), numero_os_relatorio: clean(r.portal || r.os) || null, tipo_solicitacao: clean(r.tipoSolicitacao) || 'Relatório BTG', cliente: clean(r.cliente) || null, commodity: clean(r.commodity) || null, quantidade: fnum(r.qtde), aba: r.sheet || null, linha: r.rowNumber || null, updated_at: new Date().toISOString() }));
+    const payload = list.map((r) => ({ contrato_original: contratoNorm(r.contratoOriginal), contrato_status: contratoLabel(r.contratoOriginal), numero_os_relatorio: clean(r.portal || r.os) || null, tipo_solicitacao: clean(r.tipoSolicitacao) || 'Relatório BTG', cliente: clean(r.cliente) || null, commodity: clean(r.commodity) || null, quantidade: fnum(r.qtde), aba: r.sheet || null, linha: r.rowNumber || null, checkin_diario: r.checkinDiario || null, updated_at: new Date().toISOString() }));
     for (let i = 0; i < payload.length; i += 500) {
       const { error } = await supabase.from('logistica_btg_solicitacoes').insert(payload.slice(i, i + 500));
       if (error) throw error;
@@ -799,8 +799,8 @@ async function handleFiles(files, el) {
   el.dropZone.classList.remove('btg-loading');
   await loadDbData(el);
 
-  // Restaura se o banco voltou vazio (ex.: falha silenciosa na persistência)
-  if (uploadBtgRows?.length && !state.btgRows?.length) {
+  // Restaura dados do upload — têm checkinDiario que o banco preserva mas precisa garantir
+  if (uploadBtgRows?.length) {
     state.btgRows = uploadBtgRows;
     state.btgMap  = uploadBtgMap;
     state.mode    = 'xlsx';
