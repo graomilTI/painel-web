@@ -539,11 +539,11 @@ function parseDistribuicao(wb) {
       // Cancelada e Bonificada são desconsideradas completamente
       if (situacaoN === 'CANCELADA' || situacaoN === 'BONIFICADA') continue;
 
-      // Apenas Aberta atualiza a lista de OS no banco
-      if (situacaoN === 'ABERTA') {
+      // Aberta e Ativo atualizam a lista de OS no banco
+      if (situacaoN === 'ABERTA' || situacaoN === 'ATIVO') {
         allOsRows.push({
           numero_os:          osNum,
-          situacao:           situacaoStr || null,
+          situacao:           'ABERTA',
           financeiro:         financeiroStr || null,
           data_os:            ci.data >= 0       ? excelDateBtg(r[ci.data]) : null,
           servico:            ci.servico >= 0    ? clean(String(r[ci.servico]    ?? '')) || null : null,
@@ -755,7 +755,7 @@ async function handleFiles(files, el) {
     return;
   }
 
-  if (state.distRows !== null && state.allOsRows?.length === 0) {
+  if (state.distRows !== null && state.distRows.length === 0) {
     el.feedback.textContent = 'Aviso: planilha de Distribuição carregada mas nenhuma O.S. foi lida. Verifique o formato do arquivo no console.';
   }
 
