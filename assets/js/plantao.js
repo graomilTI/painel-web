@@ -1559,46 +1559,57 @@ function shortDisplayName(name) {
   return `${parts[0]} ${parts[parts.length - 1]}`;
 }
 
-function drawInfoLine(ctx, icon, label, value, x, y, maxW, compact = false) {
-  const iconSize = compact ? 24 : 28;
+function drawInfoLine(ctx, icon, label, value, x, y, maxW, compact = false, iconSz = 0) {
+  const iconSize = iconSz || (compact ? 24 : 28);
+  const labelSz  = Math.max(10, Math.round(iconSize * 0.46));
+  const valueSz  = Math.max(12, Math.round(iconSize * 0.64));
   drawRoundRectFilled(ctx, x, y - 2, iconSize + 12, iconSize + 12, 13, 'rgba(255,255,255,.04)', 'rgba(132,184,158,.16)', 1);
   drawCanvasIcon(ctx, icon, x + 6, y + 4, iconSize, '#72c99a');
   ctx.fillStyle = '#98b4a8';
-  ctx.font = `bold ${compact ? 12 : 13}px Arial`;
+  ctx.font = `bold ${labelSz}px Arial`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(label, x + iconSize + 26, y + 1);
   ctx.fillStyle = '#e6efea';
-  ctx.font = `bold ${compact ? 16 : 18}px Arial`;
-  ctx.fillText(fitText(ctx, value || '-', maxW - iconSize - 28), x + iconSize + 26, y + (compact ? 15 : 17));
+  ctx.font = `bold ${valueSz}px Arial`;
+  ctx.fillText(fitText(ctx, value || '-', maxW - iconSize - 28), x + iconSize + 26, y + labelSz + 3);
+}
+
+// Calcula a altura necessária para um card com n plantonistas
+function calcCardHeight(numPeople) {
+  const HEADER = 140;  // data + badge + separador
+  const PAD_B  = 32;
+  const n = Math.min(Math.max(numPeople, 1), 2);
+  if (n === 1) return HEADER + 32 + 14 + 52 * 3 + PAD_B;    // ≈ 370
+  const perPerson = 24 + 14 + 42 * 3;                        // ≈ 164
+  return HEADER + perPerson * 2 + 18 + PAD_B;                // ≈ 498
 }
 
 function drawSectorCard(ctx, card, x, y, w, h, dateFallback) {
-  // Fundo com gradiente diagonal
+  // ── Fundo ───────────────────────────────────────────────────────────────────
   ctx.save();
   drawRoundRect(ctx, x, y, w, h, 22);
   ctx.clip();
   const bgGrad = ctx.createLinearGradient(x, y, x + w * .7, y + h);
-  bgGrad.addColorStop(0,   'rgba(14,32,24,.96)');
-  bgGrad.addColorStop(.5,  'rgba(9,22,17,.92)');
-  bgGrad.addColorStop(1,   'rgba(6,15,11,.94)');
+  bgGrad.addColorStop(0,  'rgba(14,32,24,.96)');
+  bgGrad.addColorStop(.5, 'rgba(9,22,17,.92)');
+  bgGrad.addColorStop(1,  'rgba(6,15,11,.94)');
   ctx.fillStyle = bgGrad;
   ctx.fillRect(x, y, w, h);
-  // Highlight sutil no topo
-  const topHighlight = ctx.createLinearGradient(x, y, x, y + 90);
-  topHighlight.addColorStop(0, 'rgba(111,208,165,.07)');
-  topHighlight.addColorStop(1, 'rgba(111,208,165,0)');
-  ctx.fillStyle = topHighlight;
+  const topHL = ctx.createLinearGradient(x, y, x, y + 90);
+  topHL.addColorStop(0, 'rgba(111,208,165,.07)');
+  topHL.addColorStop(1, 'rgba(111,208,165,0)');
+  ctx.fillStyle = topHL;
   ctx.fillRect(x, y, w, h);
   ctx.restore();
 
-  // Borda gradiente (canto superior-esquerdo mais brilhante)
+  // Borda gradiente
   ctx.save();
-  const borderGrad = ctx.createLinearGradient(x, y, x + w * .55, y + h * .55);
-  borderGrad.addColorStop(0,  'rgba(111,208,165,.65)');
-  borderGrad.addColorStop(.35,'rgba(111,208,165,.35)');
-  borderGrad.addColorStop(1,  'rgba(111,208,165,.08)');
-  ctx.strokeStyle = borderGrad;
+  const bord = ctx.createLinearGradient(x, y, x + w * .55, y + h * .55);
+  bord.addColorStop(0,   'rgba(111,208,165,.65)');
+  bord.addColorStop(.35, 'rgba(111,208,165,.32)');
+  bord.addColorStop(1,   'rgba(111,208,165,.08)');
+  ctx.strokeStyle = bord;
   ctx.lineWidth = 1.5;
   drawRoundRect(ctx, x, y, w, h, 22);
   ctx.stroke();
@@ -1606,24 +1617,23 @@ function drawSectorCard(ctx, card, x, y, w, h, dateFallback) {
 
   // Barra de acento esquerda
   ctx.save();
-  const accentGrad = ctx.createLinearGradient(0, y + 30, 0, y + h - 30);
-  accentGrad.addColorStop(0,   'rgba(34,197,94,0)');
-  accentGrad.addColorStop(.15, 'rgba(34,197,94,.95)');
-  accentGrad.addColorStop(.85, 'rgba(34,197,94,.95)');
-  accentGrad.addColorStop(1,   'rgba(34,197,94,0)');
-  ctx.fillStyle = accentGrad;
+  const acc = ctx.createLinearGradient(0, y + 28, 0, y + h - 28);
+  acc.addColorStop(0,   'rgba(34,197,94,0)');
+  acc.addColorStop(.14, 'rgba(34,197,94,.95)');
+  acc.addColorStop(.86, 'rgba(34,197,94,.95)');
+  acc.addColorStop(1,   'rgba(34,197,94,0)');
+  ctx.fillStyle = acc;
   ctx.beginPath();
   ctx.roundRect(x, y + 22, 3, h - 44, [0, 2, 2, 0]);
   ctx.fill();
   ctx.restore();
 
-  // --- Cabeçalho: data ---
+  // ── Data ────────────────────────────────────────────────────────────────────
   const dateLabel = formatCardDateLabel(card.people.flatMap((p) => p.dates || [])) || dateFallback;
   ctx.save();
   ctx.font = 'bold 16px Arial';
-  const dateLabelW = ctx.measureText(dateLabel).width;
-  drawRoundRectFilled(ctx, x + 20, y + 16, dateLabelW + 52, 32, 8,
-    'rgba(34,197,94,.07)', 'rgba(34,197,94,.20)', 1);
+  const dlW = ctx.measureText(dateLabel).width;
+  drawRoundRectFilled(ctx, x + 20, y + 16, dlW + 52, 32, 8, 'rgba(34,197,94,.07)', 'rgba(34,197,94,.20)', 1);
   drawCanvasIcon(ctx, 'calendar', x + 26, y + 19, 20, '#5ed490');
   ctx.fillStyle = '#8fd9b5';
   ctx.textBaseline = 'top';
@@ -1631,70 +1641,71 @@ function drawSectorCard(ctx, card, x, y, w, h, dateFallback) {
   ctx.fillText(fitText(ctx, dateLabel, w - 56), x + 52, y + 22);
   ctx.restore();
 
-  // --- Badge de setor ---
+  // ── Badge de setor ──────────────────────────────────────────────────────────
   const badgeY = y + 62;
-  // Ícone com fundo brilhante
-  drawRoundRectFilled(ctx, x + 20, badgeY, 52, 52, 13,
-    'rgba(34,197,94,.10)', 'rgba(34,197,94,.28)', 1.5);
+  drawRoundRectFilled(ctx, x + 20, badgeY, 52, 52, 13, 'rgba(34,197,94,.10)', 'rgba(34,197,94,.28)', 1.5);
   drawCanvasIcon(ctx, sectorIcon(card.setor), x + 30, badgeY + 10, 32, '#5ed490');
-  // Pill do setor
   drawPill(ctx, x + 84, badgeY + 8, card.setor, {
-    bg: 'rgba(34,197,94,.10)',
-    border: 'rgba(34,197,94,.30)',
-    color: '#a8e8c4',
-    font: 'bold 23px Arial',
-    px: 16, py: 7, radius: 10,
+    bg: 'rgba(34,197,94,.10)', border: 'rgba(34,197,94,.30)', color: '#a8e8c4',
+    font: 'bold 23px Arial', px: 16, py: 7, radius: 10,
   });
 
-  // Separador após badge
+  const HEADER_END = badgeY + 62; // y onde começa a seção de plantonistas
   ctx.fillStyle = 'rgba(111,208,165,.12)';
-  ctx.fillRect(x + 20, badgeY + 60, w - 40, 1);
+  ctx.fillRect(x + 20, HEADER_END, w - 40, 1);
 
-  // --- Plantonistas ---
+  // ── Plantonistas — layout totalmente adaptativo à altura disponível ─────────
   const people = card.people.length
     ? card.people
     : [{ nome: 'Sem plantonista cadastrado', telefone: '', email: '', email_corporativo: '', dates: [] }];
-  const compact = people.length > 1;
-  const maxPeople = compact ? 2 : 1;
-  let personY = badgeY + 72;
+  const maxPeople = people.length > 1 ? 2 : 1;
+  const shown     = people.slice(0, maxPeople);
+  const hasExtra  = people.length > maxPeople;
 
-  people.slice(0, maxPeople).forEach((person, idx) => {
-    // Nome — exibe nome completo, maior destaque
-    const displayName = (person.nome || '-').trim();
-    ctx.font = `bold ${compact ? 21 : 28}px Arial`;
+  // Espaço disponível para os plantonistas
+  const availH   = (y + h) - HEADER_END - (hasExtra ? 46 : 20);
+  const perH      = Math.floor(availH / shown.length);
+
+  // Escala fontes baseado no espaço por pessoa
+  const nameFontSz = Math.max(14, Math.min(28, Math.floor(perH * 0.16)));
+  const iconSz     = Math.max(18, Math.min(28, Math.floor(perH * 0.13)));
+  const lineSpacing = Math.max(32, Math.floor((perH - nameFontSz - 18) / 3));
+
+  let personY = HEADER_END + 10;
+
+  shown.forEach((person, idx) => {
+    ctx.font = `bold ${nameFontSz}px Arial`;
     ctx.fillStyle = '#f0f7f2';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(fitText(ctx, displayName, w - 48), x + 20, personY);
+    ctx.fillText(fitText(ctx, (person.nome || '-').trim(), w - 48), x + 20, personY);
 
-    // Linha divisória fina
-    const lineY = personY + (compact ? 29 : 37);
-    const lineGrad = ctx.createLinearGradient(x + 20, 0, x + w - 20, 0);
-    lineGrad.addColorStop(0, 'rgba(111,208,165,.22)');
-    lineGrad.addColorStop(.6, 'rgba(111,208,165,.10)');
-    lineGrad.addColorStop(1, 'rgba(111,208,165,0)');
-    ctx.fillStyle = lineGrad;
-    ctx.fillRect(x + 20, lineY, w - 40, 1);
+    const divY = personY + nameFontSz + 6;
+    const dg   = ctx.createLinearGradient(x + 20, 0, x + w - 20, 0);
+    dg.addColorStop(0,  'rgba(111,208,165,.22)');
+    dg.addColorStop(.6, 'rgba(111,208,165,.10)');
+    dg.addColorStop(1,  'rgba(111,208,165,0)');
+    ctx.fillStyle = dg;
+    ctx.fillRect(x + 20, divY, w - 40, 1);
 
-    const infoY = lineY + 10;
-    const phone   = formatPhone(person.telefone) || '-';
-    const email   = person.email_corporativo || person.email || '-';
-    const horario = buildHorario(person) || '-';
-    const spacing = compact ? 40 : 48;
+    const infoY  = divY + 8;
+    const phone  = formatPhone(person.telefone) || '-';
+    const email  = person.email_corporativo || person.email || '-';
+    const hora   = buildHorario(person) || '-';
 
-    drawInfoLine(ctx, 'phone', 'Contato', phone,   x + 20, infoY,             w - 40, compact);
-    drawInfoLine(ctx, 'mail',  'E-mail',  email,   x + 20, infoY + spacing,   w - 40, compact);
-    drawInfoLine(ctx, 'clock', 'Horário', horario, x + 20, infoY + spacing*2, w - 40, compact);
+    drawInfoLine(ctx, 'phone', 'Contato', phone, x + 20, infoY,               w - 40, true, iconSz);
+    drawInfoLine(ctx, 'mail',  'E-mail',  email, x + 20, infoY + lineSpacing,  w - 40, true, iconSz);
+    drawInfoLine(ctx, 'clock', 'Horário', hora,  x + 20, infoY + lineSpacing*2,w - 40, true, iconSz);
 
-    personY += compact ? 168 : 0;
+    personY += perH;
 
-    if (compact && idx === 0) {
+    if (idx < shown.length - 1) {
       ctx.fillStyle = 'rgba(111,208,165,.08)';
       ctx.fillRect(x + 20, personY - 8, w - 40, 1);
     }
   });
 
-  if (people.length > maxPeople) {
+  if (hasExtra) {
     drawPill(ctx, x + 20, y + h - 38, `+ ${people.length - maxPeople} plantonista(s) na escala completa`, {
       bg: 'rgba(255,255,255,.03)', border: 'rgba(111,208,165,.14)',
       color: '#c4ddd1', font: 'bold 13px Arial', px: 12, py: 5, radius: 999,
@@ -1822,15 +1833,35 @@ async function renderImagemPlantao() {
     ctx.font = '25px Arial';
     ctx.fillText('Ajuste os filtros e atualize a imagem.', mainX + (IMG_W - mainX - 68) / 2, 468);
   } else {
-    const gridX = mainX - 18;
-    const gridY = 284;
-    const gap = 20;
-    const cardW = Math.floor((IMG_W - gridX - 60 - gap) / 2);
-    const cardH = 344;
-    cards.slice(0, 4).forEach((card, idx) => {
-      const x = gridX + (idx % 2) * (cardW + gap);
-      const y = gridY + Math.floor(idx / 2) * (cardH + 18);
-      drawSectorCard(ctx, card, x, y, cardW, cardH, dateFallback);
+    const gridX   = mainX - 18;
+    const gridY   = 284;
+    const gap     = 20;
+    const rowGap  = 18;
+    const cardW   = Math.floor((IMG_W - gridX - 60 - gap) / 2);
+    const footerY = 1014; // limite antes do rodapé
+
+    // Monta linhas de 2 cards e calcula altura necessária de cada linha
+    const rows = [];
+    for (let i = 0; i < Math.min(cards.length, 4); i += 2) {
+      const pair = cards.slice(i, i + 2);
+      const rowH = Math.max(...pair.map((c) => calcCardHeight(c?.people?.length || 0)));
+      rows.push({ pair, rowH });
+    }
+
+    // Se o conteúdo total exceder o espaço disponível, escala proporcionalmente
+    const totalGaps  = (rows.length - 1) * rowGap;
+    const totalNeeded = rows.reduce((s, r) => s + r.rowH, 0) + totalGaps;
+    const available  = footerY - gridY;
+    const scale      = totalNeeded > available ? available / totalNeeded : 1;
+
+    let curY = gridY;
+    rows.forEach(({ pair, rowH }) => {
+      const scaledH = Math.floor(rowH * scale);
+      pair.forEach((card, idx) => {
+        const cx = gridX + idx * (cardW + gap);
+        drawSectorCard(ctx, card, cx, curY, cardW, scaledH, dateFallback);
+      });
+      curY += scaledH + rowGap;
     });
   }
 
