@@ -41,7 +41,9 @@
     metasCadastro: [],
     producaoCoordenacoes: [],
     metaEstimativa: '',
-    erro: null
+    erro: null,
+    gestores: [],
+    gestoresEditId: null
   };
 
   function injectStyle() {
@@ -1296,6 +1298,96 @@
     `;
   }
 
+  function renderGestores(state) {
+    const fmtBRL = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const calcBI = g => (Number(g.salario || 0) + Number(g.grat40 || 0)) * 0.1;
+
+    const rows = [...state.gestores].sort((a, b) =>
+      String(a.coordenacao || '').localeCompare(String(b.coordenacao || ''), 'pt-BR') ||
+      String(a.gestor || '').localeCompare(String(b.gestor || ''), 'pt-BR')
+    );
+
+    function rowHtml(g) {
+      const editing = String(g.id) === String(state.gestoresEditId);
+      if (editing) {
+        return `
+          <tr data-metas-gestor-row data-id="${escapeHtml(String(g.id))}">
+            <td><input class="metas-edit-input" data-gf="coordenacao" value="${escapeHtml(g.coordenacao || '')}" placeholder="Coordenação" /></td>
+            <td><input class="metas-edit-input" data-gf="gestor" value="${escapeHtml(g.gestor || '')}" placeholder="Nome" /></td>
+            <td><input class="metas-edit-input" data-gf="supervisao" value="${escapeHtml(g.supervisao || '')}" placeholder="Supervisão" /></td>
+            <td class="num"><input class="metas-edit-input" data-gf="salario" type="number" step="0.01" value="${g.salario || ''}" placeholder="0,00" style="text-align:right;width:100px" /></td>
+            <td class="num"><input class="metas-edit-input" data-gf="grat40" type="number" step="0.01" value="${g.grat40 || ''}" placeholder="0,00" style="text-align:right;width:90px" /></td>
+            <td class="num" style="color:#86efac;font-weight:800">R$ ${fmtBRL(calcBI(g))}</td>
+            <td style="text-align:right;white-space:nowrap">
+              <button class="metas-btn" style="padding:5px 10px;font-size:11px" data-metas-gestor-save-edit="${escapeHtml(String(g.id))}">Salvar</button>
+              <button class="metas-btn secondary" style="padding:5px 10px;font-size:11px;margin-left:4px" data-metas-gestor-cancel-edit>✕</button>
+            </td>
+          </tr>`;
+      }
+      return `
+        <tr data-metas-gestor-row data-id="${escapeHtml(String(g.id))}">
+          <td><strong>${escapeHtml(g.coordenacao || '')}</strong></td>
+          <td>${escapeHtml(g.gestor || '')}</td>
+          <td>${escapeHtml(g.supervisao || '—')}</td>
+          <td class="num">R$ ${fmtBRL(g.salario)}</td>
+          <td class="num">${Number(g.grat40 || 0) > 0 ? 'R$ ' + fmtBRL(g.grat40) : '—'}</td>
+          <td class="num" style="color:#86efac;font-weight:800">R$ ${fmtBRL(calcBI(g))}</td>
+          <td style="text-align:right;white-space:nowrap">
+            <button class="metas-btn secondary" style="padding:5px 10px;font-size:11px" data-metas-gestor-edit="${escapeHtml(String(g.id))}">Editar</button>
+            <button class="metas-btn secondary" style="padding:5px 10px;font-size:11px;color:#fca5a5;border-color:rgba(239,68,68,.3);margin-left:4px" data-metas-gestor-del="${escapeHtml(String(g.id))}">Excluir</button>
+          </td>
+        </tr>`;
+    }
+
+    return `
+      <div class="metas-table-card">
+        <div class="metas-table-top">
+          <h2>Gestores por Regional</h2>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="metas-pill">${rows.length} gestores</span>
+            <button class="metas-btn" type="button" data-metas-gestor-add>+ Adicionar</button>
+          </div>
+        </div>
+
+        <div id="metasGestorAddForm" style="display:none;padding:14px 16px;border-bottom:1px solid var(--metas-border)">
+          <div style="display:grid;grid-template-columns:1fr 1.6fr 1.6fr 110px 110px auto;gap:10px;align-items:end">
+            <div class="metas-field"><label>Coordenação</label><input class="metas-edit-input" id="mgfCoord" placeholder="Ex.: GOIAS" /></div>
+            <div class="metas-field"><label>Gestor</label><input class="metas-edit-input" id="mgfGestor" placeholder="Nome completo" /></div>
+            <div class="metas-field"><label>Supervisão</label><input class="metas-edit-input" id="mgfSup" placeholder="Ex.: GOIAS 1 - Rio Verde" /></div>
+            <div class="metas-field"><label>Salário (R$)</label><input class="metas-edit-input" id="mgfSalario" type="number" step="0.01" min="0" placeholder="0,00" /></div>
+            <div class="metas-field"><label>Grat. 40%</label><input class="metas-edit-input" id="mgfGrat" type="number" step="0.01" min="0" placeholder="0,00" /></div>
+            <div style="display:flex;gap:6px">
+              <button class="metas-btn" type="button" data-metas-gestor-save-new>Salvar</button>
+              <button class="metas-btn secondary" type="button" data-metas-gestor-cancel>✕</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="metas-table-wrap">
+          <table class="metas-table">
+            <thead>
+              <tr>
+                <th>Coordenação</th>
+                <th>Gestor</th>
+                <th>Supervisão</th>
+                <th class="num">Salário</th>
+                <th class="num">Grat. 40%</th>
+                <th class="num">Bônus Inicial</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length
+                ? rows.map(rowHtml).join('')
+                : `<tr><td colspan="7"><div class="metas-empty">Nenhum gestor cadastrado.</div></td></tr>`}
+            </tbody>
+          </table>
+        </div>
+        <p class="metas-config-hint" style="padding:10px 16px">Bônus inicial = (salário + grat.40%) × 10%.</p>
+      </div>
+    `;
+  }
+
   function renderCadastroMetas(state) {
     const years = [];
     const currentYear = new Date().getFullYear();
@@ -1454,6 +1546,10 @@
       return renderHistoricoTable(state.mensal);
     }
 
+    if (state.tab === 'gestores') {
+      return renderGestores(state);
+    }
+
     if (state.tab === 'configurar') {
       return renderCadastroMetas(state);
     }
@@ -1537,6 +1633,7 @@
           <button type="button" class="metas-tab ${state.tab === 'regionais' ? 'active' : ''}" data-metas-tab="regionais">Regionais</button>
           <button type="button" class="metas-tab ${state.tab === 'estados' ? 'active' : ''}" data-metas-tab="estados">Estados</button>
           <button type="button" class="metas-tab ${state.tab === 'historico' ? 'active' : ''}" data-metas-tab="historico">Histórico Mensal</button>
+          <button type="button" class="metas-tab ${state.tab === 'gestores' ? 'active' : ''}" data-metas-tab="gestores">Gestores</button>
           <button type="button" class="metas-tab ${state.tab === 'configurar' ? 'active' : ''}" data-metas-tab="configurar">Configurar / Fechar</button>
         </div>
 
@@ -1709,6 +1806,14 @@
         estado: row.estado,
         produzido_tons: row.produzido_tons
       }));
+
+      state.gestores = await fetchAllRows(
+        supabase.from('metas_gestores')
+          .select('id,coordenacao,gestor,supervisao,salario,grat40,ativo')
+          .eq('ativo', true)
+          .order('coordenacao', { ascending: true })
+          .order('gestor', { ascending: true })
+      ).catch(() => []);
     } catch (err) {
       console.error('[METAS] Erro ao carregar dados:', err);
       state.erro = err && err.message ? err.message : String(err);
@@ -1803,6 +1908,25 @@
 
     const fmtBRL = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+    // % atingido por regional
+    const percByKey = new Map(rows.map(row => {
+      const meta = Number(row.meta_tons || 0);
+      const prod = Number(row.produzido_tons || 0);
+      return [rowKey(row), meta > 0 ? (prod / meta) * 100 : 0];
+    }));
+
+    // gestores ativos enriquecidos com % da regional
+    const gestoresEnriq = (state.gestores || []).map(g => {
+      const key = normalizarTexto(g.coordenacao || '');
+      const pct = percByKey.has(key) ? percByKey.get(key) : null;
+      const bi = (Number(g.salario || 0) + Number(g.grat40 || 0)) * 0.1;
+      return { ...g, _key: key, pct, bonusInicial: bi };
+    });
+
+    // regionais com meta mas sem gestor cadastrado
+    const comGestor = new Set(gestoresEnriq.map(g => g._key));
+    const semGestor = rows.filter(r => !comGestor.has(rowKey(r)));
+
     const overlay = document.createElement('div');
     overlay.id = 'metas-fechar-modal-overlay';
     overlay.className = 'metas-modal-overlay';
@@ -1811,46 +1935,52 @@
       <div class="metas-modal">
         <div class="metas-modal-header">
           <h3>Fechar Meta — ${escapeHtml(getMonthName(state.mes))}/${state.ano}</h3>
-          <p>Defina o percentual mínimo para elegibilidade ao bônus e cadastre o gestor e salário de cada coordenação.</p>
+          <p>Defina o percentual mínimo para elegibilidade ao bônus e confira o cálculo por gestor.</p>
         </div>
         <div class="metas-modal-threshold">
           <div class="metas-field" style="max-width:280px">
             <label>Percentual mínimo para receber bônus (%)</label>
             <input class="metas-edit-input" id="metasMinPercInput" type="number" min="0" max="200" step="1" value="100" placeholder="Ex.: 90" />
-            <p class="metas-config-hint">Coordenações com % atingido ≥ esse valor recebem bônus.</p>
+            <p class="metas-config-hint">Regionais com % atingido ≥ esse valor — todos os gestores vinculados recebem bônus.</p>
           </div>
         </div>
-        <div class="metas-table-wrap">
-          <table class="metas-table">
-            <thead>
-              <tr>
-                <th>Coordenação</th>
-                <th class="num">% Atingido</th>
-                <th class="num">Qualifica</th>
-                <th>Gestor</th>
-                <th>Salário (R$)</th>
-                <th class="num">Bônus Estimado</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map(row => {
-                const meta = Number(row.meta_tons || 0);
-                const produzido = Number(row.produzido_tons || 0);
-                const percentual = meta > 0 ? (produzido / meta) * 100 : 0;
-                const key = rowKey(row);
-                return `<tr data-metas-bonus-row data-key="${escapeHtml(key)}" data-percentual="${percentual.toFixed(6)}">
-                  <td><strong>${escapeHtml(row.regional || '')}</strong></td>
-                  <td class="num"><span class="metas-pill ${pctClass(percentual)}">${fmtPct(percentual)}</span></td>
-                  <td class="num" data-metas-qualifica-cell>—</td>
-                  <td><input class="metas-edit-input" data-metas-gestor placeholder="Nome do gestor" style="min-width:160px" /></td>
-                  <td><input class="metas-edit-input" data-metas-salario type="number" step="0.01" min="0" placeholder="0,00" style="min-width:120px" /></td>
-                  <td class="num" data-metas-bonus-cell style="font-weight:800">—</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-        <p class="metas-config-hint">Bônus estimado = % atingido × salário × 40% (componente de produção, baseado nas regras de bônus de coordenadores).</p>
+        ${gestoresEnriq.length ? `
+          <div class="metas-table-wrap">
+            <table class="metas-table">
+              <thead>
+                <tr>
+                  <th>Gestor</th>
+                  <th>Coordenação</th>
+                  <th>Supervisão</th>
+                  <th class="num">% Regional</th>
+                  <th class="num">Qualifica</th>
+                  <th class="num">Bônus Inicial</th>
+                  <th class="num">Bônus (produção)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${gestoresEnriq.map(g => `
+                  <tr data-metas-bonus-row
+                      data-gestor-id="${escapeHtml(String(g.id))}"
+                      data-key="${escapeHtml(g._key)}"
+                      data-percentual="${(g.pct ?? 0).toFixed(6)}"
+                      data-bonus-inicial="${g.bonusInicial.toFixed(6)}">
+                    <td><strong>${escapeHtml(g.gestor || '')}</strong></td>
+                    <td>${escapeHtml(g.coordenacao || '')}</td>
+                    <td style="color:var(--metas-muted);font-size:12px">${escapeHtml(g.supervisao || '—')}</td>
+                    <td class="num">${g.pct !== null ? `<span class="metas-pill ${pctClass(g.pct)}">${fmtPct(g.pct)}</span>` : '<span class="metas-pill">sem meta</span>'}</td>
+                    <td class="num" data-metas-qualifica-cell>—</td>
+                    <td class="num">${fmtBRL(g.bonusInicial)}</td>
+                    <td class="num" data-metas-bonus-cell style="font-weight:800">—</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>` : `<div class="metas-empty">Nenhum gestor cadastrado. Acesse a aba <strong>Gestores</strong> para cadastrar antes de fechar.</div>`}
+        ${semGestor.length ? `
+          <div class="metas-error" style="padding:10px 14px;font-size:12px">
+            <strong>Regionais sem gestor vinculado:</strong> ${semGestor.map(r => escapeHtml(r.regional || '')).join(', ')}
+          </div>` : ''}
+        <p class="metas-config-hint">Bônus = % regional × bônus inicial × 40% · Bônus inicial = (salário + grat.40%) × 10%.</p>
         <div class="metas-modal-footer">
           <button class="metas-btn secondary" type="button" id="metasFecharCancelar">Cancelar</button>
           <button class="metas-btn" type="button" id="metasFecharConfirmar">Confirmar Fechamento</button>
@@ -1865,32 +1995,25 @@
     function updateBadges() {
       const min = Number(minInput.value || 100);
       overlay.querySelectorAll('[data-metas-bonus-row]').forEach(tr => {
-        const percentual = Number(tr.dataset.percentual || 0);
-        const qualifica = percentual >= min;
+        const pct = Number(tr.dataset.percentual || 0);
+        const bi = Number(tr.dataset.bonusInicial || 0);
+        const qualifica = pct >= min;
         const qualCell = tr.querySelector('[data-metas-qualifica-cell]');
         const bonusCell = tr.querySelector('[data-metas-bonus-cell]');
-        const salarioInput = tr.querySelector('[data-metas-salario]');
-        const salario = Number(salarioInput && salarioInput.value || 0);
-
-        if (qualCell) {
-          qualCell.innerHTML = qualifica
-            ? '<span class="metas-pill good">Qualifica</span>'
-            : '<span class="metas-pill bad">Não qualifica</span>';
-        }
+        if (qualCell) qualCell.innerHTML = qualifica ? '<span class="metas-pill good">Qualifica</span>' : '<span class="metas-pill bad">Não qualifica</span>';
         if (bonusCell) {
-          if (qualifica && salario > 0) {
-            bonusCell.textContent = fmtBRL((percentual / 100) * salario * 0.4);
+          if (qualifica && bi > 0) {
+            bonusCell.textContent = fmtBRL((pct / 100) * bi * 0.4);
             bonusCell.style.color = '#86efac';
           } else {
-            bonusCell.textContent = qualifica ? '— (sem salário)' : '—';
-            bonusCell.style.color = qualifica ? '#fcd34d' : '#6b7280';
+            bonusCell.textContent = '—';
+            bonusCell.style.color = '#6b7280';
           }
         }
       });
     }
 
     minInput.addEventListener('input', updateBadges);
-    overlay.querySelectorAll('[data-metas-salario]').forEach(inp => inp.addEventListener('input', updateBadges));
     updateBadges();
 
     overlay.querySelector('#metasFecharCancelar').addEventListener('click', () => overlay.remove());
@@ -1898,18 +2021,21 @@
 
     overlay.querySelector('#metasFecharConfirmar').addEventListener('click', () => {
       const min = Number(minInput.value || 100);
-      const gestores = [];
+      const gestoresBonus = [];
       overlay.querySelectorAll('[data-metas-bonus-row]').forEach(tr => {
-        gestores.push({
-          regional: tr.dataset.key,
-          percentual: Number(tr.dataset.percentual || 0),
-          gestor: (tr.querySelector('[data-metas-gestor]') || {}).value || '',
-          salario: Number((tr.querySelector('[data-metas-salario]') || {}).value || 0),
-          qualifica: Number(tr.dataset.percentual || 0) >= min
+        const pct = Number(tr.dataset.percentual || 0);
+        const bi = Number(tr.dataset.bonusInicial || 0);
+        const qualifica = pct >= min;
+        gestoresBonus.push({
+          coordenacaoKey: tr.dataset.key,
+          gestorId: Number(tr.dataset.gestorId),
+          qualifica,
+          bonusInicial: bi,
+          bonusProducao: qualifica && bi > 0 ? (pct / 100) * bi * 0.4 : 0
         });
       });
       overlay.remove();
-      onConfirm({ percentualMinimo: min, gestores });
+      onConfirm({ percentualMinimo: min, gestoresBonus });
     });
   }
 
@@ -1927,15 +2053,24 @@
 
     showFecharMetaModal(state, rows, async (params) => {
       const now = new Date().toISOString();
+
+      // Agrupa bonus por regional (soma de todos gestores qualificados)
+      const bonusByKey = new Map();
+      for (const gb of (params.gestoresBonus || [])) {
+        const k = gb.coordenacaoKey;
+        if (!bonusByKey.has(k)) bonusByKey.set(k, { total: 0, qualifica: false });
+        if (gb.qualifica) {
+          bonusByKey.get(k).total += gb.bonusProducao;
+          bonusByKey.get(k).qualifica = true;
+        }
+      }
+
       const payloads = rows.map(row => {
         const meta = Number(row.meta_tons || 0);
         const produzido = Number(row.produzido_tons || 0);
         const percentual = meta > 0 ? (produzido / meta) * 100 : 0;
         const key = rowKey(row);
-        const gestorInfo = params.gestores.find(g => g.regional === key) || {};
-        const salario = Number(gestorInfo.salario || 0);
-        const qualifica = Boolean(gestorInfo.qualifica);
-        const bonusProducao = qualifica && salario > 0 ? (percentual / 100) * salario * 0.4 : 0;
+        const bonusInfo = bonusByKey.get(key) || { total: 0, qualifica: false };
 
         return {
           ano: Number(state.ano),
@@ -1949,11 +2084,9 @@
           status_fechamento: produzido >= meta ? 'ATINGIU' : 'NAO_ATINGIU',
           produzido_fechamento: produzido,
           percentual_fechamento: percentual,
-          gestor: gestorInfo.gestor || null,
-          salario: salario || null,
           bonus_percentual_minimo: params.percentualMinimo || 100,
-          bonus_producao: bonusProducao,
-          qualifica_bonus: qualifica,
+          bonus_producao: bonusInfo.total,
+          qualifica_bonus: bonusInfo.qualifica,
           updated_at: now
         };
       });
@@ -2074,6 +2207,80 @@
         await salvarMeta(form, state, supabase, rerender);
       });
     }
+
+    // ── Gestores ──────────────────────────────────────────────────────────
+    const gestorAddBtn = container.querySelector('[data-metas-gestor-add]');
+    if (gestorAddBtn) {
+      gestorAddBtn.addEventListener('click', () => {
+        const f = document.getElementById('metasGestorAddForm');
+        if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+      });
+    }
+
+    const gestorCancelBtn = container.querySelector('[data-metas-gestor-cancel]');
+    if (gestorCancelBtn) {
+      gestorCancelBtn.addEventListener('click', () => {
+        const f = document.getElementById('metasGestorAddForm');
+        if (f) f.style.display = 'none';
+      });
+    }
+
+    const gestorSaveNewBtn = container.querySelector('[data-metas-gestor-save-new]');
+    if (gestorSaveNewBtn) {
+      gestorSaveNewBtn.addEventListener('click', async () => {
+        const coord = document.getElementById('mgfCoord')?.value?.trim().toUpperCase();
+        const gestor = document.getElementById('mgfGestor')?.value?.trim().toUpperCase();
+        const sup = document.getElementById('mgfSup')?.value?.trim() || null;
+        const sal = Number(document.getElementById('mgfSalario')?.value || 0) || null;
+        const grat = Number(document.getElementById('mgfGrat')?.value || 0) || null;
+        if (!coord || !gestor) { alert('Coordenação e Gestor são obrigatórios.'); return; }
+        const { error } = await supabase.from('metas_gestores').insert({ coordenacao: coord, gestor, supervisao: sup, salario: sal, grat40: grat, ativo: true, updated_at: new Date().toISOString() });
+        if (error) { alert('Erro: ' + error.message); return; }
+        await reload();
+      });
+    }
+
+    const gestorCancelEditBtn = container.querySelector('[data-metas-gestor-cancel-edit]');
+    if (gestorCancelEditBtn) {
+      gestorCancelEditBtn.addEventListener('click', () => { state.gestoresEditId = null; rerender(); });
+    }
+
+    container.querySelectorAll('[data-metas-gestor-edit]').forEach(btn => {
+      btn.addEventListener('click', () => { state.gestoresEditId = btn.dataset.metasGestorEdit; rerender(); });
+    });
+
+    container.querySelectorAll('[data-metas-gestor-save-edit]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = Number(btn.dataset.metasGestorSaveEdit);
+        const tr = btn.closest('[data-metas-gestor-row]');
+        if (!tr) return;
+        const gf = f => tr.querySelector(`[data-gf="${f}"]`)?.value?.trim();
+        const coord = gf('coordenacao')?.toUpperCase();
+        const gestor = gf('gestor')?.toUpperCase();
+        if (!coord || !gestor) { alert('Coordenação e Gestor são obrigatórios.'); return; }
+        const { error } = await supabase.from('metas_gestores').update({
+          coordenacao: coord,
+          gestor,
+          supervisao: gf('supervisao') || null,
+          salario: Number(tr.querySelector('[data-gf="salario"]')?.value || 0) || null,
+          grat40: Number(tr.querySelector('[data-gf="grat40"]')?.value || 0) || null,
+          updated_at: new Date().toISOString()
+        }).eq('id', id);
+        if (error) { alert('Erro: ' + error.message); return; }
+        state.gestoresEditId = null;
+        await reload();
+      });
+    });
+
+    container.querySelectorAll('[data-metas-gestor-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Excluir este gestor?')) return;
+        const id = Number(btn.dataset.metasGestorDel);
+        const { error } = await supabase.from('metas_gestores').update({ ativo: false, updated_at: new Date().toISOString() }).eq('id', id);
+        if (error) { alert('Erro: ' + error.message); return; }
+        await reload();
+      });
+    });
   }
 
   async function openHome(container, opts) {
