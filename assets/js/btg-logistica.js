@@ -502,13 +502,13 @@ function rowHtml(r) {
       ? `<span class="btg-val" style="color:#93c5fd">NHE</span>`
       : `<span class="btg-val" style="color:${fnum(r.prodDiaOs) <= 0 ? '#fca5a5' : '#86efac'}">${esc(fmt(r.prodDiaOs))}</span>`
     : '<span style="color:#475569">—</span>';
-  const isVerificar = r.status === 'VERIFICAR';
+  const canSuspender = r.status === 'VERIFICAR' || r.status === 'CHECK-IN' || r.status === 'FALTA COLABORADOR';
   const isSuspenso  = r.status === 'EMBARQUE SUSPENSO';
   const contratoKey = esc(contratoNorm(r.contratoOriginal || r.contrato || ''));
   return `<tr class="btg-row ${statusClass(r.status)}">
     <td>
       <span class="btg-status ${statusClass(r.status)}">${esc(r.status || 'OK')}</span>
-      ${isVerificar ? `<button class="btg-btn-suspender" data-action="suspender" data-contrato="${contratoKey}" title="Mover para Embarque Suspenso">→ Suspender</button>` : ''}
+      ${canSuspender ? `<button class="btg-btn-suspender" data-action="suspender" data-contrato="${contratoKey}" title="Mover para Embarque Suspenso">→ Suspender</button>` : ''}
       ${isSuspenso  ? `<button class="btg-btn-reverter-suspenso" data-action="reverter-suspenso" data-contrato="${contratoKey}" title="Reverter para Verificar">↩ Reverter</button>` : ''}
     </td>
     <td><span class="btg-os-num">${esc(r.os || '—')}</span>${checkinOff}</td>
