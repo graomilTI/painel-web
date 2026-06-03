@@ -148,8 +148,17 @@ const state = {
   sort: { col: 'os', dir: 'asc' },
   loaded: { dist: null, btg: null, listaOs: null },
   uploadAfter17h: false,
+  embarqueSuspenso: new Set((() => { try { return JSON.parse(localStorage.getItem('btg_embarque_suspenso_v1') || '[]'); } catch(_) { return []; } })()),
 };
 
+
+function toggleEmbarqueSuspenso(contratoOriginal) {
+  const k = contratoNorm(contratoOriginal);
+  if (!k) return;
+  if (state.embarqueSuspenso.has(k)) state.embarqueSuspenso.delete(k);
+  else state.embarqueSuspenso.add(k);
+  try { localStorage.setItem('btg_embarque_suspenso_v1', JSON.stringify([...state.embarqueSuspenso])); } catch(_) {}
+}
 
 async function loadSavedBtgData() {
   try {
@@ -396,6 +405,7 @@ function renderStatusButtons(el) {
     ['finalizada', 'Finalizada'],
     ['pendencia cliente', 'Pendência Cliente'],
     ['verificar', 'Verificar'],
+    ['embarque suspenso', 'Embarque Suspenso'],
     ['check-in', 'Check-in'],
     ['cancelada', 'Cancelada'],
     ['falta colaborador', 'Falta Colaborador'],
@@ -464,6 +474,7 @@ function render(el) {
 
 function statusClass(s) {
   const n = norm(s || '');
+  if (n === 'EMBARQUE SUSPENSO') return 'status-embarque-suspenso';
   if (n === 'VERIFICAR') return 'status-verificar';
   if (n === 'PENDENCIA CLIENTE') return 'status-pendencia';
   if (n === 'FALTA COLABORADOR') return 'status-falta';
@@ -491,8 +502,15 @@ function rowHtml(r) {
       ? `<span class="btg-val" style="color:#93c5fd">NHE</span>`
       : `<span class="btg-val" style="color:${fnum(r.prodDiaOs) <= 0 ? '#fca5a5' : '#86efac'}">${esc(fmt(r.prodDiaOs))}</span>`
     : '<span style="color:#475569">—</span>';
+  const isVerificar = r.status === 'VERIFICAR';
+  const isSuspenso  = r.status === 'EMBARQUE SUSPENSO';
+  const contratoKey = esc(contratoNorm(r.contratoOriginal || r.contrato || ''));
   return `<tr class="btg-row ${statusClass(r.status)}">
-    <td><span class="btg-status ${statusClass(r.status)}">${esc(r.status || 'OK')}</span></td>
+    <td>
+      <span class="btg-status ${statusClass(r.status)}">${esc(r.status || 'OK')}</span>
+      ${isVerificar ? `<button class="btg-btn-suspender" data-action="suspender" data-contrato="${contratoKey}" title="Mover para Embarque Suspenso">→ Suspender</button>` : ''}
+      ${isSuspenso  ? `<button class="btg-btn-reverter-suspenso" data-action="reverter-suspenso" data-contrato="${contratoKey}" title="Reverter para Verificar">↩ Reverter</button>` : ''}
+    </td>
     <td><span class="btg-os-num">${esc(r.os || '—')}</span>${checkinOff}</td>
     <td><span class="btg-os-num" style="color:#94a3b8">${esc(r.portal || '—')}</span></td>
     <td><span class="btg-contrato"${title}>${esc(r.contrato)}</span></td>
@@ -1031,6 +1049,11 @@ async function reconcile(el) {
     }
   }
 
+  for (const row of out) {
+    const k = contratoNorm(row.contratoOriginal || '');
+    if (k && state.embarqueSuspenso.has(k)) row.status = 'EMBARQUE SUSPENSO';
+  }
+
   state.finalRows = out;
   render(el);
 }
@@ -1348,6 +1371,12 @@ function injectStyles() {
     .btg-chip.ok,.btg-status.status-ok{background:rgba(22,163,74,.14);color:#86efac;border-color:rgba(52,211,153,.2)}
     .btg-chip.warn{background:rgba(250,204,21,.12);color:#fde68a;border-color:rgba(250,204,21,.25)}
     .btg-chip.danger{background:rgba(239,68,68,.11);color:#fca5a5;border-color:rgba(239,68,68,.25)}
+    .btg-status.status-embarque-suspenso{background:rgba(245,158,11,.13);color:#fcd34d;border-color:rgba(245,158,11,.35)}
+    .btg-row.status-embarque-suspenso td{background:rgba(245,158,11,.04)}
+    .btg-btn-suspender{display:block;margin-top:4px;padding:2px 8px;font-size:10px;font-weight:800;border-radius:999px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.1);color:#fca5a5;cursor:pointer;white-space:nowrap;transition:.15s;line-height:1.6}
+    .btg-btn-suspender:hover{background:rgba(239,68,68,.25);border-color:rgba(239,68,68,.6);color:#fff}
+    .btg-btn-reverter-suspenso{display:block;margin-top:4px;padding:2px 8px;font-size:10px;font-weight:800;border-radius:999px;border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.1);color:#fcd34d;cursor:pointer;white-space:nowrap;transition:.15s;line-height:1.6}
+    .btg-btn-reverter-suspenso:hover{background:rgba(245,158,11,.25);border-color:rgba(245,158,11,.6);color:#fff}
     .btg-status.status-verificar{background:rgba(239,68,68,.13);color:#fca5a5;border-color:rgba(239,68,68,.3)}
     .btg-status.status-checkin{background:rgba(239,68,68,.18);color:#f87171;border-color:rgba(239,68,68,.45);font-weight:900}
     .btg-row.status-checkin td{background:rgba(239,68,68,.06)}
@@ -1500,6 +1529,17 @@ initProtectedPage('BTG — Logística', async (content) => {
       return;
     }
 
+    const actionBtn = e.target.closest('[data-action]');
+    if (actionBtn) {
+      const action = actionBtn.dataset.action;
+      const contrato = actionBtn.dataset.contrato;
+      if ((action === 'suspender' || action === 'reverter-suspenso') && contrato) {
+        toggleEmbarqueSuspenso(contrato);
+        if (state.mode === 'xlsx') await reconcile(el);
+        else render(el);
+      }
+      return;
+    }
   });
 
   el.recarregar.addEventListener('click', async () => {
