@@ -2193,7 +2193,7 @@
       <section class="frotas-shell">
         <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Excesso de Velocidade</h1><p class="frotas-subtitle">Gere as notificações aos colaboradores. Depois, envie os prints em lote: o sistema identifica a placa/OCR e salva cada arquivo na pasta do motorista correspondente no Drive.</p></div></div>
         <div class="frotas-card">
-          <div class="frotas-tabs"><button class="frotas-tab" type="button" data-open-dashboard>Dashboard</button><button class="frotas-tab active" type="button">Excesso de Velocidade</button><button class="frotas-tab" type="button" data-open-veiculos>Veículos</button><button class="frotas-tab" type="button" data-open-multas>Multas</button><button class="frotas-tab" type="button" data-open-historico>Histórico</button></div>
+          <div class="frotas-tabs"><button class="frotas-tab" type="button" data-open-dashboard>Dashboard</button><button class="frotas-tab active" type="button">Excesso de Velocidade</button><button class="frotas-tab" type="button" data-open-veiculos>Veículos</button><button class="frotas-tab" type="button" data-open-multas>Multas</button><button class="frotas-tab" type="button" data-open-historico>Histórico</button><button class="frotas-tab" type="button" data-open-rastreadores>Rastreadores</button></div>
           <div class="frotas-body">
             <div class="speed-grid">
               <div class="speed-panel">
@@ -2273,6 +2273,7 @@
     container.querySelector('[data-open-veiculos]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-veiculos')));
     container.querySelector('[data-open-multas]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-multas')));
     container.querySelector('[data-open-historico]')?.addEventListener('click', () => renderHistoricoFrotas(container, opts));
+    container.querySelector('[data-open-rastreadores]')?.addEventListener('click', () => window.location.assign(panelUrl('frotas-rastreadores')));
 
     const plate = container.querySelector('[data-speed-plate]');
     if (plate) plate.addEventListener('input', () => { plate.value = onlyPlate(plate.value); });
