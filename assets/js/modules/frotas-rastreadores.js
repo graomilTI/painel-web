@@ -66,11 +66,18 @@
     setTimeout(() => el.classList.remove('show'), 3600);
   }
 
-  function statusBadge(status, naoAtendido) {
-    if (naoAtendido) return '<span class="fr-badge err">✕ Não atendido</span>';
-    if (status === 'concluido') return '<span class="fr-badge ok">✓ Concluído</span>';
-    if (status === 'em_andamento') return '<span class="fr-badge progress">⏳ Em andamento</span>';
-    return '<span class="fr-badge none">— Sem rastreador</span>';
+  const STATUS_LABEL = {
+    concluido:            ['ok',       '✓ Instalado'],
+    em_andamento:         ['progress', '⏳ Em andamento'],
+    agendado:             ['progress', '📅 Agendado'],
+    aguardando_motorista: ['progress', '⏳ Aguard. motorista'],
+    sem_rastreador:       ['none',     '— Sem rastreador'],
+  };
+
+  function statusBadge(status, agendFrus) {
+    const [cls, label] = STATUS_LABEL[status] || STATUS_LABEL.sem_rastreador;
+    const frus = agendFrus > 0 ? ` <span class="fr-badge err" style="font-size:9px">✕ ${agendFrus}x frustrado</span>` : '';
+    return `<span class="fr-badge ${cls}">${label}</span>${frus}`;
   }
 
   function mergeData() {
@@ -88,8 +95,9 @@
       const r = row._rastr;
       const status = r?.status || 'sem_rastreador';
 
+      const EM_ANDAMENTO = ['em_andamento','aguardando_motorista','agendado'];
       if (state.filtro === 'sem_rastreador' && status !== 'sem_rastreador') return false;
-      if (state.filtro === 'em_andamento' && status !== 'em_andamento') return false;
+      if (state.filtro === 'em_andamento' && !EM_ANDAMENTO.includes(status)) return false;
       if (state.filtro === 'concluido' && status !== 'concluido') return false;
 
       if (!busca) return true;
@@ -101,10 +109,11 @@
   }
 
   function calcKpis() {
+    const EM_ANDAMENTO = ['em_andamento','aguardando_motorista','agendado'];
     const total = state.merged.length;
     const bfleetTotal = state.merged.filter(r => r._hasBfleet).length;
     const sem = state.merged.filter(r => !r._rastr || r._rastr.status === 'sem_rastreador').length;
-    const andamento = state.merged.filter(r => r._rastr?.status === 'em_andamento').length;
+    const andamento = state.merged.filter(r => EM_ANDAMENTO.includes(r._rastr?.status)).length;
     const concluido = state.merged.filter(r => r._rastr?.status === 'concluido').length;
     return { total, bfleetTotal, sem, andamento, concluido };
   }
@@ -118,7 +127,7 @@
       <div class="fr-kpi"><span>Com BFleet</span><strong style="color:#a5b4fc">${k.bfleetTotal}</strong></div>
       <div class="fr-kpi"><span>Sem rastreador</span><strong style="color:#94a3b8">${k.sem}</strong></div>
       <div class="fr-kpi"><span>Em andamento</span><strong style="color:#fde68a">${k.andamento}</strong></div>
-      <div class="fr-kpi"><span>Concluídos</span><strong style="color:#86efac">${k.concluido}</strong></div>`;
+      <div class="fr-kpi"><span>Instalados</span><strong style="color:#86efac">${k.concluido}</strong></div>`;
   }
 
   function renderTable(root) {
@@ -131,7 +140,7 @@
     el.innerHTML = rows.map(row => {
       const r = row._rastr;
       const status = r?.status || 'sem_rastreador';
-      const naoAtendido = r?.nao_atendido || false;
+      const agendFrus = r?.agendamentos_frustrados || 0;
 
       // IMEI: manual tem prioridade; fallback é idgps da BFleet (estilo diferente)
       const imeiManual = r?.imei;
@@ -155,9 +164,9 @@
         <td>${r?.data_envio ? fmtDate(r.data_envio) : '—'}</td>
         <td>${r?.previsao_chegada ? fmtDate(r.previsao_chegada) : '—'}</td>
         <td style="font-family:monospace;font-size:12px">${esc(r?.cod_rastreio || '—')}</td>
-        <td>${statusBadge(status, naoAtendido)}</td>
+        <td>${statusBadge(status, agendFrus)}</td>
         <td>${r?.data_instalacao ? fmtDate(r.data_instalacao) : '—'}</td>
-        <td>${naoAtendido ? '<span class="fr-badge err">Sim</span>' : '<span class="fr-badge none">Não</span>'}</td>
+        <td>${agendFrus > 0 ? `<span class="fr-badge err">${agendFrus}</span>` : '<span class="fr-badge none">0</span>'}</td>
         <td>${esc(r?.contato || row.motorista_atual || '—')}</td>
         <td><button class="fr-btn soft fr-mini" data-edit="${esc(row.placa)}">Editar</button></td>
       </tr>`;
@@ -203,6 +212,24 @@
             </div>
           </div>
 
+          <div class="fr-divider">Contrato</div>
+          <div class="fr-form">
+            <div class="fr-field">
+              <label>Nº Contrato</label>
+              <input type="number" name="contrato" value="${r.contrato || ''}" placeholder="Ex: 110" />
+            </div>
+            <div class="fr-field" style="justify-content:flex-end">
+              <div class="fr-check-row">
+                <input type="checkbox" name="contrato_assinado" id="chk_contrato_${esc(placa)}" ${r.contrato_assinado ? 'checked' : ''} />
+                <label for="chk_contrato_${esc(placa)}">Contrato assinado</label>
+              </div>
+            </div>
+            <div class="fr-field">
+              <label>Termo assinado</label>
+              <input name="termo_assinado" value="${esc(r.termo_assinado || '')}" placeholder="Ex: Aguardando instalação" />
+            </div>
+          </div>
+
           <div class="fr-divider">Rastreador</div>
           <div class="fr-form">
             <div class="fr-field">
@@ -218,8 +245,9 @@
               <label>Status</label>
               <select name="status">
                 <option value="sem_rastreador" ${(!r.status || r.status === 'sem_rastreador') ? 'selected' : ''}>Sem rastreador</option>
-                <option value="em_andamento" ${r.status === 'em_andamento' ? 'selected' : ''}>Em andamento</option>
-                <option value="concluido" ${(r.status === 'concluido' || (isBfleet && !r.status)) ? 'selected' : ''}>Concluído</option>
+                <option value="aguardando_motorista" ${r.status === 'aguardando_motorista' ? 'selected' : ''}>Aguardando resposta motorista</option>
+                <option value="agendado" ${r.status === 'agendado' ? 'selected' : ''}>Agendado instalação</option>
+                <option value="concluido" ${(r.status === 'concluido' || (isBfleet && !r.status)) ? 'selected' : ''}>Instalado</option>
               </select>
             </div>
           </div>
@@ -246,11 +274,9 @@
               <label>Contato (Motorista/Colaborador)</label>
               <input name="contato" value="${esc(r.contato || row.motorista_atual || '')}" placeholder="Nome ou telefone" />
             </div>
-            <div class="fr-field" style="justify-content:flex-end">
-              <div class="fr-check-row">
-                <input type="checkbox" name="nao_atendido" id="chk_nao_atendido_${esc(placa)}" ${r.nao_atendido ? 'checked' : ''} />
-                <label for="chk_nao_atendido_${esc(placa)}">Não atendido</label>
-              </div>
+            <div class="fr-field">
+              <label>Agendamentos frustrados</label>
+              <input type="number" name="agendamentos_frustrados" value="${r.agendamentos_frustrados || 0}" min="0" />
             </div>
             <div class="fr-field full">
               <label>Observações</label>
@@ -275,7 +301,11 @@
   function readModal(backdrop) {
     const get = (name) => backdrop.querySelector(`[name="${name}"]`)?.value?.trim() || null;
     const chk = (name) => backdrop.querySelector(`[name="${name}"]`)?.checked || false;
+    const num = (name) => { const v = parseInt(backdrop.querySelector(`[name="${name}"]`)?.value || '0', 10); return isNaN(v) ? 0 : v; };
     return {
+      contrato: parseInt(get('contrato') || '0', 10) || null,
+      contrato_assinado: chk('contrato_assinado'),
+      termo_assinado: get('termo_assinado'),
       estado: get('estado'),
       cidade: get('cidade'),
       local_instalacao: get('local_instalacao'),
@@ -285,8 +315,8 @@
       data_envio: get('data_envio') || null,
       previsao_chegada: get('previsao_chegada') || null,
       data_instalacao: get('data_instalacao') || null,
+      agendamentos_frustrados: num('agendamentos_frustrados'),
       contato: get('contato'),
-      nao_atendido: chk('nao_atendido'),
       observacoes: get('observacoes')
     };
   }
