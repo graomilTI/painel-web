@@ -2101,6 +2101,99 @@
   }
 
 
+  // ── Despesas mensais por regional → dre_despesas_mensal ────────────────
+  async function importarDespesasDaPlanilha(file, opts) {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+
+    const candidates = ['Despesas por Regional', 'Despesas', 'DESPESAS', 'Despesas_regionais'];
+    const sheetName = wb.SheetNames.find(n => candidates.some(c => normalizeHeader(n).includes(normalizeHeader(c)))) || wb.SheetNames[0];
+    if (!sheetName) throw new Error('Aba de Despesas não encontrada.');
+
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+    if (!rows || rows.length < 3) throw new Error('Planilha de Despesas inválida.');
+
+    const headerDates = rows[0] || [];
+    const headerTypes = rows[1] || [];
+
+    // Detecta coluna TOTAL por mês (chave: "YYYY-MM" → índice da coluna TOTAL)
+    const totalColByMonth = new Map();
+    let lastMonthKey = null;
+    for (let c = 1; c < Math.max(headerDates.length, headerTypes.length); c++) {
+      const dateCell = headerDates[c];
+      if (dateCell != null && dateCell !== '') {
+        let iso = null;
+        if (dateCell instanceof Date && !isNaN(dateCell)) {
+          iso = `${dateCell.getFullYear()}-${String(dateCell.getMonth() + 1).padStart(2, '0')}`;
+        } else {
+          const full = toIsoDate(dateCell);
+          if (full) iso = full.slice(0, 7);
+          else {
+            const m = String(dateCell).trim().match(/^(\d{1,2})\/(\d{4})$/);
+            if (m) iso = `${m[2]}-${m[1].padStart(2, '0')}`;
+          }
+        }
+        if (iso) lastMonthKey = iso;
+      }
+      if (!lastMonthKey) continue;
+      if (/^TOTAL\s*$/i.test(String(headerTypes[c] || '').trim())) {
+        totalColByMonth.set(lastMonthKey, c);
+      }
+    }
+    if (!totalColByMonth.size) throw new Error('Nenhuma coluna TOTAL encontrada. Verifique o formato da planilha de Despesas.');
+
+    // Lê totais por regional e GERAL
+    const byKey  = new Map(); // "COORD|YYYY-MM" → total
+    const geralM = new Map(); // "YYYY-MM" → total
+    const normUp = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+
+    for (const row of rows.slice(2)) {
+      const raw = String(row?.[0] || '').trim();
+      if (!raw) continue;
+      const norm = normUp(raw);
+      if (!norm || /^TOTAL/i.test(norm)) continue;
+      const isGeral = norm === 'GERAL';
+      for (const [mk, ci] of totalColByMonth) {
+        const val = normalizeNumberBr(row[ci]) || 0;
+        if (!val) continue;
+        if (isGeral) geralM.set(mk, (geralM.get(mk) || 0) + val);
+        else         byKey.set(`${norm}|${mk}`, (byKey.get(`${norm}|${mk}`) || 0) + val);
+      }
+    }
+
+    // Monta payloads com rateio
+    const payloads = [];
+    for (const mk of totalColByMonth.keys()) {
+      const [yr, ms] = mk.split('-');
+      const ano = Number(yr), mes = Number(ms);
+      if (!ano || !mes) continue;
+
+      let totalTodasRegionais = 0;
+      const regionaisDoMes = new Map();
+      for (const [k, v] of byKey) {
+        const [coord, m] = k.split('|');
+        if (m !== mk) continue;
+        regionaisDoMes.set(coord, v);
+        totalTodasRegionais += v;
+      }
+
+      const totalGeral = geralM.get(mk) || 0;
+      for (const [coordenacao, total_coordenacao] of regionaisDoMes) {
+        const rateio = totalTodasRegionais > 0 ? (total_coordenacao / totalTodasRegionais) * totalGeral : 0;
+        payloads.push({ ano, mes, coordenacao, total_coordenacao, total_geral: totalGeral, total_todas_regionais: totalTodasRegionais, rateio, total_com_rateio: total_coordenacao + rateio, updated_at: new Date().toISOString() });
+      }
+    }
+    if (!payloads.length) return { total: 0, meses: 0, regionais: 0 };
+
+    for (let i = 0; i < payloads.length; i += 100) {
+      const { error } = await opts.supabase.from('dre_despesas_mensal').upsert(payloads.slice(i, i + 100), { onConflict: 'ano,mes,coordenacao' });
+      if (error) throw new Error('Erro ao salvar despesas: ' + error.message);
+    }
+    return { total: payloads.length, meses: new Set(payloads.map(p => `${p.mes}/${p.ano}`)).size, regionais: new Set(payloads.map(p => p.coordenacao)).size };
+  }
+
   async function readProducaoDiariaRowsFromFile(file) {
     const XLSX = await loadXlsx();
     const buffer = await file.arrayBuffer();
@@ -3211,6 +3304,7 @@
     let patrimoniosResumo = null;
     let frotasExcessoResumo = null;
     let resultadoDiarioResumo = null;
+    let despesasResumo = null;
     let producaoDiariaResumo = null;
     let financeiroReceberResumo = null;
     let financeiroPagarResumo = null;
@@ -3262,6 +3356,15 @@
       status.textContent = 'Importando excessos de velocidade e cruzando com patrimônios...';
       setProgress(bar, 82);
       frotasExcessoResumo = await importarFrotasExcessoVelocidadeDaPlanilha(file, opts);
+    }
+    if (detected.tipo === 'despesas') {
+      status.textContent = 'Consolidando Despesas por Regional para cálculo de bônus...';
+      setProgress(bar, 82);
+      try {
+        despesasResumo = await importarDespesasDaPlanilha(file, opts);
+      } catch (err) {
+        console.warn('[RELATORIOS] Despesas: não foi possível consolidar no banco:', err?.message || err);
+      }
     }
     if (detected.tipo === 'resultado-diario') {
       status.textContent = 'Consolidando Resultado Diário no banco para acelerar o DRE...';
@@ -3426,6 +3529,8 @@
       status.textContent = `Patrimônios: ${patrimoniosResumo.importados || 0} atualizados · ${patrimoniosResumo.veiculos || 0} veículos · ${Number(patrimoniosResumo.frotas_associadas?.veiculos_atualizados || 0)} motorista(s) associados em Frotas`;
     } else if (detected.tipo === 'frotas_excesso_velocidade' && frotasExcessoResumo) {
       status.textContent = `Frotas: ${frotasExcessoResumo.importados || 0} excessos · ${frotasExcessoResumo.identificados || 0} identificados · ${frotasExcessoResumo.pendentes || 0} pendentes`;
+    } else if (detected.tipo === 'despesas' && despesasResumo?.total) {
+      status.textContent = `Despesas: ${despesasResumo.total} registros · ${despesasResumo.regionais} regionais · ${despesasResumo.meses} meses · bônus atualizado`;
     } else if (detected.tipo === 'resultado-diario' && resultadoDiarioResumo) {
       status.textContent = `Resultado Diário: ${resultadoDiarioResumo.importados || 0} linhas consolidadas · ${Number(resultadoDiarioResumo.toneladas || 0).toLocaleString('pt-BR')} tons · DRE rápido`;
     } else if (detected.tipo === 'producao' && producaoDiariaResumo) {

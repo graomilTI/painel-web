@@ -1420,36 +1420,26 @@
 
         <div style="padding:14px 16px;border-bottom:1px solid var(--metas-border)">
           <div class="metas-section-title" style="margin-bottom:10px">
-            <h2>Custos por Regional — M-1 (${(() => { const m = mesAnterior(state.ano, state.mes); return `${getMonthName(m.mes)}/${m.ano}`; })()})</h2>
-            <span class="metas-pill">${state.custosRegional.length} cadastrados</span>
+            <h2>Despesas por Regional — M-1 (${(() => { const m = mesAnterior(state.ano, state.mes); return `${getMonthName(m.mes)}/${m.ano}`; })()})</h2>
+            <span class="metas-pill ${state.custosRegional.length ? 'good' : ''}">${state.custosRegional.length ? `${state.custosRegional.length} regionais` : 'aguardando upload'}</span>
           </div>
-          <p class="metas-config-hint" style="margin-bottom:10px">Despesas totais de cada coordenação no mês anterior. Usadas para calcular o componente de custo (30%) do bônus.</p>
+          ${state.custosRegional.length ? `
           <div class="metas-table-wrap">
             <table class="metas-table">
-              <thead><tr><th>Coordenação</th><th class="num">Despesa (R$)</th><th></th></tr></thead>
+              <thead><tr><th>Coordenação</th><th class="num">Total Regional</th><th class="num">Rateio GERAL</th><th class="num">Total c/ Rateio</th></tr></thead>
               <tbody>
-                ${(() => {
-                  const m1 = mesAnterior(state.ano, state.mes);
-                  const coords = [...new Set((state.gestores || []).map(g => g.coordenacao))].sort();
-                  const custoMap = new Map((state.custosRegional || []).map(c => [normalizarTexto(c.coordenacao), c]));
-                  const fmtBRL = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-                  return coords.map(coord => {
-                    const k = normalizarTexto(coord);
-                    const c = custoMap.get(k);
-                    return `<tr>
-                      <td><strong>${escapeHtml(coord)}</strong></td>
-                      <td class="num">
-                        <input class="metas-edit-input" data-custo-coord="${escapeHtml(coord)}" data-custo-id="${escapeHtml(String(c?.id || ''))}" type="number" step="0.01" min="0" value="${c?.despesa || ''}" placeholder="0,00" style="text-align:right;width:150px" />
-                      </td>
-                      <td style="text-align:right">
-                        <button class="metas-btn secondary" style="padding:5px 10px;font-size:11px" data-custo-save="${escapeHtml(coord)}">Salvar</button>
-                      </td>
-                    </tr>`;
-                  }).join('');
-                })()}
+                ${state.custosRegional.map(c => {
+                  const fmtBRL = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  return `<tr>
+                    <td><strong>${escapeHtml(c.coordenacao || '')}</strong></td>
+                    <td class="num">${fmtBRL(c.total_coordenacao)}</td>
+                    <td class="num" style="color:var(--metas-muted)">${fmtBRL(c.rateio)}</td>
+                    <td class="num" style="color:#86efac;font-weight:800">${fmtBRL(c.total_com_rateio)}</td>
+                  </tr>`;
+                }).join('')}
               </tbody>
             </table>
-          </div>
+          </div>` : `<p class="metas-config-hint">Carregue o <strong>Relatório de Despesas</strong> no módulo de Relatórios para popular automaticamente. Os dados são usados para calcular o componente de custo (30%) do bônus.</p>`}
         </div>
 
         <div class="metas-close-panel">
@@ -1852,8 +1842,8 @@
 
       const m1 = mesAnterior(Number(state.ano), Number(state.mes));
       state.custosRegional = await fetchAllRows(
-        supabase.from('metas_custo_regional')
-          .select('id,coordenacao,despesa,ano,mes')
+        supabase.from('dre_despesas_mensal')
+          .select('coordenacao, total_com_rateio, total_geral, total_todas_regionais, ano, mes')
           .eq('ano', m1.ano)
           .eq('mes', m1.mes)
           .order('coordenacao', { ascending: true })
@@ -1970,7 +1960,9 @@
         supabase.from('relatorio_resultado_diario').select('coordenacao,embarcado').gte('data', m1Start).lt('data', metaStart)
       ).catch(() => []),
       fetchAllRows(
-        supabase.from('metas_custo_regional').select('coordenacao,despesa').eq('ano', m1.ano).eq('mes', m1.mes)
+        supabase.from('dre_despesas_mensal')
+          .select('coordenacao,total_com_rateio,total_geral,total_todas_regionais')
+          .eq('ano', m1.ano).eq('mes', m1.mes)
       ).catch(() => [])
     ]);
 
@@ -1980,7 +1972,7 @@
       leituraMap.set(normalizarTexto(r.supervisao || ''), { pct: Number(r.leitura_pct || 0), total: r.total_ativos, lidos: r.lidos_30d, dataRef: r.data_referencia });
     }
 
-    // Resultado M-1 map: coordenação normalizada → embarcado
+    // Resultado M-1: coordenação normalizada → embarcado
     const resultadoMap = new Map();
     let resultadoGeral = 0;
     for (const r of resultadoRows) {
@@ -1990,16 +1982,21 @@
       resultadoGeral += Number(r.embarcado || 0);
     }
 
-    // Despesa M-1 map: coordenação normalizada → despesa
-    const despesaMap = new Map();
-    let despesaGeral = 0;
+    // Despesa M-1 (dre_despesas_mensal): total_com_rateio por regional
+    // indiceEmpresa = (total_todas_regionais + total_geral) / resultadoGeral  (fórmula CONFIG_BONUS)
+    const despesaMap = new Map(); // coord → total_com_rateio
+    let despesaTotalEmpresa = 0;
     for (const r of despesaRows) {
       const k = normalizarTexto(r.coordenacao || '');
-      despesaMap.set(k, Number(r.despesa || 0));
-      despesaGeral += Number(r.despesa || 0);
+      despesaMap.set(k, Number(r.total_com_rateio || 0));
+    }
+    if (despesaRows.length) {
+      // total_geral e total_todas_regionais são iguais para todas as linhas do mesmo mês
+      const ref = despesaRows[0];
+      despesaTotalEmpresa = Number(ref.total_todas_regionais || 0) + Number(ref.total_geral || 0);
     }
 
-    const indiceEmpresa = resultadoGeral > 0 ? despesaGeral / resultadoGeral : 0;
+    const indiceEmpresa = resultadoGeral > 0 ? despesaTotalEmpresa / resultadoGeral : 0;
     const temDespesas = despesaMap.size > 0;
 
     return (state.gestores || []).map(g => {
@@ -2367,24 +2364,6 @@
         await salvarMeta(form, state, supabase, rerender);
       });
     }
-
-    // ── Custos ───────────────────────────────────────────────────────────
-    container.querySelectorAll('[data-custo-save]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const coord = btn.dataset.custoSave;
-        const inp = container.querySelector(`[data-custo-coord="${CSS.escape(coord)}"]`);
-        if (!inp) return;
-        const existingId = inp.dataset.custoId;
-        const despesa = Number(inp.value || 0);
-        const m1 = mesAnterior(Number(state.ano), Number(state.mes));
-        const payload = { ano: m1.ano, mes: m1.mes, coordenacao: normalizarTexto(coord).toUpperCase(), despesa: despesa || null, updated_at: new Date().toISOString() };
-        const { error } = existingId
-          ? await supabase.from('metas_custo_regional').update(payload).eq('id', Number(existingId))
-          : await supabase.from('metas_custo_regional').upsert(payload, { onConflict: 'ano,mes,coordenacao' });
-        if (error) { alert('Erro ao salvar custo: ' + error.message); return; }
-        await reload();
-      });
-    });
 
     // ── Gestores ──────────────────────────────────────────────────────────
     const gestorAddBtn = container.querySelector('[data-metas-gestor-add]');
