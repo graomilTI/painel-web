@@ -123,6 +123,7 @@
       case 'data_instalacao':    return r?.data_instalacao || '';
       case 'agendamentos':       return r?.agendamentos_frustrados || 0;
       case 'contato':            return r?.contato || row.motorista_atual || '';
+      case 'infleet':            return r?.infleet || '';
       default:                   return '';
     }
   }
@@ -183,8 +184,8 @@
     const el = root.querySelector('[data-table]');
     if (!el) return;
     const rows = getFiltered();
-    if (state.loading) { el.innerHTML = '<tr><td class="fr-empty" colspan="14">Carregando...</td></tr>'; return; }
-    if (!rows.length) { el.innerHTML = '<tr><td class="fr-empty" colspan="14">Nenhum veículo encontrado.</td></tr>'; return; }
+    if (state.loading) { el.innerHTML = '<tr><td class="fr-empty" colspan="15">Carregando...</td></tr>'; return; }
+    if (!rows.length) { el.innerHTML = '<tr><td class="fr-empty" colspan="15">Nenhum veículo encontrado.</td></tr>'; return; }
 
     el.innerHTML = rows.map(row => {
       const r = row._rastr;
@@ -218,6 +219,11 @@
         <td>${r?.data_instalacao ? fmtDate(r.data_instalacao) : '—'}</td>
         <td>${agendFrus > 0 ? `<span class="fr-badge err">${agendFrus}</span>` : '<span class="fr-badge none">0</span>'}</td>
         <td>${esc(r?.contato || row.motorista_atual || '—')}</td>
+        <td>${r?.infleet === 'OK'
+          ? '<span class="fr-badge ok">OK</span>'
+          : r?.infleet === 'PENDENTE'
+            ? '<span class="fr-badge err">PENDENTE</span>'
+            : '<span class="fr-badge none">—</span>'}</td>
         <td><button class="fr-btn soft fr-mini" data-edit="${esc(row.placa)}">Editar</button></td>
       </tr>`;
     }).join('');
@@ -301,6 +307,14 @@
                 <option value="concluido" ${(r.status === 'concluido' || (isBfleet && !r.status)) ? 'selected' : ''}>Instalado</option>
               </select>
             </div>
+            <div class="fr-field">
+              <label>Infleet</label>
+              <select name="infleet">
+                <option value="" ${!r.infleet ? 'selected' : ''}>— Não definido</option>
+                <option value="OK" ${r.infleet === 'OK' ? 'selected' : ''}>OK</option>
+                <option value="PENDENTE" ${r.infleet === 'PENDENTE' ? 'selected' : ''}>PENDENTE</option>
+              </select>
+            </div>
           </div>
 
           <div class="fr-divider">Datas</div>
@@ -368,7 +382,8 @@
       data_instalacao: get('data_instalacao') || null,
       agendamentos_frustrados: num('agendamentos_frustrados'),
       contato: get('contato'),
-      observacoes: get('observacoes')
+      observacoes: get('observacoes'),
+      infleet: get('infleet') || null
     };
   }
 
@@ -518,6 +533,7 @@
                     <th class="fr-th-sort" data-sort="data_instalacao">Data Instalação</th>
                     <th class="fr-th-sort" data-sort="agendamentos">Não atendido</th>
                     <th class="fr-th-sort" data-sort="contato">Contato</th>
+                    <th class="fr-th-sort" data-sort="infleet">Infleet</th>
                     <th></th>
                   </tr>
                 </thead>
