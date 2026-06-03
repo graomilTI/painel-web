@@ -52,6 +52,22 @@
     return alt ? [p, alt] : [p];
   }
 
+  // Mapeamento coordenação → estado (frotas_veiculos.coordenacao)
+  const COORD_ESTADO = {
+    'GOIAS':'Goiás','MARINGA E TERMINAIS':'Paraná','PONTA GROSSA':'Paraná',
+    'CASCAVEL':'Paraná','MATO GROSSO MT1':'Mato Grosso','RIO GRANDE DO SUL':'Rio Grande do Sul',
+    'SAO PAULO':'São Paulo','SÃO PAULO':'São Paulo','LONDRINA':'Paraná',
+    'MATO GROSSO DO SUL':'Mato Grosso do Sul','MATO GROSSO MT2':'Mato Grosso',
+    'MINAS GERAIS':'Minas Gerais','MARANHAO':'Maranhão','MARANHÃO':'Maranhão',
+    'MATO GROSSO MT3 - QUERENCIA':'Mato Grosso','GERAL':'Paraná','BAHIA':'Bahia',
+    'MATO GROSSO MT4':'Mato Grosso','MATO GROSSO MT3 - CONFRESA':'Mato Grosso',
+    'PARA':'Pará','PARÁ':'Pará','TOCANTINS':'Tocantins',
+  };
+  function coordToEstado(coord) {
+    if (!coord) return '';
+    return COORD_ESTADO[String(coord).trim().toUpperCase()] || '';
+  }
+
   function hasBfleet(v) {
     const st = String(v?.bfleet_status || '').toUpperCase();
     return Boolean(v?.bfleet_confirmado || v?.rastreador_bfleet || v?.bfleet_rastreador || st === 'COM_RASTREADOR' || st === 'ATIVO' || st === 'OK');
@@ -154,10 +170,11 @@
       const bfleetTag = row._hasBfleet && !r
         ? ' <span class="fr-badge bfleet" style="font-size:9px">BFleet</span>'
         : '';
+      const estadoEfetivo = r?.estado || coordToEstado(row.coordenacao);
 
       return `<tr>
         <td><strong>${esc(row.placa)}</strong>${bfleetTag}</td>
-        <td>${esc(r?.estado || '—')}</td>
+        <td>${esc(estadoEfetivo || '—')}</td>
         <td>${esc(r?.cidade || '—')}</td>
         <td>${esc(r?.local_instalacao || '—')}</td>
         <td>${imeiCell}</td>
@@ -183,6 +200,7 @@
     const r = row._rastr || {};
     const bfleetImei = row.bfleet_idgps || '';
     const isBfleet = row._hasBfleet;
+    const estadoSugerido = r.estado || coordToEstado(row.coordenacao);
 
     const backdrop = document.createElement('div');
     backdrop.className = 'fr-modal-backdrop';
@@ -200,7 +218,7 @@
           <div class="fr-form">
             <div class="fr-field">
               <label>Estado</label>
-              <input name="estado" value="${esc(r.estado || '')}" placeholder="Ex: SP" />
+              <input name="estado" value="${esc(estadoSugerido)}" placeholder="Ex: SP" />
             </div>
             <div class="fr-field">
               <label>Cidade</label>
@@ -399,7 +417,7 @@
     const [resV, resR] = await Promise.all([
       _opts.supabase
         .from('frotas_veiculos')
-        .select('id,placa,nome,marca,modelo,motorista_atual,status,bfleet_idgps,bfleet_confirmado,rastreador_bfleet,bfleet_rastreador,bfleet_status')
+        .select('id,placa,nome,marca,modelo,motorista_atual,coordenacao,status,bfleet_idgps,bfleet_confirmado,rastreador_bfleet,bfleet_rastreador,bfleet_status')
         .eq('status', 'ATIVO')
         .order('placa'),
       _opts.supabase.from('frotas_rastreadores').select('*').order('placa')
