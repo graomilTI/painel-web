@@ -219,8 +219,8 @@
         <td>${r?.data_instalacao ? fmtDate(r.data_instalacao) : '—'}</td>
         <td>${agendFrus > 0 ? `<span class="fr-badge err">${agendFrus}</span>` : '<span class="fr-badge none">0</span>'}</td>
         <td>${esc(r?.contato || row.motorista_atual || '—')}</td>
-        <td>${r?.infleet === 'OK'
-          ? '<span class="fr-badge ok">OK</span>'
+        <td>${r?.infleet === 'RETIRADO'
+          ? '<span class="fr-badge ok">RETIRADO</span>'
           : r?.infleet === 'PENDENTE'
             ? '<span class="fr-badge err">PENDENTE</span>'
             : '<span class="fr-badge none">—</span>'}</td>
@@ -311,8 +311,8 @@
               <label>Infleet</label>
               <select name="infleet">
                 <option value="" ${!r.infleet ? 'selected' : ''}>— Não definido</option>
-                <option value="OK" ${r.infleet === 'OK' ? 'selected' : ''}>OK</option>
                 <option value="PENDENTE" ${r.infleet === 'PENDENTE' ? 'selected' : ''}>PENDENTE</option>
+                <option value="RETIRADO" ${r.infleet === 'RETIRADO' ? 'selected' : ''}>RETIRADO</option>
               </select>
             </div>
           </div>
