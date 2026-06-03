@@ -22,6 +22,36 @@
   function esc(v) { return String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[c])); }
   function fmtDate(v) { if (!v) return '—'; const d = new Date(v + 'T12:00:00'); return isNaN(d) ? v : d.toLocaleDateString('pt-BR'); }
 
+  // Normalização de placas: padrão antigo AAA0000 e Mercosul AAA0A00 são o mesmo veículo.
+  // Posição 4 (índice 4): A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8, J=9
+  const _L2D = { A:'0',B:'1',C:'2',D:'3',E:'4',F:'5',G:'6',H:'7',I:'8',J:'9' };
+  const _D2L = { '0':'A','1':'B','2':'C','3':'D','4':'E','5':'F','6':'G','7':'H','8':'I','9':'J' };
+
+  function rawPlaca(v) {
+    return String(v || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]/g,'').slice(0,7);
+  }
+
+  // Chave canônica para comparação: converte posição 4 Mercosul → dígito (formato antigo)
+  function placaKey(v) {
+    const p = rawPlaca(v);
+    if (p.length !== 7) return p;
+    const c4 = p[4];
+    return _L2D[c4] !== undefined ? p.slice(0,4) + _L2D[c4] + p.slice(5) : p;
+  }
+
+  // Gera ambos os formatos de uma placa para busca textual
+  function placaCandidates(v) {
+    const p = rawPlaca(v);
+    if (p.length !== 7) return [p];
+    const c4 = p[4];
+    const alt = _L2D[c4] !== undefined
+      ? p.slice(0,4) + _L2D[c4] + p.slice(5)           // Mercosul → antigo
+      : _D2L[c4] !== undefined
+        ? p.slice(0,4) + _D2L[c4] + p.slice(5)           // antigo → Mercosul
+        : null;
+    return alt ? [p, alt] : [p];
+  }
+
   function hasBfleet(v) {
     const st = String(v?.bfleet_status || '').toUpperCase();
     return Boolean(v?.bfleet_confirmado || v?.rastreador_bfleet || v?.bfleet_rastreador || st === 'COM_RASTREADOR' || st === 'ATIVO' || st === 'OK');
@@ -44,10 +74,10 @@
   }
 
   function mergeData() {
-    const rastrMap = new Map((state.rastreadores || []).map(r => [r.placa, r]));
+    const rastrMap = new Map((state.rastreadores || []).map(r => [placaKey(r.placa), r]));
     state.merged = (state.veiculos || []).map(v => ({
       ...v,
-      _rastr: rastrMap.get(v.placa) || null,
+      _rastr: rastrMap.get(placaKey(v.placa)) || null,
       _hasBfleet: hasBfleet(v)
     }));
   }
@@ -64,7 +94,8 @@
 
       if (!busca) return true;
       const efImei = r?.imei || row.bfleet_idgps || '';
-      return norm([row.placa, row.nome, row.marca, row.modelo, row.motorista_atual,
+      const placas = placaCandidates(row.placa).concat(r?.placa ? placaCandidates(r.placa) : []);
+      return norm([...placas, row.nome, row.marca, row.modelo, row.motorista_atual,
         r?.estado, r?.cidade, r?.local_instalacao, efImei, r?.cod_rastreio, r?.contato].join(' ')).includes(busca);
     });
   }
@@ -265,9 +296,10 @@
     btn.textContent = 'Salvando...';
     btn.disabled = true;
 
+    // Usa a placa exatamente como está em frotas_veiculos (fonte canônica)
     const { error } = await _opts.supabase
       .from('frotas_rastreadores')
-      .upsert({ placa, veiculo_id: veiculo_id || null, ...readModal(backdrop) }, { onConflict: 'placa' });
+      .upsert({ placa: rawPlaca(placa), veiculo_id: veiculo_id || null, ...readModal(backdrop) }, { onConflict: 'placa' });
 
     if (error) {
       toast(error.message || 'Erro ao salvar.', true);
