@@ -43,7 +43,8 @@
     metaEstimativa: '',
     erro: null,
     gestores: [],
-    gestoresEditId: null
+    gestoresEditId: null,
+    custosRegional: []
   };
 
   function injectStyle() {
@@ -1417,6 +1418,40 @@
           <button class="metas-btn" type="button" data-metas-save-list ${fechado ? 'disabled' : ''}>Salvar lista</button>
         </div>
 
+        <div style="padding:14px 16px;border-bottom:1px solid var(--metas-border)">
+          <div class="metas-section-title" style="margin-bottom:10px">
+            <h2>Custos por Regional — M-1 (${(() => { const m = mesAnterior(state.ano, state.mes); return `${getMonthName(m.mes)}/${m.ano}`; })()})</h2>
+            <span class="metas-pill">${state.custosRegional.length} cadastrados</span>
+          </div>
+          <p class="metas-config-hint" style="margin-bottom:10px">Despesas totais de cada coordenação no mês anterior. Usadas para calcular o componente de custo (30%) do bônus.</p>
+          <div class="metas-table-wrap">
+            <table class="metas-table">
+              <thead><tr><th>Coordenação</th><th class="num">Despesa (R$)</th><th></th></tr></thead>
+              <tbody>
+                ${(() => {
+                  const m1 = mesAnterior(state.ano, state.mes);
+                  const coords = [...new Set((state.gestores || []).map(g => g.coordenacao))].sort();
+                  const custoMap = new Map((state.custosRegional || []).map(c => [normalizarTexto(c.coordenacao), c]));
+                  const fmtBRL = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+                  return coords.map(coord => {
+                    const k = normalizarTexto(coord);
+                    const c = custoMap.get(k);
+                    return `<tr>
+                      <td><strong>${escapeHtml(coord)}</strong></td>
+                      <td class="num">
+                        <input class="metas-edit-input" data-custo-coord="${escapeHtml(coord)}" data-custo-id="${escapeHtml(String(c?.id || ''))}" type="number" step="0.01" min="0" value="${c?.despesa || ''}" placeholder="0,00" style="text-align:right;width:150px" />
+                      </td>
+                      <td style="text-align:right">
+                        <button class="metas-btn secondary" style="padding:5px 10px;font-size:11px" data-custo-save="${escapeHtml(coord)}">Salvar</button>
+                      </td>
+                    </tr>`;
+                  }).join('');
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <div class="metas-close-panel">
           <div>
             <div class="metas-close-title">Fechamento da meta de ${getMonthName(state.mes)}/${state.ano}</div>
@@ -1814,6 +1849,15 @@
           .order('coordenacao', { ascending: true })
           .order('gestor', { ascending: true })
       ).catch(() => []);
+
+      const m1 = mesAnterior(Number(state.ano), Number(state.mes));
+      state.custosRegional = await fetchAllRows(
+        supabase.from('metas_custo_regional')
+          .select('id,coordenacao,despesa,ano,mes')
+          .eq('ano', m1.ano)
+          .eq('mes', m1.mes)
+          .order('coordenacao', { ascending: true })
+      ).catch(() => []);
     } catch (err) {
       console.error('[METAS] Erro ao carregar dados:', err);
       state.erro = err && err.message ? err.message : String(err);
@@ -1902,40 +1946,132 @@
     rerender();
   }
 
-  function showFecharMetaModal(state, rows, onConfirm) {
+  function mesAnterior(ano, mes) {
+    return mes === 1 ? { ano: ano - 1, mes: 12 } : { ano, mes: mes - 1 };
+  }
+
+  function calcMultiplicadorLeitura(pct) {
+    if (pct >= 100) return 1.8;
+    if (pct > 90)   return 1.6;
+    if (pct > 80)   return 1.4;
+    if (pct > 70)   return 1.2;
+    if (pct > 60)   return 1.0;
+    return 0;
+  }
+
+  async function enrichGestoresParaFechamento(state, supabase, anoMeta, mesMeta) {
+    const m1 = mesAnterior(anoMeta, mesMeta);
+    const m1Start = `${m1.ano}-${String(m1.mes).padStart(2, '0')}-01`;
+    const metaStart = `${anoMeta}-${String(mesMeta).padStart(2, '0')}-01`;
+
+    const [leituraRes, resultadoRows, despesaRows] = await Promise.all([
+      supabase.from('v_leitura_supervisao').select('coordenacao,supervisao,leitura_pct,total_ativos,lidos_30d,data_referencia'),
+      fetchAllRows(
+        supabase.from('relatorio_resultado_diario').select('coordenacao,embarcado').gte('data', m1Start).lt('data', metaStart)
+      ).catch(() => []),
+      fetchAllRows(
+        supabase.from('metas_custo_regional').select('coordenacao,despesa').eq('ano', m1.ano).eq('mes', m1.mes)
+      ).catch(() => [])
+    ]);
+
+    // Leitura map: supervisão normalizada → pct
+    const leituraMap = new Map();
+    for (const r of (leituraRes.data || [])) {
+      leituraMap.set(normalizarTexto(r.supervisao || ''), { pct: Number(r.leitura_pct || 0), total: r.total_ativos, lidos: r.lidos_30d, dataRef: r.data_referencia });
+    }
+
+    // Resultado M-1 map: coordenação normalizada → embarcado
+    const resultadoMap = new Map();
+    let resultadoGeral = 0;
+    for (const r of resultadoRows) {
+      const k = normalizarTexto(r.coordenacao || '');
+      if (k === 'GERAL') continue;
+      resultadoMap.set(k, (resultadoMap.get(k) || 0) + Number(r.embarcado || 0));
+      resultadoGeral += Number(r.embarcado || 0);
+    }
+
+    // Despesa M-1 map: coordenação normalizada → despesa
+    const despesaMap = new Map();
+    let despesaGeral = 0;
+    for (const r of despesaRows) {
+      const k = normalizarTexto(r.coordenacao || '');
+      despesaMap.set(k, Number(r.despesa || 0));
+      despesaGeral += Number(r.despesa || 0);
+    }
+
+    const indiceEmpresa = resultadoGeral > 0 ? despesaGeral / resultadoGeral : 0;
+    const temDespesas = despesaMap.size > 0;
+
+    return (state.gestores || []).map(g => {
+      const key  = normalizarTexto(g.coordenacao || '');
+      const supK = normalizarTexto(g.supervisao  || '');
+
+      const sal = Number(g.salario || 0);
+      const gr  = Number(g.grat40  || 0);
+      const bonusInicial = (sal + gr) * 0.1;
+
+      // Leitura
+      const leit = leituraMap.get(supK) || null;
+      const leituraPct  = leit ? leit.pct : null;
+      const multLeitura = calcMultiplicadorLeitura(leituraPct ?? 0);
+      const valorLeitura = multLeitura * bonusInicial * 0.3;
+
+      // Custo
+      const resultadoCoord = resultadoMap.get(key) || 0;
+      const despesaCoord   = despesaMap.get(key)   || 0;
+      let fatorCusto = 0;
+      let valorCusto = 0;
+      if (indiceEmpresa > 0 && resultadoCoord > 0 && despesaCoord > 0) {
+        const indiceCoord = despesaCoord / resultadoCoord;
+        fatorCusto = indiceCoord > 0 ? indiceEmpresa / indiceCoord : 0;
+        valorCusto = fatorCusto * bonusInicial * 0.3;
+      }
+
+      return {
+        ...g,
+        _key: key,
+        bonusInicial,
+        leituraPct, multLeitura, valorLeitura,
+        resultadoCoord, despesaCoord, fatorCusto, valorCusto,
+        temDespesas,
+        m1Ref: `${String(m1.mes).padStart(2,'0')}/${m1.ano}`
+      };
+    });
+  }
+
+  function showFecharMetaModal(state, rows, gestoresEnriq, onConfirm) {
     const existing = document.getElementById('metas-fechar-modal-overlay');
     if (existing) existing.remove();
 
     const fmtBRL = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const fmtF   = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 
-    // % atingido por regional
     const percByKey = new Map(rows.map(row => {
       const meta = Number(row.meta_tons || 0);
       const prod = Number(row.produzido_tons || 0);
       return [rowKey(row), meta > 0 ? (prod / meta) * 100 : 0];
     }));
 
-    // gestores ativos enriquecidos com % da regional
-    const gestoresEnriq = (state.gestores || []).map(g => {
-      const key = normalizarTexto(g.coordenacao || '');
-      const pct = percByKey.has(key) ? percByKey.get(key) : null;
-      const bi = (Number(g.salario || 0) + Number(g.grat40 || 0)) * 0.1;
-      return { ...g, _key: key, pct, bonusInicial: bi };
+    // Enriquece com % regional e calcula produção
+    const gestores = gestoresEnriq.map(g => {
+      const pct = percByKey.has(g._key) ? percByKey.get(g._key) : null;
+      const valorProducao = pct !== null ? (pct / 100) * g.bonusInicial * 0.4 : 0;
+      return { ...g, pct, valorProducao };
     });
 
-    // regionais com meta mas sem gestor cadastrado
-    const comGestor = new Set(gestoresEnriq.map(g => g._key));
+    const comGestor = new Set(gestores.map(g => g._key));
     const semGestor = rows.filter(r => !comGestor.has(rowKey(r)));
+    const semDespesa = gestores.some(g => !g.temDespesas);
 
     const overlay = document.createElement('div');
     overlay.id = 'metas-fechar-modal-overlay';
     overlay.className = 'metas-modal-overlay';
 
     overlay.innerHTML = `
-      <div class="metas-modal">
+      <div class="metas-modal" style="max-width:1100px">
         <div class="metas-modal-header">
           <h3>Fechar Meta — ${escapeHtml(getMonthName(state.mes))}/${state.ano}</h3>
-          <p>Defina o percentual mínimo para elegibilidade ao bônus e confira o cálculo por gestor.</p>
+          <p>Bônus calculado com três componentes (Produção 40% · Custo 30% · Leitura 30%) usando dados de M-1 (${escapeHtml(gestores[0]?.m1Ref || '')}).</p>
         </div>
         <div class="metas-modal-threshold">
           <div class="metas-field" style="max-width:280px">
@@ -1944,43 +2080,57 @@
             <p class="metas-config-hint">Regionais com % atingido ≥ esse valor — todos os gestores vinculados recebem bônus.</p>
           </div>
         </div>
-        ${gestoresEnriq.length ? `
+        ${semDespesa ? `<div class="metas-error" style="padding:10px 14px;font-size:12px;margin-bottom:0">
+          <strong>Custo:</strong> Sem despesas cadastradas para M-1. Cadastre na aba <strong>Configurar / Fechar → Custos</strong> para incluir o componente de custo (30%). O bônus será calculado sem esse componente.
+        </div>` : ''}
+        ${gestores.length ? `
           <div class="metas-table-wrap">
-            <table class="metas-table">
+            <table class="metas-table" style="min-width:1000px">
               <thead>
                 <tr>
                   <th>Gestor</th>
-                  <th>Coordenação</th>
-                  <th>Supervisão</th>
+                  <th>Coordenação / Supervisão</th>
                   <th class="num">% Regional</th>
                   <th class="num">Qualifica</th>
-                  <th class="num">Bônus Inicial</th>
-                  <th class="num">Bônus (produção)</th>
+                  <th class="num">B. Inicial</th>
+                  <th class="num" title="Produção 40%">Prod (40%)</th>
+                  <th class="num" title="Custo 30%">Custo (30%)</th>
+                  <th class="num" title="Leitura 30%">Leitura (30%)</th>
+                  <th class="num" style="color:#86efac">Total</th>
                 </tr>
               </thead>
               <tbody>
-                ${gestoresEnriq.map(g => `
-                  <tr data-metas-bonus-row
-                      data-gestor-id="${escapeHtml(String(g.id))}"
-                      data-key="${escapeHtml(g._key)}"
-                      data-percentual="${(g.pct ?? 0).toFixed(6)}"
-                      data-bonus-inicial="${g.bonusInicial.toFixed(6)}">
-                    <td><strong>${escapeHtml(g.gestor || '')}</strong></td>
-                    <td>${escapeHtml(g.coordenacao || '')}</td>
-                    <td style="color:var(--metas-muted);font-size:12px">${escapeHtml(g.supervisao || '—')}</td>
-                    <td class="num">${g.pct !== null ? `<span class="metas-pill ${pctClass(g.pct)}">${fmtPct(g.pct)}</span>` : '<span class="metas-pill">sem meta</span>'}</td>
-                    <td class="num" data-metas-qualifica-cell>—</td>
-                    <td class="num">${fmtBRL(g.bonusInicial)}</td>
-                    <td class="num" data-metas-bonus-cell style="font-weight:800">—</td>
-                  </tr>`).join('')}
+                ${gestores.map(g => {
+                  const total = g.valorProducao + g.valorCusto + g.valorLeitura;
+                  return `
+                    <tr data-metas-bonus-row
+                        data-gestor-id="${escapeHtml(String(g.id))}"
+                        data-key="${escapeHtml(g._key)}"
+                        data-percentual="${(g.pct ?? 0).toFixed(6)}"
+                        data-valor-producao="${g.valorProducao.toFixed(6)}"
+                        data-valor-custo="${g.valorCusto.toFixed(6)}"
+                        data-valor-leitura="${g.valorLeitura.toFixed(6)}"
+                        data-bonus-total="${total.toFixed(6)}">
+                      <td><strong>${escapeHtml(g.gestor || '')}</strong></td>
+                      <td>
+                        <div>${escapeHtml(g.coordenacao || '')}</div>
+                        <div style="font-size:11px;color:var(--metas-muted)">${escapeHtml(g.supervisao || '—')}</div>
+                      </td>
+                      <td class="num">${g.pct !== null ? `<span class="metas-pill ${pctClass(g.pct)}">${fmtPct(g.pct)}</span>` : '<span class="metas-pill">sem meta</span>'}</td>
+                      <td class="num" data-metas-qualifica-cell>—</td>
+                      <td class="num" style="font-size:11px">${fmtBRL(g.bonusInicial)}</td>
+                      <td class="num" data-bonus-cell-prod style="font-size:11px">—</td>
+                      <td class="num" data-bonus-cell-custo style="font-size:11px">${g.valorCusto > 0 ? `<span title="Fator: ${fmtF(g.fatorCusto)}">${fmtBRL(g.valorCusto)}</span>` : '<span style="color:var(--metas-muted)">sem dado</span>'}</td>
+                      <td class="num" data-bonus-cell-leitura style="font-size:11px">${g.leituraPct !== null ? `<span title="${fmtPct(g.leituraPct ?? 0)} · mult ${g.multLeitura}x">${fmtBRL(g.valorLeitura)}</span>` : '<span style="color:var(--metas-muted)">sem dado</span>'}</td>
+                      <td class="num" data-bonus-cell-total style="font-weight:800">—</td>
+                    </tr>`;
+                }).join('')}
               </tbody>
             </table>
-          </div>` : `<div class="metas-empty">Nenhum gestor cadastrado. Acesse a aba <strong>Gestores</strong> para cadastrar antes de fechar.</div>`}
-        ${semGestor.length ? `
-          <div class="metas-error" style="padding:10px 14px;font-size:12px">
-            <strong>Regionais sem gestor vinculado:</strong> ${semGestor.map(r => escapeHtml(r.regional || '')).join(', ')}
-          </div>` : ''}
-        <p class="metas-config-hint">Bônus = % regional × bônus inicial × 40% · Bônus inicial = (salário + grat.40%) × 10%.</p>
+          </div>` : `<div class="metas-empty">Nenhum gestor cadastrado. Acesse a aba <strong>Gestores</strong>.</div>`}
+        ${semGestor.length ? `<div class="metas-error" style="padding:10px 14px;font-size:12px;margin-top:0">
+          <strong>Regionais sem gestor:</strong> ${semGestor.map(r => escapeHtml(r.regional || '')).join(', ')}
+        </div>` : ''}
         <div class="metas-modal-footer">
           <button class="metas-btn secondary" type="button" id="metasFecharCancelar">Cancelar</button>
           <button class="metas-btn" type="button" id="metasFecharConfirmar">Confirmar Fechamento</button>
@@ -1995,21 +2145,24 @@
     function updateBadges() {
       const min = Number(minInput.value || 100);
       overlay.querySelectorAll('[data-metas-bonus-row]').forEach(tr => {
-        const pct = Number(tr.dataset.percentual || 0);
-        const bi = Number(tr.dataset.bonusInicial || 0);
+        const pct      = Number(tr.dataset.percentual    || 0);
+        const vProd    = Number(tr.dataset.valorProducao  || 0);
+        const vCusto   = Number(tr.dataset.valorCusto     || 0);
+        const vLeitura = Number(tr.dataset.valorLeitura   || 0);
         const qualifica = pct >= min;
-        const qualCell = tr.querySelector('[data-metas-qualifica-cell]');
-        const bonusCell = tr.querySelector('[data-metas-bonus-cell]');
-        if (qualCell) qualCell.innerHTML = qualifica ? '<span class="metas-pill good">Qualifica</span>' : '<span class="metas-pill bad">Não qualifica</span>';
-        if (bonusCell) {
-          if (qualifica && bi > 0) {
-            bonusCell.textContent = fmtBRL((pct / 100) * bi * 0.4);
-            bonusCell.style.color = '#86efac';
-          } else {
-            bonusCell.textContent = '—';
-            bonusCell.style.color = '#6b7280';
-          }
-        }
+        const total = qualifica ? vProd + vCusto + vLeitura : 0;
+
+        const qc = tr.querySelector('[data-metas-qualifica-cell]');
+        if (qc) qc.innerHTML = qualifica ? '<span class="metas-pill good">Qualifica</span>' : '<span class="metas-pill bad">Não qualifica</span>';
+
+        const setCell = (sel, val, color) => {
+          const c = tr.querySelector(sel);
+          if (!c) return;
+          if (qualifica && val > 0) { c.innerHTML = `<span style="color:${color};font-weight:800">${fmtBRL(val)}</span>`; }
+          else if (!qualifica) { c.innerHTML = '<span style="color:#6b7280">—</span>'; }
+        };
+        setCell('[data-bonus-cell-prod]',  vProd,    '#86efac');
+        setCell('[data-bonus-cell-total]', total,    '#86efac');
       });
     }
 
@@ -2024,14 +2177,14 @@
       const gestoresBonus = [];
       overlay.querySelectorAll('[data-metas-bonus-row]').forEach(tr => {
         const pct = Number(tr.dataset.percentual || 0);
-        const bi = Number(tr.dataset.bonusInicial || 0);
         const qualifica = pct >= min;
         gestoresBonus.push({
           coordenacaoKey: tr.dataset.key,
           gestorId: Number(tr.dataset.gestorId),
           qualifica,
-          bonusInicial: bi,
-          bonusProducao: qualifica && bi > 0 ? (pct / 100) * bi * 0.4 : 0
+          bonusProducao: qualifica ? Number(tr.dataset.valorProducao  || 0) : 0,
+          bonusCusto:    qualifica ? Number(tr.dataset.valorCusto     || 0) : 0,
+          bonusLeitura:  qualifica ? Number(tr.dataset.valorLeitura   || 0) : 0
         });
       });
       overlay.remove();
@@ -2051,16 +2204,20 @@
       return;
     }
 
-    showFecharMetaModal(state, rows, async (params) => {
+    const gestoresEnriq = await enrichGestoresParaFechamento(state, supabase, Number(state.ano), Number(state.mes));
+
+    showFecharMetaModal(state, rows, gestoresEnriq, async (params) => {
       const now = new Date().toISOString();
 
-      // Agrupa bonus por regional (soma de todos gestores qualificados)
+      // Agrupa bonus por regional (soma todos gestores qualificados)
       const bonusByKey = new Map();
       for (const gb of (params.gestoresBonus || [])) {
         const k = gb.coordenacaoKey;
-        if (!bonusByKey.has(k)) bonusByKey.set(k, { total: 0, qualifica: false });
+        if (!bonusByKey.has(k)) bonusByKey.set(k, { prod: 0, custo: 0, leitura: 0, qualifica: false });
         if (gb.qualifica) {
-          bonusByKey.get(k).total += gb.bonusProducao;
+          bonusByKey.get(k).prod    += gb.bonusProducao;
+          bonusByKey.get(k).custo   += gb.bonusCusto;
+          bonusByKey.get(k).leitura += gb.bonusLeitura;
           bonusByKey.get(k).qualifica = true;
         }
       }
@@ -2070,7 +2227,7 @@
         const produzido = Number(row.produzido_tons || 0);
         const percentual = meta > 0 ? (produzido / meta) * 100 : 0;
         const key = rowKey(row);
-        const bonusInfo = bonusByKey.get(key) || { total: 0, qualifica: false };
+        const b = bonusByKey.get(key) || { prod: 0, custo: 0, leitura: 0, qualifica: false };
 
         return {
           ano: Number(state.ano),
@@ -2085,8 +2242,11 @@
           produzido_fechamento: produzido,
           percentual_fechamento: percentual,
           bonus_percentual_minimo: params.percentualMinimo || 100,
-          bonus_producao: bonusInfo.total,
-          qualifica_bonus: bonusInfo.qualifica,
+          bonus_producao: b.prod,
+          bonus_custo:    b.custo,
+          bonus_leitura:  b.leitura,
+          bonus_total:    b.prod + b.custo + b.leitura,
+          qualifica_bonus: b.qualifica,
           updated_at: now
         };
       });
@@ -2207,6 +2367,24 @@
         await salvarMeta(form, state, supabase, rerender);
       });
     }
+
+    // ── Custos ───────────────────────────────────────────────────────────
+    container.querySelectorAll('[data-custo-save]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const coord = btn.dataset.custoSave;
+        const inp = container.querySelector(`[data-custo-coord="${CSS.escape(coord)}"]`);
+        if (!inp) return;
+        const existingId = inp.dataset.custoId;
+        const despesa = Number(inp.value || 0);
+        const m1 = mesAnterior(Number(state.ano), Number(state.mes));
+        const payload = { ano: m1.ano, mes: m1.mes, coordenacao: normalizarTexto(coord).toUpperCase(), despesa: despesa || null, updated_at: new Date().toISOString() };
+        const { error } = existingId
+          ? await supabase.from('metas_custo_regional').update(payload).eq('id', Number(existingId))
+          : await supabase.from('metas_custo_regional').upsert(payload, { onConflict: 'ano,mes,coordenacao' });
+        if (error) { alert('Erro ao salvar custo: ' + error.message); return; }
+        await reload();
+      });
+    });
 
     // ── Gestores ──────────────────────────────────────────────────────────
     const gestorAddBtn = container.querySelector('[data-metas-gestor-add]');
