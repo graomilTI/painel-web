@@ -83,11 +83,12 @@ export const MENU_CONFIG = [
   {
     grupo: "FROTAS",
     itens: [
-      item("frotas_dashboard", "Dashboard de Frotas", "frotas-dashboard", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE", "FROTAS_VEICULOS", "VEICULOS", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS"], { hidden: true }),
+      item("frotas_dashboard", "Dashboard de Frotas", "frotas-dashboard", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE", "FROTAS_VEICULOS", "VEICULOS", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS", "FROTAS_RASTREADORES", "RASTREADORES"], { hidden: true }),
       item("frotas_excesso_velocidade", "Excesso de Velocidade", "frotas", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE"]),
       item("frotas_veiculos", "Veículos", "frotas-veiculos", ["FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS"]),
       item("frotas_multas", "Multas", "frotas-multas", ["MULTAS", "FROTAS_MULTAS"]),
-      item("frotas_historico", "Histórico", "frotas-historico", ["FROTAS_HISTORICO", "HISTORICO_FROTAS"])
+      item("frotas_historico", "Histórico", "frotas-historico", ["FROTAS_HISTORICO", "HISTORICO_FROTAS"]),
+      item("frotas_rastreadores", "Rastreadores", "frotas-rastreadores", ["FROTAS_RASTREADORES", "RASTREADORES"])
     ]
   },
 
