@@ -761,6 +761,53 @@
           justify-content: flex-start;
         }
       }
+
+      .metas-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.65);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        backdrop-filter: blur(2px);
+      }
+      .metas-modal {
+        background: #0d0d18;
+        border: 1px solid rgba(52,211,153,.2);
+        border-radius: 20px;
+        padding: 24px;
+        max-width: 860px;
+        width: 100%;
+        max-height: 88vh;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .metas-modal-header h3 {
+        margin: 0 0 6px;
+        font-size: 18px;
+        font-weight: 800;
+        color: #f1f5f9;
+      }
+      .metas-modal-header p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--metas-muted);
+      }
+      .metas-modal-threshold {
+        padding: 12px 0 16px;
+        border-bottom: 1px solid var(--metas-border);
+      }
+      .metas-modal-footer {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        padding-top: 8px;
+        border-top: 1px solid var(--metas-border);
+      }
     `;
     document.head.appendChild(style);
   }
@@ -1340,7 +1387,10 @@
       <div class="metas-table-card metas-section-spacer">
         <div class="metas-table-top">
           <h2>Resumo do Fechamento</h2>
-          <span class="metas-pill">${resumo.atingiram.length} atingiram · ${resumo.naoAtingiram.length} não atingiram</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <span class="metas-pill">${resumo.atingiram.length} atingiram · ${resumo.naoAtingiram.length} não atingiram</span>
+            ${resumo.atingiram.filter(r => r.qualifica_bonus).length ? `<span class="metas-pill good">${resumo.atingiram.filter(r => r.qualifica_bonus).length} recebem bônus</span>` : ''}
+          </div>
         </div>
         <div class="metas-table-wrap">
           <table class="metas-table">
@@ -1348,23 +1398,31 @@
               <tr>
                 <th>Situação</th>
                 <th>Coordenação</th>
+                <th>Gestor</th>
                 <th class="num">Meta</th>
                 <th class="num">Produzido</th>
                 <th class="num">%</th>
+                <th class="num">Bônus (produção)</th>
               </tr>
             </thead>
             <tbody>
               ${[...resumo.atingiram, ...resumo.naoAtingiram].length
-                ? [...resumo.atingiram.map(row => ({ ...row, label: 'Atingiu' })), ...resumo.naoAtingiram.map(row => ({ ...row, label: 'Não atingiu' }))].map(row => `
-                  <tr>
-                    <td><span class="metas-pill ${row.label === 'Atingiu' ? 'good' : 'bad'}">${row.label}</span></td>
-                    <td><strong>${escapeHtml(row.regional)}</strong></td>
-                    <td class="num">${fmtTons(row.meta_tons)}</td>
-                    <td class="num">${fmtTons(row.produzido_tons || row.produzido_fechamento)}</td>
-                    <td class="num">${fmtPct(row.percentual_atingido || row.percentual_fechamento)}</td>
-                  </tr>
-                `).join('')
-                : `<tr><td colspan="5"><div class="metas-empty">Ainda não há metas cadastradas para gerar o resumo de fechamento.</div></td></tr>`}
+                ? [...resumo.atingiram.map(row => ({ ...row, label: 'Atingiu' })), ...resumo.naoAtingiram.map(row => ({ ...row, label: 'Não atingiu' }))].map(row => {
+                    const bonus = Number(row.bonus_producao || 0);
+                    const fmtBRL = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    return `
+                      <tr>
+                        <td><span class="metas-pill ${row.label === 'Atingiu' ? 'good' : 'bad'}">${row.label}</span></td>
+                        <td><strong>${escapeHtml(row.regional)}</strong></td>
+                        <td>${row.gestor ? escapeHtml(row.gestor) : '<span style="color:var(--metas-muted)">—</span>'}</td>
+                        <td class="num">${fmtTons(row.meta_tons)}</td>
+                        <td class="num">${fmtTons(row.produzido_tons || row.produzido_fechamento)}</td>
+                        <td class="num">${fmtPct(row.percentual_atingido || row.percentual_fechamento)}</td>
+                        <td class="num">${row.qualifica_bonus && bonus > 0 ? `<span style="color:#86efac;font-weight:800">${fmtBRL(bonus)}</span>` : '<span style="color:var(--metas-muted)">—</span>'}</td>
+                      </tr>
+                    `;
+                  }).join('')
+                : `<tr><td colspan="7"><div class="metas-empty">Ainda não há metas cadastradas para gerar o resumo de fechamento.</div></td></tr>`}
             </tbody>
           </table>
         </div>
@@ -1739,6 +1797,122 @@
     rerender();
   }
 
+  function showFecharMetaModal(state, rows, onConfirm) {
+    const existing = document.getElementById('metas-fechar-modal-overlay');
+    if (existing) existing.remove();
+
+    const fmtBRL = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    const overlay = document.createElement('div');
+    overlay.id = 'metas-fechar-modal-overlay';
+    overlay.className = 'metas-modal-overlay';
+
+    overlay.innerHTML = `
+      <div class="metas-modal">
+        <div class="metas-modal-header">
+          <h3>Fechar Meta — ${escapeHtml(getMonthName(state.mes))}/${state.ano}</h3>
+          <p>Defina o percentual mínimo para elegibilidade ao bônus e cadastre o gestor e salário de cada coordenação.</p>
+        </div>
+        <div class="metas-modal-threshold">
+          <div class="metas-field" style="max-width:280px">
+            <label>Percentual mínimo para receber bônus (%)</label>
+            <input class="metas-edit-input" id="metasMinPercInput" type="number" min="0" max="200" step="1" value="100" placeholder="Ex.: 90" />
+            <p class="metas-config-hint">Coordenações com % atingido ≥ esse valor recebem bônus.</p>
+          </div>
+        </div>
+        <div class="metas-table-wrap">
+          <table class="metas-table">
+            <thead>
+              <tr>
+                <th>Coordenação</th>
+                <th class="num">% Atingido</th>
+                <th class="num">Qualifica</th>
+                <th>Gestor</th>
+                <th>Salário (R$)</th>
+                <th class="num">Bônus Estimado</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => {
+                const meta = Number(row.meta_tons || 0);
+                const produzido = Number(row.produzido_tons || 0);
+                const percentual = meta > 0 ? (produzido / meta) * 100 : 0;
+                const key = rowKey(row);
+                return `<tr data-metas-bonus-row data-key="${escapeHtml(key)}" data-percentual="${percentual.toFixed(6)}">
+                  <td><strong>${escapeHtml(row.regional || '')}</strong></td>
+                  <td class="num"><span class="metas-pill ${pctClass(percentual)}">${fmtPct(percentual)}</span></td>
+                  <td class="num" data-metas-qualifica-cell>—</td>
+                  <td><input class="metas-edit-input" data-metas-gestor placeholder="Nome do gestor" style="min-width:160px" /></td>
+                  <td><input class="metas-edit-input" data-metas-salario type="number" step="0.01" min="0" placeholder="0,00" style="min-width:120px" /></td>
+                  <td class="num" data-metas-bonus-cell style="font-weight:800">—</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p class="metas-config-hint">Bônus estimado = % atingido × salário × 40% (componente de produção, baseado nas regras de bônus de coordenadores).</p>
+        <div class="metas-modal-footer">
+          <button class="metas-btn secondary" type="button" id="metasFecharCancelar">Cancelar</button>
+          <button class="metas-btn" type="button" id="metasFecharConfirmar">Confirmar Fechamento</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const minInput = overlay.querySelector('#metasMinPercInput');
+
+    function updateBadges() {
+      const min = Number(minInput.value || 100);
+      overlay.querySelectorAll('[data-metas-bonus-row]').forEach(tr => {
+        const percentual = Number(tr.dataset.percentual || 0);
+        const qualifica = percentual >= min;
+        const qualCell = tr.querySelector('[data-metas-qualifica-cell]');
+        const bonusCell = tr.querySelector('[data-metas-bonus-cell]');
+        const salarioInput = tr.querySelector('[data-metas-salario]');
+        const salario = Number(salarioInput && salarioInput.value || 0);
+
+        if (qualCell) {
+          qualCell.innerHTML = qualifica
+            ? '<span class="metas-pill good">Qualifica</span>'
+            : '<span class="metas-pill bad">Não qualifica</span>';
+        }
+        if (bonusCell) {
+          if (qualifica && salario > 0) {
+            bonusCell.textContent = fmtBRL((percentual / 100) * salario * 0.4);
+            bonusCell.style.color = '#86efac';
+          } else {
+            bonusCell.textContent = qualifica ? '— (sem salário)' : '—';
+            bonusCell.style.color = qualifica ? '#fcd34d' : '#6b7280';
+          }
+        }
+      });
+    }
+
+    minInput.addEventListener('input', updateBadges);
+    overlay.querySelectorAll('[data-metas-salario]').forEach(inp => inp.addEventListener('input', updateBadges));
+    updateBadges();
+
+    overlay.querySelector('#metasFecharCancelar').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+    overlay.querySelector('#metasFecharConfirmar').addEventListener('click', () => {
+      const min = Number(minInput.value || 100);
+      const gestores = [];
+      overlay.querySelectorAll('[data-metas-bonus-row]').forEach(tr => {
+        gestores.push({
+          regional: tr.dataset.key,
+          percentual: Number(tr.dataset.percentual || 0),
+          gestor: (tr.querySelector('[data-metas-gestor]') || {}).value || '',
+          salario: Number((tr.querySelector('[data-metas-salario]') || {}).value || 0),
+          qualifica: Number(tr.dataset.percentual || 0) >= min
+        });
+      });
+      overlay.remove();
+      onConfirm({ percentualMinimo: min, gestores });
+    });
+  }
+
   async function fecharMetaMes(state, supabase, rerender) {
     if (isMonthClosed(state)) {
       alert('A meta deste mês já está fechada.');
@@ -1751,42 +1925,52 @@
       return;
     }
 
-    const confirmado = window.confirm(`Fechar a meta de ${getMonthName(state.mes)}/${state.ano}? Depois disso, a lista ficará bloqueada para edição.`);
-    if (!confirmado) return;
+    showFecharMetaModal(state, rows, async (params) => {
+      const now = new Date().toISOString();
+      const payloads = rows.map(row => {
+        const meta = Number(row.meta_tons || 0);
+        const produzido = Number(row.produzido_tons || 0);
+        const percentual = meta > 0 ? (produzido / meta) * 100 : 0;
+        const key = rowKey(row);
+        const gestorInfo = params.gestores.find(g => g.regional === key) || {};
+        const salario = Number(gestorInfo.salario || 0);
+        const qualifica = Boolean(gestorInfo.qualifica);
+        const bonusProducao = qualifica && salario > 0 ? (percentual / 100) * salario * 0.4 : 0;
 
-    const now = new Date().toISOString();
-    const payloads = rows.map(row => {
-      const meta = Number(row.meta_tons || 0);
-      const produzido = Number(row.produzido_tons || 0);
-      const percentual = meta > 0 ? (produzido / meta) * 100 : 0;
-      return {
-        ano: Number(state.ano),
-        mes: Number(state.mes),
-        estado: String(row.estado || '').trim().toUpperCase(),
-        regional: String(row.regional || '').trim(),
-        meta_tons: meta,
-        ativo: true,
-        fechado: true,
-        fechado_em: now,
-        status_fechamento: produzido >= meta ? 'ATINGIU' : 'NAO_ATINGIU',
-        produzido_fechamento: produzido,
-        percentual_fechamento: percentual,
-        updated_at: now
-      };
+        return {
+          ano: Number(state.ano),
+          mes: Number(state.mes),
+          estado: String(row.estado || '').trim().toUpperCase(),
+          regional: String(row.regional || '').trim(),
+          meta_tons: meta,
+          ativo: true,
+          fechado: true,
+          fechado_em: now,
+          status_fechamento: produzido >= meta ? 'ATINGIU' : 'NAO_ATINGIU',
+          produzido_fechamento: produzido,
+          percentual_fechamento: percentual,
+          gestor: gestorInfo.gestor || null,
+          salario: salario || null,
+          bonus_percentual_minimo: params.percentualMinimo || 100,
+          bonus_producao: bonusProducao,
+          qualifica_bonus: qualifica,
+          updated_at: now
+        };
+      });
+
+      const { error } = await supabase
+        .from('metas_producao')
+        .upsert(payloads, { onConflict: 'ano,mes,regional' });
+
+      if (error) {
+        console.error('[METAS] Erro ao fechar meta:', error);
+        alert('Erro ao fechar meta: ' + error.message + '\n\nExecute a migration 20260603_metas_bonus_fields.sql no Supabase Dashboard.');
+        return;
+      }
+
+      await loadData(state, supabase);
+      rerender();
     });
-
-    const { error } = await supabase
-      .from('metas_producao')
-      .upsert(payloads, { onConflict: 'ano,mes,regional' });
-
-    if (error) {
-      console.error('[METAS] Erro ao fechar meta:', error);
-      alert('Erro ao fechar meta: ' + error.message + '\n\nSe aparecer coluna inexistente, execute primeiro o SQL enviado junto com o ZIP.');
-      return;
-    }
-
-    await loadData(state, supabase);
-    rerender();
   }
 
 
