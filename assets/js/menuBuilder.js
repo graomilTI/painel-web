@@ -247,6 +247,12 @@ const FROTAS_FAILSAFE_ITEMS = [
     label: 'Histórico',
     path: 'frotas-historico',
     aliases: ['FROTAS_HISTORICO', 'HISTORICO_FROTAS']
+  },
+  {
+    code: 'frotas_rastreadores',
+    label: 'Rastreadores',
+    path: 'frotas-rastreadores',
+    aliases: ['FROTAS_RASTREADORES', 'RASTREADORES']
   }
 ];
 
