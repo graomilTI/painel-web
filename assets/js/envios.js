@@ -2,8 +2,8 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase, SUPABASE_URL } from './supabaseClient.js';
 
 const SERVICOS = {
-  '03220': 'PAC Contrato',
-  '03298': 'SEDEX Contrato',
+  '03220': 'SEDEX Contrato',
+  '03298': 'PAC Contrato',
   '80900': 'Carta Registrada c/ AR',
 };
 
@@ -110,21 +110,7 @@ function getSupabaseUrl() {
 }
 
 // ── Data loaders ──────────────────────────────────────────────────────────────
-async function loadAll() {
-  state.loading = true;
-  const [{ data: posts }, { data: rems }, { data: rev }] = await Promise.all([
-    supabase.from('envios_postagens')
-      .select('*, remetente:envios_remetentes(nome, cidade, uf), destinatario:envios_destinatarios(nome, cidade, uf)')
-      .order('created_at', { ascending: false })
-      .limit(200),
-    supabase.from('envios_remetentes').select('*').eq('ativo', true).order('nome'),
-    supabase.from('envios_reversa')
-      .select('*, cliente:envios_destinatarios(nome, cidade, uf), empresa:envios_remetentes(nome)')
-      .order('created_at', { ascending: false })
-      .limit(200),
-  ]);
-
-  // Pagina destinatários — pode ultrapassar 1000
+async function fetchAllDestinatarios() {
   let dests = [];
   for (let offset = 0; ; offset += 1000) {
     const { data } = await supabase
@@ -136,6 +122,23 @@ async function loadAll() {
     dests = dests.concat(data ?? []);
     if (!data || data.length < 1000) break;
   }
+  return dests;
+}
+
+async function loadAll() {
+  state.loading = true;
+  const [{ data: posts }, { data: rems }, { data: rev }, dests] = await Promise.all([
+    supabase.from('envios_postagens')
+      .select('*, remetente:envios_remetentes(nome, cidade, uf), destinatario:envios_destinatarios(nome, cidade, uf)')
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase.from('envios_remetentes').select('*').eq('ativo', true).order('nome'),
+    supabase.from('envios_reversa')
+      .select('*, cliente:envios_destinatarios(nome, cidade, uf), empresa:envios_remetentes(nome)')
+      .order('created_at', { ascending: false })
+      .limit(200),
+    fetchAllDestinatarios(),
+  ]);
 
   state.postagens = posts ?? [];
   state.remetentes = rems ?? [];
