@@ -1957,7 +1957,7 @@
     const [leituraRes, resultadoRows, despesaRows] = await Promise.all([
       supabase.from('v_leitura_supervisao').select('coordenacao,supervisao,leitura_pct,total_ativos,lidos_30d,data_referencia'),
       fetchAllRows(
-        supabase.from('relatorio_resultado_diario').select('coordenacao,embarcado').gte('data', m1Start).lt('data', metaStart)
+        supabase.from('relatorio_resultado_diario').select('coordenacao,toneladas').gte('data', m1Start).lt('data', metaStart)
       ).catch(() => []),
       fetchAllRows(
         supabase.from('dre_despesas_mensal')
@@ -1972,18 +1972,17 @@
       leituraMap.set(normalizarTexto(r.supervisao || ''), { pct: Number(r.leitura_pct || 0), total: r.total_ativos, lidos: r.lidos_30d, dataRef: r.data_referencia });
     }
 
-    // Resultado M-1: coordenação normalizada → embarcado
-    const resultadoMap = new Map();
-    let resultadoGeral = 0;
+    // Volume Classificado M-1: toneladas por coordenação (igual ao DRE — denominador do custo por ton)
+    const volClassMap = new Map();
+    let volClassGeral = 0;
     for (const r of resultadoRows) {
       const k = normalizarTexto(r.coordenacao || '');
       if (k === 'GERAL') continue;
-      resultadoMap.set(k, (resultadoMap.get(k) || 0) + Number(r.embarcado || 0));
-      resultadoGeral += Number(r.embarcado || 0);
+      volClassMap.set(k, (volClassMap.get(k) || 0) + Number(r.toneladas || 0));
+      volClassGeral += Number(r.toneladas || 0);
     }
 
     // Despesa M-1 (dre_despesas_mensal): total_com_rateio por regional
-    // indiceEmpresa = (total_todas_regionais + total_geral) / resultadoGeral  (fórmula CONFIG_BONUS)
     const despesaMap = new Map(); // coord → total_com_rateio
     let despesaTotalEmpresa = 0;
     for (const r of despesaRows) {
@@ -1991,12 +1990,12 @@
       despesaMap.set(k, Number(r.total_com_rateio || 0));
     }
     if (despesaRows.length) {
-      // total_geral e total_todas_regionais são iguais para todas as linhas do mesmo mês
       const ref = despesaRows[0];
       despesaTotalEmpresa = Number(ref.total_todas_regionais || 0) + Number(ref.total_geral || 0);
     }
 
-    const indiceEmpresa = resultadoGeral > 0 ? despesaTotalEmpresa / resultadoGeral : 0;
+    // cptGeral = custo por tonelada do volume classificado da empresa (igual à linha do DRE)
+    const cptGeral = volClassGeral > 0 ? despesaTotalEmpresa / volClassGeral : 0;
     const temDespesas = despesaMap.size > 0;
 
     return (state.gestores || []).map(g => {
@@ -2013,14 +2012,14 @@
       const multLeitura = calcMultiplicadorLeitura(leituraPct ?? 0);
       const valorLeitura = multLeitura * bonusInicial * 0.3;
 
-      // Custo
-      const resultadoCoord = resultadoMap.get(key) || 0;
-      const despesaCoord   = despesaMap.get(key)   || 0;
+      // Custo: fator = cptGeral / cptCoord  (custo/ton geral ÷ custo/ton da coordenação)
+      const volClassCoord = volClassMap.get(key) || 0;
+      const despesaCoord  = despesaMap.get(key)  || 0;
       let fatorCusto = 0;
       let valorCusto = 0;
-      if (indiceEmpresa > 0 && resultadoCoord > 0 && despesaCoord > 0) {
-        const indiceCoord = despesaCoord / resultadoCoord;
-        fatorCusto = indiceCoord > 0 ? indiceEmpresa / indiceCoord : 0;
+      if (cptGeral > 0 && volClassCoord > 0 && despesaCoord > 0) {
+        const cptCoord = despesaCoord / volClassCoord;
+        fatorCusto = cptCoord > 0 ? cptGeral / cptCoord : 0;
         valorCusto = fatorCusto * bonusInicial * 0.3;
       }
 
@@ -2029,7 +2028,7 @@
         _key: key,
         bonusInicial,
         leituraPct, multLeitura, valorLeitura,
-        resultadoCoord, despesaCoord, fatorCusto, valorCusto,
+        volClassCoord, despesaCoord, fatorCusto, valorCusto,
         temDespesas,
         m1Ref: `${String(m1.mes).padStart(2,'0')}/${m1.ano}`
       };
