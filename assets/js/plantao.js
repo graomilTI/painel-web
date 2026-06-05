@@ -1,13 +1,11 @@
-import { initProtectedPage } from './pageInit.js';
+﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
-const DEFAULT_SETORES = ['RH', 'Logística', 'Frotas', 'Caixas', 'Troca de Notas'];
-const SETORES_DIVULGACAO_PADRAO = ['RH', 'Logística', 'Frotas', 'Caixas', 'Troca de Notas'];
+const DEFAULT_SETORES = ['RH', 'Caixas', 'Frotas', 'Logística', 'Troca de notas'];
 const STORAGE_KEY = 'painel_rh_plantao_setores_extra';
 const TEMPLATE_STORAGE_KEY = 'painel_rh_plantao_modelo_padrao';
-const COLAB_CACHE_KEY = 'grao1000:plantao-colab:v1';
-const IMG_W = 1448;
-const IMG_H = 1086;
+const IMG_W = 1080;
+const IMG_H = 1530;
 
 let setores = [...DEFAULT_SETORES];
 let colaboradores = [];
@@ -15,7 +13,6 @@ let contatosMap = new Map();
 let escala = {};
 let modeloPlantao = [];
 let currentUserContext = null;
-let setorAtivo = DEFAULT_SETORES[0];
 
 function esc(value) {
   return String(value ?? '')
@@ -179,19 +176,12 @@ function injectPlantaoStyles() {
     .plantao-tab.active{background:rgba(22,101,52,.28);color:#dcfce7;border-color:rgba(111,208,165,.28)}
     .plantao-panel{display:none}
     .plantao-panel.active{display:block}
-    .plantao-sector-nav{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:10px;margin:0 0 14px}
-    .plantao-sector-btn{border:1px solid rgba(255,255,255,.08);background:#15152a;color:var(--text);border-radius:18px;padding:14px 16px;font-weight:900;cursor:pointer;text-align:left;box-shadow:0 14px 30px rgba(0,0,0,.12);transition:.16s ease}
-    .plantao-sector-btn:hover{border-color:rgba(111,208,165,.22);transform:translateY(-1px)}
-    .plantao-sector-btn.active{background:linear-gradient(135deg,rgba(22,101,52,.34),rgba(15,23,42,.74));color:#dcfce7;border-color:rgba(111,208,165,.38)}
-    .plantao-sector-btn small{display:block;color:var(--muted);font-weight:700;margin-top:5px}
-    .plantao-sector-btn.active small{color:#bbf7d0}
     .plantao-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
     .plantao-field{grid-column:span 12}
     .plantao-field.third{grid-column:span 4}
     .plantao-field.half{grid-column:span 6}
     .plantao-field.quarter{grid-column:span 3}
     .plantao-label{display:block;font-size:13px;color:var(--muted);font-weight:800;margin-bottom:7px}
-    .plantao-opt{font-weight:400;opacity:.65;font-size:11px}
     .plantao-input,.plantao-select,.plantao-textarea{width:100%;background:#15152a;color:var(--text);border:1px solid rgba(255,255,255,0.08);border-radius:13px;padding:11px 12px;outline:none}
     .plantao-input:focus,.plantao-select:focus,.plantao-textarea:focus{border-color:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,.15)}
     .plantao-textarea{min-height:82px;resize:vertical}
@@ -206,7 +196,7 @@ function injectPlantaoStyles() {
     .plantao-setor{border:1px solid var(--line);border-radius:18px;padding:14px;background:#15152a}
     .plantao-setor-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
     .plantao-setor-head h3{margin:0}
-    .plantao-add-grid{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(155px,.75fr) repeat(4,minmax(92px,.65fr)) 120px;gap:10px;align-items:end}
+    .plantao-add-grid{display:grid;grid-template-columns:1.7fr minmax(150px, .9fr) repeat(4, minmax(92px, 1fr)) 120px;gap:10px;align-items:end}
     .plantao-person-list{display:grid;gap:8px;margin-top:12px}
     .plantao-person{display:grid;grid-template-columns:1.5fr 1fr 1fr auto;gap:10px;align-items:center;border:1px solid var(--line);background:#10101e;border-radius:14px;padding:10px}
     .plantao-person strong{display:block}
@@ -239,7 +229,6 @@ function injectPlantaoStyles() {
     .plantao-tag{display:inline-flex;border:1px solid rgba(255,255,255,0.08);background:#10101e;border-radius:999px;padding:5px 8px;color:var(--muted);font-size:12px}
     @media (max-width:980px){
       .plantao-field.third,.plantao-field.half,.plantao-field.quarter{grid-column:span 12}
-      .plantao-sector-nav{grid-template-columns:1fr 1fr}
       .plantao-add-grid,.plantao-person{grid-template-columns:1fr}
       .plantao-mini-kpis{grid-template-columns:1fr 1fr}
     }
@@ -278,16 +267,6 @@ async function loadLatestReferenceDate() {
 
 async function loadColaboradores() {
   const latest = await loadLatestReferenceDate();
-
-  // Cache por data de importação — dados não mudam até a próxima importação
-  try {
-    const raw = sessionStorage.getItem(COLAB_CACHE_KEY);
-    if (raw) {
-      const { date, data } = JSON.parse(raw);
-      if (date === latest && Array.isArray(data)) { colaboradores = data; return; }
-    }
-  } catch {}
-
   const pageSize = 1000;
   let from = 0;
   const allRows = [];
@@ -326,7 +305,6 @@ async function loadColaboradores() {
   });
 
   colaboradores = Array.from(unique.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
-  try { sessionStorage.setItem(COLAB_CACHE_KEY, JSON.stringify({ date: latest, data: colaboradores })); } catch {}
 }
 
 async function loadContatos() {
@@ -369,7 +347,6 @@ function addEscalaRow(setor, row) {
     colaborador_key: key,
     cpf: row.cpf || '',
     nome: row.nome || '',
-    apelido: row.apelido || '',
     telefone: row.telefone || '',
     email_corporativo: row.email_corporativo || '',
     hora_inicio: row.hora_inicio || '',
@@ -858,107 +835,71 @@ function setupSuggest(input, onSelect) {
 function renderSetores() {
   const holder = document.getElementById('plantaoSetores');
   if (!holder) return;
-
-  const setoresOrdenados = [...setores].sort((a, b) => {
-    const ia = DEFAULT_SETORES.indexOf(a);
-    const ib = DEFAULT_SETORES.indexOf(b);
-    if (ia >= 0 && ib >= 0) return ia - ib;
-    if (ia >= 0) return -1;
-    if (ib >= 0) return 1;
-    return a.localeCompare(b, 'pt-BR');
-  });
-
-  if (!setoresOrdenados.includes(setorAtivo)) setorAtivo = setoresOrdenados[0] || DEFAULT_SETORES[0];
-  if (!escala[setorAtivo]) escala[setorAtivo] = [];
-
-  const navHtml = `
-    <div class="plantao-sector-nav" aria-label="Setores do plantão">
-      ${setoresOrdenados.map((setor) => {
-        const rows = escala[setor] || [];
-        return `
-          <button type="button" class="plantao-sector-btn ${setor === setorAtivo ? 'active' : ''}" data-setor-tab="${esc(setor)}">
-            ${esc(setor)}
-            <small>${rows.length} plantonista(s)</small>
-          </button>
-        `;
-      }).join('')}
-    </div>
-  `;
-
-  const setor = setorAtivo;
-  const rows = escala[setor] || [];
-  holder.innerHTML = navHtml + `
-    <section class="plantao-setor" data-setor="${esc(setor)}">
-      <div class="plantao-setor-head">
-        <div>
-          <h3>${esc(setor)}</h3>
-          <div class="plantao-meta">Selecione a data, o colaborador e o horário do responsável por este setor.</div>
-        </div>
-        ${DEFAULT_SETORES.includes(setor) ? '' : `<button type="button" class="plantao-btn danger" data-remove-setor="${esc(setor)}">Remover setor</button>`}
-      </div>
-
-      <div class="plantao-add-grid">
-        <div class="plantao-suggest-wrap">
-          <label class="plantao-label">Colaborador</label>
-          <input class="plantao-input plantao-colab-input" data-setor="${esc(setor)}" placeholder="Digite o nome do colaborador" autocomplete="off" />
-          <div class="plantao-suggestions"></div>
-        </div>
-        <div>
-          <label class="plantao-label">Data</label>
-          <select class="plantao-select" data-field="data_plantao" data-setor="${esc(setor)}">${buildDateOptions()}</select>
-        </div>
-        <div>
-          <label class="plantao-label">Início 1</label>
-          <input class="plantao-input" type="time" data-field="hora_inicio" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio)}" />
-        </div>
-        <div>
-          <label class="plantao-label">Fim 1</label>
-          <input class="plantao-input" type="time" data-field="hora_fim" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim)}" />
-        </div>
-        <div>
-          <label class="plantao-label">Início 2 <span class="plantao-opt">(opcional)</span></label>
-          <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="" />
-        </div>
-        <div>
-          <label class="plantao-label">Fim 2 <span class="plantao-opt">(opcional)</span></label>
-          <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="" />
-        </div>
-        <button type="button" class="plantao-btn primary" data-add="${esc(setor)}">Adicionar</button>
-      </div>
-      <div style="display:grid;grid-template-columns:minmax(220px,1.5fr) 1fr;gap:10px;margin-top:8px;">
-        <div>
-          <label class="plantao-label">Apelido / Nome social <span class="plantao-opt">(opcional — exibido na arte)</span></label>
-          <input class="plantao-input plantao-apelido-input" data-setor="${esc(setor)}" placeholder="Deixe vazio para usar o nome completo" />
-        </div>
-      </div>
-
-      <div class="plantao-person-list">
-        ${rows.length ? rows.map((row, idx) => `
-          <div class="plantao-person" data-row="${idx}" data-setor="${esc(setor)}">
-            <div>
-              <span class="plantao-date-pill">${esc(weekdayBR(row.data_plantao))} · ${esc(formatDateBR(row.data_plantao))}</span>
-              <strong>${esc(row.apelido || row.nome)}</strong>
-              ${row.apelido ? `<span class="plantao-meta" style="font-size:11px">${esc(row.nome)}</span>` : ''}
-              <span>${esc(row.cpf || row.colaborador_key || '')}</span>
-            </div>
-            <div><span>Contato</span><br>${esc(formatPhone(row.telefone) || '-')}</div>
-            <div><span>Horário</span><br>${esc(buildHorario(row) || '-')}</div>
-            <button type="button" class="plantao-btn danger" data-remove-row="${idx}" data-setor="${esc(setor)}">Remover</button>
+  holder.innerHTML = setores.map((setor) => {
+    const rows = escala[setor] || [];
+    return `
+      <section class="plantao-setor" data-setor="${esc(setor)}">
+        <div class="plantao-setor-head">
+          <div>
+            <h3>${esc(setor)}</h3>
+            <div class="plantao-meta">${rows.length} plantonista(s) cadastrado(s)</div>
           </div>
-        `).join('') : '<div class="plantao-meta">Nenhum plantonista adicionado neste setor.</div>'}
-      </div>
-    </section>
-  `;
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button type="button" class="plantao-btn secondary" data-imagem-setor="${esc(setor)}">Imagem do setor</button>
+            ${DEFAULT_SETORES.includes(setor) ? '' : `<button type="button" class="plantao-btn danger" data-remove-setor="${esc(setor)}">Remover setor</button>`}
+          </div>
+        </div>
 
-  holder.querySelectorAll('[data-setor-tab]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      setorAtivo = btn.dataset.setorTab;
-      renderSetores();
-    });
-  });
+        <div class="plantao-add-grid">
+          <div class="plantao-suggest-wrap">
+            <label class="plantao-label">Colaborador</label>
+            <input class="plantao-input plantao-colab-input" data-setor="${esc(setor)}" placeholder="Digite o nome do colaborador" autocomplete="off" />
+            <div class="plantao-suggestions"></div>
+          </div>
+          <div>
+            <label class="plantao-label">Dia</label>
+            <select class="plantao-select" data-field="data_plantao" data-setor="${esc(setor)}">${buildDateOptions()}</select>
+          </div>
+          <div>
+            <label class="plantao-label">Início 1</label>
+            <input class="plantao-input" type="time" data-field="hora_inicio" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio)}" />
+          </div>
+          <div>
+            <label class="plantao-label">Fim 1</label>
+            <input class="plantao-input" type="time" data-field="hora_fim" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim)}" />
+          </div>
+          <div>
+            <label class="plantao-label">Início 2</label>
+            <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio_2)}" />
+          </div>
+          <div>
+            <label class="plantao-label">Fim 2</label>
+            <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim_2)}" />
+          </div>
+          <button type="button" class="plantao-btn primary" data-add="${esc(setor)}">Adicionar</button>
+        </div>
+
+        <div class="plantao-person-list">
+          ${rows.length ? rows.map((row, idx) => `
+            <div class="plantao-person" data-row="${idx}" data-setor="${esc(setor)}">
+              <div>
+                <span class="plantao-date-pill">${esc(weekdayBR(row.data_plantao))} · ${esc(formatDateBR(row.data_plantao))}</span>
+                <strong>${esc(row.nome)}</strong>
+                <span>${esc(row.cpf || row.colaborador_key || '')}</span>
+              </div>
+              <div><span>Contato</span><br>${esc(formatPhone(row.telefone) || '-')}</div>
+              <div><span>Horário</span><br>${esc(buildHorario(row) || '-')}</div>
+              <button type="button" class="plantao-btn danger" data-remove-row="${idx}" data-setor="${esc(setor)}">Remover</button>
+            </div>
+          `).join('') : '<div class="plantao-meta">Nenhum plantonista adicionado neste setor.</div>'}
+        </div>
+      </section>
+    `;
+  }).join('');
 
   holder.querySelectorAll('.plantao-colab-input').forEach((input) => {
     setupSuggest(input, (selected) => {
+      const setor = input.dataset.setor;
       const section = input.closest('.plantao-setor');
       const contact = getContactForKey(selected.key, selected);
       section.dataset.selected = JSON.stringify({
@@ -984,12 +925,22 @@ function renderSetores() {
     });
   });
 
+  holder.querySelectorAll('[data-imagem-setor]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const setor = btn.dataset.imagemSetor;
+      renderDivulgacaoControls();
+      const selectSetor = document.getElementById('plantaoImgSetor');
+      if (selectSetor) selectSetor.value = setor;
+      switchTab('divulgacao');
+      await renderImagemPlantao();
+    });
+  });
+
   holder.querySelectorAll('[data-remove-setor]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const setor = btn.dataset.removeSetor;
       setores = setores.filter((s) => s !== setor);
       delete escala[setor];
-      if (setorAtivo === setor) setorAtivo = DEFAULT_SETORES[0];
       saveExtraSetores(setores.filter((s) => !DEFAULT_SETORES.includes(s)));
       renderSetores();
       updateKpis();
@@ -1028,15 +979,12 @@ function addFromSetorForm(setor) {
   }
 
   const getField = (name) => section.querySelector(`[data-field="${name}"]`)?.value || '';
-  const getFieldRaw = (name) => section.querySelector(`[data-field="${name}"]`)?.value ?? '';
   const padrao = getHorarioPadrao();
-  const data_plantao   = getField('data_plantao') || document.getElementById('plantaoData').value;
-  const hora_inicio    = getField('hora_inicio')   || padrao.hora_inicio;
-  const hora_fim       = getField('hora_fim')      || padrao.hora_fim;
-  // Segundo período: sem fallback — deixar vazio se o usuário não preencheu
-  const hora_inicio_2  = getFieldRaw('hora_inicio_2');
-  const hora_fim_2     = getFieldRaw('hora_fim_2');
-  const apelido        = section.querySelector('.plantao-apelido-input')?.value?.trim() || '';
+  const data_plantao = getField('data_plantao') || document.getElementById('plantaoData').value;
+  const hora_inicio = getField('hora_inicio') || padrao.hora_inicio;
+  const hora_fim = getField('hora_fim') || padrao.hora_fim;
+  const hora_inicio_2 = getField('hora_inicio_2') || padrao.hora_inicio_2;
+  const hora_fim_2 = getField('hora_fim_2') || padrao.hora_fim_2;
 
   if (!data_plantao) {
     alert('Selecione o dia do plantão antes de adicionar.');
@@ -1050,7 +998,6 @@ function addFromSetorForm(setor) {
 
   addEscalaRow(setor, {
     ...selected,
-    apelido,
     data_plantao,
     evento: document.getElementById('plantaoEvento').value,
     hora_inicio,
@@ -1081,7 +1028,6 @@ async function saveEscala() {
         colaborador_key: p.colaborador_key || collaboratorKey(p),
         cpf: p.cpf || null,
         nome: p.nome,
-        apelido: p.apelido || null,
         telefone: p.telefone || null,
         email_corporativo: p.email_corporativo || null,
         hora_inicio: p.hora_inicio || null,
@@ -1235,90 +1181,43 @@ function drawRoundRect(ctx, x, y, w, h, r) {
 }
 
 
-
-function drawBackground(ctx) {
-  // Fundo principal — gradiente diagonal mais profundo
-  const grad = ctx.createLinearGradient(0, 0, IMG_W * .6, IMG_H);
-  grad.addColorStop(0,   '#010503');
-  grad.addColorStop(.30, '#050e08');
-  grad.addColorStop(.65, '#061410');
-  grad.addColorStop(1,   '#081e16');
+function drawBackground(ctx, canvasH = IMG_H) {
+  const grad = ctx.createLinearGradient(0, 0, 0, canvasH);
+  grad.addColorStop(0, '#04110c');
+  grad.addColorStop(.55, '#071b14');
+  grad.addColorStop(1, '#0a241b');
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, IMG_W, IMG_H);
+  ctx.fillRect(0, 0, IMG_W, canvasH);
 
-  // Sidebar escura
-  const sidebarW = 286;
-  const sideGrad = ctx.createLinearGradient(0, 0, sidebarW, 0);
-  sideGrad.addColorStop(0,   '#020705');
-  sideGrad.addColorStop(.65, '#061008');
-  sideGrad.addColorStop(1,   '#030d07');
-  ctx.fillStyle = sideGrad;
-  ctx.fillRect(0, 0, sidebarW, IMG_H);
-
-  // Linha de separação verde nítida
-  const lineGrad = ctx.createLinearGradient(0, 60, 0, IMG_H - 60);
-  lineGrad.addColorStop(0,   'rgba(34,197,94,0)');
-  lineGrad.addColorStop(.12, 'rgba(34,197,94,.95)');
-  lineGrad.addColorStop(.88, 'rgba(34,197,94,.95)');
-  lineGrad.addColorStop(1,   'rgba(34,197,94,0)');
-  ctx.fillStyle = lineGrad;
-  ctx.fillRect(sidebarW - 2, 0, 3, IMG_H);
-
-  // Halo ao redor da linha
-  const sideGlow = ctx.createLinearGradient(sidebarW - 22, 0, sidebarW + 18, 0);
-  sideGlow.addColorStop(0,  'rgba(34,197,94,0)');
-  sideGlow.addColorStop(.4, 'rgba(34,197,94,.07)');
-  sideGlow.addColorStop(.6, 'rgba(34,197,94,.07)');
-  sideGlow.addColorStop(1,  'rgba(34,197,94,0)');
-  ctx.fillStyle = sideGlow;
-  ctx.fillRect(sidebarW - 22, 0, 40, IMG_H);
-
-  // Glow atmosférico central-superior
-  const glow1 = ctx.createRadialGradient(860, 220, 20, 860, 220, 620);
-  glow1.addColorStop(0,   'rgba(34,197,94,.14)');
-  glow1.addColorStop(.5,  'rgba(34,197,94,.05)');
-  glow1.addColorStop(1,   'rgba(34,197,94,0)');
+  const glow1 = ctx.createRadialGradient(180, 170, 40, 180, 170, 280);
+  glow1.addColorStop(0, 'rgba(111,208,165,.18)');
+  glow1.addColorStop(1, 'rgba(111,208,165,0)');
   ctx.fillStyle = glow1;
   ctx.fillRect(0, 0, IMG_W, IMG_H);
 
-  // Glow topo-direita (acento frio)
-  const glow2 = ctx.createRadialGradient(1340, 90, 10, 1340, 90, 420);
-  glow2.addColorStop(0, 'rgba(111,208,165,.16)');
-  glow2.addColorStop(1, 'rgba(111,208,165,0)');
+  const glow2 = ctx.createRadialGradient(960, 90, 20, 960, 90, 220);
+  glow2.addColorStop(0, 'rgba(63,168,120,.16)');
+  glow2.addColorStop(1, 'rgba(63,168,120,0)');
   ctx.fillStyle = glow2;
   ctx.fillRect(0, 0, IMG_W, IMG_H);
 
-  // Glow baixo-esquerda (sidebar)
-  const glow3 = ctx.createRadialGradient(143, 920, 10, 143, 920, 260);
-  glow3.addColorStop(0, 'rgba(34,197,94,.09)');
-  glow3.addColorStop(1, 'rgba(34,197,94,0)');
-  ctx.fillStyle = glow3;
-  ctx.fillRect(0, 600, 286, IMG_H - 600);
-
-  // Padrões hexagonais
-  drawHexPattern(ctx, 16, 160, 70, 6, 7, .07);
-  drawHexPattern(ctx, 920, -44, 96, 6, 4, .032);
-}
-
-function drawHexPattern(ctx, startX, startY, r, cols, rows, alpha = .08) {
   ctx.save();
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = .08;
   ctx.strokeStyle = '#6fd0a5';
   ctx.lineWidth = 2;
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const x = startX + col * r * 1.55 + (row % 2 ? r * .78 : 0);
-      const y = startY + row * r * 1.35;
-      ctx.beginPath();
-      for (let a = 0; a < 6; a += 1) {
-        const px = x + r * Math.cos(Math.PI / 3 * a);
-        const py = y + r * Math.sin(Math.PI / 3 * a);
-        if (a === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.stroke();
+  for (let i = 0; i < 20; i++) {
+    const x = 50 + (i % 4) * 155 + (i % 2 ? 36 : 0);
+    const y = 110 + Math.floor(i / 4) * 185;
+    const r = 42;
+    ctx.beginPath();
+    for (let a = 0; a < 6; a++) {
+      const px = x + r * Math.cos(Math.PI / 3 * a);
+      const py = y + r * Math.sin(Math.PI / 3 * a);
+      if (a === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
     }
+    ctx.closePath();
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -1332,13 +1231,13 @@ async function drawLogo(ctx) {
       img.onload = resolve;
       img.onerror = reject;
     });
-    ctx.drawImage(img, 38, 60, 214, 90);
+    ctx.drawImage(img, 70, 56, 248, 102);
   } catch {
     ctx.fillStyle = '#6fd0a5';
-    ctx.font = 'bold 43px Arial';
-    ctx.fillText('GRÃO1000', 34, 112);
-    ctx.font = '16px Arial';
-    ctx.fillText('Sustentabilidade e Logística', 36, 140);
+    ctx.font = 'bold 50px Arial';
+    ctx.fillText('GRÃO 1000', 70, 118);
+    ctx.font = '22px Arial';
+    ctx.fillText('Rastreabilidade e Logística', 72, 148);
   }
 }
 
@@ -1359,7 +1258,9 @@ function fitText(ctx, value, maxWidth) {
   let text = String(value || '');
   if (!text) return '';
   if (ctx.measureText(text).width <= maxWidth) return text;
-  while (text.length > 4 && ctx.measureText(`${text}…`).width > maxWidth) text = text.slice(0, -1);
+  while (text.length > 4 && ctx.measureText(`${text}…`).width > maxWidth) {
+    text = text.slice(0, -1);
+  }
   return `${text}…`;
 }
 
@@ -1376,9 +1277,8 @@ function drawPill(ctx, x, y, text, options = {}) {
 
   ctx.save();
   ctx.font = font;
-  const metrics = ctx.measureText(text);
+  const w = Math.ceil(ctx.measureText(text).width + px * 2);
   const h = 22 + py * 2;
-  const w = Math.ceil(metrics.width + px * 2);
   drawRoundRectFilled(ctx, x, y, w, h, radius, bg, border, 1.5);
   ctx.fillStyle = color;
   ctx.textAlign = 'left';
@@ -1388,349 +1288,71 @@ function drawPill(ctx, x, y, text, options = {}) {
   return { width: w, height: h };
 }
 
-function drawCanvasIcon(ctx, type, x, y, size = 28, color = '#66e36f') {
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = Math.max(2, size / 12);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  const s = size;
-  if (type === 'phone') {
-    ctx.beginPath();
-    ctx.moveTo(x + s * .25, y + s * .18);
-    ctx.quadraticCurveTo(x + s * .12, y + s * .25, x + s * .18, y + s * .42);
-    ctx.quadraticCurveTo(x + s * .34, y + s * .78, x + s * .69, y + s * .86);
-    ctx.quadraticCurveTo(x + s * .84, y + s * .90, x + s * .90, y + s * .74);
-    ctx.lineTo(x + s * .74, y + s * .62);
-    ctx.quadraticCurveTo(x + s * .67, y + s * .58, x + s * .60, y + s * .65);
-    ctx.lineTo(x + s * .53, y + s * .72);
-    ctx.quadraticCurveTo(x + s * .38, y + s * .66, x + s * .28, y + s * .47);
-    ctx.lineTo(x + s * .36, y + s * .40);
-    ctx.quadraticCurveTo(x + s * .43, y + s * .33, x + s * .38, y + s * .25);
-    ctx.closePath();
-    ctx.stroke();
-  } else if (type === 'mail') {
-    drawRoundRect(ctx, x + s * .12, y + s * .22, s * .76, s * .56, s * .06);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x + s * .16, y + s * .28);
-    ctx.lineTo(x + s * .50, y + s * .54);
-    ctx.lineTo(x + s * .84, y + s * .28);
-    ctx.stroke();
-  } else if (type === 'clock') {
-    ctx.beginPath();
-    ctx.arc(x + s * .5, y + s * .5, s * .34, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x + s * .5, y + s * .30);
-    ctx.lineTo(x + s * .5, y + s * .52);
-    ctx.lineTo(x + s * .66, y + s * .60);
-    ctx.stroke();
-  } else if (type === 'calendar') {
-    drawRoundRect(ctx, x + s * .14, y + s * .18, s * .72, s * .68, s * .06);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x + s * .14, y + s * .38);
-    ctx.lineTo(x + s * .86, y + s * .38);
-    ctx.moveTo(x + s * .32, y + s * .10);
-    ctx.lineTo(x + s * .32, y + s * .28);
-    ctx.moveTo(x + s * .68, y + s * .10);
-    ctx.lineTo(x + s * .68, y + s * .28);
-    ctx.stroke();
-  } else if (type === 'truck') {
-    drawRoundRect(ctx, x + s * .10, y + s * .34, s * .48, s * .28, s * .04);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x + s * .58, y + s * .42);
-    ctx.lineTo(x + s * .72, y + s * .42);
-    ctx.lineTo(x + s * .86, y + s * .54);
-    ctx.lineTo(x + s * .86, y + s * .62);
-    ctx.lineTo(x + s * .58, y + s * .62);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x + s * .28, y + s * .70, s * .08, 0, Math.PI * 2);
-    ctx.arc(x + s * .72, y + s * .70, s * .08, 0, Math.PI * 2);
-    ctx.stroke();
-  } else if (type === 'people') {
-    ctx.beginPath();
-    ctx.arc(x + s * .38, y + s * .34, s * .12, 0, Math.PI * 2);
-    ctx.arc(x + s * .64, y + s * .40, s * .10, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x + s * .38, y + s * .78, s * .26, Math.PI, 0);
-    ctx.arc(x + s * .64, y + s * .78, s * .20, Math.PI, 0);
-    ctx.stroke();
-  } else if (type === 'box') {
-    ctx.beginPath();
-    ctx.moveTo(x + s * .50, y + s * .14);
-    ctx.lineTo(x + s * .82, y + s * .32);
-    ctx.lineTo(x + s * .82, y + s * .68);
-    ctx.lineTo(x + s * .50, y + s * .86);
-    ctx.lineTo(x + s * .18, y + s * .68);
-    ctx.lineTo(x + s * .18, y + s * .32);
-    ctx.closePath();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x + s * .18, y + s * .32);
-    ctx.lineTo(x + s * .50, y + s * .50);
-    ctx.lineTo(x + s * .82, y + s * .32);
-    ctx.moveTo(x + s * .50, y + s * .50);
-    ctx.lineTo(x + s * .50, y + s * .86);
-    ctx.stroke();
-  } else if (type === 'cash') {
-    drawRoundRect(ctx, x + s * .14, y + s * .28, s * .72, s * .46, s * .05);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x + s * .5, y + s * .51, s * .12, 0, Math.PI * 2);
-    ctx.stroke();
-  } else if (type === 'headset') {
-    ctx.beginPath();
-    ctx.arc(x + s * .5, y + s * .50, s * .32, Math.PI, 0);
-    ctx.stroke();
-    drawRoundRect(ctx, x + s * .18, y + s * .48, s * .14, s * .24, s * .06);
-    drawRoundRect(ctx, x + s * .68, y + s * .48, s * .14, s * .24, s * .06);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x + s * .68, y + s * .75);
-    ctx.lineTo(x + s * .55, y + s * .82);
-    ctx.stroke();
-  } else if (type === 'leaf') {
-    ctx.beginPath();
-    ctx.moveTo(x + s * .20, y + s * .78);
-    ctx.quadraticCurveTo(x + s * .22, y + s * .18, x + s * .78, y + s * .16);
-    ctx.quadraticCurveTo(x + s * .82, y + s * .72, x + s * .20, y + s * .78);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x + s * .22, y + s * .78);
-    ctx.lineTo(x + s * .70, y + s * .26);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function sectorIcon(setor) {
-  const n = norm(setor);
-  if (n.includes('FROTA')) return 'truck';
-  if (n === 'RH' || n.includes('RECURSOS')) return 'people';
-  if (n.includes('LOGIST')) return 'box';
-  if (n.includes('TROCA') || n.includes('NOTA')) return 'mail';
-  if (n.includes('CAIXA')) return 'cash';
-  return 'cash';
-}
-
-function formatPeriodText(dataIni, dataFim) {
-  if (!dataIni || dataIni === dataFim) return formatDateBR(dataIni);
-  return `${formatDateBR(dataIni)} e ${formatDateBR(dataFim)}`;
-}
-
-function formatCardDateLabel(dates) {
-  const uniqueDates = [...new Set((dates || []).filter(Boolean))].sort();
-  if (!uniqueDates.length) return '';
-  if (uniqueDates.length === 1) return `${weekdayBR(uniqueDates[0])} • ${formatDateBR(uniqueDates[0])}`;
-  const weekdays = [...new Set(uniqueDates.map(weekdayBR))];
-  const weekLabel = weekdays.length === 2 && weekdays[0] === 'Sábado' && weekdays[1] === 'Domingo'
-    ? 'Sábado e Domingo'
-    : weekdays.join(' e ');
-  return `${weekLabel} • ${uniqueDates.map(formatDateBR).join(' e ')}`;
-}
-
-function groupRowsForDivulgacao(rows) {
-  const bySector = new Map();
-  rows.forEach((row) => {
-    const setor = row.setor || '';
-    const key = [
-      norm(row.nome),
-      onlyDigits(row.telefone),
-      norm(row.email_corporativo || row.email),
-      row.hora_inicio || '',
-      row.hora_fim || '',
-      row.hora_inicio_2 || '',
-      row.hora_fim_2 || '',
-    ].join('|');
-    if (!bySector.has(setor)) bySector.set(setor, new Map());
-    const people = bySector.get(setor);
-    if (!people.has(key)) people.set(key, { ...row, dates: [] });
-    const item = people.get(key);
-    if (row.data_plantao && !item.dates.includes(row.data_plantao)) item.dates.push(row.data_plantao);
-  });
-
-  return [...bySector.entries()].map(([setor, peopleMap]) => ({
-    setor,
-    people: [...peopleMap.values()].map((p) => ({ ...p, dates: p.dates.sort() })),
-  }));
-}
-
-function getDivulgacaoSetores(titleSetor) {
-  if (titleSetor !== 'todos') return [titleSetor];
-  return [...SETORES_DIVULGACAO_PADRAO];
-}
-
-function shortDisplayName(name) {
-  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '';
-  if (parts.length === 1) return parts[0];
-  return `${parts[0]} ${parts[parts.length - 1]}`;
-}
-
-function drawInfoLine(ctx, icon, label, value, x, y, maxW, compact = false, iconSz = 0) {
-  const iconSize = iconSz || (compact ? 24 : 28);
-  const labelSz  = Math.max(10, Math.round(iconSize * 0.46));
-  const valueSz  = Math.max(12, Math.round(iconSize * 0.64));
-  drawRoundRectFilled(ctx, x, y - 2, iconSize + 12, iconSize + 12, 13, 'rgba(255,255,255,.04)', 'rgba(132,184,158,.16)', 1);
-  drawCanvasIcon(ctx, icon, x + 6, y + 4, iconSize, '#72c99a');
-  ctx.fillStyle = '#98b4a8';
-  ctx.font = `bold ${labelSz}px Arial`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText(label, x + iconSize + 26, y + 1);
-  ctx.fillStyle = '#e6efea';
-  ctx.font = `bold ${valueSz}px Arial`;
-  ctx.fillText(fitText(ctx, value || '-', maxW - iconSize - 28), x + iconSize + 26, y + labelSz + 3);
-}
-
-// Calcula a altura necessária para um card com n plantonistas
-function calcCardHeight(numPeople) {
-  const HEADER = 140;  // data + badge + separador
-  const PAD_B  = 32;
-  const n = Math.min(Math.max(numPeople, 1), 2);
-  if (n === 1) return HEADER + 32 + 14 + 52 * 3 + PAD_B;    // ≈ 370
-  const perPerson = 24 + 14 + 42 * 3;                        // ≈ 164
-  return HEADER + perPerson * 2 + 18 + PAD_B;                // ≈ 498
-}
-
-function drawSectorCard(ctx, card, x, y, w, h, dateFallback) {
-  // ── Fundo ───────────────────────────────────────────────────────────────────
-  ctx.save();
-  drawRoundRect(ctx, x, y, w, h, 22);
-  ctx.clip();
-  const bgGrad = ctx.createLinearGradient(x, y, x + w * .7, y + h);
-  bgGrad.addColorStop(0,  'rgba(14,32,24,.96)');
-  bgGrad.addColorStop(.5, 'rgba(9,22,17,.92)');
-  bgGrad.addColorStop(1,  'rgba(6,15,11,.94)');
-  ctx.fillStyle = bgGrad;
-  ctx.fillRect(x, y, w, h);
-  const topHL = ctx.createLinearGradient(x, y, x, y + 90);
-  topHL.addColorStop(0, 'rgba(111,208,165,.07)');
-  topHL.addColorStop(1, 'rgba(111,208,165,0)');
-  ctx.fillStyle = topHL;
-  ctx.fillRect(x, y, w, h);
-  ctx.restore();
-
-  // Borda gradiente
-  ctx.save();
-  const bord = ctx.createLinearGradient(x, y, x + w * .55, y + h * .55);
-  bord.addColorStop(0,   'rgba(111,208,165,.65)');
-  bord.addColorStop(.35, 'rgba(111,208,165,.32)');
-  bord.addColorStop(1,   'rgba(111,208,165,.08)');
-  ctx.strokeStyle = bord;
-  ctx.lineWidth = 1.5;
-  drawRoundRect(ctx, x, y, w, h, 22);
-  ctx.stroke();
-  ctx.restore();
-
-  // Barra de acento esquerda
-  ctx.save();
-  const acc = ctx.createLinearGradient(0, y + 28, 0, y + h - 28);
-  acc.addColorStop(0,   'rgba(34,197,94,0)');
-  acc.addColorStop(.14, 'rgba(34,197,94,.95)');
-  acc.addColorStop(.86, 'rgba(34,197,94,.95)');
-  acc.addColorStop(1,   'rgba(34,197,94,0)');
-  ctx.fillStyle = acc;
-  ctx.beginPath();
-  ctx.roundRect(x, y + 22, 3, h - 44, [0, 2, 2, 0]);
-  ctx.fill();
-  ctx.restore();
-
-  // ── Data ────────────────────────────────────────────────────────────────────
-  const dateLabel = formatCardDateLabel(card.people.flatMap((p) => p.dates || [])) || dateFallback;
-  ctx.save();
+function drawInfoBox(ctx, x, y, w, h, label, value) {
+  drawRoundRectFilled(ctx, x, y, w, h, 18, 'rgba(255,255,255,.03)', 'rgba(111,208,165,.12)', 1);
+  ctx.fillStyle = '#6fd0a5';
   ctx.font = 'bold 16px Arial';
-  const dlW = ctx.measureText(dateLabel).width;
-  drawRoundRectFilled(ctx, x + 20, y + 16, dlW + 52, 32, 8, 'rgba(34,197,94,.07)', 'rgba(34,197,94,.20)', 1);
-  drawCanvasIcon(ctx, 'calendar', x + 26, y + 19, 20, '#5ed490');
-  ctx.fillStyle = '#8fd9b5';
-  ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
-  ctx.fillText(fitText(ctx, dateLabel, w - 56), x + 52, y + 22);
-  ctx.restore();
+  ctx.textBaseline = 'top';
+  ctx.fillText(label, x + 16, y + 12);
 
-  // ── Badge de setor ──────────────────────────────────────────────────────────
-  const badgeY = y + 62;
-  drawRoundRectFilled(ctx, x + 20, badgeY, 52, 52, 13, 'rgba(34,197,94,.10)', 'rgba(34,197,94,.28)', 1.5);
-  drawCanvasIcon(ctx, sectorIcon(card.setor), x + 30, badgeY + 10, 32, '#5ed490');
-  drawPill(ctx, x + 84, badgeY + 8, card.setor, {
-    bg: 'rgba(34,197,94,.10)', border: 'rgba(34,197,94,.30)', color: '#a8e8c4',
-    font: 'bold 23px Arial', px: 16, py: 7, radius: 10,
-  });
-
-  const HEADER_END = badgeY + 62; // y onde começa a seção de plantonistas
-  ctx.fillStyle = 'rgba(111,208,165,.12)';
-  ctx.fillRect(x + 20, HEADER_END, w - 40, 1);
-
-  // ── Plantonistas — layout totalmente adaptativo à altura disponível ─────────
-  const people = card.people.length
-    ? card.people
-    : [{ nome: 'Sem plantonista cadastrado', telefone: '', email: '', email_corporativo: '', dates: [] }];
-  const maxPeople = people.length > 1 ? 2 : 1;
-  const shown     = people.slice(0, maxPeople);
-  const hasExtra  = people.length > maxPeople;
-
-  // Espaço disponível para os plantonistas
-  const availH   = (y + h) - HEADER_END - (hasExtra ? 46 : 20);
-  const perH      = Math.floor(availH / shown.length);
-
-  // Escala fontes baseado no espaço por pessoa
-  const nameFontSz = Math.max(14, Math.min(28, Math.floor(perH * 0.16)));
-  const iconSz     = Math.max(18, Math.min(28, Math.floor(perH * 0.13)));
-  const lineSpacing = Math.max(32, Math.floor((perH - nameFontSz - 18) / 3));
-
-  let personY = HEADER_END + 10;
-
-  shown.forEach((person, idx) => {
-    ctx.font = `bold ${nameFontSz}px Arial`;
-    ctx.fillStyle = '#f0f7f2';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(fitText(ctx, (person.apelido || person.nome || '-').trim(), w - 48), x + 20, personY);
-
-    const divY = personY + nameFontSz + 6;
-    const dg   = ctx.createLinearGradient(x + 20, 0, x + w - 20, 0);
-    dg.addColorStop(0,  'rgba(111,208,165,.22)');
-    dg.addColorStop(.6, 'rgba(111,208,165,.10)');
-    dg.addColorStop(1,  'rgba(111,208,165,0)');
-    ctx.fillStyle = dg;
-    ctx.fillRect(x + 20, divY, w - 40, 1);
-
-    const infoY  = divY + 8;
-    const phone  = formatPhone(person.telefone) || '-';
-    const email  = person.email_corporativo || person.email || '-';
-    const hora   = buildHorario(person) || '-';
-
-    drawInfoLine(ctx, 'phone', 'Contato', phone, x + 20, infoY,               w - 40, true, iconSz);
-    drawInfoLine(ctx, 'mail',  'E-mail',  email, x + 20, infoY + lineSpacing,  w - 40, true, iconSz);
-    drawInfoLine(ctx, 'clock', 'Horário', hora,  x + 20, infoY + lineSpacing*2,w - 40, true, iconSz);
-
-    personY += perH;
-
-    if (idx < shown.length - 1) {
-      ctx.fillStyle = 'rgba(111,208,165,.08)';
-      ctx.fillRect(x + 20, personY - 8, w - 40, 1);
-    }
-  });
-
-  if (hasExtra) {
-    drawPill(ctx, x + 20, y + h - 38, `+ ${people.length - maxPeople} plantonista(s) na escala completa`, {
-      bg: 'rgba(255,255,255,.03)', border: 'rgba(111,208,165,.14)',
-      color: '#c4ddd1', font: 'bold 13px Arial', px: 12, py: 5, radius: 999,
-    });
-  }
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 24px Arial';
+  const fitted = fitText(ctx, value || '-', w - 32);
+  ctx.fillText(fitted, x + 16, y + 34);
 }
 
-function getRowsForDivulgacao(sectorOverride) {
+function drawCardHeader(ctx, row, x, y, w) {
+  const dateLabel = `${weekdayBR(row.data_plantao)} • ${formatDateBR(row.data_plantao)}`;
+  drawPill(ctx, x + 22, y + 18, dateLabel, {
+    bg: 'rgba(22,101,52,.18)',
+    border: 'rgba(111,208,165,.24)',
+    color: '#d8ffea',
+    font: 'bold 18px Arial',
+    px: 14,
+    py: 8,
+    radius: 999,
+  });
+
+  const setorW = ctx.measureText(String(row.setor || '')).width + 30;
+  drawPill(ctx, x + w - setorW - 22, y + 18, row.setor || '', {
+    bg: 'rgba(63,168,120,.18)',
+    border: 'rgba(111,208,165,.30)',
+    color: '#6fd0a5',
+    font: 'bold 18px Arial',
+    px: 14,
+    py: 8,
+    radius: 999,
+  });
+}
+
+function drawPersonCard(ctx, row, x, y, maxW) {
+  const cardH = 190;
+  drawRoundRectFilled(ctx, x, y, maxW, cardH, 28, 'rgba(7,18,14,.88)', 'rgba(111,208,165,.14)', 1.2);
+  drawCardHeader(ctx, row, x, y, maxW);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 40px Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const nome = fitText(ctx, row.nome || '', maxW - 44);
+  ctx.fillText(nome, x + 22, y + 66);
+
+  const phone = formatPhone(row.telefone) || '-';
+  const email = row.email_corporativo || row.email || '-';
+  const horario = buildHorario(row) || '-';
+
+  drawInfoBox(ctx, x + 22, y + 112, 220, 60, 'Contato', phone);
+  drawInfoBox(ctx, x + 258, y + 112, 356, 60, 'E-mail', email);
+  drawInfoBox(ctx, x + 630, y + 112, maxW - 652, 60, 'Horário', horario);
+
+  return cardH;
+}
+
+function getRowsForDivulgacao() {
   const dataIni = document.getElementById('plantaoImgData')?.value || document.getElementById('plantaoData')?.value || '';
   const dataFim = document.getElementById('plantaoImgDataFim')?.value || document.getElementById('plantaoDataFim')?.value || dataIni;
-  const setorFiltro = sectorOverride !== undefined ? sectorOverride : 'todos';
+  const setorFiltro = document.getElementById('plantaoImgSetor')?.value || 'todos';
 
   const rows = [];
   Object.entries(escala).forEach(([setor, pessoas]) => {
@@ -1743,15 +1365,10 @@ function getRowsForDivulgacao(sectorOverride) {
   });
 
   rows.sort((a, b) => {
-    const orderA = SETORES_DIVULGACAO_PADRAO.findIndex((s) => norm(s) === norm(a.setor));
-    const orderB = SETORES_DIVULGACAO_PADRAO.findIndex((s) => norm(s) === norm(b.setor));
-    const fixedA = orderA < 0 ? 999 : orderA;
-    const fixedB = orderB < 0 ? 999 : orderB;
-    if (fixedA !== fixedB) return fixedA - fixedB;
-    const bySetor = String(a.setor || '').localeCompare(String(b.setor || ''));
-    if (bySetor) return bySetor;
     const byDate = String(a.data_plantao || '').localeCompare(String(b.data_plantao || ''));
     if (byDate) return byDate;
+    const bySetor = String(a.setor || '').localeCompare(String(b.setor || ''));
+    if (bySetor) return bySetor;
     return String(a.nome || '').localeCompare(String(b.nome || ''));
   });
   return rows;
@@ -1760,164 +1377,94 @@ function getRowsForDivulgacao(sectorOverride) {
 async function renderImagemPlantao() {
   const canvas = document.getElementById('plantaoCanvas');
   if (!canvas) return;
+
+  const rows = getRowsForDivulgacao();
+  const cardH = 190;
+  const gap = 18;
+  const cardStartY = 430;
+  const footerH = 110;
+  const neededH = rows.length > 0
+    ? cardStartY + rows.length * (cardH + gap) - gap + footerH
+    : IMG_H;
+  const canvasH = Math.max(IMG_H, neededH);
+
   canvas.width = IMG_W;
-  canvas.height = IMG_H;
+  canvas.height = canvasH;
   const ctx = canvas.getContext('2d');
 
-  drawBackground(ctx);
+  drawBackground(ctx, canvasH);
   await drawLogo(ctx);
 
   const dataIni = document.getElementById('plantaoImgData')?.value || document.getElementById('plantaoData')?.value || '';
   const dataFim = document.getElementById('plantaoImgDataFim')?.value || document.getElementById('plantaoDataFim')?.value || dataIni;
   const titleSetor = document.getElementById('plantaoImgSetor')?.value || 'todos';
-  const rows = getRowsForDivulgacao();
-  const grouped = groupRowsForDivulgacao(rows);
-  const bySetor = new Map(grouped.map((card) => [norm(card.setor), card]));
-  const displaySetores = getDivulgacaoSetores(titleSetor);
-  const cards = displaySetores.map((setor) => bySetor.get(norm(setor)) || { setor, people: [] });
-  const dateText = formatPeriodText(dataIni, dataFim);
-  const dateFallback = dataIni === dataFim
-    ? `${weekdayBR(dataIni)} • ${formatDateBR(dataIni)}`
-    : `${weekdayBR(dataIni)} e ${weekdayBR(dataFim)} • ${formatDateBR(dataIni)} e ${formatDateBR(dataFim)}`;
 
-  const mainX = 342;
+  const title = 'Escala de Plantão';
+  const subtitle = titleSetor === 'todos' ? 'Todos os setores' : `Setor: ${titleSetor}`;
+  const dateText = dataIni === dataFim ? formatDateBR(dataIni) : `${formatDateBR(dataIni)} a ${formatDateBR(dataFim)}`;
 
-  // Linha decorativa antes do título
-  const titleLineGrad = ctx.createLinearGradient(mainX - 18, 0, mainX + 340, 0);
-  titleLineGrad.addColorStop(0, 'rgba(34,197,94,.7)');
-  titleLineGrad.addColorStop(.5, 'rgba(34,197,94,.3)');
-  titleLineGrad.addColorStop(1, 'rgba(34,197,94,0)');
-  ctx.fillStyle = titleLineGrad;
-  ctx.fillRect(mainX - 18, 50, 320, 2);
-
-  // Título principal — maior, gradiente de cor
-  ctx.save();
-  const titleGrad = ctx.createLinearGradient(mainX, 62, mainX + 600, 62);
-  titleGrad.addColorStop(0,   '#f0f7f2');
-  titleGrad.addColorStop(.55, '#c8e8d6');
-  titleGrad.addColorStop(1,   '#8fd9b5');
-  ctx.fillStyle = titleGrad;
+  ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.font = 'bold 72px Arial';
-  ctx.fillText('Escala de Plantão', mainX - 18, 60);
-  ctx.restore();
+  ctx.font = 'bold 62px Arial';
+  ctx.fillText(title, 70, 188);
 
-  // Subtítulo
-  ctx.fillStyle = '#7fa898';
-  ctx.font = '20px Arial';
-  ctx.fillText('Relação de plantonistas escalados para atendimento no período informado.', mainX - 16, 152);
+  ctx.fillStyle = '#b7d8c9';
+  ctx.font = '28px Arial';
+  ctx.fillText('Relação de plantonistas escalados para atendimento no período informado.', 70, 252);
 
-  // Chips de setor e período
-  const chipSetor = drawPill(ctx, mainX - 18, 196, titleSetor === 'todos' ? 'Todos os setores' : `Setor: ${titleSetor}`, {
-    bg: 'rgba(34,197,94,.09)',
-    border: 'rgba(34,197,94,.30)',
-    color: '#a8e8c4',
-    font: 'bold 20px Arial',
-    px: 16, py: 8,
+  drawPill(ctx, 70, 286, subtitle, {
+    bg: 'rgba(255,255,255,.06)',
+    border: 'rgba(111,208,165,.18)',
+    color: '#ffffff',
+    font: 'bold 21px Arial',
+    px: 14,
+    py: 8,
   });
-  // Separador vertical
-  ctx.fillStyle = 'rgba(111,208,165,.20)';
-  ctx.fillRect(mainX - 18 + chipSetor.width + 20, 200, 1.5, 36);
-  // Ícone + label período
-  drawCanvasIcon(ctx, 'calendar', mainX - 18 + chipSetor.width + 40, 198, 34, '#5ed490');
-  ctx.fillStyle = '#c0d8cc';
-  ctx.font = 'bold 20px Arial';
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  ctx.fillText('Período:', mainX - 18 + chipSetor.width + 82, 200);
-  ctx.fillStyle = '#8fd9b5';
-  ctx.fillText(dateText, mainX - 18 + chipSetor.width + 194, 200);
+  drawPill(ctx, 70, 336, `Período: ${dateText}`, {
+    bg: 'rgba(22,101,52,.18)',
+    border: 'rgba(111,208,165,.28)',
+    color: '#dcfce7',
+    font: 'bold 21px Arial',
+    px: 14,
+    py: 8,
+  });
 
-  // Linha divisória principal
-  const divGrad = ctx.createLinearGradient(mainX - 18, 0, IMG_W - 68, 0);
-  divGrad.addColorStop(0,  'rgba(111,208,165,.28)');
-  divGrad.addColorStop(.5, 'rgba(111,208,165,.12)');
-  divGrad.addColorStop(1,  'rgba(111,208,165,0)');
-  ctx.fillStyle = divGrad;
-  ctx.fillRect(mainX - 18, 260, IMG_W - mainX - 50, 1.5);
+  drawRoundRectFilled(ctx, 70, 400, 940, 2, 2, 'rgba(111,208,165,.18)');
+
+  let lastY = cardStartY;
 
   if (!rows.length) {
-    drawRoundRectFilled(ctx, mainX - 18, 306, IMG_W - mainX - 68, 300, 26, 'rgba(7,18,14,.88)', 'rgba(111,208,165,.18)', 1.2);
+    drawRoundRectFilled(ctx, 70, 475, 940, 220, 28, 'rgba(7,18,14,.88)', 'rgba(111,208,165,.14)', 1.2);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 42px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('Nenhum plantonista cadastrado', mainX + (IMG_W - mainX - 68) / 2, 410);
+    ctx.fillText('Nenhum plantonista cadastrado', IMG_W / 2, 560);
     ctx.fillStyle = '#b7d8c9';
-    ctx.font = '25px Arial';
-    ctx.fillText('Ajuste os filtros e atualize a imagem.', mainX + (IMG_W - mainX - 68) / 2, 468);
+    ctx.font = '28px Arial';
+    ctx.fillText('Ajuste os filtros e atualize a imagem.', IMG_W / 2, 620);
+    ctx.textAlign = 'left';
+    lastY = 720;
   } else {
-    const gridX   = mainX - 18;
-    const gridY   = 284;
-    const gap     = 20;
-    const rowGap  = 18;
-    const cardW   = Math.floor((IMG_W - gridX - 60 - gap) / 2);
-    const footerY = 1014; // limite antes do rodapé
-
-    // Monta linhas de 2 cards e calcula altura necessária de cada linha
-    const rows = [];
-    for (let i = 0; i < Math.min(cards.length, 4); i += 2) {
-      const pair = cards.slice(i, i + 2);
-      const rowH = Math.max(...pair.map((c) => calcCardHeight(c?.people?.length || 0)));
-      rows.push({ pair, rowH });
-    }
-
-    // Se o conteúdo total exceder o espaço disponível, escala proporcionalmente
-    const totalGaps  = (rows.length - 1) * rowGap;
-    const totalNeeded = rows.reduce((s, r) => s + r.rowH, 0) + totalGaps;
-    const available  = footerY - gridY;
-    const scale      = totalNeeded > available ? available / totalNeeded : 1;
-
-    let curY = gridY;
-    rows.forEach(({ pair, rowH }) => {
-      const scaledH = Math.floor(rowH * scale);
-      pair.forEach((card, idx) => {
-        const cx = gridX + idx * (cardW + gap);
-        drawSectorCard(ctx, card, cx, curY, cardW, scaledH, dateFallback);
-      });
-      curY += scaledH + rowGap;
+    let y = cardStartY;
+    rows.forEach((row) => {
+      drawPersonCard(ctx, row, 70, y, 940);
+      y += cardH + gap;
     });
+    lastY = y;
   }
 
-  // Sidebar — ícone de headset com glow
-  const hsGlow = ctx.createRadialGradient(118, 838, 10, 118, 838, 70);
-  hsGlow.addColorStop(0, 'rgba(34,197,94,.18)');
-  hsGlow.addColorStop(1, 'rgba(34,197,94,0)');
-  ctx.fillStyle = hsGlow;
-  ctx.fillRect(48, 768, 140, 140);
-  drawRoundRectFilled(ctx, 68, 790, 100, 100, 24, 'rgba(14,34,26,.72)', 'rgba(34,197,94,.35)', 1.5);
-  drawCanvasIcon(ctx, 'headset', 84, 808, 62, '#4de090');
-
-  ctx.fillStyle = '#5ed490';
-  ctx.font = 'bold 21px Arial';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText('ATENDIMENTO', 50, 908);
-  ctx.fillStyle = '#dceee4';
-  ctx.font = 'bold 19px Arial';
-  ctx.fillText('QUE MOVE', 50, 936);
-  ctx.fillText('O AGRO.', 50, 962);
-
-  // Rodapé
-  const footerY = 1032;
-  const footGrad = ctx.createLinearGradient(mainX - 18, 0, IMG_W - 68, 0);
-  footGrad.addColorStop(0,  'rgba(111,208,165,.24)');
-  footGrad.addColorStop(.5, 'rgba(111,208,165,.10)');
-  footGrad.addColorStop(1,  'rgba(111,208,165,0)');
-  ctx.fillStyle = footGrad;
-  ctx.fillRect(mainX - 18, footerY - 18, IMG_W - mainX - 50, 1.5);
-  drawCanvasIcon(ctx, 'box', mainX - 14, footerY - 10, 32, '#5ed490');
-  ctx.fillStyle = '#a0c4b4';
-  ctx.font = '18px Arial';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText('Compromisso, agilidade e confiança para manter o agro sempre em movimento.', mainX + 28, footerY - 2);
+  const footerLineY = lastY + 10;
   ctx.fillStyle = 'rgba(111,208,165,.18)';
-  ctx.fillRect(1084, footerY - 12, 1.5, 40);
-  drawCanvasIcon(ctx, 'leaf', 1112, footerY - 10, 34, '#5ed490');
-  ctx.fillStyle = '#7fd4a8';
-  ctx.font = 'bold 18px Arial';
-  ctx.fillText('www.grao1000.com.br', 1160, footerY - 2);
+  ctx.fillRect(70, footerLineY, 940, 2);
+  ctx.fillStyle = '#e2e2f0';
+  ctx.font = '24px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText('Grão 1000 • Escala de Plantão', 70, footerLineY + 22);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#6fd0a5';
+  ctx.fillText('www.grao1000.com.br', 1010, footerLineY + 22);
+  ctx.textAlign = 'left';
 }
 
 function baixarImagemPlantao() {
@@ -1965,7 +1512,7 @@ function renderPage(content) {
       <div class="section-heading">
         <div>
           <h2>Plantão</h2>
-          <p class="section-subtitle">Escolha o setor no topo, informe data, colaborador e horário do responsável, consulte plantões salvos e gere a arte de divulgação.</p>
+          <p class="section-subtitle">Monte a escala por data, cadastre mais de um plantonista por setor, consulte plantões salvos e gere a arte de divulgação com telefone, e-mail e horário.</p>
         </div>
       </div>
 
@@ -2031,7 +1578,6 @@ function renderPage(content) {
           <div class="plantao-feedback" id="plantaoFeedback"></div>
         </div>
 
-        <div class="plantao-card" style="padding:14px 16px;"><div class="plantao-meta">Setores fixos conforme controle atual: RH, Logística, Frotas, Caixas e Troca de Notas. Clique em um botão para preencher a escala do setor.</div></div>
         <div class="plantao-setores" id="plantaoSetores"></div>
       </div>
 
