@@ -183,16 +183,19 @@ async function callFn(name, body) {
   return res.json();
 }
 
-async function loadAll() {
-  state.loading = true;
-  const [{ data: tels }, { data: rems }] = await Promise.all([
-    supabase.from('envios_telegramas')
-      .select('*, remetente:envios_remetentes(nome,cep,logradouro,numero,bairro,cidade,uf), destinatario:envios_destinatarios(nome,cpf_cnpj,cep,logradouro,numero,bairro,cidade,uf)')
-      .order('created_at', { ascending: false })
-      .limit(300),
-    supabase.from('envios_remetentes').select('*').eq('ativo', true).order('nome'),
-  ]);
+const TEL_DESTS_CACHE_KEY = 'grao1000:tel-dests:v1';
+const TEL_DESTS_CACHE_TTL = 30 * 60 * 1000;
+const TEL_CLINICAS_CACHE_KEY = 'grao1000:clinicas-sst:v1';
+const TEL_CLINICAS_CACHE_TTL = 2 * 60 * 60 * 1000;
 
+async function fetchAllDestinatariosTel() {
+  try {
+    const raw = localStorage.getItem(TEL_DESTS_CACHE_KEY);
+    if (raw) {
+      const { ts, data } = JSON.parse(raw);
+      if (Date.now() - ts < TEL_DESTS_CACHE_TTL && Array.isArray(data)) return data;
+    }
+  } catch {}
   let dests = [];
   for (let offset = 0; ; offset += 1000) {
     const { data } = await supabase
@@ -204,7 +207,18 @@ async function loadAll() {
     dests = dests.concat(data ?? []);
     if (!data || data.length < 1000) break;
   }
+  try { localStorage.setItem(TEL_DESTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: dests })); } catch {}
+  return dests;
+}
 
+async function fetchAllClinicasTel() {
+  try {
+    const raw = localStorage.getItem(TEL_CLINICAS_CACHE_KEY);
+    if (raw) {
+      const { ts, clinicas } = JSON.parse(raw);
+      if (Date.now() - ts < TEL_CLINICAS_CACHE_TTL && Array.isArray(clinicas)) return clinicas;
+    }
+  } catch {}
   let clinicas = [];
   for (let offset = 0; ; offset += 1000) {
     const { data } = await supabase
@@ -216,6 +230,21 @@ async function loadAll() {
     clinicas = clinicas.concat(data ?? []);
     if (!data || data.length < 1000) break;
   }
+  try { localStorage.setItem(TEL_CLINICAS_CACHE_KEY, JSON.stringify({ ts: Date.now(), clinicas })); } catch {}
+  return clinicas;
+}
+
+async function loadAll() {
+  state.loading = true;
+  const [{ data: tels }, { data: rems }, dests, clinicas] = await Promise.all([
+    supabase.from('envios_telegramas')
+      .select('*, remetente:envios_remetentes(nome,cep,logradouro,numero,bairro,cidade,uf), destinatario:envios_destinatarios(nome,cpf_cnpj,cep,logradouro,numero,bairro,cidade,uf)')
+      .order('created_at', { ascending: false })
+      .limit(300),
+    supabase.from('envios_remetentes').select('*').eq('ativo', true).order('nome'),
+    fetchAllDestinatariosTel(),
+    fetchAllClinicasTel(),
+  ]);
 
   state.telegramas    = tels ?? [];
   state.remetentes    = rems ?? [];

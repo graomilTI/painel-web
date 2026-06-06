@@ -38,10 +38,10 @@ async function localizarAuditoria() {
     supabase.from('relatorio_resultado_diario').select('*').eq('placa', placa).eq('data', data).limit(1),
     supabase.from('programacao_colaboradores').select('*').eq('placa_veiculo', placa).limit(1)
   ];
-  let found = null;
-  for (const req of attempts) {
-    try { const { data: rows, error } = await req; if (!error && rows?.length) { found = rows[0]; break; } } catch {}
-  }
+  const results = await Promise.all(attempts.map(req =>
+    req.then(({ data: rows, error }) => (!error && rows?.length) ? rows[0] : null).catch(() => null)
+  ));
+  const found = results.find(r => r !== null) ?? null;
   state.lookup = found ? { origem: 'INTERNA', row: found } : { origem: 'EXTERNA', row: null };
   state.loadingLookup = false;
   preencherComLookup(); renderLookup();

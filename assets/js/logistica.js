@@ -190,8 +190,18 @@ async function loadAberturaOs() {
   state.aberturaLoading = false;
 }
 
+const COLAB_SS_KEY = 'grao1000:logistica-colab:v1';
+
 async function ensureColaboradores() {
   if (state.colaboradores.length) return;
+
+  try {
+    const raw = sessionStorage.getItem(COLAB_SS_KEY);
+    if (raw) {
+      const { data } = JSON.parse(raw);
+      if (Array.isArray(data) && data.length) { state.colaboradores = data; return; }
+    }
+  } catch {}
 
   const latest = await supabase
     .from('colaborador_snapshot')
@@ -207,6 +217,7 @@ async function ensureColaboradores() {
       seen.add(key);
       return true;
     });
+    try { sessionStorage.setItem(COLAB_SS_KEY, JSON.stringify({ data: state.colaboradores })); } catch {}
     return;
   }
 
@@ -217,6 +228,9 @@ async function ensureColaboradores() {
     .limit(1200);
 
   state.colaboradores = safe(fallback.data);
+  if (state.colaboradores.length) {
+    try { sessionStorage.setItem(COLAB_SS_KEY, JSON.stringify({ data: state.colaboradores })); } catch {}
+  }
 }
 
 function render(content) {
