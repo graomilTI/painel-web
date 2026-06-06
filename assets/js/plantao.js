@@ -1065,6 +1065,13 @@ function renderSetores() {
     </section>
   `;
 
+  holder.querySelectorAll('[data-setor-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setorAtivo = btn.dataset.setorTab;
+      renderSetores();
+    });
+  });
+
   holder.querySelectorAll('.plantao-colab-input').forEach((input) => {
     setupSuggest(input, (selected) => {
       const setor = input.dataset.setor;
@@ -1135,13 +1142,15 @@ function addFromSetorForm(setor) {
     return;
   }
 
-  const getField = (name) => section.querySelector(`[data-field="${name}"]`)?.value || '';
+  const getField    = (name) => section.querySelector(`[data-field="${name}"]`)?.value || '';
+  const getFieldRaw = (name) => section.querySelector(`[data-field="${name}"]`)?.value ?? '';
   const padrao = getHorarioPadrao();
-  const data_plantao = getField('data_plantao') || document.getElementById('plantaoData').value;
-  const hora_inicio = getField('hora_inicio') || padrao.hora_inicio;
-  const hora_fim = getField('hora_fim') || padrao.hora_fim;
-  const hora_inicio_2 = getField('hora_inicio_2') || padrao.hora_inicio_2;
-  const hora_fim_2 = getField('hora_fim_2') || padrao.hora_fim_2;
+  const data_plantao  = getField('data_plantao') || document.getElementById('plantaoData').value;
+  const hora_inicio   = getField('hora_inicio')  || padrao.hora_inicio;
+  const hora_fim      = getField('hora_fim')     || padrao.hora_fim;
+  const hora_inicio_2 = getFieldRaw('hora_inicio_2');
+  const hora_fim_2    = getFieldRaw('hora_fim_2');
+  const apelido       = section.querySelector('.plantao-apelido-input')?.value?.trim() || '';
 
   if (!data_plantao) {
     alert('Selecione o dia do plantão antes de adicionar.');
@@ -1155,6 +1164,7 @@ function addFromSetorForm(setor) {
 
   addEscalaRow(setor, {
     ...selected,
+    apelido,
     data_plantao,
     evento: document.getElementById('plantaoEvento').value,
     hora_inicio,
