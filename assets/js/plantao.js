@@ -14,6 +14,7 @@ let contatosMap = new Map();
 let escala = {};
 let modeloPlantao = [];
 let currentUserContext = null;
+let setorAtivo = DEFAULT_SETORES[0];
 
 function esc(value) {
   return String(value ?? '')
