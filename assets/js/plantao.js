@@ -171,73 +171,175 @@ function injectPlantaoStyles() {
   const style = document.createElement('style');
   style.id = 'plantaoStyles';
   style.textContent = `
-    .plantao-page{display:grid;gap:18px}
-    .plantao-tabs{display:flex;gap:10px;flex-wrap:wrap}
-    .plantao-tab{border:1px solid var(--line);background:#15152a;color:var(--text);border-radius:14px;padding:10px 14px;font-weight:800;cursor:pointer}
-    .plantao-tab.active{background:rgba(22,101,52,.28);color:#dcfce7;border-color:rgba(111,208,165,.28)}
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+
+    /* === PLANTÃO === */
+    .plantao-page{display:grid;gap:20px;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
+
+    /* KPIs */
+    .plantao-mini-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+    .plantao-mini-kpi{background:#111820;border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:16px 18px;transition:border-color .2s}
+    .plantao-mini-kpi:hover{border-color:rgba(34,197,94,.2)}
+    .plantao-mini-kpi .kpi-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#4b5563;display:block;margin-bottom:6px}
+    .plantao-mini-kpi b{display:block;font-size:30px;font-weight:800;color:#e6edf3;line-height:1;font-family:'DM Mono',monospace}
+    .plantao-mini-kpi .kpi-sub{font-size:11px;color:#4b5563;margin-top:5px;display:block}
+
+    /* Tabs */
+    .plantao-tabs{display:flex;gap:3px;padding:4px;background:#0b1117;border:1px solid rgba(255,255,255,.06);border-radius:16px;overflow-x:auto;scrollbar-width:none}
+    .plantao-tabs::-webkit-scrollbar{display:none}
+    .plantao-tab{flex:1;min-width:max-content;border:none;background:transparent;color:#6b7280;border-radius:12px;padding:10px 18px;font-weight:600;font-size:13px;cursor:pointer;transition:all .15s ease;font-family:'Plus Jakarta Sans',sans-serif;white-space:nowrap}
+    .plantao-tab:hover{color:#d1d5db;background:rgba(255,255,255,.04)}
+    .plantao-tab.active{background:#1a2332;color:#34d399;box-shadow:0 1px 6px rgba(0,0,0,.4)}
+
+    /* Panels */
     .plantao-panel{display:none}
-    .plantao-panel.active{display:block}
-    .plantao-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
+    .plantao-panel.active{display:grid;gap:16px}
+
+    /* Cards */
+    .plantao-card{background:#111820;border:1px solid rgba(255,255,255,.06);border-radius:18px;padding:20px}
+    .plantao-card-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#4b5563;margin:0 0 16px;display:flex;align-items:center;gap:8px}
+    .plantao-card-title::before{content:'';width:5px;height:5px;background:#22c55e;border-radius:50%;display:inline-block;box-shadow:0 0 8px rgba(34,197,94,.7)}
+
+    /* Form */
+    .plantao-config-grid,.plantao-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;align-items:end}
     .plantao-field{grid-column:span 12}
     .plantao-field.third{grid-column:span 4}
     .plantao-field.half{grid-column:span 6}
     .plantao-field.quarter{grid-column:span 3}
-    .plantao-label{display:block;font-size:13px;color:var(--muted);font-weight:800;margin-bottom:7px}
-    .plantao-input,.plantao-select,.plantao-textarea{width:100%;background:#15152a;color:var(--text);border:1px solid rgba(255,255,255,0.08);border-radius:13px;padding:11px 12px;outline:none}
-    .plantao-input:focus,.plantao-select:focus,.plantao-textarea:focus{border-color:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,.15)}
-    .plantao-textarea{min-height:82px;resize:vertical}
-    .plantao-card{background:var(--bg-card);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow-soft)}
-    .plantao-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .plantao-btn{border:0;border-radius:13px;padding:11px 14px;font-weight:800;cursor:pointer}
-    .plantao-btn.primary{background:#15803d;color:#fff}
-    .plantao-btn.secondary{background:#15152a;color:var(--text);border:1px solid rgba(255,255,255,0.08)}
-    .plantao-btn.danger{background:rgba(220,38,38,.18);color:#fecaca;border:1px solid rgba(220,38,38,.28)}
-    .plantao-btn:disabled{opacity:.55;cursor:not-allowed}
-    .plantao-setores{display:grid;gap:16px}
-    .plantao-setor{border:1px solid var(--line);border-radius:18px;padding:14px;background:#15152a}
-    .plantao-setor-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
-    .plantao-setor-head h3{margin:0}
-    .plantao-add-grid{display:grid;grid-template-columns:1.7fr minmax(150px, .9fr) repeat(4, minmax(92px, 1fr)) 120px;gap:10px;align-items:end}
-    .plantao-person-list{display:grid;gap:8px;margin-top:12px}
-    .plantao-person{display:grid;grid-template-columns:1.5fr 1fr 1fr auto;gap:10px;align-items:center;border:1px solid var(--line);background:#10101e;border-radius:14px;padding:10px}
-    .plantao-person strong{display:block}
-    .plantao-person span{color:var(--muted);font-size:13px}
-    .plantao-suggest-wrap{position:relative}
-    .plantao-suggestions{position:absolute;top:calc(100% + 6px);left:0;right:0;background:#15152a;border:1px solid rgba(255,255,255,0.08);border-radius:14px;box-shadow:0 20px 45px rgba(0,0,0,.35);z-index:20;max-height:260px;overflow:auto;display:none}
-    .plantao-suggestions.show{display:block}
-    .plantao-suggestion{width:100%;display:block;text-align:left;border:0;background:transparent;color:var(--text);padding:10px 12px;cursor:pointer;border-bottom:1px solid rgba(51,65,85,.4)}
-    .plantao-suggestion:hover{background:rgba(22,101,52,.22)}
-    .plantao-suggestion small{display:block;color:var(--muted);margin-top:3px}
-    .plantao-meta{color:var(--muted);font-size:13px;line-height:1.5}
-    .plantao-feedback{min-height:22px;color:#bbf7d0;font-size:14px}
-    .plantao-feedback.error{color:#fecaca}
-    .plantao-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px}
-    .plantao-table{width:100%;min-width:920px;border-collapse:collapse;background:#15152a}
-    .plantao-table th,.plantao-table td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-    .plantao-table th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
-    .plantao-div-grid{display:grid;gap:20px;margin-top:4px}
-    .plantao-div-card{background:var(--bg-card);border:1px solid var(--line);border-radius:22px;padding:20px;box-shadow:var(--shadow-soft)}
-    .plantao-div-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid rgba(111,208,165,.12)}
+    .plantao-label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:6px}
+    .plantao-opt{font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:#4b5563}
+    .plantao-input,.plantao-select,.plantao-textarea{width:100%;background:#0b1117;color:#e6edf3;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:10px 12px;outline:none;font-size:14px;font-family:'Plus Jakarta Sans',sans-serif;transition:border-color .15s,box-shadow .15s;box-sizing:border-box}
+    .plantao-input:focus,.plantao-select:focus,.plantao-textarea:focus{border-color:rgba(34,197,94,.5);box-shadow:0 0 0 3px rgba(34,197,94,.08)}
+    .plantao-input[type=time],.plantao-input[type=date]{font-family:'DM Mono',monospace;font-size:13px}
+    .plantao-textarea{min-height:72px;resize:vertical}
+
+    /* Horário padrão inline */
+    .plantao-horario-padrao{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:rgba(34,197,94,.04);border:1px solid rgba(34,197,94,.1);border-radius:12px;padding:12px 14px;margin-top:12px}
+    .plantao-horario-padrao-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:#34d399;white-space:nowrap;margin-right:4px}
+    .plantao-horario-padrao .plantao-input[type=time]{max-width:110px;padding:8px 10px}
+    .plantao-horario-padrao .sep{color:#4b5563;font-size:12px;font-weight:600;white-space:nowrap}
+
+    /* Divider */
+    .plantao-divider{height:1px;background:rgba(255,255,255,.05);margin:16px 0}
+
+    /* Buttons */
+    .plantao-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .plantao-btn{border:none;border-radius:10px;padding:10px 16px;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s ease;font-family:'Plus Jakarta Sans',sans-serif;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+    .plantao-btn.primary{background:#16a34a;color:#fff}
+    .plantao-btn.primary:hover{background:#15803d;transform:translateY(-1px);box-shadow:0 4px 14px rgba(22,163,74,.3)}
+    .plantao-btn.secondary{background:rgba(255,255,255,.05);color:#c9d1d9;border:1px solid rgba(255,255,255,.08)}
+    .plantao-btn.secondary:hover{background:rgba(255,255,255,.09);color:#e6edf3}
+    .plantao-btn.danger{background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(239,68,68,.2)}
+    .plantao-btn.danger:hover{background:rgba(239,68,68,.18)}
+    .plantao-btn.sm{padding:7px 12px;font-size:12px}
+    .plantao-btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important;box-shadow:none!important}
+
+    /* Feedback */
+    .plantao-feedback{font-size:13px;color:#4ade80;line-height:1.5;padding-top:8px}
+    .plantao-feedback.error{color:#f87171}
+    .plantao-feedback:empty{display:none}
+
+    /* Sector nav */
+    .plantao-sector-nav{display:flex;gap:8px;flex-wrap:wrap}
+    .plantao-sector-btn{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.06);background:#0b1117;color:#9ca3af;border-radius:999px;padding:8px 14px 8px 12px;font-weight:600;font-size:13px;cursor:pointer;transition:all .15s ease;font-family:'Plus Jakarta Sans',sans-serif}
+    .plantao-sector-btn:hover{border-color:rgba(34,197,94,.2);color:#d1d5db}
+    .plantao-sector-btn.active{background:rgba(34,197,94,.1);color:#34d399;border-color:rgba(34,197,94,.32)}
+    .plantao-sector-count{background:rgba(255,255,255,.07);color:#6b7280;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;font-family:'DM Mono',monospace;min-width:22px;text-align:center;transition:all .15s}
+    .plantao-sector-btn.active .plantao-sector-count,.plantao-sector-btn.has-people .plantao-sector-count{background:rgba(34,197,94,.15);color:#4ade80}
+
+    /* Setor section */
+    .plantao-setor{display:grid;gap:14px;margin-top:14px}
+    .plantao-setor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+    .plantao-setor-head h3{margin:0;font-size:17px;font-weight:800;color:#e6edf3;display:flex;align-items:center;gap:10px}
+    .plantao-setor-head h3::before{content:'';width:3px;height:20px;background:#22c55e;border-radius:2px;display:inline-block}
+    .plantao-hint{font-size:12px;color:#4b5563;margin:4px 0 0}
+
+    /* Add form */
+    .plantao-add-area{background:#0b1117;border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:14px}
+    .plantao-add-area-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:#4b5563;margin:0 0 12px}
+    .plantao-add-row1{display:grid;grid-template-columns:1.8fr 1fr;gap:10px;margin-bottom:10px}
+    .plantao-add-times{display:grid;grid-template-columns:repeat(4,1fr) auto;gap:10px;align-items:end}
+    .plantao-add-row3{display:grid;grid-template-columns:1.5fr 1fr;gap:10px;margin-top:10px}
+
+    /* Divulgação cards (dois canvases) */
+    .plantao-div-grid{display:grid;gap:16px;margin-top:4px}
+    .plantao-div-card{background:#111820;border:1px solid rgba(255,255,255,.06);border-radius:18px;padding:20px}
+    .plantao-div-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,.06)}
     .plantao-div-label{display:flex;align-items:center;gap:10px}
-    .plantao-div-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:rgba(22,101,52,.32);border:1px solid rgba(111,208,165,.28);color:#6fd0a5;font-size:12px;font-weight:900;letter-spacing:.04em;flex-shrink:0}
-    .plantao-div-title{font-size:15px;font-weight:900;color:var(--text)}
-    .plantao-div-sub{font-size:12px;color:var(--muted);margin-top:2px}
-    .plantao-canvas-img{display:block;max-width:100%;background:#050c09;border:1px solid rgba(111,208,165,.10);border-radius:14px}
-    .plantao-mini-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-    .plantao-mini-kpi{background:#15152a;border:1px solid var(--line);border-radius:16px;padding:12px}
-    .plantao-mini-kpi b{display:block;font-size:22px;margin-top:4px}
-    .plantao-radio-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-    .plantao-radio-row label{display:inline-flex;gap:8px;align-items:center;background:#15152a;border:1px solid var(--line);border-radius:999px;padding:9px 12px;color:var(--text)}
-    .plantao-date-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.14);color:#dcfce7;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:800;margin-bottom:5px}
+    .plantao-div-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.24);color:#4ade80;font-size:12px;font-weight:700;letter-spacing:.04em;flex-shrink:0}
+    .plantao-div-title{font-size:15px;font-weight:700;color:#e6edf3}
+    .plantao-div-sub{font-size:12px;color:#6b7280;margin-top:2px}
+    .plantao-canvas-img{display:block;max-width:100%;border:1px solid rgba(255,255,255,.06);border-radius:14px}
+
+    /* Suggestions */
+    .plantao-suggest-wrap{position:relative}
+    .plantao-suggestions{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#1a2332;border:1px solid rgba(34,197,94,.2);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.6);z-index:30;max-height:240px;overflow:auto;display:none}
+    .plantao-suggestions.show{display:block}
+    .plantao-suggestion{width:100%;display:block;text-align:left;border:none;background:transparent;color:#e6edf3;padding:10px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04);font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;transition:background .1s}
+    .plantao-suggestion:last-child{border-bottom:none}
+    .plantao-suggestion:hover{background:rgba(34,197,94,.08)}
+    .plantao-suggestion strong{color:#e6edf3;font-weight:700}
+    .plantao-suggestion small{display:block;color:#6b7280;margin-top:2px;font-size:11px}
+
+    /* Person list */
+    .plantao-person-list{display:grid;gap:8px}
+    .plantao-person{display:grid;grid-template-columns:1fr auto auto auto;gap:14px;align-items:center;background:#0b1117;border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:12px 14px;transition:border-color .15s}
+    .plantao-person:hover{border-color:rgba(255,255,255,.1)}
+    .plantao-person-name{font-size:14px;font-weight:700;color:#e6edf3;margin-bottom:3px}
+    .plantao-person-meta{font-size:11px;color:#6b7280}
+    .plantao-person-col{font-size:12px;color:#6b7280}
+    .plantao-person-col strong{display:block;font-size:13px;color:#c9d1d9;font-family:'DM Mono',monospace;font-weight:500}
+
+    /* Date pill */
+    .plantao-date-pill{display:inline-flex;align-items:center;gap:4px;border:1px solid rgba(34,197,94,.16);background:rgba(34,197,94,.07);color:#4ade80;border-radius:999px;padding:3px 9px;font-size:10px;font-weight:700;font-family:'DM Mono',monospace;margin-bottom:4px}
+
+    /* Muted */
+    .plantao-meta{font-size:13px;color:#6b7280;line-height:1.55}
+
+    /* Tables */
+    .plantao-table-wrap{overflow:auto;border:1px solid rgba(255,255,255,.05);border-radius:14px;margin-top:14px}
+    .plantao-table{width:100%;min-width:780px;border-collapse:collapse}
+    .plantao-table th{padding:10px 14px;color:#4b5563;font-size:10px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;text-align:left;border-bottom:1px solid rgba(255,255,255,.05);background:#0b1117}
+    .plantao-table td{padding:12px 14px;font-size:13px;color:#c9d1d9;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:middle}
+    .plantao-table tr:last-child td{border-bottom:none}
+    .plantao-table tr:hover td{background:rgba(255,255,255,.02)}
+
+    /* Radio */
+    .plantao-radio-row{display:flex;gap:8px;flex-wrap:wrap}
+    .plantao-radio-row label{display:inline-flex;gap:8px;align-items:center;background:#0b1117;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:8px 12px;color:#c9d1d9;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s}
+    .plantao-radio-row label:hover{border-color:rgba(34,197,94,.2)}
+
+    /* Consulta */
     .plantao-consulta-list{display:grid;gap:10px}
-    .plantao-consulta-item{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);background:#15152a;border-radius:16px;padding:12px}
-    .plantao-consulta-title{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:900}
-    .plantao-consulta-tags{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
-    .plantao-tag{display:inline-flex;border:1px solid rgba(255,255,255,0.08);background:#10101e;border-radius:999px;padding:5px 8px;color:var(--muted);font-size:12px}
-    @media (max-width:980px){
+    .plantao-consulta-item{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;border:1px solid rgba(255,255,255,.05);background:#0b1117;border-radius:14px;padding:14px 16px;transition:border-color .15s}
+    .plantao-consulta-item:hover{border-color:rgba(34,197,94,.15)}
+    .plantao-consulta-title{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:700;font-size:14px;color:#e6edf3;margin-bottom:4px}
+    .plantao-consulta-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .plantao-tag{display:inline-flex;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.03);border-radius:6px;padding:3px 8px;color:#6b7280;font-size:11px;font-weight:600}
+
+    /* Canvas */
+    .plantao-canvas-wrap{display:grid;gap:12px;justify-items:start}
+    #plantaoCanvas{max-width:100%;border:1px solid rgba(255,255,255,.06);border-radius:14px}
+
+    /* Empty state */
+    .plantao-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:32px 20px;color:#4b5563;font-size:13px;text-align:center}
+
+    /* New setor row */
+    .plantao-new-setor-row{display:flex;gap:8px;align-items:center}
+    .plantao-new-setor-row .plantao-input{max-width:190px}
+
+    @media(max-width:960px){
       .plantao-field.third,.plantao-field.half,.plantao-field.quarter{grid-column:span 12}
-      .plantao-add-grid,.plantao-person{grid-template-columns:1fr}
       .plantao-mini-kpis{grid-template-columns:1fr 1fr}
+      .plantao-add-times{grid-template-columns:1fr 1fr}
+      .plantao-add-row1{grid-template-columns:1fr}
+      .plantao-person{grid-template-columns:1fr auto}
+    }
+    @media(max-width:600px){
+      .plantao-consulta-item{grid-template-columns:1fr}
+      .plantao-add-times{grid-template-columns:1fr 1fr}
+      .plantao-tabs{gap:2px}
+      .plantao-tab{padding:9px 12px;font-size:12px}
     }
   `;
   document.head.appendChild(style);
@@ -769,10 +871,22 @@ async function consultarDatasPlantao() {
 function renderKpis() {
   return `
     <div class="plantao-mini-kpis">
-      <div class="plantao-mini-kpi"><span class="plantao-meta">Setores</span><b id="kpiSetores">${setores.length}</b></div>
-      <div class="plantao-mini-kpi"><span class="plantao-meta">Plantonistas</span><b id="kpiPessoas">0</b></div>
-      <div class="plantao-mini-kpi"><span class="plantao-meta">Período</span><b id="kpiPeriodo">-</b></div>
-      <div class="plantao-mini-kpi"><span class="plantao-meta">Base contatos</span><b id="kpiContatos">${contatosMap.size}</b></div>
+      <div class="plantao-mini-kpi">
+        <span class="kpi-label">Setores</span>
+        <b id="kpiSetores">${setores.length}</b>
+      </div>
+      <div class="plantao-mini-kpi">
+        <span class="kpi-label">Plantonistas</span>
+        <b id="kpiPessoas">0</b>
+      </div>
+      <div class="plantao-mini-kpi">
+        <span class="kpi-label">Período</span>
+        <b id="kpiPeriodo" style="font-size:15px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;line-height:1.2;margin-top:4px">—</b>
+      </div>
+      <div class="plantao-mini-kpi">
+        <span class="kpi-label">Contatos</span>
+        <b id="kpiContatos">${contatosMap.size}</b>
+      </div>
     </div>
   `;
 }
@@ -787,7 +901,7 @@ function updateKpis() {
   const elContatos = document.getElementById('kpiContatos');
   if (elSetores) elSetores.textContent = String(setores.length);
   if (elPessoas) elPessoas.textContent = String(total);
-  if (elPeriodo) elPeriodo.textContent = dataIni && dataFim ? `${formatDateBR(dataIni)} a ${formatDateBR(dataFim)}` : '-';
+  if (elPeriodo) elPeriodo.textContent = dataIni && dataFim ? `${formatDateBR(dataIni)} a ${formatDateBR(dataFim)}` : '—';
   if (elContatos) elContatos.textContent = String(contatosMap.size);
 }
 
@@ -840,64 +954,116 @@ function setupSuggest(input, onSelect) {
 function renderSetores() {
   const holder = document.getElementById('plantaoSetores');
   if (!holder) return;
-  holder.innerHTML = setores.map((setor) => {
-    const rows = escala[setor] || [];
-    return `
-      <section class="plantao-setor" data-setor="${esc(setor)}">
-        <div class="plantao-setor-head">
-          <div>
-            <h3>${esc(setor)}</h3>
-            <div class="plantao-meta">${rows.length} plantonista(s) cadastrado(s)</div>
-          </div>
-          ${DEFAULT_SETORES.includes(setor) ? '' : `<button type="button" class="plantao-btn danger" data-remove-setor="${esc(setor)}">Remover setor</button>`}
-        </div>
 
-        <div class="plantao-add-grid">
+  const setoresOrdenados = [...setores].sort((a, b) => {
+    const ia = DEFAULT_SETORES.indexOf(a);
+    const ib = DEFAULT_SETORES.indexOf(b);
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0) return -1;
+    if (ib >= 0) return 1;
+    return a.localeCompare(b, 'pt-BR');
+  });
+
+  if (!setoresOrdenados.includes(setorAtivo)) setorAtivo = setoresOrdenados[0] || DEFAULT_SETORES[0];
+  if (!escala[setorAtivo]) escala[setorAtivo] = [];
+
+  const navHtml = `
+    <div class="plantao-sector-nav" aria-label="Setores do plantão">
+      ${setoresOrdenados.map((setor) => {
+        const rows = escala[setor] || [];
+        const hasP = rows.length > 0;
+        return `
+          <button type="button" class="plantao-sector-btn ${setor === setorAtivo ? 'active' : ''} ${hasP ? 'has-people' : ''}" data-setor-tab="${esc(setor)}">
+            ${esc(setor)}
+            <span class="plantao-sector-count">${rows.length}</span>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  const setor = setorAtivo;
+  const rows = escala[setor] || [];
+  holder.innerHTML = navHtml + `
+    <section class="plantao-setor" data-setor="${esc(setor)}">
+      <div class="plantao-setor-head">
+        <div>
+          <h3>${esc(setor)}</h3>
+          <p class="plantao-hint">Busque o colaborador, defina a data e os horários para adicionar à escala.</p>
+        </div>
+        ${DEFAULT_SETORES.includes(setor) ? '' : `<button type="button" class="plantao-btn danger sm" data-remove-setor="${esc(setor)}">Remover setor</button>`}
+      </div>
+
+      <div class="plantao-add-area">
+        <p class="plantao-add-area-title">Adicionar plantonista</p>
+
+        <div class="plantao-add-row1">
           <div class="plantao-suggest-wrap">
             <label class="plantao-label">Colaborador</label>
-            <input class="plantao-input plantao-colab-input" data-setor="${esc(setor)}" placeholder="Digite o nome do colaborador" autocomplete="off" />
+            <input class="plantao-input plantao-colab-input" data-setor="${esc(setor)}" placeholder="Digite o nome para buscar..." autocomplete="off" />
             <div class="plantao-suggestions"></div>
           </div>
           <div>
-            <label class="plantao-label">Dia</label>
+            <label class="plantao-label">Data do plantão</label>
             <select class="plantao-select" data-field="data_plantao" data-setor="${esc(setor)}">${buildDateOptions()}</select>
           </div>
+        </div>
+
+        <div class="plantao-add-times">
           <div>
-            <label class="plantao-label">Início 1</label>
+            <label class="plantao-label">Entrada 1</label>
             <input class="plantao-input" type="time" data-field="hora_inicio" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio)}" />
           </div>
           <div>
-            <label class="plantao-label">Fim 1</label>
+            <label class="plantao-label">Saída 1</label>
             <input class="plantao-input" type="time" data-field="hora_fim" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim)}" />
           </div>
           <div>
-            <label class="plantao-label">Início 2</label>
-            <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio_2)}" />
+            <label class="plantao-label">Entrada 2 <span class="plantao-opt">(opc.)</span></label>
+            <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="" />
           </div>
           <div>
-            <label class="plantao-label">Fim 2</label>
-            <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim_2)}" />
+            <label class="plantao-label">Saída 2 <span class="plantao-opt">(opc.)</span></label>
+            <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="" />
           </div>
-          <button type="button" class="plantao-btn primary" data-add="${esc(setor)}">Adicionar</button>
+          <button type="button" class="plantao-btn primary" data-add="${esc(setor)}" style="align-self:end">Adicionar</button>
         </div>
 
-        <div class="plantao-person-list">
-          ${rows.length ? rows.map((row, idx) => `
-            <div class="plantao-person" data-row="${idx}" data-setor="${esc(setor)}">
-              <div>
-                <span class="plantao-date-pill">${esc(weekdayBR(row.data_plantao))} · ${esc(formatDateBR(row.data_plantao))}</span>
-                <strong>${esc(row.nome)}</strong>
-                <span>${esc(row.cpf || row.colaborador_key || '')}</span>
-              </div>
-              <div><span>Contato</span><br>${esc(formatPhone(row.telefone) || '-')}</div>
-              <div><span>Horário</span><br>${esc(buildHorario(row) || '-')}</div>
-              <button type="button" class="plantao-btn danger" data-remove-row="${idx}" data-setor="${esc(setor)}">Remover</button>
-            </div>
-          `).join('') : '<div class="plantao-meta">Nenhum plantonista adicionado neste setor.</div>'}
+        <div style="margin-top:10px;max-width:360px;">
+          <label class="plantao-label">Apelido / nome social <span class="plantao-opt">(exibido na arte — deixe vazio para usar o nome completo)</span></label>
+          <input class="plantao-input plantao-apelido-input" data-setor="${esc(setor)}" placeholder="Nome curto para a arte de divulgação" />
         </div>
-      </section>
-    `;
-  }).join('');
+      </div>
+
+      <div class="plantao-person-list">
+        ${rows.length ? rows.map((row, idx) => `
+          <div class="plantao-person" data-row="${idx}" data-setor="${esc(setor)}">
+            <div>
+              <span class="plantao-date-pill">${esc(weekdayBR(row.data_plantao))} · ${esc(formatDateBR(row.data_plantao))}</span>
+              <div class="plantao-person-name">${esc(row.apelido || row.nome)}</div>
+              ${row.apelido ? `<div class="plantao-person-meta">${esc(row.nome)}</div>` : ''}
+              ${(row.cpf || row.colaborador_key) ? `<div class="plantao-person-meta">${esc(row.cpf || row.colaborador_key)}</div>` : ''}
+            </div>
+            <div class="plantao-person-col">
+              <span>Contato</span>
+              <strong>${esc(formatPhone(row.telefone) || '—')}</strong>
+            </div>
+            <div class="plantao-person-col">
+              <span>Horário</span>
+              <strong>${esc(buildHorario(row) || '—')}</strong>
+            </div>
+            <button type="button" class="plantao-btn danger sm" data-remove-row="${idx}" data-setor="${esc(setor)}">Remover</button>
+          </div>
+        `).join('') : `
+          <div class="plantao-empty">
+            <span style="font-size:28px;opacity:.3">👤</span>
+            Nenhum plantonista adicionado.<br>
+            <span style="color:#374151">Use o formulário acima para incluir.</span>
+          </div>
+        `}
+      </div>
+    </section>
+  `;
 
   holder.querySelectorAll('.plantao-colab-input').forEach((input) => {
     setupSuggest(input, (selected) => {
@@ -1859,26 +2025,23 @@ function renderPage(content) {
 
   content.innerHTML = `
     <section class="plantao-page">
-      <div class="section-heading">
-        <div>
-          <h2>Plantão</h2>
-          <p class="section-subtitle">Monte a escala por data, cadastre mais de um plantonista por setor, consulte plantões salvos e gere a arte de divulgação com telefone, e-mail e horário.</p>
-        </div>
-      </div>
 
       ${renderKpis()}
 
       <div class="plantao-tabs">
         <button type="button" class="plantao-tab active" data-tab="escala">Escala</button>
-        <button type="button" class="plantao-tab" data-tab="programacao">Programar várias semanas</button>
+        <button type="button" class="plantao-tab" data-tab="programacao">Programação</button>
         <button type="button" class="plantao-tab" data-tab="consulta">Consultar datas</button>
         <button type="button" class="plantao-tab" data-tab="contatos">Contatos</button>
         <button type="button" class="plantao-tab" data-tab="divulgacao">Divulgação</button>
       </div>
 
+      <!-- ── ESCALA ── -->
       <div class="plantao-panel active" data-panel="escala">
+
         <div class="plantao-card">
-          <div class="plantao-grid">
+          <p class="plantao-card-title">Período e evento</p>
+          <div class="plantao-config-grid">
             <div class="plantao-field quarter">
               <label class="plantao-label" for="plantaoData">Data inicial</label>
               <input class="plantao-input" type="date" id="plantaoData" value="${dataIni}" />
@@ -1888,65 +2051,62 @@ function renderPage(content) {
               <input class="plantao-input" type="date" id="plantaoDataFim" value="${dataFim}" />
             </div>
             <div class="plantao-field half">
-              <label class="plantao-label" for="plantaoEvento">Evento / observação do final de semana</label>
-              <input class="plantao-input" id="plantaoEvento" placeholder="Ex.: Sábado e domingo / feriado / plantão operação" />
-            </div>
-            <div class="plantao-field quarter">
-              <label class="plantao-label" for="plantaoPadraoInicio1">Horário padrão · Início 1</label>
-              <input class="plantao-input" type="time" id="plantaoPadraoInicio1" value="08:00" />
-            </div>
-            <div class="plantao-field quarter">
-              <label class="plantao-label" for="plantaoPadraoFim1">Horário padrão · Fim 1</label>
-              <input class="plantao-input" type="time" id="plantaoPadraoFim1" value="12:00" />
-            </div>
-            <div class="plantao-field quarter">
-              <label class="plantao-label" for="plantaoPadraoInicio2">Horário padrão · Início 2</label>
-              <input class="plantao-input" type="time" id="plantaoPadraoInicio2" value="13:30" />
-            </div>
-            <div class="plantao-field quarter">
-              <label class="plantao-label" for="plantaoPadraoFim2">Horário padrão · Fim 2</label>
-              <input class="plantao-input" type="time" id="plantaoPadraoFim2" value="18:00" />
-            </div>
-            <div class="plantao-field">
-              <div class="plantao-actions">
-                <button type="button" class="plantao-btn secondary" id="btnAplicarHorarioPadrao">Aplicar horário padrão nos campos</button>
-                <span class="plantao-meta">Use este horário para preencher rápido os setores; depois ajuste individualmente quando precisar.</span>
-              </div>
-            </div>
-            <div class="plantao-field">
-              <label class="plantao-label" for="plantaoObs">Observações internas</label>
-              <textarea class="plantao-textarea" id="plantaoObs" placeholder="Observações opcionais para controle interno"></textarea>
+              <label class="plantao-label" for="plantaoEvento">Evento</label>
+              <input class="plantao-input" id="plantaoEvento" placeholder="Ex.: Plantão final de semana, feriado..." />
             </div>
           </div>
 
-          <div class="plantao-actions" style="margin-top:14px;">
+          <div class="plantao-horario-padrao">
+            <span class="plantao-horario-padrao-label">Horário padrão</span>
+            <input class="plantao-input" type="time" id="plantaoPadraoInicio1" value="08:00" />
+            <span class="sep">às</span>
+            <input class="plantao-input" type="time" id="plantaoPadraoFim1" value="12:00" />
+            <span class="sep">·</span>
+            <input class="plantao-input" type="time" id="plantaoPadraoInicio2" value="13:30" />
+            <span class="sep">às</span>
+            <input class="plantao-input" type="time" id="plantaoPadraoFim2" value="18:00" />
+            <button type="button" class="plantao-btn secondary sm" id="btnAplicarHorarioPadrao">Aplicar nos setores</button>
+          </div>
+
+          <div style="margin-top:12px;">
+            <label class="plantao-label" for="plantaoObs">Observações internas <span class="plantao-opt">(opcional)</span></label>
+            <textarea class="plantao-textarea" id="plantaoObs" placeholder="Anotações de controle interno"></textarea>
+          </div>
+
+          <div class="plantao-divider"></div>
+
+          <div class="plantao-actions">
             <button type="button" class="plantao-btn secondary" id="btnCarregarPlantao">Carregar período</button>
             <button type="button" class="plantao-btn primary" id="btnSalvarPlantao">Salvar plantão</button>
-            <input class="plantao-input" id="plantaoNovoSetor" placeholder="Adicionar novo setor" style="max-width:260px;" />
-            <button type="button" class="plantao-btn secondary" id="btnAddSetor">Adicionar setor</button>
+            <div class="plantao-new-setor-row">
+              <input class="plantao-input" id="plantaoNovoSetor" placeholder="Novo setor" />
+              <button type="button" class="plantao-btn secondary" id="btnAddSetor">+ Setor</button>
+            </div>
           </div>
           <div class="plantao-feedback" id="plantaoFeedback"></div>
         </div>
 
-        <div class="plantao-setores" id="plantaoSetores"></div>
+        <div class="plantao-card">
+          <p class="plantao-card-title">Escala por setor</p>
+          <div id="plantaoSetores"></div>
+        </div>
       </div>
 
+      <!-- ── PROGRAMAÇÃO ── -->
       <div class="plantao-panel" data-panel="programacao">
         <div class="plantao-card">
-          <div class="section-heading">
-            <div>
-              <h3 style="margin:0 0 6px;">Programar escala por várias semanas</h3>
-              <p class="plantao-meta">Monte uma escala-base uma única vez, salve como modelo e gere automaticamente vários finais de semana.</p>
-            </div>
-          </div>
+          <h3 style="margin:0 0 4px;font-size:16px;font-weight:800;color:#e6edf3">Programar várias semanas</h3>
+          <p class="plantao-meta">Monte a escala-base uma vez, salve como modelo e gere automaticamente vários fins de semana de uma só vez.</p>
 
-          <div class="plantao-actions" style="margin-top:12px;">
+          <div class="plantao-actions" style="margin-top:16px;">
             <button type="button" class="plantao-btn secondary" id="btnSalvarModeloPlantao">Salvar escala atual como modelo</button>
             <button type="button" class="plantao-btn secondary" id="btnCarregarModeloPlantao">Carregar modelo padrão</button>
           </div>
           <div class="plantao-feedback" id="plantaoProgramacaoFeedback"></div>
 
-          <div class="plantao-grid" style="margin-top:14px;">
+          <div class="plantao-divider"></div>
+
+          <div class="plantao-grid">
             <div class="plantao-field quarter">
               <label class="plantao-label" for="progDataInicial">Primeiro final de semana</label>
               <input class="plantao-input" type="date" id="progDataInicial" value="${dataIni}" />
@@ -1960,7 +2120,7 @@ function renderPage(content) {
               <input class="plantao-input" id="progEvento" placeholder="Ex.: Plantão final de semana" value="Plantão final de semana" />
             </div>
             <div class="plantao-field half">
-              <label class="plantao-label">Dias que entram na programação</label>
+              <label class="plantao-label">Dias incluídos</label>
               <div class="plantao-radio-row">
                 <label><input type="checkbox" id="progSexta" /> Sexta</label>
                 <label><input type="checkbox" id="progSabado" checked /> Sábado</label>
@@ -1970,30 +2130,26 @@ function renderPage(content) {
             <div class="plantao-field half">
               <label class="plantao-label">Modo de geração</label>
               <div class="plantao-radio-row">
-                <label><input type="radio" name="progModo" value="substituir" checked /> Substituir escala da tela</label>
-                <label><input type="radio" name="progModo" value="somar" /> Somar na escala atual</label>
+                <label><input type="radio" name="progModo" value="substituir" checked /> Substituir escala atual</label>
+                <label><input type="radio" name="progModo" value="somar" /> Somar na escala</label>
               </div>
             </div>
           </div>
 
-          <div class="plantao-actions" style="margin-top:14px;">
+          <div class="plantao-actions" style="margin-top:16px;">
             <button type="button" class="plantao-btn primary" id="btnGerarProgramacaoPlantao">Gerar programação</button>
             <button type="button" class="plantao-btn secondary" id="btnSalvarProgramacaoPlantao">Salvar programação gerada</button>
           </div>
         </div>
 
-        <div class="plantao-card" style="margin-top:14px;">
-          <h3 style="margin-top:0;">Modelo padrão salvo</h3>
+        <div class="plantao-card">
+          <h3 style="margin:0 0 0;font-size:15px;font-weight:700;color:#e6edf3">Modelo padrão salvo</h3>
           <div class="plantao-table-wrap">
             <table class="plantao-table">
               <thead>
                 <tr>
-                  <th>Setor</th>
-                  <th>Colaborador</th>
-                  <th>Telefone</th>
-                  <th>E-mail</th>
-                  <th>Horário</th>
-                  <th>Ação</th>
+                  <th>Setor</th><th>Colaborador</th><th>Telefone</th>
+                  <th>E-mail</th><th>Horário</th><th>Ação</th>
                 </tr>
               </thead>
               <tbody id="plantaoModeloBody"></tbody>
@@ -2002,23 +2158,19 @@ function renderPage(content) {
         </div>
       </div>
 
-
+      <!-- ── CONSULTA ── -->
       <div class="plantao-panel" data-panel="consulta">
         <div class="plantao-card">
-          <div class="section-heading">
-            <div>
-              <h3 style="margin:0 0 6px;">Consultar plantões salvos por data</h3>
-              <p class="plantao-meta">Cada data fica salva separadamente. Use esta lista para localizar um plantão antigo, carregar para edição ou gerar a imagem de divulgação daquela data.</p>
-            </div>
-          </div>
+          <h3 style="margin:0 0 4px;font-size:16px;font-weight:800;color:#e6edf3">Consultar datas salvas</h3>
+          <p class="plantao-meta">Localize qualquer plantão já salvo por período, setor ou nome. Carregue para editar ou gere a arte de divulgação daquela data.</p>
 
-          <div class="plantao-grid" style="margin-top:12px;">
+          <div class="plantao-grid" style="margin-top:14px;">
             <div class="plantao-field quarter">
-              <label class="plantao-label" for="consultaDataIni">Data inicial</label>
+              <label class="plantao-label" for="consultaDataIni">De</label>
               <input class="plantao-input" type="date" id="consultaDataIni" value="${dataIni}" />
             </div>
             <div class="plantao-field quarter">
-              <label class="plantao-label" for="consultaDataFim">Data final</label>
+              <label class="plantao-label" for="consultaDataFim">Até</label>
               <input class="plantao-input" type="date" id="consultaDataFim" value="${addDaysISO(dataIni, 60)}" />
             </div>
             <div class="plantao-field quarter">
@@ -2032,37 +2184,34 @@ function renderPage(content) {
           </div>
 
           <div class="plantao-actions" style="margin-top:14px;">
-            <button type="button" class="plantao-btn primary" id="btnConsultarDatasPlantao">Consultar datas</button>
+            <button type="button" class="plantao-btn primary" id="btnConsultarDatasPlantao">Consultar</button>
             <button type="button" class="plantao-btn secondary" id="btnConsultaProximos90">Próximos 90 dias</button>
           </div>
           <div class="plantao-feedback" id="plantaoConsultaFeedback"></div>
         </div>
 
-        <div class="plantao-card" style="margin-top:14px;">
+        <div class="plantao-card">
           <div id="plantaoConsultaLista" class="plantao-consulta-list"></div>
         </div>
       </div>
 
+      <!-- ── CONTATOS ── -->
       <div class="plantao-panel" data-panel="contatos">
         <div class="plantao-card">
-          <div class="section-heading">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:14px;">
             <div>
-              <h3 style="margin:0 0 6px;">Contatos do plantão</h3>
-              <p class="plantao-meta">Os dados vêm da base de colaboradores. Quando editar telefone ou e-mail corporativo aqui, o ajuste fica salvo para os próximos plantões.</p>
+              <h3 style="margin:0 0 4px;font-size:16px;font-weight:800;color:#e6edf3">Contatos do plantão</h3>
+              <p class="plantao-meta">Ajuste telefone ou e-mail corporativo aqui — o ajuste fica salvo para os próximos plantões.</p>
             </div>
-            <input class="plantao-input" id="plantaoContatoBusca" placeholder="Buscar colaborador" style="max-width:320px;" />
+            <input class="plantao-input" id="plantaoContatoBusca" placeholder="Buscar colaborador" style="max-width:280px;" />
           </div>
           <div class="plantao-feedback" id="plantaoContatosFeedback"></div>
-          <div class="plantao-table-wrap" style="margin-top:14px;">
+          <div class="plantao-table-wrap" style="margin-top:0;">
             <table class="plantao-table">
               <thead>
                 <tr>
-                  <th>Colaborador</th>
-                  <th>CPF</th>
-                  <th>Telefone</th>
-                  <th>E-mail corporativo</th>
-                  <th>Setor preferencial</th>
-                  <th>Ação</th>
+                  <th>Colaborador</th><th>CPF</th><th>Telefone</th>
+                  <th>E-mail corporativo</th><th>Setor preferencial</th><th>Ação</th>
                 </tr>
               </thead>
               <tbody id="plantaoContatosBody"></tbody>
@@ -2071,8 +2220,10 @@ function renderPage(content) {
         </div>
       </div>
 
+      <!-- ── DIVULGAÇÃO ── -->
       <div class="plantao-panel" data-panel="divulgacao">
         <div class="plantao-card">
+          <h3 style="margin:0 0 14px;font-size:16px;font-weight:800;color:#e6edf3">Arte de divulgação</h3>
           <div class="plantao-grid">
             <div class="plantao-field half">
               <label class="plantao-label" for="plantaoImgData">Data inicial</label>
@@ -2135,6 +2286,7 @@ function renderPage(content) {
           </div>
         </div>
       </div>
+
     </section>
   `;
 

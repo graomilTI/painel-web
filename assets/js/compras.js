@@ -19,9 +19,20 @@ function solicitanteCoord(ctx){ return usuario(ctx).coordenacao || usuario(ctx).
 function setMsg(id,msg,err=false){ const el=document.getElementById(id); if(el){ el.textContent=msg||''; el.classList.toggle('err',!!err); }}
 function pill(v){ return `<span class="cmp-status ${esc(v)}">${esc(STATUS[v]||v||'-')}</span>`; }
 async function safe(fn,fallback=[]){ try{ const {data,error}=await fn(); if(error) throw error; return data||fallback; }catch(e){ console.warn(e); return fallback; } }
+const COLAB_CACHE_KEY = 'grao1000:compras-colab:v1';
+const COLAB_CACHE_TTL = 4 * 60 * 60 * 1000;
+
 async function loadColaboradores(){
+  try {
+    const raw = localStorage.getItem(COLAB_CACHE_KEY);
+    if (raw) {
+      const { ts, data } = JSON.parse(raw);
+      if (Date.now() - ts < COLAB_CACHE_TTL && Array.isArray(data)) { state.colaboradores = data; return; }
+    }
+  } catch {}
   const dados = await safe(()=>supabase.from('colaborador_snapshot').select('id,nome,cpf,tipo,cargo,coordenacao,supervisao,ativo').order('nome',{ascending:true}).limit(5000));
   state.colaboradores = dedupeColaboradores(dados).filter(colaboradorAtivo);
+  try { localStorage.setItem(COLAB_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: state.colaboradores })); } catch {}
 }
 function colaboradorAtivo(c){ const txt=norm(c.ativo ?? c.situacao ?? 'ativo'); return !['false','0','inativo','nao ativo','não ativo','desligado'].includes(txt); }
 function colaboradorKey(c){ return String(c?.cpf || c?.documento || c?.id || norm(c?.nome || '')).trim(); }
