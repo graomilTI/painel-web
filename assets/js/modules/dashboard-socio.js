@@ -410,13 +410,16 @@
     const legenda = { position: 'top', align: 'end', labels: { boxWidth: 12, boxHeight: 12, padding: 14 } };
     const yAxis = { grid: { display: false }, ticks: { font: { size: 10 } } };
 
+    const produzidoArr = regionais.map((r) => r.produzidoTons || r.tons);
+    const restanteArr = regionais.map((r) => Math.max(r.metaTons - (r.produzidoTons || r.tons), 0));
+
     charts.meta = new ChartJs(canvasMeta, {
       type: 'bar',
       data: {
         labels,
         datasets: [
-          { label: 'Meta (t)', data: regionais.map((r) => r.metaTons), backgroundColor: 'rgba(250,204,21,.65)', borderRadius: 5, barThickness: 11 },
-          { label: 'Produzido (t)', data: regionais.map((r) => r.produzidoTons || r.tons), backgroundColor: 'rgba(34,197,94,.7)', borderRadius: 5, barThickness: 11 }
+          { label: 'Produzido (t)', data: produzidoArr, backgroundColor: 'rgba(34,197,94,.75)', borderRadius: { topLeft: 5, bottomLeft: 5 }, barThickness: 11, stack: 'meta' },
+          { label: 'Restante para a meta (t)', data: restanteArr, backgroundColor: 'rgba(250,204,21,.35)', borderRadius: { topRight: 5, bottomRight: 5 }, barThickness: 11, stack: 'meta' }
         ]
       },
       options: {
@@ -425,11 +428,22 @@
         maintainAspectRatio: false,
         plugins: {
           legend: legenda,
-          tooltip: { ...TT, callbacks: { label: (ctx) => `  ${ctx.dataset.label}: ${fmtTons(ctx.parsed.x)}` } }
+          tooltip: {
+            ...TT,
+            callbacks: {
+              label: (ctx) => `  ${ctx.dataset.label}: ${fmtTons(ctx.parsed.x)}`,
+              footer: (items) => {
+                const r = regionais[items[0].dataIndex];
+                return `Meta: ${fmtTons(r.metaTons)} · % atingido: ${r.percentualAtingido != null ? fmtPct(r.percentualAtingido) : '—'}`;
+              }
+            },
+            footerFont: { size: 10, weight: '600' },
+            footerColor: '#9aa3b5'
+          }
         },
         scales: {
-          x: { grid: { color: GRID_C }, ticks: { font: { size: 10 }, callback: (v) => `${fmtNum(v)} t` } },
-          y: yAxis
+          x: { stacked: true, grid: { color: GRID_C }, ticks: { font: { size: 10 }, callback: (v) => `${fmtNum(v)} t` } },
+          y: { ...yAxis, stacked: true }
         }
       }
     });
