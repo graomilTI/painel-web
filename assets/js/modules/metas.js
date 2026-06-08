@@ -8,6 +8,8 @@
  * - Não usar Resultado Diário, embarcado nem total_embarcado_mais_teste
  */
 
+import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
+
 (function () {
   'use strict';
 
@@ -2188,6 +2190,39 @@
     });
   }
 
+  function gerarRelatorioBonusXlsx(state, gestoresEnriq, gestoresBonus) {
+    const porId = new Map(gestoresEnriq.map(g => [g.id, g]));
+    const round2 = v => Number(Number(v || 0).toFixed(2));
+
+    const linhas = (gestoresBonus || [])
+      .filter(gb => gb.qualifica && (gb.bonusProducao + gb.bonusCusto + gb.bonusLeitura) > 0)
+      .map(gb => {
+        const g = porId.get(gb.gestorId) || {};
+        const total = gb.bonusProducao + gb.bonusCusto + gb.bonusLeitura;
+        return [
+          g.gestor || '',
+          g.coordenacao || '',
+          g.supervisao || '',
+          round2(g.bonusInicial),
+          round2(gb.bonusProducao),
+          round2(gb.bonusCusto),
+          round2(gb.bonusLeitura),
+          round2(total)
+        ];
+      })
+      .sort((a, b) => String(a[1]).localeCompare(String(b[1])) || String(a[0]).localeCompare(String(b[0])));
+
+    if (!linhas.length) return;
+
+    const headers = ['Gestor', 'Coordenação', 'Supervisão', 'Bônus Inicial', 'Produção (40%)', 'Custo (30%)', 'Patrimônios/Leitura (30%)', 'Total Bônus'];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...linhas]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Bônus');
+
+    const ref = `${String(state.mes).padStart(2, '0')}-${state.ano}`;
+    XLSX.writeFile(wb, `bonus_metas_${ref}.xlsx`);
+  }
+
   async function fecharMetaMes(state, supabase, rerender) {
     if (isMonthClosed(state)) {
       alert('A meta deste mês já está fechada.');
@@ -2255,6 +2290,12 @@
         console.error('[METAS] Erro ao fechar meta:', error);
         alert('Erro ao fechar meta: ' + error.message + '\n\nExecute a migration 20260603_metas_bonus_fields.sql no Supabase Dashboard.');
         return;
+      }
+
+      try {
+        gerarRelatorioBonusXlsx(state, gestoresEnriq, params.gestoresBonus);
+      } catch (e) {
+        console.error('[METAS] Erro ao gerar relatório de bônus:', e);
       }
 
       await loadData(state, supabase);
