@@ -2073,7 +2073,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       const m1 = mesAnterior(Number(state.ano), Number(state.mes));
       state.custosRegional = await fetchAllRows(
         supabase.from('dre_despesas_mensal')
-          .select('coordenacao, total_com_rateio, total_geral, total_todas_regionais, ano, mes')
+          .select('coordenacao, total_coordenacao, rateio, total_com_rateio, total_geral, total_todas_regionais, ano, mes')
           .eq('ano', m1.ano)
           .eq('mes', m1.mes)
           .order('coordenacao', { ascending: true })
