@@ -30,6 +30,48 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     { value: 12, label: 'Dezembro' }
   ];
 
+  const TAB_ICON_SVG = {
+    geral: '<rect x="3" y="3" width="7.5" height="9.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="5.5" rx="2"/><rect x="13.5" y="11.5" width="7.5" height="9.5" rx="2"/><rect x="3" y="15.5" width="7.5" height="5.5" rx="2"/>',
+    regionais: '<path d="M12 21s7-6.2 7-11.2a7 7 0 1 0-14 0C5 14.8 12 21 12 21Z"/><circle cx="12" cy="9.6" r="2.6"/>',
+    estados: '<path d="M5.5 3v18"/><path d="M5.5 4.5h12l-2.2 3.5 2.2 3.5h-12"/>',
+    historico: '<path d="M3.5 11a8.5 8.5 0 1 1 2.5 6"/><path d="M3.5 5.5V11h5.5"/><path d="M12 7.5V12l3.4 2"/>',
+    gestores: '<circle cx="9" cy="8" r="3.4"/><path d="M2.6 19.2c.6-3.2 3-5 6.4-5s5.8 1.8 6.4 5"/><circle cx="17.4" cy="6.8" r="2.6"/><path d="M16.2 14.2c2.7.4 4.5 2.1 5 4.7"/>',
+    configurar: '<rect x="4" y="10" width="16" height="11" rx="2.4"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="m9.3 15.4 1.9 1.9 3.5-3.7"/>'
+  };
+
+  function tabIconMarkup(id) {
+    const path = TAB_ICON_SVG[id];
+    if (!path) return '';
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+  }
+
+  const TAB_GROUPS = [
+    {
+      label: 'Acompanhamento',
+      tabs: [
+        { id: 'geral',     label: 'Visão Geral',  desc: 'Indicadores consolidados do período: meta total, produção realizada e percentual de atingimento.' },
+        { id: 'regionais', label: 'Regionais',    desc: 'Desempenho de cada regional/coordenação frente à meta cadastrada para o mês selecionado.' },
+        { id: 'estados',   label: 'Estados',      desc: 'Visão consolidada por estado, somando o resultado das regionais correspondentes.' },
+        { id: 'historico', label: 'Histórico',    desc: 'Evolução mês a mês da meta cadastrada e da produção realizada ao longo do tempo.' }
+      ]
+    },
+    {
+      label: 'Gestão',
+      tabs: [
+        { id: 'gestores',   label: 'Gestores',            desc: 'Cadastro dos gestores de cada coordenação/supervisão — base para o cálculo do bônus.' },
+        { id: 'configurar', label: 'Metas & Fechamento',  desc: 'Cadastro das metas do mês, fechamento do período e cálculo do bônus dos gestores (produção, custo e patrimônios/leitura).' }
+      ]
+    }
+  ];
+
+  function findTabMeta(tabId) {
+    for (const group of TAB_GROUPS) {
+      const found = group.tabs.find(t => t.id === tabId);
+      if (found) return found;
+    }
+    return null;
+  }
+
   const DEFAULT_STATE = {
     loading: false,
     ano: new Date().getFullYear(),
@@ -88,6 +130,64 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
         font-size: 28px;
         letter-spacing: -.04em;
         line-height: 1.05;
+      }
+
+      .metas-title-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+
+      .metas-period-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        padding: 7px 13px;
+        border-radius: 999px;
+        border: 1px solid var(--metas-border);
+        background: rgba(15, 23, 42, .58);
+        color: var(--metas-muted);
+        white-space: nowrap;
+      }
+
+      .metas-period-chip-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--metas-muted);
+        flex-shrink: 0;
+      }
+
+      .metas-period-chip.is-open {
+        color: #bbf7d0;
+        border-color: rgba(74, 222, 128, .32);
+        background: rgba(22, 101, 52, .22);
+      }
+
+      .metas-period-chip.is-open .metas-period-chip-dot {
+        background: #4ade80;
+        box-shadow: 0 0 0 0 rgba(74, 222, 128, .45);
+        animation: metas-chip-pulse 2.6s ease-in-out infinite;
+      }
+
+      .metas-period-chip.is-closed {
+        color: #cbd5e1;
+        border-color: rgba(148, 163, 184, .3);
+        background: rgba(51, 65, 85, .38);
+      }
+
+      .metas-period-chip.is-closed .metas-period-chip-dot {
+        background: #94a3b8;
+      }
+
+      @keyframes metas-chip-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, .4); }
+        50%      { box-shadow: 0 0 0 5px rgba(74, 222, 128, 0); }
       }
 
       .metas-title-wrap p {
@@ -182,27 +282,93 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
         color: #ffffff;
       }
 
-      .metas-tabs {
+      .metas-nav {
         display: flex;
-        gap: 8px;
         flex-wrap: wrap;
-        margin: 0 0 16px;
+        align-items: flex-end;
+        gap: 30px;
+        margin: 6px 0 8px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid var(--metas-border);
+      }
+
+      .metas-nav-group {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+
+      .metas-nav-group + .metas-nav-group {
+        padding-left: 30px;
+        border-left: 1px solid var(--metas-border);
+      }
+
+      .metas-nav-group-label {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+        color: var(--metas-muted);
+        padding-left: 2px;
+      }
+
+      .metas-nav-group-tabs {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
       }
 
       .metas-tab {
-        border: 1px solid var(--metas-border);
-        background: rgba(15, 23, 42, .72);
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid transparent;
+        background: transparent;
         color: var(--metas-muted);
-        padding: 9px 12px;
-        border-radius: 999px;
+        padding: 9px 14px;
+        border-radius: 12px;
         font-weight: 700;
+        font-size: 13px;
         cursor: pointer;
+        transition: color .15s ease, background .15s ease, border-color .15s ease, transform .15s ease;
+      }
+
+      .metas-tab svg {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        opacity: .6;
+        transition: opacity .15s ease;
+      }
+
+      .metas-tab:hover {
+        color: var(--metas-text);
+        background: rgba(148, 163, 184, .08);
+        border-color: var(--metas-border);
+      }
+
+      .metas-tab:hover svg {
+        opacity: .9;
       }
 
       .metas-tab.active {
         color: #dcfce7;
-        background: rgba(22, 101, 52, .84);
-        border-color: rgba(74, 222, 128, .42);
+        background: linear-gradient(135deg, rgba(22, 101, 52, .55), rgba(21, 128, 61, .28));
+        border-color: rgba(74, 222, 128, .4);
+        box-shadow: 0 10px 26px rgba(34, 197, 94, .16);
+        transform: translateY(-1px);
+      }
+
+      .metas-tab.active svg {
+        opacity: 1;
+      }
+
+      .metas-nav-desc {
+        margin: 0 0 18px;
+        font-size: 12.5px;
+        line-height: 1.55;
+        color: var(--metas-muted);
+        max-width: 760px;
       }
 
       .metas-kpis {
@@ -764,6 +930,14 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
         .metas-actions {
           justify-content: flex-start;
+        }
+
+        .metas-nav-group + .metas-nav-group {
+          padding-left: 0;
+          border-left: none;
+          margin-top: 4px;
+          padding-top: 14px;
+          border-top: 1px solid var(--metas-border);
         }
       }
 
@@ -1611,11 +1785,20 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     const currentYear = new Date().getFullYear();
     for (let y = currentYear - 2; y <= currentYear + 2; y++) years.push(y);
 
+    const fechado = isMonthClosed(state);
+    const tabAtiva = findTabMeta(state.tab);
+
     container.innerHTML = `
       <div class="metas-page ${state.loading ? 'metas-loading' : ''}">
         <div class="metas-header">
           <div class="metas-title-wrap">
-            <h1>Metas de Produção</h1>
+            <div class="metas-title-row">
+              <h1>Metas de Produção</h1>
+              <span class="metas-period-chip ${fechado ? 'is-closed' : 'is-open'}" title="${fechado ? 'O período já foi fechado: valores de bônus calculados e alterações bloqueadas.' : 'O período ainda está aberto para cadastro e ajustes.'}">
+                <span class="metas-period-chip-dot"></span>
+                ${escapeHtml(getMonthName(state.mes))}/${state.ano} · ${fechado ? 'Período fechado' : 'Período em aberto'}
+              </span>
+            </div>
             <p>
               Acompanhamento mensal da meta por regional e estado.
               Produção considerada: <strong>Relatório de Produção Diária</strong>, coluna <strong>Tons</strong>.
@@ -1661,14 +1844,27 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
           </div>
         </div>
 
-        <div class="metas-tabs">
-          <button type="button" class="metas-tab ${state.tab === 'geral' ? 'active' : ''}" data-metas-tab="geral">Visão Geral</button>
-          <button type="button" class="metas-tab ${state.tab === 'regionais' ? 'active' : ''}" data-metas-tab="regionais">Regionais</button>
-          <button type="button" class="metas-tab ${state.tab === 'estados' ? 'active' : ''}" data-metas-tab="estados">Estados</button>
-          <button type="button" class="metas-tab ${state.tab === 'historico' ? 'active' : ''}" data-metas-tab="historico">Histórico Mensal</button>
-          <button type="button" class="metas-tab ${state.tab === 'gestores' ? 'active' : ''}" data-metas-tab="gestores">Gestores</button>
-          <button type="button" class="metas-tab ${state.tab === 'configurar' ? 'active' : ''}" data-metas-tab="configurar">Configurar / Fechar</button>
-        </div>
+        <nav class="metas-nav" aria-label="Seções de Metas">
+          ${TAB_GROUPS.map(group => `
+            <div class="metas-nav-group">
+              <span class="metas-nav-group-label">${escapeHtml(group.label)}</span>
+              <div class="metas-nav-group-tabs" role="tablist">
+                ${group.tabs.map(t => `
+                  <button type="button"
+                          class="metas-tab ${state.tab === t.id ? 'active' : ''}"
+                          data-metas-tab="${t.id}"
+                          role="tab"
+                          aria-selected="${state.tab === t.id ? 'true' : 'false'}"
+                          title="${escapeHtml(t.desc)}">
+                    ${tabIconMarkup(t.id)}
+                    <span>${escapeHtml(t.label)}</span>
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </nav>
+        ${tabAtiva ? `<p class="metas-nav-desc">${escapeHtml(tabAtiva.desc)}</p>` : ''}
 
         <div data-metas-content>
           ${renderMainContent(state)}
