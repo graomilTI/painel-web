@@ -1883,6 +1883,22 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     };
   }
 
+  function regionaisTemplateAnterior(metasHistorico, ano, mes) {
+    const atual = Number(ano) * 12 + Number(mes);
+    const porChave = new Map();
+    (metasHistorico || []).forEach(row => {
+      const chave = Number(row.ano) * 12 + Number(row.mes);
+      if (chave >= atual) return;
+      if (!porChave.has(chave)) porChave.set(chave, new Map());
+      const grupo = porChave.get(chave);
+      const key = normalizarTexto(row.regional || '');
+      if (key && !grupo.has(key)) grupo.set(key, { regional: row.regional, estado: row.estado });
+    });
+    const chaves = Array.from(porChave.keys()).sort((a, b) => b - a);
+    if (!chaves.length) return [];
+    return Array.from(porChave.get(chaves[0]).values());
+  }
+
   function montarRegionaisDaProducao(producaoRows, metasCadastro, filtros = {}) {
     const map = new Map();
 
@@ -2021,10 +2037,20 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
         })
       ]);
 
-      const regionais = montarRegionaisDaProducao(producaoRows, metasCadastro, {
+      let regionais = montarRegionaisDaProducao(producaoRows, metasCadastro, {
         estado: state.estado,
         regional: state.regional
       });
+
+      // Mês novo ainda sem produção/meta cadastrada: usa a lista de regionais do mês anterior como modelo,
+      // para o usuário conseguir digitar a meta antes da produção diária começar a ser sincronizada.
+      if (!regionais.length && !producaoRows.length && !metasCadastro.length && !state.estado && !state.regional) {
+        const template = regionaisTemplateAnterior(metasHistorico, state.ano, state.mes)
+          .map(r => ({ regional: r.regional, estado: r.estado, meta_tons: 0, ativo: true }));
+        if (template.length) {
+          regionais = montarRegionaisDaProducao([], template, { estado: state.estado, regional: state.regional });
+        }
+      }
 
       state.regionais = regionais;
       state.estados = montarEstadosDasRegionais(regionais);
