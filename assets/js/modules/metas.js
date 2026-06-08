@@ -1942,10 +1942,10 @@
 
   function calcMultiplicadorLeitura(pct) {
     if (pct >= 100) return 1.8;
-    if (pct > 90)   return 1.6;
-    if (pct > 80)   return 1.4;
-    if (pct > 70)   return 1.2;
-    if (pct > 60)   return 1.0;
+    if (pct >= 90)  return 1.6;
+    if (pct >= 80)  return 1.4;
+    if (pct >= 70)  return 1.2;
+    if (pct >= 60)  return 1.0;
     return 0;
   }
 
