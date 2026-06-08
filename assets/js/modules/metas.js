@@ -664,6 +664,40 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
         letter-spacing: .02em;
       }
 
+      .metas-rc-pct {
+        margin-top: 6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: .01em;
+        padding: 2px 8px;
+        border-radius: 999px;
+        white-space: nowrap;
+        background: rgba(148, 163, 184, .12);
+        color: var(--metas-muted);
+        border: 1px solid rgba(148, 163, 184, .14);
+      }
+
+      .metas-rc-pct.good {
+        color: #bbf7d0;
+        background: rgba(22, 101, 52, .42);
+        border-color: rgba(74, 222, 128, .26);
+      }
+
+      .metas-rc-pct.warn {
+        color: #fef08a;
+        background: rgba(133, 77, 14, .35);
+        border-color: rgba(250, 204, 21, .22);
+      }
+
+      .metas-rc-pct.bad {
+        color: #fecaca;
+        background: rgba(127, 29, 29, .35);
+        border-color: rgba(248, 113, 113, .22);
+      }
+
       .metas-rc-bot-val {
         min-height: 34px;
         font-size: 12px;
@@ -1258,19 +1292,21 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     const cols = sorted.map(row => {
       const meta = Number(row.meta_tons || 0);
       const prod = Number(row.produzido_tons || 0);
+      const pctReal = Number(row.percentual_atingido || 0);
       const prodPct = Math.min(100, meta > 0 ? (prod / meta) * 100 : 0);
       const restPct = 100 - prodPct;
 
       return `
         <div class="metas-rc-col">
           <div class="metas-rc-top-val" title="${fmtTons(meta)}">${fmtTons(meta)}</div>
-          <div class="metas-rc-bar" title="${escapeHtml(row.regional)}: ${fmtPct(prodPct)} atingido">
+          <div class="metas-rc-bar" title="${escapeHtml(row.regional)}: ${fmtPct(pctReal)} atingido">
             <div class="metas-rc-restante" style="height:${restPct.toFixed(2)}%"></div>
             <div class="metas-rc-atual" style="height:${Math.max(prodPct, 0).toFixed(2)}%"></div>
             <div class="metas-rc-label-wrap">
               <span class="metas-rc-label">${escapeHtml(row.regional)}</span>
             </div>
           </div>
+          <div class="metas-rc-pct ${pctClass(pctReal)}" title="Percentual atingido">${fmtPct(pctReal)}</div>
           <div class="metas-rc-bot-val" title="${fmtTons(prod)}">${fmtTons(prod)}</div>
         </div>
       `;
