@@ -410,16 +410,16 @@
     const legenda = { position: 'top', align: 'end', labels: { boxWidth: 12, boxHeight: 12, padding: 14 } };
     const yAxis = { grid: { display: false }, ticks: { font: { size: 10 } } };
 
-    const produzidoArr = regionais.map((r) => r.produzidoTons || r.tons);
-    const restanteArr = regionais.map((r) => Math.max(r.metaTons - (r.produzidoTons || r.tons), 0));
+    const atingidoArr = regionais.map((r) => Math.min(n(r.percentualAtingido), 100));
+    const restanteArr = regionais.map((r) => Math.max(100 - n(r.percentualAtingido), 0));
 
     charts.meta = new ChartJs(canvasMeta, {
       type: 'bar',
       data: {
         labels,
         datasets: [
-          { label: 'Produzido (t)', data: produzidoArr, backgroundColor: 'rgba(34,197,94,.75)', borderRadius: { topLeft: 5, bottomLeft: 5 }, barThickness: 11, stack: 'meta' },
-          { label: 'Restante para a meta (t)', data: restanteArr, backgroundColor: 'rgba(250,204,21,.35)', borderRadius: { topRight: 5, bottomRight: 5 }, barThickness: 11, stack: 'meta' }
+          { label: '% atingido', data: atingidoArr, backgroundColor: 'rgba(34,197,94,.75)', borderRadius: { topLeft: 5, bottomLeft: 5 }, barThickness: 11, stack: 'meta' },
+          { label: 'Restante para a meta', data: restanteArr, backgroundColor: 'rgba(250,204,21,.35)', borderRadius: { topRight: 5, bottomRight: 5 }, barThickness: 11, stack: 'meta' }
         ]
       },
       options: {
@@ -431,10 +431,10 @@
           tooltip: {
             ...TT,
             callbacks: {
-              label: (ctx) => `  ${ctx.dataset.label}: ${fmtTons(ctx.parsed.x)}`,
+              label: (ctx) => `  ${ctx.dataset.label}: ${fmtPct(ctx.parsed.x)}`,
               footer: (items) => {
                 const r = regionais[items[0].dataIndex];
-                return `Meta: ${fmtTons(r.metaTons)} · % atingido: ${r.percentualAtingido != null ? fmtPct(r.percentualAtingido) : '—'}`;
+                return `Produzido: ${fmtTons(r.produzidoTons || r.tons)} de ${fmtTons(r.metaTons)} · % atingido real: ${r.percentualAtingido != null ? fmtPct(r.percentualAtingido) : '—'}`;
               }
             },
             footerFont: { size: 10, weight: '600' },
@@ -442,7 +442,7 @@
           }
         },
         scales: {
-          x: { stacked: true, grid: { color: GRID_C }, ticks: { font: { size: 10 }, callback: (v) => `${fmtNum(v)} t` } },
+          x: { stacked: true, min: 0, max: 100, grid: { color: GRID_C }, ticks: { font: { size: 10 }, callback: (v) => `${fmtNum(v)}%` } },
           y: { ...yAxis, stacked: true }
         }
       }
@@ -598,8 +598,8 @@
         ${regionais.length ? `
         <div class="socio-charts">
           <div class="socio-chart-box">
-            <h4>Meta x produção (toneladas)</h4>
-            <p class="hint">Comparativo entre a meta estabelecida e o volume produzido em cada regional.</p>
+            <h4>% da meta atingida por regional</h4>
+            <p class="hint">Barra acumulada totalizando 100%: percentual já produzido (verde) e percentual restante para a meta (dourado).</p>
             <div class="socio-chart-canvas-wrap" id="socio-chart-meta-wrap" style="height:${alturaGraficos}px">
               <canvas id="socio-chart-meta"></canvas>
             </div>
