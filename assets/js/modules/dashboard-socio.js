@@ -16,10 +16,13 @@
     metasMes: null,
     despesas: null,
     bonus: null,
-    regionais: []
+    regionais: [],
+    mesesDisponiveis: [],
+    mesSelecionado: null
   };
 
   const charts = { meta: null, financeiro: null };
+  const _attached = new WeakSet();
 
   function n(v) {
     if (v == null || v === '') return 0;
@@ -182,24 +185,45 @@
         .socio-table{font-size:11px;}
         .socio-table thead th,.socio-table tbody td{padding:8px 10px;}
       }
+
+      .socio-mes-selector{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:20px;scrollbar-width:none;}
+      .socio-mes-selector::-webkit-scrollbar{display:none;}
+      .socio-mes-btn{flex-shrink:0;padding:7px 16px;border-radius:999px;border:1px solid var(--socio-border);background:rgba(15,23,42,.7);color:var(--socio-muted);font-size:12px;font-weight:800;cursor:pointer;transition:border-color .18s,color .18s,background .18s;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;}
+      .socio-mes-btn:hover{border-color:rgba(250,204,21,.4);color:#fde68a;}
+      .socio-mes-btn.ativo{background:rgba(250,204,21,.12);border-color:rgba(250,204,21,.5);color:#fde68a;}
+      .socio-mes-btn:disabled{opacity:.35;cursor:default;}
     `;
     document.head.appendChild(style);
   }
 
-  async function carregarDados(supabase) {
-    // 1) Mês de referência: o mais recente com produção lançada
-    const { data: ultimaLinha } = await supabase
-      .from('relatorio_resultado_diario')
-      .select('data')
-      .order('data', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  async function carregarMesesDisponiveis(supabase) {
+    const { data } = await supabase
+      .from('vw_metas_producao_mensal')
+      .select('ano, mes')
+      .order('ano', { ascending: false })
+      .order('mes', { ascending: false })
+      .limit(24);
+    return (data || []).map((r) => ({ ano: Number(r.ano), mes: Number(r.mes) }));
+  }
 
-    let ano = new Date().getFullYear();
-    let mes = new Date().getMonth() + 1;
-    if (ultimaLinha?.data) {
-      const [y, m] = String(ultimaLinha.data).split('-').map(Number);
-      if (y && m) { ano = y; mes = m; }
+  async function carregarDados(supabase, anoForcado, mesForcado) {
+    let ano = anoForcado || null;
+    let mes = mesForcado || null;
+
+    // Auto-detecta o mês mais recente quando não especificado
+    if (!ano || !mes) {
+      const { data: ultimaLinha } = await supabase
+        .from('relatorio_resultado_diario')
+        .select('data')
+        .order('data', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      ano = new Date().getFullYear();
+      mes = new Date().getMonth() + 1;
+      if (ultimaLinha?.data) {
+        const [y, m] = String(ultimaLinha.data).split('-').map(Number);
+        if (y && m) { ano = y; mes = m; }
+      }
     }
 
     const inicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
@@ -219,8 +243,8 @@
       supabase
         .from('vw_metas_producao_mensal')
         .select('ano, mes, meta_total_tons, produzido_total_tons, percentual_atingido')
-        .order('ano', { ascending: false }).order('mes', { ascending: false })
-        .limit(6),
+        .eq('ano', ano).eq('mes', mes)
+        .maybeSingle(),
       supabase
         .from('dre_despesas_mensal')
         .select('coordenacao, total_coordenacao, total_geral, total_todas_regionais, rateio, total_com_rateio')
@@ -231,13 +255,9 @@
         .eq('ano', ano).eq('mes', mes)
     ]);
 
-    // Metas do mês de referência (ou o mais recente disponível com dados)
-    let metasMes = (metasMensalRows || []).find((r) => Number(r.ano) === ano && Number(r.mes) === mes) || null;
-    if (!metasMes || !n(metasMes.meta_total_tons)) {
-      metasMes = (metasMensalRows || []).find((r) => n(r.produzido_total_tons) > 0) || metasMensalRows?.[0] || null;
-    }
-    const anoRefMetas = metasMes ? Number(metasMes.ano) : ano;
-    const mesRefMetas = metasMes ? Number(metasMes.mes) : mes;
+    const metasMes = metasMensalRows || null;
+    const anoRefMetas = ano;
+    const mesRefMetas = mes;
 
     const { data: metasRegionalView } = await supabase
       .from('vw_metas_producao_regional')
@@ -473,8 +493,20 @@
     });
   }
 
+  function renderSeletorMeses() {
+    const { mesesDisponiveis, mesSelecionado } = state;
+    if (!mesesDisponiveis || !mesesDisponiveis.length) return '';
+    return `<div class="socio-mes-selector">
+      ${mesesDisponiveis.map(({ ano, mes }) => {
+        const ativo = mesSelecionado?.ano === ano && mesSelecionado?.mes === mes ? 'ativo' : '';
+        const label = `${MESES[mes - 1].slice(0, 3)} ${ano}`;
+        return `<button class="socio-mes-btn ${ativo}" data-mes-btn data-ano="${ano}" data-mes="${mes}" type="button">${label}</button>`;
+      }).join('')}
+    </div>`;
+  }
+
   function renderLoading() {
-    return `<div class="socio-status">Carregando indicadores executivos…</div>`;
+    return `<div class="socio-page">${renderSeletorMeses()}<div class="socio-status">Carregando indicadores executivos…</div></div>`;
   }
 
   function renderErro(msg) {
@@ -561,6 +593,7 @@
 
     return `
       <div class="socio-page">
+        ${renderSeletorMeses()}
         <section class="socio-hero">
           <span class="socio-kicker">Dashboard do Sócio · Visão executiva</span>
           <h2>Panorama geral da operação</h2>
@@ -633,6 +666,26 @@
     montarGraficos(container, state.regionais || []);
   }
 
+  function attachListeners(container, supabase) {
+    if (_attached.has(container)) return;
+    _attached.add(container);
+    container.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-mes-btn]');
+      if (!btn || state.loading) return;
+      const ano = Number(btn.dataset.ano);
+      const mes = Number(btn.dataset.mes);
+      if (state.mesSelecionado?.ano === ano && state.mesSelecionado?.mes === mes) return;
+      state.mesSelecionado = { ano, mes };
+      state.loading = true;
+      state.erro = null;
+      render(container);
+      carregarDados(supabase, ano, mes)
+        .then((dados) => { Object.assign(state, dados, { loading: false, erro: null }); })
+        .catch((e) => { state.loading = false; state.erro = e?.message || 'Erro inesperado.'; })
+        .finally(() => render(container));
+    });
+  }
+
   async function openHome(container, opts = {}) {
     injectStyle();
     const supabase = opts?.supabase || opts?.api?.supabase;
@@ -647,8 +700,20 @@
       return;
     }
 
+    // Busca meses disponíveis na primeira abertura
+    if (!state.mesesDisponiveis.length) {
+      try {
+        const meses = await carregarMesesDisponiveis(supabase);
+        state.mesesDisponiveis = meses;
+        if (!state.mesSelecionado && meses.length) {
+          state.mesSelecionado = meses[0];
+        }
+      } catch (_) { /* segue sem seletor */ }
+    }
+
+    const { ano, mes } = state.mesSelecionado || {};
     try {
-      const dados = await carregarDados(supabase);
+      const dados = await carregarDados(supabase, ano, mes);
       Object.assign(state, dados, { loading: false, erro: null });
     } catch (e) {
       state.loading = false;
@@ -656,6 +721,7 @@
     }
 
     render(container);
+    attachListeners(container, supabase);
   }
 
   window.DASHBOARD_SOCIO = { openHome };
