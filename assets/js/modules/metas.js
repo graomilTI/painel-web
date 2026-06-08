@@ -596,26 +596,26 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
       .metas-rc-col {
         flex: 1;
-        min-width: 46px;
+        min-width: 60px;
         display: flex;
         flex-direction: column;
         align-items: center;
       }
 
       .metas-rc-top-val {
-        height: 20px;
-        font-size: 8px;
+        min-height: 32px;
+        font-size: 11px;
+        line-height: 1.25;
         color: var(--metas-muted);
         font-weight: 700;
         text-align: center;
         display: flex;
         align-items: flex-end;
         justify-content: center;
-        padding-bottom: 2px;
-        white-space: nowrap;
-        overflow: hidden;
+        padding-bottom: 4px;
+        white-space: normal;
+        word-break: keep-all;
         width: 100%;
-        text-overflow: ellipsis;
       }
 
       .metas-rc-bar {
@@ -665,17 +665,20 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       }
 
       .metas-rc-bot-val {
-        height: 18px;
-        font-size: 8px;
-        color: var(--metas-text);
-        font-weight: 700;
+        min-height: 34px;
+        font-size: 12px;
+        line-height: 1.25;
+        color: #86efac;
+        font-weight: 800;
         text-align: center;
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: center;
-        white-space: nowrap;
+        padding-top: 4px;
+        white-space: normal;
+        word-break: keep-all;
         width: 100%;
-        overflow: hidden;
+        text-shadow: 0 1px 8px rgba(0,0,0,.35);
       }
 
       .metas-bars {
