@@ -1451,9 +1451,15 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
               Ao fechar, o painel marca cada coordenação como <strong>atingiu</strong> ou <strong>não atingiu</strong> e bloqueia novas alterações da meta cadastrada para o mês selecionado.
             </div>
           </div>
-          <button class="metas-btn ${fechado ? 'secondary' : ''}" type="button" data-metas-close ${fechado ? 'disabled' : ''}>
-            ${fechado ? 'Meta fechada' : 'Fechar meta'}
-          </button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="metas-btn ${fechado ? 'secondary' : ''}" type="button" data-metas-close ${fechado ? 'disabled' : ''}>
+              ${fechado ? 'Meta fechada' : 'Fechar meta'}
+            </button>
+            ${fechado && rows.some(r => r.qualifica_bonus) ? `
+            <button class="metas-btn secondary" type="button" data-metas-baixar-bonus>
+              Baixar relatório de bônus (XLS)
+            </button>` : ''}
+          </div>
         </div>
 
         <div class="metas-table-wrap">
@@ -2223,6 +2229,47 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     XLSX.writeFile(wb, `bonus_metas_${ref}.xlsx`);
   }
 
+  async function baixarRelatorioBonusFechado(state, supabase) {
+    if (!isMonthClosed(state)) return;
+
+    const rows = mergeCoordenacoes(state).filter(row => Number(row.meta_tons || 0) > 0);
+    if (!rows.length) {
+      alert('Nenhuma meta cadastrada para este mês.');
+      return;
+    }
+
+    const fechadoRow = (state.metasCadastro || []).find(r => r.fechado);
+    const min = Number(fechadoRow?.bonus_percentual_minimo || 100);
+
+    const gestoresEnriq = await enrichGestoresParaFechamento(state, supabase, Number(state.ano), Number(state.mes));
+
+    const percByKey = new Map(rows.map(row => {
+      const meta = Number(row.meta_tons || 0);
+      const prod = Number(row.produzido_tons || 0);
+      return [rowKey(row), meta > 0 ? (prod / meta) * 100 : 0];
+    }));
+
+    const gestoresBonus = gestoresEnriq.map(g => {
+      const pct = percByKey.has(g._key) ? percByKey.get(g._key) : 0;
+      const qualifica = pct >= min;
+      return {
+        coordenacaoKey: g._key,
+        gestorId: g.id,
+        qualifica,
+        bonusProducao: qualifica ? (pct / 100) * g.bonusInicial * 0.4 : 0,
+        bonusCusto:    qualifica ? g.valorCusto  : 0,
+        bonusLeitura:  qualifica ? g.valorLeitura : 0
+      };
+    });
+
+    if (!gestoresBonus.some(gb => gb.qualifica)) {
+      alert('Nenhum gestor qualificado para bônus neste mês.');
+      return;
+    }
+
+    gerarRelatorioBonusXlsx(state, gestoresEnriq, gestoresBonus);
+  }
+
   async function fecharMetaMes(state, supabase, rerender) {
     if (isMonthClosed(state)) {
       alert('A meta deste mês já está fechada.');
@@ -2296,6 +2343,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
         gerarRelatorioBonusXlsx(state, gestoresEnriq, params.gestoresBonus);
       } catch (e) {
         console.error('[METAS] Erro ao gerar relatório de bônus:', e);
+        alert('Meta fechada com sucesso, mas houve um erro ao gerar o XLS de bônus: ' + (e?.message || e) + '\n\nVocê pode gerar o relatório novamente pelo botão "Baixar relatório de bônus (XLS)".');
       }
 
       await loadData(state, supabase);
@@ -2394,6 +2442,24 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     if (closeBtn) {
       closeBtn.addEventListener('click', async () => {
         await fecharMetaMes(state, supabase, rerender);
+      });
+    }
+
+    const baixarBonusBtn = container.querySelector('[data-metas-baixar-bonus]');
+    if (baixarBonusBtn) {
+      baixarBonusBtn.addEventListener('click', async () => {
+        baixarBonusBtn.disabled = true;
+        const original = baixarBonusBtn.textContent;
+        baixarBonusBtn.textContent = 'Gerando...';
+        try {
+          await baixarRelatorioBonusFechado(state, supabase);
+        } catch (e) {
+          console.error('[METAS] Erro ao gerar relatório de bônus:', e);
+          alert('Erro ao gerar relatório de bônus: ' + (e?.message || e));
+        } finally {
+          baixarBonusBtn.disabled = false;
+          baixarBonusBtn.textContent = original;
+        }
       });
     }
 
