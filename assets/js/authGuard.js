@@ -2,6 +2,7 @@ import { getSession, getUserContext } from './auth.js';
 import { saveUserContext, clearUserContext } from './sessionStore.js';
 import { toPanelUrl } from './paths.js';
 import { PANEL_MENU } from './menuConfig.js';
+import { logActivity } from './activityLogger.js';
 
 function normalize(value = '') {
   return String(value || '')
@@ -116,6 +117,9 @@ export async function requireAuth() {
     window.location.replace(toPanelUrl(getFirstAllowedPath(context)));
     return null;
   }
+
+  const pagina = getCurrentPanelPath();
+  logActivity('page_access', `Acessou: ${pagina}`, pagina, null);
 
   return context;
 }

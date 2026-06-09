@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js';
+import { logActivity } from './activityLogger.js';
 
 export async function signInWithPassword(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -10,6 +11,7 @@ const CTX_CACHE_KEY = 'grao1000:user-ctx:v1';
 const CTX_CACHE_TTL = 1000 * 60 * 5;
 
 export async function signOut() {
+  logActivity('logout', 'Logout realizado', 'auth', null);
   try { sessionStorage.removeItem(CTX_CACHE_KEY); } catch {}
   const { error } = await supabase.auth.signOut();
   if (error) throw error;

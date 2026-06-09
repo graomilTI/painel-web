@@ -1,6 +1,7 @@
 import { signInWithPassword, getUserContext, getSession } from './auth.js';
 import { saveUserContext, loadUserContext } from './sessionStore.js';
 import { toPanelUrl } from './paths.js';
+import { logActivity } from './activityLogger.js';
 
 function homeUrl(context) {
   const role = String(context?.user?.role ?? context?.role ?? '').toLowerCase();
@@ -55,6 +56,7 @@ form?.addEventListener('submit', async (e) => {
     if (!context?.user?.active) throw new Error('Usuário inativo.');
 
     saveUserContext(context);
+    logActivity('login', 'Login realizado', 'auth', { role: context?.user?.role, setor: context?.user?.setor });
     feedback.textContent = 'Login realizado com sucesso.';
     window.location.replace(homeUrl(context));
   } catch (err) {
