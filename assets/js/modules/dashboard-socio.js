@@ -234,7 +234,8 @@
       { data: producaoRows },
       { data: metasMensalRows },
       { data: despesasRows },
-      { data: metasRegionaisRows }
+      { data: metasRegionaisRows },
+      { data: nfsRows }
     ] = await Promise.all([
       supabase
         .from('relatorio_resultado_diario')
@@ -252,7 +253,13 @@
       supabase
         .from('metas_producao')
         .select('regional, estado, qualifica_bonus')
-        .eq('ano', ano).eq('mes', mes)
+        .eq('ano', ano).eq('mes', mes),
+      supabase
+        .from('financeiro_contas_receber')
+        .select('valor_pago')
+        .gte('recebimento', inicio)
+        .lt('recebimento', fim)
+        .not('recebimento', 'is', null)
     ]);
 
     const metasMes = metasMensalRows || null;
@@ -321,8 +328,10 @@
     const totalTodasRegionais = n(despesasRows?.[0]?.total_todas_regionais);
     const totalGeral = n(despesasRows?.[0]?.total_geral);
 
-    const resultado = prod.receita - totalTodasRegionais;
-    const margem = prod.receita > 0 ? (resultado / prod.receita) * 100 : 0;
+    const faturamentoNF = (nfsRows || []).reduce((s, r) => s + n(r.valor_pago), 0);
+
+    const resultado = faturamentoNF - totalTodasRegionais;
+    const margem = faturamentoNF > 0 ? (resultado / faturamentoNF) * 100 : 0;
 
     // Bônus
     const totalRegionaisBonus = (metasRegionaisRows || []).length;
@@ -342,7 +351,7 @@
       mes,
       producao: {
         tons: prod.tons,
-        receita: prod.receita,
+        receita: faturamentoNF,
         embarcadoTotal: prod.embarcadoTotal,
         regionaisAtivas: prod.coordenacoes.size,
         colaboradoresAtivos: prod.colaboradores.size
@@ -532,7 +541,7 @@
         <div class="socio-card green">
           <span class="lbl">Faturamento</span>
           <strong class="val">${fmtMoney(producao.receita)}</strong>
-          <span class="sub">Valor embarcado no período</span>
+          <span class="sub">NFs recebidas no período</span>
         </div>
         <div class="socio-card">
           <span class="lbl">% da meta atingida</span>
@@ -566,7 +575,7 @@
     const resumoFinanceiro = `
       <div class="socio-fin-list">
         <div class="socio-fin-row">
-          <span class="name">Receita (valor embarcado)</span>
+          <span class="name">Receita (NFs recebidas no mês)</span>
           <span class="amt green">${fmtMoney(producao.receita)}</span>
         </div>
         <div class="socio-fin-row">
@@ -614,7 +623,7 @@
         <div class="socio-grid">
           <div class="socio-panel">
             <h4>Resumo do resultado financeiro</h4>
-            <p class="hint">Comparativo entre o faturamento embarcado e as despesas totais apuradas no DRE para o mês.</p>
+            <p class="hint">Comparativo entre as NFs recebidas no mês e as despesas totais apuradas no DRE.</p>
             ${resumoFinanceiro}
           </div>
           <div class="socio-panel">
@@ -639,7 +648,7 @@
           </div>
           <div class="socio-chart-box">
             <h4>Receita x despesas (R$)</h4>
-            <p class="hint">Comparativo entre o faturamento embarcado e as despesas apuradas em cada regional.</p>
+            <p class="hint">Faturamento operacional (valor embarcado) vs despesas apuradas em cada regional.</p>
             <div class="socio-chart-canvas-wrap" id="socio-chart-fin-wrap" style="height:${alturaGraficos}px">
               <canvas id="socio-chart-fin"></canvas>
             </div>
