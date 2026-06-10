@@ -268,6 +268,12 @@ const TI_FAILSAFE_ITEMS = [
     label: 'Contatos de Notificação',
     path: 'ti-contatos',
     aliases: ['TI_CONTATOS', 'TI']
+  },
+  {
+    code: 'emails',
+    label: 'Central de E-mails',
+    path: 'emails',
+    aliases: ['EMAILS', 'CENTRAL_EMAILS', 'CENTRAL_DE_EMAILS', 'TI_EMAILS']
   }
 ];
 
