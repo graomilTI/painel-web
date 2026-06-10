@@ -174,3 +174,38 @@ from public.email_accounts;
 revoke select on table public.email_accounts from anon, authenticated;
 grant select on public.email_accounts_public to anon, authenticated;
 grant insert, update on public.email_accounts to authenticated;
+
+-- Garantia extra para aparecer no sidebar/permissões do painel novo (app_*).
+insert into public.app_perfil_modulo (perfil_id, modulo_id, pode_ver, pode_criar, pode_editar, pode_excluir, pode_aprovar)
+select p.id, m.id, true, true, true, false, false
+from public.app_perfis p
+cross join public.app_modulos m
+where m.codigo = 'emails'
+  and upper(coalesce(p.codigo, p.nome)) in ('MASTER', 'ADMIN', 'ADM', 'TI')
+  and not exists (
+    select 1
+    from public.app_perfil_modulo apm
+    where apm.perfil_id = p.id
+      and apm.modulo_id = m.id
+  );
+
+insert into public.app_usuario_modulos (usuario_id, modulo_id)
+select u.id, m.id
+from public.app_usuarios u
+cross join public.app_modulos m
+where m.codigo = 'emails'
+  and (
+    upper(coalesce(u.setor, '')) = 'TI'
+    or exists (
+      select 1
+      from public.app_perfis p
+      where p.id = u.perfil_id
+        and upper(coalesce(p.codigo, p.nome)) in ('MASTER', 'ADMIN', 'ADM', 'TI')
+    )
+  )
+  and not exists (
+    select 1
+    from public.app_usuario_modulos aum
+    where aum.usuario_id = u.id
+      and aum.modulo_id = m.id
+  );
