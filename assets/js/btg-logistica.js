@@ -1093,6 +1093,24 @@ function fmtPhone(raw) {
   return '55' + d;
 }
 
+// PostgREST limita a 1000 linhas por padrão; pagina para trazer toda a tabela.
+async function fetchColaboradoresComWhatsapp() {
+  const PAGE = 1000;
+  const all = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('colaboradores')
+      .select('nome, whatsapp')
+      .not('whatsapp', 'is', null)
+      .neq('whatsapp', '')
+      .range(from, from + PAGE - 1);
+    if (error) return { data: null, error };
+    all.push(...(data || []));
+    if (!data || data.length < PAGE) break;
+  }
+  return { data: all, error: null };
+}
+
 async function enviarCheckinBotConversa(el) {
   const checkinRows = state.finalRows.filter(r => r.status === 'CHECK-IN');
   if (!checkinRows.length) return;
@@ -1104,11 +1122,7 @@ async function enviarCheckinBotConversa(el) {
   el.feedback.textContent = 'Buscando telefones dos colaboradores...';
   el.enviarCheckin.disabled = true;
 
-  const { data: colab, error } = await supabase
-    .from('colaboradores')
-    .select('nome, whatsapp')
-    .not('whatsapp', 'is', null)
-    .neq('whatsapp', '');
+  const { data: colab, error } = await fetchColaboradoresComWhatsapp();
 
   el.enviarCheckin.disabled = false;
 
@@ -1214,11 +1228,7 @@ async function enviarNheBotConversa(el) {
   el.feedback.textContent = 'Buscando telefones dos colaboradores...';
   el.enviarNhe.disabled = true;
 
-  const { data: colab, error } = await supabase
-    .from('colaboradores')
-    .select('nome, whatsapp')
-    .not('whatsapp', 'is', null)
-    .neq('whatsapp', '');
+  const { data: colab, error } = await fetchColaboradoresComWhatsapp();
 
   el.enviarNhe.disabled = false;
 
