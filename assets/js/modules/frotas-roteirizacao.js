@@ -26,7 +26,7 @@
     embarquesExtras: [],
     filtro: 'todos',
     rotaSelecionadaId: null,
-    mostrarTodasRotas: false,
+    mostrarTodasRotas: true,
     mostrarFormEmbarque: false,
     loading: false,
     busy: false,
@@ -375,7 +375,6 @@
     state.semCoordenadas = resp.semCoordenadas || [];
     state.totais = resp.totais || {};
     state.rotaSelecionadaId = state.rotas[0]?.__id || null;
-    state.mostrarTodasRotas = false;
     _fitDone = false;
     buildAlerts();
     if (publicado) state.publicadoEm = new Date().toISOString();
@@ -501,7 +500,7 @@
       veiculosTotal: state.veiculos.length,
       embarques,
       pendentes: state.naoAlocados.length + state.semCoordenadas.length,
-      rotas: state.rotas.length,
+      rotas: state.rotas.filter(r => r.paradas.length > 0).length,
       kmTotal,
       semSinal,
       tempoTotal,
@@ -510,13 +509,13 @@
 
   function rotasVisiveis() {
     if (!state.rotas.length) return [];
-    if (state.mostrarTodasRotas) return state.rotas.slice(0, 8);
+    if (state.mostrarTodasRotas) return state.rotas;
     const sel = state.rotas.find(r => r.__id === state.rotaSelecionadaId);
     return sel ? [sel] : state.rotas.slice(0, 1);
   }
 
   function summaryHtml(k) {
-    const mediaKm = state.rotas.length ? k.kmTotal / state.rotas.length : 0;
+    const mediaKm = k.rotas ? k.kmTotal / k.rotas : 0;
     return `<div class="rot-summary"><div class="rot-mini"><span>Tempo total estimado</span><strong>${fmtTempo(k.tempoTotal)}</strong></div><div class="rot-mini"><span>Média por rota</span><strong>${br(mediaKm, 1)} km</strong></div><div class="rot-mini"><span>Modo do mapa</span><strong>${state.mostrarTodasRotas ? 'Geral' : 'Focado'}</strong></div></div>`;
   }
 
@@ -524,9 +523,10 @@
     if (!state.rotas.length) {
       return `<div class="rot-panel"><h3>Rotas do dia</h3><div class="rot-empty">Clique em “Roteirizar agora” para gerar a sugestão automática com base nos embarques de hoje.</div></div>`;
     }
-    return `<div class="rot-panel"><h3><span>Rotas do dia</span><span class="rot-badge">${state.rotas.length}</span></h3><div class="rot-list">${state.rotas.slice(0, 8).map(r => {
-      const badge = r.distancia_real ? '<span class="rot-badge ok">Real (OSRM)</span>' : '<span class="rot-badge warn">Estimativa</span>';
-      return `<div class="rot-row ${r.__id === state.rotaSelecionadaId ? 'active' : ''}" data-rota="${esc(r.__id)}"><div><strong>${esc(r.placa)} · ${esc(r.motorista || 'sem motorista')}</strong><small>${r.paradas.length} paradas · ${br(r.km_total_estimado, 1)} km · ${fmtTempo(r.duracao_estimada_min)}</small></div>${badge}</div>`;
+    return `<div class="rot-panel"><h3><span>Rotas do dia</span><span class="rot-badge">${state.rotas.length}</span></h3><div class="rot-list">${state.rotas.map(r => {
+      const badge = !r.paradas.length ? '<span class="rot-badge">Sem embarques hoje</span>' : (r.distancia_real ? '<span class="rot-badge ok">Real (OSRM)</span>' : '<span class="rot-badge warn">Estimativa</span>');
+      const detalhe = r.paradas.length ? `${r.paradas.length} paradas · ${br(r.km_total_estimado, 1)} km · ${fmtTempo(r.duracao_estimada_min)}` : 'Disponível, aguardando embarque';
+      return `<div class="rot-row ${r.__id === state.rotaSelecionadaId ? 'active' : ''}" data-rota="${esc(r.__id)}"><div><strong>${esc(r.placa)} · ${esc(r.motorista || 'sem motorista')}</strong><small>${detalhe}</small></div>${badge}</div>`;
     }).join('')}</div></div>`;
   }
 
@@ -579,7 +579,7 @@
     const summary = root.querySelector('[data-summary]');
     if (summary) summary.innerHTML = summaryHtml(k);
     const hint = root.querySelector('[data-map-hint]');
-    if (hint) hint.innerHTML = `<span class="rot-chip"><span class="rot-dot veic"></span>Veículo</span><span class="rot-chip"><span class="rot-dot ponto"></span>Parada</span><span class="rot-chip"><span class="rot-dot urg"></span>Urgente</span><span class="rot-chip"><span class="rot-dot rota"></span>${state.mostrarTodasRotas ? `Até ${Math.min(8, state.rotas.length)} rotas visíveis` : 'Rota selecionada'}</span>`;
+    if (hint) hint.innerHTML = `<span class="rot-chip"><span class="rot-dot veic"></span>Veículo</span><span class="rot-chip"><span class="rot-dot ponto"></span>Parada</span><span class="rot-chip"><span class="rot-dot urg"></span>Urgente</span><span class="rot-chip"><span class="rot-dot rota"></span>${state.mostrarTodasRotas ? `${state.rotas.length} rota(s) visíveis` : 'Rota selecionada'}</span>`;
   }
 
   function updateSide(root) {
