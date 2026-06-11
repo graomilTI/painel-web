@@ -472,7 +472,24 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 7) Publicar rotas (substitui as rotas do dia)
+    // 7) Veículo com rastreador (posição conhecida) mas sem embarque hoje:
+    // ainda assim entra em "rotas", como rota vazia (parado/aguardando).
+    for (const veiculo of veiculos) {
+      if (usedVehicleIds.has(veiculo.id)) continue;
+      rotas.push({
+        placa: veiculo.placa,
+        veiculo_id: veiculo.id,
+        motorista: veiculo.motorista,
+        origem: { lat: veiculo.lat, lng: veiculo.lng },
+        paradas: [],
+        km_total_estimado: 0,
+        duracao_estimada_min: 0,
+        geometria: null,
+        distancia_real: false,
+      });
+    }
+
+    // 8) Publicar rotas (substitui as rotas do dia)
     if (publicar) {
       let userId: string | null = null;
       try {
