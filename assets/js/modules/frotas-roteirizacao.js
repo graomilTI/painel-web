@@ -668,6 +668,13 @@
     render();
     clearInterval(_timer);
     _timer = setInterval(refreshPosicoes, REFRESH_MS);
+
+    // Sem rota publicada para hoje: gera automaticamente a sugestão (cruza OS
+    // ativas de operacional_os com operacional_pontos_embarque via OSRM) para
+    // já mostrar "a rota do dia" no mapa, sem depender do clique manual.
+    if (!state.rotas.length) {
+      await roteirizar();
+    }
   }
 
   window[MODULE_NAME] = { openHome, roteirizar };
