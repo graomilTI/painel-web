@@ -20,3 +20,9 @@ verify_jwt = true
 
 [functions.ocr-comprovante]
 verify_jwt = false
+
+[functions.bfleet-posicoes]
+verify_jwt = true
+
+[functions.frotas-roteirizar]
+verify_jwt = true
