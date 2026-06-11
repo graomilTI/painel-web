@@ -19,6 +19,23 @@ function normComprasEpi(value = '') {
     .trim();
 }
 
+function supervisaoValida(value = '') {
+  const n = normComprasEpi(value);
+  if (!n) return false;
+  return !['rh', 'recursos humanos', 'nao informada', 'não informada', '-', 'null'].includes(n);
+}
+
+function valorCampo(obj = {}, nomes = []) {
+  for (const nome of nomes) {
+    if (obj?.[nome] !== undefined && obj?.[nome] !== null && String(obj[nome]).trim()) return obj[nome];
+  }
+  const wanted = nomes.map(normComprasEpi);
+  for (const [key, value] of Object.entries(obj || {})) {
+    if (wanted.includes(normComprasEpi(key)) && value !== undefined && value !== null && String(value).trim()) return value;
+  }
+  return '';
+}
+
 function isLinhaVazia(row) {
   return row?.querySelector?.('.adm-cmp-empty');
 }
@@ -72,39 +89,70 @@ function getMaterialResumo(row, nomeColaborador) {
     .trim();
 }
 
-function getSupervisaoCacheKey(rows) {
-  return rows.map(getItemId).filter(Boolean).sort().join('|');
+function getSupervisaoCacheKey(nome, rows) {
+  const ids = rows.map(getItemId).filter(Boolean).sort().join('|');
+  return `${normComprasEpi(nome)}|${ids}`;
 }
 
-async function buscarSupervisaoGrupo(rows, target) {
+async function buscarSupervisaoColaborador(nome) {
+  if (!nome || nome === 'SEM COLABORADOR') return '';
+  const bases = ['colaborador_snapshot', 'colaboradores'];
+  for (const base of bases) {
+    try {
+      const { data, error } = await supabase
+        .from(base)
+        .select('*')
+        .ilike('nome', nome)
+        .limit(1);
+      if (error) throw error;
+      const row = data?.[0];
+      const sup = valorCampo(row, ['supervisao', 'supervisão', 'Supervisão', 'SUPERVISAO', 'SUPERVISÃO', 'supervisor', 'responsavel', 'responsável']);
+      if (supervisaoValida(sup)) return String(sup).trim();
+    } catch (error) {
+      console.warn(`[EPI compras supervisão ${base}]`, error);
+    }
+  }
+  return '';
+}
+
+async function buscarSupervisaoGrupo(nome, rows, target) {
   const ids = rows.map(getItemId).filter(Boolean);
-  if (!ids.length || !target) return;
-  const cacheKey = getSupervisaoCacheKey(rows);
+  if (!target) return;
+  const cacheKey = getSupervisaoCacheKey(nome, rows);
   if (supervisaoGrupoCache.has(cacheKey)) {
     target.textContent = `Supervisão: ${supervisaoGrupoCache.get(cacheKey)}`;
     return;
   }
 
   try {
-    const { data, error } = await supabase
-      .from('compras_itens')
-      .select('id,colaborador_supervisao,compras_solicitacoes(supervisao,coordenacao)')
-      .in('id', ids);
-    if (error) throw error;
+    let texto = '';
 
-    const supervisoes = [...new Set((data || [])
-      .map((item) => item.colaborador_supervisao || item.compras_solicitacoes?.supervisao || '')
-      .filter(Boolean))];
-    const coordenacoes = [...new Set((data || [])
-      .map((item) => item.compras_solicitacoes?.coordenacao || '')
-      .filter(Boolean))];
+    if (ids.length) {
+      const { data, error } = await supabase
+        .from('compras_itens')
+        .select('id,colaborador_supervisao,compras_solicitacoes(supervisao)')
+        .in('id', ids);
+      if (error) throw error;
 
-    const texto = supervisoes.join(' / ') || coordenacoes.join(' / ') || 'Não informada';
+      const supervisoes = [...new Set((data || [])
+        .flatMap((item) => [item.colaborador_supervisao, item.compras_solicitacoes?.supervisao])
+        .filter(supervisaoValida)
+        .map((value) => String(value).trim()))];
+
+      texto = supervisoes.join(' / ');
+    }
+
+    if (!texto) texto = await buscarSupervisaoColaborador(nome);
+    if (!texto) texto = 'Não informada';
+
     supervisaoGrupoCache.set(cacheKey, texto);
     target.textContent = `Supervisão: ${texto}`;
   } catch (error) {
     console.warn('[EPI compras supervisão]', error);
-    target.textContent = 'Supervisão: Não informada';
+    const fallback = await buscarSupervisaoColaborador(nome);
+    const texto = fallback || 'Não informada';
+    supervisaoGrupoCache.set(cacheKey, texto);
+    target.textContent = `Supervisão: ${texto}`;
   }
 }
 
@@ -146,7 +194,7 @@ function criarLinhaGrupo(nome, rows, colCount) {
     </td>
   `;
 
-  buscarSupervisaoGrupo(rows, tr.querySelector('[data-epi-supervisao]'));
+  buscarSupervisaoGrupo(nome, rows, tr.querySelector('[data-epi-supervisao]'));
 
   tr.querySelector('[data-epi-group-check]')?.addEventListener('click', (event) => {
     event.preventDefault();
