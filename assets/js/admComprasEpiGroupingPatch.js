@@ -1,5 +1,10 @@
-// Agrupa visualmente os EPIs por colaborador no Painel de Compras.
-// O fluxo original continua igual: o comprador pode marcar o grupo inteiro ou abrir cada item.
+// Aba exclusiva de EPI no Painel de Compras.
+// - Na aba SOLICITAÇÕES, esconde os EPIs pendentes.
+// - Na aba EPI, mostra apenas EPIs pendentes e agrupa por colaborador.
+// - Depois que os EPIs avançam para cotação/compra, voltam para as abas padrão do fluxo.
+
+let painelComprasTabVisual = 'solicitacoes';
+let painelComprasClickInterno = false;
 
 function normComprasEpi(value = '') {
   return String(value || '')
@@ -9,8 +14,13 @@ function normComprasEpi(value = '') {
     .trim();
 }
 
+function isLinhaVazia(row) {
+  return row?.querySelector?.('.adm-cmp-empty');
+}
+
 function isLinhaEpi(row) {
-  const cells = row?.children || [];
+  if (!row || isLinhaVazia(row)) return false;
+  const cells = row.children || [];
   const tipo = cells[5]?.textContent || '';
   const material = cells[4]?.textContent || '';
   return normComprasEpi(tipo).includes('epi') || normComprasEpi(material).includes('ca pendente') || normComprasEpi(material).includes('ca:');
@@ -42,15 +52,34 @@ function formatMoney(value) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function getMaterialResumo(row, nomeColaborador) {
+  const cell = row.children?.[4];
+  const clone = cell?.cloneNode(true);
+  clone?.querySelectorAll('small').forEach((small) => small.remove());
+  return (clone?.textContent || cell?.textContent || '')
+    .replace(nomeColaborador, '')
+    .replace(/CA\s*:?\s*pendente/ig, '')
+    .replace(/CA\s*:?\s*\d+/ig, '')
+    .trim();
+}
+
+function marcarRows(rows, shouldCheck) {
+  rows.forEach((row) => {
+    const checkbox = row.querySelector('input[type="checkbox"]');
+    if (!checkbox) return;
+    if (checkbox.checked !== shouldCheck) {
+      checkbox.click();
+    } else {
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+}
+
 function criarLinhaGrupo(nome, rows, colCount) {
   const totalItens = rows.length;
   const totalUn = rows.reduce((sum, row) => sum + getQuantidade(row), 0);
   const totalValor = rows.reduce((sum, row) => sum + getValor(row), 0);
-  const materiais = rows.map((row) => {
-    const cell = row.children?.[4];
-    const first = [...(cell?.childNodes || [])].find((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
-    return (first?.textContent || cell?.textContent || '').split('Tam:')[0].split(nome)[0].trim();
-  }).filter(Boolean);
+  const materiais = rows.map((row) => getMaterialResumo(row, nome)).filter(Boolean);
 
   const tr = document.createElement('tr');
   tr.className = 'adm-cmp-epi-group-row';
@@ -70,53 +99,71 @@ function criarLinhaGrupo(nome, rows, colCount) {
     </td>
   `;
 
-  tr.querySelector('[data-epi-group-check]')?.addEventListener('click', () => {
+  tr.querySelector('[data-epi-group-check]')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     const shouldCheck = rows.some((row) => !row.querySelector('input[type="checkbox"]')?.checked);
-    rows.forEach((row) => {
-      const checkbox = row.querySelector('input[type="checkbox"]');
-      if (!checkbox) return;
-      checkbox.checked = shouldCheck;
-      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    marcarRows(rows, shouldCheck);
+    const btn = event.currentTarget;
+    btn.textContent = shouldCheck ? 'Grupo selecionado' : 'Selecionar grupo';
+    setTimeout(() => { btn.textContent = 'Selecionar grupo'; }, 1200);
   });
 
   return tr;
 }
 
-function agruparEpisCompras() {
-  const body = document.getElementById('admCmpBody');
-  if (!body || body.dataset.epiGroupingRunning === '1') return;
+function limparAgrupamentos(body) {
+  body?.querySelectorAll('[data-epi-group-header]').forEach((row) => row.remove());
+}
 
-  const allRows = [...body.querySelectorAll(':scope > tr')]
+function linhasBase(body) {
+  return [...(body?.querySelectorAll(':scope > tr') || [])]
     .filter((row) => !row.hasAttribute('data-epi-group-header'));
+}
 
-  if (!allRows.length) return;
-  if (allRows.some((row) => row.classList.contains('adm-cmp-group-row'))) return;
+function mostrarMensagemVazia(body, texto) {
+  const colCount = body.querySelector('tr')?.children?.length || 9;
+  body.innerHTML = `<tr><td colspan="${colCount}" class="adm-cmp-empty">${texto}</td></tr>`;
+}
 
-  const epiRows = allRows.filter(isLinhaEpi);
-  if (epiRows.length < 2) return;
+function aplicarAbaSolicitacoes(body) {
+  limparAgrupamentos(body);
+  const rows = linhasBase(body);
+  let visiveis = 0;
+  rows.forEach((row) => {
+    const mostrar = !isLinhaEpi(row) || isLinhaVazia(row);
+    row.style.display = mostrar ? '' : 'none';
+    if (mostrar && !isLinhaVazia(row)) visiveis += 1;
+  });
+  if (!visiveis && rows.some(isLinhaEpi)) mostrarMensagemVazia(body, 'Nenhuma solicitação comum nesta etapa. As solicitações de EPI ficam na aba EPI.');
+}
+
+function aplicarAbaEpi(body) {
+  limparAgrupamentos(body);
+  const rows = linhasBase(body).filter((row) => !isLinhaVazia(row));
+  const epiRows = rows.filter(isLinhaEpi);
+  const outrosRows = rows.filter((row) => !isLinhaEpi(row));
+
+  if (!epiRows.length) {
+    mostrarMensagemVazia(body, 'Nenhuma solicitação de EPI pendente. Depois da cotação, os EPIs seguem nas demais abas do fluxo.');
+    return;
+  }
 
   body.dataset.epiGroupingRunning = '1';
-  body.querySelectorAll('[data-epi-group-header]').forEach((row) => row.remove());
-
-  const colCount = allRows[0]?.children?.length || 9;
+  const colCount = rows[0]?.children?.length || 9;
   const groups = new Map();
-  const nonEpi = [];
 
-  allRows.forEach((row) => {
-    if (!isLinhaEpi(row)) {
-      nonEpi.push(row);
-      return;
-    }
+  epiRows.forEach((row) => {
+    row.style.display = '';
     const colab = getColaboradorEpi(row);
     const key = normComprasEpi(colab || 'SEM COLABORADOR');
     if (!groups.has(key)) groups.set(key, { nome: colab || 'SEM COLABORADOR', rows: [] });
     groups.get(key).rows.push(row);
   });
 
-  const frag = document.createDocumentFragment();
-  nonEpi.forEach((row) => frag.appendChild(row));
+  outrosRows.forEach((row) => { row.style.display = 'none'; });
 
+  const frag = document.createDocumentFragment();
   [...groups.values()]
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
     .forEach((group) => {
@@ -124,13 +171,85 @@ function agruparEpisCompras() {
       group.rows.forEach((row) => frag.appendChild(row));
     });
 
+  outrosRows.forEach((row) => frag.appendChild(row));
   body.appendChild(frag);
   body.dataset.epiGroupingRunning = '0';
 }
 
+function aplicarFiltroVisualCompras() {
+  const body = document.getElementById('admCmpBody');
+  if (!body || body.dataset.epiGroupingRunning === '1') return;
+
+  if (painelComprasTabVisual === 'epi') {
+    aplicarAbaEpi(body);
+  } else if (painelComprasTabVisual === 'solicitacoes') {
+    aplicarAbaSolicitacoes(body);
+  } else {
+    limparAgrupamentos(body);
+    linhasBase(body).forEach((row) => { row.style.display = ''; });
+  }
+}
+
+function atualizarTabsVisual() {
+  const tabs = document.querySelector('.adm-cmp-tabs');
+  if (!tabs) return;
+  const epiBtn = tabs.querySelector('[data-tab-epi-exclusivo]');
+  const tabButtons = [...tabs.querySelectorAll('[data-tab]')];
+
+  if (painelComprasTabVisual === 'epi') {
+    tabButtons.forEach((btn) => btn.classList.remove('active'));
+    epiBtn?.classList.add('active');
+  } else {
+    epiBtn?.classList.remove('active');
+  }
+}
+
+function instalarAbaEpi() {
+  const tabs = document.querySelector('.adm-cmp-tabs');
+  if (!tabs || tabs.querySelector('[data-tab-epi-exclusivo]')) return;
+
+  const solicitacoesBtn = tabs.querySelector('[data-tab="solicitacoes"]');
+  if (!solicitacoesBtn) return;
+
+  const epiBtn = document.createElement('button');
+  epiBtn.className = 'btn btn-secondary';
+  epiBtn.type = 'button';
+  epiBtn.setAttribute('data-tab-epi-exclusivo', '1');
+  epiBtn.textContent = 'EPI';
+  solicitacoesBtn.insertAdjacentElement('afterend', epiBtn);
+
+  epiBtn.addEventListener('click', () => {
+    painelComprasClickInterno = true;
+    solicitacoesBtn.click();
+    painelComprasClickInterno = false;
+    painelComprasTabVisual = 'epi';
+    setTimeout(() => {
+      atualizarTabsVisual();
+      aplicarFiltroVisualCompras();
+    }, 180);
+  });
+
+  tabs.querySelectorAll('[data-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (painelComprasClickInterno) return;
+      painelComprasTabVisual = btn.dataset.tab || 'solicitacoes';
+      setTimeout(() => {
+        atualizarTabsVisual();
+        aplicarFiltroVisualCompras();
+      }, 180);
+    });
+  });
+}
+
 function iniciarAgrupamentoEpiCompras() {
   const aplicar = () => {
-    try { agruparEpisCompras(); } catch (error) { console.warn('[EPI compras agrupamento]', error); }
+    try {
+      instalarAbaEpi();
+      atualizarTabsVisual();
+      aplicarFiltroVisualCompras();
+    } catch (error) {
+      console.warn('[EPI compras agrupamento]', error);
+    }
   };
 
   const observer = new MutationObserver(() => setTimeout(aplicar, 80));
