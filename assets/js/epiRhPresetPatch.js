@@ -1,5 +1,4 @@
 // Pré-seleção de EPIs por cargo de contratação no modal do RH > EPI.
-// Mantido separado para não interferir no fluxo principal do módulo.
 
 const PRESETS_EPI_CARGO = {
   operacional_i: [
@@ -28,6 +27,7 @@ function normalizarEpi(value = '') {
 }
 
 function marcarPresetEpi(modal, tipo) {
+  if (!modal) return;
   const preset = new Set((PRESETS_EPI_CARGO[tipo] || []).map(normalizarEpi));
   const todosPresets = new Set(Object.values(PRESETS_EPI_CARGO).flat().map(normalizarEpi));
 
@@ -39,18 +39,29 @@ function marcarPresetEpi(modal, tipo) {
   });
 }
 
+function localizarBlocoEpis(modal) {
+  const checkboxes = [...modal.querySelectorAll('input[type="checkbox"][id^="epiCheck_"]')];
+  if (!checkboxes.length) return null;
+
+  let node = checkboxes[0];
+  while (node && node !== modal) {
+    if (node.classList?.contains('mt-20')) return node;
+    node = node.parentElement;
+  }
+
+  return checkboxes[0].closest('label')?.parentElement?.parentElement || null;
+}
+
 function inserirSeletorCargo(modal) {
   if (!modal || modal.querySelector('#epiCargoContratacao')) return;
   if (!modal.querySelector('#solColabInput')) return;
 
-  const blocoEpis = [...modal.querySelectorAll('p')]
-    .find((p) => normalizarEpi(p.textContent).includes('EPIS'))
-    ?.closest('.mt-20');
-
+  const blocoEpis = localizarBlocoEpis(modal);
   if (!blocoEpis) return;
 
   const wrapper = document.createElement('div');
   wrapper.className = 'mt-16';
+  wrapper.setAttribute('data-epi-cargo-wrapper', '1');
   wrapper.innerHTML = `
     <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">
       Cargo de contratação <span style="color:#fde68a;font-size:11px;text-transform:none;letter-spacing:0">* selecione para pré-marcar os EPIs</span>
@@ -69,13 +80,11 @@ function inserirSeletorCargo(modal) {
 }
 
 function iniciarPatchPresetEpi() {
-  const observer = new MutationObserver(() => {
-    const modal = document.getElementById('epiModal');
-    inserirSeletorCargo(modal);
-  });
-
+  const aplicar = () => inserirSeletorCargo(document.getElementById('epiModal'));
+  const observer = new MutationObserver(aplicar);
   observer.observe(document.body, { childList: true, subtree: true });
-  inserirSeletorCargo(document.getElementById('epiModal'));
+  aplicar();
+  setInterval(aplicar, 800);
 }
 
 if (document.readyState === 'loading') {
