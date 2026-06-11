@@ -231,16 +231,25 @@ function parseReportDate(v: unknown): string | null {
   const s = cleanStr(v);
   if (!s) return null;
 
-  // formato "DD/MM/YYYY HH:mm:ss" ou "DD/MM/YYYY HH:mm"
-  // BFleet/Service24GPS é chamado com UseUTCDate=0, ou seja, ReportDate vem em
-  // horário local de Brasília (America/Sao_Paulo, UTC-3, sem horário de verão
-  // desde 2019). Sem o offset explícito, new Date() trata a string como UTC e
+  // BFleet/Service24GPS retorna ReportDate sem timezone, mas no horário local
+  // de Brasília (America/Sao_Paulo, UTC-3, sem horário de verão desde 2019) —
+  // confirmado cruzando ReportDate com InsertionDate e o campo "Gmt":"-3" do
+  // getdata. Sem o offset explícito, new Date() trata a string como UTC e
   // grava reportado_em ~3h no passado, fazendo todo veículo parecer "sem sinal".
+
+  // formato "YYYY-MM-DD HH:mm:ss" ou "YYYY-MM-DDTHH:mm:ss" (formato real do getdata)
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (iso) {
+    const [, yyyy, mm, dd, hh, min, sec] = iso;
+    const date = new Date(`${yyyy}-${mm}-${dd}T${hh.padStart(2, '0')}:${min}:${(sec || '00')}-03:00`);
+    if (!Number.isNaN(date.getTime())) return date.toISOString();
+  }
+
+  // formato "DD/MM/YYYY HH:mm:ss" ou "DD/MM/YYYY HH:mm" (fallback, caso a API mude)
   const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (br) {
     const [, dd, mm, yyyy, hh, min, sec] = br;
-    const iso = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${hh.padStart(2, '0')}:${min}:${(sec || '00')}-03:00`;
-    const date = new Date(iso);
+    const date = new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${hh.padStart(2, '0')}:${min}:${(sec || '00')}-03:00`);
     if (!Number.isNaN(date.getTime())) return date.toISOString();
   }
 
