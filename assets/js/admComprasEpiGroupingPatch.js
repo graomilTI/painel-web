@@ -1,3 +1,5 @@
+import { supabase } from './supabaseClient.js';
+
 // Aba exclusiva de EPI no Painel de Compras.
 // - Na aba SOLICITAÇÕES, esconde os EPIs pendentes.
 // - Na aba EPI, mostra apenas EPIs pendentes e agrupa por colaborador.
@@ -7,6 +9,7 @@
 let painelComprasTabVisual = 'solicitacoes';
 let painelComprasClickInterno = false;
 let painelComprasAplicandoFiltro = false;
+const supervisaoGrupoCache = new Map();
 
 function normComprasEpi(value = '') {
   return String(value || '')
@@ -40,6 +43,10 @@ function getColaboradorEpi(row) {
   return smalls[smalls.length - 1] || 'SEM COLABORADOR';
 }
 
+function getItemId(row) {
+  return row.querySelector('input[type="checkbox"][data-check]')?.dataset?.check || '';
+}
+
 function getQuantidade(row) {
   return Number(String(row.children?.[3]?.textContent || '1').replace(/\D+/g, '') || 1);
 }
@@ -63,6 +70,42 @@ function getMaterialResumo(row, nomeColaborador) {
     .replace(/CA\s*:?\s*pendente/ig, '')
     .replace(/CA\s*:?\s*\d+/ig, '')
     .trim();
+}
+
+function getSupervisaoCacheKey(rows) {
+  return rows.map(getItemId).filter(Boolean).sort().join('|');
+}
+
+async function buscarSupervisaoGrupo(rows, target) {
+  const ids = rows.map(getItemId).filter(Boolean);
+  if (!ids.length || !target) return;
+  const cacheKey = getSupervisaoCacheKey(rows);
+  if (supervisaoGrupoCache.has(cacheKey)) {
+    target.textContent = `Supervisão: ${supervisaoGrupoCache.get(cacheKey)}`;
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('compras_itens')
+      .select('id,colaborador_supervisao,compras_solicitacoes(supervisao,coordenacao)')
+      .in('id', ids);
+    if (error) throw error;
+
+    const supervisoes = [...new Set((data || [])
+      .map((item) => item.colaborador_supervisao || item.compras_solicitacoes?.supervisao || '')
+      .filter(Boolean))];
+    const coordenacoes = [...new Set((data || [])
+      .map((item) => item.compras_solicitacoes?.coordenacao || '')
+      .filter(Boolean))];
+
+    const texto = supervisoes.join(' / ') || coordenacoes.join(' / ') || 'Não informada';
+    supervisaoGrupoCache.set(cacheKey, texto);
+    target.textContent = `Supervisão: ${texto}`;
+  } catch (error) {
+    console.warn('[EPI compras supervisão]', error);
+    target.textContent = 'Supervisão: Não informada';
+  }
 }
 
 function marcarRows(rows, shouldCheck) {
@@ -91,6 +134,7 @@ function criarLinhaGrupo(nome, rows, colCount) {
       <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
         <div>
           <strong style="color:#bbf7d0">EPI — ${nome}</strong>
+          <div data-epi-supervisao style="font-size:12px;color:#fde68a;margin-top:4px;font-weight:700">Supervisão: carregando...</div>
           <div style="font-size:12px;color:#94a3b8;margin-top:4px">${totalItens} item(ns) · ${totalUn} unidade(s) · ${materiais.join(' · ')}</div>
           <div data-epi-group-status style="font-size:12px;color:#bbf7d0;margin-top:4px">${selecionados ? `${selecionados}/${totalItens} selecionado(s)` : 'Grupo fechado — detalhes na cotação'}</div>
         </div>
@@ -101,6 +145,8 @@ function criarLinhaGrupo(nome, rows, colCount) {
       </div>
     </td>
   `;
+
+  buscarSupervisaoGrupo(rows, tr.querySelector('[data-epi-supervisao]'));
 
   tr.querySelector('[data-epi-group-check]')?.addEventListener('click', (event) => {
     event.preventDefault();
