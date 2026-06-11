@@ -232,10 +232,14 @@ function parseReportDate(v: unknown): string | null {
   if (!s) return null;
 
   // formato "DD/MM/YYYY HH:mm:ss" ou "DD/MM/YYYY HH:mm"
+  // BFleet/Service24GPS é chamado com UseUTCDate=0, ou seja, ReportDate vem em
+  // horário local de Brasília (America/Sao_Paulo, UTC-3, sem horário de verão
+  // desde 2019). Sem o offset explícito, new Date() trata a string como UTC e
+  // grava reportado_em ~3h no passado, fazendo todo veículo parecer "sem sinal".
   const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (br) {
     const [, dd, mm, yyyy, hh, min, sec] = br;
-    const iso = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${hh.padStart(2, '0')}:${min}:${(sec || '00')}`;
+    const iso = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${hh.padStart(2, '0')}:${min}:${(sec || '00')}-03:00`;
     const date = new Date(iso);
     if (!Number.isNaN(date.getTime())) return date.toISOString();
   }
