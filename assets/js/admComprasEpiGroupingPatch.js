@@ -1,10 +1,12 @@
 // Aba exclusiva de EPI no Painel de Compras.
 // - Na aba SOLICITAÇÕES, esconde os EPIs pendentes.
 // - Na aba EPI, mostra apenas EPIs pendentes e agrupa por colaborador.
+// - O grupo fica fechado: os detalhes aparecem depois no fluxo de cotação/compra.
 // - Depois que os EPIs avançam para cotação/compra, voltam para as abas padrão do fluxo.
 
 let painelComprasTabVisual = 'solicitacoes';
 let painelComprasClickInterno = false;
+let painelComprasAplicandoFiltro = false;
 
 function normComprasEpi(value = '') {
   return String(value || '')
@@ -64,15 +66,14 @@ function getMaterialResumo(row, nomeColaborador) {
 }
 
 function marcarRows(rows, shouldCheck) {
+  painelComprasAplicandoFiltro = true;
   rows.forEach((row) => {
     const checkbox = row.querySelector('input[type="checkbox"]');
     if (!checkbox) return;
-    if (checkbox.checked !== shouldCheck) {
-      checkbox.click();
-    } else {
-      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-    }
+    checkbox.checked = shouldCheck;
+    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
   });
+  setTimeout(() => { painelComprasAplicandoFiltro = false; }, 120);
 }
 
 function criarLinhaGrupo(nome, rows, colCount) {
@@ -80,6 +81,7 @@ function criarLinhaGrupo(nome, rows, colCount) {
   const totalUn = rows.reduce((sum, row) => sum + getQuantidade(row), 0);
   const totalValor = rows.reduce((sum, row) => sum + getValor(row), 0);
   const materiais = rows.map((row) => getMaterialResumo(row, nome)).filter(Boolean);
+  const selecionados = rows.filter((row) => row.querySelector('input[type="checkbox"]')?.checked).length;
 
   const tr = document.createElement('tr');
   tr.className = 'adm-cmp-epi-group-row';
@@ -90,10 +92,11 @@ function criarLinhaGrupo(nome, rows, colCount) {
         <div>
           <strong style="color:#bbf7d0">EPI — ${nome}</strong>
           <div style="font-size:12px;color:#94a3b8;margin-top:4px">${totalItens} item(ns) · ${totalUn} unidade(s) · ${materiais.join(' · ')}</div>
+          <div data-epi-group-status style="font-size:12px;color:#bbf7d0;margin-top:4px">${selecionados ? `${selecionados}/${totalItens} selecionado(s)` : 'Grupo fechado — detalhes na cotação'}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <strong style="color:#e2e8f0">${formatMoney(totalValor)}</strong>
-          <button type="button" class="btn btn-small btn-secondary" data-epi-group-check>Selecionar grupo</button>
+          <button type="button" class="btn btn-small btn-secondary" data-epi-group-check>${selecionados === totalItens ? 'Desmarcar grupo' : 'Selecionar grupo'}</button>
         </div>
       </div>
     </td>
@@ -105,8 +108,9 @@ function criarLinhaGrupo(nome, rows, colCount) {
     const shouldCheck = rows.some((row) => !row.querySelector('input[type="checkbox"]')?.checked);
     marcarRows(rows, shouldCheck);
     const btn = event.currentTarget;
-    btn.textContent = shouldCheck ? 'Grupo selecionado' : 'Selecionar grupo';
-    setTimeout(() => { btn.textContent = 'Selecionar grupo'; }, 1200);
+    const status = tr.querySelector('[data-epi-group-status]');
+    btn.textContent = shouldCheck ? 'Desmarcar grupo' : 'Selecionar grupo';
+    if (status) status.textContent = shouldCheck ? `${rows.length}/${rows.length} selecionado(s)` : 'Grupo fechado — detalhes na cotação';
   });
 
   return tr;
@@ -154,7 +158,7 @@ function aplicarAbaEpi(body) {
   const groups = new Map();
 
   epiRows.forEach((row) => {
-    row.style.display = '';
+    row.style.display = 'none';
     const colab = getColaboradorEpi(row);
     const key = normComprasEpi(colab || 'SEM COLABORADOR');
     if (!groups.has(key)) groups.set(key, { nome: colab || 'SEM COLABORADOR', rows: [] });
@@ -168,7 +172,10 @@ function aplicarAbaEpi(body) {
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
     .forEach((group) => {
       frag.appendChild(criarLinhaGrupo(group.nome, group.rows, colCount));
-      group.rows.forEach((row) => frag.appendChild(row));
+      group.rows.forEach((row) => {
+        row.style.display = 'none';
+        frag.appendChild(row);
+      });
     });
 
   outrosRows.forEach((row) => frag.appendChild(row));
@@ -177,6 +184,7 @@ function aplicarAbaEpi(body) {
 }
 
 function aplicarFiltroVisualCompras() {
+  if (painelComprasAplicandoFiltro) return;
   const body = document.getElementById('admCmpBody');
   if (!body || body.dataset.epiGroupingRunning === '1') return;
 
@@ -226,7 +234,7 @@ function instalarAbaEpi() {
     setTimeout(() => {
       atualizarTabsVisual();
       aplicarFiltroVisualCompras();
-    }, 180);
+    }, 120);
   });
 
   tabs.querySelectorAll('[data-tab]').forEach((btn) => {
@@ -236,7 +244,7 @@ function instalarAbaEpi() {
       setTimeout(() => {
         atualizarTabsVisual();
         aplicarFiltroVisualCompras();
-      }, 180);
+      }, 120);
     });
   });
 }
@@ -252,9 +260,9 @@ function iniciarAgrupamentoEpiCompras() {
     }
   };
 
-  const observer = new MutationObserver(() => setTimeout(aplicar, 80));
+  const observer = new MutationObserver(() => setTimeout(aplicar, 120));
   observer.observe(document.body, { childList: true, subtree: true });
-  setInterval(aplicar, 1200);
+  setInterval(aplicar, 2500);
   aplicar();
 }
 
