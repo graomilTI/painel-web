@@ -67,8 +67,8 @@ function inserirSeletorCargo(modal) {
       Cargo de contratação <span style="color:#fde68a;font-size:11px;text-transform:none;letter-spacing:0">* selecione para pré-marcar os EPIs</span>
       <select id="epiCargoContratacao" style="width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;font-size:14px;text-transform:none;letter-spacing:0">
         <option value="">Selecione...</option>
-        <option value="operacional_i">OPERACIONAL I</option>
-        <option value="operacional_ii">OPERACIONAL II</option>
+        <option value="operacional_ii">OPERACIONAL I</option>
+        <option value="operacional_i">OPERACIONAL II</option>
       </select>
     </label>
   `;
