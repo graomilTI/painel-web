@@ -2637,6 +2637,7 @@
         colaborador_nome: row.colaborador_nome,
         origem_sugestao: 'DISTRIBUICAO_OS',
         observacao: 'Importado pela Distribuição de O.S.',
+        updated_at: new Date().toISOString(),
       });
     }
 
@@ -2652,7 +2653,9 @@
 
     let total = 0;
     for (let i = 0; i < payload.length; i += 500) {
-      const { error } = await opts.supabase.from('operacional_os_colaboradores').insert(payload.slice(i, i + 500));
+      const { error } = await opts.supabase
+        .from('operacional_os_colaboradores')
+        .upsert(payload.slice(i, i + 500), { onConflict: 'os_id,colaborador_key' });
       if (error) throw new Error(error.message || 'Falha ao salvar Distribuição de O.S. no Supabase.');
       total += payload.slice(i, i + 500).length;
     }
