@@ -45,6 +45,72 @@ function prioBadge(prioridade) {
   return `<span class="em-prio ${esc(p.toLowerCase())}">${esc(p)}</span>`;
 }
 
+const AVATAR_PALETTE = ['#2563eb', '#7c3aed', '#0ea5e9', '#16a34a', '#ea580c', '#db2777', '#0891b2', '#ca8a04', '#dc2626', '#4f46e5'];
+
+function avatarColor(seed) {
+  const s = String(seed || '');
+  let hash = 0;
+  for (let i = 0; i < s.length; i += 1) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+
+function initials(nome, email) {
+  const name = String(nome || '').trim();
+  if (name) {
+    const parts = name.split(/\s+/).filter(Boolean);
+    return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0].slice(0, 2).toUpperCase();
+  }
+  const at = String(email || '').trim();
+  return at ? at.slice(0, 2).toUpperCase() : '??';
+}
+
+function decodeEntities(html) {
+  const ta = document.createElement('textarea');
+  ta.innerHTML = html;
+  return ta.value;
+}
+
+// Converte HTML em texto preservando quebras de parágrafo/linha e listas,
+// para não virar um bloco único de texto corrido.
+function htmlToText(html) {
+  let s = String(html || '');
+  s = s.replace(/<(br|hr)\s*\/?>/gi, '\n');
+  s = s.replace(/<\/(p|div|tr|li|h[1-6]|table)>/gi, '\n');
+  s = s.replace(/<li[^>]*>/gi, '• ');
+  s = s.replace(/<[^>]+>/g, '');
+  return decodeEntities(s);
+}
+
+function emailBodyText(e) {
+  const source = (e.corpo_texto && e.corpo_texto.trim()) ? e.corpo_texto : htmlToText(e.corpo_html);
+  return String(source || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+const DADOS_LABELS = { contrato: 'Contrato', placa: 'Placa', os: 'OS', cnpj: 'CNPJ', cpf: 'CPF', valor: 'Valor' };
+
+function prettyKey(key) {
+  return String(key).replace(/_/g, ' ').replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+}
+
+function dadosDetectadosEntries(dados) {
+  return Object.entries(dados || {}).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '');
+}
+
+const ATTACHMENT_ICONS = {
+  pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', csv: '📊',
+  jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', webp: '🖼️',
+  zip: '🗜️', rar: '🗜️', '7z': '🗜️', txt: '📃', xml: '🧾', eml: '✉️'
+};
+
+function attachmentIcon(filename) {
+  const ext = String(filename || '').split('.').pop().toLowerCase();
+  return ATTACHMENT_ICONS[ext] || '📎';
+}
+
 async function updateEmail(id, payload, userContext) {
   const { error } = await supabase.from('email_messages').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id);
   if (error) throw error;
@@ -75,17 +141,39 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-list{display:grid;gap:8px;max-height:70vh;overflow:auto;padding-right:4px}
       .em-row{border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.42);border-radius:16px;padding:12px;cursor:pointer;display:grid;gap:6px}
       .em-row:hover,.em-row.active{border-color:rgba(96,165,250,.38);background:rgba(37,99,235,.12)}
-      .em-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.em-subject{color:#f8fafc;font-weight:800;line-height:1.25}.em-meta{font-size:12px;color:#94a3b8}.em-snippet{font-size:12px;color:#cbd5e1;line-height:1.35}
+      .em-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.em-row-from{display:flex;align-items:center;gap:8px;min-width:0;flex:1}.em-subject{color:#f8fafc;font-weight:800;line-height:1.25;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.em-meta{font-size:12px;color:#94a3b8}.em-snippet{font-size:12px;color:#cbd5e1;line-height:1.35}
       .em-badge,.em-prio{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:10px;font-weight:900;letter-spacing:.03em;border:1px solid rgba(148,163,184,.18);white-space:nowrap}
       .em-badge.novo{background:rgba(59,130,246,.16);color:#bfdbfe}.em-badge.pendente,.em-badge.responder{background:rgba(245,158,11,.12);color:#fde68a}.em-badge.respondido,.em-badge.resolvido{background:rgba(22,163,74,.16);color:#bbf7d0}.em-badge.arquivado,.em-badge.ignorado{background:rgba(100,116,139,.16);color:#cbd5e1}.em-badge.erro{background:rgba(220,38,38,.18);color:#fecaca}
       .em-prio.baixa{background:rgba(100,116,139,.12);color:#cbd5e1}.em-prio.normal{background:rgba(59,130,246,.12);color:#bfdbfe}.em-prio.alta{background:rgba(245,158,11,.12);color:#fde68a}.em-prio.urgente{background:rgba(220,38,38,.18);color:#fecaca}
-      .em-detail{display:grid;gap:14px}.em-detail-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.em-detail h3{margin:0;color:#f8fafc;font-size:22px}.em-kv{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;font-size:13px}.em-kv span:nth-child(odd){color:#94a3b8}.em-kv span:nth-child(even){color:#e2e8f0;min-width:0;word-break:break-word}
-      .em-analysis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.em-box{border:1px solid rgba(148,163,184,.12);border-radius:16px;background:rgba(2,6,23,.34);padding:12px}.em-box span{display:block;color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.06em}.em-box strong{display:block;color:#f8fafc;margin-top:5px}
-      .em-body{white-space:pre-wrap;color:#e2e8f0;line-height:1.55;max-height:300px;overflow:auto;border:1px solid rgba(148,163,184,.12);border-radius:16px;background:rgba(2,6,23,.32);padding:14px}
+      .em-detail{display:grid;gap:16px}
+      .em-envelope{display:flex;gap:14px;align-items:flex-start;padding-bottom:16px;border-bottom:1px solid rgba(148,163,184,.14)}
+      .em-avatar{flex:none;width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:'Syne',system-ui,sans-serif;font-weight:800;font-size:16px;color:#f8fafc;box-shadow:0 6px 16px rgba(0,0,0,.25)}
+      .em-avatar.sm{width:30px;height:30px;border-radius:9px;font-size:11px;box-shadow:none}
+      .em-envelope-main{flex:1;min-width:0}
+      .em-envelope-main h3{margin:0 0 6px;color:#f8fafc;font-size:21px;font-family:'Syne',system-ui,sans-serif;line-height:1.3;word-break:break-word}
+      .em-from{font-size:13px;color:#e2e8f0}.em-from b{font-weight:800}
+      .em-to{margin-top:4px;font-size:11px;color:#7c8aa3;word-break:break-word}
+      .em-envelope-meta{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:8px;text-align:right}
+      .em-date{font-size:11px;color:#7c8aa3;line-height:1.5;white-space:nowrap}
+      .em-insights{display:flex;flex-wrap:wrap;gap:8px}
+      .em-chip{display:flex;align-items:center;gap:6px;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:12px;padding:7px 12px;font-size:12px;color:#94a3b8}
+      .em-chip b{color:#f8fafc;font-weight:800}
+      .em-summary{border:1px solid rgba(96,165,250,.22);background:linear-gradient(135deg,rgba(37,99,235,.12),rgba(15,23,42,.3));border-radius:16px;padding:14px 16px;display:grid;gap:6px}
+      .em-summary-label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#93c5fd;font-weight:900}
+      .em-summary p{margin:0;color:#dbeafe;line-height:1.6;font-size:13px}
+      .em-section-label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#7c8aa3;font-weight:900;margin-bottom:9px}
+      .em-extracted{border:1px solid rgba(148,163,184,.12);border-radius:16px;background:rgba(2,6,23,.3);padding:12px 14px}
+      .em-dl{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;margin:0;font-size:12px}
+      .em-dl dt{color:#7c8aa3}.em-dl dd{margin:0;color:#e2e8f0;font-weight:800;word-break:break-word}
+      .em-attachments{display:flex;flex-wrap:wrap;gap:8px}
+      .em-attachment{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.4);border-radius:10px;padding:7px 12px;font-size:12px;color:#cbd5e1}
+      .em-letter{position:relative;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(248,250,252,.025);padding:18px 20px 18px 22px;overflow:hidden}
+      .em-letter::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#60a5fa,rgba(96,165,250,0))}
+      .em-letter pre{white-space:pre-wrap;word-break:break-word;color:#dbe4f3;line-height:1.7;font-size:13.5px;font-family:inherit;margin:0;max-height:420px;overflow:auto;padding-right:6px}
+      .em-reply{border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.28);padding:16px;display:grid;gap:10px}
       .em-empty{color:#94a3b8;text-align:center;padding:30px;border:1px dashed rgba(148,163,184,.22);border-radius:18px}.em-muted{color:#94a3b8}.em-small{font-size:12px}.em-danger{color:#fecaca}.em-ok{color:#bbf7d0}
       .em-account-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.em-account-grid .wide{grid-column:1/-1}.em-check{display:flex;align-items:center;gap:8px;color:#cbd5e1;font-size:13px;margin-top:24px}
-      .em-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.em-table{width:100%;border-collapse:collapse;min-width:760px}.em-table th,.em-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;color:#e2e8f0;vertical-align:top}.em-table th{background:rgba(15,23,42,.96);color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
-      @media(max-width:1040px){.em-grid{grid-template-columns:1fr}.em-list{max-height:unset}.em-filter,.em-account-grid,.em-analysis{grid-template-columns:1fr}.em-check{margin-top:0}.em-kv{grid-template-columns:1fr}}
+      @media(max-width:1040px){.em-grid{grid-template-columns:1fr}.em-list{max-height:unset}.em-filter,.em-account-grid{grid-template-columns:1fr}.em-check{margin-top:0}.em-envelope{flex-wrap:wrap}.em-envelope-meta{flex-direction:row;align-items:center;text-align:left}}
     </style>
 
     <section class="em-wrap">
@@ -121,7 +209,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
             <div><strong style="color:#f8fafc">Fila de respostas aprovadas</strong><div class="em-muted em-small">O worker envia via SMTP e atualiza esta fila.</div></div>
             <button class="btn btn-secondary" id="emLoadOutbox" type="button">Atualizar fila</button>
           </div>
-          <div class="em-table-wrap"><table class="em-table"><thead><tr><th>Status</th><th>Para</th><th>Assunto</th><th>Aprovado por</th><th>Erro</th></tr></thead><tbody id="emOutboxBody"><tr><td colspan="5" class="em-muted">Carregando...</td></tr></tbody></table></div>
+          <div class="em-list" id="emOutboxBody"><div class="em-empty">Carregando...</div></div>
         </article>
       </div>
 
@@ -188,7 +276,13 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     }
     el.innerHTML = state.accounts.map((a) => `
       <div class="em-row" data-account-id="${esc(a.id)}">
-        <div class="em-row-top"><div class="em-subject">${esc(a.nome)} — ${esc(a.email)}</div>${a.ativo ? '<span class="em-badge resolvido">ATIVA</span>' : '<span class="em-badge arquivado">INATIVA</span>'}</div>
+        <div class="em-row-top">
+          <div class="em-row-from">
+            <span class="em-avatar sm" style="background:${avatarColor(a.email)}">${esc(initials(a.nome, a.email))}</span>
+            <div class="em-subject">${esc(a.nome)} — ${esc(a.email)}</div>
+          </div>
+          ${a.ativo ? '<span class="em-badge resolvido">ATIVA</span>' : '<span class="em-badge arquivado">INATIVA</span>'}
+        </div>
         <div class="em-meta">IMAP ${esc(a.imap_host)}:${esc(a.imap_port)} · SMTP ${esc(a.smtp_host)}:${esc(a.smtp_port)}</div>
         <div class="em-meta">Última sincronização: ${brDate(a.ultima_sync_em)} · ${esc(a.ultima_sync_status || '-')}</div>
         ${a.ultima_sync_erro ? `<div class="em-danger em-small">${esc(a.ultima_sync_erro)}</div>` : ''}
@@ -276,7 +370,13 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     }
     list.innerHTML = state.emails.map((e) => `
       <div class="em-row ${state.selected?.id === e.id ? 'active' : ''}" data-email-id="${esc(e.id)}">
-        <div class="em-row-top"><div class="em-subject">${esc(e.assunto || '(sem assunto)')}</div>${statusBadge(e.status)}</div>
+        <div class="em-row-top">
+          <div class="em-row-from">
+            <span class="em-avatar sm" style="background:${avatarColor(e.remetente_email || e.remetente_nome)}">${esc(initials(e.remetente_nome, e.remetente_email))}</span>
+            <div class="em-subject">${esc(e.assunto || '(sem assunto)')}</div>
+          </div>
+          ${statusBadge(e.status)}
+        </div>
         <div class="em-meta">${esc(e.remetente_nome || e.remetente_email || '-')} · ${brDate(e.data_recebimento)}</div>
         <div class="em-actions">${prioBadge(e.prioridade)}<span class="em-badge arquivado">${esc(e.categoria || 'SEM CATEGORIA')}</span><span class="em-badge arquivado">${esc(e.regional || 'SEM REGIONAL')}</span></div>
         <div class="em-snippet">${esc((e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
@@ -301,39 +401,55 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     const e = state.selected;
     const detail = document.getElementById('emDetail');
     if (!e) return;
-    const dados = e.dados_detectados || {};
+    const dadosEntries = dadosDetectadosEntries(e.dados_detectados);
+    const bodyText = emailBodyText(e);
     detail.innerHTML = `
       <div class="em-detail">
-        <div class="em-detail-head">
-          <div><h3>${esc(e.assunto || '(sem assunto)')}</h3><div class="em-muted em-small">${esc(e.email_accounts?.nome || '')} · ${brDate(e.data_recebimento)}</div></div>
-          <div class="em-actions">${statusBadge(e.status)}${prioBadge(e.prioridade)}</div>
-        </div>
-        <div class="em-kv">
-          <span>Remetente</span><span>${esc(e.remetente_nome || '')} &lt;${esc(e.remetente_email || '')}&gt;</span>
-          <span>Destinatário</span><span>${esc(e.destinatario || '-')}</span>
-          <span>CC</span><span>${esc(e.cc || '-')}</span>
-        </div>
-        <div class="em-analysis">
-          <div class="em-box"><span>Regional</span><strong>${esc(e.regional || '-')}</strong></div>
-          <div class="em-box"><span>Categoria</span><strong>${esc(e.categoria || '-')}</strong></div>
-          <div class="em-box"><span>Responder?</span><strong>${e.precisa_resposta ? 'Sim' : 'Não'}</strong></div>
-          <div class="em-box"><span>Classificação</span><strong>${esc(e.classificado_por || '-')}</strong></div>
-        </div>
-        <div class="em-box"><span>Resumo</span><strong style="font-weight:500;line-height:1.45">${esc(e.resumo_ia || 'Sem resumo gerado.')}</strong></div>
-        <div class="em-box"><span>Dados detectados</span><pre style="white-space:pre-wrap;color:#e2e8f0;margin:8px 0 0;font-size:12px">${esc(JSON.stringify(dados, null, 2))}</pre></div>
-        ${state.attachments.length ? `<div class="em-box"><span>Anexos</span><div class="em-actions" style="margin-top:8px">${state.attachments.map((a) => `<span class="em-badge arquivado">${esc(a.nome_arquivo)}</span>`).join('')}</div></div>` : ''}
-        <div><div class="em-muted em-small" style="margin-bottom:6px">Conteúdo</div><div class="em-body">${esc(onlyText(e.corpo_texto || e.corpo_html) || '(sem conteúdo)')}</div></div>
-        <form id="emReplyForm" class="em-field">
-          <label>Resposta sugerida / resposta a enviar</label>
-          <textarea id="emReplyText">${esc(e.resposta_sugerida || '')}</textarea>
-          <div class="em-actions">
-            <button class="btn btn-primary" type="submit">Aprovar e colocar na fila de envio</button>
-            <button class="btn btn-secondary" type="button" data-action="resolved">Marcar resolvido</button>
-            <button class="btn btn-secondary" type="button" data-action="archive">Arquivar</button>
-            <button class="btn btn-secondary" type="button" data-action="pending">Marcar pendente</button>
+        <div class="em-envelope">
+          <div class="em-avatar" style="background:${avatarColor(e.remetente_email || e.remetente_nome)}">${esc(initials(e.remetente_nome, e.remetente_email))}</div>
+          <div class="em-envelope-main">
+            <h3>${esc(e.assunto || '(sem assunto)')}</h3>
+            <div class="em-from"><b>${esc(e.remetente_nome || e.remetente_email || '-')}</b> <span class="em-muted">&lt;${esc(e.remetente_email || '')}&gt;</span></div>
+            <div class="em-to">Para: ${esc(e.destinatario || '-')}${e.cc ? ` · Cc: ${esc(e.cc)}` : ''}</div>
           </div>
-          ${state.outbox.length ? `<div class="em-muted em-small">Já existe resposta na fila: ${state.outbox.map((o) => `${esc(o.status)} em ${brDate(o.created_at)}`).join(' · ')}</div>` : ''}
-        </form>
+          <div class="em-envelope-meta">
+            <div class="em-date">${esc(e.email_accounts?.nome || '')}<br>${brDate(e.data_recebimento)}</div>
+            <div class="em-actions">${statusBadge(e.status)}${prioBadge(e.prioridade)}</div>
+          </div>
+        </div>
+
+        <div class="em-insights">
+          <div class="em-chip">Regional <b>${esc(e.regional || '—')}</b></div>
+          <div class="em-chip">Categoria <b>${esc(e.categoria || '—')}</b></div>
+          <div class="em-chip">Precisa resposta? <b>${e.precisa_resposta ? 'Sim' : 'Não'}</b></div>
+          <div class="em-chip">Classificado por <b>${esc(e.classificado_por || '—')}</b></div>
+        </div>
+
+        ${e.resumo_ia ? `<div class="em-summary"><span class="em-summary-label">✨ Resumo da IA</span><p>${esc(e.resumo_ia)}</p></div>` : ''}
+
+        ${dadosEntries.length ? `<div class="em-extracted"><span class="em-section-label">Dados detectados</span><dl class="em-dl">${dadosEntries.map(([k, v]) => `<dt>${esc(DADOS_LABELS[k] || prettyKey(k))}</dt><dd>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>` : ''}
+
+        ${state.attachments.length ? `<div><span class="em-section-label">Anexos</span><div class="em-attachments">${state.attachments.map((a) => `<span class="em-attachment">${attachmentIcon(a.nome_arquivo)} ${esc(a.nome_arquivo)}</span>`).join('')}</div></div>` : ''}
+
+        <div>
+          <span class="em-section-label">Mensagem</span>
+          <div class="em-letter"><pre>${esc(bodyText || '(sem conteúdo)')}</pre></div>
+        </div>
+
+        <div class="em-reply">
+          <span class="em-section-label">↩ Responder</span>
+          <form id="emReplyForm" class="em-field">
+            <label>Resposta sugerida / resposta a enviar</label>
+            <textarea id="emReplyText">${esc(e.resposta_sugerida || '')}</textarea>
+            <div class="em-actions">
+              <button class="btn btn-primary" type="submit">Aprovar e colocar na fila de envio</button>
+              <button class="btn btn-secondary" type="button" data-action="resolved">Marcar resolvido</button>
+              <button class="btn btn-secondary" type="button" data-action="archive">Arquivar</button>
+              <button class="btn btn-secondary" type="button" data-action="pending">Marcar pendente</button>
+            </div>
+            ${state.outbox.length ? `<div class="em-muted em-small">Já existe resposta na fila: ${state.outbox.map((o) => `${esc(o.status)} em ${brDate(o.created_at)}`).join(' · ')}</div>` : ''}
+          </form>
+        </div>
       </div>
     `;
 
@@ -361,25 +477,30 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
   }
 
   async function loadOutbox() {
-    const tbody = document.getElementById('emOutboxBody');
-    tbody.innerHTML = `<tr><td colspan="5" class="em-muted">Carregando...</td></tr>`;
+    const list = document.getElementById('emOutboxBody');
+    list.innerHTML = `<div class="em-empty">Carregando...</div>`;
     const { data, error } = await supabase.from('email_outbox').select('*, email_accounts(nome,email)').order('created_at', { ascending: false }).limit(100);
     if (error) {
-      tbody.innerHTML = `<tr><td colspan="5" class="em-danger">${esc(error.message)}</td></tr>`;
+      list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}</div>`;
       return;
     }
     if (!data?.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="em-muted">Nenhuma resposta na fila.</td></tr>`;
+      list.innerHTML = `<div class="em-empty">Nenhuma resposta na fila.</div>`;
       return;
     }
-    tbody.innerHTML = data.map((o) => `
-      <tr>
-        <td>${statusBadge(o.status)}<div class="em-muted em-small">${esc(o.email_accounts?.nome || '')}</div></td>
-        <td>${esc(o.para)}</td>
-        <td>${esc(o.assunto)}<div class="em-muted em-small">${brDate(o.created_at)}</div></td>
-        <td>${esc(o.aprovado_por_nome || '-')}</td>
-        <td>${esc(o.erro || '-')}</td>
-      </tr>
+    list.innerHTML = data.map((o) => `
+      <div class="em-row">
+        <div class="em-row-top">
+          <div class="em-row-from">
+            <span class="em-avatar sm" style="background:${avatarColor(o.para)}">${esc(initials(null, o.para))}</span>
+            <div class="em-subject">${esc(o.assunto || '(sem assunto)')}</div>
+          </div>
+          ${statusBadge(o.status)}
+        </div>
+        <div class="em-meta">Para: ${esc(o.para)} · ${esc(o.email_accounts?.nome || '')} · ${brDate(o.created_at)}</div>
+        ${o.aprovado_por_nome ? `<div class="em-actions"><span class="em-badge arquivado">Aprovado por ${esc(o.aprovado_por_nome)}</span></div>` : ''}
+        ${o.erro ? `<div class="em-danger em-small">${esc(o.erro)}</div>` : ''}
+      </div>
     `).join('');
   }
 
