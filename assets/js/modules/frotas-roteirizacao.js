@@ -3,6 +3,7 @@
 
   const ROTEIRIZAR_FUNCTION = window.FROTAS_CONFIG?.ROTEIRIZAR_FUNCTION || 'frotas-roteirizar';
   const BFLEET_POSICOES_FUNCTION = window.FROTAS_CONFIG?.BFLEET_POSICOES_FUNCTION || 'bfleet-posicoes';
+  const GEOCODE_FUNCTION = window.FROTAS_CONFIG?.GEOCODE_FUNCTION || 'geocode-colaboradores';
   const REFRESH_MS = 45000;
   const SEM_SINAL_HORAS = 3;
 
@@ -13,7 +14,7 @@
 
   const styles = `
     <style>
-      .rot-shell{color:#e2e2f0}.rot-head{margin-bottom:16px}.rot-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.rot-title{margin:8px 0 6px;font-size:clamp(24px,2.5vw,34px);letter-spacing:-.04em;color:#f8fafc}.rot-sub{max-width:1050px;color:#94a3b8;line-height:1.55;margin:0}.rot-sub code{color:#bbf7d0}.rot-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.12),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.rot-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.42)}.rot-tools-left,.rot-tools-right{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.rot-btn{border:0;border-radius:14px;min-height:42px;padding:0 16px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;white-space:nowrap}.rot-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.rot-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.rot-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.rot-btn:disabled{opacity:.55;cursor:not-allowed}.rot-select{height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.rot-grid{display:grid;grid-template-columns:minmax(620px,1.45fr) minmax(360px,.82fr);gap:14px;padding:14px}.rot-map-wrap{display:flex;flex-direction:column;gap:10px}.rot-map{height:calc(100vh - 235px);min-height:560px;border:1px solid rgba(148,163,184,.14);border-radius:22px;background:linear-gradient(135deg,rgba(15,23,42,.78),rgba(2,6,23,.96));position:relative;overflow:hidden}#rot-map-el{position:absolute;inset:0}.rot-vehicle-icon{width:22px;height:22px;border-radius:8px;background:#22c55e;border:2px solid #dcfce7;box-shadow:0 0 0 7px rgba(34,197,94,.14);display:flex;align-items:center;justify-content:center;font-size:10px;color:#052e16;font-weight:1000}.rot-vehicle-icon.off{background:#ef4444;color:#fff;border-color:#fecaca}.rot-map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#94a3b8;text-align:center;padding:20px;z-index:2}.leaflet-tooltip.rot-tt{background:rgba(2,6,23,.92)!important;border:1px solid rgba(34,197,94,.35)!important;color:#f8fafc!important;border-radius:8px!important;font-size:11px!important;padding:4px 8px!important;font-weight:700!important;box-shadow:none!important}.leaflet-tooltip.rot-tt::before{border-top-color:rgba(2,6,23,.92)!important}.leaflet-control-attribution{background:rgba(2,6,23,.65)!important;color:#6b7280!important;font-size:10px!important}.leaflet-control-attribution a{color:#22c55e!important}.rot-map-hint{position:absolute;left:14px;bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;z-index:1000;pointer-events:none}.rot-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.82);border-radius:999px;padding:7px 10px;color:#cbd5e1;font-size:11px;font-weight:850}.rot-dot{width:9px;height:9px;border-radius:50%;display:inline-block}.rot-dot.veic{background:#22c55e}.rot-dot.ponto{background:#a78bfa}.rot-dot.urg{background:#f59e0b}.rot-dot.rota{background:#16a34a}.rot-side{display:flex;flex-direction:column;gap:14px;min-width:0}.rot-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.rot-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;min-height:78px}.rot-kpi span{display:block;color:#93c5fd;font-size:10px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.rot-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.rot-panel{border:1px solid rgba(148,163,184,.14);border-radius:20px;background:rgba(2,6,23,.36);overflow:hidden}.rot-panel h3{margin:0;padding:14px 16px;color:#fff;font-size:15px;border-bottom:1px solid rgba(148,163,184,.12);display:flex;justify-content:space-between;gap:8px}.rot-list{max-height:300px;overflow:auto}.rot-row{padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.10);display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;cursor:pointer}.rot-row:hover,.rot-row.active{background:rgba(34,197,94,.10)}.rot-row strong{display:block;color:#f8fafc;font-size:13px}.rot-row small{display:block;color:#94a3b8;margin-top:4px;line-height:1.35}.rot-badge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.rot-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.rot-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.rot-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.rot-alert{padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.10);display:grid;grid-template-columns:14px 1fr;gap:10px;align-items:start}.rot-alert-dot{width:9px;height:9px;border-radius:50%;background:#f59e0b;box-shadow:0 0 0 5px rgba(245,158,11,.12);margin-top:5px}.rot-alert strong{display:block;color:#fff;font-size:13px;margin-bottom:3px}.rot-alert small{display:block;color:#cbd5e1;line-height:1.35}.rot-empty{padding:26px;text-align:center;color:#94a3b8}.rot-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.rot-mini{border:1px solid rgba(148,163,184,.12);background:rgba(15,23,42,.42);border-radius:16px;padding:12px}.rot-mini span{display:block;color:#94a3b8;font-size:10px;text-transform:uppercase;font-weight:950;letter-spacing:.08em}.rot-mini strong{display:block;margin-top:6px;color:#fff;font-size:18px}.rot-form{display:grid;gap:10px;padding:14px}.rot-field{display:flex;flex-direction:column;gap:6px}.rot-field label{font-size:10px;color:#94a3b8;font-weight:950;letter-spacing:.08em;text-transform:uppercase}.rot-input{height:40px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.rot-form-actions{display:flex;gap:8px;justify-content:flex-end}.rot-row-rm{border:0;border-radius:10px;padding:6px 10px;font-weight:900;cursor:pointer;font-size:11px;background:rgba(239,68,68,.14);color:#fecaca}.rot-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.rot-toast.show{opacity:1;transform:translateY(0)}@media(max-width:1180px){.rot-grid{grid-template-columns:1fr}.rot-map{height:auto;min-height:520px}}@media(max-width:680px){.rot-toolbar{align-items:stretch}.rot-tools-left,.rot-tools-right{width:100%;display:grid;grid-template-columns:1fr}.rot-kpis,.rot-summary{grid-template-columns:1fr}.rot-map{min-height:420px}}
+      .rot-shell{color:#e2e2f0}.rot-head{margin-bottom:16px}.rot-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.rot-title{margin:8px 0 6px;font-size:clamp(24px,2.5vw,34px);letter-spacing:-.04em;color:#f8fafc}.rot-sub{max-width:1050px;color:#94a3b8;line-height:1.55;margin:0}.rot-sub code{color:#bbf7d0}.rot-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.12),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.rot-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.42)}.rot-tools-left,.rot-tools-right{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.rot-btn{border:0;border-radius:14px;min-height:42px;padding:0 16px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;white-space:nowrap}.rot-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.rot-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.rot-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.rot-btn:disabled{opacity:.55;cursor:not-allowed}.rot-select{height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.rot-grid{display:grid;grid-template-columns:minmax(620px,1.45fr) minmax(360px,.82fr);gap:14px;padding:14px}.rot-map-wrap{display:flex;flex-direction:column;gap:10px}.rot-map{height:calc(100vh - 235px);min-height:560px;border:1px solid rgba(148,163,184,.14);border-radius:22px;background:linear-gradient(135deg,rgba(15,23,42,.78),rgba(2,6,23,.96));position:relative;overflow:hidden}#rot-map-el{position:absolute;inset:0}.rot-vehicle-icon{width:22px;height:22px;border-radius:8px;background:#22c55e;border:2px solid #dcfce7;box-shadow:0 0 0 7px rgba(34,197,94,.14);display:flex;align-items:center;justify-content:center;font-size:10px;color:#052e16;font-weight:1000}.rot-vehicle-icon.off{background:#ef4444;color:#fff;border-color:#fecaca}.rot-map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#94a3b8;text-align:center;padding:20px;z-index:2}.leaflet-tooltip.rot-tt{background:rgba(2,6,23,.92)!important;border:1px solid rgba(34,197,94,.35)!important;color:#f8fafc!important;border-radius:8px!important;font-size:11px!important;padding:4px 8px!important;font-weight:700!important;box-shadow:none!important}.leaflet-tooltip.rot-tt::before{border-top-color:rgba(2,6,23,.92)!important}.leaflet-control-attribution{background:rgba(2,6,23,.65)!important;color:#6b7280!important;font-size:10px!important}.leaflet-control-attribution a{color:#22c55e!important}.rot-map-hint{position:absolute;left:14px;bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;z-index:1000;pointer-events:none}.rot-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.82);border-radius:999px;padding:7px 10px;color:#cbd5e1;font-size:11px;font-weight:850}.rot-dot{width:9px;height:9px;border-radius:50%;display:inline-block}.rot-dot.veic{background:#22c55e}.rot-dot.colab{background:#60a5fa}.rot-dot.ponto{background:#a78bfa}.rot-dot.urg{background:#f59e0b}.rot-dot.rota{background:#16a34a}.rot-side{display:flex;flex-direction:column;gap:14px;min-width:0}.rot-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.rot-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;min-height:78px}.rot-kpi span{display:block;color:#93c5fd;font-size:10px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.rot-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.rot-panel{border:1px solid rgba(148,163,184,.14);border-radius:20px;background:rgba(2,6,23,.36);overflow:hidden}.rot-panel h3{margin:0;padding:14px 16px;color:#fff;font-size:15px;border-bottom:1px solid rgba(148,163,184,.12);display:flex;justify-content:space-between;gap:8px}.rot-list{max-height:300px;overflow:auto}.rot-row{padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.10);display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;cursor:pointer}.rot-row:hover,.rot-row.active{background:rgba(34,197,94,.10)}.rot-row strong{display:block;color:#f8fafc;font-size:13px}.rot-row small{display:block;color:#94a3b8;margin-top:4px;line-height:1.35}.rot-badge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.rot-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.rot-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.rot-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.rot-alert{padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.10);display:grid;grid-template-columns:14px 1fr;gap:10px;align-items:start}.rot-alert-dot{width:9px;height:9px;border-radius:50%;background:#f59e0b;box-shadow:0 0 0 5px rgba(245,158,11,.12);margin-top:5px}.rot-alert strong{display:block;color:#fff;font-size:13px;margin-bottom:3px}.rot-alert small{display:block;color:#cbd5e1;line-height:1.35}.rot-empty{padding:26px;text-align:center;color:#94a3b8}.rot-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.rot-mini{border:1px solid rgba(148,163,184,.12);background:rgba(15,23,42,.42);border-radius:16px;padding:12px}.rot-mini span{display:block;color:#94a3b8;font-size:10px;text-transform:uppercase;font-weight:950;letter-spacing:.08em}.rot-mini strong{display:block;margin-top:6px;color:#fff;font-size:18px}.rot-form{display:grid;gap:10px;padding:14px}.rot-field{display:flex;flex-direction:column;gap:6px}.rot-field label{font-size:10px;color:#94a3b8;font-weight:950;letter-spacing:.08em;text-transform:uppercase}.rot-input{height:40px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.rot-form-actions{display:flex;gap:8px;justify-content:flex-end}.rot-row-rm{border:0;border-radius:10px;padding:6px 10px;font-weight:900;cursor:pointer;font-size:11px;background:rgba(239,68,68,.14);color:#fecaca}.rot-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.rot-toast.show{opacity:1;transform:translateY(0)}@media(max-width:1180px){.rot-grid{grid-template-columns:1fr}.rot-map{height:auto;min-height:520px}}@media(max-width:680px){.rot-toolbar{align-items:stretch}.rot-tools-left,.rot-tools-right{width:100%;display:grid;grid-template-columns:1fr}.rot-kpis,.rot-summary{grid-template-columns:1fr}.rot-map{min-height:420px}}
     </style>`;
 
   const state = {
@@ -21,6 +22,7 @@
     rotas: [],
     naoAlocados: [],
     semCoordenadas: [],
+    semGeocodificacao: [],
     totais: {},
     alertas: [],
     embarquesExtras: [],
@@ -144,6 +146,7 @@
     state.rotas = [];
     state.naoAlocados = [];
     state.semCoordenadas = [];
+    state.semGeocodificacao = [];
     state.totais = {};
     state.publicadoEm = null;
     state.rotaSelecionadaId = null;
@@ -160,7 +163,7 @@
     const ids = rotas.map(r => r.id);
     const { data: paradas, error: ppErr } = await supabase
       .from('frotas_rotas_paradas')
-      .select('id,rota_id,os_id,ordem,ponto_nome,embarque_texto,latitude,longitude,distancia_km_trecho,duracao_min_trecho')
+      .select('id,rota_id,os_id,ordem,tipo,colaborador_nome,ponto_nome,embarque_texto,latitude,longitude,distancia_km_trecho,duracao_min_trecho')
       .in('rota_id', ids)
       .order('ordem', { ascending: true });
     if (ppErr) throw ppErr;
@@ -171,6 +174,8 @@
       paradasPorRota.get(p.rota_id).push({
         ordem: p.ordem,
         os_id: p.os_id,
+        tipo: p.tipo || 'embarque',
+        colaborador_nome: p.colaborador_nome || null,
         ponto_nome: p.ponto_nome,
         embarque_texto: p.embarque_texto,
         lat: Number(p.latitude),
@@ -323,16 +328,18 @@
     visiveis.forEach(r => {
       r.paradas.forEach(p => {
         if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) return;
-        const urgent = p.os_id == null;
+        const isColab = p.tipo === 'colaborador';
         const selected = pointIds.has(`${r.__id}:${p.ordem}`);
         const marker = L.circleMarker([p.lat, p.lng], {
           radius: selected ? 7 : 5,
           color: '#fff',
           weight: 2,
-          fillColor: urgent ? '#f59e0b' : '#a78bfa',
+          fillColor: isColab ? '#60a5fa' : '#a78bfa',
           fillOpacity: 0.9,
         });
-        const titulo = `${p.ponto_nome || 'Parada'}${p.embarque_texto ? ' · ' + p.embarque_texto : ''}`;
+        const titulo = isColab
+          ? `Coleta: ${p.colaborador_nome || 'Colaborador'}${p.embarque_texto ? ' · ' + p.embarque_texto : ''}`
+          : `${p.ponto_nome || 'Destino'}${p.embarque_texto ? ' · ' + p.embarque_texto : ''}`;
         marker.bindTooltip(esc(titulo), { className: 'rot-tt' });
         _layerPontos.addLayer(marker);
         boundsPts.push([p.lat, p.lng]);
@@ -373,6 +380,7 @@
     state.rotas = (resp.rotas || []).map((r, i) => ({ ...r, __id: publicado ? `pub-${i}` : `preview-${i}` }));
     state.naoAlocados = resp.naoAlocados || [];
     state.semCoordenadas = resp.semCoordenadas || [];
+    state.semGeocodificacao = resp.semGeocodificacao || [];
     state.totais = resp.totais || {};
     state.rotaSelecionadaId = state.rotas[0]?.__id || null;
     _fitDone = false;
@@ -386,7 +394,7 @@
     render();
     try {
       const resp = await callEdgeFunction(_opts, ROTEIRIZAR_FUNCTION, {
-        maxParadas: 6,
+        maxParadas: 4,
         embarquesExtras: state.embarquesExtras,
         publicar: false,
       });
@@ -408,7 +416,7 @@
     render();
     try {
       const resp = await callEdgeFunction(_opts, ROTEIRIZAR_FUNCTION, {
-        maxParadas: 6,
+        maxParadas: 4,
         embarquesExtras: state.embarquesExtras,
         publicar: true,
       });
@@ -420,6 +428,28 @@
       state.busy = false;
       render();
     }
+  }
+
+  async function geocodificarEnderecos() {
+    if (state.busy) return;
+    state.busy = true;
+    render();
+    let ok = 0, erro = 0, restantes = Infinity;
+    try {
+      for (let i = 0; i < 10 && restantes !== 0; i++) {
+        const resp = await callEdgeFunction(_opts, GEOCODE_FUNCTION, { limite: 30 });
+        ok += resp.ok || 0;
+        erro += resp.erro || 0;
+        restantes = resp.restantes ?? 0;
+        if (!resp.processados) break;
+      }
+      toast(`Geocodificação: ${ok} endereço(s) resolvido(s)${erro ? `, ${erro} com erro` : ''}${restantes ? ` · ${restantes} restante(s)` : ''}.`);
+    } catch (e) {
+      toast(e?.message || 'Falha ao geocodificar endereços.', true);
+    } finally {
+      state.busy = false;
+    }
+    await roteirizar();
   }
 
   async function atualizarPosicoes() {
@@ -478,10 +508,15 @@
       state.alertas.push({ tipo: 'Sem sinal', texto: `${v.placa} · ${v.motorista !== '—' ? v.motorista : 'sem motorista vinculado'} sem posição recente do rastreador`, nivel: 'err' });
     });
     state.naoAlocados.slice(0, 6).forEach(n => {
-      state.alertas.push({ tipo: 'Embarque não alocado', texto: `${n.embarque || 'Embarque'} — ${n.motivo || 'sem motivo informado'}`, nivel: 'warn' });
+      const quem = n.colaborador_nome ? `${n.colaborador_nome}${n.embarque ? ' · ' + n.embarque : ''}` : (n.embarque || 'Embarque');
+      state.alertas.push({ tipo: 'Não alocado', texto: `${quem} — ${n.motivo || 'sem motivo informado'}`, nivel: 'warn' });
     });
     state.semCoordenadas.slice(0, 6).forEach(s => {
-      state.alertas.push({ tipo: 'Sem coordenadas', texto: `${s.embarque || 'Embarque'}${s.cliente ? ' · ' + s.cliente : ''}`, nivel: 'warn' });
+      const quem = s.colaborador_nome ? s.colaborador_nome + ' · ' : '';
+      state.alertas.push({ tipo: 'Sem ponto de embarque', texto: `${quem}${s.embarque || 'Embarque'}${s.cliente ? ' · ' + s.cliente : ''}`, nivel: 'warn' });
+    });
+    state.semGeocodificacao.slice(0, 6).forEach(s => {
+      state.alertas.push({ tipo: 'Endereço não geocodificado', texto: `${s.colaborador_nome}${s.cep ? ' · CEP ' + s.cep : ' · sem CEP cadastrado'}`, nivel: 'warn' });
     });
   }
 
@@ -499,7 +534,7 @@
       veiculosComPosicao: comPosicao,
       veiculosTotal: state.veiculos.length,
       embarques,
-      pendentes: state.naoAlocados.length + state.semCoordenadas.length,
+      pendentes: state.naoAlocados.length + state.semCoordenadas.length + state.semGeocodificacao.length,
       rotas: state.rotas.filter(r => r.paradas.length > 0).length,
       kmTotal,
       semSinal,
@@ -525,7 +560,9 @@
     }
     return `<div class="rot-panel"><h3><span>Rotas do dia</span><span class="rot-badge">${state.rotas.length}</span></h3><div class="rot-list">${state.rotas.map(r => {
       const badge = !r.paradas.length ? '<span class="rot-badge">Sem embarques hoje</span>' : (r.distancia_real ? '<span class="rot-badge ok">Real (OSRM)</span>' : '<span class="rot-badge warn">Estimativa</span>');
-      const detalhe = r.paradas.length ? `${r.paradas.length} paradas · ${br(r.km_total_estimado, 1)} km · ${fmtTempo(r.duracao_estimada_min)}` : 'Disponível, aguardando embarque';
+      const nColab = r.paradas.filter(p => p.tipo === 'colaborador').length;
+      const paradasTxt = nColab ? `${nColab} colaborador${nColab > 1 ? 'es' : ''}` : `${r.paradas.length} parada${r.paradas.length > 1 ? 's' : ''}`;
+      const detalhe = r.paradas.length ? `${paradasTxt} · ${br(r.km_total_estimado, 1)} km · ${fmtTempo(r.duracao_estimada_min)}` : 'Disponível, aguardando embarque';
       return `<div class="rot-row ${r.__id === state.rotaSelecionadaId ? 'active' : ''}" data-rota="${esc(r.__id)}"><div><strong>${esc(r.placa)} · ${esc(r.motorista || 'sem motorista')}</strong><small>${detalhe}</small></div>${badge}</div>`;
     }).join('')}</div></div>`;
   }
@@ -566,7 +603,11 @@
     const toggleDisabled = state.rotas.length ? '' : 'disabled';
     const busyAttr = state.busy ? 'disabled' : '';
 
-    root.querySelector('[data-tools-left]').innerHTML = `<button class="rot-btn primary" data-act="roteirizar" ${busyAttr}>${rotearLabel}</button><button class="rot-btn soft" data-act="novo">${state.mostrarFormEmbarque ? 'Cancelar embarque' : '+ Novo embarque'}</button><button class="rot-btn ghost" data-act="toggle-rotas" ${toggleDisabled}>${state.mostrarTodasRotas ? 'Ver rota selecionada' : 'Mostrar várias rotas'}</button><button class="rot-btn ghost" data-act="publicar" ${publicarDisabled}>Publicar rotas</button><button class="rot-btn ghost" data-act="atualizar" ${busyAttr}>${atualizarLabel}</button>`;
+    const geocodificarBtn = state.semGeocodificacao.length
+      ? `<button class="rot-btn ghost" data-act="geocodificar" ${busyAttr}>${state.busy ? 'Processando…' : `Geocodificar endereços (${state.semGeocodificacao.length})`}</button>`
+      : '';
+
+    root.querySelector('[data-tools-left]').innerHTML = `<button class="rot-btn primary" data-act="roteirizar" ${busyAttr}>${rotearLabel}</button><button class="rot-btn soft" data-act="novo">${state.mostrarFormEmbarque ? 'Cancelar embarque' : '+ Novo embarque'}</button><button class="rot-btn ghost" data-act="toggle-rotas" ${toggleDisabled}>${state.mostrarTodasRotas ? 'Ver rota selecionada' : 'Mostrar várias rotas'}</button><button class="rot-btn ghost" data-act="publicar" ${publicarDisabled}>Publicar rotas</button><button class="rot-btn ghost" data-act="atualizar" ${busyAttr}>${atualizarLabel}</button>${geocodificarBtn}`;
 
     const right = root.querySelector('[data-tools-right]');
     right.innerHTML = `<select class="rot-select" data-act="filtro"><option value="todos">Todos os veículos</option><option value="em_movimento">Em movimento</option><option value="parado">Parados</option><option value="sem_sinal">Sem sinal</option></select>`;
@@ -579,7 +620,7 @@
     const summary = root.querySelector('[data-summary]');
     if (summary) summary.innerHTML = summaryHtml(k);
     const hint = root.querySelector('[data-map-hint]');
-    if (hint) hint.innerHTML = `<span class="rot-chip"><span class="rot-dot veic"></span>Veículo</span><span class="rot-chip"><span class="rot-dot ponto"></span>Parada</span><span class="rot-chip"><span class="rot-dot urg"></span>Urgente</span><span class="rot-chip"><span class="rot-dot rota"></span>${state.mostrarTodasRotas ? `${state.rotas.length} rota(s) visíveis` : 'Rota selecionada'}</span>`;
+    if (hint) hint.innerHTML = `<span class="rot-chip"><span class="rot-dot veic"></span>Veículo</span><span class="rot-chip"><span class="rot-dot colab"></span>Coleta</span><span class="rot-chip"><span class="rot-dot ponto"></span>Destino</span><span class="rot-chip"><span class="rot-dot urg"></span>Urgente</span><span class="rot-chip"><span class="rot-dot rota"></span>${state.mostrarTodasRotas ? `${state.rotas.length} rota(s) visíveis` : 'Rota selecionada'}</span>`;
   }
 
   function updateSide(root) {
@@ -623,6 +664,7 @@
       if (act === 'roteirizar') roteirizar();
       else if (act === 'publicar') publicar();
       else if (act === 'atualizar') atualizarPosicoes();
+      else if (act === 'geocodificar') geocodificarEnderecos();
       else if (act === 'novo' || act === 'cancelar-embarque') toggleFormEmbarque();
       else if (act === 'salvar-embarque') {
         const form = root.querySelector('[data-embarque-form]');
