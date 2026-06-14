@@ -10,10 +10,8 @@ function localDate(date = new Date()) {
 }
 
 function dateOffset(days) {
-  const date = new Date();
-  date.setHours(12, 0, 0, 0);
-  date.setDate(date.getDate() + days);
-  return localDate(date);
+  const [year, month, day] = localDate().split('-').map(Number);
+  return localDate(new Date(Date.UTC(year, month - 1, day + days, 12)));
 }
 
 function applyLocalDefaults() {
