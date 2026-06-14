@@ -54,21 +54,31 @@ function itemIsAllowedByModules(item, allowedCodes) {
   return candidates.some((code) => allowedCodes.has(code));
 }
 
+function permissionRoute(item) {
+  const code = normalize(item?.code);
+  if (['financeiro_adiantamentos', 'financeiro_alimentacao', 'financeiro_despesas'].includes(code)) {
+    return { ...item, path: 'financeiro#despesas' };
+  }
+  return item;
+}
+
 function allowedItemsForContext(context) {
   if (context?.user?.is_master) {
-    return PANEL_MENU.flatMap((section) => section.items || []);
+    return PANEL_MENU.flatMap((section) => section.items || []).map(permissionRoute);
   }
 
   if (isGestorContext(context)) {
     const allowedSections = new Set(['inicio', 'gestor']);
     return PANEL_MENU
       .filter((section) => allowedSections.has(normalize(section.section)))
-      .flatMap((section) => section.items || []);
+      .flatMap((section) => section.items || [])
+      .map(permissionRoute);
   }
 
   const allowedCodes = buildModuleCodeSet(context);
   return PANEL_MENU.flatMap((section) => section.items || [])
-    .filter((item) => itemIsAllowedByModules(item, allowedCodes));
+    .filter((item) => itemIsAllowedByModules(item, allowedCodes))
+    .map(permissionRoute);
 }
 
 function getFirstAllowedPath(context) {
