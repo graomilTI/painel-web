@@ -90,7 +90,18 @@ function emailBodyText(e) {
     .trim();
 }
 
-const DADOS_LABELS = { contrato: 'Contrato', placa: 'Placa', os: 'OS', cnpj: 'CNPJ', cpf: 'CPF', valor: 'Valor' };
+const DADOS_LABELS = {
+  contrato: 'Contrato', placa: 'Placa', os: 'OS', cnpj: 'CNPJ', cpf: 'CPF', valor: 'Valor',
+  tipo_documento: 'Tipo de documento',
+  chave_nfe: 'Chave NF-e', numero_nf: 'Número NF', serie_nf: 'Série NF', data_emissao_nf: 'Emissão',
+  valor_nf: 'Valor da NF', emitente_nome: 'Emitente', emitente_cnpj: 'CNPJ emitente',
+  destinatario_nome: 'Destinatário', destinatario_cnpj: 'CNPJ/CPF destinatário',
+  numero_nfse: 'Número NFS-e', valor_servico: 'Valor do serviço',
+  prestador_nome: 'Prestador', prestador_cnpj: 'CNPJ prestador',
+  tomador_nome: 'Tomador', tomador_cnpj: 'CNPJ tomador',
+  vencimento: 'Vencimento', favorecido_nome: 'Favorecido', favorecido_documento: 'Documento do favorecido',
+  pagador_nome: 'Pagador', chave_pix: 'Chave PIX', numero_documento: 'Número do documento', banco: 'Banco'
+};
 
 function prettyKey(key) {
   return String(key).replace(/_/g, ' ').replace(/\b\p{L}/gu, (c) => c.toUpperCase());
@@ -110,6 +121,21 @@ function attachmentIcon(filename) {
   const ext = String(filename || '').split('.').pop().toLowerCase();
   return ATTACHMENT_ICONS[ext] || '📎';
 }
+
+function formatBytes(bytes) {
+  const n = Number(bytes);
+  if (!n) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const INTERPRETACAO_BADGES = {
+  OK: { icon: '✅', title: 'Dados extraídos automaticamente deste anexo' },
+  SEM_DADOS: { icon: '➖', title: 'Nenhum dado foi identificado neste anexo' },
+  SEM_IA: { icon: '⚠️', title: 'IA não configurada no worker para interpretar este anexo' },
+  ERRO: { icon: '❌', title: 'Falha ao interpretar este anexo' }
+};
 
 async function updateEmail(id, payload, userContext) {
   const { error } = await supabase.from('email_messages').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id);
@@ -166,7 +192,9 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-dl{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;margin:0;font-size:12px}
       .em-dl dt{color:#7c8aa3}.em-dl dd{margin:0;color:#e2e8f0;font-weight:800;word-break:break-word}
       .em-attachments{display:flex;flex-wrap:wrap;gap:8px}
-      .em-attachment{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.4);border-radius:10px;padding:7px 12px;font-size:12px;color:#cbd5e1}
+      .em-attachment{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.4);border-radius:10px;padding:7px 12px;font-size:12px;color:#cbd5e1;font-family:inherit;cursor:pointer}
+      .em-attachment:hover:not(:disabled){border-color:rgba(96,165,250,.38);background:rgba(37,99,235,.12);color:#f8fafc}
+      .em-attachment:disabled{cursor:default;opacity:.55}
       .em-letter{position:relative;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(248,250,252,.025);padding:18px 20px 18px 22px;overflow:hidden}
       .em-letter::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#60a5fa,rgba(96,165,250,0))}
       .em-letter pre{white-space:pre-wrap;word-break:break-word;color:#dbe4f3;line-height:1.7;font-size:13.5px;font-family:inherit;margin:0;max-height:420px;overflow:auto;padding-right:6px}
@@ -429,7 +457,16 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
 
         ${dadosEntries.length ? `<div class="em-extracted"><span class="em-section-label">Dados detectados</span><dl class="em-dl">${dadosEntries.map(([k, v]) => `<dt>${esc(DADOS_LABELS[k] || prettyKey(k))}</dt><dd>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>` : ''}
 
-        ${state.attachments.length ? `<div><span class="em-section-label">Anexos</span><div class="em-attachments">${state.attachments.map((a) => `<span class="em-attachment">${attachmentIcon(a.nome_arquivo)} ${esc(a.nome_arquivo)}</span>`).join('')}</div></div>` : ''}
+        ${state.attachments.length ? `<div><span class="em-section-label">Anexos</span><div class="em-attachments">${state.attachments.map((a) => {
+          const badge = INTERPRETACAO_BADGES[a.interpretacao_status];
+          const size = formatBytes(a.tamanho_bytes);
+          return `<button type="button" class="em-attachment" ${a.storage_path ? `data-attachment-path="${esc(a.storage_path)}"` : 'disabled title="Anexo não disponível para download"'}>
+            <span>${attachmentIcon(a.nome_arquivo)}</span>
+            <span>${esc(a.nome_arquivo)}</span>
+            ${size ? `<span class="em-muted">${esc(size)}</span>` : ''}
+            ${badge ? `<span title="${esc(badge.title)}">${badge.icon}</span>` : ''}
+          </button>`;
+        }).join('')}</div></div>` : ''}
 
         <div>
           <span class="em-section-label">Mensagem</span>
@@ -522,6 +559,18 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     if (row) selectEmail(row.dataset.emailId);
   });
   document.getElementById('emDetail').addEventListener('click', async (event) => {
+    const attachmentBtn = event.target.closest('[data-attachment-path]');
+    if (attachmentBtn) {
+      const win = window.open('', '_blank');
+      const { data, error } = await supabase.storage.from('email-anexos').createSignedUrl(attachmentBtn.dataset.attachmentPath, 300);
+      if (error) {
+        if (win) win.close();
+        return alert(`Erro ao abrir anexo: ${error.message}`);
+      }
+      if (win) win.location.href = data.signedUrl;
+      else window.open(data.signedUrl, '_blank');
+      return;
+    }
     const action = event.target.closest('[data-action]')?.dataset.action;
     if (!action || !state.selected) return;
     const next = action === 'resolved' ? 'RESOLVIDO' : action === 'archive' ? 'ARQUIVADO' : 'PENDENTE';

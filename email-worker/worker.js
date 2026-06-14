@@ -4,11 +4,15 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
 import OpenAI from 'openai';
+import { XMLParser } from 'fast-xml-parser';
+import pdfParse from 'pdf-parse';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const INTERVAL_SECONDS = Number(process.env.EMAIL_WORKER_INTERVAL_SECONDS || 180);
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const MAX_ANEXO_IA_BYTES = 8 * 1024 * 1024;
+const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env');
@@ -59,6 +63,116 @@ function extractData(content) {
     cpf: raw.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] || null,
     valor: raw.match(/R\$\s*[0-9.]+,[0-9]{2}/i)?.[0] || null
   };
+}
+
+function pickNonEmpty(obj) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (v !== null && v !== undefined && v !== '') out[k] = typeof v === 'object' ? v : String(v);
+  }
+  return out;
+}
+
+function interpretNfeXml(parsedXml) {
+  const proc = parsedXml.nfeProc || parsedXml.NFe || parsedXml;
+  const nfe = proc.NFe || proc;
+  const infNFe = nfe?.infNFe;
+  if (!infNFe) return null;
+  const ide = infNFe.ide || {};
+  const emit = infNFe.emit || {};
+  const dest = infNFe.dest || {};
+  const total = infNFe.total?.ICMSTot || {};
+  const chave = text(infNFe['@_Id'] || proc.protNFe?.infProt?.chNFe).replace(/^NFe/i, '');
+  return pickNonEmpty({
+    tipo_documento: 'NF-e',
+    chave_nfe: chave,
+    numero_nf: ide.nNF,
+    serie_nf: ide.serie,
+    data_emissao_nf: ide.dhEmi || ide.dEmi,
+    valor_nf: total.vNF,
+    emitente_nome: emit.xNome,
+    emitente_cnpj: emit.CNPJ,
+    destinatario_nome: dest.xNome,
+    destinatario_cnpj: dest.CNPJ || dest.CPF
+  });
+}
+
+function interpretNfseXml(parsedXml) {
+  const comp = parsedXml.CompNfse || parsedXml.ConsultarNfseResposta || parsedXml.GerarNfseResposta || parsedXml;
+  const nfse = comp?.Nfse?.InfNfse || comp?.InfNfse || comp?.Nfse;
+  if (!nfse) return null;
+  const decl = nfse.DeclaracaoPrestacaoServico?.InfDeclaracaoPrestacaoServico;
+  const servico = nfse.Servico || decl?.Servico;
+  const valores = nfse.ValoresNfse || servico?.Valores || {};
+  const prestador = nfse.PrestadorServico || decl?.Prestador || {};
+  const tomador = nfse.TomadorServico || servico?.Tomador || decl?.Tomador || {};
+  const prestadorId = prestador.IdentificacaoPrestador || {};
+  const tomadorId = tomador.IdentificacaoTomador?.CpfCnpj || tomador.IdentificacaoTomador || {};
+  return pickNonEmpty({
+    tipo_documento: 'NFS-e',
+    numero_nfse: nfse.Numero || decl?.Numero,
+    data_emissao_nf: nfse.DataEmissao || decl?.DataEmissao,
+    valor_servico: valores.ValorServicos || valores.ValorLiquidoNfse,
+    prestador_nome: prestador.RazaoSocial,
+    prestador_cnpj: prestadorId.Cnpj || prestador.Cnpj,
+    tomador_nome: tomador.RazaoSocial,
+    tomador_cnpj: tomadorId.Cnpj
+  });
+}
+
+function interpretXmlAttachment(buffer) {
+  try {
+    const xml = xmlParser.parse(buffer.toString('utf-8'));
+    return interpretNfeXml(xml) || interpretNfseXml(xml) || {};
+  } catch (err) {
+    console.warn('Falha ao interpretar XML do anexo:', err.message);
+    return {};
+  }
+}
+
+const ANEXO_IA_PROMPT = 'Extraia dados financeiros deste documento (boleto, comprovante de pagamento, recibo ou nota fiscal). Responda apenas JSON com os campos: tipo_documento (BOLETO, COMPROVANTE, RECIBO, NF-e, NFS-e ou OUTRO), valor (ex: "R$ 1.234,56"), vencimento (DD/MM/AAAA), favorecido_nome, favorecido_documento (CNPJ ou CPF), pagador_nome, chave_pix, numero_documento, banco. Use null para campos não encontrados na imagem/texto.';
+
+async function interpretAttachmentWithAI(attachment) {
+  if (!openai) return null;
+  const mime = (attachment.contentType || '').toLowerCase();
+  const buffer = attachment.content;
+  if (!buffer || buffer.length > MAX_ANEXO_IA_BYTES) return null;
+  try {
+    if (/^image\/(jpe?g|png|webp|gif)$/.test(mime)) {
+      const b64 = buffer.toString('base64');
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: ANEXO_IA_PROMPT },
+          { role: 'user', content: [
+            { type: 'text', text: 'Extraia os dados da imagem a seguir.' },
+            { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } }
+          ] }
+        ]
+      });
+      return pickNonEmpty(JSON.parse(response.choices?.[0]?.message?.content || '{}'));
+    }
+    if (mime === 'application/pdf') {
+      const { text: pdfText } = await pdfParse(buffer);
+      const clean = text(pdfText).replace(/\s+/g, ' ').slice(0, 6000);
+      if (clean.length < 30) return null;
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: ANEXO_IA_PROMPT },
+          { role: 'user', content: `Texto extraído do PDF:\n\n${clean}` }
+        ]
+      });
+      return pickNonEmpty(JSON.parse(response.choices?.[0]?.message?.content || '{}'));
+    }
+  } catch (err) {
+    console.warn('Falha ao interpretar anexo com IA:', err.message);
+  }
+  return null;
 }
 
 async function loadRules() {
@@ -137,18 +251,46 @@ async function saveAttachment(emailId, attachment) {
       contentType: attachment.contentType || 'application/octet-stream',
       upsert: false
     });
-    if (!error) stored = storagePath;
+    if (error) console.warn(`Falha ao salvar anexo ${filename} no storage:`, error.message);
+    else stored = storagePath;
   } catch (err) {
-    console.warn('Falha ao salvar anexo no storage:', err.message);
+    console.warn(`Falha ao salvar anexo ${filename} no storage:`, err.message);
   }
+
+  const mime = (attachment.contentType || '').toLowerCase();
+  let dadosExtraidos = {};
+  let status = null;
+  try {
+    if (mime === 'application/xml' || mime === 'text/xml' || /\.xml$/i.test(filename)) {
+      dadosExtraidos = interpretXmlAttachment(attachment.content);
+      status = Object.keys(dadosExtraidos).length ? 'OK' : 'SEM_DADOS';
+    } else if (/^image\/(jpe?g|png|webp|gif)$/.test(mime) || mime === 'application/pdf') {
+      const ai = await interpretAttachmentWithAI(attachment);
+      if (ai && Object.keys(ai).length) {
+        dadosExtraidos = ai;
+        status = 'OK';
+      } else {
+        status = openai ? 'SEM_DADOS' : 'SEM_IA';
+      }
+    }
+  } catch (err) {
+    console.warn(`Falha ao interpretar anexo ${filename}:`, err.message);
+    status = 'ERRO';
+  }
+
   await supabase.from('email_attachments').insert({
     email_id: emailId,
     nome_arquivo: filename,
     mime_type: attachment.contentType || null,
     tamanho_bytes: attachment.size || attachment.content?.length || null,
     storage_path: stored,
-    content_id: attachment.contentId || null
+    content_id: attachment.contentId || null,
+    dados_extraidos: dadosExtraidos,
+    interpretacao_status: status,
+    interpretado_em: status ? new Date().toISOString() : null
   });
+
+  return dadosExtraidos;
 }
 
 async function syncAccount(account, rules) {
@@ -218,8 +360,16 @@ async function syncAccount(account, rules) {
         }).select('id').single();
         if (error) throw error;
         inserted++;
+        const attachmentsDados = {};
         for (const attachment of parsed.attachments || []) {
-          await saveAttachment(saved.id, attachment);
+          const extracted = await saveAttachment(saved.id, attachment);
+          Object.assign(attachmentsDados, extracted);
+        }
+        if (Object.keys(attachmentsDados).length) {
+          await supabase.from('email_messages').update({
+            dados_detectados: { ...(cls.dados_detectados || {}), ...attachmentsDados },
+            updated_at: new Date().toISOString()
+          }).eq('id', saved.id);
         }
         if (account.auto_responder && cls.auto_responder && cls.resposta_sugerida && from.address) {
           await supabase.from('email_outbox').insert({
