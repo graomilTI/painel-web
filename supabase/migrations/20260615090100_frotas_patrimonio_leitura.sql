@@ -16,7 +16,9 @@ comment on column public.frotas_veiculos.patrimonio_dias_sem_leitura is
 create index if not exists idx_frotas_veiculos_patrimonio_codigo
   on public.frotas_veiculos (patrimonio_codigo);
 
-create or replace function public.sincronizar_frotas_veiculos_patrimonios()
+drop function if exists public.sincronizar_frotas_veiculos_patrimonios();
+
+create function public.sincronizar_frotas_veiculos_patrimonios()
 returns jsonb
 language plpgsql
 security definer
@@ -98,8 +100,7 @@ begin
            patrimonio_supervisao = p.supervisao,
            motorista_atual = coalesce(nullif(trim(p.funcionario), ''), v.motorista_atual),
            coordenacao = coalesce(nullif(trim(p.coordenacao), ''), v.coordenacao),
-           supervisao = coalesce(nullif(trim(p.supervisao), ''), v.supervisao),
-           updated_at = now()
+           supervisao = coalesce(nullif(trim(p.supervisao), ''), v.supervisao)
       from patrimonio_mais_recente p
      where regexp_replace(upper(coalesce(v.placa, '')), '[^A-Z0-9]', '', 'g') = p.placa_normalizada
     returning v.id
