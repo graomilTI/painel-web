@@ -30,12 +30,31 @@ export function applyPreviousWeekDefaults(root = document) {
   return true;
 }
 
+function triggerAutomaticSync(root = document) {
+  const startInput = root.querySelector('[data-sync-report-start]');
+  const endInput = root.querySelector('[data-sync-report-end]');
+  const syncButton = root.querySelector('[data-sync-bfleet-period]');
+  if (!startInput?.value || !endInput?.value || !syncButton) return false;
+  if (syncButton.dataset.autoSyncTriggered === '1') return true;
+
+  syncButton.dataset.autoSyncTriggered = '1';
+  window.setTimeout(() => {
+    if (!syncButton.isConnected || syncButton.disabled) return;
+    syncButton.click();
+  }, 0);
+  return true;
+}
+
 export function installPreviousWeekDefaults(root = document) {
   applyPreviousWeekDefaults(root);
+  triggerAutomaticSync(root);
   const target = root.querySelector('#pageContent') || root.body;
   if (!target || target.dataset.previousWeekDefaultsInstalled === '1') return;
 
-  const observer = new MutationObserver(() => applyPreviousWeekDefaults(root));
+  const observer = new MutationObserver(() => {
+    applyPreviousWeekDefaults(root);
+    triggerAutomaticSync(root);
+  });
   observer.observe(target, { childList: true, subtree: true });
   target.dataset.previousWeekDefaultsInstalled = '1';
 }
