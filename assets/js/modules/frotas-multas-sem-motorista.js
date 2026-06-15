@@ -72,15 +72,16 @@ function openMotoristaInMain(container, row, close) {
     archive.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  const lookup = autoNumber(row) === '—' ? row.placa : autoNumber(row);
   const search = container.querySelector('[data-search]');
   if (search) {
-    search.value = String(autoNumber(row) === '—' ? row.placa : autoNumber(row));
+    search.value = String(lookup || '');
     search.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   window.setTimeout(() => {
     const rows = [...container.querySelectorAll('[data-multas-table] tr')];
-    const target = rows.find((tableRow) => normalize(tableRow.textContent).includes(normalize(autoNumber(row))));
+    const target = rows.find((tableRow) => normalize(tableRow.textContent).includes(normalize(lookup)));
     target?.querySelector('[data-motorista]')?.click();
   }, 80);
 }
