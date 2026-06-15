@@ -3,14 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
-import OpenAI from 'openai';
 import { XMLParser } from 'fast-xml-parser';
 import pdfParse from 'pdf-parse';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const INTERVAL_SECONDS = Number(process.env.EMAIL_WORKER_INTERVAL_SECONDS || 180);
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 const MAX_ANEXO_IA_BYTES = 8 * 1024 * 1024;
 const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 
@@ -22,6 +20,23 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
 });
+
+// Carregado sob demanda: o pacote 'openai' usa um shim de detecção de runtime
+// (_shims/auto/runtime) que não resolve em Node 14, então só importamos se a
+// chave estiver configurada.
+let openaiClientPromise = null;
+function getOpenAI() {
+  if (!process.env.OPENAI_API_KEY) return Promise.resolve(null);
+  if (!openaiClientPromise) {
+    openaiClientPromise = import('openai')
+      .then(({ default: OpenAI }) => new OpenAI({ apiKey: process.env.OPENAI_API_KEY }))
+      .catch((err) => {
+        console.warn('Falha ao carregar pacote openai, seguindo só com regras:', err.message);
+        return null;
+      });
+  }
+  return openaiClientPromise;
+}
 
 function text(v) {
   return String(v || '').trim();
@@ -133,6 +148,7 @@ function interpretXmlAttachment(buffer) {
 const ANEXO_IA_PROMPT = 'Extraia dados financeiros deste documento (boleto, comprovante de pagamento, recibo ou nota fiscal). Responda apenas JSON com os campos: tipo_documento (BOLETO, COMPROVANTE, RECIBO, NF-e, NFS-e ou OUTRO), valor (ex: "R$ 1.234,56"), vencimento (DD/MM/AAAA), favorecido_nome, favorecido_documento (CNPJ ou CPF), pagador_nome, chave_pix, numero_documento, banco. Use null para campos não encontrados na imagem/texto.';
 
 async function interpretAttachmentWithAI(attachment) {
+  const openai = await getOpenAI();
   if (!openai) return null;
   const mime = (attachment.contentType || '').toLowerCase();
   const buffer = attachment.content;
@@ -212,6 +228,7 @@ function classifyByRules(message, rules) {
 }
 
 async function classifyWithAI(message, base) {
+  const openai = await getOpenAI();
   if (!openai) return base;
   const input = [
     `Assunto: ${message.subject}`,
@@ -270,7 +287,7 @@ async function saveAttachment(emailId, attachment) {
         dadosExtraidos = ai;
         status = 'OK';
       } else {
-        status = openai ? 'SEM_DADOS' : 'SEM_IA';
+        status = process.env.OPENAI_API_KEY ? 'SEM_DADOS' : 'SEM_IA';
       }
     }
   } catch (err) {
