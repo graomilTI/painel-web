@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { enhanceFrotasVeiculos } from './modules/frotas-veiculos-ui.js';
 import './modules/frotas-veiculos.js';
 
 initProtectedPage('Frotas · Veículos', (content, ctx) => {
@@ -8,4 +9,6 @@ initProtectedPage('Frotas · Veículos', (content, ctx) => {
     auth: ctx,
     user: ctx?.user || null
   });
+
+  enhanceFrotasVeiculos(content, { supabase });
 });
