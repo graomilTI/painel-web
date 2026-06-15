@@ -1,4 +1,35 @@
+import { reconcileMultaActions } from './frotas-multas-action-reconcile.js';
 import { installOneTimeMultasXlsx } from './frotas-multas-one-time-xlsx.js';
+
+function watchImportCompletion(container, supabase, button) {
+  let processing = false;
+  const observer = new MutationObserver(async () => {
+    if (processing) return;
+    const result = [...document.querySelectorAll('p')].find((element) => (
+      element.textContent.includes('multa(s) atualizada(s)')
+      && element.textContent.includes('ação(ões) concluída(s)')
+    ));
+    if (!result) return;
+
+    processing = true;
+    observer.disconnect();
+    button.disabled = true;
+    button.textContent = 'Conferindo ações...';
+
+    try {
+      const summary = await reconcileMultaActions(supabase);
+      result.textContent += ` Ações conciliadas: ${summary.dobrarConcluido} Dobrar concluída(s), ${summary.identificarConcluido} Identificar concluída(s) e ${summary.identificarPendente} Identificar pendente(s).`;
+      window.setTimeout(() => container.querySelector('[data-refresh]')?.click(), 300);
+      button.remove();
+    } catch (error) {
+      console.error('Falha ao conciliar ações das multas:', error);
+      result.textContent += ` Falha ao conciliar ações: ${error.message || 'erro desconhecido'}.`;
+      button.disabled = false;
+      button.textContent = 'Importar atualização XLSX';
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+}
 
 export function installTemporaryMultasUpload(container, supabase) {
   const toolbar = container.querySelector('.fm-toolbar');
@@ -28,17 +59,17 @@ export function installTemporaryMultasUpload(container, supabase) {
   button.textContent = 'Importar atualização XLSX';
   button.title = 'Atualização única dos status e ações das multas';
 
-  button.addEventListener('click', () => {
+  function openImporter() {
+    watchImportCompletion(container, supabase, button);
     const url = new URL(window.location.href);
     url.searchParams.set('atualizar-acoes-xlsx', '1');
     window.history.replaceState({}, '', url);
     installOneTimeMultasXlsx(container, supabase);
-  });
+  }
 
+  button.addEventListener('click', openImporter);
   toolbar.appendChild(button);
 
   const params = new URLSearchParams(window.location.search);
-  if (params.get('atualizar-acoes-xlsx') === '1') {
-    installOneTimeMultasXlsx(container, supabase);
-  }
+  if (params.get('atualizar-acoes-xlsx') === '1') openImporter();
 }
