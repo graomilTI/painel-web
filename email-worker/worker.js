@@ -4,7 +4,6 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
 import { XMLParser } from 'fast-xml-parser';
-import pdfParse from 'pdf-parse';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -171,6 +170,7 @@ async function interpretAttachmentWithAI(attachment) {
       return pickNonEmpty(JSON.parse(response.choices?.[0]?.message?.content || '{}'));
     }
     if (mime === 'application/pdf') {
+      const { default: pdfParse } = await import('pdf-parse');
       const { text: pdfText } = await pdfParse(buffer);
       const clean = text(pdfText).replace(/\s+/g, ' ').slice(0, 6000);
       if (clean.length < 30) return null;
