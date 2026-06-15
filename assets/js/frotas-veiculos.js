@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { enhanceFrotasVeiculos } from './modules/frotas-veiculos-ui.js';
+import { enhanceFrotasVeiculosXlsx } from './modules/frotas-veiculos-xlsx.js';
 import './modules/frotas-veiculos.js';
 
 initProtectedPage('Frotas · Veículos', (content, ctx) => {
@@ -11,4 +12,5 @@ initProtectedPage('Frotas · Veículos', (content, ctx) => {
   });
 
   enhanceFrotasVeiculos(content, { supabase });
+  enhanceFrotasVeiculosXlsx(content, { supabase });
 });
