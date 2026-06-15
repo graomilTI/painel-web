@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { installMultasStatusImporter } from './modules/frotas-multas-import-status.js';
 import './modules/frotas-multas.js';
 
 initProtectedPage('Frotas · Multas', (content, ctx) => {
@@ -8,4 +9,5 @@ initProtectedPage('Frotas · Multas', (content, ctx) => {
     auth: ctx,
     user: ctx?.user || null
   });
+  installMultasStatusImporter(content, supabase);
 });
