@@ -293,6 +293,30 @@ async function saveAttachment(emailId, attachment) {
   return dadosExtraidos;
 }
 
+const MAX_RFC822_DEPTH = 1;
+
+// Anexos com `related: true` são imagens referenciadas via cid: no HTML
+// (logos/ícones de assinatura) e fazem parte do corpo do e-mail, não são
+// anexos de verdade. E-mails encaminhados como anexo (message/rfc822) são
+// abertos para extrair os anexos reais de dentro.
+async function collectAttachments(parsed, depth = 0) {
+  const result = [];
+  for (const attachment of parsed.attachments || []) {
+    if (attachment.related) continue;
+    if (attachment.contentType === 'message/rfc822' && depth < MAX_RFC822_DEPTH) {
+      try {
+        const inner = await simpleParser(attachment.content);
+        result.push(...await collectAttachments(inner, depth + 1));
+      } catch (err) {
+        console.warn(`Falha ao abrir e-mail encaminhado anexado (${attachment.filename || 'sem nome'}):`, err.message);
+      }
+      continue;
+    }
+    result.push(attachment);
+  }
+  return result;
+}
+
 async function syncAccount(account, rules) {
   console.log(`Sincronizando ${account.email}...`);
   const client = new ImapFlow({
@@ -361,7 +385,7 @@ async function syncAccount(account, rules) {
         if (error) throw error;
         inserted++;
         const attachmentsDados = {};
-        for (const attachment of parsed.attachments || []) {
+        for (const attachment of await collectAttachments(parsed)) {
           const extracted = await saveAttachment(saved.id, attachment);
           Object.assign(attachmentsDados, extracted);
         }
