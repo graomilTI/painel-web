@@ -13,7 +13,7 @@
     "dotenv": "^16.4.5",
     "fast-xml-parser": "^4.5.0",
     "imapflow": "^1.0.164",
-    "mailparser": "^3.7.1",
+    "mailparser": "3.9.8",
     "nodemailer": "^6.9.15",
     "openai": "^4.67.3",
     "pdf-parse": "^1.1.1"
