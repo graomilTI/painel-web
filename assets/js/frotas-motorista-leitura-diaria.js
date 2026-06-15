@@ -128,16 +128,42 @@ async function persistMatches(originalFrom, matches) {
   }
 }
 
+async function persistUnmatched(originalFrom, rows) {
+  const ids = rows
+    .filter((row) => row?.id && (row.patrimonio_funcionario || row.status_cruzamento === 'MOTORISTA_IDENTIFICADO'))
+    .map((row) => row.id);
+  if (!ids.length) return;
+
+  const { error } = await originalFrom(EXCESSOS_TABLE)
+    .update({
+      patrimonio_funcionario: null,
+      status_cruzamento: 'PENDENTE_CONFERENCIA'
+    })
+    .in('id', ids);
+  if (error) console.warn('[FROTAS] Falha ao remover associação sem leitura diária:', error);
+}
+
 async function enrichExcessos(originalFrom, rows) {
-  const dates = [...new Set(rows.map((row) => dateOnly(row?.data_evento)).filter(Boolean))];
+  const openRows = rows.filter((row) => ['PENDENTE', 'GERADA'].includes(String(row?.status_notificacao || '').toUpperCase()));
+  const dates = [...new Set(openRows.map((row) => dateOnly(row?.data_evento)).filter(Boolean))];
   if (!dates.length) return rows;
 
   const indexes = await loadDailyReadings(originalFrom, dates);
   const matches = [];
+  const unmatched = [];
 
   const enriched = rows.map((row) => {
+    if (!openRows.includes(row)) return row;
     const reading = findReading(row, indexes);
-    if (!reading) return row;
+    if (!reading) {
+      unmatched.push(row);
+      return {
+        ...row,
+        patrimonio_funcionario: '',
+        motorista_planilha: '',
+        status_cruzamento: 'PENDENTE_CONFERENCIA'
+      };
+    }
 
     matches.push({ row, reading });
     return {
@@ -151,6 +177,7 @@ async function enrichExcessos(originalFrom, rows) {
   });
 
   await persistMatches(originalFrom, matches);
+  await persistUnmatched(originalFrom, unmatched);
   return enriched;
 }
 
