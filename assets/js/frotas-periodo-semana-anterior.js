@@ -19,6 +19,27 @@ function previousCompletedWeek(reference = new Date()) {
   };
 }
 
+function ensureImportedRecordsVisible() {
+  if (document.getElementById('frotasImportedRecordsVisible')) return;
+  const style = document.createElement('style');
+  style.id = 'frotasImportedRecordsVisible';
+  style.textContent = `
+    .speed-import-list{
+      max-height:none !important;
+      overflow:visible !important;
+    }
+    .speed-import-list .speed-import-filter-note{order:0}
+    .speed-import-list .speed-import-item{order:1}
+    .speed-import-list .speed-import-bulk{
+      order:2;
+      margin-top:12px;
+      padding-top:12px;
+      border-top:1px solid rgba(148,163,184,.14);
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 export function applyPreviousWeekDefaults(root = document) {
   const startInput = root.querySelector('[data-sync-report-start]');
   const endInput = root.querySelector('[data-sync-report-end]');
@@ -46,6 +67,7 @@ function triggerAutomaticSync(root = document) {
 }
 
 export function installPreviousWeekDefaults(root = document) {
+  ensureImportedRecordsVisible();
   applyPreviousWeekDefaults(root);
   triggerAutomaticSync(root);
   const target = root.querySelector('#pageContent') || root.body;
