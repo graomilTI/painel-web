@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { installDailyDriverResolution } from './frotas-motorista-leitura-diaria.js?v=20260615c';
+import { installDailyDriverResolution } from './frotas-motorista-leitura-diaria.js?v=20260615d';
 import './modules/frotas.js';
 
 installDailyDriverResolution(supabase);
