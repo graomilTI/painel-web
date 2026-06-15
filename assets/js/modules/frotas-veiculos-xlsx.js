@@ -132,12 +132,14 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'frotas-veiculos-xlsx-styles';
   style.textContent = `
-    .fv-xlsx-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 14px}
+    .fv-create-bar{align-items:center;gap:10px;flex-wrap:wrap}
+    .fv-xlsx-actions{display:flex;gap:10px;align-items:center;flex:1;flex-wrap:wrap;margin:0}
     .fv-xlsx-actions .fv-btn:disabled{opacity:.55;cursor:wait}
-    .fv-xlsx-note{color:#94a3b8;font-size:12px}
+    .fv-xlsx-note{color:#94a3b8;font-size:12px;margin-left:auto}
     .fv-xlsx-toast{position:fixed;right:22px;bottom:22px;z-index:10020;max-width:min(520px,calc(100vw - 44px));border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.97);color:#dcfce7;border-radius:14px;padding:12px 14px;font-weight:800;box-shadow:0 16px 45px rgba(0,0,0,.38);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}
     .fv-xlsx-toast.is-error{border-color:rgba(254,202,202,.35);background:rgba(127,29,29,.97);color:#fee2e2}
     .fv-xlsx-toast.show{opacity:1;transform:translateY(0)}
+    @media(max-width:760px){.fv-xlsx-actions{flex-basis:100%}.fv-xlsx-note{width:100%;margin-left:0}}
   `;
   document.head.appendChild(style);
 }
@@ -309,8 +311,8 @@ async function importVehicles(file, supabase, button, container) {
 }
 
 export function enhanceFrotasVeiculosXlsx(container, { supabase }) {
-  const firstToolbar = container.querySelector('.fv-toolbar');
-  if (!firstToolbar || !supabase || container.querySelector('[data-fv-xlsx-actions]')) return;
+  const createBar = container.querySelector('[data-fv-create-bar]');
+  if (!createBar || !supabase || container.querySelector('[data-fv-xlsx-actions]')) return;
 
   injectStyles();
   const actions = document.createElement('div');
@@ -322,7 +324,7 @@ export function enhanceFrotasVeiculosXlsx(container, { supabase }) {
     <input type="file" accept=".xlsx,.xls" data-vehicles-xlsx-file hidden>
     <span class="fv-xlsx-note">Atualiza somente veículos existentes; dados sincronizados permanecem protegidos.</span>
   `;
-  firstToolbar.before(actions);
+  createBar.appendChild(actions);
 
   const exportButton = actions.querySelector('[data-export-vehicles-xlsx]');
   const importButton = actions.querySelector('[data-import-vehicles-xlsx]');
