@@ -20,6 +20,15 @@ function plateVariants(value) {
   return [...variants];
 }
 
+function plateSearchValues(value) {
+  const values = new Set();
+  plateVariants(value).forEach((plate) => {
+    values.add(plate);
+    values.add(`${plate.slice(0, 3)}-${plate.slice(3)}`);
+  });
+  return [...values];
+}
+
 function dateOnly(value) {
   const raw = String(value || '').trim();
   const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -105,6 +114,42 @@ function findReading(row, indexes) {
   return null;
 }
 
+async function findLastReading(originalFrom, row) {
+  const date = dateOnly(row?.data_evento);
+  if (!date) return null;
+
+  const plateValues = plateSearchValues(row?.placa);
+  if (!plateValues.length) return null;
+  const plateFilter = plateValues.map((plate) => `identificacao.ilike.%${plate}%`).join(',');
+
+  const { data, error } = await originalFrom(LEITURAS_TABLE)
+    .select('patrimonio_codigo,funcionario,identificacao,coordenacao,supervisao,data_upload,ultima_leitura')
+    .or(plateFilter)
+    .lt('data_upload', `${nextDate(date)}T00:00:00`)
+    .not('funcionario', 'is', null)
+    .order('data_upload', { ascending: false })
+    .limit(20);
+  if (error) throw error;
+
+  return (data || []).find((reading) => {
+    const readingPlates = new Set(plateVariants(reading.identificacao));
+    return plateVariants(row.placa).some((plate) => readingPlates.has(plate));
+  }) || null;
+}
+
+async function resolveFallbackReadings(originalFrom, rows) {
+  const cache = new Map();
+  const resolved = new Map();
+
+  for (const row of rows) {
+    const key = `${dateOnly(row?.data_evento)}|${String(row?.patrimonio_codigo || '').trim().toUpperCase()}|${normalizePlate(row?.placa)}`;
+    if (!cache.has(key)) cache.set(key, findLastReading(originalFrom, row));
+    resolved.set(row, await cache.get(key));
+  }
+
+  return resolved;
+}
+
 async function persistMatches(originalFrom, matches) {
   const groups = new Map();
 
@@ -150,13 +195,32 @@ async function enrichExcessos(originalFrom, rows) {
 
   const indexes = await loadDailyReadings(originalFrom, dates);
   const matches = [];
-  const unmatched = [];
+  const exactUnmatched = [];
 
   const enriched = rows.map((row) => {
     if (!openRows.includes(row)) return row;
     const reading = findReading(row, indexes);
     if (!reading) {
-      unmatched.push(row);
+      exactUnmatched.push(row);
+      return row;
+    }
+
+    matches.push({ row, reading });
+    return {
+      ...row,
+      patrimonio_funcionario: cleanText(reading.funcionario),
+      patrimonio_codigo: cleanText(reading.patrimonio_codigo) || row.patrimonio_codigo,
+      coordenacao: cleanText(reading.coordenacao) || row.coordenacao,
+      supervisao: cleanText(reading.supervisao) || row.supervisao,
+      status_cruzamento: 'MOTORISTA_IDENTIFICADO'
+    };
+  });
+
+  const fallbackReadings = await resolveFallbackReadings(originalFrom, exactUnmatched);
+  const finalRows = enriched.map((row) => {
+    if (!exactUnmatched.includes(row)) return row;
+    const reading = fallbackReadings.get(row);
+    if (!reading) {
       return {
         ...row,
         patrimonio_funcionario: '',
@@ -176,9 +240,10 @@ async function enrichExcessos(originalFrom, rows) {
     };
   });
 
+  const unmatched = exactUnmatched.filter((row) => !fallbackReadings.get(row));
   await persistMatches(originalFrom, matches);
   await persistUnmatched(originalFrom, unmatched);
-  return enriched;
+  return finalRows;
 }
 
 export function installDailyDriverResolution(supabase) {
