@@ -6,10 +6,10 @@
   "scripts": {
     "once": "node worker.js --once",
     "start": "node worker.js",
-    "build": "esbuild worker.js --bundle --platform=node --target=node14 --format=cjs --outfile=worker.bundle.cjs"
+    "build": "esbuild worker.js --bundle --platform=node --target=node14 --format=cjs --alias:node:diagnostics_channel=./shims/diagnostics-channel.cjs --outfile=worker.bundle.cjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.4",
+    "@supabase/supabase-js": "2.45.4",
     "dotenv": "^16.4.5",
     "fast-xml-parser": "^4.5.0",
     "imapflow": "^1.0.164",
