@@ -1,5 +1,29 @@
 const STYLE_ID = 'frotas-veiculos-ui-styles';
 const TOTAL_COLUMNS = 11;
+const MERCOSUL_TO_DIGIT = Object.freeze({ A: '0', B: '1', C: '2', D: '3', E: '4', F: '5', G: '6', H: '7', I: '8', J: '9' });
+
+function normalizePlate(value) {
+  return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
+}
+
+function mercosulPlateKey(value) {
+  const plate = normalizePlate(value);
+  if (/^[A-Z]{3}[0-9][A-J][0-9]{2}$/.test(plate)) {
+    return `${plate.slice(0, 4)}${MERCOSUL_TO_DIGIT[plate[4]]}${plate.slice(5)}`;
+  }
+  return plate;
+}
+
+function isMercosulPlate(value) {
+  return /^[A-Z]{3}[0-9][A-J][0-9]{2}$/.test(normalizePlate(value));
+}
+
+function vehicleScore(vehicle) {
+  const fields = ['renavam', 'patrimonio_codigo', 'motorista_atual', 'empresa', 'nome', 'marca', 'modelo', 'coordenacao', 'supervisao'];
+  return (isMercosulPlate(vehicle.placa) ? 100 : 0)
+    + (vehicle.renavam ? 50 : 0)
+    + fields.reduce((score, field) => score + (vehicle[field] ? 5 : 0), 0);
+}
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -27,6 +51,7 @@ function injectStyles() {
     .fv-days.is-ok{background:#e7f7ee;color:#18794e}
     .fv-days.is-warn{background:#fff4d6;color:#8a6100}
     .fv-days.is-late{background:#fde8e7;color:#b42318}
+    .fv-plate-equivalent{display:block;margin-top:4px;color:#86efac;font-size:10px;font-weight:800;letter-spacing:.02em}
     .fv-table td:last-child .fv-btn{padding-left:10px;padding-right:10px}
     @media (max-width:760px){.fv-create-bar{margin-bottom:10px}.fv-form-actions{grid-column:1/-1}.fv-table{min-width:1320px!important}}
   `;
@@ -128,7 +153,39 @@ function buildDaysBadge(value) {
   return badge;
 }
 
-function applyVehicleColumns(tbody, vehiclesById) {
+function reconcileRenderedRows(tbody, vehiclesById) {
+  const groups = new Map();
+
+  tbody.querySelectorAll('tr').forEach((row) => {
+    const editButton = row.querySelector('[data-edit]');
+    if (!editButton) return;
+    const vehicle = vehiclesById.get(String(editButton.dataset.edit || ''));
+    const key = mercosulPlateKey(vehicle?.placa);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ row, vehicle: vehicle || {} });
+  });
+
+  groups.forEach((entries, key) => {
+    if (entries.length < 2) return;
+    entries.sort((a, b) => vehicleScore(b.vehicle) - vehicleScore(a.vehicle));
+    const [preferred, ...duplicates] = entries;
+    duplicates.forEach(({ row }) => row.remove());
+
+    const plateCell = preferred.row.children[0];
+    if (plateCell && !plateCell.querySelector('[data-fv-equivalent-plate]')) {
+      const note = document.createElement('small');
+      note.className = 'fv-plate-equivalent';
+      note.dataset.fvEquivalentPlate = 'true';
+      note.textContent = `Conciliada com ${key}`;
+      plateCell.appendChild(note);
+    }
+  });
+}
+
+function applyVehicleColumns(container, tbody, vehiclesById) {
+  reconcileRenderedRows(tbody, vehiclesById);
+
   tbody.querySelectorAll('tr').forEach((row) => {
     row.querySelector('[data-detran]')?.remove();
 
@@ -162,13 +219,19 @@ function applyVehicleColumns(tbody, vehiclesById) {
     }
     daysCell.replaceChildren(buildDaysBadge(vehicle.patrimonio_dias_sem_leitura));
   });
+
+  const visibleVehicles = tbody.querySelectorAll('[data-edit]').length;
+  const count = container.querySelector('[data-count]');
+  if (count) count.textContent = `${visibleVehicles} veículo(s) encontrado(s)`;
+
+  const uniqueTotal = new Set(Array.from(vehiclesById.values()).map((vehicle) => mercosulPlateKey(vehicle.placa)).filter(Boolean)).size;
+  const total = container.querySelector('[data-kpi-total]');
+  if (total) total.textContent = String(uniqueTotal);
 }
 
 async function loadVehicleMirror(supabase) {
-  const { data, error } = await supabase
-    .from('frotas_veiculos')
-    .select('id, patrimonio_codigo, patrimonio_dias_sem_leitura');
-
+  const fields = 'id, placa, renavam, patrimonio_codigo, patrimonio_dias_sem_leitura, motorista_atual, empresa, nome, marca, modelo, coordenacao, supervisao';
+  const { data, error } = await supabase.from('frotas_veiculos').select(fields);
   if (error) throw error;
   return new Map((data || []).map((vehicle) => [String(vehicle.id), vehicle]));
 }
@@ -196,7 +259,7 @@ export function enhanceFrotasVeiculos(container, { supabase }) {
     }
 
     observer.disconnect();
-    applyVehicleColumns(tbody, vehiclesById);
+    applyVehicleColumns(container, tbody, vehiclesById);
     observe();
   };
 
