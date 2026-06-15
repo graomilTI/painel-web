@@ -1,9 +1,11 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { installDailyDriverResolution } from './frotas-motorista-leitura-diaria.js?v=20260615d';
+import { installPrintDriverValidation } from './frotas-validacao-condutor-print.js?v=20260615a';
 import './modules/frotas.js';
 
 installDailyDriverResolution(supabase);
+installPrintDriverValidation(supabase);
 
 initProtectedPage('Frotas', (content, ctx) => {
   window.FROTAS.openHome(content, {
