@@ -194,41 +194,50 @@ function buildVolumeReport(elements) {
 }
 
 function buildNheReport(elements) {
-  const recentLimit = Math.max(2, Math.min(31, Number(elements.recentDays.value) || 5));
-  const minimumSequence = Math.max(2, Math.min(recentLimit, Number(elements.minimumSequence.value) || 2));
+  const minimumSequence = Math.max(2, Math.min(31, Number(elements.recentDays.value) || 3));
   const dates = Array.from(new Set(state.sourceRows.map((row) => isoDate(row.data)).filter(Boolean)))
     .sort()
-    .reverse()
-    .slice(0, recentLimit);
+    .reverse();
+  const dateIndexes = new Map(dates.map((date, index) => [date, index]));
   const groups = new Map();
 
   state.sourceRows.forEach((row) => {
     const os = clean(row.os);
     const date = isoDate(row.data);
-    if (!os || !date || !dates.includes(date)) return;
-    if (!groups.has(os)) groups.set(os, { example: row, dates: new Set() });
-    groups.get(os).dates.add(date);
+    if (!os || !date || !dateIndexes.has(date)) return;
+    if (!groups.has(os)) groups.set(os, { rowsByDate: new Map(), dates: new Set() });
+    const info = groups.get(os);
+    info.dates.add(date);
+    if (!info.rowsByDate.has(date)) info.rowsByDate.set(date, row);
   });
 
   const rows = [];
   groups.forEach((info, os) => {
-    const presence = dates.map((date) => info.dates.has(date));
-    if (!presence[0]) return;
+    const positions = Array.from(info.dates)
+      .map((date) => dateIndexes.get(date))
+      .sort((a, b) => a - b);
+    const sequences = [];
+    let current = [];
 
-    let count = 0;
-    let gapFound = false;
-    let invalid = false;
-    presence.forEach((present) => {
-      if (present) {
-        if (gapFound) invalid = true;
-        else count += 1;
-      } else if (count > 0) {
-        gapFound = true;
+    positions.forEach((position) => {
+      const previous = current[current.length - 1];
+      if (!current.length || position === previous + 1) {
+        current.push(position);
+      } else {
+        sequences.push(current);
+        current = [position];
       }
     });
-    if (invalid || count < minimumSequence) return;
+    if (current.length) sequences.push(current);
 
-    const row = info.example;
+    const qualifying = sequences
+      .filter((sequence) => sequence.length >= minimumSequence)
+      .sort((a, b) => b.length - a.length || a[0] - b[0]);
+    if (!qualifying.length) return;
+
+    const sequence = qualifying[0];
+    const sequenceDates = sequence.map((index) => dates[index]);
+    const row = info.rowsByDate.get(sequenceDates[0]);
     rows.push([
       row.supervisao,
       os,
@@ -236,8 +245,8 @@ function buildNheReport(elements) {
       row.cidade_embarque,
       row.classificador,
       row.motivo,
-      count,
-      dates.slice(0, count).map(formatDate).join(' a '),
+      sequence.length,
+      `${formatDate(sequenceDates[sequenceDates.length - 1])} a ${formatDate(sequenceDates[0])}`,
     ]);
   });
 
@@ -463,7 +472,10 @@ function setFeedback(elements, message, error = false) {
 function setBusy(elements, busy, message = '') {
   state.busy = busy;
   elements.generate.disabled = busy;
-  elements.fileLabel.classList.toggle('is-disabled', busy);
+  elements.databaseButton.disabled = busy;
+  elements.fileButton.disabled = busy;
+  elements.modeButtons.forEach((button) => { button.disabled = busy; });
+  elements.downloadAll.disabled = busy || !state.reportRows.length;
   if (message) setFeedback(elements, message);
 }
 
@@ -473,6 +485,9 @@ function renderMode(elements) {
   elements.volumeControls.hidden = !volume;
   elements.nheControls.hidden = volume;
   elements.databaseButton.hidden = !volume;
+  elements.fileButton.textContent = volume
+    ? 'Importar Resultado Diário'
+    : 'Importar relatório NHE';
   elements.fileHint.textContent = volume
     ? 'Resultado Diário (.xlsx). O arquivo local substitui temporariamente os dados do Supabase.'
     : 'Relatório NHE (.xlsx) com O.S., Data, Supervisão, Cliente, Cidade de Embarque, Classificador e Motivo.';
@@ -494,8 +509,8 @@ function injectStyles() {
   style.textContent = `
     .li-shell{color:#e2e2f0}.li-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:16px}.li-head h2{margin:0;color:#f8fafc;font-size:24px}.li-head p{margin:6px 0 0;color:#94a3b8;font-size:13px}
     .li-mode{display:flex;gap:8px;flex-wrap:wrap}.li-mode button{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.7);color:#cbd5e1;border-radius:10px;padding:9px 13px;font-weight:800;cursor:pointer}.li-mode button.active{background:#16a34a;color:#052e16;border-color:#22c55e}
-    .li-source{border-top:1px solid rgba(148,163,184,.14);padding-top:16px}.li-source-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.li-file-label.is-disabled{opacity:.45;pointer-events:none}.li-file-hint{color:#94a3b8;font-size:12px}
-    .li-controls{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin-top:14px}.li-field label{display:block;margin-bottom:5px;color:#bbf7d0;font-size:11px;font-weight:800;text-transform:uppercase}.li-field input{width:100%;box-sizing:border-box;min-height:40px;border-radius:10px;border:1px solid rgba(148,163,184,.2);background:#0d0d18;color:#e2e2f0;padding:8px 10px}
+    .li-source{border-top:1px solid rgba(148,163,184,.14);padding-top:16px}.li-source-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.li-file-hint{color:#94a3b8;font-size:12px}
+    .li-controls{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin-top:14px}.li-controls[hidden],.li-field[hidden]{display:none!important}.li-field label{display:block;margin-bottom:5px;color:#bbf7d0;font-size:11px;font-weight:800;text-transform:uppercase}.li-field input{width:100%;box-sizing:border-box;min-height:40px;border-radius:10px;border:1px solid rgba(148,163,184,.2);background:#0d0d18;color:#e2e2f0;padding:8px 10px}
     .li-actions{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:14px}.li-feedback{margin-top:12px;color:#86efac;font-size:12px}.li-feedback.is-error{color:#fca5a5}
     .li-report-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}.li-report-toolbar h3{margin:0;color:#f8fafc}.li-report-pages{display:grid;gap:20px}.li-empty{padding:28px;text-align:center;border:1px dashed rgba(148,163,184,.2);border-radius:14px;color:#94a3b8}
     .li-report-page{background:#fff;color:#111827;border-radius:8px;padding:16px;overflow:hidden}.li-report-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}.li-report-head h3{margin:0;font-size:16px;color:#111827}.li-report-head p{margin:4px 0 0;color:#4b5563;font-size:10px}.li-report-head>span{font-size:10px;color:#6b7280;white-space:nowrap}
@@ -520,20 +535,17 @@ initProtectedPage('Informativos - Logistica', async (content) => {
       <div class="li-source">
         <div class="li-source-row">
           <button class="btn" type="button" id="liLoadDatabase">Usar Resultado Diário importado</button>
-          <label class="btn btn-secondary li-file-label" id="liFileLabel">
-            Selecionar relatório
-            <input type="file" id="liFileInput" hidden />
-          </label>
+          <button class="btn btn-secondary" type="button" id="liFileButton">Importar Resultado Diário</button>
+          <input type="file" id="liFileInput" accept=".xlsx,.xls" hidden />
           <span class="li-file-hint" id="liFileHint"></span>
         </div>
         <div class="li-controls" id="liVolumeControls">
           <div class="li-field"><label>Data inicial</label><input type="date" id="liDateFrom" /></div>
           <div class="li-field"><label>Data final</label><input type="date" id="liDateTo" /></div>
-          <div class="li-field"><label>Mínimo de cargas</label><input type="number" id="liMinimumLoads" min="0" step="1" value="3" /></div>
+          <div class="li-field"><label>Mínimo de cargas</label><input type="number" id="liMinimumLoads" min="0" step="1" value="9" /></div>
         </div>
         <div class="li-controls" id="liNheControls" hidden>
-          <div class="li-field"><label>Datas recentes analisadas</label><input type="number" id="liRecentDays" min="2" max="31" value="5" /></div>
-          <div class="li-field"><label>Sequência mínima</label><input type="number" id="liMinimumSequence" min="2" max="31" value="2" /></div>
+          <div class="li-field"><label>Contagem de dias</label><input type="number" id="liRecentDays" min="2" max="31" value="3" /></div>
         </div>
         <div class="li-actions">
           <button class="btn" type="button" id="liGenerate">Gerar informativo</button>
@@ -552,7 +564,7 @@ initProtectedPage('Informativos - Logistica', async (content) => {
   const elements = {
     modeButtons: Array.from(content.querySelectorAll('[data-mode]')),
     databaseButton: content.querySelector('#liLoadDatabase'),
-    fileLabel: content.querySelector('#liFileLabel'),
+    fileButton: content.querySelector('#liFileButton'),
     fileInput: content.querySelector('#liFileInput'),
     fileHint: content.querySelector('#liFileHint'),
     volumeControls: content.querySelector('#liVolumeControls'),
@@ -561,7 +573,6 @@ initProtectedPage('Informativos - Logistica', async (content) => {
     dateTo: content.querySelector('#liDateTo'),
     minimumLoads: content.querySelector('#liMinimumLoads'),
     recentDays: content.querySelector('#liRecentDays'),
-    minimumSequence: content.querySelector('#liMinimumSequence'),
     generate: content.querySelector('#liGenerate'),
     feedback: content.querySelector('#liFeedback'),
     reportCount: content.querySelector('#liReportCount'),
@@ -574,6 +585,7 @@ initProtectedPage('Informativos - Logistica', async (content) => {
     renderMode(elements);
   }));
   elements.databaseButton.addEventListener('click', () => loadVolumeFromDatabase(elements));
+  elements.fileButton.addEventListener('click', () => elements.fileInput.click());
   elements.fileInput.addEventListener('change', () => handleFile(elements.fileInput.files?.[0], elements));
   elements.generate.addEventListener('click', () => {
     if (!state.sourceRows.length) return setFeedback(elements, 'Carregue uma fonte antes de gerar.', true);
@@ -601,5 +613,4 @@ initProtectedPage('Informativos - Logistica', async (content) => {
   });
 
   renderMode(elements);
-  await loadVolumeFromDatabase(elements);
 });
