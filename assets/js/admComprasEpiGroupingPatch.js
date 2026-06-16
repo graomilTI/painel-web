@@ -4,19 +4,16 @@ import { supabase } from './supabaseClient.js';
 // - Na aba SOLICITAÇÕES, esconde os EPIs pendentes.
 // - Na aba EPI, mostra apenas EPIs pendentes e agrupa por colaborador.
 // - Permite selecionar vários grupos para gerar uma compra/cotação consolidada.
-// - Depois que os EPIs avançam para cotação/compra, voltam para as abas padrão do fluxo.
+// - Permite ordenar os grupos por funcionário ou regional/supervisão.
 
 let painelComprasTabVisual = 'solicitacoes';
 let painelComprasClickInterno = false;
 let painelComprasAplicandoFiltro = false;
+let epiGroupSort = { field: 'funcionario', dir: 'asc' };
 const supervisaoGrupoCache = new Map();
 
 function normComprasEpi(value = '') {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
 function supervisaoValida(value = '') {
@@ -36,9 +33,7 @@ function valorCampo(obj = {}, nomes = []) {
   return '';
 }
 
-function isLinhaVazia(row) {
-  return row?.querySelector?.('.adm-cmp-empty');
-}
+function isLinhaVazia(row) { return row?.querySelector?.('.adm-cmp-empty'); }
 
 function isLinhaEpi(row) {
   if (!row || isLinhaVazia(row)) return false;
@@ -51,32 +46,21 @@ function isLinhaEpi(row) {
 function getColaboradorEpi(row) {
   const materialCell = row.children?.[4];
   if (!materialCell) return 'SEM COLABORADOR';
-
   const smalls = [...materialCell.querySelectorAll('small')]
     .map((el) => el.textContent.trim())
     .filter(Boolean)
     .filter((txt) => !/^tam\s*:/i.test(txt));
-
   return smalls[smalls.length - 1] || 'SEM COLABORADOR';
 }
 
-function getItemId(row) {
-  return row.querySelector('input[type="checkbox"][data-check]')?.dataset?.check || '';
-}
-
-function getQuantidade(row) {
-  return Number(String(row.children?.[3]?.textContent || '1').replace(/\D+/g, '') || 1);
-}
-
+function getItemId(row) { return row.querySelector('input[type="checkbox"][data-check]')?.dataset?.check || ''; }
+function getQuantidade(row) { return Number(String(row.children?.[3]?.textContent || '1').replace(/\D+/g, '') || 1); }
 function getValor(row) {
   const text = row.children?.[7]?.textContent || '0';
   const clean = text.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
   return Number(clean || 0);
 }
-
-function formatMoney(value) {
-  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+function formatMoney(value) { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
 
 function getMaterialResumo(row, nomeColaborador) {
   const cell = row.children?.[4];
@@ -94,19 +78,56 @@ function getSupervisaoCacheKey(nome, rows) {
   return `${normComprasEpi(nome)}|${ids}`;
 }
 
+function getRegionalFallback(group) {
+  const cacheKey = getSupervisaoCacheKey(group.nome, group.rows);
+  const cached = supervisaoGrupoCache.get(cacheKey);
+  if (cached) return cached;
+
+  const cell = group.rows?.[0]?.children?.[2];
+  const small = cell?.querySelector?.('small')?.textContent?.trim();
+  if (supervisaoValida(small)) return small;
+
+  return 'Não informada';
+}
+
+function compararTexto(a, b) {
+  const dir = epiGroupSort.dir === 'desc' ? -1 : 1;
+  return String(a || '').localeCompare(String(b || ''), 'pt-BR', { sensitivity: 'base', numeric: true }) * dir;
+}
+
+function ordenarGruposEpi(groups) {
+  return [...groups].sort((a, b) => {
+    if (epiGroupSort.field === 'regional') {
+      const byRegional = compararTexto(getRegionalFallback(a), getRegionalFallback(b));
+      if (byRegional) return byRegional;
+    }
+    return compararTexto(a.nome, b.nome);
+  });
+}
+
+function setSortEpi(field) {
+  if (epiGroupSort.field === field) {
+    epiGroupSort = { field, dir: epiGroupSort.dir === 'asc' ? 'desc' : 'asc' };
+  } else {
+    epiGroupSort = { field, dir: 'asc' };
+  }
+  aplicarFiltroVisualCompras();
+}
+
+function sortLabel(field) {
+  if (epiGroupSort.field !== field) return '↕';
+  return epiGroupSort.dir === 'asc' ? '↑' : '↓';
+}
+
 async function buscarSupervisaoColaborador(nome) {
   if (!nome || nome === 'SEM COLABORADOR') return '';
   const bases = ['colaborador_snapshot', 'colaboradores'];
   for (const base of bases) {
     try {
-      const { data, error } = await supabase
-        .from(base)
-        .select('*')
-        .ilike('nome', nome)
-        .limit(1);
+      const { data, error } = await supabase.from(base).select('*').ilike('nome', nome).limit(1);
       if (error) throw error;
       const row = data?.[0];
-      const sup = valorCampo(row, ['supervisao', 'supervisão', 'Supervisão', 'SUPERVISAO', 'SUPERVISÃO', 'supervisor', 'responsavel', 'responsável']);
+      const sup = valorCampo(row, ['supervisao', 'supervisão', 'Supervisão', 'SUPERVISAO', 'SUPERVISÃO', 'regional', 'coordenação', 'coordenacao', 'supervisor', 'responsavel', 'responsável']);
       if (supervisaoValida(sup)) return String(sup).trim();
     } catch (error) {
       console.warn(`[EPI compras supervisão ${base}]`, error);
@@ -119,40 +140,43 @@ async function buscarSupervisaoGrupo(nome, rows, target) {
   const ids = rows.map(getItemId).filter(Boolean);
   if (!target) return;
   const cacheKey = getSupervisaoCacheKey(nome, rows);
+  const setTarget = (texto) => {
+    target.textContent = `Supervisão: ${texto}`;
+    const tr = target.closest('[data-epi-group-header]');
+    if (tr) tr.dataset.epiRegional = texto;
+  };
+
   if (supervisaoGrupoCache.has(cacheKey)) {
-    target.textContent = `Supervisão: ${supervisaoGrupoCache.get(cacheKey)}`;
+    setTarget(supervisaoGrupoCache.get(cacheKey));
     return;
   }
 
   try {
     let texto = '';
-
     if (ids.length) {
       const { data, error } = await supabase
         .from('compras_itens')
-        .select('id,colaborador_supervisao,compras_solicitacoes(supervisao)')
+        .select('id,colaborador_supervisao,compras_solicitacoes(supervisao,coordenacao)')
         .in('id', ids);
       if (error) throw error;
 
       const supervisoes = [...new Set((data || [])
-        .flatMap((item) => [item.colaborador_supervisao, item.compras_solicitacoes?.supervisao])
+        .flatMap((item) => [item.colaborador_supervisao, item.compras_solicitacoes?.supervisao, item.compras_solicitacoes?.coordenacao])
         .filter(supervisaoValida)
         .map((value) => String(value).trim()))];
-
       texto = supervisoes.join(' / ');
     }
 
     if (!texto) texto = await buscarSupervisaoColaborador(nome);
     if (!texto) texto = 'Não informada';
-
     supervisaoGrupoCache.set(cacheKey, texto);
-    target.textContent = `Supervisão: ${texto}`;
+    setTarget(texto);
   } catch (error) {
     console.warn('[EPI compras supervisão]', error);
     const fallback = await buscarSupervisaoColaborador(nome);
     const texto = fallback || 'Não informada';
     supervisaoGrupoCache.set(cacheKey, texto);
-    target.textContent = `Supervisão: ${texto}`;
+    setTarget(texto);
   }
 }
 
@@ -192,17 +216,13 @@ function atualizarResumoSelecaoEpi() {
   const body = document.getElementById('admCmpBody');
   const toolbar = body?.querySelector('[data-epi-group-toolbar]');
   if (!body || !toolbar) return;
-
   const grupos = [...body.querySelectorAll('[data-epi-group-select]')];
   const gruposMarcados = grupos.filter((input) => input.checked).length;
   const selecionadas = linhasSelecionadasEpi(body);
   const totalUn = selecionadas.reduce((sum, row) => sum + getQuantidade(row), 0);
   const totalValor = selecionadas.reduce((sum, row) => sum + getValor(row), 0);
   const materiais = resumoMateriais(selecionadas).slice(0, 5);
-  const detalhe = materiais.length
-    ? materiais.map((m) => `${m.qtd}x ${m.material}`).join(' · ')
-    : 'Nenhum grupo selecionado';
-
+  const detalhe = materiais.length ? materiais.map((m) => `${m.qtd}x ${m.material}`).join(' · ') : 'Nenhum grupo selecionado';
   toolbar.querySelector('[data-epi-selected-summary]').textContent = `${gruposMarcados} grupo(s) · ${selecionadas.length} item(ns) · ${totalUn} unidade(s) · ${formatMoney(totalValor)}`;
   toolbar.querySelector('[data-epi-selected-materials]').textContent = detalhe;
 }
@@ -223,17 +243,13 @@ function criarToolbarGruposEpi(groups, colCount) {
           <button type="button" class="btn btn-small btn-secondary" data-epi-clear-groups>Limpar seleção</button>
         </div>
       </div>
-    </td>
-  `;
+    </td>`;
 
   tr.querySelector('[data-epi-select-all-groups]')?.addEventListener('click', (event) => {
     event.preventDefault();
     groups.forEach((group) => marcarRows(group.rows, true));
     setTimeout(() => {
-      document.querySelectorAll('[data-epi-group-select]').forEach((input) => {
-        input.checked = true;
-        input.indeterminate = false;
-      });
+      document.querySelectorAll('[data-epi-group-select]').forEach((input) => { input.checked = true; input.indeterminate = false; });
       document.querySelectorAll('[data-epi-group-status]').forEach((status) => {
         const total = Number(status.dataset.total || 0);
         status.textContent = `${total}/${total} selecionado(s)`;
@@ -247,18 +263,33 @@ function criarToolbarGruposEpi(groups, colCount) {
     event.preventDefault();
     groups.forEach((group) => marcarRows(group.rows, false));
     setTimeout(() => {
-      document.querySelectorAll('[data-epi-group-select]').forEach((input) => {
-        input.checked = false;
-        input.indeterminate = false;
-      });
-      document.querySelectorAll('[data-epi-group-status]').forEach((status) => {
-        status.textContent = 'Grupo fechado — detalhes na cotação';
-      });
+      document.querySelectorAll('[data-epi-group-select]').forEach((input) => { input.checked = false; input.indeterminate = false; });
+      document.querySelectorAll('[data-epi-group-status]').forEach((status) => { status.textContent = 'Grupo fechado — detalhes na cotação'; });
       document.querySelectorAll('[data-epi-group-check]').forEach((btn) => { btn.textContent = 'Selecionar grupo'; });
       atualizarResumoSelecaoEpi();
     }, 160);
   });
+  return tr;
+}
 
+function criarCabecalhoOrdenacaoEpi(colCount) {
+  const tr = document.createElement('tr');
+  tr.setAttribute('data-epi-sort-header', '1');
+  tr.innerHTML = `
+    <td colspan="${colCount}" style="background:rgba(30,41,59,.96);border-bottom:1px solid rgba(148,163,184,.28);padding:0">
+      <div style="display:grid;grid-template-columns:minmax(240px,1fr) minmax(180px,.7fr) 150px 170px;gap:0;align-items:center;font-size:12px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#cbd5e1">
+        <button type="button" data-epi-sort="funcionario" style="all:unset;cursor:pointer;padding:10px 14px;color:#e2e8f0">Funcionário ${sortLabel('funcionario')}</button>
+        <button type="button" data-epi-sort="regional" style="all:unset;cursor:pointer;padding:10px 14px;color:#e2e8f0">Regional/Supervisão ${sortLabel('regional')}</button>
+        <div style="padding:10px 14px;text-align:right">Valor</div>
+        <div style="padding:10px 14px;text-align:right">Ação</div>
+      </div>
+    </td>`;
+  tr.querySelectorAll('[data-epi-sort]').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      setSortEpi(event.currentTarget.dataset.epiSort);
+    });
+  });
   return tr;
 }
 
@@ -273,6 +304,8 @@ function criarLinhaGrupo(nome, rows, colCount) {
   const tr = document.createElement('tr');
   tr.className = 'adm-cmp-epi-group-row';
   tr.setAttribute('data-epi-group-header', '1');
+  tr.dataset.epiFuncionario = nome;
+  tr.dataset.epiRegional = getRegionalFallback({ nome, rows });
   tr.innerHTML = `
     <td colspan="${colCount}" style="background:rgba(16,185,129,.11);border-top:1px solid rgba(74,222,128,.35);border-bottom:1px solid rgba(74,222,128,.2);padding:12px 14px">
       <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
@@ -280,7 +313,7 @@ function criarLinhaGrupo(nome, rows, colCount) {
           <input type="checkbox" data-epi-group-select aria-label="Selecionar grupo ${nome}" style="margin-top:3px;transform:scale(1.15)">
           <div>
             <strong style="color:#bbf7d0">EPI — ${nome}</strong>
-            <div data-epi-supervisao style="font-size:12px;color:#fde68a;margin-top:4px;font-weight:700">Supervisão: carregando...</div>
+            <div data-epi-supervisao style="font-size:12px;color:#fde68a;margin-top:4px;font-weight:700">Supervisão: ${tr.dataset.epiRegional}</div>
             <div style="font-size:12px;color:#94a3b8;margin-top:4px">${totalItens} item(ns) · ${totalUn} unidade(s) · ${materiais.join(' · ')}</div>
             <div data-epi-group-status data-total="${totalItens}" style="font-size:12px;color:#bbf7d0;margin-top:4px">${selecionados ? `${selecionados}/${totalItens} selecionado(s)` : 'Grupo fechado — detalhes na cotação'}</div>
           </div>
@@ -290,8 +323,7 @@ function criarLinhaGrupo(nome, rows, colCount) {
           <button type="button" class="btn btn-small btn-secondary" data-epi-group-check>${allSelected ? 'Desmarcar grupo' : 'Selecionar grupo'}</button>
         </div>
       </div>
-    </td>
-  `;
+    </td>`;
 
   buscarSupervisaoGrupo(nome, rows, tr.querySelector('[data-epi-supervisao]'));
 
@@ -319,24 +351,20 @@ function criarLinhaGrupo(nome, rows, colCount) {
     const status = tr.querySelector('[data-epi-group-status]');
     const select = tr.querySelector('[data-epi-group-select]');
     btn.textContent = shouldCheck ? 'Desmarcar grupo' : 'Selecionar grupo';
-    if (select) {
-      select.checked = shouldCheck;
-      select.indeterminate = false;
-    }
+    if (select) { select.checked = shouldCheck; select.indeterminate = false; }
     if (status) status.textContent = shouldCheck ? `${rows.length}/${rows.length} selecionado(s)` : 'Grupo fechado — detalhes na cotação';
     atualizarResumoSelecaoEpi();
   });
-
   return tr;
 }
 
 function limparAgrupamentos(body) {
-  body?.querySelectorAll('[data-epi-group-header],[data-epi-group-toolbar]').forEach((row) => row.remove());
+  body?.querySelectorAll('[data-epi-group-header],[data-epi-group-toolbar],[data-epi-sort-header]').forEach((row) => row.remove());
 }
 
 function linhasBase(body) {
   return [...(body?.querySelectorAll(':scope > tr') || [])]
-    .filter((row) => !row.hasAttribute('data-epi-group-header') && !row.hasAttribute('data-epi-group-toolbar'));
+    .filter((row) => !row.hasAttribute('data-epi-group-header') && !row.hasAttribute('data-epi-group-toolbar') && !row.hasAttribute('data-epi-sort-header'));
 }
 
 function mostrarMensagemVazia(body, texto) {
@@ -370,7 +398,6 @@ function aplicarAbaEpi(body) {
   body.dataset.epiGroupingRunning = '1';
   const colCount = rows[0]?.children?.length || 9;
   const groups = new Map();
-
   epiRows.forEach((row) => {
     row.style.display = 'none';
     const colab = getColaboradorEpi(row);
@@ -378,19 +405,16 @@ function aplicarAbaEpi(body) {
     if (!groups.has(key)) groups.set(key, { nome: colab || 'SEM COLABORADOR', rows: [] });
     groups.get(key).rows.push(row);
   });
-
   outrosRows.forEach((row) => { row.style.display = 'none'; });
 
-  const groupList = [...groups.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const groupList = ordenarGruposEpi(groups.values());
   const frag = document.createDocumentFragment();
   frag.appendChild(criarToolbarGruposEpi(groupList, colCount));
+  frag.appendChild(criarCabecalhoOrdenacaoEpi(colCount));
 
   groupList.forEach((group) => {
     frag.appendChild(criarLinhaGrupo(group.nome, group.rows, colCount));
-    group.rows.forEach((row) => {
-      row.style.display = 'none';
-      frag.appendChild(row);
-    });
+    group.rows.forEach((row) => { row.style.display = 'none'; frag.appendChild(row); });
   });
 
   outrosRows.forEach((row) => frag.appendChild(row));
@@ -403,12 +427,9 @@ function aplicarFiltroVisualCompras() {
   if (painelComprasAplicandoFiltro) return;
   const body = document.getElementById('admCmpBody');
   if (!body || body.dataset.epiGroupingRunning === '1') return;
-
-  if (painelComprasTabVisual === 'epi') {
-    aplicarAbaEpi(body);
-  } else if (painelComprasTabVisual === 'solicitacoes') {
-    aplicarAbaSolicitacoes(body);
-  } else {
+  if (painelComprasTabVisual === 'epi') aplicarAbaEpi(body);
+  else if (painelComprasTabVisual === 'solicitacoes') aplicarAbaSolicitacoes(body);
+  else {
     limparAgrupamentos(body);
     linhasBase(body).forEach((row) => { row.style.display = ''; });
   }
@@ -419,19 +440,33 @@ function atualizarTabsVisual() {
   if (!tabs) return;
   const epiBtn = tabs.querySelector('[data-tab-epi-exclusivo]');
   const tabButtons = [...tabs.querySelectorAll('[data-tab]')];
-
   if (painelComprasTabVisual === 'epi') {
     tabButtons.forEach((btn) => btn.classList.remove('active'));
     epiBtn?.classList.add('active');
-  } else {
-    epiBtn?.classList.remove('active');
-  }
+  } else epiBtn?.classList.remove('active');
+}
+
+function instalarOrdenacaoNoCabecalhoOriginal() {
+  const table = document.querySelector('.adm-cmp-table');
+  const ths = table ? [...table.querySelectorAll('thead th')] : [];
+  const bind = (index, field, title) => {
+    const th = ths[index];
+    if (!th || th.dataset.epiSortBound === field) return;
+    th.dataset.epiSortBound = field;
+    th.title = title;
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      if (painelComprasTabVisual !== 'epi') return;
+      setSortEpi(field);
+    });
+  };
+  bind(2, 'regional', 'Ordenar grupos de EPI por regional/supervisão');
+  bind(4, 'funcionario', 'Ordenar grupos de EPI por nome do funcionário');
 }
 
 function instalarAbaEpi() {
   const tabs = document.querySelector('.adm-cmp-tabs');
   if (!tabs || tabs.querySelector('[data-tab-epi-exclusivo]')) return;
-
   const solicitacoesBtn = tabs.querySelector('[data-tab="solicitacoes"]');
   if (!solicitacoesBtn) return;
 
@@ -447,20 +482,14 @@ function instalarAbaEpi() {
     solicitacoesBtn.click();
     painelComprasClickInterno = false;
     painelComprasTabVisual = 'epi';
-    setTimeout(() => {
-      atualizarTabsVisual();
-      aplicarFiltroVisualCompras();
-    }, 120);
+    setTimeout(() => { atualizarTabsVisual(); aplicarFiltroVisualCompras(); }, 120);
   });
 
   tabs.querySelectorAll('[data-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (painelComprasClickInterno) return;
       painelComprasTabVisual = btn.dataset.tab || 'solicitacoes';
-      setTimeout(() => {
-        atualizarTabsVisual();
-        aplicarFiltroVisualCompras();
-      }, 120);
+      setTimeout(() => { atualizarTabsVisual(); aplicarFiltroVisualCompras(); }, 120);
     });
   });
 }
@@ -469,21 +498,18 @@ function iniciarAgrupamentoEpiCompras() {
   const aplicar = () => {
     try {
       instalarAbaEpi();
+      instalarOrdenacaoNoCabecalhoOriginal();
       atualizarTabsVisual();
       aplicarFiltroVisualCompras();
     } catch (error) {
       console.warn('[EPI compras agrupamento]', error);
     }
   };
-
   const observer = new MutationObserver(() => setTimeout(aplicar, 120));
   observer.observe(document.body, { childList: true, subtree: true });
   setInterval(aplicar, 2500);
   aplicar();
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', iniciarAgrupamentoEpiCompras, { once: true });
-} else {
-  iniciarAgrupamentoEpiCompras();
-}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciarAgrupamentoEpiCompras, { once: true });
+else iniciarAgrupamentoEpiCompras();
