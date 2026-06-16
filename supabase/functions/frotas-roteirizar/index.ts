@@ -35,6 +35,10 @@ function normalizePlate(v: unknown): string {
   return cleanStr(v).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
 }
 
+function normalizeCep(v: unknown): string {
+  return String(v ?? '').replace(/\D/g, '');
+}
+
 function hasGeo(lat: unknown, lng: unknown): boolean {
   return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
 }
@@ -82,6 +86,7 @@ type PontoEmbarque = {
 };
 
 type PontoEmbarqueNorm = PontoEmbarque & {
+  _id: number;
   _uf: string;
   _cidade: string;
   _nome: string;
@@ -98,6 +103,7 @@ function precomputePontos(pontos: PontoEmbarque[]): PontoEmbarqueNorm[] {
     if (!hasGeo(p.latitude, p.longitude)) continue;
     out.push({
       ...p,
+      _id: out.length,
       _uf: normalize(p.uf),
       _cidade: normalize(p.cidade),
       _nome: normalize(p.nome_local || p.tipo_local || ''),
@@ -128,16 +134,6 @@ function bestPontoForOs(row: { embarque?: string | null; cliente?: string | null
     if (score >= 120 && (!best || score > best.score)) best = { ponto: p, score };
   }
   return best?.ponto || null;
-}
-
-function resolveUfByProximity(lat: number, lng: number, pontos: PontoEmbarqueNorm[]): string {
-  let bestUf = '';
-  let bestDist = Infinity;
-  for (const p of pontos) {
-    const d = haversineKm(lat, lng, p._lat, p._lng);
-    if (d != null && d < bestDist) { bestDist = d; bestUf = p._uf; }
-  }
-  return bestUf;
 }
 
 // --- OSRM (rota real de estrada, com fallback haversine) ---
@@ -226,14 +222,16 @@ function twoOpt(route: number[], matrix: Matrix): number[] {
 
 // --- Tipos de domínio ---
 
-type EmbarqueResolvido = {
-  os_id: string | null;
+// Um "pickup" = um colaborador a buscar no endereço de casa, com o ponto de
+// embarque (destino) já resolvido a partir da OS à qual ele está vinculado.
+type Pickup = {
+  colaborador_nome: string;
+  os_id: string;
+  cliente: string | null;
   embarque: string;
-  cliente?: string | null;
-  ponto_nome: string;
   lat: number;
   lng: number;
-  uf: string;
+  ponto: PontoEmbarqueNorm;
 };
 
 type Veiculo = {
@@ -250,7 +248,8 @@ Deno.serve(async (req) => {
   try {
     const body = await readBody(req);
     const dataStr = cleanStr((body as any)?.data) || todayStr();
-    const maxParadas = Math.max(1, Math.min(20, Number((body as any)?.maxParadas) || 6));
+    // Capacidade fixa: até 4 colaboradores por veículo (5 pessoas com o motorista).
+    const MAX_COLAB = Math.max(1, Math.min(4, Number((body as any)?.maxParadas) || 4));
     const publicar = Boolean((body as any)?.publicar);
     const embarquesExtras = Array.isArray((body as any)?.embarquesExtras) ? (body as any).embarquesExtras : [];
 
@@ -266,15 +265,17 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // 1) Embarques candidatos (OS ativas, não finalizadas/devolvidas)
+    // 1) OS ativas (não finalizadas/devolvidas)
     const { data: osRows, error: osErr } = await supabase
       .from('operacional_os')
       .select('id, embarque, cliente, supervisao')
       .eq('situacao', 'Ativo')
       .or('status_logistica.is.null,status_logistica.not.in.(FINALIZADA,DEVOLVIDA)');
     if (osErr) throw osErr;
+    const osById = new Map<string, { embarque: string | null; cliente: string | null; supervisao: string | null }>();
+    for (const row of (osRows || [])) osById.set(row.id, row as any);
 
-    // 2) Pontos georreferenciados
+    // 2) Pontos georreferenciados (destinos possíveis)
     const { data: pontosRaw, error: pontosErr } = await supabase
       .from('operacional_pontos_embarque')
       .select('nome_local,cidade,uf,supervisao,coordenacao,tipo_local,latitude,longitude')
@@ -282,44 +283,99 @@ Deno.serve(async (req) => {
     if (pontosErr) throw pontosErr;
     const pontos = precomputePontos((pontosRaw || []) as PontoEmbarque[]);
 
-    // 3) Resolver coordenadas de cada OS
-    const embarques: EmbarqueResolvido[] = [];
-    const semCoordenadas: Array<{ os_id: string; embarque: string; cliente: string | null }> = [];
+    // 3) Vínculos colaborador <-> OS ativa, 1 por colaborador (vínculo mais recente)
+    const { data: vinculosRaw, error: vincErr } = await supabase
+      .from('operacional_os_colaboradores')
+      .select('os_id,colaborador_key,colaborador_nome,created_at')
+      .limit(2000);
+    if (vincErr) throw vincErr;
 
-    for (const row of (osRows || [])) {
-      const ponto = bestPontoForOs(row as any, pontos);
-      if (!ponto) {
-        semCoordenadas.push({ os_id: row.id, embarque: row.embarque || '', cliente: row.cliente || null });
+    const vinculosOrdenados = (vinculosRaw || [])
+      .filter((v) => osById.has(v.os_id))
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+
+    const vinculoPorColaborador = new Map<string, { os_id: string; colaborador_nome: string }>();
+    for (const v of vinculosOrdenados) {
+      const key = normalize(v.colaborador_key);
+      if (!key || vinculoPorColaborador.has(key)) continue;
+      vinculoPorColaborador.set(key, { os_id: v.os_id, colaborador_nome: cleanStr(v.colaborador_nome || v.colaborador_key) });
+    }
+
+    // 4) Endereços dos colaboradores ativos + cache de geocodificação por CEP
+    const { data: colabsRaw, error: colabErr } = await supabase
+      .from('colaboradores')
+      .select('nome,cep,cidade,estado')
+      .eq('situacao', 'Ativo')
+      .limit(3000);
+    if (colabErr) throw colabErr;
+
+    const colabPorNome = new Map<string, { cep: string; cidade: string; estado: string }>();
+    for (const c of (colabsRaw || [])) {
+      colabPorNome.set(normalize(c.nome), { cep: cleanStr(c.cep), cidade: cleanStr(c.cidade), estado: cleanStr(c.estado) });
+    }
+
+    const cepsNecessarios = new Set<string>();
+    for (const [nomeKey] of vinculoPorColaborador) {
+      const cepNorm = normalizeCep(colabPorNome.get(nomeKey)?.cep);
+      if (cepNorm.length === 8) cepsNecessarios.add(cepNorm);
+    }
+
+    const { data: geoRaw, error: geoErr } = await supabase
+      .from('geocode_cache')
+      .select('chave,latitude,longitude,status')
+      .in('chave', cepsNecessarios.size ? [...cepsNecessarios] : ['__none__']);
+    if (geoErr) throw geoErr;
+
+    const geoPorCep = new Map<string, { lat: number; lng: number }>();
+    for (const g of (geoRaw || [])) {
+      if (g.status === 'ok' && hasGeo(g.latitude, g.longitude)) {
+        geoPorCep.set(g.chave, { lat: Number(g.latitude), lng: Number(g.longitude) });
+      }
+    }
+
+    // 5) Montar pickups: 1 por colaborador, com endereço geocodificado + ponto de
+    // embarque (destino) resolvido a partir da OS à qual ele está vinculado.
+    const pickups: Pickup[] = [];
+    const semCoordenadas: Array<{ os_id: string; embarque: string; cliente: string | null; colaborador_nome: string }> = [];
+    const semGeocodificacao: Array<{ colaborador_nome: string; os_id: string; cliente: string | null; cep: string; cidade: string; estado: string }> = [];
+
+    for (const [nomeKey, vinculo] of vinculoPorColaborador) {
+      const osRow = osById.get(vinculo.os_id);
+      if (!osRow) continue;
+
+      const colab = colabPorNome.get(nomeKey);
+      const cepNorm = normalizeCep(colab?.cep);
+      const geo = cepNorm.length === 8 ? geoPorCep.get(cepNorm) : null;
+      if (!geo) {
+        semGeocodificacao.push({
+          colaborador_nome: vinculo.colaborador_nome,
+          os_id: vinculo.os_id,
+          cliente: osRow.cliente || null,
+          cep: colab?.cep || '',
+          cidade: colab?.cidade || '',
+          estado: colab?.estado || '',
+        });
         continue;
       }
-      embarques.push({
-        os_id: row.id,
-        embarque: row.embarque || '',
-        cliente: row.cliente || null,
-        ponto_nome: ponto.nome_local || ponto.tipo_local || 'Ponto operacional',
-        lat: ponto._lat,
-        lng: ponto._lng,
-        uf: ponto._uf || resolveUfByProximity(ponto._lat, ponto._lng, pontos),
+
+      const ponto = bestPontoForOs(osRow, pontos);
+      if (!ponto) {
+        semCoordenadas.push({ os_id: vinculo.os_id, embarque: osRow.embarque || '', cliente: osRow.cliente || null, colaborador_nome: vinculo.colaborador_nome });
+        continue;
+      }
+
+      pickups.push({
+        colaborador_nome: vinculo.colaborador_nome,
+        os_id: vinculo.os_id,
+        cliente: osRow.cliente || null,
+        embarque: osRow.embarque || '',
+        lat: geo.lat,
+        lng: geo.lng,
+        ponto,
       });
     }
 
-    // 4) Mesclar embarques extras (urgentes, manuais)
-    for (const extra of embarquesExtras) {
-      const lat = Number(extra?.latitude);
-      const lng = Number(extra?.longitude);
-      if (!hasGeo(lat, lng)) continue;
-      embarques.push({
-        os_id: null,
-        embarque: cleanStr(extra?.nome) || 'Embarque urgente',
-        cliente: null,
-        ponto_nome: cleanStr(extra?.nome) || 'Embarque urgente',
-        lat,
-        lng,
-        uf: normalize(extra?.uf) || resolveUfByProximity(lat, lng, pontos),
-      });
-    }
-
-    // 5) Veículos ativos com posição conhecida
+    // 6) Veículos ativos com posição conhecida
     const { data: veiculosRaw, error: vErr } = await supabase
       .from('frotas_veiculos')
       .select('id,placa,motorista_atual,status')
@@ -351,29 +407,31 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 6) Agrupar embarques por UF e roteirizar grupo a grupo
-    const grupos = new Map<string, EmbarqueResolvido[]>();
-    for (const e of embarques) {
-      const key = e.uf || 'SEM_UF';
-      if (!grupos.has(key)) grupos.set(key, []);
-      grupos.get(key)!.push(e);
+    // 7) Agrupar pickups pelo ponto de embarque (destino) e roteirizar grupo a grupo:
+    // veículo mais próximo do grupo -> busca os colaboradores -> leva ao ponto.
+    const grupos = new Map<number, { ponto: PontoEmbarqueNorm; pickups: Pickup[] }>();
+    for (const p of pickups) {
+      let g = grupos.get(p.ponto._id);
+      if (!g) { g = { ponto: p.ponto, pickups: [] }; grupos.set(p.ponto._id, g); }
+      g.pickups.push(p);
     }
-    const gruposOrdenados = [...grupos.entries()].sort((a, b) => b[1].length - a[1].length);
+    const gruposOrdenados = [...grupos.values()].sort((a, b) => b.pickups.length - a.pickups.length);
 
     const usedVehicleIds = new Set<string>();
-    const naoAlocados: Array<{ os_id: string | null; embarque: string; motivo: string }> = [];
+    const naoAlocados: Array<{ colaborador_nome: string; os_id: string | null; embarque: string; motivo: string }> = [];
     const rotas: any[] = [];
 
-    for (const [, grupoEmbarques] of gruposOrdenados) {
+    for (const grupo of gruposOrdenados) {
+      const grupoPickups = grupo.pickups;
       const disponiveis = veiculos.filter((v) => !usedVehicleIds.has(v.id));
       if (!disponiveis.length) {
-        for (const e of grupoEmbarques) naoAlocados.push({ os_id: e.os_id, embarque: e.embarque, motivo: 'Sem veículo disponível (todos já alocados em outras regiões)' });
+        for (const p of grupoPickups) naoAlocados.push({ colaborador_nome: p.colaborador_nome, os_id: p.os_id, embarque: p.embarque, motivo: 'Sem veículo disponível (todos já alocados)' });
         continue;
       }
 
-      const centLat = grupoEmbarques.reduce((s, e) => s + e.lat, 0) / grupoEmbarques.length;
-      const centLng = grupoEmbarques.reduce((s, e) => s + e.lng, 0) / grupoEmbarques.length;
-      const necessarios = Math.ceil(grupoEmbarques.length / maxParadas);
+      const centLat = grupoPickups.reduce((s, p) => s + p.lat, 0) / grupoPickups.length;
+      const centLng = grupoPickups.reduce((s, p) => s + p.lng, 0) / grupoPickups.length;
+      const necessarios = Math.max(1, Math.ceil(grupoPickups.length / MAX_COLAB));
 
       const candidatos = disponiveis
         .map((v) => ({ v, dist: haversineKm(v.lat, v.lng, centLat, centLng) ?? Infinity }))
@@ -381,9 +439,13 @@ Deno.serve(async (req) => {
         .slice(0, Math.min(disponiveis.length, necessarios + 1))
         .map((x) => x.v);
 
+      // O ponto de embarque (destino) é o último ponto da matriz: parada fixa,
+      // não participa do 2-opt (é anexado à rota depois de otimizar as coletas).
+      const destinoIdx = candidatos.length + grupoPickups.length;
       const points: Point[] = [
         ...candidatos.map((v) => ({ lat: v.lat, lng: v.lng })),
-        ...grupoEmbarques.map((e) => ({ lat: e.lat, lng: e.lng })),
+        ...grupoPickups.map((p) => ({ lat: p.lat, lng: p.lng })),
+        { lat: grupo.ponto._lat, lng: grupo.ponto._lng },
       ];
 
       let matrix = await osrmTable(points);
@@ -397,35 +459,34 @@ Deno.serve(async (req) => {
       const assigned = new Set<number>();
       const ordem: number[][] = candidatos.map(() => []);
 
-      while (assigned.size < grupoEmbarques.length) {
-        let best = { vIdx: -1, eIdx: -1, dist: Infinity };
+      while (assigned.size < grupoPickups.length) {
+        let best = { vIdx: -1, pIdx: -1, dist: Infinity };
         for (let vi = 0; vi < nVeic; vi++) {
-          if (stopsCount[vi] >= maxParadas) continue;
-          for (let ei = 0; ei < grupoEmbarques.length; ei++) {
-            if (assigned.has(ei)) continue;
-            const d = matrix.distances[currentIdx[vi]][nVeic + ei];
-            if (d < best.dist) best = { vIdx: vi, eIdx: ei, dist: d };
+          if (stopsCount[vi] >= MAX_COLAB) continue;
+          for (let pi = 0; pi < grupoPickups.length; pi++) {
+            if (assigned.has(pi)) continue;
+            const d = matrix.distances[currentIdx[vi]][nVeic + pi];
+            if (d < best.dist) best = { vIdx: vi, pIdx: pi, dist: d };
           }
         }
         if (best.vIdx === -1) break;
-        ordem[best.vIdx].push(best.eIdx);
-        assigned.add(best.eIdx);
-        currentIdx[best.vIdx] = nVeic + best.eIdx;
+        ordem[best.vIdx].push(best.pIdx);
+        assigned.add(best.pIdx);
+        currentIdx[best.vIdx] = nVeic + best.pIdx;
         stopsCount[best.vIdx] += 1;
       }
 
-      for (let ei = 0; ei < grupoEmbarques.length; ei++) {
-        if (!assigned.has(ei)) {
-          naoAlocados.push({ os_id: grupoEmbarques[ei].os_id, embarque: grupoEmbarques[ei].embarque, motivo: 'Capacidade máxima de paradas atingida pelos veículos da região' });
+      for (let pi = 0; pi < grupoPickups.length; pi++) {
+        if (!assigned.has(pi)) {
+          naoAlocados.push({ colaborador_nome: grupoPickups[pi].colaborador_nome, os_id: grupoPickups[pi].os_id, embarque: grupoPickups[pi].embarque, motivo: 'Capacidade máxima de passageiros atingida pelos veículos disponíveis' });
         }
       }
 
       for (let vi = 0; vi < nVeic; vi++) {
         if (!ordem[vi].length) continue;
 
-        let route = [vi, ...ordem[vi].map((ei) => nVeic + ei)];
-        route = twoOpt(route, matrix);
-        const seq = route.slice(1).map((idx) => idx - nVeic);
+        const rotaColetas = twoOpt([vi, ...ordem[vi].map((pi) => nVeic + pi)], matrix);
+        const route = [...rotaColetas, destinoIdx];
 
         const veiculo = candidatos[vi];
         usedVehicleIds.add(veiculo.id);
@@ -434,17 +495,36 @@ Deno.serve(async (req) => {
         for (let k = 1; k < route.length; k++) {
           const fromIdx = route[k - 1];
           const toIdx = route[k];
-          const e = grupoEmbarques[seq[k - 1]];
-          paradas.push({
-            ordem: k,
-            os_id: e.os_id,
-            ponto_nome: e.ponto_nome,
-            embarque_texto: e.embarque,
-            lat: e.lat,
-            lng: e.lng,
+          const trecho = {
             distancia_km_trecho: round2(matrix.distances[fromIdx][toIdx] / 1000),
             duracao_min_trecho: round1(matrix.durations[fromIdx][toIdx] / 60),
-          });
+          };
+          if (toIdx === destinoIdx) {
+            paradas.push({
+              ordem: k,
+              tipo: 'embarque',
+              os_id: null,
+              colaborador_nome: null,
+              ponto_nome: grupo.ponto.nome_local || grupo.ponto.tipo_local || 'Ponto operacional',
+              embarque_texto: '',
+              lat: grupo.ponto._lat,
+              lng: grupo.ponto._lng,
+              ...trecho,
+            });
+          } else {
+            const p = grupoPickups[toIdx - nVeic];
+            paradas.push({
+              ordem: k,
+              tipo: 'colaborador',
+              os_id: p.os_id,
+              colaborador_nome: p.colaborador_nome,
+              ponto_nome: p.ponto.nome_local || p.ponto.tipo_local || 'Ponto operacional',
+              embarque_texto: p.embarque,
+              lat: p.lat,
+              lng: p.lng,
+              ...trecho,
+            });
+          }
         }
 
         const routePoints = route.map((idx) => points[idx]);
@@ -472,7 +552,52 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 7) Veículo com rastreador (posição conhecida) mas sem embarque hoje:
+    // 8) Embarques extras (urgentes, manuais): cada um vira uma rota direta do
+    // veículo disponível mais próximo até o ponto, sem coleta de colaboradores.
+    for (const extra of embarquesExtras) {
+      const lat = Number(extra?.latitude);
+      const lng = Number(extra?.longitude);
+      const nome = cleanStr(extra?.nome) || 'Embarque urgente';
+      if (!hasGeo(lat, lng)) continue;
+
+      const disponiveis = veiculos.filter((v) => !usedVehicleIds.has(v.id));
+      if (!disponiveis.length) {
+        naoAlocados.push({ colaborador_nome: '', os_id: null, embarque: nome, motivo: 'Sem veículo disponível (todos já alocados)' });
+        continue;
+      }
+
+      const veiculo = disponiveis
+        .map((v) => ({ v, dist: haversineKm(v.lat, v.lng, lat, lng) ?? Infinity }))
+        .sort((a, b) => a.dist - b.dist)[0].v;
+      usedVehicleIds.add(veiculo.id);
+
+      const points: Point[] = [{ lat: veiculo.lat, lng: veiculo.lng }, { lat, lng }];
+      let matrix = await osrmTable(points);
+      const distanciaReal = !!matrix;
+      if (!matrix) matrix = buildHaversineMatrix(points);
+      else await sleep(300);
+
+      const routeInfo = distanciaReal ? await osrmRoute(points) : null;
+      if (routeInfo) await sleep(300);
+
+      const trecho = { distancia_km_trecho: round2(matrix.distances[0][1] / 1000), duracao_min_trecho: round1(matrix.durations[0][1] / 60) };
+      const kmTotal = routeInfo ? routeInfo.distanceKm : trecho.distancia_km_trecho;
+      const durTotal = routeInfo ? routeInfo.durationMin : trecho.duracao_min_trecho;
+
+      rotas.push({
+        placa: veiculo.placa,
+        veiculo_id: veiculo.id,
+        motorista: veiculo.motorista,
+        origem: { lat: veiculo.lat, lng: veiculo.lng },
+        paradas: [{ ordem: 1, tipo: 'embarque', os_id: null, colaborador_nome: null, ponto_nome: nome, embarque_texto: '', lat, lng, ...trecho }],
+        km_total_estimado: round2(kmTotal),
+        duracao_estimada_min: round1(durTotal),
+        geometria: routeInfo?.geometry || null,
+        distancia_real: distanciaReal || !!routeInfo,
+      });
+    }
+
+    // 9) Veículo com rastreador (posição conhecida) mas sem embarque hoje:
     // ainda assim entra em "rotas", como rota vazia (parado/aguardando).
     for (const veiculo of veiculos) {
       if (usedVehicleIds.has(veiculo.id)) continue;
@@ -489,7 +614,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 8) Publicar rotas (substitui as rotas do dia)
+    // 10) Publicar rotas (substitui as rotas do dia)
     if (publicar) {
       let userId: string | null = null;
       try {
@@ -534,6 +659,8 @@ Deno.serve(async (req) => {
           rota_id: inserted.id,
           os_id: p.os_id,
           ordem: p.ordem,
+          tipo: p.tipo,
+          colaborador_nome: p.colaborador_nome,
           ponto_nome: p.ponto_nome,
           embarque_texto: p.embarque_texto,
           latitude: p.lat,
@@ -548,16 +675,20 @@ Deno.serve(async (req) => {
       }
     }
 
+    const naoAlocadosColab = naoAlocados.filter((n) => n.colaborador_nome).length;
+
     return json({
       data: dataStr,
       rotas,
       naoAlocados,
       semCoordenadas,
+      semGeocodificacao,
       totais: {
-        embarques: embarques.length,
-        alocados: embarques.length - naoAlocados.length,
+        embarques: pickups.length,
+        alocados: pickups.length - naoAlocadosColab,
         nao_alocados: naoAlocados.length,
         sem_coordenadas: semCoordenadas.length,
+        sem_geocodificacao: semGeocodificacao.length,
         veiculos_utilizados: usedVehicleIds.size,
         veiculos_disponiveis: veiculos.length,
         km_total: round2(rotas.reduce((s, r) => s + r.km_total_estimado, 0)),
