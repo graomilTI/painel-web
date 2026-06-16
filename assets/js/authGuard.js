@@ -13,12 +13,14 @@ function normalize(value = '') {
 }
 
 function normalizePath(value = '') {
-  return String(value || '')
-    .split('?')[0]
-    .split('#')[0]
+  const raw = String(value || '').split('?')[0].trim();
+  const [pathname, hash = ''] = raw.split('#', 2);
+  const cleanPath = pathname
     .replace(/^\/+/, '')
     .replace(/\.html$/i, '')
     .trim();
+  const cleanHash = normalize(hash).replace(/[^a-z0-9_-]/g, '');
+  return cleanHash ? `${cleanPath}#${cleanHash}` : cleanPath;
 }
 
 function getCurrentPanelPath() {
@@ -26,7 +28,7 @@ function getCurrentPanelPath() {
   const parts = clean.split('/').filter(Boolean);
   const painelIndex = parts.findIndex((part) => normalize(part) === 'painel');
   const last = painelIndex >= 0 ? parts[painelIndex + 1] : parts[parts.length - 1];
-  return normalizePath(last || 'dashboard');
+  return normalizePath(`${last || 'dashboard'}${window.location.hash || ''}`);
 }
 
 function isGestorContext(context) {
@@ -52,21 +54,31 @@ function itemIsAllowedByModules(item, allowedCodes) {
   return candidates.some((code) => allowedCodes.has(code));
 }
 
+function permissionRoute(item) {
+  const code = normalize(item?.code);
+  if (['financeiro_adiantamentos', 'financeiro_alimentacao', 'financeiro_despesas'].includes(code)) {
+    return { ...item, path: 'financeiro#despesas' };
+  }
+  return item;
+}
+
 function allowedItemsForContext(context) {
   if (context?.user?.is_master) {
-    return PANEL_MENU.flatMap((section) => section.items || []);
+    return PANEL_MENU.flatMap((section) => section.items || []).map(permissionRoute);
   }
 
   if (isGestorContext(context)) {
     const allowedSections = new Set(['inicio', 'gestor']);
     return PANEL_MENU
       .filter((section) => allowedSections.has(normalize(section.section)))
-      .flatMap((section) => section.items || []);
+      .flatMap((section) => section.items || [])
+      .map(permissionRoute);
   }
 
   const allowedCodes = buildModuleCodeSet(context);
   return PANEL_MENU.flatMap((section) => section.items || [])
-    .filter((item) => itemIsAllowedByModules(item, allowedCodes));
+    .filter((item) => itemIsAllowedByModules(item, allowedCodes))
+    .map(permissionRoute);
 }
 
 function getFirstAllowedPath(context) {

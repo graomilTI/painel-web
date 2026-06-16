@@ -1,10 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { authorizeRequest } from "../_shared/authorization.ts";
 
 const CORREIOS_API = 'https://api.correios.com.br';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 function json(body: unknown, status = 200) {
@@ -13,6 +14,10 @@ function json(body: unknown, status = 200) {
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
+  if (req.method !== 'POST') return json({ ok: false, error: 'Método não permitido' }, 405);
+
+  const auth = await authorizeRequest(req, ['envios'], { requireEdit: true });
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
 
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
@@ -26,7 +31,7 @@ Deno.serve(async (req: Request) => {
     .select('*, remetente:envios_remetentes(*), destinatario:envios_destinatarios(*)')
     .eq('id', postagem_id).single();
   if (pErr || !postagem) return json({ ok: false, error: 'Postagem não encontrada' }, 404);
-  if (postagem.status !== 'RASCUNHO') return json({ ok: false, error: 'Postagem já processada' }, 400);
+  if (!['RASCUNHO', 'ERRO'].includes(postagem.status)) return json({ ok: false, error: 'Postagem já processada' }, 409);
 
   const { data: secrets } = await sb
     .from('ti_integracao_segredos').select('chave, valor')
@@ -46,7 +51,7 @@ Deno.serve(async (req: Request) => {
   function fone(t: string | null) {
     if (!t) return {};
     const d = t.replace(/\D/g, '');
-    if (d.length === 11) return { dddTelefone: d.slice(0, 2), telefone: d.slice(3) };
+    if (d.length === 11) return { dddTelefone: d.slice(0, 2), telefone: d.slice(2) };
     if (d.length === 10) return { dddTelefone: d.slice(0, 2), telefone: d.slice(2) };
     return {};
   }
@@ -127,9 +132,9 @@ Deno.serve(async (req: Request) => {
     await sb.from('envios_postagens').update({
       status: 'ERRO', observacoes: 'Error: ' + lastError, updated_at: new Date().toISOString(),
     }).eq('id', postagem_id);
-    return json({ ok: false, error: lastError }, 500);
+    return json({ ok: false, error: lastError }, 502);
   } catch (e) {
-    const err = String(e);
+    const err = e instanceof Error ? e.message : String(e);
     await sb.from('envios_postagens').update({
       status: 'ERRO', observacoes: 'Error: ' + err, updated_at: new Date().toISOString(),
     }).eq('id', postagem_id);

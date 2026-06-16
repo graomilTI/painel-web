@@ -12,6 +12,8 @@ npm install
 npm run once
 ```
 
+`EMAIL_CREDENTIALS_KEY` deve ter pelo menos 32 caracteres e ser exatamente a mesma configurada como segredo da Edge Function `email-account-save`. Contas antigas em texto puro continuam funcionando até que sejam salvas novamente pelo painel.
+
 Para rodar continuamente:
 
 ```bash
@@ -27,9 +29,10 @@ Ou por cron a cada 3 minutos:
 ## O que ele faz
 
 1. Busca contas ativas em `email_accounts`.
-2. Lê e-mails novos via IMAP.
-3. Salva mensagens e anexos no Supabase.
-4. Classifica por regras e, se `OPENAI_API_KEY` existir, melhora a classificação com IA.
-5. Envia respostas aprovadas em `email_outbox` via SMTP.
+2. Descriptografa a credencial somente em memória.
+3. Lê e-mails novos via IMAP.
+4. Salva mensagens e anexos no Supabase.
+5. Classifica por regras e, se `OPENAI_API_KEY` existir, melhora a classificação com IA.
+6. Envia respostas aprovadas em `email_outbox` via SMTP.
 
 Por segurança, respostas automáticas só são geradas quando a conta permite `auto_responder` e a regra também permite `auto_responder`. O padrão do painel é aprovação manual.

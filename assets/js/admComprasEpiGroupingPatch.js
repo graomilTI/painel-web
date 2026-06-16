@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient.js';
 // Aba exclusiva de EPI no Painel de Compras.
 // - Na aba SOLICITAÇÕES, esconde os EPIs pendentes.
 // - Na aba EPI, mostra apenas EPIs pendentes e agrupa por colaborador.
-// - O grupo fica fechado: os detalhes aparecem depois no fluxo de cotação/compra.
+// - Permite selecionar vários grupos para gerar uma compra/cotação consolidada.
 // - Depois que os EPIs avançam para cotação/compra, voltam para as abas padrão do fluxo.
 
 let painelComprasTabVisual = 'solicitacoes';
@@ -164,7 +164,102 @@ function marcarRows(rows, shouldCheck) {
     checkbox.checked = shouldCheck;
     checkbox.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  setTimeout(() => { painelComprasAplicandoFiltro = false; }, 120);
+  setTimeout(() => {
+    painelComprasAplicandoFiltro = false;
+    atualizarResumoSelecaoEpi();
+  }, 120);
+}
+
+function linhasSelecionadasEpi(body) {
+  return linhasBase(body).filter((row) => !isLinhaVazia(row) && isLinhaEpi(row) && row.querySelector('input[type="checkbox"]')?.checked);
+}
+
+function resumoMateriais(rows) {
+  const materiais = new Map();
+  rows.forEach((row) => {
+    const nomeColab = getColaboradorEpi(row);
+    const material = getMaterialResumo(row, nomeColab) || 'EPI';
+    const key = normComprasEpi(material);
+    if (!materiais.has(key)) materiais.set(key, { material, qtd: 0, total: 0 });
+    const item = materiais.get(key);
+    item.qtd += getQuantidade(row);
+    item.total += getValor(row);
+  });
+  return [...materiais.values()].sort((a, b) => a.material.localeCompare(b.material, 'pt-BR'));
+}
+
+function atualizarResumoSelecaoEpi() {
+  const body = document.getElementById('admCmpBody');
+  const toolbar = body?.querySelector('[data-epi-group-toolbar]');
+  if (!body || !toolbar) return;
+
+  const grupos = [...body.querySelectorAll('[data-epi-group-select]')];
+  const gruposMarcados = grupos.filter((input) => input.checked).length;
+  const selecionadas = linhasSelecionadasEpi(body);
+  const totalUn = selecionadas.reduce((sum, row) => sum + getQuantidade(row), 0);
+  const totalValor = selecionadas.reduce((sum, row) => sum + getValor(row), 0);
+  const materiais = resumoMateriais(selecionadas).slice(0, 5);
+  const detalhe = materiais.length
+    ? materiais.map((m) => `${m.qtd}x ${m.material}`).join(' · ')
+    : 'Nenhum grupo selecionado';
+
+  toolbar.querySelector('[data-epi-selected-summary]').textContent = `${gruposMarcados} grupo(s) · ${selecionadas.length} item(ns) · ${totalUn} unidade(s) · ${formatMoney(totalValor)}`;
+  toolbar.querySelector('[data-epi-selected-materials]').textContent = detalhe;
+}
+
+function criarToolbarGruposEpi(groups, colCount) {
+  const tr = document.createElement('tr');
+  tr.setAttribute('data-epi-group-toolbar', '1');
+  tr.innerHTML = `
+    <td colspan="${colCount}" style="background:rgba(15,23,42,.88);border:1px solid rgba(148,163,184,.25);padding:12px 14px">
+      <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+        <div>
+          <strong style="color:#e2e8f0">Selecionar vários grupos para compra</strong>
+          <div data-epi-selected-summary style="font-size:12px;color:#bbf7d0;margin-top:4px;font-weight:700">0 grupo(s) · 0 item(ns) · 0 unidade(s) · ${formatMoney(0)}</div>
+          <div data-epi-selected-materials style="font-size:12px;color:#94a3b8;margin-top:4px">Nenhum grupo selecionado</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="btn btn-small btn-secondary" data-epi-select-all-groups>Selecionar todos</button>
+          <button type="button" class="btn btn-small btn-secondary" data-epi-clear-groups>Limpar seleção</button>
+        </div>
+      </div>
+    </td>
+  `;
+
+  tr.querySelector('[data-epi-select-all-groups]')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    groups.forEach((group) => marcarRows(group.rows, true));
+    setTimeout(() => {
+      document.querySelectorAll('[data-epi-group-select]').forEach((input) => {
+        input.checked = true;
+        input.indeterminate = false;
+      });
+      document.querySelectorAll('[data-epi-group-status]').forEach((status) => {
+        const total = Number(status.dataset.total || 0);
+        status.textContent = `${total}/${total} selecionado(s)`;
+      });
+      document.querySelectorAll('[data-epi-group-check]').forEach((btn) => { btn.textContent = 'Desmarcar grupo'; });
+      atualizarResumoSelecaoEpi();
+    }, 160);
+  });
+
+  tr.querySelector('[data-epi-clear-groups]')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    groups.forEach((group) => marcarRows(group.rows, false));
+    setTimeout(() => {
+      document.querySelectorAll('[data-epi-group-select]').forEach((input) => {
+        input.checked = false;
+        input.indeterminate = false;
+      });
+      document.querySelectorAll('[data-epi-group-status]').forEach((status) => {
+        status.textContent = 'Grupo fechado — detalhes na cotação';
+      });
+      document.querySelectorAll('[data-epi-group-check]').forEach((btn) => { btn.textContent = 'Selecionar grupo'; });
+      atualizarResumoSelecaoEpi();
+    }, 160);
+  });
+
+  return tr;
 }
 
 function criarLinhaGrupo(nome, rows, colCount) {
@@ -173,6 +268,7 @@ function criarLinhaGrupo(nome, rows, colCount) {
   const totalValor = rows.reduce((sum, row) => sum + getValor(row), 0);
   const materiais = rows.map((row) => getMaterialResumo(row, nome)).filter(Boolean);
   const selecionados = rows.filter((row) => row.querySelector('input[type="checkbox"]')?.checked).length;
+  const allSelected = selecionados === totalItens;
 
   const tr = document.createElement('tr');
   tr.className = 'adm-cmp-epi-group-row';
@@ -180,21 +276,39 @@ function criarLinhaGrupo(nome, rows, colCount) {
   tr.innerHTML = `
     <td colspan="${colCount}" style="background:rgba(16,185,129,.11);border-top:1px solid rgba(74,222,128,.35);border-bottom:1px solid rgba(74,222,128,.2);padding:12px 14px">
       <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-        <div>
-          <strong style="color:#bbf7d0">EPI — ${nome}</strong>
-          <div data-epi-supervisao style="font-size:12px;color:#fde68a;margin-top:4px;font-weight:700">Supervisão: carregando...</div>
-          <div style="font-size:12px;color:#94a3b8;margin-top:4px">${totalItens} item(ns) · ${totalUn} unidade(s) · ${materiais.join(' · ')}</div>
-          <div data-epi-group-status style="font-size:12px;color:#bbf7d0;margin-top:4px">${selecionados ? `${selecionados}/${totalItens} selecionado(s)` : 'Grupo fechado — detalhes na cotação'}</div>
+        <div style="display:flex;gap:10px;align-items:flex-start;min-width:260px">
+          <input type="checkbox" data-epi-group-select aria-label="Selecionar grupo ${nome}" style="margin-top:3px;transform:scale(1.15)">
+          <div>
+            <strong style="color:#bbf7d0">EPI — ${nome}</strong>
+            <div data-epi-supervisao style="font-size:12px;color:#fde68a;margin-top:4px;font-weight:700">Supervisão: carregando...</div>
+            <div style="font-size:12px;color:#94a3b8;margin-top:4px">${totalItens} item(ns) · ${totalUn} unidade(s) · ${materiais.join(' · ')}</div>
+            <div data-epi-group-status data-total="${totalItens}" style="font-size:12px;color:#bbf7d0;margin-top:4px">${selecionados ? `${selecionados}/${totalItens} selecionado(s)` : 'Grupo fechado — detalhes na cotação'}</div>
+          </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <strong style="color:#e2e8f0">${formatMoney(totalValor)}</strong>
-          <button type="button" class="btn btn-small btn-secondary" data-epi-group-check>${selecionados === totalItens ? 'Desmarcar grupo' : 'Selecionar grupo'}</button>
+          <button type="button" class="btn btn-small btn-secondary" data-epi-group-check>${allSelected ? 'Desmarcar grupo' : 'Selecionar grupo'}</button>
         </div>
       </div>
     </td>
   `;
 
   buscarSupervisaoGrupo(nome, rows, tr.querySelector('[data-epi-supervisao]'));
+
+  const groupSelect = tr.querySelector('[data-epi-group-select]');
+  if (groupSelect) {
+    groupSelect.checked = allSelected;
+    groupSelect.indeterminate = selecionados > 0 && !allSelected;
+    groupSelect.addEventListener('change', (event) => {
+      const checked = event.currentTarget.checked;
+      marcarRows(rows, checked);
+      const btn = tr.querySelector('[data-epi-group-check]');
+      const status = tr.querySelector('[data-epi-group-status]');
+      if (btn) btn.textContent = checked ? 'Desmarcar grupo' : 'Selecionar grupo';
+      if (status) status.textContent = checked ? `${rows.length}/${rows.length} selecionado(s)` : 'Grupo fechado — detalhes na cotação';
+      atualizarResumoSelecaoEpi();
+    });
+  }
 
   tr.querySelector('[data-epi-group-check]')?.addEventListener('click', (event) => {
     event.preventDefault();
@@ -203,20 +317,26 @@ function criarLinhaGrupo(nome, rows, colCount) {
     marcarRows(rows, shouldCheck);
     const btn = event.currentTarget;
     const status = tr.querySelector('[data-epi-group-status]');
+    const select = tr.querySelector('[data-epi-group-select]');
     btn.textContent = shouldCheck ? 'Desmarcar grupo' : 'Selecionar grupo';
+    if (select) {
+      select.checked = shouldCheck;
+      select.indeterminate = false;
+    }
     if (status) status.textContent = shouldCheck ? `${rows.length}/${rows.length} selecionado(s)` : 'Grupo fechado — detalhes na cotação';
+    atualizarResumoSelecaoEpi();
   });
 
   return tr;
 }
 
 function limparAgrupamentos(body) {
-  body?.querySelectorAll('[data-epi-group-header]').forEach((row) => row.remove());
+  body?.querySelectorAll('[data-epi-group-header],[data-epi-group-toolbar]').forEach((row) => row.remove());
 }
 
 function linhasBase(body) {
   return [...(body?.querySelectorAll(':scope > tr') || [])]
-    .filter((row) => !row.hasAttribute('data-epi-group-header'));
+    .filter((row) => !row.hasAttribute('data-epi-group-header') && !row.hasAttribute('data-epi-group-toolbar'));
 }
 
 function mostrarMensagemVazia(body, texto) {
@@ -261,20 +381,22 @@ function aplicarAbaEpi(body) {
 
   outrosRows.forEach((row) => { row.style.display = 'none'; });
 
+  const groupList = [...groups.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   const frag = document.createDocumentFragment();
-  [...groups.values()]
-    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-    .forEach((group) => {
-      frag.appendChild(criarLinhaGrupo(group.nome, group.rows, colCount));
-      group.rows.forEach((row) => {
-        row.style.display = 'none';
-        frag.appendChild(row);
-      });
+  frag.appendChild(criarToolbarGruposEpi(groupList, colCount));
+
+  groupList.forEach((group) => {
+    frag.appendChild(criarLinhaGrupo(group.nome, group.rows, colCount));
+    group.rows.forEach((row) => {
+      row.style.display = 'none';
+      frag.appendChild(row);
     });
+  });
 
   outrosRows.forEach((row) => frag.appendChild(row));
   body.appendChild(frag);
   body.dataset.epiGroupingRunning = '0';
+  setTimeout(atualizarResumoSelecaoEpi, 80);
 }
 
 function aplicarFiltroVisualCompras() {

@@ -3,23 +3,14 @@ project_id = "xyzpnuumdqhegxakkyws"
 [functions.sync-multas-detran]
 verify_jwt = true
 
-[functions.verificar-indicacao-condutor]
+[functions.sync-veiculos-detran]
 verify_jwt = true
-
-[functions.gerar-guia-multa]
-verify_jwt = true
-
-[functions.notificar-multa]
-verify_jwt = true
-
-[functions.google-contacts-sync]
-verify_jwt = false
 
 [functions.ocr-documento]
 verify_jwt = true
 
 [functions.ocr-comprovante]
-verify_jwt = false
+verify_jwt = true
 
 [functions.bfleet-posicoes]
 verify_jwt = true
@@ -28,4 +19,19 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.geocode-colaboradores]
+verify_jwt = true
+
+[functions.botconversa-send]
+verify_jwt = true
+
+[functions.correios-prepostagem]
+verify_jwt = true
+
+[functions.correios-telegrama]
+verify_jwt = true
+
+[functions.correios-smt-auth]
+verify_jwt = true
+
+[functions.email-account-save]
 verify_jwt = true

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { authorizeRequest } from "../_shared/authorization.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -47,6 +48,14 @@ async function sendMessage(subscriberId: number, type: "text" | "file", value: s
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (req.method !== "POST") return json({ ok: false, error: "Método não permitido." }, 405);
+
+  const auth = await authorizeRequest(
+    req,
+    ["financeiro_pagamentos", "financeiro_fluxo_caixa", "compras_adm", "ti_contatos"],
+    { requireEdit: true },
+  );
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
 
   try {
     const supabase = createClient(
@@ -72,18 +81,26 @@ serve(async (req) => {
     };
 
     const tel = String(body.phone || "").replace(/\D/g, "");
-    if (!tel) return json({ ok: false, error: "Telefone inválido." }, 400);
+    if (tel.length < 10 || tel.length > 13) return json({ ok: false, error: "Telefone inválido." }, 400);
     if (!body.message && !body.fileUrl) return json({ ok: false, error: "Informe message ou fileUrl." }, 400);
+    if (body.message && String(body.message).length > 4000) return json({ ok: false, error: "Mensagem muito longa." }, 400);
+    if (body.fileUrl && !/^https:\/\//i.test(String(body.fileUrl))) return json({ ok: false, error: "O arquivo deve usar uma URL HTTPS." }, 400);
 
     const subscriberId = await getSubscriberId(tel, body.nome || null, apiKey);
     if (!subscriberId) return json({ ok: false, error: "Não foi possível localizar ou criar o contato no BotConversa." }, 502);
 
-    if (body.message) await sendMessage(subscriberId, "text", body.message, apiKey);
-    if (body.fileUrl) await sendMessage(subscriberId, "file", body.fileUrl, apiKey);
+    if (body.message) {
+      const sent = await sendMessage(subscriberId, "text", String(body.message), apiKey);
+      if (!sent) return json({ ok: false, error: "O BotConversa recusou a mensagem de texto." }, 502);
+    }
+    if (body.fileUrl) {
+      const sent = await sendMessage(subscriberId, "file", String(body.fileUrl), apiKey);
+      if (!sent) return json({ ok: false, error: "O BotConversa recusou o arquivo." }, 502);
+    }
 
     return json({ ok: true });
   } catch (err) {
     console.error("[botconversa-send]", err);
-    return json({ ok: false, error: String(err) }, 500);
+    return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
   }
 });

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { createDecipheriv, createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
@@ -7,6 +8,7 @@ import { XMLParser } from 'fast-xml-parser';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const EMAIL_CREDENTIALS_KEY = process.env.EMAIL_CREDENTIALS_KEY || '';
 const INTERVAL_SECONDS = Number(process.env.EMAIL_WORKER_INTERVAL_SECONDS || 180);
 const MAX_ANEXO_IA_BYTES = 8 * 1024 * 1024;
 const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
@@ -37,20 +39,39 @@ function getOpenAI() {
   return openaiClientPromise;
 }
 
-function text(v) {
-  return String(v || '').trim();
+function text(value) {
+  return String(value || '').trim();
 }
 
-function normalize(v) {
-  return text(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function normalize(value) {
+  return text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
-function cleanMessageId(value) {
-  return text(value).replace(/^<|>$/g, '') || `sem-message-id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+function decryptCredential(value) {
+  const encrypted = String(value || '');
+  if (!encrypted.startsWith('enc:v1:')) return encrypted;
+  if (EMAIL_CREDENTIALS_KEY.length < 32) {
+    throw new Error('EMAIL_CREDENTIALS_KEY deve ser igual no Supabase e no worker.');
+  }
+
+  const [, , ivBase64, payloadBase64] = encrypted.split(':');
+  const payload = Buffer.from(payloadBase64, 'base64');
+  const ciphertext = payload.subarray(0, -16);
+  const authTag = payload.subarray(-16);
+  const key = createHash('sha256').update(EMAIL_CREDENTIALS_KEY).digest();
+  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivBase64, 'base64'));
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+}
+
+function messageId(value, fallback = true) {
+  const cleaned = text(value).replace(/^<|>$/g, '');
+  if (cleaned || !fallback) return cleaned || null;
+  return `sem-message-id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function extractRegional(content) {
-  const s = normalize(content);
+  const source = normalize(content);
   const checks = [
     ['MATO GROSSO MT3', ['confresa', 'querencia', 'mt3', 'mato grosso mt3']],
     ['MATO GROSSO MT2', ['mt2', 'sorriso', 'sinop', 'lucas do rio verde']],
@@ -59,12 +80,9 @@ function extractRegional(content) {
     ['CASCAVEL', ['cascavel', 'oeste pr']],
     ['MARINGÁ E TERMINAIS', ['maringa', 'paranagua', 'terminal', 'terminais']],
     ['TOCANTINS', ['tocantins', 'palmas', 'gurupi']],
-    ['PARANÁ', ['parana', 'pr']]
+    ['PARANÁ', ['parana', ' pr ']]
   ];
-  for (const [regional, words] of checks) {
-    if (words.some((w) => s.includes(normalize(w)))) return regional;
-  }
-  return null;
+  return checks.find(([, words]) => words.some((word) => source.includes(normalize(word))))?.[0] || null;
 }
 
 function extractData(content) {
@@ -198,31 +216,23 @@ async function loadRules() {
 }
 
 function classifyByRules(message, rules) {
-  const hay = normalize([message.subject, message.fromText, message.text, message.html].join('\n'));
-  let matched = null;
-  for (const rule of rules) {
+  const haystack = normalize([message.subject, message.fromText, message.text, message.html].join('\n'));
+  const matched = rules.find((rule) => {
     const words = Array.isArray(rule.palavras_chave) ? rule.palavras_chave : [];
-    const keywordOk = !words.length || words.some((w) => hay.includes(normalize(w)));
-    const fromOk = !rule.remetente_contem || normalize(message.fromText).includes(normalize(rule.remetente_contem));
-    const subjectOk = !rule.assunto_contem || normalize(message.subject).includes(normalize(rule.assunto_contem));
-    if (keywordOk && fromOk && subjectOk) {
-      matched = rule;
-      break;
-    }
-  }
+    return (!words.length || words.some((word) => haystack.includes(normalize(word))))
+      && (!rule.remetente_contem || normalize(message.fromText).includes(normalize(rule.remetente_contem)))
+      && (!rule.assunto_contem || normalize(message.subject).includes(normalize(rule.assunto_contem)));
+  });
   const full = [message.subject, message.text, message.html].join('\n');
-  const dados = extractData(full);
-  const regional = matched?.regional || extractRegional(full);
-  const categoria = matched?.categoria || 'GERAL';
-  const summary = text(message.text || message.html).replace(/\s+/g, ' ').slice(0, 420);
   return {
-    regional,
-    categoria,
+    regional: matched?.regional || extractRegional(full),
+    categoria: matched?.categoria || 'GERAL',
     prioridade: matched?.prioridade_email || 'NORMAL',
     precisa_resposta: matched?.precisa_resposta ?? false,
-    resumo_ia: summary || 'E-mail recebido sem texto suficiente para resumo.',
-    dados_detectados: dados,
+    resumo_ia: text(message.text || message.html).replace(/\s+/g, ' ').slice(0, 420) || 'E-mail recebido sem texto suficiente para resumo.',
+    dados_detectados: extractData(full),
     resposta_sugerida: matched?.resposta_modelo || '',
+    auto_responder: matched?.auto_responder === true,
     classificado_por: matched ? `regra:${matched.nome}` : 'regras'
   };
 }
@@ -230,31 +240,26 @@ function classifyByRules(message, rules) {
 async function classifyWithAI(message, base) {
   const openai = await getOpenAI();
   if (!openai) return base;
-  const input = [
-    `Assunto: ${message.subject}`,
-    `Remetente: ${message.fromText}`,
-    `Texto: ${text(message.text || message.html).slice(0, 6000)}`,
-    `Classificação base: ${JSON.stringify(base)}`
-  ].join('\n\n');
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'Classifique e-mails corporativos da Grão 1000. Responda só JSON com regional, categoria, prioridade (BAIXA/NORMAL/ALTA/URGENTE), precisa_resposta boolean, resumo_ia, dados_detectados objeto, resposta_sugerida. Nunca prometa ações irreversíveis, pagamentos, prazos específicos ou decisões jurídicas/RH.' },
-        { role: 'user', content: input }
+        { role: 'system', content: 'Classifique e-mails corporativos. Responda só JSON com regional, categoria, prioridade, precisa_resposta, resumo_ia, dados_detectados e resposta_sugerida. Nunca prometa pagamentos, prazos ou decisões jurídicas/RH.' },
+        { role: 'user', content: `Assunto: ${message.subject}\nRemetente: ${message.fromText}\nTexto: ${text(message.text || message.html).slice(0, 6000)}\nBase: ${JSON.stringify(base)}` }
       ]
     });
     const parsed = JSON.parse(response.choices?.[0]?.message?.content || '{}');
     return {
       ...base,
       ...parsed,
+      auto_responder: base.auto_responder,
       dados_detectados: { ...(base.dados_detectados || {}), ...(parsed.dados_detectados || {}) },
       classificado_por: 'ia+regras'
     };
-  } catch (err) {
-    console.warn('Falha na IA, mantendo regras:', err.message);
+  } catch (error) {
+    console.warn('Falha na IA, mantendo regras:', error.message);
     return base;
   }
 }
@@ -340,7 +345,7 @@ async function syncAccount(account, rules) {
     host: account.imap_host,
     port: account.imap_port,
     secure: account.imap_secure,
-    auth: { user: account.username, pass: account.password_cipher },
+    auth: { user: account.username, pass: decryptCredential(account.password_cipher) },
     logger: false
   });
   let inserted = 0;
@@ -349,40 +354,33 @@ async function syncAccount(account, rules) {
     const lock = await client.getMailboxLock(account.pasta_entrada || 'INBOX');
     try {
       const lastUid = Number(account.ultima_uid || 0);
-      const range = lastUid > 0 ? `${lastUid + 1}:*` : `1:*`;
+      const range = lastUid > 0 ? `${lastUid + 1}:*` : '1:*';
       const limit = Number(account.limite_por_sync || 30);
       let maxUid = lastUid;
       const fetched = [];
-      for await (const msg of client.fetch(range, { uid: true, source: true, envelope: true, flags: true })) {
-        if (msg.uid) maxUid = Math.max(maxUid, Number(msg.uid));
-        fetched.push(msg);
+      for await (const item of client.fetch(range, { uid: true, source: true, envelope: true, flags: true })) {
+        if (item.uid) maxUid = Math.max(maxUid, Number(item.uid));
+        fetched.push(item);
         if (fetched.length >= limit) break;
       }
-      for (const msg of fetched) {
-        const parsed = await simpleParser(msg.source);
-        const messageId = cleanMessageId(parsed.messageId);
+
+      for (const item of fetched) {
+        const parsed = await simpleParser(item.source);
+        const id = messageId(parsed.messageId);
         const from = parsed.from?.value?.[0] || {};
-        const toText = parsed.to?.text || account.email;
-        const message = {
-          subject: parsed.subject || '(sem assunto)',
-          fromText: parsed.from?.text || from.address || '',
-          text: parsed.text || '',
-          html: parsed.html || ''
-        };
-        const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', messageId).maybeSingle();
+        const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', id).maybeSingle();
         if (exists.data?.id) continue;
-        const base = classifyByRules(message, rules);
-        const cls = await classifyWithAI(message, base);
-        const status = cls.precisa_resposta ? 'RESPONDER' : 'NOVO';
+        const input = { subject: parsed.subject || '(sem assunto)', fromText: parsed.from?.text || from.address || '', text: parsed.text || '', html: parsed.html || '' };
+        const cls = await classifyWithAI(input, classifyByRules(input, rules));
         const { data: saved, error } = await supabase.from('email_messages').insert({
           account_id: account.id,
-          uid: msg.uid,
-          message_id: messageId,
-          in_reply_to: cleanMessageId(parsed.inReplyTo || ''),
-          references_header: Array.isArray(parsed.references) ? parsed.references.join(' ') : text(parsed.references),
+          uid: item.uid,
+          message_id: id,
+          in_reply_to: messageId(parsed.inReplyTo, false),
+          references_header: Array.isArray(parsed.references) ? parsed.references.join(' ') : text(parsed.references) || null,
           remetente_nome: from.name || null,
           remetente_email: from.address || null,
-          destinatario: toText,
+          destinatario: parsed.to?.text || account.email,
           cc: parsed.cc?.text || null,
           assunto: parsed.subject || '(sem assunto)',
           corpo_texto: parsed.text || null,
@@ -393,11 +391,11 @@ async function syncAccount(account, rules) {
           prioridade: cls.prioridade || 'NORMAL',
           resumo_ia: cls.resumo_ia || null,
           dados_detectados: cls.dados_detectados || {},
-          precisa_resposta: !!cls.precisa_resposta,
+          precisa_resposta: Boolean(cls.precisa_resposta),
           resposta_sugerida: cls.resposta_sugerida || null,
-          status,
+          status: cls.precisa_resposta ? 'RESPONDER' : 'NOVO',
           classificado_por: cls.classificado_por,
-          raw: { flags: Array.from(msg.flags || []), headers: { from: parsed.from?.text, to: parsed.to?.text } }
+          raw: { flags: Array.from(item.flags || []), headers: { from: parsed.from?.text, to: parsed.to?.text } }
         }).select('id').single();
         if (error) throw error;
         inserted++;
@@ -423,6 +421,7 @@ async function syncAccount(account, rules) {
           });
         }
       }
+
       await supabase.from('email_accounts').update({
         ultima_uid: maxUid,
         ultima_sync_em: new Date().toISOString(),
@@ -434,13 +433,13 @@ async function syncAccount(account, rules) {
       lock.release();
     }
     await client.logout();
-  } catch (err) {
-    console.error(`Erro ao sincronizar ${account.email}:`, err);
+  } catch (error) {
+    console.error(`Erro ao sincronizar ${account.email}:`, error);
     try { await client.logout(); } catch {}
     await supabase.from('email_accounts').update({
       ultima_sync_em: new Date().toISOString(),
       ultima_sync_status: 'ERRO',
-      ultima_sync_erro: String(err.message || err).slice(0, 1000),
+      ultima_sync_erro: String(error.message || error).slice(0, 1000),
       updated_at: new Date().toISOString()
     }).eq('id', account.id);
   }
@@ -454,20 +453,20 @@ async function processOutbox() {
     .order('created_at')
     .limit(20);
   if (error) throw error;
+
   for (const row of rows || []) {
-    const acc = row.email_accounts;
-    if (!acc?.ativo) continue;
-    console.log(`Enviando resposta ${row.id} para ${row.para}`);
+    const account = row.email_accounts;
+    if (!account?.ativo) continue;
     await supabase.from('email_outbox').update({ status: 'ENVIANDO', updated_at: new Date().toISOString() }).eq('id', row.id);
     try {
       const transporter = nodemailer.createTransport({
-        host: acc.smtp_host,
-        port: acc.smtp_port,
-        secure: acc.smtp_secure,
-        auth: { user: acc.username, pass: acc.password_cipher }
+        host: account.smtp_host,
+        port: account.smtp_port,
+        secure: account.smtp_secure,
+        auth: { user: account.username, pass: decryptCredential(account.password_cipher) }
       });
       const info = await transporter.sendMail({
-        from: `${acc.nome || acc.email} <${acc.email}>`,
+        from: `${account.nome || account.email} <${account.email}>`,
         to: row.para,
         cc: row.cc || undefined,
         bcc: row.bcc || undefined,
@@ -485,10 +484,10 @@ async function processOutbox() {
         await supabase.from('email_messages').update({ status: 'RESPONDIDO', updated_at: new Date().toISOString() }).eq('id', row.email_id);
         await supabase.from('email_historico').insert({ email_id: row.email_id, outbox_id: row.id, acao: 'EMAIL_ENVIADO', detalhes: { smtp_message_id: info.messageId } });
       }
-    } catch (err) {
+    } catch (error) {
       await supabase.from('email_outbox').update({
         status: 'ERRO',
-        erro: String(err.message || err).slice(0, 1000),
+        erro: String(error.message || error).slice(0, 1000),
         updated_at: new Date().toISOString()
       }).eq('id', row.id);
     }
@@ -506,7 +505,7 @@ async function runOnce() {
 async function main() {
   const once = process.argv.includes('--once');
   do {
-    await runOnce().catch((err) => console.error('Falha no ciclo:', err));
+    await runOnce().catch((error) => console.error('Falha no ciclo:', error));
     if (once) break;
     await new Promise((resolve) => setTimeout(resolve, INTERVAL_SECONDS * 1000));
   } while (true);
