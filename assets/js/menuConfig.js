@@ -10,6 +10,7 @@ export const MENU_CONFIG = [
     grupo: "INÍCIO",
     itens: [
       item("dashboard", "Dashboard", "dashboard", ["DASHBOARD"]),
+      item("adm_app", "App ADM", "adm-app", ["ADM_APP", "COMPRAS_ADM", "COMPRAS_ESTOQUE", "ESTOQUE", "ALMOXARIFADO", "LOGISTICA_ADM", "PATRIMONIO_ADM", "ADM_HOTEL", "FROTAS_MULTAS", "FROTAS_RASTREADORES", "ADMIN_AUDITORIA", "ADMIN_USUARIOS", "USUARIOS_E_ACESSOS", "RH_PLANTAO"]),
       item("notificacoes", "Notificações", "notificacoes", ["NOTIFICACOES"]),
       item("historico_geral", "Histórico Geral", "historico", ["HISTORICO_GERAL"])
     ]
