@@ -117,6 +117,13 @@ const ATTACHMENT_ICONS = {
   zip: '🗜️', rar: '🗜️', '7z': '🗜️', txt: '📃', xml: '🧾', eml: '✉️'
 };
 
+const DANGEROUS_EXTENSIONS = /\.(exe|com|bat|cmd|msi|scr|vbs|js|jar|dll|sys|drv|ps1|pif|pst|reg|vsd|ppt|pptx|doc|docx|xls|xlsx)$/i;
+const DANGEROUS_MIMETYPES = ['application/x-msdownload', 'application/x-executable', 'application/x-msdos-program', 'application/x-dosexec'];
+
+function isDangerousAttachment(filename, mimeType) {
+  return DANGEROUS_EXTENSIONS.test(filename) || DANGEROUS_MIMETYPES.includes(mimeType);
+}
+
 function attachmentIcon(filename) {
   const ext = String(filename || '').split('.').pop().toLowerCase();
   return ATTACHMENT_ICONS[ext] || '📎';
@@ -212,6 +219,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
 
       <div class="em-tabs">
         <button class="em-tab active" data-tab="entrada" type="button">Entrada</button>
+        <button class="em-tab" data-tab="perigo" type="button">🔴 PERIGO</button>
         <button class="em-tab" data-tab="outbox" type="button">Fila de Respostas</button>
         <button class="em-tab" data-tab="contas" type="button">Contas cPanel</button>
       </div>
@@ -229,6 +237,15 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
           <article class="em-card"><div class="em-list" id="emList"><div class="em-empty">Carregando...</div></div></article>
           <article class="em-card"><div id="emDetail" class="em-empty">Selecione um e-mail para visualizar.</div></article>
         </div>
+      </div>
+
+      <div id="emPanelPerigo" class="em-panel" style="display:none">
+        <article class="em-card">
+          <div class="em-actions" style="justify-content:space-between;margin-bottom:12px">
+            <div><strong style="color:#fecaca">🔴 E-mails de RISCO (Vírus, anexos suspeitos, etc)</strong><div class="em-muted em-small">Aquivos executáveis, compactados ou com erro de interpretação são marcados como PERIGO.</div></div>
+          </div>
+          <div class="em-list" id="emPerigoList"><div class="em-empty">Carregando...</div></div>
+        </article>
       </div>
 
       <div id="emPanelOutbox" class="em-panel" style="display:none">
@@ -275,8 +292,10 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     state.tab = tab;
     document.querySelectorAll('.em-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     document.getElementById('emPanelEntrada').style.display = tab === 'entrada' ? '' : 'none';
+    document.getElementById('emPanelPerigo').style.display = tab === 'perigo' ? '' : 'none';
     document.getElementById('emPanelOutbox').style.display = tab === 'outbox' ? '' : 'none';
     document.getElementById('emPanelContas').style.display = tab === 'contas' ? '' : 'none';
+    if (tab === 'perigo') loadPerigo();
     if (tab === 'outbox') loadOutbox();
     if (tab === 'contas') renderAccounts();
   }
@@ -457,12 +476,13 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
 
         ${dadosEntries.length ? `<div class="em-extracted"><span class="em-section-label">Dados detectados</span><dl class="em-dl">${dadosEntries.map(([k, v]) => `<dt>${esc(DADOS_LABELS[k] || prettyKey(k))}</dt><dd>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>` : ''}
 
-        ${state.attachments.length ? `<div><span class="em-section-label">Anexos</span><div class="em-attachments">${state.attachments.map((a) => {
+        ${state.attachments.length ? `<div><span class="em-section-label">Anexos ${state.attachments.some((a) => isDangerousAttachment(a.nome_arquivo, a.mime_type)) ? '⚠️ PERIGO' : ''}</span><div class="em-attachments">${state.attachments.map((a) => {
           const badge = INTERPRETACAO_BADGES[a.interpretacao_status];
           const size = formatBytes(a.tamanho_bytes);
-          return `<button type="button" class="em-attachment" ${a.storage_path ? `data-attachment-path="${esc(a.storage_path)}"` : 'disabled title="Anexo não disponível para download"'}>
-            <span>${attachmentIcon(a.nome_arquivo)}</span>
-            <span>${esc(a.nome_arquivo)}</span>
+          const isDangerous = isDangerousAttachment(a.nome_arquivo, a.mime_type);
+          return `<button type="button" class="em-attachment" style="${isDangerous ? 'border-color:rgba(220,38,38,.6);background:rgba(220,38,38,.12)' : ''}" ${a.storage_path ? `data-attachment-path="${esc(a.storage_path)}"` : 'disabled title="Anexo não disponível para download"'}>
+            <span>${isDangerous ? '🚨' : attachmentIcon(a.nome_arquivo)}</span>
+            <span>${esc(a.nome_arquivo)}${isDangerous ? ' [SUSPEITO]' : ''}</span>
             ${size ? `<span class="em-muted">${esc(size)}</span>` : ''}
             ${badge ? `<span title="${esc(badge.title)}">${badge.icon}</span>` : ''}
           </button>`;
@@ -510,6 +530,37 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       await loadEmails();
       await selectEmail(e.id);
       alert('Resposta aprovada e colocada na fila. O worker enviará via SMTP.');
+    });
+  }
+
+  async function loadPerigo() {
+    const list = document.getElementById('emPerigoList');
+    list.innerHTML = `<div class="em-empty">Carregando...</div>`;
+    const { data, error } = await supabase.from('email_messages').select('*, email_accounts(nome,email)').in('risco', ['ALTO', 'CRITICO']).order('data_recebimento', { ascending: false }).limit(100);
+    if (error) {
+      list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}</div>`;
+      return;
+    }
+    if (!data?.length) {
+      list.innerHTML = `<div class="em-empty">✅ Nenhum e-mail de risco detectado.</div>`;
+      return;
+    }
+    list.innerHTML = data.map((e) => `
+      <div class="em-row" data-email-id="${esc(e.id)}" style="border-color:rgba(220,38,38,.38);background:rgba(220,38,38,.08)">
+        <div class="em-row-top">
+          <div class="em-row-from">
+            <span class="em-avatar sm" style="background:#dc2626">${esc(initials(e.remetente_nome, e.remetente_email))}</span>
+            <div class="em-subject">${esc(e.assunto || '(sem assunto)')}</div>
+          </div>
+          <span class="em-badge erro">${e.risco || 'CRITICO'}</span>
+        </div>
+        <div class="em-meta">${esc(e.remetente_nome || e.remetente_email || '-')} · ${brDate(e.data_recebimento)}</div>
+        <div class="em-snippet em-danger">⚠️ ${esc((e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
+      </div>
+    `).join('');
+    document.getElementById('emPerigoList').addEventListener('click', (event) => {
+      const row = event.target.closest('[data-email-id]');
+      if (row) selectEmail(row.dataset.emailId);
     });
   }
 
