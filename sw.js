@@ -1,37 +1,130 @@
-const CACHE_NAME = 'g1000-comprovante-v1';
+const CACHE_NAME = 'g1000-painel-pwa-v2';
 const SHARE_CACHE = 'g1000-shared-file';
-const STATIC = ['/painel/comprovante-mobile.html'];
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(
+const STATIC_URLS = [
+  '/painel/adm-app.html',
+  '/painel/compras-estoque.html',
+  '/painel/gestor-app.html',
+  '/painel/comprovante-mobile.html',
+  '/painel/styles.css',
+  '/painel/logo-grao1000.svg',
+  '/painel/assets/css/adm-app.css',
+  '/painel/assets/js/adm-app.js',
+  '/painel/assets/js/pwa-register.js',
+  '/painel/assets/js/paths.js',
+  '/painel/assets/js/auth.js',
+  '/painel/assets/js/authGuard.js',
+  '/painel/assets/js/sessionStore.js',
+  '/painel/assets/js/supabaseClient.js',
+  '/painel/assets/js/menuConfig.js',
+  '/painel/assets/js/compras-estoque.js',
+  '/painel/assets/js/compras-estoque-agrupamento.js',
+  '/painel/assets/js/compras-estoque-layout.js',
+  '/painel/manifest.webmanifest',
+  '/painel/manifest-adm.webmanifest',
+  '/painel/assets/icons/pwa-192.png',
+  '/painel/assets/icons/pwa-512.png'
+];
+
+const HTML_FALLBACKS = new Map([
+  ['adm-app', '/painel/adm-app.html'],
+  ['compras-estoque', '/painel/compras-estoque.html'],
+  ['gestor-app', '/painel/gestor-app.html'],
+  ['comprovante-mobile', '/painel/comprovante-mobile.html']
+]);
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((c) => c.addAll(STATIC).catch(() => {}))
+      .then((cache) => Promise.allSettled(STATIC_URLS.map((url) => cache.add(url))))
       .then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== SHARE_CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME && key !== SHARE_CACHE)
+          .map((key) => caches.delete(key))
+      ))
+      .then(() => self.clients.claim())
   );
 });
 
-// Web Share Target — intercepta POST do app do banco
-self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
 
-  if (e.request.method === 'POST' && url.pathname.includes('comprovante-mobile')) {
-    e.respondWith(handleShareTarget(e.request));
+  if (event.request.method === 'POST' && url.pathname.includes('comprovante-mobile')) {
+    event.respondWith(handleShareTarget(event.request));
     return;
   }
 
-  // Cache-first para o shell da PWA
-  if (e.request.method === 'GET' && STATIC.some((s) => url.pathname.endsWith(s.split('/').pop()))) {
-    e.respondWith(caches.match(e.request).then((cached) => cached || fetch(e.request)));
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
+
+  if (isNavigationRequest(event.request)) {
+    event.respondWith(networkFirst(event.request, fallbackForPath(url.pathname)));
+    return;
+  }
+
+  if (shouldCacheStatic(url.pathname)) {
+    event.respondWith(cacheFirst(event.request));
   }
 });
+
+function isNavigationRequest(request) {
+  return request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html');
+}
+
+function shouldCacheStatic(pathname) {
+  return (
+    pathname.startsWith('/painel/assets/') ||
+    pathname.endsWith('.css') ||
+    pathname.endsWith('.js') ||
+    pathname.endsWith('.webmanifest') ||
+    pathname.endsWith('.png') ||
+    pathname.endsWith('.svg') ||
+    pathname.endsWith('.ico')
+  );
+}
+
+function fallbackForPath(pathname) {
+  const clean = pathname.replace(/\/$/, '').split('/').pop() || '';
+  if (HTML_FALLBACKS.has(clean)) return HTML_FALLBACKS.get(clean);
+  if (clean.endsWith('.html')) {
+    const withoutExt = clean.replace(/\.html$/i, '');
+    return HTML_FALLBACKS.get(withoutExt) || null;
+  }
+  return null;
+}
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  const response = await fetch(request);
+  const cache = await caches.open(CACHE_NAME);
+  cache.put(request, response.clone()).catch(() => {});
+  return response;
+}
+
+async function networkFirst(request, fallbackUrl = null) {
+  try {
+    const response = await fetch(request);
+    const cache = await caches.open(CACHE_NAME);
+    cache.put(request, response.clone()).catch(() => {});
+    return response;
+  } catch (error) {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    if (fallbackUrl) {
+      const fallback = await caches.match(fallbackUrl);
+      if (fallback) return fallback;
+    }
+    throw error;
+  }
+}
 
 async function handleShareTarget(request) {
   try {
@@ -40,11 +133,15 @@ async function handleShareTarget(request) {
     if (file && file.size > 0) {
       const cache = await caches.open(SHARE_CACHE);
       await cache.put('/g1000-shared-file', new Response(file, {
-        headers: { 'Content-Type': file.type || 'image/jpeg', 'X-File-Name': encodeURIComponent(file.name || 'comprovante.jpg') }
+        headers: {
+          'Content-Type': file.type || 'image/jpeg',
+          'X-File-Name': encodeURIComponent(file.name || 'comprovante.jpg')
+        }
       }));
     }
   } catch (err) {
     console.warn('[SW] Falha ao capturar arquivo compartilhado:', err);
   }
+
   return Response.redirect('/painel/comprovante-mobile.html?shared=1', 303);
 }
