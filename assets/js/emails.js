@@ -178,7 +178,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-card{border:2px solid rgba(96,165,250,.12);border-radius:0;background:rgba(15,23,42,.85);padding:20px;min-width:0;box-shadow:0 10px 40px rgba(0,0,0,.2),inset 0 1px 0 rgba(96,165,250,.08);position:relative}
       .em-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,rgba(96,165,250,0),rgba(96,165,250,.3),rgba(96,165,250,0))}
 
-      .em-grid{display:grid;grid-template-columns:360px minmax(0,1fr);gap:24px;align-items:start;height:calc(100vh - 400px)}
+      .em-grid{display:grid;grid-template-columns:420px minmax(0,1fr);gap:20px;align-items:start}
       .em-filter{display:grid;grid-template-columns:1.1fr 1fr 1.5fr auto;gap:12px;align-items:end}
       .em-field{display:grid;gap:8px}.em-field label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;font-family:'IBM Plex Mono',monospace;font-weight:600}
       .em-field input,.em-field select,.em-field textarea{border:2px solid rgba(96,165,250,.15);border-radius:0;background:rgba(30,41,59,.8);color:#e2e8f0;padding:11px 14px;color-scheme:dark;min-width:0;font-family:inherit;transition:all 150ms;font-size:14px}
@@ -191,19 +191,16 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-list::-webkit-scrollbar-thumb{background:rgba(96,165,250,.3);border-radius:4px}
       .em-list::-webkit-scrollbar-thumb:hover{background:rgba(96,165,250,.5)}
 
-      .em-row{border:2px solid rgba(96,165,250,.12);background:rgba(2,6,23,.6);border-radius:0;padding:16px;cursor:pointer;display:grid;gap:12px;transition:all 200ms cubic-bezier(.4,.0,.2,1);position:relative;overflow:hidden;min-height:120px}
-      .em-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:transparent;transition:all 180ms}
-      .em-row:hover{border-color:rgba(96,165,250,.35);background:rgba(37,99,235,.1);transform:translateX(3px);box-shadow:0 8px 24px rgba(96,165,250,.1)}
+      .em-row{border:2px solid rgba(96,165,250,.1);background:rgba(2,6,23,.5);border-radius:0;padding:14px;cursor:pointer;display:grid;gap:8px;transition:all 180ms cubic-bezier(.4,.0,.2,1);position:relative;overflow:hidden}
+      .em-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:transparent;transition:all 180ms}
+      .em-row:hover{border-color:rgba(96,165,250,.3);background:rgba(37,99,235,.08);transform:translateX(2px)}
       .em-row:hover::before{background:linear-gradient(180deg,#3b82f6,rgba(59,130,246,0))}
-      .em-row.active{border-color:rgba(96,165,250,.6);background:rgba(37,99,235,.2);box-shadow:inset 0 0 0 2px rgba(96,165,250,.3),0 8px 24px rgba(96,165,250,.15)}
-      .em-row.active::before{background:linear-gradient(180deg,#60a5fa,rgba(96,165,250,0));width:6px}
+      .em-row.active{border-color:rgba(96,165,250,.5);background:rgba(37,99,235,.15);box-shadow:inset 0 0 0 1px rgba(96,165,250,.2)}
+      .em-row.active::before{background:linear-gradient(180deg,#60a5fa,rgba(96,165,250,0))}
 
-      .em-row-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.em-row-from{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
-      .em-subject{color:#f0f9ff;font-weight:700;line-height:1.35;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:15px}
-      .em-from-info{display:grid;gap:2px;min-width:0;flex:1}
-      .em-from-name{color:#e2e8f0;font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      .em-from-domain{color:#7c8aa3;font-size:11px;font-family:'IBM Plex Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      .em-meta{font-size:11px;color:#7c8aa3;white-space:nowrap}.em-snippet{font-size:13px;color:#cbd5e1;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;min-height:34px}
+      .em-row-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.em-row-from{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+      .em-subject{color:#f0f9ff;font-weight:700;line-height:1.3;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+      .em-meta{font-size:12px;color:#94a3b8}.em-snippet{font-size:12px;color:#cbd5e1;line-height:1.4}
 
       .em-badge,.em-prio{display:inline-flex;align-items:center;padding:5px 10px;border-radius:0;font-size:10px;font-weight:700;letter-spacing:.05em;border:1px solid currentColor;white-space:nowrap;font-family:'IBM Plex Mono',monospace;text-transform:uppercase}
       .em-badge.novo{background:rgba(59,130,246,.15);color:#60a5fa;border-color:rgba(96,165,250,.3)}
@@ -214,22 +211,19 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-prio.baixa{background:rgba(100,116,139,.12);color:#cbd5e1}.em-prio.normal{background:rgba(59,130,246,.12);color:#60a5fa}.em-prio.alta{background:rgba(245,158,11,.12);color:#fbbf24}.em-prio.urgente{background:rgba(220,38,38,.18);color:#ff6b6b;font-weight:800}
 
       .em-detail{display:grid;gap:20px}
-      .em-envelope{display:grid;gap:20px;padding-bottom:24px;border-bottom:2px solid rgba(96,165,250,.12);grid-template-columns:1fr auto}
-      .em-envelope-header{display:flex;gap:18px;align-items:flex-start}
-      .em-avatar{flex:none;width:72px;height:72px;border-radius:0;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-weight:800;font-size:28px;color:#f8fafc;box-shadow:0 12px 32px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.12);border:2px solid rgba(96,165,250,.25)}
-      .em-avatar.sm{width:32px;height:32px;border-radius:0;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.25);border:1px solid rgba(96,165,250,.2)}
-      .em-envelope-main{flex:1;min-width:0;display:grid;gap:12px}
-      .em-from-block{display:grid;gap:6px}
-      .em-from-name-big{font-size:22px;font-weight:800;color:#f0f9ff;line-height:1.2}
-      .em-from-domain-big{font-size:13px;color:#7c8aa3;font-family:'IBM Plex Mono',monospace}
-      .em-envelope-main h3{margin:0;color:#e2e8f0;font-size:20px;font-family:inherit;font-weight:600;line-height:1.4;word-break:break-word}
-      .em-to{font-size:12px;color:#94a3b8;word-break:break-word;font-family:'IBM Plex Mono',monospace}
-      .em-envelope-meta{display:flex;flex-direction:column;align-items:flex-end;gap:12px;text-align:right;padding-top:4px}
-      .em-date{font-size:13px;color:#94a3b8;line-height:1.6;white-space:nowrap;font-family:'IBM Plex Mono',monospace}
+      .em-envelope{display:flex;gap:16px;align-items:flex-start;padding-bottom:20px;border-bottom:2px solid rgba(96,165,250,.12)}
+      .em-avatar{flex:none;width:54px;height:54px;border-radius:0;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-weight:800;font-size:18px;color:#f8fafc;box-shadow:0 8px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.1);border:1px solid rgba(96,165,250,.2)}
+      .em-avatar.sm{width:32px;height:32px;border-radius:0;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+      .em-envelope-main{flex:1;min-width:0}
+      .em-envelope-main h3{margin:0 0 8px;color:#f0f9ff;font-size:26px;font-family:'Playfair Display',serif;font-weight:800;line-height:1.2;word-break:break-word}
+      .em-from{font-size:14px;color:#e2e8f0;font-family:'IBM Plex Mono',monospace}.em-from b{font-weight:700;color:#bfdbfe}
+      .em-to{margin-top:6px;font-size:12px;color:#94a3b8;word-break:break-word;font-family:'IBM Plex Mono',monospace}
+      .em-envelope-meta{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:10px;text-align:right}
+      .em-date{font-size:12px;color:#94a3b8;line-height:1.6;white-space:nowrap;font-family:'IBM Plex Mono',monospace}
 
-      .em-insights{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
-      .em-chip{display:flex;flex-direction:column;gap:6px;border:2px solid rgba(96,165,250,.15);background:rgba(2,6,23,.5);border-radius:0;padding:12px 14px;font-size:11px;color:#94a3b8;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.05em;box-shadow:inset 0 1px 0 rgba(96,165,250,.08)}
-      .em-chip b{color:#f0f9ff;font-weight:700;font-size:14px}
+      .em-insights{display:flex;flex-wrap:wrap;gap:10px}
+      .em-chip{display:flex;align-items:center;gap:8px;border:2px solid rgba(96,165,250,.18);background:rgba(2,6,23,.4);border-radius:0;padding:9px 14px;font-size:12px;color:#94a3b8;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.04em}
+      .em-chip b{color:#f0f9ff;font-weight:700}
 
       .em-summary{border:2px solid rgba(96,165,250,.25);background:linear-gradient(135deg,rgba(37,99,235,.1),rgba(15,23,42,.4));border-radius:0;padding:16px 18px;display:grid;gap:8px;box-shadow:inset 0 1px 0 rgba(96,165,250,.15)}
       .em-summary-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#93c5fd;font-weight:800;font-family:'IBM Plex Mono',monospace}
@@ -247,9 +241,9 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-attachment[style*="dc2626"]{border-color:rgba(220,38,38,.5);background:rgba(220,38,38,.1);color:#ff6b6b}
       .em-attachment[style*="dc2626"]:hover:not(:disabled){border-color:rgba(220,38,38,.8);background:rgba(220,38,38,.2);box-shadow:0 0 16px rgba(220,38,38,.2)}
 
-      .em-letter{position:relative;border:2px solid rgba(96,165,250,.1);border-radius:0;background:rgba(248,250,252,.015);padding:28px 28px;overflow:hidden;box-shadow:inset 0 1px 0 rgba(96,165,250,.08)}
-      .em-letter::before{content:'';position:absolute;left:0;top:0;bottom:0;width:5px;background:linear-gradient(180deg,#3b82f6,rgba(59,130,246,0))}
-      .em-letter pre{white-space:pre-wrap;word-break:break-word;color:#dbeafe;line-height:1.9;font-size:15px;font-family:system-ui,-apple-system,sans-serif;margin:0;max-height:500px;overflow:auto;padding-right:10px;letter-spacing:.3px}
+      .em-letter{position:relative;border:2px solid rgba(96,165,250,.1);border-radius:0;background:rgba(248,250,252,.02);padding:20px 22px;overflow:hidden;box-shadow:inset 0 1px 0 rgba(96,165,250,.08)}
+      .em-letter::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,#3b82f6,rgba(59,130,246,0))}
+      .em-letter pre{white-space:pre-wrap;word-break:break-word;color:#dbe4f3;line-height:1.8;font-size:14px;font-family:'IBM Plex Mono',monospace;margin:0;max-height:480px;overflow:auto;padding-right:8px}
 
       .em-reply{border:2px solid rgba(96,165,250,.12);border-radius:0;background:rgba(2,6,23,.35);padding:18px;display:grid;gap:12px;box-shadow:inset 0 1px 0 rgba(96,165,250,.08)}
 
@@ -464,26 +458,20 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       document.getElementById('emDetail').innerHTML = `<div class="em-empty">Selecione um e-mail para visualizar.</div>`;
       return;
     }
-    list.innerHTML = state.emails.map((e) => {
-      const domain = (e.remetente_email || '').split('@')[1] || '';
-      return `
+    list.innerHTML = state.emails.map((e) => `
       <div class="em-row ${state.selected?.id === e.id ? 'active' : ''}" data-email-id="${esc(e.id)}">
         <div class="em-row-top">
           <div class="em-row-from">
             <span class="em-avatar sm" style="background:${avatarColor(e.remetente_email || e.remetente_nome)}">${esc(initials(e.remetente_nome, e.remetente_email))}</span>
-            <div class="em-from-info">
-              <div class="em-from-name">${esc(e.remetente_nome || e.remetente_email || '-')}</div>
-              ${domain ? `<div class="em-from-domain">${esc(domain)}</div>` : ''}
-            </div>
+            <div class="em-subject">${esc(e.assunto || '(sem assunto)')}</div>
           </div>
           ${statusBadge(e.status)}
         </div>
-        <div class="em-subject">${esc(e.assunto || '(sem assunto)')}</div>
-        <div class="em-snippet">${esc((e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 120))}</div>
-        <div class="em-actions">${prioBadge(e.prioridade)}<span class="em-badge arquivado">${esc(e.categoria || '-')}</span>${e.risco && e.risco !== 'BAIXO' ? `<span class="em-badge erro">${esc(e.risco)}</span>` : ''}<span class="em-meta">${brDate(e.data_recebimento)}</span></div>
+        <div class="em-meta">${esc(e.remetente_nome || e.remetente_email || '-')} · ${brDate(e.data_recebimento)}</div>
+        <div class="em-actions">${prioBadge(e.prioridade)}<span class="em-badge arquivado">${esc(e.categoria || 'SEM CATEGORIA')}</span><span class="em-badge arquivado">${esc(e.regional || 'SEM REGIONAL')}</span></div>
+        <div class="em-snippet">${esc((e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
       </div>
-    `;
-    }).join('');
+    `).join('');
   }
 
   async function selectEmail(id) {
@@ -505,24 +493,18 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     if (!e) return;
     const dadosEntries = dadosDetectadosEntries(e.dados_detectados);
     const bodyText = emailBodyText(e);
-    const domain = (e.remetente_email || '').split('@')[1] || '';
     detail.innerHTML = `
       <div class="em-detail">
         <div class="em-envelope">
-          <div class="em-envelope-header">
-            <div class="em-avatar" style="background:${avatarColor(e.remetente_email || e.remetente_nome)}">${esc(initials(e.remetente_nome, e.remetente_email))}</div>
-            <div class="em-envelope-main">
-              <div class="em-from-block">
-                <div class="em-from-name-big">${esc(e.remetente_nome || e.remetente_email || '-')}</div>
-                ${domain ? `<div class="em-from-domain-big">${esc(domain)}</div>` : ''}
-              </div>
-              <h3>${esc(e.assunto || '(sem assunto)')}</h3>
-              <div class="em-to">Para: ${esc(e.destinatario || '-')}${e.cc ? ` · Cc: ${esc(e.cc)}` : ''}</div>
-            </div>
+          <div class="em-avatar" style="background:${avatarColor(e.remetente_email || e.remetente_nome)}">${esc(initials(e.remetente_nome, e.remetente_email))}</div>
+          <div class="em-envelope-main">
+            <h3>${esc(e.assunto || '(sem assunto)')}</h3>
+            <div class="em-from"><b>${esc(e.remetente_nome || e.remetente_email || '-')}</b> <span class="em-muted">&lt;${esc(e.remetente_email || '')}&gt;</span></div>
+            <div class="em-to">Para: ${esc(e.destinatario || '-')}${e.cc ? ` · Cc: ${esc(e.cc)}` : ''}</div>
           </div>
           <div class="em-envelope-meta">
             <div class="em-date">${esc(e.email_accounts?.nome || '')}<br>${brDate(e.data_recebimento)}</div>
-            <div class="em-actions">${statusBadge(e.status)}${prioBadge(e.prioridade)}${e.risco && e.risco !== 'BAIXO' ? `<span class="em-badge erro">${esc(e.risco)}</span>` : ''}</div>
+            <div class="em-actions">${statusBadge(e.status)}${prioBadge(e.prioridade)}</div>
           </div>
         </div>
 
