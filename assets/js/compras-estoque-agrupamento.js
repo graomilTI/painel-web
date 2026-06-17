@@ -66,6 +66,7 @@ function ensureGroupedBadge(cell, count) {
 function applyTableGrouping() {
   if (applying) return;
   applying = true;
+  observer.disconnect();
   try {
     ensureStyles();
     document.querySelectorAll('.stk-table').forEach((table) => {
@@ -101,6 +102,7 @@ function applyTableGrouping() {
     });
   } finally {
     applying = false;
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 }
 

@@ -124,11 +124,16 @@ function improveHeadings() {
 }
 
 function applyLayout() {
-  ensureStyles();
-  improveHeadings();
-  decorateTabs();
-  ensureIntro();
-  ensureContextHint();
+  observer.disconnect();
+  try {
+    ensureStyles();
+    improveHeadings();
+    decorateTabs();
+    ensureIntro();
+    ensureContextHint();
+  } finally {
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
 }
 
 const observer = new MutationObserver(() => applyLayout());
