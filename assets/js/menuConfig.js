@@ -40,7 +40,8 @@ export const MENU_CONFIG = [
   {
     grupo: "COMPRAS",
     itens: [
-      item("compras_adm", "Painel de Compras", "adm-compras", ["COMPRAS_ADM"])
+      item("compras_adm", "Painel de Compras", "adm-compras", ["COMPRAS_ADM"]),
+      item("compras_estoque", "Estoque", "compras-estoque", ["COMPRAS_ESTOQUE", "ESTOQUE", "ALMOXARIFADO", "COMPRAS_ADM"])
     ]
   },
 
