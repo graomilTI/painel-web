@@ -50,7 +50,7 @@ function statusText(row) {
 }
 
 function selectSourceTab(container, row) {
-  let target = 'abertas';
+  let target = 'todas';
   if (row.identificar_solicitado_em) target = 'identificar';
   else if (row.dobrar_solicitado_em) target = 'dobrar';
   container.querySelector(`[data-subtab="${target}"]`)?.click();
