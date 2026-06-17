@@ -30,6 +30,14 @@ function statusInfo(atual, minimo) {
   return { cls: 'normal', label: 'Normal' };
 }
 
+function ensureStyles() {
+  if (document.getElementById('stkGroupingStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'stkGroupingStyles';
+  style.textContent = `.stk-merged{display:inline-flex;margin-top:4px;padding:3px 7px;border-radius:999px;background:rgba(111,208,165,.12);color:#bbf7d0;font-size:11px;font-weight:800}.stk-merged-break{display:block}`;
+  document.head.appendChild(style);
+}
+
 function isMaterialTable(table) {
   const headers = [...table.querySelectorAll('thead th')].map((th) => norm(th.textContent));
   return headers.length >= 6 && headers[0] === 'MATERIAL' && headers.includes('CATEGORIA') && headers.includes('ATUAL') && headers.includes('MINIMO');
@@ -44,12 +52,14 @@ function rowKey(cells) {
 }
 
 function ensureGroupedBadge(cell, count) {
-  cell.querySelectorAll('.stk-merged').forEach((el) => el.remove());
+  cell.querySelectorAll('.stk-merged,.stk-merged-break').forEach((el) => el.remove());
   if (count <= 1) return;
+  const br = document.createElement('br');
+  br.className = 'stk-merged-break';
   const badge = document.createElement('span');
   badge.className = 'stk-merged';
   badge.textContent = `${count} cadastros agrupados`;
-  cell.appendChild(document.createElement('br'));
+  cell.appendChild(br);
   cell.appendChild(badge);
 }
 
@@ -57,6 +67,7 @@ function applyTableGrouping() {
   if (applying) return;
   applying = true;
   try {
+    ensureStyles();
     document.querySelectorAll('.stk-table').forEach((table) => {
       if (!isMaterialTable(table)) return;
       const rows = [...table.querySelectorAll('tbody tr')].filter((row) => row.children.length >= 6 && !row.querySelector('.stk-empty'));
