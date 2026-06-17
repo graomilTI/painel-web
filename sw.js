@@ -18,6 +18,7 @@ const STATIC_URLS = [
   '/painel/assets/js/supabaseClient.js',
   '/painel/assets/js/menuConfig.js',
   '/painel/assets/js/compras-estoque.js',
+  '/painel/assets/js/compras-estoque-agrupamento.js',
   '/painel/manifest.webmanifest',
   '/painel/manifest-adm.webmanifest',
   '/painel/assets/icons/pwa-192.png',
