@@ -358,7 +358,7 @@ async function syncAccount(account, rules) {
       const limit = Number(account.limite_por_sync || 30);
       let maxUid = lastUid;
       const fetched = [];
-      for await (const item of client.fetch(range, { uid: true, source: true, envelope: true, flags: true })) {
+      for await (const item of client.fetch(range, { uid: true, source: true, envelope: true, flags: true }, { uid: true })) {
         if (item.uid) maxUid = Math.max(maxUid, Number(item.uid));
         fetched.push(item);
         if (fetched.length >= limit) break;
@@ -439,7 +439,7 @@ async function syncAccount(account, rules) {
     await supabase.from('email_accounts').update({
       ultima_sync_em: new Date().toISOString(),
       ultima_sync_status: 'ERRO',
-      ultima_sync_erro: String(error.message || error).slice(0, 1000),
+      ultima_sync_erro: String(error.responseText || error.message || error).slice(0, 1000),
       updated_at: new Date().toISOString()
     }).eq('id', account.id);
   }
