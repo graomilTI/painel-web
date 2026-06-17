@@ -1,6 +1,6 @@
 import './pwa-register.js';
-import { requireAuth } from './authGuard.js';
-import { signOut } from './auth.js';
+import { getSession, getUserContext, signOut } from './auth.js';
+import { saveUserContext, clearUserContext } from './sessionStore.js';
 import { toPanelUrl } from './paths.js';
 
 const root = document.getElementById('admApp');
@@ -64,6 +64,31 @@ function initials(name = '') {
 function installStateText() {
   const standalone = window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone === true;
   return standalone ? 'Instalado' : 'Pronto para instalar';
+}
+
+async function loadUserContext() {
+  const session = await getSession();
+  if (!session?.user) {
+    clearUserContext();
+    window.location.replace(toPanelUrl('login.html'));
+    return null;
+  }
+
+  try {
+    const context = await getUserContext(session.user.id);
+    if (!context?.user?.active) {
+      clearUserContext();
+      window.location.replace(toPanelUrl('login.html'));
+      return null;
+    }
+    saveUserContext(context);
+    return context;
+  } catch (error) {
+    clearUserContext();
+    console.error('[adm-app] permissões', error);
+    window.location.replace(toPanelUrl('login.html'));
+    return null;
+  }
 }
 
 function setupInstallButton() {
@@ -183,7 +208,7 @@ function render(userContext) {
 
 async function boot() {
   try {
-    const userContext = await requireAuth();
+    const userContext = await loadUserContext();
     if (!userContext) return;
     render(userContext);
   } catch (error) {
