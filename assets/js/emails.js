@@ -199,8 +199,8 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-row.active::before{background:linear-gradient(180deg,#60a5fa,rgba(96,165,250,0))}
 
       .em-row-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.em-row-from{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
-      .em-subject{color:#f0f9ff;font-weight:700;line-height:1.3;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
-      .em-meta{font-size:12px;color:#94a3b8}.em-snippet{font-size:12px;color:#cbd5e1;line-height:1.4}
+      .em-subject{color:#f0f9ff;font-weight:700;line-height:1.4;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px}
+      .em-meta{font-size:12px;color:#94a3b8}.em-snippet{font-size:13px;color:#cbd5e1;line-height:1.5}
 
       .em-badge,.em-prio{display:inline-flex;align-items:center;padding:5px 10px;border-radius:0;font-size:10px;font-weight:700;letter-spacing:.05em;border:1px solid currentColor;white-space:nowrap;font-family:'IBM Plex Mono',monospace;text-transform:uppercase}
       .em-badge.novo{background:rgba(59,130,246,.15);color:#60a5fa;border-color:rgba(96,165,250,.3)}
@@ -215,9 +215,9 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-avatar{flex:none;width:54px;height:54px;border-radius:0;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-weight:800;font-size:18px;color:#f8fafc;box-shadow:0 8px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.1);border:1px solid rgba(96,165,250,.2)}
       .em-avatar.sm{width:32px;height:32px;border-radius:0;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
       .em-envelope-main{flex:1;min-width:0}
-      .em-envelope-main h3{margin:0 0 8px;color:#f0f9ff;font-size:26px;font-family:'Playfair Display',serif;font-weight:800;line-height:1.2;word-break:break-word}
-      .em-from{font-size:14px;color:#e2e8f0;font-family:'IBM Plex Mono',monospace}.em-from b{font-weight:700;color:#bfdbfe}
-      .em-to{margin-top:6px;font-size:12px;color:#94a3b8;word-break:break-word;font-family:'IBM Plex Mono',monospace}
+      .em-envelope-main h3{margin:0 0 14px;color:#f0f9ff;font-size:26px;font-family:'Playfair Display',serif;font-weight:800;line-height:1.3;word-break:break-word;padding-bottom:10px;border-bottom:1px solid rgba(96,165,250,.1)}
+      .em-from{font-size:15px;color:#e2e8f0;font-family:'IBM Plex Mono',monospace;line-height:1.6;margin-top:10px}.em-from b{font-weight:700;color:#bfdbfe;font-size:16px}
+      .em-to{margin-top:8px;font-size:12px;color:#94a3b8;word-break:break-word;font-family:'IBM Plex Mono',monospace;line-height:1.5}
       .em-envelope-meta{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:10px;text-align:right}
       .em-date{font-size:12px;color:#94a3b8;line-height:1.6;white-space:nowrap;font-family:'IBM Plex Mono',monospace}
 
@@ -241,7 +241,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-attachment[style*="dc2626"]{border-color:rgba(220,38,38,.5);background:rgba(220,38,38,.1);color:#ff6b6b}
       .em-attachment[style*="dc2626"]:hover:not(:disabled){border-color:rgba(220,38,38,.8);background:rgba(220,38,38,.2);box-shadow:0 0 16px rgba(220,38,38,.2)}
 
-      .em-letter{position:relative;border:2px solid rgba(96,165,250,.1);border-radius:0;background:rgba(248,250,252,.02);padding:20px 22px;overflow:hidden;box-shadow:inset 0 1px 0 rgba(96,165,250,.08)}
+      .em-letter{position:relative;border:2px solid rgba(96,165,250,.1);border-radius:0;background:rgba(248,250,252,.02);padding:24px 26px;overflow:hidden;box-shadow:inset 0 1px 0 rgba(96,165,250,.08)}
       .em-letter::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,#3b82f6,rgba(59,130,246,0))}
       .em-letter pre{white-space:pre-wrap;word-break:break-word;color:#dbe4f3;line-height:1.8;font-size:14px;font-family:'IBM Plex Mono',monospace;margin:0;max-height:480px;overflow:auto;padding-right:8px}
 
