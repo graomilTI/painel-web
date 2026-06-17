@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Preview - Central de E-mails</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    .em-wrap{display:grid;gap:18px}
+    .em-hero{border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:22px;background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(37,99,235,.20));box-shadow:0 20px 50px rgba(2,6,23,.22)}
+    .em-hero h2{margin:0 0 6px;color:#f8fafc;font-size:28px}.em-hero p{margin:0;color:#94a3b8;max-width:980px}
+    .em-tabs,.em-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .em-tab{border:1px solid rgba(148,163,184,.18);border-radius:999px;padding:9px 16px;background:rgba(15,23,42,.6);color:#94a3b8;cursor:pointer;font-weight:800;font-size:13px}
+    .em-tab.active{background:rgba(37,99,235,.24);color:#bfdbfe;border-color:rgba(96,165,250,.35)}
+    .em-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(15,23,42,.82);padding:18px;min-width:0}
+    .em-grid{display:grid;grid-template-columns:390px minmax(0,1fr);gap:16px;align-items:start}
+    .em-filter{display:grid;grid-template-columns:1.1fr 1fr 1.5fr auto;gap:10px;align-items:end}
+    .em-field{display:grid;gap:6px}.em-field label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}
+    .em-field input,.em-field select,.em-field textarea{border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0d0d18;color:#e2e8f0;padding:10px 12px;color-scheme:dark;min-width:0}
+    .em-field textarea{min-height:120px;resize:vertical;line-height:1.45}
+    .em-list{display:grid;gap:8px;max-height:70vh;overflow:auto;padding-right:4px}
+    .em-row{border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.42);border-radius:16px;padding:12px;cursor:pointer;display:grid;gap:6px}
+    .em-row:hover,.em-row.active{border-color:rgba(96,165,250,.38);background:rgba(37,99,235,.12)}
+    .em-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.em-row-from{display:flex;align-items:center;gap:8px;min-width:0;flex:1}.em-subject{color:#f8fafc;font-weight:800;line-height:1.25;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.em-meta{font-size:12px;color:#94a3b8}.em-snippet{font-size:12px;color:#cbd5e1;line-height:1.35}
+    .em-badge,.em-prio{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:10px;font-weight:900;letter-spacing:.03em;border:1px solid rgba(148,163,184,.18);white-space:nowrap}
+    .em-badge.novo{background:rgba(59,130,246,.16);color:#bfdbfe}.em-badge.pendente,.em-badge.responder{background:rgba(245,158,11,.12);color:#fde68a}.em-badge.respondido,.em-badge.resolvido{background:rgba(22,163,74,.16);color:#bbf7d0}.em-badge.arquivado,.em-badge.ignorado{background:rgba(100,116,139,.16);color:#cbd5e1}.em-badge.erro{background:rgba(220,38,38,.18);color:#fecaca}
+    .em-prio.baixa{background:rgba(100,116,139,.12);color:#cbd5e1}.em-prio.normal{background:rgba(59,130,246,.12);color:#bfdbfe}.em-prio.alta{background:rgba(245,158,11,.12);color:#fde68a}.em-prio.urgente{background:rgba(220,38,38,.18);color:#fecaca}
+    .em-detail{display:grid;gap:16px}
+    .em-envelope{display:flex;gap:14px;align-items:flex-start;padding-bottom:16px;border-bottom:1px solid rgba(148,163,184,.14)}
+    .em-avatar{flex:none;width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:'Syne',system-ui,sans-serif;font-weight:800;font-size:16px;color:#f8fafc;box-shadow:0 6px 16px rgba(0,0,0,.25)}
+    .em-avatar.sm{width:30px;height:30px;border-radius:9px;font-size:11px;box-shadow:none}
+    .em-envelope-main{flex:1;min-width:0}
+    .em-envelope-main h3{margin:0 0 6px;color:#f8fafc;font-size:21px;font-family:'Syne',system-ui,sans-serif;line-height:1.3;word-break:break-word}
+    .em-from{font-size:13px;color:#e2e8f0}.em-from b{font-weight:800}
+    .em-to{margin-top:4px;font-size:11px;color:#7c8aa3;word-break:break-word}
+    .em-envelope-meta{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:8px;text-align:right}
+    .em-date{font-size:11px;color:#7c8aa3;line-height:1.5;white-space:nowrap}
+    .em-insights{display:flex;flex-wrap:wrap;gap:8px}
+    .em-chip{display:flex;align-items:center;gap:6px;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:12px;padding:7px 12px;font-size:12px;color:#94a3b8}
+    .em-chip b{color:#f8fafc;font-weight:800}
+    .em-summary{border:1px solid rgba(96,165,250,.22);background:linear-gradient(135deg,rgba(37,99,235,.12),rgba(15,23,42,.3));border-radius:16px;padding:14px 16px;display:grid;gap:6px}
+    .em-summary-label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#93c5fd;font-weight:900}
+    .em-summary p{margin:0;color:#dbeafe;line-height:1.6;font-size:13px}
+    .em-section-label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#7c8aa3;font-weight:900;margin-bottom:9px}
+    .em-extracted{border:1px solid rgba(148,163,184,.12);border-radius:16px;background:rgba(2,6,23,.3);padding:12px 14px}
+    .em-dl{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;margin:0;font-size:12px}
+    .em-dl dt{color:#7c8aa3}.em-dl dd{margin:0;color:#e2e8f0;font-weight:800;word-break:break-word}
+    .em-attachments{display:flex;flex-wrap:wrap;gap:8px}
+    .em-attachment{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.4);border-radius:10px;padding:7px 12px;font-size:12px;color:#cbd5e1}
+    .em-letter{position:relative;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(248,250,252,.025);padding:18px 20px 18px 22px;overflow:hidden}
+    .em-letter::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#60a5fa,rgba(96,165,250,0))}
+    .em-letter pre{white-space:pre-wrap;word-break:break-word;color:#dbe4f3;line-height:1.7;font-size:13.5px;font-family:inherit;margin:0;max-height:420px;overflow:auto;padding-right:6px}
+    .em-reply{border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.28);padding:16px;display:grid;gap:10px}
+    .em-empty{color:#94a3b8;text-align:center;padding:30px;border:1px dashed rgba(148,163,184,.22);border-radius:18px}.em-muted{color:#94a3b8}.em-small{font-size:12px}.em-danger{color:#fecaca}.em-ok{color:#bbf7d0}
+    .em-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.em-table{width:100%;border-collapse:collapse;min-width:760px}.em-table th,.em-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;color:#e2e8f0;vertical-align:top}.em-table th{background:rgba(15,23,42,.96);color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+    @media(max-width:1040px){.em-grid{grid-template-columns:1fr}.em-list{max-height:unset}.em-filter{grid-template-columns:1fr}.em-envelope{flex-wrap:wrap}.em-envelope-meta{flex-direction:row;align-items:center;text-align:left}}
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><h2>Painel</h2><p>Gestão integrada</p></div>
+      <div></div>
+    </aside>
+    <div class="content-wrap">
+      <header class="topbar">
+        <div><h1>Central de E-mails</h1><div class="meta">Olá, Preview</div></div>
+        <div class="topbar-actions"><span class="badge">USUÁRIO</span><button class="btn btn-secondary">Sair</button></div>
+      </header>
+      <main class="page-main">
+        <section class="em-wrap">
+          <div class="em-hero">
+            <h2>Central de E-mails</h2>
+            <p>Lê caixas do cPanel via IMAP, classifica por regional/assunto, gera resumo e resposta sugerida. O envio fica em fila para aprovação e processamento pelo worker do servidor.</p>
+          </div>
+
+          <div class="em-tabs">
+            <button class="em-tab active">Entrada</button>
+            <button class="em-tab">Fila de Respostas</button>
+            <button class="em-tab">Contas cPanel</button>
+          </div>
+
+          <article class="em-card">
+            <form class="em-filter">
+              <div class="em-field"><label>Conta</label><select><option>Todas</option></select></div>
+              <div class="em-field"><label>Status</label><select><option>Pendentes</option></select></div>
+              <div class="em-field"><label>Buscar</label><input placeholder="remetente, assunto, categoria, regional..."></div>
+              <button class="btn btn-primary" type="button">Atualizar</button>
+            </form>
+          </article>
+
+          <div class="em-grid">
+            <article class="em-card">
+              <div class="em-list">
+                <div class="em-row active">
+                  <div class="em-row-top">
+                    <div class="em-row-from">
+                      <span class="em-avatar sm" style="background:#2563eb">MC</span>
+                      <div class="em-subject">Solicitação de NF para contrato P33004.000 - Regional Centro-Oeste</div>
+                    </div>
+                    <span class="em-badge novo">NOVO</span>
+                  </div>
+                  <div class="em-meta">Maria Costa · 10/06/2026 14:32</div>
+                  <div class="em-actions"><span class="em-prio alta">ALTA</span><span class="em-badge arquivado">FISCAL/NF-E</span><span class="em-badge arquivado">CENTRO-OESTE</span></div>
+                  <div class="em-snippet">Cliente solicita emissão da nota fiscal referente ao contrato P33004.000 com urgência, alega que o prazo de entrega vence amanhã.</div>
+                </div>
+                <div class="em-row">
+                  <div class="em-row-top">
+                    <div class="em-row-from">
+                      <span class="em-avatar sm" style="background:#16a34a">JP</span>
+                      <div class="em-subject">Confirmação de agendamento - Pátio SP, recebimento de carga e descarregamento amanhã cedo</div>
+                    </div>
+                    <span class="em-badge pendente">PENDENTE</span>
+                  </div>
+                  <div class="em-meta">João Pereira · 10/06/2026 09:11</div>
+                  <div class="em-actions"><span class="em-prio normal">NORMAL</span><span class="em-badge arquivado">LOGÍSTICA</span><span class="em-badge arquivado">SUDESTE</span></div>
+                  <div class="em-snippet">Confirmando o horário de chegada do caminhão placa ABC1D23 amanhã às 7h para descarregamento no pátio SP.</div>
+                </div>
+                <div class="em-row">
+                  <div class="em-row-top">
+                    <div class="em-row-from">
+                      <span class="em-avatar sm" style="background:#db2777">FC</span>
+                      <div class="em-subject">Dúvida sobre fatura em duplicidade</div>
+                    </div>
+                    <span class="em-badge respondido">RESPONDIDO</span>
+                  </div>
+                  <div class="em-meta">financeiro@clienteabc.com · 09/06/2026 17:45</div>
+                  <div class="em-actions"><span class="em-prio normal">NORMAL</span><span class="em-badge arquivado">FINANCEIRO</span><span class="em-badge arquivado">SEM REGIONAL</span></div>
+                  <div class="em-snippet">Recebemos duas cobranças referentes à mesma nota fiscal NF 4521. Poderiam verificar?</div>
+                </div>
+              </div>
+            </article>
+
+            <article class="em-card">
+              <div class="em-detail">
+                <div class="em-envelope">
+                  <div class="em-avatar" style="background:#2563eb">MC</div>
+                  <div class="em-envelope-main">
+                    <h3>Solicitação de NF para contrato P33004.000 - Regional Centro-Oeste</h3>
+                    <div class="em-from"><b>Maria Costa</b> <span class="em-muted">&lt;maria.costa@transportadorabeta.com.br&gt;</span></div>
+                    <div class="em-to">Para: fiscal@grao1000.com.br · Cc: comercial@grao1000.com.br</div>
+                  </div>
+                  <div class="em-envelope-meta">
+                    <div class="em-date">Fiscal<br>10/06/2026 14:32</div>
+                    <div class="em-actions"><span class="em-badge novo">NOVO</span><span class="em-prio alta">ALTA</span></div>
+                  </div>
+                </div>
+
+                <div class="em-insights">
+                  <div class="em-chip">Regional <b>Centro-Oeste</b></div>
+                  <div class="em-chip">Categoria <b>Fiscal/NF-e</b></div>
+                  <div class="em-chip">Precisa resposta? <b>Sim</b></div>
+                  <div class="em-chip">Classificado por <b>regra:nf-pendente</b></div>
+                </div>
+
+                <div class="em-summary">
+                  <span class="em-summary-label">✨ Resumo da IA</span>
+                  <p>Cliente solicita emissão da nota fiscal referente ao contrato P33004.000 com urgência, alega que o prazo de entrega da carga vence amanhã (11/06) e já enviou comprovante de pagamento.</p>
+                </div>
+
+                <div class="em-extracted">
+                  <span class="em-section-label">Dados detectados</span>
+                  <dl class="em-dl">
+                    <dt>Contrato</dt><dd>P33004.000</dd>
+                    <dt>Placa</dt><dd>ABC1D23</dd>
+                    <dt>Valor</dt><dd>R$ 12.450,00</dd>
+                  </dl>
+                </div>
+
+                <div>
+                  <span class="em-section-label">Anexos</span>
+                  <div class="em-attachments">
+                    <span class="em-attachment">📄 comprovante_pagamento.pdf</span>
+                    <span class="em-attachment">📊 planilha_cargas.xlsx</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span class="em-section-label">Mensagem</span>
+                  <div class="em-letter"><pre>Olá, equipe fiscal,
+
+Conforme conversamos por telefone, precisamos da nota fiscal referente ao contrato P33004.000 o quanto antes, pois o prazo de entrega da carga vence amanhã (11/06).
+
+Segue em anexo o comprovante de pagamento e a planilha com o detalhamento das cargas.
+
+Itens da carga:
+• 18 toneladas de soja
+• Origem: Rio Verde/GO
+• Destino: Santos/SP
+
+Fico no aguardo do retorno.
+
+Att,
+Maria Costa
+Transportadora Beta</pre></div>
+                </div>
+
+                <div class="em-reply">
+                  <span class="em-section-label">↩ Responder</span>
+                  <div class="em-field">
+                    <label>Resposta sugerida / resposta a enviar</label>
+                    <textarea>Olá Maria, tudo bem? Já localizamos o contrato P33004.000 e a NF está sendo processada. Você deve recebê-la ainda hoje por e-mail. Qualquer dúvida, estamos à disposição.</textarea>
+                    <div class="em-actions">
+                      <button class="btn btn-primary">Aprovar e colocar na fila de envio</button>
+                      <button class="btn btn-secondary">Marcar resolvido</button>
+                      <button class="btn btn-secondary">Arquivar</button>
+                      <button class="btn btn-secondary">Marcar pendente</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

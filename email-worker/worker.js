@@ -264,10 +264,18 @@ async function classifyWithAI(message, base) {
   }
 }
 
+function isDangerousAttachment(filename, mimeType) {
+  const dangerousExts = /\.(exe|com|bat|cmd|msi|scr|vbs|jar|dll|sys|drv|ps1|pif|pst|reg|vsd)$/i;
+  const dangerousMimes = ['application/x-msdownload', 'application/x-executable', 'application/x-msdos-program'];
+  return dangerousExts.test(filename) || dangerousMimes.includes(mimeType);
+}
+
 async function saveAttachment(emailId, attachment) {
   const filename = attachment.filename || `anexo-${Date.now()}`;
   const storagePath = `${emailId}/${Date.now()}-${filename}`.replace(/[^a-zA-Z0-9_./-]/g, '_');
   let stored = null;
+  const isDangerous = isDangerousAttachment(filename, attachment.contentType);
+
   try {
     const { error } = await supabase.storage.from('email-anexos').upload(storagePath, attachment.content, {
       contentType: attachment.contentType || 'application/octet-stream',
@@ -308,11 +316,11 @@ async function saveAttachment(emailId, attachment) {
     storage_path: stored,
     content_id: attachment.contentId || null,
     dados_extraidos: dadosExtraidos,
-    interpretacao_status: status,
-    interpretado_em: status ? new Date().toISOString() : null
+    interpretacao_status: isDangerous ? 'PERIGO' : status,
+    interpretado_em: new Date().toISOString()
   });
 
-  return dadosExtraidos;
+  return { dadosExtraidos, isDangerous };
 }
 
 const MAX_RFC822_DEPTH = 1;
@@ -346,6 +354,7 @@ async function syncAccount(account, rules) {
     port: account.imap_port,
     secure: account.imap_secure,
     auth: { user: account.username, pass: decryptCredential(account.password_cipher) },
+    tls: { rejectUnauthorized: false },
     logger: false
   });
   let inserted = 0;
@@ -400,15 +409,21 @@ async function syncAccount(account, rules) {
         if (error) throw error;
         inserted++;
         const attachmentsDados = {};
+        let temAnexoPeigoso = false;
         for (const attachment of await collectAttachments(parsed)) {
-          const extracted = await saveAttachment(saved.id, attachment);
-          Object.assign(attachmentsDados, extracted);
+          const { dadosExtraidos, isDangerous } = await saveAttachment(saved.id, attachment);
+          Object.assign(attachmentsDados, dadosExtraidos);
+          if (isDangerous) temAnexoPeigoso = true;
         }
+        const updatePayload = { updated_at: new Date().toISOString() };
         if (Object.keys(attachmentsDados).length) {
-          await supabase.from('email_messages').update({
-            dados_detectados: { ...(cls.dados_detectados || {}), ...attachmentsDados },
-            updated_at: new Date().toISOString()
-          }).eq('id', saved.id);
+          updatePayload.dados_detectados = { ...(cls.dados_detectados || {}), ...attachmentsDados };
+        }
+        if (temAnexoPeigoso) {
+          updatePayload.risco = 'CRITICO';
+        }
+        if (Object.keys(updatePayload).length > 1) {
+          await supabase.from('email_messages').update(updatePayload).eq('id', saved.id);
         }
         if (account.auto_responder && cls.auto_responder && cls.resposta_sugerida && from.address) {
           await supabase.from('email_outbox').insert({

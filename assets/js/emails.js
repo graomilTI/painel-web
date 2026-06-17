@@ -117,6 +117,13 @@ const ATTACHMENT_ICONS = {
   zip: '🗜️', rar: '🗜️', '7z': '🗜️', txt: '📃', xml: '🧾', eml: '✉️'
 };
 
+const DANGEROUS_EXTENSIONS = /\.(exe|com|bat|cmd|msi|scr|vbs|js|jar|dll|sys|drv|ps1|pif|pst|reg|vsd|ppt|pptx|doc|docx|xls|xlsx)$/i;
+const DANGEROUS_MIMETYPES = ['application/x-msdownload', 'application/x-executable', 'application/x-msdos-program', 'application/x-dosexec'];
+
+function isDangerousAttachment(filename, mimeType) {
+  return DANGEROUS_EXTENSIONS.test(filename) || DANGEROUS_MIMETYPES.includes(mimeType);
+}
+
 function attachmentIcon(filename) {
   const ext = String(filename || '').split('.').pop().toLowerCase();
   return ATTACHMENT_ICONS[ext] || '📎';
@@ -152,55 +159,98 @@ async function updateEmail(id, payload, userContext) {
 initProtectedPage('Central de E-mails', (content, userContext) => {
   content.innerHTML = `
     <style>
-      .em-wrap{display:grid;gap:18px}
-      .em-hero{border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:22px;background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(37,99,235,.20));box-shadow:0 20px 50px rgba(2,6,23,.22)}
-      .em-hero h2{margin:0 0 6px;color:#f8fafc;font-size:28px}.em-hero p{margin:0;color:#94a3b8;max-width:980px}
-      .em-tabs,.em-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-      .em-tab{border:1px solid rgba(148,163,184,.18);border-radius:999px;padding:9px 16px;background:rgba(15,23,42,.6);color:#94a3b8;cursor:pointer;font-weight:800;font-size:13px}
-      .em-tab.active{background:rgba(37,99,235,.24);color:#bfdbfe;border-color:rgba(96,165,250,.35)}
-      .em-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(15,23,42,.82);padding:18px;min-width:0}
-      .em-grid{display:grid;grid-template-columns:390px minmax(0,1fr);gap:16px;align-items:start}
-      .em-filter{display:grid;grid-template-columns:1.1fr 1fr 1.5fr auto;gap:10px;align-items:end}
-      .em-field{display:grid;gap:6px}.em-field label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}
-      .em-field input,.em-field select,.em-field textarea{border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0d0d18;color:#e2e8f0;padding:10px 12px;color-scheme:dark;min-width:0}
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Playfair+Display:wght@600;700;800&display=swap');
+
+      .em-wrap{display:grid;gap:24px;position:relative}
+      .em-wrap::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse 80% 80% at 50% 0%,rgba(37,99,235,.05),transparent);pointer-events:none;z-index:-1}
+
+      .em-hero{border:2px solid rgba(96,165,250,.25);border-radius:0;padding:32px;background:linear-gradient(135deg,rgba(15,23,42,.98),rgba(30,58,138,.15));box-shadow:0 25px 60px rgba(0,0,0,.4),inset 0 1px 0 rgba(96,165,250,.15);position:relative;overflow:hidden}
+      .em-hero::before{content:'';position:absolute;top:-50%;right:-50%;width:800px;height:800px;background:radial-gradient(circle,rgba(96,165,250,.08),transparent 70%);border-radius:50%}
+      .em-hero h2{margin:0 0 8px;color:#f0f9ff;font-size:36px;font-family:'Playfair Display',serif;font-weight:800;letter-spacing:-1px;position:relative;z-index:1}
+      .em-hero p{margin:0;color:#cbd5e1;max-width:1000px;font-size:15px;line-height:1.6;position:relative;z-index:1}
+
+      .em-tabs{display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-bottom:2px solid rgba(96,165,250,.15);padding-bottom:16px}
+      .em-tab{border:2px solid rgba(148,163,184,.2);border-radius:0;padding:12px 20px;background:rgba(15,23,42,.7);color:#94a3b8;cursor:pointer;font-weight:700;font-size:13px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.08em;transition:all 200ms cubic-bezier(.4,.0,.2,1);position:relative}
+      .em-tab:hover{border-color:rgba(96,165,250,.4);background:rgba(37,99,235,.08);color:#bfdbfe}
+      .em-tab.active{background:rgba(96,165,250,.2);color:#f0f9ff;border-color:rgba(96,165,250,.6);box-shadow:0 0 20px rgba(96,165,250,.2)}
+      .em-tab.active::after{content:'';position:absolute;bottom:-16px;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#3b82f6,transparent)}
+
+      .em-card{border:2px solid rgba(96,165,250,.12);border-radius:0;background:rgba(15,23,42,.85);padding:20px;min-width:0;box-shadow:0 10px 40px rgba(0,0,0,.2),inset 0 1px 0 rgba(96,165,250,.08);position:relative}
+      .em-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,rgba(96,165,250,0),rgba(96,165,250,.3),rgba(96,165,250,0))}
+
+      .em-grid{display:grid;grid-template-columns:420px minmax(0,1fr);gap:20px;align-items:start}
+      .em-filter{display:grid;grid-template-columns:1.1fr 1fr 1.5fr auto;gap:12px;align-items:end}
+      .em-field{display:grid;gap:8px}.em-field label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;font-family:'IBM Plex Mono',monospace;font-weight:600}
+      .em-field input,.em-field select,.em-field textarea{border:2px solid rgba(96,165,250,.15);border-radius:0;background:rgba(30,41,59,.8);color:#e2e8f0;padding:11px 14px;color-scheme:dark;min-width:0;font-family:inherit;transition:all 150ms;font-size:14px}
+      .em-field input:focus,.em-field select:focus,.em-field textarea:focus{border-color:rgba(96,165,250,.5);background:rgba(30,41,59,.95);box-shadow:0 0 0 3px rgba(96,165,250,.1);outline:none}
       .em-field textarea{min-height:120px;resize:vertical;line-height:1.45}
-      .em-list{display:grid;gap:8px;max-height:70vh;overflow:auto;padding-right:4px}
-      .em-row{border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.42);border-radius:16px;padding:12px;cursor:pointer;display:grid;gap:6px}
-      .em-row:hover,.em-row.active{border-color:rgba(96,165,250,.38);background:rgba(37,99,235,.12)}
-      .em-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.em-row-from{display:flex;align-items:center;gap:8px;min-width:0;flex:1}.em-subject{color:#f8fafc;font-weight:800;line-height:1.25;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.em-meta{font-size:12px;color:#94a3b8}.em-snippet{font-size:12px;color:#cbd5e1;line-height:1.35}
-      .em-badge,.em-prio{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:10px;font-weight:900;letter-spacing:.03em;border:1px solid rgba(148,163,184,.18);white-space:nowrap}
-      .em-badge.novo{background:rgba(59,130,246,.16);color:#bfdbfe}.em-badge.pendente,.em-badge.responder{background:rgba(245,158,11,.12);color:#fde68a}.em-badge.respondido,.em-badge.resolvido{background:rgba(22,163,74,.16);color:#bbf7d0}.em-badge.arquivado,.em-badge.ignorado{background:rgba(100,116,139,.16);color:#cbd5e1}.em-badge.erro{background:rgba(220,38,38,.18);color:#fecaca}
-      .em-prio.baixa{background:rgba(100,116,139,.12);color:#cbd5e1}.em-prio.normal{background:rgba(59,130,246,.12);color:#bfdbfe}.em-prio.alta{background:rgba(245,158,11,.12);color:#fde68a}.em-prio.urgente{background:rgba(220,38,38,.18);color:#fecaca}
-      .em-detail{display:grid;gap:16px}
-      .em-envelope{display:flex;gap:14px;align-items:flex-start;padding-bottom:16px;border-bottom:1px solid rgba(148,163,184,.14)}
-      .em-avatar{flex:none;width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:'Syne',system-ui,sans-serif;font-weight:800;font-size:16px;color:#f8fafc;box-shadow:0 6px 16px rgba(0,0,0,.25)}
-      .em-avatar.sm{width:30px;height:30px;border-radius:9px;font-size:11px;box-shadow:none}
+
+      .em-list{display:grid;gap:10px;max-height:72vh;overflow:auto;padding-right:6px}
+      .em-list::-webkit-scrollbar{width:8px}
+      .em-list::-webkit-scrollbar-track{background:rgba(2,6,23,.3)}
+      .em-list::-webkit-scrollbar-thumb{background:rgba(96,165,250,.3);border-radius:4px}
+      .em-list::-webkit-scrollbar-thumb:hover{background:rgba(96,165,250,.5)}
+
+      .em-row{border:2px solid rgba(96,165,250,.1);background:rgba(2,6,23,.5);border-radius:0;padding:14px;cursor:pointer;display:grid;gap:8px;transition:all 180ms cubic-bezier(.4,.0,.2,1);position:relative;overflow:hidden}
+      .em-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:transparent;transition:all 180ms}
+      .em-row:hover{border-color:rgba(96,165,250,.3);background:rgba(37,99,235,.08);transform:translateX(2px)}
+      .em-row:hover::before{background:linear-gradient(180deg,#3b82f6,rgba(59,130,246,0))}
+      .em-row.active{border-color:rgba(96,165,250,.5);background:rgba(37,99,235,.15);box-shadow:inset 0 0 0 1px rgba(96,165,250,.2)}
+      .em-row.active::before{background:linear-gradient(180deg,#60a5fa,rgba(96,165,250,0))}
+
+      .em-row-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.em-row-from{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+      .em-subject{color:#f0f9ff;font-weight:700;line-height:1.3;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+      .em-meta{font-size:12px;color:#94a3b8}.em-snippet{font-size:12px;color:#cbd5e1;line-height:1.4}
+
+      .em-badge,.em-prio{display:inline-flex;align-items:center;padding:5px 10px;border-radius:0;font-size:10px;font-weight:700;letter-spacing:.05em;border:1px solid currentColor;white-space:nowrap;font-family:'IBM Plex Mono',monospace;text-transform:uppercase}
+      .em-badge.novo{background:rgba(59,130,246,.15);color:#60a5fa;border-color:rgba(96,165,250,.3)}
+      .em-badge.pendente,.em-badge.responder{background:rgba(245,158,11,.15);color:#fbbf24;border-color:rgba(251,191,36,.3)}
+      .em-badge.respondido,.em-badge.resolvido{background:rgba(34,197,94,.15);color:#4ade80;border-color:rgba(74,222,128,.3)}
+      .em-badge.arquivado,.em-badge.ignorado{background:rgba(100,116,139,.12);color:#cbd5e1;border-color:rgba(148,163,184,.3)}
+      .em-badge.erro{background:rgba(220,38,38,.2);color:#ff6b6b;border-color:rgba(239,68,68,.5);font-weight:800;box-shadow:0 0 12px rgba(220,38,38,.2)}
+      .em-prio.baixa{background:rgba(100,116,139,.12);color:#cbd5e1}.em-prio.normal{background:rgba(59,130,246,.12);color:#60a5fa}.em-prio.alta{background:rgba(245,158,11,.12);color:#fbbf24}.em-prio.urgente{background:rgba(220,38,38,.18);color:#ff6b6b;font-weight:800}
+
+      .em-detail{display:grid;gap:20px}
+      .em-envelope{display:flex;gap:16px;align-items:flex-start;padding-bottom:20px;border-bottom:2px solid rgba(96,165,250,.12)}
+      .em-avatar{flex:none;width:54px;height:54px;border-radius:0;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-weight:800;font-size:18px;color:#f8fafc;box-shadow:0 8px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.1);border:1px solid rgba(96,165,250,.2)}
+      .em-avatar.sm{width:32px;height:32px;border-radius:0;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
       .em-envelope-main{flex:1;min-width:0}
-      .em-envelope-main h3{margin:0 0 6px;color:#f8fafc;font-size:21px;font-family:'Syne',system-ui,sans-serif;line-height:1.3;word-break:break-word}
-      .em-from{font-size:13px;color:#e2e8f0}.em-from b{font-weight:800}
-      .em-to{margin-top:4px;font-size:11px;color:#7c8aa3;word-break:break-word}
-      .em-envelope-meta{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:8px;text-align:right}
-      .em-date{font-size:11px;color:#7c8aa3;line-height:1.5;white-space:nowrap}
-      .em-insights{display:flex;flex-wrap:wrap;gap:8px}
-      .em-chip{display:flex;align-items:center;gap:6px;border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.34);border-radius:12px;padding:7px 12px;font-size:12px;color:#94a3b8}
-      .em-chip b{color:#f8fafc;font-weight:800}
-      .em-summary{border:1px solid rgba(96,165,250,.22);background:linear-gradient(135deg,rgba(37,99,235,.12),rgba(15,23,42,.3));border-radius:16px;padding:14px 16px;display:grid;gap:6px}
-      .em-summary-label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#93c5fd;font-weight:900}
-      .em-summary p{margin:0;color:#dbeafe;line-height:1.6;font-size:13px}
-      .em-section-label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#7c8aa3;font-weight:900;margin-bottom:9px}
-      .em-extracted{border:1px solid rgba(148,163,184,.12);border-radius:16px;background:rgba(2,6,23,.3);padding:12px 14px}
-      .em-dl{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;margin:0;font-size:12px}
-      .em-dl dt{color:#7c8aa3}.em-dl dd{margin:0;color:#e2e8f0;font-weight:800;word-break:break-word}
-      .em-attachments{display:flex;flex-wrap:wrap;gap:8px}
-      .em-attachment{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.4);border-radius:10px;padding:7px 12px;font-size:12px;color:#cbd5e1;font-family:inherit;cursor:pointer}
-      .em-attachment:hover:not(:disabled){border-color:rgba(96,165,250,.38);background:rgba(37,99,235,.12);color:#f8fafc}
-      .em-attachment:disabled{cursor:default;opacity:.55}
-      .em-letter{position:relative;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(248,250,252,.025);padding:18px 20px 18px 22px;overflow:hidden}
-      .em-letter::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#60a5fa,rgba(96,165,250,0))}
-      .em-letter pre{white-space:pre-wrap;word-break:break-word;color:#dbe4f3;line-height:1.7;font-size:13.5px;font-family:inherit;margin:0;max-height:420px;overflow:auto;padding-right:6px}
-      .em-reply{border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.28);padding:16px;display:grid;gap:10px}
-      .em-empty{color:#94a3b8;text-align:center;padding:30px;border:1px dashed rgba(148,163,184,.22);border-radius:18px}.em-muted{color:#94a3b8}.em-small{font-size:12px}.em-danger{color:#fecaca}.em-ok{color:#bbf7d0}
-      .em-account-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.em-account-grid .wide{grid-column:1/-1}.em-check{display:flex;align-items:center;gap:8px;color:#cbd5e1;font-size:13px;margin-top:24px}
+      .em-envelope-main h3{margin:0 0 8px;color:#f0f9ff;font-size:26px;font-family:'Playfair Display',serif;font-weight:800;line-height:1.2;word-break:break-word}
+      .em-from{font-size:14px;color:#e2e8f0;font-family:'IBM Plex Mono',monospace}.em-from b{font-weight:700;color:#bfdbfe}
+      .em-to{margin-top:6px;font-size:12px;color:#94a3b8;word-break:break-word;font-family:'IBM Plex Mono',monospace}
+      .em-envelope-meta{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:10px;text-align:right}
+      .em-date{font-size:12px;color:#94a3b8;line-height:1.6;white-space:nowrap;font-family:'IBM Plex Mono',monospace}
+
+      .em-insights{display:flex;flex-wrap:wrap;gap:10px}
+      .em-chip{display:flex;align-items:center;gap:8px;border:2px solid rgba(96,165,250,.18);background:rgba(2,6,23,.4);border-radius:0;padding:9px 14px;font-size:12px;color:#94a3b8;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.04em}
+      .em-chip b{color:#f0f9ff;font-weight:700}
+
+      .em-summary{border:2px solid rgba(96,165,250,.25);background:linear-gradient(135deg,rgba(37,99,235,.1),rgba(15,23,42,.4));border-radius:0;padding:16px 18px;display:grid;gap:8px;box-shadow:inset 0 1px 0 rgba(96,165,250,.15)}
+      .em-summary-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#93c5fd;font-weight:800;font-family:'IBM Plex Mono',monospace}
+      .em-summary p{margin:0;color:#dbeafe;line-height:1.7;font-size:14px}
+
+      .em-section-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#7c8aa3;font-weight:800;margin-bottom:12px;font-family:'IBM Plex Mono',monospace;border-bottom:1px solid rgba(96,165,250,.1);padding-bottom:8px}
+      .em-extracted{border:2px solid rgba(96,165,250,.1);border-radius:0;background:rgba(2,6,23,.3);padding:14px 16px;box-shadow:inset 0 1px 0 rgba(96,165,250,.08)}
+      .em-dl{display:grid;grid-template-columns:auto 1fr;gap:8px 20px;margin:0;font-size:13px}
+      .em-dl dt{color:#7c8aa3;font-family:'IBM Plex Mono',monospace;font-weight:600}.em-dl dd{margin:0;color:#e2e8f0;font-weight:600;word-break:break-word}
+
+      .em-attachments{display:flex;flex-wrap:wrap;gap:10px}
+      .em-attachment{display:inline-flex;align-items:center;gap:8px;border:2px solid rgba(96,165,250,.15);background:rgba(2,6,23,.5);border-radius:0;padding:9px 14px;font-size:12px;color:#cbd5e1;font-family:'IBM Plex Mono',monospace;cursor:pointer;transition:all 150ms;text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+      .em-attachment:hover:not(:disabled){border-color:rgba(96,165,250,.4);background:rgba(37,99,235,.12);color:#f0f9ff;box-shadow:0 4px 12px rgba(96,165,250,.15)}
+      .em-attachment:disabled{cursor:default;opacity:.5}
+      .em-attachment[style*="dc2626"]{border-color:rgba(220,38,38,.5);background:rgba(220,38,38,.1);color:#ff6b6b}
+      .em-attachment[style*="dc2626"]:hover:not(:disabled){border-color:rgba(220,38,38,.8);background:rgba(220,38,38,.2);box-shadow:0 0 16px rgba(220,38,38,.2)}
+
+      .em-letter{position:relative;border:2px solid rgba(96,165,250,.1);border-radius:0;background:rgba(248,250,252,.02);padding:20px 22px;overflow:hidden;box-shadow:inset 0 1px 0 rgba(96,165,250,.08)}
+      .em-letter::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,#3b82f6,rgba(59,130,246,0))}
+      .em-letter pre{white-space:pre-wrap;word-break:break-word;color:#dbe4f3;line-height:1.8;font-size:14px;font-family:'IBM Plex Mono',monospace;margin:0;max-height:480px;overflow:auto;padding-right:8px}
+
+      .em-reply{border:2px solid rgba(96,165,250,.12);border-radius:0;background:rgba(2,6,23,.35);padding:18px;display:grid;gap:12px;box-shadow:inset 0 1px 0 rgba(96,165,250,.08)}
+
+      .em-empty{color:#94a3b8;text-align:center;padding:40px;border:2px dashed rgba(96,165,250,.15);border-radius:0;font-size:14px;line-height:1.6}
+      .em-muted{color:#94a3b8}.em-small{font-size:12px}.em-danger{color:#ff6b6b;font-weight:700}.em-ok{color:#4ade80;font-weight:700}
+      .em-account-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.em-account-grid .wide{grid-column:1/-1}.em-check{display:flex;align-items:center;gap:10px;color:#cbd5e1;font-size:13px;margin-top:24px;font-family:'IBM Plex Mono',monospace}
+
       @media(max-width:1040px){.em-grid{grid-template-columns:1fr}.em-list{max-height:unset}.em-filter,.em-account-grid{grid-template-columns:1fr}.em-check{margin-top:0}.em-envelope{flex-wrap:wrap}.em-envelope-meta{flex-direction:row;align-items:center;text-align:left}}
     </style>
 
@@ -212,6 +262,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
 
       <div class="em-tabs">
         <button class="em-tab active" data-tab="entrada" type="button">Entrada</button>
+        <button class="em-tab" data-tab="perigo" type="button">🔴 PERIGO</button>
         <button class="em-tab" data-tab="outbox" type="button">Fila de Respostas</button>
         <button class="em-tab" data-tab="contas" type="button">Contas cPanel</button>
       </div>
@@ -229,6 +280,15 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
           <article class="em-card"><div class="em-list" id="emList"><div class="em-empty">Carregando...</div></div></article>
           <article class="em-card"><div id="emDetail" class="em-empty">Selecione um e-mail para visualizar.</div></article>
         </div>
+      </div>
+
+      <div id="emPanelPerigo" class="em-panel" style="display:none">
+        <article class="em-card">
+          <div class="em-actions" style="justify-content:space-between;margin-bottom:12px">
+            <div><strong style="color:#fecaca">🔴 E-mails de RISCO (Vírus, anexos suspeitos, etc)</strong><div class="em-muted em-small">Aquivos executáveis, compactados ou com erro de interpretação são marcados como PERIGO.</div></div>
+          </div>
+          <div class="em-list" id="emPerigoList"><div class="em-empty">Carregando...</div></div>
+        </article>
       </div>
 
       <div id="emPanelOutbox" class="em-panel" style="display:none">
@@ -275,8 +335,10 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     state.tab = tab;
     document.querySelectorAll('.em-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     document.getElementById('emPanelEntrada').style.display = tab === 'entrada' ? '' : 'none';
+    document.getElementById('emPanelPerigo').style.display = tab === 'perigo' ? '' : 'none';
     document.getElementById('emPanelOutbox').style.display = tab === 'outbox' ? '' : 'none';
     document.getElementById('emPanelContas').style.display = tab === 'contas' ? '' : 'none';
+    if (tab === 'perigo') loadPerigo();
     if (tab === 'outbox') loadOutbox();
     if (tab === 'contas') renderAccounts();
   }
@@ -457,12 +519,13 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
 
         ${dadosEntries.length ? `<div class="em-extracted"><span class="em-section-label">Dados detectados</span><dl class="em-dl">${dadosEntries.map(([k, v]) => `<dt>${esc(DADOS_LABELS[k] || prettyKey(k))}</dt><dd>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>` : ''}
 
-        ${state.attachments.length ? `<div><span class="em-section-label">Anexos</span><div class="em-attachments">${state.attachments.map((a) => {
+        ${state.attachments.length ? `<div><span class="em-section-label">Anexos ${state.attachments.some((a) => isDangerousAttachment(a.nome_arquivo, a.mime_type)) ? '⚠️ PERIGO' : ''}</span><div class="em-attachments">${state.attachments.map((a) => {
           const badge = INTERPRETACAO_BADGES[a.interpretacao_status];
           const size = formatBytes(a.tamanho_bytes);
-          return `<button type="button" class="em-attachment" ${a.storage_path ? `data-attachment-path="${esc(a.storage_path)}"` : 'disabled title="Anexo não disponível para download"'}>
-            <span>${attachmentIcon(a.nome_arquivo)}</span>
-            <span>${esc(a.nome_arquivo)}</span>
+          const isDangerous = isDangerousAttachment(a.nome_arquivo, a.mime_type);
+          return `<button type="button" class="em-attachment" style="${isDangerous ? 'border-color:rgba(220,38,38,.6);background:rgba(220,38,38,.12)' : ''}" ${a.storage_path ? `data-attachment-path="${esc(a.storage_path)}"` : 'disabled title="Anexo não disponível para download"'}>
+            <span>${isDangerous ? '🚨' : attachmentIcon(a.nome_arquivo)}</span>
+            <span>${esc(a.nome_arquivo)}${isDangerous ? ' [SUSPEITO]' : ''}</span>
             ${size ? `<span class="em-muted">${esc(size)}</span>` : ''}
             ${badge ? `<span title="${esc(badge.title)}">${badge.icon}</span>` : ''}
           </button>`;
@@ -510,6 +573,37 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       await loadEmails();
       await selectEmail(e.id);
       alert('Resposta aprovada e colocada na fila. O worker enviará via SMTP.');
+    });
+  }
+
+  async function loadPerigo() {
+    const list = document.getElementById('emPerigoList');
+    list.innerHTML = `<div class="em-empty">Carregando...</div>`;
+    const { data, error } = await supabase.from('email_messages').select('*, email_accounts(nome,email)').in('risco', ['ALTO', 'CRITICO']).order('data_recebimento', { ascending: false }).limit(100);
+    if (error) {
+      list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}</div>`;
+      return;
+    }
+    if (!data?.length) {
+      list.innerHTML = `<div class="em-empty">✅ Nenhum e-mail de risco detectado.</div>`;
+      return;
+    }
+    list.innerHTML = data.map((e) => `
+      <div class="em-row" data-email-id="${esc(e.id)}" style="border-color:rgba(220,38,38,.38);background:rgba(220,38,38,.08)">
+        <div class="em-row-top">
+          <div class="em-row-from">
+            <span class="em-avatar sm" style="background:#dc2626">${esc(initials(e.remetente_nome, e.remetente_email))}</span>
+            <div class="em-subject">${esc(e.assunto || '(sem assunto)')}</div>
+          </div>
+          <span class="em-badge erro">${e.risco || 'CRITICO'}</span>
+        </div>
+        <div class="em-meta">${esc(e.remetente_nome || e.remetente_email || '-')} · ${brDate(e.data_recebimento)}</div>
+        <div class="em-snippet em-danger">⚠️ ${esc((e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
+      </div>
+    `).join('');
+    document.getElementById('emPerigoList').addEventListener('click', (event) => {
+      const row = event.target.closest('[data-email-id]');
+      if (row) selectEmail(row.dataset.emailId);
     });
   }
 
