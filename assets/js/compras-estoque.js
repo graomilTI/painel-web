@@ -2,7 +2,7 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
 const state = { materiais: [], movs: [], colaboradores: [], tab: 'visao' };
-const CATEGORIAS = ['Uniformes','Escritório','Brindes','Equipamentos','Classificação','TI','Outros'];
+const CATEGORIAS = ['Uniformes','Escritório','Brindes','Equipamentos','Classificação','EPI','Outros'];
 const UNIDADES = ['UN','CX','PCT','KG','M','RL'];
 const LOCAIS = ['Almoxarifado','Matriz','Sala Técnica','Escritório','Veículo','Operação'];
 const MOTIVOS = ['Entrega ao colaborador','Reposição','Uso operacional','Perda','Descarte','Transferência','Manutenção','Inventário'];
