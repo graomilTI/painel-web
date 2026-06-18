@@ -1,5 +1,5 @@
 import { initProtectedPage } from './pageInit.js';
-import { supabase } from './supabaseClient.js';
+import { supabase, SUPABASE_URL } from './supabaseClient.js';
 
 const AGENTES = [
   { id: 'sync-colaboradores', name: 'Colaboradores', freq: '5 min', table: 'colaboradores' },
@@ -195,24 +195,39 @@ window.closeDetails = () => {
   render();
 };
 
+async function parseResponse(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try { return JSON.parse(text); }
+  catch { return { message: text }; }
+}
+
 window.executeAgent = async (agentId) => {
   if (!confirm(`Executar agente "${agentId}" agora?`)) return;
 
   try {
-    const response = await fetch(`https://xyzpnuumdqhegxakkyws.functions.supabase.co/${agentId}`, {
+    const { data: { session } } = await supabase.auth.getSession();
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/${agentId}`, {
       method: 'POST',
       headers: {
-        'Authorization': 'Bearer sync-colaboradores-secret-key-123',
-        'Content-Type': 'application/json'
+        'Authorization': `Bearer ${session?.access_token || ''}`,
+        'Content-Type': 'application/json',
       },
-      body: '{}'
+      body: JSON.stringify({ origem: 'painel-ti-agentes' }),
     });
 
-    const data = await response.json();
-    alert(`✅ Agente executado!\n\nInseridos: ${data.inserted}\nAtualizados: ${data.updated}\nDuração: ${data.duration_ms}ms`);
-    loadAgentes();
+    const data = await parseResponse(response);
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.error || data.message || `HTTP ${response.status}`);
+    }
+
+    alert(`✅ Agente executado!\n\nInseridos: ${data.inserted ?? 0}\nAtualizados: ${data.updated ?? 0}\nDuração: ${data.duration_ms ?? '-'}ms`);
+    await loadAgentes();
   } catch (e) {
-    alert(`❌ Erro: ${e.message}`);
+    alert(
+      `❌ Erro ao executar o agente: ${e.message}\n\n` +
+      'Se aparecer bloqueio de CORS no console, ajuste a Edge Function para responder OPTIONS com headers Access-Control-Allow-Origin.'
+    );
   }
 };
 
