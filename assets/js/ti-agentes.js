@@ -199,7 +199,7 @@ window.executeAgent = async (agentId) => {
   if (!confirm(`Executar agente "${agentId}" agora?`)) return;
 
   try {
-    const response = await fetch(`https://xyzpnuumdqhegxakkyws.functions.supabase.co/${agentId}`, {
+    const response = await fetch(`https://xyzpnuumdqhegxakkyws.supabase.co/functions/v1/${agentId}`, {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer sync-colaboradores-secret-key-123',
@@ -208,7 +208,18 @@ window.executeAgent = async (agentId) => {
       body: '{}'
     });
 
-    const data = await response.json();
+    const raw = await response.text();
+    let data = {};
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch (_) {
+      data = { raw };
+    }
+
+    if (!response.ok) {
+      throw new Error(data.error || data.message || raw || `HTTP ${response.status}`);
+    }
+
     alert(`✅ Agente executado!\n\nInseridos: ${data.inserted}\nAtualizados: ${data.updated}\nDuração: ${data.duration_ms}ms`);
     loadAgentes();
   } catch (e) {
