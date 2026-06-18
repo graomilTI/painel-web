@@ -220,15 +220,29 @@ window.executeAgent = async (agentId) => {
       throw new Error(data.error || data.message || raw || `HTTP ${response.status}`);
     }
 
-    alert(`✅ Agente executado!\n\nInseridos: ${data.inserted}\nAtualizados: ${data.updated}\nDuração: ${data.duration_ms}ms`);
-    loadAgentes();
+    const errors = Array.isArray(data.errors) ? data.errors.filter((err) => err?.error) : [];
+    const resumo = [
+      `Inseridos: ${data.inserted ?? 0}`,
+      `Atualizados: ${data.updated ?? 0}`,
+      `Total processado: ${data.total_processed ?? 0}`,
+      `Duração: ${data.duration_ms ?? 0}ms`
+    ].join('\n');
+
+    if (errors.length) {
+      const detalhes = errors.slice(0, 5).map((err) => `• Linha ${err.row ?? '-'}: ${err.error}`).join('\n');
+      alert(`⚠️ Agente executado com erro parcial.\n\n${resumo}\n\nErros:\n${detalhes}${errors.length > 5 ? `\n... mais ${errors.length - 5} erro(s)` : ''}`);
+    } else {
+      alert(`✅ Agente executado!\n\n${resumo}`);
+    }
+
+    await loadAgentes();
   } catch (e) {
     alert(`❌ Erro: ${e.message}`);
   }
 };
 
 window.viewLogs = (agentId) => {
-  const cmd = `supabase functions get-logs ${agentId} --limit 50`;
+  const cmd = `npx supabase functions logs ${agentId} --project-ref xyzpnuumdqhegxakkyws --limit 50`;
   const msg = `Execute no terminal:\n\n${cmd}\n\nPara ver os logs da execução dessa função.`;
   alert(msg);
 };
@@ -247,13 +261,19 @@ async function loadAgentes() {
 
           if (error) throw error;
 
+          const { count, error: countError } = await supabase
+            .from(agente.table)
+            .select('*', { count: 'exact', head: true });
+
+          if (countError) console.warn(`Erro contando ${agente.name}:`, countError);
+
           return {
             id: agente.id,
             name: agente.name,
             freq: agente.freq,
             table: agente.table,
             ultima_sync: data?.[0]?.sincronizado_em || null,
-            total_records: 0,
+            total_records: count || 0,
           };
         } catch (e) {
           console.error(`Erro carregando ${agente.name}:`, e);
