@@ -20,7 +20,7 @@ const EMPREGADOR_EPI = {
   endereco:'AV BRASIL, nº 2732, APT 01, SAO CRISTOVAO, Cascavel - PR, CEP 85816-294',
 };
 
-const state = { rows:[], filter:'pendente', solicitacoes:[], solFilter:'pendente' };
+const state = { solicitacoes:[], solFilter:'pendente' };
 
 const esc = (v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate = (v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-';};
@@ -28,7 +28,6 @@ const norm = (v)=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').
 const today = ()=>new Date().toISOString().slice(0,10);
 const money = (v)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 
-function setMsg(msg,err=false){const el=document.getElementById('epiFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err);}}
 function setSolMsg(msg,err=false){const el=document.getElementById('epiSolFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err);}}
 async function safe(fn,fallback=[]){try{const {data,error}=await fn(); if(error) throw error; return data||fallback;}catch(e){console.warn(e);return fallback;}}
 
@@ -112,16 +111,6 @@ function dadosColaboradorSolicitacao(s={},itens=[]){
   };
 }
 
-function safeFileName(name){return String(name||'arquivo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]+/g,'_').slice(0,120);}
-async function uploadAnexo(file){
-  if(!file) return '';
-  const path=`rh-epi/${new Date().getFullYear()}/${Date.now()}_${safeFileName(file.name)}`;
-  const {error}=await supabase.storage.from('notas-fiscais').upload(path,file,{upsert:false,contentType:file.type||'application/octet-stream'});
-  if(error) throw new Error(`Falha ao enviar arquivo: ${error.message}`);
-  const {data}=supabase.storage.from('notas-fiscais').getPublicUrl(path);
-  return data?.publicUrl||path;
-}
-
 async function notifyCompras(message){
   const cfgs=await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor','COMPRAS').eq('ativo',true).limit(10));
   for(const cfg of cfgs){
@@ -131,12 +120,6 @@ async function notifyCompras(message){
       await supabase.functions.invoke('botconversa-send',{body:{phone:tel,message,nome:cfg.nome||''}});
     }catch(e){console.warn('[notifyCompras]',e);}
   }
-}
-
-async function loadRows(){
-  state.rows=await safe(()=>supabase.from('rh_epi_registros').select('*').order('created_at',{ascending:false}).limit(500));
-  renderKpis();
-  renderTabela();
 }
 
 async function loadSolicitacoes(){
@@ -153,9 +136,6 @@ function solBucket(s){
 }
 
 function renderKpis(){
-  document.getElementById('kpiPendentes').textContent=state.rows.filter(r=>r.status==='pendente').length;
-  document.getElementById('kpiConfirmados').textContent=state.rows.filter(r=>r.status==='ok').length;
-  document.getElementById('kpiTotal').textContent=state.rows.length;
   document.getElementById('kpiSolPendentes').textContent=state.solicitacoes.filter(s=>solBucket(s)==='pendente').length;
   document.getElementById('kpiSolComprados').textContent=state.solicitacoes.filter(s=>solBucket(s)==='comprado').length;
 }
@@ -164,15 +144,6 @@ function statusPill(s){
   const map={pendente:['#fde68a','rgba(245,158,11,.1)','Pendente'],ok:['#bbf7d0','rgba(22,101,52,.18)','Confirmado'],em_cotacao:['#93c5fd','rgba(59,130,246,.12)','Em cotação'],em_analise:['#c4b5fd','rgba(139,92,246,.12)','Em análise'],pendente_pagamento:['#fde68a','rgba(245,158,11,.1)','Pend. Pagamento'],aguardando_nf:['#fde68a','rgba(245,158,11,.1)','Aguard. NF'],aguardando_termo:['#fde68a','rgba(245,158,11,.1)','Aguard. Termo'],comprado:['#bbf7d0','rgba(22,101,52,.18)','Comprado'],concluido:['#a5b4fc','rgba(99,102,241,.14)','Concluído'],recusado:['#fecaca','rgba(220,38,38,.12)','Recusado']};
   const [color,bg,label]=map[s]||['#cbd5e1','rgba(148,163,184,.1)',s||'-'];
   return `<span style="display:inline-flex;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800;color:${color};background:${bg};border:1px solid rgba(148,163,184,.2)">${esc(label)}</span>`;
-}
-
-function renderTabela(){
-  const body=document.getElementById('epiBody');
-  const rows=state.filter==='todos'?state.rows:state.rows.filter(r=>r.status===state.filter);
-  if(!rows.length){body.innerHTML=`<tr><td colspan="5" class="epi-empty">Nenhum registro encontrado.</td></tr>`;return;}
-  body.innerHTML=rows.map(r=>`<tr><td>${brDate(r.data_entrega||r.created_at)}</td><td><b>${esc(r.colaborador_nome||'-')}</b>${r.colaborador_id?`<br><small class="muted">${esc(r.colaborador_id)}</small>`:''}</td><td>${esc(r.epi||'-')}${r.ca?`<br><small class="muted">CA: ${esc(r.ca)}</small>`:''}</td><td>${statusPill(r.status)}${r.anexo_url?`<br><a class="epi-link" href="${esc(r.anexo_url)}" target="_blank">Ver anexo</a>`:''}</td><td class="epi-acoes"><button class="btn btn-small btn-secondary" data-ver="${esc(r.id)}" type="button">Ver</button>${r.status==='pendente'?`<button class="btn btn-small btn-primary" data-ok="${esc(r.id)}" type="button">OK</button>`:''}</td></tr>`).join('');
-  body.querySelectorAll('[data-ver]').forEach(b=>b.onclick=()=>openRegistroModal(b.dataset.ver));
-  body.querySelectorAll('[data-ok]').forEach(b=>b.onclick=()=>abrirConfirmar(b.dataset.ok));
 }
 
 function renderSolicitacoes(){
@@ -190,34 +161,6 @@ function renderSolicitacoes(){
     return `<tr><td>${brDate(s.data_solicitacao||s.created_at)}</td><td><b>${esc(colab.nome)}</b>${colab.cpf?`<br><small class="muted">CPF: ${esc(colab.cpf)}</small>`:''}</td><td>${esc(colab.supervisao||'-')}${colab.coordenacao?`<br><small class="muted">${esc(colab.coordenacao)}</small>`:''}</td><td style="max-width:280px;line-height:1.8">${itensHtml||'-'}</td><td>${statusPill(s.status||'pendente')}</td><td><button class="btn btn-small btn-secondary" data-sol-ver="${esc(s.id)}" type="button">Ver</button></td></tr>`;
   }).join('');
   body.querySelectorAll('[data-sol-ver]').forEach(b=>b.onclick=()=>openSolicitacaoModal(b.dataset.solVer));
-}
-
-function openRegistroModal(id){
-  const r=state.rows.find(x=>String(x.id)===String(id)); if(!r) return;
-  const modal=document.getElementById('epiModal');
-  modal.innerHTML=`<div class="epi-modal-card"><div class="section-head"><div><h3>Detalhes do EPI</h3><p class="muted">${brDate(r.data_entrega||r.created_at)} · ${statusPill(r.status)}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="epi-detail-grid mt-16"><div><span class="muted">Colaborador</span><b>${esc(r.colaborador_nome||'-')}</b></div><div><span class="muted">EPI</span><b>${esc(r.epi||'-')}</b></div><div><span class="muted">CA</span><b>${esc(r.ca||'Não informado')}</b></div><div><span class="muted">Quantidade</span><b>${esc(r.quantidade||1)}</b></div><div><span class="muted">Data de entrega</span><b>${brDate(r.data_entrega||r.created_at)}</b></div><div><span class="muted">Status</span>${statusPill(r.status)}</div></div>${r.observacao?`<div class="mt-16"><span class="muted">Observação</span><p>${esc(r.observacao)}</p></div>`:''}${r.anexo_url?`<div class="mt-16"><a class="btn btn-secondary" href="${esc(r.anexo_url)}" target="_blank">Abrir anexo</a></div>`:''}${r.status==='pendente'?`<div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mOk" type="button">Confirmar OK</button></div>`:''}</div>`;
-  modal.classList.add('open');
-  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
-  modal.querySelector('#mOk')?.addEventListener('click',()=>{modal.classList.remove('open'); abrirConfirmar(id);});
-}
-
-function abrirConfirmar(id){
-  const r=state.rows.find(x=>String(x.id)===String(id)); if(!r) return;
-  const modal=document.getElementById('epiModal');
-  modal.innerHTML=`<div class="epi-modal-card"><div class="section-head"><div><h3>Confirmar entrega de EPI</h3><p class="muted">${esc(r.colaborador_nome||'-')} · ${esc(r.epi||'-')}${r.ca?` · CA ${esc(r.ca)}`:''}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="adm-cmp-grid mt-16"><label class="adm-cmp-full">Observação (opcional)<input id="okObs" placeholder="Ex: colaborador assinou o recibo..."></label><label class="adm-cmp-full">Anexar comprovante<input id="okFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="okConfirmar" type="button">Confirmar OK</button><button class="btn btn-secondary" id="okCancelar" type="button">Cancelar</button></div><span class="epi-feedback" id="epiFeedback"></span></div>`;
-  modal.classList.add('open');
-  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
-  modal.querySelector('#okCancelar').onclick=()=>modal.classList.remove('open');
-  modal.querySelector('#okConfirmar').onclick=async()=>{
-    const btn=modal.querySelector('#okConfirmar'); btn.disabled=true; setMsg('Salvando...');
-    try{
-      const obs=modal.querySelector('#okObs')?.value?.trim()||null;
-      const file=modal.querySelector('#okFile')?.files?.[0]||null;
-      const anexo_url=file?await uploadAnexo(file):(r.anexo_url||null);
-      await supabase.from('rh_epi_registros').update({status:'ok',observacao:obs,anexo_url,confirmado_em:new Date().toISOString()}).eq('id',r.id);
-      modal.classList.remove('open'); setMsg('EPI confirmado.'); await loadRows();
-    }catch(e){setMsg(e.message,true);}finally{btn.disabled=false;}
-  };
 }
 
 function fichaEpiHtml(s,itens){
@@ -322,7 +265,7 @@ async function salvarSolicitacaoEPI(modal,userContext,getColab,colabInput){
       const r2=await supabase.from('compras_itens').insert(fallback); if(r2.error) throw r2.error;
     }
     await notifyCompras(`Nova solicitação de EPI — RH\nColaborador: ${colab.nome}\nSupervisão: ${colab.supervisao||'Não informada'}\nItens: ${checkedEpis.map(e=>e.material+(e.tamanho?` (${e.tamanho})`:'')).join(', ')}`);
-    modal.classList.remove('open'); setSolMsg('Solicitação enviada ao setor de Compras.'); await Promise.all([loadRows(),loadSolicitacoes()]);
+    modal.classList.remove('open'); setSolMsg('Solicitação enviada ao setor de Compras.'); await loadSolicitacoes();
   }catch(e){if(fb){fb.textContent=e.message;fb.classList.add('err');}}
   finally{btn.disabled=false;}
 }
@@ -330,11 +273,9 @@ async function salvarSolicitacaoEPI(modal,userContext,getColab,colabInput){
 function styles(){return `<style>.epi-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.epi-table{width:100%;border-collapse:collapse;min-width:760px}.epi-table th,.epi-table td{padding:14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.epi-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.epi-empty{text-align:center;color:var(--muted)}.epi-acoes{display:flex;gap:8px;flex-wrap:wrap}.epi-link{color:#86efac;text-decoration:underline;font-size:12px}.epi-feedback{font-weight:700;display:block}.epi-feedback.err{color:#fecaca}.epi-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.epi-modal.open{display:flex}.epi-modal-card{width:min(760px,100%);max-height:90vh;overflow:auto;background:#15152a;border:1px solid rgba(255,255,255,.06);border-radius:22px;padding:24px;color:#e2e2f0}.epi-detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.epi-detail-grid>div{display:flex;flex-direction:column;gap:4px}.epi-detail-grid .muted{font-size:12px;text-transform:uppercase;letter-spacing:.04em}.adm-cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-cmp-grid input,.adm-cmp-grid textarea{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-grid input[type=file]{padding:9px 12px;cursor:pointer}.adm-cmp-full{grid-column:1/-1}.adm-cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.epi-filter-tabs{display:flex;gap:8px;flex-wrap:wrap}.epi-filter-tabs .active{background:#166534!important;color:#fff!important}.mt-20{margin-top:20px}.mt-8{margin-top:8px}.mt-16{margin-top:16px}.epi-check-row:hover{background:#12122a!important;border-color:rgba(74,222,128,.3)!important}.epi-colab-info{margin-top:8px;padding:10px 12px;border:1px solid rgba(74,222,128,.25);background:rgba(22,101,52,.12);border-radius:12px;color:#d1fae5}.epi-colab-info small{color:#bbf7d0}.epi-colab-sug{display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.38);max-height:220px;overflow:auto;margin-top:4px}.epi-colab-sug button{text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px;cursor:pointer;width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px}.epi-colab-sug button small{color:var(--muted);font-weight:800}@media(max-width:640px){.epi-detail-grid{grid-template-columns:1fr}}</style>`;}
 
 initProtectedPage('EPI', async (content, userContext)=>{
-  content.innerHTML=`${styles()}<section class="hero-card"><div><div class="eyebrow">Recursos Humanos</div><h2>EPI</h2><p>Registro, controle e solicitação de compra de Equipamentos de Proteção Individual.</p></div><div class="hero-badge-wrap"><span class="hero-badge">RH</span></div></section><section class="grid-cards mt-16"><article class="card"><h3>Pend. de entrega</h3><p class="metric" id="kpiPendentes">0</p><p class="muted">Aguardando confirmação.</p></article><article class="card"><h3>Confirmados</h3><p class="metric" id="kpiConfirmados">0</p><p class="muted">Entrega confirmada com OK.</p></article><article class="card"><h3>Total registros</h3><p class="metric" id="kpiTotal">0</p><p class="muted">Total de registros de entrega.</p></article><article class="card"><h3>Compras abertas</h3><p class="metric" id="kpiSolPendentes">0</p><p class="muted">Solicitações em andamento.</p></article><article class="card"><h3>Comprados</h3><p class="metric" id="kpiSolComprados">0</p><p class="muted">Comprados, aguardando gerar a ficha de EPI.</p></article></section><section class="card mt-16"><div class="section-head"><div><h3>Solicitações de Compra EPI</h3><p class="muted">Solicitações do RH ao setor de Compras. A supervisão do colaborador acompanha a solicitação.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="epiNovaSol" type="button">+ Adicionar</button><button class="btn btn-secondary" id="epiSolRefresh" type="button">↻ Atualizar solicitações</button></div></div><div class="epi-filter-tabs mt-16"><button class="btn btn-secondary active" data-sf="pendente" type="button">Pendentes</button><button class="btn btn-secondary" data-sf="comprado" type="button">Comprados</button><button class="btn btn-secondary" data-sf="concluido" type="button">Concluído</button><button class="btn btn-secondary" data-sf="todos" type="button">Todos</button></div><div class="epi-table-wrap mt-16"><table class="epi-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Supervisão</th><th>EPIs / CA</th><th>Status</th><th></th></tr></thead><tbody id="epiSolBody"><tr><td colspan="6" class="epi-empty">Carregando...</td></tr></tbody></table></div><span class="epi-feedback mt-8" id="epiSolFeedback"></span></section><section class="card mt-16"><div class="section-head"><div><h3>Registros de Entrega EPI</h3><p class="muted">Clique em OK para confirmar entrega e anexar comprovante.</p></div><button class="btn btn-secondary" id="epiRefresh" type="button">↻ Atualizar entregas</button></div><div class="epi-filter-tabs mt-16"><button class="btn btn-secondary active" data-ef="pendente" type="button">Pendentes</button><button class="btn btn-secondary" data-ef="ok" type="button">Confirmados</button><button class="btn btn-secondary" data-ef="todos" type="button">Todos</button></div><div class="epi-table-wrap mt-16"><table class="epi-table"><thead><tr><th>Data</th><th>Colaborador</th><th>EPI / CA</th><th>Status</th><th>Ações</th></tr></thead><tbody id="epiBody"></tbody></table></div><span class="epi-feedback mt-8" id="epiFeedback"></span></section><div class="epi-modal" id="epiModal"></div>`;
+  content.innerHTML=`${styles()}<section class="hero-card"><div><div class="eyebrow">Recursos Humanos</div><h2>EPI</h2><p>Solicitação e controle de compra de Equipamentos de Proteção Individual.</p></div><div class="hero-badge-wrap"><span class="hero-badge">RH</span></div></section><section class="grid-cards mt-16"><article class="card"><h3>Compras abertas</h3><p class="metric" id="kpiSolPendentes">0</p><p class="muted">Solicitações em andamento.</p></article><article class="card"><h3>Comprados</h3><p class="metric" id="kpiSolComprados">0</p><p class="muted">Comprados, aguardando gerar a ficha de EPI.</p></article></section><section class="card mt-16"><div class="section-head"><div><h3>Solicitações de Compra EPI</h3><p class="muted">Solicitações do RH ao setor de Compras. A supervisão do colaborador acompanha a solicitação.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="epiNovaSol" type="button">+ Adicionar</button><button class="btn btn-secondary" id="epiSolRefresh" type="button">↻ Atualizar solicitações</button></div></div><div class="epi-filter-tabs mt-16"><button class="btn btn-secondary active" data-sf="pendente" type="button">Pendentes</button><button class="btn btn-secondary" data-sf="comprado" type="button">Comprados</button><button class="btn btn-secondary" data-sf="concluido" type="button">Concluído</button><button class="btn btn-secondary" data-sf="todos" type="button">Todos</button></div><div class="epi-table-wrap mt-16"><table class="epi-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Supervisão</th><th>EPIs / CA</th><th>Status</th><th></th></tr></thead><tbody id="epiSolBody"><tr><td colspan="6" class="epi-empty">Carregando...</td></tr></tbody></table></div><span class="epi-feedback mt-8" id="epiSolFeedback"></span></section><div class="epi-modal" id="epiModal"></div>`;
   document.getElementById('epiNovaSol').onclick=()=>openNovasSolicitacaoModal(userContext);
   document.getElementById('epiSolRefresh').onclick=loadSolicitacoes;
-  document.getElementById('epiRefresh').onclick=loadRows;
-  document.querySelectorAll('[data-ef]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.ef; document.querySelectorAll('[data-ef]').forEach(x=>x.classList.toggle('active',x===b)); renderTabela();});
   document.querySelectorAll('[data-sf]').forEach(b=>b.onclick=()=>{state.solFilter=b.dataset.sf; document.querySelectorAll('[data-sf]').forEach(x=>x.classList.toggle('active',x===b)); renderSolicitacoes();});
-  await Promise.all([loadRows(), loadSolicitacoes()]);
+  await loadSolicitacoes();
 });
