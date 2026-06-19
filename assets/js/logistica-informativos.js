@@ -88,6 +88,13 @@ function isoDate(value) {
   return `${y}-${m}-${d}`;
 }
 
+function addDaysISO(value, days) {
+  const date = dateValue(value);
+  if (!date) return null;
+  date.setDate(date.getDate() + days);
+  return isoDate(date);
+}
+
 function formatDate(value) {
   const date = dateValue(value);
   return date ? date.toLocaleDateString('pt-BR') : '';
@@ -136,26 +143,56 @@ async function readWorkbook(file) {
   return XLSX.read(buffer, { type: 'array', cellDates: true });
 }
 
-async function loadAll(table, fields, orderColumn = null) {
+async function findLatestResultadoDate() {
+  const { data, error } = await supabase
+    .from('relatorio_resultado_diario')
+    .select('data')
+    .not('data', 'is', null)
+    .order('data', { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return isoDate(data?.[0]?.data);
+}
+
+async function ensureSelectedDateRange(elements) {
+  if (elements.dateFrom.value && elements.dateTo.value) return {
+    from: elements.dateFrom.value,
+    to: elements.dateTo.value,
+  };
+
+  const latest = await findLatestResultadoDate();
+  if (latest) {
+    elements.dateFrom.value = latest;
+    elements.dateTo.value = latest;
+  }
+
+  return {
+    from: elements.dateFrom.value || latest || '',
+    to: elements.dateTo.value || latest || '',
+  };
+}
+
+async function loadResultadoDiarioRange(fields, from, to) {
   const rows = [];
   const pageSize = 1000;
-  for (let from = 0; from < 100000; from += pageSize) {
-    let query = supabase.from(table).select(fields).range(from, from + pageSize - 1);
-    if (orderColumn) query = query.order(orderColumn, { ascending: true });
+
+  for (let offset = 0; offset < 50000; offset += pageSize) {
+    let query = supabase
+      .from('relatorio_resultado_diario')
+      .select(fields)
+      .order('data', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (from) query = query.gte('data', from);
+    if (to) query = query.lte('data', to);
+
     const { data, error } = await query;
     if (error) throw error;
     rows.push(...(data || []));
     if (!data || data.length < pageSize) break;
   }
-  return rows;
-}
 
-function setLatestDateRange(rows, elements) {
-  const dates = rows.map((row) => isoDate(row.data)).filter(Boolean).sort();
-  const latest = dates[dates.length - 1];
-  if (!latest) return;
-  elements.dateFrom.value = latest;
-  elements.dateTo.value = latest;
+  return rows;
 }
 
 function normalizeNheRows(rows) {
@@ -415,18 +452,18 @@ function rebuildReport(elements, feedbackMessage = '') {
 }
 
 async function loadVolumeFromDatabase(elements) {
-  setBusy(elements, true, 'Carregando dados automáticos do Resultado Diário...');
+  setBusy(elements, true, 'Carregando Resultado Diário do período selecionado...');
   try {
-    const rows = await loadAll(
-      'relatorio_resultado_diario',
+    const { from, to } = await ensureSelectedDateRange(elements);
+    const rows = await loadResultadoDiarioRange(
       'os,data,funcionario,coordenacao,supervisao,local_embarque,cargas,toneladas',
-      'data'
+      from,
+      to
     );
     state.sourceRows = rows;
     state.sourceKind = 'auto';
-    state.sourceLabel = `Resultado Diário sincronizado no painel/Supabase (${rows.length} linhas)`;
-    setLatestDateRange(rows, elements);
-    rebuildReport(elements, `Pré-visualização automática atualizada com ${rows.length} linhas do Resultado Diário.`);
+    state.sourceLabel = `Resultado Diário sincronizado no painel/Supabase (${rows.length} linhas de ${formatDate(from)}${from !== to ? ` a ${formatDate(to)}` : ''})`;
+    rebuildReport(elements, `Pré-visualização atualizada com ${rows.length} linhas do período selecionado.`);
   } catch (error) {
     setFeedback(elements, `Não foi possível carregar o Resultado Diário automático: ${error.message}`, true);
   } finally {
@@ -437,11 +474,14 @@ async function loadVolumeFromDatabase(elements) {
 async function loadNheFromDatabase(elements) {
   setBusy(elements, true, 'Carregando dados automáticos para Sequência de NHE...');
   try {
-    const rows = await loadAll('relatorio_resultado_diario', '*', 'data');
+    const { to } = await ensureSelectedDateRange(elements);
+    const windowDays = Math.max(45, Number(elements.recentDays.value || 3) + 14);
+    const from = addDaysISO(to, -windowDays);
+    const rows = await loadResultadoDiarioRange('*', from, to);
     state.sourceRows = normalizeNheRows(rows);
     state.sourceKind = 'auto';
-    state.sourceLabel = `Resultado Diário sincronizado no painel/Supabase (${state.sourceRows.length} linhas analisáveis)`;
-    rebuildReport(elements, `Pré-visualização automática atualizada com dados sincronizados do painel.`);
+    state.sourceLabel = `Resultado Diário sincronizado no painel/Supabase (${state.sourceRows.length} linhas analisáveis de ${formatDate(from)} a ${formatDate(to)})`;
+    rebuildReport(elements, 'Pré-visualização automática atualizada com dados sincronizados do painel.');
   } catch (error) {
     setFeedback(elements, `Não foi possível carregar a base automática para NHE: ${error.message}`, true);
   } finally {
@@ -479,7 +519,12 @@ async function handleFile(file, elements) {
       state.sourceRows = rows;
       state.sourceKind = 'manual';
       state.sourceLabel = `${file.name} (${rows.length} linhas) · fonte manual temporária`;
-      setLatestDateRange(rows, elements);
+      const dates = rows.map((row) => isoDate(row.data)).filter(Boolean).sort();
+      const latest = dates[dates.length - 1];
+      if (latest) {
+        elements.dateFrom.value = latest;
+        elements.dateTo.value = latest;
+      }
       buildVolumeReport(elements);
     } else {
       const rows = objectRowsFromWorkbook(workbook, [
@@ -533,25 +578,19 @@ function renderMode(elements) {
   elements.modeButtons.forEach((button) => button.classList.toggle('active', button.dataset.mode === state.mode));
   elements.volumeControls.hidden = !volume;
   elements.nheControls.hidden = volume;
-  elements.databaseButton.textContent = volume
-    ? 'Recarregar Resultado Diário'
-    : 'Recarregar dados automáticos';
-  elements.fileButton.textContent = volume
-    ? 'Importar Resultado Diário manual'
-    : 'Importar relatório NHE manual';
-  elements.fileHint.textContent = volume
-    ? 'Fonte principal: Resultado Diário sincronizado no painel/Supabase. Use XLSX apenas como contingência.'
-    : 'Fonte principal: dados sincronizados do painel/Supabase. Use XLSX apenas para reprocessamento manual.';
+  elements.databaseButton.textContent = 'Atualizar base sincronizada';
+  elements.fileButton.textContent = 'Importar arquivo manual';
+  elements.fileHint.textContent = 'Base sincronizada automaticamente. O arquivo manual substitui temporariamente os dados apenas para contingência.';
   elements.fileInput.accept = '.xlsx,.xls';
   state.sourceRows = [];
   state.reportRows = [];
   state.reportHeaders = [];
   state.sourceLabel = '';
   state.sourceKind = 'auto';
-  elements.reportPages.innerHTML = '<div class="li-empty">Carregando dados automáticos do painel/Supabase...</div>';
+  elements.reportPages.innerHTML = '<div class="li-empty">Carregando dados sincronizados para gerar o informativo...</div>';
   elements.reportCount.textContent = '0 registros';
   elements.downloadAll.disabled = true;
-  setFeedback(elements, 'Os dados são carregados automaticamente do painel/Supabase. Upload manual fica disponível como contingência.');
+  setFeedback(elements, 'Os dados são carregados automaticamente do painel/Supabase.');
 }
 
 function injectStyles() {
@@ -585,8 +624,8 @@ initProtectedPage('Informativos - Logistica', async (content) => {
       <div class="li-source">
         <div class="li-source-row">
           <span class="li-auto-source">Fonte automática: painel/Supabase</span>
-          <button class="btn btn-secondary" type="button" id="liLoadDatabase">Recarregar Resultado Diário</button>
-          <button class="btn btn-secondary" type="button" id="liFileButton">Importar Resultado Diário manual</button>
+          <button class="btn btn-secondary" type="button" id="liLoadDatabase">Atualizar base sincronizada</button>
+          <button class="btn btn-secondary" type="button" id="liFileButton">Importar arquivo manual</button>
           <input type="file" id="liFileInput" accept=".xlsx,.xls" hidden />
           <span class="li-file-hint" id="liFileHint"></span>
         </div>
@@ -599,7 +638,7 @@ initProtectedPage('Informativos - Logistica', async (content) => {
           <div class="li-field"><label>Contagem de dias</label><input type="number" id="liRecentDays" min="2" max="31" value="3" /></div>
         </div>
         <div class="li-actions">
-          <button class="btn" type="button" id="liGenerate">Atualizar pré-visualização</button>
+          <button class="btn" type="button" id="liGenerate">Atualizar informativo</button>
         </div>
         <div class="li-feedback" id="liFeedback"></div>
       </div>
@@ -640,17 +679,27 @@ initProtectedPage('Informativos - Logistica', async (content) => {
   elements.databaseButton.addEventListener('click', () => loadAutomaticSource(elements));
   elements.fileButton.addEventListener('click', () => elements.fileInput.click());
   elements.fileInput.addEventListener('change', () => handleFile(elements.fileInput.files?.[0], elements));
-  [elements.dateFrom, elements.dateTo, elements.minimumLoads, elements.recentDays].forEach((input) => {
-    input.addEventListener('change', () => {
-      if (!state.sourceRows.length || state.busy) return;
-      rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
-    });
-    input.addEventListener('input', () => {
-      if (!state.sourceRows.length || state.busy || input.type === 'date') return;
-      rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
-    });
+  elements.dateFrom.addEventListener('change', () => {
+    if (state.sourceKind === 'auto') loadAutomaticSource(elements);
+    else rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
+  });
+  elements.dateTo.addEventListener('change', () => {
+    if (state.sourceKind === 'auto') loadAutomaticSource(elements);
+    else rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
+  });
+  elements.minimumLoads.addEventListener('input', () => {
+    if (!state.sourceRows.length || state.busy) return;
+    rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
+  });
+  elements.recentDays.addEventListener('input', () => {
+    if (!state.sourceRows.length || state.busy) return;
+    rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
   });
   elements.generate.addEventListener('click', async () => {
+    if (state.sourceKind === 'auto') {
+      await loadAutomaticSource(elements);
+      return;
+    }
     if (!state.sourceRows.length) {
       await loadAutomaticSource(elements);
       return;
