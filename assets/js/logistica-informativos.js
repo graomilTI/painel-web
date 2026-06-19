@@ -12,6 +12,7 @@ const state = {
   reportRows: [],
   reportHeaders: [],
   sourceLabel: '',
+  sourceKind: 'auto',
   sort: { index: 0, direction: 'asc' },
   busy: false,
 };
@@ -21,7 +22,7 @@ function esc(value) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/\"/g, '&quot;');
 }
 
 function norm(value) {
@@ -37,6 +38,14 @@ function clean(value) {
   return String(value ?? '').trim();
 }
 
+function firstValue(row, fields) {
+  for (const field of fields) {
+    const value = row?.[field];
+    if (value !== null && value !== undefined && clean(value) !== '') return value;
+  }
+  return '';
+}
+
 function numberValue(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   const text = clean(value);
@@ -46,6 +55,11 @@ function numberValue(value) {
     : text;
   const parsed = Number(normalized.replace(/[^0-9.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getDefaultMinimumLoads() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  return now.getHours() < 12 ? 9 : 15;
 }
 
 function dateValue(value) {
@@ -77,6 +91,13 @@ function isoDate(value) {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function addDaysISO(value, days) {
+  const date = dateValue(value);
+  if (!date) return null;
+  date.setDate(date.getDate() + days);
+  return isoDate(date);
 }
 
 function formatDate(value) {
@@ -127,26 +148,68 @@ async function readWorkbook(file) {
   return XLSX.read(buffer, { type: 'array', cellDates: true });
 }
 
-async function loadAll(table, fields, orderColumn = null) {
+async function findLatestResultadoDate() {
+  const { data, error } = await supabase
+    .from('relatorio_resultado_diario')
+    .select('data')
+    .not('data', 'is', null)
+    .order('data', { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return isoDate(data?.[0]?.data);
+}
+
+async function ensureSelectedDateRange(elements) {
+  if (elements.dateFrom.value && elements.dateTo.value) return {
+    from: elements.dateFrom.value,
+    to: elements.dateTo.value,
+  };
+
+  const latest = await findLatestResultadoDate();
+  if (latest) {
+    elements.dateFrom.value = latest;
+    elements.dateTo.value = latest;
+  }
+
+  return {
+    from: elements.dateFrom.value || latest || '',
+    to: elements.dateTo.value || latest || '',
+  };
+}
+
+async function loadResultadoDiarioRange(fields, from, to) {
   const rows = [];
   const pageSize = 1000;
-  for (let from = 0; from < 100000; from += pageSize) {
-    let query = supabase.from(table).select(fields).range(from, from + pageSize - 1);
-    if (orderColumn) query = query.order(orderColumn, { ascending: true });
+
+  for (let offset = 0; offset < 50000; offset += pageSize) {
+    let query = supabase
+      .from('relatorio_resultado_diario')
+      .select(fields)
+      .order('data', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (from) query = query.gte('data', from);
+    if (to) query = query.lte('data', to);
+
     const { data, error } = await query;
     if (error) throw error;
     rows.push(...(data || []));
     if (!data || data.length < pageSize) break;
   }
+
   return rows;
 }
 
-function setLatestDateRange(rows, elements) {
-  const dates = rows.map((row) => isoDate(row.data)).filter(Boolean).sort();
-  const latest = dates[dates.length - 1];
-  if (!latest) return;
-  elements.dateFrom.value = latest;
-  elements.dateTo.value = latest;
+function normalizeNheRows(rows) {
+  return (rows || []).map((row) => ({
+    os: firstValue(row, ['os', 'numero_os', 'ordem_servico', 'o_s']),
+    data: firstValue(row, ['data', 'data_referencia', 'data_os', 'dt_referencia']),
+    supervisao: firstValue(row, ['supervisao', 'coordenacao', 'regional']),
+    cliente: firstValue(row, ['cliente', 'cliente_nacional', 'cliente_regional', 'cliente_final']),
+    cidade_embarque: firstValue(row, ['cidade_embarque', 'cidade', 'cidade_origem', 'local_embarque']),
+    classificador: firstValue(row, ['classificador', 'funcionario', 'colaborador', 'nome']),
+    motivo: firstValue(row, ['motivo', 'observacao', 'status', 'situacao']),
+  })).filter((row) => clean(row.os) && isoDate(row.data));
 }
 
 function buildVolumeReport(elements) {
@@ -386,25 +449,54 @@ async function downloadAll(elements) {
   }
 }
 
+function rebuildReport(elements, feedbackMessage = '') {
+  if (state.mode === 'volume') buildVolumeReport(elements);
+  else buildNheReport(elements);
+  renderReport(elements);
+  if (feedbackMessage) setFeedback(elements, feedbackMessage);
+}
+
 async function loadVolumeFromDatabase(elements) {
-  setBusy(elements, true, 'Carregando Resultado Diário do Supabase...');
+  setBusy(elements, true, 'Carregando Resultado Diário do período selecionado...');
   try {
-    const rows = await loadAll(
-      'relatorio_resultado_diario',
+    const { from, to } = await ensureSelectedDateRange(elements);
+    const rows = await loadResultadoDiarioRange(
       'os,data,funcionario,coordenacao,supervisao,local_embarque,cargas,toneladas',
-      'data'
+      from,
+      to
     );
     state.sourceRows = rows;
-    state.sourceLabel = `Resultado Diário importado no painel (${rows.length} linhas)`;
-    setLatestDateRange(rows, elements);
-    buildVolumeReport(elements);
-    renderReport(elements);
-    setFeedback(elements, `${rows.length} linhas carregadas do Resultado Diário.`);
+    state.sourceKind = 'auto';
+    state.sourceLabel = `Resultado Diário sincronizado no painel/Supabase (${rows.length} linhas de ${formatDate(from)}${from !== to ? ` a ${formatDate(to)}` : ''})`;
+    rebuildReport(elements, `Pré-visualização atualizada com ${rows.length} linhas do período selecionado.`);
   } catch (error) {
-    setFeedback(elements, `Não foi possível carregar o Resultado Diário: ${error.message}`, true);
+    setFeedback(elements, `Não foi possível carregar o Resultado Diário automático: ${error.message}`, true);
   } finally {
     setBusy(elements, false);
   }
+}
+
+async function loadNheFromDatabase(elements) {
+  setBusy(elements, true, 'Carregando dados automáticos para Sequência de NHE...');
+  try {
+    const { to } = await ensureSelectedDateRange(elements);
+    const windowDays = Math.max(45, Number(elements.recentDays.value || 3) + 14);
+    const from = addDaysISO(to, -windowDays);
+    const rows = await loadResultadoDiarioRange('*', from, to);
+    state.sourceRows = normalizeNheRows(rows);
+    state.sourceKind = 'auto';
+    state.sourceLabel = `Resultado Diário sincronizado no painel/Supabase (${state.sourceRows.length} linhas analisáveis de ${formatDate(from)} a ${formatDate(to)})`;
+    rebuildReport(elements, 'Pré-visualização automática atualizada com dados sincronizados do painel.');
+  } catch (error) {
+    setFeedback(elements, `Não foi possível carregar a base automática para NHE: ${error.message}`, true);
+  } finally {
+    setBusy(elements, false);
+  }
+}
+
+async function loadAutomaticSource(elements) {
+  if (state.mode === 'volume') return loadVolumeFromDatabase(elements);
+  return loadNheFromDatabase(elements);
 }
 
 async function handleFile(file, elements) {
@@ -430,8 +522,14 @@ async function handleFile(file, elements) {
       }));
       if (!rows.length) throw new Error('Cabeçalhos esperados: O.S., Data, Funcionário e Cargas.');
       state.sourceRows = rows;
-      state.sourceLabel = `${file.name} (${rows.length} linhas)`;
-      setLatestDateRange(rows, elements);
+      state.sourceKind = 'manual';
+      state.sourceLabel = `${file.name} (${rows.length} linhas) · fonte manual temporária`;
+      const dates = rows.map((row) => isoDate(row.data)).filter(Boolean).sort();
+      const latest = dates[dates.length - 1];
+      if (latest) {
+        elements.dateFrom.value = latest;
+        elements.dateTo.value = latest;
+      }
       buildVolumeReport(elements);
     } else {
       const rows = objectRowsFromWorkbook(workbook, [
@@ -451,11 +549,12 @@ async function handleFile(file, elements) {
       }));
       if (!rows.length) throw new Error('Cabeçalhos esperados: O.S., Data, Supervisão, Classificador e Motivo.');
       state.sourceRows = rows;
-      state.sourceLabel = `${file.name} (${rows.length} linhas)`;
+      state.sourceKind = 'manual';
+      state.sourceLabel = `${file.name} (${rows.length} linhas) · fonte manual temporária`;
       buildNheReport(elements);
     }
     renderReport(elements);
-    setFeedback(elements, `${state.sourceRows.length} linhas processadas de ${file.name}.`);
+    setFeedback(elements, `Arquivo manual processado: ${state.sourceRows.length} linhas de ${file.name}.`);
   } catch (error) {
     setFeedback(elements, error.message || 'Falha ao processar a planilha.', true);
   } finally {
@@ -484,24 +583,19 @@ function renderMode(elements) {
   elements.modeButtons.forEach((button) => button.classList.toggle('active', button.dataset.mode === state.mode));
   elements.volumeControls.hidden = !volume;
   elements.nheControls.hidden = volume;
-  elements.databaseButton.hidden = !volume;
-  elements.fileButton.textContent = volume
-    ? 'Importar Resultado Diário'
-    : 'Importar relatório NHE';
-  elements.fileHint.textContent = volume
-    ? 'Resultado Diário (.xlsx). O arquivo local substitui temporariamente os dados do Supabase.'
-    : 'Relatório NHE (.xlsx) com O.S., Data, Supervisão, Cliente, Cidade de Embarque, Classificador e Motivo.';
+  elements.databaseButton.textContent = 'Atualizar base sincronizada';
+  elements.fileButton.textContent = 'Importar arquivo manual';
+  elements.fileHint.textContent = 'Base sincronizada automaticamente. O arquivo manual substitui temporariamente os dados apenas para contingência.';
   elements.fileInput.accept = '.xlsx,.xls';
   state.sourceRows = [];
   state.reportRows = [];
   state.reportHeaders = [];
   state.sourceLabel = '';
-  elements.reportPages.innerHTML = '<div class="li-empty">Carregue a fonte para gerar o informativo.</div>';
+  state.sourceKind = 'auto';
+  elements.reportPages.innerHTML = '<div class="li-empty">Carregando dados sincronizados para gerar o informativo...</div>';
   elements.reportCount.textContent = '0 registros';
   elements.downloadAll.disabled = true;
-  setFeedback(elements, volume
-    ? 'Carregue automaticamente o Resultado Diário ou selecione um arquivo.'
-    : 'Selecione o relatório NHE para analisar as sequências.');
+  setFeedback(elements, 'Os dados são carregados automaticamente do painel/Supabase.');
 }
 
 function injectStyles() {
@@ -509,7 +603,7 @@ function injectStyles() {
   style.textContent = `
     .li-shell{color:#e2e2f0}.li-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:16px}.li-head h2{margin:0;color:#f8fafc;font-size:24px}.li-head p{margin:6px 0 0;color:#94a3b8;font-size:13px}
     .li-mode{display:flex;gap:8px;flex-wrap:wrap}.li-mode button{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.7);color:#cbd5e1;border-radius:10px;padding:9px 13px;font-weight:800;cursor:pointer}.li-mode button.active{background:#16a34a;color:#052e16;border-color:#22c55e}
-    .li-source{border-top:1px solid rgba(148,163,184,.14);padding-top:16px}.li-source-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.li-file-hint{color:#94a3b8;font-size:12px}
+    .li-source{border-top:1px solid rgba(148,163,184,.14);padding-top:16px}.li-source-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.li-file-hint{color:#94a3b8;font-size:12px}.li-auto-source{display:inline-flex;align-items:center;border:1px solid rgba(34,197,94,.22);border-radius:999px;padding:7px 10px;background:rgba(22,101,52,.16);color:#bbf7d0;font-size:12px;font-weight:800}
     .li-controls{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin-top:14px}.li-controls[hidden],.li-field[hidden]{display:none!important}.li-field label{display:block;margin-bottom:5px;color:#bbf7d0;font-size:11px;font-weight:800;text-transform:uppercase}.li-field input{width:100%;box-sizing:border-box;min-height:40px;border-radius:10px;border:1px solid rgba(148,163,184,.2);background:#0d0d18;color:#e2e2f0;padding:8px 10px}
     .li-actions{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:14px}.li-feedback{margin-top:12px;color:#86efac;font-size:12px}.li-feedback.is-error{color:#fca5a5}
     .li-report-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}.li-report-toolbar h3{margin:0;color:#f8fafc}.li-report-pages{display:grid;gap:20px}.li-empty{padding:28px;text-align:center;border:1px dashed rgba(148,163,184,.2);border-radius:14px;color:#94a3b8}
@@ -526,7 +620,7 @@ initProtectedPage('Informativos - Logistica', async (content) => {
   content.innerHTML = `
     <section class="card li-shell">
       <div class="li-head">
-        <div><h2>Informativos</h2><p>Gere relatórios operacionais paginados e prontos para compartilhamento em PNG.</p></div>
+        <div><h2>Informativos</h2><p>Gere relatórios operacionais paginados a partir dos dados sincronizados automaticamente no painel/Supabase.</p></div>
         <div class="li-mode">
           <button type="button" class="active" data-mode="volume">Volume de Embarques</button>
           <button type="button" data-mode="nhe">Sequência de NHE</button>
@@ -534,21 +628,22 @@ initProtectedPage('Informativos - Logistica', async (content) => {
       </div>
       <div class="li-source">
         <div class="li-source-row">
-          <button class="btn" type="button" id="liLoadDatabase">Usar Resultado Diário importado</button>
-          <button class="btn btn-secondary" type="button" id="liFileButton">Importar Resultado Diário</button>
+          <span class="li-auto-source">Fonte automática: painel/Supabase</span>
+          <button class="btn btn-secondary" type="button" id="liLoadDatabase">Atualizar base sincronizada</button>
+          <button class="btn btn-secondary" type="button" id="liFileButton">Importar arquivo manual</button>
           <input type="file" id="liFileInput" accept=".xlsx,.xls" hidden />
           <span class="li-file-hint" id="liFileHint"></span>
         </div>
         <div class="li-controls" id="liVolumeControls">
           <div class="li-field"><label>Data inicial</label><input type="date" id="liDateFrom" /></div>
           <div class="li-field"><label>Data final</label><input type="date" id="liDateTo" /></div>
-          <div class="li-field"><label>Mínimo de cargas</label><input type="number" id="liMinimumLoads" min="0" step="1" value="9" /></div>
+          <div class="li-field"><label>Mínimo de cargas</label><input type="number" id="liMinimumLoads" min="0" step="1" value="${getDefaultMinimumLoads()}" /></div>
         </div>
         <div class="li-controls" id="liNheControls" hidden>
           <div class="li-field"><label>Contagem de dias</label><input type="number" id="liRecentDays" min="2" max="31" value="3" /></div>
         </div>
         <div class="li-actions">
-          <button class="btn" type="button" id="liGenerate">Gerar informativo</button>
+          <button class="btn" type="button" id="liGenerate">Atualizar informativo</button>
         </div>
         <div class="li-feedback" id="liFeedback"></div>
       </div>
@@ -580,19 +675,41 @@ initProtectedPage('Informativos - Logistica', async (content) => {
     downloadAll: content.querySelector('#liDownloadAll'),
   };
 
-  elements.modeButtons.forEach((button) => button.addEventListener('click', () => {
+  elements.modeButtons.forEach((button) => button.addEventListener('click', async () => {
+    if (state.busy || state.mode === button.dataset.mode) return;
     state.mode = button.dataset.mode;
     renderMode(elements);
+    await loadAutomaticSource(elements);
   }));
-  elements.databaseButton.addEventListener('click', () => loadVolumeFromDatabase(elements));
+  elements.databaseButton.addEventListener('click', () => loadAutomaticSource(elements));
   elements.fileButton.addEventListener('click', () => elements.fileInput.click());
   elements.fileInput.addEventListener('change', () => handleFile(elements.fileInput.files?.[0], elements));
-  elements.generate.addEventListener('click', () => {
-    if (!state.sourceRows.length) return setFeedback(elements, 'Carregue uma fonte antes de gerar.', true);
-    if (state.mode === 'volume') buildVolumeReport(elements);
-    else buildNheReport(elements);
-    renderReport(elements);
-    setFeedback(elements, 'Informativo atualizado.');
+  elements.dateFrom.addEventListener('change', () => {
+    if (state.sourceKind === 'auto') loadAutomaticSource(elements);
+    else rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
+  });
+  elements.dateTo.addEventListener('change', () => {
+    if (state.sourceKind === 'auto') loadAutomaticSource(elements);
+    else rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
+  });
+  elements.minimumLoads.addEventListener('input', () => {
+    if (!state.sourceRows.length || state.busy) return;
+    rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
+  });
+  elements.recentDays.addEventListener('input', () => {
+    if (!state.sourceRows.length || state.busy) return;
+    rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
+  });
+  elements.generate.addEventListener('click', async () => {
+    if (state.sourceKind === 'auto') {
+      await loadAutomaticSource(elements);
+      return;
+    }
+    if (!state.sourceRows.length) {
+      await loadAutomaticSource(elements);
+      return;
+    }
+    rebuildReport(elements, 'Pré-visualização atualizada manualmente.');
   });
   elements.downloadAll.addEventListener('click', () => downloadAll(elements));
   elements.reportPages.addEventListener('click', (event) => {
@@ -613,4 +730,5 @@ initProtectedPage('Informativos - Logistica', async (content) => {
   });
 
   renderMode(elements);
+  await loadAutomaticSource(elements);
 });
