@@ -46,6 +46,15 @@ function setSaveVisibility(isDistribuicao) {
   if (search) search.style.display = isDistribuicao ? 'none' : '';
 }
 
+let currentUiStep = 'A';
+
+function guardDistribuicaoView() {
+  if (currentUiStep !== 'A') return;
+  const list = document.getElementById('progList');
+  if (!list || document.getElementById('progDistribuicaoOsFrame')) return;
+  renderDistribuicao();
+}
+
 function setActiveDistribution() {
   document.querySelectorAll('#progSteps .stepbtn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.uiStep === 'A');
@@ -115,6 +124,7 @@ function configureSteps() {
   stepsWrap.addEventListener('click', (event) => {
     const btn = event.target.closest('.stepbtn');
     if (!btn) return;
+    currentUiStep = btn.dataset.uiStep;
     if (btn.dataset.uiStep === 'A') {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -170,6 +180,7 @@ async function initGestorProgramacaoAjustes() {
   const observer = new MutationObserver(() => {
     autoLoadSingleSupervisao();
     patchPendingOsModal();
+    guardDistribuicaoView();
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
@@ -177,8 +188,7 @@ async function initGestorProgramacaoAjustes() {
   patchPendingOsModal();
 
   document.getElementById('progSup')?.addEventListener('change', () => {
-    const active = document.querySelector('#progSteps .stepbtn.active');
-    if (active?.dataset.uiStep === 'A') renderDistribuicao();
+    if (currentUiStep === 'A') renderDistribuicao();
   });
 }
 
