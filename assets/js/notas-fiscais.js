@@ -94,7 +94,7 @@ initProtectedPage('Notas Fiscais', (content) => {
           <form class="nf-filter" id="nfFilterForm">
             <div class="nf-field"><label>Data inicial</label><input id="nfInicio" type="date" value="${esc(state.inicio)}"></div>
             <div class="nf-field"><label>Data final</label><input id="nfFim" type="date" value="${esc(state.fim)}"></div>
-            <div class="nf-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Atualizar</button></div>
+            <div class="nf-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">↻ Atualizar</button></div>
           </form>
         </article>
         <div class="nf-kpis">

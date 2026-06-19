@@ -231,7 +231,7 @@ async function gerarExportacao() {
     feedback.textContent = err.message || 'Erro ao gerar exportação.';
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Gerar e baixar';
+    btn.textContent = 'Exportar';
   }
 }
 
@@ -328,7 +328,7 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
             <input class="base-input" type="date" id="exportAdmissaoFinal" />
           </div>
           <div style="display:flex; align-items:end;">
-            <button class="base-button primary inline" id="btnGerarExportacao">Gerar e baixar</button>
+            <button class="base-button primary inline" id="btnGerarExportacao">Exportar</button>
           </div>
         </div>
         <div id="exportFeedback" class="base-meta" style="margin-top:12px;">Selecione a tabela e o período de admissão para gerar e baixar o arquivo.</div>

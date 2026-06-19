@@ -317,7 +317,7 @@ function renderShell(content) {
       </div>
       <div class="conf-actions">
         <button class="conf-btn" id="conf-export-csv" type="button">Exportar CSV</button>
-        <button class="conf-btn conf-btn-primary" id="conf-refresh" type="button">Atualizar</button>
+        <button class="conf-btn conf-btn-primary" id="conf-refresh" type="button">↻ Atualizar</button>
         <button class="conf-btn" id="conf-lancar-despesa" type="button" style="background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.35);color:#fde68a">⚡ Conferir despesa</button>
       </div>
     </section>

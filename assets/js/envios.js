@@ -464,7 +464,7 @@ function renderEtiquetar() {
 
   return `
     <div class="toolbar" style="margin-bottom:12px">
-      <button class="btn btn-secondary" id="btn-refresh-etiquetar">Atualizar</button>
+      <button class="btn btn-secondary" id="btn-refresh-etiquetar">↻ Atualizar</button>
       ${items.length > 1 ? `<button class="btn btn-primary" id="btn-etiqueta-lote-etiquetar">Gerar todas (${items.length}) em lote</button>` : ''}
     </div>
     ${items.length === 0
@@ -521,7 +521,7 @@ function renderEnviados() {
 
   return `
     <div class="toolbar" style="margin-bottom:14px;align-items:center">
-      <button class="btn btn-secondary" id="btn-refresh-enviados">Atualizar</button>
+      <button class="btn btn-secondary" id="btn-refresh-enviados">↻ Atualizar</button>
       <span id="rastreio-auto-status" style="font-size:12px;color:rgba(180,220,195,.40)"></span>
     </div>
     ${sent.length === 0
@@ -579,7 +579,7 @@ function renderHistorico() {
 
   return `
     <div class="toolbar" style="margin-bottom:14px;align-items:center">
-      <button class="btn btn-secondary" id="btn-refresh-historico">Atualizar</button>
+      <button class="btn btn-secondary" id="btn-refresh-historico">↻ Atualizar</button>
       ${summary}
     </div>
     ${hist.length === 0
@@ -793,7 +793,7 @@ function renderReversa() {
     <div class="form-section">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h3 style="margin:0">Etiquetas (${state.reversa.length})</h3>
-        <button class="btn btn-secondary" id="btn-refresh-reversa">Atualizar</button>
+        <button class="btn btn-secondary" id="btn-refresh-reversa">↻ Atualizar</button>
       </div>
       <div class="table-wrapper">
         <table class="data-table">

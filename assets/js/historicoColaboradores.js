@@ -107,7 +107,7 @@ initProtectedPage('Histórico de Importações', (content) => {
             </select>
           </div>
           <div style="display:flex; align-items:end;">
-            <button class="base-button secondary inline" id="btnAtualizar">Atualizar histórico</button>
+            <button class="base-button secondary inline" id="btnAtualizar">↻ Atualizar histórico</button>
           </div>
         </div>
 

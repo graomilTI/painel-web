@@ -2,6 +2,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
+import { getColaboradores } from './colaboradoresCache.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -70,7 +71,7 @@ initProtectedPage('Distribuir O.S', async (content) => {
       <div class="feedback mt-16" id="distFeedback">Carregando...</div>
     </section>
     <section class="grid-cards mt-16" id="distStats"></section>
-    <section class="card mt-16"><div class="section-head"><div><h3>Fila de distribuição</h3><p class="muted">Somente O.S. marcadas como Atender entram na distribuição.</p></div><button id="distReload" class="btn btn-secondary" type="button">Atualizar</button></div><div id="distList"></div></section>
+    <section class="card mt-16"><div class="section-head"><div><h3>Fila de distribuição</h3><p class="muted">Somente O.S. marcadas como Atender entram na distribuição.</p></div><button id="distReload" class="btn btn-secondary" type="button">↻ Atualizar</button></div><div id="distList"></div></section>
   `;
 
   const el = { data: document.getElementById('distData'), coord: document.getElementById('distCoord'), busca: document.getElementById('distBusca'), feedback: document.getElementById('distFeedback'), stats: document.getElementById('distStats'), list: document.getElementById('distList'), reload: document.getElementById('distReload'), pick: document.getElementById('distPickFile'), file: document.getElementById('distFile') };
@@ -122,12 +123,9 @@ initProtectedPage('Distribuir O.S', async (content) => {
       if (!error) { state.colaboradores = (data || []).filter(onlyActiveColab); return; }
     } catch {}
     try {
-      const latest = await supabase.from('colaborador_snapshot').select('data_referencia').order('data_referencia', { ascending: false }).limit(1);
-      const dt = latest.data?.[0]?.data_referencia;
-      let q = supabase.from('colaborador_snapshot').select('*').limit(5000);
-      if (dt) q = q.eq('data_referencia', dt);
-      const { data } = await q;
-      state.colaboradores = (data || []).filter(onlyActiveColab);
+      // cache compartilhado (foto mais recente)
+      const colabs = await getColaboradores();
+      state.colaboradores = colabs.filter(onlyActiveColab);
     } catch { state.colaboradores = []; }
   }
 

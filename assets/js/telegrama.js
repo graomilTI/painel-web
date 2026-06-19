@@ -488,7 +488,7 @@ function renderEnviados() {
 
   return `
     <div class="toolbar" style="margin-bottom:14px">
-      <button class="btn btn-secondary" id="btn-refresh-enviados-tel">Atualizar</button>
+      <button class="btn btn-secondary" id="btn-refresh-enviados-tel">↻ Atualizar</button>
       <span style="font-size:12px;color:rgba(180,220,195,.40)">${lista.length} telegrama(s)</span>
     </div>
     <div style="display:grid;grid-template-columns:130px 1fr 1fr 120px;gap:6px 0;padding:0 18px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(180,220,195,.28)">
@@ -518,7 +518,7 @@ function renderAgendados() {
 
   return `
     <div class="toolbar" style="margin-bottom:12px">
-      <button class="btn btn-secondary" id="btn-refresh-agendados-tel">Atualizar</button>
+      <button class="btn btn-secondary" id="btn-refresh-agendados-tel">↻ Atualizar</button>
     </div>
     <div class="table-wrapper">
       <table class="data-table">

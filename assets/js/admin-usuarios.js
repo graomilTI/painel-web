@@ -344,7 +344,7 @@ function renderPage(content) {
           <p>Controle centralizado de usuários, permissões por módulo, supervisões liberadas e senhas temporárias.</p>
         </div>
         <div class="au-actions">
-          <button class="au-btn au-btn-secondary" id="auRefreshBtn" type="button">Atualizar</button>
+          <button class="au-btn au-btn-secondary" id="auRefreshBtn" type="button">↻ Atualizar</button>
           <button class="au-btn au-btn-primary" id="auCreateBtn" type="button">Novo usuário</button>
         </div>
       </section>

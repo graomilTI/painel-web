@@ -153,7 +153,7 @@ function renderShell(content) {
           <p class="uber-sub">Sincronize as corridas pela API, confira os lançamentos do dia e mande para validação, atenção ou caixa do colaborador sem poluir o painel principal.</p>
         </div>
         <div class="uber-actions">
-          <button class="uber-btn" type="button" data-refresh>Atualizar</button>
+          <button class="uber-btn" type="button" data-refresh>↻ Atualizar</button>
           <button class="uber-btn primary" type="button" data-sync-api>Sincronizar API</button>
         </div>
       </div>

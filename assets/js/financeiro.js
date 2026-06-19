@@ -1085,7 +1085,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
             <article class="fin-kpi cf-kpi-pill cf-projected"><span>Saldo Projetado</span><strong id="kpiProjetado">R$ 0,00</strong><small id="kpiStatus">OK</small></article>
           </div>
           <div class="cf-actions-row">
-            <button class="btn btn-primary" id="btnReload" type="button">Atualizar fluxo</button>
+            <button class="btn btn-primary" id="btnReload" type="button">↻ Atualizar fluxo</button>
             <button class="btn btn-secondary" data-tab-target="importar" type="button">Importar relatórios</button>
             <button class="btn btn-secondary" data-tab-target="config" type="button">Saldo e Provisão</button>
             <button class="btn btn-secondary" data-tab-target="despesas" type="button">Despesas</button>
@@ -1305,10 +1305,10 @@ initProtectedPage('Financeiro', (content, userContext) => {
               <button class="pay-subtab" data-pay-tab="logs" type="button">Pendências</button>
             </div>
             <div class="fin-actions-row">
-              <button class="btn btn-secondary fin-small" id="btnExportFlash" type="button">Baixar Flash XLSX</button>
-              <button class="btn btn-secondary fin-small" id="btnExportIfood" type="button">Baixar iFood XLSX</button>
-              <button class="btn btn-secondary fin-small" id="btnExportAlelo" type="button">Baixar Alelo CSV</button>
-              <button class="btn btn-secondary fin-small" id="btnExportConferencia" type="button">Baixar conferência XLSX</button>
+              <button class="btn btn-secondary fin-small" id="btnExportFlash" type="button">Exportar Flash XLSX</button>
+              <button class="btn btn-secondary fin-small" id="btnExportIfood" type="button">Exportar iFood XLSX</button>
+              <button class="btn btn-secondary fin-small" id="btnExportAlelo" type="button">Exportar Alelo CSV</button>
+              <button class="btn btn-secondary fin-small" id="btnExportConferencia" type="button">Exportar conferência XLSX</button>
             </div>
           </div>
 
@@ -1330,7 +1330,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
               <h3>Pagamentos solicitados pelos setores</h3>
               <p>Fila de despesas enviadas por Compras, Hospedagem, RH e outros módulos para o financeiro realizar o pagamento.</p>
             </div>
-            <button class="btn btn-secondary" id="btnReloadSetorPagamentos" type="button">Atualizar pagamentos</button>
+            <button class="btn btn-secondary" id="btnReloadSetorPagamentos" type="button">↻ Atualizar pagamentos</button>
           </div>
 
           <div class="fin-setor-filter" id="setorPagamentoFilter">

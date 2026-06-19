@@ -1,5 +1,6 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { getColaboradores, searchColaboradores } from './colaboradoresCache.js';
 
 const CATALOGO = [
   ['ALICATE DE CORTE','Outros'],['BALANÇA DE PRECISÃO','Patrimonio'],['CAIXA DE BOBINAS','Outros'],['CAIXA DE SULFITE A4','Outros'],['CALADOR','Patrimonio'],['CELULAR',''],['ESTILETE','Outros'],['HOMOGENEIZADOR','Patrimonio'],['IMPRESSORA A4','Patrimonio'],['IMPRESSORA TÉRMICA BLUETOOTH','Patrimonio'],['JOGO DE PENEIRAS','Patrimonio'],['LIQUIDIFICADOR','Patrimonio'],['LUMINÁRIA','Patrimonio'],['MICROPIPETA','Patrimonio'],['PENEIRA INDIVIDUAL','Patrimonio'],['QUARTEADOR','Patrimonio'],['CAPACETE','EPI'],['COLETE REFLETIVO','EPI'],['LUVA MULTITATO','EPI'],['PROTETOR AURICULAR','EPI'],['MASCARA PFF2','EPI'],['OCULOS DE PROTEÇÃO','EPI'],['BOTINA','EPI']
@@ -23,16 +24,11 @@ const COLAB_CACHE_KEY = 'grao1000:compras-colab:v1';
 const COLAB_CACHE_TTL = 4 * 60 * 60 * 1000;
 
 async function loadColaboradores(){
+  // cache compartilhado (foto mais recente)
   try {
-    const raw = localStorage.getItem(COLAB_CACHE_KEY);
-    if (raw) {
-      const { ts, data } = JSON.parse(raw);
-      if (Date.now() - ts < COLAB_CACHE_TTL && Array.isArray(data)) { state.colaboradores = data; return; }
-    }
-  } catch {}
-  const dados = await safe(()=>supabase.from('colaborador_snapshot').select('id,nome,cpf,tipo,cargo,coordenacao,supervisao,ativo').order('nome',{ascending:true}).limit(5000));
-  state.colaboradores = dedupeColaboradores(dados).filter(colaboradorAtivo);
-  try { localStorage.setItem(COLAB_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: state.colaboradores })); } catch {}
+    const dados = await getColaboradores({ somenteAtivos: true });
+    state.colaboradores = dedupeColaboradores(dados).filter(colaboradorAtivo);
+  } catch(e) { console.warn(e); state.colaboradores = []; }
 }
 function colaboradorAtivo(c){ const txt=norm(c.ativo ?? c.situacao ?? 'ativo'); return !['false','0','inativo','nao ativo','não ativo','desligado'].includes(txt); }
 function colaboradorKey(c){ return String(c?.cpf || c?.documento || c?.id || norm(c?.nome || '')).trim(); }
@@ -188,7 +184,7 @@ function openCelularModal(baseItem){
     const q=colabInput.value.trim(); if(q.length<2){colabSug.innerHTML='';return;}
     clearTimeout(celDebounce);
     celDebounce=setTimeout(async()=>{
-      const {data}=await supabase.from('colaborador_snapshot').select('id,nome,cargo,tipo,ativo').ilike('nome',`%${q}%`).order('nome',{ascending:true}).limit(60);
+      const data=await searchColaboradores(q,{limite:60}); // cache local
       const seen=new Set();
       const list=(data||[]).filter(c=>{const t=norm(c.ativo??'ativo');if(['false','0','inativo','desligado'].includes(t))return false;const k=norm(c.nome||'');if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
       colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
@@ -300,7 +296,7 @@ function openDistribModal(onConfirm){
       if(q.length<2){colabSug.innerHTML='';return;}
       clearTimeout(dcDebounce);
       dcDebounce=setTimeout(async()=>{
-        const {data}=await supabase.from('colaborador_snapshot').select('id,nome,cargo,tipo,ativo').ilike('nome',`%${q}%`).order('nome',{ascending:true}).limit(60);
+        const data=await searchColaboradores(q,{limite:60}); // cache local
         const seen=new Set();
         const list=(data||[]).filter(c=>{const t=norm(c.ativo??'ativo');if(['false','0','inativo','desligado'].includes(t))return false;const k=norm(c.nome||'');if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
         colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
@@ -609,7 +605,7 @@ initProtectedPage('Compras', async (content, userContext)=>{
     <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
   </section>
   <div class="cmp-cel-modal" id="cmpCelularModal"></div>
-  <section class="card mt-16"><div class="section-head"><div><h3>Pendentes e histórico</h3><p class="muted">A solicitação fica pendente até compras concluir ou recusar.</p></div><button class="btn btn-secondary" id="cmpRefresh" type="button">Atualizar</button></div><div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div></section>`;
+  <section class="card mt-16"><div class="section-head"><div><h3>Pendentes e histórico</h3><p class="muted">A solicitação fica pendente até compras concluir ou recusar.</p></div><button class="btn btn-secondary" id="cmpRefresh" type="button">↻ Atualizar</button></div><div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div></section>`;
   state.itens=[]; state.itensInterno=[]; bindItemForm(); bindInternoForm(); renderItensList(); renderInternoList(); renderUniformes(); setupColabSearch();
   document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
   document.getElementById('cmpAddTodos').onclick=()=>addAllColaboradores(userContext); document.getElementById('cmpRefresh').onclick=loadMinhas;

@@ -47,6 +47,7 @@ const state = {
   atribuicoes: [],
   alertas: [],
   producao: [],
+  producaoLoaded: false,
   destinatariosRelatorios: [],
   filters: {
     data: '',
@@ -270,7 +271,7 @@ initProtectedPage('Painel de Logística', async (content) => {
           <h3>Painel de Logística</h3>
           <p class="muted">Fluxo central para finalizar O.S., monitorar classificadores sem atualização, controlar suspensões e preparar relatórios operacionais dos clientes.</p>
         </div>
-        <button id="logReload" class="btn btn-secondary" type="button">Atualizar</button>
+        <button id="logReload" class="btn btn-secondary" type="button">↻ Atualizar</button>
       </div>
       <div class="log-tabs" id="logTabs">
         <button class="log-tab active" data-tab="os" type="button">O.S.</button>
@@ -302,7 +303,7 @@ initProtectedPage('Painel de Logística', async (content) => {
           <h3>Abertura de OS</h3>
           <p class="muted">Solicitações enviadas pelo Gestor para cadastro da O.S. pela Logística ADM.</p>
         </div>
-        <button class="btn btn-secondary" id="aberturaOsReload" type="button">Atualizar</button>
+        <button class="btn btn-secondary" id="aberturaOsReload" type="button">↻ Atualizar</button>
       </div>
       <div id="aberturaOsList"></div>
     </section>
@@ -310,7 +311,7 @@ initProtectedPage('Painel de Logística', async (content) => {
     <section class="card mt-16 log-section active" id="section-os">
       <div class="section-head">
         <div><h3>O.S. para Logística</h3><p class="muted" id="osLogMeta">Carregando...</p></div>
-        <button class="btn btn-secondary" id="osLogReload" type="button">Atualizar</button>
+        <button class="btn btn-secondary" id="osLogReload" type="button">↻ Atualizar</button>
       </div>
       <div id="osLogList"></div>
     </section>
@@ -321,7 +322,7 @@ initProtectedPage('Painel de Logística', async (content) => {
           <h3>FOB — Comparação automática</h3>
           <p class="muted">Anexe Produção Diária, NHE e Mapa/Movimentação de Embarque para gerar o relatório igual à aba FOB da planilha modelo.</p>
         </div>
-        <button id="fobReload" class="btn btn-secondary" type="button">Atualizar histórico</button>
+        <button id="fobReload" class="btn btn-secondary" type="button">↻ Atualizar histórico</button>
       </div>
 
       <div class="card mt-16 log-subcard">
@@ -349,7 +350,7 @@ initProtectedPage('Painel de Logística', async (content) => {
         <div class="log-inline-actions mt-16">
           <button id="fobGerarRelatorio" class="btn btn-primary" type="button">Gerar relatório FOB</button>
           <button id="fobSalvarPendentes" class="btn btn-secondary" type="button" disabled>Salvar pendentes no painel</button>
-          <button id="fobExportCsv" class="btn btn-secondary" type="button" disabled>Baixar CSV</button>
+          <button id="fobExportCsv" class="btn btn-secondary" type="button" disabled>Exportar CSV</button>
           <button id="fobLimparImportacao" class="btn btn-secondary" type="button">Limpar importação</button>
         </div>
         <div class="log-note">Regra aplicada: entra no FOB toda O.S. do mapa com <strong>Tons Hoje = 0</strong>. Status <strong>OK</strong> quando há NHE por O.S./data ou Produção com Cargas = NHE; <strong>DOIS EMBARQUES</strong> quando a mesma combinação Cliente + Cidade + Local + Data aparece 2+ vezes no mapa ou também no NHE; senão fica <strong>PENDENTE</strong>.</div>
@@ -518,9 +519,10 @@ initProtectedPage('Painel de Logística', async (content) => {
 
   async function loadAll() {
     el.feedback.textContent = 'Carregando dados da logística...';
-    const [osRes, prodRes, alertRes] = await Promise.all([
+    // relatorio_resultado_diario (44MB) NÃO entra na carga inicial — é puxada
+    // sob demanda por loadProducao() só nas abas administrativas que a usam.
+    const [osRes, alertRes] = await Promise.all([
       supabase.from('operacional_os').select('*').limit(5000),
-      supabase.from('relatorio_resultado_diario').select('*').order('data', { ascending: false }).limit(5000),
       supabase.from('logistica_alertas').select('*').order('created_at', { ascending: false }).limit(1000),
     ]);
 
@@ -531,10 +533,8 @@ initProtectedPage('Painel de Logística', async (content) => {
     }
 
     state.os = safeArray(osRes.data).sort((a, b) => String(dateKey(b.data_os || b.data)).localeCompare(String(dateKey(a.data_os || a.data))) || String(osNumber(a)).localeCompare(String(osNumber(b)), 'pt-BR'));
-    state.producao = prodRes.error ? [] : safeArray(prodRes.data);
     state.alertas = alertRes.error ? [] : safeArray(alertRes.data);
 
-    if (prodRes.error) console.warn('relatorio_resultado_diario indisponível para exportações/conferências:', prodRes.error);
     if (alertRes.error) console.warn('logistica_alertas indisponível:', alertRes.error);
 
     const ids = state.os.map((row) => row.id).filter(Boolean);
@@ -548,7 +548,22 @@ initProtectedPage('Painel de Logística', async (content) => {
 
     fillCoords();
     render();
-    el.feedback.textContent = `Carregado: ${state.os.length} O.S. · ${state.producao.length} registros de produção · ${state.alertas.length} alertas.`;
+    el.feedback.textContent = `Carregado: ${state.os.length} O.S. · ${state.alertas.length} alertas.`;
+  }
+
+  // Carrega produção sob demanda (tabela grande, só usada em abas administrativas).
+  async function loadProducao() {
+    if (state.producaoLoaded) return;
+    state.producaoLoaded = true;
+    const prodRes = await supabase.from('relatorio_resultado_diario')
+      .select('*').order('data', { ascending: false }).limit(5000);
+    if (prodRes.error) {
+      state.producaoLoaded = false;
+      console.warn('relatorio_resultado_diario indisponível para exportações/conferências:', prodRes.error);
+      return;
+    }
+    state.producao = safeArray(prodRes.data);
+    render();
   }
 
   function fillCoords() {
@@ -570,6 +585,7 @@ initProtectedPage('Painel de Logística', async (content) => {
     if (state.tab === 'os' && !state.osLogLoaded) loadOsLog();
     if (state.tab === 'abertura_os' && !state.aberturaOsLoaded) loadAberturaOs();
     if (state.tab === 'fob' && !state.fobLoaded) loadFob();
+    if (isAdmTab && !state.producaoLoaded) loadProducao(); // produção sob demanda
   }
 
   function renderStats() {
@@ -1133,7 +1149,7 @@ initProtectedPage('Painel de Logística', async (content) => {
             </tr>`).join('')}</tbody>
           </table>
         </div>
-        ${rows.length > preview.length ? `<div class="log-note">Prévia limitada a ${preview.length} linhas no painel. Use Baixar CSV para o relatório completo.</div>` : ''}
+        ${rows.length > preview.length ? `<div class="log-note">Prévia limitada a ${preview.length} linhas no painel. Use Exportar CSV para o relatório completo.</div>` : ''}
       </section>`;
   }
 

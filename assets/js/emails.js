@@ -267,7 +267,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
             <div class="em-field"><label>Conta</label><select id="emConta"><option value="">Todas</option></select></div>
             <div class="em-field"><label>Status</label><select id="emStatus"><option value="NOVO,PENDENTE,RESPONDER">Pendentes</option><option value="RESPONDIDO,RESOLVIDO">Respondidos/Resolvidos</option><option value="ARQUIVADO,IGNORADO">Arquivados/Ignorados</option><option value="">Todos</option></select></div>
             <div class="em-field"><label>Buscar</label><input id="emBusca" placeholder="remetente, assunto, categoria, regional..."></div>
-            <button class="btn btn-primary" type="submit">Atualizar</button>
+            <button class="btn btn-primary" type="submit">↻ Atualizar</button>
           </form>
         </article>
         <div class="em-grid">
@@ -289,7 +289,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
         <article class="em-card">
           <div class="em-actions" style="justify-content:space-between;margin-bottom:12px">
             <div><strong style="color:#f8fafc">Fila de respostas aprovadas</strong><div class="em-muted em-small">O worker envia via SMTP e atualiza esta fila.</div></div>
-            <button class="btn btn-secondary" id="emLoadOutbox" type="button">Atualizar fila</button>
+            <button class="btn btn-secondary" id="emLoadOutbox" type="button">↻ Atualizar fila</button>
           </div>
           <div class="em-list" id="emOutboxBody"><div class="em-empty">Carregando...</div></div>
         </article>
