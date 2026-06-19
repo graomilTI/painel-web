@@ -6,6 +6,7 @@ const ROUTES_WITH_AGENT_DATA = new Set([
   'dre',
   'adm-logistica',
   'btg-logistica',
+  'logistica-informativos',
   'importar-relatorios',
   'consultar-producao',
   'consultar-colaboradores',
@@ -26,6 +27,7 @@ const ROUTE_LABELS = {
   'notas-fiscais': 'Notas Fiscais',
   'consultar-colaboradores': 'Colaboradores',
   'consultar-producao': 'Produção',
+  'logistica-informativos': 'Informativos de Logística',
   patrimonios: 'Patrimônios',
   'adm-patrimonio': 'Patrimônios',
 };
@@ -195,6 +197,65 @@ function patchDreAutoProcess(content) {
   });
 }
 
+function patchLogisticaInformativos(content) {
+  const loadDatabaseButton = content.querySelector('#liLoadDatabase');
+  const generateButton = content.querySelector('#liGenerate');
+  const fileButton = content.querySelector('#liFileButton');
+  const fileHint = content.querySelector('#liFileHint');
+  const reportPages = content.querySelector('#liReportPages');
+  if (!loadDatabaseButton || !generateButton) return;
+
+  if (!loadDatabaseButton.dataset.agentDataModeLabel) {
+    loadDatabaseButton.dataset.agentDataModeLabel = '1';
+    loadDatabaseButton.textContent = 'Atualizar base sincronizada';
+  }
+  if (!generateButton.dataset.agentDataModeLabel) {
+    generateButton.dataset.agentDataModeLabel = '1';
+    generateButton.textContent = 'Atualizar informativo';
+  }
+  if (fileButton && !fileButton.dataset.agentDataModeLabel) {
+    fileButton.dataset.agentDataModeLabel = '1';
+    fileButton.textContent = 'Importar arquivo manual';
+    fileButton.classList.add('btn-secondary');
+  }
+  if (fileHint && /Resultado Diário/i.test(fileHint.textContent || '')) {
+    fileHint.textContent = 'Base sincronizada automaticamente. O arquivo manual substitui temporariamente os dados apenas para contingência.';
+  }
+  if (reportPages && /Carregue a fonte/i.test(reportPages.textContent || '')) {
+    reportPages.innerHTML = '<div class="li-empty">Carregando dados sincronizados para gerar o informativo...</div>';
+  }
+
+  const runGenerate = () => {
+    window.setTimeout(() => {
+      if (!generateButton.disabled) generateButton.click();
+    }, 0);
+  };
+
+  ['#liDateFrom', '#liDateTo', '#liMinimumLoads', '#liRecentDays'].forEach((selector) => {
+    const input = content.querySelector(selector);
+    if (!input || input.dataset.agentDataModeFilterBound === '1') return;
+    input.dataset.agentDataModeFilterBound = '1';
+    input.addEventListener('change', runGenerate);
+    input.addEventListener('input', runGenerate);
+  });
+
+  content.querySelectorAll('[data-mode]').forEach((button) => {
+    if (button.dataset.agentDataModeModeBound === '1') return;
+    button.dataset.agentDataModeModeBound = '1';
+    button.addEventListener('click', () => {
+      window.setTimeout(() => {
+        if (button.dataset.mode === 'volume' && !loadDatabaseButton.disabled) loadDatabaseButton.click();
+      }, 0);
+    });
+  });
+
+  if (content.dataset.agentDataModeInformativosLoaded === '1') return;
+  content.dataset.agentDataModeInformativosLoaded = '1';
+  window.requestAnimationFrame(() => {
+    if (!loadDatabaseButton.disabled) loadDatabaseButton.click();
+  });
+}
+
 function applyPatches(content = document.getElementById('pageContent')) {
   if (!content) return;
   const route = routeName();
@@ -204,6 +265,9 @@ function applyPatches(content = document.getElementById('pageContent')) {
   if (route === 'dre') {
     patchGenericAgentPage(content, route);
     patchDreAutoProcess(content);
+  } else if (route === 'logistica-informativos') {
+    patchGenericAgentPage(content, route);
+    patchLogisticaInformativos(content);
   } else if (route === 'btg-logistica') patchBtg(content);
   else if (route === 'adm-logistica') patchAdmLogistica(content);
   else if (route === 'importar-relatorios' || route === 'importar-patrimonios') patchImportador(content);
