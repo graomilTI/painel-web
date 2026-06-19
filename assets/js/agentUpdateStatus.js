@@ -47,6 +47,7 @@ const ROUTE_AGENT_MAP = {
   'adm-logistica': LOGISTICA_AGENTS,
   logistica: LOGISTICA_AGENTS,
   'btg-logistica': LOGISTICA_AGENTS,
+  'logistica-informativos': ['sync-resultado-diario', 'sync-nhe'],
   'distribuir-os': ['sync-lista-os', 'sync-distribuicao-os'],
   os: ['sync-lista-os', 'sync-distribuicao-os'],
   programacao: ['sync-mapa-embarque', 'sync-lista-os', 'sync-distribuicao-os'],
