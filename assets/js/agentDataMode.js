@@ -162,13 +162,49 @@ function patchImportador(content) {
   ensureNote(firstCard, '<span>✓</span><div><strong>Uploads manuais viraram contingência.</strong><small>Os relatórios principais são abastecidos pelos agentes. Use esta tela apenas para importação excepcional, correção ou carga histórica.</small></div>', 'importadorAgentDataNote');
 }
 
+function patchDreAutoProcess(content) {
+  const refreshButton = content.querySelector('#refreshDre');
+  if (!refreshButton) return;
+
+  const status = content.querySelector('#dreStatus');
+  const yearSelect = content.querySelector('#yearSelect');
+
+  if (!refreshButton.dataset.agentDataModeLabel) {
+    refreshButton.dataset.agentDataModeLabel = '1';
+    refreshButton.textContent = 'Atualizar DRE';
+  }
+
+  if (status && /Aguardando processamento/i.test(status.textContent || '')) {
+    status.innerHTML = '<strong>Carregando DRE automaticamente.</strong> Aguarde enquanto o painel processa os dados sincronizados.';
+  }
+
+  if (yearSelect && !yearSelect.dataset.agentDataModeDreBound) {
+    yearSelect.dataset.agentDataModeDreBound = '1';
+    yearSelect.addEventListener('change', () => {
+      window.setTimeout(() => {
+        if (!refreshButton.disabled) refreshButton.click();
+      }, 0);
+    });
+  }
+
+  if (refreshButton.dataset.agentDataModeAutoStarted === '1') return;
+  refreshButton.dataset.agentDataModeAutoStarted = '1';
+
+  window.requestAnimationFrame(() => {
+    if (!refreshButton.disabled) refreshButton.click();
+  });
+}
+
 function applyPatches(content = document.getElementById('pageContent')) {
   if (!content) return;
   const route = routeName();
   if (!ROUTES_WITH_AGENT_DATA.has(route)) return;
 
   injectStyles();
-  if (route === 'btg-logistica') patchBtg(content);
+  if (route === 'dre') {
+    patchGenericAgentPage(content, route);
+    patchDreAutoProcess(content);
+  } else if (route === 'btg-logistica') patchBtg(content);
   else if (route === 'adm-logistica') patchAdmLogistica(content);
   else if (route === 'importar-relatorios' || route === 'importar-patrimonios') patchImportador(content);
   else patchGenericAgentPage(content, route);
