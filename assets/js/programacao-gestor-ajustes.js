@@ -136,7 +136,13 @@ function autoLoadSingleSupervisao() {
 
   if (options.length === 1) {
     select.value = options[0].value;
-    setTimeout(() => loadBtn.click(), 250);
+    setTimeout(() => {
+      loadBtn.click();
+      setTimeout(() => {
+        const active = document.querySelector('#progSteps .stepbtn.active');
+        if (!active || active.dataset.uiStep === 'A') renderDistribuicao();
+      }, 1800);
+    }, 250);
   }
 }
 
@@ -166,6 +172,9 @@ async function initGestorProgramacaoAjustes() {
     patchPendingOsModal();
   });
   observer.observe(document.body, { childList: true, subtree: true });
+
+  autoLoadSingleSupervisao();
+  patchPendingOsModal();
 
   document.getElementById('progSup')?.addEventListener('change', () => {
     const active = document.querySelector('#progSteps .stepbtn.active');
