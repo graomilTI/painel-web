@@ -26,59 +26,24 @@ const STATUS_META = {
   sem_job: { ui: 'idle', label: 'Aguardando', color: '#f59e0b', detail: '🟡 Aguardando' },
 };
 
-const state = {
-  agentes: [],
-  loading: false,
-  selectedAgent: null,
-};
+const state = { agentes: [], loading: false, selectedAgent: null };
 
-const esc = (v) => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+const esc = (v) => String(v ?? '')
+  .replaceAll('&','&amp;')
+  .replaceAll('<','&lt;')
+  .replaceAll('>','&gt;')
+  .replaceAll('"','&quot;')
+  .replaceAll("'",'&#039;');
 
 function getStyles() {
   return `<style id="agentes-style">
-.ag-wrap{width:100%;color:#e2e2f0}
-.ag-hero{background:radial-gradient(ellipse at top left,rgba(59,130,246,.13),transparent 55%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:24px 28px;margin-bottom:20px}
-.ag-hero h2{margin:0;font-size:clamp(20px,2vw,28px);letter-spacing:-.03em;color:#f8fafc}
-.ag-hero p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;max-width:700px}
-.ag-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}
-.ag-stat{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:12px 18px;text-align:center}
-.ag-stat-val{font-size:22px;font-weight:900;color:#3b82f6;line-height:1}
-.ag-stat-lbl{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}
-.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:20px}
-.ag-card{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}
-.ag-card:hover{border-color:rgba(59,130,246,.3);background:rgba(15,23,42,.85)}
-.ag-card.active{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)}
-.ag-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}
-.ag-card-title{font-size:14px;font-weight:900;color:#f8fafc}
-.ag-card-freq{font-size:11px;color:#94a3b8;background:rgba(148,163,184,.1);padding:3px 8px;border-radius:6px}
-.ag-card-status{display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px}
-.ag-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-.ag-status-dot.online{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}
-.ag-status-dot.error{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}
-.ag-status-dot.idle{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.4)}
-.ag-status-dot.running{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.4)}
-.ag-card-meta{display:flex;gap:16px;font-size:12px;color:#6b7280}
-.ag-card-meta span{display:flex;flex-direction:column}
-.ag-card-meta span strong{color:#e2e2f0;display:block;font-weight:900;font-size:13px}
-.ag-details{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:20px;margin-bottom:20px}
-.ag-details-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:16px}
-.ag-details-title{font-size:16px;font-weight:900;color:#f8fafc}
-.ag-details-close{background:transparent;border:0;color:#94a3b8;cursor:pointer;padding:4px;font-size:18px}
-.ag-log-box{background:rgba(0,0,0,.3);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;color:#6b7280;line-height:1.4;white-space:pre-wrap}
-.ag-log-line{margin:2px 0;color:#94a3b8}
-.ag-log-error{color:#fca5a5}
-.ag-log-success{color:#86efac}
-.ag-btn{border:0;border-radius:12px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}
-.ag-btn-primary{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}
-.ag-btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.22)}
-.ag-btn:disabled{opacity:.5;cursor:not-allowed}
+.ag-wrap{width:100%;color:#e2e2f0}.ag-hero{background:radial-gradient(ellipse at top left,rgba(59,130,246,.13),transparent 55%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:24px 28px;margin-bottom:20px}.ag-hero h2{margin:0;font-size:clamp(20px,2vw,28px);letter-spacing:-.03em;color:#f8fafc}.ag-hero p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;max-width:700px}.ag-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}.ag-stat{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:12px 18px;text-align:center}.ag-stat-val{font-size:22px;font-weight:900;color:#3b82f6;line-height:1}.ag-stat-lbl{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:20px}.ag-card{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-card:hover{border-color:rgba(59,130,246,.3);background:rgba(15,23,42,.85)}.ag-card.active{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)}.ag-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}.ag-card-title{font-size:14px;font-weight:900;color:#f8fafc}.ag-card-freq{font-size:11px;color:#94a3b8;background:rgba(148,163,184,.1);padding:3px 8px;border-radius:6px}.ag-card-status{display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px}.ag-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.ag-status-dot.online{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}.ag-status-dot.error{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}.ag-status-dot.idle{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.4)}.ag-status-dot.running{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.4)}.ag-card-meta{display:flex;gap:16px;font-size:12px;color:#6b7280}.ag-card-meta span{display:flex;flex-direction:column}.ag-card-meta span strong{color:#e2e2f0;display:block;font-weight:900;font-size:13px}.ag-details{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:20px;margin-bottom:20px}.ag-details-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:16px}.ag-details-title{font-size:16px;font-weight:900;color:#f8fafc}.ag-details-close{background:transparent;border:0;color:#94a3b8;cursor:pointer;padding:4px;font-size:18px}.ag-log-box{background:rgba(0,0,0,.3);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;color:#6b7280;line-height:1.4;white-space:pre-wrap}.ag-log-line{margin:2px 0;color:#94a3b8}.ag-log-error{color:#fca5a5}.ag-log-success{color:#86efac}.ag-btn{border:0;border-radius:12px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-btn-primary{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}.ag-btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.22)}.ag-btn:disabled{opacity:.5;cursor:not-allowed}
 </style>`;
 }
 
 function getAgenteStatus(agente) {
   const status = String(agente?.job_status || '').toLowerCase();
-  if (STATUS_META[status]) return STATUS_META[status].ui;
-  return 'idle';
+  return STATUS_META[status]?.ui || 'idle';
 }
 
 function getAgenteMeta(agente) {
@@ -100,10 +65,27 @@ function formatDuration(ms) {
   return `${Math.round(value / 1000)}s`;
 }
 
-function renderLog(job) {
-  if (!job) {
-    return '<div class="ag-log-line">Nenhum job encontrado ainda para este agente.</div>';
+function extractTotalFromJob(job) {
+  const stdout = String(job?.output?.stdout || '');
+  const patterns = [
+    /Upsert conclu[ií]do[^|\n]*\|[^\n]*Atualizados:\s*(\d+)/i,
+    /Upsert conclu[ií]do:\s*(\d+)\s+registros/i,
+    /(\d+)\s+registros\s+sincronizados/i,
+    /(\d+)\s+colaboradores\s+processados/i,
+    /(\d+)\s+linhas\s+parseadas/i,
+    /(\d+)\s+linhas/i,
+    /Total de linhas encontradas:\s*(\d+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = stdout.match(pattern);
+    if (match?.[1]) return Number(match[1]) || 0;
   }
+  return 0;
+}
+
+function renderLog(job) {
+  if (!job) return '<div class="ag-log-line">Nenhum job encontrado ainda para este agente.</div>';
 
   const output = job.output || {};
   const lines = [
@@ -125,14 +107,8 @@ function renderLog(job) {
 
 function renderAgentes() {
   const statusCount = {
-    online: AGENTES.filter(a => {
-      const agente = state.agentes.find(x => x.id === a.id);
-      return agente && getAgenteStatus(agente) === 'online';
-    }).length,
-    error: AGENTES.filter(a => {
-      const agente = state.agentes.find(x => x.id === a.id);
-      return agente && getAgenteStatus(agente) === 'error';
-    }).length,
+    online: AGENTES.filter((a) => getAgenteStatus(state.agentes.find((x) => x.id === a.id)) === 'online').length,
+    error: AGENTES.filter((a) => getAgenteStatus(state.agentes.find((x) => x.id === a.id)) === 'error').length,
   };
 
   let html = getStyles();
@@ -141,70 +117,39 @@ function renderAgentes() {
       <h2>🤖 Agentes de Sincronização</h2>
       <p>Monitor em tempo real dos ${AGENTES.length} agentes que enfileiram jobs no Supabase e são executados pelo worker do cPanel.</p>
       <div class="ag-stats">
-        <div class="ag-stat">
-          <div class="ag-stat-val">${AGENTES.length}</div>
-          <div class="ag-stat-lbl">Total de Agentes</div>
-        </div>
-        <div class="ag-stat">
-          <div class="ag-stat-val" style="color:#22c55e">${statusCount.online}</div>
-          <div class="ag-stat-lbl">Online</div>
-        </div>
-        <div class="ag-stat">
-          <div class="ag-stat-val" style="color:#ef4444">${statusCount.error}</div>
-          <div class="ag-stat-lbl">Com Erro</div>
-        </div>
+        <div class="ag-stat"><div class="ag-stat-val">${AGENTES.length}</div><div class="ag-stat-lbl">Total de Agentes</div></div>
+        <div class="ag-stat"><div class="ag-stat-val" style="color:#22c55e">${statusCount.online}</div><div class="ag-stat-lbl">Online</div></div>
+        <div class="ag-stat"><div class="ag-stat-val" style="color:#ef4444">${statusCount.error}</div><div class="ag-stat-lbl">Com Erro</div></div>
       </div>
     </div>`;
 
-  if (state.selectedAgent) {
-    html += renderAgentDetails(state.selectedAgent);
-  }
+  if (state.selectedAgent) html += renderAgentDetails(state.selectedAgent);
 
-  html += `<div class="ag-grid">`;
-  AGENTES.forEach(a => {
-    const agente = state.agentes.find(x => x.id === a.id);
+  html += '<div class="ag-grid">';
+  AGENTES.forEach((a) => {
+    const agente = state.agentes.find((x) => x.id === a.id);
     const meta = getAgenteMeta(agente);
 
     html += `<div class="ag-card ${state.selectedAgent?.id === a.id ? 'active' : ''}" onclick="selectAgent('${a.id}')">
-      <div class="ag-card-header">
-        <div class="ag-card-title">${esc(a.name)}</div>
-        <div class="ag-card-freq">${a.freq}</div>
-      </div>
-      <div class="ag-card-status">
-        <div class="ag-status-dot ${meta.ui}"></div>
-        <span style="color:${meta.color}">${meta.label}</span>
-      </div>
+      <div class="ag-card-header"><div class="ag-card-title">${esc(a.name)}</div><div class="ag-card-freq">${a.freq}</div></div>
+      <div class="ag-card-status"><div class="ag-status-dot ${meta.ui}"></div><span style="color:${meta.color}">${meta.label}</span></div>
       <div class="ag-card-meta">
-        <span>
-          Total
-          <strong>${agente?.total_records ?? 0}</strong>
-        </span>
-        <span>
-          Última Sync
-          <strong>${formatDate(agente?.ultima_sync)}</strong>
-        </span>
+        <span>Total<strong>${agente?.total_records ?? 0}</strong></span>
+        <span>Última Sync<strong>${formatDate(agente?.ultima_sync)}</strong></span>
       </div>
     </div>`;
   });
-  html += `</div>`;
+  html += '</div>';
 
-  if (!state.selectedAgent) {
-    html += `<div style="text-align:center;padding:40px;color:#6b7280">
-      <p>Clique em um agente para ver detalhes</p>
-    </div>`;
-  }
-
-  html += `</div>`;
+  if (!state.selectedAgent) html += '<div style="text-align:center;padding:40px;color:#6b7280"><p>Clique em um agente para ver detalhes</p></div>';
+  html += '</div>';
   return html;
 }
 
 function renderAgentDetails(agente) {
   const meta = getAgenteMeta(agente);
   return `<div class="ag-details">
-    <div class="ag-details-header">
-      <div class="ag-details-title">${esc(agente.name)} - Detalhes</div>
-      <button class="ag-details-close" onclick="closeDetails()">✕</button>
-    </div>
+    <div class="ag-details-header"><div class="ag-details-title">${esc(agente.name)} - Detalhes</div><button class="ag-details-close" onclick="closeDetails()">✕</button></div>
     <div style="margin-bottom:16px">
       <p><strong>ID:</strong> ${esc(agente.id)}</p>
       <p><strong>Tabela:</strong> ${esc(agente.table)}</p>
@@ -215,24 +160,17 @@ function renderAgentDetails(agente) {
       <p><strong>Último Job:</strong> ${esc(agente.job_id || 'N/A')}</p>
       <p><strong>Duração:</strong> ${esc(formatDuration(agente.duration_ms))}</p>
     </div>
-    <div>
-      <p style="margin-bottom:8px"><strong>Log do Worker:</strong></p>
-      <div class="ag-log-box">${renderLog(agente.last_job)}</div>
-    </div>
+    <div><p style="margin-bottom:8px"><strong>Log do Worker:</strong></p><div class="ag-log-box">${renderLog(agente.last_job)}</div></div>
     <div style="margin-top:16px">
-      <button class="ag-btn ag-btn-primary" onclick="executeAgent('${agente.id}')">
-        ▶️ Executar Agora
-      </button>
-      <button class="ag-btn ag-btn-danger" onclick="viewLogs('${agente.id}')" style="margin-left:8px">
-        📊 Ver Log cPanel
-      </button>
+      <button class="ag-btn ag-btn-primary" onclick="executeAgent('${agente.id}')">▶️ Executar Agora</button>
+      <button class="ag-btn ag-btn-danger" onclick="viewLogs('${agente.id}')" style="margin-left:8px">📊 Ver Log cPanel</button>
     </div>
   </div>`;
 }
 
 window.selectAgent = (agentId) => {
-  const agente = AGENTES.find(a => a.id === agentId);
-  const agenteData = state.agentes.find(a => a.id === agentId);
+  const agente = AGENTES.find((a) => a.id === agentId);
+  const agenteData = state.agentes.find((a) => a.id === agentId);
   state.selectedAgent = { ...agente, ...agenteData };
   render();
 };
@@ -301,6 +239,8 @@ async function loadAgentes() {
             getLastJob(agente.id),
             countRecords(agente.table),
           ]);
+          const jobTotal = extractTotalFromJob(lastJob);
+          const displayTotal = Number(totalRecords || 0) > 0 ? totalRecords : jobTotal;
 
           return {
             id: agente.id,
@@ -308,7 +248,7 @@ async function loadAgentes() {
             freq: agente.freq,
             table: agente.table,
             ultima_sync: lastJob?.finalizado_em || lastJob?.iniciado_em || lastJob?.created_at || null,
-            total_records: totalRecords,
+            total_records: displayTotal || 0,
             job_id: lastJob?.id || null,
             job_status: lastJob?.status || 'sem_job',
             duration_ms: lastJob?.duration_ms || null,
@@ -347,6 +287,4 @@ async function init() {
 }
 
 init();
-
-// Recarregar a cada 30 segundos
 setInterval(loadAgentes, 30000);
