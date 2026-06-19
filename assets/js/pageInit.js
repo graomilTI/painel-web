@@ -1,6 +1,7 @@
 import { requireAuth } from './authGuard.js';
 import { renderAppLayout } from './layout.js';
 import { bindLayoutActions } from './layoutActions.js';
+import { initAgentUpdateStatus } from './agentUpdateStatus.js';
 
 export async function initProtectedPage(title, renderContent) {
   document.documentElement.classList.remove('is-route-transitioning');
@@ -10,6 +11,7 @@ export async function initProtectedPage(title, renderContent) {
 
   renderAppLayout({ userContext, currentPageTitle: title });
   bindLayoutActions();
+  initAgentUpdateStatus();
 
   const content = document.getElementById('pageContent');
   if (content && typeof renderContent === 'function') {
