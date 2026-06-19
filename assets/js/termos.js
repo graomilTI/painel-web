@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { getColaboradores } from './colaboradoresCache.js';
 
 const state = { tab:'celular', celular:[], empresas:[] };
 const esc=(v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
@@ -34,6 +35,12 @@ async function loadEmpresas(){
 
 async function fetchCPF(colaboradorId){
   if(!colaboradorId) return '';
+  // tenta o cache (foto atual); fallback à query por id (snapshots antigos)
+  try{
+    const lista=await getColaboradores();
+    const hit=lista.find(c=>String(c.id)===String(colaboradorId));
+    if(hit?.cpf) return hit.cpf;
+  }catch{}
   const data=await safe(()=>supabase.from('colaborador_snapshot').select('cpf').eq('id',colaboradorId).maybeSingle(),null);
   return data?.cpf||'';
 }
@@ -302,7 +309,7 @@ initProtectedPage('Termos', async (content)=>{
         <button class="btn btn-secondary active" data-termos-tab="celular" type="button">Celular</button>
         <button class="btn btn-secondary" data-termos-tab="veiculos" type="button">Veículos</button>
       </div>
-      <button class="btn btn-secondary" id="termosRefresh" type="button">Atualizar</button>
+      <button class="btn btn-secondary" id="termosRefresh" type="button">↻ Atualizar</button>
     </div>
     <div id="termosTabCelular" class="mt-16">
       <div class="termos-table-wrap">

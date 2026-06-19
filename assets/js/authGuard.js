@@ -62,9 +62,11 @@ function permissionRoute(item) {
   return item;
 }
 
+const CHAMADOS_TI_ITEM = { code: 'chamados_ti', label: 'Chamados de TI', path: 'chamados-ti', aliases: ['CHAMADOS_TI', 'TI_CHAMADOS', 'HELPDESK', 'SUPORTE_TI'] };
+
 function allowedItemsForContext(context) {
   if (context?.user?.is_master) {
-    return PANEL_MENU.flatMap((section) => section.items || []).map(permissionRoute);
+    return PANEL_MENU.flatMap((section) => section.items || []).map(permissionRoute).concat(CHAMADOS_TI_ITEM);
   }
 
   if (isGestorContext(context)) {
@@ -72,13 +74,15 @@ function allowedItemsForContext(context) {
     return PANEL_MENU
       .filter((section) => allowedSections.has(normalize(section.section)))
       .flatMap((section) => section.items || [])
-      .map(permissionRoute);
+      .map(permissionRoute)
+      .concat(CHAMADOS_TI_ITEM);
   }
 
   const allowedCodes = buildModuleCodeSet(context);
   return PANEL_MENU.flatMap((section) => section.items || [])
     .filter((item) => itemIsAllowedByModules(item, allowedCodes))
-    .map(permissionRoute);
+    .map(permissionRoute)
+    .concat(CHAMADOS_TI_ITEM);
 }
 
 function getFirstAllowedPath(context) {

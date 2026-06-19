@@ -1670,7 +1670,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
             </button>
             ${fechado && rows.some(r => r.qualifica_bonus) ? `
             <button class="metas-btn secondary" type="button" data-metas-baixar-bonus>
-              Baixar relatório de bônus (XLS)
+              Exportar relatório de bônus (XLS)
             </button>` : ''}
           </div>
         </div>
@@ -1845,7 +1845,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
           </div>
           <div class="metas-actions">
             <button class="metas-btn secondary" type="button" data-metas-back>Voltar</button>
-            <button class="metas-btn" type="button" data-metas-refresh>Atualizar</button>
+            <button class="metas-btn" type="button" data-metas-refresh>↻ Atualizar</button>
           </div>
         </div>
 
@@ -2604,7 +2604,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
         gerarRelatorioBonusXlsx(state, gestoresEnriq, params.gestoresBonus);
       } catch (e) {
         console.error('[METAS] Erro ao gerar relatório de bônus:', e);
-        alert('Meta fechada com sucesso, mas houve um erro ao gerar o XLS de bônus: ' + (e?.message || e) + '\n\nVocê pode gerar o relatório novamente pelo botão "Baixar relatório de bônus (XLS)".');
+        alert('Meta fechada com sucesso, mas houve um erro ao gerar o XLS de bônus: ' + (e?.message || e) + '\n\nVocê pode gerar o relatório novamente pelo botão "Exportar relatório de bônus (XLS)".');
       }
 
       await loadData(state, supabase);

@@ -728,7 +728,7 @@
           </div>
           <div class="ct-actions">
             <button class="ct-btn" id="ct_apply">Aplicar filtros</button>
-            <button class="ct-btn sec" id="ct_reload">Recarregar base</button>
+            <button class="ct-btn sec" id="ct_reload">↻ Recarregar base</button>
           </div>
         </div>
 
@@ -770,12 +770,12 @@
     if (tab === 'exports') {
       content.innerHTML = `
         <div class="ct-grid">
-          <div class="ct-card"><h3>Google Contatos</h3><p>CSV compatível com importação ou sincronização direta no Google Contacts.</p><div class="ct-actions"><button class="ct-btn" data-export="google">Gerar CSV</button><button class="ct-btn sec" id="ct_open_google_sync">Sincronizar no Google</button></div></div>
-          <div class="ct-card"><h3>Correios</h3><p>XLSX com cartão de postagem, malote N e endereço separado.</p><div class="ct-actions"><button class="ct-btn" data-export="correios">Gerar XLSX</button></div></div>
-          <div class="ct-card"><h3>Flash</h3><p>XLSX para cadastro de pessoas Flash.</p><div class="ct-actions"><button class="ct-btn" data-export="flash">Gerar XLSX</button></div></div>
-          <div class="ct-card"><h3>iFood</h3><p>XLSX para cadastro de pessoas iFood Benefícios.</p><div class="ct-actions"><button class="ct-btn" data-export="ifood">Gerar XLSX</button></div></div>
-          <div class="ct-card"><h3>Uber Empresas</h3><p>CSV com e-mail, telefone, CPF e grupo pela coordenação.</p><div class="ct-actions"><button class="ct-btn" data-export="uber">Gerar CSV</button></div></div>
-          <div class="ct-card"><h3>Users BotConversa</h3><p>XLSX no layout da aba Users, com tags por empresa, coordenação, supervisão, tipo e cargo.</p><div class="ct-actions"><button class="ct-btn" data-export="bot">Gerar XLSX</button></div></div>
+          <div class="ct-card"><h3>Google Contatos</h3><p>CSV compatível com importação ou sincronização direta no Google Contacts.</p><div class="ct-actions"><button class="ct-btn" data-export="google">Exportar CSV</button><button class="ct-btn sec" id="ct_open_google_sync">Sincronizar no Google</button></div></div>
+          <div class="ct-card"><h3>Correios</h3><p>XLSX com cartão de postagem, malote N e endereço separado.</p><div class="ct-actions"><button class="ct-btn" data-export="correios">Exportar XLSX</button></div></div>
+          <div class="ct-card"><h3>Flash</h3><p>XLSX para cadastro de pessoas Flash.</p><div class="ct-actions"><button class="ct-btn" data-export="flash">Exportar XLSX</button></div></div>
+          <div class="ct-card"><h3>iFood</h3><p>XLSX para cadastro de pessoas iFood Benefícios.</p><div class="ct-actions"><button class="ct-btn" data-export="ifood">Exportar XLSX</button></div></div>
+          <div class="ct-card"><h3>Uber Empresas</h3><p>CSV com e-mail, telefone, CPF e grupo pela coordenação.</p><div class="ct-actions"><button class="ct-btn" data-export="uber">Exportar CSV</button></div></div>
+          <div class="ct-card"><h3>Users BotConversa</h3><p>XLSX no layout da aba Users, com tags por empresa, coordenação, supervisão, tipo e cargo.</p><div class="ct-actions"><button class="ct-btn" data-export="bot">Exportar XLSX</button></div></div>
         </div>
       `;
       content.querySelectorAll('[data-export]').forEach((btn) => {

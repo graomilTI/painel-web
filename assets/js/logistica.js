@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { getColaboradores } from './colaboradoresCache.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 function fmt(v) { return BR.format(Number(v) || 0); }
@@ -203,23 +204,20 @@ async function ensureColaboradores() {
     }
   } catch {}
 
-  const latest = await supabase
-    .from('colaborador_snapshot')
-    .select('nome,cpf,supervisao,coordenacao,data_referencia')
-    .order('data_referencia', { ascending: false })
-    .limit(1200);
-
-  if (!latest.error && latest.data?.length) {
-    const seen = new Set();
-    state.colaboradores = latest.data.filter(c => {
-      const key = normalizeText(c.cpf || c.nome);
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    try { sessionStorage.setItem(COLAB_SS_KEY, JSON.stringify({ data: state.colaboradores })); } catch {}
-    return;
-  }
+  try {
+    const colabs = await getColaboradores({ somenteAtivos: true }); // cache compartilhado
+    if (colabs.length) {
+      const seen = new Set();
+      state.colaboradores = colabs.filter(c => {
+        const key = normalizeText(c.cpf || c.nome);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      try { sessionStorage.setItem(COLAB_SS_KEY, JSON.stringify({ data: state.colaboradores })); } catch {}
+      return;
+    }
+  } catch {}
 
   const fallback = await supabase
     .from('colaboradores')
@@ -299,7 +297,7 @@ function renderOsTab() {
     <section class="card mt-16">
       <div class="section-head">
         <div><h3>Distribuição de O.S.</h3><p class="muted">Gerencie o status das ordens de serviço ativas.</p></div>
-        <button class="btn btn-secondary" id="logReload" type="button">Atualizar</button>
+        <button class="btn btn-secondary" id="logReload" type="button">↻ Atualizar</button>
       </div>
       ${filterBar}
       <div class="log-table-wrap">
@@ -346,7 +344,7 @@ function renderAbrirOsTab() {
           <h3>Abrir OS</h3>
           <p class="muted">Solicite a abertura de uma nova O.S. para a Logística ADM cadastrar e devolver o número da O.S.</p>
         </div>
-        <button class="btn btn-secondary" id="abrirOsReload" type="button" onclick="location.reload()">Atualizar</button>
+        <button class="btn btn-secondary" id="abrirOsReload" type="button" onclick="location.reload()">↻ Atualizar</button>
       </div>
 
       <div class="fob-kpis">
@@ -434,7 +432,7 @@ function renderFobTab() {
           <h3>FOB do Gestor</h3>
           <p class="muted">Histórico permanente de FOB. Valide todos os pendentes para liberar a programação do dia seguinte.</p>
         </div>
-        <button class="btn btn-secondary" id="fobReload" type="button">Atualizar</button>
+        <button class="btn btn-secondary" id="fobReload" type="button">↻ Atualizar</button>
       </div>
 
       <div class="fob-kpis">

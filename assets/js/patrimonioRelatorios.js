@@ -672,9 +672,9 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
         <div class="base-actions">
           <button class="base-button primary" id="btnAplicar">Aplicar filtros</button>
           <button class="base-button secondary" id="btnLimpar">Limpar</button>
-          <button class="base-button secondary" id="btnCsv">Baixar CSV</button>
-          <button class="base-button secondary" id="btnZip">Gerar ZIP imagens</button>
-          <button class="base-button secondary" id="btnZipRegional">Gerar ZIP por regional</button>
+          <button class="base-button secondary" id="btnCsv">Exportar CSV</button>
+          <button class="base-button secondary" id="btnZip">Exportar ZIP imagens</button>
+          <button class="base-button secondary" id="btnZipRegional">Exportar ZIP por regional</button>
         </div>
 
         <pre id="patrimonioFeedback" style="white-space:pre-wrap;margin:14px 0 0;color:#cbd5e1;">Carregando base atual...</pre>

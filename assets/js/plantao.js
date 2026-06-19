@@ -2246,7 +2246,7 @@ function renderPage(content) {
             </div>
           </div>
           <div class="plantao-actions" style="margin-top:14px;">
-            <button type="button" class="plantao-btn secondary" id="btnAtualizarImagem">Atualizar imagens</button>
+            <button type="button" class="plantao-btn secondary" id="btnAtualizarImagem">↻ Atualizar imagens</button>
           </div>
         </div>
 

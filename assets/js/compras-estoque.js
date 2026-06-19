@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { getColaboradores } from './colaboradoresCache.js';
 
 const state = { materiais: [], movs: [], colaboradores: [], tab: 'visao' };
 const CATEGORIAS = ['Uniformes','Escritório','Brindes','Equipamentos','Classificação','EPI','Outros'];
@@ -25,12 +26,12 @@ async function loadBase(){
   const [materiais,movs,colabs] = await Promise.all([
     safe(()=>supabase.from('compras_estoque_materiais').select('*').order('nome',{ascending:true}).limit(5000)),
     safe(()=>supabase.from('compras_estoque_movimentacoes').select('*, compras_estoque_materiais(nome,categoria,tamanho,unidade)').order('created_at',{ascending:false}).limit(300)),
-    safe(()=>supabase.from('colaborador_snapshot').select('id,nome,cpf,cargo,tipo,coordenacao,supervisao,ativo').order('nome',{ascending:true}).limit(5000))
+    getColaboradores({somenteAtivos:true}).catch(()=>[])  // cache compartilhado
   ]);
   state.materiais = (materiais||[]).filter(m=>m.ativo!==false);
   state.movs = movs||[];
   const seen = new Set();
-  state.colaboradores = (colabs||[]).filter(c=>{ const ativo=norm(c.ativo??'ativo'); const key=norm(c.cpf||c.id||c.nome); if(['false','0','inativo','desligado'].includes(ativo)||seen.has(key)) return false; seen.add(key); return true; });
+  state.colaboradores = (colabs||[]).filter(c=>{ const key=norm(c.cpf||c.id||c.nome); if(seen.has(key)) return false; seen.add(key); return true; });
 }
 
 function styles(){ return `<style>

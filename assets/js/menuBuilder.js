@@ -338,11 +338,34 @@ function ensureFrotasSection(menuSections, userContext) {
   return sections;
 }
 
+const CHAMADOS_TI_ITEM = {
+  code: 'chamados_ti',
+  label: 'Chamados de TI',
+  path: 'chamados-ti',
+  aliases: ['CHAMADOS_TI', 'TI_CHAMADOS', 'HELPDESK', 'SUPORTE_TI']
+};
+
+function ensureChamadosSection(menuSections) {
+  const sections = Array.isArray(menuSections)
+    ? menuSections.map((section) => ({ ...section, items: [...(section.items || [])] }))
+    : [];
+
+  const inicioIndex = sections.findIndex((section) => normalizeCode(section.section) === 'inicio');
+  if (inicioIndex < 0) {
+    sections.unshift({ section: 'INÍCIO', items: [CHAMADOS_TI_ITEM] });
+    return sections;
+  }
+
+  const exists = sections[inicioIndex].items.some((item) => normalizeCode(item.code) === normalizeCode(CHAMADOS_TI_ITEM.code));
+  if (!exists) sections[inicioIndex].items.push(CHAMADOS_TI_ITEM);
+  return sections;
+}
+
 export function buildAllowedMenu(userContext) {
   if (!userContext) return [];
 
   if (userContext.user?.is_master) {
-    return ensureFinanceiroSection(ensureTiSection(ensureFrotasSection(ensureGestorSection(ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext), userContext), userContext), userContext), userContext);
+    return ensureChamadosSection(ensureFinanceiroSection(ensureTiSection(ensureFrotasSection(ensureGestorSection(ensureOperationalSection(PANEL_MENU.map((section) => ({ ...section, items: [...section.items] })), userContext), userContext), userContext), userContext), userContext));
   }
 
   // Regra de segurança visual: perfil/setor GESTOR enxerga somente INÍCIO + GESTOR.
@@ -351,7 +374,7 @@ export function buildAllowedMenu(userContext) {
     const allowedSections = new Set(['inicio', 'gestor']);
     const allowedCodes = buildAllowedCodeSet(userContext);
     const hasModules = allowedCodes.size > 0;
-    return ensureGestorSection(PANEL_MENU
+    return ensureChamadosSection(ensureGestorSection(PANEL_MENU
       .filter((section) => allowedSections.has(normalizeCode(section.section)))
       .map((section) => ({
         ...section,
@@ -359,17 +382,17 @@ export function buildAllowedMenu(userContext) {
           ? section.items.filter((item) => isItemAllowed(item, allowedCodes))
           : [...section.items],
       }))
-      .filter((section) => section.items.length > 0), userContext);
+      .filter((section) => section.items.length > 0), userContext));
   }
 
   const allowedCodes = buildAllowedCodeSet(userContext);
 
-  return ensureFinanceiroSection(ensureTiSection(ensureFrotasSection(ensureGestorSection(ensureOperationalSection(PANEL_MENU
+  return ensureChamadosSection(ensureFinanceiroSection(ensureTiSection(ensureFrotasSection(ensureGestorSection(ensureOperationalSection(PANEL_MENU
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => isItemAllowed(item, allowedCodes)),
     }))
-    .filter((section) => section.items.length > 0), userContext), userContext), userContext), userContext), userContext);
+    .filter((section) => section.items.length > 0), userContext), userContext), userContext), userContext), userContext));
 }
 
 export function flattenAllowedMenu(userContext) {

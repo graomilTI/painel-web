@@ -1,5 +1,6 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { getColaboradores } from './colaboradoresCache.js';
 
 const STATUS_SOLICITACAO = {
   SOLICITADA: 'Solicitada',
@@ -194,7 +195,7 @@ initProtectedPage('Hospedagem', (content, userContext) => {
       <article class="card mt-16">
         <div class="section-head">
           <div><h3>Minhas solicitações</h3><p class="muted">Acompanhe o status enviado pelo setor de hospedagem.</p></div>
-          <button class="btn btn-secondary hosp-btn" type="button" id="refreshBtn">Atualizar</button>
+          <button class="btn btn-secondary hosp-btn" type="button" id="refreshBtn">↻ Atualizar</button>
         </div>
         <div class="hosp-table-wrap">
           <table class="hosp-table">
@@ -292,8 +293,10 @@ initProtectedPage('Hospedagem', (content, userContext) => {
   }
 
   async function loadColaboradores() {
-    const { data, error } = await safeSelect('colaborador_snapshot', 'id,nome,cpf,tipo,empresa,coordenacao,supervisao,ativo,data_referencia', (q) => q.order('nome', { ascending: true }).limit(1500));
-    if (error) {
+    let data;
+    try {
+      data = await getColaboradores(); // cache compartilhado (foto mais recente)
+    } catch {
       document.getElementById('colabFallback').style.display = 'block';
       state.colaboradores = [];
       return;

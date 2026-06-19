@@ -1,6 +1,7 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
+import { getColaboradores } from './colaboradoresCache.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -274,7 +275,7 @@ initProtectedPage('OS', async (content) => {
       <div class="feedback mt-16" id="osFeedback">Carregando...</div>
     </section>
     <section class="grid-cards mt-16" id="osStats"></section>
-    <section class="card mt-16"><div class="section-head"><div><h3>Lista de O.S.</h3><p class="muted">A sugestão de colaborador usa a menor distância disponível do mapa operacional/base de colaboradores.</p></div><button class="btn btn-secondary" id="osReload">Atualizar</button></div><div id="osList"></div></section>
+    <section class="card mt-16"><div class="section-head"><div><h3>Lista de O.S.</h3><p class="muted">A sugestão de colaborador usa a menor distância disponível do mapa operacional/base de colaboradores.</p></div><button class="btn btn-secondary" id="osReload">↻ Atualizar</button></div><div id="osList"></div></section>
   `;
 
   const el = {
@@ -415,17 +416,8 @@ initProtectedPage('OS', async (content) => {
 
     async function fromColaboradorSnapshot() {
       try {
-        const latest = await supabase
-          .from('colaborador_snapshot')
-          .select('data_referencia')
-          .order('data_referencia', { ascending: false })
-          .limit(1);
-
-        const dt = latest.data?.[0]?.data_referencia;
-        let q = supabase.from('colaborador_snapshot').select('*').limit(5000);
-        if (dt) q = q.eq('data_referencia', dt);
-        const { data, error } = await q;
-        if (error) throw error;
+        // cache compartilhado (foto mais recente)
+        const data = await getColaboradores();
         return safeArray(data).map((c) => ({
           ...c,
           nome: c.nome || c.nome_colaborador,

@@ -203,7 +203,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       <article class="card">
         <div class="section-head">
           <div><h3>Histórico importado de hospedagem</h3><p class="muted">Base vinda da Central de Importação com status, checkout, quarto e valor da diária por colaborador.</p></div>
-          <div class="adm-hosp-actions"><input id="historicoSearch" class="adm-hosp-search" placeholder="Buscar colaborador, hotel, cidade..." /><button class="btn btn-secondary adm-hosp-btn" id="refreshHistorico" type="button">Atualizar</button></div>
+          <div class="adm-hosp-actions"><input id="historicoSearch" class="adm-hosp-search" placeholder="Buscar colaborador, hotel, cidade..." /><button class="btn btn-secondary adm-hosp-btn" id="refreshHistorico" type="button">↻ Atualizar</button></div>
         </div>
         <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Hotel</th><th>Cidade / UF</th><th>Status</th><th>Quarto</th><th>Diária</th><th>Situação</th></tr></thead><tbody id="tbodyHistorico"><tr><td colspan="8" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
       </article>
@@ -211,28 +211,28 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
     <section id="tab-solicitadas" class="adm-hosp-panel">
       <article class="card">
-        <div class="section-head"><div><h3>Aguardando reserva</h3><p class="muted">Solicitações abertas sem reserva definida.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshPainel" type="button">Atualizar</button></div>
+        <div class="section-head"><div><h3>Aguardando reserva</h3><p class="muted">Solicitações abertas sem reserva definida.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshPainel" type="button">↻ Atualizar</button></div>
         <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data / Código</th><th>Colaboradores</th><th>Gestor</th><th>Cidade / UF</th><th>Período</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbodySolicitadas"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
       </article>
     </section>
 
     <section id="tab-reservados" class="adm-hosp-panel">
       <article class="card">
-        <div class="section-head"><div><h3>Reservas ativas</h3><p class="muted">Hospedagens reservadas aguardando check-in ou em andamento.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshReservados" type="button">Atualizar</button></div>
+        <div class="section-head"><div><h3>Reservas ativas</h3><p class="muted">Hospedagens reservadas aguardando check-in ou em andamento.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshReservados" type="button">↻ Atualizar</button></div>
         <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data / Código</th><th>Colaboradores</th><th>Hotel</th><th>Check-out previsto</th><th>Ações</th></tr></thead><tbody id="tbodyReservados"><tr><td colspan="5" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
       </article>
     </section>
 
     <section id="tab-checkout" class="adm-hosp-panel">
       <article class="card">
-        <div class="section-head"><div><h3>Checkout pendente</h3><p class="muted">Hospedagens com saída prevista ou solicitações de checkout.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshCheckout" type="button">Atualizar</button></div>
+        <div class="section-head"><div><h3>Checkout pendente</h3><p class="muted">Hospedagens com saída prevista ou solicitações de checkout.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshCheckout" type="button">↻ Atualizar</button></div>
         <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data / Código</th><th>Colaboradores</th><th>Hotel</th><th>Status</th><th>Valor previsto</th><th>Ações</th></tr></thead><tbody id="tbodyCheckout"><tr><td colspan="6" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
       </article>
     </section>
 
     <section id="tab-financeiro" class="adm-hosp-panel">
       <article class="card">
-        <div class="section-head"><div><h3>Aguardando pagamento</h3><p class="muted">Cobranças enviadas ao financeiro ainda não pagas.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshFinanceiro" type="button">Atualizar</button></div>
+        <div class="section-head"><div><h3>Aguardando pagamento</h3><p class="muted">Cobranças enviadas ao financeiro ainda não pagas.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshFinanceiro" type="button">↻ Atualizar</button></div>
         <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data / Código</th><th>Colaboradores</th><th>Hotel</th><th>Valor</th><th>Status financeiro</th><th>Ações</th></tr></thead><tbody id="tbodyFinanceiro"><tr><td colspan="6" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
       </article>
     </section>

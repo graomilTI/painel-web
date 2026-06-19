@@ -433,7 +433,7 @@ function render(el) {
 
   const naoOkCount = state.finalRows.filter(r => r.status !== 'OK').length;
   el.exportVerificar.disabled = !naoOkCount;
-  el.exportVerificar.textContent = naoOkCount ? `Gerar XLS pendências (${naoOkCount})` : 'Gerar XLS pendências';
+  el.exportVerificar.textContent = naoOkCount ? `Exportar XLS pendências (${naoOkCount})` : 'Exportar XLS pendências';
 
   const checkinCount = state.finalRows.filter(r => r.status === 'CHECK-IN').length;
   el.enviarCheckin.disabled = !checkinCount;
@@ -1451,7 +1451,7 @@ initProtectedPage('BTG — Logística', async (content) => {
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span id="btgModeTag" class="badge">BASE DE DADOS</span>
-          <button class="btn btn-secondary" id="btgRecarregar">Atualizar BD</button>
+          <button class="btn btn-secondary" id="btgRecarregar">↻ Atualizar BD</button>
         </div>
       </div>
 
@@ -1469,7 +1469,7 @@ initProtectedPage('BTG — Logística', async (content) => {
           <div class="btg-chip-file" id="btgChipListaOs">Lista de O.S. — aguardando</div>
         </div>
         <div class="btg-actions">
-          <button class="btn btn-secondary" id="btgExportVerificar">Gerar XLS VERIFICAR</button>
+          <button class="btn btn-secondary" id="btgExportVerificar">Exportar XLS pendências</button>
           <button class="btn btn-secondary btg-btn-checkin" id="btgEnviarCheckin" disabled>Enviar Check-in</button>
           <button class="btn btn-secondary btg-btn-nhe" id="btgEnviarNhe" disabled>Enviar NHE</button>
         </div>

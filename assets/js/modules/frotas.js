@@ -1982,7 +1982,7 @@
               <select class="speed-select" data-historico-tipo><option value="todos">Todos os tipos</option><option value="excesso">Excessos</option><option value="multa">Multas</option><option value="manutencao">Manutenções</option></select>
               <input class="speed-input" type="date" data-historico-start>
               <input class="speed-input" type="date" data-historico-end>
-              <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-historico-refresh>Atualizar</button>
+              <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-historico-refresh>↻ Atualizar</button>
             </div>
             <div class="hist-kpi-grid"><div class="hist-kpi"><span>Colaboradores</span><strong data-hist-kpi-colabs>0</strong></div><div class="hist-kpi"><span>Excessos</span><strong data-hist-kpi-excessos>0</strong></div><div class="hist-kpi"><span>Multas</span><strong data-hist-kpi-multas>0</strong></div><div class="hist-kpi"><span>Manutenções</span><strong data-hist-kpi-manut>0</strong></div></div>
             <p class="speed-hint" data-historico-count>Carregando histórico...</p>
@@ -2199,7 +2199,7 @@
               <div class="speed-panel">
                 <div class="speed-step-title"><h3>Painel 1 · Copiar mensagem</h3><span class="speed-step-pill">maior velocidade por data</span></div>
                 <div class="speed-import-card">
-                  <div class="speed-import-head"><h3>Registros importados</h3><div class="speed-import-actions"><button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-sync-bfleet-excessos>Sincronizar ontem</button><button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-infleet-import-btn>Importar Infleet</button><button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-refresh-imported-excessos>Atualizar</button></div></div>
+                  <div class="speed-import-head"><h3>Registros importados</h3><div class="speed-import-actions"><button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-sync-bfleet-excessos>Sincronizar ontem</button><button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-infleet-import-btn>Importar Infleet</button><button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-refresh-imported-excessos>↻ Atualizar</button></div></div>
                   <input type="file" accept=".xlsx,.xls" data-infleet-file hidden>
                   <p class="speed-hint" data-imported-excess-count>Nenhuma pendência carregada</p>
                   <div class="print-status-box">

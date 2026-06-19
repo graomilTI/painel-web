@@ -121,7 +121,7 @@ export function mountRequestModule(config) {
             <h3>Registros</h3>
             <p class="muted">${escapeHtml(config.listHint || 'Clique em editar para alterar um registro.')}</p>
           </div>
-          <button class="btn btn-secondary" type="button" id="${config.key}-refresh-btn">Atualizar lista</button>
+          <button class="btn btn-secondary" type="button" id="${config.key}-refresh-btn">↻ Atualizar lista</button>
         </div>
 
         <div class="table-wrap">

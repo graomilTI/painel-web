@@ -2,6 +2,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
+import { searchColaboradores } from './colaboradoresCache.js';
 
 const TABLE = 'contato_cliente_registros';
 const BUCKET = 'contato-cliente-anexos';
@@ -420,7 +421,7 @@ initProtectedPage('Contato Cliente', async (content) => {
           <h3>Registros</h3>
           <p class="muted">Histórico de contatos com clientes.</p>
         </div>
-        <button class="btn btn-secondary" type="button" id="${KEY}-refresh">Atualizar</button>
+        <button class="btn btn-secondary" type="button" id="${KEY}-refresh">↻ Atualizar</button>
       </div>
       <div class="cc-table-wrap">
         <table class="cc-table">
@@ -508,14 +509,7 @@ initProtectedPage('Contato Cliente', async (content) => {
         clearTimeout(acTimer);
         if (q.length < 2) { drop.style.display = 'none'; return; }
         acTimer = setTimeout(async () => {
-          let query = supabase
-            .from('colaborador_snapshot')
-            .select('nome')
-            .ilike('nome', `%${q}%`)
-            .order('nome')
-            .limit(25);
-          if (state.latestDataRef) query = query.eq('data_referencia', state.latestDataRef);
-          const { data } = await query;
+          const data = await searchColaboradores(q, { limite: 25 }); // cache local
           const matches = [...new Set((data || []).map(c => c.nome).filter(Boolean))];
           if (!matches.length) { drop.style.display = 'none'; return; }
           drop.innerHTML = matches.map(n => `<li class="cc-ac-item">${esc(n)}</li>`).join('');
