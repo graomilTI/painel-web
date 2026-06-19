@@ -2,6 +2,7 @@ import { requireAuth } from './authGuard.js';
 import { renderAppLayout } from './layout.js';
 import { bindLayoutActions } from './layoutActions.js';
 import { initAgentUpdateStatus } from './agentUpdateStatus.js';
+import { initAgentDataMode } from './agentDataMode.js';
 
 export async function initProtectedPage(title, renderContent) {
   document.documentElement.classList.remove('is-route-transitioning');
@@ -16,6 +17,7 @@ export async function initProtectedPage(title, renderContent) {
   const content = document.getElementById('pageContent');
   if (content && typeof renderContent === 'function') {
     renderContent(content, userContext);
+    initAgentDataMode(content);
   }
 
   requestAnimationFrame(() => {
