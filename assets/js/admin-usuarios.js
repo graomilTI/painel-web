@@ -253,7 +253,7 @@ function ensureStyles() {
     .au-modal-head h3{margin:0;font-size:24px}
     .au-modal-head p{margin:6px 0 0;color:#6b7280}
     .au-close{width:42px;height:42px;border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:#0d0d18;color:#fff;font-size:20px;cursor:pointer}
-    .au-modal-body{padding:22px;display:grid;grid-template-columns:1.3fr .7fr;gap:20px}
+    .au-modal-body{padding:22px;display:flex;flex-direction:column;gap:20px}
     .au-card{border:1px solid rgba(51,65,85,.72);border-radius:20px;padding:18px;background:#0d0d18}
     .au-card h4{margin:0 0 14px;font-size:16px}
     .au-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
@@ -283,7 +283,14 @@ function ensureStyles() {
     .au-module-grid .au-switch span{line-height:1.15}
     .au-section-tools{display:flex;justify-content:flex-end;margin:-4px 0 10px}
     .au-link-btn{background:none;border:none;color:#86efac;font-weight:700;cursor:pointer;padding:0;font-size:12px}
-    @media (max-width: 1100px){.au-grid,.au-filter-grid,.au-modal-body,.au-form-grid,.au-module-grid{grid-template-columns:1fr}.au-modal-body{display:block}.au-card + .au-card{margin-top:18px}}
+    .au-collapsible{padding:0}
+    .au-collapsible summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px;font-size:16px;font-weight:700;color:#f8fafc}
+    .au-collapsible summary::-webkit-details-marker{display:none}
+    .au-collapsible summary .au-collapsible-count{font-size:12px;font-weight:600;color:#6b7280;margin-right:auto;margin-left:10px}
+    .au-collapsible summary .au-collapsible-chevron{transition:transform .15s ease;color:#64748b;font-size:13px;flex:0 0 auto}
+    .au-collapsible[open] summary .au-collapsible-chevron{transform:rotate(180deg)}
+    .au-collapsible-body{padding:0 18px 18px}
+    @media (max-width: 1100px){.au-grid,.au-filter-grid,.au-form-grid,.au-module-grid{grid-template-columns:1fr}}
   `;
   document.head.appendChild(style);
 }
@@ -551,19 +558,25 @@ function ensureModal() {
                 <input class="au-input" id="auSetor" type="text" placeholder="Ex.: Diretoria, RH, Logística">
               </div>
               <div class="au-field full">
-                <label>Supervisões liberadas</label>
-                <div class="au-section-tools">
-                  <button class="au-link-btn" type="button" id="auToggleAllSupervisoes">Marcar / desmarcar todas</button>
-                </div>
-                <div class="au-check-grid" id="auSupervisoesGrid"></div>
-                <div class="au-section-note">Selecione em checkbox as supervisões que o usuário poderá acessar.</div>
-              </div>
-              <div class="au-field full">
                 <label for="auPassword">Senha</label>
                 <input class="au-input" id="auPassword" type="text" placeholder="Deixe em branco para gerar automaticamente">
               </div>
             </div>
           </section>
+          <details class="au-card au-collapsible" id="auSupervisoesPanel" open>
+            <summary>
+              <span>Supervisões liberadas</span>
+              <span class="au-collapsible-count" id="auSupervisoesCount"></span>
+              <span class="au-collapsible-chevron">▾</span>
+            </summary>
+            <div class="au-collapsible-body">
+              <div class="au-section-tools">
+                <button class="au-link-btn" type="button" id="auToggleAllSupervisoes">Marcar / desmarcar todas</button>
+              </div>
+              <div class="au-check-grid" id="auSupervisoesGrid"></div>
+              <div class="au-section-note">Selecione em checkbox as supervisões que o usuário poderá acessar.</div>
+            </div>
+          </details>
           <section class="au-card">
             <h4>Módulos liberados</h4>
             <div class="au-section-note">Selecione os módulos que esse usuário pode acessar individualmente.</div>
@@ -597,6 +610,7 @@ function ensureModal() {
       boxes.forEach((box) => {
         box.checked = shouldCheck;
       });
+      updateSupervisoesCount();
     });
     overlay.querySelector('#auToggleAllModules')?.addEventListener('click', () => {
       const boxes = [...overlay.querySelectorAll('#auModulesGrid input[type="checkbox"]')];
@@ -650,6 +664,18 @@ function renderSupervisoes(selectedValues = [], extraValues = []) {
       </label>
     `).join('')
     : '<span class="au-sub">Nenhuma supervisão encontrada na base.</span>';
+
+  updateSupervisoesCount();
+  wrap.removeEventListener('change', updateSupervisoesCount);
+  wrap.addEventListener('change', updateSupervisoesCount);
+}
+
+function updateSupervisoesCount() {
+  const counter = document.getElementById('auSupervisoesCount');
+  if (!counter) return;
+  const boxes = [...document.querySelectorAll('#auSupervisoesGrid input[type="checkbox"]')];
+  const checked = boxes.filter((box) => box.checked).length;
+  counter.textContent = boxes.length ? `${checked} de ${boxes.length} selecionada(s)` : '';
 }
 
 function getSelectedSupervisoes(overlay) {
