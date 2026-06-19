@@ -57,6 +57,11 @@ function numberValue(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function getDefaultMinimumLoads() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  return now.getHours() < 12 ? 9 : 15;
+}
+
 function dateValue(value) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -632,7 +637,7 @@ initProtectedPage('Informativos - Logistica', async (content) => {
         <div class="li-controls" id="liVolumeControls">
           <div class="li-field"><label>Data inicial</label><input type="date" id="liDateFrom" /></div>
           <div class="li-field"><label>Data final</label><input type="date" id="liDateTo" /></div>
-          <div class="li-field"><label>Mínimo de cargas</label><input type="number" id="liMinimumLoads" min="0" step="1" value="9" /></div>
+          <div class="li-field"><label>Mínimo de cargas</label><input type="number" id="liMinimumLoads" min="0" step="1" value="${getDefaultMinimumLoads()}" /></div>
         </div>
         <div class="li-controls" id="liNheControls" hidden>
           <div class="li-field"><label>Contagem de dias</label><input type="number" id="liRecentDays" min="2" max="31" value="3" /></div>
