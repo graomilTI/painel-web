@@ -32,7 +32,7 @@ function buildPanelHref(path = '') {
 function buildOsEmbeddedUrl() {
   const sup = document.getElementById('progSup')?.value || '';
   const dataRef = document.getElementById('progDataRef')?.value || '';
-  const url = new URL(buildPanelHref('os'), window.location.origin);
+  const url = new URL(buildPanelHref('os'), window.location.href);
   url.searchParams.set('embedded', '1');
   if (sup) url.searchParams.set('supervisao', sup);
   if (dataRef) url.searchParams.set('data', dataRef);
