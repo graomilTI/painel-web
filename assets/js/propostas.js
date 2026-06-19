@@ -14,24 +14,47 @@ const STATUS_LABEL = {
 };
 
 const MONEY_FIELDS = [
-  ['tn', 'TN'],
+  ['fob', 'FOB'],
   ['cad', 'CAD'],
   ['aud', 'AUD'],
-  ['quality', 'QUALITY'],
-  ['intacta', 'INTACTA'],
-  ['lacrar', 'LACRAR'],
   ['cif', 'CIF'],
-  ['fob', 'FOB'],
-  ['m_8h', 'M.8H'],
+  ['lacrar', 'LACRAR'],
   ['m_12h', 'M.12H'],
+  ['m_8h', 'M.8H'],
+  ['quality', 'QUALITY'],
   ['add_sup', 'ADD SUP'],
   ['add_claf', 'ADD CLAF'],
-  ['t_gmos', 'T-GMOS'],
-  ['t_gmoc', 'T-GMOC'],
   ['t_aflas', 'T-AFLAS'],
   ['t_aflac', 'T-AFLAC'],
+  ['t_gmos', 'T-GMOS'],
+  ['t_gmoc', 'T-GMOC'],
   ['t_don', 'T-DON'],
+  ['intacta', 'INTACTA'],
+  ['tn', 'TN'],
 ];
+
+const DEFAULT_MONEY_VALUES = {
+  fob: 'R$ 2,20',
+  cad: '200',
+  aud: 'R$ 880,00',
+  cif: 'R$ 600,00',
+  lacrar: 'R$ 825,00',
+  m_12h: 'R$ 15.000,00',
+  m_8h: 'R$ 15.000,00',
+  quality: 'R$ 10.450,00',
+  add_sup: 'R$ 880,00',
+  add_claf: 'R$ 825,00',
+  t_aflas: 'R$ 2,20',
+  t_aflac: 'R$ 0,35',
+  t_gmos: 'R$ 1,10',
+  t_gmoc: 'R$ 0,45',
+  t_don: 'R$ 2,20',
+  intacta: 'R$ 0,55',
+  tn: 'R$ 1,10',
+};
+
+const DEFAULT_PRAZO_FATURA = 'Semanalmente';
+const DEFAULT_PRAZO_PGTO = '10ddl';
 
 const state = {
   rows: [],
@@ -445,8 +468,8 @@ function openModal(row = null) {
   setValue('pData', row?.data_proposta || todayISO());
   setValue('pPrazoInicial', row?.prazo_inicial || '');
   setValue('pPrazoFinal', row?.prazo_final || '');
-  setValue('pPrazoFatura', row?.prazo_fatura || '');
-  setValue('pPrazoPgto', row?.prazo_pgto || '');
+  setValue('pPrazoFatura', row?.prazo_fatura || DEFAULT_PRAZO_FATURA);
+  setValue('pPrazoPgto', row?.prazo_pgto || DEFAULT_PRAZO_PGTO);
   setValue('pSolicitante', row?.solicitante || state.userContext?.user?.name || '');
   setValue('pCargo', row?.cargo || '');
   setValue('pTelefone', row?.telefone || '');
@@ -460,7 +483,7 @@ function openModal(row = null) {
   setValue('pModeloDocId', row?.modelo_doc_id || DEFAULT_MODELO_DOC_ID);
   setValue('pPastaDestinoId', row?.pasta_destino_id || DEFAULT_PASTA_DESTINO_ID);
   setValue('pObservacao', row?.observacao || '');
-  MONEY_FIELDS.forEach(([key]) => setValue(`p_${key}`, row?.[key] || row?.campos?.[key] || ''));
+  MONEY_FIELDS.forEach(([key]) => setValue(`p_${key}`, row?.[key] || row?.campos?.[key] || DEFAULT_MONEY_VALUES[key] || ''));
 
   overlay.classList.add('is-open');
 }
