@@ -12,7 +12,7 @@ export const MENU_CONFIG = [
       item("dashboard", "Dashboard", "dashboard", ["DASHBOARD"]),
       item("adm_app", "App ADM", "adm-app", ["ADM_APP", "COMPRAS_ADM", "COMPRAS_ESTOQUE", "ESTOQUE", "ALMOXARIFADO", "LOGISTICA_ADM", "PATRIMONIO_ADM", "ADM_HOTEL", "FROTAS_MULTAS", "FROTAS_RASTREADORES", "ADMIN_AUDITORIA", "ADMIN_USUARIOS", "USUARIOS_E_ACESSOS", "RH_PLANTAO"]),
       item("notificacoes", "Notificações", "notificacoes", ["NOTIFICACOES"]),
-      item("historico_geral", "Histórico Geral", "historico", ["HISTORICO_GERAL", "RH_HIST_INDISP"])
+      item("historico_geral", "Histórico Geral", "historico", ["HISTORICO_GERAL"])
     ]
   },
 
@@ -34,6 +34,13 @@ export const MENU_CONFIG = [
       item("conferencia", "Painel de Conferência", "adm-conferencia", ["ADM_CONFERENCIA"]),
       item("distribuir_os", "Distribuir O.S", "distribuir-os", ["DISTRIBUIR_OS", "CONFERENCIA_DISTRIBUIR_OS"]),
       item("termos_celular", "Termo", "termos#celular", ["TERMOS_CELULAR", "TERMOS"])
+    ]
+  },
+
+  {
+    grupo: "COMERCIAL",
+    itens: [
+      item("propostas", "Propostas", "propostas", ["PROPOSTAS", "COMERCIAL_PROPOSTAS", "PROPOSTAS_COMERCIAIS"])
     ]
   },
 
@@ -67,6 +74,7 @@ export const MENU_CONFIG = [
       item("ferias_atestados", "Férias e Atestados", "ferias-atestados", ["RH_FERIAS_ATESTADOS"]),
       item("rh_plantao", "Plantão", "plantao", ["RH_PLANTAO", "PLANTAO", "PLANTÃO"]),
       item("rh_epi", "EPI", "epi-rh", ["RH_EPI"]),
+      item("historico_geral", "Histórico Geral", "historico", ["RH_HIST_INDISP"]),
       item("rh_clinicas_sst", "Clínicas SST", "clinicas-sst", ["RH_CLINICAS", "CLINICAS_SST"]),
       item("base_colab_consulta", "Consultar Base", "consultar-colaboradores", ["BASE_COLAB_CONSULTA"]),
       item("contatos_exportacoes", "Contatos e Cadastros", "contatos", ["CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"])
@@ -128,6 +136,11 @@ export const MENU_CONFIG = [
       item("logistica_finalizacao_os", "Finalização de O.S", "adm-logistica", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS"]),
       item("logistica_btg", "BTG", "btg-logistica", ["LOGISTICA_BTG", "BTG_LOGISTICA", "BTG", "LOGISTICA_ADM"])
     ]
+  },
+
+  {
+    grupo: "TROCA DE NOTAS",
+    itens: []
   },
 
   {
