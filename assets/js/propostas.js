@@ -76,6 +76,27 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function addYearsISO(isoDate, years) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const date = new Date(y + years, m - 1, d);
+  return date.toISOString().slice(0, 10);
+}
+
+function generateNumero() {
+  const maxSeq = state.rows.reduce((max, row) => {
+    const seq = parseInt(String(row.numero || '').split('.')[0], 10);
+    return Number.isFinite(seq) && seq > max ? seq : max;
+  }, 0);
+  const seqPart = String(maxSeq + 1).padStart(3, '0');
+  const now = new Date();
+  const datePart = [
+    String(now.getFullYear()).slice(-2),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('');
+  return `${seqPart}.${datePart}`;
+}
+
 function formatDate(value) {
   if (!value) return '-';
   const [y, m, d] = String(value).slice(0, 10).split('-');
@@ -461,13 +482,14 @@ function openModal(row = null) {
   overlay.querySelector('#propModalSubtitle').textContent = row ? 'Atualize os dados e gere uma nova versão quando necessário.' : 'Preencha os dados usados nos marcadores do modelo.';
   setModalFeedback('');
 
-  setValue('pNumero', row?.numero || '');
+  const dataProposta = row?.data_proposta || todayISO();
+  setValue('pNumero', row?.numero || generateNumero());
   setValue('pCliente', row?.cliente || '');
   setValue('pStatusModal', row?.status || 'rascunho');
   setValue('pEstados', row?.estados || '');
-  setValue('pData', row?.data_proposta || todayISO());
-  setValue('pPrazoInicial', row?.prazo_inicial || '');
-  setValue('pPrazoFinal', row?.prazo_final || '');
+  setValue('pData', dataProposta);
+  setValue('pPrazoInicial', row?.prazo_inicial || dataProposta);
+  setValue('pPrazoFinal', row?.prazo_final || addYearsISO(dataProposta, 1));
   setValue('pPrazoFatura', row?.prazo_fatura || DEFAULT_PRAZO_FATURA);
   setValue('pPrazoPgto', row?.prazo_pgto || DEFAULT_PRAZO_PGTO);
   setValue('pSolicitante', row?.solicitante || state.userContext?.user?.name || '');
