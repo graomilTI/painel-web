@@ -1,4 +1,9 @@
 const ROUTES_WITH_AGENT_DATA = new Set([
+  'dashboard',
+  'dashboard-socio',
+  'desempenho',
+  'metas',
+  'dre',
   'adm-logistica',
   'btg-logistica',
   'importar-relatorios',
@@ -11,21 +16,26 @@ const ROUTES_WITH_AGENT_DATA = new Set([
   'patrimonios',
 ]);
 
+const ROUTE_LABELS = {
+  dashboard: 'Dashboard',
+  'dashboard-socio': 'Dashboard do Sócio',
+  desempenho: 'Desempenho',
+  metas: 'Metas',
+  dre: 'DRE',
+  financeiro: 'Financeiro',
+  'notas-fiscais': 'Notas Fiscais',
+  'consultar-colaboradores': 'Colaboradores',
+  'consultar-producao': 'Produção',
+  patrimonios: 'Patrimônios',
+  'adm-patrimonio': 'Patrimônios',
+};
+
 function routeName() {
   const last = String(window.location.pathname || '')
     .split('/')
     .filter(Boolean)
     .pop() || 'dashboard';
   return last.replace(/\.html$/i, '').toLowerCase();
-}
-
-function esc(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
 }
 
 function injectStyles() {
@@ -35,19 +45,21 @@ function injectStyles() {
   style.textContent = `
     .agent-data-note{display:flex;align-items:flex-start;gap:10px;border:1px solid rgba(45,212,160,.20);background:rgba(45,212,160,.08);color:#c7f9e5;border-radius:16px;padding:12px 14px;margin-top:14px;font-size:13px;line-height:1.45}
     .agent-data-note strong{color:#ecfdf5}.agent-data-note span:first-child{font-size:16px;line-height:1.2}.agent-data-note small{display:block;color:#94a3b8;margin-top:2px}
+    .agent-data-note.agent-data-note-compact{margin:0 0 14px}.agent-data-note.agent-data-note-compact + .agent-data-note{display:none}
     .agent-data-manual{border-style:dashed!important;opacity:.92}.agent-data-manual .btg-upload-hint,.agent-data-manual small{color:#94a3b8!important}
     .agent-data-optional-label{display:inline-flex;align-items:center;margin-left:6px;padding:2px 7px;border-radius:999px;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.22);color:#bfdbfe;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;vertical-align:middle}
   `;
   document.head.appendChild(style);
 }
 
-function ensureNote(container, html, id) {
+function ensureNote(container, html, id, prepend = false) {
   if (!container || document.getElementById(id)) return;
   const note = document.createElement('div');
   note.id = id;
   note.className = 'agent-data-note';
   note.innerHTML = html;
-  container.appendChild(note);
+  if (prepend) container.prepend(note);
+  else container.appendChild(note);
 }
 
 function replaceText(node, from, to) {
@@ -61,6 +73,19 @@ function replaceText(node, from, to) {
 function markManualArea(area) {
   if (!area) return;
   area.classList.add('agent-data-manual');
+}
+
+function patchGenericAgentPage(content, route) {
+  const label = ROUTE_LABELS[route] || 'Esta tela';
+  const target = content.querySelector('section.card, .card') || content;
+  ensureNote(
+    target,
+    `<span>✓</span><div><strong>${label} com atualização automática.</strong><small>Os dados desta tela são abastecidos pelos agentes. Use importações manuais apenas para correção pontual, contingência ou carga histórica.</small></div>`,
+    `agentDataGenericNote-${route}`,
+    true
+  );
+  const note = document.getElementById(`agentDataGenericNote-${route}`);
+  if (note) note.classList.add('agent-data-note-compact');
 }
 
 function patchBtg(content) {
@@ -144,8 +169,9 @@ function applyPatches(content = document.getElementById('pageContent')) {
 
   injectStyles();
   if (route === 'btg-logistica') patchBtg(content);
-  if (route === 'adm-logistica') patchAdmLogistica(content);
-  if (route === 'importar-relatorios' || route === 'importar-patrimonios') patchImportador(content);
+  else if (route === 'adm-logistica') patchAdmLogistica(content);
+  else if (route === 'importar-relatorios' || route === 'importar-patrimonios') patchImportador(content);
+  else patchGenericAgentPage(content, route);
 }
 
 export function initAgentDataMode(content) {
