@@ -220,7 +220,8 @@ async function getLastJob(agenteId) {
 async function countRecords(table) {
   const { count, error } = await supabase
     .from(table)
-    .select('*', { count: 'exact', head: true });
+    // Contagem planejada/estimada: evita COUNT(*) exato em tabelas grandes a cada atualização da tela.
+    .select('*', { count: 'planned', head: true });
 
   if (error) {
     console.warn(`Erro contando ${table}:`, error);
