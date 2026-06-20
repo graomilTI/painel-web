@@ -63,8 +63,13 @@ function injectGestorAjustesStyles() {
   const style = document.createElement('style');
   style.id = 'programacaoGestorAjustesStyles';
   style.textContent = `
-    .prog-tfield-sup{flex:1 1 320px!important;max-width:480px!important}
-    .prog-tfield-os-status{flex:0 0 170px;max-width:190px}
+    .prog-toolbar{position:relative!important;z-index:9000!important;overflow:visible!important}
+    .prog-toolbar-row{position:relative!important;z-index:9001!important;overflow:visible!important}
+    .prog-tfield-sup{flex:1 1 320px!important;max-width:520px!important;position:relative!important;z-index:9010!important;overflow:visible!important}
+    .prog-tfield-sup select,#progSup{position:relative!important;z-index:9020!important;min-width:320px!important}
+    .prog-tfield-os-status{flex:0 0 170px;max-width:190px;position:relative!important;z-index:9005!important}
+    .prog-list-card,#progList,#progDistribuicaoOsMount,#osLiteRoot,#osLiteStats,#osLiteList{position:relative;z-index:1;overflow:visible!important}
+    #progDistribuicaoOsMount .grid-cards,#progDistribuicaoOsMount .card:not(:first-child){position:relative;z-index:1}
     #progDistribuicaoOsMount .filters-grid.os-grid{display:none!important}
     #progDistribuicaoOsMount .card:first-child{margin-top:0}
     #progDistribuicaoOsMount #osStats{margin-top:12px}
@@ -72,7 +77,7 @@ function injectGestorAjustesStyles() {
     .prog-os-lazy-card strong{display:block;color:#f8fafc;margin-bottom:4px;font-size:14px}
     .prog-os-lazy-card p{margin:0;font-size:13px;line-height:1.35}
     .prog-os-lazy-card .btn{min-height:38px}
-    @media(max-width:900px){.prog-tfield-sup,.prog-tfield-os-status{flex:1 1 100%!important;max-width:none!important}.prog-os-lazy-card{align-items:stretch}.prog-os-lazy-card .btn{width:100%;justify-content:center}}
+    @media(max-width:900px){.prog-tfield-sup,.prog-tfield-os-status{flex:1 1 100%!important;max-width:none!important}.prog-tfield-sup select,#progSup{min-width:0!important}.prog-os-lazy-card{align-items:stretch}.prog-os-lazy-card .btn{width:100%;justify-content:center}}
   `;
   document.head.appendChild(style);
 }
