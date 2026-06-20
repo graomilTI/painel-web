@@ -645,15 +645,24 @@ function normalizeList(values = []) {
   return [...new Set((values || []).map((item) => String(item || '').trim()).filter(Boolean))];
 }
 
+// Alguns cadastros antigos guardaram várias supervisões concatenadas num
+// único campo de texto (ex.: "AGROTRADER | AGROTRADER | ... | RIO GRANDE DO
+// SUL..."). Sem isso, esse valor entra na lista como se fosse 1 supervisão
+// só, virando um checkbox gigante com tudo junto.
+function splitSupervisoes(raw) {
+  return String(raw || '')
+    .split(/[|;,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function getAllSupervisoesOptions() {
   const set = new Set(SUPERVISOES_DISPONIVEIS);
   state.users.forEach((user) => {
     (Array.isArray(user.supervisoes) ? user.supervisoes : []).forEach((sup) => {
-      const value = String(sup || '').trim();
-      if (value) set.add(value);
+      splitSupervisoes(sup).forEach((value) => set.add(value));
     });
-    const single = String(user.supervisao || '').trim();
-    if (single) set.add(single);
+    splitSupervisoes(user.supervisao).forEach((value) => set.add(value));
   });
   return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
@@ -661,8 +670,8 @@ function getAllSupervisoesOptions() {
 function renderSupervisoes(selectedValues = [], extraValues = []) {
   const wrap = document.getElementById('auSupervisoesGrid');
   if (!wrap) return;
-  const selectedSet = new Set(normalizeList(selectedValues));
-  const options = normalizeList([...getAllSupervisoesOptions(), ...(extraValues || [])]);
+  const selectedSet = new Set(normalizeList((selectedValues || []).flatMap(splitSupervisoes)));
+  const options = normalizeList([...getAllSupervisoesOptions(), ...(extraValues || []).flatMap(splitSupervisoes)]);
 
   wrap.innerHTML = options.length
     ? options.map((sup) => `
