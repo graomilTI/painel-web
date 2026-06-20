@@ -1,0 +1,157 @@
+// Padroniza <select> com muitas opções: transforma em combobox pesquisável
+// (digita e filtra), mantendo o <select> original funcionando por trás —
+// mesmo value, mesmo evento "change" — para não quebrar os módulos que já
+// leem/escutam esses selects. Selects pequenos (poucas opções) não são
+// tocados: continuam como <select> nativo.
+//
+// Roda automaticamente em qualquer página que passe por pageInit.js
+// (initProtectedPage), via MutationObserver no body — não precisa importar
+// manualmente em cada módulo.
+
+const THRESHOLD = 12;
+const FLAG = 'sselBound';
+
+function normalize(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .trim();
+}
+
+function injectStyle() {
+  if (document.getElementById('searchableSelectStyle')) return;
+  const style = document.createElement('style');
+  style.id = 'searchableSelectStyle';
+  style.textContent = `
+    .ssel-wrap{position:relative;width:100%}
+    .ssel-input{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;font:inherit;cursor:pointer}
+    .ssel-wrap.is-disabled .ssel-input{opacity:.55;cursor:not-allowed;pointer-events:none}
+    .ssel-list{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:260px;overflow-y:auto;background:#0d0d18;border:1px solid rgba(45,212,160,.28);border-radius:12px;z-index:300;box-shadow:0 12px 32px rgba(0,0,0,.5)}
+    .ssel-item{padding:9px 14px;font-size:13px;color:#e2e2f0;cursor:pointer}
+    .ssel-item:hover,.ssel-item.is-active{background:rgba(45,212,160,.14);color:#fff}
+    .ssel-empty{padding:10px 14px;font-size:13px;color:#7d8aa3;text-align:center}
+  `;
+  document.head.appendChild(style);
+}
+
+function buildCombobox(select) {
+  if (!select || select.dataset[FLAG] === '1') return;
+  if (select.multiple) return;
+  if (select.options.length <= THRESHOLD) return;
+
+  select.dataset[FLAG] = '1';
+  injectStyle();
+
+  const wrap = document.createElement('div');
+  wrap.className = 'ssel-wrap';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = `${select.className || ''} ssel-input`.trim();
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.placeholder = 'Digite para buscar...';
+
+  const list = document.createElement('div');
+  list.className = 'ssel-list';
+  list.hidden = true;
+
+  select.insertAdjacentElement('afterend', wrap);
+  wrap.appendChild(input);
+  wrap.appendChild(list);
+  select.style.display = 'none';
+
+  function syncDisabled() {
+    wrap.classList.toggle('is-disabled', select.disabled);
+  }
+
+  function syncInputFromSelect() {
+    const opt = select.options[select.selectedIndex];
+    input.value = opt ? opt.textContent : '';
+    syncDisabled();
+  }
+
+  function renderList(query = '') {
+    const q = normalize(query);
+    const matches = [...select.options].filter((opt) => !q || normalize(opt.textContent).includes(q)).slice(0, 200);
+
+    list.innerHTML = matches.length
+      ? matches.map((opt) => `<div class="ssel-item${opt.value === select.value ? ' is-active' : ''}" data-value="${opt.value}">${opt.textContent}</div>`).join('')
+      : '<div class="ssel-empty">Nenhum resultado encontrado.</div>';
+    list.hidden = false;
+  }
+
+  function closeList() { list.hidden = true; }
+
+  function selectValue(value) {
+    if (select.value === value) { closeList(); syncInputFromSelect(); return; }
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    syncInputFromSelect();
+    closeList();
+  }
+
+  input.addEventListener('focus', () => { if (select.disabled) return; input.select(); renderList(''); });
+  input.addEventListener('input', () => renderList(input.value));
+  input.addEventListener('blur', () => setTimeout(() => { closeList(); syncInputFromSelect(); }, 150));
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { closeList(); syncInputFromSelect(); input.blur(); return; }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return;
+    event.preventDefault();
+    const items = [...list.querySelectorAll('.ssel-item')];
+    if (!items.length) return;
+    const activeIndex = items.findIndex((item) => item.classList.contains('is-keyboard'));
+    if (event.key === 'Enter') {
+      const target = items[activeIndex] || items[0];
+      if (target) selectValue(target.dataset.value);
+      return;
+    }
+    items.forEach((item) => item.classList.remove('is-keyboard'));
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
+    const nextIndex = ((activeIndex === -1 ? (delta === 1 ? -1 : 0) : activeIndex) + delta + items.length) % items.length;
+    items[nextIndex].classList.add('is-keyboard');
+    items[nextIndex].scrollIntoView({ block: 'nearest' });
+  });
+
+  list.addEventListener('mousedown', (event) => {
+    const item = event.target.closest('.ssel-item');
+    if (!item) return;
+    event.preventDefault();
+    selectValue(item.dataset.value);
+  });
+
+  // Vários módulos repopulam o <select> (innerHTML novo, value setado por
+  // código) depois de carregar dados — refletimos isso no combobox.
+  new MutationObserver(syncInputFromSelect).observe(select, {
+    childList: true,
+    attributes: true,
+    attributeFilter: ['disabled'],
+  });
+  // select.value = x setado por código sem alterar as <option> não dispara
+  // o MutationObserver acima; código que faz isso costuma também disparar
+  // "change" manualmente — cobrimos esse caminho aqui.
+  select.addEventListener('change', syncInputFromSelect);
+
+  syncInputFromSelect();
+}
+
+function scan(root) {
+  if (!root) return;
+  if (root.matches?.('select')) buildCombobox(root);
+  root.querySelectorAll?.('select').forEach(buildCombobox);
+}
+
+let scheduled = false;
+function scheduleScan() {
+  if (scheduled) return;
+  scheduled = true;
+  requestAnimationFrame(() => {
+    scheduled = false;
+    scan(document.body);
+  });
+}
+
+new MutationObserver(scheduleScan).observe(document.body, { childList: true, subtree: true });
+window.addEventListener('load', scheduleScan);
+scheduleScan();
