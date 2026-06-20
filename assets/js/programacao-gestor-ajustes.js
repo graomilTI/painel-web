@@ -1,4 +1,5 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
+import { supabase } from './supabaseClient.js';
 import { renderOsModule } from './os.js';
 
 const OS_STATUS_OPTIONS = [
@@ -12,6 +13,8 @@ const OS_STATUS_OPTIONS = [
 let currentUiStep = 'A';
 let distribuicaoLoaded = false;
 let distribuicaoLoading = false;
+let supervisoesDropdownLoading = false;
+let supervisoesDropdownLoaded = false;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -60,6 +63,7 @@ function injectGestorAjustesStyles() {
   const style = document.createElement('style');
   style.id = 'programacaoGestorAjustesStyles';
   style.textContent = `
+    .prog-tfield-sup{flex:1 1 320px!important;max-width:480px!important}
     .prog-tfield-os-status{flex:0 0 170px;max-width:190px}
     #progDistribuicaoOsMount .filters-grid.os-grid{display:none!important}
     #progDistribuicaoOsMount .card:first-child{margin-top:0}
@@ -68,9 +72,51 @@ function injectGestorAjustesStyles() {
     .prog-os-lazy-card strong{display:block;color:#f8fafc;margin-bottom:4px;font-size:14px}
     .prog-os-lazy-card p{margin:0;font-size:13px;line-height:1.35}
     .prog-os-lazy-card .btn{min-height:38px}
-    @media(max-width:900px){.prog-tfield-os-status{flex:1 1 100%;max-width:none}.prog-os-lazy-card{align-items:stretch}.prog-os-lazy-card .btn{width:100%;justify-content:center}}
+    @media(max-width:900px){.prog-tfield-sup,.prog-tfield-os-status{flex:1 1 100%!important;max-width:none!important}.prog-os-lazy-card{align-items:stretch}.prog-os-lazy-card .btn{width:100%;justify-content:center}}
   `;
   document.head.appendChild(style);
+}
+
+async function liberarListaSupervisoes() {
+  const select = document.getElementById('progSup');
+  if (!select || supervisoesDropdownLoading) return;
+
+  const opcoesAtuais = [...select.options].filter((opt) => opt.value);
+  if (supervisoesDropdownLoaded && !select.disabled && opcoesAtuais.length > 1) return;
+
+  supervisoesDropdownLoading = true;
+  try {
+    const valorAtual = select.value || '';
+    const { data, error } = await supabase
+      .from('supervisoes')
+      .select('nome')
+      .eq('ativo', true)
+      .order('nome', { ascending: true });
+
+    if (error) throw error;
+
+    const supervisoes = [...new Set((data || [])
+      .map((row) => String(row.nome || '').trim())
+      .filter(Boolean))];
+
+    if (supervisoes.length) {
+      select.innerHTML = '<option value="">Selecione...</option>' + supervisoes
+        .map((sup) => `<option value="${escapeHtml(sup)}">${escapeHtml(sup)}</option>`)
+        .join('');
+      if (valorAtual && supervisoes.some((sup) => normalize(sup) === normalize(valorAtual))) {
+        select.value = supervisoes.find((sup) => normalize(sup) === normalize(valorAtual));
+      }
+    }
+
+    select.disabled = false;
+    select.dataset.supervisoesLiberadas = '1';
+    supervisoesDropdownLoaded = true;
+  } catch (error) {
+    console.warn('[programacao-ajustes] Não foi possível liberar lista completa de supervisões.', error);
+    select.disabled = false;
+  } finally {
+    supervisoesDropdownLoading = false;
+  }
 }
 
 function ensureStatusOsFilter() {
@@ -334,8 +380,11 @@ async function initGestorProgramacaoAjustes() {
   bindTopLoadForEtapaA();
   configureSteps();
   renderDistribuicao({ loadOs: false });
+  setTimeout(() => liberarListaSupervisoes(), 250);
+  setTimeout(() => liberarListaSupervisoes(), 900);
 
   const observer = new MutationObserver(() => {
+    liberarListaSupervisoes();
     autoSelectSingleSupervisao();
     patchPendingOsModal();
     guardDistribuicaoView();
@@ -348,6 +397,7 @@ async function initGestorProgramacaoAjustes() {
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
+  liberarListaSupervisoes();
   autoSelectSingleSupervisao();
   patchPendingOsModal();
 
