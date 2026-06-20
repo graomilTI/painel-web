@@ -1,6 +1,6 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
 import { supabase } from './supabaseClient.js';
-import { renderOsModule } from './os.js';
+import { renderOsProgramacaoLite } from './os-programacao-lite.js';
 
 const OS_STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
@@ -234,18 +234,6 @@ function setActiveDistribution() {
   });
 }
 
-function applySupervisaoFromProgSup(mount) {
-  const sup = document.getElementById('progSup')?.value || '';
-  if (!sup) return;
-  const select = mount.querySelector('#osSupervisao');
-  if (!select) return;
-  const option = [...select.options].find((opt) => opt.value && normalize(opt.value) === normalize(sup));
-  if (option && select.value !== option.value) {
-    select.value = option.value;
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-}
-
 async function renderDistribuicao({ loadOs = false, force = false } = {}) {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
@@ -274,10 +262,13 @@ async function renderDistribuicao({ loadOs = false, force = false } = {}) {
 
   try {
     const mount = document.getElementById('progDistribuicaoOsMount');
-    await renderOsModule(mount, { reuseData: !force, supervisao: document.getElementById('progSup')?.value || '', status: document.getElementById('progOsStatusTop')?.value || '' });
+    await renderOsProgramacaoLite(mount, {
+      reuseData: !force,
+      supervisao: document.getElementById('progSup')?.value || '',
+      status: document.getElementById('progOsStatusTop')?.value || '',
+      data: document.getElementById('progDataRef')?.value || '',
+    });
     prepareEmbeddedOsFilters(mount);
-    applySupervisaoFromProgSup(mount);
-    syncStatusToOsModule(mount);
     distribuicaoLoaded = true;
     if (feedback) {
       const sup = document.getElementById('progSup')?.value || '';
