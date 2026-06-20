@@ -3,8 +3,7 @@ import { toPanelUrl } from './paths.js';
 const GROUPS = [
   ['Operação do dia', [
     ['dashboard', 'Início', 'Indicadores e atalhos principais', '⌂', 'dashboard', null, true],
-    ['os', 'OS', 'Indicar, aguardar e finalizar O.S.', 'OS', 'os', null, true],
-    ['programacao', 'Programação', 'Disponibilidade, estadia e extras', '📅', 'programacao'],
+    ['programacao', 'Programação', 'Distribuir O.S., aguardar, atender e finalizar', '📅', 'programacao', null, true],
     ['logistica', 'Logística', 'FOB, report, abrir e finalizar OS', '🚚', null, 'logistica'],
   ]],
   ['Solicitações', [
@@ -23,7 +22,7 @@ const GROUPS = [
 }));
 
 const FLAT = GROUPS.flatMap((g) => g.items);
-const NAV = { dashboard: ['⌂', 'Início'], os: ['OS', 'OS'], programacao: ['📅', 'Prog.'], patrimonio: ['📦', 'Patrim.'], mais: ['☰', 'Menu'] };
+const NAV = { dashboard: ['⌂', 'Início'], programacao: ['📅', 'Prog.'], patrimonio: ['📦', 'Patrim.'], mais: ['☰', 'Menu'] };
 
 function norm(v) {
   return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -147,7 +146,6 @@ function enhanceDashboard(main) {
       <span><strong>Buscar ou abrir módulo</strong><span>OS, Programação, Logística, Compras...</span></span><b>☰</b>
     </button>
     <div class="ux-home-shortcuts">
-      <button class="ux-home-chip" type="button" data-ux-module="os">OS</button>
       <button class="ux-home-chip" type="button" data-ux-module="programacao">Programação</button>
       <button class="ux-home-chip" type="button" data-ux-module="logistica">Logística</button>
       <button class="ux-home-chip" type="button" data-ux-module="compras">Compras</button>

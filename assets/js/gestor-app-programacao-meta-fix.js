@@ -57,11 +57,6 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'gestorProgramacaoMetaFixStyles';
   style.textContent = `
-    body.gestor-no-os-kpi .bottom-nav .nav-btn[data-tab="os"],
-    body.gestor-no-os-kpi .db-os-card,
-    body.gestor-no-os-kpi .quick-card[data-go="os"],
-    body.gestor-no-os-kpi [data-ux-module="os"] { display:none!important; }
-    body.gestor-no-os-kpi .db-row-2 { grid-template-columns:1fr!important; }
     .ux-regional-meta-card{margin:0 0 14px;padding:18px;border:1px solid rgba(45,212,160,.16);border-radius:24px;background:linear-gradient(135deg,rgba(0,82,48,.34),rgba(18,18,32,.88));color:var(--text);box-shadow:0 18px 45px rgba(0,0,0,.22);animation:db-fade-up .35s ease both}
     .ux-regional-meta-card.is-warning{background:rgba(38,25,15,.82);border-color:rgba(251,191,36,.22)}
     .ux-regional-meta-card.is-loading{display:grid;gap:6px;background:rgba(18,18,32,.78)}
@@ -205,26 +200,8 @@ function enforceRegionalDashboard() {
   }
 }
 
-function removeOsStandaloneAccess() {
-  document.body.classList.add('gestor-no-os-kpi');
-  document.querySelectorAll('.nav-btn[data-tab="os"], .db-os-card, .quick-card[data-go="os"], [data-ux-module="os"]').forEach((el) => el.remove());
-
-  document.querySelectorAll('button[data-go="os"]').forEach((btn) => {
-    const clone = btn.cloneNode(true);
-    clone.removeAttribute('data-go');
-    clone.dataset.uxModule = 'programacao';
-    const title = clone.querySelector('b');
-    const desc = clone.querySelector('span');
-    if (title) title.textContent = 'Painel A de O.S.';
-    if (desc) desc.textContent = 'A distribuição fica dentro da Programação';
-    clone.addEventListener('click', () => document.querySelector('.nav-btn[data-tab="programacao"]')?.click());
-    btn.replaceWith(clone);
-  });
-}
-
 function runFixes() {
   injectStyles();
-  removeOsStandaloneAccess();
   enforceRegionalDashboard();
 }
 

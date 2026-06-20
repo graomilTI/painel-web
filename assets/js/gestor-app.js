@@ -220,7 +220,6 @@ function renderShell() {
     <main class="app-main" id="appMain"></main>
     <nav class="bottom-nav" id="bottomNav">
       <button class="nav-btn is-active" data-tab="dashboard" type="button">Dashboard</button>
-      <button class="nav-btn" data-tab="os" type="button">OS</button>
       <button class="nav-btn" data-tab="programacao" type="button">Programação</button>
       <button class="nav-btn" data-tab="patrimonio" type="button">Patrimônio</button>
       <button class="nav-btn" data-tab="mais" type="button">Mais</button>
@@ -594,8 +593,7 @@ function renderCurrentTab() {
   const main = document.getElementById('appMain');
   if (!main) return;
   if (state.currentTab === 'dashboard') { renderInicio(main); triggerStateFillAnim(main); return; }
-  if (state.currentTab === 'os') return renderOs(main);
-  if (state.currentTab === 'programacao') return renderProgramacao(main);
+  if (state.currentTab === 'programacao' || state.currentTab === 'os') return renderProgramacao(main);
   if (state.currentTab === 'patrimonio') return renderPatrimonio(main);
   return renderMais(main);
 }
@@ -935,7 +933,7 @@ function renderInicio(main) {
       </div>
 
       <div class="db-os-card">
-        <div class="db-card-eyebrow">OS</div>
+        <div class="db-card-eyebrow">Programação</div>
         <div class="db-os-row">
           <div class="db-os-block">
             <div class="db-os-num ${totalPend > 0 ? 'is-amber' : ''}">${totalPend}</div>
@@ -952,7 +950,7 @@ function renderInicio(main) {
             <div class="db-os-label">Total</div>
           </div>
         </div>
-        <button class="db-os-btn" data-go="os" type="button">Ver OS →</button>
+        <button class="db-os-btn" data-go="programacao" type="button">Abrir Programação →</button>
       </div>
     </div>
 
@@ -963,8 +961,7 @@ function renderInicio(main) {
 
     <div class="db-actions-label">Ações Rápidas</div>
     <div class="quick-grid">
-      <button class="quick-card is-primary" data-go="os" type="button"><b>OS</b><span>${totalPend} pendente(s) de ajuste</span></button>
-      <a class="quick-card" href="${panelHref('programacao')}"><b>Programação</b><span>Abrir módulo</span></a>
+      <button class="quick-card is-primary" data-go="programacao" type="button"><b>Programação</b><span>${totalPend} O.S. pendente(s) de ajuste</span></button>
       <a class="quick-card" href="${panelHref('hospedagem')}"><b>Hospedagem</b><span>Solicitações e reservas</span></a>
       <a class="quick-card" href="${panelHref('compras')}"><b>Compras</b><span>Solicitações do gestor</span></a>
       <a class="quick-card" href="${panelHref('logistica')}"><b>Logística</b><span>Distribuição e finalização</span></a>
@@ -973,10 +970,10 @@ function renderInicio(main) {
     </div>
   `;
 
-  main.querySelector('[data-go="os"]')?.addEventListener('click', () => {
-    state.currentTab = 'os';
-    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'os'));
-    renderOs(main);
+  main.querySelector('[data-go="programacao"]')?.addEventListener('click', () => {
+    state.currentTab = 'programacao';
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'programacao'));
+    renderProgramacao(main);
   });
   main.querySelector('[data-go="patrimonio"]')?.addEventListener('click', () => {
     state.currentTab = 'patrimonio';
@@ -1000,24 +997,6 @@ function renderInicio(main) {
     await state.installPrompt.userChoice.catch(() => null);
     state.installPrompt = null;
     renderInicio(main);
-  });
-}
-
-function renderProgramacao(main) {
-  main.innerHTML = `
-    <section class="hero-card">
-      <h1>Programação</h1>
-      <p>Para a primeira versão do app, a edição completa da programação abre o módulo web atual.</p>
-      <div class="quick-grid">
-        <a class="quick-card is-primary" href="${panelHref('programacao')}"><b>Abrir Programação</b><span>Disponibilidade, estadia, alimentação e extras</span></a>
-        <button class="quick-card" data-go="os" type="button"><b>Voltar para OS</b><span>Ajustar O.S. pendentes</span></button>
-      </div>
-    </section>
-  `;
-  main.querySelector('[data-go="os"]')?.addEventListener('click', () => {
-    state.currentTab = 'os';
-    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'os'));
-    renderOs(main);
   });
 }
 
@@ -1066,9 +1045,13 @@ function renderOs(main) {
   const supervisoes = [...new Set(state.os.map((o) => o.supervisao).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const rows = filteredOs();
   main.innerHTML = `
+    <section class="prog-web-banner">
+      <span class="prog-web-banner-text">Disponibilidade, estadia, alimentação e extras ficam na versão completa.</span>
+      <a class="prog-web-banner-link" href="${panelHref('programacao')}">Abrir etapas completas →</a>
+    </section>
     <section class="section-card">
       <div class="section-title">
-        <div><h2>Ordens de Serviço</h2><p>Indique colaboradores e envie para Conferência.</p></div>
+        <div><h2>Distribuição de O.S.</h2><p>Indique colaboradores e envie para Conferência.</p></div>
         <div class="os-count-badge">${rows.length}</div>
       </div>
       <div class="filter-grid">
@@ -1083,6 +1066,10 @@ function renderOs(main) {
   main.querySelector('#filterStatus')?.addEventListener('change', (e) => { state.filters.status = e.target.value; renderOs(main); });
   main.querySelector('#filterBusca')?.addEventListener('input', debounce((e) => { state.filters.busca = e.target.value; renderOs(main); }, 220));
   bindOsEvents(main);
+}
+
+function renderProgramacao(main) {
+  renderOs(main);
 }
 
 function injectGacStyles() {

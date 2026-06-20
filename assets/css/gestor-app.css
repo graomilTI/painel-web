@@ -490,6 +490,20 @@ select:focus, input:focus, textarea:focus {
 }
 .db-os-btn:active { opacity: .75; }
 
+/* ── Banner: Programação nativa x versão web completa ── */
+.prog-web-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; padding: 11px 14px; margin-bottom: 12px;
+  background: rgba(45, 212, 160, 0.08); border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.prog-web-banner-text { font-size: 12px; color: var(--muted); line-height: 1.35; flex: 1 1 200px; }
+.prog-web-banner-link {
+  flex-shrink: 0; font-size: 12px; font-weight: 950; color: var(--soft);
+  text-decoration: none; white-space: nowrap;
+}
+.prog-web-banner-link:active { opacity: .75; }
+
 /* ── Section label ── */
 .db-actions-label {
   font-size: 10px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase;
