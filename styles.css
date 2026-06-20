@@ -3017,7 +3017,8 @@ html, body,
 .users-input,
 .users-select,
 .op-field input,
-.op-field select {
+.op-field select,
+.ssel-input {
   background: rgba(21,21,42,0.80) !important;
   border: 1px solid rgba(255,255,255,0.07) !important;
   color: var(--text) !important;
@@ -3030,7 +3031,8 @@ html, body,
 .users-input:focus,
 .users-select:focus,
 .op-field input:focus,
-.op-field select:focus {
+.op-field select:focus,
+.ssel-input:focus {
   border-color: rgba(45,212,160,0.34) !important;
   box-shadow: 0 0 0 3px rgba(45,212,160,0.10) !important;
   background: rgba(21,21,42,0.95) !important;

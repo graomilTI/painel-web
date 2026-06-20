@@ -4,6 +4,7 @@ import { bindLayoutActions } from './layoutActions.js';
 import { initAgentUpdateStatus } from './agentUpdateStatus.js';
 import { initAgentDataMode } from './agentDataMode.js';
 import { initGestorMenuAjustes } from './gestor-menu-ajustes.js';
+import './searchableSelect.js';
 
 export async function initProtectedPage(title, renderContent) {
   document.documentElement.classList.remove('is-route-transitioning');
