@@ -1,6 +1,20 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
+const BTG_AGENT_ID = 'sync-btg-relatorios';
+const BTG_AGENT_ALIASES = [
+  BTG_AGENT_ID,
+  'sync-btg-relatorio',
+  'sync-btg-logistica',
+  'sync-relatorios-btg',
+  'sync-relatorio-btg',
+  'btg-relatorios',
+  'btg-relatorio',
+  'relatorios-btg',
+  'grm-sync-btg',
+  'grm-sync-btg-relatorios',
+];
+
 const AGENTES = [
   { id: 'sync-colaboradores', name: 'Colaboradores', freq: '5 min', table: 'colaboradores' },
   { id: 'sync-producao-diaria', name: 'Produção Diária', freq: '1h', table: 'grm_producao_diaria_importacoes' },
@@ -16,6 +30,7 @@ const AGENTES = [
   { id: 'sync-nhe', name: 'NHE', freq: '1h', table: 'grm_nhe_importacoes' },
   { id: 'sync-lista-os', name: 'Lista de OS', freq: '1h', table: 'grm_lista_os_importacoes' },
   { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: '1h', table: 'grm_distribuicao_os_importacoes' },
+  { id: BTG_AGENT_ID, name: 'BTG · Relatórios', freq: '1h / disparo', table: 'logistica_btg_solicitacoes', aliases: BTG_AGENT_ALIASES, kpi: true },
 ];
 
 const STATUS_META = {
@@ -37,7 +52,7 @@ const esc = (v) => String(v ?? '')
 
 function getStyles() {
   return `<style id="agentes-style">
-.ag-wrap{width:100%;color:#e2e2f0}.ag-hero{background:radial-gradient(ellipse at top left,rgba(59,130,246,.13),transparent 55%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:24px 28px;margin-bottom:20px}.ag-hero h2{margin:0;font-size:clamp(20px,2vw,28px);letter-spacing:-.03em;color:#f8fafc}.ag-hero p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;max-width:700px}.ag-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}.ag-stat{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:12px 18px;text-align:center}.ag-stat-val{font-size:22px;font-weight:900;color:#3b82f6;line-height:1}.ag-stat-lbl{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:20px}.ag-card{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-card:hover{border-color:rgba(59,130,246,.3);background:rgba(15,23,42,.85)}.ag-card.active{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)}.ag-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}.ag-card-title{font-size:14px;font-weight:900;color:#f8fafc}.ag-card-freq{font-size:11px;color:#94a3b8;background:rgba(148,163,184,.1);padding:3px 8px;border-radius:6px}.ag-card-status{display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px}.ag-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.ag-status-dot.online{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}.ag-status-dot.error{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}.ag-status-dot.idle{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.4)}.ag-status-dot.running{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.4)}.ag-card-meta{display:flex;gap:16px;font-size:12px;color:#6b7280}.ag-card-meta span{display:flex;flex-direction:column}.ag-card-meta span strong{color:#e2e2f0;display:block;font-weight:900;font-size:13px}.ag-details{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:20px;margin-bottom:20px}.ag-details-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:16px}.ag-details-title{font-size:16px;font-weight:900;color:#f8fafc}.ag-details-close{background:transparent;border:0;color:#94a3b8;cursor:pointer;padding:4px;font-size:18px}.ag-log-box{background:rgba(0,0,0,.3);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;color:#6b7280;line-height:1.4;white-space:pre-wrap}.ag-log-line{margin:2px 0;color:#94a3b8}.ag-log-error{color:#fca5a5}.ag-log-success{color:#86efac}.ag-btn{border:0;border-radius:12px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-btn-primary{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}.ag-btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.22)}.ag-btn:disabled{opacity:.5;cursor:not-allowed}
+.ag-wrap{width:100%;color:#e2e2f0}.ag-hero{background:radial-gradient(ellipse at top left,rgba(59,130,246,.13),transparent 55%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:24px 28px;margin-bottom:20px}.ag-hero h2{margin:0;font-size:clamp(20px,2vw,28px);letter-spacing:-.03em;color:#f8fafc}.ag-hero p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;max-width:700px}.ag-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}.ag-stat{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:12px 18px;text-align:center}.ag-stat-val{font-size:22px;font-weight:900;color:#3b82f6;line-height:1}.ag-stat-lbl{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi{margin-top:16px;background:linear-gradient(135deg,rgba(59,130,246,.16),rgba(34,197,94,.08));border:1px solid rgba(96,165,250,.28);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-btg-kpi:hover{border-color:rgba(96,165,250,.48);background:linear-gradient(135deg,rgba(59,130,246,.22),rgba(34,197,94,.12))}.ag-btg-kpi-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.ag-btg-kpi-title{font-size:15px;font-weight:900;color:#f8fafc}.ag-btg-kpi-sub{font-size:11px;color:#94a3b8;margin-top:3px}.ag-btg-kpi-status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:900}.ag-btg-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.ag-btg-kpi-item{background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.ag-btg-kpi-item span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi-item strong{display:block;margin-top:3px;color:#f8fafc;font-size:13px}.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:20px}.ag-card{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-card:hover{border-color:rgba(59,130,246,.3);background:rgba(15,23,42,.85)}.ag-card.active{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)}.ag-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}.ag-card-title{font-size:14px;font-weight:900;color:#f8fafc}.ag-card-freq{font-size:11px;color:#94a3b8;background:rgba(148,163,184,.1);padding:3px 8px;border-radius:6px}.ag-card-status{display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px}.ag-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.ag-status-dot.online{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}.ag-status-dot.error{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}.ag-status-dot.idle{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.4)}.ag-status-dot.running{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.4)}.ag-card-meta{display:flex;gap:16px;font-size:12px;color:#6b7280}.ag-card-meta span{display:flex;flex-direction:column}.ag-card-meta span strong{color:#e2e2f0;display:block;font-weight:900;font-size:13px}.ag-details{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:20px;margin-bottom:20px}.ag-details-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:16px}.ag-details-title{font-size:16px;font-weight:900;color:#f8fafc}.ag-details-close{background:transparent;border:0;color:#94a3b8;cursor:pointer;padding:4px;font-size:18px}.ag-log-box{background:rgba(0,0,0,.3);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;color:#6b7280;line-height:1.4;white-space:pre-wrap}.ag-log-line{margin:2px 0;color:#94a3b8}.ag-log-error{color:#fca5a5}.ag-log-success{color:#86efac}.ag-btn{border:0;border-radius:12px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-btn-primary{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}.ag-btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.22)}.ag-btn:disabled{opacity:.5;cursor:not-allowed}
 </style>`;
 }
 
@@ -65,6 +80,35 @@ function formatDuration(ms) {
   return `${Math.round(value / 1000)}s`;
 }
 
+function formatInt(value) {
+  return Number(value || 0).toLocaleString('pt-BR');
+}
+
+function unique(values) {
+  return [...new Set((values || []).filter(Boolean))];
+}
+
+function getAgentIds(agenteOrId) {
+  if (typeof agenteOrId === 'string') return [agenteOrId];
+  return unique([agenteOrId?.id, ...(agenteOrId?.aliases || [])]);
+}
+
+function isBtgAgent(agenteOrId) {
+  return getAgentIds(agenteOrId).some((id) => String(id).toLowerCase().includes('btg'));
+}
+
+function jobMentionsBtg(job) {
+  const output = job?.output || {};
+  const haystack = [
+    job?.agente_id,
+    output?.script,
+    output?.stdout,
+    output?.stderr,
+    job?.erro,
+  ].map((v) => String(v || '').toLowerCase()).join(' ');
+  return haystack.includes('btg');
+}
+
 function extractTotalFromJob(job) {
   const stdout = String(job?.output?.stdout || '');
   const patterns = [
@@ -72,6 +116,10 @@ function extractTotalFromJob(job) {
     /Upsert conclu[ií]do:\s*(\d+)\s+registros/i,
     /(\d+)\s+registros\s+sincronizados/i,
     /(\d+)\s+colaboradores\s+processados/i,
+    /(\d+)\s+solicita(?:ções|coes)/i,
+    /(\d+)\s+relat[óo]rios/i,
+    /(\d+)\s+arquivos/i,
+    /(\d+)\s+linhas\s+BTG/i,
     /(\d+)\s+linhas\s+parseadas/i,
     /(\d+)\s+linhas/i,
     /Total de linhas encontradas:\s*(\d+)/i,
@@ -90,6 +138,7 @@ function renderLog(job) {
   const output = job.output || {};
   const lines = [
     `<div class="ag-log-line">Job: ${esc(job.id || '-')}</div>`,
+    `<div class="ag-log-line">Agente gravado: ${esc(job.agente_id || '-')}</div>`,
     `<div class="ag-log-line">Status: ${esc(job.status || '-')}</div>`,
     `<div class="ag-log-line">Criado em: ${esc(formatDate(job.created_at))}</div>`,
     `<div class="ag-log-line">Iniciado em: ${esc(formatDate(job.iniciado_em))}</div>`,
@@ -103,6 +152,28 @@ function renderLog(job) {
   if (output.stderr) lines.push(`<div class="ag-log-error">stderr:\n${esc(String(output.stderr).slice(-2500))}</div>`);
 
   return lines.join('');
+}
+
+function renderBtgKpi() {
+  const btg = state.agentes.find((x) => x.id === BTG_AGENT_ID) || AGENTES.find((x) => x.id === BTG_AGENT_ID);
+  const meta = getAgenteMeta(btg);
+  const jobLabel = btg?.job_id ? String(btg.job_id).slice(0, 8) : 'N/A';
+
+  return `<div class="ag-btg-kpi" onclick="selectAgent('${BTG_AGENT_ID}')">
+    <div class="ag-btg-kpi-head">
+      <div>
+        <div class="ag-btg-kpi-title">📊 KPI · Relatórios BTG</div>
+        <div class="ag-btg-kpi-sub">Acompanha o último disparo do agente que puxa relatórios BTG pelo worker.</div>
+      </div>
+      <div class="ag-btg-kpi-status" style="color:${meta.color}"><span class="ag-status-dot ${meta.ui}"></span>${meta.label}</div>
+    </div>
+    <div class="ag-btg-kpi-grid">
+      <div class="ag-btg-kpi-item"><span>Último disparo</span><strong>${formatDate(btg?.ultima_sync)}</strong></div>
+      <div class="ag-btg-kpi-item"><span>Registros BTG</span><strong>${formatInt(btg?.total_records)}</strong></div>
+      <div class="ag-btg-kpi-item"><span>Duração</span><strong>${esc(formatDuration(btg?.duration_ms))}</strong></div>
+      <div class="ag-btg-kpi-item"><span>Último job</span><strong>${esc(jobLabel)}</strong></div>
+    </div>
+  </div>`;
 }
 
 function renderAgentes() {
@@ -121,6 +192,7 @@ function renderAgentes() {
         <div class="ag-stat"><div class="ag-stat-val" style="color:#22c55e">${statusCount.online}</div><div class="ag-stat-lbl">Online</div></div>
         <div class="ag-stat"><div class="ag-stat-val" style="color:#ef4444">${statusCount.error}</div><div class="ag-stat-lbl">Com Erro</div></div>
       </div>
+      ${renderBtgKpi()}
     </div>`;
 
   if (state.selectedAgent) html += renderAgentDetails(state.selectedAgent);
@@ -134,7 +206,7 @@ function renderAgentes() {
       <div class="ag-card-header"><div class="ag-card-title">${esc(a.name)}</div><div class="ag-card-freq">${a.freq}</div></div>
       <div class="ag-card-status"><div class="ag-status-dot ${meta.ui}"></div><span style="color:${meta.color}">${meta.label}</span></div>
       <div class="ag-card-meta">
-        <span>Total<strong>${agente?.total_records ?? 0}</strong></span>
+        <span>Total<strong>${formatInt(agente?.total_records)}</strong></span>
         <span>Última Sync<strong>${formatDate(agente?.ultima_sync)}</strong></span>
       </div>
     </div>`;
@@ -148,15 +220,17 @@ function renderAgentes() {
 
 function renderAgentDetails(agente) {
   const meta = getAgenteMeta(agente);
+  const aliases = agente.aliases?.length ? `<p><strong>Aliases monitorados:</strong> ${esc(agente.aliases.join(', '))}</p>` : '';
   return `<div class="ag-details">
     <div class="ag-details-header"><div class="ag-details-title">${esc(agente.name)} - Detalhes</div><button class="ag-details-close" onclick="closeDetails()">✕</button></div>
     <div style="margin-bottom:16px">
       <p><strong>ID:</strong> ${esc(agente.id)}</p>
+      ${aliases}
       <p><strong>Tabela:</strong> ${esc(agente.table)}</p>
       <p><strong>Frequência:</strong> ${esc(agente.freq)}</p>
       <p><strong>Status:</strong> ${meta.detail}</p>
       <p><strong>Última Sincronização:</strong> ${formatDate(agente.ultima_sync)}</p>
-      <p><strong>Total de Registros:</strong> ${agente.total_records ?? 0}</p>
+      <p><strong>Total de Registros:</strong> ${formatInt(agente.total_records)}</p>
       <p><strong>Último Job:</strong> ${esc(agente.job_id || 'N/A')}</p>
       <p><strong>Duração:</strong> ${esc(formatDuration(agente.duration_ms))}</p>
     </div>
@@ -204,17 +278,33 @@ window.viewLogs = (agentId) => {
   alert(msg);
 };
 
-async function getLastJob(agenteId) {
+async function getRecentBtgJobFallback() {
   const { data, error } = await supabase
     .from('grm_sync_jobs')
     .select('id, agente_id, status, created_at, iniciado_em, finalizado_em, duration_ms, output, erro')
-    .eq('agente_id', agenteId)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(50);
 
   if (error) throw error;
-  return data || null;
+  return (data || []).find(jobMentionsBtg) || null;
+}
+
+async function getLastJob(agenteOrId) {
+  const ids = getAgentIds(agenteOrId);
+  let query = supabase
+    .from('grm_sync_jobs')
+    .select('id, agente_id, status, created_at, iniciado_em, finalizado_em, duration_ms, output, erro')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  query = ids.length > 1 ? query.in('agente_id', ids) : query.eq('agente_id', ids[0]);
+
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  if (data) return data;
+
+  if (isBtgAgent(agenteOrId)) return getRecentBtgJobFallback();
+  return null;
 }
 
 async function countRecords(table) {
@@ -237,7 +327,7 @@ async function loadAgentes() {
       AGENTES.map(async (agente) => {
         try {
           const [lastJob, totalRecords] = await Promise.all([
-            getLastJob(agente.id),
+            getLastJob(agente),
             countRecords(agente.table),
           ]);
           const jobTotal = extractTotalFromJob(lastJob);
@@ -248,6 +338,7 @@ async function loadAgentes() {
             name: agente.name,
             freq: agente.freq,
             table: agente.table,
+            aliases: agente.aliases || [],
             ultima_sync: lastJob?.finalizado_em || lastJob?.iniciado_em || lastJob?.created_at || null,
             total_records: displayTotal || 0,
             job_id: lastJob?.id || null,
@@ -258,7 +349,7 @@ async function loadAgentes() {
           };
         } catch (e) {
           console.error(`Erro carregando ${agente.name}:`, e);
-          return { id: agente.id, name: agente.name, freq: agente.freq, table: agente.table, job_status: 'sem_job' };
+          return { id: agente.id, name: agente.name, freq: agente.freq, table: agente.table, aliases: agente.aliases || [], job_status: 'sem_job' };
         }
       })
     );
