@@ -23,9 +23,25 @@ function injectSupervisaoDropdownFixStyles() {
       overflow: visible !important;
     }
 
-    #progSup.prog-sup-native-hidden,
-    .prog-tfield-sup > #progSup.prog-sup-native-hidden {
+    body .page-main .prog-tfield-sup > select#progSup,
+    body .page-main #progSup.prog-sup-native-hidden,
+    body .page-main .prog-tfield-sup > #progSup.prog-sup-native-hidden {
       display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      width: 0 !important;
+      min-width: 0 !important;
+      max-width: 0 !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      max-height: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      border: 0 !important;
+      pointer-events: none !important;
+      position: absolute !important;
+      left: -99999px !important;
+      top: -99999px !important;
     }
 
     .prog-sup-combo {
@@ -133,6 +149,27 @@ function injectSupervisaoDropdownFixStyles() {
   document.head.appendChild(style);
 }
 
+function forceHideNativeSelect(select) {
+  if (!select) return;
+  select.classList.add('prog-sup-native-hidden');
+  select.setAttribute('aria-hidden', 'true');
+  select.tabIndex = -1;
+  select.style.setProperty('display', 'none', 'important');
+  select.style.setProperty('visibility', 'hidden', 'important');
+  select.style.setProperty('opacity', '0', 'important');
+  select.style.setProperty('width', '0', 'important');
+  select.style.setProperty('min-width', '0', 'important');
+  select.style.setProperty('height', '0', 'important');
+  select.style.setProperty('min-height', '0', 'important');
+  select.style.setProperty('padding', '0', 'important');
+  select.style.setProperty('margin', '0', 'important');
+  select.style.setProperty('border', '0', 'important');
+  select.style.setProperty('pointer-events', 'none', 'important');
+  select.style.setProperty('position', 'absolute', 'important');
+  select.style.setProperty('left', '-99999px', 'important');
+  select.style.setProperty('top', '-99999px', 'important');
+}
+
 function buildMenu(select, combo) {
   const menu = combo.querySelector('.prog-sup-menu');
   if (!menu) return;
@@ -158,6 +195,7 @@ function buildMenu(select, combo) {
 }
 
 function syncCombo(select, combo) {
+  forceHideNativeSelect(select);
   const button = combo.querySelector('.prog-sup-button');
   if (!button) return;
   const selected = select.options[select.selectedIndex];
@@ -175,6 +213,7 @@ function closeCombo(combo) {
 }
 
 function openCombo(select, combo) {
+  forceHideNativeSelect(select);
   buildMenu(select, combo);
   const menu = combo.querySelector('.prog-sup-menu');
   const button = combo.querySelector('.prog-sup-button');
@@ -186,12 +225,12 @@ function openCombo(select, combo) {
 
 function bindSupervisaoDropdownFix() {
   const select = document.getElementById('progSup');
-  if (!select || select.dataset.dropdownFixBound === '1') return;
+  if (!select) return;
 
+  forceHideNativeSelect(select);
+
+  if (select.dataset.dropdownFixBound === '1') return;
   select.dataset.dropdownFixBound = '1';
-  select.classList.add('prog-sup-native-hidden');
-  select.setAttribute('aria-hidden', 'true');
-  select.tabIndex = -1;
 
   const combo = document.createElement('div');
   combo.className = 'prog-sup-combo';
@@ -213,7 +252,7 @@ function bindSupervisaoDropdownFix() {
   select.addEventListener('change', () => syncCombo(select, combo));
 
   const observer = new MutationObserver(() => syncCombo(select, combo));
-  observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled'] });
+  observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'style', 'class'] });
 
   document.addEventListener('click', (event) => {
     if (!event.target.closest('.prog-sup-combo')) closeCombo(combo);
@@ -231,14 +270,15 @@ function initSupervisaoDropdownFix() {
 
   const tryBind = () => {
     bindSupervisaoDropdownFix();
+    document.querySelectorAll('.prog-tfield-sup > select#progSup').forEach(forceHideNativeSelect);
     if (document.getElementById('progSup')?.dataset.dropdownFixBound === '1') {
-      clearInterval(timer);
+      // Continua reforçando por mais alguns ciclos, porque o script de programação altera o select depois.
     }
   };
 
   const timer = setInterval(tryBind, 250);
   tryBind();
-  setTimeout(() => clearInterval(timer), 12000);
+  setTimeout(() => clearInterval(timer), 30000);
 }
 
 if (document.readyState === 'loading') {
