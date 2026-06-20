@@ -68,16 +68,6 @@ function injectGestorAjustesStyles() {
     .prog-tfield-sup{flex:1 1 320px!important;max-width:520px!important;position:relative!important;z-index:9010!important;overflow:visible!important}
     .prog-tfield-sup select,#progSup{position:relative!important;z-index:9020!important;min-width:320px!important;background:#020617!important;color:#f8fafc!important;border-color:rgba(52,211,153,.38)!important;opacity:1!important;color-scheme:dark!important}
     #progSup option,#progSup optgroup,#progOsStatusTop option,#progOsStatusTop optgroup{background:#020617!important;color:#f8fafc!important;opacity:1!important}
-    .prog-native-select-hidden{position:absolute!important;left:0!important;top:24px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;clip-path:inset(50%)!important;overflow:hidden!important}
-    .prog-supervisao-combo{position:relative;width:100%;z-index:100000!important}
-    .prog-supervisao-button{width:100%;min-height:38px;text-align:left;border-radius:11px;border:1px solid rgba(52,211,153,.38)!important;background:#020617!important;color:#f8fafc!important;padding:8px 38px 8px 11px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 10px 24px rgba(0,0,0,.26);position:relative;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .prog-supervisao-button::after{content:'▾';position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#86efac;font-size:13px}
-    .prog-supervisao-button[aria-expanded="true"]{border-color:rgba(134,239,172,.75)!important;box-shadow:0 0 0 3px rgba(52,211,153,.14),0 18px 40px rgba(0,0,0,.45)}
-    .prog-supervisao-menu{position:absolute;top:calc(100% + 7px);left:0;right:0;max-height:340px;overflow-y:auto;background:#020617!important;color:#f8fafc!important;border:1px solid rgba(52,211,153,.48);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.86);z-index:100001!important;opacity:1!important;backdrop-filter:none!important;padding:6px}
-    .prog-supervisao-menu[hidden]{display:none!important}
-    .prog-supervisao-option{width:100%;border:0;background:#020617!important;color:#e2e8f0!important;text-align:left;border-radius:10px;padding:10px 11px;font-size:13px;font-weight:750;cursor:pointer;display:block;opacity:1!important;white-space:normal;line-height:1.25}
-    .prog-supervisao-option:hover,.prog-supervisao-option.active{background:#064e3b!important;color:#f8fafc!important}
-    .prog-supervisao-option.placeholder{color:#94a3b8!important;font-style:italic}
     .prog-tfield-os-status{flex:0 0 170px;max-width:190px;position:relative!important;z-index:9005!important}
     .prog-list-card,#progList,#progDistribuicaoOsMount,#osLiteRoot,#osLiteStats,#osLiteList{position:relative;z-index:1;overflow:visible!important}
     #progDistribuicaoOsMount .grid-cards,#progDistribuicaoOsMount .card:not(:first-child){position:relative;z-index:1}
@@ -93,108 +83,12 @@ function injectGestorAjustesStyles() {
   document.head.appendChild(style);
 }
 
-function closeSupervisaoCombo() {
-  const combo = document.getElementById('progSupCombo');
-  if (!combo) return;
-  const button = combo.querySelector('.prog-supervisao-button');
-  const menu = combo.querySelector('.prog-supervisao-menu');
-  if (button) button.setAttribute('aria-expanded', 'false');
-  if (menu) menu.hidden = true;
-}
-
-function syncSupervisaoCombo() {
-  const select = document.getElementById('progSup');
-  const combo = document.getElementById('progSupCombo');
-  if (!select || !combo) return;
-  const button = combo.querySelector('.prog-supervisao-button');
-  const selected = select.options[select.selectedIndex];
-  if (button) button.textContent = selected?.textContent || 'Selecione...';
-  renderSupervisaoComboMenu();
-}
-
-function renderSupervisaoComboMenu() {
-  const select = document.getElementById('progSup');
-  const combo = document.getElementById('progSupCombo');
-  if (!select || !combo) return;
-  const menu = combo.querySelector('.prog-supervisao-menu');
-  if (!menu) return;
-  const options = [...select.options];
-  menu.innerHTML = options.map((opt) => {
-    const active = String(opt.value || '') === String(select.value || '');
-    const label = opt.textContent || opt.value || 'Selecione...';
-    return `<button type="button" class="prog-supervisao-option ${active ? 'active' : ''} ${opt.value ? '' : 'placeholder'}" data-sup-value="${escapeHtml(opt.value)}">${escapeHtml(label)}</button>`;
-  }).join('');
-  menu.querySelectorAll('[data-sup-value]').forEach((item) => {
-    item.addEventListener('click', (event) => {
-      event.preventDefault();
-      select.value = item.dataset.supValue || '';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      syncSupervisaoCombo();
-      closeSupervisaoCombo();
-    });
-  });
-}
-
-function ensureSupervisaoCombo() {
-  const select = document.getElementById('progSup');
-  if (!select) return;
-  select.classList.add('prog-native-select-hidden');
-  select.setAttribute('aria-hidden', 'true');
-
-  let combo = document.getElementById('progSupCombo');
-  if (!combo) {
-    combo = document.createElement('div');
-    combo.id = 'progSupCombo';
-    combo.className = 'prog-supervisao-combo';
-    combo.innerHTML = `
-      <button type="button" class="prog-supervisao-button" aria-expanded="false">Selecione...</button>
-      <div class="prog-supervisao-menu" hidden></div>
-    `;
-    select.insertAdjacentElement('afterend', combo);
-
-    const button = combo.querySelector('.prog-supervisao-button');
-    const menu = combo.querySelector('.prog-supervisao-menu');
-    button?.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const isOpen = !menu.hidden;
-      if (isOpen) {
-        closeSupervisaoCombo();
-      } else {
-        renderSupervisaoComboMenu();
-        menu.hidden = false;
-        button.setAttribute('aria-expanded', 'true');
-      }
-    });
-  }
-
-  if (select.dataset.comboBound !== '1') {
-    select.dataset.comboBound = '1';
-    select.addEventListener('change', syncSupervisaoCombo);
-  }
-
-  if (document.documentElement.dataset.progSupOutsideBound !== '1') {
-    document.documentElement.dataset.progSupOutsideBound = '1';
-    document.addEventListener('click', (event) => {
-      if (!event.target.closest('#progSupCombo')) closeSupervisaoCombo();
-    });
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') closeSupervisaoCombo();
-    });
-  }
-
-  syncSupervisaoCombo();
-}
-
 async function liberarListaSupervisoes() {
   const select = document.getElementById('progSup');
   if (!select || supervisoesDropdownLoading) return;
 
   const opcoesAtuais = [...select.options].filter((opt) => opt.value);
-  if (supervisoesDropdownLoaded && !select.disabled && opcoesAtuais.length > 1) {
-    ensureSupervisaoCombo();
-    return;
-  }
+  if (supervisoesDropdownLoaded && !select.disabled && opcoesAtuais.length > 1) return;
 
   supervisoesDropdownLoading = true;
   try {
@@ -223,11 +117,9 @@ async function liberarListaSupervisoes() {
     select.disabled = false;
     select.dataset.supervisoesLiberadas = '1';
     supervisoesDropdownLoaded = true;
-    ensureSupervisaoCombo();
   } catch (error) {
     console.warn('[programacao-ajustes] Não foi possível liberar lista completa de supervisões.', error);
     select.disabled = false;
-    ensureSupervisaoCombo();
   } finally {
     supervisoesDropdownLoading = false;
   }
@@ -448,7 +340,6 @@ function autoSelectSingleSupervisao() {
 
   if (options.length === 1) {
     select.value = options[0].value;
-    syncSupervisaoCombo();
     if (currentUiStep === 'A') renderDistribuicao({ loadOs: false });
   }
 }
@@ -484,7 +375,6 @@ function bindTopLoadForEtapaA() {
 async function initGestorProgramacaoAjustes() {
   await waitForElement('#progSteps');
   injectGestorAjustesStyles();
-  ensureSupervisaoCombo();
   ensureStatusOsFilter();
   bindTopLoadForEtapaA();
   configureSteps();
@@ -494,7 +384,6 @@ async function initGestorProgramacaoAjustes() {
 
   const observer = new MutationObserver(() => {
     liberarListaSupervisoes();
-    ensureSupervisaoCombo();
     autoSelectSingleSupervisao();
     patchPendingOsModal();
     guardDistribuicaoView();
@@ -508,12 +397,10 @@ async function initGestorProgramacaoAjustes() {
   observer.observe(document.body, { childList: true, subtree: true });
 
   liberarListaSupervisoes();
-  ensureSupervisaoCombo();
   autoSelectSingleSupervisao();
   patchPendingOsModal();
 
   document.getElementById('progSup')?.addEventListener('change', () => {
-    syncSupervisaoCombo();
     distribuicaoLoaded = false;
     if (currentUiStep === 'A') renderDistribuicao({ loadOs: false });
   });
