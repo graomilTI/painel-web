@@ -1,4 +1,13 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
+import { renderOsModule } from './os.js';
+
+function normalize(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .trim();
+}
 
 function waitForElement(selector, timeout = 12000) {
   const found = document.querySelector(selector);
@@ -19,26 +28,6 @@ function waitForElement(selector, timeout = 12000) {
   });
 }
 
-function buildPanelHref(path = '') {
-  const target = String(path || '').replace(/^\/+/, '').replace(/\.html$/i, '');
-  const host = String(window.location.hostname || '').toLowerCase();
-  if (host === 'grao1000.com.br' || host === 'www.grao1000.com.br') {
-    return target ? `/painel/${target}`.replace(/([^:]\/)\/+/, '$1') : '/painel';
-  }
-  const base = window.location.pathname.includes('/painel/') ? '/painel/' : './';
-  return base === './' ? `./${target}` : `${base}${target}`;
-}
-
-function buildOsEmbeddedUrl() {
-  const sup = document.getElementById('progSup')?.value || '';
-  const dataRef = document.getElementById('progDataRef')?.value || '';
-  const url = new URL(buildPanelHref('os'), window.location.href);
-  url.searchParams.set('embedded', '1');
-  if (sup) url.searchParams.set('supervisao', sup);
-  if (dataRef) url.searchParams.set('data', dataRef);
-  return url.pathname + url.search + url.hash;
-}
-
 function setSaveVisibility(isDistribuicao) {
   const saveBtn = document.getElementById('progSaveProgramacao');
   const search = document.getElementById('progSearch')?.closest('.filters-grid');
@@ -51,7 +40,7 @@ let currentUiStep = 'A';
 function guardDistribuicaoView() {
   if (currentUiStep !== 'A') return;
   const list = document.getElementById('progList');
-  if (!list || document.getElementById('progDistribuicaoOsFrame')) return;
+  if (!list || document.getElementById('progDistribuicaoOsMount')) return;
   renderDistribuicao();
 }
 
@@ -61,7 +50,19 @@ function setActiveDistribution() {
   });
 }
 
-function renderDistribuicao() {
+function applySupervisaoFromProgSup(mount) {
+  const sup = document.getElementById('progSup')?.value || '';
+  if (!sup) return;
+  const select = mount.querySelector('#osSupervisao');
+  if (!select) return;
+  const option = [...select.options].find((opt) => opt.value && normalize(opt.value) === normalize(sup));
+  if (option && select.value !== option.value) {
+    select.value = option.value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
+async function renderDistribuicao() {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
   if (!list) return;
@@ -82,15 +83,14 @@ function renderDistribuicao() {
       <span class="badge">Etapa A</span>
     </div>
     <div class="prog-empty-section" style="margin-bottom:12px">
-      As O.S. que precisam de verificação ficam aqui. Quando o gestor tiver mais de uma supervisão, a lista é carregada por blocos de supervisão.
+      As O.S. que precisam de verificação ficam aqui, dentro da própria Programação.
     </div>
-    <iframe
-      id="progDistribuicaoOsFrame"
-      title="Distribuição de O.S."
-      src="${buildOsEmbeddedUrl()}"
-      style="width:100%;min-height:980px;border:0;border-radius:18px;background:transparent;display:block"
-      loading="eager"></iframe>
+    <div id="progDistribuicaoOsMount"></div>
   `;
+
+  const mount = document.getElementById('progDistribuicaoOsMount');
+  await renderOsModule(mount);
+  applySupervisaoFromProgSup(mount);
 }
 
 function configureSteps() {

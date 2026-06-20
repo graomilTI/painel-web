@@ -1,5 +1,4 @@
-﻿import { initProtectedPage } from './pageInit.js';
-import { supabase } from './supabaseClient.js';
+﻿import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
@@ -262,7 +261,7 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-initProtectedPage('OS', async (content) => {
+export async function renderOsModule(content) {
   injectStyles();
   content.innerHTML = `
     <section class="card mt-16">
@@ -1053,4 +1052,4 @@ initProtectedPage('OS', async (content) => {
       if (dropdown) dropdown.hidden = true;
     }, 180);
   }
-});
+}
