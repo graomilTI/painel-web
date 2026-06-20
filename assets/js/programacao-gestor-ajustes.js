@@ -1,10 +1,27 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
 import { renderOsModule } from './os.js';
 
+const OS_STATUS_OPTIONS = [
+  { value: '', label: 'Todos' },
+  { value: 'PENDENTE', label: 'Pendente' },
+  { value: 'AGUARDAR', label: 'Aguardar' },
+  { value: 'ATENDER', label: 'Atender' },
+  { value: 'FINALIZAR', label: 'Finalizar' },
+];
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
 function normalize(value) {
   return String(value || '')
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toUpperCase()
     .trim();
 }
@@ -28,11 +45,81 @@ function waitForElement(selector, timeout = 12000) {
   });
 }
 
+function statusOptionsHtml(selected = '') {
+  return OS_STATUS_OPTIONS.map((option) => (
+    `<option value="${escapeHtml(option.value)}" ${String(selected || '') === option.value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`
+  )).join('');
+}
+
+function injectGestorAjustesStyles() {
+  if (document.getElementById('programacaoGestorAjustesStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'programacaoGestorAjustesStyles';
+  style.textContent = `
+    .prog-tfield-os-status{flex:0 0 170px;max-width:190px}
+    #progDistribuicaoOsMount .filters-grid.os-grid{display:none!important}
+    #progDistribuicaoOsMount .card:first-child{margin-top:0}
+    #progDistribuicaoOsMount #osStats{margin-top:12px}
+    @media(max-width:900px){.prog-tfield-os-status{flex:1 1 100%;max-width:none}}
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureStatusOsFilter() {
+  injectGestorAjustesStyles();
+  const loadBtn = document.getElementById('progLoadContext');
+  if (!loadBtn) return null;
+
+  let field = document.getElementById('progOsStatusTopWrap');
+  if (!field) {
+    field = document.createElement('div');
+    field.className = 'prog-tfield prog-tfield-os-status';
+    field.id = 'progOsStatusTopWrap';
+    field.innerHTML = `
+      <label for="progOsStatusTop">Status OS</label>
+      <select id="progOsStatusTop">${statusOptionsHtml()}</select>
+    `;
+    loadBtn.insertAdjacentElement('beforebegin', field);
+  }
+
+  const select = field.querySelector('#progOsStatusTop');
+  if (select && select.dataset.statusOsBound !== '1') {
+    select.dataset.statusOsBound = '1';
+    select.addEventListener('change', () => syncStatusToOsModule());
+  }
+  return select;
+}
+
+function syncStatusToOsModule(root = document) {
+  const topStatus = document.getElementById('progOsStatusTop');
+  const osStatus = root.querySelector?.('#osStatus') || document.getElementById('osStatus');
+  if (!topStatus || !osStatus) return;
+  if (osStatus.value !== topStatus.value) {
+    osStatus.value = topStatus.value;
+    osStatus.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
+function prepareEmbeddedOsFilters(mount) {
+  if (!mount) return;
+  mount.classList.add('prog-os-embedded');
+  const filters = mount.querySelector('.filters-grid.os-grid');
+  if (filters) filters.setAttribute('aria-hidden', 'true');
+  syncStatusToOsModule(mount);
+}
+
+function setStatusOsVisibility(isDistribuicao) {
+  const topStatus = ensureStatusOsFilter();
+  const wrap = topStatus?.closest('.prog-tfield-os-status');
+  if (wrap) wrap.style.display = isDistribuicao ? '' : 'none';
+}
+
 function setSaveVisibility(isDistribuicao) {
   const saveBtn = document.getElementById('progSaveProgramacao');
   const search = document.getElementById('progSearchWrap');
   if (saveBtn) saveBtn.style.display = isDistribuicao ? 'none' : '';
   if (search) search.style.display = isDistribuicao ? 'none' : '';
+  setStatusOsVisibility(isDistribuicao);
 }
 
 let currentUiStep = 'A';
@@ -90,7 +177,9 @@ async function renderDistribuicao() {
 
   const mount = document.getElementById('progDistribuicaoOsMount');
   await renderOsModule(mount, { reuseData: true });
+  prepareEmbeddedOsFilters(mount);
   applySupervisaoFromProgSup(mount);
+  syncStatusToOsModule(mount);
 }
 
 function configureSteps() {
@@ -174,6 +263,8 @@ function patchPendingOsModal() {
 
 async function initGestorProgramacaoAjustes() {
   await waitForElement('#progSteps');
+  injectGestorAjustesStyles();
+  ensureStatusOsFilter();
   configureSteps();
   renderDistribuicao();
 
@@ -181,6 +272,11 @@ async function initGestorProgramacaoAjustes() {
     autoLoadSingleSupervisao();
     patchPendingOsModal();
     guardDistribuicaoView();
+    if (currentUiStep === 'A') {
+      ensureStatusOsFilter();
+      const mount = document.getElementById('progDistribuicaoOsMount');
+      prepareEmbeddedOsFilters(mount);
+    }
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
