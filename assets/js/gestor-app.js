@@ -35,6 +35,8 @@ const state = {
   extras: new Map(),
   allowMulti: new Set(),
   suggested: new Map(),
+  atribuicoesByOsId: new Map(),
+  bigOsIndex: new Map(),
   busy: new Set(),
   tomorrow: new Set(),
   installPrompt: null,
@@ -485,6 +487,8 @@ function hydrateSelections() {
   state.selections.clear();
   state.extras.clear();
   state.allowMulti.clear();
+  state.suggested.clear();
+  state.atribuicoesByOsId.clear();
   for (const os of state.os) if (os.permitir_mais_classificadores) state.allowMulti.add(osId(os));
   for (const item of state.atribuicoes) {
     const key = String(item.os_id || '');
@@ -497,6 +501,20 @@ function hydrateSelections() {
       state.extras.set(key, list);
       state.allowMulti.add(key);
     }
+
+    const list = state.atribuicoesByOsId.get(key) || [];
+    list.push(item);
+    state.atribuicoesByOsId.set(key, list);
+  }
+
+  state.bigOsIndex.clear();
+  for (const os of state.os) {
+    if (toIsoDate(os.data_os) === '') continue;
+    if (String(os.status_gestor || '').toUpperCase() !== 'ATENDER') continue;
+    if (num(os.remanescente) < LIMITE_MULTIPLOS) continue;
+    const id = osId(os);
+    const keys = (state.atribuicoesByOsId.get(id) || []).map((a) => a.colaborador_key).filter(Boolean);
+    if (keys.length) state.bigOsIndex.set(id, keys);
   }
 }
 
@@ -525,15 +543,9 @@ function findPoint(os) {
 
 function assignedBigSet(exceptOsId = '') {
   const set = new Set();
-  for (const os of state.os) {
-    const id = osId(os);
+  for (const [id, keys] of state.bigOsIndex) {
     if (id === exceptOsId) continue;
-    if (toIsoDate(os.data_os) === '') continue;
-    if (String(os.status_gestor || '').toUpperCase() !== 'ATENDER') continue;
-    if (num(os.remanescente) < LIMITE_MULTIPLOS) continue;
-    for (const a of state.atribuicoes.filter((item) => String(item.os_id) === id)) {
-      if (a.colaborador_key) set.add(String(a.colaborador_key));
-    }
+    for (const key of keys) set.add(String(key));
   }
   return set;
 }
@@ -554,14 +566,20 @@ function suggestionsForOs(os) {
   return { point, items, aviso: items.length ? '' : 'Nenhum colaborador com coordenada disponível para este ponto.' };
 }
 
+// Sugestões são pesadas (distância contra todos os colaboradores) — calculadas
+// só quando a O.S. é de fato exibida, e cacheadas em state.suggested até a
+// próxima carga de dados (hydrateSelections limpa o cache).
 function refreshSuggestions() {
   state.suggested.clear();
-  for (const os of state.os) {
-    const id = osId(os);
-    const result = suggestionsForOs(os);
-    state.suggested.set(id, result);
-    if (!state.selections.get(id) && result.items[0]) state.selections.set(id, colabKey(result.items[0].c));
-  }
+}
+
+function getSuggestionsForOs(id) {
+  if (state.suggested.has(id)) return state.suggested.get(id);
+  const os = state.os.find((row) => osId(row) === id);
+  const result = os ? suggestionsForOs(os) : { point: null, items: [], aviso: '' };
+  state.suggested.set(id, result);
+  if (!state.selections.get(id) && result.items[0]) state.selections.set(id, colabKey(result.items[0].c));
+  return result;
 }
 
 function filteredOs() {
@@ -1095,7 +1113,7 @@ function getColabDisplayName(key) {
 }
 
 function buscarColabGac(query, osId, excludeKeys = new Set()) {
-  const point = state.suggested.get(osId)?.point || (() => {
+  const point = getSuggestionsForOs(osId)?.point || (() => {
     const os = state.os.find((row) => String(row.id || row.numero_os) === osId);
     return os ? findPoint(os) : null;
   })();
@@ -1133,7 +1151,7 @@ function renderOsCard(os) {
   const id = osId(os);
   const isCinza = (os.status_gestor || 'AGUARDAR').toUpperCase() === 'AGUARDAR' && !os.configurada_em;
   const status = isCinza ? 'PENDENTE' : String(os.status_gestor).toUpperCase();
-  const sugg = state.suggested.get(id) || { items: [], aviso: '' };
+  const sugg = getSuggestionsForOs(id) || { items: [], aviso: '' };
   const selected = state.selections.get(id) || (sugg.items[0] ? colabKey(sugg.items[0].c) : '');
   const selectedInfo = sugg.items.find((row) => colabKey(row.c) === selected) || null;
   const selectedColab = selectedInfo?.c || state.colaboradores.find((c) => colabKey(c) === selected) || null;
@@ -1427,7 +1445,7 @@ async function saveOsStatus(id, status) {
   const os = state.os.find((row) => osId(row) === id);
   if (!os) return;
   const selected = state.selections.get(id) || '';
-  const suggestions = state.suggested.get(id)?.items || [];
+  const suggestions = getSuggestionsForOs(id)?.items || [];
   const selectedInfo = suggestions.find((row) => colabKey(row.c) === selected) || suggestions[0] || null;
 
   let colabKeys = [];
