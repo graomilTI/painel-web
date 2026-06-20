@@ -277,7 +277,8 @@ function ensureStyles() {
     .au-module-group{border:1px solid rgba(51,65,85,.72);border-radius:18px;background:rgba(2,6,23,.55);overflow:hidden}
     .au-module-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 13px;background:rgba(15,23,42,.9);border-bottom:1px solid rgba(51,65,85,.55)}
     .au-module-group-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#93c5fd}
-    .au-module-group-count{font-size:11px;color:#6b7280}
+    .au-module-group-count{font-size:11px;color:#6b7280;display:flex;align-items:center;gap:10px}
+    .au-module-group-toggle{background:none;border:none;color:#86efac;font-weight:700;cursor:pointer;padding:0;font-size:11px}
     .au-module-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px}
     .au-module-grid .au-switch{padding:10px 11px;border:1px solid rgba(51,65,85,.72);border-radius:14px;background:#020617;min-height:40px}
     .au-module-grid .au-switch span{line-height:1.15}
@@ -577,14 +578,20 @@ function ensureModal() {
               <div class="au-section-note">Selecione em checkbox as supervisões que o usuário poderá acessar.</div>
             </div>
           </details>
-          <section class="au-card">
-            <h4>Módulos liberados</h4>
-            <div class="au-section-note">Selecione os módulos que esse usuário pode acessar individualmente.</div>
-            <div class="au-section-tools">
-              <button class="au-link-btn" type="button" id="auToggleAllModules">Marcar / desmarcar todos</button>
+          <details class="au-card au-collapsible" id="auModulesPanel" open>
+            <summary>
+              <span>Módulos liberados</span>
+              <span class="au-collapsible-count" id="auModulesCount"></span>
+              <span class="au-collapsible-chevron">▾</span>
+            </summary>
+            <div class="au-collapsible-body">
+              <div class="au-section-note">Selecione os módulos que esse usuário pode acessar individualmente.</div>
+              <div class="au-section-tools">
+                <button class="au-link-btn" type="button" id="auToggleAllModules">Marcar / desmarcar todos</button>
+              </div>
+              <div class="au-modules-groups" id="auModulesGrid"></div>
             </div>
-            <div class="au-modules-groups" id="auModulesGrid"></div>
-          </section>
+          </details>
         </div>
         <div class="au-feedback" id="auModalFeedback" style="margin:0 22px 18px"></div>
         <div class="au-modal-actions">
@@ -619,6 +626,7 @@ function ensureModal() {
       boxes.forEach((box) => {
         box.checked = shouldCheck;
       });
+      updateModulesCount();
     });
     bindCollaboratorSearch(overlay);
     overlay.dataset.bound = '1';
@@ -714,10 +722,13 @@ function renderModules(selectedIds = []) {
 
   wrap.innerHTML = grouped.length
     ? grouped.map(([group, items]) => `
-      <section class="au-module-group">
+      <section class="au-module-group" data-group="${escapeHtml(group)}">
         <div class="au-module-group-head">
           <span class="au-module-group-title">${escapeHtml(group)}</span>
-          <span class="au-module-group-count">${items.length} módulo(s)</span>
+          <span class="au-module-group-count">
+            <button class="au-module-group-toggle" type="button" data-toggle-group="${escapeHtml(group)}">Marcar/desmarcar</button>
+            ${items.length} módulo(s)
+          </span>
         </div>
         <div class="au-module-grid">
           ${items.map((mod) => `
@@ -730,6 +741,33 @@ function renderModules(selectedIds = []) {
       </section>
     `).join('')
     : '<span class="au-sub">Nenhum módulo ativo encontrado.</span>';
+
+  updateModulesCount();
+  wrap.removeEventListener('change', updateModulesCount);
+  wrap.addEventListener('change', updateModulesCount);
+
+  wrap.removeEventListener('click', onModulesGridClick);
+  wrap.addEventListener('click', onModulesGridClick);
+}
+
+function onModulesGridClick(event) {
+  const toggleBtn = event.target.closest('[data-toggle-group]');
+  if (!toggleBtn) return;
+  const group = toggleBtn.closest('.au-module-group');
+  if (!group) return;
+  const boxes = [...group.querySelectorAll('input[type="checkbox"]')];
+  if (!boxes.length) return;
+  const shouldCheck = boxes.some((box) => !box.checked);
+  boxes.forEach((box) => { box.checked = shouldCheck; });
+  updateModulesCount();
+}
+
+function updateModulesCount() {
+  const counter = document.getElementById('auModulesCount');
+  if (!counter) return;
+  const boxes = [...document.querySelectorAll('#auModulesGrid input[type="checkbox"]')];
+  const checked = boxes.filter((box) => box.checked).length;
+  counter.textContent = boxes.length ? `${checked} de ${boxes.length} selecionado(s)` : '';
 }
 
 function openUserModal(mode, user = null) {
