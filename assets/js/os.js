@@ -25,7 +25,12 @@ const state = {
   atribuicoes: [],
   filters: { supervisao: '', status: '', busca: '' },
   sort: { field: 'numero_os', dir: 'desc' },
+  pontoCache: new Map(),
+  sugestaoCache: new Map(),
 };
+
+const FRESH_MS = 2 * 60 * 1000;
+let lastLoadedAt = 0;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -182,7 +187,19 @@ function bestPontoForOs(row) {
   return candidatos[0]?.ponto || null;
 }
 
+function pontoCacheKey(row) {
+  return normalize(`${row.embarque || row.local_embarque || ''}|${row.cliente || ''}|${row.supervisao || ''}`);
+}
+
 function osPoint(row) {
+  const cacheKey = pontoCacheKey(row);
+  if (state.pontoCache.has(cacheKey)) return state.pontoCache.get(cacheKey);
+  const resultado = computeOsPoint(row);
+  state.pontoCache.set(cacheKey, resultado);
+  return resultado;
+}
+
+function computeOsPoint(row) {
   const ponto = bestPontoForOs(row);
   if (ponto) {
     return {
@@ -261,7 +278,9 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-export async function renderOsModule(content) {
+export async function renderOsModule(content, options = {}) {
+  const podeReusarDados = Boolean(options.reuseData) && state.os.length > 0 && (Date.now() - lastLoadedAt) < FRESH_MS;
+
   injectStyles();
   content.innerHTML = `
     <section class="card mt-16">
@@ -282,9 +301,15 @@ export async function renderOsModule(content) {
     feedback: document.getElementById('osFeedback'), list: document.getElementById('osList'), stats: document.getElementById('osStats'), reload: document.getElementById('osReload'),
   };
 
-  await resolveAccess();
+  if (!podeReusarDados || !state.user) await resolveAccess();
   bind();
-  await loadAll();
+  if (podeReusarDados) {
+    fillSupervisoes();
+    render();
+    el.feedback.textContent = `Carregado: ${state.os.length} O.S.`;
+  } else {
+    await loadAll();
+  }
 
   function bind() {
     el.supervisao.addEventListener('change', () => { state.filters.supervisao = el.supervisao.value; render(); });
@@ -315,6 +340,9 @@ export async function renderOsModule(content) {
         console.warn('Não foi possível carregar colaboradores para sugestão. A lista de O.S. continuará funcionando.', colabResult.reason);
         state.colaboradores = [];
       }
+      state.pontoCache.clear();
+      state.sugestaoCache.clear();
+      lastLoadedAt = Date.now();
       fillSupervisoes();
       render();
       el.feedback.textContent = `Carregado: ${state.os.length} O.S.`;
@@ -354,20 +382,18 @@ export async function renderOsModule(content) {
 
     try {
       const CHUNK = 200;
-      let allAtr = [];
-      for (let i = 0; i < ids.length; i += CHUNK) {
-        const { data, error } = await supabase
-          .from('operacional_os_colaboradores')
-          .select('*')
-          .in('os_id', ids.slice(i, i + CHUNK));
-        if (error) {
-          console.warn('Falha ao carregar colaboradores vinculados às O.S.', error);
-          allAtr = [];
-          break;
-        }
-        allAtr = allAtr.concat(safeArray(data));
+      const chunks = [];
+      for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+      const results = await Promise.all(
+        chunks.map((chunkIds) => supabase.from('operacional_os_colaboradores').select('*').in('os_id', chunkIds))
+      );
+      const erroChunk = results.find((r) => r.error);
+      if (erroChunk) {
+        console.warn('Falha ao carregar colaboradores vinculados às O.S.', erroChunk.error);
+        state.atribuicoes = [];
+      } else {
+        state.atribuicoes = results.flatMap((r) => safeArray(r.data));
       }
-      state.atribuicoes = allAtr;
     } catch (atrError) {
       console.warn('Falha ao carregar colaboradores vinculados às O.S.', atrError);
       state.atribuicoes = [];
@@ -505,6 +531,9 @@ export async function renderOsModule(content) {
   }
 
   function sugestoesParaOs(row) {
+    const cacheKey = String(row.id);
+    if (state.sugestaoCache.has(cacheKey)) return state.sugestaoCache.get(cacheKey);
+
     const supKey = normalize(row.supervisao);
     const ponto = osPoint(row);
     const osTemCoordenada = hasGeo(ponto.latitude, ponto.longitude);
@@ -516,7 +545,7 @@ export async function renderOsModule(content) {
       return !supKey || !colSup || colSup.includes(supKey) || supKey.includes(colSup);
     });
 
-    return cols.map((c) => {
+    const resultado = cols.map((c) => {
       const dist = osTemCoordenada && hasGeo(c.latitude, c.longitude)
         ? haversineKm(ponto.latitude, ponto.longitude, c.latitude, c.longitude)
         : null;
@@ -528,6 +557,9 @@ export async function renderOsModule(content) {
       if (aHas && bHas && a.distancia_km !== b.distancia_km) return a.distancia_km - b.distancia_km;
       return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
     }).slice(0, 12);
+
+    state.sugestaoCache.set(cacheKey, resultado);
+    return resultado;
   }
 
   function buscarColaboradorAc(query, row, excludeKeys = new Set()) {
@@ -758,7 +790,9 @@ export async function renderOsModule(content) {
     if (removeBtn) {
       const { error } = await supabase.from('operacional_os_colaboradores').delete().eq('id', removeBtn.dataset.removeColab);
       if (error) return alert(error.message);
-      await loadOs(); render();
+      await loadOs();
+      state.sugestaoCache.clear();
+      render();
     }
 
     const kgBtn = event.target.closest('[data-kg-id]');
@@ -906,6 +940,7 @@ export async function renderOsModule(content) {
       ...state.atribuicoes.filter((a) => !(String(a.os_id) === String(row.id) && String(a.colaborador_key) === String(payload.colaborador_key))),
       saved,
     ];
+    state.sugestaoCache.clear();
     return true;
   }
 
@@ -921,6 +956,7 @@ export async function renderOsModule(content) {
           const del = await supabase.from('operacional_os_colaboradores').delete().in('id', extras);
           if (del.error) return alert(del.error.message);
           state.atribuicoes = state.atribuicoes.filter((a) => !extras.includes(a.id));
+          state.sugestaoCache.clear();
         }
       }
       await updateOs(tr.dataset.osId, { permitir_mais_classificadores: checked, configurada_em: new Date().toISOString() }, true);
@@ -991,6 +1027,7 @@ export async function renderOsModule(content) {
       ...state.atribuicoes.filter((a) => !(String(a.os_id) === String(row.id) && String(a.colaborador_key) === String(payload.colaborador_key))),
       saved,
     ];
+    state.sugestaoCache.clear();
     await updateOs(row.id, { configurada_em: new Date().toISOString() }, true);
     return true;
   }

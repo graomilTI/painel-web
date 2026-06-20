@@ -89,7 +89,7 @@ async function renderDistribuicao() {
   `;
 
   const mount = document.getElementById('progDistribuicaoOsMount');
-  await renderOsModule(mount);
+  await renderOsModule(mount, { reuseData: true });
   applySupervisaoFromProgSup(mount);
 }
 
