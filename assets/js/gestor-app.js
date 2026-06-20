@@ -9,6 +9,7 @@ const CACHE_TTL      = 1000 * 60 * 7;
 const DASH_CACHE_KEY = 'grao1000:gestor-dash:v4-segmentado';
 const DASH_CACHE_TTL = 1000 * 60 * 60 * 24 * 30;
 const LIMITE_MULTIPLOS = 500000;
+const LIMITE_OS_POR_COLABORADOR = 2;
 const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
 const ICO_AGUARDAR  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="pointer-events:none"><line x1="8" y1="5" x2="8" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>`;
 const ICO_ATENDER   = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg>`;
@@ -37,6 +38,7 @@ const state = {
   suggested: new Map(),
   atribuicoesByOsId: new Map(),
   bigOsIndex: new Map(),
+  osCountByColaborador: new Map(),
   busy: new Set(),
   tomorrow: new Set(),
   installPrompt: null,
@@ -489,6 +491,7 @@ function hydrateSelections() {
   state.allowMulti.clear();
   state.suggested.clear();
   state.atribuicoesByOsId.clear();
+  state.osCountByColaborador.clear();
   for (const os of state.os) if (os.permitir_mais_classificadores) state.allowMulti.add(osId(os));
   for (const item of state.atribuicoes) {
     const key = String(item.os_id || '');
@@ -505,6 +508,13 @@ function hydrateSelections() {
     const list = state.atribuicoesByOsId.get(key) || [];
     list.push(item);
     state.atribuicoesByOsId.set(key, list);
+
+    const colabKeyValue = String(item.colaborador_key || '').trim();
+    if (colabKeyValue) {
+      const osSet = state.osCountByColaborador.get(colabKeyValue) || new Set();
+      osSet.add(key);
+      state.osCountByColaborador.set(colabKeyValue, osSet);
+    }
   }
 
   state.bigOsIndex.clear();
@@ -550,6 +560,15 @@ function assignedBigSet(exceptOsId = '') {
   return set;
 }
 
+function colaboradorAtingiuLimiteOs(colaboradorKey, exceptOsId = '') {
+  const key = String(colaboradorKey || '').trim();
+  if (!key) return false;
+  const osIds = state.osCountByColaborador.get(key);
+  if (!osIds) return false;
+  const count = exceptOsId && osIds.has(String(exceptOsId)) ? osIds.size - 1 : osIds.size;
+  return count >= LIMITE_OS_POR_COLABORADOR;
+}
+
 function suggestionsForOs(os) {
   const point = findPoint(os);
   if (!point) return { point: null, items: [], aviso: 'Ponto de embarque sem latitude/longitude no mapa operacional.' };
@@ -561,6 +580,7 @@ function suggestionsForOs(os) {
     })
     .filter((row) => Number.isFinite(row.distancia))
     .filter((row) => !blocked.has(colabKey(row.c)))
+    .filter((row) => !colaboradorAtingiuLimiteOs(colabKey(row.c), osId(os)))
     .sort((a, b) => a.distancia - b.distancia)
     .slice(0, 30);
   return { point, items, aviso: items.length ? '' : 'Nenhum colaborador com coordenada disponível para este ponto.' };
