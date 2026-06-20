@@ -18,6 +18,14 @@ const TIPOS_DESLOCAMENTO = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', '
 const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
 const DISPONIBILIDADES_LIBERADAS = new Set(['', 'OK', 'DISPONIVEL', 'LIBERADO', 'LOGISTICA', 'DESLOCAMENTO']);
 
+function debounce(fn, wait = 220) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), wait);
+  };
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -399,8 +407,13 @@ initProtectedPage('Programação', (content) => {
     cidades: [],
     alojamentos: [],
     veiculos: [],
+    veiculoByPlaca: new Map(),
+    sugestaoVeiculoCache: new Map(),
     pontosEmbarque: [],
     operacionalColabs: [],
+    operacionalColabByCpf: new Map(),
+    operacionalColabByNome: new Map(),
+    kmCache: new Map(),
     osPorColaborador: new Map(),
     search: '',
     maps: {
@@ -434,10 +447,10 @@ initProtectedPage('Programação', (content) => {
     el.loadBtn.addEventListener('click', loadContext);
     el.sup.addEventListener('change', () => checkOsPendingPopup());
     el.saveBtn.addEventListener('click', saveProgramacao);
-    el.search.addEventListener('input', () => {
+    el.search.addEventListener('input', debounce(() => {
       state.search = el.search.value.trim().toLowerCase();
       renderRows();
-    });
+    }, 220));
     el.steps.addEventListener('click', (event) => {
       const btn = event.target.closest('[data-step]');
       if (!btn) return;
@@ -550,7 +563,36 @@ initProtectedPage('Programação', (content) => {
   }
 
 
+  const CIDADES_CACHE_KEY = 'grm:cidades_ibge:v1';
+  const CIDADES_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // municípios não mudam — cache de 30 dias
+
+  function readCidadesCache() {
+    try {
+      const raw = localStorage.getItem(CIDADES_CACHE_KEY);
+      if (!raw) return null;
+      const { ts, data } = JSON.parse(raw);
+      if (!ts || Date.now() - ts > CIDADES_CACHE_TTL_MS || !Array.isArray(data) || !data.length) return null;
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeCidadesCache(data) {
+    try {
+      localStorage.setItem(CIDADES_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+    } catch {
+      // localStorage indisponível/cheio — segue sem cache persistente.
+    }
+  }
+
   async function loadCidadesBrasil() {
+    const cached = readCidadesCache();
+    if (cached) {
+      state.cidades = cached;
+      ensureCidadeDatalist();
+      return;
+    }
     try {
       const resp = await fetch('https://servicodados.ibge.gov.br/api/v1/localidades/municipios?orderBy=nome');
       const data = await resp.json();
@@ -561,6 +603,7 @@ initProtectedPage('Programação', (content) => {
         key: normalizeText(`${m.nome} ${m.microrregiao?.mesorregiao?.UF?.sigla || ''}`),
       })).filter((m) => m.nome && m.uf);
       ensureCidadeDatalist();
+      writeCidadesCache(state.cidades);
     } catch (error) {
       console.warn('Não foi possível carregar cidades do IBGE.', error);
       state.cidades = [];
@@ -620,7 +663,7 @@ initProtectedPage('Programação', (content) => {
       const { data, error } = await supabase.from('frotas_veiculos').select('*').order('placa', { ascending: true }).limit(1000);
       if (error) throw error;
       state.veiculos = normalizeRows(data);
-      if (state.veiculos.length) return;
+      if (state.veiculos.length) { indexVeiculos(); ensureVeiculosDatalist(); return; }
     } catch (error) {
       console.warn('Não foi possível carregar frotas_veiculos.', error);
     }
@@ -632,6 +675,8 @@ initProtectedPage('Programação', (content) => {
       console.warn('Não foi possível carregar patrimonios_snapshot para placas.', error);
       state.veiculos = [];
     }
+    indexVeiculos();
+    ensureVeiculosDatalist();
   }
 
   async function loadBaseOperacional() {
@@ -647,14 +692,21 @@ initProtectedPage('Programação', (content) => {
       state.operacionalColabs = [];
       state.pontosEmbarque = [];
     }
+    state.operacionalColabByCpf = new Map();
+    state.operacionalColabByNome = new Map();
+    state.operacionalColabs.forEach((row) => {
+      const cpf = normalizeCpf(row.cpf);
+      if (cpf && !state.operacionalColabByCpf.has(cpf)) state.operacionalColabByCpf.set(cpf, row);
+      const nome = normalizeText(row.nome);
+      if (nome && !state.operacionalColabByNome.has(nome)) state.operacionalColabByNome.set(nome, row);
+    });
   }
 
   function findOperacionalColab(colab) {
     const cpf = normalizeCpf(colab?.cpf);
+    if (cpf && state.operacionalColabByCpf.has(cpf)) return state.operacionalColabByCpf.get(cpf);
     const nome = normalizeText(colab?.nome);
-    return (state.operacionalColabs || []).find((row) => cpf && normalizeCpf(row.cpf) === cpf)
-      || (state.operacionalColabs || []).find((row) => nome && normalizeText(row.nome) === nome)
-      || null;
+    return (nome && state.operacionalColabByNome.get(nome)) || null;
   }
 
   function findPontoFromOs(os) {
@@ -672,17 +724,33 @@ initProtectedPage('Programação', (content) => {
   }
 
   function kmEstimadoColaborador(colab) {
+    const cacheKey = String(colab?.id || '');
+    if (cacheKey && state.kmCache.has(cacheKey)) return state.kmCache.get(cacheKey);
+
     const os = state.osPorColaborador.get(String(colab?.id || '').trim())
       || state.osPorColaborador.get(normalizeCpf(colab?.cpf))
       || state.osPorColaborador.get(normalizeText(colab?.nome || '').trim().toUpperCase());
-    if (!os) return { km: null, motivo: 'Sem O.S. vinculada ao colaborador.' };
-    if (Number.isFinite(Number(os.distancia_km))) return { km: Number(os.distancia_km), motivo: 'Distância da indicação da O.S.' };
-    const base = findOperacionalColab(colab);
-    const ponto = findPontoFromOs(os);
-    if (!base || !Number.isFinite(Number(base.latitude)) || !Number.isFinite(Number(base.longitude))) return { km: null, motivo: 'Casa/base do colaborador sem coordenadas.' };
-    if (!ponto) return { km: null, motivo: 'Ponto de embarque sem coordenadas.' };
-    const km = haversineKm(base.latitude, base.longitude, ponto.latitude, ponto.longitude);
-    return Number.isFinite(km) ? { km, motivo: `Casa → ${ponto.nome_local || ponto.nome || 'ponto de embarque'}` } : { km: null, motivo: 'Coordenadas insuficientes.' };
+
+    let result;
+    if (!os) {
+      result = { km: null, motivo: 'Sem O.S. vinculada ao colaborador.' };
+    } else if (Number.isFinite(Number(os.distancia_km))) {
+      result = { km: Number(os.distancia_km), motivo: 'Distância da indicação da O.S.' };
+    } else {
+      const base = findOperacionalColab(colab);
+      const ponto = findPontoFromOs(os);
+      if (!base || !Number.isFinite(Number(base.latitude)) || !Number.isFinite(Number(base.longitude))) {
+        result = { km: null, motivo: 'Casa/base do colaborador sem coordenadas.' };
+      } else if (!ponto) {
+        result = { km: null, motivo: 'Ponto de embarque sem coordenadas.' };
+      } else {
+        const km = haversineKm(base.latitude, base.longitude, ponto.latitude, ponto.longitude);
+        result = Number.isFinite(km) ? { km, motivo: `Casa → ${ponto.nome_local || ponto.nome || 'ponto de embarque'}` } : { km: null, motivo: 'Coordenadas insuficientes.' };
+      }
+    }
+
+    if (cacheKey) state.kmCache.set(cacheKey, result);
+    return result;
   }
 
   function ensureCidadeDatalist() {
@@ -728,10 +796,15 @@ initProtectedPage('Programação', (content) => {
     }).join('');
   }
 
+  function indexVeiculos() {
+    state.veiculoByPlaca = new Map((state.veiculos || []).map((v) => [onlyPlate(v.placa), v]));
+    state.sugestaoVeiculoCache = new Map();
+  }
+
   function findVeiculoByPlaca(placa) {
     const normalized = onlyPlate(placa);
     if (!normalized) return null;
-    return (state.veiculos || []).find((v) => onlyPlate(v.placa) === normalized) || null;
+    return state.veiculoByPlaca.get(normalized) || null;
   }
 
   function patrimonioMessageForRow(colab, tipoDeslocamento, placa) {
@@ -858,10 +931,16 @@ initProtectedPage('Programação', (content) => {
   }
 
   function suggestVeiculoForColab(colab) {
-    return (state.veiculos || []).find((v) => {
+    const cacheKey = String(colab?.id || '');
+    if (cacheKey && state.sugestaoVeiculoCache.has(cacheKey)) return state.sugestaoVeiculoCache.get(cacheKey);
+
+    const found = (state.veiculos || []).find((v) => {
       const pessoa = { nome: v.motoristaNome, cpf: v.motoristaCpf, motorista: v.motoristaNome, ...(v.raw && typeof v.raw === 'object' ? v.raw : {}) };
       return pessoaMatchesColaborador(pessoa, colab);
-    });
+    }) || null;
+
+    if (cacheKey) state.sugestaoVeiculoCache.set(cacheKey, found);
+    return found;
   }
 
   function updatePlacaLogisticaAlert(tr) {
@@ -1045,6 +1124,7 @@ initProtectedPage('Programação', (content) => {
       });
 
       state.colabsEmOsAtender = await loadOsAtender(dataReferencia, supervisao);
+      state.kmCache = new Map();
       await ensureDefaultRows();
       await loadStageData();
       updateStats();
@@ -1166,8 +1246,6 @@ initProtectedPage('Programação', (content) => {
   }
 
   function renderRows() {
-    ensureCidadeDatalist();
-    ensureVeiculosDatalist();
     if (!state.programacaoId) {
       el.list.innerHTML = '<div class="table-empty">Carregue um contexto para iniciar a programação.</div>';
       return;
