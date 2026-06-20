@@ -120,6 +120,19 @@ function assignedKeysForOs(osId) {
   );
 }
 
+const LIMITE_OS_POR_COLABORADOR = 2;
+
+function colaboradorAtingiuLimiteOs(colaboradorKey, exceptOsId) {
+  const key = String(colaboradorKey || '').trim();
+  if (!key) return false;
+  const osIds = new Set(
+    state.atribuicoes
+      .filter((a) => String(a.colaborador_key || '').trim() === key && String(a.os_id) !== String(exceptOsId))
+      .map((a) => String(a.os_id))
+  );
+  return osIds.size >= LIMITE_OS_POR_COLABORADOR;
+}
+
 function colaboradorBloqueadoEmOsGrande(row, colaboradorKey) {
   const key = String(colaboradorKey || '').trim();
   if (!key) return false;
@@ -540,6 +553,7 @@ export async function renderOsModule(content, options = {}) {
     const jaIndicadosNaOs = assignedKeysForOs(row.id);
     const cols = state.colaboradores.filter((c) => {
       const key = colabKey(c);
+      if (key && !jaIndicadosNaOs.has(key) && colaboradorAtingiuLimiteOs(key, row.id)) return false;
       if (key && colaboradorBloqueadoEmOsGrande(row, key) && !jaIndicadosNaOs.has(key)) return false;
       const colSup = normalize(c.supervisao || c.regional);
       return !supKey || !colSup || colSup.includes(supKey) || supKey.includes(colSup);
