@@ -1,4 +1,13 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
+import { renderOsModule } from './os.js';
+
+function normalize(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .trim();
+}
 
 function waitForElement(selector, timeout = 12000) {
   const found = document.querySelector(selector);
@@ -19,43 +28,6 @@ function waitForElement(selector, timeout = 12000) {
   });
 }
 
-function buildPanelHref(path = '') {
-  const target = String(path || '').replace(/^\/+/, '').replace(/\.html$/i, '');
-  const host = String(window.location.hostname || '').toLowerCase();
-  if (host === 'grao1000.com.br' || host === 'www.grao1000.com.br') {
-    return target ? `/painel/${target}`.replace(/([^:]\/)\/+/, '$1') : '/painel';
-  }
-  const base = window.location.pathname.includes('/painel/') ? '/painel/' : './';
-  return base === './' ? `./${target}` : `${base}${target}`;
-}
-
-function buildOsEmbeddedUrl() {
-  const sup = document.getElementById('progSup')?.value || '';
-  const dataRef = document.getElementById('progDataRef')?.value || '';
-  const url = new URL(buildPanelHref('os'), window.location.href);
-  url.searchParams.set('embedded', '1');
-  url.searchParams.set('from', 'programacao');
-  if (sup) url.searchParams.set('supervisao', sup);
-  if (dataRef) url.searchParams.set('data', dataRef);
-  return url.pathname + url.search + url.hash;
-}
-
-function injectDistribuicaoStyle() {
-  if (document.getElementById('progOsEmbedFixStyle')) return;
-  const style = document.createElement('style');
-  style.id = 'progOsEmbedFixStyle';
-  style.textContent = `
-    .prog-os-embed-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px}
-    .prog-os-embed-actions{display:flex;gap:8px;flex-wrap:wrap}
-    .prog-os-embed-actions .btn{min-height:36px}
-    .prog-os-embed-status{display:flex;align-items:center;gap:8px;color:#cbd5e1;font-size:12px;font-weight:800}
-    .prog-os-embed-status::before{content:'';width:8px;height:8px;border-radius:999px;background:#fbbf24;box-shadow:0 0 0 4px rgba(251,191,36,.12)}
-    .prog-os-embed-status.is-ok::before{background:#34d399;box-shadow:0 0 0 4px rgba(52,211,153,.12)}
-    @media(max-width:640px){.prog-os-embed-actions,.prog-os-embed-actions .btn{width:100%}.prog-os-embed-actions .btn{justify-content:center}}
-  `;
-  document.head.appendChild(style);
-}
-
 function setSaveVisibility(isDistribuicao) {
   const saveBtn = document.getElementById('progSaveProgramacao');
   const search = document.getElementById('progSearch')?.closest('.filters-grid');
@@ -68,7 +40,7 @@ let currentUiStep = 'A';
 function guardDistribuicaoView() {
   if (currentUiStep !== 'A') return;
   const list = document.getElementById('progList');
-  if (!list || document.getElementById('progDistribuicaoOsFrame')) return;
+  if (!list || document.getElementById('progDistribuicaoOsMount')) return;
   renderDistribuicao();
 }
 
@@ -78,7 +50,19 @@ function setActiveDistribution() {
   });
 }
 
-function renderDistribuicao() {
+function applySupervisaoFromProgSup(mount) {
+  const sup = document.getElementById('progSup')?.value || '';
+  if (!sup) return;
+  const select = mount.querySelector('#osSupervisao');
+  if (!select) return;
+  const option = [...select.options].find((opt) => opt.value && normalize(opt.value) === normalize(sup));
+  if (option && select.value !== option.value) {
+    select.value = option.value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
+async function renderDistribuicao() {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
   if (!list) return;
@@ -93,50 +77,20 @@ function renderDistribuicao() {
       : 'Distribuição carregada conforme as supervisões liberadas no login do gestor.';
   }
 
-  injectDistribuicaoStyle();
-  const src = buildOsEmbeddedUrl();
   list.innerHTML = `
     <div class="prog-section-title">
       <h4>Distribuição de O.S.</h4>
       <span class="badge">Etapa A</span>
     </div>
     <div class="prog-empty-section" style="margin-bottom:12px">
-      As O.S. que precisam de verificação ficam aqui. Quando o gestor tiver mais de uma supervisão, a lista é carregada por blocos de supervisão.
+      As O.S. que precisam de verificação ficam aqui, dentro da própria Programação.
     </div>
-    <div class="prog-os-embed-toolbar">
-      <div id="progDistribuicaoOsStatus" class="prog-os-embed-status">Carregando distribuição de O.S....</div>
-      <div class="prog-os-embed-actions">
-        <button class="btn btn-secondary" id="progDistribuicaoReload" type="button">Recarregar</button>
-        <a class="btn btn-secondary" id="progDistribuicaoOpen" href="${src}" target="_blank" rel="noopener">Abrir em tela cheia</a>
-      </div>
-    </div>
-    <iframe
-      id="progDistribuicaoOsFrame"
-      title="Distribuição de O.S."
-      src="${src}"
-      style="width:100%;min-height:980px;border:0;border-radius:18px;background:transparent;display:block"
-      loading="eager"></iframe>
+    <div id="progDistribuicaoOsMount"></div>
   `;
 
-  const frame = document.getElementById('progDistribuicaoOsFrame');
-  frame?.addEventListener('load', () => {
-    const status = document.getElementById('progDistribuicaoOsStatus');
-    if (status) {
-      status.textContent = 'Distribuição de O.S. carregada.';
-      status.classList.add('is-ok');
-    }
-  });
-  document.getElementById('progDistribuicaoReload')?.addEventListener('click', () => {
-    const next = buildOsEmbeddedUrl();
-    const status = document.getElementById('progDistribuicaoOsStatus');
-    if (status) {
-      status.textContent = 'Recarregando distribuição de O.S....';
-      status.classList.remove('is-ok');
-    }
-    const open = document.getElementById('progDistribuicaoOpen');
-    if (open) open.href = next;
-    if (frame) frame.src = next;
-  });
+  const mount = document.getElementById('progDistribuicaoOsMount');
+  await renderOsModule(mount);
+  applySupervisaoFromProgSup(mount);
 }
 
 function configureSteps() {
