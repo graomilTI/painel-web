@@ -9,6 +9,10 @@ const OS_STATUS_OPTIONS = [
   { value: 'FINALIZAR', label: 'Finalizar' },
 ];
 
+let currentUiStep = 'A';
+let distribuicaoLoaded = false;
+let distribuicaoLoading = false;
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -60,7 +64,11 @@ function injectGestorAjustesStyles() {
     #progDistribuicaoOsMount .filters-grid.os-grid{display:none!important}
     #progDistribuicaoOsMount .card:first-child{margin-top:0}
     #progDistribuicaoOsMount #osStats{margin-top:12px}
-    @media(max-width:900px){.prog-tfield-os-status{flex:1 1 100%;max-width:none}}
+    .prog-os-lazy-card{border:1px dashed rgba(52,211,153,.22);border-radius:18px;padding:18px;background:rgba(15,23,42,.18);color:#94a3b8;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+    .prog-os-lazy-card strong{display:block;color:#f8fafc;margin-bottom:4px;font-size:14px}
+    .prog-os-lazy-card p{margin:0;font-size:13px;line-height:1.35}
+    .prog-os-lazy-card .btn{min-height:38px}
+    @media(max-width:900px){.prog-tfield-os-status{flex:1 1 100%;max-width:none}.prog-os-lazy-card{align-items:stretch}.prog-os-lazy-card .btn{width:100%;justify-content:center}}
   `;
   document.head.appendChild(style);
 }
@@ -85,7 +93,9 @@ function ensureStatusOsFilter() {
   const select = field.querySelector('#progOsStatusTop');
   if (select && select.dataset.statusOsBound !== '1') {
     select.dataset.statusOsBound = '1';
-    select.addEventListener('change', () => syncStatusToOsModule());
+    select.addEventListener('change', () => {
+      if (distribuicaoLoaded) syncStatusToOsModule();
+    });
   }
   return select;
 }
@@ -122,13 +132,54 @@ function setSaveVisibility(isDistribuicao) {
   setStatusOsVisibility(isDistribuicao);
 }
 
-let currentUiStep = 'A';
+function distribuicaoHeaderHtml() {
+  return `
+    <div class="prog-section-title">
+      <h4>Distribuição de O.S.</h4>
+      <span class="badge">Etapa A</span>
+    </div>
+    <div class="prog-empty-section" style="margin-bottom:12px">
+      As O.S. que precisam de verificação ficam aqui, dentro da própria Programação.
+    </div>
+    <div id="progDistribuicaoOsMount"></div>
+  `;
+}
+
+function renderDistribuicaoPlaceholder() {
+  const mount = document.getElementById('progDistribuicaoOsMount');
+  if (!mount) return;
+  const sup = document.getElementById('progSup')?.value || '';
+  mount.innerHTML = `
+    <div class="prog-os-lazy-card">
+      <div>
+        <strong>Distribuição pronta para carregar</strong>
+        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para buscar as O.S.</p>
+      </div>
+      <button type="button" class="btn btn-primary" id="progDistribuicaoLoadNow">Carregar O.S.</button>
+    </div>
+  `;
+  mount.querySelector('#progDistribuicaoLoadNow')?.addEventListener('click', () => renderDistribuicao({ loadOs: true, force: true }));
+}
+
+function renderDistribuicaoLoading() {
+  const mount = document.getElementById('progDistribuicaoOsMount');
+  if (!mount) return;
+  const sup = document.getElementById('progSup')?.value || '';
+  mount.innerHTML = `
+    <div class="prog-os-lazy-card">
+      <div>
+        <strong>Carregando distribuição de O.S...</strong>
+        <p>${sup ? `Buscando O.S. para ${escapeHtml(sup)}.` : 'Buscando O.S. liberadas para o seu usuário.'}</p>
+      </div>
+    </div>
+  `;
+}
 
 function guardDistribuicaoView() {
   if (currentUiStep !== 'A') return;
   const list = document.getElementById('progList');
   if (!list || document.getElementById('progDistribuicaoOsMount')) return;
-  renderDistribuicao();
+  renderDistribuicao({ loadOs: false });
 }
 
 function setActiveDistribution() {
@@ -149,7 +200,7 @@ function applySupervisaoFromProgSup(mount) {
   }
 }
 
-async function renderDistribuicao() {
+async function renderDistribuicao({ loadOs = false, force = false } = {}) {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
   if (!list) return;
@@ -159,27 +210,37 @@ async function renderDistribuicao() {
   if (feedback) {
     const sup = document.getElementById('progSup')?.value || '';
     feedback.className = 'feedback mt-16 prog-feedback-ok';
-    feedback.textContent = sup
-      ? `Distribuição carregada para ${sup}.`
-      : 'Distribuição carregada conforme as supervisões liberadas no login do gestor.';
+    feedback.textContent = loadOs
+      ? (sup ? `Carregando distribuição para ${sup}.` : 'Carregando distribuição conforme o acesso do usuário.')
+      : 'Etapa A aberta. Clique em Carregar para buscar as O.S.';
   }
 
-  list.innerHTML = `
-    <div class="prog-section-title">
-      <h4>Distribuição de O.S.</h4>
-      <span class="badge">Etapa A</span>
-    </div>
-    <div class="prog-empty-section" style="margin-bottom:12px">
-      As O.S. que precisam de verificação ficam aqui, dentro da própria Programação.
-    </div>
-    <div id="progDistribuicaoOsMount"></div>
-  `;
+  list.innerHTML = distribuicaoHeaderHtml();
 
-  const mount = document.getElementById('progDistribuicaoOsMount');
-  await renderOsModule(mount, { reuseData: true });
-  prepareEmbeddedOsFilters(mount);
-  applySupervisaoFromProgSup(mount);
-  syncStatusToOsModule(mount);
+  if (!loadOs && !distribuicaoLoaded) {
+    renderDistribuicaoPlaceholder();
+    return;
+  }
+
+  if (distribuicaoLoading) return;
+  distribuicaoLoading = true;
+  renderDistribuicaoLoading();
+
+  try {
+    const mount = document.getElementById('progDistribuicaoOsMount');
+    await renderOsModule(mount, { reuseData: !force, supervisao: document.getElementById('progSup')?.value || '', status: document.getElementById('progOsStatusTop')?.value || '' });
+    prepareEmbeddedOsFilters(mount);
+    applySupervisaoFromProgSup(mount);
+    syncStatusToOsModule(mount);
+    distribuicaoLoaded = true;
+    if (feedback) {
+      const sup = document.getElementById('progSup')?.value || '';
+      feedback.className = 'feedback mt-16 prog-feedback-ok';
+      feedback.textContent = sup ? `Distribuição carregada para ${sup}.` : 'Distribuição carregada conforme as supervisões liberadas no login do gestor.';
+    }
+  } finally {
+    distribuicaoLoading = false;
+  }
 }
 
 function configureSteps() {
@@ -217,17 +278,16 @@ function configureSteps() {
     if (btn.dataset.uiStep === 'A') {
       event.preventDefault();
       event.stopImmediatePropagation();
-      renderDistribuicao();
+      renderDistribuicao({ loadOs: distribuicaoLoaded });
       return;
     }
     setSaveVisibility(false);
   }, true);
 }
 
-function autoLoadSingleSupervisao() {
+function autoSelectSingleSupervisao() {
   const select = document.getElementById('progSup');
-  const loadBtn = document.getElementById('progLoadContext');
-  if (!select || !loadBtn || select.dataset.autoLoadChecked === '1') return;
+  if (!select || select.dataset.autoLoadChecked === '1') return;
 
   const options = [...select.options].filter((opt) => opt.value);
   if (!options.length) return;
@@ -235,13 +295,7 @@ function autoLoadSingleSupervisao() {
 
   if (options.length === 1) {
     select.value = options[0].value;
-    setTimeout(() => {
-      loadBtn.click();
-      setTimeout(() => {
-        const active = document.querySelector('#progSteps .stepbtn.active');
-        if (!active || active.dataset.uiStep === 'A') renderDistribuicao();
-      }, 1800);
-    }, 250);
+    if (currentUiStep === 'A') renderDistribuicao({ loadOs: false });
   }
 }
 
@@ -256,22 +310,36 @@ function patchPendingOsModal() {
       event.preventDefault();
       event.stopImmediatePropagation();
       modal.remove();
-      renderDistribuicao();
+      renderDistribuicao({ loadOs: true, force: true });
     }, true);
   }
+}
+
+function bindTopLoadForEtapaA() {
+  const loadBtn = document.getElementById('progLoadContext');
+  if (!loadBtn || loadBtn.dataset.distribuicaoLoadBound === '1') return;
+  loadBtn.dataset.distribuicaoLoadBound = '1';
+  loadBtn.addEventListener('click', (event) => {
+    if (currentUiStep !== 'A') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    renderDistribuicao({ loadOs: true, force: true });
+  }, true);
 }
 
 async function initGestorProgramacaoAjustes() {
   await waitForElement('#progSteps');
   injectGestorAjustesStyles();
   ensureStatusOsFilter();
+  bindTopLoadForEtapaA();
   configureSteps();
-  renderDistribuicao();
+  renderDistribuicao({ loadOs: false });
 
   const observer = new MutationObserver(() => {
-    autoLoadSingleSupervisao();
+    autoSelectSingleSupervisao();
     patchPendingOsModal();
     guardDistribuicaoView();
+    bindTopLoadForEtapaA();
     if (currentUiStep === 'A') {
       ensureStatusOsFilter();
       const mount = document.getElementById('progDistribuicaoOsMount');
@@ -280,11 +348,12 @@ async function initGestorProgramacaoAjustes() {
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
-  autoLoadSingleSupervisao();
+  autoSelectSingleSupervisao();
   patchPendingOsModal();
 
   document.getElementById('progSup')?.addEventListener('change', () => {
-    if (currentUiStep === 'A') renderDistribuicao();
+    distribuicaoLoaded = false;
+    if (currentUiStep === 'A') renderDistribuicao({ loadOs: false });
   });
 }
 
