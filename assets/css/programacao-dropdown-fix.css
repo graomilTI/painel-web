@@ -1,0 +1,47 @@
+/* Ajuste visual seguro para o dropdown nativo de Supervisão da Programação.
+   Não altera a lógica, não substitui o select e não interfere no carregamento da tela. */
+
+html body #progSup,
+html body .prog-tfield-sup select#progSup {
+  background: #020617 !important;
+  background-color: #020617 !important;
+  background-image: linear-gradient(#020617, #020617) !important;
+  color: #f8fafc !important;
+  opacity: 1 !important;
+  color-scheme: dark !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html body #progSup option,
+html body #progSup optgroup {
+  background: #020617 !important;
+  background-color: #020617 !important;
+  color: #f8fafc !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+html body #progSup option:checked,
+html body #progSup option:hover {
+  background: #064e3b !important;
+  background-color: #064e3b !important;
+  color: #ffffff !important;
+}
+
+/* Enquanto o select está focado/aberto, tira as etapas da frente da lista.
+   Isso evita que A/B/C/D apareçam por trás do dropdown do navegador. */
+html body .prog-toolbar:has(#progSup:focus) .prog-toolbar-row-steps,
+html body .prog-toolbar:focus-within:has(#progSup:focus) .prog-toolbar-row-steps {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: translateY(320px) !important;
+}
+
+html body .prog-toolbar:has(#progSup:focus) #progSteps,
+html body .prog-toolbar:has(#progSup:focus) #progCtxFeedback {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
