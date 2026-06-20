@@ -1,115 +1,26 @@
-// Ajustes visuais do menu BTG para o fluxo automático via agentes.
-// Script propositalmente simples: sem MutationObserver e sem alterar regras de negócio.
-
-function txt(el, value) {
-  if (el && el.textContent !== value) el.textContent = value;
+import { initProtectedPage } from './pageInit.js';
+import { supabase } from './supabaseClient.js';
+const esc=v=>String(v??'').replace(/[&<>\"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+let rows=[], all={btg:0,lista:0,dist:0};
+async function count(table){const {count,error}=await supabase.from(table).select('*',{count:'exact',head:true}); if(error) return 0; return count||0;}
+async function load(){
+  const [btg,lista,dist]=await Promise.all([
+    supabase.from('logistica_btg_solicitacoes').select('contrato_original,numero_os_relatorio,cliente,commodity,quantidade,checkin_diario,updated_at').limit(20000),
+    count('logistica_btg_lista_os'),
+    count('logistica_btg_distribuicao')
+  ]);
+  if(btg.error) throw new Error(btg.error.message);
+  rows=(btg.data||[]).map(r=>({contrato:r.contrato_original||'',portal:r.numero_os_relatorio||'',cliente:r.cliente||'',produto:r.commodity||'',quantidade:r.quantidade||0,checkin:r.checkin_diario||'',updated:r.updated_at||''}));
+  all={btg:rows.length,lista,dist};
 }
-
-function injectStyles() {
-  if (document.getElementById('btg-agentes-ui-style')) return;
-  const style = document.createElement('style');
-  style.id = 'btg-agentes-ui-style';
-  style.textContent = `
-    .btg-agent-source-card{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;margin-bottom:12px;padding:13px 14px;border:1px solid rgba(59,130,246,.26);border-radius:16px;background:linear-gradient(135deg,rgba(59,130,246,.14),rgba(34,197,94,.07))}
-    .btg-agent-source-title{font-size:13px;font-weight:900;color:#f8fafc;margin-bottom:3px}
-    .btg-agent-source-sub{font-size:12px;color:#94a3b8;line-height:1.45}
-    .btg-agent-source-pill{font-size:11px;font-weight:900;color:#93c5fd;border:1px solid rgba(96,165,250,.28);background:rgba(59,130,246,.12);border-radius:999px;padding:6px 10px;white-space:nowrap}
-    .btg-upload-area.btg-auto-source{border-style:solid;background:rgba(15,23,42,.36)}
-    .btg-chip-file.loaded::before{content:'✓ ';font-weight:900}
-    @media(max-width:760px){.btg-agent-source-card{grid-template-columns:1fr}.btg-agent-source-pill{width:max-content}}
-  `;
-  document.head.appendChild(style);
+function status(r){if(!/^P\d{5}\.\d{3}$/i.test(String(r.contrato).trim()))return'CORRIGIR CONTRATO'; if(norm(r.checkin)==='CONFIRMADO')return'OK'; return'CHECK-IN';}
+function render(el){
+  const q=norm(el.busca.value), list=rows.filter(r=>!q||norm(`${r.contrato} ${r.portal} ${r.cliente} ${r.produto} ${status(r)}`).includes(q));
+  const pend=list.filter(r=>status(r)!=='OK').length;
+  el.kpis.innerHTML=`<div class=k><span>Relatório BTG</span><b>${all.btg}</b></div><div class=k><span>Lista OS</span><b>${all.lista}</b></div><div class=k><span>Distribuição</span><b>${all.dist}</b></div><div class="k ${pend?'warn':'ok'}"><span>Pendências</span><b>${pend}</b></div>`;
+  el.feedback.textContent=`${list.length} relatório(s) exibidos.`;
+  el.table.innerHTML=list.length?`<div class=tw><table><thead><tr><th>Status</th><th>Portal</th><th>Contrato</th><th>Cliente</th><th>Produto</th><th>Quantidade</th><th>Check-in</th></tr></thead><tbody>${list.map(r=>`<tr><td><span class="st ${status(r)==='OK'?'ok':'warn'}">${status(r)}</span></td><td>${esc(r.portal||'—')}</td><td><code>${esc(r.contrato||'—')}</code></td><td>${esc(r.cliente||'—')}</td><td>${esc(r.produto||'—')}</td><td>${esc(r.quantidade||0)}</td><td>${esc(r.checkin||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<div class=empty>Nenhum relatório BTG encontrado. Execute o agente em AGENTES TI.</div>';
 }
-
-function renameFileButton() {
-  const label = document.querySelector('.btg-file-label');
-  if (!label) return;
-  for (const node of [...label.childNodes]) {
-    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-      if (node.textContent.trim() !== 'Upload manual') node.textContent = ' Upload manual';
-      return;
-    }
-  }
-}
-
-function applyBtgAgentUi() {
-  try {
-    injectStyles();
-
-    const h3 = [...document.querySelectorAll('h3')].find((item) => ['BTG — Ordens de Serviço', 'BTG — Relatórios dos Agentes'].includes(item.textContent.trim()));
-    if (h3) {
-      txt(h3, 'BTG — Relatórios dos Agentes');
-      txt(h3.parentElement?.querySelector('.muted'), 'Relatórios BTG carregados automaticamente pelos agentes. A tela cruza Relatório BTG, Lista de OS e Distribuição para apontar pendências de contrato, OS, colaborador, check-in e NHE.');
-    }
-
-    const recarregar = document.getElementById('btgRecarregar');
-    if (recarregar) {
-      txt(recarregar, '↻ Atualizar relatórios');
-      recarregar.title = 'Recarrega do banco os relatórios sincronizados pelos agentes';
-    }
-
-    const dropZone = document.getElementById('btgDropZone');
-    if (dropZone) {
-      dropZone.classList.add('btg-auto-source');
-      if (!dropZone.querySelector('.btg-agent-source-card')) {
-        dropZone.insertAdjacentHTML('afterbegin', `
-          <div class="btg-agent-source-card">
-            <div>
-              <div class="btg-agent-source-title">🤖 Fonte automática: agentes BTG</div>
-              <div class="btg-agent-source-sub">Os arquivos coletados pelos agentes alimentam o banco e esta tela já abre reconciliando os relatórios disponíveis.</div>
-            </div>
-            <div class="btg-agent-source-pill">Upload manual = contingência</div>
-          </div>
-        `);
-      }
-    }
-
-    renameFileButton();
-    txt(document.querySelector('.btg-upload-hint'), 'Use somente se precisar substituir manualmente algum relatório. No fluxo normal, os agentes atualizam os dados automaticamente.');
-
-    const mode = document.getElementById('btgModeTag');
-    if (mode?.textContent.trim() === 'RELATÓRIOS') txt(mode, 'AGENTES');
-
-    const subtitle = document.getElementById('btgTableSubtitle');
-    if (subtitle) {
-      const value = subtitle.textContent || '';
-      if (value.includes('Importação unificada')) txt(subtitle, 'Dados automáticos dos agentes: Relatório BTG + Lista de OS + Distribuição.');
-      if (value.includes('Dados do banco de dados')) txt(subtitle, 'Base carregada do Supabase. Aguardando relatórios dos agentes para reconciliação completa.');
-    }
-
-    const feedback = document.getElementById('btgFeedback');
-    if (feedback && feedback.textContent.includes('Carregue os relatórios')) {
-      txt(feedback, 'Aguardando relatórios sincronizados pelos agentes. Use Atualizar relatórios para recarregar o banco.');
-    }
-
-    const empty = document.querySelector('.btg-empty');
-    if (empty && empty.textContent.includes('Carregue os relatórios')) {
-      txt(empty, 'Nenhum relatório BTG sincronizado ainda. Execute o agente em AGENTES TI ou aguarde a próxima sincronização automática.');
-    }
-
-    const chipLabels = {
-      btgChipDist: 'Distribuição de O.S.',
-      btgChipBtg: 'Relatório BTG',
-      btgChipListaOs: 'Lista de O.S.',
-    };
-    for (const [id, label] of Object.entries(chipLabels)) {
-      const chip = document.getElementById(id);
-      if (!chip) continue;
-      const value = chip.textContent || '';
-      if (value.includes('aguardando')) txt(chip, `${label} — aguardando agente`);
-      if (value.includes('Banco de dados')) txt(chip, value.replace('Banco de dados', 'Agente/Banco'));
-    }
-  } catch (err) {
-    console.warn('[BTG agentes UI] ajuste visual ignorado:', err);
-  }
-}
-
-function bootBtgAgentUi() {
-  const delays = [100, 400, 900, 1600, 2600, 4000];
-  delays.forEach((delay) => setTimeout(applyBtgAgentUi, delay));
-  document.addEventListener('click', () => setTimeout(applyBtgAgentUi, 80), true);
-  document.addEventListener('input', () => setTimeout(applyBtgAgentUi, 80), true);
-}
-
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootBtgAgentUi, { once: true });
-else bootBtgAgentUi();
+function styles(){const s=document.createElement('style');s.textContent=`.btg-card{border:1px solid rgba(52,211,153,.16);border-radius:18px;padding:16px;background:rgba(15,23,42,.35);margin-top:16px}.head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.head h3{margin:0;color:#f8fafc}.head p{margin:5px 0 0;color:#94a3b8;font-size:13px}.kpis{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:14px 0}.k{border:1px solid rgba(148,163,184,.16);border-radius:14px;padding:12px;background:rgba(2,6,23,.28)}.k span{display:block;color:#94a3b8;font-size:11px;font-weight:800}.k b{display:block;color:#fff;font-size:20px}.k.warn{border-color:rgba(245,158,11,.35)}.search{min-height:40px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0d0d18;color:#e2e8f0;padding:8px 12px;width:100%;box-sizing:border-box}.tw{overflow:auto;border:1px solid rgba(52,211,153,.15);border-radius:16px}table{width:100%;min-width:820px;border-collapse:separate;border-spacing:0;color:#e2e8f0}th{background:#07170f;color:#bbf7d0;text-align:left;padding:8px;font-size:11px;text-transform:uppercase}td{padding:8px;border-bottom:1px solid rgba(148,163,184,.1);font-size:12px}code{color:#a7f3d0}.st{border-radius:999px;padding:3px 9px;font-size:11px;font-weight:900}.st.ok{background:rgba(22,163,74,.14);color:#86efac}.st.warn{background:rgba(245,158,11,.14);color:#fcd34d}.empty{border:1px dashed rgba(148,163,184,.25);border-radius:16px;padding:24px;color:#94a3b8;text-align:center}`;document.head.appendChild(s)}
+initProtectedPage('BTG — Logística',async content=>{styles();content.innerHTML=`<section class=btg-card><div class=head><div><h3>BTG — Relatórios dos Agentes</h3><p>Consulta direta dos relatórios sincronizados pelos agentes no Supabase.</p></div><button class="btn btn-secondary" id=refresh>↻ Atualizar</button></div><div id=kpis class=kpis></div><input id=busca class=search placeholder="Buscar contrato, portal, cliente, produto..."/><div id=feedback class="feedback mt-16">Carregando...</div></section><section class=btg-card><div id=table></div></section>`;const el={kpis:document.getElementById('kpis'),busca:document.getElementById('busca'),feedback:document.getElementById('feedback'),table:document.getElementById('table')};document.getElementById('refresh').onclick=async()=>{await load();render(el)};el.busca.oninput=()=>render(el);try{await load()}catch(e){el.feedback.textContent='Erro: '+e.message}render(el)});
