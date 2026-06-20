@@ -1079,13 +1079,6 @@ initProtectedPage('Programação', (content) => {
       return;
     }
 
-    const fobsPendentes = await checkFobPendenciasBloqueantes(dataReferencia, supervisao);
-    if (fobsPendentes.length) {
-      showFobBlockedMessage(fobsPendentes);
-      el.saveBtn.disabled = true;
-      return;
-    }
-
     state.dataReferencia = dataReferencia;
     state.supervisao = supervisao;
     setFeedback('Carregando contexto...', 'warn');
@@ -1093,7 +1086,21 @@ initProtectedPage('Programação', (content) => {
     el.list.innerHTML = '<div class="table-empty">Carregando colaboradores...</div>';
 
     try {
-      const latestSnapshotDate = await getLatestSnapshotDate();
+      // As 4 consultas abaixo não dependem entre si — só de data/supervisão —
+      // mas eram feitas em sequência (uma esperando a outra terminar). Isso
+      // sozinho já multiplicava a latência de rede por 4.
+      const [fobsPendentes, latestSnapshotDate, indisponibilidades, colabsEmOsAtender] = await Promise.all([
+        checkFobPendenciasBloqueantes(dataReferencia, supervisao),
+        getLatestSnapshotDate(),
+        loadIndisponibilidades(dataReferencia),
+        loadOsAtender(dataReferencia, supervisao),
+      ]);
+
+      if (fobsPendentes.length) {
+        showFobBlockedMessage(fobsPendentes);
+        el.saveBtn.disabled = true;
+        return;
+      }
       if (!latestSnapshotDate) throw new Error('Nenhuma base de colaboradores foi importada ainda.');
 
       const { data: colaboradores, error: colabError } = await supabase
@@ -1117,7 +1124,6 @@ initProtectedPage('Programação', (content) => {
       const programacao = await ensureProgramacaoDia(dataReferencia, supervisao, colaboradoresAtivos?.[0]?.coordenacao || '');
       state.programacaoId = programacao.id;
 
-      const indisponibilidades = await loadIndisponibilidades(dataReferencia);
       state.colaboradores = colaboradoresAtivos.map((colab) => {
         const key = colaboradorKey(colab);
         const indis = indisponibilidades.get(normalizeCpf(colab.cpf));
@@ -1132,7 +1138,7 @@ initProtectedPage('Programação', (content) => {
         };
       });
 
-      state.colabsEmOsAtender = await loadOsAtender(dataReferencia, supervisao);
+      state.colabsEmOsAtender = colabsEmOsAtender;
       state.kmCache = new Map();
       await ensureDefaultRows();
       await loadStageData();
