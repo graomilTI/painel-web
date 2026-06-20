@@ -140,7 +140,9 @@ function ensureStatusOsFilter() {
   if (select && select.dataset.statusOsBound !== '1') {
     select.dataset.statusOsBound = '1';
     select.addEventListener('change', () => {
-      if (distribuicaoLoaded) syncStatusToOsModule();
+      if (distribuicaoLoaded && currentUiStep === 'A') {
+        renderDistribuicao({ loadOs: true, force: true });
+      }
     });
   }
   return select;
