@@ -23,17 +23,9 @@ function injectSupervisaoDropdownFixStyles() {
       overflow: visible !important;
     }
 
-    #progSup.prog-sup-native-hidden {
-      position: absolute !important;
-      left: 0 !important;
-      top: 24px !important;
-      width: 1px !important;
-      height: 1px !important;
-      min-width: 1px !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-      clip-path: inset(50%) !important;
-      overflow: hidden !important;
+    #progSup.prog-sup-native-hidden,
+    .prog-tfield-sup > #progSup.prog-sup-native-hidden {
+      display: none !important;
     }
 
     .prog-sup-combo {
@@ -199,6 +191,7 @@ function bindSupervisaoDropdownFix() {
   select.dataset.dropdownFixBound = '1';
   select.classList.add('prog-sup-native-hidden');
   select.setAttribute('aria-hidden', 'true');
+  select.tabIndex = -1;
 
   const combo = document.createElement('div');
   combo.className = 'prog-sup-combo';
