@@ -30,7 +30,7 @@ function waitForElement(selector, timeout = 12000) {
 
 function setSaveVisibility(isDistribuicao) {
   const saveBtn = document.getElementById('progSaveProgramacao');
-  const search = document.getElementById('progSearch')?.closest('.filters-grid');
+  const search = document.getElementById('progSearchWrap');
   if (saveBtn) saveBtn.style.display = isDistribuicao ? 'none' : '';
   if (search) search.style.display = isDistribuicao ? 'none' : '';
 }

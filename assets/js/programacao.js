@@ -262,6 +262,30 @@ function injectProgramacaoStyles() {
   const style = document.createElement('style');
   style.id = 'programacao-table-styles';
   style.textContent = `
+    .prog-toolbar{padding:14px 16px}
+    .prog-toolbar-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+    .prog-toolbar-row + .prog-toolbar-row{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)}
+    .prog-tfield{display:flex;flex-direction:column;gap:4px;min-width:0}
+    .prog-tfield label{font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#7d8aa3;margin:0}
+    .prog-tfield select,.prog-tfield input{min-height:38px;padding:8px 11px;border-radius:11px;border:1px solid rgba(52,211,153,.18);background:#0d0d18!important;color:#e2e2f0!important;font-size:13px;color-scheme:dark}
+    .prog-tfield-sup{flex:1 1 200px;max-width:300px}
+    .prog-tfield-date{flex:0 0 148px}
+    .prog-tfield-search{flex:1 1 220px}
+    #progLoadContext{flex:0 0 auto;width:auto;margin-top:0;min-height:38px;padding:0 18px;white-space:nowrap;border-radius:11px}
+    .prog-toolbar-spacer{flex:1 1 auto;min-width:8px}
+    .prog-toolbar-row .prog-save-main{flex:0 0 auto;min-height:38px;padding:0 18px;white-space:nowrap}
+    .prog-toolbar-row-steps{align-items:center;justify-content:space-between;flex-wrap:wrap}
+    .prog-steps-compact{gap:6px;flex:1 1 auto}
+    .prog-steps-compact .stepbtn{padding:8px 12px;border-radius:11px;font-size:12.5px}
+    .prog-toolbar .feedback{margin:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px;flex:0 1 auto}
+    .prog-list-card{padding:14px 16px}
+    @media(max-width:900px){
+      .prog-toolbar-row{align-items:stretch}
+      .prog-tfield-sup,.prog-tfield-date,.prog-tfield-search,#progLoadContext,.prog-toolbar-row .prog-save-main{flex:1 1 100%;max-width:none}
+      .prog-toolbar-spacer{display:none}
+      .prog-toolbar-row-steps{flex-direction:column;align-items:stretch;gap:8px}
+      .prog-toolbar .feedback{max-width:none;white-space:normal}
+    }
     .prog-table-wrap{width:100%;overflow:auto;border:1px solid rgba(52,211,153,.18);border-radius:18px;background:rgba(2,6,23,.26)}
     .prog-table{width:100%;border-collapse:separate;border-spacing:0;min-width:980px;color:#e2e2f0}
     .prog-table th{position:sticky;top:0;z-index:1;background:#07170f;color:#c7f9df;font-size:12px;text-transform:uppercase;letter-spacing:.045em;text-align:left;padding:13px 12px;border-bottom:1px solid rgba(52,211,153,.2)}
@@ -330,52 +354,37 @@ initProtectedPage('Programação', (content) => {
   injectProgramacaoStyles();
 
   content.innerHTML = `
-    <section class="card mt-16">
-      <div class="filters-grid prog-context-grid">
-        <div class="field">
+    <section class="card prog-toolbar">
+      <div class="prog-toolbar-row">
+        <div class="prog-tfield prog-tfield-sup">
           <label for="progSup">Supervisão</label>
           <select id="progSup"></select>
         </div>
-        <div class="field">
+        <div class="prog-tfield prog-tfield-date">
           <label for="progDataRef">Data</label>
           <input id="progDataRef" type="date" />
         </div>
-        <div class="filter-actions prog-filter-actions">
-          <button class="btn btn-primary" type="button" id="progLoadContext">Carregar</button>
+        <button class="btn btn-primary" type="button" id="progLoadContext" title="Carregar colaboradores da supervisão/data selecionada">Carregar</button>
+
+        <div class="prog-toolbar-spacer"></div>
+
+        <div class="prog-tfield prog-tfield-search" id="progSearchWrap">
+          <label for="progSearch">Buscar</label>
+          <input id="progSearch" type="text" placeholder="Nome, cargo ou supervisão..." />
         </div>
+        <button class="prog-save-main" type="button" id="progSaveProgramacao" disabled title="As alterações já são salvas automaticamente — este botão confirma e finaliza a programação">Salvar programação</button>
       </div>
-      <div class="feedback mt-16" id="progCtxFeedback">Nenhuma programação carregada.</div>
+
+      <div class="prog-toolbar-row prog-toolbar-row-steps">
+        <div class="steps-wrap prog-steps-compact" id="progSteps" title="Clique em uma etapa para editar as necessidades em formato de tabela">
+          ${STEPS.map((step) => `<button type="button" class="stepbtn ${step.code === 'A' ? 'active' : ''}" data-step="${step.code}">${step.code} · ${step.label}</button>`).join('')}
+        </div>
+        <div class="feedback" id="progCtxFeedback">Nenhuma programação carregada.</div>
+      </div>
     </section>
 
-    <section class="card mt-16">
-      <div class="section-head">
-        <div>
-          <h3>Etapas</h3>
-          <p class="muted">Clique em uma etapa para editar as necessidades em formato de tabela.</p>
-        </div>
-      </div>
-      <div class="steps-wrap" id="progSteps">
-        ${STEPS.map((step) => `<button type="button" class="stepbtn ${step.code === 'A' ? 'active' : ''}" data-step="${step.code}">${step.code} · ${step.label}</button>`).join('')}
-      </div>
-    </section>
-
-    <section class="card mt-16">
-      <div class="section-head">
-        <div>
-          <h3>Lista da etapa</h3>
-          <p class="muted">As alterações são salvas automaticamente, mas o botão abaixo confirma e finaliza a programação.</p>
-        </div>
-        <div class="prog-save-actions">
-          <button class="prog-save-main" type="button" id="progSaveProgramacao" disabled>Salvar programação</button>
-        </div>
-      </div>
-      <div class="filters-grid prog-context-grid">
-        <div class="field field-span-2">
-          <label for="progSearch">Buscar colaborador</label>
-          <input id="progSearch" type="text" placeholder="Digite nome, cargo ou supervisão..." />
-        </div>
-      </div>
-      <div class="prog-list mt-16" id="progList"></div>
+    <section class="card mt-16 prog-list-card">
+      <div class="prog-list" id="progList"></div>
     </section>
   `;
 
