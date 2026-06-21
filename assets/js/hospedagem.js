@@ -75,16 +75,26 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'hospedagemGestorStyles';
   style.textContent = `
-    .hosp-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0;padding:5px;background:#11111f;border:1px solid var(--line);border-radius:999px;width:fit-content}
-    .hosp-tab{width:auto;margin-top:0;border:1px solid transparent;background:transparent;color:var(--muted);border-radius:999px;padding:9px 16px;cursor:pointer;font-weight:800;font-size:13px}
-    .hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}
+    @keyframes hospReveal{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes hospPulse{0%,100%{box-shadow:0 0 0 0 rgba(111,208,165,.16)}50%{box-shadow:0 0 0 7px rgba(111,208,165,.05)}}
+
+    .hosp-tabs{position:relative;display:flex;gap:2px;flex-wrap:wrap;margin:18px 0 24px;padding:5px;background:#0c0c17;border:1px solid var(--line);border-radius:999px;width:fit-content}
+    .hosp-tab{position:relative;z-index:1;width:auto;margin-top:0;border:1px solid transparent;background:transparent;color:var(--muted);border-radius:999px;padding:9px 18px;cursor:pointer;font-weight:700;font-size:13px;transition:color .25s ease}
+    .hosp-tab.active{color:#eafff4}
+    .hosp-tab-indicator{position:absolute;top:5px;left:5px;height:calc(100% - 10px);width:0;border-radius:999px;background:linear-gradient(135deg,rgba(63,168,120,.4),rgba(111,208,165,.22));border:1px solid rgba(111,208,165,.4);box-shadow:0 4px 14px rgba(0,0,0,.3);transition:transform .32s cubic-bezier(.22,1,.36,1),width .32s cubic-bezier(.22,1,.36,1);z-index:0}
     .hosp-panel{display:none}.hosp-panel.active{display:block}
 
-    .hosp-section{margin-top:26px}
+    .hosp-section{position:relative;margin-top:30px;padding-left:50px;animation:hospReveal .5s cubic-bezier(.22,1,.36,1) backwards}
     .hosp-section:first-child{margin-top:0}
-    .hosp-section-head{margin-bottom:14px}
-    .hosp-section-head h4{margin:0;font-size:13px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--green-2)}
-    .hosp-section-head p{margin:3px 0 0;font-size:12.5px;color:var(--muted)}
+    .hosp-section:nth-of-type(1){animation-delay:.02s}
+    .hosp-section:nth-of-type(2){animation-delay:.07s}
+    .hosp-section:nth-of-type(3){animation-delay:.12s}
+    .hosp-section:nth-of-type(4){animation-delay:.17s}
+    .hosp-section:not(:last-of-type)::before{content:'';position:absolute;left:17px;top:36px;bottom:-30px;width:1px;background:linear-gradient(to bottom,var(--line-2),transparent)}
+    .hosp-section-num{position:absolute;left:0;top:0;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:13px;color:#06170f;background:linear-gradient(150deg,var(--green-2),var(--green));box-shadow:0 6px 16px rgba(111,208,165,.22)}
+    .hosp-section-head{margin-bottom:16px}
+    .hosp-section-head h4{margin:0;font-family:'Syne',sans-serif;font-size:17px;font-weight:700;letter-spacing:.005em;color:var(--text)}
+    .hosp-section-head p{margin:4px 0 0;font-size:13px;color:var(--muted)}
 
     .hosp-form-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
     .hosp-field{display:flex;flex-direction:column;gap:7px}
@@ -94,27 +104,45 @@ function injectStyles() {
     .hosp-field.col-4{grid-column:span 4}
     .hosp-field.col-5{grid-column:span 5}
     .hosp-field.col-6{grid-column:span 6}
-    .hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}
-    .hosp-field input,.hosp-field textarea,.hosp-field select{width:100%;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}
+    .hosp-field label{font-size:12.5px;color:#cbd5e1;font-weight:700;letter-spacing:.01em}
+    .hosp-field input,.hosp-field textarea,.hosp-field select{width:100%;border:1px solid rgba(255,255,255,0.08);background:#13131f;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark;box-shadow:inset 0 1px 0 rgba(255,255,255,.02);transition:border-color .2s ease,box-shadow .2s ease}
     .hosp-field textarea{resize:vertical;min-height:86px}
-    .hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}
+    .hosp-field input:hover,.hosp-field textarea:hover,.hosp-field select:hover{border-color:rgba(111,208,165,.22)}
+    .hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.13)}
     .hosp-help{font-size:12px;color:var(--muted)}
 
-    .hosp-diarias-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(111,208,165,.28);background:rgba(22,101,52,.16);color:#bbf7d0;border-radius:999px;padding:9px 14px;font-weight:800;font-size:13px;white-space:nowrap}
+    .hosp-diarias-badge{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(111,208,165,.28);background:rgba(22,101,52,.16);color:#bbf7d0;border-radius:999px;padding:9px 16px;font-weight:700;font-size:13px;white-space:nowrap;animation:hospPulse 3.2s ease-in-out infinite}
+    .hosp-diarias-badge::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--green-2);flex:0 0 auto}
 
-    .hosp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
-    .hosp-btn{width:auto!important;margin-top:0!important}
+    .hosp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:30px;padding-top:20px;border-top:1px solid var(--line)}
+    .hosp-btn{width:auto!important;margin-top:0!important;transition:transform .18s ease,box-shadow .18s ease}
+    .hosp-btn:hover{transform:translateY(-1px)}
+    .hosp-btn:active{transform:translateY(0)}
     .hosp-feedback{color:var(--muted);font-size:13px}.hosp-feedback.ok{color:#bbf7d0}.hosp-feedback.err{color:#fecaca}
-    .hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.hosp-table{width:100%;border-collapse:collapse;min-width:1040px;background:#15152a}.hosp-table th,.hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.hosp-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.hosp-table tr:hover td{background:rgba(111,208,165,.035)}
-    .hosp-status{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:800;white-space:nowrap}.hosp-status.solicitada,.hosp-status.em_analise,.hosp-status.em_cotacao{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.hosp-status.reservada{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.hosp-status.concluida{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.hosp-status.cancelada{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}
-    .hosp-colab-box{display:grid;gap:10px}.hosp-colab-row{display:grid;grid-template-columns:auto 1.2fr .6fr auto;gap:10px;align-items:end}
-    .hosp-colab-index{width:36px;height:36px;border-radius:50%;background:rgba(111,208,165,.14);border:1px solid rgba(111,208,165,.3);color:#bbf7d0;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px}
-    .hosp-remove{width:auto!important;margin-top:0!important;padding:10px 12px!important}
-    .hosp-add-colab{width:auto;margin-top:4px;border:1px dashed var(--line-2);background:transparent;color:var(--muted);border-radius:14px;padding:11px 14px;cursor:pointer;font-weight:800;text-align:center}
-    .hosp-add-colab:hover{border-color:var(--green-2);color:#bbf7d0}
+    .hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.hosp-table{width:100%;border-collapse:collapse;min-width:1040px;background:#15152a}.hosp-table th,.hosp-table td{padding:13px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.hosp-table th{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}.hosp-table tr{transition:background-color .15s ease}.hosp-table tr:hover td{background:rgba(111,208,165,.045)}
+    .hosp-status{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:700;white-space:nowrap}
+    .hosp-status::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;flex:0 0 auto}
+    .hosp-status.solicitada,.hosp-status.em_analise,.hosp-status.em_cotacao{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.hosp-status.reservada{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.hosp-status.concluida{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.hosp-status.cancelada{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}
+    .hosp-colab-box{display:grid;gap:10px}
+    .hosp-colab-row{display:grid;grid-template-columns:auto 1.2fr .6fr auto;gap:14px;align-items:center;background:var(--bg-card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;backdrop-filter:blur(10px);transition:border-color .2s ease,transform .2s ease,box-shadow .2s ease}
+    .hosp-colab-row:hover{border-color:var(--line-2);transform:translateY(-1px);box-shadow:var(--shadow-soft)}
+    .hosp-colab-row .hosp-field{gap:5px}
+    .hosp-colab-index{width:32px;height:32px;border-radius:50%;background:linear-gradient(150deg,rgba(111,208,165,.22),rgba(63,168,120,.1));border:1px solid rgba(111,208,165,.32);color:#bbf7d0;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:13px}
+    .hosp-remove{width:auto!important;margin-top:0!important;padding:10px 12px!important;transition:transform .16s ease,border-color .16s ease,color .16s ease}
+    .hosp-remove:hover{transform:translateY(-1px);border-color:rgba(248,113,113,.4);color:#fecaca}
+    .hosp-add-colab{width:auto;margin-top:6px;border:1px dashed var(--line-2);background:transparent;color:var(--muted);border-radius:14px;padding:12px 14px;cursor:pointer;font-weight:700;text-align:center;transition:border-color .2s ease,color .2s ease,transform .2s ease,background .2s ease}
+    .hosp-add-colab:hover{border-color:var(--green-2);color:#bbf7d0;background:rgba(111,208,165,.05);transform:translateY(-1px)}
     .hosp-empty{padding:18px;color:var(--muted);text-align:center}
     .hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;border-radius:16px;padding:12px 14px;margin-top:12px}
-    @media(max-width:850px){.hosp-form-grid,.hosp-colab-row{grid-template-columns:1fr}.hosp-form-grid .hosp-field{grid-column:1/-1}.hosp-colab-index{justify-self:start}.hosp-remove{justify-self:flex-start}}
+    @media(max-width:850px){
+      .hosp-form-grid,.hosp-colab-row{grid-template-columns:1fr}
+      .hosp-form-grid .hosp-field{grid-column:1/-1}
+      .hosp-section{padding-left:0}
+      .hosp-section-num{display:none}
+      .hosp-section::before{display:none}
+      .hosp-colab-index{justify-self:start}
+      .hosp-remove{justify-self:flex-start}
+    }
   `;
   document.head.appendChild(style);
 }
@@ -133,7 +161,8 @@ initProtectedPage('Hospedagem', (content, userContext) => {
       <div class="hero-badge-wrap"><span class="hero-badge">HOSPEDAGEM</span></div>
     </section>
 
-    <div class="hosp-tabs">
+    <div class="hosp-tabs" id="hospTabs">
+      <span class="hosp-tab-indicator" id="hospTabIndicator"></span>
       <button class="hosp-tab active" data-tab="solicitar" type="button">Solicitar hospedagem</button>
       <button class="hosp-tab" data-tab="minhas" type="button">Minhas solicitações</button>
     </div>
@@ -149,6 +178,7 @@ initProtectedPage('Hospedagem', (content, userContext) => {
 
         <form id="hospForm">
           <div class="hosp-section">
+            <span class="hosp-section-num">01</span>
             <div class="hosp-section-head">
               <h4>Onde e para quem</h4>
               <p>Cidade, cliente e local de embarque da equipe.</p>
@@ -178,6 +208,7 @@ initProtectedPage('Hospedagem', (content, userContext) => {
           </div>
 
           <div class="hosp-section">
+            <span class="hosp-section-num">02</span>
             <div class="hosp-section-head">
               <h4>Período da estadia</h4>
               <p>Datas previstas de check-in e check-out.</p>
@@ -206,6 +237,7 @@ initProtectedPage('Hospedagem', (content, userContext) => {
           </div>
 
           <div class="hosp-section">
+            <span class="hosp-section-num">03</span>
             <div class="hosp-section-head">
               <h4>Colaboradores</h4>
               <p>Adicione um ou mais colaboradores para a mesma hospedagem.</p>
@@ -216,6 +248,7 @@ initProtectedPage('Hospedagem', (content, userContext) => {
           </div>
 
           <div class="hosp-section">
+            <span class="hosp-section-num">04</span>
             <div class="hosp-section-head">
               <h4>Observações</h4>
               <p>Informações extras para o setor de hospedagem.</p>
@@ -271,11 +304,26 @@ initProtectedPage('Hospedagem', (content, userContext) => {
     feedback.className = `hosp-feedback ${type}`.trim();
   }
 
+  function moveTabIndicator(immediate = false) {
+    const active = document.querySelector('.hosp-tab.active');
+    const indicator = document.getElementById('hospTabIndicator');
+    if (!active || !indicator) return;
+    if (immediate) indicator.style.transition = 'none';
+    indicator.style.width = `${active.offsetWidth}px`;
+    indicator.style.transform = `translateX(${active.offsetLeft - 5}px)`;
+    if (immediate) {
+      // eslint-disable-next-line no-unused-expressions
+      indicator.offsetHeight; // força reflow antes de reativar a transição
+      indicator.style.transition = '';
+    }
+  }
+
   function setTab(tab) {
     state.tab = tab;
     document.querySelectorAll('.hosp-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
     document.querySelectorAll('.hosp-panel').forEach((panel) => panel.classList.remove('active'));
     document.getElementById(`panel-${tab}`).classList.add('active');
+    moveTabIndicator();
     if (tab === 'minhas') loadMinhas();
   }
 
@@ -482,6 +530,9 @@ initProtectedPage('Hospedagem', (content, userContext) => {
   checkin.addEventListener('change', updateDiarias);
   checkout.addEventListener('change', updateDiarias);
   form.addEventListener('submit', submitSolicitacao);
+  window.addEventListener('resize', () => moveTabIndicator(true));
+
+  moveTabIndicator(true);
 
   (async function boot() {
     await loadColaboradores();

@@ -1,6 +1,7 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
+import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
 
 const EXPORT_W = 1920;
 const EXPORT_H = 1080;
@@ -868,6 +869,7 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
 
   (async () => {
     try {
+      await sincronizarPatrimoniosDoAgente();
       let cachedRows;
       try {
         const raw = localStorage.getItem(RELAT_CACHE_KEY);

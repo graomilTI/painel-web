@@ -61,7 +61,10 @@ const state = {
     fim: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
   },
   detSort: { col: null, dir: 1 },
-  detFilter: { tipo: '', situacao: '', favorecido: '', doc: '' }
+  detFilter: { tipo: '', situacao: '', favorecido: '', doc: '' },
+  notasFiscais: [],
+  notasFiscaisLoaded: false,
+  notasFiscaisFiltro: { cliente: '', situacao: '' }
 };
 
 function esc(value) {
@@ -1007,6 +1010,110 @@ function statusClass(value) {
   return normalize(value).includes('atencao') || normalize(value).includes('atenção') ? 'danger' : 'ok';
 }
 
+// ── Sincronização automática com os agentes (Contas a Pagar/Receber) ───────
+// Mapeia o dump bruto do ERP (campos pin*/rin*) para o mesmo formato que a
+// importação manual de planilha já grava em financeiro_contas_pagar/receber,
+// incluindo o mesmo cálculo de unique_hash — assim os dois caminhos convivem
+// sem duplicar lançamentos e o fluxo de caixa (view) reflete tudo automaticamente.
+function agentDateOnly(value) {
+  if (!value) return null;
+  return toDateISO(String(value).slice(0, 10));
+}
+
+function mapPagarFromAgente(d, fileTag) {
+  const payload = {
+    empresa: String(d?.scpName || '').trim() || null,
+    situacao: d?.pinStatus === 'P' ? 'PAGO' : 'ABERTO',
+    cod_grupo: String(d?.pinMainCode ?? '').trim() || null,
+    data_lancamento: agentDateOnly(d?.pinDate),
+    coordenacao: String(d?.olcName || '').trim() || null,
+    supervisao: String(d?.olsName || '').trim() || null,
+    favorecido: String(d?.favoredName || '').trim() || null,
+    cnpj_cpf: String(d?.favoredDocument || '').trim() || null,
+    identificacao: String(d?.pinDocNumber || '').trim() || null,
+    categoria: String(d?.groupCategoryName || d?.picName || '').trim() || null,
+    doc: String(d?.pinDocNumber || '').trim() || null,
+    vencimento: agentDateOnly(d?.pinDueDate),
+    parcela: d?.pinInstallmentTotal ? `${d.pinInstallmentNumber}/${d.pinInstallmentTotal}` : null,
+    valor_pago: toNumber(d?.pinPaidValue),
+    valor: toNumber(d?.pinTotalValue),
+    usuario: String(d?.userName || '').trim() || null,
+    data_cadastro: agentDateOnly(d?.pinRegisterDate),
+    arquivo_origem: fileTag,
+    raw: d
+  };
+  payload.unique_hash = hashText([payload.empresa, payload.cod_grupo, payload.favorecido, payload.doc, payload.vencimento, payload.parcela, payload.valor].join('|'));
+  return payload;
+}
+
+function mapReceberFromAgente(d, fileTag) {
+  const valor = toNumber(d?.rinTotalValue ?? d?.rinValue);
+  const payload = {
+    situacao: d?.rinStatus === 'P' ? 'PAGO' : 'ABERTO',
+    codigo: String(d?.rinCode ?? '').trim() || null,
+    fatura: String(d?.biiNumber ?? '').trim() || null,
+    cliente: String(d?.cliName || '').trim() || null,
+    conta: String(d?.baccFullName || d?.baccName || '').trim() || null,
+    emissao_nf: agentDateOnly(d?.biiDate),
+    vencimento: agentDateOnly(d?.rinDueDate),
+    recebimento: agentDateOnly(d?.rinPaidDate),
+    numero_nf: String(d?.biiNumber ?? '').trim() || null,
+    valor,
+    desconto: toNumber(d?.rinDiscount),
+    juros: 0,
+    valor_pago: d?.rinPaidDate ? valor : 0,
+    arquivo_origem: fileTag,
+    raw: d
+  };
+  payload.unique_hash = hashText([payload.codigo, payload.fatura, payload.cliente, payload.vencimento, payload.valor].join('|'));
+  return payload;
+}
+
+function dedupByHash(rows) {
+  const map = new Map();
+  rows.forEach((row) => { if (row.unique_hash) map.set(row.unique_hash, row); });
+  return [...map.values()];
+}
+
+async function buscarUltimoLoteAgente(tabela, limite) {
+  const { data: maxRows, error: maxErr } = await supabase
+    .from(tabela).select('created_at').order('created_at', { ascending: false }).limit(1);
+  if (maxErr) throw maxErr;
+  const maxCreatedAt = maxRows?.[0]?.created_at;
+  if (!maxCreatedAt) return [];
+  // o agente recarrega a tabela inteira a cada sincronização; pegamos só o lote mais recente
+  // (margem de 5 min cobre a duração do próprio carregamento em lote).
+  const threshold = new Date(new Date(maxCreatedAt).getTime() - 5 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from(tabela).select('dados_json').gte('created_at', threshold).limit(limite);
+  if (error) throw error;
+  return (data || []).map((row) => row.dados_json);
+}
+
+async function sincronizarContasAgente() {
+  try {
+    const [pagarRows, receberRows] = await Promise.all([
+      buscarUltimoLoteAgente('grm_contas_pagar_importacoes', 8000),
+      buscarUltimoLoteAgente('grm_contas_receber_importacoes', 20000),
+    ]);
+
+    const pagarPayload = dedupByHash(pagarRows
+      .map((d) => mapPagarFromAgente(d, 'agente:grm_contas_pagar_importacoes'))
+      .filter((row) => row.vencimento && (row.favorecido || row.doc || row.cod_grupo) && row.valor !== 0));
+    const receberPayload = dedupByHash(receberRows
+      .map((d) => mapReceberFromAgente(d, 'agente:grm_contas_receber_importacoes'))
+      .filter((row) => row.vencimento && (row.codigo || row.fatura || row.cliente) && row.valor !== 0));
+
+    const [savedPagar, savedReceber] = await Promise.all([
+      upsertChunk('financeiro_contas_pagar', pagarPayload),
+      upsertChunk('financeiro_contas_receber', receberPayload),
+    ]);
+    console.info(`[financeiro] sincronização automática: ${savedPagar} contas a pagar, ${savedReceber} contas a receber.`);
+  } catch (error) {
+    console.warn('[financeiro] falha na sincronização automática via agente', error);
+  }
+}
+
 initProtectedPage('Financeiro', (content, userContext) => {
   content.innerHTML = `
     <style>
@@ -1105,6 +1212,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
             <button class="fin-tab" data-tab="detalhes" type="button">Detalhes</button>
             <button class="fin-tab" data-tab="despesas" type="button">Despesas</button>
             <button class="fin-tab" data-tab="pagamentos" type="button">Pagamentos</button>
+            <button class="fin-tab" data-tab="notas-fiscais" type="button">Notas Fiscais</button>
           </div>
         </div>
 
@@ -1362,6 +1470,48 @@ initProtectedPage('Financeiro', (content, userContext) => {
             </table>
           </div>
         </div>
+
+        <div class="fin-panel" id="tab-notas-fiscais">
+          <div class="fin-head">
+            <div>
+              <h3>Notas Fiscais</h3>
+              <p>Sincronizado automaticamente pelo agente sync-notas-fiscais. Dados de faturamento por nota fiscal.</p>
+            </div>
+            <button class="btn btn-secondary" id="nfReloadBtn" type="button">↻ Atualizar</button>
+          </div>
+
+          <div class="pay-summary" id="nfSummary"></div>
+
+          <div class="fin-form" style="margin:14px 0 0">
+            <div class="fin-field">
+              <label>Cliente</label>
+              <input id="nfFiltroCliente" type="text" placeholder="Buscar cliente..." />
+            </div>
+            <div class="fin-field">
+              <label>Situação</label>
+              <select id="nfFiltroSituacao">
+                <option value="">Todas</option>
+                <option value="Paga">Paga</option>
+                <option value="Aguardando Pagamento">Aguardando Pagamento</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="fin-table-wrap mt-16">
+            <table class="fin-table">
+              <thead>
+                <tr>
+                  <th>N.F.</th><th>Data N.F.</th><th>Cliente</th><th>Coordenação</th>
+                  <th>Tons</th><th>Valor Bruto</th><th>Imposto</th><th>Valor da N.F.</th><th>Situação</th>
+                </tr>
+              </thead>
+              <tbody id="nfTbody">
+                <tr><td colspan="9" class="fin-empty">Carregando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="fin-muted" id="nfPreviewNote"></div>
+        </div>
       </article>
     </section>
   `;
@@ -1376,7 +1526,7 @@ initProtectedPage('Financeiro', (content, userContext) => {
 
   function tabFromHash() {
     const tab = String(window.location.hash || '').replace(/^#/, '').toLowerCase();
-    return ['dashboard', 'fluxo', 'importar', 'config', 'detalhes', 'despesas', 'pagamentos'].includes(tab) ? tab : 'dashboard';
+    return ['dashboard', 'fluxo', 'importar', 'config', 'detalhes', 'despesas', 'pagamentos', 'notas-fiscais'].includes(tab) ? tab : 'dashboard';
   }
 
   function setTab(tab) {
@@ -1385,8 +1535,88 @@ initProtectedPage('Financeiro', (content, userContext) => {
     document.getElementById(`tab-${tab}`)?.classList.add('active');
     if (tab === 'pagamentos') loadSetorPagamentos();
     if (tab === 'dashboard') loadDashboardData();
+    if (tab === 'notas-fiscais' && !state.notasFiscaisLoaded) loadNotasFiscais();
   }
 
+  // ── Notas Fiscais (sincronizado pelo agente sync-notas-fiscais) ───────────
+  // Tela nova, somente leitura — não existia destino estruturado pra esse agente antes.
+  async function loadNotasFiscais() {
+    const tbody = document.getElementById('nfTbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="fin-empty">Carregando...</td></tr>';
+    try {
+      const { data: maxRows, error: maxErr } = await supabase
+        .from('grm_notas_fiscais_importacoes').select('created_at').order('created_at', { ascending: false }).limit(1);
+      if (maxErr) throw maxErr;
+      const maxCreatedAt = maxRows?.[0]?.created_at;
+      if (!maxCreatedAt) { state.notasFiscais = []; }
+      else {
+        // o agente recarrega a tabela inteira a cada sincronização; pegamos só o lote mais recente.
+        const threshold = new Date(new Date(maxCreatedAt).getTime() - 5 * 60 * 1000).toISOString();
+        const { data, error } = await supabase
+          .from('grm_notas_fiscais_importacoes').select('dados_json').gte('created_at', threshold).limit(5000);
+        if (error) throw error;
+        state.notasFiscais = (data || []).map((row) => row.dados_json);
+      }
+      state.notasFiscaisLoaded = true;
+    } catch (error) {
+      console.warn('[financeiro] falha ao carregar notas fiscais do agente', error);
+      state.notasFiscais = [];
+    }
+    renderNotasFiscais();
+  }
+
+  function notasFiscaisFiltradas() {
+    const clienteFiltro = normalize(state.notasFiscaisFiltro.cliente);
+    const situacaoFiltro = state.notasFiscaisFiltro.situacao;
+    return state.notasFiscais.filter((nf) => {
+      if (clienteFiltro && !normalize(nf?.Cliente).includes(clienteFiltro)) return false;
+      if (situacaoFiltro && nf?.Situação !== situacaoFiltro) return false;
+      return true;
+    });
+  }
+
+  function renderNotasFiscais() {
+    const tbody = document.getElementById('nfTbody');
+    const summary = document.getElementById('nfSummary');
+    const note = document.getElementById('nfPreviewNote');
+    if (!tbody || !summary) return;
+
+    const rows = notasFiscaisFiltradas();
+    const valorBrutoTotal = rows.reduce((sum, nf) => sum + toNumber(nf?.['Valor Bruto']), 0);
+    const valorNfTotal = rows.reduce((sum, nf) => sum + toNumber(nf?.['Valor da N.F.']), 0);
+    const pagas = rows.filter((nf) => nf?.Situação === 'Paga').length;
+    const aguardando = rows.filter((nf) => nf?.Situação === 'Aguardando Pagamento').length;
+
+    summary.innerHTML = `
+      <div class="pay-mini"><span>Total de N.F.</span><strong>${rows.length}</strong></div>
+      <div class="pay-mini"><span>Valor Bruto</span><strong>${money(valorBrutoTotal)}</strong></div>
+      <div class="pay-mini"><span>Valor da N.F.</span><strong>${money(valorNfTotal)}</strong></div>
+      <div class="pay-mini"><span>Pagas / Aguardando</span><strong>${pagas} / ${aguardando}</strong></div>
+    `;
+
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="fin-empty">Nenhuma nota fiscal encontrada.</td></tr>';
+      if (note) note.textContent = '';
+      return;
+    }
+
+    const sorted = [...rows].sort((a, b) => String(b?.['Data N.F.'] || '').localeCompare(String(a?.['Data N.F.'] || '')));
+    const preview = sorted.slice(0, 300);
+    tbody.innerHTML = preview.map((nf) => `
+      <tr>
+        <td>${esc(nf?.['N.F.'] ?? '-')}</td>
+        <td>${esc(nf?.['Data N.F.'] || '-')}</td>
+        <td>${esc(nf?.Cliente || '-')}</td>
+        <td>${esc(nf?.Coordenação || '-')}</td>
+        <td>${esc(nf?.Tons ?? '-')}</td>
+        <td>${money(toNumber(nf?.['Valor Bruto']))}</td>
+        <td>${money(toNumber(nf?.Imposto))}</td>
+        <td>${money(toNumber(nf?.['Valor da N.F.']))}</td>
+        <td><span class="fin-status ${nf?.Situação === 'Paga' ? 'ok' : 'neutral'}">${esc(nf?.Situação || '-')}</span></td>
+      </tr>
+    `).join('');
+    if (note) note.textContent = sorted.length > preview.length ? `Mostrando ${preview.length} de ${sorted.length} notas fiscais.` : '';
+  }
 
   function filteredSetorPagamentos() {
     const filter = state.pagamentosSetorFilter || 'todos';
@@ -2641,6 +2871,9 @@ initProtectedPage('Financeiro', (content, userContext) => {
   document.querySelectorAll('[data-tab-target]').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tabTarget); if (btn.dataset.tabTarget && btn.dataset.tabTarget !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tabTarget}`); }));
   document.getElementById('btnReload').addEventListener('click', loadFluxo);
   document.getElementById('btnReloadSetorPagamentos')?.addEventListener('click', loadSetorPagamentos);
+  document.getElementById('nfReloadBtn')?.addEventListener('click', loadNotasFiscais);
+  document.getElementById('nfFiltroCliente')?.addEventListener('input', (event) => { state.notasFiscaisFiltro.cliente = event.target.value; renderNotasFiscais(); });
+  document.getElementById('nfFiltroSituacao')?.addEventListener('change', (event) => { state.notasFiscaisFiltro.situacao = event.target.value; renderNotasFiscais(); });
   document.querySelectorAll('[data-setor-pay]').forEach((btn) => btn.addEventListener('click', () => {
     state.pagamentosSetorFilter = btn.dataset.setorPay || 'todos';
     document.querySelectorAll('[data-setor-pay]').forEach((item) => item.classList.toggle('active', item === btn));
@@ -2751,5 +2984,5 @@ initProtectedPage('Financeiro', (content, userContext) => {
   window.addEventListener('hashchange', () => setTab(tabFromHash()));
   setPayMode('adiantamentos');
   setTab(tabFromHash());
-  loadFluxo();
+  sincronizarContasAgente().then(loadFluxo, loadFluxo);
 });

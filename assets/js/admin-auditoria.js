@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient.js';
 const MONEY = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const DATE = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' });
 
-const state = { tab: tabFromHash(), solicitacoes: [], historico: [], agrupamentos: [], selected: null, userContext: null };
+const state = { tab: tabFromHash(), solicitacoes: [], historico: [], agrupamentos: [], auditoriasRegional: [], selected: null, userContext: null };
 
 function esc(value) { return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;'); }
 function norm(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase(); }
@@ -172,6 +172,39 @@ function renderKpis(){
   const el=document.getElementById('admAudKpis'); if(!el) return;
   el.innerHTML=`<div class="adm-aud-kpi"><b>${k.solicitadas}</b><span>Solicitadas</span></div><div class="adm-aud-kpi"><b>${k.abertas}</b><span>Abertas</span></div><div class="adm-aud-kpi"><b>${k.agrupadas}</b><span>Agrupadas</span></div><div class="adm-aud-kpi"><b>${k.lancadas}</b><span>Lançadas</span></div><div class="adm-aud-kpi"><b>${k.historico}</b><span>Histórico</span></div>`;
 }
+async function loadAuditoriasRegional(){
+  try {
+    const { data: maxRows, error: maxErr } = await supabase
+      .from('grm_auditorias_importacoes').select('created_at').order('created_at', { ascending: false }).limit(1);
+    if (maxErr) throw maxErr;
+    const maxCreatedAt = maxRows?.[0]?.created_at;
+    if (!maxCreatedAt) { state.auditoriasRegional = []; return; }
+    // o agente recarrega a tabela inteira a cada sincronização; pegamos só o lote mais recente.
+    const threshold = new Date(new Date(maxCreatedAt).getTime() - 5 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from('grm_auditorias_importacoes').select('dados_json').gte('created_at', threshold).limit(200);
+    if (error) throw error;
+    state.auditoriasRegional = (data || []).map((row) => row.dados_json);
+  } catch (error) {
+    console.warn('[Auditoria] falha ao carregar resumo regional do agente', error);
+    state.auditoriasRegional = [];
+  }
+}
+
+function renderAuditoriasRegional(){
+  const tbody = document.getElementById('admAudRegionalBody');
+  if (!tbody) return;
+  const rows = [...(state.auditoriasRegional || [])].sort((a, b) => Number(b?.auditValue || 0) - Number(a?.auditValue || 0));
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="adm-aud-empty">Nenhum resumo encontrado.</td></tr>';
+    return;
+  }
+  const totalCount = rows.reduce((sum, r) => sum + Number(r?.auditCount || 0), 0);
+  const totalValue = rows.reduce((sum, r) => sum + Number(r?.auditValue || 0), 0);
+  tbody.innerHTML = rows.map((r) => `<tr><td>${esc(r?.reportName || '-')}</td><td>${esc(r?.auditCount ?? '-')}</td><td>${money(r?.auditValue)}</td></tr>`).join('')
+    + `<tr><td><strong>Total</strong></td><td><strong>${totalCount}</strong></td><td><strong>${money(totalValue)}</strong></td></tr>`;
+}
+
 function renderActive(){
   document.querySelectorAll('.adm-aud-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab));
   if(state.tab==='agrupadas') renderTableOverrideForAgrupadas(); else renderTable();
@@ -180,9 +213,10 @@ function renderActive(){
 initProtectedPage('Auditoria', async (content, userContext) => {
   state.userContext=userContext;
   await loadAll();
-  content.innerHTML=`${styles()}<section class="adm-aud-hero"><div><div class="eyebrow">Módulo Auditoria</div><h2>Auditorias operacionais</h2><p>Fila para lançar auditorias, solicitar pagamento individual, agrupar por auditor ou finalizar internas em OK.</p></div><div class="adm-aud-kpis" id="admAudKpis"></div></section><section class="adm-aud-panel"><div class="adm-aud-head"><div class="adm-aud-tabs"><button class="adm-aud-tab" data-tab="solicitadas" type="button">Solicitadas</button><button class="adm-aud-tab" data-tab="abertas" type="button">Abertas</button><button class="adm-aud-tab" data-tab="agrupadas" type="button">Agrupadas</button><button class="adm-aud-tab" data-tab="lancadas" type="button">Lançadas</button><button class="adm-aud-tab" data-tab="historico" type="button">Histórico</button></div><div class="adm-aud-actions"><button class="adm-aud-btn" id="btnReloadAuditoria" type="button">↻ Atualizar</button></div></div><div class="adm-aud-msg" id="admAudMsg"></div><div id="admAudTable"></div></section><div class="adm-aud-modal" id="admAudModal"><div class="adm-aud-dialog" id="admAudModalBody"></div></div>`;
+  content.innerHTML=`${styles()}<section class="adm-aud-hero"><div><div class="eyebrow">Módulo Auditoria</div><h2>Auditorias operacionais</h2><p>Fila para lançar auditorias, solicitar pagamento individual, agrupar por auditor ou finalizar internas em OK.</p></div><div class="adm-aud-kpis" id="admAudKpis"></div></section><section class="adm-aud-panel"><div class="adm-aud-head"><div><h3 style="margin:0">Auditorias por região</h3><p class="adm-aud-muted">Resumo sincronizado automaticamente pelo agente sync-auditorias.</p></div></div><div class="adm-aud-table-wrap"><table class="adm-aud-table" style="min-width:0"><thead><tr><th>Região</th><th>Qtd. auditorias</th><th>Valor faturado</th></tr></thead><tbody id="admAudRegionalBody"><tr><td colspan="3" class="adm-aud-empty">Carregando...</td></tr></tbody></table></div></section><section class="adm-aud-panel"><div class="adm-aud-head"><div class="adm-aud-tabs"><button class="adm-aud-tab" data-tab="solicitadas" type="button">Solicitadas</button><button class="adm-aud-tab" data-tab="abertas" type="button">Abertas</button><button class="adm-aud-tab" data-tab="agrupadas" type="button">Agrupadas</button><button class="adm-aud-tab" data-tab="lancadas" type="button">Lançadas</button><button class="adm-aud-tab" data-tab="historico" type="button">Histórico</button></div><div class="adm-aud-actions"><button class="adm-aud-btn" id="btnReloadAuditoria" type="button">↻ Atualizar</button></div></div><div class="adm-aud-msg" id="admAudMsg"></div><div id="admAudTable"></div></section><div class="adm-aud-modal" id="admAudModal"><div class="adm-aud-dialog" id="admAudModalBody"></div></div>`;
   renderKpis(); renderActive();
+  loadAuditoriasRegional().then(renderAuditoriasRegional);
   document.querySelectorAll('.adm-aud-tab').forEach(btn=>btn.addEventListener('click',()=>{ state.tab=btn.dataset.tab; history.replaceState(null,'',`#${state.tab}`); renderActive(); }));
-  document.getElementById('btnReloadAuditoria')?.addEventListener('click',async()=>{ setMsg('Atualizando...'); await loadAll(); renderKpis(); renderActive(); setMsg('Atualizado.','ok'); });
+  document.getElementById('btnReloadAuditoria')?.addEventListener('click',async()=>{ setMsg('Atualizando...'); await loadAll(); renderKpis(); renderActive(); await loadAuditoriasRegional(); renderAuditoriasRegional(); setMsg('Atualizado.','ok'); });
   document.getElementById('admAudModal')?.addEventListener('click',(ev)=>{ if(ev.target.id==='admAudModal') ev.currentTarget.classList.remove('open'); });
 });

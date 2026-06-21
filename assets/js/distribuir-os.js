@@ -3,6 +3,7 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
 import { getColaboradores } from './colaboradoresCache.js';
+import { sincronizarListaOsDoAgente } from './listaOsAgentSync.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -76,6 +77,7 @@ initProtectedPage('Distribuir O.S', async (content) => {
 
   const el = { data: document.getElementById('distData'), coord: document.getElementById('distCoord'), busca: document.getElementById('distBusca'), feedback: document.getElementById('distFeedback'), stats: document.getElementById('distStats'), list: document.getElementById('distList'), reload: document.getElementById('distReload'), pick: document.getElementById('distPickFile'), file: document.getElementById('distFile') };
   bind();
+  await sincronizarListaOsDoAgente();
   await loadAll();
 
   function bind() {
