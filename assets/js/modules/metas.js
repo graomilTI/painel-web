@@ -9,6 +9,7 @@
  */
 
 import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
+import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSync.js';
 
 (function () {
   'use strict';
@@ -2838,6 +2839,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     render(container, state);
     bindEvents(container, state, supabase, options);
 
+    await sincronizarProducaoSnapshotDoAgente();
     await loadData(state, supabase);
     render(container, state);
     bindEvents(container, state, supabase, options);
