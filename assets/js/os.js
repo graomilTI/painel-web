@@ -294,15 +294,19 @@ function injectStyles() {
 export async function renderOsModule(content, options = {}) {
   const podeReusarDados = Boolean(options.reuseData) && state.os.length > 0 && (Date.now() - lastLoadedAt) < FRESH_MS;
 
+  if (options.supervisaoFilter !== undefined) state.filters.supervisao = options.supervisaoFilter;
+  if (options.statusFilter !== undefined) state.filters.status = options.statusFilter;
+
   injectStyles();
   content.innerHTML = `
     <section class="card mt-16">
       <div class="section-head"><div><h3>Ordens de Serviço da regional</h3><p class="muted">O gestor visualiza somente as O.S. liberadas para sua supervisão/regional e define se vai atender, finalizar ou aguardar.</p></div></div>
+      ${options.hideFilters ? '' : `
       <div class="filters-grid os-grid">
         <div class="field"><label>Supervisão</label><select id="osSupervisao" class="os-select"></select></div>
         <div class="field"><label>Status gestor</label><select id="osStatus" class="os-select"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="AGUARDAR">Aguardar</option><option value="ATENDER">Atender</option><option value="FINALIZAR">Finalizar</option></select></div>
         <div class="field field-span-2"><label>Buscar</label><input id="osBusca" class="os-select" type="text" placeholder="O.S., cliente, embarque, destino..." /></div>
-      </div>
+      </div>`}
       <div class="feedback mt-16" id="osFeedback">Carregando...</div>
     </section>
     <section class="grid-cards mt-16" id="osStats"></section>
@@ -325,9 +329,9 @@ export async function renderOsModule(content, options = {}) {
   }
 
   function bind() {
-    el.supervisao.addEventListener('change', () => { state.filters.supervisao = el.supervisao.value; render(); });
-    el.status.addEventListener('change', () => { state.filters.status = el.status.value; render(); });
-    el.busca.addEventListener('input', () => { state.filters.busca = el.busca.value.trim(); render(); });
+    el.supervisao?.addEventListener('change', () => { state.filters.supervisao = el.supervisao.value; render(); });
+    el.status?.addEventListener('change', () => { state.filters.status = el.status.value; render(); });
+    el.busca?.addEventListener('input', () => { state.filters.busca = el.busca.value.trim(); render(); });
     el.reload.addEventListener('click', loadAll);
     el.list.addEventListener('click', onListClick);
     el.list.addEventListener('change', onListChange);
@@ -482,9 +486,15 @@ export async function renderOsModule(content, options = {}) {
 
   function fillSupervisoes() {
     const sups = [...new Set(state.os.map((row) => row.supervisao).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-    el.supervisao.innerHTML = '<option value="">Todas liberadas</option>' + sups.map((sup) => `<option value="${escapeHtml(sup)}">${escapeHtml(sup)}</option>`).join('');
-    if (state.access.restricted && sups.length === 1) {
-      el.supervisao.value = sups[0];
+    if (el.supervisao) {
+      el.supervisao.innerHTML = '<option value="">Todas liberadas</option>' + sups.map((sup) => `<option value="${escapeHtml(sup)}">${escapeHtml(sup)}</option>`).join('');
+      if (state.filters.supervisao) {
+        el.supervisao.value = state.filters.supervisao;
+      } else if (state.access.restricted && sups.length === 1) {
+        el.supervisao.value = sups[0];
+        state.filters.supervisao = sups[0];
+      }
+    } else if (!state.filters.supervisao && state.access.restricted && sups.length === 1) {
       state.filters.supervisao = sups[0];
     }
   }

@@ -1,0 +1,18 @@
+-- Configuração dos settings de banco para pg_cron poder chamar as Edge Functions.
+-- ATENÇÃO: NÃO commitar com valores preenchidos.
+-- Execute manualmente no SQL Editor do Supabase dashboard após aplicar a migration anterior.
+--
+-- alter database postgres
+--   set app.supabase_url = 'https://xyzpnuumdqhegxakkyws.supabase.co';
+--
+-- alter database postgres
+--   set app.service_role_key = 'eyJ...SEU_SERVICE_ROLE_KEY_COMPLETO...';
+--
+-- Após executar, verifique os jobs agendados com:
+--   select jobname, schedule, active from cron.job order by jobname;
+--
+-- Para ver logs das últimas execuções:
+--   select job_name, started_at, status, result, error_msg
+--   from public.cron_exec_logs
+--   order by started_at desc
+--   limit 50;

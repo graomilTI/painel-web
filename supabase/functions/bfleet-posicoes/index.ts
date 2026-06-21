@@ -259,11 +259,24 @@ function parseReportDate(v: unknown): string | null {
   return null;
 }
 
+async function cronLogFinish(supabase: any, logId: string | null, status: 'success' | 'error', result?: unknown, errorMsg?: string) {
+  if (!logId) return;
+  await supabase.rpc('cron_log_finish', {
+    p_log_id: logId,
+    p_status: status,
+    p_result: result ? result : null,
+    p_error: errorMsg ?? null,
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
+  const body = await readBody(req);
+  const cronLogId: string | null = body?.cron_log_id ?? null;
+
   try {
-    await readBody(req);
+    void body; // já lido acima
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -367,15 +380,21 @@ Deno.serve(async (req) => {
       atualizados += part.length;
     }
 
-    return json({
-      ok: true,
-      total: rows.length,
-      atualizados,
-      sem_placa: semPlaca,
-      gerado_em: nowIso,
-    });
+    const result = { ok: true, total: rows.length, atualizados, sem_placa: semPlaca, gerado_em: nowIso };
+    await cronLogFinish(supabase, cronLogId, 'success', result);
+    return json(result);
   } catch (err) {
     console.error('[bfleet-posicoes]', err);
-    return json({ error: err?.message || String(err) }, 500);
+    const msg = err?.message || String(err);
+    // supabase pode não estar inicializado se erro foi antes — ignora falha no log
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+      if (supabaseUrl && serviceKey && cronLogId) {
+        const sb = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+        await cronLogFinish(sb, cronLogId, 'error', null, msg);
+      }
+    } catch { /* ignora */ }
+    return json({ error: msg }, 500);
   }
 });

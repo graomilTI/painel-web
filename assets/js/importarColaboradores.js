@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
+import { invalidateColaboradores } from './colaboradoresCache.js';
 import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
 function normalizeText(value) {
@@ -529,6 +530,7 @@ Progresso: ${done}/${total}`
 
       if (updError) throw updError;
 
+      invalidateColaboradores(); // nova foto importada: descarta cache antigo
       setSummary({ linhas: allRows.length, validas: mapped.length, status: 'Concluído' });
       setFeedback(
         `Importação concluída com sucesso.
