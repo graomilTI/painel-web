@@ -71,8 +71,7 @@ function injectGestorAjustesStyles() {
     #progSup option,#progSup optgroup,#progOsStatusTop option,#progOsStatusTop optgroup{background:#020617!important;background-color:#020617!important;color:#f8fafc!important;opacity:1!important;text-shadow:none!important}
     #progSup option:checked,#progSup option:hover,#progOsStatusTop option:checked,#progOsStatusTop option:hover{background:#064e3b!important;background-color:#064e3b!important;color:#ffffff!important}
     #progSteps,#progSteps .stepbtn{position:relative!important;z-index:0!important}
-    .prog-toolbar:has(#progSup:focus) .prog-toolbar-row-steps{margin-top:310px!important;padding-top:12px!important;position:relative!important;z-index:0!important}
-    .prog-toolbar:has(#progSup:focus) #progSteps,.prog-toolbar:has(#progSup:focus) #progSteps .stepbtn{z-index:0!important}
+    .prog-toolbar:has(#progSup:focus) .prog-toolbar-row-steps{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
     .prog-tfield-os-status{flex:0 0 170px;max-width:190px;position:relative!important;z-index:9005!important}
     .prog-list-card,#progList,#progDistribuicaoOsMount,#osLiteRoot,#osLiteStats,#osLiteList{position:relative;z-index:1;overflow:visible!important}
     #progDistribuicaoOsMount .grid-cards,#progDistribuicaoOsMount .card:not(:first-child){position:relative;z-index:1}
@@ -83,7 +82,7 @@ function injectGestorAjustesStyles() {
     .prog-os-lazy-card strong{display:block;color:#f8fafc;margin-bottom:4px;font-size:14px}
     .prog-os-lazy-card p{margin:0;font-size:13px;line-height:1.35}
     .prog-os-lazy-card .btn{min-height:38px}
-    @media(max-width:900px){.prog-tfield-sup,.prog-tfield-os-status{flex:1 1 100%!important;max-width:none!important}.prog-tfield-sup select,#progSup{min-width:0!important}.prog-toolbar:has(#progSup:focus) .prog-toolbar-row-steps{margin-top:280px!important}.prog-os-lazy-card{align-items:stretch}.prog-os-lazy-card .btn{width:100%;justify-content:center}}
+    @media(max-width:900px){.prog-tfield-sup,.prog-tfield-os-status{flex:1 1 100%!important;max-width:none!important}.prog-tfield-sup select,#progSup{min-width:0!important}.prog-os-lazy-card{align-items:stretch}.prog-os-lazy-card .btn{width:100%;justify-content:center}}
   `;
   document.head.appendChild(style);
 }
