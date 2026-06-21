@@ -43,6 +43,7 @@ const state = {
   fobReportRows: [],
   fobReportStats: null,
   fobReportFiles: { movimento: null, producao: null, nhe: null },
+  fobReportAutoLoaded: false,
   os: [],
   atribuicoes: [],
   alertas: [],
@@ -320,7 +321,7 @@ initProtectedPage('Painel de Logística', async (content) => {
       <div class="section-head">
         <div>
           <h3>FOB — Comparação automática</h3>
-          <p class="muted">Anexe Produção Diária, NHE e Mapa/Movimentação de Embarque para gerar o relatório igual à aba FOB da planilha modelo.</p>
+          <p class="muted">Comparação gerada automaticamente com a base sincronizada pelos agentes (Distribuição de O.S., Produção Diária e NHE). O upload de Produção Diária, NHE e Mapa/Movimentação fica disponível apenas para reprocessar um arquivo pontual.</p>
         </div>
         <button id="fobReload" class="btn btn-secondary" type="button">↻ Atualizar histórico</button>
       </div>
@@ -585,6 +586,7 @@ initProtectedPage('Painel de Logística', async (content) => {
     if (state.tab === 'os' && !state.osLogLoaded) loadOsLog();
     if (state.tab === 'abertura_os' && !state.aberturaOsLoaded) loadAberturaOs();
     if (state.tab === 'fob' && !state.fobLoaded) loadFob();
+    if (state.tab === 'fob' && !state.fobReportAutoLoaded) { state.fobReportAutoLoaded = true; gerarRelatorioFobAutomatico(); }
     if (isAdmTab && !state.producaoLoaded) loadProducao(); // produção sob demanda
   }
 
@@ -985,6 +987,101 @@ initProtectedPage('Painel de Logística', async (content) => {
     return XLSX.read(buffer, { type: 'array', cellDates: true });
   }
 
+  // Núcleo da comparação FOB, compartilhado entre a importação manual de planilhas
+  // e a comparação automática baseada nas tabelas sincronizadas pelos agentes.
+  // Regra: entra no FOB toda O.S. do mapa com Tons Hoje = 0. Status OK quando há NHE
+  // por O.S./data ou Produção com Cargas = NHE; DOIS EMBARQUES quando a mesma combinação
+  // Cliente + Cidade + Local + Data aparece 2+ vezes no mapa ou também no NHE; senão PENDENTE.
+  function compararFob(movRows, prodRows, nheRows) {
+    const setNheOsData = new Set();
+    const setNheOsOnly = new Set();
+    const setNheCcld = new Set();
+    nheRows.forEach((row) => {
+      const os = normOs(pickValue(row, ['O.S.', 'OS', 'O.S', 'O S']));
+      const data = ymd(pickValue(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
+      if (os) setNheOsOnly.add(os);
+      if (os && data) setNheOsData.add(`${os}|${data}`);
+      const cli = pickValue(row, ['Cliente']);
+      const cid = pickValue(row, ['Cidade de Embarque', 'Cidade']);
+      const loc = pickValue(row, ['Embarque', 'Local', 'Local de Embarque']);
+      if (cli && cid && loc && data) setNheCcld.add(`${normText(cli)}|${normText(cid)}|${normText(loc)}|${data}`);
+    });
+
+    const setProdNheOsData = new Set();
+    const setProdNheOsOnly = new Set();
+    prodRows.forEach((row) => {
+      const os = normOs(pickValue(row, ['O.S.', 'OS']));
+      const data = ymd(pickValue(row, ['Data']));
+      const cargas = normText(pickValue(row, ['Cargas']));
+      if (!os || cargas !== 'NHE') return;
+      setProdNheOsOnly.add(os);
+      if (data) setProdNheOsData.add(`${os}|${data}`);
+    });
+
+    const movCcldCount = new Map();
+    movRows.forEach((row) => {
+      const data = ymd(pickValue(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
+      const cli = pickValue(row, ['Cliente']);
+      const cid = pickValue(row, ['Cidade']);
+      const loc = pickValue(row, ['Local', 'Local de Embarque']);
+      if (!data || !cli || !cid || !loc) return;
+      const key = `${normText(cli)}|${normText(cid)}|${normText(loc)}|${data}`;
+      movCcldCount.set(key, (movCcldCount.get(key) || 0) + 1);
+    });
+
+    const rows = [];
+    movRows.forEach((row) => {
+      const os = normOs(pickValue(row, ['OS', 'O.S.', 'O.S']));
+      const data = ymd(pickValue(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
+      if (!os || !data) return;
+      const tonsHoje = toNumberLoose(pickValue(row, ['Tons Hoje', 'TonsHoje', 'Tons']));
+      if (tonsHoje !== 0) return;
+      const cliente = pickValue(row, ['Cliente']);
+      const cidade = pickValue(row, ['Cidade']);
+      const local = pickValue(row, ['Local', 'Local de Embarque']);
+      const keyOsData = `${os}|${data}`;
+      let status = 'PENDENTE';
+      const okNhe = setNheOsData.has(keyOsData) || setNheOsOnly.has(os);
+      const okProd = setProdNheOsData.has(keyOsData) || setProdNheOsOnly.has(os);
+      if (okNhe || okProd) {
+        status = 'OK';
+      } else {
+        const keyCcld = `${normText(cliente)}|${normText(cidade)}|${normText(local)}|${data}`;
+        if ((movCcldCount.get(keyCcld) || 0) >= 2 || setNheCcld.has(keyCcld)) status = 'DOIS EMBARQUES';
+      }
+      rows.push({
+        data,
+        data_br: brDateFromAny(data),
+        os,
+        supervisao: pickValue(row, ['Supervisão', 'Supervisao']),
+        funcionario: pickValue(row, ['Atualizado por', 'Atualizado Por', 'Classificador', 'Funcionário', 'Funcionario']),
+        cliente,
+        cidade,
+        local,
+        tons_movimento: tonsHoje,
+        status,
+        observacao: pickValue(row, ['Observações', 'Observacoes', 'Obs']),
+      });
+    });
+
+    const rank = { PENDENTE: 0, 'DOIS EMBARQUES': 1, OK: 2 };
+    rows.sort((a, b) => (rank[a.status] ?? 99) - (rank[b.status] ?? 99)
+      || String(a.data).localeCompare(String(b.data))
+      || String(a.supervisao || '').localeCompare(String(b.supervisao || ''), 'pt-BR'));
+
+    return {
+      rows,
+      stats: {
+        movimento: movRows.length,
+        producao: prodRows.length,
+        nhe: nheRows.length,
+        pendentes: rows.filter((r) => r.status === 'PENDENTE').length,
+        ok: rows.filter((r) => r.status === 'OK').length,
+        dois: rows.filter((r) => r.status === 'DOIS EMBARQUES').length,
+      },
+    };
+  }
+
   async function gerarRelatorioFobPorPlanilhas() {
     const files = state.fobReportFiles || {};
     if (!files.movimento || !files.producao || !files.nhe) {
@@ -1010,93 +1107,15 @@ initProtectedPage('Painel de Logística', async (content) => {
         ['O.S.', 'OS'], ['Data'], ['Cliente'], ['Cidade de Embarque', 'Cidade'], ['Embarque', 'Local'],
       ], ['NHE']);
 
-      const setNheOsData = new Set();
-      const setNheOsOnly = new Set();
-      const setNheCcld = new Set();
-      nheData.rows.forEach((row) => {
-        const os = normOs(pickValue(row, ['O.S.', 'OS', 'O.S', 'O S']));
-        const data = ymd(pickValue(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
-        if (os) setNheOsOnly.add(os);
-        if (os && data) setNheOsData.add(`${os}|${data}`);
-        const cli = pickValue(row, ['Cliente']);
-        const cid = pickValue(row, ['Cidade de Embarque', 'Cidade']);
-        const loc = pickValue(row, ['Embarque', 'Local', 'Local de Embarque']);
-        if (cli && cid && loc && data) setNheCcld.add(`${normText(cli)}|${normText(cid)}|${normText(loc)}|${data}`);
-      });
-
-      const setProdNheOsData = new Set();
-      const setProdNheOsOnly = new Set();
-      prodData.rows.forEach((row) => {
-        const os = normOs(pickValue(row, ['O.S.', 'OS']));
-        const data = ymd(pickValue(row, ['Data']));
-        const cargas = normText(pickValue(row, ['Cargas']));
-        if (!os || cargas !== 'NHE') return;
-        setProdNheOsOnly.add(os);
-        if (data) setProdNheOsData.add(`${os}|${data}`);
-      });
-
-      const movCcldCount = new Map();
-      movData.rows.forEach((row) => {
-        const data = ymd(pickValue(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
-        const cli = pickValue(row, ['Cliente']);
-        const cid = pickValue(row, ['Cidade']);
-        const loc = pickValue(row, ['Local', 'Local de Embarque']);
-        if (!data || !cli || !cid || !loc) return;
-        const key = `${normText(cli)}|${normText(cid)}|${normText(loc)}|${data}`;
-        movCcldCount.set(key, (movCcldCount.get(key) || 0) + 1);
-      });
-
-      const rows = [];
-      movData.rows.forEach((row) => {
-        const os = normOs(pickValue(row, ['OS', 'O.S.', 'O.S']));
-        const data = ymd(pickValue(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
-        if (!os || !data) return;
-        const tonsHoje = toNumberLoose(pickValue(row, ['Tons Hoje', 'TonsHoje', 'Tons']));
-        if (tonsHoje !== 0) return;
-        const cliente = pickValue(row, ['Cliente']);
-        const cidade = pickValue(row, ['Cidade']);
-        const local = pickValue(row, ['Local', 'Local de Embarque']);
-        const keyOsData = `${os}|${data}`;
-        let status = 'PENDENTE';
-        const okNhe = setNheOsData.has(keyOsData) || setNheOsOnly.has(os);
-        const okProd = setProdNheOsData.has(keyOsData) || setProdNheOsOnly.has(os);
-        if (okNhe || okProd) {
-          status = 'OK';
-        } else {
-          const keyCcld = `${normText(cliente)}|${normText(cidade)}|${normText(local)}|${data}`;
-          if ((movCcldCount.get(keyCcld) || 0) >= 2 || setNheCcld.has(keyCcld)) status = 'DOIS EMBARQUES';
-        }
-        rows.push({
-          data,
-          data_br: brDateFromAny(data),
-          os,
-          supervisao: pickValue(row, ['Supervisão', 'Supervisao']),
-          funcionario: pickValue(row, ['Atualizado por', 'Atualizado Por', 'Classificador', 'Funcionário', 'Funcionario']),
-          cliente,
-          cidade,
-          local,
-          tons_movimento: tonsHoje,
-          status,
-          observacao: pickValue(row, ['Observações', 'Observacoes', 'Obs']),
-        });
-      });
-
-      const rank = { PENDENTE: 0, 'DOIS EMBARQUES': 1, OK: 2 };
-      rows.sort((a, b) => (rank[a.status] ?? 99) - (rank[b.status] ?? 99)
-        || String(a.data).localeCompare(String(b.data))
-        || String(a.supervisao || '').localeCompare(String(b.supervisao || ''), 'pt-BR'));
+      const { rows, stats } = compararFob(movData.rows, prodData.rows, nheData.rows);
 
       state.fobReportRows = rows;
       state.fobReportStats = {
-        movimento: movData.rows.length,
-        producao: prodData.rows.length,
-        nhe: nheData.rows.length,
+        ...stats,
         abaMovimento: movData.sheetName,
         abaProducao: prodData.sheetName,
         abaNhe: nheData.sheetName,
-        pendentes: rows.filter((r) => r.status === 'PENDENTE').length,
-        ok: rows.filter((r) => r.status === 'OK').length,
-        dois: rows.filter((r) => r.status === 'DOIS EMBARQUES').length,
+        fonte: 'manual',
       };
       renderFobReport();
       el.feedback.textContent = `Relatório FOB gerado: ${rows.length} linha(s), ${state.fobReportStats.pendentes} pendente(s).`;
@@ -1105,6 +1124,79 @@ initProtectedPage('Painel de Logística', async (content) => {
       el.feedback.textContent = `Falha ao gerar FOB: ${error.message || 'erro desconhecido'}`;
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = 'Gerar relatório FOB'; }
+    }
+  }
+
+  // Comparação automática: usa as tabelas sincronizadas pelos agentes em vez de upload manual.
+  // Movimentação ("Tons Hoje") vem de grm_mapa_embarque_importacoes (agente sync-mapa-embarque);
+  // Produção e NHE vêm das importações do dia filtradas por Serviço = "Classificação FOB".
+  function agentRowToHeaderObject(dadosJson) {
+    const obj = {};
+    Object.keys(dadosJson || {}).forEach((key) => { obj[normHeader(key)] = dadosJson[key]; });
+    return obj;
+  }
+
+  async function buscarMovimentoAgente() {
+    const hoje = hojeBr();
+    const { data, error } = await supabase
+      .from('grm_mapa_embarque_importacoes')
+      .select('dados_json,created_at')
+      .eq('dados_json->>Data', hoje)
+      .order('created_at', { ascending: false })
+      .limit(20000);
+    if (error) throw error;
+    // o agente resincroniza o mapa várias vezes ao dia; mantém só a leitura mais recente por O.S.
+    const vistos = new Set();
+    const rows = [];
+    (data || []).forEach((row) => {
+      const os = String(row.dados_json?.OS ?? '').trim();
+      if (!os || vistos.has(os)) return;
+      vistos.add(os);
+      rows.push(agentRowToHeaderObject(row.dados_json));
+    });
+    return rows;
+  }
+
+  async function buscarServicoFobAgente(tabela) {
+    const hoje = hojeBr();
+    const { data, error } = await supabase
+      .from(tabela)
+      .select('dados_json')
+      .eq('dados_json->>Serviço', 'Classificação FOB')
+      .eq('dados_json->>Data', hoje)
+      .limit(20000);
+    if (error) throw error;
+    return (data || []).map((row) => agentRowToHeaderObject(row.dados_json));
+  }
+
+  function hojeBr() {
+    const d = new Date();
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  }
+
+  async function gerarRelatorioFobAutomatico() {
+    try {
+      const [movRows, prodRows, nheRows] = await Promise.all([
+        buscarMovimentoAgente(),
+        buscarServicoFobAgente('grm_producao_diaria_importacoes'),
+        buscarServicoFobAgente('grm_nhe_importacoes'),
+      ]);
+
+      const { rows, stats } = compararFob(movRows, prodRows, nheRows);
+
+      state.fobReportRows = rows;
+      state.fobReportStats = {
+        ...stats,
+        abaMovimento: 'Distribuição de O.S. (sincronizado pelo agente)',
+        abaProducao: 'Produção Diária (sincronizado pelo agente)',
+        abaNhe: 'NHE (sincronizado pelo agente)',
+        fonte: 'agente',
+      };
+      renderFobReport();
+      el.feedback.textContent = `Comparação FOB automática: ${rows.length} linha(s), ${state.fobReportStats.pendentes} pendente(s).`;
+    } catch (error) {
+      console.error('[FOB automático]', error);
+      el.feedback.textContent = `Falha ao gerar comparação automática do FOB: ${error.message || 'erro desconhecido'}. Use o reprocessamento manual.`;
     }
   }
 
@@ -1118,7 +1210,9 @@ initProtectedPage('Painel de Logística', async (content) => {
     if (btnCsv) btnCsv.disabled = !rows.length;
     if (btnSave) btnSave.disabled = !rows.some((r) => r.status === 'PENDENTE');
     if (!rows.length) {
-      box.innerHTML = '<div class="log-empty">Anexe os arquivos e clique em <strong>Gerar relatório FOB</strong> para visualizar a comparação.</div>';
+      box.innerHTML = stats?.fonte === 'agente'
+        ? '<div class="log-empty">Comparação automática rodou e não encontrou nenhuma O.S. com Tons Hoje = 0 na base sincronizada pelos agentes.</div>'
+        : '<div class="log-empty">Anexe os arquivos e clique em <strong>Gerar relatório FOB</strong> para visualizar a comparação.</div>';
       return;
     }
     const preview = rows.slice(0, 250);
@@ -1127,7 +1221,7 @@ initProtectedPage('Painel de Logística', async (content) => {
         <div class="section-head">
           <div>
             <h3>Resultado da comparação FOB</h3>
-            <p class="muted">Abas usadas: Mov./Mapa <b>${esc(stats?.abaMovimento || '-')}</b> · Produção <b>${esc(stats?.abaProducao || '-')}</b> · NHE <b>${esc(stats?.abaNhe || '-')}</b></p>
+            <p class="muted">Fonte: <b>${stats?.fonte === 'agente' ? 'automática (agentes)' : 'arquivos manuais'}</b> · Mov./Mapa <b>${esc(stats?.abaMovimento || '-')}</b> · Produção <b>${esc(stats?.abaProducao || '-')}</b> · NHE <b>${esc(stats?.abaNhe || '-')}</b></p>
           </div>
         </div>
         <div class="log-mini-grid mt-16">
@@ -1174,11 +1268,15 @@ initProtectedPage('Painel de Logística', async (content) => {
   }
 
   async function salvarPendentesFobImportado() {
-    const pendentes = (state.fobReportRows || []).filter((r) => r.status === 'PENDENTE');
-    if (!pendentes.length) { el.feedback.textContent = 'Nenhuma pendência para salvar.'; return; }
+    const jaSalvos = new Set((state.fob || []).map((r) => `${r.numero_os || ''}|${String(r.data_referencia || '').slice(0, 10)}`));
+    const pendentes = (state.fobReportRows || [])
+      .filter((r) => r.status === 'PENDENTE')
+      .filter((r) => !jaSalvos.has(`${r.os || ''}|${r.data}`));
+    if (!pendentes.length) { el.feedback.textContent = 'Nenhuma pendência nova para salvar (as já existentes não são duplicadas).'; return; }
     const btn = document.getElementById('fobSalvarPendentes');
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
     try {
+      const origemLabel = state.fobReportStats?.fonte === 'agente' ? 'comparação automática (agentes)' : 'importação manual';
       const payload = pendentes.map((r) => ({
         data_referencia: r.data,
         numero_os: r.os || null,
@@ -1187,7 +1285,7 @@ initProtectedPage('Painel de Logística', async (content) => {
         tons_movimento: r.tons_movimento || 0,
         tons_producao: 0,
         tons_nh: 0,
-        observacao: [r.observacao, `Gerado por importação FOB. Local: ${r.cidade || '-'} / ${r.local || '-'}`].filter(Boolean).join(' | '),
+        observacao: [r.observacao, `Gerado por ${origemLabel}. Local: ${r.cidade || '-'} / ${r.local || '-'}`].filter(Boolean).join(' | '),
         status: 'PENDENTE',
         criado_por: state.user?.id || null,
       }));
@@ -1391,7 +1489,7 @@ initProtectedPage('Painel de Logística', async (content) => {
 
     // FOB 0 — form salvar
     if (event.target.closest('#fobSalvar')) { await salvarFob(); return; }
-    if (event.target.closest('#fobReload')) { state.fobLoaded = false; await loadFob(); return; }
+    if (event.target.closest('#fobReload')) { state.fobLoaded = false; await loadFob(); await gerarRelatorioFobAutomatico(); return; }
     if (event.target.closest('#fobGerarRelatorio')) { await gerarRelatorioFobPorPlanilhas(); return; }
     if (event.target.closest('#fobSalvarPendentes')) { await salvarPendentesFobImportado(); return; }
     if (event.target.closest('#fobExportCsv')) { exportarCsvFob(); return; }
