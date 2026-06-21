@@ -268,6 +268,7 @@ function injectProgramacaoStyles() {
     .prog-tfield{display:flex;flex-direction:column;gap:4px;min-width:0}
     .prog-tfield label{font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#7d8aa3;margin:0}
     .prog-tfield select,.prog-tfield input{min-height:38px;padding:8px 11px;border-radius:11px;border:1px solid rgba(52,211,153,.18);background:#0d0d18!important;color:#e2e2f0!important;font-size:13px;color-scheme:dark}
+    .prog-tfield select option{background:#0d0d18;color:#e2e2f0}
     .prog-tfield-sup{flex:1 1 200px;max-width:300px}
     .prog-tfield-date{flex:0 0 148px}
     .prog-tfield-search{flex:1 1 220px}
