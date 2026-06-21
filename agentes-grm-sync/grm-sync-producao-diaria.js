@@ -203,4 +203,7 @@ main().then(() => process.exit(0)).catch(err => {
   log('ERROR', err.message);
   process.exit(1);
 });
-setTimeout(() => process.exit(0), 120000);
+// Os waits internos (botao XLS + download) foram de 15s/60s para 90s/90s; 120s aqui
+// podia matar o processo silenciosamente (sem logar erro) antes de um caso lento real
+// terminar. Aumentado para dar margem real aos timeouts novos.
+setTimeout(() => process.exit(0), 280000);
