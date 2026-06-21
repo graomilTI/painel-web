@@ -870,6 +870,9 @@
         await insertBatchesSupabase_(supabase, 'colaboradores', currentRows, 300, 'upsert');
       }
 
+      // nova foto importada: descarta cache de colaboradoresCache.js (key v1)
+      try { sessionStorage.removeItem('grm:colaboradores_atuais:v1'); } catch {}
+
       const ativos = mapped.filter((row) => row.ativo).length;
       const inativos = mapped.length - ativos;
       const coordenacoes = new Set(mapped.map((row) => row.coordenacao).filter(Boolean)).size;

@@ -233,6 +233,7 @@ function classifyByRules(message, rules) {
     dados_detectados: extractData(full),
     resposta_sugerida: matched?.resposta_modelo || '',
     auto_responder: matched?.auto_responder === true,
+    risco: matched?.risco || null,
     classificado_por: matched ? `regra:${matched.nome}` : 'regras'
   };
 }
@@ -367,7 +368,7 @@ async function syncAccount(account, rules) {
       const limit = Number(account.limite_por_sync || 30);
       let maxUid = lastUid;
       const fetched = [];
-      for await (const item of client.fetch(range, { uid: true, source: true, envelope: true, flags: true }, { uid: true })) {
+      for await (const item of client.fetch(range, { uid: true, source: true, flags: true }, { uid: true })) {
         if (item.uid) maxUid = Math.max(maxUid, Number(item.uid));
         fetched.push(item);
         if (fetched.length >= limit) break;
@@ -404,6 +405,7 @@ async function syncAccount(account, rules) {
           resposta_sugerida: cls.resposta_sugerida || null,
           status: cls.precisa_resposta ? 'RESPONDER' : 'NOVO',
           classificado_por: cls.classificado_por,
+          risco: cls.risco || 'BAIXO',
           raw: { flags: Array.from(item.flags || []), headers: { from: parsed.from?.text, to: parsed.to?.text } }
         }).select('id').single();
         if (error) throw error;
