@@ -62,13 +62,27 @@ async function downloadReport(page) {
   await page.type(REPORT_CONFIG.dateFields.invoiceFrom, dateRange.from);
   await page.type(REPORT_CONFIG.dateFields.invoiceTo, dateRange.to);
 
-  log('INFO', 'Clicando em Atualizar...');
-  await page.click('.invoices-act-update button');
-  await page.waitForSelector('.invoices-report-to-xls button:not([disabled])', { timeout: 90000 });
+  // O download as vezes nao "pega" (provavelmente disputa de recursos quando varios
+  // agentes headless rodam ao mesmo tempo no servidor) mesmo com a pagina/relatorio
+  // saudaveis - por isso repete Atualizar+XLS antes de desistir.
+  const maxAttempts = 3;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const tempDir = setupDownloadDir('notas-fiscais');
+    try {
+      log('INFO', `Clicando em Atualizar... (tentativa ${attempt}/${maxAttempts})`);
+      await page.click('.invoices-act-update button');
+      await page.waitForSelector('.invoices-report-to-xls button:not([disabled])', { timeout: 90000 });
 
-  log('INFO', 'Clicando em XLS...');
-  const tempDir = setupDownloadDir('notas-fiscais');
-  return triggerAndWaitForDownload(page, REPORT_CONFIG.xlsSelector, tempDir);
+      log('INFO', 'Clicando em XLS...');
+      return await triggerAndWaitForDownload(page, REPORT_CONFIG.xlsSelector, tempDir);
+    } catch (err) {
+      lastError = err;
+      log('WARN', `Tentativa ${attempt}/${maxAttempts} falhou: ${err.message}`);
+      if (attempt < maxAttempts) await page.waitForTimeout(3000);
+    }
+  }
+  throw lastError;
 }
 
 async function parseXLS(filePath) {
@@ -147,4 +161,7 @@ async function main() {
 }
 
 main().then(() => process.exit(0)).catch(err => { log('ERROR', err.message); process.exit(1); });
-setTimeout(() => process.exit(0), 120000);
+// Com retry (ate 3 tentativas de ~90s cada para Atualizar+XLS) o script pode levar
+// varios minutos num pior caso real; 120s matava o processo no meio da 2a tentativa
+// SEM logar erro nenhum (parecia so "travar"). Aumentado para caber as 3 tentativas.
+setTimeout(() => process.exit(0), 600000);
