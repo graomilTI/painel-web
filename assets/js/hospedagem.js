@@ -75,12 +75,46 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'hospedagemGestorStyles';
   style.textContent = `
-    .hosp-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.hosp-tab{width:auto;margin-top:0;border:1px solid var(--line-2);background:#15152a;color:var(--text);border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:800}.hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}
-    .hosp-panel{display:none}.hosp-panel.active{display:block}.hosp-form-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}.hosp-field{display:flex;flex-direction:column;gap:7px}.hosp-field.full{grid-column:1/-1}.hosp-field.col-2{grid-column:span 2}.hosp-field.col-3{grid-column:span 3}.hosp-field.col-5{grid-column:span 5}.hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.hosp-field input,.hosp-field textarea,.hosp-field select{width:100%;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.hosp-field textarea{resize:vertical;min-height:86px}.hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.hosp-help{font-size:12px;color:var(--muted)}
-    .hosp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.hosp-btn{width:auto!important;margin-top:0!important}.hosp-feedback{color:var(--muted);font-size:13px}.hosp-feedback.ok{color:#bbf7d0}.hosp-feedback.err{color:#fecaca}.hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.hosp-table{width:100%;border-collapse:collapse;min-width:1040px;background:#15152a}.hosp-table th,.hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.hosp-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.hosp-table tr:hover td{background:rgba(111,208,165,.035)}
+    .hosp-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0;padding:5px;background:#11111f;border:1px solid var(--line);border-radius:999px;width:fit-content}
+    .hosp-tab{width:auto;margin-top:0;border:1px solid transparent;background:transparent;color:var(--muted);border-radius:999px;padding:9px 16px;cursor:pointer;font-weight:800;font-size:13px}
+    .hosp-tab.active{background:rgba(22,101,52,.32);color:#dcfce7;border-color:rgba(111,208,165,.34)}
+    .hosp-panel{display:none}.hosp-panel.active{display:block}
+
+    .hosp-section{margin-top:26px}
+    .hosp-section:first-child{margin-top:0}
+    .hosp-section-head{margin-bottom:14px}
+    .hosp-section-head h4{margin:0;font-size:13px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--green-2)}
+    .hosp-section-head p{margin:3px 0 0;font-size:12.5px;color:var(--muted)}
+
+    .hosp-form-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
+    .hosp-field{display:flex;flex-direction:column;gap:7px}
+    .hosp-field.full{grid-column:1/-1}
+    .hosp-field.col-2{grid-column:span 2}
+    .hosp-field.col-3{grid-column:span 3}
+    .hosp-field.col-4{grid-column:span 4}
+    .hosp-field.col-5{grid-column:span 5}
+    .hosp-field.col-6{grid-column:span 6}
+    .hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}
+    .hosp-field input,.hosp-field textarea,.hosp-field select{width:100%;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}
+    .hosp-field textarea{resize:vertical;min-height:86px}
+    .hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}
+    .hosp-help{font-size:12px;color:var(--muted)}
+
+    .hosp-diarias-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(111,208,165,.28);background:rgba(22,101,52,.16);color:#bbf7d0;border-radius:999px;padding:9px 14px;font-weight:800;font-size:13px;white-space:nowrap}
+
+    .hosp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+    .hosp-btn{width:auto!important;margin-top:0!important}
+    .hosp-feedback{color:var(--muted);font-size:13px}.hosp-feedback.ok{color:#bbf7d0}.hosp-feedback.err{color:#fecaca}
+    .hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.hosp-table{width:100%;border-collapse:collapse;min-width:1040px;background:#15152a}.hosp-table th,.hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.hosp-table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.hosp-table tr:hover td{background:rgba(111,208,165,.035)}
     .hosp-status{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:800;white-space:nowrap}.hosp-status.solicitada,.hosp-status.em_analise,.hosp-status.em_cotacao{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.hosp-status.reservada{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.hosp-status.concluida{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.hosp-status.cancelada{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}
-    .hosp-mini-list{display:grid;gap:10px}.hosp-mini-item{border:1px solid var(--line);border-radius:16px;padding:12px;background:#15152a}.hosp-mini-item strong{display:block}.hosp-mini-item span{color:var(--muted);font-size:13px}.hosp-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px}.hosp-summary div{border:1px solid var(--line);border-radius:16px;padding:12px;background:rgba(11,18,32,.8)}.hosp-summary strong{display:block;font-size:20px;color:#dcfce7}.hosp-summary span{display:block;color:var(--muted);font-size:12px;margin-top:4px}.hosp-colab-box{display:grid;gap:10px}.hosp-colab-row{display:grid;grid-template-columns:1.2fr .6fr auto;gap:10px;align-items:end}.hosp-remove{width:auto!important;margin-top:0!important;padding:10px 12px!important}.hosp-empty{padding:18px;color:var(--muted);text-align:center}.hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;border-radius:16px;padding:12px 14px;margin-top:12px}
-    @media(max-width:850px){.hosp-form-grid,.hosp-colab-row{grid-template-columns:1fr}.hosp-form-grid .hosp-field{grid-column:1/-1}.hosp-remove{justify-self:flex-start}}
+    .hosp-colab-box{display:grid;gap:10px}.hosp-colab-row{display:grid;grid-template-columns:auto 1.2fr .6fr auto;gap:10px;align-items:end}
+    .hosp-colab-index{width:36px;height:36px;border-radius:50%;background:rgba(111,208,165,.14);border:1px solid rgba(111,208,165,.3);color:#bbf7d0;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px}
+    .hosp-remove{width:auto!important;margin-top:0!important;padding:10px 12px!important}
+    .hosp-add-colab{width:auto;margin-top:4px;border:1px dashed var(--line-2);background:transparent;color:var(--muted);border-radius:14px;padding:11px 14px;cursor:pointer;font-weight:800;text-align:center}
+    .hosp-add-colab:hover{border-color:var(--green-2);color:#bbf7d0}
+    .hosp-empty{padding:18px;color:var(--muted);text-align:center}
+    .hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;border-radius:16px;padding:12px 14px;margin-top:12px}
+    @media(max-width:850px){.hosp-form-grid,.hosp-colab-row{grid-template-columns:1fr}.hosp-form-grid .hosp-field{grid-column:1/-1}.hosp-colab-index{justify-self:start}.hosp-remove{justify-self:flex-start}}
   `;
   document.head.appendChild(style);
 }
@@ -114,65 +148,83 @@ initProtectedPage('Hospedagem', (content, userContext) => {
         </div>
 
         <form id="hospForm">
-          <div class="hosp-form-grid">
-            <div class="hosp-field col-5">
-              <label for="cidade">Cidade da reserva *</label>
-              <input id="cidade" required placeholder="Ex.: Araguapaz" />
+          <div class="hosp-section">
+            <div class="hosp-section-head">
+              <h4>Onde e para quem</h4>
+              <p>Cidade, cliente e local de embarque da equipe.</p>
             </div>
-            <div class="hosp-field col-2">
-              <label for="uf">UF *</label>
-              <input id="uf" required maxlength="2" placeholder="GO" />
-            </div>
-            <div class="hosp-field col-5">
-              <label for="cliente">Cliente *</label>
-              <input id="cliente" required placeholder="Cliente / unidade / fazenda" />
-            </div>
-            <div class="hosp-field col-5">
-              <label for="localEmbarque">Local de embarque *</label>
-              <input id="localEmbarque" required placeholder="Ex.: Fazenda Claite" />
-            </div>
-            <div class="hosp-field col-5">
-              <label for="linkLocal">Localização do embarque</label>
-              <input id="linkLocal" placeholder="Cole o link do Google Maps ou referência de localização" />
-            </div>
-            <div class="hosp-field col-2">
-              <label for="saldo">Saldo informado</label>
-              <input id="saldo" type="number" step="0.01" min="0" placeholder="0,00" />
-            </div>
-            <div class="hosp-field col-3">
-              <label for="checkin">Check-in previsto *</label>
-              <input id="checkin" type="date" required />
-            </div>
-            <div class="hosp-field col-3">
-              <label for="checkout">Check-out previsto *</label>
-              <input id="checkout" type="date" required />
-            </div>
-            <div class="hosp-field col-3">
-              <label for="horario">Horário previsto de chegada</label>
-              <input id="horario" type="time" />
-            </div>
-            <div class="hosp-field col-3">
-              <label>Diárias previstas</label>
-              <input id="diarias" readonly />
+            <div class="hosp-form-grid">
+              <div class="hosp-field col-5">
+                <label for="cidade">Cidade da reserva *</label>
+                <input id="cidade" required placeholder="Ex.: Araguapaz" />
+              </div>
+              <div class="hosp-field col-2">
+                <label for="uf">UF *</label>
+                <input id="uf" required maxlength="2" placeholder="GO" />
+              </div>
+              <div class="hosp-field col-5">
+                <label for="cliente">Cliente *</label>
+                <input id="cliente" required placeholder="Cliente / unidade / fazenda" />
+              </div>
+              <div class="hosp-field col-6">
+                <label for="localEmbarque">Local de embarque *</label>
+                <input id="localEmbarque" required placeholder="Ex.: Fazenda Claite" />
+              </div>
+              <div class="hosp-field col-6">
+                <label for="linkLocal">Localização do embarque</label>
+                <input id="linkLocal" placeholder="Cole o link do Google Maps ou referência de localização" />
+              </div>
             </div>
           </div>
 
-          <div class="card mt-16" style="box-shadow:none;">
-            <div class="section-head">
-              <div>
-                <h3>Colaboradores</h3>
-                <p class="muted">Adicione um ou mais colaboradores para a mesma hospedagem.</p>
+          <div class="hosp-section">
+            <div class="hosp-section-head">
+              <h4>Período da estadia</h4>
+              <p>Datas previstas de check-in e check-out.</p>
+            </div>
+            <div class="hosp-form-grid">
+              <div class="hosp-field col-3">
+                <label for="checkin">Check-in previsto *</label>
+                <input id="checkin" type="date" required />
               </div>
-              <button class="btn btn-secondary hosp-btn" type="button" id="addColabBtn">Adicionar colaborador</button>
+              <div class="hosp-field col-3">
+                <label for="checkout">Check-out previsto *</label>
+                <input id="checkout" type="date" required />
+              </div>
+              <div class="hosp-field col-3">
+                <label for="horario">Horário previsto de chegada</label>
+                <input id="horario" type="time" />
+              </div>
+              <div class="hosp-field col-3">
+                <label for="saldo">Saldo informado</label>
+                <input id="saldo" type="number" step="0.01" min="0" placeholder="0,00" />
+              </div>
+              <div class="hosp-field full">
+                <span class="hosp-diarias-badge" id="diariasLabel">1 diária prevista</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hosp-section">
+            <div class="hosp-section-head">
+              <h4>Colaboradores</h4>
+              <p>Adicione um ou mais colaboradores para a mesma hospedagem.</p>
             </div>
             <div class="hosp-colab-box" id="colabBox"></div>
+            <button class="hosp-add-colab" type="button" id="addColabBtn">+ Adicionar colaborador</button>
             <div class="hosp-alert" id="colabFallback" style="display:none;">Não foi possível consultar a base de colaboradores agora. Você ainda pode digitar os nomes manualmente.</div>
           </div>
 
-          <div class="hosp-form-grid mt-16">
-            <div class="hosp-field full">
-              <label for="obs">Observações do gestor</label>
-              <textarea id="obs" placeholder="Ex.: chegará por volta das 17h, priorizar hotel próximo ao local de embarque, observações sobre quartos etc."></textarea>
+          <div class="hosp-section">
+            <div class="hosp-section-head">
+              <h4>Observações</h4>
+              <p>Informações extras para o setor de hospedagem.</p>
+            </div>
+            <div class="hosp-form-grid">
+              <div class="hosp-field full">
+                <label for="obs">Observações do gestor</label>
+                <textarea id="obs" placeholder="Ex.: chegará por volta das 17h, priorizar hotel próximo ao local de embarque, observações sobre quartos etc."></textarea>
+              </div>
             </div>
           </div>
 
@@ -212,7 +264,7 @@ initProtectedPage('Hospedagem', (content, userContext) => {
   const colabBox = document.getElementById('colabBox');
   const checkin = document.getElementById('checkin');
   const checkout = document.getElementById('checkout');
-  const diarias = document.getElementById('diarias');
+  const diariasLabel = document.getElementById('diariasLabel');
 
   function setFeedback(msg, type = '') {
     feedback.textContent = msg || '';
@@ -228,7 +280,8 @@ initProtectedPage('Hospedagem', (content, userContext) => {
   }
 
   function updateDiarias() {
-    diarias.value = diffDays(checkin.value, checkout.value);
+    const n = diffDays(checkin.value, checkout.value);
+    diariasLabel.textContent = `${n} diária${n === 1 ? '' : 's'} prevista${n === 1 ? '' : 's'}`;
   }
 
   function colaboradorOptions() {
@@ -236,11 +289,16 @@ initProtectedPage('Hospedagem', (content, userContext) => {
     return `<datalist id="colaboradorList">${state.colaboradores.map((c) => `<option value="${esc(c.nome)}">${esc([c.tipo, c.supervisao].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>`;
   }
 
+  function renumberColabRows() {
+    colabBox.querySelectorAll('.hosp-colab-index').forEach((el, i) => { el.textContent = i + 1; });
+  }
+
   function addColabRow(value = '', tipo = '') {
     const id = `colab-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const wrap = document.createElement('div');
     wrap.className = 'hosp-colab-row';
     wrap.innerHTML = `
+      <span class="hosp-colab-index">1</span>
       <div class="hosp-field">
         <label for="${id}">Nome do colaborador *</label>
         <input id="${id}" class="colabNome" list="colaboradorList" required value="${esc(value)}" placeholder="Digite ou selecione o colaborador" />
@@ -249,17 +307,19 @@ initProtectedPage('Hospedagem', (content, userContext) => {
         <label>Tipo</label>
         <input class="colabTipo" value="${esc(tipo)}" placeholder="Fixo / Diarista" />
       </div>
-      <button class="btn btn-secondary hosp-remove" type="button">Remover</button>
+      <button class="btn btn-secondary hosp-remove" type="button" title="Remover colaborador">Remover</button>
     `;
     wrap.querySelector('.hosp-remove').addEventListener('click', () => {
       if (colabBox.children.length <= 1) return;
       wrap.remove();
+      renumberColabRows();
     });
     wrap.querySelector('.colabNome').addEventListener('change', (ev) => {
       const selected = state.colaboradores.find((c) => normalizeText(c.nome) === normalizeText(ev.target.value));
       if (selected) wrap.querySelector('.colabTipo').value = selected.tipo || '';
     });
     colabBox.appendChild(wrap);
+    renumberColabRows();
   }
 
   function resetForm() {
