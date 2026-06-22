@@ -81,9 +81,10 @@ function dateTimeToIsoAgente(value) {
   return null;
 }
 
-function mapAgentRow(d, dataUpload) {
+function mapAgentRow(d, dataUpload, importacaoId) {
   const patrimonioCodigo = normalizePatrimonioCodigoAgente(getFieldAgente(d, COL.patrimonioCodigo));
   return {
+    importacao_id: importacaoId,
     data_upload: dataUpload,
     patrimonio_codigo: patrimonioCodigo,
     coordenacao: normalizeTextAgente(getFieldAgente(d, COL.coordenacao)),
@@ -199,7 +200,25 @@ export async function sincronizarPatrimoniosDoAgente() {
       }
 
       const dataUpload = new Date().toISOString();
-      const mappedRaw = dadosBrutos.map((d) => mapAgentRow(d, dataUpload)).filter((row) => row.patrimonio_codigo);
+
+      // patrimonios_snapshot.importacao_id é NOT NULL com FK para patrimonios_importacoes;
+      // sem criar esse registro o insert falha silenciosamente (capturado pelo catch
+      // abaixo) depois que o snapshot já foi truncado, deixando a tabela vazia.
+      const { data: importacao, error: impError } = await supabase
+        .from('patrimonios_importacoes')
+        .insert({
+          nome_arquivo: 'sync-patrimonios (agente)',
+          origem: 'agente_grm_sync',
+          status: 'processando',
+          total_linhas: dadosBrutos.length,
+          data_upload: dataUpload,
+        })
+        .select('id')
+        .single();
+      if (impError) throw impError;
+      const importacaoId = importacao.id;
+
+      const mappedRaw = dadosBrutos.map((d) => mapAgentRow(d, dataUpload, importacaoId)).filter((row) => row.patrimonio_codigo);
       const uniqueMap = new Map();
       mappedRaw.forEach((row) => uniqueMap.set(row.patrimonio_codigo, row));
       const mapped = [...uniqueMap.values()];
@@ -207,6 +226,15 @@ export async function sincronizarPatrimoniosDoAgente() {
       const { error: limparError } = await supabase.rpc('limpar_patrimonios_snapshot');
       if (limparError) throw limparError;
       await upsertBatches('patrimonios_snapshot', mapped, 500, 'patrimonio_codigo');
+
+      await supabase
+        .from('patrimonios_importacoes')
+        .update({
+          status: 'concluido',
+          total_importadas: mapped.length,
+          total_erros: Math.max(dadosBrutos.length - mapped.length, 0),
+        })
+        .eq('id', importacaoId);
 
       // histórico diário: só grava uma vez por dia (o agente sincroniza a cada ~20min,
       // bem mais frequente que um upload manual; não queremos repetir o lote a cada sync).
