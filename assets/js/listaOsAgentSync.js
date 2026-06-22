@@ -191,6 +191,14 @@ function mapListaOsRow(d) {
     produto: toText(getField(d, ['Produto'])),
     lote: toNum(getField(d, ['Lote'])),
     remanescente: toNum(getField(d, ['Remanescente'])),
+    // colunas só presentes na exportação completa de "Ordem de Serviço" (Situação,
+    // Supervisão, Financeiro, Serviço, Embarcado); ficam null/undefined em lotes antigos do
+    // agente que não tinham essas colunas — o merge abaixo cobre com Distribuição/Mapa nesse caso.
+    situacao: toText(getField(d, ['Situação', 'Situacao'])),
+    financeiro: toText(getField(d, ['Financeiro'])),
+    servico: toText(getField(d, ['Serviço', 'Servico'])),
+    supervisaoPropria: toText(getField(d, ['Supervisão', 'Supervisao'])),
+    embarcadoProprio: getField(d, ['Embarcado']) != null ? toNum(getField(d, ['Embarcado'])) : null,
     raw: d,
   };
 }
@@ -215,13 +223,11 @@ export async function sincronizarListaOsDoAgente() {
       const uniqueMap = new Map();
       mappedRaw.forEach((row) => {
         const extra = supervisaoMap.get(row.numero_os);
+        const { supervisaoPropria, embarcadoProprio, ...rest } = row;
         uniqueMap.set(row.numero_os, {
-          ...row,
-          supervisao: extra?.supervisao ?? null,
-          embarcado: extra?.embarcado ?? 0,
-          situacao: null,
-          financeiro: null,
-          servico: null,
+          ...rest,
+          supervisao: supervisaoPropria ?? extra?.supervisao ?? null,
+          embarcado: embarcadoProprio ?? extra?.embarcado ?? 0,
           arquivo_origem: 'agente:grm_lista_os_importacoes',
           updated_at: new Date().toISOString(),
         });
