@@ -1,8 +1,4 @@
 import { initProtectedPage } from './pageInit.js';
-import { renderOsModule } from './os.js';
-import { renderOsMobile } from './os-mobile.js';
+import { renderOsMobile } from './os-mobile-v2.js?v=20260622-2';
 
-initProtectedPage('OS', (content) => {
-  const isMobile = window.matchMedia('(max-width: 900px)').matches;
-  return isMobile ? renderOsMobile(content) : renderOsModule(content);
-});
+initProtectedPage('OS', (content) => renderOsMobile(content));
