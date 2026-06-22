@@ -2,6 +2,7 @@ import { initProtectedPage } from './pageInit.js';
 import { flattenAllowedMenu, buildAllowedMenu } from './menuBuilder.js';
 import { toPanelUrl } from './paths.js';
 import { supabase } from './supabaseClient.js';
+import { sincronizarProducaoSnapshotDoAgente } from './producaoSnapshotAgentSync.js';
 
 const ICON_MODULES = `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
 const ICON_USER    = `<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
@@ -11,7 +12,10 @@ const ICON_STATUS  = `<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1
 const BR = new Intl.NumberFormat('pt-BR');
 const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const GESTOR_CACHE_KEY = 'grao1000:gestor-dash:v5-segmentado';
-const GESTOR_CACHE_TTL = 1000 * 60 * 60 * 24 * 30;
+// O agente de produção diária resincroniza producao_snapshot a cada ~20min;
+// 1h garante que a Meta Mensal não fique presa em cache por dias sem o usuário
+// precisar clicar em "Atualizar".
+const GESTOR_CACHE_TTL = 1000 * 60 * 60;
 
 /* Brazil state SVG paths — viewBox 0 0 800 796, sourced from adm-hotel.js */
 const BR_STATES = [
@@ -348,6 +352,8 @@ async function readDashboardCacheSegment(ref) {
       .maybeSingle();
     if (error) throw error;
     if (!data?.dados_json) return null;
+    const idadeMs = data.atualizado_em ? Date.now() - new Date(data.atualizado_em).getTime() : Infinity;
+    if (idadeMs > GESTOR_CACHE_TTL) return null;
     return {
       ...data.dados_json,
       cache_atualizado_em: data.atualizado_em,
@@ -397,6 +403,11 @@ async function fetchGestorData(ctx, { force = false } = {}) {
 }
 
 async function fetchGestorDataLive(ctx) {
+  // producao_snapshot é a base da Meta Mensal; sincroniza com o agente de
+  // produção diária antes de calcular, senão o card fica preso no último
+  // valor importado manualmente ou na última vez que alguém abriu o módulo Metas.
+  try { await sincronizarProducaoSnapshotDoAgente(); } catch (error) { console.warn('[dashboard] falha ao sincronizar producao_snapshot:', error?.message || error); }
+
   const isMaster = !!ctx?.user?.is_master;
   const coordenacao = ctx?.user?.coordenacao || '';
   const now = new Date();
