@@ -4,6 +4,7 @@ import { PDFDocument, StandardFonts, rgb } from 'npm:pdf-lib@1.17.1';
 
 const BUCKET = 'propostas-pdf';
 const ASSET_FILES = {
+  capa: 'capa.jpg',
   mapa: 'mapa-estados.jpg',
   parceiros: 'parceiros.jpg',
   calador: 'calador.jpg',
@@ -102,9 +103,33 @@ class PdfFlow {
   }
 
   heading(text: string, size = 14) {
-    this.ensure(size + 12);
-    this.page.drawText(text, { x: this.margin, y: this.y - size, size, font: this.fontBold, color: GREEN });
-    this.y -= size + 12;
+    const barHeight = size + 16;
+    this.ensure(barHeight + 10);
+    this.page.drawRectangle({ x: 0, y: this.y - barHeight, width: this.pageWidth, height: barHeight, color: GREEN });
+    this.page.drawText(text, {
+      x: this.margin, y: this.y - barHeight + (barHeight - size) / 2 - 2, size, font: this.fontBold, color: rgb(1, 1, 1),
+    });
+    this.y -= barHeight + 10;
+  }
+
+  async coverImage(bytes: Uint8Array | null, maxHeight = 260) {
+    if (!bytes) return;
+    let img;
+    try {
+      img = await this.doc.embedJpg(bytes);
+    } catch {
+      return;
+    }
+    let scale = this.pageWidth / img.width;
+    let h = img.height * scale;
+    if (h > maxHeight) {
+      scale = maxHeight / img.height;
+      h = maxHeight;
+    }
+    const w = img.width * scale;
+    const x = (this.pageWidth - w) / 2;
+    this.page.drawImage(img, { x, y: this.y - h, width: w, height: h });
+    this.y -= h + 16;
   }
 
   subheading(text: string, size = 11) {
@@ -247,7 +272,8 @@ serve(async (req) => {
     if (!proposta) throw new Error('Proposta não encontrada.');
     if (!proposta.numero || !proposta.cliente) throw new Error('Proposta sem número ou cliente.');
 
-    const [mapaBytes, parceirosBytes, caladorBytes, impressoraBytes, contatosBytes] = await Promise.all([
+    const [capaBytes, mapaBytes, parceirosBytes, caladorBytes, impressoraBytes, contatosBytes] = await Promise.all([
+      fetchAsset(supabaseUrl, ASSET_FILES.capa),
       fetchAsset(supabaseUrl, ASSET_FILES.mapa),
       fetchAsset(supabaseUrl, ASSET_FILES.parceiros),
       fetchAsset(supabaseUrl, ASSET_FILES.calador),
@@ -261,6 +287,7 @@ serve(async (req) => {
     const flow = new PdfFlow(doc, fontReg, fontBold);
 
     // Capa
+    await flow.coverImage(capaBytes);
     flow.heading('PROPOSTA TÉCNICA E COMERCIAL', 18);
     flow.subheading(`Nº ${val(proposta.numero)}`, 12);
     flow.spacer(6);
