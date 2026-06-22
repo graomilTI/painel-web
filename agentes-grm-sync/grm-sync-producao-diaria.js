@@ -151,6 +151,87 @@ async function upsertData(data) {
   log('SUCCESS', `Upsert concluído: ${records.length} registros`);
 }
 
+// producao_snapshot é a base de "Meta Mensal"/mapa do dashboard. Antes só era sincronizada
+// quando alguém abria o painel no navegador (sincronizarProducaoSnapshotDoAgente, fire-and-
+// forget) — sem isso o painel ficava 1-2h atrasado em relação ao grmserver, esperando
+// alguém recarregar a página. Sincroniza direto aqui, no mesmo processo que já buscou os
+// dados, sem depender de ninguém abrir o app.
+function brDateToIsoSnapshot(value) {
+  const s = String(value || '').trim();
+  if (!s) return null;
+  const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return iso ? s.slice(0, 10) : null;
+}
+
+function toTextSnapshot(value) {
+  if (value === null || value === undefined) return null;
+  const s = String(value).trim();
+  return s || null;
+}
+
+function toNumberSnapshot(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const s = String(value).trim().replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function mapProducaoSnapshotRow(d) {
+  const data = brDateToIsoSnapshot(d?.Data);
+  return {
+    data_referencia: data,
+    data,
+    coordenacao: toTextSnapshot(d?.Coordenação),
+    supervisao: toTextSnapshot(d?.Supervisão),
+    funcionario: toTextSnapshot(d?.Funcionário),
+    tipo: toTextSnapshot(d?.Tipo),
+    os: toTextSnapshot(d?.['O.S.']),
+    cliente: toTextSnapshot(d?.Cliente),
+    servico: toTextSnapshot(d?.Serviço),
+    cidade: toTextSnapshot(d?.Cidade),
+    local_embarque: toTextSnapshot(d?.['Local de Embarque']),
+    checkin: toTextSnapshot(d?.['Check-in']),
+    checkout: toTextSnapshot(d?.['Check-out']),
+    cargas: toNumberSnapshot(d?.Cargas),
+    tons: toNumberSnapshot(d?.Tons),
+  };
+}
+
+async function syncProducaoSnapshot(rows) {
+  log('INFO', 'Sincronizando producao_snapshot...');
+
+  const mapped = rows
+    .map(mapProducaoSnapshotRow)
+    .filter((row) => row.os && row.data && row.servico !== 'Total');
+
+  if (!mapped.length) {
+    log('WARN', 'Nenhuma linha válida para producao_snapshot; sincronização ignorada.');
+    return;
+  }
+
+  const datas = mapped.map((row) => row.data).sort();
+  const dataMin = datas[0];
+  const dataMax = datas[datas.length - 1];
+
+  const { error: delError } = await supabase
+    .from('producao_snapshot')
+    .delete()
+    .gte('data', dataMin)
+    .lte('data', dataMax);
+  if (delError) throw delError;
+
+  for (let i = 0; i < mapped.length; i += 500) {
+    const chunk = mapped.slice(i, i + 500);
+    const { error } = await supabase.from('producao_snapshot').insert(chunk);
+    if (error) throw error;
+  }
+
+  log('SUCCESS', `producao_snapshot sincronizado: ${mapped.length} linhas (${dataMin} a ${dataMax}).`);
+}
+
 async function main() {
   let browser;
 
@@ -188,6 +269,7 @@ async function main() {
     const filePath = await downloadReport(page);
     const data = await parseXLS(filePath);
     await upsertData(data);
+    await syncProducaoSnapshot(data);
 
     log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
 
