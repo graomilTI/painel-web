@@ -468,31 +468,25 @@ select:focus, input:focus, textarea:focus {
 .db-status-ok   { color: var(--green); }
 .db-status-late { color: var(--danger); }
 
-/* ── OS card ── */
+/* ── OS card (KPI quadrado, igual ao card de Patrimônios) ── */
 .db-os-card {
   background: rgba(14,14,26,.92); border: 1px solid rgba(255,255,255,.07);
-  border-radius: 22px; padding: 16px; display: flex; flex-direction: column;
-  justify-content: space-between;
+  border-radius: 22px; padding: 16px; overflow: hidden;
 }
-.db-os-row {
-  display: flex; align-items: center; justify-content: space-around;
-  flex: 1; margin-bottom: 12px; gap: 4px;
+.db-os-hero {
+  display: flex; align-items: baseline; gap: 4px; margin-bottom: 12px;
 }
-.db-os-block { text-align: center; flex: 1; }
 .db-os-num {
-  font-size: 28px; font-weight: 1000; letter-spacing: -0.05em; line-height: 1;
+  font-size: 36px; font-weight: 1000; letter-spacing: -0.05em; line-height: 1;
   font-variant-numeric: tabular-nums; color: var(--text);
 }
 .db-os-num.is-amber { color: var(--yellow); }
 .db-os-num.is-green { color: var(--green); }
-.db-os-label { font-size: 9px; font-weight: 900; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; margin-top: 4px; }
-.db-os-sep { width: 1px; height: 32px; background: rgba(255,255,255,.08); flex-shrink: 0; }
-.db-os-btn {
-  width: 100%; background: rgba(0,200,122,.12); color: var(--green);
-  border: 1px solid rgba(0,200,122,.28); border-radius: 12px;
-  padding: 9px; font-size: 11px; font-weight: 950; letter-spacing: .04em; cursor: pointer;
-}
-.db-os-btn:active { opacity: .75; }
+.db-os-den { font-size: 14px; font-weight: 700; color: var(--muted); }
+.db-os-status { font-size: 11px; font-weight: 900; }
+
+.is-clickable { cursor: pointer; }
+.is-clickable:active { opacity: .85; }
 
 /* ── Banner: Programação nativa x versão web completa ── */
 .prog-web-banner {
