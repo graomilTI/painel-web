@@ -162,7 +162,22 @@ function buildMultaKey(renavam: string, m: any) {
   const horaInf = cleanText(pick(m, ["api_horaInfracao", "horaInfracao"]));
   return `${renavam}|OA:${codOrgao || "0"}|CA:${codAuto}|NA:${numAuto}|DI:${dataInf}|HI:${horaInf}`;
 }
-function mapMulta(m: any, v: any, cred?: DetranCredential) {
+type HistoricoRow = { motorista: string | null; data_inicio: string; data_fim: string | null };
+
+function motoristaNaData(historico: HistoricoRow[], dataInfracao: string | null, fallback: string | null): string | null {
+  if (!dataInfracao) return fallback;
+  const target = new Date(`${dataInfracao}T00:00:00`).getTime();
+  const match = historico
+    .filter((h) => {
+      const inicio = new Date(h.data_inicio).getTime();
+      const fim = h.data_fim ? new Date(h.data_fim).getTime() : Infinity;
+      return inicio <= target && target < fim;
+    })
+    .sort((a, b) => new Date(b.data_inicio).getTime() - new Date(a.data_inicio).getTime())[0];
+  return match?.motorista || fallback;
+}
+
+function mapMulta(m: any, v: any, historico: HistoricoRow[], cred?: DetranCredential) {
   const codAuto = cleanText(pick(m, ["api_codAuto", "codAuto", "autoOriginal_codAuto", "autoCalculo"]));
   const codOrgao = cleanText(pick(m, ["api_codOrgaoAutuador", "codOrgaoAutuador", "autoOriginal_codOrgaoAutuador"]));
   const numAuto = cleanText(pick(m, ["api_numAutoInfracao", "numAutoInfracao", "numAutoInfracaoOriginal", "numAutoInfracaoSE"]));
@@ -177,6 +192,7 @@ function mapMulta(m: any, v: any, cred?: DetranCredential) {
   const vencida = vencRefDate ? new Date(`${vencRefDate}T00:00:00`).getTime() < today : false;
   const renavam = cleanText(v.renavam);
   const placa = onlyPlate(pick(m, ["api_placa", "placa"], v.placa));
+  const dataInfracao = toDate(pick(m, ["api_dataInfracao", "dataInfracao"]));
   return {
     multa_key: buildMultaKey(renavam, m),
     veiculo_id: v.id || null,
@@ -186,7 +202,7 @@ function mapMulta(m: any, v: any, cred?: DetranCredential) {
     cnpj: v.cnpj || cred?.cnpj || null,
     orgao_autuador: cleanText(pick(m, ["api_nomeOrgaoAutuador", "nomeOrgaoAutuador"])),
     orgao_competente: cleanText(pick(m, ["api_nomeOrgaoCompetente", "nomeOrgaoCompetente"])),
-    data_infracao: toDate(pick(m, ["api_dataInfracao", "dataInfracao"])),
+    data_infracao: dataInfracao,
     hora_infracao: cleanText(pick(m, ["api_horaInfracao", "horaInfracao"])),
     local: cleanText(pick(m, ["api_localInfracao", "localInfracao", "local"])),
     descricao,
@@ -202,7 +218,7 @@ function mapMulta(m: any, v: any, cred?: DetranCredential) {
     data_limite_cetran: dataLimiteCetran,
     status_multa: vencida ? "VENCIDA" : "A PAGAR",
     situacao: vencida ? "VENCIDA" : "A PAGAR",
-    motorista: v.motorista_atual || null,
+    motorista: motoristaNaData(historico, dataInfracao, v.motorista_atual || null),
     origem: "DETRAN",
     ultima_consulta_em: new Date().toISOString(),
     raw: m,
@@ -219,10 +235,12 @@ function suffixForVehicle(v: any): string {
 async function upsertMulta(supabase: ReturnType<typeof createClient>, payload: Record<string, unknown>) {
   const key = String(payload.multa_key || "");
   if (!key) return "skipped";
-  const existing = await supabase.from("frotas_multas").select("id").eq("multa_key", key).maybeSingle();
+  const existing = await supabase.from("frotas_multas").select("id,motorista_definido_em").eq("multa_key", key).maybeSingle();
   if (existing.error) throw existing.error;
   if (existing.data?.id) {
-    const { error } = await supabase.from("frotas_multas").update(payload).eq("id", existing.data.id);
+    const updatePayload = { ...payload };
+    if (existing.data.motorista_definido_em) delete updatePayload.motorista;
+    const { error } = await supabase.from("frotas_multas").update(updatePayload).eq("id", existing.data.id);
     if (error) throw error;
     return "updated";
   }
@@ -298,12 +316,16 @@ serve(async (req) => {
       const renavam = onlyDigits(v.renavam);
       if (!renavam) continue;
       try {
+        const { data: historico } = await supabase
+          .from("frotas_veiculos_historico")
+          .select("motorista,data_inicio,data_fim")
+          .eq("veiculo_id", v.id);
         const payload = await detranGetJson(baseUrl, tokenBySuffix[cred.suffix], consumerId, `/api/v1/consulta/multas-a-pagar/${renavam}`);
         const multas = extractMultas(payload);
         totalMultas += multas.length;
         let vi = 0, vu = 0;
         for (const m of multas) {
-          const mapped = mapMulta(m, v, cred);
+          const mapped = mapMulta(m, v, (historico as HistoricoRow[]) || [], cred);
           const result = await upsertMulta(supabase, mapped);
           if (result === "inserted") { inserted++; vi++; }
           if (result === "updated") { updated++; vu++; }
