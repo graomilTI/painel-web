@@ -68,12 +68,15 @@
   function isIdentificar(m){return Boolean(m.identificar_solicitado_em||m.condutor_identificado_em||m.indicar_solicitado_em||norm(m.acao_status).includes('identific'));}
   function isDobrar(m){return Boolean(m.dobrar_solicitado_em||m.multa_dobrada_em||norm(m.acao_status).includes('dobr'));}
   // Pipeline único da multa: Sem motorista -> Pendente -> Identificar|Dobrar -> Concluído (lançado em caixa).
-  // Multas pagas/canceladas/vencidas pulam direto para Concluído (consideradas arquivadas), mesmo sem terem sido arquivadas ainda.
+  // Multas pagas/canceladas pulam direto para Concluído, mesmo sem terem sido arquivadas ainda.
+  // Vencida também é tratada como Concluído, mas só depois de checar se falta motorista:
+  // a multa estar vencida não dispensa identificar quem dirigia.
   function etapaMulta(m){
     const kind=statusKind(m);
-    if(kind==='paga'||kind==='cancelada'||kind==='vencida')return 'concluido';
+    if(kind==='paga'||kind==='cancelada')return 'concluido';
     if(isArchived(m))return 'concluido';
     if(!String(m.motorista||'').trim())return 'sem_motorista';
+    if(kind==='vencida')return 'concluido';
     if(isIdentificar(m))return 'identificar';
     if(isDobrar(m))return 'dobrar';
     return 'pendente';

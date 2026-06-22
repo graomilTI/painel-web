@@ -1,9 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
-const DEFAULT_MODELO_DOC_ID = '1oXtCy8kAs9hfivR62JYKknjw7s0VKGeLvRkhSCN0Vzg';
-const DEFAULT_PASTA_DESTINO_ID = '13oHU_dFWBVe9h-YRk-ZmPTb1VoEWx0Pt';
-
 const STATUS_LABEL = {
   rascunho: 'Rascunho',
   gerada: 'Gerada',
@@ -236,7 +233,7 @@ function renderPage(content) {
       <section class="prop-hero">
         <div>
           <h3>Propostas comerciais</h3>
-          <p>Gere PDF ou Google Docs editável usando o modelo do Drive e acompanhe aceite, contato e contrato.</p>
+          <p>Gere o PDF da proposta e acompanhe aceite, contato e contrato.</p>
         </div>
         <div class="prop-actions">
           <button class="prop-btn prop-btn-secondary" id="propRefreshBtn" type="button">Atualizar</button>
@@ -321,7 +318,6 @@ function renderPage(content) {
                       <div class="prop-row-actions">
                         <button class="prop-btn prop-btn-inline prop-btn-secondary" data-action="edit" data-id="${esc(row.id)}" type="button">Editar</button>
                         <button class="prop-btn prop-btn-inline prop-btn-primary" data-action="pdf" data-id="${esc(row.id)}" type="button">PDF</button>
-                        <button class="prop-btn prop-btn-inline prop-btn-secondary" data-action="doc" data-id="${esc(row.id)}" type="button">DOC</button>
                       </div>
                     </td>
                   </tr>
@@ -356,9 +352,6 @@ function bindPageEvents(content) {
   });
   content.querySelectorAll('[data-action="pdf"]').forEach((button) => {
     button.addEventListener('click', () => generateProposal(button.dataset.id, 'PDF', content));
-  });
-  content.querySelectorAll('[data-action="doc"]').forEach((button) => {
-    button.addEventListener('click', () => generateProposal(button.dataset.id, 'DOC', content));
   });
 }
 
@@ -421,10 +414,8 @@ function ensureModal() {
         </section>
 
         <section class="prop-card">
-          <h4>Modelo no Drive</h4>
+          <h4>Observações</h4>
           <div class="prop-form-grid">
-            <div class="prop-field span-2"><label for="pModeloDocId">ID do modelo Google Docs</label><input class="prop-input" id="pModeloDocId" type="text"></div>
-            <div class="prop-field span-2"><label for="pPastaDestinoId">ID da pasta destino</label><input class="prop-input" id="pPastaDestinoId" type="text"></div>
             <div class="prop-field full"><label for="pObservacao">Observação interna</label><textarea class="prop-textarea" id="pObservacao"></textarea></div>
           </div>
         </section>
@@ -434,7 +425,6 @@ function ensureModal() {
         <button class="prop-btn prop-btn-secondary" id="propModalCancel" type="button">Cancelar</button>
         <button class="prop-btn prop-btn-secondary" id="propSaveBtn" type="button">Salvar</button>
         <button class="prop-btn prop-btn-primary" id="propSavePdfBtn" type="button">Salvar e gerar PDF</button>
-        <button class="prop-btn prop-btn-secondary" id="propSaveDocBtn" type="button">Salvar e gerar DOC</button>
       </div>
     </div>
   `;
@@ -446,7 +436,6 @@ function ensureModal() {
   overlay.querySelector('#propModalCancel')?.addEventListener('click', closeModal);
   overlay.querySelector('#propSaveBtn')?.addEventListener('click', () => saveModal());
   overlay.querySelector('#propSavePdfBtn')?.addEventListener('click', () => saveModal('PDF'));
-  overlay.querySelector('#propSaveDocBtn')?.addEventListener('click', () => saveModal('DOC'));
   return overlay;
 }
 
@@ -502,8 +491,6 @@ function openModal(row = null) {
   setValue('pDataAceite', row?.data_aceite_proposta || '');
   setValue('pLinkProposta', row?.link_proposta || '');
   setValue('pLinkContrato', row?.link_contrato || '');
-  setValue('pModeloDocId', row?.modelo_doc_id || DEFAULT_MODELO_DOC_ID);
-  setValue('pPastaDestinoId', row?.pasta_destino_id || DEFAULT_PASTA_DESTINO_ID);
   setValue('pObservacao', row?.observacao || '');
   MONEY_FIELDS.forEach(([key]) => setValue(`p_${key}`, row?.[key] || row?.campos?.[key] || DEFAULT_MONEY_VALUES[key] || ''));
 
@@ -537,8 +524,6 @@ function collectPayload() {
     data_aceite_proposta: getValue('pDataAceite') || null,
     link_proposta: getValue('pLinkProposta'),
     link_contrato: getValue('pLinkContrato'),
-    modelo_doc_id: getValue('pModeloDocId') || DEFAULT_MODELO_DOC_ID,
-    pasta_destino_id: getValue('pPastaDestinoId') || DEFAULT_PASTA_DESTINO_ID,
     observacao: getValue('pObservacao'),
     ...Object.fromEntries(MONEY_FIELDS.map(([key]) => [key, getValue(`p_${key}`)])),
     campos,
@@ -583,7 +568,7 @@ async function saveModal(generateFormat = null) {
       state.editing = saved;
     }
     if (generateFormat) {
-      setModalFeedback(`Proposta salva. Gerando ${generateFormat} no Drive...`);
+      setModalFeedback('Proposta salva. Gerando PDF...');
       await generateProposal(saved.id, generateFormat, document.getElementById('pageContent'), true);
       closeModal();
       return;
@@ -598,15 +583,15 @@ async function saveModal(generateFormat = null) {
 
 async function generateProposal(id, formato, content, fromModal = false) {
   try {
-    if (!fromModal) setFeedback(`Gerando ${formato} no Drive...`);
+    if (!fromModal) setFeedback('Gerando PDF...');
     const { data, error } = await supabase.functions.invoke('gerar-proposta', {
-      body: { proposta_id: id, formato },
+      body: { proposta_id: id },
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
     await loadRows(content, true);
     const link = data?.link_proposta;
-    setFeedback(`${formato === 'DOC' ? 'Google Docs editável' : 'PDF'} gerado com sucesso.${link ? ' Link salvo na proposta.' : ''}`);
+    setFeedback(`PDF gerado com sucesso.${link ? ' Link salvo na proposta.' : ''}`);
     if (link) window.open(link, '_blank', 'noopener');
   } catch (error) {
     const message = error.message || `Erro ao gerar ${formato}.`;
