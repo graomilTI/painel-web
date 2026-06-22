@@ -180,6 +180,10 @@ select:focus, input:focus, textarea:focus {
 .pat-status-pill { font-size: 10px; font-weight: 950; padding: 3px 10px; border-radius: 20px; background: rgba(45,212,160,.15); color: #2dd4a0; border: 1px solid rgba(45,212,160,.25); }
 .pat-card.pat-conferido .pat-status-pill { background: rgba(100,100,120,.2); color: var(--muted); border-color: rgba(255,255,255,.1); }
 .error-text { color: #fca5a5; }
+.pat-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 11px; font-weight: 950; vertical-align: middle; }
+.pat-cadastro-row { display: flex; gap: 8px; margin-top: 8px; }
+.pat-cadastro-input { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(8,8,20,.5); color: var(--text); font-size: 13px; }
+.pat-cadastro-input:focus { border-color: rgba(45,212,160,.45); outline: none; }
 
 @media (min-width: 720px) {
   .gestor-app { padding-bottom: 22px; }
