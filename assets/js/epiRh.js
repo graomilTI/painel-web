@@ -159,9 +159,22 @@ function renderSolicitacoes(){
       const caTag=i.ca?`<span style="color:#86efac;font-size:11px;font-weight:700"> · CA: ${esc(i.ca)}</span>`:(norm(i.material)==='colete refletivo'?`<span style="color:#94a3b8;font-size:11px"> · CA não obrigatório</span>`:`<span style="color:#fde68a;font-size:11px"> · CA pendente</span>`);
       return `<div style="font-size:13px">${esc(i.material)}${i.tamanho?` <small class="muted">T:${esc(i.tamanho)}</small>`:''}${caTag}</div>`;
     }).join('');
-    return `<tr><td>${brDate(s.data_solicitacao||s.created_at)}</td><td><b>${esc(colab.nome)}</b>${colab.cpf?`<br><small class="muted">CPF: ${esc(colab.cpf)}</small>`:''}</td><td>${esc(colab.supervisao||'-')}${colab.coordenacao?`<br><small class="muted">${esc(colab.coordenacao)}</small>`:''}</td><td style="max-width:280px;line-height:1.8">${itensHtml||'-'}</td><td>${statusPill(s.status||'pendente')}</td><td><button class="btn btn-small btn-secondary" data-sol-ver="${esc(s.id)}" type="button">Ver</button></td></tr>`;
+    const bucket=solBucket(s);
+    const podeCancelar=bucket!=='concluido'&&bucket!=='cancelado';
+    return `<tr><td>${brDate(s.data_solicitacao||s.created_at)}</td><td><b>${esc(colab.nome)}</b>${colab.cpf?`<br><small class="muted">CPF: ${esc(colab.cpf)}</small>`:''}</td><td>${esc(colab.supervisao||'-')}${colab.coordenacao?`<br><small class="muted">${esc(colab.coordenacao)}</small>`:''}</td><td style="max-width:280px;line-height:1.8">${itensHtml||'-'}</td><td>${statusPill(s.status||'pendente')}</td><td class="epi-acoes"><button class="btn btn-small btn-secondary" data-sol-ver="${esc(s.id)}" type="button">Ver</button>${podeCancelar?`<button class="btn btn-small btn-secondary" data-sol-cancelar="${esc(s.id)}" type="button" style="color:#fecaca;border-color:rgba(220,38,38,.4)">Cancelar</button>`:''}</td></tr>`;
   }).join('');
   body.querySelectorAll('[data-sol-ver]').forEach(b=>b.onclick=()=>openSolicitacaoModal(b.dataset.solVer));
+  body.querySelectorAll('[data-sol-cancelar]').forEach(b=>b.onclick=()=>cancelarSolicitacao(b.dataset.solCancelar));
+}
+
+async function cancelarSolicitacao(id){
+  if(!confirm('Cancelar esta solicitação de EPI? Use quando o lançamento foi feito por engano.')) return;
+  try{
+    await supabase.from('compras_solicitacoes').update({status:'cancelado'}).eq('id',id);
+    await supabase.from('compras_itens').update({status:'cancelado'}).eq('solicitacao_id',id);
+    setSolMsg('Solicitação cancelada.');
+    await loadSolicitacoes();
+  }catch(e){ setSolMsg(e.message,true); }
 }
 
 function fichaEpiHtml(s,itens){
@@ -192,17 +205,8 @@ function openSolicitacaoModal(id){
   modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
   modal.querySelector('#reabrirFichaEpi')?.addEventListener('click',()=>abrirFichaEpi(s,itens));
   modal.querySelector('#cancelarSolEpi')?.addEventListener('click',async()=>{
-    if(!confirm('Cancelar esta solicitação de EPI? Use quando o lançamento foi feito por engano.')) return;
-    const btn=modal.querySelector('#cancelarSolEpi');
-    const fb=modal.querySelector('#epiSolModalFb');
-    btn.disabled=true; if(fb){fb.textContent='Cancelando...';fb.classList.remove('err');}
-    try{
-      await supabase.from('compras_solicitacoes').update({status:'cancelado'}).eq('id',s.id);
-      await supabase.from('compras_itens').update({status:'cancelado'}).eq('solicitacao_id',s.id);
-      modal.classList.remove('open');
-      setSolMsg('Solicitação cancelada.');
-      await loadSolicitacoes();
-    }catch(e){ if(fb){fb.textContent=e.message;fb.classList.add('err');} btn.disabled=false; }
+    await cancelarSolicitacao(s.id);
+    modal.classList.remove('open');
   });
   modal.querySelector('#gerarFichaEpi')?.addEventListener('click',async()=>{
     const btn=modal.querySelector('#gerarFichaEpi');
