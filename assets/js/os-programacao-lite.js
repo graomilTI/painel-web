@@ -243,19 +243,24 @@ async function loadAtribuicoes(osIds) {
   return results.flatMap((r) => Array.isArray(r.data) ? r.data : []);
 }
 
+async function fetchDeduped(queries, dedupeKey) {
+  const results = await Promise.all(queries);
+  const erro = results.find((r) => r.error);
+  if (erro) throw erro.error;
+  const merged = new Map();
+  results.forEach((r) => (r.data || []).forEach((row) => merged.set(dedupeKey(row), row)));
+  return [...merged.values()];
+}
+
 async function loadPontos(supervisao) {
   const key = normalize(supervisao || 'GERAL');
   if (pontosCache.has(key)) return pontosCache.get(key);
 
-  let query = supabase.from('operacional_pontos_embarque').select(PONTO_SELECT).limit(2000);
-  if (supervisao) query = query.or(`supervisao.eq.${supervisao},coordenacao.eq.${supervisao}`);
-  const { data, error } = await query;
-  if (error) {
-    console.warn('Falha ao carregar pontos de embarque.', error);
-    pontosCache.set(key, []);
-    return [];
-  }
-  const rows = (data || []).filter((p) => p.ativo !== false && hasGeo(p.latitude, p.longitude));
+  const base = () => supabase.from('operacional_pontos_embarque').select(PONTO_SELECT).limit(2000);
+  const data = supervisao
+    ? await fetchDeduped([base().eq('supervisao', supervisao), base().eq('coordenacao', supervisao)], (p) => p.id)
+    : await fetchDeduped([base()], (p) => p.id);
+  const rows = data.filter((p) => p.ativo !== false && hasGeo(p.latitude, p.longitude));
   pontosCache.set(key, rows);
   return rows;
 }
@@ -264,15 +269,11 @@ async function loadColabs(supervisao) {
   const key = normalize(supervisao || 'GERAL');
   if (colabsCache.has(key)) return colabsCache.get(key);
 
-  let query = supabase.from('operacional_colaborador_base').select(COLAB_SELECT).eq('ativo', true).limit(2500);
-  if (supervisao) query = query.or(`supervisao.eq.${supervisao},regional.eq.${supervisao}`);
-  const { data, error } = await query;
-  if (error) {
-    console.warn('Falha ao carregar colaboradores para sugestão sob demanda.', error);
-    colabsCache.set(key, []);
-    return [];
-  }
-  const rows = (data || []).map((c) => ({ ...c, nome: c.nome || c.nome_colaborador, nome_colaborador: c.nome_colaborador || c.nome })).filter(onlyActiveColab);
+  const base = () => supabase.from('operacional_colaborador_base').select(COLAB_SELECT).eq('ativo', true).limit(2500);
+  const data = supervisao
+    ? await fetchDeduped([base().eq('supervisao', supervisao), base().eq('regional', supervisao)], (c) => c.id)
+    : await fetchDeduped([base()], (c) => c.id);
+  const rows = data.map((c) => ({ ...c, nome: c.nome || c.nome_colaborador, nome_colaborador: c.nome_colaborador || c.nome })).filter(onlyActiveColab);
   colabsCache.set(key, rows);
   return rows;
 }
@@ -555,7 +556,15 @@ export async function renderOsProgramacaoLite(content, options = {}) {
     positionGacDropdown(dd, input);
     dd.hidden = false;
     dd.innerHTML = '<div class="os-lite-gac-empty">Buscando...</div>';
-    const results = await buscarColabsParaOs(row, query);
+    let results;
+    try {
+      results = await buscarColabsParaOs(row, query);
+    } catch (error) {
+      console.error('Falha ao buscar colaboradores para indicação.', error);
+      if (gacState.input !== input) return;
+      dd.innerHTML = `<div class="os-lite-gac-empty">Erro ao buscar colaboradores: ${escapeHtml(error.message || 'falha desconhecida')}</div>`;
+      return;
+    }
     if (gacState.input !== input) return;
     if (!results.length) {
       dd.innerHTML = '<div class="os-lite-gac-empty">Nenhum colaborador encontrado.</div>';
