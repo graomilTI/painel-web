@@ -4,7 +4,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const XLSX = require('xlsx');
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
-const { setupDownloadDir, prepareDownload, waitForFileDownload } = require('./download-utils');
+const { setupDownloadDir, triggerAndWaitForDownload } = require('./download-utils');
 
 puppeteer.use(StealthPlugin());
 
@@ -23,6 +23,7 @@ const supabase = createClient(
 const REPORT_CONFIG = {
   name: 'Lista de OS',
   url: 'https://www.grmserver.com.br/operation/serviceOrder',
+  xlsSelector: '.serviceOrder-os-list-to-xls button',
   tableName: 'grm_lista_os_importacoes',
 };
 
@@ -46,46 +47,21 @@ async function login(page) {
   log('SUCCESS', 'Login realizado com sucesso');
 }
 
-// O botão de exportar é um ícone sem classe CSS conhecida (não tivemos acesso ao DOM real
-// pra inspecionar) — na tela é o 2º ícone da barra de ferramentas, com a legenda "XLS"
-// visível abaixo do ícone. Localiza pelo texto "XLS" e clica no ancestral clicável mais
-// próximo. Se a UI do grmserver mudar, isso passa a falhar com a mensagem abaixo — nesse
-// caso é preciso inspecionar a tela de novo e ajustar este trecho.
-async function clickXlsButton(page) {
-  const clicked = await page.evaluate(() => {
-    const candidates = Array.from(document.querySelectorAll('body *')).filter(
-      (el) => el.children.length === 0 && el.textContent.trim().toUpperCase() === 'XLS'
-    );
-    for (const el of candidates) {
-      const clickable = el.closest('button, a, [role="button"], .v-btn, [class*="btn" i]') || el;
-      clickable.click();
-      return true;
-    }
-    return false;
-  });
-  if (!clicked) {
-    throw new Error('Botão "XLS" não encontrado na tela de Ordem de Serviço — a UI do grmserver pode ter mudado.');
-  }
-}
-
 async function downloadReport(page) {
   log('INFO', `Navegando para ${REPORT_CONFIG.name}...`);
   await page.goto(REPORT_CONFIG.url, { waitUntil: 'networkidle2', timeout: 60000 });
   await page.waitForSelector('input[placeholder="O.S."], input[placeholder="Filtrar Pesquisa"]', { timeout: 30000 });
-  await page.waitForTimeout(2000);
-
-  const tempDir = setupDownloadDir('lista-os');
-  await prepareDownload(page, tempDir);
+  await page.waitForTimeout(4000);
 
   log('INFO', 'Clicando em XLS...');
-  await clickXlsButton(page);
-  const filePath = await waitForFileDownload(tempDir, 90000);
+  const tempDir = setupDownloadDir('lista-os');
+  const filePath = await triggerAndWaitForDownload(page, REPORT_CONFIG.xlsSelector, tempDir);
   log('SUCCESS', `Arquivo baixado: ${filePath}`);
 
   return filePath;
 }
 
-async function parseXLS(filePath) {
+function parseXLS(filePath) {
   log('INFO', `Parseando arquivo: ${filePath}`);
   const workbook = XLSX.readFile(filePath);
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -93,6 +69,17 @@ async function parseXLS(filePath) {
 
   log('SUCCESS', `${data.length} linhas parseadas`);
   return data;
+}
+
+// Já aconteceu de o clique no XLS disparar, por uma instabilidade de timing da tela, um
+// export diferente (ex.: "Produção Ordem de Serviço.xlsx", sem Situação/Supervisão) em vez
+// da Lista de OS de fato. Confere a coluna "Situação" pra não deixar passar batido numa
+// execução automática sem ninguém olhando o log.
+function validarColunas(data) {
+  if (!data.length) throw new Error('XLS baixado sem nenhuma linha.');
+  if (!('Situação' in data[0])) {
+    throw new Error(`XLS baixado não é a Lista de OS esperada (faltou a coluna "Situação"; colunas recebidas: ${Object.keys(data[0]).join(', ')}).`);
+  }
 }
 
 async function upsertData(data) {
@@ -151,8 +138,22 @@ async function main() {
     page.setViewport({ width: 1920, height: 1440 });
 
     await login(page);
-    const filePath = await downloadReport(page);
-    const data = await parseXLS(filePath);
+
+    let data;
+    const tentativas = 2;
+    for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
+      const filePath = await downloadReport(page);
+      data = parseXLS(filePath);
+      try {
+        validarColunas(data);
+        break;
+      } catch (error) {
+        if (tentativa === tentativas) throw error;
+        log('WARN', `${error.message} Tentando exportar de novo (tentativa ${tentativa + 1}/${tentativas})...`);
+        await page.waitForTimeout(3000);
+      }
+    }
+
     await upsertData(data);
 
     log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
