@@ -6,7 +6,6 @@ const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const STATUS_OPTIONS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
 const ICO_PLUS = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="pointer-events:none;vertical-align:middle"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
-const ICO_FOLHA = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;vertical-align:middle"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>`;
 
 const OS_SELECT = [
   'id',
@@ -40,6 +39,51 @@ let currentUser = null;
 let loadToken = 0;
 const pontosCache = new Map();
 const colabsCache = new Map();
+
+let gacDropdownEl = null;
+let gacState = { input: null, row: null, onSelect: null };
+
+function ensureGacDropdown() {
+  if (gacDropdownEl) return gacDropdownEl;
+  gacDropdownEl = document.createElement('div');
+  gacDropdownEl.id = 'osLiteGacDropdown';
+  gacDropdownEl.className = 'os-lite-gac-portal';
+  gacDropdownEl.hidden = true;
+  document.body.appendChild(gacDropdownEl);
+
+  document.addEventListener('mousedown', (event) => {
+    if (gacDropdownEl.hidden) return;
+    const item = event.target.closest('.os-lite-gac-item');
+    if (item && gacDropdownEl.contains(item)) {
+      event.preventDefault();
+      const { row, onSelect } = gacState;
+      const key = item.dataset.key;
+      hideGacDropdown();
+      if (row && onSelect) onSelect(row, key);
+      return;
+    }
+    if (!gacDropdownEl.contains(event.target) && event.target !== gacState.input) {
+      hideGacDropdown();
+    }
+  });
+  const reposition = () => { if (gacDropdownEl && !gacDropdownEl.hidden && gacState.input) positionGacDropdown(gacDropdownEl, gacState.input); };
+  window.addEventListener('scroll', reposition, true);
+  window.addEventListener('resize', reposition);
+
+  return gacDropdownEl;
+}
+
+function positionGacDropdown(dd, input) {
+  const rect = input.getBoundingClientRect();
+  dd.style.left = `${rect.left}px`;
+  dd.style.top = `${rect.bottom + 4}px`;
+  dd.style.width = `${rect.width}px`;
+}
+
+function hideGacDropdown() {
+  if (gacDropdownEl) gacDropdownEl.hidden = true;
+  gacState = { input: null, row: null, onSelect: null };
+}
 
 function debounce(fn, wait) {
   let timer;
@@ -143,14 +187,13 @@ function injectStyles() {
     .os-lite-buttons{display:flex;gap:6px;flex-wrap:wrap}.os-lite-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.72);color:#dcfce7;border-radius:999px;padding:7px 10px;font-weight:900;cursor:pointer;font-size:12px}.os-lite-btn.active{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.os-lite-btn.warn.active{background:#fde68a;color:#713f12}.os-lite-btn.danger.active{background:#fecaca;color:#7f1d1d}.os-lite-btn:disabled{opacity:.55;cursor:not-allowed}
     .os-lite-row-aguardar td{background:rgba(250,204,21,.06)!important}.os-lite-row-atender td{background:rgba(34,197,94,.06)!important}.os-lite-row-finalizar td{background:rgba(59,130,246,.06)!important}.os-lite-row-kg td{background:rgba(239,68,68,.06)!important}.os-lite-zero td:first-child{box-shadow:inset 4px 0 0 #facc15}
     .os-lite-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#6b7280;background:rgba(15,23,42,.16)}.os-lite-load-more{display:flex;justify-content:center;margin-top:12px}
-    .os-lite-gac{position:relative;width:100%}
     .os-lite-gac-input{width:100%;box-sizing:border-box;padding:6px 8px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:12.5px;outline:none}
     .os-lite-gac-input:focus{border-color:#4ade80}
-    .os-lite-gac-list{position:absolute;top:calc(100% + 2px);left:0;right:0;background:#1e2d3e;border:1px solid #334155;border-radius:8px;max-height:220px;overflow-y:auto;z-index:30;box-shadow:0 4px 16px rgba(0,0,0,.5)}
-    .os-lite-gac-item{padding:7px 10px;cursor:pointer;font-size:12.5px;color:#f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px}
-    .os-lite-gac-item:hover{background:rgba(74,222,128,.12)}
+    .os-lite-gac-portal{position:fixed;background:#0b1220;border:1px solid #334155;border-radius:8px;max-height:260px;overflow-y:auto;z-index:99999;box-shadow:0 14px 38px rgba(0,0,0,.55);opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none}
+    .os-lite-gac-item{padding:7px 10px;cursor:pointer;font-size:12.5px;color:#f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px;background:#0b1220}
+    .os-lite-gac-item:hover{background:rgba(74,222,128,.16)}
     .os-lite-gac-dist{font-size:10.5px;color:#94a3b8;white-space:nowrap;flex-shrink:0}
-    .os-lite-gac-empty{padding:8px 10px;font-size:12.5px;color:#94a3b8;font-style:italic}
+    .os-lite-gac-empty{padding:8px 10px;font-size:12.5px;color:#94a3b8;font-style:italic;background:#0b1220}
     .os-lite-btn.kg{color:#90cdf4;border-color:rgba(99,179,237,.35)}.os-lite-btn.kg.active{background:rgba(99,179,237,.35);color:#0c2942}
     .os-lite-kg-overlay{position:fixed;inset:0;background:rgba(2,6,23,.65);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
     .os-lite-kg-modal{background:#0f172a;border:1px solid rgba(52,211,153,.25);border-radius:16px;padding:18px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:10px}
@@ -317,8 +360,8 @@ function rowHtml(row, atribuicoes) {
   const main = atr[0] || null;
   const rowColorClass = isNegativo ? 'os-lite-row-kg' : row.observacao_logistica?.startsWith('KG solicitado') ? 'os-lite-row-kg' : status === 'AGUARDAR' ? 'os-lite-row-aguardar' : status === 'ATENDER' ? 'os-lite-row-atender' : status === 'FINALIZAR' ? 'os-lite-row-finalizar' : '';
   const statusButtons = STATUS_OPTIONS.map((opt) => {
-    const icon = opt === 'AGUARDAR' ? 'Ⅱ' : opt === 'ATENDER' ? ICO_FOLHA : '$';
-    const title = opt === 'ATENDER' ? 'Conferir' : opt === 'AGUARDAR' ? 'Aguardar' : 'Finalizar';
+    const icon = opt === 'AGUARDAR' ? 'Ⅱ' : opt === 'ATENDER' ? '✓' : '$';
+    const title = opt === 'ATENDER' ? 'Atender · Conferir' : opt === 'AGUARDAR' ? 'Aguardar' : 'Finalizar';
     return `<button class="os-lite-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}" title="${title}">${icon}</button>`;
   }).join('');
   const kgButton = `<button class="os-lite-btn kg ${row.observacao_logistica?.startsWith('KG solicitado') ? 'active' : ''}" data-action-kg="${escapeHtml(row.id)}" type="button" title="Adicionar saldo">${ICO_PLUS}</button>`;
@@ -327,11 +370,8 @@ function rowHtml(row, atribuicoes) {
     <td><div class="os-lite-title">${escapeHtml(row.cliente || '-')}</div><div class="os-lite-meta os-lite-route">Emb.: ${escapeHtml(row.embarque || '-')}</div><div class="os-lite-meta os-lite-route">Dest.: ${escapeHtml(row.destino || '-')}</div><div class="os-lite-meta os-lite-route">Contrato ${escapeHtml(row.contrato || '-')} • ${escapeHtml(row.produto || '-')}</div></td>
     <td><div class="os-lite-rembox"><span class="os-lite-chip ${zero ? 'warn' : rem <= 555000 ? 'info' : 'ok'}">${fmtTon(rem)}</span><div class="os-lite-meta">Lote ${fmtTon(row.lote)}</div><div class="os-lite-meta">Emb. ${fmtTon(row.embarcado)}</div></div></td>
     <td>
-      <div class="os-lite-gac">
-        <input type="text" class="os-lite-gac-input" value="${escapeHtml(main?.colaborador_nome || '')}" placeholder="Selecionar colaborador..." autocomplete="off" spellcheck="false" />
-        <div class="os-lite-gac-list" hidden></div>
-      </div>
-      <div class="os-lite-meta">${main?.distancia_km != null ? `${KM.format(main.distancia_km)} km` : main ? 'Indicado' : 'Sem indicação. Ao marcar Conferir, o painel tenta sugerir pelo mapa operacional.'}</div>
+      <input type="text" class="os-lite-gac-input" value="${escapeHtml(main?.colaborador_nome || '')}" placeholder="Selecionar colaborador..." autocomplete="off" spellcheck="false" />
+      <div class="os-lite-meta">${main?.distancia_km != null ? `${KM.format(main.distancia_km)} km` : main ? 'Indicado' : 'Sem indicação. Ao marcar Atender, o painel tenta sugerir pelo mapa operacional.'}</div>
     </td>
     <td><div class="os-lite-buttons">${statusButtons}${kgButton}</div><div style="margin-top:8px"><span class="os-lite-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
   </tr>`;
@@ -501,15 +541,27 @@ export async function renderOsProgramacaoLite(content, options = {}) {
       .slice(0, 15);
   }
 
-  async function abrirDropdownColaborador(dropdown, row, query) {
-    dropdown.hidden = false;
-    dropdown.innerHTML = '<div class="os-lite-gac-empty">Buscando...</div>';
+  async function abrirDropdownColaborador(input, row, query) {
+    const dd = ensureGacDropdown();
+    gacState = {
+      input,
+      row,
+      onSelect: (r, key) => {
+        const colabs = colabsCache.get(normalize(r.supervisao || 'GERAL')) || [];
+        const colab = colabs.find((c) => colabKey(c) === key);
+        if (colab) selecionarColaborador(r, colab);
+      },
+    };
+    positionGacDropdown(dd, input);
+    dd.hidden = false;
+    dd.innerHTML = '<div class="os-lite-gac-empty">Buscando...</div>';
     const results = await buscarColabsParaOs(row, query);
+    if (gacState.input !== input) return;
     if (!results.length) {
-      dropdown.innerHTML = '<div class="os-lite-gac-empty">Nenhum colaborador encontrado.</div>';
+      dd.innerHTML = '<div class="os-lite-gac-empty">Nenhum colaborador encontrado.</div>';
       return;
     }
-    dropdown.innerHTML = results.map(({ c, distancia }) => {
+    dd.innerHTML = results.map(({ c, distancia }) => {
       const dist = Number.isFinite(distancia) ? ` <span class="os-lite-gac-dist">${KM.format(distancia)} km</span>` : '';
       return `<div class="os-lite-gac-item" data-key="${escapeHtml(colabKey(c))}">${escapeHtml(c.nome)}${dist}</div>`;
     }).join('');
@@ -611,24 +663,13 @@ export async function renderOsProgramacaoLite(content, options = {}) {
       if (row) openKgModalLite(row);
     }
   });
-  el.list.addEventListener('mousedown', (event) => {
-    const item = event.target.closest('.os-lite-gac-item');
-    if (!item) return;
-    event.preventDefault();
-    const tr = item.closest('[data-os-id]');
-    const row = state.rows.find((r) => String(r.id) === String(tr?.dataset.osId));
-    const colabs = colabsCache.get(normalize(row?.supervisao || 'GERAL')) || [];
-    const colab = colabs.find((c) => colabKey(c) === item.dataset.key);
-    if (row && colab) selecionarColaborador(row, colab);
-  });
   const debouncedGacInput = debounce((event) => {
     const input = event.target.closest('.os-lite-gac-input');
     if (!input) return;
     const tr = input.closest('[data-os-id]');
     const row = state.rows.find((r) => String(r.id) === String(tr?.dataset.osId));
-    const dropdown = input.closest('.os-lite-gac')?.querySelector('.os-lite-gac-list');
-    if (!row || !dropdown) return;
-    abrirDropdownColaborador(dropdown, row, input.value);
+    if (!row) return;
+    abrirDropdownColaborador(input, row, input.value);
   }, 200);
   el.list.addEventListener('input', debouncedGacInput);
   el.list.addEventListener('focusin', (event) => {
@@ -636,15 +677,13 @@ export async function renderOsProgramacaoLite(content, options = {}) {
     if (!input) return;
     const tr = input.closest('[data-os-id]');
     const row = state.rows.find((r) => String(r.id) === String(tr?.dataset.osId));
-    const dropdown = input.closest('.os-lite-gac')?.querySelector('.os-lite-gac-list');
-    if (!row || !dropdown) return;
-    abrirDropdownColaborador(dropdown, row, input.value);
+    if (!row) return;
+    abrirDropdownColaborador(input, row, input.value);
   });
   el.list.addEventListener('focusout', (event) => {
     const input = event.target.closest('.os-lite-gac-input');
     if (!input) return;
-    const dropdown = input.closest('.os-lite-gac')?.querySelector('.os-lite-gac-list');
-    setTimeout(() => { if (dropdown) dropdown.hidden = true; }, 150);
+    setTimeout(() => { if (gacState.input === input) hideGacDropdown(); }, 150);
   });
 
   await loadPage({ append: false });
