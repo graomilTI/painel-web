@@ -4,7 +4,7 @@ import { toPanelUrl } from './paths.js';
 
 const STYLE_ID = 'gestorMobileHomeFixStyles';
 const PROGRAMACAO_URL = toPanelUrl('programacao');
-const cache = { loading: false, loaded: false, rows: [], error: '' };
+const cache = { loading: false, loaded: false, rows: [], error: '', access: null };
 
 function norm(value) {
   return String(value || '')
@@ -41,14 +41,43 @@ function isMasterContext(context) {
   return Boolean(context?.user?.is_master || context?.is_master || norm(role) === 'MASTER');
 }
 
-function allowedSupervisoes(context, appUser) {
-  return [
+function buildAccess(context, appUser) {
+  const labels = [
     ...parseList(appUser?.supervisao),
+    ...parseList(appUser?.supervisoes),
     ...parseList(context?.user?.supervisao),
     ...parseList(context?.user?.supervisoes),
     ...parseList(context?.supervisao),
     ...parseList(context?.supervisoes),
   ].filter(Boolean);
+
+  const coordenacao = String(appUser?.coordenacao || context?.coordenacao || context?.user?.coordenacao || '').trim();
+  if (coordenacao) labels.push(coordenacao);
+
+  const setor = norm(appUser?.setor || context?.setor || context?.department?.name || context?.department?.code || '');
+  const master = isMasterContext(context);
+  const restricted = setor === 'GESTOR' || labels.length > 0 || !master;
+  const fullTokens = [...new Set(labels.map(norm).filter((item) => item.length >= 4))];
+  const wordTokens = fullTokens
+    .flatMap((item) => item.split(/\s+/))
+    .filter((item) => item.length >= 4 && !['GERAL', 'SETOR', 'GESTOR', 'SUPERVISAO', 'REGIONAL'].includes(item));
+
+  return {
+    restricted,
+    coordenacao,
+    allowed: [...new Set(labels)],
+    tokens: [...new Set([...fullTokens, ...wordTokens])],
+  };
+}
+
+function rowAllowed(row, access) {
+  if (!access?.restricted) return true;
+  const sup = norm(row?.supervisao);
+  const coord = norm(row?.coordenacao);
+  return access.tokens.some((token) => token && (
+    sup === token || sup.includes(token) || token.includes(sup) ||
+    coord === token || coord.includes(token) || token.includes(coord)
+  ));
 }
 
 function osStatus(row) {
@@ -143,23 +172,23 @@ async function loadProgramacaoRows() {
       .maybeSingle();
     if (userError) throw userError;
 
-    const master = isMasterContext(context);
-    const allowed = allowedSupervisoes(context, appUser);
+    const access = buildAccess(context, appUser);
+    cache.access = access;
     let query = supabase
       .from('operacional_os')
       .select('id,numero_os,cliente,embarque,destino,supervisao,coordenacao,status_gestor,configurada_em,data_os,remanescente')
       .limit(250);
 
-    if (!master) {
-      if (allowed.length) query = query.in('supervisao', allowed);
-      else if (String(appUser?.supervisao || '').trim()) query = query.eq('supervisao', String(appUser.supervisao).trim());
-      else if (String(appUser?.coordenacao || '').trim()) query = query.eq('coordenacao', String(appUser.coordenacao).trim());
+    if (access.restricted) {
+      if (access.coordenacao) query = query.ilike('coordenacao', `%${access.coordenacao}%`);
+      else if (access.allowed.length === 1) query = query.ilike('supervisao', `%${access.allowed[0]}%`);
+      else if (access.allowed.length > 1) query = query.in('supervisao', access.allowed);
       else query = query.eq('supervisao', '__sem_supervisao_liberada__');
     }
 
     const { data, error } = await query;
     if (error) throw error;
-    cache.rows = Array.isArray(data) ? data : [];
+    cache.rows = (Array.isArray(data) ? data : []).filter((row) => rowAllowed(row, access));
     cache.loaded = true;
   } catch (error) {
     cache.error = error?.message || 'Não foi possível carregar a sequência de O.S.';
