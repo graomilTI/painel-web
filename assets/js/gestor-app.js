@@ -1,13 +1,17 @@
 ﻿import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getSession, getUserContext, signOut } from './auth.js';
 import { toPanelUrl } from './paths.js';
+import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
+import { sincronizarProducaoSnapshotDoAgente } from './producaoSnapshotAgentSync.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const CACHE_KEY      = 'grao1000:gestor-app:v1';
 const CACHE_TTL      = 1000 * 60 * 7;
 const DASH_CACHE_KEY = 'grao1000:gestor-dash:v4-segmentado';
-const DASH_CACHE_TTL = 1000 * 60 * 60 * 24 * 30;
+// Os agentes de produção/patrimônio resincronizam a cada ~20min; 1h evita que os
+// KPIs (meta mensal, patrimônios) fiquem presos em cache por dias.
+const DASH_CACHE_TTL = 1000 * 60 * 60;
 const LIMITE_MULTIPLOS = 500000;
 const LIMITE_OS_POR_COLABORADOR = 2;
 const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
@@ -331,6 +335,8 @@ async function readAppDashboardCacheSegment(ref) {
       .maybeSingle();
     if (error) throw error;
     if (!data?.dados_json) return null;
+    const idadeMs = data.atualizado_em ? Date.now() - new Date(data.atualizado_em).getTime() : Infinity;
+    if (idadeMs > DASH_CACHE_TTL) return null;
     return {
       ...data.dados_json,
       cache_atualizado_em: data.atualizado_em,
@@ -379,6 +385,12 @@ async function fetchDashData({ force = false } = {}) {
 }
 
 async function fetchDashDataLive() {
+  // patrimonios_snapshot e producao_snapshot são a base dos KPIs aqui (patrimônios e
+  // meta mensal); dispara a sincronização com os agentes em paralelo (sem await, são
+  // pesadas) para não travar o carregamento — o resultado fica disponível na próxima atualização.
+  sincronizarPatrimoniosDoAgente().catch((error) => console.warn('[gestor-app] falha ao sincronizar patrimonios_snapshot:', error?.message || error));
+  sincronizarProducaoSnapshotDoAgente().catch((error) => console.warn('[gestor-app] falha ao sincronizar producao_snapshot:', error?.message || error));
+
   const now = new Date();
   const ano = now.getFullYear();
   const mes = now.getMonth() + 1;
