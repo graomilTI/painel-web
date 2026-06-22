@@ -85,7 +85,7 @@
   function moneyValue(v){const n=Number(v||0);if(!Number.isFinite(n))return 0;if(Number.isInteger(n)&&Math.abs(n)>=1000)return n/100;return n;}
   function fmtMoney(v){return MONEY_FMT.format(moneyValue(v));}
   function statusText(m){return first(m.status_multa,m.situacao,m.status,'A PAGAR');}
-  function statusKind(m){const st=norm(statusText(m));if(st.includes('paga')||st.includes('baix')||st.includes('quit'))return 'paga';if(st.includes('cancel'))return 'cancelada';if(st.includes('venc'))return 'vencida';const d=parseDate(dueDate(m));if(d){const today=new Date();today.setHours(0,0,0,0);if(d.getTime()<today.getTime())return 'vencida';}return 'aberta';}
+  function statusKind(m){const st=norm(statusText(m));if(/\bpag[ao]\b/.test(st)||st.includes('baix')||st.includes('quit'))return 'paga';if(st.includes('cancel'))return 'cancelada';if(st.includes('venc'))return 'vencida';const d=parseDate(dueDate(m));if(d){const today=new Date();today.setHours(0,0,0,0);if(d.getTime()<today.getTime())return 'vencida';}return 'aberta';}
   function toast(msg,error=false){let el=document.querySelector('.fm-toast');if(!el){el=document.createElement('div');el.className='fm-toast';document.body.appendChild(el);}el.textContent=msg;el.style.background=error?'rgba(127,29,29,.96)':'rgba(22,101,52,.96)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3600);}
   async function callFunction(opts,name,body){const {data,error}=await opts.supabase.functions.invoke(name,{body});if(error){const msg=error.context?.error||error.context?.message||error.message||`Falha na function ${name}`;throw new Error(msg);}if(data?.error)throw new Error(data.error);return data;}
 
@@ -155,7 +155,7 @@
       const kind=statusKind(m);
       if(state.filtro==='vencidas'&&kind!=='vencida')return false;
       if(state.filtro==='abertas'&&!['aberta','vencida'].includes(kind))return false;
-      if(state.filtro==='pagas'&&kind!=='paga')return false;
+      if(state.filtro==='pagas'&&kind!=='aberta')return false;
       if(b&&!norm([m.placa,m.renavam,m.motorista,m.descricao,m.local,m.numero_auto_infracao,m.auto,m.empresa,statusText(m)].join(' ')).includes(b))return false;
       return true;
     }).sort(compareRows);
