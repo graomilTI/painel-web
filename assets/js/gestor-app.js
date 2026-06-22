@@ -904,7 +904,6 @@ function renderInicio(main) {
   const patri = dash?.patrimonios || { total: 0, atrasados: 0 };
   const patriOk = patri.total - patri.atrasados;
   const patriPct = patri.total > 0 ? patriOk / patri.total * 100 : 100;
-  const patriAtrPct = patri.total > 0 ? patri.atrasados / patri.total * 100 : 0;
 
   function fmtTons(val) {
     const v = Number(val) || 0;
@@ -969,13 +968,8 @@ function renderInicio(main) {
       <div class="db-patri-card is-clickable" data-go="patrimonio-leitura" role="button" tabindex="0" title="Abrir Leitura de Patrimônios">
         <div class="db-card-eyebrow">Patrimônios</div>
         <div class="db-patri-hero">
-          <span class="db-patri-num ${patri.atrasados === 0 ? 'is-green' : ''}">${patriOk}</span>
-          <span class="db-patri-den">/ ${patri.total}</span>
-        </div>
-        <div class="db-patri-read-row"><span>Leitura regularizada</span><strong>${patriPct.toFixed(0)}%</strong></div>
-        <div class="db-seg" aria-label="${patriPct.toFixed(0)}% de leitura regularizada">
-          <div class="db-seg-ok" style="width:${patriPct.toFixed(1)}%"></div>
-          <div class="db-seg-late" style="width:${patriAtrPct.toFixed(1)}%"></div>
+          <span class="db-patri-num ${patri.atrasados === 0 ? 'is-green' : ''}">${patriPct.toFixed(0)}</span>
+          <span class="db-patri-den">% regularizado</span>
         </div>
         <div class="db-patri-status">
           ${patri.atrasados > 0
