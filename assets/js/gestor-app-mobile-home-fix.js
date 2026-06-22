@@ -182,9 +182,9 @@ function patchProgramacaoCard() {
   if (den) den.textContent = `pendente${pendentes === 1 ? '' : 's'}`;
   const status = card.querySelector('.db-os-status');
   if (status) {
-    status.innerHTML = conferencia > 0
-      ? `<span class="db-status-late">${conferencia} em conferência</span>`
-      : '<span class="db-status-ok">Tudo ajustado ✓</span>';
+    if (conferencia > 0) status.innerHTML = `<span class="db-status-late">${conferencia} em conferência</span>`;
+    else if (pendentes > 0) status.innerHTML = `<span class="db-status-late">${pendentes} sem ajuste</span>`;
+    else status.innerHTML = '<span class="db-status-ok">Tudo ajustado ✓</span>';
   }
 }
 
