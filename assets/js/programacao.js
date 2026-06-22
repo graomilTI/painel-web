@@ -450,12 +450,10 @@ initProtectedPage('Programação', (content) => {
     bindEvents();
     await Promise.all([loadCidadesBrasil(), loadAlojamentos(), loadVeiculosFrota(), loadBaseOperacional()]);
     await fillSupervisoes();
-    await checkOsPendingPopup();
   }
 
   function bindEvents() {
     el.loadBtn.addEventListener('click', loadContext);
-    el.sup.addEventListener('change', () => checkOsPendingPopup());
     el.saveBtn.addEventListener('click', saveProgramacao);
     el.search.addEventListener('input', debounce(() => {
       state.search = el.search.value.trim().toLowerCase();
@@ -471,16 +469,6 @@ initProtectedPage('Programação', (content) => {
     el.list.addEventListener('click', handleTableClick);
   }
 
-
-  function osRemanescenteLabel(value) {
-    const number = Number(value || 0);
-    return Number.isFinite(number) ? number.toLocaleString('pt-BR') : '0';
-  }
-
-  function pendingOsFilter(row) {
-    if (!row) return false;
-    return row.status_gestor === 'AGUARDAR' && !row.configurada_em;
-  }
 
   async function checkFobPendenciasBloqueantes(dataReferencia, supervisao) {
     if (!dataReferencia) return [];
@@ -504,72 +492,6 @@ initProtectedPage('Programação', (content) => {
     const detalhes = rows.slice(0, 5).map((r) => `OS ${r.numero_os || '-'} • ${brDate(r.data_referencia)} • ${r.cliente || '-'}`).join(' | ');
     setFeedback(`Programação bloqueada: existem ${rows.length} FOB(s) anteriores sem validação do gestor. Valide na aba Logística > FOB. ${detalhes}`, 'error');
     el.list.innerHTML = `<div class="table-empty">Programação bloqueada por FOB pendente de validação.<br>Abra <strong>Logística &gt; FOB</strong>, marque todos como válidos ou inválidos e carregue novamente.</div>`;
-  }
-
-  async function checkOsPendingPopup() {
-    try {
-      const selectedSup = el.sup?.value || '';
-      const today = todayIso();
-      let query = supabase
-        .from('operacional_os')
-        .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,status_gestor,configurada_em,updated_at,created_at')
-        .eq('status_gestor', 'AGUARDAR')
-        .is('configurada_em', null)
-        .gte('data_os', today)
-        .lte('data_os', today)
-        .order('data_os', { ascending: false })
-        .limit(50);
-
-      if (selectedSup) {
-        query = query.eq('supervisao', selectedSup);
-      } else if (state.access?.restricted && state.access.allowedSupervisoes?.length) {
-        query = query.in('supervisao', state.access.allowedSupervisoes);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      const pending = (data || []).filter(pendingOsFilter).slice(0, 8);
-      if (pending.length) showOsPendingModal(pending);
-    } catch (error) {
-      console.warn('Não foi possível verificar O.S. pendentes para pop-up.', error);
-    }
-  }
-
-  function showOsPendingModal(rows) {
-    const old = document.getElementById('progOsPendingModal');
-    if (old) old.remove();
-    const wrap = document.createElement('div');
-    wrap.id = 'progOsPendingModal';
-    wrap.className = 'prog-os-modal-backdrop';
-    wrap.innerHTML = `
-      <div class="prog-os-modal" role="dialog" aria-modal="true" aria-label="Configuração de O.S.">
-        <div class="prog-os-modal-head">
-          <div>
-            <h3>Configurar O.S. antes da programação</h3>
-            <p>Existem O.S. novas ou alteradas para a regional liberada. Configure atendimento, colaborador sugerido e distribuição antes de seguir com a programação.</p>
-          </div>
-          
-        </div>
-        <div class="prog-os-list">
-          ${rows.map((row) => {
-            const zero = Number(row.remanescente || 0) === 0;
-            return `<div class="prog-os-card ${zero ? 'zero' : ''}">
-              <div class="prog-os-title">${escapeHtml(row.numero_os)} • ${escapeHtml(row.supervisao || '-')}</div>
-              <div class="prog-os-meta">${escapeHtml(row.cliente || '-')}</div>
-              <div class="prog-os-meta">Embarque: ${escapeHtml(row.embarque || '-')}</div>
-              <div class="prog-os-meta">Destino: ${escapeHtml(row.destino || '-')}</div>
-              <span class="prog-os-rem">Remanescente: ${osRemanescenteLabel(row.remanescente)}${zero ? ' • zerada' : ''}</span>
-            </div>`;
-          }).join('')}
-        </div>
-        <div class="prog-os-modal-actions">
-          <button class="prog-os-go" type="button" data-os-open>Ajustar O.S. agora</button>
-        </div>
-      </div>`;
-    wrap.addEventListener('click', (event) => {
-      if (event.target.matches('[data-os-open]')) window.location.href = '/painel/os';
-    });
-    document.body.appendChild(wrap);
   }
 
 
