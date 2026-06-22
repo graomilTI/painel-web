@@ -1579,15 +1579,27 @@ async function saveOsStatus(id, status) {
   }
 }
 
-function renderPatrimonio(main) {
+async function contarCadastrosPatrimonioPendentes() {
+  let query = supabase.from('compras_patrimonios_cadastro').select('id', { count: 'exact', head: true }).is('numero_patrimonio', null);
+  if (!state.isMaster && state.appUser?.coordenacao) query = query.eq('coordenacao', state.appUser.coordenacao);
+  const { count } = await query;
+  return count || 0;
+}
+
+async function renderPatrimonio(main) {
   if (state.patrimonioSubview === 'leitura') return renderPatrimonioLeitura(main);
   if (state.patrimonioSubview === 'cadastrar') return renderPatrimonioCadastrar(main);
+  main.innerHTML = `<div class="section-card"><p class="help">Carregando...</p></div>`;
+  const pendentes = await contarCadastrosPatrimonioPendentes();
   main.innerHTML = `
     <section class="hero-card">
       <h1>Patrimônio</h1>
       <p>Gerencie os patrimônios da sua regional.</p>
       <div class="quick-grid">
-        <button class="quick-card is-primary" data-pat="cadastrar" type="button"><b>Cadastrar</b><span>Solicitações do setor de Compras</span></button>
+        <button class="quick-card is-primary" data-pat="cadastrar" type="button">
+          <b>Cadastrar${pendentes > 0 ? ` <span class="pat-badge">${pendentes}</span>` : ''}</b>
+          <span>Solicitações do setor de Compras</span>
+        </button>
         <button class="quick-card" data-pat="leitura" type="button"><b>Leitura</b><span>Patrimônios cadastrados da regional</span></button>
       </div>
     </section>
@@ -1653,36 +1665,83 @@ async function renderPatrimonioLeitura(main) {
   main.querySelector('[data-pat-back]')?.addEventListener('click', () => patBack(main));
 }
 
+function renderPatrimonioCadastroCard(r) {
+  if (r.numero_patrimonio) {
+    return `
+      <div class="pat-card pat-conferido">
+        <div class="pat-card-row">
+          <span class="pat-num">${escapeHtml(r.numero_patrimonio)}</span>
+          <span class="pat-status-pill">CADASTRADO</span>
+        </div>
+        <b>${escapeHtml(r.material || '-')}</b>
+        ${r.marca ? `<span class="help">${escapeHtml(r.marca)}</span>` : ''}
+        ${r.coordenacao ? `<span class="help">${escapeHtml(r.coordenacao)}</span>` : ''}
+        ${r.informado_em ? `<span class="help">Cadastrado: ${brDate(r.informado_em)}</span>` : ''}
+      </div>
+    `;
+  }
+  return `
+    <div class="pat-card">
+      <div class="pat-card-row">
+        <span class="pat-num">S/N</span>
+        <span class="pat-status-pill">PENDENTE</span>
+      </div>
+      <b>${escapeHtml(r.material || '-')}</b>
+      ${r.marca ? `<span class="help">${escapeHtml(r.marca)}</span>` : ''}
+      ${r.coordenacao ? `<span class="help">${escapeHtml(r.coordenacao)}</span>` : ''}
+      <div class="pat-cadastro-row">
+        <input type="text" class="pat-cadastro-input" placeholder="Nº do patrimônio" data-pat-input="${escapeHtml(r.id)}" />
+        <button class="btn secondary" type="button" data-pat-confirmar="${escapeHtml(r.id)}">Confirmar</button>
+      </div>
+    </div>
+  `;
+}
+
 async function renderPatrimonioCadastrar(main) {
   main.innerHTML = `<div class="section-card"><p class="help">Carregando solicitações...</p></div>`;
   let query = supabase.from('compras_patrimonios_cadastro')
     .select('id,numero_patrimonio,material,marca,coordenacao,status,informado_em')
-    .order('informado_em', { ascending: false });
+    .order('informado_em', { ascending: false, nullsFirst: true });
   if (!state.isMaster && state.appUser?.coordenacao) query = query.eq('coordenacao', state.appUser.coordenacao);
   const { data, error } = await query;
   const rows = data || [];
+  const pendentes = rows.filter((r) => !r.numero_patrimonio);
+  const cadastrados = rows.filter((r) => r.numero_patrimonio);
   main.innerHTML = `
     <section class="hero-card pat-header">
       <button class="btn secondary" data-pat-back type="button">← Voltar</button>
       <h1>Cadastrar Patrimônio</h1>
-      <p>${rows.length} solicitação(ões) de cadastro${error ? ' — erro ao carregar' : ''}.</p>
+      <p>${pendentes.length} pendente(s) de número &middot; ${cadastrados.length} já cadastrado(s)${error ? ' — erro ao carregar' : ''}.</p>
     </section>
     <section class="section-card">
-      ${error ? `<p class="help error-text">Erro: ${escapeHtml(error.message)}</p>` : rows.length === 0 ? '<p class="help">Nenhuma solicitação de cadastro encontrada.</p>' : rows.map((r) => `
-        <div class="pat-card ${r.status === 'CONFERIDO' ? 'pat-conferido' : ''}">
-          <div class="pat-card-row">
-            <span class="pat-num">${escapeHtml(r.numero_patrimonio || 'S/N')}</span>
-            <span class="pat-status-pill">${escapeHtml(r.status || 'PENDENTE')}</span>
-          </div>
-          <b>${escapeHtml(r.material || '-')}</b>
-          ${r.marca ? `<span class="help">${escapeHtml(r.marca)}</span>` : ''}
-          ${r.coordenacao ? `<span class="help">${escapeHtml(r.coordenacao)}</span>` : ''}
-          ${r.informado_em ? `<span class="help">Informado: ${brDate(r.informado_em)}</span>` : ''}
-        </div>
-      `).join('')}
+      ${error ? `<p class="help error-text">Erro: ${escapeHtml(error.message)}</p>` : rows.length === 0 ? '<p class="help">Nenhuma solicitação de cadastro encontrada.</p>' : [...pendentes, ...cadastrados].map(renderPatrimonioCadastroCard).join('')}
     </section>
   `;
   main.querySelector('[data-pat-back]')?.addEventListener('click', () => patBack(main));
+  main.querySelectorAll('[data-pat-confirmar]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.patConfirmar;
+      const input = main.querySelector(`[data-pat-input="${id}"]`);
+      const numero = input?.value.trim();
+      if (!numero) { input?.focus(); return; }
+      btn.disabled = true;
+      btn.textContent = 'Salvando...';
+      const agoraIso = new Date().toISOString();
+      const { error: updError } = await supabase.from('compras_patrimonios_cadastro').update({
+        numero_patrimonio: numero,
+        status: 'cadastrado',
+        informado_em: agoraIso,
+        updated_at: agoraIso,
+      }).eq('id', id);
+      if (updError) {
+        alert(updError.message);
+        btn.disabled = false;
+        btn.textContent = 'Confirmar';
+        return;
+      }
+      renderPatrimonioCadastrar(main);
+    });
+  });
 }
 
 function debounce(fn, wait = 250) {
