@@ -1291,6 +1291,7 @@ function bindOsEvents(scope) {
     if (!input) return;
     const dropdown = input.closest('.gac')?.querySelector('.gac-list');
     if (!dropdown) return;
+    input.select();
     const osId = input.dataset.acOsId;
     const excludeKeys = new Set();
     if (input.dataset.acType === 'extra') {
@@ -1298,7 +1299,7 @@ function bindOsEvents(scope) {
     } else {
       (state.extras.get(osId) || []).forEach((k) => { if (k) excludeKeys.add(k); });
     }
-    renderGacDropdown(dropdown, input.value, osId, excludeKeys);
+    renderGacDropdown(dropdown, '', osId, excludeKeys);
   });
 
   scope.addEventListener('focusout', (e) => {
