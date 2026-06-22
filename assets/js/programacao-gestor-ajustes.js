@@ -17,6 +17,17 @@ let supervisoesDropdownLoading = false;
 let supervisoesDropdownLoaded = false;
 let pendingKpiReload = false;
 
+let supDropdownEl = null;
+let supComboState = { input: null, onSelect: null };
+
+function debounce(fn, wait) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), wait);
+  };
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -84,6 +95,14 @@ function injectGestorAjustesStyles() {
     .prog-os-lazy-card p{margin:0;font-size:13px;line-height:1.35}
     .prog-os-lazy-card .btn{min-height:38px}
     @media(max-width:900px){.prog-tfield-sup,.prog-tfield-os-status{flex:1 1 100%!important;max-width:none!important}.prog-tfield-sup select,#progSup{min-width:0!important}.prog-os-lazy-card{align-items:stretch}.prog-os-lazy-card .btn{width:100%;justify-content:center}}
+    .prog-sup-native-hidden{position:absolute!important;width:0!important;height:0!important;padding:0!important;border:0!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
+    .prog-sup-combo-input{position:relative!important;z-index:9020!important;min-width:320px!important;width:100%;box-sizing:border-box;padding:9px 12px;background:#020617!important;color:#f8fafc!important;border:1px solid rgba(52,211,153,.45)!important;border-radius:10px;font-size:13.5px;outline:none}
+    .prog-sup-combo-input:focus{outline:2px solid rgba(52,211,153,.35)!important;outline-offset:1px!important}
+    .prog-sup-combo-portal{position:fixed;background:#020617;border:1px solid rgba(52,211,153,.35);border-radius:10px;max-height:280px;overflow-y:auto;z-index:99999;box-shadow:0 14px 38px rgba(0,0,0,.55);opacity:1;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+    .prog-sup-combo-item{padding:9px 12px;cursor:pointer;font-size:13.5px;color:#f8fafc;background:#020617}
+    .prog-sup-combo-item:hover,.prog-sup-combo-item.active{background:#064e3b;color:#ffffff}
+    .prog-sup-combo-empty{padding:9px 12px;font-size:13px;color:#94a3b8;font-style:italic;background:#020617}
+    @media(max-width:900px){.prog-sup-combo-input{min-width:0!important}}
   `;
   document.head.appendChild(style);
 }
@@ -345,6 +364,105 @@ function triggerKpiReload() {
   loadBtn.click();
 }
 
+function ensureSupDropdown() {
+  if (supDropdownEl) return supDropdownEl;
+  supDropdownEl = document.createElement('div');
+  supDropdownEl.className = 'prog-sup-combo-portal';
+  supDropdownEl.hidden = true;
+  document.body.appendChild(supDropdownEl);
+
+  document.addEventListener('mousedown', (event) => {
+    if (supDropdownEl.hidden) return;
+    const item = event.target.closest('.prog-sup-combo-item');
+    if (item && supDropdownEl.contains(item)) {
+      event.preventDefault();
+      const { onSelect } = supComboState;
+      const value = item.dataset.value;
+      hideSupDropdown();
+      if (onSelect) onSelect(value);
+      return;
+    }
+    if (!supDropdownEl.contains(event.target) && event.target !== supComboState.input) {
+      hideSupDropdown();
+    }
+  });
+  const reposition = () => { if (supDropdownEl && !supDropdownEl.hidden && supComboState.input) positionSupDropdown(supDropdownEl, supComboState.input); };
+  window.addEventListener('scroll', reposition, true);
+  window.addEventListener('resize', reposition);
+
+  return supDropdownEl;
+}
+
+function positionSupDropdown(dd, input) {
+  const rect = input.getBoundingClientRect();
+  dd.style.left = `${rect.left}px`;
+  dd.style.top = `${rect.bottom + 4}px`;
+  dd.style.width = `${rect.width}px`;
+}
+
+function hideSupDropdown() {
+  if (supDropdownEl) supDropdownEl.hidden = true;
+  supComboState = { input: null, onSelect: null };
+}
+
+function abrirDropdownSupervisao(input, nativeSelect, query) {
+  const dd = ensureSupDropdown();
+  supComboState = {
+    input,
+    onSelect: (value) => {
+      nativeSelect.value = value;
+      nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      syncSupComboDisplay(nativeSelect);
+    },
+  };
+  positionSupDropdown(dd, input);
+  const norm = normalize(query);
+  const options = [...nativeSelect.options].filter((opt) => opt.value).filter((opt) => !norm || normalize(opt.textContent).includes(norm));
+  dd.hidden = false;
+  dd.innerHTML = options.length
+    ? options.map((opt) => `<div class="prog-sup-combo-item ${opt.value === nativeSelect.value ? 'active' : ''}" data-value="${escapeHtml(opt.value)}">${escapeHtml(opt.textContent)}</div>`).join('')
+    : '<div class="prog-sup-combo-empty">Nenhuma supervisão encontrada.</div>';
+}
+
+function syncSupComboDisplay(nativeSelect) {
+  const input = document.getElementById('progSupCombo');
+  if (!input || document.activeElement === input) return;
+  const opt = nativeSelect.options[nativeSelect.selectedIndex];
+  input.value = opt && opt.value ? opt.textContent : '';
+}
+
+function ensureSupCombo() {
+  const nativeSelect = document.getElementById('progSup');
+  if (!nativeSelect) return;
+
+  let input = document.getElementById('progSupCombo');
+  if (!input) {
+    nativeSelect.classList.add('prog-sup-native-hidden');
+    nativeSelect.tabIndex = -1;
+    input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'progSupCombo';
+    input.className = 'prog-sup-combo-input';
+    input.placeholder = 'Selecione a supervisão...';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    nativeSelect.insertAdjacentElement('beforebegin', input);
+
+    input.addEventListener('focus', () => {
+      input.select();
+      abrirDropdownSupervisao(input, nativeSelect, '');
+    });
+    input.addEventListener('input', debounce(() => abrirDropdownSupervisao(input, nativeSelect, input.value), 150));
+    input.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (supComboState.input === input) hideSupDropdown();
+        syncSupComboDisplay(nativeSelect);
+      }, 150);
+    });
+  }
+  syncSupComboDisplay(nativeSelect);
+}
+
 function autoSelectSingleSupervisao() {
   const select = document.getElementById('progSup');
   if (!select || select.dataset.autoLoadChecked === '1') return;
@@ -391,6 +509,7 @@ async function initGestorProgramacaoAjustes() {
   await waitForElement('#progSteps');
   injectGestorAjustesStyles();
   ensureStatusOsFilter();
+  ensureSupCombo();
   bindTopLoadForEtapaA();
   configureSteps();
   renderDistribuicao({ loadOs: false });
@@ -403,6 +522,7 @@ async function initGestorProgramacaoAjustes() {
     patchPendingOsModal();
     guardDistribuicaoView();
     bindTopLoadForEtapaA();
+    ensureSupCombo();
     if (currentUiStep === 'A') {
       ensureStatusOsFilter();
       const mount = document.getElementById('progDistribuicaoOsMount');

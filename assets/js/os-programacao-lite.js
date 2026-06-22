@@ -6,6 +6,7 @@ const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const STATUS_OPTIONS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
 const ICO_PLUS = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="pointer-events:none;vertical-align:middle"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+const ICO_FOLHA = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;vertical-align:middle"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>`;
 
 const OS_SELECT = [
   'id',
@@ -193,12 +194,17 @@ function injectStyles() {
     .os-lite-gac-dist{font-size:10.5px;color:#94a3b8;white-space:nowrap;flex-shrink:0}
     .os-lite-gac-empty{padding:8px 10px;font-size:12.5px;color:#94a3b8;font-style:italic;background:#0b1220}
     .os-lite-btn.kg{color:#90cdf4;border-color:rgba(99,179,237,.35)}.os-lite-btn.kg.active{background:rgba(99,179,237,.35);color:#0c2942}
+    .os-lite-btn.conferir{color:#c4b5fd;border-color:rgba(167,139,250,.35)}.os-lite-btn.conferir.active{background:rgba(167,139,250,.35);color:#2e1065}
     .os-lite-kg-overlay{position:fixed;inset:0;background:rgba(2,6,23,.65);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
     .os-lite-kg-modal{background:#0f172a;border:1px solid rgba(52,211,153,.25);border-radius:16px;padding:18px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:10px}
     .os-lite-kg-modal h3{margin:0;font-size:15px;color:#f8fafc}
     .os-lite-kg-modal p{margin:0;font-size:12px;color:#94a3b8}
     .os-lite-kg-modal input{padding:9px 10px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#f8fafc;font-size:14px}
     .os-lite-kg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+    .os-lite-dropzone{border:2px dashed rgba(167,139,250,.4);border-radius:14px;padding:24px 14px;text-align:center;color:#94a3b8;cursor:pointer;font-size:13px;transition:border-color .15s}
+    .os-lite-dropzone:hover{border-color:rgba(167,139,250,.7)}
+    .os-lite-dropzone small{font-size:11px}
+    .os-lite-file-list{font-size:12px;color:#bbf7d0;min-height:18px}
   `;
   document.head.appendChild(style);
 }
@@ -360,10 +366,11 @@ function rowHtml(row, atribuicoes) {
   const rowColorClass = isNegativo ? 'os-lite-row-kg' : row.observacao_logistica?.startsWith('KG solicitado') ? 'os-lite-row-kg' : status === 'AGUARDAR' ? 'os-lite-row-aguardar' : status === 'ATENDER' ? 'os-lite-row-atender' : status === 'FINALIZAR' ? 'os-lite-row-finalizar' : '';
   const statusButtons = STATUS_OPTIONS.map((opt) => {
     const icon = opt === 'AGUARDAR' ? 'Ⅱ' : opt === 'ATENDER' ? '✓' : '$';
-    const title = opt === 'ATENDER' ? 'Atender · Conferir' : opt === 'AGUARDAR' ? 'Aguardar' : 'Finalizar';
+    const title = opt === 'ATENDER' ? 'Atender' : opt === 'AGUARDAR' ? 'Aguardar' : 'Finalizar';
     return `<button class="os-lite-btn ${opt === 'AGUARDAR' ? 'warn' : opt === 'FINALIZAR' ? 'danger' : ''} ${status === opt ? 'active' : ''}" data-status="${opt}" title="${title}">${icon}</button>`;
   }).join('');
   const kgButton = `<button class="os-lite-btn kg ${row.observacao_logistica?.startsWith('KG solicitado') ? 'active' : ''}" data-action-kg="${escapeHtml(row.id)}" type="button" title="Adicionar saldo">${ICO_PLUS}</button>`;
+  const conferirButton = `<button class="os-lite-btn conferir ${row.observacao_logistica?.startsWith('LAUDO:') ? 'active' : ''}" data-action-conferir="${escapeHtml(row.id)}" type="button" title="Conferir · Anexar arquivo">${ICO_FOLHA}</button>`;
   return `<tr data-os-id="${escapeHtml(row.id)}" class="${zero ? 'os-lite-zero' : ''} ${rowColorClass}">
     <td><div class="os-lite-title">${escapeHtml(row.numero_os)}</div><div class="os-lite-meta">${brDate(row.data_os)}</div><div class="os-lite-meta">${escapeHtml(row.servico || '-')}</div><div class="os-lite-meta">${escapeHtml(row.supervisao || '-')}</div>${zero ? '<div class="os-lite-meta" style="color:#fde68a">Remanescente zerado</div>' : ''}</td>
     <td><div class="os-lite-title">${escapeHtml(row.cliente || '-')}</div><div class="os-lite-meta os-lite-route">Emb.: ${escapeHtml(row.embarque || '-')}</div><div class="os-lite-meta os-lite-route">Dest.: ${escapeHtml(row.destino || '-')}</div><div class="os-lite-meta os-lite-route">Contrato ${escapeHtml(row.contrato || '-')} • ${escapeHtml(row.produto || '-')}</div></td>
@@ -372,7 +379,7 @@ function rowHtml(row, atribuicoes) {
       <input type="text" class="os-lite-gac-input" value="${escapeHtml(main?.colaborador_nome || '')}" placeholder="Selecionar colaborador..." autocomplete="off" spellcheck="false" />
       <div class="os-lite-meta">${main?.distancia_km != null ? `${KM.format(main.distancia_km)} km` : main ? 'Indicado' : 'Sem indicação. Ao marcar Atender, o painel tenta sugerir pelo mapa operacional.'}</div>
     </td>
-    <td><div class="os-lite-buttons">${statusButtons}${kgButton}</div><div style="margin-top:8px"><span class="os-lite-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
+    <td><div class="os-lite-buttons">${statusButtons}${kgButton}${conferirButton}</div><div style="margin-top:8px"><span class="os-lite-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
   </tr>`;
 }
 
@@ -655,12 +662,98 @@ export async function renderOsProgramacaoLite(content, options = {}) {
     });
   }
 
+  function openConferirModalLite(row) {
+    const existing = document.getElementById('os-lite-conferir-overlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'os-lite-conferir-overlay';
+    overlay.className = 'os-lite-kg-overlay';
+    overlay.innerHTML = `
+      <div class="os-lite-kg-modal">
+        <h3>Conferir O.S. ${escapeHtml(row.numero_os)}</h3>
+        <p>Anexe imagens, planilhas ou PDFs para conferência.</p>
+        <div class="os-lite-dropzone" id="osLiteConferirDropzone">
+          Clique ou arraste arquivos aqui<br><small>imagens, PDF, Excel, CSV</small>
+        </div>
+        <input id="osLiteConferirFileInput" type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.csv" style="display:none" />
+        <div class="os-lite-file-list" id="osLiteConferirFileList"></div>
+        <div class="os-lite-kg-actions">
+          <button type="button" class="btn btn-secondary" id="osLiteConferirCancelar">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="osLiteConferirEnviar">Enviar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const dropzone = overlay.querySelector('#osLiteConferirDropzone');
+    const fileInput = overlay.querySelector('#osLiteConferirFileInput');
+    const fileList = overlay.querySelector('#osLiteConferirFileList');
+    let selectedFiles = [];
+
+    const updateFileList = () => { fileList.textContent = selectedFiles.map((f) => f.name).join(', ') || ''; };
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = 'rgba(167,139,250,.8)'; });
+    dropzone.addEventListener('dragleave', () => { dropzone.style.borderColor = 'rgba(167,139,250,.4)'; });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = 'rgba(167,139,250,.4)';
+      selectedFiles = [...(e.dataTransfer.files || [])];
+      updateFileList();
+    });
+    fileInput.addEventListener('change', () => {
+      selectedFiles = [...(fileInput.files || [])];
+      updateFileList();
+    });
+
+    overlay.querySelector('#osLiteConferirCancelar').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    overlay.querySelector('#osLiteConferirEnviar').addEventListener('click', async () => {
+      if (!selectedFiles.length) { dropzone.style.borderColor = 'rgba(239,68,68,.8)'; return; }
+      const btn = overlay.querySelector('#osLiteConferirEnviar');
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+
+      try {
+        const urls = [];
+        for (const file of selectedFiles) {
+          const path = `os/${row.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+          const { data: upData, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
+          if (upErr) throw upErr;
+          const { data: urlData } = supabase.storage.from('os-laudos').getPublicUrl(upData.path);
+          urls.push(urlData.publicUrl);
+        }
+        const laudoText = `LAUDO:${urls.join(',')}`;
+        const agoraIso = new Date().toISOString();
+        const { error } = await supabase.from('operacional_os').update({ observacao_logistica: laudoText, updated_at: agoraIso }).eq('id', row.id);
+        if (error) throw error;
+        Object.assign(row, { observacao_logistica: laudoText });
+        overlay.remove();
+        render();
+        el.feedback.textContent = `Arquivo de conferência anexado à OS ${row.numero_os}.`;
+      } catch (error) {
+        console.error(error);
+        alert(error.message || 'Não foi possível enviar o anexo.');
+        btn.disabled = false;
+        btn.textContent = 'Enviar';
+      }
+    });
+  }
+
   el.reload.addEventListener('click', () => loadPage({ append: false }));
   el.list.addEventListener('click', (event) => {
     const statusBtn = event.target.closest('[data-status]');
     if (statusBtn) {
       const tr = statusBtn.closest('[data-os-id]');
       if (tr) atualizarStatus(tr.dataset.osId, statusBtn.dataset.status, statusBtn);
+      return;
+    }
+    const conferirBtn = event.target.closest('[data-action-conferir]');
+    if (conferirBtn) {
+      const tr = conferirBtn.closest('[data-os-id]');
+      const row = state.rows.find((r) => String(r.id) === String(tr?.dataset.osId));
+      if (row) openConferirModalLite(row);
       return;
     }
     const kgBtn = event.target.closest('[data-action-kg]');
