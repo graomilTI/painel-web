@@ -15,15 +15,6 @@ function norm(value) {
     .trim();
 }
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-}
-
 function parseList(value) {
   if (!value) return [];
   if (Array.isArray(value)) return [...new Set(value.flatMap(parseList))];
@@ -86,27 +77,6 @@ function osStatus(row) {
   return st || 'PENDENTE';
 }
 
-function brDate(value) {
-  const raw = String(value || '').slice(0, 10);
-  const [y, m, d] = raw.split('-');
-  return y && m && d ? `${d}/${m}` : '';
-}
-
-function osNumber(row) {
-  return String(row?.numero_os || row?.id || '').trim();
-}
-
-function sortOs(a, b) {
-  const priority = { PENDENTE: 1, AGUARDAR: 2, ATENDER: 3, FINALIZAR: 4 };
-  const pa = priority[osStatus(a)] || 9;
-  const pb = priority[osStatus(b)] || 9;
-  if (pa !== pb) return pa - pb;
-  const da = String(a?.data_os || '').slice(0, 10);
-  const db = String(b?.data_os || '').slice(0, 10);
-  if (da !== db) return da.localeCompare(db);
-  return osNumber(a).localeCompare(osNumber(b), 'pt-BR', { numeric: true });
-}
-
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
@@ -132,17 +102,6 @@ function injectStyles() {
     .db-patri-card{order:2;min-height:auto!important;padding:14px!important}
     .db-card-eyebrow{margin-bottom:9px!important}
     .db-os-hero,.db-patri-hero{margin-bottom:8px!important}
-    .db-os-sequence{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);display:grid;gap:7px;max-height:178px;overflow:auto;scrollbar-width:none}
-    .db-os-sequence::-webkit-scrollbar{display:none}
-    .db-os-sequence-title{font-size:9px;font-weight:950;text-transform:uppercase;letter-spacing:.12em;color:var(--soft)}
-    .db-os-seq-row{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;padding:8px 9px;border-radius:13px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.055)}
-    .db-os-seq-title{font-size:12px;font-weight:950;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .db-os-seq-meta{margin-top:2px;font-size:10.5px;font-weight:750;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .db-os-seq-status{font-size:9px;font-weight:950;border-radius:999px;padding:5px 7px;color:#011a0d;background:var(--green-2);white-space:nowrap}
-    .db-os-seq-status.is-pendente{background:rgba(148,163,184,.24);color:#e2e8f0;border:1px solid rgba(148,163,184,.35)}
-    .db-os-seq-status.is-aguardar{background:var(--yellow);color:#3b2f00}
-    .db-os-seq-status.is-atender{background:var(--green-2);color:#011a0d}
-    .db-os-seq-empty,.db-os-seq-more{font-size:11px;color:var(--muted);font-weight:800;line-height:1.35}
     @media(max-width:430px){
       .app-main{padding-left:12px!important;padding-right:12px!important;padding-top:14px!important}
       .db-prod-card{padding:12px!important}
@@ -152,7 +111,6 @@ function injectStyles() {
       .db-state-abbr{font-size:15px!important}
       .db-stat-value{font-size:17px!important}
       .db-os-num,.db-patri-num{font-size:32px!important}
-      .db-os-sequence{max-height:162px!important}
     }
   `;
   document.head.appendChild(style);
@@ -200,71 +158,34 @@ async function loadProgramacaoRows() {
   return cache.rows;
 }
 
-function sequenceHtml(rows) {
-  const active = [...rows].filter((row) => osStatus(row) !== 'FINALIZAR').sort(sortOs);
-  const visible = active.slice(0, 5);
-  if (cache.loading && !cache.loaded) {
-    return `<div class="db-os-sequence"><div class="db-os-sequence-title">Sequência liberada</div><div class="db-os-seq-empty">Carregando O.S. liberadas...</div></div>`;
-  }
-  if (cache.error) {
-    return `<div class="db-os-sequence"><div class="db-os-sequence-title">Sequência liberada</div><div class="db-os-seq-empty">${escapeHtml(cache.error)}</div></div>`;
-  }
-  if (!visible.length) {
-    return `<div class="db-os-sequence"><div class="db-os-sequence-title">Sequência liberada</div><div class="db-os-seq-empty">Nenhuma O.S. liberada para esta supervisão.</div></div>`;
-  }
-
-  const rowsHtml = visible.map((row) => {
-    const st = osStatus(row);
-    const cls = st === 'PENDENTE' ? 'is-pendente' : st === 'AGUARDAR' ? 'is-aguardar' : st === 'ATENDER' ? 'is-atender' : '';
-    const cliente = row?.cliente ? ` · ${row.cliente}` : '';
-    const sup = row?.supervisao ? ` · ${row.supervisao}` : '';
-    const date = brDate(row?.data_os);
-    return `
-      <div class="db-os-seq-row">
-        <div>
-          <div class="db-os-seq-title">OS ${escapeHtml(osNumber(row) || '-')}</div>
-          <div class="db-os-seq-meta">${escapeHtml(`${date ? `${date} · ` : ''}${row?.embarque || '-'}${cliente}${sup}`)}</div>
-        </div>
-        <span class="db-os-seq-status ${cls}">${escapeHtml(st)}</span>
-      </div>`;
-  }).join('');
-  const more = active.length > visible.length
-    ? `<div class="db-os-seq-more">+${active.length - visible.length} O.S. na programação completa</div>`
-    : '';
-  return `<div class="db-os-sequence"><div class="db-os-sequence-title">Sequência liberada</div>${rowsHtml}${more}</div>`;
-}
-
+// Tela inicial mostra só a quantidade (card é clicável e abre a Programação completa
+// com a lista); manter a lista aqui também seria redundante.
 function patchProgramacaoCard() {
   const card = document.querySelector('.db-os-card');
   if (!card) return;
   card.setAttribute('title', 'Abrir Programação completa');
   card.setAttribute('aria-label', 'Abrir Programação completa');
+  card.querySelector('.db-os-sequence')?.remove();
 
+  if (!cache.loaded) return;
   const rows = cache.rows;
   const pendentes = rows.filter((row) => osStatus(row) === 'PENDENTE').length;
   const conferencia = rows.filter((row) => osStatus(row) === 'ATENDER').length;
 
-  if (cache.loaded) {
-    const number = card.querySelector('.db-os-num');
-    if (number) {
-      number.textContent = String(pendentes);
-      number.classList.toggle('is-amber', pendentes > 0);
-      number.classList.toggle('is-green', pendentes === 0);
-    }
-    const den = card.querySelector('.db-os-den');
-    if (den) den.textContent = `pendente${pendentes === 1 ? '' : 's'}`;
-    const status = card.querySelector('.db-os-status');
-    if (status) {
-      status.innerHTML = conferencia > 0
-        ? `<span class="db-status-late">${conferencia} em conferência</span>`
-        : '<span class="db-status-ok">Tudo ajustado ✓</span>';
-    }
+  const number = card.querySelector('.db-os-num');
+  if (number) {
+    number.textContent = String(pendentes);
+    number.classList.toggle('is-amber', pendentes > 0);
+    number.classList.toggle('is-green', pendentes === 0);
   }
-
-  const current = card.querySelector('.db-os-sequence');
-  const html = sequenceHtml(rows);
-  if (current) current.outerHTML = html;
-  else card.insertAdjacentHTML('beforeend', html);
+  const den = card.querySelector('.db-os-den');
+  if (den) den.textContent = `pendente${pendentes === 1 ? '' : 's'}`;
+  const status = card.querySelector('.db-os-status');
+  if (status) {
+    status.innerHTML = conferencia > 0
+      ? `<span class="db-status-late">${conferencia} em conferência</span>`
+      : '<span class="db-status-ok">Tudo ajustado ✓</span>';
+  }
 }
 
 function forceMapVisible() {

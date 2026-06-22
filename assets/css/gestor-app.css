@@ -457,13 +457,6 @@ select:focus, input:focus, textarea:focus {
 }
 .db-patri-num.is-green { color: var(--green); }
 .db-patri-den { font-size: 14px; font-weight: 700; color: var(--muted); }
-.db-seg {
-  display: flex; height: 7px; border-radius: 999px; overflow: hidden;
-  background: rgba(255,255,255,.06); margin-bottom: 10px;
-  gap: 2px;
-}
-.db-seg-ok   { background: var(--green); border-radius: 999px; transition: width .6s ease; }
-.db-seg-late { background: var(--danger); border-radius: 999px; transition: width .6s ease; }
 .db-patri-status { font-size: 11px; font-weight: 900; }
 .db-status-ok   { color: var(--green); }
 .db-status-late { color: var(--danger); }
