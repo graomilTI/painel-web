@@ -32,7 +32,7 @@ const OS_SELECT = [
   'created_at',
 ].join(',');
 
-const COLAB_SELECT = 'id,colaborador_id,cpf,nome,nome_colaborador,supervisao,regional,latitude,longitude,ativo,situacao';
+const COLAB_SELECT = 'id,colaborador_id,cpf,nome,supervisao,coordenacao,latitude,longitude,ativo';
 const PONTO_SELECT = 'id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo';
 
 let currentUser = null;
@@ -130,9 +130,7 @@ function brDate(value) {
 }
 
 function onlyActiveColab(c) {
-  if (!c || c.ativo === false) return false;
-  const sit = normalize(c.situacao);
-  return !['NAO ATIVO', 'INATIVO', 'DESLIGADO', 'DEMITIDO'].some((status) => sit.includes(status));
+  return !!c && c.ativo !== false;
 }
 
 function colabKey(c) {
@@ -271,9 +269,9 @@ async function loadColabs(supervisao) {
 
   const base = () => supabase.from('operacional_colaborador_base').select(COLAB_SELECT).eq('ativo', true).limit(2500);
   const data = supervisao
-    ? await fetchDeduped([base().eq('supervisao', supervisao), base().eq('regional', supervisao)], (c) => c.id)
+    ? await fetchDeduped([base().eq('supervisao', supervisao), base().eq('coordenacao', supervisao)], (c) => c.id)
     : await fetchDeduped([base()], (c) => c.id);
-  const rows = data.map((c) => ({ ...c, nome: c.nome || c.nome_colaborador, nome_colaborador: c.nome_colaborador || c.nome })).filter(onlyActiveColab);
+  const rows = data.filter(onlyActiveColab);
   colabsCache.set(key, rows);
   return rows;
 }
@@ -322,7 +320,7 @@ async function sugerirColaborador(row, atribuicoes) {
   const payload = {
     os_id: row.id,
     colaborador_key: colabKey(escolhido),
-    colaborador_nome: escolhido.nome || escolhido.nome_colaborador || 'Colaborador sugerido',
+    colaborador_nome: escolhido.nome || 'Colaborador sugerido',
     distancia_km: Number(escolhido.distancia_km),
     origem_sugestao: 'DISTANCIA_OPERACIONAL_LITE',
     indicado_por: currentUser?.id || null,
@@ -583,7 +581,7 @@ export async function renderOsProgramacaoLite(content, options = {}) {
     const payload = {
       os_id: row.id,
       colaborador_key: colabKey(colab),
-      colaborador_nome: colab.nome || colab.nome_colaborador || 'Colaborador',
+      colaborador_nome: colab.nome || 'Colaborador',
       distancia_km: Number.isFinite(distancia) ? distancia : null,
       origem_sugestao: 'APP_GESTOR_MANUAL_LITE',
       indicado_por: currentUser?.id || null,
