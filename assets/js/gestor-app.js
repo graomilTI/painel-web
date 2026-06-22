@@ -1,7 +1,6 @@
 ﻿import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getSession, getUserContext, signOut } from './auth.js';
 import { toPanelUrl } from './paths.js';
-import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
 import { sincronizarProducaoSnapshotDoAgente } from './producaoSnapshotAgentSync.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
@@ -385,10 +384,11 @@ async function fetchDashData({ force = false } = {}) {
 }
 
 async function fetchDashDataLive() {
-  // patrimonios_snapshot e producao_snapshot são a base dos KPIs aqui (patrimônios e
-  // meta mensal); dispara a sincronização com os agentes em paralelo (sem await, são
-  // pesadas) para não travar o carregamento — o resultado fica disponível na próxima atualização.
-  sincronizarPatrimoniosDoAgente().catch((error) => console.warn('[gestor-app] falha ao sincronizar patrimonios_snapshot:', error?.message || error));
+  // producao_snapshot é a base da meta mensal aqui; dispara a sincronização com o
+  // agente em paralelo (sem await, é pesada) para não travar o carregamento — o
+  // resultado fica disponível na próxima atualização.
+  // (patrimonios_snapshot ficou de fora: a sincronização limpa+reinsere a tabela e
+  // exige privilégio que o app da Supervisão não tem — feita só em patrimonioRelatorios.js.)
   sincronizarProducaoSnapshotDoAgente().catch((error) => console.warn('[gestor-app] falha ao sincronizar producao_snapshot:', error?.message || error));
 
   const now = new Date();
@@ -984,25 +984,17 @@ function renderInicio(main) {
         </div>
       </div>
 
-      <div class="db-os-card">
+      <div class="db-os-card is-clickable" data-go="programacao" role="button" tabindex="0" title="Abrir Programação">
         <div class="db-card-eyebrow">Programação</div>
-        <div class="db-os-row">
-          <div class="db-os-block">
-            <div class="db-os-num ${totalPend > 0 ? 'is-amber' : ''}">${totalPend}</div>
-            <div class="db-os-label">Pendentes</div>
-          </div>
-          <div class="db-os-sep"></div>
-          <div class="db-os-block">
-            <div class="db-os-num ${atender > 0 ? 'is-green' : ''}">${atender}</div>
-            <div class="db-os-label">Conferência</div>
-          </div>
-          <div class="db-os-sep"></div>
-          <div class="db-os-block">
-            <div class="db-os-num">${state.os.length}</div>
-            <div class="db-os-label">Total</div>
-          </div>
+        <div class="db-os-hero">
+          <span class="db-os-num ${totalPend > 0 ? 'is-amber' : 'is-green'}">${totalPend}</span>
+          <span class="db-os-den">pendente${totalPend === 1 ? '' : 's'}</span>
         </div>
-        <button class="db-os-btn" data-go="programacao" type="button">Abrir Programação →</button>
+        <div class="db-os-status">
+          ${totalPend > 0
+            ? `<span class="db-status-late">${atender} em conferência</span>`
+            : '<span class="db-status-ok">Tudo ajustado ✓</span>'}
+        </div>
       </div>
     </div>
 
@@ -1013,7 +1005,6 @@ function renderInicio(main) {
 
     <div class="db-actions-label">Ações Rápidas</div>
     <div class="quick-grid">
-      <button class="quick-card is-primary" data-go="programacao" type="button"><b>Programação</b><span>${totalPend} O.S. pendente(s) de ajuste</span></button>
       <a class="quick-card" href="${panelHref('hospedagem')}"><b>Hospedagem</b><span>Solicitações e reservas</span></a>
       <a class="quick-card" href="${panelHref('compras')}"><b>Compras</b><span>Solicitações do gestor</span></a>
       <a class="quick-card" href="${panelHref('logistica')}"><b>Logística</b><span>Distribuição e finalização</span></a>
@@ -1022,10 +1013,14 @@ function renderInicio(main) {
     </div>
   `;
 
-  main.querySelector('[data-go="programacao"]')?.addEventListener('click', () => {
+  const openProgramacao = () => {
     state.currentTab = 'programacao';
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === 'programacao'));
     renderProgramacao(main);
+  };
+  main.querySelector('[data-go="programacao"]')?.addEventListener('click', openProgramacao);
+  main.querySelector('[data-go="programacao"]')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openProgramacao(); }
   });
   main.querySelector('[data-go="patrimonio"]')?.addEventListener('click', () => {
     state.currentTab = 'patrimonio';
@@ -1729,7 +1724,7 @@ async function renderPatrimonioCadastrar(main) {
       const agoraIso = new Date().toISOString();
       const { error: updError } = await supabase.from('compras_patrimonios_cadastro').update({
         numero_patrimonio: numero,
-        status: 'cadastrado',
+        status: 'numero_informado',
         informado_em: agoraIso,
         updated_at: agoraIso,
       }).eq('id', id);
