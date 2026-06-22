@@ -73,10 +73,42 @@ async function buscarUltimoLote(tabela, limite) {
   if (!maxCreatedAt) return [];
   // os agentes recarregam a tabela inteira a cada sincronização; pegamos só o lote mais recente.
   const threshold = new Date(new Date(maxCreatedAt).getTime() - 5 * 60 * 1000).toISOString();
-  const { data, error } = await supabase
-    .from(tabela).select('dados_json').gte('created_at', threshold).limit(limite);
-  if (error) throw error;
-  return (data || []).map((row) => row.dados_json);
+  // PostgREST limita a 1000 linhas por requisição mesmo com .limit() maior; pagina com
+  // .range() para trazer o lote inteiro. Sem isso o sync só via 1000 O.S. do relatório e
+  // apagava do painel todas as O.S. reais que não calhavam de estar nesse recorte aleatório.
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; from < limite; from += pageSize) {
+    const to = Math.min(from + pageSize, limite) - 1;
+    const { data, error } = await supabase
+      .from(tabela)
+      .select('dados_json')
+      .gte('created_at', threshold)
+      .order('created_at', { ascending: true })
+      .range(from, to);
+    if (error) throw error;
+    const chunk = data || [];
+    rows.push(...chunk.map((row) => row.dados_json));
+    if (chunk.length < pageSize) break;
+  }
+  return rows;
+}
+
+async function buscarTodasOsExistentes() {
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from('operacional_os')
+      .select('numero_os,status_gestor,status_conferencia')
+      .order('numero_os', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const chunk = data || [];
+    rows.push(...chunk);
+    if (chunk.length < pageSize) break;
+  }
+  return rows;
 }
 
 async function buscarSupervisaoPorOs() {
@@ -142,13 +174,8 @@ export async function sincronizarListaOsDoAgente() {
       });
       const novosNumeros = new Set(uniqueMap.keys());
 
-      const { data: existentes, error: exError } = await supabase
-        .from('operacional_os')
-        .select('numero_os,status_gestor,status_conferencia')
-        .limit(10000);
-      if (exError) throw exError;
-
-      const statusExistente = new Map((existentes || []).map((row) => [row.numero_os, row]));
+      const existentes = await buscarTodasOsExistentes();
+      const statusExistente = new Map(existentes.map((row) => [row.numero_os, row]));
 
       const payload = [...uniqueMap.values()].map((row) => {
         const existente = statusExistente.get(row.numero_os);
@@ -167,7 +194,7 @@ export async function sincronizarListaOsDoAgente() {
       }
 
       // O.S. que não aparecem mais no relatório do agente saem do painel (cascade remove atribuições).
-      const removidos = (existentes || [])
+      const removidos = existentes
         .map((row) => row.numero_os)
         .filter((numero) => !novosNumeros.has(numero));
       let totalRemovidos = 0;
