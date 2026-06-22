@@ -15,6 +15,8 @@ const ICO_AGUARDAR  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height
 const ICO_ATENDER   = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg>`;
 const ICO_FINALIZAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`;
 const ICO_SOMAR_KG  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
+const ICO_SALDO_PLUS = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="pointer-events:none"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+const ICO_CONFERIR  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>`;
 
 const app = document.getElementById('app');
 
@@ -1207,6 +1209,10 @@ function renderOsCard(os) {
             <div class="gac-list" hidden></div>
           </div>
           ${selectedColab ? `<div class="help ok">Indicação: ${escapeHtml(selectedColab.nome)}${Number.isFinite(selectedDist) ? ` · ${KM.format(selectedDist)} km do ponto operacional.` : ''}</div>` : `<div class="help warn">${escapeHtml(sugg.aviso || 'Selecione um colaborador para enviar à Conferência.')}</div>`}
+          <div class="indicacao-actions" style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn secondary ${os.observacao_logistica?.startsWith('KG solicitado') ? 'kg-active' : ''}" data-action-kg="${escapeHtml(id)}" data-action-kg-num="${escapeHtml(os.numero_os)}" type="button" title="Solicitar mais saldo" style="flex:1;color:#90cdf4;border-color:rgba(99,179,237,.35)">${ICO_SALDO_PLUS} Adicionar saldo</button>
+            <button class="btn ${status === 'ATENDER' ? '' : 'secondary'}" data-action="ATENDER" type="button" title="Enviar para Conferência" style="flex:1">${ICO_CONFERIR} Conferir</button>
+          </div>
           ${canMulti ? `<label class="multi-line"><input data-role="allow-multi" type="checkbox" ${isMulti ? 'checked' : ''} /> permitir 2 ou mais colaboradores</label>` : ''}
           ${canMulti && isMulti ? renderExtraSelects(id, selected, extraValues) : ''}
         </div>` : ''}
