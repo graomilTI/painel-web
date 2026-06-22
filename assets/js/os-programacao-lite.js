@@ -678,7 +678,8 @@ export async function renderOsProgramacaoLite(content, options = {}) {
     const tr = input.closest('[data-os-id]');
     const row = state.rows.find((r) => String(r.id) === String(tr?.dataset.osId));
     if (!row) return;
-    abrirDropdownColaborador(input, row, input.value);
+    input.select();
+    abrirDropdownColaborador(input, row, '');
   });
   el.list.addEventListener('focusout', (event) => {
     const input = event.target.closest('.os-lite-gac-input');
