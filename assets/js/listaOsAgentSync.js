@@ -111,7 +111,42 @@ async function buscarTodasOsExistentes() {
   return rows;
 }
 
-async function buscarSupervisaoPorOs() {
+// grm_distribuicao_os_importacoes vem com cabeçalhos genéricos (__EMPTY, __EMPTY_1, ...)
+// porque o agente não usa a primeira linha da planilha como nome de coluna. A ordem das
+// colunas no relatório de Distribuição de OS é fixa: Coordenação, Supervisão, Funcionário,
+// Veículo, O.S., Cliente, Produto, Local de Embarque, Local de Destino, Lote, Prod. do Dia,
+// Prod. do Dia OS, Prod. da OS, Prod. Remanescente (+ "Situação" sob a chave literal errada
+// "Embarques com Produção", sobra do parser da planilha).
+const DISTRIBUICAO_OS_COLS = [
+  'Coordenação', 'Supervisão', 'Funcionário', 'Veiculo', 'O.S.', 'Cliente', 'Produto',
+  'Local de Embarque', 'Local de Destino', 'Lote', 'Prod. do Dia', 'Prod. do Dia OS',
+  'Prod. da OS', 'Prod. Remanescente',
+];
+
+function mapDistribuicaoRow(d) {
+  const row = {};
+  DISTRIBUICAO_OS_COLS.forEach((label, index) => {
+    row[label] = d?.[index === 0 ? '__EMPTY' : `__EMPTY_${index}`];
+  });
+  return row;
+}
+
+async function buscarSupervisaoPorOsDistribuicao() {
+  const rows = await buscarUltimoLote('grm_distribuicao_os_importacoes', 20000);
+  const map = new Map();
+  rows.forEach((raw) => {
+    const d = mapDistribuicaoRow(raw);
+    const os = normOs(d['O.S.']);
+    if (!os || !/^\d+$/.test(os)) return; // pula a linha de cabeçalho
+    map.set(os, {
+      supervisao: toText(d['Supervisão']),
+      embarcado: toNum(d['Prod. da OS']),
+    });
+  });
+  return map;
+}
+
+async function buscarSupervisaoPorOsMapaEmbarque() {
   const rows = await buscarUltimoLote('grm_mapa_embarque_importacoes', 10000);
   const map = new Map();
   rows.forEach((d) => {
@@ -122,6 +157,25 @@ async function buscarSupervisaoPorOs() {
       embarcado: toNum(getField(d, ['Tons Total O.S.'])),
     });
   });
+  return map;
+}
+
+// Distribuição de OS cobre muito mais O.S. abertas que o Mapa de Embarque (que só lista
+// O.S. embarcando hoje); usa Distribuição como fonte principal e o Mapa só pra preencher
+// o que faltar.
+async function buscarSupervisaoPorOs() {
+  const [mapaEmbarque, distribuicao] = await Promise.all([
+    buscarSupervisaoPorOsMapaEmbarque().catch((error) => {
+      console.warn('[lista-os-agente] falha ao ler grm_mapa_embarque_importacoes', error);
+      return new Map();
+    }),
+    buscarSupervisaoPorOsDistribuicao().catch((error) => {
+      console.warn('[lista-os-agente] falha ao ler grm_distribuicao_os_importacoes', error);
+      return new Map();
+    }),
+  ]);
+  const map = new Map(mapaEmbarque);
+  distribuicao.forEach((value, key) => map.set(key, value));
   return map;
 }
 
