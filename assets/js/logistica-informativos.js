@@ -215,6 +215,8 @@ async function loadResultadoDiarioRange(fields, from, to) {
   return rows;
 }
 
+// Só conta como lançamento de NHE quando a coluna motivo_nhe (ou observações de NHE) está
+// preenchida — uma linha de embarque normal no relatorio_resultado_diario não é um NHE.
 function normalizeNheRows(rows) {
   return (rows || []).map((row) => ({
     os: firstValue(row, ['os', 'numero_os', 'ordem_servico', 'o_s']),
@@ -223,8 +225,8 @@ function normalizeNheRows(rows) {
     cliente: firstValue(row, ['cliente', 'cliente_nacional', 'cliente_regional', 'cliente_final']),
     cidade_embarque: firstValue(row, ['cidade_embarque', 'cidade', 'cidade_origem', 'local_embarque']),
     classificador: firstValue(row, ['classificador', 'funcionario', 'colaborador', 'nome']),
-    motivo: firstValue(row, ['motivo', 'observacao', 'status', 'situacao']),
-  })).filter((row) => clean(row.os) && isoDate(row.data));
+    motivo: firstValue(row, ['motivo_nhe', 'observacoes_nhe']),
+  })).filter((row) => clean(row.os) && isoDate(row.data) && clean(row.motivo));
 }
 
 function buildVolumeReport(elements) {
@@ -351,7 +353,7 @@ function buildNheReport(elements) {
   });
 
   rows.sort((a, b) => Number(b[6]) - Number(a[6]) || PT.compare(a[0], b[0]));
-  state.reportHeaders = ['Supervisão', 'O.S.', 'Cliente', 'Cidade de Embarque', 'Classificador', 'Motivo', 'Dias sem embarque', 'Período'];
+  state.reportHeaders = ['Supervisão', 'O.S.', 'Cliente', 'Cidade de Embarque', 'Classificador', 'Motivo', 'Dias com NHE em sequência', 'Período'];
   state.reportRows = rows;
   state.sort = { index: 6, direction: 'desc' };
 }
