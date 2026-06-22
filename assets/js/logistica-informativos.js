@@ -177,6 +177,21 @@ async function ensureSelectedDateRange(elements) {
   };
 }
 
+async function ensureNheDateRange(elements) {
+  if (elements.nheDateFrom.value && elements.nheDateTo.value) return {
+    from: elements.nheDateFrom.value,
+    to: elements.nheDateTo.value,
+  };
+
+  const latest = await findLatestResultadoDate();
+  const to = elements.nheDateTo.value || latest || isoDate(new Date());
+  const from = elements.nheDateFrom.value || (to ? addDaysISO(to, -6) : '');
+  if (to) elements.nheDateTo.value = to;
+  if (from) elements.nheDateFrom.value = from;
+
+  return { from, to };
+}
+
 async function loadResultadoDiarioRange(fields, from, to) {
   const rows = [];
   const pageSize = 1000;
@@ -256,51 +271,73 @@ function buildVolumeReport(elements) {
   state.sort = { index: 5, direction: 'desc' };
 }
 
+function isWeekendDate(value) {
+  const date = dateValue(value);
+  if (!date) return false;
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+function daysBetweenISO(from, to) {
+  const a = dateValue(from);
+  const b = dateValue(to);
+  if (!a || !b) return Infinity;
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+// Sábado/domingo sem histórico de NHE para a O.S. não quebram a sequência:
+// muitas O.S. simplesmente não embarcam no fim de semana, o que não é uma falha de lançamento.
+function isBridgeableWeekendGap(from, to, hasWeekendEntries) {
+  if (hasWeekendEntries) return false;
+  const gap = daysBetweenISO(from, to);
+  if (gap <= 1) return false;
+  for (let i = 1; i < gap; i += 1) {
+    if (!isWeekendDate(addDaysISO(from, i))) return false;
+  }
+  return true;
+}
+
 function buildNheReport(elements) {
   const minimumSequence = Math.max(2, Math.min(31, Number(elements.recentDays.value) || 3));
-  const dates = Array.from(new Set(state.sourceRows.map((row) => isoDate(row.data)).filter(Boolean)))
-    .sort()
-    .reverse();
-  const dateIndexes = new Map(dates.map((date, index) => [date, index]));
   const groups = new Map();
 
   state.sourceRows.forEach((row) => {
     const os = clean(row.os);
     const date = isoDate(row.data);
-    if (!os || !date || !dateIndexes.has(date)) return;
-    if (!groups.has(os)) groups.set(os, { rowsByDate: new Map(), dates: new Set() });
+    if (!os || !date) return;
+    if (!groups.has(os)) groups.set(os, { rowsByDate: new Map(), dates: new Set(), hasWeekendEntries: false });
     const info = groups.get(os);
     info.dates.add(date);
+    if (isWeekendDate(date)) info.hasWeekendEntries = true;
     if (!info.rowsByDate.has(date)) info.rowsByDate.set(date, row);
   });
 
   const rows = [];
   groups.forEach((info, os) => {
-    const positions = Array.from(info.dates)
-      .map((date) => dateIndexes.get(date))
-      .sort((a, b) => a - b);
+    const sortedDates = Array.from(info.dates).sort();
     const sequences = [];
     let current = [];
 
-    positions.forEach((position) => {
+    sortedDates.forEach((date) => {
       const previous = current[current.length - 1];
-      if (!current.length || position === previous + 1) {
-        current.push(position);
+      if (!current.length
+        || daysBetweenISO(previous, date) === 1
+        || isBridgeableWeekendGap(previous, date, info.hasWeekendEntries)) {
+        current.push(date);
       } else {
         sequences.push(current);
-        current = [position];
+        current = [date];
       }
     });
     if (current.length) sequences.push(current);
 
     const qualifying = sequences
       .filter((sequence) => sequence.length >= minimumSequence)
-      .sort((a, b) => b.length - a.length || a[0] - b[0]);
+      .sort((a, b) => b.length - a.length || PT.compare(a[0], b[0]));
     if (!qualifying.length) return;
 
     const sequence = qualifying[0];
-    const sequenceDates = sequence.map((index) => dates[index]);
-    const row = info.rowsByDate.get(sequenceDates[0]);
+    const row = info.rowsByDate.get(sequence[sequence.length - 1]);
     rows.push([
       row.supervisao,
       os,
@@ -309,7 +346,7 @@ function buildNheReport(elements) {
       row.classificador,
       row.motivo,
       sequence.length,
-      `${formatDate(sequenceDates[sequenceDates.length - 1])} a ${formatDate(sequenceDates[0])}`,
+      `${formatDate(sequence[0])} a ${formatDate(sequence[sequence.length - 1])}`,
     ]);
   });
 
@@ -338,7 +375,10 @@ function reportTitle(elements) {
     const period = from && to ? (from === to ? from : `${from} a ${to}`) : '';
     return `Volume de Embarques${period ? ` - ${period}` : ''}`;
   }
-  return 'Sequência de NHE';
+  const from = elements.nheDateFrom.value ? formatDate(elements.nheDateFrom.value) : '';
+  const to = elements.nheDateTo.value ? formatDate(elements.nheDateTo.value) : '';
+  const period = from && to ? (from === to ? from : `${from} a ${to}`) : '';
+  return `Sequência de NHE${period ? ` - ${period}` : ''}`;
 }
 
 function renderReport(elements) {
@@ -479,9 +519,7 @@ async function loadVolumeFromDatabase(elements) {
 async function loadNheFromDatabase(elements) {
   setBusy(elements, true, 'Carregando dados automáticos para Sequência de NHE...');
   try {
-    const { to } = await ensureSelectedDateRange(elements);
-    const windowDays = Math.max(45, Number(elements.recentDays.value || 3) + 14);
-    const from = addDaysISO(to, -windowDays);
+    const { from, to } = await ensureNheDateRange(elements);
     const rows = await loadResultadoDiarioRange('*', from, to);
     state.sourceRows = normalizeNheRows(rows);
     state.sourceKind = 'auto';
@@ -640,6 +678,8 @@ initProtectedPage('Informativos - Logistica', async (content) => {
           <div class="li-field"><label>Mínimo de cargas</label><input type="number" id="liMinimumLoads" min="0" step="1" value="${getDefaultMinimumLoads()}" /></div>
         </div>
         <div class="li-controls" id="liNheControls" hidden>
+          <div class="li-field"><label>Data inicial</label><input type="date" id="liNheDateFrom" /></div>
+          <div class="li-field"><label>Data final</label><input type="date" id="liNheDateTo" /></div>
           <div class="li-field"><label>Contagem de dias</label><input type="number" id="liRecentDays" min="2" max="31" value="3" /></div>
         </div>
         <div class="li-actions">
@@ -666,6 +706,8 @@ initProtectedPage('Informativos - Logistica', async (content) => {
     nheControls: content.querySelector('#liNheControls'),
     dateFrom: content.querySelector('#liDateFrom'),
     dateTo: content.querySelector('#liDateTo'),
+    nheDateFrom: content.querySelector('#liNheDateFrom'),
+    nheDateTo: content.querySelector('#liNheDateTo'),
     minimumLoads: content.querySelector('#liMinimumLoads'),
     recentDays: content.querySelector('#liRecentDays'),
     generate: content.querySelector('#liGenerate'),
@@ -689,6 +731,14 @@ initProtectedPage('Informativos - Logistica', async (content) => {
     else rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
   });
   elements.dateTo.addEventListener('change', () => {
+    if (state.sourceKind === 'auto') loadAutomaticSource(elements);
+    else rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
+  });
+  elements.nheDateFrom.addEventListener('change', () => {
+    if (state.sourceKind === 'auto') loadAutomaticSource(elements);
+    else rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
+  });
+  elements.nheDateTo.addEventListener('change', () => {
     if (state.sourceKind === 'auto') loadAutomaticSource(elements);
     else rebuildReport(elements, 'Pré-visualização atualizada pelos filtros.');
   });
