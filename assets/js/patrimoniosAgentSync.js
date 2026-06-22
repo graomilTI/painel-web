@@ -127,10 +127,25 @@ async function buscarUltimoLotePatrimoniosAgente(limite = 10000) {
   if (!maxCreatedAt) return [];
   // o agente recarrega a tabela inteira a cada sincronização; pegamos só o lote mais recente.
   const threshold = new Date(new Date(maxCreatedAt).getTime() - 5 * 60 * 1000).toISOString();
-  const { data, error } = await supabase
-    .from('grm_patrimonios_importacoes').select('dados_json').gte('created_at', threshold).limit(limite);
-  if (error) throw error;
-  return (data || []).map((row) => row.dados_json);
+  // PostgREST limita a 1000 linhas por requisição mesmo com .limit() maior; pagina com
+  // .range() para trazer o lote inteiro (sem isso o sync sempre pegava só os 1000 primeiros
+  // e o truncate+reinsert deixava o snapshot incompleto).
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; from < limite; from += pageSize) {
+    const to = Math.min(from + pageSize, limite) - 1;
+    const { data, error } = await supabase
+      .from('grm_patrimonios_importacoes')
+      .select('dados_json')
+      .gte('created_at', threshold)
+      .order('created_at', { ascending: true })
+      .range(from, to);
+    if (error) throw error;
+    const chunk = data || [];
+    rows.push(...chunk.map((row) => row.dados_json));
+    if (chunk.length < pageSize) break;
+  }
+  return rows;
 }
 
 // Associação de regional dos veículos pela placa lida na "Identificação" — réplica do

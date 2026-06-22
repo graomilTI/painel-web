@@ -174,14 +174,15 @@ async function loadProgramacaoRows() {
 
     const access = buildAccess(context, appUser);
     cache.access = access;
+    // operacional_os não tem coluna coordenacao (só supervisao) — filtra sempre por
+    // supervisao; access.allowed já inclui a coordenação do gestor como um dos rótulos.
     let query = supabase
       .from('operacional_os')
-      .select('id,numero_os,cliente,embarque,destino,supervisao,coordenacao,status_gestor,configurada_em,data_os,remanescente')
+      .select('id,numero_os,cliente,embarque,destino,supervisao,status_gestor,configurada_em,data_os,remanescente')
       .limit(250);
 
     if (access.restricted) {
-      if (access.coordenacao) query = query.ilike('coordenacao', `%${access.coordenacao}%`);
-      else if (access.allowed.length === 1) query = query.ilike('supervisao', `%${access.allowed[0]}%`);
+      if (access.allowed.length === 1) query = query.ilike('supervisao', `%${access.allowed[0]}%`);
       else if (access.allowed.length > 1) query = query.in('supervisao', access.allowed);
       else query = query.eq('supervisao', '__sem_supervisao_liberada__');
     }

@@ -180,6 +180,11 @@ function injectMobileStyles() {
         margin-top: 10px !important;
       }
 
+      /* KPIs (Total filtrado, Na tela, Para atender...) só fazem sentido no desktop */
+      #osLiteStats {
+        display: none !important;
+      }
+
       .prog-list,
       #progList {
         width: 100% !important;
