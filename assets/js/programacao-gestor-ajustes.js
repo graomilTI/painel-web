@@ -15,6 +15,7 @@ let distribuicaoLoaded = false;
 let distribuicaoLoading = false;
 let supervisoesDropdownLoading = false;
 let supervisoesDropdownLoaded = false;
+let pendingKpiReload = false;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -331,7 +332,17 @@ function configureSteps() {
       return;
     }
     setSaveVisibility(false);
+    if (pendingKpiReload) triggerKpiReload();
   }, true);
+}
+
+function triggerKpiReload() {
+  const loadBtn = document.getElementById('progLoadContext');
+  const dataRef = document.getElementById('progDataRef')?.value || '';
+  const sup = document.getElementById('progSup')?.value || '';
+  if (!loadBtn || !dataRef || !sup) return;
+  pendingKpiReload = false;
+  loadBtn.click();
 }
 
 function autoSelectSingleSupervisao() {
@@ -406,7 +417,12 @@ async function initGestorProgramacaoAjustes() {
 
   document.getElementById('progSup')?.addEventListener('change', () => {
     distribuicaoLoaded = false;
-    if (currentUiStep === 'A') renderDistribuicao({ loadOs: false });
+    pendingKpiReload = true;
+    if (currentUiStep === 'A') {
+      renderDistribuicao({ loadOs: true, force: true });
+    } else {
+      triggerKpiReload();
+    }
   });
 }
 
