@@ -178,13 +178,18 @@ function injectStyles() {
   style.id = 'osProgramacaoLiteStyles';
   style.textContent = `
     .os-lite-actions{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:0 0 12px}.os-lite-actions .muted{font-size:12px}.os-lite-actions .btn{min-height:36px}
-    .os-lite-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:18px;background:rgba(2,6,23,.25)}
-    .os-lite-table{width:100%;min-width:980px;border-collapse:separate;border-spacing:0;table-layout:fixed;color:#e2e2f0}.os-lite-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px 9px;font-size:11px;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1}.os-lite-table td{padding:10px 9px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:top;background:rgba(15,23,42,.24)}
-    .os-lite-num{width:10%}.os-lite-cliente{width:42%}.os-lite-rem{width:13%}.os-lite-ind{width:18%}.os-lite-acao{width:17%}
-    .os-lite-title{font-weight:900;color:#f8fafc;font-size:13.5px;line-height:1.18}.os-lite-meta{font-size:11px;color:#6b7280;margin-top:3px;line-height:1.25}.os-lite-route{display:block;white-space:normal;overflow-wrap:anywhere}.os-lite-rembox{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+    .os-lite-list{display:flex;flex-direction:column;gap:10px}
+    .os-lite-card{border:1px solid rgba(52,211,153,.16);border-radius:18px;background:rgba(2,6,23,.25);overflow:hidden}
+    .os-lite-row{padding:10px 13px;border-bottom:1px solid rgba(148,163,184,.1)}
+    .os-lite-row:last-child{border-bottom:0}
+    .os-lite-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+    .os-lite-rembox{display:flex;flex-direction:column;gap:3px;align-items:flex-end;text-align:right;flex-shrink:0}
+    .os-lite-title{font-weight:900;color:#f8fafc;font-size:13.5px;line-height:1.18}.os-lite-meta{font-size:11px;color:#6b7280;margin-top:3px;line-height:1.25}.os-lite-route{display:block;white-space:normal;overflow-wrap:anywhere}
+    .os-lite-indic .os-lite-gac-input{margin-bottom:4px}
+    .os-lite-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
     .os-lite-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.os-lite-chip.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.os-lite-chip.warn{background:rgba(250,204,21,.14);color:#fde68a}.os-lite-chip.info{background:rgba(59,130,246,.13);color:#bfdbfe}.os-lite-chip.danger{background:rgba(239,68,68,.12);color:#fecaca}
-    .os-lite-buttons{display:flex;gap:4px;flex-wrap:nowrap}.os-lite-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.72);color:#dcfce7;border-radius:999px;padding:6px 8px;font-weight:900;cursor:pointer;font-size:12px;flex-shrink:0}.os-lite-btn.active{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.os-lite-btn.warn.active{background:#fde68a;color:#713f12}.os-lite-btn.danger.active{background:#fecaca;color:#7f1d1d}.os-lite-btn:disabled{opacity:.55;cursor:not-allowed}
-    .os-lite-row-aguardar td{background:rgba(250,204,21,.06)!important}.os-lite-row-atender td{background:rgba(34,197,94,.06)!important}.os-lite-row-finalizar td{background:rgba(59,130,246,.06)!important}.os-lite-row-kg td{background:rgba(239,68,68,.06)!important}.os-lite-zero td:first-child{box-shadow:inset 4px 0 0 #facc15}
+    .os-lite-buttons{display:flex;gap:4px;flex-wrap:wrap}.os-lite-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.72);color:#dcfce7;border-radius:999px;padding:6px 8px;font-weight:900;cursor:pointer;font-size:12px;flex-shrink:0}.os-lite-btn.active{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.os-lite-btn.warn.active{background:#fde68a;color:#713f12}.os-lite-btn.danger.active{background:#fecaca;color:#7f1d1d}.os-lite-btn:disabled{opacity:.55;cursor:not-allowed}
+    .os-lite-row-aguardar{background:rgba(250,204,21,.06)}.os-lite-row-atender{background:rgba(34,197,94,.06)}.os-lite-row-finalizar{background:rgba(59,130,246,.06)}.os-lite-row-kg{background:rgba(239,68,68,.06)}.os-lite-zero{box-shadow:inset 4px 0 0 #facc15}
     .os-lite-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#6b7280;background:rgba(15,23,42,.16)}.os-lite-load-more{display:flex;justify-content:center;margin-top:12px}
     .os-lite-gac-input{width:100%;box-sizing:border-box;padding:6px 8px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:12.5px;outline:none}
     .os-lite-gac-input:focus{border-color:#4ade80}
@@ -205,17 +210,8 @@ function injectStyles() {
     .os-lite-dropzone:hover{border-color:rgba(167,139,250,.7)}
     .os-lite-dropzone small{font-size:11px}
     .os-lite-file-list{font-size:12px;color:#bbf7d0;min-height:18px}
-    @media (max-width:720px){
-      .os-lite-table-wrap{overflow:visible;border:0;background:transparent}
-      .os-lite-table{min-width:0;width:100%;table-layout:auto}
-      .os-lite-table thead{display:none}
-      .os-lite-table,.os-lite-table tbody,.os-lite-table tr,.os-lite-table td{display:block;width:100%}
-      .os-lite-table tr{margin-bottom:12px;border:1px solid rgba(52,211,153,.16);border-radius:18px;overflow:hidden;background:rgba(2,6,23,.25)}
-      .os-lite-table td{border-bottom:1px solid rgba(148,163,184,.1);padding:10px 12px}
-      .os-lite-table tr:last-child{margin-bottom:0}
-      .os-lite-table td:last-child{border-bottom:0}
-      .os-lite-table td[data-label]::before{content:attr(data-label);display:block;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin-bottom:5px}
-      .os-lite-buttons{flex-wrap:wrap}
+    @media (min-width:860px){
+      .os-lite-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
     }
   `;
   document.head.appendChild(style);
@@ -383,16 +379,31 @@ function rowHtml(row, atribuicoes) {
   }).join('');
   const kgButton = `<button class="os-lite-btn kg ${row.observacao_logistica?.startsWith('KG solicitado') ? 'active' : ''}" data-action-kg="${escapeHtml(row.id)}" type="button" title="Adicionar saldo">${ICO_PLUS}</button>`;
   const conferirButton = `<button class="os-lite-btn conferir ${row.observacao_logistica?.startsWith('LAUDO:') ? 'active' : ''}" data-action-conferir="${escapeHtml(row.id)}" type="button" title="Conferir · Anexar arquivo">${ICO_FOLHA}</button>`;
-  return `<tr data-os-id="${escapeHtml(row.id)}" class="${zero ? 'os-lite-zero' : ''} ${rowColorClass}">
-    <td data-label="O.S."><div class="os-lite-title">${escapeHtml(row.numero_os)}</div><div class="os-lite-meta">${brDate(row.data_os)}</div><div class="os-lite-meta">${escapeHtml(row.servico || '-')}</div><div class="os-lite-meta">${escapeHtml(row.supervisao || '-')}</div>${zero ? '<div class="os-lite-meta" style="color:#fde68a">Remanescente zerado</div>' : ''}</td>
-    <td data-label="Cliente / rota"><div class="os-lite-title">${escapeHtml(row.cliente || '-')}</div><div class="os-lite-meta os-lite-route">Emb.: ${escapeHtml(row.embarque || '-')}</div><div class="os-lite-meta os-lite-route">Dest.: ${escapeHtml(row.destino || '-')}</div><div class="os-lite-meta os-lite-route">Contrato ${escapeHtml(row.contrato || '-')} • ${escapeHtml(row.produto || '-')}</div></td>
-    <td data-label="Remanescente"><div class="os-lite-rembox"><span class="os-lite-chip ${zero ? 'warn' : rem <= 555000 ? 'info' : 'ok'}">${fmtTon(rem)}</span><div class="os-lite-meta">Lote ${fmtTon(row.lote)}</div><div class="os-lite-meta">Emb. ${fmtTon(row.embarcado)}</div></div></td>
-    <td data-label="Indicação operacional">
+  return `<article data-os-id="${escapeHtml(row.id)}" class="os-lite-card ${zero ? 'os-lite-zero' : ''} ${rowColorClass}">
+    <div class="os-lite-row os-lite-head">
+      <div>
+        <div class="os-lite-title">${escapeHtml(row.numero_os)}</div>
+        <div class="os-lite-meta">${brDate(row.data_os)} · ${escapeHtml(row.servico || '-')} · ${escapeHtml(row.supervisao || '-')}</div>
+      </div>
+      <div class="os-lite-rembox">
+        <span class="os-lite-chip ${zero ? 'warn' : rem <= 555000 ? 'info' : 'ok'}">${fmtTon(rem)}</span>
+        <div class="os-lite-meta">Lote ${fmtTon(row.lote)} · Emb. ${fmtTon(row.embarcado)}</div>
+      </div>
+    </div>
+    <div class="os-lite-row os-lite-client">
+      <div class="os-lite-title">${escapeHtml(row.cliente || '-')}</div>
+      <div class="os-lite-meta os-lite-route">Emb.: ${escapeHtml(row.embarque || '-')} → Dest.: ${escapeHtml(row.destino || '-')}</div>
+      <div class="os-lite-meta os-lite-route">Contrato ${escapeHtml(row.contrato || '-')} • ${escapeHtml(row.produto || '-')}</div>
+    </div>
+    <div class="os-lite-row os-lite-indic">
       <input type="text" class="os-lite-gac-input" value="${escapeHtml(main?.colaborador_nome || '')}" placeholder="Selecionar colaborador..." autocomplete="off" spellcheck="false" />
       <div class="os-lite-meta">${main?.distancia_km != null ? `${KM.format(main.distancia_km)} km` : main ? 'Indicado' : 'Sem indicação. Ao marcar Atender, o painel tenta sugerir pelo mapa operacional.'}</div>
-    </td>
-    <td data-label="Ação gestor"><div class="os-lite-buttons">${statusButtons}${kgButton}${conferirButton}</div><div style="margin-top:8px"><span class="os-lite-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
-  </tr>`;
+    </div>
+    <div class="os-lite-row os-lite-footer">
+      <div class="os-lite-buttons">${statusButtons}${kgButton}${conferirButton}</div>
+      <span class="os-lite-chip ${statusClass(row)}">${escapeHtml(status)}</span>
+    </div>
+  </article>`;
 }
 
 export async function renderOsProgramacaoLite(content, options = {}) {
@@ -472,7 +483,7 @@ export async function renderOsProgramacaoLite(content, options = {}) {
     const more = state.rows.length < state.total
       ? `<div class="os-lite-load-more"><button type="button" class="btn btn-secondary" id="osLiteMore">Carregar mais ${Math.min(PAGE_SIZE, state.total - state.rows.length)} O.S.</button></div>`
       : '';
-    el.list.innerHTML = `<div class="os-lite-table-wrap"><table class="os-lite-table"><colgroup><col class="os-lite-num"><col class="os-lite-cliente"><col class="os-lite-rem"><col class="os-lite-ind"><col class="os-lite-acao"></colgroup><thead><tr><th>O.S.</th><th>Cliente / rota</th><th>Remanescente</th><th>Indicação operacional</th><th>Ação gestor</th></tr></thead><tbody>${state.rows.map((row) => rowHtml(row, state.atribuicoes)).join('')}</tbody></table></div>${more}`;
+    el.list.innerHTML = `<div class="os-lite-list">${state.rows.map((row) => rowHtml(row, state.atribuicoes)).join('')}</div>${more}`;
     el.list.querySelector('#osLiteMore')?.addEventListener('click', () => loadPage({ append: true }));
   }
 
