@@ -107,29 +107,22 @@ function injectMobileStyles() {
       }
 
       body.mobile-gestor-mode .prog-toolbar {
-        position: relative !important;
-        top: 0 !important;
+        top: 118px !important;
       }
 
       .prog-toolbar-row {
         display: grid !important;
-        grid-template-columns: 1fr 1fr !important;
+        grid-template-columns: 1fr !important;
         gap: 10px !important;
         align-items: stretch !important;
       }
 
+      .prog-tfield,
       .prog-tfield-sup,
+      .prog-tfield-date,
       .prog-tfield-search,
       #progLoadContext,
       .prog-save-main {
-        grid-column: 1 / -1 !important;
-        width: 100% !important;
-        max-width: none !important;
-        flex: none !important;
-      }
-
-      .prog-tfield-date,
-      .prog-tfield-os-status {
         width: 100% !important;
         max-width: none !important;
         flex: none !important;
@@ -153,29 +146,26 @@ function injectMobileStyles() {
       }
 
       .prog-toolbar-row-steps {
-        grid-template-columns: 1fr !important;
         gap: 10px !important;
       }
 
       .prog-steps-compact,
       .steps-wrap {
-        display: flex !important;
-        flex-wrap: nowrap !important;
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
         width: 100% !important;
-        gap: 5px !important;
+        gap: 8px !important;
         overflow: visible !important;
       }
 
       .prog-steps-compact .stepbtn,
       .stepbtn {
-        flex: 1 1 0 !important;
-        width: auto !important;
-        min-width: 0 !important;
-        min-height: 38px !important;
+        width: 100% !important;
+        min-height: 46px !important;
         white-space: normal !important;
-        line-height: 1.1 !important;
-        padding: 8px 2px !important;
-        border-radius: 12px !important;
+        line-height: 1.15 !important;
+        padding: 9px 8px !important;
+        border-radius: 14px !important;
         text-align: center !important;
         font-size: 12px !important;
       }
