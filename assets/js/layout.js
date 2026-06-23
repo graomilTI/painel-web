@@ -101,6 +101,56 @@ function setupMobileBackButton(userContext) {
   }
 }
 
+const QUICK_NAV_ITEMS = [
+  { path: 'gestor-app', icon: '⌂', label: 'Início' },
+  { path: 'programacao', icon: '📅', label: 'Programação' },
+  { path: 'logistica', icon: '🚚', label: 'Logística' },
+  { path: 'compras', icon: '🛒', label: 'Compras' },
+  { path: 'hospedagem', icon: '🏨', label: 'Hospedagem' },
+  { path: 'contato-cliente', icon: '🤝', label: 'Contato' },
+  { path: 'patrimonios', icon: '📦', label: 'Patrimônio' },
+];
+
+function ensureQuickNavStyles() {
+  if (document.getElementById('mobileQuickNavStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'mobileQuickNavStyles';
+  style.textContent = `
+    .mobile-quick-nav{display:none;gap:8px;overflow-x:auto;padding:8px max(12px,env(safe-area-inset-left));background:rgba(9,9,20,.92);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.06);position:sticky;top:64px;z-index:55;scrollbar-width:none}
+    .mobile-quick-nav::-webkit-scrollbar{display:none}
+    body.mobile-gestor-mode .mobile-quick-nav{display:flex}
+    .mobile-quick-nav-item{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 12px;border-radius:14px;border:1px solid transparent;background:transparent;color:#9aa6bd;text-decoration:none;font-size:10.5px;font-weight:800;white-space:nowrap}
+    .mobile-quick-nav-item .qn-ico{font-size:17px;line-height:1}
+    .mobile-quick-nav-item.active{background:rgba(0,200,122,.14);border-color:rgba(45,212,160,.30);color:#dcfce7}
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureMobileQuickNav() {
+  const topbar = document.querySelector('.topbar');
+  if (!topbar) return null;
+
+  let nav = document.getElementById('mobileQuickNav');
+  if (!nav) {
+    ensureQuickNavStyles();
+    nav = document.createElement('nav');
+    nav.id = 'mobileQuickNav';
+    nav.className = 'mobile-quick-nav';
+    nav.innerHTML = QUICK_NAV_ITEMS.map((item) => {
+      const href = toPanelUrl(item.path);
+      return `<a class="mobile-quick-nav-item" href="${href}" data-quick-nav-path="${item.path}"><span class="qn-ico" aria-hidden="true">${item.icon}</span><span>${item.label}</span></a>`;
+    }).join('');
+    topbar.insertAdjacentElement('afterend', nav);
+  }
+
+  const current = window.location.pathname.replace(/\.html$/i, '').split('/').pop() || 'gestor-app';
+  nav.querySelectorAll('[data-quick-nav-path]').forEach((link) => {
+    link.classList.toggle('active', link.dataset.quickNavPath === current);
+  });
+
+  return nav;
+}
+
 function esc(v) {
   return String(v ?? '')
     .replaceAll('&', '&amp;')
@@ -624,6 +674,7 @@ export function renderAppLayout({ userContext, currentPageTitle = 'Painel' }) {
   applySidebarCollapsed(collapsed);
   syncSidebarToggle(collapsed);
   setupMobileBackButton(userContext);
+  ensureMobileQuickNav();
 
   const menu = buildAllowedMenu(userContext);
   renderMenu(document.getElementById('sidebarMenu'), menu, window.location.pathname, userContext);
@@ -655,6 +706,7 @@ export function renderAppLayout({ userContext, currentPageTitle = 'Painel' }) {
       const btn = document.getElementById('sidebarToggleBtn');
       if (btn) btn.hidden = nowMobile;
       setupMobileBackButton(userContext);
+  ensureMobileQuickNav();
     });
     window.__painelMobileResizeBound = true;
   }
