@@ -5,7 +5,7 @@ const esc=(v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').repl
 const brDate=(v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-'};
 const normalize=(v)=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
 
-let state = { tab: 'cadastrar', isMaster: false, supervisoes: [], histRows: [], histSort: { key: 'dias_sem_leitura', dir: 'desc' }, histFilters: { num: '', material: '' } };
+let state = { tab: 'cadastrar', isMaster: false, supervisoes: [], histRows: [], histSort: { key: 'maxDias', dir: 'desc' }, histFilters: { num: '', material: '' } };
 
 function setMsg(msg,err=false){const el=document.getElementById('patFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err)}}
 
@@ -31,8 +31,8 @@ async function saveAll(){
 }
 
 async function loadHistorico(){
-  const body=document.getElementById('patHistoricoBody');
-  body.innerHTML='<tr><td colspan="4" class="pat-empty">Carregando...</td></tr>';
+  const grid=document.getElementById('patHistoricoGrid');
+  grid.innerHTML='<p class="pat-empty">Carregando...</p>';
   const PAGE=1000;
   let rows=[], page=0, error=null;
   while(true){
@@ -47,42 +47,74 @@ async function loadHistorico(){
     if(!data || data.length<PAGE) break;
     page++;
   }
-  if(error){body.innerHTML=`<tr><td colspan="4" class="pat-empty">${esc(error.message)}</td></tr>`;return;}
+  if(error){grid.innerHTML=`<p class="pat-empty">${esc(error.message)}</p>`;return;}
   state.histRows=rows;
   renderHistorico();
 }
 
+function groupByColaborador(rows){
+  const map=new Map();
+  for(const r of rows){
+    const nome=r.funcionario||'-';
+    if(!map.has(nome)) map.set(nome,{funcionario:nome, items:[], maxDias:-1, inativo:false});
+    const g=map.get(nome);
+    g.items.push(r);
+    const dias=r.dias_sem_leitura??-1;
+    if(dias>g.maxDias) g.maxDias=dias;
+    if(/n.o\s*ativo|inativo|desligado|demitido/i.test(normalize(r.situacao||''))) g.inativo=true;
+  }
+  return [...map.values()];
+}
+
 function renderHistorico(){
-  const body=document.getElementById('patHistoricoBody');
+  const grid=document.getElementById('patHistoricoGrid');
   const {num,material}=state.histFilters;
-  let rows=state.histRows.filter(r=>{
+  const rows=state.histRows.filter(r=>{
     if(num && !normalize(r.patrimonio_codigo||'').includes(normalize(num)) && !normalize(r.funcionario||'').includes(normalize(num))) return false;
     if(material && !normalize(r.identificacao||'').includes(normalize(material))) return false;
     return true;
   });
+  let groups=groupByColaborador(rows);
   const {key,dir}=state.histSort;
-  rows=[...rows].sort((a,b)=>{
-    let va=a[key], vb=b[key];
-    if(key==='dias_sem_leitura'){va=va??-1;vb=vb??-1;}
-    else{va=normalize(va||'');vb=normalize(vb||'');}
+  groups.sort((a,b)=>{
+    let va,vb;
+    if(key==='funcionario'){va=normalize(a.funcionario);vb=normalize(b.funcionario);}
+    else if(key==='qtd'){va=a.items.length;vb=b.items.length;}
+    else{va=a.maxDias;vb=b.maxDias;}
     if(va<vb) return dir==='asc'?-1:1;
     if(va>vb) return dir==='asc'?1:-1;
     return 0;
   });
-  document.querySelectorAll('#patHistoricoSection [data-sort-key]').forEach(th=>{
-    th.classList.toggle('sort-active', th.dataset.sortKey===key);
-    th.dataset.sortDir = th.dataset.sortKey===key ? dir : '';
+  document.querySelectorAll('#patHistoricoSection [data-sort-key]').forEach(btn=>{
+    btn.classList.toggle('sort-active', btn.dataset.sortKey===key);
+    btn.dataset.sortDir = btn.dataset.sortKey===key ? dir : '';
   });
-  if(!rows.length){body.innerHTML='<tr><td colspan="4" class="pat-empty">Nenhum patrimônio encontrado.</td></tr>';return;}
-  body.innerHTML=rows.map(r=>{
-    const inativo=/n.o\s*ativo|inativo|desligado|demitido/i.test(normalize(r.situacao||''));
-    return `<tr class="${inativo?'pat-row-inativo':''}"><td>${esc(r.patrimonio_codigo||'-')}</td><td>${esc(r.funcionario||'-')}</td><td>${esc(r.identificacao||'-')}</td><td class="${(r.dias_sem_leitura??0)>30 && !inativo?'dias-alerta':''}">${r.dias_sem_leitura??'-'}</td></tr>`;
-  }).join('');
+  if(!groups.length){grid.innerHTML='<p class="pat-empty">Nenhum patrimônio encontrado.</p>';return;}
+  grid.innerHTML=groups.map((g,i)=>`<button class="pat-hist-item-card ${g.inativo?'pat-row-inativo':''}" data-idx="${i}" type="button">
+      <div class="pat-hist-item-name">${esc(g.funcionario)}</div>
+      <div class="pat-hist-item-meta">
+        <span class="pat-hist-item-badge">${g.items.length} ${g.items.length===1?'material':'materiais'}</span>
+        <span class="${g.maxDias>30 && !g.inativo?'dias-alerta':''}">${g.maxDias>=0?g.maxDias+' dias s/ leitura':'-'}</span>
+      </div>
+    </button>`).join('');
+  grid.querySelectorAll('[data-idx]').forEach(card=>card.onclick=()=>openHistModal(groups[Number(card.dataset.idx)]));
 }
+
+function openHistModal(group){
+  document.getElementById('patHistModalTitle').textContent=group.funcionario;
+  const items=[...group.items].sort((a,b)=>(b.dias_sem_leitura??-1)-(a.dias_sem_leitura??-1));
+  document.getElementById('patHistModalBody').innerHTML=items.map(r=>{
+    const inativo=/n.o\s*ativo|inativo|desligado|demitido/i.test(normalize(r.situacao||''));
+    return `<tr class="${inativo?'pat-row-inativo':''}"><td>${esc(r.patrimonio_codigo||'-')}</td><td>${esc(r.identificacao||'-')}</td><td class="${(r.dias_sem_leitura??0)>30 && !inativo?'dias-alerta':''}">${r.dias_sem_leitura??'-'}</td></tr>`;
+  }).join('');
+  document.getElementById('patHistModalOverlay').style.display='flex';
+}
+
+function closeHistModal(){document.getElementById('patHistModalOverlay').style.display='none';}
 
 function setHistSort(key){
   const cur=state.histSort;
-  state.histSort = cur.key===key ? {key, dir: cur.dir==='asc'?'desc':'asc'} : {key, dir:'asc'};
+  state.histSort = cur.key===key ? {key, dir: cur.dir==='asc'?'desc':'asc'} : {key, dir: key==='funcionario'?'asc':'desc'};
   renderHistorico();
 }
 
@@ -118,11 +150,26 @@ function styles(){return `<style>
 .pat-hist-text small{font-size:11px;color:var(--muted)}
 .pat-hist-filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .pat-hist-filters input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;min-width:220px}
-.pat-table th[data-sort-key]{cursor:pointer;user-select:none;white-space:nowrap}
-.pat-table th[data-sort-key]::after{content:'⇅';margin-left:6px;opacity:.4;font-size:10px}
-.pat-table th[data-sort-key].sort-active::after{opacity:1;content:attr(data-sort-dir)}
-.pat-table th[data-sort-key].sort-active[data-sort-dir="asc"]::after{content:'▲'}
-.pat-table th[data-sort-key].sort-active[data-sort-dir="desc"]::after{content:'▼'}
+.pat-hist-sortbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.pat-hist-sortbar-label{font-size:12px;color:var(--muted)}
+.pat-sort-chip{border:1px solid rgba(148,163,184,.24);background:transparent;color:#e2e2f0;border-radius:999px;padding:6px 14px;font-size:12px;cursor:pointer}
+.pat-sort-chip::after{content:'⇅';margin-left:6px;opacity:.4;font-size:10px}
+.pat-sort-chip.sort-active{border-color:#818cf8;background:rgba(129,140,248,.16)}
+.pat-sort-chip.sort-active::after{opacity:1}
+.pat-sort-chip.sort-active[data-sort-dir="asc"]::after{content:'▲'}
+.pat-sort-chip.sort-active[data-sort-dir="desc"]::after{content:'▼'}
+.pat-hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.pat-hist-item-card{display:flex;flex-direction:column;gap:8px;text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;border-radius:16px;padding:14px 16px;cursor:pointer;color:#e2e2f0;transition:transform .15s ease,border-color .15s ease}
+.pat-hist-item-card:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.55)}
+.pat-hist-item-card.pat-row-inativo{border-color:rgba(248,113,113,.4)}
+.pat-hist-item-name{font-weight:800;font-size:14px}
+.pat-hist-item-meta{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)}
+.pat-hist-item-badge{border:1px solid rgba(148,163,184,.24);border-radius:999px;padding:2px 10px}
+.pat-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;padding:20px}
+.pat-modal{background:#11111c;border:1px solid rgba(148,163,184,.24);border-radius:18px;padding:20px;max-width:680px;width:100%;max-height:80vh;overflow:auto}
+.pat-modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px}
+.pat-modal-head h3{margin:0}
+.pat-modal-close{background:transparent;border:none;color:#e2e2f0;font-size:22px;cursor:pointer;line-height:1}
 </style>`}
 
 initProtectedPage('Patrimônios', async (content, userContext)=>{
@@ -148,16 +195,30 @@ initProtectedPage('Patrimônios', async (content, userContext)=>{
         <input id="patHistFilterNum" type="text" placeholder="Filtrar por Nº ou colaborador">
         <input id="patHistFilterMaterial" type="text" placeholder="Filtrar por material">
       </div>
-      <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th data-sort-key="patrimonio_codigo">Nº</th><th data-sort-key="funcionario">Colaborador</th><th data-sort-key="identificacao">Material</th><th data-sort-key="dias_sem_leitura">Dias s/ Leitura</th></tr></thead><tbody id="patHistoricoBody"></tbody></table></div>
-    </section>`;
+      <div class="pat-hist-sortbar">
+        <span class="pat-hist-sortbar-label">Ordenar por:</span>
+        <button class="pat-sort-chip" data-sort-key="funcionario" type="button">Colaborador</button>
+        <button class="pat-sort-chip" data-sort-key="maxDias" type="button">Dias s/ Leitura</button>
+        <button class="pat-sort-chip" data-sort-key="qtd" type="button">Qtd. Materiais</button>
+      </div>
+      <div class="pat-hist-grid" id="patHistoricoGrid"></div>
+    </section>
+    <div class="pat-modal-overlay" id="patHistModalOverlay">
+      <div class="pat-modal">
+        <div class="pat-modal-head"><h3 id="patHistModalTitle"></h3><button class="pat-modal-close" id="patHistModalClose" type="button">&times;</button></div>
+        <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th>Nº</th><th>Material</th><th>Dias s/ Leitura</th></tr></thead><tbody id="patHistModalBody"></tbody></table></div>
+      </div>
+    </div>`;
 
   document.getElementById('patRefresh').onclick=loadCadastrar;
   document.getElementById('patSaveAll').onclick=saveAll;
   document.getElementById('patHistRefresh').onclick=loadHistorico;
   document.getElementById('patHistFilterNum').addEventListener('input', (e)=>{state.histFilters.num=e.target.value; renderHistorico();});
   document.getElementById('patHistFilterMaterial').addEventListener('input', (e)=>{state.histFilters.material=e.target.value; renderHistorico();});
-  document.querySelectorAll('#patHistoricoSection [data-sort-key]').forEach((th)=>th.addEventListener('click', () => setHistSort(th.dataset.sortKey)));
+  document.querySelectorAll('#patHistoricoSection [data-sort-key]').forEach((btn)=>btn.addEventListener('click', () => setHistSort(btn.dataset.sortKey)));
   document.querySelectorAll('[data-pat-tab]').forEach((btn)=>btn.addEventListener('click', () => setActiveTab(btn.dataset.patTab)));
+  document.getElementById('patHistModalClose').onclick=closeHistModal;
+  document.getElementById('patHistModalOverlay').addEventListener('click',(e)=>{if(e.target.id==='patHistModalOverlay') closeHistModal();});
 
   setActiveTab('cadastrar');
   await loadCadastrar();
