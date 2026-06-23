@@ -106,6 +106,10 @@ function injectMobileStyles() {
         backdrop-filter: blur(14px) !important;
       }
 
+      body.mobile-gestor-mode .prog-toolbar {
+        top: 118px !important;
+      }
+
       .prog-toolbar-row {
         display: grid !important;
         grid-template-columns: 1fr !important;

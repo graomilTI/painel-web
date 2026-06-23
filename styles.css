@@ -2037,15 +2037,6 @@ body.sidebar-collapsed .sidebar-toggle-btn {
     border-radius: 16px;
   }
 
-  body.mobile-panel-mode .topbar-actions #signOutBtn {
-    font-size: 0;
-  }
-
-  body.mobile-panel-mode .topbar-actions #signOutBtn::after {
-    content: 'Sair';
-    font-size: 13px;
-  }
-
   body.mobile-panel-mode .page-main {
     padding: 14px 12px calc(24px + env(safe-area-inset-bottom));
     width: 100% !important;

@@ -1,5 +1,4 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
-import { supabase } from './supabaseClient.js';
 import { renderOsProgramacaoLite } from './os-programacao-lite.js';
 
 const OS_STATUS_OPTIONS = [
@@ -13,8 +12,6 @@ const OS_STATUS_OPTIONS = [
 let currentUiStep = 'A';
 let distribuicaoLoaded = false;
 let distribuicaoLoading = false;
-let supervisoesDropdownLoading = false;
-let supervisoesDropdownLoaded = false;
 let pendingKpiReload = false;
 
 let supDropdownEl = null;
@@ -94,7 +91,18 @@ function injectGestorAjustesStyles() {
     .prog-os-lazy-card strong{display:block;color:#f8fafc;margin-bottom:4px;font-size:14px}
     .prog-os-lazy-card p{margin:0;font-size:13px;line-height:1.35}
     .prog-os-lazy-card .btn{min-height:38px}
-    @media(max-width:900px){.prog-tfield-sup,.prog-tfield-os-status{flex:1 1 100%!important;max-width:none!important}.prog-tfield-sup select,#progSup{min-width:0!important}.prog-os-lazy-card{align-items:stretch}.prog-os-lazy-card .btn{width:100%;justify-content:center}}
+    @media(max-width:900px){
+      .prog-tfield-sup{flex:1 1 100%!important;max-width:none!important}
+      .prog-tfield-sup select,#progSup{min-width:0!important}
+      .prog-tfield-date,.prog-tfield-os-status{flex:1 1 0!important;max-width:none!important;min-width:0!important}
+      .prog-os-lazy-card{align-items:stretch}
+      .prog-os-lazy-card .btn{width:100%;justify-content:center}
+    }
+    @media(max-width:720px){
+      #progSteps{flex-wrap:nowrap!important;overflow-x:auto;gap:6px!important}
+      #progSteps .stepbtn{flex:1 1 0;min-width:0;padding:10px 4px;text-align:center}
+      #progSteps .stepbtn-label{display:none}
+    }
     .prog-sup-native-hidden{position:absolute!important;width:0!important;height:0!important;padding:0!important;border:0!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
     .prog-sup-combo-input{position:relative!important;z-index:9020!important;min-width:320px!important;width:100%;box-sizing:border-box;padding:9px 12px;background:#020617!important;color:#f8fafc!important;border:1px solid rgba(52,211,153,.45)!important;border-radius:10px;font-size:13.5px;outline:none}
     .prog-sup-combo-input:focus{outline:2px solid rgba(52,211,153,.35)!important;outline-offset:1px!important}
@@ -105,48 +113,6 @@ function injectGestorAjustesStyles() {
     @media(max-width:900px){.prog-sup-combo-input{min-width:0!important}}
   `;
   document.head.appendChild(style);
-}
-
-async function liberarListaSupervisoes() {
-  const select = document.getElementById('progSup');
-  if (!select || supervisoesDropdownLoading) return;
-
-  const opcoesAtuais = [...select.options].filter((opt) => opt.value);
-  if (supervisoesDropdownLoaded && !select.disabled && opcoesAtuais.length > 1) return;
-
-  supervisoesDropdownLoading = true;
-  try {
-    const valorAtual = select.value || '';
-    const { data, error } = await supabase
-      .from('supervisoes')
-      .select('nome')
-      .eq('ativo', true)
-      .order('nome', { ascending: true });
-
-    if (error) throw error;
-
-    const supervisoes = [...new Set((data || [])
-      .map((row) => String(row.nome || '').trim())
-      .filter(Boolean))];
-
-    if (supervisoes.length) {
-      select.innerHTML = '<option value="">Selecione...</option>' + supervisoes
-        .map((sup) => `<option value="${escapeHtml(sup)}">${escapeHtml(sup)}</option>`)
-        .join('');
-      if (valorAtual && supervisoes.some((sup) => normalize(sup) === normalize(valorAtual))) {
-        select.value = supervisoes.find((sup) => normalize(sup) === normalize(valorAtual));
-      }
-    }
-
-    select.disabled = false;
-    select.dataset.supervisoesLiberadas = '1';
-    supervisoesDropdownLoaded = true;
-  } catch (error) {
-    console.warn('[programacao-ajustes] Não foi possível liberar lista completa de supervisões.', error);
-    select.disabled = false;
-  } finally {
-    supervisoesDropdownLoading = false;
-  }
 }
 
 function ensureStatusOsFilter() {
@@ -336,7 +302,7 @@ function configureSteps() {
     }
     btn.dataset.uiStep = step.ui;
     btn.dataset.step = step.internal;
-    btn.textContent = `${step.ui} · ${step.label}`;
+    btn.innerHTML = `<span class="stepbtn-letter">${step.ui}</span><span class="stepbtn-label"> · ${step.label}</span>`;
   });
 
   stepsWrap.dataset.gestorAjustado = '1';
@@ -513,11 +479,8 @@ async function initGestorProgramacaoAjustes() {
   bindTopLoadForEtapaA();
   configureSteps();
   renderDistribuicao({ loadOs: false });
-  setTimeout(() => liberarListaSupervisoes(), 250);
-  setTimeout(() => liberarListaSupervisoes(), 900);
 
   const observer = new MutationObserver(() => {
-    liberarListaSupervisoes();
     autoSelectSingleSupervisao();
     patchPendingOsModal();
     guardDistribuicaoView();
@@ -531,7 +494,6 @@ async function initGestorProgramacaoAjustes() {
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
-  liberarListaSupervisoes();
   autoSelectSingleSupervisao();
   patchPendingOsModal();
 
