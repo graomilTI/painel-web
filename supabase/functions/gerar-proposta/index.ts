@@ -9,7 +9,6 @@ const ASSET_FILES = {
   parceiros: 'parceiros.jpg',
   calador: 'calador.jpg',
   impressora: 'mobile-printer.jpg',
-  contatosRegionais: 'contatos-regionais.jpg',
 };
 
 const corsHeaders = {
@@ -22,6 +21,31 @@ type TextAlign = 'left' | 'center' | 'justify';
 type ImageAlign = 'left' | 'center';
 type ParagraphOptions = { align?: TextAlign; justify?: boolean };
 type ImageOptions = { maxWidth?: number; maxHeight?: number; caption?: string; align?: ImageAlign };
+type GestorRegional = { regional: string; supervisor: string; contato: string; ordem?: number };
+
+const DEFAULT_GESTORES_REGIONAIS: GestorRegional[] = [
+  { ordem: 10, regional: 'BAHIA', supervisor: 'DOUGLAS CANDIDO', contato: '(77) 9 9999-3585' },
+  { ordem: 20, regional: 'GOIAS', supervisor: 'DILSON REBAU', contato: '(64) 9 9344-0641' },
+  { ordem: 30, regional: 'GOIAS', supervisor: 'SIDNEI RIBEIRO', contato: '(64) 9 9223-3113' },
+  { ordem: 40, regional: 'MARANHÃO', supervisor: 'MANUEL DE JESUS', contato: '(99) 9 8848-6088' },
+  { ordem: 50, regional: 'MATO GROSSO DO SUL', supervisor: 'SAMUEL SANTA CRUZ', contato: '(67) 9 9119-4786' },
+  { ordem: 60, regional: 'MATO GROSSO DO SUL', supervisor: 'CECILIA KAROLAYNE', contato: '(66) 9 8437-4326' },
+  { ordem: 70, regional: 'MINAS GERAIS', supervisor: 'RICARDO ARAÚJO', contato: '(34) 9 9729-7489' },
+  { ordem: 80, regional: 'MT1 - SINOP', supervisor: 'MARCO AUGUSTO', contato: '(66) 9 9714-3354' },
+  { ordem: 90, regional: 'MT2 - RONDONOPOLIS/PRIMAVERA DO LESTE', supervisor: 'JEAN PABLO', contato: '(66) 9 9607-6403' },
+  { ordem: 100, regional: 'MT3 - CONFRESA', supervisor: 'VANUZA PEREIRA', contato: '(66) 9 8457-8435' },
+  { ordem: 110, regional: 'MT3 - QUERENCIA', supervisor: 'VANUZA PEREIRA', contato: '(66) 9 8457-8435' },
+  { ordem: 120, regional: 'MT4 - CAMPO NOVO DO PARECIS', supervisor: 'CLEUTON ALBERNAZ', contato: '(66) 9 9690-9921' },
+  { ordem: 130, regional: 'PARA', supervisor: 'JADSON SARAVA', contato: '(63) 9 9216-7795' },
+  { ordem: 140, regional: 'PARAGUAI', supervisor: 'ANDERSON DO CARMO', contato: '(44) 9 9829-3822' },
+  { ordem: 150, regional: 'PR - PONTA GROSSA E REGIÃO', supervisor: 'MICHAEL RIBAS', contato: '(42) 9 9834-4303' },
+  { ordem: 160, regional: 'PR - CASCAVEL', supervisor: 'ANDERSON DO CARMO', contato: '(44) 9 9829-3822' },
+  { ordem: 170, regional: 'PR - LONDRINA', supervisor: 'MICHAEL GONÇALVES', contato: '(43) 9 9182-6733' },
+  { ordem: 180, regional: 'PR - MARINGÁ E TERMINAIS FERROVIÁRIOS', supervisor: 'JOSÉ BOA VENTURA', contato: '(44) 9 9836-1000' },
+  { ordem: 190, regional: 'RIO GRANDE DO SUL', supervisor: 'DILMAR THOMET', contato: '(54) 9 9674-3775' },
+  { ordem: 200, regional: 'SÃO PAULO', supervisor: 'MAYCKON INOUE', contato: '(43) 9 9604-1000' },
+  { ordem: 210, regional: 'TOCANTINS', supervisor: 'KAIRO LEITE', contato: '(63) 9 9120-1087' },
+];
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -32,7 +56,7 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
 
 function cleanFileName(value: string) {
   return String(value || '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[\\/:*?"<>|]/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
@@ -71,8 +95,10 @@ function wrapText(font: any, text: string, size: number, maxWidth: number): stri
 }
 
 const GREEN = rgb(0.06, 0.36, 0.18);
+const HEADER_GREEN = rgb(0, 0.68, 0.24);
 const GRAY_TEXT = rgb(0.18, 0.18, 0.18);
 const GRAY_LIGHT = rgb(0.55, 0.55, 0.55);
+const ROW_ALT = rgb(0.94, 0.94, 0.94);
 const BORDER = rgb(0.82, 0.82, 0.82);
 
 class PdfFlow {
@@ -242,6 +268,63 @@ class PdfFlow {
     this.y -= 6;
   }
 
+  private contactsHeader(x: number, widths: number[], size: number, rowHeight: number) {
+    const titles = ['REGIONAL', 'SUPERVISOR', 'CONTATO'];
+    this.page.drawRectangle({ x, y: this.y - rowHeight, width: widths.reduce((a, b) => a + b, 0), height: rowHeight, color: HEADER_GREEN, borderColor: GREEN, borderWidth: 0.8 });
+    let cursor = x;
+    titles.forEach((title, i) => {
+      this.drawTextLine(title, cursor + 4, this.y - rowHeight + (rowHeight - size) / 2 - 1, size, this.fontBold, rgb(1, 1, 1), widths[i] - 8, 'center');
+      if (i > 0) this.page.drawLine({ start: { x: cursor, y: this.y }, end: { x: cursor, y: this.y - rowHeight }, thickness: 0.5, color: GREEN });
+      cursor += widths[i];
+    });
+    this.y -= rowHeight;
+  }
+
+  contactsTable(rows: GestorRegional[], size = 7.2) {
+    const ordered = [...rows].sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+    const widths = [250, 145, 100];
+    const totalWidth = widths.reduce((a, b) => a + b, 0);
+    const x = this.margin + (this.contentWidth - totalWidth) / 2;
+    const pad = 4;
+    const lineHeight = size * 1.25;
+    const headerHeight = 18;
+
+    this.ensure(headerHeight + 22);
+    this.contactsHeader(x, widths, size, headerHeight);
+
+    ordered.forEach((row, index) => {
+      const values = [val(row.regional, ''), val(row.supervisor, ''), val(row.contato, '')];
+      const wrapped = values.map((text, i) => wrapText(this.fontReg, text, size, widths[i] - pad * 2));
+      const rowHeight = Math.max(17, Math.max(...wrapped.map((lines) => lines.length)) * lineHeight + pad * 2);
+
+      if (this.y - rowHeight < this.margin) {
+        this.addPage();
+        this.contactsHeader(x, widths, size, headerHeight);
+      }
+
+      const topY = this.y;
+      if (index % 2 === 1) {
+        this.page.drawRectangle({ x, y: topY - rowHeight, width: totalWidth, height: rowHeight, color: ROW_ALT });
+      }
+      this.page.drawRectangle({ x, y: topY - rowHeight, width: totalWidth, height: rowHeight, borderColor: GRAY_TEXT, borderWidth: 0.45 });
+
+      let cursor = x;
+      wrapped.forEach((lines, colIndex) => {
+        if (colIndex > 0) {
+          this.page.drawLine({ start: { x: cursor, y: topY }, end: { x: cursor, y: topY - rowHeight }, thickness: 0.45, color: GRAY_TEXT });
+        }
+        const textBlockHeight = lines.length * lineHeight;
+        const firstY = topY - (rowHeight - textBlockHeight) / 2 - size;
+        lines.forEach((line, lineIndex) => {
+          this.drawTextLine(line, cursor + pad, firstY - lineIndex * lineHeight, size, this.fontReg, GRAY_TEXT, widths[colIndex] - pad * 2, 'center');
+        });
+        cursor += widths[colIndex];
+      });
+      this.y -= rowHeight;
+    });
+    this.y -= 10;
+  }
+
   async image(bytes: Uint8Array | null, opts: ImageOptions = {}) {
     if (!bytes) return;
     let img;
@@ -269,7 +352,7 @@ class PdfFlow {
     this.y -= 8;
   }
 
-  async imagesRow(items: ImageOptions[] & { bytes?: Uint8Array | null }[]) {
+  async imagesRow(items: ({ bytes?: Uint8Array | null } & ImageOptions)[]) {
     const valid = items.filter((it) => it.bytes) as { bytes: Uint8Array; maxWidth?: number; maxHeight?: number; caption?: string }[];
     if (!valid.length) return;
     const gap = 20;
@@ -351,6 +434,29 @@ async function fetchAsset(supabaseUrl: string, fileName: string): Promise<Uint8A
   }
 }
 
+async function loadGestoresRegionais(db: any): Promise<GestorRegional[]> {
+  try {
+    const { data, error } = await db
+      .from('propostas_gestores_regionais')
+      .select('regional,supervisor,contato,ordem')
+      .eq('ativo', true)
+      .order('ordem', { ascending: true })
+      .order('regional', { ascending: true });
+    if (error) throw error;
+    const rows = (data || [])
+      .filter((row: GestorRegional) => row.regional && row.supervisor && row.contato)
+      .map((row: GestorRegional) => ({
+        regional: String(row.regional),
+        supervisor: String(row.supervisor),
+        contato: String(row.contato),
+        ordem: Number(row.ordem) || 0,
+      }));
+    return rows.length ? rows : DEFAULT_GESTORES_REGIONAIS;
+  } catch {
+    return DEFAULT_GESTORES_REGIONAIS;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return jsonResponse({ error: 'Método não permitido.' }, 405);
@@ -381,13 +487,13 @@ serve(async (req) => {
     if (!proposta) throw new Error('Proposta não encontrada.');
     if (!proposta.numero || !proposta.cliente) throw new Error('Proposta sem número ou cliente.');
 
-    const [capaBytes, mapaBytes, parceirosBytes, caladorBytes, impressoraBytes, contatosBytes] = await Promise.all([
+    const [capaBytes, mapaBytes, parceirosBytes, caladorBytes, impressoraBytes, gestoresRegionais] = await Promise.all([
       fetchAsset(supabaseUrl, ASSET_FILES.capa),
       fetchAsset(supabaseUrl, ASSET_FILES.mapa),
       fetchAsset(supabaseUrl, ASSET_FILES.parceiros),
       fetchAsset(supabaseUrl, ASSET_FILES.calador),
       fetchAsset(supabaseUrl, ASSET_FILES.impressora),
-      fetchAsset(supabaseUrl, ASSET_FILES.contatosRegionais),
+      loadGestoresRegionais(db),
     ]);
 
     const doc = await PDFDocument.create();
@@ -547,7 +653,7 @@ serve(async (req) => {
     ]);
 
     flow.heading('Contatos Regionais');
-    await flow.image(contatosBytes, { maxWidth: flow.contentWidth, maxHeight: 420, align: 'center' });
+    flow.contactsTable(gestoresRegionais);
 
     flow.heading('Atenciosamente');
     flow.subheading(val(proposta.solicitante));
