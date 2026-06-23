@@ -453,6 +453,7 @@ initProtectedPage('Programação', (content) => {
   }
 
   function bindEvents() {
+    window.__progLoadColaboradores = loadContext;
     el.loadBtn.addEventListener('click', loadContext);
     el.saveBtn.addEventListener('click', saveProgramacao);
     el.search.addEventListener('input', debounce(() => {
