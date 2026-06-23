@@ -217,6 +217,42 @@ class PdfFlow {
     this.y -= 8;
   }
 
+  async imagesRow(items: { bytes: Uint8Array | null; maxWidth?: number; maxHeight?: number; caption?: string }[]) {
+    const valid = items.filter((it) => it.bytes) as { bytes: Uint8Array; maxWidth?: number; maxHeight?: number; caption?: string }[];
+    if (!valid.length) return;
+    const gap = 20;
+    const colWidth = (this.contentWidth - gap * (valid.length - 1)) / valid.length;
+    const prepared: { img: any; w: number; h: number; caption?: string }[] = [];
+    for (const it of valid) {
+      let img;
+      try {
+        img = await this.doc.embedJpg(it.bytes);
+      } catch {
+        continue;
+      }
+      const maxWidth = Math.min(it.maxWidth || colWidth, colWidth);
+      const maxHeight = it.maxHeight || 320;
+      let scale = Math.min(maxWidth / img.width, 1);
+      if (img.height * scale > maxHeight) scale = maxHeight / img.height;
+      prepared.push({ img, w: img.width * scale, h: img.height * scale, caption: it.caption });
+    }
+    if (!prepared.length) return;
+    const rowHeight = Math.max(...prepared.map((it) => it.h));
+    const hasCaption = prepared.some((it) => it.caption);
+    this.ensure(rowHeight + (hasCaption ? 16 : 0) + 14);
+    let x = this.margin;
+    for (const it of prepared) {
+      const colX = x + (colWidth - it.w) / 2;
+      this.page.drawImage(it.img, { x: colX, y: this.y - it.h, width: it.w, height: it.h });
+      if (it.caption) {
+        const captionWidth = this.fontReg.widthOfTextAtSize(it.caption, 8);
+        this.page.drawText(it.caption, { x: x + (colWidth - captionWidth) / 2, y: this.y - it.h - 9, size: 8, font: this.fontReg, color: GRAY_LIGHT });
+      }
+      x += colWidth + gap;
+    }
+    this.y -= rowHeight + (hasCaption ? 16 : 0) + 8;
+  }
+
   async imageFillRemaining(bytes: Uint8Array | null, opts: { caption?: string } = {}) {
     if (!bytes) return;
     let img;
@@ -401,8 +437,10 @@ serve(async (req) => {
       'Impressoras térmicas para impressão de laudos',
       'Homogeneizador e quarteador',
     ]);
-    await flow.image(caladorBytes, { maxWidth: 160, maxHeight: 220, caption: 'Calador 3 estágios, inox' });
-    await flow.image(impressoraBytes, { maxWidth: 140, maxHeight: 180, caption: 'Impressora térmica para laudos' });
+    await flow.imagesRow([
+      { bytes: caladorBytes, maxWidth: 160, maxHeight: 220, caption: 'Calador 3 estágios, inox' },
+      { bytes: impressoraBytes, maxWidth: 140, maxHeight: 180, caption: 'Impressora térmica para laudos' },
+    ]);
 
     flow.heading('Tarifas e Serviços');
     flow.table([
@@ -455,11 +493,6 @@ serve(async (req) => {
       'Quando a CONTRATADA identificar cargas com presença de insetos vivos/mortos, sementes tratadas, sementes tóxicas, sementes quarentenárias ou quaisquer tipos de sementes na origem, deve comunicar o CONTRATANTE imediatamente via e-mail ou telefone (WhatsApp), cabendo ao CONTRATANTE decidir sobre a continuidade ou não do embarque;',
       'Sendo constatada alguma divergência de qualidade no destino, e após a realização da auditoria for confirmada a responsabilidade da CONTRATADA, passará a ser feita retenção de até 30% do valor das faturas até que seja realizada reunião entre as partes para a definição/levantamento/acerto dos valores e condições de ressarcimento, que deverá ser realizada mensalmente ou no máximo trimestralmente.',
     ]);
-
-    if (proposta.campos && typeof proposta.campos === 'object' && Object.keys(proposta.campos).length) {
-      flow.heading('Campos adicionais');
-      flow.table(Object.entries(proposta.campos).map(([k, v]) => [k, String(v ?? '-')]));
-    }
 
     flow.heading('Contatos Regionais');
     await flow.image(contatosBytes, { maxWidth: flow.contentWidth, maxHeight: 420 });
