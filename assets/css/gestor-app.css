@@ -54,9 +54,10 @@ select:focus, input:focus, textarea:focus {
   background: rgba(10, 10, 20, 0.88); backdrop-filter: blur(20px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
-.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.brand img { width: 40px; height: 40px; object-fit: contain; }
-.brand small { display: block; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46vw; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.brand img { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; }
+.brand > div { min-width: 0; }
+.brand small { display: block; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
 .brand strong { font-size: 18px; line-height: 1; }
 .top-actions { display: flex; align-items: center; gap: 8px; }
 .pill { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid rgba(45, 212, 160, 0.22); background: rgba(21, 21, 42, 0.90); color: var(--soft); border-radius: 999px; padding: 9px 12px; font-weight: 800; font-size: 12px; }

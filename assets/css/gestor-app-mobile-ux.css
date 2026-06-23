@@ -86,37 +86,6 @@
   font-weight: 950;
 }
 
-.ux-search-wrap {
-  position: sticky;
-  top: -12px;
-  z-index: 2;
-  padding: 4px 0 10px;
-  background: linear-gradient(180deg, rgba(9,9,20,.98), rgba(9,9,20,.88));
-}
-
-.ux-search {
-  width: 100%;
-  min-height: 48px;
-  padding: 13px 15px;
-  border-radius: 17px;
-  border: 1px solid rgba(45,212,160,.16);
-  background: rgba(18,18,32,.90);
-  color: var(--text);
-}
-
-.ux-menu-group {
-  margin-top: 14px;
-}
-
-.ux-menu-group-title {
-  margin: 0 0 8px 2px;
-  color: var(--soft);
-  font-size: 11px;
-  font-weight: 950;
-  letter-spacing: .10em;
-  text-transform: uppercase;
-}
-
 .ux-menu-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -160,14 +129,6 @@
   font-size: 12px;
   line-height: 1.25;
   margin-top: 3px;
-}
-
-.ux-empty-search {
-  padding: 20px;
-  text-align: center;
-  color: var(--muted);
-  border: 1px dashed rgba(45,212,160,.18);
-  border-radius: 18px;
 }
 
 .ux-home-actions {
@@ -268,7 +229,6 @@
 @media (max-width: 520px) {
   .top-actions .pill { display: none; }
   .brand strong { font-size: 16px; }
-  .brand small { max-width: 38vw; }
   .app-main { padding-left: 12px; padding-right: 12px; }
 
   .action-grid {
@@ -321,6 +281,4 @@
     border-radius: 28px;
     border-bottom: 1px solid rgba(45, 212, 160, .14);
   }
-
-  .ux-menu-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
