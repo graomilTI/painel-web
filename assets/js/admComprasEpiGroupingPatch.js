@@ -6,6 +6,7 @@ let epiInternalClick = false;
 let epiApplying = false;
 let epiSort = { field: 'funcionario', dir: 'asc' };
 let epiObserverInstalled = false;
+let epiObserver = null;
 let epiDelegationInstalled = false;
 let epiApplyTimer = null;
 
@@ -305,6 +306,11 @@ function applyEpiVisual() {
   const body = document.getElementById('admCmpBody');
   if (!body) return;
   epiApplying = true;
+  // Desliga o observer enquanto reorganizamos o DOM: sem isso, o MutationObserver
+  // só processa a fila de mutações depois que este bloco termina (microtask), quando
+  // epiApplying já voltou a false — ele então achava que era uma mudança externa e
+  // chamava scheduleApply de novo, reconstruindo a tabela em loop e piscando tudo.
+  epiObserver?.disconnect();
   try {
     if (epiTabVisual === 'epi') applyEpi(body);
     else if (epiTabVisual === 'solicitacoes') applySolicitacoes(body);
@@ -314,6 +320,7 @@ function applyEpiVisual() {
     }
   } finally {
     epiApplying = false;
+    if (epiObserverInstalled) epiObserver?.observe(body, { childList: true });
   }
 }
 
@@ -417,12 +424,12 @@ function installBodyObserver() {
   const body = document.getElementById('admCmpBody');
   if (!body) return;
   epiObserverInstalled = true;
-  const observer = new MutationObserver((mutations) => {
+  epiObserver = new MutationObserver((mutations) => {
     if (epiApplying) return;
     if (!mutations.some((m) => [...m.addedNodes, ...m.removedNodes].some((node) => node.nodeType === 1 && !node.hasAttribute?.('data-epi-toolbar') && !node.hasAttribute?.('data-epi-sort-header') && !node.hasAttribute?.('data-epi-group-header') && !node.hasAttribute?.('data-epi-empty-row')))) return;
     scheduleApply(120);
   });
-  observer.observe(body, { childList: true });
+  epiObserver.observe(body, { childList: true });
 }
 
 function bootEpiCompras() {
