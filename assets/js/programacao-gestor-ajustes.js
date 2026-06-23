@@ -92,11 +92,15 @@ function injectGestorAjustesStyles() {
     .prog-os-lazy-card p{margin:0;font-size:13px;line-height:1.35}
     .prog-os-lazy-card .btn{min-height:38px}
     @media(max-width:900px){
+      .prog-tfield-sup{flex:1 1 100%!important;max-width:none!important}
       .prog-tfield-sup select,#progSup{min-width:0!important}
+      .prog-tfield-date,.prog-tfield-os-status{flex:1 1 0!important;max-width:none!important;min-width:0!important}
       .prog-os-lazy-card{align-items:stretch}
       .prog-os-lazy-card .btn{width:100%;justify-content:center}
     }
     @media(max-width:720px){
+      #progSteps{flex-wrap:nowrap!important;overflow-x:auto;gap:6px!important}
+      #progSteps .stepbtn{flex:1 1 0;min-width:0;padding:10px 4px;text-align:center}
       #progSteps .stepbtn-label{display:none}
     }
     .prog-sup-native-hidden{position:absolute!important;width:0!important;height:0!important;padding:0!important;border:0!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
