@@ -274,11 +274,11 @@ function renderOsTab() {
     const rem = Number(r.remanescente);
     const zero = rem === 0;
     return `<tr>
-      <td><strong>${esc(r.numero_os)}</strong><br><small class="muted">${brDate(r.data_os)}</small><br><small class="muted">${esc(r.supervisao||'-')}</small></td>
-      <td><strong>${esc(r.cliente||'-')}</strong><div class="muted" style="font-size:11px;margin-top:2px">Emb: ${esc(r.embarque||'-')} → ${esc(r.destino||'-')}</div></td>
-      <td><span class="log-chip ${rem<=0?'warn':'ok'}">${fmt(rem)}</span></td>
-      <td><span class="log-chip ${!st?'gray':st==='AGUARDAR'?'warn':st==='ATENDER'?'blue':st==='FINALIZAR'?'ok':'gray'}">${OS_STATUS_LABELS[st||'PENDENTE']||st||'Pendente'}</span></td>
-      <td>
+      <td data-label="O.S."><strong>${esc(r.numero_os)}</strong><br><small class="muted">${brDate(r.data_os)}</small><br><small class="muted">${esc(r.supervisao||'-')}</small></td>
+      <td data-label="Cliente / Rota"><strong>${esc(r.cliente||'-')}</strong><div class="muted" style="font-size:11px;margin-top:2px">Emb: ${esc(r.embarque||'-')} → ${esc(r.destino||'-')}</div></td>
+      <td data-label="Remanescente"><span class="log-chip ${rem<=0?'warn':'ok'}">${fmt(rem)}</span></td>
+      <td data-label="Status"><span class="log-chip ${!st?'gray':st==='AGUARDAR'?'warn':st==='ATENDER'?'blue':st==='FINALIZAR'?'ok':'gray'}">${OS_STATUS_LABELS[st||'PENDENTE']||st||'Pendente'}</span></td>
+      <td data-label="Ação">
         <div class="log-os-actions">
           ${zero
             ? statusBtn(r.id,'FINALIZAR',ICO_FINALIZAR,'green',st==='FINALIZAR')
@@ -409,11 +409,11 @@ function renderAberturaOsHistorico() {
   if (!state.aberturaRows.length) return `<div class="log-empty">Nenhuma solicitação de abertura de O.S. encontrada.</div>`;
   return `<div class="log-table-wrap"><table class="log-table"><thead><tr><th>Data</th><th>Cliente / contrato</th><th>Origem / destino</th><th>Produto</th><th>Status</th></tr></thead><tbody>${state.aberturaRows.map(r => `
     <tr>
-      <td>${brDate(r.created_at)}<br><small class="muted">Regional: ${esc(r.regional || '-')}</small></td>
-      <td><strong>${esc(r.contratante_cliente || '-')}</strong><br><small class="muted">Filial: ${esc(r.filial_pagadora || '-')}</small><br><small class="muted">Contrato: ${esc(r.numero_contrato || '-')}</small></td>
-      <td><strong>${esc(r.armazem_embarque || '-')}</strong><br><small class="muted">${esc(r.cidade_embarque || '-')} → ${esc(r.cidade_destino || '-')}</small><br><small class="muted">Destino: ${esc(r.local_destino || '-')}</small></td>
-      <td>${esc(r.produto || '-')}<br><small class="muted">${esc(r.tipo_produto || '-')} · ${fmt(r.volume_inicial)} tons</small><br><small class="muted">${esc(r.servico || '-')}</small></td>
-      <td><span class="log-chip ${String(r.status)==='CADASTRADO'?'ok':String(r.status)==='RECUSADO'?'red':'warn'}">${String(r.status)==='CADASTRADO' ? `OS ${esc(r.numero_os_cadastrada || '')}` : esc(r.status || 'PENDENTE')}</span>${r.observacao_adm ? `<div class="log-obs">${esc(r.observacao_adm)}</div>` : ''}</td>
+      <td data-label="Data">${brDate(r.created_at)}<br><small class="muted">Regional: ${esc(r.regional || '-')}</small></td>
+      <td data-label="Cliente / contrato"><strong>${esc(r.contratante_cliente || '-')}</strong><br><small class="muted">Filial: ${esc(r.filial_pagadora || '-')}</small><br><small class="muted">Contrato: ${esc(r.numero_contrato || '-')}</small></td>
+      <td data-label="Origem / destino"><strong>${esc(r.armazem_embarque || '-')}</strong><br><small class="muted">${esc(r.cidade_embarque || '-')} → ${esc(r.cidade_destino || '-')}</small><br><small class="muted">Destino: ${esc(r.local_destino || '-')}</small></td>
+      <td data-label="Produto">${esc(r.produto || '-')}<br><small class="muted">${esc(r.tipo_produto || '-')} · ${fmt(r.volume_inicial)} tons</small><br><small class="muted">${esc(r.servico || '-')}</small></td>
+      <td data-label="Status"><span class="log-chip ${String(r.status)==='CADASTRADO'?'ok':String(r.status)==='RECUSADO'?'red':'warn'}">${String(r.status)==='CADASTRADO' ? `OS ${esc(r.numero_os_cadastrada || '')}` : esc(r.status || 'PENDENTE')}</span>${r.observacao_adm ? `<div class="log-obs">${esc(r.observacao_adm)}</div>` : ''}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -518,11 +518,11 @@ function rowHtml(row) {
       : `<span class="log-chip blue">$ Finalizar</span>`;
   const rem = Number(row.remanescente);
   return `<tr data-log-row="${esc(String(row.id))}">
-    <td><strong>${esc(row.numero_os)}</strong><br><small class="muted">${brDate(row.data_os)}</small><br><small class="muted">${esc(row.supervisao||'-')}</small></td>
-    <td><div style="font-weight:850">${esc(row.cliente||'-')}</div><div class="muted" style="font-size:12px;margin-top:3px">Emb.: ${esc(row.embarque||'-')}</div><div class="muted" style="font-size:12px">Dest.: ${esc(row.destino||'-')}</div></td>
-    <td><span class="log-chip ${rem<=0?'warn':'ok'}">${fmt(rem)}</span><div class="muted" style="font-size:11px;margin-top:4px">Lote ${fmt(row.lote)}</div></td>
-    <td>${badge}</td>
-    <td><button class="log-btn-ok" data-ok-id="${esc(String(row.id))}" data-ok-type="${type}" type="button">OK</button></td>
+    <td data-label="O.S."><strong>${esc(row.numero_os)}</strong><br><small class="muted">${brDate(row.data_os)}</small><br><small class="muted">${esc(row.supervisao||'-')}</small></td>
+    <td data-label="Cliente / Rota"><div style="font-weight:850">${esc(row.cliente||'-')}</div><div class="muted" style="font-size:12px;margin-top:3px">Emb.: ${esc(row.embarque||'-')}</div><div class="muted" style="font-size:12px">Dest.: ${esc(row.destino||'-')}</div></td>
+    <td data-label="Remanescente"><span class="log-chip ${rem<=0?'warn':'ok'}">${fmt(rem)}</span><div class="muted" style="font-size:11px;margin-top:4px">Lote ${fmt(row.lote)}</div></td>
+    <td data-label="Solicitação">${badge}</td>
+    <td data-label="Ação"><button class="log-btn-ok" data-ok-id="${esc(String(row.id))}" data-ok-type="${type}" type="button">OK</button></td>
   </tr>`;
 }
 
@@ -760,6 +760,18 @@ function injectStyles() {
     .log-os-actions{display:flex;gap:6px}.log-os-status-btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(52,211,153,.2);background:rgba(15,23,42,.6);color:#8fa1b5;border-radius:10px;width:36px;height:36px;cursor:pointer;transition:background .15s}.log-os-status-btn.yellow.active,.log-os-status-btn.yellow:hover{background:rgba(250,204,21,.18);border-color:rgba(250,204,21,.35);color:#fde68a}.log-os-status-btn.blue.active,.log-os-status-btn.blue:hover{background:rgba(59,130,246,.18);border-color:rgba(96,165,250,.35);color:#bfdbfe}.log-os-status-btn.green.active,.log-os-status-btn.green:hover{background:rgba(22,163,74,.22);border-color:rgba(34,197,94,.4);color:#bbf7d0}
     @media(max-width:1100px){.abrir-os-grid{grid-template-columns:1fr 1fr}.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr 1fr}.fob-row{grid-template-columns:1fr}.fob-cell.actions{grid-template-columns:1fr 52px 52px}}
     @media(max-width:680px){.abrir-os-grid{grid-template-columns:1fr}.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr}.fob-os-line{grid-template-columns:1fr}.log-tab{flex:1}.fob-cell.actions{grid-template-columns:1fr 48px 48px}}
+    @media(max-width:720px){
+      .log-table-wrap{overflow:visible;border:0;background:transparent;margin-top:12px}
+      .log-table{min-width:0;width:100%}
+      .log-table thead{display:none}
+      .log-table,.log-table tbody,.log-table tr,.log-table td{display:block;width:100%}
+      .log-table tr{margin-bottom:12px;border:1px solid rgba(52,211,153,.16);border-radius:18px;overflow:hidden;background:rgba(2,6,23,.25)}
+      .log-table tr:last-child{margin-bottom:0}
+      .log-table td{padding:10px 13px;border-bottom:1px solid rgba(148,163,184,.1)}
+      .log-table td:last-child{border-bottom:0}
+      .log-table td[data-label]::before{content:attr(data-label);display:block;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin-bottom:5px}
+      .log-os-actions{flex-wrap:wrap}
+    }
   `;
   document.head.appendChild(s);
 }

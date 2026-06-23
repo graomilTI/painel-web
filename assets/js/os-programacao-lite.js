@@ -205,6 +205,18 @@ function injectStyles() {
     .os-lite-dropzone:hover{border-color:rgba(167,139,250,.7)}
     .os-lite-dropzone small{font-size:11px}
     .os-lite-file-list{font-size:12px;color:#bbf7d0;min-height:18px}
+    @media (max-width:720px){
+      .os-lite-table-wrap{overflow:visible;border:0;background:transparent}
+      .os-lite-table{min-width:0;width:100%;table-layout:auto}
+      .os-lite-table thead{display:none}
+      .os-lite-table,.os-lite-table tbody,.os-lite-table tr,.os-lite-table td{display:block;width:100%}
+      .os-lite-table tr{margin-bottom:12px;border:1px solid rgba(52,211,153,.16);border-radius:18px;overflow:hidden;background:rgba(2,6,23,.25)}
+      .os-lite-table td{border-bottom:1px solid rgba(148,163,184,.1);padding:10px 12px}
+      .os-lite-table tr:last-child{margin-bottom:0}
+      .os-lite-table td:last-child{border-bottom:0}
+      .os-lite-table td[data-label]::before{content:attr(data-label);display:block;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin-bottom:5px}
+      .os-lite-buttons{flex-wrap:wrap}
+    }
   `;
   document.head.appendChild(style);
 }
@@ -372,14 +384,14 @@ function rowHtml(row, atribuicoes) {
   const kgButton = `<button class="os-lite-btn kg ${row.observacao_logistica?.startsWith('KG solicitado') ? 'active' : ''}" data-action-kg="${escapeHtml(row.id)}" type="button" title="Adicionar saldo">${ICO_PLUS}</button>`;
   const conferirButton = `<button class="os-lite-btn conferir ${row.observacao_logistica?.startsWith('LAUDO:') ? 'active' : ''}" data-action-conferir="${escapeHtml(row.id)}" type="button" title="Conferir · Anexar arquivo">${ICO_FOLHA}</button>`;
   return `<tr data-os-id="${escapeHtml(row.id)}" class="${zero ? 'os-lite-zero' : ''} ${rowColorClass}">
-    <td><div class="os-lite-title">${escapeHtml(row.numero_os)}</div><div class="os-lite-meta">${brDate(row.data_os)}</div><div class="os-lite-meta">${escapeHtml(row.servico || '-')}</div><div class="os-lite-meta">${escapeHtml(row.supervisao || '-')}</div>${zero ? '<div class="os-lite-meta" style="color:#fde68a">Remanescente zerado</div>' : ''}</td>
-    <td><div class="os-lite-title">${escapeHtml(row.cliente || '-')}</div><div class="os-lite-meta os-lite-route">Emb.: ${escapeHtml(row.embarque || '-')}</div><div class="os-lite-meta os-lite-route">Dest.: ${escapeHtml(row.destino || '-')}</div><div class="os-lite-meta os-lite-route">Contrato ${escapeHtml(row.contrato || '-')} • ${escapeHtml(row.produto || '-')}</div></td>
-    <td><div class="os-lite-rembox"><span class="os-lite-chip ${zero ? 'warn' : rem <= 555000 ? 'info' : 'ok'}">${fmtTon(rem)}</span><div class="os-lite-meta">Lote ${fmtTon(row.lote)}</div><div class="os-lite-meta">Emb. ${fmtTon(row.embarcado)}</div></div></td>
-    <td>
+    <td data-label="O.S."><div class="os-lite-title">${escapeHtml(row.numero_os)}</div><div class="os-lite-meta">${brDate(row.data_os)}</div><div class="os-lite-meta">${escapeHtml(row.servico || '-')}</div><div class="os-lite-meta">${escapeHtml(row.supervisao || '-')}</div>${zero ? '<div class="os-lite-meta" style="color:#fde68a">Remanescente zerado</div>' : ''}</td>
+    <td data-label="Cliente / rota"><div class="os-lite-title">${escapeHtml(row.cliente || '-')}</div><div class="os-lite-meta os-lite-route">Emb.: ${escapeHtml(row.embarque || '-')}</div><div class="os-lite-meta os-lite-route">Dest.: ${escapeHtml(row.destino || '-')}</div><div class="os-lite-meta os-lite-route">Contrato ${escapeHtml(row.contrato || '-')} • ${escapeHtml(row.produto || '-')}</div></td>
+    <td data-label="Remanescente"><div class="os-lite-rembox"><span class="os-lite-chip ${zero ? 'warn' : rem <= 555000 ? 'info' : 'ok'}">${fmtTon(rem)}</span><div class="os-lite-meta">Lote ${fmtTon(row.lote)}</div><div class="os-lite-meta">Emb. ${fmtTon(row.embarcado)}</div></div></td>
+    <td data-label="Indicação operacional">
       <input type="text" class="os-lite-gac-input" value="${escapeHtml(main?.colaborador_nome || '')}" placeholder="Selecionar colaborador..." autocomplete="off" spellcheck="false" />
       <div class="os-lite-meta">${main?.distancia_km != null ? `${KM.format(main.distancia_km)} km` : main ? 'Indicado' : 'Sem indicação. Ao marcar Atender, o painel tenta sugerir pelo mapa operacional.'}</div>
     </td>
-    <td><div class="os-lite-buttons">${statusButtons}${kgButton}${conferirButton}</div><div style="margin-top:8px"><span class="os-lite-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
+    <td data-label="Ação gestor"><div class="os-lite-buttons">${statusButtons}${kgButton}${conferirButton}</div><div style="margin-top:8px"><span class="os-lite-chip ${statusClass(row)}">${escapeHtml(status)}</span></div></td>
   </tr>`;
 }
 
