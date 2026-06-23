@@ -1409,6 +1409,11 @@ async function validarUberPorLaudo() {
   }
 }
 
+const UBER_STATUS_VALIDACAO_DB = {
+  VALIDADA: 'VALIDADO',
+  CAIXA_COLABORADOR: 'CAIXA',
+};
+
 async function updateUberStatus(id, classificacao) {
   const row = state.uber.find((item) => String(item.id) === String(id));
   if (!row) return;
@@ -1418,7 +1423,7 @@ async function updateUberStatus(id, classificacao) {
     .from('conferencia_uber_corridas')
     .update({
       classificacao_manual: classificacao,
-      status_validacao: classificacao,
+      status_validacao: UBER_STATUS_VALIDACAO_DB[classificacao] || classificacao,
       validado_em: new Date().toISOString(),
     })
     .eq('id', id)

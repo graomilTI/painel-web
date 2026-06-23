@@ -485,6 +485,11 @@ async function syncApi(root) {
   }
 }
 
+const STATUS_VALIDACAO_DB = {
+  VALIDADA: 'VALIDADO',
+  CAIXA_COLABORADOR: 'CAIXA',
+};
+
 async function updateStatus(id, status) {
   setFeedback('Salvando conferência da corrida...');
   try {
@@ -492,14 +497,14 @@ async function updateStatus(id, status) {
       .from('conferencia_uber_corridas')
       .update({
         classificacao_manual: status,
-        status_validacao: status,
+        status_validacao: STATUS_VALIDACAO_DB[status] || status,
         validado_em: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', id);
     if (error) throw error;
     const row = state.rows.find((item) => String(item.id) === String(id));
-    if (row) Object.assign(row, { classificacao_manual: status, status_validacao: status, validado_em: new Date().toISOString() });
+    if (row) Object.assign(row, { classificacao_manual: status, status_validacao: STATUS_VALIDACAO_DB[status] || status, validado_em: new Date().toISOString() });
     setFeedback('Corrida atualizada.');
     renderData();
   } catch (error) {
