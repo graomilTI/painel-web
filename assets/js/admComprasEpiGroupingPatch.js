@@ -9,6 +9,7 @@ let epiObserverInstalled = false;
 let epiObserver = null;
 let epiDelegationInstalled = false;
 let epiApplyTimer = null;
+const epiExpanded = new Set();
 
 function normEpi(value = '') {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -134,12 +135,26 @@ function updateGroupState(header) {
   const box = header?.querySelector?.('[data-epi-group-select]');
   const status = header?.querySelector?.('[data-epi-group-status]');
   const btn = header?.querySelector?.('[data-epi-group-check]');
+  const arrow = header?.querySelector?.('[data-epi-group-arrow]');
+  const kpi = header?.querySelector?.('[data-epi-group-kpi]');
   if (box) {
     box.checked = total > 0 && selected === total;
     box.indeterminate = selected > 0 && selected < total;
   }
-  if (status) status.textContent = selected ? `${selected}/${total} selecionado(s)` : 'Marque os itens abaixo para liberar ou comprar individualmente';
+  const expanded = epiExpanded.has(header?.dataset?.epiGroupKey);
+  if (arrow) arrow.textContent = expanded ? '▾' : '▸';
+  if (kpi) kpi.title = `Clique para ${expanded ? 'recolher' : 'expandir'} e ver os itens individualmente`;
+  if (status) status.textContent = selected ? `${selected}/${total} selecionado(s)` : (expanded ? 'Marque os itens abaixo para liberar ou comprar individualmente' : 'Clique aqui para ver e marcar os itens individualmente');
   if (btn) btn.textContent = total > 0 && selected === total ? 'Desmarcar grupo' : 'Selecionar grupo';
+}
+
+function toggleGroupExpand(header) {
+  const key = header?.dataset?.epiGroupKey;
+  if (!key) return;
+  const expand = !epiExpanded.has(key);
+  if (expand) epiExpanded.add(key); else epiExpanded.delete(key);
+  groupRowsFromHeader(header).forEach((row) => { row.style.display = expand ? '' : 'none'; });
+  updateGroupState(header);
 }
 
 function updateSummary() {
@@ -216,23 +231,25 @@ function makeSortHeader(colCount) {
   return tr;
 }
 
-function makeGroupHeader(group, colCount) {
+function makeGroupHeader(group, colCount, key) {
   const totalItens = group.rows.length;
   const totalUn = group.rows.reduce((sum, row) => sum + getQtd(row), 0);
   const totalValor = group.rows.reduce((sum, row) => sum + getValor(row), 0);
   const materiais = group.rows.map((row) => getMaterial(row, group.nome)).filter(Boolean).join(' · ');
+  const expanded = epiExpanded.has(key);
   const tr = document.createElement('tr');
   tr.setAttribute('data-epi-group-header', '1');
+  tr.dataset.epiGroupKey = key;
   tr.innerHTML = `
     <td colspan="${colCount}" style="background:rgba(16,185,129,.11);border-top:1px solid rgba(74,222,128,.35);border-bottom:1px solid rgba(74,222,128,.2);padding:12px 14px">
       <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
         <div style="display:flex;gap:10px;align-items:flex-start;min-width:260px">
           <input type="checkbox" data-epi-group-select aria-label="Selecionar grupo ${group.nome}" style="margin-top:3px;transform:scale(1.15)">
-          <div>
-            <strong style="color:#bbf7d0">EPI — ${group.nome}</strong>
+          <div data-epi-group-kpi style="cursor:pointer" title="Clique para ${expanded ? 'recolher' : 'expandir'} e ver os itens individualmente">
+            <strong style="color:#bbf7d0"><span data-epi-group-arrow>${expanded ? '▾' : '▸'}</span> EPI — ${group.nome}</strong>
             <div style="font-size:12px;color:#fde68a;margin-top:4px;font-weight:700">Regional/Supervisão: ${group.regional}</div>
             <div style="font-size:12px;color:#94a3b8;margin-top:4px">${totalItens} item(ns) · ${totalUn} unidade(s) · ${materiais}</div>
-            <div data-epi-group-status style="font-size:12px;color:#bbf7d0;margin-top:4px">Marque os itens abaixo para liberar ou comprar individualmente</div>
+            <div data-epi-group-status style="font-size:12px;color:#bbf7d0;margin-top:4px">${expanded ? 'Marque os itens abaixo para liberar ou comprar individualmente' : 'Clique aqui para ver e marcar os itens individualmente'}</div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -280,7 +297,7 @@ function applyEpi(body) {
   epiRows.forEach((row) => {
     const nome = getColaborador(row);
     const key = normEpi(nome);
-    if (!map.has(key)) map.set(key, { nome, regional: getRegional(row), rows: [] });
+    if (!map.has(key)) map.set(key, { key, nome, regional: getRegional(row), rows: [] });
     map.get(key).rows.push(row);
   });
 
@@ -290,9 +307,10 @@ function applyEpi(body) {
   frag.appendChild(makeSortHeader(colCount));
 
   groups.forEach((group) => {
-    frag.appendChild(makeGroupHeader(group, colCount));
+    const expanded = epiExpanded.has(group.key);
+    frag.appendChild(makeGroupHeader(group, colCount, group.key));
     group.rows.forEach((row) => {
-      row.style.display = '';
+      row.style.display = expanded ? '' : 'none';
       row.style.borderLeft = '3px solid rgba(74,222,128,.35)';
       frag.appendChild(row);
     });
@@ -392,6 +410,13 @@ function installDelegation() {
     if (groupBtn) {
       event.preventDefault();
       toggleGroup(groupBtn.closest('[data-epi-group-header]'));
+      return;
+    }
+
+    const kpi = event.target.closest?.('[data-epi-group-kpi]');
+    if (kpi) {
+      event.preventDefault();
+      toggleGroupExpand(kpi.closest('[data-epi-group-header]'));
       return;
     }
 
