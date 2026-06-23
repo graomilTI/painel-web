@@ -3,7 +3,7 @@
 
   const styles = `
     <style>
-      .fr-shell{color:#e2e2f0}.fr-head{margin-bottom:18px}.fr-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fr-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fr-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fr-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fr-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.fr-tab{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 16px;font-weight:950;cursor:pointer;font-size:13px;transition:.15s}.fr-tab.active,.fr-tab:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35);color:#f8fafc}.fr-body{padding:18px}.fr-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 180px auto auto auto;gap:10px;margin-bottom:14px;align-items:center}.fr-input,.fr-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fr-select option{background:#0d0d18;color:#e2e2f0}.fr-btn{border:0;border-radius:14px;min-height:42px;padding:0 16px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;white-space:nowrap}.fr-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fr-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fr-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fr-btn.danger{border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fca5a5}.fr-btn:disabled{opacity:.5;cursor:not-allowed}.fr-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:14px 0}.fr-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;width:100%;text-align:left;cursor:pointer;font-family:inherit;transition:.15s}.fr-kpi:hover{border-color:rgba(34,197,94,.45);background:rgba(2,6,23,.5)}.fr-kpi.active{border-color:rgba(34,197,94,.7);background:rgba(22,101,52,.22);box-shadow:0 0 0 1px rgba(34,197,94,.35) inset}.fr-kpi span{display:block;color:#93c5fd;font-size:11px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.fr-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.fr-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fr-table{width:100%;border-collapse:collapse;min-width:1560px}.fr-table th{padding:11px 12px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38);white-space:nowrap}.fr-table td{padding:11px 12px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:middle}.fr-table tr:hover td{background:rgba(22,101,52,.08)}.fr-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fr-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fr-badge.progress{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fr-badge.none{border-color:rgba(148,163,184,.22);background:rgba(15,23,42,.6);color:#94a3b8}.fr-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fr-badge.bfleet{border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.12);color:#a5b4fc}.fr-badge.removed{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fecaca}.fr-imei-bfleet{font-family:monospace;font-size:12px;color:#a5b4fc;opacity:.8}.fr-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fr-resp-select{width:100%;min-width:112px;height:34px;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0d0d18;color:#e2e2f0;padding:0 8px;font-size:12px;font-weight:700;outline:none;color-scheme:dark}.fr-resp-select option{background:#0d0d18;color:#e2e2f0}.fr-resp-select.is-anderson{border-color:rgba(99,102,241,.4);color:#a5b4fc}.fr-resp-select.is-cleverson{border-color:rgba(245,158,11,.4);color:#fde68a}.fr-empty{text-align:center;color:#94a3b8;padding:34px!important}.fr-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:22px}.fr-modal{width:min(860px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fr-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px;border-bottom:1px solid rgba(148,163,184,.16)}.fr-modal-head h3{margin:0;color:#fff;font-size:20px}.fr-modal-head p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.45}.fr-modal-body{padding:20px}.fr-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.fr-field{display:flex;flex-direction:column;gap:6px}.fr-field.full{grid-column:1/-1}.fr-field.half{grid-column:span 2}.fr-field label{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fr-field input,.fr-field select,.fr-field textarea{border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:10px 12px;outline:none;font-size:13px;color-scheme:dark}.fr-field textarea{min-height:70px;resize:vertical}.fr-field select option{background:#0d0d18}.fr-field input[type=checkbox]{width:18px;height:18px;cursor:pointer;accent-color:#22c55e}.fr-check-row{display:flex;align-items:center;gap:10px;padding:10px 0}.fr-check-row label{color:#e2e2f0;font-size:13px;font-weight:600;cursor:pointer}.fr-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.12)}.fr-hint{font-size:11px;color:#6366f1;margin-top:3px}.fr-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fr-toast.show{opacity:1;transform:translateY(0)}.fr-divider{margin:16px 0 10px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em;border-bottom:1px solid rgba(34,197,94,.18);padding-bottom:6px}.fr-th-sort{cursor:pointer;user-select:none;white-space:nowrap}.fr-th-sort:hover{color:#e2e2f0}.fr-th-sort::after{content:' ⇅';opacity:.35;font-size:10px}.fr-th-sort.asc::after{content:' ↑';opacity:1;color:#86efac}.fr-th-sort.desc::after{content:' ↓';opacity:1;color:#86efac}@media(max-width:1100px){.fr-toolbar{grid-template-columns:1fr 1fr}.fr-kpis{grid-template-columns:repeat(3,1fr)}.fr-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fr-toolbar,.fr-kpis,.fr-form{grid-template-columns:1fr}}
+      .fr-shell{color:#e2e2f0}.fr-head{margin-bottom:18px}.fr-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fr-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fr-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fr-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fr-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.fr-tab{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 16px;font-weight:950;cursor:pointer;font-size:13px;transition:.15s}.fr-tab.active,.fr-tab:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35);color:#f8fafc}.fr-body{padding:18px}.fr-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto;gap:10px;margin-bottom:14px;align-items:center}.fr-filter-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) auto;gap:10px;margin-bottom:14px;align-items:center}.fr-input,.fr-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fr-select option{background:#0d0d18;color:#e2e2f0}.fr-btn{border:0;border-radius:14px;min-height:42px;padding:0 16px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;white-space:nowrap}.fr-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fr-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fr-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fr-btn.danger{border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fca5a5}.fr-btn:disabled{opacity:.5;cursor:not-allowed}.fr-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:14px 0}.fr-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;width:100%;text-align:left;cursor:pointer;font-family:inherit;transition:.15s}.fr-kpi:hover{border-color:rgba(34,197,94,.45);background:rgba(2,6,23,.5)}.fr-kpi.active{border-color:rgba(34,197,94,.7);background:rgba(22,101,52,.22);box-shadow:0 0 0 1px rgba(34,197,94,.35) inset}.fr-kpi span{display:block;color:#93c5fd;font-size:11px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.fr-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.fr-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fr-table{width:100%;border-collapse:collapse;min-width:1560px}.fr-table th{padding:11px 12px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38);white-space:nowrap}.fr-table td{padding:11px 12px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:middle}.fr-table tr:hover td{background:rgba(22,101,52,.08)}.fr-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fr-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fr-badge.progress{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fr-badge.none{border-color:rgba(148,163,184,.22);background:rgba(15,23,42,.6);color:#94a3b8}.fr-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fr-badge.bfleet{border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.12);color:#a5b4fc}.fr-badge.removed{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fecaca}.fr-imei-bfleet{font-family:monospace;font-size:12px;color:#a5b4fc;opacity:.8}.fr-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fr-resp-select{width:100%;min-width:112px;height:34px;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0d0d18;color:#e2e2f0;padding:0 8px;font-size:12px;font-weight:700;outline:none;color-scheme:dark}.fr-resp-select option{background:#0d0d18;color:#e2e2f0}.fr-resp-select.is-anderson{border-color:rgba(99,102,241,.4);color:#a5b4fc}.fr-resp-select.is-cleverson{border-color:rgba(245,158,11,.4);color:#fde68a}.fr-empty{text-align:center;color:#94a3b8;padding:34px!important}.fr-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:22px}.fr-modal{width:min(860px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fr-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px;border-bottom:1px solid rgba(148,163,184,.16)}.fr-modal-head h3{margin:0;color:#fff;font-size:20px}.fr-modal-head p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.45}.fr-modal-body{padding:20px}.fr-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.fr-field{display:flex;flex-direction:column;gap:6px}.fr-field.full{grid-column:1/-1}.fr-field.half{grid-column:span 2}.fr-field label{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fr-field input,.fr-field select,.fr-field textarea{border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:10px 12px;outline:none;font-size:13px;color-scheme:dark}.fr-field textarea{min-height:70px;resize:vertical}.fr-field select option{background:#0d0d18}.fr-field input[type=checkbox]{width:18px;height:18px;cursor:pointer;accent-color:#22c55e}.fr-check-row{display:flex;align-items:center;gap:10px;padding:10px 0}.fr-check-row label{color:#e2e2f0;font-size:13px;font-weight:600;cursor:pointer}.fr-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.12)}.fr-hint{font-size:11px;color:#6366f1;margin-top:3px}.fr-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fr-toast.show{opacity:1;transform:translateY(0)}.fr-divider{margin:16px 0 10px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em;border-bottom:1px solid rgba(34,197,94,.18);padding-bottom:6px}.fr-th-sort{cursor:pointer;user-select:none;white-space:nowrap}.fr-th-sort:hover{color:#e2e2f0}.fr-th-sort::after{content:' ⇅';opacity:.35;font-size:10px}.fr-th-sort.asc::after{content:' ↑';opacity:1;color:#86efac}.fr-th-sort.desc::after{content:' ↓';opacity:1;color:#86efac}@media(max-width:1100px){.fr-toolbar{grid-template-columns:1fr 1fr}.fr-filter-row{grid-template-columns:repeat(3,1fr)}.fr-kpis{grid-template-columns:repeat(3,1fr)}.fr-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fr-toolbar,.fr-filter-row,.fr-kpis,.fr-form{grid-template-columns:1fr}}
     </style>`;
 
   let _opts = {};
@@ -16,6 +16,7 @@
     loading: false,
     syncing: false,
     filtro: 'todos',
+    filtros: { placa: '', estado: '', cidade: '', responsavel: '' },
     busca: '',
     sortCol: 'placa',
     sortDir: 'asc'
@@ -190,6 +191,15 @@
       if (state.filtro === 'em_andamento' && !EM_ANDAMENTO.includes(status)) return false;
       if (state.filtro === 'concluido' && status !== 'concluido') return false;
       if (state.filtro === 'bfleet' && !row._hasBfleet) return false;
+
+      const estadoRow = r?.estado || coordToEstado(row.coordenacao);
+      if (state.filtros.placa && row.placa !== state.filtros.placa) return false;
+      if (state.filtros.estado && estadoRow !== state.filtros.estado) return false;
+      if (state.filtros.cidade && (r?.cidade || '') !== state.filtros.cidade) return false;
+      if (state.filtros.responsavel) {
+        if (state.filtros.responsavel === '__sem__') { if (r?.responsavel) return false; }
+        else if ((r?.responsavel || '') !== state.filtros.responsavel) return false;
+      }
 
       if (!busca) return true;
       const efImei = r?.imei || row.bfleet_idgps || '';
@@ -696,6 +706,30 @@
     return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }
 
+  function getCidadesDisponiveis() {
+    const set = new Set();
+    state.merged.forEach(row => { if (row._rastr?.cidade) set.add(row._rastr.cidade); });
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }
+
+  function getPlacasDisponiveis() {
+    return [...state.merged].map(row => row.placa).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }
+
+  // Reconstrói as opções da linha de filtro a partir dos dados carregados,
+  // preservando o valor selecionado se ele ainda existir nos novos dados.
+  function renderFilterRow(root) {
+    const fill = (selector, values, currentValue, placeholder) => {
+      const sel = root.querySelector(selector);
+      if (!sel) return;
+      const valid = values.includes(currentValue) ? currentValue : '';
+      sel.innerHTML = `<option value="">${placeholder}</option>` + values.map(v => `<option value="${esc(v)}" ${v === valid ? 'selected' : ''}>${esc(v)}</option>`).join('');
+    };
+    fill('[data-filter-placa]', getPlacasDisponiveis(), state.filtros.placa, 'Todas as placas');
+    fill('[data-filter-estado]', getEstadosDisponiveis(), state.filtros.estado, 'Todos os estados');
+    fill('[data-filter-cidade]', getCidadesDisponiveis(), state.filtros.cidade, 'Todas as cidades');
+  }
+
   // Atribui (ou remove) o responsável de todos os veículos de um estado de uma vez,
   // evitando ter que editar veículo por veículo.
   function openBulkResponsavelModal(root) {
@@ -805,6 +839,7 @@
     mergeData();
     state.loading = false;
     renderKpis(root);
+    renderFilterRow(root);
     renderTable(root);
   }
 
@@ -831,6 +866,15 @@
           <div class="fr-body">
             <div class="fr-toolbar">
               <input class="fr-input" type="search" placeholder="Buscar por placa, cidade, IMEI, contato..." data-search />
+              <button class="fr-btn soft" data-refresh>↺ Atualizar</button>
+              <button class="fr-btn ghost" data-sync-bfleet>⟳ Sync BFleet</button>
+              <button class="fr-btn ghost" data-bulk-responsavel>👤 Responsável por Estado</button>
+            </div>
+
+            <div class="fr-filter-row">
+              <select class="fr-select" data-filter-placa><option value="">Todas as placas</option></select>
+              <select class="fr-select" data-filter-estado><option value="">Todos os estados</option></select>
+              <select class="fr-select" data-filter-cidade><option value="">Todas as cidades</option></select>
               <select class="fr-select" data-search-status>
                 <option value="">Todos os status</option>
                 <option value="bfleet">Com BFleet</option>
@@ -839,9 +883,12 @@
                 <option value="concluido">Concluído</option>
                 <option value="removidos">REMOVIDOS</option>
               </select>
-              <button class="fr-btn soft" data-refresh>↺ Atualizar</button>
-              <button class="fr-btn ghost" data-sync-bfleet>⟳ Sync BFleet</button>
-              <button class="fr-btn ghost" data-bulk-responsavel>👤 Responsável por Estado</button>
+              <select class="fr-select" data-filter-responsavel>
+                <option value="">Todos os responsáveis</option>
+                <option value="__sem__">— Sem responsável —</option>
+                ${RESPONSAVEIS.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}
+              </select>
+              <button class="fr-btn ghost" data-clear-filters>Limpar filtros</button>
             </div>
 
             <div class="fr-kpis" data-kpis></div>
@@ -884,6 +931,22 @@
     });
 
     container.querySelector('[data-search-status]').addEventListener('change', e => setFiltro(container, e.target.value));
+
+    container.querySelector('[data-filter-placa]').addEventListener('change', e => { state.filtros.placa = e.target.value; renderTable(container); });
+    container.querySelector('[data-filter-estado]').addEventListener('change', e => { state.filtros.estado = e.target.value; renderTable(container); });
+    container.querySelector('[data-filter-cidade]').addEventListener('change', e => { state.filtros.cidade = e.target.value; renderTable(container); });
+    container.querySelector('[data-filter-responsavel]').addEventListener('change', e => { state.filtros.responsavel = e.target.value; renderTable(container); });
+
+    container.querySelector('[data-clear-filters]').addEventListener('click', () => {
+      state.busca = '';
+      state.filtros = { placa: '', estado: '', cidade: '', responsavel: '' };
+      container.querySelector('[data-search]').value = '';
+      ['[data-filter-placa]', '[data-filter-estado]', '[data-filter-cidade]', '[data-filter-responsavel]'].forEach(sel => {
+        const el = container.querySelector(sel);
+        if (el) el.value = '';
+      });
+      setFiltro(container, 'todos');
+    });
 
     container.querySelector('[data-kpis]').addEventListener('click', e => {
       const btn = e.target.closest('[data-kpi-filter]');
