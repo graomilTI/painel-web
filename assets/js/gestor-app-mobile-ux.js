@@ -50,15 +50,9 @@ function card(item) {
   </${tag}>`;
 }
 
-function renderGroups(container, query = '') {
+function renderGroups(container) {
   if (!container) return;
-  const q = norm(query);
-  const html = GROUPS.map((group) => {
-    const items = group.items.filter((item) => !q || norm(`${group.title} ${item.label} ${item.desc}`).includes(q));
-    if (!items.length) return '';
-    return `<section class="ux-menu-group"><h3 class="ux-menu-group-title">${group.title}</h3><div class="ux-menu-grid">${items.map(card).join('')}</div></section>`;
-  }).join('');
-  container.innerHTML = html || '<div class="ux-empty-search">Nenhum módulo encontrado para essa busca.</div>';
+  container.innerHTML = `<div class="ux-menu-grid">${FLAT.map(card).join('')}</div>`;
 }
 
 function bindModuleClicks(root) {
@@ -84,33 +78,27 @@ function ensureSheet() {
     <div class="ux-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="uxMenuTitle">
       <div class="ux-sheet-handle"></div>
       <div class="ux-sheet-head">
-        <div><h2 id="uxMenuTitle">Menu do gestor</h2><p>Busque ou toque em um módulo para navegar sem abrir a sidebar do painel.</p></div>
+        <div><h2 id="uxMenuTitle">Menu do gestor</h2><p>Toque em um módulo para navegar sem abrir a sidebar do painel.</p></div>
         <button class="ux-sheet-close" id="uxSheetClose" type="button" aria-label="Fechar menu">×</button>
       </div>
-      <div class="ux-search-wrap"><input class="ux-search" id="uxSheetSearch" type="search" placeholder="Buscar módulo, OS, compras..." autocomplete="off" /></div>
       <div id="uxSheetContent"></div>
     </div>`;
   document.body.appendChild(sheet);
 
-  const search = sheet.querySelector('#uxSheetSearch');
   const content = sheet.querySelector('#uxSheetContent');
   renderGroups(content);
   bindModuleClicks(sheet);
 
   sheet.querySelector('#uxSheetClose').addEventListener('click', closeSheet);
   sheet.addEventListener('click', (event) => { if (event.target === sheet) closeSheet(); });
-  search.addEventListener('input', () => renderGroups(content, search.value));
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeSheet(); });
   return sheet;
 }
 
 function openSheet() {
   const sheet = ensureSheet();
-  const search = sheet.querySelector('#uxSheetSearch');
   sheet.classList.add('is-open');
-  search.value = '';
   renderGroups(sheet.querySelector('#uxSheetContent'));
-  setTimeout(() => search.focus(), 60);
 }
 
 function closeSheet() { document.getElementById('uxMenuSheet')?.classList.remove('is-open'); }
@@ -143,7 +131,7 @@ function enhanceDashboard(main) {
   wrap.className = 'ux-home-actions';
   wrap.innerHTML = `
     <button class="ux-home-search" type="button" id="uxHomeSearch">
-      <span><strong>Buscar ou abrir módulo</strong><span>OS, Programação, Logística, Compras...</span></span><b>☰</b>
+      <span><strong>Abrir módulo</strong><span>Programação, Logística, Compras...</span></span><b>☰</b>
     </button>
     <div class="ux-home-shortcuts">
       <button class="ux-home-chip" type="button" data-ux-module="programacao">Programação</button>
@@ -159,15 +147,12 @@ function enhanceMore(main) {
   const title = main?.querySelector('.hero-card h1')?.textContent || '';
   if (!norm(title).includes('mais') || main.querySelector('#uxMoreContent')) return;
   main.innerHTML = `
-    <section class="hero-card ux-more-head"><h1>Menu do gestor</h1><p>Módulos organizados por rotina. Use a busca para encontrar rápido no celular.</p></section>
+    <section class="hero-card ux-more-head"><h1>Menu do gestor</h1><p>Toque em um módulo para abrir.</p></section>
     <section class="section-card">
-      <div class="ux-search-wrap"><input class="ux-search" id="uxMoreSearch" type="search" placeholder="Buscar módulo..." autocomplete="off" /></div>
       <div id="uxMoreContent"></div>
     </section>`;
-  const search = main.querySelector('#uxMoreSearch');
   const content = main.querySelector('#uxMoreContent');
   renderGroups(content);
-  search.addEventListener('input', () => renderGroups(content, search.value));
   bindModuleClicks(main);
 }
 
