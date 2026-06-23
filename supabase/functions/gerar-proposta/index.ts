@@ -112,7 +112,7 @@ class PdfFlow {
     this.y -= barHeight + 10;
   }
 
-  async coverImage(bytes: Uint8Array | null, maxHeight = 260) {
+  async coverPage(bytes: Uint8Array | null) {
     if (!bytes) return;
     let img;
     try {
@@ -120,16 +120,12 @@ class PdfFlow {
     } catch {
       return;
     }
-    let scale = this.pageWidth / img.width;
-    let h = img.height * scale;
-    if (h > maxHeight) {
-      scale = maxHeight / img.height;
-      h = maxHeight;
-    }
+    const scale = Math.max(this.pageWidth / img.width, this.pageHeight / img.height);
     const w = img.width * scale;
+    const h = img.height * scale;
     const x = (this.pageWidth - w) / 2;
-    this.page.drawImage(img, { x, y: this.y - h, width: w, height: h });
-    this.y -= h + 16;
+    const y = (this.pageHeight - h) / 2;
+    this.page.drawImage(img, { x, y, width: w, height: h });
   }
 
   subheading(text: string, size = 11) {
@@ -221,6 +217,31 @@ class PdfFlow {
     this.y -= 8;
   }
 
+  async imageFillRemaining(bytes: Uint8Array | null, opts: { caption?: string } = {}) {
+    if (!bytes) return;
+    let img;
+    try {
+      img = await this.doc.embedJpg(bytes);
+    } catch {
+      return;
+    }
+    const captionSpace = opts.caption ? 16 : 0;
+    const availW = this.contentWidth;
+    const availH = this.y - this.margin - captionSpace;
+    const scale = Math.min(availW / img.width, availH / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    const x = this.margin + (availW - w) / 2;
+    const y = this.margin + captionSpace + (availH - h);
+    this.page.drawImage(img, { x, y, width: w, height: h });
+    this.y = y;
+    if (opts.caption) {
+      const captionWidth = this.fontReg.widthOfTextAtSize(opts.caption, 8);
+      this.page.drawText(opts.caption, { x: this.margin + (availW - captionWidth) / 2, y: this.y - 9, size: 8, font: this.fontReg, color: GRAY_LIGHT });
+      this.y -= 14;
+    }
+  }
+
   pageNumbers() {
     const pages = this.doc.getPages();
     pages.forEach((p, idx) => {
@@ -286,8 +307,9 @@ serve(async (req) => {
     const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
     const flow = new PdfFlow(doc, fontReg, fontBold);
 
-    // Capa
-    await flow.coverImage(capaBytes);
+    // Capa (página cheia)
+    await flow.coverPage(capaBytes);
+    flow.addPage();
     flow.heading('PROPOSTA TÉCNICA E COMERCIAL', 18);
     flow.subheading(`Nº ${val(proposta.numero)}`, 12);
     flow.spacer(6);
@@ -366,7 +388,7 @@ serve(async (req) => {
       'Mais de 2.000 equipamentos de classificação garantindo que todo classificador esteja devidamente equipado para realizar seu trabalho;',
       'Plataforma com acesso às informações das Ordens de Serviços, acompanhamento de laudos emitidos em tempo real, informações atualizadas de hora em hora dos pontos de embarque, aprovação de faturamento, troca de notas e diversos tipos de relatórios das operações.',
     ]);
-    await flow.image(mapaBytes, { maxWidth: 260, caption: 'Estados de atuação' });
+    await flow.imageFillRemaining(mapaBytes, { caption: 'Estados de atuação' });
     await flow.image(parceirosBytes, { maxWidth: 360, caption: 'Alguns parceiros e clientes' });
 
     flow.heading('Equipamentos');
