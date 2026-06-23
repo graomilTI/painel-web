@@ -38,6 +38,33 @@ function updateKpis(){
 }
 function rowLabel(r){return `${r.quantidade||r.unidade||1} un | ${r.material}${r.tamanho?` (${r.tamanho})`:''}${r.colaborador_nome?` | ${r.colaborador_nome}`:''}`;}
 
+function updateSelCount(){
+  const el=document.getElementById('admCmpSelCount');
+  if(el) el.textContent=state.selected.size?`${state.selected.size} selecionado(s)`:'';
+}
+function bindCheckHandlers(body){
+  body.querySelectorAll('[data-check]').forEach(c=>{
+    c.checked=state.selected.has(c.dataset.check);
+    c.closest('tr')?.classList.toggle('is-selected',c.checked);
+    c.onchange=()=>{
+      c.checked?state.selected.add(c.dataset.check):state.selected.delete(c.dataset.check);
+      c.closest('tr')?.classList.toggle('is-selected',c.checked);
+      updateSelCount();
+    };
+  });
+  body.querySelectorAll('[data-check-group]').forEach(c=>{
+    const ids=c.dataset.checkGroup.split(',');
+    c.checked=ids.every(id=>state.selected.has(id));
+    c.closest('tr')?.classList.toggle('is-selected',c.checked);
+    c.onchange=()=>{
+      ids.forEach(id=>c.checked?state.selected.add(id):state.selected.delete(id));
+      c.closest('tr')?.classList.toggle('is-selected',c.checked);
+      updateSelCount();
+    };
+  });
+  updateSelCount();
+}
+
 function groupKey(r, useNf=false){
   if(useNf){ const nf=norm(r.nf_url||''); if(nf) return `nf:${nf}`; }
   const fn=norm(r.fornecedor||'');
@@ -82,8 +109,7 @@ function renderTable(){
         <td><button class="btn btn-small btn-secondary" data-open-grupo="${esc(gids)}" type="button">Abrir grupo</button></td>
       </tr>`;
     }).join('');
-    body.querySelectorAll('[data-check]').forEach(c=>c.onchange=()=>{c.checked?state.selected.add(c.dataset.check):state.selected.delete(c.dataset.check)});
-    body.querySelectorAll('[data-check-group]').forEach(c=>c.onchange=()=>{c.dataset.checkGroup.split(',').forEach(id=>c.checked?state.selected.add(id):state.selected.delete(id));});
+    bindCheckHandlers(body);
     body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
     body.querySelectorAll('[data-open-grupo]').forEach(b=>b.onclick=()=>openGrupoModal(b.dataset.openGrupo));
     return;
@@ -113,8 +139,7 @@ function renderTable(){
         <td><button class="btn btn-small btn-secondary" data-ver-grupo="${esc(gids)}" type="button">Ver grupo</button></td>
       </tr>`;
     }).join('');
-    body.querySelectorAll('[data-check]').forEach(c=>c.onchange=()=>{c.checked?state.selected.add(c.dataset.check):state.selected.delete(c.dataset.check)});
-    body.querySelectorAll('[data-check-group]').forEach(c=>c.onchange=()=>{c.dataset.checkGroup.split(',').forEach(id=>c.checked?state.selected.add(id):state.selected.delete(id));});
+    bindCheckHandlers(body);
     body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
     body.querySelectorAll('[data-ver-grupo]').forEach(b=>b.onclick=()=>verGrupoCompradoModal(b.dataset.verGrupo));
     return;
@@ -123,7 +148,7 @@ function renderTable(){
   body.innerHTML=rows.map(r=>{const s=r.compras_solicitacoes||{}; return `<tr>
     <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td><button class="btn btn-small btn-secondary" data-open="${esc(r.id)}" type="button">Abrir</button></td>
   </tr>`}).join('');
-  body.querySelectorAll('[data-check]').forEach(c=>c.onchange=()=>{c.checked?state.selected.add(c.dataset.check):state.selected.delete(c.dataset.check)});
+  bindCheckHandlers(body);
   body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
 }
 function selectedRows(){return state.rows.filter(r=>state.selected.has(String(r.id)));}
@@ -689,6 +714,8 @@ function styles(){return `<style>
 .adm-cot-forn-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.adm-cot-forn-cell{display:flex;flex-direction:column;gap:4px}.adm-cot-forn-cell label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.adm-cot-forn-cell input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px 12px;min-width:180px}.adm-cot-table input{width:120px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;color-scheme:dark}.adm-cot-melhor{font-weight:700;color:#bbf7d0}.adm-cot-forn-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}.adm-cot-forn-opt{border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;text-align:center}.adm-cot-forn-total{font-size:22px;font-weight:800;color:#bbf7d0}
 .cot-colab-wrap{position:relative}.cot-colab-sug{position:absolute;top:100%;left:0;right:0;z-index:60;background:#071b13;border:1px solid var(--line);border-radius:12px;padding:4px;max-height:200px;overflow:auto;box-shadow:0 12px 30px rgba(0,0,0,.38)}.cot-colab-sug:empty{display:none}.cot-colab-sug button{display:block;width:100%;text-align:left;border:none;background:transparent;color:#e2e2f0;padding:8px 10px;border-radius:8px;cursor:pointer}.cot-colab-sug button:hover{background:rgba(255,255,255,.06)}.cot-colab-input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;width:160px;box-sizing:border-box;color-scheme:dark}
 .adm-cmp-group-row{background:rgba(34,197,94,.04)}.adm-cmp-group-row>td:first-child{border-left:3px solid rgba(34,197,94,.5)}
+.adm-cmp-table tbody tr.is-selected{background:rgba(34,197,94,.16)!important}.adm-cmp-table tbody tr.is-selected>td:first-child{border-left:3px solid #4ade80}
+.adm-cmp-sel-count{display:inline-flex;align-items:center;font-weight:800;color:#86efac;font-size:13px}
 @media(max-width:760px){.adm-cmp-grid{grid-template-columns:1fr}.adm-cmp-table{min-width:920px}}
 </style>`}
 
@@ -711,7 +738,7 @@ function updateActionButtons(){
 
 initProtectedPage('Compras ADM', async (content)=>{
   await loadColaboradores();
-  content.innerHTML=`${styles()}<section class="hero-card"><div><h2>Compras ADM</h2><p>Fluxo de solicitações, cotação, aprovação, pagamento, NF e encerramento das compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">ADM</span></div></section><section class="grid-cards mt-16"><article class="card"><h3>Itens na etapa</h3><p class="metric" id="kpiSol">0</p><p class="muted">Registros filtrados.</p></article><article class="card"><h3>Total cotado</h3><p class="metric" id="kpiTotal">R$ 0,00</p><p class="muted">Soma dos valores informados.</p></article><article class="card"><h3>Patrimônios</h3><p class="metric" id="kpiPat">0</p><p class="muted">Itens que exigem cadastro patrimonial.</p></article></section><section class="card mt-16"><div class="section-head"><div><h3>Fila de compras</h3><p class="muted">Selecione itens específicos. A compra pode ser parcial e por fornecedores diferentes.</p></div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div class="adm-cmp-tabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="btnCotar" type="button">COTAR</button><button class="btn btn-primary" id="btnComprar" type="button" style="display:none">COMPRAR</button><button class="btn btn-secondary" id="btnLiberar" type="button" title="Para EPI já disponível em estoque: libera pro RH com o CA da última compra, sem precisar comprar de novo">LIBERADO</button><button class="btn btn-secondary" id="btnAprovar" type="button">SOLICITAR APROVAÇÃO</button><button class="btn btn-danger" id="btnRecusar" type="button">RECUSAR</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
+  content.innerHTML=`${styles()}<section class="hero-card"><div><h2>Compras ADM</h2><p>Fluxo de solicitações, cotação, aprovação, pagamento, NF e encerramento das compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">ADM</span></div></section><section class="grid-cards mt-16"><article class="card"><h3>Itens na etapa</h3><p class="metric" id="kpiSol">0</p><p class="muted">Registros filtrados.</p></article><article class="card"><h3>Total cotado</h3><p class="metric" id="kpiTotal">R$ 0,00</p><p class="muted">Soma dos valores informados.</p></article><article class="card"><h3>Patrimônios</h3><p class="metric" id="kpiPat">0</p><p class="muted">Itens que exigem cadastro patrimonial.</p></article></section><section class="card mt-16"><div class="section-head"><div><h3>Fila de compras</h3><p class="muted">Selecione itens específicos. A compra pode ser parcial e por fornecedores diferentes.</p></div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div class="adm-cmp-tabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="btnCotar" type="button">COTAR</button><button class="btn btn-primary" id="btnComprar" type="button" style="display:none">COMPRAR</button><button class="btn btn-secondary" id="btnLiberar" type="button" title="Para EPI já disponível em estoque: libera pro RH com o CA da última compra, sem precisar comprar de novo">LIBERADO</button><button class="btn btn-secondary" id="btnAprovar" type="button">SOLICITAR APROVAÇÃO</button><button class="btn btn-danger" id="btnRecusar" type="button">RECUSAR</button><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); updateActionButtons(); loadRows();});
   document.getElementById('admCmpRefresh').onclick=loadRows;
   document.getElementById('btnCotar').onclick=()=>abrirCotarModal();
