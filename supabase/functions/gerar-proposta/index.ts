@@ -18,6 +18,11 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+type TextAlign = 'left' | 'center' | 'justify';
+type ImageAlign = 'left' | 'center';
+type ParagraphOptions = { align?: TextAlign; justify?: boolean };
+type ImageOptions = { maxWidth?: number; maxHeight?: number; caption?: string; align?: ImageAlign };
+
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -128,34 +133,78 @@ class PdfFlow {
     this.page.drawImage(img, { x, y, width: w, height: h });
   }
 
-  subheading(text: string, size = 11) {
+  private drawTextLine(
+    line: string,
+    x: number,
+    y: number,
+    size: number,
+    font: any,
+    color: any,
+    maxWidth: number,
+    align: TextAlign = 'left',
+    justify = false,
+  ) {
+    const text = String(line ?? '').trim();
+    if (!text) return;
+
+    if (align === 'center') {
+      const textWidth = font.widthOfTextAtSize(text, size);
+      this.page.drawText(text, { x: x + Math.max((maxWidth - textWidth) / 2, 0), y, size, font, color });
+      return;
+    }
+
+    if (justify) {
+      const words = text.split(/\s+/).filter(Boolean);
+      if (words.length > 1) {
+        const wordsWidth = words.reduce((sum, word) => sum + font.widthOfTextAtSize(word, size), 0);
+        const gap = (maxWidth - wordsWidth) / (words.length - 1);
+        if (Number.isFinite(gap) && gap > 2 && gap < 18) {
+          let cursorX = x;
+          for (const word of words) {
+            this.page.drawText(word, { x: cursorX, y, size, font, color });
+            cursorX += font.widthOfTextAtSize(word, size) + gap;
+          }
+          return;
+        }
+      }
+    }
+
+    this.page.drawText(text, { x, y, size, font, color });
+  }
+
+  subheading(text: string, size = 11, align: TextAlign = 'left') {
     this.ensure(size + 6);
-    this.page.drawText(text, { x: this.margin, y: this.y - size, size, font: this.fontBold, color: GRAY_TEXT });
+    this.drawTextLine(text, this.margin, this.y - size, size, this.fontBold, GRAY_TEXT, this.contentWidth, align, false);
     this.y -= size + 6;
   }
 
-  paragraph(text: string, size = 10) {
+  paragraph(text: string, size = 10, opts: ParagraphOptions = {}) {
     const lineHeight = size * 1.4;
+    const align = opts.align || 'justify';
     const lines = wrapText(this.fontReg, text, size, this.contentWidth);
-    for (const line of lines) {
+    lines.forEach((line, idx) => {
       this.ensure(lineHeight);
-      this.page.drawText(line, { x: this.margin, y: this.y - size, size, font: this.fontReg, color: GRAY_TEXT });
+      const isLastLine = idx === lines.length - 1 || lines[idx + 1] === '';
+      const shouldJustify = align === 'justify' && opts.justify !== false && !isLastLine;
+      this.drawTextLine(line, this.margin, this.y - size, size, this.fontReg, GRAY_TEXT, this.contentWidth, align, shouldJustify);
       this.y -= lineHeight;
-    }
+    });
     this.y -= 4;
   }
 
   bullets(items: string[], size = 10) {
     const lineHeight = size * 1.4;
     const indent = 14;
+    const textX = this.margin + indent;
+    const textWidth = this.contentWidth - indent;
     for (const item of items) {
-      const lines = wrapText(this.fontReg, item, size, this.contentWidth - indent);
+      const lines = wrapText(this.fontReg, item, size, textWidth);
       lines.forEach((line, idx) => {
         this.ensure(lineHeight);
         if (idx === 0) {
           this.page.drawText('-', { x: this.margin, y: this.y - size, size, font: this.fontReg, color: GRAY_TEXT });
         }
-        this.page.drawText(line, { x: this.margin + indent, y: this.y - size, size, font: this.fontReg, color: GRAY_TEXT });
+        this.drawTextLine(line, textX, this.y - size, size, this.fontReg, GRAY_TEXT, textWidth, 'justify', idx < lines.length - 1);
         this.y -= lineHeight;
       });
     }
@@ -193,7 +242,7 @@ class PdfFlow {
     this.y -= 6;
   }
 
-  async image(bytes: Uint8Array | null, opts: { maxWidth?: number; maxHeight?: number; caption?: string } = {}) {
+  async image(bytes: Uint8Array | null, opts: ImageOptions = {}) {
     if (!bytes) return;
     let img;
     try {
@@ -207,17 +256,20 @@ class PdfFlow {
     if (img.height * scale > maxHeight) scale = maxHeight / img.height;
     const w = img.width * scale;
     const h = img.height * scale;
+    const x = opts.align === 'center' ? this.margin + (this.contentWidth - w) / 2 : this.margin;
     this.ensure(h + (opts.caption ? 16 : 0) + 14);
-    this.page.drawImage(img, { x: this.margin, y: this.y - h, width: w, height: h });
+    this.page.drawImage(img, { x, y: this.y - h, width: w, height: h });
     this.y -= h + 4;
     if (opts.caption) {
-      this.page.drawText(opts.caption, { x: this.margin, y: this.y - 9, size: 8, font: this.fontReg, color: GRAY_LIGHT });
+      const captionWidth = this.fontReg.widthOfTextAtSize(opts.caption, 8);
+      const captionX = opts.align === 'center' ? this.margin + (this.contentWidth - captionWidth) / 2 : x;
+      this.page.drawText(opts.caption, { x: captionX, y: this.y - 9, size: 8, font: this.fontReg, color: GRAY_LIGHT });
       this.y -= 14;
     }
     this.y -= 8;
   }
 
-  async imagesRow(items: { bytes: Uint8Array | null; maxWidth?: number; maxHeight?: number; caption?: string }[]) {
+  async imagesRow(items: ImageOptions[] & { bytes?: Uint8Array | null }[]) {
     const valid = items.filter((it) => it.bytes) as { bytes: Uint8Array; maxWidth?: number; maxHeight?: number; caption?: string }[];
     if (!valid.length) return;
     const gap = 20;
@@ -410,12 +462,12 @@ serve(async (req) => {
       'fornecer soluções que gerem valor e satisfação para os nossos parceiros.'
     );
 
-    flow.subheading('MISSÃO');
-    flow.paragraph('Ser sinônimo de garantia de qualidade de grãos, gerando segurança para o cliente.');
-    flow.subheading('VISÃO');
-    flow.paragraph('Ser reconhecida como a empresa referência no segmento de classificação de grãos, pela pontualidade, profissionalismo e aperfeiçoamento constante.');
-    flow.subheading('VALORES');
-    flow.paragraph('Respeito, ética, transparência, excelência e profissionalismo.');
+    flow.subheading('MISSÃO', 11, 'center');
+    flow.paragraph('Ser sinônimo de garantia de qualidade de grãos, gerando segurança para o cliente.', 10, { align: 'center', justify: false });
+    flow.subheading('VISÃO', 11, 'center');
+    flow.paragraph('Ser reconhecida como a empresa referência no segmento de classificação de grãos, pela pontualidade, profissionalismo e aperfeiçoamento constante.', 10, { align: 'center', justify: false });
+    flow.subheading('VALORES', 11, 'center');
+    flow.paragraph('Respeito, ética, transparência, excelência e profissionalismo.', 10, { align: 'center', justify: false });
 
     flow.heading('Estrutura e Abrangência');
     flow.bullets([
@@ -495,7 +547,7 @@ serve(async (req) => {
     ]);
 
     flow.heading('Contatos Regionais');
-    await flow.image(contatosBytes, { maxWidth: flow.contentWidth, maxHeight: 420 });
+    await flow.image(contatosBytes, { maxWidth: flow.contentWidth, maxHeight: 420, align: 'center' });
 
     flow.heading('Atenciosamente');
     flow.subheading(val(proposta.solicitante));
