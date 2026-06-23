@@ -27,7 +27,7 @@ async function loadHistorico() {
 
   let query = supabase
     .from('colaborador_importacoes')
-    .select('data_referencia,arquivo_nome,origem,status,total_linhas,created_at,created_by_nome,observacoes')
+    .select('data_referencia,arquivo_nome,origem,status,total_linhas,created_at,importado_por,observacoes')
     .order('created_at', { ascending: false })
     .limit(200);
 
@@ -59,7 +59,7 @@ async function loadHistorico() {
     tr.appendChild(tdStatus);
     tr.appendChild(makeCell(row.total_linhas));
     tr.appendChild(makeCell(row.created_at));
-    tr.appendChild(makeCell(row.created_by_nome));
+    tr.appendChild(makeCell(row.importado_por));
     tr.appendChild(makeCell(row.observacoes));
     tbody.appendChild(tr);
   }
