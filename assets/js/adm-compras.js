@@ -258,6 +258,32 @@ async function confirmarCotacao(rows, fornecedores){
 
 async function solicitarAprovacao(){ const rows=selectedRows(); const msg=approvalMessage(rows); await updateItems(rows,{status:'em_analise', mensagem_aprovacao:msg}); await navigator.clipboard?.writeText(msg).catch(()=>{}); setMsg('Mensagem de aprovação gerada e copiada. Itens movidos para EM ANÁLISE.'); await loadRows(); }
 async function recusarSelecionados(){ const rows=selectedRows(); const motivo=prompt('Motivo da recusa:'); if(!motivo) return; await updateItems(rows,{status:'recusado', motivo_recusa:motivo}); setMsg('Itens recusados.'); await loadRows(); }
+
+// ─── LIBERAR (sem compra, usa CA do estoque) ──────────────────────────────────
+async function buscarUltimoCaPorMaterial(material){
+  const rows=await safe(()=>supabase.from('compras_itens').select('ca,created_at').eq('material',material).eq('status','comprado').not('ca','is',null).order('created_at',{ascending:false}).limit(1));
+  return rows?.[0]?.ca||null;
+}
+async function liberarSelecionados(){
+  const rows=selectedRows();
+  if(!rows.length){setMsg('Selecione pelo menos um item para liberar.',true);return;}
+  const naoEpi=rows.filter(r=>!isEPI(r));
+  if(naoEpi.length){setMsg('Liberado é só para itens de EPI já disponíveis em estoque.',true);return;}
+  for(const r of rows){
+    let ca=r.ca||null;
+    if(!ca) ca=await buscarUltimoCaPorMaterial(r.material);
+    if(!ca&&!confirm(`Nenhum CA encontrado em compras anteriores de "${r.material}". Liberar mesmo assim, sem CA?`)) return;
+    const updPayload={status:'comprado', ca:ca||null, comprado_em:new Date().toISOString()};
+    const {error:updErr}=await supabase.from('compras_itens').update(updPayload).eq('id',r.id);
+    if(updErr){delete updPayload.ca; await supabase.from('compras_itens').update(updPayload).eq('id',r.id);}
+    const {data:epiReg}=await supabase.from('rh_epi_registros').select('id').eq('compra_item_id',r.id).maybeSingle();
+    if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null,status:'liberado'}).eq('compra_item_id',r.id));
+    else await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'liberado',created_at:new Date().toISOString()}]),null);
+  }
+  await syncSolicitacoesStatus(rows.map(r=>r.solicitacao_id));
+  setMsg(`${rows.length} item(ns) liberado(s) direto do estoque, sem necessidade de compra.`);
+  await loadRows();
+}
 function openItem(id){ const r=state.rows.find(x=>String(x.id)===String(id)); if(!r)return; const s=r.compras_solicitacoes||{}; const modal=document.getElementById('admCmpModal');
   modal.innerHTML=`<div class="adm-cmp-modal-card"><div class="section-head"><div><h3>${esc(r.material)}</h3><p class="muted">${esc(s.solicitante||'-')} · ${brDate(s.data_solicitacao)} · ${pill(r.status)}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="adm-cmp-grid">
     <div><b>Quantidade:</b> ${esc(r.quantidade||r.unidade||1)}</div><div><b>Tipo:</b> ${esc(r.tipo||'-')}</div><div><b>Tamanho:</b> ${esc(r.tamanho||'-')}</div><div><b>Valor:</b> ${money(r.valor_total||0)}</div>
@@ -672,10 +698,12 @@ function updateActionButtons(){
   const isSolic=tab==='solicitacoes';
   const btnCotar=document.getElementById('btnCotar');
   const btnComprar=document.getElementById('btnComprar');
+  const btnLiberar=document.getElementById('btnLiberar');
   const btnAprovar=document.getElementById('btnAprovar');
   const btnRecusar=document.getElementById('btnRecusar');
   if(btnCotar) btnCotar.style.display=isSolic?'inline-flex':'none';
   if(btnComprar) btnComprar.style.display=isCotacoes?'inline-flex':'none';
+  if(btnLiberar) btnLiberar.style.display=isSolic?'inline-flex':'none';
   if(btnAprovar) btnAprovar.style.display=isSolic?'inline-flex':'none';
   if(btnRecusar) btnRecusar.style.display=(isSolic||isCotacoes||tab==='analise')?'inline-flex':'none';
   setMsg('');
@@ -683,11 +711,12 @@ function updateActionButtons(){
 
 initProtectedPage('Compras ADM', async (content)=>{
   await loadColaboradores();
-  content.innerHTML=`${styles()}<section class="hero-card"><div><h2>Compras ADM</h2><p>Fluxo de solicitações, cotação, aprovação, pagamento, NF e encerramento das compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">ADM</span></div></section><section class="grid-cards mt-16"><article class="card"><h3>Itens na etapa</h3><p class="metric" id="kpiSol">0</p><p class="muted">Registros filtrados.</p></article><article class="card"><h3>Total cotado</h3><p class="metric" id="kpiTotal">R$ 0,00</p><p class="muted">Soma dos valores informados.</p></article><article class="card"><h3>Patrimônios</h3><p class="metric" id="kpiPat">0</p><p class="muted">Itens que exigem cadastro patrimonial.</p></article></section><section class="card mt-16"><div class="section-head"><div><h3>Fila de compras</h3><p class="muted">Selecione itens específicos. A compra pode ser parcial e por fornecedores diferentes.</p></div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div class="adm-cmp-tabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="btnCotar" type="button">COTAR</button><button class="btn btn-primary" id="btnComprar" type="button" style="display:none">COMPRAR</button><button class="btn btn-secondary" id="btnAprovar" type="button">SOLICITAR APROVAÇÃO</button><button class="btn btn-danger" id="btnRecusar" type="button">RECUSAR</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
+  content.innerHTML=`${styles()}<section class="hero-card"><div><h2>Compras ADM</h2><p>Fluxo de solicitações, cotação, aprovação, pagamento, NF e encerramento das compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">ADM</span></div></section><section class="grid-cards mt-16"><article class="card"><h3>Itens na etapa</h3><p class="metric" id="kpiSol">0</p><p class="muted">Registros filtrados.</p></article><article class="card"><h3>Total cotado</h3><p class="metric" id="kpiTotal">R$ 0,00</p><p class="muted">Soma dos valores informados.</p></article><article class="card"><h3>Patrimônios</h3><p class="metric" id="kpiPat">0</p><p class="muted">Itens que exigem cadastro patrimonial.</p></article></section><section class="card mt-16"><div class="section-head"><div><h3>Fila de compras</h3><p class="muted">Selecione itens específicos. A compra pode ser parcial e por fornecedores diferentes.</p></div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div class="adm-cmp-tabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="btnCotar" type="button">COTAR</button><button class="btn btn-primary" id="btnComprar" type="button" style="display:none">COMPRAR</button><button class="btn btn-secondary" id="btnLiberar" type="button" title="Para EPI já disponível em estoque: libera pro RH com o CA da última compra, sem precisar comprar de novo">LIBERADO</button><button class="btn btn-secondary" id="btnAprovar" type="button">SOLICITAR APROVAÇÃO</button><button class="btn btn-danger" id="btnRecusar" type="button">RECUSAR</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); updateActionButtons(); loadRows();});
   document.getElementById('admCmpRefresh').onclick=loadRows;
   document.getElementById('btnCotar').onclick=()=>abrirCotarModal();
   document.getElementById('btnComprar').onclick=()=>abrirCompraSelecionados();
+  document.getElementById('btnLiberar').onclick=()=>liberarSelecionados().catch(e=>setMsg(e.message,true));
   document.getElementById('btnAprovar').onclick=()=>solicitarAprovacao().catch(e=>setMsg(e.message,true));
   document.getElementById('btnRecusar').onclick=()=>recusarSelecionados().catch(e=>setMsg(e.message,true));
   updateActionButtons();
