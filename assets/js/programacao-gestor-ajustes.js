@@ -464,6 +464,12 @@ function bindTopLoadForEtapaA() {
     event.preventDefault();
     event.stopImmediatePropagation();
     renderDistribuicao({ loadOs: true, force: true });
+    // Pré-carrega os colaboradores usados nas etapas B-F, para não exigir
+    // um segundo "Carregar" ao trocar de etapa. A view da etapa A é
+    // restaurada depois, pois loadContext() reescreve #progList.
+    Promise.resolve(window.__progLoadColaboradores?.()).finally(() => {
+      if (currentUiStep === 'A') renderDistribuicao({ loadOs: false });
+    });
   }, true);
 }
 
