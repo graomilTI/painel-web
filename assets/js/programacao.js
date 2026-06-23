@@ -797,8 +797,11 @@ initProtectedPage('Programação', (content) => {
     const isMaster = Boolean(getDeepValue(context, 'user.is_master') || context.is_master || normalizeAccessText(role) === 'MASTER');
     const isGestor = looksLikeGestor(role) || looksLikeGestor(setor) || looksLikeGestor(departmentName) || looksLikeGestor(departmentCode);
 
+    const coordenacao = appUser?.coordenacao || getDeepValue(context, 'user.coordenacao') || '';
+
     const allowedSupervisoes = [
       ...parseSupervisoes(appUser?.supervisao),
+      ...parseSupervisoes(coordenacao),
       ...parseSupervisoes(context.supervisoes),
       ...parseSupervisoes(context.supervisao),
       ...parseSupervisoes(getDeepValue(context, 'user.supervisoes')),
@@ -812,6 +815,7 @@ initProtectedPage('Programação', (content) => {
       setor,
       departmentName,
       departmentCode,
+      coordenacao,
     };
   }
 
