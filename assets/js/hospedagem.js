@@ -127,6 +127,13 @@ function injectStyles() {
     .hosp-colab-row{display:grid;grid-template-columns:auto 1.2fr .6fr auto;gap:14px;align-items:center;background:var(--bg-card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;backdrop-filter:blur(10px);transition:border-color .2s ease,transform .2s ease,box-shadow .2s ease}
     .hosp-colab-row:hover{border-color:var(--line-2);transform:translateY(-1px);box-shadow:var(--shadow-soft)}
     .hosp-colab-row .hosp-field{gap:5px}
+    .hosp-ac{position:relative;width:100%}
+    .hosp-ac-list{position:absolute;top:calc(100% + 6px);left:0;right:0;background:#13131f;border:1px solid rgba(111,208,165,.28);border-radius:14px;overflow:hidden;z-index:50;max-height:230px;overflow-y:auto;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+    .hosp-ac-item{padding:10px 13px;cursor:pointer;font-size:13px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.05)}
+    .hosp-ac-item:last-child{border-bottom:0}
+    .hosp-ac-item:hover{background:rgba(111,208,165,.12);color:#eafff4}
+    .hosp-ac-item small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;font-weight:500}
+    .hosp-ac-empty{padding:10px 13px;font-size:12.5px;color:var(--muted);text-align:center}
     .hosp-colab-index{width:32px;height:32px;border-radius:50%;background:linear-gradient(150deg,rgba(111,208,165,.22),rgba(63,168,120,.1));border:1px solid rgba(111,208,165,.32);color:#bbf7d0;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:13px}
     .hosp-remove{width:auto!important;margin-top:0!important;padding:10px 12px!important;transition:transform .16s ease,border-color .16s ease,color .16s ease}
     .hosp-remove:hover{transform:translateY(-1px);border-color:rgba(248,113,113,.4);color:#fecaca}
@@ -332,13 +339,17 @@ initProtectedPage('Hospedagem', (content, userContext) => {
     diariasLabel.textContent = `${n} diária${n === 1 ? '' : 's'} prevista${n === 1 ? '' : 's'}`;
   }
 
-  function colaboradorOptions() {
-    if (!state.colaboradores.length) return '';
-    return `<datalist id="colaboradorList">${state.colaboradores.map((c) => `<option value="${esc(c.nome)}">${esc([c.tipo, c.supervisao].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>`;
-  }
-
   function renumberColabRows() {
     colabBox.querySelectorAll('.hosp-colab-index').forEach((el, i) => { el.textContent = i + 1; });
+  }
+
+  function buscarColaboradores(query) {
+    const q = normalizeText(query);
+    if (!q) return [];
+    return state.colaboradores
+      .filter((c) => normalizeText(c.nome).includes(q))
+      .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'))
+      .slice(0, 15);
   }
 
   function addColabRow(value = '', tipo = '') {
@@ -349,7 +360,10 @@ initProtectedPage('Hospedagem', (content, userContext) => {
       <span class="hosp-colab-index">1</span>
       <div class="hosp-field">
         <label for="${id}">Nome do colaborador *</label>
-        <input id="${id}" class="colabNome" list="colaboradorList" required value="${esc(value)}" placeholder="Digite ou selecione o colaborador" />
+        <div class="hosp-ac">
+          <input id="${id}" class="colabNome hosp-ac-input" autocomplete="off" spellcheck="false" required value="${esc(value)}" placeholder="Digite o nome do colaborador..." />
+          <div class="hosp-ac-list" hidden></div>
+        </div>
       </div>
       <div class="hosp-field">
         <label>Tipo</label>
@@ -362,10 +376,38 @@ initProtectedPage('Hospedagem', (content, userContext) => {
       wrap.remove();
       renumberColabRows();
     });
-    wrap.querySelector('.colabNome').addEventListener('change', (ev) => {
-      const selected = state.colaboradores.find((c) => normalizeText(c.nome) === normalizeText(ev.target.value));
-      if (selected) wrap.querySelector('.colabTipo').value = selected.tipo || '';
+
+    const nomeInput = wrap.querySelector('.colabNome');
+    const tipoInput = wrap.querySelector('.colabTipo');
+    const acList = wrap.querySelector('.hosp-ac-list');
+    let matches = [];
+
+    function renderSuggestions() {
+      matches = buscarColaboradores(nomeInput.value);
+      if (!nomeInput.value.trim()) {
+        acList.hidden = true;
+        acList.innerHTML = '';
+        return;
+      }
+      acList.innerHTML = matches.length
+        ? matches.map((c, i) => `<div class="hosp-ac-item" data-idx="${i}">${esc(c.nome)}<small>${esc([c.tipo, c.supervisao].filter(Boolean).join(' · '))}</small></div>`).join('')
+        : '<div class="hosp-ac-empty">Nenhum colaborador encontrado na sua regional</div>';
+      acList.hidden = false;
+    }
+
+    nomeInput.addEventListener('input', renderSuggestions);
+    nomeInput.addEventListener('focus', () => { if (nomeInput.value.trim()) renderSuggestions(); });
+    nomeInput.addEventListener('blur', () => { setTimeout(() => { acList.hidden = true; }, 180); });
+    acList.addEventListener('click', (ev) => {
+      const item = ev.target.closest('.hosp-ac-item');
+      if (!item) return;
+      const selected = matches[Number(item.dataset.idx)];
+      if (!selected) return;
+      nomeInput.value = selected.nome;
+      tipoInput.value = selected.tipo || '';
+      acList.hidden = true;
     });
+
     colabBox.appendChild(wrap);
     renumberColabRows();
   }
@@ -376,7 +418,7 @@ initProtectedPage('Hospedagem', (content, userContext) => {
     const out = new Date();
     out.setDate(out.getDate() + 1);
     checkout.value = `${out.getFullYear()}-${String(out.getMonth() + 1).padStart(2, '0')}-${String(out.getDate()).padStart(2, '0')}`;
-    colabBox.innerHTML = colaboradorOptions();
+    colabBox.innerHTML = '';
     addColabRow();
     updateDiarias();
     setFeedback('');
@@ -400,6 +442,17 @@ initProtectedPage('Hospedagem', (content, userContext) => {
     }).filter((c) => c.nome_colaborador);
   }
 
+  function parseSupervisaoList(value) {
+    const text = String(value || '').trim();
+    if (!text) return [];
+    return [...new Set(text.split(/[,;|\n]+/).map((s) => s.trim()).filter(Boolean))];
+  }
+
+  function getMinhasRegionais() {
+    const raw = getUserField(userContext, 'supervisao', 'user.supervisao');
+    return [...new Set(parseSupervisaoList(raw).map(normalizeText))];
+  }
+
   async function loadColaboradores() {
     let data;
     try {
@@ -410,9 +463,13 @@ initProtectedPage('Hospedagem', (content, userContext) => {
       return;
     }
     const latest = data.reduce((max, row) => row.data_referencia > max ? row.data_referencia : max, '');
+    const minhasRegionais = getMinhasRegionais();
     state.colaboradores = data
       .filter((row) => !latest || row.data_referencia === latest)
       .filter((row) => row.ativo !== false)
+      // Restringe a sugestão à(s) regional(is) do próprio gestor (campo supervisao).
+      // Sem nenhuma regional configurada no perfil, mantém a lista completa como fallback.
+      .filter((row) => !minhasRegionais.length || minhasRegionais.includes(normalizeText(row.supervisao)))
       .map((row) => ({
         id: row.id,
         nome: row.nome,
