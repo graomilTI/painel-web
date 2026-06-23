@@ -210,8 +210,17 @@ function injectStyles() {
     .os-lite-dropzone:hover{border-color:rgba(167,139,250,.7)}
     .os-lite-dropzone small{font-size:11px}
     .os-lite-file-list{font-size:12px;color:#bbf7d0;min-height:18px}
-    @media (min-width:860px){
-      .os-lite-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
+    @media (min-width:901px){
+      .os-lite-list{display:flex;flex-direction:column;gap:8px}
+      .os-lite-card{display:grid;grid-template-columns:minmax(170px,1.05fr) minmax(280px,1.7fr) minmax(220px,1.15fr) minmax(190px,.95fr);align-items:stretch;border-radius:12px;overflow:visible}
+      .os-lite-row{display:flex;min-width:0;padding:9px 11px;border-bottom:0;border-right:1px solid rgba(148,163,184,.1)}
+      .os-lite-row:last-child{border-right:0}
+      .os-lite-head{align-items:center}
+      .os-lite-client,.os-lite-indic{flex-direction:column;justify-content:center}
+      .os-lite-footer{align-items:center;justify-content:center;flex-direction:column;gap:7px}
+      .os-lite-rembox{min-width:96px}
+      .os-lite-buttons{justify-content:center;flex-wrap:nowrap}
+      .os-lite-gac-input{min-height:34px}
     }
   `;
   document.head.appendChild(style);
