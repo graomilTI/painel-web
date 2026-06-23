@@ -6,7 +6,6 @@
   const STYLE_ID = 'dashboard-socio-style-v1';
 
   const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-
   const state = {
     loading: true,
     erro: null,
@@ -64,6 +63,111 @@
     if (v >= 100) return 'good';
     if (v >= 80) return 'warn';
     return 'bad';
+  }
+
+  function numberBr(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    const text = String(value ?? '').trim();
+    if (!text) return 0;
+    const normalized = text.includes(',')
+      ? text.replace(/\./g, '').replace(',', '.')
+      : text;
+    const parsed = Number(normalized.replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function rawValue(row, aliases) {
+    const source = row?.dados_json || row?.raw || row || {};
+    const keys = Object.keys(source);
+    for (const alias of aliases) {
+      const expected = normKey(alias);
+      const key = keys.find((candidate) => normKey(candidate) === expected);
+      if (key && source[key] != null && String(source[key]).trim() !== '') return source[key];
+    }
+    return null;
+  }
+
+  function rangeOverlaps(rowStart, rowEnd, inicio, fim) {
+    if (!rowStart && !rowEnd) return true;
+    const start = String(rowStart || inicio).slice(0, 10);
+    const end = String(rowEnd || fim).slice(0, 10);
+    return start < fim && end >= inicio;
+  }
+
+  async function carregarLoteMaisRecenteAgente(supabase, table, select) {
+    const { data: latest, error: latestError } = await supabase
+      .from(table)
+      .select('created_at')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (latestError) throw latestError;
+    const createdAt = latest?.[0]?.created_at;
+    if (!createdAt) return [];
+
+    const threshold = new Date(new Date(createdAt).getTime() - 5 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .gte('created_at', threshold)
+      .limit(10000);
+
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function carregarDespesasAgente(supabase, inicio, fim) {
+    try {
+      const rows = await carregarLoteMaisRecenteAgente(
+        supabase,
+        'grm_despesas_importacoes',
+        'coordenacao,valor,data_conta_de,data_conta_ate,dados_json,created_at'
+      );
+      const filtradas = rows.filter((r) => rangeOverlaps(r.data_conta_de, r.data_conta_ate, inicio, fim));
+      if (!filtradas.length) return [];
+
+      const porRegional = new Map();
+      filtradas.forEach((r) => {
+        const coordenacao = String(r.coordenacao || rawValue(r, ['Coordenação', 'Coordenacao', 'Regional']) || '').trim();
+        if (!coordenacao) return;
+        const valor = numberBr(r.valor || rawValue(r, ['Total', 'Valor']));
+        porRegional.set(coordenacao, (porRegional.get(coordenacao) || 0) + valor);
+      });
+
+      const totalTodasRegionais = Array.from(porRegional.values()).reduce((sum, value) => sum + value, 0);
+      return Array.from(porRegional.entries()).map(([coordenacao, total]) => ({
+        coordenacao,
+        total_coordenacao: total,
+        total_geral: 0,
+        total_todas_regionais: totalTodasRegionais,
+        rateio: 0,
+        total_com_rateio: total
+      }));
+    } catch (e) {
+      console.warn('[dashboard socio] fallback de despesas dos agentes indisponível', e);
+      return [];
+    }
+  }
+
+  async function carregarFaturamentoNotasAgente(supabase, inicio, fim) {
+    try {
+      const rows = await carregarLoteMaisRecenteAgente(
+        supabase,
+        'grm_notas_fiscais_importacoes',
+        'valor_total,data_nota_de,data_nota_ate,data_fatura_de,data_fatura_ate,dados_json,created_at'
+      );
+      const filtradas = rows.filter((r) => (
+        rangeOverlaps(r.data_fatura_de || r.data_nota_de, r.data_fatura_ate || r.data_nota_ate, inicio, fim)
+      ));
+
+      return filtradas.reduce((sum, r) => {
+        const raw = rawValue(r, ['Valor Total', 'Valor', 'Total', 'Valor NF', 'Valor da NF']);
+        return sum + (raw != null ? numberBr(raw) : numberBr(r.valor_total));
+      }, 0);
+    } catch (e) {
+      console.warn('[dashboard socio] fallback de notas fiscais dos agentes indisponível', e);
+      return 0;
+    }
   }
 
   function injectStyle() {
@@ -233,9 +337,11 @@
     const [
       { data: producaoRows },
       { data: metasMensalRows },
-      { data: despesasRows },
+      { data: despesasDreRows },
       { data: metasRegionaisRows },
-      { data: nfsRows }
+      { data: contasReceberRows },
+      despesasAgenteRows,
+      faturamentoNotasAgente
     ] = await Promise.all([
       supabase
         .from('relatorio_resultado_diario')
@@ -259,8 +365,12 @@
         .select('valor_pago')
         .gte('recebimento', inicio)
         .lt('recebimento', fim)
-        .not('recebimento', 'is', null)
+        .not('recebimento', 'is', null),
+      carregarDespesasAgente(supabase, inicio, fim),
+      carregarFaturamentoNotasAgente(supabase, inicio, fim)
     ]);
+
+    const despesasRows = despesasAgenteRows?.length ? despesasAgenteRows : (despesasDreRows || []);
 
     const metasMes = metasMensalRows || null;
     const anoRefMetas = ano;
@@ -328,7 +438,8 @@
     const totalTodasRegionais = n(despesasRows?.[0]?.total_todas_regionais);
     const totalGeral = n(despesasRows?.[0]?.total_geral);
 
-    const faturamentoNF = (nfsRows || []).reduce((s, r) => s + n(r.valor_pago), 0);
+    const faturamentoContasReceber = (contasReceberRows || []).reduce((s, r) => s + n(r.valor_pago), 0);
+    const faturamentoNF = faturamentoNotasAgente > 0 ? faturamentoNotasAgente : faturamentoContasReceber;
 
     const resultado = faturamentoNF - totalTodasRegionais;
     const margem = faturamentoNF > 0 ? (resultado / faturamentoNF) * 100 : 0;
