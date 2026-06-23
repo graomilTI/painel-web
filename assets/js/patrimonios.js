@@ -5,7 +5,7 @@ const esc=(v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').repl
 const brDate=(v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-'};
 const normalize=(v)=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
 
-let state = { tab: 'cadastrar', isMaster: false, supervisoes: [], histRows: [], histSort: { key: 'maxDias', dir: 'desc' }, histFilters: { num: '', material: '' } };
+let state = { tab: 'cadastrar', isMaster: false, supervisoes: [], histRows: [], histSort: { key: 'maxDias', dir: 'desc' }, histFilters: { num: '', material: '' }, histExpanded: new Set() };
 
 function setMsg(msg,err=false){const el=document.getElementById('patFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err)}}
 
@@ -90,26 +90,29 @@ function renderHistorico(){
     btn.dataset.sortDir = btn.dataset.sortKey===key ? dir : '';
   });
   if(!groups.length){grid.innerHTML='<p class="pat-empty">Nenhum patrimônio encontrado.</p>';return;}
-  grid.innerHTML=groups.map((g,i)=>`<button class="pat-hist-item-row ${g.inativo?'pat-row-inativo':''}" data-idx="${i}" type="button">
-      <span class="pat-hist-item-name">${esc(g.funcionario)}</span>
-      <span class="pat-hist-item-badge">${g.items.length} ${g.items.length===1?'material':'materiais'}</span>
-      <span class="pat-hist-item-dias ${g.maxDias>30 && !g.inativo?'dias-alerta':''}">${g.maxDias>=0?g.maxDias+' dias s/ leitura':'-'}</span>
-      <span class="pat-hist-item-arrow">›</span>
-    </button>`).join('');
-  grid.querySelectorAll('[data-idx]').forEach(row=>row.onclick=()=>openHistModal(groups[Number(row.dataset.idx)]));
-}
-
-function openHistModal(group){
-  document.getElementById('patHistModalTitle').textContent=group.funcionario;
-  const items=[...group.items].sort((a,b)=>(b.dias_sem_leitura??-1)-(a.dias_sem_leitura??-1));
-  document.getElementById('patHistModalBody').innerHTML=items.map(r=>{
-    const inativo=/n.o\s*ativo|inativo|desligado|demitido/i.test(normalize(r.situacao||''));
-    return `<tr class="${inativo?'pat-row-inativo':''}"><td>${esc(r.patrimonio_codigo||'-')}</td><td>${esc(r.identificacao||'-')}</td><td class="${(r.dias_sem_leitura??0)>30 && !inativo?'dias-alerta':''}">${r.dias_sem_leitura??'-'}</td></tr>`;
+  grid.innerHTML=groups.map((g)=>{
+    const open=state.histExpanded.has(g.funcionario);
+    const items=[...g.items].sort((a,b)=>(b.dias_sem_leitura??-1)-(a.dias_sem_leitura??-1));
+    const detailRows=items.map(r=>{
+      const inativo=/n.o\s*ativo|inativo|desligado|demitido/i.test(normalize(r.situacao||''));
+      return `<tr class="${inativo?'pat-row-inativo':''}"><td>${esc(r.patrimonio_codigo||'-')}</td><td>${esc(r.identificacao||'-')}</td><td class="${(r.dias_sem_leitura??0)>30 && !inativo?'dias-alerta':''}">${r.dias_sem_leitura??'-'}</td></tr>`;
+    }).join('');
+    return `<div class="pat-hist-item">
+      <button class="pat-hist-item-row ${g.inativo?'pat-row-inativo':''} ${open?'pat-hist-item-open':''}" data-colaborador="${esc(g.funcionario)}" type="button">
+        <span class="pat-hist-item-arrow">${open?'▾':'▸'}</span>
+        <span class="pat-hist-item-name">${esc(g.funcionario)}</span>
+        <span class="pat-hist-item-badge">${g.items.length} ${g.items.length===1?'material':'materiais'}</span>
+        <span class="pat-hist-item-dias ${g.maxDias>30 && !g.inativo?'dias-alerta':''}">${g.maxDias>=0?g.maxDias+' dias s/ leitura':'-'}</span>
+      </button>
+      ${open?`<div class="pat-hist-item-detail"><table class="pat-table"><thead><tr><th>Nº</th><th>Material</th><th>Dias s/ Leitura</th></tr></thead><tbody>${detailRows}</tbody></table></div>`:''}
+    </div>`;
   }).join('');
-  document.getElementById('patHistModalOverlay').style.display='flex';
+  grid.querySelectorAll('[data-colaborador]').forEach(row=>row.onclick=()=>{
+    const nome=row.dataset.colaborador;
+    if(state.histExpanded.has(nome)) state.histExpanded.delete(nome); else state.histExpanded.add(nome);
+    renderHistorico();
+  });
 }
-
-function closeHistModal(){document.getElementById('patHistModalOverlay').style.display='none';}
 
 function setHistSort(key){
   const cur=state.histSort;
@@ -158,19 +161,19 @@ function styles(){return `<style>
 .pat-sort-chip.sort-active[data-sort-dir="asc"]::after{content:'▲'}
 .pat-sort-chip.sort-active[data-sort-dir="desc"]::after{content:'▼'}
 .pat-hist-grid{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:18px;overflow:hidden}
-.pat-hist-item-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);background:transparent;padding:14px 16px;cursor:pointer;color:#e2e2f0;font:inherit;transition:background-color .15s ease}
-.pat-hist-item-row:last-child{border-bottom:none}
+.pat-hist-item{border-bottom:1px solid var(--line)}
+.pat-hist-item:last-child{border-bottom:none}
+.pat-hist-item-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;border:none;background:transparent;padding:14px 16px;cursor:pointer;color:#e2e2f0;font:inherit;transition:background-color .15s ease}
 .pat-hist-item-row:hover{background:rgba(129,140,248,.1)}
+.pat-hist-item-row.pat-hist-item-open{background:rgba(129,140,248,.08)}
 .pat-hist-item-row.pat-row-inativo .pat-hist-item-name{color:#f87171}
 .pat-hist-item-name{font-weight:800;font-size:14px;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pat-hist-item-badge{flex:none;border:1px solid rgba(148,163,184,.24);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--muted)}
 .pat-hist-item-dias{flex:none;font-size:12px;color:var(--muted);min-width:130px;text-align:right}
-.pat-hist-item-arrow{flex:none;color:var(--muted);font-size:18px}
-.pat-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;padding:20px}
-.pat-modal{background:#11111c;border:1px solid rgba(148,163,184,.24);border-radius:18px;padding:20px;max-width:680px;width:100%;max-height:80vh;overflow:auto}
-.pat-modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px}
-.pat-modal-head h3{margin:0}
-.pat-modal-close{background:transparent;border:none;color:#e2e2f0;font-size:22px;cursor:pointer;line-height:1}
+.pat-hist-item-arrow{flex:none;color:var(--muted);font-size:12px;width:14px}
+.pat-hist-item-detail{padding:0 16px 14px 44px;background:rgba(13,13,24,.6)}
+.pat-hist-item-detail .pat-table{min-width:0}
+.pat-hist-item-detail .pat-table th,.pat-hist-item-detail .pat-table td{padding:8px 10px}
 </style>`}
 
 initProtectedPage('Patrimônios', async (content, userContext)=>{
@@ -203,13 +206,7 @@ initProtectedPage('Patrimônios', async (content, userContext)=>{
         <button class="pat-sort-chip" data-sort-key="qtd" type="button">Qtd. Materiais</button>
       </div>
       <div class="pat-hist-grid" id="patHistoricoGrid"></div>
-    </section>
-    <div class="pat-modal-overlay" id="patHistModalOverlay">
-      <div class="pat-modal">
-        <div class="pat-modal-head"><h3 id="patHistModalTitle"></h3><button class="pat-modal-close" id="patHistModalClose" type="button">&times;</button></div>
-        <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th>Nº</th><th>Material</th><th>Dias s/ Leitura</th></tr></thead><tbody id="patHistModalBody"></tbody></table></div>
-      </div>
-    </div>`;
+    </section>`;
 
   document.getElementById('patRefresh').onclick=loadCadastrar;
   document.getElementById('patSaveAll').onclick=saveAll;
@@ -218,9 +215,6 @@ initProtectedPage('Patrimônios', async (content, userContext)=>{
   document.getElementById('patHistFilterMaterial').addEventListener('input', (e)=>{state.histFilters.material=e.target.value; renderHistorico();});
   document.querySelectorAll('#patHistoricoSection [data-sort-key]').forEach((btn)=>btn.addEventListener('click', () => setHistSort(btn.dataset.sortKey)));
   document.querySelectorAll('[data-pat-tab]').forEach((btn)=>btn.addEventListener('click', () => setActiveTab(btn.dataset.patTab)));
-  document.getElementById('patHistModalClose').onclick=closeHistModal;
-  document.getElementById('patHistModalOverlay').addEventListener('click',(e)=>{if(e.target.id==='patHistModalOverlay') closeHistModal();});
-
   setActiveTab('cadastrar');
   await loadCadastrar();
 });
