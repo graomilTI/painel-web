@@ -90,8 +90,13 @@ function getModuleGroupInfo(mod) {
   const name = normalizeModuleText(getModuleDisplayName(mod));
   const haystack = [code, name].filter(Boolean).join(' | ');
 
+  // "adm_app" é um hub que reaproveita os códigos de várias outras telas (Compras,
+  // Patrimônio, Auditoria, etc.) como alias só para montar um link de atalho.
+  // Se ele entrar nesta busca, sempre casa primeiro (fica na 1ª seção, INÍCIO) e
+  // esconde o módulo real da seção em que o usuário esperaria encontrá-lo.
   for (const section of Array.isArray(MENU_CONFIG) ? MENU_CONFIG : []) {
     for (const item of section.itens || []) {
+      if (item.code === 'adm_app') continue;
       const candidates = [item.code, item.label, item.path, ...(item.aliases || [])]
         .map(normalizeModuleText)
         .filter(Boolean);

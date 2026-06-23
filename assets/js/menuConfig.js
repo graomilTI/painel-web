@@ -19,12 +19,13 @@ export const MENU_CONFIG = [
   {
     grupo: "GESTOR",
     itens: [
-      item("programacao", "Programação", "programacao", ["PROGRAMACAO", "OS", "O.S", "OPERACIONAL_OS", "GESTOR_OS"]),
+      item("programacao", "Programação", "programacao", ["PROGRAMACAO", "OS", "O.S", "OPERACIONAL_OS", "GESTOR_OS", "OS_GESTOR"]),
       item("hospedagem", "Hospedagem", "hospedagem", ["HOSPEDAGEM"]),
       item("compras_gestor", "Compras", "compras", ["COMPRAS"]),
       item("logistica_gestor", "Logística", "logistica", ["LOGISTICA"]),
       item("patrimonios_gestor", "Patrimônios", "patrimonios", ["PATRIMONIOS"]),
-      item("contato_cliente", "Contato Cliente", "contato-cliente", ["CONTATO_CLIENTE"])
+      item("contato_cliente", "Contato Cliente", "contato-cliente", ["CONTATO_CLIENTE"]),
+      item("gestor_app", "App Gestor", "gestor-app", ["GESTOR_APP"])
     ]
   },
 
@@ -32,8 +33,10 @@ export const MENU_CONFIG = [
     grupo: "CONFERÊNCIA",
     itens: [
       item("conferencia", "Painel de Conferência", "adm-conferencia", ["ADM_CONFERENCIA"]),
+      item("conferencia_uber", "Uber · Conferência", "uber", ["CONFERENCIA_UBER", "UBER"]),
       item("distribuir_os", "Distribuir O.S", "distribuir-os", ["DISTRIBUIR_OS", "CONFERENCIA_DISTRIBUIR_OS"]),
-      item("termos_celular", "Termo", "termos#celular", ["TERMOS_CELULAR", "TERMOS"])
+      item("termos_celular", "Termo Celular", "termos#celular", ["TERMOS_CELULAR", "TERMOS"]),
+      item("termos_veiculos", "Termo Veículos", "termos#veiculos", ["TERMOS_VEICULOS"])
     ]
   },
 
@@ -133,7 +136,11 @@ export const MENU_CONFIG = [
     itens: [
       item("logistica_adm", "Painel de Logística", "adm-logistica", ["LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_informativos", "Informativos", "logistica-informativos", ["LOGISTICA_INFORMATIVOS", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_finalizacao_os", "Finalização de O.S", "adm-logistica", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS"]),
+      item("logistica_finalizacao_os", "Finalização de O.S", "adm-logistica#finalizacao", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS"]),
+      item("logistica_classificadores", "Classificadores", "adm-logistica#classificadores", ["LOGISTICA_CLASSIFICADORES"]),
+      item("logistica_conferencias", "Conferências", "adm-logistica#conferencias", ["LOGISTICA_CONFERENCIAS"]),
+      item("logistica_exportacoes", "Exportações clientes", "adm-logistica#exportacoes", ["LOGISTICA_EXPORTACOES"]),
+      item("logistica_relatorios_cliente", "Relatórios ao Cliente", "adm-logistica#relatorios", ["LOGISTICA_RELATORIOS_CLIENTE"]),
       item("logistica_btg", "BTG", "btg-logistica", ["LOGISTICA_BTG", "BTG_LOGISTICA", "BTG", "LOGISTICA_ADM"])
     ]
   },
@@ -161,10 +168,10 @@ export const MENU_CONFIG = [
   {
     grupo: "RELATÓRIOS",
     itens: [
-      item("relatorios_importar", "Importar Relatórios", "importar-relatorios", ["RELATORIOS_IMPORTAR", "RELATORIOS_UPLOAD"]),
-      item("relatorios_colab", "Colaboradores", "consultar-colaboradores", ["RELATORIOS_COLAB"]),
-      item("relatorios_prod", "Produção", "consultar-producao", ["RELATORIOS_PROD"]),
-      item("relatorios_patrimonios_importar", "Patrimônios", "importar-patrimonios", ["RELATORIOS_PATRIMONIOS_IMPORTAR"])
+      item("relatorios_importar", "Importar Relatórios", "importar-relatorios", ["RELATORIOS_IMPORTAR", "RELATORIOS_UPLOAD", "IMPORTAR_RELATORIOS", "RELATORIOS"]),
+      item("relatorios_colab", "Colaboradores", "consultar-colaboradores", ["RELATORIOS_COLAB", "RELATORIOS"]),
+      item("relatorios_prod", "Produção", "consultar-producao", ["RELATORIOS_PROD", "RELATORIOS"]),
+      item("relatorios_patrimonios_importar", "Patrimônios", "importar-patrimonios", ["RELATORIOS_PATRIMONIOS_IMPORTAR", "RELATORIOS"])
     ]
   },
 
