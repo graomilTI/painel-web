@@ -530,11 +530,16 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
   const storedOpenSections = new Set(loadOpenSections());
 
   menuSections.forEach((section) => {
+    const visibleItems = (Array.isArray(section.items) ? section.items : []).filter((item) => !item.hidden);
+    // Sem itens visíveis = nada pra esse usuário nesta seção. Não desenha o
+    // cabeçalho nem o aviso "Em implantação": isso deixava um bloco vazio na
+    // sidebar sempre que o usuário não tinha acesso a nenhum módulo da seção.
+    if (!visibleItems.length) return;
+
     const sectionEl = document.createElement('section');
     sectionEl.className = 'menu-section';
 
-    const hasItems = Array.isArray(section.items) && section.items.length > 0;
-    const hasActiveItem = (section.items || []).some((item) => {
+    const hasActiveItem = visibleItems.some((item) => {
       const normalizedItemPath = normalizePath(item.path);
       const normalizedItemNoHash = normalizePath(String(item.path || '').split('#')[0]);
       return (
@@ -560,7 +565,7 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
 
     const caret = document.createElement('span');
     caret.className = 'menu-section-caret';
-    caret.textContent = hasItems ? '▾' : '•';
+    caret.textContent = '▾';
 
     titleBtn.appendChild(iconEl);
     titleBtn.appendChild(titleText);
@@ -570,72 +575,64 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
     const listWrap = document.createElement('div');
     listWrap.className = 'menu-section-body';
 
-    const isOpen = hasItems && (hasActiveItem || storedOpenSections.has(section.section) || menuSections.length <= 3);
+    const isOpen = hasActiveItem || storedOpenSections.has(section.section) || menuSections.length <= 3;
 
     if (!isOpen) {
       listWrap.hidden = true;
       titleBtn.classList.add('is-collapsed');
     }
 
-    if (hasItems) {
-      const list = document.createElement('ul');
-      list.className = 'menu-list';
+    const list = document.createElement('ul');
+    list.className = 'menu-list';
 
-      section.items.forEach((item) => {
-        if (item.hidden) return;
-        const li = document.createElement('li');
-        const link = document.createElement('a');
-        link.href = buildPanelHref(item.path);
+    visibleItems.forEach((item) => {
+      const li = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = buildPanelHref(item.path);
 
-        const dot = document.createElement('span');
-        dot.className = 'menu-item-dot';
-        const label = document.createElement('span');
-        label.textContent = item.label;
-        link.appendChild(dot);
-        link.appendChild(label);
+      const dot = document.createElement('span');
+      dot.className = 'menu-item-dot';
+      const label = document.createElement('span');
+      label.textContent = item.label;
+      link.appendChild(dot);
+      link.appendChild(label);
 
-        const normalizedItemPath = normalizePath(item.path);
-        const normalizedItemNoHash = normalizePath(String(item.path || '').split('#')[0]);
-        if (
-          normalizedCurrent.endsWith(normalizedItemPath) ||
-          normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, '')) ||
-          normalizedCurrent.endsWith(normalizedItemPath + '.html') ||
-          normalizedCurrent.endsWith(normalizedItemNoHash) ||
-          normalizedCurrent.endsWith(normalizedItemNoHash + '.html')
-        ) {
-          link.classList.add('active');
-        }
+      const normalizedItemPath = normalizePath(item.path);
+      const normalizedItemNoHash = normalizePath(String(item.path || '').split('#')[0]);
+      if (
+        normalizedCurrent.endsWith(normalizedItemPath) ||
+        normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, '')) ||
+        normalizedCurrent.endsWith(normalizedItemPath + '.html') ||
+        normalizedCurrent.endsWith(normalizedItemNoHash) ||
+        normalizedCurrent.endsWith(normalizedItemNoHash + '.html')
+      ) {
+        link.classList.add('active');
+      }
 
-        link.addEventListener('mouseenter', () => prefetchUrl(link.href), { passive: true });
-        link.addEventListener('focus', () => prefetchUrl(link.href), { passive: true });
-        link.addEventListener('touchstart', () => prefetchUrl(link.href), { passive: true, once: true });
-        link.addEventListener('click', (event) => {
-          if (!shouldHandleAsNormalNavigation(event)) return;
-          document.documentElement.classList.add('is-route-transitioning');
-        });
-
-        li.appendChild(link);
-        list.appendChild(li);
+      link.addEventListener('mouseenter', () => prefetchUrl(link.href), { passive: true });
+      link.addEventListener('focus', () => prefetchUrl(link.href), { passive: true });
+      link.addEventListener('touchstart', () => prefetchUrl(link.href), { passive: true, once: true });
+      link.addEventListener('click', (event) => {
+        if (!shouldHandleAsNormalNavigation(event)) return;
+        document.documentElement.classList.add('is-route-transitioning');
       });
 
-      listWrap.appendChild(list);
+      li.appendChild(link);
+      list.appendChild(li);
+    });
 
-      titleBtn.addEventListener('click', () => {
-        const willOpen = listWrap.hidden;
-        listWrap.hidden = !willOpen;
-        titleBtn.classList.toggle('is-collapsed', !willOpen);
+    listWrap.appendChild(list);
 
-        const openSections = new Set(loadOpenSections());
-        if (willOpen) openSections.add(section.section);
-        else openSections.delete(section.section);
-        saveOpenSections([...openSections]);
-      });
-    } else {
-      const empty = document.createElement('div');
-      empty.className = 'menu-empty';
-      empty.textContent = 'Em implantação';
-      listWrap.appendChild(empty);
-    }
+    titleBtn.addEventListener('click', () => {
+      const willOpen = listWrap.hidden;
+      listWrap.hidden = !willOpen;
+      titleBtn.classList.toggle('is-collapsed', !willOpen);
+
+      const openSections = new Set(loadOpenSections());
+      if (willOpen) openSections.add(section.section);
+      else openSections.delete(section.section);
+      saveOpenSections([...openSections]);
+    });
 
     sectionEl.appendChild(listWrap);
     container.appendChild(sectionEl);
