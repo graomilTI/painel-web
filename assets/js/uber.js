@@ -218,14 +218,21 @@ function rowText(row) {
   ].filter(Boolean).join(' '));
 }
 
-function filteredRows() {
+const STATUS_GROUPS = {
+  PENDENTE: ['PENDENTE'],
+  EMBARQUE: ['EMBARQUE'],
+  ATENCAO_CAIXA: ['ATENCAO', 'ATENÇÃO', 'CAIXA_COLABORADOR'],
+  VALIDADA: ['VALIDADA', 'CONFERIDO'],
+};
+
+function textFilteredRows() {
   const q = normalize(state.filters.q);
-  const status = normalize(state.filters.status).replaceAll(' ', '_');
-  return state.rows.filter((row) => {
-    if (q && !rowText(row).includes(q)) return false;
-    if (status && computedStatus(row) !== status) return false;
-    return true;
-  });
+  return state.rows.filter((row) => !q || rowText(row).includes(q));
+}
+
+function filteredRows() {
+  const group = STATUS_GROUPS[state.filters.status];
+  return textFilteredRows().filter((row) => !group || group.includes(computedStatus(row)));
 }
 
 function splitRows() {
@@ -242,18 +249,19 @@ function getValor(row) {
 }
 
 function metrics() {
-  const rows = filteredRows();
+  const rows = textFilteredRows();
   const total = rows.length;
-  const validadas = rows.filter((row) => ['VALIDADA', 'CONFERIDO'].includes(computedStatus(row))).length;
+  const pendentes = rows.filter((row) => computedStatus(row) === 'PENDENTE').length;
   const embarques = rows.filter((row) => computedStatus(row) === 'EMBARQUE').length;
-  const atencao = rows.filter((row) => ['ATENCAO', 'ATENÇÃO', 'CAIXA_COLABORADOR'].includes(computedStatus(row))).length;
+  const atencaoCaixa = rows.filter((row) => STATUS_GROUPS.ATENCAO_CAIXA.includes(computedStatus(row))).length;
+  const validadas = rows.filter((row) => STATUS_GROUPS.VALIDADA.includes(computedStatus(row))).length;
   const valor = rows.reduce((sum, row) => sum + getValor(row), 0);
-  return { total, validadas, embarques, atencao, pendentes: total - validadas - embarques, valor };
+  return { total, pendentes, embarques, atencaoCaixa, validadas, valor };
 }
 
 function styles() {
   return `<style>
-    .uber-shell{color:#e2e2f0}.uber-hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;background:radial-gradient(circle at top right,rgba(34,197,94,.16),transparent 34%),linear-gradient(180deg,rgba(8,22,17,.96),rgba(3,13,10,.96));border:1px solid rgba(148,163,184,.16);border-radius:28px;padding:24px;box-shadow:0 22px 70px rgba(0,0,0,.28)}.uber-kicker{display:inline-flex;color:#86efac;font-size:12px;font-weight:950;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.uber-title{margin:0;color:#f8fafc;font-size:clamp(24px,2.6vw,36px);letter-spacing:-.045em}.uber-sub{max-width:850px;margin:10px 0 0;color:#6b7280;line-height:1.55}.uber-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.uber-btn{border:1px solid rgba(34,197,94,.28);background:rgba(15,23,42,.78);color:#e2e2f0;border-radius:14px;padding:11px 14px;font-weight:950;cursor:pointer;min-height:42px}.uber-btn:hover{background:rgba(22,101,52,.24)}.uber-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;border:0}.uber-btn.danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.34)}.uber-btn:disabled{opacity:.55;cursor:not-allowed}.uber-grid{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:14px;margin-top:16px}.uber-kpi{background:rgba(8,22,17,.72);border:1px solid rgba(148,163,184,.14);border-radius:22px;padding:17px;box-shadow:0 18px 50px rgba(0,0,0,.20)}.uber-kpi span{display:block;color:#6b7280;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.uber-kpi strong{display:block;color:#f8fafc;font-size:28px;margin-top:8px}.uber-card{margin-top:16px;background:rgba(8,22,17,.72);border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.22)}.uber-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.uber-card h3{margin:0;color:#f8fafc}.uber-card p{margin:5px 0 0;color:#6b7280;font-size:13px}.uber-filters{display:grid;grid-template-columns:150px 150px minmax(240px,1fr) 180px auto;gap:10px;align-items:end}.uber-field label{display:block;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;margin:0 0 6px}.uber-input,.uber-select{width:100%;border:1px solid rgba(148,163,184,.18);background:#0d0d18;color:#e2e2f0;border-radius:14px;padding:11px 12px;outline:none;color-scheme:dark}.uber-select option{background:#0d0d18;color:#e2e2f0}.uber-feedback{min-height:22px;color:#6b7280;font-size:13px;margin-top:10px}.uber-feedback.error{color:#fecaca}.uber-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.30)}.uber-table{width:100%;border-collapse:collapse;min-width:1360px}.uber-table th,.uber-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.10);text-align:left;vertical-align:top}.uber-table th{background:rgba(15,23,42,.92);color:#bbf7d0;font-size:11px;text-transform:uppercase;letter-spacing:.08em}.uber-table td{color:#e2e2f0;font-size:13px}.uber-table small{display:block;color:#6b7280;margin-top:4px;line-height:1.35}.uber-row-actions{display:flex;gap:8px;flex-wrap:wrap}.uber-row-actions .uber-btn{font-size:12px;padding:8px 10px;min-height:34px}.uber-chip{display:inline-flex;align-items:center;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:950;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.uber-chip-ok{background:rgba(34,197,94,.16);color:#bbf7d0;border-color:rgba(34,197,94,.30)}.uber-chip-warn{background:rgba(234,179,8,.14);color:#fde68a;border-color:rgba(234,179,8,.30)}.uber-chip-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.34)}.uber-chip-neutral{background:rgba(148,163,184,.12);color:#cbd5e1}.uber-empty{text-align:center;color:#6b7280;padding:28px!important}.uber-conferidas{margin-top:18px;border-color:rgba(34,197,94,.24);background:rgba(4,24,18,.55)}@media(max-width:1180px){.uber-grid{grid-template-columns:repeat(2,1fr)}.uber-filters{grid-template-columns:1fr 1fr}}@media(max-width:760px){.uber-hero,.uber-card-head{display:block}.uber-actions{justify-content:flex-start;margin-top:12px}.uber-grid,.uber-filters{grid-template-columns:1fr}}
+    .uber-shell{color:#e2e2f0}.uber-hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;background:radial-gradient(circle at top right,rgba(34,197,94,.16),transparent 34%),linear-gradient(180deg,rgba(8,22,17,.96),rgba(3,13,10,.96));border:1px solid rgba(148,163,184,.16);border-radius:28px;padding:24px;box-shadow:0 22px 70px rgba(0,0,0,.28)}.uber-kicker{display:inline-flex;color:#86efac;font-size:12px;font-weight:950;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.uber-title{margin:0;color:#f8fafc;font-size:clamp(24px,2.6vw,36px);letter-spacing:-.045em}.uber-sub{max-width:850px;margin:10px 0 0;color:#6b7280;line-height:1.55}.uber-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.uber-btn{border:1px solid rgba(34,197,94,.28);background:rgba(15,23,42,.78);color:#e2e2f0;border-radius:14px;padding:11px 14px;font-weight:950;cursor:pointer;min-height:42px}.uber-btn:hover{background:rgba(22,101,52,.24)}.uber-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;border:0}.uber-btn.danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.34)}.uber-btn:disabled{opacity:.55;cursor:not-allowed}.uber-grid{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:14px;margin-top:16px}.uber-kpi{background:rgba(8,22,17,.72);border:1px solid rgba(148,163,184,.14);border-radius:22px;padding:17px;box-shadow:0 18px 50px rgba(0,0,0,.20)}.uber-kpi span{display:block;color:#6b7280;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.uber-kpi strong{display:block;color:#f8fafc;font-size:28px;margin-top:8px}.uber-kpi-filter{cursor:pointer;transition:border-color .15s,background .15s}.uber-kpi-filter:hover{border-color:rgba(34,197,94,.4)}.uber-kpi-filter.is-active{border-color:#22c55e;background:rgba(22,101,52,.28)}.uber-card{margin-top:16px;background:rgba(8,22,17,.72);border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.22)}.uber-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.uber-card h3{margin:0;color:#f8fafc}.uber-card p{margin:5px 0 0;color:#6b7280;font-size:13px}.uber-filters{display:grid;grid-template-columns:150px 150px minmax(240px,1fr) auto;gap:10px;align-items:end}.uber-field label{display:block;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;margin:0 0 6px}.uber-input,.uber-select{width:100%;border:1px solid rgba(148,163,184,.18);background:#0d0d18;color:#e2e2f0;border-radius:14px;padding:11px 12px;outline:none;color-scheme:dark}.uber-select option{background:#0d0d18;color:#e2e2f0}.uber-feedback{min-height:22px;color:#6b7280;font-size:13px;margin-top:10px}.uber-feedback.error{color:#fecaca}.uber-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.30)}.uber-table{width:100%;border-collapse:collapse;min-width:1360px}.uber-table th,.uber-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.10);text-align:left;vertical-align:top}.uber-table th{background:rgba(15,23,42,.92);color:#bbf7d0;font-size:11px;text-transform:uppercase;letter-spacing:.08em}.uber-table td{color:#e2e2f0;font-size:13px}.uber-table small{display:block;color:#6b7280;margin-top:4px;line-height:1.35}.uber-row-actions{display:flex;gap:8px;flex-wrap:wrap}.uber-row-actions .uber-btn{font-size:12px;padding:8px 10px;min-height:34px}.uber-chip{display:inline-flex;align-items:center;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:950;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.uber-chip-ok{background:rgba(34,197,94,.16);color:#bbf7d0;border-color:rgba(34,197,94,.30)}.uber-chip-warn{background:rgba(234,179,8,.14);color:#fde68a;border-color:rgba(234,179,8,.30)}.uber-chip-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.34)}.uber-chip-neutral{background:rgba(148,163,184,.12);color:#cbd5e1}.uber-empty{text-align:center;color:#6b7280;padding:28px!important}.uber-conferidas{margin-top:18px;border-color:rgba(34,197,94,.24);background:rgba(4,24,18,.55)}@media(max-width:1180px){.uber-grid{grid-template-columns:repeat(2,1fr)}.uber-filters{grid-template-columns:1fr 1fr}}@media(max-width:760px){.uber-hero,.uber-card-head{display:block}.uber-actions{justify-content:flex-start;margin-top:12px}.uber-grid,.uber-filters{grid-template-columns:1fr}}
   </style>`;
 }
 
@@ -283,7 +291,6 @@ function renderShell(content) {
           <div class="uber-field"><label>Data inicial</label><input class="uber-input" type="date" data-inicio value="${escapeHtml(state.filters.inicio)}"></div>
           <div class="uber-field"><label>Data final</label><input class="uber-input" type="date" data-fim value="${escapeHtml(state.filters.fim)}"></div>
           <div class="uber-field"><label>Buscar</label><input class="uber-input" type="search" data-q placeholder="Colaborador, e-mail, regional, endereço..." value="${escapeHtml(state.filters.q)}"></div>
-          <div class="uber-field"><label>Status</label><select class="uber-select" data-status><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="EMBARQUE">Embarque</option><option value="ATENCAO">Atenção</option><option value="CAIXA_COLABORADOR">Caixa colaborador</option><option value="VALIDADA">Validada</option></select></div>
           <button class="uber-btn primary" type="submit">Aplicar</button>
         </form>
         <div class="uber-feedback" data-feedback></div>
@@ -315,14 +322,16 @@ function renderMetrics() {
   const m = metrics();
   const target = document.querySelector('[data-metrics]');
   if (!target) return;
-  target.innerHTML = [
-    ['Corridas', m.total],
-    ['Pendentes', m.pendentes],
-    ['Embarque', m.embarques],
-    ['Atenção/Caixa', m.atencao],
-    ['Validadas', m.validadas],
-    ['Valor filtrado', money(m.valor)],
-  ].map(([label, value]) => `<article class="uber-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`).join('');
+  const active = state.filters.status || '';
+  const filters = [
+    ['', 'Corridas', m.total],
+    ['PENDENTE', 'Pendentes', m.pendentes],
+    ['EMBARQUE', 'Embarque', m.embarques],
+    ['ATENCAO_CAIXA', 'Atenção/Caixa', m.atencaoCaixa],
+    ['VALIDADA', 'Validadas', m.validadas],
+  ].map(([key, label, value]) => `<article class="uber-kpi uber-kpi-filter${key === active ? ' is-active' : ''}" data-kpi="${escapeHtml(key)}" role="button" tabindex="0"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`).join('');
+  const valor = `<article class="uber-kpi"><span>Valor filtrado</span><strong>${escapeHtml(money(m.valor))}</strong></article>`;
+  target.innerHTML = filters + valor;
 }
 
 const EMPTY_LABEL = {
@@ -392,7 +401,6 @@ function getFilterValues(root = document) {
   state.filters.inicio = root.querySelector('[data-inicio]')?.value || '';
   state.filters.fim = root.querySelector('[data-fim]')?.value || '';
   state.filters.q = root.querySelector('[data-q]')?.value || '';
-  state.filters.status = root.querySelector('[data-status]')?.value || '';
 }
 
 async function fetchAll(makeQuery, maxRows = MAX_UBER_ROWS) {
@@ -596,11 +604,14 @@ function bindEvents(root) {
     state.filters.q = event.target.value || '';
     renderData();
   });
-  root.querySelector('[data-status]')?.addEventListener('change', (event) => {
-    state.filters.status = event.target.value || '';
-    renderData();
-  });
   root.addEventListener('click', (event) => {
+    const kpi = event.target.closest('[data-kpi]');
+    if (kpi) {
+      const key = kpi.dataset.kpi;
+      state.filters.status = state.filters.status === key ? '' : key;
+      renderData();
+      return;
+    }
     const btn = event.target.closest('[data-action][data-id]');
     if (!btn) return;
     updateStatus(btn.dataset.id, btn.dataset.action);
