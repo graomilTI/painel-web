@@ -90,14 +90,13 @@ function renderHistorico(){
     btn.dataset.sortDir = btn.dataset.sortKey===key ? dir : '';
   });
   if(!groups.length){grid.innerHTML='<p class="pat-empty">Nenhum patrimônio encontrado.</p>';return;}
-  grid.innerHTML=groups.map((g,i)=>`<button class="pat-hist-item-card ${g.inativo?'pat-row-inativo':''}" data-idx="${i}" type="button">
-      <div class="pat-hist-item-name">${esc(g.funcionario)}</div>
-      <div class="pat-hist-item-meta">
-        <span class="pat-hist-item-badge">${g.items.length} ${g.items.length===1?'material':'materiais'}</span>
-        <span class="${g.maxDias>30 && !g.inativo?'dias-alerta':''}">${g.maxDias>=0?g.maxDias+' dias s/ leitura':'-'}</span>
-      </div>
+  grid.innerHTML=groups.map((g,i)=>`<button class="pat-hist-item-row ${g.inativo?'pat-row-inativo':''}" data-idx="${i}" type="button">
+      <span class="pat-hist-item-name">${esc(g.funcionario)}</span>
+      <span class="pat-hist-item-badge">${g.items.length} ${g.items.length===1?'material':'materiais'}</span>
+      <span class="pat-hist-item-dias ${g.maxDias>30 && !g.inativo?'dias-alerta':''}">${g.maxDias>=0?g.maxDias+' dias s/ leitura':'-'}</span>
+      <span class="pat-hist-item-arrow">›</span>
     </button>`).join('');
-  grid.querySelectorAll('[data-idx]').forEach(card=>card.onclick=()=>openHistModal(groups[Number(card.dataset.idx)]));
+  grid.querySelectorAll('[data-idx]').forEach(row=>row.onclick=()=>openHistModal(groups[Number(row.dataset.idx)]));
 }
 
 function openHistModal(group){
@@ -158,13 +157,15 @@ function styles(){return `<style>
 .pat-sort-chip.sort-active::after{opacity:1}
 .pat-sort-chip.sort-active[data-sort-dir="asc"]::after{content:'▲'}
 .pat-sort-chip.sort-active[data-sort-dir="desc"]::after{content:'▼'}
-.pat-hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
-.pat-hist-item-card{display:flex;flex-direction:column;gap:8px;text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;border-radius:16px;padding:14px 16px;cursor:pointer;color:#e2e2f0;transition:transform .15s ease,border-color .15s ease}
-.pat-hist-item-card:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.55)}
-.pat-hist-item-card.pat-row-inativo{border-color:rgba(248,113,113,.4)}
-.pat-hist-item-name{font-weight:800;font-size:14px}
-.pat-hist-item-meta{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)}
-.pat-hist-item-badge{border:1px solid rgba(148,163,184,.24);border-radius:999px;padding:2px 10px}
+.pat-hist-grid{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.pat-hist-item-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);background:transparent;padding:14px 16px;cursor:pointer;color:#e2e2f0;font:inherit;transition:background-color .15s ease}
+.pat-hist-item-row:last-child{border-bottom:none}
+.pat-hist-item-row:hover{background:rgba(129,140,248,.1)}
+.pat-hist-item-row.pat-row-inativo .pat-hist-item-name{color:#f87171}
+.pat-hist-item-name{font-weight:800;font-size:14px;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pat-hist-item-badge{flex:none;border:1px solid rgba(148,163,184,.24);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--muted)}
+.pat-hist-item-dias{flex:none;font-size:12px;color:var(--muted);min-width:130px;text-align:right}
+.pat-hist-item-arrow{flex:none;color:var(--muted);font-size:18px}
 .pat-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;padding:20px}
 .pat-modal{background:#11111c;border:1px solid rgba(148,163,184,.24);border-radius:18px;padding:20px;max-width:680px;width:100%;max-height:80vh;overflow:auto}
 .pat-modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px}

@@ -367,6 +367,7 @@ async function syncAccount(account, rules) {
       const range = lastUid > 0 ? `${lastUid + 1}:*` : '1:*';
       const limit = Number(account.limite_por_sync || 30);
       let maxUid = lastUid;
+      let comFalha = 0;
       const fetched = [];
       for await (const item of client.fetch(range, { uid: true, source: true, flags: true }, { uid: true })) {
         if (item.uid) maxUid = Math.max(maxUid, Number(item.uid));
@@ -375,75 +376,82 @@ async function syncAccount(account, rules) {
       }
 
       for (const item of fetched) {
-        const parsed = await simpleParser(item.source);
-        const id = messageId(parsed.messageId);
-        const from = parsed.from?.value?.[0] || {};
-        const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', id).maybeSingle();
-        if (exists.data?.id) continue;
-        const input = { subject: parsed.subject || '(sem assunto)', fromText: parsed.from?.text || from.address || '', text: parsed.text || '', html: parsed.html || '' };
-        const cls = await classifyWithAI(input, classifyByRules(input, rules));
-        const { data: saved, error } = await supabase.from('email_messages').insert({
-          account_id: account.id,
-          uid: item.uid,
-          message_id: id,
-          in_reply_to: messageId(parsed.inReplyTo, false),
-          references_header: Array.isArray(parsed.references) ? parsed.references.join(' ') : text(parsed.references) || null,
-          remetente_nome: from.name || null,
-          remetente_email: from.address || null,
-          destinatario: parsed.to?.text || account.email,
-          cc: parsed.cc?.text || null,
-          assunto: parsed.subject || '(sem assunto)',
-          corpo_texto: parsed.text || null,
-          corpo_html: parsed.html || null,
-          data_recebimento: parsed.date?.toISOString() || new Date().toISOString(),
-          regional: cls.regional || null,
-          categoria: cls.categoria || 'GERAL',
-          prioridade: cls.prioridade || 'NORMAL',
-          resumo_ia: cls.resumo_ia || null,
-          dados_detectados: cls.dados_detectados || {},
-          precisa_resposta: Boolean(cls.precisa_resposta),
-          resposta_sugerida: cls.resposta_sugerida || null,
-          status: cls.precisa_resposta ? 'RESPONDER' : 'NOVO',
-          classificado_por: cls.classificado_por,
-          risco: cls.risco || 'BAIXO',
-          raw: { flags: Array.from(item.flags || []), headers: { from: parsed.from?.text, to: parsed.to?.text } }
-        }).select('id').single();
-        if (error) throw error;
-        inserted++;
-        const attachmentsDados = {};
-        let temAnexoPeigoso = false;
-        for (const attachment of await collectAttachments(parsed)) {
-          const { dadosExtraidos, isDangerous } = await saveAttachment(saved.id, attachment);
-          Object.assign(attachmentsDados, dadosExtraidos);
-          if (isDangerous) temAnexoPeigoso = true;
-        }
-        const updatePayload = { updated_at: new Date().toISOString() };
-        if (Object.keys(attachmentsDados).length) {
-          updatePayload.dados_detectados = { ...(cls.dados_detectados || {}), ...attachmentsDados };
-        }
-        if (temAnexoPeigoso) {
-          updatePayload.risco = 'CRITICO';
-        }
-        if (Object.keys(updatePayload).length > 1) {
-          await supabase.from('email_messages').update(updatePayload).eq('id', saved.id);
-        }
-        if (account.auto_responder && cls.auto_responder && cls.resposta_sugerida && from.address) {
-          await supabase.from('email_outbox').insert({
-            email_id: saved.id,
+        try {
+          const parsed = await simpleParser(item.source);
+          const id = messageId(parsed.messageId);
+          const from = parsed.from?.value?.[0] || {};
+          const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', id).maybeSingle();
+          if (exists.data?.id) continue;
+          const input = { subject: parsed.subject || '(sem assunto)', fromText: parsed.from?.text || from.address || '', text: parsed.text || '', html: parsed.html || '' };
+          const cls = await classifyWithAI(input, classifyByRules(input, rules));
+          const { data: saved, error } = await supabase.from('email_messages').insert({
             account_id: account.id,
-            para: from.address,
-            assunto: /^re:/i.test(parsed.subject || '') ? parsed.subject : `Re: ${parsed.subject || ''}`,
-            corpo: cls.resposta_sugerida,
-            status: 'PENDENTE'
-          });
+            uid: item.uid,
+            message_id: id,
+            in_reply_to: messageId(parsed.inReplyTo, false),
+            references_header: Array.isArray(parsed.references) ? parsed.references.join(' ') : text(parsed.references) || null,
+            remetente_nome: from.name || null,
+            remetente_email: from.address || null,
+            destinatario: parsed.to?.text || account.email,
+            cc: parsed.cc?.text || null,
+            assunto: parsed.subject || '(sem assunto)',
+            corpo_texto: parsed.text || null,
+            corpo_html: parsed.html || null,
+            data_recebimento: parsed.date?.toISOString() || new Date().toISOString(),
+            regional: cls.regional || null,
+            categoria: cls.categoria || 'GERAL',
+            prioridade: cls.prioridade || 'NORMAL',
+            resumo_ia: cls.resumo_ia || null,
+            dados_detectados: cls.dados_detectados || {},
+            precisa_resposta: Boolean(cls.precisa_resposta),
+            resposta_sugerida: cls.resposta_sugerida || null,
+            status: cls.precisa_resposta ? 'RESPONDER' : 'NOVO',
+            classificado_por: cls.classificado_por,
+            risco: cls.risco || 'BAIXO',
+            raw: { flags: Array.from(item.flags || []), headers: { from: parsed.from?.text, to: parsed.to?.text } }
+          }).select('id').single();
+          if (error) throw error;
+          inserted++;
+          const attachmentsDados = {};
+          let temAnexoPeigoso = false;
+          for (const attachment of await collectAttachments(parsed)) {
+            const { dadosExtraidos, isDangerous } = await saveAttachment(saved.id, attachment);
+            Object.assign(attachmentsDados, dadosExtraidos);
+            if (isDangerous) temAnexoPeigoso = true;
+          }
+          const updatePayload = { updated_at: new Date().toISOString() };
+          if (Object.keys(attachmentsDados).length) {
+            updatePayload.dados_detectados = { ...(cls.dados_detectados || {}), ...attachmentsDados };
+          }
+          if (temAnexoPeigoso) {
+            updatePayload.risco = 'CRITICO';
+          }
+          if (Object.keys(updatePayload).length > 1) {
+            await supabase.from('email_messages').update(updatePayload).eq('id', saved.id);
+          }
+          if (account.auto_responder && cls.auto_responder && cls.resposta_sugerida && from.address) {
+            await supabase.from('email_outbox').insert({
+              email_id: saved.id,
+              account_id: account.id,
+              para: from.address,
+              assunto: /^re:/i.test(parsed.subject || '') ? parsed.subject : `Re: ${parsed.subject || ''}`,
+              corpo: cls.resposta_sugerida,
+              status: 'PENDENTE'
+            });
+          }
+        } catch (itemError) {
+          // Mensagem com cabeçalho/anexo malformado não pode travar o checkpoint
+          // de uid para sempre: registra o erro e segue para a próxima.
+          comFalha++;
+          console.error(`Falha ao processar mensagem uid=${item.uid} de ${account.email}:`, itemError);
         }
       }
 
       await supabase.from('email_accounts').update({
         ultima_uid: maxUid,
         ultima_sync_em: new Date().toISOString(),
-        ultima_sync_status: `OK - ${inserted} novo(s)`,
-        ultima_sync_erro: null,
+        ultima_sync_status: comFalha ? `OK - ${inserted} novo(s), ${comFalha} com falha` : `OK - ${inserted} novo(s)`,
+        ultima_sync_erro: comFalha ? `${comFalha} mensagem(ns) pulada(s) por erro de parsing (ver logs)` : null,
         updated_at: new Date().toISOString()
       }).eq('id', account.id);
     } finally {
