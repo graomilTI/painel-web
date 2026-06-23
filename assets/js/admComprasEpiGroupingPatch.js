@@ -138,7 +138,7 @@ function updateGroupState(header) {
     box.checked = total > 0 && selected === total;
     box.indeterminate = selected > 0 && selected < total;
   }
-  if (status) status.textContent = selected ? `${selected}/${total} selecionado(s)` : 'Grupo fechado — detalhes na cotação';
+  if (status) status.textContent = selected ? `${selected}/${total} selecionado(s)` : 'Marque os itens abaixo para liberar ou comprar individualmente';
   if (btn) btn.textContent = total > 0 && selected === total ? 'Desmarcar grupo' : 'Selecionar grupo';
 }
 
@@ -232,7 +232,7 @@ function makeGroupHeader(group, colCount) {
             <strong style="color:#bbf7d0">EPI — ${group.nome}</strong>
             <div style="font-size:12px;color:#fde68a;margin-top:4px;font-weight:700">Regional/Supervisão: ${group.regional}</div>
             <div style="font-size:12px;color:#94a3b8;margin-top:4px">${totalItens} item(ns) · ${totalUn} unidade(s) · ${materiais}</div>
-            <div data-epi-group-status style="font-size:12px;color:#bbf7d0;margin-top:4px">Grupo fechado — detalhes na cotação</div>
+            <div data-epi-group-status style="font-size:12px;color:#bbf7d0;margin-top:4px">Marque os itens abaixo para liberar ou comprar individualmente</div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -292,7 +292,8 @@ function applyEpi(body) {
   groups.forEach((group) => {
     frag.appendChild(makeGroupHeader(group, colCount));
     group.rows.forEach((row) => {
-      row.style.display = 'none';
+      row.style.display = '';
+      row.style.borderLeft = '3px solid rgba(74,222,128,.35)';
       frag.appendChild(row);
     });
   });
