@@ -2,9 +2,9 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
 const MONEY = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-const DATE = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' });
 const MAX_UBER_ROWS = 30000;
 const PAGE_SIZE = 1000;
+const CACHE_KEY = 'uberConferenciaCache_v1';
 
 const state = {
   loading: false,
@@ -49,10 +49,10 @@ function todayISO() {
 function brDate(value) {
   if (!value) return '-';
   const raw = String(value).slice(0, 10);
-  const parts = raw.split('-');
-  if (parts.length !== 3) return escapeHtml(value);
-  const date = new Date(`${parts[0]}-${parts[1]}-${parts[2]}T00:00:00Z`);
-  return Number.isNaN(date.getTime()) ? escapeHtml(value) : DATE.format(date);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return escapeHtml(value);
+  const [, y, m, d] = match;
+  return `${d}/${m}/${y}`;
 }
 
 function money(value) {
@@ -230,10 +230,10 @@ function filteredRows() {
 
 function splitRows() {
   const rows = filteredRows();
-  const done = new Set(['VALIDADA', 'CONFERIDO', 'EMBARQUE']);
   return {
-    pendentes: rows.filter((row) => !done.has(computedStatus(row))),
-    conferidas: rows.filter((row) => done.has(computedStatus(row))),
+    valida: rows.filter((row) => computedStatus(row) === 'VALIDADA'),
+    caixa: rows.filter((row) => computedStatus(row) === 'CAIXA_COLABORADOR'),
+    conferir: rows.filter((row) => !['VALIDADA', 'CAIXA_COLABORADOR'].includes(computedStatus(row))),
   };
 }
 
@@ -289,12 +289,16 @@ function renderShell(content) {
         <div class="uber-feedback" data-feedback></div>
       </section>
       <section class="uber-card">
-        <div class="uber-card-head"><div><h3>Pendências para conferência</h3><p>Corridas sem vínculo automático com embarque seguem pendentes para validação, atenção ou caixa do colaborador.</p></div></div>
-        <div data-pendentes></div>
+        <div class="uber-card-head"><div><h3>Conferir</h3><p>Corridas pendentes, em atenção ou identificadas como embarque que ainda precisam de uma decisão.</p></div></div>
+        <div data-conferir></div>
       </section>
       <section class="uber-card uber-conferidas">
-        <div class="uber-card-head"><div><h3>Conferidas / Embarque</h3><p>Corridas validadas e corridas identificadas como embarque ficam agrupadas aqui embaixo.</p></div></div>
-        <div data-conferidas></div>
+        <div class="uber-card-head"><div><h3>Caixa colaborador</h3><p>Corridas marcadas para reembolso/caixa do colaborador.</p></div></div>
+        <div data-caixa></div>
+      </section>
+      <section class="uber-card uber-conferidas">
+        <div class="uber-card-head"><div><h3>Valida</h3><p>Corridas já validadas.</p></div></div>
+        <div data-valida></div>
       </section>
     </section>`;
   bindEvents(content);
@@ -321,10 +325,16 @@ function renderMetrics() {
   ].map(([label, value]) => `<article class="uber-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`).join('');
 }
 
-function renderTable(target, rows, mode = 'pendentes') {
+const EMPTY_LABEL = {
+  conferir: 'para conferir',
+  caixa: 'em caixa colaborador',
+  valida: 'validada',
+};
+
+function renderTable(target, rows, mode = 'conferir') {
   if (!target) return;
   if (!rows.length) {
-    target.innerHTML = `<div class="uber-table-wrap"><table class="uber-table"><tbody><tr><td class="uber-empty">Nenhuma corrida ${mode === 'pendentes' ? 'pendente' : 'conferida/embarque'} nos filtros atuais.</td></tr></tbody></table></div>`;
+    target.innerHTML = `<div class="uber-table-wrap"><table class="uber-table"><tbody><tr><td class="uber-empty">Nenhuma corrida ${EMPTY_LABEL[mode] || mode} nos filtros atuais.</td></tr></tbody></table></div>`;
     return;
   }
   target.innerHTML = `<div class="uber-table-wrap"><table class="uber-table">
@@ -373,8 +383,9 @@ function renderRow(row) {
 function renderData() {
   renderMetrics();
   const split = splitRows();
-  renderTable(document.querySelector('[data-pendentes]'), split.pendentes, 'pendentes');
-  renderTable(document.querySelector('[data-conferidas]'), split.conferidas, 'conferidas');
+  renderTable(document.querySelector('[data-conferir]'), split.conferir, 'conferir');
+  renderTable(document.querySelector('[data-caixa]'), split.caixa, 'caixa');
+  renderTable(document.querySelector('[data-valida]'), split.valida, 'valida');
 }
 
 function getFilterValues(root = document) {
@@ -424,6 +435,34 @@ async function loadProducaoForRows(rows) {
   }
 }
 
+function saveCache() {
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+      rows: state.rows,
+      producao: state.producao,
+      filters: state.filters,
+    }));
+  } catch (error) {
+    console.warn('[Uber] saveCache:', error);
+  }
+}
+
+function loadCache() {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return false;
+    const cached = JSON.parse(raw);
+    if (!Array.isArray(cached?.rows) || !cached.rows.length) return false;
+    state.rows = cached.rows;
+    state.producao = Array.isArray(cached.producao) ? cached.producao : [];
+    state.filters = { ...state.filters, ...(cached.filters || {}) };
+    return true;
+  } catch (error) {
+    console.warn('[Uber] loadCache:', error);
+    return false;
+  }
+}
+
 async function loadRows() {
   if (state.loading) return;
   state.loading = true;
@@ -446,6 +485,7 @@ async function loadRows() {
     const embarques = rows.filter((row) => computedStatus(row) === 'EMBARQUE').length;
     const textoPeriodo = state.filters.inicio || state.filters.fim ? 'no período' : 'carregados';
     setFeedback(`Atualizado: ${state.rows.length} lançamento(s) Uber ${textoPeriodo}. ${embarques} marcado(s) como Embarque.`);
+    saveCache();
   } catch (error) {
     console.error('[Uber] loadRows:', error);
     state.rows = [];
@@ -505,6 +545,7 @@ async function updateStatus(id, status) {
     if (error) throw error;
     const row = state.rows.find((item) => String(item.id) === String(id));
     if (row) Object.assign(row, { classificacao_manual: status, status_validacao: STATUS_VALIDACAO_DB[status] || status, validado_em: new Date().toISOString() });
+    saveCache();
     setFeedback('Corrida atualizada.');
     renderData();
   } catch (error) {
@@ -567,6 +608,12 @@ function bindEvents(root) {
 }
 
 initProtectedPage('Uber · Conferência', async (content) => {
+  const cached = loadCache();
   renderShell(content);
-  await loadRows();
+  if (cached) {
+    renderData();
+    setFeedback(`${state.rows.length} lançamento(s) Uber carregados do cache. Use "Atualizar" para buscar dados novos.`);
+  } else {
+    await loadRows();
+  }
 });
