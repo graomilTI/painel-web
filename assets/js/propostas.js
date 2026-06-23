@@ -50,15 +50,43 @@ const DEFAULT_MONEY_VALUES = {
   tn: 'R$ 1,10',
 };
 
+const DEFAULT_GESTORES_REGIONAIS = [
+  { ordem: 10, regional: 'BAHIA', supervisor: 'DOUGLAS CANDIDO', contato: '(77) 9 9999-3585' },
+  { ordem: 20, regional: 'GOIAS', supervisor: 'DILSON REBAU', contato: '(64) 9 9344-0641' },
+  { ordem: 30, regional: 'GOIAS', supervisor: 'SIDNEI RIBEIRO', contato: '(64) 9 9223-3113' },
+  { ordem: 40, regional: 'MARANHÃO', supervisor: 'MANUEL DE JESUS', contato: '(99) 9 8848-6088' },
+  { ordem: 50, regional: 'MATO GROSSO DO SUL', supervisor: 'SAMUEL SANTA CRUZ', contato: '(67) 9 9119-4786' },
+  { ordem: 60, regional: 'MATO GROSSO DO SUL', supervisor: 'CECILIA KAROLAYNE', contato: '(66) 9 8437-4326' },
+  { ordem: 70, regional: 'MINAS GERAIS', supervisor: 'RICARDO ARAÚJO', contato: '(34) 9 9729-7489' },
+  { ordem: 80, regional: 'MT1 - SINOP', supervisor: 'MARCO AUGUSTO', contato: '(66) 9 9714-3354' },
+  { ordem: 90, regional: 'MT2 - RONDONOPOLIS/PRIMAVERA DO LESTE', supervisor: 'JEAN PABLO', contato: '(66) 9 9607-6403' },
+  { ordem: 100, regional: 'MT3 - CONFRESA', supervisor: 'VANUZA PEREIRA', contato: '(66) 9 8457-8435' },
+  { ordem: 110, regional: 'MT3 - QUERENCIA', supervisor: 'VANUZA PEREIRA', contato: '(66) 9 8457-8435' },
+  { ordem: 120, regional: 'MT4 - CAMPO NOVO DO PARECIS', supervisor: 'CLEUTON ALBERNAZ', contato: '(66) 9 9690-9921' },
+  { ordem: 130, regional: 'PARA', supervisor: 'JADSON SARAVA', contato: '(63) 9 9216-7795' },
+  { ordem: 140, regional: 'PARAGUAI', supervisor: 'ANDERSON DO CARMO', contato: '(44) 9 9829-3822' },
+  { ordem: 150, regional: 'PR - PONTA GROSSA E REGIÃO', supervisor: 'MICHAEL RIBAS', contato: '(42) 9 9834-4303' },
+  { ordem: 160, regional: 'PR - CASCAVEL', supervisor: 'ANDERSON DO CARMO', contato: '(44) 9 9829-3822' },
+  { ordem: 170, regional: 'PR - LONDRINA', supervisor: 'MICHAEL GONÇALVES', contato: '(43) 9 9182-6733' },
+  { ordem: 180, regional: 'PR - MARINGÁ E TERMINAIS FERROVIÁRIOS', supervisor: 'JOSÉ BOA VENTURA', contato: '(44) 9 9836-1000' },
+  { ordem: 190, regional: 'RIO GRANDE DO SUL', supervisor: 'DILMAR THOMET', contato: '(54) 9 9674-3775' },
+  { ordem: 200, regional: 'SÃO PAULO', supervisor: 'MAYCKON INOUE', contato: '(43) 9 9604-1000' },
+  { ordem: 210, regional: 'TOCANTINS', supervisor: 'KAIRO LEITE', contato: '(63) 9 9120-1087' },
+];
+
 const DEFAULT_PRAZO_FATURA = 'Semanalmente';
 const DEFAULT_PRAZO_PGTO = '10ddl';
 
 const state = {
   rows: [],
   filtered: [],
+  gestores: DEFAULT_GESTORES_REGIONAIS,
   filters: { q: '', status: '' },
+  activeTab: 'propostas',
   loading: false,
   editing: null,
+  gestorEditing: null,
+  gestoresError: '',
   userContext: null,
 };
 
@@ -131,6 +159,9 @@ function ensureStyles() {
     .prop-btn-secondary{background:#0d0d18;border-color:rgba(255,255,255,.08);color:#e2e8f0}
     .prop-btn-danger{background:#7f1d1d;color:white}
     .prop-btn-inline{padding:8px 10px;border-radius:11px;font-size:12px}
+    .prop-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:6px;background:rgba(2,6,23,.48);border:1px solid rgba(51,65,85,.7);border-radius:18px;width:max-content;max-width:100%}
+    .prop-tab{border:1px solid transparent;border-radius:13px;padding:10px 14px;background:transparent;color:#94a3b8;font-weight:900;cursor:pointer}
+    .prop-tab.is-active{background:#16a34a;color:#fff;box-shadow:0 10px 24px rgba(22,163,74,.18)}
     .prop-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
     .prop-kpi{background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.92));border:1px solid rgba(51,65,85,.8);border-radius:20px;padding:16px 18px;box-shadow:0 12px 28px rgba(2,6,23,.24)}
     .prop-kpi-label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -180,7 +211,9 @@ function ensureStyles() {
     .prop-link{color:#86efac;text-decoration:none;font-weight:800}
     .prop-link:hover{text-decoration:underline}
     .prop-loading{opacity:.72;pointer-events:none}
-    @media (max-width: 1100px){.prop-grid,.prop-filter-grid,.prop-form-grid{grid-template-columns:1fr}.prop-form-grid .span-2{grid-column:auto}}
+    .gestor-form{padding:20px;display:grid;grid-template-columns:1.3fr 1fr .8fr .35fr auto;gap:12px;align-items:end;border-top:1px solid rgba(51,65,85,.45)}
+    .gestor-table{min-width:820px}
+    @media (max-width: 1100px){.prop-grid,.prop-filter-grid,.prop-form-grid,.gestor-form{grid-template-columns:1fr}.prop-form-grid .span-2{grid-column:auto}.prop-tabs{width:100%}.prop-tab{flex:1}}
   `;
   document.head.appendChild(style);
 }
@@ -194,6 +227,18 @@ function statusClass(status) {
 
 function setFeedback(message, type = 'success') {
   const box = document.getElementById('propFeedback');
+  if (!box) return;
+  if (!message) {
+    box.className = 'prop-feedback';
+    box.textContent = '';
+    return;
+  }
+  box.className = `prop-feedback is-visible ${type === 'error' ? 'is-error' : 'is-success'}`;
+  box.textContent = message;
+}
+
+function setGestorFeedback(message, type = 'success') {
+  const box = document.getElementById('gestorFeedback');
   if (!box) return;
   if (!message) {
     box.className = 'prop-feedback';
@@ -221,120 +266,224 @@ function applyFilters() {
   });
 }
 
-function renderPage(content) {
-  applyFilters();
+function renderTabs() {
+  return `
+    <div class="prop-tabs" role="tablist" aria-label="Abas de propostas">
+      <button class="prop-tab ${state.activeTab === 'propostas' ? 'is-active' : ''}" data-tab="propostas" type="button">Propostas</button>
+      <button class="prop-tab ${state.activeTab === 'gestores' ? 'is-active' : ''}" data-tab="gestores" type="button">Gestores</button>
+    </div>
+  `;
+}
+
+function renderPropostasPanel() {
   const total = state.rows.length;
   const geradas = state.rows.filter((row) => row.link_proposta).length;
   const aceitas = state.rows.filter((row) => row.status === 'aceita' || row.data_aceite_proposta).length;
   const contratos = state.rows.filter((row) => row.link_contrato).length;
 
+  return `
+    <section class="prop-grid">
+      <article class="prop-kpi"><div class="prop-kpi-label">Propostas</div><div class="prop-kpi-value">${total}</div></article>
+      <article class="prop-kpi"><div class="prop-kpi-label">Com link</div><div class="prop-kpi-value">${geradas}</div></article>
+      <article class="prop-kpi"><div class="prop-kpi-label">Aceitas</div><div class="prop-kpi-value">${aceitas}</div></article>
+      <article class="prop-kpi"><div class="prop-kpi-label">Contratos</div><div class="prop-kpi-value">${contratos}</div></article>
+    </section>
+
+    <section class="prop-panel">
+      <div class="prop-panel-head">
+        <div>
+          <h3>Base de propostas</h3>
+          <p>${state.filtered.length} registro(s) exibido(s)</p>
+        </div>
+      </div>
+
+      <div class="prop-filter-grid">
+        <div class="prop-field">
+          <label for="propSearch">Buscar</label>
+          <input class="prop-input" id="propSearch" type="text" placeholder="Número, cliente, contato, e-mail, WhatsApp..." value="${esc(state.filters.q)}">
+        </div>
+        <div class="prop-field">
+          <label for="propStatus">Status</label>
+          <select class="prop-select" id="propStatus">
+            <option value="">Todos</option>
+            ${Object.entries(STATUS_LABEL).map(([value, label]) => `<option value="${esc(value)}" ${state.filters.status === value ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="prop-field" style="justify-content:flex-end">
+          <label>&nbsp;</label>
+          <button class="prop-btn prop-btn-secondary" id="propClearBtn" type="button">Limpar</button>
+        </div>
+      </div>
+
+      <div class="prop-feedback" id="propFeedback"></div>
+
+      <div class="prop-table-wrap">
+        ${state.filtered.length ? `
+          <table class="prop-table">
+            <thead>
+              <tr>
+                <th>Nº / Cliente</th>
+                <th>Contato</th>
+                <th>Prazo</th>
+                <th>Status</th>
+                <th>Links</th>
+                <th>Atualização</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.filtered.map((row) => `
+                <tr>
+                  <td>
+                    <div class="prop-name">
+                      <strong>#${esc(row.numero || '-')} · ${esc(row.cliente || '-')}</strong>
+                      <span class="prop-sub">${esc(row.estados || 'Sem estado informado')}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="prop-name">
+                      <strong>${esc(row.nome_contato || '-')}</strong>
+                      <span class="prop-sub">${esc(row.email_contato || '-')}</span>
+                      <span class="prop-sub">${esc(row.whatsapp_contato || '-')}</span>
+                    </div>
+                  </td>
+                  <td>${formatDate(row.prazo_inicial)} até ${formatDate(row.prazo_final)}<br><span class="prop-sub">Aceite: ${formatDate(row.data_aceite_proposta)}</span></td>
+                  <td><span class="${statusClass(row.status)}">${esc(STATUS_LABEL[row.status] || row.status || '-')}</span></td>
+                  <td>
+                    ${row.link_proposta ? `<a class="prop-link" href="${esc(row.link_proposta)}" target="_blank" rel="noopener">Proposta</a>` : '<span class="prop-sub">Sem proposta</span>'}
+                    <br>
+                    ${row.link_contrato ? `<a class="prop-link" href="${esc(row.link_contrato)}" target="_blank" rel="noopener">Contrato</a>` : '<span class="prop-sub">Sem contrato</span>'}
+                  </td>
+                  <td>${formatDateTime(row.updated_at || row.created_at)}</td>
+                  <td>
+                    <div class="prop-row-actions">
+                      <button class="prop-btn prop-btn-inline prop-btn-secondary" data-action="edit" data-id="${esc(row.id)}" type="button">Editar</button>
+                      <button class="prop-btn prop-btn-inline prop-btn-primary" data-action="pdf" data-id="${esc(row.id)}" type="button">PDF</button>
+                    </div>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : `<div class="prop-empty">Nenhuma proposta encontrada.</div>`}
+      </div>
+    </section>
+  `;
+}
+
+function renderGestoresPanel() {
+  const editing = state.gestorEditing || {};
+  return `
+    <section class="prop-panel">
+      <div class="prop-panel-head">
+        <div>
+          <h3>Gestores regionais</h3>
+          <p>Esses contatos entram automaticamente na tabela do PDF da proposta.</p>
+        </div>
+        <div class="prop-actions">
+          <button class="prop-btn prop-btn-secondary" id="gestorDefaultsBtn" type="button">Carregar padrão</button>
+          <button class="prop-btn prop-btn-secondary" id="gestorRefreshBtn" type="button">Atualizar</button>
+        </div>
+      </div>
+
+      <div class="gestor-form">
+        <div class="prop-field">
+          <label for="gRegional">Regional</label>
+          <input class="prop-input" id="gRegional" type="text" value="${esc(editing.regional || '')}" placeholder="Ex.: PR - Cascavel">
+        </div>
+        <div class="prop-field">
+          <label for="gSupervisor">Supervisor</label>
+          <input class="prop-input" id="gSupervisor" type="text" value="${esc(editing.supervisor || '')}" placeholder="Nome do supervisor">
+        </div>
+        <div class="prop-field">
+          <label for="gContato">Contato</label>
+          <input class="prop-input" id="gContato" type="text" value="${esc(editing.contato || '')}" placeholder="(00) 9 0000-0000">
+        </div>
+        <div class="prop-field">
+          <label for="gOrdem">Ordem</label>
+          <input class="prop-input" id="gOrdem" type="number" value="${esc(editing.ordem ?? nextGestorOrdem())}">
+        </div>
+        <div class="prop-actions">
+          ${state.gestorEditing ? '<button class="prop-btn prop-btn-secondary" id="gestorCancelBtn" type="button">Cancelar</button>' : ''}
+          <button class="prop-btn prop-btn-primary" id="gestorSaveBtn" type="button">${state.gestorEditing ? 'Salvar ajuste' : 'Adicionar'}</button>
+        </div>
+      </div>
+
+      <div class="prop-feedback ${state.gestoresError ? 'is-visible is-error' : ''}" id="gestorTableNotice">${esc(state.gestoresError)}</div>
+      <div class="prop-feedback" id="gestorFeedback"></div>
+
+      <div class="prop-table-wrap">
+        ${state.gestores.length ? `
+          <table class="prop-table gestor-table">
+            <thead>
+              <tr>
+                <th>Ordem</th>
+                <th>Regional</th>
+                <th>Supervisor</th>
+                <th>Contato</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.gestores.map((row) => `
+                <tr>
+                  <td>${esc(row.ordem ?? '-')}</td>
+                  <td><strong>${esc(row.regional || '-')}</strong></td>
+                  <td>${esc(row.supervisor || '-')}</td>
+                  <td>${esc(row.contato || '-')}</td>
+                  <td>
+                    <div class="prop-row-actions">
+                      <button class="prop-btn prop-btn-inline prop-btn-secondary" data-gestor-action="edit" data-id="${esc(row.id || row._key)}" type="button">Editar</button>
+                      ${row.id ? `<button class="prop-btn prop-btn-inline prop-btn-danger" data-gestor-action="remove" data-id="${esc(row.id)}" type="button">Remover</button>` : ''}
+                    </div>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : `<div class="prop-empty">Nenhum gestor cadastrado.</div>`}
+      </div>
+    </section>
+  `;
+}
+
+function renderPage(content) {
+  applyFilters();
   content.innerHTML = `
     <section class="prop-shell ${state.loading ? 'prop-loading' : ''}">
       <section class="prop-hero">
         <div>
           <h3>Propostas comerciais</h3>
-          <p>Gere o PDF da proposta e acompanhe aceite, contato e contrato.</p>
+          <p>Gere o PDF da proposta e acompanhe aceite, contato, contrato e gestores regionais.</p>
         </div>
         <div class="prop-actions">
           <button class="prop-btn prop-btn-secondary" id="propRefreshBtn" type="button">Atualizar</button>
           <button class="prop-btn prop-btn-primary" id="propNewBtn" type="button">Nova proposta</button>
         </div>
       </section>
-
-      <section class="prop-grid">
-        <article class="prop-kpi"><div class="prop-kpi-label">Propostas</div><div class="prop-kpi-value">${total}</div></article>
-        <article class="prop-kpi"><div class="prop-kpi-label">Com link</div><div class="prop-kpi-value">${geradas}</div></article>
-        <article class="prop-kpi"><div class="prop-kpi-label">Aceitas</div><div class="prop-kpi-value">${aceitas}</div></article>
-        <article class="prop-kpi"><div class="prop-kpi-label">Contratos</div><div class="prop-kpi-value">${contratos}</div></article>
-      </section>
-
-      <section class="prop-panel">
-        <div class="prop-panel-head">
-          <div>
-            <h3>Base de propostas</h3>
-            <p>${state.filtered.length} registro(s) exibido(s)</p>
-          </div>
-        </div>
-
-        <div class="prop-filter-grid">
-          <div class="prop-field">
-            <label for="propSearch">Buscar</label>
-            <input class="prop-input" id="propSearch" type="text" placeholder="Número, cliente, contato, e-mail, WhatsApp..." value="${esc(state.filters.q)}">
-          </div>
-          <div class="prop-field">
-            <label for="propStatus">Status</label>
-            <select class="prop-select" id="propStatus">
-              <option value="">Todos</option>
-              ${Object.entries(STATUS_LABEL).map(([value, label]) => `<option value="${esc(value)}" ${state.filters.status === value ? 'selected' : ''}>${esc(label)}</option>`).join('')}
-            </select>
-          </div>
-          <div class="prop-field" style="justify-content:flex-end">
-            <label>&nbsp;</label>
-            <button class="prop-btn prop-btn-secondary" id="propClearBtn" type="button">Limpar</button>
-          </div>
-        </div>
-
-        <div class="prop-feedback" id="propFeedback"></div>
-
-        <div class="prop-table-wrap">
-          ${state.filtered.length ? `
-            <table class="prop-table">
-              <thead>
-                <tr>
-                  <th>Nº / Cliente</th>
-                  <th>Contato</th>
-                  <th>Prazo</th>
-                  <th>Status</th>
-                  <th>Links</th>
-                  <th>Atualização</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${state.filtered.map((row) => `
-                  <tr>
-                    <td>
-                      <div class="prop-name">
-                        <strong>#${esc(row.numero || '-')} · ${esc(row.cliente || '-')}</strong>
-                        <span class="prop-sub">${esc(row.estados || 'Sem estado informado')}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="prop-name">
-                        <strong>${esc(row.nome_contato || '-')}</strong>
-                        <span class="prop-sub">${esc(row.email_contato || '-')}</span>
-                        <span class="prop-sub">${esc(row.whatsapp_contato || '-')}</span>
-                      </div>
-                    </td>
-                    <td>${formatDate(row.prazo_inicial)} até ${formatDate(row.prazo_final)}<br><span class="prop-sub">Aceite: ${formatDate(row.data_aceite_proposta)}</span></td>
-                    <td><span class="${statusClass(row.status)}">${esc(STATUS_LABEL[row.status] || row.status || '-')}</span></td>
-                    <td>
-                      ${row.link_proposta ? `<a class="prop-link" href="${esc(row.link_proposta)}" target="_blank" rel="noopener">Proposta</a>` : '<span class="prop-sub">Sem proposta</span>'}
-                      <br>
-                      ${row.link_contrato ? `<a class="prop-link" href="${esc(row.link_contrato)}" target="_blank" rel="noopener">Contrato</a>` : '<span class="prop-sub">Sem contrato</span>'}
-                    </td>
-                    <td>${formatDateTime(row.updated_at || row.created_at)}</td>
-                    <td>
-                      <div class="prop-row-actions">
-                        <button class="prop-btn prop-btn-inline prop-btn-secondary" data-action="edit" data-id="${esc(row.id)}" type="button">Editar</button>
-                        <button class="prop-btn prop-btn-inline prop-btn-primary" data-action="pdf" data-id="${esc(row.id)}" type="button">PDF</button>
-                      </div>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          ` : `<div class="prop-empty">Nenhuma proposta encontrada.</div>`}
-        </div>
-      </section>
+      ${renderTabs()}
+      ${state.activeTab === 'gestores' ? renderGestoresPanel() : renderPropostasPanel()}
     </section>
   `;
   bindPageEvents(content);
 }
 
 function bindPageEvents(content) {
+  content.querySelectorAll('[data-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.activeTab = button.dataset.tab || 'propostas';
+      state.gestorEditing = null;
+      renderPage(content);
+    });
+  });
   content.querySelector('#propRefreshBtn')?.addEventListener('click', () => loadRows(content, true));
   content.querySelector('#propNewBtn')?.addEventListener('click', () => openModal());
+
+  if (state.activeTab === 'gestores') {
+    bindGestorEvents(content);
+    return;
+  }
+
   content.querySelector('#propSearch')?.addEventListener('input', (event) => {
     state.filters.q = event.target.value;
     renderPage(content);
@@ -355,8 +504,126 @@ function bindPageEvents(content) {
   });
 }
 
+function bindGestorEvents(content) {
+  content.querySelector('#gestorRefreshBtn')?.addEventListener('click', async () => {
+    await loadGestores();
+    renderPage(content);
+    setGestorFeedback('Gestores atualizados.');
+  });
+  content.querySelector('#gestorDefaultsBtn')?.addEventListener('click', () => restoreDefaultGestores(content));
+  content.querySelector('#gestorCancelBtn')?.addEventListener('click', () => {
+    state.gestorEditing = null;
+    renderPage(content);
+  });
+  content.querySelector('#gestorSaveBtn')?.addEventListener('click', () => saveGestor(content));
+  content.querySelectorAll('[data-gestor-action="edit"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.gestorEditing = getGestor(button.dataset.id);
+      renderPage(content);
+    });
+  });
+  content.querySelectorAll('[data-gestor-action="remove"]').forEach((button) => {
+    button.addEventListener('click', () => removeGestor(button.dataset.id, content));
+  });
+}
+
 function getRow(id) {
   return state.rows.find((row) => String(row.id) === String(id)) || null;
+}
+
+function nextGestorOrdem() {
+  const max = state.gestores.reduce((acc, row) => Math.max(acc, Number(row.ordem) || 0), 0);
+  return max + 10;
+}
+
+function gestorKey(row) {
+  return row.id || `${row.ordem}-${normalize(row.regional)}-${normalize(row.supervisor)}-${normalize(row.contato)}`;
+}
+
+function getGestor(id) {
+  return state.gestores.find((row) => String(gestorKey(row)) === String(id) || String(row.id) === String(id)) || null;
+}
+
+async function loadGestores() {
+  try {
+    state.gestoresError = '';
+    const { data, error } = await supabase
+      .from('propostas_gestores_regionais')
+      .select('*')
+      .eq('ativo', true)
+      .order('ordem', { ascending: true })
+      .order('regional', { ascending: true });
+    if (error) throw error;
+    const rows = (data || []).map((row, index) => ({
+      ...row,
+      _key: gestorKey(row) || `gestor-${index}`,
+    }));
+    state.gestores = rows.length ? rows : DEFAULT_GESTORES_REGIONAIS.map((row, index) => ({ ...row, _key: `default-${index}` }));
+  } catch (error) {
+    state.gestores = DEFAULT_GESTORES_REGIONAIS.map((row, index) => ({ ...row, _key: `default-${index}` }));
+    state.gestoresError = `${error.message || 'Não foi possível carregar a tabela de gestores.'} Execute a migration propostas_gestores_regionais no Supabase.`;
+  }
+}
+
+async function saveGestor(content) {
+  const payload = {
+    regional: document.getElementById('gRegional')?.value?.trim() || '',
+    supervisor: document.getElementById('gSupervisor')?.value?.trim() || '',
+    contato: document.getElementById('gContato')?.value?.trim() || '',
+    ordem: Number(document.getElementById('gOrdem')?.value || 0) || nextGestorOrdem(),
+    ativo: true,
+    updated_at: new Date().toISOString(),
+  };
+  if (!payload.regional || !payload.supervisor || !payload.contato) {
+    setGestorFeedback('Informe regional, supervisor e contato.', 'error');
+    return;
+  }
+  try {
+    const query = state.gestorEditing?.id
+      ? supabase.from('propostas_gestores_regionais').update(payload).eq('id', state.gestorEditing.id)
+      : supabase.from('propostas_gestores_regionais').insert(payload);
+    const { error } = await query;
+    if (error) throw error;
+    state.gestorEditing = null;
+    await loadGestores();
+    renderPage(content);
+    setGestorFeedback('Gestor salvo com sucesso. As próximas propostas já usarão essa tabela.');
+  } catch (error) {
+    setGestorFeedback(`${error.message || 'Erro ao salvar gestor.'} Verifique se a migration propostas_gestores_regionais foi executada.`, 'error');
+  }
+}
+
+async function removeGestor(id, content) {
+  const row = getGestor(id);
+  if (!row?.id) return;
+  if (!window.confirm(`Remover ${row.supervisor || 'gestor'} da tabela de contatos regionais?`)) return;
+  try {
+    const { error } = await supabase
+      .from('propostas_gestores_regionais')
+      .update({ ativo: false, updated_at: new Date().toISOString() })
+      .eq('id', row.id);
+    if (error) throw error;
+    await loadGestores();
+    renderPage(content);
+    setGestorFeedback('Gestor removido da tabela.');
+  } catch (error) {
+    setGestorFeedback(error.message || 'Erro ao remover gestor.', 'error');
+  }
+}
+
+async function restoreDefaultGestores(content) {
+  try {
+    const payload = DEFAULT_GESTORES_REGIONAIS.map((row) => ({ ...row, ativo: true, updated_at: new Date().toISOString() }));
+    const { error } = await supabase
+      .from('propostas_gestores_regionais')
+      .upsert(payload, { onConflict: 'regional,supervisor,contato' });
+    if (error) throw error;
+    await loadGestores();
+    renderPage(content);
+    setGestorFeedback('Lista padrão carregada com sucesso.');
+  } catch (error) {
+    setGestorFeedback(`${error.message || 'Erro ao carregar lista padrão.'} Verifique se a migration propostas_gestores_regionais foi executada.`, 'error');
+  }
 }
 
 function ensureModal() {
@@ -613,6 +880,7 @@ async function loadRows(content, keepFeedback = false) {
       .limit(1000);
     if (error) throw error;
     state.rows = data || [];
+    await loadGestores();
   } catch (error) {
     loadError = error;
   } finally {
