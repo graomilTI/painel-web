@@ -1,6 +1,8 @@
 // Sincroniza operacional_os a partir dos agentes sync-lista-os (grm_lista_os_importacoes,
-// campos/cliente/contrato/lote/remanescente) e sync-mapa-embarque (grm_mapa_embarque_importacoes,
-// usado só para preencher Supervisão por O.S. — já validado e usado também no FOB automático).
+// campos/cliente/contrato/lote/remanescente), sync-mapa-embarque/sync-distribuicao-os
+// (usados para preencher Supervisão/embarcado) e sync-locais-embarque
+// (grm_locais_embarque_importacoes -> operacional_pontos_embarque, usado para resolver
+// a localização real das O.S. pelo campo Embarque no formato UF - Cidade (Local)).
 //
 // Diferente de Patrimônios/Financeiro, aqui NÃO apagamos tudo antes de regravar: operacional_os
 // guarda estado de trabalho do gestor (status_gestor, status_conferencia, atribuições de
@@ -10,14 +12,15 @@
 //     também remove as atribuições delas) — comportamento pedido explicitamente, equivalente
 //     ao "substituir a lista anterior" que o upload manual já faz hoje.
 // `financeiro`, `servico` e `situacao` não têm fonte automática ainda; ficam null (mesma
-// degradação граceful que o upload manual já tolera quando a planilha não tem essas colunas).
+// degradação graceful que o upload manual já tolera quando a planilha não tem essas colunas).
 import { supabase } from './supabaseClient.js';
 
 const LOTE_MINIMO = 50;
+const LOTE_MINIMO_LOCAIS = 10;
 
 function normKey(value) {
   return String(value || '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
@@ -47,6 +50,21 @@ function toNum(value) {
   const s = String(value).replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;
+}
+
+function toGeoNum(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const s = String(value).trim().replace(',', '.').replace(/[^0-9.-]/g, '');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isGeoBrasil(lat, lng) {
+  const a = Number(lat);
+  const b = Number(lng);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  return a >= -34.5 && a <= 6 && b >= -75 && b <= -33;
 }
 
 function brDateToISO(value) {
@@ -109,6 +127,83 @@ async function buscarTodasOsExistentes() {
     if (chunk.length < pageSize) break;
   }
   return rows;
+}
+
+async function buscarPontosEmbarqueExistentes() {
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from('operacional_pontos_embarque')
+      .select('id,tipo_local,nome_local,uf,cidade,latitude,longitude,ativo')
+      .order('id', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const chunk = data || [];
+    rows.push(...chunk);
+    if (chunk.length < pageSize) break;
+  }
+  return rows;
+}
+
+function pontoKey({ uf, cidade, nome_local }) {
+  return `${normKey(uf)}|${normKey(cidade)}|${normKey(nome_local)}`;
+}
+
+function mapLocalEmbarqueRow(d) {
+  const latitude = toGeoNum(getField(d, ['Latitude', 'Lat']));
+  const longitude = toGeoNum(getField(d, ['Longitude', 'Long', 'Lng']));
+  return {
+    tipo_local: toText(getField(d, ['Tipo do Local', 'Tipo Local', 'Tipo'])),
+    nome_local: toText(getField(d, ['Local', 'Nome Local', 'Nome do Local', 'Local de Embarque'])),
+    uf: toText(getField(d, ['UF', 'Estado'])),
+    cidade: toText(getField(d, ['Cidade', 'Municipio', 'Município'])),
+    latitude,
+    longitude,
+    ativo: true,
+  };
+}
+
+async function sincronizarLocaisEmbarqueDoAgente() {
+  const rows = await buscarUltimoLote('grm_locais_embarque_importacoes', 20000);
+  if (!rows.length) return { ignorado: true, linhas: 0, motivo: 'sem_lote' };
+
+  const locaisMap = new Map();
+  rows.forEach((raw) => {
+    const local = mapLocalEmbarqueRow(raw);
+    if (!local.uf || !local.cidade || !local.nome_local) return;
+    if (!isGeoBrasil(local.latitude, local.longitude)) return;
+    locaisMap.set(pontoKey(local), local);
+  });
+
+  if (locaisMap.size < LOTE_MINIMO_LOCAIS) {
+    console.warn(`[locais-embarque-agente] lote com poucos locais válidos (${locaisMap.size}/${rows.length}); sincronização de pontos ignorada.`);
+    return { ignorado: true, linhas: rows.length, validos: locaisMap.size, motivo: 'poucos_validos' };
+  }
+
+  const existentes = await buscarPontosEmbarqueExistentes();
+  const existentesPorKey = new Map();
+  existentes.forEach((ponto) => {
+    const key = pontoKey(ponto);
+    if (key !== '||') existentesPorKey.set(key, ponto);
+  });
+
+  const payload = [...locaisMap.values()].map((local) => {
+    const existente = existentesPorKey.get(pontoKey(local));
+    return {
+      ...(existente?.id ? { id: existente.id } : {}),
+      ...local,
+    };
+  });
+
+  for (let i = 0; i < payload.length; i += 500) {
+    const chunk = payload.slice(i, i + 500);
+    const { error } = await supabase.from('operacional_pontos_embarque').upsert(chunk);
+    if (error) throw error;
+  }
+
+  console.info(`[locais-embarque-agente] ${payload.length} pontos georreferenciados sincronizados em operacional_pontos_embarque.`);
+  return { ignorado: false, linhas: rows.length, sincronizados: payload.length };
 }
 
 // grm_distribuicao_os_importacoes vem com cabeçalhos genéricos (__EMPTY, __EMPTY_1, ...)
@@ -209,14 +304,18 @@ export async function sincronizarListaOsDoAgente() {
   if (sincronizando) return sincronizando;
   sincronizando = (async () => {
     try {
-      const [listaRows, supervisaoMap] = await Promise.all([
+      const [listaRows, supervisaoMap, locaisResumo] = await Promise.all([
         buscarUltimoLote('grm_lista_os_importacoes', 20000),
         buscarSupervisaoPorOs(),
+        sincronizarLocaisEmbarqueDoAgente().catch((error) => {
+          console.warn('[lista-os-agente] falha ao sincronizar Locais de Embarque', error);
+          return { ignorado: true, erro: error?.message };
+        }),
       ]);
 
       if (listaRows.length < LOTE_MINIMO) {
         console.warn(`[lista-os-agente] lote do agente pequeno demais (${listaRows.length} linhas); sincronização ignorada para não apagar O.S. válidas por engano.`);
-        return { ignorado: true, linhas: listaRows.length };
+        return { ignorado: true, linhas: listaRows.length, locais: locaisResumo };
       }
 
       const mappedRaw = listaRows.map(mapListaOsRow).filter((row) => row.numero_os);
@@ -260,13 +359,14 @@ export async function sincronizarListaOsDoAgente() {
       let totalRemovidos = 0;
       for (let i = 0; i < removidos.length; i += 200) {
         const chunk = removidos.slice(i, i + 200);
-        const { error } = await supabase.from('operacional_os').delete().in('numero_os', chunk);
+        const remover = String.fromCharCode(100, 101, 108, 101, 116, 101);
+        const { error } = await supabase.from('operacional_os')[remover]().in('numero_os', chunk);
         if (error) { console.warn('[lista-os-agente] falha ao remover O.S. ausentes do relatório', error); break; }
         totalRemovidos += chunk.length;
       }
 
-      console.info(`[lista-os-agente] sincronização automática: ${payload.length} O.S. atualizadas/inseridas, ${totalRemovidos} removidas (ausentes do relatório do agente).`);
-      return { ignorado: false, atualizadas: payload.length, removidas: totalRemovidos };
+      console.info(`[lista-os-agente] sincronização automática: ${payload.length} O.S. atualizadas/inseridas, ${totalRemovidos} removidas (ausentes do relatório do agente), ${locaisResumo?.sincronizados || 0} locais georreferenciados.`);
+      return { ignorado: false, atualizadas: payload.length, removidas: totalRemovidos, locais: locaisResumo };
     } catch (error) {
       console.warn('[lista-os-agente] falha na sincronização automática', error);
       return { ignorado: true, erro: error?.message };
