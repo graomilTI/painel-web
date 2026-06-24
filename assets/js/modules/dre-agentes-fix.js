@@ -1,6 +1,6 @@
 // Ajustes de saneamento para fontes do DRE alimentadas pelos agentes GRM.
 // Este arquivo roda depois do módulo principal e envolve o openHome para limpar caches
-// antigos e entregar ao DRE despesas do agente já normalizadas/deduplicadas.
+// antigos e entregar ao DRE somente as fontes oficiais dos agentes para NF, despesas e produção.
 (function () {
   const originalDre = window.DRE;
   if (!originalDre || typeof originalDre.openHome !== 'function' || originalDre.openHome.__dreAgentesFix) return;
@@ -20,6 +20,7 @@
   };
 
   const REGIOES_IGNORADAS_DRE = new Set(['NULL', 'AGROTRADER', 'LOG1000', 'PARAGUAI']);
+  const DRE_TIPOS_AGENTES_OFICIAIS = new Set(['despesas', 'notas_fiscais', 'resultado-diario']);
   const CAMPOS_VALOR = [
     'Valor Total', 'Valor', 'Valor Pago', 'V. Pago', 'Total Pago', 'Total',
     'valor_total', 'valor', 'valor_pago', 'total'
@@ -47,6 +48,43 @@
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^A-Z0-9]/g, '');
+  }
+
+  function cleanTipo(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/_/g, '-')
+      .replace(/\s+/g, '-');
+  }
+
+  function normalizeReportTipo(row) {
+    const candidates = [
+      row?.tipo,
+      row?.tipo_relatorio,
+      row?.titulo_relatorio,
+      row?.nome_arquivo,
+      row?.arquivo_nome_original
+    ].map(v => String(v || '').trim()).filter(Boolean);
+
+    for (const original of candidates) {
+      const t = cleanTipo(original);
+      const low = original.toLowerCase();
+      if (['despesas', 'relatorio-de-despesas', 'despesas-por-regional'].includes(t)) return 'despesas';
+      if (['notas-fiscais', 'nota-fiscal', 'nfs', 'nf', 'nfe', 'nfse', 'faturamento', 'relatorio-de-notas-fiscais'].includes(t)) return 'notas_fiscais';
+      if (['resultado-diario', 'resultado-diario-gavilon', 'relatorio-resultado-diario', 'producao', 'producao-consolidada', 'relatorio-de-resultado-diario'].includes(t)) return 'resultado-diario';
+      if (/despesas?|despesas?\s*por\s*regional/.test(low)) return 'despesas';
+      if (/notas?\s*fiscais?|nfe|nfse|faturamento/.test(low)) return 'notas_fiscais';
+      if (/resultado.*diario|diario.*resultado|gavilon|producao|produção/.test(low)) return 'resultado-diario';
+    }
+    return cleanTipo(candidates[0] || 'outros');
+  }
+
+  function filterRelatoriosManuaisDoDre(data) {
+    const rows = Array.isArray(data) ? data : [];
+    return rows.filter(row => !DRE_TIPOS_AGENTES_OFICIAIS.has(normalizeReportTipo(row)));
   }
 
   function n(value) {
@@ -188,8 +226,6 @@
       const categoryKeys = Object.keys(categoryColumns);
 
       if (categoryKeys.length > 1) {
-        // Linha pivotada completa: o agente pode recarregar a mesma competência diversas vezes.
-        // Para DRE mensal, fica somente o snapshot mais recente por regional+mês.
         const key = `${reg}|${month}`;
         const total = Object.values(categoryColumns).reduce((acc, value) => acc + Math.abs(n(value)), 0);
         const entry = { row, reg, month, values: categoryColumns, total };
@@ -198,7 +234,6 @@
       }
 
       if (categoryKeys.length === 1) {
-        // Snapshot por categoria: mantém somente a versão mais recente da categoria no mês.
         const category = categoryKeys[0];
         const values = { [category]: n(categoryColumns[category]) };
         const key = `${reg}|${month}|${category}`;
@@ -212,7 +247,6 @@
       const analytic = analyticCategoryValue(json);
       if (!analytic) continue;
 
-      // Linha analítica: soma as linhas reais, mas remove repetições do mesmo documento/lançamento.
       const signature = `${reg}|${month}|${analytic.category}|${stableJson(json)}`;
       if (window.__dreDespesasAgentesSeen.has(signature)) continue;
       window.__dreDespesasAgentesSeen.add(signature);
@@ -227,9 +261,6 @@
     }
 
     const fullPivotKeys = new Set(fullPivotByRegMonth.keys());
-
-    // Se existe snapshot completo de regional+mês, ele é a fonte mais segura e substitui
-    // snapshots por categoria da mesma regional+mês para evitar somar o mesmo lote duas vezes.
     const categoryEntries = [...categorySnapshotByRegMonthCategory.values()]
       .filter(entry => !fullPivotKeys.has(`${entry.reg}|${entry.month}`));
 
@@ -244,8 +275,15 @@
     ].map(toNormalizedRow);
   }
 
-  function shouldPatchDespesasResult(state) {
-    return state.table === 'grm_despesas_importacoes' && /dados_json/i.test(state.selected || '');
+  function patchResultData(state, result) {
+    if (!result || !Array.isArray(result.data)) return result;
+    if (state.table === 'grm_despesas_importacoes' && /dados_json/i.test(state.selected || '')) {
+      return { ...result, data: normalizeDespesasRows(result.data) };
+    }
+    if (state.table === 'relatorios_importacoes') {
+      return { ...result, data: filterRelatoriosManuaisDoDre(result.data) };
+    }
+    return result;
   }
 
   function wrapQueryBuilder(builder, table) {
@@ -256,13 +294,7 @@
     proxy = new Proxy({}, {
       get(_target, prop) {
         if (prop === 'then') {
-          return (resolve, reject) => inner.then((result) => {
-            if (shouldPatchDespesasResult(state) && result && Array.isArray(result.data)) {
-              resolve({ ...result, data: normalizeDespesasRows(result.data) });
-              return;
-            }
-            resolve(result);
-          }, reject);
+          return (resolve, reject) => inner.then((result) => resolve(patchResultData(state, result)), reject);
         }
         if (prop === 'catch') return (...args) => Promise.resolve(proxy).catch(...args);
         if (prop === 'finally') return (...args) => Promise.resolve(proxy).finally(...args);
@@ -295,17 +327,19 @@
 
   function wrapSupabaseForDre(supabase) {
     if (!supabase || supabase.__dreAgentesFix) return supabase;
-    return new Proxy(supabase, {
+    const wrapped = new Proxy(supabase, {
       get(target, prop) {
         if (prop !== 'from') return target[prop];
         return (table) => {
           const builder = target.from(table);
-          return table === 'grm_despesas_importacoes'
+          return (table === 'grm_despesas_importacoes' || table === 'relatorios_importacoes')
             ? wrapQueryBuilder(builder, table)
             : builder;
         };
       }
     });
+    Object.defineProperty(wrapped, '__dreAgentesFix', { value: true });
+    return wrapped;
   }
 
   function clearDreCaches() {
