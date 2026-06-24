@@ -149,6 +149,30 @@
     }
   }
 
+  const REGIONAIS_EXCLUIDAS = new Set(['GERAL', 'AGROTRADER', 'LOG1000', 'PARAGUAI']);
+  function isRegionalExcluida(nome) {
+    return REGIONAIS_EXCLUIDAS.has(normKey(nome));
+  }
+
+  async function carregarProducaoMes(supabase, inicio, fim) {
+    const pageSize = 1000;
+    let from = 0;
+    const all = [];
+    while (true) {
+      const { data, error } = await supabase
+        .from('relatorio_resultado_diario')
+        .select('toneladas, valor_embarcado, total_embarcado_mais_teste, coordenacao, funcionario')
+        .gte('data', inicio).lt('data', fim)
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      const rows = data || [];
+      all.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
+  }
+
   async function carregarFaturamentoNotasAgente(supabase, inicio, fim) {
     try {
       const rows = await carregarLoteMaisRecenteAgente(
@@ -335,7 +359,7 @@
     const fim = `${fimMesObj.getFullYear()}-${String(fimMesObj.getMonth() + 1).padStart(2, '0')}-01`;
 
     const [
-      { data: producaoRows },
+      producaoRows,
       { data: metasMensalRows },
       { data: despesasDreRows },
       { data: metasRegionaisRows },
@@ -343,10 +367,7 @@
       despesasAgenteRows,
       faturamentoNotasAgente
     ] = await Promise.all([
-      supabase
-        .from('relatorio_resultado_diario')
-        .select('toneladas, valor_embarcado, total_embarcado_mais_teste, coordenacao, funcionario')
-        .gte('data', inicio).lt('data', fim),
+      carregarProducaoMes(supabase, inicio, fim),
       supabase
         .from('vw_metas_producao_mensal')
         .select('ano, mes, meta_total_tons, produzido_total_tons, percentual_atingido')
@@ -405,7 +426,7 @@
       acc.tons += n(r.toneladas);
       acc.receita += n(r.valor_embarcado);
       acc.embarcadoTotal += n(r.total_embarcado_mais_teste);
-      if (r.coordenacao) {
+      if (r.coordenacao && !isRegionalExcluida(r.coordenacao)) {
         acc.coordenacoes.add(normKey(r.coordenacao));
         const reg = ensureRegional(r.coordenacao);
         if (reg) {
@@ -418,6 +439,7 @@
     }, { tons: 0, receita: 0, embarcadoTotal: 0, coordenacoes: new Set(), colaboradores: new Set() });
 
     (metasRegionalView || []).forEach((r) => {
+      if (isRegionalExcluida(r.regional)) return;
       const reg = ensureRegional(r.regional);
       if (!reg) return;
       reg.estado = r.estado || reg.estado;
@@ -432,6 +454,7 @@
       totalComRateio: n(r.total_com_rateio)
     })).sort((a, b) => b.totalComRateio - a.totalComRateio);
     (despesasRows || []).forEach((r) => {
+      if (isRegionalExcluida(r.coordenacao)) return;
       const reg = ensureRegional(r.coordenacao);
       if (reg) reg.despesas = n(r.total_com_rateio);
     });
