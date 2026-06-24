@@ -33,7 +33,16 @@
   const state = { tab:'geral', year:new Date().getFullYear(), regional:'', data:null, reports:[], busy:false };
 
   function norm(s){return String(s??'').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]/g,'');}
-  function mapReg(s){const raw=String(s??'').trim(); return ALIASES[norm(raw)] || raw;}
+  // Canonicaliza acentos/maiusculas/espacos: planilha manual e agente as vezes
+  // grafam a mesma regional de formas diferentes (ex.: "SAO PAULO" vs "SÃO PAULO"),
+  // o que criava 2 chaves distintas em desp.base/nf.bruto/prod.* e duplicava o
+  // valor da regional na consolidacao (mergeDespesasMelhorMes etc. so substitui
+  // quando a chave bate exatamente).
+  function mapReg(s){
+    const raw=String(s??'').trim();
+    const aliased=ALIASES[norm(raw)] || raw;
+    return aliased.toUpperCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '').replace(/\s+/g,' ').trim();
+  }
   function isIgnored(r){return IGNORED.some(x=>norm(x)===norm(r));}
   function isExcluded(r){return INDIVIDUAL_EXCLUDED.some(x=>norm(x)===norm(r));}
   function isPool(r){return POOL.some(x=>norm(x)===norm(r));}
