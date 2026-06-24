@@ -188,22 +188,28 @@ async function sincronizarLocaisEmbarqueDoAgente() {
     if (key !== '||') existentesPorKey.set(key, ponto);
   });
 
-  const payload = [...locaisMap.values()].map((local) => {
+  const atualizacoes = [];
+  const insercoes = [];
+  [...locaisMap.values()].forEach((local) => {
     const existente = existentesPorKey.get(pontoKey(local));
-    return {
-      ...(existente?.id ? { id: existente.id } : {}),
-      ...local,
-    };
+    if (existente?.id) atualizacoes.push({ id: existente.id, ...local });
+    else insercoes.push(local);
   });
 
-  for (let i = 0; i < payload.length; i += 500) {
-    const chunk = payload.slice(i, i + 500);
-    const { error } = await supabase.from('operacional_pontos_embarque').upsert(chunk);
+  for (let i = 0; i < atualizacoes.length; i += 500) {
+    const chunk = atualizacoes.slice(i, i + 500);
+    const { error } = await supabase.from('operacional_pontos_embarque').upsert(chunk, { onConflict: 'id' });
+    if (error) throw error;
+  }
+  for (let i = 0; i < insercoes.length; i += 500) {
+    const chunk = insercoes.slice(i, i + 500);
+    const { error } = await supabase.from('operacional_pontos_embarque').insert(chunk);
     if (error) throw error;
   }
 
-  console.info(`[locais-embarque-agente] ${payload.length} pontos georreferenciados sincronizados em operacional_pontos_embarque.`);
-  return { ignorado: false, linhas: rows.length, sincronizados: payload.length };
+  const total = atualizacoes.length + insercoes.length;
+  console.info(`[locais-embarque-agente] ${total} pontos georreferenciados sincronizados em operacional_pontos_embarque (${atualizacoes.length} atualizados, ${insercoes.length} novos).`);
+  return { ignorado: false, linhas: rows.length, sincronizados: total, atualizados: atualizacoes.length, novos: insercoes.length };
 }
 
 // grm_distribuicao_os_importacoes vem com cabeçalhos genéricos (__EMPTY, __EMPTY_1, ...)
