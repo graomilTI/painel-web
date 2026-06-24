@@ -618,6 +618,73 @@
     }
   }
 
+  async function botConversaSyncAction(action, payload = {}) {
+    const opts = window.CONTATOS.__opts || {};
+    const client = opts.supabase;
+    if (!client?.functions?.invoke) throw new Error('Supabase Functions não está disponível no painel.');
+    const { data, error } = await client.functions.invoke('botconversa-sync', { body: { action, ...payload } });
+    if (error) throw error;
+    if (!data || data.ok === false) throw new Error(data?.error || 'Falha na sincronização do BotConversa.');
+    return data;
+  }
+
+  function botConversaJobIsRunning(job) {
+    const st = String(job?.status || '').toLowerCase();
+    return st === 'pendente' || st === 'processando';
+  }
+
+  function renderBotConversaJobProgress(content, job) {
+    const progress = content.querySelector('#ct_bot_progress');
+    const btn = content.querySelector('#ct_sync_bot');
+    if (!progress) return;
+    if (!job) { progress.innerHTML = ''; return; }
+    const running = botConversaJobIsRunning(job);
+    const status = String(job.status || '').toUpperCase();
+    const cls = job.status === 'erro' || job.status === 'parcial' ? 'ct-err' : 'ct-ok';
+    if (btn) {
+      btn.disabled = running;
+      btn.textContent = running ? 'Sincronizando...' : 'Sincronizar contatos';
+    }
+    progress.innerHTML = `<div class="ct-alert ${cls}">
+      <strong>BotConversa:</strong> ${esc(status)}${job.observacoes ? ` · ${esc(job.observacoes)}` : ''}
+      ${job.total_processado != null ? ` · Sincronizados: ${job.total_sucesso || 0} · Erros: ${job.total_erro || 0}` : ''}
+      ${job.erro ? `<br><strong>Erro:</strong> ${esc(job.erro)}` : ''}
+      ${running ? '<br>Processando no Supabase. Pode sair desta tela.' : ''}
+    </div>`;
+  }
+
+  let botConversaPollTimer = null;
+
+  async function pollBotConversaJob(content, once = false) {
+    if (botConversaPollTimer) clearTimeout(botConversaPollTimer);
+    botConversaPollTimer = null;
+    try {
+      const resp = await botConversaSyncAction('job_status');
+      const job = resp.job || null;
+      renderBotConversaJobProgress(content, job);
+      if (job && botConversaJobIsRunning(job) && !once) {
+        botConversaPollTimer = setTimeout(() => pollBotConversaJob(content), 4000);
+      }
+      return job;
+    } catch (err) {
+      renderBotConversaJobProgress(content, { status: 'erro', erro: err?.message || String(err) });
+      return null;
+    }
+  }
+
+  async function sincronizarBotConversaContatos(content) {
+    const btn = content.querySelector('#ct_sync_bot');
+    if (btn) { btn.disabled = true; btn.textContent = 'Iniciando...'; }
+    try {
+      const resp = await botConversaSyncAction('start_sync');
+      renderBotConversaJobProgress(content, { status: resp.status || 'pendente' });
+      await pollBotConversaJob(content);
+    } catch (err) {
+      renderBotConversaJobProgress(content, { status: 'erro', erro: err?.message || String(err) });
+      if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar contatos'; }
+    }
+  }
+
   async function desconectarGoogle(container) {
     const ok = confirm('Desconectar a conta Google deste painel? Os contatos já criados no Google não serão apagados.');
     if (!ok) return;
@@ -845,8 +912,9 @@
         <div class="ct-grid">
           <div class="ct-card">
             <h3>Sincronizar BotConversa</h3>
-            <p>Chama a rotina já existente do painel para criar/localizar subscribers e sincronizar tags.</p>
-            <div class="ct-actions"><button class="ct-btn" id="ct_sync_bot">Sincronizar contatos e tags</button></div>
+            <p>Cria/atualiza os subscribers no BotConversa a partir da base de colaboradores ativos. Roda automaticamente a cada 2h; use o botão para forçar agora.</p>
+            <div class="ct-actions"><button class="ct-btn" id="ct_sync_bot">Sincronizar contatos</button></div>
+            <div id="ct_bot_progress" style="margin-top:12px"></div>
           </div>
           <div class="ct-card">
             <h3>Leitura em atraso</h3>
@@ -855,22 +923,8 @@
           </div>
         </div>
       `;
-      content.querySelector('#ct_sync_bot').onclick = async () => {
-        const btn = content.querySelector('#ct_sync_bot');
-        btn.disabled = true;
-        btn.textContent = 'Sincronizando...';
-        try {
-          const resp = await fetch('/api/botconversa/sync-subscribers', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok || data?.ok === false) throw new Error(data?.error || 'Falha ao sincronizar BotConversa.');
-          setStatus(container, 'Sincronização enviada com sucesso.', 'ok');
-        } catch (err) {
-          setStatus(container, err?.message || 'Erro ao sincronizar BotConversa.', 'err');
-        } finally {
-          btn.disabled = false;
-          btn.textContent = 'Sincronizar contatos e tags';
-        }
-      };
+      content.querySelector('#ct_sync_bot').onclick = () => sincronizarBotConversaContatos(content);
+      pollBotConversaJob(content, true);
       return;
     }
 
