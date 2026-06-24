@@ -1762,8 +1762,8 @@ initProtectedPage('Programação', (content) => {
         const aloj = (state.alojamentos || []).find((a) => String(a.id) === String(payload.alojamento_id));
         payload.alojamento_nome = aloj?.nome || payload.alojamento_nome || null;
       }
-      payload.tipo_estadia = normalizeText(payload.tipo_estadia || '') || null;
-      payload.tem_estadia = Boolean(payload.tipo_estadia);
+      payload.tipo_estadia = normalizeText(payload.tipo_estadia || '') || 'NAO PRECISA';
+      payload.tem_estadia = TIPOS_ESTADIA_BOTOES.includes(payload.tipo_estadia);
     }
     if (table === 'programacao_deslocamento') {
       const disp = state.maps.disponibilidade.get(String(colab.id)) || {};
