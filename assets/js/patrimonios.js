@@ -5,7 +5,7 @@ const esc=(v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').repl
 const brDate=(v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-'};
 const normalize=(v)=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
 
-let state = { tab: 'cadastrar', isMaster: false, supervisoes: [], histRows: [], histSort: { key: 'maxDias', dir: 'desc' }, histFilters: { num: '', material: '' }, histExpanded: new Set() };
+let state = { tab: 'cadastrar', isMaster: false, allowedSupervisoes: new Set(), histRows: [], histSort: { key: 'maxDias', dir: 'desc' }, histFilters: { num: '', material: '' }, histExpanded: new Set() };
 
 function setMsg(msg,err=false){const el=document.getElementById('patFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err)}}
 
@@ -40,7 +40,6 @@ async function loadHistorico(){
       .select('patrimonio_codigo,funcionario,identificacao,dias_sem_leitura,supervisao,situacao')
       .order('patrimonio_codigo',{ascending:true})
       .range(page*PAGE,(page+1)*PAGE-1);
-    if(!state.isMaster && state.supervisoes.length) q=q.in('supervisao', state.supervisoes);
     const {data,error:err}=await q;
     if(err){error=err;break}
     rows=rows.concat(data||[]);
@@ -48,6 +47,7 @@ async function loadHistorico(){
     page++;
   }
   if(error){grid.innerHTML=`<p class="pat-empty">${esc(error.message)}</p>`;return;}
+  if(!state.isMaster && state.allowedSupervisoes.size) rows=rows.filter(r=>state.allowedSupervisoes.has(normalize(r.supervisao||'')));
   state.histRows=rows;
   renderHistorico();
 }
@@ -183,7 +183,11 @@ function styles(){return `<style>
 
 initProtectedPage('Patrimônios', async (content, userContext)=>{
   state.isMaster = !!userContext?.user?.is_master;
-  state.supervisoes = Array.isArray(userContext?.user?.supervisoes) ? userContext.user.supervisoes : [];
+  const rawSupervisoes = [
+    ...(Array.isArray(userContext?.user?.supervisoes) ? userContext.user.supervisoes : []),
+    userContext?.user?.supervisao,
+  ].filter(Boolean);
+  state.allowedSupervisoes = new Set(rawSupervisoes.map(normalize));
 
   content.innerHTML=`${styles()}<section class="hero-card"><div><div class="eyebrow">Gestor</div><h2>Patrimônios</h2><p>Histórico de leituras e cadastro dos números patrimoniais dos itens comprados pelo setor de compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">GESTOR</span></div></section>
     <div class="pat-tabs">
