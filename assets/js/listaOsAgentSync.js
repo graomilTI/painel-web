@@ -185,7 +185,7 @@ function mapListaOsRow(d) {
     numero_os,
     data_os: brDateToISO(getField(d, ['Data'])),
     cliente: toText(getField(d, ['Cliente'])),
-    embarque: toText(getField(d, ['Local de Embarque'])),
+    embarque: toText(getField(d, ['Embarque', 'Local de Embarque'])),
     destino: toText(getField(d, ['Destino'])),
     contrato: toText(getField(d, ['Contrato'])),
     produto: toText(getField(d, ['Produto'])),
