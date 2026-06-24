@@ -1355,6 +1355,15 @@ initProtectedPage('Programação', (content) => {
         </table>
       </div>` : '<div class="prog-empty-section">Nenhum colaborador disponível para estadia.</div>'}
       ${renderBloqueadosResumo(bloqueados)}`;
+
+    el.list.querySelectorAll('tr[data-table="programacao_estadia"]').forEach((tr) => {
+      const tipo = String(tr.querySelector('[data-field="tipo_estadia"]')?.value || '').toUpperCase();
+      const cidadeEl = tr.querySelector('[data-field="cidade"]');
+      if (tipo === 'HOTEL' && cidadeEl && !cidadeEl.value && preencherCidadeDaOs(tr)) {
+        atualizarSugestaoAlojamento(tr);
+        scheduleSaveRow(tr);
+      }
+    });
   }
 
   function renderAlimentacao(rows) {
@@ -1497,6 +1506,20 @@ initProtectedPage('Programação', (content) => {
     }
   }
 
+  function preencherCidadeDaOs(tr) {
+    if (!tr) return false;
+    const colab = colabById(tr.dataset.colabId);
+    const os = getOsForColab(colab);
+    const cidadeInfo = cidadeUfFromOs(os);
+    if (!cidadeInfo) return false;
+    const cidadeEl = tr.querySelector('[data-field="cidade"]');
+    const ufEl = tr.querySelector('[data-field="uf"]');
+    if (!cidadeEl) return false;
+    cidadeEl.value = cidadeInfo.cidade || '';
+    if (ufEl) ufEl.value = cidadeInfo.uf || '';
+    return true;
+  }
+
   function atualizarSugestaoAlojamento(tr) {
     if (!tr) return;
     const tipo = String(tr.querySelector('[data-field="tipo_estadia"]')?.value || '').toUpperCase();
@@ -1583,17 +1606,7 @@ initProtectedPage('Programação', (content) => {
       tr.querySelectorAll('.prog-estadia-card').forEach((btn) => btn.classList.toggle('active', !wasActive && btn === estadiaBtn));
       const note = tr.querySelector('.prog-required-note');
       if (note) note.remove();
-      if (tipo === 'HOTEL') {
-        const colab = colabById(tr.dataset.colabId);
-        const os = getOsForColab(colab);
-        const cidadeInfo = cidadeUfFromOs(os);
-        const cidadeEl = tr.querySelector('[data-field="cidade"]');
-        const ufEl = tr.querySelector('[data-field="uf"]');
-        if (cidadeInfo && cidadeEl) {
-          cidadeEl.value = cidadeInfo.cidade || '';
-          if (ufEl) ufEl.value = cidadeInfo.uf || '';
-        }
-      }
+      if (tipo === 'HOTEL') preencherCidadeDaOs(tr);
       atualizarSugestaoAlojamento(tr);
       scheduleSaveRow(tr);
       return;
