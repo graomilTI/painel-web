@@ -14,6 +14,7 @@ const DISPONIBILIDADES = ['OK', 'LOGISTICA', 'DESLOCAMENTO', 'SEM EMBARQUE', 'IN
 const DISPONIBILIDADES_PRINCIPAIS = ['OK', 'LOGISTICA', 'DESLOCAMENTO', 'SEM EMBARQUE', 'INDISPONIVEL'];
 const INDISPONIBILIDADE_MOTIVOS = ['ATESTADO', 'FALTA', 'FERIAS', 'FOLGA'];
 const TIPOS_ESTADIA = ['CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
+const TIPOS_ESTADIA_BOTOES = ['PERNOITE', 'ALOJAMENTO', 'HOTEL'];
 const TIPOS_DESLOCAMENTO = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'ÔNIBUS', 'OUTRO'];
 const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
 const DISPONIBILIDADES_LIBERADAS = new Set(['', 'OK', 'DISPONIVEL', 'LIBERADO', 'LOGISTICA', 'DESLOCAMENTO']);
@@ -328,13 +329,14 @@ function injectProgramacaoStyles() {
     .prog-tipo-btn.active[data-tipo="SEM EMBARQUE"],.prog-tipo-btn.active[data-tipo="INDISPONIVEL"]{background:rgba(127,29,29,.30);color:#fecaca;border-color:rgba(248,113,113,.45)}
     .prog-indisponivel-wrap{display:flex;align-items:center;gap:8px;margin-top:8px;max-width:260px}
     .prog-indisponivel-wrap select{min-height:34px!important;padding:6px 9px!important}
-    .prog-estadia-selector{display:grid;grid-template-columns:repeat(4,minmax(112px,1fr));gap:10px;min-width:520px}
-    .prog-estadia-card{border:1px solid rgba(52,211,153,.18);background:rgba(15,23,42,.56);color:#e2e2f0;border-radius:16px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;font-weight:900;transition:all .15s;min-height:92px}
-    .prog-estadia-card svg{width:34px;height:34px;stroke:#86efac;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+    .prog-estadia-selector{display:grid;grid-template-columns:repeat(3,minmax(78px,1fr));gap:7px;min-width:280px}
+    .prog-estadia-card{border:1px solid rgba(52,211,153,.18);background:rgba(15,23,42,.56);color:#e2e2f0;border-radius:12px;padding:7px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;font-weight:900;transition:all .15s;min-height:62px}
+    .prog-estadia-card svg{width:22px;height:22px;stroke:#86efac;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
     .prog-estadia-card:hover{background:rgba(22,101,52,.22);transform:translateY(-1px)}
     .prog-estadia-card.active{border-color:rgba(134,239,172,.70);background:rgba(22,101,52,.34);box-shadow:0 0 0 1px rgba(134,239,172,.16) inset}
-    .prog-estadia-card span{font-size:12px;letter-spacing:.02em;text-align:center}
+    .prog-estadia-card span{font-size:10.5px;letter-spacing:.02em;text-align:center}
     .prog-required-note{margin-top:6px;font-size:11px;color:#fde68a;font-weight:800}
+    .prog-required-note--info{color:#9ca3af}
     .prog-km-note{display:block;margin-top:4px;color:#6b7280;font-size:11px;line-height:1.35}
     .prog-placa-wrap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
     .prog-placa-wrap input{width:130px!important;font-family:monospace;text-transform:uppercase;min-height:32px!important;padding:5px 8px!important}
@@ -346,7 +348,7 @@ function injectProgramacaoStyles() {
     .prog-os-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.prog-os-modal-head h3{margin:0;color:#f8fafc;font-size:22px}.prog-os-modal-head p{margin:6px 0 0;color:#6b7280}
     .prog-os-list{display:grid;gap:10px}.prog-os-card{border:1px solid rgba(52,211,153,.16);background:rgba(15,23,42,.62);border-radius:18px;padding:14px}.prog-os-card.zero{box-shadow:inset 4px 0 0 #facc15}.prog-os-title{font-weight:950;color:#f8fafc}.prog-os-meta{font-size:12px;color:#6b7280;margin-top:4px}.prog-os-rem{display:inline-flex;border-radius:999px;padding:5px 10px;margin-top:8px;font-size:12px;font-weight:950;border:1px solid rgba(250,204,21,.25);color:#fde68a;background:rgba(113,63,18,.22)}
     .prog-os-modal-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:18px}.prog-os-close{border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.72);color:#e2e2f0;border-radius:13px;padding:10px 14px;font-weight:900;cursor:pointer}.prog-os-go{border:1px solid rgba(187,247,208,.32);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;border-radius:13px;padding:10px 14px;font-weight:950;cursor:pointer}
-    @media(max-width:900px){.prog-extra-card{grid-template-columns:1fr}.prog-table{min-width:860px}.prog-os-modal{padding:16px}.prog-estadia-selector{grid-template-columns:repeat(2,minmax(110px,1fr));min-width:320px}}
+    @media(max-width:900px){.prog-extra-card{grid-template-columns:1fr}.prog-table{min-width:860px}.prog-os-modal{padding:16px}.prog-estadia-selector{grid-template-columns:repeat(3,minmax(70px,1fr));min-width:220px}}
   `;
   document.head.appendChild(style);
 }
@@ -642,6 +644,20 @@ initProtectedPage('Programação', (content) => {
     return (nome && state.operacionalColabByNome.get(nome)) || null;
   }
 
+  function getOsForColab(colab) {
+    return state.osPorColaborador.get(String(colab?.id || '').trim())
+      || state.osPorColaborador.get(normalizeCpf(colab?.cpf))
+      || state.osPorColaborador.get(normalizeText(colab?.nome || '').trim().toUpperCase())
+      || null;
+  }
+
+  function cidadeUfFromOs(os) {
+    const raw = String(os?.embarque || os?.local_embarque || '').trim();
+    const match = raw.match(/^([A-Z]{2})\s*-\s*([^()]+?)(?:\s*\([^)]+\))?\s*$/i);
+    if (!match) return raw ? { cidade: raw, uf: '' } : null;
+    return { cidade: match[2].trim(), uf: match[1].toUpperCase() };
+  }
+
   function findPontoFromOs(os) {
     if (!os) return null;
     if (Number.isFinite(Number(os.ponto1_latitude)) && Number.isFinite(Number(os.ponto1_longitude))) {
@@ -660,9 +676,7 @@ initProtectedPage('Programação', (content) => {
     const cacheKey = String(colab?.id || '');
     if (cacheKey && state.kmCache.has(cacheKey)) return state.kmCache.get(cacheKey);
 
-    const os = state.osPorColaborador.get(String(colab?.id || '').trim())
-      || state.osPorColaborador.get(normalizeCpf(colab?.cpf))
-      || state.osPorColaborador.get(normalizeText(colab?.nome || '').trim().toUpperCase());
+    const os = getOsForColab(colab);
 
     let result;
     if (!os) {
@@ -1316,10 +1330,10 @@ initProtectedPage('Programação', (content) => {
                 <td>${colabCell(colab)}</td>
                 <td>
                   <div class="prog-estadia-selector" data-estadia-selector>
-                    ${TIPOS_ESTADIA.map((tipo) => `<button type="button" class="prog-estadia-card${tipoAtual === tipo ? ' active' : ''}" data-estadia-tipo="${escapeHtml(tipo)}" ${blocked ? 'disabled' : ''}>${estadiaIcon(tipo)}<span>${escapeHtml(estadiaLabel(tipo))}</span></button>`).join('')}
+                    ${TIPOS_ESTADIA_BOTOES.map((tipo) => `<button type="button" class="prog-estadia-card${tipoAtual === tipo ? ' active' : ''}" data-estadia-tipo="${escapeHtml(tipo)}" ${blocked ? 'disabled' : ''}>${estadiaIcon(tipo)}<span>${escapeHtml(estadiaLabel(tipo))}</span></button>`).join('')}
                   </div>
                   <input data-field="tipo_estadia" type="hidden" value="${escapeHtml(tipoAtual)}" />
-                  ${!tipoAtual ? '<div class="prog-required-note">Selecione uma opção para liberar o salvamento.</div>' : ''}
+                  ${!tipoAtual ? '<div class="prog-required-note prog-required-note--info">Casa (nenhuma opção selecionada).</div>' : ''}
                 </td>
                 <td><input data-field="cidade" list="progCidadesBrasilList" type="text" value="${escapeHtml(r.cidade || '')}" placeholder="Digite e selecione a cidade" ${blocked ? 'disabled' : ''}/></td>
                 <td><input data-field="uf" type="text" value="${escapeHtml(r.uf || '')}" placeholder="UF" maxlength="2" ${blocked ? 'disabled' : ''}/></td>
@@ -1554,12 +1568,24 @@ initProtectedPage('Programação', (content) => {
     if (estadiaBtn) {
       const tr = estadiaBtn.closest('tr');
       if (!tr || estadiaBtn.disabled) return;
-      const tipo = estadiaBtn.dataset.estadiaTipo || '';
+      const wasActive = estadiaBtn.classList.contains('active');
+      const tipo = wasActive ? '' : (estadiaBtn.dataset.estadiaTipo || '');
       const hidden = tr.querySelector('[data-field="tipo_estadia"]');
       if (hidden) hidden.value = tipo;
-      tr.querySelectorAll('.prog-estadia-card').forEach((btn) => btn.classList.toggle('active', btn === estadiaBtn));
+      tr.querySelectorAll('.prog-estadia-card').forEach((btn) => btn.classList.toggle('active', !wasActive && btn === estadiaBtn));
       const note = tr.querySelector('.prog-required-note');
       if (note) note.remove();
+      if (tipo === 'HOTEL') {
+        const colab = colabById(tr.dataset.colabId);
+        const os = getOsForColab(colab);
+        const cidadeInfo = cidadeUfFromOs(os);
+        const cidadeEl = tr.querySelector('[data-field="cidade"]');
+        const ufEl = tr.querySelector('[data-field="uf"]');
+        if (cidadeInfo && cidadeEl) {
+          cidadeEl.value = cidadeInfo.cidade || '';
+          if (ufEl) ufEl.value = cidadeInfo.uf || '';
+        }
+      }
       atualizarSugestaoAlojamento(tr);
       scheduleSaveRow(tr);
       return;
