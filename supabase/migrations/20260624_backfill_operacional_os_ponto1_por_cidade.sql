@@ -22,10 +22,10 @@ with os_parse as (
     ) as cidade_norm
   from public.operacional_os o
   cross join lateral regexp_match(
-    coalesce(o.embarque, o.local_embarque, ''),
+    coalesce(o.embarque, ''),
     '^\s*([A-Z]{2})\s*-\s*([^()]+?)(?:\s*\((.*)\))?\s*$'
   ) as m
-  where coalesce(o.embarque, o.local_embarque, '') <> ''
+  where coalesce(o.embarque, '') <> ''
 ),
 pontos_rank as (
   select
