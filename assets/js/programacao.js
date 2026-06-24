@@ -645,9 +645,14 @@ initProtectedPage('Programação', (content) => {
   }
 
   function getOsForColab(colab) {
-    return state.osPorColaborador.get(String(colab?.id || '').trim())
-      || state.osPorColaborador.get(normalizeCpf(colab?.cpf))
-      || state.osPorColaborador.get(normalizeText(colab?.nome || '').trim().toUpperCase())
+    if (!colab) return null;
+    const base = findOperacionalColab(colab);
+    const idKey = normalizeCpf(base?.colaborador_id);
+    const cpfKey = normalizeCpf(colab.cpf || base?.cpf);
+    const nomeKey = normalizeText(colab.nome || '').trim().toUpperCase();
+    return state.osPorColaborador.get(idKey)
+      || state.osPorColaborador.get(cpfKey)
+      || state.osPorColaborador.get(nomeKey)
       || null;
   }
 
