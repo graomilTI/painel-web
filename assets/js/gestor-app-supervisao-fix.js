@@ -5,10 +5,7 @@ const state = {
   ready: false,
   restricted: false,
   allowedLabels: [],
-  tokens: [],
-  options: [],
-  loading: false,
-  loaded: false,
+  allowedKeys: new Set(),
   autoSelectedOnce: false,
 };
 
@@ -24,23 +21,30 @@ function norm(value) {
 function parseList(value) {
   if (!value) return [];
   if (Array.isArray(value)) return [...new Set(value.flatMap(parseList))];
-  if (typeof value === 'object') return parseList(value.supervisao || value.supervisoes || value.nome || value.name || value.coordenacao || value.regional);
+  if (typeof value === 'object') {
+    return parseList(value.supervisao || value.supervisoes || value.nome || value.name || value.label || value.value);
+  }
+
   const text = String(value).trim();
   if (!text) return [];
+
   try {
-    if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) return parseList(JSON.parse(text));
+    if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
+      return parseList(JSON.parse(text));
+    }
   } catch {}
+
   return [...new Set(text.split(/[,;|\n]+/).map((item) => item.trim()).filter(Boolean))];
 }
 
-function uniqSorted(values) {
+function uniqLabels(values) {
   const map = new Map();
   values.flatMap(parseList).forEach((item) => {
     const label = String(item || '').trim();
     const key = norm(label);
     if (label && key && !map.has(key)) map.set(key, label);
   });
-  return [...map.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  return [...map.values()];
 }
 
 function isMasterContext(context) {
@@ -48,80 +52,47 @@ function isMasterContext(context) {
   return Boolean(context?.user?.is_master || context?.is_master || norm(role) === 'MASTER');
 }
 
-function buildAccess(appUser, context) {
-  const labels = [
-    ...parseList(appUser?.supervisao),
-    ...parseList(appUser?.supervisoes),
-    ...parseList(appUser?.supervisao_liberada),
-    ...parseList(appUser?.supervisoes_liberadas),
-    ...parseList(appUser?.coordenacao),
-    ...parseList(context?.user?.supervisao),
-    ...parseList(context?.user?.supervisoes),
-    ...parseList(context?.user?.coordenacao),
-    ...parseList(context?.supervisao),
-    ...parseList(context?.supervisoes),
-    ...parseList(context?.coordenacao),
-  ].filter(Boolean);
+function looksLikeGestor(value) {
+  const normalized = norm(value);
+  return normalized === 'GESTOR' || normalized.startsWith('GESTOR ');
+}
 
-  const setor = norm(appUser?.setor || context?.setor || context?.department?.name || context?.department?.code || '');
+function extractAllowedSupervisoes(appUser, context) {
+  return uniqLabels([
+    appUser?.supervisoes,
+    appUser?.supervisao,
+    context?.user?.supervisoes,
+    context?.user?.supervisao,
+    context?.supervisoes,
+    context?.supervisao,
+  ]).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+function buildAccess(appUser, context) {
+  const setor = appUser?.setor || context?.setor || context?.department?.name || context?.department?.code || '';
+  const role = context?.user?.role || context?.perfil_codigo || context?.perfil_nome || context?.role || '';
   const master = isMasterContext(context);
-  const restricted = setor === 'GESTOR' || labels.length > 0 || !master;
-  const fullTokens = uniqSorted(labels).map(norm).filter((item) => item.length >= 4);
-  const wordTokens = fullTokens
-    .flatMap((item) => item.split(/\s+/))
-    .filter((item) => item.length >= 4 && !['GERAL', 'SETOR', 'GESTOR', 'SUPERVISAO', 'REGIONAL'].includes(item));
+  const allowedLabels = extractAllowedSupervisoes(appUser, context);
+  const restricted = !master && (looksLikeGestor(setor) || looksLikeGestor(role) || allowedLabels.length > 0);
 
   return {
     restricted,
-    allowedLabels: uniqSorted(labels),
-    tokens: [...new Set([...fullTokens, ...wordTokens])],
+    allowedLabels,
+    allowedKeys: new Set(allowedLabels.map(norm).filter(Boolean)),
   };
 }
 
-function allowed(label) {
+function optionAllowed(optionText) {
   if (!state.restricted) return true;
-  const key = norm(label);
-  return state.tokens.some((token) => token && (key === token || key.includes(token) || token.includes(key)));
+  const key = norm(optionText);
+  return Boolean(key && state.allowedKeys.has(key));
 }
 
-function collectRows(rows, fields) {
-  return (rows || []).flatMap((row) => fields.flatMap((field) => parseList(row?.[field])));
-}
-
-async function loadOptions() {
-  if (state.loading) return state.options;
-  if (state.loaded) return state.options;
-
-  state.loading = true;
-  const collected = [...state.allowedLabels];
-  const requests = [
-    supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome', { ascending: true }),
-    supabase.from('operacional_os').select('supervisao').limit(5000),
-    supabase.from('operacional_colaborador_base').select('supervisao,coordenacao').eq('ativo', true).limit(5000),
-    supabase.from('operacional_pontos_embarque').select('supervisao,coordenacao').eq('ativo', true).limit(8000),
-    supabase.from('colaborador_snapshot').select('supervisao,coordenacao').limit(5000),
-  ];
-
-  const results = await Promise.allSettled(requests);
-  results.forEach((result) => {
-    if (result.status !== 'fulfilled' || result.value?.error) return;
-    collected.push(...collectRows(result.value?.data || [], ['nome', 'supervisao', 'supervisoes', 'coordenacao', 'regional']));
-  });
-
-  state.options = uniqSorted(collected);
-  state.loaded = true;
-  state.loading = false;
-  return state.options;
-}
-
-function applySelectOptions(select) {
-  if (!select || !state.ready) return;
-
-  let candidates = state.options.filter(allowed);
-  if (state.restricted && !candidates.length && state.allowedLabels.length) candidates = state.allowedLabels;
+function addAllowedOptions(select) {
+  if (!select || !state.restricted) return;
 
   const existing = new Set([...select.options].map((option) => norm(option.value || option.textContent)));
-  candidates.forEach((label) => {
+  state.allowedLabels.forEach((label) => {
     const key = norm(label);
     if (!key || existing.has(key)) return;
     const option = document.createElement('option');
@@ -130,12 +101,31 @@ function applySelectOptions(select) {
     select.appendChild(option);
     existing.add(key);
   });
+}
+
+function patchSelect() {
+  const select = document.getElementById('filterSupervisao');
+  if (!select || !state.ready) return;
+
+  if (!state.restricted) return;
+
+  addAllowedOptions(select);
+
+  if (!state.allowedLabels.length) {
+    select.value = '';
+    select.disabled = true;
+    return;
+  }
 
   let visibleCount = 0;
   let first = '';
   [...select.options].forEach((option) => {
-    if (!option.value) return;
-    const ok = allowed(option.textContent || option.value);
+    if (!option.value) {
+      option.hidden = false;
+      option.disabled = false;
+      return;
+    }
+    const ok = optionAllowed(option.textContent || option.value);
     option.hidden = !ok;
     option.disabled = !ok;
     if (ok) {
@@ -144,7 +134,13 @@ function applySelectOptions(select) {
     }
   });
 
-  if (state.restricted && first && (!select.value || select.selectedOptions?.[0]?.disabled)) {
+  if (!visibleCount) {
+    select.value = '';
+    select.disabled = true;
+    return;
+  }
+
+  if (!select.value || select.selectedOptions?.[0]?.disabled) {
     select.value = first;
     if (!state.autoSelectedOnce) {
       state.autoSelectedOnce = true;
@@ -152,29 +148,31 @@ function applySelectOptions(select) {
     }
   }
 
-  if (state.restricted && visibleCount === 1) select.disabled = true;
+  select.disabled = visibleCount === 1;
 }
 
-async function patchSelect() {
-  const select = document.getElementById('filterSupervisao');
-  if (!select || !state.ready) return;
-  if (select.options.length <= 1 && !state.loaded) await loadOptions().catch((error) => console.warn('[gestor-app-supervisao-fix] opções:', error));
-  applySelectOptions(select);
+async function getAppUser(userId) {
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from('app_usuarios')
+    .select('*')
+    .eq('auth_user_id', userId)
+    .maybeSingle();
+  if (error) {
+    console.warn('[gestor-app-supervisao-fix] app_usuarios:', error);
+    return null;
+  }
+  return data || null;
 }
 
 async function init() {
   try {
     const user = await getCurrentUser().catch(() => null);
-    const [context, userRes] = await Promise.all([
+    const [context, appUser] = await Promise.all([
       user?.id ? getUserContext(user.id).catch(() => null) : Promise.resolve(null),
-      supabase
-        .from('app_usuarios')
-        .select('id,nome,email,setor,supervisao,supervisoes,supervisao_liberada,supervisoes_liberadas,coordenacao,status')
-        .eq('auth_user_id', user?.id || '')
-        .maybeSingle(),
+      getAppUser(user?.id),
     ]);
-    Object.assign(state, buildAccess(userRes?.data || null, context), { ready: true });
-    await loadOptions();
+    Object.assign(state, buildAccess(appUser, context), { ready: true });
     patchSelect();
   } catch (error) {
     console.warn('[gestor-app-supervisao-fix] falha ao iniciar:', error);
