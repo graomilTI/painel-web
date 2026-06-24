@@ -278,6 +278,60 @@
   }
 
 
+  // Despesas sincronizadas pelo agente sync-despesas: 1 chamada por mês ao relatório
+  // GRM agrupado por Coordenação × Grupo de Categoria (mesmas colunas que a planilha
+  // "Despesas por Regional" importada manualmente usa). O agente reenvia os últimos
+  // ~13 meses a cada execução (reload completo), então sempre lemos só o lote mais
+  // recente por created_at.
+  async function loadDespesasFromDb(supabase, year){
+    const cached=dreFromCache(`grao1000:dre-despesas:${year}`);
+    if(cached) return cached;
+    const out={base:{}, geral:{}, regionais:new Set(), totalRows:0};
+    if(!supabase || !year) return out;
+
+    const {data:maxRows,error:maxErr}=await supabase
+      .from('grm_despesas_importacoes').select('created_at').order('created_at',{ascending:false}).limit(1);
+    if(maxErr || !maxRows?.length){
+      if(maxErr) console.warn('DRE: não foi possível carregar despesas sincronizadas pelo agente.', maxErr);
+      return out;
+    }
+    const threshold=new Date(new Date(maxRows[0].created_at).getTime()-5*60*1000).toISOString();
+
+    const pageSize=1000; let from=0; const rows=[];
+    while(true){
+      const {data,error}=await supabase
+        .from('grm_despesas_importacoes')
+        .select('coordenacao,data_conta_de,dados_json')
+        .gte('created_at', threshold)
+        .range(from, from+pageSize-1);
+      if(error){ console.warn('DRE: falha ao paginar despesas sincronizadas pelo agente.', error); break; }
+      const batch=data||[]; rows.push(...batch);
+      if(batch.length<pageSize) break;
+      from+=pageSize;
+    }
+    out.totalRows=rows.length;
+
+    for(const row of rows){
+      const reg=mapReg(row.coordenacao || row.dados_json?.['Coordenação']);
+      // Parse manual da data (YYYY-MM-DD): monthFrom() cairia no new Date(raw) genérico,
+      // que interpreta string "date-only" como UTC e pode voltar 1 dia em fusos negativos
+      // (BRT = UTC-3), classificando o 1º dia do mês no mês anterior.
+      const isoMatch=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(row.data_conta_de||''));
+      const m=isoMatch ? {year:+isoMatch[1], month:+isoMatch[2]-1} : null;
+      if(!reg || !m || m.year!==year || isIgnored(reg)) continue;
+      const isGeral=norm(reg)==='GERAL';
+      if(!isGeral && !isExcluded(reg)) out.regionais.add(reg);
+      const json=row.dados_json||{};
+      for(const [tipo,valor] of Object.entries(json)){
+        if(tipo==='Coordenação' || tipo==='Total') continue;
+        if(isGeral){ const key=norm(tipo); if(!out.geral[key]) out.geral[key]=Array(12).fill(0); out.geral[key][m.month]+=n(valor); }
+        else add(out.base, reg, tipo, m.month, valor);
+      }
+    }
+    dreCache(`grao1000:dre-despesas:${year}`, out);
+    return out;
+  }
+
   async function loadProduzidoColaboradorFromDb(supabase, year){
     const cached=dreFromCache(`grao1000:dre-colab:${year}`);
     if(cached) return cached;
@@ -861,6 +915,38 @@
     return target;
   }
 
+  // Despesas: igual à produção, se o mesmo mês existir tanto no upload manual quanto
+  // no agente, usa o mais completo (nunca soma os dois, senão duplica valores).
+  function topicTotalForMonth(topicsMap, mi){
+    return Object.values(topicsMap||{}).reduce((a,arr)=>a+Math.abs(n(arr?.[mi])),0);
+  }
+  function setTopicsForMonth(targetTopics, sourceTopics, mi){
+    const keys=new Set([...Object.keys(targetTopics||{}),...Object.keys(sourceTopics||{})]);
+    for(const k of keys){
+      if(!targetTopics[k]) targetTopics[k]=Array(12).fill(0);
+      targetTopics[k][mi]=n(sourceTopics?.[k]?.[mi]);
+    }
+  }
+  function mergeDespesasMelhorMes(target, source){
+    if(!source) return target;
+    const regs=new Set([...Object.keys(target.base||{}),...Object.keys(source.base||{})]);
+    for(const reg of regs){
+      if(!target.base[reg]) target.base[reg]={};
+      for(let mi=0;mi<12;mi++){
+        const atual=topicTotalForMonth(target.base[reg],mi);
+        const novo=topicTotalForMonth(source.base?.[reg],mi);
+        if(novo>atual) setTopicsForMonth(target.base[reg], source.base[reg], mi);
+      }
+    }
+    for(let mi=0;mi<12;mi++){
+      const atual=topicTotalForMonth(target.geral,mi);
+      const novo=topicTotalForMonth(source.geral,mi);
+      if(novo>atual) setTopicsForMonth(target.geral, source.geral, mi);
+    }
+    mergeSet(target.regionais, source.regionais);
+    return target;
+  }
+
   async function processReports(opts,setStatus){
     state.busy=true; setStatus('Buscando relatórios ativos importados...');
     state.reports=await getLatestReports(opts.supabase);
@@ -903,6 +989,20 @@
         const ant = parseAntecipacoes(sheetRows(wb,['Antecipações','Antecipacoes','Caixa Fornecedor']));
         for(let i=0;i<12;i++) src.antecipacoes[i] += n(ant[i]);
       }
+    }
+
+    setStatus('Conferindo despesas sincronizadas pelo agente...');
+    const despesasDb = await loadDespesasFromDb(opts.supabase, state.year);
+    if(despesasDb.totalRows > 0){
+      mergeDespesasMelhorMes(src.desp, despesasDb);
+      if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
+      state.sourceAudit.used.push({
+        tipo: 'despesas-agente-db',
+        nome: `grm_despesas_importacoes (${despesasDb.totalRows} linhas)`,
+        status: 'fonte_mensal_segura',
+        modo: 'merge_best_month',
+        created_at: new Date().toISOString()
+      });
     }
 
     setStatus('Conferindo produção consolidada no banco de dados...');
