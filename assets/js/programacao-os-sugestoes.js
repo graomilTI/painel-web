@@ -323,64 +323,67 @@ async function loadContext(supervisao) {
 }
 
 function injectStyles() {
-  if (document.getElementById('programacaoOsSugestoesSafeStyles')) return;
+  if (document.getElementById('programacaoOsSugestoesCompactStyles')) return;
   const style = document.createElement('style');
-  style.id = 'programacaoOsSugestoesSafeStyles';
+  style.id = 'programacaoOsSugestoesCompactStyles';
   style.textContent = `
-    .os-lite-indic .os-sug-safe{margin-top:5px;border-radius:9px;padding:5px 7px;background:rgba(15,23,42,.34);border:1px solid rgba(148,163,184,.14);line-height:1.25}
-    .os-lite-indic .os-sug-safe span{display:block;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:950;color:#94a3b8;margin-bottom:1px}
-    .os-lite-indic .os-sug-safe strong{display:block;font-size:11.5px;color:#f8fafc;font-weight:950;overflow-wrap:anywhere}
-    .os-lite-indic .os-sug-safe em{display:block;font-style:normal;font-size:10.5px;color:#9ca3af;margin-top:1px;overflow-wrap:anywhere}
-    .os-lite-indic .os-sug-safe.suggestion{background:rgba(22,101,52,.16);border-color:rgba(134,239,172,.24)}
-    .os-lite-indic .os-sug-safe.suggestion span{color:#bbf7d0}
-    .os-lite-indic .os-sug-safe.suggestion em{color:#a7f3d0}
-    .os-lite-indic .os-sug-safe.empty strong{color:#fbbf24}
+    .os-lite-gac-input.os-sug-default{border-color:rgba(134,239,172,.42)!important;background:rgba(22,101,52,.18)!important;color:#f8fafc!important}
+    .os-lite-indic .os-sug-compact{margin-top:4px;font-size:10.7px;line-height:1.25;color:#9ca3af;overflow-wrap:anywhere}
+    .os-lite-indic .os-sug-compact b{color:#bbf7d0;font-weight:950}
+    .os-lite-indic .os-sug-compact.warn{color:#fbbf24}
   `;
   document.head.appendChild(style);
 }
 
-function ensureBlocks(card) {
-  if (card.dataset.osSugSafeBound === '1') return;
+function ensureMeta(indic) {
+  let meta = indic.querySelector('.os-sug-compact');
+  if (!meta) {
+    meta = document.createElement('div');
+    meta.className = 'os-sug-compact';
+    indic.appendChild(meta);
+  }
+  return meta;
+}
+
+function clearOldBlocks(indic) {
+  indic.querySelectorAll('.os-sug-safe').forEach((el) => el.remove());
+}
+
+function applyDisplay(card, os, context) {
   const indic = card.querySelector('.os-lite-indic');
-  if (!indic) return;
-  card.dataset.osSugSafeBound = '1';
+  const input = indic?.querySelector('.os-lite-gac-input');
+  if (!indic || !input) return;
 
-  const atual = document.createElement('div');
-  atual.className = 'os-sug-safe current';
-  atual.innerHTML = '<span>Indicação atual</span><strong>Carregando contrato...</strong>';
-
-  const sugestao = document.createElement('div');
-  sugestao.className = 'os-sug-safe suggestion';
-  sugestao.innerHTML = '<span>Sugestão</span><strong>Calculando...</strong>';
-
-  indic.appendChild(atual);
-  indic.appendChild(sugestao);
-}
-
-function renderCurrent(card, context) {
-  const box = card.querySelector('.os-sug-safe.current');
-  if (!box) return;
-  const nome = String(card.querySelector('.os-lite-gac-input')?.value || '').trim();
-  if (!nome) {
-    box.classList.add('empty');
-    box.innerHTML = '<span>Indicação atual</span><strong>Sem indicação gravada</strong>';
-    return;
-  }
-  const colab = findColabByName(nome, context);
-  box.classList.remove('empty');
-  box.innerHTML = `<span>Indicação atual</span><strong>${escapeHtml(nome)} · ${escapeHtml(contratoLabel(colab || {}))}</strong>`;
-}
-
-function renderSuggestion(card, os, context) {
-  const box = card.querySelector('.os-sug-safe.suggestion');
-  if (!box) return;
+  clearOldBlocks(indic);
+  const meta = ensureMeta(indic);
+  const rawValue = String(input.value || '').trim();
+  const hadSavedValue = rawValue && input.dataset.osSugDefault !== '1';
   const sug = buildSuggestion(os, context);
-  if (!sug) {
-    box.innerHTML = '<span>Sugestão</span><strong>Sem sugestão calculada</strong><em>Verifique coordenadas do ponto/colaborador.</em>';
+
+  input.classList.remove('os-sug-default');
+  input.dataset.osSugDefault = '';
+
+  if (hadSavedValue) {
+    const colab = findColabByName(rawValue, context);
+    const contrato = contratoLabel(colab || {});
+    meta.classList.remove('warn');
+    meta.innerHTML = `<b>${escapeHtml(contrato)}</b>${sug ? ` · Sug.: ${escapeHtml(sug.nome)} · ${escapeHtml(sug.contrato)}` : ''}`;
     return;
   }
-  const km = Number.isFinite(sug.distanciaKm) ? `${KM.format(sug.distanciaKm)} km` : 'km s/dados';
-  box.innerHTML = `<span>Sugestão</span><strong>${escapeHtml(sug.nome)} · ${escapeHtml(sug.contrato)}</strong><em>${escapeHtml(km)} · Aud.: ${escapeHtml(sug.auditLabel)}</em>`;
+
+  if (sug) {
+    input.value = sug.nome;
+    input.dataset.osSugDefault = '1';
+    input.classList.add('os-sug-default');
+    const km = Number.isFinite(sug.distanciaKm) ? `${KM.format(sug.distanciaKm)} km` : 'km s/dados';
+    meta.classList.remove('warn');
+    meta.innerHTML = `<b>Sugestão</b> · ${escapeHtml(sug.contrato)} · ${escapeHtml(km)} · Aud.: ${escapeHtml(sug.auditLabel)}`;
+    return;
+  }
+
+  input.value = '';
+  meta.classList.add('warn');
+  meta.textContent = 'Sem indicação e sem sugestão calculada.';
 }
 
 async function refreshCards() {
@@ -389,7 +392,6 @@ async function refreshCards() {
 
   const cards = [...document.querySelectorAll('#progDistribuicaoOsMount .os-lite-card[data-os-id]')];
   if (!cards.length) return;
-  cards.forEach(ensureBlocks);
 
   const ids = cards.map((card) => card.dataset.osId).filter(Boolean);
   let rows = [];
@@ -413,15 +415,8 @@ async function refreshCards() {
   cards.forEach((card) => {
     const os = rowById.get(String(card.dataset.osId));
     const context = os ? contexts.get(String(os.supervisao || '').trim()) : null;
-    const current = card.querySelector('.os-sug-safe.current');
-    const suggestion = card.querySelector('.os-sug-safe.suggestion');
-    if (!os || !context) {
-      if (current) current.innerHTML = '<span>Indicação atual</span><strong>Contrato não carregado</strong>';
-      if (suggestion) suggestion.innerHTML = '<span>Sugestão</span><strong>Não carregada</strong>';
-      return;
-    }
-    renderCurrent(card, context);
-    renderSuggestion(card, os, context);
+    if (!os || !context) return;
+    applyDisplay(card, os, context);
   });
 }
 
