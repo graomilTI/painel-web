@@ -43,7 +43,7 @@ const STATUS_META = {
   sem_job: { ui: 'idle', label: 'Aguardando', color: '#f59e0b', detail: '🟡 Aguardando' },
 };
 
-const state = { agentes: [], loading: false, selectedAgent: null };
+const state = { agentes: [], loading: false, selectedAgent: null, botconversaFailures: [] };
 
 const esc = (v) => String(v ?? '')
   .replaceAll('&','&amp;')
@@ -236,23 +236,59 @@ function renderAgentDetails(agente) {
       <p><strong>Último Job:</strong> ${esc(agente.job_id || 'N/A')}</p>
       <p><strong>Duração:</strong> ${esc(formatDuration(agente.duration_ms))}</p>
     </div>
-    <div><p style="margin-bottom:8px"><strong>Log do Worker:</strong></p><div class="ag-log-box">${renderLog(agente.last_job)}</div></div>
+    <div><p style="margin-bottom:8px"><strong>${agente.source === 'botconversa' ? 'Resumo do job:' : 'Log do Worker:'}</strong></p><div class="ag-log-box">${renderLog(agente.last_job)}</div></div>
+    ${agente.source === 'botconversa' ? renderBotConversaFailures() : ''}
     <div style="margin-top:16px">
       <button class="ag-btn ag-btn-primary" onclick="executeAgent('${agente.id}')">▶️ Executar Agora</button>
-      <button class="ag-btn ag-btn-danger" onclick="viewLogs('${agente.id}')" style="margin-left:8px">📊 Ver Log cPanel</button>
+      <button class="ag-btn ag-btn-danger" onclick="viewLogs('${agente.id}')" style="margin-left:8px">📊 ${agente.source === 'botconversa' ? 'Onde ver os logs' : 'Ver Log cPanel'}</button>
     </div>
   </div>`;
+}
+
+function renderBotConversaFailures() {
+  const rows = state.botconversaFailures;
+  if (rows === null) {
+    return '<div style="margin-top:16px"><p style="margin-bottom:8px"><strong>Contatos com falha:</strong></p><div class="ag-log-box">Carregando...</div></div>';
+  }
+  if (!rows.length) {
+    return '<div style="margin-top:16px"><p style="margin-bottom:8px"><strong>Contatos com falha:</strong></p><div class="ag-log-box"><span class="ag-log-success">Nenhuma falha no último job. ✅</span></div></div>';
+  }
+  const lines = rows.map((r) => `<div class="ag-log-error">${esc(formatDate(r.created_at))} · ${esc(r.nome || '-')} (${esc(r.telefone || '-')}): ${esc(r.erro || 'erro desconhecido')}</div>`).join('');
+  return `<div style="margin-top:16px"><p style="margin-bottom:8px"><strong>Contatos com falha (últimas ${rows.length}):</strong></p><div class="ag-log-box">${lines}</div></div>`;
+}
+
+async function loadBotConversaFailures(jobId) {
+  if (!jobId) { state.botconversaFailures = []; render(); return; }
+  state.botconversaFailures = null;
+  try {
+    const { data, error } = await supabase
+      .from('botconversa_logs')
+      .select('nome, telefone, erro, created_at')
+      .eq('job_id', jobId)
+      .eq('sucesso', false)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if (error) throw error;
+    state.botconversaFailures = data || [];
+  } catch (e) {
+    console.error('Erro carregando falhas do BotConversa:', e);
+    state.botconversaFailures = [];
+  }
+  render();
 }
 
 window.selectAgent = (agentId) => {
   const agente = AGENTES.find((a) => a.id === agentId);
   const agenteData = state.agentes.find((a) => a.id === agentId);
   state.selectedAgent = { ...agente, ...agenteData };
+  state.botconversaFailures = [];
   render();
+  if (agente?.source === 'botconversa') loadBotConversaFailures(state.selectedAgent.job_id);
 };
 
 window.closeDetails = () => {
   state.selectedAgent = null;
+  state.botconversaFailures = [];
   render();
 };
 
@@ -419,9 +455,13 @@ async function loadAgentes() {
 
     state.agentes = results;
     if (state.selectedAgent?.id) {
+      const previousJobId = state.selectedAgent.job_id;
       const latest = results.find((item) => item.id === state.selectedAgent.id);
       const base = AGENTES.find((item) => item.id === state.selectedAgent.id);
       state.selectedAgent = { ...base, ...latest };
+      if (base?.source === 'botconversa' && state.selectedAgent.job_id !== previousJobId) {
+        loadBotConversaFailures(state.selectedAgent.job_id);
+      }
     }
   } catch (e) {
     console.error('Erro ao carregar agentes:', e);
