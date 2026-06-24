@@ -9,6 +9,7 @@ const state = {
   options: [],
   loading: false,
   loaded: false,
+  autoSelectedOnce: false,
 };
 
 function norm(value) {
@@ -145,8 +146,8 @@ function applySelectOptions(select) {
 
   if (state.restricted && first && (!select.value || select.selectedOptions?.[0]?.disabled)) {
     select.value = first;
-    if (!select.dataset.gestorSupFixSelected) {
-      select.dataset.gestorSupFixSelected = '1';
+    if (!state.autoSelectedOnce) {
+      state.autoSelectedOnce = true;
       select.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
