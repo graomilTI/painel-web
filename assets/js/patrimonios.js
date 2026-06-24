@@ -174,6 +174,12 @@ function styles(){return `<style>
 .pat-hist-item-detail{padding:0 16px 14px 44px;background:rgba(13,13,24,.6)}
 .pat-hist-item-detail .pat-table{min-width:0}
 .pat-hist-item-detail .pat-table th,.pat-hist-item-detail .pat-table td{padding:8px 10px}
+@media(max-width:640px){
+  .pat-hist-item-row{flex-wrap:wrap;row-gap:6px}
+  .pat-hist-item-name{flex:1 1 calc(100% - 32px);white-space:normal;overflow:visible;text-overflow:unset;word-break:break-word}
+  .pat-hist-item-badge{order:1;margin-left:28px}
+  .pat-hist-item-dias{order:2;min-width:0;text-align:left}
+}
 </style>`}
 
 initProtectedPage('Patrimônios', async (content, userContext)=>{
