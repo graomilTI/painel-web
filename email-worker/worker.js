@@ -56,11 +56,25 @@ function getOpenAI() {
 }
 
 function text(value) {
-  return String(value || '').trim();
+  return String(value || '').replace(/\u0000/g, '').trim();
 }
 
 function normalize(value) {
   return text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function nullableText(value) {
+  const cleaned = text(value);
+  return cleaned || null;
+}
+
+function sanitizeForPostgres(value) {
+  if (typeof value === 'string') return text(value);
+  if (Array.isArray(value)) return value.map(sanitizeForPostgres);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, val]) => [key, sanitizeForPostgres(val)]));
+  }
+  return value;
 }
 
 function envList(name, fallback = []) {
@@ -379,7 +393,7 @@ async function saveAttachment(emailId, attachment) {
     tamanho_bytes: attachment.size || attachment.content?.length || null,
     storage_path: stored,
     content_id: attachment.contentId || null,
-    dados_extraidos: dadosExtraidos,
+    dados_extraidos: sanitizeForPostgres(dadosExtraidos),
     interpretacao_status: isDangerous ? 'PERIGO' : status,
     interpretado_em: new Date().toISOString()
   });
@@ -445,29 +459,29 @@ async function processMailbox(client, account, rules, mailbox, state) {
         const from = parsed.from?.value?.[0] || {};
         const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', id).maybeSingle();
         if (exists.data?.id) continue;
-        const input = { subject: parsed.subject || '(sem assunto)', fromText: parsed.from?.text || from.address || '', text: parsed.text || '', html: parsed.html || '' };
+        const input = { subject: text(parsed.subject) || '(sem assunto)', fromText: text(parsed.from?.text || from.address), text: text(parsed.text), html: text(parsed.html) };
         const cls = await classifyWithAI(input, classifyByRules(input, rules));
         const { data: saved, error } = await supabase.from('email_messages').insert({
           account_id: account.id,
           uid: item.uid,
           message_id: id,
           in_reply_to: messageId(parsed.inReplyTo, false),
-          references_header: Array.isArray(parsed.references) ? parsed.references.join(' ') : text(parsed.references) || null,
-          remetente_nome: from.name || null,
-          remetente_email: from.address || null,
-          destinatario: parsed.to?.text || account.email,
-          cc: parsed.cc?.text || null,
-          assunto: parsed.subject || '(sem assunto)',
-          corpo_texto: parsed.text || null,
-          corpo_html: parsed.html || null,
+          references_header: nullableText(Array.isArray(parsed.references) ? parsed.references.join(' ') : parsed.references),
+          remetente_nome: nullableText(from.name),
+          remetente_email: nullableText(from.address),
+          destinatario: nullableText(parsed.to?.text) || account.email,
+          cc: nullableText(parsed.cc?.text),
+          assunto: text(parsed.subject) || '(sem assunto)',
+          corpo_texto: nullableText(parsed.text),
+          corpo_html: nullableText(parsed.html),
           data_recebimento: parsed.date?.toISOString() || new Date().toISOString(),
           regional: cls.regional || null,
           categoria: cls.categoria || 'GERAL',
           prioridade: cls.prioridade || 'NORMAL',
-          resumo_ia: cls.resumo_ia || null,
-          dados_detectados: cls.dados_detectados || {},
+          resumo_ia: nullableText(cls.resumo_ia),
+          dados_detectados: sanitizeForPostgres(cls.dados_detectados || {}),
           precisa_resposta: Boolean(cls.precisa_resposta),
-          resposta_sugerida: cls.resposta_sugerida || null,
+          resposta_sugerida: nullableText(cls.resposta_sugerida),
           status: cls.precisa_resposta ? 'RESPONDER' : 'NOVO',
           classificado_por: cls.classificado_por,
           risco: cls.risco || 'BAIXO',
@@ -475,7 +489,7 @@ async function processMailbox(client, account, rules, mailbox, state) {
             mailbox: mailboxPath,
             uid_validity: uidValidity,
             flags: Array.from(item.flags || []),
-            headers: { from: parsed.from?.text, to: parsed.to?.text }
+            headers: { from: nullableText(parsed.from?.text), to: nullableText(parsed.to?.text) }
           }
         }).select('id').single();
         if (error) throw error;
@@ -489,7 +503,7 @@ async function processMailbox(client, account, rules, mailbox, state) {
         }
         const updatePayload = { updated_at: new Date().toISOString() };
         if (Object.keys(attachmentsDados).length) {
-          updatePayload.dados_detectados = { ...(cls.dados_detectados || {}), ...attachmentsDados };
+          updatePayload.dados_detectados = sanitizeForPostgres({ ...(cls.dados_detectados || {}), ...attachmentsDados });
         }
         if (temAnexoPeigoso) {
           updatePayload.risco = 'CRITICO';
