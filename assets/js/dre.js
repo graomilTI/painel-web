@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import './modules/dre.js';
+import './modules/dre-agentes-fix.js';
 
 initProtectedPage('DRE', (content, ctx) => {
   if (!window.DRE || typeof window.DRE.openHome !== 'function') {
