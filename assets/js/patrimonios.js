@@ -122,10 +122,7 @@ function setHistSort(key){
 
 function setActiveTab(tab){
   state.tab = tab;
-  const cadastrarBtn=document.querySelector('[data-pat-tab="cadastrar"]');
-  cadastrarBtn.classList.toggle('btn-primary', tab==='cadastrar');
-  cadastrarBtn.classList.toggle('btn-secondary', tab!=='cadastrar');
-  document.querySelector('[data-pat-tab="historico"]').classList.toggle('pat-hist-card-active', tab==='historico');
+  document.querySelectorAll('[data-pat-tab]').forEach((btn)=>btn.classList.toggle('pat-hist-card-active', btn.dataset.patTab===tab));
   document.getElementById('patCadastrarSection').style.display = tab==='cadastrar' ? '' : 'none';
   document.getElementById('patHistoricoSection').style.display = tab==='historico' ? '' : 'none';
   if(tab==='historico') loadHistorico();
@@ -143,9 +140,11 @@ function styles(){return `<style>
 .pat-row-inativo td{color:#f87171}
 .dias-alerta{color:#fca5a5;font-weight:950}
 .pat-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:stretch}
-.pat-hist-card{display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:16px;border:1px solid rgba(148,163,184,.24);background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(99,102,241,.05));cursor:pointer;color:#e2e2f0;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+.pat-hist-card{display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:16px;border:1px solid rgba(148,163,184,.24);background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(99,102,241,.05));cursor:pointer;color:#e2e2f0;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;flex:1 1 220px}
 .pat-hist-card:hover{transform:translateY(-1px);border-color:rgba(99,102,241,.55)}
-.pat-hist-card-active{border-color:#818cf8;box-shadow:0 0 0 2px rgba(129,140,248,.35)}
+.pat-hist-card-active{border-color:#818cf8;box-shadow:0 0 0 2px rgba(129,140,248,.35);background:linear-gradient(135deg,rgba(99,102,241,.3),rgba(99,102,241,.08))}
+.pat-actions{display:flex;gap:10px;flex-wrap:wrap}
+.pat-actions .btn,.pat-table .btn{width:auto;margin-top:0}
 .pat-hist-icon{font-size:22px}
 .pat-hist-text{display:flex;flex-direction:column;gap:2px;text-align:left}
 .pat-hist-text strong{font-size:14px}
@@ -188,14 +187,17 @@ initProtectedPage('Patrimônios', async (content, userContext)=>{
 
   content.innerHTML=`${styles()}<section class="hero-card"><div><div class="eyebrow">Gestor</div><h2>Patrimônios</h2><p>Histórico de leituras e cadastro dos números patrimoniais dos itens comprados pelo setor de compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">GESTOR</span></div></section>
     <div class="pat-tabs">
-      <button class="btn btn-primary" data-pat-tab="cadastrar" type="button">Cadastrar</button>
+      <button class="pat-hist-card pat-hist-card-active" data-pat-tab="cadastrar" type="button">
+        <span class="pat-hist-icon">📝</span>
+        <span class="pat-hist-text"><strong>Cadastro</strong><small>Informar nº de patrimônio dos itens comprados</small></span>
+      </button>
       <button class="pat-hist-card" data-pat-tab="historico" type="button">
         <span class="pat-hist-icon">🕒</span>
         <span class="pat-hist-text"><strong>Histórico</strong><small>Leituras e cadastros já feitos</small></span>
       </button>
     </div>
     <section class="card mt-16" id="patCadastrarSection">
-      <div class="section-head"><div><h3>Compras aguardando número de patrimônio</h3><p class="muted">Cada item comprado como Patrimônio entra aqui em uma linha. É possível salvar individualmente ou em lote.</p></div><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-primary" id="patSaveAll" type="button">Salvar lote preenchido</button><button class="btn btn-secondary" id="patRefresh" type="button">↻ Atualizar</button></div></div>
+      <div class="section-head"><div><h3>Compras aguardando número de patrimônio</h3><p class="muted">Cada item comprado como Patrimônio entra aqui em uma linha. É possível salvar individualmente ou em lote.</p></div><div class="pat-actions"><button class="btn btn-primary" id="patSaveAll" type="button">Salvar lote preenchido</button><button class="btn btn-secondary" id="patRefresh" type="button">↻ Atualizar</button></div></div>
       <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th>Data</th><th>Material</th><th>Marca</th><th>Coordenação</th><th>Nº</th><th>Obs.</th><th>Ação</th></tr></thead><tbody id="patComprasBody"></tbody></table></div>
       <div class="form-actions"><span class="pat-feedback" id="patFeedback"></span></div>
     </section>
