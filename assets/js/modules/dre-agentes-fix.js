@@ -37,7 +37,7 @@
   ];
   const CAMPOS_VOLATEIS = new Set([
     'id', 'created_at', 'updated_at', 'sync_job_id', 'job_id', 'importacao_id',
-    'createdAt', 'updatedAt'
+    'createdAt', 'updatedAt', 'processado_em', 'sincronizado_em'
   ]);
 
   function norm(value) {
@@ -110,29 +110,51 @@
       .join(',')}}`;
   }
 
-  function extractCategoryValues(json) {
+  function sourceStamp(row) {
+    const stamp = Date.parse(row?.created_at || row?.updated_at || row?.sincronizado_em || '') || 0;
+    return `${String(stamp).padStart(16, '0')}|${String(row?.id || '')}`;
+  }
+
+  function categoryValuesFromColumns(json) {
     const out = {};
     for (const [key, value] of Object.entries(json || {})) {
       const category = canonicalCategory(key);
       if (!category) continue;
       out[category] = (out[category] || 0) + n(value);
     }
-
-    // Caso o agente grave linhas analíticas do GRM em vez de pivot mensal,
-    // converte Grupo/Categoria + Valor para o mesmo formato da planilha pivotada.
-    if (!Object.keys(out).length) {
-      const group = pick(json, CAMPOS_GRUPO);
-      const value = pick(json, CAMPOS_VALOR);
-      const category = canonicalCategory(group);
-      if (category) out[category] = n(value);
-    }
-
     return out;
+  }
+
+  function analyticCategoryValue(json) {
+    const group = pick(json, CAMPOS_GRUPO);
+    const value = pick(json, CAMPOS_VALOR);
+    const category = canonicalCategory(group);
+    if (!category) return null;
+    return { category, value: n(value) };
+  }
+
+  function isBetterEntry(next, current) {
+    if (!current) return true;
+    const nextStamp = sourceStamp(next.row);
+    const currentStamp = sourceStamp(current.row);
+    if (nextStamp !== currentStamp) return nextStamp > currentStamp;
+    return Math.abs(next.total || 0) >= Math.abs(current.total || 0);
+  }
+
+  function toNormalizedRow(entry) {
+    return {
+      ...entry.row,
+      coordenacao: entry.reg,
+      data_conta_de: entry.month,
+      dados_json: entry.values
+    };
   }
 
   function normalizeDespesasRows(data) {
     const rows = Array.isArray(data) ? data : [];
-    const normalized = [];
+    const fullPivotByRegMonth = new Map();
+    const categorySnapshotByRegMonthCategory = new Map();
+    const analyticRows = [];
 
     if (!window.__dreDespesasAgentesSeen) window.__dreDespesasAgentesSeen = new Set();
 
@@ -144,22 +166,60 @@
       const month = monthStart(row?.data_conta_de || pick(json, CAMPOS_DATA));
       if (!month) continue;
 
-      const values = extractCategoryValues(json);
-      if (!Object.keys(values).length) continue;
+      const categoryColumns = categoryValuesFromColumns(json);
+      const categoryKeys = Object.keys(categoryColumns);
 
-      const signature = `${reg}|${month}|${stableJson(values)}|${stableJson(json)}`;
+      if (categoryKeys.length > 1) {
+        // Linha pivotada completa: o agente pode recarregar a mesma competência diversas vezes.
+        // Para DRE mensal, fica somente o snapshot mais recente por regional+mês.
+        const key = `${reg}|${month}`;
+        const total = Object.values(categoryColumns).reduce((acc, value) => acc + Math.abs(n(value)), 0);
+        const entry = { row, reg, month, values: categoryColumns, total };
+        if (isBetterEntry(entry, fullPivotByRegMonth.get(key))) fullPivotByRegMonth.set(key, entry);
+        continue;
+      }
+
+      if (categoryKeys.length === 1) {
+        // Snapshot por categoria: mantém somente a versão mais recente da categoria no mês.
+        const category = categoryKeys[0];
+        const values = { [category]: n(categoryColumns[category]) };
+        const key = `${reg}|${month}|${category}`;
+        const entry = { row, reg, month, values, total: Math.abs(values[category]) };
+        if (isBetterEntry(entry, categorySnapshotByRegMonthCategory.get(key))) {
+          categorySnapshotByRegMonthCategory.set(key, entry);
+        }
+        continue;
+      }
+
+      const analytic = analyticCategoryValue(json);
+      if (!analytic) continue;
+
+      // Linha analítica: soma as linhas reais, mas remove repetições do mesmo documento/lançamento.
+      const signature = `${reg}|${month}|${analytic.category}|${stableJson(json)}`;
       if (window.__dreDespesasAgentesSeen.has(signature)) continue;
       window.__dreDespesasAgentesSeen.add(signature);
 
-      normalized.push({
-        ...row,
-        coordenacao: reg,
-        data_conta_de: month,
-        dados_json: values
+      analyticRows.push({
+        row,
+        reg,
+        month,
+        values: { [analytic.category]: analytic.value },
+        total: Math.abs(analytic.value)
       });
     }
 
-    return normalized;
+    const fullPivotKeys = new Set(fullPivotByRegMonth.keys());
+
+    // Se existe snapshot completo de regional+mês, ele é a fonte mais segura e substitui
+    // snapshots por categoria da mesma regional+mês para evitar somar o mesmo lote duas vezes.
+    const categoryEntries = [...categorySnapshotByRegMonthCategory.values()]
+      .filter(entry => !fullPivotKeys.has(`${entry.reg}|${entry.month}`));
+
+    return [
+      ...fullPivotByRegMonth.values(),
+      ...categoryEntries,
+      ...analyticRows
+    ].map(toNormalizedRow);
   }
 
   function shouldPatchDespesasResult(state) {
