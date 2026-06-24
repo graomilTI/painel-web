@@ -375,6 +375,14 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     `).join('');
   }
 
+  function accountInfo(accountId) {
+    return state.accounts.find((account) => String(account.id) === String(accountId)) || null;
+  }
+
+  function attachAccountInfo(rows) {
+    return (rows || []).map((row) => ({ ...row, email_accounts: accountInfo(row.account_id) }));
+  }
+
   function fillAccountForm(acc) {
     document.getElementById('accId').value = acc?.id || '';
     document.getElementById('accNome').value = acc?.nome || '';
@@ -397,9 +405,11 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     const id = document.getElementById('accId').value;
     const password = document.getElementById('accPassword').value;
     const payload = {
+      id: id || null,
       nome: document.getElementById('accNome').value.trim(),
       email: document.getElementById('accEmail').value.trim(),
       username: document.getElementById('accUsername').value.trim(),
+      password,
       imap_host: document.getElementById('accImapHost').value.trim(),
       imap_port: Number(document.getElementById('accImapPort').value || 993),
       imap_secure: document.getElementById('accImapSecure').checked,
@@ -409,18 +419,10 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       limite_por_sync: Number(document.getElementById('accLimit').value || 30),
       ativo: document.getElementById('accAtivo').checked,
       auto_responder: document.getElementById('accAuto').checked,
-      updated_at: new Date().toISOString()
     };
-    if (!id || password) payload.password_cipher = password;
-    if (!id) {
-      payload.criado_por = userContext?.user?.id || null;
-      payload.criado_por_nome = userContext?.profile?.full_name || userContext?.user?.email || null;
-    }
-    const query = id
-      ? supabase.from('email_accounts').update(payload).eq('id', id)
-      : supabase.from('email_accounts').insert(payload);
-    const { error } = await query;
+    const { data, error } = await supabase.functions.invoke('email-account-save', { body: payload });
     if (error) return alert(error.message);
+    if (!data?.ok) return alert(data?.error || 'Não foi possível salvar a conta.');
     fillAccountForm(null);
     await loadAccounts();
     alert('Conta salva. Execute o worker no servidor para sincronizar/enviar e-mails.');
@@ -429,7 +431,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
   async function loadEmails() {
     const list = document.getElementById('emList');
     list.innerHTML = `<div class="em-empty">Carregando e-mails...</div>`;
-    let q = supabase.from('email_messages').select('*, email_accounts(nome,email)').order('data_recebimento', { ascending: false }).limit(80);
+    let q = supabase.from('email_messages').select('*').order('data_recebimento', { ascending: false }).limit(80);
     if (state.conta) q = q.eq('account_id', state.conta);
     if (state.status) q = q.in('status', state.status.split(','));
     const { data, error } = await q;
@@ -438,7 +440,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       return;
     }
     const busca = state.busca.toLowerCase().trim();
-    state.emails = (data || []).filter((e) => {
+    state.emails = attachAccountInfo(data).filter((e) => {
       if (!busca) return true;
       return [e.assunto, e.remetente_email, e.remetente_nome, e.regional, e.categoria, e.resumo_ia].some((v) => String(v || '').toLowerCase().includes(busca));
     });
@@ -573,16 +575,17 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
   async function loadPerigo() {
     const list = document.getElementById('emPerigoList');
     list.innerHTML = `<div class="em-empty">Carregando...</div>`;
-    const { data, error } = await supabase.from('email_messages').select('*, email_accounts(nome,email)').in('risco', ['ALTO', 'CRITICO']).order('data_recebimento', { ascending: false }).limit(100);
+    const { data, error } = await supabase.from('email_messages').select('*').in('risco', ['ALTO', 'CRITICO']).order('data_recebimento', { ascending: false }).limit(100);
     if (error) {
       list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}</div>`;
       return;
     }
-    if (!data?.length) {
+    const rows = attachAccountInfo(data);
+    if (!rows.length) {
       list.innerHTML = `<div class="em-empty">✅ Nenhum e-mail de risco detectado.</div>`;
       return;
     }
-    list.innerHTML = data.map((e) => `
+    list.innerHTML = rows.map((e) => `
       <div class="em-row" data-email-id="${esc(e.id)}" style="border-color:rgba(220,38,38,.38);background:rgba(220,38,38,.08)">
         <div class="em-row-top">
           <div class="em-row-from">
@@ -604,16 +607,17 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
   async function loadOutbox() {
     const list = document.getElementById('emOutboxBody');
     list.innerHTML = `<div class="em-empty">Carregando...</div>`;
-    const { data, error } = await supabase.from('email_outbox').select('*, email_accounts(nome,email)').order('created_at', { ascending: false }).limit(100);
+    const { data, error } = await supabase.from('email_outbox').select('*').order('created_at', { ascending: false }).limit(100);
     if (error) {
       list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}</div>`;
       return;
     }
-    if (!data?.length) {
+    const rows = attachAccountInfo(data);
+    if (!rows.length) {
       list.innerHTML = `<div class="em-empty">Nenhuma resposta na fila.</div>`;
       return;
     }
-    list.innerHTML = data.map((o) => `
+    list.innerHTML = rows.map((o) => `
       <div class="em-row">
         <div class="em-row-top">
           <div class="em-row-from">
