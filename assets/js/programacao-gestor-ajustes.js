@@ -1,5 +1,6 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
-import { renderOsProgramacaoLite } from './os-programacao-lite.js';
+import './programacao-os-sugestoes.js?v=20260624-3';
+import { renderOsProgramacaoLite } from './os-programacao-lite.js?v=20260624-3';
 
 const OS_STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
@@ -263,6 +264,7 @@ async function renderDistribuicao({ loadOs = false, force = false } = {}) {
       data: document.getElementById('progDataRef')?.value || '',
     });
     prepareEmbeddedOsFilters(mount);
+    setTimeout(() => window.__programacaoOsSugestoesRefresh?.(), 0);
     distribuicaoLoaded = true;
     if (feedback) {
       const sup = document.getElementById('progSup')?.value || '';
@@ -464,9 +466,6 @@ function bindTopLoadForEtapaA() {
     event.preventDefault();
     event.stopImmediatePropagation();
     renderDistribuicao({ loadOs: true, force: true });
-    // Pré-carrega os colaboradores usados nas etapas B-F, para não exigir
-    // um segundo "Carregar" ao trocar de etapa. A view da etapa A é
-    // restaurada depois, pois loadContext() reescreve #progList.
     Promise.resolve(window.__progLoadColaboradores?.()).finally(() => {
       if (currentUiStep === 'A') renderDistribuicao({ loadOs: false });
     });
