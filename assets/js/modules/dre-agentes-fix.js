@@ -150,6 +150,23 @@
     };
   }
 
+  function entryUniqueKey(entry) {
+    const categories = Object.keys(entry.values || {}).sort().join('|');
+    return `${categories.includes('|') ? 'P' : 'C'}|${entry.reg}|${entry.month}|${categories}`;
+  }
+
+  function filterAlreadyReturnedSnapshots(entries) {
+    if (!window.__dreDespesasSnapshotSeen) window.__dreDespesasSnapshotSeen = new Set();
+    const out = [];
+    for (const entry of entries) {
+      const key = entryUniqueKey(entry);
+      if (window.__dreDespesasSnapshotSeen.has(key)) continue;
+      window.__dreDespesasSnapshotSeen.add(key);
+      out.push(entry);
+    }
+    return out;
+  }
+
   function normalizeDespesasRows(data) {
     const rows = Array.isArray(data) ? data : [];
     const fullPivotByRegMonth = new Map();
@@ -157,6 +174,7 @@
     const analyticRows = [];
 
     if (!window.__dreDespesasAgentesSeen) window.__dreDespesasAgentesSeen = new Set();
+    if (!window.__dreDespesasSnapshotSeen) window.__dreDespesasSnapshotSeen = new Set();
 
     for (const row of rows) {
       const json = row?.dados_json && typeof row.dados_json === 'object' ? row.dados_json : {};
@@ -215,9 +233,13 @@
     const categoryEntries = [...categorySnapshotByRegMonthCategory.values()]
       .filter(entry => !fullPivotKeys.has(`${entry.reg}|${entry.month}`));
 
-    return [
+    const snapshotEntries = filterAlreadyReturnedSnapshots([
       ...fullPivotByRegMonth.values(),
-      ...categoryEntries,
+      ...categoryEntries
+    ]);
+
+    return [
+      ...snapshotEntries,
       ...analyticRows
     ].map(toNormalizedRow);
   }
@@ -256,6 +278,9 @@
               if (!/created_at/i.test(columns)) columns += ',created_at';
               if (!/(^|,)\s*id\s*(,|$)/i.test(columns)) columns += ',id';
               inner = value.call(inner, columns, ...args.slice(1));
+              if (typeof inner.order === 'function') {
+                inner = inner.order('created_at', { ascending: false });
+              }
               return proxy;
             }
           }
@@ -286,6 +311,7 @@
   function clearDreCaches() {
     try {
       window.__dreDespesasAgentesSeen = new Set();
+      window.__dreDespesasSnapshotSeen = new Set();
       for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
         const key = sessionStorage.key(i) || '';
         if (key.startsWith('grao1000:dre-despesas:') || key.startsWith('grao1000:dre-full:')) {
