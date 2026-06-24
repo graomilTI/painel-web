@@ -31,12 +31,14 @@ const AGENTES = [
   { id: 'sync-lista-os', name: 'Lista de OS', freq: '1h', table: 'grm_lista_os_importacoes' },
   { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: '1h', table: 'grm_distribuicao_os_importacoes' },
   { id: BTG_AGENT_ID, name: 'BTG · Relatórios', freq: '1h / disparo', table: 'logistica_btg_solicitacoes', aliases: BTG_AGENT_ALIASES, kpi: true },
+  { id: 'botconversa-sync', name: 'BotConversa · Contatos', freq: '1h', table: 'botconversa_contatos', source: 'botconversa' },
 ];
 
 const STATUS_META = {
   pendente: { ui: 'idle', label: 'Aguardando', color: '#f59e0b', detail: '🟡 Aguardando worker' },
   rodando: { ui: 'running', label: 'Executando', color: '#3b82f6', detail: '🔵 Executando' },
   sucesso: { ui: 'online', label: 'Online', color: '#22c55e', detail: '✅ Sucesso' },
+  parcial: { ui: 'idle', label: 'Parcial', color: '#f59e0b', detail: '⚠️ Concluído com erros' },
   erro: { ui: 'error', label: 'Erro', color: '#ef4444', detail: '❌ Erro' },
   sem_job: { ui: 'idle', label: 'Aguardando', color: '#f59e0b', detail: '🟡 Aguardando' },
 };
@@ -186,7 +188,7 @@ function renderAgentes() {
   html += `<div class="ag-wrap">
     <div class="ag-hero">
       <h2>🤖 Agentes de Sincronização</h2>
-      <p>Monitor em tempo real dos ${AGENTES.length} agentes que enfileiram jobs no Supabase e são executados pelo worker do cPanel.</p>
+      <p>Monitor em tempo real dos ${AGENTES.length} agentes de sincronização (worker do cPanel + Edge Functions do Supabase).</p>
       <div class="ag-stats">
         <div class="ag-stat"><div class="ag-stat-val">${AGENTES.length}</div><div class="ag-stat-lbl">Total de Agentes</div></div>
         <div class="ag-stat"><div class="ag-stat-val" style="color:#22c55e">${statusCount.online}</div><div class="ag-stat-lbl">Online</div></div>
@@ -255,6 +257,22 @@ window.closeDetails = () => {
 };
 
 window.executeAgent = async (agentId) => {
+  const agenteDef = AGENTES.find((a) => a.id === agentId);
+
+  if (agenteDef?.source === 'botconversa') {
+    if (!confirm('Disparar agora a sincronização de contatos do BotConversa?')) return;
+    try {
+      const { data, error } = await supabase.functions.invoke('botconversa-sync', { body: { action: 'start_sync' } });
+      if (error) throw error;
+      if (!data || data.ok === false) throw new Error(data?.error || 'Falha ao iniciar a sincronização.');
+      alert(`✅ Sincronização iniciada.\n\nJob: ${data.job_id}\nStatus: ${data.status}\n\nRoda direto no Supabase (sem worker de servidor); esta tela atualiza a cada 30s.`);
+      await loadAgentes();
+    } catch (e) {
+      alert(`❌ Erro ao iniciar sincronização: ${e.message}`);
+    }
+    return;
+  }
+
   if (!confirm(`Enfileirar agente "${agentId}" para o worker do cPanel executar?`)) return;
 
   try {
@@ -274,6 +292,11 @@ window.executeAgent = async (agentId) => {
 };
 
 window.viewLogs = (agentId) => {
+  const agenteDef = AGENTES.find((a) => a.id === agentId);
+  if (agenteDef?.source === 'botconversa') {
+    alert('Esse agente roda como Edge Function no Supabase (sem worker de servidor). Logs por contato (sucesso/erro) ficam na tabela botconversa_logs, filtrando por job_id; o progresso do job fica em botconversa_jobs.');
+    return;
+  }
   const msg = `Para acompanhar no servidor cPanel:\n\ntail -f /home/grao100/painel-scripts/grm-sync/logs/worker-cron.log\n\nO agente ${agentId} também grava o resultado final em public.grm_sync_jobs.`;
   alert(msg);
 };
@@ -289,7 +312,47 @@ async function getRecentBtgJobFallback() {
   return (data || []).find(jobMentionsBtg) || null;
 }
 
+// botconversa-sync não roda no worker do cPanel — é uma Edge Function do
+// Supabase, com seu próprio job (botconversa_jobs) e vocabulário de status
+// diferente do grm_sync_jobs. Normaliza pro mesmo formato pra reaproveitar
+// renderLog/renderAgentDetails sem duplicar a UI.
+const BOTCONVERSA_STATUS_MAP = { pendente: 'pendente', processando: 'rodando', concluido: 'sucesso', parcial: 'parcial', erro: 'erro' };
+
+function normalizeBotConversaJob(row) {
+  if (!row) return null;
+  const durationMs = row.finished_at && row.created_at
+    ? new Date(row.finished_at).getTime() - new Date(row.created_at).getTime()
+    : null;
+  return {
+    id: row.id,
+    agente_id: 'botconversa-sync',
+    status: BOTCONVERSA_STATUS_MAP[String(row.status || '').toLowerCase()] || 'sem_job',
+    created_at: row.created_at,
+    iniciado_em: row.created_at,
+    finalizado_em: row.finished_at,
+    duration_ms: durationMs,
+    erro: row.erro,
+    output: { stdout: [row.observacoes, `Sucesso: ${row.total_sucesso || 0} · Erros: ${row.total_erro || 0}`].filter(Boolean).join('\n') },
+  };
+}
+
+async function getLastJobBotConversa() {
+  const { data, error } = await supabase
+    .from('botconversa_jobs')
+    .select('id, status, total_processado, total_sucesso, total_erro, erro, observacoes, created_at, finished_at')
+    .eq('tipo', 'sync_subscribers')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return normalizeBotConversaJob(data);
+}
+
 async function getLastJob(agenteOrId) {
+  if (typeof agenteOrId !== 'string' && agenteOrId?.source === 'botconversa') {
+    return getLastJobBotConversa();
+  }
+
   const ids = getAgentIds(agenteOrId);
   let query = supabase
     .from('grm_sync_jobs')
