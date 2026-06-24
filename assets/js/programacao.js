@@ -17,6 +17,23 @@ const TIPOS_ESTADIA = ['CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
 const TIPOS_ESTADIA_BOTOES = ['PERNOITE', 'ALOJAMENTO', 'HOTEL'];
 const TIPOS_DESLOCAMENTO = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'ÔNIBUS', 'OUTRO'];
 const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
+const SUPERVISAO_UF_MAP = {
+  'BAHIA': 'BA',
+  'CASCAVEL': 'PR',
+  'GOIAS': 'GO',
+  'LONDRINA': 'PR',
+  'MARANHAO': 'MA',
+  'MARINGA': 'PR',
+  'MATO GROSSO DO SUL': 'MS',
+  'MATO GROSSO': 'MT',
+  'MINAS GERAIS': 'MG',
+  'PARA': 'PA',
+  'PONTA GROSSA': 'PR',
+  'RIO GRANDE DO SUL': 'RS',
+  'SP': 'SP',
+  'TOCANTINS': 'TO',
+};
+const SUPERVISAO_UF_CHAVES = Object.keys(SUPERVISAO_UF_MAP).sort((a, b) => b.length - a.length);
 const DISPONIBILIDADES_LIBERADAS = new Set(['', 'OK', 'DISPONIVEL', 'LIBERADO', 'LOGISTICA', 'DESLOCAMENTO']);
 
 function debounce(fn, wait = 220) {
@@ -738,14 +755,19 @@ initProtectedPage('Programação', (content) => {
       || (state.cidades || []).find((c) => c.key === normalizeText(`${text} ${uf}`));
   }
 
+  function ufFromSupervisao(supervisao) {
+    const norm = normalizeText(supervisao || '');
+    if (!norm) return '';
+    const chave = SUPERVISAO_UF_CHAVES.find((k) => norm.startsWith(normalizeText(k)));
+    return chave ? SUPERVISAO_UF_MAP[chave] : '';
+  }
+
   function alojamentoOptions(selectedId, cidade, uf) {
     const cidadeNorm = normalizeText(cidade);
-    const ufNorm = normalizeUF(uf);
-    const rows = (state.alojamentos || []).filter((a) => {
-      if (!cidadeNorm && !ufNorm) return true;
-      return (!cidadeNorm || normalizeText(a.cidade) === cidadeNorm) && (!ufNorm || normalizeUF(a.uf) === ufNorm);
-    });
-    const all = rows.length ? rows : (state.alojamentos || []);
+    const ufNorm = normalizeUF(uf) || ufFromSupervisao(state.supervisao);
+    const porRegional = ufNorm ? (state.alojamentos || []).filter((a) => normalizeUF(a.uf) === ufNorm) : (state.alojamentos || []);
+    const rows = cidadeNorm ? porRegional.filter((a) => normalizeText(a.cidade) === cidadeNorm) : porRegional;
+    const all = rows.length ? rows : porRegional;
     return `<option value="">Selecionar alojamento</option>` + all.map((a) => {
       const label = `${a.nome} · ${a.cidade || '-'}/${a.uf || ''}${a.capacidade ? ` · Cap. ${a.capacidade}` : ''}`;
       return `<option value="${escapeHtml(a.id)}" ${String(selectedId || '') === String(a.id) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
