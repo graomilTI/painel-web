@@ -44,6 +44,7 @@
       const toggle = document.getElementById('mobileNavToggle');
       const backdrop = document.getElementById('mobileSidebarBackdrop');
       const sidebar = document.getElementById('sidebarNav');
+      const pageContent = document.getElementById('pageContent');
 
       if (!toggle || !backdrop || !sidebar) return;
 
@@ -51,6 +52,21 @@
         document.body.classList.toggle('mobile-nav-open', open);
         toggle.setAttribute('aria-expanded', String(open));
         backdrop.hidden = !open;
+      };
+
+      const enhanceResponsiveTables = (root = document) => {
+        root.querySelectorAll('table:not(.mobile-table-enhanced)').forEach((table) => {
+          if (table.closest('.mobile-table-scroll, .table-wrap, .table-responsive, .data-table-wrap, .list-table-wrap, .report-table-wrap')) {
+            table.classList.add('mobile-table-enhanced');
+            return;
+          }
+
+          const wrapper = document.createElement('div');
+          wrapper.className = 'mobile-table-scroll';
+          table.parentNode.insertBefore(wrapper, table);
+          wrapper.appendChild(table);
+          table.classList.add('mobile-table-enhanced');
+        });
       };
 
       toggle.addEventListener('click', () => {
@@ -70,6 +86,14 @@
       window.addEventListener('resize', () => {
         if (window.innerWidth > 980) setMenuOpen(false);
       });
+
+      enhanceResponsiveTables();
+      if (pageContent) {
+        new MutationObserver(() => enhanceResponsiveTables(pageContent)).observe(pageContent, {
+          childList: true,
+          subtree: true
+        });
+      }
     })();
   </script>
   <script type="module" src="./assets/js/dashboard.js"></script>
