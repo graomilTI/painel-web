@@ -332,6 +332,55 @@
     return out;
   }
 
+  // Notas Fiscais sincronizadas pelo agente sync-notas-fiscais: download real do XLS
+  // de Notas Fiscais (não é pivot de API como Despesas), então o dados_json já vem
+  // com as mesmas colunas da planilha manual (Coordenação, Data N.F., Valor Bruto,
+  // Desconto, Acréscimo, Imposto) — não precisa de nenhuma transformação no agente,
+  // só ler e converter pro mesmo formato de parseNF. O agente só cobre uma janela
+  // rolante de ~35 dias (não o ano inteiro), então meses fora dessa janela continuam
+  // vindo do upload manual.
+  async function loadNotasFiscaisFromDb(supabase, year){
+    const cached=dreFromCache(`grao1000:dre-nf:${year}`);
+    if(cached) return cached;
+    const out={bruto:{}, descAcresc:{}, impostos:{}, regionais:new Set(), totalRows:0};
+    if(!supabase || !year) return out;
+
+    const {data:maxRows,error:maxErr}=await supabase
+      .from('grm_notas_fiscais_importacoes').select('created_at').order('created_at',{ascending:false}).limit(1);
+    if(maxErr || !maxRows?.length){
+      if(maxErr) console.warn('DRE: não foi possível carregar notas fiscais sincronizadas pelo agente.', maxErr);
+      return out;
+    }
+    const threshold=new Date(new Date(maxRows[0].created_at).getTime()-5*60*1000).toISOString();
+
+    const pageSize=1000; let from=0; const rows=[];
+    while(true){
+      const {data,error}=await supabase
+        .from('grm_notas_fiscais_importacoes')
+        .select('dados_json')
+        .gte('created_at', threshold)
+        .range(from, from+pageSize-1);
+      if(error){ console.warn('DRE: falha ao paginar notas fiscais sincronizadas pelo agente.', error); break; }
+      const batch=data||[]; rows.push(...batch);
+      if(batch.length<pageSize) break;
+      from+=pageSize;
+    }
+    out.totalRows=rows.length;
+
+    for(const row of rows){
+      const json=row.dados_json||{};
+      const reg=mapReg(json['Coordenação'] ?? json['Coordenacao'] ?? json['Regional']);
+      const m=monthFrom(json['Data N.F.'] ?? json['Data da NF'] ?? json['Data NF'] ?? json['Data Nota'] ?? json['Data']);
+      if(!reg || !m || m.year!==year || isIgnored(reg)) continue;
+      if(!isExcluded(reg)) out.regionais.add(reg);
+      addArr(out.bruto, reg, m.month, json['Valor Bruto'] ?? json['Valor Bruto da NF'] ?? json['Valor Bruto NF'] ?? json['Valor da N.F.'] ?? json['Valor NF'] ?? json['Valor']);
+      addArr(out.descAcresc, reg, m.month, n(json['Acréscimo'] ?? json['Acrescimo']) - n(json['Desconto'] ?? json['Descontos']));
+      addArr(out.impostos, reg, m.month, json['Imposto'] ?? json['Impostos'] ?? json['Total de Impostos']);
+    }
+    dreCache(`grao1000:dre-nf:${year}`, out);
+    return out;
+  }
+
   async function loadProduzidoColaboradorFromDb(supabase, year){
     const cached=dreFromCache(`grao1000:dre-colab:${year}`);
     if(cached) return cached;
@@ -947,6 +996,25 @@
     return target;
   }
 
+  // Notas Fiscais: mesma estratégia "melhor mês" da Produção/Despesas.
+  function mergeNFMelhorMes(target, source){
+    if(!source) return target;
+    const regs=new Set([...Object.keys(target.bruto||{}),...Object.keys(source.bruto||{})]);
+    for(const reg of regs){
+      for(let mi=0;mi<12;mi++){
+        const atualPontuacao=Math.abs(getArrVal(target.bruto, reg, mi))+Math.abs(getArrVal(target.impostos, reg, mi));
+        const novoPontuacao=Math.abs(getArrVal(source.bruto, reg, mi))+Math.abs(getArrVal(source.impostos, reg, mi));
+        if(novoPontuacao > atualPontuacao){
+          setArrVal(target.bruto, reg, mi, getArrVal(source.bruto, reg, mi));
+          setArrVal(target.descAcresc, reg, mi, getArrVal(source.descAcresc, reg, mi));
+          setArrVal(target.impostos, reg, mi, getArrVal(source.impostos, reg, mi));
+        }
+      }
+    }
+    mergeSet(target.regionais, source.regionais);
+    return target;
+  }
+
   async function processReports(opts,setStatus){
     state.busy=true; setStatus('Buscando relatórios ativos importados...');
     state.reports=await getLatestReports(opts.supabase);
@@ -999,6 +1067,20 @@
       state.sourceAudit.used.push({
         tipo: 'despesas-agente-db',
         nome: `grm_despesas_importacoes (${despesasDb.totalRows} linhas)`,
+        status: 'fonte_mensal_segura',
+        modo: 'merge_best_month',
+        created_at: new Date().toISOString()
+      });
+    }
+
+    setStatus('Conferindo notas fiscais sincronizadas pelo agente...');
+    const nfDb = await loadNotasFiscaisFromDb(opts.supabase, state.year);
+    if(nfDb.totalRows > 0){
+      mergeNFMelhorMes(src.nf, nfDb);
+      if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
+      state.sourceAudit.used.push({
+        tipo: 'notas-fiscais-agente-db',
+        nome: `grm_notas_fiscais_importacoes (${nfDb.totalRows} linhas)`,
         status: 'fonte_mensal_segura',
         modo: 'merge_best_month',
         created_at: new Date().toISOString()
