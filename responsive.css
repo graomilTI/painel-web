@@ -43,7 +43,8 @@ textarea {
 .list-table-wrap,
 .report-table-wrap,
 .grid-scroll,
-.overflow-x-auto {
+.overflow-x-auto,
+.mobile-table-scroll {
   max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -316,23 +317,21 @@ textarea {
     width: 100%;
   }
 
-  table {
-    display: block;
+  .mobile-table-scroll {
     width: 100%;
-    max-width: 100%;
-    overflow-x: auto;
-    border-spacing: 0;
-    -webkit-overflow-scrolling: touch;
+    margin-inline: -2px;
+    padding: 0 2px 6px;
   }
 
-  thead,
-  tbody,
-  tr {
+  .mobile-table-scroll table {
+    width: max-content;
     min-width: 720px;
+    display: table;
+    border-spacing: 0;
   }
 
-  th,
-  td {
+  .mobile-table-scroll th,
+  .mobile-table-scroll td {
     white-space: nowrap;
   }
 
