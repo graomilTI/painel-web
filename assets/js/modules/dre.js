@@ -278,6 +278,109 @@
   }
 
 
+  // Despesas sincronizadas pelo agente sync-despesas: 1 chamada por mês ao relatório
+  // GRM agrupado por Coordenação × Grupo de Categoria (mesmas colunas que a planilha
+  // "Despesas por Regional" importada manualmente usa). O agente reenvia os últimos
+  // ~13 meses a cada execução (reload completo), então sempre lemos só o lote mais
+  // recente por created_at.
+  async function loadDespesasFromDb(supabase, year){
+    const cached=dreFromCache(`grao1000:dre-despesas:${year}`);
+    if(cached) return cached;
+    const out={base:{}, geral:{}, regionais:new Set(), totalRows:0};
+    if(!supabase || !year) return out;
+
+    const {data:maxRows,error:maxErr}=await supabase
+      .from('grm_despesas_importacoes').select('created_at').order('created_at',{ascending:false}).limit(1);
+    if(maxErr || !maxRows?.length){
+      if(maxErr) console.warn('DRE: não foi possível carregar despesas sincronizadas pelo agente.', maxErr);
+      return out;
+    }
+    const threshold=new Date(new Date(maxRows[0].created_at).getTime()-5*60*1000).toISOString();
+
+    const pageSize=1000; let from=0; const rows=[];
+    while(true){
+      const {data,error}=await supabase
+        .from('grm_despesas_importacoes')
+        .select('coordenacao,data_conta_de,dados_json')
+        .gte('created_at', threshold)
+        .range(from, from+pageSize-1);
+      if(error){ console.warn('DRE: falha ao paginar despesas sincronizadas pelo agente.', error); break; }
+      const batch=data||[]; rows.push(...batch);
+      if(batch.length<pageSize) break;
+      from+=pageSize;
+    }
+    out.totalRows=rows.length;
+
+    for(const row of rows){
+      const reg=mapReg(row.coordenacao || row.dados_json?.['Coordenação']);
+      // Parse manual da data (YYYY-MM-DD): monthFrom() cairia no new Date(raw) genérico,
+      // que interpreta string "date-only" como UTC e pode voltar 1 dia em fusos negativos
+      // (BRT = UTC-3), classificando o 1º dia do mês no mês anterior.
+      const isoMatch=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(row.data_conta_de||''));
+      const m=isoMatch ? {year:+isoMatch[1], month:+isoMatch[2]-1} : null;
+      if(!reg || !m || m.year!==year || isIgnored(reg)) continue;
+      const isGeral=norm(reg)==='GERAL';
+      if(!isGeral && !isExcluded(reg)) out.regionais.add(reg);
+      const json=row.dados_json||{};
+      for(const [tipo,valor] of Object.entries(json)){
+        if(tipo==='Coordenação' || tipo==='Total') continue;
+        if(isGeral){ const key=norm(tipo); if(!out.geral[key]) out.geral[key]=Array(12).fill(0); out.geral[key][m.month]+=n(valor); }
+        else add(out.base, reg, tipo, m.month, valor);
+      }
+    }
+    dreCache(`grao1000:dre-despesas:${year}`, out);
+    return out;
+  }
+
+  // Notas Fiscais sincronizadas pelo agente sync-notas-fiscais: download real do XLS
+  // de Notas Fiscais (não é pivot de API como Despesas), então o dados_json já vem
+  // com as mesmas colunas da planilha manual (Coordenação, Data N.F., Valor Bruto,
+  // Desconto, Acréscimo, Imposto) — não precisa de nenhuma transformação no agente,
+  // só ler e converter pro mesmo formato de parseNF. O agente só cobre uma janela
+  // rolante de ~35 dias (não o ano inteiro), então meses fora dessa janela continuam
+  // vindo do upload manual.
+  async function loadNotasFiscaisFromDb(supabase, year){
+    const cached=dreFromCache(`grao1000:dre-nf:${year}`);
+    if(cached) return cached;
+    const out={bruto:{}, descAcresc:{}, impostos:{}, regionais:new Set(), totalRows:0};
+    if(!supabase || !year) return out;
+
+    const {data:maxRows,error:maxErr}=await supabase
+      .from('grm_notas_fiscais_importacoes').select('created_at').order('created_at',{ascending:false}).limit(1);
+    if(maxErr || !maxRows?.length){
+      if(maxErr) console.warn('DRE: não foi possível carregar notas fiscais sincronizadas pelo agente.', maxErr);
+      return out;
+    }
+    const threshold=new Date(new Date(maxRows[0].created_at).getTime()-5*60*1000).toISOString();
+
+    const pageSize=1000; let from=0; const rows=[];
+    while(true){
+      const {data,error}=await supabase
+        .from('grm_notas_fiscais_importacoes')
+        .select('dados_json')
+        .gte('created_at', threshold)
+        .range(from, from+pageSize-1);
+      if(error){ console.warn('DRE: falha ao paginar notas fiscais sincronizadas pelo agente.', error); break; }
+      const batch=data||[]; rows.push(...batch);
+      if(batch.length<pageSize) break;
+      from+=pageSize;
+    }
+    out.totalRows=rows.length;
+
+    for(const row of rows){
+      const json=row.dados_json||{};
+      const reg=mapReg(json['Coordenação'] ?? json['Coordenacao'] ?? json['Regional']);
+      const m=monthFrom(json['Data N.F.'] ?? json['Data da NF'] ?? json['Data NF'] ?? json['Data Nota'] ?? json['Data']);
+      if(!reg || !m || m.year!==year || isIgnored(reg)) continue;
+      if(!isExcluded(reg)) out.regionais.add(reg);
+      addArr(out.bruto, reg, m.month, json['Valor Bruto'] ?? json['Valor Bruto da NF'] ?? json['Valor Bruto NF'] ?? json['Valor da N.F.'] ?? json['Valor NF'] ?? json['Valor']);
+      addArr(out.descAcresc, reg, m.month, n(json['Acréscimo'] ?? json['Acrescimo']) - n(json['Desconto'] ?? json['Descontos']));
+      addArr(out.impostos, reg, m.month, json['Imposto'] ?? json['Impostos'] ?? json['Total de Impostos']);
+    }
+    dreCache(`grao1000:dre-nf:${year}`, out);
+    return out;
+  }
+
   async function loadProduzidoColaboradorFromDb(supabase, year){
     const cached=dreFromCache(`grao1000:dre-colab:${year}`);
     if(cached) return cached;
@@ -861,8 +964,68 @@
     return target;
   }
 
+  // Despesas: igual à produção, se o mesmo mês existir tanto no upload manual quanto
+  // no agente, usa o mais completo (nunca soma os dois, senão duplica valores).
+  function topicTotalForMonth(topicsMap, mi){
+    return Object.values(topicsMap||{}).reduce((a,arr)=>a+Math.abs(n(arr?.[mi])),0);
+  }
+  function setTopicsForMonth(targetTopics, sourceTopics, mi){
+    const keys=new Set([...Object.keys(targetTopics||{}),...Object.keys(sourceTopics||{})]);
+    for(const k of keys){
+      if(!targetTopics[k]) targetTopics[k]=Array(12).fill(0);
+      targetTopics[k][mi]=n(sourceTopics?.[k]?.[mi]);
+    }
+  }
+  function mergeDespesasMelhorMes(target, source){
+    if(!source) return target;
+    const regs=new Set([...Object.keys(target.base||{}),...Object.keys(source.base||{})]);
+    for(const reg of regs){
+      if(!target.base[reg]) target.base[reg]={};
+      for(let mi=0;mi<12;mi++){
+        const atual=topicTotalForMonth(target.base[reg],mi);
+        const novo=topicTotalForMonth(source.base?.[reg],mi);
+        if(novo>atual) setTopicsForMonth(target.base[reg], source.base[reg], mi);
+      }
+    }
+    for(let mi=0;mi<12;mi++){
+      const atual=topicTotalForMonth(target.geral,mi);
+      const novo=topicTotalForMonth(source.geral,mi);
+      if(novo>atual) setTopicsForMonth(target.geral, source.geral, mi);
+    }
+    mergeSet(target.regionais, source.regionais);
+    return target;
+  }
+
+  // Notas Fiscais: mesma estratégia "melhor mês" da Produção/Despesas.
+  function mergeNFMelhorMes(target, source){
+    if(!source) return target;
+    const regs=new Set([...Object.keys(target.bruto||{}),...Object.keys(source.bruto||{})]);
+    for(const reg of regs){
+      for(let mi=0;mi<12;mi++){
+        const atualPontuacao=Math.abs(getArrVal(target.bruto, reg, mi))+Math.abs(getArrVal(target.impostos, reg, mi));
+        const novoPontuacao=Math.abs(getArrVal(source.bruto, reg, mi))+Math.abs(getArrVal(source.impostos, reg, mi));
+        if(novoPontuacao > atualPontuacao){
+          setArrVal(target.bruto, reg, mi, getArrVal(source.bruto, reg, mi));
+          setArrVal(target.descAcresc, reg, mi, getArrVal(source.descAcresc, reg, mi));
+          setArrVal(target.impostos, reg, mi, getArrVal(source.impostos, reg, mi));
+        }
+      }
+    }
+    mergeSet(target.regionais, source.regionais);
+    return target;
+  }
+
   async function processReports(opts,setStatus){
-    state.busy=true; setStatus('Buscando relatórios ativos importados...');
+    state.busy=true;
+    try{
+      await processReportsInner(opts,setStatus);
+    } finally {
+      state.busy=false;
+    }
+  }
+
+  async function processReportsInner(opts,setStatus){
+    setStatus('Buscando relatórios ativos importados...');
     state.reports=await getLatestReports(opts.supabase);
     const audit = state.sourceAudit || { used: [], ignored: [] };
     const usedTxt = audit.used.map(r => `${r.tipo}: ${r.nome}`).join(' · ');
@@ -903,6 +1066,34 @@
         const ant = parseAntecipacoes(sheetRows(wb,['Antecipações','Antecipacoes','Caixa Fornecedor']));
         for(let i=0;i<12;i++) src.antecipacoes[i] += n(ant[i]);
       }
+    }
+
+    setStatus('Conferindo despesas sincronizadas pelo agente...');
+    const despesasDb = await loadDespesasFromDb(opts.supabase, state.year);
+    if(despesasDb.totalRows > 0){
+      mergeDespesasMelhorMes(src.desp, despesasDb);
+      if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
+      state.sourceAudit.used.push({
+        tipo: 'despesas-agente-db',
+        nome: `grm_despesas_importacoes (${despesasDb.totalRows} linhas)`,
+        status: 'fonte_mensal_segura',
+        modo: 'merge_best_month',
+        created_at: new Date().toISOString()
+      });
+    }
+
+    setStatus('Conferindo notas fiscais sincronizadas pelo agente...');
+    const nfDb = await loadNotasFiscaisFromDb(opts.supabase, state.year);
+    if(nfDb.totalRows > 0){
+      mergeNFMelhorMes(src.nf, nfDb);
+      if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
+      state.sourceAudit.used.push({
+        tipo: 'notas-fiscais-agente-db',
+        nome: `grm_notas_fiscais_importacoes (${nfDb.totalRows} linhas)`,
+        status: 'fonte_mensal_segura',
+        modo: 'merge_best_month',
+        created_at: new Date().toISOString()
+      });
     }
 
     setStatus('Conferindo produção consolidada no banco de dados...');
@@ -950,7 +1141,7 @@
       });
     }
 
-    state.reportsData=src; buildDre(); state.busy=false;
+    state.reportsData=src; buildDre();
   }
 
   function activeReport(){ return state.tab==='geral' ? state.data?.geral : state.data?.regional?.[state.regional]; }
@@ -1143,15 +1334,90 @@
     }
   }
 
+  // DRE "sempre aberto": mostra na hora o último resultado já processado (cache local
+  // por ano) e dispara uma atualização em segundo plano, sem travar a tela; enquanto a
+  // tela ficar aberta, repete essa atualização sozinha pra refletir as sincronizações
+  // dos agentes (que rodam a cada ~28min) sem o usuário precisar clicar em nada.
+  const DRE_AUTO_REFRESH_MS = 10 * 60 * 1000;
+  const DRE_FULL_REPORT_PREFIX = 'grao1000:dre-full:';
+  let dreAutoRefreshTimer = null;
+
+  function saveFullReportCache(year, data){
+    try{ sessionStorage.setItem(`${DRE_FULL_REPORT_PREFIX}${year}`, JSON.stringify({ ts: Date.now(), data })); }catch(_){}
+  }
+  function loadFullReportCache(year){
+    try{
+      const raw=sessionStorage.getItem(`${DRE_FULL_REPORT_PREFIX}${year}`); if(!raw) return null;
+      return JSON.parse(raw);
+    }catch(_){ return null; }
+  }
+  function applyCachedReport(container, cached){
+    state.data = cached.data;
+    if(!state.regional && state.data?.regionais?.length) state.regional = state.data.regionais[0];
+    container.querySelector('#exportPdf').disabled=false;
+    container.querySelector('#exportAllPdfs').disabled=false;
+    container.querySelector('#exportImg').disabled=false;
+    renderReport(container);
+  }
+
+  async function runDreRefresh(container, opts, setStatus){
+    if(state.busy || !document.body.contains(container)) return;
+    const btn=container.querySelector('#refreshDre');
+    if(btn) btn.disabled=true;
+    try{
+      await processReports(opts,setStatus);
+      saveFullReportCache(state.year, state.data);
+      container.querySelector('#exportPdf').disabled=false;
+      container.querySelector('#exportAllPdfs').disabled=false;
+      container.querySelector('#exportImg').disabled=false;
+      renderReport(container);
+      setStatus(`<strong>Atualizado às ${new Date().toLocaleTimeString('pt-BR')}.</strong> Sincroniza automaticamente a cada ${Math.round(DRE_AUTO_REFRESH_MS/60000)} min.`);
+    }catch(err){
+      console.error(err);
+      setStatus(`<strong>Erro ao atualizar:</strong> ${safe(err?.message||'Falha ao processar DRE.')}`);
+    }finally{
+      if(btn) btn.disabled=false;
+    }
+  }
+
   function openHome(container, opts={}){
+    if(dreAutoRefreshTimer){ clearInterval(dreAutoRefreshTimer); dreAutoRefreshTimer=null; }
     state.year=new Date().getFullYear(); state.tab='geral'; state.data=null; state.reports=[];
-    container.innerHTML=`${styles}<section class="dre-wrap"><div class="dre-hero"><div><div class="dre-kicker">Diretoria · DRE</div><h2>Dashboard DRE completo</h2><p>DRE geral e regional com indicadores operacionais do novo Resultado Diário: <b>Toneladas</b> como Volume Classificado e <b>Embarcado</b> como Volume Embarcado + NHE + cad.</p></div><div class="dre-controls"><select id="yearSelect">${[state.year-1,state.year,state.year+1].map(y=>`<option value="${y}" ${y===state.year?'selected':''}>${y}</option>`).join('')}</select><select id="regionalSelect" disabled></select><button id="refreshDre" class="primary">Processar DRE</button><button id="exportPdf" disabled>PDF</button><button id="exportAllPdfs" disabled>PDFs Regionais</button><button id="exportImg" disabled>Imagem</button></div></div><div class="dre-tabs"><button class="dre-tab active" data-tab="geral">DRE Geral</button><button class="dre-tab" data-tab="regional">DRE Regional</button></div><div class="dre-status show" id="dreStatus"><strong>Aguardando processamento.</strong> Clique em Processar DRE para carregar os últimos relatórios importados.</div><div id="dreCards" class="dre-cards"></div><div id="dreCharts" class="dre-grid"></div><article class="dre-report" id="dreReport"><div class="dre-report-head"><div><h3>DRE</h3><p>Sem dados processados.</p></div></div></article></section>`;
+    container.innerHTML=`${styles}<section class="dre-wrap"><div class="dre-hero"><div><div class="dre-kicker">Diretoria · DRE</div><h2>Dashboard DRE completo</h2><p>DRE geral e regional com indicadores operacionais do novo Resultado Diário: <b>Toneladas</b> como Volume Classificado e <b>Embarcado</b> como Volume Embarcado + NHE + cad.</p></div><div class="dre-controls"><select id="yearSelect">${[state.year-1,state.year,state.year+1].map(y=>`<option value="${y}" ${y===state.year?'selected':''}>${y}</option>`).join('')}</select><select id="regionalSelect" disabled></select><button id="refreshDre" class="primary">Atualizar agora</button><button id="exportPdf" disabled>PDF</button><button id="exportAllPdfs" disabled>PDFs Regionais</button><button id="exportImg" disabled>Imagem</button></div></div><div class="dre-tabs"><button class="dre-tab active" data-tab="geral">DRE Geral</button><button class="dre-tab" data-tab="regional">DRE Regional</button></div><div class="dre-status show" id="dreStatus"><strong>Carregando...</strong></div><div id="dreCards" class="dre-cards"></div><div id="dreCharts" class="dre-grid"></div><article class="dre-report" id="dreReport"><div class="dre-report-head"><div><h3>DRE</h3><p>Sem dados processados.</p></div></div></article></section>`;
     const status=container.querySelector('#dreStatus'); const setStatus=(txt)=>{status.classList.add('show');status.innerHTML=txt.includes('<')?txt:`<strong>Status:</strong> ${safe(txt)}`;};
-    container.querySelector('#yearSelect').addEventListener('change',e=>{state.year=Number(e.target.value)||state.year;});
+
+    container.querySelector('#yearSelect').addEventListener('change',e=>{
+      state.year=Number(e.target.value)||state.year;
+      const cached=loadFullReportCache(state.year);
+      if(cached?.data){ applyCachedReport(container, cached); setStatus(`<strong>Mostrando última versão sincronizada (${new Date(cached.ts).toLocaleTimeString('pt-BR')}) para ${state.year}.</strong> Atualizando em segundo plano...`); }
+      else {
+        state.data=null;
+        container.querySelector('#exportPdf').disabled=true;
+        container.querySelector('#exportAllPdfs').disabled=true;
+        container.querySelector('#exportImg').disabled=true;
+        renderReport(container);
+        setStatus(`Carregando DRE de ${state.year}...`);
+      }
+      runDreRefresh(container, opts, setStatus);
+    });
     container.querySelector('#regionalSelect').addEventListener('change',e=>{state.regional=e.target.value; renderReport(container);});
     container.querySelectorAll('.dre-tab').forEach(btn=>btn.addEventListener('click',()=>{state.tab=btn.dataset.tab; container.querySelectorAll('.dre-tab').forEach(b=>b.classList.toggle('active',b===btn)); if(state.data) renderReport(container);}));
-    container.querySelector('#refreshDre').addEventListener('click',async()=>{try{container.querySelector('#refreshDre').disabled=true; await processReports(opts,setStatus); status.classList.remove('show'); container.querySelector('#exportPdf').disabled=false; container.querySelector('#exportAllPdfs').disabled=false; container.querySelector('#exportImg').disabled=false; renderReport(container);}catch(err){console.error(err);setStatus(`<strong>Erro:</strong> ${safe(err?.message||'Falha ao processar DRE.')}`);}finally{container.querySelector('#refreshDre').disabled=false;}});
+    container.querySelector('#refreshDre').addEventListener('click',()=>runDreRefresh(container, opts, setStatus));
     container.querySelector('#exportPdf').addEventListener('click',exportPdf); container.querySelector('#exportAllPdfs').addEventListener('click',exportAllRegionalPdfs); container.querySelector('#exportImg').addEventListener('click',exportImage);
+
+    const cached=loadFullReportCache(state.year);
+    if(cached?.data){
+      applyCachedReport(container, cached);
+      setStatus(`<strong>Mostrando última versão sincronizada (${new Date(cached.ts).toLocaleTimeString('pt-BR')}).</strong> Atualizando em segundo plano...`);
+    } else {
+      setStatus('Carregando DRE pela primeira vez...');
+    }
+    runDreRefresh(container, opts, setStatus);
+
+    dreAutoRefreshTimer=setInterval(()=>{
+      if(!document.body.contains(container)){ clearInterval(dreAutoRefreshTimer); dreAutoRefreshTimer=null; return; }
+      runDreRefresh(container, opts, setStatus);
+    }, DRE_AUTO_REFRESH_MS);
   }
   window.DRE={openHome};
 })();
