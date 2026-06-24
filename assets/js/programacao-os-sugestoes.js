@@ -79,19 +79,19 @@ function colabKey(colab) {
 }
 
 function cargoRank(row) {
-  const text = normalize(`${row?.cargo || ''} ${row?.tipo || ''} ${row?.tipo_funcionario || ''} ${row?.vinculo || ''}`);
+  const text = normalize(`${row?.cargo || ''} ${row?.tipo || ''} ${row?.tipo_funcionario || ''} ${row?.vinculo || ''} ${row?.contrato || ''} ${row?.tipo_contrato || ''}`);
   if (text.includes('EFETIVO') || text.includes('CLT')) return 0;
   if (text.includes('INTERMITENTE')) return 1;
   if (text.includes('DIARISTA') || text.includes('DIARIA')) return 2;
   return 3;
 }
 
-function cargoLabel(row) {
+function contratoLabel(row) {
   const rank = cargoRank(row);
   if (rank === 0) return 'Efetivo';
   if (rank === 1) return 'Intermitente';
   if (rank === 2) return 'Diarista';
-  return row?.cargo || row?.tipo || 'Cargo não informado';
+  return 'Contrato não informado';
 }
 
 function splitUfCidadeLocal(text) {
@@ -284,40 +284,67 @@ async function loadOsRows(osIds) {
   return osIds.map((id) => cache.os.get(String(id))).filter(Boolean);
 }
 
-async function buildSuggestionForOs(os) {
-  const supervisao = String(os?.supervisao || document.getElementById('progSup')?.value || '').trim();
-  if (!supervisao) return null;
-
+async function buildContextForSupervisao(supervisao) {
   const [pontos, colabsBase, snapshot, auditorias] = await Promise.all([
     loadPontos(supervisao),
     loadColabsBase(supervisao),
     loadSnapshot(supervisao),
     loadAuditoriaIndex(),
   ]);
+  return { pontos, colabsBase, snapshot, auditorias, snapshotIndex: buildSnapshotIndexes(snapshot) };
+}
 
-  const ponto = bestPontoForOs(os, pontos);
-  const snapshotIndex = buildSnapshotIndexes(snapshot);
-  const candidatos = (colabsBase || []).map((base) => {
-    const cpf = onlyDigits(base.cpf || base.documento || base.colaborador_cpf);
-    const nomeKey = normalize(base.nome || base.colaborador || base.nome_colaborador);
-    const snap = (cpf && snapshotIndex.byCpf.get(cpf)) || snapshotIndex.byName.get(nomeKey) || null;
-    const merged = { ...(snap || {}), ...(base || {}) };
-    const auditField = auditScoreFromRows(base, snap);
-    const fallbackAudit = auditorias.get(normalize(merged.nome || base.nome || snap?.nome || ''));
-    const distanciaKm = ponto && hasGeo(base.latitude, base.longitude)
-      ? haversineKm(ponto.latitude, ponto.longitude, base.latitude, base.longitude)
-      : null;
+function mergeColabWithSnapshot(base, context) {
+  const cpf = onlyDigits(base?.cpf || base?.documento || base?.colaborador_cpf);
+  const nomeKey = normalize(base?.nome || base?.colaborador || base?.nome_colaborador);
+  const snap = (cpf && context.snapshotIndex.byCpf.get(cpf)) || context.snapshotIndex.byName.get(nomeKey) || null;
+  return { ...(snap || {}), ...(base || {}) };
+}
 
-    return {
-      key: colabKey(merged),
-      nome: merged.nome || base.nome || snap?.nome || 'Colaborador',
-      cargo: cargoLabel(merged),
-      cargoRank: cargoRank(merged),
-      distanciaKm,
-      auditScore: auditField?.value ?? (Number.isFinite(fallbackAudit) ? fallbackAudit : null),
-      auditLabel: auditField?.label ?? (Number.isFinite(fallbackAudit) ? `${BR.format(fallbackAudit)} hist.` : 's/dados'),
-    };
-  }).filter((item) => item.key && item.nome);
+function findColabByName(nome, context) {
+  const key = normalize(nome);
+  if (!key) return null;
+  return (context.colabsBase || []).map((base) => mergeColabWithSnapshot(base, context)).find((row) => {
+    const rowName = normalize(row.nome || row.colaborador || row.nome_colaborador);
+    return rowName && (rowName === key || rowName.includes(key) || key.includes(rowName));
+  }) || null;
+}
+
+function currentIndicacaoHtml(card, context) {
+  const input = card.querySelector('.os-lite-gac-input');
+  const nome = String(input?.value || '').trim();
+  if (!nome) {
+    return '<div class="os-current-card empty"><span>Indicação atual</span><b>Sem indicação gravada</b></div>';
+  }
+  const colab = findColabByName(nome, context);
+  const contrato = contratoLabel(colab || {});
+  return `<div class="os-current-card"><span>Indicação atual</span><b>${escapeHtml(nome)} · ${escapeHtml(contrato)}</b></div>`;
+}
+
+function candidateFromBase(base, ponto, context) {
+  const merged = mergeColabWithSnapshot(base, context);
+  const auditField = auditScoreFromRows(base, merged);
+  const fallbackAudit = context.auditorias.get(normalize(merged.nome || base.nome || ''));
+  const distanciaKm = ponto && hasGeo(base.latitude, base.longitude)
+    ? haversineKm(ponto.latitude, ponto.longitude, base.latitude, base.longitude)
+    : null;
+
+  return {
+    key: colabKey(merged),
+    nome: merged.nome || base.nome || 'Colaborador',
+    contrato: contratoLabel(merged),
+    cargoRank: cargoRank(merged),
+    distanciaKm,
+    auditScore: auditField?.value ?? (Number.isFinite(fallbackAudit) ? fallbackAudit : null),
+    auditLabel: auditField?.label ?? (Number.isFinite(fallbackAudit) ? `${BR.format(fallbackAudit)} hist.` : 's/dados'),
+  };
+}
+
+function buildSuggestionForOs(os, context) {
+  const ponto = bestPontoForOs(os, context.pontos);
+  const candidatos = (context.colabsBase || [])
+    .map((base) => candidateFromBase(base, ponto, context))
+    .filter((item) => item.key && item.nome);
 
   candidatos.sort(sortCandidates);
   return candidatos[0] || null;
@@ -329,8 +356,8 @@ function suggestionHtml(sug) {
   }
   const km = Number.isFinite(sug.distanciaKm) ? `${KM.format(sug.distanciaKm)} km` : 'km s/dados';
   return `
-    <div class="os-sug-name">${escapeHtml(sug.nome)}</div>
-    <div class="os-sug-meta">${escapeHtml(sug.cargo)} · ${escapeHtml(km)} · Aud.: ${escapeHtml(sug.auditLabel)}</div>
+    <div class="os-sug-name">${escapeHtml(sug.nome)} · ${escapeHtml(sug.contrato)}</div>
+    <div class="os-sug-meta">${escapeHtml(km)} · Aud.: ${escapeHtml(sug.auditLabel)}</div>
     <button type="button" class="os-sug-apply" data-sug-key="${escapeHtml(sug.key)}" data-sug-name="${escapeHtml(sug.nome)}" data-sug-km="${Number.isFinite(sug.distanciaKm) ? String(sug.distanciaKm) : ''}">Aplicar sugestão</button>
   `;
 }
@@ -340,6 +367,10 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'programacaoOsSugestoesStyles';
   style.textContent = `
+    .os-current-card{margin-top:7px;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.42);border-radius:10px;padding:7px 9px;display:flex;flex-direction:column;gap:2px}
+    .os-current-card span{font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:950;color:#94a3b8}
+    .os-current-card b{font-size:12.5px;line-height:1.25;color:#f8fafc}
+    .os-current-card.empty b{color:#fbbf24}
     .os-sug-card{margin-top:7px;border:1px solid rgba(134,239,172,.26);background:rgba(22,101,52,.16);border-radius:10px;padding:8px 9px;display:flex;flex-direction:column;gap:4px}
     .os-sug-title{font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:950;color:#bbf7d0}
     .os-sug-name{font-size:13px;line-height:1.2;font-weight:950;color:#f8fafc}
@@ -387,7 +418,7 @@ async function applySuggestion(card, osId, button) {
 async function enhanceVisibleCards() {
   const token = ++enhancementToken;
   injectStyles();
-  const cards = [...document.querySelectorAll('#progDistribuicaoOsMount .os-lite-card[data-os-id]')];
+  const cards = [...document.querySelectorAll('#progDistribuicaoOsMount .os-lite-card[data-os-id], #osLiteList .os-lite-card[data-os-id]')];
   const pendingCards = cards.filter((card) => !card.dataset.osSugestaoBound);
   if (!pendingCards.length) return;
 
@@ -395,10 +426,14 @@ async function enhanceVisibleCards() {
     card.dataset.osSugestaoBound = '1';
     const indic = card.querySelector('.os-lite-indic');
     if (!indic) return;
-    const box = document.createElement('div');
-    box.className = 'os-sug-card';
-    box.innerHTML = '<div class="os-sug-title">Sugestão</div><div class="os-sug-meta">Calculando prioridade...</div>';
-    indic.appendChild(box);
+    const currentBox = document.createElement('div');
+    currentBox.className = 'os-current-card';
+    currentBox.innerHTML = '<span>Indicação atual</span><b>Carregando contrato...</b>';
+    const sugBox = document.createElement('div');
+    sugBox.className = 'os-sug-card';
+    sugBox.innerHTML = '<div class="os-sug-title">Sugestão</div><div class="os-sug-meta">Calculando prioridade...</div>';
+    indic.appendChild(currentBox);
+    indic.appendChild(sugBox);
   });
 
   try {
@@ -406,17 +441,26 @@ async function enhanceVisibleCards() {
     const rows = await loadOsRows(osIds);
     if (token !== enhancementToken) return;
 
+    const contexts = new Map();
+    await Promise.all([...new Set(rows.map((os) => String(os.supervisao || '').trim()).filter(Boolean))].map(async (supervisao) => {
+      contexts.set(supervisao, await buildContextForSupervisao(supervisao));
+    }));
+
     await Promise.all(rows.map(async (os) => {
-      const card = document.querySelector(`#progDistribuicaoOsMount .os-lite-card[data-os-id="${CSS.escape(String(os.id))}"]`);
-      const box = card?.querySelector('.os-sug-card');
-      if (!box) return;
+      const card = document.querySelector(`#progDistribuicaoOsMount .os-lite-card[data-os-id="${CSS.escape(String(os.id))}"], #osLiteList .os-lite-card[data-os-id="${CSS.escape(String(os.id))}"]`);
+      const currentBox = card?.querySelector('.os-current-card');
+      const sugBox = card?.querySelector('.os-sug-card');
+      if (!card || !sugBox) return;
       try {
-        const sug = await buildSuggestionForOs(os);
-        box.innerHTML = `<div class="os-sug-title">Sugestão</div>${suggestionHtml(sug)}`;
-        box.querySelector('.os-sug-apply')?.addEventListener('click', (event) => applySuggestion(card, os.id, event.currentTarget));
+        const context = contexts.get(String(os.supervisao || '').trim()) || await buildContextForSupervisao(os.supervisao);
+        if (currentBox) currentBox.outerHTML = currentIndicacaoHtml(card, context);
+        const sug = buildSuggestionForOs(os, context);
+        sugBox.innerHTML = `<div class="os-sug-title">Sugestão</div>${suggestionHtml(sug)}`;
+        sugBox.querySelector('.os-sug-apply')?.addEventListener('click', (event) => applySuggestion(card, os.id, event.currentTarget));
       } catch (error) {
         console.warn('[Sugestão OS] Falha ao calcular sugestão da OS:', os.numero_os, error);
-        box.innerHTML = '<div class="os-sug-title">Sugestão</div><div class="os-sug-meta">Não foi possível calcular agora.</div>';
+        if (currentBox) currentBox.innerHTML = '<span>Indicação atual</span><b>Contrato não carregado</b>';
+        sugBox.innerHTML = '<div class="os-sug-title">Sugestão</div><div class="os-sug-meta">Não foi possível calcular agora.</div>';
       }
     }));
   } catch (error) {
