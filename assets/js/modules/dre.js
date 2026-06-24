@@ -354,29 +354,38 @@
     const out={bruto:{}, descAcresc:{}, impostos:{}, regionais:new Set(), totalRows:0};
     if(!supabase || !year) return out;
 
-    const {data:maxRows,error:maxErr}=await supabase
-      .from('grm_notas_fiscais_importacoes').select('created_at').order('created_at',{ascending:false}).limit(1);
-    if(maxErr || !maxRows?.length){
-      if(maxErr) console.warn('DRE: não foi possível carregar notas fiscais sincronizadas pelo agente.', maxErr);
-      return out;
-    }
-    const threshold=new Date(new Date(maxRows[0].created_at).getTime()-5*60*1000).toISOString();
-
+    // Antes lia so o "lote mais recente" (created_at dentro de 5min do mais novo),
+    // assumindo que toda a sincronizacao terminava nesse intervalo. Na pratica o
+    // agente de notas fiscais processa o relatorio inteiro (ate 35 dias, milhares
+    // de notas) em mais de 5 minutos, então essa janela so capturava um pedaço do
+    // que estava sendo sincronizado - e como o upsert antigo nunca deduplicava
+    // (sem chave por numero da nota), a tabela acumulou ~380 mil linhas repetidas.
+    // Agora a tabela tem indice unico por numero_nf (upsert real), então basta
+    // paginar tudo; o dedupe por numero_nf abaixo é só defesa extra para linhas
+    // antigas sem numero_nf preenchido ou eventuais resíduos.
     const pageSize=1000; let from=0; const rows=[];
     while(true){
       const {data,error}=await supabase
         .from('grm_notas_fiscais_importacoes')
-        .select('dados_json')
-        .gte('created_at', threshold)
+        .select('numero_nf, created_at, dados_json')
         .range(from, from+pageSize-1);
       if(error){ console.warn('DRE: falha ao paginar notas fiscais sincronizadas pelo agente.', error); break; }
       const batch=data||[]; rows.push(...batch);
       if(batch.length<pageSize) break;
       from+=pageSize;
     }
-    out.totalRows=rows.length;
 
+    const porNumeroNf=new Map(); const semNumero=[];
     for(const row of rows){
+      const chave=row.numero_nf ?? row.dados_json?.['N.F.'];
+      if(chave==null){ semNumero.push(row); continue; }
+      const atual=porNumeroNf.get(chave);
+      if(!atual || new Date(row.created_at||0) > new Date(atual.created_at||0)) porNumeroNf.set(chave, row);
+    }
+    const rowsDeduplicadas=[...porNumeroNf.values(), ...semNumero];
+    out.totalRows=rowsDeduplicadas.length;
+
+    for(const row of rowsDeduplicadas){
       const json=row.dados_json||{};
       const reg=mapReg(json['Coordenação'] ?? json['Coordenacao'] ?? json['Regional']);
       const m=monthFrom(json['Data N.F.'] ?? json['Data da NF'] ?? json['Data NF'] ?? json['Data Nota'] ?? json['Data']);
