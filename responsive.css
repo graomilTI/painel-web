@@ -1,0 +1,529 @@
+/* =========================================================
+   Responsividade global do painel Grão 1000
+   Mantém o desktop intacto e melhora leitura/uso em celulares.
+   ========================================================= */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  max-width: 100%;
+}
+
+.mobile-nav-toggle,
+.mobile-sidebar-backdrop {
+  display: none;
+}
+
+.table-wrap,
+.table-responsive,
+.data-table-wrap,
+.list-table-wrap,
+.report-table-wrap,
+.grid-scroll,
+.overflow-x-auto,
+.mobile-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.card,
+.mini-card,
+.hero-card,
+.prog-item,
+.db-mini-card,
+[class*="card"] {
+  min-width: 0;
+}
+
+.card *,
+.mini-card *,
+.hero-card *,
+.prog-item *,
+.db-mini-card * {
+  min-width: 0;
+}
+
+/* =========================
+   Tablet / telas médias
+   ========================= */
+@media (max-width: 980px) {
+  .app-shell {
+    display: block;
+    min-height: 100vh;
+  }
+
+  .mobile-nav-toggle {
+    position: fixed;
+    left: 12px;
+    top: max(10px, env(safe-area-inset-top));
+    z-index: 95;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 10px 13px;
+    border: 1px solid rgba(111, 208, 165, .28);
+    border-radius: 999px;
+    background: rgba(11, 18, 32, .94);
+    color: #dcfce7;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+    backdrop-filter: blur(12px);
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mobile-nav-toggle svg {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+  }
+
+  .mobile-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: block;
+    background: rgba(0, 0, 0, .55);
+    backdrop-filter: blur(3px);
+  }
+
+  .mobile-sidebar-backdrop[hidden] {
+    display: none !important;
+  }
+
+  body.mobile-nav-open {
+    overflow: hidden;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 80;
+    width: min(88vw, 360px);
+    height: 100dvh;
+    max-height: 100dvh;
+    padding: calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    overflow-y: auto;
+    transform: translateX(-105%);
+    transition: transform .22s ease;
+    box-shadow: 24px 0 60px rgba(0, 0, 0, .36);
+  }
+
+  body.mobile-nav-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .sidebar-brand {
+    padding: 8px 10px 16px;
+    margin-bottom: 14px;
+  }
+
+  .menu-section {
+    margin-bottom: 16px;
+  }
+
+  .menu-section h4 {
+    position: sticky;
+    top: -1px;
+    z-index: 1;
+    padding: 8px 2px;
+    background: #0b1220;
+  }
+
+  .menu-list {
+    gap: 8px;
+  }
+
+  .menu-list a {
+    padding: 12px 13px;
+    border: 1px solid rgba(255, 255, 255, .06);
+    background: rgba(255, 255, 255, .025);
+  }
+
+  .content-wrap {
+    display: block;
+    min-width: 0;
+  }
+
+  .topbar {
+    min-height: 64px;
+    padding: calc(12px + env(safe-area-inset-top)) 14px 12px 112px;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .topbar h1 {
+    font-size: clamp(19px, 5vw, 24px);
+    line-height: 1.08;
+  }
+
+  .topbar .meta {
+    margin-top: 4px;
+    font-size: 12px;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .topbar-actions .badge {
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar-actions .btn {
+    padding: 9px 11px;
+    border-radius: 12px;
+  }
+
+  .page-main {
+    padding: 16px;
+  }
+
+  .hero-card,
+  .op-hero,
+  .section-heading,
+  .card-header,
+  .panel-header,
+  .module-header,
+  .toolbar,
+  .filters-row,
+  .actions-row,
+  .header-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-card {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .hero-card h2 {
+    font-size: clamp(22px, 6vw, 30px);
+  }
+
+  .hero-badge-wrap {
+    justify-content: flex-start;
+  }
+
+  .grid-cards,
+  .compact-grid,
+  .prog-context-grid,
+  .db-secondary-grid,
+  .kpi-grid,
+  .metrics-grid,
+  .cards-grid,
+  .summary-grid,
+  .filters-grid,
+  .form-grid,
+  .field-grid,
+  .columns-grid,
+  .layout-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .card,
+  .mini-card,
+  .db-mini-card,
+  .prog-item {
+    border-radius: 18px;
+    padding: 15px;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .metric,
+  .db-patri-num,
+  .kpi-value,
+  .card-value,
+  .stat-value {
+    font-size: clamp(28px, 10vw, 38px) !important;
+    line-height: 1;
+  }
+
+  .chips,
+  .steps-wrap,
+  .tabs,
+  .tab-list,
+  .status-tabs,
+  .filter-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .chip,
+  .stepbtn,
+  .tab,
+  .tab-btn,
+  .status-tab,
+  .filter-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  form,
+  .filters,
+  .filter-panel,
+  .search-panel,
+  .form-card {
+    max-width: 100%;
+  }
+
+  .field,
+  .form-field,
+  label {
+    min-width: 0;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+  }
+
+  .mobile-table-scroll {
+    width: 100%;
+    margin-inline: -2px;
+    padding: 0 2px 6px;
+  }
+
+  .mobile-table-scroll table {
+    width: max-content;
+    min-width: 720px;
+    display: table;
+    border-spacing: 0;
+  }
+
+  .mobile-table-scroll th,
+  .mobile-table-scroll td {
+    white-space: nowrap;
+  }
+
+  td .btn,
+  td button,
+  .table-actions .btn,
+  .table-actions button {
+    width: auto;
+    min-width: max-content;
+  }
+
+  .modal,
+  .dialog,
+  .drawer,
+  .modal-card,
+  .dialog-card,
+  .drawer-card,
+  [role="dialog"] {
+    width: min(94vw, 560px) !important;
+    max-width: 94vw !important;
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+  }
+}
+
+/* =========================
+   Celulares
+   ========================= */
+@media (max-width: 640px) {
+  body {
+    font-size: 14px;
+  }
+
+  .auth-page {
+    align-items: start;
+    padding: 18px;
+  }
+
+  .auth-card {
+    margin-top: 10vh;
+    padding: 22px;
+    border-radius: 22px;
+  }
+
+  .auth-card h1 {
+    font-size: 25px;
+  }
+
+  .mobile-nav-toggle {
+    left: 10px;
+    min-height: 40px;
+    padding: 9px 11px;
+    font-size: 13px;
+  }
+
+  .sidebar {
+    width: min(92vw, 340px);
+  }
+
+  .topbar {
+    padding-left: 102px;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .topbar-actions .badge {
+    max-width: 58vw;
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+
+  .topbar-actions .btn {
+    min-height: 36px;
+  }
+
+  .page-main {
+    padding: 12px;
+  }
+
+  .grid-cards {
+    gap: 12px;
+  }
+
+  .card,
+  .mini-card,
+  .db-mini-card,
+  .prog-item {
+    padding: 14px;
+    border-radius: 17px;
+  }
+
+  .card h2,
+  .card h3,
+  .mini-card h3,
+  .section-heading h2 {
+    line-height: 1.12;
+  }
+
+  .btn,
+  button.btn,
+  .prog-filter-actions .btn,
+  .form-actions .btn,
+  .actions-row .btn {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .actions-row,
+  .form-actions,
+  .prog-filter-actions,
+  .toolbar-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    width: 100%;
+  }
+
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  textarea {
+    min-height: 96px;
+  }
+
+  .badge,
+  .chip,
+  .stepbtn,
+  .tab,
+  .tab-btn {
+    font-size: 12px;
+  }
+
+  .hero-card {
+    padding: 16px;
+  }
+
+  .hero-card p,
+  .muted,
+  .empty-state {
+    font-size: 13px;
+  }
+
+  table {
+    font-size: 13px;
+  }
+
+  th,
+  td {
+    padding: 10px 12px;
+  }
+}
+
+/* =========================
+   Celulares estreitos
+   ========================= */
+@media (max-width: 420px) {
+  .topbar {
+    padding-left: 96px;
+  }
+
+  .topbar h1 {
+    font-size: 18px;
+  }
+
+  .topbar .meta {
+    display: none;
+  }
+
+  .topbar-actions .badge {
+    max-width: 52vw;
+  }
+
+  .mobile-nav-toggle {
+    gap: 6px;
+  }
+
+  .mobile-nav-toggle span {
+    display: inline;
+  }
+
+  .metric,
+  .db-patri-num,
+  .kpi-value,
+  .card-value,
+  .stat-value {
+    font-size: 30px !important;
+  }
+}
