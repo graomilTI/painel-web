@@ -138,12 +138,24 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
 
   const ALOJAMENTOS_HTML = `
     <section id="tab-alojamentos" class="adm-hosp-panel">
-      <article class="card">
-        <div class="adm-hosp-toolbar">
-          <div><h3>Cadastro de alojamentos</h3><p class="muted">Base de casas, apartamentos, pousadas e escritórios para sugerir na programação.</p></div>
-          <input id="alojSearch" class="adm-hosp-search" placeholder="Buscar alojamento, cidade, responsável..." />
+      <article class="card adm-hotel-register-card">
+        <div><h3>Alojamentos cadastrados</h3><p class="muted">Consulte a base e abra o cadastro somente quando precisar incluir ou editar um alojamento.</p></div>
+        <button class="btn btn-primary adm-hosp-btn" type="button" id="btnAbrirCadastroAlojamento">Novo</button>
+      </article>
+      <article class="card mt-16">
+        <div class="adm-hosp-toolbar"><div><h3>Base de alojamentos</h3><p class="muted">Casas, apartamentos, pousadas e escritórios para sugerir na programação.</p></div><input id="alojSearch" class="adm-hosp-search" placeholder="Buscar alojamento, cidade, responsável..." /></div>
+        <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Alojamento</th><th>Cidade</th><th>Estrutura</th><th>Despesas</th><th>Fatura</th><th>Status</th><th>Ações</th></tr></thead><tbody id="alojTbody"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
+      </article>
+    </section>`;
+
+  const ALOJAMENTO_MODAL_HTML = `
+    <div id="modalAlojamentoCadastro" class="adm-hosp-modal">
+      <div class="adm-hosp-modal-card">
+        <div class="adm-hosp-modal-head">
+          <div><h3 id="alojModalTitle">Cadastrar Alojamento</h3><p class="muted">Preencha apenas quando for cadastrar ou editar um alojamento.</p></div>
+          <button class="btn btn-secondary adm-hosp-btn" type="button" id="modalAlojamentoClose">Fechar</button>
         </div>
-        <form id="alojForm" class="adm-hosp-form">
+        <form id="alojForm" class="adm-hosp-form mt-16">
           <div class="adm-hosp-field"><label>Nome do alojamento *</label><input id="alojNome" required placeholder="Ex.: MT - Confresa" /></div>
           <div class="adm-hosp-field"><label>Tipo</label><select id="alojTipo"><option value="CASA">Casa</option><option value="APARTAMENTO">Apartamento</option><option value="POUSADA">Pousada</option><option value="ESCRITORIO">Escritório</option><option value="OUTRO">Outro</option></select></div>
           <div class="adm-hosp-field"><label>Cidade *</label><input id="alojCidade" required /></div>
@@ -169,9 +181,8 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
           <div class="adm-hosp-field full"><label>Observações</label><textarea id="alojObs"></textarea></div>
         </form>
         <div class="adm-hosp-form-actions"><button class="btn btn-primary adm-hosp-btn" type="submit" form="alojForm" id="alojSave">Salvar alojamento</button><button class="btn btn-secondary adm-hosp-btn" type="button" id="alojClear">Limpar</button><span id="alojFeedback" class="adm-hosp-feedback"></span></div>
-      </article>
-      <article class="card mt-16"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Alojamento</th><th>Cidade</th><th>Estrutura</th><th>Despesas</th><th>Fatura</th><th>Status</th><th>Ações</th></tr></thead><tbody id="alojTbody"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article>
-    </section>`;
+      </div>
+    </div>`;
 
   content.innerHTML = `
     <section class="hero-card">
@@ -247,6 +258,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     ${HOTEIS_HTML}
     ${ALOJAMENTOS_HTML}
     ${HOTEL_MODAL_HTML}
+    ${ALOJAMENTO_MODAL_HTML}
 
     <!-- Modal: Reservar -->
     <div id="modalReservar" class="adm-hosp-modal">
@@ -1127,12 +1139,20 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       </tr>`;
     }).join('');
   }
+  function openAlojamentoModal(editing=false) {
+    document.getElementById('alojModalTitle').textContent = editing ? 'Editar Alojamento' : 'Cadastrar Alojamento';
+    document.getElementById('modalAlojamentoCadastro')?.classList.add('open');
+    setTimeout(() => document.getElementById('alojNome')?.focus(), 50);
+  }
+  function closeAlojamentoModal() { document.getElementById('modalAlojamentoCadastro')?.classList.remove('open'); }
+
   function resetAlojamentoForm() {
     state.editingAlojamento=null;
     document.getElementById('alojForm')?.reset();
     if (document.getElementById('alojStatus')) document.getElementById('alojStatus').value='ATIVO';
     if (document.getElementById('alojPrioridade')) document.getElementById('alojPrioridade').value='NORMAL';
     if (document.getElementById('alojSave')) document.getElementById('alojSave').textContent='Salvar alojamento';
+    if (document.getElementById('alojModalTitle')) document.getElementById('alojModalTitle').textContent='Cadastrar Alojamento';
     setFeedback('alojFeedback','');
   }
   function fillAlojamentoForm(a) {
@@ -1146,7 +1166,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
       if (dbKey!==undefined) el.value=a[dbKey]||'';
     });
     document.getElementById('alojSave').textContent='Salvar alterações';
-    document.getElementById('alojNome').scrollIntoView({behavior:'smooth',block:'center'});
+    openAlojamentoModal(true);
   }
   async function saveAlojamento(ev) {
     ev.preventDefault();
@@ -1166,7 +1186,7 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
     if (!payload.nome||!payload.cidade||!payload.uf) { setFeedback('alojFeedback','Informe nome, cidade e UF.','err'); return; }
     const result=state.editingAlojamento?await supabase.from('hospedagem_alojamentos').update(payload).eq('id',state.editingAlojamento):await supabase.from('hospedagem_alojamentos').insert({...payload,criado_por:userContext?.user?.id||null});
     if (result.error) { setFeedback('alojFeedback',result.error.message,'err'); return; }
-    resetAlojamentoForm(); setFeedback('alojFeedback','Alojamento salvo.','ok'); await loadAlojamentos();
+    resetAlojamentoForm(); setFeedback('alojFeedback','Alojamento salvo.','ok'); closeAlojamentoModal(); await loadAlojamentos();
   }
   async function deleteAlojamento(id) {
     const aloj=(state.alojamentos||[]).find((a) => String(a.id)===String(id));
@@ -1544,6 +1564,9 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   document.getElementById('hotelForm')?.addEventListener('submit',saveHotel);
   document.getElementById('hotelClear')?.addEventListener('click',resetHotelForm);
   document.getElementById('alojSearch')?.addEventListener('input',renderAlojamentos);
+  document.getElementById('btnAbrirCadastroAlojamento')?.addEventListener('click',() => { resetAlojamentoForm(); openAlojamentoModal(false); });
+  document.getElementById('modalAlojamentoClose')?.addEventListener('click',closeAlojamentoModal);
+  document.getElementById('modalAlojamentoCadastro')?.addEventListener('click',(ev) => { if (ev.target.id==='modalAlojamentoCadastro') closeAlojamentoModal(); });
   document.getElementById('alojForm')?.addEventListener('submit',saveAlojamento);
   document.getElementById('alojClear')?.addEventListener('click',resetAlojamentoForm);
 
