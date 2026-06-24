@@ -657,9 +657,10 @@ initProtectedPage('Programação', (content) => {
   }
 
   function cidadeUfFromOs(os) {
-    const raw = String(os?.embarque || os?.local_embarque || '').trim();
+    const raw = String(os?.embarque || os?.raw?.Embarque || os?.local_embarque || '').trim();
     if (!raw) return null;
-    const partes = raw.split(/\s*-\s*/).map((p) => p.trim()).filter(Boolean);
+    const semPonto = raw.replace(/\([^()]*\)\s*$/, '').trim();
+    const partes = semPonto.split(/\s*-\s*/).map((p) => p.trim()).filter(Boolean);
     if (partes.length >= 2 && /^[A-Z]{2}$/i.test(partes[0])) {
       return { uf: partes[0].toUpperCase(), cidade: partes[1] };
     }
