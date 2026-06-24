@@ -100,16 +100,20 @@ async function upsertData(data) {
     data_nota_ate: toIso(dateRange.to),
     data_fatura_de: toIso(dateRange.from),
     data_fatura_ate: toIso(dateRange.to),
-    cliente_nacional: row['Cliente Nacional'] || null,
-    numero_nf: row['Número NF'] || row['NF'] || null,
-    valor_total: parseFloat(row['Valor Total'] || row['Valor']) || null,
+    cliente_nacional: row['Cliente Nacional'] || row['Cliente'] || null,
+    // A planilha real do GRM usa a chave "N.F." (confirmado via dados_json ao vivo em
+    // 2026-06-24) - "Número NF"/"NF" nunca existiram, por isso numero_nf ficava sempre
+    // nulo e o upsert (onConflict:'id', sem id no registro) so inseria linhas novas a
+    // cada sincronizacao, acumulando ~380 mil duplicatas da mesma nota fiscal.
+    numero_nf: row['N.F.'] != null ? String(row['N.F.']) : (row['Número NF'] || row['NF'] || null),
+    valor_total: parseFloat(row['Valor Total'] || row['Valor Bruto'] || row['Valor']) || null,
     dados_json: row,
     data_sincronizacao: new Date().toISOString(), sincronizado_em: new Date().toISOString()
   }));
 
   for (let i = 0; i < records.length; i += 100) {
     const chunk = records.slice(i, i + 100);
-    const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(chunk, { onConflict: 'id' });
+    const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(chunk, { onConflict: 'numero_nf' });
     if (error) throw error;
     log('INFO', `Progresso: ${Math.min(i + 100, records.length)}/${records.length}`);
   }
