@@ -7,6 +7,9 @@ const state = {
   allowedLabels: [],
   tokens: [],
   feedback: '',
+  fallbackLoaded: false,
+  fallbackLoading: false,
+  fallbackOptions: [],
 };
 
 function norm(value) {
@@ -21,13 +24,23 @@ function norm(value) {
 function parseList(value) {
   if (!value) return [];
   if (Array.isArray(value)) return [...new Set(value.flatMap(parseList))];
-  if (typeof value === 'object') return parseList(value.supervisao || value.supervisoes || value.nome || value.name);
+  if (typeof value === 'object') return parseList(value.supervisao || value.supervisoes || value.nome || value.name || value.coordenacao || value.regional);
   const text = String(value).trim();
   if (!text) return [];
   try {
     if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) return parseList(JSON.parse(text));
   } catch {}
   return [...new Set(text.split(/[,;|\n]+/).map((item) => item.trim()).filter(Boolean))];
+}
+
+function uniqSorted(values) {
+  const map = new Map();
+  values.flatMap(parseList).forEach((item) => {
+    const label = String(item || '').trim();
+    const key = norm(label);
+    if (label && key && !map.has(key)) map.set(key, label);
+  });
+  return [...map.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
 function isMasterContext(context) {
@@ -80,12 +93,74 @@ function setFeedback(message, type = 'ok') {
   feedback.textContent = message;
 }
 
+function collectRows(rows, fields) {
+  return (rows || []).flatMap((row) => fields.flatMap((field) => parseList(row?.[field])));
+}
+
+async function fetchFallbackSupervisoes() {
+  if (state.fallbackLoading) return state.fallbackOptions;
+  if (state.fallbackLoaded) return state.fallbackOptions;
+
+  state.fallbackLoading = true;
+  const collected = [...state.allowedLabels];
+
+  const requests = [
+    supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome', { ascending: true }),
+    supabase.from('operacional_colaborador_base').select('supervisao,coordenacao').eq('ativo', true).limit(5000),
+    supabase.from('colaborador_snapshot').select('supervisao,coordenacao').limit(5000),
+    supabase.from('operacional_os').select('supervisao').limit(5000),
+    supabase.from('app_usuarios').select('supervisao,coordenacao,status').limit(1000),
+  ];
+
+  const results = await Promise.allSettled(requests);
+  results.forEach((result) => {
+    if (result.status !== 'fulfilled' || result.value?.error) return;
+    const rows = result.value?.data || [];
+    collected.push(...collectRows(rows, ['nome', 'supervisao', 'supervisoes', 'coordenacao', 'regional']));
+  });
+
+  state.fallbackOptions = uniqSorted(collected);
+  state.fallbackLoaded = true;
+  state.fallbackLoading = false;
+  return state.fallbackOptions;
+}
+
+function applyOptionsToSelect(select, options) {
+  if (!select) return 0;
+
+  let visibleCandidates = uniqSorted(options).filter(optionAllowed);
+  if (state.restricted && !visibleCandidates.length && state.allowedLabels.length) {
+    visibleCandidates = uniqSorted(state.allowedLabels);
+  }
+
+  const existing = new Set([...select.options].map((option) => norm(option.value || option.textContent)));
+  visibleCandidates.forEach((label) => {
+    const key = norm(label);
+    if (!key || existing.has(key)) return;
+    const option = document.createElement('option');
+    option.value = label;
+    option.textContent = label;
+    select.appendChild(option);
+    existing.add(key);
+  });
+
+  return visibleCandidates.length;
+}
+
 function filterSelect() {
   const select = document.getElementById('progSup');
-  if (!select || !state.ready || !state.restricted) return;
+  if (!select || !state.ready) return;
+
+  applyOptionsToSelect(select, state.fallbackOptions);
 
   const options = [...select.options];
-  if (options.length <= 1) return;
+  if (options.length <= 1 && !state.fallbackLoading) {
+    fetchFallbackSupervisoes().then((fallback) => {
+      applyOptionsToSelect(select, fallback);
+      filterSelect();
+    }).catch((error) => console.warn('[programacao-gestor-filtro] fallback supervisões:', error));
+    return;
+  }
 
   let visibleCount = 0;
   let firstAllowed = '';
@@ -104,20 +179,23 @@ function filterSelect() {
     }
   }
 
-  if (!visibleCount) {
+  if (state.restricted && !visibleCount) {
     select.value = '';
     select.disabled = true;
-    setFeedback('Seu usuário está como Gestor, mas nenhuma supervisão da regional liberada foi encontrada. Verifique app_usuarios.coordenacao/supervisao.', 'error');
+    setFeedback('Seu usuário está como Gestor, mas nenhuma supervisão liberada foi encontrada. Verifique app_usuarios.coordenacao/supervisao.', 'error');
     return;
   }
 
-  if (!select.value || select.selectedOptions?.[0]?.disabled) {
+  if (state.restricted && (!select.value || select.selectedOptions?.[0]?.disabled)) {
     select.value = firstAllowed;
     select.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  select.disabled = visibleCount === 1;
-  setFeedback(`Programação limitada ao login do gestor: ${state.allowedLabels.join(', ')}.`, 'ok');
+  select.disabled = state.restricted && visibleCount === 1;
+  if (state.restricted && visibleCount) {
+    const label = state.allowedLabels.length ? state.allowedLabels.join(', ') : `${visibleCount} supervisão(ões)`;
+    setFeedback(`Programação limitada ao login do gestor: ${label}.`, 'ok');
+  }
 }
 
 async function initAccess() {
@@ -127,13 +205,14 @@ async function initAccess() {
       user?.id ? getUserContext(user.id).catch(() => null) : Promise.resolve(null),
       supabase
         .from('app_usuarios')
-        .select('id,nome,email,setor,supervisao,coordenacao,status')
+        .select('id,nome,email,setor,supervisao,supervisoes,supervisao_liberada,supervisoes_liberadas,coordenacao,status')
         .eq('auth_user_id', user?.id || '')
         .maybeSingle(),
     ]);
 
     const appUser = userRes?.data || null;
     Object.assign(state, buildAccess(appUser, context), { ready: true });
+    await fetchFallbackSupervisoes();
     filterSelect();
   } catch (error) {
     console.warn('[programacao-gestor-filtro] Falha ao resolver acesso:', error);
