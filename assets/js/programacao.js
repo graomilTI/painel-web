@@ -658,9 +658,12 @@ initProtectedPage('Programação', (content) => {
 
   function cidadeUfFromOs(os) {
     const raw = String(os?.embarque || os?.local_embarque || '').trim();
-    const match = raw.match(/^([A-Z]{2})\s*-\s*([^()]+?)(?:\s*\([^)]+\))?\s*$/i);
-    if (!match) return raw ? { cidade: raw, uf: '' } : null;
-    return { cidade: match[2].trim(), uf: match[1].toUpperCase() };
+    if (!raw) return null;
+    const partes = raw.split(/\s*-\s*/).map((p) => p.trim()).filter(Boolean);
+    if (partes.length >= 2 && /^[A-Z]{2}$/i.test(partes[0])) {
+      return { uf: partes[0].toUpperCase(), cidade: partes[1] };
+    }
+    return { cidade: raw, uf: '' };
   }
 
   function findPontoFromOs(os) {
