@@ -30,9 +30,18 @@ Ou por cron a cada 3 minutos:
 
 1. Busca contas ativas em `email_accounts`.
 2. Descriptografa a credencial somente em memória.
-3. Lê e-mails novos via IMAP.
+3. Lista as pastas IMAP da conta e lê e-mails novos por pasta.
 4. Salva mensagens e anexos no Supabase.
 5. Classifica por regras e, se `OPENAI_API_KEY` existir, melhora a classificação com IA.
 6. Envia respostas aprovadas em `email_outbox` via SMTP.
 
 Por segurança, respostas automáticas só são geradas quando a conta permite `auto_responder` e a regra também permite `auto_responder`. O padrão do painel é aprovação manual.
+
+## Pastas IMAP
+
+Por padrão o worker sincroniza `INBOX` e demais pastas listadas no cPanel, ignorando enviadas, rascunhos, lixeira e spam. Para controlar manualmente:
+
+- `EMAIL_WORKER_INCLUDE_MAILBOXES=INBOX,Clientes,Financeiro` sincroniza somente essas pastas.
+- `EMAIL_WORKER_EXCLUDE_MAILBOXES=Sent,Drafts,Trash,Junk,Spam` substitui a lista padrão de exclusão.
+
+O checkpoint fica em `email_mailbox_states`, porque cada pasta IMAP tem seu próprio UID/UIDVALIDITY.
