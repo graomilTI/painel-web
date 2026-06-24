@@ -11,6 +11,22 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const EMAIL_CREDENTIALS_KEY = process.env.EMAIL_CREDENTIALS_KEY || '';
 const INTERVAL_SECONDS = Number(process.env.EMAIL_WORKER_INTERVAL_SECONDS || 180);
 const MAX_ANEXO_IA_BYTES = 8 * 1024 * 1024;
+const DEFAULT_EXCLUDED_MAILBOXES = [
+  '\\Sent',
+  '\\Drafts',
+  '\\Trash',
+  '\\Junk',
+  'sent',
+  'sent items',
+  'enviados',
+  'itens enviados',
+  'drafts',
+  'rascunhos',
+  'trash',
+  'lixeira',
+  'junk',
+  'spam'
+];
 const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -40,11 +56,72 @@ function getOpenAI() {
 }
 
 function text(value) {
-  return String(value || '').trim();
+  return String(value || '').replace(/\u0000/g, '').trim();
 }
 
 function normalize(value) {
   return text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function nullableText(value) {
+  const cleaned = text(value);
+  return cleaned || null;
+}
+
+function sanitizeForPostgres(value) {
+  if (typeof value === 'string') return text(value);
+  if (Array.isArray(value)) return value.map(sanitizeForPostgres);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, val]) => [key, sanitizeForPostgres(val)]));
+  }
+  return value;
+}
+
+function envList(name, fallback = []) {
+  const value = text(process.env[name]);
+  if (!value) return fallback;
+  return value.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function mailboxKey(value) {
+  return normalize(value).replace(/^inbox$/i, 'inbox');
+}
+
+function mailboxFlagList(mailbox) {
+  return Array.from(mailbox.flags || []).map((flag) => text(flag));
+}
+
+function shouldSyncMailbox(mailbox, account) {
+  if (!mailbox?.path || mailbox.disabled) return false;
+  const pathKey = mailboxKey(mailbox.path);
+  const include = envList('EMAIL_WORKER_INCLUDE_MAILBOXES');
+  if (include.length) return include.map(mailboxKey).includes(pathKey);
+
+  const excluded = envList('EMAIL_WORKER_EXCLUDE_MAILBOXES', DEFAULT_EXCLUDED_MAILBOXES).map(mailboxKey);
+  const flagKeys = mailboxFlagList(mailbox).map(mailboxKey);
+  if (excluded.includes(pathKey) || flagKeys.some((flag) => excluded.includes(flag))) return false;
+
+  const primary = mailboxKey(account.pasta_entrada || 'INBOX');
+  return pathKey === primary || mailbox.listed !== false;
+}
+
+async function loadMailboxStates(accountId) {
+  const { data, error } = await supabase
+    .from('email_mailbox_states')
+    .select('*')
+    .eq('account_id', accountId);
+  if (error) throw error;
+  return new Map((data || []).map((row) => [row.mailbox_path, row]));
+}
+
+async function saveMailboxState(accountId, mailboxPath, payload) {
+  const { error } = await supabase.from('email_mailbox_states').upsert({
+    account_id: accountId,
+    mailbox_path: mailboxPath,
+    ...payload,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'account_id,mailbox_path' });
+  if (error) throw error;
 }
 
 function decryptCredential(value) {
@@ -316,7 +393,7 @@ async function saveAttachment(emailId, attachment) {
     tamanho_bytes: attachment.size || attachment.content?.length || null,
     storage_path: stored,
     content_id: attachment.contentId || null,
-    dados_extraidos: dadosExtraidos,
+    dados_extraidos: sanitizeForPostgres(dadosExtraidos),
     interpretacao_status: isDangerous ? 'PERIGO' : status,
     interpretado_em: new Date().toISOString()
   });
@@ -348,6 +425,121 @@ async function collectAttachments(parsed, depth = 0) {
   return result;
 }
 
+async function processMailbox(client, account, rules, mailbox, state) {
+  const mailboxPath = mailbox.path;
+  const lock = await client.getMailboxLock(mailboxPath);
+  let inserted = 0;
+  let failed = 0;
+  let maxUid = Number(state?.ultima_uid || 0);
+  try {
+    const uidValidity = client.mailbox?.uidValidity ? String(client.mailbox.uidValidity) : null;
+    const stateUidValidity = state?.uid_validity ? String(state.uid_validity) : null;
+    const primaryPath = account.pasta_entrada || 'INBOX';
+    const legacyUid = mailboxPath === primaryPath && !state ? Number(account.ultima_uid || 0) : 0;
+    const uidValidityChanged = stateUidValidity && uidValidity && stateUidValidity !== uidValidity;
+    const lastUid = uidValidityChanged ? 0 : Math.max(Number(state?.ultima_uid || 0), legacyUid);
+    const startUid = lastUid + 1;
+    const uidNext = Number(client.mailbox?.uidNext || 0);
+    const limit = Number(account.limite_por_sync || 30);
+    const fetched = [];
+
+    maxUid = lastUid;
+    if (!uidNext || startUid < uidNext) {
+      for await (const item of client.fetch(lastUid > 0 ? `${startUid}:*` : '1:*', { uid: true, source: true, flags: true }, { uid: true })) {
+        if (item.uid) maxUid = Math.max(maxUid, Number(item.uid));
+        fetched.push(item);
+        if (fetched.length >= limit) break;
+      }
+    }
+
+    for (const item of fetched) {
+      try {
+        const parsed = await simpleParser(item.source);
+        const id = messageId(parsed.messageId);
+        const from = parsed.from?.value?.[0] || {};
+        const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', id).maybeSingle();
+        if (exists.data?.id) continue;
+        const input = { subject: text(parsed.subject) || '(sem assunto)', fromText: text(parsed.from?.text || from.address), text: text(parsed.text), html: text(parsed.html) };
+        const cls = await classifyWithAI(input, classifyByRules(input, rules));
+        const { data: saved, error } = await supabase.from('email_messages').insert({
+          account_id: account.id,
+          uid: item.uid,
+          message_id: id,
+          in_reply_to: messageId(parsed.inReplyTo, false),
+          references_header: nullableText(Array.isArray(parsed.references) ? parsed.references.join(' ') : parsed.references),
+          remetente_nome: nullableText(from.name),
+          remetente_email: nullableText(from.address),
+          destinatario: nullableText(parsed.to?.text) || account.email,
+          cc: nullableText(parsed.cc?.text),
+          assunto: text(parsed.subject) || '(sem assunto)',
+          corpo_texto: nullableText(parsed.text),
+          corpo_html: nullableText(parsed.html),
+          data_recebimento: parsed.date?.toISOString() || new Date().toISOString(),
+          regional: cls.regional || null,
+          categoria: cls.categoria || 'GERAL',
+          prioridade: cls.prioridade || 'NORMAL',
+          resumo_ia: nullableText(cls.resumo_ia),
+          dados_detectados: sanitizeForPostgres(cls.dados_detectados || {}),
+          precisa_resposta: Boolean(cls.precisa_resposta),
+          resposta_sugerida: nullableText(cls.resposta_sugerida),
+          status: cls.precisa_resposta ? 'RESPONDER' : 'NOVO',
+          classificado_por: cls.classificado_por,
+          risco: cls.risco || 'BAIXO',
+          raw: {
+            mailbox: mailboxPath,
+            uid_validity: uidValidity,
+            flags: Array.from(item.flags || []),
+            headers: { from: nullableText(parsed.from?.text), to: nullableText(parsed.to?.text) }
+          }
+        }).select('id').single();
+        if (error) throw error;
+        inserted++;
+        const attachmentsDados = {};
+        let temAnexoPeigoso = false;
+        for (const attachment of await collectAttachments(parsed)) {
+          const { dadosExtraidos, isDangerous } = await saveAttachment(saved.id, attachment);
+          Object.assign(attachmentsDados, dadosExtraidos);
+          if (isDangerous) temAnexoPeigoso = true;
+        }
+        const updatePayload = { updated_at: new Date().toISOString() };
+        if (Object.keys(attachmentsDados).length) {
+          updatePayload.dados_detectados = sanitizeForPostgres({ ...(cls.dados_detectados || {}), ...attachmentsDados });
+        }
+        if (temAnexoPeigoso) {
+          updatePayload.risco = 'CRITICO';
+        }
+        if (Object.keys(updatePayload).length > 1) {
+          await supabase.from('email_messages').update(updatePayload).eq('id', saved.id);
+        }
+        if (account.auto_responder && cls.auto_responder && cls.resposta_sugerida && from.address) {
+          await supabase.from('email_outbox').insert({
+            email_id: saved.id,
+            account_id: account.id,
+            para: from.address,
+            assunto: /^re:/i.test(parsed.subject || '') ? parsed.subject : `Re: ${parsed.subject || ''}`,
+            corpo: cls.resposta_sugerida,
+            status: 'PENDENTE'
+          });
+        }
+      } catch (itemError) {
+        failed++;
+        console.error(`Falha ao processar mensagem uid=${item.uid} de ${account.email} em ${mailboxPath}:`, itemError);
+      }
+    }
+
+    await saveMailboxState(account.id, mailboxPath, {
+      uid_validity: uidValidity,
+      ultima_uid: maxUid,
+      ultima_sync_em: new Date().toISOString(),
+      ultima_sync_status: failed ? `OK - ${inserted} novo(s), ${failed} com falha` : `OK - ${inserted} novo(s)`,
+      ultima_sync_erro: failed ? `${failed} mensagem(ns) pulada(s) por erro de parsing (ver logs)` : null
+    });
+    return { inserted, failed, maxUid, mailboxPath };
+  } finally {
+    lock.release();
+  }
+}
+
 async function syncAccount(account, rules) {
   console.log(`Sincronizando ${account.email}...`);
   const client = new ImapFlow({
@@ -358,106 +550,49 @@ async function syncAccount(account, rules) {
     tls: { rejectUnauthorized: false },
     logger: false
   });
-  let inserted = 0;
   try {
     await client.connect();
-    const lock = await client.getMailboxLock(account.pasta_entrada || 'INBOX');
-    try {
-      const lastUid = Number(account.ultima_uid || 0);
-      const range = lastUid > 0 ? `${lastUid + 1}:*` : '1:*';
-      const limit = Number(account.limite_por_sync || 30);
-      let maxUid = lastUid;
-      let comFalha = 0;
-      const fetched = [];
-      for await (const item of client.fetch(range, { uid: true, source: true, flags: true }, { uid: true })) {
-        if (item.uid) maxUid = Math.max(maxUid, Number(item.uid));
-        fetched.push(item);
-        if (fetched.length >= limit) break;
-      }
-
-      for (const item of fetched) {
-        try {
-          const parsed = await simpleParser(item.source);
-          const id = messageId(parsed.messageId);
-          const from = parsed.from?.value?.[0] || {};
-          const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', id).maybeSingle();
-          if (exists.data?.id) continue;
-          const input = { subject: parsed.subject || '(sem assunto)', fromText: parsed.from?.text || from.address || '', text: parsed.text || '', html: parsed.html || '' };
-          const cls = await classifyWithAI(input, classifyByRules(input, rules));
-          const { data: saved, error } = await supabase.from('email_messages').insert({
-            account_id: account.id,
-            uid: item.uid,
-            message_id: id,
-            in_reply_to: messageId(parsed.inReplyTo, false),
-            references_header: Array.isArray(parsed.references) ? parsed.references.join(' ') : text(parsed.references) || null,
-            remetente_nome: from.name || null,
-            remetente_email: from.address || null,
-            destinatario: parsed.to?.text || account.email,
-            cc: parsed.cc?.text || null,
-            assunto: parsed.subject || '(sem assunto)',
-            corpo_texto: parsed.text || null,
-            corpo_html: parsed.html || null,
-            data_recebimento: parsed.date?.toISOString() || new Date().toISOString(),
-            regional: cls.regional || null,
-            categoria: cls.categoria || 'GERAL',
-            prioridade: cls.prioridade || 'NORMAL',
-            resumo_ia: cls.resumo_ia || null,
-            dados_detectados: cls.dados_detectados || {},
-            precisa_resposta: Boolean(cls.precisa_resposta),
-            resposta_sugerida: cls.resposta_sugerida || null,
-            status: cls.precisa_resposta ? 'RESPONDER' : 'NOVO',
-            classificado_por: cls.classificado_por,
-            risco: cls.risco || 'BAIXO',
-            raw: { flags: Array.from(item.flags || []), headers: { from: parsed.from?.text, to: parsed.to?.text } }
-          }).select('id').single();
-          if (error) throw error;
-          inserted++;
-          const attachmentsDados = {};
-          let temAnexoPeigoso = false;
-          for (const attachment of await collectAttachments(parsed)) {
-            const { dadosExtraidos, isDangerous } = await saveAttachment(saved.id, attachment);
-            Object.assign(attachmentsDados, dadosExtraidos);
-            if (isDangerous) temAnexoPeigoso = true;
-          }
-          const updatePayload = { updated_at: new Date().toISOString() };
-          if (Object.keys(attachmentsDados).length) {
-            updatePayload.dados_detectados = { ...(cls.dados_detectados || {}), ...attachmentsDados };
-          }
-          if (temAnexoPeigoso) {
-            updatePayload.risco = 'CRITICO';
-          }
-          if (Object.keys(updatePayload).length > 1) {
-            await supabase.from('email_messages').update(updatePayload).eq('id', saved.id);
-          }
-          if (account.auto_responder && cls.auto_responder && cls.resposta_sugerida && from.address) {
-            await supabase.from('email_outbox').insert({
-              email_id: saved.id,
-              account_id: account.id,
-              para: from.address,
-              assunto: /^re:/i.test(parsed.subject || '') ? parsed.subject : `Re: ${parsed.subject || ''}`,
-              corpo: cls.resposta_sugerida,
-              status: 'PENDENTE'
-            });
-          }
-        } catch (itemError) {
-          // Mensagem com cabeçalho/anexo malformado não pode travar o checkpoint
-          // de uid para sempre: registra o erro e segue para a próxima.
-          comFalha++;
-          console.error(`Falha ao processar mensagem uid=${item.uid} de ${account.email}:`, itemError);
-        }
-      }
-
-      await supabase.from('email_accounts').update({
-        ultima_uid: maxUid,
-        ultima_sync_em: new Date().toISOString(),
-        ultima_sync_status: comFalha ? `OK - ${inserted} novo(s), ${comFalha} com falha` : `OK - ${inserted} novo(s)`,
-        ultima_sync_erro: comFalha ? `${comFalha} mensagem(ns) pulada(s) por erro de parsing (ver logs)` : null,
-        updated_at: new Date().toISOString()
-      }).eq('id', account.id);
-    } finally {
-      lock.release();
+    const states = await loadMailboxStates(account.id);
+    const listed = await client.list();
+    const mailboxes = listed.filter((mailbox) => shouldSyncMailbox(mailbox, account));
+    if (!mailboxes.some((mailbox) => mailbox.path === (account.pasta_entrada || 'INBOX'))) {
+      mailboxes.unshift({ path: account.pasta_entrada || 'INBOX', flags: new Set(['\\Inbox']), listed: true });
     }
+
+    let inserted = 0;
+    let failed = 0;
+    let mailboxErrors = 0;
+    let primaryMaxUid = Number(account.ultima_uid || 0);
+    const syncedPaths = [];
+
+    for (const mailbox of mailboxes) {
+      try {
+        const result = await processMailbox(client, account, rules, mailbox, states.get(mailbox.path));
+        inserted += result.inserted;
+        failed += result.failed;
+        syncedPaths.push(mailbox.path);
+        if (mailbox.path === (account.pasta_entrada || 'INBOX')) primaryMaxUid = result.maxUid;
+      } catch (mailboxError) {
+        mailboxErrors++;
+        console.error(`Erro ao sincronizar pasta ${mailbox.path} de ${account.email}:`, mailboxError);
+        await saveMailboxState(account.id, mailbox.path, {
+          ultima_sync_em: new Date().toISOString(),
+          ultima_sync_status: 'ERRO',
+          ultima_sync_erro: String(mailboxError.responseText || mailboxError.message || mailboxError).slice(0, 1000)
+        });
+      }
+    }
+
     await client.logout();
+    await supabase.from('email_accounts').update({
+      ultima_uid: primaryMaxUid,
+      ultima_sync_em: new Date().toISOString(),
+      ultima_sync_status: mailboxErrors
+        ? `OK PARCIAL - ${inserted} novo(s), ${failed} com falha, ${mailboxErrors} pasta(s) com erro`
+        : `OK - ${inserted} novo(s) em ${syncedPaths.length} pasta(s)`,
+      ultima_sync_erro: mailboxErrors ? `${mailboxErrors} pasta(s) falharam. Ver email_mailbox_states/logs.` : null,
+      updated_at: new Date().toISOString()
+    }).eq('id', account.id);
   } catch (error) {
     console.error(`Erro ao sincronizar ${account.email}:`, error);
     try { await client.logout(); } catch {}

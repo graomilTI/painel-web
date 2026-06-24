@@ -431,16 +431,13 @@
   }
 
 
+  // O job roda direto dentro da função google-contacts-sync (action start_sync/job_status),
+  // que carrega a base de colaboradores e o mapa de contatos do Google uma única vez por
+  // execução e processa em paralelo. Antes passava por uma função intermediária
+  // (google-contacts-job) que recarregava tudo do zero a cada lote e dormia 250ms entre eles.
   async function googleContactsJobAction(action, payload = {}) {
-    const opts = window.CONTATOS.__opts || {};
-    const client = opts.supabase;
-    if (!client?.functions?.invoke) throw new Error('Supabase Functions não está disponível no painel.');
-    const { data, error } = await client.functions.invoke('google-contacts-job', {
-      body: { action, ...payload }
-    });
-    if (error) throw error;
-    if (!data || data.ok === false) throw new Error(data?.error || 'Falha no job de Google Contacts.');
-    return data;
+    const actionMap = { start: 'start_sync', status: 'job_status' };
+    return googleContactsAction(actionMap[action] || action, payload);
   }
 
   function readGoogleJobId() {
@@ -461,7 +458,7 @@
   }
 
   function googleJobSummary(job) {
-    const resumo = job?.resumo || job?.summary || {};
+    const resumo = job?.resumo || job?.summary || job || {};
     return {
       criados: Number(resumo.criados || 0),
       atualizados: Number(resumo.atualizados || 0),
@@ -487,7 +484,8 @@
     const resumo = googleJobSummary(job);
     const running = googleJobIsRunning(job);
     const status = String(job.status || '').toUpperCase();
-    const cls = job.status === 'erro' ? 'ct-err' : 'ct-ok';
+    const errorMsg = job.erro || job.error || '';
+    const cls = job.status === 'erro' || job.status === 'parcial' ? 'ct-err' : 'ct-ok';
     if (btn) {
       btn.disabled = running || !state.google.connected;
       btn.textContent = running ? 'Job em execução...' : 'Iniciar job de sincronização';
@@ -495,7 +493,7 @@
     progress.innerHTML = `<div class="ct-alert ${cls}">
       <strong>Job Google Contacts:</strong> ${esc(status)} · ${Math.min(cursor, total || cursor)} de ${total || '?'} (${pct}%).
       Criados: ${resumo.criados} · Atualizados: ${resumo.atualizados} · Ignorados: ${resumo.ignorados} · Removidos: ${resumo.removidos} · Erros: ${resumo.erros}
-      ${job.error ? `<br><strong>Erro:</strong> ${esc(job.error)}` : ''}
+      ${errorMsg ? `<br><strong>Erro:</strong> ${esc(errorMsg)}` : ''}
       ${running ? '<br>Processando no Supabase. Pode sair desta tela ou fechar o navegador.' : ''}
     </div>`;
   }
@@ -520,11 +518,12 @@
         await loadGoogleStatus();
         saveGoogleJobId('');
         renderGoogleJobProgress(container, job);
-        setStatus(container, job.status === 'erro' ? (job.error || 'Job concluído com erro.') : 'Job concluído no Supabase.', job.status === 'erro' ? 'err' : 'ok');
+        const failed = job.status === 'erro' || job.status === 'parcial';
+        setStatus(container, failed ? (job.erro || job.error || 'Job concluído com erro.') : 'Job concluído no Supabase.', failed ? 'err' : 'ok');
       }
       return job;
     } catch (err) {
-      renderGoogleJobProgress(container, { status: 'erro', error: err?.message || String(err), cursor: 0, total: 0, resumo: {} });
+      renderGoogleJobProgress(container, { status: 'erro', erro: err?.message || String(err), cursor: 0, total: 0 });
       return null;
     }
   }
