@@ -340,9 +340,8 @@ function bindItemForm(){
     const found=findCatalogoItem(document.getElementById('cmpNovoItem')?.value || '');
     const item=currentItemForm();
     if(!item.material){ setMsg('cmpFeedback','Digite o nome do material antes de adicionar.',true); return; }
-    if(!item.tipo){ setMsg('cmpFeedback','Selecione o tipo do material antes de adicionar.',true); return; }
     if(found && itemNeedsDetail(found.material) && !item.tamanho){ setMsg('cmpFeedback','Informe o tamanho/detalhe antes de adicionar na lista.',true); return; }
-    if(norm(item.material)==='celular' && norm(item.tipo)==='outros'){ openCelularModal(item); return; }
+    if(norm(item.material)==='celular'){ openCelularModal({...item, tipo:'Outros'}); return; }
     state.itens.push({...item, _id:`${Date.now()}_${Math.random().toString(16).slice(2)}`});
     resetItemForm();
     renderItensList();
@@ -359,7 +358,7 @@ function renderItensList(){
   body.innerHTML=state.itens.map(i=>{
     const isCelular=norm(i.material)==='celular';
     const matLabel=isCelular&&i.colaborador_nome?`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)} · ${i._metodo==='parcelado'?`${i._parcelas||1}x`:'À vista'}</small>`:esc(i.material);
-    return `<tr data-item-id="${esc(i._id)}"><td>${esc(i.unidade||i.quantidade||1)}</td><td>${matLabel}</td><td>${esc(i.tipo)}</td><td>${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`;
+    return `<tr data-item-id="${esc(i._id)}"><td>${esc(i.unidade||i.quantidade||1)}</td><td>${matLabel}</td><td>${esc(i.tipo||'-')}</td><td>${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`;
   }).join('');
   body.querySelectorAll('[data-del-item]').forEach(btn=>btn.onclick=()=>{
     const id=btn.closest('tr').dataset.itemId;
@@ -424,7 +423,6 @@ function bindInternoForm(){
     const tipo=document.getElementById('cmpIntTipo')?.value||'';
     const material=found?.material||raw.toUpperCase();
     if(!material){setMsg('cmpFeedback','Digite o nome do item antes de adicionar.',true);return;}
-    if(!tipo){setMsg('cmpFeedback','Selecione o tipo antes de adicionar.',true);return;}
     state.itensInterno.push({_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,unidade:qtd,quantidade:qtd,material,tipo});
     input.value=''; document.getElementById('cmpIntUn').value=1; document.getElementById('cmpIntTipo').value=''; box.innerHTML='';
     renderInternoList();
@@ -605,7 +603,7 @@ initProtectedPage('Compras', async (content, userContext)=>{
       <div class="cmp-add-box">
         <div class="cmp-field"><label>Un.</label><input id="cmpNovaUn" type="number" min="1" value="1"></div>
         <div class="cmp-field cmp-autocomplete-wrap"><label>Item</label><input id="cmpNovoItem" type="text" placeholder="Comece a digitar o material..." autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpItemSug"></div></div>
-        <div class="cmp-field"><label>Tipo</label><select id="cmpNovoTipo"><option value="">-- Tipo --</option><option value="EPI">EPI</option><option value="Patrimonio">Patrimônio</option><option value="Outros">Outros</option></select></div>
+        <div class="cmp-field"><label>Tipo</label><select id="cmpNovoTipo" disabled><option value="">-- Tipo --</option><option value="EPI">EPI</option><option value="Patrimonio">Patrimônio</option><option value="Outros">Outros</option></select><small class="muted">Classificado pelo catálogo. Só a equipe de Compras (ADM) pode alterar.</small></div>
         <div class="cmp-field"><label>Tamanho/Detalhe</label><input id="cmpNovoTam" placeholder="Selecione Botina ou Peneira Individual" disabled></div>
         <div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpAddMaterial" type="button">Adicionar material</button></div>
       </div>
@@ -613,7 +611,7 @@ initProtectedPage('Compras', async (content, userContext)=>{
       <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tipo</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
     </div>
     <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-actions"><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos os colaboradores</button><div class="cmp-field" style="min-width:280px"><label>Adicionar colaborador</label><input id="cmpColabBusca" placeholder="Digite o nome"><div class="cmp-suggest" id="cmpColabSug"></div></div></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
-    <div id="panel-interno" class="cmp-panel mt-16"><div style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.22);border-radius:14px;padding:14px 16px;margin-bottom:16px"><b style="color:#a5b4fc">Solicitação Interna — Estoque Matriz</b><p class="muted" style="margin:4px 0 0">Solicite itens disponíveis no estoque da matriz. Sem necessidade de fornecedor ou cotação.</p></div><div class="cmp-add-box" style="grid-template-columns:110px 1.4fr 1fr auto"><div class="cmp-field"><label>Un.</label><input id="cmpIntUn" type="number" min="1" value="1"></div><div class="cmp-field cmp-autocomplete-wrap"><label>Item</label><input id="cmpIntItem" type="text" placeholder="Comece a digitar o item..." autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpIntItemSug"></div></div><div class="cmp-field"><label>Tipo</label><select id="cmpIntTipo"><option value="">-- Tipo --</option><option value="EPI">EPI</option><option value="Patrimonio">Patrimônio</option><option value="Outros">Outros</option></select></div><div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpIntAddItem" type="button">Adicionar item</button></div></div><div class="cmp-field mt-12"><label>Justificativa / Observações</label><textarea id="cmpObsInterno" rows="2" placeholder="Motivo da solicitação, destino ou urgência."></textarea></div><p class="muted mt-12">Monte a lista abaixo antes de clicar em <b>SOLICITAR</b>.</p><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tipo</th><th></th></tr></thead><tbody id="cmpInternoBody"></tbody></table></div></div>
+    <div id="panel-interno" class="cmp-panel mt-16"><div style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.22);border-radius:14px;padding:14px 16px;margin-bottom:16px"><b style="color:#a5b4fc">Solicitação Interna — Estoque Matriz</b><p class="muted" style="margin:4px 0 0">Solicite itens disponíveis no estoque da matriz. Sem necessidade de fornecedor ou cotação.</p></div><div class="cmp-add-box" style="grid-template-columns:110px 1.4fr 1fr auto"><div class="cmp-field"><label>Un.</label><input id="cmpIntUn" type="number" min="1" value="1"></div><div class="cmp-field cmp-autocomplete-wrap"><label>Item</label><input id="cmpIntItem" type="text" placeholder="Comece a digitar o item..." autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpIntItemSug"></div></div><div class="cmp-field"><label>Tipo</label><select id="cmpIntTipo" disabled><option value="">-- Tipo --</option><option value="EPI">EPI</option><option value="Patrimonio">Patrimônio</option><option value="Outros">Outros</option></select><small class="muted">Classificado pelo catálogo. Só a equipe de Compras (ADM) pode alterar.</small></div><div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpIntAddItem" type="button">Adicionar item</button></div></div><div class="cmp-field mt-12"><label>Justificativa / Observações</label><textarea id="cmpObsInterno" rows="2" placeholder="Motivo da solicitação, destino ou urgência."></textarea></div><p class="muted mt-12">Monte a lista abaixo antes de clicar em <b>SOLICITAR</b>.</p><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tipo</th><th></th></tr></thead><tbody id="cmpInternoBody"></tbody></table></div></div>
     <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
   </section>
   <div class="cmp-cel-modal" id="cmpCelularModal"></div>

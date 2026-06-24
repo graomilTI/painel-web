@@ -311,12 +311,19 @@ async function liberarSelecionados(){
 }
 function openItem(id){ const r=state.rows.find(x=>String(x.id)===String(id)); if(!r)return; const s=r.compras_solicitacoes||{}; const modal=document.getElementById('admCmpModal');
   modal.innerHTML=`<div class="adm-cmp-modal-card"><div class="section-head"><div><h3>${esc(r.material)}</h3><p class="muted">${esc(s.solicitante||'-')} · ${brDate(s.data_solicitacao)} · ${pill(r.status)}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="adm-cmp-grid">
-    <div><b>Quantidade:</b> ${esc(r.quantidade||r.unidade||1)}</div><div><b>Tipo:</b> ${esc(r.tipo||'-')}</div><div><b>Tamanho:</b> ${esc(r.tamanho||'-')}</div><div><b>Valor:</b> ${money(r.valor_total||0)}</div>
+    <div><b>Quantidade:</b> ${esc(r.quantidade||r.unidade||1)}</div><div><b>Tipo:</b> <select id="mTipo"><option value="" ${!r.tipo?'selected':''}>-- Selecionar --</option><option value="EPI" ${r.tipo==='EPI'?'selected':''}>EPI</option><option value="Patrimonio" ${r.tipo==='Patrimonio'?'selected':''}>Patrimônio</option><option value="Outros" ${r.tipo==='Outros'?'selected':''}>Outros</option></select></div><div><b>Tamanho:</b> ${esc(r.tamanho||'-')}</div><div><b>Valor:</b> ${money(r.valor_total||0)}</div>
     ${r.ca?`<div><b>CA:</b> ${esc(r.ca)}</div>`:''}
     ${r.colaborador_nome?`<div><b>Colaborador:</b> ${esc(r.colaborador_nome)}</div>`:''}
     <div class="adm-cmp-full"><b>Observação:</b> ${esc(s.observacoes||'-')}</div>
   </div><div id="modalArea" class="mt-16"></div></div>`;
-  modal.classList.add('open'); modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open'); renderModalArea(r);
+  modal.classList.add('open'); modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#mTipo').onchange=async(ev)=>{
+    const novoTipo=ev.target.value||null;
+    await safe(()=>supabase.from('compras_itens').update({tipo:novoTipo}).eq('id',r.id));
+    r.tipo=novoTipo;
+    await loadRows();
+  };
+  renderModalArea(r);
 }
 function renderModalArea(r){ const area=document.getElementById('modalArea'); if(!area)return;
   if(r.status==='em_cotacao') area.innerHTML=`<h3>Cotação</h3><div class="adm-cmp-grid"><label>Valor unitário<input id="mValor" type="number" step="0.01" value="${esc(r.valor_unitario||'')}"></label><label>Total<input id="mTotal" readonly value="${esc(r.valor_total||'')}"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mComprar" type="button">COMPRAR</button><button class="btn btn-danger" id="mCancelar" type="button">CANCELAR</button></div>`;
