@@ -3,13 +3,33 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: ["main"]
+  pull_request:
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check email-worker/worker.js
+          node --check assets/js/adm-compras.js
+          node --check assets/js/compras.js
+          node --check assets/js/patrimonios.js
+          node --check assets/js/programacao.js
+
   deploy:
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
