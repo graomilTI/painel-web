@@ -226,7 +226,7 @@ function guardDistribuicaoView() {
 function guardEquipeView() {
   if (currentUiStep !== 'B') return;
   const list = document.getElementById('progList');
-  if (!list || document.getElementById('peqOsList')) return;
+  if (!list || document.getElementById('peqbOsList')) return;
   renderEquipe();
 }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'grao1000-gestor-pwa-v8';
+const CACHE_NAME = 'grao1000-gestor-pwa-v9';
 const STATIC_ASSETS = [
   '/painel/gestor-app',
   '/gestor-app.html',
