@@ -784,6 +784,26 @@ initProtectedPage('Programação', (content) => {
 
   function indexVeiculos() {
     state.veiculoByPlaca = new Map((state.veiculos || []).map((v) => [onlyPlate(v.placa), v]));
+
+    // Índice por CPF/nome do motorista, montado uma única vez aqui (O(veículos))
+    // em vez de normalizar nome/CPF de novo para cada par colaborador×veículo
+    // em suggestVeiculoForColab (O(colaboradores × veículos) — chegava a
+    // centenas de milhares de comparações e travava a tela a cada "Carregar").
+    state.veiculoByMotoristaCpf = new Map();
+    state.veiculosByMotoristaNomeKey = new Map();
+    (state.veiculos || []).forEach((v) => {
+      if (v.motoristaCpf && !state.veiculoByMotoristaCpf.has(v.motoristaCpf)) {
+        state.veiculoByMotoristaCpf.set(v.motoristaCpf, v);
+      }
+      const pessoa = { nome: v.motoristaNome, cpf: v.motoristaCpf, motorista: v.motoristaNome, ...(v.raw && typeof v.raw === 'object' ? v.raw : {}) };
+      splitPossibleNames(firstFilled(pessoa.nome, pessoa.name, pessoa.motorista, pessoa.condutor, pessoa.colaborador, pessoa.responsavel)).forEach((nome) => {
+        const key = normalizeText(nome);
+        if (!key) return;
+        if (!state.veiculosByMotoristaNomeKey.has(key)) state.veiculosByMotoristaNomeKey.set(key, []);
+        state.veiculosByMotoristaNomeKey.get(key).push(v);
+      });
+    });
+
     state.sugestaoVeiculoCache = new Map();
   }
 
@@ -924,10 +944,20 @@ initProtectedPage('Programação', (content) => {
     const cacheKey = String(colab?.id || '');
     if (cacheKey && state.sugestaoVeiculoCache.has(cacheKey)) return state.sugestaoVeiculoCache.get(cacheKey);
 
-    const found = (state.veiculos || []).find((v) => {
-      const pessoa = { nome: v.motoristaNome, cpf: v.motoristaCpf, motorista: v.motoristaNome, ...(v.raw && typeof v.raw === 'object' ? v.raw : {}) };
-      return pessoaMatchesColaborador(pessoa, colab);
-    }) || null;
+    const cpfColab = normalizeCpf(colab?.cpf);
+    let found = (cpfColab && state.veiculoByMotoristaCpf?.get(cpfColab)) || null;
+
+    if (!found) {
+      const nomeColab = normalizeText(colab?.nome || '');
+      if (nomeColab && state.veiculosByMotoristaNomeKey) {
+        found = state.veiculosByMotoristaNomeKey.get(nomeColab)?.[0] || null;
+        if (!found) {
+          for (const [key, veiculos] of state.veiculosByMotoristaNomeKey) {
+            if (key.includes(nomeColab) || nomeColab.includes(key)) { found = veiculos[0]; break; }
+          }
+        }
+      }
+    }
 
     if (cacheKey) state.sugestaoVeiculoCache.set(cacheKey, found);
     return found;
