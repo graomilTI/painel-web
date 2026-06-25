@@ -525,12 +525,14 @@ function bindTopLoad() {
     if (currentUiStep === 'A') {
       event.preventDefault();
       event.stopImmediatePropagation();
-      renderDistribuicao({ loadOs: true, force: true });
-      // Pré-carrega os colaboradores usados nas etapas B-G, para não exigir
-      // um segundo "Carregar" ao trocar de etapa. A view da etapa A é
-      // restaurada depois, pois loadContext() reescreve #progList.
+      // O pré-carregamento de colaboradores (usado pelas etapas B-G) escreve
+      // direto em #progList, o mesmo container da distribuição da etapa A.
+      // Antes isso rodava em paralelo com renderDistribuicao, então um
+      // sobrescrevia o outro nessa mesma div (a lista de O.S. aparecia e
+      // some, com pedidos duplicados) — por isso agora roda em sequência:
+      // pré-carrega primeiro, só then mostra a distribuição.
       Promise.resolve(window.__progLoadColaboradores?.()).finally(() => {
-        if (currentUiStep === 'A') renderDistribuicao({ loadOs: false });
+        if (currentUiStep === 'A') renderDistribuicao({ loadOs: true, force: true });
       });
       return;
     }
