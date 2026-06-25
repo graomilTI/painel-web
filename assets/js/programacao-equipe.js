@@ -35,6 +35,25 @@ function hasGeo(lat, lng) {
 
 function round1(n) { return Math.round(n * 10) / 10; }
 
+// Distância acima da qual sugerimos hotel. R$7/L, 10km/L → 150km ida =
+// R$210 combustível R/T, mais econômico do que ida+volta no dia seguinte.
+const HOTEL_KM_THRESHOLD = 150;
+const HOTEL_DIARIA_EST = 120; // R$ estimado por diária (referência básica)
+
+function precisaHotel(km) { return km != null && km >= HOTEL_KM_THRESHOLD; }
+function estimarCustoKm(km) {
+  if (km == null) return null;
+  return Math.round((km * 2 / 10) * 7 * 100) / 100;
+}
+function parseEmbarqueUfCidade(embarque) {
+  const m = /^([A-Z]{2})\s*-\s*([^(]+)/.exec(embarque || '');
+  if (!m) return { uf: '', cidade: '' };
+  return { uf: m[1].trim(), cidade: m[2].trim() };
+}
+
+// Rastreia OS que já tiveram hotel solicitado nesta sessão para atualizar o botão
+const hotelSolicitadoIds = new Set();
+
 function contratoLabel(tipo) {
   const norm = normalizeText(tipo);
   if (norm.includes('EFETIVO')) return 'Efetivo';
@@ -111,6 +130,10 @@ function injectStyles() {
     .leaflet-tooltip.peqb-tt{background:rgba(2,6,23,.92)!important;border:1px solid rgba(34,197,94,.35)!important;color:#f8fafc!important;border-radius:8px!important;font-size:11px!important;padding:4px 8px!important;font-weight:700!important;box-shadow:none!important}
     .leaflet-control-attribution{background:rgba(2,6,23,.65)!important;color:#6b7280!important;font-size:10px!important}
     .peqb-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:22px;text-align:center;color:#94a3b8;line-height:1.4}
+    .peqb-chip-hotel{border-color:rgba(251,191,36,.4)!important;background:rgba(251,191,36,.1)!important;color:#fbbf24!important;font-weight:950!important}
+    .peqb-row-btn.hotel{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.12);color:#fbbf24}
+    .peqb-row-btn.hotel:hover{background:rgba(251,191,36,.22)}
+    .peqb-row-btn.hotel.done{border-color:rgba(34,197,94,.4);background:rgba(22,163,74,.15);color:#86efac;cursor:default}
   `;
   document.head.appendChild(style);
 }
@@ -206,7 +229,8 @@ function candidatoOptionLabel(cand) {
   const km = cand.km != null ? `${cand.km}km` : 'sem coord.';
   const custo = cand.custoTotal != null ? `R$${brl(cand.custoTotal)}` : 'sem custo';
   const logistica = cand.veiculoId ? ' 🚐' : '';
-  return `${cand.nome} — ${km} — ${custo} — score ${(cand.score * 100).toFixed(0)}${logistica}`;
+  const hotel = precisaHotel(cand.km) ? ' 🏨' : '';
+  return `${cand.nome} — ${km} — ${custo} — score ${(cand.score * 100).toFixed(0)}${logistica}${hotel}`;
 }
 
 function osRowHtml(item) {
@@ -217,14 +241,32 @@ function osRowHtml(item) {
     ? candidatos.map((c) => `<option value="${esc(c.colaboradorId)}" ${c.colaboradorId === selecionadoId ? 'selected' : ''}>${esc(candidatoOptionLabel(c))}</option>`).join('')
     : '<option value="">Nenhum candidato disponível</option>';
 
+  // Botão de hotel: só aparece quando confirmado e colaborador está longe
+  const kmConfirmado = confirmadoRow?.km_estimado != null ? Number(confirmadoRow.km_estimado) : null;
+  const custoKmConfirmado = estimarCustoKm(kmConfirmado);
+  const hotelJaPedido = hotelSolicitadoIds.has(os.id);
+  const hotelBtn = confirmado && precisaHotel(kmConfirmado)
+    ? hotelJaPedido
+      ? `<button type="button" class="peqb-row-btn hotel done" disabled>✓ Hotel solicitado</button>`
+      : `<button type="button" class="peqb-row-btn hotel" data-pedir-hotel title="Combustível ida+volta estimado: R$${custoKmConfirmado != null ? brl(custoKmConfirmado) : '?'} — hotel pode ser mais econômico">🏨 Pedir hotel</button>`
+    : '';
+
+  // Badge informativo para OS ainda não confirmadas com candidato distante
+  const kmMelhor = candidatos[0]?.km ?? null;
+  const infoBadge = !confirmado && precisaHotel(kmMelhor)
+    ? `<span class="peqb-chip peqb-chip-hotel">🏨 Melhor candidato a ${kmMelhor}km</span>`
+    : '';
+
   return `
     <article class="peqb-row" data-os-id="${esc(os.id)}">
       <div class="peqb-row-head"><span>${esc(os.cliente || '-')}</span><small>OS ${esc(os.numero_os || '-')}</small></div>
       <div class="peqb-row-meta">Embarque: ${esc(os.embarque || '-')}</div>
-      <span class="peqb-chip ${confirmado ? 'ok' : 'warn'}">${confirmado ? `Confirmado · ${esc(confirmadoRow.nome_colaborador)}${confirmadoRow.km_estimado != null ? ` · ${confirmadoRow.km_estimado}km` : ''}` : 'Pendente'}</span>
+      <span class="peqb-chip ${confirmado ? 'ok' : 'warn'}">${confirmado ? `Confirmado · ${esc(confirmadoRow.nome_colaborador)}${kmConfirmado != null ? ` · ${kmConfirmado}km` : ''}` : 'Pendente'}</span>
+      ${infoBadge}
       <div class="peqb-row-actions">
         <select class="peqb-select" data-select-colaborador ${candidatos.length ? '' : 'disabled'}>${optionsHtml}</select>
         <button type="button" class="peqb-row-btn" data-confirmar ${candidatos.length ? '' : 'disabled'}>${confirmado ? 'Atualizar' : 'Confirmar'}</button>
+        ${hotelBtn}
         ${confirmado ? `<button type="button" class="peqb-row-btn danger" data-remover="${esc(confirmadoRow.id)}">Remover</button>` : ''}
       </div>
     </article>
@@ -504,14 +546,15 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   listEl.addEventListener('click', async (event) => {
     const btnConfirmar = event.target.closest('[data-confirmar]');
     const btnRemover = event.target.closest('[data-remover]');
+    const btnHotelEl = event.target.closest('[data-pedir-hotel]');
     const row = event.target.closest('.peqb-row');
-    if (!btnConfirmar && !btnRemover && row && !event.target.closest('select')) {
+    if (!btnConfirmar && !btnRemover && !btnHotelEl && row && !event.target.closest('select')) {
       await atualizarMapaParaOs(row.dataset.osId);
       return;
     }
-    if (!btnConfirmar && !btnRemover) return;
+    if (!btnConfirmar && !btnRemover && !btnHotelEl) return;
 
-    const btn = btnConfirmar || btnRemover;
+    const btn = btnConfirmar || btnRemover || btnHotelEl;
     const osId = row?.dataset.osId;
     btn.disabled = true;
     try {
@@ -522,6 +565,23 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         if (item && cand) await confirmarCandidato(programacaoId, item.os, cand);
       } else if (btnRemover) {
         await removerConfirmacao(programacaoId, btn.dataset.remover);
+      } else if (btnHotelEl) {
+        const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
+        if (item) {
+          const sol = await solicitarHospedagem(item.os, item.confirmadoRow, options.dataReferencia || null);
+          hotelSolicitadoIds.add(osId);
+          btn.textContent = '✓ Hotel solicitado';
+          btn.classList.add('done');
+          btn.disabled = true;
+          if (sol?.codigo) {
+            const info = document.createElement('span');
+            info.className = 'peqb-chip peqb-chip-hotel';
+            info.style.cssText = 'margin-left:4px;font-size:9px';
+            info.textContent = sol.codigo;
+            btn.after(info);
+          }
+          return; // não precisa recarregar a lista toda
+        }
       }
       await carregarERenderizar();
     } catch (error) {
@@ -599,6 +659,40 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   });
 
   await carregarERenderizar();
+}
+
+
+async function solicitarHospedagem(os, confirmadoRow, dataReferencia) {
+  const { uf, cidade } = parseEmbarqueUfCidade(os.embarque);
+  const data = dataReferencia || new Date().toISOString().slice(0, 10);
+  const nome = confirmadoRow?.nome_colaborador || '';
+  const km = confirmadoRow?.km_estimado;
+
+  const payload = {
+    data_solicitacao: data,
+    cidade: cidade || os.embarque || '',
+    uf: uf || '',
+    cliente: os.cliente || null,
+    local_embarque: os.embarque || '',
+    data_checkin_prevista: data,
+    data_checkout_prevista: data,
+    quantidade_diarias_prevista: 1,
+    observacao_gestor: `Sugestão automática via Programação — ${nome}${km != null ? ` a ${km}km` : ''} do ponto de embarque.`,
+    status_solicitacao: 'SOLICITADA',
+  };
+
+  const { data: sol, error } = await supabase.from('hospedagem_solicitacoes').insert(payload).select('id,codigo').single();
+  if (error) throw error;
+
+  const cpf = confirmadoRow?.colaborador_id && /^\d+$/.test(confirmadoRow.colaborador_id)
+    ? confirmadoRow.colaborador_id : null;
+  await supabase.from('hospedagem_solicitacao_colaboradores').insert({
+    solicitacao_id: sol.id,
+    colaborador_nome: nome,
+    colaborador_cpf: cpf,
+  });
+
+  return sol;
 }
 
 async function confirmarCandidato(programacaoId, os, cand) {
