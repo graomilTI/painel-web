@@ -1,5 +1,6 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
 import { renderOsProgramacaoLite } from './os-programacao-lite.js';
+import { renderProgramacaoEquipe } from './programacao-equipe.js';
 
 const OS_STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
@@ -222,10 +223,18 @@ function guardDistribuicaoView() {
   renderDistribuicao({ loadOs: false });
 }
 
-function setActiveDistribution() {
+function guardEquipeView() {
+  if (currentUiStep !== 'B') return;
+  const list = document.getElementById('progList');
+  if (!list || document.getElementById('peqOsList')) return;
+  renderEquipe();
+}
+
+function setActiveUiStep(step) {
   document.querySelectorAll('#progSteps .stepbtn').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.uiStep === 'A');
+    btn.classList.toggle('active', btn.dataset.uiStep === step);
   });
+  document.body.classList.toggle('prog-step-a-os', step === 'A');
 }
 
 async function renderDistribuicao({ loadOs = false, force = false } = {}) {
@@ -233,7 +242,7 @@ async function renderDistribuicao({ loadOs = false, force = false } = {}) {
   const feedback = document.getElementById('progCtxFeedback');
   if (!list) return;
 
-  setActiveDistribution();
+  setActiveUiStep('A');
   setSaveVisibility(true);
   if (feedback) {
     const sup = document.getElementById('progSup')?.value || '';
@@ -274,18 +283,64 @@ async function renderDistribuicao({ loadOs = false, force = false } = {}) {
   }
 }
 
+function renderEquipePlaceholder(list) {
+  const sup = document.getElementById('progSup')?.value || '';
+  list.innerHTML = `
+    <div class="prog-section-title">
+      <h4>Organizar Equipe</h4>
+      <span class="badge">Etapa B</span>
+    </div>
+    <div class="prog-os-lazy-card">
+      <div>
+        <strong>Equipe pronta para organizar</strong>
+        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para buscar as O.S. em ATENDER e sugerir colaboradores.</p>
+      </div>
+      <button type="button" class="btn btn-primary" id="progEquipeLoadNow">Carregar equipe</button>
+    </div>
+  `;
+  list.querySelector('#progEquipeLoadNow')?.addEventListener('click', () => {
+    document.getElementById('progLoadContext')?.click();
+  });
+}
+
+async function renderEquipe() {
+  const list = document.getElementById('progList');
+  const feedback = document.getElementById('progCtxFeedback');
+  if (!list) return;
+
+  setActiveUiStep('B');
+  setSaveVisibility(false);
+  if (feedback) {
+    feedback.className = 'feedback mt-16 prog-feedback-ok';
+    feedback.textContent = 'Etapa B aberta. Confirme quem vai atender cada O.S.';
+  }
+
+  const programacaoId = window.__progGetProgramacaoId?.() || null;
+  if (!programacaoId) {
+    renderEquipePlaceholder(list);
+    return;
+  }
+
+  await renderProgramacaoEquipe(list, {
+    supervisao: document.getElementById('progSup')?.value || '',
+    dataReferencia: document.getElementById('progDataRef')?.value || '',
+    programacaoId,
+  });
+}
+
 function configureSteps() {
   const stepsWrap = document.getElementById('progSteps');
   if (!stepsWrap || stepsWrap.dataset.gestorAjustado === '1') return;
 
   const existing = [...stepsWrap.querySelectorAll('.stepbtn')];
   const layout = [
-    { ui: 'A', label: 'Distribuição', internal: '__distribuicao' },
-    { ui: 'B', label: 'Disponibilidade', internal: 'A' },
-    { ui: 'C', label: 'Estadia', internal: 'B' },
-    { ui: 'D', label: 'Alimentação', internal: 'C' },
+    { ui: 'A', label: 'Situação da O.S.', internal: '__distribuicao' },
+    { ui: 'B', label: 'Organizar Equipe', internal: '__equipe' },
+    { ui: 'C', label: 'Disponibilidade', internal: 'A' },
+    { ui: 'D', label: 'Estadia', internal: 'B' },
     { ui: 'E', label: 'Deslocamento', internal: 'D' },
-    { ui: 'F', label: 'Extras', internal: 'E' },
+    { ui: 'F', label: 'Alimentação', internal: 'C' },
+    { ui: 'G', label: 'Extras', internal: 'E' },
   ];
 
   layout.forEach((step, index) => {
@@ -312,6 +367,13 @@ function configureSteps() {
       renderDistribuicao({ loadOs: distribuicaoLoaded });
       return;
     }
+    if (btn.dataset.uiStep === 'B') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      renderEquipe();
+      return;
+    }
+    setActiveUiStep(btn.dataset.uiStep);
     setSaveVisibility(false);
     if (pendingKpiReload) triggerKpiReload();
   }, true);
@@ -455,21 +517,32 @@ function patchPendingOsModal() {
   }
 }
 
-function bindTopLoadForEtapaA() {
+function bindTopLoad() {
   const loadBtn = document.getElementById('progLoadContext');
   if (!loadBtn || loadBtn.dataset.distribuicaoLoadBound === '1') return;
   loadBtn.dataset.distribuicaoLoadBound = '1';
   loadBtn.addEventListener('click', (event) => {
-    if (currentUiStep !== 'A') return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    renderDistribuicao({ loadOs: true, force: true });
-    // Pré-carrega os colaboradores usados nas etapas B-F, para não exigir
-    // um segundo "Carregar" ao trocar de etapa. A view da etapa A é
-    // restaurada depois, pois loadContext() reescreve #progList.
-    Promise.resolve(window.__progLoadColaboradores?.()).finally(() => {
-      if (currentUiStep === 'A') renderDistribuicao({ loadOs: false });
-    });
+    if (currentUiStep === 'A') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      renderDistribuicao({ loadOs: true, force: true });
+      // Pré-carrega os colaboradores usados nas etapas B-G, para não exigir
+      // um segundo "Carregar" ao trocar de etapa. A view da etapa A é
+      // restaurada depois, pois loadContext() reescreve #progList.
+      Promise.resolve(window.__progLoadColaboradores?.()).finally(() => {
+        if (currentUiStep === 'A') renderDistribuicao({ loadOs: false });
+      });
+      return;
+    }
+    if (currentUiStep === 'B') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const list = document.getElementById('progList');
+      if (list) list.innerHTML = '<div class="prog-os-lazy-card"><div><strong>Carregando contexto...</strong><p>Buscando colaboradores e OS em ATENDER.</p></div></div>';
+      Promise.resolve(window.__progLoadColaboradores?.()).finally(() => {
+        if (currentUiStep === 'B') renderEquipe();
+      });
+    }
   }, true);
 }
 
@@ -478,7 +551,7 @@ async function initGestorProgramacaoAjustes() {
   injectGestorAjustesStyles();
   ensureStatusOsFilter();
   ensureSupCombo();
-  bindTopLoadForEtapaA();
+  bindTopLoad();
   configureSteps();
   renderDistribuicao({ loadOs: false });
 
@@ -486,7 +559,8 @@ async function initGestorProgramacaoAjustes() {
     autoSelectSingleSupervisao();
     patchPendingOsModal();
     guardDistribuicaoView();
-    bindTopLoadForEtapaA();
+    guardEquipeView();
+    bindTopLoad();
     ensureSupCombo();
     if (currentUiStep === 'A') {
       ensureStatusOsFilter();
