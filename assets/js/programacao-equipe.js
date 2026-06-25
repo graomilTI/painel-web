@@ -605,7 +605,11 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     try {
       const pendentes = osComCandidatosAtual.filter((it) => !it.confirmadoRow && it.candidatos.length);
       for (const item of pendentes) {
-        const melhor = item.candidatos[0];
+        // Menor custo total para a empresa; fallback para candidatos sem custo calculado
+        const comCusto = item.candidatos.filter((c) => c.custoTotal != null);
+        const melhor = comCusto.length
+          ? comCusto.reduce((a, b) => a.custoTotal <= b.custoTotal ? a : b)
+          : item.candidatos[0];
         if (!melhor) continue;
         await confirmarCandidato(programacaoId, item.os, melhor);
         // Remove o colaborador recém-confirmado dos candidatos das próximas OS
