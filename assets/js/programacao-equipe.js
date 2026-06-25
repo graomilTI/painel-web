@@ -112,6 +112,12 @@ function injectStyles() {
     .peq-cand-row:hover{background:rgba(34,197,94,.07)}
     .peq-cand-nome{color:#f1f5f9;font-size:12.5px;font-weight:800}
     .peq-cand-info{color:#94a3b8;font-size:11px;margin-top:1px}
+    .peq-cand-badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+    .peq-badge{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:850;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.6);color:#cbd5e1;white-space:nowrap}
+    .peq-badge--ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.22);color:#bbf7d0}
+    .peq-badge--warn{border-color:rgba(245,158,11,.32);background:rgba(245,158,11,.12);color:#fde68a}
+    .peq-badge--muted{border-color:rgba(148,163,184,.18);background:rgba(15,23,42,.5);color:#94a3b8}
+    .peq-badge--score{border-style:dashed;color:#93c5fd}
     .peq-btn{border:1px solid rgba(134,239,172,.35);background:rgba(22,163,74,.16);color:#dcfce7;border-radius:999px;padding:6px 11px;font-size:11.5px;font-weight:950;cursor:pointer;white-space:nowrap}
     .peq-btn:hover{background:rgba(22,163,74,.3)}
     .peq-btn.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.14);color:#fecaca}
@@ -256,10 +262,21 @@ function montarCandidatos(ponto, contexto, jaConfirmadosOutraOs) {
   return candidatos.slice(0, TOP_CANDIDATOS);
 }
 
-function candidatoInfo(cand) {
-  const km = cand.km != null ? `${cand.km} km` : 'sem coordenadas';
-  const aud = cand.auditPeso != null ? `${cand.auditPeso.toFixed(1)} pts auditoria` : 'sem auditoria recente';
-  return `${cand.tipoLabel} · ${km} · ${aud} · score ${(cand.score * 100).toFixed(0)}`;
+function contratoBadgeClass(tipoLabel) {
+  if (tipoLabel === 'Efetivo') return 'peq-badge--ok';
+  if (tipoLabel === 'Intermitente') return 'peq-badge--warn';
+  return 'peq-badge--muted';
+}
+
+function candidatoBadgesHtml(cand) {
+  const km = cand.km != null ? `${cand.km} km` : 'sem coord.';
+  const aud = cand.auditPeso != null ? `${cand.auditPeso.toFixed(1)} pts aud.` : 'sem auditoria';
+  return `
+    <span class="peq-badge ${contratoBadgeClass(cand.tipoLabel)}">${esc(cand.tipoLabel)}</span>
+    <span class="peq-badge ${cand.km != null ? 'peq-badge--ok' : 'peq-badge--muted'}">${esc(km)}</span>
+    <span class="peq-badge ${cand.auditPeso != null ? 'peq-badge--warn' : 'peq-badge--muted'}">${esc(aud)}</span>
+    <span class="peq-badge peq-badge--score">score ${(cand.score * 100).toFixed(0)}</span>
+  `;
 }
 
 function osCardHtml(item) {
@@ -273,7 +290,7 @@ function osCardHtml(item) {
   const candidatosHtml = candidatos.length
     ? `<div class="peq-candidatos">${candidatos.map((c) => `
         <div class="peq-cand-row">
-          <div><div class="peq-cand-nome">${esc(c.colaborador.nome)}</div><div class="peq-cand-info">${esc(candidatoInfo(c))}</div></div>
+          <div><div class="peq-cand-nome">${esc(c.colaborador.nome)}</div><div class="peq-cand-badges">${candidatoBadgesHtml(c)}</div></div>
           <button type="button" class="peq-btn" data-confirmar="${esc(c.colaboradorId)}">Confirmar</button>
         </div>`).join('')}</div>`
     : '<div class="peq-cand-info" style="margin-top:8px">Nenhum candidato disponível (todos já confirmados em outras OS).</div>';
