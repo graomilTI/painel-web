@@ -1,15 +1,13 @@
 // Etapa B da Programação: "quem vai atender as OS disponíveis".
-// Sugere candidatos por OS (Contrato 50% / Distância 30% / Auditoria 20%),
-// o gestor confirma, e o mapa mostra o roteiro (casa do colaborador -> ponto
-// de embarque) com KM real via OSRM (edge function programacao-rota-equipe).
+// Cruza os colaboradores da regional/supervisão selecionada com as OS em
+// ATENDER e sugere candidatos ranqueados (Contrato 50% / Distância 30% /
+// Auditoria 20%); o gestor confirma quem atende cada OS.
 import { supabase } from './supabaseClient.js';
 
 const PESOS = { contrato: 0.5, distancia: 0.3, auditoria: 0.2 };
 const CONTRATO_SCORE = { EFETIVO: 1, INTERMITENTE: 0.6, DIARISTA: 0.3 };
 const AUDITORIA_DIAS = 180;
 const TOP_CANDIDATOS = 8;
-const LEAFLET_CSS_ID = 'leaflet-css-prog-equipe';
-const LEAFLET_JS_ID = 'leaflet-js-prog-equipe';
 
 function esc(value) {
   return String(value ?? '')
@@ -93,45 +91,16 @@ function rankScores(values) {
   return scores;
 }
 
-function loadScriptComTimeout(src, id, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timeout ao carregar ${src}`)), timeoutMs);
-    const script = document.createElement('script');
-    script.id = id;
-    script.src = src;
-    script.onload = () => { clearTimeout(timer); resolve(); };
-    script.onerror = () => { clearTimeout(timer); reject(new Error(`Falha ao carregar ${src}`)); };
-    document.head.appendChild(script);
-  });
-}
-
-async function ensureLeaflet() {
-  if (window.L) return true;
-  try {
-    if (!document.getElementById(LEAFLET_CSS_ID)) {
-      const link = document.createElement('link');
-      link.id = LEAFLET_CSS_ID;
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-    }
-    if (!document.getElementById(LEAFLET_JS_ID)) {
-      await loadScriptComTimeout('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', LEAFLET_JS_ID, 8000);
-    }
-    return Boolean(window.L);
-  } catch (error) {
-    console.warn('[programacao-equipe] Leaflet indisponível.', error);
-    return false;
-  }
-}
-
 function injectStyles() {
   if (document.getElementById('progEquipeStyles')) return;
   const style = document.createElement('style');
   style.id = 'progEquipeStyles';
   style.textContent = `
-    .peq-shell{display:grid;grid-template-columns:minmax(420px,1.2fr) minmax(340px,.8fr);gap:14px;align-items:start}
-    .peq-os-list{display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 300px);overflow:auto;padding-right:4px}
+    .peq-kpis{display:grid;grid-template-columns:repeat(2,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+    .peq-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:12px;padding:10px}
+    .peq-kpi span{display:block;color:#93c5fd;font-size:9.5px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}
+    .peq-kpi strong{display:block;margin-top:4px;color:#fff;font-size:18px}
+    .peq-os-list{display:flex;flex-direction:column;gap:10px}
     .peq-os-card{border:1px solid rgba(52,211,153,.18);border-radius:16px;background:rgba(2,6,23,.32);padding:12px}
     .peq-os-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;color:#f8fafc;font-weight:950;font-size:13px}
     .peq-os-head small{color:#bbf7d0;font-size:11px;white-space:nowrap}
@@ -149,104 +118,11 @@ function injectStyles() {
     .peq-btn.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.14);color:#fecaca}
     .peq-btn:disabled{opacity:.6;cursor:not-allowed}
     .peq-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:22px;text-align:center;color:#94a3b8;line-height:1.4}
-    .peq-map-panel{position:sticky;top:92px;border:1px solid rgba(52,211,153,.18);border-radius:16px;background:rgba(2,6,23,.32);overflow:hidden}
-    .peq-map-head{padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12);display:flex;justify-content:space-between;align-items:center;gap:8px}
-    .peq-map-head h4{margin:0;color:#f8fafc;font-size:14px}
-    .peq-map{height:480px;position:relative}
-    #peqMapEl{position:absolute;inset:0}
-    .peq-map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#94a3b8;text-align:center;padding:18px;z-index:2}
-    .peq-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:10px 14px}
-    .peq-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:12px;padding:10px}
-    .peq-kpi span{display:block;color:#93c5fd;font-size:9.5px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}
-    .peq-kpi strong{display:block;margin-top:4px;color:#fff;font-size:18px}
-    @media(max-width:1100px){.peq-shell{grid-template-columns:1fr}.peq-map-panel{position:relative;top:auto}}
   `;
   document.head.appendChild(style);
 }
 
-let _map = null;
-let _mapInitializing = false;
-let _layerPontos = null;
-let _layerColabs = null;
-let _layerRotas = null;
-let _resizeBound = false;
-let _mapMountedOn = null;
-
-async function ensureMap(root) {
-  const mapEl = root.querySelector('#peqMapEl');
-  if (!mapEl) return;
-  // O painel é remontado (innerHTML trocado) a cada render/troca de etapa — o
-  // #peqMapEl antigo morre junto, mas a instância Leaflet em _map continuava
-  // viva apontando para um nó desconectado. Sem isso, voltar para a etapa B
-  // reaproveitava esse mapa "fantasma" e travava a inicialização.
-  if (_map && _mapMountedOn !== mapEl) {
-    _map.remove();
-    _map = null;
-  }
-  if (_map) return;
-  if (_mapInitializing) return;
-  _mapInitializing = true;
-  try {
-    const ok = await ensureLeaflet();
-    if (!mapEl.isConnected) return;
-    if (!ok) {
-      mapEl.innerHTML = '<div class="peq-map-loading">Mapa indisponível (falha ao carregar Leaflet).</div>';
-      return;
-    }
-    const L = window.L;
-    _map = L.map(mapEl, { zoomControl: true, scrollWheelZoom: true, center: [-14.235, -51.925], zoom: 4 });
-    _mapMountedOn = mapEl;
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OSM &copy; CARTO',
-      subdomains: 'abcd',
-    }).addTo(_map);
-    _layerPontos = L.layerGroup().addTo(_map);
-    _layerColabs = L.layerGroup().addTo(_map);
-    _layerRotas = L.layerGroup().addTo(_map);
-    if (!_resizeBound) {
-      window.addEventListener('resize', () => { if (_map) _map.invalidateSize(); });
-      _resizeBound = true;
-    }
-    setTimeout(() => { if (_map) _map.invalidateSize(); }, 80);
-  } finally {
-    _mapInitializing = false;
-  }
-}
-
-function updateMap(osComCandidatos) {
-  if (!_map || !window.L) return;
-  const L = window.L;
-  _layerPontos.clearLayers();
-  _layerColabs.clearLayers();
-  _layerRotas.clearLayers();
-
-  const bounds = [];
-  osComCandidatos.forEach(({ os, ponto, confirmados }) => {
-    if (ponto && hasGeo(ponto.lat, ponto.lng)) {
-      const marker = L.circleMarker([ponto.lat, ponto.lng], { radius: 8, color: '#a78bfa', fillColor: '#a78bfa', fillOpacity: .85, weight: 2 });
-      marker.bindTooltip(`${esc(ponto.nome || os.embarque || 'Ponto de embarque')}`, { className: 'rot-tt' });
-      _layerPontos.addLayer(marker);
-      bounds.push([ponto.lat, ponto.lng]);
-    }
-    confirmados.forEach((conf) => {
-      if (conf.origem && hasGeo(conf.origem.lat, conf.origem.lng)) {
-        const marker = L.circleMarker([conf.origem.lat, conf.origem.lng], { radius: 6, color: '#60a5fa', fillColor: '#60a5fa', fillOpacity: .85, weight: 2 });
-        marker.bindTooltip(`${esc(conf.nome_colaborador)} · ${conf.km != null ? `${conf.km} km` : 'sem rota'}`, { className: 'rot-tt' });
-        _layerColabs.addLayer(marker);
-        bounds.push([conf.origem.lat, conf.origem.lng]);
-      }
-      if (conf.geometria?.type === 'LineString' && Array.isArray(conf.geometria.coordinates)) {
-        const latlngs = conf.geometria.coordinates.map(([lng, lat]) => [lat, lng]);
-        L.polyline(latlngs, { color: '#22c55e', weight: 3, opacity: .8, dashArray: conf.distancia_real ? null : '6 6' }).addTo(_layerRotas);
-      }
-    });
-  });
-
-  if (bounds.length) _map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
-}
-
-const cache = { pontos: new Map(), snapshot: new Map(), colabBase: new Map(), contrato: new Map(), auditoria: null };
+const cache = { snapshot: new Map(), colabBase: new Map(), contrato: new Map(), auditoria: null };
 const CACHE_TTL_MS = 1000 * 60 * 5;
 
 function cacheGet(map, key) {
@@ -305,6 +181,7 @@ async function loadContratos(cpfs) {
   if (pendentes.length) {
     const { data, error } = await supabase.from('colaboradores').select('cpf,tipo').in('cpf', pendentes);
     if (!error) (data || []).forEach((row) => cache.contrato.set(normalizeCpf(row.cpf), row.tipo));
+    else pendentes.forEach((c) => cache.contrato.set(c, null));
   }
   const map = new Map();
   cpfs.forEach((c) => map.set(c, cache.contrato.get(c) || null));
@@ -319,6 +196,7 @@ async function loadColabBase(cpfs) {
       const cpf = normalizeCpf(row.cpf);
       if (cpf && !cache.colabBase.has(cpf)) cache.colabBase.set(cpf, hasGeo(row.latitude, row.longitude) ? { lat: Number(row.latitude), lng: Number(row.longitude) } : null);
     });
+    pendentes.forEach((c) => { if (!cache.colabBase.has(c)) cache.colabBase.set(c, null); });
   }
   const map = new Map();
   cpfs.forEach((c) => map.set(c, cache.colabBase.get(c) || null));
@@ -440,54 +318,15 @@ function osCardHtml(item) {
   `;
 }
 
-async function atualizarMapaENativos(root, osComCandidatos, confirmadosPorOs) {
-  await ensureMap(root);
-  const pares = [];
-  osComCandidatos.forEach(({ os }) => {
-    const confirmado = confirmadosPorOs.get(os.id);
-    if (confirmado) {
-      const home = confirmado.__home;
-      if (home) pares.push({ os_id: os.id, colaborador_id: confirmado.colaborador_id, origem_lat: home.lat, origem_lng: home.lng });
-    }
-  });
-
-  let rotasPorPar = new Map();
-  let porOs = {};
-  if (pares.length) {
-    try {
-      const invocacao = supabase.functions.invoke('programacao-rota-equipe', { body: { pares } });
-      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo esgotado ao calcular a rota.')), 25000));
-      const { data, error } = await Promise.race([invocacao, timeout]);
-      if (error) throw error;
-      (data?.rotas || []).forEach((r) => rotasPorPar.set(`${r.os_id}:${r.colaborador_id}`, r));
-      porOs = data?.porOs || {};
-    } catch (error) {
-      console.warn('[programacao-equipe] falha ao calcular rota.', error);
-    }
-  }
-
+function atualizarKpis(root, osComCandidatos, confirmadosPorOs) {
   const kpiKmEl = root.querySelector('#peqKpiKm');
   const kpiOsEl = root.querySelector('#peqKpiOs');
-  const kmTotal = Object.values(porOs).reduce((s, o) => s + (o.km_total || 0), 0);
+  const kmTotal = osComCandidatos.reduce((soma, { os }) => {
+    const km = confirmadosPorOs.get(os.id)?.km_estimado;
+    return soma + (Number.isFinite(km) ? km : 0);
+  }, 0);
   if (kpiKmEl) kpiKmEl.textContent = `${round1(kmTotal)} km`;
   if (kpiOsEl) kpiOsEl.textContent = String(confirmadosPorOs.size);
-
-  const osParaMapa = osComCandidatos.map(({ os, ponto }) => {
-    const confirmado = confirmadosPorOs.get(os.id);
-    const confirmados = [];
-    if (confirmado) {
-      const rota = rotasPorPar.get(`${os.id}:${confirmado.colaborador_id}`);
-      confirmados.push({
-        nome_colaborador: confirmado.nome_colaborador,
-        origem: confirmado.__home,
-        km: rota?.km ?? confirmado.km_estimado,
-        geometria: rota?.geometria || null,
-        distancia_real: rota?.distancia_real || false,
-      });
-    }
-    return { os, ponto, confirmados };
-  });
-  updateMap(osParaMapa);
 }
 
 export async function renderProgramacaoEquipe(content, options = {}) {
@@ -500,17 +339,11 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       <h4>Organizar Equipe</h4>
       <span class="badge">Etapa B</span>
     </div>
-    <div class="peq-shell">
-      <div class="peq-os-list" id="peqOsList"><div class="peq-empty">Carregando OS em ATENDER...</div></div>
-      <aside class="peq-map-panel">
-        <div class="peq-map-head"><h4>Roteiro logístico</h4></div>
-        <div class="peq-kpis">
-          <div class="peq-kpi"><span>Km total estimado</span><strong id="peqKpiKm">0 km</strong></div>
-          <div class="peq-kpi"><span>OS com equipe</span><strong id="peqKpiOs">0</strong></div>
-        </div>
-        <div class="peq-map"><div id="peqMapEl"></div></div>
-      </aside>
+    <div class="peq-kpis">
+      <div class="peq-kpi"><span>Km total estimado</span><strong id="peqKpiKm">0 km</strong></div>
+      <div class="peq-kpi"><span>OS com equipe</span><strong id="peqKpiOs">0</strong></div>
     </div>
+    <div class="peq-os-list" id="peqOsList"><div class="peq-empty">Carregando OS em ATENDER...</div></div>
   `;
 
   const listEl = content.querySelector('#peqOsList');
@@ -529,8 +362,6 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const [osRows, equipeRows] = await Promise.all([loadOsAtender(supervisao), loadEquipeExistente(programacaoId)]);
       if (!osRows.length) {
         listEl.innerHTML = '<div class="peq-empty">Nenhuma OS marcada como ATENDER para esta supervisão. Confirme as OS na etapa A.</div>';
-        await ensureMap(content);
-        updateMap([]);
         return;
       }
 
@@ -538,10 +369,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const contexto = await montarContexto(supervisao);
 
       const confirmadosPorOs = new Map();
-      equipeRows.filter((r) => r.confirmado).forEach((r) => {
-        const home = contexto.bases.get(normalizeCpf(r.colaborador_id)) || null;
-        confirmadosPorOs.set(r.os_id, { ...r, __home: home });
-      });
+      equipeRows.filter((r) => r.confirmado).forEach((r) => confirmadosPorOs.set(r.os_id, r));
       const colaboradoresConfirmadosEmOutraOs = new Set(equipeRows.filter((r) => r.confirmado).map((r) => r.colaborador_id));
 
       const osComCandidatos = osRows.map((os) => {
@@ -552,6 +380,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       });
 
       listEl.innerHTML = osComCandidatos.map(osCardHtml).join('');
+      atualizarKpis(content, osComCandidatos, confirmadosPorOs);
 
       listEl.querySelectorAll('[data-confirmar]').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -589,8 +418,6 @@ export async function renderProgramacaoEquipe(content, options = {}) {
           }
         });
       });
-
-      await atualizarMapaENativos(content, osComCandidatos, confirmadosPorOs);
     } catch (error) {
       console.error('[programacao-equipe] render:', error);
       listEl.innerHTML = `<div class="peq-empty">${esc(error.message || 'Erro ao montar a equipe.')}</div>`;
