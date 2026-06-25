@@ -18,6 +18,9 @@ verify_jwt = true
 [functions.frotas-roteirizar]
 verify_jwt = true
 
+[functions.programacao-rota-equipe]
+verify_jwt = true
+
 [functions.geocode-colaboradores]
 verify_jwt = true
 

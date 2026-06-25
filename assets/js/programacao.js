@@ -11,7 +11,9 @@ const STEPS = [
 ];
 
 const DISPONIBILIDADES = ['OK', 'LOGISTICA', 'DESLOCAMENTO', 'SEM EMBARQUE', 'INDISPONIVEL', 'ATESTADO', 'FALTA', 'FERIAS', 'FOLGA'];
-const DISPONIBILIDADES_PRINCIPAIS = ['OK', 'LOGISTICA', 'DESLOCAMENTO', 'SEM EMBARQUE', 'INDISPONIVEL'];
+// Etapa C (Disponibilidade) só lista quem não atende OS — "OK" agora é
+// decidido só pela confirmação na etapa B (Organizar Equipe).
+const DISPONIBILIDADES_ETAPA_C = ['LOGISTICA', 'DESLOCAMENTO', 'SEM EMBARQUE', 'INDISPONIVEL'];
 const INDISPONIBILIDADE_MOTIVOS = ['ATESTADO', 'FALTA', 'FERIAS', 'FOLGA'];
 const TIPOS_ESTADIA = ['CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
 const TIPOS_ESTADIA_BOTOES = ['PERNOITE', 'ALOJAMENTO', 'HOTEL'];
@@ -473,6 +475,7 @@ initProtectedPage('Programação', (content) => {
 
   function bindEvents() {
     window.__progLoadColaboradores = loadContext;
+    window.__progGetProgramacaoId = () => state.programacaoId;
     el.loadBtn.addEventListener('click', loadContext);
     el.saveBtn.addEventListener('click', saveProgramacao);
     el.search.addEventListener('input', debounce(() => {
@@ -652,6 +655,7 @@ initProtectedPage('Programação', (content) => {
       const nome = normalizeText(row.nome);
       if (nome && !state.operacionalColabByNome.has(nome)) state.operacionalColabByNome.set(nome, row);
     });
+    state.pontosEmbarqueById = new Map((state.pontosEmbarque || []).map((p) => [p.id, p]));
   }
 
   function findOperacionalColab(colab) {
@@ -688,6 +692,10 @@ initProtectedPage('Programação', (content) => {
     if (!os) return null;
     if (Number.isFinite(Number(os.ponto1_latitude)) && Number.isFinite(Number(os.ponto1_longitude))) {
       return { latitude: Number(os.ponto1_latitude), longitude: Number(os.ponto1_longitude), nome: os.embarque || 'Ponto da O.S.' };
+    }
+    if (os.ponto_embarque_id) {
+      const ponto = state.pontosEmbarqueById?.get(os.ponto_embarque_id);
+      if (ponto && Number.isFinite(Number(ponto.latitude)) && Number.isFinite(Number(ponto.longitude))) return ponto;
     }
     const emb = normalizeText(os.embarque || os.local_embarque || '');
     if (!emb) return null;
@@ -1130,9 +1138,10 @@ initProtectedPage('Programação', (content) => {
     if (!state.programacaoId || !state.colaboradores.length) return;
     const payload = state.colaboradores.map((colab) => {
       const motivo = disponibilidadeNorm(colab.indisponibilidade?.motivo || '');
+      const veiculoVinculado = !colab.indisponibilidade && !colaboradorPodeFicarOk(colab) ? suggestVeiculoForColab(colab) : null;
       const disponibilidade = colab.indisponibilidade
         ? (INDISPONIBILIDADE_MOTIVOS.includes(motivo) ? motivo : 'ATESTADO')
-        : (colaboradorPodeFicarOk(colab) ? 'OK' : 'SEM EMBARQUE');
+        : (colaboradorPodeFicarOk(colab) ? 'OK' : (veiculoVinculado ? 'LOGISTICA' : 'SEM EMBARQUE'));
       return {
         programacao_id: state.programacaoId,
         data_referencia: state.dataReferencia,
@@ -1142,6 +1151,7 @@ initProtectedPage('Programação', (content) => {
         coordenacao: colab.coordenacao || null,
         supervisao: colab.supervisao || null,
         disponibilidade,
+        placa_veiculo: veiculoVinculado ? onlyPlate(veiculoVinculado.placa) : null,
       };
     });
 
@@ -1262,7 +1272,10 @@ initProtectedPage('Programação', (content) => {
   }
 
   function renderDisponibilidade(rows) {
-    const { disponiveis, bloqueados } = splitByDisponibilidade(rows);
+    // Quem já foi confirmado para atender uma O.S. na etapa B (Organizar
+    // Equipe) não aparece mais aqui — esta etapa é só para quem não atende.
+    const naoAtende = rows.filter((colab) => disponibilidadeCategoria(disponibilidadeAtual(colab)) !== 'OK');
+    const { disponiveis, bloqueados } = splitByDisponibilidade(naoAtende);
     el.list.innerHTML = `
       ${renderDisponibilidadeTable('Disponíveis', disponiveis, false)}
       ${renderDisponibilidadeTable('Bloqueados', bloqueados, true)}
@@ -1288,18 +1301,15 @@ initProtectedPage('Programação', (content) => {
                 const sugestao = categoria === 'LOGISTICA' && !placa ? suggestVeiculoForColab(colab) : null;
                 const placaSugerida = sugestao?.placa || '';
                 const alertMsg = placa ? patrimonioMessageForRow(colab, 'MOTORISTA FROTA', placa) : '';
-                const podeOk = colaboradorPodeFicarOk(colab);
                 return `<tr data-colab-id="${escapeHtml(colab.id)}" data-table="programacao_colaboradores">
                   <td>${colabCell(colab)}</td>
                   <td>
                     <div class="prog-tipo-selector">
-                      ${DISPONIBILIDADES_PRINCIPAIS.map((op) => {
-                        const okBloqueado = op === 'OK' && !podeOk;
-                        return `<button type="button" class="prog-tipo-btn${categoria === op ? ' active' : ''}${okBloqueado ? ' disabled' : ''}" data-tipo="${escapeHtml(op)}" ${okBloqueado ? 'disabled title="OK só é liberado quando houver O.S. em ATENDER vinculada ao colaborador"' : ''}>${escapeHtml(disponibilidadeLabel(op))}</button>`;
+                      ${DISPONIBILIDADES_ETAPA_C.map((op) => {
+                        return `<button type="button" class="prog-tipo-btn${categoria === op ? ' active' : ''}" data-tipo="${escapeHtml(op)}">${escapeHtml(disponibilidadeLabel(op))}</button>`;
                       }).join('')}
                       <input type="hidden" data-field="disponibilidade" value="${escapeHtml(categoria === 'INDISPONIVEL' ? (motivo || 'ATESTADO') : categoria)}" />
                     </div>
-                    ${categoria === 'OK' && !podeOk ? `<div class="prog-placa-alert show">OK bloqueado: este colaborador não possui O.S. marcada como ATENDER no menu OS.</div>` : ''}
                     ${categoria === 'INDISPONIVEL' ? `<div class="prog-indisponivel-wrap">
                       <select data-indisponivel-motivo>${INDISPONIBILIDADE_MOTIVOS.map((op) => `<option value="${escapeHtml(op)}" ${String(motivo || 'ATESTADO') === op ? 'selected' : ''}>${escapeHtml(disponibilidadeLabel(op))}</option>`).join('')}</select>
                     </div>` : ''}
