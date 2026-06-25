@@ -14,7 +14,7 @@ function injectStyles() {
   style.textContent = `
     body.prog-step-a-os #progDistribuicaoOsMount .os-lite-list{gap:6px!important;overflow-x:auto;padding-bottom:4px}
     body.prog-step-a-os #progDistribuicaoOsMount .os-lite-card{display:block!important;border-radius:12px!important;overflow:visible!important;background:rgba(2,6,23,.22)!important;border:1px solid rgba(52,211,153,.16)!important;box-shadow:none!important;min-width:1180px}
-    body.prog-step-a-os #progDistribuicaoOsMount .os-a-line{display:grid;grid-template-columns:minmax(250px,1.55fr) 82px 132px minmax(250px,1.55fr) 116px 112px 132px 225px;align-items:center;gap:0;min-height:58px}
+    body.prog-step-a-os #progDistribuicaoOsMount .os-a-line{display:grid;grid-template-columns:minmax(250px,1.55fr) 82px 132px minmax(250px,1.55fr) 116px 112px 225px;align-items:center;gap:0;min-height:58px}
     body.prog-step-a-os #progDistribuicaoOsMount .os-a-cell{min-width:0;padding:8px 10px;border-right:1px solid rgba(148,163,184,.1);display:flex;flex-direction:column;justify-content:center;gap:2px;height:100%}
     body.prog-step-a-os #progDistribuicaoOsMount .os-a-cell:last-child{border-right:0}
     body.prog-step-a-os #progDistribuicaoOsMount .os-a-label{font-size:9px;line-height:1;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:950;white-space:nowrap}
@@ -27,7 +27,7 @@ function injectStyles() {
     body.prog-step-a-os #progDistribuicaoOsMount .os-a-actions .os-lite-btn{padding:6px 8px!important}
     @media(max-width:900px){
       body.prog-step-a-os #progDistribuicaoOsMount .os-lite-card{min-width:1120px}
-      body.prog-step-a-os #progDistribuicaoOsMount .os-a-line{grid-template-columns:minmax(230px,1.5fr) 78px 125px minmax(230px,1.5fr) 105px 105px 125px 215px}
+      body.prog-step-a-os #progDistribuicaoOsMount .os-a-line{grid-template-columns:minmax(230px,1.5fr) 78px 125px minmax(230px,1.5fr) 105px 105px 215px}
     }
   `;
   document.head.appendChild(style);
@@ -86,7 +86,6 @@ function compactCard(card) {
       ${cell('Local de Embarque', local)}
       ${cell('Produto', produto)}
       <div class="os-a-cell"><span class="os-a-label">Saldo</span><span class="os-a-value saldo">${escapeHtml(saldo)}</span></div>
-      ${cell('Contrato', contrato)}
       <div class="os-a-cell os-a-actions">
         <div class="os-lite-buttons">${buttonsHtml}</div>
         ${statusHtml}
