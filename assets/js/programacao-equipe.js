@@ -240,6 +240,31 @@ function atualizarKpis(root, osComCandidatos, confirmadosPorOs) {
 // Reaproveita o padrão visual/técnico de assets/js/modules/frotas-roteirizacao.js
 // (tiles CartoDB dark, layer groups, polyline verde, marcadores circulares).
 
+// Ícone de volante (motorista/logística — quem está com a leitura do veículo
+// no patrimônio) e ícone de pin vermelho de check-in (ponto de embarque),
+// no mesmo estilo visual do resto do painel.
+const ICON_WHEEL_SVG = `
+  <svg width="26" height="26" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="13" cy="13" r="11.5" fill="#16a34a" stroke="#dcfce7" stroke-width="2"/>
+    <circle cx="13" cy="13" r="7" fill="none" stroke="#052e16" stroke-width="2"/>
+    <circle cx="13" cy="13" r="2" fill="#052e16"/>
+    <line x1="13" y1="6.5" x2="13" y2="9.7" stroke="#052e16" stroke-width="2"/>
+    <line x1="8.2" y1="16.2" x2="11.1" y2="14.4" stroke="#052e16" stroke-width="2"/>
+    <line x1="17.8" y1="16.2" x2="14.9" y2="14.4" stroke="#052e16" stroke-width="2"/>
+  </svg>`;
+const ICON_PIN_SVG = `
+  <svg width="26" height="34" viewBox="0 0 26 34" xmlns="http://www.w3.org/2000/svg">
+    <path d="M13 33C13 33 24 20.5 24 12.5C24 6.15 18.85 1 12.5 1S1 6.15 1 12.5C1 20.5 13 33 13 33Z" fill="#ef4444" stroke="#fecaca" stroke-width="1.5"/>
+    <circle cx="12.5" cy="12.5" r="5.2" fill="#fff"/>
+  </svg>`;
+
+function iconWheel() {
+  return window.L.divIcon({ className: '', html: ICON_WHEEL_SVG, iconSize: [26, 26], iconAnchor: [13, 13] });
+}
+function iconPin() {
+  return window.L.divIcon({ className: '', html: ICON_PIN_SVG, iconSize: [26, 34], iconAnchor: [13, 33] });
+}
+
 function criarMapState() {
   return { map: null, layerRota: null, layerPontos: null, ready: false };
 }
@@ -261,32 +286,79 @@ async function garantirMapa(mapState, mountEl) {
   return mapState.map;
 }
 
-function desenharNoMapa(mapState, { pontos, linhas }) {
+function desenharPolyline(mapState, bounds, { coords, geometria, dashed }) {
+  const L = window.L;
+  if (geometria?.type === 'LineString' && Array.isArray(geometria.coordinates)) {
+    const latlngs = geometria.coordinates.map(([lng, lat]) => [lat, lng]);
+    L.polyline(latlngs, { color: '#22c55e', weight: 4, opacity: 0.85 }).addTo(mapState.layerRota);
+    latlngs.forEach((p) => bounds.push(p));
+  } else if (Array.isArray(coords) && coords.length >= 2) {
+    L.polyline(coords, { color: '#22c55e', weight: 4, opacity: 0.85, dashArray: dashed ? '6 6' : null }).addTo(mapState.layerRota);
+    coords.forEach((p) => bounds.push(p));
+  }
+}
+
+// Preview simples: 1 colaborador -> 1 embarque (reta), usado antes de calcular
+// rotas reais ou quando a OS focada não está em nenhuma rota calculada.
+function desenharNoMapa(mapState, { pontoEmbarque, colaborador, linha }) {
   const L = window.L;
   if (!L || !mapState.map) return;
   mapState.layerRota.clearLayers();
   mapState.layerPontos.clearLayers();
 
   const bounds = [];
-  pontos.forEach(({ lat, lng, cor, titulo }) => {
-    if (!hasGeo(lat, lng)) return;
-    const marker = L.circleMarker([lat, lng], { radius: 7, color: '#fff', weight: 2, fillColor: cor, fillOpacity: 0.95 });
-    if (titulo) marker.bindTooltip(esc(titulo), { className: 'peqb-tt' });
+  if (pontoEmbarque && hasGeo(pontoEmbarque.lat, pontoEmbarque.lng)) {
+    const marker = L.marker([pontoEmbarque.lat, pontoEmbarque.lng], { icon: iconPin() });
+    marker.bindTooltip(esc(pontoEmbarque.titulo || 'Embarque'), { className: 'peqb-tt' });
     mapState.layerPontos.addLayer(marker);
-    bounds.push([lat, lng]);
-  });
-
-  linhas.forEach(({ coords, geometria, dashed }) => {
-    if (geometria?.type === 'LineString' && Array.isArray(geometria.coordinates)) {
-      const latlngs = geometria.coordinates.map(([lng, lat]) => [lat, lng]);
-      L.polyline(latlngs, { color: '#22c55e', weight: 4, opacity: 0.85 }).addTo(mapState.layerRota);
-      latlngs.forEach((p) => bounds.push(p));
-    } else if (Array.isArray(coords) && coords.length >= 2) {
-      L.polyline(coords, { color: '#22c55e', weight: 4, opacity: 0.85, dashArray: dashed ? '6 6' : null }).addTo(mapState.layerRota);
-    }
-  });
+    bounds.push([pontoEmbarque.lat, pontoEmbarque.lng]);
+  }
+  if (colaborador && hasGeo(colaborador.lat, colaborador.lng)) {
+    const marker = colaborador.logistica
+      ? L.marker([colaborador.lat, colaborador.lng], { icon: iconWheel() })
+      : L.circleMarker([colaborador.lat, colaborador.lng], { radius: 7, color: '#fff', weight: 2, fillColor: '#60a5fa', fillOpacity: 0.95 });
+    marker.bindTooltip(esc(colaborador.titulo), { className: 'peqb-tt' });
+    mapState.layerPontos.addLayer(marker);
+    bounds.push([colaborador.lat, colaborador.lng]);
+  }
+  if (linha) desenharPolyline(mapState, bounds, linha);
 
   if (bounds.length) mapState.map.fitBounds(bounds, { padding: [28, 28], maxZoom: 13 });
+}
+
+// Desenha todas as rotas calculadas de uma vez (chamado por "Ver rotas no
+// mapa"): origem do veículo com ícone de volante (é onde o motorista/
+// logística está agora), paradas de coleta em azul, embarque com pin
+// vermelho de check-in.
+function desenharTodasRotas(mapState, rotas) {
+  const L = window.L;
+  if (!L || !mapState.map) return;
+  mapState.layerRota.clearLayers();
+  mapState.layerPontos.clearLayers();
+
+  const bounds = [];
+  rotas.forEach((rota) => {
+    if (!rota.paradas.length) return;
+    const coords = [rota.origem, ...rota.paradas].map((p) => [p.lat, p.lng]);
+    desenharPolyline(mapState, bounds, { coords, geometria: rota.geometria });
+
+    if (hasGeo(rota.origem?.lat, rota.origem?.lng)) {
+      const marker = L.marker([rota.origem.lat, rota.origem.lng], { icon: iconWheel() });
+      marker.bindTooltip(esc(`Motorista: ${rota.motorista || 'Não identificado'} · ${rota.placa}`), { className: 'peqb-tt' });
+      mapState.layerPontos.addLayer(marker);
+    }
+    rota.paradas.forEach((p) => {
+      if (!hasGeo(p.lat, p.lng)) return;
+      const marker = p.tipo === 'embarque'
+        ? L.marker([p.lat, p.lng], { icon: iconPin() })
+        : L.circleMarker([p.lat, p.lng], { radius: 7, color: '#fff', weight: 2, fillColor: '#60a5fa', fillOpacity: 0.95 });
+      const titulo = p.tipo === 'embarque' ? (p.ponto_nome || 'Embarque') : `Coleta: ${p.colaborador_nome}`;
+      marker.bindTooltip(esc(titulo), { className: 'peqb-tt' });
+      mapState.layerPontos.addLayer(marker);
+    });
+  });
+
+  if (bounds.length) mapState.map.fitBounds(bounds, { padding: [28, 28], maxZoom: 12 });
 }
 
 export async function renderProgramacaoEquipe(content, options = {}) {
@@ -328,6 +400,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   let carregando = false;
   let osComCandidatosAtual = [];
   let rotasPorOsId = new Map(); // os_id -> rota completa (frotas-roteirizar), só após "Ver rotas no mapa"
+  let rotasCompletas = []; // todas as rotas relevantes (sem duplicar veículo), desenhadas juntas no mapa
   let focoOsId = null;
 
   function candidatoSelecionado(item) {
@@ -355,25 +428,24 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     }
     mapEmptyEl.style.display = 'none';
 
-    const rotaReal = rotasPorOsId.get(osId);
-    if (rotaReal) {
-      const pontos = rotaReal.paradas.map((p) => ({
-        lat: p.lat, lng: p.lng, cor: p.tipo === 'colaborador' ? '#60a5fa' : '#a78bfa',
-        titulo: p.tipo === 'colaborador' ? `Coleta: ${p.colaborador_nome}` : (p.ponto_nome || 'Embarque'),
-      }));
-      const coords = [{ lat: rotaReal.origem.lat, lng: rotaReal.origem.lng }, ...rotaReal.paradas].map((p) => [p.lat, p.lng]);
-      desenharNoMapa(mapState, { pontos, linhas: [{ coords, geometria: rotaReal.geometria }] });
+    // Com "Ver rotas no mapa" já calculado, todas as rotas ficam visíveis ao
+    // mesmo tempo — clicar numa OS só dá zoom/foco na rota dela específica.
+    if (rotasCompletas.length) {
+      desenharTodasRotas(mapState, rotasCompletas);
+      const rotaDaOs = rotasPorOsId.get(osId);
+      if (rotaDaOs) {
+        const bounds = [rotaDaOs.origem, ...rotaDaOs.paradas].map((p) => [p.lat, p.lng]);
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 13 });
+      }
       return;
     }
 
     const cand = candidatoSelecionado(item);
-    const pontos = [{ lat: item.ponto.lat, lng: item.ponto.lng, cor: '#a78bfa', titulo: item.ponto.nome || 'Embarque' }];
-    const linhas = [];
-    if (cand && hasGeo(cand.lat, cand.lng)) {
-      pontos.push({ lat: cand.lat, lng: cand.lng, cor: '#60a5fa', titulo: cand.nome });
-      linhas.push({ coords: [[cand.lat, cand.lng], [item.ponto.lat, item.ponto.lng]], dashed: true });
-    }
-    desenharNoMapa(mapState, { pontos, linhas });
+    desenharNoMapa(mapState, {
+      pontoEmbarque: { lat: item.ponto.lat, lng: item.ponto.lng, titulo: item.ponto.nome || 'Embarque' },
+      colaborador: cand && hasGeo(cand.lat, cand.lng) ? { lat: cand.lat, lng: cand.lng, titulo: cand.nome, logistica: !!cand.veiculoId } : null,
+      linha: cand && hasGeo(cand.lat, cand.lng) ? { coords: [[cand.lat, cand.lng], [item.ponto.lat, item.ponto.lng]], dashed: true } : null,
+    });
     if (!cand || !hasGeo(cand?.lat, cand?.lng)) {
       mapEmptyEl.style.display = 'flex';
       mapEmptyEl.textContent = 'Colaborador sem coordenadas — mostrando só o ponto de embarque.';
@@ -499,11 +571,18 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       if (data?.error) throw new Error(data.error);
 
       rotasPorOsId = new Map();
-      (data?.rotas || []).forEach((rota) => {
+      // Só as rotas que atendem alguma OS desta tela (a function devolve
+      // também veículos sem embarque hoje, que não interessam aqui).
+      rotasCompletas = (data?.rotas || []).filter((rota) => rota.paradas.some((p) => p.os_id));
+      rotasCompletas.forEach((rota) => {
         rota.paradas.filter((p) => p.os_id).forEach((p) => rotasPorOsId.set(p.os_id, rota));
       });
       if (!rotasPorOsId.size) alert('Nenhuma rota calculada (colaboradores sem coordenadas ou sem veículo disponível).');
       if (focoOsId) await atualizarMapaParaOs(focoOsId);
+      else if (rotasCompletas.length) {
+        const map = await garantirMapa(mapState, mapMount);
+        if (map) { mapEmptyEl.style.display = 'none'; desenharTodasRotas(mapState, rotasCompletas); }
+      }
     } catch (error) {
       console.error('[programacao-equipe] ver rotas:', error);
       alert(error.message || 'Erro ao calcular rotas.');
