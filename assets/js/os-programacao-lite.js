@@ -171,6 +171,8 @@ function injectStyles() {
     .os-lite-list{display:flex;flex-direction:column;gap:10px}.os-lite-card{border:1px solid rgba(52,211,153,.16);border-radius:18px;background:rgba(2,6,23,.25);overflow:hidden}.os-lite-row{padding:10px 13px;border-bottom:1px solid rgba(148,163,184,.1)}.os-lite-row:last-child{border-bottom:0}.os-lite-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.os-lite-title{font-weight:900;color:#f8fafc;font-size:13.5px;line-height:1.18}.os-lite-meta{font-size:11px;color:#6b7280;margin-top:3px;line-height:1.25}.os-lite-route{display:block;white-space:normal;overflow-wrap:anywhere}.os-lite-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.os-lite-rembox{display:flex;flex-direction:column;gap:3px;align-items:flex-end;text-align:right;flex-shrink:0}
     .os-lite-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.os-lite-chip.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.os-lite-chip.warn{background:rgba(250,204,21,.14);color:#fde68a}.os-lite-chip.info{background:rgba(59,130,246,.13);color:#bfdbfe}.os-lite-chip.danger{background:rgba(239,68,68,.12);color:#fecaca}
     .os-lite-buttons{display:flex;gap:4px;flex-wrap:wrap}.os-lite-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.72);color:#dcfce7;border-radius:999px;padding:6px 8px;font-weight:900;cursor:pointer;font-size:12px;flex-shrink:0}.os-lite-btn.active{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}.os-lite-btn.warn.active{background:#fde68a;color:#713f12}.os-lite-btn.danger.active{background:#fecaca;color:#7f1d1d}.os-lite-btn:disabled{opacity:.55;cursor:not-allowed}.os-lite-btn.kg{color:#90cdf4;border-color:rgba(99,179,237,.35)}.os-lite-btn.kg.active{background:rgba(99,179,237,.35);color:#0c2942}.os-lite-btn.conferir{color:#c4b5fd;border-color:rgba(167,139,250,.35)}
+    .os-lite-btn.loading{color:transparent!important;pointer-events:none;position:relative}.os-lite-btn.loading::after{content:'';position:absolute;inset:0;margin:auto;width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:osLiteSpin .6s linear infinite}
+    @keyframes osLiteSpin{to{transform:rotate(360deg)}}
     .os-lite-row-aguardar{background:rgba(250,204,21,.06)}.os-lite-row-atender{background:rgba(34,197,94,.06)}.os-lite-row-finalizar{background:rgba(59,130,246,.06)}.os-lite-row-kg{background:rgba(239,68,68,.06)}.os-lite-zero{box-shadow:inset 4px 0 0 #facc15}.os-lite-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#6b7280;background:rgba(15,23,42,.16)}.os-lite-load-more{display:flex;justify-content:center;margin-top:12px}
     .os-lite-gac-input{width:100%;box-sizing:border-box;padding:6px 8px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:12.5px;outline:none}.os-lite-gac-input:focus{border-color:#4ade80}.os-lite-gac-portal{position:fixed;background:#0b1220;border:1px solid #334155;border-radius:8px;max-height:260px;overflow-y:auto;z-index:99999;box-shadow:0 14px 38px rgba(0,0,0,.55)}.os-lite-gac-item{padding:7px 10px;cursor:pointer;font-size:12.5px;color:#f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px;background:#0b1220}.os-lite-gac-item:hover{background:rgba(74,222,128,.16)}.os-lite-gac-dist{font-size:10.5px;color:#94a3b8;white-space:nowrap;flex-shrink:0}.os-lite-gac-empty{padding:8px 10px;font-size:12.5px;color:#94a3b8;font-style:italic;background:#0b1220}
     .os-lite-kg-overlay{position:fixed;inset:0;background:rgba(2,6,23,.65);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}.os-lite-kg-modal{background:#0f172a;border:1px solid rgba(52,211,153,.25);border-radius:16px;padding:18px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:10px}.os-lite-kg-modal h3{margin:0;font-size:15px;color:#f8fafc}.os-lite-kg-modal p{margin:0;font-size:12px;color:#94a3b8}.os-lite-kg-modal input{padding:9px 10px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#f8fafc;font-size:14px}.os-lite-kg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
@@ -406,12 +408,21 @@ export async function renderOsProgramacaoLite(content, options = {}) {
     el.list.querySelector('#osLiteMore')?.addEventListener('click', () => loadPage({ append: true }));
   }
 
+  // Atualiza só o card dessa OS no DOM (outerHTML), em vez de redesenhar a
+  // lista inteira a cada clique — evita o "piscar" de todas as OS na tela.
+  function renderRow(row) {
+    const card = el.list.querySelector(`[data-os-id="${row.id}"]`);
+    if (card) card.outerHTML = rowHtml(row, state.atribuicoes);
+    el.stats.innerHTML = statsHtml(state.rows, state.total);
+  }
+
   async function atualizarStatus(osId, nextStatus, button) {
     const row = state.rows.find((item) => String(item.id) === String(osId));
     if (!row || button?.disabled) return;
     const previous = { ...row };
     const previousAtribuicoes = [...state.atribuicoes];
     button.disabled = true;
+    button.classList.add('loading');
     try {
       if (nextStatus === 'ATENDER') {
         const atual = state.atribuicoes.filter((a) => String(a.os_id) === String(row.id));
@@ -434,7 +445,7 @@ export async function renderOsProgramacaoLite(content, options = {}) {
         patch.logistica_solicitado_por = null;
       }
       Object.assign(row, patch);
-      render();
+      renderRow(row);
       const { error } = await supabase.from('operacional_os').update({ ...patch, updated_at: agoraIso }).eq('id', osId);
       if (error) throw error;
       el.feedback.textContent = `OS ${row.numero_os} atualizada para ${nextStatus}.`;
@@ -442,10 +453,8 @@ export async function renderOsProgramacaoLite(content, options = {}) {
       console.error(error);
       Object.assign(row, previous);
       state.atribuicoes = previousAtribuicoes;
-      render();
+      renderRow(row);
       alert(error.message || 'Não foi possível atualizar a O.S.');
-    } finally {
-      button.disabled = false;
     }
   }
 
@@ -506,7 +515,7 @@ export async function renderOsProgramacaoLite(content, options = {}) {
       if (error) throw error;
       state.atribuicoes = [...state.atribuicoes.filter((a) => String(a.os_id) !== String(row.id)), data || payload];
       el.feedback.textContent = `Colaborador da OS ${row.numero_os} atualizado.`;
-      render();
+      renderRow(row);
     } catch (error) {
       console.error(error);
       alert(error.message || 'Não foi possível atualizar o colaborador.');
@@ -533,7 +542,7 @@ export async function renderOsProgramacaoLite(content, options = {}) {
       row.status_gestor = 'AGUARDAR';
       row.configurada_em = null;
       overlay.remove();
-      render();
+      renderRow(row);
       const { error } = await supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: 'AGUARDAR', configurada_em: null, updated_at: new Date().toISOString() }).eq('id', row.id);
       if (error) alert(error.message || 'Não foi possível solicitar saldo.');
     });
