@@ -579,7 +579,7 @@ async function initGestorProgramacaoAjustes() {
     distribuicaoLoaded = false;
     pendingKpiReload = true;
     if (currentUiStep === 'A') {
-      renderDistribuicao({ loadOs: true, force: true });
+      renderDistribuicao({ loadOs: false });
     } else {
       triggerKpiReload();
     }
