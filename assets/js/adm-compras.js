@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
 const TABS = [
-  ['solicitacoes','SOLICITAÇÕES'], ['cotacoes','COTAÇÕES'], ['analise','EM ANÁLISE'], ['aguardando','AGUARDANDO'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS']
+  ['solicitacoes','SOLICITAÇÕES'], ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS']
 ];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando Termo', comprado:'Comprado', recusado:'Recusado' };
 const state = { tab:'solicitacoes', rows:[], selected:new Set(), cotacao:null, colaboradores:[], cotacaoCache:{} };

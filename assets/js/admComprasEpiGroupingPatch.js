@@ -187,6 +187,13 @@ function toggleGroup(header, checked = null) {
   const rows = groupRowsFromHeader(header);
   const shouldCheck = checked ?? rows.some((row) => !row.querySelector('input[type="checkbox"][data-check]')?.checked);
   setRowsChecked(rows, shouldCheck);
+  if (shouldCheck) {
+    const key = header?.dataset?.epiGroupKey;
+    if (key && !epiExpanded.has(key)) {
+      epiExpanded.add(key);
+      rows.forEach((row) => { row.style.display = ''; });
+    }
+  }
   updateGroupState(header);
   updateSummary();
 }
@@ -277,7 +284,33 @@ function applySolicitacoes(body) {
     row.style.display = show ? '' : 'none';
     if (show && !isEmptyRow(row)) visible += 1;
   });
-  if (!visible && rows.some(isEpiRow)) body.appendChild(makeEmptyRow(rows[0]?.children?.length || 9, 'Nenhuma solicitação comum nesta etapa. As solicitações de EPI ficam na aba EPI.'));
+  const epiCount = rows.filter(isEpiRow).length;
+  if (epiCount > 0) {
+    const colCount = rows[0]?.children?.length || 9;
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-epi-empty-row', '1');
+    if (!visible) {
+      tr.innerHTML = `<td colspan="${colCount}" class="adm-cmp-empty" style="padding:24px 16px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+          <span>Nenhuma solicitação comum nesta etapa.</span>
+          <button type="button" class="btn btn-secondary" id="epiGoToEpiTab" style="font-weight:700;letter-spacing:.04em">
+            📋 Ver ${epiCount} solicitaç${epiCount === 1 ? 'ão' : 'ões'} de EPI pendente${epiCount === 1 ? '' : 's'}
+          </button>
+        </div>
+      </td>`;
+    } else {
+      tr.innerHTML = `<td colspan="${colCount}" style="padding:8px 14px;background:rgba(245,158,11,.08);border-top:1px solid rgba(245,158,11,.25)">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:13px;color:#fde68a;font-weight:700">⚠️ ${epiCount} solicitaç${epiCount === 1 ? 'ão' : 'ões'} de EPI oculta${epiCount === 1 ? '' : 's'} nesta aba.</span>
+          <button type="button" class="btn btn-small btn-secondary" id="epiGoToEpiTab" style="font-size:12px">Ver EPIs →</button>
+        </div>
+      </td>`;
+    }
+    body.appendChild(tr);
+    tr.querySelector('#epiGoToEpiTab')?.addEventListener('click', () => {
+      document.querySelector('[data-tab-epi-exclusivo]')?.click();
+    });
+  }
 }
 
 function applyEpi(body) {
