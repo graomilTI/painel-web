@@ -1,8 +1,15 @@
 // Etapa B da Programação: "quem vai atender as OS disponíveis".
-// Cruza os colaboradores da regional/supervisão selecionada com as OS em
-// ATENDER e sugere candidatos ranqueados (Contrato 50% / Distância 30% /
-// Auditoria 20%); o gestor confirma quem atende cada OS.
+// Lista compacta de OS em ATENDER, cada uma com um dropdown de candidatos
+// ranqueados (Contrato 50% / Distância 30% / Auditoria 20%, calculado no
+// banco pela RPC programacao_etapa_b_candidatos) e um mapa à direita
+// mostrando a rota do colaborador focado até o ponto de embarque — reta por
+// padrão, ou a rota real (OSRM, agrupando até 4 colaboradores por veículo)
+// quando o gestor pedir "Ver rotas no mapa" (reaproveita a Edge Function já
+// usada em Frotas Roteirização, ver supabase/functions/frotas-roteirizar).
 import { supabase } from './supabaseClient.js';
+
+const LEAFLET_CSS_ID = 'leaflet-css-prog-equipe';
+const LEAFLET_JS_ID = 'leaflet-js-prog-equipe';
 
 function esc(value) {
   return String(value ?? '')
@@ -36,39 +43,74 @@ function contratoLabel(tipo) {
   return 'Não informado';
 }
 
+function loadCss(href, id) {
+  if (document.getElementById(id)) return;
+  const link = document.createElement('link');
+  link.id = id;
+  link.rel = 'stylesheet';
+  link.href = href;
+  document.head.appendChild(link);
+}
+
+function loadScript(src, id) {
+  if (document.getElementById(id)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.id = id;
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureLeaflet() {
+  if (window.L) return true;
+  try {
+    loadCss('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', LEAFLET_CSS_ID);
+    await loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', LEAFLET_JS_ID);
+    return !!window.L;
+  } catch {
+    return false;
+  }
+}
+
 function injectStyles() {
   if (document.getElementById('progEquipeStyles')) return;
   const style = document.createElement('style');
   style.id = 'progEquipeStyles';
   style.textContent = `
-    .peq-kpis{display:grid;grid-template-columns:repeat(2,minmax(140px,1fr));gap:10px;margin-bottom:12px}
-    .peq-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:12px;padding:10px}
-    .peq-kpi span{display:block;color:#93c5fd;font-size:9.5px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}
-    .peq-kpi strong{display:block;margin-top:4px;color:#fff;font-size:18px}
-    .peq-os-list{display:flex;flex-direction:column;gap:10px}
-    .peq-os-card{border:1px solid rgba(52,211,153,.18);border-radius:16px;background:rgba(2,6,23,.32);padding:12px}
-    .peq-os-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;color:#f8fafc;font-weight:950;font-size:13px}
-    .peq-os-head small{color:#bbf7d0;font-size:11px;white-space:nowrap}
-    .peq-os-meta{color:#94a3b8;font-size:11.5px;margin-top:3px;line-height:1.35}
-    .peq-confirmado{margin-top:8px;border:1px solid rgba(34,197,94,.35);background:rgba(22,101,52,.18);border-radius:12px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
-    .peq-confirmado b{color:#dcfce7;font-size:12.5px}
-    .peq-confirmado small{display:block;color:#a7f3d0;font-size:11px;margin-top:2px}
-    .peq-candidatos{margin-top:8px;border-top:1px solid rgba(148,163,184,.12);padding-top:8px}
-    .peq-cand-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:6px 4px;border-radius:8px}
-    .peq-cand-row:hover{background:rgba(34,197,94,.07)}
-    .peq-cand-nome{color:#f1f5f9;font-size:12.5px;font-weight:800}
-    .peq-cand-info{color:#94a3b8;font-size:11px;margin-top:1px}
-    .peq-cand-badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
-    .peq-badge{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:850;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.6);color:#cbd5e1;white-space:nowrap}
-    .peq-badge--ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.22);color:#bbf7d0}
-    .peq-badge--warn{border-color:rgba(245,158,11,.32);background:rgba(245,158,11,.12);color:#fde68a}
-    .peq-badge--muted{border-color:rgba(148,163,184,.18);background:rgba(15,23,42,.5);color:#94a3b8}
-    .peq-badge--score{border-style:dashed;color:#93c5fd}
-    .peq-btn{border:1px solid rgba(134,239,172,.35);background:rgba(22,163,74,.16);color:#dcfce7;border-radius:999px;padding:6px 11px;font-size:11.5px;font-weight:950;cursor:pointer;white-space:nowrap}
-    .peq-btn:hover{background:rgba(22,163,74,.3)}
-    .peq-btn.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.14);color:#fecaca}
-    .peq-btn:disabled{opacity:.6;cursor:not-allowed}
-    .peq-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:22px;text-align:center;color:#94a3b8;line-height:1.4}
+    .peqb-kpis{display:grid;grid-template-columns:repeat(2,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+    .peqb-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:12px;padding:10px}
+    .peqb-kpi span{display:block;color:#93c5fd;font-size:9.5px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}
+    .peqb-kpi strong{display:block;margin-top:4px;color:#fff;font-size:18px}
+    .peqb-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin-bottom:12px}
+    .peqb-btn{border:1px solid rgba(134,239,172,.35);background:rgba(22,163,74,.16);color:#dcfce7;border-radius:999px;padding:8px 14px;font-size:12px;font-weight:950;cursor:pointer;white-space:nowrap}
+    .peqb-btn:hover{background:rgba(22,163,74,.3)}
+    .peqb-btn:disabled{opacity:.55;cursor:not-allowed}
+    .peqb-grid{display:grid;grid-template-columns:minmax(360px,1fr) minmax(320px,.85fr);gap:14px;align-items:start}
+    @media(max-width:1080px){.peqb-grid{grid-template-columns:1fr}}
+    .peqb-os-list{display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 320px);min-height:300px;overflow:auto;padding-right:2px}
+    .peqb-row{border:1px solid rgba(52,211,153,.18);border-radius:14px;background:rgba(2,6,23,.32);padding:10px 12px;cursor:pointer}
+    .peqb-row:hover,.peqb-row.focus{border-color:rgba(52,211,153,.45);background:rgba(34,197,94,.08)}
+    .peqb-row-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;color:#f8fafc;font-weight:950;font-size:12.5px}
+    .peqb-row-head small{color:#bbf7d0;font-size:10.5px;white-space:nowrap}
+    .peqb-row-meta{color:#94a3b8;font-size:10.5px;margin-top:2px;line-height:1.3}
+    .peqb-chip{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:9.5px;font-weight:850;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.6);color:#cbd5e1;white-space:nowrap;margin-top:4px}
+    .peqb-chip.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.22);color:#bbf7d0}
+    .peqb-chip.warn{border-color:rgba(245,158,11,.32);background:rgba(245,158,11,.12);color:#fde68a}
+    .peqb-row-actions{display:flex;gap:6px;margin-top:7px;align-items:center}
+    .peqb-select{flex:1;min-width:0;height:32px;border:1px solid rgba(148,163,184,.22);border-radius:8px;background:#0d0d18;color:#e2e2f0;padding:0 8px;font-size:11.5px;outline:none;color-scheme:dark}
+    .peqb-row-btn{border:1px solid rgba(134,239,172,.35);background:rgba(22,163,74,.16);color:#dcfce7;border-radius:8px;padding:0 10px;height:32px;font-size:11px;font-weight:900;cursor:pointer;white-space:nowrap}
+    .peqb-row-btn.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.14);color:#fecaca}
+    .peqb-row-btn:disabled{opacity:.6;cursor:not-allowed}
+    .peqb-map-wrap{border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.36);overflow:hidden;position:sticky;top:8px}
+    .peqb-map{height:min(560px,calc(100vh - 280px));min-height:340px;position:relative}
+    #peqbMapEl{position:absolute;inset:0}
+    .peqb-map-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#94a3b8;text-align:center;padding:20px;font-size:12.5px}
+    .leaflet-tooltip.peqb-tt{background:rgba(2,6,23,.92)!important;border:1px solid rgba(34,197,94,.35)!important;color:#f8fafc!important;border-radius:8px!important;font-size:11px!important;padding:4px 8px!important;font-weight:700!important;box-shadow:none!important}
+    .leaflet-control-attribution{background:rgba(2,6,23,.65)!important;color:#6b7280!important;font-size:10px!important}
+    .peqb-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:22px;text-align:center;color:#94a3b8;line-height:1.4}
   `;
   document.head.appendChild(style);
 }
@@ -114,10 +156,8 @@ function pontoDaOs(os, pontosPorId) {
 
 // O ranking de candidatos (Contrato/Distância/Auditoria) é calculado no banco
 // pela RPC programacao_etapa_b_candidatos (ver migração
-// 20260625130000_programacao_etapa_b_candidatos_rpc.sql), que já filtra pelos
-// top 8 por OS usando colaborador_cruzamento pré-computado. Antes esse cálculo
-// rodava no navegador para cada OS x cada colaborador da supervisão e travava
-// a tela em supervisões grandes.
+// 20260625130000_programacao_etapa_b_candidatos_rpc.sql e seguintes), que já
+// filtra pelos top 8 por OS usando colaborador_cruzamento pré-computado.
 async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
   const osPayload = osComPonto
     .filter(({ candidatosNecessarios }) => candidatosNecessarios)
@@ -135,73 +175,118 @@ async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
   (data || []).forEach((row) => {
     const lista = porOs.get(row.os_id) || [];
     lista.push({
-      colaborador: { nome: row.nome, cargo: row.cargo, coordenacao: row.coordenacao, supervisao: row.supervisao },
+      nome: row.nome,
+      cargo: row.cargo,
+      coordenacao: row.coordenacao,
+      supervisao: row.supervisao,
       colaboradorId: row.colaborador_id,
       tipoLabel: contratoLabel(row.tipo_contrato),
       km: row.km != null ? Number(row.km) : null,
       auditPeso: row.auditorias_peso != null ? Number(row.auditorias_peso) : null,
+      veiculoId: row.veiculo_id || null,
+      veiculoPlaca: row.veiculo_placa || null,
+      lat: row.colab_lat != null ? Number(row.colab_lat) : null,
+      lng: row.colab_lng != null ? Number(row.colab_lng) : null,
+      score: Number(row.score),
       scoreContrato: Number(row.score_contrato),
       scoreDistancia: Number(row.score_distancia),
       scoreAuditoria: Number(row.score_auditoria),
-      score: Number(row.score),
     });
     porOs.set(row.os_id, lista);
   });
   return porOs;
 }
 
-function contratoBadgeClass(tipoLabel) {
-  if (tipoLabel === 'Efetivo') return 'peq-badge--ok';
-  if (tipoLabel === 'Intermitente') return 'peq-badge--warn';
-  return 'peq-badge--muted';
+function candidatoOptionLabel(cand) {
+  const km = cand.km != null ? `${cand.km}km` : 'sem coord.';
+  const logistica = cand.veiculoId ? ' 🚐' : '';
+  return `${cand.nome} — ${km} — score ${(cand.score * 100).toFixed(0)}${logistica}`;
 }
 
-function candidatoBadgesHtml(cand) {
-  const km = cand.km != null ? `${cand.km} km` : 'sem coord.';
-  const aud = cand.auditPeso != null ? `${cand.auditPeso.toFixed(1)} pts aud.` : 'sem auditoria';
-  return `
-    <span class="peq-badge ${contratoBadgeClass(cand.tipoLabel)}">${esc(cand.tipoLabel)}</span>
-    <span class="peq-badge ${cand.km != null ? 'peq-badge--ok' : 'peq-badge--muted'}">${esc(km)}</span>
-    <span class="peq-badge ${cand.auditPeso != null ? 'peq-badge--warn' : 'peq-badge--muted'}">${esc(aud)}</span>
-    <span class="peq-badge peq-badge--score">score ${(cand.score * 100).toFixed(0)}</span>
-  `;
-}
-
-function osCardHtml(item) {
+function osRowHtml(item) {
   const { os, confirmadoRow, candidatos } = item;
-  const confirmadoHtml = confirmadoRow
-    ? `<div class="peq-confirmado">
-        <div><b>${esc(confirmadoRow.nome_colaborador)}</b><small>Confirmado · ${confirmadoRow.km_estimado != null ? `${confirmadoRow.km_estimado} km` : 'sem rota'}</small></div>
-        <button type="button" class="peq-btn danger" data-remover="${esc(confirmadoRow.id)}">Remover</button>
-      </div>`
-    : '';
-  const candidatosHtml = candidatos.length
-    ? `<div class="peq-candidatos">${candidatos.map((c) => `
-        <div class="peq-cand-row">
-          <div><div class="peq-cand-nome">${esc(c.colaborador.nome)}</div><div class="peq-cand-badges">${candidatoBadgesHtml(c)}</div></div>
-          <button type="button" class="peq-btn" data-confirmar="${esc(c.colaboradorId)}">Confirmar</button>
-        </div>`).join('')}</div>`
-    : '<div class="peq-cand-info" style="margin-top:8px">Nenhum candidato disponível (todos já confirmados em outras OS).</div>';
+  const confirmado = !!confirmadoRow;
+  const selecionadoId = confirmadoRow?.colaborador_id || candidatos[0]?.colaboradorId || '';
+  const optionsHtml = candidatos.length
+    ? candidatos.map((c) => `<option value="${esc(c.colaboradorId)}" ${c.colaboradorId === selecionadoId ? 'selected' : ''}>${esc(candidatoOptionLabel(c))}</option>`).join('')
+    : '<option value="">Nenhum candidato disponível</option>';
 
   return `
-    <article class="peq-os-card" data-os-id="${esc(os.id)}">
-      <div class="peq-os-head"><span>${esc(os.cliente || '-')}</span><small>OS ${esc(os.numero_os || '-')}</small></div>
-      <div class="peq-os-meta">Embarque: ${esc(os.embarque || '-')}</div>
-      ${confirmadoHtml}
-      ${confirmadoRow ? '' : candidatosHtml}
+    <article class="peqb-row" data-os-id="${esc(os.id)}">
+      <div class="peqb-row-head"><span>${esc(os.cliente || '-')}</span><small>OS ${esc(os.numero_os || '-')}</small></div>
+      <div class="peqb-row-meta">Embarque: ${esc(os.embarque || '-')}</div>
+      <span class="peqb-chip ${confirmado ? 'ok' : 'warn'}">${confirmado ? `Confirmado · ${esc(confirmadoRow.nome_colaborador)}${confirmadoRow.km_estimado != null ? ` · ${confirmadoRow.km_estimado}km` : ''}` : 'Pendente'}</span>
+      <div class="peqb-row-actions">
+        <select class="peqb-select" data-select-colaborador ${candidatos.length ? '' : 'disabled'}>${optionsHtml}</select>
+        <button type="button" class="peqb-row-btn" data-confirmar ${candidatos.length ? '' : 'disabled'}>${confirmado ? 'Atualizar' : 'Confirmar'}</button>
+        ${confirmado ? `<button type="button" class="peqb-row-btn danger" data-remover="${esc(confirmadoRow.id)}">Remover</button>` : ''}
+      </div>
     </article>
   `;
 }
 
 function atualizarKpis(root, osComCandidatos, confirmadosPorOs) {
-  const kpiKmEl = root.querySelector('#peqKpiKm');
-  const kpiOsEl = root.querySelector('#peqKpiOs');
+  const kpiKmEl = root.querySelector('#peqbKpiKm');
+  const kpiOsEl = root.querySelector('#peqbKpiOs');
   const kmTotal = osComCandidatos.reduce((soma, { os }) => {
     const km = confirmadosPorOs.get(os.id)?.km_estimado;
     return soma + (Number.isFinite(km) ? km : 0);
   }, 0);
   if (kpiKmEl) kpiKmEl.textContent = `${round1(kmTotal)} km`;
   if (kpiOsEl) kpiOsEl.textContent = String(confirmadosPorOs.size);
+}
+
+// --- Mapa: desenho de preview (reta) e de rota real (frotas-roteirizar) ---
+// Reaproveita o padrão visual/técnico de assets/js/modules/frotas-roteirizacao.js
+// (tiles CartoDB dark, layer groups, polyline verde, marcadores circulares).
+
+function criarMapState() {
+  return { map: null, layerRota: null, layerPontos: null, ready: false };
+}
+
+async function garantirMapa(mapState, mountEl) {
+  if (mapState.ready) return mapState.map;
+  const ok = await ensureLeaflet();
+  if (!ok || !window.L) return null;
+  const L = window.L;
+  mapState.map = L.map(mountEl, { zoomControl: true, scrollWheelZoom: true, center: [-14.235, -51.925], zoom: 4 });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OSM &copy; CARTO',
+    subdomains: 'abcd',
+  }).addTo(mapState.map);
+  mapState.layerRota = L.layerGroup().addTo(mapState.map);
+  mapState.layerPontos = L.layerGroup().addTo(mapState.map);
+  mapState.ready = true;
+  return mapState.map;
+}
+
+function desenharNoMapa(mapState, { pontos, linhas }) {
+  const L = window.L;
+  if (!L || !mapState.map) return;
+  mapState.layerRota.clearLayers();
+  mapState.layerPontos.clearLayers();
+
+  const bounds = [];
+  pontos.forEach(({ lat, lng, cor, titulo }) => {
+    if (!hasGeo(lat, lng)) return;
+    const marker = L.circleMarker([lat, lng], { radius: 7, color: '#fff', weight: 2, fillColor: cor, fillOpacity: 0.95 });
+    if (titulo) marker.bindTooltip(esc(titulo), { className: 'peqb-tt' });
+    mapState.layerPontos.addLayer(marker);
+    bounds.push([lat, lng]);
+  });
+
+  linhas.forEach(({ coords, geometria, dashed }) => {
+    if (geometria?.type === 'LineString' && Array.isArray(geometria.coordinates)) {
+      const latlngs = geometria.coordinates.map(([lng, lat]) => [lat, lng]);
+      L.polyline(latlngs, { color: '#22c55e', weight: 4, opacity: 0.85 }).addTo(mapState.layerRota);
+      latlngs.forEach((p) => bounds.push(p));
+    } else if (Array.isArray(coords) && coords.length >= 2) {
+      L.polyline(coords, { color: '#22c55e', weight: 4, opacity: 0.85, dashArray: dashed ? '6 6' : null }).addTo(mapState.layerRota);
+    }
+  });
+
+  if (bounds.length) mapState.map.fitBounds(bounds, { padding: [28, 28], maxZoom: 13 });
 }
 
 export async function renderProgramacaoEquipe(content, options = {}) {
@@ -214,30 +299,95 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       <h4>Organizar Equipe</h4>
       <span class="badge">Etapa B</span>
     </div>
-    <div class="peq-kpis">
-      <div class="peq-kpi"><span>Km total estimado</span><strong id="peqKpiKm">0 km</strong></div>
-      <div class="peq-kpi"><span>OS com equipe</span><strong id="peqKpiOs">0</strong></div>
+    <div class="peqb-kpis">
+      <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
+      <div class="peqb-kpi"><span>OS com equipe</span><strong id="peqbKpiOs">0</strong></div>
     </div>
-    <div class="peq-os-list" id="peqOsList"><div class="peq-empty">Carregando OS em ATENDER...</div></div>
+    <div class="peqb-toolbar">
+      <button type="button" class="peqb-btn" id="peqbAutoPreencher">Auto-preencher</button>
+      <button type="button" class="peqb-btn" id="peqbVerRotas">Ver rotas no mapa</button>
+    </div>
+    <div class="peqb-grid">
+      <div class="peqb-os-list" id="peqbOsList"><div class="peqb-empty">Carregando OS em ATENDER...</div></div>
+      <div class="peqb-map-wrap">
+        <div class="peqb-map"><div id="peqbMapEl"></div><div class="peqb-map-empty" id="peqbMapEmpty">Selecione uma OS para ver a rota.</div></div>
+      </div>
+    </div>
   `;
 
-  const listEl = content.querySelector('#peqOsList');
+  const listEl = content.querySelector('#peqbOsList');
+  const mapMount = content.querySelector('#peqbMapEl');
+  const mapEmptyEl = content.querySelector('#peqbMapEmpty');
+  const mapState = criarMapState();
 
   if (!supervisao || !programacaoId) {
-    listEl.innerHTML = '<div class="peq-empty">Carregue o contexto (supervisão e data) para organizar a equipe.</div>';
+    listEl.innerHTML = '<div class="peqb-empty">Carregue o contexto (supervisão e data) para organizar a equipe.</div>';
     return;
   }
 
   let carregando = false;
   let osComCandidatosAtual = [];
+  let rotasPorOsId = new Map(); // os_id -> rota completa (frotas-roteirizar), só após "Ver rotas no mapa"
+  let focoOsId = null;
+
+  function candidatoSelecionado(item) {
+    const select = listEl.querySelector(`[data-os-id="${item.os.id}"] [data-select-colaborador]`);
+    const id = select?.value || item.confirmadoRow?.colaborador_id || item.candidatos[0]?.colaboradorId;
+    return item.candidatos.find((c) => c.colaboradorId === id) || null;
+  }
+
+  async function atualizarMapaParaOs(osId) {
+    focoOsId = osId;
+    listEl.querySelectorAll('.peqb-row').forEach((row) => row.classList.toggle('focus', row.dataset.osId === osId));
+
+    const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
+    if (!item || !item.ponto) {
+      mapEmptyEl.style.display = 'flex';
+      mapEmptyEl.textContent = 'Sem coordenadas de embarque para esta OS.';
+      return;
+    }
+
+    const map = await garantirMapa(mapState, mapMount);
+    if (!map) {
+      mapEmptyEl.style.display = 'flex';
+      mapEmptyEl.textContent = 'Não foi possível carregar o mapa (sem conexão com o Leaflet).';
+      return;
+    }
+    mapEmptyEl.style.display = 'none';
+
+    const rotaReal = rotasPorOsId.get(osId);
+    if (rotaReal) {
+      const pontos = rotaReal.paradas.map((p) => ({
+        lat: p.lat, lng: p.lng, cor: p.tipo === 'colaborador' ? '#60a5fa' : '#a78bfa',
+        titulo: p.tipo === 'colaborador' ? `Coleta: ${p.colaborador_nome}` : (p.ponto_nome || 'Embarque'),
+      }));
+      const coords = [{ lat: rotaReal.origem.lat, lng: rotaReal.origem.lng }, ...rotaReal.paradas].map((p) => [p.lat, p.lng]);
+      desenharNoMapa(mapState, { pontos, linhas: [{ coords, geometria: rotaReal.geometria }] });
+      return;
+    }
+
+    const cand = candidatoSelecionado(item);
+    const pontos = [{ lat: item.ponto.lat, lng: item.ponto.lng, cor: '#a78bfa', titulo: item.ponto.nome || 'Embarque' }];
+    const linhas = [];
+    if (cand && hasGeo(cand.lat, cand.lng)) {
+      pontos.push({ lat: cand.lat, lng: cand.lng, cor: '#60a5fa', titulo: cand.nome });
+      linhas.push({ coords: [[cand.lat, cand.lng], [item.ponto.lat, item.ponto.lng]], dashed: true });
+    }
+    desenharNoMapa(mapState, { pontos, linhas });
+    if (!cand || !hasGeo(cand?.lat, cand?.lng)) {
+      mapEmptyEl.style.display = 'flex';
+      mapEmptyEl.textContent = 'Colaborador sem coordenadas — mostrando só o ponto de embarque.';
+    }
+  }
+
   async function carregarERenderizar() {
     if (carregando) return;
     carregando = true;
-    listEl.innerHTML = '<div class="peq-empty">Carregando OS em ATENDER...</div>';
+    listEl.innerHTML = '<div class="peqb-empty">Carregando OS em ATENDER...</div>';
     try {
       const [osRows, equipeRows] = await Promise.all([loadOsAtender(supervisao), loadEquipeExistente(programacaoId)]);
       if (!osRows.length) {
-        listEl.innerHTML = '<div class="peq-empty">Nenhuma OS marcada como ATENDER para esta supervisão. Confirme as OS na etapa A.</div>';
+        listEl.innerHTML = '<div class="peqb-empty">Nenhuma OS marcada como ATENDER para esta supervisão. Confirme as OS na etapa A.</div>';
         return;
       }
 
@@ -259,54 +409,119 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         confirmadoRow,
         candidatos: confirmadoRow ? [] : (candidatosPorOs.get(os.id) || []),
       }));
-      listEl.innerHTML = osComCandidatosAtual.map(osCardHtml).join('');
+      listEl.innerHTML = osComCandidatosAtual.map(osRowHtml).join('');
 
       atualizarKpis(content, osComCandidatosAtual, confirmadosPorOs);
+
+      const manterFoco = focoOsId && osComCandidatosAtual.some((it) => String(it.os.id) === focoOsId);
+      await atualizarMapaParaOs(manterFoco ? focoOsId : String(osComCandidatosAtual[0].os.id));
     } catch (error) {
       console.error('[programacao-equipe] render:', error);
-      listEl.innerHTML = `<div class="peq-empty">${esc(error.message || 'Erro ao montar a equipe.')}</div>`;
+      listEl.innerHTML = `<div class="peqb-empty">${esc(error.message || 'Erro ao montar a equipe.')}</div>`;
     } finally {
       carregando = false;
     }
   }
 
-  if (!listEl.dataset.peqBound) {
-    listEl.dataset.peqBound = '1';
-    listEl.addEventListener('click', async (event) => {
-      const btnConfirmar = event.target.closest('[data-confirmar]');
-      const btnRemover = event.target.closest('[data-remover]');
-      if (!btnConfirmar && !btnRemover) return;
-      const btn = btnConfirmar || btnRemover;
-      const osCard = btn.closest('[data-os-id]');
-      const osId = osCard?.dataset.osId;
-      btn.disabled = true;
-      try {
-        if (btnConfirmar) {
-          const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
-          const cand = item?.candidatos.find((c) => c.colaboradorId === btn.dataset.confirmar);
-          if (item && cand) await confirmarCandidato(programacaoId, item.os, cand);
-        } else if (btnRemover) {
-          await removerConfirmacao(programacaoId, btn.dataset.remover);
-        }
-        await carregarERenderizar();
-      } catch (error) {
-        console.error('[programacao-equipe] ação:', error);
-        btn.disabled = false;
-        alert(error.message || 'Erro ao salvar. Tente novamente.');
+  listEl.addEventListener('click', async (event) => {
+    const btnConfirmar = event.target.closest('[data-confirmar]');
+    const btnRemover = event.target.closest('[data-remover]');
+    const row = event.target.closest('.peqb-row');
+    if (!btnConfirmar && !btnRemover && row && !event.target.closest('select')) {
+      await atualizarMapaParaOs(row.dataset.osId);
+      return;
+    }
+    if (!btnConfirmar && !btnRemover) return;
+
+    const btn = btnConfirmar || btnRemover;
+    const osId = row?.dataset.osId;
+    btn.disabled = true;
+    try {
+      if (btnConfirmar) {
+        const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
+        const selectEl = row.querySelector('[data-select-colaborador]');
+        const cand = item?.candidatos.find((c) => c.colaboradorId === selectEl?.value);
+        if (item && cand) await confirmarCandidato(programacaoId, item.os, cand);
+      } else if (btnRemover) {
+        await removerConfirmacao(programacaoId, btn.dataset.remover);
       }
-    });
-  }
+      await carregarERenderizar();
+    } catch (error) {
+      console.error('[programacao-equipe] ação:', error);
+      btn.disabled = false;
+      alert(error.message || 'Erro ao salvar. Tente novamente.');
+    }
+  });
+
+  listEl.addEventListener('change', (event) => {
+    const select = event.target.closest('[data-select-colaborador]');
+    const row = event.target.closest('.peqb-row');
+    if (!select || !row) return;
+    atualizarMapaParaOs(row.dataset.osId);
+  });
+
+  const autoPreencherBtn = content.querySelector('#peqbAutoPreencher');
+  autoPreencherBtn.addEventListener('click', async () => {
+    autoPreencherBtn.disabled = true;
+    autoPreencherBtn.textContent = 'Preenchendo...';
+    try {
+      const pendentes = osComCandidatosAtual.filter((it) => !it.confirmadoRow && it.candidatos.length);
+      for (const item of pendentes) {
+        const melhor = item.candidatos[0];
+        if (!melhor) continue;
+        await confirmarCandidato(programacaoId, item.os, melhor);
+        // Remove o colaborador recém-confirmado dos candidatos das próximas OS
+        // desta mesma rodada, pra não escalar a mesma pessoa duas vezes.
+        osComCandidatosAtual.forEach((outro) => {
+          outro.candidatos = outro.candidatos.filter((c) => c.colaboradorId !== melhor.colaboradorId);
+        });
+      }
+      await carregarERenderizar();
+    } catch (error) {
+      console.error('[programacao-equipe] auto-preencher:', error);
+      alert(error.message || 'Erro ao auto-preencher.');
+    } finally {
+      autoPreencherBtn.disabled = false;
+      autoPreencherBtn.textContent = 'Auto-preencher';
+    }
+  });
+
+  const verRotasBtn = content.querySelector('#peqbVerRotas');
+  verRotasBtn.addEventListener('click', async () => {
+    verRotasBtn.disabled = true;
+    verRotasBtn.textContent = 'Calculando rotas...';
+    try {
+      const osIds = osComCandidatosAtual.map((it) => String(it.os.id));
+      const { data, error } = await supabase.functions.invoke('frotas-roteirizar', {
+        body: { osIds, maxParadas: 4, publicar: false },
+      });
+      if (error) throw new Error(error.message || 'Falha ao calcular rotas.');
+      if (data?.error) throw new Error(data.error);
+
+      rotasPorOsId = new Map();
+      (data?.rotas || []).forEach((rota) => {
+        rota.paradas.filter((p) => p.os_id).forEach((p) => rotasPorOsId.set(p.os_id, rota));
+      });
+      if (!rotasPorOsId.size) alert('Nenhuma rota calculada (colaboradores sem coordenadas ou sem veículo disponível).');
+      if (focoOsId) await atualizarMapaParaOs(focoOsId);
+    } catch (error) {
+      console.error('[programacao-equipe] ver rotas:', error);
+      alert(error.message || 'Erro ao calcular rotas.');
+    } finally {
+      verRotasBtn.disabled = false;
+      verRotasBtn.textContent = 'Ver rotas no mapa';
+    }
+  });
 
   await carregarERenderizar();
 }
 
 async function confirmarCandidato(programacaoId, os, cand) {
-  const colab = cand.colaborador;
   const payload = {
     programacao_id: programacaoId,
     os_id: os.id,
     colaborador_id: cand.colaboradorId,
-    nome_colaborador: colab.nome,
+    nome_colaborador: cand.nome,
     score: cand.score,
     score_contrato: cand.scoreContrato,
     score_distancia: cand.scoreDistancia,
@@ -326,21 +541,23 @@ async function confirmarCandidato(programacaoId, os, cand) {
   const { error: vinculoErr } = await supabase.from('operacional_os_colaboradores').insert({
     os_id: os.id,
     colaborador_key: cand.colaboradorId,
-    colaborador_nome: colab.nome,
+    colaborador_nome: cand.nome,
     colaborador_cpf: cpfCandidato,
     distancia_km: cand.km,
     origem_sugestao: 'PROGRAMACAO_ETAPA_B',
   });
   if (vinculoErr) console.warn('[programacao-equipe] falha ao gravar vínculo OS<->colaborador.', vinculoErr);
 
+  // Colaborador que já é motorista de um veículo cadastrado (colaborador_cruzamento.veiculo_id)
+  // entra como "Logística" em vez de "OK", mesma convenção usada em programacao.js/ensureDefaultRows.
   const espelho = {
     programacao_id: programacaoId,
     colaborador_id: cand.colaboradorId,
-    nome_colaborador: colab.nome,
-    cargo: colab.cargo || null,
-    coordenacao: colab.coordenacao || null,
-    supervisao: colab.supervisao || null,
-    disponibilidade: 'OK',
+    nome_colaborador: cand.nome,
+    cargo: cand.cargo || null,
+    coordenacao: cand.coordenacao || null,
+    supervisao: cand.supervisao || null,
+    disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
   };
   const { error: espelhoErr } = await supabase.from('programacao_colaboradores').upsert(espelho, { onConflict: 'programacao_id,colaborador_id' });
   if (espelhoErr) console.warn('[programacao-equipe] falha ao espelhar disponibilidade.', espelhoErr);
