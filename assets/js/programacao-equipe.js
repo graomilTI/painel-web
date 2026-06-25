@@ -6,7 +6,6 @@ import { supabase } from './supabaseClient.js';
 
 const PESOS = { contrato: 0.5, distancia: 0.3, auditoria: 0.2 };
 const CONTRATO_SCORE = { EFETIVO: 1, INTERMITENTE: 0.6, DIARISTA: 0.3 };
-const AUDITORIA_DIAS = 180;
 const TOP_CANDIDATOS = 8;
 
 function esc(value) {
@@ -122,7 +121,7 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-const cache = { snapshot: new Map(), colabBase: new Map(), contrato: new Map(), auditoria: null };
+const cache = { snapshot: new Map(), cruzamento: new Map() };
 const CACHE_TTL_MS = 1000 * 60 * 5;
 
 function cacheGet(map, key) {
@@ -176,51 +175,22 @@ async function loadSnapshotColaboradores(supervisao) {
   return cacheSet(cache.snapshot, supervisao, rows);
 }
 
-async function loadContratos(cpfs) {
-  const pendentes = cpfs.filter((c) => !cache.contrato.has(c));
+// colaborador_cruzamento é pré-calculado no banco (pg_cron, ver migração
+// 20260625120000_colaborador_cruzamento.sql) — contrato, endereço/coordenadas
+// e peso de auditoria já vêm prontos, sem precisar refazer o cruzamento por
+// nome/CPF aqui no navegador a cada render.
+async function loadCruzamento(cpfs) {
+  const pendentes = cpfs.filter((c) => !cache.cruzamento.has(c));
   if (pendentes.length) {
-    const { data, error } = await supabase.from('colaboradores').select('cpf,tipo').in('cpf', pendentes);
-    if (!error) (data || []).forEach((row) => cache.contrato.set(normalizeCpf(row.cpf), row.tipo));
-    else pendentes.forEach((c) => cache.contrato.set(c, null));
+    const { data, error } = await supabase
+      .from('colaborador_cruzamento')
+      .select('cpf,tipo_contrato,latitude,longitude,auditorias_180d_qtd,auditorias_180d_peso')
+      .in('cpf', pendentes);
+    if (!error) (data || []).forEach((row) => cache.cruzamento.set(normalizeCpf(row.cpf), row));
+    pendentes.forEach((c) => { if (!cache.cruzamento.has(c)) cache.cruzamento.set(c, null); });
   }
   const map = new Map();
-  cpfs.forEach((c) => map.set(c, cache.contrato.get(c) || null));
-  return map;
-}
-
-async function loadColabBase(cpfs) {
-  const pendentes = cpfs.filter((c) => !cache.colabBase.has(c));
-  if (pendentes.length) {
-    const { data, error } = await supabase.from('operacional_colaborador_base').select('cpf,latitude,longitude').in('cpf', pendentes).eq('ativo', true);
-    if (!error) (data || []).forEach((row) => {
-      const cpf = normalizeCpf(row.cpf);
-      if (cpf && !cache.colabBase.has(cpf)) cache.colabBase.set(cpf, hasGeo(row.latitude, row.longitude) ? { lat: Number(row.latitude), lng: Number(row.longitude) } : null);
-    });
-    pendentes.forEach((c) => { if (!cache.colabBase.has(c)) cache.colabBase.set(c, null); });
-  }
-  const map = new Map();
-  cpfs.forEach((c) => map.set(c, cache.colabBase.get(c) || null));
-  return map;
-}
-
-async function loadAuditorias() {
-  if (cache.auditoria && Date.now() - cache.auditoria.ts < CACHE_TTL_MS) return cache.auditoria.data;
-  const cutoff = new Date(Date.now() - AUDITORIA_DIAS * 86400000).toISOString().slice(0, 10);
-  const { data, error } = await supabase
-    .from('operacional_auditoria_colaborador')
-    .select('nome_chave,score_impacto,data_evento')
-    .gte('data_evento', cutoff)
-    .limit(5000);
-  const map = new Map();
-  if (!error) {
-    (data || []).forEach((row) => {
-      const key = String(row.nome_chave || '').trim().toUpperCase();
-      if (!key) return;
-      const atual = map.get(key) || 0;
-      map.set(key, atual + 1 + Math.abs(Number(row.score_impacto) || 0));
-    });
-  }
-  cache.auditoria = { ts: Date.now(), data: map };
+  cpfs.forEach((c) => map.set(c, cache.cruzamento.get(c) || null));
   return map;
 }
 
@@ -233,8 +203,8 @@ async function loadEquipeExistente(programacaoId) {
 async function montarContexto(supervisao) {
   const colaboradores = await loadSnapshotColaboradores(supervisao);
   const cpfs = [...new Set(colaboradores.map((c) => normalizeCpf(c.cpf)).filter(Boolean))];
-  const [contratos, bases, auditorias] = await Promise.all([loadContratos(cpfs), loadColabBase(cpfs), loadAuditorias()]);
-  return { colaboradores, contratos, bases, auditorias };
+  const cruzamento = await loadCruzamento(cpfs);
+  return { colaboradores, cruzamento };
 }
 
 function pontoDaOs(os, pontosPorId) {
@@ -252,19 +222,19 @@ function montarCandidatos(ponto, contexto, jaConfirmadosOutraOs) {
   const candidatosBrutos = contexto.colaboradores.filter((colab) => !jaConfirmadosOutraOs.has(colaboradorKey(colab)));
 
   const kms = candidatosBrutos.map((colab) => {
-    const home = contexto.bases.get(normalizeCpf(colab.cpf));
-    return ponto && home ? haversineKm(home.lat, home.lng, ponto.lat, ponto.lng) : null;
+    const cruz = contexto.cruzamento.get(normalizeCpf(colab.cpf));
+    return ponto && hasGeo(cruz?.latitude, cruz?.longitude) ? haversineKm(Number(cruz.latitude), Number(cruz.longitude), ponto.lat, ponto.lng) : null;
   });
   const auditPesos = candidatosBrutos.map((colab) => {
-    const peso = contexto.auditorias.get(normalizeText(colab.nome));
-    return peso != null ? peso : null;
+    const cruz = contexto.cruzamento.get(normalizeCpf(colab.cpf));
+    return cruz?.auditorias_180d_qtd > 0 ? Number(cruz.auditorias_180d_peso) : null;
   });
 
   const distScores = rankScores(kms);
   const auditScoresNormalizados = rankScores(auditPesos.map((p) => (p == null ? 0 : p)));
 
   const candidatos = candidatosBrutos.map((colab, i) => {
-    const tipo = contexto.contratos.get(normalizeCpf(colab.cpf));
+    const tipo = contexto.cruzamento.get(normalizeCpf(colab.cpf))?.tipo_contrato;
     const scoreContrato = contratoScore(tipo);
     const scoreDistancia = distScores[i];
     const scoreAuditoria = auditScoresNormalizados[i];

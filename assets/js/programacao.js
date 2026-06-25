@@ -439,13 +439,13 @@ initProtectedPage('Programação', (content) => {
     alojamentos: [],
     veiculos: [],
     veiculoByPlaca: new Map(),
-    sugestaoVeiculoCache: new Map(),
     pontosEmbarque: [],
     operacionalColabs: [],
     operacionalColabByCpf: new Map(),
     operacionalColabByNome: new Map(),
     kmCache: new Map(),
     osPorColaborador: new Map(),
+    cruzamentoByCpf: new Map(),
     search: '',
     maps: {
       disponibilidade: new Map(),
@@ -634,6 +634,21 @@ initProtectedPage('Programação', (content) => {
     ensureVeiculosDatalist();
   }
 
+  async function loadCruzamento(cpfs) {
+    state.cruzamentoByCpf = new Map();
+    if (!cpfs.length) return;
+    try {
+      const { data, error } = await supabase
+        .from('colaborador_cruzamento')
+        .select('cpf,veiculo_placa,latitude,longitude,tipo_contrato,auditorias_180d_qtd,auditorias_180d_peso')
+        .in('cpf', cpfs);
+      if (error) throw error;
+      (data || []).forEach((row) => state.cruzamentoByCpf.set(normalizeCpf(row.cpf), row));
+    } catch (error) {
+      console.warn('Não foi possível carregar colaborador_cruzamento.', error);
+    }
+  }
+
   async function loadBaseOperacional() {
     try {
       const [colabs, pontos] = await Promise.all([
@@ -784,27 +799,6 @@ initProtectedPage('Programação', (content) => {
 
   function indexVeiculos() {
     state.veiculoByPlaca = new Map((state.veiculos || []).map((v) => [onlyPlate(v.placa), v]));
-
-    // Índice por CPF/nome do motorista, montado uma única vez aqui (O(veículos))
-    // em vez de normalizar nome/CPF de novo para cada par colaborador×veículo
-    // em suggestVeiculoForColab (O(colaboradores × veículos) — chegava a
-    // centenas de milhares de comparações e travava a tela a cada "Carregar").
-    state.veiculoByMotoristaCpf = new Map();
-    state.veiculosByMotoristaNomeKey = new Map();
-    (state.veiculos || []).forEach((v) => {
-      if (v.motoristaCpf && !state.veiculoByMotoristaCpf.has(v.motoristaCpf)) {
-        state.veiculoByMotoristaCpf.set(v.motoristaCpf, v);
-      }
-      const pessoa = { nome: v.motoristaNome, cpf: v.motoristaCpf, motorista: v.motoristaNome, ...(v.raw && typeof v.raw === 'object' ? v.raw : {}) };
-      splitPossibleNames(firstFilled(pessoa.nome, pessoa.name, pessoa.motorista, pessoa.condutor, pessoa.colaborador, pessoa.responsavel)).forEach((nome) => {
-        const key = normalizeText(nome);
-        if (!key) return;
-        if (!state.veiculosByMotoristaNomeKey.has(key)) state.veiculosByMotoristaNomeKey.set(key, []);
-        state.veiculosByMotoristaNomeKey.get(key).push(v);
-      });
-    });
-
-    state.sugestaoVeiculoCache = new Map();
   }
 
   function findVeiculoByPlaca(placa) {
@@ -941,26 +935,12 @@ initProtectedPage('Programação', (content) => {
   }
 
   function suggestVeiculoForColab(colab) {
-    const cacheKey = String(colab?.id || '');
-    if (cacheKey && state.sugestaoVeiculoCache.has(cacheKey)) return state.sugestaoVeiculoCache.get(cacheKey);
-
+    // O cruzamento colaborador↔veículo é pré-calculado no banco (tabela
+    // colaborador_cruzamento, atualizada por pg_cron) — aqui é só leitura
+    // O(1), sem refazer matching de nome/CPF no navegador a cada colaborador.
     const cpfColab = normalizeCpf(colab?.cpf);
-    let found = (cpfColab && state.veiculoByMotoristaCpf?.get(cpfColab)) || null;
-
-    if (!found) {
-      const nomeColab = normalizeText(colab?.nome || '');
-      if (nomeColab && state.veiculosByMotoristaNomeKey) {
-        found = state.veiculosByMotoristaNomeKey.get(nomeColab)?.[0] || null;
-        if (!found) {
-          for (const [key, veiculos] of state.veiculosByMotoristaNomeKey) {
-            if (key.includes(nomeColab) || nomeColab.includes(key)) { found = veiculos[0]; break; }
-          }
-        }
-      }
-    }
-
-    if (cacheKey) state.sugestaoVeiculoCache.set(cacheKey, found);
-    return found;
+    const row = cpfColab ? state.cruzamentoByCpf.get(cpfColab) : null;
+    return row?.veiculo_placa ? { placa: row.veiculo_placa } : null;
   }
 
   function updatePlacaLogisticaAlert(tr) {
@@ -1151,6 +1131,7 @@ initProtectedPage('Programação', (content) => {
 
       state.colabsEmOsAtender = colabsEmOsAtender;
       state.kmCache = new Map();
+      await loadCruzamento(state.colaboradores.map((colab) => colab.cpf).filter(Boolean));
       await ensureDefaultRows();
       await loadStageData();
       updateStats();
