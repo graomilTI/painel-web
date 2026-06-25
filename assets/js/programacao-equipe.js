@@ -187,6 +187,7 @@ async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
       veiculoPlaca: row.veiculo_placa || null,
       lat: row.colab_lat != null ? Number(row.colab_lat) : null,
       lng: row.colab_lng != null ? Number(row.colab_lng) : null,
+      custoTotal: row.custo_total != null ? Number(row.custo_total) : null,
       score: Number(row.score),
       scoreContrato: Number(row.score_contrato),
       scoreDistancia: Number(row.score_distancia),
@@ -197,10 +198,15 @@ async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
   return porOs;
 }
 
+function brl(value) {
+  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function candidatoOptionLabel(cand) {
   const km = cand.km != null ? `${cand.km}km` : 'sem coord.';
+  const custo = cand.custoTotal != null ? `R$${brl(cand.custoTotal)}` : 'sem custo';
   const logistica = cand.veiculoId ? ' 🚐' : '';
-  return `${cand.nome} — ${km} — score ${(cand.score * 100).toFixed(0)}${logistica}`;
+  return `${cand.nome} — ${km} — ${custo} — score ${(cand.score * 100).toFixed(0)}${logistica}`;
 }
 
 function osRowHtml(item) {
