@@ -102,7 +102,7 @@ function compactAll() {
 
 function start() {
   injectStyles();
-  const observer = new MutationObserver(() => setTimeout(compactAll, 80));
+  const observer = new MutationObserver(compactAll);
   observer.observe(document.body, { childList: true, subtree: true });
   document.addEventListener('DOMContentLoaded', compactAll);
   setTimeout(compactAll, 300);
