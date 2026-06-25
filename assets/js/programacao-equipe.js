@@ -4,10 +4,6 @@
 // Auditoria 20%); o gestor confirma quem atende cada OS.
 import { supabase } from './supabaseClient.js';
 
-const PESOS = { contrato: 0.5, distancia: 0.3, auditoria: 0.2 };
-const CONTRATO_SCORE = { EFETIVO: 1, INTERMITENTE: 0.6, DIARISTA: 0.3 };
-const TOP_CANDIDATOS = 8;
-
 function esc(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -26,47 +22,11 @@ function normalizeText(value) {
     .trim();
 }
 
-function normalizeCpf(value) {
-  return String(value || '').replace(/\D/g, '');
-}
-
-function colaboradorKey(colab) {
-  return normalizeCpf(colab.cpf) || String(colab.id || colab.nome || '').trim();
-}
-
-function isColaboradorAtivo(colab) {
-  if (!colab) return false;
-  if (colab.ativo === false) return false;
-  const situacao = normalizeText(colab.situacao);
-  const desligamento = String(colab.desligamento || '').trim();
-  if (desligamento) return false;
-  return !['NAO ATIVO', 'NAO ATIVA', 'INATIVO', 'INATIVA', 'DESLIGADO', 'DESLIGADA', 'DEMITIDO', 'DEMITIDA'].some((s) => situacao.includes(s));
-}
-
 function hasGeo(lat, lng) {
   return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
 }
 
-function haversineKm(aLat, aLng, bLat, bLng) {
-  const lat1 = Number(aLat), lon1 = Number(aLng), lat2 = Number(bLat), lon2 = Number(bLng);
-  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return null;
-  const r = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const s1 = Math.sin(dLat / 2) ** 2;
-  const s2 = Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return r * 2 * Math.atan2(Math.sqrt(s1 + s2), Math.sqrt(1 - s1 - s2));
-}
-
 function round1(n) { return Math.round(n * 10) / 10; }
-
-function contratoScore(tipo) {
-  const norm = normalizeText(tipo);
-  if (norm.includes('EFETIVO')) return CONTRATO_SCORE.EFETIVO;
-  if (norm.includes('INTERMITENTE')) return CONTRATO_SCORE.INTERMITENTE;
-  if (norm.includes('DIARISTA')) return CONTRATO_SCORE.DIARISTA;
-  return 0.5;
-}
 
 function contratoLabel(tipo) {
   const norm = normalizeText(tipo);
@@ -74,20 +34,6 @@ function contratoLabel(tipo) {
   if (norm.includes('INTERMITENTE')) return 'Intermitente';
   if (norm.includes('DIARISTA')) return 'Diarista';
   return 'Não informado';
-}
-
-// Normaliza um valor (km ou peso de auditoria) por ranking dentro do grupo de
-// candidatos da mesma OS: melhor (menor valor) = 1, pior (maior valor) = 0.
-// Quem não tem o dado (null) fica sempre no fim, com score 0.
-function rankScores(values) {
-  const indices = values.map((v, i) => i).filter((i) => values[i] != null);
-  indices.sort((a, b) => values[a] - values[b]);
-  const scores = values.map(() => 0);
-  const n = indices.length;
-  indices.forEach((idx, pos) => {
-    scores[idx] = n > 1 ? 1 - pos / (n - 1) : 1;
-  });
-  return scores;
 }
 
 function injectStyles() {
@@ -127,20 +73,6 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-const cache = { snapshot: new Map(), cruzamento: new Map() };
-const CACHE_TTL_MS = 1000 * 60 * 5;
-
-function cacheGet(map, key) {
-  const item = map.get(key);
-  if (!item || Date.now() - item.ts > CACHE_TTL_MS) return null;
-  return item.data;
-}
-
-function cacheSet(map, key, data) {
-  map.set(key, { ts: Date.now(), data });
-  return data;
-}
-
 async function loadOsAtender(supervisao) {
   const { data, error } = await supabase
     .from('operacional_os')
@@ -163,54 +95,10 @@ async function loadPontos(ids) {
   return new Map((data || []).map((p) => [p.id, p]));
 }
 
-async function loadSnapshotColaboradores(supervisao) {
-  const cached = cacheGet(cache.snapshot, supervisao);
-  if (cached) return cached;
-  const latest = await supabase.from('colaborador_snapshot').select('data_referencia').order('data_referencia', { ascending: false }).limit(1);
-  const ref = latest.data?.[0]?.data_referencia;
-  if (!ref) return cacheSet(cache.snapshot, supervisao, []);
-  const { data, error } = await supabase.from('colaborador_snapshot').select('*').eq('data_referencia', ref).eq('supervisao', supervisao).limit(3500);
-  if (error) throw error;
-  const seen = new Set();
-  const rows = (data || []).filter(isColaboradorAtivo).filter((colab) => {
-    const key = normalizeCpf(colab.cpf) || normalizeText(colab.nome);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  return cacheSet(cache.snapshot, supervisao, rows);
-}
-
-// colaborador_cruzamento é pré-calculado no banco (pg_cron, ver migração
-// 20260625120000_colaborador_cruzamento.sql) — contrato, endereço/coordenadas
-// e peso de auditoria já vêm prontos, sem precisar refazer o cruzamento por
-// nome/CPF aqui no navegador a cada render.
-async function loadCruzamento(cpfs) {
-  const pendentes = cpfs.filter((c) => !cache.cruzamento.has(c));
-  if (pendentes.length) {
-    const { data, error } = await supabase
-      .from('colaborador_cruzamento')
-      .select('cpf,tipo_contrato,latitude,longitude,auditorias_180d_qtd,auditorias_180d_peso')
-      .in('cpf', pendentes);
-    if (!error) (data || []).forEach((row) => cache.cruzamento.set(normalizeCpf(row.cpf), row));
-    pendentes.forEach((c) => { if (!cache.cruzamento.has(c)) cache.cruzamento.set(c, null); });
-  }
-  const map = new Map();
-  cpfs.forEach((c) => map.set(c, cache.cruzamento.get(c) || null));
-  return map;
-}
-
 async function loadEquipeExistente(programacaoId) {
   const { data, error } = await supabase.from('programacao_equipe').select('*').eq('programacao_id', programacaoId);
   if (error) throw error;
   return data || [];
-}
-
-async function montarContexto(supervisao) {
-  const colaboradores = await loadSnapshotColaboradores(supervisao);
-  const cpfs = [...new Set(colaboradores.map((c) => normalizeCpf(c.cpf)).filter(Boolean))];
-  const cruzamento = await loadCruzamento(cpfs);
-  return { colaboradores, cruzamento };
 }
 
 function pontoDaOs(os, pontosPorId) {
@@ -224,42 +112,42 @@ function pontoDaOs(os, pontosPorId) {
   return null;
 }
 
-function montarCandidatos(ponto, contexto, jaConfirmadosOutraOs) {
-  const candidatosBrutos = contexto.colaboradores.filter((colab) => !jaConfirmadosOutraOs.has(colaboradorKey(colab)));
+// O ranking de candidatos (Contrato/Distância/Auditoria) é calculado no banco
+// pela RPC programacao_etapa_b_candidatos (ver migração
+// 20260625130000_programacao_etapa_b_candidatos_rpc.sql), que já filtra pelos
+// top 8 por OS usando colaborador_cruzamento pré-computado. Antes esse cálculo
+// rodava no navegador para cada OS x cada colaborador da supervisão e travava
+// a tela em supervisões grandes.
+async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
+  const osPayload = osComPonto
+    .filter(({ candidatosNecessarios }) => candidatosNecessarios)
+    .map(({ os, ponto }) => ({ os_id: os.id, lat: ponto?.lat ?? null, lng: ponto?.lng ?? null }));
+  if (!osPayload.length) return new Map();
 
-  const kms = candidatosBrutos.map((colab) => {
-    const cruz = contexto.cruzamento.get(normalizeCpf(colab.cpf));
-    return ponto && hasGeo(cruz?.latitude, cruz?.longitude) ? haversineKm(Number(cruz.latitude), Number(cruz.longitude), ponto.lat, ponto.lng) : null;
+  const { data, error } = await supabase.rpc('programacao_etapa_b_candidatos', {
+    p_supervisao: supervisao,
+    p_excluir_colaborador_ids: [...excluirIds],
+    p_os: osPayload,
   });
-  const auditPesos = candidatosBrutos.map((colab) => {
-    const cruz = contexto.cruzamento.get(normalizeCpf(colab.cpf));
-    return cruz?.auditorias_180d_qtd > 0 ? Number(cruz.auditorias_180d_peso) : null;
+  if (error) throw error;
+
+  const porOs = new Map();
+  (data || []).forEach((row) => {
+    const lista = porOs.get(row.os_id) || [];
+    lista.push({
+      colaborador: { nome: row.nome, cargo: row.cargo, coordenacao: row.coordenacao, supervisao: row.supervisao },
+      colaboradorId: row.colaborador_id,
+      tipoLabel: contratoLabel(row.tipo_contrato),
+      km: row.km != null ? Number(row.km) : null,
+      auditPeso: row.auditorias_peso != null ? Number(row.auditorias_peso) : null,
+      scoreContrato: Number(row.score_contrato),
+      scoreDistancia: Number(row.score_distancia),
+      scoreAuditoria: Number(row.score_auditoria),
+      score: Number(row.score),
+    });
+    porOs.set(row.os_id, lista);
   });
-
-  const distScores = rankScores(kms);
-  const auditScoresNormalizados = rankScores(auditPesos.map((p) => (p == null ? 0 : p)));
-
-  const candidatos = candidatosBrutos.map((colab, i) => {
-    const tipo = contexto.cruzamento.get(normalizeCpf(colab.cpf))?.tipo_contrato;
-    const scoreContrato = contratoScore(tipo);
-    const scoreDistancia = distScores[i];
-    const scoreAuditoria = auditScoresNormalizados[i];
-    const final = PESOS.contrato * scoreContrato + PESOS.distancia * scoreDistancia + PESOS.auditoria * scoreAuditoria;
-    return {
-      colaborador: colab,
-      colaboradorId: colaboradorKey(colab),
-      tipoLabel: contratoLabel(tipo),
-      km: kms[i] != null ? round1(kms[i]) : null,
-      auditPeso: auditPesos[i],
-      scoreContrato,
-      scoreDistancia,
-      scoreAuditoria,
-      score: final,
-    };
-  });
-
-  candidatos.sort((a, b) => b.score - a.score);
-  return candidatos.slice(0, TOP_CANDIDATOS);
+  return porOs;
 }
 
 function contratoBadgeClass(tipoLabel) {
@@ -341,6 +229,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   }
 
   let carregando = false;
+  let osComCandidatosAtual = [];
   async function carregarERenderizar() {
     if (carregando) return;
     carregando = true;
@@ -353,64 +242,59 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       }
 
       const pontosPorId = await loadPontos([...new Set(osRows.map((os) => os.ponto_embarque_id).filter(Boolean))]);
-      const contexto = await montarContexto(supervisao);
 
       const confirmadosPorOs = new Map();
       equipeRows.filter((r) => r.confirmado).forEach((r) => confirmadosPorOs.set(r.os_id, r));
       const colaboradoresConfirmadosEmOutraOs = new Set(equipeRows.filter((r) => r.confirmado).map((r) => r.colaborador_id));
 
-      const osComCandidatos = osRows.map((os) => {
-        const ponto = pontoDaOs(os, pontosPorId);
+      const osComPonto = osRows.map((os) => {
         const confirmadoRow = confirmadosPorOs.get(os.id) || null;
-        const candidatos = confirmadoRow ? [] : montarCandidatos(ponto, contexto, colaboradoresConfirmadosEmOutraOs);
-        return { os, ponto, confirmadoRow, candidatos };
+        return { os, ponto: pontoDaOs(os, pontosPorId), confirmadoRow, candidatosNecessarios: !confirmadoRow };
       });
+      const candidatosPorOs = await loadCandidatosPorOs(supervisao, osComPonto, colaboradoresConfirmadosEmOutraOs);
 
-      listEl.innerHTML = osComCandidatos.map(osCardHtml).join('');
-      atualizarKpis(content, osComCandidatos, confirmadosPorOs);
+      osComCandidatosAtual = osComPonto.map(({ os, ponto, confirmadoRow }) => ({
+        os,
+        ponto,
+        confirmadoRow,
+        candidatos: confirmadoRow ? [] : (candidatosPorOs.get(os.id) || []),
+      }));
+      listEl.innerHTML = osComCandidatosAtual.map(osCardHtml).join('');
 
-      listEl.querySelectorAll('[data-confirmar]').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          const card = btn.closest('.peq-os-card');
-          const osId = card?.dataset.osId;
-          const item = osComCandidatos.find((x) => String(x.os.id) === String(osId));
-          const cand = item?.candidatos.find((c) => c.colaboradorId === btn.dataset.confirmar);
-          if (!item || !cand) return;
-          btn.disabled = true;
-          btn.textContent = 'Salvando...';
-          try {
-            await confirmarCandidato(programacaoId, item.os, cand);
-            await carregarERenderizar();
-          } catch (error) {
-            console.error('[programacao-equipe] confirmar:', error);
-            btn.disabled = false;
-            btn.textContent = 'Confirmar';
-            alert(error.message || 'Não foi possível confirmar o colaborador.');
-          }
-        });
-      });
-
-      listEl.querySelectorAll('[data-remover]').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          btn.textContent = 'Removendo...';
-          try {
-            await removerConfirmacao(programacaoId, btn.dataset.remover);
-            await carregarERenderizar();
-          } catch (error) {
-            console.error('[programacao-equipe] remover:', error);
-            btn.disabled = false;
-            btn.textContent = 'Remover';
-            alert(error.message || 'Não foi possível remover a confirmação.');
-          }
-        });
-      });
+      atualizarKpis(content, osComCandidatosAtual, confirmadosPorOs);
     } catch (error) {
       console.error('[programacao-equipe] render:', error);
       listEl.innerHTML = `<div class="peq-empty">${esc(error.message || 'Erro ao montar a equipe.')}</div>`;
     } finally {
       carregando = false;
     }
+  }
+
+  if (!listEl.dataset.peqBound) {
+    listEl.dataset.peqBound = '1';
+    listEl.addEventListener('click', async (event) => {
+      const btnConfirmar = event.target.closest('[data-confirmar]');
+      const btnRemover = event.target.closest('[data-remover]');
+      if (!btnConfirmar && !btnRemover) return;
+      const btn = btnConfirmar || btnRemover;
+      const osCard = btn.closest('[data-os-id]');
+      const osId = osCard?.dataset.osId;
+      btn.disabled = true;
+      try {
+        if (btnConfirmar) {
+          const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
+          const cand = item?.candidatos.find((c) => c.colaboradorId === btn.dataset.confirmar);
+          if (item && cand) await confirmarCandidato(programacaoId, item.os, cand);
+        } else if (btnRemover) {
+          await removerConfirmacao(programacaoId, btn.dataset.remover);
+        }
+        await carregarERenderizar();
+      } catch (error) {
+        console.error('[programacao-equipe] ação:', error);
+        btn.disabled = false;
+        alert(error.message || 'Erro ao salvar. Tente novamente.');
+      }
+    });
   }
 
   await carregarERenderizar();
@@ -438,11 +322,12 @@ async function confirmarCandidato(programacaoId, os, cand) {
   // "substitui a atribuição da OS" que a distribuição manual já fazia.
   const { error: delErr } = await supabase.from('operacional_os_colaboradores').delete().eq('os_id', os.id);
   if (delErr) console.warn('[programacao-equipe] falha ao limpar vínculo anterior da OS.', delErr);
+  const cpfCandidato = /^\d+$/.test(cand.colaboradorId) ? cand.colaboradorId : null;
   const { error: vinculoErr } = await supabase.from('operacional_os_colaboradores').insert({
     os_id: os.id,
     colaborador_key: cand.colaboradorId,
     colaborador_nome: colab.nome,
-    colaborador_cpf: normalizeCpf(colab.cpf) || null,
+    colaborador_cpf: cpfCandidato,
     distancia_km: cand.km,
     origem_sugestao: 'PROGRAMACAO_ETAPA_B',
   });
