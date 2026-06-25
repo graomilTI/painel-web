@@ -252,6 +252,10 @@ Deno.serve(async (req) => {
     const MAX_COLAB = Math.max(1, Math.min(4, Number((body as any)?.maxParadas) || 4));
     const publicar = Boolean((body as any)?.publicar);
     const embarquesExtras = Array.isArray((body as any)?.embarquesExtras) ? (body as any).embarquesExtras : [];
+    // Filtro opcional: quando informado, restringe a roteirização a essas OS
+    // específicas (usado pela Etapa B da Programação, que já filtrou as OS
+    // por supervisão/status_gestor=ATENDER antes de chamar esta function).
+    const osIds: string[] = Array.isArray((body as any)?.osIds) ? (body as any).osIds.filter((v: unknown) => typeof v === 'string' && v) : [];
 
     osrmDeadline = Date.now() + OSRM_BUDGET_MS;
 
@@ -265,12 +269,12 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // 1) OS ativas (não finalizadas/devolvidas)
-    const { data: osRows, error: osErr } = await supabase
-      .from('operacional_os')
-      .select('id, embarque, cliente, supervisao')
-      .eq('situacao', 'Ativo')
-      .or('status_logistica.is.null,status_logistica.not.in.(FINALIZADA,DEVOLVIDA)');
+    // 1) OS ativas (não finalizadas/devolvidas), ou só as OS indicadas em osIds
+    let osQuery = supabase.from('operacional_os').select('id, embarque, cliente, supervisao');
+    osQuery = osIds.length
+      ? osQuery.in('id', osIds)
+      : osQuery.eq('situacao', 'Ativo').or('status_logistica.is.null,status_logistica.not.in.(FINALIZADA,DEVOLVIDA)');
+    const { data: osRows, error: osErr } = await osQuery;
     if (osErr) throw osErr;
     const osById = new Map<string, { embarque: string | null; cliente: string | null; supervisao: string | null }>();
     for (const row of (osRows || [])) osById.set(row.id, row as any);
@@ -284,10 +288,9 @@ Deno.serve(async (req) => {
     const pontos = precomputePontos((pontosRaw || []) as PontoEmbarque[]);
 
     // 3) Vínculos colaborador <-> OS ativa, 1 por colaborador (vínculo mais recente)
-    const { data: vinculosRaw, error: vincErr } = await supabase
-      .from('operacional_os_colaboradores')
-      .select('os_id,colaborador_key,colaborador_nome,created_at')
-      .limit(2000);
+    let vincQuery = supabase.from('operacional_os_colaboradores').select('os_id,colaborador_key,colaborador_nome,created_at');
+    vincQuery = osIds.length ? vincQuery.in('os_id', osIds) : vincQuery.limit(2000);
+    const { data: vinculosRaw, error: vincErr } = await vincQuery;
     if (vincErr) throw vincErr;
 
     const vinculosOrdenados = (vinculosRaw || [])
@@ -333,6 +336,23 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 4b) Fallback de geocodificação: colaborador_cruzamento já traz lat/lng
+    // pré-computados (vindos de operacional_colaborador_base via pg_cron) —
+    // usados quando o CEP do colaborador não tem entrada em geocode_cache.
+    // Casa por nome_chave (mesma normalização usada nessa tabela).
+    const nomesNecessarios = [...vinculoPorColaborador.keys()];
+    const { data: cruzamentoRaw, error: cruzErr } = await supabase
+      .from('colaborador_cruzamento')
+      .select('nome_chave,latitude,longitude')
+      .in('nome_chave', nomesNecessarios.length ? nomesNecessarios : ['__none__']);
+    if (cruzErr) throw cruzErr;
+    const geoPorNomeChave = new Map<string, { lat: number; lng: number }>();
+    for (const c of (cruzamentoRaw || [])) {
+      if (hasGeo(c.latitude, c.longitude)) {
+        geoPorNomeChave.set(c.nome_chave, { lat: Number(c.latitude), lng: Number(c.longitude) });
+      }
+    }
+
     // 5) Montar pickups: 1 por colaborador, com endereço geocodificado + ponto de
     // embarque (destino) resolvido a partir da OS à qual ele está vinculado.
     const pickups: Pickup[] = [];
@@ -345,7 +365,7 @@ Deno.serve(async (req) => {
 
       const colab = colabPorNome.get(nomeKey);
       const cepNorm = normalizeCep(colab?.cep);
-      const geo = cepNorm.length === 8 ? geoPorCep.get(cepNorm) : null;
+      const geo = (cepNorm.length === 8 ? geoPorCep.get(cepNorm) : null) || geoPorNomeChave.get(nomeKey);
       if (!geo) {
         semGeocodificacao.push({
           colaborador_nome: vinculo.colaborador_nome,
