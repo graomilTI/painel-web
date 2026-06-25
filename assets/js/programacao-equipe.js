@@ -93,6 +93,18 @@ function rankScores(values) {
   return scores;
 }
 
+function loadScriptComTimeout(src, id, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timeout ao carregar ${src}`)), timeoutMs);
+    const script = document.createElement('script');
+    script.id = id;
+    script.src = src;
+    script.onload = () => { clearTimeout(timer); resolve(); };
+    script.onerror = () => { clearTimeout(timer); reject(new Error(`Falha ao carregar ${src}`)); };
+    document.head.appendChild(script);
+  });
+}
+
 async function ensureLeaflet() {
   if (window.L) return true;
   try {
@@ -104,14 +116,7 @@ async function ensureLeaflet() {
       document.head.appendChild(link);
     }
     if (!document.getElementById(LEAFLET_JS_ID)) {
-      await new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.id = LEAFLET_JS_ID;
-        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-      });
+      await loadScriptComTimeout('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', LEAFLET_JS_ID, 8000);
     }
     return Boolean(window.L);
   } catch (error) {
@@ -165,10 +170,20 @@ let _layerPontos = null;
 let _layerColabs = null;
 let _layerRotas = null;
 let _resizeBound = false;
+let _mapMountedOn = null;
 
 async function ensureMap(root) {
   const mapEl = root.querySelector('#peqMapEl');
-  if (!mapEl || _map) return;
+  if (!mapEl) return;
+  // O painel é remontado (innerHTML trocado) a cada render/troca de etapa — o
+  // #peqMapEl antigo morre junto, mas a instância Leaflet em _map continuava
+  // viva apontando para um nó desconectado. Sem isso, voltar para a etapa B
+  // reaproveitava esse mapa "fantasma" e travava a inicialização.
+  if (_map && _mapMountedOn !== mapEl) {
+    _map.remove();
+    _map = null;
+  }
+  if (_map) return;
   if (_mapInitializing) return;
   _mapInitializing = true;
   try {
@@ -180,6 +195,7 @@ async function ensureMap(root) {
     }
     const L = window.L;
     _map = L.map(mapEl, { zoomControl: true, scrollWheelZoom: true, center: [-14.235, -51.925], zoom: 4 });
+    _mapMountedOn = mapEl;
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
       maxZoom: 19,
       attribution: '&copy; OSM &copy; CARTO',
@@ -439,7 +455,9 @@ async function atualizarMapaENativos(root, osComCandidatos, confirmadosPorOs) {
   let porOs = {};
   if (pares.length) {
     try {
-      const { data, error } = await supabase.functions.invoke('programacao-rota-equipe', { body: { pares } });
+      const invocacao = supabase.functions.invoke('programacao-rota-equipe', { body: { pares } });
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo esgotado ao calcular a rota.')), 25000));
+      const { data, error } = await Promise.race([invocacao, timeout]);
       if (error) throw error;
       (data?.rotas || []).forEach((r) => rotasPorPar.set(`${r.os_id}:${r.colaborador_id}`, r));
       porOs = data?.porOs || {};
@@ -502,7 +520,10 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     return;
   }
 
+  let carregando = false;
   async function carregarERenderizar() {
+    if (carregando) return;
+    carregando = true;
     listEl.innerHTML = '<div class="peq-empty">Carregando OS em ATENDER...</div>';
     try {
       const [osRows, equipeRows] = await Promise.all([loadOsAtender(supervisao), loadEquipeExistente(programacaoId)]);
@@ -573,6 +594,8 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     } catch (error) {
       console.error('[programacao-equipe] render:', error);
       listEl.innerHTML = `<div class="peq-empty">${esc(error.message || 'Erro ao montar a equipe.')}</div>`;
+    } finally {
+      carregando = false;
     }
   }
 
