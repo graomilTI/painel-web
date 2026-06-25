@@ -2,6 +2,7 @@ import { supabase } from './supabaseClient.js';
 
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const BR = new Intl.NumberFormat('pt-BR');
+const BRL = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const CACHE_TTL_MS = 1000 * 60 * 8;
 
 const cache = {
@@ -9,6 +10,7 @@ const cache = {
   pontos: new Map(),
   colabs: new Map(),
   snapshots: new Map(),
+  cruzamento: new Map(),
   auditorias: null,
 };
 
@@ -170,19 +172,39 @@ function candidateFromBase(base, ponto, context) {
     ? haversineKm(ponto.latitude, ponto.longitude, base.latitude, base.longitude)
     : null;
 
+  const cpfNorm = onlyDigits(merged.cpf || merged.documento || merged.colaborador_cpf || base.cpf || '');
+  const cruzEntry = cpfNorm ? context.cruzamentoIndex?.get(cpfNorm) : null;
+  const mergedComCruz = cruzEntry ? { ...merged, tipo_contrato: cruzEntry.tipo_contrato } : merged;
+  const rank = cargoRank(mergedComCruz);
+  const isEfetivo = rank === 0;
+  const salario = Number(cruzEntry?.salario) || 0;
+  // Efetivo: salário é custo fixo do mês, não varia com o embarque — custo marginal = só combustível
+  // Intermitente/Diarista: recebem por dia embarcado → custo = salário + combustível
+  const custoTotal = distanciaKm != null
+    ? (isEfetivo ? 0 : salario) + (distanciaKm * 2 / 10) * 7.0
+    : null;
+
   return {
     nome,
-    contrato: contratoLabel(merged),
-    cargoRank: cargoRank(merged),
+    contrato: contratoLabel(mergedComCruz),
+    cargoRank: rank,
     distanciaKm,
+    custoTotal,
     auditScore: auditField?.value ?? (Number.isFinite(fallbackAudit) ? fallbackAudit : null),
     auditLabel: auditField?.label ?? (Number.isFinite(fallbackAudit) ? `${BR.format(fallbackAudit)} hist.` : 's/dados'),
   };
 }
 
 function sortCandidates(a, b) {
-  if (a.cargoRank !== b.cargoRank) return a.cargoRank - b.cargoRank;
+  // Primário: menor custo total (efetivo só paga combustível; intermitente/diarista paga salário + combustível)
+  const aHasCusto = Number.isFinite(a.custoTotal);
+  const bHasCusto = Number.isFinite(b.custoTotal);
+  if (aHasCusto && bHasCusto && a.custoTotal !== b.custoTotal) return a.custoTotal - b.custoTotal;
+  if (aHasCusto && !bHasCusto) return -1;
+  if (!aHasCusto && bHasCusto) return 1;
 
+  // Fallback sem dados de custo: tipo de contrato, depois distância
+  if (a.cargoRank !== b.cargoRank) return a.cargoRank - b.cargoRank;
   const aHasKm = Number.isFinite(a.distanciaKm);
   const bHasKm = Number.isFinite(b.distanciaKm);
   if (aHasKm && bHasKm && a.distanciaKm !== b.distanciaKm) return a.distanciaKm - b.distanciaKm;
@@ -312,14 +334,38 @@ async function loadAuditorias() {
   }
 }
 
+async function loadCruzamento(supervisao) {
+  const key = normalize(supervisao || 'GERAL');
+  const cached = readCache(cache.cruzamento, key);
+  if (cached) return cached;
+  try {
+    const { data, error } = await supabase
+      .from('colaborador_cruzamento')
+      .select('cpf,tipo_contrato,salario')
+      .eq('supervisao', supervisao)
+      .neq('cpf', '')
+      .limit(3000);
+    if (error) throw error;
+    const index = new Map();
+    (data || []).forEach((row) => {
+      if (row.cpf && !index.has(row.cpf)) index.set(row.cpf, row);
+    });
+    return writeCache(cache.cruzamento, key, index);
+  } catch (error) {
+    console.warn('[OS sugestão] cruzamento indisponível:', error);
+    return writeCache(cache.cruzamento, key, new Map());
+  }
+}
+
 async function loadContext(supervisao) {
-  const [pontos, colabs, snapshot, auditorias] = await Promise.all([
+  const [pontos, colabs, snapshot, cruzamentoIndex, auditorias] = await Promise.all([
     loadPontos(supervisao),
     loadColabs(supervisao),
     loadSnapshot(supervisao),
+    loadCruzamento(supervisao),
     loadAuditorias(),
   ]);
-  return { pontos, colabs, snapshot, snapshotIndex: buildSnapshotIndex(snapshot), auditorias };
+  return { pontos, colabs, snapshot, snapshotIndex: buildSnapshotIndex(snapshot), cruzamentoIndex, auditorias };
 }
 
 function injectStyles() {
@@ -376,8 +422,9 @@ function applyDisplay(card, os, context) {
     input.dataset.osSugDefault = '1';
     input.classList.add('os-sug-default');
     const km = Number.isFinite(sug.distanciaKm) ? `${KM.format(sug.distanciaKm)} km` : 'km s/dados';
+    const custo = Number.isFinite(sug.custoTotal) ? ` · R$ ${BRL.format(sug.custoTotal)}` : '';
     meta.classList.remove('warn');
-    meta.innerHTML = `<b>Sugestão</b> · ${escapeHtml(sug.contrato)} · ${escapeHtml(km)} · Aud.: ${escapeHtml(sug.auditLabel)}`;
+    meta.innerHTML = `<b>Sugestão</b> · ${escapeHtml(sug.contrato)} · ${escapeHtml(km)}${escapeHtml(custo)} · Aud.: ${escapeHtml(sug.auditLabel)}`;
     return;
   }
 

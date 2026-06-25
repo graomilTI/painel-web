@@ -817,11 +817,15 @@ initProtectedPage('Programação', (content) => {
       return `Placa ${normalizedPlate} não localizada na base de patrimônios/frota. Solicitar leitura do patrimônio para confirmar o veículo.`;
     }
 
+    // O spread de veiculo.raw vem ANTES dos campos calculados: frotas_veiculos
+    // tem uma coluna "nome" que é o nome/apelido do veículo (ex.: "MOBI LIKE -
+    // SHV7F36"), não do motorista — se viesse depois, sobrescrevia o nome
+    // correto do motorista_atual e gerava falso alerta de divergência.
     const pessoa = {
+      ...((veiculo.raw && typeof veiculo.raw === 'object') ? veiculo.raw : {}),
       nome: veiculo.motoristaNome,
       cpf: veiculo.motoristaCpf,
       motorista: veiculo.motoristaNome,
-      ...((veiculo.raw && typeof veiculo.raw === 'object') ? veiculo.raw : {}),
     };
 
     if (pessoaMatchesColaborador(pessoa, colab)) return '';
