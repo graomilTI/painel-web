@@ -297,29 +297,46 @@ Deno.serve(async (req) => {
       .filter((v) => osById.has(v.os_id))
       .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
 
-    const vinculoPorColaborador = new Map<string, { os_id: string; colaborador_nome: string }>();
+    // colaborador_key normalmente é o CPF (não o nome) — ver colabKey() em
+    // os-programacao-lite.js e o colaboradorId retornado pela RPC da Etapa B.
+    // Guardamos os dois (cpf normalizado e nome) pra poder casar por qualquer
+    // um dos dois mais adiante.
+    const vinculoPorColaborador = new Map<string, { os_id: string; colaborador_nome: string; cpf: string }>();
     for (const v of vinculosOrdenados) {
-      const key = normalize(v.colaborador_key);
+      const cpfDigits = normalizeCep(v.colaborador_key);
+      const key = cpfDigits.length === 11 ? cpfDigits : normalize(v.colaborador_key);
       if (!key || vinculoPorColaborador.has(key)) continue;
-      vinculoPorColaborador.set(key, { os_id: v.os_id, colaborador_nome: cleanStr(v.colaborador_nome || v.colaborador_key) });
+      vinculoPorColaborador.set(key, {
+        os_id: v.os_id,
+        colaborador_nome: cleanStr(v.colaborador_nome || v.colaborador_key),
+        cpf: cpfDigits.length === 11 ? cpfDigits : '',
+      });
     }
 
     // 4) Endereços dos colaboradores ativos + cache de geocodificação por CEP
     const { data: colabsRaw, error: colabErr } = await supabase
       .from('colaboradores')
-      .select('nome,cep,cidade,estado')
+      .select('nome,cpf,cep,cidade,estado')
       .eq('situacao', 'Ativo')
       .limit(3000);
     if (colabErr) throw colabErr;
 
     const colabPorNome = new Map<string, { cep: string; cidade: string; estado: string }>();
+    const colabPorCpf = new Map<string, { cep: string; cidade: string; estado: string }>();
     for (const c of (colabsRaw || [])) {
-      colabPorNome.set(normalize(c.nome), { cep: cleanStr(c.cep), cidade: cleanStr(c.cidade), estado: cleanStr(c.estado) });
+      const info = { cep: cleanStr(c.cep), cidade: cleanStr(c.cidade), estado: cleanStr(c.estado) };
+      colabPorNome.set(normalize(c.nome), info);
+      const cpfDigits = normalizeCep(c.cpf);
+      if (cpfDigits.length === 11) colabPorCpf.set(cpfDigits, info);
+    }
+
+    function resolveColab(vinculo: { cpf: string; colaborador_nome: string }) {
+      return (vinculo.cpf && colabPorCpf.get(vinculo.cpf)) || colabPorNome.get(normalize(vinculo.colaborador_nome)) || null;
     }
 
     const cepsNecessarios = new Set<string>();
-    for (const [nomeKey] of vinculoPorColaborador) {
-      const cepNorm = normalizeCep(colabPorNome.get(nomeKey)?.cep);
+    for (const [, vinculo] of vinculoPorColaborador) {
+      const cepNorm = normalizeCep(resolveColab(vinculo)?.cep);
       if (cepNorm.length === 8) cepsNecessarios.add(cepNorm);
     }
 
@@ -339,18 +356,21 @@ Deno.serve(async (req) => {
     // 4b) Fallback de geocodificação: colaborador_cruzamento já traz lat/lng
     // pré-computados (vindos de operacional_colaborador_base via pg_cron) —
     // usados quando o CEP do colaborador não tem entrada em geocode_cache.
-    // Casa por nome_chave (mesma normalização usada nessa tabela).
-    const nomesNecessarios = [...vinculoPorColaborador.keys()];
+    // Casa por cpf (mais confiável) e, na falta, por nome_chave.
+    const cpfsNecessarios = [...vinculoPorColaborador.values()].map((v) => v.cpf).filter(Boolean);
+    const nomesNecessarios = [...vinculoPorColaborador.values()].map((v) => normalize(v.colaborador_nome)).filter(Boolean);
     const { data: cruzamentoRaw, error: cruzErr } = await supabase
       .from('colaborador_cruzamento')
-      .select('nome_chave,latitude,longitude')
-      .in('nome_chave', nomesNecessarios.length ? nomesNecessarios : ['__none__']);
+      .select('cpf,nome_chave,latitude,longitude')
+      .or(`cpf.in.(${(cpfsNecessarios.length ? cpfsNecessarios : ['__none__']).join(',')}),nome_chave.in.(${(nomesNecessarios.length ? nomesNecessarios : ['__none__']).join(',')})`);
     if (cruzErr) throw cruzErr;
+    const geoPorCpfCruz = new Map<string, { lat: number; lng: number }>();
     const geoPorNomeChave = new Map<string, { lat: number; lng: number }>();
     for (const c of (cruzamentoRaw || [])) {
-      if (hasGeo(c.latitude, c.longitude)) {
-        geoPorNomeChave.set(c.nome_chave, { lat: Number(c.latitude), lng: Number(c.longitude) });
-      }
+      if (!hasGeo(c.latitude, c.longitude)) continue;
+      const geo = { lat: Number(c.latitude), lng: Number(c.longitude) };
+      if (c.cpf) geoPorCpfCruz.set(c.cpf, geo);
+      if (c.nome_chave) geoPorNomeChave.set(c.nome_chave, geo);
     }
 
     // 5) Montar pickups: 1 por colaborador, com endereço geocodificado + ponto de
@@ -359,13 +379,15 @@ Deno.serve(async (req) => {
     const semCoordenadas: Array<{ os_id: string; embarque: string; cliente: string | null; colaborador_nome: string }> = [];
     const semGeocodificacao: Array<{ colaborador_nome: string; os_id: string; cliente: string | null; cep: string; cidade: string; estado: string }> = [];
 
-    for (const [nomeKey, vinculo] of vinculoPorColaborador) {
+    for (const [, vinculo] of vinculoPorColaborador) {
       const osRow = osById.get(vinculo.os_id);
       if (!osRow) continue;
 
-      const colab = colabPorNome.get(nomeKey);
+      const colab = resolveColab(vinculo);
       const cepNorm = normalizeCep(colab?.cep);
-      const geo = (cepNorm.length === 8 ? geoPorCep.get(cepNorm) : null) || geoPorNomeChave.get(nomeKey);
+      const geo = (cepNorm.length === 8 ? geoPorCep.get(cepNorm) : null)
+        || (vinculo.cpf ? geoPorCpfCruz.get(vinculo.cpf) : null)
+        || geoPorNomeChave.get(normalize(vinculo.colaborador_nome));
       if (!geo) {
         semGeocodificacao.push({
           colaborador_nome: vinculo.colaborador_nome,
