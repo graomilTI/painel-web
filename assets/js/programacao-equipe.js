@@ -7,6 +7,11 @@
 // quando o gestor pedir "Ver rotas no mapa" (reaproveita a Edge Function já
 // usada em Frotas Roteirização, ver supabase/functions/frotas-roteirizar).
 import { supabase } from './supabaseClient.js';
+import { getCurrentUser } from './auth.js';
+
+let currentUser = null;
+const BRI = new Intl.NumberFormat('pt-BR');
+const STATUS_OPTS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
 
 const LEAFLET_CSS_ID = 'leaflet-css-prog-equipe';
 const LEAFLET_JS_ID = 'leaflet-js-prog-equipe';
@@ -169,21 +174,83 @@ function injectStyles() {
     .peqb-legend b{font-weight:850;color:#cbd5e1}
     .peqb-legend i{display:inline-block;width:13px;height:6px;border-radius:2px;margin-right:5px;vertical-align:middle}
     .peqb-legend .lg-c{background:#22c55e}.peqb-legend .lg-d{background:#38bdf8}.peqb-legend .lg-a{background:#fbbf24}
+    .peqb-block-head{font-size:11px;font-weight:850;letter-spacing:.06em;text-transform:uppercase;color:#6fd0a5;margin:2px 0 9px}
+    .peqb-status-strip{display:flex;gap:5px;flex-wrap:wrap;margin:9px 0 4px}
+    .peqb-st{border:1px solid rgba(111,208,165,.22);background:rgba(8,22,17,.55);color:#cfe7da;border-radius:999px;min-width:34px;height:32px;padding:0 9px;font-weight:900;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+    .peqb-st:hover{border-color:rgba(111,208,165,.45)}
+    .peqb-st.warn.on{background:#fde68a;color:#713f12;border-color:#fde68a}
+    .peqb-st.ok.on{background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;border-color:#86efac}
+    .peqb-st.danger.on{background:#fecaca;color:#7f1d1d;border-color:#fecaca}
+    .peqb-st.kg{color:#90cdf4;border-color:rgba(99,179,237,.35)}.peqb-st.kg.on{background:rgba(99,179,237,.3);color:#0c2942}
+    .peqb-st.conf{color:#c4b5fd;border-color:rgba(167,139,250,.35)}.peqb-st.conf.on{background:rgba(167,139,250,.3);color:#2a1d52}
+    .peqb-st:disabled{opacity:.5;cursor:not-allowed}
+    .peqb-sep{display:flex;align-items:center;gap:10px;margin:18px 0 11px;color:#9fb7aa;font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.05em}
+    .peqb-sep::before,.peqb-sep::after{content:'';flex:1;height:1px;background:rgba(111,208,165,.16)}
+    .peqb-na{border:1px solid rgba(111,208,165,.12);border-radius:13px;background:rgba(2,6,23,.25);padding:11px 13px;margin-bottom:8px}
+    .peqb-na-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+    .peqb-na-title{font-size:13px;font-weight:850;color:#e8f3ec}
+    .peqb-na-meta{font-size:11px;color:#8ba79a;margin-top:2px}
+    .peqb-modal-ov{position:fixed;inset:0;background:rgba(2,6,23,.7);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
+    .peqb-modal{background:#0c1f17;border:1px solid rgba(111,208,165,.25);border-radius:16px;padding:18px;width:100%;max-width:380px;display:flex;flex-direction:column;gap:10px}
+    .peqb-modal h3{margin:0;font-size:15px;color:#f8fafc}.peqb-modal p{margin:0;font-size:12px;color:#9fb7aa}
+    .peqb-modal input{padding:9px 10px;border-radius:9px;border:1px solid rgba(111,208,165,.3);background:#0a1e17;color:#f8fafc;font-size:14px}
+    .peqb-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
     @media(max-width:600px){.peqb-cand-cost{align-self:flex-start}}
   `;
   document.head.appendChild(style);
 }
 
-async function loadOsAtender(supervisao) {
+// Carrega as OS acionáveis da supervisão (pendentes/aguardar/atender) — as
+// FINALIZAR já saíram do fluxo do dia. A triagem (mudar status) e a atribuição
+// passam a conviver na mesma tela.
+async function loadOsRelevantes(supervisao) {
   const { data, error } = await supabase
     .from('operacional_os')
-    .select('id,numero_os,cliente,embarque,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao')
+    .select('id,numero_os,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os')
     .eq('supervisao', supervisao)
-    .eq('status_gestor', 'ATENDER')
+    .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR,status_gestor.eq.ATENDER')
+    .order('data_os', { ascending: false })
     .order('numero_os', { ascending: false })
-    .limit(300);
+    .limit(400);
   if (error) throw error;
   return data || [];
+}
+
+function statusNorm(os) {
+  return normalizeText(os?.status_gestor || '') || 'PENDENTE';
+}
+
+// Tira de status/saldo/conferir reaproveitada da triagem (os-programacao-lite),
+// agora dentro da própria tela de equipe.
+function statusStripHtml(os) {
+  const st = statusNorm(os);
+  const btn = (status, label, icon, cls) =>
+    `<button type="button" class="peqb-st ${cls} ${st === status ? 'on' : ''}" data-status="${status}" data-os="${esc(os.id)}" title="${label}">${icon}</button>`;
+  const kgAtivo = String(os.observacao_logistica || '').startsWith('KG solicitado');
+  const laudoAtivo = String(os.observacao_logistica || '').startsWith('LAUDO:');
+  return `<div class="peqb-status-strip">
+    ${btn('AGUARDAR', 'Aguardar', '❚❚', 'warn')}
+    ${btn('ATENDER', 'Atender', '✓', 'ok')}
+    ${btn('FINALIZAR', 'Finalizar', '＄', 'danger')}
+    <button type="button" class="peqb-st kg ${kgAtivo ? 'on' : ''}" data-kg="${esc(os.id)}" title="Aumentar saldo">＋</button>
+    <button type="button" class="peqb-st conf ${laudoAtivo ? 'on' : ''}" data-conf="${esc(os.id)}" title="Conferir / anexar laudo">▣</button>
+  </div>`;
+}
+
+// Cartão compacto do bloco "Não vão atender" (sem atribuição de equipe).
+function osNaoAtenderHtml(os) {
+  const st = statusNorm(os);
+  const chipCls = st === 'AGUARDAR' ? 'warn' : st === 'FINALIZAR' ? 'danger' : '';
+  return `<div class="peqb-na" data-os-id="${esc(os.id)}">
+    <div class="peqb-na-head">
+      <div>
+        <div class="peqb-na-title">${esc(os.cliente || '-')} <span style="color:#6f8a7d;font-weight:700">· OS ${esc(os.numero_os || '-')}</span></div>
+        <div class="peqb-na-meta">📍 ${esc(os.embarque || '-')}</div>
+      </div>
+      <span class="peqb-chip ${chipCls}">${esc(st === 'PENDENTE' ? 'Pendente' : st.charAt(0) + st.slice(1).toLowerCase())}</span>
+    </div>
+    ${statusStripHtml(os)}
+  </div>`;
 }
 
 async function loadPontos(ids) {
@@ -343,6 +410,7 @@ function osRowHtml(item) {
     return `
       <article class="peqb-row" data-os-id="${esc(os.id)}">
         ${osHeadHtml(os, true)}
+        ${statusStripHtml(os)}
         <div class="peqb-cand sel peqb-cand-confirmado">
           <span class="peqb-cand-av">${esc(iniciais(confirmadoRow.nome_colaborador))}</span>
           <span class="peqb-cand-main">
@@ -378,6 +446,7 @@ function osRowHtml(item) {
   return `
     <article class="peqb-row" data-os-id="${esc(os.id)}">
       ${osHeadHtml(os, false)}
+      ${statusStripHtml(os)}
       <input type="hidden" data-select-colaborador value="${esc(selecionadoId)}" />
       ${candHtml}
       ${outrosHtml}
@@ -526,6 +595,7 @@ function desenharTodasRotas(mapState, rotas) {
 
 export async function renderProgramacaoEquipe(content, options = {}) {
   injectStyles();
+  if (!currentUser) currentUser = await getCurrentUser().catch(() => null);
   const supervisao = String(options.supervisao || '').trim();
   const programacaoId = options.programacaoId || null;
 
@@ -563,6 +633,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
 
   let carregando = false;
   let osComCandidatosAtual = [];
+  let osTodasAtual = [];
   let rotasPorOsId = new Map(); // os_id -> rota completa (frotas-roteirizar), só após "Ver rotas no mapa"
   let rotasCompletas = []; // todas as rotas relevantes (sem duplicar veículo), desenhadas juntas no mapa
   let focoOsId = null;
@@ -619,21 +690,26 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   async function carregarERenderizar() {
     if (carregando) return;
     carregando = true;
-    listEl.innerHTML = '<div class="peqb-empty">Carregando OS em ATENDER...</div>';
+    listEl.innerHTML = '<div class="peqb-empty">Carregando O.S. da supervisão...</div>';
     try {
-      const [osRows, equipeRows] = await Promise.all([loadOsAtender(supervisao), loadEquipeExistente(programacaoId)]);
-      if (!osRows.length) {
-        listEl.innerHTML = '<div class="peqb-empty">Nenhuma OS marcada como ATENDER para esta supervisão. Confirme as OS na etapa A.</div>';
+      const [osTodas, equipeRows] = await Promise.all([loadOsRelevantes(supervisao), loadEquipeExistente(programacaoId)]);
+      osTodasAtual = osTodas;
+      if (!osTodas.length) {
+        listEl.innerHTML = '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
+        osComCandidatosAtual = [];
         return;
       }
 
-      const pontosPorId = await loadPontos([...new Set(osRows.map((os) => os.ponto_embarque_id).filter(Boolean))]);
+      const atenderRows = osTodas.filter((os) => statusNorm(os) === 'ATENDER');
+      const outrasRows = osTodas.filter((os) => statusNorm(os) !== 'ATENDER');
+
+      const pontosPorId = await loadPontos([...new Set(atenderRows.map((os) => os.ponto_embarque_id).filter(Boolean))]);
 
       const confirmadosPorOs = new Map();
       equipeRows.filter((r) => r.confirmado).forEach((r) => confirmadosPorOs.set(r.os_id, r));
       const colaboradoresConfirmadosEmOutraOs = new Set(equipeRows.filter((r) => r.confirmado).map((r) => r.colaborador_id));
 
-      const osComPonto = osRows.map((os) => {
+      const osComPonto = atenderRows.map((os) => {
         const confirmadoRow = confirmadosPorOs.get(os.id) || null;
         return { os, ponto: pontoDaOs(os, pontosPorId), confirmadoRow, candidatosNecessarios: !confirmadoRow };
       });
@@ -645,12 +721,24 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         confirmadoRow,
         candidatos: confirmadoRow ? [] : (candidatosPorOs.get(os.id) || []),
       }));
-      listEl.innerHTML = osComCandidatosAtual.map(osRowHtml).join('');
+
+      const atenderHtml = osComCandidatosAtual.length
+        ? osComCandidatosAtual.map(osRowHtml).join('')
+        : '<div class="peqb-empty" style="margin:0 0 4px">Nenhuma O.S. marcada para atender ainda — use o botão ✓ nas O.S. abaixo.</div>';
+      const outrasHtml = outrasRows.length
+        ? `<div class="peqb-sep">Não vão atender · ${outrasRows.length}</div>${outrasRows.map(osNaoAtenderHtml).join('')}`
+        : '';
+      listEl.innerHTML = `<div class="peqb-block-head">Vão atender · ${osComCandidatosAtual.length}</div>${atenderHtml}${outrasHtml}`;
 
       atualizarKpis(content, osComCandidatosAtual, confirmadosPorOs);
 
-      const manterFoco = focoOsId && osComCandidatosAtual.some((it) => String(it.os.id) === focoOsId);
-      await atualizarMapaParaOs(manterFoco ? focoOsId : String(osComCandidatosAtual[0].os.id));
+      if (osComCandidatosAtual.length) {
+        const manterFoco = focoOsId && osComCandidatosAtual.some((it) => String(it.os.id) === focoOsId);
+        await atualizarMapaParaOs(manterFoco ? focoOsId : String(osComCandidatosAtual[0].os.id));
+      } else {
+        mapEmptyEl.style.display = 'flex';
+        mapEmptyEl.textContent = 'Marque uma O.S. como atender (✓) para ver a rota.';
+      }
     } catch (error) {
       console.error('[programacao-equipe] render:', error);
       listEl.innerHTML = `<div class="peqb-empty">${esc(error.message || 'Erro ao montar a equipe.')}</div>`;
@@ -659,7 +747,104 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     }
   }
 
+  async function atualizarStatusOs(osId, nextStatus, btn) {
+    if (btn?.disabled) return;
+    if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
+    try {
+      const agoraIso = new Date().toISOString();
+      const patch = { status_gestor: nextStatus, configurada_em: agoraIso, observacao_logistica: null, updated_at: agoraIso };
+      if (nextStatus === 'FINALIZAR') {
+        patch.status_logistica = 'PENDENTE';
+        patch.enviado_logistica_em = agoraIso;
+        patch.logistica_solicitado_por = currentUser?.id || null;
+      } else {
+        patch.status_logistica = null;
+        patch.enviado_logistica_em = null;
+        patch.logistica_solicitado_por = null;
+      }
+      const { error } = await supabase.from('operacional_os').update(patch).eq('id', osId);
+      if (error) throw error;
+      await carregarERenderizar();
+    } catch (error) {
+      console.error('[programacao-equipe] status:', error);
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+      alert(error.message || 'Não foi possível atualizar a O.S.');
+    }
+  }
+
+  function openKgModal(osId) {
+    const os = osTodasAtual.find((o) => String(o.id) === String(osId));
+    if (!os) return;
+    const ov = document.createElement('div');
+    ov.className = 'peqb-modal-ov';
+    ov.innerHTML = `<div class="peqb-modal"><h3>Quanto somar na O.S.?</h3><p>O.S. <b style="color:#bbf7d0">${esc(os.numero_os || '-')}</b> — vai para a Logística como saldo.</p><input id="peqbKgInput" type="number" min="1" placeholder="Inserir KG" inputmode="numeric"/><div class="peqb-modal-actions"><button type="button" class="peqb-row-btn" data-kg-cancel>Cancelar</button><button type="button" class="peqb-row-btn" data-kg-ok style="border-color:rgba(134,239,172,.4);color:#bbf7d0">Confirmar</button></div></div>`;
+    document.body.appendChild(ov);
+    const input = ov.querySelector('#peqbKgInput');
+    input.focus();
+    const close = () => ov.remove();
+    ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+    ov.querySelector('[data-kg-cancel]').addEventListener('click', close);
+    ov.querySelector('[data-kg-ok]').addEventListener('click', async () => {
+      const kg = Number(input.value);
+      if (!kg || kg <= 0) { input.focus(); return; }
+      const kgText = `KG solicitado pelo gestor: ${BRI.format(kg)} kg`;
+      close();
+      try {
+        const { error } = await supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: 'AGUARDAR', configurada_em: null, updated_at: new Date().toISOString() }).eq('id', osId);
+        if (error) throw error;
+        await carregarERenderizar();
+      } catch (error) { alert(error.message || 'Não foi possível solicitar saldo.'); }
+    });
+  }
+
+  function openLaudoModal(osId) {
+    const os = osTodasAtual.find((o) => String(o.id) === String(osId));
+    if (!os) return;
+    const ov = document.createElement('div');
+    ov.className = 'peqb-modal-ov';
+    ov.innerHTML = `<div class="peqb-modal"><h3>Conferir · anexar laudo</h3><p>O.S. <b style="color:#bbf7d0">${esc(os.numero_os || '-')}</b> — anexe o(s) arquivo(s).</p><input id="peqbLaudoFile" type="file" multiple/><div id="peqbLaudoList" style="font-size:11px;color:#9fb7aa"></div><div class="peqb-modal-actions"><button type="button" class="peqb-row-btn" data-laudo-cancel>Cancelar</button><button type="button" class="peqb-row-btn" data-laudo-ok style="border-color:rgba(134,239,172,.4);color:#bbf7d0">Enviar</button></div></div>`;
+    document.body.appendChild(ov);
+    const fileInput = ov.querySelector('#peqbLaudoFile');
+    const listInfo = ov.querySelector('#peqbLaudoList');
+    let files = [];
+    fileInput.addEventListener('change', () => { files = [...(fileInput.files || [])]; listInfo.textContent = files.map((f) => f.name).join(', '); });
+    const close = () => ov.remove();
+    ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+    ov.querySelector('[data-laudo-cancel]').addEventListener('click', close);
+    ov.querySelector('[data-laudo-ok]').addEventListener('click', async () => {
+      if (!files.length) { fileInput.focus(); return; }
+      const okBtn = ov.querySelector('[data-laudo-ok]');
+      okBtn.disabled = true; okBtn.textContent = 'Enviando...';
+      try {
+        const urls = [];
+        for (const file of files) {
+          const path = `${osId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+          const { data: up, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
+          if (upErr) throw upErr;
+          const { data: urlData } = supabase.storage.from('os-laudos').getPublicUrl(up.path);
+          urls.push(urlData.publicUrl);
+        }
+        const laudoText = `LAUDO:${urls.join(',')}`;
+        const { error } = await supabase.from('operacional_os').update({ observacao_logistica: laudoText, updated_at: new Date().toISOString() }).eq('id', osId);
+        if (error) throw error;
+        close();
+        await carregarERenderizar();
+      } catch (error) {
+        okBtn.disabled = false; okBtn.textContent = 'Enviar';
+        alert(error.message || 'Não foi possível anexar o laudo.');
+      }
+    });
+  }
+
   listEl.addEventListener('click', async (event) => {
+    // Triagem embutida: status / saldo / conferir (vale para os dois blocos)
+    const statusBtn = event.target.closest('[data-status]');
+    if (statusBtn) { await atualizarStatusOs(statusBtn.dataset.os, statusBtn.dataset.status, statusBtn); return; }
+    const kgBtn = event.target.closest('[data-kg]');
+    if (kgBtn) { openKgModal(kgBtn.dataset.kg); return; }
+    const confBtn = event.target.closest('[data-conf]');
+    if (confBtn) { openLaudoModal(confBtn.dataset.conf); return; }
+
     const toggleOutros = event.target.closest('[data-toggle-outros]');
     const pickBtn = event.target.closest('[data-pick-cand]');
     const btnConfirmar = event.target.closest('[data-confirmar]');
