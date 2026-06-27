@@ -531,8 +531,8 @@ export async function renderProgramacaoEquipe(content, options = {}) {
 
   content.innerHTML = `
     <div class="prog-section-title">
-      <h4>Organizar Equipe</h4>
-      <span class="badge">Etapa B</span>
+      <h4>Programar OS — equipe de menor custo</h4>
+      <span class="badge">Fase 1</span>
     </div>
     <div class="peqb-kpis">
       <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
