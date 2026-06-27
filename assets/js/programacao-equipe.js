@@ -222,6 +222,14 @@ function injectStyles() {
     .peqb-clab{font-size:10px;font-weight:850;color:#6fd0a5;text-transform:uppercase;letter-spacing:.03em}
     .peqb-cinp{min-height:36px;border:1px solid rgba(111,208,165,.3);background:#06130e;color:#eef7f2;border-radius:9px;padding:6px 9px;font-size:13px;color-scheme:dark;width:100%;box-sizing:border-box}
     .peqb-cinp.dias{text-align:center;padding:6px 4px}
+    .peqb-cinp-sm{min-height:34px!important;font-size:12px!important;padding:5px 7px!important}
+    .peqb-destino{min-width:0}
+    .peqb-cinp-na{color:#5f7a6d;font-size:12px;align-self:center;padding-left:4px}
+    .peqb-crow-mix{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:1px}
+    .peqb-crow-mix .sel-desloc{flex:0 0 132px}
+    .peqb-crow-mix .inp-placa{flex:0 0 92px;text-transform:uppercase;font-family:ui-monospace,monospace;letter-spacing:.04em}
+    .peqb-crow-mix .peqb-chips{flex:1;justify-content:flex-end;min-width:150px}
+    .peqb-mini-ico{font-size:14px;opacity:.85}
     .peqb-chips{display:flex;gap:6px;flex-wrap:wrap}
     .peqb-chip{border:1px solid rgba(111,208,165,.16);background:transparent;color:#8ba79a;border-radius:9px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer}
     .peqb-chip.on{border-color:rgba(111,208,165,.5);background:rgba(63,168,120,.18);color:#bbf7d0}
@@ -301,6 +309,40 @@ async function loadEquipeExistente(programacaoId) {
   const { data, error } = await supabase.from('programacao_equipe').select('*').eq('programacao_id', programacaoId);
   if (error) throw error;
   return data || [];
+}
+
+let alojamentosCache = null;
+// Alojamentos ativos (para sugestão automática por regional/UF na estadia).
+async function loadAlojamentos() {
+  if (alojamentosCache) return alojamentosCache;
+  try {
+    const { data, error } = await supabase
+      .from('hospedagem_alojamentos')
+      .select('id,nome,cidade,uf,status')
+      .eq('status', 'ATIVO')
+      .order('cidade', { ascending: true });
+    if (error) throw error;
+    alojamentosCache = data || [];
+  } catch (error) {
+    console.warn('[equipe] alojamentos indisponíveis', error);
+    alojamentosCache = [];
+  }
+  return alojamentosCache;
+}
+
+// Placa do veículo já vinculado ao colaborador (leitura de patrimônio,
+// pré-calculada em colaborador_cruzamento por CPF) — para puxar a placa auto.
+async function loadCruzamentoPlacas(cpfs) {
+  const ids = [...new Set(cpfs.filter((c) => /^\d+$/.test(String(c))))];
+  if (!ids.length) return new Map();
+  try {
+    const { data, error } = await supabase.from('colaborador_cruzamento').select('cpf,veiculo_placa').in('cpf', ids);
+    if (error) throw error;
+    return new Map((data || []).filter((r) => r.veiculo_placa).map((r) => [String(r.cpf).replace(/\D/g, ''), r.veiculo_placa]));
+  } catch (error) {
+    console.warn('[equipe] cruzamento de placas indisponível', error);
+    return new Map();
+  }
 }
 
 // Custos já lançados (estadia/alimentação/deslocamento) por colaborador, para
@@ -455,36 +497,65 @@ function diasFromEstadia(est) {
 }
 function estadiaLabel(t) { return ({ CASA: 'Casa', PERNOITE: 'Pernoite', ALOJAMENTO: 'Alojamento', HOTEL: 'Hotel' })[normalizeText(t)] || t; }
 
-// Bloco de custos preenchido inline embaixo do colaborador confirmado:
-// estadia (tipo + cidade + dias), alimentação (chips) e deslocamento (tipo +
-// placa). Grava nas mesmas tabelas que a antiga Fase 2.
+function normalizeUF(v) { return String(v || '').trim().toUpperCase().slice(0, 2); }
+function ufFromEmbarque(emb) { const m = /^([A-Z]{2})\s*-/.exec(String(emb || '').trim()); return m ? m[1].toUpperCase() : ''; }
+function cidadeFromEmbarque(emb) { const m = /^[A-Z]{2}\s*-\s*([^(]+)/.exec(String(emb || '').trim()); return m ? m[1].trim() : ''; }
+
+// Opções de alojamento filtradas pela regional (UF do embarque); cai para a
+// lista completa se não houver alojamento cadastrado naquela UF.
+function alojamentoOptions(selectedId, uf) {
+  const lista0 = alojamentosCache || [];
+  const ufn = normalizeUF(uf);
+  const rows = ufn ? lista0.filter((a) => normalizeUF(a.uf) === ufn) : lista0;
+  const lista = rows.length ? rows : lista0;
+  return '<option value="">Sugerir alojamento…</option>' + lista.map((a) => `<option value="${esc(a.id)}" ${String(selectedId || '') === String(a.id) ? 'selected' : ''}>${esc(`${a.nome} · ${a.cidade || '-'}/${a.uf || ''}`)}</option>`).join('');
+}
+
+// Campo do meio da estadia, contextual ao tipo: ALOJAMENTO → select sugerido
+// por regional; HOTEL/PERNOITE → cidade (sugerida do embarque da OS).
+function estadiaDestinoHtml(tipo, est, os) {
+  const t = normalizeText(tipo);
+  if (t === 'ALOJAMENTO') {
+    return `<select class="peqb-cinp peqb-cinp-sm" data-tab="estadia" data-fld="alojamento_id">${alojamentoOptions(est.alojamento_id, ufFromEmbarque(os.embarque))}</select>`;
+  }
+  if (t === 'HOTEL' || t === 'PERNOITE') {
+    const cid = est.cidade || cidadeFromEmbarque(os.embarque);
+    return `<input class="peqb-cinp peqb-cinp-sm" data-tab="estadia" data-fld="cidade" value="${esc(cid)}" placeholder="Cidade" />`;
+  }
+  return '<span class="peqb-cinp-na">—</span>';
+}
+
+// Bloco de custos inline do colaborador confirmado. Linha 1: estadia (tipo +
+// destino contextual + dias). Linha 2: deslocamento (tipo + placa) e
+// alimentação (chips) juntos. Grava nas tabelas da antiga Fase 2.
 function custoRowsHtml(item) {
   const colabId = String(item.confirmadoRow.colaborador_id);
   const nome = item.confirmadoRow.nome_colaborador || '';
+  const os = item.os;
   const est = item.custos?.est || {};
   const ali = item.custos?.ali || { almoco: true };
   const des = item.custos?.des || {};
   const tipoEst = normalizeText(est.tipo_estadia || 'CASA');
   const dias = diasFromEstadia(est);
-  const km = item.confirmadoRow.km_estimado != null ? Number(item.confirmadoRow.km_estimado) : null;
-  const longe = precisaHotel(km);
+  // Placa: usa a salva; senão puxa a leitura do veículo (cruzamento). Com placa
+  // automática e sem deslocamento salvo, assume "motorista frota".
+  const placaAuto = item.custos?.placaAuto || '';
+  const placa = des.placa_veiculo || placaAuto || '';
+  const tipoDesl = des.tipo_deslocamento || (placa ? 'MOTORISTA FROTA' : 'NÃO PRECISA');
   return `<div class="peqb-custos" data-colab-id="${esc(colabId)}" data-nome="${esc(nome)}">
     <div class="peqb-crow peqb-crow-3">
       <span class="peqb-clab">🛏 Estadia</span>
-      <select class="peqb-cinp" data-tab="estadia" data-fld="tipo_estadia">${TIPOS_ESTADIA.map((t) => `<option value="${t}" ${tipoEst === t ? 'selected' : ''}>${estadiaLabel(t)}</option>`).join('')}</select>
-      <input class="peqb-cinp" data-tab="estadia" data-fld="cidade" value="${esc(est.cidade || '')}" placeholder="Cidade" />
+      <select class="peqb-cinp peqb-cinp-sm" data-tab="estadia" data-fld="tipo_estadia">${TIPOS_ESTADIA.map((t) => `<option value="${t}" ${tipoEst === t ? 'selected' : ''}>${estadiaLabel(t)}</option>`).join('')}</select>
+      <div class="peqb-destino" data-estadia-destino>${estadiaDestinoHtml(tipoEst, est, os)}</div>
       <input class="peqb-cinp dias" data-tab="estadia" data-fld="dias" type="number" min="1" value="${dias}" title="diárias" />
     </div>
-    <div class="peqb-crow">
-      <span class="peqb-clab">🍽 Alimentação</span>
+    <div class="peqb-crow-mix">
+      <span class="peqb-mini-ico" title="Deslocamento">🚐</span>
+      <select class="peqb-cinp peqb-cinp-sm sel-desloc" data-tab="deslocamento" data-fld="tipo_deslocamento">${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(tipoDesl) === normalizeText(t) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+      <input class="peqb-cinp peqb-cinp-sm inp-placa" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(onlyPlate(placa))}" placeholder="Placa" title="${placaAuto && !des.placa_veiculo ? 'Puxada da leitura do veículo' : 'Placa do veículo'}" />
+      <span class="peqb-mini-ico" title="Alimentação">🍽</span>
       <div class="peqb-chips">${REFEICOES.map(([k, l]) => `<button type="button" class="peqb-chip ${ali[k] ? 'on' : ''}" data-tab="alimentacao" data-ref="${k}">${l}</button>`).join('')}</div>
     </div>
-    <div class="peqb-crow peqb-crow-2">
-      <span class="peqb-clab">🚐 Deslocam.</span>
-      <select class="peqb-cinp" data-tab="deslocamento" data-fld="tipo_deslocamento">${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(des.tipo_deslocamento || 'NÃO PRECISA') === normalizeText(t) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
-      <input class="peqb-cinp" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(des.placa_veiculo || '')}" placeholder="Placa (motorista)" style="text-transform:uppercase" />
-    </div>
-    ${longe ? '<div class="peqb-na-meta" style="color:#fbbf24;margin-top:2px">⚡ Longe do embarque — considere hotel/pernoite.</div>' : ''}
   </div>`;
 }
 
@@ -791,6 +862,9 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     try {
       const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisao), loadEquipeExistente(programacaoId), loadCustos(programacaoId)]);
       osTodasAtual = osTodas;
+      await loadAlojamentos();
+      const cpfsConf = equipeRows.filter((r) => r.confirmado).map((r) => String(r.colaborador_id).replace(/\D/g, '')).filter(Boolean);
+      const placasPorCpf = await loadCruzamentoPlacas(cpfsConf);
       if (!osTodas.length) {
         listEl.innerHTML = '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
         osComCandidatosAtual = [];
@@ -821,6 +895,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
           est: custos.est.get(String(confirmadoRow.colaborador_id)) || {},
           ali: custos.ali.get(String(confirmadoRow.colaborador_id)) || { almoco: true },
           des: custos.des.get(String(confirmadoRow.colaborador_id)) || {},
+          placaAuto: placasPorCpf.get(String(confirmadoRow.colaborador_id).replace(/\D/g, '')) || '',
         } : null,
       }));
 
@@ -949,7 +1024,17 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const tipo = normalizeText(section.querySelector('[data-fld="tipo_estadia"]')?.value || 'CASA') || 'CASA';
       const dias = Math.max(1, Number(section.querySelector('[data-fld="dias"]')?.value || 1));
       const checkin = options.dataReferencia || todayIso();
-      payload = { ...base, tipo_estadia: tipo, tem_estadia: COM_ESTADIA.has(tipo), cidade: section.querySelector('[data-fld="cidade"]')?.value || null, checkin, checkout: addDaysIso(checkin, dias) };
+      let cidade = section.querySelector('[data-fld="cidade"]')?.value || null;
+      let alojamento_id = null;
+      let alojamento_nome = null;
+      const alojSel = section.querySelector('[data-fld="alojamento_id"]');
+      if (alojSel && alojSel.value) {
+        alojamento_id = alojSel.value;
+        const a = (alojamentosCache || []).find((x) => String(x.id) === String(alojSel.value));
+        alojamento_nome = a?.nome || null;
+        if (a && !cidade) cidade = a.cidade || null;
+      }
+      payload = { ...base, tipo_estadia: tipo, tem_estadia: COM_ESTADIA.has(tipo), cidade, alojamento_id, alojamento_nome, checkin, checkout: addDaysIso(checkin, dias) };
     } else if (tabela === 'programacao_deslocamento') {
       payload = { ...base, tipo_deslocamento: section.querySelector('[data-fld="tipo_deslocamento"]')?.value || 'NÃO PRECISA', placa_veiculo: onlyPlate(section.querySelector('[data-fld="placa_veiculo"]')?.value || '') };
     } else if (tabela === 'programacao_alimentacao') {
@@ -1065,6 +1150,13 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     const costSel = event.target;
     if (costSel.matches && costSel.matches('select[data-fld][data-tab]')) {
       const section = costSel.closest('.peqb-custos');
+      // Mudar o tipo de estadia troca o campo do meio (cidade ↔ alojamento).
+      if (costSel.dataset.fld === 'tipo_estadia' && section) {
+        const card = costSel.closest('.peqb-os2');
+        const item = osComCandidatosAtual.find((it) => String(it.os.id) === card?.dataset.osId);
+        const destino = section.querySelector('[data-estadia-destino]');
+        if (destino && item) destino.innerHTML = estadiaDestinoHtml(costSel.value, item.custos?.est || {}, item.os);
+      }
       if (section) saveCusto(section, `programacao_${costSel.dataset.tab}`);
       return;
     }
