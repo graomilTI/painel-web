@@ -13,6 +13,12 @@ let currentUser = null;
 const BRI = new Intl.NumberFormat('pt-BR');
 const STATUS_OPTS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
 
+// Custos inline por O.S. (antiga Fase 2, agora dentro do card da equipe)
+const TIPOS_ESTADIA = ['CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
+const COM_ESTADIA = new Set(['PERNOITE', 'ALOJAMENTO', 'HOTEL']);
+const TIPOS_DESLOC = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'ÔNIBUS'];
+const REFEICOES = [['cafe', 'Café'], ['almoco', 'Almoço'], ['janta', 'Janta']];
+
 const LEAFLET_CSS_ID = 'leaflet-css-prog-equipe';
 const LEAFLET_JS_ID = 'leaflet-js-prog-equipe';
 
@@ -195,6 +201,34 @@ function injectStyles() {
     .peqb-modal h3{margin:0;font-size:15px;color:#f8fafc}.peqb-modal p{margin:0;font-size:12px;color:#9fb7aa}
     .peqb-modal input{padding:9px 10px;border-radius:9px;border:1px solid rgba(111,208,165,.3);background:#0a1e17;color:#f8fafc;font-size:14px}
     .peqb-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+    /* Card de O.S. em duas colunas (esquerda OS+status / direita colaborador+custos) */
+    .peqb-os-list-full{max-height:none!important;overflow:visible!important}
+    .peqb-row.peqb-os2{display:grid!important;grid-template-columns:minmax(0,0.8fr) minmax(0,1.2fr)!important;padding:0!important;gap:0!important;overflow:hidden!important;align-items:stretch}
+    .peqb-os2-left{padding:14px 15px;border-right:1px solid rgba(111,208,165,.14)}
+    .peqb-os2-right{padding:14px 15px;background:rgba(16,40,30,.45)}
+    .peqb-os2-cliente{font-size:13.5px;font-weight:850;color:#f8fafc;line-height:1.25}
+    .peqb-os2-emb{font-size:11.5px;color:#8ba79a;margin-top:3px;overflow-wrap:anywhere}
+    .peqb-os2-tags{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+    .peqb-tag{font-size:11px;font-weight:850;padding:4px 9px;border-radius:999px}
+    .peqb-tag.g{background:rgba(63,168,120,.16);color:#6fd0a5}
+    .peqb-tag.b{background:rgba(99,179,237,.14);color:#bfdbfe}
+    .peqb-conf-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+    .peqb-conf-name{font-size:13.5px;font-weight:850;color:#f8fafc;overflow-wrap:anywhere}
+    .peqb-conf-sub{font-size:11px;color:#8ba79a}
+    .peqb-custos{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+    .peqb-crow{display:grid;grid-template-columns:92px 1fr;gap:8px;align-items:center}
+    .peqb-crow-2{grid-template-columns:92px 1fr 1fr}
+    .peqb-crow-3{grid-template-columns:92px 1.1fr 1.5fr 58px}
+    .peqb-clab{font-size:10px;font-weight:850;color:#6fd0a5;text-transform:uppercase;letter-spacing:.03em}
+    .peqb-cinp{min-height:36px;border:1px solid rgba(111,208,165,.3);background:#06130e;color:#eef7f2;border-radius:9px;padding:6px 9px;font-size:13px;color-scheme:dark;width:100%;box-sizing:border-box}
+    .peqb-cinp.dias{text-align:center;padding:6px 4px}
+    .peqb-chips{display:flex;gap:6px;flex-wrap:wrap}
+    .peqb-chip{border:1px solid rgba(111,208,165,.16);background:transparent;color:#8ba79a;border-radius:9px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer}
+    .peqb-chip.on{border-color:rgba(111,208,165,.5);background:rgba(63,168,120,.18);color:#bbf7d0}
+    .peqb-map-band{margin-top:14px;border:1px solid rgba(111,208,165,.14);border-radius:16px;overflow:hidden;background:rgba(2,6,23,.36)}
+    .peqb-map-band-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(111,208,165,.14);font-size:12.5px;font-weight:850;color:#cfe7da}
+    .peqb-map-band .peqb-map{height:min(420px,60vh);position:relative}
+    @media(max-width:760px){.peqb-row.peqb-os2{grid-template-columns:1fr!important}.peqb-os2-left{border-right:0;border-bottom:1px solid rgba(111,208,165,.14)}.peqb-crow,.peqb-crow-2,.peqb-crow-3{grid-template-columns:1fr!important}}
     @media(max-width:600px){.peqb-cand-cost{align-self:flex-start}}
   `;
   document.head.appendChild(style);
@@ -267,6 +301,21 @@ async function loadEquipeExistente(programacaoId) {
   const { data, error } = await supabase.from('programacao_equipe').select('*').eq('programacao_id', programacaoId);
   if (error) throw error;
   return data || [];
+}
+
+// Custos já lançados (estadia/alimentação/deslocamento) por colaborador, para
+// pré-preencher os campos inline dos cartões confirmados.
+async function loadCustos(programacaoId) {
+  const [est, ali, des] = await Promise.all([
+    supabase.from('programacao_estadia').select('*').eq('programacao_id', programacaoId),
+    supabase.from('programacao_alimentacao').select('*').eq('programacao_id', programacaoId),
+    supabase.from('programacao_deslocamento').select('*').eq('programacao_id', programacaoId),
+  ]);
+  return {
+    est: new Map((est.data || []).map((r) => [String(r.colaborador_id), r])),
+    ali: new Map((ali.data || []).map((r) => [String(r.colaborador_id), r])),
+    des: new Map((des.data || []).map((r) => [String(r.colaborador_id), r])),
+  };
 }
 
 function pontoDaOs(os, pontosPorId) {
@@ -394,10 +443,69 @@ function candCardHtml(cand, selected, minCustoId) {
   </button>`;
 }
 
+function onlyPlate(value) { return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7); }
+function todayIso() { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+function addDaysIso(iso, days) { const d = new Date(`${iso || todayIso()}T00:00:00`); d.setDate(d.getDate() + Number(days || 0)); return d.toISOString().slice(0, 10); }
+function diasFromEstadia(est) {
+  if (est?.checkin && est?.checkout) {
+    const diff = Math.round((new Date(`${est.checkout}T00:00:00`) - new Date(`${est.checkin}T00:00:00`)) / 86400000);
+    return diff > 0 ? diff : 1;
+  }
+  return 1;
+}
+function estadiaLabel(t) { return ({ CASA: 'Casa', PERNOITE: 'Pernoite', ALOJAMENTO: 'Alojamento', HOTEL: 'Hotel' })[normalizeText(t)] || t; }
+
+// Bloco de custos preenchido inline embaixo do colaborador confirmado:
+// estadia (tipo + cidade + dias), alimentação (chips) e deslocamento (tipo +
+// placa). Grava nas mesmas tabelas que a antiga Fase 2.
+function custoRowsHtml(item) {
+  const colabId = String(item.confirmadoRow.colaborador_id);
+  const nome = item.confirmadoRow.nome_colaborador || '';
+  const est = item.custos?.est || {};
+  const ali = item.custos?.ali || { almoco: true };
+  const des = item.custos?.des || {};
+  const tipoEst = normalizeText(est.tipo_estadia || 'CASA');
+  const dias = diasFromEstadia(est);
+  const km = item.confirmadoRow.km_estimado != null ? Number(item.confirmadoRow.km_estimado) : null;
+  const longe = precisaHotel(km);
+  return `<div class="peqb-custos" data-colab-id="${esc(colabId)}" data-nome="${esc(nome)}">
+    <div class="peqb-crow peqb-crow-3">
+      <span class="peqb-clab">🛏 Estadia</span>
+      <select class="peqb-cinp" data-tab="estadia" data-fld="tipo_estadia">${TIPOS_ESTADIA.map((t) => `<option value="${t}" ${tipoEst === t ? 'selected' : ''}>${estadiaLabel(t)}</option>`).join('')}</select>
+      <input class="peqb-cinp" data-tab="estadia" data-fld="cidade" value="${esc(est.cidade || '')}" placeholder="Cidade" />
+      <input class="peqb-cinp dias" data-tab="estadia" data-fld="dias" type="number" min="1" value="${dias}" title="diárias" />
+    </div>
+    <div class="peqb-crow">
+      <span class="peqb-clab">🍽 Alimentação</span>
+      <div class="peqb-chips">${REFEICOES.map(([k, l]) => `<button type="button" class="peqb-chip ${ali[k] ? 'on' : ''}" data-tab="alimentacao" data-ref="${k}">${l}</button>`).join('')}</div>
+    </div>
+    <div class="peqb-crow peqb-crow-2">
+      <span class="peqb-clab">🚐 Deslocam.</span>
+      <select class="peqb-cinp" data-tab="deslocamento" data-fld="tipo_deslocamento">${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(des.tipo_deslocamento || 'NÃO PRECISA') === normalizeText(t) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+      <input class="peqb-cinp" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(des.placa_veiculo || '')}" placeholder="Placa (motorista)" style="text-transform:uppercase" />
+    </div>
+    ${longe ? '<div class="peqb-na-meta" style="color:#fbbf24;margin-top:2px">⚡ Longe do embarque — considere hotel/pernoite.</div>' : ''}
+  </div>`;
+}
+
+function osLeftHtml(os) {
+  const rem = os.remanescente;
+  return `<div class="peqb-os2-left">
+    <div class="peqb-os2-cliente">${esc(os.cliente || '-')}</div>
+    <div class="peqb-os2-emb">📍 ${esc(os.embarque || '-')}</div>
+    <div class="peqb-os2-tags">
+      <span class="peqb-tag g">OS ${esc(os.numero_os || '-')}</span>
+      ${rem != null && rem !== '' ? `<span class="peqb-tag b">Rem. ${BRI.format(Number(rem) || 0)}</span>` : ''}
+    </div>
+    ${statusStripHtml(os)}
+  </div>`;
+}
+
 function osRowHtml(item) {
   const { os, confirmadoRow, candidatos } = item;
   const confirmado = !!confirmadoRow;
 
+  let right;
   if (confirmado) {
     const km = confirmadoRow.km_estimado != null ? Number(confirmadoRow.km_estimado) : null;
     const custoKm = estimarCustoKm(km);
@@ -407,54 +515,44 @@ function osRowHtml(item) {
         ? '<button type="button" class="peqb-row-btn hotel done" disabled>✓ Hotel solicitado</button>'
         : `<button type="button" class="peqb-row-btn hotel" data-pedir-hotel title="Combustível ida+volta estimado: R$${custoKm != null ? brl(custoKm) : '?'} — hotel pode ser mais econômico">🏨 Pedir hotel</button>`)
       : '';
-    return `
-      <article class="peqb-row" data-os-id="${esc(os.id)}">
-        ${osHeadHtml(os, true)}
-        ${statusStripHtml(os)}
-        <div class="peqb-cand sel peqb-cand-confirmado">
-          <span class="peqb-cand-av">${esc(iniciais(confirmadoRow.nome_colaborador))}</span>
-          <span class="peqb-cand-main">
-            <span class="peqb-cand-top"><strong>${esc(confirmadoRow.nome_colaborador)}</strong><span class="peqb-cand-best">confirmado</span></span>
-            <span class="peqb-cand-sub">${km != null ? `${km} km do embarque` : 'sem distância calculada'}</span>
-          </span>
+    right = `<div class="peqb-os2-right">
+      <div class="peqb-conf-head">
+        <span class="peqb-cand-av">${esc(iniciais(confirmadoRow.nome_colaborador))}</span>
+        <div style="flex:1;min-width:0">
+          <div class="peqb-conf-name">${esc(confirmadoRow.nome_colaborador)}</div>
+          <div class="peqb-conf-sub">${km != null ? `${km} km do embarque` : 'sem distância'} · <span style="color:#6fd0a5">confirmado</span></div>
         </div>
-        <div class="peqb-row-actions">
-          ${hotelBtn}
-          <button type="button" class="peqb-row-btn danger" data-remover="${esc(confirmadoRow.id)}">Remover</button>
-        </div>
-      </article>
-    `;
-  }
-
-  const selecionadoId = candidatos[0]?.colaboradorId || '';
-  const comCusto = candidatos.filter((c) => c.custoTotal != null);
-  const minCustoId = comCusto.length
-    ? comCusto.reduce((a, b) => (a.custoTotal <= b.custoTotal ? a : b)).colaboradorId
-    : null;
-  const principal = candidatos[0] || null;
-  const outros = candidatos.slice(1);
-
-  const candHtml = principal
-    ? candCardHtml(principal, true, minCustoId)
-    : '<div class="peqb-empty" style="margin:8px 0 0">Nenhum candidato disponível. Ajuste a OS ou as exclusões na etapa A.</div>';
-
-  const outrosHtml = outros.length
-    ? `<button type="button" class="peqb-cand-more" data-toggle-outros>▾ Ver outros ${outros.length} candidato${outros.length > 1 ? 's' : ''} (por custo/score)</button>
-       <div class="peqb-cand-list" data-outros hidden>${outros.map((c) => candCardHtml(c, false, minCustoId)).join('')}</div>`
-    : '';
-
-  return `
-    <article class="peqb-row" data-os-id="${esc(os.id)}">
-      ${osHeadHtml(os, false)}
-      ${statusStripHtml(os)}
+        <button type="button" class="peqb-row-btn" data-remover="${esc(confirmadoRow.id)}" title="Trocar colaborador">trocar</button>
+      </div>
+      ${hotelBtn}
+      ${custoRowsHtml(item)}
+    </div>`;
+  } else {
+    const selecionadoId = candidatos[0]?.colaboradorId || '';
+    const comCusto = candidatos.filter((c) => c.custoTotal != null);
+    const minCustoId = comCusto.length
+      ? comCusto.reduce((a, b) => (a.custoTotal <= b.custoTotal ? a : b)).colaboradorId
+      : null;
+    const principal = candidatos[0] || null;
+    const outros = candidatos.slice(1);
+    const candHtml = principal
+      ? candCardHtml(principal, true, minCustoId)
+      : '<div class="peqb-empty" style="margin:0">Nenhum candidato disponível para esta O.S.</div>';
+    const outrosHtml = outros.length
+      ? `<button type="button" class="peqb-cand-more" data-toggle-outros>▾ Ver outros ${outros.length} candidato${outros.length > 1 ? 's' : ''}</button>
+         <div class="peqb-cand-list" data-outros hidden>${outros.map((c) => candCardHtml(c, false, minCustoId)).join('')}</div>`
+      : '';
+    right = `<div class="peqb-os2-right">
       <input type="hidden" data-select-colaborador value="${esc(selecionadoId)}" />
       ${candHtml}
       ${outrosHtml}
       <div class="peqb-row-actions">
         <button type="button" class="peqb-row-btn" data-confirmar ${candidatos.length ? '' : 'disabled'}>Confirmar selecionado</button>
       </div>
-    </article>
-  `;
+    </div>`;
+  }
+
+  return `<article class="peqb-row peqb-os2" data-os-id="${esc(os.id)}">${osLeftHtml(os)}${right}</article>`;
 }
 
 function atualizarKpis(root, osComCandidatos, confirmadosPorOs) {
@@ -607,16 +705,14 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
       <div class="peqb-kpi"><span>OS com equipe</span><strong id="peqbKpiOs">0</strong></div>
     </div>
-    <div class="peqb-legend"><b>Barra de score:</b> <span><i class="lg-c"></i>Contrato 50%</span> <span><i class="lg-d"></i>Distância 30%</span> <span><i class="lg-a"></i>Auditoria 20%</span></div>
+    <div class="peqb-legend"><b>Score:</b> <span><i class="lg-c"></i>Contrato 50%</span> <span><i class="lg-d"></i>Distância 30%</span> <span><i class="lg-a"></i>Auditoria 20%</span></div>
     <div class="peqb-toolbar">
-      <button type="button" class="peqb-btn" id="peqbAutoPreencher">Auto-preencher</button>
-      <button type="button" class="peqb-btn" id="peqbVerRotas">Ver rotas no mapa</button>
+      <button type="button" class="peqb-btn" id="peqbAutoPreencher">Auto-preencher equipe</button>
     </div>
-    <div class="peqb-grid">
-      <div class="peqb-os-list" id="peqbOsList"><div class="peqb-empty">Carregando OS em ATENDER...</div></div>
-      <div class="peqb-map-wrap">
-        <div class="peqb-map"><div id="peqbMapEl"></div><div class="peqb-map-empty" id="peqbMapEmpty">Selecione uma OS para ver a rota.</div></div>
-      </div>
+    <div class="peqb-os-list peqb-os-list-full" id="peqbOsList"><div class="peqb-empty">Carregando O.S....</div></div>
+    <div class="peqb-map-band">
+      <div class="peqb-map-band-head"><span>🗺 Rotas até o embarque</span><button type="button" class="peqb-btn" id="peqbVerRotas">Ver rotas reais</button></div>
+      <div class="peqb-map"><div id="peqbMapEl"></div><div class="peqb-map-empty" id="peqbMapEmpty">Marque uma O.S. como atender (✓) para ver a rota.</div></div>
     </div>
   `;
 
@@ -696,7 +792,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     carregando = true;
     listEl.innerHTML = '<div class="peqb-empty">Carregando O.S. da supervisão...</div>';
     try {
-      const [osTodas, equipeRows] = await Promise.all([loadOsRelevantes(supervisao), loadEquipeExistente(programacaoId)]);
+      const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisao), loadEquipeExistente(programacaoId), loadCustos(programacaoId)]);
       osTodasAtual = osTodas;
       if (!osTodas.length) {
         listEl.innerHTML = '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
@@ -724,6 +820,11 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         ponto,
         confirmadoRow,
         candidatos: confirmadoRow ? [] : (candidatosPorOs.get(os.id) || []),
+        custos: confirmadoRow ? {
+          est: custos.est.get(String(confirmadoRow.colaborador_id)) || {},
+          ali: custos.ali.get(String(confirmadoRow.colaborador_id)) || { almoco: true },
+          des: custos.des.get(String(confirmadoRow.colaborador_id)) || {},
+        } : null,
       }));
 
       const atenderHtml = osComCandidatosAtual.length
@@ -840,7 +941,54 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     });
   }
 
+  // --- Custos inline (estadia/alimentação/deslocamento) por colaborador ---
+  async function saveCusto(section, tabela) {
+    if (!section) return;
+    const base = {
+      programacao_id: programacaoId,
+      data_referencia: options.dataReferencia || null,
+      colaborador_id: section.dataset.colabId,
+      nome_colaborador: section.dataset.nome || '',
+    };
+    let payload = { ...base };
+    if (tabela === 'programacao_estadia') {
+      const tipo = normalizeText(section.querySelector('[data-fld="tipo_estadia"]')?.value || 'CASA') || 'CASA';
+      const dias = Math.max(1, Number(section.querySelector('[data-fld="dias"]')?.value || 1));
+      const checkin = options.dataReferencia || todayIso();
+      payload = { ...base, tipo_estadia: tipo, tem_estadia: COM_ESTADIA.has(tipo), cidade: section.querySelector('[data-fld="cidade"]')?.value || null, checkin, checkout: addDaysIso(checkin, dias) };
+    } else if (tabela === 'programacao_deslocamento') {
+      payload = { ...base, tipo_deslocamento: section.querySelector('[data-fld="tipo_deslocamento"]')?.value || 'NÃO PRECISA', placa_veiculo: onlyPlate(section.querySelector('[data-fld="placa_veiculo"]')?.value || '') };
+    } else if (tabela === 'programacao_alimentacao') {
+      REFEICOES.forEach(([k]) => { payload[k] = !!section.querySelector(`[data-ref="${k}"]`)?.classList.contains('on'); });
+    }
+    const { error } = await supabase.from(tabela).upsert(payload, { onConflict: 'programacao_id,colaborador_id' });
+    if (error) console.error('[equipe custo]', tabela, error);
+  }
+  const custoTimers = new Map();
+  function agendarCusto(section, tabela) {
+    const key = `${tabela}:${section.dataset.colabId}`;
+    clearTimeout(custoTimers.get(key));
+    custoTimers.set(key, setTimeout(() => saveCusto(section, tabela), 450));
+  }
+
+  listEl.addEventListener('input', (event) => {
+    const inp = event.target;
+    if (!inp.matches || !inp.matches('input[data-fld][data-tab]')) return;
+    if (inp.dataset.fld === 'placa_veiculo') inp.value = inp.value.toUpperCase();
+    const section = inp.closest('.peqb-custos');
+    if (section) agendarCusto(section, `programacao_${inp.dataset.tab}`);
+  });
+
   listEl.addEventListener('click', async (event) => {
+    // Chip de refeição (café/almoço/janta) — alterna e salva alimentação
+    const chip = event.target.closest('.peqb-chip[data-ref]');
+    if (chip) {
+      chip.classList.toggle('on');
+      const section = chip.closest('.peqb-custos');
+      if (section) saveCusto(section, 'programacao_alimentacao');
+      return;
+    }
+
     // Triagem embutida: status / saldo / conferir (vale para os dois blocos)
     const statusBtn = event.target.closest('[data-status]');
     if (statusBtn) { await atualizarStatusOs(statusBtn.dataset.os, statusBtn.dataset.status, statusBtn); return; }
@@ -919,6 +1067,13 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   });
 
   listEl.addEventListener('change', (event) => {
+    // Selects de custo inline (tipo de estadia / deslocamento)
+    const costSel = event.target;
+    if (costSel.matches && costSel.matches('select[data-fld][data-tab]')) {
+      const section = costSel.closest('.peqb-custos');
+      if (section) saveCusto(section, `programacao_${costSel.dataset.tab}`);
+      return;
+    }
     const select = event.target.closest('[data-select-colaborador]');
     const row = event.target.closest('.peqb-row');
     if (!select || !row) return;
