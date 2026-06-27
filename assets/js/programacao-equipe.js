@@ -216,6 +216,10 @@ function injectStyles() {
     .peqb-conf-head .peqb-row-btn{height:34px;font-size:12px;padding:0 12px;white-space:nowrap;flex:0 0 auto}
     .peqb-conf-head .peqb-row-btn.hotel{font-weight:850}
     .peqb-conf-name{font-size:13.5px;font-weight:850;color:#f8fafc;overflow-wrap:anywhere}
+    .peqb-name-sel{width:100%;max-width:100%;border:1px solid transparent;background:transparent;color:#f8fafc;font-size:13.5px;font-weight:850;cursor:pointer;border-radius:8px;padding:4px 24px 4px 7px;color-scheme:dark;text-overflow:ellipsis}
+    .peqb-name-sel:hover{border-color:rgba(111,208,165,.35);background:rgba(8,22,17,.55)}
+    .peqb-name-sel:focus{border-color:rgba(111,208,165,.55);outline:none;background:#06130e}
+    .peqb-name-sel option{background:#0c1f17;color:#eef7f2;font-weight:600}
     .peqb-conf-sub{font-size:11px;color:#8ba79a}
     /* Custos em UM único grid de 4 colunas — as duas linhas (estadia /
        deslocamento+alimentação) compartilham as colunas, então tudo alinha. */
@@ -591,11 +595,12 @@ function osRowHtml(item) {
       <div class="peqb-conf-head">
         <span class="peqb-cand-av">${esc(iniciais(confirmadoRow.nome_colaborador))}</span>
         <div style="flex:1;min-width:0">
-          <div class="peqb-conf-name">${esc(confirmadoRow.nome_colaborador)}</div>
+          <select class="peqb-name-sel" data-trocar-colab title="Clique para trocar o colaborador">
+            ${candidatos.map((c) => `<option value="${esc(c.colaboradorId)}" ${String(c.colaboradorId) === String(confirmadoRow.colaborador_id) ? 'selected' : ''}>${esc(c.nome)}${c.custoTotal != null ? ` — R$ ${brl(c.custoTotal)}` : ''}${c.km != null ? ` · ${c.km}km` : ''}</option>`).join('')}
+          </select>
           <div class="peqb-conf-sub">${km != null ? `${km} km do embarque` : 'sem distância'} · <span style="color:#6fd0a5">confirmado</span></div>
         </div>
         ${hotelBtn}
-        <button type="button" class="peqb-row-btn" data-remover="${esc(confirmadoRow.id)}" title="Trocar colaborador">trocar</button>
       </div>
       ${custoRowsHtml(item)}
     </div>`;
@@ -882,7 +887,9 @@ export async function renderProgramacaoEquipe(content, options = {}) {
 
       const osComPonto = atenderRows.map((os) => {
         const confirmadoRow = confirmadosPorOs.get(os.id) || null;
-        return { os, ponto: pontoDaOs(os, pontosPorId), confirmadoRow, candidatosNecessarios: !confirmadoRow };
+        // Carrega candidatos para TODAS as OS (inclusive confirmadas), para o
+        // dropdown de troca do nome ter alternativas.
+        return { os, ponto: pontoDaOs(os, pontosPorId), confirmadoRow, candidatosNecessarios: true };
       });
       const candidatosPorOs = await loadCandidatosPorOs(supervisao, osComPonto, colaboradoresConfirmadosEmOutraOs);
 
@@ -890,7 +897,9 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         os,
         ponto,
         confirmadoRow,
-        candidatos: confirmadoRow ? [] : (candidatosPorOs.get(os.id) || []),
+        candidatos: confirmadoRow
+          ? [{ colaboradorId: confirmadoRow.colaborador_id, nome: confirmadoRow.nome_colaborador, km: confirmadoRow.km_estimado != null ? Number(confirmadoRow.km_estimado) : null, custoTotal: null }, ...(candidatosPorOs.get(os.id) || [])]
+          : (candidatosPorOs.get(os.id) || []),
         custos: confirmadoRow ? {
           est: custos.est.get(String(confirmadoRow.colaborador_id)) || {},
           ali: custos.ali.get(String(confirmadoRow.colaborador_id)) || { almoco: true },
@@ -1161,7 +1170,26 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     }
   });
 
-  listEl.addEventListener('change', (event) => {
+  listEl.addEventListener('change', async (event) => {
+    // Trocar colaborador pelo dropdown do nome
+    const trocarSel = event.target.closest('[data-trocar-colab]');
+    if (trocarSel) {
+      const card = trocarSel.closest('.peqb-os2');
+      const item = osComCandidatosAtual.find((it) => String(it.os.id) === card?.dataset.osId);
+      const cand = item?.candidatos.find((c) => String(c.colaboradorId) === trocarSel.value);
+      if (item && cand && String(cand.colaboradorId) !== String(item.confirmadoRow?.colaborador_id)) {
+        trocarSel.disabled = true;
+        try {
+          await confirmarCandidato(programacaoId, item.os, cand);
+          await carregarERenderizar();
+        } catch (error) {
+          console.error('[equipe] trocar colaborador:', error);
+          trocarSel.disabled = false;
+          alert(error.message || 'Não foi possível trocar o colaborador.');
+        }
+      }
+      return;
+    }
     // Selects de custo inline (tipo de estadia / deslocamento)
     const costSel = event.target;
     if (costSel.matches && costSel.matches('select[data-fld][data-tab]')) {
