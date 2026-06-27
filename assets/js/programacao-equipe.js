@@ -215,22 +215,19 @@ function injectStyles() {
     .peqb-conf-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
     .peqb-conf-name{font-size:13.5px;font-weight:850;color:#f8fafc;overflow-wrap:anywhere}
     .peqb-conf-sub{font-size:11px;color:#8ba79a}
-    .peqb-custos{display:flex;flex-direction:column;gap:9px;margin-top:4px}
-    .peqb-crow{display:grid;grid-template-columns:92px 1fr;gap:8px;align-items:center}
-    .peqb-crow-2{grid-template-columns:92px 1fr 1fr}
-    .peqb-crow-3{grid-template-columns:92px 1.1fr 1.5fr 58px}
+    /* Custos em UM único grid de 4 colunas — as duas linhas (estadia /
+       deslocamento+alimentação) compartilham as colunas, então tudo alinha. */
+    .peqb-custos{display:grid;grid-template-columns:74px minmax(0,1fr) minmax(0,1.25fr) auto;gap:9px 8px;align-items:center;margin-top:6px}
     .peqb-clab{font-size:10px;font-weight:850;color:#6fd0a5;text-transform:uppercase;letter-spacing:.03em}
     .peqb-cinp{min-height:36px;border:1px solid rgba(111,208,165,.3);background:#06130e;color:#eef7f2;border-radius:9px;padding:6px 9px;font-size:13px;color-scheme:dark;width:100%;box-sizing:border-box}
-    .peqb-cinp.dias{text-align:center;padding:6px 4px}
     .peqb-cinp-sm{min-height:34px!important;font-size:12px!important;padding:5px 7px!important}
     .peqb-destino{min-width:0}
-    .peqb-cinp-na{color:#5f7a6d;font-size:12px;align-self:center;padding-left:4px}
-    .peqb-crow-mix{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:1px}
-    .peqb-crow-mix .sel-desloc{flex:0 0 132px}
-    .peqb-crow-mix .inp-placa{flex:0 0 92px;text-transform:uppercase;font-family:ui-monospace,monospace;letter-spacing:.04em}
-    .peqb-crow-mix .peqb-chips{flex:1;justify-content:flex-end;min-width:150px}
-    .peqb-mini-ico{font-size:14px;opacity:.85}
-    .peqb-chips{display:flex;gap:6px;flex-wrap:wrap}
+    .peqb-destino .peqb-cinp{width:100%}
+    .peqb-cinp-na{color:#5f7a6d;font-size:13px;text-align:center}
+    .peqb-dias{width:56px!important;justify-self:end;text-align:center}
+    .inp-placa{text-transform:uppercase;font-family:ui-monospace,monospace;letter-spacing:.04em}
+    @media(max-width:600px){.peqb-custos{grid-template-columns:64px minmax(0,1fr) auto}.peqb-destino{grid-column:2 / -1}.peqb-chips{grid-column:2 / -1;justify-content:flex-start}.peqb-dias{justify-self:start}}
+    .peqb-chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
     .peqb-chip{border:1px solid rgba(111,208,165,.16);background:transparent;color:#8ba79a;border-radius:9px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer}
     .peqb-chip.on{border-color:rgba(111,208,165,.5);background:rgba(63,168,120,.18);color:#bbf7d0}
     .peqb-map-band{margin-top:14px;border:1px solid rgba(111,208,165,.14);border-radius:16px;overflow:hidden;background:rgba(2,6,23,.36)}
@@ -550,19 +547,14 @@ function custoRowsHtml(item) {
   const placa = des.placa_veiculo || placaAuto || '';
   const tipoDesl = des.tipo_deslocamento || (placa ? 'MOTORISTA FROTA' : 'NÃO PRECISA');
   return `<div class="peqb-custos" data-colab-id="${esc(colabId)}" data-nome="${esc(nome)}">
-    <div class="peqb-crow peqb-crow-3">
-      <span class="peqb-clab">🛏 Estadia</span>
-      <select class="peqb-cinp peqb-cinp-sm" data-tab="estadia" data-fld="tipo_estadia">${TIPOS_ESTADIA.map((t) => `<option value="${t}" ${tipoEst === t ? 'selected' : ''}>${estadiaLabel(t)}</option>`).join('')}</select>
-      <div class="peqb-destino" data-estadia-destino>${estadiaDestinoHtml(tipoEst, est, os)}</div>
-      <input class="peqb-cinp dias" data-tab="estadia" data-fld="dias" type="number" min="1" value="${dias}" title="diárias" />
-    </div>
-    <div class="peqb-crow-mix">
-      <span class="peqb-mini-ico" title="Deslocamento">🚐</span>
-      <select class="peqb-cinp peqb-cinp-sm sel-desloc" data-tab="deslocamento" data-fld="tipo_deslocamento">${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(tipoDesl) === normalizeText(t) ? 'selected' : ''}>${esc(deslocLabel(t))}</option>`).join('')}</select>
-      <input class="peqb-cinp peqb-cinp-sm inp-placa" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(onlyPlate(placa))}" placeholder="Placa" title="${placaAuto && !des.placa_veiculo ? 'Puxada da leitura do veículo' : 'Placa do veículo'}" />
-      <span class="peqb-mini-ico" title="Alimentação">🍽</span>
-      <div class="peqb-chips">${REFEICOES.map(([k, l]) => `<button type="button" class="peqb-chip ${ali[k] ? 'on' : ''}" data-tab="alimentacao" data-ref="${k}">${l}</button>`).join('')}</div>
-    </div>
+    <span class="peqb-clab">🛏 Estadia</span>
+    <select class="peqb-cinp peqb-cinp-sm" data-tab="estadia" data-fld="tipo_estadia">${TIPOS_ESTADIA.map((t) => `<option value="${t}" ${tipoEst === t ? 'selected' : ''}>${estadiaLabel(t)}</option>`).join('')}</select>
+    <div class="peqb-destino" data-estadia-destino>${estadiaDestinoHtml(tipoEst, est, os)}</div>
+    <input class="peqb-cinp peqb-cinp-sm peqb-dias" data-tab="estadia" data-fld="dias" type="number" min="1" value="${dias}" title="diárias" />
+    <span class="peqb-clab">🚐 Desloc.</span>
+    <select class="peqb-cinp peqb-cinp-sm" data-tab="deslocamento" data-fld="tipo_deslocamento">${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(tipoDesl) === normalizeText(t) ? 'selected' : ''}>${esc(deslocLabel(t))}</option>`).join('')}</select>
+    <input class="peqb-cinp peqb-cinp-sm inp-placa" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(onlyPlate(placa))}" placeholder="Placa" title="${placaAuto && !des.placa_veiculo ? 'Puxada da leitura do veículo' : 'Placa do veículo'}" />
+    <div class="peqb-chips">${REFEICOES.map(([k, l]) => `<button type="button" class="peqb-chip ${ali[k] ? 'on' : ''}" data-tab="alimentacao" data-ref="${k}">${l}</button>`).join('')}</div>
   </div>`;
 }
 
