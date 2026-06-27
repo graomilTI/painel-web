@@ -595,7 +595,6 @@ function desenharTodasRotas(mapState, rotas) {
 
 export async function renderProgramacaoEquipe(content, options = {}) {
   injectStyles();
-  if (!currentUser) currentUser = await getCurrentUser().catch(() => null);
   const supervisao = String(options.supervisao || '').trim();
   const programacaoId = options.programacaoId || null;
 
@@ -620,6 +619,11 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       </div>
     </div>
   `;
+
+  // currentUser é opcional (só preenche logistica_solicitado_por ao FINALIZAR).
+  // Busca SEM bloquear o render — assim o #peqbOsList já existe acima e o
+  // observer da Fase 1 não re-renderiza em loop se a chamada de auth demorar.
+  if (!currentUser) getCurrentUser().then((u) => { currentUser = u; }).catch(() => {});
 
   const listEl = content.querySelector('#peqbOsList');
   const mapMount = content.querySelector('#peqbMapEl');

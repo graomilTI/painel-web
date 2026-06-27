@@ -67,6 +67,22 @@
   outline-offset: 1px !important;
   border-color: var(--pr-green) !important;
 }
+/* O <select> nativo de supervisão é trocado por um combobox (#progSupCombo) e
+   recebe .prog-sup-native-hidden. A regra geral acima reativava sua altura e
+   fundo — aqui o re-ocultamos com especificidade maior para ele não reaparecer
+   como uma barra vazia abaixo do campo. */
+.app-shell .prog-tfield select.prog-sup-native-hidden {
+  position: absolute !important;
+  width: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
 .app-shell #progLoadContext {
   min-height: 44px !important;
   border-radius: 13px !important;
