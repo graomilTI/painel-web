@@ -1,0 +1,418 @@
+/* ==========================================================================
+   Programação — Redesenho visual (Fase 1: fundação)
+   --------------------------------------------------------------------------
+   Reskin coeso da tela de Programação, ancorado nos tokens oficiais do
+   painel (styles.css :root). NÃO altera marcação nem lógica — só aparência.
+
+   Os <style> injetados via JS (programacao.js, gestor-ajustes, mobile-ui-fix)
+   entram no <head> DEPOIS deste arquivo, então venceriam em empate de
+   cascata. Por isso todas as regras são ancoradas em `.app-shell` (que sempre
+   envolve a página): isso eleva a especificidade acima das regras de classe
+   única do legado e garante que o redesenho prevaleça — inclusive no mobile.
+
+   Para reverter: remova o <link> de programacao.html.
+   ========================================================================== */
+
+:root {
+  --pr-bg: #06130e;
+  --pr-surface: rgba(8, 22, 17, 0.72);
+  --pr-surface-2: rgba(13, 32, 24, 0.92);
+  --pr-surface-3: rgba(18, 40, 30, 0.6);
+  --pr-line: rgba(111, 208, 165, 0.14);
+  --pr-line-2: rgba(111, 208, 165, 0.28);
+  --pr-text: #eef7f2;
+  --pr-text-2: #b8ccc0;
+  --pr-muted: #8ba79a;
+  --pr-green: #3fa878;
+  --pr-green-2: #6fd0a5;
+  --pr-green-3: #1f6f4a;
+  --pr-green-soft: rgba(63, 168, 120, 0.16);
+  --pr-amber: #fbbf24;
+  --pr-amber-soft: rgba(251, 191, 36, 0.12);
+  --pr-danger: #f87171;
+  --pr-danger-soft: rgba(239, 68, 68, 0.12);
+  --pr-radius: 16px;
+  --pr-radius-lg: 20px;
+  --pr-radius-pill: 999px;
+}
+
+/* --------------------------------------------------------------------------
+   1. Toolbar (supervisão / data / status / buscar / salvar)
+   -------------------------------------------------------------------------- */
+.app-shell .prog-toolbar {
+  background: var(--pr-surface) !important;
+  border: 1px solid var(--pr-line) !important;
+  border-radius: var(--pr-radius-lg) !important;
+  padding: 16px 18px !important;
+}
+.app-shell .prog-tfield label {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
+  color: var(--pr-muted) !important;
+  text-transform: uppercase !important;
+}
+.app-shell .prog-tfield select,
+.app-shell .prog-tfield input {
+  min-height: 44px !important;
+  font-size: 14px !important;
+  border-radius: 13px !important;
+  border: 1px solid var(--pr-line-2) !important;
+  background: var(--pr-surface-2) !important;
+  color: var(--pr-text) !important;
+}
+.app-shell .prog-tfield select:focus,
+.app-shell .prog-tfield input:focus {
+  outline: 2px solid var(--pr-green-soft) !important;
+  outline-offset: 1px !important;
+  border-color: var(--pr-green) !important;
+}
+.app-shell #progLoadContext {
+  min-height: 44px !important;
+  border-radius: 13px !important;
+  font-weight: 700 !important;
+}
+
+/* --------------------------------------------------------------------------
+   2. Navegação de etapas — agrupada visualmente nas 4 fases do gestor
+      (1) Analisar OS · (2) Equipe & custo · (3) Hospedagem · (4) Custos
+      As 7 etapas continuam; só ganham respiro, área de toque e cor de fase.
+   -------------------------------------------------------------------------- */
+.app-shell .prog-steps-compact,
+.app-shell .steps-wrap {
+  gap: 7px !important;
+}
+.app-shell .prog-steps-compact .stepbtn,
+.app-shell .steps-wrap .stepbtn {
+  min-height: 42px !important;
+  padding: 8px 13px !important;
+  font-size: 13px !important;
+  border-radius: 13px !important;
+  border: 1px solid var(--pr-line) !important;
+  background: var(--pr-surface-3) !important;
+  color: var(--pr-text-2) !important;
+  font-weight: 700 !important;
+  transition: background 0.15s, border-color 0.15s, color 0.15s !important;
+}
+.app-shell .prog-steps-compact .stepbtn:hover,
+.app-shell .steps-wrap .stepbtn:hover {
+  background: var(--pr-green-soft) !important;
+  color: var(--pr-green-2) !important;
+}
+.app-shell .prog-steps-compact .stepbtn.active,
+.app-shell .steps-wrap .stepbtn.active {
+  background: linear-gradient(135deg, var(--pr-green-3), var(--pr-green)) !important;
+  border-color: var(--pr-green-2) !important;
+  color: #f0fff7 !important;
+  box-shadow: 0 6px 18px rgba(31, 111, 74, 0.35) !important;
+}
+.app-shell .stepbtn .stepbtn-letter {
+  font-weight: 900 !important;
+  opacity: 0.95 !important;
+}
+/* Fita de fase: marca onde cada uma das 4 fases começa
+   (A=analisar, B=equipe, D=hospedagem, C=custos do dia) */
+.app-shell .stepbtn[data-ui-step="A"],
+.app-shell .stepbtn[data-ui-step="B"],
+.app-shell .stepbtn[data-ui-step="D"],
+.app-shell .stepbtn[data-ui-step="C"] {
+  position: relative !important;
+}
+.app-shell .stepbtn[data-ui-step="A"]::after,
+.app-shell .stepbtn[data-ui-step="B"]::after,
+.app-shell .stepbtn[data-ui-step="D"]::after,
+.app-shell .stepbtn[data-ui-step="C"]::after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  top: -5px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--pr-green-2);
+  opacity: 0.55;
+}
+
+/* --------------------------------------------------------------------------
+   3. Títulos de seção e cartão de lista
+   -------------------------------------------------------------------------- */
+.app-shell .prog-list-card {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 4px 0 !important;
+}
+.app-shell .prog-section-title h4 {
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  color: var(--pr-text) !important;
+}
+.app-shell .prog-section-title .badge {
+  font-size: 12px !important;
+  background: var(--pr-green-soft) !important;
+  color: var(--pr-green-2) !important;
+  border: 1px solid var(--pr-line-2) !important;
+}
+.app-shell .prog-empty-section {
+  border: 1px dashed var(--pr-line-2) !important;
+  border-radius: var(--pr-radius) !important;
+  color: var(--pr-muted) !important;
+  background: var(--pr-surface-3) !important;
+  padding: 16px !important;
+  font-size: 13.5px !important;
+}
+
+/* --------------------------------------------------------------------------
+   4. Tabelas → cartões legíveis em QUALQUER largura (desktop + mobile)
+      Mantém thead no desktop largo; vira cartões empilhados abaixo de 1024px.
+   -------------------------------------------------------------------------- */
+/* Cartões de verdade em TODAS as larguras (Fase 3). O <table>/<tr>/<td>
+   continua no DOM — só a apresentação vira card — então os handlers de
+   autosave (closest('tr'), [data-field], data-table) seguem intactos.
+   O rótulo de cada campo vem de data-mobile-label (setado por
+   programacao-mobile-ui-fix.js a partir do thead, que fica oculto). */
+.app-shell .prog-table-wrap {
+  border: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+.app-shell .prog-table {
+  display: block !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  color: var(--pr-text) !important;
+}
+.app-shell .prog-table thead { display: none !important; }
+.app-shell .prog-table tbody {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)) !important;
+  gap: 12px !important;
+  align-items: start !important;
+}
+.app-shell .prog-table tr {
+  display: grid !important;
+  gap: 11px !important;
+  padding: 15px 16px !important;
+  border: 1px solid var(--pr-line) !important;
+  border-radius: var(--pr-radius-lg) !important;
+  background: var(--pr-surface) !important;
+  transition: border-color 0.15s !important;
+}
+.app-shell .prog-table tr:hover { border-color: var(--pr-line-2) !important; }
+.app-shell .prog-table td {
+  display: grid !important;
+  gap: 6px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  white-space: normal !important;
+}
+.app-shell .prog-table td::before {
+  content: attr(data-mobile-label);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--pr-green-2);
+}
+.app-shell .prog-table td[data-mobile-label="Colaborador"]::before { display: none; }
+/* Colaborador vira o "cabeçalho" do card, separado dos campos por uma linha */
+.app-shell .prog-table td[data-mobile-label="Colaborador"] {
+  border-bottom: 1px solid var(--pr-line) !important;
+  padding-bottom: 11px !important;
+}
+.app-shell .prog-table .colab-name {
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  color: var(--pr-text) !important;
+}
+.app-shell .prog-table .colab-meta {
+  font-size: 12.5px !important;
+  color: var(--pr-muted) !important;
+}
+.app-shell .prog-table input,
+.app-shell .prog-table select,
+.app-shell .prog-table textarea {
+  min-height: 42px !important;
+  font-size: 14px !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--pr-line-2) !important;
+  background: var(--pr-surface-2) !important;
+  color: var(--pr-text) !important;
+}
+
+/* Estados de disponibilidade / botões de tipo */
+.app-shell .prog-status {
+  font-size: 11.5px !important;
+  padding: 6px 11px !important;
+  border-radius: var(--pr-radius-pill) !important;
+}
+.app-shell .prog-status.ok {
+  background: var(--pr-green-soft) !important;
+  color: var(--pr-green-2) !important;
+  border-color: var(--pr-line-2) !important;
+}
+.app-shell .prog-status.block {
+  background: var(--pr-danger-soft) !important;
+  color: var(--pr-danger) !important;
+}
+.app-shell .prog-tipo-btn {
+  font-size: 13px !important;
+  padding: 9px 13px !important;
+  border-radius: 11px !important;
+  border: 1px solid var(--pr-line-2) !important;
+  background: var(--pr-surface-3) !important;
+  color: var(--pr-text-2) !important;
+}
+.app-shell .prog-tipo-btn.active {
+  background: var(--pr-green-soft) !important;
+  color: var(--pr-green-2) !important;
+  border-color: var(--pr-green-2) !important;
+}
+
+/* Cartões de estadia */
+.app-shell .prog-estadia-card {
+  border: 1px solid var(--pr-line-2) !important;
+  background: var(--pr-surface-3) !important;
+  border-radius: 14px !important;
+  min-height: 70px !important;
+}
+.app-shell .prog-estadia-card span {
+  font-size: 11.5px !important;
+}
+.app-shell .prog-estadia-card.active {
+  border-color: var(--pr-green-2) !important;
+  background: var(--pr-green-soft) !important;
+}
+.app-shell .prog-estadia-card svg {
+  stroke: var(--pr-green-2) !important;
+}
+
+/* Botões mini / salvar */
+.app-shell .prog-mini-btn {
+  border-radius: 12px !important;
+  border: 1px solid var(--pr-line-2) !important;
+  background: var(--pr-green-soft) !important;
+  color: var(--pr-green-2) !important;
+  font-size: 13px !important;
+  padding: 10px 13px !important;
+}
+.app-shell .prog-mini-btn.danger {
+  background: var(--pr-danger-soft) !important;
+  color: var(--pr-danger) !important;
+}
+.app-shell .prog-save-main {
+  border-radius: 14px !important;
+  background: linear-gradient(135deg, var(--pr-green-3), var(--pr-green-2)) !important;
+  color: #052e16 !important;
+  font-weight: 800 !important;
+  border: 0 !important;
+}
+
+/* Celular: cartões em coluna única e um pouco mais compactos */
+@media (max-width: 700px) {
+  .app-shell .prog-table tbody { grid-template-columns: 1fr !important; }
+  .app-shell .prog-table tr { padding: 13px !important; }
+}
+
+/* --------------------------------------------------------------------------
+   5. Etapa B — Organizar Equipe (custo-benefício)
+      Aumenta a legibilidade da decisão mais importante do gestor.
+   -------------------------------------------------------------------------- */
+.app-shell .peqb-kpi {
+  border: 1px solid var(--pr-line) !important;
+  background: var(--pr-surface) !important;
+  border-radius: 14px !important;
+  padding: 12px 14px !important;
+}
+.app-shell .peqb-kpi span {
+  color: var(--pr-muted) !important;
+  font-size: 10.5px !important;
+}
+.app-shell .peqb-kpi strong {
+  font-size: 20px !important;
+  color: var(--pr-text) !important;
+}
+.app-shell .peqb-btn {
+  border: 1px solid var(--pr-line-2) !important;
+  background: var(--pr-green-soft) !important;
+  color: var(--pr-green-2) !important;
+  font-size: 13px !important;
+  padding: 10px 16px !important;
+  border-radius: var(--pr-radius-pill) !important;
+}
+.app-shell .peqb-row {
+  border: 1px solid var(--pr-line) !important;
+  background: var(--pr-surface) !important;
+  border-radius: var(--pr-radius-lg) !important;
+  padding: 13px 15px !important;
+}
+.app-shell .peqb-row:hover,
+.app-shell .peqb-row.focus {
+  border-color: var(--pr-green-2) !important;
+  background: var(--pr-green-soft) !important;
+}
+.app-shell .peqb-row-head {
+  font-size: 14px !important;
+  color: var(--pr-text) !important;
+}
+.app-shell .peqb-row-head small {
+  color: var(--pr-green-2) !important;
+  font-size: 11.5px !important;
+}
+.app-shell .peqb-row-meta {
+  font-size: 12px !important;
+  color: var(--pr-muted) !important;
+}
+.app-shell .peqb-chip {
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+}
+.app-shell .peqb-chip.ok {
+  background: var(--pr-green-soft) !important;
+  color: var(--pr-green-2) !important;
+  border-color: var(--pr-line-2) !important;
+}
+.app-shell .peqb-select {
+  height: 42px !important;
+  font-size: 13.5px !important;
+  border-radius: 11px !important;
+  border: 1px solid var(--pr-line-2) !important;
+  background: var(--pr-surface-2) !important;
+  color: var(--pr-text) !important;
+}
+.app-shell .peqb-row-btn {
+  height: 42px !important;
+  font-size: 13px !important;
+  border-radius: 11px !important;
+  padding: 0 15px !important;
+  border: 1px solid var(--pr-line-2) !important;
+  background: var(--pr-green-soft) !important;
+  color: var(--pr-green-2) !important;
+}
+.app-shell .peqb-row-btn.danger {
+  background: var(--pr-danger-soft) !important;
+  color: var(--pr-danger) !important;
+}
+
+/* --------------------------------------------------------------------------
+   6. Distribuição de O.S. (Etapa A) — cartão da OS mais respirado
+   -------------------------------------------------------------------------- */
+.app-shell.prog-step-a-os #progDistribuicaoOsMount .os-lite-card,
+body.prog-step-a-os #progDistribuicaoOsMount .os-lite-card {
+  border: 1px solid var(--pr-line) !important;
+  background: var(--pr-surface) !important;
+  border-radius: var(--pr-radius-lg) !important;
+}
+body.prog-step-a-os #progDistribuicaoOsMount .os-a-value.strong {
+  color: var(--pr-text) !important;
+}
+body.prog-step-a-os #progDistribuicaoOsMount .os-a-label {
+  color: var(--pr-muted) !important;
+}
+
+/* --------------------------------------------------------------------------
+   7. Respiro geral da página
+   -------------------------------------------------------------------------- */
+.app-shell .page-main { padding-bottom: 40px !important; }

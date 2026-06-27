@@ -134,6 +134,42 @@ function injectStyles() {
     .peqb-row-btn.hotel{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.12);color:#fbbf24}
     .peqb-row-btn.hotel:hover{background:rgba(251,191,36,.22)}
     .peqb-row-btn.hotel.done{border-color:rgba(34,197,94,.4);background:rgba(22,163,74,.15);color:#86efac;cursor:default}
+    /* Cartões de candidato (Fase 2 do redesenho) — substituem o <select> apertado */
+    .peqb-cand{display:flex;align-items:flex-start;gap:11px;width:100%;text-align:left;cursor:pointer;border:1px solid var(--line-2,rgba(111,208,165,.22));background:rgba(8,22,17,.5);border-radius:13px;padding:11px 12px;margin-top:8px;color:var(--text,#eef7f2);font:inherit}
+    .peqb-cand:hover{border-color:var(--green-2,#6fd0a5);background:rgba(63,168,120,.12)}
+    .peqb-cand.sel{border-color:var(--green-2,#6fd0a5);background:rgba(63,168,120,.16);box-shadow:0 0 0 1px rgba(111,208,165,.25) inset}
+    .peqb-cand-confirmado{cursor:default}
+    .peqb-cand-av{flex:0 0 auto;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(63,168,120,.2);color:#bbf7d0;font-size:12px;font-weight:900}
+    .peqb-cand-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+    .peqb-cand-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+    .peqb-cand-top strong{font-size:14px;color:#f8fafc;font-weight:850}
+    .peqb-cand-tag{font-size:10px;font-weight:850;padding:2px 8px;border-radius:999px;border:1px solid rgba(148,163,184,.25)}
+    .peqb-cand-tag.t-ok{background:rgba(22,163,74,.18);color:#bbf7d0;border-color:rgba(34,197,94,.3)}
+    .peqb-cand-tag.t-warn{background:rgba(245,158,11,.14);color:#fde68a;border-color:rgba(245,158,11,.3)}
+    .peqb-cand-tag.t-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(59,130,246,.3)}
+    .peqb-cand-tag.t-muted{background:rgba(148,163,184,.14);color:#cbd5e1}
+    .peqb-cand-veic{font-size:10.5px;color:#bbf7d0}
+    .peqb-cand-flag{font-size:10px;font-weight:850;padding:2px 8px;border-radius:999px}
+    .peqb-cand-flag.hotel{background:rgba(251,191,36,.12);color:#fbbf24;border:1px solid rgba(251,191,36,.35)}
+    .peqb-cand-flag.menor{background:rgba(22,163,74,.18);color:#bbf7d0;border:1px solid rgba(34,197,94,.3)}
+    .peqb-cand-best{font-size:10px;font-weight:850;padding:2px 8px;border-radius:999px;background:rgba(63,168,120,.2);color:#bbf7d0}
+    .peqb-cand-sub{font-size:11.5px;color:#9fb7aa}
+    .peqb-cand-cost{flex:0 0 auto;font-size:15px;font-weight:900;color:#f8fafc;white-space:nowrap;align-self:center}
+    .peqb-score{display:flex;height:5px;border-radius:3px;overflow:hidden;background:rgba(148,163,184,.18);max-width:240px}
+    .peqb-score i{display:block;height:100%}
+    .peqb-score .seg-c{background:#22c55e}
+    .peqb-score .seg-d{background:#38bdf8}
+    .peqb-score .seg-a{background:#fbbf24}
+    .peqb-cand-more{margin-top:8px;width:100%;border:1px dashed rgba(111,208,165,.3);background:transparent;color:#9fb7aa;border-radius:11px;padding:9px;font-size:12.5px;font-weight:800;cursor:pointer}
+    .peqb-cand-more:hover{color:#bbf7d0;border-color:rgba(111,208,165,.5)}
+    .peqb-cand-more.open{color:#bbf7d0}
+    .peqb-cand-list{display:flex;flex-direction:column}
+    .peqb-cand-list[hidden]{display:none}
+    .peqb-legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:-2px 0 12px;font-size:11px;color:#9fb7aa}
+    .peqb-legend b{font-weight:850;color:#cbd5e1}
+    .peqb-legend i{display:inline-block;width:13px;height:6px;border-radius:2px;margin-right:5px;vertical-align:middle}
+    .peqb-legend .lg-c{background:#22c55e}.peqb-legend .lg-d{background:#38bdf8}.peqb-legend .lg-a{background:#fbbf24}
+    @media(max-width:600px){.peqb-cand-cost{align-self:flex-start}}
   `;
   document.head.appendChild(style);
 }
@@ -233,41 +269,120 @@ function candidatoOptionLabel(cand) {
   return `${cand.nome} — ${km} — ${custo} — score ${(cand.score * 100).toFixed(0)}${logistica}${hotel}`;
 }
 
+function iniciais(nome) {
+  return String(nome || '?').trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase() || '?';
+}
+
+function tipoTone(label) {
+  const n = normalizeText(label);
+  if (n.includes('EFETIVO')) return 'ok';
+  if (n.includes('INTERMITENTE')) return 'warn';
+  if (n.includes('DIARISTA')) return 'info';
+  return 'muted';
+}
+
+// Barra de score quebrada em Contrato / Distância / Auditoria (pesos 50/30/20
+// vindos da RPC) — torna visível o que está sustentando o ranking.
+function scoreSeg(cand) {
+  const c = Math.max(0, Number(cand.scoreContrato) || 0);
+  const d = Math.max(0, Number(cand.scoreDistancia) || 0);
+  const a = Math.max(0, Number(cand.scoreAuditoria) || 0);
+  const sum = c + d + a;
+  if (!sum) return '';
+  const cw = Math.round((c / sum) * 100);
+  const dw = Math.round((d / sum) * 100);
+  const aw = Math.max(0, 100 - cw - dw);
+  return `<span class="peqb-score" title="Score: Contrato / Distância / Auditoria"><i class="seg-c" style="width:${cw}%"></i><i class="seg-d" style="width:${dw}%"></i><i class="seg-a" style="width:${aw}%"></i></span>`;
+}
+
+function osHeadHtml(os, confirmado) {
+  return `
+    <div class="peqb-row-head"><span>${esc(os.cliente || '-')}</span><small>OS ${esc(os.numero_os || '-')}</small></div>
+    <div class="peqb-row-meta">📍 ${esc(os.embarque || '-')}</div>
+    <span class="peqb-chip ${confirmado ? 'ok' : 'warn'}">${confirmado ? 'Equipe confirmada' : 'Aguardando confirmação'}</span>
+  `;
+}
+
+// Cartão selecionável de candidato — substitui cada <option> do antigo select.
+function candCardHtml(cand, selected, minCustoId) {
+  const hotel = precisaHotel(cand.km);
+  const km = cand.km != null ? `${cand.km} km` : 'sem coord.';
+  const custo = cand.custoTotal != null ? `R$ ${brl(cand.custoTotal)}` : 's/ custo';
+  const tone = tipoTone(cand.tipoLabel);
+  const ehMenor = minCustoId && cand.colaboradorId === minCustoId;
+  return `<button type="button" class="peqb-cand${selected ? ' sel' : ''}" data-pick-cand="${esc(cand.colaboradorId)}">
+    <span class="peqb-cand-av">${esc(iniciais(cand.nome))}</span>
+    <span class="peqb-cand-main">
+      <span class="peqb-cand-top">
+        <strong>${esc(cand.nome)}</strong>
+        <span class="peqb-cand-tag t-${tone}">${esc(cand.tipoLabel)}</span>
+        ${cand.veiculoPlaca ? `<span class="peqb-cand-veic">🚐 ${esc(cand.veiculoPlaca)}</span>` : ''}
+        ${hotel ? '<span class="peqb-cand-flag hotel">🏨 sugerir hotel</span>' : ''}
+        ${ehMenor ? '<span class="peqb-cand-flag menor">menor custo</span>' : ''}
+      </span>
+      <span class="peqb-cand-sub">${esc(km)} · score ${Math.round((Number(cand.score) || 0) * 100)}</span>
+      ${scoreSeg(cand)}
+    </span>
+    <span class="peqb-cand-cost">${esc(custo)}</span>
+  </button>`;
+}
+
 function osRowHtml(item) {
   const { os, confirmadoRow, candidatos } = item;
   const confirmado = !!confirmadoRow;
-  const selecionadoId = confirmadoRow?.colaborador_id || candidatos[0]?.colaboradorId || '';
-  const optionsHtml = candidatos.length
-    ? candidatos.map((c) => `<option value="${esc(c.colaboradorId)}" ${c.colaboradorId === selecionadoId ? 'selected' : ''}>${esc(candidatoOptionLabel(c))}</option>`).join('')
-    : '<option value="">Nenhum candidato disponível</option>';
 
-  // Botão de hotel: só aparece quando confirmado e colaborador está longe
-  const kmConfirmado = confirmadoRow?.km_estimado != null ? Number(confirmadoRow.km_estimado) : null;
-  const custoKmConfirmado = estimarCustoKm(kmConfirmado);
-  const hotelJaPedido = hotelSolicitadoIds.has(os.id);
-  const hotelBtn = confirmado && precisaHotel(kmConfirmado)
-    ? hotelJaPedido
-      ? `<button type="button" class="peqb-row-btn hotel done" disabled>✓ Hotel solicitado</button>`
-      : `<button type="button" class="peqb-row-btn hotel" data-pedir-hotel title="Combustível ida+volta estimado: R$${custoKmConfirmado != null ? brl(custoKmConfirmado) : '?'} — hotel pode ser mais econômico">🏨 Pedir hotel</button>`
-    : '';
+  if (confirmado) {
+    const km = confirmadoRow.km_estimado != null ? Number(confirmadoRow.km_estimado) : null;
+    const custoKm = estimarCustoKm(km);
+    const hotelJaPedido = hotelSolicitadoIds.has(os.id);
+    const hotelBtn = precisaHotel(km)
+      ? (hotelJaPedido
+        ? '<button type="button" class="peqb-row-btn hotel done" disabled>✓ Hotel solicitado</button>'
+        : `<button type="button" class="peqb-row-btn hotel" data-pedir-hotel title="Combustível ida+volta estimado: R$${custoKm != null ? brl(custoKm) : '?'} — hotel pode ser mais econômico">🏨 Pedir hotel</button>`)
+      : '';
+    return `
+      <article class="peqb-row" data-os-id="${esc(os.id)}">
+        ${osHeadHtml(os, true)}
+        <div class="peqb-cand sel peqb-cand-confirmado">
+          <span class="peqb-cand-av">${esc(iniciais(confirmadoRow.nome_colaborador))}</span>
+          <span class="peqb-cand-main">
+            <span class="peqb-cand-top"><strong>${esc(confirmadoRow.nome_colaborador)}</strong><span class="peqb-cand-best">confirmado</span></span>
+            <span class="peqb-cand-sub">${km != null ? `${km} km do embarque` : 'sem distância calculada'}</span>
+          </span>
+        </div>
+        <div class="peqb-row-actions">
+          ${hotelBtn}
+          <button type="button" class="peqb-row-btn danger" data-remover="${esc(confirmadoRow.id)}">Remover</button>
+        </div>
+      </article>
+    `;
+  }
 
-  // Badge informativo para OS ainda não confirmadas com candidato distante
-  const kmMelhor = candidatos[0]?.km ?? null;
-  const infoBadge = !confirmado && precisaHotel(kmMelhor)
-    ? `<span class="peqb-chip peqb-chip-hotel">🏨 Melhor candidato a ${kmMelhor}km</span>`
+  const selecionadoId = candidatos[0]?.colaboradorId || '';
+  const comCusto = candidatos.filter((c) => c.custoTotal != null);
+  const minCustoId = comCusto.length
+    ? comCusto.reduce((a, b) => (a.custoTotal <= b.custoTotal ? a : b)).colaboradorId
+    : null;
+  const principal = candidatos[0] || null;
+  const outros = candidatos.slice(1);
+
+  const candHtml = principal
+    ? candCardHtml(principal, true, minCustoId)
+    : '<div class="peqb-empty" style="margin:8px 0 0">Nenhum candidato disponível. Ajuste a OS ou as exclusões na etapa A.</div>';
+
+  const outrosHtml = outros.length
+    ? `<button type="button" class="peqb-cand-more" data-toggle-outros>▾ Ver outros ${outros.length} candidato${outros.length > 1 ? 's' : ''} (por custo/score)</button>
+       <div class="peqb-cand-list" data-outros hidden>${outros.map((c) => candCardHtml(c, false, minCustoId)).join('')}</div>`
     : '';
 
   return `
     <article class="peqb-row" data-os-id="${esc(os.id)}">
-      <div class="peqb-row-head"><span>${esc(os.cliente || '-')}</span><small>OS ${esc(os.numero_os || '-')}</small></div>
-      <div class="peqb-row-meta">Embarque: ${esc(os.embarque || '-')}</div>
-      <span class="peqb-chip ${confirmado ? 'ok' : 'warn'}">${confirmado ? `Confirmado · ${esc(confirmadoRow.nome_colaborador)}${kmConfirmado != null ? ` · ${kmConfirmado}km` : ''}` : 'Pendente'}</span>
-      ${infoBadge}
+      ${osHeadHtml(os, false)}
+      <input type="hidden" data-select-colaborador value="${esc(selecionadoId)}" />
+      ${candHtml}
+      ${outrosHtml}
       <div class="peqb-row-actions">
-        <select class="peqb-select" data-select-colaborador ${candidatos.length ? '' : 'disabled'}>${optionsHtml}</select>
-        <button type="button" class="peqb-row-btn" data-confirmar ${candidatos.length ? '' : 'disabled'}>${confirmado ? 'Atualizar' : 'Confirmar'}</button>
-        ${hotelBtn}
-        ${confirmado ? `<button type="button" class="peqb-row-btn danger" data-remover="${esc(confirmadoRow.id)}">Remover</button>` : ''}
+        <button type="button" class="peqb-row-btn" data-confirmar ${candidatos.length ? '' : 'disabled'}>Confirmar selecionado</button>
       </div>
     </article>
   `;
@@ -423,6 +538,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
       <div class="peqb-kpi"><span>OS com equipe</span><strong id="peqbKpiOs">0</strong></div>
     </div>
+    <div class="peqb-legend"><b>Barra de score:</b> <span><i class="lg-c"></i>Contrato 50%</span> <span><i class="lg-d"></i>Distância 30%</span> <span><i class="lg-a"></i>Auditoria 20%</span></div>
     <div class="peqb-toolbar">
       <button type="button" class="peqb-btn" id="peqbAutoPreencher">Auto-preencher</button>
       <button type="button" class="peqb-btn" id="peqbVerRotas">Ver rotas no mapa</button>
@@ -544,11 +660,33 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   }
 
   listEl.addEventListener('click', async (event) => {
+    const toggleOutros = event.target.closest('[data-toggle-outros]');
+    const pickBtn = event.target.closest('[data-pick-cand]');
     const btnConfirmar = event.target.closest('[data-confirmar]');
     const btnRemover = event.target.closest('[data-remover]');
     const btnHotelEl = event.target.closest('[data-pedir-hotel]');
     const row = event.target.closest('.peqb-row');
-    if (!btnConfirmar && !btnRemover && !btnHotelEl && row && !event.target.closest('select')) {
+
+    // Abre/fecha a lista de candidatos alternativos
+    if (toggleOutros && row) {
+      const lista = row.querySelector('[data-outros]');
+      if (lista) {
+        lista.hidden = !lista.hidden;
+        toggleOutros.classList.toggle('open', !lista.hidden);
+      }
+      return;
+    }
+
+    // Seleciona um candidato (grava no input oculto que confirmar/mapa leem)
+    if (pickBtn && row) {
+      const hidden = row.querySelector('[data-select-colaborador]');
+      if (hidden) hidden.value = pickBtn.dataset.pickCand || '';
+      row.querySelectorAll('.peqb-cand').forEach((c) => c.classList.toggle('sel', c === pickBtn));
+      await atualizarMapaParaOs(row.dataset.osId);
+      return;
+    }
+
+    if (!btnConfirmar && !btnRemover && !btnHotelEl && row) {
       await atualizarMapaParaOs(row.dataset.osId);
       return;
     }
