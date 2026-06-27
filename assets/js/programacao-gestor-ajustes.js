@@ -1,6 +1,6 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
 import { renderOsProgramacaoLite } from './os-programacao-lite.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260627-restruct';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260627-merge';
 import { renderFase2Custos } from './programacao-fase2-custos.js?v=20260627-restruct';
 
 const OS_STATUS_OPTIONS = [
@@ -12,7 +12,6 @@ const OS_STATUS_OPTIONS = [
 ];
 
 let currentUiStep = '1';
-let fase1Sub = 'triagem'; // 'triagem' (analisar/ATENDER) | 'equipe' (atribuir)
 let distribuicaoLoaded = false;
 let distribuicaoLoading = false;
 let pendingKpiReload = false;
@@ -139,10 +138,9 @@ function ensureStatusOsFilter() {
   if (select && select.dataset.statusOsBound !== '1') {
     select.dataset.statusOsBound = '1';
     select.addEventListener('change', () => {
-      if (currentUiStep === '1' && fase1Sub === 'triagem') {
-        const body = document.getElementById('fase1Body');
-        if (body) renderTriagemInto(body);
-      }
+      // A triagem agora vive dentro da tela da equipe (Fase 1), que carrega
+      // todos os status relevantes — o filtro do topo fica oculto nessa fase.
+      if (currentUiStep === '1') renderEquipe();
     });
   }
   return select;
@@ -233,10 +231,10 @@ function guardDistribuicaoView() {
 function guardEquipeView() {
   if (currentUiStep !== '1') return;
   const list = document.getElementById('progList');
-  if (!list) return;
-  // Se o wrapper da Fase 1 foi substituído (ex.: o núcleo renderizou a
-  // disponibilidade em #progList ao carregar contexto), reconstrói a Fase 1.
-  if (!document.getElementById('fase1Body')) renderEquipe();
+  if (!list || document.getElementById('peqbOsList') || document.getElementById('progEquipeLoadNow')) return;
+  // A tela da Fase 1 foi substituída (ex.: o núcleo renderizou outra coisa em
+  // #progList) — reconstrói.
+  renderEquipe();
 }
 
 function guardFase2View() {
@@ -371,27 +369,9 @@ function renderEquipePlaceholder(list) {
   });
 }
 
-async function renderTriagemInto(body) {
-  body.innerHTML = `
-    <div class="prog-empty-section" style="margin-bottom:12px">Marque as O.S. que vão <b>ATENDER</b> — elas passam para "Atribuir equipe".</div>
-    <div id="progDistribuicaoOsMount"></div>`;
-  ensureStatusOsFilter();
-  const mount = body.querySelector('#progDistribuicaoOsMount');
-  try {
-    await renderOsProgramacaoLite(mount, {
-      reuseData: false,
-      supervisao: document.getElementById('progSup')?.value || '',
-      status: document.getElementById('progOsStatusTop')?.value || '',
-      data: document.getElementById('progDataRef')?.value || '',
-    });
-    prepareEmbeddedOsFilters(mount);
-  } catch (error) {
-    console.warn('[fase1 triagem]', error);
-  }
-}
-
-// Fase 1 "Programar OS" = duas sub-abas no mesmo passo: Triar O.S. (analisar /
-// marcar ATENDER) e Atribuir equipe (custo-benefício). Sem virar etapa de topo.
+// Fase 1 "Programar O.S." = uma tela só: triar as O.S. (status ✓/aguardar/
+// finalizar/saldo/conferir) e atribuir a equipe de menor custo convivem na
+// mesma view (renderProgramacaoEquipe), com o bloco "Não vão atender" embaixo.
 async function renderEquipe() {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
@@ -399,39 +379,17 @@ async function renderEquipe() {
 
   setActiveUiStep('1');
   hideCoreControls();
-  setStatusOsVisibility(fase1Sub === 'triagem');
   if (feedback) {
     feedback.className = 'feedback mt-16 prog-feedback-ok';
-    feedback.textContent = fase1Sub === 'triagem'
-      ? 'Fase 1 · Triar — marque quais O.S. vão atender.'
-      : 'Fase 1 · Equipe — atribua o menor custo a cada O.S. (Auto-preencher e revise).';
-  }
-
-  list.innerHTML = `
-    <div class="prog-section-title"><h4>Programar O.S.</h4><span class="badge">Fase 1</span></div>
-    <div class="prog-f1-tabs">
-      <button type="button" class="prog-f1-tab ${fase1Sub === 'triagem' ? 'active' : ''}" data-f1="triagem">1 · Triar O.S.</button>
-      <button type="button" class="prog-f1-tab ${fase1Sub === 'equipe' ? 'active' : ''}" data-f1="equipe">2 · Atribuir equipe</button>
-    </div>
-    <div id="fase1Body"></div>`;
-  list.querySelectorAll('[data-f1]').forEach((btn) => btn.addEventListener('click', () => {
-    if (fase1Sub === btn.dataset.f1) return;
-    fase1Sub = btn.dataset.f1;
-    renderEquipe();
-  }));
-
-  const body = list.querySelector('#fase1Body');
-  if (fase1Sub === 'triagem') {
-    await renderTriagemInto(body);
-    return;
+    feedback.textContent = 'Fase 1 — trie as O.S. (✓ atender) e atribua a equipe de menor custo, na mesma tela.';
   }
 
   const programacaoId = window.__progGetProgramacaoId?.() || null;
   if (!programacaoId) {
-    renderEquipePlaceholder(body);
+    renderEquipePlaceholder(list);
     return;
   }
-  await renderProgramacaoEquipe(body, {
+  await renderProgramacaoEquipe(list, {
     supervisao: document.getElementById('progSup')?.value || '',
     dataReferencia: document.getElementById('progDataRef')?.value || '',
     programacaoId,
