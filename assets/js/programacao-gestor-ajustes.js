@@ -1,6 +1,6 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
 import { renderOsProgramacaoLite } from './os-programacao-lite.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260627-merge2';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260627-merge3';
 import { renderFase2Custos } from './programacao-fase2-custos.js?v=20260627-restruct';
 
 const OS_STATUS_OPTIONS = [
@@ -415,8 +415,7 @@ function configureSteps() {
   //  Fase 2 "Fechar custos" -> card único por colaborador (estadia+desloc+alim+extras)
   //  Fase 3 "Disponibilidade" -> etapa interna 'A' do núcleo (quem não embarca)
   const layout = [
-    { ui: '1', label: 'Programar OS', internal: '__equipe' },
-    { ui: '2', label: 'Fechar custos', internal: '__custos' },
+    { ui: '1', label: 'Programar O.S.', internal: '__equipe' },
     { ui: '3', label: 'Disponibilidade', internal: 'A' },
   ];
 
