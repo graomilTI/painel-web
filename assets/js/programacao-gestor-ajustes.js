@@ -1,6 +1,6 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
 import { renderOsProgramacaoLite } from './os-programacao-lite.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260627-merge';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260627-merge2';
 import { renderFase2Custos } from './programacao-fase2-custos.js?v=20260627-restruct';
 
 const OS_STATUS_OPTIONS = [
@@ -12,6 +12,7 @@ const OS_STATUS_OPTIONS = [
 ];
 
 let currentUiStep = '1';
+let equipeRendering = false;
 let distribuicaoLoaded = false;
 let distribuicaoLoading = false;
 let pendingKpiReload = false;
@@ -389,11 +390,19 @@ async function renderEquipe() {
     renderEquipePlaceholder(list);
     return;
   }
-  await renderProgramacaoEquipe(list, {
-    supervisao: document.getElementById('progSup')?.value || '',
-    dataReferencia: document.getElementById('progDataRef')?.value || '',
-    programacaoId,
-  });
+  // Trava de reentrância: o observer pode chamar renderEquipe várias vezes
+  // enquanto a tela carrega — evita reentrar e disparar requisições em loop.
+  if (equipeRendering) return;
+  equipeRendering = true;
+  try {
+    await renderProgramacaoEquipe(list, {
+      supervisao: document.getElementById('progSup')?.value || '',
+      dataReferencia: document.getElementById('progDataRef')?.value || '',
+      programacaoId,
+    });
+  } finally {
+    equipeRendering = false;
+  }
 }
 
 function configureSteps() {
