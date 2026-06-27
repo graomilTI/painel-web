@@ -569,8 +569,10 @@ async function submitUniformes(ctx){
   await salvarSolicitacao(ctx,'uniformes',itens);
   return itens;
 }
-async function loadMinhas(){
-  const data=await safe(()=>supabase.from('compras_solicitacoes').select('*, compras_itens(*)').order('created_at',{ascending:false}).limit(80));
+async function loadMinhas(userId){
+  let q=supabase.from('compras_solicitacoes').select('*, compras_itens(*)').order('created_at',{ascending:false}).limit(80);
+  if(userId) q=q.eq('solicitante_id',userId);
+  const data=await safe(()=>q);
   state.rows=data; const body=document.getElementById('cmpMinhasBody');
   if(!data.length){ body.innerHTML='<tr><td colspan="5" class="cmp-empty">Nenhuma solicitação localizada.</td></tr>'; return; }
   body.innerHTML=data.map(r=>`<tr><td data-label="Data">${brDate(r.data_solicitacao)}</td><td data-label="Tipo">${esc(r.tipo_solicitacao)}</td><td data-label="Itens">${(r.compras_itens||[]).map(i=>`${esc(i.quantidade||i.unidade||1)} un | ${esc(i.material)}${i.tamanho?` (${esc(i.tamanho)})`:''}`).join('<br>')}</td><td data-label="Status">${pill(r.status)}</td><td data-label="Motivo">${esc(r.motivo_recusa||'')}</td></tr>`).join('');
@@ -618,7 +620,8 @@ initProtectedPage('Compras', async (content, userContext)=>{
   <section class="card mt-16"><div class="section-head"><div><h3>Pendentes e histórico</h3><p class="muted">A solicitação fica pendente até compras concluir ou recusar.</p></div><button class="btn btn-secondary" id="cmpRefresh" type="button">↻ Atualizar</button></div><div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div></section>`;
   state.itens=[]; state.itensInterno=[]; bindItemForm(); bindInternoForm(); renderItensList(); renderInternoList(); renderUniformes(); setupColabSearch();
   document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
-  document.getElementById('cmpAddTodos').onclick=()=>addAllColaboradores(userContext); document.getElementById('cmpRefresh').onclick=loadMinhas;
+  const userId=usuario(userContext).id||null;
+  document.getElementById('cmpAddTodos').onclick=()=>addAllColaboradores(userContext); document.getElementById('cmpRefresh').onclick=()=>loadMinhas(userId);
   async function doSolicitar(overrideItems=null){
     const btn=document.getElementById('cmpSolicitar');
     btn.disabled=true;
@@ -632,7 +635,7 @@ initProtectedPage('Compras', async (content, userContext)=>{
       state.uniformes=[]; renderUniformes();
       state.itensInterno=[]; renderInternoList();
       if(document.getElementById('cmpObsInterno')) document.getElementById('cmpObsInterno').value='';
-      await loadMinhas();
+      await loadMinhas(userId);
     }catch(e){ setMsg('cmpFeedback',e.message||'Erro ao solicitar.',true); }
     finally{ btn.disabled=false; }
   }
@@ -644,5 +647,5 @@ initProtectedPage('Compras', async (content, userContext)=>{
     }
     doSolicitar();
   };
-  await loadMinhas();
+  await loadMinhas(userId);
 });
