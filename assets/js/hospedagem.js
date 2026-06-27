@@ -75,81 +75,57 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'hospedagemGestorStyles';
   style.textContent = `
-    @keyframes hospReveal{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-    @keyframes hospPulse{0%,100%{box-shadow:0 0 0 0 rgba(111,208,165,.16)}50%{box-shadow:0 0 0 7px rgba(111,208,165,.05)}}
-
-    .hosp-tabs{position:relative;display:flex;gap:2px;flex-wrap:wrap;margin:18px 0 24px;padding:5px;background:#0c0c17;border:1px solid var(--line);border-radius:999px;width:fit-content}
-    .hosp-tab{position:relative;z-index:1;width:auto;margin-top:0;border:1px solid transparent;background:transparent;color:var(--muted);border-radius:999px;padding:9px 18px;cursor:pointer;font-weight:700;font-size:13px;transition:color .25s ease}
-    .hosp-tab.active{color:#eafff4}
-    .hosp-tab-indicator{position:absolute;top:5px;left:5px;height:calc(100% - 10px);width:0;border-radius:999px;background:linear-gradient(135deg,rgba(63,168,120,.4),rgba(111,208,165,.22));border:1px solid rgba(111,208,165,.4);box-shadow:0 4px 14px rgba(0,0,0,.3);transition:transform .32s cubic-bezier(.22,1,.36,1),width .32s cubic-bezier(.22,1,.36,1);z-index:0}
+    .hosp-tabs{display:flex;gap:6px;margin:0 0 16px;flex-wrap:wrap}
+    .hosp-tab{border:1px solid var(--line);background:var(--bg-card);color:var(--muted);border-radius:12px;padding:9px 16px;cursor:pointer;font-weight:700;font-size:13px;width:auto;margin:0}
+    .hosp-tab:hover{color:#cfe7da;border-color:var(--line-2)}
+    .hosp-tab.active{background:linear-gradient(135deg,var(--green-3),var(--green));color:#f0fff7;border-color:var(--green-2)}
     .hosp-panel{display:none}.hosp-panel.active{display:block}
-
-    .hosp-section{position:relative;margin-top:30px;padding-left:50px;animation:hospReveal .5s cubic-bezier(.22,1,.36,1) backwards}
-    .hosp-section:first-child{margin-top:0}
-    .hosp-section:nth-of-type(1){animation-delay:.02s}
-    .hosp-section:nth-of-type(2){animation-delay:.07s}
-    .hosp-section:nth-of-type(3){animation-delay:.12s}
-    .hosp-section:nth-of-type(4){animation-delay:.17s}
-    .hosp-section:not(:last-of-type)::before{content:'';position:absolute;left:17px;top:36px;bottom:-30px;width:1px;background:linear-gradient(to bottom,var(--line-2),transparent)}
-    .hosp-section-num{position:absolute;left:0;top:0;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:13px;color:#06170f;background:linear-gradient(150deg,var(--green-2),var(--green));box-shadow:0 6px 16px rgba(111,208,165,.22)}
-    .hosp-section-head{margin-bottom:16px}
-    .hosp-section-head h4{margin:0;font-family:'Syne',sans-serif;font-size:17px;font-weight:700;letter-spacing:.005em;color:var(--text)}
-    .hosp-section-head p{margin:4px 0 0;font-size:13px;color:var(--muted)}
-
-    .hosp-form-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
-    .hosp-field{display:flex;flex-direction:column;gap:7px}
-    .hosp-field.full{grid-column:1/-1}
-    .hosp-field.col-2{grid-column:span 2}
-    .hosp-field.col-3{grid-column:span 3}
-    .hosp-field.col-4{grid-column:span 4}
-    .hosp-field.col-5{grid-column:span 5}
-    .hosp-field.col-6{grid-column:span 6}
-    .hosp-field label{font-size:12.5px;color:#cbd5e1;font-weight:700;letter-spacing:.01em}
-    .hosp-field input,.hosp-field textarea,.hosp-field select{width:100%;border:1px solid rgba(255,255,255,0.08);background:#13131f;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark;box-shadow:inset 0 1px 0 rgba(255,255,255,.02);transition:border-color .2s ease,box-shadow .2s ease}
-    .hosp-field textarea{resize:vertical;min-height:86px}
-    .hosp-field input:hover,.hosp-field textarea:hover,.hosp-field select:hover{border-color:rgba(111,208,165,.22)}
-    .hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.13)}
-    .hosp-help{font-size:12px;color:var(--muted)}
-
-    .hosp-diarias-badge{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(111,208,165,.28);background:rgba(22,101,52,.16);color:#bbf7d0;border-radius:999px;padding:9px 16px;font-weight:700;font-size:13px;white-space:nowrap;animation:hospPulse 3.2s ease-in-out infinite}
-    .hosp-diarias-badge::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--green-2);flex:0 0 auto}
-
-    .hosp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:30px;padding-top:20px;border-top:1px solid var(--line)}
-    .hosp-btn{width:auto!important;margin-top:0!important;transition:transform .18s ease,box-shadow .18s ease}
-    .hosp-btn:hover{transform:translateY(-1px)}
-    .hosp-btn:active{transform:translateY(0)}
+    .hosp-card{background:var(--bg-card);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+    .hosp-grp{margin-top:16px}.hosp-grp:first-child{margin-top:0}
+    .hosp-grp-h{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:850;letter-spacing:.05em;text-transform:uppercase;color:var(--green-2);margin:0 0 9px}
+    .hosp-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:10px}
+    .hosp-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+    .hosp-field.full{grid-column:1/-1}.hosp-field.col-2{grid-column:span 2}.hosp-field.col-3{grid-column:span 3}.hosp-field.col-4{grid-column:span 4}.hosp-field.col-5{grid-column:span 5}.hosp-field.col-6{grid-column:span 6}
+    .hosp-field label{font-size:11px;color:var(--muted);font-weight:700}
+    .hosp-field input,.hosp-field textarea,.hosp-field select{width:100%;min-height:40px;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px 11px;outline:none;color-scheme:dark;font-size:14px;box-sizing:border-box}
+    .hosp-field textarea{min-height:62px;resize:vertical}
+    .hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus{border-color:var(--green-2);outline:2px solid rgba(111,208,165,.16)}
+    .hosp-help{font-size:11.5px;color:var(--muted)}
+    .hosp-diarias-badge{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(111,208,165,.28);background:rgba(63,168,120,.14);color:#bbf7d0;border-radius:999px;padding:6px 13px;font-weight:800;font-size:12px;white-space:nowrap}
+    .hosp-diarias-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green-2)}
+    .hosp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+    .hosp-btn{width:auto!important;margin-top:0!important}
     .hosp-feedback{color:var(--muted);font-size:13px}.hosp-feedback.ok{color:#bbf7d0}.hosp-feedback.err{color:#fecaca}
-    .hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.hosp-table{width:100%;border-collapse:collapse;min-width:1040px;background:#15152a}.hosp-table th,.hosp-table td{padding:13px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.hosp-table th{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}.hosp-table tr{transition:background-color .15s ease}.hosp-table tr:hover td{background:rgba(111,208,165,.045)}
-    .hosp-status{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12px;font-weight:700;white-space:nowrap}
-    .hosp-status::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;flex:0 0 auto}
-    .hosp-status.solicitada,.hosp-status.em_analise,.hosp-status.em_cotacao{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.hosp-status.reservada{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.hosp-status.concluida{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.hosp-status.cancelada{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}
-    .hosp-colab-box{display:grid;gap:10px}
-    .hosp-colab-row{display:grid;grid-template-columns:auto 1.2fr .6fr auto;gap:14px;align-items:center;background:var(--bg-card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;backdrop-filter:blur(10px);transition:border-color .2s ease,transform .2s ease,box-shadow .2s ease}
-    .hosp-colab-row:hover{border-color:var(--line-2);transform:translateY(-1px);box-shadow:var(--shadow-soft)}
-    .hosp-colab-row .hosp-field{gap:5px}
+    .hosp-colab-box{display:flex;flex-direction:column;gap:8px}
+    .hosp-colab-row{display:grid;grid-template-columns:1.5fr .8fr auto;gap:8px;align-items:center}
+    .hosp-colab-row input{width:100%;min-height:40px;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px 11px;outline:none;color-scheme:dark;font-size:14px;box-sizing:border-box}
+    .hosp-colab-row input:focus{border-color:var(--green-2);outline:2px solid rgba(111,208,165,.16)}
     .hosp-ac{position:relative;width:100%}
-    .hosp-ac-list{position:absolute;top:calc(100% + 6px);left:0;right:0;background:#13131f;border:1px solid rgba(111,208,165,.28);border-radius:14px;overflow:hidden;z-index:50;max-height:230px;overflow-y:auto;box-shadow:0 10px 30px rgba(0,0,0,.45)}
-    .hosp-ac-item{padding:10px 13px;cursor:pointer;font-size:13px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.05)}
+    .hosp-ac-list{position:absolute;top:calc(100% + 5px);left:0;right:0;background:#0a1e17;border:1px solid rgba(111,208,165,.3);border-radius:12px;overflow:hidden;z-index:50;max-height:230px;overflow-y:auto;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+    .hosp-ac-item{padding:9px 12px;cursor:pointer;font-size:13px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.05)}
     .hosp-ac-item:last-child{border-bottom:0}
     .hosp-ac-item:hover{background:rgba(111,208,165,.12);color:#eafff4}
-    .hosp-ac-item small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;font-weight:500}
-    .hosp-ac-empty{padding:10px 13px;font-size:12.5px;color:var(--muted);text-align:center}
-    .hosp-colab-index{width:32px;height:32px;border-radius:50%;background:linear-gradient(150deg,rgba(111,208,165,.22),rgba(63,168,120,.1));border:1px solid rgba(111,208,165,.32);color:#bbf7d0;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:13px}
-    .hosp-remove{width:auto!important;margin-top:0!important;padding:10px 12px!important;transition:transform .16s ease,border-color .16s ease,color .16s ease}
-    .hosp-remove:hover{transform:translateY(-1px);border-color:rgba(248,113,113,.4);color:#fecaca}
-    .hosp-add-colab{width:auto;margin-top:6px;border:1px dashed var(--line-2);background:transparent;color:var(--muted);border-radius:14px;padding:12px 14px;cursor:pointer;font-weight:700;text-align:center;transition:border-color .2s ease,color .2s ease,transform .2s ease,background .2s ease}
-    .hosp-add-colab:hover{border-color:var(--green-2);color:#bbf7d0;background:rgba(111,208,165,.05);transform:translateY(-1px)}
-    .hosp-empty{padding:18px;color:var(--muted);text-align:center}
-    .hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;border-radius:16px;padding:12px 14px;margin-top:12px}
-    @media(max-width:850px){
-      .hosp-form-grid,.hosp-colab-row{grid-template-columns:1fr}
-      .hosp-form-grid .hosp-field{grid-column:1/-1}
-      .hosp-section{padding-left:0}
-      .hosp-section-num{display:none}
-      .hosp-section::before{display:none}
-      .hosp-colab-index{justify-self:start}
-      .hosp-remove{justify-self:flex-start}
-    }
+    .hosp-ac-item small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+    .hosp-ac-empty{padding:9px 12px;font-size:12.5px;color:var(--muted);text-align:center}
+    .hosp-remove{width:auto!important;margin:0!important;padding:0 14px!important;height:40px;border-radius:11px!important;white-space:nowrap;font-size:15px}
+    .hosp-remove:hover{border-color:rgba(248,113,113,.4);color:#fecaca}
+    .hosp-add-colab{width:auto;align-self:flex-start;margin-top:2px;border:1px dashed var(--line-2);background:transparent;color:var(--muted);border-radius:11px;padding:9px 14px;cursor:pointer;font-weight:700;font-size:13px}
+    .hosp-add-colab:hover{border-color:var(--green-2);color:#bbf7d0}
+    .hosp-empty{padding:16px;color:var(--muted);text-align:center}
+    .hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;border-radius:12px;padding:10px 12px;margin-top:10px;font-size:12.5px}
+    .hosp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+    .hosp-stat{background:var(--bg-card);border:1px solid var(--line);border-radius:13px;padding:11px 14px}
+    .hosp-stat span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    .hosp-stat strong{display:block;font-size:22px;margin-top:3px;color:var(--text)}
+    .hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px}
+    .hosp-table{width:100%;border-collapse:collapse;min-width:760px}
+    .hosp-table th,.hosp-table td{padding:11px 13px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:13px}
+    .hosp-table th{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:800;background:rgba(13,32,24,.55)}
+    .hosp-table tr:hover td{background:rgba(111,208,165,.045)}
+    .hosp-status{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;border:1px solid var(--line-2);font-size:11.5px;font-weight:700;white-space:nowrap}
+    .hosp-status::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+    .hosp-status.solicitada,.hosp-status.em_analise,.hosp-status.em_cotacao{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.hosp-status.reservada{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.hosp-status.concluida{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.hosp-status.cancelada{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}
+    @media(max-width:760px){.hosp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hosp-grid .hosp-field{grid-column:span 1}.hosp-field.full{grid-column:1/-1}.hosp-colab-row{grid-template-columns:1fr auto}.hosp-colab-row .hosp-ac{grid-column:1/-1}}
   `;
   document.head.appendChild(style);
 }
@@ -159,134 +135,63 @@ initProtectedPage('Hospedagem', (content, userContext) => {
   const state = { solicitacoes: [], colaboradores: [], tab: 'solicitar' };
 
   content.innerHTML = `
-    <section class="hero-card">
-      <div>
-        <div class="eyebrow">Gestor</div>
-        <h2>Solicitação de Hospedagem</h2>
-        <p>Envie pedidos para o setor de hospedagem com colaboradores, local de embarque, cidade, datas e observações em um fluxo rastreável.</p>
-      </div>
-      <div class="hero-badge-wrap"><span class="hero-badge">HOSPEDAGEM</span></div>
-    </section>
-
     <div class="hosp-tabs" id="hospTabs">
-      <span class="hosp-tab-indicator" id="hospTabIndicator"></span>
-      <button class="hosp-tab active" data-tab="solicitar" type="button">Solicitar hospedagem</button>
+      <button class="hosp-tab active" data-tab="solicitar" type="button">Solicitar</button>
       <button class="hosp-tab" data-tab="minhas" type="button">Minhas solicitações</button>
     </div>
 
     <section class="hosp-panel active" id="panel-solicitar">
-      <article class="card">
-        <div class="section-head">
-          <div>
-            <h3>Nova solicitação</h3>
-            <p class="muted">O gestor informa a necessidade. A reserva, pagamento e NF ficam com o módulo Hospedagem.</p>
+      <form id="hospForm" class="hosp-card">
+        <div class="hosp-grp">
+          <div class="hosp-grp-h">📍 Onde e para quem</div>
+          <div class="hosp-grid">
+            <div class="hosp-field col-5"><label for="cidade">Cidade *</label><input id="cidade" required placeholder="Ex.: Araguapaz" /></div>
+            <div class="hosp-field col-2"><label for="uf">UF *</label><input id="uf" required maxlength="2" placeholder="GO" /></div>
+            <div class="hosp-field col-5"><label for="cliente">Cliente *</label><input id="cliente" required placeholder="Cliente / unidade / fazenda" /></div>
+            <div class="hosp-field col-6"><label for="localEmbarque">Local de embarque *</label><input id="localEmbarque" required placeholder="Ex.: Fazenda Claite" /></div>
+            <div class="hosp-field col-6"><label for="linkLocal">Localização (link)</label><input id="linkLocal" placeholder="Link do Google Maps ou referência" /></div>
           </div>
         </div>
 
-        <form id="hospForm">
-          <div class="hosp-section">
-            <span class="hosp-section-num">01</span>
-            <div class="hosp-section-head">
-              <h4>Onde e para quem</h4>
-              <p>Cidade, cliente e local de embarque da equipe.</p>
-            </div>
-            <div class="hosp-form-grid">
-              <div class="hosp-field col-5">
-                <label for="cidade">Cidade da reserva *</label>
-                <input id="cidade" required placeholder="Ex.: Araguapaz" />
-              </div>
-              <div class="hosp-field col-2">
-                <label for="uf">UF *</label>
-                <input id="uf" required maxlength="2" placeholder="GO" />
-              </div>
-              <div class="hosp-field col-5">
-                <label for="cliente">Cliente *</label>
-                <input id="cliente" required placeholder="Cliente / unidade / fazenda" />
-              </div>
-              <div class="hosp-field col-6">
-                <label for="localEmbarque">Local de embarque *</label>
-                <input id="localEmbarque" required placeholder="Ex.: Fazenda Claite" />
-              </div>
-              <div class="hosp-field col-6">
-                <label for="linkLocal">Localização do embarque</label>
-                <input id="linkLocal" placeholder="Cole o link do Google Maps ou referência de localização" />
-              </div>
-            </div>
+        <div class="hosp-grp">
+          <div class="hosp-grp-h">Período <span class="hosp-diarias-badge" id="diariasLabel" style="margin-left:auto;text-transform:none;letter-spacing:0">1 diária prevista</span></div>
+          <div class="hosp-grid">
+            <div class="hosp-field col-3"><label for="checkin">Check-in *</label><input id="checkin" type="date" required /></div>
+            <div class="hosp-field col-3"><label for="checkout">Check-out *</label><input id="checkout" type="date" required /></div>
+            <div class="hosp-field col-3"><label for="horario">Chegada</label><input id="horario" type="time" /></div>
+            <div class="hosp-field col-3"><label for="saldo">Saldo informado</label><input id="saldo" type="number" step="0.01" min="0" placeholder="0,00" /></div>
           </div>
+        </div>
 
-          <div class="hosp-section">
-            <span class="hosp-section-num">02</span>
-            <div class="hosp-section-head">
-              <h4>Período da estadia</h4>
-              <p>Datas previstas de check-in e check-out.</p>
-            </div>
-            <div class="hosp-form-grid">
-              <div class="hosp-field col-3">
-                <label for="checkin">Check-in previsto *</label>
-                <input id="checkin" type="date" required />
-              </div>
-              <div class="hosp-field col-3">
-                <label for="checkout">Check-out previsto *</label>
-                <input id="checkout" type="date" required />
-              </div>
-              <div class="hosp-field col-3">
-                <label for="horario">Horário previsto de chegada</label>
-                <input id="horario" type="time" />
-              </div>
-              <div class="hosp-field col-3">
-                <label for="saldo">Saldo informado</label>
-                <input id="saldo" type="number" step="0.01" min="0" placeholder="0,00" />
-              </div>
-              <div class="hosp-field full">
-                <span class="hosp-diarias-badge" id="diariasLabel">1 diária prevista</span>
-              </div>
-            </div>
-          </div>
+        <div class="hosp-grp">
+          <div class="hosp-grp-h">Colaboradores</div>
+          <div class="hosp-colab-box" id="colabBox"></div>
+          <button class="hosp-add-colab" type="button" id="addColabBtn">+ Adicionar colaborador</button>
+          <div class="hosp-alert" id="colabFallback" style="display:none;">Não foi possível consultar a base de colaboradores agora. Você pode digitar os nomes manualmente.</div>
+        </div>
 
-          <div class="hosp-section">
-            <span class="hosp-section-num">03</span>
-            <div class="hosp-section-head">
-              <h4>Colaboradores</h4>
-              <p>Adicione um ou mais colaboradores para a mesma hospedagem.</p>
-            </div>
-            <div class="hosp-colab-box" id="colabBox"></div>
-            <button class="hosp-add-colab" type="button" id="addColabBtn">+ Adicionar colaborador</button>
-            <div class="hosp-alert" id="colabFallback" style="display:none;">Não foi possível consultar a base de colaboradores agora. Você ainda pode digitar os nomes manualmente.</div>
-          </div>
+        <div class="hosp-grp">
+          <div class="hosp-grp-h">Observações</div>
+          <div class="hosp-field full"><textarea id="obs" placeholder="Ex.: chegará ~17h, priorizar hotel próximo ao embarque, observações sobre quartos..."></textarea></div>
+        </div>
 
-          <div class="hosp-section">
-            <span class="hosp-section-num">04</span>
-            <div class="hosp-section-head">
-              <h4>Observações</h4>
-              <p>Informações extras para o setor de hospedagem.</p>
-            </div>
-            <div class="hosp-form-grid">
-              <div class="hosp-field full">
-                <label for="obs">Observações do gestor</label>
-                <textarea id="obs" placeholder="Ex.: chegará por volta das 17h, priorizar hotel próximo ao local de embarque, observações sobre quartos etc."></textarea>
-              </div>
-            </div>
-          </div>
-
-          <div class="hosp-actions">
-            <button class="btn btn-primary hosp-btn" type="submit" id="submitBtn">Enviar solicitação</button>
-            <button class="btn btn-secondary hosp-btn" type="button" id="clearBtn">Limpar</button>
-            <span class="hosp-feedback" id="feedback"></span>
-          </div>
-        </form>
-      </article>
+        <div class="hosp-actions">
+          <button class="btn btn-primary hosp-btn" type="submit" id="submitBtn">Enviar solicitação</button>
+          <button class="btn btn-secondary hosp-btn" type="button" id="clearBtn">Limpar</button>
+          <span class="hosp-feedback" id="feedback"></span>
+        </div>
+      </form>
     </section>
 
     <section class="hosp-panel" id="panel-minhas">
-      <section class="grid-cards compact-grid">
-        <article class="card"><h3>Total</h3><p class="metric" id="statTotal">0</p><p class="muted">Solicitações encontradas.</p></article>
-        <article class="card"><h3>Em andamento</h3><p class="metric" id="statOpen">0</p><p class="muted">Aguardando análise/reserva.</p></article>
-        <article class="card"><h3>Reservadas</h3><p class="metric" id="statReserved">0</p><p class="muted">Hotel já confirmado.</p></article>
-      </section>
-
-      <article class="card mt-16">
-        <div class="section-head">
-          <div><h3>Minhas solicitações</h3><p class="muted">Acompanhe o status enviado pelo setor de hospedagem.</p></div>
+      <div class="hosp-stats">
+        <div class="hosp-stat"><span>Total</span><strong id="statTotal">0</strong></div>
+        <div class="hosp-stat"><span>Em andamento</span><strong id="statOpen">0</strong></div>
+        <div class="hosp-stat"><span>Reservadas</span><strong id="statReserved">0</strong></div>
+      </div>
+      <div class="hosp-card" style="padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+          <strong style="font-size:15px">Minhas solicitações</strong>
           <button class="btn btn-secondary hosp-btn" type="button" id="refreshBtn">↻ Atualizar</button>
         </div>
         <div class="hosp-table-wrap">
@@ -295,7 +200,7 @@ initProtectedPage('Hospedagem', (content, userContext) => {
             <tbody id="minhasTbody"><tr><td colspan="7" class="hosp-empty">Carregando...</td></tr></tbody>
           </table>
         </div>
-      </article>
+      </div>
     </section>
   `;
 
@@ -357,19 +262,12 @@ initProtectedPage('Hospedagem', (content, userContext) => {
     const wrap = document.createElement('div');
     wrap.className = 'hosp-colab-row';
     wrap.innerHTML = `
-      <span class="hosp-colab-index">1</span>
-      <div class="hosp-field">
-        <label for="${id}">Nome do colaborador *</label>
-        <div class="hosp-ac">
-          <input id="${id}" class="colabNome hosp-ac-input" autocomplete="off" spellcheck="false" required value="${esc(value)}" placeholder="Digite o nome do colaborador..." />
-          <div class="hosp-ac-list" hidden></div>
-        </div>
+      <div class="hosp-ac">
+        <input id="${id}" class="colabNome hosp-ac-input" autocomplete="off" spellcheck="false" required value="${esc(value)}" placeholder="Nome do colaborador..." />
+        <div class="hosp-ac-list" hidden></div>
       </div>
-      <div class="hosp-field">
-        <label>Tipo</label>
-        <input class="colabTipo" value="${esc(tipo)}" placeholder="Fixo / Diarista" />
-      </div>
-      <button class="btn btn-secondary hosp-remove" type="button" title="Remover colaborador">Remover</button>
+      <input class="colabTipo" value="${esc(tipo)}" placeholder="Fixo / Diarista" />
+      <button class="btn btn-secondary hosp-remove" type="button" title="Remover colaborador" aria-label="Remover">✕</button>
     `;
     wrap.querySelector('.hosp-remove').addEventListener('click', () => {
       if (colabBox.children.length <= 1) return;
