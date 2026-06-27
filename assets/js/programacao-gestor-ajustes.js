@@ -1,6 +1,6 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
 import { renderOsProgramacaoLite } from './os-programacao-lite.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260627-redesign-fase4';
 
 const OS_STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
