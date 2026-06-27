@@ -710,10 +710,6 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       <button type="button" class="peqb-btn" id="peqbAutoPreencher">Auto-preencher equipe</button>
     </div>
     <div class="peqb-os-list peqb-os-list-full" id="peqbOsList"><div class="peqb-empty">Carregando O.S....</div></div>
-    <div class="peqb-map-band">
-      <div class="peqb-map-band-head"><span>🗺 Rotas até o embarque</span><button type="button" class="peqb-btn" id="peqbVerRotas">Ver rotas reais</button></div>
-      <div class="peqb-map"><div id="peqbMapEl"></div><div class="peqb-map-empty" id="peqbMapEmpty">Marque uma O.S. como atender (✓) para ver a rota.</div></div>
-    </div>
   `;
 
   // currentUser é opcional (só preenche logistica_solicitado_por ao FINALIZAR).
@@ -747,6 +743,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   async function atualizarMapaParaOs(osId) {
     focoOsId = osId;
     listEl.querySelectorAll('.peqb-row').forEach((row) => row.classList.toggle('focus', row.dataset.osId === osId));
+    if (!mapMount) return; // mapa removido desta tela
 
     const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
     if (!item || !item.ponto) {
@@ -837,12 +834,9 @@ export async function renderProgramacaoEquipe(content, options = {}) {
 
       atualizarKpis(content, osComCandidatosAtual, confirmadosPorOs);
 
-      if (osComCandidatosAtual.length) {
+      if (mapMount && osComCandidatosAtual.length) {
         const manterFoco = focoOsId && osComCandidatosAtual.some((it) => String(it.os.id) === focoOsId);
         await atualizarMapaParaOs(manterFoco ? focoOsId : String(osComCandidatosAtual[0].os.id));
-      } else {
-        mapEmptyEl.style.display = 'flex';
-        mapEmptyEl.textContent = 'Marque uma O.S. como atender (✓) para ver a rota.';
       }
     } catch (error) {
       console.error('[programacao-equipe] render:', error);
@@ -1111,7 +1105,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   });
 
   const verRotasBtn = content.querySelector('#peqbVerRotas');
-  verRotasBtn.addEventListener('click', async () => {
+  if (verRotasBtn) verRotasBtn.addEventListener('click', async () => {
     verRotasBtn.disabled = true;
     verRotasBtn.textContent = 'Calculando rotas...';
     try {
