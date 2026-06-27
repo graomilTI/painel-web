@@ -101,10 +101,20 @@ export async function sincronizarProducaoSnapshotDoAgente() {
         return { ignorado: true, linhas: dadosBrutos.length };
       }
 
-      const mapped = dadosBrutos
+      const rawMapped = dadosBrutos
         .map(mapAgentRow)
         // descarta linhas de rodapé/total ("Serviço":"Total") e linhas sem O.S./data válida
         .filter((row) => row.os && row.data && row.servico !== 'Total');
+
+      // De-duplica por chave de negócio: a janela de 5 min pode capturar dois ciclos
+      // consecutivos do agente, o que dobraria os dados antes do delete+insert.
+      const seen = new Set();
+      const mapped = rawMapped.filter((row) => {
+        const key = `${row.data}|${row.os}|${row.funcionario}|${row.servico}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
 
       if (!mapped.length) {
         console.warn('[producao-snapshot-agente] nenhuma linha válida após filtro; sincronização ignorada.');
