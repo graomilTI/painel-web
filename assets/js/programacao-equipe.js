@@ -331,14 +331,20 @@ async function loadAlojamentos() {
 }
 
 // Placa do veículo já vinculado ao colaborador (leitura de patrimônio,
-// pré-calculada em colaborador_cruzamento por CPF) — para puxar a placa auto.
-async function loadCruzamentoPlacas(cpfs) {
-  const ids = [...new Set(cpfs.filter((c) => /^\d+$/.test(String(c))))];
-  if (!ids.length) return new Map();
+// pré-calculada em colaborador_cruzamento). Carrega pela supervisão e indexa
+// por CPF normalizado (o cpf na tabela pode vir formatado), igual ao resto do
+// painel — assim a placa casa de forma confiável.
+async function loadCruzamentoPlacas(supervisao) {
   try {
-    const { data, error } = await supabase.from('colaborador_cruzamento').select('cpf,veiculo_placa').in('cpf', ids);
+    const { data, error } = await supabase
+      .from('colaborador_cruzamento')
+      .select('cpf,veiculo_placa')
+      .eq('supervisao', supervisao)
+      .limit(5000);
     if (error) throw error;
-    return new Map((data || []).filter((r) => r.veiculo_placa).map((r) => [String(r.cpf).replace(/\D/g, ''), r.veiculo_placa]));
+    const map = new Map();
+    (data || []).forEach((r) => { if (r.veiculo_placa) map.set(String(r.cpf || '').replace(/\D/g, ''), r.veiculo_placa); });
+    return map;
   } catch (error) {
     console.warn('[equipe] cruzamento de placas indisponível', error);
     return new Map();
@@ -496,6 +502,7 @@ function diasFromEstadia(est) {
   return 1;
 }
 function estadiaLabel(t) { return ({ CASA: 'Casa', PERNOITE: 'Pernoite', ALOJAMENTO: 'Alojamento', HOTEL: 'Hotel' })[normalizeText(t)] || t; }
+function deslocLabel(t) { return ({ 'NAO PRECISA': 'Não precisa', 'MOTORISTA FROTA': 'Frota', 'CARONA FROTA': 'Carona', 'UBER TAXI': 'Uber/Táxi', 'REEMBOLSO KM': 'Reemb. km', ONIBUS: 'Ônibus' })[normalizeText(t)] || t; }
 
 function normalizeUF(v) { return String(v || '').trim().toUpperCase().slice(0, 2); }
 function ufFromEmbarque(emb) { const m = /^([A-Z]{2})\s*-/.exec(String(emb || '').trim()); return m ? m[1].toUpperCase() : ''; }
@@ -551,7 +558,7 @@ function custoRowsHtml(item) {
     </div>
     <div class="peqb-crow-mix">
       <span class="peqb-mini-ico" title="Deslocamento">🚐</span>
-      <select class="peqb-cinp peqb-cinp-sm sel-desloc" data-tab="deslocamento" data-fld="tipo_deslocamento">${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(tipoDesl) === normalizeText(t) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+      <select class="peqb-cinp peqb-cinp-sm sel-desloc" data-tab="deslocamento" data-fld="tipo_deslocamento">${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(tipoDesl) === normalizeText(t) ? 'selected' : ''}>${esc(deslocLabel(t))}</option>`).join('')}</select>
       <input class="peqb-cinp peqb-cinp-sm inp-placa" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(onlyPlate(placa))}" placeholder="Placa" title="${placaAuto && !des.placa_veiculo ? 'Puxada da leitura do veículo' : 'Placa do veículo'}" />
       <span class="peqb-mini-ico" title="Alimentação">🍽</span>
       <div class="peqb-chips">${REFEICOES.map(([k, l]) => `<button type="button" class="peqb-chip ${ali[k] ? 'on' : ''}" data-tab="alimentacao" data-ref="${k}">${l}</button>`).join('')}</div>
@@ -863,8 +870,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisao), loadEquipeExistente(programacaoId), loadCustos(programacaoId)]);
       osTodasAtual = osTodas;
       await loadAlojamentos();
-      const cpfsConf = equipeRows.filter((r) => r.confirmado).map((r) => String(r.colaborador_id).replace(/\D/g, '')).filter(Boolean);
-      const placasPorCpf = await loadCruzamentoPlacas(cpfsConf);
+      const placasPorCpf = await loadCruzamentoPlacas(supervisao);
       if (!osTodas.length) {
         listEl.innerHTML = '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
         osComCandidatosAtual = [];
@@ -906,6 +912,22 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         ? `<div class="peqb-sep">Não vão atender · ${outrasRows.length}</div>${outrasRows.map(osNaoAtenderHtml).join('')}`
         : '';
       listEl.innerHTML = `<div class="peqb-block-head">Vão atender · ${osComCandidatosAtual.length}</div>${atenderHtml}${outrasHtml}`;
+
+      // Persiste (uma vez) a placa puxada da leitura do veículo para motoristas
+      // confirmados sem deslocamento gravado — assim a placa fica salva sem o
+      // gestor precisar tocar. Na próxima carga já vem de des.placa_veiculo.
+      osComCandidatosAtual.forEach((it) => {
+        if (it.confirmadoRow && it.custos?.placaAuto && !it.custos.des?.placa_veiculo) {
+          supabase.from('programacao_deslocamento').upsert({
+            programacao_id: programacaoId,
+            data_referencia: options.dataReferencia || null,
+            colaborador_id: String(it.confirmadoRow.colaborador_id),
+            nome_colaborador: it.confirmadoRow.nome_colaborador || '',
+            tipo_deslocamento: 'MOTORISTA FROTA',
+            placa_veiculo: onlyPlate(it.custos.placaAuto),
+          }, { onConflict: 'programacao_id,colaborador_id' }).then(({ error }) => { if (error) console.warn('[equipe] auto-placa', error); });
+        }
+      });
 
       atualizarKpis(content, osComCandidatosAtual, confirmadosPorOs);
 
