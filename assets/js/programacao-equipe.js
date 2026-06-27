@@ -212,7 +212,9 @@ function injectStyles() {
     .peqb-tag{font-size:11px;font-weight:850;padding:4px 9px;border-radius:999px}
     .peqb-tag.g{background:rgba(63,168,120,.16);color:#6fd0a5}
     .peqb-tag.b{background:rgba(99,179,237,.14);color:#bfdbfe}
-    .peqb-conf-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+    .peqb-conf-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+    .peqb-conf-head .peqb-row-btn{height:34px;font-size:12px;padding:0 12px;white-space:nowrap;flex:0 0 auto}
+    .peqb-conf-head .peqb-row-btn.hotel{font-weight:850}
     .peqb-conf-name{font-size:13.5px;font-weight:850;color:#f8fafc;overflow-wrap:anywhere}
     .peqb-conf-sub{font-size:11px;color:#8ba79a}
     /* Custos em UM único grid de 4 colunas — as duas linhas (estadia /
@@ -592,9 +594,9 @@ function osRowHtml(item) {
           <div class="peqb-conf-name">${esc(confirmadoRow.nome_colaborador)}</div>
           <div class="peqb-conf-sub">${km != null ? `${km} km do embarque` : 'sem distância'} · <span style="color:#6fd0a5">confirmado</span></div>
         </div>
+        ${hotelBtn}
         <button type="button" class="peqb-row-btn" data-remover="${esc(confirmadoRow.id)}" title="Trocar colaborador">trocar</button>
       </div>
-      ${hotelBtn}
       ${custoRowsHtml(item)}
     </div>`;
   } else {
