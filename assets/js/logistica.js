@@ -338,11 +338,8 @@ function renderAbrirOsTab() {
 
   return `
     <section class="card mt-16">
-      <div class="section-head">
-        <div>
-          <h3>Abrir OS</h3>
-          <p class="muted">Solicite a abertura de uma nova O.S. para a Logística ADM cadastrar e devolver o número da O.S.</p>
-        </div>
+      <div class="section-head" style="margin-bottom:10px">
+        <h3 style="margin:0">Abrir OS</h3>
         <button class="btn btn-secondary" id="abrirOsReload" type="button" onclick="location.reload()">↻ Atualizar</button>
       </div>
 
@@ -749,9 +746,9 @@ function injectStyles() {
     .log-input:focus{border-color:var(--green-2);outline:2px solid rgba(111,208,165,.16)}
     .log-muted-box{border:1px dashed rgba(148,163,184,.18);border-radius:16px;padding:14px;color:#8fa1b5;background:rgba(15,23,42,.28);margin:12px 0}
     .log-alert.bad{border:1px solid rgba(239,68,68,.26);background:rgba(239,68,68,.08);color:#fecaca;border-radius:16px;padding:12px;margin:14px 0}
-    .fob-kpis{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:12px;margin:16px 0}
-    .fob-kpi{border:1px solid rgba(52,211,153,.14);background:linear-gradient(180deg,rgba(15,23,42,.45),rgba(2,6,23,.2));border-radius:18px;padding:14px}
-    .fob-kpi strong{display:block;font-size:28px;color:#e5e7eb;line-height:1}.fob-kpi span{color:#8fa1b5;font-size:12px;font-weight:800}.fob-kpi.ok strong{color:#86efac}.fob-kpi.bad strong{color:#fca5a5}.fob-kpi.gray strong{color:#cbd5e1}
+    .fob-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:0 0 12px}
+    .fob-kpi{border:1px solid rgba(52,211,153,.14);background:rgba(2,6,23,.3);border-radius:13px;padding:9px 13px}
+    .fob-kpi strong{display:block;font-size:20px;color:#e5e7eb;line-height:1.1}.fob-kpi span{color:#8fa1b5;font-size:11px;font-weight:800}.fob-kpi.ok strong{color:#86efac}.fob-kpi.bad strong{color:#fca5a5}.fob-kpi.gray strong{color:#cbd5e1}
     .fob-add{border:1px solid rgba(52,211,153,.14);border-radius:18px;background:rgba(2,6,23,.18);padding:14px;margin-bottom:16px}.fob-add summary{cursor:pointer;color:#bbf7d0;font-weight:950}.fob-add-grid{display:grid;grid-template-columns:1.2fr .7fr 1fr 1.5fr;gap:12px;margin:14px 0}.fob-add label{font-size:12px;color:#8fa1b5;font-weight:900}.fob-os-line{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:6px}.fob-add label>.log-input,.fob-add label textarea,.fob-add label input[list]{margin-top:6px}
     .fob-os-found{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;border:1px solid rgba(34,197,94,.18);background:rgba(22,101,52,.12);border-radius:16px;padding:12px;margin:12px 0}.fob-os-found small{display:block;color:#8fa1b5;font-size:11px}.fob-os-found strong{display:block;color:#e5e7eb;margin-top:3px}
     .abrir-os-card{border:1px solid rgba(52,211,153,.14);border-radius:16px;background:rgba(2,6,23,.18);padding:14px;margin-top:14px}.abrir-os-card h4{margin:0 0 10px;color:#bbf7d0;font-size:14px}.abrir-os-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px}.abrir-os-grid label{font-size:11px;color:#8fa1b5;font-weight:800}.abrir-os-grid .log-input{margin-top:4px}.log-subtitle{color:#bbf7d0;margin:0 0 12px;font-weight:950}
