@@ -15,13 +15,13 @@ function dateFromTomorrowLock() {
   return d.toISOString().slice(0,10);
 }
 
-const TABS = ['os','abrir_os','fob','report','conferir'];
-const TAB_LABELS = { os: 'O.S.', abrir_os: 'Abrir OS', fob: 'FOB', report: 'Report', conferir: 'Conferir' };
+const TABS = ['abrir_os','fob','report','conferir'];
+const TAB_LABELS = { abrir_os: 'Abrir OS', fob: 'FOB', report: 'Report', conferir: 'Conferir' };
 
 const OS_STATUS_LABELS = { PENDENTE: 'Pendente', AGUARDAR: 'Aguardar', ATENDER: 'Atender', FINALIZAR: 'Finalizar' };
 
 const state = {
-  tab: location.hash.replace('#','') || 'os',
+  tab: (() => { const h = location.hash.replace('#',''); return ['abrir_os','fob','report','conferir'].includes(h) ? h : 'abrir_os'; })(),
   rows: [],
   allOs: [],
   allOsFilter: 'TODAS',
@@ -85,7 +85,6 @@ initProtectedPage('Logística', async (content) => {
 
   if (state.tab === 'fob') await loadFob();
   else if (state.tab === 'abrir_os') await loadAberturaOs();
-  else await Promise.all([loadOs(), loadAllOs()]);
   render(content);
 });
 
