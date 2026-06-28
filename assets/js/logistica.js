@@ -15,13 +15,13 @@ function dateFromTomorrowLock() {
   return d.toISOString().slice(0,10);
 }
 
-const TABS = ['abrir_os','fob','report','conferir'];
-const TAB_LABELS = { abrir_os: 'Abrir OS', fob: 'FOB', report: 'Report', conferir: 'Conferir' };
+const TABS = ['abrir_os','fob'];
+const TAB_LABELS = { abrir_os: 'Abrir OS', fob: 'FOB' };
 
 const OS_STATUS_LABELS = { PENDENTE: 'Pendente', AGUARDAR: 'Aguardar', ATENDER: 'Atender', FINALIZAR: 'Finalizar' };
 
 const state = {
-  tab: (() => { const h = location.hash.replace('#',''); return ['abrir_os','fob','report','conferir'].includes(h) ? h : 'abrir_os'; })(),
+  tab: (() => { const h = location.hash.replace('#',''); return ['abrir_os','fob'].includes(h) ? h : 'abrir_os'; })(),
   rows: [],
   allOs: [],
   allOsFilter: 'TODAS',
