@@ -56,7 +56,7 @@ initProtectedPage('Logística', async (content) => {
     content.querySelectorAll('.log-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
     if (state.tab === 'os' && !state.rows.length) await Promise.all([loadOs(), loadAllOs()]);
     if (state.tab === 'abrir_os' && !state.aberturaRows.length) await loadAberturaOs();
-    if (state.tab === 'fob' && !state.fobRows.length) await loadFob();
+    if (state.tab === 'fob') await loadFob();
     render(content);
   });
 
