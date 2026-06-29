@@ -1,7 +1,6 @@
-// Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
+// Ajustes do Gestor: Programação concentra a tela unificada de O.S. + despesas e a etapa de disponibilidade.
 import { renderOsProgramacaoLite } from './os-programacao-lite.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos1';
-import { renderFase2Custos } from './programacao-fase2-custos.js?v=20260627-restruct';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos2';
 
 const OS_STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
@@ -110,10 +109,6 @@ function injectGestorAjustesStyles() {
     .prog-sup-combo-item:hover,.prog-sup-combo-item.active{background:#064e3b;color:#ffffff}
     .prog-sup-combo-empty{padding:9px 12px;font-size:13px;color:#94a3b8;font-style:italic;background:#020617}
     @media(max-width:900px){.prog-sup-combo-input{min-width:0!important}}
-    .prog-f1-tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-    .prog-f1-tab{padding:9px 15px;border-radius:11px;border:1px solid rgba(111,208,165,.22);background:rgba(8,22,17,.5);color:#9fb7aa;font-weight:800;font-size:13px;cursor:pointer}
-    .prog-f1-tab:hover{color:#cfe7da;border-color:rgba(111,208,165,.4)}
-    .prog-f1-tab.active{background:linear-gradient(135deg,#13392a,#1f6f4a);border-color:#6fd0a5;color:#f0fff7}
   `;
   document.head.appendChild(style);
 }
@@ -234,13 +229,6 @@ function guardEquipeView() {
   renderEquipe();
 }
 
-function guardFase2View() {
-  if (currentUiStep !== '2' || fase2Loading) return;
-  const list = document.getElementById('progList');
-  if (!list || document.getElementById('f2Count') || document.getElementById('progFase2LoadNow')) return;
-  renderFase2();
-}
-
 function setActiveUiStep(step) {
   document.querySelectorAll('#progSteps .stepbtn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.uiStep === step);
@@ -254,47 +242,6 @@ function hideCoreControls() {
     if (el) el.style.display = 'none';
   });
   setStatusOsVisibility(false);
-}
-
-let fase2Loading = false;
-
-async function renderFase2() {
-  const list = document.getElementById('progList');
-  const feedback = document.getElementById('progCtxFeedback');
-  if (!list) return;
-
-  setActiveUiStep('2');
-  hideCoreControls();
-  if (feedback) {
-    feedback.className = 'feedback mt-16 prog-feedback-ok';
-    feedback.textContent = 'Despesas — confira hospedagem, deslocamento, alimentação e extras do colaborador em um único card.';
-  }
-
-  const programacaoId = window.__progGetProgramacaoId?.() || null;
-  if (!programacaoId) {
-    const sup = document.getElementById('progSup')?.value || '';
-    list.innerHTML = `
-      <div class="prog-section-title"><h4>Despesas do colaborador</h4><span class="badge">Custos</span></div>
-      <div class="prog-os-lazy-card">
-        <div><strong>Pronto para lançar as despesas</strong>
-        <p>${sup ? `Supervisão: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para trazer a equipe confirmada.</p></div>
-        <button type="button" class="btn btn-primary" id="progFase2LoadNow">Carregar</button>
-      </div>`;
-    list.querySelector('#progFase2LoadNow')?.addEventListener('click', () => document.getElementById('progLoadContext')?.click());
-    return;
-  }
-
-  if (fase2Loading) return;
-  fase2Loading = true;
-  try {
-    await renderFase2Custos(list, {
-      supervisao: document.getElementById('progSup')?.value || '',
-      dataReferencia: document.getElementById('progDataRef')?.value || '',
-      programacaoId,
-    });
-  } finally {
-    fase2Loading = false;
-  }
 }
 
 async function renderDistribuicao({ loadOs = false, force = false } = {}) {
@@ -348,12 +295,12 @@ function renderEquipePlaceholder(list) {
   list.innerHTML = `
     <div class="prog-section-title">
       <h4>Programar OS — equipe de menor custo</h4>
-      <span class="badge">Fase 1</span>
+      <span class="badge">O.S. + despesas</span>
     </div>
     <div class="prog-os-lazy-card">
       <div>
         <strong>Pronto para programar as O.S.</strong>
-        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para buscar as O.S. em ATENDER e sugerir a equipe de menor custo.</p>
+        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para buscar as O.S. em ATENDER e lançar colaborador, hospedagem, deslocamento e alimentação no mesmo card.</p>
       </div>
       <button type="button" class="btn btn-primary" id="progEquipeLoadNow">Carregar</button>
     </div>
@@ -372,7 +319,7 @@ async function renderEquipe() {
   hideCoreControls();
   if (feedback) {
     feedback.className = 'feedback mt-16 prog-feedback-ok';
-    feedback.textContent = 'Fase 1 — trie as O.S. (✓ atender) e atribua a equipe de menor custo.';
+    feedback.textContent = 'Etapa 1 — O.S. e despesas do colaborador na mesma tela.';
   }
 
   const programacaoId = window.__progGetProgramacaoId?.() || null;
@@ -400,7 +347,6 @@ function configureSteps() {
   const existing = [...stepsWrap.querySelectorAll('.stepbtn')];
   const layout = [
     { ui: '1', label: 'Programar O.S.', internal: '__equipe' },
-    { ui: '2', label: 'Despesas', internal: '__custos' },
     { ui: '3', label: 'Disponibilidade', internal: 'A' },
   ];
 
@@ -427,12 +373,6 @@ function configureSteps() {
       event.preventDefault();
       event.stopImmediatePropagation();
       renderEquipe();
-      return;
-    }
-    if (btn.dataset.uiStep === '2') {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      renderFase2();
       return;
     }
     setActiveUiStep('3');
@@ -575,9 +515,7 @@ function hookContextLoad() {
   loadBtn.dataset.gestorAjustesBound = '1';
   loadBtn.addEventListener('click', () => {
     distribuicaoLoaded = false;
-    if (currentUiStep === '2') {
-      setTimeout(() => renderFase2(), 350);
-    } else if (currentUiStep === '1') {
+    if (currentUiStep === '1') {
       setTimeout(() => renderEquipe(), 350);
     }
   });
@@ -607,7 +545,6 @@ const observer = new MutationObserver(debounce(() => {
   ensureSupCombo();
   guardDistribuicaoView();
   guardEquipeView();
-  guardFase2View();
 }, 120));
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
