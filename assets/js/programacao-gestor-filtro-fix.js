@@ -57,8 +57,9 @@ function looksLikeGestor(value) {
   return normalized === 'GESTOR' || normalized.startsWith('GESTOR ');
 }
 
-function extractAllowedSupervisoes(appUser, context) {
+function extractAllowedSupervisoes(appUser, context, relationRows = []) {
   return uniqLabels([
+    relationRows,
     appUser?.supervisoes,
     appUser?.supervisao,
     context?.user?.supervisoes,
@@ -68,11 +69,11 @@ function extractAllowedSupervisoes(appUser, context) {
   ]).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
-function buildAccess(appUser, context) {
+function buildAccess(appUser, context, relationRows = []) {
   const setor = appUser?.setor || context?.setor || context?.department?.name || context?.department?.code || '';
   const role = context?.user?.role || context?.perfil_codigo || context?.perfil_nome || context?.role || '';
   const master = isMasterContext(context);
-  const allowedLabels = extractAllowedSupervisoes(appUser, context);
+  const allowedLabels = extractAllowedSupervisoes(appUser, context, relationRows);
   const restricted = !master && (looksLikeGestor(setor) || looksLikeGestor(role) || allowedLabels.length > 0);
 
   return {
@@ -121,7 +122,7 @@ function filterSelect() {
   if (!state.allowedLabels.length) {
     select.value = '';
     select.disabled = true;
-    setFeedback('Seu usuário está como Gestor, mas não possui supervisão liberada em Usuários e Acessos.', 'error');
+    setFeedback('Seu usuário está como Gestor, mas não possui supervisão liberada na relação de supervisões.', 'error');
     return;
   }
 
@@ -145,7 +146,7 @@ function filterSelect() {
   if (!visibleCount) {
     select.value = '';
     select.disabled = true;
-    setFeedback('Nenhuma supervisão liberada em Usuários e Acessos foi encontrada no seletor.', 'error');
+    setFeedback('Nenhuma supervisão liberada foi encontrada no seletor.', 'error');
     return;
   }
 
@@ -158,7 +159,7 @@ function filterSelect() {
   }
 
   select.disabled = visibleCount === 1;
-  setFeedback(`Programação limitada às supervisões liberadas em Usuários e Acessos: ${state.allowedLabels.join(', ')}.`, 'ok');
+  setFeedback(`Programação limitada às supervisões liberadas: ${state.allowedLabels.join(', ')}.`, 'ok');
 }
 
 async function getAppUser(userId) {
@@ -175,15 +176,27 @@ async function getAppUser(userId) {
   return data || null;
 }
 
+async function getRelationSupervisoes() {
+  try {
+    const { data, error } = await supabase.rpc('programacao_listar_supervisoes');
+    if (error) throw error;
+    return (data || []).map((row) => row.nome || row.supervisao).filter(Boolean);
+  } catch (error) {
+    console.warn('[programacao-gestor-filtro] relação de supervisões:', error);
+    return [];
+  }
+}
+
 async function initAccess() {
   try {
     const user = await getCurrentUser().catch(() => null);
-    const [context, appUser] = await Promise.all([
+    const [context, appUser, relationRows] = await Promise.all([
       user?.id ? getUserContext(user.id).catch(() => null) : Promise.resolve(null),
       getAppUser(user?.id),
+      getRelationSupervisoes(),
     ]);
 
-    Object.assign(state, buildAccess(appUser, context), { ready: true });
+    Object.assign(state, buildAccess(appUser, context, relationRows), { ready: true });
     filterSelect();
   } catch (error) {
     console.warn('[programacao-gestor-filtro] Falha ao resolver acesso:', error);
