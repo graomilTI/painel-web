@@ -1,9 +1,10 @@
 // Ajustes do Gestor: tela limpa. Etapa 1 carrega somente O.S. + despesas no mesmo card.
 import { supabase } from './supabaseClient.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos4';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos5';
 
 let currentUiStep = '1';
 let equipeRendering = false;
+let finalRenderScheduled = false;
 let supDropdownEl = null;
 let supComboState = { input: null, onSelect: null };
 
@@ -202,6 +203,22 @@ async function renderEquipeFinal() {
   }
 }
 
+function scheduleFinalRender(delay = 250) {
+  if (currentUiStep !== '1' || finalRenderScheduled) return;
+  finalRenderScheduled = true;
+  setTimeout(async () => {
+    finalRenderScheduled = false;
+    await renderEquipeFinal();
+  }, delay);
+}
+
+function listShowsCoreDisponibilidade() {
+  const list = document.getElementById('progList');
+  if (!list) return false;
+  if (list.querySelector('#peqbOsList') || list.querySelector('#progEquipeLoadNow')) return false;
+  return /Disponíveis|Disponiveis|DISPONIBILIDADE|Contexto carregado/i.test(list.textContent || '');
+}
+
 function configureSteps() {
   const stepsWrap = document.getElementById('progSteps');
   if (!stepsWrap) return;
@@ -380,11 +397,12 @@ function ensureSupCombo() {
 
 function hookContextLoad() {
   const loadBtn = document.getElementById('progLoadContext');
-  if (!loadBtn || loadBtn.dataset.gestorAjustesBound === '1') return;
-  loadBtn.dataset.gestorAjustesBound = '1';
+  if (!loadBtn || loadBtn.dataset.gestorFinalBound === '1') return;
+  loadBtn.dataset.gestorFinalBound = '1';
   loadBtn.addEventListener('click', () => {
-    if (currentUiStep === '1') setTimeout(() => renderEquipeFinal(), 450);
-  });
+    if (currentUiStep !== '1') return;
+    [250, 700, 1200, 1800].forEach((delay) => setTimeout(() => scheduleFinalRender(0), delay));
+  }, true);
 }
 
 function boot() {
@@ -410,6 +428,9 @@ const observer = new MutationObserver(debounce(() => {
   hookContextLoad();
   hideCoreControls();
   ensureSupCombo();
+  if (currentUiStep === '1' && listShowsCoreDisponibilidade()) {
+    scheduleFinalRender(200);
+  }
 }, 120));
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
