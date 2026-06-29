@@ -1,56 +1,69 @@
-// Patch visual seguro da Programação: apenas CSS, sem MutationObserver.
+// Programação: ajuste leve de fonte para manter cliente/local em linha única, sem reticências.
 (function () {
-  const STYLE_ID = 'programacaoKpiInlinePatchStyles';
+  const MIN_FONT = 8.2;
+  let scheduled = false;
+  let observerReady = false;
 
-  function injectStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = `
-      .prog-toolbar{padding:12px 20px 10px!important;margin-bottom:10px!important;min-height:0!important}
-      .prog-toolbar .prog-toolbar-row:first-child{display:grid!important;grid-template-columns:minmax(300px,1.25fr) 150px 112px!important;gap:10px!important;align-items:end!important;margin:0!important}
-      .prog-toolbar-row-steps{margin-top:6px!important;padding-top:6px!important;min-height:0!important;align-items:center!important}
-      #progSteps{gap:7px!important}
-      #progSteps .stepbtn{padding:8px 13px!important;min-height:34px!important}
-      #progCtxFeedback{margin:0!important;font-size:11px!important;line-height:1.2!important}
-      #progList{padding-top:0!important;margin-top:0!important}
-      #progList>.prog-section-title{margin:0 0 3px!important;min-height:0!important}
-      #progList>.prog-section-title h4{font-size:17px!important;line-height:1.1!important;margin:0!important}
-      #progList>.prog-section-title .badge{padding:5px 9px!important;font-size:10px!important}
-      #progList .peqb-legend{margin:0 0 4px!important;font-size:10px!important;line-height:1.1!important}
-      #progList .peqb-toolbar{margin:-25px 0 2px auto!important;min-height:0!important}
-      #progList .peqb-btn{padding:7px 13px!important;font-size:11.5px!important}
-      #progList .peqb-block-head{margin:5px 0 6px!important;font-size:10.5px!important;line-height:1.1!important}
-      #progList .peqb-empty{padding:10px!important}
-      .peqb-kpis{gap:8px!important;margin-bottom:8px!important}
-      .peqb-kpi{min-height:34px!important;padding:3px 8px!important;border-radius:8px!important}
-      .peqb-kpi span{font-size:7px!important;line-height:1!important}
-      .peqb-kpi strong{font-size:12.5px!important;line-height:1!important;margin-top:1px!important}
-      .peqb-row.peqb-os2{grid-template-columns:minmax(700px,1.45fr) minmax(470px,.9fr)!important;min-height:94px!important}
-      .peqb-os2-left{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-rows:auto auto!important;column-gap:10px!important;row-gap:5px!important;align-content:center!important;align-items:center!important;min-width:0!important;padding:10px 16px!important}
-      .peqb-os2-cliente{grid-column:1!important;grid-row:1!important;margin:0!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;min-width:0!important;line-height:1.1!important;font-size:13px!important;max-width:100%!important}
-      .peqb-status-strip{grid-column:2!important;grid-row:1!important;position:static!important;justify-self:end!important;margin:0!important;display:flex!important;gap:6px!important;align-items:center!important;z-index:2!important}
-      .peqb-os2-emb{grid-column:1!important;grid-row:2!important;margin:0!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;min-width:0!important;line-height:1.2!important}
-      .peqb-os2-tagsrow{grid-column:2!important;grid-row:2!important;margin:0!important;display:flex!important;align-items:center!important;justify-self:end!important;gap:6px!important;white-space:nowrap!important;min-width:max-content!important}
-      .peqb-st{height:28px!important;min-width:28px!important;padding:0 7px!important;font-size:11px!important}
-      .peqb-tag{font-size:10px!important;padding:4px 8px!important}
-      .peqb-os2-right{min-width:0!important;padding:8px 14px!important;gap:6px!important}
-      .peqb-cand-av{display:none!important}
-      .peqb-conf-head{display:grid!important;grid-template-columns:minmax(245px,330px) auto minmax(145px,1fr)!important;grid-template-rows:auto!important;gap:6px 8px!important;align-items:center!important;margin:0!important}
-      .peqb-name-sel{grid-column:1!important;grid-row:1!important;width:100%!important;max-width:330px!important;min-width:0!important;height:30px!important;min-height:30px!important;font-size:12.5px!important}
-      .peqb-conf-head .peqb-row-btn.hotel{grid-column:2!important;grid-row:1!important;justify-self:start!important;height:28px!important;min-height:28px!important;padding:0 10px!important;white-space:nowrap!important;font-size:11px!important}
-      .peqb-ali{grid-column:3!important;grid-row:1!important;justify-content:flex-end!important;margin-left:auto!important;white-space:nowrap!important;gap:5px!important}
-      .peqb-chip{min-height:24px!important;padding:4px 8px!important;font-size:10.5px!important}
-      .peqb-custos{gap:6px!important;margin-top:0!important;grid-template-columns:18px minmax(105px,125px) minmax(110px,1fr) 44px 18px minmax(112px,138px) minmax(88px,112px)!important}
-      .peqb-cinp,.peqb-cinp-sm{height:31px!important;min-height:31px!important;font-size:11.5px!important;padding:4px 8px!important;border-radius:8px!important}
-      .peqb-dias{width:44px!important}
-      @media(max-width:1380px){.peqb-row.peqb-os2{grid-template-columns:minmax(610px,1.25fr) minmax(460px,1fr)!important}.peqb-conf-head{grid-template-columns:minmax(230px,310px) auto minmax(120px,1fr)!important}.peqb-name-sel{max-width:310px!important}}
-      @media(max-width:1280px){.prog-toolbar .prog-toolbar-row:first-child{grid-template-columns:minmax(260px,1fr) 150px 112px!important}.peqb-row.peqb-os2{grid-template-columns:1fr!important}.peqb-conf-head{grid-template-columns:minmax(240px,330px) auto!important}.peqb-ali{grid-column:1 / -1!important;grid-row:2!important;justify-content:flex-start!important;margin-left:0!important}}
-      @media(max-width:720px){.prog-toolbar .prog-toolbar-row:first-child{grid-template-columns:1fr!important}#progList .peqb-toolbar{margin:0 0 5px auto!important}.peqb-os2-left{display:flex!important;flex-direction:column!important;align-items:flex-start!important;padding:10px 12px!important}.peqb-status-strip,.peqb-os2-tagsrow{position:static!important;justify-self:auto!important}.peqb-conf-head{grid-template-columns:1fr!important}.peqb-conf-head .peqb-row-btn.hotel,.peqb-ali{grid-column:1!important;grid-row:auto!important}}
-    `;
-    document.head.appendChild(style);
+  function fitText(el, maxFont) {
+    if (!el) return;
+    el.style.fontSize = `${maxFont}px`;
+    el.style.transform = '';
+    el.style.display = 'block';
+    el.style.whiteSpace = 'nowrap';
+    el.style.overflow = 'visible';
+    el.style.textOverflow = 'clip';
+    el.style.transformOrigin = 'left center';
+
+    const width = el.clientWidth;
+    if (!width || width < 40) return;
+
+    let size = maxFont;
+    while (el.scrollWidth > width && size > MIN_FONT) {
+      size -= 0.35;
+      el.style.fontSize = `${size.toFixed(2)}px`;
+    }
+
+    if (el.scrollWidth > width) {
+      const scale = Math.max(0.72, width / el.scrollWidth);
+      el.style.transform = `scaleX(${scale.toFixed(3)})`;
+    }
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectStyles, { once: true });
-  else injectStyles();
+  function applyFit() {
+    document.querySelectorAll('.peqb-os2-cliente').forEach((el) => fitText(el, window.innerWidth <= 1380 ? 10.8 : 11.6));
+    document.querySelectorAll('.peqb-os2-emb').forEach((el) => fitText(el, window.innerWidth <= 1380 ? 9.9 : 10.4));
+  }
+
+  function scheduleFit() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      applyFit();
+    });
+  }
+
+  function bindObserver() {
+    if (observerReady) return;
+    const list = document.getElementById('progList');
+    if (!list) return;
+    observerReady = true;
+    new MutationObserver(scheduleFit).observe(list, { childList: true, subtree: true });
+  }
+
+  function boot() {
+    bindObserver();
+    scheduleFit();
+    setTimeout(scheduleFit, 120);
+    setTimeout(scheduleFit, 450);
+    window.addEventListener('resize', scheduleFit);
+    const rootObserver = new MutationObserver(() => {
+      bindObserver();
+      scheduleFit();
+    });
+    rootObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
 }());
