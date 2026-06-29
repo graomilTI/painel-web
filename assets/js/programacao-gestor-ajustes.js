@@ -1,6 +1,6 @@
 // Ajustes do Gestor: Programação passa a concentrar Distribuição de O.S. + etapas operacionais.
 import { renderOsProgramacaoLite } from './os-programacao-lite.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260627-merge10';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos1';
 import { renderFase2Custos } from './programacao-fase2-custos.js?v=20260627-restruct';
 
 const OS_STATUS_OPTIONS = [
@@ -139,8 +139,6 @@ function ensureStatusOsFilter() {
   if (select && select.dataset.statusOsBound !== '1') {
     select.dataset.statusOsBound = '1';
     select.addEventListener('change', () => {
-      // A triagem agora vive dentro da tela da equipe (Fase 1), que carrega
-      // todos os status relevantes — o filtro do topo fica oculto nessa fase.
       if (currentUiStep === '1') renderEquipe();
     });
   }
@@ -233,8 +231,6 @@ function guardEquipeView() {
   if (currentUiStep !== '1') return;
   const list = document.getElementById('progList');
   if (!list || document.getElementById('peqbOsList') || document.getElementById('progEquipeLoadNow')) return;
-  // A tela da Fase 1 foi substituída (ex.: o núcleo renderizou outra coisa em
-  // #progList) — reconstrói.
   renderEquipe();
 }
 
@@ -249,12 +245,9 @@ function setActiveUiStep(step) {
   document.querySelectorAll('#progSteps .stepbtn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.uiStep === step);
   });
-  // O modo os-lite (compactação de cards de OS) não é usado nas novas fases.
   document.body.classList.toggle('prog-step-a-os', false);
 }
 
-// Nas fases 1 e 2 a persistência é por autosave; escondemos os controles do
-// núcleo (Salvar/Buscar/Status OS) que pertenciam ao fluxo antigo de tabelas.
 function hideCoreControls() {
   ['progSaveProgramacao', 'progSearchWrap'].forEach((id) => {
     const el = document.getElementById(id);
@@ -274,16 +267,16 @@ async function renderFase2() {
   hideCoreControls();
   if (feedback) {
     feedback.className = 'feedback mt-16 prog-feedback-ok';
-    feedback.textContent = 'Fase 2 — feche os custos de cada pessoa que embarca, num card só.';
+    feedback.textContent = 'Despesas — confira hospedagem, deslocamento, alimentação e extras do colaborador em um único card.';
   }
 
   const programacaoId = window.__progGetProgramacaoId?.() || null;
   if (!programacaoId) {
     const sup = document.getElementById('progSup')?.value || '';
     list.innerHTML = `
-      <div class="prog-section-title"><h4>Fechar custos da equipe</h4><span class="badge">Fase 2</span></div>
+      <div class="prog-section-title"><h4>Despesas do colaborador</h4><span class="badge">Custos</span></div>
       <div class="prog-os-lazy-card">
-        <div><strong>Pronto para fechar custos</strong>
+        <div><strong>Pronto para lançar as despesas</strong>
         <p>${sup ? `Supervisão: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para trazer a equipe confirmada.</p></div>
         <button type="button" class="btn btn-primary" id="progFase2LoadNow">Carregar</button>
       </div>`;
@@ -370,9 +363,6 @@ function renderEquipePlaceholder(list) {
   });
 }
 
-// Fase 1 "Programar O.S." = uma tela só: triar as O.S. (status ✓/aguardar/
-// finalizar/saldo/conferir) e atribuir a equipe de menor custo convivem na
-// mesma view (renderProgramacaoEquipe), com o bloco "Não vão atender" embaixo.
 async function renderEquipe() {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
@@ -382,7 +372,7 @@ async function renderEquipe() {
   hideCoreControls();
   if (feedback) {
     feedback.className = 'feedback mt-16 prog-feedback-ok';
-    feedback.textContent = 'Fase 1 — trie as O.S. (✓ atender) e atribua a equipe de menor custo, na mesma tela.';
+    feedback.textContent = 'Fase 1 — trie as O.S. (✓ atender) e atribua a equipe de menor custo.';
   }
 
   const programacaoId = window.__progGetProgramacaoId?.() || null;
@@ -390,8 +380,6 @@ async function renderEquipe() {
     renderEquipePlaceholder(list);
     return;
   }
-  // Trava de reentrância: o observer pode chamar renderEquipe várias vezes
-  // enquanto a tela carrega — evita reentrar e disparar requisições em loop.
   if (equipeRendering) return;
   equipeRendering = true;
   try {
@@ -410,12 +398,9 @@ function configureSteps() {
   if (!stepsWrap || stepsWrap.dataset.gestorAjustado === '1') return;
 
   const existing = [...stepsWrap.querySelectorAll('.stepbtn')];
-  // Reestruturação: 7 etapas -> 3 fases.
-  //  Fase 1 "Programar OS"  -> Organizar Equipe (custo-benefício, auto-preenche)
-  //  Fase 2 "Fechar custos" -> card único por colaborador (estadia+desloc+alim+extras)
-  //  Fase 3 "Disponibilidade" -> etapa interna 'A' do núcleo (quem não embarca)
   const layout = [
     { ui: '1', label: 'Programar O.S.', internal: '__equipe' },
+    { ui: '2', label: 'Despesas', internal: '__custos' },
     { ui: '3', label: 'Disponibilidade', internal: 'A' },
   ];
 
@@ -431,7 +416,6 @@ function configureSteps() {
     btn.dataset.step = step.internal;
     btn.innerHTML = `<span class="stepbtn-letter">${index + 1}</span><span class="stepbtn-label"> · ${step.label}</span>`;
   });
-  // Remove botões sobrando do layout antigo de 7 etapas.
   existing.slice(layout.length).forEach((btn) => btn.remove());
 
   stepsWrap.dataset.gestorAjustado = '1';
@@ -451,10 +435,6 @@ function configureSteps() {
       renderFase2();
       return;
     }
-    // Fase 3: deixa o clique chegar no listener do núcleo (data-step='A'),
-    // que renderiza a Disponibilidade do restante. Mantemos aqui o botão
-    // "Salvar programação" do núcleo, que finaliza e notifica a Conferência
-    // (ele valida as mesmas tabelas que a Fase 2 preenche).
     setActiveUiStep('3');
     const saveBtn = document.getElementById('progSaveProgramacao');
     if (saveBtn) saveBtn.style.display = '';
@@ -562,112 +542,74 @@ function ensureSupCombo() {
       input.select();
       abrirDropdownSupervisao(input, nativeSelect, '');
     });
-    input.addEventListener('input', debounce(() => abrirDropdownSupervisao(input, nativeSelect, input.value), 150));
-    input.addEventListener('blur', () => {
-      setTimeout(() => {
-        if (supComboState.input === input) hideSupDropdown();
-        syncSupComboDisplay(nativeSelect);
-      }, 150);
+    input.addEventListener('input', () => abrirDropdownSupervisao(input, nativeSelect, input.value));
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        hideSupDropdown();
+        input.blur();
+      }
+      if (event.key === 'Enter') {
+        const active = supDropdownEl?.querySelector('.prog-sup-combo-item.active') || supDropdownEl?.querySelector('.prog-sup-combo-item');
+        if (active) {
+          event.preventDefault();
+          const value = active.dataset.value;
+          hideSupDropdown();
+          nativeSelect.value = value;
+          nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          syncSupComboDisplay(nativeSelect);
+          input.blur();
+        }
+      }
     });
   }
   syncSupComboDisplay(nativeSelect);
-}
-
-function autoSelectSingleSupervisao() {
-  const select = document.getElementById('progSup');
-  if (!select || select.dataset.autoLoadChecked === '1') return;
-
-  const options = [...select.options].filter((opt) => opt.value);
-  if (!options.length) return;
-  select.dataset.autoLoadChecked = '1';
-
-  if (options.length === 1) {
-    select.value = options[0].value;
-    if (currentUiStep === '1') renderEquipe();
+  if (nativeSelect.dataset.comboBound !== '1') {
+    nativeSelect.dataset.comboBound = '1';
+    nativeSelect.addEventListener('change', () => syncSupComboDisplay(nativeSelect));
   }
 }
 
-function patchPendingOsModal() {
-  const modal = document.getElementById('progOsPendingModal');
-  if (!modal || modal.dataset.distribuicaoPatched === '1') return;
-  modal.dataset.distribuicaoPatched = '1';
-  const btn = modal.querySelector('[data-os-open]');
-  if (btn) {
-    btn.textContent = 'Abrir Distribuição agora';
-    btn.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      modal.remove();
-      renderDistribuicao({ loadOs: true, force: true });
-    }, true);
-  }
-}
-
-function bindTopLoad() {
+function hookContextLoad() {
   const loadBtn = document.getElementById('progLoadContext');
-  if (!loadBtn || loadBtn.dataset.distribuicaoLoadBound === '1') return;
-  loadBtn.dataset.distribuicaoLoadBound = '1';
-  loadBtn.addEventListener('click', (event) => {
-    // Fases 1 e 2 usam o mesmo pré-carregamento de contexto (colaboradores +
-    // OS em ATENDER) que escreve em #progList; rodamos em sequência e só então
-    // renderizamos a fase atual, para um não sobrescrever o outro.
-    if (currentUiStep === '1') {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const list = document.getElementById('progList');
-      if (list) list.innerHTML = '<div class="prog-os-lazy-card"><div><strong>Carregando contexto...</strong><p>Buscando colaboradores e OS em ATENDER.</p></div></div>';
-      Promise.resolve(window.__progLoadColaboradores?.()).finally(() => {
-        if (currentUiStep === '1') renderEquipe();
-      });
-      return;
-    }
+  if (!loadBtn || loadBtn.dataset.gestorAjustesBound === '1') return;
+  loadBtn.dataset.gestorAjustesBound = '1';
+  loadBtn.addEventListener('click', () => {
+    distribuicaoLoaded = false;
     if (currentUiStep === '2') {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const list = document.getElementById('progList');
-      if (list) list.innerHTML = '<div class="prog-os-lazy-card"><div><strong>Carregando custos...</strong><p>Buscando a equipe confirmada.</p></div></div>';
-      Promise.resolve(window.__progLoadColaboradores?.()).finally(() => {
-        if (currentUiStep === '2') renderFase2();
-      });
+      setTimeout(() => renderFase2(), 350);
+    } else if (currentUiStep === '1') {
+      setTimeout(() => renderEquipe(), 350);
     }
-    // Fase 3 (Disponibilidade): deixa o núcleo carregar/renderizar normalmente.
-  }, true);
+  });
 }
 
-async function initGestorProgramacaoAjustes() {
-  await waitForElement('#progSteps');
+function boot() {
   injectGestorAjustesStyles();
+  waitForElement('#progSteps').then(() => {
+    configureSteps();
+    hookContextLoad();
+    ensureStatusOsFilter();
+    ensureSupCombo();
+    const sup = document.getElementById('progSup');
+    if (sup) {
+      const obsSup = new MutationObserver(() => ensureSupCombo());
+      obsSup.observe(sup, { childList: true, subtree: true, attributes: true });
+    }
+    renderEquipe();
+  }).catch(() => {});
+}
+
+const observer = new MutationObserver(debounce(() => {
+  if (!document.getElementById('progSteps')) return;
+  configureSteps();
+  hookContextLoad();
   ensureStatusOsFilter();
   ensureSupCombo();
-  bindTopLoad();
-  configureSteps();
-  setActiveUiStep('1');
-  renderEquipe();
+  guardDistribuicaoView();
+  guardEquipeView();
+  guardFase2View();
+}, 120));
+observer.observe(document.documentElement, { childList: true, subtree: true });
 
-  const observer = new MutationObserver(() => {
-    autoSelectSingleSupervisao();
-    patchPendingOsModal();
-    guardEquipeView();
-    guardFase2View();
-    bindTopLoad();
-    ensureSupCombo();
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-
-  autoSelectSingleSupervisao();
-  patchPendingOsModal();
-
-  document.getElementById('progSup')?.addEventListener('change', () => {
-    distribuicaoLoaded = false;
-    pendingKpiReload = true;
-    if (currentUiStep === '1') {
-      renderEquipe();
-    } else if (currentUiStep === '2') {
-      renderFase2();
-    } else {
-      triggerKpiReload();
-    }
-  });
-}
-
-initGestorProgramacaoAjustes().catch((error) => console.warn('[programacao-ajustes]', error));
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+else boot();
