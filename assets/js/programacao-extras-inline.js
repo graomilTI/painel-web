@@ -19,6 +19,31 @@ function dataRef() {
   return document.getElementById('progDataRef')?.value || null;
 }
 
+function ajustarTexto(el, maxFont) {
+  if (!el) return;
+  el.style.fontSize = `${maxFont}px`;
+  el.style.transform = '';
+  el.style.whiteSpace = 'nowrap';
+  el.style.overflow = 'visible';
+  el.style.textOverflow = 'clip';
+  const width = el.clientWidth;
+  if (!width || width < 40) return;
+  let size = maxFont;
+  while (el.scrollWidth > width && size > 8.2) {
+    size -= 0.3;
+    el.style.fontSize = `${size.toFixed(2)}px`;
+  }
+  if (el.scrollWidth > width) {
+    el.style.transformOrigin = 'left center';
+    el.style.transform = `scaleX(${Math.max(.72, width / el.scrollWidth).toFixed(3)})`;
+  }
+}
+
+function ajustarFontesOs() {
+  document.querySelectorAll('.peqb-os2-cliente').forEach((el) => ajustarTexto(el, window.innerWidth <= 1380 ? 11.6 : 12.8));
+  document.querySelectorAll('.peqb-os2-emb').forEach((el) => ajustarTexto(el, window.innerWidth <= 1380 ? 9.7 : 10.2));
+}
+
 function itemHtml(row) {
   return `<span class="peqb-extra-mini" data-extra-id="${esc(row.id)}"><span>${esc(row.tipo_despesa || row.descricao || 'Extra')}</span><button type="button" data-extra-remove="${esc(row.id)}">×</button></span>`;
 }
@@ -85,6 +110,7 @@ async function remover(id, box) {
 }
 
 function aplicar() {
+  ajustarFontesOs();
   document.querySelectorAll('.peqb-os2-right').forEach((right) => {
     const head = right.querySelector('.peqb-conf-head');
     const ali = right.querySelector('.peqb-ali');
@@ -125,6 +151,7 @@ function agendar() {
 
 function boot() {
   agendar();
+  window.addEventListener('resize', agendar);
   document.addEventListener('click', async (event) => {
     const toggle = event.target.closest('.peqb-extra-btn');
     if (toggle) {
