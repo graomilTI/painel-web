@@ -14,8 +14,8 @@ const SEGMENTS = [
     state: 'MT',
     name: 'Sinop',
     aliases: ['MT1', 'MATO GROSSO MT1', 'SINOP'],
-    path: 'M279 312 C300 298 326 289 355 289 C370 309 377 338 380 369 C356 375 329 378 298 378 C289 358 283 337 279 312 Z',
-    labelX: 322,
+    path: 'M238 238 H372 C373 282 374 324 382 371 C340 381 294 386 238 388 Z',
+    labelX: 315,
     labelY: 344,
   },
   {
@@ -23,17 +23,17 @@ const SEGMENTS = [
     state: 'MT',
     name: 'Confresa',
     aliases: ['MT3', 'MATO GROSSO MT3', 'MATO GROSSO MT3 CONFRESA', 'MATO GROSSO MT3 QUERENCIA', 'CONFRESA', 'QUERENCIA'],
-    path: 'M355 289 C392 286 432 294 470 313 C467 335 458 355 443 375 C421 378 401 376 380 369 C377 338 370 309 355 289 Z',
-    labelX: 422,
-    labelY: 346,
+    path: 'M372 238 H520 V392 C468 386 421 378 382 371 C374 324 373 282 372 238 Z',
+    labelX: 428,
+    labelY: 345,
   },
   {
     key: 'MT4',
     state: 'MT',
     name: 'Campo Novo do Parecis',
     aliases: ['MT4', 'MATO GROSSO MT4', 'CAMPO NOVO DO PARECIS', 'CAMPO NOVO', 'PARECIS'],
-    path: 'M298 378 C329 378 356 375 380 369 C378 396 379 424 386 458 C366 464 344 468 321 466 C304 447 295 425 290 403 C287 394 287 386 298 378 Z',
-    labelX: 321,
+    path: 'M238 388 C294 386 340 381 382 371 C378 413 380 452 392 506 H238 Z',
+    labelX: 318,
     labelY: 424,
   },
   {
@@ -41,8 +41,8 @@ const SEGMENTS = [
     state: 'MT',
     name: 'Primavera do Leste',
     aliases: ['MT2', 'MATO GROSSO MT2', 'PRIMAVERA DO LESTE', 'PRIMAVERA'],
-    path: 'M380 369 C401 376 421 378 443 375 C455 394 460 417 459 442 C451 458 439 468 425 472 C410 469 398 465 386 458 C379 424 378 396 380 369 Z',
-    labelX: 421,
+    path: 'M382 371 C421 378 468 386 520 392 V506 H392 C380 452 378 413 382 371 Z',
+    labelX: 426,
     labelY: 424,
   },
 
@@ -51,8 +51,8 @@ const SEGMENTS = [
     state: 'PR',
     name: 'Maringá',
     aliases: ['MARINGA', 'MARINGÁ', 'MARINGA E TERMINAIS', 'MARINGÁ E TERMINAIS'],
-    path: 'M414 566 C430 560 446 558 463 560 C462 573 462 587 463 600 C446 600 429 599 412 595 C411 585 412 575 414 566 Z',
-    labelX: 438,
+    path: 'M378 542 H463 C462 565 462 584 463 600 C438 600 411 596 378 596 Z',
+    labelX: 435,
     labelY: 584,
   },
   {
@@ -60,17 +60,17 @@ const SEGMENTS = [
     state: 'PR',
     name: 'Londrina',
     aliases: ['LONDRINA'],
-    path: 'M463 560 C482 558 501 558 520 562 C523 573 524 587 523 600 C503 601 483 601 463 600 C462 587 462 573 463 560 Z',
-    labelX: 492,
-    labelY: 585,
+    path: 'M463 542 H548 V603 C519 603 490 601 463 600 C462 584 462 565 463 542 Z',
+    labelX: 493,
+    labelY: 584,
   },
   {
     key: 'PR_CASCAVEL',
     state: 'PR',
     name: 'Cascavel',
     aliases: ['CASCAVEL'],
-    path: 'M412 595 C429 599 446 600 463 600 C464 615 463 629 458 640 C442 641 426 638 411 631 C408 619 409 607 412 595 Z',
-    labelX: 437,
+    path: 'M378 596 C411 596 438 600 463 600 C465 618 463 636 456 660 H378 Z',
+    labelX: 435,
     labelY: 620,
   },
   {
@@ -78,9 +78,9 @@ const SEGMENTS = [
     state: 'PR',
     name: 'Curitiba',
     aliases: ['CURITIBA', 'PONTA GROSSA', 'PONTA GROSSA PR', 'PARANA CURITIBA', 'PARANÁ CURITIBA'],
-    path: 'M463 600 C483 601 503 601 523 600 C521 613 516 625 503 635 C488 637 473 638 458 640 C463 629 464 615 463 600 Z',
-    labelX: 492,
-    labelY: 622,
+    path: 'M463 600 C490 601 519 603 548 603 V660 H456 C463 636 465 618 463 600 Z',
+    labelX: 493,
+    labelY: 620,
   },
 ];
 
@@ -178,6 +178,11 @@ function ensureStyles() {
     .db-state-svg .db-regional-overlay text {
       transition: all .25s ease;
     }
+
+    @media(max-width: 700px) {
+      .db-map-mode-toggle { width: 100%; justify-content: space-between; }
+      .db-map-mode-btn { flex: 1; }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -222,25 +227,25 @@ function getPalette(info) {
 
   if (!hasData) {
     return {
-      fill: 'rgba(255,255,255,.06)',
+      fill: 'rgba(255,255,255,.055)',
       stroke: 'rgba(255,255,255,.12)',
       text: 'rgba(255,255,255,.78)',
     };
   }
 
   if (info.onTrack || pct >= 100) {
-    const alpha = (0.32 + (pct / 100) * 0.42).toFixed(2);
+    const alpha = (0.30 + (pct / 100) * 0.42).toFixed(2);
     return {
       fill: `rgba(0,200,122,${alpha})`,
-      stroke: 'rgba(45,212,160,.78)',
+      stroke: 'rgba(45,212,160,.76)',
       text: 'rgba(238,255,246,.96)',
     };
   }
 
-  const alpha = (0.28 + (pct / 100) * 0.34).toFixed(2);
+  const alpha = (0.27 + (pct / 100) * 0.34).toFixed(2);
   return {
     fill: `rgba(253,230,138,${alpha})`,
-    stroke: 'rgba(253,230,138,.72)',
+    stroke: 'rgba(253,230,138,.70)',
     text: 'rgba(255,248,220,.95)',
   };
 }
@@ -389,8 +394,8 @@ function createRegionalOverlay(data) {
   const stateCovers = ['MT', 'PR'].map((uf) => `
     <path
       d="${STATE_PATHS[uf]}"
-      fill="rgba(13,13,24,.92)"
-      stroke="rgba(255,255,255,.12)"
+      fill="rgba(13,13,24,.96)"
+      stroke="rgba(255,255,255,.11)"
       stroke-width="1"
       stroke-linejoin="round"
     />
@@ -406,8 +411,8 @@ function createRegionalOverlay(data) {
         <path
           d="${seg.path}"
           fill="${palette.fill}"
-          stroke="rgba(15,23,42,.72)"
-          stroke-width="1.6"
+          stroke="rgba(255,255,255,.28)"
+          stroke-width="1.15"
           stroke-linejoin="round"
         />
       </g>
