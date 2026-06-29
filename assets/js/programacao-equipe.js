@@ -208,6 +208,7 @@ function injectStyles() {
     .peqb-os2-right{padding:14px 15px;background:rgba(16,40,30,.45)}
     .peqb-os2-cliente{font-size:13.5px;font-weight:850;color:#f8fafc;line-height:1.25}
     .peqb-os2-emb{font-size:11.5px;color:#8ba79a;margin-top:3px;overflow-wrap:anywhere}
+    .peqb-os2-uf{color:#6fd0a5;font-weight:900}
     .peqb-os2-tags{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
     .peqb-os2-tagsrow{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:10px}
     .peqb-os2-tagsrow .peqb-status-strip{margin:0}
@@ -569,14 +570,26 @@ function custoRowsHtml(item) {
   </div>`;
 }
 
+// Embarque vem como "UF – CIDADE (FAZENDA…)". Destaca a UF e normaliza o
+// separador, sem reformatar o resto (cidade/fazenda ficam como vieram).
+function embarqueHtml(embarque) {
+  const s = String(embarque == null ? '' : embarque).trim();
+  if (!s || s === '-') return '📍 -';
+  const m = s.match(/^([A-Za-z]{2})\s*[–-]\s*(.+)$/);
+  if (m) return `📍 <span class="peqb-os2-uf">${esc(m[1].toUpperCase())}</span> · ${esc(m[2])}`;
+  return '📍 ' + esc(s);
+}
+
 function osLeftHtml(os) {
   const rem = os.remanescente;
   return `<div class="peqb-os2-left">
     <div class="peqb-os2-cliente">${esc(os.cliente || '-')}</div>
-    <div class="peqb-os2-emb">📍 ${esc(os.embarque || '-')}</div>
+    <div class="peqb-os2-emb">${embarqueHtml(os.embarque)}</div>
     <div class="peqb-os2-tagsrow">
-      <span class="peqb-tag g">OS ${esc(os.numero_os || '-')}</span>
-      ${rem != null && rem !== '' ? `<span class="peqb-tag b">Rem. ${BRI.format(Number(rem) || 0)}</span>` : ''}
+      <span class="peqb-os2-tags2">
+        <span class="peqb-tag g">OS ${esc(os.numero_os || '-')}</span>
+        ${rem != null && rem !== '' ? `<span class="peqb-tag b">Rem. ${BRI.format(Number(rem) || 0)}</span>` : ''}
+      </span>
       ${statusStripHtml(os)}
     </div>
   </div>`;
@@ -637,7 +650,7 @@ function osRowHtml(item) {
     </div>`;
   }
 
-  return `<article class="peqb-row peqb-os2" data-os-id="${esc(os.id)}">${osLeftHtml(os)}${right}</article>`;
+  return `<article class="peqb-row peqb-os2 ${confirmado ? 'peqb-os2-done' : ''}" data-os-id="${esc(os.id)}">${osLeftHtml(os)}${right}</article>`;
 }
 
 function atualizarKpis(root, osComCandidatos, confirmadosPorOs) {
