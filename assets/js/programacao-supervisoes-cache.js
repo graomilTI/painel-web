@@ -1,5 +1,6 @@
 // Programação: usa a relação programacao_usuario_supervisoes/RPC para não buscar todas as supervisões a cada carregamento.
 import { supabase } from './supabaseClient.js';
+import './programacao-extras-inline.js?v=20260629-extras1';
 
 const CACHE_KEY = 'programacao_supervisoes_v1';
 const CACHE_TTL_MS = 1000 * 60 * 60 * 12;
