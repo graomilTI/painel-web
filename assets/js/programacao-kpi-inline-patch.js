@@ -30,8 +30,8 @@
   }
 
   function applyFit() {
-    document.querySelectorAll('.peqb-os2-cliente').forEach((el) => fitText(el, window.innerWidth <= 1380 ? 10.8 : 11.6));
-    document.querySelectorAll('.peqb-os2-emb').forEach((el) => fitText(el, window.innerWidth <= 1380 ? 9.9 : 10.4));
+    document.querySelectorAll('.peqb-os2-cliente').forEach((el) => fitText(el, window.innerWidth <= 1380 ? 11.2 : 12.4));
+    document.querySelectorAll('.peqb-os2-emb').forEach((el) => fitText(el, window.innerWidth <= 1380 ? 9.7 : 10.2));
   }
 
   function scheduleFit() {
