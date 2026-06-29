@@ -1,6 +1,6 @@
 // Programação Gestor — Etapa 1 = O.S. + despesas no mesmo card.
 import { supabase } from './supabaseClient.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-colabreg1';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-dropdown1';
 
 let currentUiStep = '1';
 let equipeRendering = false;
