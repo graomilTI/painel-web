@@ -1,10 +1,10 @@
-// Ajustes do Gestor: tela limpa. Etapa 1 carrega somente O.S. + despesas no mesmo card.
-import { supabase } from './supabaseClient.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos6';
+// Programação Gestor — otimizado: Etapa 1 = O.S. + despesas no mesmo card.
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos8';
 
 let currentUiStep = '1';
 let equipeRendering = false;
-let finalRenderScheduled = false;
+let renderScheduled = false;
+let renderRetryCount = 0;
 let supDropdownEl = null;
 let supComboState = { input: null, onSelect: null };
 
@@ -60,7 +60,7 @@ function injectGestorAjustesStyles() {
     .prog-toolbar{position:relative!important;z-index:9000!important;overflow:visible!important}
     .prog-toolbar-row{position:relative!important;z-index:9001!important;overflow:visible!important}
     .prog-tfield-sup{flex:1 1 320px!important;max-width:520px!important;position:relative!important;z-index:9010!important;overflow:visible!important}
-    .prog-tfield-sup select,#progSup{position:relative!important;z-index:9020!important;min-width:320px!important;background:#020617!important;background-color:#020617!important;background-image:linear-gradient(#020617,#020617)!important;color:#f8fafc!important;border-color:rgba(52,211,153,.45)!important;opacity:1!important;color-scheme:dark!important;box-shadow:0 10px 26px rgba(0,0,0,.42)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+    .prog-tfield-sup select,#progSup{position:relative!important;z-index:9020!important;min-width:320px!important;background:#020617!important;background-color:#020617!important;color:#f8fafc!important;border-color:rgba(52,211,153,.45)!important;opacity:1!important;color-scheme:dark!important;box-shadow:0 10px 26px rgba(0,0,0,.42)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
     .prog-tfield-sup select:focus,#progSup:focus{background:#020617!important;background-color:#020617!important;color:#f8fafc!important;outline:2px solid rgba(52,211,153,.35)!important;outline-offset:1px!important}
     #progSup option,#progSup optgroup{background:#020617!important;background-color:#020617!important;color:#f8fafc!important;opacity:1!important;text-shadow:none!important}
     #progSup option:checked,#progSup option:hover{background:#064e3b!important;background-color:#064e3b!important;color:#ffffff!important}
@@ -84,61 +84,6 @@ function injectGestorAjustesStyles() {
       .prog-os-lazy-card .btn{width:100%;justify-content:center}
     }
     @media(max-width:720px){#progSteps .stepbtn-label{display:none}}
-  `;
-  document.head.appendChild(style);
-}
-
-function injectEquipeCompactStyles() {
-  document.getElementById('programacaoEquipeCompactStyles')?.remove();
-  const style = document.createElement('style');
-  style.id = 'programacaoEquipeCompactStyles';
-  style.textContent = `
-    .peqb-kpis{display:grid!important;grid-template-columns:repeat(2,minmax(140px,1fr))!important;gap:8px!important;margin-bottom:8px!important}
-    .peqb-kpi{padding:7px 12px!important;min-height:48px!important;border-radius:11px!important}
-    .peqb-kpi span{font-size:8.5px!important;line-height:1!important;letter-spacing:.08em!important}
-    .peqb-kpi strong{font-size:16px!important;line-height:1.05!important;margin-top:3px!important}
-    .peqb-legend{margin:0 0 8px!important;font-size:10.5px!important}
-    .peqb-toolbar{margin-bottom:8px!important}
-    .peqb-block-head{margin:2px 0 7px!important;font-size:10.5px!important}
-    .peqb-row.peqb-os2{grid-template-columns:minmax(360px,.92fr) minmax(560px,1.55fr)!important;border-radius:16px!important;min-height:104px!important}
-    .peqb-os2-left{padding:12px 16px!important;display:flex!important;flex-direction:column!important;justify-content:center!important}
-    .peqb-os2-cliente{font-size:14px!important;line-height:1.16!important;margin:0!important}
-    .peqb-os2-emb{font-size:11.5px!important;line-height:1.25!important;margin-top:5px!important}
-    .peqb-os2-tagsrow{margin-top:10px!important;gap:7px!important;align-items:center!important}
-    .peqb-status-strip{margin:0!important;gap:6px!important}
-    .peqb-tag{font-size:10.5px!important;padding:4px 9px!important}
-    .peqb-st{height:30px!important;min-width:30px!important;padding:0 8px!important;font-size:12px!important}
-    .peqb-os2-right{padding:10px 14px!important;display:flex!important;flex-direction:column!important;justify-content:center!important;gap:7px!important}
-    .peqb-conf-head{display:grid!important;grid-template-columns:38px minmax(250px,1fr) auto!important;grid-template-rows:auto auto!important;gap:5px 10px!important;margin:0!important;align-items:center!important}
-    .peqb-conf-head>.peqb-cand-av{grid-column:1!important;grid-row:1 / span 2!important;width:36px!important;height:36px!important;font-size:12px!important}
-    .peqb-name-sel{grid-column:2!important;grid-row:1!important;min-height:28px!important;height:28px!important;padding:2px 22px 2px 4px!important;font-size:13.5px!important;line-height:1!important;background:transparent!important;border-color:transparent!important}
-    .peqb-conf-head .peqb-row-btn.hotel{grid-column:2!important;grid-row:2!important;justify-self:start!important;height:26px!important;font-size:10.5px!important;padding:0 9px!important;margin:0!important}
-    .peqb-ali{grid-column:3!important;grid-row:1!important;justify-content:flex-end!important;align-items:center!important;margin-left:auto!important;display:flex!important;gap:6px!important;white-space:nowrap!important}
-    .peqb-conf-head .peqb-chip{padding:4px 9px!important;font-size:11px!important;margin-top:0!important;min-height:24px!important}
-    .peqb-custos{margin-top:0!important;display:grid!important;grid-template-columns:20px minmax(115px,130px) minmax(120px,1fr) 50px 22px minmax(120px,150px) minmax(94px,120px)!important;gap:7px!important;align-items:center!important;width:100%!important}
-    .peqb-clab{font-size:13px!important;text-align:center!important;line-height:1!important}
-    .peqb-clab-2{margin-left:0!important}
-    .peqb-cinp,.peqb-cinp-sm{min-height:34px!important;height:34px!important;border-radius:9px!important;font-size:12px!important;padding:5px 8px!important}
-    .peqb-tipo-est,.peqb-tipo-desl,.peqb-destino,.peqb-cinp-na,.peqb-dias,.inp-placa{flex:initial!important;width:100%!important;min-width:0!important}
-    .peqb-dias{width:50px!important;text-align:center!important}
-    .inp-placa{text-align:left!important}
-    .peqb-cinp-na{display:flex!important;align-items:center!important;justify-content:center!important;height:34px!important}
-    @media(max-width:1200px){
-      .peqb-row.peqb-os2{grid-template-columns:1fr!important}
-      .peqb-os2-left{border-right:0!important;border-bottom:1px solid rgba(111,208,165,.14)!important}
-      .peqb-conf-head{grid-template-columns:38px minmax(180px,1fr)!important}
-      .peqb-ali{grid-column:1 / -1!important;grid-row:3!important;justify-content:flex-start!important;margin-left:0!important}
-      .peqb-custos{grid-template-columns:20px minmax(120px,1fr) minmax(140px,1fr) 50px!important}
-      .peqb-clab-2{grid-column:1!important}
-      .peqb-tipo-desl{grid-column:2!important}
-      .inp-placa{grid-column:3 / span 2!important}
-    }
-    @media(max-width:720px){
-      .peqb-kpis{grid-template-columns:1fr!important}
-      .peqb-custos{grid-template-columns:1fr 1fr!important}
-      .peqb-clab,.peqb-clab-2{display:none!important}
-      .peqb-destino,.inp-placa{grid-column:auto!important}
-    }
   `;
   document.head.appendChild(style);
 }
@@ -174,8 +119,8 @@ function renderIdle() {
     </div>
     <div class="prog-os-lazy-card">
       <div>
-        <strong>Tela limpa pronta para carregar</strong>
-        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para montar a tela final com O.S., colaborador, hospedagem, deslocamento e alimentação no mesmo card.</p>
+        <strong>Tela pronta para carregar</strong>
+        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para montar a tela final.</p>
       </div>
       <button type="button" class="btn btn-primary" id="progEquipeLoadNow">Carregar</button>
     </div>
@@ -183,40 +128,6 @@ function renderIdle() {
   list.querySelector('#progEquipeLoadNow')?.addEventListener('click', () => {
     document.getElementById('progLoadContext')?.click();
   });
-}
-
-async function marcarPendentesComoAtender(supervisao) {
-  if (!supervisao) return;
-  const { error } = await supabase
-    .from('operacional_os')
-    .update({ status_gestor: 'ATENDER', updated_at: new Date().toISOString() })
-    .eq('supervisao', supervisao)
-    .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR');
-  if (error) console.warn('[programacao] não foi possível preparar O.S. como ATENDER', error);
-}
-
-function autoPreencherEquipeParaMostrarDespesas(programacaoId) {
-  const key = [
-    programacaoId || '',
-    document.getElementById('progSup')?.value || '',
-    document.getElementById('progDataRef')?.value || '',
-  ].join('|');
-  window.__progAutoEquipeKeys = window.__progAutoEquipeKeys || new Set();
-  if (window.__progAutoEquipeKeys.has(key)) return;
-
-  const tentar = (tentativa = 0) => {
-    if (currentUiStep !== '1') return;
-    const list = document.getElementById('peqbOsList');
-    const btn = document.getElementById('peqbAutoPreencher');
-    const temPendentes = !!list?.querySelector('[data-confirmar]');
-    if (btn && temPendentes && !btn.disabled) {
-      window.__progAutoEquipeKeys.add(key);
-      btn.click();
-      return;
-    }
-    if (tentativa < 12) setTimeout(() => tentar(tentativa + 1), 300);
-  };
-  setTimeout(() => tentar(0), 400);
 }
 
 async function renderEquipeFinal() {
@@ -230,7 +141,12 @@ async function renderEquipeFinal() {
   const programacaoId = window.__progGetProgramacaoId?.() || null;
   const supervisao = document.getElementById('progSup')?.value || '';
   if (!programacaoId) {
-    renderIdle();
+    if (renderRetryCount < 8) {
+      renderRetryCount += 1;
+      scheduleFinalRender(220);
+    } else {
+      renderIdle();
+    }
     return;
   }
 
@@ -239,17 +155,15 @@ async function renderEquipeFinal() {
   try {
     if (feedback) {
       feedback.className = 'feedback mt-16 prog-feedback-ok';
-      feedback.textContent = 'Preparando O.S. e despesas em tela única...';
+      feedback.textContent = 'Carregando O.S. e despesas...';
     }
-    list.innerHTML = '<div class="prog-os-lazy-card"><div><strong>Montando tela final...</strong><p>Organizando O.S., equipe e despesas no mesmo card.</p></div></div>';
-    await marcarPendentesComoAtender(supervisao);
+    list.innerHTML = '<div class="prog-os-lazy-card"><div><strong>Montando tela...</strong><p>Buscando O.S., equipe e despesas.</p></div></div>';
     await renderProgramacaoEquipe(list, {
       supervisao,
       dataReferencia: document.getElementById('progDataRef')?.value || '',
       programacaoId,
+      fastMode: true,
     });
-    injectEquipeCompactStyles();
-    autoPreencherEquipeParaMostrarDespesas(programacaoId);
     if (feedback) {
       feedback.className = 'feedback mt-16 prog-feedback-ok';
       feedback.textContent = 'Etapa 1 — O.S. e despesas do colaborador na mesma tela.';
@@ -260,10 +174,10 @@ async function renderEquipeFinal() {
 }
 
 function scheduleFinalRender(delay = 250) {
-  if (currentUiStep !== '1' || finalRenderScheduled) return;
-  finalRenderScheduled = true;
+  if (currentUiStep !== '1' || renderScheduled) return;
+  renderScheduled = true;
   setTimeout(async () => {
-    finalRenderScheduled = false;
+    renderScheduled = false;
     await renderEquipeFinal();
   }, delay);
 }
@@ -311,6 +225,7 @@ function configureSteps() {
       event.stopImmediatePropagation();
       setActiveUiStep('1');
       hideCoreControls();
+      renderRetryCount = 0;
       renderIdle();
       return;
     }
@@ -348,9 +263,7 @@ function ensureSupDropdown() {
   });
 
   const reposition = () => {
-    if (supDropdownEl && !supDropdownEl.hidden && supComboState.input) {
-      positionSupDropdown(supDropdownEl, supComboState.input);
-    }
+    if (supDropdownEl && !supDropdownEl.hidden && supComboState.input) positionSupDropdown(supDropdownEl, supComboState.input);
   };
   window.addEventListener('scroll', reposition, true);
   window.addEventListener('resize', reposition);
@@ -376,7 +289,7 @@ function abrirDropdownSupervisao(input, nativeSelect, query) {
     onSelect: (value) => {
       nativeSelect.value = value;
       nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-      syncSupComboDisplay(nativeSelect);
+      syncSupComboDisplay(nativeSelect, true);
       renderIdle();
     },
   };
@@ -391,9 +304,9 @@ function abrirDropdownSupervisao(input, nativeSelect, query) {
     : '<div class="prog-sup-combo-empty">Nenhuma supervisão encontrada.</div>';
 }
 
-function syncSupComboDisplay(nativeSelect) {
+function syncSupComboDisplay(nativeSelect, force = false) {
   const input = document.getElementById('progSupCombo');
-  if (!input || document.activeElement === input) return;
+  if (!input || (!force && document.activeElement === input)) return;
   const opt = nativeSelect.options[nativeSelect.selectedIndex];
   input.value = opt && opt.value ? opt.textContent : '';
 }
@@ -433,7 +346,7 @@ function ensureSupCombo() {
           hideSupDropdown();
           nativeSelect.value = value;
           nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-          syncSupComboDisplay(nativeSelect);
+          syncSupComboDisplay(nativeSelect, true);
           input.blur();
           renderIdle();
         }
@@ -445,7 +358,7 @@ function ensureSupCombo() {
   if (nativeSelect.dataset.comboBound !== '1') {
     nativeSelect.dataset.comboBound = '1';
     nativeSelect.addEventListener('change', () => {
-      syncSupComboDisplay(nativeSelect);
+      syncSupComboDisplay(nativeSelect, true);
       renderIdle();
     });
   }
@@ -457,7 +370,8 @@ function hookContextLoad() {
   loadBtn.dataset.gestorFinalBound = '1';
   loadBtn.addEventListener('click', () => {
     if (currentUiStep !== '1') return;
-    [250, 700, 1200, 1800].forEach((delay) => setTimeout(() => scheduleFinalRender(0), delay));
+    renderRetryCount = 0;
+    scheduleFinalRender(320);
   }, true);
 }
 
@@ -484,10 +398,8 @@ const observer = new MutationObserver(debounce(() => {
   hookContextLoad();
   hideCoreControls();
   ensureSupCombo();
-  if (currentUiStep === '1' && listShowsCoreDisponibilidade()) {
-    scheduleFinalRender(200);
-  }
-}, 120));
+  if (currentUiStep === '1' && listShowsCoreDisponibilidade()) scheduleFinalRender(120);
+}, 180));
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
