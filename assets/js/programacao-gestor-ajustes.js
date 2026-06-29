@@ -1,21 +1,8 @@
-// Ajustes do Gestor: Programação concentra a tela unificada de O.S. + despesas e a etapa de disponibilidade.
-import { renderOsProgramacaoLite } from './os-programacao-lite.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos2';
-
-const OS_STATUS_OPTIONS = [
-  { value: '', label: 'Todos' },
-  { value: 'PENDENTE', label: 'Pendente' },
-  { value: 'AGUARDAR', label: 'Aguardar' },
-  { value: 'ATENDER', label: 'Atender' },
-  { value: 'FINALIZAR', label: 'Finalizar' },
-];
+// Ajustes do Gestor: etapa 1 = O.S. + despesas no mesmo card; etapa 2 = disponibilidade.
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos3';
 
 let currentUiStep = '1';
 let equipeRendering = false;
-let distribuicaoLoaded = false;
-let distribuicaoLoading = false;
-let pendingKpiReload = false;
-
 let supDropdownEl = null;
 let supComboState = { input: null, onSelect: null };
 
@@ -63,12 +50,6 @@ function waitForElement(selector, timeout = 12000) {
   });
 }
 
-function statusOptionsHtml(selected = '') {
-  return OS_STATUS_OPTIONS.map((option) => (
-    `<option value="${escapeHtml(option.value)}" ${String(selected || '') === option.value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`
-  )).join('');
-}
-
 function injectGestorAjustesStyles() {
   if (document.getElementById('programacaoGestorAjustesStyles')) return;
   const style = document.createElement('style');
@@ -79,28 +60,15 @@ function injectGestorAjustesStyles() {
     .prog-tfield-sup{flex:1 1 320px!important;max-width:520px!important;position:relative!important;z-index:9010!important;overflow:visible!important}
     .prog-tfield-sup select,#progSup{position:relative!important;z-index:9020!important;min-width:320px!important;background:#020617!important;background-color:#020617!important;background-image:linear-gradient(#020617,#020617)!important;color:#f8fafc!important;border-color:rgba(52,211,153,.45)!important;opacity:1!important;color-scheme:dark!important;box-shadow:0 10px 26px rgba(0,0,0,.42)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
     .prog-tfield-sup select:focus,#progSup:focus{background:#020617!important;background-color:#020617!important;color:#f8fafc!important;outline:2px solid rgba(52,211,153,.35)!important;outline-offset:1px!important}
-    #progSup option,#progSup optgroup,#progOsStatusTop option,#progOsStatusTop optgroup{background:#020617!important;background-color:#020617!important;color:#f8fafc!important;opacity:1!important;text-shadow:none!important}
-    #progSup option:checked,#progSup option:hover,#progOsStatusTop option:checked,#progOsStatusTop option:hover{background:#064e3b!important;background-color:#064e3b!important;color:#ffffff!important}
+    #progSup option,#progSup optgroup{background:#020617!important;background-color:#020617!important;color:#f8fafc!important;opacity:1!important;text-shadow:none!important}
+    #progSup option:checked,#progSup option:hover{background:#064e3b!important;background-color:#064e3b!important;color:#ffffff!important}
     #progSteps,#progSteps .stepbtn{position:relative!important;z-index:0!important}
     .prog-toolbar:has(#progSup:focus) .prog-toolbar-row-steps{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
-    .prog-tfield-os-status{flex:0 0 170px;max-width:190px;position:relative!important;z-index:9005!important}
-    .prog-list-card,#progList,#progDistribuicaoOsMount,#osLiteRoot,#osLiteStats,#osLiteList{position:relative;z-index:1;overflow:visible!important}
-    #progDistribuicaoOsMount .grid-cards,#progDistribuicaoOsMount .card:not(:first-child){position:relative;z-index:1}
-    #progDistribuicaoOsMount .filters-grid.os-grid{display:none!important}
-    #progDistribuicaoOsMount .card:first-child{margin-top:0}
-    #progDistribuicaoOsMount #osStats{margin-top:12px}
+    .prog-list-card,#progList,#peqbOsList{position:relative;z-index:1;overflow:visible!important}
     .prog-os-lazy-card{border:1px dashed rgba(52,211,153,.22);border-radius:18px;padding:18px;background:rgba(15,23,42,.18);color:#94a3b8;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
     .prog-os-lazy-card strong{display:block;color:#f8fafc;margin-bottom:4px;font-size:14px}
     .prog-os-lazy-card p{margin:0;font-size:13px;line-height:1.35}
     .prog-os-lazy-card .btn{min-height:38px}
-    @media(max-width:900px){
-      .prog-tfield-sup select,#progSup{min-width:0!important}
-      .prog-os-lazy-card{align-items:stretch}
-      .prog-os-lazy-card .btn{width:100%;justify-content:center}
-    }
-    @media(max-width:720px){
-      #progSteps .stepbtn-label{display:none}
-    }
     .prog-sup-native-hidden{position:absolute!important;width:0!important;height:0!important;padding:0!important;border:0!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
     .prog-sup-combo-input{position:relative!important;z-index:9020!important;min-width:320px!important;width:100%;box-sizing:border-box;padding:9px 12px;background:#020617!important;color:#f8fafc!important;border:1px solid rgba(52,211,153,.45)!important;border-radius:10px;font-size:13.5px;outline:none}
     .prog-sup-combo-input:focus{outline:2px solid rgba(52,211,153,.35)!important;outline-offset:1px!important}
@@ -108,125 +76,26 @@ function injectGestorAjustesStyles() {
     .prog-sup-combo-item{padding:9px 12px;cursor:pointer;font-size:13.5px;color:#f8fafc;background:#020617}
     .prog-sup-combo-item:hover,.prog-sup-combo-item.active{background:#064e3b;color:#ffffff}
     .prog-sup-combo-empty{padding:9px 12px;font-size:13px;color:#94a3b8;font-style:italic;background:#020617}
-    @media(max-width:900px){.prog-sup-combo-input{min-width:0!important}}
+    @media(max-width:900px){
+      .prog-tfield-sup select,#progSup,.prog-sup-combo-input{min-width:0!important}
+      .prog-os-lazy-card{align-items:stretch}
+      .prog-os-lazy-card .btn{width:100%;justify-content:center}
+    }
+    @media(max-width:720px){#progSteps .stepbtn-label{display:none}}
   `;
   document.head.appendChild(style);
 }
 
-function ensureStatusOsFilter() {
-  injectGestorAjustesStyles();
-  const loadBtn = document.getElementById('progLoadContext');
-  if (!loadBtn) return null;
-
-  let field = document.getElementById('progOsStatusTopWrap');
-  if (!field) {
-    field = document.createElement('div');
-    field.className = 'prog-tfield prog-tfield-os-status';
-    field.id = 'progOsStatusTopWrap';
-    field.innerHTML = `
-      <label for="progOsStatusTop">Status OS</label>
-      <select id="progOsStatusTop">${statusOptionsHtml()}</select>
-    `;
-    loadBtn.insertAdjacentElement('beforebegin', field);
-  }
-
-  const select = field.querySelector('#progOsStatusTop');
-  if (select && select.dataset.statusOsBound !== '1') {
-    select.dataset.statusOsBound = '1';
-    select.addEventListener('change', () => {
-      if (currentUiStep === '1') renderEquipe();
-    });
-  }
-  return select;
+function hideTopOsStatus() {
+  const wrap = document.getElementById('progOsStatusTopWrap');
+  if (wrap) wrap.style.display = 'none';
 }
 
-function syncStatusToOsModule(root = document) {
-  const topStatus = document.getElementById('progOsStatusTop');
-  const osStatus = root.querySelector?.('#osStatus') || document.getElementById('osStatus');
-  if (!topStatus || !osStatus) return;
-  if (osStatus.value !== topStatus.value) {
-    osStatus.value = topStatus.value;
-    osStatus.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-}
-
-function prepareEmbeddedOsFilters(mount) {
-  if (!mount) return;
-  mount.classList.add('prog-os-embedded');
-  const filters = mount.querySelector('.filters-grid.os-grid');
-  if (filters) filters.setAttribute('aria-hidden', 'true');
-  syncStatusToOsModule(mount);
-}
-
-function setStatusOsVisibility(isDistribuicao) {
-  const topStatus = ensureStatusOsFilter();
-  const wrap = topStatus?.closest('.prog-tfield-os-status');
-  if (wrap) wrap.style.display = isDistribuicao ? '' : 'none';
-}
-
-function setSaveVisibility(isDistribuicao) {
-  const saveBtn = document.getElementById('progSaveProgramacao');
-  const search = document.getElementById('progSearchWrap');
-  if (saveBtn) saveBtn.style.display = isDistribuicao ? 'none' : '';
-  if (search) search.style.display = isDistribuicao ? 'none' : '';
-  setStatusOsVisibility(isDistribuicao);
-}
-
-function distribuicaoHeaderHtml() {
-  return `
-    <div class="prog-section-title">
-      <h4>Distribuição de O.S.</h4>
-      <span class="badge">Etapa A</span>
-    </div>
-    <div class="prog-empty-section" style="margin-bottom:12px">
-      As O.S. que precisam de verificação ficam aqui, dentro da própria Programação.
-    </div>
-    <div id="progDistribuicaoOsMount"></div>
-  `;
-}
-
-function renderDistribuicaoPlaceholder() {
-  const mount = document.getElementById('progDistribuicaoOsMount');
-  if (!mount) return;
-  const sup = document.getElementById('progSup')?.value || '';
-  mount.innerHTML = `
-    <div class="prog-os-lazy-card">
-      <div>
-        <strong>Distribuição pronta para carregar</strong>
-        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para buscar as O.S.</p>
-      </div>
-      <button type="button" class="btn btn-primary" id="progDistribuicaoLoadNow">Carregar O.S.</button>
-    </div>
-  `;
-  mount.querySelector('#progDistribuicaoLoadNow')?.addEventListener('click', () => renderDistribuicao({ loadOs: true, force: true }));
-}
-
-function renderDistribuicaoLoading() {
-  const mount = document.getElementById('progDistribuicaoOsMount');
-  if (!mount) return;
-  const sup = document.getElementById('progSup')?.value || '';
-  mount.innerHTML = `
-    <div class="prog-os-lazy-card">
-      <div>
-        <strong>Carregando distribuição de O.S...</strong>
-        <p>${sup ? `Buscando O.S. para ${escapeHtml(sup)}.` : 'Buscando O.S. liberadas para o seu usuário.'}</p>
-      </div>
-    </div>
-  `;
-}
-
-function guardDistribuicaoView() {
-  if (currentUiStep !== 'A') return;
-  const list = document.getElementById('progList');
-  if (!list || document.getElementById('progDistribuicaoOsMount')) return;
-  renderDistribuicao({ loadOs: false });
-}
-
-function guardEquipeView() {
-  if (currentUiStep !== '1') return;
-  const list = document.getElementById('progList');
-  if (!list || document.getElementById('peqbOsList') || document.getElementById('progEquipeLoadNow')) return;
-  renderEquipe();
+function hideCoreControls() {
+  ['progSaveProgramacao', 'progSearchWrap', 'progOsStatusTopWrap'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
 }
 
 function setActiveUiStep(step) {
@@ -234,60 +103,6 @@ function setActiveUiStep(step) {
     btn.classList.toggle('active', btn.dataset.uiStep === step);
   });
   document.body.classList.toggle('prog-step-a-os', false);
-}
-
-function hideCoreControls() {
-  ['progSaveProgramacao', 'progSearchWrap'].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  });
-  setStatusOsVisibility(false);
-}
-
-async function renderDistribuicao({ loadOs = false, force = false } = {}) {
-  const list = document.getElementById('progList');
-  const feedback = document.getElementById('progCtxFeedback');
-  if (!list) return;
-
-  setActiveUiStep('A');
-  setSaveVisibility(true);
-  if (feedback) {
-    const sup = document.getElementById('progSup')?.value || '';
-    feedback.className = 'feedback mt-16 prog-feedback-ok';
-    feedback.textContent = loadOs
-      ? (sup ? `Carregando distribuição para ${sup}.` : 'Carregando distribuição conforme o acesso do usuário.')
-      : 'Etapa A aberta. Clique em Carregar para buscar as O.S.';
-  }
-
-  list.innerHTML = distribuicaoHeaderHtml();
-
-  if (!loadOs && !distribuicaoLoaded) {
-    renderDistribuicaoPlaceholder();
-    return;
-  }
-
-  if (distribuicaoLoading) return;
-  distribuicaoLoading = true;
-  renderDistribuicaoLoading();
-
-  try {
-    const mount = document.getElementById('progDistribuicaoOsMount');
-    await renderOsProgramacaoLite(mount, {
-      reuseData: !force,
-      supervisao: document.getElementById('progSup')?.value || '',
-      status: document.getElementById('progOsStatusTop')?.value || '',
-      data: document.getElementById('progDataRef')?.value || '',
-    });
-    prepareEmbeddedOsFilters(mount);
-    distribuicaoLoaded = true;
-    if (feedback) {
-      const sup = document.getElementById('progSup')?.value || '';
-      feedback.className = 'feedback mt-16 prog-feedback-ok';
-      feedback.textContent = sup ? `Distribuição carregada para ${sup}.` : 'Distribuição carregada conforme as supervisões liberadas no login do gestor.';
-    }
-  } finally {
-    distribuicaoLoading = false;
-  }
 }
 
 function renderEquipePlaceholder(list) {
@@ -300,7 +115,7 @@ function renderEquipePlaceholder(list) {
     <div class="prog-os-lazy-card">
       <div>
         <strong>Pronto para programar as O.S.</strong>
-        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para buscar as O.S. em ATENDER e lançar colaborador, hospedagem, deslocamento e alimentação no mesmo card.</p>
+        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para buscar as O.S. em ATENDER e trazer colaborador, hospedagem, deslocamento e alimentação no mesmo card.</p>
       </div>
       <button type="button" class="btn btn-primary" id="progEquipeLoadNow">Carregar</button>
     </div>
@@ -310,11 +125,37 @@ function renderEquipePlaceholder(list) {
   });
 }
 
+function autoPreencherEquipeParaMostrarDespesas(programacaoId) {
+  const key = [
+    programacaoId || '',
+    document.getElementById('progSup')?.value || '',
+    document.getElementById('progDataRef')?.value || '',
+  ].join('|');
+  window.__progAutoEquipeKeys = window.__progAutoEquipeKeys || new Set();
+  if (window.__progAutoEquipeKeys.has(key)) return;
+
+  const tentar = (tentativa = 0) => {
+    if (currentUiStep !== '1') return;
+    const list = document.getElementById('peqbOsList');
+    const btn = document.getElementById('peqbAutoPreencher');
+    const temPendentes = !!list?.querySelector('[data-confirmar]');
+
+    if (btn && temPendentes && !btn.disabled) {
+      window.__progAutoEquipeKeys.add(key);
+      btn.click();
+      return;
+    }
+    if (tentativa < 10) setTimeout(() => tentar(tentativa + 1), 250);
+  };
+  setTimeout(() => tentar(0), 350);
+}
+
 async function renderEquipe() {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
   if (!list) return;
 
+  currentUiStep = '1';
   setActiveUiStep('1');
   hideCoreControls();
   if (feedback) {
@@ -327,6 +168,7 @@ async function renderEquipe() {
     renderEquipePlaceholder(list);
     return;
   }
+
   if (equipeRendering) return;
   equipeRendering = true;
   try {
@@ -335,6 +177,7 @@ async function renderEquipe() {
       dataReferencia: document.getElementById('progDataRef')?.value || '',
       programacaoId,
     });
+    autoPreencherEquipeParaMostrarDespesas(programacaoId);
   } finally {
     equipeRendering = false;
   }
@@ -342,7 +185,7 @@ async function renderEquipe() {
 
 function configureSteps() {
   const stepsWrap = document.getElementById('progSteps');
-  if (!stepsWrap || stepsWrap.dataset.gestorAjustado === '1') return;
+  if (!stepsWrap) return;
 
   const existing = [...stepsWrap.querySelectorAll('.stepbtn')];
   const layout = [
@@ -364,33 +207,34 @@ function configureSteps() {
   });
   existing.slice(layout.length).forEach((btn) => btn.remove());
 
+  if (stepsWrap.dataset.gestorAjustado === '1') return;
   stepsWrap.dataset.gestorAjustado = '1';
   stepsWrap.addEventListener('click', (event) => {
     const btn = event.target.closest('.stepbtn');
     if (!btn) return;
     currentUiStep = btn.dataset.uiStep;
+
     if (btn.dataset.uiStep === '1') {
       event.preventDefault();
       event.stopImmediatePropagation();
       renderEquipe();
       return;
     }
+
     setActiveUiStep('3');
     const saveBtn = document.getElementById('progSaveProgramacao');
     if (saveBtn) saveBtn.style.display = '';
     const searchWrap = document.getElementById('progSearchWrap');
     if (searchWrap) searchWrap.style.display = 'none';
-    setStatusOsVisibility(false);
-    if (pendingKpiReload) triggerKpiReload();
+    hideTopOsStatus();
   }, true);
 }
 
-function triggerKpiReload() {
+function triggerContextLoadIfReady() {
   const loadBtn = document.getElementById('progLoadContext');
   const dataRef = document.getElementById('progDataRef')?.value || '';
   const sup = document.getElementById('progSup')?.value || '';
   if (!loadBtn || !dataRef || !sup) return;
-  pendingKpiReload = false;
   loadBtn.click();
 }
 
@@ -416,7 +260,12 @@ function ensureSupDropdown() {
       hideSupDropdown();
     }
   });
-  const reposition = () => { if (supDropdownEl && !supDropdownEl.hidden && supComboState.input) positionSupDropdown(supDropdownEl, supComboState.input); };
+
+  const reposition = () => {
+    if (supDropdownEl && !supDropdownEl.hidden && supComboState.input) {
+      positionSupDropdown(supDropdownEl, supComboState.input);
+    }
+  };
   window.addEventListener('scroll', reposition, true);
   window.addEventListener('resize', reposition);
 
@@ -443,11 +292,14 @@ function abrirDropdownSupervisao(input, nativeSelect, query) {
       nativeSelect.value = value;
       nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
       syncSupComboDisplay(nativeSelect);
+      if (currentUiStep === '1') setTimeout(triggerContextLoadIfReady, 50);
     },
   };
   positionSupDropdown(dd, input);
   const norm = normalize(query);
-  const options = [...nativeSelect.options].filter((opt) => opt.value).filter((opt) => !norm || normalize(opt.textContent).includes(norm));
+  const options = [...nativeSelect.options]
+    .filter((opt) => opt.value)
+    .filter((opt) => !norm || normalize(opt.textContent).includes(norm));
   dd.hidden = false;
   dd.innerHTML = options.length
     ? options.map((opt) => `<div class="prog-sup-combo-item ${opt.value === nativeSelect.value ? 'active' : ''}" data-value="${escapeHtml(opt.value)}">${escapeHtml(opt.textContent)}</div>`).join('')
@@ -498,10 +350,12 @@ function ensureSupCombo() {
           nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
           syncSupComboDisplay(nativeSelect);
           input.blur();
+          if (currentUiStep === '1') setTimeout(triggerContextLoadIfReady, 50);
         }
       }
     });
   }
+
   syncSupComboDisplay(nativeSelect);
   if (nativeSelect.dataset.comboBound !== '1') {
     nativeSelect.dataset.comboBound = '1';
@@ -514,10 +368,7 @@ function hookContextLoad() {
   if (!loadBtn || loadBtn.dataset.gestorAjustesBound === '1') return;
   loadBtn.dataset.gestorAjustesBound = '1';
   loadBtn.addEventListener('click', () => {
-    distribuicaoLoaded = false;
-    if (currentUiStep === '1') {
-      setTimeout(() => renderEquipe(), 350);
-    }
+    if (currentUiStep === '1') setTimeout(() => renderEquipe(), 350);
   });
 }
 
@@ -526,7 +377,7 @@ function boot() {
   waitForElement('#progSteps').then(() => {
     configureSteps();
     hookContextLoad();
-    ensureStatusOsFilter();
+    hideTopOsStatus();
     ensureSupCombo();
     const sup = document.getElementById('progSup');
     if (sup) {
@@ -541,10 +392,12 @@ const observer = new MutationObserver(debounce(() => {
   if (!document.getElementById('progSteps')) return;
   configureSteps();
   hookContextLoad();
-  ensureStatusOsFilter();
+  hideTopOsStatus();
   ensureSupCombo();
-  guardDistribuicaoView();
-  guardEquipeView();
+  if (currentUiStep === '1') {
+    const list = document.getElementById('progList');
+    if (list && !document.getElementById('peqbOsList') && !document.getElementById('progEquipeLoadNow')) renderEquipe();
+  }
 }, 120));
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
