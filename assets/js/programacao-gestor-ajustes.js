@@ -1,5 +1,6 @@
-// Ajustes do Gestor: etapa 1 = O.S. + despesas no mesmo card; etapa 2 = disponibilidade.
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos3';
+// Ajustes do Gestor: tela limpa. Etapa 1 carrega somente O.S. + despesas no mesmo card.
+import { supabase } from './supabaseClient.js';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos4';
 
 let currentUiStep = '1';
 let equipeRendering = false;
@@ -86,11 +87,6 @@ function injectGestorAjustesStyles() {
   document.head.appendChild(style);
 }
 
-function hideTopOsStatus() {
-  const wrap = document.getElementById('progOsStatusTopWrap');
-  if (wrap) wrap.style.display = 'none';
-}
-
 function hideCoreControls() {
   ['progSaveProgramacao', 'progSearchWrap', 'progOsStatusTopWrap'].forEach((id) => {
     const el = document.getElementById(id);
@@ -105,17 +101,25 @@ function setActiveUiStep(step) {
   document.body.classList.toggle('prog-step-a-os', false);
 }
 
-function renderEquipePlaceholder(list) {
+function renderIdle() {
+  if (currentUiStep !== '1') return;
+  const list = document.getElementById('progList');
+  const feedback = document.getElementById('progCtxFeedback');
+  if (feedback) {
+    feedback.className = 'feedback mt-16 prog-feedback-ok';
+    feedback.textContent = 'Etapa 1 — O.S. e despesas do colaborador na mesma tela.';
+  }
+  if (!list) return;
   const sup = document.getElementById('progSup')?.value || '';
   list.innerHTML = `
     <div class="prog-section-title">
-      <h4>Programar OS — equipe de menor custo</h4>
-      <span class="badge">O.S. + despesas</span>
+      <h4>Programar OS — O.S. + despesas</h4>
+      <span class="badge">Tela única</span>
     </div>
     <div class="prog-os-lazy-card">
       <div>
-        <strong>Pronto para programar as O.S.</strong>
-        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para buscar as O.S. em ATENDER e trazer colaborador, hospedagem, deslocamento e alimentação no mesmo card.</p>
+        <strong>Tela limpa pronta para carregar</strong>
+        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para montar a tela final com O.S., colaborador, hospedagem, deslocamento e alimentação no mesmo card.</p>
       </div>
       <button type="button" class="btn btn-primary" id="progEquipeLoadNow">Carregar</button>
     </div>
@@ -123,6 +127,16 @@ function renderEquipePlaceholder(list) {
   list.querySelector('#progEquipeLoadNow')?.addEventListener('click', () => {
     document.getElementById('progLoadContext')?.click();
   });
+}
+
+async function marcarPendentesComoAtender(supervisao) {
+  if (!supervisao) return;
+  const { error } = await supabase
+    .from('operacional_os')
+    .update({ status_gestor: 'ATENDER', updated_at: new Date().toISOString() })
+    .eq('supervisao', supervisao)
+    .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR');
+  if (error) console.warn('[programacao] não foi possível preparar O.S. como ATENDER', error);
 }
 
 function autoPreencherEquipeParaMostrarDespesas(programacaoId) {
@@ -139,45 +153,50 @@ function autoPreencherEquipeParaMostrarDespesas(programacaoId) {
     const list = document.getElementById('peqbOsList');
     const btn = document.getElementById('peqbAutoPreencher');
     const temPendentes = !!list?.querySelector('[data-confirmar]');
-
     if (btn && temPendentes && !btn.disabled) {
       window.__progAutoEquipeKeys.add(key);
       btn.click();
       return;
     }
-    if (tentativa < 10) setTimeout(() => tentar(tentativa + 1), 250);
+    if (tentativa < 12) setTimeout(() => tentar(tentativa + 1), 300);
   };
-  setTimeout(() => tentar(0), 350);
+  setTimeout(() => tentar(0), 400);
 }
 
-async function renderEquipe() {
+async function renderEquipeFinal() {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
-  if (!list) return;
+  if (!list || currentUiStep !== '1') return;
 
-  currentUiStep = '1';
   setActiveUiStep('1');
   hideCoreControls();
-  if (feedback) {
-    feedback.className = 'feedback mt-16 prog-feedback-ok';
-    feedback.textContent = 'Etapa 1 — O.S. e despesas do colaborador na mesma tela.';
-  }
 
   const programacaoId = window.__progGetProgramacaoId?.() || null;
+  const supervisao = document.getElementById('progSup')?.value || '';
   if (!programacaoId) {
-    renderEquipePlaceholder(list);
+    renderIdle();
     return;
   }
 
   if (equipeRendering) return;
   equipeRendering = true;
   try {
+    if (feedback) {
+      feedback.className = 'feedback mt-16 prog-feedback-ok';
+      feedback.textContent = 'Preparando O.S. e despesas em tela única...';
+    }
+    list.innerHTML = '<div class="prog-os-lazy-card"><div><strong>Montando tela final...</strong><p>Organizando O.S., equipe e despesas no mesmo card.</p></div></div>';
+    await marcarPendentesComoAtender(supervisao);
     await renderProgramacaoEquipe(list, {
-      supervisao: document.getElementById('progSup')?.value || '',
+      supervisao,
       dataReferencia: document.getElementById('progDataRef')?.value || '',
       programacaoId,
     });
     autoPreencherEquipeParaMostrarDespesas(programacaoId);
+    if (feedback) {
+      feedback.className = 'feedback mt-16 prog-feedback-ok';
+      feedback.textContent = 'Etapa 1 — O.S. e despesas do colaborador na mesma tela.';
+    }
   } finally {
     equipeRendering = false;
   }
@@ -217,7 +236,9 @@ function configureSteps() {
     if (btn.dataset.uiStep === '1') {
       event.preventDefault();
       event.stopImmediatePropagation();
-      renderEquipe();
+      setActiveUiStep('1');
+      hideCoreControls();
+      renderIdle();
       return;
     }
 
@@ -226,16 +247,8 @@ function configureSteps() {
     if (saveBtn) saveBtn.style.display = '';
     const searchWrap = document.getElementById('progSearchWrap');
     if (searchWrap) searchWrap.style.display = 'none';
-    hideTopOsStatus();
+    hideCoreControls();
   }, true);
-}
-
-function triggerContextLoadIfReady() {
-  const loadBtn = document.getElementById('progLoadContext');
-  const dataRef = document.getElementById('progDataRef')?.value || '';
-  const sup = document.getElementById('progSup')?.value || '';
-  if (!loadBtn || !dataRef || !sup) return;
-  loadBtn.click();
 }
 
 function ensureSupDropdown() {
@@ -268,7 +281,6 @@ function ensureSupDropdown() {
   };
   window.addEventListener('scroll', reposition, true);
   window.addEventListener('resize', reposition);
-
   return supDropdownEl;
 }
 
@@ -292,7 +304,7 @@ function abrirDropdownSupervisao(input, nativeSelect, query) {
       nativeSelect.value = value;
       nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
       syncSupComboDisplay(nativeSelect);
-      if (currentUiStep === '1') setTimeout(triggerContextLoadIfReady, 50);
+      renderIdle();
     },
   };
   positionSupDropdown(dd, input);
@@ -350,7 +362,7 @@ function ensureSupCombo() {
           nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
           syncSupComboDisplay(nativeSelect);
           input.blur();
-          if (currentUiStep === '1') setTimeout(triggerContextLoadIfReady, 50);
+          renderIdle();
         }
       }
     });
@@ -359,7 +371,10 @@ function ensureSupCombo() {
   syncSupComboDisplay(nativeSelect);
   if (nativeSelect.dataset.comboBound !== '1') {
     nativeSelect.dataset.comboBound = '1';
-    nativeSelect.addEventListener('change', () => syncSupComboDisplay(nativeSelect));
+    nativeSelect.addEventListener('change', () => {
+      syncSupComboDisplay(nativeSelect);
+      renderIdle();
+    });
   }
 }
 
@@ -368,7 +383,7 @@ function hookContextLoad() {
   if (!loadBtn || loadBtn.dataset.gestorAjustesBound === '1') return;
   loadBtn.dataset.gestorAjustesBound = '1';
   loadBtn.addEventListener('click', () => {
-    if (currentUiStep === '1') setTimeout(() => renderEquipe(), 350);
+    if (currentUiStep === '1') setTimeout(() => renderEquipeFinal(), 450);
   });
 }
 
@@ -377,14 +392,15 @@ function boot() {
   waitForElement('#progSteps').then(() => {
     configureSteps();
     hookContextLoad();
-    hideTopOsStatus();
+    hideCoreControls();
     ensureSupCombo();
     const sup = document.getElementById('progSup');
     if (sup) {
       const obsSup = new MutationObserver(() => ensureSupCombo());
       obsSup.observe(sup, { childList: true, subtree: true, attributes: true });
     }
-    renderEquipe();
+    setActiveUiStep('1');
+    renderIdle();
   }).catch(() => {});
 }
 
@@ -392,12 +408,8 @@ const observer = new MutationObserver(debounce(() => {
   if (!document.getElementById('progSteps')) return;
   configureSteps();
   hookContextLoad();
-  hideTopOsStatus();
+  hideCoreControls();
   ensureSupCombo();
-  if (currentUiStep === '1') {
-    const list = document.getElementById('progList');
-    if (list && !document.getElementById('peqbOsList') && !document.getElementById('progEquipeLoadNow')) renderEquipe();
-  }
 }, 120));
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
