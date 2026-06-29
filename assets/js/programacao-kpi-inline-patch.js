@@ -3,7 +3,7 @@
   const STYLE_ID = 'programacaoKpiInlinePatchStyles';
 
   function injectStyles() {
-    document.getElementById(STYLE_ID)?.remove();
+    if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
@@ -81,7 +81,7 @@
       inlineKpis();
       bindSupervisaoSync();
     });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
