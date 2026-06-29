@@ -361,6 +361,20 @@ async function loadCruzamentoPlacas(supervisao) {
   }
 }
 
+// Lista COMPLETA de colaboradores ativos da supervisão (regional liberada do
+// usuário), para o dropdown de troca poder escolher qualquer um — não só os 8
+// candidatos ranqueados. Os já escalados em outra OS são marcados com ♻ na UI.
+async function loadColaboradoresRegional(supervisao) {
+  try {
+    const { data, error } = await supabase.rpc('programacao_colaboradores_supervisao', { p_supervisao: supervisao });
+    if (error) throw error;
+    return (data || []).map((r) => ({ colaboradorId: r.colaborador_id, nome: r.nome }));
+  } catch (error) {
+    console.warn('[equipe] lista de colaboradores da regional indisponível', error);
+    return [];
+  }
+}
+
 // Custos já lançados (estadia/alimentação/deslocamento) por colaborador, para
 // pré-preencher os campos inline dos cartões confirmados.
 async function loadCustos(programacaoId) {
@@ -600,6 +614,27 @@ function aliChipsHtml(colabId, nome, ali) {
   return `<div class="peqb-ali peqb-chips" data-colab-id="${esc(colabId)}" data-nome="${esc(nome)}">${REFEICOES.map(([k, l]) => `<button type="button" class="peqb-chip ${ali[k] ? 'on' : ''}" data-tab="alimentacao" data-ref="${k}">${l}</button>`).join('')}</div>`;
 }
 
+// Opções do dropdown de TROCA: todos os colaboradores ativos da regional
+// (item.colaboradoresRegional). Os já escalados em OUTRA OS recebem ♻ + nº da
+// OS. O confirmado atual fica selecionado (e entra na lista mesmo se já não
+// estiver no snapshot ativo).
+function trocarOptionsHtml(item) {
+  const confirmadoRow = item.confirmadoRow;
+  const currentId = String(confirmadoRow.colaborador_id);
+  const escalados = item.escaladosPorColab || new Map();
+  const osNumero = item.os?.numero_os;
+  const lista = (item.colaboradoresRegional || []).slice();
+  if (!lista.some((c) => String(c.colaboradorId) === currentId)) {
+    lista.unshift({ colaboradorId: currentId, nome: confirmadoRow.nome_colaborador });
+  }
+  return lista.map((c) => {
+    const id = String(c.colaboradorId);
+    const escaladoEmOutra = escalados.has(id) && escalados.get(id) != null && escalados.get(id) !== osNumero;
+    const label = `${escaladoEmOutra ? '♻ ' : ''}${c.nome}${escaladoEmOutra ? ` · OS ${escalados.get(id)}` : ''}`;
+    return `<option value="${esc(id)}" ${id === currentId ? 'selected' : ''}>${esc(label)}</option>`;
+  }).join('');
+}
+
 function osRowHtml(item) {
   const { os, confirmadoRow, candidatos } = item;
   const confirmado = !!confirmadoRow;
@@ -617,8 +652,8 @@ function osRowHtml(item) {
     right = `<div class="peqb-os2-right">
       <div class="peqb-conf-head">
         <span class="peqb-cand-av">${esc(iniciais(confirmadoRow.nome_colaborador))}</span>
-        <select class="peqb-name-sel" data-trocar-colab title="Clique para trocar o colaborador">
-          ${candidatos.map((c) => `<option value="${esc(c.colaboradorId)}" ${String(c.colaboradorId) === String(confirmadoRow.colaborador_id) ? 'selected' : ''}>${esc(c.nome)}${c.km != null ? ` · ${c.km}km` : ''}${c.custoTotal != null ? ` — R$ ${brl(c.custoTotal)}` : ''}</option>`).join('')}
+        <select class="peqb-name-sel" data-trocar-colab title="Trocar o colaborador (♻ = já escalado em outra OS)">
+          ${trocarOptionsHtml(item)}
         </select>
         ${hotelBtn}
         ${aliChipsHtml(String(confirmadoRow.colaborador_id), confirmadoRow.nome_colaborador, item.custos?.ali || { almoco: true })}
@@ -891,6 +926,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       osTodasAtual = osTodas;
       await loadAlojamentos();
       const placasPorCpf = await loadCruzamentoPlacas(supervisao);
+      const colaboradoresRegional = await loadColaboradoresRegional(supervisao);
       if (!osTodas.length) {
         listEl.innerHTML = '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
         osComCandidatosAtual = [];
@@ -905,6 +941,10 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const confirmadosPorOs = new Map();
       equipeRows.filter((r) => r.confirmado).forEach((r) => confirmadosPorOs.set(r.os_id, r));
       const colaboradoresConfirmadosEmOutraOs = new Set(equipeRows.filter((r) => r.confirmado).map((r) => r.colaborador_id));
+      // Mapa colaborador_id -> OS onde já está escalado (para marcar ♻ no dropdown de troca).
+      const numeroPorOsId = new Map(osTodas.map((o) => [o.id, o.numero_os]));
+      const escaladosPorColab = new Map();
+      equipeRows.filter((r) => r.confirmado).forEach((r) => escaladosPorColab.set(String(r.colaborador_id), numeroPorOsId.get(r.os_id) || null));
 
       const osComPonto = atenderRows.map((os) => {
         const confirmadoRow = confirmadosPorOs.get(os.id) || null;
@@ -921,6 +961,8 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         candidatos: confirmadoRow
           ? [{ colaboradorId: confirmadoRow.colaborador_id, nome: confirmadoRow.nome_colaborador, km: confirmadoRow.km_estimado != null ? Number(confirmadoRow.km_estimado) : null, custoTotal: null }, ...(candidatosPorOs.get(os.id) || [])]
           : (candidatosPorOs.get(os.id) || []),
+        colaboradoresRegional,
+        escaladosPorColab,
         custos: confirmadoRow ? {
           est: custos.est.get(String(confirmadoRow.colaborador_id)) || {},
           ali: custos.ali.get(String(confirmadoRow.colaborador_id)) || { almoco: true },
@@ -1197,7 +1239,10 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     if (trocarSel) {
       const card = trocarSel.closest('.peqb-os2');
       const item = osComCandidatosAtual.find((it) => String(it.os.id) === card?.dataset.osId);
-      const cand = item?.candidatos.find((c) => String(c.colaboradorId) === trocarSel.value);
+      // Preferimos o candidato ranqueado (traz km/score/veículo); se o gestor
+      // escolheu alguém fora do top-8, montamos o cand a partir da lista da regional.
+      const cand = item?.candidatos.find((c) => String(c.colaboradorId) === trocarSel.value)
+        || item?.colaboradoresRegional?.find((c) => String(c.colaboradorId) === trocarSel.value);
       if (item && cand && String(cand.colaboradorId) !== String(item.confirmadoRow?.colaborador_id)) {
         trocarSel.disabled = true;
         try {
