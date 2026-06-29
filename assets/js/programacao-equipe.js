@@ -826,6 +826,18 @@ function desenharTodasRotas(mapState, rotas) {
   if (bounds.length) mapState.map.fitBounds(bounds, { padding: [28, 28], maxZoom: 12 });
 }
 
+// Acha o ancestral que realmente rola, para preservar a posição num refresh
+// silencioso (sem isso, trocar o innerHTML joga a rolagem pro topo).
+function scrollParentDe(el) {
+  let p = el && el.parentElement;
+  while (p) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight + 4) return p;
+    p = p.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
 export async function renderProgramacaoEquipe(content, options = {}) {
   injectStyles();
   const supervisao = String(options.supervisao || '').trim();
@@ -919,10 +931,14 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     }
   }
 
-  async function carregarERenderizar() {
+  // silent = refresh sem piscar: mantém a lista visível durante o fetch e
+  // preserva a rolagem (em vez de zerar com "Carregando..." e pular pro topo).
+  async function carregarERenderizar({ silent = false } = {}) {
     if (carregando) return;
     carregando = true;
-    listEl.innerHTML = '<div class="peqb-empty">Carregando O.S. da supervisão...</div>';
+    const scroller = silent ? scrollParentDe(listEl) : null;
+    const scrollPos = scroller ? scroller.scrollTop : 0;
+    if (!silent) listEl.innerHTML = '<div class="peqb-empty">Carregando O.S. da supervisão...</div>';
     try {
       const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisao), loadEquipeExistente(programacaoId), loadCustos(programacaoId)]);
       osTodasAtual = osTodas;
@@ -980,6 +996,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         ? `<div class="peqb-sep">Não vão atender · ${outrasRows.length}</div>${outrasRows.map(osNaoAtenderHtml).join('')}`
         : '';
       listEl.innerHTML = `<div class="peqb-block-head">Vão atender · ${osComCandidatosAtual.length}</div>${atenderHtml}${outrasHtml}`;
+      if (silent && scroller) scroller.scrollTop = scrollPos;
 
       // Persiste (uma vez) a placa puxada da leitura do veículo para motoristas
       // confirmados sem deslocamento gravado — assim a placa fica salva sem o
@@ -1028,7 +1045,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       }
       const { error } = await supabase.from('operacional_os').update(patch).eq('id', osId);
       if (error) throw error;
-      await carregarERenderizar();
+      await carregarERenderizar({ silent: true });
     } catch (error) {
       console.error('[programacao-equipe] status:', error);
       if (btn) { btn.disabled = false; btn.style.opacity = ''; }
@@ -1056,7 +1073,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       try {
         const { error } = await supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: 'AGUARDAR', configurada_em: null, updated_at: new Date().toISOString() }).eq('id', osId);
         if (error) throw error;
-        await carregarERenderizar();
+        await carregarERenderizar({ silent: true });
       } catch (error) { alert(error.message || 'Não foi possível solicitar saldo.'); }
     });
   }
@@ -1092,7 +1109,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         const { error } = await supabase.from('operacional_os').update({ observacao_logistica: laudoText, updated_at: new Date().toISOString() }).eq('id', osId);
         if (error) throw error;
         close();
-        await carregarERenderizar();
+        await carregarERenderizar({ silent: true });
       } catch (error) {
         okBtn.disabled = false; okBtn.textContent = 'Enviar';
         alert(error.message || 'Não foi possível anexar o laudo.');
@@ -1227,7 +1244,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
           return; // não precisa recarregar a lista toda
         }
       }
-      await carregarERenderizar();
+      await carregarERenderizar({ silent: true });
     } catch (error) {
       console.error('[programacao-equipe] ação:', error);
       btn.disabled = false;
@@ -1249,7 +1266,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         trocarSel.disabled = true;
         try {
           await confirmarCandidato(programacaoId, item.os, cand);
-          await carregarERenderizar();
+          await carregarERenderizar({ silent: true });
         } catch (error) {
           console.error('[equipe] trocar colaborador:', error);
           trocarSel.disabled = false;
@@ -1298,7 +1315,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
           outro.candidatos = outro.candidatos.filter((c) => c.colaboradorId !== melhor.colaboradorId);
         });
       }
-      await carregarERenderizar();
+      await carregarERenderizar({ silent: true });
     } catch (error) {
       console.error('[programacao-equipe] auto-preencher:', error);
       alert(error.message || 'Erro ao auto-preencher.');
