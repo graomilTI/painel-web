@@ -1,4 +1,4 @@
-// Patch visual da Programação: KPIs na linha dos filtros e topo mais compacto.
+// Patch visual da Programação: KPIs na linha dos filtros, topo compacto e supervisão sincronizada.
 (function () {
   const STYLE_ID = 'programacaoKpiInlinePatchStyles';
 
@@ -48,10 +48,39 @@
     if (!host.contains(kpis)) host.appendChild(kpis);
   }
 
+  function syncSupervisaoDisplay() {
+    const select = document.getElementById('progSup');
+    const input = document.getElementById('progSupCombo');
+    if (!select || !input) return;
+    const opt = select.options[select.selectedIndex];
+    if (opt && opt.value) input.value = opt.textContent || opt.value;
+  }
+
+  function bindSupervisaoSync() {
+    const select = document.getElementById('progSup');
+    if (!select || select.dataset.kpiInlineSupSync === '1') return;
+    select.dataset.kpiInlineSupSync = '1';
+    select.addEventListener('change', () => setTimeout(syncSupervisaoDisplay, 0), true);
+    select.addEventListener('input', () => setTimeout(syncSupervisaoDisplay, 0), true);
+  }
+
   function boot() {
     injectStyles();
     inlineKpis();
-    const observer = new MutationObserver(() => inlineKpis());
+    bindSupervisaoSync();
+    setTimeout(syncSupervisaoDisplay, 300);
+    document.addEventListener('mousedown', (event) => {
+      if (event.target.closest('.prog-sup-combo-item')) setTimeout(syncSupervisaoDisplay, 0);
+    }, true);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && document.activeElement?.id === 'progSupCombo') {
+        setTimeout(syncSupervisaoDisplay, 0);
+      }
+    }, true);
+    const observer = new MutationObserver(() => {
+      inlineKpis();
+      bindSupervisaoSync();
+    });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 
