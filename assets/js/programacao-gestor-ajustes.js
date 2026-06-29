@@ -1,10 +1,11 @@
-// Programação Gestor — otimizado: Etapa 1 = O.S. + despesas no mesmo card.
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos8';
+// Programação Gestor — Etapa 1 = O.S. + despesas no mesmo card.
+import { supabase } from './supabaseClient.js';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-custos9';
 
 let currentUiStep = '1';
 let equipeRendering = false;
-let renderScheduled = false;
-let renderRetryCount = 0;
+let finalRenderScheduled = false;
+let renderTentativas = 0;
 let supDropdownEl = null;
 let supComboState = { input: null, onSelect: null };
 
@@ -130,6 +131,40 @@ function renderIdle() {
   });
 }
 
+async function marcarPendentesComoAtender(supervisao) {
+  if (!supervisao) return;
+  const { error } = await supabase
+    .from('operacional_os')
+    .update({ status_gestor: 'ATENDER', updated_at: new Date().toISOString() })
+    .eq('supervisao', supervisao)
+    .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR');
+  if (error) console.warn('[programacao] não foi possível preparar O.S. como ATENDER', error);
+}
+
+function autoPreencherEquipeParaMostrarDespesas(programacaoId) {
+  const key = [
+    programacaoId || '',
+    document.getElementById('progSup')?.value || '',
+    document.getElementById('progDataRef')?.value || '',
+  ].join('|');
+  window.__progAutoEquipeKeys = window.__progAutoEquipeKeys || new Set();
+  if (window.__progAutoEquipeKeys.has(key)) return;
+
+  const tentar = (tentativa = 0) => {
+    if (currentUiStep !== '1') return;
+    const list = document.getElementById('peqbOsList');
+    const btn = document.getElementById('peqbAutoPreencher');
+    const temPendentes = !!list?.querySelector('[data-confirmar]');
+    if (btn && temPendentes && !btn.disabled) {
+      window.__progAutoEquipeKeys.add(key);
+      btn.click();
+      return;
+    }
+    if (tentativa < 10) setTimeout(() => tentar(tentativa + 1), 300);
+  };
+  setTimeout(() => tentar(0), 400);
+}
+
 async function renderEquipeFinal() {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
@@ -141,9 +176,9 @@ async function renderEquipeFinal() {
   const programacaoId = window.__progGetProgramacaoId?.() || null;
   const supervisao = document.getElementById('progSup')?.value || '';
   if (!programacaoId) {
-    if (renderRetryCount < 8) {
-      renderRetryCount += 1;
-      scheduleFinalRender(220);
+    if (renderTentativas < 10) {
+      renderTentativas += 1;
+      scheduleFinalRender(250);
     } else {
       renderIdle();
     }
@@ -155,15 +190,16 @@ async function renderEquipeFinal() {
   try {
     if (feedback) {
       feedback.className = 'feedback mt-16 prog-feedback-ok';
-      feedback.textContent = 'Carregando O.S. e despesas...';
+      feedback.textContent = 'Preparando O.S. e despesas em tela única...';
     }
-    list.innerHTML = '<div class="prog-os-lazy-card"><div><strong>Montando tela...</strong><p>Buscando O.S., equipe e despesas.</p></div></div>';
+    list.innerHTML = '<div class="prog-os-lazy-card"><div><strong>Montando tela final...</strong><p>Organizando O.S., equipe e despesas no mesmo card.</p></div></div>';
+    await marcarPendentesComoAtender(supervisao);
     await renderProgramacaoEquipe(list, {
       supervisao,
       dataReferencia: document.getElementById('progDataRef')?.value || '',
       programacaoId,
-      fastMode: true,
     });
+    autoPreencherEquipeParaMostrarDespesas(programacaoId);
     if (feedback) {
       feedback.className = 'feedback mt-16 prog-feedback-ok';
       feedback.textContent = 'Etapa 1 — O.S. e despesas do colaborador na mesma tela.';
@@ -174,10 +210,10 @@ async function renderEquipeFinal() {
 }
 
 function scheduleFinalRender(delay = 250) {
-  if (currentUiStep !== '1' || renderScheduled) return;
-  renderScheduled = true;
+  if (currentUiStep !== '1' || finalRenderScheduled) return;
+  finalRenderScheduled = true;
   setTimeout(async () => {
-    renderScheduled = false;
+    finalRenderScheduled = false;
     await renderEquipeFinal();
   }, delay);
 }
@@ -225,7 +261,7 @@ function configureSteps() {
       event.stopImmediatePropagation();
       setActiveUiStep('1');
       hideCoreControls();
-      renderRetryCount = 0;
+      renderTentativas = 0;
       renderIdle();
       return;
     }
@@ -262,9 +298,7 @@ function ensureSupDropdown() {
     }
   });
 
-  const reposition = () => {
-    if (supDropdownEl && !supDropdownEl.hidden && supComboState.input) positionSupDropdown(supDropdownEl, supComboState.input);
-  };
+  const reposition = () => { if (supDropdownEl && !supDropdownEl.hidden && supComboState.input) positionSupDropdown(supDropdownEl, supComboState.input); };
   window.addEventListener('scroll', reposition, true);
   window.addEventListener('resize', reposition);
   return supDropdownEl;
@@ -353,7 +387,6 @@ function ensureSupCombo() {
       }
     });
   }
-
   syncSupComboDisplay(nativeSelect);
   if (nativeSelect.dataset.comboBound !== '1') {
     nativeSelect.dataset.comboBound = '1';
@@ -370,8 +403,8 @@ function hookContextLoad() {
   loadBtn.dataset.gestorFinalBound = '1';
   loadBtn.addEventListener('click', () => {
     if (currentUiStep !== '1') return;
-    renderRetryCount = 0;
-    scheduleFinalRender(320);
+    renderTentativas = 0;
+    [250, 700, 1200].forEach((delay) => setTimeout(() => scheduleFinalRender(0), delay));
   }, true);
 }
 
@@ -398,8 +431,8 @@ const observer = new MutationObserver(debounce(() => {
   hookContextLoad();
   hideCoreControls();
   ensureSupCombo();
-  if (currentUiStep === '1' && listShowsCoreDisponibilidade()) scheduleFinalRender(120);
-}, 180));
+  if (currentUiStep === '1' && listShowsCoreDisponibilidade()) scheduleFinalRender(150);
+}, 160));
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
