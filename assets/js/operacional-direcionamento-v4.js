@@ -8,11 +8,8 @@ import { supabase } from './supabaseClient.js';
   const LEAFLET_JS = 'leaflet-js-opv4';
 
   const HOTEL_KM = 120;
-  const RAIO_CAMINHO = 5;
-  const RAIO_OPPOSTO = 2.5;
   const DISTANCIA_BOA_KM = 60;
   const DISTANCIA_MAX_PRIORITARIA_KM = 120;
-
   const BR_LAT_MIN = -34.2;
   const BR_LAT_MAX = 6.0;
   const BR_LNG_MIN = -74.5;
@@ -22,8 +19,8 @@ import { supabase } from './supabaseClient.js';
     os: [],
     pontos: [],
     vinculos: [],
+    patrimonios: [],
     veiculosLeitura: [],
-    desloc: [],
     hoteis: [],
     rotas: [],
     ignorados: [],
@@ -35,15 +32,19 @@ import { supabase } from './supabaseClient.js';
 
   const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
   const norm = v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
-  const num = v => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
   const digits = v => String(v ?? '').replace(/\D/g, '');
+  const num = v => {
+    const n = Number(String(v ?? '').replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  };
   const lat = r => num(r?.latitude ?? r?.lat);
   const lng = r => num(r?.longitude ?? r?.lng ?? r?.lon);
   const first = (r, fs) => fs.map(f => r?.[f]).find(v => v !== undefined && v !== null && String(v).trim() !== '') ?? '';
   const kmFmt = v => Number.isFinite(Number(v)) ? `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km` : '—';
 
   function inBrazil(a, b) {
-    const la = Number(a), lo = Number(b);
+    const la = Number(a);
+    const lo = Number(b);
     return Number.isFinite(la) && Number.isFinite(lo)
       && la >= BR_LAT_MIN && la <= BR_LAT_MAX
       && lo >= BR_LNG_MIN && lo <= BR_LNG_MAX;
@@ -65,7 +66,8 @@ import { supabase } from './supabaseClient.js';
 
   function colKey(r) {
     const cpf = digits(first(r, ['cpf', 'colaborador_cpf', 'documento', 'colaborador_key']));
-    return cpf.length === 11 ? `cpf:${cpf}` : `nome:${norm(first(r, ['nome', 'funcionario', 'colaborador', 'colaborador_nome', 'nome_colaborador', 'colaborador_key']))}`;
+    if (cpf.length === 11) return `cpf:${cpf}`;
+    return `nome:${norm(first(r, ['nome', 'funcionario', 'colaborador', 'colaborador_nome', 'nome_colaborador', 'colaborador_key']))}`;
   }
 
   function short(n) {
@@ -115,7 +117,6 @@ import { supabase } from './supabaseClient.js';
       const pc = norm(p.cidade);
       const pn = norm(p.nome_local || p.tipo_local || '');
       const ps = norm(p.supervisao || p.coordenacao || '');
-
       if (uf && pu === uf) sc += 45;
       if (cidade && (pc === cidade || pc.includes(cidade) || cidade.includes(pc))) sc += 85;
       if (local && (pn.includes(local) || local.includes(pn))) sc += 120;
@@ -124,30 +125,6 @@ import { supabase } from './supabaseClient.js';
       if (sc >= 110 && (!best || sc > best.sc)) best = { p, sc };
     }
     return best?.p || null;
-  }
-
-  function normHotel(h, fonte) {
-    return {
-      id: h.id,
-      nome: first(h, ['nome', 'hotel', 'nome_hotel', 'razao_social']) || 'Hotel',
-      cidade: first(h, ['cidade', 'cidade_hotel']),
-      uf: String(first(h, ['uf', 'estado', 'uf_hotel'])).toUpperCase(),
-      latitude: first(h, ['latitude', 'lat']),
-      longitude: first(h, ['longitude', 'lng', 'lon']),
-      ativo: h.ativo !== false,
-      fonte,
-    };
-  }
-
-  function hotelProx(p) {
-    return st.hoteis
-      .filter(h => h.ativo !== false && (geo(h) || norm(h.cidade) === norm(p.cidade)))
-      .map(h => ({ ...h, dist: geo(h) ? km(lat(h), lng(h), lat(p), lng(p)) : null }))
-      .sort((a, b) => {
-        const ca = norm(a.cidade) === norm(p.cidade) && norm(a.uf) === norm(p.uf) ? 0 : 1;
-        const cb = norm(b.cidade) === norm(p.cidade) && norm(b.uf) === norm(p.uf) ? 0 : 1;
-        return ca - cb || (a.dist ?? 9999) - (b.dist ?? 9999);
-      })[0] || null;
   }
 
   function isVeiculoPatrimonio(p) {
@@ -164,21 +141,10 @@ import { supabase } from './supabaseClient.js';
     const nome = norm(c.nome);
     const cpf = digits(c.cpf);
     return st.veiculosLeitura.find(p => {
-      const pn = norm(p.funcionario || p.colaborador || p.nome || p.responsavel);
+      const pn = norm(p.funcionario || p.colaborador || p.nome || p.responsavel || p.patrimonio_funcionario);
       const pc = digits(p.cpf || p.documento || p.colaborador_cpf);
       return (cpf && pc === cpf) || pn === nome;
     }) || null;
-  }
-
-  function veicProprio(c) {
-    const nome = norm(c.nome);
-    const cpf = digits(c.cpf);
-    return st.desloc.some(d => {
-      const dn = norm(d.nome || d.colaborador || d.colaborador_nome || d.funcionario);
-      const dc = digits(d.cpf || d.colaborador_cpf || d.documento);
-      const blob = norm(`${d.tipo || ''} ${d.status || ''} ${d.situacao || ''} ${d.observacao || ''} ${d.veiculo || ''} ${d.placa || ''}`);
-      return /PROPRIO|VEICULO|CARRO|DESLOCAMENTO/.test(blob) && !/CANCELAD|FINALIZAD|CONCLUID/.test(blob) && ((cpf && dc === cpf) || dn === nome);
-    });
   }
 
   function distLinha(p, a, b) {
@@ -201,14 +167,11 @@ import { supabase } from './supabaseClient.js';
       .map(m => {
         const origem = { lat: lat(m), lng: lng(m) };
         const direto = km(origem.lat, origem.lng, dest.lat, dest.lng) || Infinity;
-
-        // Não faz sentido sugerir carona quando a própria rota do motorista já é muito longa.
         if (direto > DISTANCIA_MAX_PRIORITARIA_KM) return null;
-
         const linha = distLinha(pass, origem, dest);
         const via = (km(origem.lat, origem.lng, pass.lat, pass.lng) || 0) + (km(pass.lat, pass.lng, dest.lat, dest.lng) || 0);
         const desvio = Math.max(0, via - direto);
-        const limite = linha.t > 0 && linha.t < 1 ? RAIO_CAMINHO : RAIO_OPPOSTO;
+        const limite = linha.t > 0 && linha.t < 1 ? 5 : 2.5;
         return { motorista: m, linha: linha.d, desvio, limite, ok: linha.d <= limite || desvio <= limite };
       })
       .filter(x => x && x.ok)
@@ -216,55 +179,29 @@ import { supabase } from './supabaseClient.js';
   }
 
   function classificarRota(c, d, car) {
-    // Distância é o fator principal. Frota/carona só melhora quando a rota é viável.
-    let modo = 'Avaliar logística';
-    let score = d;
-
-    if (d > DISTANCIA_MAX_PRIORITARIA_KM) {
-      return { modo: 'Distante · verificar alternativa próxima', score: d + 10000, distante: true };
-    }
-
-    if (c.temFrota) {
-      modo = 'Frota vinculada pela leitura';
-      score = d - 12;
-    } else if (car) {
-      modo = 'Carona em frota';
-      score = d - 8;
-    } else if (c.veicProprio) {
-      modo = 'Veículo próprio';
-      score = d - 5;
-    } else if (d <= 25) {
-      modo = 'Deslocamento local';
-      score = d;
-    } else if (d <= DISTANCIA_BOA_KM) {
-      modo = 'Próximo · deslocamento simples';
-      score = d + 5;
-    } else {
-      modo = 'Médio deslocamento';
-      score = d + 20;
-    }
-
-    return { modo, score: Math.max(0, score), distante: false };
+    if (d > DISTANCIA_MAX_PRIORITARIA_KM) return { modo: 'Distante · verificar alternativa próxima', score: d + 10000, distante: true };
+    if (c.temFrota) return { modo: 'Frota vinculada pela leitura', score: Math.max(0, d - 12), distante: false };
+    if (car) return { modo: 'Carona em frota', score: Math.max(0, d - 8), distante: false };
+    if (d <= 25) return { modo: 'Deslocamento local', score: d, distante: false };
+    if (d <= DISTANCIA_BOA_KM) return { modo: 'Próximo · deslocamento simples', score: d + 5, distante: false };
+    return { modo: 'Médio deslocamento', score: d + 20, distante: false };
   }
 
   async function load() {
-    const [osRaw, pontosRaw, vincRaw, colRaw, baseRaw, patRaw, hot1, hot2, d1, d2, d3, d4] = await Promise.all([
+    const [osRaw, pontosRaw, vincRaw, colRaw, baseRaw, patRaw, hot1, hot2] = await Promise.all([
       sel('operacional_os', '*', q => q.order('created_at', { ascending: false })),
       sel('operacional_pontos_embarque', '*', q => q.eq('ativo', true)),
       sel('operacional_os_colaboradores', '*', q => q.order('created_at', { ascending: false })),
-      sel('colaboradores', '*', q => q.eq('situacao', 'Ativo')),
+      sel('colaboradores', '*'),
       sel('operacional_colaborador_base', '*'),
       sel('vw_patrimonios_atual', '*'),
       sel('hospedagem_hoteis', '*'),
       sel('operacional_hoteis', '*'),
-      sel('lista_deslocamento', '*'),
-      sel('operacional_deslocamentos', '*'),
-      sel('programacao_deslocamentos', '*'),
-      sel('deslocamento_colaboradores', '*'),
     ]);
 
     st.pontos = pontosRaw.filter(geo).map(p => ({ ...p, __key: pKey(p) }));
     st.veiculosLeitura = patRaw.filter(isVeiculoComLeitura);
+    st.hoteis = [...hot1, ...hot2];
 
     st.os = osRaw
       .filter(osAberta)
@@ -295,9 +232,6 @@ import { supabase } from './supabaseClient.js';
         return { ...v, __colab: { ...c, id: key } };
       });
 
-    st.desloc = [...d1, ...d2, ...d3, ...d4];
-    st.hoteis = [...hot1.map(h => normHotel(h, 'Hospedagem')), ...hot2.map(h => normHotel(h, 'Operacional'))];
-
     build();
   }
 
@@ -311,7 +245,6 @@ import { supabase } from './supabaseClient.js';
 
     all.forEach(c => {
       c.temFrota = !!(c.patrimonio = veicPatr(c));
-      c.veicProprio = veicProprio(c);
     });
 
     for (const v of st.vinculos) {
@@ -332,7 +265,6 @@ import { supabase } from './supabaseClient.js';
       }
 
       const car = d <= DISTANCIA_MAX_PRIORITARIA_KM ? carona(c, p, all) : null;
-      const hotel = d > HOTEL_KM ? hotelProx(p) : null;
       const cls = classificarRota(c, d, car);
 
       st.rotas.push({
@@ -342,7 +274,7 @@ import { supabase } from './supabaseClient.js';
         colab: c,
         dist: d,
         carona: car,
-        hotel,
+        hotel: null,
         modo: cls.modo,
         score: cls.score,
         distante: cls.distante,
@@ -350,7 +282,6 @@ import { supabase } from './supabaseClient.js';
       });
     }
 
-    // Ordenação nova: proximidade primeiro. Rota distante fica no fim mesmo tendo frota.
     st.rotas.sort((a, b) => a.score - b.score || a.dist - b.dist);
     st.pontos = st.pontos.filter(p => st.os.some(o => o.__pontoKey === p.__key));
   }
@@ -365,7 +296,7 @@ import { supabase } from './supabaseClient.js';
       .opv2-head{padding:16px;display:flex;justify-content:space-between;gap:12px}
       .opv2 h2,.opv2 h3{margin:0;color:#fff}.opv2 p{color:#94a3b8;margin:6px 0 0;font-size:13px}
       .opv2-btn{border:1px solid rgba(34,197,94,.35);border-radius:13px;background:#166534;color:#ecfdf5;font-weight:900;padding:9px 13px;cursor:pointer}
-      .opv2-select{height:40px;border:1px solid rgba(148,163,184,.2);border-radius:13px;background:#0d0d18;color:#e2e8f0;padding:0 12px}
+      .opv2-select{height:40px;border:1px solid rgba(148,163,184,.2);border-radius:13px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}
       .opv2-filter{padding:0 16px 14px}.opv2-grid{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:14px;padding:0 16px 16px}
       .opv2-map{height:650px;border:1px solid rgba(148,163,184,.14);border-radius:20px;background:#0d1117}.opv2-side{display:flex;flex-direction:column;gap:12px}
       .opv2-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.opv2-kpi{border:1px solid rgba(34,197,94,.18);border-radius:16px;padding:12px;background:rgba(2,6,23,.35)}
@@ -391,7 +322,8 @@ import { supabase } from './supabaseClient.js';
       addCss('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', LEAFLET_CSS);
       await script('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', LEAFLET_JS);
       return !!window.L;
-    } catch {
+    } catch (err) {
+      console.warn('[opv4] leaflet:', err?.message || err);
       return false;
     }
   }
@@ -425,7 +357,6 @@ import { supabase } from './supabaseClient.js';
       veiculosLeitura: st.veiculosLeitura.length,
       frotaOs: st.rotas.filter(r => r.colab.temFrota).length,
       carona: st.rotas.filter(r => r.carona).length,
-      hotel: st.rotas.filter(r => r.precisaHotel).length,
       ignorados: st.ignorados.length,
       distantes: st.rotas.filter(r => r.distante).length,
     };
@@ -439,7 +370,6 @@ import { supabase } from './supabaseClient.js';
     if (r.distante) return '<span class="opv2-pill warn">distante</span>';
     if (r.colab.temFrota) return '<span class="opv2-pill ok">frota</span>';
     if (r.carona) return '<span class="opv2-pill warn">carona</span>';
-    if (r.colab.veicProprio) return '<span class="opv2-pill ok">próprio</span>';
     return '<span class="opv2-pill">avaliar</span>';
   }
 
@@ -456,7 +386,7 @@ import { supabase } from './supabaseClient.js';
           <div class="opv2-head">
             <div>
               <h2>Mapa de direcionamento</h2>
-              <p>Somente OS abertas. Agora a proximidade é a regra principal; frota/carona não ultrapassa colaborador muito mais próximo.</p>
+              <p>Somente OS abertas. Proximidade é a regra principal; coordenadas fora do Brasil são ignoradas.</p>
             </div>
             <button class="opv2-btn" data-reload>Atualizar</button>
           </div>
@@ -486,10 +416,7 @@ import { supabase } from './supabaseClient.js';
                     <div class="opv2-row ${st.rota === r.id ? 'active' : ''} ${r.distante ? 'distante' : ''}" data-rota="${esc(r.id)}">
                       <strong>${esc(short(r.colab.nome))} · ${esc(r.os.cliente || 'OS')}</strong>
                       <small>${esc(r.modo)} · ${kmFmt(r.dist)} · OS ${esc(r.os.numero_os || r.os.os || r.os.id)}</small>
-                      <small>
-                        ${r.carona ? `Carona: ${esc(short(r.carona.motorista.nome))} · desvio ${kmFmt(r.carona.desvio)}` : ''}
-                        ${r.precisaHotel ? `${r.carona ? '<br>' : ''}Hotel: ${esc(r.hotel?.nome || 'sem cadastro próximo')}` : ''}
-                      </small>
+                      <small>${r.carona ? `Carona: ${esc(short(r.carona.motorista.nome))} · desvio ${kmFmt(r.carona.desvio)}` : ''}</small>
                       ${badge(r)}
                     </div>
                   `).join('') : '<div class="opv2-load">Nenhuma rota encontrada para as OS abertas.</div>'}
@@ -513,7 +440,7 @@ import { supabase } from './supabaseClient.js';
         <div class="opv2-mini"><span>Ponto</span><strong>${esc(r.ponto.nome_local || r.ponto.tipo_local)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)}</strong></div>
         <div class="opv2-mini"><span>Distância</span><strong>${kmFmt(r.dist)}</strong></div>
         <div class="opv2-mini"><span>Transporte</span><strong>${esc(r.modo)}</strong></div>
-        <div class="opv2-mini"><span>Hotel > 120 km</span><strong>${r.precisaHotel ? esc(r.hotel ? `${r.hotel.nome} · ${kmFmt(r.hotel.dist)}` : 'Sem hotel próximo') : 'Não precisa'}</strong></div>
+        <div class="opv2-mini"><span>Hospedagem > 120 km</span><strong>${r.precisaHotel ? 'Verificar hospedagem próxima' : 'Não precisa'}</strong></div>
         <div class="opv2-mini"><span>Frota por leitura</span><strong>${r.colab.temFrota ? esc(r.colab.patrimonio?.identificacao || r.colab.patrimonio?.patrimonio_codigo || 'Sim') : 'Não'}</strong></div>
       </div>
     `;
@@ -536,7 +463,13 @@ import { supabase } from './supabaseClient.js';
 
   async function map(root) {
     const el = root.querySelector('#opv2Map');
-    if (!el || !await leaflet()) return;
+    if (!el) return;
+    const ok = await leaflet();
+    if (!ok) {
+      el.innerHTML = '<div class="opv2-load">Não foi possível carregar o mapa.</div>';
+      return;
+    }
+
     if (st.map) {
       try { st.map.remove(); } catch {}
     }
@@ -609,21 +542,40 @@ import { supabase } from './supabaseClient.js';
     map(root);
   }
 
+  function renderErro(root, err) {
+    root.innerHTML = `
+      <div class="opv2">
+        <section class="opv2-card">
+          <div class="opv2-load">
+            Não foi possível carregar o mapa operacional.<br>
+            <small>${esc(err?.message || err || 'Erro desconhecido')}</small>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
   async function openHome(root) {
     css();
-    root.innerHTML = '<div class="opv2"><section class="opv2-card"><div class="opv2-load">Carregando OS abertas, colaboradores, frota, deslocamentos e hotéis...</div></section></div>';
-    await load();
-    const primeiraNaoDistante = rows().find(r => !r.distante);
-    st.rota = primeiraNaoDistante?.id || rows()[0]?.id || '';
-    render(root);
-    console.info('[opv4] direcionamento carregado', {
-      os: st.os.length,
-      rotas: st.rotas.length,
-      veiculosLeitura: st.veiculosLeitura.length,
-      frotaOs: st.rotas.filter(r => r.colab.temFrota).length,
-      distantes: st.rotas.filter(r => r.distante).length,
-      ignorados: st.ignorados.length,
-    });
+    root.innerHTML = '<div class="opv2"><section class="opv2-card"><div class="opv2-load">Carregando OS abertas, colaboradores, frota e pontos de embarque...</div></section></div>';
+
+    try {
+      await load();
+      const primeiraNaoDistante = rows().find(r => !r.distante);
+      st.rota = primeiraNaoDistante?.id || rows()[0]?.id || '';
+      render(root);
+      console.info('[opv4] direcionamento carregado', {
+        os: st.os.length,
+        rotas: st.rotas.length,
+        veiculosLeitura: st.veiculosLeitura.length,
+        frotaOs: st.rotas.filter(r => r.colab.temFrota).length,
+        distantes: st.rotas.filter(r => r.distante).length,
+        ignorados: st.ignorados.length,
+      });
+    } catch (err) {
+      console.error('[opv4] erro ao carregar direcionamento:', err);
+      renderErro(root, err);
+    }
   }
 
   window.OPERACIONAL = { openHome };
