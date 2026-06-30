@@ -1,13 +1,29 @@
-// Programação → Hospedagem: normaliza o vínculo de colaboradores.
+// Programação: correções pontuais carregadas depois do módulo principal.
 //
-// A tela de Programação usa a tabela hospedagem_solicitacao_colaboradores para
-// mostrar quem vai ficar no hotel. O fluxo automático antigo enviava
-// colaborador_nome/colaborador_cpf, mas o módulo de Hospedagem e a view usam
-// nome_colaborador/cpf. Esse patch corrige qualquer insert desse fluxo antes de
-// chegar ao Supabase, evitando solicitação "Solicitada" sem colaborador.
+// 1) Programação → Hospedagem: normaliza o vínculo de colaboradores.
+//    O fluxo automático antigo enviava colaborador_nome/colaborador_cpf, mas o
+//    módulo de Hospedagem e a view usam nome_colaborador/cpf.
+//
+// 2) Programação → Embarque: Supervisor e Auditor não podem entrar como
+//    sugestão/candidato de O.S. O filtro abaixo blinda a resposta da RPC de
+//    candidatos antes do auto-preenchimento usar os nomes.
 import { supabase } from './supabaseClient.js';
 
-const PATCH_FLAG = '__programacaoHospedagemColaboradoresFix';
+const PATCH_FLAG = '__programacaoAjustesPontuaisFix';
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim();
+}
+
+function isCargoBloqueadoEmbarque(value) {
+  const cargo = normalizeText(value);
+  return cargo.includes('SUPERVISOR') || cargo.includes('AUDITOR');
+}
 
 function normalizeHospedagemColaboradorRow(row) {
   const out = { ...(row || {}) };
@@ -32,10 +48,8 @@ function normalizeHospedagemColaboradorRow(row) {
   return out;
 }
 
-if (!supabase[PATCH_FLAG]) {
-  const originalFrom = supabase.from.bind(supabase);
-
-  supabase.from = function patchedFrom(table) {
+function patchHospedagemColaboradoresInsert(originalFrom) {
+  return function patchedFrom(table) {
     const builder = originalFrom(table);
     if (table !== 'hospedagem_solicitacao_colaboradores' || builder.__hospColabInsertPatched) {
       return builder;
@@ -60,6 +74,25 @@ if (!supabase[PATCH_FLAG]) {
     builder.__hospColabInsertPatched = true;
     return builder;
   };
+}
 
+function patchCandidatosRpc(originalRpc) {
+  return function patchedRpc(fn, params, options) {
+    const result = originalRpc(fn, params, options);
+    if (fn !== 'programacao_etapa_b_candidatos') return result;
+
+    return Promise.resolve(result).then((payload) => {
+      if (!payload || !Array.isArray(payload.data)) return payload;
+      return {
+        ...payload,
+        data: payload.data.filter((row) => !isCargoBloqueadoEmbarque(row?.cargo)),
+      };
+    });
+  };
+}
+
+if (!supabase[PATCH_FLAG]) {
+  supabase.from = patchHospedagemColaboradoresInsert(supabase.from.bind(supabase));
+  supabase.rpc = patchCandidatosRpc(supabase.rpc.bind(supabase));
   supabase[PATCH_FLAG] = true;
 }
