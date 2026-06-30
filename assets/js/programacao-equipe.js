@@ -883,19 +883,22 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   // Usado pelo botão "Auto-preencher" e pelo preenchimento automático inicial
   // (que roda antes do 1º render, pra não mostrar os cards não confirmados).
   async function confirmarPendentesAuto() {
+    // Decide as escalas EM MEMÓRIA (rápido, sem rede), evitando escalar a mesma
+    // pessoa em duas O.S., e só então grava tudo em LOTE (poucas chamadas).
     const pendentes = osComCandidatosAtual.filter((it) => !it.confirmadoRow && it.candidatos.length);
+    const usados = new Set();
+    const atribuicoes = [];
     for (const item of pendentes) {
-      const comCusto = item.candidatos.filter((c) => c.custoTotal != null);
+      const disponiveis = item.candidatos.filter((c) => !usados.has(c.colaboradorId));
+      const comCusto = disponiveis.filter((c) => c.custoTotal != null);
       const melhor = comCusto.length
         ? comCusto.reduce((a, b) => a.custoTotal <= b.custoTotal ? a : b)
-        : item.candidatos[0];
+        : disponiveis[0];
       if (!melhor) continue;
-      await confirmarCandidato(programacaoId, item.os, melhor);
-      // Tira o recém-confirmado dos candidatos das próximas O.S. desta rodada.
-      osComCandidatosAtual.forEach((outro) => {
-        outro.candidatos = outro.candidatos.filter((c) => c.colaboradorId !== melhor.colaboradorId);
-      });
+      usados.add(melhor.colaboradorId);
+      atribuicoes.push({ os: item.os, cand: melhor });
     }
+    if (atribuicoes.length) await confirmarCandidatosEmLote(programacaoId, atribuicoes);
   }
   let rotasPorOsId = new Map(); // os_id -> rota completa (frotas-roteirizar), só após "Ver rotas no mapa"
   let rotasCompletas = []; // todas as rotas relevantes (sem duplicar veículo), desenhadas juntas no mapa
@@ -1457,6 +1460,60 @@ async function confirmarCandidato(programacaoId, os, cand) {
   };
   const { error: espelhoErr } = await supabase.from('programacao_colaboradores').upsert(espelho, { onConflict: 'programacao_id,colaborador_id' });
   if (espelhoErr) console.warn('[programacao-equipe] falha ao espelhar disponibilidade.', espelhoErr);
+}
+
+// Versão em LOTE de confirmarCandidato: grava N atribuições ({os, cand}) com
+// ~4 chamadas no total (em vez de ~4 por O.S.). Usada no auto-preencher, que
+// antes fazia uma confirmação sequencial por O.S. e ficava lento (37 O.S.).
+async function confirmarCandidatosEmLote(programacaoId, atribuicoes) {
+  if (!atribuicoes.length) return;
+
+  const equipeRows = atribuicoes.map(({ os, cand }) => ({
+    programacao_id: programacaoId,
+    os_id: os.id,
+    colaborador_id: cand.colaboradorId,
+    nome_colaborador: cand.nome,
+    score: cand.score,
+    score_contrato: cand.scoreContrato,
+    score_distancia: cand.scoreDistancia,
+    score_auditoria: cand.scoreAuditoria,
+    km_estimado: cand.km,
+    confirmado: true,
+  }));
+  const { error } = await supabase.from('programacao_equipe').upsert(equipeRows, { onConflict: 'programacao_id,os_id,colaborador_id' });
+  if (error) throw error;
+
+  // Substitui o vínculo OS<->colaborador de todas as O.S. de uma vez.
+  const osIds = atribuicoes.map(({ os }) => os.id);
+  const { error: delErr } = await supabase.from('operacional_os_colaboradores').delete().in('os_id', osIds);
+  if (delErr) console.warn('[programacao-equipe] lote: limpar vínculos', delErr);
+
+  const vinculos = atribuicoes.map(({ os, cand }) => ({
+    os_id: os.id,
+    colaborador_key: cand.colaboradorId,
+    colaborador_nome: cand.nome,
+    colaborador_cpf: /^\d+$/.test(cand.colaboradorId) ? cand.colaboradorId : null,
+    distancia_km: cand.km,
+    origem_sugestao: 'PROGRAMACAO_ETAPA_B',
+  }));
+  const { error: vErr } = await supabase.from('operacional_os_colaboradores').insert(vinculos);
+  if (vErr) console.warn('[programacao-equipe] lote: gravar vínculos', vErr);
+
+  // Espelho de disponibilidade — um por colaborador (dedup por colaborador_id).
+  const espMap = new Map();
+  atribuicoes.forEach(({ cand }) => {
+    espMap.set(String(cand.colaboradorId), {
+      programacao_id: programacaoId,
+      colaborador_id: cand.colaboradorId,
+      nome_colaborador: cand.nome,
+      cargo: cand.cargo || null,
+      coordenacao: cand.coordenacao || null,
+      supervisao: cand.supervisao || null,
+      disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
+    });
+  });
+  const { error: espErr } = await supabase.from('programacao_colaboradores').upsert([...espMap.values()], { onConflict: 'programacao_id,colaborador_id' });
+  if (espErr) console.warn('[programacao-equipe] lote: espelhar disponibilidade', espErr);
 }
 
 async function removerConfirmacao(programacaoId, equipeRowId) {
