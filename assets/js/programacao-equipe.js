@@ -226,6 +226,7 @@ function injectStyles() {
     .peqb-name-sel:focus{border-color:rgba(111,208,165,.55);outline:none;background:#06130e}
     .peqb-name-sel option{background:#0c1f17;color:#eef7f2;font-weight:600}
     .peqb-conf-sub{font-size:11px;color:#8ba79a}
+    .peqb-conf-km{font-size:11px;color:#9fb7aa;font-weight:800;white-space:nowrap;display:inline-flex;align-items:center;gap:3px}
     /* Custos em UM único grid de 4 colunas — as duas linhas (estadia /
        deslocamento+alimentação) compartilham as colunas, então tudo alinha. */
     /* Estadia + deslocamento numa linha só (flex que quebra se faltar largura) */
@@ -660,6 +661,7 @@ function osRowHtml(item) {
         ${hotelBtn}
         ${aliChipsHtml(String(confirmadoRow.colaborador_id), confirmadoRow.nome_colaborador, item.custos?.ali || { almoco: true })}
       </div>
+      <div class="peqb-conf-km" title="Distância do colaborador até o ponto de embarque">📍 ${km != null ? `${round1(km)} km até o embarque` : 'sem coordenada do ponto'}</div>
       ${custoRowsHtml(item)}
     </div>`;
   } else {

@@ -33,6 +33,7 @@
 .peqb-cand-av{display:none!important}
 .peqb-conf-head{display:grid!important;grid-template-columns:minmax(238px,330px) auto minmax(170px,1fr) auto!important;grid-template-rows:auto!important;gap:6px 8px!important;align-items:center!important;margin:0!important}
 .peqb-name-sel{grid-column:1!important;grid-row:1!important;width:100%!important;max-width:330px!important;min-width:0!important;height:30px!important;min-height:30px!important;font-size:12.2px!important}
+.peqb-conf-km{font-size:10px!important;color:#9fb7aa!important;font-weight:800!important;margin:2px 0 5px!important}
 .peqb-conf-head .peqb-row-btn.hotel{grid-column:2!important;grid-row:1!important;justify-self:start!important;height:28px!important;min-height:28px!important;padding:0 10px!important;white-space:nowrap!important;font-size:11px!important}
 .peqb-ali{grid-column:3!important;grid-row:1!important;justify-content:flex-end!important;margin-left:auto!important;white-space:nowrap!important;gap:4px!important}
 .peqb-extra-btn{grid-column:4!important;grid-row:1!important;height:28px!important;min-height:28px!important;border:1px solid rgba(56,189,248,.35)!important;background:rgba(14,116,144,.16)!important;color:#bfdbfe!important;border-radius:9px!important;padding:0 9px!important;font-size:10.5px!important;font-weight:900!important;cursor:pointer!important;white-space:nowrap!important}
