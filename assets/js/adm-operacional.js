@@ -5,6 +5,7 @@ import './operacional-direcionamento-v3.js';
 import './operacional-direcionamento-v4.js';
 import './operacional-direcionamento-v5.js';
 import './operacional-direcionamento-v6.js';
+import './operacional-direcionamento-v7.js';
 
 initProtectedPage('Operacional ADM', (content, userContext) => {
   if (window.OPERACIONAL?.openHome) {
