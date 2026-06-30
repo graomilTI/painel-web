@@ -11,10 +11,18 @@
 //      da regional para o gestor sempre conseguir escolher alguém;
 //    - filtra a lista completa do dropdown de troca;
 //    - limpa, em segundo plano, os vínculos antigos já salvos no banco.
+//
+// 3) Programação → Alojamento: quando o gestor escolhe ALOJAMENTO, o select passa
+//    a priorizar o alojamento mais próximo do ponto de embarque. Usa latitude/
+//    longitude quando existir, tenta extrair do link do Maps e, se só houver
+//    endereço textual, tenta geocodificar em memória para calcular a distância.
 import { supabase } from './supabaseClient.js';
 
-const PATCH_FLAG = '__programacaoAjustesPontuaisFixV4';
+const PATCH_FLAG = '__programacaoAjustesPontuaisFixV5';
 const colaboradoresElegiveisCache = new Map();
+const alojamentosDistanciaCache = { rows: null, loading: null };
+const geocodeCache = new Map();
+let alojamentoSortScheduled = false;
 
 function normalizeText(value) {
   return String(value || '')
@@ -47,6 +55,56 @@ function isCargoBloqueadoEmbarque(value) {
 function isSituacaoInativa(value) {
   const s = normalizeText(value);
   return ['NAO ATIVO', 'NAO ATIVA', 'INATIVO', 'INATIVA', 'DESLIGADO', 'DESLIGADA', 'DEMITIDO', 'DEMITIDA'].includes(s);
+}
+
+function normalizeUF(value) {
+  return String(value || '').trim().toUpperCase().slice(0, 2);
+}
+
+function ufFromEmbarque(value) {
+  const m = /^([A-Z]{2})\s*[–-]/i.exec(String(value || '').trim());
+  return m ? normalizeUF(m[1]) : '';
+}
+
+function firstValue(row, keys) {
+  for (const key of keys) {
+    if (row && row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') return row[key];
+  }
+  return null;
+}
+
+function num(value) {
+  const n = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function hasGeo(lat, lng) {
+  return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+}
+
+function kmEntre(aLat, aLng, bLat, bLng) {
+  if (!hasGeo(aLat, aLng) || !hasGeo(bLat, bLng)) return null;
+  const R = 6371;
+  const rad = (d) => (Number(d) * Math.PI) / 180;
+  const dLat = rad(Number(bLat) - Number(aLat));
+  const dLng = rad(Number(bLng) - Number(aLng));
+  const s = Math.sin(dLat / 2) ** 2
+    + Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.min(1, Math.sqrt(s))) * 10) / 10;
+}
+
+function parseMapsCoords(value) {
+  const text = String(value || '');
+  const patterns = [
+    /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+    /[?&](?:q|ll)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
+  ];
+  for (const pattern of patterns) {
+    const m = pattern.exec(text);
+    if (m && hasGeo(m[1], m[2])) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  return null;
 }
 
 function normalizeHospedagemColaboradorRow(row) {
@@ -310,9 +368,211 @@ function patchRpc(originalRpc, originalFrom) {
   };
 }
 
+async function carregarAlojamentosDistancia() {
+  if (alojamentosDistanciaCache.rows) return alojamentosDistanciaCache.rows;
+  if (alojamentosDistanciaCache.loading) return alojamentosDistanciaCache.loading;
+
+  alojamentosDistanciaCache.loading = supabase
+    .from('hospedagem_alojamentos')
+    .select('*')
+    .then(({ data, error }) => {
+      if (error) throw error;
+      alojamentosDistanciaCache.rows = (data || [])
+        .filter((a) => normalizeText(a.status || 'ATIVO') === 'ATIVO')
+        .map((a) => ({
+          ...a,
+          _nome: firstValue(a, ['nome', 'alojamento', 'nome_alojamento']) || 'Alojamento sem nome',
+          _cidade: firstValue(a, ['cidade', 'cidade_alojamento']) || '',
+          _uf: normalizeUF(firstValue(a, ['uf', 'estado', 'uf_alojamento']) || ''),
+        }));
+      return alojamentosDistanciaCache.rows;
+    })
+    .catch((error) => {
+      console.warn('[programacao] alojamentos/distância:', error);
+      alojamentosDistanciaCache.rows = [];
+      return [];
+    });
+
+  return alojamentosDistanciaCache.loading;
+}
+
+function coordsAlojamento(row) {
+  const lat = num(firstValue(row, ['latitude', 'lat', 'geo_latitude', 'endereco_latitude']));
+  const lng = num(firstValue(row, ['longitude', 'lng', 'lon', 'geo_longitude', 'endereco_longitude']));
+  if (hasGeo(lat, lng)) return { lat, lng, fonte: 'coord' };
+
+  const maps = [firstValue(row, ['link_maps', 'maps', 'google_maps', 'url_maps', 'localizacao']), firstValue(row, ['endereco', 'endereco_completo'])]
+    .filter(Boolean)
+    .map(parseMapsCoords)
+    .find(Boolean);
+  if (maps) return { ...maps, fonte: 'maps' };
+
+  return null;
+}
+
+function enderecoAlojamento(row) {
+  const endereco = firstValue(row, ['endereco', 'endereco_completo', 'logradouro', 'localizacao']);
+  if (String(endereco || '').startsWith('http')) return '';
+  return [endereco, row._cidade || row.cidade, row._uf || row.uf, 'Brasil']
+    .filter(Boolean)
+    .join(', ');
+}
+
+async function geocodeAlojamento(row) {
+  const direct = coordsAlojamento(row);
+  if (direct) return direct;
+
+  const endereco = enderecoAlojamento(row);
+  if (!endereco || endereco.length < 8) return null;
+  const cacheKey = normalizeText(endereco);
+  if (geocodeCache.has(cacheKey)) return geocodeCache.get(cacheKey);
+
+  const p = fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(endereco)}`)
+    .then((r) => r.ok ? r.json() : [])
+    .then((data) => {
+      const first = Array.isArray(data) ? data[0] : null;
+      const lat = num(first?.lat);
+      const lng = num(first?.lon);
+      return hasGeo(lat, lng) ? { lat, lng, fonte: 'endereco' } : null;
+    })
+    .catch(() => null);
+
+  geocodeCache.set(cacheKey, p);
+  return p;
+}
+
+async function carregarOsParaAlojamento(osIds) {
+  if (!osIds.length) return new Map();
+  const { data, error } = await supabase
+    .from('operacional_os')
+    .select('id,embarque,ponto_embarque_id,ponto1_latitude,ponto1_longitude')
+    .in('id', osIds);
+  if (error) throw error;
+
+  const rows = data || [];
+  const pontosIds = unique(rows.filter((o) => !hasGeo(o.ponto1_latitude, o.ponto1_longitude)).map((o) => o.ponto_embarque_id));
+  const pontos = new Map();
+  if (pontosIds.length) {
+    const p = await supabase
+      .from('operacional_pontos_embarque')
+      .select('id,latitude,longitude,nome_local')
+      .in('id', pontosIds);
+    (p.data || []).forEach((item) => pontos.set(String(item.id), item));
+  }
+
+  return new Map(rows.map((os) => {
+    const ponto = pontos.get(String(os.ponto_embarque_id));
+    const lat = num(os.ponto1_latitude) ?? num(ponto?.latitude);
+    const lng = num(os.ponto1_longitude) ?? num(ponto?.longitude);
+    return [String(os.id), { ...os, lat, lng, uf: ufFromEmbarque(os.embarque) }];
+  }));
+}
+
+async function ordenarSelectAlojamento(select, os, alojamentos) {
+  if (!select || select.dataset.distanciaOrdenando === '1') return;
+  if (!os || !hasGeo(os.lat, os.lng)) return;
+
+  select.dataset.distanciaOrdenando = '1';
+  try {
+    const selected = select.value;
+    const uf = normalizeUF(os.uf || ufFromEmbarque(os.embarque));
+    const ativos = alojamentos || [];
+    const porUf = uf ? ativos.filter((a) => normalizeUF(a._uf || a.uf) === uf) : [];
+    const base = (porUf.length ? porUf : ativos).slice(0, 80);
+
+    const enriquecidos = await Promise.all(base.map(async (a) => {
+      const geo = await geocodeAlojamento(a);
+      const km = geo ? kmEntre(geo.lat, geo.lng, os.lat, os.lng) : null;
+      return { a, geo, km };
+    }));
+
+    enriquecidos.sort((x, y) => {
+      const dx = x.km == null ? 999999 : x.km;
+      const dy = y.km == null ? 999999 : y.km;
+      return dx - dy
+        || String(x.a._cidade || '').localeCompare(String(y.a._cidade || ''), 'pt-BR')
+        || String(x.a._nome || '').localeCompare(String(y.a._nome || ''), 'pt-BR');
+    });
+
+    const opts = ['<option value="">Sugerir alojamento mais próximo…</option>'];
+    enriquecidos.forEach(({ a, km }) => {
+      const id = String(a.id);
+      const dist = km != null ? ` · ${km} km` : ' · sem km';
+      const cidadeUf = [a._cidade || a.cidade || '-', a._uf || a.uf || ''].filter(Boolean).join('/');
+      opts.push(`<option value="${String(id).replaceAll('"', '&quot;')}">${String(`${a._nome} · ${cidadeUf}${dist}`).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')}</option>`);
+    });
+    select.innerHTML = opts.join('');
+
+    const existeSelecionado = selected && enriquecidos.some(({ a }) => String(a.id) === String(selected));
+    if (existeSelecionado) {
+      select.value = selected;
+    } else if (!selected && enriquecidos[0]?.a?.id) {
+      select.value = String(enriquecidos[0].a.id);
+      select.dataset.sugeridoDistancia = '1';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    const wrap = select.closest('[data-estadia-destino]');
+    let hint = wrap?.querySelector('[data-aloj-dist-hint]');
+    if (wrap && !hint) {
+      hint = document.createElement('small');
+      hint.dataset.alojDistHint = '1';
+      hint.style.cssText = 'display:block;margin-top:3px;color:#8ba79a;font-size:10.5px;font-weight:800';
+      wrap.appendChild(hint);
+    }
+    if (hint) {
+      const best = enriquecidos.find((x) => x.km != null);
+      hint.textContent = best ? `Mais próximo do embarque: ${best.km} km` : 'Alojamentos sem coordenada/endereço geocodificado.';
+    }
+  } catch (error) {
+    console.warn('[programacao] ordenar alojamentos por distância:', error);
+  } finally {
+    select.dataset.distanciaOrdenando = '0';
+  }
+}
+
+function agendarOrdenacaoAlojamentos() {
+  if (alojamentoSortScheduled) return;
+  alojamentoSortScheduled = true;
+  setTimeout(async () => {
+    alojamentoSortScheduled = false;
+    try {
+      const selects = [...document.querySelectorAll('.peqb-os2 select[data-fld="alojamento_id"]')]
+        .filter((s) => s.offsetParent !== null);
+      if (!selects.length) return;
+
+      const osIds = unique(selects.map((s) => s.closest('.peqb-os2')?.dataset.osId));
+      const [osMap, alojamentos] = await Promise.all([
+        carregarOsParaAlojamento(osIds),
+        carregarAlojamentosDistancia(),
+      ]);
+
+      await Promise.all(selects.map((select) => {
+        const osId = String(select.closest('.peqb-os2')?.dataset.osId || '');
+        return ordenarSelectAlojamento(select, osMap.get(osId), alojamentos);
+      }));
+    } catch (error) {
+      console.warn('[programacao] sugestão de alojamento:', error);
+    }
+  }, 120);
+}
+
+function iniciarAlojamentosPorDistancia() {
+  const boot = () => {
+    agendarOrdenacaoAlojamentos();
+    new MutationObserver(agendarOrdenacaoAlojamentos).observe(document.body || document.documentElement, { childList: true, subtree: true });
+    document.addEventListener('change', (event) => {
+      if (event.target?.matches?.('select[data-fld="tipo_estadia"]')) agendarOrdenacaoAlojamentos();
+    });
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
+}
+
 if (!supabase[PATCH_FLAG]) {
   const originalFrom = supabase.from.bind(supabase);
   supabase.from = patchFrom(originalFrom);
   supabase.rpc = patchRpc(supabase.rpc.bind(supabase), originalFrom);
+  iniciarAlojamentosPorDistancia();
   supabase[PATCH_FLAG] = true;
 }
