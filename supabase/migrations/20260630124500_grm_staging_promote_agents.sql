@@ -177,8 +177,7 @@ begin
 end;
 $$;
 
-drop function if exists public.grm_create_staging_table(text);
-
+grant execute on function public.grm_create_staging_table(text) to service_role;
 grant execute on function public.grm_limpar_staging(text) to service_role;
 grant execute on function public.grm_promover_staging(text, bigint) to service_role;
 grant execute on function public.grm_staging_status() to service_role;
