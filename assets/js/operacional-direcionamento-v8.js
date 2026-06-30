@@ -22,7 +22,7 @@ import { supabase } from './supabaseClient.js';
   const placaNorm = v => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
   function ativo(row) {
-    const s = norm(`${row?.status || ''} ${row?.situacao || ''}`);
+    const s = norm(row?.status || '');
     return !/INATIV|DESLIGAD|DEMITID|REMOVID|BAIXAD|VENDID|CANCELAD/.test(s);
   }
 
@@ -31,7 +31,7 @@ import { supabase } from './supabaseClient.js';
       || row?.bfleet_confirmado === true
       || row?.possui_rastreador === true
       || norm(row?.bfleet_status) === 'COM RASTREADOR'
-      || norm(row?.bfleet_status) === 'COM RASTREADOR';
+      || norm(row?.bfleet_status) === 'COM_RASTREADOR';
   }
 
   async function safeSelect(table, columns) {
@@ -93,7 +93,7 @@ import { supabase } from './supabaseClient.js';
 
   async function carregarPainelBfleet() {
     const [veiculos, posicoes] = await Promise.all([
-      safeSelect('frotas_veiculos', 'id,placa,placa_normalizada,status,situacao,possui_rastreador,rastreador_bfleet,bfleet_confirmado,bfleet_status,bfleet_id,bfleet_idgps,bfleet_device_id,bfleet_vehicle_id,bfleet_placa,bfleet_patente'),
+      safeSelect('frotas_veiculos', 'id,placa,placa_normalizada,status,possui_rastreador,rastreador_bfleet,bfleet_confirmado,bfleet_status,bfleet_id,bfleet_idgps,bfleet_device_id,bfleet_vehicle_id,bfleet_placa,bfleet_patente'),
       safeSelect('frotas_posicoes', '*'),
     ]);
 
@@ -117,7 +117,6 @@ import { supabase } from './supabaseClient.js';
       return keys.some(k => posTodos.has(k));
     }).length;
 
-    // Se a tabela de posições não cruza por id/placa mas tem registros, usa o maior número disponível.
     const posicaoAtual = Math.max(rastreadosComPosicao, posTodos.size, posComCoord.length);
 
     painel = {
