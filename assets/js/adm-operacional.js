@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import './operacional.js';
 import './operacional-direcionamento-v12.js';
+import './operacional-direcionamento-v12-fix.js';
 import './operacional-direcionamento-v9.js';
 
 initProtectedPage('Operacional ADM', (content, userContext) => {
