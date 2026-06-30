@@ -875,8 +875,28 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   }
 
   let carregando = false;
+  let autoPreencherPendente = !!options.autoPreencher;
   let osComCandidatosAtual = [];
   let osTodasAtual = [];
+
+  // Confirma o candidato de menor custo para cada O.S. ainda sem equipe.
+  // Usado pelo botão "Auto-preencher" e pelo preenchimento automático inicial
+  // (que roda antes do 1º render, pra não mostrar os cards não confirmados).
+  async function confirmarPendentesAuto() {
+    const pendentes = osComCandidatosAtual.filter((it) => !it.confirmadoRow && it.candidatos.length);
+    for (const item of pendentes) {
+      const comCusto = item.candidatos.filter((c) => c.custoTotal != null);
+      const melhor = comCusto.length
+        ? comCusto.reduce((a, b) => a.custoTotal <= b.custoTotal ? a : b)
+        : item.candidatos[0];
+      if (!melhor) continue;
+      await confirmarCandidato(programacaoId, item.os, melhor);
+      // Tira o recém-confirmado dos candidatos das próximas O.S. desta rodada.
+      osComCandidatosAtual.forEach((outro) => {
+        outro.candidatos = outro.candidatos.filter((c) => c.colaboradorId !== melhor.colaboradorId);
+      });
+    }
+  }
   let rotasPorOsId = new Map(); // os_id -> rota completa (frotas-roteirizar), só após "Ver rotas no mapa"
   let rotasCompletas = []; // todas as rotas relevantes (sem duplicar veículo), desenhadas juntas no mapa
   let focoOsId = null;
@@ -988,6 +1008,16 @@ export async function renderProgramacaoEquipe(content, options = {}) {
           placaAuto: placasPorCpf.get(String(confirmadoRow.colaborador_id).replace(/\D/g, '')) || '',
         } : null,
       }));
+
+      // Auto-preenchimento de menor custo ANTES do 1º render visível: evita
+      // exibir os cards não confirmados (que pareciam um bug). Roda só uma vez.
+      if (autoPreencherPendente && osComCandidatosAtual.some((it) => !it.confirmadoRow && it.candidatos.length)) {
+        autoPreencherPendente = false;
+        listEl.innerHTML = '<div class="peqb-empty">Preparando equipe de menor custo…</div>';
+        await confirmarPendentesAuto();
+        carregando = false;
+        return carregarERenderizar({ silent: true });
+      }
 
       const atenderHtml = osComCandidatosAtual.length
         ? osComCandidatosAtual.map(osRowHtml).join('')
@@ -1300,21 +1330,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     autoPreencherBtn.disabled = true;
     autoPreencherBtn.textContent = 'Preenchendo...';
     try {
-      const pendentes = osComCandidatosAtual.filter((it) => !it.confirmadoRow && it.candidatos.length);
-      for (const item of pendentes) {
-        // Menor custo total para a empresa; fallback para candidatos sem custo calculado
-        const comCusto = item.candidatos.filter((c) => c.custoTotal != null);
-        const melhor = comCusto.length
-          ? comCusto.reduce((a, b) => a.custoTotal <= b.custoTotal ? a : b)
-          : item.candidatos[0];
-        if (!melhor) continue;
-        await confirmarCandidato(programacaoId, item.os, melhor);
-        // Remove o colaborador recém-confirmado dos candidatos das próximas OS
-        // desta mesma rodada, pra não escalar a mesma pessoa duas vezes.
-        osComCandidatosAtual.forEach((outro) => {
-          outro.candidatos = outro.candidatos.filter((c) => c.colaboradorId !== melhor.colaboradorId);
-        });
-      }
+      await confirmarPendentesAuto();
       await carregarERenderizar({ silent: true });
     } catch (error) {
       console.error('[programacao-equipe] auto-preencher:', error);
