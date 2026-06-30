@@ -1,6 +1,6 @@
 // Programação Gestor — Etapa 1 = O.S. + despesas no mesmo card.
 import { supabase } from './supabaseClient.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260629-noflicker1';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260630-noflash1';
 
 let currentUiStep = '1';
 let equipeRendering = false;
@@ -141,30 +141,6 @@ async function marcarPendentesComoAtender(supervisao) {
   if (error) console.warn('[programacao] não foi possível preparar O.S. como ATENDER', error);
 }
 
-function autoPreencherEquipeParaMostrarDespesas(programacaoId) {
-  const key = [
-    programacaoId || '',
-    document.getElementById('progSup')?.value || '',
-    document.getElementById('progDataRef')?.value || '',
-  ].join('|');
-  window.__progAutoEquipeKeys = window.__progAutoEquipeKeys || new Set();
-  if (window.__progAutoEquipeKeys.has(key)) return;
-
-  const tentar = (tentativa = 0) => {
-    if (currentUiStep !== '1') return;
-    const list = document.getElementById('peqbOsList');
-    const btn = document.getElementById('peqbAutoPreencher');
-    const temPendentes = !!list?.querySelector('[data-confirmar]');
-    if (btn && temPendentes && !btn.disabled) {
-      window.__progAutoEquipeKeys.add(key);
-      btn.click();
-      return;
-    }
-    if (tentativa < 10) setTimeout(() => tentar(tentativa + 1), 300);
-  };
-  setTimeout(() => tentar(0), 400);
-}
-
 async function renderEquipeFinal() {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
@@ -194,12 +170,20 @@ async function renderEquipeFinal() {
     }
     list.innerHTML = '<div class="prog-os-lazy-card"><div><strong>Montando tela final...</strong><p>Organizando O.S., equipe e despesas no mesmo card.</p></div></div>';
     await marcarPendentesComoAtender(supervisao);
+    // Auto-preenche a equipe de menor custo só uma vez por contexto
+    // (programação/supervisão/data) e ANTES do 1º render — a tela vai direto de
+    // "preparando" para os cards confirmados, sem exibir os não confirmados.
+    const dataRef = document.getElementById('progDataRef')?.value || '';
+    const autoKey = [programacaoId || '', supervisao, dataRef].join('|');
+    window.__progAutoEquipeKeys = window.__progAutoEquipeKeys || new Set();
+    const autoPreencher = !window.__progAutoEquipeKeys.has(autoKey);
+    if (autoPreencher) window.__progAutoEquipeKeys.add(autoKey);
     await renderProgramacaoEquipe(list, {
       supervisao,
-      dataReferencia: document.getElementById('progDataRef')?.value || '',
+      dataReferencia: dataRef,
       programacaoId,
+      autoPreencher,
     });
-    autoPreencherEquipeParaMostrarDespesas(programacaoId);
     if (feedback) {
       feedback.className = 'feedback mt-16 prog-feedback-ok';
       feedback.textContent = 'Etapa 1 — O.S. e despesas do colaborador na mesma tela.';
