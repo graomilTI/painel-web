@@ -31,4 +31,7 @@ as $$
   order by nome;
 $$;
 
-grant execute on function public.programacao_colaboradores_supervisao(text) to authenticated, anon;
+-- Só usuários logados (o painel é autenticado); SECURITY DEFINER não deve ser
+-- chamável sem login (advisor "Public Can Execute SECURITY DEFINER Function").
+revoke execute on function public.programacao_colaboradores_supervisao(text) from public;
+grant execute on function public.programacao_colaboradores_supervisao(text) to authenticated;
