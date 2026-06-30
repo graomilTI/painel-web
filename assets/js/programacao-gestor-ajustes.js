@@ -168,7 +168,7 @@ async function renderEquipeFinal() {
       feedback.className = 'feedback mt-16 prog-feedback-ok';
       feedback.textContent = 'Preparando O.S. e despesas em tela única...';
     }
-    list.innerHTML = '<div class="prog-os-lazy-card"><div><strong>Montando tela final...</strong><p>Organizando O.S., equipe e despesas no mesmo card.</p></div></div>';
+    list.innerHTML = PROG_MONTANDO_HTML;
     await marcarPendentesComoAtender(supervisao);
     // Auto-preenche a equipe de menor custo só uma vez por contexto
     // (programação/supervisão/data) e ANTES do 1º render — a tela vai direto de
@@ -207,6 +207,32 @@ function listShowsCoreDisponibilidade() {
   if (!list) return false;
   if (list.querySelector('#peqbOsList') || list.querySelector('#progEquipeLoadNow')) return false;
   return /Disponíveis|Disponiveis|DISPONIBILIDADE|Contexto carregado/i.test(list.textContent || '');
+}
+
+const PROG_MONTANDO_HTML = '<div class="prog-os-lazy-card"><div><strong>Montando tela final...</strong><p>Organizando O.S., equipe e despesas no mesmo card.</p></div></div>';
+
+// O núcleo (programacao.js) tem state.step = 'A' por padrão e renderiza a
+// Disponibilidade no #progList ao terminar de carregar o contexto. Na aba
+// "Programar O.S." (uiStep '1') isso NÃO deve aparecer — para o usuário a tela
+// de cards de disponibilidade no lugar dos cards de O.S. parece um bug.
+//
+// O observer geral abaixo é debounced (160ms), tempo suficiente para a
+// Disponibilidade pintar e "piscar"/permanecer numa carga lenta. Este guard é
+// um observer SÍNCRONO ancorado direto no #progList: o callback do
+// MutationObserver roda antes da pintura do browser, então trocamos o conteúdo
+// pelo placeholder ANTES de o usuário ver a Disponibilidade, e disparamos o
+// render final (cards de O.S.).
+function attachProgListGuard() {
+  const list = document.getElementById('progList');
+  if (!list || list.dataset.gestorGuard === '1') return;
+  list.dataset.gestorGuard = '1';
+  const guard = new MutationObserver(() => {
+    if (currentUiStep !== '1') return;
+    if (!listShowsCoreDisponibilidade()) return;
+    list.innerHTML = PROG_MONTANDO_HTML;
+    scheduleFinalRender(0);
+  });
+  guard.observe(list, { childList: true });
 }
 
 function configureSteps() {
@@ -397,6 +423,7 @@ function boot() {
   waitForElement('#progSteps').then(() => {
     configureSteps();
     hookContextLoad();
+    attachProgListGuard();
     hideCoreControls();
     ensureSupCombo();
     const sup = document.getElementById('progSup');
@@ -413,6 +440,7 @@ const observer = new MutationObserver(debounce(() => {
   if (!document.getElementById('progSteps')) return;
   configureSteps();
   hookContextLoad();
+  attachProgListGuard();
   hideCoreControls();
   ensureSupCombo();
   if (currentUiStep === '1' && listShowsCoreDisponibilidade()) scheduleFinalRender(150);
