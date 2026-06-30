@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import './operacional.js';
+import './operacional-direcionamento-v2.js';
 
 initProtectedPage('Operacional ADM', (content, userContext) => {
   if (window.OPERACIONAL?.openHome) {
