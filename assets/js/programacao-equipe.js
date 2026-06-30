@@ -46,6 +46,18 @@ function hasGeo(lat, lng) {
 
 function round1(n) { return Math.round(n * 10) / 10; }
 
+// Caronas: orçamento de desvio do frota (km) e capacidade de caronas por carro.
+const CARONA_DESVIO_KM = 5;
+const CARONA_CAP = 4;
+// Distância em km entre dois pontos (Haversine).
+function kmEntre(aLat, aLng, bLat, bLng) {
+  if (aLat == null || aLng == null || bLat == null || bLng == null) return null;
+  const R = 6371, rad = (d) => (Number(d) * Math.PI) / 180;
+  const dLat = rad(bLat - aLat), dLng = rad(bLng - aLng);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
 // Distância acima da qual sugerimos hotel. R$7/L, 10km/L → 150km ida =
 // R$210 combustível R/T, mais econômico do que ida+volta no dia seguinte.
 const HOTEL_KM_THRESHOLD = 150;
@@ -857,6 +869,8 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     <div class="peqb-legend"><b>Score:</b> <span><i class="lg-c"></i>Contrato 50%</span> <span><i class="lg-d"></i>Distância 30%</span> <span><i class="lg-a"></i>Auditoria 20%</span></div>
     <div class="peqb-toolbar">
       <button type="button" class="peqb-btn" id="peqbAutoPreencher">Auto-preencher equipe</button>
+      <button type="button" class="peqb-btn" id="peqbSugerirCaronas" title="Motorista/carona por frota (desvio ≤ ${CARONA_DESVIO_KM} km), sobra vira próprio/Uber">Sugerir caronas</button>
+      <span id="peqbCaronasMsg" style="font-size:11.5px;color:#9fb7aa;align-self:center"></span>
     </div>
     <div class="peqb-os-list peqb-os-list-full" id="peqbOsList"><div class="peqb-empty">Carregando O.S....</div></div>
   `;
@@ -901,6 +915,91 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       atribuicoes.push({ os: item.os, cand: melhor });
     }
     if (atribuicoes.length) await confirmarCandidatosEmLote(programacaoId, atribuicoes);
+  }
+
+  // Sugere caronas: por ponto de embarque, quem tem frota é MOTORISTA; passageiros
+  // entram como CARONA se o DESVIO do frota (dMP+dPE−dME) ≤ T, atribuídos ao frota
+  // de menor desvio (cap CARONA_CAP). Quem sobra: REEMBOLSO KM se na relação de
+  // veículo próprio, senão UBER/TÁXI. Grava tipo_deslocamento em lote e devolve o resumo.
+  async function sugerirCaronas() {
+    const { data, error } = await supabase.rpc('programacao_caronas_dados', { p_programacao_id: programacaoId });
+    if (error) throw error;
+    const rows = data || [];
+    const resultado = new Map();
+
+    const porPonto = new Map();
+    rows.forEach((r) => {
+      const key = r.ponto_id || `__sem_ponto__${r.colaborador_id}`;
+      if (!porPonto.has(key)) porPonto.set(key, []);
+      porPonto.get(key).push(r);
+    });
+
+    porPonto.forEach((grupo) => {
+      const motoristas = grupo
+        .filter((r) => r.tem_frota && r.lat != null && r.emb_lat != null)
+        .map((r) => ({ r, vagas: CARONA_CAP }));
+      const passageiros = grupo.filter((r) => !r.tem_frota);
+
+      motoristas.forEach(({ r }) => resultado.set(r.colaborador_id, { tipo: 'MOTORISTA FROTA', placa: r.veiculo_placa || '', obs: '' }));
+
+      const pares = [];
+      passageiros.forEach((p) => {
+        if (p.lat == null || p.emb_lat == null) return;
+        motoristas.forEach((m) => {
+          const dME = kmEntre(m.r.lat, m.r.lng, p.emb_lat, p.emb_lng);
+          const dMP = kmEntre(m.r.lat, m.r.lng, p.lat, p.lng);
+          const dPE = kmEntre(p.lat, p.lng, p.emb_lat, p.emb_lng);
+          if (dME == null || dMP == null || dPE == null) return;
+          const desvio = dMP + dPE - dME;
+          if (desvio <= CARONA_DESVIO_KM) pares.push({ p, m, desvio });
+        });
+      });
+      pares.sort((a, b) => a.desvio - b.desvio);
+      const atribuido = new Set();
+      pares.forEach(({ p, m }) => {
+        if (atribuido.has(p.colaborador_id) || m.vagas <= 0) return;
+        m.vagas -= 1;
+        atribuido.add(p.colaborador_id);
+        resultado.set(p.colaborador_id, { tipo: 'CARONA FROTA', placa: m.r.veiculo_placa || '', obs: `Carona com ${m.r.nome || '—'}` });
+      });
+
+      passageiros.forEach((p) => {
+        if (atribuido.has(p.colaborador_id)) return;
+        resultado.set(p.colaborador_id, {
+          tipo: p.veiculo_proprio ? 'REEMBOLSO KM' : 'UBER/TÁXI',
+          placa: '',
+          obs: p.veiculo_proprio ? 'Veículo próprio' : (p.lat == null ? 'Sem coordenada do colaborador' : ''),
+        });
+      });
+    });
+
+    const payload = [];
+    rows.forEach((r) => {
+      const res = resultado.get(r.colaborador_id);
+      if (!res) return;
+      payload.push({
+        programacao_id: programacaoId,
+        data_referencia: options.dataReferencia || null,
+        colaborador_id: r.colaborador_id,
+        nome_colaborador: r.nome || '',
+        tipo_deslocamento: res.tipo,
+        placa_veiculo: onlyPlate(res.placa || ''),
+        observacao: res.obs || null,
+      });
+    });
+    if (payload.length) {
+      const { error: upErr } = await supabase.from('programacao_deslocamento').upsert(payload, { onConflict: 'programacao_id,colaborador_id' });
+      if (upErr) throw upErr;
+    }
+
+    const cont = { mot: 0, car: 0, prop: 0, uber: 0 };
+    resultado.forEach((v) => {
+      if (v.tipo === 'MOTORISTA FROTA') cont.mot += 1;
+      else if (v.tipo === 'CARONA FROTA') cont.car += 1;
+      else if (v.tipo === 'REEMBOLSO KM') cont.prop += 1;
+      else cont.uber += 1;
+    });
+    return cont;
   }
   let rotasPorOsId = new Map(); // os_id -> rota completa (frotas-roteirizar), só após "Ver rotas no mapa"
   let rotasCompletas = []; // todas as rotas relevantes (sem duplicar veículo), desenhadas juntas no mapa
@@ -1343,6 +1442,25 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     } finally {
       autoPreencherBtn.disabled = false;
       autoPreencherBtn.textContent = 'Auto-preencher';
+    }
+  });
+
+  const caronasBtn = content.querySelector('#peqbSugerirCaronas');
+  caronasBtn?.addEventListener('click', async () => {
+    caronasBtn.disabled = true;
+    const orig = caronasBtn.textContent;
+    caronasBtn.textContent = 'Sugerindo...';
+    const msgEl = content.querySelector('#peqbCaronasMsg');
+    try {
+      const c = await sugerirCaronas();
+      await carregarERenderizar({ silent: true });
+      if (msgEl) msgEl.textContent = `${c.mot} motorista(s) · ${c.car} carona(s) · ${c.prop} próprio · ${c.uber} Uber/Táxi`;
+    } catch (error) {
+      console.error('[programacao-equipe] caronas:', error);
+      alert(error.message || 'Não foi possível sugerir caronas.');
+    } finally {
+      caronasBtn.disabled = false;
+      caronasBtn.textContent = orig;
     }
   });
 
