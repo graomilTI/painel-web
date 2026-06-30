@@ -11,9 +11,6 @@ import { supabase } from './supabaseClient.js';
   const RAIO_CAMINHO = 5;
   const RAIO_OPPOSTO = 2.5;
 
-  // Limites aproximados do território brasileiro.
-  // Coordenadas fora dessa caixa normalmente indicam falta de informação,
-  // CEP/endereço geocodificado errado ou latitude/longitude invertidas.
   const BR_LAT_MIN = -34.2;
   const BR_LAT_MAX = 6.0;
   const BR_LNG_MIN = -74.5;
@@ -24,6 +21,7 @@ import { supabase } from './supabaseClient.js';
     pontos: [],
     vinculos: [],
     patrimonios: [],
+    veiculosLeitura: [],
     desloc: [],
     hoteis: [],
     rotas: [],
@@ -152,16 +150,27 @@ import { supabase } from './supabaseClient.js';
       })[0] || null;
   }
 
+  function isVeiculoPatrimonio(p) {
+    const txt = norm(`${p.identificacao || ''} ${p.categoria || ''} ${p.material || ''} ${p.descricao || ''} ${p.patrimonio_codigo || ''} ${p.numero_patrimonio || ''}`);
+    return /VEICULO|VEICULOS|CARRO|CAMINHONETE|CAMINHAO|MOTO|PLACA|SAVEIRO|STRADA|HILUX|AMAROK|S10|L200|RANGER|TORO|FIORINO|UNO|GOL|VOYAGE|ONIX|HB20|FIAT|CHEVROLET|VOLKSWAGEN|TOYOTA|MITSUBISHI|FORD|RENAULT|NISSAN|[A-Z]{3}[0-9][A-Z0-9][0-9]{2}/.test(txt);
+  }
+
+  function hasLeituraAtiva(p) {
+    const diasRaw = p.dias_sem_leitura ?? p.dias_sem_leitura_veiculo ?? p.diasSemLeitura ?? 999;
+    const dias = Number(diasRaw);
+    const sit = norm(`${p.situacao || ''} ${p.status || ''}`);
+    return isVeiculoPatrimonio(p)
+      && Number.isFinite(dias)
+      && dias <= 7
+      && !/INATIV|DESLIGAD|DEMITID|REMOVID|BAIXAD/.test(sit);
+  }
+
   function veicPatr(c) {
     const nome = norm(c.nome), cpf = digits(c.cpf);
-    return st.patrimonios.find(p => {
+    return st.veiculosLeitura.find(p => {
       const pn = norm(p.funcionario || p.colaborador || p.nome || p.responsavel);
       const pc = digits(p.cpf || p.documento || p.colaborador_cpf);
-      const txt = norm(`${p.identificacao || ''} ${p.categoria || ''} ${p.material || ''} ${p.descricao || ''} ${p.patrimonio_codigo || ''}`);
-      const dias = Number(p.dias_sem_leitura ?? 999);
-      const sit = norm(p.situacao || p.status);
-      const veic = /VEICULO|CARRO|CAMINHONETE|CAMINHAO|MOTO|SAVEIRO|STRADA|HILUX|AMAROK|S10|L200|[A-Z]{3}[0-9][A-Z0-9][0-9]{2}/.test(txt);
-      return veic && dias <= 7 && !/INATIV|DESLIGAD|DEMITID/.test(sit) && ((cpf && pc === cpf) || pn === nome);
+      return (cpf && pc === cpf) || pn === nome;
     }) || null;
   }
 
@@ -222,6 +231,8 @@ import { supabase } from './supabaseClient.js';
     ]);
 
     st.pontos = pontosRaw.filter(geo).map(p => ({ ...p, __key: pKey(p) }));
+    st.patrimonios = patRaw;
+    st.veiculosLeitura = patRaw.filter(hasLeituraAtiva);
 
     st.os = osRaw
       .filter(osAberta)
@@ -252,7 +263,6 @@ import { supabase } from './supabaseClient.js';
         return { ...v, __colab: { ...c, id: key } };
       });
 
-    st.patrimonios = patRaw;
     st.desloc = [...d1, ...d2, ...d3, ...d4];
     st.hoteis = [...hot1.map(h => normHotel(h, 'Hospedagem')), ...hot2.map(h => normHotel(h, 'Operacional'))];
 
@@ -394,7 +404,8 @@ import { supabase } from './supabaseClient.js';
       os: st.os.length,
       pontos: st.pontos.length,
       rotas: st.rotas.length,
-      frota: st.rotas.filter(r => r.colab.temFrota).length,
+      veiculosLeitura: st.veiculosLeitura.length,
+      frotaOs: st.rotas.filter(r => r.colab.temFrota).length,
       carona: st.rotas.filter(r => r.carona).length,
       hotel: st.rotas.filter(r => r.precisaHotel).length,
       ignorados: st.ignorados.length,
@@ -443,8 +454,10 @@ import { supabase } from './supabaseClient.js';
                 <div class="opv2-kpi"><span>OS abertas</span><strong>${k.os}</strong></div>
                 <div class="opv2-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div>
                 <div class="opv2-kpi"><span>Rotas</span><strong>${k.rotas}</strong></div>
-                <div class="opv2-kpi"><span>Frota</span><strong>${k.frota}</strong></div>
+                <div class="opv2-kpi"><span>Veículos c/ leitura</span><strong>${k.veiculosLeitura}</strong></div>
+                <div class="opv2-kpi"><span>Frota nas OS</span><strong>${k.frotaOs}</strong></div>
                 <div class="opv2-kpi"><span>Carona</span><strong>${k.carona}</strong></div>
+                <div class="opv2-kpi"><span>Hotel &gt; 120 km</span><strong>${k.hotel}</strong></div>
                 <div class="opv2-kpi"><span>Ignorados</span><strong>${k.ignorados}</strong></div>
               </div>
               <section class="opv2-card">
@@ -582,7 +595,7 @@ import { supabase } from './supabaseClient.js';
     await load();
     st.rota = rows()[0]?.id || '';
     render(root);
-    console.info('[opv2] direcionamento carregado', { os: st.os.length, rotas: st.rotas.length, ignorados: st.ignorados.length });
+    console.info('[opv2] direcionamento carregado', { os: st.os.length, rotas: st.rotas.length, veiculosLeitura: st.veiculosLeitura.length, ignorados: st.ignorados.length });
   }
 
   window.OPERACIONAL = { openHome };
