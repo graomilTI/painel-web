@@ -3,7 +3,7 @@ import './operacional.js';
 import './operacional-direcionamento-v14.js';
 import './operacional-direcionamento-v12-fix.js';
 import './operacional-direcionamento-v9.js';
-import './operacional-direcionamento-v15.js';
+import './operacional-direcionamento-v16.js';
 
 initProtectedPage('Operacional ADM', (content, userContext) => {
   if (window.OPERACIONAL?.openHome) {
