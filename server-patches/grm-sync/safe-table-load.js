@@ -3,16 +3,13 @@
 /**
  * Helper de carga segura para agentes GRM no cPanel/WHM.
  *
- * Uso esperado no agente:
- *   const { replaceTableSafely } = require('./safe-table-load');
- *   await replaceTableSafely(supabase, 'relatorio_resultado_diario', rows, {
- *     minRows: 1,
- *     chunkSize: 500,
- *     logger: console,
- *   });
+ * Modos:
+ *   - replaceTableSafely(...): substitui a tabela final inteira.
+ *   - replaceTablePeriodSafely(...): substitui apenas o período presente na staging.
  *
- * Requer a migration:
+ * Requer migrations:
  *   supabase/migrations/20260630124500_grm_staging_promote_agents.sql
+ *   supabase/migrations/20260630131000_grm_staging_promote_by_period.sql
  */
 
 const DEFAULT_CHUNK_SIZE = 500;
@@ -46,6 +43,14 @@ async function clearStaging(supabase, tableName) {
 async function promoteStaging(supabase, tableName, minRows) {
   return runRpc(supabase, 'grm_promover_staging', {
     p_table: tableName,
+    p_min_rows: minRows == null ? 1 : minRows,
+  });
+}
+
+async function promoteStagingByPeriod(supabase, tableName, dateColumn, minRows) {
+  return runRpc(supabase, 'grm_promover_staging_periodo', {
+    p_table: tableName,
+    p_date_column: dateColumn || 'data',
     p_min_rows: minRows == null ? 1 : minRows,
   });
 }
@@ -101,10 +106,39 @@ async function replaceTableSafely(supabase, tableName, rows, options) {
   return promoted;
 }
 
+async function replaceTablePeriodSafely(supabase, tableName, rows, options) {
+  const logger = getLogger(options && options.logger);
+  const minRows = options && options.minRows != null ? options.minRows : 1;
+  const dateColumn = options && options.dateColumn ? options.dateColumn : 'data';
+  const stagingTable = stagingName(tableName);
+
+  ensureRows(rows, tableName);
+
+  if (rows.length < minRows) {
+    throw new Error(
+      'Carga segura por período abortada para ' + tableName + ': ' + rows.length + ' linhas, mínimo exigido ' + minRows
+    );
+  }
+
+  logger.log('[safe-load] Limpando staging ' + stagingTable);
+  await clearStaging(supabase, tableName);
+
+  logger.log('[safe-load] Inserindo ' + rows.length + ' linhas em ' + stagingTable);
+  await insertRowsChunked(supabase, stagingTable, rows, options || {});
+
+  logger.log('[safe-load] Promovendo período de staging para ' + tableName + ' pela coluna ' + dateColumn);
+  const promoted = await promoteStagingByPeriod(supabase, tableName, dateColumn, minRows);
+
+  logger.log('[safe-load] Concluído período ' + tableName + ': ' + rows.length + ' linhas');
+  return promoted;
+}
+
 module.exports = {
   clearStaging,
   insertRowsChunked,
   promoteStaging,
+  promoteStagingByPeriod,
   replaceTableSafely,
+  replaceTablePeriodSafely,
   stagingName,
 };
