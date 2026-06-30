@@ -1,11 +1,13 @@
 // Programação Gestor — Etapa 1 = O.S. + despesas no mesmo card.
 import { supabase } from './supabaseClient.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260630-caronas1';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260630-caronas2';
 
 let currentUiStep = '1';
 let equipeRendering = false;
+let equipePending = false;
 let finalRenderScheduled = false;
 let renderTentativas = 0;
+let clobberRetries = 0;
 let supDropdownEl = null;
 let supComboState = { input: null, onSelect: null };
 
@@ -161,7 +163,10 @@ async function renderEquipeFinal() {
     return;
   }
 
-  if (equipeRendering) return;
+  // Já existe um render em andamento: em vez de descartar o pedido (o que
+  // deixaria a tela travada em "Montando..." se o núcleo tivesse sobrescrito a
+  // lista no meio do caminho), marca pendência para re-renderizar ao terminar.
+  if (equipeRendering) { equipePending = true; return; }
   equipeRendering = true;
   try {
     if (feedback) {
@@ -190,6 +195,19 @@ async function renderEquipeFinal() {
     }
   } finally {
     equipeRendering = false;
+    // Re-renderiza se (a) alguém pediu re-render enquanto renderizávamos, ou
+    // (b) o núcleo sobrescreveu o #progList durante o render (corrida do
+    // renderRows): nesse caso os cards de O.S. foram para um nó destacado e o
+    // #peqbOsList não está mais anexado. Sem isso a tela trava em "Montando...".
+    const clobbered = currentUiStep === '1' && !document.querySelector('#progList #peqbOsList');
+    const precisaRe = equipePending || clobbered;
+    equipePending = false;
+    if (precisaRe && clobberRetries < 10) {
+      clobberRetries += 1;
+      scheduleFinalRender(0);
+    } else if (!precisaRe) {
+      clobberRetries = 0;
+    }
   }
 }
 
@@ -272,6 +290,7 @@ function configureSteps() {
       setActiveUiStep('1');
       hideCoreControls();
       renderTentativas = 0;
+      clobberRetries = 0;
       renderIdle();
       return;
     }
@@ -414,6 +433,7 @@ function hookContextLoad() {
   loadBtn.addEventListener('click', () => {
     if (currentUiStep !== '1') return;
     renderTentativas = 0;
+    clobberRetries = 0;
     [250, 700, 1200].forEach((delay) => setTimeout(() => scheduleFinalRender(0), delay));
   }, true);
 }
