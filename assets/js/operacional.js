@@ -72,7 +72,7 @@ import { supabase } from './supabaseClient.js';
   const st = {
     os: [], osTodas: [], pontos: [], colaboradores: [], veiculos: [], rotas: [], semAssociacao: [],
     estado: '', ponto: '', rota: '', mostrarRota: true, tab: 'mapa', mapaBase: 'escuro',
-    mostrarVeiculos: true, mostrarColaboradores: true, mostrarOS: true, mostrarHoteis: false,
+    mostrarVeiculos: true, mostrarColaboradores: true, mostrarOsComSaldo: true, mostrarOsSemSaldo: true, mostrarHoteis: false,
     comparativo: [], supervisaoComparativo: '',
     map: null, tileLayer: null, layer: null, routeLayer: null, rotaRealCache: new Map(), drawToken: 0,
   };
@@ -783,7 +783,7 @@ import { supabase } from './supabaseClient.js';
     const rotaInfo = st.mostrarRota ? `Ligado · desenhando ${base.length} rota(s) visíveis` : 'Desligada';
     return `
         <div class="mo-map-tools"><div class="mo-filter"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select><select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
-        <div class="mo-legend"><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOS ? '' : 'off'}" data-toggle-marker="os"><i class="verde"></i>OS ${st.mostrarOS ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarHoteis ? '' : 'off'}" data-toggle-marker="hoteis"><i class="roxo"></i>Hotéis ${st.mostrarHoteis ? 'On' : 'Off'}</button><span><i class="vermelho"></i>OS sem saldo</span><span data-rota-status>Rotas: ${rotaInfo}</span></div></div>
+        <div class="mo-legend"><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsComSaldo ? '' : 'off'}" data-toggle-marker="os-com-saldo"><i class="verde"></i>OS com saldo ${st.mostrarOsComSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsSemSaldo ? '' : 'off'}" data-toggle-marker="os-sem-saldo"><i class="vermelho"></i>OS sem saldo ${st.mostrarOsSemSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarHoteis ? '' : 'off'}" data-toggle-marker="hoteis"><i class="roxo"></i>Hotéis ${st.mostrarHoteis ? 'On' : 'Off'}</button><span data-rota-status>Rotas: ${rotaInfo}</span></div></div>
         <div class="mo-body">
           <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
           <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>KM frota</span><strong>${fmtKm(k.kmFrota)}</strong></div><div class="mo-kpi"><span>KM particular</span><strong>${fmtKm(k.kmParticular)}</strong></div><div class="mo-kpi"><span>KM uber</span><strong>${fmtKm(k.kmUber)}</strong></div><div class="mo-kpi"><span>Recomenda hospedar</span><strong>${k.hospedar}</strong></div></div>
@@ -887,7 +887,8 @@ import { supabase } from './supabaseClient.js';
         const alvo = el.dataset.toggleMarker;
         if (alvo === 'veiculos') st.mostrarVeiculos = !st.mostrarVeiculos;
         if (alvo === 'colaboradores') st.mostrarColaboradores = !st.mostrarColaboradores;
-        if (alvo === 'os') st.mostrarOS = !st.mostrarOS;
+        if (alvo === 'os-com-saldo') st.mostrarOsComSaldo = !st.mostrarOsComSaldo;
+        if (alvo === 'os-sem-saldo') st.mostrarOsSemSaldo = !st.mostrarOsSemSaldo;
         if (alvo === 'hoteis') st.mostrarHoteis = !st.mostrarHoteis;
         render(root);
       };
@@ -966,11 +967,19 @@ import { supabase } from './supabaseClient.js';
     const colabSelecionadoId = r?.colab?.id;
     const pontosVisiveis = st.pontos.filter(p => passaFiltroPonto(p) && p.temCoord);
 
-    if (st.mostrarOS) {
+    if (st.mostrarOsComSaldo || st.mostrarOsSemSaldo) {
       pontosVisiveis.forEach(p => {
-        const oss = osPorPonto(p), semSaldo = oss.length && oss.every(o => o.__saldo <= 0);
-        L.marker([p.lat, p.lng], { icon: icon(semSaldo ? 'os-zero' : 'os-ok', r?.ponto?.__key === p.__key) }).bindTooltip(`${semSaldo ? 'OS sem saldo' : 'OS com saldo'} · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${oss.length} OS`).addTo(st.layer);
-        b.push([p.lat, p.lng]);
+        const oss = osPorPonto(p);
+        const comSaldo = oss.filter(o => o.__saldo > 0).length, semSaldo = oss.filter(o => o.__saldo <= 0).length;
+        const sel = r?.ponto?.__key === p.__key;
+        if (st.mostrarOsComSaldo && comSaldo) {
+          L.marker([p.lat, p.lng], { icon: icon('os-ok', sel) }).bindTooltip(`OS com saldo · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${comSaldo} OS`).addTo(st.layer);
+          b.push([p.lat, p.lng]);
+        }
+        if (st.mostrarOsSemSaldo && semSaldo) {
+          L.marker([p.lat, p.lng], { icon: icon('os-zero', sel) }).bindTooltip(`OS sem saldo · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${semSaldo} OS`).addTo(st.layer);
+          b.push([p.lat, p.lng]);
+        }
       });
     }
 
