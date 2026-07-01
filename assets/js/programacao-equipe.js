@@ -1633,8 +1633,8 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     const est = item.custos?.est || {};
     const ali = item.custos?.ali || { almoco: true };
     const des = item.custos?.des || {};
-    if (Object.keys(est).length || origemId) {
-      await supabase.from('programacao_estadia').upsert({
+    await Promise.all([
+      (Object.keys(est).length || origemId) ? supabase.from('programacao_estadia').upsert({
         ...destinoBase,
         tipo_estadia: est.tipo_estadia || 'CASA',
         tem_estadia: !!est.tem_estadia,
@@ -1645,19 +1645,19 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         nome_hotel: est.nome_hotel || null,
         checkin: est.checkin || options.dataReferencia || todayIso(),
         checkout: est.checkout || options.dataReferencia || todayIso(),
-      }, { onConflict: 'programacao_id,colaborador_id' });
-    }
-    await supabase.from('programacao_alimentacao').upsert({
-      ...destinoBase,
-      cafe: !!ali.cafe,
-      almoco: ali.almoco !== false,
-      janta: !!ali.janta,
-    }, { onConflict: 'programacao_id,colaborador_id' });
-    await supabase.from('programacao_deslocamento').upsert({
-      ...destinoBase,
-      tipo_deslocamento: des.tipo_deslocamento || 'NÃO PRECISA',
-      placa_veiculo: onlyPlate(des.placa_veiculo || ''),
-    }, { onConflict: 'programacao_id,colaborador_id' });
+      }, { onConflict: 'programacao_id,colaborador_id' }) : null,
+      supabase.from('programacao_alimentacao').upsert({
+        ...destinoBase,
+        cafe: !!ali.cafe,
+        almoco: ali.almoco !== false,
+        janta: !!ali.janta,
+      }, { onConflict: 'programacao_id,colaborador_id' }),
+      supabase.from('programacao_deslocamento').upsert({
+        ...destinoBase,
+        tipo_deslocamento: des.tipo_deslocamento || 'NÃO PRECISA',
+        placa_veiculo: onlyPlate(des.placa_veiculo || ''),
+      }, { onConflict: 'programacao_id,colaborador_id' }),
+    ]);
   }
 
   listEl.addEventListener('input', (event) => {
@@ -1710,9 +1710,15 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       if (!item || !cand) return;
       addColabConfirm.disabled = true;
       try {
-        await adicionarColaboradorOs(programacaoId, item.os, cand);
-        await copiarCustosDoPrincipal(item, cand);
-        await carregarERenderizar({ silent: true });
+        // Grava e atualiza só esta linha no DOM — recarregar a lista inteira
+        // (49+ O.S., cada uma com candidatos/custos) pra refletir 1 pessoa
+        // adicionada deixava a confirmação visivelmente lenta.
+        const [novaLinha] = await Promise.all([
+          adicionarColaboradorOs(programacaoId, item.os, cand),
+          copiarCustosDoPrincipal(item, cand),
+        ]);
+        item.equipeRows = [...(item.equipeRows || []), novaLinha];
+        row.outerHTML = osRowHtml(item);
       } catch (error) {
         console.error('[equipe] adicionar colaborador:', error);
         addColabConfirm.disabled = false;
@@ -1721,11 +1727,16 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       return;
     }
 
-    if (removerAdicional) {
+    if (removerAdicional && row) {
+      const item = osComCandidatosAtual.find((it) => String(it.os.id) === row.dataset.osId);
+      const equipeRowId = removerAdicional.dataset.removerAdicional;
       removerAdicional.disabled = true;
       try {
-        await removerConfirmacao(programacaoId, removerAdicional.dataset.removerAdicional);
-        await carregarERenderizar({ silent: true });
+        await removerConfirmacao(programacaoId, equipeRowId);
+        if (item) {
+          item.equipeRows = (item.equipeRows || []).filter((r) => String(r.id) !== String(equipeRowId));
+          row.outerHTML = osRowHtml(item);
+        }
       } catch (error) {
         console.error('[equipe] remover colaborador adicional:', error);
         removerAdicional.disabled = false;
@@ -2005,35 +2016,34 @@ async function adicionarColaboradorOs(programacaoId, os, cand) {
     km_estimado: cand.km,
     confirmado: true,
   };
-  const { error } = await supabase.from('programacao_equipe').upsert(payload, { onConflict: 'programacao_id,os_id,colaborador_id' });
+  const { data: upsertRows, error } = await supabase.from('programacao_equipe').upsert(payload, { onConflict: 'programacao_id,os_id,colaborador_id' }).select().limit(1);
   if (error) throw error;
 
   const cpfCandidato = /^\d+$/.test(String(cand.colaboradorId)) ? String(cand.colaboradorId) : null;
-  await supabase
-    .from('operacional_os_colaboradores')
-    .delete()
-    .eq('os_id', os.id)
-    .eq('colaborador_key', cand.colaboradorId);
-  const { error: vinculoErr } = await supabase.from('operacional_os_colaboradores').insert({
-    os_id: os.id,
-    colaborador_key: cand.colaboradorId,
-    colaborador_nome: cand.nome,
-    colaborador_cpf: cpfCandidato,
-    distancia_km: cand.km,
-    origem_sugestao: 'PROGRAMACAO_ETAPA_B_ADICIONAL',
-  });
-  if (vinculoErr) console.warn('[programacao-equipe] falha ao gravar colaborador adicional da OS.', vinculoErr);
+  const [vinculoRes, espelhoRes] = await Promise.all([
+    supabase.from('operacional_os_colaboradores').delete().eq('os_id', os.id).eq('colaborador_key', cand.colaboradorId)
+      .then(() => supabase.from('operacional_os_colaboradores').insert({
+        os_id: os.id,
+        colaborador_key: cand.colaboradorId,
+        colaborador_nome: cand.nome,
+        colaborador_cpf: cpfCandidato,
+        distancia_km: cand.km,
+        origem_sugestao: 'PROGRAMACAO_ETAPA_B_ADICIONAL',
+      })),
+    supabase.from('programacao_colaboradores').upsert({
+      programacao_id: programacaoId,
+      colaborador_id: cand.colaboradorId,
+      nome_colaborador: cand.nome,
+      cargo: cand.cargo || null,
+      coordenacao: cand.coordenacao || null,
+      supervisao: cand.supervisao || null,
+      disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
+    }, { onConflict: 'programacao_id,colaborador_id' }),
+  ]);
+  if (vinculoRes?.error) console.warn('[programacao-equipe] falha ao gravar colaborador adicional da OS.', vinculoRes.error);
+  if (espelhoRes?.error) console.warn('[programacao-equipe] falha ao espelhar colaborador adicional.', espelhoRes.error);
 
-  const { error: espelhoErr } = await supabase.from('programacao_colaboradores').upsert({
-    programacao_id: programacaoId,
-    colaborador_id: cand.colaboradorId,
-    nome_colaborador: cand.nome,
-    cargo: cand.cargo || null,
-    coordenacao: cand.coordenacao || null,
-    supervisao: cand.supervisao || null,
-    disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
-  }, { onConflict: 'programacao_id,colaborador_id' });
-  if (espelhoErr) console.warn('[programacao-equipe] falha ao espelhar colaborador adicional.', espelhoErr);
+  return upsertRows?.[0] || { ...payload, id: null };
 }
 
 // Versão em LOTE de confirmarCandidato: grava N atribuições ({os, cand}) com
