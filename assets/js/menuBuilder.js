@@ -253,12 +253,6 @@ const FROTAS_FAILSAFE_ITEMS = [
     label: 'Rastreadores',
     path: 'frotas-rastreadores',
     aliases: ['FROTAS_RASTREADORES', 'RASTREADORES']
-  },
-  {
-    code: 'frotas_roteirizacao',
-    label: 'Roteirização',
-    path: 'frotas-roteirizacao',
-    aliases: ['FROTAS_ROTEIRIZACAO', 'ROTEIRIZACAO', 'ROTEIRIZAÇÃO', 'ROTAS', 'BFLEET', 'TMS']
   }
 ];
 
