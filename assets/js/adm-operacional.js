@@ -2,7 +2,7 @@ import { initProtectedPage } from './pageInit.js';
 import './operacional.js';
 import './operacional-direcionamento-v14.js';
 import './operacional-direcionamento-v12-fix.js';
-import './operacional-direcionamento-v21.js';
+import './operacional-direcionamento-v22.js';
 
 initProtectedPage('Operacional ADM', (content, userContext) => {
   if (window.OPERACIONAL?.openHome) {
