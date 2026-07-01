@@ -196,7 +196,14 @@ async function preencherVazios() {
       return;
     }
     const opts = lista.map((c) => `<option value="${esc(c.id)}">${esc(c.nome)}${c.cargo ? ` · ${esc(c.cargo)}` : ''}</option>`).join('');
-    right.innerHTML = `<div class="peqb-conf-km" style="margin-bottom:6px">Sem candidato ranqueado para a O.S. ${esc(osNumero(row) || '')} — escolha manualmente:</div><div class="peqb-row-actions" style="margin-top:0"><select class="peqb-select" data-manual-candidato>${opts}</select><button type="button" class="peqb-row-btn" data-manual-confirmar>Confirmar</button></div>`;
+    // Mesma "esqueleto" visual do cartão confirmado (peqb-conf-head + legenda
+    // no lugar da distância) — só troca o <select> de nome pelo escolha manual,
+    // pra não ficar com card mais raso/desproporcional que os vizinhos.
+    right.innerHTML = `<div class="peqb-conf-head">
+      <span class="peqb-conf-name"><select class="peqb-select" data-manual-candidato>${opts}</select></span>
+      <button type="button" class="peqb-row-btn" style="grid-column:2" data-manual-confirmar>Confirmar</button>
+    </div>
+    <div class="peqb-conf-km">⚠ Sem candidato ranqueado para a O.S. ${esc(osNumero(row) || '')} — selecione manualmente</div>`;
   });
 }
 function boot() {
