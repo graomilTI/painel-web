@@ -107,6 +107,71 @@ function prettyKey(key) {
   return String(key).replace(/_/g, ' ').replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 }
 
+const CATEGORIA_LABELS = {
+  'LOGÍSTICA': 'Logística / Embarque',
+  'QUALIDADE': 'Qualidade da carga',
+  'NOTAS FISCAIS': 'Notas fiscais',
+  'FINANCEIRO': 'Financeiro',
+  'FROTAS': 'Frotas / Multas',
+  'RH': 'Recursos Humanos',
+  'PHISHING': '⚠️ Suspeita de golpe',
+  'PROPOSTA': 'Proposta comercial (interno)',
+  'GERAL': 'Sem categoria definida'
+};
+
+const CATEGORIA_DESC = {
+  'LOGÍSTICA': 'Ordem de serviço, fechamento de frete, liberação ou programação de embarque.',
+  'QUALIDADE': 'Carga recusada, fora do padrão ou com impureza — vai com cópia pra auditoria.',
+  'NOTAS FISCAIS': 'Nota fiscal (NF-e/NFS-e), XML ou danfe anexado — vai pro faturamento.',
+  'FINANCEIRO': 'Boleto, comprovante, pagamento ou cobrança.',
+  'FROTAS': 'Multa, infração ou documento de veículo.',
+  'RH': 'Atestado, admissão, rescisão ou outro assunto de pessoal.',
+  'PHISHING': 'Sinais de golpe/phishing. Não abra anexos nem clique em links deste e-mail.',
+  'PROPOSTA': 'Encaminhamento interno de proposta comercial — não precisa agir por aqui.',
+  'GERAL': 'Não bateu com nenhuma regra automática. Vale conferir manualmente.'
+};
+
+function categoriaLabel(categoria) {
+  return CATEGORIA_LABELS[categoria] || categoria || 'Sem categoria definida';
+}
+
+function categoriaDesc(categoria) {
+  return CATEGORIA_DESC[categoria] || '';
+}
+
+const REGIONAL_LABELS = {
+  BAHIA: 'Bahia',
+  GOIAS: 'Goiás',
+  MARANHAO: 'Maranhão',
+  'MATO GROSSO DO SUL': 'Mato Grosso do Sul',
+  'MINAS GERAIS': 'Minas Gerais',
+  'MATO GROSSO MT1': 'Mato Grosso — MT1 (Sinop)',
+  'MATO GROSSO MT2': 'Mato Grosso — MT2 (Rondonópolis/Primavera do Leste)',
+  'MATO GROSSO MT3': 'Mato Grosso — MT3 (Confresa/Querência)',
+  'MATO GROSSO MT4': 'Mato Grosso — MT4 (Campo Novo do Parecis)',
+  PARA: 'Pará',
+  PARAGUAI: 'Paraguai',
+  'PR PONTA GROSSA': 'Paraná — Ponta Grossa',
+  'PR CASCAVEL': 'Paraná — Cascavel',
+  'PR LONDRINA': 'Paraná — Londrina',
+  'PR MARINGA': 'Paraná — Maringá e terminais',
+  'RIO GRANDE DO SUL': 'Rio Grande do Sul',
+  'SAO PAULO': 'São Paulo',
+  TOCANTINS: 'Tocantins'
+};
+
+function regionalLabel(regional) {
+  return REGIONAL_LABELS[regional] || regional || 'Sem regional identificado';
+}
+
+function classificadoPorLabel(valor) {
+  const v = String(valor || '');
+  if (v === 'ia+regras') return 'Regras + Inteligência Artificial';
+  if (v === 'regras') return 'Palavras-chave (sem regra específica)';
+  if (v.startsWith('regra:')) return `Regra automática: ${v.slice(6)}`;
+  return v || '—';
+}
+
 function dadosDetectadosEntries(dados) {
   return Object.entries(dados || {}).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '');
 }
@@ -165,6 +230,15 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-hero{border:1px solid var(--line);border-radius:24px;padding:32px;background:var(--bg-card);box-shadow:var(--shadow-soft);position:relative;overflow:hidden}
       .em-hero h2{margin:0 0 8px;color:var(--text);font-size:32px;font-family:'Syne',sans-serif;font-weight:800;letter-spacing:-0.03em;position:relative;z-index:1}
       .em-hero p{margin:0;color:var(--muted);max-width:1000px;font-size:14px;line-height:1.6;position:relative;z-index:1}
+
+      .em-guia{border:1px solid var(--green-2);border-radius:20px;background:var(--green-soft);padding:20px 22px;display:grid;gap:12px}
+      .em-guia-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+      .em-guia-head strong{color:var(--text);font-size:15px;font-family:'DM Sans',sans-serif}
+      .em-guia-passos{margin:0;padding-left:0;list-style:none;display:grid;gap:8px}
+      .em-guia-passos li{color:var(--text);font-size:13px;line-height:1.6;font-family:'DM Sans',sans-serif}
+      .em-guia-passos li b{color:var(--green-2);margin-right:6px}
+      .em-guia-toggle{align-self:flex-start;border:none;background:none;color:var(--muted);font-size:12px;cursor:pointer;text-decoration:underline;padding:0;font-family:'DM Sans',sans-serif}
+      .em-guia-toggle:hover{color:var(--green-2)}
 
       .em-tabs{display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line);padding-bottom:16px}
       .em-tab{border:1px solid var(--line);border-radius:16px;padding:10px 16px;background:transparent;color:var(--muted);cursor:pointer;font-weight:700;font-size:12px;font-family:'DM Sans',sans-serif;text-transform:uppercase;letter-spacing:.06em;transition:all 200ms;position:relative}
@@ -255,12 +329,27 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
         <p>Lê caixas do cPanel via IMAP, classifica por regional/assunto, gera resumo e resposta sugerida. O envio fica em fila para aprovação e processamento pelo worker do servidor.</p>
       </div>
 
+      <div class="em-guia" id="emGuia" style="display:none">
+        <div class="em-guia-head">
+          <strong>📚 Como funciona a Central de E-mails</strong>
+          <button class="btn btn-secondary" type="button" id="emGuiaFechar">Entendi, fechar</button>
+        </div>
+        <ol class="em-guia-passos">
+          <li><b>1.</b> Todo e-mail que chega é lido e classificado sozinho: o sistema decide a <b>categoria</b> (do que se trata) e a <b>regional</b> (de qual área é).</li>
+          <li><b>2.</b> Quando dá pra saber pra quem aquele e-mail deveria ir (por exemplo, o gestor daquela regional), aparece uma sugestão de <b>encaminhamento</b> dentro do e-mail.</li>
+          <li><b>3.</b> Você só aprova — o sistema envia de verdade pro destinatário certo, com os anexos originais, sem precisar reescrever nada.</li>
+          <li><b>4.</b> O mesmo vale pras respostas: você escreve ou ajusta o texto, aprova, e o envio por SMTP acontece sozinho depois, na aba "Fila de Respostas".</li>
+        </ol>
+      </div>
+      <button class="em-guia-toggle" type="button" id="emGuiaAbrir" style="display:none">❓ Como funciona esta tela?</button>
+
       <div class="em-tabs">
         <button class="em-tab active" data-tab="entrada" type="button">Entrada</button>
         <button class="em-tab" data-tab="perigo" type="button">🔴 PERIGO</button>
         <button class="em-tab" data-tab="outbox" type="button">Fila de Respostas</button>
         <button class="em-tab" data-tab="contas" type="button">Contas cPanel</button>
       </div>
+      <p class="em-muted em-small" id="emTabHint" style="margin:-8px 0 0"></p>
 
       <div id="emPanelEntrada" class="em-panel">
         <article class="em-card">
@@ -326,6 +415,13 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     </section>
   `;
 
+  const TAB_HINTS = {
+    entrada: 'E-mails recebidos, já classificados. Aprove respostas/encaminhamentos ou arquive o que já foi resolvido.',
+    perigo: 'E-mails com anexo suspeito (executável, compactado ou não identificado). Não abra os anexos marcados aqui.',
+    outbox: 'Fila do que já foi aprovado (respostas e encaminhamentos) — o worker do servidor envia de verdade a cada poucos minutos.',
+    contas: 'Caixas de e-mail (cPanel) que o worker lê via IMAP. Cadastre aqui as contas que devem entrar na Central.'
+  };
+
   function setTab(tab) {
     state.tab = tab;
     document.querySelectorAll('.em-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
@@ -333,6 +429,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     document.getElementById('emPanelPerigo').style.display = tab === 'perigo' ? '' : 'none';
     document.getElementById('emPanelOutbox').style.display = tab === 'outbox' ? '' : 'none';
     document.getElementById('emPanelContas').style.display = tab === 'contas' ? '' : 'none';
+    document.getElementById('emTabHint').textContent = TAB_HINTS[tab] || '';
     if (tab === 'perigo') loadPerigo();
     if (tab === 'outbox') loadOutbox();
     if (tab === 'contas') renderAccounts();
@@ -465,7 +562,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
           ${statusBadge(e.status)}
         </div>
         <div class="em-meta">${esc(e.remetente_nome || e.remetente_email || '-')} · ${brDate(e.data_recebimento)}</div>
-        <div class="em-actions">${prioBadge(e.prioridade)}<span class="em-badge arquivado">${esc(e.categoria || 'SEM CATEGORIA')}</span><span class="em-badge arquivado">${esc(e.regional || 'SEM REGIONAL')}</span></div>
+        <div class="em-actions">${prioBadge(e.prioridade)}<span class="em-badge arquivado" title="${esc(categoriaDesc(e.categoria))}">${esc(categoriaLabel(e.categoria))}</span><span class="em-badge arquivado">${esc(regionalLabel(e.regional))}</span></div>
         <div class="em-snippet">${esc((e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
       </div>
     `).join('');
@@ -513,15 +610,15 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
         </div>
 
         <div class="em-insights">
-          <div class="em-chip">Regional <b>${esc(e.regional || '—')}</b></div>
-          <div class="em-chip">Categoria <b>${esc(e.categoria || '—')}</b></div>
-          <div class="em-chip">Precisa resposta? <b>${e.precisa_resposta ? 'Sim' : 'Não'}</b></div>
-          <div class="em-chip">Classificado por <b>${esc(e.classificado_por || '—')}</b></div>
+          <div class="em-chip" title="Área/regional identificada no conteúdo do e-mail">Regional <b>${esc(regionalLabel(e.regional))}</b></div>
+          <div class="em-chip" title="${esc(categoriaDesc(e.categoria))}">Categoria <b>${esc(categoriaLabel(e.categoria))}</b></div>
+          <div class="em-chip" title="Se sim, o e-mail entra como pendente até você responder ou arquivar">Precisa resposta? <b>${e.precisa_resposta ? 'Sim' : 'Não'}</b></div>
+          <div class="em-chip" title="Como o sistema decidiu a categoria acima">Classificado por <b>${esc(classificadoPorLabel(e.classificado_por))}</b></div>
         </div>
 
         ${e.resumo_ia ? `<div class="em-summary"><span class="em-summary-label">✨ Resumo da IA</span><p>${esc(e.resumo_ia)}</p></div>` : ''}
 
-        ${e.encaminhar_sugerido_para ? `<div class="em-summary"><span class="em-summary-label">📤 Encaminhamento sugerido</span><p>Para: <b>${esc(e.encaminhar_sugerido_para)}</b>${e.encaminhar_sugerido_cc ? ` · Cc: <b>${esc(e.encaminhar_sugerido_cc)}</b>` : ''}</p>${(() => {
+        ${e.encaminhar_sugerido_para ? `<div class="em-summary"><span class="em-summary-label">📤 Encaminhamento sugerido</span><p>Para: <b>${esc(e.encaminhar_sugerido_para)}</b>${e.encaminhar_sugerido_cc ? ` · Cc: <b>${esc(e.encaminhar_sugerido_cc)}</b>` : ''}</p><div class="em-muted em-small">O sistema identificou pra quem esse e-mail deveria ir. Ao aprovar, ele reenvia o e-mail original (com os anexos) pra esse destinatário — você não precisa reescrever nada.</div>${(() => {
           const existente = state.outbox.find((o) => o.tipo === 'ENCAMINHAMENTO');
           return existente
             ? `<div class="em-muted em-small">Encaminhamento já ${esc(existente.status)} em ${brDate(existente.created_at)}</div>`
@@ -558,6 +655,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
               <button class="btn btn-secondary" type="button" data-action="archive">Arquivar</button>
               <button class="btn btn-secondary" type="button" data-action="pending">Marcar pendente</button>
             </div>
+            <div class="em-muted em-small">"Aprovar" coloca o texto acima na fila de envio — o sistema manda pelo SMTP sozinho em seguida. "Marcar resolvido"/"Arquivar" tiram este e-mail da lista de pendentes sem enviar nada. "Marcar pendente" devolve pra lista de acompanhamento.</div>
             ${state.outbox.length ? `<div class="em-muted em-small">Já existe resposta na fila: ${state.outbox.map((o) => `${esc(o.status)} em ${brDate(o.created_at)}`).join(' · ')}</div>` : ''}
           </form>
         </div>
@@ -714,6 +812,23 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     if (sync) syncAccount(sync);
   });
   document.getElementById('emLoadOutbox').addEventListener('click', loadOutbox);
+
+  const emGuia = document.getElementById('emGuia');
+  const emGuiaAbrir = document.getElementById('emGuiaAbrir');
+  const guiaFechado = localStorage.getItem('emGuiaFechado') === '1';
+  emGuia.style.display = guiaFechado ? 'none' : '';
+  emGuiaAbrir.style.display = guiaFechado ? '' : 'none';
+  document.getElementById('emGuiaFechar').addEventListener('click', () => {
+    localStorage.setItem('emGuiaFechado', '1');
+    emGuia.style.display = 'none';
+    emGuiaAbrir.style.display = '';
+  });
+  emGuiaAbrir.addEventListener('click', () => {
+    localStorage.setItem('emGuiaFechado', '0');
+    emGuia.style.display = '';
+    emGuiaAbrir.style.display = 'none';
+  });
+  document.getElementById('emTabHint').textContent = TAB_HINTS.entrada;
 
   loadAccounts().then(loadEmails).catch((err) => {
     document.getElementById('emList').innerHTML = `<div class="em-empty em-danger">${esc(err.message || err)}</div>`;
