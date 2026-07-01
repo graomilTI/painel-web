@@ -111,7 +111,13 @@ const DADOS_LABELS = {
   prestador_nome: 'Prestador', prestador_cnpj: 'CNPJ prestador',
   tomador_nome: 'Tomador', tomador_cnpj: 'CNPJ tomador',
   vencimento: 'Vencimento', favorecido_nome: 'Favorecido', favorecido_documento: 'Documento do favorecido',
-  pagador_nome: 'Pagador', chave_pix: 'Chave PIX', numero_documento: 'Número do documento', banco: 'Banco'
+  pagador_nome: 'Pagador', chave_pix: 'Chave PIX', numero_documento: 'Número do documento', banco: 'Banco',
+  contratante_cliente: 'Contratante/Cliente', filial_pagadora: 'Filial pagadora',
+  produtor: 'Produtor/Fornecedor', armazem_embarque: 'Armazém de embarque',
+  cidade_embarque: 'Cidade de embarque', cidade_destino: 'Cidade destino', local_destino: 'Local de destino',
+  numero_contrato: 'Número do contrato', produto: 'Produto', tipo_produto: 'Tipo de produto',
+  volume_inicial: 'Volume inicial', outros_a_cobrar: 'Outros a cobrar',
+  regional_informado: 'Regional (informado no e-mail)'
 };
 
 function prettyKey(key) {
@@ -185,10 +191,16 @@ function classificadoPorLabel(valor) {
 
 // "contrato" só é confiável no formato real da empresa (ex: P31899.000); qualquer outra
 // coisa (como o fallback genérico que já existiu no worker) tende a ser telefone/data/CEP
-// pego por engano. Valores muito compridos em geral são texto de assinatura/disclaimer que
-// vazou pro regex de extração, não um dado de verdade — melhor esconder do que confundir.
+// pego por engano. O limite de tamanho é só pros campos que deveriam ser um código curto
+// (ex: "os") — campos de endereço/nome (armazém, produtor, local) são naturalmente longos.
 const DADOS_VALIDATORS = {
   contrato: (v) => /^P\d{5}\.\d{3}$/i.test(v)
+};
+
+const DADOS_MAX_LEN = {
+  os: 30, placa: 12, contrato: 15, cnpj: 20, cpf: 16, valor: 20, numero_nf: 20,
+  serie_nf: 10, chave_nfe: 50, numero_nfse: 20, numero_documento: 30, chave_pix: 80,
+  numero_contrato: 20, cidade_embarque: 60, cidade_destino: 60
 };
 
 function dadosDetectadosEntries(dados) {
@@ -198,7 +210,7 @@ function dadosDetectadosEntries(dados) {
     if (!s) return false;
     if (typeof v === 'object') return true;
     if (DADOS_VALIDATORS[k] && !DADOS_VALIDATORS[k](s)) return false;
-    return s.length <= 60;
+    return s.length <= (DADOS_MAX_LEN[k] || 200);
   });
 }
 

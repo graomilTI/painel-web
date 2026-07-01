@@ -218,6 +218,74 @@ function extractData(content) {
   };
 }
 
+function normalizeLabel(value) {
+  return normalize(value).replace(/[^a-z0-9/ ]/g, '').trim();
+}
+
+// E-mails de solicitação de atendimento/embarque costumam vir como uma lista de
+// "Rótulo: valor" (um por linha), mas cada remetente usa palavras um pouco diferentes pro
+// mesmo campo (ex: "Fornecedor" e "Produtor" pro mesmo conceito). Por isso o match é por
+// sinônimo normalizado, não por rótulo exato -- e quando o rótulo não aparece no e-mail, o
+// campo fica null (nem todo e-mail desse tipo traz todos os campos).
+const FORM_FIELD_SYNONYMS = {
+  contratante_cliente: ['contratante/cliente', 'contratante cliente', 'contratante', 'cliente'],
+  filial_pagadora: ['filial pagadora', 'filial'],
+  produtor: ['produtor', 'fornecedor'],
+  armazem_embarque: ['armazem de embarque', 'armazem embarque', 'local embarque', 'local de embarque'],
+  cidade_embarque: ['cidade de embarque', 'cidade embarque'],
+  cidade_destino: ['cidade destino', 'cidade de destino'],
+  local_destino: ['local destino', 'local de destino'],
+  numero_contrato: ['numero do contrato', 'numero contrato', 'no contrato'],
+  produto_completo: ['produto'],
+  volume_inicial: ['volume inicial', 'volume'],
+  outros_a_cobrar: ['outros a cobrar', 'outros cobrar'],
+  regional_informado: ['regional']
+};
+
+const PRODUTOS_CONHECIDOS = ['MILHO', 'SOJA', 'TRIGO', 'SORGO', 'ARROZ', 'FEIJÃO', 'FEIJAO', 'ALGODÃO', 'ALGODAO', 'FARELO DE SOJA', 'FARELO'];
+
+// "Produto: MILHO EM GRAOS" junta produto + tipo numa linha só. Separa pelo nome de grão
+// conhecido no começo do valor; se não reconhecer, guarda tudo em "produto" e deixa
+// "tipo_produto" vazio em vez de arriscar um corte errado.
+function splitProdutoTipo(valor) {
+  const v = text(valor);
+  const upper = v.toUpperCase();
+  const match = PRODUTOS_CONHECIDOS.find((p) => upper.startsWith(p));
+  if (!match) return { produto: v || null, tipo_produto: null };
+  const resto = v.slice(match.length).trim();
+  return { produto: match, tipo_produto: resto || null };
+}
+
+function extractFormFields(content) {
+  const found = {};
+  for (const line of text(content).split(/\r?\n/)) {
+    const m = line.match(/^\s*([^:]{2,40}):\s*(.+?)\s*$/);
+    if (!m) continue;
+    const label = normalizeLabel(m[1]);
+    const value = text(m[2]);
+    if (!value) continue;
+    for (const [field, synonyms] of Object.entries(FORM_FIELD_SYNONYMS)) {
+      if (!found[field] && synonyms.includes(label)) found[field] = value;
+    }
+  }
+  const { produto, tipo_produto } = found.produto_completo ? splitProdutoTipo(found.produto_completo) : { produto: null, tipo_produto: null };
+  return {
+    contratante_cliente: found.contratante_cliente || null,
+    filial_pagadora: found.filial_pagadora || null,
+    produtor: found.produtor || null,
+    armazem_embarque: found.armazem_embarque || null,
+    cidade_embarque: found.cidade_embarque || null,
+    cidade_destino: found.cidade_destino || null,
+    local_destino: found.local_destino || null,
+    numero_contrato: found.numero_contrato || null,
+    produto,
+    tipo_produto,
+    volume_inicial: found.volume_inicial || null,
+    outros_a_cobrar: found.outros_a_cobrar || null,
+    regional_informado: found.regional_informado || null
+  };
+}
+
 function pickNonEmpty(obj) {
   const out = {};
   for (const [k, v] of Object.entries(obj || {})) {
@@ -359,7 +427,7 @@ function classifyByRules(message, rules, gestores) {
     prioridade: matched?.prioridade_email || 'NORMAL',
     precisa_resposta: matched?.precisa_resposta ?? false,
     resumo_ia: stripArtifacts(message.text || message.html).replace(/\s+/g, ' ').slice(0, 420) || 'E-mail recebido sem texto suficiente para resumo.',
-    dados_detectados: extractData(fullLimpo),
+    dados_detectados: { ...extractData(fullLimpo), ...extractFormFields(fullLimpo) },
     resposta_sugerida: matched?.resposta_modelo || '',
     auto_responder: matched?.auto_responder === true,
     risco: matched?.risco || null,
