@@ -1,4 +1,4 @@
-const CACHE_NAME = 'g1000-painel-pwa-v8';
+const CACHE_NAME = 'g1000-painel-pwa-v9';
 const SHARE_CACHE = 'g1000-shared-file';
 
 const STATIC_URLS = [
@@ -69,7 +69,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (shouldCacheStatic(url.pathname)) {
-    event.respondWith(cacheFirst(event.request));
+    event.respondWith(staleWhileRevalidate(event.request));
   }
 });
 
@@ -99,14 +99,16 @@ function fallbackForPath(pathname) {
   return null;
 }
 
-async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-
-  const response = await fetch(request);
+// Serve do cache na hora (funciona offline/conexão ruim em campo), mas sempre busca uma versão
+// nova em paralelo e atualiza o cache pro próximo carregamento — evita que .js/.css fiquem presos
+// pra sempre na primeira versão cacheada (cacheFirst puro nunca revalidava contra a rede).
+async function staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE_NAME);
-  cache.put(request, response.clone()).catch(() => {});
-  return response;
+  const cached = await cache.match(request);
+  const atualizado = fetch(request)
+    .then((response) => { cache.put(request, response.clone()).catch(() => {}); return response; })
+    .catch(() => null);
+  return cached || (await atualizado) || fetch(request);
 }
 
 async function networkFirst(request, fallbackUrl = null) {
