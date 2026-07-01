@@ -246,16 +246,24 @@ import { supabase } from './supabaseClient.js';
       sel('hospedagem_alojamentos', 'nome,cidade,uf,status', q => q.eq('status', 'ATIVO')),
     ]);
     const hoteisComCoord = hoteis.filter(geo);
-    const alojamentosPorCidade = new Map();
-    alojamentos.forEach(a => { const k = `${norm(a.cidade)}|${norm(a.uf)}`; if (!alojamentosPorCidade.has(k)) alojamentosPorCidade.set(k, a); });
-    return { hoteisComCoord, alojamentosPorCidade };
+    // Poucos registros (dezenas) — mantidos em lista simples, não em Map por chave exata: nomes
+    // de cidade em hospedagem_alojamentos às vezes vêm truncados/abreviados (ex.: "Campo Novo"
+    // em vez de "Campo Novo do Parecis"), então o casamento com o ponto da OS precisa ser por
+    // substring, não igualdade exata.
+    const alojamentosPorUf = alojamentos.map(a => ({ ...a, cidadeNorm: norm(a.cidade), ufNorm: norm(a.uf) }));
+    return { hoteisComCoord, alojamentosPorUf };
   }
 
   // --- Motor de custo-benefício ----------------------------------------
 
+  function alojamentoParaPonto(ponto) {
+    const ufN = norm(ponto.uf), cidadeN = norm(ponto.cidade);
+    if (!ufN || !cidadeN) return null;
+    return st.alojamentosPorUf.find(a => a.ufNorm === ufN && (cidadeN.includes(a.cidadeNorm) || a.cidadeNorm.includes(cidadeN))) || null;
+  }
+
   function hospedagemParaPonto(ponto) {
-    const chaveCidade = `${norm(ponto.cidade)}|${norm(ponto.uf)}`;
-    const alojamento = st.alojamentosPorCidade.get(chaveCidade);
+    const alojamento = alojamentoParaPonto(ponto);
     if (alojamento) return { tipo: 'alojamento', nome: alojamento.nome, custoDia: 0 };
 
     if (!ponto.temCoord) return null;
@@ -314,7 +322,7 @@ import { supabase } from './supabaseClient.js';
 
     const modoInfo = modoColaborador(c, ponto);
     const custoDeslocamento = modoInfo.custo ?? modoInfo.custoFn(distReal);
-    const hospedagem = ponto.temCoord || st.alojamentosPorCidade.has(`${norm(ponto.cidade)}|${norm(ponto.uf)}`) ? hospedagemParaPonto(ponto) : null;
+    const hospedagem = ponto.temCoord || alojamentoParaPonto(ponto) ? hospedagemParaPonto(ponto) : null;
 
     const hospedar = hospedagem && hospedagem.custoDia < custoDeslocamento;
     const custoDia = hospedar ? hospedagem.custoDia : custoDeslocamento;
@@ -387,7 +395,7 @@ import { supabase } from './supabaseClient.js';
     st.nomesFrotaSet = frotaAtual.nomesFrotaSet;
     st.posicaoPorNome = frotaAtual.posicaoPorNome;
     st.hoteisComCoord = hospedagem.hoteisComCoord;
-    st.alojamentosPorCidade = hospedagem.alojamentosPorCidade;
+    st.alojamentosPorUf = hospedagem.alojamentosPorUf;
 
     // Motoristas de frota com posição atual mas sem cadastro em operacional_colaborador_base
     // (ex.: admissão recente) não podem ficar de fora — senão nunca seriam sugeridos,
