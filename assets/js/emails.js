@@ -521,6 +521,13 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
 
         ${e.resumo_ia ? `<div class="em-summary"><span class="em-summary-label">✨ Resumo da IA</span><p>${esc(e.resumo_ia)}</p></div>` : ''}
 
+        ${e.encaminhar_sugerido_para ? `<div class="em-summary"><span class="em-summary-label">📤 Encaminhamento sugerido</span><p>Para: <b>${esc(e.encaminhar_sugerido_para)}</b>${e.encaminhar_sugerido_cc ? ` · Cc: <b>${esc(e.encaminhar_sugerido_cc)}</b>` : ''}</p>${(() => {
+          const existente = state.outbox.find((o) => o.tipo === 'ENCAMINHAMENTO');
+          return existente
+            ? `<div class="em-muted em-small">Encaminhamento já ${esc(existente.status)} em ${brDate(existente.created_at)}</div>`
+            : `<div class="em-actions"><button class="btn btn-primary" type="button" id="emAprovarEncaminhamento">Aprovar encaminhamento</button></div>`;
+        })()}</div>` : ''}
+
         ${dadosEntries.length ? `<div class="em-extracted"><span class="em-section-label">Dados detectados</span><dl class="em-dl">${dadosEntries.map(([k, v]) => `<dt>${esc(DADOS_LABELS[k] || prettyKey(k))}</dt><dd>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>` : ''}
 
         ${state.attachments.length ? `<div><span class="em-section-label">Anexos ${state.attachments.some((a) => isDangerousAttachment(a.nome_arquivo, a.mime_type)) ? '⚠️ PERIGO' : ''}</span><div class="em-attachments">${state.attachments.map((a) => {
@@ -578,6 +585,25 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       await selectEmail(e.id);
       alert('Resposta aprovada e colocada na fila. O worker enviará via SMTP.');
     });
+
+    document.getElementById('emAprovarEncaminhamento')?.addEventListener('click', async () => {
+      const { error } = await supabase.from('email_outbox').insert({
+        email_id: e.id,
+        account_id: e.account_id,
+        tipo: 'ENCAMINHAMENTO',
+        para: e.encaminhar_sugerido_para,
+        cc: e.encaminhar_sugerido_cc || null,
+        assunto: /^fwd:/i.test(e.assunto || '') ? e.assunto : `Fwd: ${e.assunto || ''}`,
+        corpo: `Encaminhado automaticamente pela Central de E-mails.\n\n${bodyText}`,
+        status: 'PENDENTE',
+        aprovado_por: userContext?.user?.id || null,
+        aprovado_por_nome: userContext?.profile?.full_name || userContext?.user?.email || null,
+        aprovado_em: new Date().toISOString()
+      });
+      if (error) return alert(error.message);
+      await selectEmail(e.id);
+      alert('Encaminhamento aprovado e colocado na fila. O worker enviará via SMTP com os anexos originais.');
+    });
   }
 
   async function loadPerigo() {
@@ -632,9 +658,9 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
             <span class="em-avatar sm" style="background:${avatarColor(o.para)}">${esc(initials(null, o.para))}</span>
             <div class="em-subject">${esc(o.assunto || '(sem assunto)')}</div>
           </div>
-          ${statusBadge(o.status)}
+          <div class="em-actions">${o.tipo === 'ENCAMINHAMENTO' ? '<span class="em-badge arquivado">📤 Encaminhamento</span>' : '<span class="em-badge arquivado">↩ Resposta</span>'}${statusBadge(o.status)}</div>
         </div>
-        <div class="em-meta">Para: ${esc(o.para)} · ${esc(o.email_accounts?.nome || '')} · ${brDate(o.created_at)}</div>
+        <div class="em-meta">Para: ${esc(o.para)}${o.cc ? ` · Cc: ${esc(o.cc)}` : ''} · ${esc(o.email_accounts?.nome || '')} · ${brDate(o.created_at)}</div>
         ${o.aprovado_por_nome ? `<div class="em-actions"><span class="em-badge arquivado">Aprovado por ${esc(o.aprovado_por_nome)}</span></div>` : ''}
         ${o.erro ? `<div class="em-danger em-small">${esc(o.erro)}</div>` : ''}
       </div>

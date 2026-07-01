@@ -147,19 +147,48 @@ function messageId(value, fallback = true) {
   return `sem-message-id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+// Chaves alinhadas com email_gestores_regionais.regional. Priorizamos códigos de assunto
+// de "PROGRAMAÇÃO" (pgo/mga/csc/br163/vale sul/ms norte-sul/pa pgm) e nomes de estado por
+// extenso, que são inequívocos. Evitamos abreviações de 2-3 letras soltas (tipo "ma", "pa")
+// e nomes de cidade tirados do cadastro de colaboradores porque aquele cadastro tem cidades
+// repetidas em mais de uma regional (ex: "Rio Verde" aparece em Goiás e no MT2) — usar isso
+// arriscaria encaminhar pro gestor errado.
 function extractRegional(content) {
   const source = normalize(content);
   const checks = [
-    ['MATO GROSSO MT3', ['confresa', 'querencia', 'mt3', 'mato grosso mt3']],
-    ['MATO GROSSO MT2', ['mt2', 'sorriso', 'sinop', 'lucas do rio verde']],
-    ['MATO GROSSO MT1', ['mt1', 'rondonopolis', 'primavera do leste']],
-    ['GOIÁS', ['goias', 'goiania', 'rio verde', 'jatai']],
-    ['CASCAVEL', ['cascavel', 'oeste pr']],
-    ['MARINGÁ E TERMINAIS', ['maringa', 'paranagua', 'terminal', 'terminais']],
-    ['TOCANTINS', ['tocantins', 'palmas', 'gurupi']],
-    ['PARANÁ', ['parana', ' pr ']]
+    ['MATO GROSSO MT3', ['vale sul', 'confresa', 'querencia', 'mt3', 'mato grosso mt3']],
+    ['MATO GROSSO MT1', ['br163 sul', 'br163 norte', 'br 163', 'mt1', 'sinop', 'sorriso', 'lucas do rio verde']],
+    ['MATO GROSSO MT2', ['mt2', 'rondonopolis', 'primavera do leste']],
+    ['MATO GROSSO MT4', ['mt4', 'campo novo do parecis', 'comodoro']],
+    ['PR PONTA GROSSA', ['pr pgo', 'ponta grossa']],
+    ['PR CASCAVEL', ['pr csc', 'cascavel', 'oeste pr']],
+    ['PR LONDRINA', ['londrina']],
+    ['PR MARINGA', ['pr mga', 'maringa', 'paranagua', 'terminal', 'terminais']],
+    ['GOIAS', ['goias', 'goiania', 'jatai']],
+    ['MATO GROSSO DO SUL', ['ms norte', 'ms sul', 'mato grosso do sul']],
+    ['MINAS GERAIS', ['minas gerais']],
+    ['BAHIA', ['bahia']],
+    ['MARANHAO', ['maranhao']],
+    ['PARA', ['pa pgm', 'paragominas']],
+    ['PARAGUAI', ['paraguai']],
+    ['RIO GRANDE DO SUL', ['rio grande do sul']],
+    ['SAO PAULO', ['sao paulo']],
+    ['TOCANTINS', ['tocantins', 'palmas', 'gurupi']]
   ];
   return checks.find(([, words]) => words.some((word) => source.includes(normalize(word))))?.[0] || null;
+}
+
+function resolveEncaminhamento(rule, regional, gestores) {
+  const para = [];
+  if (rule?.destino_fixo_email) para.push(rule.destino_fixo_email);
+  if (rule?.destino_regional && regional) {
+    const gestor = gestores?.get(regional);
+    if (gestor?.gestor_email) para.push(gestor.gestor_email);
+  }
+  return {
+    encaminhar_sugerido_para: para.length ? [...new Set(para)].join(',') : null,
+    encaminhar_sugerido_cc: rule?.cc_fixo_email || null
+  };
 }
 
 function extractData(content) {
@@ -292,7 +321,13 @@ async function loadRules() {
   return data || [];
 }
 
-function classifyByRules(message, rules) {
+async function loadGestoresRegionais() {
+  const { data, error } = await supabase.from('email_gestores_regionais').select('*').eq('ativo', true);
+  if (error) throw error;
+  return new Map((data || []).map((row) => [row.regional, row]));
+}
+
+function classifyByRules(message, rules, gestores) {
   const haystack = normalize([message.subject, message.fromText, message.text, message.html].join('\n'));
   const matched = rules.find((rule) => {
     const words = Array.isArray(rule.palavras_chave) ? rule.palavras_chave : [];
@@ -301,8 +336,9 @@ function classifyByRules(message, rules) {
       && (!rule.assunto_contem || normalize(message.subject).includes(normalize(rule.assunto_contem)));
   });
   const full = [message.subject, message.text, message.html].join('\n');
+  const regional = matched?.regional || extractRegional(full);
   return {
-    regional: matched?.regional || extractRegional(full),
+    regional,
     categoria: matched?.categoria || 'GERAL',
     prioridade: matched?.prioridade_email || 'NORMAL',
     precisa_resposta: matched?.precisa_resposta ?? false,
@@ -311,7 +347,8 @@ function classifyByRules(message, rules) {
     resposta_sugerida: matched?.resposta_modelo || '',
     auto_responder: matched?.auto_responder === true,
     risco: matched?.risco || null,
-    classificado_por: matched ? `regra:${matched.nome}` : 'regras'
+    classificado_por: matched ? `regra:${matched.nome}` : 'regras',
+    ...resolveEncaminhamento(matched, regional, gestores)
   };
 }
 
@@ -425,7 +462,7 @@ async function collectAttachments(parsed, depth = 0) {
   return result;
 }
 
-async function processMailbox(client, account, rules, mailbox, state) {
+async function processMailbox(client, account, rules, gestores, mailbox, state) {
   const mailboxPath = mailbox.path;
   const lock = await client.getMailboxLock(mailboxPath);
   let inserted = 0;
@@ -460,7 +497,7 @@ async function processMailbox(client, account, rules, mailbox, state) {
         const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', id).maybeSingle();
         if (exists.data?.id) continue;
         const input = { subject: text(parsed.subject) || '(sem assunto)', fromText: text(parsed.from?.text || from.address), text: text(parsed.text), html: text(parsed.html) };
-        const cls = await classifyWithAI(input, classifyByRules(input, rules));
+        const cls = await classifyWithAI(input, classifyByRules(input, rules, gestores));
         const { data: saved, error } = await supabase.from('email_messages').insert({
           account_id: account.id,
           uid: item.uid,
@@ -485,6 +522,8 @@ async function processMailbox(client, account, rules, mailbox, state) {
           status: cls.precisa_resposta ? 'RESPONDER' : 'NOVO',
           classificado_por: cls.classificado_por,
           risco: cls.risco || 'BAIXO',
+          encaminhar_sugerido_para: nullableText(cls.encaminhar_sugerido_para),
+          encaminhar_sugerido_cc: nullableText(cls.encaminhar_sugerido_cc),
           raw: {
             mailbox: mailboxPath,
             uid_validity: uidValidity,
@@ -540,7 +579,7 @@ async function processMailbox(client, account, rules, mailbox, state) {
   }
 }
 
-async function syncAccount(account, rules) {
+async function syncAccount(account, rules, gestores) {
   console.log(`Sincronizando ${account.email}...`);
   const client = new ImapFlow({
     host: account.imap_host,
@@ -567,7 +606,7 @@ async function syncAccount(account, rules) {
 
     for (const mailbox of mailboxes) {
       try {
-        const result = await processMailbox(client, account, rules, mailbox, states.get(mailbox.path));
+        const result = await processMailbox(client, account, rules, gestores, mailbox, states.get(mailbox.path));
         inserted += result.inserted;
         failed += result.failed;
         syncedPaths.push(mailbox.path);
@@ -605,6 +644,32 @@ async function syncAccount(account, rules) {
   }
 }
 
+// Encaminhamentos (tipo ENCAMINHAMENTO) reenviam os anexos originais da mensagem, baixados
+// do bucket privado onde o worker já guardou uma cópia na hora de classificar o e-mail.
+async function loadForwardAttachments(emailId) {
+  if (!emailId) return [];
+  const { data: attachments, error } = await supabase
+    .from('email_attachments')
+    .select('nome_arquivo, mime_type, storage_path')
+    .eq('email_id', emailId)
+    .not('storage_path', 'is', null);
+  if (error) throw error;
+  const result = [];
+  for (const attachment of attachments || []) {
+    const { data, error: downloadError } = await supabase.storage.from('email-anexos').download(attachment.storage_path);
+    if (downloadError) {
+      console.warn(`Falha ao baixar anexo ${attachment.nome_arquivo} pra encaminhamento:`, downloadError.message);
+      continue;
+    }
+    result.push({
+      filename: attachment.nome_arquivo || 'anexo',
+      contentType: attachment.mime_type || undefined,
+      content: Buffer.from(await data.arrayBuffer())
+    });
+  }
+  return result;
+}
+
 async function processOutbox() {
   const { data: rows, error } = await supabase
     .from('email_outbox')
@@ -625,13 +690,15 @@ async function processOutbox() {
         secure: account.smtp_secure,
         auth: { user: account.username, pass: decryptCredential(account.password_cipher) }
       });
+      const attachments = row.tipo === 'ENCAMINHAMENTO' ? await loadForwardAttachments(row.email_id) : [];
       const info = await transporter.sendMail({
         from: `${account.nome || account.email} <${account.email}>`,
         to: row.para,
         cc: row.cc || undefined,
         bcc: row.bcc || undefined,
         subject: row.assunto,
-        text: row.corpo
+        text: row.corpo,
+        attachments: attachments.length ? attachments : undefined
       });
       await supabase.from('email_outbox').update({
         status: 'ENVIADO',
@@ -640,7 +707,9 @@ async function processOutbox() {
         erro: null,
         updated_at: new Date().toISOString()
       }).eq('id', row.id);
-      if (row.email_id) {
+      if (row.email_id && row.tipo === 'ENCAMINHAMENTO') {
+        await supabase.from('email_historico').insert({ email_id: row.email_id, outbox_id: row.id, acao: 'ENCAMINHAMENTO_ENVIADO', detalhes: { para: row.para, cc: row.cc, smtp_message_id: info.messageId } });
+      } else if (row.email_id) {
         await supabase.from('email_messages').update({ status: 'RESPONDIDO', updated_at: new Date().toISOString() }).eq('id', row.email_id);
         await supabase.from('email_historico').insert({ email_id: row.email_id, outbox_id: row.id, acao: 'EMAIL_ENVIADO', detalhes: { smtp_message_id: info.messageId } });
       }
@@ -656,9 +725,10 @@ async function processOutbox() {
 
 async function runOnce() {
   const rules = await loadRules();
+  const gestores = await loadGestoresRegionais();
   const { data: accounts, error } = await supabase.from('email_accounts').select('*').eq('ativo', true).order('nome');
   if (error) throw error;
-  for (const account of accounts || []) await syncAccount(account, rules);
+  for (const account of accounts || []) await syncAccount(account, rules, gestores);
   await processOutbox();
 }
 
