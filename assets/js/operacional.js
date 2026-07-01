@@ -17,8 +17,11 @@ import { supabase } from './supabaseClient.js';
   // Combustível: R$7/L, 10km/L, ida+volta. Mesma premissa usada em programacao-fase2-custos.js.
   const COMBUSTIVEL_PRECO_L = 7;
   const COMBUSTIVEL_KM_L = 10;
-  // Uber/táxi: média real de preco_liquido/distancia_km de 270 corridas em conferencia_uber_corridas.
+  // Uber/táxi: média real de preco_liquido/distancia_km de 270 corridas em conferencia_uber_corridas
+  // (corrida média de 8,5km). Acima desse raio (p90 real de colaborador->OS mais próxima = ~60km) a
+  // tarifa por km deixa de ser realista para Uber/táxi intermunicipal; nesse caso assume-se carro.
   const UBER_RS_KM = 6.77;
+  const UBER_RAIO_MAX_KM = 60;
 
   const st = {
     os: [], osTodas: [], pontos: [], colaboradores: [], rotas: [], semAssociacao: [],
@@ -65,6 +68,11 @@ import { supabase } from './supabaseClient.js';
 
   function combustivelIdaVolta(distKmUmaVia) { return (Number(distKmUmaVia) || 0) * 2 / COMBUSTIVEL_KM_L * COMBUSTIVEL_PRECO_L; }
   function uberIdaVolta(distKmUmaVia) { return (Number(distKmUmaVia) || 0) * 2 * UBER_RS_KM; }
+  // Fora do raio real de Uber/táxi, extrapolar a tarifa por km gera valores absurdos (ex.: 1000km
+  // de distância vira ~R$13mil numa única rota). Além do raio, assume-se custo de carro (mais realista).
+  function uberOuCarroIdaVolta(distKmUmaVia) {
+    return (Number(distKmUmaVia) || 0) <= UBER_RAIO_MAX_KM ? uberIdaVolta(distKmUmaVia) : combustivelIdaVolta(distKmUmaVia);
+  }
 
   function short(n) { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[1]}` : (p[0] || '—'); }
   function splitEmbarque(t) {
@@ -269,13 +277,13 @@ import { supabase } from './supabaseClient.js';
       if (habitual.tipo === 'CARONA FROTA') return { modo: 'carona', label: 'Carona com frota', custo: 0 };
       if (habitual.tipo === 'NAO PRECISA') return { modo: 'local', label: 'Já está no local', custo: 0 };
       if (habitual.tipo === 'REEMBOLSO KM') return { modo: 'reembolso', label: 'Veículo próprio', custoFn: combustivelIdaVolta };
-      if (habitual.tipo === 'UBER TAXI' || habitual.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberIdaVolta };
+      if (habitual.tipo === 'UBER TAXI' || habitual.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
     }
 
     if (st.veiculoProprioCpfs.has(c.cpf) || st.veiculoProprioNomes.has(norm(c.nome))) {
       return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };
     }
-    return { modo: 'a-definir', label: 'A definir (estimado por Uber)', custoFn: uberIdaVolta, estimado: true };
+    return { modo: 'a-definir', label: 'A definir (estimado)', custoFn: uberOuCarroIdaVolta, estimado: true };
   }
 
   function avaliarCandidato(c, ponto, dist) {
@@ -454,12 +462,15 @@ import { supabase } from './supabaseClient.js';
 
   function kpis() {
     const osSemSaldo = st.osTodas.filter(o => o.__saldo <= 0).length;
-    const custoTotalDia = st.rotas.reduce((acc, r) => acc + r.custoDia, 0);
+    // Soma de todas as rotas sugeridas no backlog aberto (não é o custo de "hoje" — as OS abertas
+    // se espalham por datas e regiões diferentes). Por isso reportamos também a média por rota.
+    const custoTotalBacklog = st.rotas.reduce((acc, r) => acc + r.custoDia, 0);
+    const custoMedioRota = st.rotas.length ? custoTotalBacklog / st.rotas.length : 0;
     const economiaPotencial = st.rotas.reduce((acc, r) => acc + r.economia, 0);
     return {
       os: st.os.length, osSemSaldo, pontos: st.pontos.length, rotas: st.rotas.length,
       semColaborador: st.semAssociacao.length, repetidos: st.rotas.filter(r => r.repetido).length,
-      custoTotalDia, economiaPotencial, hospedar: st.rotas.filter(r => r.recomendacao === 'hospedar').length,
+      custoTotalBacklog, custoMedioRota, economiaPotencial, hospedar: st.rotas.filter(r => r.recomendacao === 'hospedar').length,
     };
   }
   function rows() { return { base: st.rotas.filter(r => passaFiltroPonto(r.ponto)), sem: st.semAssociacao.filter(r => passaFiltroPonto(r.ponto)) }; }
@@ -475,10 +486,10 @@ import { supabase } from './supabaseClient.js';
     const alertaSem = sem.length ? `<div class="mo-alert">${sem.length} OS com saldo remanescente ainda sem colaborador disponível respeitando local/5 km.</div>` : '';
     const rotaInfo = st.mostrarRota ? `Ligado · desenhando ${base.length} rota(s) visíveis` : 'Desligada';
     return `
-      <div class="mo"><section class="mo-card"><div class="mo-head"><div><h2>Mapa operacional</h2><p>Custo-benefício por OS: compara frota/carona (grátis), veículo próprio, Uber/táxi e hospedagem próxima. Ordenado por custo estimado do dia.</p></div><div class="mo-actions"><button class="mo-btn ${st.mostrarRota ? '' : 'off'}" data-toggle-rota>${st.mostrarRota ? 'Desligar rota' : 'Ligar rota'}</button><button class="mo-btn" data-reload>Atualizar</button></div></div>${alertaSem}
+      <div class="mo"><section class="mo-card"><div class="mo-head"><div><h2>Mapa operacional</h2><p>Custo-benefício por OS: compara frota/carona (grátis), veículo próprio, Uber/táxi (até 60km, além disso vira carro) e hospedagem próxima. Ordenado por custo estimado da rota.</p></div><div class="mo-actions"><button class="mo-btn ${st.mostrarRota ? '' : 'off'}" data-toggle-rota>${st.mostrarRota ? 'Desligar rota' : 'Ligar rota'}</button><button class="mo-btn" data-reload>Atualizar</button></div></div>${alertaSem}
         <div class="mo-filter"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select><select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
         <div class="mo-legend"><span><i class="azul"></i>Colaborador</span><span><i class="frota"></i>Motorista/frota</span><span><i class="verde"></i>OS com saldo</span><span><i class="vermelho"></i>OS sem saldo</span><span data-rota-status>Rotas: ${rotaInfo}</span></div>
-        <div class="mo-grid"><div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div><aside class="mo-side"><div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>Custo estimado/dia</span><strong>${fmtRs(k.custoTotalDia)}</strong></div><div class="mo-kpi"><span>Economia c/ hospedagem</span><strong>${fmtRs(k.economiaPotencial)}</strong></div><div class="mo-kpi"><span>Associadas/sugeridas</span><strong>${k.rotas}</strong></div><div class="mo-kpi"><span>Recomendam hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div><section class="mo-card"><div class="mo-list">${base.length ? base.map(r => `<div class="mo-row ${st.rota === r.id ? 'active' : ''}" data-rota="${esc(r.id)}"><strong>${esc(short(r.colab.nome))} · ${esc(r.os.cliente || 'OS')}</strong><small>${esc(r.modoLabel)} · ${fmtKm(r.dist)} · custo/dia ${fmtRs(r.custoDia)} · saldo OS ${fmtKg(r.os.__saldo)}</small>${badge(r)}</div>`).join('') : ''}${sem.map(r => `<div class="mo-row sem"><strong>${r.ponto.temCoord ? 'Sem colaborador' : 'Sem coordenada do ponto'} · ${esc(r.os.cliente || 'OS')}</strong><small>OS ${esc(r.os.numero_os || r.os.id)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)} · saldo ${fmtKg(r.os.__saldo)} · ${esc(r.motivo)}</small><span class="mo-pill bad">pendente</span></div>`).join('')}${!base.length && !sem.length ? '<div class="mo-load">Nenhuma OS com saldo remanescente encontrada para o filtro.</div>' : ''}</div></section><section class="mo-card">${detail()}</section></aside></div></section>${colabsHtml()}</div>`;
+        <div class="mo-grid"><div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div><aside class="mo-side"><div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>Custo médio/rota</span><strong>${fmtRs(k.custoMedioRota)}</strong></div><div class="mo-kpi"><span>Custo total (backlog aberto)</span><strong>${fmtRs(k.custoTotalBacklog)}</strong></div><div class="mo-kpi"><span>Economia c/ hospedagem</span><strong>${fmtRs(k.economiaPotencial)}</strong></div><div class="mo-kpi"><span>Associadas/sugeridas</span><strong>${k.rotas}</strong></div><div class="mo-kpi"><span>Recomendam hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div><section class="mo-card"><div class="mo-list">${base.length ? base.map(r => `<div class="mo-row ${st.rota === r.id ? 'active' : ''}" data-rota="${esc(r.id)}"><strong>${esc(short(r.colab.nome))} · ${esc(r.os.cliente || 'OS')}</strong><small>${esc(r.modoLabel)} · ${fmtKm(r.dist)} · custo ${fmtRs(r.custoDia)} · saldo OS ${fmtKg(r.os.__saldo)}</small>${badge(r)}</div>`).join('') : ''}${sem.map(r => `<div class="mo-row sem"><strong>${r.ponto.temCoord ? 'Sem colaborador' : 'Sem coordenada do ponto'} · ${esc(r.os.cliente || 'OS')}</strong><small>OS ${esc(r.os.numero_os || r.os.id)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)} · saldo ${fmtKg(r.os.__saldo)} · ${esc(r.motivo)}</small><span class="mo-pill bad">pendente</span></div>`).join('')}${!base.length && !sem.length ? '<div class="mo-load">Nenhuma OS com saldo remanescente encontrada para o filtro.</div>' : ''}</div></section><section class="mo-card">${detail()}</section></aside></div></section>${colabsHtml()}</div>`;
   }
 
   function detail() {
@@ -499,7 +510,7 @@ import { supabase } from './supabaseClient.js';
     }
     const lista = [...porColab.values()].sort((a, b) => b.custo - a.custo);
     const body = lista.length
-      ? `<table class="mo-colabs-table"><thead><tr><th>Colaborador</th><th>Modo</th><th>OS</th><th>Saldo</th><th>Custo/dia</th></tr></thead><tbody>${lista.map(c => `<tr><td>${esc(c.nome)}</td><td>${esc(c.modo)}</td><td>${c.os}</td><td>${fmtKg(c.saldo)}</td><td>${fmtRs(c.custo)}</td></tr>`).join('')}</tbody></table>`
+      ? `<table class="mo-colabs-table"><thead><tr><th>Colaborador</th><th>Modo</th><th>OS</th><th>Saldo</th><th>Custo total</th></tr></thead><tbody>${lista.map(c => `<tr><td>${esc(c.nome)}</td><td>${esc(c.modo)}</td><td>${c.os}</td><td>${fmtKg(c.saldo)}</td><td>${fmtRs(c.custo)}</td></tr>`).join('')}</tbody></table>`
       : '<div class="mo-load">Nenhum colaborador associado para o filtro atual.</div>';
     return `<section class="mo-colabs-card"><div class="mo-colabs-head"><strong>Colaboradores no mapa</strong><span>${lista.length} colaborador(es)</span></div>${body}</section>`;
   }
