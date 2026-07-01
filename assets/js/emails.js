@@ -81,9 +81,20 @@ function htmlToText(html) {
   return decodeEntities(s);
 }
 
+// Limpa artefatos que o Outlook deixa na versão em texto puro do e-mail: "[cid:xxxx]"
+// (imagem de assinatura quebrada) e "endereço<mailto:outro>"/"link<http://...>" (hyperlink
+// cujo destino não bate com o texto visível). Isso já existia nos e-mails antes dessa
+// limpeza, então é aplicado na exibição — não precisa reprocessar nada no worker.
+function cleanEmailArtifacts(value) {
+  return String(value || '')
+    .replace(/\[cid:[^\]]*\]/gi, ' ')
+    .replace(/<(?:mailto|https?|cid):[^>]*>/gi, ' ')
+    .replace(/[ \t]{2,}/g, ' ');
+}
+
 function emailBodyText(e) {
   const source = (e.corpo_texto && e.corpo_texto.trim()) ? e.corpo_texto : htmlToText(e.corpo_html);
-  return String(source || '')
+  return cleanEmailArtifacts(source)
     .replace(/\r\n?/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -172,8 +183,23 @@ function classificadoPorLabel(valor) {
   return v || '—';
 }
 
+// "contrato" só é confiável no formato real da empresa (ex: P31899.000); qualquer outra
+// coisa (como o fallback genérico que já existiu no worker) tende a ser telefone/data/CEP
+// pego por engano. Valores muito compridos em geral são texto de assinatura/disclaimer que
+// vazou pro regex de extração, não um dado de verdade — melhor esconder do que confundir.
+const DADOS_VALIDATORS = {
+  contrato: (v) => /^P\d{5}\.\d{3}$/i.test(v)
+};
+
 function dadosDetectadosEntries(dados) {
-  return Object.entries(dados || {}).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '');
+  return Object.entries(dados || {}).filter(([k, v]) => {
+    if (v === null || v === undefined) return false;
+    const s = String(v).trim();
+    if (!s) return false;
+    if (typeof v === 'object') return true;
+    if (DADOS_VALIDATORS[k] && !DADOS_VALIDATORS[k](s)) return false;
+    return s.length <= 60;
+  });
 }
 
 const ATTACHMENT_ICONS = {
@@ -563,7 +589,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
         </div>
         <div class="em-meta">${esc(e.remetente_nome || e.remetente_email || '-')} · ${brDate(e.data_recebimento)}</div>
         <div class="em-actions">${prioBadge(e.prioridade)}<span class="em-badge arquivado" title="${esc(categoriaDesc(e.categoria))}">${esc(categoriaLabel(e.categoria))}</span><span class="em-badge arquivado">${esc(regionalLabel(e.regional))}</span></div>
-        <div class="em-snippet">${esc((e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
+        <div class="em-snippet">${esc(cleanEmailArtifacts(e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
       </div>
     `).join('');
   }
@@ -616,7 +642,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
           <div class="em-chip" title="Como o sistema decidiu a categoria acima">Classificado por <b>${esc(classificadoPorLabel(e.classificado_por))}</b></div>
         </div>
 
-        ${e.resumo_ia ? `<div class="em-summary"><span class="em-summary-label">✨ Resumo da IA</span><p>${esc(e.resumo_ia)}</p></div>` : ''}
+        ${e.resumo_ia ? `<div class="em-summary"><span class="em-summary-label">✨ Resumo da IA</span><p>${esc(cleanEmailArtifacts(e.resumo_ia))}</p></div>` : ''}
 
         ${e.encaminhar_sugerido_para ? `<div class="em-summary"><span class="em-summary-label">📤 Encaminhamento sugerido</span><p>Para: <b>${esc(e.encaminhar_sugerido_para)}</b>${e.encaminhar_sugerido_cc ? ` · Cc: <b>${esc(e.encaminhar_sugerido_cc)}</b>` : ''}</p><div class="em-muted em-small">O sistema identificou pra quem esse e-mail deveria ir. Ao aprovar, ele reenvia o e-mail original (com os anexos) pra esse destinatário — você não precisa reescrever nada.</div>${(() => {
           const existente = state.outbox.find((o) => o.tipo === 'ENCAMINHAMENTO');
@@ -727,7 +753,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
           <span class="em-badge erro">${e.risco || 'CRITICO'}</span>
         </div>
         <div class="em-meta">${esc(e.remetente_nome || e.remetente_email || '-')} · ${brDate(e.data_recebimento)}</div>
-        <div class="em-snippet em-danger">⚠️ ${esc((e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
+        <div class="em-snippet em-danger">⚠️ ${esc(cleanEmailArtifacts(e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
       </div>
     `).join('');
     document.getElementById('emPerigoList').addEventListener('click', (event) => {
