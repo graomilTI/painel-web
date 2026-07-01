@@ -19,9 +19,21 @@ import { supabase } from './supabaseClient.js';
   };
 
   const BR_LAT_MIN = -34.2, BR_LAT_MAX = 6.0, BR_LNG_MIN = -74.5, BR_LNG_MAX = -28.0;
-  const RAIO_REPETIR_COLAB_KM = 5;
+  // Raio pra permitir reusar um colaborador já usado em outra OS. Analisado em 2026-07-01:
+  // ignorando esse raio inteiramente (reuso livre), 94% das 842 OS abertas têm alguém a menos de
+  // 150km e a mediana é 3,4km — ou seja, quase nunca é escassez real de mão de obra. O raio de 5km
+  // tratava esse backlog (que se espalha por semanas) como se fosse um único dia de rotas, fazendo
+  // a primeira OS grande processada "gastar" o colaborador mais próximo pra sempre, mesmo que ele
+  // pudesse perfeitamente atender uma segunda OS a 30-80km em outro dia — daí colaboradores sendo
+  // sugeridos a 800+km quando havia gente muito mais perto, só que já "usada" numa OS vizinha maior.
+  const RAIO_REPETIR_COLAB_KM = 100;
   const RAIO_HOTEL_KM = 60;
   const RAIO_CARONA_KM = 5;
+  // Dentro dessa margem, candidatos são tratados como "praticamente igual em distância" e o
+  // desempate passa a ser por carga de trabalho — sem isso, alargar RAIO_REPETIR_COLAB_KM faria
+  // o colaborador mais central de uma região virar sugestão repetida pra dezenas de OS (um empate
+  // exato de distância real quase nunca acontece, então o desempate por carga nunca entrava).
+  const DIST_TOLERANCIA_EMPATE_KM = 20;
   const OS_SALDO_PEQUENO_KG = 500;
   // Leitura de patrimônio (Frotas > Veículos) mais velha que isso não confirma posse atual do
   // veículo — média real hoje é 4,4 dias, 65% das leituras são de até 7 dias.
@@ -449,7 +461,7 @@ import { supabase } from './supabaseClient.js';
     const usados = usos.get(c.id) || [];
     if (!usados.length) return true;
     // OS pequena (saldo <= 500kg): não justifica dedicar um colaborador exclusivo, quem já
-    // está em campo hoje pode assumir também, mesmo fora do raio de 5km da outra OS.
+    // está em campo hoje pode assumir também, mesmo fora do raio de reuso (RAIO_REPETIR_COLAB_KM).
     if (Number(osSaldoKg) <= OS_SALDO_PEQUENO_KG) return true;
     return usados.some(u => mesmoLocalOuRaio(u.ponto, ponto));
   }
@@ -475,10 +487,15 @@ import { supabase } from './supabaseClient.js';
           return { c, dist: avaliacao.distReal, avaliacao, saldoAtual: saldoAcumulado(c, usos) };
         })
         .filter(x => Number.isFinite(x.dist))
-        // Sempre o colaborador mais próximo primeiro; custo e carga de trabalho só desempatam
-        // entre candidatos essencialmente equidistantes — nunca mandamos alguém a milhares de
-        // km só porque o modo de transporte "parece" mais barato no papel.
-        .sort((a, b) => a.dist - b.dist || a.avaliacao.custoDia - b.avaliacao.custoDia || a.saldoAtual - b.saldoAtual);
+        // Sempre o colaborador mais próximo primeiro — nunca mandamos alguém a milhares de km só
+        // porque o modo de transporte "parece" mais barato no papel. Mas dentro de ~20km de
+        // diferença, distância deixa de ser decisiva e quem tem menos carga acumulada no dia
+        // ganha prioridade — senão o colaborador mais central de uma região vira sugestão
+        // repetida pra dezenas de OS, já que um empate exato de distância real é raríssimo.
+        .sort((a, b) => {
+          if (Math.abs(a.dist - b.dist) > DIST_TOLERANCIA_EMPATE_KM) return a.dist - b.dist;
+          return a.saldoAtual - b.saldoAtual || a.avaliacao.custoDia - b.avaliacao.custoDia || a.dist - b.dist;
+        });
     }
 
     const candidatosVinculados = ranquear(vinculados);
@@ -665,7 +682,7 @@ import { supabase } from './supabaseClient.js';
       const escolhido = ponto.temCoord ? escolherColaborador(os, ponto, usos) : null;
       if (!escolhido) {
         const motivo = ponto.temCoord
-          ? 'Sem colaborador com coordenada disponível respeitando repetição por local/5 km'
+          ? `Sem colaborador com coordenada disponível respeitando repetição por local/${RAIO_REPETIR_COLAB_KM} km`
           : 'Ponto de embarque sem coordenada cadastrada (endereço não geocodificado) — associe manualmente';
         st.semAssociacao.push({ os, ponto, motivo });
         continue;
@@ -750,7 +767,7 @@ import { supabase } from './supabaseClient.js';
   function rows() { return { base: st.rotas.filter(r => passaFiltroPonto(r.ponto)), sem: st.semAssociacao.filter(r => passaFiltroPonto(r.ponto)) }; }
   function badge(r) {
     let html = r.origem === 'associado' ? '<span class="mo-pill ok">associado</span>' : '<span class="mo-pill info">sugerido</span>';
-    if (r.repetido) html += '<span class="mo-pill warn">repetido 5 km</span>';
+    if (r.repetido) html += `<span class="mo-pill warn">repetido ${RAIO_REPETIR_COLAB_KM} km</span>`;
     if (r.recomendacao === 'hospedar') html += `<span class="mo-pill warn">hospedar compensa${r.hospedagem?.estimado ? ' (estimado)' : ''}</span>`;
     if (r.inviavel) html += '<span class="mo-pill bad">sem opção viável perto</span>';
     return html;
@@ -769,7 +786,7 @@ import { supabase } from './supabaseClient.js';
   function htmlMapa() {
     const k = kpis(), { base, sem } = rows(), estados = estadosDisponiveis(), pontosFiltrados = st.pontos.filter(p => !st.estado || p.uf === st.estado);
     const alertas = [
-      sem.length ? `${sem.length} OS com saldo remanescente ainda sem colaborador disponível respeitando local/5 km.` : '',
+      sem.length ? `${sem.length} OS com saldo remanescente ainda sem colaborador disponível respeitando local/${RAIO_REPETIR_COLAB_KM} km.` : '',
       k.inviaveis ? `${k.inviaveis} OS com colaborador sugerido a mais de ${DIST_MAX_DESLOCAMENTO_DIARIO_KM}km e sem hospedagem conhecida por perto — precisa de hospedagem (a cadastrar) ou revisão manual.` : '',
     ].filter(Boolean);
     const alertasHtml = alertas.length ? `<div class="mo-alerts">${alertas.map(a => `<div class="mo-alert" title="${esc(a)}">${esc(a)}</div>`).join('')}</div>` : '';
