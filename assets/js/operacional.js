@@ -24,10 +24,14 @@ import { supabase } from './supabaseClient.js';
   // tarifa por km deixa de ser realista para Uber/táxi intermunicipal; nesse caso assume-se carro.
   const UBER_RS_KM = 6.77;
   const UBER_RAIO_MAX_KM = 60;
+  // Diária informativa quando o registro real escolheu alojamento/hotel mas não há um match
+  // real (coordenada/cidade) por perto — mesmo fallback usado em programacao-fase2-custos.js.
+  const EST_ESTADIA_FALLBACK = { ALOJAMENTO: 60, HOTEL: 180 };
 
   const st = {
     os: [], osTodas: [], pontos: [], colaboradores: [], rotas: [], semAssociacao: [],
-    estado: '', ponto: '', rota: '', mostrarRota: true,
+    estado: '', ponto: '', rota: '', mostrarRota: true, tab: 'mapa',
+    comparativo: [], supervisaoComparativo: '',
     map: null, layer: null, routeLayer: null, rotaRealCache: new Map(), drawToken: 0,
   };
 
@@ -111,32 +115,38 @@ import { supabase } from './supabaseClient.js';
 
   // --- Carregamento ---------------------------------------------------
 
+  function pontoDeOs(o) {
+    const embarque = splitEmbarque(o.embarque || '');
+    const temCoord = geo({ latitude: o.ponto1_latitude, longitude: o.ponto1_longitude });
+    return {
+      lat: temCoord ? Number(o.ponto1_latitude) : null,
+      lng: temCoord ? Number(o.ponto1_longitude) : null,
+      nome_local: o.ponto1_nome || embarque.local || o.cliente || 'Ponto',
+      cidade: embarque.cidade,
+      uf: norm(embarque.uf),
+      temCoord,
+    };
+  }
+
   async function loadOsEPontos() {
     const osRaw = await sel('operacional_os', '*', q => q.order('created_at', { ascending: false }));
     const pontosPorChave = new Map();
+    // Todas as OS por id (qualquer situação), usada pela aba Sugerido x Registrado — que precisa
+    // de OS já atendidas, não só o backlog aberto com saldo.
+    const osPorId = new Map();
+    osRaw.forEach(o => { osPorId.set(String(o.id), { ...pontoDeOs(o), numero_os: o.numero_os, cliente: o.cliente }); });
 
     const abertas = osRaw.filter(osAberta).map(o => {
-      const embarque = splitEmbarque(o.embarque || '');
-      const temCoord = geo({ latitude: o.ponto1_latitude, longitude: o.ponto1_longitude });
-      const chave = temCoord
-        ? `${Number(o.ponto1_latitude).toFixed(3)}|${Number(o.ponto1_longitude).toFixed(3)}`
-        : `sem-coord:${norm(embarque.uf)}|${norm(embarque.cidade)}|${norm(o.ponto1_nome || embarque.local)}`;
+      const p = pontoDeOs(o);
+      const chave = p.temCoord
+        ? `${p.lat.toFixed(3)}|${p.lng.toFixed(3)}`
+        : `sem-coord:${p.uf}|${norm(p.cidade)}|${norm(p.nome_local)}`;
 
-      if (!pontosPorChave.has(chave)) {
-        pontosPorChave.set(chave, {
-          __key: chave,
-          lat: temCoord ? Number(o.ponto1_latitude) : null,
-          lng: temCoord ? Number(o.ponto1_longitude) : null,
-          nome_local: o.ponto1_nome || embarque.local || o.cliente || 'Ponto',
-          cidade: embarque.cidade,
-          uf: norm(embarque.uf),
-          temCoord,
-        });
-      }
+      if (!pontosPorChave.has(chave)) pontosPorChave.set(chave, { __key: chave, ...p });
       return { ...o, __pontoKey: chave, __saldo: num(o.remanescente) || 0 };
     });
 
-    return { abertas, pontos: [...pontosPorChave.values()] };
+    return { abertas, pontos: [...pontosPorChave.values()], osPorId };
   }
 
   async function loadColaboradores() {
@@ -383,9 +393,10 @@ import { supabase } from './supabaseClient.js';
   }
 
   async function load() {
-    const [{ abertas, pontos }, colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem] = await Promise.all([
+    const [{ abertas, pontos, osPorId }, colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem] = await Promise.all([
       loadOsEPontos(), loadColaboradores(), loadVinculos(), loadModoHabitual(), loadVeiculoProprio(), loadFrotaAtual(), loadHospedagem(),
     ]);
+    st.osPorId = osPorId;
 
     st.vinculosPorOs = vinculosPorOs;
     st.modoHabitualPorCpf = modoHabitual.porCpf;
@@ -415,6 +426,7 @@ import { supabase } from './supabaseClient.js';
     st.os = abertas.filter(o => o.__saldo > 0);
     st.frotaTrajetos = calcularTrajetosFrota();
     build();
+    st.comparativo = await loadComparativo();
   }
 
   // Aproxima o "trajeto do motorista até seu ponto de embarque" pelo segmento entre a posição
@@ -438,6 +450,109 @@ import { supabase } from './supabaseClient.js';
       if (destino) trajetos.push({ aLat, aLng, bLat: destino.lat, bLng: destino.lng });
     }
     return trajetos;
+  }
+
+  // --- Comparativo: sugerido (motor) x registrado (Programação) ---------
+
+  function categoriaDeslocamentoRegistrado(tipo) {
+    const t = norm(tipo);
+    if (t === 'MOTORISTA FROTA') return 'frota';
+    if (t === 'CARONA FROTA') return 'carona';
+    if (t === 'REEMBOLSO KM') return 'reembolso';
+    if (t === 'UBER TAXI' || t === 'UBER/TAXI') return 'uber';
+    if (t === 'NAO PRECISA') return 'local';
+    return 'outro';
+  }
+
+  function custoDeslocamentoRegistrado(tipo, distKmUmaVia) {
+    const t = norm(tipo);
+    if (t === 'MOTORISTA FROTA' || t === 'CARONA FROTA' || t === 'NAO PRECISA') return 0;
+    if (t === 'REEMBOLSO KM') return combustivelIdaVolta(distKmUmaVia);
+    if (t === 'UBER TAXI' || t === 'UBER/TAXI') return uberOuCarroIdaVolta(distKmUmaVia);
+    return null; // ÔNIBUS/OUTRO: sem fórmula confiável pra estimar
+  }
+
+  function custoEstadiaRegistrada(tipoEstadia, ponto) {
+    const t = norm(tipoEstadia);
+    if (!t || t === 'CASA' || t === 'PERNOITE') return 0;
+    if (t === 'ALOJAMENTO' || t === 'HOTEL') {
+      const h = hospedagemParaPonto(ponto);
+      return h ? h.custoDia : (EST_ESTADIA_FALLBACK[t] ?? 0);
+    }
+    return 0;
+  }
+
+  async function loadComparativo() {
+    const equipe = await sel('programacao_equipe', 'id,programacao_id,os_id,colaborador_id,nome_colaborador', q => q.eq('confirmado', true));
+    if (!equipe.length) return [];
+
+    const [programacoesRows, deslocRows, estadiaRows] = await Promise.all([
+      sel('programacoes', 'id,data_referencia,supervisao'),
+      sel('programacao_deslocamento', 'programacao_id,colaborador_id,tipo_deslocamento'),
+      sel('programacao_estadia', 'programacao_id,colaborador_id,tipo_estadia'),
+    ]);
+
+    const programacaoPorId = new Map(programacoesRows.map(p => [String(p.id), p]));
+    const deslocPorChave = new Map(deslocRows.map(d => [`${d.programacao_id}|${digits(d.colaborador_id)}`, d]));
+    const estadiaPorChave = new Map(estadiaRows.map(e => [`${e.programacao_id}|${digits(e.colaborador_id)}`, e]));
+    const colabPorCpf = new Map(st.colaboradores.filter(c => c.cpf).map(c => [c.cpf, c]));
+
+    const linhas = [];
+    for (const e of equipe) {
+      const ponto = st.osPorId.get(String(e.os_id));
+      if (!ponto || !ponto.temCoord) continue;
+      const cpf = digits(e.colaborador_id);
+      const colab = colabPorCpf.get(cpf);
+      if (!colab || !geo(colab)) continue;
+
+      const dist = distColabPonto(colab, ponto);
+      if (!Number.isFinite(dist)) continue;
+
+      const avaliacao = avaliarCandidato(colab, ponto, dist);
+      const categoriaSugerida = avaliacao.recomendacao === 'hospedar' ? 'hospedagem' : avaliacao.modoInfo.modo;
+
+      const chave = `${e.programacao_id}|${cpf}`;
+      const desloc = deslocPorChave.get(chave);
+      const estadia = estadiaPorChave.get(chave);
+      const custoDeslocReg = desloc ? custoDeslocamentoRegistrado(desloc.tipo_deslocamento, dist) : null;
+      const custoEstadiaReg = estadia ? custoEstadiaRegistrada(estadia.tipo_estadia, ponto) : null;
+
+      // tipo_deslocamento e tipo_estadia são fatos independentes na Programação (a pessoa pode
+      // ter ido de frota E ainda assim ter ficado hospedada) — não são estratégias alternativas
+      // como no motor de sugestão. Hospedagem real (ALOJAMENTO/HOTEL) é o fato dominante quando
+      // presente; comparar por "menor custo" erraria sempre pro lado do modo mais barato (ex.:
+      // "não precisa"/pernoite = R$0) mesmo quando a pessoa de fato ficou num hotel.
+      let categoriaRegistrada = 'sem-registro', custoRegistrado = null, modoRegistradoLabel = 'Sem registro';
+      const estadiaReal = estadia && ['ALOJAMENTO', 'HOTEL'].includes(norm(estadia.tipo_estadia));
+      if (estadiaReal) {
+        categoriaRegistrada = 'hospedagem';
+        custoRegistrado = custoEstadiaReg;
+        modoRegistradoLabel = `Hospedagem (${estadia.tipo_estadia})`;
+      } else if (custoDeslocReg !== null) {
+        categoriaRegistrada = categoriaDeslocamentoRegistrado(desloc.tipo_deslocamento);
+        custoRegistrado = custoDeslocReg;
+        modoRegistradoLabel = desloc.tipo_deslocamento || 'Deslocamento';
+      } else if (custoEstadiaReg !== null) {
+        categoriaRegistrada = 'local';
+        custoRegistrado = custoEstadiaReg;
+        modoRegistradoLabel = estadia.tipo_estadia || 'Casa';
+      }
+
+      const prog = programacaoPorId.get(String(e.programacao_id));
+
+      linhas.push({
+        nome: colab.nome, os: ponto,
+        supervisao: prog?.supervisao || 'Sem programação', data: prog?.data_referencia || null,
+        modoSugerido: categoriaSugerida === 'hospedagem' ? `Hospedagem (${avaliacao.hospedagem?.nome || '—'})` : avaliacao.modoInfo.label,
+        custoSugerido: avaliacao.custoDia,
+        modoRegistrado: modoRegistradoLabel, custoRegistrado,
+        concorda: categoriaRegistrada !== 'sem-registro' && categoriaRegistrada === categoriaSugerida,
+        temRegistro: categoriaRegistrada !== 'sem-registro',
+        diferenca: custoRegistrado !== null ? custoRegistrado - avaliacao.custoDia : null,
+      });
+    }
+
+    return linhas.sort((a, b) => (b.diferenca ?? -Infinity) - (a.diferenca ?? -Infinity));
   }
 
   function build() {
@@ -506,7 +621,7 @@ import { supabase } from './supabaseClient.js';
     const s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent = `
-      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:14px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:16px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo p{color:#94a3b8;margin:6px 0 0;font-size:13px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:13px;background:#166534;color:#ecfdf5;font-weight:900;padding:9px 13px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:40px;border:1px solid rgba(148,163,184,.2);border-radius:13px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-filter{position:relative;z-index:2500;padding:0 16px 14px;display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:14px;padding:0 16px 16px}.mo-map{height:720px;border:1px solid rgba(148,163,184,.14);border-radius:20px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px}.mo-kpi{flex:1 1 0;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:14px;padding:10px 8px;background:rgba(2,6,23,.35)}.mo-kpi span{display:block;font-size:9px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:17px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alert{padding:10px 16px;color:#fde68a;background:rgba(120,53,15,.16);border-top:1px solid rgba(251,191,36,.18);font-size:12px}.mo-legend{position:relative;z-index:20;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:0 16px 12px;color:#94a3b8;font-size:12px}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .frota{background:#3b82f6;box-shadow:inset 0 0 0 3px #fff}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.frota{background:#3b82f6}.mk.frota:after{content:'';position:absolute;left:4px;top:4px;width:4px;height:4px;border-radius:50%;background:#fff}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(3),.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5){text-align:right}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}@media(max-width:1100px){.mo-below{grid-template-columns:1fr}.mo-map{height:520px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:wrap}.mo-kpi{flex:1 1 30%}}
+      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:14px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:16px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo p{color:#94a3b8;margin:6px 0 0;font-size:13px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:13px;background:#166534;color:#ecfdf5;font-weight:900;padding:9px 13px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:40px;border:1px solid rgba(148,163,184,.2);border-radius:13px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-filter{position:relative;z-index:2500;padding:0 16px 14px;display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:14px;padding:0 16px 16px}.mo-map{height:720px;border:1px solid rgba(148,163,184,.14);border-radius:20px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px}.mo-kpi{flex:1 1 0;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:14px;padding:10px 8px;background:rgba(2,6,23,.35)}.mo-kpi span{display:block;font-size:9px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:17px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alert{padding:10px 16px;color:#fde68a;background:rgba(120,53,15,.16);border-top:1px solid rgba(251,191,36,.18);font-size:12px}.mo-legend{position:relative;z-index:20;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:0 16px 12px;color:#94a3b8;font-size:12px}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .frota{background:#3b82f6;box-shadow:inset 0 0 0 3px #fff}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.frota{background:#3b82f6}.mk.frota:after{content:'';position:absolute;left:4px;top:4px;width:4px;height:4px;border-radius:50%;background:#fff}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(3),.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5){text-align:right}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}.mo-tabs{display:flex;gap:8px;padding:0 16px 10px;position:relative;z-index:20}.mo-tab-btn{border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-size:12.5px}.mo-tab-btn.active{background:#166534;border-color:rgba(34,197,94,.4);color:#ecfdf5}.mo-comp-table{width:100%;border-collapse:collapse;font-size:12px}.mo-comp-table th,.mo-comp-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-comp-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55);position:sticky;top:0}.mo-comp-table td.num{text-align:right;white-space:nowrap}.mo-comp-wrap{max-height:520px;overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:16px}.mo-pill.concorda{color:#bbf7d0}.mo-pill.diverge{color:#fecaca}.mo-pill.sem-registro{color:#94a3b8}@media(max-width:1100px){.mo-below{grid-template-columns:1fr}.mo-map{height:520px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:wrap}.mo-kpi{flex:1 1 30%}}
     `;
     document.head.appendChild(s);
   }
@@ -541,19 +656,89 @@ import { supabase } from './supabaseClient.js';
   }
 
   function html() {
+    const tabs = `<div class="mo-tabs"><button class="mo-tab-btn ${st.tab === 'mapa' ? 'active' : ''}" data-tab="mapa">Mapa</button><button class="mo-tab-btn ${st.tab === 'comparativo' ? 'active' : ''}" data-tab="comparativo">Sugerido x Registrado</button></div>`;
+    const corpo = st.tab === 'comparativo' ? htmlComparativo() : htmlMapa();
+    return `
+      <div class="mo"><section class="mo-card"><div class="mo-head"><div><h2>Mapa operacional</h2><p>Custo-benefício por OS: compara frota/carona (grátis), veículo próprio, Uber/táxi (até 60km, além disso vira carro) e hospedagem próxima.</p></div><div class="mo-actions"><button class="mo-btn ${st.mostrarRota ? '' : 'off'}" data-toggle-rota>${st.mostrarRota ? 'Desligar rota' : 'Ligar rota'}</button><button class="mo-btn" data-reload>Atualizar</button></div></div>
+        ${tabs}
+        ${corpo}
+      </section>${st.tab === 'mapa' ? colabsHtml() : ''}</div>`;
+  }
+
+  function htmlMapa() {
     const k = kpis(), { base, sem } = rows(), estados = estadosDisponiveis(), pontosFiltrados = st.pontos.filter(p => !st.estado || p.uf === st.estado);
     const alertaSem = sem.length ? `<div class="mo-alert">${sem.length} OS com saldo remanescente ainda sem colaborador disponível respeitando local/5 km.</div>` : '';
     const rotaInfo = st.mostrarRota ? `Ligado · desenhando ${base.length} rota(s) visíveis` : 'Desligada';
-    return `
-      <div class="mo"><section class="mo-card"><div class="mo-head"><div><h2>Mapa operacional</h2><p>Custo-benefício por OS: compara frota/carona (grátis), veículo próprio, Uber/táxi (até 60km, além disso vira carro) e hospedagem próxima. Ordenado por custo estimado da rota.</p></div><div class="mo-actions"><button class="mo-btn ${st.mostrarRota ? '' : 'off'}" data-toggle-rota>${st.mostrarRota ? 'Desligar rota' : 'Ligar rota'}</button><button class="mo-btn" data-reload>Atualizar</button></div></div>${alertaSem}
+    return `${alertaSem}
         <div class="mo-filter"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select><select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
         <div class="mo-legend"><span><i class="azul"></i>Colaborador</span><span><i class="frota"></i>Motorista/frota</span><span><i class="verde"></i>OS com saldo</span><span><i class="vermelho"></i>OS sem saldo</span><span data-rota-status>Rotas: ${rotaInfo}</span></div>
         <div class="mo-body">
           <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>Custo médio/rota</span><strong>${fmtRs(k.custoMedioRota)}</strong></div><div class="mo-kpi"><span>Custo total (backlog)</span><strong>${fmtRs(k.custoTotalBacklog)}</strong></div><div class="mo-kpi"><span>Economia hospedagem</span><strong>${fmtRs(k.economiaPotencial)}</strong></div><div class="mo-kpi"><span>Associadas/sugeridas</span><strong>${k.rotas}</strong></div><div class="mo-kpi"><span>Recomendam hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div>
           <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
           <div class="mo-below"><section class="mo-card"><div class="mo-list">${base.length ? base.map(r => `<div class="mo-row ${st.rota === r.id ? 'active' : ''}" data-rota="${esc(r.id)}"><strong>${esc(short(r.colab.nome))} · ${esc(r.os.cliente || 'OS')}</strong><small>${esc(r.modoLabel)} · ${fmtKm(r.dist)} · custo ${fmtRs(r.custoDia)} · saldo OS ${fmtKg(r.os.__saldo)}</small>${badge(r)}</div>`).join('') : ''}${sem.map(r => `<div class="mo-row sem"><strong>${r.ponto.temCoord ? 'Sem colaborador' : 'Sem coordenada do ponto'} · ${esc(r.os.cliente || 'OS')}</strong><small>OS ${esc(r.os.numero_os || r.os.id)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)} · saldo ${fmtKg(r.os.__saldo)} · ${esc(r.motivo)}</small><span class="mo-pill bad">pendente</span></div>`).join('')}${!base.length && !sem.length ? '<div class="mo-load">Nenhuma OS com saldo remanescente encontrada para o filtro.</div>' : ''}</div></section><section class="mo-card">${detail()}</section></div>
-        </div>
-      </section>${colabsHtml()}</div>`;
+        </div>`;
+  }
+
+  function passaFiltroSupervisao(l) { return !st.supervisaoComparativo || l.supervisao === st.supervisaoComparativo; }
+  function supervisoesComparativo() { return [...new Set(st.comparativo.map(l => l.supervisao))].sort(); }
+
+  function kpisComparativo() {
+    const linhas = st.comparativo.filter(passaFiltroSupervisao);
+    const comRegistro = linhas.filter(l => l.temRegistro);
+    const concordam = comRegistro.filter(l => l.concorda).length;
+    const custoSugeridoTotal = comRegistro.reduce((a, l) => a + l.custoSugerido, 0);
+    const custoRegistradoTotal = comRegistro.reduce((a, l) => a + l.custoRegistrado, 0);
+    return {
+      total: linhas.length, comRegistro: comRegistro.length,
+      pctConcordancia: comRegistro.length ? Math.round((concordam / comRegistro.length) * 100) : 0,
+      custoSugeridoTotal, custoRegistradoTotal, diferencaTotal: custoRegistradoTotal - custoSugeridoTotal,
+    };
+  }
+
+  function htmlComparativo() {
+    const k = kpisComparativo();
+    const supervisoes = supervisoesComparativo();
+    const linhas = st.comparativo.filter(passaFiltroSupervisao);
+    return `
+        <div class="mo-body">
+          <p style="color:#94a3b8;font-size:12px;margin:0 16px">Compara o que o motor de custo-benefício recomendaria hoje contra o que foi de fato escolhido na Programação (Organizar Equipe / Fechar custos). É estimativa contra estimativa — nenhum dos dois lados é despesa paga de verdade. Supervisão só é conhecida quando a programação de origem ainda existe no cadastro; registros antigos aparecem como "Sem programação".</p>
+          <div class="mo-kpis"><div class="mo-kpi"><span>OS comparadas</span><strong>${k.total}</strong></div><div class="mo-kpi"><span>Com registro real</span><strong>${k.comRegistro}</strong></div><div class="mo-kpi"><span>Concordância</span><strong>${k.pctConcordancia}%</strong></div><div class="mo-kpi"><span>Custo sugerido</span><strong>${fmtRs(k.custoSugeridoTotal)}</strong></div><div class="mo-kpi"><span>Custo registrado</span><strong>${fmtRs(k.custoRegistradoTotal)}</strong></div><div class="mo-kpi"><span>Diferença</span><strong>${fmtRs(k.diferencaTotal)}</strong></div></div>
+          <div class="mo-filter" style="grid-template-columns:260px auto"><select class="mo-select" data-supervisao-comp><option value="">Todas as supervisões</option>${supervisoes.map(s => `<option value="${esc(s)}" ${st.supervisaoComparativo === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><button class="mo-btn" data-export-csv style="justify-self:start">Exportar CSV</button></div>
+          <div class="mo-comp-wrap"><table class="mo-comp-table"><thead><tr><th>Colaborador</th><th>OS/Cliente</th><th>Supervisão</th><th>Sugerido</th><th>Registrado</th><th>Custo sugerido</th><th>Custo registrado</th><th>Diferença</th><th></th></tr></thead><tbody>${linhas.length ? linhas.map(l => `
+            <tr>
+              <td>${esc(l.nome)}</td>
+              <td>${esc(l.os.cliente || l.os.numero_os || '—')}</td>
+              <td>${esc(l.supervisao)}</td>
+              <td>${esc(l.modoSugerido)}</td>
+              <td>${esc(l.modoRegistrado)}</td>
+              <td class="num">${fmtRs(l.custoSugerido)}</td>
+              <td class="num">${l.custoRegistrado !== null ? fmtRs(l.custoRegistrado) : '—'}</td>
+              <td class="num">${l.diferenca !== null ? fmtRs(l.diferenca) : '—'}</td>
+              <td>${l.temRegistro ? (l.concorda ? '<span class="mo-pill concorda">concorda</span>' : '<span class="mo-pill diverge">diverge</span>') : '<span class="mo-pill sem-registro">sem registro</span>'}</td>
+            </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8">Nenhuma OS confirmada na Programação encontrada.</td></tr>'}</tbody></table></div>
+        </div>`;
+  }
+
+  function exportarComparativoCSV() {
+    const linhas = st.comparativo.filter(passaFiltroSupervisao);
+    const cab = ['Colaborador', 'OS/Cliente', 'Supervisão', 'Sugerido', 'Registrado', 'Custo sugerido', 'Custo registrado', 'Diferença', 'Status'];
+    const csvEsc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const linhasCsv = linhas.map(l => [
+      l.nome, l.os.cliente || l.os.numero_os || '', l.supervisao, l.modoSugerido, l.modoRegistrado,
+      l.custoSugerido.toFixed(2).replace('.', ','), l.custoRegistrado !== null ? l.custoRegistrado.toFixed(2).replace('.', ',') : '',
+      l.diferenca !== null ? l.diferenca.toFixed(2).replace('.', ',') : '',
+      l.temRegistro ? (l.concorda ? 'concorda' : 'diverge') : 'sem registro',
+    ].map(csvEsc).join(';'));
+    const csv = [cab.map(csvEsc).join(';'), ...linhasCsv].join('\n');
+    const blob = new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mapa-operacional-sugerido-x-registrado.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   function detail() {
@@ -580,11 +765,14 @@ import { supabase } from './supabaseClient.js';
   }
 
   function bind(root) {
+    root.querySelectorAll('[data-tab]').forEach(el => { el.onclick = () => { st.tab = el.dataset.tab; render(root); }; });
     root.querySelector('[data-estado]')?.addEventListener('change', e => { st.estado = e.target.value; st.ponto = ''; st.rota = ''; render(root); });
     root.querySelector('[data-ponto]')?.addEventListener('change', e => { st.ponto = e.target.value; st.rota = ''; render(root); });
     root.querySelector('[data-toggle-rota]')?.addEventListener('click', () => { st.mostrarRota = !st.mostrarRota; render(root); });
     root.querySelector('[data-reload]')?.addEventListener('click', () => openHome(root));
     root.querySelectorAll('[data-rota]').forEach(el => { el.onclick = () => { st.rota = el.dataset.rota; render(root); }; });
+    root.querySelector('[data-supervisao-comp]')?.addEventListener('change', e => { st.supervisaoComparativo = e.target.value; render(root); });
+    root.querySelector('[data-export-csv]')?.addEventListener('click', () => exportarComparativoCSV());
   }
 
   async function map(root) {
@@ -668,7 +856,7 @@ import { supabase } from './supabaseClient.js';
     if (a) a.textContent = text;
   }
 
-  function render(root) { root.innerHTML = html(); bind(root); map(root); }
+  function render(root) { root.innerHTML = html(); bind(root); if (st.tab === 'mapa') map(root); }
   function renderErro(root, err) { root.innerHTML = `<div class="mo"><section class="mo-card"><div class="mo-load">Não foi possível carregar o mapa operacional.<br><small>${esc(err?.message || err || 'Erro desconhecido')}</small></div></section></div>`; }
 
   async function openHome(root) {
@@ -678,7 +866,7 @@ import { supabase } from './supabaseClient.js';
       await load();
       st.rota = rows().base[0]?.id || '';
       render(root);
-      console.info('[mapa-operacional] carregado', { osComSaldo: st.os.length, pontos: st.pontos.length, associadas: st.rotas.length, semAssociacao: st.semAssociacao.length });
+      console.info('[mapa-operacional] carregado', { osComSaldo: st.os.length, pontos: st.pontos.length, associadas: st.rotas.length, semAssociacao: st.semAssociacao.length, comparativo: st.comparativo.length });
     } catch (err) {
       console.error('[mapa-operacional] erro ao carregar:', err);
       renderErro(root, err);
