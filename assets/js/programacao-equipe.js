@@ -233,6 +233,8 @@ function injectStyles() {
     .peqb-conf-head .peqb-row-btn{height:32px;font-size:12px;padding:0 11px;white-space:nowrap;flex:0 0 auto}
     .peqb-conf-head .peqb-row-btn.hotel{font-weight:850}
     .peqb-conf-head .peqb-chip{padding:5px 9px;font-size:11.5px}
+    .peqb-conf-name{display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 140px}
+    .peqb-conf-tag{flex:0 0 auto;white-space:nowrap}
     .peqb-name-sel{flex:1 1 140px;min-width:0;max-width:100%;border:1px solid transparent;background:transparent;color:#f8fafc;font-size:13.5px;font-weight:850;cursor:pointer;border-radius:8px;padding:4px 24px 4px 7px;color-scheme:dark;text-overflow:ellipsis}
     .peqb-name-sel:hover{border-color:rgba(111,208,165,.35);background:rgba(8,22,17,.55)}
     .peqb-name-sel:focus{border-color:rgba(111,208,165,.55);outline:none;background:#06130e}
@@ -460,6 +462,31 @@ async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
   return porOs;
 }
 
+// Tipo de contrato (Efetivo/Intermitente/Diarista) do colaborador confirmado
+// em cada O.S. — reaproveita o que já veio no ranking de candidatos (se o
+// confirmado estiver no top-8) e só consulta colaborador_cruzamento por CPF
+// para os que faltarem (trocados manualmente / fora do ranking).
+async function loadTipoContratoConfirmados(confirmadosPorOs, candidatosPorOs) {
+  const mapa = new Map();
+  candidatosPorOs.forEach((lista) => {
+    lista.forEach((c) => {
+      const id = String(c.colaboradorId || '');
+      if (id && c.tipoLabel && !mapa.has(id)) mapa.set(id, c.tipoLabel);
+    });
+  });
+  const idsConfirmados = [...confirmadosPorOs.values()].map((r) => String(r.colaborador_id));
+  const cpfsFaltantes = [...new Set(idsConfirmados.filter((id) => !mapa.has(id) && /^\d+$/.test(id)))];
+  if (cpfsFaltantes.length) {
+    const { data, error } = await supabase.from('colaborador_cruzamento').select('cpf,tipo_contrato').in('cpf', cpfsFaltantes);
+    if (!error) {
+      (data || []).forEach((r) => {
+        if (r.cpf && !mapa.has(r.cpf)) mapa.set(r.cpf, contratoLabel(r.tipo_contrato));
+      });
+    }
+  }
+  return mapa;
+}
+
 function brl(value) {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -491,7 +518,7 @@ function scoreSeg(cand) {
   const d = Math.max(0, Number(cand.scoreDistancia) || 0);
   const a = Math.max(0, Number(cand.scoreAuditoria) || 0);
   const sum = c + d + a;
-  if (!sum) return '';
+  if (!sum) return '<span class="peqb-score peqb-score-empty" title="Sem dados de ranking — candidato de reserva"></span>';
   const cw = Math.round((c / sum) * 100);
   const dw = Math.round((d / sum) * 100);
   const aw = Math.max(0, 100 - cw - dw);
@@ -666,10 +693,13 @@ function osRowHtml(item) {
       : '';
     right = `<div class="peqb-os2-right">
       <div class="peqb-conf-head">
-        <span class="peqb-cand-av">${esc(iniciais(confirmadoRow.nome_colaborador))}</span>
-        <select class="peqb-name-sel" data-trocar-colab title="Trocar o colaborador (♻ = já escalado em outra OS)">
-          ${trocarOptionsHtml(item)}
-        </select>
+        <span class="peqb-conf-name">
+          <span class="peqb-cand-av">${esc(iniciais(confirmadoRow.nome_colaborador))}</span>
+          <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(item.confirmadoTipoLabel)}">${esc(item.confirmadoTipoLabel)}</span>
+          <select class="peqb-name-sel" data-trocar-colab title="Trocar o colaborador (♻ = já escalado em outra OS)">
+            ${trocarOptionsHtml(item)}
+          </select>
+        </span>
         ${hotelBtn}
         ${aliChipsHtml(String(confirmadoRow.colaborador_id), confirmadoRow.nome_colaborador, item.custos?.ali || { almoco: true })}
       </div>
@@ -940,7 +970,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         .map((r) => ({ r, vagas: CARONA_CAP }));
       const passageiros = grupo.filter((r) => !r.tem_frota);
 
-      motoristas.forEach(({ r }) => resultado.set(r.colaborador_id, { tipo: 'MOTORISTA FROTA', placa: r.veiculo_placa || '', obs: '' }));
+      motoristas.forEach(({ r }) => resultado.set(r.colaborador_id, { tipo: 'MOTORISTA FROTA', placa: r.veiculo_placa || '' }));
 
       const pares = [];
       passageiros.forEach((p) => {
@@ -960,7 +990,8 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         if (atribuido.has(p.colaborador_id) || m.vagas <= 0) return;
         m.vagas -= 1;
         atribuido.add(p.colaborador_id);
-        resultado.set(p.colaborador_id, { tipo: 'CARONA FROTA', placa: m.r.veiculo_placa || '', obs: `Carona com ${m.r.nome || '—'}` });
+        // Carona carrega a PLACA do frota (igual ao motorista) — é o vínculo visível.
+        resultado.set(p.colaborador_id, { tipo: 'CARONA FROTA', placa: m.r.veiculo_placa || '' });
       });
 
       passageiros.forEach((p) => {
@@ -968,7 +999,6 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         resultado.set(p.colaborador_id, {
           tipo: p.veiculo_proprio ? 'REEMBOLSO KM' : 'UBER/TÁXI',
           placa: '',
-          obs: p.veiculo_proprio ? 'Veículo próprio' : (p.lat == null ? 'Sem coordenada do colaborador' : ''),
         });
       });
     });
@@ -984,7 +1014,6 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         nome_colaborador: r.nome || '',
         tipo_deslocamento: res.tipo,
         placa_veiculo: onlyPlate(res.placa || ''),
-        observacao: res.obs || null,
       });
     });
     if (payload.length) {
@@ -1095,11 +1124,13 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         return { os, ponto: pontoDaOs(os, pontosPorId), confirmadoRow, candidatosNecessarios: true };
       });
       const candidatosPorOs = await loadCandidatosPorOs(supervisao, osComPonto, colaboradoresConfirmadosEmOutraOs);
+      const tipoLabelPorColaborador = await loadTipoContratoConfirmados(confirmadosPorOs, candidatosPorOs);
 
       osComCandidatosAtual = osComPonto.map(({ os, ponto, confirmadoRow }) => ({
         os,
         ponto,
         confirmadoRow,
+        confirmadoTipoLabel: confirmadoRow ? (tipoLabelPorColaborador.get(String(confirmadoRow.colaborador_id)) || 'Não informado') : null,
         candidatos: confirmadoRow
           ? [{ colaboradorId: confirmadoRow.colaborador_id, nome: confirmadoRow.nome_colaborador, km: confirmadoRow.km_estimado != null ? Number(confirmadoRow.km_estimado) : null, custoTotal: null }, ...(candidatosPorOs.get(os.id) || [])]
           : (candidatosPorOs.get(os.id) || []),

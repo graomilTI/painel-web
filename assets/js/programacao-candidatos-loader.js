@@ -189,7 +189,7 @@ async function preencherVazios() {
       return;
     }
     const opts = lista.map((c) => `<option value="${esc(c.id)}">${esc(c.nome)}${c.cargo ? ` · ${esc(c.cargo)}` : ''}</option>`).join('');
-    right.innerHTML = `<div class="peqb-empty" style="margin:0 0 8px;text-align:left;padding:12px">Escolha manualmente um colaborador elegível para a O.S. ${esc(osNumero(row) || '')}.</div><div class="peqb-row-actions"><select class="peqb-select" data-manual-candidato>${opts}</select><button type="button" class="peqb-row-btn" data-manual-confirmar>Confirmar</button></div>`;
+    right.innerHTML = `<div class="peqb-conf-km" style="margin-bottom:6px">Sem candidato ranqueado para a O.S. ${esc(osNumero(row) || '')} — escolha manualmente:</div><div class="peqb-row-actions" style="margin-top:0"><select class="peqb-select" data-manual-candidato>${opts}</select><button type="button" class="peqb-row-btn" data-manual-confirmar>Confirmar</button></div>`;
   });
 }
 function boot() {
