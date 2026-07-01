@@ -1,6 +1,6 @@
 // Programação Gestor — Etapa 1 = O.S. + despesas no mesmo card.
 import { supabase } from './supabaseClient.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260701-contrato1';
+import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260701-fallbackh2';
 
 let currentUiStep = '1';
 let equipeRendering = false;
@@ -71,9 +71,12 @@ function injectGestorAjustesStyles() {
     .prog-toolbar:has(#progSup:focus) .prog-toolbar-row-steps{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
     .prog-list-card,#progList,#peqbOsList{position:relative;z-index:1;overflow:visible!important}
     .prog-os-lazy-card{border:1px dashed rgba(52,211,153,.22);border-radius:18px;padding:18px;background:rgba(15,23,42,.18);color:#94a3b8;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+    .prog-os-lazy-card.is-loading{justify-content:flex-start}
     .prog-os-lazy-card strong{display:block;color:#f8fafc;margin-bottom:4px;font-size:14px}
     .prog-os-lazy-card p{margin:0;font-size:13px;line-height:1.35}
     .prog-os-lazy-card .btn{min-height:38px}
+    .prog-spinner{width:28px;height:28px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;flex:0 0 auto;animation:progSpin .75s linear infinite}
+    @keyframes progSpin{to{transform:rotate(360deg)}}
     .prog-sup-native-hidden{position:absolute!important;width:0!important;height:0!important;padding:0!important;border:0!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
     .prog-sup-combo-input{position:relative!important;z-index:9020!important;min-width:320px!important;width:100%;box-sizing:border-box;padding:9px 12px;background:#020617!important;color:#f8fafc!important;border:1px solid rgba(52,211,153,.45)!important;border-radius:10px;font-size:13.5px;outline:none}
     .prog-sup-combo-input:focus{outline:2px solid rgba(52,211,153,.35)!important;outline-offset:1px!important}
@@ -123,14 +126,10 @@ function renderIdle() {
     <div class="prog-os-lazy-card">
       <div>
         <strong>Tela pronta para carregar</strong>
-        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Clique em <b>Carregar</b> para montar a tela final.</p>
+        <p>${sup ? `Supervisão selecionada: ${escapeHtml(sup)}.` : 'Selecione a supervisão e a data no topo.'} Use o botão Carregar no topo para montar a tela final.</p>
       </div>
-      <button type="button" class="btn btn-primary" id="progEquipeLoadNow">Carregar</button>
     </div>
   `;
-  list.querySelector('#progEquipeLoadNow')?.addEventListener('click', () => {
-    document.getElementById('progLoadContext')?.click();
-  });
 }
 
 async function marcarPendentesComoAtender(supervisao) {
@@ -223,11 +222,11 @@ function scheduleFinalRender(delay = 250) {
 function listShowsCoreDisponibilidade() {
   const list = document.getElementById('progList');
   if (!list) return false;
-  if (list.querySelector('#peqbOsList') || list.querySelector('#progEquipeLoadNow')) return false;
+  if (list.querySelector('#peqbOsList')) return false;
   return /Disponíveis|Disponiveis|DISPONIBILIDADE|Contexto carregado/i.test(list.textContent || '');
 }
 
-const PROG_MONTANDO_HTML = '<div class="prog-os-lazy-card"><div><strong>Montando tela final...</strong><p>Organizando O.S., equipe e despesas no mesmo card.</p></div></div>';
+const PROG_MONTANDO_HTML = '<div class="prog-os-lazy-card is-loading"><span class="prog-spinner" aria-hidden="true"></span><div><strong>Montando tela final...</strong><p>Organizando O.S., equipe e despesas no mesmo card.</p></div></div>';
 
 // O núcleo (programacao.js) tem state.step = 'A' por padrão e renderiza a
 // Disponibilidade no #progList ao terminar de carregar o contexto. Na aba
