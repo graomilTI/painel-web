@@ -28,8 +28,15 @@ function cargoBloqueado(cargo) {
     || c.includes('AUDITOR')
     || c.includes('COORDENADOR')
     || c.includes('COORDENADORA')
+    || c.includes('ADMINISTRATIVO')
     || c === 'COORDENACAO'
     || c.startsWith('COORDENACAO ');
+}
+// Coordenação "Geral" (ou "... - Geral") é backoffice/HQ, não escala equipe
+// de campo — não deve aparecer como candidato de embarque.
+function coordenacaoBloqueada(coordenacao) {
+  const c = norm(coordenacao);
+  return c === 'GERAL' || c.endsWith(' GERAL');
 }
 function inativo(row) {
   if (row?.ativo === false) return true;
@@ -42,7 +49,7 @@ function id(row) { return String(row?.colaborador_id || row?.colaboradorId || cp
 function candidato(row, supervisao) {
   const colabId = id(row);
   const colabNome = nome(row);
-  if (!colabId || !colabNome || cargoBloqueado(row?.cargo) || inativo(row)) return null;
+  if (!colabId || !colabNome || cargoBloqueado(row?.cargo) || coordenacaoBloqueada(row?.coordenacao) || inativo(row)) return null;
   return {
     id: colabId,
     nome: colabNome,
