@@ -348,15 +348,22 @@ import { supabase } from './supabaseClient.js';
     if (alojamento) return { tipo: 'alojamento', nome: alojamento.nome, custoDia: 0 };
 
     if (!ponto.temCoord) return null;
-    let melhor = null;
+    // Prioriza hotel com diária real cadastrada; na falta, usa o hotel real mais próximo sem
+    // diária (temos a localização, só não o preço) com estimativa — melhor que ignorar um hotel
+    // que existe de verdade e cair direto no fallback genérico de "sem hotel cadastrado".
+    let melhorComPreco = null;
+    let melhorSemPreco = null;
     for (const h of st.hoteisComCoord) {
       const d = km(ponto.lat, ponto.lng, lat(h), lng(h));
       if (d === null || d > RAIO_HOTEL_KM) continue;
       const diaria = num(h.valor_diaria_individual) ?? num(h.valor_diaria_padrao);
-      if (diaria === null) continue;
-      if (!melhor || diaria < melhor.custoDia) melhor = { tipo: 'hotel', nome: h.nome, custoDia: diaria, distKm: d };
+      if (diaria !== null) {
+        if (!melhorComPreco || diaria < melhorComPreco.custoDia) melhorComPreco = { tipo: 'hotel', nome: h.nome, custoDia: diaria, distKm: d };
+      } else if (!melhorSemPreco || d < melhorSemPreco.distKm) {
+        melhorSemPreco = { tipo: 'hotel', nome: h.nome, custoDia: EST_ESTADIA_FALLBACK.HOTEL, distKm: d, estimado: true };
+      }
     }
-    return melhor;
+    return melhorComPreco || melhorSemPreco;
   }
 
   // Distância aproximada de um ponto até um segmento (trajeto reto entre dois pontos), por
@@ -772,7 +779,7 @@ import { supabase } from './supabaseClient.js';
         <div class="mo-legend"><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOS ? '' : 'off'}" data-toggle-marker="os"><i class="verde"></i>OS ${st.mostrarOS ? 'On' : 'Off'}</button><span><i class="vermelho"></i>OS sem saldo</span><span data-rota-status>Rotas: ${rotaInfo}</span></div></div>
         <div class="mo-body">
           <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
-          <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>Custo médio/rota</span><strong>${fmtRs(k.custoMedioRota)}</strong></div><div class="mo-kpi"><span>Custo total (backlog)</span><strong>${fmtRs(k.custoTotalBacklog)}</strong></div><div class="mo-kpi"><span>Economia hospedagem</span><strong>${fmtRs(k.economiaPotencial)}</strong></div><div class="mo-kpi"><span>Associadas/sugeridas</span><strong>${k.rotas}</strong></div><div class="mo-kpi"><span>Recomendam hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Hospedagem sem hotel real</span><strong>${k.hospedarEstimado}</strong></div><div class="mo-kpi"><span>Sem opção viável perto</span><strong>${k.inviaveis}</strong></div><div class="mo-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div>
+          <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>Custo médio/rota</span><strong>${fmtRs(k.custoMedioRota)}</strong></div><div class="mo-kpi"><span>Custo total (backlog)</span><strong>${fmtRs(k.custoTotalBacklog)}</strong></div><div class="mo-kpi"><span>Economia hospedagem</span><strong>${fmtRs(k.economiaPotencial)}</strong></div><div class="mo-kpi"><span>Associadas/sugeridas</span><strong>${k.rotas}</strong></div><div class="mo-kpi"><span>Recomendam hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Hospedagem c/ diária estimada</span><strong>${k.hospedarEstimado}</strong></div><div class="mo-kpi"><span>Sem opção viável perto</span><strong>${k.inviaveis}</strong></div><div class="mo-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div>
           <div class="mo-below"><section class="mo-card"><div class="mo-list">${base.length ? base.map(r => `<div class="mo-row ${st.rota === r.id ? 'active' : ''} ${r.inviavel ? 'sem' : ''}" data-rota="${esc(r.id)}"><strong>${esc(short(r.colab.nome))} · ${esc(r.os.cliente || 'OS')}</strong><small>${esc(r.modoLabel)} · ${fmtKm(r.dist)} · custo ${fmtRs(r.custoDia)} · saldo OS ${fmtKg(r.os.__saldo)}</small>${badge(r)}</div>`).join('') : ''}${sem.map(r => `<div class="mo-row sem"><strong>${r.ponto.temCoord ? 'Sem colaborador' : 'Sem coordenada do ponto'} · ${esc(r.os.cliente || 'OS')}</strong><small>OS ${esc(r.os.numero_os || r.os.id)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)} · saldo ${fmtKg(r.os.__saldo)} · ${esc(r.motivo)}</small><span class="mo-pill bad">pendente</span></div>`).join('')}${!base.length && !sem.length ? '<div class="mo-load">Nenhuma OS com saldo remanescente encontrada para o filtro.</div>' : ''}</div></section><section class="mo-card">${detail()}</section></div>
         </div>`;
   }
@@ -843,7 +850,7 @@ import { supabase } from './supabaseClient.js';
     const r = st.rotas.find(x => x.id === st.rota) || rows().base[0];
     if (!r) return '<div class="mo-load">Selecione uma rota.</div>';
     st.rota = r.id;
-    const hospInfo = r.hospedagem ? `${esc(r.hospedagem.nome)} · ${fmtRs(r.hospedagem.custoDia)}/dia${r.hospedagem.distKm != null ? ` · ${fmtKm(r.hospedagem.distKm)} do ponto` : ''}` : 'Nenhuma opção próxima conhecida';
+    const hospInfo = r.hospedagem ? `${esc(r.hospedagem.nome)} · ${fmtRs(r.hospedagem.custoDia)}/dia${r.hospedagem.estimado ? ' (diária estimada)' : ''}${r.hospedagem.distKm != null ? ` · ${fmtKm(r.hospedagem.distKm)} do ponto` : ''}` : 'Nenhuma opção próxima conhecida';
     return `<div class="mo-detail"><div class="mo-mini"><span>Colaborador</span><strong>${esc(r.colab.nome)}</strong></div><div class="mo-mini"><span>Ponto/OS</span><strong>${esc(r.ponto.nome_local)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)}</strong></div><div class="mo-mini"><span>Modo de deslocamento</span><strong>${esc(r.modoLabel)}${r.modoEstimado ? ' (estimado)' : ''}</strong></div><div class="mo-mini"><span>Custo deslocamento/dia</span><strong>${fmtRs(r.custoDeslocamento)}</strong></div><div class="mo-mini"><span>Hospedagem próxima</span><strong>${hospInfo}</strong></div><div class="mo-mini"><span>Recomendação</span><strong>${r.inviavel ? `Sem opção viável em ${fmtKm(r.dist)} — mão de obra próxima já alocada em OS maiores; precisa de hospedagem (não cadastrada aqui) ou revisão manual` : r.recomendacao === 'hospedar' ? `Hospedar — economiza ${fmtRs(r.economia)}/dia` : 'Deslocar no dia'}</strong></div><div class="mo-mini"><span>Saldo da OS</span><strong>${fmtKg(r.os.__saldo)}</strong></div><div class="mo-mini"><span>Saldo acumulado colab.</span><strong>${fmtKg(r.saldoDepois)}</strong></div></div>`;
   }
 
