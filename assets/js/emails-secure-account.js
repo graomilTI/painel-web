@@ -6,16 +6,6 @@ supabase.from = (relation) => {
   const safeRelation = relation === 'email_accounts' ? 'email_accounts_public' : relation;
   const builder = originalFrom(safeRelation);
 
-  if (relation === 'email_messages' && typeof builder.select === 'function') {
-    const originalSelect = builder.select.bind(builder);
-    builder.select = (...args) => {
-      const query = originalSelect(...args);
-      const originalLimit = query.limit.bind(query);
-      query.limit = (count, options) => originalLimit(Math.max(Number(count) || 0, 500), options);
-      return query;
-    };
-  }
-
   return builder;
 };
 

@@ -119,6 +119,7 @@ const ATTACHMENT_ICONS = {
 
 const DANGEROUS_EXTENSIONS = /\.(exe|com|bat|cmd|msi|scr|vbs|js|jar|dll|sys|drv|ps1|pif|pst|reg|vsd|ppt|pptx|doc|docx|xls|xlsx)$/i;
 const DANGEROUS_MIMETYPES = ['application/x-msdownload', 'application/x-executable', 'application/x-msdos-program', 'application/x-dosexec'];
+const EMAIL_LIST_SELECT = 'id,account_id,remetente_nome,remetente_email,assunto,data_recebimento,regional,categoria,prioridade,resumo_ia,precisa_resposta,status,risco';
 
 function isDangerousAttachment(filename, mimeType) {
   return DANGEROUS_EXTENSIONS.test(filename) || DANGEROUS_MIMETYPES.includes(mimeType);
@@ -431,7 +432,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
   async function loadEmails() {
     const list = document.getElementById('emList');
     list.innerHTML = `<div class="em-empty">Carregando e-mails...</div>`;
-    let q = supabase.from('email_messages').select('*').order('data_recebimento', { ascending: false }).limit(80);
+    let q = supabase.from('email_messages').select(EMAIL_LIST_SELECT).order('data_recebimento', { ascending: false }).limit(80);
     if (state.conta) q = q.eq('account_id', state.conta);
     if (state.status) q = q.in('status', state.status.split(','));
     const { data, error } = await q;
@@ -471,13 +472,20 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
   }
 
   async function selectEmail(id) {
-    state.selected = state.emails.find((e) => e.id === id) || null;
+    const selectedSummary = state.emails.find((e) => e.id === id) || null;
+    state.selected = selectedSummary;
     renderEmails();
-    if (!state.selected) return;
-    const [{ data: attachments }, { data: outbox }] = await Promise.all([
+    if (!selectedSummary) return;
+    const [{ data: fullEmail, error: emailError }, { data: attachments }, { data: outbox }] = await Promise.all([
+      supabase.from('email_messages').select('*').eq('id', id).maybeSingle(),
       supabase.from('email_attachments').select('*').eq('email_id', id).order('created_at'),
       supabase.from('email_outbox').select('*').eq('email_id', id).order('created_at', { ascending: false })
     ]);
+    if (emailError) {
+      document.getElementById('emDetail').innerHTML = `<div class="em-empty em-danger">${esc(emailError.message)}</div>`;
+      return;
+    }
+    state.selected = { ...selectedSummary, ...(fullEmail || {}), email_accounts: selectedSummary.email_accounts };
     state.attachments = attachments || [];
     state.outbox = outbox || [];
     renderDetail(userContext);
@@ -575,7 +583,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
   async function loadPerigo() {
     const list = document.getElementById('emPerigoList');
     list.innerHTML = `<div class="em-empty">Carregando...</div>`;
-    const { data, error } = await supabase.from('email_messages').select('*').in('risco', ['ALTO', 'CRITICO']).order('data_recebimento', { ascending: false }).limit(100);
+    const { data, error } = await supabase.from('email_messages').select(EMAIL_LIST_SELECT).in('risco', ['ALTO', 'CRITICO']).order('data_recebimento', { ascending: false }).limit(100);
     if (error) {
       list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}</div>`;
       return;
