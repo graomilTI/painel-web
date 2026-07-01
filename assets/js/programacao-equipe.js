@@ -313,13 +313,17 @@ function injectStyles() {
     .peqb-name-sel option{background:#0c1f17;color:#eef7f2;font-weight:600}
     .peqb-add-colab{width:28px;height:28px;min-height:28px;padding:0;border-radius:9px;border:1px solid rgba(56,189,248,.42);background:rgba(14,116,144,.16);color:#bfdbfe;font-size:16px;font-weight:950;cursor:pointer;flex:0 0 auto;line-height:1}
     .peqb-add-colab:hover{background:rgba(14,116,144,.28);color:#e0f2fe}
-    .peqb-extra-colabs{display:flex;gap:5px;flex-wrap:wrap;width:100%;margin:-3px 0 5px}
-    .peqb-extra-colab{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(56,189,248,.28);background:rgba(14,116,144,.12);color:#bfdbfe;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:850;line-height:1.1}
-    .peqb-extra-colab button{border:0;background:transparent;color:#fecaca;font-size:12px;font-weight:950;cursor:pointer;padding:0;line-height:1}
-    .peqb-add-box{display:flex;gap:6px;align-items:center;width:100%;margin:-1px 0 6px}
+    .peqb-extra-colabs{display:flex;flex-direction:column;gap:6px;width:100%;margin:-2px 0 7px}
+    .peqb-extra-colab{display:flex;align-items:center;gap:6px;width:100%;border:1px solid rgba(56,189,248,.24);background:rgba(15,23,42,.74);border-radius:10px;padding:5px 7px;box-sizing:border-box}
+    .peqb-extra-colab .peqb-name-sel{background:rgba(15,23,42,.9);border-color:rgba(56,189,248,.18);cursor:default}
+    .peqb-extra-colab button{width:28px;height:28px;border-radius:9px;border:1px solid rgba(248,113,113,.3);background:rgba(127,29,29,.18);color:#fecaca;font-size:14px;font-weight:950;cursor:pointer;padding:0;line-height:1;flex:0 0 auto}
+    .peqb-extra-colab button:hover{background:rgba(127,29,29,.3)}
+    .peqb-add-box{display:flex;gap:6px;align-items:center;width:100%;margin:-1px 0 7px;border:1px solid rgba(56,189,248,.28);background:rgba(15,23,42,.72);border-radius:10px;padding:5px 7px;box-sizing:border-box}
     .peqb-add-box[hidden]{display:none}
-    .peqb-add-box .peqb-select{height:30px;min-height:30px;flex:1 1 auto}
-    .peqb-add-box .peqb-row-btn{height:30px;min-height:30px;font-size:11px}
+    .peqb-add-box .peqb-cand-av{width:28px;height:28px;font-size:12px;background:rgba(14,116,144,.24);color:#bfdbfe}
+    .peqb-add-box .peqb-name-sel{height:30px;min-height:30px;flex:1 1 auto;background:rgba(15,23,42,.9);border-color:rgba(56,189,248,.18)}
+    .peqb-add-box .peqb-row-btn{height:30px;min-height:30px;font-size:11px;border-color:rgba(56,189,248,.42);background:rgba(14,116,144,.2);color:#bfdbfe}
+    .peqb-add-box .peqb-row-btn:hover{background:rgba(14,116,144,.34)}
     .peqb-conf-sub{font-size:11px;color:#8ba79a}
     .peqb-conf-km{font-size:11px;color:#9fb7aa;font-weight:800;white-space:nowrap;display:inline-flex;align-items:center;gap:3px}
     /* Custos em UM único grid de 4 colunas — as duas linhas (estadia /
@@ -929,7 +933,9 @@ function colabsExtrasHtml(item) {
   if (!extras.length) return '';
   return `<div class="peqb-extra-colabs">${extras.map((r) => `
     <span class="peqb-extra-colab" title="Colaborador adicional nesta O.S.">
-      ${esc(r.nome_colaborador || r.colaborador_id)}
+      <span class="peqb-cand-av">${esc(iniciais(r.nome_colaborador || r.colaborador_id))}</span>
+      <span class="peqb-cand-tag peqb-conf-tag t-info">Adicional</span>
+      <span class="peqb-name-sel">${esc(r.nome_colaborador || r.colaborador_id)}</span>
       <button type="button" data-remover-adicional="${esc(r.id)}" title="Remover colaborador">×</button>
     </span>`).join('')}</div>`;
 }
@@ -963,7 +969,9 @@ function osRowHtml(item) {
       </div>
       ${colabsExtrasHtml(item)}
       <div class="peqb-add-box" data-add-box hidden>
-        <select class="peqb-select" data-add-colab-select>${addColabOptionsHtml(item)}</select>
+        <span class="peqb-cand-av">+</span>
+        <span class="peqb-cand-tag peqb-conf-tag t-info">Adicionar</span>
+        <select class="peqb-name-sel" data-add-colab-select>${addColabOptionsHtml(item)}</select>
         <button type="button" class="peqb-row-btn" data-add-colab-confirm>Adicionar</button>
       </div>
       <div class="peqb-conf-km" title="Distância do colaborador até o ponto de embarque">📍 ${km != null ? `${round1(km)} km até o embarque` : 'sem coordenada do ponto'}</div>
