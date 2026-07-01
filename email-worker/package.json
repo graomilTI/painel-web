@@ -12,7 +12,7 @@
     "@supabase/supabase-js": "2.45.4",
     "dotenv": "^16.4.5",
     "fast-xml-parser": "^4.5.0",
-    "imapflow": "^1.0.164",
+    "imapflow": "1.0.198",
     "mailparser": "3.9.8",
     "nodemailer": "^6.9.15",
     "openai": "^4.67.3",
