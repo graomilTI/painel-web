@@ -663,6 +663,20 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
             : `<div class="em-actions"><button class="btn btn-primary" type="button" id="emAprovarEncaminhamento">Aprovar encaminhamento</button></div>`;
         })()}</div>` : ''}
 
+        ${(e.os_sugestao_aguardar || []).map((sug) => {
+          const linha = sug.linha || {};
+          const candidatos = sug.candidatos || [];
+          const desc = [linha.terminal, linha.cidade, linha.local].filter(Boolean).join(' · ') || 'linha sem terminal/cidade/local identificado';
+          const corpo = !candidatos.length
+            ? `<div class="em-muted em-small">Não encontrei nenhuma OS correspondente na tabela "Lista de OS" — confira manualmente.</div>`
+            : candidatos.map((os) => `
+              <div class="em-actions" style="justify-content:space-between;align-items:center;flex-wrap:wrap">
+                <div class="em-small em-muted">OS <b style="color:var(--text)">${esc(os.numero_os)}</b> · ${esc(os.cliente || '-')} · ${esc(os.embarque || '-')}${os.contrato ? ` · Contrato ${esc(os.contrato)}` : ''}</div>
+                ${os.status_gestor === 'AGUARDAR' ? '<span class="em-badge resolvido">Já está AGUARDAR</span>' : `<button class="btn btn-primary" type="button" data-marcar-os="${esc(os.id)}" data-numero-os="${esc(os.numero_os)}">Marcar AGUARDAR</button>`}
+              </div>`).join('');
+          return `<div class="em-summary"><span class="em-summary-label">🚦 Embarque suspenso detectado</span><p>${esc(desc)}${linha.data ? ` · ${esc(linha.data)}` : ''}</p><div class="em-muted em-small">Detectado na tabela de programação de embarque anexada a este e-mail.${candidatos.length ? ' Confirme qual OS marcar como AGUARDAR — o sistema não muda sozinho.' : ''}</div>${corpo}</div>`;
+        }).join('')}
+
         ${dadosEntries.length ? `<div class="em-extracted"><span class="em-section-label">Dados detectados</span><dl class="em-dl">${dadosEntries.map(([k, v]) => `<dt>${esc(DADOS_LABELS[k] || prettyKey(k))}</dt><dd>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>` : ''}
 
         ${state.attachments.length ? `<div><span class="em-section-label">Anexos ${state.attachments.some((a) => isDangerousAttachment(a.nome_arquivo, a.mime_type)) ? '⚠️ PERIGO' : ''}</span><div class="em-attachments">${state.attachments.map((a) => {
@@ -831,6 +845,27 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       }
       if (win) win.location.href = data.signedUrl;
       else window.open(data.signedUrl, '_blank');
+      return;
+    }
+    const marcarOsBtn = event.target.closest('[data-marcar-os]');
+    if (marcarOsBtn) {
+      const osId = marcarOsBtn.dataset.marcarOs;
+      const numeroOs = marcarOsBtn.dataset.numeroOs;
+      const { error } = await supabase.from('operacional_os').update({
+        status_gestor: 'AGUARDAR',
+        configurada_em: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }).eq('id', osId);
+      if (error) return alert(`Erro ao marcar OS: ${error.message}`);
+      await supabase.from('email_historico').insert({
+        email_id: state.selected?.id || null,
+        usuario_id: userContext?.user?.id || null,
+        usuario_nome: userContext?.profile?.full_name || userContext?.user?.email || null,
+        acao: 'OS_MARCADA_AGUARDAR',
+        detalhes: { numero_os: numeroOs, os_id: osId }
+      });
+      marcarOsBtn.outerHTML = '<span class="em-badge resolvido">Já está AGUARDAR</span>';
+      alert(`OS ${numeroOs} marcada como AGUARDAR.`);
       return;
     }
     const action = event.target.closest('[data-action]')?.dataset.action;

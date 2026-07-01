@@ -398,6 +398,77 @@ async function interpretAttachmentWithAI(attachment) {
   return null;
 }
 
+const PROGRAMACAO_EMBARQUE_PROMPT = 'Esta imagem pode ser uma tabela de "Programação de Embarques" (linhas com Terminal, Cidade, Local e um status normalmente colorido: Aberto, Programado para iniciar, Suspenso ou Finalizado). Se for esse tipo de tabela, responda apenas JSON: {"eh_tabela_embarque": true, "linhas": [{"terminal": "...", "cidade": "...", "local": "...", "status": "Aberto|Programado para iniciar|Suspenso|Finalizado", "data": "DD/MM/AAAA ou null"}]}, incluindo TODAS as linhas da tabela, não só as suspensas. Se a imagem não for esse tipo de tabela (ex: logo, foto, ícone de assinatura), responda {"eh_tabela_embarque": false, "linhas": []}.';
+
+// E-mails de programação de embarque (ex: COFCO) costumam colar essa tabela como imagem
+// embutida no corpo, não como texto — por isso essa interpretação só roda pra imagens
+// (collectAttachments já filtra por tamanho antes de chegar aqui).
+async function interpretEmbarqueTable(attachment) {
+  const openai = await getOpenAI();
+  if (!openai) return null;
+  const mime = (attachment.contentType || '').toLowerCase();
+  const buffer = attachment.content;
+  if (!buffer || buffer.length > MAX_ANEXO_IA_BYTES || !/^image\/(jpe?g|png|webp|gif)$/.test(mime)) return null;
+  try {
+    const b64 = buffer.toString('base64');
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: PROGRAMACAO_EMBARQUE_PROMPT },
+        { role: 'user', content: [
+          { type: 'text', text: 'Essa imagem é uma tabela de programação de embarque?' },
+          { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } }
+        ] }
+      ]
+    });
+    const parsed = JSON.parse(response.choices?.[0]?.message?.content || '{}');
+    return { eh_tabela_embarque: parsed.eh_tabela_embarque === true, linhas: Array.isArray(parsed.linhas) ? parsed.linhas : [] };
+  } catch (err) {
+    console.warn('Falha ao interpretar imagem como tabela de embarque:', err.message);
+    return null;
+  }
+}
+
+// Cobre só os remetentes já conhecidos por mandar tabela de programação de embarque com
+// status colorido. Outros domínios não geram sugestão até serem adicionados aqui.
+const CLIENTE_HINT_POR_DOMINIO = [
+  ['cofcointernational.com', 'COFCO'],
+  ['cargill.com', 'CARGILL'],
+  ['ldc.com', 'LDC']
+];
+
+function clienteHintFromEmail(fromText) {
+  const from = normalize(fromText);
+  return CLIENTE_HINT_POR_DOMINIO.find(([dominio]) => from.includes(dominio))?.[1] || null;
+}
+
+// Cruza uma linha "Suspenso" da tabela de embarque com public.operacional_os por
+// Cliente + Cidade + Local de embarque (conforme confirmado com o usuário). Não decide
+// sozinho quando ambíguo — devolve todos os candidatos pra escolha manual na Central de
+// E-mails, e null quando não há como nem tentar (remetente desconhecido) ou não achou nada.
+async function sugerirAguardarOS(linha, fromText) {
+  const clienteHint = clienteHintFromEmail(fromText);
+  if (!clienteHint) return null;
+  let query = supabase.from('operacional_os')
+    .select('id, numero_os, cliente, embarque, contrato, produto, data_os, status_gestor')
+    .neq('status_gestor', 'FINALIZAR')
+    .ilike('cliente', `%${clienteHint}%`);
+  if (linha.cidade) query = query.ilike('embarque', `%${linha.cidade}%`);
+  const { data, error } = await query.limit(20);
+  if (error) {
+    console.warn('Falha ao buscar OS pra sugestão de AGUARDAR:', error.message);
+    return null;
+  }
+  let candidatos = data || [];
+  if (candidatos.length > 1 && linha.local) {
+    const porLocal = candidatos.filter((os) => normalize(os.embarque).includes(normalize(linha.local)));
+    if (porLocal.length) candidatos = porLocal;
+  }
+  return { linha, candidatos: candidatos.slice(0, 5) };
+}
+
 async function loadRules() {
   const { data, error } = await supabase.from('email_regras').select('*').eq('ativo', true).order('prioridade');
   if (error) throw error;
@@ -493,6 +564,16 @@ async function saveAttachment(emailId, attachment) {
     if (mime === 'application/xml' || mime === 'text/xml' || /\.xml$/i.test(filename)) {
       dadosExtraidos = interpretXmlAttachment(attachment.content);
       status = Object.keys(dadosExtraidos).length ? 'OK' : 'SEM_DADOS';
+    } else if (attachment.related && /^image\//.test(mime)) {
+      // Imagem embutida grande (collectAttachments só deixa passar as grandes): pode ser um
+      // print de tabela de programação de embarque, não um documento financeiro.
+      const tabela = await interpretEmbarqueTable(attachment);
+      if (tabela?.eh_tabela_embarque && tabela.linhas.length) {
+        dadosExtraidos = { linhas_embarque: tabela.linhas };
+        status = 'OK';
+      } else {
+        status = process.env.OPENAI_API_KEY ? 'SEM_DADOS' : 'SEM_IA';
+      }
     } else if (/^image\/(jpe?g|png|webp|gif)$/.test(mime) || mime === 'application/pdf') {
       const ai = await interpretAttachmentWithAI(attachment);
       if (ai && Object.keys(ai).length) {
@@ -523,15 +604,22 @@ async function saveAttachment(emailId, attachment) {
 }
 
 const MAX_RFC822_DEPTH = 1;
+const MIN_INLINE_IMAGE_BYTES = 40 * 1024;
 
-// Anexos com `related: true` são imagens referenciadas via cid: no HTML
-// (logos/ícones de assinatura) e fazem parte do corpo do e-mail, não são
-// anexos de verdade. E-mails encaminhados como anexo (message/rfc822) são
-// abertos para extrair os anexos reais de dentro.
+// Anexos com `related: true` são imagens referenciadas via cid: no HTML e normalmente são
+// logo/ícone de assinatura (pequenos) — mas às vezes (ex: print de tabela de programação de
+// embarque colado no corpo) trazem dado operacional de verdade. Só vale abrir mão de
+// ignorar quando a imagem é grande o bastante pra não ser um ícone. E-mails encaminhados
+// como anexo (message/rfc822) são abertos para extrair os anexos reais de dentro.
 async function collectAttachments(parsed, depth = 0) {
   const result = [];
   for (const attachment of parsed.attachments || []) {
-    if (attachment.related) continue;
+    if (attachment.related) {
+      const isImage = /^image\//.test(attachment.contentType || '');
+      const isBigEnough = (attachment.content?.length || 0) >= MIN_INLINE_IMAGE_BYTES;
+      if (isImage && isBigEnough) result.push(attachment);
+      continue;
+    }
     if (attachment.contentType === 'message/rfc822' && depth < MAX_RFC822_DEPTH) {
       try {
         const inner = await simpleParser(attachment.content);
@@ -618,10 +706,15 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
         if (error) throw error;
         inserted++;
         const attachmentsDados = {};
+        const linhasEmbarque = [];
         let temAnexoPeigoso = false;
         for (const attachment of await collectAttachments(parsed)) {
           const { dadosExtraidos, isDangerous } = await saveAttachment(saved.id, attachment);
-          Object.assign(attachmentsDados, dadosExtraidos);
+          // linhas_embarque vira sugestão de OS separada (ver abaixo), não faz sentido
+          // misturar com os "Dados detectados" de contrato/CNPJ/etc.
+          const { linhas_embarque, ...resto } = dadosExtraidos || {};
+          if (Array.isArray(linhas_embarque)) linhasEmbarque.push(...linhas_embarque);
+          Object.assign(attachmentsDados, resto);
           if (isDangerous) temAnexoPeigoso = true;
         }
         const updatePayload = { updated_at: new Date().toISOString() };
@@ -630,6 +723,11 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
         }
         if (temAnexoPeigoso) {
           updatePayload.risco = 'CRITICO';
+        }
+        const linhasSuspensas = linhasEmbarque.filter((linha) => normalize(linha?.status).includes('suspenso'));
+        if (linhasSuspensas.length) {
+          const sugestoes = (await Promise.all(linhasSuspensas.map((linha) => sugerirAguardarOS(linha, message.fromText)))).filter(Boolean);
+          if (sugestoes.length) updatePayload.os_sugestao_aguardar = sanitizeForPostgres(sugestoes);
         }
         if (Object.keys(updatePayload).length > 1) {
           await supabase.from('email_messages').update(updatePayload).eq('id', saved.id);
