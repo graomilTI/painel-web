@@ -30,6 +30,7 @@
 .peqb-st{height:26px!important;min-width:26px!important;padding:0 6px!important;font-size:10.5px!important}
 .peqb-tag{font-size:9.5px!important;padding:4px 7px!important}
 .peqb-os2-right{min-width:0!important;padding:8px 10px!important;gap:6px!important}
+.peqb-os2-right-fallback{min-height:110px!important;display:flex!important;flex-direction:column!important;justify-content:center!important}
 .peqb-cand-av{display:none!important}
 .peqb-conf-head{display:grid!important;grid-template-columns:minmax(268px,360px) auto minmax(170px,1fr) auto!important;grid-template-rows:auto!important;gap:6px 8px!important;align-items:center!important;margin:0!important}
 .peqb-conf-name{grid-column:1!important;grid-row:1!important;width:100%!important;min-width:0!important}

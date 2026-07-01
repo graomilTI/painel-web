@@ -191,6 +191,7 @@ async function preencherVazios() {
     const right = row.querySelector('.peqb-os2-right');
     if (!right || right.dataset.manualFallback === '1') return;
     right.dataset.manualFallback = '1';
+    right.classList.add('peqb-os2-right-fallback');
     if (!lista.length) {
       right.innerHTML = '<div class="peqb-empty" style="margin:0">Não encontrei colaborador elegível no snapshot/programação.</div>';
       return;
