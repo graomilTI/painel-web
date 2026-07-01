@@ -11,6 +11,8 @@ import { supabase } from './supabaseClient.js';
   const BR_LAT_MIN = -34.2, BR_LAT_MAX = 6.0, BR_LNG_MIN = -74.5, BR_LNG_MAX = -28.0;
   const RAIO_REPETIR_COLAB_KM = 5;
   const RAIO_HOTEL_KM = 60;
+  const RAIO_CARONA_KM = 5;
+  const OS_SALDO_PEQUENO_KG = 500;
   const ROTAS_REAIS_SIMULTANEAS = 4;
   const ROTAS_REAIS_LIMITE = 180;
 
@@ -268,17 +270,36 @@ import { supabase } from './supabaseClient.js';
     return melhor;
   }
 
-  function modoColaborador(c) {
+  // Distância aproximada de um ponto até um segmento (trajeto reto entre dois pontos), por
+  // amostragem — suficiente pra um raio de tolerância, sem precisar de rota real via OSRM.
+  function distPontoTrajeto(ponto, trajeto, amostras = 12) {
+    let min = Infinity;
+    for (let i = 0; i <= amostras; i++) {
+      const t = i / amostras;
+      const la = trajeto.aLat + (trajeto.bLat - trajeto.aLat) * t;
+      const lo = trajeto.aLng + (trajeto.bLng - trajeto.aLng) * t;
+      const d = km(ponto.lat, ponto.lng, la, lo);
+      if (d !== null && d < min) min = d;
+    }
+    return min;
+  }
+
+  // Carona só conta como custo zero se o ponto estiver a até 5km do trajeto de algum motorista
+  // de frota até o embarque mais próximo dele — senão vira "carona fantasma" sem motorista real por perto.
+  function caronaDisponivelPara(ponto) {
+    if (!ponto.temCoord || !st.frotaTrajetos?.length) return false;
+    return st.frotaTrajetos.some(t => distPontoTrajeto(ponto, t) <= RAIO_CARONA_KM);
+  }
+
+  function modoColaborador(c, ponto) {
     if (st.nomesFrotaSet.has(norm(c.nome))) return { modo: 'frota', label: 'Motorista/frota', custo: 0 };
 
     const habitual = st.modoHabitualPorCpf.get(c.cpf) || st.modoHabitualPorNome.get(norm(c.nome));
-    if (habitual) {
-      if (habitual.tipo === 'MOTORISTA FROTA') return { modo: 'frota', label: 'Motorista/frota', custo: 0 };
-      if (habitual.tipo === 'CARONA FROTA') return { modo: 'carona', label: 'Carona com frota', custo: 0 };
-      if (habitual.tipo === 'NAO PRECISA') return { modo: 'local', label: 'Já está no local', custo: 0 };
-      if (habitual.tipo === 'REEMBOLSO KM') return { modo: 'reembolso', label: 'Veículo próprio', custoFn: combustivelIdaVolta };
-      if (habitual.tipo === 'UBER TAXI' || habitual.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
-    }
+    if (habitual?.tipo === 'MOTORISTA FROTA') return { modo: 'frota', label: 'Motorista/frota', custo: 0 };
+    if (habitual?.tipo === 'CARONA FROTA' && caronaDisponivelPara(ponto)) return { modo: 'carona', label: 'Carona com frota', custo: 0 };
+    if (habitual?.tipo === 'NAO PRECISA') return { modo: 'local', label: 'Já está no local', custo: 0 };
+    if (habitual?.tipo === 'REEMBOLSO KM') return { modo: 'reembolso', label: 'Veículo próprio', custoFn: combustivelIdaVolta };
+    if (habitual?.tipo === 'UBER TAXI' || habitual?.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
 
     if (st.veiculoProprioCpfs.has(c.cpf) || st.veiculoProprioNomes.has(norm(c.nome))) {
       return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };
@@ -291,7 +312,7 @@ import { supabase } from './supabaseClient.js';
     const candidato = posicaoFrota && geo(posicaoFrota) ? { ...c, latitude: lat(posicaoFrota), longitude: lng(posicaoFrota) } : c;
     const distReal = posicaoFrota && geo(posicaoFrota) ? distColabPonto(candidato, ponto) : dist;
 
-    const modoInfo = modoColaborador(c);
+    const modoInfo = modoColaborador(c, ponto);
     const custoDeslocamento = modoInfo.custo ?? modoInfo.custoFn(distReal);
     const hospedagem = ponto.temCoord || st.alojamentosPorCidade.has(`${norm(ponto.cidade)}|${norm(ponto.uf)}`) ? hospedagemParaPonto(ponto) : null;
 
@@ -310,9 +331,12 @@ import { supabase } from './supabaseClient.js';
     return d !== null && d <= RAIO_REPETIR_COLAB_KM;
   }
 
-  function podeUsarColaborador(c, ponto, usos) {
+  function podeUsarColaborador(c, ponto, usos, osSaldoKg) {
     const usados = usos.get(c.id) || [];
     if (!usados.length) return true;
+    // OS pequena (saldo <= 500kg): não justifica dedicar um colaborador exclusivo, quem já
+    // está em campo hoje pode assumir também, mesmo fora do raio de 5km da outra OS.
+    if (Number(osSaldoKg) <= OS_SALDO_PEQUENO_KG) return true;
     return usados.some(u => mesmoLocalOuRaio(u.ponto, ponto));
   }
   function registrarUso(c, ponto, saldo, usos) {
@@ -330,14 +354,17 @@ import { supabase } from './supabaseClient.js';
     function ranquear(lista) {
       // Todo item de st.colaboradores (cadastrados ou sintéticos de frota) já tem geo válida garantida na origem.
       return lista
-        .filter(c => podeUsarColaborador(c, ponto, usos))
+        .filter(c => podeUsarColaborador(c, ponto, usos, os.__saldo))
         .map(c => {
           const dist = distColabPonto(c, ponto);
           const avaliacao = avaliarCandidato(c, ponto, dist);
           return { c, dist: avaliacao.distReal, avaliacao, saldoAtual: saldoAcumulado(c, usos) };
         })
         .filter(x => Number.isFinite(x.dist))
-        .sort((a, b) => a.avaliacao.custoDia - b.avaliacao.custoDia || a.saldoAtual - b.saldoAtual || a.dist - b.dist);
+        // Sempre o colaborador mais próximo primeiro; custo e carga de trabalho só desempatam
+        // entre candidatos essencialmente equidistantes — nunca mandamos alguém a milhares de
+        // km só porque o modo de transporte "parece" mais barato no papel.
+        .sort((a, b) => a.dist - b.dist || a.avaliacao.custoDia - b.avaliacao.custoDia || a.saldoAtual - b.saldoAtual);
     }
 
     const candidatosVinculados = ranquear(vinculados);
@@ -378,7 +405,31 @@ import { supabase } from './supabaseClient.js';
     st.colaboradores = [...colaboradores, ...sinteticos];
     st.osTodas = abertas;
     st.os = abertas.filter(o => o.__saldo > 0);
+    st.frotaTrajetos = calcularTrajetosFrota();
     build();
+  }
+
+  // Aproxima o "trajeto do motorista até seu ponto de embarque" pelo segmento entre a posição
+  // atual/base do motorista de frota e o ponto de OS mais próximo dele — não temos a rota real
+  // de cada motorista, então usamos essa reta como raio de referência pra validar carona.
+  function calcularTrajetosFrota() {
+    const trajetos = [];
+    for (const c of st.colaboradores) {
+      if (!st.nomesFrotaSet.has(norm(c.nome))) continue;
+      const posAtual = st.posicaoPorNome.get(norm(c.nome));
+      const aLat = posAtual && geo(posAtual) ? lat(posAtual) : lat(c);
+      const aLng = posAtual && geo(posAtual) ? lng(posAtual) : lng(c);
+      if (!Number.isFinite(aLat) || !Number.isFinite(aLng)) continue;
+
+      let destino = null, menor = Infinity;
+      for (const p of st.pontos) {
+        if (!p.temCoord) continue;
+        const d = km(aLat, aLng, p.lat, p.lng);
+        if (d !== null && d < menor) { menor = d; destino = p; }
+      }
+      if (destino) trajetos.push({ aLat, aLng, bLat: destino.lat, bLng: destino.lng });
+    }
+    return trajetos;
   }
 
   function build() {
@@ -447,7 +498,7 @@ import { supabase } from './supabaseClient.js';
     const s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent = `
-      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:14px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:16px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo p{color:#94a3b8;margin:6px 0 0;font-size:13px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:13px;background:#166534;color:#ecfdf5;font-weight:900;padding:9px 13px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:40px;border:1px solid rgba(148,163,184,.2);border-radius:13px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-filter{position:relative;z-index:2500;padding:0 16px 14px;display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-grid{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:14px;padding:0 16px 16px}.mo-map{height:650px;border:1px solid rgba(148,163,184,.14);border-radius:20px;background:#0d1117;z-index:1}.mo-side{display:flex;flex-direction:column;gap:12px}.mo-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-kpi{border:1px solid rgba(34,197,94,.18);border-radius:16px;padding:12px;background:rgba(2,6,23,.35)}.mo-kpi span{font-size:10px;color:#94a3b8;font-weight:900;text-transform:uppercase}.mo-kpi strong{display:block;color:#fff;font-size:21px;margin-top:5px}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alert{padding:10px 16px;color:#fde68a;background:rgba(120,53,15,.16);border-top:1px solid rgba(251,191,36,.18);font-size:12px}.mo-legend{position:relative;z-index:20;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:0 16px 12px;color:#94a3b8;font-size:12px}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .frota{background:#3b82f6;box-shadow:inset 0 0 0 3px #fff}.mk{position:relative;width:20px;height:20px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.25)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.frota{background:#3b82f6}.mk.frota:after{content:'';position:absolute;left:5px;top:5px;width:6px;height:6px;border-radius:50%;background:#fff}.mk.sel{box-shadow:0 0 0 4px rgba(250,204,21,.45)}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(3),.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5){text-align:right}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}@media(max-width:1100px){.mo-grid{grid-template-columns:1fr}.mo-map{height:520px}.mo-filter{grid-template-columns:1fr}}
+      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:14px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:16px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo p{color:#94a3b8;margin:6px 0 0;font-size:13px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:13px;background:#166534;color:#ecfdf5;font-weight:900;padding:9px 13px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:40px;border:1px solid rgba(148,163,184,.2);border-radius:13px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-filter{position:relative;z-index:2500;padding:0 16px 14px;display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:14px;padding:0 16px 16px}.mo-map{height:720px;border:1px solid rgba(148,163,184,.14);border-radius:20px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px}.mo-kpi{flex:1 1 0;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:14px;padding:10px 8px;background:rgba(2,6,23,.35)}.mo-kpi span{display:block;font-size:9px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:17px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alert{padding:10px 16px;color:#fde68a;background:rgba(120,53,15,.16);border-top:1px solid rgba(251,191,36,.18);font-size:12px}.mo-legend{position:relative;z-index:20;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:0 16px 12px;color:#94a3b8;font-size:12px}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .frota{background:#3b82f6;box-shadow:inset 0 0 0 3px #fff}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.frota{background:#3b82f6}.mk.frota:after{content:'';position:absolute;left:4px;top:4px;width:4px;height:4px;border-radius:50%;background:#fff}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(3),.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5){text-align:right}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}@media(max-width:1100px){.mo-below{grid-template-columns:1fr}.mo-map{height:520px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:wrap}.mo-kpi{flex:1 1 30%}}
     `;
     document.head.appendChild(s);
   }
@@ -489,7 +540,12 @@ import { supabase } from './supabaseClient.js';
       <div class="mo"><section class="mo-card"><div class="mo-head"><div><h2>Mapa operacional</h2><p>Custo-benefício por OS: compara frota/carona (grátis), veículo próprio, Uber/táxi (até 60km, além disso vira carro) e hospedagem próxima. Ordenado por custo estimado da rota.</p></div><div class="mo-actions"><button class="mo-btn ${st.mostrarRota ? '' : 'off'}" data-toggle-rota>${st.mostrarRota ? 'Desligar rota' : 'Ligar rota'}</button><button class="mo-btn" data-reload>Atualizar</button></div></div>${alertaSem}
         <div class="mo-filter"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select><select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
         <div class="mo-legend"><span><i class="azul"></i>Colaborador</span><span><i class="frota"></i>Motorista/frota</span><span><i class="verde"></i>OS com saldo</span><span><i class="vermelho"></i>OS sem saldo</span><span data-rota-status>Rotas: ${rotaInfo}</span></div>
-        <div class="mo-grid"><div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div><aside class="mo-side"><div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>Custo médio/rota</span><strong>${fmtRs(k.custoMedioRota)}</strong></div><div class="mo-kpi"><span>Custo total (backlog aberto)</span><strong>${fmtRs(k.custoTotalBacklog)}</strong></div><div class="mo-kpi"><span>Economia c/ hospedagem</span><strong>${fmtRs(k.economiaPotencial)}</strong></div><div class="mo-kpi"><span>Associadas/sugeridas</span><strong>${k.rotas}</strong></div><div class="mo-kpi"><span>Recomendam hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div><section class="mo-card"><div class="mo-list">${base.length ? base.map(r => `<div class="mo-row ${st.rota === r.id ? 'active' : ''}" data-rota="${esc(r.id)}"><strong>${esc(short(r.colab.nome))} · ${esc(r.os.cliente || 'OS')}</strong><small>${esc(r.modoLabel)} · ${fmtKm(r.dist)} · custo ${fmtRs(r.custoDia)} · saldo OS ${fmtKg(r.os.__saldo)}</small>${badge(r)}</div>`).join('') : ''}${sem.map(r => `<div class="mo-row sem"><strong>${r.ponto.temCoord ? 'Sem colaborador' : 'Sem coordenada do ponto'} · ${esc(r.os.cliente || 'OS')}</strong><small>OS ${esc(r.os.numero_os || r.os.id)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)} · saldo ${fmtKg(r.os.__saldo)} · ${esc(r.motivo)}</small><span class="mo-pill bad">pendente</span></div>`).join('')}${!base.length && !sem.length ? '<div class="mo-load">Nenhuma OS com saldo remanescente encontrada para o filtro.</div>' : ''}</div></section><section class="mo-card">${detail()}</section></aside></div></section>${colabsHtml()}</div>`;
+        <div class="mo-body">
+          <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>Custo médio/rota</span><strong>${fmtRs(k.custoMedioRota)}</strong></div><div class="mo-kpi"><span>Custo total (backlog)</span><strong>${fmtRs(k.custoTotalBacklog)}</strong></div><div class="mo-kpi"><span>Economia hospedagem</span><strong>${fmtRs(k.economiaPotencial)}</strong></div><div class="mo-kpi"><span>Associadas/sugeridas</span><strong>${k.rotas}</strong></div><div class="mo-kpi"><span>Recomendam hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div>
+          <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
+          <div class="mo-below"><section class="mo-card"><div class="mo-list">${base.length ? base.map(r => `<div class="mo-row ${st.rota === r.id ? 'active' : ''}" data-rota="${esc(r.id)}"><strong>${esc(short(r.colab.nome))} · ${esc(r.os.cliente || 'OS')}</strong><small>${esc(r.modoLabel)} · ${fmtKm(r.dist)} · custo ${fmtRs(r.custoDia)} · saldo OS ${fmtKg(r.os.__saldo)}</small>${badge(r)}</div>`).join('') : ''}${sem.map(r => `<div class="mo-row sem"><strong>${r.ponto.temCoord ? 'Sem colaborador' : 'Sem coordenada do ponto'} · ${esc(r.os.cliente || 'OS')}</strong><small>OS ${esc(r.os.numero_os || r.os.id)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)} · saldo ${fmtKg(r.os.__saldo)} · ${esc(r.motivo)}</small><span class="mo-pill bad">pendente</span></div>`).join('')}${!base.length && !sem.length ? '<div class="mo-load">Nenhuma OS com saldo remanescente encontrada para o filtro.</div>' : ''}</div></section><section class="mo-card">${detail()}</section></div>
+        </div>
+      </section>${colabsHtml()}</div>`;
   }
 
   function detail() {
@@ -537,7 +593,7 @@ import { supabase } from './supabaseClient.js';
     await draw(root);
     setTimeout(() => st.map?.invalidateSize(), 80);
   }
-  function icon(t, selected = false) { return window.L.divIcon({ className: '', html: `<div class="mk ${t} ${selected ? 'sel' : ''}"></div>`, iconSize: [20, 20], iconAnchor: [10, 10] }); }
+  function icon(t, selected = false) { return window.L.divIcon({ className: '', html: `<div class="mk ${t} ${selected ? 'sel' : ''}"></div>`, iconSize: [13, 13], iconAnchor: [6.5, 6.5] }); }
   function osPorPonto(ponto) { return st.osTodas.filter(o => o.__pontoKey === ponto.__key); }
 
   async function draw(root) {
