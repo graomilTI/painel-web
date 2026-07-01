@@ -40,6 +40,50 @@ function normalizeText(value) {
     .trim();
 }
 
+function cpfNorm(value) { return String(value || '').replace(/\D/g, ''); }
+
+function isCargoBloqueado(value) {
+  const cargo = normalizeText(value);
+  return cargo.includes('SUPERVISOR')
+    || cargo.includes('AUDITOR')
+    || cargo.includes('COORDENADOR')
+    || cargo.includes('COORDENADORA')
+    || cargo.includes('ADMINISTRATIVO')
+    || cargo === 'COORDENACAO'
+    || cargo.startsWith('COORDENACAO ');
+}
+
+function isCoordenacaoBloqueada(value) {
+  const coord = normalizeText(value);
+  return coord === 'GERAL' || coord.endsWith(' GERAL');
+}
+
+function isColaboradorInativo(row) {
+  if (row?.ativo === false) return true;
+  if (String(row?.desligamento || '').trim()) return true;
+  const situacao = normalizeText(row?.situacao || row?.status || row?.disponibilidade);
+  return ['INATIVO', 'INATIVA', 'DESLIGADO', 'DESLIGADA', 'DEMITIDO', 'DEMITIDA', 'ATESTADO', 'FALTA', 'FERIAS', 'FOLGA', 'INDISPONIVEL']
+    .some((status) => situacao.includes(status));
+}
+
+function colaboradorKey(row) {
+  return String(row?.colaborador_id || row?.colaboradorId || cpfNorm(row?.cpf) || row?.id || row?.nome || row?.nome_colaborador || '').trim();
+}
+
+function colaboradorNome(row) {
+  return String(row?.nome || row?.nome_colaborador || row?.colaborador_nome || '').trim();
+}
+
+function regionalScore(row, supervisao) {
+  const alvo = normalizeText(supervisao);
+  if (!alvo) return 1;
+  const campos = [row?.supervisao, row?.coordenacao, row?.regional, row?.cidade].map(normalizeText).filter(Boolean);
+  if (campos.some((c) => c === alvo)) return 100;
+  if (campos.some((c) => c.includes(alvo) || alvo.includes(c))) return 80;
+  const tokens = alvo.split(' ').filter((t) => t.length >= 3);
+  return tokens.filter((t) => campos.some((c) => c.includes(t) || t.includes(c))).length;
+}
+
 function hasGeo(lat, lng) {
   return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
 }
@@ -385,16 +429,49 @@ async function loadCruzamentoPlacas(supervisao) {
 // usuário), para o dropdown de troca poder escolher qualquer um — não só os 8
 // candidatos ranqueados. Os já escalados em outra OS são marcados com ♻ na UI.
 async function loadColaboradoresRegional(supervisao) {
+  const fontes = [];
   try {
     const { data, error } = await supabase.rpc('programacao_colaboradores_supervisao', { p_supervisao: supervisao });
     if (error) throw error;
-    return (data || []).map((r) => ({
-      colaboradorId: r.colaborador_id,
-      nome: r.nome,
+    fontes.push(...(data || []).map((r) => ({ ...r, _scoreRegional: 100, _fonteRegional: 1 })));
+  } catch (error) {
+    console.warn('[equipe] lista de colaboradores da regional via RPC indisponível', error);
+  }
+
+  try {
+    const latest = await supabase
+      .from('colaborador_snapshot')
+      .select('data_referencia')
+      .order('data_referencia', { ascending: false })
+      .limit(1);
+    const dataRef = latest?.data?.[0]?.data_referencia;
+    if (dataRef) {
+      const { data, error } = await supabase
+        .from('colaborador_snapshot')
+        .select('cpf,nome,cargo,coordenacao,supervisao,situacao,ativo,desligamento')
+        .eq('data_referencia', dataRef)
+        .limit(12000);
+      if (error) throw error;
+      fontes.push(...(data || [])
+        .map((r) => ({ ...r, colaborador_id: cpfNorm(r.cpf) || r.nome, _scoreRegional: regionalScore(r, supervisao), _fonteRegional: 2 }))
+        .filter((r) => r._scoreRegional > 0));
+    }
+  } catch (error) {
+    console.warn('[equipe] snapshot de colaboradores indisponível para fallback regional', error);
+  }
+
+  const seenIds = new Set();
+  const seenNomes = new Set();
+  return fontes
+    .filter((r) => !isCargoBloqueado(r.cargo) && !isCoordenacaoBloqueada(r.coordenacao) && !isColaboradorInativo(r))
+    .sort((a, b) => (b._scoreRegional || 0) - (a._scoreRegional || 0) || colaboradorNome(a).localeCompare(colaboradorNome(b), 'pt-BR'))
+    .map((r) => ({
+      colaboradorId: colaboradorKey(r),
+      nome: colaboradorNome(r),
       cargo: r.cargo || null,
       coordenacao: r.coordenacao || null,
       supervisao: r.supervisao || supervisao || null,
-      tipoLabel: contratoLabel(r.tipo_contrato),
+      tipoLabel: r.tipo_contrato ? contratoLabel(r.tipo_contrato) : 'Regional',
       km: null,
       auditPeso: null,
       veiculoId: null,
@@ -407,11 +484,15 @@ async function loadColaboradoresRegional(supervisao) {
       scoreDistancia: 0,
       scoreAuditoria: 0,
       origemRegional: true,
-    }));
-  } catch (error) {
-    console.warn('[equipe] lista de colaboradores da regional indisponível', error);
-    return [];
-  }
+    }))
+    .filter((c) => {
+      const id = String(c.colaboradorId || '');
+      const nome = normalizeText(c.nome);
+      if (!id || !nome || seenIds.has(id) || seenNomes.has(nome)) return false;
+      seenIds.add(id);
+      seenNomes.add(nome);
+      return true;
+    });
 }
 
 // Custos já lançados (estadia/alimentação/deslocamento) por colaborador, para
@@ -487,16 +568,26 @@ async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
 function aplicarSugestoesRegionais(porOs, osComPonto, colaboradoresRegional, excluirIds) {
   if (!colaboradoresRegional?.length) return porOs;
   const bloqueados = new Set([...excluirIds].map(String));
-  const usadosFallback = new Set();
+  const nomesBloqueados = new Set();
+  porOs.forEach((lista) => {
+    (lista || []).forEach((c) => {
+      const id = String(c.colaboradorId || '');
+      const nome = normalizeText(c.nome);
+      if (id) bloqueados.add(id);
+      if (nome) nomesBloqueados.add(nome);
+    });
+  });
   osComPonto.forEach(({ os }) => {
     const atuais = porOs.get(os.id) || [];
     if (atuais.length) return;
     const sugestao = colaboradoresRegional.find((c) => {
       const id = String(c.colaboradorId || '');
-      return id && !bloqueados.has(id) && !usadosFallback.has(id);
+      const nome = normalizeText(c.nome);
+      return id && nome && !bloqueados.has(id) && !nomesBloqueados.has(nome);
     });
     if (!sugestao) return;
-    usadosFallback.add(String(sugestao.colaboradorId));
+    bloqueados.add(String(sugestao.colaboradorId));
+    nomesBloqueados.add(normalizeText(sugestao.nome));
     porOs.set(os.id, [{ ...sugestao, tipoLabel: sugestao.tipoLabel || 'Regional' }]);
   });
   return porOs;
