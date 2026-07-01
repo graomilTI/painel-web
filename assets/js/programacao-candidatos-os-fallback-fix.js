@@ -30,8 +30,16 @@ function isCargoBloqueado(value) {
     || cargo.includes('AUDITOR')
     || cargo.includes('COORDENADOR')
     || cargo.includes('COORDENADORA')
+    || cargo.includes('ADMINISTRATIVO')
     || cargo === 'COORDENACAO'
     || cargo.startsWith('COORDENACAO ');
+}
+
+// Coordenação "Geral" (ou "... - Geral") é backoffice/HQ, não escala equipe
+// de campo — não deve aparecer como candidato de embarque.
+function isCoordenacaoBloqueada(value) {
+  const c = normalizeText(value);
+  return c === 'GERAL' || c.endsWith(' GERAL');
 }
 
 function colaboradorId(row) {
@@ -65,7 +73,7 @@ async function enriquecerEFiltrarPorCargo(rows, supervisao) {
 
   // Se a própria RPC já trouxe cargo, filtra direto.
   if (base.some((r) => r.cargo)) {
-    return base.filter((r) => !isCargoBloqueado(r.cargo));
+    return base.filter((r) => !isCargoBloqueado(r.cargo) && !isCoordenacaoBloqueada(r.coordenacao));
   }
 
   // Se a RPC não trouxe cargo, tenta enriquecer pelo snapshot mais recente por nome/CPF.
@@ -118,7 +126,7 @@ async function enriquecerEFiltrarPorCargo(rows, supervisao) {
           supervisao: snap.supervisao || r.supervisao || supervisao || null,
         } : r;
       })
-      .filter((r) => !isCargoBloqueado(r.cargo));
+      .filter((r) => !isCargoBloqueado(r.cargo) && !isCoordenacaoBloqueada(r.coordenacao));
   } catch (error) {
     console.warn('[programacao] fallback candidatos: não foi possível enriquecer cargo.', error);
     return base;
@@ -232,7 +240,7 @@ function patchRpc() {
     return Promise.resolve(result).then(async (payload) => {
       if (!payload || !Array.isArray(payload.data)) return payload;
 
-      const filtrados = payload.data.filter((row) => !isCargoBloqueado(row?.cargo));
+      const filtrados = payload.data.filter((row) => !isCargoBloqueado(row?.cargo) && !isCoordenacaoBloqueada(row?.coordenacao));
       const qtdPorOs = temCandidatoPorOs(filtrados);
       const faltaAlgumaOs = (params?.p_os || []).some((osItem) => !qtdPorOs.get(String(osItem?.os_id || '')));
       if (!faltaAlgumaOs) return { ...payload, data: filtrados };
