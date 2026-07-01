@@ -227,7 +227,9 @@ import { supabase } from './supabaseClient.js';
     return [...new Set(keys)];
   }
   function motoristaNomes(v) {
-    return [v?.motorista_atual, v?.bfleet_condutor, v?.patrimonio_funcionario, v?.bfleet_nome].filter(x => x && String(x).trim() !== '');
+    // bfleet_nome guarda modelo+placa do veículo (ex.: "MOBI LIKE - SHE1H46"), não nome de
+    // pessoa — nunca deve entrar aqui.
+    return [v?.motorista_atual, v?.bfleet_condutor, v?.patrimonio_funcionario].filter(x => x && String(x).trim() !== '');
   }
 
   async function loadFrotaAtual() {
@@ -315,15 +317,26 @@ import { supabase } from './supabaseClient.js';
   }
 
   function modoColaborador(c, ponto) {
-    if (st.nomesFrotaSet.has(norm(c.nome))) return { modo: 'frota', label: 'Motorista/frota', custo: 0 };
+    // "Frota" só é custo zero quando há posição de GPS confirmando que o veículo está em uso
+    // agora (frotas_posicoes). Ser motorista_atual/responsável de patrimônio de algum carro da
+    // empresa (frotas_veiculos) sem GPS ao vivo NÃO torna a viagem grátis — o carro ainda gasta
+    // combustível pra chegar até essa OS especifica, só não precisa de reembolso a terceiro.
+    // Sem essa distinção, ~35% do quadro (todo mundo com carro da empresa) virava custo zero
+    // incondicional, o que nunca perdia pra hospedagem, mesmo a centenas de km de distância.
+    const posicaoAtual = st.posicaoPorNome.get(norm(c.nome));
+    const frotaComPosicaoAoVivo = st.nomesFrotaSet.has(norm(c.nome)) && posicaoAtual && geo(posicaoAtual);
+    if (frotaComPosicaoAoVivo) return { modo: 'frota', label: 'Motorista/frota (posição atual confirmada)', custo: 0 };
 
     const habitual = st.modoHabitualPorCpf.get(c.cpf) || st.modoHabitualPorNome.get(norm(c.nome));
-    if (habitual?.tipo === 'MOTORISTA FROTA') return { modo: 'frota', label: 'Motorista/frota', custo: 0 };
+    if (habitual?.tipo === 'MOTORISTA FROTA') return { modo: 'reembolso', label: 'Motorista de frota (sem GPS ao vivo — veículo da empresa)', custoFn: combustivelIdaVolta };
     if (habitual?.tipo === 'CARONA FROTA' && caronaDisponivelPara(ponto)) return { modo: 'carona', label: 'Carona com frota', custo: 0 };
     if (habitual?.tipo === 'NAO PRECISA') return { modo: 'local', label: 'Já está no local', custo: 0 };
     if (habitual?.tipo === 'REEMBOLSO KM') return { modo: 'reembolso', label: 'Veículo próprio', custoFn: combustivelIdaVolta };
     if (habitual?.tipo === 'UBER TAXI' || habitual?.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
 
+    if (st.nomesFrotaSet.has(norm(c.nome))) {
+      return { modo: 'reembolso', label: 'Motorista de frota (sem GPS ao vivo — veículo da empresa)', custoFn: combustivelIdaVolta, estimado: true };
+    }
     if (st.veiculoProprioCpfs.has(c.cpf) || st.veiculoProprioNomes.has(norm(c.nome))) {
       return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };
     }
