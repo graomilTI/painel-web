@@ -191,12 +191,27 @@ function resolveEncaminhamento(rule, regional, gestores) {
   };
 }
 
+// Remove artefatos de assinatura/HTML->texto que o Outlook deixa no corpo em texto puro:
+// "[cid:xxxx]" (imagem quebrada) e "endereco<mailto:outro>"/"link<http://...>" (hyperlink
+// cujo destino não bate com o texto visível). Sem isso, esses trechos entravam no resumo da
+// IA e podiam confundir os regexes de dados detectados (ver extractData).
+function stripArtifacts(content) {
+  return text(content)
+    .replace(/\[cid:[^\]]*\]/gi, ' ')
+    .replace(/<(?:mailto|https?|cid):[^>]*>/gi, ' ')
+    .replace(/[ \t]{2,}/g, ' ');
+}
+
 function extractData(content) {
   const raw = text(content);
   return {
-    contrato: raw.match(/\bP\d{5}\.\d{3}\b/i)?.[0] || raw.match(/\b[A-Z]?\d{4,}[./-]?\d*\b/i)?.[0] || null,
+    // Só o formato real usado nos contratos da empresa (ex: P31899.000). Um fallback
+    // genérico de "4+ dígitos" já capturou telefone da assinatura em vez de contrato.
+    contrato: raw.match(/\bP\d{5}\.\d{3}\b/i)?.[0] || null,
     placa: raw.match(/\b[A-Z]{3}[0-9][A-Z0-9][0-9]{2}\b/i)?.[0] || raw.match(/\b[A-Z]{3}-?\d{4}\b/i)?.[0] || null,
-    os: raw.match(/\bOS\s*[:#-]?\s*([A-Z0-9./-]{3,})\b/i)?.[1] || null,
+    // Limite de tamanho pra não capturar um trecho gigante de disclaimer/assinatura quando
+    // o texto tem uma sequência longa de letras/números logo depois de "OS".
+    os: raw.match(/\bOS\s*[:#-]?\s*([A-Z0-9./-]{3,15})\b/i)?.[1] || null,
     cnpj: raw.match(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/)?.[0] || null,
     cpf: raw.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] || null,
     valor: raw.match(/R\$\s*[0-9.]+,[0-9]{2}/i)?.[0] || null
@@ -336,14 +351,15 @@ function classifyByRules(message, rules, gestores) {
       && (!rule.assunto_contem || normalize(message.subject).includes(normalize(rule.assunto_contem)));
   });
   const full = [message.subject, message.text, message.html].join('\n');
-  const regional = matched?.regional || extractRegional(full);
+  const fullLimpo = stripArtifacts(full);
+  const regional = matched?.regional || extractRegional(fullLimpo);
   return {
     regional,
     categoria: matched?.categoria || 'GERAL',
     prioridade: matched?.prioridade_email || 'NORMAL',
     precisa_resposta: matched?.precisa_resposta ?? false,
-    resumo_ia: text(message.text || message.html).replace(/\s+/g, ' ').slice(0, 420) || 'E-mail recebido sem texto suficiente para resumo.',
-    dados_detectados: extractData(full),
+    resumo_ia: stripArtifacts(message.text || message.html).replace(/\s+/g, ' ').slice(0, 420) || 'E-mail recebido sem texto suficiente para resumo.',
+    dados_detectados: extractData(fullLimpo),
     resposta_sugerida: matched?.resposta_modelo || '',
     auto_responder: matched?.auto_responder === true,
     risco: matched?.risco || null,
