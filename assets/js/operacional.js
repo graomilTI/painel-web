@@ -24,6 +24,11 @@ import { supabase } from './supabaseClient.js';
   // tarifa por km deixa de ser realista para Uber/táxi intermunicipal; nesse caso assume-se carro.
   const UBER_RS_KM = 6.77;
   const UBER_RAIO_MAX_KM = 60;
+  // Acima disso, ida+volta no mesmo dia deixa de ser fisicamente executável (ex.: 795km = 1590km
+  // no dia). Sem hospedagem real cadastrada por perto, a sugestão precisa ser sinalizada como
+  // inviável em vez de aparecer como um "deslocar no dia" normal — mesmo raciocínio do antigo
+  // HOTEL_KM_THRESHOLD de programacao-fase2-custos.js.
+  const DIST_MAX_DESLOCAMENTO_DIARIO_KM = 150;
   // Diária informativa quando o registro real escolheu alojamento/hotel mas não há um match
   // real (coordenada/cidade) por perto — mesmo fallback usado em programacao-fase2-custos.js.
   const EST_ESTADIA_FALLBACK = { ALOJAMENTO: 60, HOTEL: 180 };
@@ -338,7 +343,15 @@ import { supabase } from './supabaseClient.js';
     const custoDia = hospedar ? hospedagem.custoDia : custoDeslocamento;
     const economia = hospedar ? (custoDeslocamento - hospedagem.custoDia) : 0;
 
-    return { candidato, distReal, modoInfo, custoDeslocamento, hospedagem, recomendacao: hospedar ? 'hospedar' : 'deslocar', custoDia, economia };
+    // Sem custo zero (frota/carona/local) nem hospedagem real, e distância além do que dá pra
+    // fazer ida+volta no mesmo dia: não é uma recomendação executável, é o "menos pior" disponível
+    // porque a mão de obra próxima já foi consumida por outras OS. Precisa ficar visível como tal.
+    const inviavel = !hospedar && custoDeslocamento > 0 && distReal > DIST_MAX_DESLOCAMENTO_DIARIO_KM;
+
+    return {
+      candidato, distReal, modoInfo, custoDeslocamento, hospedagem,
+      recomendacao: hospedar ? 'hospedar' : 'deslocar', custoDia, economia, inviavel,
+    };
   }
 
   function mesmoLocalOuRaio(p1, p2) {
@@ -583,6 +596,7 @@ import { supabase } from './supabaseClient.js';
         modo: avaliacao.modoInfo.modo, modoLabel: avaliacao.modoInfo.label, modoEstimado: !!avaliacao.modoInfo.estimado,
         custoDeslocamento: avaliacao.custoDeslocamento, hospedagem: avaliacao.hospedagem,
         recomendacao: avaliacao.recomendacao, custoDia: avaliacao.custoDia, economia: avaliacao.economia,
+        inviavel: avaliacao.inviavel,
         saldoAntes: saldoAtual, saldoDepois: saldoAtual + os.__saldo,
       });
     }
@@ -645,6 +659,7 @@ import { supabase } from './supabaseClient.js';
       os: st.os.length, osSemSaldo, pontos: st.pontos.length, rotas: st.rotas.length,
       semColaborador: st.semAssociacao.length, repetidos: st.rotas.filter(r => r.repetido).length,
       custoTotalBacklog, custoMedioRota, economiaPotencial, hospedar: st.rotas.filter(r => r.recomendacao === 'hospedar').length,
+      inviaveis: st.rotas.filter(r => r.inviavel).length,
     };
   }
   function rows() { return { base: st.rotas.filter(r => passaFiltroPonto(r.ponto)), sem: st.semAssociacao.filter(r => passaFiltroPonto(r.ponto)) }; }
@@ -652,6 +667,7 @@ import { supabase } from './supabaseClient.js';
     let html = r.origem === 'associado' ? '<span class="mo-pill ok">associado</span>' : '<span class="mo-pill info">sugerido</span>';
     if (r.repetido) html += '<span class="mo-pill warn">repetido 5 km</span>';
     if (r.recomendacao === 'hospedar') html += '<span class="mo-pill warn">hospedar compensa</span>';
+    if (r.inviavel) html += '<span class="mo-pill bad">sem opção viável perto</span>';
     return html;
   }
 
@@ -668,14 +684,15 @@ import { supabase } from './supabaseClient.js';
   function htmlMapa() {
     const k = kpis(), { base, sem } = rows(), estados = estadosDisponiveis(), pontosFiltrados = st.pontos.filter(p => !st.estado || p.uf === st.estado);
     const alertaSem = sem.length ? `<div class="mo-alert">${sem.length} OS com saldo remanescente ainda sem colaborador disponível respeitando local/5 km.</div>` : '';
+    const alertaInviavel = k.inviaveis ? `<div class="mo-alert">${k.inviaveis} OS com colaborador sugerido a mais de ${DIST_MAX_DESLOCAMENTO_DIARIO_KM}km e sem hospedagem conhecida por perto — mão de obra próxima já está alocada em OS maiores nessa região. Não é um plano executável de ida-volta no dia; precisa de hospedagem (a cadastrar) ou revisão manual.</div>` : '';
     const rotaInfo = st.mostrarRota ? `Ligado · desenhando ${base.length} rota(s) visíveis` : 'Desligada';
-    return `${alertaSem}
+    return `${alertaSem}${alertaInviavel}
         <div class="mo-filter"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select><select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
         <div class="mo-legend"><span><i class="azul"></i>Colaborador</span><span><i class="frota"></i>Motorista/frota</span><span><i class="verde"></i>OS com saldo</span><span><i class="vermelho"></i>OS sem saldo</span><span data-rota-status>Rotas: ${rotaInfo}</span></div>
         <div class="mo-body">
-          <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>Custo médio/rota</span><strong>${fmtRs(k.custoMedioRota)}</strong></div><div class="mo-kpi"><span>Custo total (backlog)</span><strong>${fmtRs(k.custoTotalBacklog)}</strong></div><div class="mo-kpi"><span>Economia hospedagem</span><strong>${fmtRs(k.economiaPotencial)}</strong></div><div class="mo-kpi"><span>Associadas/sugeridas</span><strong>${k.rotas}</strong></div><div class="mo-kpi"><span>Recomendam hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div>
+          <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>Custo médio/rota</span><strong>${fmtRs(k.custoMedioRota)}</strong></div><div class="mo-kpi"><span>Custo total (backlog)</span><strong>${fmtRs(k.custoTotalBacklog)}</strong></div><div class="mo-kpi"><span>Economia hospedagem</span><strong>${fmtRs(k.economiaPotencial)}</strong></div><div class="mo-kpi"><span>Associadas/sugeridas</span><strong>${k.rotas}</strong></div><div class="mo-kpi"><span>Recomendam hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Sem opção viável perto</span><strong>${k.inviaveis}</strong></div><div class="mo-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div>
           <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
-          <div class="mo-below"><section class="mo-card"><div class="mo-list">${base.length ? base.map(r => `<div class="mo-row ${st.rota === r.id ? 'active' : ''}" data-rota="${esc(r.id)}"><strong>${esc(short(r.colab.nome))} · ${esc(r.os.cliente || 'OS')}</strong><small>${esc(r.modoLabel)} · ${fmtKm(r.dist)} · custo ${fmtRs(r.custoDia)} · saldo OS ${fmtKg(r.os.__saldo)}</small>${badge(r)}</div>`).join('') : ''}${sem.map(r => `<div class="mo-row sem"><strong>${r.ponto.temCoord ? 'Sem colaborador' : 'Sem coordenada do ponto'} · ${esc(r.os.cliente || 'OS')}</strong><small>OS ${esc(r.os.numero_os || r.os.id)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)} · saldo ${fmtKg(r.os.__saldo)} · ${esc(r.motivo)}</small><span class="mo-pill bad">pendente</span></div>`).join('')}${!base.length && !sem.length ? '<div class="mo-load">Nenhuma OS com saldo remanescente encontrada para o filtro.</div>' : ''}</div></section><section class="mo-card">${detail()}</section></div>
+          <div class="mo-below"><section class="mo-card"><div class="mo-list">${base.length ? base.map(r => `<div class="mo-row ${st.rota === r.id ? 'active' : ''} ${r.inviavel ? 'sem' : ''}" data-rota="${esc(r.id)}"><strong>${esc(short(r.colab.nome))} · ${esc(r.os.cliente || 'OS')}</strong><small>${esc(r.modoLabel)} · ${fmtKm(r.dist)} · custo ${fmtRs(r.custoDia)} · saldo OS ${fmtKg(r.os.__saldo)}</small>${badge(r)}</div>`).join('') : ''}${sem.map(r => `<div class="mo-row sem"><strong>${r.ponto.temCoord ? 'Sem colaborador' : 'Sem coordenada do ponto'} · ${esc(r.os.cliente || 'OS')}</strong><small>OS ${esc(r.os.numero_os || r.os.id)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)} · saldo ${fmtKg(r.os.__saldo)} · ${esc(r.motivo)}</small><span class="mo-pill bad">pendente</span></div>`).join('')}${!base.length && !sem.length ? '<div class="mo-load">Nenhuma OS com saldo remanescente encontrada para o filtro.</div>' : ''}</div></section><section class="mo-card">${detail()}</section></div>
         </div>`;
   }
 
@@ -746,7 +763,7 @@ import { supabase } from './supabaseClient.js';
     if (!r) return '<div class="mo-load">Selecione uma rota.</div>';
     st.rota = r.id;
     const hospInfo = r.hospedagem ? `${esc(r.hospedagem.nome)} · ${fmtRs(r.hospedagem.custoDia)}/dia${r.hospedagem.distKm != null ? ` · ${fmtKm(r.hospedagem.distKm)} do ponto` : ''}` : 'Nenhuma opção próxima conhecida';
-    return `<div class="mo-detail"><div class="mo-mini"><span>Colaborador</span><strong>${esc(r.colab.nome)}</strong></div><div class="mo-mini"><span>Ponto/OS</span><strong>${esc(r.ponto.nome_local)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)}</strong></div><div class="mo-mini"><span>Modo de deslocamento</span><strong>${esc(r.modoLabel)}${r.modoEstimado ? ' (estimado)' : ''}</strong></div><div class="mo-mini"><span>Custo deslocamento/dia</span><strong>${fmtRs(r.custoDeslocamento)}</strong></div><div class="mo-mini"><span>Hospedagem próxima</span><strong>${hospInfo}</strong></div><div class="mo-mini"><span>Recomendação</span><strong>${r.recomendacao === 'hospedar' ? `Hospedar — economiza ${fmtRs(r.economia)}/dia` : 'Deslocar no dia'}</strong></div><div class="mo-mini"><span>Saldo da OS</span><strong>${fmtKg(r.os.__saldo)}</strong></div><div class="mo-mini"><span>Saldo acumulado colab.</span><strong>${fmtKg(r.saldoDepois)}</strong></div></div>`;
+    return `<div class="mo-detail"><div class="mo-mini"><span>Colaborador</span><strong>${esc(r.colab.nome)}</strong></div><div class="mo-mini"><span>Ponto/OS</span><strong>${esc(r.ponto.nome_local)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)}</strong></div><div class="mo-mini"><span>Modo de deslocamento</span><strong>${esc(r.modoLabel)}${r.modoEstimado ? ' (estimado)' : ''}</strong></div><div class="mo-mini"><span>Custo deslocamento/dia</span><strong>${fmtRs(r.custoDeslocamento)}</strong></div><div class="mo-mini"><span>Hospedagem próxima</span><strong>${hospInfo}</strong></div><div class="mo-mini"><span>Recomendação</span><strong>${r.inviavel ? `Sem opção viável em ${fmtKm(r.dist)} — mão de obra próxima já alocada em OS maiores; precisa de hospedagem (não cadastrada aqui) ou revisão manual` : r.recomendacao === 'hospedar' ? `Hospedar — economiza ${fmtRs(r.economia)}/dia` : 'Deslocar no dia'}</strong></div><div class="mo-mini"><span>Saldo da OS</span><strong>${fmtKg(r.os.__saldo)}</strong></div><div class="mo-mini"><span>Saldo acumulado colab.</span><strong>${fmtKg(r.saldoDepois)}</strong></div></div>`;
   }
 
   function colabsHtml() {
