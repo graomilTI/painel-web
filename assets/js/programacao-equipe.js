@@ -102,12 +102,37 @@ function kmEntre(aLat, aLng, bLat, bLng) {
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
-// Distância acima da qual sugerimos hotel. R$7/L, 10km/L → 150km ida =
-// R$210 combustível R/T, mais econômico do que ida+volta no dia seguinte.
-const HOTEL_KM_THRESHOLD = 150;
+// Perto do embarque tem prioridade. Acima disso o colaborador segue possível,
+// mas a tela recomenda hospedagem em vez de deslocamento longo.
+const EMBARQUE_PROXIMO_KM = 400;
+const HOTEL_KM_THRESHOLD = EMBARQUE_PROXIMO_KM;
 const HOTEL_DIARIA_EST = 120; // R$ estimado por diária (referência básica)
 
 function precisaHotel(km) { return km != null && km >= HOTEL_KM_THRESHOLD; }
+function kmValido(km) { return km != null && Number.isFinite(Number(km)); }
+function kmSortValue(km) { return kmValido(km) ? Number(km) : Number.POSITIVE_INFINITY; }
+function candidatoPerto(cand) { return kmValido(cand?.km) && Number(cand.km) <= EMBARQUE_PROXIMO_KM; }
+function ordenarCandidatosPorEmbarque(lista = []) {
+  return [...lista].sort((a, b) => {
+    const pa = candidatoPerto(a) ? 0 : 1;
+    const pb = candidatoPerto(b) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    const ka = kmSortValue(a?.km);
+    const kb = kmSortValue(b?.km);
+    if (ka !== kb) return ka - kb;
+    return (Number(b?.score) || 0) - (Number(a?.score) || 0);
+  });
+}
+function melhorCandidatoEmbarque(disponiveis = []) {
+  const perto = disponiveis.filter(candidatoPerto);
+  const pool = perto.length ? perto : disponiveis;
+  const comCusto = pool.filter((c) => c.custoTotal != null);
+  if (comCusto.length) return comCusto.reduce((a, b) => {
+    if (a.custoTotal !== b.custoTotal) return a.custoTotal <= b.custoTotal ? a : b;
+    return kmSortValue(a.km) <= kmSortValue(b.km) ? a : b;
+  });
+  return ordenarCandidatosPorEmbarque(pool)[0] || null;
+}
 function estimarCustoKm(km) {
   if (km == null) return null;
   return Math.round((km * 2 / 10) * 7 * 100) / 100;
@@ -286,6 +311,15 @@ function injectStyles() {
     .peqb-name-sel:hover{border-color:rgba(111,208,165,.35);background:rgba(8,22,17,.55)}
     .peqb-name-sel:focus{border-color:rgba(111,208,165,.55);outline:none;background:#06130e}
     .peqb-name-sel option{background:#0c1f17;color:#eef7f2;font-weight:600}
+    .peqb-add-colab{width:28px;height:28px;min-height:28px;padding:0;border-radius:9px;border:1px solid rgba(56,189,248,.42);background:rgba(14,116,144,.16);color:#bfdbfe;font-size:16px;font-weight:950;cursor:pointer;flex:0 0 auto;line-height:1}
+    .peqb-add-colab:hover{background:rgba(14,116,144,.28);color:#e0f2fe}
+    .peqb-extra-colabs{display:flex;gap:5px;flex-wrap:wrap;width:100%;margin:-3px 0 5px}
+    .peqb-extra-colab{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(56,189,248,.28);background:rgba(14,116,144,.12);color:#bfdbfe;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:850;line-height:1.1}
+    .peqb-extra-colab button{border:0;background:transparent;color:#fecaca;font-size:12px;font-weight:950;cursor:pointer;padding:0;line-height:1}
+    .peqb-add-box{display:flex;gap:6px;align-items:center;width:100%;margin:-1px 0 6px}
+    .peqb-add-box[hidden]{display:none}
+    .peqb-add-box .peqb-select{height:30px;min-height:30px;flex:1 1 auto}
+    .peqb-add-box .peqb-row-btn{height:30px;min-height:30px;font-size:11px}
     .peqb-conf-sub{font-size:11px;color:#8ba79a}
     .peqb-conf-km{font-size:11px;color:#9fb7aa;font-weight:800;white-space:nowrap;display:inline-flex;align-items:center;gap:3px}
     /* Custos em UM único grid de 4 colunas — as duas linhas (estadia /
@@ -380,7 +414,11 @@ async function loadPontos(ids) {
 }
 
 async function loadEquipeExistente(programacaoId) {
-  const { data, error } = await supabase.from('programacao_equipe').select('*').eq('programacao_id', programacaoId);
+  const { data, error } = await supabase
+    .from('programacao_equipe')
+    .select('*')
+    .eq('programacao_id', programacaoId)
+    .order('created_at', { ascending: true });
   if (error) throw error;
   return data || [];
 }
@@ -402,6 +440,25 @@ async function loadAlojamentos() {
     alojamentosCache = [];
   }
   return alojamentosCache;
+}
+
+let hoteisCache = null;
+async function loadHoteis() {
+  if (hoteisCache) return hoteisCache;
+  try {
+    const { data, error } = await supabase
+      .from('hospedagem_hoteis')
+      .select('id,nome,cidade,uf,status,prioridade,valor_diaria_individual,valor_diaria_padrao')
+      .eq('status', 'ATIVO')
+      .order('cidade', { ascending: true })
+      .order('nome', { ascending: true });
+    if (error) throw error;
+    hoteisCache = data || [];
+  } catch (error) {
+    console.warn('[equipe] hoteis indisponiveis', error);
+    hoteisCache = [];
+  }
+  return hoteisCache;
 }
 
 // Placa do veículo já vinculado ao colaborador (leitura de patrimônio,
@@ -562,6 +619,7 @@ async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
     });
     porOs.set(row.os_id, lista);
   });
+  porOs.forEach((lista, osId) => porOs.set(osId, ordenarCandidatosPorEmbarque(lista)));
   return porOs;
 }
 
@@ -588,7 +646,7 @@ function aplicarSugestoesRegionais(porOs, osComPonto, colaboradoresRegional, exc
     if (!sugestao) return;
     bloqueados.add(String(sugestao.colaboradorId));
     nomesBloqueados.add(normalizeText(sugestao.nome));
-    porOs.set(os.id, [{ ...sugestao, tipoLabel: sugestao.tipoLabel || 'Regional' }]);
+    porOs.set(os.id, ordenarCandidatosPorEmbarque([{ ...sugestao, tipoLabel: sugestao.tipoLabel || 'Regional' }]));
   });
   return porOs;
 }
@@ -715,14 +773,40 @@ function alojamentoOptions(selectedId, uf) {
   return '<option value="">Sugerir alojamento…</option>' + lista.map((a) => `<option value="${esc(a.id)}" ${String(selectedId || '') === String(a.id) ? 'selected' : ''}>${esc(`${a.nome} · ${a.cidade || '-'}/${a.uf || ''}`)}</option>`).join('');
 }
 
+function hotelOptions(selectedId, os) {
+  const lista0 = hoteisCache || [];
+  const uf = normalizeUF(ufFromEmbarque(os?.embarque));
+  const cidade = normalizeText(cidadeFromEmbarque(os?.embarque));
+  const porCidade = lista0.filter((h) => {
+    if (uf && normalizeUF(h.uf) !== uf) return false;
+    return !cidade || normalizeText(h.cidade) === cidade;
+  });
+  const porUf = uf ? lista0.filter((h) => normalizeUF(h.uf) === uf) : [];
+  const lista = porCidade.length ? porCidade : (porUf.length ? porUf : lista0);
+  return '<option value="">Sugerir hotel…</option>' + lista.map((h) => {
+    const diaria = h.valor_diaria_individual || h.valor_diaria_padrao;
+    const preco = diaria ? ` · R$ ${brl(Number(diaria))}` : '';
+    const pref = normalizeText(h.prioridade).includes('PREFERENCIAL') ? '★ ' : '';
+    return `<option value="${esc(h.id)}" ${String(selectedId || '') === String(h.id) ? 'selected' : ''}>${esc(`${pref}${h.nome} · ${h.cidade || '-'}/${h.uf || ''}${preco}`)}</option>`;
+  }).join('');
+}
+
 // Campo do meio da estadia, contextual ao tipo: ALOJAMENTO → select sugerido
-// por regional; HOTEL/PERNOITE → cidade (sugerida do embarque da OS).
+// por regional; HOTEL → base de hotéis; PERNOITE → cidade da OS.
 function estadiaDestinoHtml(tipo, est, os) {
   const t = normalizeText(tipo);
   if (t === 'ALOJAMENTO') {
     return `<select class="peqb-cinp peqb-cinp-sm" data-tab="estadia" data-fld="alojamento_id">${alojamentoOptions(est.alojamento_id, ufFromEmbarque(os.embarque))}</select>`;
   }
-  if (t === 'HOTEL' || t === 'PERNOITE') {
+  if (t === 'HOTEL') {
+    const opts = hotelOptions(est.hotel_id, os);
+    if (opts.includes('<option value="') && (hoteisCache || []).length) {
+      return `<select class="peqb-cinp peqb-cinp-sm" data-tab="estadia" data-fld="hotel_id">${opts}</select>`;
+    }
+    const cid = est.cidade || cidadeFromEmbarque(os.embarque);
+    return `<input class="peqb-cinp peqb-cinp-sm" data-tab="estadia" data-fld="cidade" value="${esc(cid)}" placeholder="Cidade/hotel" />`;
+  }
+  if (t === 'PERNOITE') {
     const cid = est.cidade || cidadeFromEmbarque(os.embarque);
     return `<input class="peqb-cinp peqb-cinp-sm" data-tab="estadia" data-fld="cidade" value="${esc(cid)}" placeholder="Cidade" />`;
   }
@@ -733,8 +817,11 @@ function estadiaDestinoHtml(tipo, est, os) {
 // destino contextual + dias). Linha 2: deslocamento (tipo + placa) e
 // alimentação (chips) juntos. Grava nas tabelas da antiga Fase 2.
 function custoRowsHtml(item) {
+  const equipeRows = item.equipeRows?.length ? item.equipeRows : [item.confirmadoRow].filter(Boolean);
   const colabId = String(item.confirmadoRow.colaborador_id);
   const nome = item.confirmadoRow.nome_colaborador || '';
+  const colabIds = equipeRows.map((r) => String(r.colaborador_id)).filter(Boolean);
+  const colabNomes = equipeRows.map((r) => String(r.nome_colaborador || '')).filter(Boolean);
   const os = item.os;
   const est = item.custos?.est || {};
   const ali = item.custos?.ali || { almoco: true };
@@ -746,7 +833,7 @@ function custoRowsHtml(item) {
   const placaAuto = item.custos?.placaAuto || '';
   const placa = des.placa_veiculo || placaAuto || '';
   const tipoDesl = des.tipo_deslocamento || (placa ? 'MOTORISTA FROTA' : 'NÃO PRECISA');
-  return `<div class="peqb-custos" data-colab-id="${esc(colabId)}" data-nome="${esc(nome)}">
+  return `<div class="peqb-custos" data-colab-id="${esc(colabId)}" data-colab-ids="${esc(colabIds.join('|'))}" data-colab-nomes="${esc(colabNomes.join('|'))}" data-nome="${esc(nome)}" data-cidade-embarque="${esc(cidadeFromEmbarque(os.embarque))}">
     <span class="peqb-clab" title="Estadia">🛏</span>
     <select class="peqb-cinp peqb-cinp-sm peqb-tipo-est" data-tab="estadia" data-fld="tipo_estadia">${TIPOS_ESTADIA.map((t) => `<option value="${t}" ${tipoEst === t ? 'selected' : ''}>${estadiaLabel(t)}</option>`).join('')}</select>
     <div class="peqb-destino" data-estadia-destino>${estadiaDestinoHtml(tipoEst, est, os)}</div>
@@ -783,8 +870,11 @@ function osLeftHtml(os) {
 }
 
 // Chips de alimentação — agora na linha do nome do colaborador.
-function aliChipsHtml(colabId, nome, ali) {
-  return `<div class="peqb-ali peqb-chips" data-colab-id="${esc(colabId)}" data-nome="${esc(nome)}">${REFEICOES.map(([k, l]) => `<button type="button" class="peqb-chip ${ali[k] ? 'on' : ''}" data-tab="alimentacao" data-ref="${k}">${l}</button>`).join('')}</div>`;
+function aliChipsHtml(colabId, nome, ali, equipeRows = []) {
+  const rows = equipeRows.length ? equipeRows : [{ colaborador_id: colabId, nome_colaborador: nome }];
+  const colabIds = rows.map((r) => String(r.colaborador_id)).filter(Boolean);
+  const colabNomes = rows.map((r) => String(r.nome_colaborador || '')).filter(Boolean);
+  return `<div class="peqb-ali peqb-chips" data-colab-id="${esc(colabId)}" data-colab-ids="${esc(colabIds.join('|'))}" data-colab-nomes="${esc(colabNomes.join('|'))}" data-nome="${esc(nome)}">${REFEICOES.map(([k, l]) => `<button type="button" class="peqb-chip ${ali[k] ? 'on' : ''}" data-tab="alimentacao" data-ref="${k}">${l}</button>`).join('')}</div>`;
 }
 
 // Opções do dropdown de TROCA: todos os colaboradores ativos da regional
@@ -806,6 +896,42 @@ function trocarOptionsHtml(item) {
     const label = `${escaladoEmOutra ? '♻ ' : ''}${c.nome}${escaladoEmOutra ? ` · OS ${escalados.get(id)}` : ''}`;
     return `<option value="${esc(id)}" ${id === currentId ? 'selected' : ''}>${esc(label)}</option>`;
   }).join('');
+}
+
+function equipeIds(item) {
+  return new Set((item.equipeRows || []).map((r) => String(r.colaborador_id)).filter(Boolean));
+}
+
+function addColabOptionsHtml(item) {
+  const atuais = equipeIds(item);
+  const escalados = item.escaladosPorColab || new Map();
+  const osNumero = item.os?.numero_os;
+  const candidatos = [...(item.candidatos || []), ...(item.colaboradoresRegional || [])];
+  const seen = new Set();
+  const options = candidatos
+    .filter((c) => {
+      const id = String(c.colaboradorId || '');
+      if (!id || atuais.has(id) || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .map((c) => {
+      const id = String(c.colaboradorId);
+      const escaladoEmOutra = escalados.has(id) && escalados.get(id) != null && escalados.get(id) !== osNumero;
+      const label = `${escaladoEmOutra ? '♻ ' : ''}${c.nome}${escaladoEmOutra ? ` · OS ${escalados.get(id)}` : ''}`;
+      return `<option value="${esc(id)}">${esc(label)}</option>`;
+    });
+  return options.length ? options.join('') : '<option value="">Sem colaborador disponível</option>';
+}
+
+function colabsExtrasHtml(item) {
+  const extras = (item.equipeRows || []).filter((r) => String(r.colaborador_id) !== String(item.confirmadoRow?.colaborador_id));
+  if (!extras.length) return '';
+  return `<div class="peqb-extra-colabs">${extras.map((r) => `
+    <span class="peqb-extra-colab" title="Colaborador adicional nesta O.S.">
+      ${esc(r.nome_colaborador || r.colaborador_id)}
+      <button type="button" data-remover-adicional="${esc(r.id)}" title="Remover colaborador">×</button>
+    </span>`).join('')}</div>`;
 }
 
 function osRowHtml(item) {
@@ -830,9 +956,15 @@ function osRowHtml(item) {
           <select class="peqb-name-sel" data-trocar-colab title="Trocar o colaborador (♻ = já escalado em outra OS)">
             ${trocarOptionsHtml(item)}
           </select>
+          <button type="button" class="peqb-add-colab" data-toggle-add-colab title="Adicionar outro colaborador nesta O.S.">+</button>
         </span>
         ${hotelBtn}
-        ${aliChipsHtml(String(confirmadoRow.colaborador_id), confirmadoRow.nome_colaborador, item.custos?.ali || { almoco: true })}
+        ${aliChipsHtml(String(confirmadoRow.colaborador_id), confirmadoRow.nome_colaborador, item.custos?.ali || { almoco: true }, item.equipeRows || [])}
+      </div>
+      ${colabsExtrasHtml(item)}
+      <div class="peqb-add-box" data-add-box hidden>
+        <select class="peqb-select" data-add-colab-select>${addColabOptionsHtml(item)}</select>
+        <button type="button" class="peqb-row-btn" data-add-colab-confirm>Adicionar</button>
       </div>
       <div class="peqb-conf-km" title="Distância do colaborador até o ponto de embarque">📍 ${km != null ? `${round1(km)} km até o embarque` : 'sem coordenada do ponto'}</div>
       ${custoRowsHtml(item)}
@@ -1067,10 +1199,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     const atribuicoes = [];
     for (const item of pendentes) {
       const disponiveis = item.candidatos.filter((c) => !usados.has(c.colaboradorId));
-      const comCusto = disponiveis.filter((c) => c.custoTotal != null);
-      const melhor = comCusto.length
-        ? comCusto.reduce((a, b) => a.custoTotal <= b.custoTotal ? a : b)
-        : disponiveis[0];
+      const melhor = melhorCandidatoEmbarque(disponiveis);
       if (!melhor) continue;
       usados.add(melhor.colaboradorId);
       atribuicoes.push({ os: item.os, cand: melhor });
@@ -1226,7 +1355,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     try {
       const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisao), loadEquipeExistente(programacaoId), loadCustos(programacaoId)]);
       osTodasAtual = osTodas;
-      await loadAlojamentos();
+      await Promise.all([loadAlojamentos(), loadHoteis()]);
       const placasPorCpf = await loadCruzamentoPlacas(supervisao);
       const colaboradoresRegional = await loadColaboradoresRegional(supervisao);
       if (!osTodas.length) {
@@ -1241,7 +1370,13 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const pontosPorId = await loadPontos([...new Set(atenderRows.map((os) => os.ponto_embarque_id).filter(Boolean))]);
 
       const confirmadosPorOs = new Map();
-      equipeRows.filter((r) => r.confirmado).forEach((r) => confirmadosPorOs.set(r.os_id, r));
+      const equipeRowsPorOs = new Map();
+      equipeRows.filter((r) => r.confirmado).forEach((r) => {
+        const lista = equipeRowsPorOs.get(r.os_id) || [];
+        lista.push(r);
+        equipeRowsPorOs.set(r.os_id, lista);
+        if (!confirmadosPorOs.has(r.os_id)) confirmadosPorOs.set(r.os_id, r);
+      });
       const colaboradoresConfirmadosEmOutraOs = new Set(equipeRows.filter((r) => r.confirmado).map((r) => r.colaborador_id));
       // Mapa colaborador_id -> OS onde já está escalado (para marcar ♻ no dropdown de troca).
       const numeroPorOsId = new Map(osTodas.map((o) => [o.id, o.numero_os]));
@@ -1262,23 +1397,27 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       );
       const tipoLabelPorColaborador = await loadTipoContratoConfirmados(confirmadosPorOs, candidatosPorOs);
 
-      osComCandidatosAtual = osComPonto.map(({ os, ponto, confirmadoRow }) => ({
-        os,
-        ponto,
-        confirmadoRow,
-        confirmadoTipoLabel: confirmadoRow ? (tipoLabelPorColaborador.get(String(confirmadoRow.colaborador_id)) || 'Não informado') : null,
-        candidatos: confirmadoRow
-          ? [{ colaboradorId: confirmadoRow.colaborador_id, nome: confirmadoRow.nome_colaborador, km: confirmadoRow.km_estimado != null ? Number(confirmadoRow.km_estimado) : null, custoTotal: null }, ...(candidatosPorOs.get(os.id) || [])]
-          : (candidatosPorOs.get(os.id) || []),
-        colaboradoresRegional,
-        escaladosPorColab,
-        custos: confirmadoRow ? {
-          est: custos.est.get(String(confirmadoRow.colaborador_id)) || {},
-          ali: custos.ali.get(String(confirmadoRow.colaborador_id)) || { almoco: true },
-          des: custos.des.get(String(confirmadoRow.colaborador_id)) || {},
-          placaAuto: placasPorCpf.get(String(confirmadoRow.colaborador_id).replace(/\D/g, '')) || '',
-        } : null,
-      }));
+      osComCandidatosAtual = osComPonto.map(({ os, ponto, confirmadoRow }) => {
+        const equipeRowsOs = equipeRowsPorOs.get(os.id) || (confirmadoRow ? [confirmadoRow] : []);
+        return {
+          os,
+          ponto,
+          confirmadoRow,
+          equipeRows: equipeRowsOs,
+          confirmadoTipoLabel: confirmadoRow ? (tipoLabelPorColaborador.get(String(confirmadoRow.colaborador_id)) || 'Não informado') : null,
+          candidatos: ordenarCandidatosPorEmbarque(confirmadoRow
+            ? [{ colaboradorId: confirmadoRow.colaborador_id, nome: confirmadoRow.nome_colaborador, km: confirmadoRow.km_estimado != null ? Number(confirmadoRow.km_estimado) : null, custoTotal: null }, ...(candidatosPorOs.get(os.id) || [])]
+            : (candidatosPorOs.get(os.id) || [])),
+          colaboradoresRegional,
+          escaladosPorColab,
+          custos: confirmadoRow ? {
+            est: custos.est.get(String(confirmadoRow.colaborador_id)) || {},
+            ali: custos.ali.get(String(confirmadoRow.colaborador_id)) || { almoco: true },
+            des: custos.des.get(String(confirmadoRow.colaborador_id)) || {},
+            placaAuto: placasPorCpf.get(String(confirmadoRow.colaborador_id).replace(/\D/g, '')) || '',
+          } : null,
+        };
+      });
 
       // Auto-preenchimento de menor custo ANTES do 1º render visível: evita
       // exibir os cards não confirmados (que pareciam um bug). Roda só uma vez.
@@ -1421,20 +1560,25 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   // --- Custos inline (estadia/alimentação/deslocamento) por colaborador ---
   async function saveCusto(section, tabela) {
     if (!section) return;
-    const base = {
+    const ids = String(section.dataset.colabIds || section.dataset.colabId || '').split('|').map((v) => v.trim()).filter(Boolean);
+    const nomes = String(section.dataset.colabNomes || section.dataset.nome || '').split('|');
+    const bases = (ids.length ? ids : [section.dataset.colabId].filter(Boolean)).map((id, index) => ({
       programacao_id: programacaoId,
       data_referencia: options.dataReferencia || null,
-      colaborador_id: section.dataset.colabId,
-      nome_colaborador: section.dataset.nome || '',
-    };
-    let payload = { ...base };
+      colaborador_id: id,
+      nome_colaborador: nomes[index] || section.dataset.nome || '',
+    }));
+    if (!bases.length) return;
+    let payloads = bases.map((base) => ({ ...base }));
     if (tabela === 'programacao_estadia') {
       const tipo = normalizeText(section.querySelector('[data-fld="tipo_estadia"]')?.value || 'CASA') || 'CASA';
       const dias = Math.max(1, Number(section.querySelector('[data-fld="dias"]')?.value || 1));
       const checkin = options.dataReferencia || todayIso();
-      let cidade = section.querySelector('[data-fld="cidade"]')?.value || null;
+      let cidade = section.querySelector('[data-fld="cidade"]')?.value || section.dataset.cidadeEmbarque || null;
       let alojamento_id = null;
       let alojamento_nome = null;
+      let hotel_id = null;
+      let nome_hotel = null;
       const alojSel = section.querySelector('[data-fld="alojamento_id"]');
       if (alojSel && alojSel.value) {
         alojamento_id = alojSel.value;
@@ -1442,13 +1586,24 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         alojamento_nome = a?.nome || null;
         if (a && !cidade) cidade = a.cidade || null;
       }
-      payload = { ...base, tipo_estadia: tipo, tem_estadia: COM_ESTADIA.has(tipo), cidade, alojamento_id, alojamento_nome, checkin, checkout: addDaysIso(checkin, dias) };
+      const hotelSel = section.querySelector('[data-fld="hotel_id"]');
+      if (hotelSel && hotelSel.value) {
+        hotel_id = hotelSel.value;
+        const h = (hoteisCache || []).find((x) => String(x.id) === String(hotelSel.value));
+        nome_hotel = h?.nome || null;
+        if (h && !cidade) cidade = h.cidade || null;
+      }
+      payloads = bases.map((base) => ({ ...base, tipo_estadia: tipo, tem_estadia: COM_ESTADIA.has(tipo), cidade, alojamento_id, alojamento_nome, hotel_id, nome_hotel, checkin, checkout: addDaysIso(checkin, dias) }));
     } else if (tabela === 'programacao_deslocamento') {
-      payload = { ...base, tipo_deslocamento: section.querySelector('[data-fld="tipo_deslocamento"]')?.value || 'NÃO PRECISA', placa_veiculo: onlyPlate(section.querySelector('[data-fld="placa_veiculo"]')?.value || '') };
+      const tipo_deslocamento = section.querySelector('[data-fld="tipo_deslocamento"]')?.value || 'NÃO PRECISA';
+      const placa_veiculo = onlyPlate(section.querySelector('[data-fld="placa_veiculo"]')?.value || '');
+      payloads = bases.map((base) => ({ ...base, tipo_deslocamento, placa_veiculo }));
     } else if (tabela === 'programacao_alimentacao') {
-      REFEICOES.forEach(([k]) => { payload[k] = !!section.querySelector(`[data-ref="${k}"]`)?.classList.contains('on'); });
+      const refs = {};
+      REFEICOES.forEach(([k]) => { refs[k] = !!section.querySelector(`[data-ref="${k}"]`)?.classList.contains('on'); });
+      payloads = bases.map((base) => ({ ...base, ...refs }));
     }
-    const { error } = await supabase.from(tabela).upsert(payload, { onConflict: 'programacao_id,colaborador_id' });
+    const { error } = await supabase.from(tabela).upsert(payloads, { onConflict: 'programacao_id,colaborador_id' });
     if (error) console.error('[equipe custo]', tabela, error);
   }
   const custoTimers = new Map();
@@ -1456,6 +1611,45 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     const key = `${tabela}:${section.dataset.colabId}`;
     clearTimeout(custoTimers.get(key));
     custoTimers.set(key, setTimeout(() => saveCusto(section, tabela), 450));
+  }
+
+  async function copiarCustosDoPrincipal(item, cand) {
+    if (!item?.confirmadoRow || !cand?.colaboradorId) return;
+    const origemId = String(item.confirmadoRow.colaborador_id);
+    const destinoBase = {
+      programacao_id: programacaoId,
+      data_referencia: options.dataReferencia || null,
+      colaborador_id: cand.colaboradorId,
+      nome_colaborador: cand.nome || '',
+    };
+    const est = item.custos?.est || {};
+    const ali = item.custos?.ali || { almoco: true };
+    const des = item.custos?.des || {};
+    if (Object.keys(est).length || origemId) {
+      await supabase.from('programacao_estadia').upsert({
+        ...destinoBase,
+        tipo_estadia: est.tipo_estadia || 'CASA',
+        tem_estadia: !!est.tem_estadia,
+        cidade: est.cidade || null,
+        alojamento_id: est.alojamento_id || null,
+        alojamento_nome: est.alojamento_nome || null,
+        hotel_id: est.hotel_id || null,
+        nome_hotel: est.nome_hotel || null,
+        checkin: est.checkin || options.dataReferencia || todayIso(),
+        checkout: est.checkout || options.dataReferencia || todayIso(),
+      }, { onConflict: 'programacao_id,colaborador_id' });
+    }
+    await supabase.from('programacao_alimentacao').upsert({
+      ...destinoBase,
+      cafe: !!ali.cafe,
+      almoco: ali.almoco !== false,
+      janta: !!ali.janta,
+    }, { onConflict: 'programacao_id,colaborador_id' });
+    await supabase.from('programacao_deslocamento').upsert({
+      ...destinoBase,
+      tipo_deslocamento: des.tipo_deslocamento || 'NÃO PRECISA',
+      placa_veiculo: onlyPlate(des.placa_veiculo || ''),
+    }, { onConflict: 'programacao_id,colaborador_id' });
   }
 
   listEl.addEventListener('input', (event) => {
@@ -1485,11 +1679,52 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     if (confBtn) { openLaudoModal(confBtn.dataset.conf); return; }
 
     const toggleOutros = event.target.closest('[data-toggle-outros]');
+    const toggleAddColab = event.target.closest('[data-toggle-add-colab]');
+    const addColabConfirm = event.target.closest('[data-add-colab-confirm]');
+    const removerAdicional = event.target.closest('[data-remover-adicional]');
     const pickBtn = event.target.closest('[data-pick-cand]');
     const btnConfirmar = event.target.closest('[data-confirmar]');
     const btnRemover = event.target.closest('[data-remover]');
     const btnHotelEl = event.target.closest('[data-pedir-hotel]');
     const row = event.target.closest('.peqb-row');
+
+    if (toggleAddColab && row) {
+      const box = row.querySelector('[data-add-box]');
+      if (box) box.hidden = !box.hidden;
+      return;
+    }
+
+    if (addColabConfirm && row) {
+      const item = osComCandidatosAtual.find((it) => String(it.os.id) === row.dataset.osId);
+      const sel = row.querySelector('[data-add-colab-select]');
+      const cand = item?.candidatos.find((c) => String(c.colaboradorId) === String(sel?.value))
+        || item?.colaboradoresRegional?.find((c) => String(c.colaboradorId) === String(sel?.value));
+      if (!item || !cand) return;
+      addColabConfirm.disabled = true;
+      try {
+        await adicionarColaboradorOs(programacaoId, item.os, cand);
+        await copiarCustosDoPrincipal(item, cand);
+        await carregarERenderizar({ silent: true });
+      } catch (error) {
+        console.error('[equipe] adicionar colaborador:', error);
+        addColabConfirm.disabled = false;
+        alert(error.message || 'Não foi possível adicionar o colaborador.');
+      }
+      return;
+    }
+
+    if (removerAdicional) {
+      removerAdicional.disabled = true;
+      try {
+        await removerConfirmacao(programacaoId, removerAdicional.dataset.removerAdicional);
+        await carregarERenderizar({ silent: true });
+      } catch (error) {
+        console.error('[equipe] remover colaborador adicional:', error);
+        removerAdicional.disabled = false;
+        alert(error.message || 'Não foi possível remover o colaborador.');
+      }
+      return;
+    }
 
     // Abre/fecha a lista de candidatos alternativos
     if (toggleOutros && row) {
@@ -1695,8 +1930,8 @@ async function solicitarHospedagem(os, confirmadoRow, dataReferencia) {
     ? confirmadoRow.colaborador_id : null;
   await supabase.from('hospedagem_solicitacao_colaboradores').insert({
     solicitacao_id: sol.id,
-    colaborador_nome: nome,
-    colaborador_cpf: cpf,
+    nome_colaborador: nome,
+    cpf,
   });
 
   return sol;
@@ -1747,6 +1982,50 @@ async function confirmarCandidato(programacaoId, os, cand) {
   };
   const { error: espelhoErr } = await supabase.from('programacao_colaboradores').upsert(espelho, { onConflict: 'programacao_id,colaborador_id' });
   if (espelhoErr) console.warn('[programacao-equipe] falha ao espelhar disponibilidade.', espelhoErr);
+}
+
+async function adicionarColaboradorOs(programacaoId, os, cand) {
+  const payload = {
+    programacao_id: programacaoId,
+    os_id: os.id,
+    colaborador_id: cand.colaboradorId,
+    nome_colaborador: cand.nome,
+    score: cand.score || 0,
+    score_contrato: cand.scoreContrato || 0,
+    score_distancia: cand.scoreDistancia || 0,
+    score_auditoria: cand.scoreAuditoria || 0,
+    km_estimado: cand.km,
+    confirmado: true,
+  };
+  const { error } = await supabase.from('programacao_equipe').upsert(payload, { onConflict: 'programacao_id,os_id,colaborador_id' });
+  if (error) throw error;
+
+  const cpfCandidato = /^\d+$/.test(String(cand.colaboradorId)) ? String(cand.colaboradorId) : null;
+  await supabase
+    .from('operacional_os_colaboradores')
+    .delete()
+    .eq('os_id', os.id)
+    .eq('colaborador_key', cand.colaboradorId);
+  const { error: vinculoErr } = await supabase.from('operacional_os_colaboradores').insert({
+    os_id: os.id,
+    colaborador_key: cand.colaboradorId,
+    colaborador_nome: cand.nome,
+    colaborador_cpf: cpfCandidato,
+    distancia_km: cand.km,
+    origem_sugestao: 'PROGRAMACAO_ETAPA_B_ADICIONAL',
+  });
+  if (vinculoErr) console.warn('[programacao-equipe] falha ao gravar colaborador adicional da OS.', vinculoErr);
+
+  const { error: espelhoErr } = await supabase.from('programacao_colaboradores').upsert({
+    programacao_id: programacaoId,
+    colaborador_id: cand.colaboradorId,
+    nome_colaborador: cand.nome,
+    cargo: cand.cargo || null,
+    coordenacao: cand.coordenacao || null,
+    supervisao: cand.supervisao || null,
+    disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
+  }, { onConflict: 'programacao_id,colaborador_id' });
+  if (espelhoErr) console.warn('[programacao-equipe] falha ao espelhar colaborador adicional.', espelhoErr);
 }
 
 // Versão em LOTE de confirmarCandidato: grava N atribuições ({os, cand}) com
@@ -1813,7 +2092,11 @@ async function removerConfirmacao(programacaoId, equipeRowId) {
   if (error) throw error;
 
   if (osId) {
-    const { error: vinculoErr } = await supabase.from('operacional_os_colaboradores').delete().eq('os_id', osId);
+    const { error: vinculoErr } = await supabase
+      .from('operacional_os_colaboradores')
+      .delete()
+      .eq('os_id', osId)
+      .eq('colaborador_key', colaboradorId);
     if (vinculoErr) console.warn('[programacao-equipe] falha ao remover vínculo OS<->colaborador.', vinculoErr);
   }
 
