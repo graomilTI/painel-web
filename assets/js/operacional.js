@@ -157,7 +157,7 @@ import { supabase } from './supabaseClient.js';
   async function loadColaboradores() {
     const [baseRaw, colRaw] = await Promise.all([
       sel('operacional_colaborador_base', '*', q => q.eq('ativo', true)),
-      sel('colaboradores', 'cpf,nome,situacao'),
+      sel('colaboradores', 'cpf,nome,situacao,cargo'),
     ]);
 
     const colPorCpf = new Map();
@@ -168,6 +168,7 @@ import { supabase } from './supabaseClient.js';
         const cpf = digits(b.cpf);
         const cad = colPorCpf.get(cpf);
         if (cpf.length === 11 && colRaw.length && !cad) return null; // desligado na base de colaboradores
+        if (norm(cad?.cargo) === 'ADMINISTRATIVO') return null; // setor administrativo não embarca
         return { id: colKey(b.cpf, b.nome, `${b.cidade_base}|${b.uf_base}`), cpf, nome: b.nome || cad?.nome, latitude: b.latitude, longitude: b.longitude, cidade_base: b.cidade_base, uf_base: b.uf_base };
       })
       .filter(c => c && c.nome && geo(c));
