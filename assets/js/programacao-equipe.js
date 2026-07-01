@@ -153,6 +153,9 @@ function injectStyles() {
     .leaflet-tooltip.peqb-tt{background:rgba(2,6,23,.92)!important;border:1px solid rgba(34,197,94,.35)!important;color:#f8fafc!important;border-radius:8px!important;font-size:11px!important;padding:4px 8px!important;font-weight:700!important;box-shadow:none!important}
     .leaflet-control-attribution{background:rgba(2,6,23,.65)!important;color:#6b7280!important;font-size:10px!important}
     .peqb-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:22px;text-align:center;color:#94a3b8;line-height:1.4}
+    .peqb-loading{display:flex;align-items:center;justify-content:center;gap:10px;text-align:left}
+    .peqb-spinner{width:24px;height:24px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;flex:0 0 auto;animation:peqbSpin .75s linear infinite}
+    @keyframes peqbSpin{to{transform:rotate(360deg)}}
     .peqb-chip-hotel{border-color:rgba(251,191,36,.4)!important;background:rgba(251,191,36,.1)!important;color:#fbbf24!important;font-weight:950!important}
     .peqb-row-btn.hotel{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.12);color:#fbbf24}
     .peqb-row-btn.hotel:hover{background:rgba(251,191,36,.22)}
@@ -385,7 +388,26 @@ async function loadColaboradoresRegional(supervisao) {
   try {
     const { data, error } = await supabase.rpc('programacao_colaboradores_supervisao', { p_supervisao: supervisao });
     if (error) throw error;
-    return (data || []).map((r) => ({ colaboradorId: r.colaborador_id, nome: r.nome }));
+    return (data || []).map((r) => ({
+      colaboradorId: r.colaborador_id,
+      nome: r.nome,
+      cargo: r.cargo || null,
+      coordenacao: r.coordenacao || null,
+      supervisao: r.supervisao || supervisao || null,
+      tipoLabel: contratoLabel(r.tipo_contrato),
+      km: null,
+      auditPeso: null,
+      veiculoId: null,
+      veiculoPlaca: null,
+      lat: null,
+      lng: null,
+      custoTotal: null,
+      score: 0,
+      scoreContrato: 0,
+      scoreDistancia: 0,
+      scoreAuditoria: 0,
+      origemRegional: true,
+    }));
   } catch (error) {
     console.warn('[equipe] lista de colaboradores da regional indisponível', error);
     return [];
@@ -458,6 +480,24 @@ async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
       scoreAuditoria: Number(row.score_auditoria),
     });
     porOs.set(row.os_id, lista);
+  });
+  return porOs;
+}
+
+function aplicarSugestoesRegionais(porOs, osComPonto, colaboradoresRegional, excluirIds) {
+  if (!colaboradoresRegional?.length) return porOs;
+  const bloqueados = new Set([...excluirIds].map(String));
+  const usadosFallback = new Set();
+  osComPonto.forEach(({ os }) => {
+    const atuais = porOs.get(os.id) || [];
+    if (atuais.length) return;
+    const sugestao = colaboradoresRegional.find((c) => {
+      const id = String(c.colaboradorId || '');
+      return id && !bloqueados.has(id) && !usadosFallback.has(id);
+    });
+    if (!sugestao) return;
+    usadosFallback.add(String(sugestao.colaboradorId));
+    porOs.set(os.id, [{ ...sugestao, tipoLabel: sugestao.tipoLabel || 'Regional' }]);
   });
   return porOs;
 }
@@ -902,7 +942,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       <button type="button" class="peqb-btn" id="peqbSugerirCaronas" title="Motorista/carona por frota (desvio ≤ ${CARONA_DESVIO_KM} km), sobra vira próprio/Uber">Sugerir caronas</button>
       <span id="peqbCaronasMsg" style="font-size:11.5px;color:#9fb7aa;align-self:center"></span>
     </div>
-    <div class="peqb-os-list peqb-os-list-full" id="peqbOsList"><div class="peqb-empty">Carregando O.S....</div></div>
+    <div class="peqb-os-list peqb-os-list-full" id="peqbOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
   `;
 
   // currentUser é opcional (só preenche logistica_solicitado_por ao FINALIZAR).
@@ -1091,7 +1131,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     carregando = true;
     const scroller = silent ? scrollParentDe(listEl) : null;
     const scrollPos = scroller ? scroller.scrollTop : 0;
-    if (!silent) listEl.innerHTML = '<div class="peqb-empty">Carregando O.S. da supervisão...</div>';
+    if (!silent) listEl.innerHTML = '<div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S. da supervisão...</span></div>';
     try {
       const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisao), loadEquipeExistente(programacaoId), loadCustos(programacaoId)]);
       osTodasAtual = osTodas;
@@ -1123,7 +1163,12 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         // dropdown de troca do nome ter alternativas.
         return { os, ponto: pontoDaOs(os, pontosPorId), confirmadoRow, candidatosNecessarios: true };
       });
-      const candidatosPorOs = await loadCandidatosPorOs(supervisao, osComPonto, colaboradoresConfirmadosEmOutraOs);
+      const candidatosPorOs = aplicarSugestoesRegionais(
+        await loadCandidatosPorOs(supervisao, osComPonto, colaboradoresConfirmadosEmOutraOs),
+        osComPonto,
+        colaboradoresRegional,
+        colaboradoresConfirmadosEmOutraOs,
+      );
       const tipoLabelPorColaborador = await loadTipoContratoConfirmados(confirmadosPorOs, candidatosPorOs);
 
       osComCandidatosAtual = osComPonto.map(({ os, ponto, confirmadoRow }) => ({
@@ -1148,7 +1193,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       // exibir os cards não confirmados (que pareciam um bug). Roda só uma vez.
       if (autoPreencherPendente && osComCandidatosAtual.some((it) => !it.confirmadoRow && it.candidatos.length)) {
         autoPreencherPendente = false;
-        listEl.innerHTML = '<div class="peqb-empty">Preparando equipe de menor custo…</div>';
+        listEl.innerHTML = '<div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Preparando equipe de menor custo...</span></div>';
         await confirmarPendentesAuto();
         carregando = false;
         return carregarERenderizar({ silent: true });
