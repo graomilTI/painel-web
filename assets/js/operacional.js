@@ -13,6 +13,9 @@ import { supabase } from './supabaseClient.js';
   const RAIO_HOTEL_KM = 60;
   const RAIO_CARONA_KM = 5;
   const OS_SALDO_PEQUENO_KG = 500;
+  // Leitura de patrimônio (Frotas > Veículos) mais velha que isso não confirma posse atual do
+  // veículo — média real hoje é 4,4 dias, 65% das leituras são de até 7 dias.
+  const LIMITE_DIAS_LEITURA_PATRIMONIO = 7;
   const ROTAS_REAIS_SIMULTANEAS = 4;
   const ROTAS_REAIS_LIMITE = 180;
 
@@ -230,15 +233,9 @@ import { supabase } from './supabaseClient.js';
     [v?.placa, v?.placa_normalizada, v?.bfleet_placa, v?.bfleet_patente].map(placaNorm).filter(Boolean).forEach(p => keys.push(`placa:${p}`));
     return [...new Set(keys)];
   }
-  function motoristaNomes(v) {
-    // bfleet_nome guarda modelo+placa do veículo (ex.: "MOBI LIKE - SHE1H46"), não nome de
-    // pessoa — nunca deve entrar aqui.
-    return [v?.motorista_atual, v?.bfleet_condutor, v?.patrimonio_funcionario].filter(x => x && String(x).trim() !== '');
-  }
-
   async function loadFrotaAtual() {
     const [veiculos, posicoes] = await Promise.all([
-      sel('frotas_veiculos', 'id,placa,placa_normalizada,motorista_atual,bfleet_condutor,patrimonio_funcionario,bfleet_nome,bfleet_vehicle_id,bfleet_id,bfleet_idgps,bfleet_placa,bfleet_patente'),
+      sel('frotas_veiculos', 'id,placa,placa_normalizada,patrimonio_funcionario,patrimonio_dias_sem_leitura,bfleet_vehicle_id,bfleet_id,bfleet_idgps,bfleet_placa,bfleet_patente'),
       sel('frotas_posicoes', 'placa,veiculo_id,idgps,latitude,longitude,motorista'),
     ]);
 
@@ -249,14 +246,21 @@ import { supabase } from './supabaseClient.js';
     const posicaoPorNome = new Map();
     const nomeOriginalPorNome = new Map();
     const guardarNome = (nome) => { const key = norm(nome); nomesFrotaSet.add(key); if (!nomeOriginalPorNome.has(key)) nomeOriginalPorNome.set(key, String(nome).trim()); return key; };
+
+    // "Motorista" só conta quem está de fato com o veículo — mesmo critério já usado em
+    // Frotas > Veículos: leitura de patrimônio recente (patrimonio_funcionario/_dias_sem_leitura),
+    // não o cadastro nominal de "motorista_atual" (que pode estar desatualizado).
     veiculos.forEach(v => {
+      const nome = v?.patrimonio_funcionario;
+      const dias = num(v?.patrimonio_dias_sem_leitura);
+      if (!nome || !String(nome).trim() || dias === null || dias > LIMITE_DIAS_LEITURA_PATRIMONIO) return;
+      const key = guardarNome(nome);
       const pos = veiculoKeys(v).map(k => posPorChave.get(k)).find(Boolean);
-      motoristaNomes(v).forEach(nome => {
-        const key = guardarNome(nome);
-        if (pos && !posicaoPorNome.has(key)) posicaoPorNome.set(key, pos);
-      });
+      if (pos && !posicaoPorNome.has(key)) posicaoPorNome.set(key, pos);
     });
-    posicoes.forEach(p => { if (p.motorista) { const key = guardarNome(p.motorista); if (!posicaoPorNome.has(key)) posicaoPorNome.set(key, p); } });
+    // Posição de GPS ao vivo só refina a distância de quem já foi confirmado por leitura de
+    // patrimônio — não adiciona ninguém novo ao conjunto de motoristas.
+    posicoes.forEach(p => { const key = norm(p.motorista); if (p.motorista && nomesFrotaSet.has(key) && !posicaoPorNome.has(key)) posicaoPorNome.set(key, p); });
 
     return { nomesFrotaSet, posicaoPorNome, nomeOriginalPorNome };
   }
@@ -321,26 +325,19 @@ import { supabase } from './supabaseClient.js';
   }
 
   function modoColaborador(c, ponto) {
-    // "Frota" só é custo zero quando há posição de GPS confirmando que o veículo está em uso
-    // agora (frotas_posicoes). Ser motorista_atual/responsável de patrimônio de algum carro da
-    // empresa (frotas_veiculos) sem GPS ao vivo NÃO torna a viagem grátis — o carro ainda gasta
-    // combustível pra chegar até essa OS especifica, só não precisa de reembolso a terceiro.
-    // Sem essa distinção, ~35% do quadro (todo mundo com carro da empresa) virava custo zero
-    // incondicional, o que nunca perdia pra hospedagem, mesmo a centenas de km de distância.
-    const posicaoAtual = st.posicaoPorNome.get(norm(c.nome));
-    const frotaComPosicaoAoVivo = st.nomesFrotaSet.has(norm(c.nome)) && posicaoAtual && geo(posicaoAtual);
-    if (frotaComPosicaoAoVivo) return { modo: 'frota', label: 'Motorista/frota (posição atual confirmada)', custo: 0 };
+    // "Motorista de frota" (custo zero) exige leitura de patrimônio recente confirmando que a
+    // pessoa está de fato com o veículo agora (mesmo critério já usado em Frotas > Veículos,
+    // via patrimonio_funcionario + patrimonio_dias_sem_leitura) — não o cadastro nominal de
+    // motorista_atual, que pode estar desatualizado e não refletir quem realmente está com o carro.
+    if (st.nomesFrotaSet.has(norm(c.nome))) return { modo: 'frota', label: 'Motorista/frota (leitura de patrimônio recente)', custo: 0 };
 
     const habitual = st.modoHabitualPorCpf.get(c.cpf) || st.modoHabitualPorNome.get(norm(c.nome));
-    if (habitual?.tipo === 'MOTORISTA FROTA') return { modo: 'reembolso', label: 'Motorista de frota (sem GPS ao vivo — veículo da empresa)', custoFn: combustivelIdaVolta };
+    if (habitual?.tipo === 'MOTORISTA FROTA') return { modo: 'reembolso', label: 'Motorista de frota (sem leitura recente — veículo da empresa)', custoFn: combustivelIdaVolta };
     if (habitual?.tipo === 'CARONA FROTA' && caronaDisponivelPara(ponto)) return { modo: 'carona', label: 'Carona com frota', custo: 0 };
     if (habitual?.tipo === 'NAO PRECISA') return { modo: 'local', label: 'Já está no local', custo: 0 };
     if (habitual?.tipo === 'REEMBOLSO KM') return { modo: 'reembolso', label: 'Veículo próprio', custoFn: combustivelIdaVolta };
     if (habitual?.tipo === 'UBER TAXI' || habitual?.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
 
-    if (st.nomesFrotaSet.has(norm(c.nome))) {
-      return { modo: 'reembolso', label: 'Motorista de frota (sem GPS ao vivo — veículo da empresa)', custoFn: combustivelIdaVolta, estimado: true };
-    }
     if (st.veiculoProprioCpfs.has(c.cpf) || st.veiculoProprioNomes.has(norm(c.nome))) {
       return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };
     }
