@@ -3,1064 +3,611 @@ import { supabase } from './supabaseClient.js';
 (function () {
   'use strict';
 
-  const styleId      = 'operacional-direcionamento-styles';
-  const leafletCssId = 'leaflet-css-operacional';
-  const leafletJsId  = 'leaflet-js-operacional';
-  const clusterCssId = 'leaflet-cluster-css';
-  const clusterDfCssId = 'leaflet-cluster-default-css';
-  const clusterJsId  = 'leaflet-cluster-js';
-  const INDICACOES_KEY = 'operacional_indicacoes_v1';
+  const STYLE_ID = 'mapa-operacional-style';
+  const LEAFLET_CSS = 'leaflet-css-mapaop';
+  const LEAFLET_JS = 'leaflet-js-mapaop';
+  const OSRM_BASE = 'https://router.project-osrm.org';
 
-  const BRAZIL_LAT_MIN = -33.77;
-  const BRAZIL_LAT_MAX = 5.28;
-  const BRAZIL_LNG_MIN = -73.99;
-  const BRAZIL_LNG_MAX = -28.84;
+  const BR_LAT_MIN = -34.2, BR_LAT_MAX = 6.0, BR_LNG_MIN = -74.5, BR_LNG_MAX = -28.0;
+  const RAIO_REPETIR_COLAB_KM = 5;
+  const RAIO_HOTEL_KM = 60;
+  const ROTAS_REAIS_SIMULTANEAS = 4;
+  const ROTAS_REAIS_LIMITE = 180;
 
-  const COLAB_COLORS = ['#facc15', '#fb923c', '#f87171', '#a78bfa', '#38bdf8'];
+  // Combustível: R$7/L, 10km/L, ida+volta. Mesma premissa usada em programacao-fase2-custos.js.
+  const COMBUSTIVEL_PRECO_L = 7;
+  const COMBUSTIVEL_KM_L = 10;
+  // Uber/táxi: média real de preco_liquido/distancia_km de 270 corridas em conferencia_uber_corridas.
+  const UBER_RS_KM = 6.77;
 
-  const state = {
-    pontos: [],
-    colaboradores: [],
-    hoteis: [],
-    passagens: [],
-    auditorias: [],
-    selectedPontoId: '',
-    ranking: [],
-    map: null,
-    clusterGroup: null,
-    colabLayer: null,
-    selectedLayer: null,
-    loaded: false,
-    indicacoes: {},
-    foraDoMapa: { colaboradores: [], pontos: [] },
+  const st = {
+    os: [], osTodas: [], pontos: [], colaboradores: [], rotas: [], semAssociacao: [],
+    estado: '', ponto: '', rota: '', mostrarRota: true,
+    map: null, layer: null, routeLayer: null, rotaRealCache: new Map(), drawToken: 0,
   };
 
-  /* ─── utilidades ─── */
+  const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+  const norm = v => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+  const digits = v => String(v ?? '').replace(/\D/g, '');
 
-  function safeText(v) {
-    return String(v ?? '').replace(/[&<>'"]/g, c =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+  function num(v) {
+    if (v === null || v === undefined || v === '') return null;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    let s = String(v).trim();
+    if (!s) return null;
+    if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(',', '.');
+    s = s.replace(/[^0-9.-]/g, '');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
   }
 
-  function n(value, fallback = 0) {
-    const p = Number(String(value ?? '').replace(',', '.'));
-    return Number.isFinite(p) ? p : fallback;
+  const lat = r => num(r?.latitude ?? r?.lat);
+  const lng = r => num(r?.longitude ?? r?.lng ?? r?.lon);
+  const fmtKm = v => Number.isFinite(Number(v)) ? `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km` : '—';
+  const fmtKg = v => Number.isFinite(Number(v)) ? `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} kg` : '—';
+  const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+  const fmtRs = v => Number.isFinite(Number(v)) ? BRL.format(v) : '—';
+
+  function inBrazil(a, b) {
+    const la = Number(a), lo = Number(b);
+    return Number.isFinite(la) && Number.isFinite(lo) && la >= BR_LAT_MIN && la <= BR_LAT_MAX && lo >= BR_LNG_MIN && lo <= BR_LNG_MAX;
+  }
+  function geo(r) { return inBrazil(lat(r), lng(r)); }
+  function km(a, b, c, d) {
+    if (!inBrazil(a, b) || !inBrazil(c, d)) return null;
+    const la1 = Number(a), lo1 = Number(b), la2 = Number(c), lo2 = Number(d);
+    const R = 6371, dlat = (la2 - la1) * Math.PI / 180, dlon = (lo2 - lo1) * Math.PI / 180;
+    const x = Math.sin(dlat / 2) ** 2 + Math.cos(la1 * Math.PI / 180) * Math.cos(la2 * Math.PI / 180) * Math.sin(dlon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  }
+  function distColabPonto(c, p) { return km(lat(c), lng(c), lat(p), lng(p)) ?? Infinity; }
+
+  function combustivelIdaVolta(distKmUmaVia) { return (Number(distKmUmaVia) || 0) * 2 / COMBUSTIVEL_KM_L * COMBUSTIVEL_PRECO_L; }
+  function uberIdaVolta(distKmUmaVia) { return (Number(distKmUmaVia) || 0) * 2 * UBER_RS_KM; }
+
+  function short(n) { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[1]}` : (p[0] || '—'); }
+  function splitEmbarque(t) {
+    const m = String(t || '').match(/^([A-Z]{2})\s*-\s*([^()]+?)(?:\s*\(([^)]+)\))?\s*$/i);
+    return m ? { uf: m[1], cidade: m[2].trim(), local: (m[3] || '').trim() } : { uf: '', cidade: '', local: '' };
   }
 
-  function money(value) {
-    return n(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  async function sel(table, columns = '*', fn = null, limit = 5000) {
+    try {
+      let q = supabase.from(table).select(columns).limit(limit);
+      if (fn) q = fn(q);
+      const { data, error } = await q;
+      if (error) throw error;
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      console.warn(`[mapa-operacional] ${table}:`, e?.message || e);
+      return [];
+    }
   }
 
-  function normalize(value) {
-    return String(value || '')
-      .normalize('NFD').replace(/[̀-ͯ]/g, '')
-      .trim().toUpperCase();
+  function osAberta(o) {
+    const s = norm(`${o.situacao || ''} ${o.status || ''} ${o.status_logistica || ''} ${o.status_gestor || ''}`);
+    return !['FINALIZAD', 'FINALIZAR', 'DEVOLVID', 'CANCELAD', 'CONCLUID', 'ENCERRAD', 'ARQUIVAD', 'INATIV'].some(x => s.includes(x));
   }
 
-  function toRad(v) { return (Number(v) * Math.PI) / 180; }
+  function colaboradorAtivo(c) { return norm(c.situacao) === 'ATIVO'; }
 
-  function distanciaKm(aLat, aLon, bLat, bLon) {
-    const [la1, lo1, la2, lo2] = [aLat, aLon, bLat, bLon].map(Number);
-    if (![la1, lo1, la2, lo2].every(Number.isFinite)) return null;
-    const R = 6371;
-    const dLat = toRad(la2 - la1), dLon = toRad(lo2 - lo1);
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(la1)) * Math.cos(toRad(la2)) * Math.sin(dLon / 2) ** 2;
-    return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 100) / 100;
+  function colKey(cpf, nome, extra) {
+    const d = digits(cpf);
+    if (d.length === 11) return `cpf:${d}`;
+    // Sem CPF válido: soma cidade/UF-base para reduzir colisão entre homônimos.
+    return `nome:${norm(nome)}|${norm(extra || '')}`;
   }
 
-  function isInsideBrazil(lat, lng) {
-    const la = Number(lat), lo = Number(lng);
-    return Number.isFinite(la) && Number.isFinite(lo)
-      && la >= BRAZIL_LAT_MIN && la <= BRAZIL_LAT_MAX
-      && lo >= BRAZIL_LNG_MIN && lo <= BRAZIL_LNG_MAX;
-  }
+  // --- Carregamento ---------------------------------------------------
 
-  function shortName(nome) {
-    const parts = String(nome || '').trim().split(/\s+/);
-    return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : parts[0] || '';
-  }
+  async function loadOsEPontos() {
+    const osRaw = await sel('operacional_os', '*', q => q.order('created_at', { ascending: false }));
+    const pontosPorChave = new Map();
 
-  /* ─── indicações ─── */
+    const abertas = osRaw.filter(osAberta).map(o => {
+      const embarque = splitEmbarque(o.embarque || '');
+      const temCoord = geo({ latitude: o.ponto1_latitude, longitude: o.ponto1_longitude });
+      const chave = temCoord
+        ? `${Number(o.ponto1_latitude).toFixed(3)}|${Number(o.ponto1_longitude).toFixed(3)}`
+        : `sem-coord:${norm(embarque.uf)}|${norm(embarque.cidade)}|${norm(o.ponto1_nome || embarque.local)}`;
 
-  function loadIndicacoesFromStorage() {
-    try { return JSON.parse(localStorage.getItem(INDICACOES_KEY) || '{}'); } catch { return {}; }
-  }
-
-  function saveIndicacoes() {
-    try { localStorage.setItem(INDICACOES_KEY, JSON.stringify(state.indicacoes)); } catch {}
-  }
-
-  function indicarColab(pontoId, colabId) {
-    const pId = String(pontoId), cId = String(colabId);
-    if (!state.indicacoes[pId]) state.indicacoes[pId] = [];
-    if (!state.indicacoes[pId].includes(cId)) state.indicacoes[pId].push(cId);
-    saveIndicacoes();
-  }
-
-  function removerIndicacao(pontoId, colabId) {
-    const pId = String(pontoId);
-    if (!state.indicacoes[pId]) return;
-    state.indicacoes[pId] = state.indicacoes[pId].filter(id => id !== String(colabId));
-    if (!state.indicacoes[pId].length) delete state.indicacoes[pId];
-    saveIndicacoes();
-  }
-
-  function isIndicadoNoPonto(pontoId, colabId) {
-    return (state.indicacoes[String(pontoId)] || []).includes(String(colabId));
-  }
-
-  function countOsElsewhere(currentPontoId) {
-    const count = {};
-    Object.entries(state.indicacoes).forEach(([pId, ids]) => {
-      if (String(pId) !== String(currentPontoId)) {
-        ids.forEach(id => { count[id] = (count[id] || 0) + 1; });
+      if (!pontosPorChave.has(chave)) {
+        pontosPorChave.set(chave, {
+          __key: chave,
+          lat: temCoord ? Number(o.ponto1_latitude) : null,
+          lng: temCoord ? Number(o.ponto1_longitude) : null,
+          nome_local: o.ponto1_nome || embarque.local || o.cliente || 'Ponto',
+          cidade: embarque.cidade,
+          uf: norm(embarque.uf),
+          temCoord,
+        });
       }
+      return { ...o, __pontoKey: chave, __saldo: num(o.remanescente) || 0 };
     });
-    return count;
+
+    return { abertas, pontos: [...pontosPorChave.values()] };
   }
 
-  function totalOsCount() {
-    const count = {};
-    Object.values(state.indicacoes).forEach(ids => {
-      ids.forEach(id => { count[id] = (count[id] || 0) + 1; });
+  async function loadColaboradores() {
+    const [baseRaw, colRaw] = await Promise.all([
+      sel('operacional_colaborador_base', '*', q => q.eq('ativo', true)),
+      sel('colaboradores', 'cpf,nome,situacao'),
+    ]);
+
+    const colPorCpf = new Map();
+    colRaw.filter(colaboradorAtivo).forEach(c => { const d = digits(c.cpf); if (d.length === 11) colPorCpf.set(d, c); });
+
+    return baseRaw
+      .map(b => {
+        const cpf = digits(b.cpf);
+        const cad = colPorCpf.get(cpf);
+        if (cpf.length === 11 && colRaw.length && !cad) return null; // desligado na base de colaboradores
+        return { id: colKey(b.cpf, b.nome, `${b.cidade_base}|${b.uf_base}`), cpf, nome: b.nome || cad?.nome, latitude: b.latitude, longitude: b.longitude, cidade_base: b.cidade_base, uf_base: b.uf_base };
+      })
+      .filter(c => c && c.nome && geo(c));
+  }
+
+  async function loadVinculos() {
+    const vincRaw = await sel('operacional_os_colaboradores', '*');
+    const porOs = new Map();
+    vincRaw.forEach(v => {
+      const arr = porOs.get(String(v.os_id)) || [];
+      arr.push({ cpf: v.colaborador_cpf, nome: v.colaborador_nome || v.colaborador_key });
+      porOs.set(String(v.os_id), arr);
     });
-    return count;
+    return porOs;
   }
 
-  // Exclui do ranking apenas quem já atingiu 2 OS em outros pontos
-  function getAssignedElsewhere(currentPontoId) {
-    const count = countOsElsewhere(currentPontoId);
-    const out = new Set();
-    Object.entries(count).forEach(([id, c]) => { if (c >= 2) out.add(id); });
-    return out;
+  async function loadModoHabitual() {
+    const rows = await sel('programacao_deslocamento', 'colaborador_id,nome_colaborador,tipo_deslocamento,data_referencia,updated_at');
+    const porCpf = new Map(), porNome = new Map();
+    for (const r of rows) {
+      const quando = r.data_referencia || r.updated_at || '';
+      const cpf = digits(r.colaborador_id);
+      const entrada = { tipo: norm(r.tipo_deslocamento), quando };
+      if (cpf.length === 11) {
+        const atual = porCpf.get(cpf);
+        if (!atual || String(quando) > String(atual.quando)) porCpf.set(cpf, entrada);
+      }
+      const nomeKey = norm(r.nome_colaborador);
+      if (nomeKey) {
+        const atual = porNome.get(nomeKey);
+        if (!atual || String(quando) > String(atual.quando)) porNome.set(nomeKey, entrada);
+      }
+    }
+    return { porCpf, porNome };
   }
 
-  /* ─── estilos e scripts ─── */
+  async function loadVeiculoProprio() {
+    const rows = await sel('programacao_veiculo_proprio', 'colaborador_id,nome,ativo', q => q.eq('ativo', true));
+    const cpfs = new Set(), nomes = new Set();
+    rows.forEach(r => { const d = digits(r.colaborador_id); if (d.length === 11) cpfs.add(d); if (r.nome) nomes.add(norm(r.nome)); });
+    return { cpfs, nomes };
+  }
 
-  function ensureStyles() {
-    if (document.getElementById(styleId)) return;
+  function placaNorm(v) { return String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+  function posKey(pos) {
+    const placa = placaNorm(pos?.placa);
+    if (placa) return `placa:${placa}`;
+    if (pos?.veiculo_id) return `id:${pos.veiculo_id}`;
+    if (pos?.idgps) return `gps:${pos.idgps}`;
+    return '';
+  }
+  function veiculoKeys(v) {
+    const keys = [];
+    [v?.id, v?.bfleet_vehicle_id, v?.bfleet_id].filter(Boolean).forEach(id => keys.push(`id:${id}`));
+    [v?.bfleet_idgps].filter(Boolean).forEach(id => keys.push(`gps:${id}`));
+    [v?.placa, v?.placa_normalizada, v?.bfleet_placa, v?.bfleet_patente].map(placaNorm).filter(Boolean).forEach(p => keys.push(`placa:${p}`));
+    return [...new Set(keys)];
+  }
+  function motoristaNomes(v) {
+    return [v?.motorista_atual, v?.bfleet_condutor, v?.patrimonio_funcionario, v?.bfleet_nome].filter(x => x && String(x).trim() !== '');
+  }
+
+  async function loadFrotaAtual() {
+    const [veiculos, posicoes] = await Promise.all([
+      sel('frotas_veiculos', 'id,placa,placa_normalizada,motorista_atual,bfleet_condutor,patrimonio_funcionario,bfleet_nome,bfleet_vehicle_id,bfleet_id,bfleet_idgps,bfleet_placa,bfleet_patente'),
+      sel('frotas_posicoes', 'placa,veiculo_id,idgps,latitude,longitude,motorista'),
+    ]);
+
+    const posPorChave = new Map();
+    posicoes.forEach(p => { if (geo(p)) { const k = posKey(p); if (k) posPorChave.set(k, p); } });
+
+    const nomesFrotaSet = new Set();
+    const posicaoPorNome = new Map();
+    const nomeOriginalPorNome = new Map();
+    const guardarNome = (nome) => { const key = norm(nome); nomesFrotaSet.add(key); if (!nomeOriginalPorNome.has(key)) nomeOriginalPorNome.set(key, String(nome).trim()); return key; };
+    veiculos.forEach(v => {
+      const pos = veiculoKeys(v).map(k => posPorChave.get(k)).find(Boolean);
+      motoristaNomes(v).forEach(nome => {
+        const key = guardarNome(nome);
+        if (pos && !posicaoPorNome.has(key)) posicaoPorNome.set(key, pos);
+      });
+    });
+    posicoes.forEach(p => { if (p.motorista) { const key = guardarNome(p.motorista); if (!posicaoPorNome.has(key)) posicaoPorNome.set(key, p); } });
+
+    return { nomesFrotaSet, posicaoPorNome, nomeOriginalPorNome };
+  }
+
+  async function loadHospedagem() {
+    const [hoteis, alojamentos] = await Promise.all([
+      sel('hospedagem_hoteis', 'nome,cidade,uf,latitude,longitude,valor_diaria_individual,valor_diaria_padrao'),
+      sel('hospedagem_alojamentos', 'nome,cidade,uf,status', q => q.eq('status', 'ATIVO')),
+    ]);
+    const hoteisComCoord = hoteis.filter(geo);
+    const alojamentosPorCidade = new Map();
+    alojamentos.forEach(a => { const k = `${norm(a.cidade)}|${norm(a.uf)}`; if (!alojamentosPorCidade.has(k)) alojamentosPorCidade.set(k, a); });
+    return { hoteisComCoord, alojamentosPorCidade };
+  }
+
+  // --- Motor de custo-benefício ----------------------------------------
+
+  function hospedagemParaPonto(ponto) {
+    const chaveCidade = `${norm(ponto.cidade)}|${norm(ponto.uf)}`;
+    const alojamento = st.alojamentosPorCidade.get(chaveCidade);
+    if (alojamento) return { tipo: 'alojamento', nome: alojamento.nome, custoDia: 0 };
+
+    if (!ponto.temCoord) return null;
+    let melhor = null;
+    for (const h of st.hoteisComCoord) {
+      const d = km(ponto.lat, ponto.lng, lat(h), lng(h));
+      if (d === null || d > RAIO_HOTEL_KM) continue;
+      const diaria = num(h.valor_diaria_individual) ?? num(h.valor_diaria_padrao);
+      if (diaria === null) continue;
+      if (!melhor || diaria < melhor.custoDia) melhor = { tipo: 'hotel', nome: h.nome, custoDia: diaria, distKm: d };
+    }
+    return melhor;
+  }
+
+  function modoColaborador(c) {
+    if (st.nomesFrotaSet.has(norm(c.nome))) return { modo: 'frota', label: 'Motorista/frota', custo: 0 };
+
+    const habitual = st.modoHabitualPorCpf.get(c.cpf) || st.modoHabitualPorNome.get(norm(c.nome));
+    if (habitual) {
+      if (habitual.tipo === 'MOTORISTA FROTA') return { modo: 'frota', label: 'Motorista/frota', custo: 0 };
+      if (habitual.tipo === 'CARONA FROTA') return { modo: 'carona', label: 'Carona com frota', custo: 0 };
+      if (habitual.tipo === 'NAO PRECISA') return { modo: 'local', label: 'Já está no local', custo: 0 };
+      if (habitual.tipo === 'REEMBOLSO KM') return { modo: 'reembolso', label: 'Veículo próprio', custoFn: combustivelIdaVolta };
+      if (habitual.tipo === 'UBER TAXI' || habitual.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberIdaVolta };
+    }
+
+    if (st.veiculoProprioCpfs.has(c.cpf) || st.veiculoProprioNomes.has(norm(c.nome))) {
+      return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };
+    }
+    return { modo: 'a-definir', label: 'A definir (estimado por Uber)', custoFn: uberIdaVolta, estimado: true };
+  }
+
+  function avaliarCandidato(c, ponto, dist) {
+    const posicaoFrota = st.posicaoPorNome.get(norm(c.nome));
+    const candidato = posicaoFrota && geo(posicaoFrota) ? { ...c, latitude: lat(posicaoFrota), longitude: lng(posicaoFrota) } : c;
+    const distReal = posicaoFrota && geo(posicaoFrota) ? distColabPonto(candidato, ponto) : dist;
+
+    const modoInfo = modoColaborador(c);
+    const custoDeslocamento = modoInfo.custo ?? modoInfo.custoFn(distReal);
+    const hospedagem = ponto.temCoord || st.alojamentosPorCidade.has(`${norm(ponto.cidade)}|${norm(ponto.uf)}`) ? hospedagemParaPonto(ponto) : null;
+
+    const hospedar = hospedagem && hospedagem.custoDia < custoDeslocamento;
+    const custoDia = hospedar ? hospedagem.custoDia : custoDeslocamento;
+    const economia = hospedar ? (custoDeslocamento - hospedagem.custoDia) : 0;
+
+    return { candidato, distReal, modoInfo, custoDeslocamento, hospedagem, recomendacao: hospedar ? 'hospedar' : 'deslocar', custoDia, economia };
+  }
+
+  function mesmoLocalOuRaio(p1, p2) {
+    if (!p1 || !p2) return false;
+    if (p1.__key === p2.__key) return true;
+    if (!p1.temCoord || !p2.temCoord) return false;
+    const d = km(p1.lat, p1.lng, p2.lat, p2.lng);
+    return d !== null && d <= RAIO_REPETIR_COLAB_KM;
+  }
+
+  function podeUsarColaborador(c, ponto, usos) {
+    const usados = usos.get(c.id) || [];
+    if (!usados.length) return true;
+    return usados.some(u => mesmoLocalOuRaio(u.ponto, ponto));
+  }
+  function registrarUso(c, ponto, saldo, usos) {
+    const arr = usos.get(c.id) || [];
+    arr.push({ ponto, saldo: Number(saldo) || 0 });
+    usos.set(c.id, arr);
+  }
+  function saldoAcumulado(c, usos) { return (usos.get(c.id) || []).reduce((acc, u) => acc + u.saldo, 0); }
+
+  function escolherColaborador(os, ponto, usos) {
+    const vinculados = (st.vinculosPorOs.get(String(os.id)) || [])
+      .map(v => st.colaboradores.find(c => (digits(v.cpf).length === 11 && c.cpf === digits(v.cpf)) || norm(c.nome) === norm(v.nome)))
+      .filter(Boolean);
+
+    function ranquear(lista) {
+      // Todo item de st.colaboradores (cadastrados ou sintéticos de frota) já tem geo válida garantida na origem.
+      return lista
+        .filter(c => podeUsarColaborador(c, ponto, usos))
+        .map(c => {
+          const dist = distColabPonto(c, ponto);
+          const avaliacao = avaliarCandidato(c, ponto, dist);
+          return { c, dist: avaliacao.distReal, avaliacao, saldoAtual: saldoAcumulado(c, usos) };
+        })
+        .filter(x => Number.isFinite(x.dist))
+        .sort((a, b) => a.avaliacao.custoDia - b.avaliacao.custoDia || a.saldoAtual - b.saldoAtual || a.dist - b.dist);
+    }
+
+    const candidatosVinculados = ranquear(vinculados);
+    if (candidatosVinculados.length) return { ...candidatosVinculados[0], origem: 'associado' };
+
+    const candidatosTodos = ranquear(st.colaboradores);
+    return candidatosTodos.length ? { ...candidatosTodos[0], origem: 'sugerido' } : null;
+  }
+
+  async function load() {
+    const [{ abertas, pontos }, colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem] = await Promise.all([
+      loadOsEPontos(), loadColaboradores(), loadVinculos(), loadModoHabitual(), loadVeiculoProprio(), loadFrotaAtual(), loadHospedagem(),
+    ]);
+
+    st.vinculosPorOs = vinculosPorOs;
+    st.modoHabitualPorCpf = modoHabitual.porCpf;
+    st.modoHabitualPorNome = modoHabitual.porNome;
+    st.veiculoProprioCpfs = veiculoProprio.cpfs;
+    st.veiculoProprioNomes = veiculoProprio.nomes;
+    st.nomesFrotaSet = frotaAtual.nomesFrotaSet;
+    st.posicaoPorNome = frotaAtual.posicaoPorNome;
+    st.hoteisComCoord = hospedagem.hoteisComCoord;
+    st.alojamentosPorCidade = hospedagem.alojamentosPorCidade;
+
+    // Motoristas de frota com posição atual mas sem cadastro em operacional_colaborador_base
+    // (ex.: admissão recente) não podem ficar de fora — senão nunca seriam sugeridos,
+    // mesmo custando zero e estando fisicamente perto do ponto.
+    const nomesJaCadastrados = new Set(colaboradores.map(c => norm(c.nome)));
+    const sinteticos = [];
+    for (const [key, pos] of frotaAtual.posicaoPorNome.entries()) {
+      if (nomesJaCadastrados.has(key) || !geo(pos)) continue;
+      const nome = frotaAtual.nomeOriginalPorNome.get(key) || key;
+      sinteticos.push({ id: colKey('', nome, 'frota-sem-cadastro'), cpf: '', nome, latitude: lat(pos), longitude: lng(pos) });
+      nomesJaCadastrados.add(key);
+    }
+
+    st.pontos = pontos;
+    st.colaboradores = [...colaboradores, ...sinteticos];
+    st.osTodas = abertas;
+    st.os = abertas.filter(o => o.__saldo > 0);
+    build();
+  }
+
+  function build() {
+    const pontosPorChave = new Map(st.pontos.map(p => [p.__key, p]));
+    const usos = new Map();
+    st.semAssociacao = [];
+    st.rotas = [];
+
+    const ordenadas = [...st.os].sort((a, b) => b.__saldo - a.__saldo);
+    for (const os of ordenadas) {
+      const ponto = pontosPorChave.get(os.__pontoKey);
+      if (!ponto) continue;
+      const escolhido = ponto.temCoord ? escolherColaborador(os, ponto, usos) : null;
+      if (!escolhido) {
+        const motivo = ponto.temCoord
+          ? 'Sem colaborador com coordenada disponível respeitando repetição por local/5 km'
+          : 'Ponto de embarque sem coordenada cadastrada (endereço não geocodificado) — associe manualmente';
+        st.semAssociacao.push({ os, ponto, motivo });
+        continue;
+      }
+      const { c, dist, avaliacao, saldoAtual, origem } = escolhido;
+      registrarUso(c, ponto, os.__saldo, usos);
+      const repetido = (usos.get(c.id) || []).length > 1;
+
+      st.rotas.push({
+        id: `${os.id}|${c.id}`, os, ponto, colab: avaliacao.candidato, dist,
+        origem, repetido,
+        modo: avaliacao.modoInfo.modo, modoLabel: avaliacao.modoInfo.label, modoEstimado: !!avaliacao.modoInfo.estimado,
+        custoDeslocamento: avaliacao.custoDeslocamento, hospedagem: avaliacao.hospedagem,
+        recomendacao: avaliacao.recomendacao, custoDia: avaliacao.custoDia, economia: avaliacao.economia,
+        saldoAntes: saldoAtual, saldoDepois: saldoAtual + os.__saldo,
+      });
+    }
+    st.rotas.sort((a, b) => b.custoDia - a.custoDia || b.dist - a.dist);
+    st.pontos = st.pontos.filter(p => st.osTodas.some(o => o.__pontoKey === p.__key));
+  }
+
+  // --- Renderização ------------------------------------------------------
+
+  function estadosDisponiveis() { return [...new Set(st.osTodas.map(o => pontoKeyToUf(o.__pontoKey)).filter(Boolean))].sort(); }
+  function pontoKeyToUf(key) { return st.pontos.find(p => p.__key === key)?.uf || ''; }
+  function passaFiltroPonto(p) { if (!p) return false; if (st.estado && p.uf !== st.estado) return false; if (st.ponto && p.__key !== st.ponto) return false; return true; }
+
+  async function rotaReal(points) {
+    const key = points.map(p => `${Number(p.lng).toFixed(5)},${Number(p.lat).toFixed(5)}`).join(';');
+    if (st.rotaRealCache.has(key)) return st.rotaRealCache.get(key);
+    if (st.rotaRealCache.size > 2000) st.rotaRealCache.clear(); // evita crescimento sem limite em sessões longas
+    try {
+      const res = await fetch(`${OSRM_BASE}/route/v1/driving/${key}?overview=full&geometries=geojson`);
+      if (!res.ok) throw new Error(`OSRM HTTP ${res.status}`);
+      const data = await res.json();
+      const route = data?.routes?.[0];
+      if (!route?.geometry?.coordinates) throw new Error('Sem rota real para os pontos');
+      const out = { coords: route.geometry.coordinates.map(([lg, la]) => [la, lg]) };
+      st.rotaRealCache.set(key, out);
+      return out;
+    } catch (err) {
+      const fallback = { coords: null };
+      st.rotaRealCache.set(key, fallback);
+      return fallback;
+    }
+  }
+
+  function css() {
+    if (document.getElementById(STYLE_ID)) return;
     const s = document.createElement('style');
-    s.id = styleId;
+    s.id = STYLE_ID;
     s.textContent = `
-      .op-shell{display:flex;flex-direction:column;gap:16px;color:#e2e2f0;padding-bottom:36px}
-
-      /* compact header */
-      .op-header{border:1px solid rgba(51,65,85,.6);border-radius:20px;background:rgba(15,23,42,.9);padding:14px 16px}
-      .op-header-top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-      .op-header-top h2{margin:0;font-size:16px;font-weight:900;color:#f8fafc;white-space:nowrap}
-      .op-filters{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-      .op-filters .op-field{flex:1;min-width:90px}
-      .op-field{display:flex;flex-direction:column;gap:5px}
-      .op-field label{font-size:11px;color:#6b7280;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
-      .op-field input,.op-field select{width:100%;box-sizing:border-box;border:1px solid rgba(51,65,85,.9);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:9px 10px;outline:none;color-scheme:dark;min-height:38px;font-size:13px}
-      .op-field select option{background:#0d0d18;color:#e2e2f0}
-      .op-field input:focus,.op-field select:focus{border-color:#22c55e;box-shadow:0 0 0 2px rgba(34,197,94,.14)}
-      .op-btn{border:1px solid rgba(34,197,94,.38);border-radius:12px;background:linear-gradient(135deg,#166534,#15803d);color:#ecfdf5;font-weight:900;padding:9px 14px;cursor:pointer;min-height:38px;white-space:nowrap;font-size:13px}
-      .op-btn.secondary{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.25);color:#e2e2f0}
-      .op-btn:hover{filter:brightness(1.08)}.op-btn:disabled{opacity:.55;cursor:not-allowed}
-
-      /* mapa layout */
-      .op-map-layout{display:grid;grid-template-columns:1fr 290px;border:1px solid rgba(51,65,85,.7);border-radius:24px;overflow:hidden;min-height:640px}
-      .op-map-wrap{position:relative;background:#0d1117}
-      #opMap{height:640px;background:#0d1117;position:relative}
-      .op-map-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#cbd5e1;background:radial-gradient(circle at center,rgba(34,197,94,.12),transparent 40%),#0d1117;z-index:1}
-      .op-map-empty strong{display:block;color:#f8fafc;font-size:17px;margin-bottom:6px}
-
-      /* pontos panel lateral */
-      .op-pontos-panel{display:flex;flex-direction:column;border-left:1px solid rgba(51,65,85,.7);background:rgba(2,6,23,.85)}
-      .op-pontos-panel-head{display:flex;align-items:center;justify-content:space-between;padding:11px 13px;border-bottom:1px solid rgba(51,65,85,.6);background:rgba(15,23,42,.95);flex-shrink:0}
-      .op-pontos-panel-head strong{font-size:13px;font-weight:900;color:#f8fafc}
-      .op-pontos-panel-head span{font-size:11px;color:#6b7280}
-      #opPontosListMap{overflow-y:auto;flex:1;padding:8px}
-      #opPontosListMap .op-point{border:1px solid rgba(51,65,85,.55);background:rgba(15,23,42,.6);border-radius:14px;padding:10px 11px;cursor:pointer;transition:.15s ease;margin-bottom:6px}
-      #opPontosListMap .op-point:hover{border-color:rgba(34,197,94,.4);background:rgba(22,101,52,.12)}
-      #opPontosListMap .op-point.active{border-color:#22c55e;background:rgba(22,101,52,.2)}
-      #opPontosListMap .op-point strong{font-size:12px;color:#f8fafc;display:block}
-      #opPontosListMap .op-point span{font-size:11px;color:#6b7280;display:block;margin-top:2px;line-height:1.3}
-      .op-pontos-empty{padding:20px 12px;text-align:center;color:#6b7280;font-size:12px;line-height:1.5}
-
-      /* cards e layouts secundários */
-      .op-card{border:1px solid rgba(51,65,85,.7);border-radius:24px;background:linear-gradient(180deg,rgba(15,23,42,.94),rgba(2,6,23,.78));overflow:hidden}
-      .op-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 16px 0}
-      .op-card-head h3{margin:0;color:#f8fafc;font-size:16px;font-weight:900}
-      .op-card-head p{margin:4px 0 0;color:#6b7280;font-size:12px;line-height:1.4}
-      .op-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr);gap:16px;align-items:stretch}
-      .op-list{display:flex;flex-direction:column;gap:8px;padding:14px;max-height:520px;overflow:auto}
-      .op-rank{border:1px solid rgba(51,65,85,.72);background:rgba(15,23,42,.74);border-radius:16px;padding:11px;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;cursor:default;transition:.15s}
-      .op-rank:hover{border-color:rgba(34,197,94,.4)}
-      .op-rank.indicado{border-color:rgba(34,197,94,.5);background:rgba(22,101,52,.12)}
-      .op-rank-pos{width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:rgba(22,101,52,.75);color:#dcfce7;font-weight:900;font-size:13px}
-      .op-rank strong{display:block;color:#f8fafc;font-size:13px}
-      .op-rank span{display:block;margin-top:3px;color:#6b7280;font-size:11px;line-height:1.3}
-      .op-score{text-align:right}.op-score strong{font-size:18px;color:#bbf7d0;display:block}.op-score span{font-size:10px;text-transform:uppercase;font-weight:900;color:#6b7280}
-
-      /* summary */
-      .op-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-      .op-metric{border:1px solid rgba(51,65,85,.7);border-radius:18px;background:rgba(15,23,42,.72);padding:13px}
-      .op-metric span{font-size:11px;color:#6b7280;text-transform:uppercase;font-weight:900;letter-spacing:.05em}
-      .op-metric strong{display:block;margin-top:6px;font-size:22px;color:#f8fafc}
-
-      /* table */
-      .op-table-wrap{overflow:auto;padding:0 16px 16px}
-      .op-table{width:100%;border-collapse:separate;border-spacing:0 8px;min-width:1120px}
-      .op-table th{text-align:left;font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;padding:0 10px 2px}
-      .op-table td{background:rgba(15,23,42,.78);border-top:1px solid rgba(51,65,85,.7);border-bottom:1px solid rgba(51,65,85,.7);padding:11px 10px;color:#e2e2f0;font-size:12px}
-      .op-table td:first-child{border-left:1px solid rgba(51,65,85,.7);border-radius:12px 0 0 12px;font-weight:900;color:#f8fafc}
-      .op-table td:last-child{border-right:1px solid rgba(51,65,85,.7);border-radius:0 12px 12px 0}
-
-      /* pills, alerts */
-      .op-pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.7);white-space:nowrap}
-      .op-pill.ok{color:#bbf7d0;background:rgba(22,101,52,.22)}.op-pill.warn{color:#fde68a;background:rgba(120,53,15,.22)}.op-pill.bad{color:#fecaca;background:rgba(127,29,29,.22)}.op-pill.muted{color:#cbd5e1;background:rgba(51,65,85,.32)}
-      .op-alert{border:1px solid rgba(251,191,36,.3);border-radius:16px;background:rgba(120,53,15,.14);color:#fde68a;padding:12px 14px;line-height:1.45;font-size:13px}
-      .op-alert strong{color:#fef3c7}
-      .op-alert.danger{border-color:rgba(239,68,68,.3);background:rgba(127,29,29,.14);color:#fecaca}
-      .op-alert.danger strong{color:#fee2e2}
-      .op-loading{opacity:.72;pointer-events:none}
-
-      /* mapa – marcadores custom */
-      .op-cluster-icon{border-radius:50%;background:rgba(22,101,52,.28);border:2px solid rgba(34,197,94,.55);display:flex;align-items:center;justify-content:center;color:#bbf7d0;font-weight:900;font-size:12px;box-shadow:0 0 12px rgba(34,197,94,.2)}
-      .op-colab-marker{display:flex;align-items:center;gap:4px;pointer-events:none}
-      .op-colab-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;box-shadow:0 0 6px currentColor}
-      .op-colab-label{background:rgba(2,6,23,.88);border:1px solid;border-radius:6px;padding:2px 6px;font-size:11px;font-weight:700;color:#f8fafc;white-space:nowrap}
-      .op-ponto-sel{display:flex;flex-direction:column;align-items:center;pointer-events:none;position:relative}
-      .op-ponto-sel-ring{position:absolute;top:-9px;left:-9px;width:34px;height:34px;border-radius:50%;border:2px solid rgba(34,197,94,.5);animation:op-pulse 1.8s ease-out infinite}
-      .op-ponto-sel-dot{width:16px;height:16px;border-radius:50%;background:#22c55e;border:3px solid #f0fdf4;box-shadow:0 0 14px rgba(34,197,94,.8);flex-shrink:0}
-      .op-ponto-sel-label{margin-top:7px;background:rgba(2,6,23,.92);border:1px solid rgba(34,197,94,.55);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#f8fafc;white-space:nowrap;text-align:center;line-height:1.35}
-      @keyframes op-pulse{0%{transform:scale(.8);opacity:.9}100%{transform:scale(2.4);opacity:0}}
-
-      /* leaflet tooltip override */
-      .leaflet-tooltip.op-tt{background:rgba(2,6,23,.9)!important;border:1px solid rgba(34,197,94,.35)!important;color:#f8fafc!important;border-radius:8px!important;font-size:11px!important;padding:3px 7px!important;font-weight:600!important;box-shadow:none!important;pointer-events:none}
-      .leaflet-tooltip.op-tt::before{border-top-color:rgba(2,6,23,.9)!important}
-      .leaflet-control-attribution{background:rgba(2,6,23,.65)!important;color:#6b7280!important;font-size:10px!important}
-      .leaflet-control-attribution a{color:#22c55e!important}
-
-      .op-direcionar-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(51,65,85,.35)}
-      .op-direcionar-row:last-child{border-bottom:none}
-      .op-kicker{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;border:1px solid rgba(74,222,128,.22);background:rgba(22,101,52,.18);font-size:11px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;color:#bbf7d0}
-
-      @media(max-width:1100px){.op-map-layout{grid-template-columns:1fr}.op-pontos-panel{border-left:none;border-top:1px solid rgba(51,65,85,.7);max-height:320px}.op-layout{grid-template-columns:1fr}.op-summary{grid-template-columns:repeat(2,1fr)}.op-filters{grid-template-columns:repeat(2,1fr)}}
-      @media(max-width:640px){.op-summary{grid-template-columns:1fr}#opMap{height:420px}.op-filters{flex-direction:column}}
+      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:14px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:16px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo p{color:#94a3b8;margin:6px 0 0;font-size:13px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:13px;background:#166534;color:#ecfdf5;font-weight:900;padding:9px 13px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:40px;border:1px solid rgba(148,163,184,.2);border-radius:13px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-filter{position:relative;z-index:2500;padding:0 16px 14px;display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-grid{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:14px;padding:0 16px 16px}.mo-map{height:650px;border:1px solid rgba(148,163,184,.14);border-radius:20px;background:#0d1117;z-index:1}.mo-side{display:flex;flex-direction:column;gap:12px}.mo-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-kpi{border:1px solid rgba(34,197,94,.18);border-radius:16px;padding:12px;background:rgba(2,6,23,.35)}.mo-kpi span{font-size:10px;color:#94a3b8;font-weight:900;text-transform:uppercase}.mo-kpi strong{display:block;color:#fff;font-size:21px;margin-top:5px}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alert{padding:10px 16px;color:#fde68a;background:rgba(120,53,15,.16);border-top:1px solid rgba(251,191,36,.18);font-size:12px}.mo-legend{position:relative;z-index:20;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:0 16px 12px;color:#94a3b8;font-size:12px}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .frota{background:#3b82f6;box-shadow:inset 0 0 0 3px #fff}.mk{position:relative;width:20px;height:20px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.25)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.frota{background:#3b82f6}.mk.frota:after{content:'';position:absolute;left:5px;top:5px;width:6px;height:6px;border-radius:50%;background:#fff}.mk.sel{box-shadow:0 0 0 4px rgba(250,204,21,.45)}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(3),.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5){text-align:right}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}@media(max-width:1100px){.mo-grid{grid-template-columns:1fr}.mo-map{height:520px}.mo-filter{grid-template-columns:1fr}}
     `;
     document.head.appendChild(s);
   }
 
-  function loadScript(src, id) {
-    return new Promise((resolve, reject) => {
-      if (document.getElementById(id)) return resolve();
-      const s = document.createElement('script');
-      s.id = id; s.src = src; s.async = true;
-      s.onload = resolve; s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
-
-  function loadCss(href, id) {
-    if (document.getElementById(id)) return;
-    const l = document.createElement('link');
-    l.id = id; l.rel = 'stylesheet'; l.href = href;
-    document.head.appendChild(l);
-  }
-
-  async function ensureLeaflet() {
+  async function leaflet() {
     if (window.L) return true;
-    try {
-      loadCss('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', leafletCssId);
-      await loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', leafletJsId);
-      return Boolean(window.L);
-    } catch (err) {
-      console.warn('[Operacional] Leaflet indisponível.', err);
-      return false;
-    }
+    try { addCss('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', LEAFLET_CSS); await scriptTag('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', LEAFLET_JS); return !!window.L; }
+    catch (err) { console.warn('[mapa-operacional] leaflet:', err?.message || err); return false; }
   }
+  function addCss(h, id) { if (document.getElementById(id)) return; const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = h; l.id = id; document.head.appendChild(l); }
+  function scriptTag(src, id) { return new Promise((res, rej) => { if (document.getElementById(id)) return res(); const s = document.createElement('script'); s.src = src; s.id = id; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
 
-  async function ensureCluster() {
-    if (window.L?.MarkerClusterGroup) return true;
-    try {
-      loadCss('https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css', clusterCssId);
-      loadCss('https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css', clusterDfCssId);
-      await loadScript('https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js', clusterJsId);
-      return Boolean(window.L?.MarkerClusterGroup);
-    } catch (err) {
-      console.warn('[Operacional] MarkerCluster indisponível.', err);
-      return false;
-    }
-  }
-
-  /* ─── dados ─── */
-
-  async function selectFrom(table, columns, orderColumn, limit = 2000) {
-    try {
-      let q = supabase.from(table).select(columns).limit(limit);
-      if (orderColumn) q = q.order(orderColumn, { ascending: true });
-      const { data, error } = await q;
-      if (error) throw error;
-      return Array.isArray(data) ? data : [];
-    } catch (err) {
-      console.warn(`[Operacional] Falha ao carregar ${table}:`, err?.message || err);
-      return [];
-    }
-  }
-
-  async function selectAll(table, orderColumn, limit = 3000) {
-    try {
-      let q = supabase.from(table).select('*').limit(limit);
-      if (orderColumn) q = q.order(orderColumn, { ascending: true });
-      const { data, error } = await q;
-      if (error) throw error;
-      return Array.isArray(data) ? data : [];
-    } catch (err) {
-      console.warn(`[Operacional] Falha ao carregar ${table}:`, err?.message || err);
-      return [];
-    }
-  }
-
-  function firstValue(row, fields) {
-    for (const f of fields) {
-      const v = row?.[f];
-      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
-    }
-    return null;
-  }
-
-  function parseLatLngFromMaps(value) {
-    const text = String(value || '');
-    if (!text) return { latitude: null, longitude: null };
-    const at = text.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
-    if (at) return { latitude: Number(at[1]), longitude: Number(at[2]) };
-    const q = text.match(/[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
-    if (q) return { latitude: Number(q[1]), longitude: Number(q[2]) };
-    const g = text.match(/(-?\d{1,2}\.\d{4,})[,\s]+(-?\d{1,3}\.\d{4,})/);
-    if (g) return { latitude: Number(g[1]), longitude: Number(g[2]) };
-    return { latitude: null, longitude: null };
-  }
-
-  function normalizeHotelRow(row, fonte = 'Hospedagem') {
-    const maps = parseLatLngFromMaps(firstValue(row, ['link_maps', 'maps', 'google_maps', 'url_maps']));
-    const latitude  = firstValue(row, ['latitude', 'lat']) ?? maps.latitude;
-    const longitude = firstValue(row, ['longitude', 'lng', 'lon']) ?? maps.longitude;
-    const status = String(firstValue(row, ['status', 'situacao']) || '').trim().toUpperCase();
-    const ativo  = row?.ativo !== false && !['INATIVO', 'INATIVA', 'CANCELADO', 'CANCELADA', 'BLOQUEADO', 'BLOQUEADA'].includes(status);
+  function kpis() {
+    const osSemSaldo = st.osTodas.filter(o => o.__saldo <= 0).length;
+    const custoTotalDia = st.rotas.reduce((acc, r) => acc + r.custoDia, 0);
+    const economiaPotencial = st.rotas.reduce((acc, r) => acc + r.economia, 0);
     return {
-      id: row?.id,
-      nome: firstValue(row, ['nome', 'hotel', 'nome_hotel', 'razao_social']) || 'Hotel sem nome',
-      cidade: firstValue(row, ['cidade', 'cidade_hotel']) || '',
-      uf: String(firstValue(row, ['uf', 'estado', 'uf_hotel']) || '').trim().toUpperCase(),
-      latitude, longitude,
-      diaria_individual: firstValue(row, ['valor_diaria_individual', 'diaria_individual', 'valor_individual', 'individual', 'valor_diaria_padrao', 'diaria_padrao']),
-      diaria_duplo:      firstValue(row, ['valor_diaria_duplo', 'diaria_duplo', 'valor_duplo', 'duplo']),
-      diaria_triplo:     firstValue(row, ['valor_diaria_triplo', 'diaria_triplo', 'valor_triplo', 'triplo']),
-      diaria_quadruplo:  firstValue(row, ['valor_diaria_quadruplo', 'diaria_quadruplo', 'valor_quadruplo', 'quadruplo']),
-      prioridade: firstValue(row, ['prioridade']) || 'NORMAL',
-      status: status || 'ATIVO',
-      ativo, fonte, raw: row,
+      os: st.os.length, osSemSaldo, pontos: st.pontos.length, rotas: st.rotas.length,
+      semColaborador: st.semAssociacao.length, repetidos: st.rotas.filter(r => r.repetido).length,
+      custoTotalDia, economiaPotencial, hospedar: st.rotas.filter(r => r.recomendacao === 'hospedar').length,
     };
   }
-
-  function dedupeHoteis(hoteis) {
-    const seen = new Set();
-    return hoteis.filter(h => {
-      const key = normalize(`${h.nome}|${h.cidade}|${h.uf}|${h.fonte}`);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+  function rows() { return { base: st.rotas.filter(r => passaFiltroPonto(r.ponto)), sem: st.semAssociacao.filter(r => passaFiltroPonto(r.ponto)) }; }
+  function badge(r) {
+    let html = r.origem === 'associado' ? '<span class="mo-pill ok">associado</span>' : '<span class="mo-pill info">sugerido</span>';
+    if (r.repetido) html += '<span class="mo-pill warn">repetido 5 km</span>';
+    if (r.recomendacao === 'hospedar') html += '<span class="mo-pill warn">hospedar compensa</span>';
+    return html;
   }
 
-  async function loadData() {
-    const [pontos, colaboradores, hoteisH, hoteisOp, passagens, auditorias] = await Promise.all([
-      selectFrom('operacional_pontos_embarque', 'id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo', 'nome_local', 3000),
-      selectFrom('operacional_colaborador_base', 'id,colaborador_id,nome,cpf,tipo_mao_obra,empresa,coordenacao,supervisao,cidade_base,uf_base,latitude,longitude,valor_diaria,valor_alimentacao,ativo', 'nome', 3000),
-      selectAll('hospedagem_hoteis', 'cidade', 3000),
-      selectAll('operacional_hoteis', 'nome', 2000),
-      selectFrom('operacional_passagens_cache', 'origem_cidade,origem_uf,destino_cidade,destino_uf,valor_estimado,data_cotacao,validade_ate', 'data_cotacao', 5000),
-      selectFrom('operacional_auditoria_colaborador', 'colaborador_id,nome_colaborador,nome_chave,score_impacto,severidade,data_evento,resultado,motivo_recusa,local_embarque,cidade_embarque,uf_destino,produto,desconto_kg,ativo', 'data_evento', 5000),
-    ]);
-
-    const foraColab  = colaboradores.filter(c => c.ativo !== false && Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude)) && !isInsideBrazil(c.latitude, c.longitude));
-    const foraPontos = pontos.filter(p => p.ativo !== false && Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude)) && !isInsideBrazil(p.latitude, p.longitude));
-    state.foraDoMapa = { colaboradores: foraColab, pontos: foraPontos };
-
-    state.pontos = pontos.filter(p => p.ativo !== false && isInsideBrazil(p.latitude, p.longitude));
-    state.colaboradores = colaboradores.filter(c => c.ativo !== false).map(c =>
-      isInsideBrazil(c.latitude, c.longitude) ? c : { ...c, latitude: null, longitude: null }
-    );
-    state.hoteis = dedupeHoteis([
-      ...hoteisH.map(h => normalizeHotelRow(h, 'Hospedagem')),
-      ...hoteisOp.map(h => normalizeHotelRow(h, 'Operacional')),
-    ]).filter(h => h.ativo && h.nome && h.cidade && h.uf);
-    state.passagens = passagens;
-    state.auditorias = auditorias.filter(a => a.ativo !== false);
-    state.loaded = true;
-  }
-
-  /* ─── getters e form ─── */
-
-  function selectedPonto() {
-    return state.pontos.find(p => String(p.id) === String(state.selectedPontoId)) || null;
-  }
-
-  function getForm(container) {
-    return {
-      pontoId: container.querySelector('#opPonto')?.value || state.selectedPontoId,
-      volume:  n(container.querySelector('#opVolume')?.value, 0),
-      dias:    Math.max(1, n(container.querySelector('#opDias')?.value, 1)),
-      qtd:     Math.max(1, n(container.querySelector('#opQtd')?.value, 1)),
-      tipo:    container.querySelector('#opTipo')?.value || 'todos',
-      busca:   normalize(container.querySelector('#opBusca')?.value || ''),
-    };
-  }
-
-  /* ─── cálculos ─── */
-
-  function hotelDiariaPorEquipe(hotel, qtd = 1) {
-    qtd = Math.max(1, n(qtd, 1));
-    const ind = n(hotel?.diaria_individual, 0), dup = n(hotel?.diaria_duplo, 0);
-    const tri = n(hotel?.diaria_triplo, 0),  qua = n(hotel?.diaria_quadruplo, 0);
-    const fb = ind || dup || tri || qua || 0;
-    if (qtd <= 1) return { diaria: ind || fb, tipo_quarto: 'individual', quartos: 1 };
-    if (qtd === 2) return { diaria: dup || ind || fb, tipo_quarto: 'duplo', quartos: 1 };
-    if (qtd === 3) return { diaria: tri || dup || ind || fb, tipo_quarto: 'triplo', quartos: 1 };
-    const quartos = Math.ceil(qtd / 4);
-    return { diaria: (qua || tri || dup || ind || fb) * quartos, tipo_quarto: 'quádruplo', quartos };
-  }
-
-  function hotelMaisProximo(ponto, qtdEquipe = 1) {
-    if (!ponto) return null;
-    const enrich = h => {
-      const distancia = distanciaKm(h.latitude, h.longitude, ponto.latitude, ponto.longitude);
-      const di = hotelDiariaPorEquipe(h, qtdEquipe);
-      return { ...h, distancia, diaria: di.diaria, tipo_quarto: di.tipo_quarto, quartos: di.quartos };
-    };
-    const daCidade = state.hoteis
-      .filter(h => normalize(h.cidade) === normalize(ponto.cidade) && normalize(h.uf) === normalize(ponto.uf))
-      .map(enrich)
-      .sort((a, b) => (normalize(a.prioridade).includes('ALTA') ? 0 : 1) - (normalize(b.prioridade).includes('ALTA') ? 0 : 1) || n(a.diaria, 9e6) - n(b.diaria, 9e6) || n(a.distancia, 9e6) - n(b.distancia, 9e6));
-    if (daCidade[0]) return daCidade[0];
-    return state.hoteis.map(enrich).filter(h => Number.isFinite(Number(h.distancia))).sort((a, b) => n(a.distancia, 9e6) - n(b.distancia, 9e6) || n(a.diaria, 9e6) - n(b.diaria, 9e6))[0] || null;
-  }
-
-  function passagemPara(colab, ponto) {
-    const match = state.passagens
-      .filter(p => normalize(p.origem_cidade) === normalize(colab.cidade_base)
-        && normalize(p.origem_uf) === normalize(colab.uf_base)
-        && normalize(p.destino_cidade) === normalize(ponto.cidade)
-        && normalize(p.destino_uf) === normalize(ponto.uf))
-      .sort((a, b) => String(b.data_cotacao || '').localeCompare(String(a.data_cotacao || '')))[0];
-    if (match) return n(match.valor_estimado, 0);
-    const d = distanciaKm(colab.latitude, colab.longitude, ponto.latitude, ponto.longitude);
-    if (d == null) return 0;
-    if (d <= 55) return 0;
-    return Math.round((45 + d * 0.42) * 100) / 100;
-  }
-
-  function auditoriaResumo(colab) {
-    const nomeChave = normalize(`${colab.nome_chave || colab.nome || ''}`);
-    const items = state.auditorias.filter(a => {
-      const sameId  = colab.colaborador_id && a.colaborador_id && String(a.colaborador_id) === String(colab.colaborador_id);
-      const sameKey = a.nome_chave && nomeChave && normalize(a.nome_chave) === nomeChave;
-      const sameName = normalize(a.nome_colaborador) === normalize(colab.nome);
-      return sameId || sameKey || sameName;
-    });
-    const impacto   = items.reduce((s, a) => s + n(a.score_impacto, 0), 0);
-    const descontos = items.filter(a => normalize(a.resultado || '').includes('DESCONTO') || n(a.desconto_kg, 0) > 0).length;
-    const altas     = items.filter(a => normalize(a.severidade || '').includes('ALTA')).length;
-    const ultima    = items.slice().sort((a, b) => String(b.data_evento || '').localeCompare(String(a.data_evento || '')))[0] || null;
-    return {
-      score: Math.max(0, Math.min(100, 100 - impacto)),
-      total: items.length, descontos, altas,
-      ultima_data: ultima?.data_evento || null,
-      ultima_resultado: ultima?.resultado || null,
-      ultima_motivo: ultima?.motivo_recusa || null,
-      impacto,
-    };
-  }
-
-  function scoreClass(score) {
-    return score >= 80 ? 'ok' : score >= 62 ? 'warn' : 'bad';
-  }
-
-  function calcRanking(container) {
-    const form = getForm(container);
-    state.selectedPontoId = form.pontoId;
-    const ponto = selectedPonto();
-    if (!ponto) { state.ranking = []; return []; }
-
-    const hotel = hotelMaisProximo(ponto, form.qtd);
-    const assignedElsewhere = getAssignedElsewhere(form.pontoId);
-    const osElsewhereCount  = countOsElsewhere(form.pontoId);
-
-    const rows = state.colaboradores.filter(c => {
-      if (!c.nome) return false;
-      if (assignedElsewhere.has(String(c.id))) return false;
-      if (form.tipo !== 'todos' && normalize(c.tipo_mao_obra) !== normalize(form.tipo)) return false;
-      if (form.busca) {
-        const blob = normalize(`${c.nome} ${c.cidade_base} ${c.uf_base} ${c.supervisao} ${c.coordenacao}`);
-        if (!blob.includes(form.busca)) return false;
-      }
-      return true;
-    }).map(c => {
-      const distancia = distanciaKm(c.latitude, c.longitude, ponto.latitude, ponto.longitude);
-      const semCoordenada = distancia == null;
-      const passagem  = passagemPara(c, ponto);
-      const tipo      = normalize(c.tipo_mao_obra).includes('DIAR') ? 'Diarista' : 'Efetivo';
-      const alimentacao = n(c.valor_alimentacao, 30) * form.dias;
-      const maoObra   = tipo === 'Diarista' ? n(c.valor_diaria, 0) * form.dias : 0;
-      const precisaHotel = distancia == null ? true : distancia > 80;
-      const valorHotel   = precisaHotel ? n(hotel?.diaria, 0) * form.dias : 0;
-      const custoTotal   = passagem + valorHotel + maoObra + alimentacao;
-      const audit     = auditoriaResumo(c);
-      const distanciaScore = distancia == null ? 35 : Math.max(0, 100 - (distancia / 8));
-      const custoScore     = Math.max(0, 100 - (custoTotal / 12));
-      const volumePeso     = form.volume >= 600 ? 0.32 : 0.24;
-      const auditoriaPeso  = form.volume >= 600 ? 0.36 : 0.28;
-      const osElsewhere = osElsewhereCount[String(c.id)] || 0;
-      const score = Math.round(
-        (audit.score * auditoriaPeso) + (distanciaScore * 0.22) + (custoScore * 0.30)
-        + ((tipo === 'Efetivo' ? 88 : 72) * volumePeso * 0.35)
-      );
-      return {
-        ...c,
-        tipo_calculado: tipo, ponto, distancia, semCoordenada,
-        indicado: isIndicadoNoPonto(form.pontoId, c.id),
-        hotel_nome: hotel ? `${hotel.nome} · ${hotel.cidade}/${hotel.uf}` : 'Sem hotel cadastrado',
-        hotel_distancia: hotel?.distancia ?? null, hotel_fonte: hotel?.fonte || null,
-        hotel_tipo_quarto: hotel?.tipo_quarto || null, hotel_quartos: hotel?.quartos || 0,
-        valor_hotel: valorHotel, valor_passagem: passagem, valor_mao_obra: maoObra,
-        valor_alimentacao: alimentacao, custo_total: custoTotal,
-        score_auditoria: audit.score, auditoria_total: audit.total,
-        auditoria_descontos: audit.descontos, auditoria_altas: audit.altas,
-        auditoria_ultima_data: audit.ultima_data, auditoria_ultima_resultado: audit.ultima_resultado,
-        auditoria_ultima_motivo: audit.ultima_motivo,
-        osElsewhere,
-        score_final: Math.max(0, Math.min(100, score - osElsewhere * 6)),
-        status: semCoordenada ? 'Falta coordenada' : (score >= 80 ? 'Recomendado' : score >= 62 ? 'Analisar' : 'Alto custo'),
-      };
-    }).sort((a, b) => b.score_final - a.score_final || a.custo_total - b.custo_total);
-
-    state.ranking = rows;
-    return rows;
-  }
-
-  /* ─── render helpers ─── */
-
-  function renderOptions() {
-    const opts = state.pontos.map(p => `
-      <option value="${safeText(p.id)}" ${String(p.id) === String(state.selectedPontoId) ? 'selected' : ''}>
-        ${safeText(p.nome_local)} · ${safeText(p.cidade)}/${safeText(p.uf)}
-      </option>`).join('');
-    return `<option value="">— Selecione um ponto —</option>${opts}`;
-  }
-
-  function renderMetrics(rows) {
-    const ponto = selectedPonto();
-    const best  = rows[0];
-    const totalIndicados = Object.values(state.indicacoes).reduce((s, arr) => s + arr.length, 0);
-    const saturados = Object.values(totalOsCount()).filter(c => c >= 2).length;
+  function html() {
+    const k = kpis(), { base, sem } = rows(), estados = estadosDisponiveis(), pontosFiltrados = st.pontos.filter(p => !st.estado || p.uf === st.estado);
+    const alertaSem = sem.length ? `<div class="mo-alert">${sem.length} OS com saldo remanescente ainda sem colaborador disponível respeitando local/5 km.</div>` : '';
+    const rotaInfo = st.mostrarRota ? `Ligado · desenhando ${base.length} rota(s) visíveis` : 'Desligada';
     return `
-      <section class="op-summary">
-        <div class="op-metric"><span>Ponto</span><strong>${ponto ? safeText(`${ponto.cidade}/${ponto.uf}`) : '—'}</strong></div>
-        <div class="op-metric"><span>No ranking</span><strong>${rows.length}</strong></div>
-        <div class="op-metric"><span>Melhor indicação</span><strong style="font-size:15px">${best ? safeText(shortName(best.nome)) : '—'}</strong></div>
-        <div class="op-metric"><span>Direcionados</span><strong>${totalIndicados}${saturados ? `<small style="font-size:12px;color:#fde68a;display:block">${saturados} no limite</small>` : ''}</strong></div>
-      </section>`;
+      <div class="mo"><section class="mo-card"><div class="mo-head"><div><h2>Mapa operacional</h2><p>Custo-benefício por OS: compara frota/carona (grátis), veículo próprio, Uber/táxi e hospedagem próxima. Ordenado por custo estimado do dia.</p></div><div class="mo-actions"><button class="mo-btn ${st.mostrarRota ? '' : 'off'}" data-toggle-rota>${st.mostrarRota ? 'Desligar rota' : 'Ligar rota'}</button><button class="mo-btn" data-reload>Atualizar</button></div></div>${alertaSem}
+        <div class="mo-filter"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select><select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
+        <div class="mo-legend"><span><i class="azul"></i>Colaborador</span><span><i class="frota"></i>Motorista/frota</span><span><i class="verde"></i>OS com saldo</span><span><i class="vermelho"></i>OS sem saldo</span><span data-rota-status>Rotas: ${rotaInfo}</span></div>
+        <div class="mo-grid"><div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div><aside class="mo-side"><div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>Custo estimado/dia</span><strong>${fmtRs(k.custoTotalDia)}</strong></div><div class="mo-kpi"><span>Economia c/ hospedagem</span><strong>${fmtRs(k.economiaPotencial)}</strong></div><div class="mo-kpi"><span>Associadas/sugeridas</span><strong>${k.rotas}</strong></div><div class="mo-kpi"><span>Recomendam hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Pontos</span><strong>${k.pontos}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div><section class="mo-card"><div class="mo-list">${base.length ? base.map(r => `<div class="mo-row ${st.rota === r.id ? 'active' : ''}" data-rota="${esc(r.id)}"><strong>${esc(short(r.colab.nome))} · ${esc(r.os.cliente || 'OS')}</strong><small>${esc(r.modoLabel)} · ${fmtKm(r.dist)} · custo/dia ${fmtRs(r.custoDia)} · saldo OS ${fmtKg(r.os.__saldo)}</small>${badge(r)}</div>`).join('') : ''}${sem.map(r => `<div class="mo-row sem"><strong>${r.ponto.temCoord ? 'Sem colaborador' : 'Sem coordenada do ponto'} · ${esc(r.os.cliente || 'OS')}</strong><small>OS ${esc(r.os.numero_os || r.os.id)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)} · saldo ${fmtKg(r.os.__saldo)} · ${esc(r.motivo)}</small><span class="mo-pill bad">pendente</span></div>`).join('')}${!base.length && !sem.length ? '<div class="mo-load">Nenhuma OS com saldo remanescente encontrada para o filtro.</div>' : ''}</div></section><section class="mo-card">${detail()}</section></aside></div></section>${colabsHtml()}</div>`;
   }
 
-  function renderRanking(rows) {
-    if (!rows.length) return '<div class="op-alert"><strong>Nenhum colaborador encontrado.</strong><br>Cadastre a base operacional para gerar o ranking.</div>';
-    const pontoId = state.selectedPontoId;
-    return rows.slice(0, 10).map((row, i) => {
-      const ind = isIndicadoNoPonto(pontoId, row.id);
-      return `
-        <div class="op-rank${ind ? ' indicado' : ''}">
-          <div class="op-rank-pos">${i + 1}</div>
-          <div>
-            <strong>${safeText(row.nome)}</strong>
-            <span>${safeText(row.tipo_calculado)} · ${row.distancia == null ? 'sem km' : row.distancia + ' km'} · ${money(row.custo_total)} · Aud: ${Math.round(row.score_auditoria)}%${row.osElsewhere > 0 ? ` · <span class="op-pill warn" style="font-size:10px;padding:2px 6px">Em ${row.osElsewhere} OS</span>` : ''}</span>
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
-            <div class="op-score"><strong>${row.score_final}</strong><span>score</span></div>
-            <button class="op-btn${ind ? '' : ' secondary'}" style="padding:4px 10px;min-height:unset;font-size:11px"
-                    data-toggle-indicacao="${safeText(row.id)}" data-indicado="${ind}">
-              ${ind ? '✓ Indicado' : 'Indicar'}
-            </button>
-          </div>
-        </div>`;
-    }).join('');
+  function detail() {
+    const r = st.rotas.find(x => x.id === st.rota) || rows().base[0];
+    if (!r) return '<div class="mo-load">Selecione uma rota.</div>';
+    st.rota = r.id;
+    const hospInfo = r.hospedagem ? `${esc(r.hospedagem.nome)} · ${fmtRs(r.hospedagem.custoDia)}/dia${r.hospedagem.distKm != null ? ` · ${fmtKm(r.hospedagem.distKm)} do ponto` : ''}` : 'Nenhuma opção próxima conhecida';
+    return `<div class="mo-detail"><div class="mo-mini"><span>Colaborador</span><strong>${esc(r.colab.nome)}</strong></div><div class="mo-mini"><span>Ponto/OS</span><strong>${esc(r.ponto.nome_local)} · ${esc(r.ponto.cidade)}/${esc(r.ponto.uf)}</strong></div><div class="mo-mini"><span>Modo de deslocamento</span><strong>${esc(r.modoLabel)}${r.modoEstimado ? ' (estimado)' : ''}</strong></div><div class="mo-mini"><span>Custo deslocamento/dia</span><strong>${fmtRs(r.custoDeslocamento)}</strong></div><div class="mo-mini"><span>Hospedagem próxima</span><strong>${hospInfo}</strong></div><div class="mo-mini"><span>Recomendação</span><strong>${r.recomendacao === 'hospedar' ? `Hospedar — economiza ${fmtRs(r.economia)}/dia` : 'Deslocar no dia'}</strong></div><div class="mo-mini"><span>Saldo da OS</span><strong>${fmtKg(r.os.__saldo)}</strong></div><div class="mo-mini"><span>Saldo acumulado colab.</span><strong>${fmtKg(r.saldoDepois)}</strong></div></div>`;
   }
 
-  function renderTable(rows) {
-    if (!rows.length) return '';
-    const pontoId = state.selectedPontoId;
-    return `
-      <article class="op-card">
-        <div class="op-card-head"><div><h3>Relação de custo-benefício</h3><p>Ranking completo para o ponto selecionado.</p></div></div>
-        <div class="op-table-wrap">
-          <table class="op-table">
-            <thead><tr>
-              <th>#</th><th>Colaborador</th><th>OS</th><th>Tipo</th><th>Base</th><th>Distância</th><th>Hotel sugerido</th><th>Fonte</th><th>Passagem</th><th>Hotel</th><th>Mão de obra</th><th>Alimentação</th><th>Total</th><th>Auditoria</th><th>Score</th><th>Status</th><th>Direcionamento</th>
-            </tr></thead>
-            <tbody>
-              ${rows.map((row, i) => {
-                const cls = row.semCoordenada ? 'muted' : scoreClass(row.score_final);
-                const ind = isIndicadoNoPonto(pontoId, row.id);
-                return `<tr>
-                  <td>${i + 1}</td><td>${safeText(row.nome)}</td><td>${row.osElsewhere > 0 ? `<span class="op-pill warn">${row.osElsewhere}/2</span>` : '<span class="op-pill ok">livre</span>'}</td><td>${safeText(row.tipo_calculado)}</td>
-                  <td>${safeText(`${row.cidade_base || '-'}${row.uf_base ? '/' + row.uf_base : ''}`)}</td>
-                  <td>${row.distancia == null ? '-' : row.distancia + ' km'}</td>
-                  <td>${safeText(row.hotel_nome)}${row.hotel_tipo_quarto ? `<br><small>${safeText(row.hotel_tipo_quarto)}</small>` : ''}</td>
-                  <td>${row.hotel_fonte ? `<span class="op-pill ok">${safeText(row.hotel_fonte)}</span>` : `<span class="op-pill muted">—</span>`}</td>
-                  <td>${money(row.valor_passagem)}</td><td>${money(row.valor_hotel)}</td>
-                  <td>${money(row.valor_mao_obra)}</td><td>${money(row.valor_alimentacao)}</td><td>${money(row.custo_total)}</td>
-                  <td>${Math.round(row.score_auditoria)}%</td>
-                  <td><span class="op-pill ${cls}">${row.score_final}</span></td>
-                  <td><span class="op-pill ${cls}">${safeText(row.status)}</span></td>
-                  <td>
-                    <button class="op-btn${ind ? '' : ' secondary'}" style="padding:4px 10px;min-height:unset;font-size:11px"
-                            data-toggle-indicacao="${safeText(row.id)}" data-indicado="${ind}">
-                      ${ind ? '✓ Indicado' : 'Indicar'}
-                    </button>
-                  </td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      </article>`;
-  }
-
-  function renderDirecionamentoPanel() {
-    const entries = Object.entries(state.indicacoes)
-      .map(([pId, ids]) => ({ ponto: state.pontos.find(p => String(p.id) === String(pId)), colabIds: ids }))
-      .filter(({ ponto, colabIds }) => ponto && colabIds.length);
-    if (!entries.length) return '';
-
-    const items = entries.map(({ ponto, colabIds }) => {
-      const colabs = colabIds.map(cId => state.colaboradores.find(c => String(c.id) === String(cId))).filter(Boolean);
-      if (!colabs.length) return '';
-      const allCounts = totalOsCount();
-      const colabRows = colabs.map(c => {
-        const totOs = allCounts[String(c.id)] || 0;
-        return `
-              <div class="op-direcionar-row">
-                <span style="color:#f8fafc;font-size:13px">${safeText(c.nome)}${totOs > 1 ? ` <span class="op-pill warn" style="font-size:10px;padding:2px 5px">${totOs}/2 OS</span>` : ''}</span>
-                <button class="op-btn secondary" style="padding:3px 10px;min-height:unset;font-size:11px"
-                        data-remover-indicacao="${safeText(ponto.id)}" data-remover-colab="${safeText(c.id)}">
-                  Remover
-                </button>
-              </div>`;
-      }).join('');
-      return `
-        <div class="op-rank" style="flex-direction:column;gap:8px;cursor:default">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-            <div>
-              <strong>${safeText(ponto.nome_local)}</strong>
-              <span>${safeText(ponto.cidade)}/${safeText(ponto.uf)} · ${safeText(ponto.supervisao || '')}</span>
-            </div>
-            <span class="op-pill ok">${colabs.length} indicado${colabs.length > 1 ? 's' : ''}</span>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:4px">
-            ${colabRows}
-          </div>
-        </div>`;
-    }).filter(Boolean);
-    if (!items.length) return '';
-
-    return `
-      <article class="op-card">
-        <div class="op-card-head">
-          <div><h3>Mapa de direcionamento</h3><p>Colaboradores indicados por ponto. Indicados em outro ponto são ocultados dos demais rankings.</p></div>
-          <button class="op-btn secondary" id="opLimparIndicacoes" type="button" style="white-space:nowrap;flex-shrink:0">Limpar tudo</button>
-        </div>
-        <div class="op-list" style="max-height:none">${items.join('')}</div>
-      </article>`;
-  }
-
-  function renderOutOfBrazilWarning() {
-    const { colaboradores: fC, pontos: fP } = state.foraDoMapa;
-    const total = fC.length + fP.length;
-    if (!total) return '';
-    const partes = [
-      fC.length ? `${fC.length} colaborador(es) (ex.: ${fC.slice(0, 2).map(c => safeText(c.nome)).join(', ')}${fC.length > 2 ? '...' : ''})` : '',
-      fP.length ? `${fP.length} ponto(s) de embarque` : '',
-    ].filter(Boolean).join(' e ');
-    return `
-      <div class="op-alert danger">
-        <strong>Coordenadas fora do Brasil</strong> — ${partes}. Foram desconsiderados no mapa e no ranking.
-        <button class="op-btn" id="opLimparCoords" type="button" style="margin-top:10px;font-size:12px;padding:7px 12px">
-          Limpar coordenadas inválidas no banco
-        </button>
-      </div>`;
-  }
-
-  function renderPontosListForMap(pontos) {
-    if (!pontos.length) return '<div class="op-pontos-empty">Nenhum ponto no enquadramento.<br>Explore o mapa com zoom out.</div>';
-    return pontos.map(p => {
-      const qtdInd   = (state.indicacoes[String(p.id)] || []).length;
-      const isActive = String(p.id) === String(state.selectedPontoId);
-      return `
-        <div class="op-point${isActive ? ' active' : ''}" data-ponto-id="${safeText(p.id)}">
-          <strong>${safeText(p.nome_local)}${qtdInd ? ` <span class="op-pill ok" style="font-size:10px;padding:2px 6px">${qtdInd} dir.</span>` : ''}</strong>
-          <span>${safeText(p.tipo_local || 'Ponto')} · ${safeText(p.cidade)}/${safeText(p.uf)}</span>
-        </div>`;
-    }).join('');
-  }
-
-  /* ─── mapa ─── */
-
-  async function limparCoordenadasForaDoBrasil(container) {
-    const { colaboradores: fC, pontos: fP } = state.foraDoMapa;
-    if (!fC.length && !fP.length) return;
-    const btn = container.querySelector('#opLimparCoords');
-    if (btn) { btn.disabled = true; btn.textContent = 'Limpando...'; }
-    try {
-      const ops = [];
-      if (fC.length) ops.push(supabase.from('operacional_colaborador_base').update({ latitude: null, longitude: null }).in('id', fC.map(c => c.id)));
-      if (fP.length) ops.push(supabase.from('operacional_pontos_embarque').update({ latitude: null, longitude: null }).in('id', fP.map(p => p.id)));
-      const results = await Promise.all(ops);
-      const err = results.find(r => r.error);
-      if (err) throw err.error;
-      state.foraDoMapa = { colaboradores: [], pontos: [] };
-      container.classList.add('op-loading');
-      await loadData();
-      container.classList.remove('op-loading');
-      renderShell(container);
-    } catch (err) {
-      console.error('[Operacional] Erro ao limpar coordenadas:', err);
-      if (btn) { btn.disabled = false; btn.textContent = 'Limpar coordenadas inválidas no banco'; }
+  function colabsHtml() {
+    const porColab = new Map();
+    for (const r of st.rotas) {
+      const key = norm(r.colab.nome);
+      const atual = porColab.get(key) || { nome: r.colab.nome, modo: r.modoLabel, os: 0, saldo: 0, custo: 0 };
+      atual.os += 1; atual.saldo += r.os.__saldo; atual.custo += r.custoDia;
+      porColab.set(key, atual);
     }
+    const lista = [...porColab.values()].sort((a, b) => b.custo - a.custo);
+    const body = lista.length
+      ? `<table class="mo-colabs-table"><thead><tr><th>Colaborador</th><th>Modo</th><th>OS</th><th>Saldo</th><th>Custo/dia</th></tr></thead><tbody>${lista.map(c => `<tr><td>${esc(c.nome)}</td><td>${esc(c.modo)}</td><td>${c.os}</td><td>${fmtKg(c.saldo)}</td><td>${fmtRs(c.custo)}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="mo-load">Nenhum colaborador associado para o filtro atual.</div>';
+    return `<section class="mo-colabs-card"><div class="mo-colabs-head"><strong>Colaboradores no mapa</strong><span>${lista.length} colaborador(es)</span></div>${body}</section>`;
   }
 
-  function updatePontosListFromBounds(map, container) {
-    const bounds  = map.getBounds();
-    const visible = state.pontos.filter(p => bounds.contains([Number(p.latitude), Number(p.longitude)]));
-    const listEl  = container.querySelector('#opPontosListMap');
-    const countEl = container.querySelector('#opPontosCount');
-    if (countEl) countEl.textContent = `${visible.length} de ${state.pontos.length}`;
-    if (!listEl) return;
-    listEl.innerHTML = renderPontosListForMap(visible);
-    listEl.querySelectorAll('[data-ponto-id]').forEach(el => {
-      el.addEventListener('click', () => {
-        const ponto = state.pontos.find(p => String(p.id) === el.getAttribute('data-ponto-id'));
-        if (ponto) onPontoClick(ponto, container, map, true);
-      });
-    });
+  function bind(root) {
+    root.querySelector('[data-estado]')?.addEventListener('change', e => { st.estado = e.target.value; st.ponto = ''; st.rota = ''; render(root); });
+    root.querySelector('[data-ponto]')?.addEventListener('change', e => { st.ponto = e.target.value; st.rota = ''; render(root); });
+    root.querySelector('[data-toggle-rota]')?.addEventListener('click', () => { st.mostrarRota = !st.mostrarRota; render(root); });
+    root.querySelector('[data-reload]')?.addEventListener('click', () => openHome(root));
+    root.querySelectorAll('[data-rota]').forEach(el => { el.onclick = () => { st.rota = el.dataset.rota; render(root); }; });
   }
 
-  function showColabsOnMap(ponto, rows, map) {
-    state.colabLayer?.clearLayers();
-    state.selectedLayer?.clearLayers();
+  async function map(root) {
+    const el = root.querySelector('#moMap');
+    if (!el) return;
+    const ok = await leaflet();
+    if (!ok) { el.innerHTML = '<div class="mo-load">Não foi possível carregar o mapa.</div>'; return; }
+    if (st.map) { try { st.map.remove(); } catch {} }
     const L = window.L;
-    const pontoLL = [Number(ponto.latitude), Number(ponto.longitude)];
+    st.map = L.map(el, { center: [-14.235, -51.925], zoom: 4 });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; OSM' }).addTo(st.map);
+    st.layer = L.layerGroup().addTo(st.map);
+    st.routeLayer = L.layerGroup().addTo(st.map);
+    await draw(root);
+    setTimeout(() => st.map?.invalidateSize(), 80);
+  }
+  function icon(t, selected = false) { return window.L.divIcon({ className: '', html: `<div class="mk ${t} ${selected ? 'sel' : ''}"></div>`, iconSize: [20, 20], iconAnchor: [10, 10] }); }
+  function osPorPonto(ponto) { return st.osTodas.filter(o => o.__pontoKey === ponto.__key); }
 
-    // Pulsing marker para o ponto selecionado
-    const pontoIcon = L.divIcon({
-      html: `<div class="op-ponto-sel">
-        <div class="op-ponto-sel-ring"></div>
-        <div class="op-ponto-sel-dot"></div>
-        <div class="op-ponto-sel-label">${safeText(ponto.nome_local)}<br><small style="opacity:.75">${safeText(ponto.cidade)}/${safeText(ponto.uf)}</small></div>
-      </div>`,
-      className: '',
-      iconAnchor: [8, 8],
-    });
-    L.marker(pontoLL, { icon: pontoIcon, zIndexOffset: 1000 }).addTo(state.selectedLayer);
+  async function draw(root) {
+    if (!st.map || !window.L || !st.layer) return;
+    const L = window.L, b = [];
+    const token = ++st.drawToken;
+    st.layer.clearLayers();
+    st.routeLayer?.clearLayers();
+    const { base } = rows();
+    const r = st.rotas.find(x => x.id === st.rota) || base[0];
+    const pontosVisiveis = st.pontos.filter(p => passaFiltroPonto(p) && p.temCoord);
 
-    // Top 5 colaboradores com coordenadas
-    const top5 = rows.filter(r => Number.isFinite(Number(r.latitude)) && Number.isFinite(Number(r.longitude))).slice(0, 5);
-    const bounds = [pontoLL];
-
-    top5.forEach((row, i) => {
-      const latlng = [Number(row.latitude), Number(row.longitude)];
-      const color  = COLAB_COLORS[i];
-      bounds.push(latlng);
-
-
-      // Marcador com nome
-      const icon = L.divIcon({
-        html: `<div class="op-colab-marker">
-          <div class="op-colab-dot" style="background:${color};box-shadow:0 0 8px ${color}"></div>
-          <div class="op-colab-label" style="border-color:${color}60">${i + 1}. ${safeText(shortName(row.nome))}</div>
-        </div>`,
-        className: '',
-        iconAnchor: [0, 8],
-      });
-      L.marker(latlng, { icon })
-        .bindPopup(`<strong>${safeText(row.nome)}</strong><br>${safeText(row.tipo_calculado)} · ${row.distancia ?? '-'} km<br>Score: ${row.score_final} · ${money(row.custo_total)}<br>Aud: ${Math.round(row.score_auditoria)}%`)
-        .addTo(state.colabLayer);
+    pontosVisiveis.forEach(p => {
+      const oss = osPorPonto(p), semSaldo = oss.length && oss.every(o => o.__saldo <= 0);
+      L.marker([p.lat, p.lng], { icon: icon(semSaldo ? 'os-zero' : 'os-ok', r?.ponto?.__key === p.__key) }).bindTooltip(`${semSaldo ? 'OS sem saldo' : 'OS com saldo'} · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${oss.length} OS`).addTo(st.layer);
+      b.push([p.lat, p.lng]);
     });
 
-    if (bounds.length > 1) {
-      map.fitBounds(L.latLngBounds(bounds).pad(0.25), { maxZoom: 10, animate: true });
-    } else {
-      map.flyTo(pontoLL, 10, { animate: true, duration: 0.8 });
-    }
+    const usados = new Map();
+    base.forEach(x => { if (geo(x.colab) && !usados.has(x.colab.id)) usados.set(x.colab.id, x.colab); });
+    usados.forEach(c => { L.marker([lat(c), lng(c)], { icon: icon(norm(c.nome) === norm(r?.colab?.nome) ? 'frota' : 'colab', norm(c.nome) === norm(r?.colab?.nome)) }).bindTooltip(`Colaborador: ${esc(c.nome)}`).addTo(st.layer); b.push([lat(c), lng(c)]); });
+
+    if (st.mostrarRota) drawAllRoutes(root, base, token, b);
+    if (b.length) st.map.fitBounds(b, { padding: [34, 34], maxZoom: st.estado || st.ponto ? 9 : 10 });
   }
 
-  function onPontoClick(ponto, container, map, flyTo = true) {
-    state.selectedPontoId = String(ponto.id);
+  function drawFallbackRoute(L, route, selected) {
+    const c = [lat(route.colab), lng(route.colab)], p = [route.ponto.lat, route.ponto.lng];
+    return L.polyline([c, p], { color: selected ? '#facc15' : '#60a5fa', weight: selected ? 4 : 1.5, opacity: selected ? .9 : .18, dashArray: '5 8' }).addTo(st.routeLayer);
+  }
 
-    // Atualiza select
-    const sel = container.querySelector('#opPonto');
-    if (sel) sel.value = state.selectedPontoId;
-
-    // Calcula ranking e mostra colaboradores no mapa
-    const rows = calcRanking(container);
-    if (flyTo) showColabsOnMap(ponto, rows, map);
-
-    // Exibe seção de ranking
-    const section = container.querySelector('#opRankingSection');
-    if (section) section.style.display = '';
-
-    // Atualiza painéis
-    const metricsEl = container.querySelector('#opMetrics');
-    if (metricsEl) metricsEl.innerHTML = renderMetrics(rows);
-    const rankingEl = container.querySelector('#opRanking');
-    if (rankingEl) rankingEl.innerHTML = renderRanking(rows);
-    const tableEl = container.querySelector('#opTable');
-    if (tableEl) tableEl.innerHTML = renderTable(rows);
-    const dirEl = container.querySelector('#opDirecionamentoPlaceholder');
-    if (dirEl) dirEl.innerHTML = renderDirecionamentoPanel();
-
-    // Destaca ponto na lista lateral
-    container.querySelectorAll('#opPontosListMap [data-ponto-id]').forEach(el => {
-      el.classList.toggle('active', el.getAttribute('data-ponto-id') === String(ponto.id));
+  async function drawAllRoutes(root, base, token, bounds) {
+    if (!st.map || !window.L || !st.routeLayer) return;
+    const L = window.L;
+    const selecionada = st.rotas.find(x => x.id === st.rota) || base[0];
+    const validas = base.filter(r => geo(r.colab) && r.ponto.temCoord);
+    validas.forEach(r => {
+      drawFallbackRoute(L, r, r.id === selecionada?.id);
+      bounds.push([lat(r.colab), lng(r.colab)], [r.ponto.lat, r.ponto.lng]);
     });
 
-    bindIndicacaoClicks(container);
-  }
-
-  async function initMap(container) {
-    const mapEl = container.querySelector('#opMap');
-    if (!mapEl) return;
-
-    const leafletOk = await ensureLeaflet();
-    if (!leafletOk) {
-      mapEl.innerHTML = '<div class="op-map-empty"><div><strong>Mapa indisponível</strong><br><span>Não foi possível carregar a biblioteca de mapas.</span></div></div>';
-      return;
-    }
-    await ensureCluster();
-
-    if (state.map) { state.map.remove(); state.map = null; }
-    mapEl.innerHTML = '';
-
-    const L   = window.L;
-    const map = L.map(mapEl, { zoomControl: true, scrollWheelZoom: true, center: [-14.235, -51.925], zoom: 4 });
-
-    // Dark tile - CartoDB Dark Matter
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
-    }).addTo(map);
-
-    // Layers auxiliares
-    state.colabLayer    = L.layerGroup().addTo(map);
-    state.selectedLayer = L.layerGroup().addTo(map);
-
-    // MarkerCluster para os pontos de embarque
-    const useCluster = Boolean(L.MarkerClusterGroup);
-    if (useCluster) {
-      state.clusterGroup = L.markerClusterGroup({
-        maxClusterRadius: 55,
-        disableClusteringAtZoom: 11,
-        spiderfyOnMaxZoom: false,
-        showCoverageOnHover: false,
-        zoomToBoundsOnClick: true,
-        iconCreateFunction: c => {
-          const count = c.getChildCount();
-          const size  = count < 10 ? 36 : count < 50 ? 44 : 52;
-          return L.divIcon({
-            html: `<div class="op-cluster-icon" style="width:${size}px;height:${size}px">${count}</div>`,
-            className: '',
-            iconSize: [size, size],
-            iconAnchor: [size / 2, size / 2],
-          });
-        },
-      });
-    }
-
-    state.pontos.forEach(ponto => {
-      const lat = Number(ponto.latitude), lng = Number(ponto.longitude);
-      const marker = L.circleMarker([lat, lng], {
-        radius: 7, color: '#22c55e', fillColor: '#16a34a', fillOpacity: 0.8, weight: 2,
-      });
-      marker.bindTooltip(safeText(ponto.nome_local), { direction: 'top', className: 'op-tt' });
-      marker.on('click', () => onPontoClick(ponto, container, map, true));
-      if (useCluster) state.clusterGroup.addLayer(marker);
-      else marker.addTo(map);
-    });
-
-    if (useCluster) state.clusterGroup.addTo(map);
-
-    // Atualiza lista lateral ao mover/zoom
-    map.on('moveend zoomend', () => updatePontosListFromBounds(map, container));
-    updatePontosListFromBounds(map, container);
-
-    state.map = map;
-    setTimeout(() => map.invalidateSize(), 80);
-  }
-
-  /* ─── shell e eventos ─── */
-
-  function renderShell(container) {
-    container.innerHTML = `
-      <div class="op-shell">
-        <div class="op-header">
-          <div class="op-header-top">
-            <span class="op-kicker">Operacional</span>
-            <h2>Mapa de direcionamento</h2>
-          </div>
-          <div class="op-filters">
-            <div class="op-field" style="flex:2;min-width:200px">
-              <label>Ponto de embarque</label>
-              <select id="opPonto">${renderOptions()}</select>
-            </div>
-            <div class="op-field"><label>Volume (t)</label><input id="opVolume" type="number" placeholder="0" value="${safeText(container.dataset.volume || '')}"></div>
-            <div class="op-field"><label>Dias</label><input id="opDias" type="number" min="1" value="${safeText(container.dataset.dias || '1')}"></div>
-            <div class="op-field"><label>Equipe</label><input id="opQtd" type="number" min="1" value="${safeText(container.dataset.qtd || '1')}"></div>
-            <div class="op-field"><label>Tipo</label>
-              <select id="opTipo"><option value="todos">Todos</option><option value="efetivo">Efetivo</option><option value="diarista">Diarista</option></select>
-            </div>
-            <div class="op-field" style="flex:1.5"><label>Buscar</label><input id="opBusca" placeholder="Nome, cidade..."></div>
-            <div class="op-field" style="flex:0">
-              <label style="opacity:0">.</label>
-              <div style="display:flex;gap:7px">
-                <button class="op-btn" id="opGerar" type="button">Ranking</button>
-                <button class="op-btn secondary" id="opReload" type="button" title="Atualizar dados">↺</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div id="opForaBrasilPlaceholder">${renderOutOfBrazilWarning()}</div>
-
-        <div class="op-map-layout">
-          <div class="op-map-wrap">
-            <div id="opMap">
-              <div class="op-map-empty"><div><strong>Carregando mapa...</strong></div></div>
-            </div>
-          </div>
-          <div class="op-pontos-panel">
-            <div class="op-pontos-panel-head">
-              <strong>Pontos de embarque</strong>
-              <span id="opPontosCount">${state.pontos.length} pontos</span>
-            </div>
-            <div id="opPontosListMap"></div>
-          </div>
-        </div>
-
-        <div id="opRankingSection" style="display:none;display:flex;flex-direction:column;gap:16px">
-          <div id="opMetrics"></div>
-          <section class="op-layout">
-            <article class="op-card">
-              <div class="op-card-head"><div><h3>Ranking recomendado</h3><p>Colaboradores ordenados por score. Indicados em outro ponto não aparecem aqui.</p></div></div>
-              <div class="op-list" id="opRanking"><div class="op-alert">Clique em um ponto de embarque no mapa ou na lista para gerar o ranking.</div></div>
-            </article>
-            <article class="op-card">
-              <div class="op-card-head"><div><h3>Como usar</h3></div></div>
-              <div class="op-list">
-                <div class="op-alert">
-                  <strong>Fluxo:</strong><br>
-                  1. Clique num ponto no mapa ou na lista lateral.<br>
-                  2. Os 5 melhores colaboradores aparecem no mapa com nome.<br>
-                  3. Clique <strong>Indicar</strong> para direcionar o colaborador.<br>
-                  4. Cada colaborador pode ser indicado para até <strong>2 OS</strong>.<br>
-                  5. Quem já está em 1 OS aparece com badge <em>Em 1 OS</em> e score reduzido.<br>
-                  6. Ao atingir 2 OS, sai de todos os rankings.
-                </div>
-              </div>
-            </article>
-          </section>
-        </div>
-
-        <div id="opDirecionamentoPlaceholder">${renderDirecionamentoPanel()}</div>
-        <div id="opTable"></div>
-      </div>
-    `;
-
-    // Corrige o display do opRankingSection (estava com dois display)
-    const rankingSection = container.querySelector('#opRankingSection');
-    if (rankingSection) rankingSection.style.display = 'none';
-
-    bindEvents(container);
-    initMap(container);
-  }
-
-  function refreshComputed(container) {
-    container.dataset.volume = container.querySelector('#opVolume')?.value || '';
-    container.dataset.dias   = container.querySelector('#opDias')?.value || '1';
-    container.dataset.qtd    = container.querySelector('#opQtd')?.value || '1';
-    const ponto = selectedPonto();
-    if (ponto && state.map) {
-      onPontoClick(ponto, container, state.map, false);
-      showColabsOnMap(ponto, state.ranking, state.map);
-    }
-  }
-
-  function bindIndicacaoClicks(container) {
-    container.querySelectorAll('[data-toggle-indicacao]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const colabId = btn.dataset.toggleIndicacao;
-        const pontoId = state.selectedPontoId;
-        if (btn.dataset.indicado === 'true') removerIndicacao(pontoId, colabId);
-        else indicarColab(pontoId, colabId);
-        const ponto = selectedPonto();
-        if (ponto && state.map) onPontoClick(ponto, container, state.map, false);
-      });
-    });
-    container.querySelectorAll('[data-remover-indicacao]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        removerIndicacao(btn.dataset.removerIndicacao, btn.dataset.removerColab);
-        const ponto = selectedPonto();
-        if (ponto && state.map) onPontoClick(ponto, container, state.map, false);
-        else {
-          const dirEl = container.querySelector('#opDirecionamentoPlaceholder');
-          if (dirEl) dirEl.innerHTML = renderDirecionamentoPanel();
-          bindIndicacaoClicks(container);
+    updateRouteStatus(root, `Rotas: desenhando ${validas.length} rota(s) visíveis...`);
+    const fila = validas.slice(0, ROTAS_REAIS_LIMITE);
+    let done = 0, realOk = 0;
+    async function worker() {
+      while (fila.length && token === st.drawToken) {
+        const r = fila.shift();
+        const real = await rotaReal([{ lat: lat(r.colab), lng: lng(r.colab) }, { lat: r.ponto.lat, lng: r.ponto.lng }]);
+        if (token !== st.drawToken || !st.routeLayer) return;
+        done++;
+        if (real?.coords?.length) {
+          realOk++;
+          L.polyline(real.coords, { color: r.id === selecionada?.id ? '#facc15' : '#22c55e', weight: r.id === selecionada?.id ? 4 : 2, opacity: r.id === selecionada?.id ? .95 : .35 }).addTo(st.routeLayer);
         }
-      });
-    });
-    container.querySelector('#opLimparIndicacoes')?.addEventListener('click', () => {
-      state.indicacoes = {};
-      saveIndicacoes();
-      const ponto = selectedPonto();
-      if (ponto && state.map) onPontoClick(ponto, container, state.map, false);
-      else {
-        const dirEl = container.querySelector('#opDirecionamentoPlaceholder');
-        if (dirEl) dirEl.innerHTML = '';
+        updateRouteStatus(root, `Rotas: ${done}/${Math.min(validas.length, ROTAS_REAIS_LIMITE)} reais carregadas${validas.length > ROTAS_REAIS_LIMITE ? ` · limite ${ROTAS_REAIS_LIMITE}/${validas.length}` : ''}`);
       }
-    });
-    container.querySelector('#opLimparCoords')?.addEventListener('click', () => limparCoordenadasForaDoBrasil(container));
+    }
+    await Promise.all(Array.from({ length: Math.min(ROTAS_REAIS_SIMULTANEAS, fila.length) }, worker));
+    if (token === st.drawToken) updateRouteStatus(root, `Rotas: ${validas.length} visíveis · ${realOk} reais carregadas${validas.length > ROTAS_REAIS_LIMITE ? ' · use filtro de estado/ponto para carregar as demais' : ''}`);
   }
 
-  function bindEvents(container) {
-    container.querySelector('#opPonto')?.addEventListener('change', ev => {
-      const ponto = state.pontos.find(p => String(p.id) === ev.target.value);
-      if (ponto && state.map) onPontoClick(ponto, container, state.map, true);
-    });
-    container.querySelector('#opGerar')?.addEventListener('click', () => refreshComputed(container));
-    container.querySelector('#opBusca')?.addEventListener('input', () => refreshComputed(container));
-    container.querySelector('#opTipo')?.addEventListener('change', () => refreshComputed(container));
-    container.querySelector('#opReload')?.addEventListener('click', async () => {
-      container.classList.add('op-loading');
-      await loadData();
-      container.classList.remove('op-loading');
-      renderShell(container);
-    });
-    bindIndicacaoClicks(container);
+  function updateRouteStatus(root, text) {
+    const a = root.querySelector('[data-rota-status]');
+    if (a) a.textContent = text;
   }
 
-  async function openHome(container) {
-    ensureStyles();
-    state.indicacoes = loadIndicacoesFromStorage();
-    container.innerHTML = `
-      <div class="op-shell">
-        <div class="op-header">
-          <div class="op-header-top"><span class="op-kicker">Operacional</span><h2>Mapa de direcionamento</h2></div>
-          <p style="margin:6px 0 0;color:#6b7280;font-size:13px">Buscando pontos, colaboradores, hotéis, passagens e auditoria...</p>
-        </div>
-      </div>`;
-    await loadData();
-    renderShell(container);
+  function render(root) { root.innerHTML = html(); bind(root); map(root); }
+  function renderErro(root, err) { root.innerHTML = `<div class="mo"><section class="mo-card"><div class="mo-load">Não foi possível carregar o mapa operacional.<br><small>${esc(err?.message || err || 'Erro desconhecido')}</small></div></section></div>`; }
+
+  async function openHome(root) {
+    css();
+    root.innerHTML = '<div class="mo"><section class="mo-card"><div class="mo-load">Carregando OS, colaboradores, frota e hospedagem...</div></section></div>';
+    try {
+      await load();
+      st.rota = rows().base[0]?.id || '';
+      render(root);
+      console.info('[mapa-operacional] carregado', { osComSaldo: st.os.length, pontos: st.pontos.length, associadas: st.rotas.length, semAssociacao: st.semAssociacao.length });
+    } catch (err) {
+      console.error('[mapa-operacional] erro ao carregar:', err);
+      renderErro(root, err);
+    }
   }
 
   window.OPERACIONAL = { openHome };
