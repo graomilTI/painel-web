@@ -996,12 +996,17 @@ import { supabase } from './supabaseClient.js';
     const colabSelecionadoId = selecionada?.colab?.id;
     const validas = base.filter(r => geo(r.colab) && r.ponto.temCoord);
     validas.forEach(r => {
-      drawFallbackRoute(L, r, r.colab.id === colabSelecionadoId);
+      // Pontilhado (reta simplificada) só na rota do colaborador selecionado — desenhar em todas
+      // poluía o mapa inteiro quando havia centenas de rotas sem rota real carregada ainda.
+      if (r.colab.id === colabSelecionadoId) drawFallbackRoute(L, r, true);
       bounds.push([lat(r.colab), lng(r.colab)], [r.ponto.lat, r.ponto.lng]);
     });
 
     updateRouteStatus(root, `Rotas: desenhando ${validas.length} rota(s) visíveis...`);
-    const fila = validas.slice(0, ROTAS_REAIS_LIMITE);
+    // A rota selecionada vai primeiro na fila — senão ela podia nunca resolver pra rota real se
+    // caísse fora do limite de ROTAS_REAIS_LIMITE, ficando só no pontilhado indefinidamente.
+    const ordenadas = [...validas].sort((a, b) => (b.colab.id === colabSelecionadoId ? 1 : 0) - (a.colab.id === colabSelecionadoId ? 1 : 0));
+    const fila = ordenadas.slice(0, ROTAS_REAIS_LIMITE);
     let done = 0, realOk = 0;
     async function worker() {
       while (fila.length && token === st.drawToken) {
