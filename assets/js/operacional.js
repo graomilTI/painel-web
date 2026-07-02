@@ -430,7 +430,12 @@ import { supabase } from './supabaseClient.js';
     if (st.veiculoProprioCpfs.has(c.cpf) || st.veiculoProprioNomes.has(norm(c.nome))) {
       return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };
     }
-    return { modo: 'a-definir', label: 'A definir (estimado)', custoFn: uberOuCarroIdaVolta, estimado: true };
+    // Sem modo habitual registrado nem veículo próprio marcado (61% dos classificadores ativos —
+    // achado ao investigar um custo "exorbitante" pra uma rota curta): a suposição de Uber/táxi
+    // aqui era um chute muito mais caro (~10x por km) que a realidade — Uber praticamente não
+    // opera entre cidades pequenas do interior. Reembolso por km (veículo próprio) é a suposição
+    // mais realista quando não se sabe o meio de transporte; Uber só quando é o modo REGISTRADO.
+    return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };
   }
 
   function avaliarCandidato(c, ponto, dist, osSaldoKg = 0) {
@@ -795,7 +800,7 @@ import { supabase } from './supabaseClient.js';
     const kmRoundTrip = r => r.dist * 2;
     const kmFrota = st.rotas.filter(r => r.modo === 'frota' || r.modo === 'carona').reduce((a, r) => a + kmRoundTrip(r), 0);
     const kmParticular = st.rotas.filter(r => r.modo === 'reembolso').reduce((a, r) => a + kmRoundTrip(r), 0);
-    const kmUber = st.rotas.filter(r => r.modo === 'uber' || r.modo === 'a-definir').reduce((a, r) => a + kmRoundTrip(r), 0);
+    const kmUber = st.rotas.filter(r => r.modo === 'uber').reduce((a, r) => a + kmRoundTrip(r), 0);
     return {
       os: st.os.length, osSemSaldo, kmFrota, kmParticular, kmUber,
       hospedar: st.rotas.filter(r => r.recomendacao === 'hospedar').length,
