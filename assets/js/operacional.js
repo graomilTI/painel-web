@@ -75,7 +75,7 @@ import { supabase } from './supabaseClient.js';
     mostrarVeiculos: true, mostrarColaboradores: true, mostrarOsComSaldo: true, mostrarOsSemSaldo: true, mostrarHoteis: false,
     mostrarIrregularidades: true, irregularidades: [],
     comparativo: [], supervisaoComparativo: '',
-    map: null, tileLayer: null, layer: null, routeLayer: null, rotaRealCache: new Map(), drawToken: 0,
+    map: null, mapEl: null, tileLayer: null, layer: null, routeLayer: null, rotaRealCache: new Map(), drawToken: 0,
   };
 
   const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -522,11 +522,22 @@ import { supabase } from './supabaseClient.js';
     return sel('logistica_cargas_irregularidades', '*', q => q.order('detectado_em', { ascending: false }), 500);
   }
 
-  async function load() {
-    const [{ abertas, pontos, osPorId }, colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem, irregularidades] = await Promise.all([
-      loadOsEPontos(), loadColaboradores(), loadVinculos(), loadModoHabitual(), loadVeiculoProprio(), loadFrotaAtual(), loadHospedagem(), loadIrregularidades(),
-    ]);
+  // Carrega em duas fases pra o mapa ir mostrando pontos conforme os dados chegam, em vez de
+  // ficar tudo em branco até a última consulta terminar: OS/pontos primeiro (dá pra ver algo
+  // rápido), depois colaboradores/frota/hospedagem/irregularidades em paralelo. Cada fase chama
+  // render(root) pra desenhar o que já tem — render() reaproveita o mapa Leaflet já existente
+  // (não recria do zero), então isso só preenche marcadores, não pisca a tela.
+  async function load(root) {
+    const { abertas, pontos, osPorId } = await loadOsEPontos();
     st.osPorId = osPorId;
+    st.pontos = pontos;
+    st.osTodas = abertas;
+    st.os = abertas.filter(o => o.__saldo > 0);
+    if (root) render(root, true);
+
+    const [colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem, irregularidades] = await Promise.all([
+      loadColaboradores(), loadVinculos(), loadModoHabitual(), loadVeiculoProprio(), loadFrotaAtual(), loadHospedagem(), loadIrregularidades(),
+    ]);
     st.irregularidades = irregularidades;
 
     st.vinculosPorOs = vinculosPorOs;
@@ -552,12 +563,10 @@ import { supabase } from './supabaseClient.js';
       nomesJaCadastrados.add(key);
     }
 
-    st.pontos = pontos;
     st.colaboradores = [...colaboradores, ...sinteticos];
-    st.osTodas = abertas;
-    st.os = abertas.filter(o => o.__saldo > 0);
     st.frotaTrajetos = calcularTrajetosFrota();
     build();
+    if (root) render(root, true);
     st.comparativo = await loadComparativo();
   }
 
@@ -927,8 +936,8 @@ import { supabase } from './supabaseClient.js';
 
   function bind(root) {
     root.querySelectorAll('[data-tab]').forEach(el => { el.onclick = () => { st.tab = el.dataset.tab; render(root); }; });
-    root.querySelector('[data-estado]')?.addEventListener('change', e => { st.estado = e.target.value; st.ponto = ''; st.rota = ''; render(root); });
-    root.querySelector('[data-ponto]')?.addEventListener('change', e => { st.ponto = e.target.value; st.rota = ''; render(root); });
+    root.querySelector('[data-estado]')?.addEventListener('change', e => { st.estado = e.target.value; st.ponto = ''; st.rota = ''; render(root, true); });
+    root.querySelector('[data-ponto]')?.addEventListener('change', e => { st.ponto = e.target.value; st.rota = ''; render(root, true); });
     root.querySelector('[data-map-base]')?.addEventListener('change', e => { st.mapaBase = TILE_LAYERS[e.target.value] ? e.target.value : 'escuro'; applyBaseLayer(); });
     root.querySelectorAll('[data-toggle-marker]').forEach(el => {
       el.onclick = () => {
@@ -957,11 +966,12 @@ import { supabase } from './supabaseClient.js';
     if (st.map) { try { st.map.remove(); } catch {} }
     const L = window.L;
     st.map = L.map(el, { center: [-14.235, -51.925], zoom: 4 });
+    st.mapEl = el;
     st.tileLayer = null;
     applyBaseLayer();
     st.layer = L.layerGroup().addTo(st.map);
     st.routeLayer = L.layerGroup().addTo(st.map);
-    await draw(root);
+    await draw(root, true);
     setTimeout(() => st.map?.invalidateSize(), 80);
   }
   function applyBaseLayer() {
@@ -1026,7 +1036,7 @@ import { supabase } from './supabaseClient.js';
     });
   }
 
-  async function draw(root) {
+  async function draw(root, ajustarZoom = false) {
     if (!st.map || !window.L || !st.layer) return;
     const L = window.L, b = [];
     const token = ++st.drawToken;
@@ -1065,7 +1075,10 @@ import { supabase } from './supabaseClient.js';
     usados.forEach(c => { const sel = c.id === colabSelecionadoId; L.marker([lat(c), lng(c)], { icon: icon(sel ? 'frota' : 'colab', sel) }).bindTooltip(`Colaborador: ${esc(c.nome)}`).addTo(st.layer); b.push([lat(c), lng(c)]); });
 
     if (st.mostrarRota) drawAllRoutes(root, base, token, b);
-    if (b.length) st.map.fitBounds(b, { padding: [34, 34], maxZoom: st.estado || st.ponto ? 9 : 10 });
+    // Só ajusta zoom/posição na carga inicial, ao trocar filtro de estado/ponto ou num recarregar
+    // explícito — em toggles de legenda/seleção de linha o mapa mantém a posição atual do usuário
+    // (senão cada clique "pulava" o mapa de volta pro enquadramento geral, parecendo fechar/reabrir).
+    if (b.length && ajustarZoom) st.map.fitBounds(b, { padding: [34, 34], maxZoom: st.estado || st.ponto ? 9 : 10 });
   }
 
   function drawFallbackRoute(L, route, selected) {
@@ -1115,16 +1128,44 @@ import { supabase } from './supabaseClient.js';
     if (a) a.textContent = text;
   }
 
-  function render(root) { root.innerHTML = html(); bind(root); if (st.tab === 'mapa') map(root); }
+  // ajustarZoom=true só na carga inicial/recarregar/troca de filtro geográfico — em interações
+  // comuns (toggle de legenda, seleção de linha) o mapa não se move sozinho.
+  function render(root, ajustarZoom = false) {
+    // Reaproveita a instância do Leaflet já viva (com zoom/posição/tiles carregados) em vez de
+    // destruir e recriar a cada render — reencaixa o mesmo nó DOM no HTML novo. Sem isso, toda
+    // interação (mesmo ligar/desligar uma legenda) recriava o mapa do zero, "fechando e reabrindo"
+    // e voltando pro enquadramento padrão do Brasil.
+    // st.mapEl é a referência persistente do container (sobrevive à troca de aba: ao sair do
+    // Mapa o nó fica só na memória, sem estar no documento, e volta inteiro ao retornar).
+    const mapEl = st.tab === 'mapa' && st.map && st.mapEl ? st.mapEl : null;
+    root.innerHTML = html();
+    bind(root);
+    if (st.tab !== 'mapa') return;
+    if (mapEl) {
+      root.querySelector('#moMap').replaceWith(mapEl);
+      draw(root, ajustarZoom);
+      setTimeout(() => st.map?.invalidateSize(), 80);
+    } else {
+      map(root);
+    }
+  }
   function renderErro(root, err) { root.innerHTML = `<div class="mo"><section class="mo-card"><div class="mo-load">Não foi possível carregar o mapa operacional.<br><small>${esc(err?.message || err || 'Erro desconhecido')}</small></div></section></div>`; }
 
   async function openHome(root) {
     css();
-    root.innerHTML = '<div class="mo"><section class="mo-card"><div class="mo-load">Carregando OS, colaboradores, frota e hospedagem...</div></section></div>';
+    // Só monta a casca do zero na primeira vez — num recarregar (botão Atualizar) o mapa já
+    // montado continua visível (em qualquer aba) com os dados antigos enquanto os novos chegam,
+    // preenchidos em fases por load(root) em vez de sumir numa tela de "carregando" e reaparecer.
+    const jaMontado = !!st.map;
     try {
-      await load();
+      if (!jaMontado) {
+        root.innerHTML = html();
+        bind(root);
+        if (st.tab === 'mapa') await map(root);
+      }
+      await load(root);
       st.rota = rows().base[0]?.id || '';
-      render(root);
+      render(root, true);
       console.info('[mapa-operacional] carregado', { osComSaldo: st.os.length, pontos: st.pontos.length, associadas: st.rotas.length, semAssociacao: st.semAssociacao.length, comparativo: st.comparativo.length });
     } catch (err) {
       console.error('[mapa-operacional] erro ao carregar:', err);
