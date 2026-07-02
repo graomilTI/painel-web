@@ -451,11 +451,16 @@ import { supabase } from './supabaseClient.js';
   }
 
   function modoColaborador(c, ponto) {
-    // "Motorista de frota" (custo zero) exige leitura de patrimônio recente confirmando que a
-    // pessoa está de fato com o veículo agora (mesmo critério já usado em Frotas > Veículos,
-    // via patrimonio_funcionario + patrimonio_dias_sem_leitura) — não o cadastro nominal de
+    // "Motorista de frota" exige leitura de patrimônio recente confirmando que a pessoa está de
+    // fato com o veículo agora (mesmo critério já usado em Frotas > Veículos, via
+    // patrimonio_funcionario + patrimonio_dias_sem_leitura) — não o cadastro nominal de
     // motorista_atual, que pode estar desatualizado e não refletir quem realmente está com o carro.
-    if (st.nomesFrotaSet.has(norm(c.nome))) return { modo: 'frota', label: 'Motorista/frota (leitura de patrimônio recente)', custo: 0 };
+    // Custo estimado de combustível (mesma fórmula/tarifa do reembolso — R$0,70/km) mesmo sendo
+    // veículo da empresa: sem isso a estimativa de gastos aparecia zerada, como se o deslocamento
+    // não custasse nada — a empresa paga o combustível de qualquer forma, só não reembolsa o
+    // colaborador. "Carona" continua custo zero: não é uma viagem dedicada, é aproveitar um
+    // trajeto que já ia acontecer de qualquer forma.
+    if (st.nomesFrotaSet.has(norm(c.nome))) return { modo: 'frota', label: 'Motorista/frota (leitura de patrimônio recente)', custoFn: combustivelIdaVolta };
 
     const habitual = st.modoHabitualPorCpf.get(c.cpf) || st.modoHabitualPorNome.get(norm(c.nome));
     if (habitual?.tipo === 'MOTORISTA FROTA') return { modo: 'reembolso', label: 'Motorista de frota (sem leitura recente — veículo da empresa)', custoFn: combustivelIdaVolta };
