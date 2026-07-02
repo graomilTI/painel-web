@@ -1,8 +1,8 @@
 // Runtime do Mapa Operacional com rotas mais inteligentes.
 // Mantém o arquivo operacional.js original como base, mas aplica ajustes em tempo de carregamento
-// para evitar rotas em estrela/zigue-zague e para abrir visualização street-level gratuita.
+// para evitar rotas em estrela/zigue-zague, preencher carona/placa e filtrar OS por sugestão.
 
-const SMART_VERSION = '20260702-rotas-inteligentes';
+const SMART_VERSION = '20260702-carona-filtros';
 
 function replaceOrKeep(source, search, replacement, label) {
   if (!source.includes(search)) {
@@ -130,6 +130,171 @@ function patchSource(source, supabaseClientUrl) {
   out = replaceOrKeep(out, 'const RAIO_REPETIR_COLAB_KM = 100;', 'const RAIO_REPETIR_COLAB_KM = 45;', 'raio repetir colaborador');
   out = replaceOrKeep(out, 'const DIST_TOLERANCIA_EMPATE_KM = 20;', 'const DIST_TOLERANCIA_EMPATE_KM = 8;', 'tolerância empate');
   out = replaceOrKeep(out, 'const MAX_OS_POR_COLABORADOR = 10;', 'const MAX_OS_POR_COLABORADOR = 4;\n  const DIST_MAX_ENTRE_PARADAS_ROTA_KM = 40;\n  const DESVIO_MAX_ROTA_KM = 45;', 'limites de rota');
+
+  out = replaceOrKeep(
+    out,
+    "estado: '', ponto: '', rota: '', mostrarRota: true, tab: 'mapa', mapaBase: 'escuro',",
+    "estado: '', ponto: '', filtroOs: 'com-sugestao', rota: '', mostrarRota: true, tab: 'mapa', mapaBase: 'escuro',",
+    'estado filtro de OS'
+  );
+
+  out = replaceOrKeep(
+    out,
+    '.mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px}',
+    '.mo-filter{display:grid;grid-template-columns:180px minmax(220px,1fr) 190px;gap:8px}',
+    'layout filtro OS'
+  );
+
+  out = replaceOrKeep(
+    out,
+    "    const nomesFrotaSet = new Set();\n    const posicaoPorNome = new Map();\n    const nomeOriginalPorNome = new Map();",
+    "    const nomesFrotaSet = new Set();\n    const posicaoPorNome = new Map();\n    const placaPorNome = new Map();\n    const nomeOriginalPorNome = new Map();",
+    'mapa placa por motorista'
+  );
+
+  out = replaceOrKeep(
+    out,
+    "      const pos = veiculoKeys(v).map(k => posPorChave.get(k)).find(Boolean);\n      if (pos && !posicaoPorNome.has(key)) posicaoPorNome.set(key, pos);",
+    "      const placa = v.placa || v.placa_normalizada || v.bfleet_placa || v.bfleet_patente || '';\n      if (placa && !placaPorNome.has(key)) placaPorNome.set(key, placa);\n      const pos = veiculoKeys(v).map(k => posPorChave.get(k)).find(Boolean);\n      if (pos && !posicaoPorNome.has(key)) posicaoPorNome.set(key, { ...pos, placa: pos.placa || placa });",
+    'placa leitura patrimônio'
+  );
+
+  out = replaceOrKeep(
+    out,
+    "    posicoes.forEach(p => { const key = norm(p.motorista); if (p.motorista && nomesFrotaSet.has(key) && !posicaoPorNome.has(key)) posicaoPorNome.set(key, p); });",
+    "    posicoes.forEach(p => { const key = norm(p.motorista); if (!p.motorista || !nomesFrotaSet.has(key)) return; if (p.placa && !placaPorNome.has(key)) placaPorNome.set(key, p.placa); if (!posicaoPorNome.has(key)) posicaoPorNome.set(key, { ...p, placa: p.placa || placaPorNome.get(key) || '' }); });",
+    'placa posição GPS'
+  );
+
+  out = replaceOrKeep(
+    out,
+    "    return { nomesFrotaSet, posicaoPorNome, nomeOriginalPorNome, veiculos: veiculosMapa };",
+    "    return { nomesFrotaSet, posicaoPorNome, placaPorNome, nomeOriginalPorNome, veiculos: veiculosMapa };",
+    'retorno placa por motorista'
+  );
+
+  out = replaceOrKeep(
+    out,
+    "    st.posicaoPorNome = frotaAtual.posicaoPorNome;",
+    "    st.posicaoPorNome = frotaAtual.posicaoPorNome;\n    st.placaPorNome = frotaAtual.placaPorNome || new Map();",
+    'estado placa por motorista'
+  );
+
+  out = replaceOrKeep(
+    out,
+    "      if (destino) trajetos.push({ aLat, aLng, bLat: destino.lat, bLng: destino.lng });",
+    "      if (destino) trajetos.push({ aLat, aLng, bLat: destino.lat, bLng: destino.lng, motorista: c.nome, placa: st.placaPorNome?.get(norm(c.nome)) || posAtual?.placa || '' });",
+    'trajeto frota com placa'
+  );
+
+  out = replaceOrKeep(
+    out,
+    `  // Carona só conta como custo zero se o ponto estiver a até 5km do trajeto de algum motorista
+  // de frota até o embarque mais próximo dele — senão vira "carona fantasma" sem motorista real por perto.
+  function caronaDisponivelPara(ponto) {
+    if (!ponto.temCoord || !st.frotaTrajetos?.length) return false;
+    return st.frotaTrajetos.some(t => distPontoTrajeto(ponto, t) <= RAIO_CARONA_KM);
+  }`,
+    `  // Carona só conta como custo zero se o ponto estiver a até 5km do trajeto de algum motorista
+  // de frota até o embarque mais próximo dele — senão vira "carona fantasma" sem motorista real por perto.
+  function caronaInfoPara(ponto) {
+    if (!ponto.temCoord || !st.frotaTrajetos?.length) return null;
+    let melhor = null;
+    for (const t of st.frotaTrajetos) {
+      const d = distPontoTrajeto(ponto, t);
+      if (d <= RAIO_CARONA_KM && (!melhor || d < melhor.distKm)) melhor = { ...t, distKm: d };
+    }
+    return melhor;
+  }`,
+    'carona com placa'
+  );
+
+  out = replaceOrKeep(
+    out,
+    `    const habitual = st.modoHabitualPorCpf.get(c.cpf) || st.modoHabitualPorNome.get(norm(c.nome));
+    if (habitual?.tipo === 'MOTORISTA FROTA') return { modo: 'reembolso', label: 'Motorista de frota (sem leitura recente — veículo da empresa)', custoFn: combustivelIdaVolta };
+    if (habitual?.tipo === 'CARONA FROTA' && caronaDisponivelPara(ponto)) return { modo: 'carona', label: 'Carona com frota', custo: 0 };
+    if (habitual?.tipo === 'NAO PRECISA') return { modo: 'local', label: 'Já está no local', custo: 0 };
+    if (habitual?.tipo === 'REEMBOLSO KM') return { modo: 'reembolso', label: 'Veículo próprio', custoFn: combustivelIdaVolta };
+    if (habitual?.tipo === 'UBER TAXI' || habitual?.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
+
+    if (st.veiculoProprioCpfs.has(c.cpf) || st.veiculoProprioNomes.has(norm(c.nome))) {
+      return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };
+    }
+    // Sem modo habitual registrado nem veículo próprio marcado (61% dos classificadores ativos —
+    // achado ao investigar um custo "exorbitante" pra uma rota curta): a suposição de Uber/táxi
+    // aqui era um chute muito mais caro (~10x por km) que a realidade — Uber praticamente não
+    // opera entre cidades pequenas do interior. Reembolso por km (veículo próprio) é a suposição
+    // mais realista quando não se sabe o meio de transporte; Uber só quando é o modo REGISTRADO.
+    return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };`,
+    `    const habitual = st.modoHabitualPorCpf.get(c.cpf) || st.modoHabitualPorNome.get(norm(c.nome));
+    if (habitual?.tipo === 'MOTORISTA FROTA') return { modo: 'reembolso', label: 'Motorista de frota (sem leitura recente — veículo da empresa)', custoFn: combustivelIdaVolta };
+    if (habitual?.tipo === 'NAO PRECISA') return { modo: 'local', label: 'Já está no local', custo: 0 };
+    if (habitual?.tipo === 'REEMBOLSO KM') return { modo: 'reembolso', label: 'Veículo próprio', custoFn: combustivelIdaVolta };
+    if (habitual?.tipo === 'UBER TAXI' || habitual?.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
+
+    const carona = caronaInfoPara(ponto);
+    if (carona) {
+      const placa = carona.placa ? placaNorm(carona.placa) : 'placa não localizada';
+      return { modo: 'carona', label: \`CARONA · \${placa}\`, custo: 0, placaCarona: placa, motoristaCarona: carona.motorista || '' };
+    }
+
+    return { modo: 'sem-modo', label: 'Sem deslocamento cadastrado', custo: Infinity, semSugestao: true };`,
+    'modo colaborador carona e veículo próprio'
+  );
+
+  out = replaceOrKeep(
+    out,
+    'const hospedar = hospedagem && hospedagem.custoDia < custoDeslocamento;',
+    'const hospedar = !modoInfo.semSugestao && hospedagem && hospedagem.custoDia < custoDeslocamento;',
+    'hospedagem sem deslocamento'
+  );
+
+  out = replaceOrKeep(
+    out,
+    'const inviavel = !hospedar && custoDeslocamento > 0 && distReal > DIST_MAX_DESLOCAMENTO_DIARIO_KM;',
+    'const inviavel = modoInfo.semSugestao || (!hospedar && custoDeslocamento > 0 && distReal > DIST_MAX_DESLOCAMENTO_DIARIO_KM);',
+    'inviável sem deslocamento'
+  );
+
+  out = replaceOrKeep(
+    out,
+    '  function passaFiltroPonto(p) { if (!p) return false; if (st.estado && p.uf !== st.estado) return false; if (st.ponto && p.__key !== st.ponto) return false; return true; }',
+    `  function pontoTemSugestao(p) { return !!p && st.rotas.some(r => r.ponto?.__key === p.__key); }
+  function pontoSemSugestao(p) { return !!p && st.semAssociacao.some(r => r.ponto?.__key === p.__key); }
+  function pontoTemSemSaldo(p) { return !!p && st.osTodas.some(o => o.__pontoKey === p.__key && Number(o.__saldo) <= 0); }
+  function passaFiltroPonto(p) {
+    if (!p) return false;
+    if (st.estado && p.uf !== st.estado) return false;
+    if (st.ponto && p.__key !== st.ponto) return false;
+    if (st.filtroOs === 'com-sugestao' && !pontoTemSugestao(p)) return false;
+    if (st.filtroOs === 'sem-sugestao' && !pontoSemSugestao(p)) return false;
+    if (st.filtroOs === 'sem-saldo' && !pontoTemSemSaldo(p)) return false;
+    return true;
+  }`,
+    'filtro por sugestão'
+  );
+
+  out = replaceOrKeep(
+    out,
+    "root.querySelector('[data-ponto]')?.addEventListener('change', e => { st.ponto = e.target.value; st.rota = ''; render(root, true); });",
+    "root.querySelector('[data-ponto]')?.addEventListener('change', e => { st.ponto = e.target.value; st.rota = ''; render(root, true); });\n    root.querySelector('[data-filtro-os]')?.addEventListener('change', e => { st.filtroOs = e.target.value || 'com-sugestao'; st.ponto = ''; st.rota = ''; render(root, true); });",
+    'bind filtro OS'
+  );
+
+  out = replaceOrKeep(
+    out,
+    `<select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>\${pontosFiltrados.map(p => \`<option value="\${esc(p.__key)}" \${st.ponto === p.__key ? 'selected' : ''}>\${esc(p.cidade || p.nome_local)}/\${esc(p.uf)} · \${esc(p.nome_local || 'Ponto')}</option>\`).join('')}</select></div>`,
+    `<select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>\${pontosFiltrados.map(p => \`<option value="\${esc(p.__key)}" \${st.ponto === p.__key ? 'selected' : ''}>\${esc(p.cidade || p.nome_local)}/\${esc(p.uf)} · \${esc(p.nome_local || 'Ponto')}</option>\`).join('')}</select><select class="mo-select" data-filtro-os><option value="com-sugestao" \${st.filtroOs === 'com-sugestao' ? 'selected' : ''}>OS com sugestão</option><option value="sem-sugestao" \${st.filtroOs === 'sem-sugestao' ? 'selected' : ''}>OS sem sugestão</option><option value="sem-saldo" \${st.filtroOs === 'sem-saldo' ? 'selected' : ''}>OS sem saldo</option></select></div>`,
+    'select filtro OS'
+  );
+
+  out = replaceOrKeep(
+    out,
+    'for (const r of st.rotas) {',
+    'for (const r of rows().base) {',
+    'tabela inferior filtrada'
+  );
 
   out = injectAfter(
     out,
