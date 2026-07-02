@@ -466,11 +466,25 @@ function parseDate(value) {
   const dateStr = String(value).trim();
   if (!dateStr) return null;
 
-  // Tentar parsear diferentes formatos
+  // Formato brasileiro DD/MM/YYYY (ou DD-MM-YYYY) - o GRM Server exporta assim.
+  // new Date(string) assume formato americano MM/DD/YYYY para strings com "/",
+  // trocando dia e mês silenciosamente quando o dia é <= 12 (ex.: 02/07/2026 virava 07/02/2026).
+  const brMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (brMatch) {
+    const [, d, m, y] = brMatch;
+    const day = Number(d);
+    const month = Number(m);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+    return null;
+  }
+
+  // Já em ISO (YYYY-MM-DD) ou outro formato sem ambiguidade de dia/mês.
   try {
     const date = new Date(dateStr);
     if (!isNaN(date.getTime())) {
-      return date.toISOString().split('T')[0]; // Retornar em formato YYYY-MM-DD
+      return date.toISOString().split('T')[0];
     }
   } catch (e) {
     // Ignorar erro
