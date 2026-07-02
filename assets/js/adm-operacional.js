@@ -1,5 +1,5 @@
 import { initProtectedPage } from './pageInit.js';
-import './operacional-rotas-inteligentes.js?v=20260702-rotas-inteligentes';
+import './operacional-rotas-inteligentes.js?v=20260702-carona-filtros';
 import './operacional-irregularidades-acoes.js?v=20260702-1430';
 
 initProtectedPage('Operacional ADM', (content, userContext) => {
