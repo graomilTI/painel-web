@@ -1,15 +1,22 @@
 // Preenche operacional_os.ponto1_latitude/longitude para O.S. cujo embarque
 // (texto "UF - Cidade (Local)" vindo do agente grm_lista_os_importacoes) nunca
-// teve coordenada resolvida. O backfill original de ponto1_lat/lng foi feito
-// uma unica vez via SQL direto contra operacional_pontos_embarque (tabela rasa,
-// so cobre locais do relatorio "Locais de Embarque") -- O.S. novas cujo local
-// nao esta ali (a maioria: fazendas/armazens especificos) nunca ganhavam
-// coordenada. Mesmo padrao de geocode-colaborador-base: Nominatim (1 req/s),
-// cache em geocode_cache (tipo 'cidade' -- o check constraint so aceita
-// 'cep'/'cidade', a chave prefixada 'os_embarque:' ja evita colisao com as
-// chaves de CEP/cidade usadas pela geocodificacao de colaboradores). Tenta
-// local+cidade primeiro e cai pra so cidade/UF quando o nome informal da
-// fazenda nao resolve no OSM.
+// teve coordenada resolvida, ou só tem a versão aproximada (fallback de cidade
+// via Nominatim, veja abaixo).
+//
+// Ordem de resolução, do mais preciso pro menos preciso:
+//   1) operacional_pontos_embarque casado por embarque_label EXATO (coluna gerada
+//      "UF - Cidade (Local)", igual ao formato de operacional_os.embarque) — é o
+//      armazém/fazenda real, mesmo local exato citado na O.S. Confirmado batendo
+//      98% das O.S. depois de importar a planilha "Locais de Serviço" completa
+//      (2026-07-02): a tabela só tinha 992 locais antes (sincronizados aos poucos
+//      pelo agente), a planilha trouxe 4339 de uma vez.
+//   2) operacional_pontos_embarque casado só por UF+Cidade — quando o nome exato
+//      do local não bate mas a cidade tem outro ponto cadastrado, ainda é melhor
+//      que um centro de cidade genérico.
+//   3) Nominatim (OpenStreetMap), tentando local+cidade primeiro — nome informal
+//      de fazenda/armazém quase nunca resolve — e caindo pra só cidade/UF quando
+//      falha. Marcado como aproximado (operacional.js detecta pelo formato do
+//      ponto1_nome: sem "·" = aproximado, com "·" = local real).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
 
 const CORS = {
@@ -95,16 +102,18 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // 1) O.S. sem coordenada, com embarque preenchido e parseável ("UF - Cidade (Local)").
-    const { data: pendentesRaw, error: pendErr } = await supabase
+    // 1) O.S. com embarque parseável e sem local REAL ainda — inclui as sem coordenada nenhuma
+    // e as que só têm a versão aproximada (ponto1_nome sem "·"), pra tentar melhorar com o passo 2.
+    const { data: todasRaw, error: todasErr } = await supabase
       .from('operacional_os')
-      .select('embarque')
-      .is('ponto1_latitude', null)
+      .select('embarque,ponto1_latitude,ponto1_nome')
       .not('embarque', 'is', null);
-    if (pendErr) throw pendErr;
+    if (todasErr) throw todasErr;
 
     const porEmbarque = new Map<string, Embarque>();
-    (pendentesRaw || []).forEach((r: any) => {
+    (todasRaw || []).forEach((r: any) => {
+      const jaTemLocalReal = r.ponto1_latitude != null && typeof r.ponto1_nome === 'string' && r.ponto1_nome.includes('·');
+      if (jaTemLocalReal) return;
       const texto = String(r.embarque || '').trim();
       if (!texto || porEmbarque.has(texto)) return;
       const parsed = splitEmbarque(texto);
@@ -112,12 +121,31 @@ Deno.serve(async (req) => {
     });
 
     if (!porEmbarque.size) {
-      return json({ pendentes: 0, geocodificados_novo: 0, atualizadas: 0 });
+      return json({ pendentes: 0, via_label_exato: 0, via_uf_cidade: 0, geocodificados_nominatim: 0, atualizadas: 0 });
     }
 
     const chaves = [...porEmbarque.keys()].map((texto) => ({ texto, chave: `${PREFIXO_CHAVE}${normKey(texto)}` }));
 
-    // 2) Cache existente — evita regeocodificar o mesmo local pra cada O.S. que o usa.
+    // 2) operacional_pontos_embarque (relatório "Locais de Embarque") — sem limite de taxa,
+    // é leitura local. Prioridade sobre Nominatim: é cadastro real da própria operação, não
+    // um centro genérico geocodificado. Casa primeiro pelo embarque_label exato (local certo);
+    // UF+Cidade fica só como segundo fallback quando o local exato não está cadastrado.
+    const { data: pontosEmbarque, error: peErr } = await supabase
+      .from('operacional_pontos_embarque')
+      .select('uf,cidade,nome_local,latitude,longitude,embarque_label')
+      .not('latitude', 'is', null);
+    if (peErr) throw peErr;
+    const pontosPorLabel = new Map<string, { nome_local: string; lat: number; lng: number }>();
+    const pontosPorUfCidade = new Map<string, { nome_local: string; lat: number; lng: number }>();
+    (pontosEmbarque || []).forEach((p: any) => {
+      const ponto = { nome_local: p.nome_local, lat: Number(p.latitude), lng: Number(p.longitude) };
+      const labelKey = String(p.embarque_label || '').trim();
+      if (labelKey && !pontosPorLabel.has(labelKey)) pontosPorLabel.set(labelKey, ponto);
+      const ufCidadeKey = `${normKey(p.uf)}|${normKey(p.cidade)}`;
+      if (!pontosPorUfCidade.has(ufCidadeKey)) pontosPorUfCidade.set(ufCidadeKey, ponto);
+    });
+
+    // 3) Cache existente (Nominatim) — evita regeocodificar o mesmo local pra cada O.S. que o usa.
     const chaveList = chaves.map((c) => c.chave);
     const { data: cacheRaw, error: cacheErr } = await supabase
       .from('geocode_cache')
@@ -137,11 +165,29 @@ Deno.serve(async (req) => {
       }
     });
 
-    // 3) Geocodifica (até `limite` locais novos, 1 req/s): tenta local+cidade
-    // primeiro (nome de fazenda/armazém raramente resolve no OSM) e cai pra
-    // só cidade/UF quando falha — melhor um ponto na cidade certa do que nada.
-    const pendentesGeo = chaves.filter((c) => !cacheOk.has(c.chave) && !cacheErroRecente.has(c.chave));
+    // 4) Resolve via pontos_embarque primeiro (grátis, sem limite de taxa) — formata o nome no
+    // mesmo padrão "NOME · CIDADE/UF" do backfill original, pra não ficar marcado como aproximado.
+    // Label exato (local certo) antes de UF+Cidade (aproximação por cidade).
+    let viaLabelExato = 0;
+    let viaUfCidade = 0;
+    const aindaPendentes: typeof chaves = [];
+    for (const item of chaves) {
+      if (cacheOk.has(item.chave)) continue;
+      const parsed = porEmbarque.get(item.texto)!;
+      const pontoExato = pontosPorLabel.get(item.texto);
+      const pontoReal = pontoExato || pontosPorUfCidade.get(`${normKey(parsed.uf)}|${normKey(parsed.cidade)}`);
+      if (!pontoReal) { aindaPendentes.push(item); continue; }
+      const display = `${pontoReal.nome_local} · ${parsed.cidade}/${parsed.uf}`;
+      const row = { chave: item.chave, tipo: 'cidade', latitude: pontoReal.lat, longitude: pontoReal.lng, endereco_resolvido: display, status: 'ok', atualizado_em: new Date().toISOString() };
+      const { error: upErr } = await supabase.from('geocode_cache').upsert(row, { onConflict: 'chave' });
+      if (upErr) throw upErr;
+      cacheOk.set(item.chave, { lat: pontoReal.lat, lng: pontoReal.lng, display });
+      if (pontoExato) viaLabelExato++; else viaUfCidade++;
+    }
 
+    // 5) Nominatim pro que sobrou (até `limite` locais novos, 1 req/s): tenta local+cidade
+    // primeiro e cai pra só cidade/UF quando falha — melhor um ponto na cidade certa do que nada.
+    const pendentesGeo = aindaPendentes.filter((c) => !cacheErroRecente.has(c.chave));
     let lastCallAt = 0;
     async function throttledSearch(params: Record<string, string>): Promise<GeoResult> {
       const wait = lastCallAt + NOMINATIM_DELAY_MS - Date.now();
@@ -151,7 +197,7 @@ Deno.serve(async (req) => {
     }
 
     const lote = pendentesGeo.slice(0, limite);
-    let geocodificadosNovo = 0;
+    let geocodificadosNominatim = 0;
     for (const { texto, chave } of lote) {
       const parsed = porEmbarque.get(texto)!;
       let resultado: GeoResult = null;
@@ -166,11 +212,11 @@ Deno.serve(async (req) => {
         : { chave, tipo: 'cidade', latitude: null, longitude: null, endereco_resolvido: null, status: 'erro', atualizado_em: new Date().toISOString() };
       const { error: upErr } = await supabase.from('geocode_cache').upsert(row, { onConflict: 'chave' });
       if (upErr) throw upErr;
-      if (resultado) { cacheOk.set(chave, resultado); geocodificadosNovo++; }
+      if (resultado) { cacheOk.set(chave, resultado); geocodificadosNominatim++; }
     }
 
-    // 4) Grava operacional_os pra todo embarque já resolvido (cache antigo + o
-    // que acabou de ser geocodificado agora), não só o lote desta execução.
+    // 6) Grava operacional_os pra todo embarque já resolvido (cache antigo + pontos_embarque +
+    // o que acabou de ser geocodificado agora), não só o lote desta execução.
     let atualizadas = 0;
     const falhas: { texto: string; erro: string }[] = [];
     for (const { texto, chave } of chaves) {
@@ -182,20 +228,21 @@ Deno.serve(async (req) => {
           { ponto1_latitude: geo.lat, ponto1_longitude: geo.lng, ponto1_nome: geo.display || texto, updated_at: new Date().toISOString() },
           { count: 'exact' }
         )
-        .eq('embarque', texto)
-        .is('ponto1_latitude', null);
+        .eq('embarque', texto);
       if (updErr) { falhas.push({ texto, erro: updErr.message }); continue; }
       atualizadas += count || 0;
     }
 
     return json({
       pendentes: porEmbarque.size,
-      chaves_pendentes_antes: pendentesGeo.length,
-      geocodificados_novo: geocodificadosNovo,
+      via_label_exato: viaLabelExato,
+      via_uf_cidade: viaUfCidade,
+      chaves_pendentes_nominatim_antes: pendentesGeo.length,
+      geocodificados_nominatim: geocodificadosNominatim,
       atualizadas,
       falhas_gravacao: falhas.length,
       falhas_detalhe: falhas.slice(0, 10),
-      restantes: Math.max(0, pendentesGeo.length - lote.length),
+      restantes_nominatim: Math.max(0, pendentesGeo.length - lote.length),
     });
   } catch (err) {
     console.error('[geocode-operacional-os]', err);
