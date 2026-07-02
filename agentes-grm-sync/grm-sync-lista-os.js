@@ -1,3 +1,7 @@
+process.env.TMPDIR = '/home/grao100/tmp';
+process.env.TEMP = '/home/grao100/tmp';
+process.env.TMP = '/home/grao100/tmp';
+
 require('dotenv').config();
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -50,7 +54,7 @@ async function login(page) {
 async function downloadReport(page) {
   log('INFO', `Navegando para ${REPORT_CONFIG.name}...`);
   await page.goto(REPORT_CONFIG.url, { waitUntil: 'networkidle2', timeout: 60000 });
-  await page.waitForSelector('input[placeholder="O.S."], input[placeholder="Filtrar Pesquisa"]', { timeout: 30000 });
+  await page.waitForSelector('input[placeholder="O.S."], input[placeholder="Filtrar Pesquisa"]', { timeout: 90000 });
   await page.waitForTimeout(4000);
 
   log('INFO', 'Clicando em XLS...');
@@ -117,10 +121,12 @@ async function main() {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--noerrdialogs',
+        '--disable-breakpad',
+        '--disable-crashpad',
+        '--disable-crash-reporter',
         '--disable-gpu',
         '--disable-software-rasterizer',
-        '--no-zygote',
-        '--single-process',
         '--disable-extensions',
         '--disable-background-networking',
         '--disable-default-apps',
@@ -132,10 +138,10 @@ async function main() {
         '--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
         '--disable-site-isolation-trials'
       ],
-      defaultViewport: { width: 1920, height: 1440 }
+      defaultViewport: { width: 1366, height: 768 }
     });
     const page = await browser.newPage();
-    page.setViewport({ width: 1920, height: 1440 });
+    page.setViewport({ width: 1366, height: 768 });
 
     await login(page);
 

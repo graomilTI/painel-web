@@ -1,3 +1,7 @@
+process.env.TMPDIR = '/home/grao100/tmp';
+process.env.TEMP = '/home/grao100/tmp';
+process.env.TMP = '/home/grao100/tmp';
+
 require('dotenv').config();
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -195,10 +199,12 @@ async function main() {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--noerrdialogs',
+        '--disable-breakpad',
+        '--disable-crashpad',
+        '--disable-crash-reporter',
         '--disable-gpu',
         '--disable-software-rasterizer',
-        '--no-zygote',
-        '--single-process',
         '--disable-extensions',
         '--disable-background-networking',
         '--disable-default-apps',
@@ -210,10 +216,10 @@ async function main() {
         '--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
         '--disable-site-isolation-trials'
       ],
-      defaultViewport: { width: 1920, height: 1440 }
+      defaultViewport: { width: 1366, height: 768 }
     });
     const page = await browser.newPage();
-    page.setViewport({ width: 1920, height: 1440 });
+    page.setViewport({ width: 1366, height: 768 });
     await login(page);
 
     log('INFO', `Navegando para ${REPORT_CONFIG.name}...`);

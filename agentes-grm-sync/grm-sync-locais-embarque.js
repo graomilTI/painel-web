@@ -1,7 +1,3 @@
-process.env.TMPDIR = '/home/grao100/tmp';
-process.env.TEMP = '/home/grao100/tmp';
-process.env.TMP = '/home/grao100/tmp';
-
 require('dotenv').config();
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -17,15 +13,12 @@ puppeteer.use(StealthPlugin());
 const supabase = createClient(process.env.SUPABASE_URL, (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY), { realtime: { transport: WebSocket } });
 
 const REPORT_CONFIG = {
-  name: 'Notas Fiscais',
-  url: 'https://www.grmserver.com.br/report/finance/invoices',
-  dateFields: { noteFrom: '#biiDateFrom', noteTo: '#biiDateTo', invoiceFrom: '#bilDateFrom', invoiceTo: '#bilDateTo' },
-  xlsSelector: '.invoices-report-to-xls button',
-  tableName: 'grm_notas_fiscais_importacoes',
-  // 90 dias deixava o relatório pesado demais (falha recorrente: clique em XLS nunca
-  // gerava arquivo, com erro JS no console da própria página do GRM). Como o agente
-  // resincroniza a cada ~28min, uma janela menor ainda cobre tudo com folga.
-  daysBack: Number(process.env.GRM_NOTAS_DIAS || 30)
+  name: 'Locais de Embarque',
+  url: 'https://www.grmserver.com.br/report/classification/servicePlaces',
+  dateFields: { from: '#requestDateFrom', to: '#requestDateTo' },
+  xlsSelector: '.servicePlaces-report-to-xls button',
+  tableName: 'grm_locais_embarque_importacoes',
+  daysBack: 30
 };
 
 function log(level, msg) {
@@ -44,27 +37,6 @@ function toIso(brDate) {
   return `${year}-${month}-${day}`;
 }
 
-async function setDateField(page, selector, value) {
-  await page.waitForSelector(selector, { timeout: 30000 });
-
-  await page.evaluate((sel, val) => {
-    const el = document.querySelector(sel);
-    if (!el) throw new Error('Campo de data não encontrado: ' + sel);
-
-    el.focus();
-    el.value = '';
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-
-    el.value = val;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    el.blur();
-  }, selector, value);
-
-  await page.waitForTimeout(250);
-}
-
 async function login(page) {
   log('INFO', 'Iniciando login...');
   await page.goto('https://www.grmserver.com.br/login', { waitUntil: 'networkidle2' });
@@ -76,54 +48,47 @@ async function login(page) {
 
 async function downloadReport(page) {
   log('INFO', `Navegando para ${REPORT_CONFIG.name}...`);
-  await page.goto(REPORT_CONFIG.url, { waitUntil: 'networkidle2', timeout: 60000 });
+  await page.goto(REPORT_CONFIG.url, { waitUntil: 'networkidle2' });
   await page.waitForTimeout(2000);
 
   const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
   log('INFO', `Preenchendo datas: ${dateRange.from} até ${dateRange.to}`);
+  await page.type(REPORT_CONFIG.dateFields.from, dateRange.from);
+  await page.type(REPORT_CONFIG.dateFields.to, dateRange.to);
 
-  await setDateField(page, REPORT_CONFIG.dateFields.noteFrom, dateRange.from);
-  await setDateField(page, REPORT_CONFIG.dateFields.noteTo, dateRange.to);
-  await setDateField(page, REPORT_CONFIG.dateFields.invoiceFrom, dateRange.from);
-  await setDateField(page, REPORT_CONFIG.dateFields.invoiceTo, dateRange.to);
+  log('INFO', 'Clicando em Atualizar...');
+  await page.click('.servicePlaces-act-update button');
 
-  const valoresDatas = await page.evaluate((fields) => {
-    const read = (sel) => {
-      const el = document.querySelector(sel);
-      return el ? el.value : null;
-    };
+  // Aguarda o GRM processar o relatório antes de tentar baixar o XLS.
+  await page.waitForTimeout(8000);
 
-    return {
-      noteFrom: read(fields.noteFrom),
-      noteTo: read(fields.noteTo),
-      invoiceFrom: read(fields.invoiceFrom),
-      invoiceTo: read(fields.invoiceTo)
-    };
-  }, REPORT_CONFIG.dateFields);
-
-  log('INFO', 'Datas confirmadas na tela: ' + JSON.stringify(valoresDatas));
-
-  // O download as vezes nao "pega" (provavelmente disputa de recursos quando varios
-  // agentes headless rodam ao mesmo tempo no servidor) mesmo com a pagina/relatorio
-  // saudaveis - por isso repete Atualizar+XLS antes de desistir.
-  const maxAttempts = 3;
-  let lastError;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const tempDir = setupDownloadDir('notas-fiscais');
-    try {
-      log('INFO', `Clicando em Atualizar... (tentativa ${attempt}/${maxAttempts})`);
-      await page.click('.invoices-act-update button');
-      await page.waitForSelector('.invoices-report-to-xls button:not([disabled])', { timeout: 90000 });
-
-      log('INFO', 'Clicando em XLS...');
-      return await triggerAndWaitForDownload(page, REPORT_CONFIG.xlsSelector, tempDir);
-    } catch (err) {
-      lastError = err;
-      log('WARN', `Tentativa ${attempt}/${maxAttempts} falhou: ${err.message}`);
-      if (attempt < maxAttempts) await page.waitForTimeout(3000);
-    }
+  try {
+    await page.waitForNetworkIdle({ idleTime: 1500, timeout: 30000 });
+  } catch (_) {
+    log('INFO', 'Network idle não confirmou, seguindo com validação do botão XLS...');
   }
-  throw lastError;
+
+  await page.waitForSelector(REPORT_CONFIG.xlsSelector, { visible: true, timeout: 30000 });
+
+  const xlsEnabled = await page.$eval(REPORT_CONFIG.xlsSelector, (btn) => !btn.disabled && !btn.closest('[disabled]'));
+  if (!xlsEnabled) {
+    throw new Error('Botão XLS encontrado, mas ainda está desabilitado');
+  }
+
+  log('INFO', 'Clicando em XLS...');
+  const tempDir = setupDownloadDir('locais-embarque');
+
+  try {
+    return await triggerAndWaitForDownload(page, REPORT_CONFIG.xlsSelector, tempDir, { timeout: 120000 });
+  } catch (error) {
+    const debugDir = '/tmp/grm-sync-debug';
+    fs.mkdirSync(debugDir, { recursive: true });
+    await page.screenshot({ path: path.join(debugDir, 'locais-embarque-timeout.png'), fullPage: true });
+    fs.writeFileSync(path.join(debugDir, 'locais-embarque-timeout.html'), await page.content());
+    log('DEBUG', `Screenshot salvo em ${path.join(debugDir, 'locais-embarque-timeout.png')}`);
+    log('DEBUG', `HTML salvo em ${path.join(debugDir, 'locais-embarque-timeout.html')}`);
+    throw error;
+  }
 }
 
 async function parseXLS(filePath) {
@@ -137,13 +102,14 @@ async function upsertData(data) {
   log('INFO', `Iniciando upsert de ${data.length} registros...`);
   const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
   const records = data.map(row => ({
-    data_nota_de: toIso(dateRange.from),
-    data_nota_ate: toIso(dateRange.to),
-    data_fatura_de: toIso(dateRange.from),
-    data_fatura_ate: toIso(dateRange.to),
+    data_solicitacao_de: toIso(dateRange.from),
+    data_solicitacao_ate: toIso(dateRange.to),
     cliente_nacional: row['Cliente Nacional'] || null,
-    numero_nf: row['Número NF'] || row['NF'] || null,
-    valor_total: parseFloat(row['Valor Total'] || row['Valor']) || null,
+    produto: row['Produto'] || null,
+    coordenacao: row['Coordenação'] || null,
+    servico: row['Serviço'] || null,
+    local_tipo_servico: row['Tipo Local de Serviço'] || null,
+    uf: row['UF'] || null,
     dados_json: row,
     data_sincronizacao: new Date().toISOString(), sincronizado_em: new Date().toISOString()
   }));
@@ -169,12 +135,10 @@ async function main() {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--noerrdialogs',
-        '--disable-breakpad',
-        '--disable-crashpad',
-        '--disable-crash-reporter',
         '--disable-gpu',
         '--disable-software-rasterizer',
+        '--no-zygote',
+        '--single-process',
         '--disable-extensions',
         '--disable-background-networking',
         '--disable-default-apps',
@@ -186,10 +150,10 @@ async function main() {
         '--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
         '--disable-site-isolation-trials'
       ],
-      defaultViewport: { width: 1366, height: 768 }
+      defaultViewport: { width: 1920, height: 1440 }
     });
     const page = await browser.newPage();
-    page.setViewport({ width: 1366, height: 768 });
+    page.setViewport({ width: 1920, height: 1440 });
     await login(page);
     const filePath = await downloadReport(page);
     const data = await parseXLS(filePath);
@@ -204,7 +168,7 @@ async function main() {
 }
 
 main().then(() => process.exit(0)).catch(err => { log('ERROR', err.message); process.exit(1); });
-// Com retry (ate 3 tentativas de ~90s cada para Atualizar+XLS) o script pode levar
-// varios minutos num pior caso real; 120s matava o processo no meio da 2a tentativa
-// SEM logar erro nenhum (parecia so "travar"). Aumentado para caber as 3 tentativas.
-setTimeout(() => process.exit(0), 600000);
+setTimeout(() => {
+  console.error('[ERROR] Timeout global de 5 minutos atingido');
+  process.exit(1);
+}, 300000);

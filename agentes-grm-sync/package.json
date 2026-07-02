@@ -1,0 +1,36 @@
+{
+  "name": "grm-server-colaboradores-sync",
+  "version": "1.0.0",
+  "description": "Script de sincronização de colaboradores do GRM Server para Supabase",
+  "main": "grmserver-colaboradores-sync.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node grmserver-colaboradores-sync.js",
+    "sync": "node grmserver-colaboradores-sync.js",
+    "sync:watch": "nodemon grmserver-colaboradores-sync.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.7",
+    "dotenv": "^16.6.1",
+    "puppeteer": "^19.11.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ws": "^8.21.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "grm",
+    "supabase",
+    "sync",
+    "colaboradores",
+    "web-scraping"
+  ],
+  "author": "Tecnologia GRAO",
+  "license": "MIT"
+}
