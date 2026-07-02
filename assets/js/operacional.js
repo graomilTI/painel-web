@@ -799,6 +799,7 @@ import { supabase } from './supabaseClient.js';
     return {
       os: st.os.length, osSemSaldo, kmFrota, kmParticular, kmUber,
       hospedar: st.rotas.filter(r => r.recomendacao === 'hospedar').length,
+      semColaborador: st.semAssociacao.length,
     };
   }
   function rows() { return { base: st.rotas.filter(r => passaFiltroPonto(r.ponto)), sem: st.semAssociacao.filter(r => passaFiltroPonto(r.ponto)) }; }
@@ -822,7 +823,7 @@ import { supabase } from './supabaseClient.js';
         <div class="mo-legend"><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsComSaldo ? '' : 'off'}" data-toggle-marker="os-com-saldo"><i class="verde"></i>OS com saldo ${st.mostrarOsComSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsSemSaldo ? '' : 'off'}" data-toggle-marker="os-sem-saldo"><i class="vermelho"></i>OS sem saldo ${st.mostrarOsSemSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarHoteis ? '' : 'off'}" data-toggle-marker="hoteis"><i class="roxo"></i>Hotéis ${st.mostrarHoteis ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarIrregularidades ? '' : 'off'}" data-toggle-marker="irregularidades"><i class="laranja"></i>Irregularidades ${st.mostrarIrregularidades ? 'On' : 'Off'}</button><span data-rota-status>Rotas: ${rotaInfo}</span></div></div>
         <div class="mo-body">
           <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
-          <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>KM frota</span><strong>${fmtKm(k.kmFrota)}</strong></div><div class="mo-kpi"><span>KM particular</span><strong>${fmtKm(k.kmParticular)}</strong></div><div class="mo-kpi"><span>KM uber</span><strong>${fmtKm(k.kmUber)}</strong></div><div class="mo-kpi"><span>Recomenda hospedar</span><strong>${k.hospedar}</strong></div></div>
+          <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>KM frota</span><strong>${fmtKm(k.kmFrota)}</strong></div><div class="mo-kpi"><span>KM particular</span><strong>${fmtKm(k.kmParticular)}</strong></div><div class="mo-kpi"><span>KM uber</span><strong>${fmtKm(k.kmUber)}</strong></div><div class="mo-kpi"><span>Recomenda hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div>
         </div>`;
   }
 
