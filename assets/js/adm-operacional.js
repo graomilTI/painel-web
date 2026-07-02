@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import './operacional.js';
+import './operacional-irregularidades-acoes.js?v=20260702-1430';
 
 initProtectedPage('Operacional ADM', (content, userContext) => {
   if (window.OPERACIONAL?.openHome) {
