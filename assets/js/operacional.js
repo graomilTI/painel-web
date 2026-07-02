@@ -470,13 +470,22 @@ import { supabase } from './supabaseClient.js';
     // OS pequena (saldo <= 500kg): não justifica dedicar um colaborador exclusivo, quem já
     // está em campo hoje pode assumir também, mesmo fora do raio de atendimento.
     if (Number(osSaldoKg) <= OS_SALDO_PEQUENO_KG) return true;
-    // Raio de atendimento medido a partir da BASE real do colaborador até o novo ponto — não da
-    // distância entre pontos já usados. Checar só contra o último ponto (ou "qualquer" ponto já
-    // usado) permite encadeamento: fazenda A -> armazém B (perto de A) -> silo C (perto de B, mas
-    // já longe de A) -> ..., cada elo parecendo razoável mas o conjunto virando uma rota impossível
-    // na prática. Ancorando na base, todo novo ponto precisa estar realmente dentro do alcance dele.
-    const d = distColabPonto(c, ponto);
-    return Number.isFinite(d) && d <= RAIO_REPETIR_COLAB_KM;
+    // Duas condições, as duas precisam valer:
+    // 1) o novo ponto precisa estar dentro do raio de atendimento a partir da BASE real do
+    //    colaborador — sem isso, um encadeamento de pontos (cada um perto só do anterior) deriva
+    //    pra bem longe da base real, mesmo que cada elo pareça razoável isoladamente.
+    // 2) o novo ponto também precisa estar perto de PELO MENOS UM ponto já atribuído a esse
+    //    colaborador — sem isso, alguém central geograficamente vira "sugestão" pra várias
+    //    direções distantes entre si (cada uma dentro do raio da base, mas sem nenhuma relação
+    //    entre elas), tipo sair da base, ir buscar carona numa ponta e voltar pra outra ponta
+    //    oposta — nenhum colaborador real cobre isso.
+    const distBase = distColabPonto(c, ponto);
+    if (!Number.isFinite(distBase) || distBase > RAIO_REPETIR_COLAB_KM) return false;
+    return usados.some(u => {
+      if (!u.ponto?.temCoord || !ponto.temCoord) return false;
+      const d = km(u.ponto.lat, u.ponto.lng, ponto.lat, ponto.lng);
+      return d !== null && d <= RAIO_REPETIR_COLAB_KM;
+    });
   }
   function registrarUso(c, ponto, saldo, usos) {
     const arr = usos.get(c.id) || [];
