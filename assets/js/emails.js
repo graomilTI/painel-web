@@ -286,11 +286,37 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
       .em-card{border:1px solid var(--line);border-radius:24px;background:var(--bg-card);padding:20px;min-width:0;box-shadow:var(--shadow-soft);position:relative}
 
       .em-grid{display:grid;grid-template-columns:420px minmax(0,1fr);gap:20px;align-items:start}
-      .em-filter{display:grid;grid-template-columns:1.1fr 1fr 1.5fr auto;gap:12px;align-items:end}
+      .em-grid-3{display:grid;grid-template-columns:330px minmax(0,1.35fr) minmax(300px,1fr);gap:20px;align-items:start}
+
+      .em-step-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+      .em-step-num{flex:none;width:30px;height:30px;border-radius:50%;background:var(--green-soft);color:var(--green-2);border:1.5px solid var(--green-2);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:14px}
+      .em-step-title{color:var(--text);font-size:14px;font-family:'Syne',sans-serif;font-weight:700;letter-spacing:-.01em;line-height:1.3}
+      .em-step-sub{display:block;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;font-family:'DM Sans',sans-serif;margin-top:2px}
+      .em-col-list,.em-col-main{position:relative}
+      .em-col-list::after,.em-col-main::after{content:'›';position:absolute;top:44px;right:-15px;color:var(--green-2);font-size:26px;font-weight:800;opacity:.55;z-index:2;font-family:'Syne',sans-serif}
+      @media(max-width:1280px){.em-grid-3{grid-template-columns:1fr}.em-col-list::after,.em-col-main::after{display:none}}
+
+      .em-filter{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+      .em-filter .em-field{display:contents}
+      .em-filter label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+      .em-filter select{border:1px solid var(--line);border-radius:14px;background:var(--bg-soft);color:var(--text);padding:11px 14px;font-size:13px;color-scheme:dark;font-family:inherit;cursor:pointer}
+      .em-filter input{flex:1;min-width:200px;border:1px solid var(--line);border-radius:14px;background:var(--bg-soft);color:var(--text);padding:11px 14px;font-size:13px;font-family:inherit}
+      .em-filter select:focus,.em-filter input:focus{border-color:var(--green-2);background:var(--bg);box-shadow:0 0 0 3px var(--green-soft);outline:none}
+      .em-filter button{white-space:nowrap}
+
       .em-field{display:grid;gap:8px}.em-field label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Sans',sans-serif;font-weight:700}
       .em-field input,.em-field select,.em-field textarea{border:1px solid var(--line);border-radius:16px;background:var(--bg-soft);color:var(--text);padding:12px 14px;color-scheme:dark;min-width:0;font-family:inherit;transition:all 150ms;font-size:14px}
       .em-field input:focus,.em-field select:focus,.em-field textarea:focus{border-color:var(--green-2);background:var(--bg);box-shadow:0 0 0 3px var(--green-soft);outline:none}
       .em-field textarea{min-height:120px;resize:vertical;line-height:1.45}
+
+      .em-insight-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+      .em-insight-cell{border:1px solid var(--line);background:var(--bg-soft);border-radius:14px;padding:12px 14px;min-width:0}
+      .em-insight-cell span{display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Sans',sans-serif;font-weight:700;margin-bottom:4px}
+      .em-insight-cell b{color:var(--green-2);font-size:13px;font-weight:700;font-family:'DM Sans',sans-serif;line-height:1.4;word-break:break-word}
+
+      .em-recipients-toggle{border:1px solid var(--line);background:var(--bg-soft);border-radius:12px;padding:9px 14px;font-size:12px;color:var(--green-2);cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:6px;font-family:'DM Sans',sans-serif}
+      .em-recipients-toggle:hover{border-color:var(--green-2);background:var(--green-soft)}
+      .em-recipients-full{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.7;word-break:break-word}
 
       .em-list{display:grid;gap:10px;max-height:72vh;overflow:auto;padding-right:6px}
       .em-list::-webkit-scrollbar{width:8px}
@@ -368,7 +394,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
 
     <section class="em-wrap">
       <div class="em-hero">
-        <h2>Central de E-mails</h2>
+        <h2>Central de E-mails Inteligente</h2>
         <p>Lê caixas do cPanel via IMAP, classifica por regional/assunto, gera resumo e resposta sugerida. O envio fica em fila para aprovação e processamento pelo worker do servidor.</p>
       </div>
 
@@ -403,9 +429,19 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
             <button class="btn btn-primary" type="submit">↻ Atualizar</button>
           </form>
         </article>
-        <div class="em-grid">
-          <article class="em-card"><div class="em-list" id="emList"><div class="em-empty">Carregando...</div></div></article>
-          <article class="em-card"><div id="emDetail" class="em-empty">Selecione um e-mail para visualizar.</div></article>
+        <div class="em-grid-3" id="emDetailGrid">
+          <article class="em-card em-col-list">
+            <div class="em-step-head"><span class="em-step-num">1</span><div><span class="em-step-title">Caixa de Entrada</span><span class="em-step-sub">Fila de triagem</span></div></div>
+            <div class="em-list" id="emList"><div class="em-empty">Carregando...</div></div>
+          </article>
+          <article class="em-card em-col-main">
+            <div class="em-step-head"><span class="em-step-num">2</span><div><span class="em-step-title">Leitura e interpretação pela IA</span></div></div>
+            <div id="emDetail" class="em-empty">Selecione um e-mail para visualizar.</div>
+          </article>
+          <aside class="em-card em-col-action">
+            <div class="em-step-head"><span class="em-step-num">3</span><div><span class="em-step-title">Ação sugerida</span></div></div>
+            <div id="emAction" class="em-empty">Selecione um e-mail pra ver o que fazer com ele.</div>
+          </aside>
         </div>
       </div>
 
@@ -593,6 +629,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     if (!state.emails.length) {
       list.innerHTML = `<div class="em-empty">Nenhum e-mail encontrado para os filtros.</div>`;
       document.getElementById('emDetail').innerHTML = `<div class="em-empty">Selecione um e-mail para visualizar.</div>`;
+      document.getElementById('emAction').innerHTML = `<div class="em-empty">Selecione um e-mail pra ver o que fazer com ele.</div>`;
       return;
     }
     list.innerHTML = state.emails.map((e) => `
@@ -634,9 +671,17 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
   function renderDetail(userContext) {
     const e = state.selected;
     const detail = document.getElementById('emDetail');
+    const actionEl = document.getElementById('emAction');
     if (!e) return;
     const dadosEntries = dadosDetectadosEntries(e.dados_detectados);
     const bodyText = emailBodyText(e);
+
+    const ccList = String(e.cc || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const recipientsBlock = ccList.length > 1
+      ? `<button type="button" class="em-recipients-toggle" id="emRecipientsToggle">👥 Destinatários e cópias ocultos (${ccList.length} contatos) · ver detalhes</button>
+         <div class="em-recipients-full" id="emRecipientsFull" style="display:none">Para: ${esc(e.destinatario || '-')}<br>Cc: ${esc(e.cc)}</div>`
+      : `<div class="em-to">Para: ${esc(e.destinatario || '-')}${e.cc ? ` · Cc: ${esc(e.cc)}` : ''}</div>`;
+
     detail.innerHTML = `
       <div class="em-detail">
         <div class="em-envelope">
@@ -644,7 +689,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
           <div class="em-envelope-main">
             <h3>${esc(e.assunto || '(sem assunto)')}</h3>
             <div class="em-from"><b>${esc(e.remetente_nome || e.remetente_email || '-')}</b> <span class="em-muted">&lt;${esc(e.remetente_email || '')}&gt;</span></div>
-            <div class="em-to">Para: ${esc(e.destinatario || '-')}${e.cc ? ` · Cc: ${esc(e.cc)}` : ''}</div>
+            ${recipientsBlock}
           </div>
           <div class="em-envelope-meta">
             <div class="em-date">${esc(e.email_accounts?.nome || '')}<br>${brDate(e.data_recebimento)}</div>
@@ -652,35 +697,14 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
           </div>
         </div>
 
-        <div class="em-insights">
-          <div class="em-chip" title="Área/regional identificada no conteúdo do e-mail">Regional <b>${esc(regionalLabel(e.regional))}</b></div>
-          <div class="em-chip" title="${esc(categoriaDesc(e.categoria))}">Categoria <b>${esc(categoriaLabel(e.categoria))}</b></div>
-          <div class="em-chip" title="Se sim, o e-mail entra como pendente até você responder ou arquivar">Precisa resposta? <b>${e.precisa_resposta ? 'Sim' : 'Não'}</b></div>
-          <div class="em-chip" title="Como o sistema decidiu a categoria acima">Classificado por <b>${esc(classificadoPorLabel(e.classificado_por))}</b></div>
+        <div class="em-insight-grid">
+          <div class="em-insight-cell" title="Área/regional identificada no conteúdo do e-mail"><span>Regional</span><b>${esc(regionalLabel(e.regional))}</b></div>
+          <div class="em-insight-cell" title="${esc(categoriaDesc(e.categoria))}"><span>Categoria</span><b>${esc(categoriaLabel(e.categoria))}</b></div>
+          <div class="em-insight-cell" title="Se sim, o e-mail entra como pendente até você responder ou arquivar"><span>Precisa resposta?</span><b>${e.precisa_resposta ? 'Sim' : 'Não'}</b></div>
+          <div class="em-insight-cell" title="Como o sistema decidiu a categoria acima"><span>Classificado por</span><b>${esc(classificadoPorLabel(e.classificado_por))}</b></div>
         </div>
 
         ${e.resumo_ia ? `<div class="em-summary"><span class="em-summary-label">✨ Resumo da IA</span><p>${esc(cleanEmailArtifacts(e.resumo_ia))}</p></div>` : ''}
-
-        ${e.encaminhar_sugerido_para ? `<div class="em-summary"><span class="em-summary-label">📤 Encaminhamento sugerido</span><p>Para: <b>${esc(e.encaminhar_sugerido_para)}</b>${e.encaminhar_sugerido_cc ? ` · Cc: <b>${esc(e.encaminhar_sugerido_cc)}</b>` : ''}</p><div class="em-muted em-small">O sistema identificou pra quem esse e-mail deveria ir. Ao aprovar, ele reenvia o e-mail original (com os anexos) pra esse destinatário — você não precisa reescrever nada.</div>${(() => {
-          const existente = state.outbox.find((o) => o.tipo === 'ENCAMINHAMENTO');
-          return existente
-            ? `<div class="em-muted em-small">Encaminhamento já ${esc(existente.status)} em ${brDate(existente.created_at)}</div>`
-            : `<div class="em-actions"><button class="btn btn-primary" type="button" id="emAprovarEncaminhamento">Aprovar encaminhamento</button></div>`;
-        })()}</div>` : ''}
-
-        ${(e.os_sugestao_aguardar || []).map((sug) => {
-          const linha = sug.linha || {};
-          const candidatos = sug.candidatos || [];
-          const desc = [linha.terminal, linha.cidade, linha.local].filter(Boolean).join(' · ') || 'linha sem terminal/cidade/local identificado';
-          const corpo = !candidatos.length
-            ? `<div class="em-muted em-small">Não encontrei nenhuma OS correspondente na tabela "Lista de OS" — confira manualmente.</div>`
-            : candidatos.map((os) => `
-              <div class="em-actions" style="justify-content:space-between;align-items:center;flex-wrap:wrap">
-                <div class="em-small em-muted">OS <b style="color:var(--text)">${esc(os.numero_os)}</b> · ${esc(os.cliente || '-')} · ${esc(os.embarque || '-')}${os.contrato ? ` · Contrato ${esc(os.contrato)}` : ''}</div>
-                ${os.status_gestor === 'AGUARDAR' ? '<span class="em-badge resolvido">Já está AGUARDAR</span>' : `<button class="btn btn-primary" type="button" data-marcar-os="${esc(os.id)}" data-numero-os="${esc(os.numero_os)}">Marcar AGUARDAR</button>`}
-              </div>`).join('');
-          return `<div class="em-summary"><span class="em-summary-label">🚦 Embarque suspenso detectado</span><p>${esc(desc)}${linha.data ? ` · ${esc(linha.data)}` : ''}</p><div class="em-muted em-small">Detectado na tabela de programação de embarque anexada a este e-mail.${candidatos.length ? ' Confirme qual OS marcar como AGUARDAR — o sistema não muda sozinho.' : ''}</div>${corpo}</div>`;
-        }).join('')}
 
         ${dadosEntries.length ? `<div class="em-extracted"><span class="em-section-label">Dados detectados</span><dl class="em-dl">${dadosEntries.map(([k, v]) => `<dt>${esc(DADOS_LABELS[k] || prettyKey(k))}</dt><dd>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>` : ''}
 
@@ -700,6 +724,36 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
           <span class="em-section-label">Mensagem</span>
           <div class="em-letter"><pre>${esc(bodyText || '(sem conteúdo)')}</pre></div>
         </div>
+      </div>
+    `;
+
+    document.getElementById('emRecipientsToggle')?.addEventListener('click', () => {
+      const full = document.getElementById('emRecipientsFull');
+      full.style.display = full.style.display === 'none' ? 'block' : 'none';
+    });
+
+    actionEl.innerHTML = `
+      <div class="em-detail">
+        ${e.encaminhar_sugerido_para ? `<div class="em-summary"><span class="em-summary-label">📤 Encaminhamento sugerido</span><p>Para: <b>${esc(e.encaminhar_sugerido_para)}</b>${e.encaminhar_sugerido_cc ? ` · Cc: <b>${esc(e.encaminhar_sugerido_cc)}</b>` : ''}</p><div class="em-muted em-small">O sistema identificou pra quem esse e-mail deveria ir. Ao aprovar, ele reenvia o e-mail original (com os anexos) pra esse destinatário — você não precisa reescrever nada.</div>${(() => {
+          const existente = state.outbox.find((o) => o.tipo === 'ENCAMINHAMENTO');
+          return existente
+            ? `<div class="em-muted em-small">Encaminhamento já ${esc(existente.status)} em ${brDate(existente.created_at)}</div>`
+            : `<div class="em-actions"><button class="btn btn-primary em-btn-full" type="button" id="emAprovarEncaminhamento">Aprovar encaminhamento</button></div>`;
+        })()}</div>` : ''}
+
+        ${(e.os_sugestao_aguardar || []).map((sug) => {
+          const linha = sug.linha || {};
+          const candidatos = sug.candidatos || [];
+          const desc = [linha.terminal, linha.cidade, linha.local].filter(Boolean).join(' · ') || 'linha sem terminal/cidade/local identificado';
+          const corpo = !candidatos.length
+            ? `<div class="em-muted em-small">Não encontrei nenhuma OS correspondente na tabela "Lista de OS" — confira manualmente.</div>`
+            : candidatos.map((os) => `
+              <div class="em-actions" style="justify-content:space-between;align-items:center;flex-wrap:wrap">
+                <div class="em-small em-muted">OS <b style="color:var(--text)">${esc(os.numero_os)}</b> · ${esc(os.cliente || '-')} · ${esc(os.embarque || '-')}${os.contrato ? ` · Contrato ${esc(os.contrato)}` : ''}</div>
+                ${os.status_gestor === 'AGUARDAR' ? '<span class="em-badge resolvido">Já está AGUARDAR</span>' : `<button class="btn btn-primary" type="button" data-marcar-os="${esc(os.id)}" data-numero-os="${esc(os.numero_os)}">Marcar AGUARDAR</button>`}
+              </div>`).join('');
+          return `<div class="em-summary"><span class="em-summary-label">🚦 Embarque suspenso detectado</span><p>${esc(desc)}${linha.data ? ` · ${esc(linha.data)}` : ''}</p><div class="em-muted em-small">Detectado na tabela de programação de embarque anexada a este e-mail.${candidatos.length ? ' Confirme qual OS marcar como AGUARDAR — o sistema não muda sozinho.' : ''}</div>${corpo}</div>`;
+        }).join('')}
 
         <div class="em-reply">
           <span class="em-section-label">↩ Responder ao remetente</span>
@@ -845,7 +899,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     const row = event.target.closest('[data-email-id]');
     if (row) selectEmail(row.dataset.emailId);
   });
-  document.getElementById('emDetail').addEventListener('click', async (event) => {
+  document.getElementById('emDetailGrid').addEventListener('click', async (event) => {
     const attachmentBtn = event.target.closest('[data-attachment-path]');
     if (attachmentBtn) {
       const win = window.open('', '_blank');
@@ -886,6 +940,7 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
     await loadEmails();
     state.selected = null;
     document.getElementById('emDetail').innerHTML = `<div class="em-empty">Status atualizado.</div>`;
+    document.getElementById('emAction').innerHTML = `<div class="em-empty">Selecione um e-mail pra ver o que fazer com ele.</div>`;
   });
   document.getElementById('emAccountForm').addEventListener('submit', saveAccount);
   document.getElementById('accClear').addEventListener('click', () => fillAccountForm(null));
