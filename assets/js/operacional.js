@@ -23,6 +23,43 @@ import { supabase } from './supabaseClient.js';
   };
 
   const BR_LAT_MIN = -34.2, BR_LAT_MAX = 6.0, BR_LNG_MIN = -74.5, BR_LNG_MAX = -28.0;
+  // Nome do estado (como aparece no endereço reverso-geocodificado de frotas_posicoes.endereco,
+  // ex.: "..., Mato Grosso, Brazil") -> sigla, pra filtrar veículos pela posição atual deles
+  // (não pela UF de registro do veículo, que pode ser de outro estado).
+  const UF_POR_NOME_ESTADO = {
+    ACRE: 'AC', ALAGOAS: 'AL', AMAPA: 'AP', AMAZONAS: 'AM', BAHIA: 'BA', CEARA: 'CE',
+    'DISTRITO FEDERAL': 'DF', 'ESPIRITO SANTO': 'ES', GOIAS: 'GO', MARANHAO: 'MA',
+    'MATO GROSSO': 'MT', 'MATO GROSSO DO SUL': 'MS', 'MINAS GERAIS': 'MG', PARA: 'PA',
+    PARAIBA: 'PB', PARANA: 'PR', PERNAMBUCO: 'PE', PIAUI: 'PI', 'RIO DE JANEIRO': 'RJ',
+    'RIO GRANDE DO NORTE': 'RN', 'RIO GRANDE DO SUL': 'RS', RONDONIA: 'RO', RORAIMA: 'RR',
+    'SANTA CATARINA': 'SC', 'SAO PAULO': 'SP', SERGIPE: 'SE', TOCANTINS: 'TO',
+  };
+  function ufDoEndereco(endereco) {
+    const partes = String(endereco || '').split(',').map(p => norm(p).replace(/\s+/g, ' ').trim());
+    for (const parte of partes) { if (UF_POR_NOME_ESTADO[parte]) return UF_POR_NOME_ESTADO[parte]; }
+    return '';
+  }
+  // Fallback geográfico (capital mais próxima) pra achar a UF de um ponto que tem coordenada mas
+  // não tem texto de embarque parseável (ex.: irregularidades ligadas a OS com "Embarque" vazio
+  // na origem) — impreciso perto de fronteira, mas muito melhor que não filtrar nada.
+  const CAPITAIS_POR_UF = {
+    AC: [-9.97, -67.81], AL: [-9.66, -35.74], AP: [0.04, -51.07], AM: [-3.12, -60.02],
+    BA: [-12.97, -38.51], CE: [-3.73, -38.53], DF: [-15.79, -47.88], ES: [-20.32, -40.34],
+    GO: [-16.68, -49.25], MA: [-2.53, -44.30], MT: [-15.60, -56.10], MS: [-20.44, -54.65],
+    MG: [-19.92, -43.94], PA: [-1.46, -48.50], PB: [-7.12, -34.86], PR: [-25.43, -49.27],
+    PE: [-8.05, -34.88], PI: [-5.09, -42.80], RJ: [-22.91, -43.17], RN: [-5.79, -35.21],
+    RS: [-30.03, -51.23], RO: [-8.76, -63.90], RR: [2.82, -60.67], SC: [-27.60, -48.55],
+    SP: [-23.55, -46.63], SE: [-10.91, -37.07], TO: [-10.25, -48.25],
+  };
+  function ufDaCoordenada(latitude, longitude) {
+    if (!Number.isFinite(Number(latitude)) || !Number.isFinite(Number(longitude))) return '';
+    let melhorUf = '', menorDist = Infinity;
+    for (const [uf, [clat, clng]] of Object.entries(CAPITAIS_POR_UF)) {
+      const d = km(latitude, longitude, clat, clng);
+      if (d !== null && d < menorDist) { menorDist = d; melhorUf = uf; }
+    }
+    return melhorUf;
+  }
   // Raio pra permitir reusar um colaborador já usado em outra OS. Analisado em 2026-07-01:
   // ignorando esse raio inteiramente (reuso livre), 94% das 842 OS abertas têm alguém a menos de
   // 150km e a mediana é 3,4km — ou seja, quase nunca é escassez real de mão de obra. O raio de 5km
@@ -73,7 +110,7 @@ import { supabase } from './supabaseClient.js';
     os: [], osTodas: [], pontos: [], colaboradores: [], veiculos: [], rotas: [], semAssociacao: [],
     estado: '', ponto: '', rota: '', mostrarRota: true, tab: 'mapa', mapaBase: 'escuro',
     mostrarVeiculos: true, mostrarColaboradores: true, mostrarOsComSaldo: true, mostrarOsSemSaldo: true, mostrarHoteis: false,
-    mostrarIrregularidades: true, irregularidades: [],
+    mostrarIrregularidades: true, irregularidades: [], ufPorNumeroOs: new Map(),
     comparativo: [], supervisaoComparativo: '',
     map: null, mapEl: null, tileLayer: null, layer: null, routeLayer: null, rotaRealCache: new Map(), drawToken: 0,
   };
@@ -721,6 +758,17 @@ import { supabase } from './supabaseClient.js';
     st.semAssociacao = [];
     st.rotas = [];
 
+    // logistica_cargas_irregularidades não tem UF própria — só o número da OS. Resolve pela UF
+    // do ponto de embarque daquela OS (usa st.osTodas, não só st.os, pra cobrir OS já fechadas).
+    st.ufPorNumeroOs = new Map();
+    st.osTodas.forEach(o => {
+      const ponto = pontosPorChave.get(o.__pontoKey);
+      // Embarque parseável dá a UF exata; sem isso (texto "-  ()" vazio na origem, mas com
+      // coordenada real), cai no fallback por proximidade da capital.
+      const uf = ponto?.uf || ufDaCoordenada(ponto?.lat, ponto?.lng);
+      if (uf && o.numero_os) st.ufPorNumeroOs.set(String(o.numero_os), uf);
+    });
+
     const ordenadas = [...st.os].sort((a, b) => b.__saldo - a.__saldo);
     for (const os of ordenadas) {
       const ponto = pontosPorChave.get(os.__pontoKey);
@@ -1015,9 +1063,11 @@ import { supabase } from './supabaseClient.js';
   }
 
   function drawVeiculos(L, bounds) {
-    st.veiculos.filter(geo).forEach(v => {
+    // UF extraída do endereço reverso-geocodificado (posição atual do veículo), não da UF de
+    // registro/placa — um veículo emplacado em MT pode estar operando em GO agora.
+    st.veiculos.filter(geo).filter(v => !st.estado || ufDoEndereco(v.endereco) === st.estado).forEach(v => {
       L.marker([lat(v), lng(v)], { icon: icon(v.status === 'em_movimento' ? 'veic-mov' : 'veic-park') }).bindTooltip(veiculoTooltip(v)).addTo(st.layer);
-      if (!st.estado && !st.ponto) bounds.push([lat(v), lng(v)]);
+      bounds.push([lat(v), lng(v)]);
     });
   }
 
@@ -1029,9 +1079,9 @@ import { supabase } from './supabaseClient.js';
   }
 
   function drawHoteis(L, bounds) {
-    st.hoteisComCoord.forEach(h => {
+    st.hoteisComCoord.filter(h => !st.estado || norm(h.uf) === norm(st.estado)).forEach(h => {
       L.marker([lat(h), lng(h)], { icon: icon('hotel') }).bindTooltip(hotelTooltip(h)).addTo(st.layer);
-      if (!st.estado && !st.ponto) bounds.push([lat(h), lng(h)]);
+      bounds.push([lat(h), lng(h)]);
     });
   }
 
@@ -1042,10 +1092,21 @@ import { supabase } from './supabaseClient.js';
     return `<strong>⚠️ Carga fora do raio · O.S. ${esc(i.os || '—')}</strong><br>${esc(i.cliente || '')}<br>Classificador: ${esc(i.colaborador || '—')}<br>Distância do embarque: ${esc(dist)}<br>${esc(fmtDataBr(i.data_classificacao))}${i.hora_cadastro ? ' ' + esc(i.hora_cadastro) : ''}`;
   }
 
+  // st.ufPorNumeroOs cobre a maioria; quando a OS não está lá (ex.: já finalizada/fora de
+  // st.osTodas), cai na coordenada própria do registro de irregularidade.
+  function ufDaIrregularidade(i) {
+    return st.ufPorNumeroOs.get(String(i.os))
+      || ufDaCoordenada(i.lat_os, i.lng_os)
+      || ufDaCoordenada(i.lat_lancamento, i.lng_lancamento);
+  }
+
   // Só marca no mapa as irregularidades ainda ABERTAS — resolvidas ficam de registro histórico
   // só na aba de lista, senão o mapa fica poluído com alertas que já foram tratados.
   function drawIrregularidades(L, bounds) {
-    st.irregularidades.filter(i => norm(i.status) === 'ABERTA' && geo({ latitude: i.lat_lancamento, longitude: i.lng_lancamento })).forEach(i => {
+    st.irregularidades
+      .filter(i => norm(i.status) === 'ABERTA' && geo({ latitude: i.lat_lancamento, longitude: i.lng_lancamento }))
+      .filter(i => !st.estado || ufDaIrregularidade(i) === st.estado)
+      .forEach(i => {
       L.marker([i.lat_lancamento, i.lng_lancamento], { icon: iconIrreg() }).bindTooltip(irregTooltip(i)).addTo(st.layer);
       bounds.push([i.lat_lancamento, i.lng_lancamento]);
       if (geo({ latitude: i.lat_os, longitude: i.lng_os })) {
