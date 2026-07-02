@@ -509,6 +509,11 @@ import { supabase } from './supabaseClient.js';
           return { c, dist: avaliacao.distReal, avaliacao, saldoAtual: saldoAcumulado(c, usos) };
         })
         .filter(x => Number.isFinite(x.dist))
+        // Candidato "inviável" (mais de 150km sem hospedagem real/estimada que justifique) não é
+        // uma sugestão executável — é só o "menos pior" quando a mão de obra próxima já foi
+        // consumida por outras OS. Nunca deve aparecer como se fosse uma recomendação normal;
+        // melhor cair em "sem colaborador" e sinalizar que precisa de revisão manual.
+        .filter(x => !x.avaliacao.inviavel)
         // Sempre o colaborador mais próximo primeiro — nunca mandamos alguém a milhares de km só
         // porque o modo de transporte "parece" mais barato no papel. Mas dentro de ~20km de
         // diferença, distância deixa de ser decisiva e quem tem menos carga acumulada no dia
@@ -718,7 +723,7 @@ import { supabase } from './supabaseClient.js';
       const escolhido = ponto.temCoord ? escolherColaborador(os, ponto, usos) : null;
       if (!escolhido) {
         const motivo = ponto.temCoord
-          ? `Sem colaborador com coordenada disponível respeitando repetição por local/${RAIO_REPETIR_COLAB_KM} km`
+          ? `Sem colaborador viável a até ${DIST_MAX_DESLOCAMENTO_DIARIO_KM}km (ou dentro do raio de ${RAIO_REPETIR_COLAB_KM}km pra reuso) e sem hospedagem por perto — precisa de revisão manual`
           : 'Ponto de embarque sem coordenada cadastrada (endereço não geocodificado) — associe manualmente';
         st.semAssociacao.push({ os, ponto, motivo });
         continue;
