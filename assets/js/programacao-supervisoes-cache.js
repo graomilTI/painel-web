@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import './programacao-extras-inline.js?v=20260629-extras1';
 
-const CACHE_KEY = 'programacao_supervisoes_v1';
+const CACHE_KEY = 'programacao_supervisoes_v2';
 const CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const originalFrom = supabase.from.bind(supabase);
 const originalRpc = supabase.rpc.bind(supabase);

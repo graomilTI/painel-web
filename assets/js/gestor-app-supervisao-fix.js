@@ -37,12 +37,17 @@ function parseList(value) {
   return [...new Set(text.split(/[,;|\n]+/).map((item) => item.trim()).filter(Boolean))];
 }
 
+// Marcadores de papel/perfil que às vezes aparecem misturados no campo livre
+// app_usuarios.supervisao (ex.: "Master" herdado de backfill legado) — não são
+// coordenações reais e não podem aparecer como se fossem uma.
+const NAO_COORDENACAO = new Set(['MASTER', 'ADMIN', 'ADMINISTRADOR', 'GESTOR', 'DIRETOR']);
+
 function uniqLabels(values) {
   const map = new Map();
   values.flatMap(parseList).forEach((item) => {
     const label = String(item || '').trim();
     const key = norm(label);
-    if (label && key && !map.has(key)) map.set(key, label);
+    if (label && key && !NAO_COORDENACAO.has(key) && !map.has(key)) map.set(key, label);
   });
   return [...map.values()];
 }

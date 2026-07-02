@@ -32,6 +32,11 @@ function isMasterContext(context) {
   return Boolean(context?.user?.is_master || context?.is_master || norm(role) === 'MASTER');
 }
 
+// Marcadores de papel/perfil que às vezes aparecem misturados no campo livre
+// app_usuarios.supervisao (ex.: "Master" herdado de backfill legado) — não são
+// coordenações/supervisões reais.
+const NAO_COORDENACAO = new Set(['MASTER', 'ADMIN', 'ADMINISTRADOR', 'GESTOR', 'DIRETOR']);
+
 function buildAccess(context, appUser) {
   const labels = [
     ...parseList(appUser?.supervisao),
@@ -40,7 +45,7 @@ function buildAccess(context, appUser) {
     ...parseList(context?.user?.supervisoes),
     ...parseList(context?.supervisao),
     ...parseList(context?.supervisoes),
-  ].filter(Boolean);
+  ].filter((item) => item && !NAO_COORDENACAO.has(norm(item)));
 
   const coordenacao = String(appUser?.coordenacao || context?.coordenacao || context?.user?.coordenacao || '').trim();
   if (coordenacao) labels.push(coordenacao);
