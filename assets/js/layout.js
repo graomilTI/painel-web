@@ -116,10 +116,11 @@ function ensureQuickNavStyles() {
   const style = document.createElement('style');
   style.id = 'mobileQuickNavStyles';
   style.textContent = `
-    .mobile-quick-nav{display:none;gap:8px;overflow-x:auto;padding:8px max(12px,env(safe-area-inset-left));background:rgba(9,9,20,.92);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.06);position:sticky;top:64px;z-index:55;scrollbar-width:none}
+    .mobile-quick-nav{display:none;gap:4px;overflow-x:auto;padding:8px max(8px,env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom));background:rgba(8,8,16,.94);backdrop-filter:blur(20px);border-top:1px solid rgba(255,255,255,.052);position:fixed;left:0;right:0;bottom:0;z-index:70;scrollbar-width:none}
     .mobile-quick-nav::-webkit-scrollbar{display:none}
     body.mobile-gestor-mode .mobile-quick-nav{display:flex}
-    .mobile-quick-nav-item{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 12px;border-radius:14px;border:1px solid transparent;background:transparent;color:#9aa6bd;text-decoration:none;font-size:10.5px;font-weight:800;white-space:nowrap}
+    body.mobile-gestor-mode .page-main{padding-bottom:calc(66px + env(safe-area-inset-bottom))!important}
+    .mobile-quick-nav-item{flex:1 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:58px;min-height:50px;padding:6px 8px;border-radius:14px;border:1px solid transparent;background:transparent;color:#9aa6bd;text-decoration:none;font-size:10px;font-weight:800;white-space:nowrap}
     .mobile-quick-nav-item .qn-ico{font-size:17px;line-height:1}
     .mobile-quick-nav-item.active{background:rgba(0,200,122,.14);border-color:rgba(45,212,160,.30);color:#dcfce7}
   `;
@@ -127,9 +128,6 @@ function ensureQuickNavStyles() {
 }
 
 function ensureMobileQuickNav() {
-  const topbar = document.querySelector('.topbar');
-  if (!topbar) return null;
-
   let nav = document.getElementById('mobileQuickNav');
   if (!nav) {
     ensureQuickNavStyles();
@@ -140,7 +138,7 @@ function ensureMobileQuickNav() {
       const href = toPanelUrl(item.path);
       return `<a class="mobile-quick-nav-item" href="${href}" data-quick-nav-path="${item.path}"><span class="qn-ico" aria-hidden="true">${item.icon}</span><span>${item.label}</span></a>`;
     }).join('');
-    topbar.insertAdjacentElement('afterend', nav);
+    document.body.appendChild(nav);
   }
 
   const current = window.location.pathname.replace(/\.html$/i, '').split('/').pop() || 'gestor-app';
