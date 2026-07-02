@@ -15,6 +15,8 @@ const BTG_AGENT_ALIASES = [
   'grm-sync-btg-relatorios',
 ];
 
+const CARGAS_AGENT_ID = 'sync-cargas-geofence';
+
 const AGENTES = [
   { id: 'sync-colaboradores', name: 'Colaboradores', freq: '5 min', table: 'colaboradores' },
   { id: 'sync-producao-diaria', name: 'Produção Diária', freq: '1h', table: 'grm_producao_diaria_importacoes' },
@@ -30,6 +32,7 @@ const AGENTES = [
   { id: 'sync-nhe', name: 'NHE', freq: '1h', table: 'grm_nhe_importacoes' },
   { id: 'sync-lista-os', name: 'Lista de OS', freq: '1h', table: 'grm_lista_os_importacoes' },
   { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: '1h', table: 'grm_distribuicao_os_importacoes' },
+  { id: CARGAS_AGENT_ID, name: 'Cargas · Geofence', freq: '1h', table: 'grm_cargas_importacoes' },
   { id: BTG_AGENT_ID, name: 'BTG · Relatórios', freq: '1h / disparo', table: 'logistica_btg_solicitacoes', aliases: BTG_AGENT_ALIASES, kpi: true },
   { id: 'botconversa-sync', name: 'BotConversa · Contatos', freq: '1h', table: 'botconversa_contatos', source: 'botconversa' },
 ];
@@ -43,7 +46,7 @@ const STATUS_META = {
   sem_job: { ui: 'idle', label: 'Aguardando', color: '#f59e0b', detail: '🟡 Aguardando' },
 };
 
-const state = { agentes: [], loading: false, selectedAgent: null, botconversaFailures: [] };
+const state = { agentes: [], loading: false, selectedAgent: null, botconversaFailures: [], cargasKpi: null };
 
 const esc = (v) => String(v ?? '')
   .replaceAll('&','&amp;')
@@ -178,6 +181,53 @@ function renderBtgKpi() {
   </div>`;
 }
 
+function renderCargasKpi() {
+  const cargas = state.agentes.find((x) => x.id === CARGAS_AGENT_ID) || AGENTES.find((x) => x.id === CARGAS_AGENT_ID);
+  const meta = getAgenteMeta(cargas);
+  const lastRun = state.cargasKpi?.lastRun;
+  const abertas = state.cargasKpi?.abertas || 0;
+
+  return `<div class="ag-btg-kpi" onclick="selectAgent('${CARGAS_AGENT_ID}')">
+    <div class="ag-btg-kpi-head">
+      <div>
+        <div class="ag-btg-kpi-title">🗺️ KPI · Cargas x Geofence</div>
+        <div class="ag-btg-kpi-sub">Cargas lançadas fora do raio de 2km da O.S., cruzando o relatório do dia com o mapa.</div>
+      </div>
+      <div class="ag-btg-kpi-status" style="color:${meta.color}"><span class="ag-status-dot ${meta.ui}"></span>${meta.label}</div>
+    </div>
+    <div class="ag-btg-kpi-grid">
+      <div class="ag-btg-kpi-item"><span>Último relatório</span><strong>${formatDate(lastRun?.iniciado_em)}</strong></div>
+      <div class="ag-btg-kpi-item"><span>Linhas processadas</span><strong>${formatInt(lastRun?.total_linhas)}</strong></div>
+      <div class="ag-btg-kpi-item"><span>Sem referência de O.S.</span><strong>${formatInt(lastRun?.total_sem_referencia_os)}</strong></div>
+      <div class="ag-btg-kpi-item"><span>Irregularidades abertas</span><strong style="color:${abertas ? '#fca5a5' : '#86efac'}">${formatInt(abertas)}</strong></div>
+    </div>
+  </div>`;
+}
+
+async function loadCargasKpi() {
+  try {
+    const [lastRunRes, abertasRes] = await Promise.all([
+      supabase
+        .from('logistica_cargas_monitor_execucoes')
+        .select('data_ref, status, iniciado_em, finalizado_em, total_linhas, total_com_coordenada, total_sem_referencia_os, total_irregularidades, erro')
+        .order('iniciado_em', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('logistica_cargas_irregularidades')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'ABERTA'),
+    ]);
+    state.cargasKpi = {
+      lastRun: lastRunRes.data || null,
+      abertas: abertasRes.count || 0,
+    };
+  } catch (e) {
+    console.error('Erro carregando KPI de Cargas x Geofence:', e);
+  }
+  render();
+}
+
 function renderAgentes() {
   const statusCount = {
     online: AGENTES.filter((a) => getAgenteStatus(state.agentes.find((x) => x.id === a.id)) === 'online').length,
@@ -195,6 +245,7 @@ function renderAgentes() {
         <div class="ag-stat"><div class="ag-stat-val" style="color:#ef4444">${statusCount.error}</div><div class="ag-stat-lbl">Com Erro</div></div>
       </div>
       ${renderBtgKpi()}
+      ${renderCargasKpi()}
     </div>`;
 
   if (state.selectedAgent) html += renderAgentDetails(state.selectedAgent);
@@ -478,8 +529,11 @@ function render() {
 
 async function init() {
   await initProtectedPage(['TI_AGENTES', 'TI']);
-  await loadAgentes();
+  await Promise.all([loadAgentes(), loadCargasKpi()]);
 }
 
 init();
-setInterval(loadAgentes, 30000);
+setInterval(() => {
+  loadAgentes();
+  loadCargasKpi();
+}, 30000);
