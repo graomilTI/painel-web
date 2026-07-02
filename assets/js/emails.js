@@ -350,9 +350,14 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
 
       .em-letter{position:relative;border:1px solid var(--line);border-radius:16px;background:var(--bg-soft);padding:24px;overflow:hidden}
       .em-letter::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green-2)}
-      .em-letter pre{white-space:pre-wrap;word-break:break-word;color:var(--text);line-height:1.8;font-size:14px;font-family:'DM Sans',monospace;margin:0;max-height:480px;overflow:auto;padding-right:8px}
+      .em-letter pre{white-space:pre-wrap;word-break:break-word;color:var(--text);line-height:1.8;font-size:14px;font-family:'DM Sans',monospace;margin:0;max-height:480px;overflow:auto;padding-right:8px;text-align:left}
 
       .em-reply{border:1px solid var(--line);border-radius:16px;background:var(--bg-soft);padding:18px;display:grid;gap:12px}
+      .em-btn-full{width:100%;text-align:center}
+      .em-reply-divider{height:1px;background:var(--line);margin:4px 0}
+      .em-secondary-label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Sans',sans-serif;font-weight:700;margin-bottom:10px}
+      .em-btn-ghost{background:transparent;border:1px solid var(--line);color:var(--muted);font-weight:700}
+      .em-btn-ghost:hover{border-color:var(--green-2);color:var(--green-2);background:var(--green-soft)}
 
       .em-empty{color:var(--muted);text-align:center;padding:40px;border:1px dashed var(--line);border-radius:16px;font-size:14px;line-height:1.6}
       .em-muted{color:var(--muted)}.em-small{font-size:12px}.em-danger{color:var(--danger);font-weight:700}.em-ok{color:var(--green-2);font-weight:700}
@@ -697,19 +702,25 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
         </div>
 
         <div class="em-reply">
-          <span class="em-section-label">↩ Responder</span>
+          <span class="em-section-label">↩ Responder ao remetente</span>
           <form id="emReplyForm" class="em-field">
             <label>Resposta sugerida / resposta a enviar</label>
             <textarea id="emReplyText">${esc(e.resposta_sugerida || '')}</textarea>
-            <div class="em-actions">
-              <button class="btn btn-primary" type="submit">Aprovar e colocar na fila de envio</button>
-              <button class="btn btn-secondary" type="button" data-action="resolved">Marcar resolvido</button>
-              <button class="btn btn-secondary" type="button" data-action="archive">Arquivar</button>
-              <button class="btn btn-secondary" type="button" data-action="pending">Marcar pendente</button>
-            </div>
-            <div class="em-muted em-small">"Aprovar" coloca o texto acima na fila de envio — o sistema manda pelo SMTP sozinho em seguida. "Marcar resolvido"/"Arquivar" tiram este e-mail da lista de pendentes sem enviar nada. "Marcar pendente" devolve pra lista de acompanhamento.</div>
+            <button class="btn btn-primary em-btn-full" type="submit">✅ Aprovar e colocar na fila de envio</button>
+            <div class="em-muted em-small">O texto acima vai pra fila de envio — o sistema manda pelo SMTP sozinho em seguida, sem precisar fazer mais nada.</div>
             ${state.outbox.length ? `<div class="em-muted em-small">Já existe resposta na fila: ${state.outbox.map((o) => `${esc(o.status)} em ${brDate(o.created_at)}`).join(' · ')}</div>` : ''}
           </form>
+
+          <div class="em-reply-divider"></div>
+
+          <div>
+            <span class="em-secondary-label">Outras ações — não envia e-mail nenhum</span>
+            <div class="em-actions">
+              <button class="btn em-btn-ghost" type="button" data-action="resolved" title="Tira da lista de pendentes, sem enviar resposta">✔️ Marcar resolvido</button>
+              <button class="btn em-btn-ghost" type="button" data-action="archive" title="Tira da lista de pendentes, sem enviar resposta">🗄️ Arquivar</button>
+              <button class="btn em-btn-ghost" type="button" data-action="pending" title="Devolve pra lista de acompanhamento">⏳ Marcar pendente</button>
+            </div>
+          </div>
         </div>
       </div>
     `;
