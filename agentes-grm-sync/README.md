@@ -15,7 +15,14 @@ worker/grm-sync-job-worker.js       — poll a cada 15s (GRM_SYNC_JOB_POLL_MS), 
 grm-sync-*.js / grmserver-colaboradores-sync.js  — login Puppeteer no GRM → baixa XLS → parseia → upsert no Supabase
 ```
 
-Não usa mais PM2 cron nem Edge Functions (arquitetura antiga, abandonada). Tudo passa pela fila `grm_sync_jobs`.
+Não usa mais Docker, PM2 nem Edge Functions (arquiteturas antigas, abandonadas — a versão Docker foi desativada em 2026-06-29). Tudo passa pela fila `grm_sync_jobs`, disparada por cron puro (crontab do usuário `grao100`, sem PM2 instalado no servidor):
+
+```cron
+* * * * *   cd /home/grao100/painel-scripts/grm-sync && HOME=/home/grao100 TMPDIR=/home/grao100/tmp TMP=/home/grao100/tmp TEMP=/home/grao100/tmp PATH=/home/grao100/bin:/opt/cpanel/ea-nodejs10/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /home/grao100/bin/node worker/grm-sync-job-worker.js --once >> logs/worker-cron.log 2>&1
+*/5 * * * * cd /home/grao100/painel-scripts/grm-sync && HOME=/home/grao100 TMPDIR=/home/grao100/tmp TMP=/home/grao100/tmp TEMP=/home/grao100/tmp PATH=/home/grao100/bin:/opt/cpanel/ea-nodejs10/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /home/grao100/bin/node worker/grm-sync-auto-scheduler.js >> logs/auto-scheduler.log 2>&1
+```
+
+`grm-sync-job-worker.js --once` roda a cada minuto (pega no máximo 1 job pendente e sai); `grm-sync-auto-scheduler.js` roda a cada 5 minutos (enfileira jobs novos e libera jobs travados). Node real: `/home/grao100/bin/node`.
 
 ## Agentes ativos (SCRIPT_MAP em worker/grm-sync-job-worker.js)
 
@@ -54,9 +61,7 @@ SUPABASE_SERVICE_ROLE_KEY=...
 
 ```bash
 cd /home/grao100/painel-scripts/grm-sync
-node grmserver-colaboradores-sync.js
-# ou, se o node do sistema não for compatível:
-/opt/cpanel/ea-nodejs16/bin/node grmserver-colaboradores-sync.js
+/home/grao100/bin/node grmserver-colaboradores-sync.js
 ```
 
 Um run saudável demora ~80-120s (login + download + parse + upsert) e imprime `[INFO]`/`[SUCCESS]` a cada etapa. **Se o script terminar em menos de 1s sem nenhum log, o arquivo está quebrado/truncado** — foi exatamente isso que aconteceu com `grmserver-colaboradores-sync.js` entre 29/06 e 02/07: alguém salvou só um trecho do arquivo (a função de login) por cima do script inteiro, e o job continuava marcando "sucesso" em `grm_sync_jobs` porque o processo saía com código 0.
