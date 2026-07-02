@@ -18,6 +18,7 @@ function addStyle() {
     .emails-smart-page .em-tabs{width:fit-content;max-width:100%;border:1px solid var(--el);border-radius:18px;background:rgba(9,18,17,.55);padding:6px;gap:6px}.emails-smart-page .em-tab{border-color:transparent;background:transparent;color:var(--em);border-radius:13px;padding:10px 14px}.emails-smart-page .em-tab.active{background:rgba(101,212,110,.16);border-color:rgba(101,212,110,.28);color:var(--eg2)}.emails-smart-page #emTabHint,.emails-smart-page .em-guia,.emails-smart-page .em-guia-toggle{display:none!important}.emails-smart-page #emPanelEntrada{display:grid;gap:12px}.emails-smart-page .em-card{border-color:var(--el);background:linear-gradient(145deg,rgba(14,27,25,.92),rgba(8,18,17,.86));box-shadow:0 20px 52px rgba(0,0,0,.24);border-radius:20px}.emails-smart-page .em-v2-filter-card{padding:14px}.emails-smart-page .em-filter{grid-template-columns:180px 180px minmax(220px,1fr) auto;gap:10px}.emails-smart-page .em-field label{color:var(--em);font-size:10px}.emails-smart-page .em-field input,.emails-smart-page .em-field select,.emails-smart-page .em-field textarea{background:rgba(5,12,11,.58);border-color:var(--el);color:var(--et);border-radius:13px}
     .emails-smart-page .em-grid{grid-template-columns:minmax(320px,390px) minmax(0,1fr);gap:14px}.em-v2-step-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:-2px 0 14px;color:var(--et);font-weight:900;font-size:15px}.em-v2-step-title{display:inline-flex;align-items:center;gap:8px}.em-v2-step-index{width:24px;height:24px;border-radius:999px;display:inline-grid;place-items:center;color:var(--eg2);background:rgba(101,212,110,.13);border:1px solid rgba(101,212,110,.36);font-size:12px;font-weight:900}.em-v2-mini-note{color:var(--em);font-size:11px}.emails-smart-page .em-list{max-height:min(74vh,760px);padding-right:4px}.emails-smart-page .em-row{border-color:rgba(255,255,255,.07);background:rgba(10,21,19,.72);border-radius:16px}.emails-smart-page .em-row:hover,.emails-smart-page .em-row.active{border-color:rgba(101,212,110,.78);background:linear-gradient(135deg,rgba(101,212,110,.16),rgba(20,38,32,.82));box-shadow:0 14px 34px rgba(0,0,0,.24)}.emails-smart-page .em-row.active:before{background:var(--eg)}.emails-smart-page .em-avatar{background:rgba(101,212,110,.24)!important;color:var(--eg2)}.emails-smart-page .em-subject{color:var(--et);font-size:15px}.emails-smart-page .em-meta,.emails-smart-page .em-snippet{color:var(--em)}.emails-smart-page .em-badge,.emails-smart-page .em-prio{border-radius:999px;padding:5px 9px;font-size:10px;background:rgba(255,255,255,.04)}
     .emails-smart-page .em-detail{display:block}.em-v2-detail-shell{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(310px,.82fr);gap:14px}.em-v2-read-col,.em-v2-action-col{display:grid;gap:12px;min-width:0}.em-v2-read-col>.em-v2-step-head,.em-v2-action-col>.em-v2-step-head{margin-bottom:0}.emails-smart-page .em-envelope,.emails-smart-page .em-summary,.emails-smart-page .em-extracted,.emails-smart-page .em-letter,.emails-smart-page .em-reply{border-color:rgba(255,255,255,.08);background:rgba(5,12,11,.42);border-radius:16px}.emails-smart-page .em-envelope{padding:16px;border:1px solid rgba(255,255,255,.08)}.emails-smart-page .em-envelope-main h3{font-size:20px;margin-bottom:8px}.emails-smart-page .em-insights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.emails-smart-page .em-chip{border-color:rgba(255,255,255,.07);background:rgba(255,255,255,.035);border-radius:14px;text-transform:none;letter-spacing:0;justify-content:space-between}.emails-smart-page .em-summary-label,.emails-smart-page .em-section-label{color:var(--eg2)}.emails-smart-page .em-letter pre{max-height:260px;font-size:13px;line-height:1.7}.emails-smart-page .em-reply textarea{min-height:150px}.emails-smart-page .em-actions{display:flex;gap:10px;flex-wrap:wrap}.emails-smart-page .btn.btn-primary,.emails-smart-page .em-v2-primary-action{background:linear-gradient(135deg,#3fa64a,#65d46e)!important;border-color:rgba(101,212,110,.68)!important;color:#041007!important;font-weight:900;box-shadow:0 12px 28px rgba(76,175,80,.2)}.emails-smart-page .btn.btn-secondary{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.11);color:var(--et)}.emails-smart-page .em-v2-action-col .btn{width:100%;justify-content:center;min-height:44px;border-radius:14px}.emails-smart-page .em-empty{border-color:rgba(101,212,110,.2);color:var(--em)}
+    .emails-smart-page .em-to{margin-top:10px}.emails-smart-page .em-v2-recipients{border:1px solid rgba(101,212,110,.16);background:rgba(101,212,110,.06);border-radius:13px;padding:9px 11px;color:var(--em);font-size:12px}.emails-smart-page .em-v2-recipients summary{cursor:pointer;color:var(--eg2);font-weight:800;list-style:none}.emails-smart-page .em-v2-recipients summary::-webkit-details-marker{display:none}.emails-smart-page .em-v2-recipients summary:after{content:' · ver detalhes';color:var(--em);font-weight:600}.emails-smart-page .em-v2-recipients[open] summary:after{content:' · ocultar'}.emails-smart-page .em-v2-recipients pre{margin:10px 0 0;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:var(--em);font:12px/1.55 'DM Sans',system-ui,sans-serif}
     @media(max-width:1280px){.emails-smart-page .em-grid,.em-v2-detail-shell{grid-template-columns:1fr}.emails-smart-page .em-list{max-height:unset}}@media(max-width:880px){.em-v2-head-row,.em-v2-kpis,.emails-smart-page .em-filter,.emails-smart-page .em-insights{grid-template-columns:1fr}.emails-smart-page .em-tabs{width:100%}.emails-smart-page .em-tab{flex:1 1 auto}}
   `;
   document.head.appendChild(s);
@@ -61,6 +62,25 @@ async function refreshKpis() {
   if (status) status.textContent = `Histórico: última atualização ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+function compactRecipients(root) {
+  const to = root.querySelector('.em-to');
+  if (!to || to.dataset.emailV2Compact === '1') return;
+  const raw = (to.textContent || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return;
+  const count = (raw.match(/@/g) || []).length;
+  const summary = count > 1 ? `Destinatários e cópias ocultos (${count} contatos)` : 'Destinatário oculto';
+  to.textContent = '';
+  const details = document.createElement('details');
+  details.className = 'em-v2-recipients';
+  const summaryEl = document.createElement('summary');
+  summaryEl.textContent = summary;
+  const pre = document.createElement('pre');
+  pre.textContent = raw;
+  details.append(summaryEl, pre);
+  to.appendChild(details);
+  to.dataset.emailV2Compact = '1';
+}
+
 function enhanceDetail() {
   const inner = document.getElementById('emDetail')?.querySelector('.em-detail');
   if (!inner || inner.dataset.emailV2 === '1') return;
@@ -68,6 +88,7 @@ function enhanceDetail() {
   const shell = document.createElement('div'); shell.className = 'em-v2-detail-shell';
   const read = document.createElement('div'); read.className = 'em-v2-read-col'; read.innerHTML = '<div class="em-v2-step-head"><span class="em-v2-step-title"><span class="em-v2-step-index">2</span>Leitura e interpretação pela IA</span></div>';
   const action = document.createElement('div'); action.className = 'em-v2-action-col'; action.innerHTML = '<div class="em-v2-step-head"><span class="em-v2-step-title"><span class="em-v2-step-index">3</span>Ação sugerida</span></div>';
+  compactRecipients(inner);
   Array.from(inner.children).forEach((node) => {
     const isAction = node.classList?.contains('em-reply') || (node.classList?.contains('em-summary') && /Encaminhamento sugerido/i.test(node.textContent || ''));
     (isAction ? action : read).appendChild(node);
