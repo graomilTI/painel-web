@@ -1,0 +1,6 @@
+node_modules/
+.env
+.env.production
+.env.bkp-*
+.env.*.bkp-*
+agentes-grm-sync/logs/*.log

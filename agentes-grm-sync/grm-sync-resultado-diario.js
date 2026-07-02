@@ -1,3 +1,4 @@
+const { replaceTableSafely, replaceTablePeriodSafely } = require('./safe-table-load');
 require('dotenv').config();
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -303,19 +304,14 @@ async function replacePainelResultadoDiario(data) {
 
   log('INFO', `Atualizando ${REPORT_CONFIG.painelTableName}: ${rows.length} registros de ${fromIso} até ${toIsoRange}...`);
 
-  const deleteResult = await supabase
-    .from(REPORT_CONFIG.painelTableName)
-    .delete()
-    .gte('data', fromIso)
-    .lte('data', toIsoRange);
-  if (deleteResult.error) throw deleteResult.error;
+  await replaceTablePeriodSafely(supabase, REPORT_CONFIG.painelTableName, rows, {
+    dateColumn: 'data',
+    minRows: 1000,
+    chunkSize: 500,
+    logger: console,
+  });
 
-  for (let i = 0; i < rows.length; i += 500) {
-    const chunk = rows.slice(i, i + 500);
-    const { error } = await supabase.from(REPORT_CONFIG.painelTableName).insert(chunk);
-    if (error) throw error;
-    log('INFO', `Progresso painel: ${Math.min(i + 500, rows.length)}/${rows.length}`);
-  }
+  log('SUCCESS', `Tabela ${REPORT_CONFIG.painelTableName} sincronizada com segurança: ${rows.length} registros.`);
 
   log('SUCCESS', `${REPORT_CONFIG.painelTableName} atualizado: ${rows.length} registros`);
 }

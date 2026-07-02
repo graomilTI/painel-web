@@ -1,4 +1,15 @@
 #!/usr/bin/env node
+
+// Ambiente fixo para Chromium/Puppeteer no cPanel.
+// Evita erro de partition_address_space e permission denied em /home/grao100/tmp.
+process.env.HOME = process.env.HOME || '/home/grao100';
+process.env.TMP = '/home/grao100/chrome-runtime/tmp';
+process.env.TEMP = '/home/grao100/chrome-runtime/tmp';
+process.env.TMPDIR = '/home/grao100/chrome-runtime/tmp';
+process.env.XDG_RUNTIME_DIR = '/home/grao100/chrome-runtime/tmp';
+process.env.XDG_CACHE_HOME = '/home/grao100/chrome-runtime/cache';
+process.env.MALLOC_ARENA_MAX = '2';
+
 /*
   Worker de jobs GRM.
 
@@ -16,7 +27,9 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 
-const PROJECT_ROOT = process.cwd();
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+const NODE_BIN = process.env.GRM_SYNC_NODE_BIN || '/home/grao100/bin/node';
+const SAFE_TMP = process.env.GRM_SYNC_TMPDIR || '/home/grao100/chrome-runtime/tmp';
 const POLL_MS = Number(process.env.GRM_SYNC_JOB_POLL_MS || 15000);
 const MAX_OUTPUT = 30000;
 
@@ -35,6 +48,7 @@ const SCRIPT_MAP = {
   'sync-nhe': 'grm-sync-nhe.js',
   'sync-lista-os': 'grm-sync-lista-os.js',
   'sync-distribuicao-os': 'grm-sync-distribuicao-os.js',
+  'sync-cargas-geofence': 'grm-sync-cargas-geofence.js',
   'sync-btg-relatorios': 'grm-sync-btg-classificador.js',
   'sync-btg-classificador': 'grm-sync-btg-classificador.js',
   'sync-btg-checkin': 'grm-sync-btg-checkin.js',
@@ -99,9 +113,18 @@ function runScript(scriptName) {
 
     log(`Executando ${scriptName}`);
 
-    const child = spawn(process.execPath, [scriptPath], {
+    const child = spawn(NODE_BIN, [scriptPath], {
       cwd: PROJECT_ROOT,
-      env: process.env,
+      env: {
+        ...process.env,
+        HOME: process.env.HOME || '/home/grao100',
+        TMP: '/home/grao100/chrome-runtime/tmp',
+        TEMP: '/home/grao100/chrome-runtime/tmp',
+        TMPDIR: '/home/grao100/chrome-runtime/tmp',
+        XDG_RUNTIME_DIR: '/home/grao100/chrome-runtime/tmp',
+        XDG_CACHE_HOME: '/home/grao100/chrome-runtime/cache',
+        MALLOC_ARENA_MAX: '2',
+},
       shell: false,
     });
 

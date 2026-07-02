@@ -1,3 +1,8 @@
+const { replaceTableSafely, replaceTablePeriodSafely } = require('./safe-table-load');
+process.env.TMPDIR = '/home/grao100/tmp';
+process.env.TEMP = '/home/grao100/tmp';
+process.env.TMP = '/home/grao100/tmp';
+
 require('dotenv').config();
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -103,6 +108,9 @@ async function downloadReport(page) {
   // 15s era curto demais para um relatório de 30 dias, especialmente com varios agentes
   // batendo no mesmo servidor a cada ~28min (causava "Waiting failed: 15000ms exceeded").
   await page.waitForSelector('.dailyProductionReport-report-to-xls button:not([disabled])', { timeout: 90000 });
+
+  log('INFO', 'Aguardando relatório estabilizar antes do XLS...');
+  await page.waitForTimeout(30000);
 
   log('INFO', 'Clicando em XLS...');
   const tempDir = setupDownloadDir('producao-diaria');
@@ -216,18 +224,12 @@ async function syncProducaoSnapshot(rows) {
   const dataMin = datas[0];
   const dataMax = datas[datas.length - 1];
 
-  const { error: delError } = await supabase
-    .from('producao_snapshot')
-    .delete()
-    .gte('data', dataMin)
-    .lte('data', dataMax);
-  if (delError) throw delError;
-
-  for (let i = 0; i < mapped.length; i += 500) {
-    const chunk = mapped.slice(i, i + 500);
-    const { error } = await supabase.from('producao_snapshot').insert(chunk);
-    if (error) throw error;
-  }
+  await replaceTablePeriodSafely(supabase, 'producao_snapshot', mapped, {
+    dateColumn: 'data',
+    minRows: 1000,
+    chunkSize: 500,
+    logger: console,
+  });
 
   log('SUCCESS', `producao_snapshot sincronizado: ${mapped.length} linhas (${dataMin} a ${dataMax}).`);
 }
@@ -245,10 +247,12 @@ async function main() {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--noerrdialogs',
+        '--disable-breakpad',
+        '--disable-crashpad',
+        '--disable-crash-reporter',
         '--disable-gpu',
         '--disable-software-rasterizer',
-        '--no-zygote',
-        '--single-process',
         '--disable-extensions',
         '--disable-background-networking',
         '--disable-default-apps',
@@ -260,10 +264,10 @@ async function main() {
         '--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
         '--disable-site-isolation-trials'
       ],
-      defaultViewport: { width: 1920, height: 1440 }
+      defaultViewport: { width: 1366, height: 768 }
     });
     const page = await browser.newPage();
-    page.setViewport({ width: 1920, height: 1440 });
+    page.setViewport({ width: 1366, height: 768 });
 
     await login(page);
     const filePath = await downloadReport(page);
