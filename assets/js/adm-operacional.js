@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import './operacional-rotas-inteligentes.js?v=20260702-carona-filtros';
 import './operacional-irregularidades-acoes.js?v=20260702-1430';
+import './operacional-filtros-click-fix.js?v=20260702-1735';
 
 initProtectedPage('Operacional ADM', (content, userContext) => {
   if (window.OPERACIONAL?.openHome) {
