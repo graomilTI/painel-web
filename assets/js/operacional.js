@@ -197,6 +197,11 @@ import { supabase } from './supabaseClient.js';
   function pontoDeOs(o) {
     const embarque = splitEmbarque(o.embarque || '');
     const temCoord = geo({ latitude: o.ponto1_latitude, longitude: o.ponto1_longitude });
+    // Backfill original grava "NOME DO LOCAL · CIDADE/UF" (fazenda/armazém real); a geocodificação
+    // automática (geocode-operacional-os, via Nominatim) não acha nomes informais de fazenda e cai
+    // pro centro da cidade, gravando só "Cidade, Estado, ..." (sem "·") — sinal confiável de que a
+    // coordenada é aproximada (nível de cidade, pode estar a dezenas de km do local real).
+    const aproximado = temCoord && !!o.ponto1_nome && !String(o.ponto1_nome).includes('·');
     return {
       lat: temCoord ? Number(o.ponto1_latitude) : null,
       lng: temCoord ? Number(o.ponto1_longitude) : null,
@@ -204,6 +209,7 @@ import { supabase } from './supabaseClient.js';
       cidade: embarque.cidade,
       uf: norm(embarque.uf),
       temCoord,
+      aproximado,
     };
   }
 
@@ -510,6 +516,34 @@ import { supabase } from './supabaseClient.js';
     };
   }
 
+  function distEntrePontos(p1, p2) {
+    if (!p1?.temCoord || !p2?.temCoord) return Infinity;
+    const d = km(p1.lat, p1.lng, p2.lat, p2.lng);
+    return d === null ? Infinity : d;
+  }
+
+  // Melhor jeito de encaixar `ponto` na rota já existente do colaborador — casa só no início e
+  // no fim, entre uma parada e outra é OS pra OS direto. Testa toda posição de inserção (antes
+  // da 1ª parada, entre cada par consecutivo, depois da última) e devolve a mais barata (custo
+  // em km extra + posição pra manter a rota na ordem de visita) — sem isso, a rota vira sempre
+  // "casa -> parada -> casa -> parada -> casa..." em vez de um trajeto único. Rota vazia = ida
+  // e volta direta de casa (não tem o que encadear ainda).
+  function melhorInsercaoRota(c, rota, ponto) {
+    const distHomePonto = distColabPonto(c, ponto);
+    if (!rota.length) return { custo: distHomePonto * 2, posicao: 0 };
+    let melhorCusto = distHomePonto + distEntrePontos(ponto, rota[0].ponto) - distColabPonto(c, rota[0].ponto);
+    let melhorPos = 0;
+    for (let i = 0; i < rota.length - 1; i++) {
+      const custoAtual = distEntrePontos(rota[i].ponto, rota[i + 1].ponto);
+      const custoNovo = distEntrePontos(rota[i].ponto, ponto) + distEntrePontos(ponto, rota[i + 1].ponto) - custoAtual;
+      if (custoNovo < melhorCusto) { melhorCusto = custoNovo; melhorPos = i + 1; }
+    }
+    const ultimo = rota[rota.length - 1];
+    const custoFim = distEntrePontos(ultimo.ponto, ponto) + distHomePonto - distColabPonto(c, ultimo.ponto);
+    if (custoFim < melhorCusto) { melhorCusto = custoFim; melhorPos = rota.length; }
+    return { custo: melhorCusto, posicao: melhorPos };
+  }
+
   function podeUsarColaborador(c, ponto, usos, osSaldoKg) {
     const usados = usos.get(c.id) || [];
     if (!usados.length) return true;
@@ -517,26 +551,18 @@ import { supabase } from './supabaseClient.js';
     // OS pequena (saldo <= 500kg): não justifica dedicar um colaborador exclusivo, quem já
     // está em campo hoje pode assumir também, mesmo fora do raio de atendimento.
     if (Number(osSaldoKg) <= OS_SALDO_PEQUENO_KG) return true;
-    // Duas condições, as duas precisam valer:
-    // 1) o novo ponto precisa estar dentro do raio de atendimento a partir da BASE real do
-    //    colaborador — sem isso, um encadeamento de pontos (cada um perto só do anterior) deriva
-    //    pra bem longe da base real, mesmo que cada elo pareça razoável isoladamente.
-    // 2) o novo ponto também precisa estar perto de PELO MENOS UM ponto já atribuído a esse
-    //    colaborador — sem isso, alguém central geograficamente vira "sugestão" pra várias
-    //    direções distantes entre si (cada uma dentro do raio da base, mas sem nenhuma relação
-    //    entre elas), tipo sair da base, ir buscar carona numa ponta e voltar pra outra ponta
-    //    oposta — nenhum colaborador real cobre isso.
-    const distBase = distColabPonto(c, ponto);
-    if (!Number.isFinite(distBase) || distBase > RAIO_REPETIR_COLAB_KM) return false;
-    return usados.some(u => {
-      if (!u.ponto?.temCoord || !ponto.temCoord) return false;
-      const d = km(u.ponto.lat, u.ponto.lng, ponto.lat, ponto.lng);
-      return d !== null && d <= RAIO_REPETIR_COLAB_KM;
-    });
+    // O novo ponto precisa caber na rota já existente sem um desvio grande — se ele está "no
+    // caminho" ou perto de alguma parada já atribuída, o km extra de inserir é pequeno (pode até
+    // ser negativo, se ficar entre duas paradas). Se está numa direção totalmente diferente, o
+    // km extra fica perto de uma ida+volta inteira só pra ele — mesmo raio usado pra "até onde dá
+    // pra mandar alguém" também serve de limite pro desvio aceitável de uma parada extra.
+    return melhorInsercaoRota(c, usados, ponto).custo <= RAIO_REPETIR_COLAB_KM;
   }
   function registrarUso(c, ponto, saldo, usos) {
     const arr = usos.get(c.id) || [];
-    arr.push({ ponto, saldo: Number(saldo) || 0 });
+    if (!arr.length) { arr.push({ ponto, saldo: Number(saldo) || 0 }); usos.set(c.id, arr); return; }
+    const { posicao } = melhorInsercaoRota(c, arr, ponto);
+    arr.splice(posicao, 0, { ponto, saldo: Number(saldo) || 0 });
     usos.set(c.id, arr);
   }
   function saldoAcumulado(c, usos) { return (usos.get(c.id) || []).reduce((acc, u) => acc + u.saldo, 0); }
@@ -835,7 +861,7 @@ import { supabase } from './supabaseClient.js';
     const s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent = `
-      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:12px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo h2{font-size:24px;line-height:1}.mo p{color:#94a3b8;margin:5px 0 0;font-size:12px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:12px;background:#166534;color:#ecfdf5;font-weight:900;padding:8px 12px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:38px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-map-select{width:180px}.mo-map-tools{position:relative;z-index:2500;padding:0 16px 10px;display:grid;grid-template-columns:minmax(360px,1fr) auto;gap:10px;align-items:center}.mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}.mo-map{height:calc(100vh - 300px);min-height:500px;max-height:760px;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}.mo-kpi{flex:1 0 126px;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:8px;background:rgba(2,6,23,.35)}.mo-kpi span{display:block;font-size:8.5px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:16px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alerts{border-top:1px solid rgba(251,191,36,.18);border-bottom:1px solid rgba(251,191,36,.12);background:rgba(120,53,15,.12)}.mo-alert{padding:7px 16px;color:#fde68a;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-alert+.mo-alert{border-top:1px solid rgba(251,191,36,.12)}.mo-legend{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;color:#94a3b8;font-size:12px}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .veiculo{background:#06b6d4}.mo-legend .roxo{background:#a855f7}.mo-legend .laranja{background:#f59e0b}.mo-legend .frota{background:#3b82f6;box-shadow:inset 0 0 0 3px #fff}.mo-marker-toggle{border:1px solid rgba(34,197,94,.28);background:rgba(6,78,59,.45);color:#ecfdf5;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;cursor:pointer}.mo-marker-toggle.off{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.22);color:#94a3b8}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk-irreg{width:19px;height:19px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#451a03;font-weight:900;font-size:12px;line-height:1}.mk-irreg.sel{box-shadow:0 0 0 3px rgba(250,204,21,.6)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.frota{background:#3b82f6}.mk.frota:after{content:'';position:absolute;left:4px;top:4px;width:4px;height:4px;border-radius:50%;background:#fff}.mk.veic-mov{background:#06b6d4}.mk.veic-park{background:#f59e0b}.mk.veic-mov:after,.mk.veic-park:after{content:'';position:absolute;left:3px;top:3px;width:5px;height:5px;border-radius:50%;background:#0f172a}.mk.hotel{background:#a855f7}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5),.mo-colabs-table td:nth-child(6){text-align:right}.mo-colabs-table tbody tr{cursor:pointer}.mo-colabs-table tbody tr:hover{background:rgba(63,168,120,.1)}.mo-colabs-table tbody tr.active{background:rgba(22,101,52,.22)}.mo-colabs-table tbody tr.active td:first-child{color:#facc15;font-weight:800}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}.mo-tabs{display:flex;gap:8px;padding:0 16px 8px;position:relative;z-index:20}.mo-tab-btn{border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-size:12.5px}.mo-tab-btn.active{background:#166534;border-color:rgba(34,197,94,.4);color:#ecfdf5}.mo-comp-table{width:100%;border-collapse:collapse;font-size:12px}.mo-comp-table th,.mo-comp-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-comp-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55);position:sticky;top:0}.mo-comp-table td.num{text-align:right;white-space:nowrap}.mo-comp-wrap{max-height:520px;overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:16px}.mo-pill.concorda{color:#bbf7d0}.mo-pill.diverge{color:#fecaca}.mo-pill.sem-registro{color:#94a3b8}@media(max-width:1100px){.mo-head{flex-direction:column}.mo-map-tools{grid-template-columns:1fr}.mo-legend{justify-content:flex-start}.mo-below{grid-template-columns:1fr}.mo-map{height:560px;min-height:420px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:nowrap}.mo-map-select{width:100%}}
+      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:12px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo h2{font-size:24px;line-height:1}.mo p{color:#94a3b8;margin:5px 0 0;font-size:12px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:12px;background:#166534;color:#ecfdf5;font-weight:900;padding:8px 12px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:38px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-map-select{width:180px}.mo-map-tools{position:relative;z-index:2500;padding:0 16px 10px;display:grid;grid-template-columns:minmax(360px,1fr) auto;gap:10px;align-items:center}.mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}.mo-map{height:calc(100vh - 300px);min-height:500px;max-height:760px;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}.mo-kpi{flex:1 0 126px;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:8px;background:rgba(2,6,23,.35)}.mo-kpi span{display:block;font-size:8.5px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:16px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alerts{border-top:1px solid rgba(251,191,36,.18);border-bottom:1px solid rgba(251,191,36,.12);background:rgba(120,53,15,.12)}.mo-alert{padding:7px 16px;color:#fde68a;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-alert+.mo-alert{border-top:1px solid rgba(251,191,36,.12)}.mo-legend{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;color:#94a3b8;font-size:12px}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .veiculo{background:#06b6d4}.mo-legend .roxo{background:#a855f7}.mo-legend .laranja{background:#f59e0b}.mo-legend .frota{background:#3b82f6;box-shadow:inset 0 0 0 3px #fff}.mo-marker-toggle{border:1px solid rgba(34,197,94,.28);background:rgba(6,78,59,.45);color:#ecfdf5;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;cursor:pointer}.mo-marker-toggle.off{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.22);color:#94a3b8}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk-irreg{width:19px;height:19px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#451a03;font-weight:900;font-size:12px;line-height:1}.mk-irreg.sel{box-shadow:0 0 0 3px rgba(250,204,21,.6)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.frota{background:#3b82f6}.mk.frota:after{content:'';position:absolute;left:4px;top:4px;width:4px;height:4px;border-radius:50%;background:#fff}.mk.veic-mov{background:#06b6d4}.mk.veic-park{background:#f59e0b}.mk.veic-mov:after,.mk.veic-park:after{content:'';position:absolute;left:3px;top:3px;width:5px;height:5px;border-radius:50%;background:#0f172a}.mk.hotel{background:#a855f7}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mk.aprox{border-style:dashed;border-width:2px;border-color:#fde68a}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5),.mo-colabs-table td:nth-child(6){text-align:right}.mo-colabs-table tbody tr{cursor:pointer}.mo-colabs-table tbody tr:hover{background:rgba(63,168,120,.1)}.mo-colabs-table tbody tr.active{background:rgba(22,101,52,.22)}.mo-colabs-table tbody tr.active td:first-child{color:#facc15;font-weight:800}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}.mo-tabs{display:flex;gap:8px;padding:0 16px 8px;position:relative;z-index:20}.mo-tab-btn{border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-size:12.5px}.mo-tab-btn.active{background:#166534;border-color:rgba(34,197,94,.4);color:#ecfdf5}.mo-comp-table{width:100%;border-collapse:collapse;font-size:12px}.mo-comp-table th,.mo-comp-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-comp-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55);position:sticky;top:0}.mo-comp-table td.num{text-align:right;white-space:nowrap}.mo-comp-wrap{max-height:520px;overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:16px}.mo-pill.concorda{color:#bbf7d0}.mo-pill.diverge{color:#fecaca}.mo-pill.sem-registro{color:#94a3b8}@media(max-width:1100px){.mo-head{flex-direction:column}.mo-map-tools{grid-template-columns:1fr}.mo-legend{justify-content:flex-start}.mo-below{grid-template-columns:1fr}.mo-map{height:560px;min-height:420px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:nowrap}.mo-map-select{width:100%}}
     `;
     document.head.appendChild(s);
   }
@@ -1055,7 +1081,7 @@ import { supabase } from './supabaseClient.js';
     }
     st.tileLayer = window.L.tileLayer(cfg.url, cfg.options).addTo(st.map);
   }
-  function icon(t, selected = false) { return window.L.divIcon({ className: '', html: `<div class="mk ${t} ${selected ? 'sel' : ''}"></div>`, iconSize: [13, 13], iconAnchor: [6.5, 6.5] }); }
+  function icon(t, selected = false, aproximado = false) { return window.L.divIcon({ className: '', html: `<div class="mk ${t} ${selected ? 'sel' : ''} ${aproximado ? 'aprox' : ''}"></div>`, iconSize: [13, 13], iconAnchor: [6.5, 6.5] }); }
   function osPorPonto(ponto) { return st.osTodas.filter(o => o.__pontoKey === ponto.__key); }
 
   function veiculoTooltip(v) {
@@ -1138,12 +1164,13 @@ import { supabase } from './supabaseClient.js';
         const oss = osPorPonto(p);
         const comSaldo = oss.filter(o => o.__saldo > 0).length, semSaldo = oss.filter(o => o.__saldo <= 0).length;
         const sel = r?.ponto?.__key === p.__key;
+        const aviso = p.aproximado ? ' · <em>posição aproximada (nível de cidade — fazenda/armazém específico não localizado)</em>' : '';
         if (st.mostrarOsComSaldo && comSaldo) {
-          L.marker([p.lat, p.lng], { icon: icon('os-ok', sel) }).bindTooltip(`OS com saldo · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${comSaldo} OS`).addTo(st.layer);
+          L.marker([p.lat, p.lng], { icon: icon('os-ok', sel, p.aproximado) }).bindTooltip(`OS com saldo · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${comSaldo} OS${aviso}`).addTo(st.layer);
           b.push([p.lat, p.lng]);
         }
         if (st.mostrarOsSemSaldo && semSaldo) {
-          L.marker([p.lat, p.lng], { icon: icon('os-zero', sel) }).bindTooltip(`OS sem saldo · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${semSaldo} OS`).addTo(st.layer);
+          L.marker([p.lat, p.lng], { icon: icon('os-zero', sel, p.aproximado) }).bindTooltip(`OS sem saldo · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${semSaldo} OS${aviso}`).addTo(st.layer);
           b.push([p.lat, p.lng]);
         }
       });
