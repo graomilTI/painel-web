@@ -191,7 +191,7 @@ function buildAccessTokens(access) {
     normalized
       .replace(/^GESTOR\s+/, '')
       .split(/\s+/)
-      .filter((part) => part.length >= 4 && !['GERAL', 'SETOR', 'ADM', 'ADMINISTRADOR'].includes(part))
+      .filter((part) => part.length >= 4 && !['GERAL', 'SETOR', 'ADM', 'ADMINISTRADOR', 'GESTOR', 'MASTER', 'DIRETOR'].includes(part))
       .forEach((part) => tokens.add(part));
   });
 
