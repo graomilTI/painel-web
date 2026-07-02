@@ -117,13 +117,13 @@ function patchDrawAllRoutes(source) {
   return `${source.slice(0, start)}${replacement}${source.slice(end)}`;
 }
 
-function patchSource(source) {
+function patchSource(source, supabaseClientUrl) {
   let out = source;
 
   out = replaceOrKeep(
     out,
     "import { supabase } from './supabaseClient.js';",
-    "import { supabase } from './assets/js/supabaseClient.js';",
+    `import { supabase } from '${supabaseClientUrl}';`,
     'import supabase'
   );
 
@@ -214,7 +214,7 @@ function patchSource(source) {
     out,
     'window.OPERACIONAL = { openHome };',
     `window.OPERACIONAL = { openHome, smartRoutes: true, smartVersion: '${SMART_VERSION}' };`,
-    'exposição OPERAÇÃO'
+    'exposição OPERACIONAL'
   );
 
   return out;
@@ -223,22 +223,19 @@ function patchSource(source) {
 async function loadSmartOperational() {
   try {
     const sourceUrl = new URL(`./operacional.js?v=${SMART_VERSION}`, import.meta.url);
+    const supabaseClientUrl = new URL('./supabaseClient.js', import.meta.url).href;
     const response = await fetch(sourceUrl, { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const source = await response.text();
-    const patched = patchSource(source);
-
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.type = 'module';
-      script.dataset.smartOperational = SMART_VERSION;
-      script.textContent = patched + `\n//# sourceURL=/painel/assets/js/operacional-smart-inline.js?v=${SMART_VERSION}`;
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-      setTimeout(resolve, 0);
-    });
+    const patched = patchSource(source, supabaseClientUrl);
+    const blob = new Blob([`${patched}\n//# sourceURL=/painel/assets/js/operacional-smart-inline.js?v=${SMART_VERSION}`], { type: 'text/javascript' });
+    const blobUrl = URL.createObjectURL(blob);
+    try {
+      await import(blobUrl);
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
   } catch (error) {
     console.error('[rotas-inteligentes] Falha ao carregar versão inteligente. Usando módulo original.', error);
     await import(`./operacional.js?v=${SMART_VERSION}`);
