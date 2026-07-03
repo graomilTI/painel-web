@@ -1239,8 +1239,13 @@ import { supabase } from './supabaseClient.js';
         const comSaldo = oss.filter(o => o.__saldo > 0).length, semSaldo = oss.filter(o => o.__saldo <= 0).length;
         const sel = r?.ponto?.__key === p.__key;
         const aviso = p.aproximado ? ' · <em>posição aproximada (nível de cidade — fazenda/armazém específico não localizado)</em>' : '';
+        // Clicar num ponto seleciona a rota que atende aquele local (mesma rota que o clique na
+        // tabela "Colaboradores no mapa" seleciona) — busca em st.rotas (não em `base`) pra
+        // funcionar mesmo com um filtro de KPI ativo que não inclua essa rota especificamente.
+        const rotaDoPonto = st.rotas.find(x => x.ponto.__key === p.__key)?.id || '';
         if (st.mostrarOsComSaldo && comSaldo) {
-          L.marker([p.lat, p.lng], { icon: icon('os-ok', sel, p.aproximado) }).bindTooltip(`OS com saldo · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${comSaldo} OS${aviso}`).addTo(st.layer);
+          const marker = L.marker([p.lat, p.lng], { icon: icon('os-ok', sel, p.aproximado) }).bindTooltip(`OS com saldo · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${comSaldo} OS${aviso}`).addTo(st.layer);
+          if (rotaDoPonto) marker.on('click', () => { st.rota = rotaDoPonto; render(root); });
           b.push([p.lat, p.lng]);
         }
         if (st.mostrarOsSemSaldo && semSaldo) {
@@ -1259,7 +1264,13 @@ import { supabase } from './supabaseClient.js';
     // Destaca o colaborador selecionado (via clique na rota ou na tabela "Colaboradores no mapa")
     // e TODAS as rotas dele, não só a rota exata clicada — comparado por id, não por nome, pra não
     // colidir entre homônimos.
-    usados.forEach(c => { const sel = c.id === colabSelecionadoId; L.marker([lat(c), lng(c)], { icon: icon(sel ? 'frota' : 'colab', sel) }).bindTooltip(`Colaborador: ${esc(c.nome)}`).addTo(st.layer); b.push([lat(c), lng(c)]); });
+    usados.forEach(c => {
+      const sel = c.id === colabSelecionadoId;
+      const rotaDoColab = st.rotas.find(x => x.colab.id === c.id)?.id || '';
+      const marker = L.marker([lat(c), lng(c)], { icon: icon(sel ? 'frota' : 'colab', sel) }).bindTooltip(`Colaborador: ${esc(c.nome)}`).addTo(st.layer);
+      if (rotaDoColab) marker.on('click', () => { st.rota = rotaDoColab; render(root); });
+      b.push([lat(c), lng(c)]);
+    });
 
     if (st.mostrarRota) drawAllRoutes(root, base, token, b);
     // Só ajusta zoom/posição na carga inicial, ao trocar filtro de estado/ponto ou num recarregar

@@ -2,7 +2,7 @@
 // Mantém o arquivo operacional.js original como base, mas aplica ajustes em tempo de carregamento
 // para evitar rotas em estrela/zigue-zague, preencher carona/placa e filtrar OS por sugestão.
 
-const SMART_VERSION = '20260703-escassez-primeiro';
+const SMART_VERSION = '20260703-rota-estendida-sutil';
 
 function replaceOrKeep(source, search, replacement, label) {
   if (!source.includes(search)) {
@@ -61,10 +61,14 @@ function patchDrawAllRoutes(source) {
     if (!grupo.length) return null;
     const inicio = [lat(grupo[0].colab), lng(grupo[0].colab)];
     const pontos = grupo.map(r => [r.ponto.lat, r.ponto.lng]);
+    // Rota estendida só ganha traço grosso/opaco quando destacada de propósito (clique numa OS/
+    // colaborador daquela rota, ou filtro "Rota estendida" ativo nos KPIs) — fora isso, fica fina
+    // igual às rotas normais não selecionadas, só na cor laranja pra identificar sem poluir o mapa.
+    const destaque = selected || (estendida && st.kpiFiltro === 'rota-estendida');
     return L.polyline([inicio, ...pontos], {
       color: estendida ? '#f97316' : (selected ? '#facc15' : '#60a5fa'),
-      weight: selected ? 4 : 1.5,
-      opacity: selected ? .9 : .16,
+      weight: destaque ? 4 : 1.5,
+      opacity: destaque ? .9 : (estendida ? .35 : .16),
       dashArray: '5 8',
     }).addTo(st.routeLayer);
   }
@@ -104,8 +108,9 @@ function patchDrawAllRoutes(source) {
           realOk++;
           const sel = grupo[0].colab.id === colabSelecionadoId;
           const estendida = grupo.some(r => r.rotaEstendida);
+          const destaque = sel || (estendida && st.kpiFiltro === 'rota-estendida');
           const cor = estendida ? '#f97316' : (sel ? '#facc15' : '#22c55e');
-          L.polyline(real.coords, { color: cor, weight: sel || estendida ? 4 : 2, opacity: sel || estendida ? .95 : .32 }).addTo(st.routeLayer);
+          L.polyline(real.coords, { color: cor, weight: destaque ? 4 : 2, opacity: destaque ? .95 : (estendida ? .5 : .32) }).addTo(st.routeLayer);
         }
         updateRouteStatus(root, \`Rotas inteligentes: \${done}/\${Math.min(grupos.length, ROTAS_REAIS_LIMITE)} grupos carregados · \${validas.length} OS\${grupos.length > ROTAS_REAIS_LIMITE ? \` · limite \${ROTAS_REAIS_LIMITE}/\${grupos.length}\` : ''}\`);
       }
