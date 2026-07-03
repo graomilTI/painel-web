@@ -423,37 +423,17 @@ function ensureProgramacaoBlockStyle() {
   document.head.appendChild(style);
 }
 
-async function markProgramacaoIfOsPending(container, userContext) {
+// Nota: o bloqueio por "OS pendente" (operacional_os.status_gestor) foi removido —
+// a distribuição de OS foi unificada dentro da própria tela de Programação, então
+// bloquear o acesso a Programação por causa disso travava o gestor (ele precisava
+// entrar em Programação justamente pra resolver a OS pendente). Mantido só o
+// bloqueio por FOB pendente, que continua sendo uma tela separada (Logística > FOB).
+async function markProgramacaoIfFobPending(container, userContext) {
   try {
     const programacaoLink = [...container.querySelectorAll('a')].find((link) => normalizePath(link.getAttribute('href') || '').includes('/programacao'));
     if (!programacaoLink) return;
 
     const today = new Date().toISOString().slice(0, 10);
-    const supervisoes = Array.isArray(userContext?.user?.supervisoes) && userContext.user.supervisoes.length
-      ? userContext.user.supervisoes
-      : userContext?.user?.supervisao
-        ? [userContext.user.supervisao]
-        : null;
-
-    let query = supabase
-      .from('operacional_os')
-      .select('id')
-      .is('status_gestor', null)
-      .gte('data_os', today)
-      .lte('data_os', today);
-
-    if (supervisoes?.length) {
-      query = query.in('supervisao', supervisoes);
-    }
-
-    const { data, error } = await query.limit(1);
-    if (!error && Array.isArray(data) && data.length) {
-      ensureProgramacaoBlockStyle();
-      programacaoLink.classList.add('os-pending-blocked');
-      programacaoLink.dataset.blockLabel = 'OS pendente';
-      programacaoLink.dataset.blockTarget = 'os';
-      programacaoLink.title = 'Existem O.S. pendentes. Ajuste o submenu OS antes de acessar Programação.';
-    }
 
     const { data: fobData, error: fobError } = await supabase
       .from('logistica_fob')
@@ -465,7 +445,6 @@ async function markProgramacaoIfOsPending(container, userContext) {
       ensureProgramacaoBlockStyle();
       programacaoLink.classList.add('os-pending-blocked');
       programacaoLink.dataset.blockLabel = 'FOB pendente';
-      programacaoLink.dataset.blockTarget = 'logistica#fob';
       programacaoLink.title = 'Existem FOBs anteriores sem validação. Valide no menu Logística > FOB antes de acessar Programação.';
     }
 
@@ -473,16 +452,13 @@ async function markProgramacaoIfOsPending(container, userContext) {
       programacaoLink.addEventListener('click', (event) => {
         if (!programacaoLink.classList.contains('os-pending-blocked')) return;
         event.preventDefault();
-        const isFob = (programacaoLink.dataset.blockTarget || '').includes('logistica');
-        alert(isFob
-          ? 'Antes de acessar Programação, valide todos os FOBs pendentes no menu Logística > FOB.'
-          : 'Antes de acessar Programação, ajuste as O.S. pendentes no submenu OS.');
-        window.location.href = isFob ? buildPanelHref('logistica#fob') : buildPanelHref('os');
+        alert('Antes de acessar Programação, valide todos os FOBs pendentes no menu Logística > FOB.');
+        window.location.href = buildPanelHref('logistica#fob');
       });
       programacaoLink.dataset.osPendingBound = '1';
     }
   } catch (error) {
-    console.warn('Não foi possível validar pendências de O.S. para o menu.', error);
+    console.warn('Não foi possível validar pendências de FOB para o menu.', error);
   }
 }
 
@@ -632,5 +608,5 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
     container.appendChild(sectionEl);
   });
 
-  markProgramacaoIfOsPending(container, userContext);
+  markProgramacaoIfFobPending(container, userContext);
 }
