@@ -1633,6 +1633,11 @@ html:not(.is-route-ready) .app-shell {
 }
 html.is-route-ready .app-shell {
   visibility: visible;
+}
+/* routeFadeIn só deve tocar no boot inicial (hard load). Escopado a
+   :not(.is-app-booted) pra navegação suave nunca replay-ar esse fade,
+   que causava um flash escuro a cada troca de página. */
+html.is-route-ready:not(.is-app-booted) .app-shell {
   animation: routeFadeIn .18s ease;
 }
 
@@ -2308,7 +2313,7 @@ body.sidebar-collapsed .sidebar-toggle-btn {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-html.is-route-ready .app-shell {
+html.is-route-ready:not(.is-app-booted) .app-shell {
   animation: routeFadeIn .22s cubic-bezier(.4,0,.2,1);
 }
 
@@ -3950,6 +3955,6 @@ body.mobile-panel-mode .topbar {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-html.is-route-ready .app-shell {
+html.is-route-ready:not(.is-app-booted) .app-shell {
   animation: routeFadeIn .22s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }

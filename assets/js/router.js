@@ -85,9 +85,11 @@ function renderRoute(routeName, entry, mod, userContext) {
 
   window.scrollTo(0, 0);
 
+  // is-route-ready/is-app-booted já estão presentes desde o boot inicial e nunca
+  // são removidos aqui de propósito — reaplicá-los faria o CSS (routeFadeIn)
+  // replay-ar o fade de boot a cada navegação suave, causando um flash escuro.
   requestAnimationFrame(() => {
-    document.documentElement.classList.remove('is-route-transitioning', 'is-route-booting');
-    document.documentElement.classList.add('is-route-ready');
+    document.documentElement.classList.remove('is-route-transitioning');
   });
 }
 
