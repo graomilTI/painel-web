@@ -68,7 +68,7 @@
   }
 
   window.fetch = async function patchedFetch(input, init) {
-    const url = typeof input === 'string' ? input : input?.url;
+    const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : input?.url);
     const isOperacionalJs = /\/assets\/js\/operacional\.js(?:\?|$)/.test(String(url || '')) || /(?:^|\/)operacional\.js(?:\?|$)/.test(String(url || ''));
 
     const response = await originalFetch(input, init);
