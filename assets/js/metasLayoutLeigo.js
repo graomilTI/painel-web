@@ -358,6 +358,11 @@ function ensureMonthBar(container) {
 
   const bar = section.querySelector('.metas-month-bar');
   const current = Number(mesSelect.value || 0);
+  const selectedKey = String(current || '');
+
+  if (bar.dataset.selectedMes === selectedKey && bar.children.length === MESES.length) return;
+
+  bar.dataset.selectedMes = selectedKey;
   bar.innerHTML = MESES.map((m) => `
     <button type="button"
             class="metas-month-btn ${Number(m.value) === current ? 'active' : ''}"
@@ -379,12 +384,14 @@ function bindMonthBar(container) {
     if (!btn || !container.contains(btn)) return;
 
     const mesSelect = container.querySelector('[data-metas-filter="mes"]');
+    const bar = container.querySelector('.metas-month-bar');
     if (!mesSelect) return;
 
     const value = btn.getAttribute('data-metas-month-btn');
     if (!value || String(mesSelect.value) === String(value)) return;
 
     mesSelect.value = value;
+    if (bar) bar.dataset.selectedMes = String(value);
     mesSelect.dispatchEvent(new Event('change', { bubbles: true }));
 
     container.querySelectorAll('[data-metas-month-btn]').forEach((item) => {
