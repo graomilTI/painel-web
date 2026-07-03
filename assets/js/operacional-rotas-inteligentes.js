@@ -2,7 +2,7 @@
 // Mantém o arquivo operacional.js original como base, mas aplica ajustes em tempo de carregamento
 // para evitar rotas em estrela/zigue-zague, preencher carona/placa e filtrar OS por sugestão.
 
-const SMART_VERSION = '20260702-carona-filtros';
+const SMART_VERSION = '20260703-fix-cobertura';
 
 function replaceOrKeep(source, search, replacement, label) {
   if (!source.includes(search)) {
@@ -127,9 +127,8 @@ function patchSource(source, supabaseClientUrl) {
     'import supabase'
   );
 
-  out = replaceOrKeep(out, 'const RAIO_REPETIR_COLAB_KM = 100;', 'const RAIO_REPETIR_COLAB_KM = 45;', 'raio repetir colaborador');
   out = replaceOrKeep(out, 'const DIST_TOLERANCIA_EMPATE_KM = 20;', 'const DIST_TOLERANCIA_EMPATE_KM = 8;', 'tolerância empate');
-  out = replaceOrKeep(out, 'const MAX_OS_POR_COLABORADOR = 10;', 'const MAX_OS_POR_COLABORADOR = 4;\n  const DIST_MAX_ENTRE_PARADAS_ROTA_KM = 40;\n  const DESVIO_MAX_ROTA_KM = 45;', 'limites de rota');
+  out = replaceOrKeep(out, 'const MAX_OS_POR_COLABORADOR = 10;', 'const MAX_OS_POR_COLABORADOR = 8;', 'limites de rota');
 
   out = replaceOrKeep(
     out,
@@ -315,17 +314,6 @@ function patchSource(source, supabaseClientUrl) {
   }
 `,
     'street viewer helpers'
-  );
-
-  out = replaceOrKeep(
-    out,
-    'return melhorInsercaoRota(c, usados, ponto).custo <= RAIO_REPETIR_COLAB_KM;',
-    `const insercao = melhorInsercaoRota(c, usados, ponto);
-    const distParadaMaisProxima = Math.min(...usados.map(u => distEntrePontos(u.ponto, ponto)).filter(Number.isFinite));
-    if (!Number.isFinite(distParadaMaisProxima)) return false;
-    if (distParadaMaisProxima > DIST_MAX_ENTRE_PARADAS_ROTA_KM) return false;
-    return insercao.custo <= DESVIO_MAX_ROTA_KM;`,
-    'regra podeUsarColaborador'
   );
 
   out = replaceOrKeep(
