@@ -1635,6 +1635,25 @@ html.is-route-ready .app-shell {
   visibility: visible;
   animation: routeFadeIn .18s ease;
 }
+
+/* ── Navegação suave: barra de progresso no topo enquanto troca #pageContent.
+   Sem isso, uma troca sem o "branco" natural de um reload pode parecer travada. ── */
+html.is-route-transitioning::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, #00c87a, transparent);
+  z-index: 99999;
+  animation: routeProgressSlide .9s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes routeProgressSlide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
 @keyframes routeFadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }

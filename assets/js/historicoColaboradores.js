@@ -67,7 +67,7 @@ async function loadHistorico() {
   meta.textContent = `${data.length} importação(ões) encontrada(s).`;
 }
 
-initProtectedPage('Histórico de Importações', (content) => {
+export function renderContent(content) {
   content.innerHTML = `
     <section class="base-page">
       <div class="section-heading">
@@ -147,4 +147,6 @@ initProtectedPage('Histórico de Importações', (content) => {
     const meta = document.getElementById('metaHistorico');
     if (meta) meta.textContent = `Erro ao carregar histórico: ${err.message || err}`;
   });
-});
+}
+
+initProtectedPage('Histórico de Importações', renderContent);

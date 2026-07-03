@@ -181,7 +181,7 @@ function styles(){return `<style>
 }
 </style>`}
 
-initProtectedPage('Patrimônios', async (content, userContext)=>{
+export async function renderContent(content, userContext){
   state.isMaster = !!userContext?.user?.is_master;
   const rawSupervisoes = [
     ...(Array.isArray(userContext?.user?.supervisoes) ? userContext.user.supervisoes : []),
@@ -229,4 +229,6 @@ initProtectedPage('Patrimônios', async (content, userContext)=>{
   document.querySelectorAll('[data-pat-tab]').forEach((btn)=>btn.addEventListener('click', () => setActiveTab(btn.dataset.patTab)));
   setActiveTab('cadastrar');
   await loadCadastrar();
-});
+}
+
+initProtectedPage('Patrimônios', renderContent);
