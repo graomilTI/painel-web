@@ -254,6 +254,194 @@ function injectStyle() {
       font-size: clamp(28px, 3vw, 40px) !important;
     }
 
+    .metas-config-workflow {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .metas-config-hero {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto;
+      gap: 18px;
+      padding: 20px;
+      border-radius: 24px;
+      border: 1px solid rgba(74, 222, 128, .18);
+      background:
+        radial-gradient(circle at top left, rgba(34, 197, 94, .16), transparent 34%),
+        linear-gradient(135deg, rgba(15, 23, 42, .96), rgba(2, 6, 23, .84));
+      box-shadow: 0 18px 46px rgba(0,0,0,.22);
+    }
+
+    .metas-config-hero h2 {
+      margin: 0 0 7px;
+      font-size: clamp(22px, 2.4vw, 30px);
+      letter-spacing: -.04em;
+    }
+
+    .metas-config-hero p {
+      margin: 0;
+      max-width: 760px;
+      color: #94a3b8;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .metas-config-status {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .metas-flow-stepper {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 9px;
+    }
+
+    .metas-flow-step {
+      display: flex;
+      gap: 9px;
+      align-items: center;
+      padding: 11px 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, .13);
+      background: rgba(15, 23, 42, .52);
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .metas-flow-step strong {
+      width: 24px;
+      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: rgba(34, 197, 94, .15);
+      color: #bbf7d0;
+      border: 1px solid rgba(74, 222, 128, .22);
+      flex-shrink: 0;
+    }
+
+    .metas-config-workflow-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    .metas-work-card {
+      overflow: hidden;
+      border-radius: 24px;
+      border: 1px solid rgba(148, 163, 184, .16);
+      background:
+        radial-gradient(circle at top left, rgba(34, 197, 94, .07), transparent 32%),
+        linear-gradient(180deg, rgba(15, 23, 42, .95), rgba(2, 6, 23, .86));
+      box-shadow: 0 16px 42px rgba(0,0,0,.22);
+    }
+
+    .metas-work-card.is-primary {
+      border-color: rgba(74, 222, 128, .26);
+    }
+
+    .metas-work-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 16px 18px;
+      border-bottom: 1px solid rgba(148, 163, 184, .11);
+      background: rgba(15, 23, 42, .46);
+    }
+
+    .metas-work-title-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .metas-work-num {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 14px;
+      background: rgba(34, 197, 94, .16);
+      border: 1px solid rgba(74, 222, 128, .24);
+      color: #bbf7d0;
+      font-weight: 950;
+      flex-shrink: 0;
+    }
+
+    .metas-work-head h3 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -.02em;
+    }
+
+    .metas-work-head p {
+      margin: 4px 0 0;
+      color: #94a3b8;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .metas-work-body {
+      padding: 16px 18px 18px;
+    }
+
+    .metas-work-body > .metas-suggest-card {
+      margin: 0;
+      border: 1px solid rgba(148, 163, 184, .12);
+      border-radius: 18px;
+      background: rgba(2, 6, 23, .30);
+    }
+
+    .metas-work-body > .metas-table-wrap {
+      border: 1px solid rgba(148, 163, 184, .10);
+      border-radius: 18px;
+      background: rgba(2, 6, 23, .25);
+    }
+
+    .metas-work-body > [style*="padding"] {
+      padding: 0 !important;
+      border-bottom: 0 !important;
+    }
+
+    .metas-work-card.is-close .metas-work-body {
+      padding: 0;
+    }
+
+    .metas-work-card.is-close .metas-close-panel {
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+      background:
+        radial-gradient(circle at right, rgba(34, 197, 94, .16), transparent 36%),
+        rgba(2, 6, 23, .18);
+      padding: 20px;
+    }
+
+    .metas-work-card.is-close .metas-close-title {
+      font-size: 22px;
+      letter-spacing: -.03em;
+    }
+
+    .metas-work-card.is-close [data-metas-close] {
+      min-height: 48px;
+      padding-inline: 20px;
+      font-size: 14px;
+    }
+
+    .metas-config-workflow .metas-section-spacer {
+      margin: 0 !important;
+      border-radius: 24px !important;
+    }
+
     @media (max-width: 1100px) {
       .metas-month-bar {
         grid-template-columns: repeat(6, minmax(64px, 1fr));
@@ -262,16 +450,27 @@ function injectStyle() {
       .metas-kpis {
         grid-template-columns: repeat(2, minmax(170px, 1fr)) !important;
       }
+      .metas-flow-stepper {
+        grid-template-columns: repeat(2, minmax(170px, 1fr));
+      }
+      .metas-config-hero {
+        grid-template-columns: 1fr;
+      }
+      .metas-config-status {
+        align-items: flex-start;
+      }
     }
 
     @media (max-width: 760px) {
       .metas-header,
-      .metas-filter-intro {
+      .metas-filter-intro,
+      .metas-work-head {
         flex-direction: column;
       }
       .metas-guide-strip,
       .metas-kpis,
-      .metas-filters {
+      .metas-filters,
+      .metas-flow-stepper {
         grid-template-columns: 1fr !important;
       }
       .metas-month-bar {
@@ -407,6 +606,106 @@ function bindMonthBar(container) {
   });
 }
 
+function createWorkCard(num, title, desc, options = {}) {
+  const card = document.createElement('section');
+  card.className = `metas-work-card ${options.className || ''}`.trim();
+  card.innerHTML = `
+    <div class="metas-work-head">
+      <div class="metas-work-title-row">
+        <span class="metas-work-num">${num}</span>
+        <div>
+          <h3>${title}</h3>
+          <p>${desc}</p>
+        </div>
+      </div>
+      ${options.badge ? `<span class="metas-pill ${options.badgeClass || ''}">${options.badge}</span>` : ''}
+    </div>
+    <div class="metas-work-body"></div>
+  `;
+  return card;
+}
+
+function directChildByText(parent, text) {
+  return Array.from(parent.children).find((el) => String(el.textContent || '').includes(text));
+}
+
+function directMetaTable(parent) {
+  return Array.from(parent.children).find((el) => (
+    el.classList?.contains('metas-table-wrap') &&
+    el.querySelector('[data-metas-meta-row], [data-meta-field="meta_tons"]')
+  ));
+}
+
+function ensureConfigWorkflow(container) {
+  const content = container.querySelector('[data-metas-content]');
+  if (!content || content.querySelector('.metas-config-workflow')) return;
+
+  const sourceCard = Array.from(content.children).find((el) => (
+    el.classList?.contains('metas-table-card') && el.querySelector('.metas-suggest-card')
+  ));
+  if (!sourceCard) return;
+
+  const suggest = sourceCard.querySelector('.metas-suggest-card');
+  const despesas = directChildByText(sourceCard, 'Despesas por Regional');
+  const closePanel = sourceCard.querySelector('.metas-close-panel');
+  const metasTable = directMetaTable(sourceCard);
+  const resumo = Array.from(content.children).find((el) => (
+    el !== sourceCard && el.classList?.contains('metas-section-spacer')
+  ));
+
+  if (!suggest || !despesas || !closePanel || !metasTable) return;
+
+  const period = String(container.querySelector('.metas-period-chip')?.textContent || '').trim() || 'Período selecionado';
+  const totalMetas = metasTable.querySelectorAll('[data-metas-meta-row]').length;
+  const custosBadge = despesas.querySelector('.metas-pill')?.textContent?.trim() || 'custos';
+  const fechado = Boolean(closePanel.querySelector('[data-metas-close][disabled]'));
+
+  const workflow = document.createElement('div');
+  workflow.className = 'metas-config-workflow';
+  workflow.innerHTML = `
+    <div class="metas-config-hero">
+      <div>
+        <h2>Fechamento guiado da meta</h2>
+        <p>Use esta tela de cima para baixo. Primeiro defina ou confira as metas, depois confira as despesas do mês anterior e só então feche o período para calcular o bônus.</p>
+      </div>
+      <div class="metas-config-status">
+        <span class="metas-pill ${fechado ? 'good' : ''}">${period}</span>
+        <span class="metas-pill">${totalMetas || 0} regionais com meta</span>
+      </div>
+    </div>
+    <div class="metas-flow-stepper" aria-label="Fluxo do fechamento de metas">
+      <div class="metas-flow-step"><strong>1</strong><span>Definir meta</span></div>
+      <div class="metas-flow-step"><strong>2</strong><span>Conferir regionais</span></div>
+      <div class="metas-flow-step"><strong>3</strong><span>Validar M-1</span></div>
+      <div class="metas-flow-step"><strong>4</strong><span>Fechar meta</span></div>
+      <div class="metas-flow-step"><strong>5</strong><span>Ver bônus</span></div>
+    </div>
+    <div class="metas-config-workflow-grid"></div>
+  `;
+
+  const grid = workflow.querySelector('.metas-config-workflow-grid');
+  const step1 = createWorkCard('1', 'Definir ou sugerir a meta do mês', 'Informe o valor estimado ou use a sugestão automática. Depois clique em Salvar lista.', { className: 'is-primary' });
+  const step2 = createWorkCard('2', 'Conferir metas por regional', 'Confira se cada regional está com a meta correta antes do fechamento.', { badge: `${totalMetas || 0} linhas` });
+  const step3 = createWorkCard('3', 'Conferir despesas do mês anterior', 'O custo do bônus usa sempre M-1. Exemplo: meta de Junho usa despesas de Maio.', { badge: custosBadge, badgeClass: custosBadge.includes('aguardando') ? '' : 'good' });
+  const step4 = createWorkCard('4', 'Fechar meta e calcular bônus', 'Depois de conferir metas, despesas, gestores e leitura de patrimônio, finalize o período.', { className: 'is-close' });
+  const step5 = createWorkCard('5', 'Resumo do fechamento', 'Depois de fechado, acompanhe quem atingiu a meta e os valores calculados.' );
+
+  step1.querySelector('.metas-work-body').appendChild(suggest);
+  step2.querySelector('.metas-work-body').appendChild(metasTable);
+  step3.querySelector('.metas-work-body').appendChild(despesas);
+  step4.querySelector('.metas-work-body').appendChild(closePanel);
+
+  if (resumo) {
+    step5.querySelector('.metas-work-body').appendChild(resumo);
+  } else {
+    step5.querySelector('.metas-work-body').innerHTML = '<div class="metas-empty">O resumo será exibido após carregar ou fechar uma meta.</div>';
+  }
+
+  grid.append(step1, step2, step3, step4, step5);
+  content.insertBefore(workflow, sourceCard);
+  sourceCard.remove();
+}
+
 function enhance(container) {
   const page = container.querySelector('.metas-page');
   if (!page) return;
@@ -415,6 +714,7 @@ function enhance(container) {
   ensureGuide(container);
   ensureFilterIntro(container.querySelector('.metas-filter-card'));
   ensureMonthBar(container);
+  ensureConfigWorkflow(container);
   bindMonthBar(container);
 }
 
