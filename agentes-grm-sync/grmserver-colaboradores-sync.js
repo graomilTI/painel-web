@@ -516,8 +516,7 @@ function normalizeEmail(value) {
 async function upsertColaboradores(supabase, colaboradores) {
   logger.info(`Iniciando upsert de ${colaboradores.length} colaboradores...`);
 
-  let inserted = 0;
-  let updated = 0;
+  let synced = 0;
   let errors = 0;
 
   // Processar em lotes para evitar timeout
@@ -528,7 +527,7 @@ async function upsertColaboradores(supabase, colaboradores) {
 
     try {
       // Usar upsert do Supabase por CPF
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('colaboradores')
         .upsert(batch, {
           onConflict: 'cpf', // Usar CPF como chave de conflito
@@ -539,20 +538,7 @@ async function upsertColaboradores(supabase, colaboradores) {
         logger.error(`Erro no upsert do lote ${i / batchSize + 1}: ${error.message}`);
         errors += batch.length;
       } else {
-        // Contar inserts vs updates consultando registros
-        for (const col of batch) {
-          const { data: existing } = await supabase
-            .from('colaboradores')
-            .select('id')
-            .eq('cpf', col.cpf)
-            .single();
-
-          if (existing) {
-            updated++;
-          } else {
-            inserted++;
-          }
-        }
+        synced += batch.length;
       }
     } catch (error) {
       logger.error(`Erro ao processar lote ${i / batchSize + 1}: ${error.message}`);
@@ -565,10 +551,10 @@ async function upsertColaboradores(supabase, colaboradores) {
   }
 
   logger.success(
-    `Upsert concluído | Inseridos: ${inserted} | Atualizados: ${updated} | Erros: ${errors}`
+    `Upsert concluído | Sincronizados: ${synced} | Erros: ${errors}`
   );
 
-  return { inserted, updated, errors };
+  return { synced, errors };
 }
 
 // ============================================================================
