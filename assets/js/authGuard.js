@@ -12,7 +12,7 @@ function normalize(value = '') {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-function normalizePath(value = '') {
+export function normalizePath(value = '') {
   const raw = String(value || '').split('?')[0].trim();
   const [pathname, hash = ''] = raw.split('#', 2);
   const cleanPath = pathname
@@ -23,7 +23,7 @@ function normalizePath(value = '') {
   return cleanHash ? `${cleanPath}#${cleanHash}` : cleanPath;
 }
 
-function getCurrentPanelPath() {
+export function getCurrentPanelPath() {
   const clean = normalizePath(window.location.pathname);
   const parts = clean.split('/').filter(Boolean);
   const painelIndex = parts.findIndex((part) => normalize(part) === 'painel');
@@ -64,7 +64,7 @@ function permissionRoute(item) {
 
 const CHAMADOS_TI_ITEM = { code: 'chamados_ti', label: 'Chamados de TI', path: 'chamados-ti', aliases: ['CHAMADOS_TI', 'TI_CHAMADOS', 'HELPDESK', 'SUPORTE_TI'] };
 
-function allowedItemsForContext(context) {
+export function allowedItemsForContext(context) {
   if (context?.user?.is_master) {
     return PANEL_MENU.flatMap((section) => section.items || []).map(permissionRoute).concat(CHAMADOS_TI_ITEM);
   }
@@ -85,23 +85,25 @@ function allowedItemsForContext(context) {
     .concat(CHAMADOS_TI_ITEM);
 }
 
-function getFirstAllowedPath(context) {
+export function getFirstAllowedPath(context) {
   const items = allowedItemsForContext(context);
   const preferred = items.find((item) => normalizePath(item.path) === 'programacao') || items[0];
   return preferred?.path || 'dashboard';
 }
 
-function userCanOpenCurrentPage(context) {
+export function canOpenPath(context, path) {
   if (context?.user?.is_master) return true;
-
-  const current = getCurrentPanelPath();
-  if (!current || current === 'login') return true;
+  if (!path || path === 'login') return true;
 
   const allowedPaths = new Set(
     allowedItemsForContext(context).map((item) => normalizePath(item.path)).filter(Boolean)
   );
 
-  return allowedPaths.has(current);
+  return allowedPaths.has(path);
+}
+
+function userCanOpenCurrentPage(context) {
+  return canOpenPath(context, getCurrentPanelPath());
 }
 
 export async function requireAuth() {

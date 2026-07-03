@@ -288,7 +288,7 @@ async function sincronizarBotConversa() {
   }
 }
 
-initProtectedPage('Consultar Base de Colaboradores', (content) => {
+export function renderContent(content) {
   content.innerHTML = `
     <section class="base-page">
       <div class="section-heading">
@@ -421,4 +421,6 @@ initProtectedPage('Consultar Base de Colaboradores', (content) => {
     const meta = document.getElementById('metaConsulta');
     if (meta) meta.textContent = `Erro ao consultar base: ${err.message || err}`;
   });
-});
+}
+
+initProtectedPage('Consultar Base de Colaboradores', renderContent);

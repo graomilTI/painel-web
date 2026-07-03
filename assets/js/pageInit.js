@@ -5,6 +5,7 @@ import { initAgentUpdateStatus } from './agentUpdateStatus.js';
 import { initAgentDataMode } from './agentDataMode.js';
 import { initGestorMenuAjustes } from './gestor-menu-ajustes.js';
 import { initProgramacaoRuntimeFixes } from './programacao-runtime-fixes.js';
+import { initRouter } from './router.js';
 import './searchableSelect.js';
 
 function currentRouteName() {
@@ -21,6 +22,8 @@ export async function initProtectedPage(title, renderContent) {
   document.documentElement.classList.add('is-route-booting');
   const userContext = await requireAuth();
   if (!userContext) return;
+
+  initRouter();
 
   renderAppLayout({ userContext, currentPageTitle: title });
   bindLayoutActions();
