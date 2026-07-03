@@ -76,10 +76,18 @@ import { supabase } from './supabaseClient.js';
   // exato de distância real quase nunca acontece, então o desempate por carga nunca entrava).
   const DIST_TOLERANCIA_EMPATE_KM = 20;
   const OS_SALDO_PEQUENO_KG = 500;
-  // Um colaborador não dá conta de quantidade ilimitada de OS no backlog — cada parada extra soma
-  // tempo de estrada além do tempo de trabalho em si, mesmo quando cada ponto novo "parece" perto
-  // do anterior (encadeamento fazenda A -> armazém B -> silo C...). Trava dura, sem exceção.
-  const MAX_OS_POR_COLABORADOR = 10;
+  // Com ~433 classificadores ativos geocodificados pra ~800 OS abertas (achado em 2026-07-03), a
+  // média nacional é <2 OS por pessoa — ninguém deveria precisar de muito mais que isso na passada
+  // normal. Teto baixo aqui é o que garante rota lisa (poucas paradas por colaborador); a passada de
+  // fallback abaixo (mais permissiva) só entra pras OS que sobrarem sem ninguém na passada normal.
+  const MAX_OS_POR_COLABORADOR = 3;
+  const MAX_OS_POR_COLABORADOR_FALLBACK = 6;
+  // Passada normal: só reusa colaborador se o novo ponto estiver perto de alguma parada já
+  // atribuída (rota lisa, sem saltos entre clusters distantes). Passada de fallback (mais abaixo,
+  // em escolherColaborador/build) ignora esse raio e usa só RAIO_REPETIR_COLAB_KM — é o "menos pior"
+  // pras OS que a passada normal deixou sem ninguém, e vem sinalizada como rota estendida.
+  const ROTA_VIZINHA_MAX_KM = 40;
+  const ROTA_DESVIO_MAX_KM = 45;
   // Leitura de patrimônio (Frotas > Veículos) mais velha que isso não confirma posse atual do
   // veículo — média real hoje é 4,4 dias, 65% das leituras são de até 7 dias.
   const LIMITE_DIAS_LEITURA_PATRIMONIO = 7;
@@ -544,19 +552,22 @@ import { supabase } from './supabaseClient.js';
     return { custo: melhorCusto, posicao: melhorPos };
   }
 
-  function podeUsarColaborador(c, ponto, usos, osSaldoKg) {
+  function podeUsarColaborador(c, ponto, usos, osSaldoKg, fallback = false) {
     const usados = usos.get(c.id) || [];
     if (!usados.length) return true;
-    if (usados.length >= MAX_OS_POR_COLABORADOR) return false;
+    if (usados.length >= (fallback ? MAX_OS_POR_COLABORADOR_FALLBACK : MAX_OS_POR_COLABORADOR)) return false;
     // OS pequena (saldo <= 500kg): não justifica dedicar um colaborador exclusivo, quem já
     // está em campo hoje pode assumir também, mesmo fora do raio de atendimento.
     if (Number(osSaldoKg) <= OS_SALDO_PEQUENO_KG) return true;
-    // O novo ponto precisa caber na rota já existente sem um desvio grande — se ele está "no
-    // caminho" ou perto de alguma parada já atribuída, o km extra de inserir é pequeno (pode até
-    // ser negativo, se ficar entre duas paradas). Se está numa direção totalmente diferente, o
-    // km extra fica perto de uma ida+volta inteira só pra ele — mesmo raio usado pra "até onde dá
-    // pra mandar alguém" também serve de limite pro desvio aceitável de uma parada extra.
-    return melhorInsercaoRota(c, usados, ponto).custo <= RAIO_REPETIR_COLAB_KM;
+    // Fallback (só usado pras OS que sobraram sem ninguém na passada normal): aceita qualquer
+    // desvio dentro do raio de reuso, sem exigir proximidade com uma parada já existente — é o
+    // "menos pior" disponível, marcado como rota estendida em vez de aparecer como se fosse ideal.
+    if (fallback) return melhorInsercaoRota(c, usados, ponto).custo <= RAIO_REPETIR_COLAB_KM;
+    // Passada normal: o novo ponto precisa estar perto de alguma parada já atribuída (rota lisa,
+    // sem saltos entre clusters distantes) E caber sem um desvio grande de inserção.
+    const distParadaMaisProxima = Math.min(...usados.map(u => distEntrePontos(u.ponto, ponto)).filter(Number.isFinite));
+    if (!Number.isFinite(distParadaMaisProxima) || distParadaMaisProxima > ROTA_VIZINHA_MAX_KM) return false;
+    return melhorInsercaoRota(c, usados, ponto).custo <= ROTA_DESVIO_MAX_KM;
   }
   function registrarUso(c, ponto, saldo, usos) {
     const arr = usos.get(c.id) || [];
@@ -567,7 +578,17 @@ import { supabase } from './supabaseClient.js';
   }
   function saldoAcumulado(c, usos) { return (usos.get(c.id) || []).reduce((acc, u) => acc + u.saldo, 0); }
 
-  function escolherColaborador(os, ponto, usos) {
+  // Quantos candidatos existem fisicamente ao alcance da OS, ignorando quem já foi "usado" —
+  // mede escassez real de mão de obra na região, não a disponibilidade momentânea no backlog.
+  // Usado só pra ordenar o build() (atender primeiro quem tem menos opção), não como filtro.
+  function candidatosProximos(ponto) {
+    return st.colaboradores.reduce((n, c) => {
+      const d = distColabPonto(c, ponto);
+      return n + (Number.isFinite(d) && d <= DIST_MAX_DESLOCAMENTO_DIARIO_KM ? 1 : 0);
+    }, 0);
+  }
+
+  function escolherColaborador(os, ponto, usos, fallback = false) {
     const vinculados = (st.vinculosPorOs.get(String(os.id)) || [])
       .map(v => st.colaboradores.find(c => (digits(v.cpf).length === 11 && c.cpf === digits(v.cpf)) || norm(c.nome) === norm(v.nome)))
       .filter(Boolean);
@@ -575,7 +596,7 @@ import { supabase } from './supabaseClient.js';
     function ranquear(lista) {
       // Todo item de st.colaboradores (cadastrados ou sintéticos de frota) já tem geo válida garantida na origem.
       return lista
-        .filter(c => podeUsarColaborador(c, ponto, usos, os.__saldo))
+        .filter(c => podeUsarColaborador(c, ponto, usos, os.__saldo, fallback))
         .map(c => {
           const dist = distColabPonto(c, ponto);
           const avaliacao = avaliarCandidato(c, ponto, dist, os.__saldo);
@@ -800,31 +821,59 @@ import { supabase } from './supabaseClient.js';
       if (uf && o.numero_os) st.ufPorNumeroOs.set(String(o.numero_os), uf);
     });
 
-    const ordenadas = [...st.os].sort((a, b) => b.__saldo - a.__saldo);
-    for (const os of ordenadas) {
+    // Escassez primeiro: processar a OS com menos candidatos por perto antes das que têm gente
+    // sobrando ao redor. Sem isso, a ordem por saldo desc deixa a maior OS "sequestrar" o
+    // colaborador mais próximo da região logo de cara, empurrando as OS vizinhas menores pra
+    // reusar alguém mais longe (ou pra "sem colaborador") mesmo quando há gente perto o bastante
+    // pra atender todo mundo se a ordem fosse melhor — achado ao investigar OS "sem atendente"
+    // crescendo depois de apertar os limites de rota (2026-07-03, 433 candidatos reais pra ~800
+    // OS abertas, então a escassez normalmente é de ordem, não de gente).
+    const escassezPorOs = new Map();
+    for (const os of st.os) {
       const ponto = pontosPorChave.get(os.__pontoKey);
-      if (!ponto) continue;
-      const escolhido = ponto.temCoord ? escolherColaborador(os, ponto, usos) : null;
-      if (!escolhido) {
-        const motivo = ponto.temCoord
-          ? `Sem colaborador viável a até ${DIST_MAX_DESLOCAMENTO_DIARIO_KM}km (ou dentro do raio de ${RAIO_REPETIR_COLAB_KM}km pra reuso) e sem hospedagem por perto — precisa de revisão manual`
-          : 'Ponto de embarque sem coordenada cadastrada (endereço não geocodificado) — associe manualmente';
-        st.semAssociacao.push({ os, ponto, motivo });
-        continue;
-      }
+      escassezPorOs.set(os.id, ponto?.temCoord ? candidatosProximos(ponto) : 0);
+    }
+    const ordenadas = [...st.os].sort((a, b) => {
+      const diffEscassez = escassezPorOs.get(a.id) - escassezPorOs.get(b.id);
+      return diffEscassez !== 0 ? diffEscassez : b.__saldo - a.__saldo;
+    });
+
+    function tentarAssociar(os, ponto, fallback) {
+      const escolhido = escolherColaborador(os, ponto, usos, fallback);
+      if (!escolhido) return false;
       const { c, dist, avaliacao, saldoAtual, origem } = escolhido;
       registrarUso(c, ponto, os.__saldo, usos);
       const repetido = (usos.get(c.id) || []).length > 1;
-
       st.rotas.push({
         id: `${os.id}|${c.id}`, os, ponto, colab: avaliacao.candidato, dist,
-        origem, repetido,
+        origem, repetido, rotaEstendida: fallback,
         modo: avaliacao.modoInfo.modo, modoLabel: avaliacao.modoInfo.label, modoEstimado: !!avaliacao.modoInfo.estimado,
         custoDeslocamento: avaliacao.custoDeslocamento, hospedagem: avaliacao.hospedagem,
         recomendacao: avaliacao.recomendacao, custoDia: avaliacao.custoDia, economia: avaliacao.economia,
         inviavel: avaliacao.inviavel,
         saldoAntes: saldoAtual, saldoDepois: saldoAtual + os.__saldo,
       });
+      return true;
+    }
+
+    const pendentes = [];
+    for (const os of ordenadas) {
+      const ponto = pontosPorChave.get(os.__pontoKey);
+      if (!ponto) continue;
+      if (!ponto.temCoord) {
+        st.semAssociacao.push({ os, ponto, motivo: 'Ponto de embarque sem coordenada cadastrada (endereço não geocodificado) — associe manualmente' });
+        continue;
+      }
+      if (!tentarAssociar(os, ponto, false)) pendentes.push({ os, ponto });
+    }
+    // Segunda passada (fallback): só pras OS que a passada normal deixou sem ninguém. Usa raio de
+    // reuso mais largo e teto por colaborador mais alto — o resultado vem marcado `rotaEstendida`
+    // pra não se misturar com as rotas normais como se fosse uma sugestão igualmente boa.
+    for (const { os, ponto } of pendentes) {
+      if (!tentarAssociar(os, ponto, true)) {
+        const motivo = `Sem colaborador viável a até ${DIST_MAX_DESLOCAMENTO_DIARIO_KM}km (ou dentro do raio de ${RAIO_REPETIR_COLAB_KM}km pra reuso) e sem hospedagem por perto — precisa de revisão manual`;
+        st.semAssociacao.push({ os, ponto, motivo });
+      }
     }
     st.rotas.sort((a, b) => b.custoDia - a.custoDia || b.dist - a.dist);
     st.pontos = st.pontos.filter(p => st.osTodas.some(o => o.__pontoKey === p.__key));
@@ -884,6 +933,7 @@ import { supabase } from './supabaseClient.js';
       os: st.os.length, osSemSaldo, kmFrota, kmParticular, kmUber,
       hospedar: st.rotas.filter(r => r.recomendacao === 'hospedar').length,
       semColaborador: st.semAssociacao.length,
+      rotaEstendida: st.rotas.filter(r => r.rotaEstendida).length,
     };
   }
   function rows() { return { base: st.rotas.filter(r => passaFiltroPonto(r.ponto)), sem: st.semAssociacao.filter(r => passaFiltroPonto(r.ponto)) }; }
@@ -907,7 +957,7 @@ import { supabase } from './supabaseClient.js';
         <div class="mo-legend"><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsComSaldo ? '' : 'off'}" data-toggle-marker="os-com-saldo"><i class="verde"></i>OS com saldo ${st.mostrarOsComSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsSemSaldo ? '' : 'off'}" data-toggle-marker="os-sem-saldo"><i class="vermelho"></i>OS sem saldo ${st.mostrarOsSemSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarHoteis ? '' : 'off'}" data-toggle-marker="hoteis"><i class="roxo"></i>Hotéis ${st.mostrarHoteis ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarIrregularidades ? '' : 'off'}" data-toggle-marker="irregularidades"><i class="laranja"></i>Irregularidades ${st.mostrarIrregularidades ? 'On' : 'Off'}</button><span data-rota-status>Rotas: ${rotaInfo}</span></div></div>
         <div class="mo-body">
           <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
-          <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>KM frota</span><strong>${fmtKm(k.kmFrota)}</strong></div><div class="mo-kpi"><span>KM particular</span><strong>${fmtKm(k.kmParticular)}</strong></div><div class="mo-kpi"><span>KM uber</span><strong>${fmtKm(k.kmUber)}</strong></div><div class="mo-kpi"><span>Recomenda hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div></div>
+          <div class="mo-kpis"><div class="mo-kpi"><span>OS com saldo</span><strong>${k.os}</strong></div><div class="mo-kpi"><span>OS sem saldo</span><strong>${k.osSemSaldo}</strong></div><div class="mo-kpi"><span>KM frota</span><strong>${fmtKm(k.kmFrota)}</strong></div><div class="mo-kpi"><span>KM particular</span><strong>${fmtKm(k.kmParticular)}</strong></div><div class="mo-kpi"><span>KM uber</span><strong>${fmtKm(k.kmUber)}</strong></div><div class="mo-kpi"><span>Recomenda hospedar</span><strong>${k.hospedar}</strong></div><div class="mo-kpi"><span>Sem colaborador</span><strong>${k.semColaborador}</strong></div><div class="mo-kpi"><span>Rota estendida</span><strong>${k.rotaEstendida}</strong></div></div>
         </div>`;
   }
 
@@ -1021,14 +1071,18 @@ import { supabase } from './supabaseClient.js';
       // st.rotas já vem ordenado por custo desc (build()); a primeira rota encontrada aqui pra
       // cada colaborador é a de maior custo — usada como âncora pro clique (destaque no mapa) e
       // como referência de deslocamento/estadia exibida na linha.
-      const atual = porColab.get(key) || { nome: r.colab.nome, colabId: r.colab.id, modo: r.modoLabel, estadia: estadiaLabel(r), os: 0, saldo: 0, custo: 0, rotaPrincipal: r.id };
+      const atual = porColab.get(key) || { nome: r.colab.nome, colabId: r.colab.id, modo: r.modoLabel, estadia: estadiaLabel(r), os: 0, saldo: 0, custo: 0, rotaPrincipal: r.id, estendida: false };
       atual.os += 1; atual.saldo += r.os.__saldo; atual.custo += r.custoDia;
+      if (r.rotaEstendida) atual.estendida = true;
       porColab.set(key, atual);
     }
     const lista = [...porColab.values()].sort((a, b) => b.custo - a.custo);
     const colabSelecionadoId = st.rotas.find(x => x.id === st.rota)?.colab?.id;
+    // "Rota estendida" = colaborador entrou pela passada de fallback (build()) porque a OS não
+    // tinha ninguém dentro do raio normal de rota lisa — sinaliza pro gestor que esse deslocamento
+    // é atípico (maior desvio que o comum), não uma sugestão equivalente às demais.
     const body = lista.length
-      ? `<table class="mo-colabs-table"><thead><tr><th>Colaborador</th><th>Deslocamento</th><th>Estadia</th><th>OS</th><th>Saldo</th><th>Custo total</th></tr></thead><tbody>${lista.map(c => `<tr class="${c.colabId === colabSelecionadoId ? 'active' : ''}" data-colab-rota="${esc(c.rotaPrincipal)}"><td>${esc(c.nome)}</td><td>${esc(c.modo)}</td><td>${esc(c.estadia)}</td><td>${c.os}</td><td>${fmtKg(c.saldo)}</td><td>${fmtRs(c.custo)}</td></tr>`).join('')}</tbody></table>`
+      ? `<table class="mo-colabs-table"><thead><tr><th>Colaborador</th><th>Deslocamento</th><th>Estadia</th><th>OS</th><th>Saldo</th><th>Custo total</th></tr></thead><tbody>${lista.map(c => `<tr class="${c.colabId === colabSelecionadoId ? 'active' : ''}" data-colab-rota="${esc(c.rotaPrincipal)}"><td>${esc(c.nome)}${c.estendida ? ' <span class="mo-pill warn" title="Alguma OS desse colaborador só encontrou vaga na passada de fallback (raio mais largo)">Rota estendida</span>' : ''}</td><td>${esc(c.modo)}</td><td>${esc(c.estadia)}</td><td>${c.os}</td><td>${fmtKg(c.saldo)}</td><td>${fmtRs(c.custo)}</td></tr>`).join('')}</tbody></table>`
       : '<div class="mo-load">Nenhum colaborador associado para o filtro atual.</div>';
     return `<section class="mo-colabs-card"><div class="mo-colabs-head"><strong>Colaboradores no mapa</strong><span>${lista.length} colaborador(es) · clique pra destacar no mapa</span></div>${body}</section>`;
   }
