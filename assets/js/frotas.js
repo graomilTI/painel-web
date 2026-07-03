@@ -11,10 +11,12 @@ installPrintDriverValidation(supabase);
 installPreviousWeekDefaults(document, supabase);
 installIntuitiveFleetLayout(document);
 
-initProtectedPage('Frotas', (content, ctx) => {
+export function renderContent(content, ctx) {
   window.FROTAS.openHome(content, {
     supabase,
     auth: ctx,
     user: ctx?.user || null
   });
-});
+}
+
+initProtectedPage('Frotas', renderContent);

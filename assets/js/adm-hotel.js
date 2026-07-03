@@ -86,7 +86,7 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-initProtectedPage('Módulo Hospedagem', (content, userContext) => {
+export function renderContent(content, userContext) {
   injectStyles();
   const state = {
     rows: [], resumo: {}, hoteis: [], alojamentos: [], historicoRows: [], historicoAtual: [], historicoErro: null,
@@ -1632,4 +1632,6 @@ initProtectedPage('Módulo Hospedagem', (content, userContext) => {
   // ─── Boot ──────────────────────────────────────────────────────────────────
 
   (async function boot() { await loadHoteis(); await loadAlojamentos(); await Promise.all([loadRows(), loadHistoricoRows()]); setTab(initialTabFromHash()); })();
-});
+}
+
+initProtectedPage('Módulo Hospedagem', renderContent);

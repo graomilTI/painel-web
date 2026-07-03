@@ -55,7 +55,7 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-initProtectedPage('Distribuir O.S', async (content) => {
+export async function renderContent(content) {
   injectStyles();
   state.user = await getCurrentUser();
   content.innerHTML = `
@@ -341,4 +341,6 @@ initProtectedPage('Distribuir O.S', async (content) => {
     const embarque = pick(row, ['Embarque', 'Ponto 1', 'Local Embarque']);
     return { numero_os: String(numero || '').trim(), situacao: String(pick(row, ['Situação', 'Situacao']) || '').trim() || null, financeiro: String(pick(row, ['Financeiro']) || '').trim() || null, data_os: excelDate(pick(row, ['Data'])) || null, servico: String(pick(row, ['Serviço', 'Servico']) || '').trim() || null, cliente: String(pick(row, ['Cliente']) || '').trim() || null, embarque: String(embarque || '').trim() || null, destino: String(pick(row, ['Destino']) || '').trim() || null, supervisao: String(pick(row, ['Supervisão', 'Supervisao', 'Regional']) || '').trim() || null, contrato: String(pick(row, ['Contrato']) || '').trim() || null, produto: String(pick(row, ['Produto']) || '').trim() || null, lote: num(pick(row, ['Lote'])), embarcado: num(pick(row, ['Embarcado'])), remanescente: num(pick(row, ['Remanescente'])), status_gestor: null, status_conferencia: 'PENDENTE', raw: row, updated_at: new Date().toISOString() };
   }
-});
+}
+
+initProtectedPage('Distribuir O.S', renderContent);
