@@ -1,4 +1,4 @@
-import { initProtectedPage } from './pageInit.js';
+﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
 const DEFAULT_SETORES = ['RH', 'Caixas', 'Frotas', 'Logística', 'Troca de notas'];
@@ -152,8 +152,9 @@ function buildHorario(row) {
   return parts.join(' | ');
 }
 
-function getDisplayName(person) {
-  return String(person?.apelido || person?.nome || '').trim();
+function getPersonDisplayName(person) {
+  const apelido = String(person?.apelido || '').trim();
+  return apelido || person?.nome || '';
 }
 
 function getPersonDateLabel(person) {
@@ -163,21 +164,9 @@ function getPersonDateLabel(person) {
 }
 
 function shouldShowPersonDates(pessoas) {
-  const dates = [...new Set((pessoas || []).map((p) => p.data_plantao).filter(Boolean))];
+  const dates = [...new Set((pessoas || []).map((p) => p?.data_plantao).filter(Boolean))];
   return dates.length > 1;
 }
-
-function isMissingColumnError(error, column) {
-  if (!error || !column) return false;
-  const text = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase();
-  return text.includes(column.toLowerCase()) && (
-    text.includes('schema cache') ||
-    text.includes('could not find') ||
-    text.includes('does not exist') ||
-    text.includes('column')
-  );
-}
-
 
 function getSavedExtraSetores() {
   try {
@@ -608,18 +597,9 @@ async function salvarModeloPlantao() {
       updated_at: new Date().toISOString(),
     }));
 
-    let { error: insertError } = await supabase
+    const { error: insertError } = await supabase
       .from('rh_plantao_modelos')
       .insert(payload);
-
-    if (isMissingColumnError(insertError, 'apelido')) {
-      const payloadSemApelido = payload.map(({ apelido, ...row }) => row);
-      const retry = await supabase
-        .from('rh_plantao_modelos')
-        .insert(payloadSemApelido);
-      insertError = retry.error;
-    }
-
     if (insertError) throw insertError;
 
     if (feedback) feedback.textContent = `Modelo padrão salvo com ${rows.length} linha(s).`;
@@ -727,11 +707,7 @@ function renderModeloTable() {
   tbody.innerHTML = modeloPlantao.length ? modeloPlantao.map((row, idx) => `
     <tr>
       <td>${esc(row.setor)}</td>
-      <td>
-        <strong>${esc(getDisplayName(row))}</strong>
-        ${row.apelido ? `<div class="plantao-meta">${esc(row.nome)}</div>` : ''}
-        <div class="plantao-meta">${esc(row.cpf || row.colaborador_key || '')}</div>
-      </td>
+      <td><strong>${esc(row.nome)}</strong><div class="plantao-meta">${esc(row.cpf || row.colaborador_key || '')}</div></td>
       <td>${esc(formatPhone(row.telefone) || '-')}</td>
       <td>${esc(row.email_corporativo || '-')}</td>
       <td>${esc(buildHorario(row) || '-')}</td>
@@ -820,7 +796,7 @@ function aggregateEscalasByDate(rows) {
     item.total += 1;
     if (row.evento) item.eventos.add(row.evento);
     if (row.setor) item.setores.add(row.setor);
-    if ((row.apelido || row.nome) && item.nomes.length < 8) item.nomes.push(row.apelido || row.nome);
+    if (row.nome && item.nomes.length < 8) item.nomes.push(row.nome);
   });
 
   return Array.from(map.values())
@@ -849,28 +825,18 @@ async function consultarDatasPlantao() {
   }
 
   try {
-    const buildConsultaQuery = (selectFields) => {
-      let query = supabase
-        .from('rh_plantao_escalas')
-        .select(selectFields)
-        .gte('data_plantao', dataIni)
-        .lte('data_plantao', dataFim)
-        .order('data_plantao', { ascending: true })
-        .order('setor', { ascending: true })
-        .order('ordem', { ascending: true });
+    let query = supabase
+      .from('rh_plantao_escalas')
+      .select('id,data_plantao,evento,setor,nome,colaborador_key,hora_inicio,hora_fim')
+      .gte('data_plantao', dataIni)
+      .lte('data_plantao', dataFim)
+      .order('data_plantao', { ascending: true })
+      .order('setor', { ascending: true })
+      .order('ordem', { ascending: true });
 
-      if (setor !== 'todos') query = query.eq('setor', setor);
-      return query;
-    };
+    if (setor !== 'todos') query = query.eq('setor', setor);
 
-    let { data, error } = await buildConsultaQuery('id,data_plantao,evento,setor,nome,apelido,colaborador_key,hora_inicio,hora_fim');
-
-    if (isMissingColumnError(error, 'apelido')) {
-      const retry = await buildConsultaQuery('id,data_plantao,evento,setor,nome,colaborador_key,hora_inicio,hora_fim');
-      data = retry.data;
-      error = retry.error;
-    }
-
+    const { data, error } = await query;
     if (error) throw error;
 
     const filtered = busca
@@ -1283,32 +1249,15 @@ async function saveEscala() {
 
     if (delError) throw delError;
 
-    let salvouSemColunaApelido = false;
-    let { error: insertError } = await supabase
+    const { error: insertError } = await supabase
       .from('rh_plantao_escalas')
       .insert(rows);
 
-    if (isMissingColumnError(insertError, 'apelido')) {
-      salvouSemColunaApelido = true;
-      const rowsSemApelido = rows.map(({ apelido, ...row }) => row);
-      const retry = await supabase
-        .from('rh_plantao_escalas')
-        .insert(rowsSemApelido);
-      insertError = retry.error;
-    }
-
     if (insertError) throw insertError;
 
-    feedback.textContent = salvouSemColunaApelido
-      ? `Plantão salvo com ${rows.length} plantonista(s). Atenção: a coluna apelido ainda não existe no Supabase, então o apelido fica apenas na tela atual.`
-      : `Plantão salvo com ${rows.length} plantonista(s), separado por ${new Set(rows.map((r) => r.data_plantao)).size} data(s).`;
+    feedback.textContent = `Plantão salvo com ${rows.length} plantonista(s), separado por ${new Set(rows.map((r) => r.data_plantao)).size} data(s).`;
     if (document.getElementById('plantaoConsultaLista')) consultarDatasPlantao().catch(() => null);
-    if (!salvouSemColunaApelido) {
-      await loadEscalaFromDb();
-    } else {
-      renderSetores();
-      updateKpis();
-    }
+    await loadEscalaFromDb();
   } catch (err) {
     console.error(err);
     feedback.classList.add('error');
@@ -1632,7 +1581,6 @@ function drawSectorIcon(ctx, cx, cy, r, setor) {
 function computeCardH(pessoas) {
   const showPersonDates = shouldShowPersonDates(pessoas);
   let h = 20 + 38 + 48 + 11;
-
   pessoas.forEach((p, i) => {
     if (showPersonDates && getPersonDateLabel(p)) h += 28;
     h += 40;
@@ -1642,7 +1590,6 @@ function computeCardH(pessoas) {
     h += 10;
     if (i < pessoas.length - 1) h += 13;
   });
-
   return h + 20;
 }
 
@@ -1669,7 +1616,7 @@ function drawPersonBlock(ctx, x, y, w, person, showDate = false) {
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText(fitText(ctx, getDisplayName(person).toUpperCase(), w), x, cy);
+  ctx.fillText(fitText(ctx, getPersonDisplayName(person).toUpperCase(), w), x, cy);
   cy += 40;
 
   function infoRow(drawIcon, label, value) {
@@ -2067,7 +2014,7 @@ async function renderWhatsappStatus(canvasEl, setor) {
     ctx.save();
     ctx.font = 'bold 44px Arial'; ctx.fillStyle = '#fff';
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText(fitText(ctx, getDisplayName(person).toUpperCase(), cardW - 44), PAD + 22, iy);
+    ctx.fillText(fitText(ctx, getPersonDisplayName(person).toUpperCase(), cardW - 44), PAD + 22, iy);
     ctx.restore();
     iy += 52;
 
