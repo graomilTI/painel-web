@@ -152,6 +152,22 @@ function buildHorario(row) {
   return parts.join(' | ');
 }
 
+function getPersonDisplayName(person) {
+  const apelido = String(person?.apelido || '').trim();
+  return apelido || person?.nome || '';
+}
+
+function getPersonDateLabel(person) {
+  const data = person?.data_plantao || '';
+  if (!data) return '';
+  return `${weekdayBR(data)} • ${formatDateBR(data)}`;
+}
+
+function shouldShowPersonDates(pessoas) {
+  const dates = [...new Set((pessoas || []).map((p) => p?.data_plantao).filter(Boolean))];
+  return dates.length > 1;
+}
+
 function getSavedExtraSetores() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -457,6 +473,7 @@ function addEscalaRow(setor, row) {
     colaborador_key: key,
     cpf: row.cpf || '',
     nome: row.nome || '',
+    apelido: row.apelido || '',
     telefone: row.telefone || '',
     email_corporativo: row.email_corporativo || '',
     hora_inicio: row.hora_inicio || '',
@@ -506,6 +523,7 @@ async function loadModeloPlantao() {
       colaborador_key: row.colaborador_key,
       cpf: row.cpf || '',
       nome: row.nome || '',
+      apelido: row.apelido || '',
       telefone: row.telefone || '',
       email_corporativo: row.email_corporativo || '',
       hora_inicio: row.hora_inicio || '',
@@ -528,6 +546,7 @@ async function salvarModeloPlantao() {
       colaborador_key: r.colaborador_key || collaboratorKey(r),
       cpf: r.cpf || '',
       nome: r.nome,
+      apelido: r.apelido || '',
       telefone: r.telefone || '',
       email_corporativo: r.email_corporativo || '',
       hora_inicio: r.hora_inicio || '',
@@ -565,6 +584,7 @@ async function salvarModeloPlantao() {
       colaborador_key: r.colaborador_key,
       cpf: r.cpf || null,
       nome: r.nome,
+      apelido: r.apelido || null,
       telefone: r.telefone || null,
       email_corporativo: r.email_corporativo || null,
       hora_inicio: r.hora_inicio || null,
@@ -1196,6 +1216,7 @@ async function saveEscala() {
         colaborador_key: p.colaborador_key || collaboratorKey(p),
         cpf: p.cpf || null,
         nome: p.nome,
+        apelido: p.apelido || null,
         telefone: p.telefone || null,
         email_corporativo: p.email_corporativo || null,
         hora_inicio: p.hora_inicio || null,
@@ -1558,8 +1579,10 @@ function drawSectorIcon(ctx, cx, cy, r, setor) {
 }
 
 function computeCardH(pessoas) {
+  const showPersonDates = shouldShowPersonDates(pessoas);
   let h = 20 + 38 + 48 + 11;
   pessoas.forEach((p, i) => {
+    if (showPersonDates && getPersonDateLabel(p)) h += 28;
     h += 40;
     if (formatPhone(p.telefone)) h += 30;
     if (p.email_corporativo) h += 30;
@@ -1570,15 +1593,30 @@ function computeCardH(pessoas) {
   return h + 20;
 }
 
-function drawPersonBlock(ctx, x, y, w, person) {
+function drawPersonBlock(ctx, x, y, w, person, showDate = false) {
   const iS = 9;
   let cy = y;
   ctx.save();
+
+  if (showDate) {
+    const dateLabel = getPersonDateLabel(person);
+    if (dateLabel) {
+      ctx.font = 'bold 13px Arial';
+      const pillW = Math.min(ctx.measureText(dateLabel).width + 20, w);
+      drawRoundRectFilled(ctx, x, cy, pillW, 23, 999, 'rgba(22,101,52,.24)', 'rgba(111,208,165,.28)', 1);
+      ctx.fillStyle = '#6fd0a5';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(fitText(ctx, dateLabel, pillW - 20), x + 10, cy + 12);
+      cy += 28;
+    }
+  }
+
   ctx.font = 'bold 26px Arial';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText(fitText(ctx, (person.nome || '').toUpperCase(), w), x, cy);
+  ctx.fillText(fitText(ctx, getPersonDisplayName(person).toUpperCase(), w), x, cy);
   cy += 40;
 
   function infoRow(drawIcon, label, value) {
@@ -1611,6 +1649,7 @@ function drawSectorCard(ctx, x, y, w, setor, pessoas, dateLabel) {
   const pad = 20;
   const iconR = 18;
   const cardH = computeCardH(pessoas);
+  const showPersonDates = shouldShowPersonDates(pessoas);
   drawRoundRectFilled(ctx, x, y, w, cardH, 18, 'rgba(3,10,6,.88)', 'rgba(22,163,74,.38)', 1.8);
 
   let cy = y + pad;
@@ -1648,7 +1687,7 @@ function drawSectorCard(ctx, x, y, w, setor, pessoas, dateLabel) {
 
   // People
   pessoas.forEach((person, i) => {
-    const usedH = drawPersonBlock(ctx, x + pad, cy, w - pad * 2, person);
+    const usedH = drawPersonBlock(ctx, x + pad, cy, w - pad * 2, person, showPersonDates);
     cy += usedH;
     if (i < pessoas.length - 1) {
       ctx.fillStyle = 'rgba(111,208,165,.07)';
@@ -1883,9 +1922,11 @@ async function renderWhatsappStatus(canvasEl, setor) {
   }
 
   const PAD = 56, HEADER_H = 360, FOOTER_H = 90, GAP = 18;
+  const showPersonDates = shouldShowPersonDates(rows);
 
   function personH(p) {
     let h = 32 + 52; // top-pad + name
+    if (showPersonDates && getPersonDateLabel(p)) h += 40;
     if (formatPhone(p.telefone)) h += 46;
     if (p.email_corporativo) h += 46;
     if (buildHorario(p)) h += 46;
@@ -1954,10 +1995,26 @@ async function renderWhatsappStatus(canvasEl, setor) {
 
     let iy = cy + 32;
 
+    if (showPersonDates) {
+      const dateLabel = getPersonDateLabel(person);
+      if (dateLabel) {
+        ctx.save();
+        ctx.font = 'bold 20px Arial';
+        const pillW = Math.min(ctx.measureText(dateLabel).width + 28, cardW - 44);
+        drawRoundRectFilled(ctx, PAD + 22, iy, pillW, 32, 999, 'rgba(22,101,52,.25)', 'rgba(111,208,165,.3)', 1.2);
+        ctx.fillStyle = '#6fd0a5';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(fitText(ctx, dateLabel, pillW - 28), PAD + 36, iy + 16);
+        ctx.restore();
+        iy += 40;
+      }
+    }
+
     ctx.save();
     ctx.font = 'bold 44px Arial'; ctx.fillStyle = '#fff';
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText(fitText(ctx, (person.nome || '').toUpperCase(), cardW - 44), PAD + 22, iy);
+    ctx.fillText(fitText(ctx, getPersonDisplayName(person).toUpperCase(), cardW - 44), PAD + 22, iy);
     ctx.restore();
     iy += 52;
 
