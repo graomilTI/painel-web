@@ -1,10 +1,12 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { initMetasFechamentoValidacao } from './metasFechamentoValidacao.js';
+import { initMetasLayoutLeigo } from './metasLayoutLeigo.js';
 import './modules/metas.js';
 
 initProtectedPage('METAS', async (content, ctx) => {
   initMetasFechamentoValidacao(content, supabase);
+  initMetasLayoutLeigo(content);
 
   await window.METAS.openHome(content, {
     supabase,
