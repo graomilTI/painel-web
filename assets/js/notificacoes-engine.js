@@ -2,7 +2,6 @@
  * Motor de notificações do painel.
  *
  * Notificações COMPUTADAS (derivadas em tempo real de tabelas existentes):
- *   os_pendente         — OS sem status definido (status_gestor IS NULL) na regional do gestor
  *   programacao_pendente — programacao_dia sem status "salvo" para hoje
  *   patrimonio_atrasado — patrimônios com dias_sem_leitura >= 7
  *   checkout_hoje       — hospedagem com checkout_prevista = hoje e status RESERVADA
@@ -19,7 +18,6 @@ import { toPanelUrl } from './paths.js';
 
 // ---------- meta de cada tipo ----------
 export const NOTIF_META = {
-  os_pendente:          { prioridade: 'urgente',     icone: 'clipboard-alert', label: 'OS Pendentes',          modulo_url: 'os' },
   programacao_pendente: { prioridade: 'atencao',     icone: 'calendar-clock',  label: 'Programação Pendente',  modulo_url: 'programacao' },
   patrimonio_atrasado:  { prioridade: 'atencao',     icone: 'package-alert',   label: 'Patrimônios Atrasados', modulo_url: 'patrimonios' },
   checkout_hoje:        { prioridade: 'urgente',     icone: 'hotel-alert',     label: 'Checkout Hoje',         modulo_url: 'hospedagem' },
@@ -100,38 +98,9 @@ function todayISO() {
 }
 
 // ---------- notificações computadas ----------
-async function loadComputedOsPendente() {
-  if (!isGestor() && !isMaster()) return [];
-  const sups = getSupervisoes();
-  if (!isMaster() && !sups.length) return [];
-
-  // "Cinza" = OS sem ação do gestor: status_gestor IS NULL (não definiu nenhum status ainda)
-  let q = supabase
-    .from('operacional_os')
-    .select('id,numero_os,data_os,supervisao,status_gestor')
-    .is('status_gestor', null);
-
-  if (!isMaster() && sups.length) {
-    q = q.in('supervisao', sups);
-  }
-
-  const { data } = await q.limit(500);
-  if (!data?.length) return [];
-
-  return [{
-    id: 'computed:os_pendente',
-    tipo: 'os_pendente',
-    titulo: `${data.length} OS sem definição na sua regional`,
-    descricao: `${data.length} ordem${data.length > 1 ? 's' : ''} ainda em cinza (sem status definido pelo gestor)`,
-    prioridade: 'urgente',
-    icone: 'clipboard-alert',
-    modulo_url: 'os',
-    computed: true,
-    created_at: new Date().toISOString(),
-    count: data.length,
-  }];
-}
-
+// Nota: a notificação "os_pendente" (OS sem status_gestor) foi removida — a
+// distribuição de OS foi unificada dentro da própria tela de Programação, então
+// o sinal relevante pro gestor agora é só "programação não realizada", abaixo.
 async function loadComputedProgramacaoPendente() {
   if (!isGestor() && !isMaster()) return [];
   const sups = getSupervisoes();
@@ -154,7 +123,7 @@ async function loadComputedProgramacaoPendente() {
   return [{
     id: 'computed:programacao_pendente',
     tipo: 'programacao_pendente',
-    titulo: 'Programação do dia não realizada',
+    titulo: 'Programação não realizada na data de hoje',
     descricao: 'A programação de despesas de hoje ainda não foi salva',
     prioridade: 'atencao',
     icone: 'calendar-clock',
@@ -236,13 +205,12 @@ async function loadComputedCheckoutHoje() {
 }
 
 async function refreshComputed() {
-  const [os, prog, pat, ckout] = await Promise.all([
-    loadComputedOsPendente(),
+  const [prog, pat, ckout] = await Promise.all([
     loadComputedProgramacaoPendente(),
     loadComputedPatrimonioAtrasado(),
     loadComputedCheckoutHoje(),
   ]);
-  _computed = [...os, ...prog, ...pat, ...ckout];
+  _computed = [...prog, ...pat, ...ckout];
 }
 
 // ---------- notificações evento (banco) ----------
@@ -481,7 +449,7 @@ function scheduleRefreshComputed() {
 }
 
 async function setupComputedRealtime() {
-  const tables = ['operacional_os', 'programacao_dia', 'hospedagem_solicitacoes', 'patrimonios_historico_leituras'];
+  const tables = ['programacao_dia', 'hospedagem_solicitacoes', 'patrimonios_historico_leituras'];
 
   try {
     if (_computedChs.length) {
