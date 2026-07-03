@@ -42,6 +42,9 @@ export async function initProtectedPage(title, renderContent) {
 
   requestAnimationFrame(() => {
     document.documentElement.classList.remove('is-route-booting');
-    document.documentElement.classList.add('is-route-ready');
+    // is-app-booted marca que o fade-in de boot (routeFadeIn) já tocou uma vez.
+    // Navegação suave (router.js) nunca remove is-route-ready/is-app-booted, então
+    // o CSS não replay-a essa animação a cada troca de página.
+    document.documentElement.classList.add('is-route-ready', 'is-app-booted');
   });
 }
