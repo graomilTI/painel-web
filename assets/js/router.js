@@ -71,6 +71,25 @@ const SOFT_NAV_PAGES = new Map([
   ['consultar-producao', { title: 'Histórico de Produção', module: () => import('./consultarProducao.js') }],
   ['dashboard-socio', { title: 'Dashboard do Sócio', module: () => import('./dashboard-socio.js') }],
   ['notificacoes', { title: 'Notificações', module: () => import('./notificacoes.js') }],
+  // Fase 2 — Categoria B (padrão próprio, verificado individualmente)
+  ['admin-configuracoes', { title: 'Configurações', module: () => import('./admin-configuracoes.js') }],
+  ['adm-hotel', { title: 'Módulo Hospedagem', module: () => import('./adm-hotel.js') }],
+  ['contatos', { title: 'Contatos', module: () => import('./contatos.js') }],
+  ['ti-integracoes', { title: 'TI · Integrações', module: () => import('./ti-integracoes.js') }],
+  ['distribuir-os', { title: 'Distribuir O.S', module: () => import('./distribuir-os.js') }],
+  ['adm-patrimonio', { title: 'Relatórios de Patrimônios', module: () => import('./patrimonioRelatorios.js') }],
+  ['frotas', { title: 'Frotas', module: () => import('./frotas.js') }],
+  ['epi-rh', { title: 'EPI', module: () => import('./epiRh.js'), extraModules: [() => import('./epiRhPresetPatch.js')] }],
+  ['admin-usuarios', { title: 'Usuários e acessos', module: () => import('./admin-usuarios.js'), extraModules: [() => import('./admin-usuarios-create-password.js')] }],
+  // relatorio-importador.js é compartilhado por 8 rotas — todas levam ao mesmo hub genérico de importação (confirmado: openHome() não depende da URL/rota).
+  ['importar-relatorios', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
+  ['relatorio-caixa-fornecedor', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
+  ['relatorio-cargas', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
+  ['relatorio-despesas', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
+  ['relatorio-notas-fiscais', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
+  ['relatorio-producao-consolidada', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
+  ['relatorio-resultado-diario', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
+  ['relatorio-servicos-faturados', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
 ]);
 
 function routeNameFromUrl(url) {
@@ -152,6 +171,9 @@ async function navigateSoft(routeName, href) {
 
   setTransitioning(true);
   try {
+    if (Array.isArray(entry.extraModules)) {
+      for (const load of entry.extraModules) await load();
+    }
     const mod = await entry.module();
     if (typeof mod.renderContent !== 'function') {
       throw new Error(`Módulo de "${baseRoute}" não exporta renderContent`);
@@ -204,7 +226,12 @@ function onPopState() {
   }
 
   setTransitioning(true);
-  entry.module()
+  (async () => {
+    if (Array.isArray(entry.extraModules)) {
+      for (const load of entry.extraModules) await load();
+    }
+    return entry.module();
+  })()
     .then((mod) => renderRoute(routeName, entry, mod, userContext))
     .catch((err) => {
       console.error('[router] falha ao renderizar via popstate, recarregando:', err);

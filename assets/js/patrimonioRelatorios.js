@@ -610,7 +610,7 @@ function groupRowsByRegional(rows) {
   return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
 
-initProtectedPage('Relatórios de Patrimônios', (content) => {
+export function renderContent(content) {
   injectVisualStyles();
   const relatoriosUrl = toPanelUrl('adm-patrimonio');
   const importarUrl = toPanelUrl('importar-patrimonios');
@@ -894,7 +894,9 @@ initProtectedPage('Relatórios de Patrimônios', (content) => {
       setFeedback(error?.message || 'Erro ao carregar base de patrimônios.', true);
     }
   })();
-});
+}
+
+initProtectedPage('Relatórios de Patrimônios', renderContent);
 
 window.PATRIMONIO_RELATORIOS = window.PATRIMONIO_RELATORIOS || {};
 window.PATRIMONIO_RELATORIOS.gerarPacoteImagensPaginado = gerarPacoteImagensPaginado;

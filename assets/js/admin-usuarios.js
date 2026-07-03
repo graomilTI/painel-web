@@ -994,7 +994,7 @@ async function loadAll(content, keepFeedback = false) {
   }
 }
 
-initProtectedPage('Usuários e acessos', async (content, userContext) => {
+export async function renderContent(content, userContext) {
   ensureStyles();
 
   if (!userContext?.user?.is_master) {
@@ -1008,4 +1008,6 @@ initProtectedPage('Usuários e acessos', async (content, userContext) => {
 
   renderSkeleton(content);
   await loadAll(content);
-});
+}
+
+initProtectedPage('Usuários e acessos', renderContent);
