@@ -92,7 +92,7 @@ function iconHtml(icone, prioridade) {
   return `<div class="pn-icon" style="background:${c.bg};border-color:${c.bd};color:${c.c}">${svg}</div>`;
 }
 
-initProtectedPage('Notificações', async (content, userContext) => {
+export async function renderContent(content, userContext) {
   injectStyles();
 
   const isMaster = !!userContext?.user?.is_master || String(userContext?.user?.role || '').toUpperCase() === 'MASTER';
@@ -244,7 +244,9 @@ initProtectedPage('Notificações', async (content, userContext) => {
   if (isMaster) {
     await loadMasterHistory();
   }
-});
+}
+
+initProtectedPage('Notificações', renderContent);
 
 async function loadMasterHistory() {
   const tbody = document.getElementById('pnMasterBody');
