@@ -183,7 +183,7 @@ function wireLista() {
   });
 }
 
-function renderPage(content) {
+export function renderContent(content) {
   injectStyles();
   elRoot = content;
   content.innerHTML = `
@@ -233,4 +233,4 @@ function renderPage(content) {
   Promise.all([loadBase(), loadLista()]).then(() => renderLista());
 }
 
-initProtectedPage('Conferência · Deslocamento', (content) => renderPage(content));
+initProtectedPage('Conferência · Deslocamento', renderContent);

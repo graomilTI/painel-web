@@ -4,7 +4,7 @@ import { initMetasFechamentoValidacao } from './metasFechamentoValidacao.js';
 import { initMetasLayoutLeigo } from './metasLayoutLeigo.js';
 import './modules/metas.js';
 
-initProtectedPage('METAS', async (content, ctx) => {
+export async function renderContent(content, ctx) {
   initMetasFechamentoValidacao(content, supabase);
   initMetasLayoutLeigo(content);
 
@@ -17,4 +17,6 @@ initProtectedPage('METAS', async (content, ctx) => {
       window.location.href = './dre.html';
     }
   });
-});
+}
+
+initProtectedPage('METAS', renderContent);

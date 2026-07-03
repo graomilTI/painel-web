@@ -264,7 +264,7 @@ function applyFilters(rows) {
   document.getElementById('metaResultado').textContent = `${filtered.length} colaborador(es) após filtros.`;
 }
 
-initProtectedPage('Efetivos sem Produção', async (content) => {
+export async function renderContent(content) {
   content.innerHTML = `
     <section class="base-page">
       <div class="section-heading">
@@ -357,4 +357,6 @@ initProtectedPage('Efetivos sem Produção', async (content) => {
     }
     generateImage(rows, window.__efetivosDate || document.getElementById('fData').value);
   });
-});
+}
+
+initProtectedPage('Efetivos sem Produção', renderContent);

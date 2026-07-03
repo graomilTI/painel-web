@@ -1799,7 +1799,9 @@ function abrirModalDespesa() {
   });
 }
 
-initProtectedPage('ADM Conferência', async (content) => {
+export async function renderContent(content) {
   renderShell(content);
   await loadAll();
-});
+}
+
+initProtectedPage('ADM Conferência', renderContent);

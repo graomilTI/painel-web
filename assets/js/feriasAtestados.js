@@ -62,7 +62,7 @@ async function carregarRecentes() {
   meta.textContent = `${data.length} registro(s) carregado(s).`;
 }
 
-initProtectedPage('Férias e Atestados', (content, ctx) => {
+export function renderContent(content, ctx) {
   content.innerHTML = `
     <section class="base-page">
       <div class="section-heading">
@@ -192,4 +192,6 @@ initProtectedPage('Férias e Atestados', (content, ctx) => {
   });
 
   carregarRecentes().catch(console.error);
-});
+}
+
+initProtectedPage('Férias e Atestados', renderContent);

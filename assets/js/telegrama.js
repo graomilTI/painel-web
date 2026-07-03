@@ -928,7 +928,7 @@ function bindEvents() {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-initProtectedPage('Telegrama', async (content) => {
+export async function renderContent(content) {
   $root = content;
   content.innerHTML = `
     <style>
@@ -988,4 +988,6 @@ initProtectedPage('Telegrama', async (content) => {
   await loadAll();
   renderTab();
   iniciarAuth();
-});
+}
+
+initProtectedPage('Telegrama', renderContent);

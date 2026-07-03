@@ -175,7 +175,7 @@ async function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
-async function renderPage(content) {
+export async function renderContent(content) {
   injectStyles();
   content.innerHTML = `<div class="lu-wrap"><div class="lu-hero"><h2>Logs de Usuários</h2><p>Monitoramento de logins, acessos e ações no painel</p></div><div id="luKpis"></div><div class="lu-filters" id="luFilters"><label>De<input type="date" id="luDe" value="${state.de}"></label><label>Até<input type="date" id="luAte" value="${state.ate}"></label><label>Tipo<select id="luTipo"><option value="">Todos</option><option value="login">Login</option><option value="logout">Logout</option><option value="page_access">Acesso</option><option value="action">Ação</option></select></label><label>Usuário<input type="text" id="luUsuario" placeholder="Nome..."></label><button class="lu-btn" id="luBuscar">Buscar</button><button class="lu-btn lu-btn-export" id="luExport">Exportar CSV</button></div><div id="luTableArea"><div class="lu-empty">Carregando...</div></div><div id="luPagination"></div></div>`;
 
@@ -214,4 +214,4 @@ async function renderPage(content) {
   refresh();
 }
 
-initProtectedPage('Logs de Usuários', renderPage);
+initProtectedPage('Logs de Usuários', renderContent);

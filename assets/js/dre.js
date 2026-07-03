@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient.js';
 import './modules/dre.js';
 import './modules/dre-agentes-fix.js';
 
-initProtectedPage('DRE', (content, ctx) => {
+export function renderContent(content, ctx) {
   if (!window.DRE || typeof window.DRE.openHome !== 'function') {
     content.innerHTML = '<div class="card"><strong>Erro ao carregar DRE.</strong><br>O módulo window.DRE.openHome não foi encontrado.</div>';
     return;
@@ -18,4 +18,6 @@ initProtectedPage('DRE', (content, ctx) => {
       window.location.href = './dashboard.html';
     }
   });
-});
+}
+
+initProtectedPage('DRE', renderContent);

@@ -277,7 +277,7 @@ function setSummary({ linhas = 0, validas = 0, status = 'Aguardando' }) {
   if (elStatus) elStatus.textContent = status;
 }
 
-initProtectedPage('Importar Colaboradores', (content, ctx) => {
+export function renderContent(content, ctx) {
   content.innerHTML = `
     <section class="base-page">
       <div class="section-heading">
@@ -567,4 +567,6 @@ ${err.message || err}`);
       btnImportar.disabled = false;
     }
   });
-});
+}
+
+initProtectedPage('Importar Colaboradores', renderContent);

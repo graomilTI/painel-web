@@ -311,7 +311,7 @@ async function gerarPdf(row) {
   }
 }
 
-initProtectedPage('Contato Cliente', async (content) => {
+export async function renderContent(content) {
   injectStyles();
 
   content.innerHTML = `
@@ -805,4 +805,6 @@ initProtectedPage('Contato Cliente', async (content) => {
   state.currentUser = await getCurrentUser();
   resetForm();
   await Promise.all([loadColaboradores(), loadRows()]);
-});
+}
+
+initProtectedPage('Contato Cliente', renderContent);

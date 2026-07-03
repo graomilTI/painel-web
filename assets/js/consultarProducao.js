@@ -465,7 +465,7 @@ function renderMonthChips(activeMonth) {
   `).join('');
 }
 
-initProtectedPage('Histórico de Produção', async (content, userContext) => {
+export async function renderContent(content, userContext) {
   injectHistoricoStyles();
 
   const params = new URLSearchParams(window.location.search);
@@ -570,4 +570,6 @@ initProtectedPage('Histórico de Produção', async (content, userContext) => {
   });
 
   await loadData(userContext);
-});
+}
+
+initProtectedPage('Histórico de Produção', renderContent);

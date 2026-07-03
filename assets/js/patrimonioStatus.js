@@ -316,7 +316,7 @@ function setFeedback(message, isError = false) {
   el.style.color = isError ? '#fca5a5' : '#cbd5e1';
 }
 
-initProtectedPage('Status de Patrimônios', (content) => {
+export function renderContent(content) {
   injectStatusStyles();
   const relatoriosUrl = toPanelUrl('adm-patrimonio');
   const importarUrl = toPanelUrl('importar-patrimonios');
@@ -476,4 +476,6 @@ initProtectedPage('Status de Patrimônios', (content) => {
       setFeedback(error?.message || 'Erro ao carregar o status de patrimônios.', true);
     }
   })();
-});
+}
+
+initProtectedPage('Status de Patrimônios', renderContent);

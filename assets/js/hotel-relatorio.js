@@ -59,7 +59,7 @@ function statusBadge(v) {
   return `<span class="hbadge neutral">${esc(v)}</span>`;
 }
 
-initProtectedPage('Relatório de Hospedagem', (content) => {
+export function renderContent(content) {
   injectStyles();
   const today = todayStr();
   let lastRows = [];
@@ -316,4 +316,6 @@ initProtectedPage('Relatório de Hospedagem', (content) => {
   document.getElementById('hrExportar').addEventListener('click', exportCSV);
 
   loadReport();
-});
+}
+
+initProtectedPage('Relatório de Hospedagem', renderContent);

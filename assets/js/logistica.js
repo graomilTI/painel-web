@@ -39,7 +39,7 @@ const state = {
   loading: false
 };
 
-initProtectedPage('Logística', async (content) => {
+export async function renderContent(content) {
   injectStyles();
   content.innerHTML = `
     <section class="card mt-16">
@@ -86,7 +86,9 @@ initProtectedPage('Logística', async (content) => {
   if (state.tab === 'fob') await loadFob();
   else if (state.tab === 'abrir_os') await loadAberturaOs();
   render(content);
-});
+}
+
+initProtectedPage('Logística', renderContent);
 
 async function loadOs() {
   state.loading = true;

@@ -130,7 +130,7 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-initProtectedPage('Hospedagem', (content, userContext) => {
+export function renderContent(content, userContext) {
   injectStyles();
   const state = { solicitacoes: [], colaboradores: [], tab: 'solicitar' };
 
@@ -494,4 +494,6 @@ initProtectedPage('Hospedagem', (content, userContext) => {
     resetForm();
     await loadMinhas(false);
   })();
-});
+}
+
+initProtectedPage('Hospedagem', renderContent);
