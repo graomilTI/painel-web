@@ -31,7 +31,6 @@ import { toPanelUrl } from './paths.js';
 const SOFT_NAV_PAGES = new Map([
   ['patrimonios', { title: 'Patrimônios', module: () => import('./patrimonios.js') }],
   ['historico-colaboradores', { title: 'Histórico de Importações', module: () => import('./historicoColaboradores.js') }],
-  ['os', { title: 'OS', module: () => import('./os-page.js') }],
   ['consultar-colaboradores', { title: 'Consultar Base de Colaboradores', module: () => import('./consultarColaboradores.js') }],
 ]);
 
