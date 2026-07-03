@@ -211,7 +211,10 @@ Deno.serve(async (req) => {
     }
 
     const placasFiltro = Array.isArray(body?.placas) ? body.placas.map((p: unknown) => normalizePlate(p)).filter(Boolean) : [];
-    let q = supabase.from('frotas_bfleet_condutores_fila').select('*').in('status', mode === 'retry_all' ? ['PENDENTE', 'ERRO'] : ['PENDENTE']).order('created_at', { ascending: true }).limit(limit);
+    // Ordena por tentativas primeiro: sem isso, itens antigos que falham sempre venciam o
+    // order by created_at e travavam o retry_all nos mesmos 100 registros pra sempre, sem
+    // nunca alcançar o resto da fila.
+    let q = supabase.from('frotas_bfleet_condutores_fila').select('*').in('status', mode === 'retry_all' ? ['PENDENTE', 'ERRO'] : ['PENDENTE']).order('tentativas', { ascending: true }).order('created_at', { ascending: true }).limit(limit);
     if (placasFiltro.length) q = q.in('placa', placasFiltro);
     const { data: fila, error: filaError } = await q;
     if (filaError) throw filaError;
