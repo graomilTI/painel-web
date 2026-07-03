@@ -2,7 +2,7 @@
 // Mantém o arquivo operacional.js original como base, mas aplica ajustes em tempo de carregamento
 // para evitar rotas em estrela/zigue-zague, preencher carona/placa e filtrar OS por sugestão.
 
-const SMART_VERSION = '20260703-fix-cobertura';
+const SMART_VERSION = '20260703-escassez-primeiro';
 
 function replaceOrKeep(source, search, replacement, label) {
   if (!source.includes(search)) {
@@ -57,12 +57,12 @@ function patchDrawAllRoutes(source) {
     return [...porColab.values()].map(grupo => ordenarRotasSequenciais(grupo));
   }
 
-  function drawFallbackRouteGroup(L, grupo, selected) {
+  function drawFallbackRouteGroup(L, grupo, selected, estendida) {
     if (!grupo.length) return null;
     const inicio = [lat(grupo[0].colab), lng(grupo[0].colab)];
     const pontos = grupo.map(r => [r.ponto.lat, r.ponto.lng]);
     return L.polyline([inicio, ...pontos], {
-      color: selected ? '#facc15' : '#60a5fa',
+      color: estendida ? '#f97316' : (selected ? '#facc15' : '#60a5fa'),
       weight: selected ? 4 : 1.5,
       opacity: selected ? .9 : .16,
       dashArray: '5 8',
@@ -80,7 +80,8 @@ function patchDrawAllRoutes(source) {
     grupos.forEach(grupo => {
       if (!grupo.length) return;
       const selected = grupo[0].colab.id === colabSelecionadoId;
-      if (selected) drawFallbackRouteGroup(L, grupo, true);
+      const estendida = grupo.some(r => r.rotaEstendida);
+      if (selected || estendida) drawFallbackRouteGroup(L, grupo, selected, estendida);
       bounds.push([lat(grupo[0].colab), lng(grupo[0].colab)]);
       grupo.forEach(r => bounds.push([r.ponto.lat, r.ponto.lng]));
     });
@@ -102,7 +103,9 @@ function patchDrawAllRoutes(source) {
         if (real?.coords?.length) {
           realOk++;
           const sel = grupo[0].colab.id === colabSelecionadoId;
-          L.polyline(real.coords, { color: sel ? '#facc15' : '#22c55e', weight: sel ? 4 : 2, opacity: sel ? .95 : .32 }).addTo(st.routeLayer);
+          const estendida = grupo.some(r => r.rotaEstendida);
+          const cor = estendida ? '#f97316' : (sel ? '#facc15' : '#22c55e');
+          L.polyline(real.coords, { color: cor, weight: sel || estendida ? 4 : 2, opacity: sel || estendida ? .95 : .32 }).addTo(st.routeLayer);
         }
         updateRouteStatus(root, \`Rotas inteligentes: \${done}/\${Math.min(grupos.length, ROTAS_REAIS_LIMITE)} grupos carregados · \${validas.length} OS\${grupos.length > ROTAS_REAIS_LIMITE ? \` · limite \${ROTAS_REAIS_LIMITE}/\${grupos.length}\` : ''}\`);
       }
@@ -128,7 +131,6 @@ function patchSource(source, supabaseClientUrl) {
   );
 
   out = replaceOrKeep(out, 'const DIST_TOLERANCIA_EMPATE_KM = 20;', 'const DIST_TOLERANCIA_EMPATE_KM = 8;', 'tolerância empate');
-  out = replaceOrKeep(out, 'const MAX_OS_POR_COLABORADOR = 10;', 'const MAX_OS_POR_COLABORADOR = 8;', 'limites de rota');
 
   out = replaceOrKeep(
     out,
