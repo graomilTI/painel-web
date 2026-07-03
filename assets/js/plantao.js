@@ -1,4 +1,4 @@
-﻿import { initProtectedPage } from './pageInit.js';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
 const DEFAULT_SETORES = ['RH', 'Caixas', 'Frotas', 'Logística', 'Troca de notas'];
@@ -167,6 +167,7 @@ function shouldShowPersonDates(pessoas) {
   const dates = [...new Set((pessoas || []).map((p) => p?.data_plantao).filter(Boolean))];
   return dates.length > 1;
 }
+
 
 function getSavedExtraSetores() {
   try {
@@ -1579,10 +1580,8 @@ function drawSectorIcon(ctx, cx, cy, r, setor) {
 }
 
 function computeCardH(pessoas) {
-  const showPersonDates = shouldShowPersonDates(pessoas);
   let h = 20 + 38 + 48 + 11;
   pessoas.forEach((p, i) => {
-    if (showPersonDates && getPersonDateLabel(p)) h += 28;
     h += 40;
     if (formatPhone(p.telefone)) h += 30;
     if (p.email_corporativo) h += 30;
@@ -1601,23 +1600,21 @@ function drawPersonBlock(ctx, x, y, w, person, showDate = false) {
   if (showDate) {
     const dateLabel = getPersonDateLabel(person);
     if (dateLabel) {
-      ctx.font = 'bold 13px Arial';
-      const pillW = Math.min(ctx.measureText(dateLabel).width + 20, w);
-      drawRoundRectFilled(ctx, x, cy, pillW, 23, 999, 'rgba(22,101,52,.24)', 'rgba(111,208,165,.28)', 1);
+      ctx.font = 'bold 10px Arial';
       ctx.fillStyle = '#6fd0a5';
       ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(fitText(ctx, dateLabel, pillW - 20), x + 10, cy + 12);
-      cy += 28;
+      ctx.textBaseline = 'top';
+      ctx.fillText(fitText(ctx, dateLabel, w), x, cy);
+      cy += 13;
     }
   }
 
-  ctx.font = 'bold 26px Arial';
+  ctx.font = showDate ? 'bold 23px Arial' : 'bold 26px Arial';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(fitText(ctx, getPersonDisplayName(person).toUpperCase(), w), x, cy);
-  cy += 40;
+  cy += showDate ? 27 : 40;
 
   function infoRow(drawIcon, label, value) {
     if (!value) return;
@@ -1650,7 +1647,7 @@ function drawSectorCard(ctx, x, y, w, setor, pessoas, dateLabel) {
   const iconR = 18;
   const cardH = computeCardH(pessoas);
   const showPersonDates = shouldShowPersonDates(pessoas);
-  drawRoundRectFilled(ctx, x, y, w, cardH, 18, 'rgba(3,10,6,.88)', 'rgba(22,163,74,.38)', 1.8);
+  drawRoundRectFilled(ctx, x, y, w, cardH, 18, 'rgba(3,10,6,.96)', 'rgba(22,163,74,.38)', 1.8);
 
   let cy = y + pad;
 
@@ -1926,7 +1923,7 @@ async function renderWhatsappStatus(canvasEl, setor) {
 
   function personH(p) {
     let h = 32 + 52; // top-pad + name
-    if (showPersonDates && getPersonDateLabel(p)) h += 40;
+    if (showPersonDates && getPersonDateLabel(p)) h += 28;
     if (formatPhone(p.telefone)) h += 46;
     if (p.email_corporativo) h += 46;
     if (buildHorario(p)) h += 46;
@@ -1991,7 +1988,7 @@ async function renderWhatsappStatus(canvasEl, setor) {
   rows.forEach((person) => {
     const h = personH(person);
     drawRoundRectFilled(ctx, PAD, cy, cardW, h, 22,
-      'rgba(3,12,7,.85)', 'rgba(22,163,74,.28)', 1.5);
+      'rgba(3,12,7,.94)', 'rgba(22,163,74,.28)', 1.5);
 
     let iy = cy + 32;
 
@@ -2000,14 +1997,12 @@ async function renderWhatsappStatus(canvasEl, setor) {
       if (dateLabel) {
         ctx.save();
         ctx.font = 'bold 20px Arial';
-        const pillW = Math.min(ctx.measureText(dateLabel).width + 28, cardW - 44);
-        drawRoundRectFilled(ctx, PAD + 22, iy, pillW, 32, 999, 'rgba(22,101,52,.25)', 'rgba(111,208,165,.3)', 1.2);
         ctx.fillStyle = '#6fd0a5';
         ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(fitText(ctx, dateLabel, pillW - 28), PAD + 36, iy + 16);
+        ctx.textBaseline = 'top';
+        ctx.fillText(fitText(ctx, dateLabel, cardW - 44), PAD + 22, iy);
         ctx.restore();
-        iy += 40;
+        iy += 28;
       }
     }
 
