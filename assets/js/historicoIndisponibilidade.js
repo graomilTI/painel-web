@@ -70,7 +70,7 @@ async function carregarHistorico() {
   meta.textContent = `${data.length} registro(s) encontrado(s).`;
 }
 
-initProtectedPage('Histórico de Indisponibilidade', (content) => {
+export function renderContent(content) {
   content.innerHTML = `
     <section class="base-page">
       <div class="section-heading">
@@ -138,4 +138,6 @@ initProtectedPage('Histórico de Indisponibilidade', (content) => {
 
   document.getElementById('btnPesquisar').addEventListener('click', carregarHistorico);
   carregarHistorico().catch(console.error);
-});
+}
+
+initProtectedPage('Histórico de Indisponibilidade', renderContent);

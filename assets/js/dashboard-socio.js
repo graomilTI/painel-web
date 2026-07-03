@@ -139,7 +139,7 @@ function criarSupabaseDashboardSocio(baseSupabase) {
   });
 }
 
-initProtectedPage('Dashboard do Sócio', (content, ctx) => {
+export function renderContent(content, ctx) {
   if (!window.DASHBOARD_SOCIO || typeof window.DASHBOARD_SOCIO.openHome !== 'function') {
     content.innerHTML = '<div class="card"><strong>Erro ao carregar o Dashboard do Sócio.</strong><br>O módulo window.DASHBOARD_SOCIO.openHome não foi encontrado.</div>';
     return;
@@ -156,4 +156,6 @@ initProtectedPage('Dashboard do Sócio', (content, ctx) => {
       window.location.href = './dashboard.html';
     }
   });
-});
+}
+
+initProtectedPage('Dashboard do Sócio', renderContent);

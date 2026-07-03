@@ -72,7 +72,7 @@ async function loadData() {
   meta.textContent = `${data.length} importação(ões) encontrada(s).`;
 }
 
-initProtectedPage('Histórico de Produção', (content) => {
+export function renderContent(content) {
   content.innerHTML = `
     <section class="base-page">
       <div class="section-heading">
@@ -144,4 +144,6 @@ initProtectedPage('Histórico de Produção', (content) => {
     console.error(err);
     document.getElementById('metaInfo').textContent = `Erro ao carregar histórico: ${err.message || err}`;
   });
-});
+}
+
+initProtectedPage('Histórico de Produção', renderContent);

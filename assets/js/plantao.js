@@ -2419,7 +2419,7 @@ function showLoadError(err) {
   }
 }
 
-initProtectedPage('Plantão', async (content, userContext) => {
+export async function renderContent(content, userContext) {
   currentUserContext = userContext;
   injectPlantaoStyles();
   renderPage(content);
@@ -2441,4 +2441,6 @@ initProtectedPage('Plantão', async (content, userContext) => {
     feedback.classList.add('error');
     feedback.textContent = `Erro ao iniciar Plantão: ${err.message || err}`;
   }
-});
+}
+
+initProtectedPage('Plantão', renderContent);

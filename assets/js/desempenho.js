@@ -2,7 +2,7 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import './modules/desempenho.js';
 
-initProtectedPage('Desempenho', (content, ctx) => {
+export function renderContent(content, ctx) {
   if (!window.DESEMPENHO || typeof window.DESEMPENHO.openHome !== 'function') {
     content.innerHTML = '<div class="card"><strong>Erro ao carregar Desempenho.</strong><br>O módulo window.DESEMPENHO.openHome não foi encontrado.</div>';
     return;
@@ -17,4 +17,6 @@ initProtectedPage('Desempenho', (content, ctx) => {
       window.location.href = './dre.html';
     }
   });
-});
+}
+
+initProtectedPage('Desempenho', renderContent);

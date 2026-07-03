@@ -368,9 +368,11 @@ function render(root) {
   root.querySelector('[data-tic-search]').addEventListener('input', e => renderList(root, e.target.value));
 }
 
-initProtectedPage('TI · Contatos de Notificação', async (content) => {
+export async function renderContent(content) {
   render(content);
   await load();
   renderStats(content);
   renderList(content);
-});
+}
+
+initProtectedPage('TI · Contatos de Notificação', renderContent);

@@ -310,7 +310,7 @@ async function substituirModelo(content, file) {
   }
 }
 
-async function renderContent(content) {
+export async function renderContent(content) {
   content.innerHTML = '<div style="padding:10px 0;color:var(--muted);font-size:13px">Carregando…</div>';
   await Promise.all([loadJobStatus(), loadAniversariantesHoje()]);
   render(content);

@@ -210,7 +210,7 @@ function renderActive(){
   if(state.tab==='agrupadas') renderTableOverrideForAgrupadas(); else renderTable();
 }
 
-initProtectedPage('Auditoria', async (content, userContext) => {
+export async function renderContent(content, userContext) {
   state.userContext=userContext;
   await loadAll();
   content.innerHTML=`${styles()}<section class="adm-aud-hero"><div><div class="eyebrow">Módulo Auditoria</div><h2>Auditorias operacionais</h2><p>Fila para lançar auditorias, solicitar pagamento individual, agrupar por auditor ou finalizar internas em OK.</p></div><div class="adm-aud-kpis" id="admAudKpis"></div></section><section class="adm-aud-panel"><div class="adm-aud-head"><div><h3 style="margin:0">Auditorias por região</h3><p class="adm-aud-muted">Resumo sincronizado automaticamente pelo agente sync-auditorias.</p></div></div><div class="adm-aud-table-wrap"><table class="adm-aud-table" style="min-width:0"><thead><tr><th>Região</th><th>Qtd. auditorias</th><th>Valor faturado</th></tr></thead><tbody id="admAudRegionalBody"><tr><td colspan="3" class="adm-aud-empty">Carregando...</td></tr></tbody></table></div></section><section class="adm-aud-panel"><div class="adm-aud-head"><div class="adm-aud-tabs"><button class="adm-aud-tab" data-tab="solicitadas" type="button">Solicitadas</button><button class="adm-aud-tab" data-tab="abertas" type="button">Abertas</button><button class="adm-aud-tab" data-tab="agrupadas" type="button">Agrupadas</button><button class="adm-aud-tab" data-tab="lancadas" type="button">Lançadas</button><button class="adm-aud-tab" data-tab="historico" type="button">Histórico</button></div><div class="adm-aud-actions"><button class="adm-aud-btn" id="btnReloadAuditoria" type="button">↻ Atualizar</button></div></div><div class="adm-aud-msg" id="admAudMsg"></div><div id="admAudTable"></div></section><div class="adm-aud-modal" id="admAudModal"><div class="adm-aud-dialog" id="admAudModalBody"></div></div>`;
@@ -219,4 +219,6 @@ initProtectedPage('Auditoria', async (content, userContext) => {
   document.querySelectorAll('.adm-aud-tab').forEach(btn=>btn.addEventListener('click',()=>{ state.tab=btn.dataset.tab; history.replaceState(null,'',`#${state.tab}`); renderActive(); }));
   document.getElementById('btnReloadAuditoria')?.addEventListener('click',async()=>{ setMsg('Atualizando...'); await loadAll(); renderKpis(); renderActive(); await loadAuditoriasRegional(); renderAuditoriasRegional(); setMsg('Atualizado.','ok'); });
   document.getElementById('admAudModal')?.addEventListener('click',(ev)=>{ if(ev.target.id==='admAudModal') ev.currentTarget.classList.remove('open'); });
-});
+}
+
+initProtectedPage('Auditoria', renderContent);

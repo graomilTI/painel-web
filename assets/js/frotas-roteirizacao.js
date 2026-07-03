@@ -1,6 +1,8 @@
 import { initProtectedPage } from './pageInit.js';
 import './operacional.js';
 
-initProtectedPage('Mapa de Direcionamento', (content, ctx) => {
+export function renderContent(content, ctx) {
   window.OPERACIONAL.openHome(content, { userContext: ctx });
-});
+}
+
+initProtectedPage('Mapa de Direcionamento', renderContent);

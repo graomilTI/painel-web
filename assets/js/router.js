@@ -29,9 +29,47 @@ import { bindLayoutActions } from './layoutActions.js';
 import { toPanelUrl } from './paths.js';
 
 const SOFT_NAV_PAGES = new Map([
+  // Fase 1
   ['patrimonios', { title: 'Patrimônios', module: () => import('./patrimonios.js') }],
   ['historico-colaboradores', { title: 'Histórico de Importações', module: () => import('./historicoColaboradores.js') }],
   ['consultar-colaboradores', { title: 'Consultar Base de Colaboradores', module: () => import('./consultarColaboradores.js') }],
+  // Fase 2 — Categoria A (padrão mecânico simples)
+  ['adm-conferencia', { title: 'ADM Conferência', module: () => import('./adm-conferencia.js') }],
+  ['admin-auditoria', { title: 'Auditoria', module: () => import('./admin-auditoria.js') }],
+  ['auditoria', { title: 'Auditoria', module: () => import('./auditoria.js') }],
+  ['clinicas-sst', { title: 'Clínicas SST', module: () => import('./clinicas-sst.js') }],
+  ['contato-cliente', { title: 'Contato Cliente', module: () => import('./contato-cliente.js') }],
+  ['desempenho', { title: 'Desempenho', module: () => import('./desempenho.js') }],
+  ['dre', { title: 'DRE', module: () => import('./dre.js') }],
+  ['efetivos-sem-producao', { title: 'Efetivos sem Produção', module: () => import('./efetivosSemProducao.js') }],
+  ['ferias-atestados', { title: 'Férias e Atestados', module: () => import('./feriasAtestados.js') }],
+  ['frotas-historico', { title: 'Frotas', module: () => import('./frotas-historico.js') }],
+  ['frotas-veiculos', { title: 'Frotas · Veículos', module: () => import('./frotas-veiculos.js') }],
+  ['historico-indisponibilidade', { title: 'Histórico de Indisponibilidade', module: () => import('./historicoIndisponibilidade.js') }],
+  ['historico-producao', { title: 'Histórico de Produção', module: () => import('./historicoProducao.js') }],
+  ['historico', { title: 'Histórico Geral', module: () => import('./historico.js') }],
+  ['hotel-relatorio', { title: 'Relatório de Hospedagem', module: () => import('./hotel-relatorio.js') }],
+  ['importar-colaboradores', { title: 'Importar Colaboradores', module: () => import('./importarColaboradores.js') }],
+  ['importar-patrimonios', { title: 'Importar Patrimônios', module: () => import('./importarPatrimonios.js') }],
+  ['metas', { title: 'METAS', module: () => import('./metas.js') }],
+  ['notas-fiscais', { title: 'Notas Fiscais', module: () => import('./notas-fiscais.js') }],
+  ['patrimonio-status', { title: 'Status de Patrimônios', module: () => import('./patrimonioStatus.js') }],
+  ['plantao', { title: 'Plantão', module: () => import('./plantao.js') }],
+  ['telegrama', { title: 'Telegrama', module: () => import('./telegrama.js') }],
+  ['termos', { title: 'Termos', module: () => import('./termos.js') }],
+  ['ti-contatos', { title: 'TI · Contatos de Notificação', module: () => import('./ti-contatos.js') }],
+  ['frotas-rastreadores', { title: 'Frotas · Rastreadores', module: () => import('./frotas-rastreadores.js') }],
+  ['logs-usuarios', { title: 'Logs de Usuários', module: () => import('./logs-usuarios.js') }],
+  ['frotas-multas', { title: 'Frotas · Multas', module: () => import('./frotas-multas.js') }],
+  ['propostas', { title: 'Propostas', module: () => import('./propostas.js') }],
+  ['ti-comunicacao', { title: 'TI · Comunicação', module: () => import('./ti-comunicacao.js') }],
+  ['hospedagem', { title: 'Hospedagem', module: () => import('./hospedagem.js') }],
+  ['compras', { title: 'Compras', module: () => import('./compras.js') }],
+  ['logistica', { title: 'Logística', module: () => import('./logistica.js') }],
+  ['conferencia-deslocamento', { title: 'Conferência · Deslocamento', module: () => import('./conferencia-deslocamento.js') }],
+  ['frotas-roteirizacao', { title: 'Mapa de Direcionamento', module: () => import('./frotas-roteirizacao.js') }],
+  ['consultar-producao', { title: 'Histórico de Produção', module: () => import('./consultarProducao.js') }],
+  ['dashboard-socio', { title: 'Dashboard do Sócio', module: () => import('./dashboard-socio.js') }],
 ]);
 
 function routeNameFromUrl(url) {

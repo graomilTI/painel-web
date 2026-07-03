@@ -892,9 +892,11 @@ async function loadRows(content, keepFeedback = false) {
   }
 }
 
-initProtectedPage('Propostas', async (content, userContext) => {
+export async function renderContent(content, userContext) {
   state.userContext = userContext;
   ensureStyles();
   content.innerHTML = '<section class="prop-panel"><div class="prop-empty">Carregando propostas...</div></section>';
   await loadRows(content);
-});
+}
+
+initProtectedPage('Propostas', renderContent);

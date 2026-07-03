@@ -595,7 +595,7 @@ function styles(){return `<style>
 }
 </style>`}
 
-initProtectedPage('Compras', async (content, userContext)=>{
+export async function renderContent(content, userContext){
   await loadColaboradores();
   content.innerHTML=`${styles()}
   <section class="card"><div class="section-head" style="margin-bottom:14px"><div><h3 style="margin:0">Nova solicitação</h3><p class="muted" style="margin:2px 0 0">Solicitante: <b>${esc(solicitanteNome(userContext))}</b></p></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Itens</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniformes</button><button class="btn btn-secondary cmp-tab" data-mode="interno" type="button">Interno</button></div></div>
@@ -647,4 +647,6 @@ initProtectedPage('Compras', async (content, userContext)=>{
     doSolicitar();
   };
   await loadMinhas(userId);
-});
+}
+
+initProtectedPage('Compras', renderContent);

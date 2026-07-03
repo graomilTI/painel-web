@@ -138,7 +138,7 @@ function renderActive(){
   }
 }
 
-initProtectedPage('Auditoria', async (content, userContext) => {
+export async function renderContent(content, userContext) {
   state.userContext = userContext;
   await loadRows();
   const abertas=state.rows.filter(r=>['SOLICITADA','ABERTA'].includes(norm(r.status))).length;
@@ -147,4 +147,6 @@ initProtectedPage('Auditoria', async (content, userContext) => {
   content.innerHTML = `${styles()}<section class="aud-hero"><div><div class="eyebrow">Gestor</div><h2>Auditoria</h2><p>Informe auditorias solicitadas e acompanhe o andamento até lançamento, agrupamento, pagamento ou OK.</p></div><div class="aud-kpis"><div class="aud-kpi"><b>${abertas}</b><span>Abertas</span></div><div class="aud-kpi"><b>${internas}</b><span>Internas</span></div><div class="aud-kpi"><b>${externas}</b><span>Externas</span></div></div></section><section class="aud-panel"><div class="aud-tabs"><button class="aud-tab active" data-tab="informar" type="button">Informar</button><button class="aud-tab" data-tab="acompanhar" type="button">Acompanhar</button><button class="aud-tab" data-tab="status" type="button">Status</button></div><div id="audBody"></div></section>`;
   document.querySelectorAll('.aud-tab').forEach(btn=>btn.addEventListener('click', ()=>{ state.tab=btn.dataset.tab; renderActive(); }));
   renderActive();
-});
+}
+
+initProtectedPage('Auditoria', renderContent);

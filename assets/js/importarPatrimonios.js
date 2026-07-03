@@ -268,7 +268,7 @@ function safeErrorMessage(err) {
   return err?.message || err?.error_description || err?.details || String(err);
 }
 
-initProtectedPage('Importar Patrimônios', (content, ctx) => {
+export function renderContent(content, ctx) {
   const relatoriosUrl = toPanelUrl('adm-patrimonio');
   const statusUrl = toPanelUrl('patrimonio-status');
 
@@ -520,4 +520,6 @@ initProtectedPage('Importar Patrimônios', (content, ctx) => {
       btnLimpar.disabled = false;
     }
   });
-});
+}
+
+initProtectedPage('Importar Patrimônios', renderContent);

@@ -34,7 +34,7 @@ function isUrl(v) {
   return /^https?:\/\//i.test(String(v || ''));
 }
 
-initProtectedPage('Notas Fiscais', (content) => {
+export function renderContent(content) {
   content.innerHTML = `
     <style>
       .nf-wrap{display:grid;gap:18px}
@@ -667,4 +667,6 @@ initProtectedPage('Notas Fiscais', (content) => {
   });
 
   load();
-});
+}
+
+initProtectedPage('Notas Fiscais', renderContent);

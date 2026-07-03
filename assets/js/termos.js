@@ -295,7 +295,7 @@ function styles(){return `<style>
 @media(max-width:640px){.termos-detail-grid{grid-template-columns:1fr}.adm-cmp-grid{grid-template-columns:1fr}}
 </style>`}
 
-initProtectedPage('Termos', async (content)=>{
+export async function renderContent(content){
   content.innerHTML=`${styles()}
   <section class="hero-card"><div><div class="eyebrow">Conferência</div><h2>Termos</h2><p>Gestão de termos de responsabilidade para compras especiais que exigem assinatura antes do pagamento.</p></div><div class="hero-badge-wrap"><span class="hero-badge">CONF</span></div></section>
   <section class="grid-cards mt-16">
@@ -334,4 +334,6 @@ initProtectedPage('Termos', async (content)=>{
   });
   document.getElementById('termosRefresh').onclick=loadCelular;
   await loadCelular();
-});
+}
+
+initProtectedPage('Termos', renderContent);

@@ -344,7 +344,7 @@ async function loadClinicas(container) {
   renderGrid(container);
 }
 
-initProtectedPage('Clínicas SST', (content) => {
+export function renderContent(content) {
   content.innerHTML = `
     ${css}
     <div class="clinicas-wrap">
@@ -389,4 +389,6 @@ initProtectedPage('Clínicas SST', (content) => {
   state.cidade = '';
 
   loadClinicas(content);
-});
+}
+
+initProtectedPage('Clínicas SST', renderContent);
