@@ -1,3 +1,9 @@
+-- DESATUALIZADO (2026-07-03): secret hardcoded abaixo foi exposto em log e
+-- 12 dos 13 syncs têm verify_jwt:true (gateway do Supabase rejeita esse
+-- bearer custom com 401 antes de chegar na function). Só sync-colaboradores
+-- foi migrado pro padrão correto — ver supabase/migrations/20260703140000_cron_sync_colaboradores_job_queue.sql.
+-- As outras 12 ainda precisam ser migradas pro padrão job-queue.
+
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS pg_net;
 
