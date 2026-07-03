@@ -467,6 +467,19 @@ function setupComputedPolling() {
 }
 
 // ---------- subscriptions para tabelas de computed ----------
+// Debounce: patrimonios_historico_leituras recebe centenas de INSERTs em lote
+// no sync horário do GRM; sem isso, cada linha dispararia um refreshComputed()
+// em todo cliente conectado.
+let _refreshComputedDebounce = null;
+function scheduleRefreshComputed() {
+  if (_refreshComputedDebounce) return;
+  _refreshComputedDebounce = setTimeout(async () => {
+    _refreshComputedDebounce = null;
+    await refreshComputed();
+    notify();
+  }, 3000);
+}
+
 async function setupComputedRealtime() {
   const tables = ['operacional_os', 'programacao_dia', 'hospedagem_solicitacoes', 'patrimonios_historico_leituras'];
 
@@ -479,9 +492,8 @@ async function setupComputedRealtime() {
     for (const table of tables) {
       const channel = supabase
         .channel(`notif_computed_${table}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table }, async () => {
-          await refreshComputed();
-          notify();
+        .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+          scheduleRefreshComputed();
         });
 
       _computedChs.push(channel);
