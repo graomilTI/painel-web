@@ -302,7 +302,7 @@ function ensureGuide(container) {
   guide.innerHTML = `
     <div class="metas-guide-item">
       <span class="metas-guide-num">1</span>
-      <div><div class="metas-guide-title">Escolha o período</div><div class="metas-guide-desc">Clique no mês desejado e confirme o ano.</div></div>
+      <div><div class="metas-guide-title">Escolha o período</div><div class="metas-guide-desc">Clique no mês desejado. Ex.: Junho usa despesas de Maio.</div></div>
     </div>
     <div class="metas-guide-item">
       <span class="metas-guide-num">2</span>
@@ -346,7 +346,7 @@ function ensureMonthBar(container) {
     section.innerHTML = `
       <div class="metas-month-title">
         <strong>Mês da meta</strong>
-        <span>Clique em um mês para carregar o período</span>
+        <span>Ao escolher um mês, as despesas usadas serão sempre do mês anterior</span>
       </div>
       <div class="metas-month-bar" role="tablist" aria-label="Selecionar mês da meta"></div>
     `;
@@ -383,12 +383,15 @@ function bindMonthBar(container) {
     const btn = event.target?.closest?.('[data-metas-month-btn]');
     if (!btn || !container.contains(btn)) return;
 
+    event.preventDefault();
+    event.stopPropagation();
+
     const mesSelect = container.querySelector('[data-metas-filter="mes"]');
     const bar = container.querySelector('.metas-month-bar');
     if (!mesSelect) return;
 
     const value = btn.getAttribute('data-metas-month-btn');
-    if (!value || String(mesSelect.value) === String(value)) return;
+    if (!value) return;
 
     mesSelect.value = value;
     if (bar) bar.dataset.selectedMes = String(value);
