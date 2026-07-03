@@ -70,6 +70,7 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas-roteirizacao', { title: 'Mapa de Direcionamento', module: () => import('./frotas-roteirizacao.js') }],
   ['consultar-producao', { title: 'Histórico de Produção', module: () => import('./consultarProducao.js') }],
   ['dashboard-socio', { title: 'Dashboard do Sócio', module: () => import('./dashboard-socio.js') }],
+  ['notificacoes', { title: 'Notificações', module: () => import('./notificacoes.js') }],
 ]);
 
 function routeNameFromUrl(url) {
