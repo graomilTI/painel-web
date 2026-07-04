@@ -372,7 +372,7 @@ function injectProgramacaoStyles() {
   document.head.appendChild(style);
 }
 
-initProtectedPage('Programação', (content) => {
+export function renderContent(content) {
   injectProgramacaoStyles();
 
   content.innerHTML = `
@@ -2010,4 +2010,6 @@ initProtectedPage('Programação', (content) => {
   }
 
   init();
-});
+}
+
+initProtectedPage('Programação', renderContent);

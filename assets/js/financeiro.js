@@ -1114,7 +1114,7 @@ async function sincronizarContasAgente() {
   }
 }
 
-initProtectedPage('Financeiro', (content, userContext) => {
+export function renderContent(content, userContext) {
   content.innerHTML = `
     <style>
       .fin-wrap{display:grid;gap:20px}.fin-hero{border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:22px;background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(22,101,52,.28));box-shadow:0 20px 50px rgba(2,6,23,.22)}
@@ -2985,4 +2985,6 @@ initProtectedPage('Financeiro', (content, userContext) => {
   setPayMode('adiantamentos');
   setTab(tabFromHash());
   sincronizarContasAgente().then(loadFluxo, loadFluxo);
-});
+}
+
+initProtectedPage('Financeiro', renderContent);

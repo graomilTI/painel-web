@@ -794,7 +794,7 @@ function renderQuickAccess(menuSections) {
   `;
 }
 
-initProtectedPage('Dashboard', async (content, userContext) => {
+export async function renderContent(content, userContext) {
   const menuSections   = buildAllowedMenu(userContext);
   const menuItems      = flattenAllowedMenu(userContext);
   const totalLiberados = menuItems.length;
@@ -886,4 +886,6 @@ initProtectedPage('Dashboard', async (content, userContext) => {
   }
 
   await loadGestorData();
-});
+}
+
+initProtectedPage('Dashboard', renderContent);

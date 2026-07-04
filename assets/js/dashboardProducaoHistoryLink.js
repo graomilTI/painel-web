@@ -69,9 +69,9 @@ function addHistoryButton() {
   return true;
 }
 
-if (!addHistoryButton()) {
-  const observer = new MutationObserver(() => {
-    if (addHistoryButton()) observer.disconnect();
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-}
+// Observer nunca desconecta: sob soft-nav o módulo só executa uma vez, mas
+// #dbGestorSection é recriado a cada renderContent(). addHistoryButton() já
+// se protege contra duplicidade (checa #dbHistoryBtn), então é seguro manter
+// o observer vivo pra reaplicar em todo re-render.
+addHistoryButton();
+new MutationObserver(addHistoryButton).observe(document.body, { childList: true, subtree: true });
