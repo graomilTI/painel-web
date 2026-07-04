@@ -1,8 +1,29 @@
-import { getSession, getUserContext } from './auth.js';
+import { getSession, getUserContext, signOut } from './auth.js';
 import { saveUserContext, clearUserContext } from './sessionStore.js';
 import { toPanelUrl } from './paths.js';
 import { PANEL_MENU } from './menuConfig.js';
 import { logActivity } from './activityLogger.js';
+
+// Guarda contra loop de redirecionamento login<->dashboard: se o contexto do
+// usuário falhar repetidas vezes num curto intervalo (ex: instabilidade da
+// RPC logo após login), a sessão em si continua válida e login.js manda de
+// volta pra cá — sem isso, vira um ping-pong infinito que trava a aba.
+const BOUNCE_KEY = 'grao1000:auth-bounce-guard';
+const BOUNCE_WINDOW_MS = 10000;
+const BOUNCE_LIMIT = 2;
+
+function registerBounceAndCheckLoop() {
+  let entry = null;
+  try { entry = JSON.parse(sessionStorage.getItem(BOUNCE_KEY) || 'null'); } catch { entry = null; }
+  const now = Date.now();
+  entry = (!entry || now - entry.ts > BOUNCE_WINDOW_MS) ? { count: 1, ts: now } : { count: entry.count + 1, ts: now };
+  try { sessionStorage.setItem(BOUNCE_KEY, JSON.stringify(entry)); } catch {}
+  return entry.count > BOUNCE_LIMIT;
+}
+
+function clearBounceGuard() {
+  try { sessionStorage.removeItem(BOUNCE_KEY); } catch {}
+}
 
 function normalize(value = '') {
   return String(value || '')
@@ -118,9 +139,20 @@ export async function requireAuth() {
   try {
     context = await getUserContext(session.user.id);
     saveUserContext(context);
+    clearBounceGuard();
   } catch (error) {
     clearUserContext();
     console.error('Erro ao carregar permissões do usuário:', error);
+    if (registerBounceAndCheckLoop()) {
+      // Loop detectado (>2 tentativas em 10s): a sessão em si continua válida
+      // e login.js mandaria de volta pra cá — encerra a sessão pra sair do
+      // ciclo em vez de travar a aba, e sinaliza login.html pra não redirecionar.
+      console.error('[authGuard] loop de redirecionamento detectado — encerrando sessão.');
+      try { await signOut(); } catch {}
+      clearBounceGuard();
+      window.location.replace(`${toPanelUrl('login.html')}?erro=sessao`);
+      return null;
+    }
     window.location.replace(toPanelUrl('login.html'));
     return null;
   }

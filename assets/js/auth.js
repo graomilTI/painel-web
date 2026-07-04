@@ -159,6 +159,27 @@ function ensureContextShape(context) {
   };
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Logo após um login/redirect (ex: login.html -> dashboard.html), o cliente
+// Supabase é recriado do zero na página nova e pode levar um instante pra
+// reidratar a sessão internamente antes que .rpc() anexe o header de auth —
+// nessa janela a RPC roda como anônima e volta vazia (não é erro de rede).
+// Tenta de novo algumas vezes antes de desistir, em vez de derrubar a sessão.
+async function fetchUserContextRaw(attempt = 1) {
+  const { data, error } = await supabase.rpc('rpc_get_user_context');
+  if (error) throw error;
+
+  const raw = normalizeContextPayload(data);
+  if (!raw && attempt < 3) {
+    await wait(300 * attempt);
+    return fetchUserContextRaw(attempt + 1);
+  }
+  return raw;
+}
+
 export async function getUserContext(_userId) {
   try {
     const cached = sessionStorage.getItem(CTX_CACHE_KEY);
@@ -168,10 +189,7 @@ export async function getUserContext(_userId) {
     }
   } catch {}
 
-  const { data, error } = await supabase.rpc('rpc_get_user_context');
-  if (error) throw error;
-
-  const raw = normalizeContextPayload(data);
+  const raw = await fetchUserContextRaw();
   try { sessionStorage.setItem(CTX_CACHE_KEY, JSON.stringify({ ts: Date.now(), raw })); } catch {}
 
   return ensureContextShape(raw);
