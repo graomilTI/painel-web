@@ -261,7 +261,7 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-initProtectedPage('Painel de Logística', async (content) => {
+export async function renderContent(content) {
   injectStyles();
   state.user = await getCurrentUser();
 
@@ -1786,4 +1786,6 @@ initProtectedPage('Painel de Logística', async (content) => {
       console.warn('Falha ao registrar log de logística', error);
     }
   }
-});
+}
+
+initProtectedPage('Painel de Logística', renderContent);

@@ -90,6 +90,12 @@ const SOFT_NAV_PAGES = new Map([
   ['relatorio-producao-consolidada', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
   ['relatorio-resultado-diario', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
   ['relatorio-servicos-faturados', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
+  // Fase 2 — Categoria C (múltiplos scripts na origem, verificados individualmente)
+  ['envios', { title: 'Correios', module: () => import('./envios.js'), extraScripts: ['https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'] }],
+  ['frotas-dashboard', { title: 'Dashboard de Frotas', module: () => import('./frotas-dashboard.js'), extraScripts: ['https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'] }],
+  ['adm-logistica', { title: 'Painel de Logística', module: () => import('./adm-logistica.js'), extraModules: [() => import('./modules/logistica-classificadores-ativos.js')] }],
+  ['uber', { title: 'Uber · Conferência', module: () => import('./uber.js'), extraModules: [() => import('./modules/uber-despesas-sync.js')] }],
+  ['adm-operacional', { title: 'Operacional ADM', module: () => import('./adm-operacional.js') }],
 ]);
 
 function routeNameFromUrl(url) {
@@ -126,6 +132,32 @@ function findAnchor(target) {
 
 function setTransitioning(on) {
   document.documentElement.classList.toggle('is-route-transitioning', on);
+}
+
+const loadedClassicScripts = new Set();
+
+// Carrega um <script> clássico (CDN, não-módulo — ex: XLSX, Chart.js) uma
+// única vez por sessão, deduplicado por src. Necessário porque essas libs
+// expõem um global (window.XLSX/window.Chart) em vez de export ES module,
+// então import() não serve — e o router nunca busca o HTML da página de
+// destino, só o módulo, então a tag <script> original nunca seria carregada.
+function ensureClassicScript(src) {
+  if (loadedClassicScripts.has(src)) return Promise.resolve();
+  const existing = document.querySelector(`script[src="${src}"]`);
+  if (existing) {
+    loadedClassicScripts.add(src);
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = () => {
+      loadedClassicScripts.add(src);
+      resolve();
+    };
+    script.onerror = () => reject(new Error(`Falha ao carregar script externo: ${src}`));
+    document.head.appendChild(script);
+  });
 }
 
 function renderRoute(routeName, entry, mod, userContext) {
@@ -171,6 +203,9 @@ async function navigateSoft(routeName, href) {
 
   setTransitioning(true);
   try {
+    if (Array.isArray(entry.extraScripts)) {
+      for (const src of entry.extraScripts) await ensureClassicScript(src);
+    }
     if (Array.isArray(entry.extraModules)) {
       for (const load of entry.extraModules) await load();
     }
@@ -227,6 +262,9 @@ function onPopState() {
 
   setTransitioning(true);
   (async () => {
+    if (Array.isArray(entry.extraScripts)) {
+      for (const src of entry.extraScripts) await ensureClassicScript(src);
+    }
     if (Array.isArray(entry.extraModules)) {
       for (const load of entry.extraModules) await load();
     }

@@ -635,7 +635,7 @@ function bindEvents(root) {
   });
 }
 
-initProtectedPage('Uber · Conferência', async (content) => {
+export async function renderContent(content) {
   const cached = loadCache();
   renderShell(content);
   if (cached) {
@@ -644,4 +644,6 @@ initProtectedPage('Uber · Conferência', async (content) => {
   } else {
     await loadRows();
   }
-});
+}
+
+initProtectedPage('Uber · Conferência', renderContent);

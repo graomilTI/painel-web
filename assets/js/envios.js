@@ -1602,7 +1602,7 @@ function bindFormDestinatario(area) {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-initProtectedPage('Correios', async (content) => {
+export async function renderContent(content) {
   $root = content;
   content.innerHTML = `
     <style>
@@ -1671,4 +1671,6 @@ initProtectedPage('Correios', async (content) => {
 
   await loadAll();
   renderTab();
-});
+}
+
+initProtectedPage('Correios', renderContent);
