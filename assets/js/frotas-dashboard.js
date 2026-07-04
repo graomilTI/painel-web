@@ -539,6 +539,8 @@ function setCard(container, selector, value) {
   el.textContent = value;
 }
 
-initProtectedPage('Dashboard de Frotas', (content, ctx) => {
+export function renderContent(content, ctx) {
   renderFrotasDashboard(content, { supabase: sbDefault, auth: ctx });
-});
+}
+
+initProtectedPage('Dashboard de Frotas', renderContent);
