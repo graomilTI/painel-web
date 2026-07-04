@@ -98,6 +98,19 @@ const SOFT_NAV_PAGES = new Map([
   ['adm-operacional', { title: 'Operacional ADM', module: () => import('./adm-operacional.js') }],
   ['compras-estoque', { title: 'Estoque', module: () => import('./compras-estoque.js'), extraModules: [() => import('./pwa-register.js'), () => import('./compras-estoque-agrupamento.js'), () => import('./compras-estoque-layout.js')] }],
   ['emails', { title: 'Central de E-mails', module: () => import('./emails.js'), extraModules: [() => import('./emails-secure-account.js'), () => import('./emails-layout-v2.js')] }],
+  // Fase 3 (2026-07-04) — páginas críticas com muitos scripts, consolidação avaliada script a script
+  ['programacao', { title: 'Programação', module: () => import('./programacao.js'), extraModules: [
+    () => import('./programacao-supervisoes-cache.js'),
+    () => import('./programacao-ultima-programacao-fix.js'),
+    () => import('./programacao-hospedagem-colaboradores-fix.js'),
+    () => import('./programacao-gestor-ajustes.js'),
+    () => import('./programacao-kpi-inline-patch.js'),
+    () => import('./programacao-etapa-a-linha.js'),
+    () => import('./programacao-gestor-filtro-fix.js'),
+    () => import('./programacao-mobile-ui-fix.js'),
+  ] }],
+  ['financeiro', { title: 'Financeiro', module: () => import('./financeiro.js'), extraScripts: ['https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'], extraModules: [() => import('./financeiro-access.js'), () => import('./financeiro-local-date.js')] }],
+  ['dashboard', { title: 'Dashboard', module: () => import('./dashboard.js'), extraModules: [() => import('./dashboardProducaoHistoryLink.js'), () => import('./dashboard-regional-map.js')] }],
 ]);
 
 function routeNameFromUrl(url) {
@@ -230,6 +243,12 @@ function onLinkClick(event) {
   if (!anchor) return;
   if (anchor.target && anchor.target !== '_self') return;
   if (anchor.hasAttribute('download')) return;
+  // menuBuilder.js bloqueia cliques no link de Programação quando há FOB
+  // pendente (listener próprio no <a>, fase de bubble). Como esse listener
+  // roda DEPOIS deste (captura em document sempre termina antes da fase "no
+  // alvo"), sem este bail-out o soft-nav dispararia em paralelo com o
+  // alert+redirect do bloqueio. Deixa a navegação nativa cuidar do bloqueio.
+  if (anchor.classList.contains('os-pending-blocked')) return;
 
   const rawHref = anchor.getAttribute('href') || '';
   if (/^(mailto:|tel:|javascript:)/i.test(rawHref)) return;

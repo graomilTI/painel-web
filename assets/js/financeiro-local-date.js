@@ -41,10 +41,9 @@ function applyLocalDefaults() {
   return true;
 }
 
-if (!applyLocalDefaults()) {
-  const observer = new MutationObserver(() => {
-    if (applyLocalDefaults()) observer.disconnect();
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-  window.setTimeout(() => observer.disconnect(), 15000);
-}
+// Observer nunca desconecta: sob soft-nav o módulo só executa uma vez, mas o
+// #cfgData/#filterInicio etc. são recriados a cada renderContent(). O guard
+// dataset.localDateInitialized em applyLocalDefaults já evita reaplicar em
+// campos que o usuário alterou, então é seguro rodar em todo re-render.
+applyLocalDefaults();
+new MutationObserver(applyLocalDefaults).observe(document.documentElement, { childList: true, subtree: true });
