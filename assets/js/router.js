@@ -96,6 +96,8 @@ const SOFT_NAV_PAGES = new Map([
   ['adm-logistica', { title: 'Painel de Logística', module: () => import('./adm-logistica.js'), extraModules: [() => import('./modules/logistica-classificadores-ativos.js')] }],
   ['uber', { title: 'Uber · Conferência', module: () => import('./uber.js'), extraModules: [() => import('./modules/uber-despesas-sync.js')] }],
   ['adm-operacional', { title: 'Operacional ADM', module: () => import('./adm-operacional.js') }],
+  ['compras-estoque', { title: 'Estoque', module: () => import('./compras-estoque.js'), extraModules: [() => import('./pwa-register.js'), () => import('./compras-estoque-agrupamento.js'), () => import('./compras-estoque-layout.js')] }],
+  ['emails', { title: 'Central de E-mails', module: () => import('./emails.js'), extraModules: [() => import('./emails-secure-account.js'), () => import('./emails-layout-v2.js')] }],
 ]);
 
 function routeNameFromUrl(url) {

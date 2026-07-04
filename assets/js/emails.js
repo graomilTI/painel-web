@@ -260,7 +260,7 @@ async function updateEmail(id, payload, userContext) {
   });
 }
 
-initProtectedPage('Central de E-mails', (content, userContext) => {
+export function renderContent(content, userContext) {
   content.innerHTML = `
     <style>
       .em-wrap{display:grid;gap:24px;position:relative}
@@ -972,4 +972,6 @@ initProtectedPage('Central de E-mails', (content, userContext) => {
   loadAccounts().then(loadEmails).catch((err) => {
     document.getElementById('emList').innerHTML = `<div class="em-empty em-danger">${esc(err.message || err)}</div>`;
   });
-});
+}
+
+initProtectedPage('Central de E-mails', renderContent);
