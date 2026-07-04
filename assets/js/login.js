@@ -27,6 +27,11 @@ if (togglePassword) {
 }
 
 async function redirectIfSessionExists() {
+  if (new URLSearchParams(window.location.search).get('erro') === 'sessao') {
+    feedback.textContent = 'Não foi possível carregar sua sessão. Faça login novamente.';
+    return;
+  }
+
   try {
     const session = await getSession();
     if (session?.user) {
