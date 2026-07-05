@@ -1,6 +1,13 @@
 import { supabase } from './supabaseClient.js';
 
-const state = { scheduled: false, ready: false };
+const state = {
+  scheduled: false,
+  ready: false,
+  pid: null,
+  extrasByColab: new Map(),
+  loadedColabs: new Set(),
+  loadingColabs: new Map(),
+};
 
 function esc(value) {
   return String(value ?? '')
@@ -17,6 +24,18 @@ function programacaoId() {
 
 function dataRef() {
   return document.getElementById('progDataRef')?.value || null;
+}
+
+function resetCacheIfNeeded(pid) {
+  if (state.pid === pid) return;
+  state.pid = pid;
+  state.extrasByColab = new Map();
+  state.loadedColabs = new Set();
+  state.loadingColabs = new Map();
+}
+
+function colabIdFromBox(box) {
+  return String(box?.dataset.colabId || '').trim();
 }
 
 function ajustarTexto(el, maxFont) {
@@ -48,44 +67,79 @@ function itemHtml(row) {
   return `<span class="peqb-extra-mini" data-extra-id="${esc(row.id)}"><span>${esc(row.tipo_despesa || row.descricao || 'Extra')}</span><button type="button" data-extra-remove="${esc(row.id)}">×</button></span>`;
 }
 
-async function carregar(box) {
+function renderExtrasBox(box, rows = []) {
+  const list = box?.querySelector('.peqb-extra-mini-list');
+  if (!list) return;
+  list.innerHTML = (rows || []).map(itemHtml).join('');
+}
+
+async function carregar(box, { force = false } = {}) {
   const pid = programacaoId();
-  const colabId = box?.dataset.colabId;
+  const colabId = colabIdFromBox(box);
   const list = box?.querySelector('.peqb-extra-mini-list');
   if (!pid || !colabId || !list) return;
-  const { data, error } = await supabase
+
+  resetCacheIfNeeded(pid);
+
+  if (!force && state.loadedColabs.has(colabId)) {
+    renderExtrasBox(box, state.extrasByColab.get(colabId) || []);
+    return;
+  }
+
+  const key = `${pid}:${colabId}`;
+  if (state.loadingColabs.has(key)) {
+    await state.loadingColabs.get(key);
+    renderExtrasBox(box, state.extrasByColab.get(colabId) || []);
+    return;
+  }
+
+  list.innerHTML = '<span class="peqb-extra-mini">Carregando...</span>';
+
+  const request = supabase
     .from('programacao_extras')
     .select('id,tipo_despesa,descricao')
     .eq('programacao_id', pid)
     .eq('colaborador_id', colabId)
     .order('created_at', { ascending: true });
+
+  state.loadingColabs.set(key, request);
+  const { data, error } = await request;
+  state.loadingColabs.delete(key);
+
   if (error) {
     console.warn('[programacao extras] carregar', error);
     list.innerHTML = '';
     return;
   }
-  list.innerHTML = (data || []).map(itemHtml).join('');
+
+  state.extrasByColab.set(colabId, data || []);
+  state.loadedColabs.add(colabId);
+  renderExtrasBox(box, data || []);
 }
 
 async function salvar(box) {
   const pid = programacaoId();
   const input = box?.querySelector('.peqb-extra-input');
   const tipo = String(input?.value || '').trim();
-  if (!pid || !box || !tipo) {
+  const colabId = colabIdFromBox(box);
+  if (!pid || !box || !colabId || !tipo) {
     input?.focus();
     return;
   }
+
+  resetCacheIfNeeded(pid);
+
   const btn = box.querySelector('.peqb-extra-ok');
   if (btn) btn.disabled = true;
-  const { error } = await supabase.from('programacao_extras').insert({
+  const { data, error } = await supabase.from('programacao_extras').insert({
     programacao_id: pid,
     data_referencia: dataRef(),
-    colaborador_id: box.dataset.colabId,
+    colaborador_id: colabId,
     nome_colaborador: box.dataset.nome || '',
     tipo_despesa: tipo,
     descricao: tipo,
     valor: 0,
-  });
+  }).select('id,tipo_despesa,descricao').single();
   if (btn) btn.disabled = false;
   if (error) {
     console.error('[programacao extras] salvar', error);
@@ -93,7 +147,11 @@ async function salvar(box) {
     return;
   }
   input.value = '';
-  await carregar(box);
+
+  const rows = [...(state.extrasByColab.get(colabId) || []), data || { id: `novo-${Date.now()}`, tipo_despesa: tipo, descricao: tipo }];
+  state.extrasByColab.set(colabId, rows);
+  state.loadedColabs.add(colabId);
+  renderExtrasBox(box, rows);
 }
 
 async function remover(id, box) {
@@ -106,11 +164,22 @@ async function remover(id, box) {
     window.alert(error.message || 'Não foi possível excluir a despesa extra.');
     return;
   }
-  await carregar(box);
+
+  const colabId = colabIdFromBox(box);
+  if (colabId && state.loadedColabs.has(colabId)) {
+    const rows = (state.extrasByColab.get(colabId) || []).filter((row) => String(row.id) !== String(id));
+    state.extrasByColab.set(colabId, rows);
+    renderExtrasBox(box, rows);
+  } else {
+    renderExtrasBox(box, []);
+  }
 }
 
 function aplicar() {
   ajustarFontesOs();
+  const pid = programacaoId();
+  if (pid) resetCacheIfNeeded(pid);
+
   document.querySelectorAll('.peqb-os2-right').forEach((right) => {
     const head = right.querySelector('.peqb-conf-head');
     const ali = right.querySelector('.peqb-ali');
@@ -136,7 +205,11 @@ function aplicar() {
       <div class="peqb-extra-mini-list"></div>
     `;
     head.insertAdjacentElement('afterend', box);
-    carregar(box);
+
+    const colabId = colabIdFromBox(box);
+    if (colabId && state.loadedColabs.has(colabId)) {
+      renderExtrasBox(box, state.extrasByColab.get(colabId) || []);
+    }
   });
 }
 
