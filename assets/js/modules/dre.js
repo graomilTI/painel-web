@@ -1055,13 +1055,18 @@
       antecipacoes:Array(12).fill(0)
     };
 
-    for(const report of state.reports){
-      const nome=report.nome_arquivo||report.arquivo_nome_original||report.tipo;
-      setStatus(`Processando ${nome}...`);
-      let wb=null;
+    if(state.reports.length) setStatus(`Baixando ${state.reports.length} relatório(s) importado(s)...`);
+    const reportDownloads=await Promise.all(state.reports.map(async report=>{
       try{
-        wb=await readWorkbook(opts.supabase,report);
+        return {report, wb:await readWorkbook(opts.supabase,report)};
       }catch(err){
+        return {report, wb:null, err};
+      }
+    }));
+
+    for(const {report, wb, err} of reportDownloads){
+      const nome=report.nome_arquivo||report.arquivo_nome_original||report.tipo;
+      if(!wb){
         console.warn('DRE: falha ao baixar/processar relatório. Ignorando fonte e continuando.', nome, err);
         if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
         state.sourceAudit.ignored.push({tipo:report.tipo,nome,status:'falha_download',motivo:err?.message||String(err)});
@@ -1086,8 +1091,15 @@
       }
     }
 
-    setStatus('Conferindo despesas sincronizadas pelo agente...');
-    const despesasDb = await loadDespesasFromDb(opts.supabase, state.year);
+    setStatus('Conferindo dados sincronizados pelo agente e calculando rateios...');
+    const [despesasDb, nfDb, prodDb, prodColab, ativosRateio] = await Promise.all([
+      loadDespesasFromDb(opts.supabase, state.year),
+      loadNotasFiscaisFromDb(opts.supabase, state.year),
+      loadResultadoDiarioFromDb(opts.supabase, state.year),
+      loadProduzidoColaboradorFromDb(opts.supabase, state.year),
+      loadMediaAtivosPorRegionalFromDb(opts.supabase, state.year),
+    ]);
+
     if(despesasDb.totalRows > 0){
       mergeDespesasMelhorMes(src.desp, despesasDb);
       if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
@@ -1100,8 +1112,6 @@
       });
     }
 
-    setStatus('Conferindo notas fiscais sincronizadas pelo agente...');
-    const nfDb = await loadNotasFiscaisFromDb(opts.supabase, state.year);
     if(nfDb.totalRows > 0){
       mergeNFMelhorMes(src.nf, nfDb);
       if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
@@ -1114,8 +1124,6 @@
       });
     }
 
-    setStatus('Conferindo produção consolidada no banco de dados...');
-    const prodDb = await loadResultadoDiarioFromDb(opts.supabase, state.year);
     if(prodDb.totalRows > 0){
       // Mescla mensal segura: se abril foi importado no banco agora, entra no DRE;
       // se janeiro/fevereiro/março estão mais completos nos arquivos mensais antigos, mantém esses valores.
@@ -1129,12 +1137,6 @@
         created_at: new Date().toISOString()
       });
     }
-
-    setStatus('Calculando produzido por colaborador e rateio de investimentos...');
-    const [prodColab, ativosRateio] = await Promise.all([
-      loadProduzidoColaboradorFromDb(opts.supabase, state.year),
-      loadMediaAtivosPorRegionalFromDb(opts.supabase, state.year),
-    ]);
     if(prodColab.totalProdRows > 0 && prodColab.totalHistRows > 0){
       src.prod.prodColab = prodColab.porRegional;
       src.prod.prodColabGeral = prodColab.geral;
