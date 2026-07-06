@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const SUPABASE_URL  = 'https://xyzpnuumdqhegxakkyws.supabase.co';
-const SUPABASE_ANON = 'sb_publishable_YDjKfceWqANbNVMaHte2Kw_Dy4_i471';
+const SUPABASE_URL  = 'https://jbzmcyycanrlnfhedcup.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_IyW6rkgdOfEfQh_kx-Z6QQ_cWpdAMte';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true, autoRefreshToken: true } });
 
 const BRL   = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
