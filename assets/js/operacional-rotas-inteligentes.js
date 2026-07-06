@@ -78,6 +78,9 @@ function patchDrawAllRoutes(source) {
     const L = window.L;
     const selecionada = st.rotas.find(x => x.id === st.rota) || base[0];
     const colabSelecionadoId = selecionada?.colab?.id;
+    st.rotaSelecionadaReal = null;
+    updateRotaRealStatus(root);
+    checarAlternativa(root);
     const validas = base.filter(r => geo(r.colab) && r.ponto.temCoord);
     const grupos = agruparRotasPorColaborador(validas);
 
@@ -111,6 +114,15 @@ function patchDrawAllRoutes(source) {
           const destaque = sel || (estendida && st.kpiFiltro === 'rota-estendida');
           const cor = estendida ? '#f97316' : (sel ? '#facc15' : '#22c55e');
           L.polyline(real.coords, { color: cor, weight: destaque ? 4 : 2, opacity: destaque ? .95 : (estendida ? .5 : .32) }).addTo(st.routeLayer);
+          if (sel && Number.isFinite(real.distanciaKm)) {
+            let retaTotal = 0;
+            for (let i = 1; i < pontos.length; i++) {
+              const d = km(pontos[i - 1].lat, pontos[i - 1].lng, pontos[i].lat, pontos[i].lng);
+              if (Number.isFinite(d)) retaTotal += d;
+            }
+            st.rotaSelecionadaReal = { distanciaKm: real.distanciaKm, duracaoMin: real.duracaoMin, distanciaRetaKm: retaTotal, paradas: grupo.length };
+            updateRotaRealStatus(root);
+          }
         }
         updateRouteStatus(root, \`Rotas inteligentes: \${done}/\${Math.min(grupos.length, ROTAS_REAIS_LIMITE)} grupos carregados · \${validas.length} OS\${grupos.length > ROTAS_REAIS_LIMITE ? \` · limite \${ROTAS_REAIS_LIMITE}/\${grupos.length}\` : ''}\`);
       }
@@ -234,7 +246,11 @@ function patchSource(source, supabaseClientUrl) {
     // mais realista quando não se sabe o meio de transporte; Uber só quando é o modo REGISTRADO.
     return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };`,
     `    const habitual = st.modoHabitualPorCpf.get(c.cpf) || st.modoHabitualPorNome.get(norm(c.nome));
-    if (habitual?.tipo === 'MOTORISTA FROTA') return { modo: 'reembolso', label: 'Motorista de frota (sem leitura recente — veículo da empresa)', custoFn: combustivelIdaVolta };
+    // "MOTORISTA FROTA" só é um modo legítimo quando o colaborador tem veículo confirmado agora
+    // (ramo st.nomesFrotaSet acima, com leitura de patrimônio recente) — chegar aqui já significa
+    // que isso é falso. Um "MOTORISTA FROTA" habitual sem veículo confirmado não é motorista de
+    // fato hoje (só um registro histórico da Programação, possivelmente desatualizado); cai no
+    // mesmo tratamento de veículo próprio/reembolso que qualquer outro colaborador sem frota.
     if (habitual?.tipo === 'NAO PRECISA') return { modo: 'local', label: 'Já está no local', custo: 0 };
     if (habitual?.tipo === 'REEMBOLSO KM') return { modo: 'reembolso', label: 'Veículo próprio', custoFn: combustivelIdaVolta };
     if (habitual?.tipo === 'UBER TAXI' || habitual?.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
