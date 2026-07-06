@@ -109,15 +109,29 @@ async function fillGroupBySelects(page) {
   if (picked2 !== 'Grupo de Categoria') throw new Error(`Agrupamento nível 2 inesperado: ${picked2}`);
 }
 
-// Ctrl+A + Backspace nem sempre limpa de verdade um campo de data mascarado do
-// Vuetify (o "de" pode ficar preso na 1ª data digitada enquanto o "até" avança
-// certo a cada mês, fazendo o relatório trazer o acumulado do ano até aquele mês
-// em vez do mês isolado). Clique triplo + Backspace/Delete repetidos garante a
-// limpeza mesmo se a seleção via teclado não colar no campo.
+// Confirmado ao vivo (2026-07-06, diagnóstico com captura do request body real):
+// o campo "de" às vezes fica preso na data do mês anterior mesmo depois de
+// clicar+digitar de novo, fazendo o relatório trazer o acumulado do ano até
+// aquele mês em vez do mês isolado (ex.: abril saía com "de"=01/03, somando
+// março+abril). Ctrl+A/triple-click não é confiável o bastante nesse campo
+// mascarado do Vuetify. Fix: fecha qualquer overlay residual (Escape), foca e
+// seleciona via DOM nativo (el.select()) antes de digitar, e CONFERE o valor
+// final — se não colou, tenta de novo com limpeza mais agressiva e lança erro
+// se ainda assim não bater (preferível falhar a sincronizar número errado).
 async function setDateField(page, selector, value) {
-  await page.click(selector, { clickCount: 3 });
-  for (let i = 0; i < 12; i++) { await page.keyboard.press('Backspace'); await page.keyboard.press('Delete'); }
-  await page.type(selector, value);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  await page.click(selector);
+  await page.evaluate((sel) => { const el = document.querySelector(sel); el.focus(); el.select(); }, selector);
+  await page.keyboard.press('Backspace');
+  await page.type(selector, value, { delay: 20 });
+  let actual = await page.$eval(selector, (el) => el.value);
+  if (actual !== value) {
+    for (let i = 0; i < 15; i++) { await page.keyboard.press('Backspace'); await page.keyboard.press('Delete'); }
+    await page.type(selector, value, { delay: 20 });
+    actual = await page.$eval(selector, (el) => el.value);
+  }
+  if (actual !== value) throw new Error(`Falha ao definir campo de data ${selector}: esperado "${value}", ficou "${actual}"`);
 }
 
 // Diferente dos outros relatórios do GRM, "Despesas" NÃO gera um arquivo XLS pra
