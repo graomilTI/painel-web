@@ -47,6 +47,7 @@ function injectStyles() {
   style.id = 'dist-os-styles';
   style.textContent = `
     .dist-grid{display:grid;grid-template-columns:180px 220px 1fr;gap:12px}.dist-input{width:100%;min-height:40px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0d0d18;color:#e2e2f0;color-scheme:dark;padding:9px}.dist-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:18px;background:rgba(2,6,23,.25)}.dist-table{width:100%;min-width:1050px;border-collapse:separate;border-spacing:0;color:#e2e2f0;table-layout:fixed}.dist-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1}.dist-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:top;background:rgba(15,23,42,.24)}.dist-table tr:hover td{background:rgba(22,101,52,.1)}.dist-title{font-weight:950;color:#f8fafc;font-size:14px;line-height:1.2}.dist-meta{font-size:12px;color:#6b7280;margin-top:4px;line-height:1.25}.dist-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.dist-chip.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.dist-chip.warn{background:rgba(250,204,21,.14);color:#fde68a}.dist-chip.info{background:rgba(59,130,246,.13);color:#bfdbfe}.dist-chip.danger{background:rgba(239,68,68,.12);color:#fecaca}.dist-zero{box-shadow:inset 4px 0 0 #facc15}.dist-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#6b7280;background:rgba(15,23,42,.16)}.dist-os-list{display:flex;flex-direction:column;gap:7px}.dist-os-card{border:1px solid rgba(52,211,153,.13);border-radius:12px;padding:8px;background:rgba(2,6,23,.18)}.dist-upload{border:1px solid rgba(52,211,153,.18);background:rgba(22,101,52,.1);border-radius:18px;padding:16px;margin-top:14px}.dist-actions{display:grid;grid-template-columns:150px 1fr;gap:8px}.dist-col-data{width:11%}.dist-col-colab{width:23%}.dist-col-os{width:38%}.dist-col-coord{width:16%}.dist-col-ajuste{width:12%}
+    #distList{transition:opacity .15s ease}#distList.is-loading{opacity:.35;pointer-events:none}
     .dist-ac{position:relative;width:100%}.dist-ac-list{position:absolute;top:calc(100% + 4px);left:0;right:0;min-width:180px;background:#0d0d18;border:1px solid rgba(52,211,153,.28);border-radius:12px;overflow:hidden;z-index:200;max-height:200px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.55)}
     .dist-ac-item{padding:8px 12px;cursor:pointer;font-size:12px;color:#e2e2f0;border-bottom:1px solid rgba(52,211,153,.08)}.dist-ac-item:last-child{border-bottom:0}.dist-ac-item:hover{background:rgba(52,211,153,.13);color:#f8fafc}
     .dist-ac-empty{padding:10px 12px;font-size:12px;color:#6b7280;text-align:center}.dist-ac-input{cursor:text!important;background:transparent!important;border:none!important;outline:none!important;color:#f8fafc!important;font-weight:950!important;font-size:14px!important;width:100%;padding:0!important;line-height:1.2}
@@ -95,28 +96,30 @@ export async function renderContent(content) {
 
   async function loadAll() {
     el.feedback.textContent = 'Carregando distribuição...';
-    const [osResult] = await Promise.all([
-      supabase.from('operacional_os').select('*').eq('status_gestor', 'ATENDER').limit(3000),
-      loadColaboradores(),
-    ]);
-    if (osResult.error) { el.feedback.textContent = osResult.error.message || 'Falha ao consultar operacional_os.'; return; }
-    const all = safe(osResult.data).sort((a, b) => String(b.configurada_em || b.data_os || '').localeCompare(String(a.configurada_em || a.data_os || '')) || num(b.numero_os) - num(a.numero_os));
-    state.rows = all.filter(r => r.status_conferencia !== 'AJUSTADA');
-    state.ajustadas = all.filter(r => r.status_conferencia === 'AJUSTADA');
-    const ids = state.rows.map(r => r.id).filter(Boolean);
-    if (ids.length) {
-      const CHUNK = 200;
-      let allAtr = [];
-      let atrError = null;
-      for (let i = 0; i < ids.length; i += CHUNK) {
-        const { data, error } = await supabase.from('operacional_os_colaboradores').select('*').in('os_id', ids.slice(i, i + CHUNK));
-        if (error) { atrError = error; allAtr = []; break; }
-        allAtr = allAtr.concat(safe(data));
-      }
-      if (atrError) { console.warn('Falha ao carregar colaboradores indicados.', atrError); state.atrib = []; }
-      else state.atrib = allAtr;
-    } else state.atrib = [];
-    fillCoords(); render(); el.feedback.textContent = `Carregado: ${state.rows.length} pendente(s) · ${state.ajustadas.length} ajustada(s) · ${state.atrib.length} indicação(ões).`;
+    el.list.classList.add('is-loading');
+    try {
+      const [osResult] = await Promise.all([
+        supabase.from('operacional_os').select('*').eq('status_gestor', 'ATENDER').limit(3000),
+        loadColaboradores(),
+      ]);
+      if (osResult.error) { el.feedback.textContent = osResult.error.message || 'Falha ao consultar operacional_os.'; return; }
+      const all = safe(osResult.data).sort((a, b) => String(b.configurada_em || b.data_os || '').localeCompare(String(a.configurada_em || a.data_os || '')) || num(b.numero_os) - num(a.numero_os));
+      state.rows = all.filter(r => r.status_conferencia !== 'AJUSTADA');
+      state.ajustadas = all.filter(r => r.status_conferencia === 'AJUSTADA');
+      const ids = state.rows.map(r => r.id).filter(Boolean);
+      if (ids.length) {
+        const CHUNK = 200;
+        const chunks = [];
+        for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+        const results = await Promise.all(chunks.map(chunk => supabase.from('operacional_os_colaboradores').select('*').in('os_id', chunk)));
+        const atrError = results.find(r => r.error)?.error;
+        if (atrError) { console.warn('Falha ao carregar colaboradores indicados.', atrError); state.atrib = []; }
+        else state.atrib = results.flatMap(r => safe(r.data));
+      } else state.atrib = [];
+      fillCoords(); render(); el.feedback.textContent = `Carregado: ${state.rows.length} pendente(s) · ${state.ajustadas.length} ajustada(s) · ${state.atrib.length} indicação(ões).`;
+    } finally {
+      el.list.classList.remove('is-loading');
+    }
   }
 
   async function loadColaboradores() {
