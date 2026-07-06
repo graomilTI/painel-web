@@ -109,10 +109,14 @@ async function fillGroupBySelects(page) {
   if (picked2 !== 'Grupo de Categoria') throw new Error(`Agrupamento nível 2 inesperado: ${picked2}`);
 }
 
+// Ctrl+A + Backspace nem sempre limpa de verdade um campo de data mascarado do
+// Vuetify (o "de" pode ficar preso na 1ª data digitada enquanto o "até" avança
+// certo a cada mês, fazendo o relatório trazer o acumulado do ano até aquele mês
+// em vez do mês isolado). Clique triplo + Backspace/Delete repetidos garante a
+// limpeza mesmo se a seleção via teclado não colar no campo.
 async function setDateField(page, selector, value) {
-  await page.click(selector);
-  await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control');
-  await page.keyboard.press('Backspace');
+  await page.click(selector, { clickCount: 3 });
+  for (let i = 0; i < 12; i++) { await page.keyboard.press('Backspace'); await page.keyboard.press('Delete'); }
   await page.type(selector, value);
 }
 
