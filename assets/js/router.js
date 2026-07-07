@@ -93,7 +93,9 @@ const SOFT_NAV_PAGES = new Map([
   // Fase 2 — Categoria C (múltiplos scripts na origem, verificados individualmente)
   ['envios', { title: 'Correios', module: () => import('./envios.js'), extraScripts: ['https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'] }],
   ['frotas-dashboard', { title: 'Dashboard de Frotas', module: () => import('./frotas-dashboard.js'), extraScripts: ['https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'] }],
-  ['adm-logistica', { title: 'Painel de Logística', module: () => import('./adm-logistica.js'), extraModules: [() => import('./modules/logistica-classificadores-ativos.js')] }],
+  // adm-logistica fica fora da navegação suave por enquanto: o módulo ainda possui boot próprio
+  // via initProtectedPage() e, quando importado pelo router, executa duas renderizações/consultas
+  // concorrentes. Isso travava a tela ao clicar no menu. Mantém navegação normal por reload.
   ['uber', { title: 'Uber · Conferência', module: () => import('./uber.js'), extraModules: [() => import('./modules/uber-despesas-sync.js')] }],
   ['adm-operacional', { title: 'Operacional ADM', module: () => import('./adm-operacional.js') }],
   ['compras-estoque', { title: 'Estoque', module: () => import('./compras-estoque.js'), extraModules: [() => import('./pwa-register.js'), () => import('./compras-estoque-agrupamento.js'), () => import('./compras-estoque-layout.js')] }],
