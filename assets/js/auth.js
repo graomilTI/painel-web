@@ -23,23 +23,44 @@ export async function getSession() {
   return data.session;
 }
 
-// Várias telas chamam getCurrentUser() de forma concorrente logo no carregamento
-// (renderContent da própria página + activityLogger + módulos extras). Chamadas
-// simultâneas a supabase.auth.getUser() disputam o lock interno de refresh de
-// token do supabase-js e podem travar indefinidamente (visto no Painel de
-// Logística: duas chamadas a getUser() penduradas em "pending" e a página
-// nunca chegava a renderizar). Uma única chamada em andamento é compartilhada
-// por todos os chamadores concorrentes.
+// Evita que qualquer tela fique em branco aguardando indefinidamente uma chamada
+// de auth. O contexto do usuário já foi validado no boot por requireAuth(); para
+// renderizações internas, o usuário da sessão local é suficiente e não depende de
+// ida à rede. Se a sessão ainda não estiver pronta, cai para getUser() com timeout.
 let currentUserInflight = null;
 
+function withTimeout(promise, ms, fallback = null) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((resolve) => { timer = setTimeout(() => resolve(fallback), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 export async function getCurrentUser() {
+  try {
+    const sessionUser = await withTimeout(
+      supabase.auth.getSession().then(({ data, error }) => {
+        if (error) throw error;
+        return data?.session?.user || null;
+      }),
+      1500,
+      null,
+    );
+    if (sessionUser) return sessionUser;
+  } catch (error) {
+    console.warn('[auth] getSession indisponível, tentando getUser:', error);
+  }
+
   if (currentUserInflight) return currentUserInflight;
-  currentUserInflight = supabase.auth.getUser()
-    .then(({ data, error }) => {
+  currentUserInflight = withTimeout(
+    supabase.auth.getUser().then(({ data, error }) => {
       if (error) throw error;
-      return data.user;
-    })
-    .finally(() => { currentUserInflight = null; });
+      return data?.user || null;
+    }),
+    5000,
+    null,
+  ).finally(() => { currentUserInflight = null; });
   return currentUserInflight;
 }
 
