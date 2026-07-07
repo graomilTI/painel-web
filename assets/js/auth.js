@@ -10,25 +10,6 @@ export async function signInWithPassword(email, password) {
 const CTX_CACHE_KEY = 'grao1000:user-ctx:v1';
 const CTX_CACHE_TTL = 1000 * 60 * 5;
 
-export async function signOut() {
-  logActivity('logout', 'Logout realizado', 'auth', null);
-  try { sessionStorage.removeItem(CTX_CACHE_KEY); } catch {}
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
-}
-
-export async function getSession() {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  return data.session;
-}
-
-// Evita que qualquer tela fique em branco aguardando indefinidamente uma chamada
-// de auth. O contexto do usuário já foi validado no boot por requireAuth(); para
-// renderizações internas, o usuário da sessão local é suficiente e não depende de
-// ida à rede. Se a sessão ainda não estiver pronta, cai para getUser() com timeout.
-let currentUserInflight = null;
-
 function withTimeout(promise, ms, fallback = null) {
   let timer;
   return Promise.race([
@@ -36,6 +17,42 @@ function withTimeout(promise, ms, fallback = null) {
     new Promise((resolve) => { timer = setTimeout(() => resolve(fallback), ms); }),
   ]).finally(() => clearTimeout(timer));
 }
+
+function withRejectTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+export async function signOut() {
+  logActivity('logout', 'Logout realizado', 'auth', null);
+  try { sessionStorage.removeItem(CTX_CACHE_KEY); } catch {}
+  const { error } = await withRejectTimeout(
+    supabase.auth.signOut(),
+    6000,
+    'Tempo excedido ao sair do sistema.'
+  );
+  if (error) throw error;
+}
+
+export async function getSession() {
+  const result = await withTimeout(
+    supabase.auth.getSession(),
+    6000,
+    { data: { session: null }, error: null }
+  );
+  const { data, error } = result || { data: { session: null }, error: null };
+  if (error) throw error;
+  return data?.session || null;
+}
+
+// Evita que qualquer tela fique em branco aguardando indefinidamente uma chamada
+// de auth. O contexto do usuário já foi validado no boot por requireAuth(); para
+// renderizações internas, o usuário da sessão local é suficiente e não depende de
+// ida à rede. Se a sessão ainda não estiver pronta, cai para getUser() com timeout.
+let currentUserInflight = null;
 
 export async function getCurrentUser() {
   try {
@@ -204,7 +221,11 @@ function wait(ms) {
 // nessa janela a RPC roda como anônima e volta vazia (não é erro de rede).
 // Tenta de novo algumas vezes antes de desistir, em vez de derrubar a sessão.
 async function fetchUserContextRaw(attempt = 1) {
-  const { data, error } = await supabase.rpc('rpc_get_user_context');
+  const { data, error } = await withRejectTimeout(
+    supabase.rpc('rpc_get_user_context'),
+    9000,
+    'Tempo excedido ao carregar permissões do usuário.'
+  );
   if (error) throw error;
 
   const raw = normalizeContextPayload(data);
