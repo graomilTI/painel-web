@@ -2,7 +2,7 @@
 // Mantém o arquivo operacional.js original como base, mas aplica ajustes em tempo de carregamento
 // para evitar rotas em estrela/zigue-zague, preencher carona/placa e filtrar OS por sugestão.
 
-const SMART_VERSION = '20260703-rota-estendida-sutil';
+const SMART_VERSION = '20260707-efetivo-veiculo-proprio';
 
 function replaceOrKeep(source, search, replacement, label) {
   if (!source.includes(search)) {
@@ -81,7 +81,9 @@ function patchDrawAllRoutes(source) {
     st.rotaSelecionadaReal = null;
     updateRotaRealStatus(root);
     checarAlternativa(root);
-    const validas = base.filter(r => geo(r.colab) && r.ponto.temCoord);
+    // modo 'local' = colaborador já está no ponto (achado NAO PRECISA) — não embarca, não dirige
+    // até lá, então não deveria virar "parada" na rota real desenhada/somada por estrada.
+    const validas = base.filter(r => geo(r.colab) && r.ponto.temCoord && r.modo !== 'local');
     const grupos = agruparRotasPorColaborador(validas);
     const fallbackPorColab = new Map();
 
@@ -256,7 +258,7 @@ function patchSource(source, supabaseClientUrl) {
     if (habitual?.tipo === 'UBER TAXI' || habitual?.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
 
     if (st.veiculoProprioCpfs.has(c.cpf) || st.veiculoProprioNomes.has(norm(c.nome))) {
-      return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };
+      return { modo: 'reembolso', label: 'Veículo próprio (Conferência · Deslocamento)', custoFn: veiculoProprioIdaVolta };
     }
     // Sem modo habitual registrado nem veículo próprio marcado (61% dos classificadores ativos —
     // achado ao investigar um custo "exorbitante" pra uma rota curta): a suposição de Uber/táxi
@@ -273,6 +275,14 @@ function patchSource(source, supabaseClientUrl) {
     if (habitual?.tipo === 'NAO PRECISA') return { modo: 'local', label: 'Já está no local', custo: 0 };
     if (habitual?.tipo === 'REEMBOLSO KM') return { modo: 'reembolso', label: 'Veículo próprio', custoFn: combustivelIdaVolta };
     if (habitual?.tipo === 'UBER TAXI' || habitual?.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
+
+    // Cadastro ativo em Conferência > Deslocamento (programacao_veiculo_proprio) é fato confirmado,
+    // não suposição — checa ANTES da carona/sem-modo. Tinha sido descartado sem querer nessa
+    // reescrita (a versão anterior deste patch não tinha esse ramo), o que jogava esses
+    // colaboradores pra "sem sugestão"/inviável e forçava o motor a buscar gente bem mais longe.
+    if (st.veiculoProprioCpfs.has(c.cpf) || st.veiculoProprioNomes.has(norm(c.nome))) {
+      return { modo: 'reembolso', label: 'Veículo próprio (Conferência · Deslocamento)', custoFn: veiculoProprioIdaVolta };
+    }
 
     const carona = caronaInfoPara(ponto);
     if (carona) {
@@ -376,9 +386,9 @@ function patchSource(source, supabaseClientUrl) {
   out = replaceOrKeep(
     out,
     `if (Math.abs(a.dist - b.dist) > DIST_TOLERANCIA_EMPATE_KM) return a.dist - b.dist;
-          return a.saldoAtual - b.saldoAtual || a.avaliacao.custoDia - b.avaliacao.custoDia || a.dist - b.dist;`,
+          return pesoContrato(a.c) - pesoContrato(b.c) || a.saldoAtual - b.saldoAtual || a.avaliacao.custoDia - b.avaliacao.custoDia || a.dist - b.dist;`,
     `if (Math.abs(a.score - b.score) > DIST_TOLERANCIA_EMPATE_KM) return a.score - b.score;
-          return a.saldoAtual - b.saldoAtual || a.avaliacao.custoDia - b.avaliacao.custoDia || a.dist - b.dist;`,
+          return pesoContrato(a.c) - pesoContrato(b.c) || a.saldoAtual - b.saldoAtual || a.avaliacao.custoDia - b.avaliacao.custoDia || a.dist - b.dist;`,
     'ordenação inteligente'
   );
 
