@@ -47,6 +47,7 @@ const SCRIPT_MAP = {
   'sync-auditorias': 'grm-sync-auditorias.js',
   'sync-nhe': 'grm-sync-nhe.js',
   'sync-lista-os': 'grm-sync-lista-os.js',
+  'sync-operacional-os': 'grm-sync-operacional-os.js',
   'sync-distribuicao-os': 'grm-sync-distribuicao-os.js',
   'sync-cargas-geofence': 'grm-sync-cargas-geofence.js',
   'sync-btg-relatorios': 'grm-sync-btg-classificador.js',

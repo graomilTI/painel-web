@@ -30,6 +30,7 @@ const AGENTES_CONTINUOS = [
   'sync-mapa-embarque',
   'sync-nhe',
   'sync-lista-os',
+  'sync-operacional-os',
   'sync-distribuicao-os',
   'sync-locais-embarque',
   'sync-auditorias',
