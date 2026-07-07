@@ -129,8 +129,8 @@ var supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 var OS_ALIASES = splitEnv(process.env.CARGAS_OS_ALIASES || 'O.S.,OS,Os,os,Ordem de Serviço,Ordem Serviço,ordem_servico,ordem_servico_id,sorder,sorCode');
-var LAT_ALIASES = splitEnv(process.env.CARGAS_OS_LAT_ALIASES || 'Latitude,latitude,Lat,lat,Latitude Local,Latitude do Local,Latitude Serviço,Latitude Servico,lat_local,latitude_local,local_latitude,lat_os,latitude_os,Latitude Embarque,Latitude de Embarque');
-var LNG_ALIASES = splitEnv(process.env.CARGAS_OS_LNG_ALIASES || 'Longitude,longitude,Lng,lng,Long,long,Longitude Local,Longitude do Local,Longitude Serviço,Longitude Servico,lng_local,longitude_local,local_longitude,lng_os,longitude_os,Longitude Embarque,Longitude de Embarque');
+var LAT_ALIASES = splitEnv(process.env.CARGAS_OS_LAT_ALIASES || 'Latitude,latitude,Lat,lat,Latitude Local,Latitude do Local,Latitude Serviço,Latitude Servico,lat_local,latitude_local,local_latitude,lat_os,latitude_os,ponto1_latitude,Latitude Embarque,Latitude de Embarque');
+var LNG_ALIASES = splitEnv(process.env.CARGAS_OS_LNG_ALIASES || 'Longitude,longitude,Lng,lng,Long,long,Longitude Local,Longitude do Local,Longitude Serviço,Longitude Servico,lng_local,longitude_local,local_longitude,lng_os,longitude_os,ponto1_longitude,Longitude Embarque,Longitude de Embarque');
 
 function log(level, msg) {
   console.log('[' + level + '] ' + new Date().toISOString() + ' - ' + msg);
@@ -911,6 +911,38 @@ async function buscarLocalOs(osValue) {
 }
 
 async function buscarLocalOsNaTabela(table, osKey) {
+  // operacional_os não é um dump grm_*_importacoes (dados_json, coluna "os" genérica,
+  // sincronizado_em) — é a tabela de negócio real, com numero_os e ponto1_latitude/longitude
+  // (resolvidos por trigger a partir do embarque, ver migration
+  // 20260706213240_consolida_matching_embarque_os.sql). As 3 estratégias genéricas abaixo
+  // nunca encontravam nada aqui (nenhuma delas bate com esse schema), então essa tabela nunca
+  // conseguia alimentar lat_os/lng_os apesar de configurada em CARGAS_OS_LOOKUP_TABLES.
+  if (table === 'operacional_os') {
+    try {
+      var resOs = await supabase
+        .from('operacional_os')
+        .select('numero_os,ponto1_latitude,ponto1_longitude,ponto1_nome,embarque,cliente')
+        .eq('numero_os', osKey)
+        .limit(1);
+      if (!resOs.error && resOs.data && resOs.data.length) {
+        var osRow = resOs.data[0];
+        if (isValidCoord(osRow.ponto1_latitude, osRow.ponto1_longitude)) {
+          return {
+            os: osKey,
+            lat_os: Number(osRow.ponto1_latitude),
+            lng_os: Number(osRow.ponto1_longitude),
+            fonte_tabela: table,
+            fonte_raw: osRow,
+            local_servico: osRow.ponto1_nome || osRow.embarque || null,
+            cidade: null,
+            uf: null
+          };
+        }
+      }
+    } catch (eOs) {}
+    return null;
+  }
+
   // 1) Tenta filtros diretos em JSON bruto, que é o padrão das tabelas grm_*_importacoes.
   var jsonFields = ['O.S.', 'OS', 'Os', 'O.S', 'os'];
   for (var j = 0; j < jsonFields.length; j++) {
