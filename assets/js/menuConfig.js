@@ -122,6 +122,13 @@ export const MENU_CONFIG = [
   },
 
   {
+    grupo: "FATURAMENTO",
+    itens: [
+      item("faturamento", "Painel de Faturamento", "faturamento", ["FATURAMENTO", "FATURAMENTO_PAINEL", "FINANCEIRO_FATURAMENTO", "FATURAS", "BOLETOS"])
+    ]
+  },
+
+  {
     grupo: "FINANCEIRO",
     itens: [
       item("financeiro_fluxo_caixa", "Fluxo de Caixa", "financeiro", ["FINANCEIRO", "FLUXO_CAIXA", "FINANCEIRO_FLUXO_CAIXA"]),
