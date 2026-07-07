@@ -23,6 +23,9 @@ const supabase = createClient(url, key, {
   },
 });
 
+// sync-colaboradores tem agendamento próprio via pg_cron (job "sync-colaboradores-5min",
+// a cada 5min, ver migration 20260703140000_cron_sync_colaboradores_job_queue.sql) — não
+// entra no round-robin pra não ser escolhido em duplicidade.
 const AGENTES_CONTINUOS = [
   'sync-mapa-embarque',
   'sync-nhe',
@@ -31,7 +34,6 @@ const AGENTES_CONTINUOS = [
   'sync-locais-embarque',
   'sync-auditorias',
   'sync-btg-relatorios',
-  'sync-colaboradores',
   'sync-patrimonios',
   'sync-contas-pagar',
   'sync-contas-receber',
@@ -78,10 +80,13 @@ async function liberarJobTravado(job) {
 }
 
 async function existeJobAberto() {
+  // sync-colaboradores é agendado direto pelo pg_cron (fora deste round-robin) e roda a
+  // cada 5min o dia todo — ignorar seus jobs aqui pra não bloquear os outros agentes.
   const { data, error } = await supabase
     .from('grm_sync_jobs')
     .select('id,agente_id,status,solicitado_em,iniciado_em,created_at')
     .in('status', ['pendente', 'rodando'])
+    .neq('agente_id', 'sync-colaboradores')
     .order('created_at', { ascending: true })
     .limit(1);
 
