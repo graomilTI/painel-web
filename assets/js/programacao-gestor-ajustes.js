@@ -172,7 +172,11 @@ async function renderEquipeFinal() {
       feedback.className = 'feedback mt-16 prog-feedback-ok';
       feedback.textContent = 'Preparando O.S. e despesas em tela única...';
     }
-    list.innerHTML = PROG_MONTANDO_HTML;
+    // Não troca #progList por um placeholder genérico aqui: renderProgramacaoEquipe
+    // já pinta seu próprio skeleton (título + KPIs + spinner) de forma síncrona,
+    // logo abaixo. Mostrar "Montando tela final..." antes disso só criava uma
+    // 2ª tela de carregamento diferente que piscava por cima da primeira,
+    // dando a impressão de bug em vez de um carregamento único e contínuo.
     await marcarPendentesComoAtender(supervisao);
     // Auto-preenche a equipe de menor custo só uma vez por contexto
     // (programação/supervisão/data) e ANTES do 1º render — a tela vai direto de
