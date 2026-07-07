@@ -44,11 +44,23 @@ async function parseXLS(filePath) {
 }
 
 async function upsertData(data) {
-  const records = data.map(row => ({ dados_json: row, data_sincronizacao: new Date().toISOString(), sincronizado_em: new Date().toISOString() }));
+  const startedAt = new Date();
+  const records = data.map(row => ({ dados_json: row, data_sincronizacao: startedAt.toISOString(), sincronizado_em: startedAt.toISOString() }));
   for (let i = 0; i < records.length; i += 100) {
-    const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(records.slice(i, i + 100), { onConflict: 'id' });
+    // Era upsert com onConflict:'id', mas o payload nunca envia "id" (a coluna é
+    // gen_random_uuid() por default) — o onConflict nunca colidia com nada e cada
+    // "sincronização" só inserta linhas novas. Isso fez grm_patrimonios_importacoes
+    // crescer sem limite (2,26 milhões de linhas em 19 dias). A tabela só serve de
+    // estágio do lote mais recente (lido por patrimoniosAgentSync.js), então trocamos
+    // por insert simples + limpeza do que sobrou de execuções anteriores logo abaixo.
+    const { error } = await supabase.from(REPORT_CONFIG.tableName).insert(records.slice(i, i + 100));
     if (error) throw error;
   }
+  const { error: cleanupError } = await supabase
+    .from(REPORT_CONFIG.tableName)
+    .delete()
+    .lt('created_at', startedAt.toISOString());
+  if (cleanupError) log('WARN', `Falha ao limpar lote antigo de ${REPORT_CONFIG.tableName}: ${cleanupError.message}`);
   log('SUCCESS', `${records.length} registros sincronizados`);
 }
 

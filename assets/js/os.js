@@ -214,6 +214,26 @@ function isAllowedSupervisao(supervisao) {
   return state.access.allowedSupervisoes.some((sup) => normalize(sup) === key || key.includes(normalize(sup)) || normalize(sup).includes(key));
 }
 
+// O relatório de origem (GRM) já vem filtrado só por O.S. abertas, então "situacao"
+// quase nunca chega como fechada — o sinal real de que uma O.S. fechou é ela parar de
+// ser confirmada pelo agente. grm-sync-operacional-os.js só remove O.S. ausentes do
+// relatório quando o lote novo cobre ≥80% das existentes (proteção contra scraping
+// incompleto); quando isso falha, a O.S. já fechada fica "presa" com situacao=Aberta
+// e updated_at parado. Tratamos como fechada tanto a situação explícita quanto a
+// ausência de confirmação recente do agente.
+const OS_STALE_DIAS = 3;
+const SITUACOES_FECHADAS = ['FECHADA', 'FINALIZADA', 'CANCELADA', 'ENCERRADA', 'CONCLUIDA'];
+
+function isOsFechada(row) {
+  const situacao = normalize(row?.situacao || '');
+  if (situacao && SITUACOES_FECHADAS.some((s) => situacao.includes(s))) return true;
+  const ref = row?.updated_at || row?.configurada_em || row?.created_at;
+  if (!ref) return false;
+  const ts = Date.parse(ref);
+  if (!Number.isFinite(ts)) return false;
+  return (Date.now() - ts) > OS_STALE_DIAS * 24 * 60 * 60 * 1000;
+}
+
 function injectStyles() {
   if (document.getElementById('os-styles')) return;
   const style = document.createElement('style');
@@ -339,7 +359,7 @@ export async function renderOsModule(content, options = {}) {
       if (all.length >= 6000) break;
     }
 
-    state.os = all.filter((row) => isAllowedSupervisao(row.supervisao));
+    state.os = all.filter((row) => isAllowedSupervisao(row.supervisao) && !isOsFechada(row));
     const ids = state.os.map((row) => row.id).filter(Boolean);
     if (!ids.length) {
       state.atribuicoes = [];

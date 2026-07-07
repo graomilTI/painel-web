@@ -55,13 +55,26 @@ async function fetchAuditData(page) {
 
 async function upsertData(data) {
   log('INFO', `Iniciando upsert de ${data.length} registros...`);
-  const records = data.map(row => ({ dados_json: row, data_sincronizacao: new Date().toISOString(), sincronizado_em: new Date().toISOString() }));
+  const startedAt = new Date();
+  const records = data.map(row => ({ dados_json: row, data_sincronizacao: startedAt.toISOString(), sincronizado_em: startedAt.toISOString() }));
 
   for (let i = 0; i < records.length; i += 100) {
     const chunk = records.slice(i, i + 100);
-    const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(chunk, { onConflict: 'id' });
+    // Era upsert com onConflict:'id' sem enviar "id" no payload (coluna é
+    // gen_random_uuid() por default) — nunca colidia com nada, então toda
+    // sincronização só inseria linhas novas e a tabela crescia sem limite
+    // (25 mil linhas em 19 dias). Só o lote mais recente importa (lido por
+    // admin-auditoria.js), então trocamos por insert simples + limpeza do
+    // que sobrou de execuções anteriores.
+    const { error } = await supabase.from(REPORT_CONFIG.tableName).insert(chunk);
     if (error) throw error;
   }
+
+  const { error: cleanupError } = await supabase
+    .from(REPORT_CONFIG.tableName)
+    .delete()
+    .lt('created_at', startedAt.toISOString());
+  if (cleanupError) log('WARN', `Falha ao limpar lote antigo de ${REPORT_CONFIG.tableName}: ${cleanupError.message}`);
 
   log('SUCCESS', `Upsert concluído: ${records.length} registros`);
 }
