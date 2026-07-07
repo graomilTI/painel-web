@@ -16,11 +16,13 @@ const WebSocket = require('ws');
 //   - upsert por numero_os preservando status_gestor/status_conferencia das O.S. já existentes;
 //   - O.S. que não aparecem mais no relatório do agente são removidas do painel (cascade
 //     também remove as atribuições delas) — MAS só se o lote novo cobrir pelo menos
-//     LIMITE_PROPORCAO_REMOCAO das O.S. existentes; do contrário, um scraping incompleto
-//     (GRM parcialmente fora do ar, filtro errado etc.) apagaria O.S. válidas em massa sem
-//     ninguém supervisionando (essa versão roda sozinha via agendador, sem o gestor olhando
-//     a tela como acontecia na versão original em assets/js/listaOsAgentSync.js).
-// `financeiro`, `servico` e `situacao` não têm fonte automática ainda; ficam null.
+//     LIMITE_PROPORCAO_REMOCAO do LOTE ANTERIOR do agente (contarLoteAnteriorListaOs), não do
+//     total acumulado em operacional_os; do contrário, um scraping incompleto (GRM parcialmente
+//     fora do ar, filtro errado etc.) apagaria O.S. válidas em massa sem ninguém supervisionando
+//     (essa versão roda sozinha via agendador, sem o gestor olhando a tela como acontecia na
+//     versão original em assets/js/listaOsAgentSync.js).
+// `financeiro`, `servico` e `situacao` já vêm do XLS (ver mapListaOsRow) — nenhuma tela do
+// painel filtra por eles hoje além de os.js (isOsFechada), que usa situacao + updated_at.
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -127,6 +129,35 @@ async function buscarUltimoLote(tabela, limite) {
     if (chunk.length < pageSize) break;
   }
   return rows;
+}
+
+// Conta o tamanho do lote de grm_lista_os_importacoes ANTERIOR ao mais recente (mesma
+// lógica de janela de 5min do buscarUltimoLote, aplicada ao lote que veio antes dele).
+// Usado como referência de cobertura para o guard de remoção — ver contarLoteAnteriorListaOs.
+async function contarLoteAnteriorListaOs() {
+  const { data: maxRows, error: maxErr } = await supabase
+    .from('grm_lista_os_importacoes').select('created_at').order('created_at', { ascending: false }).limit(1);
+  if (maxErr) throw maxErr;
+  const maxCreatedAt = maxRows?.[0]?.created_at;
+  if (!maxCreatedAt) return null;
+  const thresholdAtual = new Date(new Date(maxCreatedAt).getTime() - 5 * 60 * 1000).toISOString();
+
+  const { data: prevRows, error: prevErr } = await supabase
+    .from('grm_lista_os_importacoes').select('created_at')
+    .lt('created_at', thresholdAtual)
+    .order('created_at', { ascending: false }).limit(1);
+  if (prevErr) throw prevErr;
+  const prevCreatedAt = prevRows?.[0]?.created_at;
+  if (!prevCreatedAt) return null;
+  const prevThreshold = new Date(new Date(prevCreatedAt).getTime() - 5 * 60 * 1000).toISOString();
+
+  const { count, error: countErr } = await supabase
+    .from('grm_lista_os_importacoes')
+    .select('*', { count: 'exact', head: true })
+    .gte('created_at', prevThreshold)
+    .lt('created_at', thresholdAtual);
+  if (countErr) throw countErr;
+  return count ?? null;
 }
 
 async function buscarTodasOsExistentes() {
@@ -370,15 +401,28 @@ async function sincronizarListaOsDoAgente() {
     .map((row) => row.numero_os)
     .filter((numero) => !novosNumeros.has(numero));
   let totalRemovidos = 0;
-  const proporcaoCobertura = existentes.length > 0 ? novosNumeros.size / existentes.length : 1;
-  if (removidos.length && proporcaoCobertura < LIMITE_PROPORCAO_REMOCAO) {
-    log('WARN', `Lote novo cobre só ${novosNumeros.size}/${existentes.length} (${(proporcaoCobertura * 100).toFixed(1)}%) das O.S. existentes; pulando remoção automática de ${removidos.length} O.S. ausentes (possível scraping incompleto).`);
-  } else {
-    for (let i = 0; i < removidos.length; i += 200) {
-      const chunk = removidos.slice(i, i + 200);
-      const { error } = await supabase.from('operacional_os').delete().in('numero_os', chunk);
-      if (error) { log('WARN', `falha ao remover O.S. ausentes do relatório: ${error.message}`); break; }
-      totalRemovidos += chunk.length;
+  if (removidos.length) {
+    // A cobertura é medida contra o LOTE ANTERIOR do próprio agente (scrape-a-scrape), não
+    // contra existentes.length: esse total acumula O.S. já fechadas que a própria falta de
+    // remoção nunca deixa cair, então comparar contra ele cria um piso que a cobertura real
+    // (tipicamente ~55-60% do acumulado, mesmo com scraping saudável) nunca alcança — travando
+    // a remoção pra sempre e agravando o acúmulo que o guard deveria evitar. Sem lote anterior
+    // pra comparar (primeira execução), cai no comportamento antigo como rede de segurança.
+    const loteAnterior = await contarLoteAnteriorListaOs().catch((error) => {
+      log('WARN', `Não foi possível conferir o lote anterior para validar cobertura: ${error.message}`);
+      return null;
+    });
+    const referencia = loteAnterior && loteAnterior > 0 ? loteAnterior : existentes.length;
+    const proporcaoCobertura = referencia > 0 ? novosNumeros.size / referencia : 1;
+    if (proporcaoCobertura < LIMITE_PROPORCAO_REMOCAO) {
+      log('WARN', `Lote novo cobre só ${novosNumeros.size}/${referencia} (${(proporcaoCobertura * 100).toFixed(1)}%) do lote de referência; pulando remoção automática de ${removidos.length} O.S. ausentes (possível scraping incompleto).`);
+    } else {
+      for (let i = 0; i < removidos.length; i += 200) {
+        const chunk = removidos.slice(i, i + 200);
+        const { error } = await supabase.from('operacional_os').delete().in('numero_os', chunk);
+        if (error) { log('WARN', `falha ao remover O.S. ausentes do relatório: ${error.message}`); break; }
+        totalRemovidos += chunk.length;
+      }
     }
   }
 
