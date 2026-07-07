@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Painel</title>
   <link rel="icon" href="./assets/icons/pwa-192.png" />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=logistica-20260707" />
 </head>
 <body>
   <div class="app-shell">
@@ -29,10 +29,22 @@
         </div>
       </header>
 
-      <main class="page-main" id="pageContent"></main>
+      <main class="page-main" id="pageContent">
+        <section class="card mt-16">
+          <div class="feedback">Carregando Painel de Logística...</div>
+        </section>
+      </main>
     </div>
   </div>
-  <script type="module" src="./assets/js/modules/logistica-classificadores-ativos.js"></script>
-  <script type="module" src="./assets/js/adm-logistica.js"></script>
+
+  <script>
+    window.setTimeout(function () {
+      var content = document.getElementById('pageContent');
+      if (content && /Carregando Painel de Logística/.test(content.textContent || '')) {
+        content.innerHTML = '<section class="card mt-16"><div class="log-empty">O carregamento demorou mais que o esperado. Abra a aba Console para ver o erro ou recarregue com Ctrl + F5.</div></section>';
+      }
+    }, 12000);
+  </script>
+  <script type="module" src="./assets/js/adm-logistica.js?v=logistica-20260707"></script>
 </body>
 </html>
