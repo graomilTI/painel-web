@@ -17,40 +17,92 @@ function currentRouteName() {
     .toLowerCase() || 'dashboard';
 }
 
+function finishBoot() {
+  document.documentElement.classList.remove('is-route-booting', 'is-route-transitioning');
+  document.documentElement.classList.add('is-route-ready', 'is-app-booted');
+}
+
+function renderBootError(message) {
+  finishBoot();
+  const content = document.getElementById('pageContent');
+  if (content) {
+    content.innerHTML = `<section class="card mt-16"><div class="log-empty">${message}</div></section>`;
+    return;
+  }
+
+  document.body.innerHTML = `<main style="min-height:100vh;padding:24px;background:#06130e;color:#eef7f2;font-family:system-ui,-apple-system,sans-serif"><section style="max-width:760px;border:1px solid rgba(111,208,165,.22);border-radius:18px;padding:18px;background:rgba(8,22,17,.78)">${message}</section></main>`;
+}
+
+function withRejectTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 export async function initProtectedPage(title, renderContent) {
   document.documentElement.classList.remove('is-route-transitioning');
   document.documentElement.classList.add('is-route-booting');
-  const userContext = await requireAuth();
-  if (!userContext) return;
 
-  initRouter();
+  // Evita a tela preta sem retorno: se algum passo do boot prender, a tela é liberada
+  // e o usuário vê um aviso em vez de ficar com o painel vazio.
+  const bootWatchdog = setTimeout(() => {
+    finishBoot();
+    const content = document.getElementById('pageContent');
+    if (content && !content.children.length) {
+      content.innerHTML = '<section class="card mt-16"><div class="log-empty">Carregamento demorou mais que o esperado. Recarregue a página ou confira a aba Console para ver o erro.</div></section>';
+    }
+  }, 9000);
 
-  renderAppLayout({ userContext, currentPageTitle: title });
-  bindLayoutActions();
-  initGestorMenuAjustes();
-  initAgentUpdateStatus();
+  let userContext = null;
+  try {
+    userContext = await withRejectTimeout(requireAuth(), 12000, 'Tempo excedido ao validar usuário/permissões. Recarregue a página.');
+  } catch (error) {
+    clearTimeout(bootWatchdog);
+    console.error('[pageInit] Falha no boot protegido:', error);
+    renderBootError(`Erro ao validar usuário/permissões: ${String(error?.message || error)}.`);
+    return;
+  }
+
+  if (!userContext) {
+    clearTimeout(bootWatchdog);
+    finishBoot();
+    return;
+  }
+
+  try {
+    initRouter();
+    renderAppLayout({ userContext, currentPageTitle: title });
+    bindLayoutActions();
+    initGestorMenuAjustes();
+    initAgentUpdateStatus();
+  } catch (error) {
+    clearTimeout(bootWatchdog);
+    console.error('[pageInit] Falha ao montar layout:', error);
+    renderBootError(`Erro ao montar layout: ${String(error?.message || error)}.`);
+    return;
+  }
 
   const content = document.getElementById('pageContent');
   if (content && typeof renderContent === 'function') {
-    // renderContent não é aguardado aqui de propósito (não bloqueia o resto do boot da página),
-    // mas isso significa que um erro dentro dela (ex.: getCurrentUser() rejeitando) antes do
-    // primeiro innerHTML deixava a tela em branco silenciosamente, sem nenhum aviso pro usuário.
     Promise.resolve(renderContent(content, userContext)).catch((error) => {
       console.error('[pageInit] Falha ao renderizar a página:', error);
       content.innerHTML = `<section class="card mt-16"><div class="log-empty">Erro ao carregar esta página: ${String(error?.message || error)}. Tente recarregar.</div></section>`;
     });
-    initProgramacaoRuntimeFixes(content);
 
-    // Informativos já faz o carregamento automático internamente.
-    // Evita que a camada auxiliar dispare cliques duplicados e carregue a mesma base duas vezes.
-    if (currentRouteName() !== 'logistica-informativos') initAgentDataMode(content);
+    try {
+      initProgramacaoRuntimeFixes(content);
+      // Informativos já faz o carregamento automático internamente.
+      // Evita que a camada auxiliar dispare cliques duplicados e carregue a mesma base duas vezes.
+      if (currentRouteName() !== 'logistica-informativos') initAgentDataMode(content);
+    } catch (error) {
+      console.warn('[pageInit] Complementos da página falharam:', error);
+    }
   }
 
-  requestAnimationFrame(() => {
-    document.documentElement.classList.remove('is-route-booting');
-    // is-app-booted marca que o fade-in de boot (routeFadeIn) já tocou uma vez.
-    // Navegação suave (router.js) nunca remove is-route-ready/is-app-booted, então
-    // o CSS não replay-a essa animação a cada troca de página.
-    document.documentElement.classList.add('is-route-ready', 'is-app-booted');
-  });
+  clearTimeout(bootWatchdog);
+  requestAnimationFrame(finishBoot);
 }
