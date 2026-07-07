@@ -32,7 +32,13 @@ export async function initProtectedPage(title, renderContent) {
 
   const content = document.getElementById('pageContent');
   if (content && typeof renderContent === 'function') {
-    renderContent(content, userContext);
+    // renderContent não é aguardado aqui de propósito (não bloqueia o resto do boot da página),
+    // mas isso significa que um erro dentro dela (ex.: getCurrentUser() rejeitando) antes do
+    // primeiro innerHTML deixava a tela em branco silenciosamente, sem nenhum aviso pro usuário.
+    Promise.resolve(renderContent(content, userContext)).catch((error) => {
+      console.error('[pageInit] Falha ao renderizar a página:', error);
+      content.innerHTML = `<section class="card mt-16"><div class="log-empty">Erro ao carregar esta página: ${String(error?.message || error)}. Tente recarregar.</div></section>`;
+    });
     initProgramacaoRuntimeFixes(content);
 
     // Informativos já faz o carregamento automático internamente.
