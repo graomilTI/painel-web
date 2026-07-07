@@ -21,11 +21,9 @@ const state = {
   access: { restricted: false, allowedSupervisoes: [] },
   os: [],
   colaboradores: [],
-  pontosEmbarque: [],
   atribuicoes: [],
   filters: { supervisao: '', status: '', busca: '' },
   sort: { field: 'numero_os', dir: 'desc' },
-  pontoCache: new Map(),
   sugestaoCache: new Map(),
 };
 
@@ -167,59 +165,16 @@ function colabKey(c) {
 
 function getOsKey(row) { return String(row.id || row.numero_os || ''); }
 
-function splitUfCidadeLocal(text) {
-  const raw = String(text || '').trim();
-  const match = raw.match(/^([A-Z]{2})\s*-\s*([^()]+?)(?:\s*\(([^)]+)\))?\s*$/i);
-  if (!match) return { uf: '', cidade: raw, local: '' };
-  return { uf: match[1].toUpperCase(), cidade: match[2].trim(), local: (match[3] || '').trim() };
-}
-
-function bestPontoForOs(row) {
-  const parsed = splitUfCidadeLocal(row.embarque || row.local_embarque || '');
-  const uf = normalize(parsed.uf);
-  const cidade = normalize(parsed.cidade);
-  const local = normalize(parsed.local);
-  const cliente = normalize(row.cliente);
-  const candidatos = state.pontosEmbarque
-    .filter((p) => hasGeo(p.latitude, p.longitude))
-    .map((p) => {
-      let score = 0;
-      const pUf = normalize(p.uf);
-      const pCidade = normalize(p.cidade);
-      const pNome = normalize(p.nome_local || p.tipo_local || '');
-      const pSup = normalize(p.supervisao || p.coordenacao || '');
-      if (uf && pUf === uf) score += 50;
-      if (cidade && (pCidade === cidade || pCidade.includes(cidade) || cidade.includes(pCidade))) score += 80;
-      if (local && (pNome.includes(local) || local.includes(pNome))) score += 120;
-      if (cliente && (pNome.includes(cliente) || cliente.includes(pNome))) score += 30;
-      if (row.supervisao && pSup && (pSup.includes(normalize(row.supervisao)) || normalize(row.supervisao).includes(pSup))) score += 15;
-      return { ponto: p, score };
-    })
-    .filter((x) => x.score >= 120)
-    .sort((a, b) => b.score - a.score);
-  return candidatos[0]?.ponto || null;
-}
-
-function pontoCacheKey(row) {
-  return normalize(`${row.embarque || row.local_embarque || ''}|${row.cliente || ''}|${row.supervisao || ''}`);
-}
-
+// ponto_embarque_id/ponto1_latitude/ponto1_longitude/ponto1_nome são resolvidos e
+// persistidos automaticamente por trigger no banco (ver migration
+// 20260706213240_consolida_matching_embarque_os.sql) — aqui só lemos o resultado.
 function osPoint(row) {
-  const cacheKey = pontoCacheKey(row);
-  if (state.pontoCache.has(cacheKey)) return state.pontoCache.get(cacheKey);
-  const resultado = computeOsPoint(row);
-  state.pontoCache.set(cacheKey, resultado);
-  return resultado;
-}
-
-function computeOsPoint(row) {
-  const ponto = bestPontoForOs(row);
-  if (ponto) {
+  if (hasGeo(row.ponto1_latitude, row.ponto1_longitude)) {
     return {
-      latitude: Number(ponto.latitude),
-      longitude: Number(ponto.longitude),
+      latitude: Number(row.ponto1_latitude),
+      longitude: Number(row.ponto1_longitude),
       origem: 'MAPA_OPERACIONAL',
-      label: `${ponto.nome_local || 'Ponto operacional'} · ${ponto.cidade || ''}/${ponto.uf || ''}`,
+      label: row.ponto1_nome || 'Ponto operacional',
     };
   }
   return { latitude: null, longitude: null, origem: 'SEM_PONTO_MAPA', label: 'Sem ponto georreferenciado no mapa operacional' };
@@ -343,21 +298,15 @@ export async function renderOsModule(content, options = {}) {
   async function loadAll() {
     el.feedback.textContent = 'Carregando O.S. e colaboradores...';
     try {
-      const [osResult, pontoResult, colabResult] = await Promise.allSettled([
+      const [osResult, colabResult] = await Promise.allSettled([
         loadOs(),
-        loadPontosEmbarque(),
         loadColaboradores(),
       ]);
       if (osResult.status === 'rejected') throw osResult.reason;
-      if (pontoResult.status === 'rejected') {
-        console.warn('Não foi possível carregar pontos de embarque do mapa operacional.', pontoResult.reason);
-        state.pontosEmbarque = [];
-      }
       if (colabResult.status === 'rejected') {
         console.warn('Não foi possível carregar colaboradores para sugestão. A lista de O.S. continuará funcionando.', colabResult.reason);
         state.colaboradores = [];
       }
-      state.pontoCache.clear();
       state.sugestaoCache.clear();
       lastLoadedAt = Date.now();
       fillSupervisoes();
@@ -414,25 +363,6 @@ export async function renderOsModule(content, options = {}) {
     } catch (atrError) {
       console.warn('Falha ao carregar colaboradores vinculados às O.S.', atrError);
       state.atribuicoes = [];
-    }
-  }
-
-  async function loadPontosEmbarque() {
-    try {
-      let q = supabase
-        .from('operacional_pontos_embarque')
-        .select('id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo')
-        .limit(5000);
-      const { data, error } = await q;
-      if (error) {
-        console.warn('Falha ao consultar operacional_pontos_embarque.', error);
-        state.pontosEmbarque = [];
-        return;
-      }
-      state.pontosEmbarque = safeArray(data).filter((p) => p.ativo !== false && hasGeo(p.latitude, p.longitude));
-    } catch (error) {
-      console.warn('Falha ao consultar operacional_pontos_embarque.', error);
-      state.pontosEmbarque = [];
     }
   }
 
