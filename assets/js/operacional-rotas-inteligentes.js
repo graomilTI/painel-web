@@ -217,19 +217,30 @@ function patchSource(source, supabaseClientUrl) {
     out,
     `  // Carona só conta como custo zero se o ponto estiver a até 5km do trajeto de algum motorista
   // de frota até o embarque mais próximo dele — senão vira "carona fantasma" sem motorista real por perto.
+  // Resultado só depende do ponto (nunca do colaborador/OS) — cacheado por ponto.__key pelo mesmo
+  // motivo do hospedagemCache/candidatosProximosCache: sem isso, build() varria st.frotaTrajetos
+  // (amostragem de 12 pontos por trajeto) pra cada par OS×colaborador.
   function caronaDisponivelPara(ponto) {
     if (!ponto.temCoord || !st.frotaTrajetos?.length) return false;
-    return st.frotaTrajetos.some(t => distPontoTrajeto(ponto, t) <= RAIO_CARONA_KM);
+    if (st.caronaInfoCache.has(ponto.__key)) return !!st.caronaInfoCache.get(ponto.__key);
+    const disponivel = st.frotaTrajetos.some(t => distPontoTrajeto(ponto, t) <= RAIO_CARONA_KM);
+    st.caronaInfoCache.set(ponto.__key, disponivel);
+    return disponivel;
   }`,
     `  // Carona só conta como custo zero se o ponto estiver a até 5km do trajeto de algum motorista
   // de frota até o embarque mais próximo dele — senão vira "carona fantasma" sem motorista real por perto.
+  // Resultado só depende do ponto (nunca do colaborador/OS) — cacheado por ponto.__key pelo mesmo
+  // motivo do hospedagemCache/candidatosProximosCache: sem isso, build() varria st.frotaTrajetos
+  // (amostragem de 12 pontos por trajeto) pra cada par OS×colaborador.
   function caronaInfoPara(ponto) {
     if (!ponto.temCoord || !st.frotaTrajetos?.length) return null;
+    if (st.caronaInfoCache.has(ponto.__key)) return st.caronaInfoCache.get(ponto.__key);
     let melhor = null;
     for (const t of st.frotaTrajetos) {
       const d = distPontoTrajeto(ponto, t);
       if (d <= RAIO_CARONA_KM && (!melhor || d < melhor.distKm)) melhor = { ...t, distKm: d };
     }
+    st.caronaInfoCache.set(ponto.__key, melhor);
     return melhor;
   }`,
     'carona com placa'

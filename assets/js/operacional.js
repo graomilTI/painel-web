@@ -127,7 +127,7 @@ import { supabase } from './supabaseClient.js';
     // st.hoteisComCoord (~1000 linhas) de novo a cada vez. Com ~1000 OS abertas × ~2200
     // colaboradores isso passava de 2 bilhões de iterações; cacheado por ponto, cai pra uma vez
     // por ponto distinto (dezenas/poucas centenas). Limpo no início de cada build().
-    hospedagemCache: new Map(), candidatosProximosCache: new Map(),
+    hospedagemCache: new Map(), candidatosProximosCache: new Map(), caronaInfoCache: new Map(),
   };
 
   const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -474,9 +474,15 @@ import { supabase } from './supabaseClient.js';
 
   // Carona só conta como custo zero se o ponto estiver a até 5km do trajeto de algum motorista
   // de frota até o embarque mais próximo dele — senão vira "carona fantasma" sem motorista real por perto.
+  // Resultado só depende do ponto (nunca do colaborador/OS) — cacheado por ponto.__key pelo mesmo
+  // motivo do hospedagemCache/candidatosProximosCache: sem isso, build() varria st.frotaTrajetos
+  // (amostragem de 12 pontos por trajeto) pra cada par OS×colaborador.
   function caronaDisponivelPara(ponto) {
     if (!ponto.temCoord || !st.frotaTrajetos?.length) return false;
-    return st.frotaTrajetos.some(t => distPontoTrajeto(ponto, t) <= RAIO_CARONA_KM);
+    if (st.caronaInfoCache.has(ponto.__key)) return !!st.caronaInfoCache.get(ponto.__key);
+    const disponivel = st.frotaTrajetos.some(t => distPontoTrajeto(ponto, t) <= RAIO_CARONA_KM);
+    st.caronaInfoCache.set(ponto.__key, disponivel);
+    return disponivel;
   }
 
   function modoColaborador(c, ponto) {
@@ -834,6 +840,7 @@ import { supabase } from './supabaseClient.js';
   function build() {
     st.hospedagemCache.clear();
     st.candidatosProximosCache.clear();
+    st.caronaInfoCache.clear();
     const pontosPorChave = new Map(st.pontos.map(p => [p.__key, p]));
     const usos = new Map();
     st.semAssociacao = [];
