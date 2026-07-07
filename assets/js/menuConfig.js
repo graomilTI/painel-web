@@ -126,8 +126,8 @@ export const MENU_CONFIG = [
     itens: [
       item("financeiro_fluxo_caixa", "Fluxo de Caixa", "financeiro", ["FINANCEIRO", "FLUXO_CAIXA", "FINANCEIRO_FLUXO_CAIXA"]),
       item("financeiro_pagamentos", "Pagamentos", "financeiro#pagamentos", ["FINANCEIRO", "PAGAMENTOS", "FINANCEIRO_PAGAMENTOS"]),
-      item("financeiro_adiantamentos", "Adiantamentos", "financeiro#pagamentos", ["ADIANTAMENTOS", "FINANCEIRO_ADIANTAMENTOS"]),
-      item("financeiro_alimentacao", "Alimentação", "financeiro#pagamentos", ["ALIMENTACAO", "ALIMENTAÇÃO", "FINANCEIRO_ALIMENTACAO"])
+      item("financeiro_adiantamentos", "Adiantamentos", "financeiro#despesas?modo=adiantamentos", ["ADIANTAMENTOS", "FINANCEIRO_ADIANTAMENTOS"]),
+      item("financeiro_alimentacao", "Alimentação", "financeiro#despesas?modo=pagamentos", ["ALIMENTACAO", "ALIMENTAÇÃO", "FINANCEIRO_ALIMENTACAO"])
     ]
   },
 
