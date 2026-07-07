@@ -150,6 +150,9 @@ function injectVisualStyles() {
       color: #dbeafe;
       white-space: nowrap;
     }
+    .pat-sort-btn { width: 100%; display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; text-align: left; cursor: pointer; padding: 0; }
+    .pat-sort-icon { font-size: .85em; opacity: .55; }
+    .pat-sort-icon.active { opacity: 1; color: #6fd0a5; }
     .patrimonio-table tbody tr:nth-child(odd) td { background: rgba(255,255,255,0.018); }
     .patrimonio-table tbody tr:hover td { background: rgba(52, 211, 153, 0.08); }
     .patrimonio-table td {
@@ -216,6 +219,20 @@ function injectVisualStyles() {
   document.head.appendChild(style);
 }
 
+function renderThead(sortState) {
+  const thead = document.getElementById('patrimonioThead');
+  if (!thead) return;
+  thead.innerHTML = `<tr>
+    ${sortableTh(sortState, 'patrimonio', 'Patrimônio')}
+    ${sortableTh(sortState, 'regional', 'Regional')}
+    ${sortableTh(sortState, 'supervisao', 'Supervisão')}
+    ${sortableTh(sortState, 'funcionario', 'Funcionário')}
+    ${sortableTh(sortState, 'identificacao', 'Identificação')}
+    ${sortableTh(sortState, 'ultima_leitura', 'Última leitura')}
+    ${sortableTh(sortState, 'dias', 'Dias')}
+  </tr>`;
+}
+
 function getDiasInfo(row) {
   if (row?.dias_sem_leitura === null || row?.dias_sem_leitura === undefined || row?.dias_sem_leitura === '') {
     return { hasValue: false, value: null };
@@ -226,6 +243,37 @@ function getDiasInfo(row) {
 
 function getRegional(row) {
   return normalizeText(row.coordenacao) || 'Sem regional';
+}
+
+const SORT_COLUMNS = {
+  patrimonio: (row) => row.patrimonio_codigo || '',
+  regional: (row) => getRegional(row),
+  supervisao: (row) => row.supervisao || '',
+  funcionario: (row) => row.funcionario || '',
+  identificacao: (row) => row.identificacao || '',
+  ultima_leitura: (row) => row.ultima_leitura || '',
+  dias: (row) => { const info = getDiasInfo(row); return info.hasValue ? info.value : -1; },
+};
+
+function sortIcon(sortState, column) {
+  if (sortState.column !== column) return '<span class="pat-sort-icon">↕</span>';
+  return `<span class="pat-sort-icon active">${sortState.direction === 'asc' ? '↑' : '↓'}</span>`;
+}
+
+function sortableTh(sortState, column, label) {
+  return `<th><button class="pat-sort-btn" type="button" data-sort-column="${escapeHtml(column)}">${escapeHtml(label)} ${sortIcon(sortState, column)}</button></th>`;
+}
+
+function sortRows(rows, sortState) {
+  const getValue = SORT_COLUMNS[sortState.column];
+  if (!getValue) return rows;
+  const factor = sortState.direction === 'desc' ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const av = getValue(a);
+    const bv = getValue(b);
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * factor;
+    return String(av).localeCompare(String(bv), 'pt-BR', { numeric: true, sensitivity: 'base' }) * factor;
+  });
 }
 
 function toCsv(rows) {
@@ -703,16 +751,7 @@ export function renderContent(content) {
         <div class="table-shell">
           <div class="table-scroll-x">
             <table class="patrimonio-table">
-              <thead>
-                <tr>
-                  <th>Patrimônio</th>
-                  <th>Regional</th>
-                  <th>Supervisão</th>
-                  <th>Funcionário</th>
-                  <th>Identificação</th>
-                  <th>Última leitura</th>
-                  <th>Dias</th>
-                </tr>
+              <thead id="patrimonioThead">
               </thead>
               <tbody id="patrimonioRows">
                 <tr><td colspan="7">Carregando...</td></tr>
@@ -727,8 +766,23 @@ export function renderContent(content) {
   const state = {
     allRows: [],
     filteredRows: [],
-    page: 1
+    page: 1,
+    sort: { column: '', direction: 'asc' }
   };
+
+  renderThead(state.sort);
+
+  document.getElementById('patrimonioThead')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-sort-column]');
+    if (!btn) return;
+    const column = btn.dataset.sortColumn;
+    state.sort = {
+      column,
+      direction: state.sort.column === column && state.sort.direction === 'asc' ? 'desc' : 'asc'
+    };
+    renderThead(state.sort);
+    applyAndRender();
+  });
 
   const readFilters = () => ({
     coordenacao: document.getElementById('fCoordenacao')?.value || '',
@@ -739,7 +793,7 @@ export function renderContent(content) {
   });
 
   const applyAndRender = () => {
-    state.filteredRows = applyFilters(state.allRows, readFilters());
+    state.filteredRows = sortRows(applyFilters(state.allRows, readFilters()), state.sort);
     state.page = updatePagination(state.filteredRows.length, state.page);
     renderTableRows(state.filteredRows, state.page);
     updateSummary(state.filteredRows);

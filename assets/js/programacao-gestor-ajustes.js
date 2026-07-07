@@ -134,10 +134,17 @@ function renderIdle() {
 
 async function marcarPendentesComoAtender(supervisao) {
   if (!supervisao) return;
+  // Só promove O.S. que o agente confirmou recentemente como ainda presentes no relatório
+  // (updated_at recente). Sem esse filtro, uma O.S. já fechada na origem — mas que ficou
+  // "presa" em operacional_os porque o scraping do agente veio incompleto e a limpeza
+  // automática foi pulada (ver grm-sync-operacional-os.js) — tinha o updated_at "relançado"
+  // por este UPDATE e passava a parecer confirmada de novo, mesmo fechada.
+  const limiteRecente = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
   const { error } = await supabase
     .from('operacional_os')
     .update({ status_gestor: 'ATENDER', updated_at: new Date().toISOString() })
     .eq('supervisao', supervisao)
+    .gte('updated_at', limiteRecente)
     .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR');
   if (error) console.warn('[programacao] não foi possível preparar O.S. como ATENDER', error);
 }
