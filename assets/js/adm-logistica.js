@@ -1645,22 +1645,29 @@ export async function renderContent(content) {
   }
 
 
+  // Mesmo risco de chamada concorrente duplicada do loadOsLog (chamada direta no boot +
+  // condicional em renderTabs quando a aba 'abertura_os' já vem selecionada pela hash).
+  let aberturaOsInflight = null;
   async function loadAberturaOs() {
-    const list = document.getElementById('aberturaOsList');
-    if (list) list.innerHTML = '<div class="log-empty">Carregando solicitações de abertura...</div>';
-    const { data, error } = await supabase
-      .from('logistica_abertura_os')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1000);
-    state.aberturaOsLoaded = true;
-    if (error) {
-      state.aberturaOs = [];
-      if (list) list.innerHTML = `<div class="log-empty">${esc(error.message)}. Rode o SQL de abertura de OS no Supabase.</div>`;
-      return;
-    }
-    state.aberturaOs = safeArray(data);
-    renderAberturaOs();
+    if (aberturaOsInflight) return aberturaOsInflight;
+    aberturaOsInflight = (async () => {
+      const list = document.getElementById('aberturaOsList');
+      if (list) list.innerHTML = '<div class="log-empty">Carregando solicitações de abertura...</div>';
+      const { data, error } = await supabase
+        .from('logistica_abertura_os')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      state.aberturaOsLoaded = true;
+      if (error) {
+        state.aberturaOs = [];
+        if (list) list.innerHTML = `<div class="log-empty">${esc(error.message)}. Rode o SQL de abertura de OS no Supabase.</div>`;
+        return;
+      }
+      state.aberturaOs = safeArray(data);
+      renderAberturaOs();
+    })();
+    try { return await aberturaOsInflight; } finally { aberturaOsInflight = null; }
   }
 
   function renderAberturaOs() {
@@ -1714,24 +1721,38 @@ export async function renderContent(content) {
     el.feedback.textContent = `O.S. ${numero} vinculada à solicitação e liberada para o Gestor.`;
   }
 
+  // renderTabs() já chama loadOsLog() quando a aba inicial é 'os' (padrão), e o boot da
+  // página também chama loadOsLog() direto pra pré-carregar essa aba independente de qual
+  // esteja ativa -- as duas rodavam em paralelo (osLogLoaded só vira true depois do await,
+  // tarde demais pra bloquear a 2a chamada), duplicando a consulta e piorando o
+  // congestionamento de conexões concorrentes na carga inicial. Guard reusa a mesma chamada.
+  let osLogInflight = null;
   async function loadOsLog() {
-    const meta = document.getElementById('osLogMeta');
-    const list = document.getElementById('osLogList');
-    if (meta) meta.textContent = 'Carregando...';
-    const { data, error } = await supabase
-      .from('operacional_os')
-      .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,embarcado,status_gestor,observacao_logistica')
-      .or('status_gestor.eq.FINALIZAR,observacao_logistica.ilike.KG solicitado*')
-      .order('data_os', { ascending: false })
-      .limit(1000);
-    state.osLog = safeArray(data);
-    state.osLogLoaded = true;
-    const finalizarCount = state.osLog.filter((r) => String(r.status_gestor || '') === 'FINALIZAR').length;
-    const kgCount = state.osLog.filter((r) => String(r.observacao_logistica || '').startsWith('KG solicitado')).length;
-    if (meta) meta.textContent = `${finalizarCount} para finalizar · ${kgCount} aumento de saldo`;
-    if (error) { if (list) list.innerHTML = `<div class="log-empty">${esc(error.message)}</div>`; return; }
-    renderOsLog();
-    document.getElementById('osLogReload')?.addEventListener('click', () => { state.osLogLoaded = false; loadOsLog(); });
+    if (osLogInflight) return osLogInflight;
+    osLogInflight = (async () => {
+      const meta = document.getElementById('osLogMeta');
+      const list = document.getElementById('osLogList');
+      if (meta) meta.textContent = 'Carregando...';
+      const { data, error } = await supabase
+        .from('operacional_os')
+        .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,embarcado,status_gestor,observacao_logistica')
+        .or('status_gestor.eq.FINALIZAR,observacao_logistica.ilike.KG solicitado*')
+        .order('data_os', { ascending: false })
+        .limit(1000);
+      state.osLog = safeArray(data);
+      state.osLogLoaded = true;
+      const finalizarCount = state.osLog.filter((r) => String(r.status_gestor || '') === 'FINALIZAR').length;
+      const kgCount = state.osLog.filter((r) => String(r.observacao_logistica || '').startsWith('KG solicitado')).length;
+      if (meta) meta.textContent = `${finalizarCount} para finalizar · ${kgCount} aumento de saldo`;
+      if (error) { if (list) list.innerHTML = `<div class="log-empty">${esc(error.message)}</div>`; return; }
+      renderOsLog();
+      const reloadBtn = document.getElementById('osLogReload');
+      if (reloadBtn && !reloadBtn.dataset.osLogReloadBound) {
+        reloadBtn.dataset.osLogReloadBound = '1';
+        reloadBtn.addEventListener('click', () => { state.osLogLoaded = false; loadOsLog(); });
+      }
+    })();
+    try { return await osLogInflight; } finally { osLogInflight = null; }
   }
 
   function renderOsLog() {
