@@ -1525,14 +1525,20 @@ export function renderContent(content, userContext) {
 
 
   function tabFromHash() {
-    const tab = String(window.location.hash || '').replace(/^#/, '').toLowerCase();
+    const tab = String(window.location.hash || '').replace(/^#/, '').split('?')[0].toLowerCase();
     return ['dashboard', 'fluxo', 'importar', 'config', 'detalhes', 'despesas', 'pagamentos', 'notas-fiscais'].includes(tab) ? tab : 'dashboard';
+  }
+
+  function payModeFromHash() {
+    const query = String(window.location.hash || '').split('?')[1] || '';
+    return new URLSearchParams(query).get('modo') || 'adiantamentos';
   }
 
   function setTab(tab) {
     document.querySelectorAll('.fin-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
     document.querySelectorAll('.fin-panel').forEach((panel) => panel.classList.remove('active'));
     document.getElementById(`tab-${tab}`)?.classList.add('active');
+    if (tab === 'despesas') setPayMode(payModeFromHash());
     if (tab === 'pagamentos') loadSetorPagamentos();
     if (tab === 'dashboard') loadDashboardData();
     if (tab === 'notas-fiscais' && !state.notasFiscaisLoaded) loadNotasFiscais();

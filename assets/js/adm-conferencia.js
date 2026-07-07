@@ -31,9 +31,11 @@ const state = {
   auditoria: [],
   resultado: [],
   uber: [],
+  uberKpi: null,
   loading: false,
   sort: {
     despesas: { column: 'colaborador', direction: 'asc' },
+    uber: { column: 'data', direction: 'desc' },
   },
   filters: {
     inicio: '',
@@ -115,17 +117,24 @@ function statusChip(status) {
   return `<span class="conf-chip conf-chip-${STATUS_CLASS[key] || 'neutral'}">${escapeHtml(STATUS_LABELS[key] || status || 'Pendente')}</span>`;
 }
 
-function sortIcon(column) {
-  const current = state.sort.despesas;
+function sortIcon(column, kind = 'despesas') {
+  const current = state.sort[kind] || state.sort.despesas;
   if (current.column !== column) return '<span class="conf-sort-icon">↕</span>';
   return `<span class="conf-sort-icon active">${current.direction === 'asc' ? '↑' : '↓'}</span>`;
 }
 
-function sortableTh(column, label) {
-  return `<th><button class="conf-sort-btn" type="button" data-sort-column="${escapeHtml(column)}">${escapeHtml(label)} ${sortIcon(column)}</button></th>`;
+function sortableTh(column, label, kind = 'despesas') {
+  return `<th><button class="conf-sort-btn" type="button" data-sort-column="${escapeHtml(column)}" data-sort-kind="${escapeHtml(kind)}">${escapeHtml(label)} ${sortIcon(column, kind)}</button></th>`;
 }
 
-function getSortValue(row, column) {
+function getSortValue(row, column, kind = 'despesas') {
+  if (kind === 'uber') {
+    if (column === 'data') return row.data_solicitacao_local || row.data_corrida || row.data || '';
+    if (column === 'colaborador') return row.nome_colaborador || row.nome || '';
+    if (column === 'regional') return row.supervisao || row.regional || '';
+    if (column === 'valor') return asNumber(row.valor || row.preco_liquido);
+    if (column === 'gps') return hasUberCoordinates(row) ? 1 : 0;
+  }
   if (column === 'colaborador') return row.colaborador || row.nome_colaborador || '';
   if (column === 'regional') return getRegional(row);
   if (column === 'status') return STATUS_LABELS[getStatus(row)] || getStatus(row);
@@ -133,14 +142,16 @@ function getSortValue(row, column) {
 }
 
 function sortRows(rows, kind = 'despesas') {
-  if (kind !== 'despesas') return rows;
-  const { column, direction } = state.sort.despesas;
+  if (!state.sort[kind]) return rows;
+  const { column, direction } = state.sort[kind];
   const factor = direction === 'desc' ? -1 : 1;
 
   return [...rows].sort((a, b) => {
-    const av = normalizeText(getSortValue(a, column));
-    const bv = normalizeText(getSortValue(b, column));
-    const result = av.localeCompare(bv, 'pt-BR', { numeric: true, sensitivity: 'base' });
+    const av = getSortValue(a, column, kind);
+    const bv = getSortValue(b, column, kind);
+    const result = typeof av === 'number' && typeof bv === 'number'
+      ? av - bv
+      : normalizeText(av).localeCompare(normalizeText(bv), 'pt-BR', { numeric: true, sensitivity: 'base' });
     if (result !== 0) return result * factor;
 
     const ad = String(a.data_referencia || '');
@@ -298,6 +309,7 @@ function renderStyles() {
       .conf-note{width:100%;min-height:74px;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#15152a;color:#e2e2f0;padding:12px;resize:vertical}.conf-feedback{min-height:20px;margin-top:10px;color:var(--muted)}
       .conf-subsection-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin:0 0 12px}.conf-subsection-head h4{margin:0;color:#f8fafc;font-size:17px;font-weight:900}.conf-subsection-head p{margin:4px 0 0;color:var(--muted);font-size:13px}.conf-counter{display:inline-flex;align-items:center;white-space:nowrap;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#e2e2f0;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:900}.conf-counter-ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.30);color:#bbf7d0}.conf-conferidos-box{margin-top:22px;padding:16px;border:1px solid rgba(34,197,94,.22);border-radius:20px;background:rgba(4,24,18,.58)}.conf-table-wrap-conferidos{border-color:rgba(34,197,94,.24)}.conf-row-conferido{background:rgba(34,197,94,.045)}
       .conf-uber-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px;padding:12px 14px;border:1px solid rgba(111,208,165,.18);border-radius:18px;background:rgba(15,23,42,.48)}.conf-uber-tools p{margin:4px 0 0;color:var(--muted);font-size:12px}.conf-uber-actions{display:flex;gap:10px;flex-wrap:wrap}.conf-gps-ok{font-size:12px;color:#bbf7d0;font-weight:800}.conf-gps-missing{font-size:12px;color:#fde68a;font-weight:800}
+      .conf-uber-kpis{display:grid;grid-template-columns:repeat(5,minmax(110px,1fr));gap:10px;margin:0 0 12px}.conf-uber-kpi{cursor:pointer;text-align:left;border:1px solid var(--line);background:rgba(8,22,17,.68);border-radius:16px;padding:12px 14px;color:#eef7f2}.conf-uber-kpi strong{display:block;font-size:24px;font-weight:900;color:#dcfce7}.conf-uber-kpi span{display:block;margin-top:2px;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}.conf-uber-kpi:hover{border-color:rgba(111,208,165,.4)}.conf-uber-kpi.active{border-color:#3fa878;background:rgba(22,101,52,.28)}.conf-uber-kpi.active strong{color:#86efac}
       @media(max-width:760px){.conf-hero,.conf-panel-head{display:block}.conf-filters{flex-direction:column}.conf-field,.conf-field-sm{flex:1 1 100%}.conf-actions{justify-content:flex-start;margin-top:12px}}
     </style>
   `;
@@ -859,12 +871,35 @@ async function geocodeUberBatch(onlyId = null) {
   setFeedback(`Conversão GPS concluída. Atualizadas: ${ok}. Não localizadas/erro: ${fail}.`);
 }
 
+function uberKpiCard(key, label, count) {
+  const isActive = (state.uberKpi || '') === key;
+  return `<button class="conf-uber-kpi ${isActive ? 'active' : ''}" type="button" data-uber-kpi="${escapeHtml(key)}"><strong>${count}</strong><span>${escapeHtml(label)}</span></button>`;
+}
+
 function renderUberTable() {
-  const rows = applyLocalFilters(state.uber, 'uber');
+  const baseRows = sortRows(applyLocalFilters(state.uber, 'uber'), 'uber');
+  const kpiCounts = {
+    SEM_GPS: baseRows.filter(needsUberGeocoding).length,
+    ATENCAO: baseRows.filter((row) => getUberClass(row) === 'ATENCAO').length,
+    VALIDADA: baseRows.filter((row) => getUberClass(row) === 'VALIDADA').length,
+    CAIXA_COLABORADOR: baseRows.filter((row) => getUberClass(row) === 'CAIXA_COLABORADOR').length,
+  };
+  const rows = !state.uberKpi ? baseRows
+    : state.uberKpi === 'SEM_GPS' ? baseRows.filter(needsUberGeocoding)
+    : baseRows.filter((row) => getUberClass(row) === state.uberKpi);
+  const kpiRow = `
+    <div class="conf-uber-kpis">
+      ${uberKpiCard('', 'Total', baseRows.length)}
+      ${uberKpiCard('SEM_GPS', 'Sem GPS', kpiCounts.SEM_GPS)}
+      ${uberKpiCard('ATENCAO', 'Atenção', kpiCounts.ATENCAO)}
+      ${uberKpiCard('VALIDADA', 'Validadas', kpiCounts.VALIDADA)}
+      ${uberKpiCard('CAIXA_COLABORADOR', 'Caixa colaborador', kpiCounts.CAIXA_COLABORADOR)}
+    </div>`;
   const target = document.getElementById('conf-table');
   const pendingGps = rows.filter(needsUberGeocoding).length;
   if (!rows.length) {
     target.innerHTML = `
+      ${kpiRow}
       <div class="conf-uber-tools">
         <div>
           <strong>Sincronização Uber</strong>
@@ -881,6 +916,7 @@ function renderUberTable() {
     return;
   }
   target.innerHTML = `
+    ${kpiRow}
     <div class="conf-uber-tools">
       <div>
         <strong>GPS das corridas</strong>
@@ -895,7 +931,16 @@ function renderUberTable() {
     </div>
     <div class="conf-table-wrap">
       <table class="conf-table" style="min-width:1540px">
-        <thead><tr><th>Data</th><th>Colaborador</th><th>Regional</th><th>Partida</th><th>Destino</th><th>Valor</th><th>Distância</th><th>GPS</th><th>Validação</th><th>Motivo</th><th>Ações</th></tr></thead>
+        <thead><tr>
+          ${sortableTh('data', 'Data', 'uber')}
+          ${sortableTh('colaborador', 'Colaborador', 'uber')}
+          ${sortableTh('regional', 'Regional', 'uber')}
+          <th>Partida</th><th>Destino</th>
+          ${sortableTh('valor', 'Valor', 'uber')}
+          <th>Distância</th>
+          ${sortableTh('gps', 'GPS', 'uber')}
+          <th>Validação</th><th>Motivo</th><th>Ações</th>
+        </tr></thead>
         <tbody>
           ${rows.map((row) => `
             <tr>
@@ -1267,6 +1312,16 @@ function normalizeUberTime(value) {
   return raw.slice(0, 20);
 }
 
+function uberUtcToLocal(dateISO, timeStr) {
+  if (!dateISO) return { date: dateISO, time: timeStr };
+  const time = timeStr || '00:00:00';
+  const utcDate = new Date(`${dateISO}T${time}Z`);
+  if (Number.isNaN(utcDate.getTime())) return { date: dateISO, time: timeStr };
+  // Brasil não observa mais horário de verão desde 2019: offset de Brasília é UTC-3 fixo.
+  const localDate = new Date(utcDate.getTime() - 3 * 60 * 60 * 1000);
+  return { date: localDate.toISOString().slice(0, 10), time: localDate.toISOString().slice(11, 19) };
+}
+
 function makeUberImportHash(row) {
   return [
     row.data_solicitacao_local,
@@ -1282,15 +1337,16 @@ function makeUberImportHash(row) {
 function mapUberCsvRow(row, fileName = '') {
   const nome = String(row.Nome || '').trim();
   const sobrenome = String(row.Sobrenome || '').trim();
-  const data = uberCsvDateToISO(row['Data da solicitação (UTC)']);
-  const hora = normalizeUberTime(row['Hora da solicitação (UTC)']);
+  const dataUtc = uberCsvDateToISO(row['Data da solicitação (UTC)']);
+  const horaUtc = normalizeUberTime(row['Hora da solicitação (UTC)']);
+  const { date: data, time: hora } = uberUtcToLocal(dataUtc, horaUtc);
   const valor = asNumber(row['Valor total: BRL']);
   const payload = {
     external_id: null,
     import_hash: null,
     data_solicitacao_local: data,
     hora_solicitacao_local: hora,
-    hora_solicitacao_utc: hora,
+    hora_solicitacao_utc: horaUtc,
     nome_colaborador: [nome, sobrenome].filter(Boolean).join(' ').trim(),
     nome,
     regional: row.Cidade || null,
@@ -1573,6 +1629,7 @@ function bindEvents() {
 
   document.getElementById('conf-clear')?.addEventListener('click', () => {
     state.filters = { inicio: todayISO(), fim: todayISO(), regional: '', colaborador: '', status: '' };
+    state.uberKpi = null;
     document.getElementById('conf-inicio').value = state.filters.inicio;
     document.getElementById('conf-fim').value = state.filters.fim;
     document.getElementById('conf-colaborador').value = '';
@@ -1600,12 +1657,21 @@ function bindEvents() {
     const sortBtn = event.target.closest('[data-sort-column]');
     if (sortBtn) {
       const column = sortBtn.dataset.sortColumn;
-      const current = state.sort.despesas;
-      state.sort.despesas = {
+      const kind = sortBtn.dataset.sortKind || 'despesas';
+      const current = state.sort[kind] || { column: '', direction: 'asc' };
+      state.sort[kind] = {
         column,
         direction: current.column === column && current.direction === 'asc' ? 'desc' : 'asc',
       };
       renderActiveTab();
+      return;
+    }
+
+    const kpiBtn = event.target.closest('[data-uber-kpi]');
+    if (kpiBtn) {
+      const key = kpiBtn.dataset.uberKpi || '';
+      state.uberKpi = state.uberKpi === key || !key ? null : key;
+      renderUberTable();
       return;
     }
 
