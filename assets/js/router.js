@@ -184,7 +184,14 @@ function renderRoute(routeName, entry, mod, userContext) {
   const content = document.getElementById('pageContent');
   if (content && typeof mod.renderContent === 'function') {
     content.innerHTML = '';
-    mod.renderContent(content, userContext);
+    // renderContent não é aguardado aqui de propósito (navegação suave não pode travar
+    // no boot da próxima página), mas isso significa que um erro/rejeição dentro dela
+    // deixava #pageContent em branco pra sempre, sem nenhum aviso — o innerHTML='' acima
+    // já limpou a página anterior e nada preenchia o lugar se renderContent rejeitasse.
+    Promise.resolve(mod.renderContent(content, userContext)).catch((error) => {
+      console.error('[router] Falha ao renderizar a página:', error);
+      content.innerHTML = `<section class="card mt-16"><div class="log-empty">Erro ao carregar esta página: ${String(error?.message || error)}. Tente recarregar.</div></section>`;
+    });
   }
 
   window.scrollTo(0, 0);
