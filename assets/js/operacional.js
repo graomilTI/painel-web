@@ -122,6 +122,12 @@ import { supabase } from './supabaseClient.js';
     comparativo: [], supervisaoComparativo: '',
     map: null, mapEl: null, tileLayer: null, layer: null, routeLayer: null, rotaRealCache: new Map(), drawToken: 0,
     rotaSelecionadaReal: null, alternativaComparativo: null, alternativaToken: 0,
+    // hospedagemParaPonto/candidatosProximos só dependem do ponto, não do colaborador nem da OS —
+    // sem cache, build() recalculava os dois pra cada par (OS × colaborador), varrendo
+    // st.hoteisComCoord (~1000 linhas) de novo a cada vez. Com ~1000 OS abertas × ~2200
+    // colaboradores isso passava de 2 bilhões de iterações; cacheado por ponto, cai pra uma vez
+    // por ponto distinto (dezenas/poucas centenas). Limpo no início de cada build().
+    hospedagemCache: new Map(), candidatosProximosCache: new Map(),
   };
 
   const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -422,10 +428,16 @@ import { supabase } from './supabaseClient.js';
   }
 
   function hospedagemParaPonto(ponto) {
-    const alojamento = alojamentoParaPonto(ponto);
-    if (alojamento) return { tipo: 'alojamento', nome: alojamento.nome, custoDia: 0 };
+    if (st.hospedagemCache.has(ponto.__key)) return st.hospedagemCache.get(ponto.__key);
 
-    if (!ponto.temCoord) return null;
+    const alojamento = alojamentoParaPonto(ponto);
+    if (alojamento) {
+      const resultado = { tipo: 'alojamento', nome: alojamento.nome, custoDia: 0 };
+      st.hospedagemCache.set(ponto.__key, resultado);
+      return resultado;
+    }
+
+    if (!ponto.temCoord) { st.hospedagemCache.set(ponto.__key, null); return null; }
     // Prioriza hotel com diária real cadastrada; na falta, usa o hotel real mais próximo sem
     // diária (temos a localização, só não o preço) com estimativa — melhor que ignorar um hotel
     // que existe de verdade e cair direto no fallback genérico de "sem hotel cadastrado".
@@ -441,7 +453,9 @@ import { supabase } from './supabaseClient.js';
         melhorSemPreco = { tipo: 'hotel', nome: h.nome, custoDia: EST_ESTADIA_FALLBACK.HOTEL, distKm: d, estimado: true };
       }
     }
-    return melhorComPreco || melhorSemPreco;
+    const resultado = melhorComPreco || melhorSemPreco;
+    st.hospedagemCache.set(ponto.__key, resultado);
+    return resultado;
   }
 
   // Distância aproximada de um ponto até um segmento (trajeto reto entre dois pontos), por
@@ -583,10 +597,13 @@ import { supabase } from './supabaseClient.js';
   // mede escassez real de mão de obra na região, não a disponibilidade momentânea no backlog.
   // Usado só pra ordenar o build() (atender primeiro quem tem menos opção), não como filtro.
   function candidatosProximos(ponto) {
-    return st.colaboradores.reduce((n, c) => {
+    if (st.candidatosProximosCache.has(ponto.__key)) return st.candidatosProximosCache.get(ponto.__key);
+    const n = st.colaboradores.reduce((acc, c) => {
       const d = distColabPonto(c, ponto);
-      return n + (Number.isFinite(d) && d <= DIST_MAX_DESLOCAMENTO_DIARIO_KM ? 1 : 0);
+      return acc + (Number.isFinite(d) && d <= DIST_MAX_DESLOCAMENTO_DIARIO_KM ? 1 : 0);
     }, 0);
+    st.candidatosProximosCache.set(ponto.__key, n);
+    return n;
   }
 
   function escolherColaborador(os, ponto, usos, fallback = false) {
@@ -815,6 +832,8 @@ import { supabase } from './supabaseClient.js';
   }
 
   function build() {
+    st.hospedagemCache.clear();
+    st.candidatosProximosCache.clear();
     const pontosPorChave = new Map(st.pontos.map(p => [p.__key, p]));
     const usos = new Map();
     st.semAssociacao = [];
