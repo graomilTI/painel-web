@@ -23,10 +23,24 @@ export async function getSession() {
   return data.session;
 }
 
+// Várias telas chamam getCurrentUser() de forma concorrente logo no carregamento
+// (renderContent da própria página + activityLogger + módulos extras). Chamadas
+// simultâneas a supabase.auth.getUser() disputam o lock interno de refresh de
+// token do supabase-js e podem travar indefinidamente (visto no Painel de
+// Logística: duas chamadas a getUser() penduradas em "pending" e a página
+// nunca chegava a renderizar). Uma única chamada em andamento é compartilhada
+// por todos os chamadores concorrentes.
+let currentUserInflight = null;
+
 export async function getCurrentUser() {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  return data.user;
+  if (currentUserInflight) return currentUserInflight;
+  currentUserInflight = supabase.auth.getUser()
+    .then(({ data, error }) => {
+      if (error) throw error;
+      return data.user;
+    })
+    .finally(() => { currentUserInflight = null; });
+  return currentUserInflight;
 }
 
 function normalizeContextPayload(data) {
