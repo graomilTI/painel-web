@@ -10,7 +10,6 @@ export const MENU_CONFIG = [
     grupo: "INÍCIO",
     itens: [
       item("dashboard", "Dashboard", "dashboard", ["DASHBOARD"]),
-      item("adm_app", "App ADM", "adm-app", ["ADM_APP", "COMPRAS_ADM", "COMPRAS_ESTOQUE", "ESTOQUE", "ALMOXARIFADO", "LOGISTICA_ADM", "PATRIMONIO_ADM", "ADM_HOTEL", "FROTAS_MULTAS", "FROTAS_RASTREADORES", "ADMIN_AUDITORIA", "ADMIN_USUARIOS", "USUARIOS_E_ACESSOS", "RH_PLANTAO"]),
       item("notificacoes", "Notificações", "notificacoes", ["NOTIFICACOES"]),
       item("historico_geral", "Histórico Geral", "historico", ["HISTORICO_GERAL"])
     ]
@@ -25,7 +24,6 @@ export const MENU_CONFIG = [
       item("logistica_gestor", "Logística", "logistica", ["LOGISTICA"]),
       item("patrimonios_gestor", "Patrimônios", "patrimonios", ["PATRIMONIOS"]),
       item("contato_cliente", "Contato Cliente", "contato-cliente", ["CONTATO_CLIENTE"]),
-      item("gestor_app", "App Gestor", "gestor-app", ["GESTOR_APP"]),
       item("historico_producao", "Histórico Produção", "consultar-producao", ["RELATORIOS_PROD", "CONSULTAR_PRODUCAO", "PRODUCAO_HISTORICO", "GESTOR_APP", "PROGRAMACAO", "DESEMPENHO"])
     ]
   },
@@ -37,8 +35,7 @@ export const MENU_CONFIG = [
       item("conferencia_deslocamento", "Deslocamento", "conferencia-deslocamento", ["CONFERENCIA_DESLOCAMENTO", "ADM_CONFERENCIA"]),
       item("conferencia_uber", "Uber · Conferência", "uber", ["CONFERENCIA_UBER", "UBER"]),
       item("distribuir_os", "Distribuir O.S", "distribuir-os", ["DISTRIBUIR_OS", "CONFERENCIA_DISTRIBUIR_OS"]),
-      item("termos_celular", "Termo Celular", "termos#celular", ["TERMOS_CELULAR", "TERMOS"]),
-      item("termos_veiculos", "Termo Veículos", "termos#veiculos", ["TERMOS_VEICULOS"])
+      item("termos", "Termos", "termos", ["TERMOS_CELULAR", "TERMOS_VEICULOS", "TERMOS"])
     ]
   },
 

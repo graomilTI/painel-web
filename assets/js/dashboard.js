@@ -714,7 +714,7 @@ function renderGestorDashboard(container, data) {
               <div class="db-os-label">Total</div>
             </div>
           </div>
-          <a class="db-os-link" href="${buildPanelHref('os')}">Abrir módulo de OS →</a>
+          <a class="db-os-link" href="${buildPanelHref('programacao')}">Abrir módulo de OS →</a>
         </div>
       </div>
     </div>

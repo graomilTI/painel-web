@@ -374,7 +374,6 @@ function renderShell(content) {
         <div class="conf-tabs">
           <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
           <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
-          <button class="conf-tab" data-tab="resultado" type="button">Resultado diário</button>
           <button class="conf-tab" data-tab="uber" type="button">Uber</button>
         </div>
       </div>

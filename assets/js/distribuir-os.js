@@ -1,4 +1,3 @@
-import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
@@ -17,17 +16,6 @@ function brDate(value) { if (!value) return '-'; const raw = String(value).slice
 function dateKey(value) { return String(value || '').slice(0, 10); }
 function coordOf(row) { return row.coordenacao || row.coordenacao_os || row.regional || row.supervisao || '-'; }
 function safe(data) { return Array.isArray(data) ? data : []; }
-function excelDate(value) {
-  if (!value) return null;
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0,10);
-  if (typeof value === 'number') { const date = XLSX.SSF.parse_date_code(value); if (date) return `${date.y}-${String(date.m).padStart(2,'0')}-${String(date.d).padStart(2,'0')}`; }
-  const text = String(value).trim();
-  const dm = text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
-  if (dm) return `${dm[3].length === 2 ? '20' + dm[3] : dm[3]}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`;
-  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : null;
-}
-function pick(row, names) { const entries = Object.entries(row || {}); for (const n of names) { const key = normalize(n); const found = entries.find(([k]) => normalize(k) === key); if (found) return found[1]; } return null; }
 function onlyActiveColab(c) { if (!c || c.ativo === false) return false; const sit = normalize(c.situacao || ''); return !['NAO ATIVO','INATIVO','DESLIGADO','DEMITIDO'].some(s => sit.includes(s)); }
 function colabKey(c) { return String(c.colaborador_id || c.cpf || c.id || c.nome || '').replace(/\D/g,'') || String(c.id || c.nome || '').trim(); }
 function buscarColabPorNome(query, excludeKeys = new Set()) {
@@ -67,16 +55,13 @@ export async function renderContent(content) {
         <div class="field"><label>Coordenação</label><select id="distCoord" class="dist-input"></select></div>
         <div class="field"><label>Buscar</label><input id="distBusca" class="dist-input" type="text" placeholder="Colaborador, O.S., cliente, cidade..." /></div>
       </div>
-      <div class="dist-upload">
-        <div class="section-head" style="margin:0"><div><h3>Importar lista de O.S.</h3><p class="muted">Aceita a planilha padrão de O.S. operacional.</p></div><div><input id="distFile" type="file" accept=".xlsx,.xls,.csv" hidden /><button id="distPickFile" class="btn btn-primary" type="button">Selecionar arquivo</button></div></div>
-      </div>
       <div class="feedback mt-16" id="distFeedback">Carregando...</div>
     </section>
     <section class="grid-cards mt-16" id="distStats"></section>
     <section class="card mt-16"><div class="section-head"><div><h3>Fila de distribuição</h3><p class="muted">Somente O.S. marcadas como Atender entram na distribuição.</p></div><button id="distReload" class="btn btn-secondary" type="button">↻ Atualizar</button></div><div id="distList"></div></section>
   `;
 
-  const el = { data: document.getElementById('distData'), coord: document.getElementById('distCoord'), busca: document.getElementById('distBusca'), feedback: document.getElementById('distFeedback'), stats: document.getElementById('distStats'), list: document.getElementById('distList'), reload: document.getElementById('distReload'), pick: document.getElementById('distPickFile'), file: document.getElementById('distFile') };
+  const el = { data: document.getElementById('distData'), coord: document.getElementById('distCoord'), busca: document.getElementById('distBusca'), feedback: document.getElementById('distFeedback'), stats: document.getElementById('distStats'), list: document.getElementById('distList'), reload: document.getElementById('distReload') };
   bind();
   await sincronizarListaOsDoAgente();
   await loadAll();
@@ -86,8 +71,6 @@ export async function renderContent(content) {
     el.coord.addEventListener('change', () => { state.filters.coordenacao = el.coord.value; render(); });
     el.busca.addEventListener('input', () => { state.filters.busca = el.busca.value.trim(); render(); });
     el.reload.addEventListener('click', loadAll);
-    el.pick.addEventListener('click', () => el.file.click());
-    el.file.addEventListener('change', importFile);
     el.list.addEventListener('click', onListClick);
     el.list.addEventListener('input', onAcInput);
     el.list.addEventListener('focusin', onAcFocusin);
@@ -298,52 +281,6 @@ export async function renderContent(content) {
     setTimeout(() => { const d = ac.querySelector('.dist-ac-list'); if (d) d.hidden = true; }, 180);
   }
 
-  async function limparDistribuicaoAnterior() {
-    // Deleta TODAS as OS — o CASCADE da FK apaga operacional_os_colaboradores automaticamente.
-    const { error } = await supabase
-      .from('operacional_os')
-      .delete()
-      .gte('created_at', '2000-01-01');
-    if (error) throw new Error(`Falha ao limpar lista anterior: ${error.message}`);
-
-    state.rows = [];
-    state.ajustadas = [];
-    state.atrib = [];
-  }
-
-  async function importFile() {
-    const file = el.file.files?.[0]; if (!file) return;
-    el.feedback.textContent = 'Lendo planilha...';
-    try {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-      const rawRows = json.map(mapImportRow).filter(r => r.numero_os);
-      if (!rawRows.length) throw new Error('Nenhuma O.S. encontrada na planilha.');
-      // Deduplica por numero_os (UNIQUE constraint) — mesma OS pode aparecer para vários colaboradores
-      const dedup = new Map();
-      for (const r of rawRows) dedup.set(r.numero_os, r);
-      const rows = [...dedup.values()];
-      el.feedback.textContent = 'Limpando Distribuição de O.S. anterior...';
-      await limparDistribuicaoAnterior();
-      el.feedback.textContent = 'Gravando nova Distribuição de O.S...';
-      for (let i = 0; i < rows.length; i += 500) {
-        const batch = rows.slice(i, i + 500);
-        const { error } = await supabase.from('operacional_os').insert(batch);
-        if (error) throw error;
-      }
-      el.feedback.textContent = `Importação concluída: ${rows.length} O.S. importadas (lista anterior substituída).`;
-      el.file.value = '';
-      await loadAll();
-    } catch (error) { console.error(error); el.feedback.textContent = error.message || 'Falha ao importar planilha.'; }
-  }
-
-  function mapImportRow(row) {
-    const numero = pick(row, ['O.S.', 'OS', 'O.S', 'Ordem de Serviço']);
-    const embarque = pick(row, ['Embarque', 'Ponto 1', 'Local Embarque']);
-    return { numero_os: String(numero || '').trim(), situacao: String(pick(row, ['Situação', 'Situacao']) || '').trim() || null, financeiro: String(pick(row, ['Financeiro']) || '').trim() || null, data_os: excelDate(pick(row, ['Data'])) || null, servico: String(pick(row, ['Serviço', 'Servico']) || '').trim() || null, cliente: String(pick(row, ['Cliente']) || '').trim() || null, embarque: String(embarque || '').trim() || null, destino: String(pick(row, ['Destino']) || '').trim() || null, supervisao: String(pick(row, ['Supervisão', 'Supervisao', 'Regional']) || '').trim() || null, contrato: String(pick(row, ['Contrato']) || '').trim() || null, produto: String(pick(row, ['Produto']) || '').trim() || null, lote: num(pick(row, ['Lote'])), embarcado: num(pick(row, ['Embarcado'])), remanescente: num(pick(row, ['Remanescente'])), status_gestor: null, status_conferencia: 'PENDENTE', raw: row, updated_at: new Date().toISOString() };
-  }
 }
 
 initProtectedPage('Distribuir O.S', renderContent);
