@@ -168,6 +168,11 @@ import { supabase } from './supabaseClient.js';
   function distColabPonto(c, p) { return km(lat(c), lng(c), lat(p), lng(p)) ?? Infinity; }
 
   function combustivelIdaVolta(distKmUmaVia) { return (Number(distKmUmaVia) || 0) * 2 / COMBUSTIVEL_KM_L * COMBUSTIVEL_PRECO_L; }
+  // Colaborador cadastrado (ativo) em Conferência > Deslocamento (programacao_veiculo_proprio) já
+  // é um fato confirmado, não uma suposição — usa tarifa própria de R$1,00/km rodado (ida+volta)
+  // pedida pelo usuário, em vez do combustível genérico usado quando não se sabe o meio de transporte.
+  const VEICULO_PROPRIO_RS_KM = 1;
+  function veiculoProprioIdaVolta(distKmUmaVia) { return (Number(distKmUmaVia) || 0) * 2 * VEICULO_PROPRIO_RS_KM; }
   function uberIdaVolta(distKmUmaVia) { return (Number(distKmUmaVia) || 0) * 2 * UBER_RS_KM; }
   // Fora do raio real de Uber/táxi, extrapolar a tarifa por km gera valores absurdos (ex.: 1000km
   // de distância vira ~R$13mil numa única rota). Além do raio, assume-se custo de carro (mais realista).
@@ -199,6 +204,10 @@ import { supabase } from './supabaseClient.js';
   }
 
   function colaboradorAtivo(c) { return norm(c.situacao) === 'ATIVO'; }
+  // Efetivo tem prioridade sobre Intermitente/Diarista no desempate entre candidatos praticamente
+  // equidistantes — pedido do usuário pra não mandar mão de obra avulsa pra rotas que dá pra
+  // cobrir com quadro fixo mais perto ou igualmente perto.
+  function pesoContrato(c) { return norm(c?.tipoContrato) === 'EFETIVO' ? 0 : 1; }
 
   function colKey(cpf, nome, extra) {
     const d = digits(cpf);
@@ -252,7 +261,7 @@ import { supabase } from './supabaseClient.js';
   async function loadColaboradores() {
     const [baseRaw, colRaw] = await Promise.all([
       sel('operacional_colaborador_base', '*', q => q.eq('ativo', true)),
-      sel('colaboradores', 'cpf,nome,situacao,cargo'),
+      sel('colaboradores', 'cpf,nome,situacao,cargo,tipo'),
     ]);
 
     const colPorCpf = new Map();
@@ -270,7 +279,9 @@ import { supabase } from './supabaseClient.js';
         // por proximidade contra quem de fato vai a campo). Só rejeita quando o cargo é
         // conhecido (cad existe) — sem cadastro casado em colaboradores, mantém como antes.
         if (cad && !norm(cad.cargo).startsWith('CLASSIFICADOR')) return null;
-        return { id: colKey(b.cpf, b.nome, `${b.cidade_base}|${b.uf_base}`), cpf, nome: b.nome || cad?.nome, latitude: b.latitude, longitude: b.longitude, cidade_base: b.cidade_base, uf_base: b.uf_base };
+        // tipo de contrato (colaboradores.tipo: Efetivo/Intermitente/Diarista) — usado pra
+        // priorizar Efetivo no desempate entre candidatos praticamente equidistantes.
+        return { id: colKey(b.cpf, b.nome, `${b.cidade_base}|${b.uf_base}`), cpf, nome: b.nome || cad?.nome, latitude: b.latitude, longitude: b.longitude, cidade_base: b.cidade_base, uf_base: b.uf_base, tipoContrato: cad?.tipo || '' };
       })
       .filter(c => c && c.nome && geo(c));
   }
@@ -505,7 +516,7 @@ import { supabase } from './supabaseClient.js';
     if (habitual?.tipo === 'UBER TAXI' || habitual?.tipo === 'UBER/TAXI') return { modo: 'uber', label: 'Uber/táxi', custoFn: uberOuCarroIdaVolta };
 
     if (st.veiculoProprioCpfs.has(c.cpf) || st.veiculoProprioNomes.has(norm(c.nome))) {
-      return { modo: 'reembolso', label: 'Veículo próprio (estimado)', custoFn: combustivelIdaVolta, estimado: true };
+      return { modo: 'reembolso', label: 'Veículo próprio (Conferência · Deslocamento)', custoFn: veiculoProprioIdaVolta };
     }
     // Sem modo habitual registrado nem veículo próprio marcado (61% dos classificadores ativos —
     // achado ao investigar um custo "exorbitante" pra uma rota curta): a suposição de Uber/táxi
@@ -639,7 +650,7 @@ import { supabase } from './supabaseClient.js';
         // repetida pra dezenas de OS, já que um empate exato de distância real é raríssimo.
         .sort((a, b) => {
           if (Math.abs(a.dist - b.dist) > DIST_TOLERANCIA_EMPATE_KM) return a.dist - b.dist;
-          return a.saldoAtual - b.saldoAtual || a.avaliacao.custoDia - b.avaliacao.custoDia || a.dist - b.dist;
+          return pesoContrato(a.c) - pesoContrato(b.c) || a.saldoAtual - b.saldoAtual || a.avaliacao.custoDia - b.avaliacao.custoDia || a.dist - b.dist;
         });
     }
 
