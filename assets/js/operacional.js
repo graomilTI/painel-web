@@ -1328,10 +1328,11 @@ import { supabase } from './supabaseClient.js';
     st.rotaSelecionadaReal = null;
     updateRotaRealStatus(root);
     const validas = base.filter(r => geo(r.colab) && r.ponto.temCoord);
+    let fallbackSelecionado = null;
     validas.forEach(r => {
       // Pontilhado (reta simplificada) só na rota do colaborador selecionado — desenhar em todas
       // poluía o mapa inteiro quando havia centenas de rotas sem rota real carregada ainda.
-      if (r.colab.id === colabSelecionadoId) drawFallbackRoute(L, r, true);
+      if (r.colab.id === colabSelecionadoId) fallbackSelecionado = drawFallbackRoute(L, r, true);
       bounds.push([lat(r.colab), lng(r.colab)], [r.ponto.lat, r.ponto.lng]);
     });
 
@@ -1350,6 +1351,12 @@ import { supabase } from './supabaseClient.js';
         if (real?.coords?.length) {
           realOk++;
           const sel = r.colab.id === colabSelecionadoId;
+          // Some o pontilhado assim que a rota real chega — senão as duas ficam sobrepostas
+          // no mapa pro resto do carregamento (parecia um bug de rota errada).
+          if (sel && fallbackSelecionado) {
+            st.routeLayer.removeLayer(fallbackSelecionado);
+            fallbackSelecionado = null;
+          }
           L.polyline(real.coords, { color: sel ? '#facc15' : '#22c55e', weight: sel ? 4 : 2, opacity: sel ? .95 : .35 }).addTo(st.routeLayer);
           if (sel && Number.isFinite(real.distanciaKm)) {
             st.rotaSelecionadaReal = { distanciaKm: real.distanciaKm, duracaoMin: real.duracaoMin, distanciaRetaKm: r.dist };
