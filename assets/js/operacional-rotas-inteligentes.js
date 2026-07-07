@@ -83,12 +83,13 @@ function patchDrawAllRoutes(source) {
     checarAlternativa(root);
     const validas = base.filter(r => geo(r.colab) && r.ponto.temCoord);
     const grupos = agruparRotasPorColaborador(validas);
+    const fallbackPorColab = new Map();
 
     grupos.forEach(grupo => {
       if (!grupo.length) return;
       const selected = grupo[0].colab.id === colabSelecionadoId;
       const estendida = grupo.some(r => r.rotaEstendida);
-      if (selected || estendida) drawFallbackRouteGroup(L, grupo, selected, estendida);
+      if (selected || estendida) fallbackPorColab.set(grupo[0].colab.id, drawFallbackRouteGroup(L, grupo, selected, estendida));
       bounds.push([lat(grupo[0].colab), lng(grupo[0].colab)]);
       grupo.forEach(r => bounds.push([r.ponto.lat, r.ponto.lng]));
     });
@@ -113,6 +114,13 @@ function patchDrawAllRoutes(source) {
           const estendida = grupo.some(r => r.rotaEstendida);
           const destaque = sel || (estendida && st.kpiFiltro === 'rota-estendida');
           const cor = estendida ? '#f97316' : (sel ? '#facc15' : '#22c55e');
+          // Some o pontilhado assim que a rota real chega — senão as duas ficam sobrepostas
+          // no mapa pro resto do carregamento (parecia um bug de rota errada).
+          const fallback = fallbackPorColab.get(grupo[0].colab.id);
+          if (fallback) {
+            st.routeLayer.removeLayer(fallback);
+            fallbackPorColab.delete(grupo[0].colab.id);
+          }
           L.polyline(real.coords, { color: cor, weight: destaque ? 4 : 2, opacity: destaque ? .95 : (estendida ? .5 : .32) }).addTo(st.routeLayer);
           if (sel && Number.isFinite(real.distanciaKm)) {
             let retaTotal = 0;
@@ -209,19 +217,30 @@ function patchSource(source, supabaseClientUrl) {
     out,
     `  // Carona só conta como custo zero se o ponto estiver a até 5km do trajeto de algum motorista
   // de frota até o embarque mais próximo dele — senão vira "carona fantasma" sem motorista real por perto.
+  // Resultado só depende do ponto (nunca do colaborador/OS) — cacheado por ponto.__key pelo mesmo
+  // motivo do hospedagemCache/candidatosProximosCache: sem isso, build() varria st.frotaTrajetos
+  // (amostragem de 12 pontos por trajeto) pra cada par OS×colaborador.
   function caronaDisponivelPara(ponto) {
     if (!ponto.temCoord || !st.frotaTrajetos?.length) return false;
-    return st.frotaTrajetos.some(t => distPontoTrajeto(ponto, t) <= RAIO_CARONA_KM);
+    if (st.caronaInfoCache.has(ponto.__key)) return !!st.caronaInfoCache.get(ponto.__key);
+    const disponivel = st.frotaTrajetos.some(t => distPontoTrajeto(ponto, t) <= RAIO_CARONA_KM);
+    st.caronaInfoCache.set(ponto.__key, disponivel);
+    return disponivel;
   }`,
     `  // Carona só conta como custo zero se o ponto estiver a até 5km do trajeto de algum motorista
   // de frota até o embarque mais próximo dele — senão vira "carona fantasma" sem motorista real por perto.
+  // Resultado só depende do ponto (nunca do colaborador/OS) — cacheado por ponto.__key pelo mesmo
+  // motivo do hospedagemCache/candidatosProximosCache: sem isso, build() varria st.frotaTrajetos
+  // (amostragem de 12 pontos por trajeto) pra cada par OS×colaborador.
   function caronaInfoPara(ponto) {
     if (!ponto.temCoord || !st.frotaTrajetos?.length) return null;
+    if (st.caronaInfoCache.has(ponto.__key)) return st.caronaInfoCache.get(ponto.__key);
     let melhor = null;
     for (const t of st.frotaTrajetos) {
       const d = distPontoTrajeto(ponto, t);
       if (d <= RAIO_CARONA_KM && (!melhor || d < melhor.distKm)) melhor = { ...t, distKm: d };
     }
+    st.caronaInfoCache.set(ponto.__key, melhor);
     return melhor;
   }`,
     'carona com placa'

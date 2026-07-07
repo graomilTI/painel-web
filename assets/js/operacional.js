@@ -127,7 +127,7 @@ import { supabase } from './supabaseClient.js';
     // st.hoteisComCoord (~1000 linhas) de novo a cada vez. Com ~1000 OS abertas × ~2200
     // colaboradores isso passava de 2 bilhões de iterações; cacheado por ponto, cai pra uma vez
     // por ponto distinto (dezenas/poucas centenas). Limpo no início de cada build().
-    hospedagemCache: new Map(), candidatosProximosCache: new Map(),
+    hospedagemCache: new Map(), candidatosProximosCache: new Map(), caronaInfoCache: new Map(),
   };
 
   const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -474,9 +474,15 @@ import { supabase } from './supabaseClient.js';
 
   // Carona só conta como custo zero se o ponto estiver a até 5km do trajeto de algum motorista
   // de frota até o embarque mais próximo dele — senão vira "carona fantasma" sem motorista real por perto.
+  // Resultado só depende do ponto (nunca do colaborador/OS) — cacheado por ponto.__key pelo mesmo
+  // motivo do hospedagemCache/candidatosProximosCache: sem isso, build() varria st.frotaTrajetos
+  // (amostragem de 12 pontos por trajeto) pra cada par OS×colaborador.
   function caronaDisponivelPara(ponto) {
     if (!ponto.temCoord || !st.frotaTrajetos?.length) return false;
-    return st.frotaTrajetos.some(t => distPontoTrajeto(ponto, t) <= RAIO_CARONA_KM);
+    if (st.caronaInfoCache.has(ponto.__key)) return !!st.caronaInfoCache.get(ponto.__key);
+    const disponivel = st.frotaTrajetos.some(t => distPontoTrajeto(ponto, t) <= RAIO_CARONA_KM);
+    st.caronaInfoCache.set(ponto.__key, disponivel);
+    return disponivel;
   }
 
   function modoColaborador(c, ponto) {
@@ -834,6 +840,7 @@ import { supabase } from './supabaseClient.js';
   function build() {
     st.hospedagemCache.clear();
     st.candidatosProximosCache.clear();
+    st.caronaInfoCache.clear();
     const pontosPorChave = new Map(st.pontos.map(p => [p.__key, p]));
     const usos = new Map();
     st.semAssociacao = [];
@@ -1328,10 +1335,11 @@ import { supabase } from './supabaseClient.js';
     st.rotaSelecionadaReal = null;
     updateRotaRealStatus(root);
     const validas = base.filter(r => geo(r.colab) && r.ponto.temCoord);
+    let fallbackSelecionado = null;
     validas.forEach(r => {
       // Pontilhado (reta simplificada) só na rota do colaborador selecionado — desenhar em todas
       // poluía o mapa inteiro quando havia centenas de rotas sem rota real carregada ainda.
-      if (r.colab.id === colabSelecionadoId) drawFallbackRoute(L, r, true);
+      if (r.colab.id === colabSelecionadoId) fallbackSelecionado = drawFallbackRoute(L, r, true);
       bounds.push([lat(r.colab), lng(r.colab)], [r.ponto.lat, r.ponto.lng]);
     });
 
@@ -1350,6 +1358,12 @@ import { supabase } from './supabaseClient.js';
         if (real?.coords?.length) {
           realOk++;
           const sel = r.colab.id === colabSelecionadoId;
+          // Some o pontilhado assim que a rota real chega — senão as duas ficam sobrepostas
+          // no mapa pro resto do carregamento (parecia um bug de rota errada).
+          if (sel && fallbackSelecionado) {
+            st.routeLayer.removeLayer(fallbackSelecionado);
+            fallbackSelecionado = null;
+          }
           L.polyline(real.coords, { color: sel ? '#facc15' : '#22c55e', weight: sel ? 4 : 2, opacity: sel ? .95 : .35 }).addTo(st.routeLayer);
           if (sel && Number.isFinite(real.distanciaKm)) {
             st.rotaSelecionadaReal = { distanciaKm: real.distanciaKm, duracaoMin: real.duracaoMin, distanciaRetaKm: r.dist };
