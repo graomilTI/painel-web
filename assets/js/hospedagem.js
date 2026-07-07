@@ -156,10 +156,9 @@ export function renderContent(content, userContext) {
         <div class="hosp-grp">
           <div class="hosp-grp-h">Período <span class="hosp-diarias-badge" id="diariasLabel" style="margin-left:auto;text-transform:none;letter-spacing:0">1 diária prevista</span></div>
           <div class="hosp-grid">
-            <div class="hosp-field col-3"><label for="checkin">Check-in *</label><input id="checkin" type="date" required /></div>
-            <div class="hosp-field col-3"><label for="checkout">Check-out *</label><input id="checkout" type="date" required /></div>
-            <div class="hosp-field col-3"><label for="horario">Chegada</label><input id="horario" type="time" /></div>
-            <div class="hosp-field col-3"><label for="saldo">Saldo informado</label><input id="saldo" type="number" step="0.01" min="0" placeholder="0,00" /></div>
+            <div class="hosp-field col-4"><label for="checkin">Check-in *</label><input id="checkin" type="date" required /></div>
+            <div class="hosp-field col-4"><label for="checkout">Check-out *</label><input id="checkout" type="date" required /></div>
+            <div class="hosp-field col-4"><label for="horario">Chegada</label><input id="horario" type="time" /></div>
           </div>
         </div>
 
@@ -362,21 +361,27 @@ export function renderContent(content, userContext) {
     }
     const latest = data.reduce((max, row) => row.data_referencia > max ? row.data_referencia : max, '');
     const minhasRegionais = getMinhasRegionais();
-    state.colaboradores = data
+    const filtrados = data
       .filter((row) => !latest || row.data_referencia === latest)
       .filter((row) => row.ativo !== false)
       // Restringe a sugestão à(s) regional(is) do próprio gestor (campo supervisao).
       // Sem nenhuma regional configurada no perfil, mantém a lista completa como fallback.
-      .filter((row) => !minhasRegionais.length || minhasRegionais.includes(normalizeText(row.supervisao)))
-      .map((row) => ({
-        id: row.id,
-        nome: row.nome,
-        cpf: row.cpf,
-        tipo: row.tipo,
-        empresa: row.empresa,
-        coordenacao: row.coordenacao,
-        supervisao: row.supervisao
-      }));
+      .filter((row) => !minhasRegionais.length || minhasRegionais.includes(normalizeText(row.supervisao)));
+    // Dedup por colaborador (id ou cpf) — colaborador_snapshot pode ter mais de uma linha por pessoa na mesma data.
+    const porChave = new Map();
+    for (const row of filtrados) {
+      const chave = String(row.id || row.cpf || row.nome || '').trim();
+      if (!chave || !porChave.has(chave)) porChave.set(chave, row);
+    }
+    state.colaboradores = [...porChave.values()].map((row) => ({
+      id: row.id,
+      nome: row.nome,
+      cpf: row.cpf,
+      tipo: row.tipo,
+      empresa: row.empresa,
+      coordenacao: row.coordenacao,
+      supervisao: row.supervisao
+    }));
   }
 
   async function submitSolicitacao(ev) {
@@ -412,7 +417,6 @@ export function renderContent(content, userContext) {
       data_checkout_prevista: checkout.value,
       horario_chegada_previsto: document.getElementById('horario').value || null,
       quantidade_diarias_prevista: diffDays(checkin.value, checkout.value),
-      saldo_informado: document.getElementById('saldo').value ? Number(document.getElementById('saldo').value) : null,
       observacao_gestor: document.getElementById('obs').value.trim() || null,
       status_solicitacao: 'SOLICITADA'
     };
