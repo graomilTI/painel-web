@@ -1,6 +1,9 @@
-// Programação Gestor — Etapa 1 = O.S. + despesas no mesmo card.
-import { supabase } from './supabaseClient.js';
-import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260701-addcolabfast1';
+// Programação Gestor — 3 etapas navegáveis: 1 Situação da O.S., 2 Equipe +
+// Mapa, 3 Despesas. Cada uma reescreve #progList por conta própria; nenhuma
+// delas usa o stepper A-E nativo de programacao.js (que ficou sem botão
+// visível desde que este script passou a controlar #progSteps).
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260708-despesas1';
+import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260708-despesas1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 let currentUiStep = '1';
@@ -11,6 +14,13 @@ let renderTentativas = 0;
 let clobberRetries = 0;
 let supDropdownEl = null;
 let supComboState = { input: null, onSelect: null };
+
+const STEP_LABELS = {
+  '1': { label: 'Situação da O.S.', title: 'Situação da O.S.' },
+  '2': { label: 'Equipe e mapa do gestor', title: 'Equipe + Mapa' },
+  '3': { label: 'Despesas da equipe', title: 'Despesas' },
+};
+const ANCHOR_BY_STEP = { '1': '#peqsOsList', '2': '#peqbOsList', '3': '#peqdRoster' };
 
 function debounce(fn, wait) {
   let timer;
@@ -110,19 +120,19 @@ function setActiveUiStep(step) {
 }
 
 function renderIdle() {
-  if (currentUiStep !== '1') return;
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
+  const info = STEP_LABELS[currentUiStep] || STEP_LABELS['1'];
   if (feedback) {
     feedback.className = 'feedback mt-16 prog-feedback-ok';
-    feedback.textContent = 'Etapa 1 — O.S. e despesas do colaborador na mesma tela.';
+    feedback.textContent = `Etapa ${currentUiStep} — ${info.label}.`;
   }
   if (!list) return;
   const sup = document.getElementById('progSup')?.value || '';
   list.innerHTML = `
     <div class="prog-section-title">
-      <h4>Programar OS — O.S. + despesas</h4>
-      <span class="badge">Tela única</span>
+      <h4>${info.title}</h4>
+      <span class="badge">Etapa ${currentUiStep}</span>
     </div>
     <div class="prog-os-lazy-card">
       <div>
@@ -133,30 +143,17 @@ function renderIdle() {
   `;
 }
 
-async function marcarPendentesComoAtender(supervisao) {
-  const lista = Array.isArray(supervisao) ? supervisao.filter(Boolean) : [supervisao].filter(Boolean);
-  if (!lista.length) return;
-  // Só promove O.S. que o agente confirmou recentemente como ainda presentes no relatório
-  // (updated_at recente). Sem esse filtro, uma O.S. já fechada na origem — mas que ficou
-  // "presa" em operacional_os porque o scraping do agente veio incompleto e a limpeza
-  // automática foi pulada (ver grm-sync-operacional-os.js) — tinha o updated_at "relançado"
-  // por este UPDATE e passava a parecer confirmada de novo, mesmo fechada.
-  const limiteRecente = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
-  const { error } = await supabase
-    .from('operacional_os')
-    .update({ status_gestor: 'ATENDER', updated_at: new Date().toISOString() })
-    .in('supervisao', lista)
-    .gte('updated_at', limiteRecente)
-    .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR');
-  if (error) console.warn('[programacao] não foi possível preparar O.S. como ATENDER', error);
-}
-
-async function renderEquipeFinal() {
+// Renderiza a etapa atual (1/2/3) em #progList. Substitui a antiga
+// renderEquipeFinal, que só sabia desenhar a Etapa 2 (Equipe). Não existe
+// mais promoção automática de status_gestor: toda O.S. exige decisão manual
+// na Etapa 1 (removida junto com esta generalização — ver marcarPendentesComoAtender
+// no histórico do git se precisar recuperar o comportamento antigo).
+async function renderStepFinal() {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
-  if (!list || currentUiStep !== '1') return;
+  if (!list) return;
 
-  setActiveUiStep('1');
+  setActiveUiStep(currentUiStep);
   hideCoreControls();
 
   const supervisao = document.getElementById('progSup')?.value || '';
@@ -179,44 +176,42 @@ async function renderEquipeFinal() {
   // lista no meio do caminho), marca pendência para re-renderizar ao terminar.
   if (equipeRendering) { equipePending = true; return; }
   equipeRendering = true;
+  const step = currentUiStep;
   try {
     if (feedback) {
       feedback.className = 'feedback mt-16 prog-feedback-ok';
-      feedback.textContent = 'Preparando O.S. e despesas em tela única...';
+      feedback.textContent = `Preparando ${STEP_LABELS[step]?.label || ''}...`;
     }
-    // Não troca #progList por um placeholder genérico aqui: renderProgramacaoEquipe
-    // já pinta seu próprio skeleton (título + KPIs + spinner) de forma síncrona,
-    // logo abaixo. Mostrar "Montando tela final..." antes disso só criava uma
-    // 2ª tela de carregamento diferente que piscava por cima da primeira,
-    // dando a impressão de bug em vez de um carregamento único e contínuo.
-    await marcarPendentesComoAtender(isTodas ? supervisoesResolvidas : supervisao);
-    // Auto-preenche a equipe de menor custo só uma vez por contexto
-    // (programação/supervisão/data) e ANTES do 1º render — a tela vai direto de
-    // "preparando" para os cards confirmados, sem exibir os não confirmados.
     const dataRef = document.getElementById('progDataRef')?.value || '';
-    const autoKey = [programacaoId || [...programacaoIdMap.values()].sort().join(','), supervisao, dataRef].join('|');
-    window.__progAutoEquipeKeys = window.__progAutoEquipeKeys || new Set();
-    const autoPreencher = !window.__progAutoEquipeKeys.has(autoKey);
-    if (autoPreencher) window.__progAutoEquipeKeys.add(autoKey);
-    await renderProgramacaoEquipe(list, {
-      supervisao,
-      supervisoesResolvidas,
-      dataReferencia: dataRef,
-      programacaoId,
-      programacaoIdMap,
-      autoPreencher,
-    });
+    const commonOpts = { supervisao, supervisoesResolvidas, dataReferencia: dataRef, programacaoId, programacaoIdMap };
+
+    if (step === '1') {
+      await renderProgramacaoSituacao(list, commonOpts);
+    } else if (step === '2') {
+      // Auto-preenche a equipe de menor custo só uma vez por contexto
+      // (programação/supervisão/data) — mecanismo diferente da antiga
+      // promoção automática de status_gestor (removida): aqui só associa
+      // candidato a O.S. que JÁ está ATENDER, não decide status sozinho.
+      const autoKey = [programacaoId || [...programacaoIdMap.values()].sort().join(','), supervisao, dataRef].join('|');
+      window.__progAutoEquipeKeys = window.__progAutoEquipeKeys || new Set();
+      const autoPreencher = !window.__progAutoEquipeKeys.has(autoKey);
+      if (autoPreencher) window.__progAutoEquipeKeys.add(autoKey);
+      await renderProgramacaoEquipe(list, { ...commonOpts, autoPreencher });
+    } else if (step === '3') {
+      await renderProgramacaoDespesas(list, commonOpts);
+    }
     if (feedback) {
       feedback.className = 'feedback mt-16 prog-feedback-ok';
-      feedback.textContent = 'Etapa 1 — O.S. e despesas do colaborador na mesma tela.';
+      feedback.textContent = `Etapa ${step} — ${STEP_LABELS[step]?.label || ''}.`;
     }
   } finally {
     equipeRendering = false;
     // Re-renderiza se (a) alguém pediu re-render enquanto renderizávamos, ou
     // (b) o núcleo sobrescreveu o #progList durante o render (corrida do
-    // renderRows): nesse caso os cards de O.S. foram para um nó destacado e o
-    // #peqbOsList não está mais anexado. Sem isso a tela trava em "Montando...".
-    const clobbered = currentUiStep === '1' && !document.querySelector('#progList #peqbOsList');
+    // renderRows): nesse caso os cards da etapa foram para um nó destacado e o
+    // âncora da etapa não está mais anexado. Sem isso a tela trava em "Montando...".
+    const anchor = ANCHOR_BY_STEP[currentUiStep];
+    const clobbered = currentUiStep === step && anchor && !document.querySelector(`#progList ${anchor}`);
     const precisaRe = equipePending || clobbered;
     equipePending = false;
     if (precisaRe && clobberRetries < 10) {
@@ -229,40 +224,40 @@ async function renderEquipeFinal() {
 }
 
 function scheduleFinalRender(delay = 250) {
-  if (currentUiStep !== '1' || finalRenderScheduled) return;
+  if (finalRenderScheduled) return;
   finalRenderScheduled = true;
   setTimeout(async () => {
     finalRenderScheduled = false;
-    await renderEquipeFinal();
+    await renderStepFinal();
   }, delay);
 }
 
 function listShowsCoreDisponibilidade() {
   const list = document.getElementById('progList');
   if (!list) return false;
-  if (list.querySelector('#peqbOsList')) return false;
+  const anchor = ANCHOR_BY_STEP[currentUiStep];
+  if (anchor && list.querySelector(anchor)) return false;
   return /Disponíveis|Disponiveis|DISPONIBILIDADE|Contexto carregado/i.test(list.textContent || '');
 }
 
-const PROG_MONTANDO_HTML = '<div class="prog-os-lazy-card is-loading"><span class="prog-spinner" aria-hidden="true"></span><div><strong>Montando tela final...</strong><p>Organizando O.S., equipe e despesas no mesmo card.</p></div></div>';
+const PROG_MONTANDO_HTML = '<div class="prog-os-lazy-card is-loading"><span class="prog-spinner" aria-hidden="true"></span><div><strong>Montando tela final...</strong><p>Organizando a etapa atual.</p></div></div>';
 
 // O núcleo (programacao.js) tem state.step = 'A' por padrão e renderiza a
-// Disponibilidade no #progList ao terminar de carregar o contexto. Na aba
-// "Programar O.S." (uiStep '1') isso NÃO deve aparecer — para o usuário a tela
-// de cards de disponibilidade no lugar dos cards de O.S. parece um bug.
+// Disponibilidade no #progList ao terminar de carregar o contexto. Nenhuma das
+// 3 etapas geridas por este script quer ver isso — para o usuário a tela de
+// cards de disponibilidade no lugar da etapa atual parece um bug.
 //
 // O observer geral abaixo é debounced (160ms), tempo suficiente para a
 // Disponibilidade pintar e "piscar"/permanecer numa carga lenta. Este guard é
 // um observer SÍNCRONO ancorado direto no #progList: o callback do
 // MutationObserver roda antes da pintura do browser, então trocamos o conteúdo
 // pelo placeholder ANTES de o usuário ver a Disponibilidade, e disparamos o
-// render final (cards de O.S.).
+// render final da etapa atual.
 function attachProgListGuard() {
   const list = document.getElementById('progList');
   if (!list || list.dataset.gestorGuard === '1') return;
   list.dataset.gestorGuard = '1';
   const guard = new MutationObserver(() => {
-    if (currentUiStep !== '1') return;
     if (!listShowsCoreDisponibilidade()) return;
     list.innerHTML = PROG_MONTANDO_HTML;
     scheduleFinalRender(0);
@@ -276,8 +271,9 @@ function configureSteps() {
 
   const existing = [...stepsWrap.querySelectorAll('.stepbtn')];
   const layout = [
-    { ui: '1', label: 'Programar O.S.', internal: '__equipe' },
-    { ui: '3', label: 'Disponibilidade', internal: 'A' },
+    { ui: '1', label: STEP_LABELS['1'].title },
+    { ui: '2', label: STEP_LABELS['2'].title },
+    { ui: '3', label: STEP_LABELS['3'].title },
   ];
 
   layout.forEach((step, index) => {
@@ -289,7 +285,6 @@ function configureSteps() {
       stepsWrap.appendChild(btn);
     }
     btn.dataset.uiStep = step.ui;
-    btn.dataset.step = step.internal;
     btn.innerHTML = `<span class="stepbtn-letter">${index + 1}</span><span class="stepbtn-label"> · ${step.label}</span>`;
   });
   existing.slice(layout.length).forEach((btn) => btn.remove());
@@ -299,25 +294,14 @@ function configureSteps() {
   stepsWrap.addEventListener('click', (event) => {
     const btn = event.target.closest('.stepbtn');
     if (!btn) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
     currentUiStep = btn.dataset.uiStep;
-
-    if (btn.dataset.uiStep === '1') {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      setActiveUiStep('1');
-      hideCoreControls();
-      renderTentativas = 0;
-      clobberRetries = 0;
-      renderIdle();
-      return;
-    }
-
-    setActiveUiStep('3');
-    const saveBtn = document.getElementById('progSaveProgramacao');
-    if (saveBtn) saveBtn.style.display = '';
-    const searchWrap = document.getElementById('progSearchWrap');
-    if (searchWrap) searchWrap.style.display = 'none';
+    setActiveUiStep(currentUiStep);
     hideCoreControls();
+    renderTentativas = 0;
+    clobberRetries = 0;
+    renderIdle();
   }, true);
 }
 
@@ -459,7 +443,6 @@ function hookContextLoad() {
   if (!loadBtn || loadBtn.dataset.gestorFinalBound === '1') return;
   loadBtn.dataset.gestorFinalBound = '1';
   loadBtn.addEventListener('click', () => {
-    if (currentUiStep !== '1') return;
     renderTentativas = 0;
     clobberRetries = 0;
     [250, 700, 1200].forEach((delay) => setTimeout(() => scheduleFinalRender(0), delay));
@@ -491,7 +474,7 @@ const observer = new MutationObserver(debounce(() => {
   attachProgListGuard();
   hideCoreControls();
   ensureSupCombo();
-  if (currentUiStep === '1' && listShowsCoreDisponibilidade()) scheduleFinalRender(150);
+  if (listShowsCoreDisponibilidade()) scheduleFinalRender(150);
 }, 160));
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
