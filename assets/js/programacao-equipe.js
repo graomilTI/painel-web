@@ -8,6 +8,7 @@
 // usada em Frotas Roteirização, ver supabase/functions/frotas-roteirizar).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
+import { logActivity } from './activityLogger.js';
 
 let currentUser = null;
 const BRI = new Intl.NumberFormat('pt-BR');
@@ -570,6 +571,27 @@ async function loadColaboradoresRegional(supervisao) {
 
 // Custos já lançados (estadia/alimentação/deslocamento) por colaborador, para
 // pré-preencher os campos inline dos cartões confirmados.
+// Estado atual de Atendimento(OK)/Logística de cada colaborador confirmado —
+// só pra refletir no toggle do card; o valor em si já é escrito/mantido por
+// confirmarCandidato/adicionarColaboradorOs (auto) ou pelo próprio toggle.
+async function loadDisponibilidadeConfirmados(programacaoId, colaboradorIds) {
+  const ids = [...new Set((colaboradorIds || []).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const pids = Array.isArray(programacaoId) ? programacaoId : [programacaoId];
+  try {
+    const { data, error } = await supabase
+      .from('programacao_colaboradores')
+      .select('colaborador_id,disponibilidade')
+      .in('programacao_id', pids)
+      .in('colaborador_id', ids);
+    if (error) throw error;
+    return new Map((data || []).map((r) => [String(r.colaborador_id), r.disponibilidade]));
+  } catch (error) {
+    console.warn('[equipe] disponibilidade dos confirmados indisponível', error);
+    return new Map();
+  }
+}
+
 async function loadCustos(programacaoId) {
   const ids = Array.isArray(programacaoId) ? programacaoId : [programacaoId];
   const [est, ali, des] = await Promise.all([
@@ -976,6 +998,24 @@ function colabsExtrasHtml(item) {
     </span>`).join('')}</div>`;
 }
 
+// Motorista com frota vinculada (placaAuto) pode ser marcado como
+// Atendimento (disponibilidade=OK) ou Logística (LOGISTICA) — hoje isso é
+// só um efeito colateral automático de confirmarCandidato/adicionarColaboradorOs;
+// este toggle deixa a escolha explícita pro gestor.
+function dispToggleHtml(colaboradorId, dispAtual) {
+  const isLogistica = disponibilidadeCategoriaLocal(dispAtual) === 'LOGISTICA';
+  const btn = (valor, label, ativo) =>
+    `<button type="button" class="peqb-row-btn ${ativo ? '' : ''}" data-disp-toggle="${esc(valor)}" data-disp-colab="${esc(colaboradorId)}" style="${ativo ? 'border-color:rgba(134,239,172,.5);background:rgba(22,163,74,.28);color:#bbf7d0' : ''}">${label}</button>`;
+  return `<div class="peqb-row-actions" style="margin-top:6px" title="Motorista com frota vinculada — Atendimento ou Logística no dia">
+    <span class="peqb-clab" style="align-self:center">🚗</span>
+    ${btn('OK', 'Atendimento', !isLogistica)}
+    ${btn('LOGISTICA', 'Logística', isLogistica)}
+  </div>`;
+}
+function disponibilidadeCategoriaLocal(value) {
+  return normalizeText(value || '') === 'LOGISTICA' ? 'LOGISTICA' : 'OK';
+}
+
 function osRowHtml(item) {
   const { os, confirmadoRow, candidatos } = item;
   const confirmado = !!confirmadoRow;
@@ -1003,6 +1043,7 @@ function osRowHtml(item) {
         ${hotelBtn}
         ${aliChipsHtml(String(confirmadoRow.colaborador_id), confirmadoRow.nome_colaborador, item.custos?.ali || { almoco: true }, item.equipeRows || [])}
       </div>
+      ${item.custos?.placaAuto ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual) : ''}
       ${colabsExtrasHtml(item)}
       <div class="peqb-add-box" data-add-box hidden>
         <span class="peqb-cand-av">+</span>
@@ -1468,6 +1509,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         colaboradoresConfirmadosEmOutraOs,
       );
       const tipoLabelPorColaborador = await loadTipoContratoConfirmados(confirmadosPorOs, candidatosPorOs);
+      const dispPorColaborador = await loadDisponibilidadeConfirmados(programacaoIdQuery, [...confirmadosPorOs.values()].map((r) => r.colaborador_id));
 
       osComCandidatosAtual = osComPonto.map(({ os, ponto, confirmadoRow }) => {
         const equipeRowsOs = equipeRowsPorOs.get(os.id) || (confirmadoRow ? [confirmadoRow] : []);
@@ -1487,6 +1529,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
             ali: custos.ali.get(String(confirmadoRow.colaborador_id)) || { almoco: true },
             des: custos.des.get(String(confirmadoRow.colaborador_id)) || {},
             placaAuto: placasPorCpf.get(String(confirmadoRow.colaborador_id).replace(/\D/g, '')) || '',
+            dispAtual: confirmadoRow ? (dispPorColaborador.get(String(confirmadoRow.colaborador_id)) || null) : null,
           } : null,
         };
       });
@@ -1587,6 +1630,38 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         if (error) throw error;
         await carregarERenderizar({ silent: true });
       } catch (error) { alert(error.message || 'Não foi possível solicitar saldo.'); }
+    });
+  }
+
+  // "2 no ponto": ao adicionar o 2º+ colaborador numa mesma O.S., o gestor
+  // precisa justificar o motivo — registrado em app_logs_usuarios (via
+  // logActivity), não existe tabela dedicada pra isso na base atual.
+  function openJustificativaModal(os, colaboradoresAtuais, novoColaborador) {
+    return new Promise((resolve) => {
+      const nomesAtuais = colaboradoresAtuais.map((c) => c.nome_colaborador || c.nome).filter(Boolean).join(', ');
+      const ov = document.createElement('div');
+      ov.className = 'peqb-modal-ov';
+      ov.innerHTML = `<div class="peqb-modal">
+        <h3>Justificar 2+ colaboradores na O.S.</h3>
+        <p>O.S. <b style="color:#bbf7d0">${esc(os.numero_os || '-')}</b> já tem <b>${esc(nomesAtuais || '-')}</b>.
+        Adicionar <b style="color:#bbf7d0">${esc(novoColaborador.nome || '-')}</b> também — informe o motivo (obrigatório):</p>
+        <textarea id="peqbJustifInput" rows="3" placeholder="Ex.: volume da carga exige 2 pessoas no ponto" style="width:100%;resize:vertical;background:#0d0d18;color:#e2e2f0;border:1px solid rgba(52,211,153,.28);border-radius:10px;padding:9px 10px;font-size:13px"></textarea>
+        <div class="peqb-modal-actions">
+          <button type="button" class="peqb-row-btn" data-justif-cancel>Cancelar</button>
+          <button type="button" class="peqb-row-btn" data-justif-ok style="border-color:rgba(134,239,172,.4);color:#bbf7d0">Confirmar</button>
+        </div>
+      </div>`;
+      document.body.appendChild(ov);
+      const input = ov.querySelector('#peqbJustifInput');
+      input.focus();
+      const close = (motivo) => { ov.remove(); resolve(motivo); };
+      ov.addEventListener('click', (e) => { if (e.target === ov) close(null); });
+      ov.querySelector('[data-justif-cancel]').addEventListener('click', () => close(null));
+      ov.querySelector('[data-justif-ok]').addEventListener('click', () => {
+        const motivo = input.value.trim();
+        if (!motivo) { input.focus(); return; }
+        close(motivo);
+      });
     });
   }
 
@@ -1753,6 +1828,29 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     const confBtn = event.target.closest('[data-conf]');
     if (confBtn) { openLaudoModal(confBtn.dataset.conf); return; }
 
+    const dispToggleBtn = event.target.closest('[data-disp-toggle]');
+    if (dispToggleBtn) {
+      const colabRow = event.target.closest('.peqb-row');
+      const item = osComCandidatosAtual.find((it) => String(it.os.id) === colabRow?.dataset.osId);
+      const colaboradorId = dispToggleBtn.dataset.dispColab;
+      const valor = dispToggleBtn.dataset.dispToggle;
+      if (!item || !colaboradorId) return;
+      dispToggleBtn.disabled = true;
+      try {
+        const { error } = await supabase.from('programacao_colaboradores')
+          .update({ disponibilidade: valor })
+          .eq('programacao_id', programacaoIdParaOs(item.os))
+          .eq('colaborador_id', colaboradorId);
+        if (error) throw error;
+        if (item.custos) item.custos.dispAtual = valor;
+        if (colabRow) colabRow.outerHTML = osRowHtml(item);
+      } catch (error) {
+        dispToggleBtn.disabled = false;
+        alert(error.message || 'Não foi possível atualizar Atendimento/Logística.');
+      }
+      return;
+    }
+
     const toggleOutros = event.target.closest('[data-toggle-outros]');
     const toggleAddColab = event.target.closest('[data-toggle-add-colab]');
     const addColabConfirm = event.target.closest('[data-add-colab-confirm]');
@@ -1775,7 +1873,19 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const cand = item?.candidatos.find((c) => String(c.colaboradorId) === String(sel?.value))
         || item?.colaboradoresRegional?.find((c) => String(c.colaboradorId) === String(sel?.value));
       if (!item || !cand) return;
+      // A caixa "+ colaborador" só aparece em O.S. que já tem 1+ confirmado
+      // (ver osRowHtml/data-add-box) — logo todo clique aqui é o 2º+.
+      const colaboradoresAtuais = item.equipeRows || [];
+      const motivo = await openJustificativaModal(item.os, colaboradoresAtuais, { nome: cand.nome, colaboradorId: cand.colaboradorId });
+      if (!motivo) return;
       addColabConfirm.disabled = true;
+      logActivity('action', 'justificativa_multiplos_colaboradores_os', 'programacao', {
+        os_id: item.os.id,
+        numero_os: item.os.numero_os,
+        colaboradores: [...colaboradoresAtuais.map((c) => c.colaborador_id), cand.colaboradorId],
+        nomes: [...colaboradoresAtuais.map((c) => c.nome_colaborador), cand.nome],
+        motivo,
+      });
       try {
         // Grava e atualiza só esta linha no DOM — recarregar a lista inteira
         // (49+ O.S., cada uma com candidatos/custos) pra refletir 1 pessoa

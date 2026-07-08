@@ -174,8 +174,12 @@ function buildMenu(select, combo) {
   const menu = combo.querySelector('.prog-sup-menu');
   if (!menu) return;
 
-  const options = [...select.options];
-  menu.innerHTML = options.map((option, index) => {
+  // Só entram no menu visível as options que o filtro de acesso (programacao-gestor-filtro-fix.js)
+  // deixou habilitadas — options ocultas/desabilitadas são supervisões fora do acesso do usuário.
+  const options = [...select.options]
+    .map((option, index) => ({ option, index }))
+    .filter(({ option }) => !option.hidden && !option.disabled);
+  menu.innerHTML = options.map(({ option, index }) => {
     const value = option.value || '';
     const label = option.textContent || value || 'Selecione...';
     const active = String(value) === String(select.value || '');
