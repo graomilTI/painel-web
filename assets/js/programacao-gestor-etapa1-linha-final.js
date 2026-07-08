@@ -1,5 +1,5 @@
 // Ajuste final da Etapa 1 do Gestor > Programação:
-// mantém KPIs em linha compacta, sem card gigante e sem blocos internos.
+// organização horizontal: Cliente | Local | Remanescente | OS | Ações.
 
 const CSS_ID = 'pgcEtapa1LinhaFinalCss';
 
@@ -30,24 +30,24 @@ function injectEtapa1LinhaCss() {
     #pgcPane1 .pgc-os-kpi-head,
     #pgcPane1 .pgc-os-line-head {
       display: grid !important;
-      grid-template-columns: minmax(280px, 1.85fr) minmax(430px, 2.75fr) 68px 62px 176px !important;
-      gap: 6px !important;
+      grid-template-columns: minmax(300px, 1.8fr) minmax(430px, 2.55fr) 112px 74px 194px !important;
+      gap: 0 !important;
       align-items: center !important;
-      margin: 0 0 5px !important;
-      padding: 0 7px !important;
+      margin: 0 0 4px !important;
+      padding: 0 14px !important;
       background: transparent !important;
       border: 0 !important;
     }
 
     #pgcPane1 .pgc-os-kpi-head span,
     #pgcPane1 .pgc-os-line-head span {
-      font-size: 9.5px !important;
+      font-size: 10px !important;
       line-height: 1 !important;
       font-weight: 950 !important;
       text-transform: uppercase !important;
       letter-spacing: .06em !important;
       color: #93c5fd !important;
-      padding: 0 !important;
+      padding: 0 8px !important;
       text-align: left !important;
     }
 
@@ -64,7 +64,7 @@ function injectEtapa1LinhaCss() {
     #pgcPane1 .peqb-os-list {
       display: flex !important;
       flex-direction: column !important;
-      gap: 4px !important;
+      gap: 5px !important;
     }
 
     #pgcPane1 .peqs-row {
@@ -72,24 +72,24 @@ function injectEtapa1LinhaCss() {
       min-height: 0 !important;
       margin: 0 !important;
       padding: 0 !important;
-      border: 1px solid rgba(52, 211, 153, .13) !important;
-      border-radius: 9px !important;
-      background: rgba(2, 6, 23, .18) !important;
+      border: 1px solid rgba(52, 211, 153, .18) !important;
+      border-radius: 15px !important;
+      background: rgba(2, 6, 23, .14) !important;
       box-shadow: none !important;
       overflow: hidden !important;
     }
 
     #pgcPane1 .peqs-row:hover {
-      border-color: rgba(52, 211, 153, .30) !important;
-      background: rgba(2, 6, 23, .26) !important;
+      border-color: rgba(52, 211, 153, .38) !important;
+      background: rgba(2, 6, 23, .22) !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-left {
       display: grid !important;
-      grid-template-columns: minmax(280px, 1.85fr) minmax(430px, 2.75fr) 68px 62px 176px !important;
+      grid-template-columns: minmax(300px, 1.8fr) minmax(430px, 2.55fr) 112px 74px 194px !important;
       gap: 0 !important;
       align-items: stretch !important;
-      min-height: 32px !important;
+      min-height: 50px !important;
       padding: 0 !important;
       border: 0 !important;
       background: transparent !important;
@@ -101,19 +101,20 @@ function injectEtapa1LinhaCss() {
 
     #pgcPane1 .peqs-row .peqb-os2-kpi {
       min-width: 0 !important;
-      height: 32px !important;
-      min-height: 32px !important;
+      height: 50px !important;
+      min-height: 50px !important;
       margin: 0 !important;
-      padding: 0 8px !important;
+      padding: 6px 13px !important;
       border: 0 !important;
-      border-right: 1px solid rgba(148, 163, 184, .10) !important;
+      border-right: 1px solid rgba(148, 163, 184, .11) !important;
       border-radius: 0 !important;
       background: transparent !important;
       box-shadow: none !important;
       box-sizing: border-box !important;
       display: flex !important;
-      align-items: center !important;
-      justify-content: flex-start !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      justify-content: center !important;
       overflow: hidden !important;
     }
 
@@ -126,45 +127,75 @@ function injectEtapa1LinhaCss() {
       width: 100% !important;
       margin: 0 !important;
       color: #f8fafc !important;
-      font-size: 11.5px !important;
+      font-size: 13px !important;
       font-weight: 900 !important;
-      line-height: 1 !important;
+      line-height: 1.12 !important;
       white-space: nowrap !important;
       overflow: hidden !important;
       text-overflow: ellipsis !important;
     }
 
+    /* Local de embarque: pode ocupar duas linhas, como no exemplo enviado. */
+    #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(2) strong {
+      white-space: normal !important;
+      display: -webkit-box !important;
+      -webkit-line-clamp: 2 !important;
+      -webkit-box-orient: vertical !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      line-height: 1.18 !important;
+    }
+
     #pgcPane1 .peqs-row .peqb-os2-kpi strong *,
     #pgcPane1 .peqs-row .peqb-os2-kpi strong span {
       display: inline !important;
-      white-space: nowrap !important;
+      white-space: inherit !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-kpi strong br {
       display: none !important;
     }
 
+    /* Remanescente e OS: rótulo pequeno em cima e valor abaixo. */
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(3),
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(4) {
+      align-items: center !important;
       justify-content: center !important;
       text-align: center !important;
-      padding-left: 4px !important;
-      padding-right: 4px !important;
+      padding: 5px 6px !important;
+    }
+
+    #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(3) span,
+    #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(4) span {
+      display: block !important;
+      width: 100% !important;
+      margin: 0 0 4px !important;
+      color: #cbd5e1 !important;
+      font-size: 10.5px !important;
+      line-height: 1 !important;
+      font-weight: 700 !important;
+      letter-spacing: 0 !important;
+      text-transform: none !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(3) strong,
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(4) strong {
       text-align: center !important;
+      font-size: 12.5px !important;
+      line-height: 1 !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-tagsrow {
-      height: 32px !important;
-      min-height: 32px !important;
+      height: 50px !important;
+      min-height: 50px !important;
       margin: 0 !important;
-      padding: 0 6px !important;
+      padding: 0 10px !important;
       border: 0 !important;
       border-radius: 0 !important;
-      background: transparent !important;
+      background: #020617 !important;
       box-shadow: none !important;
       box-sizing: border-box !important;
       display: flex !important;
@@ -174,17 +205,17 @@ function injectEtapa1LinhaCss() {
 
     #pgcPane1 .peqs-row .peqb-status-strip {
       margin: 0 !important;
-      gap: 6px !important;
+      gap: 8px !important;
       flex-wrap: nowrap !important;
     }
 
     #pgcPane1 .peqs-row .peqb-st {
-      height: 26px !important;
-      min-width: 28px !important;
-      width: 28px !important;
+      height: 30px !important;
+      min-width: 30px !important;
+      width: 30px !important;
       padding: 0 !important;
       border-radius: 999px !important;
-      font-size: 10px !important;
+      font-size: 11px !important;
     }
 
     @media (max-width: 980px) {
@@ -207,8 +238,8 @@ function injectEtapa1LinhaCss() {
       }
       #pgcPane1 .peqs-row .peqb-os2-kpi,
       #pgcPane1 .peqs-row .peqb-os2-tagsrow {
-        height: 32px !important;
-        min-height: 32px !important;
+        height: 40px !important;
+        min-height: 40px !important;
       }
     }
   `;
@@ -223,7 +254,7 @@ function normalizeEtapa1Texts() {
   if (list && !pane.querySelector('.pgc-os-line-head, .pgc-os-kpi-head')) {
     list.insertAdjacentHTML(
       'beforebegin',
-      '<div class="pgc-os-line-head"><span>Cliente</span><span>Local de embarque</span><span>Rem.</span><span>O.S.</span><span>Ações</span></div>'
+      '<div class="pgc-os-line-head"><span>Cliente</span><span>Local de embarque</span><span>Remanescente</span><span>OS</span><span>Ações</span></div>'
     );
   }
 
