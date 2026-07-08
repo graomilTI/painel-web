@@ -1,6 +1,7 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
+import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 const STEPS = [
   { code: 'A', label: 'Disponibilidade' },
@@ -433,6 +434,12 @@ export function renderContent(content) {
     dataReferencia: todayIso(),
     supervisao: '',
     programacaoId: null,
+    // Sob "Todas": programacaoId fica null e programacaoIdMap guarda
+    // Map<supervisao, programacao_id> — cada colaborador/OS resolve o seu
+    // próprio id de gravação pela própria supervisao (ver programacaoIdFor).
+    programacaoIdMap: new Map(),
+    supervisoesResolvidas: [],
+    todasSupervisoes: [],
     colaboradores: [],
     colabsEmOsAtender: new Set(),
     cidades: [],
@@ -473,9 +480,15 @@ export function renderContent(content) {
     await fillSupervisoes();
   }
 
+  function programacaoIdFor(colab) {
+    if (state.programacaoIdMap.size) return state.programacaoIdMap.get(colab?.supervisao || '') || null;
+    return state.programacaoId;
+  }
+
   function bindEvents() {
     window.__progLoadColaboradores = loadContext;
     window.__progGetProgramacaoId = () => state.programacaoId;
+    window.__progGetProgramacaoIdMap = () => state.programacaoIdMap;
     el.loadBtn.addEventListener('click', loadContext);
     el.saveBtn.addEventListener('click', saveProgramacao);
     el.search.addEventListener('input', debounce(() => {
@@ -502,7 +515,11 @@ export function renderContent(content) {
       .lt('data_referencia', dataReferencia)
       .order('data_referencia', { ascending: false })
       .limit(50);
-    if (supervisao) query = query.eq('supervisao', supervisao);
+    if (Array.isArray(supervisao)) {
+      if (supervisao.length) query = query.in('supervisao', supervisao);
+    } else if (supervisao) {
+      query = query.eq('supervisao', supervisao);
+    }
     const { data, error } = await query;
     if (error) {
       console.warn('Não foi possível validar pendências de FOB.', error);
@@ -894,11 +911,12 @@ export function renderContent(content) {
     const set = new Set();
     state.osPorColaborador = new Map();
     try {
-      const { data: osRows } = await supabase
+      let query = supabase
         .from('operacional_os')
         .select('*')
-        .eq('supervisao', supervisao)
         .eq('status_gestor', 'ATENDER');
+      query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
+      const { data: osRows } = await query;
       const atenderRows = osRows || [];
       if (!atenderRows.length) return set;
       const osMap = new Map((atenderRows || []).map((r) => [String(r.id), r]));
@@ -974,6 +992,7 @@ export function renderContent(content) {
     }
 
     const todasSupervisoes = (data || []).map((r) => String(r.nome || '').trim()).filter(Boolean);
+    state.todasSupervisoes = todasSupervisoes;
     const supervisoes = filterAllowedSupervisoes(todasSupervisoes, state.access);
 
     if (state.access?.restricted && !supervisoes.length) {
@@ -1068,10 +1087,14 @@ export function renderContent(content) {
       return;
     }
 
-    const allowedNow = filterAllowedSupervisoes([supervisao], state.access);
-    if (state.access?.restricted && !allowedNow.includes(supervisao)) {
-      setFeedback('Esta supervisão não está liberada para o seu usuário.', 'error');
-      return;
+    const isTodas = supervisao === TODAS_SUPERVISOES;
+
+    if (!isTodas) {
+      const allowedNow = filterAllowedSupervisoes([supervisao], state.access);
+      if (state.access?.restricted && !allowedNow.includes(supervisao)) {
+        setFeedback('Esta supervisão não está liberada para o seu usuário.', 'error');
+        return;
+      }
     }
 
     state.dataReferencia = dataReferencia;
@@ -1081,14 +1104,24 @@ export function renderContent(content) {
     el.list.innerHTML = '<div class="table-empty">Carregando colaboradores...</div>';
 
     try {
+      let supervisoesQuery = supervisao;
+      if (isTodas) {
+        const permitidas = filterAllowedSupervisoes(state.todasSupervisoes, state.access);
+        const { data: comOs, error: comOsErr } = await supabase.rpc('programacao_supervisoes_com_os_acionavel', { p_supervisoes: permitidas });
+        if (comOsErr) throw comOsErr;
+        supervisoesQuery = (comOs || []).map((r) => r.supervisao).filter(Boolean);
+        if (!supervisoesQuery.length) throw new Error('Nenhuma supervisão liberada tem O.S. acionável no momento.');
+      }
+      state.supervisoesResolvidas = isTodas ? supervisoesQuery : [supervisao];
+
       // As 4 consultas abaixo não dependem entre si — só de data/supervisão —
       // mas eram feitas em sequência (uma esperando a outra terminar). Isso
       // sozinho já multiplicava a latência de rede por 4.
       const [fobsPendentes, latestSnapshotDate, indisponibilidades, colabsEmOsAtender] = await Promise.all([
-        checkFobPendenciasBloqueantes(dataReferencia, supervisao),
+        checkFobPendenciasBloqueantes(dataReferencia, supervisoesQuery),
         getLatestSnapshotDate(),
         loadIndisponibilidades(dataReferencia),
-        loadOsAtender(dataReferencia, supervisao),
+        loadOsAtender(dataReferencia, supervisoesQuery),
       ]);
 
       if (fobsPendentes.length) {
@@ -1098,12 +1131,13 @@ export function renderContent(content) {
       }
       if (!latestSnapshotDate) throw new Error('Nenhuma base de colaboradores foi importada ainda.');
 
-      const { data: colaboradores, error: colabError } = await supabase
+      let colabQuery = supabase
         .from('colaborador_snapshot')
         .select('*')
         .eq('data_referencia', latestSnapshotDate)
-        .eq('supervisao', supervisao)
         .order('nome', { ascending: true });
+      colabQuery = isTodas ? colabQuery.in('supervisao', supervisoesQuery) : colabQuery.eq('supervisao', supervisao);
+      const { data: colaboradores, error: colabError } = await colabQuery;
 
       if (colabError) throw colabError;
 
@@ -1116,8 +1150,23 @@ export function renderContent(content) {
         return true;
       });
 
-      const programacao = await ensureProgramacaoDia(dataReferencia, supervisao, colaboradoresAtivos?.[0]?.coordenacao || '');
-      state.programacaoId = programacao.id;
+      if (isTodas) {
+        const coordenacaoPorSupervisao = new Map();
+        colaboradoresAtivos.forEach((colab) => {
+          if (!coordenacaoPorSupervisao.has(colab.supervisao)) coordenacaoPorSupervisao.set(colab.supervisao, colab.coordenacao || '');
+        });
+        const idMap = new Map();
+        await Promise.all(supervisoesQuery.map(async (sup) => {
+          const programacao = await ensureProgramacaoDia(dataReferencia, sup, coordenacaoPorSupervisao.get(sup) || '');
+          idMap.set(sup, programacao.id);
+        }));
+        state.programacaoIdMap = idMap;
+        state.programacaoId = null;
+      } else {
+        const programacao = await ensureProgramacaoDia(dataReferencia, supervisao, colaboradoresAtivos?.[0]?.coordenacao || '');
+        state.programacaoId = programacao.id;
+        state.programacaoIdMap = new Map();
+      }
 
       state.colaboradores = colaboradoresAtivos.map((colab) => {
         const key = colaboradorKey(colab);
@@ -1150,7 +1199,8 @@ export function renderContent(content) {
   }
 
   async function ensureDefaultRows() {
-    if (!state.programacaoId || !state.colaboradores.length) return;
+    if (!state.programacaoId && !state.programacaoIdMap.size) return;
+    if (!state.colaboradores.length) return;
     const payload = state.colaboradores.map((colab) => {
       const motivo = disponibilidadeNorm(colab.indisponibilidade?.motivo || '');
       const veiculoVinculado = !colab.indisponibilidade && !colaboradorPodeFicarOk(colab) ? suggestVeiculoForColab(colab) : null;
@@ -1158,7 +1208,7 @@ export function renderContent(content) {
         ? (INDISPONIBILIDADE_MOTIVOS.includes(motivo) ? motivo : 'ATESTADO')
         : (colaboradorPodeFicarOk(colab) ? 'OK' : (veiculoVinculado ? 'LOGISTICA' : 'SEM EMBARQUE'));
       return {
-        programacao_id: state.programacaoId,
+        programacao_id: programacaoIdFor(colab),
         data_referencia: state.dataReferencia,
         colaborador_id: colab.id,
         nome_colaborador: colab.nome,
@@ -1168,7 +1218,7 @@ export function renderContent(content) {
         disponibilidade,
         placa_veiculo: veiculoVinculado ? onlyPlate(veiculoVinculado.placa) : null,
       };
-    });
+    }).filter((p) => p.programacao_id);
 
     const { error } = await supabase
       .from('programacao_colaboradores')
@@ -1176,25 +1226,28 @@ export function renderContent(content) {
     if (error) throw error;
 
     // Promove SEM EMBARQUE → OK para colaboradores que agora têm OS em ATENDER
-    const idsParaOk = payload.filter((p) => p.disponibilidade === 'OK').map((p) => p.colaborador_id);
-    if (idsParaOk.length) {
-      await supabase
-        .from('programacao_colaboradores')
-        .update({ disponibilidade: 'OK' })
-        .eq('programacao_id', state.programacaoId)
-        .in('colaborador_id', idsParaOk)
-        .eq('disponibilidade', 'SEM EMBARQUE');
-    }
+    // (agrupado por programacao_id, pois sob "Todas" cada supervisão tem o seu)
+    const porProgramacaoId = new Map();
+    payload.filter((p) => p.disponibilidade === 'OK').forEach((p) => {
+      if (!porProgramacaoId.has(p.programacao_id)) porProgramacaoId.set(p.programacao_id, []);
+      porProgramacaoId.get(p.programacao_id).push(p.colaborador_id);
+    });
+    await Promise.all([...porProgramacaoId.entries()].map(([pid, ids]) => supabase
+      .from('programacao_colaboradores')
+      .update({ disponibilidade: 'OK' })
+      .eq('programacao_id', pid)
+      .in('colaborador_id', ids)
+      .eq('disponibilidade', 'SEM EMBARQUE')));
   }
 
   async function loadStageData() {
-    const pid = state.programacaoId;
+    const pids = state.programacaoIdMap.size ? [...state.programacaoIdMap.values()] : [state.programacaoId];
     const [disp, estadia, alimentacao, deslocamento, extras] = await Promise.all([
-      supabase.from('programacao_colaboradores').select('*').eq('programacao_id', pid),
-      supabase.from('programacao_estadia').select('*').eq('programacao_id', pid),
-      supabase.from('programacao_alimentacao').select('*').eq('programacao_id', pid),
-      supabase.from('programacao_deslocamento').select('*').eq('programacao_id', pid),
-      supabase.from('programacao_extras').select('*').eq('programacao_id', pid).order('created_at', { ascending: true }),
+      supabase.from('programacao_colaboradores').select('*').in('programacao_id', pids),
+      supabase.from('programacao_estadia').select('*').in('programacao_id', pids),
+      supabase.from('programacao_alimentacao').select('*').in('programacao_id', pids),
+      supabase.from('programacao_deslocamento').select('*').in('programacao_id', pids),
+      supabase.from('programacao_extras').select('*').in('programacao_id', pids).order('created_at', { ascending: true }),
     ]);
 
     for (const res of [disp, estadia, alimentacao, deslocamento, extras]) {
@@ -1259,7 +1312,7 @@ export function renderContent(content) {
   }
 
   function renderRows() {
-    if (!state.programacaoId) {
+    if (!state.programacaoId && !state.programacaoIdMap.size) {
       el.list.innerHTML = '<div class="table-empty">Carregue um contexto para iniciar a programação.</div>';
       return;
     }
@@ -1775,11 +1828,15 @@ export function renderContent(content) {
 
     const payload = {
       ...getFieldPayload(tr),
-      programacao_id: state.programacaoId,
+      programacao_id: programacaoIdFor(colab),
       data_referencia: state.dataReferencia,
       colaborador_id: colab.id,
       nome_colaborador: colab.nome,
     };
+    if (!payload.programacao_id) {
+      setFeedback(`Não foi possível resolver a programação do dia para ${colab.nome}.`, 'error');
+      return;
+    }
 
     if (table === 'programacao_estadia') {
       payload.uf = normalizeUF(payload.uf);
@@ -1828,11 +1885,13 @@ export function renderContent(content) {
   async function addExtra(colabId) {
     const colab = colabById(colabId);
     if (!colab) return;
+    const programacaoId = programacaoIdFor(colab);
+    if (!programacaoId) return;
 
     const { data, error } = await supabase
       .from('programacao_extras')
       .insert({
-        programacao_id: state.programacaoId,
+        programacao_id: programacaoId,
         data_referencia: state.dataReferencia,
         colaborador_id: colab.id,
         nome_colaborador: colab.nome,
@@ -1934,12 +1993,12 @@ export function renderContent(content) {
   }
 
   async function saveProgramacao() {
-    if (!state.programacaoId) {
+    if (!state.programacaoId && !state.programacaoIdMap.size) {
       setFeedback('Carregue um contexto antes de salvar a programação.', 'warn');
       return;
     }
 
-    const fobsPendentes = await checkFobPendenciasBloqueantes(state.dataReferencia, state.supervisao);
+    const fobsPendentes = await checkFobPendenciasBloqueantes(state.dataReferencia, state.programacaoIdMap.size ? state.supervisoesResolvidas : state.supervisao);
     if (fobsPendentes.length) {
       showFobBlockedMessage(fobsPendentes);
       return;
@@ -1965,33 +2024,42 @@ export function renderContent(content) {
       const extraCards = [...el.list.querySelectorAll('.prog-extra-card[data-extra-id]')];
       for (const card of extraCards) await saveExtra(card, { silent: true });
 
-      const { error } = await supabase
-        .from('programacao_dia')
-        .update({ status: 'salvo', updated_at: new Date().toISOString() })
-        .eq('id', state.programacaoId);
+      // Sob "Todas" existe 1 programacao_dia por supervisão resolvida — cada
+      // uma é finalizada e notificada separadamente.
+      const idsPorSupervisao = state.programacaoIdMap.size
+        ? [...state.programacaoIdMap.entries()]
+        : [[state.supervisao, state.programacaoId]];
 
-      if (error) throw error;
+      for (const [, pid] of idsPorSupervisao) {
+        const { error } = await supabase
+          .from('programacao_dia')
+          .update({ status: 'salvo', updated_at: new Date().toISOString() })
+          .eq('id', pid);
+        if (error) throw error;
+      }
 
       setFeedback(`Programação salva com sucesso em ${new Date().toLocaleTimeString('pt-BR')}.`, 'ok');
 
-      // Notifica o setor de Conferência
+      // Notifica o setor de Conferência (uma notificação por supervisão)
       try {
         const engine = window.__painelNotifEngine;
         const ctx = state.userContext || {};
         const criador = firstFilled(ctx?.user?.name, ctx?.user?.email, 'Gestor');
-        const supervisao = firstFilled(ctx?.supervisao, ctx?.user?.supervisao, '');
         const hoje = new Date().toISOString().slice(0, 10);
         if (engine) {
-          await engine.criarNotificacao({
-            tipo: 'programacao_salva',
-            titulo: `Programação realizada — ${criador}`,
-            descricao: `Gestor ${criador} salvou a programação de despesas${supervisao ? ` (${supervisao})` : ''}.`,
-            destinatario_modulo: 'conferencia',
-            supervisao: supervisao || null,
-            referencia_tabela: 'programacao_dia',
-            referencia_id: state.programacaoId,
-            chave_dedup: `programacao_salva:${state.programacaoId}:${hoje}`,
-          });
+          await Promise.all(idsPorSupervisao.map(([sup, pid]) => {
+            const supervisaoLabel = sup && sup !== TODAS_SUPERVISOES ? sup : firstFilled(ctx?.supervisao, ctx?.user?.supervisao, '');
+            return engine.criarNotificacao({
+              tipo: 'programacao_salva',
+              titulo: `Programação realizada — ${criador}`,
+              descricao: `Gestor ${criador} salvou a programação de despesas${supervisaoLabel ? ` (${supervisaoLabel})` : ''}.`,
+              destinatario_modulo: 'conferencia',
+              supervisao: supervisaoLabel || null,
+              referencia_tabela: 'programacao_dia',
+              referencia_id: pid,
+              chave_dedup: `programacao_salva:${pid}:${hoje}`,
+            });
+          }));
         }
       } catch (_) {}
 

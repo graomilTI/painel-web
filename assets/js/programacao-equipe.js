@@ -75,6 +75,10 @@ function colaboradorNome(row) {
 }
 
 function regionalScore(row, supervisao) {
+  if (Array.isArray(supervisao)) {
+    if (!supervisao.length) return 1;
+    return Math.max(...supervisao.map((s) => regionalScore(row, s)));
+  }
   const alvo = normalizeText(supervisao);
   if (!alvo) return 1;
   const campos = [row?.supervisao, row?.coordenacao, row?.regional, row?.cidade].map(normalizeText).filter(Boolean);
@@ -358,10 +362,11 @@ function injectStyles() {
 // FINALIZAR já saíram do fluxo do dia. A triagem (mudar status) e a atribuição
 // passam a conviver na mesma tela.
 async function loadOsRelevantes(supervisao) {
-  const { data, error } = await supabase
+  let query = supabase
     .from('operacional_os')
-    .select('id,numero_os,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os')
-    .eq('supervisao', supervisao)
+    .select('id,numero_os,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os');
+  query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
+  const { data, error } = await query
     .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR,status_gestor.eq.ATENDER')
     .order('data_os', { ascending: false })
     .order('numero_os', { ascending: false })
@@ -418,11 +423,9 @@ async function loadPontos(ids) {
 }
 
 async function loadEquipeExistente(programacaoId) {
-  const { data, error } = await supabase
-    .from('programacao_equipe')
-    .select('*')
-    .eq('programacao_id', programacaoId)
-    .order('created_at', { ascending: true });
+  let query = supabase.from('programacao_equipe').select('*');
+  query = Array.isArray(programacaoId) ? query.in('programacao_id', programacaoId) : query.eq('programacao_id', programacaoId);
+  const { data, error } = await query.order('created_at', { ascending: true });
   if (error) throw error;
   return data || [];
 }
@@ -471,11 +474,9 @@ async function loadHoteis() {
 // painel — assim a placa casa de forma confiável.
 async function loadCruzamentoPlacas(supervisao) {
   try {
-    const { data, error } = await supabase
-      .from('colaborador_cruzamento')
-      .select('cpf,veiculo_placa')
-      .eq('supervisao', supervisao)
-      .limit(5000);
+    let query = supabase.from('colaborador_cruzamento').select('cpf,veiculo_placa');
+    query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
+    const { data, error } = await query.limit(5000);
     if (error) throw error;
     const map = new Map();
     (data || []).forEach((r) => { if (r.veiculo_placa) map.set(String(r.cpf || '').replace(/\D/g, ''), r.veiculo_placa); });
@@ -491,10 +492,15 @@ async function loadCruzamentoPlacas(supervisao) {
 // candidatos ranqueados. Os já escalados em outra OS são marcados com ♻ na UI.
 async function loadColaboradoresRegional(supervisao) {
   const fontes = [];
+  const listaSupervisoes = Array.isArray(supervisao) ? supervisao : [supervisao];
   try {
-    const { data, error } = await supabase.rpc('programacao_colaboradores_supervisao', { p_supervisao: supervisao });
-    if (error) throw error;
-    fontes.push(...(data || []).map((r) => ({ ...r, _scoreRegional: 100, _fonteRegional: 1 })));
+    const resultados = await Promise.all(listaSupervisoes.map((sup) =>
+      supabase.rpc('programacao_colaboradores_supervisao', { p_supervisao: sup })
+    ));
+    resultados.forEach(({ data, error }) => {
+      if (error) throw error;
+      fontes.push(...(data || []).map((r) => ({ ...r, _scoreRegional: 100, _fonteRegional: 1 })));
+    });
   } catch (error) {
     console.warn('[equipe] lista de colaboradores da regional via RPC indisponível', error);
   }
@@ -531,7 +537,7 @@ async function loadColaboradoresRegional(supervisao) {
       nome: colaboradorNome(r),
       cargo: r.cargo || null,
       coordenacao: r.coordenacao || null,
-      supervisao: r.supervisao || supervisao || null,
+      supervisao: r.supervisao || (Array.isArray(supervisao) ? null : supervisao) || null,
       tipoLabel: r.tipo_contrato ? contratoLabel(r.tipo_contrato) : 'Regional',
       km: null,
       auditPeso: null,
@@ -559,10 +565,11 @@ async function loadColaboradoresRegional(supervisao) {
 // Custos já lançados (estadia/alimentação/deslocamento) por colaborador, para
 // pré-preencher os campos inline dos cartões confirmados.
 async function loadCustos(programacaoId) {
+  const ids = Array.isArray(programacaoId) ? programacaoId : [programacaoId];
   const [est, ali, des] = await Promise.all([
-    supabase.from('programacao_estadia').select('*').eq('programacao_id', programacaoId),
-    supabase.from('programacao_alimentacao').select('*').eq('programacao_id', programacaoId),
-    supabase.from('programacao_deslocamento').select('*').eq('programacao_id', programacaoId),
+    supabase.from('programacao_estadia').select('*').in('programacao_id', ids),
+    supabase.from('programacao_alimentacao').select('*').in('programacao_id', ids),
+    supabase.from('programacao_deslocamento').select('*').in('programacao_id', ids),
   ]);
   return {
     est: new Map((est.data || []).map((r) => [String(r.colaborador_id), r])),
@@ -586,7 +593,26 @@ function pontoDaOs(os, pontosPorId) {
 // pela RPC programacao_etapa_b_candidatos (ver migração
 // 20260625130000_programacao_etapa_b_candidatos_rpc.sql e seguintes), que já
 // filtra pelos top 8 por OS usando colaborador_cruzamento pré-computado.
+// A RPC programacao_etapa_b_candidatos filtra o pool de colaboradores por uma
+// única supervisão — sob "Todas" (múltiplas supervisões na mesma tela),
+// agrupamos as O.S. pela própria supervisão (já vem em os.supervisao) e
+// chamamos a RPC uma vez por grupo, mesclando os resultados no final.
 async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
+  const grupos = new Map();
+  osComPonto.forEach((item) => {
+    const sup = item.os?.supervisao || supervisao;
+    if (!grupos.has(sup)) grupos.set(sup, []);
+    grupos.get(sup).push(item);
+  });
+  const resultados = await Promise.all(
+    [...grupos.entries()].map(([sup, itens]) => loadCandidatosPorOsUnico(sup, itens, excluirIds))
+  );
+  const porOsFinal = new Map();
+  resultados.forEach((mapa) => mapa.forEach((valor, chave) => porOsFinal.set(chave, valor)));
+  return porOsFinal;
+}
+
+async function loadCandidatosPorOsUnico(supervisao, osComPonto, excluirIds) {
   const osPayload = osComPonto
     .filter(({ candidatosNecessarios }) => candidatosNecessarios)
     .map(({ os, ponto }) => ({ os_id: os.id, lat: ponto?.lat ?? null, lng: ponto?.lng ?? null }));
@@ -1157,6 +1183,14 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   injectStyles();
   const supervisao = String(options.supervisao || '').trim();
   const programacaoId = options.programacaoId || null;
+  const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
+  // Sob "Todas" (programacaoIdMap populado), cada O.S. resolve seu próprio
+  // programacao_id pela própria supervisão; fora disso, todas usam o único id.
+  const supervisaoQuery = programacaoIdMap.size ? [...programacaoIdMap.keys()] : supervisao;
+  const programacaoIdQuery = programacaoIdMap.size ? [...programacaoIdMap.values()] : programacaoId;
+  function programacaoIdParaOs(os) {
+    return programacaoIdMap.size ? (programacaoIdMap.get(os?.supervisao) || null) : programacaoId;
+  }
 
   content.innerHTML = `
     <div class="prog-section-title">
@@ -1186,7 +1220,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   const mapEmptyEl = content.querySelector('#peqbMapEmpty');
   const mapState = criarMapState();
 
-  if (!supervisao || !programacaoId) {
+  if (!supervisao || (!programacaoId && !programacaoIdMap.size)) {
     listEl.innerHTML = '<div class="peqb-empty">Carregue o contexto (supervisão e data) para organizar a equipe.</div>';
     return;
   }
@@ -1212,7 +1246,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       usados.add(melhor.colaboradorId);
       atribuicoes.push({ os: item.os, cand: melhor });
     }
-    if (atribuicoes.length) await confirmarCandidatosEmLote(programacaoId, atribuicoes);
+    if (atribuicoes.length) await confirmarCandidatosEmLote(programacaoIdParaOs, atribuicoes);
   }
 
   // Sugere caronas: por ponto de embarque, quem tem frota é MOTORISTA; passageiros
@@ -1220,9 +1254,16 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   // de menor desvio (cap CARONA_CAP). Quem sobra: REEMBOLSO KM se na relação de
   // veículo próprio, senão UBER/TÁXI. Grava tipo_deslocamento em lote e devolve o resumo.
   async function sugerirCaronas() {
-    const { data, error } = await supabase.rpc('programacao_caronas_dados', { p_programacao_id: programacaoId });
-    if (error) throw error;
-    const rows = data || [];
+    // Sob "Todas" a RPC (escopada a 1 programacao_id) roda uma vez por
+    // supervisão resolvida; cada linha guarda de qual programacao_id veio,
+    // pra gravar tipo_deslocamento no registro certo mais abaixo.
+    const idsAlvo = programacaoIdMap.size ? [...programacaoIdMap.values()] : [programacaoId];
+    const resultadosRpc = await Promise.all(idsAlvo.map((pid) => supabase.rpc('programacao_caronas_dados', { p_programacao_id: pid })));
+    const rows = [];
+    resultadosRpc.forEach(({ data, error }, idx) => {
+      if (error) throw error;
+      (data || []).forEach((r) => rows.push({ ...r, __programacaoId: idsAlvo[idx] }));
+    });
     const resultado = new Map();
 
     const porPonto = new Map();
@@ -1276,7 +1317,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const res = resultado.get(r.colaborador_id);
       if (!res) return;
       payload.push({
-        programacao_id: programacaoId,
+        programacao_id: r.__programacaoId || programacaoId,
         data_referencia: options.dataReferencia || null,
         colaborador_id: r.colaborador_id,
         nome_colaborador: r.nome || '',
@@ -1361,11 +1402,11 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     const scrollPos = scroller ? scroller.scrollTop : 0;
     if (!silent) listEl.innerHTML = '<div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S. da supervisão...</span></div>';
     try {
-      const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisao), loadEquipeExistente(programacaoId), loadCustos(programacaoId)]);
+      const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisaoQuery), loadEquipeExistente(programacaoIdQuery), loadCustos(programacaoIdQuery)]);
       osTodasAtual = osTodas;
       await Promise.all([loadAlojamentos(), loadHoteis()]);
-      const placasPorCpf = await loadCruzamentoPlacas(supervisao);
-      const colaboradoresRegional = await loadColaboradoresRegional(supervisao);
+      const placasPorCpf = await loadCruzamentoPlacas(supervisaoQuery);
+      const colaboradoresRegional = await loadColaboradoresRegional(supervisaoQuery);
       if (!osTodas.length) {
         listEl.innerHTML = '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
         osComCandidatosAtual = [];
@@ -1452,7 +1493,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       osComCandidatosAtual.forEach((it) => {
         if (it.confirmadoRow && it.custos?.placaAuto && !it.custos.des?.placa_veiculo) {
           supabase.from('programacao_deslocamento').upsert({
-            programacao_id: programacaoId,
+            programacao_id: programacaoIdParaOs(it.os),
             data_referencia: options.dataReferencia || null,
             colaborador_id: String(it.confirmadoRow.colaborador_id),
             nome_colaborador: it.confirmadoRow.nome_colaborador || '',
@@ -1568,10 +1609,13 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   // --- Custos inline (estadia/alimentação/deslocamento) por colaborador ---
   async function saveCusto(section, tabela) {
     if (!section) return;
+    const osIdDaSecao = section.closest('[data-os-id]')?.dataset.osId || null;
+    const itemDaSecao = osComCandidatosAtual.find((it) => String(it.os.id) === osIdDaSecao);
+    const pidDaSecao = itemDaSecao ? programacaoIdParaOs(itemDaSecao.os) : programacaoId;
     const ids = String(section.dataset.colabIds || section.dataset.colabId || '').split('|').map((v) => v.trim()).filter(Boolean);
     const nomes = String(section.dataset.colabNomes || section.dataset.nome || '').split('|');
     const bases = (ids.length ? ids : [section.dataset.colabId].filter(Boolean)).map((id, index) => ({
-      programacao_id: programacaoId,
+      programacao_id: pidDaSecao,
       data_referencia: options.dataReferencia || null,
       colaborador_id: id,
       nome_colaborador: nomes[index] || section.dataset.nome || '',
@@ -1625,7 +1669,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     if (!item?.confirmadoRow || !cand?.colaboradorId) return;
     const origemId = String(item.confirmadoRow.colaborador_id);
     const destinoBase = {
-      programacao_id: programacaoId,
+      programacao_id: programacaoIdParaOs(item.os),
       data_referencia: options.dataReferencia || null,
       colaborador_id: cand.colaboradorId,
       nome_colaborador: cand.nome || '',
@@ -1714,7 +1758,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         // (49+ O.S., cada uma com candidatos/custos) pra refletir 1 pessoa
         // adicionada deixava a confirmação visivelmente lenta.
         const [novaLinha] = await Promise.all([
-          adicionarColaboradorOs(programacaoId, item.os, cand),
+          adicionarColaboradorOs(programacaoIdParaOs(item.os), item.os, cand),
           copiarCustosDoPrincipal(item, cand),
         ]);
         item.equipeRows = [...(item.equipeRows || []), novaLinha];
@@ -1732,7 +1776,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const equipeRowId = removerAdicional.dataset.removerAdicional;
       removerAdicional.disabled = true;
       try {
-        await removerConfirmacao(programacaoId, equipeRowId);
+        await removerConfirmacao(item ? programacaoIdParaOs(item.os) : programacaoId, equipeRowId);
         if (item) {
           item.equipeRows = (item.equipeRows || []).filter((r) => String(r.id) !== String(equipeRowId));
           row.outerHTML = osRowHtml(item);
@@ -1778,9 +1822,10 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
         const selectEl = row.querySelector('[data-select-colaborador]');
         const cand = item?.candidatos.find((c) => c.colaboradorId === selectEl?.value);
-        if (item && cand) await confirmarCandidato(programacaoId, item.os, cand);
+        if (item && cand) await confirmarCandidato(programacaoIdParaOs(item.os), item.os, cand);
       } else if (btnRemover) {
-        await removerConfirmacao(programacaoId, btn.dataset.remover);
+        const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
+        await removerConfirmacao(item ? programacaoIdParaOs(item.os) : programacaoId, btn.dataset.remover);
       } else if (btnHotelEl) {
         const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
         if (item) {
@@ -1820,7 +1865,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       if (item && cand && String(cand.colaboradorId) !== String(item.confirmadoRow?.colaborador_id)) {
         trocarSel.disabled = true;
         try {
-          await confirmarCandidato(programacaoId, item.os, cand);
+          await confirmarCandidato(programacaoIdParaOs(item.os), item.os, cand);
           await carregarERenderizar({ silent: true });
         } catch (error) {
           console.error('[equipe] trocar colaborador:', error);
@@ -2049,11 +2094,12 @@ async function adicionarColaboradorOs(programacaoId, os, cand) {
 // Versão em LOTE de confirmarCandidato: grava N atribuições ({os, cand}) com
 // ~4 chamadas no total (em vez de ~4 por O.S.). Usada no auto-preencher, que
 // antes fazia uma confirmação sequencial por O.S. e ficava lento (37 O.S.).
-async function confirmarCandidatosEmLote(programacaoId, atribuicoes) {
+async function confirmarCandidatosEmLote(programacaoIdParaOs, atribuicoes) {
   if (!atribuicoes.length) return;
+  const resolverId = typeof programacaoIdParaOs === 'function' ? programacaoIdParaOs : () => programacaoIdParaOs;
 
   const equipeRows = atribuicoes.map(({ os, cand }) => ({
-    programacao_id: programacaoId,
+    programacao_id: resolverId(os),
     os_id: os.id,
     colaborador_id: cand.colaboradorId,
     nome_colaborador: cand.nome,
@@ -2085,9 +2131,9 @@ async function confirmarCandidatosEmLote(programacaoId, atribuicoes) {
 
   // Espelho de disponibilidade — um por colaborador (dedup por colaborador_id).
   const espMap = new Map();
-  atribuicoes.forEach(({ cand }) => {
+  atribuicoes.forEach(({ os, cand }) => {
     espMap.set(String(cand.colaboradorId), {
-      programacao_id: programacaoId,
+      programacao_id: resolverId(os),
       colaborador_id: cand.colaboradorId,
       nome_colaborador: cand.nome,
       cargo: cand.cargo || null,
