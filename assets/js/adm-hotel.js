@@ -62,11 +62,14 @@ function injectStyles() {
     .dash-period-btn{padding:6px 14px;border-radius:999px;border:1px solid var(--line-2);background:transparent;color:var(--muted);font-size:12px;font-weight:800;cursor:pointer;transition:all .15s}
     .dash-period-btn.active{background:rgba(22,101,52,.28);color:#dcfce7;border-color:rgba(111,208,165,.3)}
     .dash-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
-    .dash-kpi{background:#0d1b12;border:1px solid rgba(111,208,165,.12);border-radius:18px;padding:16px 18px;position:relative;overflow:hidden}
+    .dash-kpi{background:#0a120c;border:1px solid rgba(111,208,165,.16);border-radius:18px;padding:16px 18px 15px;position:relative;overflow:hidden}
     .dash-kpi::before{content:'';position:absolute;inset:0;background:var(--kpi-glow,transparent);pointer-events:none}
+    .dash-kpi::after{content:'';position:absolute;top:0;left:14%;right:14%;height:2px;border-radius:0 0 4px 4px;background:linear-gradient(90deg,transparent,var(--kpi-color,#4ade80),transparent);opacity:.8}
     .dash-kpi-value{font-size:30px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--kpi-color,#e2e8f0);line-height:1;position:relative}
-    .dash-kpi-label{font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:8px;position:relative}
-    .dash-kpi-sub{font-size:11px;color:var(--muted);margin-top:3px;opacity:.7;position:relative}
+    .dash-kpi-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;position:relative}
+    .dash-kpi-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:10px;font-weight:900;white-space:nowrap;letter-spacing:.03em}
+    .dash-kpi-badge.dark{background:rgba(15,23,42,.75);color:#e2e8f0;border:1px solid rgba(255,255,255,.08);text-transform:uppercase}
+    .dash-kpi-badge.accent{background:color-mix(in srgb,var(--kpi-color,#4ade80) 18%,transparent);color:var(--kpi-color,#4ade80);border:1px solid color-mix(in srgb,var(--kpi-color,#4ade80) 40%,transparent)}
     .dash-main-grid{display:grid;grid-template-columns:1fr 1.5fr;gap:14px;margin-bottom:14px}
     .dash-bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
     .dash-card{background:#0d1b12;border:1px solid rgba(111,208,165,.1);border-radius:18px;padding:16px 18px}
@@ -691,8 +694,10 @@ export function renderContent(content, userContext) {
       <div class="dash-kpi-grid">
         ${kpiCards.map(k=>`<div class="dash-kpi" style="--kpi-color:${k.color};--kpi-glow:radial-gradient(ellipse at top left,${k.glow},transparent 65%)">
           <div class="dash-kpi-value"${k.small?` style="font-size:${String(k.val).length>10?'16px':'22px'}"`:''}>${k.val}</div>
-          <div class="dash-kpi-label">${k.label}</div>
-          <div class="dash-kpi-sub">${k.sub}</div>
+          <div class="dash-kpi-badges">
+            <span class="dash-kpi-badge dark">${esc(k.label)}</span>
+            <span class="dash-kpi-badge accent">${esc(k.sub)}</span>
+          </div>
         </div>`).join('')}
       </div>
       <div class="dash-main-grid">
