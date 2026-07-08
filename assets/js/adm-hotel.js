@@ -44,7 +44,20 @@ function injectStyles() {
     .adm-pix-box{display:none;grid-template-columns:220px 1fr;gap:14px;align-items:start;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.08);border-radius:18px;padding:14px;margin-top:12px}.adm-pix-box.open{display:grid}.adm-pix-qr{width:220px;height:220px;border-radius:14px;background:#fff;padding:10px;object-fit:contain}.adm-pix-copy{width:100%;min-height:126px;border:1px solid rgba(255,255,255,.08);background:#15152a;color:#dcfce7;border-radius:14px;padding:12px;font-size:12px;line-height:1.45;resize:vertical;outline:none}.adm-pix-hint{font-size:12px;color:#9ca3af;margin:0 0 8px}.adm-hotel-register-card{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.adm-hotel-register-card h3{margin:0}.adm-hotel-register-card p{margin:4px 0 0}
     .adm-hosp-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.adm-hosp-action-grid .btn{width:100%!important}
     .adm-hidden-soft{display:none!important}.adm-hidden{display:none!important}.adm-hosp-help{font-size:12px;color:#6b7280;margin-top:4px}.mt-16{margin-top:16px!important}
-    .adm-menu-mode-hoteis [data-tab="alojamentos"],.adm-menu-mode-alojamentos [data-tab="solicitadas"],.adm-menu-mode-alojamentos [data-tab="reservados"],.adm-menu-mode-alojamentos [data-tab="checkout"],.adm-menu-mode-alojamentos [data-tab="financeiro"],.adm-menu-mode-alojamentos [data-tab="concluidos"],.adm-menu-mode-alojamentos [data-tab="hoteis"]{display:none!important}
+    .adm-menu-mode-hoteis [data-tab="alojamentos"],.adm-menu-mode-alojamentos [data-tab="solicitadas"],.adm-menu-mode-alojamentos [data-tab="andamento"],.adm-menu-mode-alojamentos [data-tab="concluidos"],.adm-menu-mode-alojamentos [data-tab="hoteis"]{display:none!important}
+    .adm-hosp-tabs-sep{width:1px;align-self:stretch;background:var(--line-2);margin:0 4px}
+    .adm-hosp-tabs-label{align-self:center;font-size:10px;font-weight:900;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+    .adm-hosp-chip-bar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+    .adm-hosp-stage{display:flex;align-items:center;gap:4px}
+    .adm-hosp-stage-step{display:flex;flex-direction:column;align-items:center;gap:3px;opacity:.45}
+    .adm-hosp-stage-step.done{opacity:.75}
+    .adm-hosp-stage-step.active{opacity:1}
+    .adm-hosp-stage-dot{width:8px;height:8px;border-radius:50%;background:var(--line-2)}
+    .adm-hosp-stage-step.done .adm-hosp-stage-dot,.adm-hosp-stage-step.active .adm-hosp-stage-dot{background:#4ade80}
+    .adm-hosp-stage-step.active .adm-hosp-stage-dot{box-shadow:0 0 0 3px rgba(74,222,128,.22)}
+    .adm-hosp-stage-label{font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap}
+    .adm-hosp-stage-step.active .adm-hosp-stage-label{color:#dcfce7}
+    .adm-hosp-stage-sep{width:18px;height:1px;background:var(--line-2);margin-bottom:14px}
     .dash-period-bar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
     .dash-period-btn{padding:6px 14px;border-radius:999px;border:1px solid var(--line-2);background:transparent;color:var(--muted);font-size:12px;font-weight:800;cursor:pointer;transition:all .15s}
     .dash-period-btn.active{background:rgba(22,101,52,.28);color:#dcfce7;border-color:rgba(111,208,165,.3)}
@@ -93,7 +106,7 @@ export function renderContent(content, userContext) {
     editingHotel: null, editingAlojamento: null,
     tab: 'dashboard', selected: null,
     reservarColabs: [], estenderColabs: [],
-    dashPeriod: 30, dashUF: null
+    dashPeriod: 30, dashUF: null, andamentoFiltro: 'todos'
   };
   function getHotelById(id) { return state.hoteis.find((h) => String(h.id) === String(id)); }
 
@@ -198,10 +211,10 @@ export function renderContent(content, userContext) {
       <button class="adm-hosp-tab active" data-tab="dashboard" type="button">Dashboard</button>
       <button class="adm-hosp-tab" data-tab="historico" type="button">Histórico <small id="cntHistorico">0</small></button>
       <button class="adm-hosp-tab" data-tab="solicitadas" type="button">Solicitado <small id="cntSolicitadas">0</small></button>
-      <button class="adm-hosp-tab" data-tab="reservados" type="button">Reservado <small id="cntReservados">0</small></button>
-      <button class="adm-hosp-tab" data-tab="checkout" type="button">Checkout <small id="cntCheckout">0</small></button>
-      <button class="adm-hosp-tab" data-tab="financeiro" type="button">Financeiro <small id="cntFinanceiro">0</small></button>
+      <button class="adm-hosp-tab" data-tab="andamento" type="button">Em andamento <small id="cntAndamento">0</small></button>
       <button class="adm-hosp-tab" data-tab="concluidos" type="button">Concluído <small id="cntConcluidos">0</small></button>
+      <span class="adm-hosp-tabs-sep" aria-hidden="true"></span>
+      <span class="adm-hosp-tabs-label">Cadastros</span>
       <button class="adm-hosp-tab" data-tab="hoteis" type="button">Hotéis</button>
       <button class="adm-hosp-tab" data-tab="alojamentos" type="button">Alojamentos</button>
     </div>
@@ -227,24 +240,16 @@ export function renderContent(content, userContext) {
       </article>
     </section>
 
-    <section id="tab-reservados" class="adm-hosp-panel">
+    <section id="tab-andamento" class="adm-hosp-panel">
       <article class="card">
-        <div class="section-head"><div><h3>Reservas ativas</h3><p class="muted">Hospedagens reservadas aguardando check-in ou em andamento.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshReservados" type="button">↻ Atualizar</button></div>
-        <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data / Código</th><th>Colaboradores</th><th>Hotel</th><th>Check-out previsto</th><th>Ações</th></tr></thead><tbody id="tbodyReservados"><tr><td colspan="5" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
-      </article>
-    </section>
-
-    <section id="tab-checkout" class="adm-hosp-panel">
-      <article class="card">
-        <div class="section-head"><div><h3>Checkout pendente</h3><p class="muted">Hospedagens com saída prevista ou solicitações de checkout.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshCheckout" type="button">↻ Atualizar</button></div>
-        <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data / Código</th><th>Colaboradores</th><th>Hotel</th><th>Status</th><th>Valor previsto</th><th>Ações</th></tr></thead><tbody id="tbodyCheckout"><tr><td colspan="6" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
-      </article>
-    </section>
-
-    <section id="tab-financeiro" class="adm-hosp-panel">
-      <article class="card">
-        <div class="section-head"><div><h3>Aguardando pagamento</h3><p class="muted">Cobranças enviadas ao financeiro ainda não pagas.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshFinanceiro" type="button">↻ Atualizar</button></div>
-        <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data / Código</th><th>Colaboradores</th><th>Hotel</th><th>Valor</th><th>Status financeiro</th><th>Ações</th></tr></thead><tbody id="tbodyFinanceiro"><tr><td colspan="6" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
+        <div class="section-head"><div><h3>Hospedagens em andamento</h3><p class="muted">Do reservado ao pagamento — envie para pagamento em qualquer etapa, sem esperar o checkout.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshAndamento" type="button">↻ Atualizar</button></div>
+        <div class="adm-hosp-chip-bar" id="andamentoFiltros">
+          <button class="dash-period-btn active" data-stage-filter="todos" type="button">Todos</button>
+          <button class="dash-period-btn" data-stage-filter="reservados" type="button">Reservado</button>
+          <button class="dash-period-btn" data-stage-filter="checkout" type="button">Checkout</button>
+          <button class="dash-period-btn" data-stage-filter="financeiro" type="button">Financeiro</button>
+        </div>
+        <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data / Código</th><th>Colaboradores</th><th>Hotel</th><th>Estágio</th><th>Check-out</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="tbodyAndamento"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
       </article>
     </section>
 
@@ -319,7 +324,7 @@ export function renderContent(content, userContext) {
     <div id="modalCheckout" class="adm-hosp-modal">
       <div class="adm-hosp-modal-card medium">
         <div class="adm-hosp-modal-head">
-          <div><h3>Checkout</h3><p class="muted" id="checkoutSub"></p></div>
+          <div><h3>Fechamento da hospedagem</h3><p class="muted" id="checkoutSub"></p></div>
           <button class="btn btn-secondary adm-hosp-btn" type="button" id="modalCheckoutClose">Fechar</button>
         </div>
         <div class="adm-section-block"><div class="adm-section-label">Colaboradores</div><div id="checkoutColabList" class="adm-colab-chips"></div></div>
@@ -856,7 +861,7 @@ export function renderContent(content, userContext) {
 
   async function loadRows() {
     const {data,error}=await supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao',{ascending:false});
-    if (error) { ['tbodySolicitadas','tbodyReservados','tbodyCheckout','tbodyFinanceiro','tbodyConcluidos'].forEach((id) => { const el=document.getElementById(id); if (el) el.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; }); return; }
+    if (error) { ['tbodySolicitadas','tbodyAndamento','tbodyConcluidos'].forEach((id) => { const el=document.getElementById(id); if (el) el.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; }); return; }
     state.rows=await enrichRowsWithColaboradores(data||[]);
     updateTabCounts();
     renderCurrentTab();
@@ -878,12 +883,14 @@ export function renderContent(content, userContext) {
   function updateTabCounts() {
     const counts={solicitadas:0,reservados:0,checkout:0,financeiro:0,concluidos:0};
     (state.rows||[]).forEach((r) => { const b=painelBucket(r); counts[b]=(counts[b]||0)+1; });
-    Object.entries({cntSolicitadas:counts.solicitadas,cntReservados:counts.reservados,cntCheckout:counts.checkout,cntFinanceiro:counts.financeiro,cntConcluidos:counts.concluidos}).forEach(([id,v]) => { const el=document.getElementById(id); if (el) el.textContent=v; });
+    const andamento=counts.reservados+counts.checkout+counts.financeiro;
+    Object.entries({cntSolicitadas:counts.solicitadas,cntAndamento:andamento,cntConcluidos:counts.concluidos}).forEach(([id,v]) => { const el=document.getElementById(id); if (el) el.textContent=v; });
+    return counts;
   }
 
   function renderCurrentTab() {
     if (['hoteis','alojamentos'].includes(state.tab)) return;
-    const fns={dashboard:renderTabDashboard,historico:renderHistorico,solicitadas:renderTabSolicitadas,reservados:renderTabReservados,checkout:renderTabCheckout,financeiro:renderTabFinanceiro,concluidos:renderTabConcluidos};
+    const fns={dashboard:renderTabDashboard,historico:renderHistorico,solicitadas:renderTabSolicitadas,andamento:renderTabAndamento,concluidos:renderTabConcluidos};
     (fns[state.tab]||renderTabDashboard)();
   }
 
@@ -903,48 +910,55 @@ export function renderContent(content, userContext) {
     </tr>`).join('');
   }
 
-  function renderTabReservados() {
-    const tbody=document.getElementById('tbodyReservados');
-    if (!tbody) return;
-    const rows=state.rows.filter((r) => painelBucket(r)==='reservados');
-    if (!rows.length) { tbody.innerHTML=`<tr><td colspan="5" class="adm-hosp-empty">Nenhuma reserva ativa.</td></tr>`; return; }
-    tbody.innerHTML=rows.map((r) => `<tr>
-      <td><strong>${esc(r.codigo||'-')}</strong><span class="adm-hosp-row-note">${brDate(r.data_solicitacao)}</span></td>
-      <td>${renderColaboradoresCell(r)}</td>
-      <td>${esc(r.hotel||'-')}<span class="adm-hosp-row-note">${esc([r.cidade,r.uf].filter(Boolean).join('/'))}</span></td>
-      <td>${brDate(r.data_checkout||r.data_checkout_prevista)}<span class="adm-hosp-row-note">Check-in: ${brDate(r.data_checkin||r.data_checkin_prevista)}</span></td>
-      <td><div class="adm-hosp-actions"><button class="btn btn-secondary adm-hosp-small" data-action="estender" data-id="${esc(r.solicitacao_id)}" type="button">Estender</button><button class="btn btn-primary adm-hosp-small" data-action="checkout" data-id="${esc(r.solicitacao_id)}" type="button">Checkout</button></div></td>
-    </tr>`).join('');
+  const ANDAMENTO_STAGES=[
+    {bucket:'reservados',label:'Reservado'},
+    {bucket:'checkout',label:'Checkout'},
+    {bucket:'financeiro',label:'Pagamento'}
+  ];
+
+  function renderStageStepper(bucket) {
+    const idx=ANDAMENTO_STAGES.findIndex((s) => s.bucket===bucket);
+    const steps=ANDAMENTO_STAGES.map((s,i) => {
+      const cls=i<idx?'done':i===idx?'active':'';
+      return `<div class="adm-hosp-stage-step ${cls}"><span class="adm-hosp-stage-dot"></span><span class="adm-hosp-stage-label">${esc(s.label)}</span></div>`;
+    }).join('<span class="adm-hosp-stage-sep"></span>');
+    return `<div class="adm-hosp-stage">${steps}</div>`;
   }
 
-  function renderTabCheckout() {
-    const tbody=document.getElementById('tbodyCheckout');
-    if (!tbody) return;
-    const rows=state.rows.filter((r) => painelBucket(r)==='checkout');
-    if (!rows.length) { tbody.innerHTML=`<tr><td colspan="6" class="adm-hosp-empty">Nenhum checkout pendente.</td></tr>`; return; }
-    tbody.innerHTML=rows.map((r) => `<tr>
-      <td><strong>${esc(r.codigo||'-')}</strong><span class="adm-hosp-row-note">${brDate(r.data_solicitacao)}</span></td>
-      <td>${renderColaboradoresCell(r)}</td>
-      <td>${esc(r.hotel||'-')}</td>
-      <td>${statusPill(r.status_hospedagem||r.status_solicitacao)}</td>
-      <td>${r.valor_total_previsto?money(r.valor_total_previsto):'-'}</td>
-      <td><button class="btn btn-primary adm-hosp-small" data-action="checkout" data-id="${esc(r.solicitacao_id)}" type="button">Checkout</button></td>
-    </tr>`).join('');
+  function stageStatusPill(r,bucket) {
+    if (bucket==='financeiro') return statusPill(r.status_financeiro||'NAO_INICIADO');
+    return statusPill(r.status_hospedagem||r.status_solicitacao);
   }
 
-  function renderTabFinanceiro() {
-    const tbody=document.getElementById('tbodyFinanceiro');
+  function pagamentoActionLabel(bucket) { return bucket==='financeiro' ? 'Registrar pagamento' : 'Enviar p/ pagamento'; }
+
+  function renderTabAndamento() {
+    const tbody=document.getElementById('tbodyAndamento');
     if (!tbody) return;
-    const rows=state.rows.filter((r) => painelBucket(r)==='financeiro');
-    if (!rows.length) { tbody.innerHTML=`<tr><td colspan="6" class="adm-hosp-empty">Nenhuma pendência financeira.</td></tr>`; return; }
-    tbody.innerHTML=rows.map((r) => `<tr>
-      <td><strong>${esc(r.codigo||'-')}</strong><span class="adm-hosp-row-note">${brDate(r.data_solicitacao)}</span></td>
-      <td>${renderColaboradoresCell(r)}</td>
-      <td>${esc(r.hotel||'-')}</td>
-      <td>${(r.valor_financeiro||r.valor_total_previsto)?money(r.valor_financeiro||r.valor_total_previsto):'-'}</td>
-      <td>${statusPill(r.status_financeiro||'NAO_INICIADO')}</td>
-      <td><button class="btn btn-secondary adm-hosp-small" data-action="checkout" data-id="${esc(r.solicitacao_id)}" type="button">Detalhes</button></td>
-    </tr>`).join('');
+    const all=state.rows.filter((r) => ['reservados','checkout','financeiro'].includes(painelBucket(r)));
+    document.querySelectorAll('#andamentoFiltros [data-stage-filter]').forEach((btn) => {
+      const key=btn.dataset.stageFilter;
+      btn.classList.toggle('active',key===state.andamentoFiltro);
+    });
+    const rows=state.andamentoFiltro==='todos' ? all : all.filter((r) => painelBucket(r)===state.andamentoFiltro);
+    if (!rows.length) { tbody.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">Nenhuma hospedagem em andamento.</td></tr>`; return; }
+    tbody.innerHTML=rows.map((r) => {
+      const bucket=painelBucket(r);
+      const valor=r.valor_financeiro||r.valor_total_previsto;
+      const acoes=[
+        bucket==='reservados' ? `<button class="btn btn-secondary adm-hosp-small" data-action="estender" data-id="${esc(r.solicitacao_id)}" type="button">Estender</button>` : '',
+        r.reserva_id ? `<button class="btn btn-primary adm-hosp-small" data-action="enviar-pagamento" data-id="${esc(r.solicitacao_id)}" type="button">${esc(pagamentoActionLabel(bucket))}</button>` : ''
+      ].filter(Boolean).join('');
+      return `<tr>
+        <td><strong>${esc(r.codigo||'-')}</strong><span class="adm-hosp-row-note">${brDate(r.data_solicitacao)}</span></td>
+        <td>${renderColaboradoresCell(r)}</td>
+        <td>${esc(r.hotel||'-')}<span class="adm-hosp-row-note">${esc([r.cidade,r.uf].filter(Boolean).join('/'))}</span></td>
+        <td>${renderStageStepper(bucket)}<span class="adm-hosp-row-note">${stageStatusPill(r,bucket)}</span></td>
+        <td>${brDate(r.data_checkout||r.data_checkout_prevista)}<span class="adm-hosp-row-note">Check-in: ${brDate(r.data_checkin||r.data_checkin_prevista)}</span></td>
+        <td>${valor?money(valor):'-'}</td>
+        <td><div class="adm-hosp-actions">${acoes}</div></td>
+      </tr>`;
+    }).join('');
   }
 
   function renderTabConcluidos() {
@@ -964,7 +978,7 @@ export function renderContent(content, userContext) {
   // ─── Tab navigation ────────────────────────────────────────────────────────
 
   function setTab(tab) {
-    const valid=['dashboard','historico','solicitadas','reservados','checkout','financeiro','concluidos','hoteis','alojamentos'];
+    const valid=['dashboard','historico','solicitadas','andamento','concluidos','hoteis','alojamentos'];
     const t=valid.includes(tab)?tab:'dashboard';
     state.tab=t;
     document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active',b.dataset.tab===t));
@@ -1336,7 +1350,8 @@ export function renderContent(content, userContext) {
   function openModalCheckout(row) {
     state.selected=row;
     const colabs=getColaboradoresDetalhados(row);
-    document.getElementById('checkoutSub').textContent=`${row.hotel||'-'} · ${[row.cidade,row.uf].filter(Boolean).join('/')}`;
+    const stageLabel=ANDAMENTO_STAGES.find((s) => s.bucket===painelBucket(row))?.label||'';
+    document.getElementById('checkoutSub').textContent=`${row.hotel||'-'} · ${[row.cidade,row.uf].filter(Boolean).join('/')}${stageLabel?` · Estágio: ${stageLabel}`:''}`;
     document.getElementById('checkoutColabList').innerHTML=colabs.map((c) => {
       const nome=c.nome_colaborador||c.nome||'-';
       return `<div class="adm-colab-chip"><span class="cn">${esc(nome)}</span></div>`;
@@ -1552,9 +1567,15 @@ export function renderContent(content, userContext) {
   // ─── Event listeners ───────────────────────────────────────────────────────
 
   document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
-  ['refreshPainel','refreshReservados','refreshCheckout','refreshFinanceiro'].forEach((id) => document.getElementById(id)?.addEventListener('click',loadRows));
+  ['refreshPainel','refreshAndamento'].forEach((id) => document.getElementById(id)?.addEventListener('click',loadRows));
   document.getElementById('refreshHistorico')?.addEventListener('click',loadHistoricoRows);
   document.getElementById('historicoSearch')?.addEventListener('input',renderHistorico);
+  document.getElementById('andamentoFiltros')?.addEventListener('click',(ev) => {
+    const btn=ev.target.closest('[data-stage-filter]');
+    if (!btn) return;
+    state.andamentoFiltro=btn.dataset.stageFilter;
+    renderTabAndamento();
+  });
 
   // Hotel/Alojamento management
   document.getElementById('hotelSearch')?.addEventListener('input',renderHoteis);
@@ -1622,7 +1643,7 @@ export function renderContent(content, userContext) {
     if (btn.dataset.action==='reservar') { const r=state.rows.find((x) => x.solicitacao_id===id); if (r) openModalReservar(r); }
     else if (btn.dataset.action==='recusar') { const r=state.rows.find((x) => x.solicitacao_id===id); if (r) recusarSolicitacao(r); }
     else if (btn.dataset.action==='estender') { const r=state.rows.find((x) => x.solicitacao_id===id); if (r) openModalEstender(r); }
-    else if (btn.dataset.action==='checkout') { const r=state.rows.find((x) => x.solicitacao_id===id); if (r) openModalCheckout(r); }
+    else if (btn.dataset.action==='enviar-pagamento') { const r=state.rows.find((x) => x.solicitacao_id===id); if (r) openModalCheckout(r); }
     else if (btn.dataset.action==='edit-hotel') { const h=state.hoteis.find((x) => x.id===btn.dataset.id); if (h) fillHotelForm(h); }
     else if (btn.dataset.action==='delete-hotel') deleteHotel(btn.dataset.id);
     else if (btn.dataset.action==='edit-alojamento') { const a=(state.alojamentos||[]).find((x) => String(x.id)===String(btn.dataset.id)); if (a) fillAlojamentoForm(a); }

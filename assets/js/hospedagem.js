@@ -367,10 +367,12 @@ export function renderContent(content, userContext) {
       // Restringe a sugestão à(s) regional(is) do próprio gestor (campo supervisao).
       // Sem nenhuma regional configurada no perfil, mantém a lista completa como fallback.
       .filter((row) => !minhasRegionais.length || minhasRegionais.includes(normalizeText(row.supervisao)));
-    // Dedup por colaborador (id ou cpf) — colaborador_snapshot pode ter mais de uma linha por pessoa na mesma data.
+    // Dedup por colaborador (cpf ou nome) — colaborador_snapshot pode ter mais de uma linha por pessoa na mesma data.
+    // Usa cpf/nome (estáveis por pessoa) em vez de id (chave de linha, diferente em cada duplicata).
     const porChave = new Map();
     for (const row of filtrados) {
-      const chave = String(row.id || row.cpf || row.nome || '').trim();
+      const cpfChave = String(row.cpf || '').replace(/\D/g, '');
+      const chave = cpfChave || String(row.nome || row.id || '').trim();
       if (!chave || !porChave.has(chave)) porChave.set(chave, row);
     }
     state.colaboradores = [...porChave.values()].map((row) => ({
