@@ -1216,9 +1216,22 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       <button type="button" class="peqb-btn" id="peqbAutoPreencher">Auto-preencher equipe</button>
       <button type="button" class="peqb-btn" id="peqbSugerirCaronas" title="Motorista/carona por frota (desvio ≤ ${CARONA_DESVIO_KM} km), sobra vira próprio/Uber">Sugerir caronas</button>
       <span id="peqbCaronasMsg" style="font-size:11.5px;color:#9fb7aa;align-self:center"></span>
+      <button type="button" class="peqb-btn" id="peqbVerMapa">🗺️ Ver mapa do gestor</button>
     </div>
+    <div id="peqbMapBand" hidden></div>
     <div class="peqb-os-list peqb-os-list-full" id="peqbOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
   `;
+
+  // Ponte para o módulo do mapa (programacao-mapa-gestor.js), carregado à
+  // parte e só ativado no clique de "Ver mapa do gestor" — mantém o mapa
+  // (Leaflet + geocodificação) fora do caminho crítico do render da lista de
+  // O.S., que já travou a tela 2x no passado quando isso era síncrono.
+  window.__peqbGetEquipeSnapshot = () => ({
+    osComCandidatosAtual,
+    supervisoesResolvidas: programacaoIdMap.size ? [...programacaoIdMap.keys()] : [supervisao],
+    programacaoIdParaOs,
+    dataReferencia: options.dataReferencia || null,
+  });
 
   // currentUser é opcional (só preenche logistica_solicitado_por ao FINALIZAR).
   // Busca SEM bloquear o render — assim o #peqbOsList já existe acima e o
