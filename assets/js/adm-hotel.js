@@ -878,6 +878,7 @@ export function renderContent(content, userContext) {
     const hosp=String(r.status_hospedagem||'').toUpperCase();
     const sol=String(r.status_solicitacao||'').toUpperCase();
     if (fin==='PAGO'||nf==='LANCADO'||sol==='CONCLUIDA') return 'concluidos';
+    if (sol==='CANCELADA') return 'cancelada';
     if (['AGUARDANDO_PAGAMENTO','ENVIADO_AO_FINANCEIRO'].includes(fin)||r.pendencia_financeira||r.pendencia_nf) return 'financeiro';
     if (r.checkout_hoje||r.checkout_vencido||['CHECKOUT_HOJE','RENOVACAO_NECESSARIA','CHECKOUT_REALIZADO'].includes(hosp)) return 'checkout';
     if (sol==='RESERVADA'||['CHECKIN_PREVISTO','HOSPEDADO'].includes(hosp)) return 'reservados';
