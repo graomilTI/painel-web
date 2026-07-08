@@ -1,3 +1,7 @@
+# ARQUIVO ÓRFÃO/DEPRECATED — não é lido pela Supabase CLI (que usa supabase/config.toml).
+# project_id abaixo é inválido (URL de callback OAuth, ref de projeto antigo que não existe mais).
+# Mantido só para histórico; o bloco [functions.google-contacts-sync] já foi replicado
+# em supabase/config.toml (2026-07-08). Pode ser removido com segurança no futuro.
 project_id = "https://xyzpnuumdqhegxakkyws.supabase.co/functions/v1/google-contacts-sync/callback"
 
 [functions.sync-multas-detran]
