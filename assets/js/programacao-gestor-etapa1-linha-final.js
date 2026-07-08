@@ -1,5 +1,5 @@
 // Ajuste final da Etapa 1 do Gestor > Programação:
-// mantém KPIs, mas sem card gigante e sem blocos internos.
+// mantém KPIs em linha compacta, sem card gigante e sem blocos internos.
 
 const CSS_ID = 'pgcEtapa1LinhaFinalCss';
 
@@ -30,18 +30,18 @@ function injectEtapa1LinhaCss() {
     #pgcPane1 .pgc-os-kpi-head,
     #pgcPane1 .pgc-os-line-head {
       display: grid !important;
-      grid-template-columns: minmax(220px, 1.4fr) minmax(320px, 2.1fr) 86px 78px 205px !important;
-      gap: 8px !important;
+      grid-template-columns: minmax(280px, 1.85fr) minmax(430px, 2.75fr) 68px 62px 176px !important;
+      gap: 6px !important;
       align-items: center !important;
-      margin: 0 0 6px !important;
-      padding: 0 8px !important;
+      margin: 0 0 5px !important;
+      padding: 0 7px !important;
       background: transparent !important;
       border: 0 !important;
     }
 
     #pgcPane1 .pgc-os-kpi-head span,
     #pgcPane1 .pgc-os-line-head span {
-      font-size: 10px !important;
+      font-size: 9.5px !important;
       line-height: 1 !important;
       font-weight: 950 !important;
       text-transform: uppercase !important;
@@ -64,7 +64,7 @@ function injectEtapa1LinhaCss() {
     #pgcPane1 .peqb-os-list {
       display: flex !important;
       flex-direction: column !important;
-      gap: 5px !important;
+      gap: 4px !important;
     }
 
     #pgcPane1 .peqs-row {
@@ -73,23 +73,23 @@ function injectEtapa1LinhaCss() {
       margin: 0 !important;
       padding: 0 !important;
       border: 1px solid rgba(52, 211, 153, .13) !important;
-      border-radius: 10px !important;
-      background: rgba(2, 6, 23, .20) !important;
+      border-radius: 9px !important;
+      background: rgba(2, 6, 23, .18) !important;
       box-shadow: none !important;
       overflow: hidden !important;
     }
 
     #pgcPane1 .peqs-row:hover {
       border-color: rgba(52, 211, 153, .30) !important;
-      background: rgba(2, 6, 23, .28) !important;
+      background: rgba(2, 6, 23, .26) !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-left {
       display: grid !important;
-      grid-template-columns: minmax(220px, 1.4fr) minmax(320px, 2.1fr) 86px 78px 205px !important;
+      grid-template-columns: minmax(280px, 1.85fr) minmax(430px, 2.75fr) 68px 62px 176px !important;
       gap: 0 !important;
       align-items: stretch !important;
-      min-height: 38px !important;
+      min-height: 32px !important;
       padding: 0 !important;
       border: 0 !important;
       background: transparent !important;
@@ -101,10 +101,10 @@ function injectEtapa1LinhaCss() {
 
     #pgcPane1 .peqs-row .peqb-os2-kpi {
       min-width: 0 !important;
-      height: 38px !important;
-      min-height: 38px !important;
+      height: 32px !important;
+      min-height: 32px !important;
       margin: 0 !important;
-      padding: 0 10px !important;
+      padding: 0 8px !important;
       border: 0 !important;
       border-right: 1px solid rgba(148, 163, 184, .10) !important;
       border-radius: 0 !important;
@@ -126,7 +126,7 @@ function injectEtapa1LinhaCss() {
       width: 100% !important;
       margin: 0 !important;
       color: #f8fafc !important;
-      font-size: 12px !important;
+      font-size: 11.5px !important;
       font-weight: 900 !important;
       line-height: 1 !important;
       white-space: nowrap !important;
@@ -148,6 +148,8 @@ function injectEtapa1LinhaCss() {
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(4) {
       justify-content: center !important;
       text-align: center !important;
+      padding-left: 4px !important;
+      padding-right: 4px !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(3) strong,
@@ -156,10 +158,10 @@ function injectEtapa1LinhaCss() {
     }
 
     #pgcPane1 .peqs-row .peqb-os2-tagsrow {
-      height: 38px !important;
-      min-height: 38px !important;
+      height: 32px !important;
+      min-height: 32px !important;
       margin: 0 !important;
-      padding: 0 8px !important;
+      padding: 0 6px !important;
       border: 0 !important;
       border-radius: 0 !important;
       background: transparent !important;
@@ -172,17 +174,17 @@ function injectEtapa1LinhaCss() {
 
     #pgcPane1 .peqs-row .peqb-status-strip {
       margin: 0 !important;
-      gap: 7px !important;
+      gap: 6px !important;
       flex-wrap: nowrap !important;
     }
 
     #pgcPane1 .peqs-row .peqb-st {
-      height: 28px !important;
-      min-width: 30px !important;
-      width: 30px !important;
+      height: 26px !important;
+      min-width: 28px !important;
+      width: 28px !important;
       padding: 0 !important;
       border-radius: 999px !important;
-      font-size: 11px !important;
+      font-size: 10px !important;
     }
 
     @media (max-width: 980px) {
@@ -205,8 +207,8 @@ function injectEtapa1LinhaCss() {
       }
       #pgcPane1 .peqs-row .peqb-os2-kpi,
       #pgcPane1 .peqs-row .peqb-os2-tagsrow {
-        height: 34px !important;
-        min-height: 34px !important;
+        height: 32px !important;
+        min-height: 32px !important;
       }
     }
   `;
