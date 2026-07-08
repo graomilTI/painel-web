@@ -388,6 +388,17 @@ function ensureSupCombo() {
   const nativeSelect = document.getElementById('progSup');
   if (!nativeSelect) return;
 
+  // Defesa contra re-render duplicado do toolbar (ex.: initProtectedPage sendo
+  // acionado 2x, uma via navegação suave e outra pelo boot interno do módulo):
+  // se sobrar mais de um <select id="progSup"> ou mais de um combo já montado
+  // no mesmo wrapper, mantém só o par oficial (o select atual + seu combo) e
+  // remove o resto — evita a barra de Supervisão aparecer duplicada.
+  const wrap = nativeSelect.closest('.prog-tfield-sup');
+  if (wrap) {
+    wrap.querySelectorAll('select#progSup').forEach((sel) => { if (sel !== nativeSelect) sel.remove(); });
+    wrap.querySelectorAll('#progSupCombo').forEach((el, index) => { if (index > 0) el.remove(); });
+  }
+
   let input = document.getElementById('progSupCombo');
   if (!input) {
     nativeSelect.classList.add('prog-sup-native-hidden');
