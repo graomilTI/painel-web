@@ -13,6 +13,7 @@ type QueueRow = {
 
 type DriverRow = Record<string, any>;
 type LocalMotoristaRow = Record<string, any>;
+type ContactFallback = { email: string; telefone: string };
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -104,11 +105,34 @@ async function getValidToken(params: { supabase: any; integracaoId: string; secr
   await upsertSecret(params.supabase, params.integracaoId, 'BFLEET_TOKEN_EXPIRES', newExpires, 'Vencimento do BFLEET_TOKEN em milissegundos (epoch)', false);
   return token;
 }
-async function bfleetCall(apiBase: string, endpoint: string, payload: Record<string, unknown>) {
-  const response = await fetch(`${apiBase}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formPayload(payload) });
-  const text = await response.text();
-  let parsed: any; try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
-  return { ok: response.ok, status: response.status, text, parsed };
+function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+async function bfleetCall(apiBase: string, endpoint: string, payload: Record<string, unknown>, timeoutMs = 25000) {
+  let last: { ok: boolean; status: number; text: string; parsed: any } | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`${apiBase}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formPayload(payload),
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      let parsed: any; try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+      return { ok: response.ok, status: response.status, text, parsed };
+    } catch (err) {
+      const e = err as any;
+      const msg = e?.name === 'AbortError'
+        ? `BFleet ${endpoint}: timeout interno de ${timeoutMs}ms`
+        : `BFleet ${endpoint}: ${e?.message || String(e)}`;
+      last = { ok: false, status: 0, text: msg, parsed: { error: msg, endpoint } };
+      if (attempt < 2) await sleep(800);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return last as { ok: boolean; status: number; text: string; parsed: any };
 }
 function extractArray(payload: any): any[] {
   if (Array.isArray(payload?.data)) return payload.data;
@@ -127,9 +151,6 @@ function isBfleetOk(resp: { ok: boolean; parsed: any }) {
 function extractDriverId(payload: any): string {
   return cleanStr(payload?.data?.idConductor ?? payload?.data?.id_conductor ?? payload?.data?.id ?? payload?.idConductor ?? payload?.id_conductor ?? payload?.id);
 }
-
-// A API BFleet/Service24GPS (RedGPS) não tem endpoint pra "definir o condutor de um veículo".
-// O vínculo é feito ao contrário: createDriver/updateDriver com idvehiculo associa o veículo AO condutor.
 async function fetchDrivers(apiBase: string, apiKey: string, token: string) {
   const resp = await bfleetCall(apiBase, 'driverGetAll', { apikey: apiKey, token });
   return { resp, rows: extractArray(resp.parsed) as DriverRow[] };
@@ -167,12 +188,38 @@ function vehicleIdFromRow(row: DriverRow): string {
 function vehiclePlateFromRow(row: DriverRow): string {
   return normalizePlate(row.patente ?? row.placa ?? row.nombre);
 }
+function normalizeGps(v: unknown): string { return onlyDigits(v); }
+function uniqueKeys(values: unknown[]): string[] {
+  const out = new Set<string>();
+  for (const value of values) {
+    const clean = cleanStr(value);
+    const digits = normalizeGps(value);
+    if (clean) out.add(clean);
+    if (digits) out.add(digits);
+  }
+  return Array.from(out).filter(Boolean);
+}
+function vehicleGpsKeysFromBfleet(row: DriverRow): string[] {
+  return uniqueKeys([
+    row.idgps, row.idGps, row.idGPS, row.id_gps, row.gps, row.gpsId, row.gps_id,
+    row.imei, row.IMEI, row.imeiGps, row.imei_gps, row.idDispositivo, row.id_dispositivo,
+    row.dispositivo, row.serial, row.identificador, row.equipo, row.idEquipo, row.id_equipo,
+  ]);
+}
+function painelVehicleGpsKeys(row: Record<string, any> | null | undefined): string[] {
+  if (!row) return [];
+  return uniqueKeys([
+    row.bfleet_idgps, row.bfleet_id_gps, row.idgps, row.id_gps, row.gps,
+    row.imei, row.imei_gps, row.rastreador_imei, row.id_rastreador,
+  ]);
+}
+function painelVehicleDirectId(row: Record<string, any> | null | undefined): string {
+  if (!row) return '';
+  return cleanStr(row.bfleet_id ?? row.bfleet_idvehiculo ?? row.bfleet_id_veiculo ?? row.idvehiculo ?? row.id_vehiculo);
+}
 function splitDriverName(fullName: unknown) {
   const parts = cleanStr(fullName).replace(/\s+/g, ' ').split(' ').filter(Boolean);
-  return {
-    nombre: parts.shift() || '',
-    apellido: parts.join(' ') || '',
-  };
+  return { nombre: parts.shift() || '', apellido: parts.join(' ') || '' };
 }
 function formatDateOnly(value: unknown): string {
   const s = cleanStr(value);
@@ -183,34 +230,36 @@ function formatDateOnly(value: unknown): string {
   if (br) return `${br[3]}-${br[2]}-${br[1]}`;
   return s;
 }
-function localEmail(local: LocalMotoristaRow | null | undefined, fallbackByName: string) {
-  return cleanStr(local?.email) || fallbackByName || '';
+function localEmail(local: LocalMotoristaRow | null | undefined, fallback: ContactFallback) {
+  return cleanStr(local?.email) || fallback.email || '';
 }
-function localPhone(local: LocalMotoristaRow | null | undefined) {
-  return onlyDigits(local?.telefone) || cleanStr(local?.telefone);
+function localPhone(local: LocalMotoristaRow | null | undefined, fallback: ContactFallback) {
+  return onlyDigits(local?.telefone) || fallback.telefone || '';
 }
-function validateLocalForCreate(local: LocalMotoristaRow | null | undefined, fallbackEmail: string) {
+function localAddress(local: LocalMotoristaRow | null | undefined) {
+  return cleanStr(local?.endereco) || 'Não informado';
+}
+function validateLocalForCreate(local: LocalMotoristaRow | null | undefined, fallback: ContactFallback) {
   const missing: string[] = [];
   if (!local) missing.push('cadastro em frotas_motoristas');
-  if (local && !localPhone(local)) missing.push('telefone');
-  if (local && !localEmail(local, fallbackEmail)) missing.push('email');
+  if (local && !localPhone(local, fallback)) missing.push('telefone');
+  if (local && !localEmail(local, fallback)) missing.push('email');
   if (local && !cleanStr(local.cnh_numero)) missing.push('CNH');
   if (local && !cleanStr(local.cnh_validade)) missing.push('validade da CNH');
-  if (local && !cleanStr(local.endereco)) missing.push('endereço');
   return missing;
 }
-function createDriverPayload(params: { apiKey: string; token: string; local: LocalMotoristaRow; condutorNome: string; vehicleId: string; fallbackEmail: string }) {
+function createDriverPayload(params: { apiKey: string; token: string; local: LocalMotoristaRow; condutorNome: string; vehicleId: string; fallback: ContactFallback }) {
   const names = splitDriverName(params.local.nome || params.condutorNome);
   return {
     apikey: params.apiKey,
     token: params.token,
     nombre: names.nombre,
     apellido: names.apellido,
-    telefono: localPhone(params.local),
+    telefono: localPhone(params.local, params.fallback),
     licencia: cleanStr(params.local.cnh_numero),
     vigencia: formatDateOnly(params.local.cnh_validade),
-    direccion: cleanStr(params.local.endereco),
-    email: localEmail(params.local, params.fallbackEmail),
+    direccion: localAddress(params.local),
+    email: localEmail(params.local, params.fallback),
     numero: '',
     alias: cleanStr(params.condutorNome),
     identificador: '',
@@ -220,7 +269,7 @@ function createDriverPayload(params: { apiKey: string; token: string; local: Loc
     idvehiculo: params.vehicleId,
   };
 }
-function updateDriverPayload(params: { apiKey: string; token: string; driver: DriverRow; local?: LocalMotoristaRow | null; condutorNome: string; vehicleId: string; fallbackEmail: string }) {
+function updateDriverPayload(params: { apiKey: string; token: string; driver: DriverRow; local?: LocalMotoristaRow | null; condutorNome: string; vehicleId: string; fallback: ContactFallback }) {
   const names = splitDriverName(params.local?.nome || params.condutorNome || `${params.driver.nombre || ''} ${params.driver.apellido || ''}`);
   return {
     apikey: params.apiKey,
@@ -228,11 +277,11 @@ function updateDriverPayload(params: { apiKey: string; token: string; driver: Dr
     idConductor: cleanStr(params.driver.id ?? params.driver.idConductor ?? params.driver.id_conductor),
     nombre: cleanStr(params.driver.nombre) || names.nombre,
     apellido: cleanStr(params.driver.apellido) || names.apellido,
-    telefono: localPhone(params.local) || cleanStr(params.driver.telefono),
+    telefono: localPhone(params.local, params.fallback) || cleanStr(params.driver.telefono),
     licencia: cleanStr(params.local?.cnh_numero) || cleanStr(params.driver.licencia),
     vigencia: formatDateOnly(params.local?.cnh_validade) || cleanStr(params.driver.vigencia),
-    direccion: cleanStr(params.local?.endereco) || cleanStr(params.driver.direccion),
-    email: localEmail(params.local, params.fallbackEmail) || cleanStr(params.driver.email),
+    direccion: localAddress(params.local) || cleanStr(params.driver.direccion),
+    email: localEmail(params.local, params.fallback) || cleanStr(params.driver.email),
     numero: cleanStr(params.driver.numero),
     alias: cleanStr(params.driver.alias),
     identificador: cleanStr(params.driver.identificador),
@@ -281,38 +330,22 @@ Deno.serve(async (req) => {
 
     let token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password });
 
-    let vehiclesResp = await fetchVehicles(apiBase, apiKey, token);
-    if (isAuthError(vehiclesResp.resp)) {
-      token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password, force: true });
-      vehiclesResp = await fetchVehicles(apiBase, apiKey, token);
-    }
-    if (!vehiclesResp.resp.ok && Number(vehiclesResp.resp.parsed?.status) !== 200) {
-      return json({ error: `Falha ao listar veículos BFleet (${vehiclesResp.resp.status}).`, detalhe: vehiclesResp.resp.text.slice(0, 800) }, 502);
-    }
     const byPlate = new Map<string, DriverRow>();
-    for (const row of vehiclesResp.rows) { const plate = vehiclePlateFromRow(row); if (plate) byPlate.set(plate, row); }
+    const byGps = new Map<string, DriverRow>();
+    const byVehicleId = new Map<string, DriverRow>();
+    let vehicleGetAllError = '';
+    let driverGetAllError = '';
+    let driversByName = new Map<string, DriverRow>();
 
-    let driversResp = await fetchDrivers(apiBase, apiKey, token);
-    if (isAuthError(driversResp.resp)) {
-      token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password, force: true });
-      driversResp = await fetchDrivers(apiBase, apiKey, token);
-    }
-    if (!driversResp.resp.ok && Number(driversResp.resp.parsed?.status) !== 200) {
-      return json({ error: `Falha ao listar condutores BFleet (${driversResp.resp.status}).`, detalhe: driversResp.resp.text.slice(0, 800) }, 502);
-    }
-    const driversByName = buildDriverIndex(driversResp.rows);
-
-    const { data: colaboradores } = await supabase.from('colaboradores_atuais').select('nome,email_empresa,email_pessoal');
-    const emailByName = new Map<string, string>();
+    const { data: colaboradores } = await supabase.from('colaboradores_atuais').select('nome,email_empresa,email_pessoal,whatsapp');
+    const contactByName = new Map<string, ContactFallback>();
     for (const c of (colaboradores || []) as any[]) {
-      const email = cleanStr(c.email_empresa) || cleanStr(c.email_pessoal);
       const key = normalizeName(c.nome);
-      if (email && key && !emailByName.has(key)) emailByName.set(key, email);
+      if (!key || contactByName.has(key)) continue;
+      contactByName.set(key, { email: cleanStr(c.email_empresa) || cleanStr(c.email_pessoal), telefone: onlyDigits(c.whatsapp) });
     }
 
-    const { data: motoristas } = await supabase
-      .from('frotas_motoristas')
-      .select('nome,cpf,telefone,email,cnh_numero,cnh_validade,endereco,status,observacoes');
+    const { data: motoristas } = await supabase.from('frotas_motoristas').select('nome,cpf,telefone,email,cnh_numero,cnh_validade,endereco,status,observacoes');
     const motoristasByName = buildLocalMotoristaIndex((motoristas || []) as LocalMotoristaRow[]);
 
     const placasFiltro = Array.isArray(body?.placas) ? body.placas.map((p: unknown) => normalizePlate(p)).filter(Boolean) : [];
@@ -321,72 +354,162 @@ Deno.serve(async (req) => {
     const { data: fila, error: filaError } = await q;
     if (filaError) throw filaError;
 
+    const veiculoIds = Array.from(new Set(((fila || []) as QueueRow[]).map((item) => cleanStr(item.veiculo_id)).filter(Boolean)));
+    const veiculosPainelById = new Map<string, Record<string, any>>();
+    if (veiculoIds.length) {
+      const { data: veiculosPainel, error: veiculosPainelError } = await supabase
+        .from('frotas_veiculos')
+        .select('id,placa,motorista_atual,bfleet_id,bfleet_idgps,bfleet_placa,bfleet_patente,bfleet_confirmado,bfleet_condutor_status,bfleet_condutor_erro')
+        .in('id', veiculoIds);
+      if (veiculosPainelError) throw veiculosPainelError;
+      for (const veiculo of (veiculosPainel || []) as Record<string, any>[]) {
+        const id = cleanStr(veiculo.id);
+        if (id) veiculosPainelById.set(id, veiculo);
+      }
+    }
+
+    const precisaVehicleGetAll = ((fila || []) as QueueRow[]).some((item) => {
+      const v = item.veiculo_id ? veiculosPainelById.get(cleanStr(item.veiculo_id)) : null;
+      return !painelVehicleDirectId(v);
+    });
+
+    if (precisaVehicleGetAll) {
+      let vehiclesResp = await fetchVehicles(apiBase, apiKey, token);
+      if (isAuthError(vehiclesResp.resp)) {
+        token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password, force: true });
+        vehiclesResp = await fetchVehicles(apiBase, apiKey, token);
+      }
+      if (!vehiclesResp.resp.ok && Number(vehiclesResp.resp.parsed?.status) !== 200) {
+        vehicleGetAllError = `Falha ao listar veículos BFleet (${vehiclesResp.resp.status}): ${vehiclesResp.resp.text.slice(0, 800)}`;
+      } else {
+        for (const row of vehiclesResp.rows) {
+          const plate = vehiclePlateFromRow(row);
+          if (plate && !byPlate.has(plate)) byPlate.set(plate, row);
+
+          const vehicleId = vehicleIdFromRow(row);
+          if (vehicleId && !byVehicleId.has(vehicleId)) byVehicleId.set(vehicleId, row);
+
+          for (const gpsKey of vehicleGpsKeysFromBfleet(row)) {
+            if (gpsKey && !byGps.has(gpsKey)) byGps.set(gpsKey, row);
+          }
+        }
+      }
+    }
+
+    const driversResp = await fetchDrivers(apiBase, apiKey, token);
+    if (isAuthError(driversResp.resp)) {
+      token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password, force: true });
+      const refreshedDriversResp = await fetchDrivers(apiBase, apiKey, token);
+      if (refreshedDriversResp.resp.ok || Number(refreshedDriversResp.resp.parsed?.status) === 200) {
+        driversByName = buildDriverIndex(refreshedDriversResp.rows);
+      } else {
+        driverGetAllError = `Falha ao listar condutores BFleet (${refreshedDriversResp.resp.status}): ${refreshedDriversResp.resp.text.slice(0, 800)}`;
+      }
+    } else if (driversResp.resp.ok || Number(driversResp.resp.parsed?.status) === 200) {
+      driversByName = buildDriverIndex(driversResp.rows);
+    } else {
+      driverGetAllError = `Falha ao listar condutores BFleet (${driversResp.resp.status}): ${driversResp.resp.text.slice(0, 800)}`;
+    }
+
     let updated = 0, created = 0, errors = 0, skipped = 0;
     const detalhes: any[] = [];
     for (const item of (fila || []) as QueueRow[]) {
-      const plate = normalizePlate(item.placa);
-      const condutorNome = cleanStr(item.motorista_atual);
-      const veiculoBf = byPlate.get(plate);
+      const veiculoPainel = item.veiculo_id ? veiculosPainelById.get(cleanStr(item.veiculo_id)) : null;
+      const plate = normalizePlate(item.placa || veiculoPainel?.placa || veiculoPainel?.bfleet_placa || veiculoPainel?.bfleet_patente);
+      const condutorNome = cleanStr(item.motorista_atual || veiculoPainel?.motorista_atual);
+      const directVehicleId = painelVehicleDirectId(veiculoPainel);
 
-      if (!plate || !condutorNome) {
+      let matchMode = '';
+      let veiculoBf: DriverRow | undefined;
+
+      if (directVehicleId) {
+        veiculoBf = byVehicleId.get(directVehicleId) || { id: directVehicleId, idvehiculo: directVehicleId, patente: plate };
+        matchMode = byVehicleId.has(directVehicleId) ? 'bfleet_id_vehicleGetAll' : 'bfleet_id_painel';
+      }
+
+      if (!veiculoBf) {
+        for (const gpsKey of painelVehicleGpsKeys(veiculoPainel)) {
+          const found = byGps.get(gpsKey);
+          if (found) {
+            veiculoBf = found;
+            matchMode = 'bfleet_idgps';
+            break;
+          }
+        }
+      }
+
+      if (!veiculoBf && plate) {
+        veiculoBf = byPlate.get(plate);
+        if (veiculoBf) matchMode = 'placa';
+      }
+
+      if ((!plate && !directVehicleId) || !condutorNome) {
         skipped++;
-        const msg = 'Placa ou motorista vazio.';
+        const msg = 'Placa/ID BFleet ou motorista vazio.';
         await markErro(supabase, item, msg);
         detalhes.push({ placa: item.placa, status: 'ERRO', erro: msg });
         continue;
       }
       if (!veiculoBf) {
         skipped++;
-        const msg = 'Placa não encontrada no vehicleGetAll BFleet.';
+        const msg = vehicleGetAllError
+          ? `Não localizei o veículo e o vehicleGetAll falhou: ${vehicleGetAllError}`
+          : (veiculoPainel?.bfleet_confirmado
+            ? 'Veículo confirmado BFleet no painel, mas não localizado por bfleet_id, bfleet_idgps nem placa no vehicleGetAll.'
+            : 'Placa não encontrada no vehicleGetAll BFleet e veículo sem BFleet confirmado no painel.');
         await markErro(supabase, item, msg);
         detalhes.push({ placa: item.placa, status: 'ERRO', erro: msg });
         continue;
       }
 
-      const vehicleId = vehicleIdFromRow(veiculoBf);
-      const local = motoristasByName.get(normalizeName(condutorNome)) || null;
-      const fallbackEmail = emailByName.get(normalizeName(condutorNome)) || '';
-      let driver = driversByName.get(normalizeName(condutorNome));
+      const vehicleId = vehicleIdFromRow(veiculoBf) || directVehicleId;
+      if (!vehicleId) {
+        skipped++;
+        const msg = 'Veículo localizado, mas sem idvehiculo BFleet para vincular condutor.';
+        await markErro(supabase, item, msg);
+        detalhes.push({ placa: item.placa, status: 'ERRO', erro: msg, matchMode });
+        continue;
+      }
+      const nameKey = normalizeName(condutorNome);
+      const local = motoristasByName.get(nameKey) || null;
+      const fallback = contactByName.get(nameKey) || { email: '', telefone: '' };
+      let driver = driversByName.get(nameKey);
 
       if (!driver) {
-        const missing = validateLocalForCreate(local, fallbackEmail);
+        const missing = validateLocalForCreate(local, fallback);
         if (missing.length) {
           errors++;
           const msg = `Motorista "${condutorNome}" não existe no BFleet e não tem dados completos no painel para createDriver: ${missing.join(', ')}.`;
           await markErro(supabase, item, msg);
-          detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'ERRO', erro: msg });
+          detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'ERRO', erro: msg, matchMode });
           continue;
         }
-
-        const createPayload = createDriverPayload({ apiKey, token, local: local as LocalMotoristaRow, condutorNome, vehicleId, fallbackEmail });
+        const createPayload = createDriverPayload({ apiKey, token, local: local as LocalMotoristaRow, condutorNome, vehicleId, fallback });
         let createResp = await bfleetCall(apiBase, 'createDriver', createPayload);
         if (isAuthError(createResp)) {
           token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password, force: true });
           createResp = await bfleetCall(apiBase, 'createDriver', { ...createPayload, token });
         }
-
         if (!isBfleetOk(createResp)) {
           errors++;
           const msg = `BFleet createDriver (${createResp.status}): ${createResp.text.slice(0, 500)} | payload: ${JSON.stringify(safePayload(createPayload))}`;
           await markErro(supabase, item, msg);
-          detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'ERRO', erro: msg });
+          detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'ERRO', erro: msg, matchMode });
           continue;
         }
-
         created++;
         const newId = extractDriverId(createResp.parsed);
         driver = { id: newId, ...createPayload };
         for (const key of driverNameKeys(driver)) if (!driversByName.has(key)) driversByName.set(key, driver);
       }
 
-      const payload = updateDriverPayload({ apiKey, token, driver, local, condutorNome, vehicleId, fallbackEmail });
+      const payload = updateDriverPayload({ apiKey, token, driver, local, condutorNome, vehicleId, fallback });
       if (!cleanStr(payload.idConductor)) {
-        // Alguns createDriver retornam OK sem o id do condutor. Se isso acontecer, busca de novo no driverGetAll.
         const refreshed = await fetchDrivers(apiBase, apiKey, token);
         if (refreshed.resp.ok || Number(refreshed.resp.parsed?.status) === 200) {
           const idx = buildDriverIndex(refreshed.rows);
-          const refreshedDriver = idx.get(normalizeName(condutorNome));
-          if (refreshedDriver) Object.assign(payload, updateDriverPayload({ apiKey, token, driver: refreshedDriver, local, condutorNome, vehicleId, fallbackEmail }));
+          const refreshedDriver = idx.get(nameKey);
+          if (refreshedDriver) Object.assign(payload, updateDriverPayload({ apiKey, token, driver: refreshedDriver, local, condutorNome, vehicleId, fallback }));
         }
       }
 
@@ -398,16 +521,15 @@ Deno.serve(async (req) => {
       if (isBfleetOk(resp)) {
         updated++;
         await markOk(supabase, item);
-        detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'OK', criado: !driversResp.rows.some((d) => driverNameKeys(d).includes(normalizeName(condutorNome))) });
+        detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'OK', matchMode });
       } else {
         errors++;
         const msg = `BFleet updateDriver (${resp.status}): ${resp.text.slice(0, 500)} | payload: ${JSON.stringify(safePayload(payload))}`;
         await markErro(supabase, item, msg);
-        detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'ERRO', erro: msg });
+        detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'ERRO', erro: msg, matchMode });
       }
     }
-
-    return json({ ok: true, total_fila: (fila || []).length, created, updated, errors, skipped, detalhes });
+    return json({ ok: true, total_fila: (fila || []).length, created, updated, errors, skipped, vehicleGetAllError, driverGetAllError, detalhes });
   } catch (err) {
     const e = err as any;
     return json({ error: e?.message || String(e) }, 500);
