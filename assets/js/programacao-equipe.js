@@ -8,6 +8,7 @@
 // usada em Frotas Roteirização, ver supabase/functions/frotas-roteirizar).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
+import { logActivity } from './activityLogger.js';
 
 let currentUser = null;
 const BRI = new Intl.NumberFormat('pt-BR');
@@ -75,6 +76,10 @@ function colaboradorNome(row) {
 }
 
 function regionalScore(row, supervisao) {
+  if (Array.isArray(supervisao)) {
+    if (!supervisao.length) return 1;
+    return Math.max(...supervisao.map((s) => regionalScore(row, s)));
+  }
   const alvo = normalizeText(supervisao);
   if (!alvo) return 1;
   const campos = [row?.supervisao, row?.coordenacao, row?.regional, row?.cidade].map(normalizeText).filter(Boolean);
@@ -195,6 +200,12 @@ function injectStyles() {
     .peqb-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:12px;padding:10px}
     .peqb-kpi span{display:block;color:#93c5fd;font-size:9.5px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}
     .peqb-kpi strong{display:block;margin-top:4px;color:#fff;font-size:18px}
+    .peqb-os2-kpis{display:grid;grid-template-columns:repeat(4,minmax(90px,1fr));gap:8px;margin-bottom:8px}
+    .peqb-os2-kpi{border:1px solid rgba(34,197,94,.16);background:rgba(2,6,23,.28);border-radius:10px;padding:7px 9px;min-width:0}
+    .peqb-os2-kpi span{display:block;color:#93c5fd;font-size:9px;font-weight:950;letter-spacing:.06em;text-transform:uppercase}
+    .peqb-os2-kpi strong{display:block;margin-top:3px;color:#fff;font-size:13px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .peqb-os2-kpi-wide{grid-column:span 1}
+    @media(max-width:640px){.peqb-os2-kpis{grid-template-columns:repeat(2,minmax(90px,1fr))}.peqb-os2-kpi-wide{grid-column:span 2}}
     .peqb-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin-bottom:12px}
     .peqb-btn{border:1px solid rgba(134,239,172,.35);background:rgba(22,163,74,.16);color:#dcfce7;border-radius:999px;padding:8px 14px;font-size:12px;font-weight:950;cursor:pointer;white-space:nowrap}
     .peqb-btn:hover{background:rgba(22,163,74,.3)}
@@ -358,10 +369,11 @@ function injectStyles() {
 // FINALIZAR já saíram do fluxo do dia. A triagem (mudar status) e a atribuição
 // passam a conviver na mesma tela.
 async function loadOsRelevantes(supervisao) {
-  const { data, error } = await supabase
+  let query = supabase
     .from('operacional_os')
-    .select('id,numero_os,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os')
-    .eq('supervisao', supervisao)
+    .select('id,numero_os,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os');
+  query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
+  const { data, error } = await query
     .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR,status_gestor.eq.ATENDER')
     .order('data_os', { ascending: false })
     .order('numero_os', { ascending: false })
@@ -418,11 +430,9 @@ async function loadPontos(ids) {
 }
 
 async function loadEquipeExistente(programacaoId) {
-  const { data, error } = await supabase
-    .from('programacao_equipe')
-    .select('*')
-    .eq('programacao_id', programacaoId)
-    .order('created_at', { ascending: true });
+  let query = supabase.from('programacao_equipe').select('*');
+  query = Array.isArray(programacaoId) ? query.in('programacao_id', programacaoId) : query.eq('programacao_id', programacaoId);
+  const { data, error } = await query.order('created_at', { ascending: true });
   if (error) throw error;
   return data || [];
 }
@@ -471,11 +481,9 @@ async function loadHoteis() {
 // painel — assim a placa casa de forma confiável.
 async function loadCruzamentoPlacas(supervisao) {
   try {
-    const { data, error } = await supabase
-      .from('colaborador_cruzamento')
-      .select('cpf,veiculo_placa')
-      .eq('supervisao', supervisao)
-      .limit(5000);
+    let query = supabase.from('colaborador_cruzamento').select('cpf,veiculo_placa');
+    query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
+    const { data, error } = await query.limit(5000);
     if (error) throw error;
     const map = new Map();
     (data || []).forEach((r) => { if (r.veiculo_placa) map.set(String(r.cpf || '').replace(/\D/g, ''), r.veiculo_placa); });
@@ -491,10 +499,15 @@ async function loadCruzamentoPlacas(supervisao) {
 // candidatos ranqueados. Os já escalados em outra OS são marcados com ♻ na UI.
 async function loadColaboradoresRegional(supervisao) {
   const fontes = [];
+  const listaSupervisoes = Array.isArray(supervisao) ? supervisao : [supervisao];
   try {
-    const { data, error } = await supabase.rpc('programacao_colaboradores_supervisao', { p_supervisao: supervisao });
-    if (error) throw error;
-    fontes.push(...(data || []).map((r) => ({ ...r, _scoreRegional: 100, _fonteRegional: 1 })));
+    const resultados = await Promise.all(listaSupervisoes.map((sup) =>
+      supabase.rpc('programacao_colaboradores_supervisao', { p_supervisao: sup })
+    ));
+    resultados.forEach(({ data, error }) => {
+      if (error) throw error;
+      fontes.push(...(data || []).map((r) => ({ ...r, _scoreRegional: 100, _fonteRegional: 1 })));
+    });
   } catch (error) {
     console.warn('[equipe] lista de colaboradores da regional via RPC indisponível', error);
   }
@@ -531,7 +544,7 @@ async function loadColaboradoresRegional(supervisao) {
       nome: colaboradorNome(r),
       cargo: r.cargo || null,
       coordenacao: r.coordenacao || null,
-      supervisao: r.supervisao || supervisao || null,
+      supervisao: r.supervisao || (Array.isArray(supervisao) ? null : supervisao) || null,
       tipoLabel: r.tipo_contrato ? contratoLabel(r.tipo_contrato) : 'Regional',
       km: null,
       auditPeso: null,
@@ -558,11 +571,33 @@ async function loadColaboradoresRegional(supervisao) {
 
 // Custos já lançados (estadia/alimentação/deslocamento) por colaborador, para
 // pré-preencher os campos inline dos cartões confirmados.
+// Estado atual de Atendimento(OK)/Logística de cada colaborador confirmado —
+// só pra refletir no toggle do card; o valor em si já é escrito/mantido por
+// confirmarCandidato/adicionarColaboradorOs (auto) ou pelo próprio toggle.
+async function loadDisponibilidadeConfirmados(programacaoId, colaboradorIds) {
+  const ids = [...new Set((colaboradorIds || []).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const pids = Array.isArray(programacaoId) ? programacaoId : [programacaoId];
+  try {
+    const { data, error } = await supabase
+      .from('programacao_colaboradores')
+      .select('colaborador_id,disponibilidade')
+      .in('programacao_id', pids)
+      .in('colaborador_id', ids);
+    if (error) throw error;
+    return new Map((data || []).map((r) => [String(r.colaborador_id), r.disponibilidade]));
+  } catch (error) {
+    console.warn('[equipe] disponibilidade dos confirmados indisponível', error);
+    return new Map();
+  }
+}
+
 async function loadCustos(programacaoId) {
+  const ids = Array.isArray(programacaoId) ? programacaoId : [programacaoId];
   const [est, ali, des] = await Promise.all([
-    supabase.from('programacao_estadia').select('*').eq('programacao_id', programacaoId),
-    supabase.from('programacao_alimentacao').select('*').eq('programacao_id', programacaoId),
-    supabase.from('programacao_deslocamento').select('*').eq('programacao_id', programacaoId),
+    supabase.from('programacao_estadia').select('*').in('programacao_id', ids),
+    supabase.from('programacao_alimentacao').select('*').in('programacao_id', ids),
+    supabase.from('programacao_deslocamento').select('*').in('programacao_id', ids),
   ]);
   return {
     est: new Map((est.data || []).map((r) => [String(r.colaborador_id), r])),
@@ -586,7 +621,26 @@ function pontoDaOs(os, pontosPorId) {
 // pela RPC programacao_etapa_b_candidatos (ver migração
 // 20260625130000_programacao_etapa_b_candidatos_rpc.sql e seguintes), que já
 // filtra pelos top 8 por OS usando colaborador_cruzamento pré-computado.
+// A RPC programacao_etapa_b_candidatos filtra o pool de colaboradores por uma
+// única supervisão — sob "Todas" (múltiplas supervisões na mesma tela),
+// agrupamos as O.S. pela própria supervisão (já vem em os.supervisao) e
+// chamamos a RPC uma vez por grupo, mesclando os resultados no final.
 async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
+  const grupos = new Map();
+  osComPonto.forEach((item) => {
+    const sup = item.os?.supervisao || supervisao;
+    if (!grupos.has(sup)) grupos.set(sup, []);
+    grupos.get(sup).push(item);
+  });
+  const resultados = await Promise.all(
+    [...grupos.entries()].map(([sup, itens]) => loadCandidatosPorOsUnico(sup, itens, excluirIds))
+  );
+  const porOsFinal = new Map();
+  resultados.forEach((mapa) => mapa.forEach((valor, chave) => porOsFinal.set(chave, valor)));
+  return porOsFinal;
+}
+
+async function loadCandidatosPorOsUnico(supervisao, osComPonto, excluirIds) {
   const osPayload = osComPonto
     .filter(({ candidatosNecessarios }) => candidatosNecessarios)
     .map(({ os, ponto }) => ({ os_id: os.id, lat: ponto?.lat ?? null, lng: ponto?.lng ?? null }));
@@ -858,16 +912,20 @@ function embarqueHtml(embarque) {
   return '📍 ' + esc(s);
 }
 
+// Passo 2 (KPIs do atendimento): Cliente / Local de Embarque / Remanescente /
+// OS sempre visíveis como tiles, no mesmo estilo visual do resumo
+// "Km total estimado / OS com equipe" do topo da tela (.peqb-kpi) — antes
+// eram chips inline junto do nome do cliente.
 function osLeftHtml(os) {
   const rem = os.remanescente;
   return `<div class="peqb-os2-left">
-    <div class="peqb-os2-cliente">${esc(os.cliente || '-')}</div>
-    <div class="peqb-os2-emb">${embarqueHtml(os.embarque)}</div>
+    <div class="peqb-os2-kpis">
+      <div class="peqb-os2-kpi peqb-os2-kpi-wide"><span>Cliente</span><strong>${esc(os.cliente || '-')}</strong></div>
+      <div class="peqb-os2-kpi peqb-os2-kpi-wide"><span>Local de embarque</span><strong>${embarqueHtml(os.embarque)}</strong></div>
+      <div class="peqb-os2-kpi"><span>Remanescente</span><strong>${rem != null && rem !== '' ? BRI.format(Number(rem) || 0) : '-'}</strong></div>
+      <div class="peqb-os2-kpi"><span>OS</span><strong>${esc(os.numero_os || '-')}</strong></div>
+    </div>
     <div class="peqb-os2-tagsrow">
-      <span class="peqb-os2-tags2">
-        <span class="peqb-tag g">OS ${esc(os.numero_os || '-')}</span>
-        ${rem != null && rem !== '' ? `<span class="peqb-tag b">Rem. ${BRI.format(Number(rem) || 0)}</span>` : ''}
-      </span>
       ${statusStripHtml(os)}
     </div>
   </div>`;
@@ -940,6 +998,24 @@ function colabsExtrasHtml(item) {
     </span>`).join('')}</div>`;
 }
 
+// Motorista com frota vinculada (placaAuto) pode ser marcado como
+// Atendimento (disponibilidade=OK) ou Logística (LOGISTICA) — hoje isso é
+// só um efeito colateral automático de confirmarCandidato/adicionarColaboradorOs;
+// este toggle deixa a escolha explícita pro gestor.
+function dispToggleHtml(colaboradorId, dispAtual) {
+  const isLogistica = disponibilidadeCategoriaLocal(dispAtual) === 'LOGISTICA';
+  const btn = (valor, label, ativo) =>
+    `<button type="button" class="peqb-row-btn ${ativo ? '' : ''}" data-disp-toggle="${esc(valor)}" data-disp-colab="${esc(colaboradorId)}" style="${ativo ? 'border-color:rgba(134,239,172,.5);background:rgba(22,163,74,.28);color:#bbf7d0' : ''}">${label}</button>`;
+  return `<div class="peqb-row-actions" style="margin-top:6px" title="Motorista com frota vinculada — Atendimento ou Logística no dia">
+    <span class="peqb-clab" style="align-self:center">🚗</span>
+    ${btn('OK', 'Atendimento', !isLogistica)}
+    ${btn('LOGISTICA', 'Logística', isLogistica)}
+  </div>`;
+}
+function disponibilidadeCategoriaLocal(value) {
+  return normalizeText(value || '') === 'LOGISTICA' ? 'LOGISTICA' : 'OK';
+}
+
 function osRowHtml(item) {
   const { os, confirmadoRow, candidatos } = item;
   const confirmado = !!confirmadoRow;
@@ -967,6 +1043,7 @@ function osRowHtml(item) {
         ${hotelBtn}
         ${aliChipsHtml(String(confirmadoRow.colaborador_id), confirmadoRow.nome_colaborador, item.custos?.ali || { almoco: true }, item.equipeRows || [])}
       </div>
+      ${item.custos?.placaAuto ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual) : ''}
       ${colabsExtrasHtml(item)}
       <div class="peqb-add-box" data-add-box hidden>
         <span class="peqb-cand-av">+</span>
@@ -1157,6 +1234,14 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   injectStyles();
   const supervisao = String(options.supervisao || '').trim();
   const programacaoId = options.programacaoId || null;
+  const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
+  // Sob "Todas" (programacaoIdMap populado), cada O.S. resolve seu próprio
+  // programacao_id pela própria supervisão; fora disso, todas usam o único id.
+  const supervisaoQuery = programacaoIdMap.size ? [...programacaoIdMap.keys()] : supervisao;
+  const programacaoIdQuery = programacaoIdMap.size ? [...programacaoIdMap.values()] : programacaoId;
+  function programacaoIdParaOs(os) {
+    return programacaoIdMap.size ? (programacaoIdMap.get(os?.supervisao) || null) : programacaoId;
+  }
 
   content.innerHTML = `
     <div class="prog-section-title">
@@ -1172,9 +1257,22 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       <button type="button" class="peqb-btn" id="peqbAutoPreencher">Auto-preencher equipe</button>
       <button type="button" class="peqb-btn" id="peqbSugerirCaronas" title="Motorista/carona por frota (desvio ≤ ${CARONA_DESVIO_KM} km), sobra vira próprio/Uber">Sugerir caronas</button>
       <span id="peqbCaronasMsg" style="font-size:11.5px;color:#9fb7aa;align-self:center"></span>
+      <button type="button" class="peqb-btn" id="peqbVerMapa">🗺️ Ver mapa do gestor</button>
     </div>
+    <div id="peqbMapBand" hidden></div>
     <div class="peqb-os-list peqb-os-list-full" id="peqbOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
   `;
+
+  // Ponte para o módulo do mapa (programacao-mapa-gestor.js), carregado à
+  // parte e só ativado no clique de "Ver mapa do gestor" — mantém o mapa
+  // (Leaflet + geocodificação) fora do caminho crítico do render da lista de
+  // O.S., que já travou a tela 2x no passado quando isso era síncrono.
+  window.__peqbGetEquipeSnapshot = () => ({
+    osComCandidatosAtual,
+    supervisoesResolvidas: programacaoIdMap.size ? [...programacaoIdMap.keys()] : [supervisao],
+    programacaoIdParaOs,
+    dataReferencia: options.dataReferencia || null,
+  });
 
   // currentUser é opcional (só preenche logistica_solicitado_por ao FINALIZAR).
   // Busca SEM bloquear o render — assim o #peqbOsList já existe acima e o
@@ -1186,7 +1284,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   const mapEmptyEl = content.querySelector('#peqbMapEmpty');
   const mapState = criarMapState();
 
-  if (!supervisao || !programacaoId) {
+  if (!supervisao || (!programacaoId && !programacaoIdMap.size)) {
     listEl.innerHTML = '<div class="peqb-empty">Carregue o contexto (supervisão e data) para organizar a equipe.</div>';
     return;
   }
@@ -1212,7 +1310,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       usados.add(melhor.colaboradorId);
       atribuicoes.push({ os: item.os, cand: melhor });
     }
-    if (atribuicoes.length) await confirmarCandidatosEmLote(programacaoId, atribuicoes);
+    if (atribuicoes.length) await confirmarCandidatosEmLote(programacaoIdParaOs, atribuicoes);
   }
 
   // Sugere caronas: por ponto de embarque, quem tem frota é MOTORISTA; passageiros
@@ -1220,9 +1318,16 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   // de menor desvio (cap CARONA_CAP). Quem sobra: REEMBOLSO KM se na relação de
   // veículo próprio, senão UBER/TÁXI. Grava tipo_deslocamento em lote e devolve o resumo.
   async function sugerirCaronas() {
-    const { data, error } = await supabase.rpc('programacao_caronas_dados', { p_programacao_id: programacaoId });
-    if (error) throw error;
-    const rows = data || [];
+    // Sob "Todas" a RPC (escopada a 1 programacao_id) roda uma vez por
+    // supervisão resolvida; cada linha guarda de qual programacao_id veio,
+    // pra gravar tipo_deslocamento no registro certo mais abaixo.
+    const idsAlvo = programacaoIdMap.size ? [...programacaoIdMap.values()] : [programacaoId];
+    const resultadosRpc = await Promise.all(idsAlvo.map((pid) => supabase.rpc('programacao_caronas_dados', { p_programacao_id: pid })));
+    const rows = [];
+    resultadosRpc.forEach(({ data, error }, idx) => {
+      if (error) throw error;
+      (data || []).forEach((r) => rows.push({ ...r, __programacaoId: idsAlvo[idx] }));
+    });
     const resultado = new Map();
 
     const porPonto = new Map();
@@ -1276,7 +1381,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const res = resultado.get(r.colaborador_id);
       if (!res) return;
       payload.push({
-        programacao_id: programacaoId,
+        programacao_id: r.__programacaoId || programacaoId,
         data_referencia: options.dataReferencia || null,
         colaborador_id: r.colaborador_id,
         nome_colaborador: r.nome || '',
@@ -1361,11 +1466,11 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     const scrollPos = scroller ? scroller.scrollTop : 0;
     if (!silent) listEl.innerHTML = '<div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S. da supervisão...</span></div>';
     try {
-      const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisao), loadEquipeExistente(programacaoId), loadCustos(programacaoId)]);
+      const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisaoQuery), loadEquipeExistente(programacaoIdQuery), loadCustos(programacaoIdQuery)]);
       osTodasAtual = osTodas;
       await Promise.all([loadAlojamentos(), loadHoteis()]);
-      const placasPorCpf = await loadCruzamentoPlacas(supervisao);
-      const colaboradoresRegional = await loadColaboradoresRegional(supervisao);
+      const placasPorCpf = await loadCruzamentoPlacas(supervisaoQuery);
+      const colaboradoresRegional = await loadColaboradoresRegional(supervisaoQuery);
       if (!osTodas.length) {
         listEl.innerHTML = '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
         osComCandidatosAtual = [];
@@ -1404,6 +1509,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         colaboradoresConfirmadosEmOutraOs,
       );
       const tipoLabelPorColaborador = await loadTipoContratoConfirmados(confirmadosPorOs, candidatosPorOs);
+      const dispPorColaborador = await loadDisponibilidadeConfirmados(programacaoIdQuery, [...confirmadosPorOs.values()].map((r) => r.colaborador_id));
 
       osComCandidatosAtual = osComPonto.map(({ os, ponto, confirmadoRow }) => {
         const equipeRowsOs = equipeRowsPorOs.get(os.id) || (confirmadoRow ? [confirmadoRow] : []);
@@ -1423,6 +1529,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
             ali: custos.ali.get(String(confirmadoRow.colaborador_id)) || { almoco: true },
             des: custos.des.get(String(confirmadoRow.colaborador_id)) || {},
             placaAuto: placasPorCpf.get(String(confirmadoRow.colaborador_id).replace(/\D/g, '')) || '',
+            dispAtual: confirmadoRow ? (dispPorColaborador.get(String(confirmadoRow.colaborador_id)) || null) : null,
           } : null,
         };
       });
@@ -1452,7 +1559,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       osComCandidatosAtual.forEach((it) => {
         if (it.confirmadoRow && it.custos?.placaAuto && !it.custos.des?.placa_veiculo) {
           supabase.from('programacao_deslocamento').upsert({
-            programacao_id: programacaoId,
+            programacao_id: programacaoIdParaOs(it.os),
             data_referencia: options.dataReferencia || null,
             colaborador_id: String(it.confirmadoRow.colaborador_id),
             nome_colaborador: it.confirmadoRow.nome_colaborador || '',
@@ -1526,6 +1633,38 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     });
   }
 
+  // "2 no ponto": ao adicionar o 2º+ colaborador numa mesma O.S., o gestor
+  // precisa justificar o motivo — registrado em app_logs_usuarios (via
+  // logActivity), não existe tabela dedicada pra isso na base atual.
+  function openJustificativaModal(os, colaboradoresAtuais, novoColaborador) {
+    return new Promise((resolve) => {
+      const nomesAtuais = colaboradoresAtuais.map((c) => c.nome_colaborador || c.nome).filter(Boolean).join(', ');
+      const ov = document.createElement('div');
+      ov.className = 'peqb-modal-ov';
+      ov.innerHTML = `<div class="peqb-modal">
+        <h3>Justificar 2+ colaboradores na O.S.</h3>
+        <p>O.S. <b style="color:#bbf7d0">${esc(os.numero_os || '-')}</b> já tem <b>${esc(nomesAtuais || '-')}</b>.
+        Adicionar <b style="color:#bbf7d0">${esc(novoColaborador.nome || '-')}</b> também — informe o motivo (obrigatório):</p>
+        <textarea id="peqbJustifInput" rows="3" placeholder="Ex.: volume da carga exige 2 pessoas no ponto" style="width:100%;resize:vertical;background:#0d0d18;color:#e2e2f0;border:1px solid rgba(52,211,153,.28);border-radius:10px;padding:9px 10px;font-size:13px"></textarea>
+        <div class="peqb-modal-actions">
+          <button type="button" class="peqb-row-btn" data-justif-cancel>Cancelar</button>
+          <button type="button" class="peqb-row-btn" data-justif-ok style="border-color:rgba(134,239,172,.4);color:#bbf7d0">Confirmar</button>
+        </div>
+      </div>`;
+      document.body.appendChild(ov);
+      const input = ov.querySelector('#peqbJustifInput');
+      input.focus();
+      const close = (motivo) => { ov.remove(); resolve(motivo); };
+      ov.addEventListener('click', (e) => { if (e.target === ov) close(null); });
+      ov.querySelector('[data-justif-cancel]').addEventListener('click', () => close(null));
+      ov.querySelector('[data-justif-ok]').addEventListener('click', () => {
+        const motivo = input.value.trim();
+        if (!motivo) { input.focus(); return; }
+        close(motivo);
+      });
+    });
+  }
+
   function openLaudoModal(osId) {
     const os = osTodasAtual.find((o) => String(o.id) === String(osId));
     if (!os) return;
@@ -1568,10 +1707,13 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   // --- Custos inline (estadia/alimentação/deslocamento) por colaborador ---
   async function saveCusto(section, tabela) {
     if (!section) return;
+    const osIdDaSecao = section.closest('[data-os-id]')?.dataset.osId || null;
+    const itemDaSecao = osComCandidatosAtual.find((it) => String(it.os.id) === osIdDaSecao);
+    const pidDaSecao = itemDaSecao ? programacaoIdParaOs(itemDaSecao.os) : programacaoId;
     const ids = String(section.dataset.colabIds || section.dataset.colabId || '').split('|').map((v) => v.trim()).filter(Boolean);
     const nomes = String(section.dataset.colabNomes || section.dataset.nome || '').split('|');
     const bases = (ids.length ? ids : [section.dataset.colabId].filter(Boolean)).map((id, index) => ({
-      programacao_id: programacaoId,
+      programacao_id: pidDaSecao,
       data_referencia: options.dataReferencia || null,
       colaborador_id: id,
       nome_colaborador: nomes[index] || section.dataset.nome || '',
@@ -1625,7 +1767,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     if (!item?.confirmadoRow || !cand?.colaboradorId) return;
     const origemId = String(item.confirmadoRow.colaborador_id);
     const destinoBase = {
-      programacao_id: programacaoId,
+      programacao_id: programacaoIdParaOs(item.os),
       data_referencia: options.dataReferencia || null,
       colaborador_id: cand.colaboradorId,
       nome_colaborador: cand.nome || '',
@@ -1686,6 +1828,29 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     const confBtn = event.target.closest('[data-conf]');
     if (confBtn) { openLaudoModal(confBtn.dataset.conf); return; }
 
+    const dispToggleBtn = event.target.closest('[data-disp-toggle]');
+    if (dispToggleBtn) {
+      const colabRow = event.target.closest('.peqb-row');
+      const item = osComCandidatosAtual.find((it) => String(it.os.id) === colabRow?.dataset.osId);
+      const colaboradorId = dispToggleBtn.dataset.dispColab;
+      const valor = dispToggleBtn.dataset.dispToggle;
+      if (!item || !colaboradorId) return;
+      dispToggleBtn.disabled = true;
+      try {
+        const { error } = await supabase.from('programacao_colaboradores')
+          .update({ disponibilidade: valor })
+          .eq('programacao_id', programacaoIdParaOs(item.os))
+          .eq('colaborador_id', colaboradorId);
+        if (error) throw error;
+        if (item.custos) item.custos.dispAtual = valor;
+        if (colabRow) colabRow.outerHTML = osRowHtml(item);
+      } catch (error) {
+        dispToggleBtn.disabled = false;
+        alert(error.message || 'Não foi possível atualizar Atendimento/Logística.');
+      }
+      return;
+    }
+
     const toggleOutros = event.target.closest('[data-toggle-outros]');
     const toggleAddColab = event.target.closest('[data-toggle-add-colab]');
     const addColabConfirm = event.target.closest('[data-add-colab-confirm]');
@@ -1708,13 +1873,25 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const cand = item?.candidatos.find((c) => String(c.colaboradorId) === String(sel?.value))
         || item?.colaboradoresRegional?.find((c) => String(c.colaboradorId) === String(sel?.value));
       if (!item || !cand) return;
+      // A caixa "+ colaborador" só aparece em O.S. que já tem 1+ confirmado
+      // (ver osRowHtml/data-add-box) — logo todo clique aqui é o 2º+.
+      const colaboradoresAtuais = item.equipeRows || [];
+      const motivo = await openJustificativaModal(item.os, colaboradoresAtuais, { nome: cand.nome, colaboradorId: cand.colaboradorId });
+      if (!motivo) return;
       addColabConfirm.disabled = true;
+      logActivity('action', 'justificativa_multiplos_colaboradores_os', 'programacao', {
+        os_id: item.os.id,
+        numero_os: item.os.numero_os,
+        colaboradores: [...colaboradoresAtuais.map((c) => c.colaborador_id), cand.colaboradorId],
+        nomes: [...colaboradoresAtuais.map((c) => c.nome_colaborador), cand.nome],
+        motivo,
+      });
       try {
         // Grava e atualiza só esta linha no DOM — recarregar a lista inteira
         // (49+ O.S., cada uma com candidatos/custos) pra refletir 1 pessoa
         // adicionada deixava a confirmação visivelmente lenta.
         const [novaLinha] = await Promise.all([
-          adicionarColaboradorOs(programacaoId, item.os, cand),
+          adicionarColaboradorOs(programacaoIdParaOs(item.os), item.os, cand),
           copiarCustosDoPrincipal(item, cand),
         ]);
         item.equipeRows = [...(item.equipeRows || []), novaLinha];
@@ -1732,7 +1909,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const equipeRowId = removerAdicional.dataset.removerAdicional;
       removerAdicional.disabled = true;
       try {
-        await removerConfirmacao(programacaoId, equipeRowId);
+        await removerConfirmacao(item ? programacaoIdParaOs(item.os) : programacaoId, equipeRowId);
         if (item) {
           item.equipeRows = (item.equipeRows || []).filter((r) => String(r.id) !== String(equipeRowId));
           row.outerHTML = osRowHtml(item);
@@ -1778,9 +1955,10 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
         const selectEl = row.querySelector('[data-select-colaborador]');
         const cand = item?.candidatos.find((c) => c.colaboradorId === selectEl?.value);
-        if (item && cand) await confirmarCandidato(programacaoId, item.os, cand);
+        if (item && cand) await confirmarCandidato(programacaoIdParaOs(item.os), item.os, cand);
       } else if (btnRemover) {
-        await removerConfirmacao(programacaoId, btn.dataset.remover);
+        const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
+        await removerConfirmacao(item ? programacaoIdParaOs(item.os) : programacaoId, btn.dataset.remover);
       } else if (btnHotelEl) {
         const item = osComCandidatosAtual.find((it) => String(it.os.id) === osId);
         if (item) {
@@ -1820,7 +1998,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       if (item && cand && String(cand.colaboradorId) !== String(item.confirmadoRow?.colaborador_id)) {
         trocarSel.disabled = true;
         try {
-          await confirmarCandidato(programacaoId, item.os, cand);
+          await confirmarCandidato(programacaoIdParaOs(item.os), item.os, cand);
           await carregarERenderizar({ silent: true });
         } catch (error) {
           console.error('[equipe] trocar colaborador:', error);
@@ -2049,11 +2227,12 @@ async function adicionarColaboradorOs(programacaoId, os, cand) {
 // Versão em LOTE de confirmarCandidato: grava N atribuições ({os, cand}) com
 // ~4 chamadas no total (em vez de ~4 por O.S.). Usada no auto-preencher, que
 // antes fazia uma confirmação sequencial por O.S. e ficava lento (37 O.S.).
-async function confirmarCandidatosEmLote(programacaoId, atribuicoes) {
+async function confirmarCandidatosEmLote(programacaoIdParaOs, atribuicoes) {
   if (!atribuicoes.length) return;
+  const resolverId = typeof programacaoIdParaOs === 'function' ? programacaoIdParaOs : () => programacaoIdParaOs;
 
   const equipeRows = atribuicoes.map(({ os, cand }) => ({
-    programacao_id: programacaoId,
+    programacao_id: resolverId(os),
     os_id: os.id,
     colaborador_id: cand.colaboradorId,
     nome_colaborador: cand.nome,
@@ -2085,9 +2264,9 @@ async function confirmarCandidatosEmLote(programacaoId, atribuicoes) {
 
   // Espelho de disponibilidade — um por colaborador (dedup por colaborador_id).
   const espMap = new Map();
-  atribuicoes.forEach(({ cand }) => {
+  atribuicoes.forEach(({ os, cand }) => {
     espMap.set(String(cand.colaboradorId), {
-      programacao_id: programacaoId,
+      programacao_id: resolverId(os),
       colaborador_id: cand.colaboradorId,
       nome_colaborador: cand.nome,
       cargo: cand.cargo || null,

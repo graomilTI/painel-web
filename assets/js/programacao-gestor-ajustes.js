@@ -1,6 +1,7 @@
 // Programação Gestor — Etapa 1 = O.S. + despesas no mesmo card.
 import { supabase } from './supabaseClient.js';
 import { renderProgramacaoEquipe } from './programacao-equipe.js?v=20260701-addcolabfast1';
+import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 let currentUiStep = '1';
 let equipeRendering = false;
@@ -133,7 +134,8 @@ function renderIdle() {
 }
 
 async function marcarPendentesComoAtender(supervisao) {
-  if (!supervisao) return;
+  const lista = Array.isArray(supervisao) ? supervisao.filter(Boolean) : [supervisao].filter(Boolean);
+  if (!lista.length) return;
   // Só promove O.S. que o agente confirmou recentemente como ainda presentes no relatório
   // (updated_at recente). Sem esse filtro, uma O.S. já fechada na origem — mas que ficou
   // "presa" em operacional_os porque o scraping do agente veio incompleto e a limpeza
@@ -143,7 +145,7 @@ async function marcarPendentesComoAtender(supervisao) {
   const { error } = await supabase
     .from('operacional_os')
     .update({ status_gestor: 'ATENDER', updated_at: new Date().toISOString() })
-    .eq('supervisao', supervisao)
+    .in('supervisao', lista)
     .gte('updated_at', limiteRecente)
     .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR');
   if (error) console.warn('[programacao] não foi possível preparar O.S. como ATENDER', error);
@@ -157,9 +159,11 @@ async function renderEquipeFinal() {
   setActiveUiStep('1');
   hideCoreControls();
 
-  const programacaoId = window.__progGetProgramacaoId?.() || null;
   const supervisao = document.getElementById('progSup')?.value || '';
-  if (!programacaoId) {
+  const isTodas = supervisao === TODAS_SUPERVISOES;
+  const programacaoId = window.__progGetProgramacaoId?.() || null;
+  const programacaoIdMap = isTodas ? (window.__progGetProgramacaoIdMap?.() || new Map()) : new Map();
+  if (!programacaoId && !programacaoIdMap.size) {
     if (renderTentativas < 10) {
       renderTentativas += 1;
       scheduleFinalRender(250);
@@ -168,6 +172,7 @@ async function renderEquipeFinal() {
     }
     return;
   }
+  const supervisoesResolvidas = isTodas ? [...programacaoIdMap.keys()] : [supervisao];
 
   // Já existe um render em andamento: em vez de descartar o pedido (o que
   // deixaria a tela travada em "Montando..." se o núcleo tivesse sobrescrito a
@@ -184,19 +189,21 @@ async function renderEquipeFinal() {
     // logo abaixo. Mostrar "Montando tela final..." antes disso só criava uma
     // 2ª tela de carregamento diferente que piscava por cima da primeira,
     // dando a impressão de bug em vez de um carregamento único e contínuo.
-    await marcarPendentesComoAtender(supervisao);
+    await marcarPendentesComoAtender(isTodas ? supervisoesResolvidas : supervisao);
     // Auto-preenche a equipe de menor custo só uma vez por contexto
     // (programação/supervisão/data) e ANTES do 1º render — a tela vai direto de
     // "preparando" para os cards confirmados, sem exibir os não confirmados.
     const dataRef = document.getElementById('progDataRef')?.value || '';
-    const autoKey = [programacaoId || '', supervisao, dataRef].join('|');
+    const autoKey = [programacaoId || [...programacaoIdMap.values()].sort().join(','), supervisao, dataRef].join('|');
     window.__progAutoEquipeKeys = window.__progAutoEquipeKeys || new Set();
     const autoPreencher = !window.__progAutoEquipeKeys.has(autoKey);
     if (autoPreencher) window.__progAutoEquipeKeys.add(autoKey);
     await renderProgramacaoEquipe(list, {
       supervisao,
+      supervisoesResolvidas,
       dataReferencia: dataRef,
       programacaoId,
+      programacaoIdMap,
       autoPreencher,
     });
     if (feedback) {

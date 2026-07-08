@@ -1,4 +1,4 @@
-project_id = "xyzpnuumdqhegxakkyws"
+project_id = "jbzmcyycanrlnfhedcup"
 
 [functions.sync-multas-detran]
 verify_jwt = true

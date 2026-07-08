@@ -9,6 +9,12 @@ const state = {
   autoSelectedOnce: false,
 };
 
+// Valor sintético da opção "Todas" no seletor de Supervisão — não existe na
+// tabela supervisoes, é resolvido em tempo de carregamento (ver
+// programacao.js/programacao-gestor-ajustes.js) para a lista de supervisões
+// permitidas ao gestor que têm alguma O.S. acionável no dia.
+export const TODAS_SUPERVISOES = '__TODAS__';
+
 function norm(value) {
   return String(value || '')
     .normalize('NFD')
@@ -114,6 +120,14 @@ function addAllowedOptions(select) {
     select.appendChild(option);
     existing.add(key);
   });
+
+  if (state.allowedLabels.length > 1 && ![...select.options].some((o) => o.value === TODAS_SUPERVISOES)) {
+    const todas = document.createElement('option');
+    todas.value = TODAS_SUPERVISOES;
+    todas.textContent = 'Todas';
+    const placeholder = select.options[0] && !select.options[0].value ? select.options[0] : null;
+    select.insertBefore(todas, placeholder ? placeholder.nextSibling : select.firstChild);
+  }
 }
 
 function filterSelect() {
@@ -134,7 +148,7 @@ function filterSelect() {
   let visibleCount = 0;
   let firstAllowed = '';
   [...select.options].forEach((option) => {
-    if (!option.value) {
+    if (!option.value || option.value === TODAS_SUPERVISOES) {
       option.hidden = false;
       option.disabled = false;
       return;
@@ -155,8 +169,13 @@ function filterSelect() {
     return;
   }
 
+  // Com mais de uma supervisão liberada, "Todas" é o padrão mais útil (a
+  // maioria dos gestores tem acesso a quase todas as supervisões cadastradas
+  // — escolher uma só arbitrariamente escondia O.S. de outras supervisões).
+  const defaultValue = visibleCount > 1 ? TODAS_SUPERVISOES : firstAllowed;
+
   if (!select.value || select.selectedOptions?.[0]?.disabled) {
-    select.value = firstAllowed;
+    select.value = defaultValue;
     if (!state.autoSelectedOnce) {
       state.autoSelectedOnce = true;
       select.dispatchEvent(new Event('change', { bubbles: true }));
