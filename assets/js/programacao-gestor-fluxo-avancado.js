@@ -131,6 +131,12 @@ function setActiveStep(step) {
   if (state.panes) {
     Object.entries(state.panes).forEach(([key, pane]) => { pane.hidden = key !== state.activeStep; });
   }
+  // O mapa arrastável da Etapa 2 (#peqbMapBand) só abre quando alguém chama
+  // window.__pmgRenderMapaGestor, exposto por programacao-gestor-hotfix-manual-v3.js.
+  // O clique no botão de etapa é interceptado aqui via stopImmediatePropagation
+  // antes de chegar no listener de clique daquele arquivo — sem este gatilho o
+  // mapa nunca abre sozinho ao trocar de aba, só a lista lateral de arrastar.
+  if (state.activeStep === '2') window.__pmgRenderMapaGestor?.();
 }
 
 function getContextOptions() {
