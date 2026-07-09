@@ -336,19 +336,38 @@
    5. Etapa B — Organizar Equipe (custo-benefício)
       Aumenta a legibilidade da decisão mais importante do gestor.
    -------------------------------------------------------------------------- */
+.app-shell .peqb-kpis {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin-bottom: 6px !important;
+}
 .app-shell .peqb-kpi {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: baseline !important;
+  gap: 6px !important;
+  width: auto !important;
+  min-height: 0 !important;
+  line-height: 1 !important;
   border: 1px solid var(--pr-line) !important;
   background: var(--pr-surface) !important;
-  border-radius: 14px !important;
-  padding: 12px 14px !important;
+  border-radius: 9px !important;
+  padding: 5px 10px !important;
 }
 .app-shell .peqb-kpi span {
   color: var(--pr-muted) !important;
-  font-size: 10.5px !important;
+  font-size: 9.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: .02em !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
 }
 .app-shell .peqb-kpi strong {
-  font-size: 20px !important;
+  font-size: 13px !important;
   color: var(--pr-text) !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
 }
 .app-shell .peqb-btn {
   border: 1px solid var(--pr-line-2) !important;
