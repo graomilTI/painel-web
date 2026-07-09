@@ -1,17 +1,12 @@
-// Programação Gestor — 3 etapas navegáveis: 1 Situação da O.S., 2 Equipe +
-// Mapa, 3 Despesas. Cada uma reescreve #progList por conta própria; nenhuma
-// delas usa o stepper A-E nativo de programacao.js (que ficou sem botão
-// visível desde que este script passou a controlar #progSteps).
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260709-emb2linhas1';
-import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260708-despesas1';
+// Programação Gestor — cria os 3 botões de etapa (1 Situação da O.S., 2 Equipe
+// + Mapa, 3 Despesas) e o combo de supervisão pesquisável. A renderização das
+// 3 abas em si (todas de uma vez, sem reload ao trocar de aba) é feita por
+// programacao-gestor-fluxo-avancado.js — este arquivo NÃO escreve mais em
+// #progList sozinho (fazia isso antes e entrava em corrida com o fluxo novo,
+// sobrescrevendo o wrapper das 3 abas e deixando os botões 2/3 mortos).
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 let currentUiStep = '1';
-let equipeRendering = false;
-let equipePending = false;
-let finalRenderScheduled = false;
-let renderTentativas = 0;
-let clobberRetries = 0;
 let supDropdownEl = null;
 let supComboState = { input: null, onSelect: null };
 
@@ -20,7 +15,6 @@ const STEP_LABELS = {
   '2': { label: 'Equipe e mapa do gestor', title: 'Equipe + Mapa' },
   '3': { label: 'Despesas da equipe', title: 'Despesas' },
 };
-const ANCHOR_BY_STEP = { '1': '#peqsOsList', '2': '#peqbOsList', '3': '#peqdRoster' };
 
 function debounce(fn, wait) {
   let timer;
@@ -42,7 +36,7 @@ function escapeHtml(value) {
 function normalize(value) {
   return String(value || '')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
     .trim();
 }
@@ -119,6 +113,11 @@ function setActiveUiStep(step) {
   document.body.classList.toggle('prog-step-a-os', false);
 }
 
+// Placeholder mostrado só antes do primeiro "Carregar" (ou depois de trocar a
+// supervisão, antes de recarregar). Uma vez que o fluxo novo monta as 3 abas
+// em #pgcPane1/2/3, os cliques nos botões de etapa são interceptados por
+// programacao-gestor-fluxo-avancado.js antes de chegar aqui — este texto só
+// aparece se o usuário ainda não clicou em Carregar.
 function renderIdle() {
   const list = document.getElementById('progList');
   const feedback = document.getElementById('progCtxFeedback');
@@ -141,128 +140,6 @@ function renderIdle() {
       </div>
     </div>
   `;
-}
-
-// Renderiza a etapa atual (1/2/3) em #progList. Substitui a antiga
-// renderEquipeFinal, que só sabia desenhar a Etapa 2 (Equipe). Não existe
-// mais promoção automática de status_gestor: toda O.S. exige decisão manual
-// na Etapa 1 (removida junto com esta generalização — ver marcarPendentesComoAtender
-// no histórico do git se precisar recuperar o comportamento antigo).
-async function renderStepFinal() {
-  const list = document.getElementById('progList');
-  const feedback = document.getElementById('progCtxFeedback');
-  if (!list) return;
-
-  setActiveUiStep(currentUiStep);
-  hideCoreControls();
-
-  const supervisao = document.getElementById('progSup')?.value || '';
-  const isTodas = supervisao === TODAS_SUPERVISOES;
-  const programacaoId = window.__progGetProgramacaoId?.() || null;
-  const programacaoIdMap = isTodas ? (window.__progGetProgramacaoIdMap?.() || new Map()) : new Map();
-  if (!programacaoId && !programacaoIdMap.size) {
-    if (renderTentativas < 10) {
-      renderTentativas += 1;
-      scheduleFinalRender(250);
-    } else {
-      renderIdle();
-    }
-    return;
-  }
-  const supervisoesResolvidas = isTodas ? [...programacaoIdMap.keys()] : [supervisao];
-
-  // Já existe um render em andamento: em vez de descartar o pedido (o que
-  // deixaria a tela travada em "Montando..." se o núcleo tivesse sobrescrito a
-  // lista no meio do caminho), marca pendência para re-renderizar ao terminar.
-  if (equipeRendering) { equipePending = true; return; }
-  equipeRendering = true;
-  const step = currentUiStep;
-  try {
-    if (feedback) {
-      feedback.className = 'feedback mt-16 prog-feedback-ok';
-      feedback.textContent = `Preparando ${STEP_LABELS[step]?.label || ''}...`;
-    }
-    const dataRef = document.getElementById('progDataRef')?.value || '';
-    const commonOpts = { supervisao, supervisoesResolvidas, dataReferencia: dataRef, programacaoId, programacaoIdMap };
-
-    if (step === '1') {
-      await renderProgramacaoSituacao(list, commonOpts);
-    } else if (step === '2') {
-      // Auto-preenche a equipe de menor custo só uma vez por contexto
-      // (programação/supervisão/data) — mecanismo diferente da antiga
-      // promoção automática de status_gestor (removida): aqui só associa
-      // candidato a O.S. que JÁ está ATENDER, não decide status sozinho.
-      const autoKey = [programacaoId || [...programacaoIdMap.values()].sort().join(','), supervisao, dataRef].join('|');
-      window.__progAutoEquipeKeys = window.__progAutoEquipeKeys || new Set();
-      const autoPreencher = !window.__progAutoEquipeKeys.has(autoKey);
-      if (autoPreencher) window.__progAutoEquipeKeys.add(autoKey);
-      await renderProgramacaoEquipe(list, { ...commonOpts, autoPreencher });
-    } else if (step === '3') {
-      await renderProgramacaoDespesas(list, commonOpts);
-    }
-    if (feedback) {
-      feedback.className = 'feedback mt-16 prog-feedback-ok';
-      feedback.textContent = `Etapa ${step} — ${STEP_LABELS[step]?.label || ''}.`;
-    }
-  } finally {
-    equipeRendering = false;
-    // Re-renderiza se (a) alguém pediu re-render enquanto renderizávamos, ou
-    // (b) o núcleo sobrescreveu o #progList durante o render (corrida do
-    // renderRows): nesse caso os cards da etapa foram para um nó destacado e o
-    // âncora da etapa não está mais anexado. Sem isso a tela trava em "Montando...".
-    const anchor = ANCHOR_BY_STEP[currentUiStep];
-    const clobbered = currentUiStep === step && anchor && !document.querySelector(`#progList ${anchor}`);
-    const precisaRe = equipePending || clobbered;
-    equipePending = false;
-    if (precisaRe && clobberRetries < 10) {
-      clobberRetries += 1;
-      scheduleFinalRender(0);
-    } else if (!precisaRe) {
-      clobberRetries = 0;
-    }
-  }
-}
-
-function scheduleFinalRender(delay = 250) {
-  if (finalRenderScheduled) return;
-  finalRenderScheduled = true;
-  setTimeout(async () => {
-    finalRenderScheduled = false;
-    await renderStepFinal();
-  }, delay);
-}
-
-function listShowsCoreDisponibilidade() {
-  const list = document.getElementById('progList');
-  if (!list) return false;
-  const anchor = ANCHOR_BY_STEP[currentUiStep];
-  if (anchor && list.querySelector(anchor)) return false;
-  return /Disponíveis|Disponiveis|DISPONIBILIDADE|Contexto carregado/i.test(list.textContent || '');
-}
-
-const PROG_MONTANDO_HTML = '<div class="prog-os-lazy-card is-loading"><span class="prog-spinner" aria-hidden="true"></span><div><strong>Montando tela final...</strong><p>Organizando a etapa atual.</p></div></div>';
-
-// O núcleo (programacao.js) tem state.step = 'A' por padrão e renderiza a
-// Disponibilidade no #progList ao terminar de carregar o contexto. Nenhuma das
-// 3 etapas geridas por este script quer ver isso — para o usuário a tela de
-// cards de disponibilidade no lugar da etapa atual parece um bug.
-//
-// O observer geral abaixo é debounced (160ms), tempo suficiente para a
-// Disponibilidade pintar e "piscar"/permanecer numa carga lenta. Este guard é
-// um observer SÍNCRONO ancorado direto no #progList: o callback do
-// MutationObserver roda antes da pintura do browser, então trocamos o conteúdo
-// pelo placeholder ANTES de o usuário ver a Disponibilidade, e disparamos o
-// render final da etapa atual.
-function attachProgListGuard() {
-  const list = document.getElementById('progList');
-  if (!list || list.dataset.gestorGuard === '1') return;
-  list.dataset.gestorGuard = '1';
-  const guard = new MutationObserver(() => {
-    if (!listShowsCoreDisponibilidade()) return;
-    list.innerHTML = PROG_MONTANDO_HTML;
-    scheduleFinalRender(0);
-  });
-  guard.observe(list, { childList: true });
 }
 
 function configureSteps() {
@@ -291,16 +168,16 @@ function configureSteps() {
 
   if (stepsWrap.dataset.gestorAjustado === '1') return;
   stepsWrap.dataset.gestorAjustado = '1';
+  // Fallback: só roda se programacao-gestor-fluxo-avancado.js ainda não tiver
+  // as abas montadas (state.panes null lá) — nesse caso ele deixa o clique
+  // passar em vez de consumir com stopImmediatePropagation.
   stepsWrap.addEventListener('click', (event) => {
     const btn = event.target.closest('.stepbtn');
     if (!btn) return;
     event.preventDefault();
-    event.stopImmediatePropagation();
     currentUiStep = btn.dataset.uiStep;
     setActiveUiStep(currentUiStep);
     hideCoreControls();
-    renderTentativas = 0;
-    clobberRetries = 0;
     renderIdle();
   }, true);
 }
@@ -438,23 +315,10 @@ function ensureSupCombo() {
   }
 }
 
-function hookContextLoad() {
-  const loadBtn = document.getElementById('progLoadContext');
-  if (!loadBtn || loadBtn.dataset.gestorFinalBound === '1') return;
-  loadBtn.dataset.gestorFinalBound = '1';
-  loadBtn.addEventListener('click', () => {
-    renderTentativas = 0;
-    clobberRetries = 0;
-    [250, 700, 1200].forEach((delay) => setTimeout(() => scheduleFinalRender(0), delay));
-  }, true);
-}
-
 function boot() {
   injectGestorAjustesStyles();
   waitForElement('#progSteps').then(() => {
     configureSteps();
-    hookContextLoad();
-    attachProgListGuard();
     hideCoreControls();
     ensureSupCombo();
     const sup = document.getElementById('progSup');
@@ -470,11 +334,8 @@ function boot() {
 const observer = new MutationObserver(debounce(() => {
   if (!document.getElementById('progSteps')) return;
   configureSteps();
-  hookContextLoad();
-  attachProgListGuard();
   hideCoreControls();
   ensureSupCombo();
-  if (listShowsCoreDisponibilidade()) scheduleFinalRender(150);
 }, 160));
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
