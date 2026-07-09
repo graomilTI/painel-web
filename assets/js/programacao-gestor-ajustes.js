@@ -2,7 +2,7 @@
 // Mapa, 3 Despesas. Cada uma reescreve #progList por conta própria; nenhuma
 // delas usa o stepper A-E nativo de programacao.js (que ficou sem botão
 // visível desde que este script passou a controlar #progSteps).
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260708-despesas1';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260709-emb2linhas1';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260708-despesas1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 

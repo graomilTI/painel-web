@@ -135,20 +135,45 @@ function injectEtapa1LinhaCss() {
       text-overflow: ellipsis !important;
     }
 
-    /* Local de embarque: pode ocupar duas linhas, como no exemplo enviado. */
+    /* Local de embarque: linha 1 = UF - Cidade, linha 2 = local em si
+       (sem cabeçalho próprio — o rótulo já vem do cabeçalho único da lista). */
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(2) strong {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      gap: 1px !important;
       white-space: normal !important;
-      display: -webkit-box !important;
-      -webkit-line-clamp: 2 !important;
-      -webkit-box-orient: vertical !important;
+    }
+
+    #pgcPane1 .peqs-row .peqb-os2-kpi .peqb-os2-emb-l1,
+    #pgcPane1 .peqs-row .peqb-os2-kpi .peqb-os2-emb-l2 {
+      display: block !important;
+      width: 100% !important;
+      white-space: nowrap !important;
       overflow: hidden !important;
       text-overflow: ellipsis !important;
-      line-height: 1.18 !important;
+    }
+
+    #pgcPane1 .peqs-row .peqb-os2-kpi .peqb-os2-emb-l1 {
+      font-size: 13px !important;
+      font-weight: 900 !important;
+      color: #f8fafc !important;
+      line-height: 1.15 !important;
+    }
+
+    #pgcPane1 .peqs-row .peqb-os2-kpi .peqb-os2-emb-l2 {
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      color: #9fb7aa !important;
+      line-height: 1.1 !important;
+    }
+
+    #pgcPane1 .peqs-row .peqb-os2-kpi .peqb-os2-uf {
+      display: inline !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-kpi strong *,
     #pgcPane1 .peqs-row .peqb-os2-kpi strong span {
-      display: inline !important;
       white-space: inherit !important;
     }
 
@@ -156,29 +181,14 @@ function injectEtapa1LinhaCss() {
       display: none !important;
     }
 
-    /* Remanescente e OS: rótulo pequeno em cima e valor abaixo. */
+    /* Remanescente e OS: só o valor — o rótulo já está no cabeçalho único
+       da lista (.pgc-os-kpi-head / .pgc-os-line-head), sem repetir aqui. */
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(3),
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(4) {
       align-items: center !important;
       justify-content: center !important;
       text-align: center !important;
       padding: 5px 6px !important;
-    }
-
-    #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(3) span,
-    #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(4) span {
-      display: block !important;
-      width: 100% !important;
-      margin: 0 0 4px !important;
-      color: #cbd5e1 !important;
-      font-size: 10.5px !important;
-      line-height: 1 !important;
-      font-weight: 700 !important;
-      letter-spacing: 0 !important;
-      text-transform: none !important;
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(3) strong,
