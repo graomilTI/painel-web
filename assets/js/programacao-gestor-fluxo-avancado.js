@@ -226,6 +226,26 @@ async function renderAllTabs({ force = false } = {}) {
 
 window.__pgcProgramacaoReload = () => renderAllTabs({ force: true });
 
+// Atualização parcial da Aba 3 (Despesas), usada por
+// programacao-gestor-hotfix-manual-v3.js depois de um vínculo feito pelo
+// mapa: o roster de despesas depende de quem está confirmado em
+// programacao_equipe, então precisa buscar de novo — diferente das Abas 1/2,
+// que já são atualizadas por outros caminhos (silentRefresh, mapa) sem
+// precisar tocar na Aba 3. Não passa por mountShell/renderAllTabs pra não
+// recriar as Abas 1/2 (e o mapa Leaflet vivo dentro da Aba 2) à toa.
+window.__pgcRefreshDespesas = async () => {
+  if (!state.panes?.['3']) return;
+  const opts = getContextOptions();
+  if (!contextReady(opts)) return;
+  await renderProgramacaoDespesas(state.panes['3'], {
+    supervisao: opts.supervisao,
+    supervisoesResolvidas: opts.supervisoesResolvidas,
+    dataReferencia: opts.dataReferencia,
+    programacaoId: opts.programacaoId,
+    programacaoIdMap: opts.programacaoIdMap,
+  });
+};
+
 const scheduleEquipeAugment = debounce(() => augmentEquipeDnd(), 180);
 
 function tipoLetter(label) {
