@@ -64,6 +64,14 @@ function bandHtml(b){if(b.querySelector('#peqbMapEl2'))return;b.innerHTML=`<div 
 async function ensureMap(el){if(S.map&&S.mapEl===el)return S.map;if(S.map)try{S.map.remove()}catch{};if(!await leaflet())return null;S.mapEl=el;S.map=window.L.map(el,{zoomControl:true,scrollWheelZoom:true,center:[-14.235,-51.925],zoom:4});window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19,attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd'}).addTo(S.map);S.osLayer=window.L.layerGroup().addTo(S.map);S.colabLayer=window.L.layerGroup().addTo(S.map);return S.map}
 function alvo(m){if(!S.map)return null;const p=S.map.latLngToContainerPoint(m.getLatLng());let best=null,dist=99999;for(const o of S.markers){if(o===m)continue;const d=p.distanceTo(S.map.latLngToContainerPoint(o.getLatLng()));if(d<dist){dist=d;best=o}}return dist<=42?best:null}
 function drag(m,meta){m.__pmgMeta=meta;m.__origLatLng=m.getLatLng();m.on('click mousedown dblclick contextmenu',ev=>{if(ev?.originalEvent&&window.L?.DomEvent)window.L.DomEvent.stop(ev.originalEvent)});m.on('dragstart',()=>m.closeTooltip());m.on('dragend',async()=>{const a=alvo(m);m.setLatLng(m.__origLatLng);if(!a?.__pmgMeta)return;const el=a.getElement();el?.classList.add('pmg-pending');try{await associar(a.__pmgMeta,m.__pmgMeta)}finally{el?.classList.remove('pmg-pending')}});S.markers.push(m)}
+function fallbackPos(col,items,idx){
+  const pontos=items.filter(it=>(!col?.supervisao||it.os?.supervisao===col.supervisao)&&it.ponto&&geo(it.ponto.lat,it.ponto.lng)).map(it=>it.ponto);
+  const base=(pontos.length?pontos:items.filter(it=>it.ponto&&geo(it.ponto.lat,it.ponto.lng)).map(it=>it.ponto));
+  if(!base.length)return null;
+  const lat=base.reduce((s,p)=>s+Number(p.lat),0)/base.length,lng=base.reduce((s,p)=>s+Number(p.lng),0)/base.length;
+  const a=(idx%24)*Math.PI*2/24,r=0.012+(Math.floor(idx/24)*0.006);
+  return{lat:lat+Math.sin(a)*r,lng:lng+Math.cos(a)*r,fallback:true};
+}
 async function loadTransporte(programacaoIds){
   const ids=[...new Set((programacaoIds||[]).filter(Boolean).map(String))];
   if(!ids.length)return new Map();
@@ -113,11 +121,11 @@ async function mapRender({force=false}={}){
     drag(m,{tipo:'os',osId:it.os.id,numeroOs:it.os.numero_os,supervisao:it.os.supervisao});
     S.osLayer.addLayer(m);bounds.push([it.ponto.lat,it.ponto.lng]);
   });
-  ps.forEach(col=>{
-    const p=pos(col);if(!p)return;
+  ps.forEach((col,idx)=>{
+    const p=pos(col)||fallbackPos(col,items,idx);if(!p)return;
     const vinc=eq.get(String(col.colaboradorId)),on=!!vinc,mot=isMot(col),st=on?statusColab(col.colaboradorId):'pendente';
-    const labelStatus=st==='motorista'?'com motorista':st==='os'?'vinculado à O.S. sem transporte':'pendente';
-    const m=L.marker([p.lat,p.lng],{icon:mot?iCar(st):iCol(col,st),draggable:true,autoPan:true,bubblingMouseEvents:false}).bindTooltip(`${esc(col.nome)}${on?` · OS ${esc(vinc.item.os.numero_os||'-')}`:''} · ${mot?'Motorista':esc(tipo(col))} · ${labelStatus}`,{className:'peqb-tt'});
+    const labelStatus=st==='motorista'?'com motorista':st==='os'?'vinculado à O.S. sem transporte':'pendente',geoStatus=p.fallback?' · sem coordenada cadastrada':'';
+    const m=L.marker([p.lat,p.lng],{icon:mot?iCar(st):iCol(col,st),draggable:true,autoPan:true,bubblingMouseEvents:false}).bindTooltip(`${esc(col.nome)}${on?` · OS ${esc(vinc.item.os.numero_os||'-')}`:''} · ${mot?'Motorista':esc(tipo(col))} · ${labelStatus}${geoStatus}`,{className:'peqb-tt'});
     drag(m,{tipo:mot?'motorista':'colaborador',colaboradorId:col.colaboradorId,osId:on?vinc.item.os.id:null,supervisao:col.supervisao,colab:col});
     S.colabLayer.addLayer(m);bounds.push([p.lat,p.lng]);
   });
