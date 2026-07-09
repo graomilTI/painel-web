@@ -14,10 +14,6 @@
 #progList .peqb-btn{padding:7px 13px!important;font-size:11.5px!important}
 #progList .peqb-block-head{margin:5px 0 6px!important;font-size:10.5px!important;line-height:1.1!important}
 #progList .peqb-empty{padding:10px!important}
-.peqb-kpis{gap:8px!important;margin-bottom:8px!important}
-.peqb-kpi{min-height:34px!important;padding:3px 8px!important;border-radius:8px!important}
-.peqb-kpi span{font-size:7px!important;line-height:1!important}
-.peqb-kpi strong{font-size:12.5px!important;line-height:1!important;margin-top:1px!important}
 .peqb-row.peqb-os2{grid-template-columns:minmax(920px,1.96fr) minmax(340px,.64fr)!important;min-height:94px!important;border:1.5px solid rgba(111,208,165,.30)!important;box-shadow:0 1px 0 rgba(111,208,165,.10) inset,0 6px 16px rgba(0,0,0,.28)!important}
 .peqb-row.peqb-os2:hover{border-color:rgba(111,208,165,.5)!important}
 .peqb-row.peqb-os2.peqb-os2-done{border-color:#6fd0a5!important;box-shadow:0 0 0 1.5px rgba(63,168,120,.16) inset,0 0 18px rgba(63,168,120,.22)!important}

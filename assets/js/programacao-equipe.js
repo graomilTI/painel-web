@@ -297,6 +297,8 @@ function injectStyles() {
     .peqb-os2-cliente{font-size:13.5px;font-weight:850;color:#f8fafc;line-height:1.25}
     .peqb-os2-emb{font-size:11.5px;color:#8ba79a;margin-top:3px;overflow-wrap:anywhere}
     .peqb-os2-uf{color:#6fd0a5;font-weight:900}
+    .peqb-os2-emb-l1,.peqb-os2-emb-l2{display:block}
+    .peqb-os2-emb-l2{font-size:10.5px;color:#8ba79a;margin-top:1px}
     .peqb-os2-tags{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
     .peqb-os2-tagsrow{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:10px}
     .peqb-os2-tagsrow .peqb-status-strip{margin:0}
@@ -725,14 +727,22 @@ function candCardHtml(cand, selected, minCustoId) {
 function onlyPlate(value) { return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7); }
 function todayIso() { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
 
-// Embarque vem como "UF – CIDADE (FAZENDA…)". Destaca a UF e normaliza o
-// separador, sem reformatar o resto (cidade/fazenda ficam como vieram).
+// Embarque vem como "UF – CIDADE (FAZENDA…)". Divide em 2 linhas: a 1ª com
+// UF - Cidade (UF destacada) e a 2ª com o local em si (o que vier entre
+// parênteses, ou o restante do texto quando não houver parênteses).
 function embarqueHtml(embarque) {
   const s = String(embarque == null ? '' : embarque).trim();
   if (!s || s === '-') return '📍 -';
   const m = s.match(/^([A-Za-z]{2})\s*[–-]\s*(.+)$/);
-  if (m) return `📍 <span class="peqb-os2-uf">${esc(m[1].toUpperCase())}</span> · ${esc(m[2])}`;
-  return '📍 ' + esc(s);
+  if (!m) return `<span class="peqb-os2-emb-l1">📍 ${esc(s)}</span>`;
+  const uf = m[1].toUpperCase();
+  const resto = m[2].trim();
+  const p = resto.match(/^([^(]+?)\s*\(([^)]*)\)\s*$/);
+  const cidade = (p ? p[1] : resto).trim();
+  const local = p ? p[2].trim() : '';
+  const linha1 = `<span class="peqb-os2-emb-l1">📍 <span class="peqb-os2-uf">${esc(uf)}</span> · ${esc(cidade)}</span>`;
+  const linha2 = local ? `<span class="peqb-os2-emb-l2">${esc(local)}</span>` : '';
+  return linha1 + linha2;
 }
 
 // Passo 2 (KPIs do atendimento): Cliente / Local de Embarque / Remanescente /
