@@ -64,7 +64,7 @@ function injectEtapa1LinhaCss() {
     #pgcPane1 .peqb-os-list {
       display: flex !important;
       flex-direction: column !important;
-      gap: 5px !important;
+      gap: 4px !important;
     }
 
     #pgcPane1 .peqs-row {
@@ -73,7 +73,7 @@ function injectEtapa1LinhaCss() {
       margin: 0 !important;
       padding: 0 !important;
       border: 1px solid rgba(52, 211, 153, .18) !important;
-      border-radius: 15px !important;
+      border-radius: 12px !important;
       background: rgba(2, 6, 23, .14) !important;
       box-shadow: none !important;
       overflow: hidden !important;
@@ -89,7 +89,7 @@ function injectEtapa1LinhaCss() {
       grid-template-columns: minmax(300px, 1.8fr) minmax(430px, 2.55fr) 112px 74px 194px !important;
       gap: 0 !important;
       align-items: stretch !important;
-      min-height: 50px !important;
+      min-height: 38px !important;
       padding: 0 !important;
       border: 0 !important;
       background: transparent !important;
@@ -101,10 +101,10 @@ function injectEtapa1LinhaCss() {
 
     #pgcPane1 .peqs-row .peqb-os2-kpi {
       min-width: 0 !important;
-      height: 50px !important;
-      min-height: 50px !important;
+      height: 38px !important;
+      min-height: 38px !important;
       margin: 0 !important;
-      padding: 6px 13px !important;
+      padding: 3px 12px !important;
       border: 0 !important;
       border-right: 1px solid rgba(148, 163, 184, .11) !important;
       border-radius: 0 !important;
@@ -127,9 +127,9 @@ function injectEtapa1LinhaCss() {
       width: 100% !important;
       margin: 0 !important;
       color: #f8fafc !important;
-      font-size: 13px !important;
+      font-size: 12px !important;
       font-weight: 900 !important;
-      line-height: 1.12 !important;
+      line-height: 1.1 !important;
       white-space: nowrap !important;
       overflow: hidden !important;
       text-overflow: ellipsis !important;
@@ -155,17 +155,17 @@ function injectEtapa1LinhaCss() {
     }
 
     #pgcPane1 .peqs-row .peqb-os2-kpi .peqb-os2-emb-l1 {
-      font-size: 13px !important;
+      font-size: 12px !important;
       font-weight: 900 !important;
       color: #f8fafc !important;
-      line-height: 1.15 !important;
+      line-height: 1.1 !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-kpi .peqb-os2-emb-l2 {
-      font-size: 11px !important;
+      font-size: 10px !important;
       font-weight: 600 !important;
       color: #9fb7aa !important;
-      line-height: 1.1 !important;
+      line-height: 1.05 !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-kpi .peqb-os2-uf {
@@ -188,21 +188,21 @@ function injectEtapa1LinhaCss() {
       align-items: center !important;
       justify-content: center !important;
       text-align: center !important;
-      padding: 5px 6px !important;
+      padding: 3px 6px !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(3) strong,
     #pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(4) strong {
       text-align: center !important;
-      font-size: 12.5px !important;
+      font-size: 11.5px !important;
       line-height: 1 !important;
     }
 
     #pgcPane1 .peqs-row .peqb-os2-tagsrow {
-      height: 50px !important;
-      min-height: 50px !important;
+      height: 38px !important;
+      min-height: 38px !important;
       margin: 0 !important;
-      padding: 0 10px !important;
+      padding: 0 8px !important;
       border: 0 !important;
       border-radius: 0 !important;
       background: #020617 !important;
@@ -215,17 +215,17 @@ function injectEtapa1LinhaCss() {
 
     #pgcPane1 .peqs-row .peqb-status-strip {
       margin: 0 !important;
-      gap: 8px !important;
+      gap: 6px !important;
       flex-wrap: nowrap !important;
     }
 
     #pgcPane1 .peqs-row .peqb-st {
-      height: 30px !important;
-      min-width: 30px !important;
-      width: 30px !important;
+      height: 26px !important;
+      min-width: 26px !important;
+      width: 26px !important;
       padding: 0 !important;
       border-radius: 999px !important;
-      font-size: 11px !important;
+      font-size: 10px !important;
     }
 
     @media (max-width: 980px) {
@@ -248,8 +248,8 @@ function injectEtapa1LinhaCss() {
       }
       #pgcPane1 .peqs-row .peqb-os2-kpi,
       #pgcPane1 .peqs-row .peqb-os2-tagsrow {
-        height: 40px !important;
-        min-height: 40px !important;
+        height: auto !important;
+        min-height: 34px !important;
       }
     }
   `;
