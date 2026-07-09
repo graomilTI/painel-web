@@ -559,14 +559,14 @@ async function vincularColaboradorNaOs(osId, colab) {
   const jaNaOs = (item.equipeRows || []).some((r) => String(r.colaborador_id) === String(cand.colaboradorId));
   if (jaNaOs) { alert(`${cand.nome} já está vinculado nesta O.S.`); return; }
 
+  let disponibilidade = isMotorista(cand) ? await escolherDisponibilidadeMotorista(cand.nome) : 'OK';
+  if (!disponibilidade) return;
   const atuais = item.equipeRows || [];
   let motivo = null;
-  if (atuais.length) {
+  if (disponibilidade === 'OK' && atuais.length) {
     motivo = await pedirJustificativa(item.os, atuais, cand);
     if (!motivo) return;
   }
-  let disponibilidade = isMotorista(cand) ? await escolherDisponibilidadeMotorista(cand.nome) : 'OK';
-  if (!disponibilidade) return;
   const programacaoId = snapshot.programacaoIdParaOs?.(item.os) || item.programacao_id || snapshot.programacaoId || item.equipeRows?.[0]?.programacao_id;
   if (!programacaoId) { alert('Programação da O.S. não encontrada. Recarregue a tela.'); return; }
 
@@ -607,8 +607,7 @@ async function vincularMotoristaAoColaborador(osId, alvoPessoa, motorista) {
   if (!alvoId) { await vincularColaboradorNaOs(osId, motorista); return; }
   const programacaoId = snapshot.programacaoIdParaOs?.(item.os) || item.equipeRows?.[0]?.programacao_id || snapshot.programacaoId;
   if (!programacaoId) { alert('Programação da O.S. não encontrada. Recarregue a tela.'); return; }
-  const disponibilidade = await escolherDisponibilidadeMotorista(motorista.nome);
-  if (!disponibilidade) return;
+  const disponibilidade = 'LOGISTICA';
   const cand = materializarCand(item, motorista);
   try {
     await upsertVinculo({ programacaoId, os: item.os, cand, disponibilidade });
