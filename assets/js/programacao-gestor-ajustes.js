@@ -171,6 +171,36 @@ function attachProgListGuard() {
   guard.observe(list, { childList: true });
 }
 
+// Defesa definitiva: os guards acima são REATIVOS (detectam o vazamento
+// depois que ele já apareceu e pedem pro fluxo novo remontar) — dependem de
+// timing de MutationObserver/polling que, na prática, às vezes não pega a
+// tempo e o usuário chega a ver a Disponibilidade nativa por um bom tempo.
+// Em vez de corrigir depois, intercepta a ESCRITA em si: sobrescreve o
+// setter nativo de innerHTML só em #progList e ignora silenciosamente
+// qualquer valor que pareça a Disponibilidade nativa (tem .colab-name/
+// .colab-meta/.prog-status, exclusivos de colabCell() no núcleo) e não seja
+// o wrapper das 3 abas nem o placeholder daqui. Todo o resto passa normal.
+function installProgListWriteGuard(list) {
+  if (!list || list.dataset.gestorWriteGuard === '1') return;
+  list.dataset.gestorWriteGuard = '1';
+  const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')
+    || Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'innerHTML');
+  const nativeSet = descriptor?.set;
+  const nativeGet = descriptor?.get;
+  if (!nativeSet || !nativeGet) return;
+  Object.defineProperty(list, 'innerHTML', {
+    configurable: true,
+    get() { return nativeGet.call(this); },
+    set(html) {
+      if (typeof html === 'string' && !html.includes('id="pgcTabsShell"') && /colab-name|colab-meta|prog-status|table-empty/.test(html)) {
+        console.warn('[gestor-ajustes] bloqueada escrita da Disponibilidade nativa em #progList');
+        return;
+      }
+      nativeSet.call(this, html);
+    },
+  });
+}
+
 // Rede de segurança: o núcleo também escuta o Realtime de programacao_colaboradores
 // (mesma tabela que os vínculos do mapa gravam) e chama sua própria renderRows()
 // quando essa tabela muda — não só ao carregar o contexto. Isso pode clobbrar
@@ -368,6 +398,7 @@ function boot() {
     hideCoreControls();
     ensureSupCombo();
     attachProgListGuard();
+    installProgListWriteGuard(document.getElementById('progList'));
     const sup = document.getElementById('progSup');
     if (sup) {
       const obsSup = new MutationObserver(() => ensureSupCombo());
@@ -384,6 +415,7 @@ const observer = new MutationObserver(debounce(() => {
   hideCoreControls();
   ensureSupCombo();
   attachProgListGuard();
+  installProgListWriteGuard(document.getElementById('progList'));
 }, 160));
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
