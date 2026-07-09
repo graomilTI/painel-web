@@ -424,9 +424,14 @@ async function loadColaboradoresRegional(supervisao) {
     const resultados = await Promise.all(listaSupervisoes.map((sup) =>
       supabase.rpc('programacao_colaboradores_supervisao', { p_supervisao: sup })
     ));
-    resultados.forEach(({ data, error }) => {
+    resultados.forEach(({ data, error }, idx) => {
       if (error) throw error;
-      fontes.push(...(data || []).map((r) => ({ ...r, _scoreRegional: 100, _fonteRegional: 1 })));
+      // A RPC não devolve a supervisão (só colaborador_id/nome/cargo) — sem
+      // marcar aqui com a supervisão da própria chamada, o mapa acaba
+      // descartando esses colaboradores no filtro por supervisão quando a
+      // busca cobre mais de uma (modo "Todas").
+      const sup = listaSupervisoes[idx];
+      fontes.push(...(data || []).map((r) => ({ ...r, supervisao: r.supervisao || sup, _scoreRegional: 100, _fonteRegional: 1 })));
     });
   } catch (error) {
     console.warn('[equipe] lista de colaboradores da regional via RPC indisponível', error);
