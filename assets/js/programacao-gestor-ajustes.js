@@ -168,6 +168,23 @@ function attachProgListGuard() {
   guard.observe(list, { childList: true });
 }
 
+// Rede de segurança: o núcleo também escuta o Realtime de programacao_colaboradores
+// (mesma tabela que os vínculos do mapa gravam) e chama sua própria renderRows()
+// quando essa tabela muda — não só ao carregar o contexto. Isso pode clobbrar
+// #progList bem depois do attachProgListGuard já ter sido "satisfeito" uma vez, e
+// depende de detalhes de timing do MutationObserver que às vezes falham. Um
+// polling simples (a cada 1.2s) é o jeito mais confiável de nunca deixar a
+// Disponibilidade nativa visível por muito tempo, custando quase nada.
+let ultimoReloadVazamento = 0;
+function checarVazamentoPeriodico() {
+  if (!listShowsCoreDisponibilidade()) return;
+  const agora = Date.now();
+  if (agora - ultimoReloadVazamento < 2000) return;
+  ultimoReloadVazamento = agora;
+  window.__pgcProgramacaoReload?.();
+}
+setInterval(checarVazamentoPeriodico, 1200);
+
 function configureSteps() {
   const stepsWrap = document.getElementById('progSteps');
   if (!stepsWrap) return;
