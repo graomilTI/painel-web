@@ -25,6 +25,9 @@ const NOMINATIM_USER_AGENT = 'PainelGrao1000/1.0 (tecnologia@grao1000.com.br)';
 const NOMINATIM_DELAY_MS = 1100; // política de uso do Nominatim: máx. 1 req/s
 const ERRO_RETRY_DIAS = 7;
 const ORIGEM = 'geocode_auto_colaboradores';
+const BFLEET_PREFIX = 'G1000 COLAB';
+const TOKEN_VALIDITY_MS = 55 * 60 * 1000;
+const TOKEN_RENEW_MARGIN_MS = 5 * 60 * 1000;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -50,6 +53,7 @@ async function readBody(req: Request) {
 }
 
 type GeoResult = { lat: number; lng: number; display: string } | null;
+type SecretRow = { id?: string; integracao_id?: string; chave: string; valor: string; ativo?: boolean };
 
 async function nominatimSearch(params: Record<string, string>): Promise<GeoResult> {
   try {
@@ -76,6 +80,351 @@ function formatCepBR(cep8: string): string {
 }
 
 type Pendente = { colaborador_id: string; cpf: string; nome: string; nome_chave: string; cep: string; cidade: string; estado: string; endereco: string; bairro: string };
+type BaseColaborador = {
+  colaborador_id: string;
+  nome: string;
+  cpf: string | null;
+  cidade_base: string | null;
+  uf_base: string | null;
+  endereco_base: string | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  ativo: boolean | null;
+  bfleet_lugar_id?: string | null;
+  bfleet_lugar_nome?: string | null;
+  bfleet_lugar_hash?: string | null;
+};
+
+function normalizeKey(key: string): string {
+  return cleanStr(key).toUpperCase().replace(/[^A-Z0-9_]+/g, '_');
+}
+
+function normalizeName(v: unknown): string {
+  return cleanStr(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+}
+
+function normalizeBaseUrl(base: string): string {
+  let b = cleanStr(base).replace(/\/+$/, '');
+  if (!b) return 'https://api.service24gps.com/api/v1';
+  if (!/\/api\/v1$/i.test(b)) b = `${b}/api/v1`;
+  return b.replace(/\/+$/, '');
+}
+
+function formPayload(payload: Record<string, unknown>) {
+  const p = new URLSearchParams();
+  Object.entries(payload).forEach(([k, v]) => p.append(k, String(v ?? '')));
+  return p;
+}
+
+function pickSecret(secrets: Map<string, SecretRow>, ...keys: string[]): string {
+  for (const key of keys) {
+    const row = secrets.get(normalizeKey(key));
+    const val = cleanStr(row?.valor);
+    if (val) return val;
+  }
+  return '';
+}
+
+function toNumOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function validLatLng(lat: unknown, lng: unknown): boolean {
+  const la = toNumOrNull(lat), lo = toNumOrNull(lng);
+  return la !== null && lo !== null && la >= -34 && la <= 6 && lo >= -75 && lo <= -30;
+}
+
+async function sha256(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function upsertSecret(supabase: any, integracaoId: string, chave: string, valor: string, descricao: string, sensivel = true) {
+  const payload = { integracao_id: integracaoId, chave: normalizeKey(chave), valor, descricao, sensivel, ativo: true, updated_at: new Date().toISOString() };
+  const { error } = await supabase.from('ti_integracao_segredos').upsert(payload, { onConflict: 'integracao_id,chave' });
+  if (error) {
+    const { data: existing } = await supabase.from('ti_integracao_segredos').select('id').eq('integracao_id', integracaoId).eq('chave', payload.chave).maybeSingle();
+    if (existing?.id) {
+      const upd = await supabase.from('ti_integracao_segredos').update(payload).eq('id', existing.id);
+      if (upd.error) throw upd.error;
+    } else {
+      const ins = await supabase.from('ti_integracao_segredos').insert(payload);
+      if (ins.error) throw ins.error;
+    }
+  }
+}
+
+async function getBfleetIntegration(supabase: any) {
+  let { data, error } = await supabase.from('ti_integracoes').select('*').eq('codigo', 'BFLEET_SERVICE24GPS').eq('ativo', true).maybeSingle();
+  if (error) throw error;
+  if (data) return data;
+  const res = await supabase.from('ti_integracoes').select('*').ilike('base_url', '%service24gps%').eq('ativo', true).limit(1).maybeSingle();
+  if (res.error) throw res.error;
+  return res.data;
+}
+
+async function getIntegrationSecrets(supabase: any, integracaoId: string) {
+  const { data, error } = await supabase.from('ti_integracao_segredos').select('id,integracao_id,chave,valor,ativo').eq('integracao_id', integracaoId).eq('ativo', true);
+  if (error) throw error;
+  const map = new Map<string, SecretRow>();
+  for (const row of (data || []) as SecretRow[]) map.set(normalizeKey(row.chave), row);
+  return map;
+}
+
+async function requestToken(apiBase: string, apiKey: string, username: string, password: string) {
+  const response = await fetch(`${apiBase}/gettoken`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: formPayload({ apikey: apiKey, token: '', username, password }),
+  });
+  const text = await response.text();
+  let parsed: any; try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+  if (!response.ok || !parsed?.data) throw new Error(`Falha ao gerar token BFleet/Service24GPS (${response.status}): ${text.slice(0, 600)}`);
+  return cleanStr(parsed.data);
+}
+
+async function getValidToken(params: { supabase: any; integracaoId: string; secrets: Map<string, SecretRow>; apiBase: string; apiKey: string; username: string; password: string; force?: boolean }) {
+  const savedToken = pickSecret(params.secrets, 'TOKEN', 'BFLEET_TOKEN', 'SERVICE24GPS_TOKEN');
+  const expires = Number(pickSecret(params.secrets, 'TOKEN_EXPIRES', 'BFLEET_TOKEN_EXPIRES', 'SERVICE24GPS_TOKEN_EXPIRES') || 0);
+  if (!params.force && savedToken && Number.isFinite(expires) && Date.now() + TOKEN_RENEW_MARGIN_MS < expires) return savedToken;
+  const token = await requestToken(params.apiBase, params.apiKey, params.username, params.password);
+  const newExpires = String(Date.now() + TOKEN_VALIDITY_MS);
+  await upsertSecret(params.supabase, params.integracaoId, 'TOKEN', token, 'Token BFleet/Service24GPS gerado automaticamente pela Edge Function', true);
+  await upsertSecret(params.supabase, params.integracaoId, 'TOKEN_EXPIRES', newExpires, 'Vencimento do TOKEN BFleet em milissegundos (epoch)', false);
+  await upsertSecret(params.supabase, params.integracaoId, 'BFLEET_TOKEN', token, 'Token BFleet/Service24GPS gerado automaticamente pela Edge Function', true);
+  await upsertSecret(params.supabase, params.integracaoId, 'BFLEET_TOKEN_EXPIRES', newExpires, 'Vencimento do BFLEET_TOKEN em milissegundos (epoch)', false);
+  return token;
+}
+
+async function bfleetCall(apiBase: string, endpoint: string, payload: Record<string, unknown>, timeoutMs = 25000) {
+  let last: { ok: boolean; status: number; text: string; parsed: any } | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`${apiBase}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formPayload(payload),
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      let parsed: any; try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+      return { ok: response.ok, status: response.status, text, parsed };
+    } catch (err) {
+      const e = err as any;
+      const msg = e?.name === 'AbortError' ? `BFleet ${endpoint}: timeout interno de ${timeoutMs}ms` : `BFleet ${endpoint}: ${e?.message || String(e)}`;
+      last = { ok: false, status: 0, text: msg, parsed: { error: msg, endpoint } };
+      if (attempt < 2) await sleep(800);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return last as { ok: boolean; status: number; text: string; parsed: any };
+}
+
+function isAuthError(resp: { status: number; parsed: any }) {
+  return resp.status === 401 || resp.status === 403 || Number(resp.parsed?.status) === 401 || Number(resp.parsed?.status) === 403 || Number(resp.parsed?.status) === 30400;
+}
+
+function isBfleetOk(resp: { ok: boolean; parsed: any }) {
+  const apiCode = resp.parsed?.data?.code;
+  return resp.ok && Number(resp.parsed?.status) === 200 && apiCode === undefined;
+}
+
+function extractPlaces(payload: any): any[] {
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.data?.result)) return payload.data.result;
+  if (Array.isArray(payload?.result)) return payload.result;
+  if (Array.isArray(payload)) return payload;
+  return [];
+}
+
+function placeId(row: any): string {
+  return cleanStr(row?.idLugar ?? row?.idlugar ?? row?.id_lugar ?? row?.id);
+}
+
+function placeName(row: any): string {
+  return cleanStr(row?.nombre ?? row?.nome ?? row?.name);
+}
+
+function localPlaceName(row: BaseColaborador): string {
+  const id = cleanStr(row.colaborador_id).slice(0, 8).toUpperCase();
+  const nome = cleanStr(row.nome).replace(/\s+/g, ' ').slice(0, 74);
+  return `${BFLEET_PREFIX} ${id} - ${nome}`;
+}
+
+function buildPlacePayload(row: BaseColaborador, icono: string) {
+  const lat = toNumOrNull(row.latitude);
+  const lng = toNumOrNull(row.longitude);
+  return {
+    nombre: localPlaceName(row),
+    direccion: cleanStr(row.endereco_base) || `${cleanStr(row.cidade_base)} ${cleanStr(row.uf_base)}`.trim() || cleanStr(row.nome),
+    latitud: lat,
+    longitud: lng,
+    descripcion: `Colaborador ${cleanStr(row.nome)}${cleanStr(row.cpf) ? ` | CPF ${cleanStr(row.cpf)}` : ''}`,
+    telefono: '',
+    email: '',
+    solo_mi_usuario: '0',
+    icono,
+  };
+}
+
+async function fetchPlaces(apiBase: string, apiKey: string, token: string) {
+  const resp = await bfleetCall(apiBase, 'getPlaces', { apikey: apiKey, token });
+  return { resp, rows: extractPlaces(resp.parsed) };
+}
+
+async function syncBfleetPlaces(supabase: any, body: any) {
+  if (body?.bfleet_lugares === false) return { habilitado: false, motivo: 'desativado_no_payload' };
+  const integracao = await getBfleetIntegration(supabase);
+  if (!integracao?.id) return { habilitado: false, motivo: 'integracao_bfleet_nao_configurada' };
+  const secrets = await getIntegrationSecrets(supabase, integracao.id);
+  const apiBase = normalizeBaseUrl(cleanStr(integracao.base_url) || pickSecret(secrets, 'BASE_URL', 'API_BASE', 'BFLEET_BASE_URL'));
+  const apiKey = pickSecret(secrets, 'APIKEY', 'API_KEY', 'BFLEET_APIKEY', 'SERVICE24GPS_APIKEY');
+  const username = pickSecret(secrets, 'USERNAME', 'USER', 'BFLEET_USERNAME', 'SERVICE24GPS_USERNAME');
+  const password = pickSecret(secrets, 'PASSWORD', 'PASS', 'BFLEET_PASSWORD', 'SERVICE24GPS_PASSWORD');
+  if (!apiKey || !username || !password) return { habilitado: false, motivo: 'credenciais_bfleet_incompletas' };
+
+  let token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password });
+  let placesResp = await fetchPlaces(apiBase, apiKey, token);
+  if (isAuthError(placesResp.resp)) {
+    token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password, force: true });
+    placesResp = await fetchPlaces(apiBase, apiKey, token);
+  }
+  if (!isBfleetOk(placesResp.resp)) throw new Error(`BFleet getPlaces: ${placesResp.resp.text.slice(0, 600)}`);
+
+  const byId = new Map<string, any>();
+  const byName = new Map<string, any>();
+  for (const place of placesResp.rows) {
+    const id = placeId(place);
+    const name = normalizeName(placeName(place));
+    if (id) byId.set(id, place);
+    if (name && !byName.has(name)) byName.set(name, place);
+  }
+
+  const limite = Math.max(1, Math.min(500, Number(body?.bfleet_limite) || 150));
+  const icono = cleanStr(body?.bfleet_icono) || '/images/Lugares/new_596_office_building.png';
+  const { data: ativos, error: ativosErr } = await supabase
+    .from('operacional_colaborador_base')
+    .select('colaborador_id,nome,cpf,cidade_base,uf_base,endereco_base,latitude,longitude,ativo,bfleet_lugar_id,bfleet_lugar_nome,bfleet_lugar_hash')
+    .eq('ativo', true)
+    .not('endereco_base', 'is', null)
+    .limit(limite);
+  if (ativosErr) throw ativosErr;
+
+  let criados = 0, atualizados = 0, semCoordenada = 0, semMudanca = 0, falhas = 0;
+  const falhasDetalhe: any[] = [];
+  for (const row of ((ativos || []) as BaseColaborador[])) {
+    if (!validLatLng(row.latitude, row.longitude)) {
+      semCoordenada++;
+      continue;
+    }
+    const payload = buildPlacePayload(row, icono);
+    const hash = await sha256(JSON.stringify(payload));
+    const existing = (row.bfleet_lugar_id && byId.get(row.bfleet_lugar_id)) || byName.get(normalizeName(payload.nombre));
+    const idExistente = existing ? placeId(existing) : '';
+    if (idExistente && row.bfleet_lugar_hash === hash && row.bfleet_lugar_id === idExistente) {
+      semMudanca++;
+      continue;
+    }
+
+    const endpoint = idExistente ? 'updatePlace' : 'createPlace';
+    const reqPayload = idExistente
+      ? { apikey: apiKey, token, idLugar: idExistente, ...payload }
+      : { apikey: apiKey, token, ...payload };
+    const resp = await bfleetCall(apiBase, endpoint, reqPayload);
+    if (!isBfleetOk(resp)) {
+      falhas++;
+      falhasDetalhe.push({ colaborador_id: row.colaborador_id, nome: row.nome, endpoint, erro: resp.text.slice(0, 400) });
+      await supabase.from('operacional_colaborador_base').update({
+        bfleet_lugar_sync_status: 'ERRO',
+        bfleet_lugar_sync_error: resp.text.slice(0, 1000),
+        bfleet_lugar_sync_em: new Date().toISOString(),
+      }).eq('colaborador_id', row.colaborador_id);
+      continue;
+    }
+
+    const idLugar = idExistente || cleanStr(resp.parsed?.data?.idLugar ?? resp.parsed?.data?.id_lugar ?? resp.parsed?.data?.id ?? resp.parsed?.data);
+    await supabase.from('operacional_colaborador_base').update({
+      bfleet_lugar_id: idLugar || null,
+      bfleet_lugar_nome: payload.nombre,
+      bfleet_lugar_hash: hash,
+      bfleet_lugar_payload: payload,
+      bfleet_lugar_sync_status: idExistente ? 'ATUALIZADO' : 'CRIADO',
+      bfleet_lugar_sync_error: null,
+      bfleet_lugar_sync_em: new Date().toISOString(),
+    }).eq('colaborador_id', row.colaborador_id);
+    if (idExistente) atualizados++; else criados++;
+  }
+
+  const { data: limparRows, error: limparErr } = await supabase
+    .from('operacional_colaborador_base')
+    .select('colaborador_id,nome,bfleet_lugar_id')
+    .not('bfleet_lugar_id', 'is', null)
+    .or('ativo.is.false,endereco_base.is.null,latitude.is.null,longitude.is.null')
+    .limit(200);
+  if (limparErr) throw limparErr;
+  let removidos = 0;
+  for (const row of (limparRows || []) as any[]) {
+    const idLugar = cleanStr(row.bfleet_lugar_id);
+    if (!idLugar) continue;
+    const resp = await bfleetCall(apiBase, 'deletePlace', { apikey: apiKey, token, idLugar });
+    if (isBfleetOk(resp)) {
+      removidos++;
+      await supabase.from('operacional_colaborador_base').update({
+        bfleet_lugar_id: null,
+        bfleet_lugar_nome: null,
+        bfleet_lugar_hash: null,
+        bfleet_lugar_payload: null,
+        bfleet_lugar_sync_status: 'REMOVIDO',
+        bfleet_lugar_sync_error: null,
+        bfleet_lugar_sync_em: new Date().toISOString(),
+      }).eq('colaborador_id', row.colaborador_id);
+    }
+  }
+
+  const atualizadosCoord = await refreshCoordsFromBfleet(supabase, apiBase, apiKey, token);
+  return { habilitado: true, criados, atualizados, removidos, sem_coordenada: semCoordenada, sem_mudanca: semMudanca, falhas, falhas_detalhe: falhasDetalhe.slice(0, 10), coordenadas_retornadas: atualizadosCoord };
+}
+
+async function safeSyncBfleetPlaces(supabase: any, body: any) {
+  try {
+    return await syncBfleetPlaces(supabase, body);
+  } catch (err) {
+    console.error('[geocode-colaborador-base] bfleet lugares', err);
+    return { habilitado: true, erro: (err as any)?.message || String(err) };
+  }
+}
+
+async function refreshCoordsFromBfleet(supabase: any, apiBase: string, apiKey: string, token: string) {
+  const placesResp = await fetchPlaces(apiBase, apiKey, token);
+  if (!isBfleetOk(placesResp.resp)) return 0;
+  const byId = new Map<string, any>();
+  for (const p of placesResp.rows) {
+    const id = placeId(p);
+    if (id) byId.set(id, p);
+  }
+  const { data, error } = await supabase
+    .from('operacional_colaborador_base')
+    .select('colaborador_id,bfleet_lugar_id')
+    .not('bfleet_lugar_id', 'is', null)
+    .limit(1000);
+  if (error) throw error;
+  let atualizados = 0;
+  for (const row of (data || []) as any[]) {
+    const p = byId.get(cleanStr(row.bfleet_lugar_id));
+    const lat = toNumOrNull(p?.latitud ?? p?.latitude ?? p?.lat);
+    const lng = toNumOrNull(p?.longitud ?? p?.longitude ?? p?.lng ?? p?.lon);
+    if (!validLatLng(lat, lng)) continue;
+    const upd = await supabase.from('operacional_colaborador_base').update({ latitude: lat, longitude: lng }).eq('colaborador_id', row.colaborador_id);
+    if (!upd.error) atualizados++;
+  }
+  return atualizados;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -103,7 +452,8 @@ Deno.serve(async (req) => {
       endereco: cleanStr(r.endereco), bairro: cleanStr(r.bairro),
     }));
     if (!faltantes.length) {
-      return json({ faltantes: 0, geocodificados_novo: 0, gravados: 0 });
+      const bfleet_lugares = await safeSyncBfleetPlaces(supabase, body);
+      return json({ faltantes: 0, geocodificados_novo: 0, gravados: 0, bfleet_lugares });
     }
 
     // 2) Cache existente (por CEP) — evita regeocodificar quem já foi resolvido
@@ -208,6 +558,8 @@ Deno.serve(async (req) => {
       }
     }
 
+    const bfleet_lugares = await safeSyncBfleetPlaces(supabase, body);
+
     return json({
       faltantes: faltantes.length,
       chaves_pendentes_antes: pendentes.length,
@@ -216,6 +568,7 @@ Deno.serve(async (req) => {
       falhas_gravacao: falhas.length,
       falhas_detalhe: falhas.slice(0, 10),
       restantes: Math.max(0, pendentes.length - lote.length),
+      bfleet_lugares,
     });
   } catch (err) {
     console.error('[geocode-colaborador-base]', err);
