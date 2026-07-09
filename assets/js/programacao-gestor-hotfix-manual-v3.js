@@ -92,10 +92,34 @@ const corStatus=s=>s==='motorista'?COR_MOTORISTA:s==='os'?COR_OS:COR_PENDENTE;
 const iOs=s=>window.L.divIcon({className:'pmg-drag-icon',html:star(corStatus(s)),iconSize:[28,28],iconAnchor:[14,14]});
 const iCol=(r,s)=>window.L.divIcon({className:'pmg-drag-icon',html:person(corStatus(s),letter(tipo(r))),iconSize:[28,34],iconAnchor:[14,32]});
 const iCar=s=>window.L.divIcon({className:'pmg-drag-icon',html:car(corStatus(s)),iconSize:[32,25],iconAnchor:[16,21]});
-function bandHtml(b){if(b.querySelector('#peqbMapEl2'))return;b.innerHTML=`<div class="pmg-wrap"><div class="pmg-head"><strong>Mapa do gestor</strong><div class="pmg-legend"><span><i style="background:${COR_PENDENTE}"></i>Pendente</span><span><i style="background:${COR_OS}"></i>Vinculado à O.S.</span><span><i style="background:${COR_MOTORISTA}"></i>Com motorista</span><span class="pmg-help">Arraste um marcador sobre outro para vincular</span></div><div style="display:flex;gap:8px;align-items:center"><span id="pmgMsg" style="font-size:11px;color:#9fb7aa"></span><button type="button" class="peqb-btn" id="pmgAtualizarManual">↻ Atualizar</button></div></div><div class="pmg-map"><div id="peqbMapEl2"></div><div id="pmgEmpty" class="pmg-empty" style="display:none">Nenhuma coordenada para mostrar nesta supervisão.</div></div></div>`;b.querySelector('#pmgAtualizarManual')?.addEventListener('click',()=>mapRender({force:true}))}
+function bandHtml(b){if(b.querySelector('#peqbMapEl2'))return;b.innerHTML=`<div class="pmg-wrap"><div class="pmg-head"><strong>Mapa do gestor</strong><div class="pmg-legend"><span><i style="background:${COR_PENDENTE}"></i>Pendente</span><span><i style="background:${COR_OS}"></i>Vinculado à O.S.</span><span><i style="background:${COR_MOTORISTA}"></i>Com motorista</span><span class="pmg-help">Arraste um marcador sobre outro para vincular · 2 cliques rápidos pra desvincular</span></div><div style="display:flex;gap:8px;align-items:center"><span id="pmgMsg" style="font-size:11px;color:#9fb7aa"></span><button type="button" class="peqb-btn" id="pmgAtualizarManual">↻ Atualizar</button></div></div><div class="pmg-map"><div id="peqbMapEl2"></div><div id="pmgEmpty" class="pmg-empty" style="display:none">Nenhuma coordenada para mostrar nesta supervisão.</div></div></div>`;b.querySelector('#pmgAtualizarManual')?.addEventListener('click',()=>mapRender({force:true}))}
 async function ensureMap(el){if(S.map&&S.mapEl===el)return S.map;if(S.map)try{S.map.remove()}catch{};if(!await leaflet())return null;S.mapEl=el;S.map=window.L.map(el,{zoomControl:true,scrollWheelZoom:true,center:[-14.235,-51.925],zoom:4});window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19,attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd'}).addTo(S.map);S.osLayer=window.L.layerGroup().addTo(S.map);S.colabLayer=window.L.layerGroup().addTo(S.map);return S.map}
 function alvo(m){if(!S.map)return null;const p=S.map.latLngToContainerPoint(m.getLatLng());let best=null,dist=99999;for(const o of S.markers){if(o===m)continue;const d=p.distanceTo(S.map.latLngToContainerPoint(o.getLatLng()));if(d<dist){dist=d;best=o}}return dist<=42?best:null}
-function drag(m,meta){m.__pmgMeta=meta;m.__origLatLng=m.getLatLng();m.on('click mousedown dblclick contextmenu',ev=>{if(ev?.originalEvent&&window.L?.DomEvent)window.L.DomEvent.stop(ev.originalEvent)});m.on('dragstart',()=>m.closeTooltip());m.on('dragend',async()=>{const a=alvo(m);m.setLatLng(m.__origLatLng);if(!a?.__pmgMeta)return;const el=a.getElement();el?.classList.add('pmg-pending');try{await associar(a.__pmgMeta,m.__pmgMeta)}finally{el?.classList.remove('pmg-pending')}});S.markers.push(m)}
+function drag(m,meta){m.__pmgMeta=meta;m.__origLatLng=m.getLatLng();m.on('click mousedown dblclick contextmenu',ev=>{if(ev?.originalEvent&&window.L?.DomEvent)window.L.DomEvent.stop(ev.originalEvent)});m.on('dragstart',()=>m.closeTooltip());m.on('dragend',async()=>{const a=alvo(m);m.setLatLng(m.__origLatLng);if(!a?.__pmgMeta)return;const el=a.getElement();el?.classList.add('pmg-pending');try{await associar(a.__pmgMeta,m.__pmgMeta)}finally{el?.classList.remove('pmg-pending')}});m.on('dblclick',async()=>{m.closeTooltip();const el=m.getElement();el?.classList.add('pmg-pending');try{await desvincular(m.__pmgMeta)}finally{el?.classList.remove('pmg-pending')}});S.markers.push(m)}
+// 2 cliques rápidos num marcador já vinculado remove o vínculo. Colaborador/
+// motorista: tira ele da própria O.S. O.S.: tira todo mundo confirmado nela
+// de uma vez (pede confirmação, é destrutivo).
+async function removerVinculo(programacaoId,osId,colaboradorId,equipeRowId){
+  if(equipeRowId){const{error}=await supabase.from('programacao_equipe').delete().eq('id',equipeRowId);if(error)throw error}
+  else{const{error}=await supabase.from('programacao_equipe').delete().eq('os_id',osId).eq('colaborador_id',colaboradorId);if(error)throw error}
+  await supabase.from('operacional_os_colaboradores').delete().eq('os_id',osId).eq('colaborador_key',colaboradorId);
+  if(programacaoId)await supabase.from('programacao_colaboradores').update({disponibilidade:'SEM EMBARQUE'}).eq('programacao_id',programacaoId).eq('colaborador_id',colaboradorId);
+}
+async function desvincular(meta){
+  if(!meta)return;
+  if((meta.tipo==='colaborador'||meta.tipo==='motorista')){
+    if(!meta.osId)return;
+    if(!confirm(`Desvincular ${meta.colab?.nome||'colaborador'} da O.S. ${meta.numeroOs||'-'}?`))return;
+    try{await removerVinculo(meta.programacaoId,meta.osId,meta.colaboradorId,meta.equipeRowId);logActivity('action','desvinculo_manual_mapa','programacao',{os_id:meta.osId,numero_os:meta.numeroOs,colaborador_id:meta.colaboradorId,nome:meta.colab?.nome});afterWrite()}
+    catch(e){alert('Não foi possível desvincular: '+(e?.message||e))}
+  }else if(meta.tipo==='os'){
+    const{item}=findOs(meta.osId),rows=item?.equipeRows||[];
+    if(!rows.length)return;
+    if(!confirm(`Remover ${rows.length} colaborador(es) vinculado(s) à O.S. ${meta.numeroOs||'-'}?`))return;
+    try{for(const r of rows)await removerVinculo(r.programacao_id,meta.osId,r.colaborador_id,r.id);logActivity('action','desvinculo_manual_mapa_os','programacao',{os_id:meta.osId,numero_os:meta.numeroOs,colaboradores:rows.map(r=>r.colaborador_id)});afterWrite()}
+    catch(e){alert('Não foi possível desvincular: '+(e?.message||e))}
+  }
+}
 function fallbackPos(col,items,idx){
   const pontos=items.filter(it=>(!col?.supervisao||it.os?.supervisao===col.supervisao)&&it.ponto&&geo(it.ponto.lat,it.ponto.lng)).map(it=>it.ponto);
   const base=(pontos.length?pontos:items.filter(it=>it.ponto&&geo(it.ponto.lat,it.ponto.lng)).map(it=>it.ponto));
@@ -159,7 +183,7 @@ async function mapRender({force=false}={}){
     const labelStatus=st==='motorista'?'com motorista':st==='os'?'vinculado à O.S. sem transporte':'pendente',geoStatus=p.fallback?' · sem coordenada cadastrada':'';
     const enderecoTt=col.endereco?`<br>📍 ${esc(col.endereco)}`:'';
     const m=L.marker([p.lat,p.lng],{icon:mot?iCar(st):iCol(col,st),draggable:true,autoPan:true,bubblingMouseEvents:false}).bindTooltip(`${esc(col.nome)}${on?` · OS ${esc(vinc.item.os.numero_os||'-')}`:''} · ${mot?'Motorista':esc(tipo(col))} · ${labelStatus}${geoStatus}${enderecoTt}`,{className:'peqb-tt'});
-    drag(m,{tipo:mot?'motorista':'colaborador',colaboradorId:col.colaboradorId,osId:on?vinc.item.os.id:null,supervisao:col.supervisao,colab:col});
+    drag(m,{tipo:mot?'motorista':'colaborador',colaboradorId:col.colaboradorId,osId:on?vinc.item.os.id:null,numeroOs:on?vinc.item.os.numero_os:null,equipeRowId:on?vinc.row.id:null,programacaoId:on?(snap.programacaoIdParaOs?.(vinc.item.os)||vinc.row.programacao_id):null,supervisao:col.supervisao,colab:col});
     S.colabLayer.addLayer(m);bounds.push([p.lat,p.lng]);
   });
   const empty=band.querySelector('#pmgEmpty');
