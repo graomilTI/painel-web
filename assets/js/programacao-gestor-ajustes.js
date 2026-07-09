@@ -150,11 +150,14 @@ function renderIdle() {
 // antiga deste guard, NÃO renderizamos nada aqui: só detectamos o vazamento e
 // pedimos pro fluxo novo remontar (window.__pgcProgramacaoReload, exposto por
 // programacao-gestor-fluxo-avancado.js) — assim não competimos pelo #progList.
+// Checagem barata (querySelector, sem serializar o textContent da árvore
+// inteira toda hora): .colab-name/.colab-meta/.prog-status só existem no
+// colabCell() do núcleo (programacao.js), nunca nos templates das 3 abas.
 function listShowsCoreDisponibilidade() {
   const list = document.getElementById('progList');
   if (!list) return false;
   if (list.querySelector('#pgcTabsShell')) return false;
-  return /Disponíveis|Disponiveis|DISPONIBILIDADE|Contexto carregado/i.test(list.textContent || '');
+  return !!list.querySelector('.colab-name, .colab-meta, .prog-status, .table-empty');
 }
 
 function attachProgListGuard() {
