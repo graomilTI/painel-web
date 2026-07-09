@@ -350,12 +350,23 @@ function colabCardHtml(c) {
   </div>`;
 }
 
+// observeEquipePane() (embaixo) reage a QUALQUER mutação no documento pra
+// reconstruir esta lista. Escrever inner/textContent incondicionalmente aqui
+// cria um loop de auto-alimentação: escrever é uma mutação -> dispara o
+// observer de novo -> escreve de novo -> ... rodando pra sempre a cada ~400ms
+// assim que a Etapa 2 é aberta pela 1ª vez, mesmo sem nada realmente mudar.
+// Só escreve quando o conteúdo calculado é diferente do que já está lá.
 function renderPool(poolEl, pool, query = '') {
   const q = normalizeText(query);
   const filtrados = q ? pool.filter((c) => normalizeText(`${c.nome} ${c.tipoLabel} ${c.supervisao} ${c.veiculoPlaca}`).includes(q)) : pool;
-  poolEl.querySelector('.pgc-pool-count').textContent = `${filtrados.length}/${pool.length}`;
+  const countEl = poolEl.querySelector('.pgc-pool-count');
+  const countText = `${filtrados.length}/${pool.length}`;
+  if (countEl.textContent !== countText) countEl.textContent = countText;
   const list = poolEl.querySelector('.pgc-colab-list');
-  list.innerHTML = filtrados.length ? filtrados.map(colabCardHtml).join('') : '<div class="pgc-colab-empty">Nenhum colaborador encontrado.</div>';
+  const html = filtrados.length ? filtrados.map(colabCardHtml).join('') : '<div class="pgc-colab-empty">Nenhum colaborador encontrado.</div>';
+  if (list.__pgcHtmlCache === html) return;
+  list.__pgcHtmlCache = html;
+  list.innerHTML = html;
 }
 
 function ensureEquipeSplit(pane) {
