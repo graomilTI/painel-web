@@ -1236,6 +1236,13 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     dataReferencia: options.dataReferencia || null,
   });
 
+  // Ponte pro drag-and-drop do mapa (programacao-gestor-hotfix-manual-v3.js):
+  // atualização incremental depois de vincular um marcador. carregarERenderizar
+  // com silent:true só troca #peqbOsList (a lista de O.S.) e o snapshot acima —
+  // não mexe em #peqbMapBand, então a instância do Leaflet continua viva e só
+  // repinta os marcadores, sem o "piscar" de recriar as 3 abas do zero.
+  window.__peqbSilentRefresh = () => carregarERenderizar({ silent: true });
+
   // currentUser é opcional (só preenche logistica_solicitado_por ao FINALIZAR).
   // Busca SEM bloquear o render — assim o #peqbOsList já existe acima e o
   // observer da Fase 1 não re-renderiza em loop se a chamada de auth demorar.

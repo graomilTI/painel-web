@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260709-emb2linhas1';
-import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260708-despesas1';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260709-silentref1';
+import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260709-despesas2';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 // Programação Gestor — fluxo avançado:
