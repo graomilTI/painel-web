@@ -142,6 +142,32 @@ function renderIdle() {
   `;
 }
 
+// O núcleo (programacao.js) tem state.step = 'A' por padrão e, quando termina
+// de carregar o contexto sozinho, escreve a Disponibilidade nativa em
+// #progList — mesmo depois do fluxo novo (programacao-gestor-fluxo-avancado.js)
+// já ter montado o wrapper #pgcTabsShell com as 3 abas. Sem esse guard, essa
+// Disponibilidade nativa aparece por cima das abas. Ao contrário da versão
+// antiga deste guard, NÃO renderizamos nada aqui: só detectamos o vazamento e
+// pedimos pro fluxo novo remontar (window.__pgcProgramacaoReload, exposto por
+// programacao-gestor-fluxo-avancado.js) — assim não competimos pelo #progList.
+function listShowsCoreDisponibilidade() {
+  const list = document.getElementById('progList');
+  if (!list) return false;
+  if (list.querySelector('#pgcTabsShell')) return false;
+  return /Disponíveis|Disponiveis|DISPONIBILIDADE|Contexto carregado/i.test(list.textContent || '');
+}
+
+function attachProgListGuard() {
+  const list = document.getElementById('progList');
+  if (!list || list.dataset.gestorGuard === '1') return;
+  list.dataset.gestorGuard = '1';
+  const guard = new MutationObserver(() => {
+    if (!listShowsCoreDisponibilidade()) return;
+    window.__pgcProgramacaoReload?.();
+  });
+  guard.observe(list, { childList: true });
+}
+
 function configureSteps() {
   const stepsWrap = document.getElementById('progSteps');
   if (!stepsWrap) return;
@@ -321,6 +347,7 @@ function boot() {
     configureSteps();
     hideCoreControls();
     ensureSupCombo();
+    attachProgListGuard();
     const sup = document.getElementById('progSup');
     if (sup) {
       const obsSup = new MutationObserver(() => ensureSupCombo());
@@ -336,6 +363,7 @@ const observer = new MutationObserver(debounce(() => {
   configureSteps();
   hideCoreControls();
   ensureSupCombo();
+  attachProgListGuard();
 }, 160));
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
