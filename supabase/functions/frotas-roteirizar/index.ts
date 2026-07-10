@@ -193,33 +193,6 @@ function buildHaversineMatrix(points: Point[]): Matrix {
   return { distances, durations };
 }
 
-// 2-opt simples sobre uma rota com início fixo (route[0] = ponto de origem do veículo)
-function twoOpt(route: number[], matrix: Matrix): number[] {
-  const n = route.length;
-  if (n < 4) return route;
-  const dist = (a: number, b: number) => matrix.distances[a][b];
-  let improved = true;
-  let iter = 0;
-  while (improved && iter < 100) {
-    improved = false;
-    iter++;
-    for (let i = 1; i < n - 1; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const a = route[i - 1], b = route[i], c = route[j];
-        const d = j + 1 < n ? route[j + 1] : null;
-        const oldCost = dist(a, b) + (d !== null ? dist(c, d) : 0);
-        const newCost = dist(a, c) + (d !== null ? dist(b, d) : 0);
-        if (newCost < oldCost - 1e-6) {
-          let lo = i, hi = j;
-          while (lo < hi) { const tmp = route[lo]; route[lo] = route[hi]; route[hi] = tmp; lo++; hi--; }
-          improved = true;
-        }
-      }
-    }
-  }
-  return route;
-}
-
 // --- Tipos de domínio ---
 
 // Um "pickup" = um colaborador a buscar no endereço de casa, com o ponto de
@@ -449,136 +422,66 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 7) Agrupar pickups pelo ponto de embarque (destino) e roteirizar grupo a grupo:
-    // veículo mais próximo do grupo -> busca os colaboradores -> leva ao ponto.
-    const grupos = new Map<number, { ponto: PontoEmbarqueNorm; pickups: Pickup[] }>();
-    for (const p of pickups) {
-      let g = grupos.get(p.ponto._id);
-      if (!g) { g = { ponto: p.ponto, pickups: [] }; grupos.set(p.ponto._id, g); }
-      g.pickups.push(p);
+    // 7) Roteirização real via VROOM (multi-veículo, pickup-delivery): cada
+    // colaborador vira um "shipment" (pickup no endereço dele, delivery no
+    // ponto de embarque da OS que ele atende) e o VROOM decide, pra frota
+    // inteira de uma vez, quem cada veículo leva e em que ordem — substitui o
+    // agrupamento manual por ponto compartilhado + guloso + 2-opt de antes,
+    // que só funcionava bem quando todo mundo num veículo ia pro mesmo lugar.
+    const vroomUrl = Deno.env.get('VROOM_URL') || '';
+    const vroomKey = Deno.env.get('VROOM_KEY') || '';
+    if (pickups.length && (!vroomUrl || !vroomKey)) {
+      return json({ error: 'VROOM_URL ou VROOM_KEY não configurados na Edge Function.' }, 500);
     }
-    const gruposOrdenados = [...grupos.values()].sort((a, b) => b.pickups.length - a.pickups.length);
 
     const usedVehicleIds = new Set<string>();
     const naoAlocados: Array<{ colaborador_nome: string; os_id: string | null; embarque: string; motivo: string }> = [];
     const rotas: any[] = [];
 
-    for (const grupo of gruposOrdenados) {
-      const grupoPickups = grupo.pickups;
-      const disponiveis = veiculos.filter((v) => !usedVehicleIds.has(v.id));
-      if (!disponiveis.length) {
-        for (const p of grupoPickups) naoAlocados.push({ colaborador_nome: p.colaborador_nome, os_id: p.os_id, embarque: p.embarque, motivo: 'Sem veículo disponível (todos já alocados)' });
-        continue;
-      }
+    if (pickups.length && veiculos.length) {
+      const vroomVehicles = veiculos.map((v, i) => ({ id: i, start: [v.lng, v.lat], capacity: [MAX_COLAB] }));
+      const vroomShipments = pickups.map((p, i) => ({
+        pickup: { id: i * 2, location: [p.lng, p.lat] },
+        delivery: { id: i * 2 + 1, location: [p.ponto._lng, p.ponto._lat] },
+        amount: [1],
+      }));
 
-      const centLat = grupoPickups.reduce((s, p) => s + p.lat, 0) / grupoPickups.length;
-      const centLng = grupoPickups.reduce((s, p) => s + p.lng, 0) / grupoPickups.length;
-      const necessarios = Math.max(1, Math.ceil(grupoPickups.length / MAX_COLAB));
+      const vroomRes = await fetch(vroomUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Vroom-Key': vroomKey },
+        body: JSON.stringify({ vehicles: vroomVehicles, shipments: vroomShipments, options: { g: true } }),
+        signal: AbortSignal.timeout(OSRM_BUDGET_MS),
+      });
+      if (!vroomRes.ok) throw new Error(`VROOM respondeu HTTP ${vroomRes.status}`);
+      const vroomData = await vroomRes.json();
+      if (vroomData?.code !== 0) throw new Error(vroomData?.error || 'VROOM não conseguiu resolver a roteirização.');
 
-      const candidatos = disponiveis
-        .map((v) => ({ v, dist: haversineKm(v.lat, v.lng, centLat, centLng) ?? Infinity }))
-        .sort((a, b) => a.dist - b.dist)
-        .slice(0, Math.min(disponiveis.length, necessarios + 1))
-        .map((x) => x.v);
-
-      // O ponto de embarque (destino) é o último ponto da matriz: parada fixa,
-      // não participa do 2-opt (é anexado à rota depois de otimizar as coletas).
-      const destinoIdx = candidatos.length + grupoPickups.length;
-      const points: Point[] = [
-        ...candidatos.map((v) => ({ lat: v.lat, lng: v.lng })),
-        ...grupoPickups.map((p) => ({ lat: p.lat, lng: p.lng })),
-        { lat: grupo.ponto._lat, lng: grupo.ponto._lng },
-      ];
-
-      let matrix = await osrmTable(points);
-      const distanciaReal = !!matrix;
-      if (!matrix) matrix = buildHaversineMatrix(points);
-      else await sleep(300);
-
-      const nVeic = candidatos.length;
-      const currentIdx = candidatos.map((_, i) => i);
-      const stopsCount = candidatos.map(() => 0);
-      const assigned = new Set<number>();
-      const ordem: number[][] = candidatos.map(() => []);
-
-      while (assigned.size < grupoPickups.length) {
-        let best = { vIdx: -1, pIdx: -1, dist: Infinity };
-        for (let vi = 0; vi < nVeic; vi++) {
-          if (stopsCount[vi] >= MAX_COLAB) continue;
-          for (let pi = 0; pi < grupoPickups.length; pi++) {
-            if (assigned.has(pi)) continue;
-            const d = matrix.distances[currentIdx[vi]][nVeic + pi];
-            if (d < best.dist) best = { vIdx: vi, pIdx: pi, dist: d };
-          }
-        }
-        if (best.vIdx === -1) break;
-        ordem[best.vIdx].push(best.pIdx);
-        assigned.add(best.pIdx);
-        currentIdx[best.vIdx] = nVeic + best.pIdx;
-        stopsCount[best.vIdx] += 1;
-      }
-
-      for (let pi = 0; pi < grupoPickups.length; pi++) {
-        if (!assigned.has(pi)) {
-          naoAlocados.push({ colaborador_nome: grupoPickups[pi].colaborador_nome, os_id: grupoPickups[pi].os_id, embarque: grupoPickups[pi].embarque, motivo: 'Capacidade máxima de passageiros atingida pelos veículos disponíveis' });
-        }
-      }
-
-      for (let vi = 0; vi < nVeic; vi++) {
-        if (!ordem[vi].length) continue;
-
-        const rotaColetas = twoOpt([vi, ...ordem[vi].map((pi) => nVeic + pi)], matrix);
-        const route = [...rotaColetas, destinoIdx];
-
-        const veiculo = candidatos[vi];
+      for (const route of (vroomData.routes || [])) {
+        const veiculo = veiculos[route.vehicle];
+        if (!veiculo) continue;
         usedVehicleIds.add(veiculo.id);
 
         const paradas: any[] = [];
-        for (let k = 1; k < route.length; k++) {
-          const fromIdx = route[k - 1];
-          const toIdx = route[k];
-          const trecho = {
-            distancia_km_trecho: round2(matrix.distances[fromIdx][toIdx] / 1000),
-            duracao_min_trecho: round1(matrix.durations[fromIdx][toIdx] / 60),
-          };
-          if (toIdx === destinoIdx) {
-            paradas.push({
-              ordem: k,
-              tipo: 'embarque',
-              os_id: null,
-              colaborador_nome: null,
-              ponto_nome: grupo.ponto.nome_local || grupo.ponto.tipo_local || 'Ponto operacional',
-              embarque_texto: '',
-              lat: grupo.ponto._lat,
-              lng: grupo.ponto._lng,
-              ...trecho,
-            });
+        let prevDist = 0;
+        let prevDur = 0;
+        let ordem = 0;
+        for (const step of (route.steps || [])) {
+          const dist = typeof step.distance === 'number' ? step.distance : prevDist;
+          const dur = typeof step.duration === 'number' ? step.duration : prevDur;
+          if (step.type === 'start') { prevDist = dist; prevDur = dur; continue; }
+          const trecho = { distancia_km_trecho: round2((dist - prevDist) / 1000), duracao_min_trecho: round1((dur - prevDur) / 60) };
+          prevDist = dist;
+          prevDur = dur;
+          if (step.type !== 'pickup' && step.type !== 'delivery') continue;
+          const p = pickups[Math.floor(Number(step.id) / 2)];
+          if (!p) continue;
+          ordem += 1;
+          if (step.type === 'pickup') {
+            paradas.push({ ordem, tipo: 'colaborador', os_id: p.os_id, colaborador_nome: p.colaborador_nome, ponto_nome: p.ponto.nome_local || p.ponto.tipo_local || 'Ponto operacional', embarque_texto: p.embarque, lat: p.lat, lng: p.lng, ...trecho });
           } else {
-            const p = grupoPickups[toIdx - nVeic];
-            paradas.push({
-              ordem: k,
-              tipo: 'colaborador',
-              os_id: p.os_id,
-              colaborador_nome: p.colaborador_nome,
-              ponto_nome: p.ponto.nome_local || p.ponto.tipo_local || 'Ponto operacional',
-              embarque_texto: p.embarque,
-              lat: p.lat,
-              lng: p.lng,
-              ...trecho,
-            });
+            paradas.push({ ordem, tipo: 'embarque', os_id: p.os_id, colaborador_nome: null, ponto_nome: p.ponto.nome_local || p.ponto.tipo_local || 'Ponto operacional', embarque_texto: '', lat: p.ponto._lat, lng: p.ponto._lng, ...trecho });
           }
         }
-
-        const routePoints = route.map((idx) => points[idx]);
-        // Só tenta refinar com OSRM se o table do grupo já funcionou (distanciaReal).
-        // Quando o table falha (ex.: grupo > OSRM_TABLE_MAX_POINTS ou OSRM indisponível),
-        // chamadas route por veículo tendem a também falhar/travar perto do timeout e,
-        // multiplicadas por dezenas de veículos, estouram o limite de recursos da function.
-        const routeInfo = distanciaReal ? await osrmRoute(routePoints) : null;
-        if (routeInfo) await sleep(300);
-
-        const kmTotal = routeInfo ? routeInfo.distanceKm : paradas.reduce((s, p) => s + p.distancia_km_trecho, 0);
-        const durTotal = routeInfo ? routeInfo.durationMin : paradas.reduce((s, p) => s + p.duracao_min_trecho, 0);
 
         rotas.push({
           placa: veiculo.placa,
@@ -586,12 +489,21 @@ Deno.serve(async (req) => {
           motorista: veiculo.motorista,
           origem: { lat: veiculo.lat, lng: veiculo.lng },
           paradas,
-          km_total_estimado: round2(kmTotal),
-          duracao_estimada_min: round1(durTotal),
-          geometria: routeInfo?.geometry || null,
-          distancia_real: distanciaReal || !!routeInfo,
+          km_total_estimado: round2(prevDist / 1000),
+          duracao_estimada_min: round1(prevDur / 60),
+          geometria: null,
+          distancia_real: true,
         });
       }
+
+      const semRota = new Set<number>();
+      for (const u of (vroomData.unassigned || [])) semRota.add(Math.floor(Number(u.id) / 2));
+      for (const idx of semRota) {
+        const p = pickups[idx];
+        if (p) naoAlocados.push({ colaborador_nome: p.colaborador_nome, os_id: p.os_id, embarque: p.embarque, motivo: 'Não coube na capacidade da frota disponível (VROOM)' });
+      }
+    } else if (pickups.length) {
+      for (const p of pickups) naoAlocados.push({ colaborador_nome: p.colaborador_nome, os_id: p.os_id, embarque: p.embarque, motivo: 'Sem veículo disponível' });
     }
 
     // 8) Embarques extras (urgentes, manuais): cada um vira uma rota direta do
