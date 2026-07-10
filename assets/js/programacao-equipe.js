@@ -14,6 +14,19 @@ let currentUser = null;
 const BRI = new Intl.NumberFormat('pt-BR');
 const STATUS_OPTS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
 
+function debounce(fn, wait = 400) {
+  let t = null;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+}
+// Etapa 1 (Situação da O.S.) e Etapa 2 (Equipe + Mapa) buscam dados de forma
+// independente (cada uma 1x, dentro de renderAllTabs). Autorizar/retirar uma
+// O.S. na Etapa 1 não atualiza sozinho o snapshot da Etapa 2 -- sem isso, o
+// mapa só reflete a mudança depois que o gestor mexe nele (arrastar um
+// marcador aciona afterWrite(), que aí sim atualiza o snapshot). Debounced
+// pra não martelar o refresh completo da Etapa 2 a cada clique quando o
+// gestor está triando várias O.S. em sequência.
+const refreshEquipeSnapshot = debounce(() => window.__peqbSilentRefresh?.(), 400);
+
 const LEAFLET_CSS_ID = 'leaflet-css-prog-equipe';
 const LEAFLET_JS_ID = 'leaflet-js-prog-equipe';
 
@@ -1114,6 +1127,7 @@ export async function renderProgramacaoSituacao(content, options = {}) {
       const { error } = await supabase.from('operacional_os').update(patch).eq('id', osId);
       if (error) throw error;
       await carregar({ silent: true });
+      refreshEquipeSnapshot();
     } catch (error) {
       console.error('[programacao-situacao] status:', error);
       if (btn) { btn.disabled = false; btn.style.opacity = ''; }
@@ -1142,6 +1156,7 @@ export async function renderProgramacaoSituacao(content, options = {}) {
         const { error } = await supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: 'AGUARDAR', configurada_em: null, updated_at: new Date().toISOString() }).eq('id', osId);
         if (error) throw error;
         await carregar({ silent: true });
+        refreshEquipeSnapshot();
       } catch (error) { alert(error.message || 'Não foi possível solicitar saldo.'); }
     });
   }
