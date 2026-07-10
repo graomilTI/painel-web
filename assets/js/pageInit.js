@@ -8,6 +8,48 @@ import { initProgramacaoRuntimeFixes } from './programacao-runtime-fixes.js';
 import { initRouter } from './router.js';
 import './searchableSelect.js';
 
+// Aviso de "nova versão disponível": router.js e o resto do bootstrap
+// compartilhado (layout, auth etc.) não têm cache-busting por query string
+// como os scripts de patch da Programação -- uma aba já aberta antes de um
+// deploy fica com o módulo antigo na memória até um reload completo (nem o
+// service worker resolve isso sozinho, só evita refetch repetido). Em vez de
+// deixar o usuário descobrir na marra (feature quebrada, precisa adivinhar
+// que é F5), poll leve comparando o ETag/Last-Modified do router.js a cada
+// alguns minutos e mostra um aviso discreto pra atualizar quando mudar.
+const ROUTER_VERSION_URL = new URL('./router.js', import.meta.url).href;
+const VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+let lastRouterVersionTag = null;
+let updateBannerShown = false;
+
+function showUpdateBanner() {
+  if (updateBannerShown || document.getElementById('pgcUpdateBanner')) return;
+  updateBannerShown = true;
+  const bar = document.createElement('div');
+  bar.id = 'pgcUpdateBanner';
+  bar.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99999;background:#123524;color:#eef7f2;border:1px solid rgba(111,208,165,.4);border-radius:999px;padding:8px 8px 8px 16px;display:flex;align-items:center;gap:10px;font-size:13px;font-family:inherit;box-shadow:0 8px 24px rgba(0,0,0,.4)';
+  bar.innerHTML = '<span>Nova versão do painel disponível.</span><button type="button" data-refresh style="background:#22c55e;color:#052e16;border:0;border-radius:999px;padding:6px 14px;font-weight:800;cursor:pointer;font-size:12px">Atualizar</button>';
+  bar.querySelector('[data-refresh]').addEventListener('click', () => window.location.reload());
+  document.body.appendChild(bar);
+}
+
+async function checkForNewVersion() {
+  try {
+    const res = await fetch(ROUTER_VERSION_URL, { cache: 'no-store' });
+    if (!res.ok) return;
+    const tag = res.headers.get('etag') || res.headers.get('last-modified') || res.headers.get('content-length') || '';
+    if (!tag) return;
+    if (lastRouterVersionTag === null) { lastRouterVersionTag = tag; return; }
+    if (tag !== lastRouterVersionTag) showUpdateBanner();
+  } catch { /* rede instável/offline — não é crítico, tenta de novo no próximo intervalo */ }
+}
+
+function startUpdateWatcher() {
+  if (window.__pgcUpdateWatcherStarted) return;
+  window.__pgcUpdateWatcherStarted = true;
+  checkForNewVersion();
+  setInterval(checkForNewVersion, VERSION_CHECK_INTERVAL_MS);
+}
+
 function currentRouteName() {
   return String(window.location.pathname || '')
     .split('/')
@@ -79,6 +121,7 @@ export async function initProtectedPage(title, renderContent) {
     bindLayoutActions();
     initGestorMenuAjustes();
     initAgentUpdateStatus();
+    startUpdateWatcher();
   } catch (error) {
     clearTimeout(bootWatchdog);
     console.error('[pageInit] Falha ao montar layout:', error);
