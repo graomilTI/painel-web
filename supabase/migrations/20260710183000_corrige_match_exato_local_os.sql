@@ -149,7 +149,9 @@ begin
 
   -- 2) Fallback por cidade + local, somente quando o resultado é único.
   if v_cidade_key <> '' and v_local_key <> '' then
-    select min(p.id), count(*)
+    select
+      (array_agg(p.id order by p.updated_at desc nulls last, p.id))[1],
+      count(*)
       into v_ponto_id, v_quantidade
     from public.operacional_pontos_embarque p
     where p.ativo is true
@@ -165,7 +167,9 @@ begin
 
   -- 3) Fallback pelo nome completo do local, também apenas se for único.
   if v_local_key <> '' then
-    select min(p.id), count(*)
+    select
+      (array_agg(p.id order by p.updated_at desc nulls last, p.id))[1],
+      count(*)
       into v_ponto_id, v_quantidade
     from public.operacional_pontos_embarque p
     where p.ativo is true
