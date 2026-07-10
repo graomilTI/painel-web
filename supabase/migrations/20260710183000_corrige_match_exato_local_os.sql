@@ -1,11 +1,15 @@
 -- Faz o vínculo da O.S. com "Locais de Serviço" pela mesma regra usada na
 -- conferência da planilha: UF + cidade + nome completo do local, ignorando
--- acentos, espaços e pontuação. O matching por trecho fica apenas como fallback.
+-- acentos, espaços e pontuação.
 --
--- Corrige também dois problemas do fluxo anterior:
---   1. nomes com parênteses internos não eram interpretados;
---   2. um cadastro curto (ex.: "FAZENDA CAMPO NOVO") podia ganhar de um cadastro
---      completo (ex.: "FAZENDA CAMPO NOVO - PEDRO L DINIZ") por empate de score.
+-- O vínculo automático passa a ser conservador: se o local completo não existir,
+-- a O.S. permanece sem coordenadas até o cadastro correto ser criado. Isso impede
+-- que qualquer fazenda/armazém da mesma cidade seja escolhido por aproximação.
+--
+-- Corrige também:
+--   1. nomes com parênteses internos, que antes não eram interpretados;
+--   2. cadastros curtos que ganhavam de um cadastro completo por empate de score;
+--   3. coordenadas antigas que permaneciam gravadas depois de o vínculo falhar.
 
 create or replace function public.normalizar_chave_local(txt text)
 returns text
@@ -26,7 +30,7 @@ as $$
   );
 $$;
 
--- Aceita:
+-- Aceita os formatos:
 --   UF - Cidade (Local)
 --   UF - Cidade (Local com (complemento))
 --   UF - Cidade - Local
@@ -52,8 +56,8 @@ begin
   v_restante := btrim(v_prefixo[2]);
   v_abre_parenteses := strpos(v_restante, '(');
 
-  -- Usa o primeiro "(" e o último ")", preservando parênteses existentes
-  -- dentro do nome do local.
+  -- Usa o primeiro "(" e o último ")", preservando parênteses que façam parte
+  -- do nome do local, por exemplo: MOAGEIRA IRATI CEREAIS S/A (MATRIZ).
   if v_abre_parenteses > 0 and right(v_restante, 1) = ')' then
     return query
       select
@@ -110,8 +114,6 @@ declare
   v_uf_key text;
   v_cidade_key text;
   v_local_key text;
-  v_cliente_key text := public.normalizar_chave_local(p_cliente);
-  v_supervisao_key text := public.normalizar_chave_local(p_supervisao);
   v_ponto_id uuid;
   v_quantidade integer;
 begin
@@ -127,8 +129,7 @@ begin
   v_cidade_key := public.normalizar_chave_local(v_cidade);
   v_local_key := public.normalizar_chave_local(v_local);
 
-  -- 1) Regra principal: UF + cidade + nome COMPLETO do local.
-  -- Esta é a associação usada para preencher latitude e longitude da planilha.
+  -- Regra principal: UF + cidade + nome COMPLETO do local.
   if v_uf_key <> '' and v_cidade_key <> '' and v_local_key <> '' then
     select p.id
       into v_ponto_id
@@ -147,8 +148,9 @@ begin
     end if;
   end if;
 
-  -- 2) Fallback por cidade + local, somente quando o resultado é único.
-  if v_cidade_key <> '' and v_local_key <> '' then
+  -- Só usa cidade + local quando a fonte realmente não trouxe UF e existe um
+  -- único cadastro possível. Com UF informada, não há aproximação automática.
+  if v_uf_key = '' and v_cidade_key <> '' and v_local_key <> '' then
     select
       (array_agg(p.id order by p.updated_at desc nulls last, p.id))[1],
       count(*)
@@ -165,80 +167,7 @@ begin
     end if;
   end if;
 
-  -- 3) Fallback pelo nome completo do local, também apenas se for único.
-  if v_local_key <> '' then
-    select
-      (array_agg(p.id order by p.updated_at desc nulls last, p.id))[1],
-      count(*)
-      into v_ponto_id, v_quantidade
-    from public.operacional_pontos_embarque p
-    where p.ativo is true
-      and p.latitude is not null
-      and p.longitude is not null
-      and public.normalizar_chave_local(p.nome_local) = v_local_key;
-
-    if v_quantidade = 1 then
-      return v_ponto_id;
-    end if;
-  end if;
-
-  -- 4) Último recurso: comparação aproximada dentro da mesma UF.
-  -- O local mais parecido e com menor diferença de tamanho ganha; assim um nome
-  -- curto não supera arbitrariamente um cadastro mais completo.
-  select p.id
-    into v_ponto_id
-  from public.operacional_pontos_embarque p
-  cross join lateral (
-    select
-      public.normalizar_chave_local(p.cidade) as cidade_key,
-      public.normalizar_chave_local(p.nome_local) as local_key,
-      public.normalizar_chave_local(p.supervisao) as supervisao_key
-  ) chave
-  cross join lateral (
-    select
-      (case when v_uf_key <> '' and public.normalizar_chave_local(p.uf) = v_uf_key then 50 else 0 end)
-      + (case
-          when v_cidade_key <> '' and chave.cidade_key = v_cidade_key then 100
-          when v_cidade_key <> '' and (
-            chave.cidade_key like '%' || v_cidade_key || '%'
-            or v_cidade_key like '%' || chave.cidade_key || '%'
-          ) then 70
-          else 0
-        end)
-      + (case
-          when v_local_key <> '' and chave.local_key = v_local_key then 200
-          when v_local_key <> '' and (
-            chave.local_key like '%' || v_local_key || '%'
-            or v_local_key like '%' || chave.local_key || '%'
-          ) then 120
-          else 0
-        end)
-      + (case when v_cliente_key <> '' and (
-          chave.local_key like '%' || v_cliente_key || '%'
-          or v_cliente_key like '%' || chave.local_key || '%'
-        ) then 30 else 0 end)
-      + (case when v_supervisao_key <> '' and chave.supervisao_key <> '' and (
-          chave.supervisao_key like '%' || v_supervisao_key || '%'
-          or v_supervisao_key like '%' || chave.supervisao_key || '%'
-        ) then 15 else 0 end)
-      as score
-  ) pontuacao
-  where p.ativo is true
-    and p.latitude is not null
-    and p.longitude is not null
-    and (v_uf_key = '' or upper(btrim(p.uf)) = v_uf_key)
-    and pontuacao.score >= 120
-  order by
-    (chave.cidade_key = v_cidade_key) desc,
-    (chave.local_key = v_local_key) desc,
-    pontuacao.score desc,
-    abs(char_length(chave.local_key) - char_length(v_local_key)) asc,
-    char_length(chave.local_key) desc,
-    p.updated_at desc nulls last,
-    p.id
-  limit 1;
-
-  return v_ponto_id;
+  return null;
 end;
 $$;
 
@@ -263,8 +192,6 @@ begin
   where p.id = public.match_ponto_embarque(new.embarque, new.cliente, new.supervisao);
 
   if v_ponto.id is null then
-    -- Não mantém coordenada antiga quando o texto de embarque mudou e deixou de
-    -- corresponder a um local válido.
     new.ponto_embarque_id := null;
     new.ponto1_latitude := null;
     new.ponto1_longitude := null;
@@ -280,8 +207,8 @@ begin
 end;
 $$;
 
--- Reprocessa todas as O.S. atuais para substituir vínculos aproximados incorretos
--- pelos vínculos exatos e preencher os casos com parênteses internos.
+-- Reprocessa as O.S. atuais para substituir vínculos aproximados incorretos pelos
+-- vínculos exatos e preencher os casos que possuem parênteses internos.
 update public.operacional_os
 set embarque = embarque
 where embarque is not null;
