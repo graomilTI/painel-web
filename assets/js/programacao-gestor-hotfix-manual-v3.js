@@ -67,20 +67,24 @@ function addVehiclePool(m,row){
   if(!id)return;
   addPool(m,{colaborador_id:id,nome,tipo_contrato:'Motorista',supervisao:row?.supervisao,coordenacao:row?.coordenacao,status:row?.status,veiculo_id:row?.id,veiculo_placa:row?.placa||row?.placa_normalizada,placa_veiculo:row?.placa||row?.placa_normalizada});
 }
-async function pool(){const snap=window.__peqbGetEquipeSnapshot?.(),c=ctx(),supervisoes=c.supervisoes.length?c.supervisoes:(snap?.supervisoesResolvidas||[]),key=supervisoes.slice().sort().join('|')||'sem-supervisao';if(S.poolKey===key&&S.pool.length)return S.pool;if(S.poolPromise&&S.poolPromiseKey===key)return S.poolPromise;S.poolKey=key;S.poolPromiseKey=key;const carregar=(async()=>{const m=new Map();try{if(supervisoes.length){let q=supabase.from('colaborador_cruzamento').select('colaborador_id,cpf,nome,supervisao,coordenacao,tipo_contrato,latitude,longitude,endereco_base,veiculo_id,veiculo_placa');q=supervisoes.length>1?q.in('supervisao',supervisoes):q.eq('supervisao',supervisoes[0]);const{data,error}=await q.limit(12000);if(error)throw error;(data||[]).forEach(r=>addPool(m,r));}}catch(e){console.warn('[pgc-v3] pool colaborador_cruzamento',e)}
+async function pool(){const snap=window.__peqbGetEquipeSnapshot?.(),c=ctx(),supervisoes=c.supervisoes.length?c.supervisoes:(snap?.supervisoesResolvidas||[]),key=supervisoes.slice().sort().join('|')||'sem-supervisao';if(S.poolKey===key&&S.pool.length)return S.pool;if(S.poolPromise&&S.poolPromiseKey===key)return S.poolPromise;S.poolKey=key;S.poolPromiseKey=key;const carregar=(async()=>{const m=new Map();
+    const cpfsConfirmados=[...new Set((snap?.osComCandidatosAtual||[]).flatMap(it=>(it.equipeRows||[]).map(r=>String(r.colaborador_id||'').trim())).filter(Boolean))];
+    const qCruz=supervisoes.length?(supervisoes.length>1?supabase.from('colaborador_cruzamento').select('colaborador_id,cpf,nome,supervisao,coordenacao,tipo_contrato,latitude,longitude,endereco_base,veiculo_id,veiculo_placa').in('supervisao',supervisoes):supabase.from('colaborador_cruzamento').select('colaborador_id,cpf,nome,supervisao,coordenacao,tipo_contrato,latitude,longitude,endereco_base,veiculo_id,veiculo_placa').eq('supervisao',supervisoes[0])).limit(12000):Promise.resolve({data:[]});
     // Colaborador confirmado (programacao_equipe) pode ter o cadastro em
     // colaborador_cruzamento sob OUTRA supervisão (atende O.S. fora da região
     // de origem) -- a busca acima, filtrada pela supervisão selecionada, nunca
     // pega a coordenada dele. Busca extra por cpf, sem filtro de supervisão,
     // só pra quem já está confirmado nesta programação.
-    try{
-      const cpfsConfirmados=[...new Set((snap?.osComCandidatosAtual||[]).flatMap(it=>(it.equipeRows||[]).map(r=>String(r.colaborador_id||'').trim())).filter(Boolean))];
-      if(cpfsConfirmados.length){
-        const{data,error}=await supabase.from('colaborador_cruzamento').select('colaborador_id,cpf,nome,supervisao,coordenacao,tipo_contrato,latitude,longitude,endereco_base,veiculo_id,veiculo_placa').in('cpf',cpfsConfirmados).limit(2000);
-        if(error)throw error;
-        (data||[]).forEach(r=>addPool(m,r));
-      }
-    }catch(e){console.warn('[pgc-v3] pool confirmados fora da supervisao',e)}try{if(supervisoes.length){let vq=supabase.from('frotas_veiculos').select('id,placa,placa_normalizada,motorista_atual,patrimonio_funcionario,supervisao,coordenacao,status').eq('status','ATIVO').not('motorista_atual','is',null);vq=supervisoes.length>1?vq.in('supervisao',supervisoes):vq.eq('supervisao',supervisoes[0]);const{data,error}=await vq.limit(5000);if(error)throw error;(data||[]).forEach(r=>addVehiclePool(m,r));}}catch(e){console.warn('[pgc-v3] pool frotas_veiculos',e)}(snap?.osComCandidatosAtual||[]).forEach(it=>{(it.candidatos||[]).forEach(r=>addPool(m,r));(it.colaboradoresRegional||[]).forEach(r=>addPool(m,r));(it.equipeRows||[]).forEach(r=>addPool(m,{...r,supervisao:r.supervisao||it.os?.supervisao},{linked:true}))});S.pool=[...m.values()].sort((a,b)=>Number(isMot(b))-Number(isMot(a))||Number(b.linked)-Number(a.linked)||a.nome.localeCompare(b.nome,'pt-BR'));return S.pool})();S.poolPromise=carregar;const resultado=await carregar;if(S.poolPromiseKey===key)S.poolPromise=null;return resultado}
+    const qConf=cpfsConfirmados.length?supabase.from('colaborador_cruzamento').select('colaborador_id,cpf,nome,supervisao,coordenacao,tipo_contrato,latitude,longitude,endereco_base,veiculo_id,veiculo_placa').in('cpf',cpfsConfirmados).limit(2000):Promise.resolve({data:[]});
+    const qFrota=supervisoes.length?(supervisoes.length>1?supabase.from('frotas_veiculos').select('id,placa,placa_normalizada,motorista_atual,patrimonio_funcionario,supervisao,coordenacao,status').eq('status','ATIVO').not('motorista_atual','is',null).in('supervisao',supervisoes):supabase.from('frotas_veiculos').select('id,placa,placa_normalizada,motorista_atual,patrimonio_funcionario,supervisao,coordenacao,status').eq('status','ATIVO').not('motorista_atual','is',null).eq('supervisao',supervisoes[0])).limit(5000):Promise.resolve({data:[]});
+    // As 3 buscas são independentes entre si -- rodam em paralelo em vez de
+    // sequenciais pra não somar a latência de rede de cada uma (isso é o que
+    // deixava as cores/posições dos marcadores do mapa demorando pra aparecer).
+    const[rCruz,rConf,rFrota]=await Promise.all([qCruz,qConf,qFrota]);
+    try{if(rCruz.error)throw rCruz.error;(rCruz.data||[]).forEach(r=>addPool(m,r))}catch(e){console.warn('[pgc-v3] pool colaborador_cruzamento',e)}
+    try{if(rConf.error)throw rConf.error;(rConf.data||[]).forEach(r=>addPool(m,r))}catch(e){console.warn('[pgc-v3] pool confirmados fora da supervisao',e)}
+    try{if(rFrota.error)throw rFrota.error;(rFrota.data||[]).forEach(r=>addVehiclePool(m,r))}catch(e){console.warn('[pgc-v3] pool frotas_veiculos',e)}
+    (snap?.osComCandidatosAtual||[]).forEach(it=>{(it.candidatos||[]).forEach(r=>addPool(m,r));(it.colaboradoresRegional||[]).forEach(r=>addPool(m,r));(it.equipeRows||[]).forEach(r=>addPool(m,{...r,supervisao:r.supervisao||it.os?.supervisao},{linked:true}))});S.pool=[...m.values()].sort((a,b)=>Number(isMot(b))-Number(isMot(a))||Number(b.linked)-Number(a.linked)||a.nome.localeCompare(b.nome,'pt-BR'));return S.pool})();S.poolPromise=carregar;const resultado=await carregar;if(S.poolPromiseKey===key)S.poolPromise=null;return resultado}
 function loadCss(h,id){if(document.getElementById(id))return;const l=document.createElement('link');l.id=id;l.rel='stylesheet';l.href=h;document.head.appendChild(l)}
 function loadScript(src,id){if(document.getElementById(id))return Promise.resolve();return new Promise((ok,err)=>{const s=document.createElement('script');s.id=id;s.src=src;s.onload=ok;s.onerror=err;document.head.appendChild(s)})}
 async function leaflet(){if(window.L)return true;try{loadCss('./assets/vendor/leaflet/leaflet.css','leaflet-css-pgc-manual-v3');await loadScript('./assets/vendor/leaflet/leaflet.js','leaflet-js-pgc-manual-v3');return!!window.L}catch{return false}}
@@ -153,9 +157,9 @@ async function mapRender({force=false}={}){
   if(!snap?.osComCandidatosAtual){if(msg)msg.textContent='Carregue a programação.';return}
   const c=ctx(),sup=new Set(c.supervisoes);
   const items=(snap.osComCandidatosAtual||[]).filter(it=>!sup.size||sup.has(it.os?.supervisao));
-  const p=await pool(),ps=p.filter(x=>!sup.size||sup.has(x.supervisao));
   const programacaoIds=[...new Set(items.map(it=>snap.programacaoIdParaOs?.(it.os)||it.programacao_id||it.equipeRows?.[0]?.programacao_id).filter(Boolean))];
-  const transporte=await loadTransporte(programacaoIds);
+  const[p,transporte]=await Promise.all([pool(),loadTransporte(programacaoIds)]);
+  const ps=p.filter(x=>!sup.size||sup.has(x.supervisao));
   const statusColab=id=>transporte.get(String(id))||'os';
   const statusOs=it=>(it.equipeRows||[]).some(r=>transporte.get(String(r.colaborador_id))==='motorista')?'motorista':((it.equipeRows||[]).length?'os':'pendente');
   const key=JSON.stringify({os:items.map(it=>[it.os?.id,statusOs(it),(it.equipeRows||[]).map(r=>`${r.colaborador_id}:${statusColab(r.colaborador_id)}`).sort().join(',')]),pool:ps.map(x=>[x.colaboradorId,x.supervisao,x.lat??x.latitude,x.lng??x.longitude,x.veiculoPlaca,x.linked?1:0,transporte.get(String(x.colaboradorId))||''])});
