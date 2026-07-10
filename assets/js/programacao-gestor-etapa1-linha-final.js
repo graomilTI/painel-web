@@ -269,9 +269,11 @@ function normalizeEtapa1Texts() {
   }
 
   pane.querySelectorAll('.peqb-os2-kpi strong').forEach((strong) => {
-    strong.textContent = String(strong.textContent || '')
+    if (strong.children.length) return; // preserva o UF/cidade/local do embarqueHtml (2 linhas)
+    const clean = String(strong.textContent || '')
       .replace(/\s+/g, ' ')
       .trim();
+    if (strong.textContent !== clean) strong.textContent = clean;
   });
 }
 
