@@ -2,7 +2,7 @@ import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
-const S={poolKey:'',pool:[],poolPromise:null,poolPromiseKey:'',map:null,mapEl:null,osLayer:null,colabLayer:null,rotaLayer:null,markers:[],mapKey:'',boundsKey:'',mapTimer:null,tileLayer:null};
+const S={poolKey:'',pool:[],poolPromise:null,poolPromiseKey:'',map:null,mapEl:null,osLayer:null,colabLayer:null,rotaLayer:null,markers:[],mapKey:'',mapTimer:null,tileLayer:null};
 const esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
 const cpf=v=>String(v||'').replace(/\D/g,'');
@@ -19,7 +19,7 @@ function ctx(){const supervisao=document.getElementById('progSup')?.value||'',to
 function css(){if(document.getElementById('pgcManualV3Css'))return;const s=document.createElement('style');s.id='pgcManualV3Css';s.textContent=`
 #pgcPane1 .prog-section-title{margin-bottom:8px!important}#pgcPane1 .peqb-block-head{display:none!important}.pgc-os-kpi-head{display:grid;grid-template-columns:minmax(220px,1.45fr) minmax(330px,2.1fr) 90px 80px 210px;gap:8px;margin:4px 0 8px}.pgc-os-kpi-head span{font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.06em;color:#93c5fd;padding:0 10px}.pgc-os-kpi-head span:nth-child(n+3){text-align:center}.pgc-os-kpi-head span:last-child{color:#bbf7d0}
 #pgcPane1 .peqb-os-list{display:flex!important;flex-direction:column!important;gap:8px!important;max-height:none!important;overflow:visible!important;padding-right:0!important;background:transparent!important;border:0!important}#pgcPane1 .peqs-row{display:block!important;border-radius:14px!important;padding:8px!important;background:rgba(2,6,23,.26)!important;border:1px solid rgba(52,211,153,.14)!important;box-shadow:none!important;min-height:0!important}#pgcPane1 .peqs-row .peqb-os2-left{display:grid!important;grid-template-columns:minmax(220px,1.45fr) minmax(330px,2.1fr) 90px 80px 210px!important;gap:8px!important;align-items:center!important;padding:0!important;border:0!important;background:transparent!important;min-height:0!important}#pgcPane1 .peqs-row .peqb-os2-kpis{display:contents!important}#pgcPane1 .peqs-row .peqb-os2-kpi{min-width:0!important;margin:0!important;padding:7px 10px!important;border-radius:11px!important;border:1px solid rgba(148,163,184,.12)!important;background:rgba(15,23,42,.42)!important;height:43px!important;box-sizing:border-box;display:flex!important;align-items:center!important;overflow:hidden!important}#pgcPane1 .peqs-row .peqb-os2-kpi span{display:none!important}#pgcPane1 .peqs-row .peqb-os2-kpi strong{display:block!important;width:100%!important;font-size:12.2px!important;line-height:1.08!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;color:#f8fafc!important;margin:0!important}#pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(3),#pgcPane1 .peqs-row .peqb-os2-kpi:nth-child(4){text-align:center!important}#pgcPane1 .peqs-row .peqb-os2-kpi strong *{display:inline!important;white-space:nowrap!important}#pgcPane1 .peqs-row .peqb-os2-kpi strong br{display:none!important}#pgcPane1 .peqs-row .peqb-os2-tagsrow{margin:0!important;height:43px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:rgba(15,23,42,.18)!important;border:1px solid rgba(52,211,153,.10)!important;border-radius:11px!important;padding:3px 7px!important}#pgcPane1 .peqs-row .peqb-status-strip{margin:0!important;gap:7px!important;flex-wrap:nowrap!important}#pgcPane1 .peqs-row .peqb-st{height:29px!important;min-width:32px!important;width:32px!important;border-radius:999px!important;font-size:11px!important;padding:0!important}
-#pgcPane2 #peqbAutoPreencher,#pgcPane2 #peqbSugerirCaronas,#pgcPane2 #peqbCaronasMsg,#pgcPane2 #peqbVerMapa,#pgcPane2 .peqb-legend,#pgcPane2 [data-confirmar],#pgcPane2 .peqb-cand,#pgcPane2 .peqb-cand-more,#pgcPane2 .peqb-cand-list,#pgcPane2 [data-outros],#pgcPane2 .peqb-row-btn.hotel,#pgcPane2 .peqb-cand-flag.hotel{display:none!important}#pgcPane2 .peqb-toolbar::after{content:'Vinculação manual: arraste no mapa ou na lista lateral.';font-size:11px;color:#9fb7aa;align-self:center}#pgcPane2 #peqbMapBand{display:block!important;margin:0 0 12px!important}.pmg-map{height:min(540px,calc(100vh - 320px))!important;min-height:340px!important}.pmg-drag-icon{cursor:grab!important}.leaflet-dragging .pmg-drag-icon{cursor:grabbing!important}.leaflet-marker-icon.pmg-drag-icon{pointer-events:auto!important}.pmg-help{font-size:10.5px;color:#9fb7aa}.pmg-pending{animation:pmgPending .8s ease-in-out infinite!important}@keyframes pmgPending{0%,100%{opacity:1}50%{opacity:.3}}#pmgTipoMapa{color-scheme:dark;height:32px;box-sizing:border-box}
+#pgcPane2 #peqbAutoPreencher,#pgcPane2 #peqbSugerirCaronas,#pgcPane2 #peqbCaronasMsg,#pgcPane2 #peqbVerMapa,#pgcPane2 .peqb-legend,#pgcPane2 [data-confirmar],#pgcPane2 .peqb-cand,#pgcPane2 .peqb-cand-more,#pgcPane2 .peqb-cand-list,#pgcPane2 [data-outros],#pgcPane2 .peqb-row-btn.hotel,#pgcPane2 .peqb-cand-flag.hotel{display:none!important}#pgcPane2 .peqb-toolbar::after{content:'Vinculação manual: arraste no mapa ou na lista lateral.';font-size:11px;color:#9fb7aa;align-self:center}#pgcPane2 #peqbMapBand{display:block!important;margin:0 0 12px!important}.pmg-map{height:min(1200px,calc(100vh - 180px))!important;min-height:460px!important}.pmg-drag-icon{cursor:grab!important}.leaflet-dragging .pmg-drag-icon{cursor:grabbing!important}.leaflet-marker-icon.pmg-drag-icon{pointer-events:auto!important}.pmg-help{font-size:10.5px;color:#9fb7aa}.pmg-pending{animation:pmgPending .8s ease-in-out infinite!important}@keyframes pmgPending{0%,100%{opacity:1}50%{opacity:.3}}#pmgTipoMapa{color-scheme:dark;height:32px;box-sizing:border-box}
 #pgcPane3 .prog-section-title{margin-bottom:6px!important;align-items:center!important}#pgcPane3 .prog-section-title h4{font-size:18px!important;letter-spacing:0!important}.pgc-desp-head{display:none!important}#pgcPane3 .peqd-list{gap:6px!important;overflow:auto;border:0;border-radius:0}
 /* Etapa 3: 1 linha só por colaborador -- nome / estadia / dias / refeições / deslocamento / placa / extras.
    .peqd-sec e seus filhos internos (.peqd-row/.peqd-chips) viram display:contents pra "desembrulhar"
@@ -122,12 +122,14 @@ const iOs=s=>window.L.divIcon({className:'pmg-drag-icon',html:star(corStatus(s))
 const iCol=(r,s)=>window.L.divIcon({className:'pmg-drag-icon',html:person(corStatus(s),letter(tipo(r))),iconSize:[28,34],iconAnchor:[14,32]});
 const iCar=s=>window.L.divIcon({className:'pmg-drag-icon',html:car(corStatus(s)),iconSize:[32,25],iconAnchor:[16,21]});
 function kmEntre(aLat,aLng,bLat,bLng){const R=6371,dLat=(bLat-aLat)*Math.PI/180,dLng=(bLng-aLng)*Math.PI/180,s1=Math.sin(dLat/2)**2,s2=Math.cos(aLat*Math.PI/180)*Math.cos(bLat*Math.PI/180)*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(s1+s2),Math.sqrt(1-s1-s2))}
-// Rota do motorista: guloso (vizinho mais próximo) respeitando 2 regras —
+// Rota do motorista: guloso (vizinho mais próximo) respeitando 3 regras —
 // (1) só pode "deixar" um passageiro depois de "buscar" ele (precedência);
-// (2) se o motorista também tem Atendimento (OS própria), essa parada entra
-// sempre por último, fora da disputa do guloso. Frota pequena (até 4
+// (2) paradas de Logística (O.S. em que o motorista dá suporte, sem ficar)
+// entram na disputa do guloso normalmente, junto com buscas/entregas;
+// (3) se o motorista também tem Atendimento (OS própria em que ele fica),
+// essa parada entra sempre por último, fora da disputa. Frota pequena (até 4
 // passageiros) então guloso já resolve bem; não precisa de 2-opt/OSRM aqui.
-function planejarRota(motorista,passageiros,atendimento){
+function planejarRota(motorista,passageiros,logisticaStops,atendimento){
   const origem=pos(motorista);
   if(!origem)return null;
   const paradas=[];
@@ -136,10 +138,11 @@ function planejarRota(motorista,passageiros,atendimento){
     if(pick)paradas.push({tipo:'pickup',colaboradorId:p.col.colaboradorId,nome:p.col.nome,coord:pick});
     if(p.destino&&geo(p.destino.lat,p.destino.lng))paradas.push({tipo:'dropoff',colaboradorId:p.col.colaboradorId,nome:p.col.nome,coord:p.destino,os:p.os});
   });
+  (logisticaStops||[]).forEach((s,i)=>paradas.push({tipo:'logistica',colaboradorId:`__log${i}`,coord:s.coord,os:s.os}));
   const picked=new Set(),ordem=[],restantes=paradas.slice();
   let atual=origem;
   while(restantes.length){
-    const candidatos=restantes.filter(s=>s.tipo==='pickup'||picked.has(s.colaboradorId));
+    const candidatos=restantes.filter(s=>s.tipo!=='dropoff'||picked.has(s.colaboradorId));
     if(!candidatos.length)break;
     let melhor=null,melhorDist=Infinity;
     candidatos.forEach(c=>{const d=kmEntre(atual.lat,atual.lng,c.coord.lat,c.coord.lng);if(d<melhorDist){melhorDist=d;melhor=c}});
@@ -160,12 +163,13 @@ function desenharRotaMotorista(layer,motorista,plano,idx){
   const passos=plano.ordem.map((s,i)=>{
     if(s.tipo==='pickup')return `${i+1}. Buscar ${esc(s.nome)}`;
     if(s.tipo==='dropoff')return `${i+1}. Deixar ${esc(s.nome)} · OS ${esc(s.os?.numero_os||'-')}`;
+    if(s.tipo==='logistica')return `${i+1}. Logística · OS ${esc(s.os?.numero_os||'-')}`;
     return `${i+1}. Atendimento · OS ${esc(s.os?.numero_os||'-')}`;
   }).join('<br>');
   linha.bindTooltip(`<b>${esc(motorista.nome)}</b><br>${passos}`,{className:'peqb-tt',sticky:true});
   layer.addLayer(linha);
 }
-function bandHtml(b){if(b.querySelector('#peqbMapEl2'))return;const tileOpts=Object.entries(TILE_LAYERS).map(([k,v])=>`<option value="${k}" ${k===tileKeyAtual()?'selected':''}>${v.label}</option>`).join('');b.innerHTML=`<div class="pmg-wrap"><div class="pmg-head"><strong>Mapa do gestor</strong><div class="pmg-legend"><span><i style="background:${COR_PENDENTE}"></i>Pendente</span><span><i style="background:${COR_OS}"></i>Vinculado à O.S.</span><span><i style="background:${COR_MOTORISTA}"></i>Com motorista</span><span class="pmg-help">Arraste um marcador sobre outro para vincular · 2 cliques rápidos pra desvincular · linha tracejada = rota sugerida do motorista (Atendimento sempre por último)</span></div><div style="display:flex;gap:8px;align-items:center"><select id="pmgTipoMapa" class="peqb-btn" title="Tipo do mapa">${tileOpts}</select><span id="pmgMsg" style="font-size:11px;color:#9fb7aa"></span><button type="button" class="peqb-btn" id="pmgAtualizarManual">↻ Atualizar</button></div></div><div class="pmg-map"><div id="peqbMapEl2"></div><div id="pmgEmpty" class="pmg-empty" style="display:none">Nenhuma coordenada para mostrar nesta supervisão.</div></div></div>`;b.querySelector('#pmgAtualizarManual')?.addEventListener('click',()=>mapRender({force:true}));b.querySelector('#pmgTipoMapa')?.addEventListener('change',e=>{localStorage.setItem(TILE_STORAGE_KEY,e.target.value);if(S.map)aplicarTile(S.map,e.target.value)})}
+function bandHtml(b){if(b.querySelector('#peqbMapEl2'))return;const tileOpts=Object.entries(TILE_LAYERS).map(([k,v])=>`<option value="${k}" ${k===tileKeyAtual()?'selected':''}>${v.label}</option>`).join('');b.innerHTML=`<div class="pmg-wrap"><div class="pmg-head"><strong>Mapa do gestor</strong><div class="pmg-legend"><span><i style="background:${COR_PENDENTE}"></i>Pendente</span><span><i style="background:${COR_OS}"></i>Vinculado à O.S.</span><span><i style="background:${COR_MOTORISTA}"></i>Com motorista</span><span class="pmg-help">Arraste um marcador sobre outro para vincular · 2 cliques rápidos pra desvincular · linha tracejada = rota sugerida do motorista (Logística nas O.S. em que só dá suporte, Atendimento sempre por último)</span></div><div style="display:flex;gap:8px;align-items:center"><select id="pmgTipoMapa" class="peqb-btn" title="Tipo do mapa">${tileOpts}</select><span id="pmgMsg" style="font-size:11px;color:#9fb7aa"></span><button type="button" class="peqb-btn" id="pmgAtualizarManual">↻ Atualizar</button></div></div><div class="pmg-map"><div id="peqbMapEl2"></div><div id="pmgEmpty" class="pmg-empty" style="display:none">Nenhuma coordenada para mostrar nesta supervisão.</div></div></div>`;b.querySelector('#pmgAtualizarManual')?.addEventListener('click',()=>mapRender({force:true}));b.querySelector('#pmgTipoMapa')?.addEventListener('change',e=>{localStorage.setItem(TILE_STORAGE_KEY,e.target.value);if(S.map)aplicarTile(S.map,e.target.value)})}
 async function ensureMap(el){if(S.map&&S.mapEl===el)return S.map;if(S.map)try{S.map.remove()}catch{};if(!await leaflet())return null;S.mapEl=el;S.map=window.L.map(el,{zoomControl:true,scrollWheelZoom:true,center:[-14.235,-51.925],zoom:4});aplicarTile(S.map,tileKeyAtual());S.osLayer=window.L.layerGroup().addTo(S.map);S.colabLayer=window.L.layerGroup().addTo(S.map);S.rotaLayer=window.L.layerGroup().addTo(S.map);return S.map}
 function alvo(m){if(!S.map)return null;const p=S.map.latLngToContainerPoint(m.getLatLng());let best=null,dist=99999;for(const o of S.markers){if(o===m)continue;const d=p.distanceTo(S.map.latLngToContainerPoint(o.getLatLng()));if(d<dist){dist=d;best=o}}return dist<=42?best:null}
 function drag(m,meta){m.__pmgMeta=meta;m.__origLatLng=m.getLatLng();m.on('click mousedown dblclick contextmenu',ev=>{if(ev?.originalEvent&&window.L?.DomEvent)window.L.DomEvent.stop(ev.originalEvent)});m.on('dragstart',()=>m.closeTooltip());m.on('dragend',async()=>{const a=alvo(m);m.setLatLng(m.__origLatLng);if(!a?.__pmgMeta)return;const el=a.getElement();el?.classList.add('pmg-pending');try{await associar(a.__pmgMeta,m.__pmgMeta)}finally{el?.classList.remove('pmg-pending')}});m.on('dblclick',async()=>{m.closeTooltip();const el=m.getElement();el?.classList.add('pmg-pending');try{await desvincular(m.__pmgMeta)}finally{el?.classList.remove('pmg-pending')}});S.markers.push(m)}
@@ -216,6 +220,20 @@ async function loadTransporte(programacaoIds){
     return map;
   }catch(e){console.warn('[pgc-v3] transporte',e);return new Map()}
 }
+// Atendimento(OK)/Logística por colaborador+dia (programacao_colaboradores.disponibilidade
+// — mesmo campo que o toggle "Atendimento/Logística" de programacao-equipe.js grava).
+// É 1 valor por pessoa por programação, não por O.S.
+async function loadDisponibilidade(programacaoIds){
+  const ids=[...new Set((programacaoIds||[]).filter(Boolean).map(String))];
+  if(!ids.length)return new Map();
+  try{
+    const{data,error}=await supabase.from('programacao_colaboradores').select('programacao_id,colaborador_id,disponibilidade').in('programacao_id',ids);
+    if(error)throw error;
+    const map=new Map();
+    (data||[]).forEach(r=>{if(norm(r.disponibilidade)==='LOGISTICA')map.set(String(r.colaborador_id),'LOGISTICA')});
+    return map;
+  }catch(e){console.warn('[pgc-v3] disponibilidade',e);return new Map()}
+}
 async function mapRender({force=false}={}){
   if(!step2()&&!force)return;
   const band=document.getElementById('peqbMapBand');
@@ -227,12 +245,11 @@ async function mapRender({force=false}={}){
   const c=ctx(),sup=new Set(c.supervisoes);
   const items=(snap.osComCandidatosAtual||[]).filter(it=>!sup.size||sup.has(it.os?.supervisao));
   const programacaoIds=[...new Set(items.map(it=>snap.programacaoIdParaOs?.(it.os)||it.programacao_id||it.equipeRows?.[0]?.programacao_id).filter(Boolean))];
-  const[p,transporte]=await Promise.all([pool(),loadTransporte(programacaoIds)]);
+  const[p,transporte,disponibilidade]=await Promise.all([pool(),loadTransporte(programacaoIds),loadDisponibilidade(programacaoIds)]);
   const ps=p.filter(x=>!sup.size||sup.has(x.supervisao));
   const statusColab=id=>transporte.get(String(id))?.status||'os';
   const statusOs=it=>(it.equipeRows||[]).some(r=>transporte.get(String(r.colaborador_id))?.status==='motorista')?'motorista':((it.equipeRows||[]).length?'os':'pendente');
-  const key=JSON.stringify({os:items.map(it=>[it.os?.id,statusOs(it),(it.equipeRows||[]).map(r=>`${r.colaborador_id}:${statusColab(r.colaborador_id)}`).sort().join(',')]),pool:ps.map(x=>[x.colaboradorId,x.supervisao,x.lat??x.latitude,x.lng??x.longitude,x.veiculoPlaca,x.linked?1:0,transporte.get(String(x.colaboradorId))?.status||'',transporte.get(String(x.colaboradorId))?.placa||''])});
-  const boundsKey=JSON.stringify({os:items.map(it=>it.os?.id).sort(),pool:ps.map(x=>x.colaboradorId).sort()});
+  const key=JSON.stringify({os:items.map(it=>[it.os?.id,statusOs(it),(it.equipeRows||[]).map(r=>`${r.colaborador_id}:${statusColab(r.colaborador_id)}`).sort().join(',')]),pool:ps.map(x=>[x.colaboradorId,x.supervisao,x.lat??x.latitude,x.lng??x.longitude,x.veiculoPlaca,x.linked?1:0,transporte.get(String(x.colaboradorId))?.status||'',transporte.get(String(x.colaboradorId))?.placa||'',disponibilidade.get(String(x.colaboradorId))||''])});
   if(!force&&S.mapKey===key&&S.map){setTimeout(()=>{try{S.map.invalidateSize()}catch{}},40);return}
   S.mapKey=key;
   if(msg)msg.textContent='Carregando mapa...';
@@ -241,8 +258,12 @@ async function mapRender({force=false}={}){
   if(!map)return;
   setTimeout(()=>{try{map.invalidateSize()}catch{}},80);
   S.osLayer.clearLayers();S.colabLayer.clearLayers();S.rotaLayer.clearLayers();S.markers=[];
-  const eq=new Map();
-  items.forEach(it=>(it.equipeRows||[]).forEach(r=>eq.set(String(r.colaborador_id),{row:r,item:it})));
+  // Um colaborador pode estar confirmado em MAIS de 1 O.S. no mesmo dia
+  // (comum pra quem faz Logística, ver planejarRota) -- por isso é uma lista,
+  // não um valor só. eq1() dá o primeiro/principal, usado nos marcadores.
+  const eqMulti=new Map();
+  items.forEach(it=>(it.equipeRows||[]).forEach(r=>{const id=String(r.colaborador_id),arr=eqMulti.get(id)||[];arr.push({row:r,item:it});eqMulti.set(id,arr)}));
+  const eq1=id=>eqMulti.get(String(id))?.[0]||null;
   const bounds=[],L=window.L;
   items.forEach(it=>{
     if(!it.ponto||!geo(it.ponto.lat,it.ponto.lng))return;
@@ -252,33 +273,39 @@ async function mapRender({force=false}={}){
   });
   ps.forEach((col,idx)=>{
     const p=pos(col)||fallbackPos(col,items,idx);if(!p)return;
-    const vinc=eq.get(String(col.colaboradorId)),on=!!vinc,mot=isMot(col),st=on?statusColab(col.colaboradorId):'pendente';
+    const vinc=eq1(col.colaboradorId),on=!!vinc,mot=isMot(col),st=on?statusColab(col.colaboradorId):'pendente';
     const labelStatus=st==='motorista'?'com motorista':st==='os'?'vinculado à O.S. sem transporte':'pendente',geoStatus=p.fallback?' · sem coordenada cadastrada':'';
     const enderecoTt=col.endereco?`<br>📍 ${esc(col.endereco)}`:'';
     const m=L.marker([p.lat,p.lng],{icon:mot?iCar(st):iCol(col,st),draggable:true,autoPan:true,bubblingMouseEvents:false}).bindTooltip(`${esc(col.nome)}${on?` · OS ${esc(vinc.item.os.numero_os||'-')}`:''} · ${mot?'Motorista':esc(tipo(col))} · ${labelStatus}${geoStatus}${enderecoTt}`,{className:'peqb-tt'});
     drag(m,{tipo:mot?'motorista':'colaborador',colaboradorId:col.colaboradorId,osId:on?vinc.item.os.id:null,numeroOs:on?vinc.item.os.numero_os:null,equipeRowId:on?vinc.row.id:null,programacaoId:on?(snap.programacaoIdParaOs?.(vinc.item.os)||vinc.row.programacao_id):null,supervisao:col.supervisao,colab:col});
     S.colabLayer.addLayer(m);bounds.push([p.lat,p.lng]);
   });
-  // Rota de cada motorista com passageiro(s) vinculado(s) a ele (mesma placa em
-  // programacao_deslocamento) e/ou Atendimento próprio (ele mesmo confirmado
-  // numa OS, via eq). Ver planejarRota() acima pras regras de ordem/precedência.
+  // Rota de cada motorista: passageiro(s) vinculado(s) a ele (mesma placa em
+  // programacao_deslocamento) + as O.S. em que ele mesmo está confirmado. Se a
+  // disponibilidade dele no dia é Logística, TODAS essas O.S. viram paradas
+  // normais (ele pode estar confirmado em várias, ex. dar suporte em mais de
+  // um ponto) -- se é Atendimento, é só a dele própria e sempre por último
+  // (ver planejarRota() acima pras regras de ordem/precedência).
   ps.filter(isMot).forEach((mot,idx)=>{
     const motPlaca=placa(mot.veiculoPlaca||'');
     if(!motPlaca)return;
     const passageiros=ps.filter(col=>!isMot(col)&&transporte.get(String(col.colaboradorId))?.status==='motorista'&&transporte.get(String(col.colaboradorId))?.placa===motPlaca)
-      .map(col=>{const vinc=eq.get(String(col.colaboradorId));return vinc?{col,os:vinc.item.os,destino:vinc.item.ponto}:null})
+      .map(col=>{const vinc=eq1(col.colaboradorId);return vinc?{col,os:vinc.item.os,destino:vinc.item.ponto}:null})
       .filter(Boolean);
-    const vincMot=eq.get(String(mot.colaboradorId));
-    const atendimento=vincMot&&vincMot.item.ponto&&geo(vincMot.item.ponto.lat,vincMot.item.ponto.lng)?{coord:vincMot.item.ponto,os:vincMot.item.os}:null;
-    if(!passageiros.length&&!atendimento)return;
-    const plano=planejarRota(mot,passageiros,atendimento);
+    const minhasOs=(eqMulti.get(String(mot.colaboradorId))||[]).filter(v=>v.item.ponto&&geo(v.item.ponto.lat,v.item.ponto.lng));
+    const isLogistica=disponibilidade.get(String(mot.colaboradorId))==='LOGISTICA';
+    const logisticaStops=isLogistica?minhasOs.map(v=>({coord:v.item.ponto,os:v.item.os})):[];
+    const atendimento=!isLogistica&&minhasOs.length?{coord:minhasOs[0].item.ponto,os:minhasOs[0].item.os}:null;
+    if(!passageiros.length&&!logisticaStops.length&&!atendimento)return;
+    const plano=planejarRota(mot,passageiros,logisticaStops,atendimento);
     if(plano)desenharRotaMotorista(S.rotaLayer,mot,plano,idx);
   });
   const empty=band.querySelector('#pmgEmpty');
   if(empty)empty.style.display=bounds.length?'none':'flex';
-  const mudouConjunto=S.boundsKey!==boundsKey;
-  if(bounds.length&&(isNovoMapa||mudouConjunto))map.fitBounds(bounds,{padding:[34,34],maxZoom:12});
-  S.boundsKey=boundsKey;
+  // Só enquadra automaticamente na 1ª criação do mapa -- depois disso o
+  // zoom/posição é do gestor, nenhuma atualização de dado (vincular,
+  // desvincular, trocar tipo de mapa etc.) deve mexer na câmera sozinha.
+  if(bounds.length&&isNovoMapa)map.fitBounds(bounds,{padding:[34,34],maxZoom:12});
   if(msg)msg.textContent='';
 }
 window.__pmgRenderMapaGestor=()=>mapRender({force:false});
