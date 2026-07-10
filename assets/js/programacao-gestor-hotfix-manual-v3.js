@@ -2,13 +2,13 @@ import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
-const S={poolKey:'',pool:[],poolPromise:null,poolPromiseKey:'',map:null,mapEl:null,osLayer:null,colabLayer:null,markers:[],mapKey:'',boundsKey:'',mapTimer:null,tileLayer:null};
+const S={poolKey:'',pool:[],poolPromise:null,poolPromiseKey:'',map:null,mapEl:null,osLayer:null,colabLayer:null,rotaLayer:null,markers:[],mapKey:'',boundsKey:'',mapTimer:null,tileLayer:null};
 const esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
 const cpf=v=>String(v||'').replace(/\D/g,'');
 const placa=v=>String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,7);
 const hoje=()=>{const n=new Date();return new Date(n.getTime()-n.getTimezoneOffset()*60000).toISOString().slice(0,10)};
-const geo=(a,b)=>Number.isFinite(Number(a))&&Number.isFinite(Number(b));
+const geo=(a,b)=>a!=null&&b!=null&&Number.isFinite(Number(a))&&Number.isFinite(Number(b));
 const letter=t=>norm(t).includes('INTERMITENTE')?'I':norm(t).includes('DIARISTA')?'D':'E';
 const tipo=r=>r?.tipoLabel||r?.tipo_contrato||r?.tipo||'Efetivo';
 const isMot=r=>!!(r?.veiculoId||r?.veiculo_id||r?.veiculoPlaca||r?.veiculo_placa||r?.placa_veiculo);
@@ -121,8 +121,52 @@ function aplicarTile(map,key){const def=TILE_LAYERS[key]||TILE_LAYERS.escuro;if(
 const iOs=s=>window.L.divIcon({className:'pmg-drag-icon',html:star(corStatus(s)),iconSize:[28,28],iconAnchor:[14,14]});
 const iCol=(r,s)=>window.L.divIcon({className:'pmg-drag-icon',html:person(corStatus(s),letter(tipo(r))),iconSize:[28,34],iconAnchor:[14,32]});
 const iCar=s=>window.L.divIcon({className:'pmg-drag-icon',html:car(corStatus(s)),iconSize:[32,25],iconAnchor:[16,21]});
-function bandHtml(b){if(b.querySelector('#peqbMapEl2'))return;const tileOpts=Object.entries(TILE_LAYERS).map(([k,v])=>`<option value="${k}" ${k===tileKeyAtual()?'selected':''}>${v.label}</option>`).join('');b.innerHTML=`<div class="pmg-wrap"><div class="pmg-head"><strong>Mapa do gestor</strong><div class="pmg-legend"><span><i style="background:${COR_PENDENTE}"></i>Pendente</span><span><i style="background:${COR_OS}"></i>Vinculado à O.S.</span><span><i style="background:${COR_MOTORISTA}"></i>Com motorista</span><span class="pmg-help">Arraste um marcador sobre outro para vincular · 2 cliques rápidos pra desvincular</span></div><div style="display:flex;gap:8px;align-items:center"><select id="pmgTipoMapa" class="peqb-btn" title="Tipo do mapa">${tileOpts}</select><span id="pmgMsg" style="font-size:11px;color:#9fb7aa"></span><button type="button" class="peqb-btn" id="pmgAtualizarManual">↻ Atualizar</button></div></div><div class="pmg-map"><div id="peqbMapEl2"></div><div id="pmgEmpty" class="pmg-empty" style="display:none">Nenhuma coordenada para mostrar nesta supervisão.</div></div></div>`;b.querySelector('#pmgAtualizarManual')?.addEventListener('click',()=>mapRender({force:true}));b.querySelector('#pmgTipoMapa')?.addEventListener('change',e=>{localStorage.setItem(TILE_STORAGE_KEY,e.target.value);if(S.map)aplicarTile(S.map,e.target.value)})}
-async function ensureMap(el){if(S.map&&S.mapEl===el)return S.map;if(S.map)try{S.map.remove()}catch{};if(!await leaflet())return null;S.mapEl=el;S.map=window.L.map(el,{zoomControl:true,scrollWheelZoom:true,center:[-14.235,-51.925],zoom:4});aplicarTile(S.map,tileKeyAtual());S.osLayer=window.L.layerGroup().addTo(S.map);S.colabLayer=window.L.layerGroup().addTo(S.map);return S.map}
+function kmEntre(aLat,aLng,bLat,bLng){const R=6371,dLat=(bLat-aLat)*Math.PI/180,dLng=(bLng-aLng)*Math.PI/180,s1=Math.sin(dLat/2)**2,s2=Math.cos(aLat*Math.PI/180)*Math.cos(bLat*Math.PI/180)*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(s1+s2),Math.sqrt(1-s1-s2))}
+// Rota do motorista: guloso (vizinho mais próximo) respeitando 2 regras —
+// (1) só pode "deixar" um passageiro depois de "buscar" ele (precedência);
+// (2) se o motorista também tem Atendimento (OS própria), essa parada entra
+// sempre por último, fora da disputa do guloso. Frota pequena (até 4
+// passageiros) então guloso já resolve bem; não precisa de 2-opt/OSRM aqui.
+function planejarRota(motorista,passageiros,atendimento){
+  const origem=pos(motorista);
+  if(!origem)return null;
+  const paradas=[];
+  passageiros.forEach(p=>{
+    const pick=pos(p.col);
+    if(pick)paradas.push({tipo:'pickup',colaboradorId:p.col.colaboradorId,nome:p.col.nome,coord:pick});
+    if(p.destino&&geo(p.destino.lat,p.destino.lng))paradas.push({tipo:'dropoff',colaboradorId:p.col.colaboradorId,nome:p.col.nome,coord:p.destino,os:p.os});
+  });
+  const picked=new Set(),ordem=[],restantes=paradas.slice();
+  let atual=origem;
+  while(restantes.length){
+    const candidatos=restantes.filter(s=>s.tipo==='pickup'||picked.has(s.colaboradorId));
+    if(!candidatos.length)break;
+    let melhor=null,melhorDist=Infinity;
+    candidatos.forEach(c=>{const d=kmEntre(atual.lat,atual.lng,c.coord.lat,c.coord.lng);if(d<melhorDist){melhorDist=d;melhor=c}});
+    ordem.push(melhor);
+    restantes.splice(restantes.indexOf(melhor),1);
+    if(melhor.tipo==='pickup')picked.add(melhor.colaboradorId);
+    atual=melhor.coord;
+  }
+  if(atendimento)ordem.push({tipo:'atendimento',coord:atendimento.coord,os:atendimento.os});
+  if(!ordem.length)return null;
+  return{origem,ordem};
+}
+const ROTA_CORES=['#a78bfa','#f472b6','#fb923c','#38bdf8','#facc15','#4ade80'];
+function desenharRotaMotorista(layer,motorista,plano,idx){
+  const cor=ROTA_CORES[idx%ROTA_CORES.length];
+  const pontos=[plano.origem,...plano.ordem.map(s=>s.coord)];
+  const linha=window.L.polyline(pontos.map(p=>[p.lat,p.lng]),{color:cor,weight:3,opacity:.78,dashArray:'2 8'});
+  const passos=plano.ordem.map((s,i)=>{
+    if(s.tipo==='pickup')return `${i+1}. Buscar ${esc(s.nome)}`;
+    if(s.tipo==='dropoff')return `${i+1}. Deixar ${esc(s.nome)} · OS ${esc(s.os?.numero_os||'-')}`;
+    return `${i+1}. Atendimento · OS ${esc(s.os?.numero_os||'-')}`;
+  }).join('<br>');
+  linha.bindTooltip(`<b>${esc(motorista.nome)}</b><br>${passos}`,{className:'peqb-tt',sticky:true});
+  layer.addLayer(linha);
+}
+function bandHtml(b){if(b.querySelector('#peqbMapEl2'))return;const tileOpts=Object.entries(TILE_LAYERS).map(([k,v])=>`<option value="${k}" ${k===tileKeyAtual()?'selected':''}>${v.label}</option>`).join('');b.innerHTML=`<div class="pmg-wrap"><div class="pmg-head"><strong>Mapa do gestor</strong><div class="pmg-legend"><span><i style="background:${COR_PENDENTE}"></i>Pendente</span><span><i style="background:${COR_OS}"></i>Vinculado à O.S.</span><span><i style="background:${COR_MOTORISTA}"></i>Com motorista</span><span class="pmg-help">Arraste um marcador sobre outro para vincular · 2 cliques rápidos pra desvincular · linha tracejada = rota sugerida do motorista (Atendimento sempre por último)</span></div><div style="display:flex;gap:8px;align-items:center"><select id="pmgTipoMapa" class="peqb-btn" title="Tipo do mapa">${tileOpts}</select><span id="pmgMsg" style="font-size:11px;color:#9fb7aa"></span><button type="button" class="peqb-btn" id="pmgAtualizarManual">↻ Atualizar</button></div></div><div class="pmg-map"><div id="peqbMapEl2"></div><div id="pmgEmpty" class="pmg-empty" style="display:none">Nenhuma coordenada para mostrar nesta supervisão.</div></div></div>`;b.querySelector('#pmgAtualizarManual')?.addEventListener('click',()=>mapRender({force:true}));b.querySelector('#pmgTipoMapa')?.addEventListener('change',e=>{localStorage.setItem(TILE_STORAGE_KEY,e.target.value);if(S.map)aplicarTile(S.map,e.target.value)})}
+async function ensureMap(el){if(S.map&&S.mapEl===el)return S.map;if(S.map)try{S.map.remove()}catch{};if(!await leaflet())return null;S.mapEl=el;S.map=window.L.map(el,{zoomControl:true,scrollWheelZoom:true,center:[-14.235,-51.925],zoom:4});aplicarTile(S.map,tileKeyAtual());S.osLayer=window.L.layerGroup().addTo(S.map);S.colabLayer=window.L.layerGroup().addTo(S.map);S.rotaLayer=window.L.layerGroup().addTo(S.map);return S.map}
 function alvo(m){if(!S.map)return null;const p=S.map.latLngToContainerPoint(m.getLatLng());let best=null,dist=99999;for(const o of S.markers){if(o===m)continue;const d=p.distanceTo(S.map.latLngToContainerPoint(o.getLatLng()));if(d<dist){dist=d;best=o}}return dist<=42?best:null}
 function drag(m,meta){m.__pmgMeta=meta;m.__origLatLng=m.getLatLng();m.on('click mousedown dblclick contextmenu',ev=>{if(ev?.originalEvent&&window.L?.DomEvent)window.L.DomEvent.stop(ev.originalEvent)});m.on('dragstart',()=>m.closeTooltip());m.on('dragend',async()=>{const a=alvo(m);m.setLatLng(m.__origLatLng);if(!a?.__pmgMeta)return;const el=a.getElement();el?.classList.add('pmg-pending');try{await associar(a.__pmgMeta,m.__pmgMeta)}finally{el?.classList.remove('pmg-pending')}});m.on('dblclick',async()=>{m.closeTooltip();const el=m.getElement();el?.classList.add('pmg-pending');try{await desvincular(m.__pmgMeta)}finally{el?.classList.remove('pmg-pending')}});S.markers.push(m)}
 // 2 cliques rápidos num marcador já vinculado remove o vínculo. Colaborador/
@@ -166,8 +210,8 @@ async function loadTransporte(programacaoIds){
     const map=new Map();
     (data||[]).forEach(r=>{
       const tipo=norm(r.tipo_deslocamento);
-      const temPlaca=!!placa(r.placa_veiculo||'');
-      if((tipo==='MOTORISTA FROTA'||tipo==='CARONA FROTA')&&temPlaca)map.set(String(r.colaborador_id),'motorista');
+      const pl=placa(r.placa_veiculo||'');
+      if((tipo==='MOTORISTA FROTA'||tipo==='CARONA FROTA')&&pl)map.set(String(r.colaborador_id),{status:'motorista',placa:pl});
     });
     return map;
   }catch(e){console.warn('[pgc-v3] transporte',e);return new Map()}
@@ -185,9 +229,9 @@ async function mapRender({force=false}={}){
   const programacaoIds=[...new Set(items.map(it=>snap.programacaoIdParaOs?.(it.os)||it.programacao_id||it.equipeRows?.[0]?.programacao_id).filter(Boolean))];
   const[p,transporte]=await Promise.all([pool(),loadTransporte(programacaoIds)]);
   const ps=p.filter(x=>!sup.size||sup.has(x.supervisao));
-  const statusColab=id=>transporte.get(String(id))||'os';
-  const statusOs=it=>(it.equipeRows||[]).some(r=>transporte.get(String(r.colaborador_id))==='motorista')?'motorista':((it.equipeRows||[]).length?'os':'pendente');
-  const key=JSON.stringify({os:items.map(it=>[it.os?.id,statusOs(it),(it.equipeRows||[]).map(r=>`${r.colaborador_id}:${statusColab(r.colaborador_id)}`).sort().join(',')]),pool:ps.map(x=>[x.colaboradorId,x.supervisao,x.lat??x.latitude,x.lng??x.longitude,x.veiculoPlaca,x.linked?1:0,transporte.get(String(x.colaboradorId))||''])});
+  const statusColab=id=>transporte.get(String(id))?.status||'os';
+  const statusOs=it=>(it.equipeRows||[]).some(r=>transporte.get(String(r.colaborador_id))?.status==='motorista')?'motorista':((it.equipeRows||[]).length?'os':'pendente');
+  const key=JSON.stringify({os:items.map(it=>[it.os?.id,statusOs(it),(it.equipeRows||[]).map(r=>`${r.colaborador_id}:${statusColab(r.colaborador_id)}`).sort().join(',')]),pool:ps.map(x=>[x.colaboradorId,x.supervisao,x.lat??x.latitude,x.lng??x.longitude,x.veiculoPlaca,x.linked?1:0,transporte.get(String(x.colaboradorId))?.status||'',transporte.get(String(x.colaboradorId))?.placa||''])});
   const boundsKey=JSON.stringify({os:items.map(it=>it.os?.id).sort(),pool:ps.map(x=>x.colaboradorId).sort()});
   if(!force&&S.mapKey===key&&S.map){setTimeout(()=>{try{S.map.invalidateSize()}catch{}},40);return}
   S.mapKey=key;
@@ -196,7 +240,7 @@ async function mapRender({force=false}={}){
   const map=await ensureMap(mapEl2);
   if(!map)return;
   setTimeout(()=>{try{map.invalidateSize()}catch{}},80);
-  S.osLayer.clearLayers();S.colabLayer.clearLayers();S.markers=[];
+  S.osLayer.clearLayers();S.colabLayer.clearLayers();S.rotaLayer.clearLayers();S.markers=[];
   const eq=new Map();
   items.forEach(it=>(it.equipeRows||[]).forEach(r=>eq.set(String(r.colaborador_id),{row:r,item:it})));
   const bounds=[],L=window.L;
@@ -214,6 +258,21 @@ async function mapRender({force=false}={}){
     const m=L.marker([p.lat,p.lng],{icon:mot?iCar(st):iCol(col,st),draggable:true,autoPan:true,bubblingMouseEvents:false}).bindTooltip(`${esc(col.nome)}${on?` · OS ${esc(vinc.item.os.numero_os||'-')}`:''} · ${mot?'Motorista':esc(tipo(col))} · ${labelStatus}${geoStatus}${enderecoTt}`,{className:'peqb-tt'});
     drag(m,{tipo:mot?'motorista':'colaborador',colaboradorId:col.colaboradorId,osId:on?vinc.item.os.id:null,numeroOs:on?vinc.item.os.numero_os:null,equipeRowId:on?vinc.row.id:null,programacaoId:on?(snap.programacaoIdParaOs?.(vinc.item.os)||vinc.row.programacao_id):null,supervisao:col.supervisao,colab:col});
     S.colabLayer.addLayer(m);bounds.push([p.lat,p.lng]);
+  });
+  // Rota de cada motorista com passageiro(s) vinculado(s) a ele (mesma placa em
+  // programacao_deslocamento) e/ou Atendimento próprio (ele mesmo confirmado
+  // numa OS, via eq). Ver planejarRota() acima pras regras de ordem/precedência.
+  ps.filter(isMot).forEach((mot,idx)=>{
+    const motPlaca=placa(mot.veiculoPlaca||'');
+    if(!motPlaca)return;
+    const passageiros=ps.filter(col=>!isMot(col)&&transporte.get(String(col.colaboradorId))?.status==='motorista'&&transporte.get(String(col.colaboradorId))?.placa===motPlaca)
+      .map(col=>{const vinc=eq.get(String(col.colaboradorId));return vinc?{col,os:vinc.item.os,destino:vinc.item.ponto}:null})
+      .filter(Boolean);
+    const vincMot=eq.get(String(mot.colaboradorId));
+    const atendimento=vincMot&&vincMot.item.ponto&&geo(vincMot.item.ponto.lat,vincMot.item.ponto.lng)?{coord:vincMot.item.ponto,os:vincMot.item.os}:null;
+    if(!passageiros.length&&!atendimento)return;
+    const plano=planejarRota(mot,passageiros,atendimento);
+    if(plano)desenharRotaMotorista(S.rotaLayer,mot,plano,idx);
   });
   const empty=band.querySelector('#pmgEmpty');
   if(empty)empty.style.display=bounds.length?'none':'flex';
