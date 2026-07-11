@@ -1,6 +1,6 @@
 # GRM Sync — agentes GRM Server → Supabase
 
-Scripts Node.js/Puppeteer que fazem login no GRM Server (`www.grmserver.com.br`), baixam relatórios em XLS e sincronizam com o Supabase (projeto `painel`, ref `xyzpnuumdqhegxakkyws`). Rodam no cPanel em `/home/grao100/painel-scripts/grm-sync` (este diretório local é o espelho de trabalho).
+Scripts Node.js/Puppeteer que fazem login no GRM Server (`www.grmserver.com.br`), baixam relatórios em XLS (ou chamam a API interna direto) e sincronizam com o Supabase (projeto `painel-web` BR, ref `jbzmcyycanrlnfhedcup`). Rodam no cPanel em `/home/grao100/painel-scripts/grm-sync` (este diretório local é o espelho de trabalho).
 
 ## Arquitetura
 
@@ -45,6 +45,7 @@ Não usa mais Docker, PM2 nem Edge Functions (arquiteturas antigas, abandonadas 
 | sync-btg-relatorios / sync-btg-classificador | grm-sync-btg-classificador.js | colaborador_cruzamento / BTG |
 | sync-btg-checkin | grm-sync-btg-checkin.js | logistica_btg_solicitacoes |
 | sync-cargas-geofence | grm-sync-cargas-geofence.js | cargas/geofence |
+| sync-adiantamentos | grm-sync-adiantamentos.js | grm_adiantamentos_importacoes |
 
 `safe-table-load.js` fornece `replaceTableSafely()` — grava em tabela `_staging` e promove via função SQL transacional, evitando janela de tabela vazia (ver migration `20260630124500_grm_staging_promote_agents.sql` no painel-web). `download-utils.js` tem os helpers de download de XLS compartilhados pelos agentes de relatório.
 
@@ -53,7 +54,7 @@ Não usa mais Docker, PM2 nem Edge Functions (arquiteturas antigas, abandonadas 
 ```
 GRMSERVER_USER=...
 GRMSERVER_PASSWORD=...
-SUPABASE_URL=https://xyzpnuumdqhegxakkyws.supabase.co
+SUPABASE_URL=https://jbzmcyycanrlnfhedcup.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...
 ```
 

@@ -302,7 +302,6 @@ function readWorkbookRows(file) {
 
 const PAGAMENTO_VALOR_ALMOCO = 30;
 const PAGAMENTO_IFOOD_CNPJ = '29.666.679/0001-34';
-const ALELO_SERIE_DIGITOS = 15;
 
 function onlyDigits(value) {
   return String(value ?? '').replace(/\D/g, '');
@@ -310,10 +309,6 @@ function onlyDigits(value) {
 
 function normalizeName(value) {
   return normalize(value).replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-}
-
-function normConta(value) {
-  return normalize(value).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function dateRangeLabel(inicio, fim) {
@@ -334,16 +329,6 @@ function formatDateForXlsx(value) {
   return value ? brDate(value) : '';
 }
 
-function buildCpfToSerieMap(rows) {
-  const map = new Map();
-  rows.forEach((row) => {
-    const cpf = onlyDigits(row.CPF ?? row.Cpf ?? row.cpf);
-    const serie = row['N de Série'] ?? row['N de Serie'] ?? row['Nº de Série'] ?? row['Nº de Serie'] ?? row['Numero de Serie'] ?? row['Número de Série'] ?? '';
-    if (cpf) map.set(cpf, String(serie || '').trim());
-  });
-  return map;
-}
-
 function getAny(row, names = []) {
   const keys = Object.keys(row || {});
   for (const name of names) {
@@ -351,178 +336,6 @@ function getAny(row, names = []) {
     if (found) return row[found];
   }
   return null;
-}
-
-function makeAleloRows(extratoRows, fonteRows) {
-  const mapCpfToSerie = buildCpfToSerieMap(fonteRows || []);
-  const alelo = [];
-  const ifood = [];
-  const flash = [];
-  const logs = [];
-
-  (extratoRows || []).forEach((row, index) => {
-    const conta = normConta(getAny(row, ['Conta']));
-    const cpf = onlyDigits(getAny(row, ['CPF']));
-    const valor = toNumber(getAny(row, ['Valor']));
-    const obsCompleta = String(getAny(row, ['Descrição', 'Descricao', 'Observacao', 'Observação']) || '').trim();
-    const obs = obsCompleta.slice(0, 30);
-    const nome = String(getAny(row, ['Funcionário', 'Funcionario', 'Nome']) || '').trim();
-    const nasc = getAny(row, ['Data de Nascimento', 'Nascimento']);
-    const data = parseDateLoose(getAny(row, ['Data', 'Data de Solicitação', 'Data de Solicitacao']));
-    const situacao = String(getAny(row, ['Situação', 'Situacao', 'Status']) || '').trim();
-    const situacaoNorm = normalize(situacao);
-
-    if (!conta && !nome && !cpf && !valor) return;
-    if (situacaoNorm && !situacaoNorm.includes('aprovada') && !situacaoNorm.includes('aprovado')) {
-      logs.push({ data: data || '', funcionario: nome || '-', status: 'IGNORADO', mensagem: `Linha ${index + 2}: situação não aprovada: ${situacao || '(vazio)'}.` });
-      return;
-    }
-    if (!conta) {
-      logs.push({ data: data || '', funcionario: nome || '-', status: 'ERRO', mensagem: `Linha ${index + 2}: conta de pagamento não informada.` });
-      return;
-    }
-    if (!valor || valor <= 0) {
-      logs.push({ data: data || '', funcionario: nome || '-', status: 'ERRO', mensagem: `Linha ${index + 2}: valor ausente ou inválido.` });
-      return;
-    }
-    if (!cpf || cpf.length !== 11) logs.push({ data: data || '', funcionario: nome || '-', status: 'ATENÇÃO', mensagem: `Linha ${index + 2}: CPF inválido ou ausente para ${nome || 'linha sem nome'}.` });
-
-    if (conta.includes('ALELO') && (conta.includes('BVGRAIN') || conta.includes('EXCELENCIA') || conta.includes('GRAOMIL'))) {
-      let serie = onlyDigits(mapCpfToSerie.get(cpf) || '');
-      if (serie.length < ALELO_SERIE_DIGITOS) serie = serie.padStart(ALELO_SERIE_DIGITOS, '0');
-      if (serie.length > ALELO_SERIE_DIGITOS) serie = serie.slice(0, ALELO_SERIE_DIGITOS);
-      if (!serie || /^0+$/.test(serie)) logs.push({ data: data || '', funcionario: nome || cpf, status: 'Alelo', mensagem: `Número de série não localizado para ${nome || cpf}.` });
-      alelo.push({ serie: `'${serie}`, cpf: `'${cpf.padStart(11, '0').slice(0, 11)}`, valor, observacao: obs, nome, data });
-      return;
-    }
-
-    if (conta.includes('IFOOD') && conta.includes('GRAOMIL')) {
-      ifood.push({ cnpj: PAGAMENTO_IFOOD_CNPJ, nome, cpf, nascimento: nasc, email: '', celular: '', centro_custo: '', livre: valor, data, observacao: obsCompleta });
-      return;
-    }
-
-    if (conta.includes('FLASH') && conta.includes('GRAOMIL')) {
-      flash.push({ cpf, valor, nome, data, observacao: obsCompleta });
-      return;
-    }
-
-    logs.push({ data: data || '', funcionario: nome || '-', status: 'ERRO', mensagem: `Linha ${index + 2}: conta não reconhecida para pagamento: ${conta}.` });
-  });
-
-  return { alelo, ifood, flash, logs };
-}
-
-
-function isSolicitacaoDespesasFile(rows) {
-  const first = (rows || [])[0] || {};
-  const keys = Object.keys(first).map((key) => normalize(key));
-  return keys.includes('categoria') && keys.includes('funcionario') && keys.includes('data de solicitacao');
-}
-
-function buildSolicitacaoDespesasRows(solicitacaoRows, rhMap) {
-  const flashMap = new Map();
-  const ifoodMap = new Map();
-  const conferencia = [];
-  const logs = [];
-
-  (solicitacaoRows || []).forEach((row, index) => {
-    const categoria = String(getAny(row, ['Categoria']) || '').trim();
-    const categoriaNorm = normalize(categoria);
-    const status = String(getAny(row, ['Status']) || '').trim();
-    const statusNorm = normalize(status);
-    const funcionario = String(getAny(row, ['Funcionário', 'Funcionario', 'Colaborador', 'Nome']) || '').trim();
-    const dataRef = parseDateLoose(getAny(row, ['Data de Solicitação', 'Data de Solicitacao', 'Data']));
-    const valor = toNumber(getAny(row, ['Valor']));
-    const coordenacao = String(getAny(row, ['Coordenação', 'Coordenacao']) || '').trim();
-    const supervisao = String(getAny(row, ['Supervisão', 'Supervisao']) || '').trim();
-    const cidade = String(getAny(row, ['Cidade']) || '').trim();
-    const fornecedor = String(getAny(row, ['Fornecedor']) || '').trim();
-
-    if (!funcionario && !valor) return;
-
-    const isAdiantamento = categoriaNorm.includes('solicitacao de dinheiro') || categoriaNorm.includes('adiantamento');
-    const isPendente = !statusNorm || statusNorm.includes('pendente') || statusNorm.includes('aberto') || statusNorm.includes('aguardando');
-
-    if (!isAdiantamento) {
-      logs.push({ data: dataRef || '', funcionario: funcionario || '-', status: 'IGNORADO', mensagem: `Linha ${index + 2}: categoria não entra em Adiantamentos: ${categoria || '(vazio)'}.` });
-      return;
-    }
-    if (!isPendente) {
-      logs.push({ data: dataRef || '', funcionario: funcionario || '-', status: 'IGNORADO', mensagem: `Linha ${index + 2}: status não pendente: ${status || '(vazio)'}.` });
-      return;
-    }
-    if (!funcionario) {
-      logs.push({ data: dataRef || '', funcionario: '-', status: 'ERRO', mensagem: `Linha ${index + 2}: colaborador não informado.` });
-      return;
-    }
-    if (!valor || valor <= 0) {
-      logs.push({ data: dataRef || '', funcionario, status: 'ERRO', mensagem: `Linha ${index + 2}: valor ausente ou inválido.` });
-      return;
-    }
-
-    const rh = rhMap.get(normalizeName(funcionario));
-    if (!rh) {
-      logs.push({ data: dataRef || '', funcionario, status: 'ERRO', mensagem: 'Colaborador não localizado na base RH.' });
-      conferencia.push({ data: dataRef || '', funcionario, cpf: '', destino: 'Pendente', tipo: categoria || 'Adiantamento', valor, composicao: fornecedor || cidade || 'Solicitação de Despesas', coordenacao, supervisao, banco: '', observacao: 'Colaborador não localizado na base RH.' });
-      return;
-    }
-    if (!rh.cpf || rh.cpf.length !== 11) {
-      logs.push({ data: dataRef || '', funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: 'CPF ausente ou inválido na base RH.' });
-      conferencia.push({ data: dataRef || '', funcionario: rh.nome || funcionario, cpf: rh.cpf || '', destino: 'Pendente', tipo: categoria || 'Adiantamento', valor, composicao: fornecedor || cidade || 'Solicitação de Despesas', coordenacao: rh.coordenacao || coordenacao, supervisao: rh.supervisao || supervisao, banco: rh.banco || '', observacao: 'CPF ausente ou inválido.' });
-      return;
-    }
-
-    const bancoNorm = normalize(rh.banco).replace(/\s+/g, '');
-    let destino = 'Pendente';
-    if (bancoNorm.includes('graomilflash') || bancoNorm.includes('flash')) destino = 'Flash';
-    if (bancoNorm.includes('graomilifood') || bancoNorm.includes('ifood')) destino = 'iFood';
-
-    const confRow = {
-      data: dataRef || '',
-      funcionario: rh.nome || funcionario,
-      cpf: rh.cpf,
-      destino,
-      tipo: categoria || 'Adiantamento',
-      valor: roundNumber(valor),
-      composicao: [fornecedor, cidade].filter(Boolean).join(' · ') || 'Solicitação de Despesas',
-      coordenacao: rh.coordenacao || coordenacao,
-      supervisao: rh.supervisao || supervisao,
-      banco: rh.banco || '',
-      observacao: destino === 'Pendente' ? `C. Banc. Despesas sem destino reconhecido: ${rh.banco || '(vazio)'}` : 'OK'
-    };
-    conferencia.push(confRow);
-
-    if (destino === 'Flash') {
-      const key = rh.cpf;
-      if (!flashMap.has(key)) flashMap.set(key, { cpf: rh.cpf, nome: rh.nome, valor: 0 });
-      flashMap.get(key).valor = roundNumber(flashMap.get(key).valor + valor);
-    } else if (destino === 'iFood') {
-      const key = rh.cpf;
-      if (!ifoodMap.has(key)) {
-        ifoodMap.set(key, {
-          cnpj: PAGAMENTO_IFOOD_CNPJ,
-          nome: rh.nome,
-          cpf: rh.cpf,
-          nascimento: rh.nascimento || '',
-          email: rh.emailEmpresa || rh.emailPessoal || '',
-          celular: onlyDigits(rh.whatsapp),
-          centro_custo: rh.coordenacao || coordenacao || '',
-          livre: 0
-        });
-      }
-      ifoodMap.get(key).livre = roundNumber(ifoodMap.get(key).livre + valor);
-    } else {
-      logs.push({ data: dataRef || '', funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: confRow.observacao });
-    }
-  });
-
-  return {
-    conferencia: conferencia.sort((a, b) => `${a.data}|${a.funcionario}`.localeCompare(`${b.data}|${b.funcionario}`, 'pt-BR')),
-    flash: Array.from(flashMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
-    ifood: Array.from(ifoodMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
-    alelo: [],
-    logs
-  };
 }
 
 function mapProducaoDiariaFileRows(rows, origem = 'arquivo_producao_diaria') {
@@ -1176,6 +989,7 @@ export function renderContent(content, userContext) {
       .det-th-active{color:#34d399!important}
       .det-sort-icon{margin-left:4px;opacity:.6;font-size:10px}
       .det-th-active .det-sort-icon{opacity:1;color:#34d399}
+      .adiant-subtab{border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#64748b;border-radius:10px;padding:7px 13px;cursor:pointer;font-size:13px;font-weight:600;transition:all .14s}.adiant-subtab:hover{color:#e2e8f0;background:rgba(15,23,42,.85)}.adiant-subtab.active{background:linear-gradient(135deg,#14532d,#166534);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(22,101,52,.35)}.adiant-table{display:none}.adiant-table.active{display:block}
     </style>
     <section class="fin-wrap">
       <div class="cf-header">
@@ -1365,12 +1179,53 @@ export function renderContent(content, userContext) {
 
           <section class="pay-card pay-mode-panel active" id="pay-mode-adiantamentos">
             <h4>ADIANTAMENTOS</h4>
-            <p>Suba a planilha de adiantamentos. O painel separa Flash/iFood e prepara a conferência para pagamento.</p>
+            <p>Solicitações de Caixa Operacional sincronizadas automaticamente do GRM (agente sync-adiantamentos, a cada 15min). Marque ✓ para incluir no pagamento ou ✗ para recusar (motivo fica no histórico).</p>
             <div class="pay-filter-grid">
-              <div class="fin-field"><label>Planilha de adiantamentos</label><label class="pay-upload" for="adiantFileExtrato" data-drop-for="adiantFileExtrato"><input id="adiantFileExtrato" type="file" accept=".xlsx,.xls,.csv"><span><strong>Arraste aqui ou clique para escolher</strong><span id="adiantFileExtratoName">Nenhum arquivo selecionado</span></span></label></div>
-              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAdiantamentos" type="button">Gerar adiantamentos</button></div>
-              <div class="fin-field"><label>Status padrão</label><select id="payDefaultStatus"><option value="OK" selected>OK</option><option value="PENDENTE">PENDENTE</option></select></div>
-              <div class="fin-field"><label>&nbsp;</label><span id="fbAdiantamentos" class="fin-feedback"></span></div>
+              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-secondary" id="btnAtualizarAdiantamentos" type="button">↻ Atualizar</button></div>
+              <div class="fin-field full"><label>&nbsp;</label><span id="fbAdiantamentos" class="fin-feedback"></span></div>
+            </div>
+
+            <div class="pay-summary">
+              <div class="pay-mini"><span>Pendentes</span><strong id="adiantPendentes">0</strong></div>
+              <div class="pay-mini"><span>Selecionados ✓</span><strong id="adiantSelecionados">0</strong></div>
+              <div class="pay-mini"><span>Total selecionado</span><strong id="adiantTotalSelecionado">R$ 0,00</strong></div>
+              <div class="pay-mini"><span>Recusados</span><strong id="adiantRecusados">0</strong></div>
+            </div>
+
+            <div class="pay-note">Somente linhas marcadas com <strong>✓</strong> entram no botão <strong>PAGAR</strong>. Recusar exige motivo, que fica registrado no histórico. Ao pagar, a linha sai daqui e vai para <strong>Histórico de Pagamentos</strong> — evita pagamento duplicado.</div>
+
+            <div class="pay-subtabs">
+              <button class="adiant-subtab active" data-adiant-tab="ativos" type="button">Solicitações</button>
+              <button class="adiant-subtab" data-adiant-tab="historico" type="button">Histórico de Pagamentos</button>
+            </div>
+
+            <div class="adiant-table active" id="adiant-ativos">
+              <div class="fin-table-wrap">
+                <table class="fin-table">
+                  <thead><tr>
+                    <th>Data</th><th>Colaborador</th><th>Coordenação</th><th>Supervisão</th>
+                    <th>Valor</th><th>Saldo</th><th>Embarque</th><th>Leitura</th><th>Descrição</th><th>Ação</th>
+                  </tr></thead>
+                  <tbody id="adiantTbody"><tr><td colspan="10" class="fin-empty">Carregando...</td></tr></tbody>
+                </table>
+              </div>
+
+              <div class="pay-footer">
+                <div><strong id="adiantFooterTotal">Total pronto para pagar: R$ 0,00</strong><span id="adiantFooterHint">Marque ✓ nas solicitações para liberar o botão.</span></div>
+                <button class="btn-pay-final" id="btnPagarAdiantamentos" type="button" disabled>PAGAR</button>
+              </div>
+            </div>
+
+            <div class="adiant-table" id="adiant-historico">
+              <div class="fin-table-wrap">
+                <table class="fin-table">
+                  <thead><tr>
+                    <th>Data</th><th>Colaborador</th><th>Coordenação</th><th>Supervisão</th>
+                    <th>Valor</th><th>Conta</th><th>Descrição</th><th>Pago em</th>
+                  </tr></thead>
+                  <tbody id="adiantHistoricoTbody"><tr><td colspan="8" class="fin-empty">Nenhum pagamento registrado ainda.</td></tr></tbody>
+                </table>
+              </div>
             </div>
           </section>
 
@@ -1381,55 +1236,56 @@ export function renderContent(content, userContext) {
               <div class="fin-field"><label>Data inicial</label><input id="alimInicio" type="date" value="${esc(state.filters.inicio)}"></div>
               <div class="fin-field"><label>Data final</label><input id="alimFim" type="date" value="${esc(state.currentDate)}"></div>
               <div class="fin-field"><label>Tipo</label><select id="payTipoGeracao"><option value="alimentacao" selected>Alimentação</option><option value="diarias">Diárias</option></select></div>
+              <div class="fin-field"><label>Status padrão</label><select id="payDefaultStatus"><option value="OK" selected>OK</option><option value="PENDENTE">PENDENTE</option></select></div>
               <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarPagamentoPeriodo" type="button">Consultar pagamentos</button></div>
               <div class="fin-field full"><span id="fbAlimentacao" class="fin-feedback"></span></div>
             </div>
+
+            <div class="pay-summary">
+              <div class="pay-mini"><span>Tipo</span><strong id="payTipo">-</strong></div>
+              <div class="pay-mini"><span>Período</span><strong id="payPeriodo">-</strong></div>
+              <div class="pay-mini"><span>Registros OK</span><strong id="payRegistros">0</strong></div>
+              <div class="pay-mini"><span>Total OK</span><strong id="payTotal">R$ 0,00</strong></div>
+            </div>
+
+            <div class="pay-note">Somente linhas marcadas como <strong>OK</strong> entram no botão <strong>PAGAR</strong>. Linhas <strong>PENDENTES</strong> permanecem para o financeiro resolver depois. Linhas <strong>PAGO</strong> são bloqueadas para evitar duplicidade.</div>
+
+            <div class="pay-search-panel">
+              <div class="pay-search-field">
+                <label>Pesquisar colaborador para bloquear</label>
+                <input id="payColaboradorFiltro" class="pay-search-input" type="search" placeholder="Digite nome, CPF, supervisão ou destino">
+                <span id="payFiltroInfo" class="pay-search-count">Mostrando todos os colaboradores.</span>
+              </div>
+              <button class="btn btn-secondary" id="btnLimparPayFiltro" type="button">Limpar filtro</button>
+            </div>
+
+            <div class="pay-toolbar">
+              <div class="pay-subtabs">
+                <button class="pay-subtab active" data-pay-tab="conferencia" type="button">Conferência</button>
+                <button class="pay-subtab" data-pay-tab="flash" type="button">Flash</button>
+                <button class="pay-subtab" data-pay-tab="ifood" type="button">iFood</button>
+                <button class="pay-subtab" data-pay-tab="alelo" type="button">Alelo</button>
+                <button class="pay-subtab" data-pay-tab="logs" type="button">Pendências</button>
+              </div>
+              <div class="fin-actions-row">
+                <button class="btn btn-secondary fin-small" id="btnExportFlash" type="button">Exportar Flash XLSX</button>
+                <button class="btn btn-secondary fin-small" id="btnExportIfood" type="button">Exportar iFood XLSX</button>
+                <button class="btn btn-secondary fin-small" id="btnExportAlelo" type="button">Exportar Alelo CSV</button>
+                <button class="btn btn-secondary fin-small" id="btnExportConferencia" type="button">Exportar conferência XLSX</button>
+              </div>
+            </div>
+
+            <div class="pay-table active" id="pay-conferencia"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Status</th><th>Data</th><th>Colaborador</th><th>CPF</th><th>Destino</th><th>Tipo</th><th>Valor</th><th>Composição</th><th>Supervisão</th><th>Observação</th></tr></thead><tbody id="payConferenciaTbody"><tr><td colspan="10" class="fin-empty">Gere um pagamento para conferir.</td></tr></tbody></table></div></div>
+            <div class="pay-table" id="pay-flash"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CPF</th><th>Nome</th><th>Valor</th></tr></thead><tbody id="payFlashTbody"><tr><td colspan="3" class="fin-empty">Nenhum arquivo Flash gerado.</td></tr></tbody></table></div></div>
+            <div class="pay-table" id="pay-ifood"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CNPJ</th><th>Nome</th><th>CPF</th><th>Nascimento</th><th>Email</th><th>Celular</th><th>Centro de custo</th><th>Livre</th></tr></thead><tbody id="payIfoodTbody"><tr><td colspan="8" class="fin-empty">Nenhum arquivo iFood gerado.</td></tr></tbody></table></div></div>
+            <div class="pay-table" id="pay-alelo"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Número de Série</th><th>CPF</th><th>Valor da Carga</th><th>Observação</th><th>Nome</th></tr></thead><tbody id="payAleloTbody"><tr><td colspan="5" class="fin-empty">Nenhum arquivo Alelo gerado.</td></tr></tbody></table></div></div>
+            <div class="pay-table" id="pay-logs"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data/Linha</th><th>Colaborador</th><th>Status</th><th>Mensagem</th></tr></thead><tbody id="payLogsTbody"><tr><td colspan="4" class="fin-empty">Nenhuma pendência.</td></tr></tbody></table></div></div>
+
+            <div class="pay-footer">
+              <div><strong id="payFooterTotal">Total pronto para pagar: R$ 0,00</strong><span id="payFooterHint">Gere ou importe pagamentos para liberar o botão.</span></div>
+              <button class="btn-pay-final" id="btnPagarBeneficios" type="button" disabled>PAGAR</button>
+            </div>
           </section>
-
-          <div class="pay-summary">
-            <div class="pay-mini"><span>Tipo</span><strong id="payTipo">-</strong></div>
-            <div class="pay-mini"><span>Período</span><strong id="payPeriodo">-</strong></div>
-            <div class="pay-mini"><span>Registros OK</span><strong id="payRegistros">0</strong></div>
-            <div class="pay-mini"><span>Total OK</span><strong id="payTotal">R$ 0,00</strong></div>
-          </div>
-
-          <div class="pay-note">Somente linhas marcadas como <strong>OK</strong> entram no botão <strong>PAGAR</strong>. Linhas <strong>PENDENTES</strong> permanecem para o financeiro resolver depois. Linhas <strong>PAGO</strong> são bloqueadas para evitar duplicidade.</div>
-
-          <div class="pay-search-panel">
-            <div class="pay-search-field">
-              <label>Pesquisar colaborador para bloquear</label>
-              <input id="payColaboradorFiltro" class="pay-search-input" type="search" placeholder="Digite nome, CPF, supervisão ou destino">
-              <span id="payFiltroInfo" class="pay-search-count">Mostrando todos os colaboradores.</span>
-            </div>
-            <button class="btn btn-secondary" id="btnLimparPayFiltro" type="button">Limpar filtro</button>
-          </div>
-
-          <div class="pay-toolbar">
-            <div class="pay-subtabs">
-              <button class="pay-subtab active" data-pay-tab="conferencia" type="button">Conferência</button>
-              <button class="pay-subtab" data-pay-tab="flash" type="button">Flash</button>
-              <button class="pay-subtab" data-pay-tab="ifood" type="button">iFood</button>
-              <button class="pay-subtab" data-pay-tab="alelo" type="button">Alelo</button>
-              <button class="pay-subtab" data-pay-tab="logs" type="button">Pendências</button>
-            </div>
-            <div class="fin-actions-row">
-              <button class="btn btn-secondary fin-small" id="btnExportFlash" type="button">Exportar Flash XLSX</button>
-              <button class="btn btn-secondary fin-small" id="btnExportIfood" type="button">Exportar iFood XLSX</button>
-              <button class="btn btn-secondary fin-small" id="btnExportAlelo" type="button">Exportar Alelo CSV</button>
-              <button class="btn btn-secondary fin-small" id="btnExportConferencia" type="button">Exportar conferência XLSX</button>
-            </div>
-          </div>
-
-          <div class="pay-table active" id="pay-conferencia"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Status</th><th>Data</th><th>Colaborador</th><th>CPF</th><th>Destino</th><th>Tipo</th><th>Valor</th><th>Composição</th><th>Supervisão</th><th>Observação</th></tr></thead><tbody id="payConferenciaTbody"><tr><td colspan="10" class="fin-empty">Gere um pagamento para conferir.</td></tr></tbody></table></div></div>
-          <div class="pay-table" id="pay-flash"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CPF</th><th>Nome</th><th>Valor</th></tr></thead><tbody id="payFlashTbody"><tr><td colspan="3" class="fin-empty">Nenhum arquivo Flash gerado.</td></tr></tbody></table></div></div>
-          <div class="pay-table" id="pay-ifood"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CNPJ</th><th>Nome</th><th>CPF</th><th>Nascimento</th><th>Email</th><th>Celular</th><th>Centro de custo</th><th>Livre</th></tr></thead><tbody id="payIfoodTbody"><tr><td colspan="8" class="fin-empty">Nenhum arquivo iFood gerado.</td></tr></tbody></table></div></div>
-          <div class="pay-table" id="pay-alelo"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Número de Série</th><th>CPF</th><th>Valor da Carga</th><th>Observação</th><th>Nome</th></tr></thead><tbody id="payAleloTbody"><tr><td colspan="5" class="fin-empty">Nenhum arquivo Alelo gerado.</td></tr></tbody></table></div></div>
-          <div class="pay-table" id="pay-logs"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data/Linha</th><th>Colaborador</th><th>Status</th><th>Mensagem</th></tr></thead><tbody id="payLogsTbody"><tr><td colspan="4" class="fin-empty">Nenhuma pendência.</td></tr></tbody></table></div></div>
-
-          <div class="pay-footer">
-            <div><strong id="payFooterTotal">Total pronto para pagar: R$ 0,00</strong><span id="payFooterHint">Gere ou importe pagamentos para liberar o botão.</span></div>
-            <button class="btn-pay-final" id="btnPagarBeneficios" type="button" disabled>PAGAR</button>
-          </div>
         </div>
 
         <div class="fin-panel" id="tab-pagamentos">
@@ -2566,6 +2422,8 @@ export function renderContent(content, userContext) {
 
 
   state.pagamentos = { tipo: null, periodo: '', conferencia: [], flash: [], ifood: [], alelo: [], logs: [], modo: 'adiantamentos' };
+  state.adiantamentosRows = [];
+  state.adiantamentosLoaded = false;
 
   function paySetFeedback(id, text, type = '') {
     setFeedback(id, text, type);
@@ -2693,39 +2551,280 @@ export function renderContent(content, userContext) {
   }
 
 
-  async function gerarAdiantamentos() {
-    const extratoFile = document.getElementById('adiantFileExtrato').files?.[0];
-    if (!extratoFile) return paySetFeedback('fbAdiantamentos', 'Selecione ou arraste a planilha Solicitações Caixa Operacional.', 'err');
+  // ── Adiantamentos (sincronizado do GRM pelo agente sync-adiantamentos) ────
+  // Fonte: grm_adiantamentos_importacoes (espelho GRM) + financeiro_adiantamentos_decisoes
+  // (decisão local ✓/✗, não altera nada no GRM). Merge feito aqui no cliente por ofr_code.
+  async function carregarAdiantamentos() {
+    paySetFeedback('fbAdiantamentos', 'Carregando solicitações...');
     try {
-      paySetFeedback('fbAdiantamentos', 'Lendo planilha de adiantamentos...');
-      const extratoRows = await readWorkbookRows(extratoFile);
+      const [{ data: importadas, error: e1 }, { data: decisoes, error: e2 }] = await Promise.all([
+        supabase.from('grm_adiantamentos_importacoes')
+          .select('ofr_code,data_solicitacao,data_registro,colaborador,cpf,coordenacao,supervisao,conta,valor,saldo,embarque,leitura_mais_antiga,descricao')
+          .order('data_registro', { ascending: false })
+          .limit(500),
+        supabase.from('financeiro_adiantamentos_decisoes')
+          .select('ofr_code,status,motivo_recusa,decidido_por,decidido_em,execucao_id,pago_em')
+      ]);
+      if (e1) throw e1;
+      if (e2) throw e2;
 
-      if (isSolicitacaoDespesasFile(extratoRows)) {
-        paySetFeedback('fbAdiantamentos', 'Formato antigo detectado. Lendo base de colaboradores...');
-        const rhMap = await loadColaboradoresPagamento(state.currentDate);
-        let apuracao = buildSolicitacaoDespesasRows(extratoRows, rhMap);
-        apuracao = await syncPaidStatus(normalizePaymentRows(apuracao, document.getElementById('payDefaultStatus')?.value || 'OK'));
-        state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, modo: 'adiantamentos', ...apuracao };
-        renderPayTables();
-        setPayTab('conferencia');
-        paySetFeedback('fbAdiantamentos', `Gerado da Solicitação de Despesas: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências/ignorados.`, 'ok');
-        return;
-      }
-
-      const apuracao = makeAleloRows(extratoRows, []);
-      const conferencia = [
-        ...apuracao.alelo.map((r) => ({ data: r.data || '', funcionario: r.nome, cpf: String(r.cpf || '').replace(/^'/, ''), destino: 'Alelo', tipo: 'Adiantamento', valor: r.valor, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: r.serie ? 'OK' : 'Sem série' })),
-        ...apuracao.ifood.map((r) => ({ data: r.data || '', funcionario: r.nome, cpf: r.cpf, destino: 'iFood', tipo: 'Adiantamento', valor: r.livre, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: 'OK' })),
-        ...apuracao.flash.map((r) => ({ data: r.data || '', funcionario: r.nome, cpf: r.cpf, destino: 'Flash', tipo: 'Adiantamento', valor: r.valor, composicao: r.observacao || 'Adiantamento', supervisao: '', observacao: 'OK' }))
-      ];
-      let mergedApuracao = await syncPaidStatus(normalizePaymentRows({ conferencia, flash: apuracao.flash, ifood: apuracao.ifood, alelo: apuracao.alelo, logs: apuracao.logs }, document.getElementById('payDefaultStatus')?.value || 'OK'));
-      state.pagamentos = { tipo: 'Adiantamentos', periodo: extratoFile.name, modo: 'adiantamentos', ...mergedApuracao };
-      renderPayTables();
-      setPayTab('conferencia');
-      paySetFeedback('fbAdiantamentos', `Gerado: ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.alelo.length} Alelo, ${apuracao.logs.length} pendências/ignorados.`, 'ok');
+      const decisaoMap = new Map((decisoes || []).map((d) => [d.ofr_code, d]));
+      state.adiantamentosRows = (importadas || []).map((row) => ({ ...row, decisao: decisaoMap.get(row.ofr_code) || null }));
+      renderAdiantamentosTable();
+      paySetFeedback('fbAdiantamentos', `${state.adiantamentosRows.length} solicitação(ões) carregada(s).`, 'ok');
     } catch (err) {
       console.error(err);
-      paySetFeedback('fbAdiantamentos', err.message || 'Erro ao gerar adiantamentos.', 'err');
+      paySetFeedback('fbAdiantamentos', err.message || 'Erro ao carregar adiantamentos.', 'err');
+    }
+  }
+
+  function adiantAcaoHtml(row) {
+    const st = row.decisao?.status || 'pendente';
+    if (st === 'pago') return `<span class="pay-status-paid">PAGO</span>`;
+    const motivoAttr = row.decisao?.motivo_recusa ? ` title="${esc(row.decisao.motivo_recusa)}"` : '';
+    return `
+      <div class="pay-status-toggle" role="group" aria-label="Ação para ${esc(row.colaborador || 'colaborador')}">
+        <button class="pay-status-btn ${st === 'ok' ? 'active-ok' : 'is-inactive'}" type="button" data-adiant-ok="${row.ofr_code}">✓</button>
+        <button class="pay-status-btn ${st === 'recusado' ? 'active-pendente' : 'is-inactive'}"${motivoAttr} type="button" data-adiant-recusar="${row.ofr_code}">✗</button>
+      </div>`;
+  }
+
+  function setAdiantTab(tab) {
+    document.querySelectorAll('.adiant-subtab').forEach((btn) => btn.classList.toggle('active', btn.dataset.adiantTab === tab));
+    document.querySelectorAll('.adiant-table').forEach((panel) => panel.classList.remove('active'));
+    document.getElementById(`adiant-${tab}`)?.classList.add('active');
+  }
+
+  function renderAdiantamentosTable() {
+    const rows = state.adiantamentosRows || [];
+    const ativos = rows.filter((r) => r.decisao?.status !== 'pago');
+    const historico = rows.filter((r) => r.decisao?.status === 'pago')
+      .sort((a, b) => String(b.decisao?.pago_em || '').localeCompare(String(a.decisao?.pago_em || '')));
+
+    const tbody = document.getElementById('adiantTbody');
+    if (tbody) {
+      tbody.innerHTML = ativos.length ? ativos.map((row) => `
+        <tr>
+          <td>${brDate(row.data_solicitacao)}</td>
+          <td><strong>${esc(row.colaborador || '-')}</strong></td>
+          <td>${esc(row.coordenacao || '-')}</td>
+          <td>${esc(row.supervisao || '-')}</td>
+          <td>${money(row.valor)}</td>
+          <td>${money(row.saldo)}</td>
+          <td>${row.embarque ? brDate(row.embarque) : '-'}</td>
+          <td>${row.leitura_mais_antiga ? brDate(row.leitura_mais_antiga) : '-'}</td>
+          <td>${esc(row.descricao || '-')}</td>
+          <td>${adiantAcaoHtml(row)}</td>
+        </tr>
+      `).join('') : '<tr><td colspan="10" class="fin-empty">Nenhuma solicitação pendente.</td></tr>';
+
+      tbody.querySelectorAll('[data-adiant-ok]').forEach((btn) => btn.addEventListener('click', () => decidirAdiantamentoOk(Number(btn.dataset.adiantOk))));
+      tbody.querySelectorAll('[data-adiant-recusar]').forEach((btn) => btn.addEventListener('click', () => abrirModalRecusaAdiantamento(Number(btn.dataset.adiantRecusar))));
+    }
+
+    const historicoTbody = document.getElementById('adiantHistoricoTbody');
+    if (historicoTbody) {
+      historicoTbody.innerHTML = historico.length ? historico.map((row) => `
+        <tr>
+          <td>${brDate(row.data_solicitacao)}</td>
+          <td><strong>${esc(row.colaborador || '-')}</strong></td>
+          <td>${esc(row.coordenacao || '-')}</td>
+          <td>${esc(row.supervisao || '-')}</td>
+          <td>${money(row.valor)}</td>
+          <td>${esc(row.conta || '-')}</td>
+          <td>${esc(row.descricao || '-')}</td>
+          <td>${row.decisao?.pago_em ? new Date(row.decisao.pago_em).toLocaleString('pt-BR') : '-'}</td>
+        </tr>
+      `).join('') : '<tr><td colspan="8" class="fin-empty">Nenhum pagamento registrado ainda.</td></tr>';
+    }
+
+    const pendentes = ativos.filter((r) => (r.decisao?.status || 'pendente') === 'pendente').length;
+    const selecionados = ativos.filter((r) => r.decisao?.status === 'ok');
+    const recusados = ativos.filter((r) => r.decisao?.status === 'recusado').length;
+    const totalSelecionado = selecionados.reduce((sum, r) => sum + Number(r.valor || 0), 0);
+
+    if (document.getElementById('adiantPendentes')) document.getElementById('adiantPendentes').textContent = String(pendentes);
+    if (document.getElementById('adiantSelecionados')) document.getElementById('adiantSelecionados').textContent = String(selecionados.length);
+    if (document.getElementById('adiantTotalSelecionado')) document.getElementById('adiantTotalSelecionado').textContent = money(totalSelecionado);
+    if (document.getElementById('adiantRecusados')) document.getElementById('adiantRecusados').textContent = String(recusados);
+    if (document.getElementById('adiantFooterTotal')) document.getElementById('adiantFooterTotal').textContent = `Total pronto para pagar: ${money(totalSelecionado)}`;
+    if (document.getElementById('adiantFooterHint')) document.getElementById('adiantFooterHint').textContent = `${selecionados.length} selecionado(s) · ${pendentes} pendente(s) · ${recusados} recusado(s)`;
+    if (document.getElementById('btnPagarAdiantamentos')) document.getElementById('btnPagarAdiantamentos').disabled = selecionados.length === 0;
+  }
+
+  async function decidirAdiantamentoOk(ofrCode) {
+    const row = (state.adiantamentosRows || []).find((r) => r.ofr_code === ofrCode);
+    if (!row || row.decisao?.status === 'pago') return;
+    const novoStatus = row.decisao?.status === 'ok' ? 'pendente' : 'ok';
+    const payload = {
+      ofr_code: ofrCode,
+      status: novoStatus,
+      motivo_recusa: null,
+      decidido_por: userContext?.user?.name || userContext?.user?.email || null,
+      decidido_em: new Date().toISOString()
+    };
+    const { error } = await supabase.from('financeiro_adiantamentos_decisoes').upsert(payload, { onConflict: 'ofr_code' });
+    if (error) { paySetFeedback('fbAdiantamentos', error.message, 'err'); return; }
+    row.decisao = { ...row.decisao, ...payload };
+    renderAdiantamentosTable();
+  }
+
+  function abrirModalRecusaAdiantamento(ofrCode) {
+    const row = (state.adiantamentosRows || []).find((r) => r.ofr_code === ofrCode);
+    if (!row || row.decisao?.status === 'pago') return;
+    let modal = document.getElementById('adiantRecusaModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'adiantRecusaModal';
+      modal.className = 'fin-pay-modal';
+      document.body.appendChild(modal);
+    }
+    modal.innerHTML = `<div class="fin-pay-modal-card">
+      <div class="fin-head">
+        <div>
+          <h3>Recusar adiantamento</h3>
+          <p>Informe o motivo da recusa. Fica registrado no histórico.</p>
+        </div>
+        <button class="btn btn-secondary" id="adiantRecusaClose" type="button">Fechar</button>
+      </div>
+      <div class="pay-summary">
+        <div class="pay-mini"><span>Colaborador</span><strong>${esc(row.colaborador || '-')}</strong></div>
+        <div class="pay-mini"><span>Valor</span><strong>${money(row.valor)}</strong></div>
+      </div>
+      <div class="fin-field full mt-16">
+        <label>Motivo da recusa <span style="color:#f87171">*</span></label>
+        <textarea id="adiantRecusaMotivo" rows="4" placeholder="Descreva o motivo para recusar esta solicitação..." style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(148,163,184,.2);border-radius:10px;color:#e2e8f0;padding:10px 12px;font-size:14px;resize:vertical">${esc(row.decisao?.motivo_recusa || '')}</textarea>
+      </div>
+      <div class="fin-actions-row mt-16">
+        <button class="btn fin-btn-recusar" id="adiantRecusaConfirm" type="button">CONFIRMAR RECUSA</button>
+        <span id="adiantRecusaFeedback" class="fin-feedback"></span>
+      </div>
+    </div>`;
+    modal.classList.add('open');
+    modal.querySelector('#adiantRecusaClose').onclick = () => modal.classList.remove('open');
+    modal.querySelector('#adiantRecusaConfirm').onclick = () => confirmarRecusaAdiantamento(ofrCode, modal);
+  }
+
+  async function confirmarRecusaAdiantamento(ofrCode, modal) {
+    const motivoEl = modal.querySelector('#adiantRecusaMotivo');
+    const fb = modal.querySelector('#adiantRecusaFeedback');
+    const motivo = (motivoEl?.value || '').trim();
+    if (!motivo) {
+      if (fb) { fb.textContent = 'Informe o motivo da recusa.'; fb.style.color = '#f87171'; }
+      motivoEl?.focus();
+      return;
+    }
+    const btn = modal.querySelector('#adiantRecusaConfirm');
+    if (btn) { btn.disabled = true; btn.textContent = 'Recusando...'; }
+    try {
+      const payload = {
+        ofr_code: ofrCode,
+        status: 'recusado',
+        motivo_recusa: motivo,
+        decidido_por: userContext?.user?.name || userContext?.user?.email || null,
+        decidido_em: new Date().toISOString()
+      };
+      const { error } = await supabase.from('financeiro_adiantamentos_decisoes').upsert(payload, { onConflict: 'ofr_code' });
+      if (error) throw error;
+      const row = (state.adiantamentosRows || []).find((r) => r.ofr_code === ofrCode);
+      if (row) row.decisao = { ...row.decisao, ...payload };
+      modal.classList.remove('open');
+      renderAdiantamentosTable();
+    } catch (err) {
+      if (fb) { fb.textContent = `Erro: ${err.message}`; fb.style.color = '#f87171'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'CONFIRMAR RECUSA'; }
+    }
+  }
+
+  // PAGAR (Adiantamentos): por enquanto gera os arquivos de upload em conta bancária
+  // (mesmo modelo Flash/iFood/Alelo já usado em Diárias e Almoço) e registra a execução
+  // para conferência/dedup — não chama a Edge Function de pagamento automático ainda.
+  async function pagarAdiantamentos() {
+    const selecionados = (state.adiantamentosRows || []).filter((r) => r.decisao?.status === 'ok');
+    if (!selecionados.length) return paySetFeedback('fbAdiantamentos', 'Marque ✓ em pelo menos uma solicitação antes de pagar.', 'err');
+
+    const conferenciaRows = selecionados.map((row) => {
+      const contaNorm = normalize(row.conta);
+      const destino = contaNorm.includes('ifood') ? 'iFood' : contaNorm.includes('flash') ? 'Flash' : contaNorm.includes('alelo') ? 'Alelo' : 'Pendente';
+      const conf = {
+        data: row.data_solicitacao,
+        funcionario: row.colaborador,
+        cpf: onlyDigits(row.cpf),
+        destino,
+        tipo: 'Adiantamento',
+        valor: roundNumber(row.valor),
+        composicao: row.descricao || 'Adiantamento',
+        coordenacao: row.coordenacao,
+        supervisao: row.supervisao,
+        banco: row.conta,
+        observacao: 'OK'
+      };
+      return { ...conf, unique_hash: makePaymentHash(conf), _ofr_code: row.ofr_code };
+    });
+
+    const pagaveis = conferenciaRows.filter((row) => row.destino !== 'Pendente');
+    const semDestino = conferenciaRows.filter((row) => row.destino === 'Pendente');
+    if (!pagaveis.length) return paySetFeedback('fbAdiantamentos', 'Nenhuma linha selecionada tem Conta reconhecida (Flash/iFood/Alelo).', 'err');
+
+    const btn = document.getElementById('btnPagarAdiantamentos');
+    try {
+      if (btn) btn.disabled = true;
+      paySetFeedback('fbAdiantamentos', 'Conferindo duplicidades e gerando arquivos de pagamento...');
+
+      const paid = await fetchAlreadyPaidMap(pagaveis.map((r) => r.unique_hash));
+      const elegiveis = pagaveis.filter((r) => !paid.has(r.unique_hash));
+      const jaPagos = pagaveis.filter((r) => paid.has(r.unique_hash));
+
+      if (elegiveis.length) {
+        const outputs = buildPaymentOutputs(elegiveis.map((r) => ({ ...r, status_pagamento: 'OK' })));
+        const periodo = new Date().toISOString().slice(0, 10);
+        const total = elegiveis.reduce((sum, r) => sum + Number(r.valor || 0), 0);
+
+        const { data: execucao, error: execError } = await supabase.from('financeiro_pagamentos_execucoes').insert({
+          tipo: 'Adiantamentos',
+          periodo,
+          status: 'PAGO',
+          total_valor: roundNumber(total),
+          total_linhas: elegiveis.length,
+          responsavel: userContext?.user?.name || userContext?.user?.email || null
+        }).select('id').single();
+        if (execError) throw execError;
+
+        await registrarLinhasPagamento(elegiveis, execucao.id, 'PAGO');
+        await salvarResumoNotasFiscais(elegiveis, execucao.id);
+
+        const arquivos = [];
+        if (outputs.flash.length) { downloadWorkbook(`PGTO_FLASH_${compactDate(periodo)}.xlsx`, [{ name: 'PGTO_FLASH', ws: worksheetFromObjects(outputs.flash, flashCols) }]); arquivos.push(`Flash (${outputs.flash.length})`); }
+        if (outputs.ifood.length) { downloadWorkbook(`PGTO_IFOOD_${compactDate(periodo)}.xlsx`, [{ name: 'PGTO_IFOOD', ws: worksheetFromObjects(outputs.ifood, ifoodCols) }]); arquivos.push(`iFood (${outputs.ifood.length})`); }
+        if (outputs.alelo.length) { downloadCsv(`PGTO_ALELO_${compactDate(periodo)}.csv`, outputs.alelo, aleloCols); arquivos.push(`Alelo (${outputs.alelo.length})`); }
+        downloadWorkbook(`CONFERENCIA_ADIANTAMENTOS_${compactDate(periodo)}.xlsx`, [{ name: 'Conferencia', ws: worksheetFromObjects(elegiveis, confCols) }]);
+
+        const pagoEm = new Date().toISOString();
+        const responsavel = userContext?.user?.name || userContext?.user?.email || null;
+        const decisoesPagas = elegiveis.map((r) => ({ ofr_code: r._ofr_code, status: 'pago', execucao_id: execucao.id, pago_em: pagoEm, decidido_por: responsavel, decidido_em: pagoEm }));
+        const { error: decError } = await supabase.from('financeiro_adiantamentos_decisoes').upsert(decisoesPagas, { onConflict: 'ofr_code' });
+        if (decError) throw decError;
+        decisoesPagas.forEach((d) => {
+          const row = (state.adiantamentosRows || []).find((x) => x.ofr_code === d.ofr_code);
+          if (row) row.decisao = { ...row.decisao, ...d };
+        });
+
+        paySetFeedback('fbAdiantamentos', `Arquivo(s) gerado(s): ${arquivos.join(', ') || 'nenhum (sem CPF válido)'}${jaPagos.length ? ` · ${jaPagos.length} já estavam pagas` : ''}${semDestino.length ? ` · ${semDestino.length} sem conta reconhecida (não incluída)` : ''}.`, 'ok');
+      } else {
+        paySetFeedback('fbAdiantamentos', 'Todas as linhas selecionadas já constavam como PAGO. Nenhum arquivo novo foi gerado.', 'ok');
+      }
+
+      jaPagos.forEach((r) => {
+        const row = (state.adiantamentosRows || []).find((x) => x.ofr_code === r._ofr_code);
+        if (row && row.decisao?.status !== 'pago') row.decisao = { ...row.decisao, status: 'pago' };
+      });
+
+      renderAdiantamentosTable();
+      setAdiantTab('historico');
+    } catch (err) {
+      console.error(err);
+      paySetFeedback('fbAdiantamentos', err.message || 'Erro ao gerar pagamento.', 'err');
+      renderAdiantamentosTable();
     }
   }
 
@@ -2736,6 +2835,10 @@ export function renderContent(content, userContext) {
     document.querySelectorAll('.pay-mode-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.payMode === clean));
     document.querySelectorAll('.pay-mode-panel').forEach((panel) => panel.classList.remove('active'));
     document.getElementById(`pay-mode-${clean}`)?.classList.add('active');
+    if (clean === 'adiantamentos' && !state.adiantamentosLoaded) {
+      state.adiantamentosLoaded = true;
+      carregarAdiantamentos();
+    }
   }
 
   async function gerarPagamentoPeriodo() {
@@ -2902,57 +3005,10 @@ export function renderContent(content, userContext) {
   document.getElementById('detFiltroFavorecido')?.addEventListener('input', (e) => { state.detFilter.favorecido = e.target.value; renderDetalhes(); });
   document.getElementById('detFiltroDoc')?.addEventListener('input', (e) => { state.detFilter.doc = e.target.value; renderDetalhes(); });
 
-  function setupPagamentoDropzone(inputId) {
-    const input = document.getElementById(inputId);
-    const zone = document.querySelector(`[data-drop-for="${inputId}"]`);
-    const nameEl = document.getElementById(`${inputId}Name`);
-    if (!input || !zone || !nameEl) return;
-
-    const setFileLabel = () => {
-      const file = input.files && input.files[0];
-      nameEl.textContent = file ? file.name : 'Nenhum arquivo selecionado';
-      zone.classList.toggle('has-file', !!file);
-    };
-
-    input.addEventListener('change', setFileLabel);
-
-    ['dragenter', 'dragover'].forEach((evtName) => {
-      zone.addEventListener(evtName, (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        zone.classList.add('dragging');
-      });
-    });
-
-    ['dragleave', 'drop'].forEach((evtName) => {
-      zone.addEventListener(evtName, (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        zone.classList.remove('dragging');
-      });
-    });
-
-    zone.addEventListener('drop', (event) => {
-      const file = event.dataTransfer?.files?.[0];
-      if (!file) return;
-      const ok = /\.(xlsx|xls|csv)$/i.test(file.name);
-      if (!ok) {
-        paySetFeedback('fbAdiantamentos', 'Arquivo inválido. Envie XLSX, XLS ou CSV.', 'err');
-        return;
-      }
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      input.files = dt.files;
-      setFileLabel();
-      paySetFeedback('fbAdiantamentos', `${file.name} carregado.`, 'ok');
-    });
-
-    setFileLabel();
-  }
-
-  setupPagamentoDropzone('adiantFileExtrato');
   document.getElementById('btnGerarPagamentoPeriodo').addEventListener('click', gerarPagamentoPeriodo);
-  document.getElementById('btnGerarAdiantamentos').addEventListener('click', gerarAdiantamentos);
+  document.getElementById('btnAtualizarAdiantamentos')?.addEventListener('click', carregarAdiantamentos);
+  document.getElementById('btnPagarAdiantamentos')?.addEventListener('click', pagarAdiantamentos);
+  document.querySelectorAll('.adiant-subtab').forEach((btn) => btn.addEventListener('click', () => setAdiantTab(btn.dataset.adiantTab)));
   document.querySelectorAll('.pay-mode-btn').forEach((btn) => btn.addEventListener('click', () => setPayMode(btn.dataset.payMode)));
   document.getElementById('btnPagarBeneficios').addEventListener('click', pagarBeneficios);
   document.getElementById('payColaboradorFiltro')?.addEventListener('input', renderPayTables);
