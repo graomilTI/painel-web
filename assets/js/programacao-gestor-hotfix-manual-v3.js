@@ -271,8 +271,20 @@ async function mapRender({force=false}={}){
     drag(m,{tipo:'os',osId:it.os.id,numeroOs:it.os.numero_os,supervisao:it.os.supervisao});
     S.osLayer.addLayer(m);bounds.push([it.ponto.lat,it.ponto.lng]);
   });
-  ps.forEach((col,idx)=>{
-    const p=pos(col)||fallbackPos(col,items,idx);if(!p)return;
+  // Pré-calcula a posição de todos antes de desenhar, pra poder detectar quem
+  // caiu exatamente no mesmo ponto (mesmo endereço/coordenada) e afastar um
+  // pouco cada um em círculo -- sem isso os marcadores ficam 100% sobrepostos
+  // e não dá pra clicar/arrastar o(s) que ficam "atrás".
+  const posPorColab=ps.map((col,idx)=>({col,p:pos(col)||fallbackPos(col,items,idx)}));
+  const gruposPos=new Map();
+  posPorColab.forEach(e=>{if(!e.p)return;const chave=`${e.p.lat.toFixed(5)},${e.p.lng.toFixed(5)}`;const arr=gruposPos.get(chave)||[];arr.push(e);gruposPos.set(chave,arr)});
+  gruposPos.forEach(arr=>{
+    if(arr.length<2)return;
+    const base=arr[0].p,r=0.00035;
+    arr.forEach((e,i)=>{const ang=i*2*Math.PI/arr.length;e.p={lat:base.lat+Math.sin(ang)*r,lng:base.lng+Math.cos(ang)*r,fallback:base.fallback}});
+  });
+  posPorColab.forEach(({col,p})=>{
+    if(!p)return;
     const vinc=eq1(col.colaboradorId),on=!!vinc,mot=isMot(col),st=on?statusColab(col.colaboradorId):'pendente';
     const labelStatus=st==='motorista'?'com motorista':st==='os'?'vinculado à O.S. sem transporte':'pendente',geoStatus=p.fallback?' · sem coordenada cadastrada':'';
     const enderecoTt=col.endereco?`<br>📍 ${esc(col.endereco)}`:'';
