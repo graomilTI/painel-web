@@ -187,14 +187,6 @@ function isMissingColumnError(error) {
 
 
 
-function nextDateISO(value) {
-  const iso = String(value || '').slice(0, 10);
-  const dt = new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(dt.getTime())) return iso;
-  dt.setDate(dt.getDate() + 1);
-  return dt.toISOString().slice(0, 10);
-}
-
 function toNumber(value) {
   if (value === null || value === undefined || value === '') return 0;
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -338,30 +330,6 @@ function getAny(row, names = []) {
   return null;
 }
 
-function mapProducaoDiariaFileRows(rows, origem = 'arquivo_producao_diaria') {
-  return (rows || []).map((row) => ({
-    data: getAny(row, ['Data', 'Data Produção', 'Data Producao', 'Data Referência', 'Data Referencia']),
-    data_referencia: getAny(row, ['Data', 'Data Produção', 'Data Producao', 'Data Referência', 'Data Referencia']),
-    funcionario: getAny(row, ['Funcionário', 'Funcionario', 'Colaborador', 'Nome']),
-    tipo: getAny(row, ['Tipo']) || '',
-    coordenacao: getAny(row, ['Coordenação', 'Coordenacao']) || '',
-    supervisao: getAny(row, ['Supervisão', 'Supervisao']) || '',
-    cliente: getAny(row, ['Cliente']) || '',
-    os: getAny(row, ['O.S.', 'O.S', 'OS', 'Ordem de Serviço', 'Ordem de Servico']) || '',
-    cargas: getAny(row, ['Cargas']) || '',
-    toneladas: getAny(row, ['Tons', 'Toneladas']) || 0,
-    origem
-  })).map((row) => ({ ...row, data: parseDateLoose(row.data), data_referencia: parseDateLoose(row.data_referencia) }))
-    .filter((row) => row.funcionario && (row.data || row.data_referencia));
-}
-
-function filterProducaoPeriodo(rows, inicio, fim) {
-  return (rows || []).filter((row) => {
-    const dataRef = parseDateLoose(row.data || row.data_referencia);
-    return dataRef && dataRef >= inicio && dataRef <= fim;
-  });
-}
-
 function buildLatestColaboradorMap(rows) {
   const map = new Map();
   (rows || []).forEach((row) => {
@@ -386,7 +354,7 @@ function buildLatestColaboradorMap(rows) {
 }
 
 async function loadColaboradoresPagamento(dataReferencia = null) {
-  const ref = dataReferencia || document.getElementById('alimFim')?.value || state.currentDate || new Date().toISOString().slice(0, 10);
+  const ref = dataReferencia || state.currentDate || new Date().toISOString().slice(0, 10);
 
   // Resolve a data de importação mais recente ≤ ref (evita baixar todas as datas do snapshot)
   let latestDate = null;
@@ -428,133 +396,35 @@ async function loadColaboradoresPagamento(dataReferencia = null) {
   return buildLatestColaboradorMap(rows || []);
 }
 
-function mapProducaoSnapshotRows(rows, origem) {
-  return (rows || []).map((row) => ({
-    data: row.data || row.data_referencia,
-    data_referencia: row.data_referencia || row.data,
-    funcionario: row.funcionario,
-    tipo: row.tipo || row.tipoRh || '',
-    coordenacao: row.coordenacao,
-    supervisao: row.supervisao,
-    cliente: row.cliente || row.cliente_final || '',
-    os: row.os || '',
-    toneladas: row.toneladas ?? row.tons ?? 0,
-    cargas: row.cargas,
-    origem
-  })).filter((row) => row.funcionario && (row.data || row.data_referencia));
-}
-
-async function loadProducaoPagamento(inicio, fim) {
-  // Produção Diária já importada pelo menu Importar Relatórios.
-  // Não usa Resultado Diário e não exige upload dentro do Financeiro.
-  const fimExclusivo = nextDateISO(fim);
-  const pageSize = 1000;
-  const allRows = [];
-  const diagnostics = [];
-
-  async function fetchByColumn(columnName, origem) {
-    const collected = [];
-    let from = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from('producao_snapshot')
-        .select('data,data_referencia,funcionario,tipo,coordenacao,supervisao,cliente,os,tons,cargas')
-        .gte(columnName, inicio)
-        .lt(columnName, fimExclusivo)
-        .order(columnName, { ascending: true })
-        .range(from, from + pageSize - 1);
-      if (error) throw error;
-      const rows = data || [];
-      collected.push(...rows);
-      if (rows.length < pageSize) break;
-      from += pageSize;
-    }
-    diagnostics.push(`${origem}: ${collected.length} registros brutos`);
-    return mapProducaoSnapshotRows(collected, origem);
-  }
-
-  const [byData, byReferencia] = await Promise.all([
-    fetchByColumn('data', 'producao_snapshot.data'),
-    fetchByColumn('data_referencia', 'producao_snapshot.data_referencia'),
-  ]);
-  allRows.push(...byData, ...byReferencia);
-
-  const seen = new Set();
-  const unique = [];
-  for (const row of allRows) {
-    const dataRef = parseDateLoose(row.data || row.data_referencia);
-    const key = `${dataRef}|${normalizeName(row.funcionario)}|${row.os || ''}|${row.cliente || ''}`;
-    if (!dataRef || seen.has(key)) continue;
-    seen.add(key);
-    unique.push({ ...row, data: dataRef, data_referencia: row.data_referencia || dataRef });
-  }
-
-  if (!unique.length) {
-    let ultimaData = '-';
-    try {
-      const { data } = await supabase
-        .from('producao_snapshot')
-        .select('data,data_referencia')
-        .order('data_referencia', { ascending: false, nullsFirst: false })
-        .limit(1);
-      const row = (data || [])[0];
-      ultimaData = row ? `data: ${brDate(row.data)} | data_referencia: ${brDate(row.data_referencia)}` : '-';
-    } catch (_) {}
-    throw new Error(`Nenhuma Produção Diária importada localizada no período selecionado. Diagnóstico: ${diagnostics.join(' | ')}. Última referência disponível: ${ultimaData}.`);
-  }
-
-  return unique;
-}
-
-function apurarProducaoPagamentoRows(producaoRows, rhMap, modo = 'alimentacao') {
+// Fonte: financeiro_alimentacao_colaboradores, gravada pelo agente sync-login-alimentacao
+// (login no GRM entre 10:30-12:00 a até 1km de um Local de Embarque). Cruza com a base RH
+// só para achar CPF/conta bancária (Flash/iFood) — mesma lógica de destino já usada em
+// Adiantamentos/antiga apuração de produção.
+function apurarAlmocoRows(rows, rhMap) {
   const flashMap = new Map();
   const ifoodMap = new Map();
   const conferencia = [];
   const logs = [];
-  const vistosDia = new Set();
-  const isModoDiarias = modo === 'diarias';
 
-  (producaoRows || []).forEach((row) => {
-    const funcionario = String(row.funcionario || '').trim();
-    const dataRef = parseDateLoose(row.data);
+  (rows || []).forEach((row) => {
+    const funcionario = String(row.colaborador || '').trim();
+    const dataRef = row.data_ref;
     if (!funcionario || !dataRef) return;
 
-    const chaveDia = `${dataRef}|${normalizeName(funcionario)}`;
-    if (vistosDia.has(chaveDia)) return;
-    vistosDia.add(chaveDia);
-
+    const composicaoBase = [row.local_nome, row.hora_identificada, row.distancia_m != null ? `${row.distancia_m}m` : null].filter(Boolean).join(' · ');
     const rh = rhMap.get(normalizeName(funcionario));
     if (!rh) {
       logs.push({ data: dataRef, funcionario, status: 'ERRO', mensagem: 'Colaborador não localizado na base RH.' });
-      conferencia.push({ data: dataRef, funcionario, cpf: '', destino: 'Pendente', tipo: row.tipo || '', valor: 0, observacao: 'Colaborador não localizado na base RH.' });
+      conferencia.push({ data: dataRef, funcionario, cpf: '', destino: 'Pendente', tipo: 'Almoço', valor: 0, composicao: composicaoBase, coordenacao: row.coordenacao || '', supervisao: row.supervisao || '', observacao: 'Colaborador não localizado na base RH.', _almoco_id: row.id, status_pagamento: row.status && row.status !== 'PENDENTE' ? String(row.status).toUpperCase() : undefined });
       return;
     }
     if (!rh.cpf || rh.cpf.length !== 11) {
-      logs.push({ data: dataRef, funcionario, status: 'ERRO', mensagem: 'CPF ausente ou inválido na base RH.' });
-      conferencia.push({ data: dataRef, funcionario: rh.nome || funcionario, cpf: rh.cpf || '', destino: 'Pendente', tipo: row.tipo || rh.tipoRh || '', valor: 0, observacao: 'CPF ausente ou inválido.' });
+      logs.push({ data: dataRef, funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: 'CPF ausente ou inválido na base RH.' });
+      conferencia.push({ data: dataRef, funcionario: rh.nome || funcionario, cpf: rh.cpf || '', destino: 'Pendente', tipo: 'Almoço', valor: 0, composicao: composicaoBase, coordenacao: rh.coordenacao || row.coordenacao || '', supervisao: rh.supervisao || row.supervisao || '', observacao: 'CPF ausente ou inválido.', _almoco_id: row.id, status_pagamento: row.status && row.status !== 'PENDENTE' ? String(row.status).toUpperCase() : undefined });
       return;
     }
 
-    const tipoProd = String(rh.tipoRh || row.tipo || '').trim();
-    const isDiarista = normalize(tipoProd).includes('diarista');
-
-    let valor = 0;
-    let composicao = '';
-
-    if (isModoDiarias) {
-      if (!isDiarista) return;
-      if (!rh.salario || rh.salario <= 0) {
-        logs.push({ data: dataRef, funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: 'Contrato Diarista, mas salário/diária não encontrado no RH.' });
-        conferencia.push({ data: dataRef, funcionario: rh.nome || funcionario, cpf: rh.cpf, destino: 'Pendente', tipo: tipoProd, valor: 0, observacao: 'Diarista sem valor de diária no RH.' });
-        return;
-      }
-      valor = rh.salario;
-      composicao = `Diária ${money(rh.salario)}`;
-    } else {
-      valor = PAGAMENTO_VALOR_ALMOCO;
-      composicao = `Almoço ${money(PAGAMENTO_VALOR_ALMOCO)}`;
-    }
-
+    const valor = PAGAMENTO_VALOR_ALMOCO;
     const bancoNorm = normalize(rh.banco).replace(/\s+/g, '');
     let destino = 'Pendente';
     if (bancoNorm.includes('graomilflash') || bancoNorm.includes('flash')) destino = 'Flash';
@@ -565,13 +435,15 @@ function apurarProducaoPagamentoRows(producaoRows, rhMap, modo = 'alimentacao') 
       funcionario: rh.nome || funcionario,
       cpf: rh.cpf,
       destino,
-      tipo: tipoProd,
+      tipo: 'Almoço',
       valor: roundNumber(valor),
-      composicao,
+      composicao: composicaoBase || `Almoço ${money(valor)}`,
       coordenacao: rh.coordenacao || row.coordenacao || '',
       supervisao: rh.supervisao || row.supervisao || '',
       banco: rh.banco || '',
-      observacao: destino === 'Pendente' ? `C. Banc. Despesas sem destino reconhecido: ${rh.banco || '(vazio)'}` : 'OK'
+      observacao: destino === 'Pendente' ? `C. Banc. Despesas sem destino reconhecido: ${rh.banco || '(vazio)'}` : 'OK',
+      _almoco_id: row.id,
+      status_pagamento: row.status && row.status !== 'PENDENTE' ? String(row.status).toUpperCase() : undefined
     };
     conferencia.push(confRow);
 
@@ -605,14 +477,6 @@ function apurarProducaoPagamentoRows(producaoRows, rhMap, modo = 'alimentacao') 
     ifood: Array.from(ifoodMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
     logs
   };
-}
-
-function apurarAlimentacaoRows(producaoRows, rhMap) {
-  return apurarProducaoPagamentoRows(producaoRows, rhMap, 'alimentacao');
-}
-
-function apurarDiariasRows(producaoRows, rhMap) {
-  return apurarProducaoPagamentoRows(producaoRows, rhMap, 'diarias');
 }
 
 function roundNumber(value) {
@@ -1195,7 +1059,8 @@ export function renderContent(content, userContext) {
 
           <div class="pay-mode-switch">
             <button class="pay-mode-btn active" data-pay-mode="adiantamentos" type="button">ADIANTAMENTOS</button>
-            <button class="pay-mode-btn" data-pay-mode="pagamentos" type="button">DIÁRIAS E ALMOÇO</button>
+            <button class="pay-mode-btn" data-pay-mode="almoco" type="button">ALMOÇO</button>
+            <button class="pay-mode-btn" data-pay-mode="diarias" type="button">DIÁRIAS</button>
           </div>
 
           <section class="pay-card pay-mode-panel active" id="pay-mode-adiantamentos">
@@ -1243,15 +1108,13 @@ export function renderContent(content, userContext) {
             </div>
           </section>
 
-          <section class="pay-card pay-mode-panel" id="pay-mode-pagamentos">
-            <h4>DIÁRIAS E ALMOÇO</h4>
-            <p>Consulte a Produção Diária importada, gere alimentação ou diárias e marque cada linha como OK ou PENDENTE antes de pagar.</p>
+          <section class="pay-card pay-mode-panel" id="pay-mode-almoco">
+            <h4>ALMOÇO</h4>
+            <p>Colaboradores identificados automaticamente pelo relatório de login do GRM: login entre 10:30 e 12:00, a até 1km de um Local de Embarque (agente sync-login-alimentacao, roda a cada hora). Marque cada linha como OK ou PENDENTE antes de pagar.</p>
             <div class="pay-filter-grid">
-              <div class="fin-field"><label>Data inicial</label><input id="alimInicio" type="date" value="${esc(state.filters.inicio)}"></div>
-              <div class="fin-field"><label>Data final</label><input id="alimFim" type="date" value="${esc(state.currentDate)}"></div>
-              <div class="fin-field"><label>Tipo</label><select id="payTipoGeracao"><option value="alimentacao" selected>Alimentação</option><option value="diarias">Diárias</option></select></div>
+              <div class="fin-field"><label>Data</label><input id="almocoData" type="date" value="${esc(state.currentDate)}"></div>
               <div class="fin-field"><label>Status padrão</label><select id="payDefaultStatus"><option value="OK" selected>OK</option><option value="PENDENTE">PENDENTE</option></select></div>
-              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarPagamentoPeriodo" type="button">Consultar pagamentos</button></div>
+              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAlmoco" type="button">Consultar</button></div>
               <div class="fin-field full"><span id="fbAlimentacao" class="fin-feedback"></span></div>
             </div>
 
@@ -1299,6 +1162,11 @@ export function renderContent(content, userContext) {
               <div><strong id="payFooterTotal">Total pronto para pagar: R$ 0,00</strong><span id="payFooterHint">Gere ou importe pagamentos para liberar o botão.</span></div>
               <button class="btn-pay-final" id="btnPagarBeneficios" type="button" disabled>PAGAR</button>
             </div>
+          </section>
+
+          <section class="pay-card pay-mode-panel" id="pay-mode-diarias">
+            <h4>DIÁRIAS</h4>
+            <div class="fin-empty" style="padding:60px 20px;font-size:16px">🚧 Em Desenvolvimento</div>
           </section>
         </div>
 
@@ -2528,40 +2396,33 @@ export function renderContent(content, userContext) {
     updatePaySummary();
   }
 
-  async function gerarProducaoPagamento(modo) {
-    const inicio = document.getElementById('alimInicio').value;
-    const fim = document.getElementById('alimFim').value;
-    const isDiarias = modo === 'diarias';
-    const label = isDiarias ? 'Diárias' : 'Alimentação';
-    if (!inicio || !fim) return paySetFeedback('fbAlimentacao', 'Informe data inicial e final.', 'err');
-    if (inicio > fim) return paySetFeedback('fbAlimentacao', 'A data inicial não pode ser maior que a final.', 'err');
+  async function carregarAlmoco() {
+    const data = document.getElementById('almocoData')?.value;
+    if (!data) return paySetFeedback('fbAlimentacao', 'Informe a data.', 'err');
     try {
-      paySetFeedback('fbAlimentacao', `Consultando Produção Diária importada e colaboradores para ${label.toLowerCase()}...`);
-      const [rhMap, producao] = await Promise.all([loadColaboradoresPagamento(fim), loadProducaoPagamento(inicio, fim)]);
-      let apuracao = isDiarias ? apurarDiariasRows(producao, rhMap) : apurarAlimentacaoRows(producao, rhMap);
+      paySetFeedback('fbAlimentacao', 'Consultando colaboradores elegíveis (login x embarque) e base de colaboradores...');
+      const [rhMap, almoco] = await Promise.all([
+        loadColaboradoresPagamento(data),
+        supabase.from('financeiro_alimentacao_colaboradores')
+          .select('id,data_ref,colaborador,cpf,coordenacao,supervisao,hora_identificada,local_nome,distancia_m,status')
+          .eq('data_ref', data)
+          .eq('ativo', true)
+      ]);
+      if (almoco.error) throw almoco.error;
+
+      let apuracao = apurarAlmocoRows(almoco.data || [], rhMap);
       apuracao = await syncPaidStatus(normalizePaymentRows(apuracao, document.getElementById('payDefaultStatus')?.value || 'OK'));
-      if (!apuracao.conferencia.length && apuracao.logs.length) {
-        paySetFeedback('fbAlimentacao', `Produção localizada, mas sem colaboradores válidos. Verifique Pendências: ${apuracao.logs.length}.`, 'err');
+      if (!apuracao.conferencia.length) {
+        paySetFeedback('fbAlimentacao', 'Nenhum colaborador elegível para almoço nessa data (login entre 10:30-12:00 a até 1km de um embarque).', 'err');
       }
-      if (!apuracao.conferencia.length && !apuracao.logs.length) {
-        paySetFeedback('fbAlimentacao', isDiarias ? 'Nenhum colaborador com contrato Diarista localizado no período.' : 'Nenhuma alimentação gerada no período.', 'err');
-      }
-      state.pagamentos = { tipo: label, periodo: dateRangeLabel(inicio, fim), modo: 'pagamentos', ...apuracao };
+      state.pagamentos = { tipo: 'Almoço', periodo: brDate(data), modo: 'almoco', ...apuracao };
       renderPayTables();
       setPayTab('conferencia');
-      paySetFeedback('fbAlimentacao', `Gerado da Produção Diária importada: ${apuracao.conferencia.length} conferências, ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências.`, 'ok');
+      paySetFeedback('fbAlimentacao', `Gerado: ${apuracao.conferencia.length} colaborador(es), ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências.`, 'ok');
     } catch (err) {
       console.error(err);
-      paySetFeedback('fbAlimentacao', err.message || `Erro ao gerar ${label.toLowerCase()}.`, 'err');
+      paySetFeedback('fbAlimentacao', err.message || 'Erro ao consultar almoço.', 'err');
     }
-  }
-
-  async function gerarAlimentacao() {
-    return gerarProducaoPagamento('alimentacao');
-  }
-
-  async function gerarDiarias() {
-    return gerarProducaoPagamento('diarias');
   }
 
 
@@ -2926,7 +2787,7 @@ export function renderContent(content, userContext) {
 
 
   function setPayMode(mode) {
-    const clean = mode === 'pagamentos' ? 'pagamentos' : 'adiantamentos';
+    const clean = ['almoco', 'diarias'].includes(mode) ? mode : 'adiantamentos';
     state.pagamentos.modo = clean;
     document.querySelectorAll('.pay-mode-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.payMode === clean));
     document.querySelectorAll('.pay-mode-panel').forEach((panel) => panel.classList.remove('active'));
@@ -2935,11 +2796,6 @@ export function renderContent(content, userContext) {
       state.adiantamentosLoaded = true;
       carregarAdiantamentos();
     }
-  }
-
-  async function gerarPagamentoPeriodo() {
-    const modo = document.getElementById('payTipoGeracao')?.value || 'alimentacao';
-    return gerarProducaoPagamento(modo);
   }
 
   async function salvarResumoNotasFiscais(rows, execucaoId = null) {
@@ -3021,6 +2877,11 @@ export function renderContent(content, userContext) {
       await salvarResumoNotasFiscais(elegiveis, execucao.id);
       await supabase.from('financeiro_pagamentos_execucoes').update({ status: 'PAGO', api_retorno: apiData || null }).eq('id', execucao.id);
 
+      const almocoIds = elegiveis.map((row) => row._almoco_id).filter(Boolean);
+      if (almocoIds.length) {
+        await supabase.from('financeiro_alimentacao_colaboradores').update({ status: 'PAGO', processado_em: new Date().toISOString() }).in('id', almocoIds);
+      }
+
       const paidHashes = new Set(elegiveis.map((row) => row.unique_hash || makePaymentHash(row)));
       state.pagamentos.conferencia = state.pagamentos.conferencia.map((row) => paidHashes.has(row.unique_hash || makePaymentHash(row)) ? { ...row, status_pagamento: 'PAGO', observacao: 'PAGO - bloqueado para evitar duplicidade' } : row);
       renderPayTables();
@@ -3101,7 +2962,7 @@ export function renderContent(content, userContext) {
   document.getElementById('detFiltroFavorecido')?.addEventListener('input', (e) => { state.detFilter.favorecido = e.target.value; renderDetalhes(); });
   document.getElementById('detFiltroDoc')?.addEventListener('input', (e) => { state.detFilter.doc = e.target.value; renderDetalhes(); });
 
-  document.getElementById('btnGerarPagamentoPeriodo').addEventListener('click', gerarPagamentoPeriodo);
+  document.getElementById('btnGerarAlmoco')?.addEventListener('click', carregarAlmoco);
   document.getElementById('btnAtualizarAdiantamentos')?.addEventListener('click', carregarAdiantamentos);
   document.getElementById('btnPagarAdiantamentos')?.addEventListener('click', pagarAdiantamentos);
   document.querySelectorAll('.adiant-subtab').forEach((btn) => btn.addEventListener('click', () => setAdiantTab(btn.dataset.adiantTab)));
@@ -3121,8 +2982,13 @@ export function renderContent(content, userContext) {
     const value = String(statusBtn.dataset.payStatusValue || '').toUpperCase();
     if (!Number.isInteger(idx) || !state.pagamentos.conferencia?.[idx]) return;
     if (!['OK', 'PENDENTE'].includes(value)) return;
-    state.pagamentos.conferencia[idx].status_pagamento = value;
+    const row = state.pagamentos.conferencia[idx];
+    row.status_pagamento = value;
     renderPayTables();
+    if (row._almoco_id) {
+      supabase.from('financeiro_alimentacao_colaboradores').update({ status: value, updated_at: new Date().toISOString() }).eq('id', row._almoco_id)
+        .then(({ error }) => { if (error) console.warn('[financeiro] falha ao persistir status do almoço', error); });
+    }
   });
   document.querySelectorAll('.pay-subtab').forEach((btn) => btn.addEventListener('click', () => setPayTab(btn.dataset.payTab)));
   document.getElementById('btnExportFlash').addEventListener('click', () => exportPagamento('flash'));
