@@ -396,9 +396,12 @@ async function loadColaboradoresPagamento(dataReferencia = null) {
   return buildLatestColaboradorMap(rows || []);
 }
 
+const TIPO_BENEFICIO_LABEL = { CAFE: 'Café', ALMOCO: 'Almoço', JANTA: 'Janta' };
+
 // Fonte: financeiro_alimentacao_colaboradores, gravada pelo agente sync-login-alimentacao
-// (login no GRM entre 10:30-12:00 a até 1km de um Local de Embarque). Cruza com a base RH
-// só para achar CPF/conta bancária (Flash/iFood) — mesma lógica de destino já usada em
+// (login no GRM a até 1km de um Local de Embarque, classificado por turno: Café 06:00-07:30,
+// Almoço 11:00-12:30, Janta 19:00-20:30 — coluna tipo_beneficio). Cruza com a base RH só
+// para achar CPF/conta bancária (Flash/iFood) — mesma lógica de destino já usada em
 // Adiantamentos/antiga apuração de produção.
 function apurarAlmocoRows(rows, rhMap) {
   const flashMap = new Map();
@@ -411,16 +414,17 @@ function apurarAlmocoRows(rows, rhMap) {
     const dataRef = row.data_ref;
     if (!funcionario || !dataRef) return;
 
+    const tipoLabel = TIPO_BENEFICIO_LABEL[row.tipo_beneficio] || 'Refeição';
     const composicaoBase = [row.local_nome, row.hora_identificada, row.distancia_m != null ? `${row.distancia_m}m` : null].filter(Boolean).join(' · ');
     const rh = rhMap.get(normalizeName(funcionario));
     if (!rh) {
       logs.push({ data: dataRef, funcionario, status: 'ERRO', mensagem: 'Colaborador não localizado na base RH.' });
-      conferencia.push({ data: dataRef, funcionario, cpf: '', destino: 'Pendente', tipo: 'Almoço', valor: 0, composicao: composicaoBase, coordenacao: row.coordenacao || '', supervisao: row.supervisao || '', observacao: 'Colaborador não localizado na base RH.', _almoco_id: row.id, status_pagamento: row.status && row.status !== 'PENDENTE' ? String(row.status).toUpperCase() : undefined });
+      conferencia.push({ data: dataRef, funcionario, cpf: '', destino: 'Pendente', tipo: tipoLabel, valor: 0, composicao: composicaoBase, coordenacao: row.coordenacao || '', supervisao: row.supervisao || '', observacao: 'Colaborador não localizado na base RH.', _almoco_id: row.id, status_pagamento: row.status && row.status !== 'PENDENTE' ? String(row.status).toUpperCase() : undefined });
       return;
     }
     if (!rh.cpf || rh.cpf.length !== 11) {
       logs.push({ data: dataRef, funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: 'CPF ausente ou inválido na base RH.' });
-      conferencia.push({ data: dataRef, funcionario: rh.nome || funcionario, cpf: rh.cpf || '', destino: 'Pendente', tipo: 'Almoço', valor: 0, composicao: composicaoBase, coordenacao: rh.coordenacao || row.coordenacao || '', supervisao: rh.supervisao || row.supervisao || '', observacao: 'CPF ausente ou inválido.', _almoco_id: row.id, status_pagamento: row.status && row.status !== 'PENDENTE' ? String(row.status).toUpperCase() : undefined });
+      conferencia.push({ data: dataRef, funcionario: rh.nome || funcionario, cpf: rh.cpf || '', destino: 'Pendente', tipo: tipoLabel, valor: 0, composicao: composicaoBase, coordenacao: rh.coordenacao || row.coordenacao || '', supervisao: rh.supervisao || row.supervisao || '', observacao: 'CPF ausente ou inválido.', _almoco_id: row.id, status_pagamento: row.status && row.status !== 'PENDENTE' ? String(row.status).toUpperCase() : undefined });
       return;
     }
 
@@ -435,9 +439,9 @@ function apurarAlmocoRows(rows, rhMap) {
       funcionario: rh.nome || funcionario,
       cpf: rh.cpf,
       destino,
-      tipo: 'Almoço',
+      tipo: tipoLabel,
       valor: roundNumber(valor),
-      composicao: composicaoBase || `Almoço ${money(valor)}`,
+      composicao: composicaoBase || `${tipoLabel} ${money(valor)}`,
       coordenacao: rh.coordenacao || row.coordenacao || '',
       supervisao: rh.supervisao || row.supervisao || '',
       banco: rh.banco || '',
@@ -1059,7 +1063,7 @@ export function renderContent(content, userContext) {
 
           <div class="pay-mode-switch">
             <button class="pay-mode-btn active" data-pay-mode="adiantamentos" type="button">ADIANTAMENTOS</button>
-            <button class="pay-mode-btn" data-pay-mode="almoco" type="button">ALMOÇO</button>
+            <button class="pay-mode-btn" data-pay-mode="almoco" type="button">REFEIÇÕES</button>
             <button class="pay-mode-btn" data-pay-mode="diarias" type="button">DIÁRIAS</button>
           </div>
 
@@ -1109,8 +1113,8 @@ export function renderContent(content, userContext) {
           </section>
 
           <section class="pay-card pay-mode-panel" id="pay-mode-almoco">
-            <h4>ALMOÇO</h4>
-            <p>Colaboradores identificados automaticamente pelo relatório de login do GRM: login entre 10:30 e 12:00, a até 1km de um Local de Embarque (agente sync-login-alimentacao, roda a cada hora). Marque cada linha como OK ou PENDENTE antes de pagar.</p>
+            <h4>REFEIÇÕES</h4>
+            <p>Colaboradores identificados automaticamente pelo relatório de login do GRM, a até 1km de um Local de Embarque, classificados pela coluna <strong>Tipo</strong> conforme o horário do login: <strong>Café</strong> 06:00-07:30, <strong>Almoço</strong> 11:00-12:30, <strong>Janta</strong> 19:00-20:30 (agente sync-login-alimentacao). Marque cada linha como OK ou PENDENTE antes de pagar.</p>
             <div class="pay-filter-grid">
               <div class="fin-field"><label>Data</label><input id="almocoData" type="date" value="${esc(state.currentDate)}"></div>
               <div class="fin-field"><label>Status padrão</label><select id="payDefaultStatus"><option value="OK" selected>OK</option><option value="PENDENTE">PENDENTE</option></select></div>
@@ -1158,7 +1162,7 @@ export function renderContent(content, userContext) {
             <div class="pay-table" id="pay-ifood"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CNPJ</th><th>Nome</th><th>CPF</th><th>Nascimento</th><th>Email</th><th>Celular</th><th>Centro de custo</th><th>Livre</th></tr></thead><tbody id="payIfoodTbody"><tr><td colspan="8" class="fin-empty">Nenhum arquivo iFood gerado.</td></tr></tbody></table></div></div>
             <div class="pay-table" id="pay-alelo"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Número de Série</th><th>CPF</th><th>Valor da Carga</th><th>Observação</th><th>Nome</th></tr></thead><tbody id="payAleloTbody"><tr><td colspan="5" class="fin-empty">Nenhum arquivo Alelo gerado.</td></tr></tbody></table></div></div>
             <div class="pay-table" id="pay-logs"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data/Linha</th><th>Colaborador</th><th>Status</th><th>Mensagem</th></tr></thead><tbody id="payLogsTbody"><tr><td colspan="4" class="fin-empty">Nenhuma pendência.</td></tr></tbody></table></div></div>
-            <div class="pay-table" id="pay-historico"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Coordenação</th><th>Supervisão</th><th>Local</th><th>Pago em</th></tr></thead><tbody id="payHistoricoTbody"><tr><td colspan="6" class="fin-empty">Carregando...</td></tr></tbody></table></div></div>
+            <div class="pay-table" id="pay-historico"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Tipo</th><th>Colaborador</th><th>Coordenação</th><th>Supervisão</th><th>Local</th><th>Pago em</th></tr></thead><tbody id="payHistoricoTbody"><tr><td colspan="7" class="fin-empty">Carregando...</td></tr></tbody></table></div></div>
 
             <div class="pay-footer">
               <div><strong id="payFooterTotal">Total pronto para pagar: R$ 0,00</strong><span id="payFooterHint">Gere ou importe pagamentos para liberar o botão.</span></div>
@@ -2406,7 +2410,7 @@ export function renderContent(content, userContext) {
       const [rhMap, almoco] = await Promise.all([
         loadColaboradoresPagamento(data),
         supabase.from('financeiro_alimentacao_colaboradores')
-          .select('id,data_ref,colaborador,cpf,coordenacao,supervisao,hora_identificada,local_nome,distancia_m,status')
+          .select('id,data_ref,colaborador,cpf,coordenacao,supervisao,hora_identificada,local_nome,distancia_m,status,tipo_beneficio')
           .eq('data_ref', data)
           .eq('ativo', true)
           .neq('status', 'PAGO')
@@ -2433,11 +2437,11 @@ export function renderContent(content, userContext) {
   // quem já foi pago no mesmo dia.
   async function carregarHistoricoAlmoco() {
     const tbody = document.getElementById('payHistoricoTbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="fin-empty">Carregando...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="fin-empty">Carregando...</td></tr>';
     try {
       const { data, error } = await supabase
         .from('financeiro_alimentacao_colaboradores')
-        .select('data_ref,colaborador,coordenacao,supervisao,local_nome,processado_em')
+        .select('data_ref,colaborador,coordenacao,supervisao,local_nome,processado_em,tipo_beneficio')
         .eq('status', 'PAGO')
         .order('processado_em', { ascending: false })
         .limit(500);
@@ -2446,16 +2450,17 @@ export function renderContent(content, userContext) {
       tbody.innerHTML = (data || []).length ? data.map((row) => `
         <tr>
           <td>${brDate(row.data_ref)}</td>
+          <td>${esc(TIPO_BENEFICIO_LABEL[row.tipo_beneficio] || 'Refeição')}</td>
           <td><strong>${esc(row.colaborador || '-')}</strong></td>
           <td>${esc(row.coordenacao || '-')}</td>
           <td>${esc(row.supervisao || '-')}</td>
           <td>${esc(row.local_nome || '-')}</td>
           <td>${row.processado_em ? new Date(row.processado_em).toLocaleString('pt-BR') : '-'}</td>
         </tr>
-      `).join('') : '<tr><td colspan="6" class="fin-empty">Nenhum pagamento de almoço registrado ainda.</td></tr>';
+      `).join('') : '<tr><td colspan="7" class="fin-empty">Nenhum pagamento registrado ainda.</td></tr>';
     } catch (err) {
       console.error(err);
-      if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="fin-empty">Erro ao carregar histórico: ${esc(err.message)}</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="fin-empty">Erro ao carregar histórico: ${esc(err.message)}</td></tr>`;
     }
   }
 
