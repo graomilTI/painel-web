@@ -990,6 +990,23 @@ export function renderContent(content, userContext) {
       .det-sort-icon{margin-left:4px;opacity:.6;font-size:10px}
       .det-th-active .det-sort-icon{opacity:1;color:#34d399}
       .adiant-subtab{border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#64748b;border-radius:10px;padding:7px 13px;cursor:pointer;font-size:13px;font-weight:600;transition:all .14s}.adiant-subtab:hover{color:#e2e8f0;background:rgba(15,23,42,.85)}.adiant-subtab.active{background:linear-gradient(135deg,#14532d,#166534);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(22,101,52,.35)}.adiant-table{display:none}.adiant-table.active{display:block}
+      .hist-colab-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:rgba(15,23,42,.6);padding:16px;margin-bottom:14px}
+      .hist-colab-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(148,163,184,.1)}
+      .hist-colab-name{font-size:15px;font-weight:800;color:#f8fafc}
+      .hist-colab-meta{display:flex;gap:18px;flex-wrap:wrap}
+      .hist-colab-meta span{display:block;font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}
+      .hist-colab-meta strong{display:block;margin-top:2px;font-size:15px;color:#f8fafc}
+      .hist-cal-row{display:flex;gap:16px;flex-wrap:wrap}
+      .hist-cal{width:238px}
+      .hist-cal-title{font-size:12px;font-weight:700;color:#9fb7aa;text-transform:capitalize;margin-bottom:6px;text-align:center}
+      .hist-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+      .hist-cal-dow{font-size:9px;color:#475569;text-align:center;font-weight:700;padding-bottom:2px}
+      .hist-cal-day{min-height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border-radius:6px;font-size:11px;color:#475569;background:rgba(255,255,255,.02)}
+      .hist-cal-day .d{font-weight:700;line-height:1}
+      .hist-cal-day .v{font-size:8px;line-height:1;opacity:.85}
+      .hist-cal-day.paid{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}
+      .hist-cal-day.recusado{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff7f7}
+      .hist-cal-day.blank{background:transparent}
     </style>
     <section class="fin-wrap">
       <div class="cf-header">
@@ -1192,7 +1209,7 @@ export function renderContent(content, userContext) {
               <div class="pay-mini"><span>Recusados</span><strong id="adiantRecusados">0</strong></div>
             </div>
 
-            <div class="pay-note">Somente linhas marcadas com <strong>✓</strong> entram no botão <strong>PAGAR</strong>. Recusar exige motivo, que fica registrado no histórico. Ao pagar, a linha sai daqui e vai para <strong>Histórico de Pagamentos</strong> — evita pagamento duplicado.</div>
+            <div class="pay-note">Somente linhas marcadas com <strong>✓</strong> entram no botão <strong>PAGAR</strong>. Ao pagar ou recusar (motivo obrigatório), a linha sai daqui e vai para <strong>Histórico de Pagamentos</strong> — evita pagamento duplicado.</div>
 
             <div class="pay-subtabs">
               <button class="adiant-subtab active" data-adiant-tab="ativos" type="button">Solicitações</button>
@@ -1217,15 +1234,8 @@ export function renderContent(content, userContext) {
             </div>
 
             <div class="adiant-table" id="adiant-historico">
-              <div class="fin-table-wrap">
-                <table class="fin-table">
-                  <thead><tr>
-                    <th>Data</th><th>Colaborador</th><th>Coordenação</th><th>Supervisão</th>
-                    <th>Valor</th><th>Conta</th><th>Descrição</th><th>Pago em</th>
-                  </tr></thead>
-                  <tbody id="adiantHistoricoTbody"><tr><td colspan="8" class="fin-empty">Nenhum pagamento registrado ainda.</td></tr></tbody>
-                </table>
-              </div>
+              <input id="histColaboradorFiltro" class="pay-search-input" type="search" placeholder="Filtrar por colaborador..." style="margin-bottom:14px">
+              <div id="adiantHistoricoContent"><div class="fin-empty">Nenhum pagamento registrado ainda.</div></div>
             </div>
           </section>
 
@@ -2597,9 +2607,9 @@ export function renderContent(content, userContext) {
 
   function renderAdiantamentosTable() {
     const rows = state.adiantamentosRows || [];
-    const ativos = rows.filter((r) => r.decisao?.status !== 'pago');
-    const historico = rows.filter((r) => r.decisao?.status === 'pago')
-      .sort((a, b) => String(b.decisao?.pago_em || '').localeCompare(String(a.decisao?.pago_em || '')));
+    const ativos = rows.filter((r) => !['pago', 'recusado'].includes(r.decisao?.status));
+    const historico = rows.filter((r) => ['pago', 'recusado'].includes(r.decisao?.status))
+      .sort((a, b) => String(b.decisao?.decidido_em || '').localeCompare(String(a.decisao?.decidido_em || '')));
 
     const tbody = document.getElementById('adiantTbody');
     if (tbody) {
@@ -2622,25 +2632,12 @@ export function renderContent(content, userContext) {
       tbody.querySelectorAll('[data-adiant-recusar]').forEach((btn) => btn.addEventListener('click', () => abrirModalRecusaAdiantamento(Number(btn.dataset.adiantRecusar))));
     }
 
-    const historicoTbody = document.getElementById('adiantHistoricoTbody');
-    if (historicoTbody) {
-      historicoTbody.innerHTML = historico.length ? historico.map((row) => `
-        <tr>
-          <td>${brDate(row.data_solicitacao)}</td>
-          <td><strong>${esc(row.colaborador || '-')}</strong></td>
-          <td>${esc(row.coordenacao || '-')}</td>
-          <td>${esc(row.supervisao || '-')}</td>
-          <td>${money(row.valor)}</td>
-          <td>${esc(row.conta || '-')}</td>
-          <td>${esc(row.descricao || '-')}</td>
-          <td>${row.decisao?.pago_em ? new Date(row.decisao.pago_em).toLocaleString('pt-BR') : '-'}</td>
-        </tr>
-      `).join('') : '<tr><td colspan="8" class="fin-empty">Nenhum pagamento registrado ainda.</td></tr>';
-    }
+    state.adiantamentosHistorico = historico;
+    renderHistoricoAgrupado(historico);
 
     const pendentes = ativos.filter((r) => (r.decisao?.status || 'pendente') === 'pendente').length;
     const selecionados = ativos.filter((r) => r.decisao?.status === 'ok');
-    const recusados = ativos.filter((r) => r.decisao?.status === 'recusado').length;
+    const recusados = historico.filter((r) => r.decisao?.status === 'recusado').length;
     const totalSelecionado = selecionados.reduce((sum, r) => sum + Number(r.valor || 0), 0);
 
     if (document.getElementById('adiantPendentes')) document.getElementById('adiantPendentes').textContent = String(pendentes);
@@ -2652,9 +2649,100 @@ export function renderContent(content, userContext) {
     if (document.getElementById('btnPagarAdiantamentos')) document.getElementById('btnPagarAdiantamentos').disabled = selecionados.length === 0;
   }
 
+  const HIST_DOW_LABELS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+  const HIST_MES_LABELS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+  function moneyCompact(v) {
+    return Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+  }
+
+  function calendarioMesHtml(mesKey, diasMap) {
+    const [ano, mes] = mesKey.split('-').map(Number);
+    const diasNoMes = new Date(ano, mes, 0).getDate();
+    const offset = new Date(ano, mes - 1, 1).getDay();
+
+    const celulas = [];
+    for (let i = 0; i < offset; i++) celulas.push('<div class="hist-cal-day blank"></div>');
+    for (let d = 1; d <= diasNoMes; d++) {
+      const iso = `${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const info = diasMap.get(iso);
+      if (!info || (!info.pago && !info.recusado)) {
+        celulas.push(`<div class="hist-cal-day"><span class="d">${d}</span></div>`);
+        continue;
+      }
+      const isPago = info.pago > 0;
+      const valor = isPago ? info.pago : info.recusado;
+      celulas.push(`<div class="hist-cal-day ${isPago ? 'paid' : 'recusado'}" title="${esc(money(valor))}"><span class="d">${d}</span><span class="v">${moneyCompact(valor)}</span></div>`);
+    }
+
+    return `
+      <div class="hist-cal">
+        <div class="hist-cal-title">${HIST_MES_LABELS[mes - 1]}/${ano}</div>
+        <div class="hist-cal-grid">
+          ${HIST_DOW_LABELS.map((l) => `<div class="hist-cal-dow">${l}</div>`).join('')}
+          ${celulas.join('')}
+        </div>
+      </div>`;
+  }
+
+  function renderHistoricoAgrupado(historico) {
+    const container = document.getElementById('adiantHistoricoContent');
+    if (!container) return;
+    if (!historico.length) {
+      container.innerHTML = '<div class="fin-empty">Nenhum pagamento registrado ainda.</div>';
+      return;
+    }
+
+    const termo = normalize(document.getElementById('histColaboradorFiltro')?.value || '');
+    const grupos = new Map();
+    historico.forEach((row) => {
+      const key = row.cpf || row.colaborador || '-';
+      if (!grupos.has(key)) grupos.set(key, { nome: row.colaborador || '-', totalPago: 0, totalRecusado: 0, dias: new Map() });
+      const g = grupos.get(key);
+      const status = row.decisao?.status;
+      const valor = Number(row.valor || 0);
+      const dia = String(row.decisao?.decidido_em || row.data_solicitacao || '').slice(0, 10);
+      if (status === 'pago') g.totalPago += valor; else if (status === 'recusado') g.totalRecusado += valor;
+      if (dia) {
+        const atual = g.dias.get(dia) || { pago: 0, recusado: 0 };
+        if (status === 'pago') atual.pago += valor; else if (status === 'recusado') atual.recusado += valor;
+        g.dias.set(dia, atual);
+      }
+    });
+
+    let lista = Array.from(grupos.values()).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    if (termo) lista = lista.filter((g) => normalize(g.nome).includes(termo));
+
+    if (!lista.length) {
+      container.innerHTML = '<div class="fin-empty">Nenhum colaborador encontrado nesse filtro.</div>';
+      return;
+    }
+
+    container.innerHTML = lista.map((g) => {
+      const diasPagos = Array.from(g.dias.values()).filter((d) => d.pago > 0).length;
+      const diasRecusados = Array.from(g.dias.values()).filter((d) => d.recusado > 0).length;
+      const meses = new Set(Array.from(g.dias.keys()).map((dia) => dia.slice(0, 7)));
+      const calendariosHtml = Array.from(meses).sort().map((mesKey) => calendarioMesHtml(mesKey, g.dias)).join('');
+
+      return `
+        <div class="hist-colab-card">
+          <div class="hist-colab-head">
+            <div class="hist-colab-name">${esc(g.nome)}</div>
+            <div class="hist-colab-meta">
+              <div><span>Total recebido</span><strong style="color:#86efac">${money(g.totalPago)}</strong></div>
+              <div><span>Dias pagos</span><strong>${diasPagos}</strong></div>
+              <div><span>Total recusado</span><strong style="color:#fca5a5">${money(g.totalRecusado)}</strong></div>
+              <div><span>Dias recusados</span><strong>${diasRecusados}</strong></div>
+            </div>
+          </div>
+          <div class="hist-cal-row">${calendariosHtml}</div>
+        </div>`;
+    }).join('');
+  }
+
   async function decidirAdiantamentoOk(ofrCode) {
     const row = (state.adiantamentosRows || []).find((r) => r.ofr_code === ofrCode);
-    if (!row || row.decisao?.status === 'pago') return;
+    if (!row || ['pago','recusado'].includes(row.decisao?.status)) return;
     const novoStatus = row.decisao?.status === 'ok' ? 'pendente' : 'ok';
     const payload = {
       ofr_code: ofrCode,
@@ -2671,7 +2759,7 @@ export function renderContent(content, userContext) {
 
   function abrirModalRecusaAdiantamento(ofrCode) {
     const row = (state.adiantamentosRows || []).find((r) => r.ofr_code === ofrCode);
-    if (!row || row.decisao?.status === 'pago') return;
+    if (!row || ['pago','recusado'].includes(row.decisao?.status)) return;
     let modal = document.getElementById('adiantRecusaModal');
     if (!modal) {
       modal = document.createElement('div');
@@ -3009,6 +3097,7 @@ export function renderContent(content, userContext) {
   document.getElementById('btnAtualizarAdiantamentos')?.addEventListener('click', carregarAdiantamentos);
   document.getElementById('btnPagarAdiantamentos')?.addEventListener('click', pagarAdiantamentos);
   document.querySelectorAll('.adiant-subtab').forEach((btn) => btn.addEventListener('click', () => setAdiantTab(btn.dataset.adiantTab)));
+  document.getElementById('histColaboradorFiltro')?.addEventListener('input', () => renderHistoricoAgrupado(state.adiantamentosHistorico || []));
   document.querySelectorAll('.pay-mode-btn').forEach((btn) => btn.addEventListener('click', () => setPayMode(btn.dataset.payMode)));
   document.getElementById('btnPagarBeneficios').addEventListener('click', pagarBeneficios);
   document.getElementById('payColaboradorFiltro')?.addEventListener('input', renderPayTables);
