@@ -26,6 +26,11 @@ const supabase = createClient(url, key, {
 // sync-colaboradores tem agendamento próprio via pg_cron (job "sync-colaboradores-5min",
 // a cada 5min, ver migration 20260703140000_cron_sync_colaboradores_job_queue.sql) — não
 // entra no round-robin pra não ser escolhido em duplicidade.
+// sync-login-alimentacao também saiu daqui: precisa rodar várias vezes SÓ entre 11h-12h30
+// (jobs "sync-login-alimentacao-11h"/"-12h", ver migration
+// 20260712140000_cron_sync_login_alimentacao_janela.sql) pra capturar login tardio do
+// colaborador antes do fechamento da janela de elegibilidade — o round-robin de 60min
+// roda em qualquer horário do dia, o que não serve pra esse caso.
 const AGENTES_CONTINUOS = [
   'sync-mapa-embarque',
   'sync-nhe',
@@ -55,12 +60,6 @@ const AGENTES_DIARIOS = [
     agente_id: 'sync-adiantamentos',
     nome: 'Adiantamentos - Solicitações Caixa Operacional',
     intervalo_minutos: 15,
-    ativo: true,
-  },
-  {
-    agente_id: 'sync-login-alimentacao',
-    nome: 'Relatório de Login - Alimentação (Almoço)',
-    intervalo_minutos: 60,
     ativo: true,
   },
 ];

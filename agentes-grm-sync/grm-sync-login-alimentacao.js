@@ -1443,6 +1443,14 @@ function nearestLocal(row, locals) {
   return best;
 }
 
+// Colaborador pode abrir o app perto do embarque e, no mesmo dia, longe (ou vice-versa).
+// Cada linha só entra em "inside" se JÁ estiver dentro do raio (linhas fora do raio nunca
+// competem); dentre as que estão dentro, fica só a mais próxima (sort + [0]). Como o
+// agente roda várias vezes na janela 11h-12h30 e sempre baixa o relatório do dia inteiro
+// de novo (não é incremental), cada execução já "acumula" o melhor login visto até ali —
+// não precisa lembrar execuções anteriores. O upsert (chave_unica = data+colaborador)
+// nunca envia a coluna status, então recomputar não derruba uma decisão OK/PAGO já tomada
+// pelo financeiro.
 function qualifyForMeal(rows, locals) {
   var start = timeToMinutes(HORA_INICIO);
   var end = timeToMinutes(HORA_FIM);

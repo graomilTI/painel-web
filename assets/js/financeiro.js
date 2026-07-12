@@ -1143,6 +1143,7 @@ export function renderContent(content, userContext) {
                 <button class="pay-subtab" data-pay-tab="ifood" type="button">iFood</button>
                 <button class="pay-subtab" data-pay-tab="alelo" type="button">Alelo</button>
                 <button class="pay-subtab" data-pay-tab="logs" type="button">Pendências</button>
+                <button class="pay-subtab" data-pay-tab="historico" type="button">Histórico</button>
               </div>
               <div class="fin-actions-row">
                 <button class="btn btn-secondary fin-small" id="btnExportFlash" type="button">Exportar Flash XLSX</button>
@@ -1157,6 +1158,7 @@ export function renderContent(content, userContext) {
             <div class="pay-table" id="pay-ifood"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CNPJ</th><th>Nome</th><th>CPF</th><th>Nascimento</th><th>Email</th><th>Celular</th><th>Centro de custo</th><th>Livre</th></tr></thead><tbody id="payIfoodTbody"><tr><td colspan="8" class="fin-empty">Nenhum arquivo iFood gerado.</td></tr></tbody></table></div></div>
             <div class="pay-table" id="pay-alelo"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Número de Série</th><th>CPF</th><th>Valor da Carga</th><th>Observação</th><th>Nome</th></tr></thead><tbody id="payAleloTbody"><tr><td colspan="5" class="fin-empty">Nenhum arquivo Alelo gerado.</td></tr></tbody></table></div></div>
             <div class="pay-table" id="pay-logs"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data/Linha</th><th>Colaborador</th><th>Status</th><th>Mensagem</th></tr></thead><tbody id="payLogsTbody"><tr><td colspan="4" class="fin-empty">Nenhuma pendência.</td></tr></tbody></table></div></div>
+            <div class="pay-table" id="pay-historico"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Coordenação</th><th>Supervisão</th><th>Local</th><th>Pago em</th></tr></thead><tbody id="payHistoricoTbody"><tr><td colspan="6" class="fin-empty">Carregando...</td></tr></tbody></table></div></div>
 
             <div class="pay-footer">
               <div><strong id="payFooterTotal">Total pronto para pagar: R$ 0,00</strong><span id="payFooterHint">Gere ou importe pagamentos para liberar o botão.</span></div>
@@ -2407,6 +2409,7 @@ export function renderContent(content, userContext) {
           .select('id,data_ref,colaborador,cpf,coordenacao,supervisao,hora_identificada,local_nome,distancia_m,status')
           .eq('data_ref', data)
           .eq('ativo', true)
+          .neq('status', 'PAGO')
       ]);
       if (almoco.error) throw almoco.error;
 
@@ -2422,6 +2425,37 @@ export function renderContent(content, userContext) {
     } catch (err) {
       console.error(err);
       paySetFeedback('fbAlimentacao', err.message || 'Erro ao consultar almoço.', 'err');
+    }
+  }
+
+  // Histórico do Almoço: linhas já PAGAS somem da Conferência (carregarAlmoco filtra
+  // status<>PAGO) e aparecem só aqui — evita que o financeiro gere o XLS de novo pra
+  // quem já foi pago no mesmo dia.
+  async function carregarHistoricoAlmoco() {
+    const tbody = document.getElementById('payHistoricoTbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="fin-empty">Carregando...</td></tr>';
+    try {
+      const { data, error } = await supabase
+        .from('financeiro_alimentacao_colaboradores')
+        .select('data_ref,colaborador,coordenacao,supervisao,local_nome,processado_em')
+        .eq('status', 'PAGO')
+        .order('processado_em', { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      if (!tbody) return;
+      tbody.innerHTML = (data || []).length ? data.map((row) => `
+        <tr>
+          <td>${brDate(row.data_ref)}</td>
+          <td><strong>${esc(row.colaborador || '-')}</strong></td>
+          <td>${esc(row.coordenacao || '-')}</td>
+          <td>${esc(row.supervisao || '-')}</td>
+          <td>${esc(row.local_nome || '-')}</td>
+          <td>${row.processado_em ? new Date(row.processado_em).toLocaleString('pt-BR') : '-'}</td>
+        </tr>
+      `).join('') : '<tr><td colspan="6" class="fin-empty">Nenhum pagamento de almoço registrado ainda.</td></tr>';
+    } catch (err) {
+      console.error(err);
+      if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="fin-empty">Erro ao carregar histórico: ${esc(err.message)}</td></tr>`;
     }
   }
 
@@ -2991,6 +3025,7 @@ export function renderContent(content, userContext) {
     }
   });
   document.querySelectorAll('.pay-subtab').forEach((btn) => btn.addEventListener('click', () => setPayTab(btn.dataset.payTab)));
+  document.querySelector('[data-pay-tab="historico"]')?.addEventListener('click', carregarHistoricoAlmoco);
   document.getElementById('btnExportFlash').addEventListener('click', () => exportPagamento('flash'));
   document.getElementById('btnExportIfood').addEventListener('click', () => exportPagamento('ifood'));
   document.getElementById('btnExportAlelo').addEventListener('click', () => exportPagamento('alelo'));
