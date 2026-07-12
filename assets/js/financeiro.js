@@ -991,12 +991,16 @@ export function renderContent(content, userContext) {
       .det-th-active .det-sort-icon{opacity:1;color:#34d399}
       .adiant-subtab{border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#64748b;border-radius:10px;padding:7px 13px;cursor:pointer;font-size:13px;font-weight:600;transition:all .14s}.adiant-subtab:hover{color:#e2e8f0;background:rgba(15,23,42,.85)}.adiant-subtab.active{background:linear-gradient(135deg,#14532d,#166534);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(22,101,52,.35)}.adiant-table{display:none}.adiant-table.active{display:block}
       .hist-colab-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:rgba(15,23,42,.6);padding:16px;margin-bottom:14px}
-      .hist-colab-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(148,163,184,.1)}
-      .hist-colab-name{font-size:15px;font-weight:800;color:#f8fafc}
+      .hist-colab-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding-bottom:0;border-bottom:0;cursor:pointer;user-select:none}
+      .hist-colab-card.expanded .hist-colab-head{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(148,163,184,.1)}
+      .hist-colab-name{font-size:15px;font-weight:800;color:#f8fafc;display:flex;align-items:center;gap:8px}
+      .hist-colab-toggle{display:inline-block;font-size:11px;color:#6b7280;transition:transform .16s ease}
+      .hist-colab-card.expanded .hist-colab-toggle{transform:rotate(90deg)}
       .hist-colab-meta{display:flex;gap:18px;flex-wrap:wrap}
       .hist-colab-meta span{display:block;font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}
       .hist-colab-meta strong{display:block;margin-top:2px;font-size:15px;color:#f8fafc}
-      .hist-cal-row{display:flex;gap:16px;flex-wrap:wrap}
+      .hist-cal-row{display:none;gap:16px;flex-wrap:wrap}
+      .hist-colab-card.expanded .hist-cal-row{display:flex}
       .hist-cal{width:238px}
       .hist-cal-title{font-size:12px;font-weight:700;color:#9fb7aa;text-transform:capitalize;margin-bottom:6px;text-align:center}
       .hist-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
@@ -2726,8 +2730,8 @@ export function renderContent(content, userContext) {
 
       return `
         <div class="hist-colab-card">
-          <div class="hist-colab-head">
-            <div class="hist-colab-name">${esc(g.nome)}</div>
+          <div class="hist-colab-head" data-hist-toggle>
+            <div class="hist-colab-name"><span class="hist-colab-toggle">▸</span>${esc(g.nome)}</div>
             <div class="hist-colab-meta">
               <div><span>Total recebido</span><strong style="color:#86efac">${money(g.totalPago)}</strong></div>
               <div><span>Dias pagos</span><strong>${diasPagos}</strong></div>
@@ -2738,6 +2742,10 @@ export function renderContent(content, userContext) {
           <div class="hist-cal-row">${calendariosHtml}</div>
         </div>`;
     }).join('');
+
+    container.querySelectorAll('[data-hist-toggle]').forEach((head) => {
+      head.addEventListener('click', () => head.closest('.hist-colab-card')?.classList.toggle('expanded'));
+    });
   }
 
   async function decidirAdiantamentoOk(ofrCode) {
