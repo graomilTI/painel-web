@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * GRM Server - Relatório de Login x Alimentação
+ * GRM Server - Relatório de Login x Refeição (Café/Almoço/Janta)
  *
  * Fluxo:
  * 1. Loga no GRM Server.
@@ -10,8 +10,16 @@
  * 5. Clica em Gerar Relatório e aguarda o botão XLS ficar habilitado.
  * 6. Baixa o XLS, capturando arquivo do Chrome, resposta HTTP ou Blob gerado pela página.
  * 7. Grava os registros em grm_login_movimentos_importacoes.
- * 8. Entre 10:30 e 12:00, compara a posição do colaborador com os Locais de Embarque.
- * 9. Se estiver a até 1 km, relaciona o colaborador em financeiro_alimentacao_colaboradores.
+ * 8. Classifica cada login por turno (TURNOS abaixo: Café 06:00-07:30, Almoço 11:00-12:30,
+ *    Janta 19:00-20:30) e compara a posição do colaborador com os Locais de Embarque.
+ * 9. Se estiver a até 1 km do embarque, relaciona o colaborador em
+ *    financeiro_alimentacao_colaboradores (coluna tipo_beneficio = CAFE/ALMOCO/JANTA), 1
+ *    linha por dia+colaborador+turno — um colaborador pode aparecer nos 3 turnos no mesmo
+ *    dia. Se houver mais de um login dentro do mesmo turno, fica só o mais próximo do
+ *    embarque (o script sempre rebaixa e reprocessa o relatório do dia inteiro, então cada
+ *    execução já "acumula" o melhor login visto até ali, sem precisar lembrar execuções
+ *    anteriores). Agendado via pg_cron pra rodar várias vezes dentro de cada janela (ver
+ *    migration 20260712150000_cron_sync_login_alimentacao_turnos.sql).
  *
  * Compatível com o padrão dos agentes Puppeteer/Supabase do cPanel/WHM.
  */
@@ -44,8 +52,11 @@ var GRM_PASSWORD = process.env.GRMSERVER_PASSWORD;
 
 var TIMEZONE = process.env.LOGIN_REPORT_TIMEZONE || 'America/Sao_Paulo';
 var RAIO_M = Number(process.env.ALIMENTACAO_RAIO_M || 1000);
-var HORA_INICIO = process.env.ALIMENTACAO_HORA_INICIO || '10:30';
-var HORA_FIM = process.env.ALIMENTACAO_HORA_FIM || '12:00';
+var TURNOS = [
+  { tipo: 'CAFE', inicio: process.env.CAFE_HORA_INICIO || '06:00', fim: process.env.CAFE_HORA_FIM || '07:30' },
+  { tipo: 'ALMOCO', inicio: process.env.ALMOCO_HORA_INICIO || process.env.ALIMENTACAO_HORA_INICIO || '11:00', fim: process.env.ALMOCO_HORA_FIM || process.env.ALIMENTACAO_HORA_FIM || '12:30' },
+  { tipo: 'JANTA', inicio: process.env.JANTA_HORA_INICIO || '19:00', fim: process.env.JANTA_HORA_FIM || '20:30' }
+];
 var DOWNLOAD_TIMEOUT_MS = Number(process.env.LOGIN_REPORT_DOWNLOAD_TIMEOUT_MS || 120000);
 var WAIT_AFTER_GENERATE_MS = Number(process.env.LOGIN_REPORT_WAIT_AFTER_GENERATE_MS || 3000);
 var XLS_READY_TIMEOUT_MS = Number(process.env.LOGIN_REPORT_XLS_READY_TIMEOUT_MS || 180000);
@@ -1304,8 +1315,7 @@ async function createRun(fromYmd, toYmd) {
     raw: {
       agente: 'grm-sync-login-alimentacao',
       raio_m: RAIO_M,
-      hora_inicio: HORA_INICIO,
-      hora_fim: HORA_FIM,
+      turnos: TURNOS,
       local_tables: REPORT_CONFIG.localTables
     }
   };
@@ -1451,18 +1461,30 @@ function nearestLocal(row, locals) {
 // não precisa lembrar execuções anteriores. O upsert (chave_unica = data+colaborador)
 // nunca envia a coluna status, então recomputar não derruba uma decisão OK/PAGO já tomada
 // pelo financeiro.
-function qualifyForMeal(rows, locals) {
-  var start = timeToMinutes(HORA_INICIO);
-  var end = timeToMinutes(HORA_FIM);
-  if (start === null || end === null || end < start) throw new Error('Janela ALIMENTACAO_HORA_INICIO/FIM inválida.');
+// Acha em qual turno (Café/Almoço/Janta) um horário cai, ou null se não cai em nenhum.
+function turnoForMinutes(minutes) {
+  for (var i = 0; i < TURNOS.length; i++) {
+    var t = TURNOS[i];
+    var start = timeToMinutes(t.inicio);
+    var end = timeToMinutes(t.fim);
+    if (start === null || end === null || end < start) throw new Error('Janela do turno ' + t.tipo + ' inválida: ' + t.inicio + '-' + t.fim);
+    if (minutes >= start && minutes <= end) return t;
+  }
+  return null;
+}
 
+function qualifyForMeal(rows, locals) {
+  // Chave por dia+colaborador+turno: um colaborador pode ficar elegível pros 3 turnos no
+  // mesmo dia, cada um vira uma linha própria em financeiro_alimentacao_colaboradores.
   var grouped = {};
   rows.forEach(function (row) {
     if (!row.hora_movimento || !isValidCoord(row.latitude, row.longitude)) return;
     var minutes = timeToMinutes(row.hora_movimento);
-    if (minutes === null || minutes < start || minutes > end) return;
-    var groupKey = row.data_movimento + '|' + row.colaborador_chave;
-    if (!grouped[groupKey]) grouped[groupKey] = { rows: [], inside: [] };
+    if (minutes === null) return;
+    var turno = turnoForMinutes(minutes);
+    if (!turno) return;
+    var groupKey = row.data_movimento + '|' + row.colaborador_chave + '|' + turno.tipo;
+    if (!grouped[groupKey]) grouped[groupKey] = { turno: turno, rows: [], inside: [] };
     grouped[groupKey].rows.push(row);
     var nearest = nearestLocal(row, locals);
     if (nearest && nearest.distancia <= RAIO_M) grouped[groupKey].inside.push({ row: row, nearest: nearest });
@@ -1477,6 +1499,7 @@ function qualifyForMeal(rows, locals) {
     var chosen = group.inside[0];
     var row = chosen.row;
     var local = chosen.nearest.local;
+    var turno = group.turno;
 
     eligible.push({
       chave_unica: hash(groupKey),
@@ -1500,6 +1523,7 @@ function qualifyForMeal(rows, locals) {
       local_longitude: local.longitude,
       distancia_m: Math.round(chosen.nearest.distancia),
       raio_m: RAIO_M,
+      tipo_beneficio: turno.tipo,
       pontos_na_janela: group.rows.length,
       pontos_dentro_raio: group.inside.length,
       origem: REPORT_CONFIG.origem,
@@ -1511,8 +1535,9 @@ function qualifyForMeal(rows, locals) {
         movimento_selecionado: row.dados_json,
         local_selecionado: local.raw,
         regra: {
-          hora_inicio: HORA_INICIO,
-          hora_fim: HORA_FIM,
+          tipo_beneficio: turno.tipo,
+          hora_inicio: turno.inicio,
+          hora_fim: turno.fim,
           raio_m: RAIO_M,
           criterio: 'ao_menos_um_ponto_na_janela_dentro_do_raio'
         }
