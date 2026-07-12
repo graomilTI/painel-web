@@ -54,6 +54,7 @@ const SCRIPT_MAP = {
   'sync-btg-classificador': 'grm-sync-btg-classificador.js',
   'sync-btg-checkin': 'grm-sync-btg-checkin.js',
   'sync-adiantamentos': 'grm-sync-adiantamentos.js',
+  'sync-login-alimentacao': 'grm-sync-login-alimentacao.js',
 };
 
 function getSupabase() {
