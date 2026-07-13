@@ -221,6 +221,9 @@ serve(async (req) => {
     };
 
     const tel = normalizeBrazilPhone(body.phone);
+    const flowId = String(body.flowId || "").trim();
+    const hasFlow = Boolean(flowId);
+
     if (tel.length < 12 || tel.length > 13 || !tel.startsWith("55")) {
       return json({
         ok: false,
@@ -228,7 +231,7 @@ serve(async (req) => {
         error: `Telefone inválido para WhatsApp: ${tel || "vazio"}. Use DDD + número.`,
       });
     }
-    if (!body.message && !body.fileUrl && !body.flowId) {
+    if (!body.message && !body.fileUrl && !hasFlow) {
       return json({ ok: false, stage: "validation", error: "Informe message, fileUrl ou flowId." });
     }
     if (body.message && String(body.message).length > 4000) {
@@ -248,7 +251,9 @@ serve(async (req) => {
       });
     }
 
-    if (body.message) {
+    // Quando existe um fluxo, ele é o responsável por enviar a mensagem.
+    // Isso evita que o hotel receba a mensagem direta e, em seguida, a mesma mensagem pelo fluxo.
+    if (body.message && !hasFlow) {
       const sent = await sendMessage(
         subscriber.subscriberId,
         "text",
@@ -280,17 +285,17 @@ serve(async (req) => {
       }
     }
 
-    if (body.flowId) {
+    if (hasFlow) {
       const started = await sendFlow(
         subscriber.subscriberId,
-        String(body.flowId),
+        flowId,
         keyResult.apiKey,
       );
       if (!started.ok) {
         return json({
           ok: false,
           stage: "flow",
-          error: `O BotConversa recusou o fluxo ${body.flowId} (HTTP ${started.status}): ${started.detail || "sem detalhes"}`,
+          error: `O BotConversa recusou o fluxo ${flowId} (HTTP ${started.status}): ${started.detail || "sem detalhes"}`,
         });
       }
     }
@@ -300,6 +305,7 @@ serve(async (req) => {
       phone: tel,
       subscriberId: subscriber.subscriberId,
       apiKeySource: keyResult.source,
+      deliveryMode: hasFlow ? "flow" : "direct",
     });
   } catch (err) {
     console.error("[botconversa-send]", err);
