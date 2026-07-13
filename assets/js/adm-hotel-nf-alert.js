@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient.js';
 const state = {
   hotels: new Map(),
   rows: new Map(),
+  quotes: new Map(),
   editingHotelId: null,
   refreshTimer: null,
   decorating: false,
@@ -24,6 +25,7 @@ function injectStyles() {
     .hosp-nf-alert.finance{border-color:rgba(248,113,113,.48);background:rgba(127,29,29,.2);color:#fecaca}
     .hosp-nf-hotel-tag{display:inline-flex;align-items:center;gap:4px;margin:5px 0 0 7px;padding:3px 7px;border-radius:999px;border:1px solid rgba(251,146,60,.35);background:rgba(124,45,18,.14);color:#fdba74;font-size:10px;font-weight:900;white-space:nowrap}
     .hosp-nf-kpi-alert{position:absolute;right:8px;top:7px;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;border:1px solid rgba(248,113,113,.5);background:rgba(127,29,29,.34);color:#fecaca;font-size:12px;font-style:normal;box-shadow:0 0 14px rgba(248,113,113,.16);cursor:help}
+    .hosp-quote-flow-data{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.hosp-quote-flow-chip{padding:3px 6px;border-radius:999px;border:1px solid rgba(74,222,128,.22);background:rgba(22,101,52,.15);color:#bbf7d0;font-size:9px;font-weight:900}.hosp-quote-flow-chip.warn{border-color:rgba(248,113,113,.38);background:rgba(127,29,29,.17);color:#fecaca}
   `;
   document.head.appendChild(style);
 }
@@ -207,6 +209,45 @@ function decorateKpis() {
   });
 }
 
+function money(value) {
+  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function decorateQuoteResponses() {
+  document.querySelectorAll('.hosp-v2-quote').forEach((quoteEl) => {
+    const id = quoteEl.querySelector('[data-quote-id]')?.dataset.quoteId;
+    const quote = id ? state.quotes.get(String(id)) : null;
+    let details = quoteEl.querySelector('.hosp-quote-flow-data');
+    if (!quote) {
+      details?.remove();
+      return;
+    }
+    const summary = quoteEl.querySelector('small');
+    if (summary) {
+      const total = quote.valor_total ? `${money(quote.valor_total)} total` : quote.valor_diaria ? `${money(quote.valor_diaria)} por diária` : 'Valor pendente';
+      const checkout = quote.aceita_pagamento_checkout === true ? 'aceita checkout' : quote.aceita_pagamento_checkout === false ? 'pagamento antecipado' : 'condição pendente';
+      const text = `${total} · ${checkout}`;
+      if (summary.textContent !== text) summary.textContent = text;
+    }
+    const chips = [
+      quote.disponibilidade === false ? '<span class="hosp-quote-flow-chip warn">Indisponível</span>' : quote.disponibilidade === true ? '<span class="hosp-quote-flow-chip">Disponível</span>' : '',
+      quote.cafe_incluso === true ? '<span class="hosp-quote-flow-chip">Café incluso</span>' : quote.cafe_incluso === false ? '<span class="hosp-quote-flow-chip warn">Sem café</span>' : '',
+      quote.estacionamento_incluso === true ? '<span class="hosp-quote-flow-chip">Estacionamento incluso</span>' : quote.estacionamento_incluso === false ? '<span class="hosp-quote-flow-chip warn">Sem estacionamento</span>' : '',
+      quote.valor_diaria ? `<span class="hosp-quote-flow-chip">Diária ${money(quote.valor_diaria)}</span>` : '',
+    ].filter(Boolean).join('');
+    if (!chips) {
+      details?.remove();
+      return;
+    }
+    if (!details) {
+      details = document.createElement('div');
+      details.className = 'hosp-quote-flow-data';
+      summary?.insertAdjacentElement('afterend', details);
+    }
+    if (details.innerHTML !== chips) details.innerHTML = chips;
+  });
+}
+
 function decorate() {
   if (state.decorating) return;
   state.decorating = true;
@@ -215,6 +256,7 @@ function decorate() {
     decorateHotelTable();
     decorateLodgingCards();
     decorateKpis();
+    decorateQuoteResponses();
   } finally {
     state.decorating = false;
   }
@@ -226,12 +268,14 @@ function scheduleDecorate() {
 }
 
 async function refreshData() {
-  const [hotelsRes, rowsRes] = await Promise.all([
+  const [hotelsRes, rowsRes, quotesRes] = await Promise.all([
     supabase.from('hospedagem_hoteis').select('id,nome,cidade,uf,emite_nota_fiscal'),
     supabase.from('hospedagem_painel_geral').select('solicitacao_id,hotel_id,status_solicitacao,status_financeiro,pendencia_financeira'),
+    supabase.from('hospedagem_cotacoes').select('id,solicitacao_id,hotel_id,status,disponibilidade,valor_diaria,valor_total,aceita_pagamento_checkout,cafe_incluso,estacionamento_incluso,observacoes,respondido_em'),
   ]);
   if (!hotelsRes.error) state.hotels = new Map((hotelsRes.data || []).map((hotel) => [String(hotel.id), hotel]));
   if (!rowsRes.error) state.rows = new Map((rowsRes.data || []).map((row) => [String(row.solicitacao_id), row]));
+  if (!quotesRes.error) state.quotes = new Map((quotesRes.data || []).map((quote) => [String(quote.id), quote]));
   decorate();
 }
 
