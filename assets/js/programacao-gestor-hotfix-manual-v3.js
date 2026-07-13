@@ -26,6 +26,7 @@ async function loadModule() {
   ], { type: 'text/javascript' }));
   try {
     await import(blobUrl);
+    await import('./programacao-frota-os-auto-colaborador.js?v=20260713-osautocolab1');
   } finally {
     URL.revokeObjectURL(blobUrl);
   }
