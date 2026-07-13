@@ -23,12 +23,13 @@ async function boot() {
 
     clearUserContext();
     setStatus('Sessão não encontrada', 'Abrindo login...');
-    window.location.replace(toPanelUrl('login.html'));
+    // Usa o arquivo HTML diretamente para evitar cache/roteamento incorreto em URLs limpas.
+    window.location.replace('./login.html');
   } catch (error) {
     console.error('Erro ao iniciar o painel:', error);
     clearUserContext();
     setStatus('Não foi possível validar a sessão', 'Redirecionando para o login...');
-    window.location.replace(toPanelUrl('login.html'));
+    window.location.replace('./login.html');
   }
 }
 
