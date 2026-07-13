@@ -12,7 +12,6 @@ const ROUTES_WITH_AGENT_DATA = new Set([
   'consultar-colaboradores',
   'importar-patrimonios',
   'notas-fiscais',
-  'financeiro',
   'adm-patrimonio',
   'patrimonios',
 ]);
@@ -23,7 +22,6 @@ const ROUTE_LABELS = {
   desempenho: 'Desempenho',
   metas: 'Metas',
   dre: 'DRE',
-  financeiro: 'Financeiro',
   'notas-fiscais': 'Notas Fiscais',
   'consultar-colaboradores': 'Colaboradores',
   'consultar-producao': 'Produção',

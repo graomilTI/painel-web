@@ -879,6 +879,13 @@ export function renderContent(content, userContext) {
       .hist-cal-day.paid{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}
       .hist-cal-day.recusado{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff7f7}
       .hist-cal-day.blank{background:transparent}
+      .fin-tab-icon{margin-left:auto;border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#9fb7aa;border-radius:10px;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;transition:all .14s}
+      .fin-tab-icon:hover{color:#fff;background:linear-gradient(135deg,#166534,#16a34a);border-color:transparent}
+      .ajustes-subtab{border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#64748b;border-radius:10px;padding:7px 13px;cursor:pointer;font-size:13px;font-weight:600;transition:all .14s}
+      .ajustes-subtab:hover{color:#e2e8f0;background:rgba(15,23,42,.85)}
+      .ajustes-subtab.active{background:linear-gradient(135deg,#14532d,#166534);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(22,101,52,.35)}
+      .ajustes-panel{display:none}
+      .ajustes-panel.active{display:block}
     </style>
     <section class="fin-wrap">
       <div class="cf-header">
@@ -894,13 +901,6 @@ export function renderContent(content, userContext) {
             <article class="fin-kpi cf-kpi-pill"><span>Provisão</span><strong id="kpiProvisao">R$ 0,00</strong><small>–</small></article>
             <article class="fin-kpi cf-kpi-pill cf-projected"><span>Saldo Projetado</span><strong id="kpiProjetado">R$ 0,00</strong><small id="kpiStatus">OK</small></article>
           </div>
-          <div class="cf-actions-row">
-            <button class="btn btn-primary" id="btnReload" type="button">↻ Atualizar fluxo</button>
-            <button class="btn btn-secondary" data-tab-target="importar" type="button">Importar relatórios</button>
-            <button class="btn btn-secondary" data-tab-target="config" type="button">Saldo e Provisão</button>
-            <button class="btn btn-secondary" data-tab-target="despesas" type="button">Despesas</button>
-            <button class="btn btn-secondary" data-tab-target="pagamentos" type="button">Pagamentos</button>
-          </div>
         </div>
       </div>
 
@@ -910,12 +910,11 @@ export function renderContent(content, userContext) {
           <div class="fin-tabs">
             <button class="fin-tab active" data-tab="dashboard" type="button">Dashboard</button>
             <button class="fin-tab" data-tab="fluxo" type="button">Fluxo</button>
-            <button class="fin-tab" data-tab="importar" type="button">Importar</button>
-            <button class="fin-tab" data-tab="config" type="button">Saldo e Provisão</button>
-            <button class="fin-tab" data-tab="detalhes" type="button">Detalhes</button>
             <button class="fin-tab" data-tab="despesas" type="button">Despesas</button>
             <button class="fin-tab" data-tab="pagamentos" type="button">Pagamentos</button>
             <button class="fin-tab" data-tab="notas-fiscais" type="button">Notas Fiscais</button>
+            <button class="fin-tab" data-tab="ajustes" type="button">Ajustes</button>
+            <button class="fin-tab-icon" id="btnReload" type="button" title="Atualizar fluxo">↻</button>
           </div>
         </div>
 
@@ -978,81 +977,94 @@ export function renderContent(content, userContext) {
         </div>
 
         <div class="fin-panel" id="tab-fluxo">
-          <div class="cf-flow-mini" id="cfFlowMini" style="display:none">
-            <div class="cf-flow-mini-item cf-fm-receber">
-              <span class="cf-fm-label">Total Receber</span>
-              <span class="cf-fm-val" id="cfFmReceber">R$ 0,00</span>
+          <div id="fluxoListaView">
+            <div class="cf-flow-mini" id="cfFlowMini" style="display:none">
+              <div class="cf-flow-mini-item cf-fm-receber">
+                <span class="cf-fm-label">Total Receber</span>
+                <span class="cf-fm-val" id="cfFmReceber">R$ 0,00</span>
+              </div>
+              <div class="cf-flow-mini-item cf-fm-pagar">
+                <span class="cf-fm-label">Total Pagar</span>
+                <span class="cf-fm-val" id="cfFmPagar">R$ 0,00</span>
+              </div>
+              <div class="cf-flow-mini-item cf-fm-liquido">
+                <span class="cf-fm-label">Fluxo Líquido</span>
+                <span class="cf-fm-val" id="cfFmLiquido">R$ 0,00</span>
+              </div>
+              <div class="cf-flow-bar-wrap">
+                <span class="cf-flow-bar-label">Receber vs Pagar</span>
+                <div class="cf-flow-bar-track">
+                  <div class="cf-flow-bar-recv" id="cfBarRecv" style="width:50%"></div>
+                  <div class="cf-flow-bar-pay" id="cfBarPay" style="width:50%"></div>
+                </div>
+              </div>
             </div>
-            <div class="cf-flow-mini-item cf-fm-pagar">
-              <span class="cf-fm-label">Total Pagar</span>
-              <span class="cf-fm-val" id="cfFmPagar">R$ 0,00</span>
+            <form class="fin-form" id="periodForm">
+              <div class="fin-field"><label>Data inicial</label><input id="filterInicio" type="date" value="${esc(state.filters.inicio)}"></div>
+              <div class="fin-field"><label>Data final</label><input id="filterFim" type="date" value="${esc(state.filters.fim)}"></div>
+              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Aplicar período</button></div>
+            </form>
+            <br>
+            <div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Saldo do dia</th><th>Receber</th><th>Pagar</th><th>Provisão</th><th>Saldo projetado</th><th>Status</th><th>Ação</th></tr></thead><tbody id="fluxoTbody"><tr><td colspan="8" class="fin-empty">Carregando...</td></tr></tbody></table></div>
+          </div>
+
+          <div id="fluxoDetalhesView" style="display:none">
+            <div class="fin-head">
+              <div><h3>Detalhes do dia selecionado</h3><p id="detalhesData">Selecione uma data no fluxo.</p></div>
+              <button class="btn btn-secondary" id="btnVoltarFluxo" type="button">← Voltar</button>
             </div>
-            <div class="cf-flow-mini-item cf-fm-liquido">
-              <span class="cf-fm-label">Fluxo Líquido</span>
-              <span class="cf-fm-val" id="cfFmLiquido">R$ 0,00</span>
+            <div class="fin-det-filters">
+              <select id="detFiltroTipo"><option value="">Tipo</option><option value="Receber">Receber</option><option value="Pagar">Pagar</option></select>
+              <select id="detFiltroSituacao"><option value="">Situação</option><option value="Recebida">Recebida</option><option value="A vencer">A vencer</option><option value="Vencida">Vencida</option><option value="Paga">Paga</option></select>
+              <input type="text" id="detFiltroFavorecido" placeholder="Favorecido...">
+              <input type="text" id="detFiltroDoc" placeholder="Documento...">
             </div>
-            <div class="cf-flow-bar-wrap">
-              <span class="cf-flow-bar-label">Receber vs Pagar</span>
-              <div class="cf-flow-bar-track">
-                <div class="cf-flow-bar-recv" id="cfBarRecv" style="width:50%"></div>
-                <div class="cf-flow-bar-pay" id="cfBarPay" style="width:50%"></div>
+            <div class="fin-table-wrap"><table class="fin-table"><thead><tr>
+              <th data-det-sort="tipo" class="det-th-sort">Tipo <span class="det-sort-icon">↕</span></th>
+              <th data-det-sort="situacao" class="det-th-sort">Situação <span class="det-sort-icon">↕</span></th>
+              <th data-det-sort="nome" class="det-th-sort">Nome/Favorecido <span class="det-sort-icon">↕</span></th>
+              <th data-det-sort="doc" class="det-th-sort">Documento <span class="det-sort-icon">↕</span></th>
+              <th data-det-sort="valor" class="det-th-sort">Valor <span class="det-sort-icon">↕</span></th>
+              <th data-det-sort="vencimento" class="det-th-sort">Vencimento <span class="det-sort-icon">↕</span></th>
+            </tr></thead><tbody id="detalhesTbody"><tr><td colspan="6" class="fin-empty">Nenhuma data selecionada.</td></tr></tbody></table></div>
+          </div>
+        </div>
+
+        <div class="fin-panel" id="tab-ajustes">
+          <div class="fin-head"><div><h3>Ajustes</h3><p>Saldo e provisão manual, e importação de relatórios (contingência).</p></div></div>
+          <div class="pay-subtabs">
+            <button class="ajustes-subtab active" data-ajustes-tab="saldo" type="button">Saldo e Provisão</button>
+            <button class="ajustes-subtab" data-ajustes-tab="importar" type="button">Importar relatórios</button>
+          </div>
+
+          <div class="ajustes-panel active" id="ajustes-saldo">
+            <form class="fin-form" id="configForm">
+              <div class="fin-field"><label>Data</label><input id="cfgData" type="date" value="${esc(state.currentDate)}" required></div>
+              <div class="fin-field"><label>Saldo do dia</label><input id="cfgSaldo" type="number" step="0.01" placeholder="0,00"></div>
+              <div class="fin-field"><label>Provisão automática</label><input id="cfgProvAuto" type="number" step="0.01" placeholder="0,00"></div>
+              <div class="fin-field"><label>Ajuste manual provisão</label><input id="cfgProvManual" type="number" step="0.01" placeholder="0,00"></div>
+              <div class="fin-field full"><label>Observações</label><textarea id="cfgObs" placeholder="Observações do financeiro"></textarea></div>
+              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Salvar ajustes</button></div>
+              <div class="fin-field"><label>&nbsp;</label><span id="fbConfig" class="fin-feedback"></span></div>
+            </form>
+          </div>
+
+          <div class="ajustes-panel" id="ajustes-importar">
+            <div class="fin-import-grid">
+              <div class="fin-drop">
+                <h3>Contas a Receber</h3>
+                <p class="fin-muted">Use o relatório com colunas Código, Fatura, Cliente, Vencimento, Valor e Valor Pago.</p><br>
+                <input id="fileReceber" type="file" accept=".xlsx,.xls,.csv">
+                <div class="fin-actions-row"><button class="btn btn-primary" id="btnImportReceber" type="button">Importar receber</button><span id="fbReceber" class="fin-feedback"></span></div>
+              </div>
+              <div class="fin-drop">
+                <h3>Contas a Pagar</h3>
+                <p class="fin-muted">Use o relatório com colunas Empresa, COD/Grupo, Favorecido, Doc, Vencimento, Parcela e Valor.</p><br>
+                <input id="filePagar" type="file" accept=".xlsx,.xls,.csv">
+                <div class="fin-actions-row"><button class="btn btn-primary" id="btnImportPagar" type="button">Importar pagar</button><span id="fbPagar" class="fin-feedback"></span></div>
               </div>
             </div>
           </div>
-          <form class="fin-form" id="periodForm">
-            <div class="fin-field"><label>Data inicial</label><input id="filterInicio" type="date" value="${esc(state.filters.inicio)}"></div>
-            <div class="fin-field"><label>Data final</label><input id="filterFim" type="date" value="${esc(state.filters.fim)}"></div>
-            <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Aplicar período</button></div>
-          </form>
-          <br>
-          <div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Saldo do dia</th><th>Receber</th><th>Pagar</th><th>Provisão</th><th>Saldo projetado</th><th>Status</th><th>Ação</th></tr></thead><tbody id="fluxoTbody"><tr><td colspan="8" class="fin-empty">Carregando...</td></tr></tbody></table></div>
-        </div>
-
-        <div class="fin-panel" id="tab-importar">
-          <div class="fin-import-grid">
-            <div class="fin-drop">
-              <h3>Contas a Receber</h3>
-              <p class="fin-muted">Use o relatório com colunas Código, Fatura, Cliente, Vencimento, Valor e Valor Pago.</p><br>
-              <input id="fileReceber" type="file" accept=".xlsx,.xls,.csv">
-              <div class="fin-actions-row"><button class="btn btn-primary" id="btnImportReceber" type="button">Importar receber</button><span id="fbReceber" class="fin-feedback"></span></div>
-            </div>
-            <div class="fin-drop">
-              <h3>Contas a Pagar</h3>
-              <p class="fin-muted">Use o relatório com colunas Empresa, COD/Grupo, Favorecido, Doc, Vencimento, Parcela e Valor.</p><br>
-              <input id="filePagar" type="file" accept=".xlsx,.xls,.csv">
-              <div class="fin-actions-row"><button class="btn btn-primary" id="btnImportPagar" type="button">Importar pagar</button><span id="fbPagar" class="fin-feedback"></span></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="fin-panel" id="tab-config">
-          <form class="fin-form" id="configForm">
-            <div class="fin-field"><label>Data</label><input id="cfgData" type="date" value="${esc(state.currentDate)}" required></div>
-            <div class="fin-field"><label>Saldo do dia</label><input id="cfgSaldo" type="number" step="0.01" placeholder="0,00"></div>
-            <div class="fin-field"><label>Provisão automática</label><input id="cfgProvAuto" type="number" step="0.01" placeholder="0,00"></div>
-            <div class="fin-field"><label>Ajuste manual provisão</label><input id="cfgProvManual" type="number" step="0.01" placeholder="0,00"></div>
-            <div class="fin-field full"><label>Observações</label><textarea id="cfgObs" placeholder="Observações do financeiro"></textarea></div>
-            <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Salvar ajustes</button></div>
-            <div class="fin-field"><label>&nbsp;</label><span id="fbConfig" class="fin-feedback"></span></div>
-          </form>
-        </div>
-
-        <div class="fin-panel" id="tab-detalhes">
-          <div class="fin-head"><div><h3>Detalhes do dia selecionado</h3><p id="detalhesData">Selecione uma data no fluxo.</p></div></div>
-          <div class="fin-det-filters">
-            <select id="detFiltroTipo"><option value="">Tipo</option><option value="Receber">Receber</option><option value="Pagar">Pagar</option></select>
-            <select id="detFiltroSituacao"><option value="">Situação</option><option value="Recebida">Recebida</option><option value="A vencer">A vencer</option><option value="Vencida">Vencida</option><option value="Paga">Paga</option></select>
-            <input type="text" id="detFiltroFavorecido" placeholder="Favorecido...">
-            <input type="text" id="detFiltroDoc" placeholder="Documento...">
-          </div>
-          <div class="fin-table-wrap"><table class="fin-table"><thead><tr>
-            <th data-det-sort="tipo" class="det-th-sort">Tipo <span class="det-sort-icon">↕</span></th>
-            <th data-det-sort="situacao" class="det-th-sort">Situação <span class="det-sort-icon">↕</span></th>
-            <th data-det-sort="nome" class="det-th-sort">Nome/Favorecido <span class="det-sort-icon">↕</span></th>
-            <th data-det-sort="doc" class="det-th-sort">Documento <span class="det-sort-icon">↕</span></th>
-            <th data-det-sort="valor" class="det-th-sort">Valor <span class="det-sort-icon">↕</span></th>
-            <th data-det-sort="vencimento" class="det-th-sort">Vencimento <span class="det-sort-icon">↕</span></th>
-          </tr></thead><tbody id="detalhesTbody"><tr><td colspan="6" class="fin-empty">Nenhuma data selecionada.</td></tr></tbody></table></div>
         </div>
 
 
@@ -1270,7 +1282,7 @@ export function renderContent(content, userContext) {
 
   function tabFromHash() {
     const tab = String(window.location.hash || '').replace(/^#/, '').split('?')[0].toLowerCase();
-    return ['dashboard', 'fluxo', 'importar', 'config', 'detalhes', 'despesas', 'pagamentos', 'notas-fiscais'].includes(tab) ? tab : 'dashboard';
+    return ['dashboard', 'fluxo', 'despesas', 'pagamentos', 'notas-fiscais', 'ajustes'].includes(tab) ? tab : 'dashboard';
   }
 
   function payModeFromHash() {
@@ -1278,10 +1290,31 @@ export function renderContent(content, userContext) {
     return new URLSearchParams(query).get('modo') || 'adiantamentos';
   }
 
+  function mostrarFluxoLista() {
+    const lista = document.getElementById('fluxoListaView');
+    const det = document.getElementById('fluxoDetalhesView');
+    if (lista) lista.style.display = '';
+    if (det) det.style.display = 'none';
+  }
+
+  function mostrarFluxoDetalhes() {
+    const lista = document.getElementById('fluxoListaView');
+    const det = document.getElementById('fluxoDetalhesView');
+    if (lista) lista.style.display = 'none';
+    if (det) det.style.display = '';
+  }
+
+  function setAjustesTab(tab) {
+    document.querySelectorAll('.ajustes-subtab').forEach((btn) => btn.classList.toggle('active', btn.dataset.ajustesTab === tab));
+    document.querySelectorAll('.ajustes-panel').forEach((panel) => panel.classList.remove('active'));
+    document.getElementById(`ajustes-${tab}`)?.classList.add('active');
+  }
+
   function setTab(tab) {
     document.querySelectorAll('.fin-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
     document.querySelectorAll('.fin-panel').forEach((panel) => panel.classList.remove('active'));
     document.getElementById(`tab-${tab}`)?.classList.add('active');
+    if (tab === 'fluxo') mostrarFluxoLista();
     if (tab === 'despesas') setPayMode(payModeFromHash());
     if (tab === 'pagamentos') loadSetorPagamentos();
     if (tab === 'dashboard') loadDashboardData();
@@ -2169,7 +2202,8 @@ export function renderContent(content, userContext) {
     document.getElementById('cfgProvAuto').value = provisaoRes.data?.valor_automatico ?? '';
     document.getElementById('cfgProvManual').value = provisaoRes.data?.ajuste_manual ?? '';
     renderDetalhes();
-    setTab('detalhes');
+    setTab('fluxo');
+    mostrarFluxoDetalhes();
   }
 
   function updateKpis() {
@@ -2223,7 +2257,7 @@ export function renderContent(content, userContext) {
         <td>${money(row.provisoes_dia)}</td>
         <td><strong>${money(row.saldo_projetado)}</strong></td>
         <td><span class="fin-status ${statusClass(row.status)}">${esc(row.status || 'OK')}</span></td>
-        <td><button class="btn btn-secondary fin-small" data-detail-date="${esc(row.data)}" type="button">Abrir</button></td>
+        <td><button class="btn btn-secondary fin-small" data-detail-date="${esc(row.data)}" type="button">Detalhes</button></td>
       </tr>
     `).join('');
   }
@@ -3045,6 +3079,8 @@ export function renderContent(content, userContext) {
     const btn = event.target.closest('[data-detail-date]');
     if (btn) loadDetalhes(btn.dataset.detailDate);
   });
+  document.getElementById('btnVoltarFluxo')?.addEventListener('click', mostrarFluxoLista);
+  document.querySelectorAll('.ajustes-subtab').forEach((btn) => btn.addEventListener('click', () => setAjustesTab(btn.dataset.ajustesTab)));
 
   window.addEventListener('hashchange', () => setTab(tabFromHash()));
   setPayMode('adiantamentos');
