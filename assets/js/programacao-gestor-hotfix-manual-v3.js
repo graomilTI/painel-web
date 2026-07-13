@@ -29,6 +29,7 @@ async function loadModule() {
     await import('./programacao-mapa-ux-fast.js?v=20260713-transition3');
     await import('./programacao-frota-os-auto-colaborador.js?v=20260713-osautocolab1');
     await import('./programacao-sugerir-equipe.js?v=20260713-sugerir1');
+    await import('./programacao-sugerir-equipe-proximidade-loader.js?v=20260713-proximidade1');
     await import('./programacao-limpar-conciliacoes.js?v=20260713-limpar2');
   } finally {
     URL.revokeObjectURL(blobUrl);
