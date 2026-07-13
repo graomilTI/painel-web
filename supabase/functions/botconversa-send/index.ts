@@ -163,10 +163,15 @@ async function sendFlow(
   flowId: string,
   apiKey: string,
 ): Promise<BotResult> {
-  const headers = { "api-key": apiKey, accept: "application/json" };
-  const res = await fetch(`${BASE}/subscriber/${subscriberId}/send_flow/${flowId}/`, {
+  const headers = {
+    "api-key": apiKey,
+    accept: "application/json",
+    "content-type": "application/json",
+  };
+  const res = await fetch(`${BASE}/subscriber/${subscriberId}/send_flow/`, {
     method: "POST",
     headers,
+    body: JSON.stringify({ flow: flowId }),
   });
   return parseBotResponse(res);
 }
