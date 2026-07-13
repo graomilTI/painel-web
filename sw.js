@@ -1,4 +1,4 @@
-const CACHE_NAME = 'g1000-painel-pwa-v9';
+const CACHE_NAME = 'g1000-painel-pwa-v10';
 const SHARE_CACHE = 'g1000-shared-file';
 
 const STATIC_URLS = [
@@ -53,6 +53,10 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
@@ -68,6 +72,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Código da aplicação precisa vir da rede primeiro. O comportamento anterior
+  // (stale-while-revalidate) entregava o JS antigo na primeira abertura após um
+  // deploy e só disponibilizava a versão nova no segundo carregamento/hard refresh.
+  if (isApplicationCode(url.pathname)) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+
   if (shouldCacheStatic(url.pathname)) {
     event.respondWith(staleWhileRevalidate(event.request));
   }
@@ -77,11 +89,13 @@ function isNavigationRequest(request) {
   return request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html');
 }
 
+function isApplicationCode(pathname) {
+  return pathname.endsWith('.js') || pathname.endsWith('.css');
+}
+
 function shouldCacheStatic(pathname) {
   return (
     pathname.startsWith('/painel/assets/') ||
-    pathname.endsWith('.css') ||
-    pathname.endsWith('.js') ||
     pathname.endsWith('.webmanifest') ||
     pathname.endsWith('.png') ||
     pathname.endsWith('.svg') ||
@@ -99,23 +113,37 @@ function fallbackForPath(pathname) {
   return null;
 }
 
-// Serve do cache na hora (funciona offline/conexão ruim em campo), mas sempre busca uma versão
-// nova em paralelo e atualiza o cache pro próximo carregamento — evita que .js/.css fiquem presos
-// pra sempre na primeira versão cacheada (cacheFirst puro nunca revalidava contra a rede).
+function freshRequest(request) {
+  try {
+    return new Request(request, { cache: 'no-store' });
+  } catch {
+    return request;
+  }
+}
+
+function canCache(response) {
+  return Boolean(response && response.ok && (response.type === 'basic' || response.type === 'default'));
+}
+
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(request);
-  const atualizado = fetch(request)
-    .then((response) => { cache.put(request, response.clone()).catch(() => {}); return response; })
+  const atualizado = fetch(freshRequest(request))
+    .then((response) => {
+      if (canCache(response)) cache.put(request, response.clone()).catch(() => {});
+      return response;
+    })
     .catch(() => null);
   return cached || (await atualizado) || fetch(request);
 }
 
 async function networkFirst(request, fallbackUrl = null) {
   try {
-    const response = await fetch(request);
-    const cache = await caches.open(CACHE_NAME);
-    cache.put(request, response.clone()).catch(() => {});
+    const response = await fetch(freshRequest(request));
+    if (canCache(response)) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, response.clone()).catch(() => {});
+    }
     return response;
   } catch (error) {
     const cached = await caches.match(request);
