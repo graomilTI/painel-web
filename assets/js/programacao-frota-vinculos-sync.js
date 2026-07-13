@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient.js';
 // Compatibiliza a sugestão regional com a estrutura usada pelo mapa.
 // O mapa pinta O.S./colaboradores de verde e desenha as rotas a partir dos
 // vínculos de frota válidos. A tabela aceita somente ATENDIMENTO ou LOGISTICA.
-const RELEASE = '20260713-frota-sync1';
+const RELEASE = '20260713-frota-sync2';
 const state = { running: false, timer: null, rerun: false };
 
 const text = value => String(value ?? '').trim();
@@ -244,8 +244,10 @@ function boot() {
 
   const observer = new MutationObserver(() => {
     const success = [...document.querySelectorAll('.prg-modal.prg-message h3')]
-      .some(element => norm(element.textContent) === 'SUGESTOES APLICADAS');
-    if (success) agendar(120);
+      .find(element => norm(element.textContent) === 'SUGESTOES APLICADAS');
+    if (!success || success.dataset.frotaSyncHandled === RELEASE) return;
+    success.dataset.frotaSyncHandled = RELEASE;
+    agendar(120);
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 }
