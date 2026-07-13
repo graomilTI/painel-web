@@ -1,11 +1,12 @@
 // Ajustes de UX do mapa da Programação:
 // - acrescenta legenda compacta para os formatos dos marcadores;
 // - antecipa o carregamento das abas assim que o contexto fica disponível;
-// - reaplica o render do mapa no primeiro frame após abrir a Etapa 2.
+// - troca para a Etapa 2 antes de iniciar o trabalho pesado do mapa.
 
 const PATCH_ID = 'programacaoMapaUxFastStyles';
 const MAX_CONTEXT_WAIT_MS = 3200;
 const CONTEXT_POLL_MS = 45;
+const MAP_RENDERER_FLAG = '__pgcDeferredMapRenderer';
 
 function injectStyles() {
   if (document.getElementById(PATCH_ID)) return;
@@ -42,6 +43,32 @@ function injectStyles() {
       flex:0 0 auto;
     }
     .pmg-icon-key.is-os svg{fill:#d6fbe9;stroke:#d6fbe9}
+    .pgc-map-opening-hint{
+      display:flex;
+      align-items:center;
+      gap:9px;
+      min-height:38px;
+      margin:0 0 8px;
+      padding:8px 11px;
+      border:1px solid rgba(52,211,153,.22);
+      border-radius:11px;
+      background:rgba(6,30,22,.88);
+      color:#c8f7df;
+      font-size:11px;
+      font-weight:800;
+      box-sizing:border-box;
+    }
+    .pgc-map-opening-hint::before{
+      content:'';
+      width:15px;
+      height:15px;
+      flex:0 0 auto;
+      border-radius:999px;
+      border:2px solid rgba(134,239,172,.24);
+      border-top-color:#86efac;
+      animation:pgcMapOpeningSpin .65s linear infinite;
+    }
+    @keyframes pgcMapOpeningSpin{to{transform:rotate(360deg)}}
     @media(max-width:1180px){
       .pmg-icon-keys{gap:6px;padding-left:7px}
       .pmg-icon-key{font-size:9px}
@@ -125,14 +152,86 @@ function accelerateContextLoad() {
   queueMicrotask(check);
 }
 
-function renderMapImmediately() {
-  requestAnimationFrame(() => {
-    window.__pmgRenderMapaGestor?.();
-    ensureIconLegend();
-    setTimeout(() => {
-      window.__pmgRenderMapaGestor?.();
-      ensureIconLegend();
-    }, 32);
+function openingHint(show) {
+  const pane = document.getElementById('pgcPane2');
+  if (!pane) return;
+  let hint = pane.querySelector('.pgc-map-opening-hint');
+  if (show) {
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.className = 'pgc-map-opening-hint';
+      hint.textContent = 'Abrindo mapa e posicionando os marcadores...';
+      pane.prepend(hint);
+    }
+  } else {
+    hint?.remove();
+  }
+}
+
+function showStepTwoImmediately(button) {
+  const pane = document.getElementById('pgcPane2');
+  if (!pane) return;
+
+  document.querySelectorAll('#pgcTabsShell .pgc-tab-pane').forEach((item) => {
+    item.hidden = item !== pane;
+  });
+  document.querySelectorAll('#progSteps .stepbtn').forEach((item) => item.classList.remove('active'));
+  button?.classList.add('active');
+  openingHint(true);
+}
+
+function installDeferredMapRenderer() {
+  const current = window.__pmgRenderMapaGestor;
+  if (typeof current !== 'function') return false;
+  if (current[MAP_RENDERER_FLAG]) return true;
+
+  let scheduled = false;
+  let latestArgs = [];
+  let waiters = [];
+
+  const deferred = (...args) => {
+    latestArgs = args;
+    openingHint(true);
+
+    const promise = new Promise((resolve, reject) => waiters.push({ resolve, reject }));
+    promise.catch(() => {});
+    if (scheduled) return promise;
+    scheduled = true;
+
+    // Primeiro frame: a Etapa 2 aparece. Segundo frame: inicia o mapa pesado.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(async () => {
+        scheduled = false;
+        const batch = waiters;
+        waiters = [];
+        try {
+          const result = await current(...latestArgs);
+          batch.forEach(({ resolve }) => resolve(result));
+        } catch (error) {
+          batch.forEach(({ reject }) => reject(error));
+        } finally {
+          openingHint(false);
+          ensureIconLegend();
+        }
+      });
+    });
+
+    return promise;
+  };
+
+  deferred[MAP_RENDERER_FLAG] = true;
+  deferred.__pgcOriginal = current;
+  window.__pmgRenderMapaGestor = deferred;
+  return true;
+}
+
+function requestMapRender() {
+  installDeferredMapRenderer();
+  const render = window.__pmgRenderMapaGestor;
+  if (typeof render !== 'function') return;
+  Promise.resolve(render()).catch((error) => {
+    console.warn('[programacao-mapa-ux-fast] render do mapa:', error);
+    openingHint(false);
   });
 }
 
@@ -146,6 +245,7 @@ function observeUi() {
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
+      installDeferredMapRenderer();
       ensureIconLegend();
 
       const pane = document.getElementById('pgcPane2');
@@ -154,7 +254,7 @@ function observeUi() {
         lastPaneVisible = false;
       }
       const paneVisible = Boolean(pane && !pane.hidden);
-      if (paneVisible && !lastPaneVisible) renderMapImmediately();
+      if (paneVisible && !lastPaneVisible) requestMapRender();
       lastPaneVisible = paneVisible;
     });
   };
@@ -174,20 +274,21 @@ function bindFastInteractions() {
     if (event.target.closest('#progLoadContext')) accelerateContextLoad();
   }, true);
 
-  // O listener principal das etapas interrompe o evento "click" no document.
-  // pointerdown chega antes e permite preparar o mapa sem competir com ele.
+  // Mostra a nova etapa no pointerdown. O render pesado fica para dois frames
+  // depois, evitando a sensação de clique ignorado ou tela travada.
   document.addEventListener('pointerdown', (event) => {
     const button = event.target.closest('#progSteps .stepbtn');
     if (!button) return;
     const step = button.dataset.uiStep
       || button.dataset.step
       || (button.textContent.match(/\d/) || [''])[0];
-    if (String(step) === '2') setTimeout(renderMapImmediately, 0);
+    if (String(step) === '2') showStepTwoImmediately(button);
   }, true);
 }
 
 function boot() {
   injectStyles();
+  installDeferredMapRenderer();
   bindFastInteractions();
   observeUi();
 }
