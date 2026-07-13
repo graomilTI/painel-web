@@ -138,14 +138,24 @@ function renderMapImmediately() {
 
 function observeUi() {
   let scheduled = false;
+  let lastPane = null;
+  let lastPaneVisible = false;
+
   const schedule = () => {
     if (scheduled) return;
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
       ensureIconLegend();
+
       const pane = document.getElementById('pgcPane2');
-      if (pane && !pane.hidden) renderMapImmediately();
+      if (pane !== lastPane) {
+        lastPane = pane;
+        lastPaneVisible = false;
+      }
+      const paneVisible = Boolean(pane && !pane.hidden);
+      if (paneVisible && !lastPaneVisible) renderMapImmediately();
+      lastPaneVisible = paneVisible;
     });
   };
 
