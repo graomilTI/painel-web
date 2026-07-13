@@ -52,7 +52,16 @@ serve(async (req) => {
 
   const auth = await authorizeRequest(
     req,
-    ["financeiro_pagamentos", "financeiro_fluxo_caixa", "compras_adm", "ti_contatos"],
+    [
+      "financeiro_pagamentos",
+      "financeiro_fluxo_caixa",
+      "compras_adm",
+      "ti_contatos",
+      "hotel",
+      "hospedagem",
+      "adm_hotel",
+      "gestor_hospedagem",
+    ],
     { requireEdit: true },
   );
   if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);

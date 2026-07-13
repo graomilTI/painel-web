@@ -30,6 +30,11 @@ verify_jwt = true
 [functions.botconversa-send]
 verify_jwt = false
 
+# Webhook público chamado pelo BotConversa. A autorização é feita internamente
+# pelo token HOSPEDAGEM_BOTCONVERSA_WEBHOOK_SECRET.
+[functions.hospedagem-whatsapp-webhook]
+verify_jwt = false
+
 [functions.correios-prepostagem]
 verify_jwt = true
 
