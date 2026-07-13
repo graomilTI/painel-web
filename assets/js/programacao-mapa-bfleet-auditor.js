@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 
-const RELEASE = '20260713-bfleet-auditor1';
+const RELEASE = '20260713-bfleet-auditor2';
 const POSICAO_CACHE_MS = 90 * 1000;
 const REFRESH_INTERVAL_MS = 2 * 60 * 1000;
 
@@ -242,6 +242,47 @@ function enrichTooltip(layer, position) {
   layer.__pmgBfleetTooltip = RELEASE;
 }
 
+function htmlText(value) {
+  const container = document.createElement('div');
+  container.innerHTML = String(value || '');
+  return text(container.textContent || container.innerText || '');
+}
+
+function routeDriverPosition(layer) {
+  const tooltip = layer?.getTooltip?.();
+  const content = tooltip?.getContent?.();
+  if (typeof content !== 'string') return null;
+  const match = content.match(/<b>([\s\S]*?)<\/b>/i);
+  const driverName = norm(htmlText(match?.[1] || ''));
+  return driverName ? state.byDriverName.get(driverName) || null : null;
+}
+
+function connectRouteToBfleet(layer) {
+  if (!layer || typeof layer.getLatLngs !== 'function' || typeof layer.setLatLngs !== 'function') return false;
+  if (layer.__pmgBfleetRouteConnected === RELEASE) return true;
+
+  const position = routeDriverPosition(layer);
+  if (!position) return false;
+
+  const latLngs = layer.getLatLngs();
+  if (!Array.isArray(latLngs) || !latLngs.length) return false;
+
+  const origin = window.L.latLng(position.latitude, position.longitude);
+  if (Array.isArray(latLngs[0])) {
+    const groups = latLngs.map(group => Array.isArray(group) ? group.slice() : group);
+    if (!groups[0]?.length) return false;
+    groups[0][0] = origin;
+    layer.setLatLngs(groups);
+  } else {
+    const points = latLngs.slice();
+    points[0] = origin;
+    layer.setLatLngs(points);
+  }
+
+  layer.__pmgBfleetRouteConnected = RELEASE;
+  return true;
+}
+
 async function ensureLeaflet() {
   if (window.L?.LayerGroup) return window.L;
 
@@ -298,6 +339,11 @@ function patchLeaflet() {
       }
     }
 
+    // A rota era calculada com a coordenada residencial antes do marcador ser
+    // reposicionado pela BFleet. Corrige o primeiro ponto da linha para a mesma
+    // posição usada pelo ícone da frota, evitando a rota "solta" no mapa.
+    connectRouteToBfleet(layer);
+
     return originalAddLayer.call(this, layer);
   }
 
@@ -308,15 +354,26 @@ function patchLeaflet() {
   return true;
 }
 
+function filterAndEnrich(rows) {
+  return (rows || [])
+    .filter(row => !isAuditor(row))
+    .map(row => {
+      const copy = { ...row };
+      const position = positionFor(copy);
+      if (position && isFleet(copy, null)) enrichFleetRow(copy, position);
+      return copy;
+    });
+}
+
 function filteredSnapshot(snapshot) {
   if (!snapshot?.osComCandidatosAtual) return snapshot;
   return {
     ...snapshot,
     osComCandidatosAtual: snapshot.osComCandidatosAtual.map(item => ({
       ...item,
-      candidatos: (item.candidatos || []).filter(row => !isAuditor(row)),
-      colaboradoresRegional: (item.colaboradoresRegional || []).filter(row => !isAuditor(row)),
-      equipeRows: (item.equipeRows || []).filter(row => !isAuditor(row)),
+      candidatos: filterAndEnrich(item.candidatos),
+      colaboradoresRegional: filterAndEnrich(item.colaboradoresRegional),
+      equipeRows: filterAndEnrich(item.equipeRows),
     })),
   };
 }
