@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient.js';
-import { getColaboradores } from './colaboradoresCache.js';
+import { getColaboradores } from './colaboradoresCache.js?v=20260713-fonte-atual2';
 import { getCurrentUser, getUserContext } from './auth.js';
 
 const S = {
@@ -106,8 +106,8 @@ async function carregar() {
   try {
     await resolverAcesso();
     const rows = await getColaboradores({ force: true, somenteAtivos: true });
-    // A view colaboradores_atuais já resolve a fotografia vigente. Um segundo
-    // corte pela maior data global escondia pessoas de regionais atualizadas em dias diferentes.
+    // A fonte principal agora é public.colaboradores, sincronizada pelo agente.
+    // A view de snapshot permanece somente como fallback de compatibilidade.
     S.lista = dedup(rows.filter(pertence));
     S.porNome = new Map(S.lista.map((row) => [norm(row.nome), row]));
     S.pronto = true;
