@@ -36,17 +36,41 @@ function unicos(values) {
   return [...map.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
+async function buscarAppUser(userId) {
+  if (!userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('app_usuarios')
+      .select('*')
+      .eq('auth_user_id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    return data || null;
+  } catch (error) {
+    console.warn('[hospedagem] app_usuarios indisponível:', error);
+    return null;
+  }
+}
+
+async function buscarSupervisoesRelacionadas() {
+  try {
+    const { data, error } = await supabase.rpc('programacao_listar_supervisoes');
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.warn('[hospedagem] relação de supervisões indisponível:', error);
+    return [];
+  }
+}
+
 async function resolverAcesso() {
+  S.erro = '';
   const user = await getCurrentUser().catch(() => null);
-  const context = user?.id ? await getUserContext(user.id).catch(() => null) : null;
-  const [appRes, relRes] = await Promise.all([
-    user?.id
-      ? supabase.from('app_usuarios').select('*').eq('auth_user_id', user.id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    supabase.rpc('programacao_listar_supervisoes').catch(() => ({ data: [] })),
+  const [context, app, relacionadas] = await Promise.all([
+    user?.id ? getUserContext(user.id).catch(() => null) : Promise.resolve(null),
+    buscarAppUser(user?.id),
+    buscarSupervisoesRelacionadas(),
   ]);
-  const app = appRes?.data || null;
-  const relacionadas = relRes?.error ? [] : (relRes?.data || []);
   const role = context?.user?.role || context?.perfil_codigo || context?.perfil_nome || context?.role;
   S.master = Boolean(context?.user?.is_master || context?.is_master || norm(role) === 'master');
   S.labels = unicos([
@@ -81,7 +105,7 @@ async function carregar() {
   S.carregando = true;
   try {
     await resolverAcesso();
-    const rows = await getColaboradores({ somenteAtivos: true });
+    const rows = await getColaboradores({ force: true, somenteAtivos: true });
     // A view colaboradores_atuais já resolve a fotografia vigente. Um segundo
     // corte pela maior data global escondia pessoas de regionais atualizadas em dias diferentes.
     S.lista = dedup(rows.filter(pertence));
