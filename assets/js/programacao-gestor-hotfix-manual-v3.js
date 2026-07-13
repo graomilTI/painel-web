@@ -27,9 +27,11 @@ async function loadModule() {
   try {
     await import(blobUrl);
     await import('./programacao-mapa-ux-fast.js?v=20260713-transition3');
-    // Mantém o botão SUGERIR disponível mesmo se a estratégia agrupada falhar ao iniciar.
+    // Mantém o botão SUGERIR disponível mesmo se alguma estratégia complementar falhar.
     await import('./programacao-sugerir-equipe.js?v=20260713-sugerir2');
     await import('./programacao-sugerir-equipe-cluster-loader.js?v=20260713-cluster3');
+    // Última camada: substitui a ação do botão por um agrupamento regional mais abrangente.
+    await import('./programacao-sugerir-equipe-regional.js?v=20260713-regional3');
     await import('./programacao-limpar-conciliacoes.js?v=20260713-limpar2');
   } finally {
     URL.revokeObjectURL(blobUrl);
