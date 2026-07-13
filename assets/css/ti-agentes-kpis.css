@@ -1,0 +1,132 @@
+/* Mantém os KPIs de BTG e Geofence no mesmo padrão compacto dos demais KPIs. */
+.ag-hero {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.ag-hero > h2,
+.ag-hero > p {
+  grid-column: 1 / -1;
+}
+
+.ag-hero > .ag-stats {
+  display: contents !important;
+  margin: 0 !important;
+}
+
+.ag-hero > .ag-stats .ag-stat,
+.ag-hero > .ag-btg-kpi {
+  min-width: 0;
+  min-height: 76px;
+  box-sizing: border-box;
+}
+
+.ag-hero > .ag-btg-kpi {
+  position: relative;
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  justify-content: center;
+  margin-top: 0 !important;
+  padding: 12px 18px !important;
+  text-align: center;
+  background: rgba(15, 23, 42, 0.72) !important;
+  border: 1px solid rgba(148, 163, 184, 0.12) !important;
+  border-radius: 16px !important;
+}
+
+.ag-hero > .ag-btg-kpi:hover {
+  background: rgba(15, 23, 42, 0.85) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+.ag-hero > .ag-btg-kpi .ag-btg-kpi-head {
+  display: block !important;
+  margin: 0 !important;
+}
+
+.ag-hero > .ag-btg-kpi .ag-btg-kpi-title {
+  margin-top: 4px;
+  color: #6b7280 !important;
+  font-size: 0 !important;
+  font-weight: 400 !important;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ag-hero > .ag-btg-kpi:nth-of-type(2) .ag-btg-kpi-title::after {
+  content: "Relatórios BTG";
+  font-size: 11px;
+}
+
+.ag-hero > .ag-btg-kpi:nth-of-type(3) .ag-btg-kpi-title::after {
+  content: "Irregularidades Geofence";
+  font-size: 11px;
+}
+
+.ag-hero > .ag-btg-kpi .ag-btg-kpi-sub {
+  display: none !important;
+}
+
+.ag-hero > .ag-btg-kpi .ag-btg-kpi-status {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  gap: 0 !important;
+  font-size: 0 !important;
+}
+
+.ag-hero > .ag-btg-kpi .ag-btg-kpi-grid {
+  display: block !important;
+}
+
+.ag-hero > .ag-btg-kpi .ag-btg-kpi-item {
+  display: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+/* BTG: usa Registros BTG como valor principal. */
+.ag-hero > .ag-btg-kpi:nth-of-type(2) .ag-btg-kpi-item:nth-child(2),
+/* Geofence: usa Irregularidades abertas como valor principal. */
+.ag-hero > .ag-btg-kpi:nth-of-type(3) .ag-btg-kpi-item:nth-child(4) {
+  display: block !important;
+}
+
+.ag-hero > .ag-btg-kpi .ag-btg-kpi-item span {
+  display: none !important;
+}
+
+.ag-hero > .ag-btg-kpi .ag-btg-kpi-item strong {
+  margin: 0 !important;
+  font-size: 22px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+}
+
+.ag-hero > .ag-btg-kpi:nth-of-type(2) .ag-btg-kpi-item strong {
+  color: #3b82f6 !important;
+}
+
+@media (min-width: 760px) {
+  .ag-hero {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (min-width: 1320px) {
+  .ag-hero {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .ag-hero {
+    grid-template-columns: 1fr !important;
+  }
+}
