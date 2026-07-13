@@ -1,9 +1,6 @@
 // Complementa o fluxo de Financeiro > Despesas > Refeições.
-// O botão PAGAR passa a acionar, no mesmo clique do usuário, a exportação já
-// preparada pelo módulo financeiro: Conferência, iFood e Flash.
-//
-// O listener usa a fase de captura para exportar antes de pagarBeneficios()
-// atualizar as linhas para PAGO, quando elas deixam de compor os arquivos.
+// Mantém a exportação antiga apenas como fallback. Quando o novo fluxo de
+// refeições únicas assume o botão, ele próprio gera os arquivos consolidados.
 
 if (!window.__financeiroPagamentoLoteAtivo) {
   window.__financeiroPagamentoLoteAtivo = true;
@@ -14,6 +11,7 @@ if (!window.__financeiroPagamentoLoteAtivo) {
       : null;
 
     if (!pagarBtn) return;
+    if (pagarBtn.hasAttribute('data-refeicoes-unicas-bound')) return;
 
     const exportarBtn = document.getElementById('btnExportarTudo');
     if (!exportarBtn) {
