@@ -78,7 +78,10 @@ function buildRecords(rows) {
     supervisao: row.olsName || null,
     conta: row.baccName || null,
     valor: row.ofrValue ?? null,
-    saldo: row.ofsBallance ?? null,
+    // ofsBallance vem invertido em relação à leitura financeira que o painel usa (saldo
+    // positivo = colaborador com crédito; negativo = colaborador devendo) — GRM guarda o
+    // sinal oposto, por isso invertemos aqui na sincronização.
+    saldo: row.ofsBallance != null ? -row.ofsBallance : null,
     embarque: row.lastLoad || null,
     leitura_mais_antiga: row.lastNoShip || null,
     descricao: row.ofrDescription || null,
