@@ -87,6 +87,8 @@ function buildRecords(rows) {
     descricao: row.ofrDescription || null,
     dados_json: row,
     data_sincronizacao: new Date().toISOString(),
+    pendente_no_grm: true,
+    saiu_pendente_em: null,
   }));
 }
 
@@ -99,6 +101,25 @@ async function upsertData(records) {
     log('INFO', `Progresso: ${Math.min(i + 100, records.length)}/${records.length}`);
   }
   log('SUCCESS', `Upsert concluído: ${records.length} registros`);
+}
+
+// A API do GRM sempre devolve a lista COMPLETA de pendentes. Se um ofr_code que já
+// sincronizamos como pendente sumir dessa lista, foi resolvido/baixado direto no GRM (fora
+// do fluxo do painel) — marcamos pendente_no_grm=false pra tela tirar da aba Solicitações e
+// jogar automaticamente pro Histórico, mesmo sem decisão do financeiro.
+async function marcarSaidosDoGrm(ofrCodesAtuais) {
+  log('INFO', 'Verificando solicitações que saíram da lista de pendentes do GRM...');
+  const agora = new Date().toISOString();
+  let query = supabase
+    .from(REPORT_CONFIG.tableName)
+    .update({ pendente_no_grm: false, saiu_pendente_em: agora })
+    .eq('pendente_no_grm', true);
+  if (ofrCodesAtuais.length) {
+    query = query.not('ofr_code', 'in', `(${ofrCodesAtuais.join(',')})`);
+  }
+  const { data, error } = await query.select('ofr_code');
+  if (error) throw error;
+  log('SUCCESS', `${(data || []).length} solicitação(ões) marcada(s) como não mais pendente(s) no GRM.`);
 }
 
 async function main() {
@@ -138,6 +159,7 @@ async function main() {
     const rows = await fetchPendingRequests(page);
     const records = buildRecords(rows);
     await upsertData(records);
+    await marcarSaidosDoGrm(records.map((r) => r.ofr_code));
 
     log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
   } catch (error) {

@@ -862,6 +862,7 @@ export function renderContent(content, userContext) {
       .hist-cal-day .v{font-size:8px;line-height:1;opacity:.85}
       .hist-cal-day.paid{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}
       .hist-cal-day.recusado{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff7f7}
+      .hist-cal-day.removido{background:linear-gradient(135deg,#475569,#64748b);color:#f1f5f9}
       .hist-cal-day.blank{background:transparent}
       .fin-tab-icon{margin-left:auto;border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#9fb7aa;border-radius:10px;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;transition:all .14s}
       .fin-tab-icon:hover{color:#fff;background:linear-gradient(135deg,#166534,#16a34a);border-color:transparent}
@@ -1078,7 +1079,7 @@ export function renderContent(content, userContext) {
               <div class="pay-mini"><span>Recusados</span><strong id="adiantRecusados">0</strong></div>
             </div>
 
-            <div class="pay-note">Somente linhas marcadas com <strong>✓</strong> entram no botão <strong>PAGAR</strong>. Ao pagar ou recusar (motivo obrigatório), a linha sai daqui e vai para <strong>Histórico de Pagamentos</strong> — evita pagamento duplicado.</div>
+            <div class="pay-note">Somente linhas marcadas com <strong>✓</strong> entram no botão <strong>PAGAR</strong>. Ao pagar, recusar (motivo obrigatório) ou sair da lista de pendentes do GRM (resolvido direto por lá), a linha sai daqui e vai para <strong>Histórico de Pagamentos</strong> — evita pagamento duplicado.</div>
 
             <div class="pay-subtabs">
               <button class="adiant-subtab active" data-adiant-tab="ativos" type="button">Solicitações</button>
@@ -2488,7 +2489,7 @@ export function renderContent(content, userContext) {
     try {
       const [{ data: importadas, error: e1 }, { data: decisoes, error: e2 }] = await Promise.all([
         supabase.from('grm_adiantamentos_importacoes')
-          .select('ofr_code,data_solicitacao,data_registro,colaborador,cpf,coordenacao,supervisao,conta,valor,saldo,embarque,leitura_mais_antiga,descricao')
+          .select('ofr_code,data_solicitacao,data_registro,colaborador,cpf,coordenacao,supervisao,conta,valor,saldo,embarque,leitura_mais_antiga,descricao,pendente_no_grm,saiu_pendente_em')
           .order('data_registro', { ascending: false })
           .limit(500),
         supabase.from('financeiro_adiantamentos_decisoes')
@@ -2526,9 +2527,12 @@ export function renderContent(content, userContext) {
 
   function renderAdiantamentosTable() {
     const rows = state.adiantamentosRows || [];
-    const ativos = rows.filter((r) => !['pago', 'recusado'].includes(r.decisao?.status));
-    const historico = rows.filter((r) => ['pago', 'recusado'].includes(r.decisao?.status))
-      .sort((a, b) => String(b.decisao?.decidido_em || '').localeCompare(String(a.decisao?.decidido_em || '')));
+    // Sai da lista de Solicitações (e vai pro Histórico automaticamente) tanto quem já foi
+    // pago/recusado pelo financeiro quanto quem deixou de aparecer como pendente no GRM
+    // (resolvido/baixado direto por lá, fora do fluxo do painel).
+    const ativos = rows.filter((r) => r.pendente_no_grm !== false && !['pago', 'recusado'].includes(r.decisao?.status));
+    const historico = rows.filter((r) => r.pendente_no_grm === false || ['pago', 'recusado'].includes(r.decisao?.status))
+      .sort((a, b) => String(b.decisao?.decidido_em || b.saiu_pendente_em || '').localeCompare(String(a.decisao?.decidido_em || a.saiu_pendente_em || '')));
 
     const tbody = document.getElementById('adiantTbody');
     if (tbody) {
@@ -2585,13 +2589,15 @@ export function renderContent(content, userContext) {
     for (let d = 1; d <= diasNoMes; d++) {
       const iso = `${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const info = diasMap.get(iso);
-      if (!info || (!info.pago && !info.recusado)) {
+      if (!info || (!info.pago && !info.recusado && !info.removido)) {
         celulas.push(`<div class="hist-cal-day"><span class="d">${d}</span></div>`);
         continue;
       }
-      const isPago = info.pago > 0;
-      const valor = isPago ? info.pago : info.recusado;
-      celulas.push(`<div class="hist-cal-day ${isPago ? 'paid' : 'recusado'}" title="${esc(money(valor))}"><span class="d">${d}</span><span class="v">${moneyCompact(valor)}</span></div>`);
+      let cls, valor, titulo;
+      if (info.pago > 0) { cls = 'paid'; valor = info.pago; titulo = money(valor); }
+      else if (info.recusado > 0) { cls = 'recusado'; valor = info.recusado; titulo = money(valor); }
+      else { cls = 'removido'; valor = info.removido; titulo = `${money(valor)} · saiu do GRM sem decisão do financeiro`; }
+      celulas.push(`<div class="hist-cal-day ${cls}" title="${esc(titulo)}"><span class="d">${d}</span><span class="v">${moneyCompact(valor)}</span></div>`);
     }
 
     return `
@@ -2616,15 +2622,21 @@ export function renderContent(content, userContext) {
     const grupos = new Map();
     historico.forEach((row) => {
       const key = row.cpf || row.colaborador || '-';
-      if (!grupos.has(key)) grupos.set(key, { nome: row.colaborador || '-', totalPago: 0, totalRecusado: 0, dias: new Map() });
+      if (!grupos.has(key)) grupos.set(key, { nome: row.colaborador || '-', totalPago: 0, totalRecusado: 0, totalRemovido: 0, dias: new Map() });
       const g = grupos.get(key);
       const status = row.decisao?.status;
+      // Saiu da lista de pendentes do GRM sem o financeiro ter marcado ✓/✗ aqui.
+      const removidoSemDecisao = row.pendente_no_grm === false && !['pago', 'recusado'].includes(status);
       const valor = Number(row.valor || 0);
-      const dia = String(row.decisao?.decidido_em || row.data_solicitacao || '').slice(0, 10);
-      if (status === 'pago') g.totalPago += valor; else if (status === 'recusado') g.totalRecusado += valor;
+      const dia = String(row.decisao?.decidido_em || row.saiu_pendente_em || row.data_solicitacao || '').slice(0, 10);
+      if (status === 'pago') g.totalPago += valor;
+      else if (status === 'recusado') g.totalRecusado += valor;
+      else if (removidoSemDecisao) g.totalRemovido += valor;
       if (dia) {
-        const atual = g.dias.get(dia) || { pago: 0, recusado: 0 };
-        if (status === 'pago') atual.pago += valor; else if (status === 'recusado') atual.recusado += valor;
+        const atual = g.dias.get(dia) || { pago: 0, recusado: 0, removido: 0 };
+        if (status === 'pago') atual.pago += valor;
+        else if (status === 'recusado') atual.recusado += valor;
+        else if (removidoSemDecisao) atual.removido += valor;
         g.dias.set(dia, atual);
       }
     });
@@ -2640,6 +2652,7 @@ export function renderContent(content, userContext) {
     container.innerHTML = lista.map((g) => {
       const diasPagos = Array.from(g.dias.values()).filter((d) => d.pago > 0).length;
       const diasRecusados = Array.from(g.dias.values()).filter((d) => d.recusado > 0).length;
+      const diasRemovidos = Array.from(g.dias.values()).filter((d) => d.removido > 0).length;
       const meses = new Set(Array.from(g.dias.keys()).map((dia) => dia.slice(0, 7)));
       const calendariosHtml = Array.from(meses).sort().map((mesKey) => calendarioMesHtml(mesKey, g.dias)).join('');
 
@@ -2652,6 +2665,7 @@ export function renderContent(content, userContext) {
               <div><span>Dias pagos</span><strong>${diasPagos}</strong></div>
               <div><span>Total recusado</span><strong style="color:#fca5a5">${money(g.totalRecusado)}</strong></div>
               <div><span>Dias recusados</span><strong>${diasRecusados}</strong></div>
+              <div><span>Saiu do GRM sem decisão</span><strong style="color:#cbd5e1">${diasRemovidos}</strong></div>
             </div>
           </div>
           <div class="hist-cal-row">${calendariosHtml}</div>
