@@ -47,6 +47,27 @@ function normalizeBrazilPhone(value: unknown): string {
   return digits;
 }
 
+function splitSubscriberName(value: unknown): { firstName: string; lastName: string } {
+  const clean = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+
+  if (!clean) {
+    return { firstName: "Hotel", lastName: "Hospedagem" };
+  }
+
+  const parts = clean.split(" ").filter(Boolean);
+  if (parts.length === 1) {
+    return { firstName: parts[0].slice(0, 60), lastName: "Hotel" };
+  }
+
+  return {
+    firstName: parts.shift()!.slice(0, 60),
+    lastName: parts.join(" ").slice(0, 60) || "Hotel",
+  };
+}
+
 async function loadApiKey(supabase: ReturnType<typeof createClient>): Promise<{
   apiKey: string;
   source?: string;
@@ -96,9 +117,11 @@ async function getSubscriberId(
     return { subscriberId: Number(getResult.data.id) };
   }
 
+  const { firstName, lastName } = splitSubscriberName(nome);
   const body = new FormData();
   body.append("phone", tel);
-  if (nome) body.append("name", nome.substring(0, 60));
+  body.append("first_name", firstName);
+  body.append("last_name", lastName);
 
   const createRes = await fetch(`${BASE}/subscriber/`, {
     method: "POST",
