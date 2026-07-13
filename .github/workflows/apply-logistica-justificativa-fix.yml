@@ -1,0 +1,84 @@
+name: Aplicar correção de Logística na Programação
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-logistica-justificativa-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  aplicar-correcao:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ajustar regra de justificativa
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          js_path = Path('assets/js/programacao-gestor-hotfix-manual-v3.js')
+          html_path = Path('programacao.html')
+          workflow_path = Path('.github/workflows/apply-logistica-justificativa-fix.yml')
+
+          old = """async function vincOs(osId,col){const{snap,item}=findOs(osId);if(!snap||!item)return;const cand=mat(item,col);if((item.equipeRows||[]).some(r=>String(r.colaborador_id)===String(cand.colaboradorId))){avisar(`${cand.nome} já está vinculado nesta O.S.`);return}const atuais=item.equipeRows||[];const disponibilidade=isMot(cand)?await dispMot(cand.nome):'OK';if(!disponibilidade)return;let motivo=null;if(disponibilidade==='OK'&&atuais.length){motivo=await just(item.os,atuais,cand);if(!motivo)return}const programacaoId=snap.programacaoIdParaOs?.(item.os)||item.equipeRows?.[0]?.programacao_id;if(!programacaoId){avisar('Programação da O.S. não encontrada. Recarregue a tela.');return}await upsert({programacaoId,os:item.os,cand,disponibilidade});if(motivo)logActivity('action','justificativa_multiplos_colaboradores_os','programacao',{os_id:item.os.id,numero_os:item.os.numero_os,colaboradores:[...atuais.map(c=>c.colaborador_id),cand.colaboradorId],nomes:[...atuais.map(c=>c.nome_colaborador),cand.nome],motivo});afterWrite()}"""
+
+          new = """async function vincOs(osId,col){
+            const{snap,item}=findOs(osId);
+            if(!snap||!item)return;
+            const cand=mat(item,col);
+            if((item.equipeRows||[]).some(r=>String(r.colaborador_id)===String(cand.colaboradorId))){avisar(`${cand.nome} já está vinculado nesta O.S.`);return}
+            const atuais=item.equipeRows||[];
+            const programacaoId=snap.programacaoIdParaOs?.(item.os)||item.equipeRows?.[0]?.programacao_id;
+            if(!programacaoId){avisar('Programação da O.S. não encontrada. Recarregue a tela.');return}
+            const disponibilidade=isMot(cand)?await dispMot(cand.nome):'OK';
+            if(!disponibilidade)return;
+            let atuaisAtendimento=atuais,motivo=null;
+            if(disponibilidade==='OK'&&atuais.length){
+              const logistica=await loadDisponibilidade([programacaoId]);
+              atuaisAtendimento=atuais.filter(r=>logistica.get(String(r.colaborador_id))!=='LOGISTICA');
+              if(atuaisAtendimento.length){motivo=await just(item.os,atuaisAtendimento,cand);if(!motivo)return}
+            }
+            await upsert({programacaoId,os:item.os,cand,disponibilidade});
+            if(motivo)logActivity('action','justificativa_multiplos_colaboradores_os','programacao',{os_id:item.os.id,numero_os:item.os.numero_os,colaboradores:[...atuaisAtendimento.map(c=>c.colaborador_id),cand.colaboradorId],nomes:[...atuaisAtendimento.map(c=>c.nome_colaborador),cand.nome],motivo});
+            afterWrite()
+          }"""
+
+          js = js_path.read_text(encoding='utf-8')
+          if new not in js:
+              if old not in js:
+                  raise SystemExit('Trecho esperado de vincOs não foi encontrado; correção não aplicada.')
+              js_path.write_text(js.replace(old, new, 1), encoding='utf-8')
+
+          html = html_path.read_text(encoding='utf-8')
+          html = html.replace(
+              'programacao-gestor-hotfix-manual-v3.js?v=20260710-markerjitter1',
+              'programacao-gestor-hotfix-manual-v3.js?v=20260713-logistica-just1'
+          )
+          html_path.write_text(html, encoding='utf-8')
+
+          workflow_path.unlink()
+          PY
+
+      - name: Validar sintaxe do módulo
+        shell: bash
+        run: |
+          cp assets/js/programacao-gestor-hotfix-manual-v3.js /tmp/programacao-gestor-hotfix-manual-v3.mjs
+          node --check /tmp/programacao-gestor-hotfix-manual-v3.mjs
+
+      - name: Publicar correção
+        shell: bash
+        run: |
+          git config user.name "graomilTI"
+          git config user.email "noreply@github.com"
+          git add assets/js/programacao-gestor-hotfix-manual-v3.js programacao.html .github/workflows/apply-logistica-justificativa-fix.yml
+          git commit -m "Programação: Logística não conta como colaborador no ponto"
+          git push origin main
