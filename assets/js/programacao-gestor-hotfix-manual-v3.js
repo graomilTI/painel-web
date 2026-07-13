@@ -26,9 +26,9 @@ async function loadModule() {
   ], { type: 'text/javascript' }));
   try {
     await import(blobUrl);
+    await import('./programacao-mapa-ux-fast.js?v=20260713-iconlegend-fast1');
     await import('./programacao-frota-os-auto-colaborador.js?v=20260713-osautocolab1');
     await import('./programacao-sugerir-equipe.js?v=20260713-sugerir1');
-    await import('./programacao-mapa-ux-fast.js?v=20260713-iconlegend-fast1');
   } finally {
     URL.revokeObjectURL(blobUrl);
   }
