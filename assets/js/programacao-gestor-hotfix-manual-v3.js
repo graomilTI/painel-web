@@ -27,7 +27,9 @@ async function loadModule() {
   try {
     await import(blobUrl);
     await import('./programacao-mapa-ux-fast.js?v=20260713-transition3');
-    await import('./programacao-sugerir-equipe-cluster-loader.js?v=20260713-cluster2');
+    // Mantém o botão SUGERIR disponível mesmo se a estratégia agrupada falhar ao iniciar.
+    await import('./programacao-sugerir-equipe.js?v=20260713-sugerir2');
+    await import('./programacao-sugerir-equipe-cluster-loader.js?v=20260713-cluster3');
     await import('./programacao-limpar-conciliacoes.js?v=20260713-limpar2');
   } finally {
     URL.revokeObjectURL(blobUrl);
