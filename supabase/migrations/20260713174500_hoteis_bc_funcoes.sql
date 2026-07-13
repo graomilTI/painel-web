@@ -47,9 +47,9 @@ returns text
 language plpgsql
 as $$
 declare
-  v_id public.hospedagem_hoteis.id%type;
+  v_id text;
 begin
-  select h.id
+  select h.id::text
     into v_id
   from public.hospedagem_hoteis h
   where
@@ -104,7 +104,7 @@ begin
       'ATIVO', coalesce(nullif(trim(p_prioridade), ''), 'NORMAL'),
       nullif(trim(p_observacoes), '')
     )
-    returning id into v_id;
+    returning id::text into v_id;
   else
     update public.hospedagem_hoteis h
     set
@@ -141,10 +141,10 @@ begin
         when nullif(trim(coalesce(h.observacoes, '')), '') is null then p_observacoes
         when position('Fonte: bc hoteis.xlsx' in h.observacoes) > 0 then h.observacoes
         else h.observacoes || E'\n' || p_observacoes end
-    where h.id = v_id;
+    where h.id::text = v_id;
   end if;
 
-  return v_id::text;
+  return v_id;
 end;
 $$;
 
