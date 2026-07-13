@@ -7,7 +7,53 @@ import { initGestorMenuAjustes } from './gestor-menu-ajustes.js';
 import { initProgramacaoRuntimeFixes } from './programacao-runtime-fixes.js';
 import { initRouter } from './router.js';
 import './searchableSelect.js';
-import './hospedagem-colaboradores-regional.js?v=20260713-regional3';
+import './pwa-register.js?v=20260713-cache-v10';
+import './hospedagem-colaboradores-regional.js?v=20260713-cache-v10';
+
+// Hospedagem recebe alterações frequentes e não pode reaproveitar uma instância
+// antiga do módulo ES já carregada pela navegação suave. Até o roteador possuir
+// versionamento automático por rota, esta página usa navegação completa com uma
+// chave de release. Isso não equivale a hard refresh: o clique normal no menu já
+// abre a versão publicada mais recente.
+const HOSPEDAGEM_RELEASE = '20260713-cache-v10';
+
+function installFreshHospedagemNavigation() {
+  if (window.__hospedagemFreshNavigationBound) return;
+  window.__hospedagemFreshNavigationBound = true;
+
+  document.addEventListener('click', (event) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) return;
+
+    const anchor = event.target.closest?.('a[href]');
+    if (!anchor || anchor.target && anchor.target !== '_self' || anchor.hasAttribute('download')) return;
+
+    let url;
+    try {
+      url = new URL(anchor.href, window.location.href);
+    } catch {
+      return;
+    }
+
+    if (url.origin !== window.location.origin) return;
+    const route = url.pathname.split('/').filter(Boolean).pop()?.replace(/\.html$/i, '').toLowerCase();
+    const current = window.location.pathname.split('/').filter(Boolean).pop()?.replace(/\.html$/i, '').toLowerCase();
+    if (route !== 'hospedagem' || current === 'hospedagem') return;
+
+    url.searchParams.set('_release', HOSPEDAGEM_RELEASE);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    window.location.assign(url.href);
+  }, true);
+}
+
+installFreshHospedagemNavigation();
 
 // Aviso de "nova versão disponível": router.js e o resto do bootstrap
 // compartilhado (layout, auth etc.) não têm cache-busting por query string
