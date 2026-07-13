@@ -178,6 +178,7 @@ function eventos() {
     const input = ev.target.closest?.('#colabBox .hosp-ac-input');
     if (!input) return;
     ev.stopImmediatePropagation();
+    ajuda();
     render(input);
     if (!S.pronto && !S.carregando) carregar().then(() => render(input));
   }, true);
@@ -241,12 +242,18 @@ function ajuda() {
 }
 
 function ativar() {
-  if (!document.getElementById('colabBox')) return;
+  if (!document.getElementById('colabBox')) return false;
   ajuda();
   carregar();
+  return true;
 }
 
 patchInsert();
 eventos();
-ativar();
-new MutationObserver(ativar).observe(document.documentElement, { childList: true, subtree: true });
+if (!ativar()) {
+  const observer = new MutationObserver(() => {
+    if (ativar()) observer.disconnect();
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  setTimeout(() => observer.disconnect(), 60000);
+}
