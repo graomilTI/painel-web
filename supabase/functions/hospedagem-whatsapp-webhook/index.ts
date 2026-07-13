@@ -17,6 +17,15 @@ function digits(value: unknown) {
   return String(value ?? "").replace(/\D/g, "");
 }
 
+function normalizeKey(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function pick(obj: any, paths: string[]) {
   for (const path of paths) {
     const value = path.split(".").reduce((acc, key) => acc?.[key], obj);
@@ -34,6 +43,117 @@ function normalizePhone(value: unknown) {
 
 function extractCode(text: string) {
   return text.toUpperCase().match(/HOSP[-\s]?\d{3,}/)?.[0]?.replace(/\s/g, "-") || null;
+}
+
+function flattenValues(value: unknown, prefix = "", output = new Map<string, unknown>()) {
+  if (value === null || value === undefined) return output;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => flattenValues(item, `${prefix}.${index}`, output));
+    return output;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const fieldName = record.name ?? record.key ?? record.field ?? record.slug ?? record.label;
+    const fieldValue = record.value ?? record.answer ?? record.response ?? record.content;
+    if (fieldName !== undefined && fieldValue !== undefined && typeof fieldValue !== "object") {
+      output.set(normalizeKey(fieldName), fieldValue);
+    }
+    Object.entries(record).forEach(([key, item]) => {
+      const path = prefix ? `${prefix}.${key}` : key;
+      flattenValues(item, path, output);
+    });
+    return output;
+  }
+  const full = normalizeKey(prefix);
+  const leaf = normalizeKey(prefix.split(".").pop());
+  if (full) output.set(full, value);
+  if (leaf && !output.has(leaf)) output.set(leaf, value);
+  return output;
+}
+
+function parseLabelledText(text: string, output: Map<string, unknown>) {
+  String(text || "").split(/\r?\n/).forEach((line) => {
+    const match = line.match(/^\s*([^:=-]{2,60})\s*[:=-]\s*(.+?)\s*$/);
+    if (!match) return;
+    const key = normalizeKey(match[1]);
+    if (key && !output.has(key)) output.set(key, match[2]);
+  });
+}
+
+function valueFrom(map: Map<string, unknown>, aliases: string[]) {
+  const normalizedAliases = aliases.map(normalizeKey);
+  for (const alias of normalizedAliases) {
+    if (map.has(alias)) return map.get(alias);
+  }
+  for (const [key, value] of map.entries()) {
+    if (normalizedAliases.some((alias) => key.endsWith(`_${alias}`))) return value;
+  }
+  return null;
+}
+
+function parseBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const normalized = normalizeKey(value);
+  if (!normalized) return null;
+  if (["sim", "s", "yes", "true", "1", "disponivel", "disponibilidade_confirmada", "incluido", "aceita"].includes(normalized)) return true;
+  if (["nao", "n", "no", "false", "0", "indisponivel", "sem_disponibilidade", "nao_incluido", "nao_aceita"].includes(normalized)) return false;
+  if (normalized.includes("nao") || normalized.includes("indispon")) return false;
+  if (normalized.includes("sim") || normalized.includes("disponiv")) return true;
+  return null;
+}
+
+function parseMoney(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  let raw = String(value ?? "").trim();
+  if (!raw) return null;
+  raw = raw.replace(/[^0-9,.-]/g, "");
+  if (!raw) return null;
+  if (raw.includes(",")) raw = raw.replace(/\./g, "").replace(",", ".");
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function quoteFields(body: any, text: string) {
+  const values = flattenValues(body);
+  parseLabelledText(text, values);
+  return {
+    code: String(valueFrom(values, ["codigo", "codigo_hospedagem", "solicitacao", "solicitacao_codigo"]) || ""),
+    flowId: String(valueFrom(values, ["flow_id", "flowid", "fluxo_id", "id_fluxo"]) || ""),
+    availability: parseBoolean(valueFrom(values, ["disponibilidade", "disponivel", "tem_disponibilidade", "possui_disponibilidade"])),
+    dailyValue: parseMoney(valueFrom(values, ["valor_diaria", "diaria", "valor_da_diaria", "preco_diaria"])),
+    totalValue: parseMoney(valueFrom(values, ["valor_total", "total", "total_cotacao", "valor_total_cotacao"])),
+    acceptsCheckout: parseBoolean(valueFrom(values, ["aceita_pagamento_checkout", "pagamento_checkout", "aceita_checkout", "pagar_checkout"])),
+    breakfastIncluded: parseBoolean(valueFrom(values, ["cafe_incluso", "cafe_da_manha", "cafe_da_manha_incluso", "inclui_cafe"])),
+    parkingIncluded: parseBoolean(valueFrom(values, ["estacionamento_incluso", "estacionamento", "inclui_estacionamento"])),
+    emitsInvoice: parseBoolean(valueFrom(values, ["emite_nota_fiscal", "emite_nf", "nota_fiscal", "emissao_nota_fiscal"])),
+    notes: String(valueFrom(values, ["observacoes", "observacao", "comentarios", "detalhes", "mensagem_final"]) || ""),
+  };
+}
+
+function hasStructuredQuote(fields: ReturnType<typeof quoteFields>) {
+  return [
+    fields.availability,
+    fields.dailyValue,
+    fields.totalValue,
+    fields.acceptsCheckout,
+    fields.breakfastIncluded,
+    fields.parkingIncluded,
+    fields.emitsInvoice,
+  ].some((value) => value !== null) || Boolean(fields.notes || fields.code);
+}
+
+function quoteSummary(fields: ReturnType<typeof quoteFields>) {
+  return [
+    fields.availability === null ? "" : `Disponibilidade: ${fields.availability ? "Sim" : "Não"}`,
+    fields.dailyValue === null ? "" : `Diária: R$ ${fields.dailyValue.toFixed(2)}`,
+    fields.totalValue === null ? "" : `Total: R$ ${fields.totalValue.toFixed(2)}`,
+    fields.breakfastIncluded === null ? "" : `Café: ${fields.breakfastIncluded ? "Sim" : "Não"}`,
+    fields.parkingIncluded === null ? "" : `Estacionamento: ${fields.parkingIncluded ? "Sim" : "Não"}`,
+    fields.acceptsCheckout === null ? "" : `Pagamento no checkout: ${fields.acceptsCheckout ? "Sim" : "Não"}`,
+    fields.emitsInvoice === null ? "" : `Emite NF: ${fields.emitsInvoice ? "Sim" : "Não"}`,
+    fields.notes,
+  ].filter(Boolean).join(" | ");
 }
 
 serve(async (req) => {
@@ -77,13 +197,15 @@ serve(async (req) => {
     const externalId = String(pick(body, [
       "message_id", "id", "data.message_id", "data.id", "event.message.id",
     ]) || "");
+    const fields = quoteFields(body, text);
+    const code = extractCode(fields.code) || extractCode(text);
 
-    if (!phone && !extractCode(text)) return json({ ok: false, error: "Não foi possível identificar telefone ou código da hospedagem." }, 400);
-    if (!fileUrl && !text) return json({ ok: false, error: "Webhook sem mensagem ou arquivo." }, 400);
+    if (!phone && !code) return json({ ok: false, error: "Não foi possível identificar telefone ou código da hospedagem." }, 400);
+    if (!fileUrl && !text && !hasStructuredQuote(fields)) return json({ ok: false, error: "Webhook sem mensagem, arquivo ou dados da cotação." }, 400);
 
-    const code = extractCode(text);
     let solicitation: any = null;
     let hotel: any = null;
+    let quote: any = null;
 
     if (code) {
       const { data } = await supabase
@@ -94,36 +216,79 @@ serve(async (req) => {
       solicitation = data;
     }
 
-    if (!solicitation && phone) {
+    if (phone) {
       const { data: hotels } = await supabase
         .from("hospedagem_hoteis")
-        .select("id,nome,whatsapp")
+        .select("id,nome,whatsapp,emite_nota_fiscal")
         .not("whatsapp", "is", null);
       hotel = (hotels || []).find((item: any) => normalizePhone(item.whatsapp) === phone) || null;
-      if (hotel) {
-        const { data } = await supabase
+    }
+
+    if (solicitation && hotel?.id) {
+      const { data } = await supabase
+        .from("hospedagem_cotacoes")
+        .select("*")
+        .eq("solicitacao_id", solicitation.solicitacao_id)
+        .eq("hotel_id", hotel.id)
+        .maybeSingle();
+      quote = data;
+    }
+
+    if (!solicitation && hotel?.id) {
+      const { data } = await supabase
+        .from("hospedagem_cotacoes")
+        .select("*")
+        .eq("hotel_id", hotel.id)
+        .in("status", ["ENVIADA", "ENVIANDO", "PENDENTE", "RESPONDIDA"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      quote = data;
+      if (quote?.solicitacao_id) {
+        const { data: row } = await supabase
           .from("hospedagem_painel_geral")
           .select("*")
-          .eq("hotel_id", hotel.id)
-          .in("status_solicitacao", ["RESERVADA", "EM_COTACAO", "SOLICITADA"])
-          .order("data_solicitacao", { ascending: false })
-          .limit(1)
+          .eq("solicitacao_id", quote.solicitacao_id)
           .maybeSingle();
-        solicitation = data;
+        solicitation = row;
       }
     }
 
-    if (!solicitation) {
-      return json({ ok: false, error: "Nenhuma hospedagem aberta foi localizada para esta mensagem." }, 404);
+    if (!solicitation && hotel?.id) {
+      const { data } = await supabase
+        .from("hospedagem_painel_geral")
+        .select("*")
+        .eq("hotel_id", hotel.id)
+        .in("status_solicitacao", ["RESERVADA", "EM_COTACAO", "SOLICITADA"])
+        .order("data_solicitacao", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      solicitation = data;
     }
 
-    if (!hotel && solicitation.hotel_id) {
+    if (solicitation && !hotel && solicitation.hotel_id) {
       const { data } = await supabase
         .from("hospedagem_hoteis")
-        .select("id,nome,whatsapp")
+        .select("id,nome,whatsapp,emite_nota_fiscal")
         .eq("id", solicitation.hotel_id)
         .maybeSingle();
       hotel = data;
+    }
+
+    if (solicitation && !quote) {
+      let query = supabase
+        .from("hospedagem_cotacoes")
+        .select("*")
+        .eq("solicitacao_id", solicitation.solicitacao_id)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (hotel?.id) query = query.eq("hotel_id", hotel.id);
+      const { data } = await query.maybeSingle();
+      quote = data;
+    }
+
+    if (!solicitation) {
+      return json({ ok: false, error: "Nenhuma hospedagem ou cotação aberta foi localizada para esta resposta." }, 404);
     }
 
     if (fileUrl) {
@@ -166,21 +331,41 @@ serve(async (req) => {
       return json({ ok: true, action: "documento_vinculado", document_id: documentRow.id, tipo: documentRow.tipo, codigo: solicitation.codigo });
     }
 
-    const quote = hotel?.id
-      ? await supabase
-        .from("hospedagem_cotacoes")
-        .select("id")
-        .eq("solicitacao_id", solicitation.solicitacao_id)
-        .eq("hotel_id", hotel.id)
-        .maybeSingle()
-      : { data: null };
+    const responseText = text || quoteSummary(fields);
+    const quotePayload: Record<string, unknown> = {
+      status: fields.availability === false ? "INDISPONIVEL" : "RESPONDIDA",
+      resposta_texto: responseText || null,
+      resposta_dados: body,
+      resposta_flow_id: fields.flowId || "8660973",
+      respondido_em: new Date().toISOString(),
+    };
+    if (fields.availability !== null) quotePayload.disponibilidade = fields.availability;
+    if (fields.dailyValue !== null) quotePayload.valor_diaria = fields.dailyValue;
+    if (fields.totalValue !== null) quotePayload.valor_total = fields.totalValue;
+    if (fields.acceptsCheckout !== null) quotePayload.aceita_pagamento_checkout = fields.acceptsCheckout;
+    if (fields.breakfastIncluded !== null) quotePayload.cafe_incluso = fields.breakfastIncluded;
+    if (fields.parkingIncluded !== null) quotePayload.estacionamento_incluso = fields.parkingIncluded;
+    if (fields.notes) quotePayload.observacoes = fields.notes;
 
-    if (quote.data?.id) {
-      await supabase.from("hospedagem_cotacoes").update({
-        status: "RESPONDIDA",
-        resposta_texto: text,
-        respondido_em: new Date().toISOString(),
-      }).eq("id", quote.data.id);
+    if (quote?.id) {
+      const { error } = await supabase.from("hospedagem_cotacoes").update(quotePayload).eq("id", quote.id);
+      if (error) throw error;
+    } else if (hotel?.id) {
+      const { error } = await supabase.from("hospedagem_cotacoes").upsert({
+        solicitacao_id: solicitation.solicitacao_id,
+        hotel_id: hotel.id,
+        hotel_nome: hotel.nome || null,
+        ...quotePayload,
+      }, { onConflict: "solicitacao_id,hotel_id" });
+      if (error) throw error;
+    }
+
+    if (hotel?.id && fields.emitsInvoice !== null) {
+      const { error } = await supabase
+        .from("hospedagem_hoteis")
+        .update({ emite_nota_fiscal: fields.emitsInvoice })
+        .eq("id", hotel.id);
+      if (error) throw error;
     }
 
     await supabase.from("hospedagem_mensagens").upsert({
@@ -191,13 +376,28 @@ serve(async (req) => {
       tipo: "RESPOSTA_COTACAO",
       canal: "BOTCONVERSA",
       remetente: phone,
-      conteudo: text,
+      conteudo: responseText || null,
       external_message_id: externalId || null,
       status: "RECEBIDA",
       recebido_em: new Date().toISOString(),
     }, externalId ? { onConflict: "external_message_id" } : undefined);
 
-    return json({ ok: true, action: "mensagem_vinculada", codigo: solicitation.codigo });
+    return json({
+      ok: true,
+      action: "cotacao_atualizada",
+      codigo: solicitation.codigo,
+      quote_id: quote?.id || null,
+      hotel_id: hotel?.id || null,
+      fields: {
+        disponibilidade: fields.availability,
+        valor_diaria: fields.dailyValue,
+        valor_total: fields.totalValue,
+        aceita_pagamento_checkout: fields.acceptsCheckout,
+        cafe_incluso: fields.breakfastIncluded,
+        estacionamento_incluso: fields.parkingIncluded,
+        emite_nota_fiscal: fields.emitsInvoice,
+      },
+    });
   } catch (error) {
     console.error("[hospedagem-whatsapp-webhook]", error);
     return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);
