@@ -451,25 +451,16 @@ async function loadColaboradoresRegional(supervisao) {
   }
 
   try {
-    const latest = await supabase
-      .from('colaborador_snapshot')
-      .select('data_referencia')
-      .order('data_referencia', { ascending: false })
-      .limit(1);
-    const dataRef = latest?.data?.[0]?.data_referencia;
-    if (dataRef) {
-      const { data, error } = await supabase
-        .from('colaborador_snapshot')
-        .select('cpf,nome,cargo,coordenacao,supervisao,situacao,ativo,desligamento')
-        .eq('data_referencia', dataRef)
-        .limit(12000);
-      if (error) throw error;
-      fontes.push(...(data || [])
-        .map((r) => ({ ...r, colaborador_id: cpfNorm(r.cpf) || r.nome, _scoreRegional: regionalScore(r, supervisao), _fonteRegional: 2 }))
-        .filter((r) => r._scoreRegional > 0));
-    }
+    const { data, error } = await supabase
+      .from('colaboradores_atuais')
+      .select('cpf,nome,cargo,coordenacao,supervisao,situacao,ativo,desligamento')
+      .limit(12000);
+    if (error) throw error;
+    fontes.push(...(data || [])
+      .map((r) => ({ ...r, colaborador_id: cpfNorm(r.cpf) || r.nome, _scoreRegional: regionalScore(r, supervisao), _fonteRegional: 2 }))
+      .filter((r) => r._scoreRegional > 0));
   } catch (error) {
-    console.warn('[equipe] snapshot de colaboradores indisponível para fallback regional', error);
+    console.warn('[equipe] colaboradores indisponível para fallback regional', error);
   }
 
   const seenIds = new Set();

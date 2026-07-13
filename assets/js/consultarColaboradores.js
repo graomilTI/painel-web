@@ -13,19 +13,6 @@ function normalizeCpfInput(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
-async function getLatestReferenceDate() {
-  const { data, error } = await supabase
-    .from('colaborador_importacoes')
-    .select('data_referencia')
-    .eq('status', 'processado')
-    .order('data_referencia', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data?.data_referencia || null;
-}
-
 async function getAccessToken() {
   const session = await getSession();
   const token = session?.access_token;
@@ -48,10 +35,12 @@ async function loadData() {
   tbody.innerHTML = '';
   meta.textContent = 'Consultando base...';
 
-  const latestReferenceDate = await getLatestReferenceDate();
-
+  // colaboradores_atuais (não a tabela colaboradores crua) porque normaliza o cpf:
+  // ~731 colaboradores "Ativo" ainda têm cpf mascarado (XXX.XXX.XXX-XX) até o
+  // próximo ciclo do sync reescrever essas linhas, e o filtro fCpf abaixo compara
+  // dígitos limpos.
   let query = supabase
-    .from('colaborador_snapshot')
+    .from('colaboradores_atuais')
     .select(`
       cpf,
       nome,
@@ -69,7 +58,6 @@ async function loadData() {
     .order('nome', { ascending: true })
     .limit(1000);
 
-  if (latestReferenceDate) query = query.eq('data_referencia', latestReferenceDate);
   if (fCoordenacao) query = query.ilike('coordenacao', `%${fCoordenacao}%`);
   if (fSupervisao) query = query.ilike('supervisao', `%${fSupervisao}%`);
   if (fNome) query = query.ilike('nome', `%${fNome}%`);
@@ -108,9 +96,7 @@ async function loadData() {
     tbody.appendChild(tr);
   });
 
-  meta.textContent = latestReferenceDate
-    ? `${data.length} registro(s) localizado(s) na base mais recente.`
-    : `${data.length} registro(s) localizado(s).`;
+  meta.textContent = `${data.length} registro(s) localizado(s).`;
 }
 
 function getExportEndpoint(tipo) {

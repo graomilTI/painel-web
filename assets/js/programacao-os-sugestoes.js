@@ -286,19 +286,9 @@ async function loadSnapshot(supervisao) {
   const cached = readCache(cache.snapshots, key);
   if (cached) return cached;
   try {
-    const latest = await supabase
-      .from('colaborador_snapshot')
-      .select('data_referencia')
-      .order('data_referencia', { ascending: false })
-      .limit(1);
-    if (latest.error) throw latest.error;
-    const dataReferencia = latest.data?.[0]?.data_referencia;
-    if (!dataReferencia) return writeCache(cache.snapshots, key, []);
-
     const { data, error } = await supabase
-      .from('colaborador_snapshot')
+      .from('colaboradores_atuais')
       .select('*')
-      .eq('data_referencia', dataReferencia)
       .eq('supervisao', supervisao)
       .limit(3000);
     if (error) throw error;

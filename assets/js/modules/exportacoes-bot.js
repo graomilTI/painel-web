@@ -127,58 +127,36 @@ async function xPatchById(env, table, id, patch) {
   return Array.isArray(out) ? out[0] : out;
 }
 
-async function xGetLatestColabReferenceDate(env) {
-  const rows = await xSupabaseRest(
-    env,
-    "colaborador_importacoes?select=data_referencia,status&status=eq.processado&order=data_referencia.desc&limit=1"
-  );
-  return Array.isArray(rows) && rows[0]?.data_referencia ? rows[0].data_referencia : null;
-}
-
 function xNormalizeDate(v) {
   if (!v) return null;
   const s = String(v).slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
 
-function xDistinctLatestByCpf(rows) {
+// colaboradores não tem dimensão histórica; mantém só um distinct por cpf
+// (defesa contra as ~5 pessoas hoje duplicadas em colaboradores por divergência
+// de formato de cpf entre sincronizações — ver memória do fix do sync).
+function xDistinctByCpf(rows) {
   const byCpf = new Map();
   for (const row of rows || []) {
     const cpf = String(row.cpf || "").trim();
     if (!cpf) continue;
-    const prev = byCpf.get(cpf);
-    if (!prev) {
-      byCpf.set(cpf, row);
-      continue;
-    }
-    const prevDate = String(prev.data_referencia || "");
-    const currDate = String(row.data_referencia || "");
-    if (currDate > prevDate) byCpf.set(cpf, row);
+    if (!byCpf.has(cpf)) byCpf.set(cpf, row);
   }
   return [...byCpf.values()].sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || "")));
 }
 
 async function xLoadColaboradores(env, filtros = {}) {
-  const latestReference = await xGetLatestColabReferenceDate(env);
-  if (!latestReference) {
-    return {
-      rows: [],
-      debug: { latest_reference: null, total_base: 0, total_filtrado: 0, total_distinct: 0 }
-    };
-  }
-
   const parts = [
-    "select=cpf,nome,situacao,admissao,desligamento,ativo,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cidade,bairro,endereco,complemento,estado,cep,data_referencia",
+    "select=cpf,nome,situacao,admissao,desligamento,ativo,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cidade,bairro,endereco,complemento,estado,cep",
     "admissao=not.is.null",
-    `data_referencia=lte.${encodeURIComponent(latestReference)}`,
-    "limit=10000",
-    "order=data_referencia.desc"
+    "limit=10000"
   ];
 
   if (filtros.empresa) parts.push(`empresa=ilike.*${encodeURIComponent(filtros.empresa)}*`);
   if (filtros.nome) parts.push(`nome=ilike.*${encodeURIComponent(filtros.nome)}*`);
 
-  const baseRows = await xSupabaseRest(env, `colaborador_snapshot?${parts.join("&")}`);
+  const baseRows = await xSupabaseRest(env, `colaboradores_atuais?${parts.join("&")}`);
   const totalBase = Array.isArray(baseRows) ? baseRows.length : 0;
 
   const dataInicial = xNormalizeDate(filtros.data_admissao_inicial);
@@ -201,12 +179,11 @@ async function xLoadColaboradores(env, filtros = {}) {
     return true;
   });
 
-  const distinctRows = xDistinctLatestByCpf(filtrados);
+  const distinctRows = xDistinctByCpf(filtrados);
 
   return {
     rows: distinctRows,
     debug: {
-      latest_reference: latestReference,
       total_base: totalBase,
       total_filtrado: filtrados.length,
       total_distinct: distinctRows.length,

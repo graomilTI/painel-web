@@ -379,34 +379,18 @@ async function loadSetores() {
   }
 }
 
-async function loadLatestReferenceDate() {
-  const { data, error } = await supabase
-    .from('colaborador_importacoes')
-    .select('data_referencia')
-    .eq('status', 'processado')
-    .order('data_referencia', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) return null;
-  return data?.data_referencia || null;
-}
-
 async function loadColaboradores() {
-  const latest = await loadLatestReferenceDate();
   const pageSize = 1000;
   let from = 0;
   const allRows = [];
 
   while (true) {
     let query = supabase
-      .from('colaborador_snapshot')
+      .from('colaboradores')
       .select('cpf,nome,situacao,empresa,coordenacao,supervisao,cargo,email_empresa,email_pessoal,whatsapp,tipo')
+      .eq('situacao', 'Ativo')
       .order('nome', { ascending: true })
       .range(from, from + pageSize - 1);
-
-    if (latest) query = query.eq('data_referencia', latest);
-    query = query.eq('situacao', 'Ativo');
 
     const { data, error } = await query;
     if (error) throw error;

@@ -672,24 +672,14 @@
     if (status) status.textContent = 'Carregando colaboradores da base...';
 
     try {
-      const snapshotRows = await fetchAllRows(
-        supabase,
-        'colaborador_snapshot',
-        'id,nome,cpf,situacao,tipo,empresa,coordenacao,supervisao,ativo,data_referencia,created_at',
-        'nome'
-      );
-
       const baseRows = await fetchAllRows(
         supabase,
         'colaboradores',
         'id,nome,cpf,situacao,tipo,empresa,coordenacao,supervisao,created_at,updated_at',
         'nome'
-      ).catch((err) => {
-        console.warn('[FROTAS] Tabela colaboradores não disponível para complemento:', err);
-        return [];
-      });
+      );
 
-      const merged = mergeColaboradores([...snapshotRows, ...baseRows]);
+      const merged = mergeColaboradores(baseRows);
 
       state.colaboradores = merged;
       state.colaboradoresLoaded = true;

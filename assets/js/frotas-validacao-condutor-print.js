@@ -76,12 +76,9 @@ async function fetchRows(table, select) {
 async function loadCollaborators() {
   if (collaboratorsPromise) return collaboratorsPromise;
   collaboratorsPromise = (async () => {
-    const [snapshot, base] = await Promise.all([
-      fetchRows('colaborador_snapshot', 'id,nome,cpf,situacao,ativo,coordenacao,supervisao').catch(() => []),
-      fetchRows('colaboradores', 'id,nome,cpf,situacao,coordenacao,supervisao').catch(() => [])
-    ]);
+    const base = await fetchRows('colaboradores', 'id,nome,cpf,situacao,coordenacao,supervisao');
     const map = new Map();
-    [...snapshot, ...base].forEach((row) => {
+    base.forEach((row) => {
       if (!row?.nome || !isActive(row)) return;
       const key = normalizeName(row.nome);
       if (!key) return;

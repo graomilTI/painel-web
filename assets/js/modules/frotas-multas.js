@@ -100,7 +100,7 @@
     for(const sel of selects){
       try{
         let all=[],from=0;const PAGE=1000;
-        while(true){const {data,error}=await opts.supabase.from('colaborador_snapshot').select(sel).order('nome',{ascending:true}).range(from,from+PAGE-1);if(error)throw error;const rows=data||[];all=all.concat(rows);if(rows.length<PAGE)break;from+=PAGE;}
+        while(true){const {data,error}=await opts.supabase.from('colaboradores_atuais').select(sel).order('nome',{ascending:true}).range(from,from+PAGE-1);if(error)throw error;const rows=data||[];all=all.concat(rows);if(rows.length<PAGE)break;from+=PAGE;}
         state.motoristas=uniqueMotoristas(all.filter(isColaboradorAtivo));
         state.motoristasLoaded=true;
         return state.motoristas;

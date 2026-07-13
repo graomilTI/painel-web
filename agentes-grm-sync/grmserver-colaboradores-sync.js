@@ -399,7 +399,7 @@ function parseColaboradoresXls(filePath) {
       .map((row) => {
         // Limpar e normalizar dados
         return {
-          cpf: normalizeText(row['CPF'] || row['cpf'] || row['Cpf'] || ''),
+          cpf: normalizeCpf(row['CPF'] || row['cpf'] || row['Cpf'] || ''),
           nome: normalizeText(row['Nome'] || row['NOME'] || row['nome'] || ''),
           situacao: normalizeText(
             row['Situação'] || row['situacao'] || row['SITUACAO'] || ''
@@ -496,6 +496,14 @@ function parseDate(value) {
 function normalizePhone(value) {
   if (!value) return '';
   // Manter apenas números
+  return String(value).replace(/\D/g, '');
+}
+
+function normalizeCpf(value) {
+  if (!value) return '';
+  // O XLS traz CPF mascarado (XXX.XXX.XXX-XX) para colaboradores ativos e sem
+  // máscara para os demais; onConflict é por cpf, então formato inconsistente
+  // faz o upsert criar linha duplicada em vez de atualizar a existente.
   return String(value).replace(/\D/g, '');
 }
 
