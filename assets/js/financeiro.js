@@ -2342,6 +2342,7 @@ export function renderContent(content, userContext) {
   state.pagamentos = { tipo: null, periodo: '', conferencia: [], flash: [], ifood: [], alelo: [], logs: [], modo: 'adiantamentos' };
   state.adiantamentosRows = [];
   state.adiantamentosLoaded = false;
+  state.almocoLoaded = false;
 
   function paySetFeedback(id, text, type = '') {
     setFeedback(id, text, type);
@@ -2892,6 +2893,10 @@ export function renderContent(content, userContext) {
     if (clean === 'adiantamentos' && !state.adiantamentosLoaded) {
       state.adiantamentosLoaded = true;
       carregarAdiantamentos();
+    }
+    if (clean === 'almoco' && !state.almocoLoaded) {
+      state.almocoLoaded = true;
+      carregarAlmoco();
     }
   }
 
