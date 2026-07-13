@@ -10,16 +10,28 @@ import './searchableSelect.js';
 import './pwa-register.js?v=20260713-cache-v10';
 import './hospedagem-colaboradores-regional.js?v=20260713-cache-v10';
 
-// Hospedagem recebe alterações frequentes e não pode reaproveitar uma instância
-// antiga do módulo ES já carregada pela navegação suave. Até o roteador possuir
-// versionamento automático por rota, esta página usa navegação completa com uma
-// chave de release. Isso não equivale a hard refresh: o clique normal no menu já
-// abre a versão publicada mais recente.
-const HOSPEDAGEM_RELEASE = '20260713-cache-v10';
+// Algumas páginas são compostas por vários módulos complementares que alteram o
+// layout base. A navegação suave carrega somente o módulo principal e, nesses
+// casos, pode exibir o layout antigo até um hard refresh. Essas rotas usam uma
+// navegação completa e versionada para garantir que todos os scripts da página
+// sejam carregados na ordem definida no HTML.
+const FULL_PAGE_RELEASES = new Map([
+  ['hospedagem', '20260713-cache-v10'],
+  ['adm-hotel', '20260713-fluxo-v2-sidebar1'],
+]);
 
-function installFreshHospedagemNavigation() {
-  if (window.__hospedagemFreshNavigationBound) return;
-  window.__hospedagemFreshNavigationBound = true;
+function routeFromPath(pathname) {
+  return String(pathname || '')
+    .split('/')
+    .filter(Boolean)
+    .pop()
+    ?.replace(/\.html$/i, '')
+    .toLowerCase() || 'dashboard';
+}
+
+function installFreshModuleNavigation() {
+  if (window.__freshModuleNavigationBound) return;
+  window.__freshModuleNavigationBound = true;
 
   document.addEventListener('click', (event) => {
     if (
@@ -42,18 +54,24 @@ function installFreshHospedagemNavigation() {
     }
 
     if (url.origin !== window.location.origin) return;
-    const route = url.pathname.split('/').filter(Boolean).pop()?.replace(/\.html$/i, '').toLowerCase();
-    const current = window.location.pathname.split('/').filter(Boolean).pop()?.replace(/\.html$/i, '').toLowerCase();
-    if (route !== 'hospedagem' || current === 'hospedagem') return;
 
-    url.searchParams.set('_release', HOSPEDAGEM_RELEASE);
+    const route = routeFromPath(url.pathname);
+    const release = FULL_PAGE_RELEASES.get(route);
+    if (!release) return;
+
+    const currentRoute = routeFromPath(window.location.pathname);
+    const targetPathAndHash = `${url.pathname}${url.hash}`;
+    const currentPathAndHash = `${window.location.pathname}${window.location.hash}`;
+    if (route === currentRoute && targetPathAndHash === currentPathAndHash) return;
+
+    url.searchParams.set('_release', release);
     event.preventDefault();
     event.stopImmediatePropagation();
     window.location.assign(url.href);
   }, true);
 }
 
-installFreshHospedagemNavigation();
+installFreshModuleNavigation();
 
 // Aviso de "nova versão disponível": router.js e o resto do bootstrap
 // compartilhado (layout, auth etc.) não têm cache-busting por query string
