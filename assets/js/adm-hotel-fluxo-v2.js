@@ -1,5 +1,7 @@
 import { supabase } from './supabaseClient.js';
 
+const HOSP_COTACAO_FLOW_ID = '8660973';
+
 const state = {
   rows: [],
   hotels: [],
@@ -279,7 +281,7 @@ async function sendQuoteBatch() {
   for (const hotel of hotels) {
     let quoteId = null;
     if (state.tables.quotes) { const payload = { solicitacao_id: row.solicitacao_id, hotel_id: hotel.id, hotel_nome: hotel.nome, status: 'ENVIANDO', quantidade_pessoas: getPeople(row).length || null, quantidade_quartos: row.quantidade_quartos || null, composicao_quartos: roomsLabel(row), diarias_previstas: Number(row.quantidade_diarias_prevista || 1), aceita_pagamento_checkout: hotel.aceita_pagamento_checkout ?? null, mensagem_enviada: message }; const { data } = await supabase.from('hospedagem_cotacoes').upsert(payload, { onConflict: 'solicitacao_id,hotel_id' }).select('id').single(); quoteId = data?.id || null; }
-    try { const { data, error } = await supabase.functions.invoke('botconversa-send', { body: { phone: onlyDigits(hotel.whatsapp), nome: hotel.nome, message } }); if (error || data?.ok === false) throw new Error(data?.error || error?.message || 'Falha no envio'); sent += 1; if (quoteId) await supabase.from('hospedagem_cotacoes').update({ status: 'ENVIADA', enviado_em: new Date().toISOString(), erro_envio: null }).eq('id', quoteId); if (state.tables.messages) await supabase.from('hospedagem_mensagens').insert({ solicitacao_id: row.solicitacao_id, reserva_id: row.reserva_id || null, hotel_id: hotel.id, direcao: 'SAIDA', tipo: 'COTACAO', canal: 'BOTCONVERSA', destinatario: hotel.whatsapp, conteudo: message, status: 'ENVIADA', enviado_em: new Date().toISOString() }); }
+    try { const { data, error } = await supabase.functions.invoke('botconversa-send', { body: { phone: onlyDigits(hotel.whatsapp), nome: hotel.nome, message, flowId: HOSP_COTACAO_FLOW_ID } }); if (error || data?.ok === false) throw new Error(data?.error || error?.message || 'Falha no envio'); sent += 1; if (quoteId) await supabase.from('hospedagem_cotacoes').update({ status: 'ENVIADA', enviado_em: new Date().toISOString(), erro_envio: null }).eq('id', quoteId); if (state.tables.messages) await supabase.from('hospedagem_mensagens').insert({ solicitacao_id: row.solicitacao_id, reserva_id: row.reserva_id || null, hotel_id: hotel.id, direcao: 'SAIDA', tipo: 'COTACAO', canal: 'BOTCONVERSA', destinatario: hotel.whatsapp, conteudo: message, status: 'ENVIADA', enviado_em: new Date().toISOString() }); }
     catch (error) { failures.push(`${hotel.nome}: ${error.message}`); if (quoteId) await supabase.from('hospedagem_cotacoes').update({ status: 'FALHA', erro_envio: error.message }).eq('id', quoteId); }
   }
   $('#hospV2SendQuote').disabled = false; setFeedback('hospV2QuoteFeedback', `${sent}/${hotels.length} enviados${failures.length ? ` · ${failures.join(' | ')}` : ''}`, failures.length ? 'err' : 'ok'); await loadData(); setTimeout(() => closeModal('hospV2QuoteModal'), failures.length ? 2400 : 900);

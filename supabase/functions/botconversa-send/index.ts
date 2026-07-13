@@ -46,6 +46,12 @@ async function sendMessage(subscriberId: number, type: "text" | "file", value: s
   return res.ok;
 }
 
+async function sendFlow(subscriberId: number, flowId: string, apiKey: string): Promise<boolean> {
+  const headers = { "api-key": apiKey, accept: "application/json" };
+  const res = await fetch(`${BASE}/subscriber/${subscriberId}/send_flow/${flowId}/`, { method: "POST", headers });
+  return res.ok;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ ok: false, error: "Método não permitido." }, 405);
@@ -87,6 +93,7 @@ serve(async (req) => {
       message?: string;
       fileUrl?: string;
       nome?: string;
+      flowId?: string;
     };
 
     const tel = String(body.phone || "").replace(/\D/g, "");
@@ -105,6 +112,10 @@ serve(async (req) => {
     if (body.fileUrl) {
       const sent = await sendMessage(subscriberId, "file", String(body.fileUrl), apiKey);
       if (!sent) return json({ ok: false, error: "O BotConversa recusou o arquivo." }, 502);
+    }
+    if (body.flowId) {
+      const started = await sendFlow(subscriberId, String(body.flowId), apiKey);
+      if (!started) return json({ ok: false, error: "O BotConversa recusou o início do fluxo." }, 502);
     }
 
     return json({ ok: true });
