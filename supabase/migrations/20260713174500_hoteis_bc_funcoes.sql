@@ -19,6 +19,15 @@ as $$
   );
 $$;
 
+create or replace function public.hospedagem_normalizar_telefone(valor text)
+returns text
+language sql
+immutable
+parallel safe
+as $$
+  select regexp_replace(coalesce(valor, ''), '[^0-9]+', '', 'g');
+$$;
+
 create or replace function public.hospedagem_conciliar_hotel(
   p_nome text,
   p_cidade text,
@@ -57,11 +66,25 @@ begin
         regexp_replace(coalesce(h.nome, ''), '\s*\([^)]*\)\s*', ' ', 'g')
       ) = public.hospedagem_normalizar_texto(p_nome)
     )
+    or
+    (
+      nullif(public.hospedagem_normalizar_telefone(p_whatsapp), '') is not null
+      and public.hospedagem_normalizar_telefone(h.whatsapp)
+        = public.hospedagem_normalizar_telefone(p_whatsapp)
+      and upper(trim(coalesce(h.uf, ''))) = upper(trim(p_uf))
+      and public.hospedagem_normalizar_texto(h.cidade)
+        = public.hospedagem_normalizar_texto(p_cidade)
+    )
   order by
     case
       when nullif(trim(p_link_maps), '') is not null
        and lower(trim(coalesce(h.link_maps, ''))) = lower(trim(p_link_maps))
-      then 0 else 1
+      then 0
+      when nullif(public.hospedagem_normalizar_telefone(p_whatsapp), '') is not null
+       and public.hospedagem_normalizar_telefone(h.whatsapp)
+         = public.hospedagem_normalizar_telefone(p_whatsapp)
+      then 1
+      else 2
     end,
     h.id::text
   limit 1;
