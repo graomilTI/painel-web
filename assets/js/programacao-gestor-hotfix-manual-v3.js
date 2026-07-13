@@ -33,7 +33,7 @@ async function loadModule() {
     // Última camada: substitui a ação do botão por um agrupamento regional mais abrangente.
     await import('./programacao-sugerir-equipe-regional.js?v=20260713-regional3');
     // Converte os deslocamentos sugeridos em vínculos reconhecidos pelo mapa.
-    await import('./programacao-frota-vinculos-sync.js?v=20260713-frota-sync1');
+    await import('./programacao-frota-vinculos-sync.js?v=20260713-frota-sync2');
     await import('./programacao-limpar-conciliacoes.js?v=20260713-limpar2');
   } finally {
     URL.revokeObjectURL(blobUrl);
