@@ -7,6 +7,7 @@ import { initGestorMenuAjustes } from './gestor-menu-ajustes.js';
 import { initProgramacaoRuntimeFixes } from './programacao-runtime-fixes.js';
 import { initRouter } from './router.js';
 import './searchableSelect.js';
+import './hospedagem-colaboradores-regional.js?v=20260713-regional3';
 
 // Aviso de "nova versão disponível": router.js e o resto do bootstrap
 // compartilhado (layout, auth etc.) não têm cache-busting por query string
