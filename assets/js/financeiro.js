@@ -339,7 +339,7 @@ function buildLatestColaboradorMap(rows) {
       nome: row.nome,
       cpf: onlyDigits(row.cpf).padStart(11, '0').slice(0, 11),
       salario: toNumber(row.salario),
-      banco: row.conta_bancaria || row['C. Banc. Despesas'] || '',
+      banco: row.conta_bancaria_despesas || row.conta_bancaria || row['C. Banc. Despesas'] || '',
       empresa: row.empresa || '',
       coordenacao: row.coordenacao || '',
       supervisao: row.supervisao || '',
@@ -353,39 +353,23 @@ function buildLatestColaboradorMap(rows) {
   return map;
 }
 
-async function loadColaboradoresPagamento(dataReferencia = null) {
-  const ref = dataReferencia || state.currentDate || new Date().toISOString().slice(0, 10);
-
-  // Resolve a data de importação mais recente ≤ ref (evita baixar todas as datas do snapshot)
-  let latestDate = null;
-  try {
-    const { data } = await supabase
-      .from('colaborador_importacoes')
-      .select('data_referencia')
-      .lte('data_referencia', ref)
-      .order('data_referencia', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    latestDate = data?.data_referencia || null;
-  } catch {}
-
+// Fonte: colaboradores (sincronizada pelo agente grmserver-colaboradores-sync a cada
+// ciclo do worker, dado atual — sem dimensão de data). Antes lia de colaborador_snapshot,
+// uma base legada alimentada por upload manual (importarColaboradores.js) que parou de
+// ser atualizada em 2026-06-18 — CPF/conta bancária ficavam presos num estado de ~1 mês
+// atrás (ex.: colaborador ainda aparecia com conta ALELO muito depois de a GRM já ter
+// zerado/trocado o campo). dataReferencia não é mais usado (colaboradores não tem
+// histórico por data); mantido no parâmetro só para não quebrar o chamador.
+async function loadColaboradoresPagamento(_dataReferencia = null) {
   const pageSize = 1000;
   const rows = [];
   let from = 0;
 
   while (true) {
-    let query = supabase
-      .from('colaborador_snapshot')
-      .select('nome,cpf,salario,conta_bancaria,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa,data_referencia,ativo');
-
-    if (latestDate) {
-      query = query.eq('data_referencia', latestDate);
-    } else {
-      query = query.lte('data_referencia', ref).order('data_referencia', { ascending: false, nullsFirst: false });
-    }
-
-    query = query.range(from, from + pageSize - 1);
-    const { data, error } = await query;
+    const { data, error } = await supabase
+      .from('colaboradores')
+      .select('nome,cpf,salario,conta_bancaria_despesas,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa')
+      .range(from, from + pageSize - 1);
     if (error) throw error;
     const page = data || [];
     rows.push(...page);
@@ -1162,10 +1146,7 @@ export function renderContent(content, userContext) {
                 <button class="pay-subtab" data-pay-tab="historico" type="button">Histórico</button>
               </div>
               <div class="fin-actions-row">
-                <button class="btn btn-secondary fin-small" id="btnExportFlash" type="button">Exportar Flash XLSX</button>
-                <button class="btn btn-secondary fin-small" id="btnExportIfood" type="button">Exportar iFood XLSX</button>
-                <button class="btn btn-secondary fin-small" id="btnExportAlelo" type="button">Exportar Alelo CSV</button>
-                <button class="btn btn-secondary fin-small" id="btnExportConferencia" type="button">Exportar conferência XLSX</button>
+                <button class="btn btn-secondary fin-small" id="btnExportarTudo" type="button">Exportar arquivos</button>
               </div>
             </div>
 
@@ -2983,27 +2964,37 @@ export function renderContent(content, userContext) {
     { key: 'banco', label: 'C. Banc. Despesas' }, { key: 'observacao', label: 'Observação' }
   ];
 
-  function exportPagamento(kind) {
+  // Um único botão baixa todos os arquivos necessários (cada categoria com dados vira um
+  // arquivo, no formato exigido pra upload na respectiva plataforma) em vez de exigir um
+  // clique por categoria.
+  function exportarTudo() {
     const p = state.pagamentos;
-    if (kind === 'flash') {
-      if (!p.flash?.length) return alert('Nenhum registro Flash para exportar.');
-      return downloadWorkbook(`PGTO_FLASH_${compactDate(p.periodo) || compactDate(new Date().toISOString())}.xlsx`, [{ name: 'PGTO_FLASH', ws: worksheetFromObjects(p.flash, flashCols) }]);
+    const periodo = compactDate(p.periodo) || compactDate(new Date().toISOString());
+    const gerados = [];
+
+    if (p.flash?.length) {
+      downloadWorkbook(`PGTO_FLASH_${periodo}.xlsx`, [{ name: 'PGTO_FLASH', ws: worksheetFromObjects(p.flash, flashCols) }]);
+      gerados.push('Flash');
     }
-    if (kind === 'ifood') {
-      if (!p.ifood?.length) return alert('Nenhum registro iFood para exportar.');
-      return downloadWorkbook(`PGTO_IFOOD_${compactDate(p.periodo) || compactDate(new Date().toISOString())}.xlsx`, [{ name: 'PGTO_IFOOD', ws: worksheetFromObjects(p.ifood, ifoodCols) }]);
+    if (p.ifood?.length) {
+      downloadWorkbook(`PGTO_IFOOD_${periodo}.xlsx`, [{ name: 'PGTO_IFOOD', ws: worksheetFromObjects(p.ifood, ifoodCols) }]);
+      gerados.push('iFood');
     }
-    if (kind === 'alelo') {
-      if (!p.alelo?.length) return alert('Nenhum registro Alelo para exportar.');
-      return downloadCsv(`PGTO_ALELO_${compactDate(new Date().toISOString())}.csv`, p.alelo, aleloCols);
+    if (p.alelo?.length) {
+      downloadCsv(`PGTO_ALELO_${periodo}.csv`, p.alelo, aleloCols);
+      gerados.push('Alelo');
     }
-    if (!p.conferencia?.length) return alert('Nenhuma conferência para exportar.');
-    return downloadWorkbook(`CONFERENCIA_PAGAMENTOS_${compactDate(new Date().toISOString())}.xlsx`, [
-      { name: 'Conferencia', ws: worksheetFromObjects(p.conferencia, confCols) },
-      { name: 'Flash', ws: worksheetFromObjects(p.flash || [], flashCols) },
-      { name: 'iFood', ws: worksheetFromObjects(p.ifood || [], ifoodCols) },
-      { name: 'Alelo', ws: worksheetFromObjects(p.alelo || [], aleloCols) }
-    ]);
+    if (p.conferencia?.length) {
+      downloadWorkbook(`CONFERENCIA_PAGAMENTOS_${periodo}.xlsx`, [
+        { name: 'Conferencia', ws: worksheetFromObjects(p.conferencia, confCols) },
+        { name: 'Flash', ws: worksheetFromObjects(p.flash || [], flashCols) },
+        { name: 'iFood', ws: worksheetFromObjects(p.ifood || [], ifoodCols) },
+        { name: 'Alelo', ws: worksheetFromObjects(p.alelo || [], aleloCols) }
+      ]);
+      gerados.push('Conferência');
+    }
+
+    if (!gerados.length) alert('Nenhum registro para exportar.');
   }
 
   document.querySelectorAll('.fin-tab').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tab); if (btn.dataset.tab && btn.dataset.tab !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tab}`); }));
@@ -3065,10 +3056,7 @@ export function renderContent(content, userContext) {
   });
   document.querySelectorAll('.pay-subtab').forEach((btn) => btn.addEventListener('click', () => setPayTab(btn.dataset.payTab)));
   document.querySelector('[data-pay-tab="historico"]')?.addEventListener('click', carregarHistoricoAlmoco);
-  document.getElementById('btnExportFlash').addEventListener('click', () => exportPagamento('flash'));
-  document.getElementById('btnExportIfood').addEventListener('click', () => exportPagamento('ifood'));
-  document.getElementById('btnExportAlelo').addEventListener('click', () => exportPagamento('alelo'));
-  document.getElementById('btnExportConferencia').addEventListener('click', () => exportPagamento('conferencia'));
+  document.getElementById('btnExportarTudo').addEventListener('click', exportarTudo);
   document.getElementById('periodForm').addEventListener('submit', (event) => {
     event.preventDefault();
     state.filters.inicio = document.getElementById('filterInicio').value;
