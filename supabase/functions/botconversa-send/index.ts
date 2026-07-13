@@ -57,6 +57,7 @@ serve(async (req) => {
       "financeiro_fluxo_caixa",
       "compras_adm",
       "ti_contatos",
+      "hotel",
       "hospedagem",
       "adm_hotel",
       "gestor_hospedagem",
