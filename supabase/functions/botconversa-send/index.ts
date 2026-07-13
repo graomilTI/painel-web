@@ -16,40 +16,136 @@ function json(payload: unknown, status = 200) {
 
 const BASE = "https://backend.botconversa.com.br/api/v1/webhook";
 
-async function getSubscriberId(tel: string, nome: string | null, apiKey: string): Promise<number | null> {
+type BotResult<T = unknown> = {
+  ok: boolean;
+  status: number;
+  data?: T;
+  detail?: string;
+};
+
+async function parseBotResponse<T = unknown>(res: Response): Promise<BotResult<T>> {
+  const text = await res.text();
+  let data: T | undefined;
+  try {
+    data = text ? JSON.parse(text) as T : undefined;
+  } catch {
+    data = undefined;
+  }
+
+  return {
+    ok: res.ok,
+    status: res.status,
+    data,
+    detail: text ? text.slice(0, 1200) : undefined,
+  };
+}
+
+function normalizeBrazilPhone(value: unknown): string {
+  let digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.startsWith("0") && digits.length > 11) digits = digits.slice(1);
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
+  return digits;
+}
+
+async function loadApiKey(supabase: ReturnType<typeof createClient>): Promise<{
+  apiKey: string;
+  source?: string;
+  diagnostics: string[];
+}> {
+  const diagnostics: string[] = [];
+  const envKey = String(Deno.env.get("BOTCONVERSA_API_KEY") || "").trim();
+  if (envKey) return { apiKey: envKey, source: "environment", diagnostics };
+
+  const secretResult = await supabase
+    .from("ti_integracao_segredos")
+    .select("valor")
+    .eq("chave", "BOTCONVERSA_API_KEY")
+    .eq("ativo", true)
+    .maybeSingle();
+
+  if (secretResult.error) diagnostics.push(`ti_integracao_segredos: ${secretResult.error.message}`);
+  const secretKey = String(secretResult.data?.valor || "").trim();
+  if (secretKey) return { apiKey: secretKey, source: "ti_integracao_segredos", diagnostics };
+
+  const configResult = await supabase
+    .from("botconversa_config")
+    .select("valor, updated_at")
+    .eq("chave", "BOTCONVERSA_API_KEY")
+    .eq("ativo", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (configResult.error) diagnostics.push(`botconversa_config: ${configResult.error.message}`);
+  const configKey = String(configResult.data?.valor || "").trim();
+  if (configKey) return { apiKey: configKey, source: "botconversa_config", diagnostics };
+
+  return { apiKey: "", diagnostics };
+}
+
+async function getSubscriberId(
+  tel: string,
+  nome: string | null,
+  apiKey: string,
+): Promise<{ subscriberId: number | null; error?: string }> {
   const headers = { "api-key": apiKey, accept: "application/json" };
 
   const getRes = await fetch(`${BASE}/subscriber/${tel}/`, { headers });
-  if (getRes.ok) {
-    const data = await getRes.json();
-    if (data?.id) return data.id;
+  const getResult = await parseBotResponse<{ id?: number }>(getRes);
+  if (getResult.ok && getResult.data?.id) {
+    return { subscriberId: Number(getResult.data.id) };
   }
 
   const body = new FormData();
   body.append("phone", tel);
   if (nome) body.append("name", nome.substring(0, 60));
-  const createRes = await fetch(`${BASE}/subscriber/`, { method: "POST", headers, body });
-  if (createRes.ok) {
-    const data = await createRes.json();
-    if (data?.id) return data.id;
+
+  const createRes = await fetch(`${BASE}/subscriber/`, {
+    method: "POST",
+    headers,
+    body,
+  });
+  const createResult = await parseBotResponse<{ id?: number }>(createRes);
+  if (createResult.ok && createResult.data?.id) {
+    return { subscriberId: Number(createResult.data.id) };
   }
 
-  return null;
+  const detail = createResult.detail || getResult.detail || "sem detalhes";
+  return {
+    subscriberId: null,
+    error: `Contato recusado pelo BotConversa (HTTP ${createResult.status || getResult.status}): ${detail}`,
+  };
 }
 
-async function sendMessage(subscriberId: number, type: "text" | "file", value: string, apiKey: string): Promise<boolean> {
+async function sendMessage(
+  subscriberId: number,
+  type: "text" | "file",
+  value: string,
+  apiKey: string,
+): Promise<BotResult> {
   const headers = { "api-key": apiKey, accept: "application/json" };
   const body = new FormData();
   body.append("type", type);
   body.append("value", value);
-  const res = await fetch(`${BASE}/subscriber/${subscriberId}/send_message/`, { method: "POST", headers, body });
-  return res.ok;
+  const res = await fetch(`${BASE}/subscriber/${subscriberId}/send_message/`, {
+    method: "POST",
+    headers,
+    body,
+  });
+  return parseBotResponse(res);
 }
 
-async function sendFlow(subscriberId: number, flowId: string, apiKey: string): Promise<boolean> {
+async function sendFlow(
+  subscriberId: number,
+  flowId: string,
+  apiKey: string,
+): Promise<BotResult> {
   const headers = { "api-key": apiKey, accept: "application/json" };
-  const res = await fetch(`${BASE}/subscriber/${subscriberId}/send_flow/${flowId}/`, { method: "POST", headers });
-  return res.ok;
+  const res = await fetch(`${BASE}/subscriber/${subscriberId}/send_flow/${flowId}/`, {
+    method: "POST",
+    headers,
+  });
+  return parseBotResponse(res);
 }
 
 serve(async (req) => {
@@ -70,7 +166,12 @@ serve(async (req) => {
     ],
     { requireEdit: true },
   );
-  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+
+  // Retorna HTTP 200 para que o painel consiga exibir o motivo real da recusa.
+  // A operação continua bloqueada quando não houver autorização.
+  if (!auth.ok) {
+    return json({ ok: false, error: auth.error, stage: "authorization", status: auth.status });
+  }
 
   try {
     const supabase = createClient(
@@ -78,15 +179,15 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: secretRow } = await supabase
-      .from("ti_integracao_segredos")
-      .select("valor")
-      .eq("chave", "BOTCONVERSA_API_KEY")
-      .eq("ativo", true)
-      .maybeSingle();
-
-    const apiKey = secretRow?.valor || "";
-    if (!apiKey) return json({ ok: false, error: "BOTCONVERSA_API_KEY não configurada em TI > Integrações." }, 400);
+    const keyResult = await loadApiKey(supabase);
+    if (!keyResult.apiKey) {
+      return json({
+        ok: false,
+        stage: "configuration",
+        error: "BOTCONVERSA_API_KEY não configurada. Cadastre a chave em botconversa_config, TI > Integrações ou como segredo da Edge Function.",
+        diagnostics: keyResult.diagnostics,
+      });
+    }
 
     const body = await req.json() as {
       phone: string;
@@ -96,31 +197,93 @@ serve(async (req) => {
       flowId?: string;
     };
 
-    const tel = String(body.phone || "").replace(/\D/g, "");
-    if (tel.length < 10 || tel.length > 13) return json({ ok: false, error: "Telefone inválido." }, 400);
-    if (!body.message && !body.fileUrl) return json({ ok: false, error: "Informe message ou fileUrl." }, 400);
-    if (body.message && String(body.message).length > 4000) return json({ ok: false, error: "Mensagem muito longa." }, 400);
-    if (body.fileUrl && !/^https:\/\//i.test(String(body.fileUrl))) return json({ ok: false, error: "O arquivo deve usar uma URL HTTPS." }, 400);
+    const tel = normalizeBrazilPhone(body.phone);
+    if (tel.length < 12 || tel.length > 13 || !tel.startsWith("55")) {
+      return json({
+        ok: false,
+        stage: "validation",
+        error: `Telefone inválido para WhatsApp: ${tel || "vazio"}. Use DDD + número.`,
+      });
+    }
+    if (!body.message && !body.fileUrl && !body.flowId) {
+      return json({ ok: false, stage: "validation", error: "Informe message, fileUrl ou flowId." });
+    }
+    if (body.message && String(body.message).length > 4000) {
+      return json({ ok: false, stage: "validation", error: "Mensagem muito longa." });
+    }
+    if (body.fileUrl && !/^https:\/\//i.test(String(body.fileUrl))) {
+      return json({ ok: false, stage: "validation", error: "O arquivo deve usar uma URL HTTPS." });
+    }
 
-    const subscriberId = await getSubscriberId(tel, body.nome || null, apiKey);
-    if (!subscriberId) return json({ ok: false, error: "Não foi possível localizar ou criar o contato no BotConversa." }, 502);
+    const subscriber = await getSubscriberId(tel, body.nome || null, keyResult.apiKey);
+    if (!subscriber.subscriberId) {
+      return json({
+        ok: false,
+        stage: "subscriber",
+        phone: tel,
+        error: subscriber.error || "Não foi possível localizar ou criar o contato no BotConversa.",
+      });
+    }
 
     if (body.message) {
-      const sent = await sendMessage(subscriberId, "text", String(body.message), apiKey);
-      if (!sent) return json({ ok: false, error: "O BotConversa recusou a mensagem de texto." }, 502);
-    }
-    if (body.fileUrl) {
-      const sent = await sendMessage(subscriberId, "file", String(body.fileUrl), apiKey);
-      if (!sent) return json({ ok: false, error: "O BotConversa recusou o arquivo." }, 502);
-    }
-    if (body.flowId) {
-      const started = await sendFlow(subscriberId, String(body.flowId), apiKey);
-      if (!started) return json({ ok: false, error: "O BotConversa recusou o início do fluxo." }, 502);
+      const sent = await sendMessage(
+        subscriber.subscriberId,
+        "text",
+        String(body.message),
+        keyResult.apiKey,
+      );
+      if (!sent.ok) {
+        return json({
+          ok: false,
+          stage: "message",
+          error: `O BotConversa recusou a mensagem (HTTP ${sent.status}): ${sent.detail || "sem detalhes"}`,
+        });
+      }
     }
 
-    return json({ ok: true });
+    if (body.fileUrl) {
+      const sent = await sendMessage(
+        subscriber.subscriberId,
+        "file",
+        String(body.fileUrl),
+        keyResult.apiKey,
+      );
+      if (!sent.ok) {
+        return json({
+          ok: false,
+          stage: "file",
+          error: `O BotConversa recusou o arquivo (HTTP ${sent.status}): ${sent.detail || "sem detalhes"}`,
+        });
+      }
+    }
+
+    if (body.flowId) {
+      const started = await sendFlow(
+        subscriber.subscriberId,
+        String(body.flowId),
+        keyResult.apiKey,
+      );
+      if (!started.ok) {
+        return json({
+          ok: false,
+          stage: "flow",
+          error: `O BotConversa recusou o fluxo ${body.flowId} (HTTP ${started.status}): ${started.detail || "sem detalhes"}`,
+        });
+      }
+    }
+
+    return json({
+      ok: true,
+      phone: tel,
+      subscriberId: subscriber.subscriberId,
+      apiKeySource: keyResult.source,
+    });
   } catch (err) {
     console.error("[botconversa-send]", err);
-    return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
+    return json({
+      ok: false,
+      stage: "exception",
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 });
