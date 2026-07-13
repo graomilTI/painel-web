@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
 
-const RELEASE = '20260713-limpar1';
+const RELEASE = '20260713-limpar2';
 const BUTTON_ID = 'pmgLimparConciliacoes';
 
 const state = {
@@ -165,7 +165,7 @@ async function readCurrentLinks(context) {
   const operationalPromise = osIds.length
     ? supabase
       .from('operacional_os_colaboradores')
-      .select('id,os_id,colaborador_key')
+      .select('os_id,colaborador_key')
       .in('os_id', osIds)
       .limit(12000)
     : Promise.resolve({ data: [], error: null });
@@ -208,7 +208,15 @@ async function clearLinks(context, links) {
   ]);
 
   await deleteByIds('programacao_equipe', links.team.map(row => row.id));
-  await deleteByIds('operacional_os_colaboradores', links.operational.map(row => row.id));
+
+  if (context.osIds.length) {
+    const { error } = await supabase
+      .from('operacional_os_colaboradores')
+      .delete()
+      .in('os_id', context.osIds);
+    if (error) throw error;
+  }
+
   if (links.fleetTableAvailable) await deleteByIds('programacao_frota_vinculos', links.fleet.map(row => row.id));
   await deleteByIds('programacao_deslocamento', links.displacements.map(row => row.id));
 
@@ -252,6 +260,7 @@ async function clearCurrentConciliations() {
     const total = links.team.length + links.fleet.length + links.displacements.length + links.operational.length;
     if (!total) {
       setMapMessage('Nenhuma conciliação encontrada.');
+      window.setTimeout(() => setMapMessage(''), 2200);
       await modal({
         title: 'Nada para limpar',
         message: 'Não existem vínculos de colaborador, O.S. ou frota no contexto carregado.',
