@@ -1,7 +1,7 @@
 // Ajustes de UX do mapa da Programação:
 // - acrescenta legenda compacta para os formatos dos marcadores;
 // - antecipa o carregamento das abas assim que o contexto fica disponível;
-// - troca para a Etapa 2 antes de iniciar o trabalho pesado do mapa.
+// - troca visualmente entre as etapas antes de iniciar qualquer trabalho pesado.
 
 const PATCH_ID = 'programacaoMapaUxFastStyles';
 const MAX_CONTEXT_WAIT_MS = 3200;
@@ -168,16 +168,35 @@ function openingHint(show) {
   }
 }
 
-function showStepTwoImmediately(button) {
-  const pane = document.getElementById('pgcPane2');
-  if (!pane) return;
+function showStepImmediately(step, button) {
+  const key = String(step || '');
+  const pane = document.getElementById(`pgcPane${key}`);
+  if (!pane) return false;
 
   document.querySelectorAll('#pgcTabsShell .pgc-tab-pane').forEach((item) => {
     item.hidden = item !== pane;
   });
-  document.querySelectorAll('#progSteps .stepbtn').forEach((item) => item.classList.remove('active'));
+  document.querySelectorAll('#progSteps .stepbtn').forEach((item) => {
+    const itemStep = item.dataset.uiStep
+      || item.dataset.step
+      || (item.textContent.match(/\d/) || [''])[0];
+    const active = String(itemStep) === key;
+    item.classList.toggle('active', active);
+    item.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
   button?.classList.add('active');
-  openingHint(true);
+
+  if (key === '2') openingHint(true);
+  else openingHint(false);
+
+  // Força o navegador a reconhecer a troca de painel antes do click principal.
+  void pane.offsetHeight;
+  return true;
+}
+
+function stepTwoVisible() {
+  const pane = document.getElementById('pgcPane2');
+  return Boolean(pane && !pane.hidden);
 }
 
 function installDeferredMapRenderer() {
@@ -191,19 +210,27 @@ function installDeferredMapRenderer() {
 
   const deferred = (...args) => {
     latestArgs = args;
-    openingHint(true);
+    if (stepTwoVisible()) openingHint(true);
 
     const promise = new Promise((resolve, reject) => waiters.push({ resolve, reject }));
     promise.catch(() => {});
     if (scheduled) return promise;
     scheduled = true;
 
-    // Primeiro frame: a Etapa 2 aparece. Segundo frame: inicia o mapa pesado.
+    // Primeiro frame: a etapa escolhida aparece. Segundo frame: só inicia o
+    // mapa se a Etapa 2 ainda estiver aberta.
     requestAnimationFrame(() => {
       requestAnimationFrame(async () => {
         scheduled = false;
         const batch = waiters;
         waiters = [];
+
+        if (!stepTwoVisible()) {
+          openingHint(false);
+          batch.forEach(({ resolve }) => resolve(undefined));
+          return;
+        }
+
         try {
           const result = await current(...latestArgs);
           batch.forEach(({ resolve }) => resolve(result));
@@ -226,6 +253,7 @@ function installDeferredMapRenderer() {
 }
 
 function requestMapRender() {
+  if (!stepTwoVisible()) return;
   installDeferredMapRenderer();
   const render = window.__pmgRenderMapaGestor;
   if (typeof render !== 'function') return;
@@ -255,6 +283,7 @@ function observeUi() {
       }
       const paneVisible = Boolean(pane && !pane.hidden);
       if (paneVisible && !lastPaneVisible) requestMapRender();
+      if (!paneVisible) openingHint(false);
       lastPaneVisible = paneVisible;
     });
   };
@@ -274,15 +303,15 @@ function bindFastInteractions() {
     if (event.target.closest('#progLoadContext')) accelerateContextLoad();
   }, true);
 
-  // Mostra a nova etapa no pointerdown. O render pesado fica para dois frames
-  // depois, evitando a sensação de clique ignorado ou tela travada.
+  // Faz a troca visual no pointerdown para todas as etapas. Assim, ao voltar
+  // da Etapa 2 para a Etapa 1, o mapa some antes de qualquer listener pesado.
   document.addEventListener('pointerdown', (event) => {
     const button = event.target.closest('#progSteps .stepbtn');
     if (!button) return;
     const step = button.dataset.uiStep
       || button.dataset.step
       || (button.textContent.match(/\d/) || [''])[0];
-    if (String(step) === '2') showStepTwoImmediately(button);
+    if (step) showStepImmediately(step, button);
   }, true);
 }
 
