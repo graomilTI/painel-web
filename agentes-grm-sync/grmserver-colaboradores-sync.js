@@ -412,7 +412,7 @@ function parseColaboradoresXls(filePath) {
             String(row['Salário'] || row['salario'] || row['SALARIO'] || 0).replace(/[^\d,.-]/g, '').replace(',', '.')
           ) || 0,
           conta_bancaria_despesas: normalizeText(
-            row['Conta Bancária'] || row['conta_bancaria' ] || row['ContaBancaria'] || ''
+            row['C. Banc. Despesas'] || row['Conta Bancária'] || row['conta_bancaria' ] || row['ContaBancaria'] || ''
           ),
           empresa: normalizeText(row['Empresa'] || row['empresa'] || row['EMPRESA'] || ''),
           coordenacao: normalizeText(
