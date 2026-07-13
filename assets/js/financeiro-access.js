@@ -8,11 +8,33 @@ function normalize(value) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+function currentRoute() {
+  const parts = String(window.location.pathname || '').split('/').filter(Boolean);
+  return normalize(parts[parts.length - 1] || '').replace(/\.html$/i, '');
+}
+
+function isFinanceiroPage() {
+  return currentRoute() === 'financeiro';
+}
+
+function isMasterContext(context) {
+  const user = context?.user || {};
+  const role = normalize(
+    user.role
+    || context?.role
+    || context?.perfil_codigo
+    || context?.perfil_nome
+    || context?.profile?.role
+  );
+  const masterFlag = user.is_master ?? context?.is_master ?? context?.profile?.is_master;
+  return masterFlag === true || normalize(masterFlag) === 'true' || role === 'master';
+}
+
 function getAccess() {
   try {
     const context = JSON.parse(localStorage.getItem(CONTEXT_KEY) || 'null');
     if (!context) return null;
-    if (context?.user?.is_master || normalize(context?.user?.role) === 'master') {
+    if (isMasterContext(context)) {
       return { allowed: new Set(['dashboard', 'fluxo', 'importar', 'config', 'detalhes', 'despesas', 'pagamentos']), editFluxo: true };
     }
 
@@ -55,6 +77,12 @@ function firstAllowed(allowed) {
 }
 
 function applyPermissions() {
+  // Este módulo permanece carregado quando o usuário navega de Financeiro para
+  // outra página usando a navegação suave. Sem esta guarda, qualquer botão
+  // genérico data-tab (Hospedagem, Compras etc.) era interpretado como aba do
+  // Financeiro e disparava um alerta de permissão indevido.
+  if (!isFinanceiroPage()) return;
+
   const access = getAccess();
   if (!access || !access.allowed.size) return;
 
@@ -73,8 +101,13 @@ function applyPermissions() {
 }
 
 document.addEventListener('click', (event) => {
-  const target = event.target.closest('[data-tab], [data-tab-target]');
-  if (!target) return;
+  if (!isFinanceiroPage()) return;
+
+  // Restringe o bloqueio às abas reais do Financeiro. Outros módulos também
+  // usam data-tab e não devem passar por esta validação.
+  const target = event.target.closest('.fin-tab[data-tab], [data-tab-target]');
+  if (!target || !target.closest('#pageContent')) return;
+
   const tab = target.dataset.tab || target.dataset.tabTarget;
   const access = getAccess();
   if (tab && access && !access.allowed.has(tab)) {
