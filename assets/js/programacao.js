@@ -1017,25 +1017,6 @@ export function renderContent(content) {
     }
   }
 
-  async function getLatestSnapshotDate() {
-    const { data, error } = await supabase
-      .from('colaborador_importacoes')
-      .select('data_referencia')
-      .eq('status', 'processado')
-      .order('data_referencia', { ascending: false })
-      .limit(1);
-
-    if (!error && data?.[0]?.data_referencia) return data[0].data_referencia;
-
-    const fallback = await supabase
-      .from('colaborador_snapshot')
-      .select('data_referencia')
-      .order('data_referencia', { ascending: false })
-      .limit(1);
-
-    return fallback.data?.[0]?.data_referencia || null;
-  }
-
   async function ensureProgramacaoDia(dataReferencia, supervisao, coordenacao = '') {
     const found = await supabase
       .from('programacao_dia')
@@ -1114,12 +1095,11 @@ export function renderContent(content) {
       }
       state.supervisoesResolvidas = isTodas ? supervisoesQuery : [supervisao];
 
-      // As 4 consultas abaixo não dependem entre si — só de data/supervisão —
+      // As 3 consultas abaixo não dependem entre si — só de data/supervisão —
       // mas eram feitas em sequência (uma esperando a outra terminar). Isso
-      // sozinho já multiplicava a latência de rede por 4.
-      const [fobsPendentes, latestSnapshotDate, indisponibilidades, colabsEmOsAtender] = await Promise.all([
+      // sozinho já multiplicava a latência de rede.
+      const [fobsPendentes, indisponibilidades, colabsEmOsAtender] = await Promise.all([
         checkFobPendenciasBloqueantes(dataReferencia, supervisoesQuery),
-        getLatestSnapshotDate(),
         loadIndisponibilidades(dataReferencia),
         loadOsAtender(dataReferencia, supervisoesQuery),
       ]);
@@ -1129,12 +1109,10 @@ export function renderContent(content) {
         el.saveBtn.disabled = true;
         return;
       }
-      if (!latestSnapshotDate) throw new Error('Nenhuma base de colaboradores foi importada ainda.');
 
       let colabQuery = supabase
-        .from('colaborador_snapshot')
+        .from('colaboradores_atuais')
         .select('*')
-        .eq('data_referencia', latestSnapshotDate)
         .order('nome', { ascending: true });
       colabQuery = isTodas ? colabQuery.in('supervisao', supervisoesQuery) : colabQuery.eq('supervisao', supervisao);
       const { data: colaboradores, error: colabError } = await colabQuery;

@@ -264,49 +264,15 @@
     );
   }
 
-  async function loadLatestSnapshotColabs(supabase) {
-    const { data: refs, error: refErr } = await supabase
-      .from('colaborador_importacoes')
-      .select('id,data_referencia,status,created_at')
-      .eq('status', 'processado')
-      .order('created_at', { ascending: false })
-      .limit(1);
-    if (refErr) return { rows: [], error: refErr };
-    const importacaoId = refs?.[0]?.id;
-    if (!importacaoId) return { rows: [], error: null };
-
-    return fetchAllRowsSupabase(
-      supabase,
-      'colaborador_snapshot',
-      'cpf,nome,situacao,admissao,desligamento,ativo,empresa,coordenacao,supervisao,tipo,cargo,whatsapp,email_pessoal,email_empresa,cep,estado,cidade,bairro,endereco,complemento,data_nascimento,data_referencia,importacao_id,created_at',
-      (query) => query.eq('importacao_id', importacaoId),
-      'nome'
-    );
-  }
-
   async function loadLatestColabs(supabase) {
-    // O Google Contacts da planilha antiga usava a aba DADOS completa.
-    // No painel, a tabela `colaboradores` representa essa base atual.
-    // O snapshot fica como apoio histórico, mas não pode limitar a exportação.
-    const [atuais, snapshot] = await Promise.all([
-      loadColaboradoresAtuais(supabase),
-      loadLatestSnapshotColabs(supabase)
-    ]);
-
+    // colaboradores é sincronizada continuamente (agentes-grm-sync); colaborador_snapshot
+    // era a base legada (upload manual, parada em 2026-06-18) usada aqui como reforço
+    // quando ela tinha mais ativos que a tabela atual — não faz mais sentido, já que
+    // colaboradores é hoje a fonte fresca e colaborador_snapshot só regride no tempo.
+    const atuais = await loadColaboradoresAtuais(supabase);
     const atuaisRows = dedupeColaboradores(atuais.rows || []);
-    const snapshotRows = dedupeColaboradores(snapshot.rows || []);
-
-    const ativosAtuais = atuaisRows.filter(colaboradorAtivo).length;
-    const ativosSnapshot = snapshotRows.filter(colaboradorAtivo).length;
-
-    // Se a última importação de Funcionários tem mais ativos que a tabela atual,
-    // usa o snapshot para evitar exportar só parte da base. Antes de comparar,
-    // deduplica por CPF/telefone/nome para não contar importações repetidas.
-    if (snapshotRows.length && ativosSnapshot > ativosAtuais) return snapshotRows;
     if (atuaisRows.length) return atuaisRows;
-    if (snapshotRows.length) return snapshotRows;
     if (atuais.error) throw atuais.error;
-    if (snapshot.error) throw snapshot.error;
     return [];
   }
 

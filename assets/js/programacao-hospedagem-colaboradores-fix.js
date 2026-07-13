@@ -133,21 +133,8 @@ async function carregarColaboradoresElegiveis(originalFrom, supervisao) {
   if (colaboradoresElegiveisCache.has(sup)) return colaboradoresElegiveisCache.get(sup);
 
   try {
-    const latest = await originalFrom('colaborador_snapshot')
-      .select('data_referencia')
-      .eq('supervisao', sup)
-      .order('data_referencia', { ascending: false })
-      .limit(1);
-
-    const dataRef = latest?.data?.[0]?.data_referencia;
-    if (!dataRef) {
-      colaboradoresElegiveisCache.set(sup, []);
-      return [];
-    }
-
-    const { data, error } = await originalFrom('colaborador_snapshot')
+    const { data, error } = await originalFrom('colaboradores_atuais')
       .select('cpf,nome,cargo,coordenacao,supervisao,situacao,ativo,desligamento')
-      .eq('data_referencia', dataRef)
       .eq('supervisao', sup)
       .limit(5000);
 

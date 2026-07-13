@@ -81,7 +81,7 @@ async function buscarColaboradoresPorNome(q){
 
 async function buscarColaboradorDetalhes(colab){
   if(!colab?.id && !colab?.nome) return normalizarColaborador(colab||{});
-  const bases=['colaborador_snapshot','colaboradores'];
+  const bases=['colaboradores'];
   for(const base of bases){
     try{
       let q=supabase.from(base).select('*').limit(1);

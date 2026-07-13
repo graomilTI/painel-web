@@ -233,10 +233,9 @@ import { loadUserContext } from './sessionStore.js';
 
     try {
       const { data, error } = await supabase
-        .from('colaborador_snapshot')
-        .select('cpf,nome,coordenacao,supervisao,data_referencia')
+        .from('colaboradores_atuais')
+        .select('cpf,nome,coordenacao,supervisao')
         .ilike('nome', `%${nome}%`)
-        .order('data_referencia', { ascending: false })
         .limit(1)
         .maybeSingle();
       if (error) throw error;

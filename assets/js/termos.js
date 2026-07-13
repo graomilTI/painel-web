@@ -35,14 +35,14 @@ async function loadEmpresas(){
 
 async function fetchCPF(colaboradorId){
   if(!colaboradorId) return '';
-  // tenta o cache (foto atual); fallback à query por id (snapshots antigos)
+  // tenta o cache (foto atual); fallback à query direta caso o id não esteja no cache
   try{
     const lista=await getColaboradores();
     const hit=lista.find(c=>String(c.id)===String(colaboradorId));
     if(hit?.cpf) return hit.cpf;
   }catch{}
-  const data=await safe(()=>supabase.from('colaborador_snapshot').select('cpf').eq('id',colaboradorId).maybeSingle(),null);
-  return data?.cpf||'';
+  const data=await safe(()=>supabase.from('colaboradores').select('cpf').eq('id',colaboradorId).maybeSingle(),null);
+  return String(data?.cpf||'').replace(/\D/g,'');
 }
 
 const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];

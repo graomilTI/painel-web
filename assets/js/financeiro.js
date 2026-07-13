@@ -62,6 +62,7 @@ const state = {
   },
   detSort: { col: null, dir: 1 },
   detFilter: { tipo: '', situacao: '', favorecido: '', doc: '' },
+  adiantSort: { col: null, dir: 1 },
   notasFiscais: [],
   notasFiscaisLoaded: false,
   notasFiscaisFiltro: { cliente: '', situacao: '' }
@@ -842,6 +843,11 @@ export function renderContent(content, userContext) {
       .det-sort-icon{margin-left:4px;opacity:.6;font-size:10px}
       .det-th-active .det-sort-icon{opacity:1;color:#34d399}
       .adiant-subtab{border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#64748b;border-radius:10px;padding:7px 13px;cursor:pointer;font-size:13px;font-weight:600;transition:all .14s}.adiant-subtab:hover{color:#e2e8f0;background:rgba(15,23,42,.85)}.adiant-subtab.active{background:linear-gradient(135deg,#14532d,#166534);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(22,101,52,.35)}.adiant-table{display:none}.adiant-table.active{display:block}
+      .adiant-th-sort{cursor:pointer;user-select:none;white-space:nowrap;transition:color .14s}
+      .adiant-th-sort:hover{color:#e2e8f0!important}
+      .adiant-th-active{color:#34d399!important}
+      .adiant-sort-icon{margin-left:4px;opacity:.6;font-size:10px}
+      .adiant-th-active .adiant-sort-icon{opacity:1;color:#34d399}
       .hist-colab-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:rgba(15,23,42,.6);padding:16px;margin-bottom:14px}
       .hist-colab-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding-bottom:0;border-bottom:0;cursor:pointer;user-select:none}
       .hist-colab-card.expanded .hist-colab-head{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(148,163,184,.1)}
@@ -1090,8 +1096,16 @@ export function renderContent(content, userContext) {
               <div class="fin-table-wrap">
                 <table class="fin-table">
                   <thead><tr>
-                    <th>Data</th><th>Colaborador</th><th>Coordenação</th><th>Supervisão</th>
-                    <th>Valor</th><th>Saldo</th><th>Embarque</th><th>Leitura</th><th>Descrição</th><th>Ação</th>
+                    <th data-adiant-sort="data_solicitacao" class="adiant-th-sort">Data <span class="adiant-sort-icon">↕</span></th>
+                    <th data-adiant-sort="colaborador" class="adiant-th-sort">Colaborador <span class="adiant-sort-icon">↕</span></th>
+                    <th data-adiant-sort="coordenacao" class="adiant-th-sort">Coordenação <span class="adiant-sort-icon">↕</span></th>
+                    <th data-adiant-sort="supervisao" class="adiant-th-sort">Supervisão <span class="adiant-sort-icon">↕</span></th>
+                    <th data-adiant-sort="valor" class="adiant-th-sort">Valor <span class="adiant-sort-icon">↕</span></th>
+                    <th data-adiant-sort="saldo" class="adiant-th-sort">Saldo <span class="adiant-sort-icon">↕</span></th>
+                    <th data-adiant-sort="embarque" class="adiant-th-sort">Embarque <span class="adiant-sort-icon">↕</span></th>
+                    <th data-adiant-sort="leitura_mais_antiga" class="adiant-th-sort">Leitura <span class="adiant-sort-icon">↕</span></th>
+                    <th data-adiant-sort="descricao" class="adiant-th-sort">Descrição <span class="adiant-sort-icon">↕</span></th>
+                    <th>Ação</th>
                   </tr></thead>
                   <tbody id="adiantTbody"><tr><td colspan="10" class="fin-empty">Carregando...</td></tr></tbody>
                 </table>
@@ -2534,6 +2548,21 @@ export function renderContent(content, userContext) {
     const historico = rows.filter((r) => r.pendente_no_grm === false || ['pago', 'recusado'].includes(r.decisao?.status))
       .sort((a, b) => String(b.decisao?.decidido_em || b.saiu_pendente_em || '').localeCompare(String(a.decisao?.decidido_em || a.saiu_pendente_em || '')));
 
+    const { col: sortCol, dir: sortDir } = state.adiantSort;
+    if (sortCol) {
+      const numericCols = ['valor', 'saldo'];
+      ativos.sort((a, b) => {
+        if (numericCols.includes(sortCol)) return ((Number(a[sortCol]) || 0) - (Number(b[sortCol]) || 0)) * sortDir;
+        return String(a[sortCol] || '').localeCompare(String(b[sortCol] || ''), 'pt-BR') * sortDir;
+      });
+    }
+    document.querySelectorAll('.adiant-th-sort').forEach((th) => {
+      const c = th.dataset.adiantSort;
+      const icon = th.querySelector('.adiant-sort-icon');
+      if (icon) icon.textContent = c === sortCol ? (sortDir === 1 ? '▲' : '▼') : '↕';
+      th.classList.toggle('adiant-th-active', c === sortCol);
+    });
+
     const tbody = document.getElementById('adiantTbody');
     if (tbody) {
       tbody.innerHTML = ativos.length ? ativos.map((row) => `
@@ -3033,6 +3062,13 @@ export function renderContent(content, userContext) {
       const col = th.dataset.detSort;
       if (state.detSort.col === col) { state.detSort.dir *= -1; } else { state.detSort.col = col; state.detSort.dir = 1; }
       renderDetalhes();
+    });
+  });
+  document.querySelectorAll('.adiant-th-sort').forEach((th) => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.adiantSort;
+      if (state.adiantSort.col === col) { state.adiantSort.dir *= -1; } else { state.adiantSort.col = col; state.adiantSort.dir = 1; }
+      renderAdiantamentosTable();
     });
   });
   document.getElementById('detFiltroTipo')?.addEventListener('change', (e) => { state.detFilter.tipo = e.target.value; renderDetalhes(); });
