@@ -1,6 +1,16 @@
 // assets/js/menuConfig.js
 // Menu alinhado com os códigos reais do Supabase, mantendo compatibilidade com IDs legados.
 
+// O dashboard de Frotas também pode abrir pela navegação suave, que não recarrega o HTML.
+// Mantém o CSS específico disponível em ambos os modos de navegação.
+if (typeof document !== 'undefined' && !document.getElementById('frotasDashboardStyles')) {
+  const link = document.createElement('link');
+  link.id = 'frotasDashboardStyles';
+  link.rel = 'stylesheet';
+  link.href = new URL('../css/frotas-dashboard.css?v=20260713-layout2', import.meta.url).href;
+  document.head.appendChild(link);
+}
+
 function item(code, label, path, aliases = [], opts = {}) {
   return { code, label, path, aliases, ...opts };
 }
@@ -93,7 +103,7 @@ export const MENU_CONFIG = [
   {
     grupo: "FROTAS",
     itens: [
-      item("frotas_dashboard", "Dashboard de Frotas", "frotas-dashboard", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE", "FROTAS_VEICULOS", "VEICULOS", "FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS", "FROTAS_RASTREADORES", "RASTREADORES"], { hidden: true }),
+      item("frotas_dashboard", "Dashboard", "frotas-dashboard", ["FROTAS_DASHBOARD", "FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE", "FROTAS_VEICULOS", "VEICULOS", "FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS", "FROTAS_RASTREADORES", "RASTREADORES"]),
       item("frotas_excesso_velocidade", "Excesso de Velocidade", "frotas", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE"]),
       item("frotas_veiculos", "Veículos", "frotas-veiculos", ["FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS"]),
       item("frotas_motoristas", "Motoristas", "frotas-motoristas", ["FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_VEICULOS", "VEICULOS"]),
