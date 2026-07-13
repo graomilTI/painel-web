@@ -66,7 +66,6 @@ async function resolveSavedHotelId(snapshot) {
       .eq('nome', snapshot.nome)
       .eq('cidade', snapshot.cidade)
       .eq('uf', snapshot.uf)
-      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (data?.id) return data.id;
@@ -95,13 +94,15 @@ async function persistInvoiceChoice(snapshot) {
 
 function bindHotelForm() {
   document.addEventListener('click', (event) => {
-    const edit = event.target.closest('[data-action="edit-hotel"]');
+    const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+    if (!target) return;
+    const edit = target.closest('[data-action="edit-hotel"]');
     if (edit) {
       state.editingHotelId = edit.dataset.id || null;
       setTimeout(() => loadHotelField(state.editingHotelId), 0);
       return;
     }
-    if (event.target.closest('#btnAbrirCadastroHotel') || event.target.closest('#hotelClear')) {
+    if (target.closest('#btnAbrirCadastroHotel') || target.closest('#hotelClear')) {
       state.editingHotelId = null;
       setTimeout(() => loadHotelField(null), 0);
     }
@@ -123,10 +124,15 @@ function bindHotelForm() {
 
 function decorateHotelTable() {
   document.querySelectorAll('#hotelTbody tr').forEach((row) => {
-    row.querySelectorAll('.hosp-nf-hotel-tag').forEach((tag) => tag.remove());
+    const existing = row.querySelector('.hosp-nf-hotel-tag');
     const id = row.querySelector('[data-action="edit-hotel"]')?.dataset.id;
     const hotel = id ? state.hotels.get(String(id)) : null;
-    if (!hotel || hotel.emite_nota_fiscal !== false) return;
+    const shouldAlert = hotel?.emite_nota_fiscal === false;
+    if (!shouldAlert) {
+      existing?.remove();
+      return;
+    }
+    if (existing) return;
     const title = row.querySelector('td:first-child strong');
     if (title) title.insertAdjacentHTML('afterend', '<span class="hosp-nf-hotel-tag" title="Este hotel foi cadastrado como não emissor de nota fiscal">⚠ Não emite NF</span>');
   });
@@ -150,15 +156,27 @@ function isActive(row) {
 
 function decorateLodgingCards() {
   document.querySelectorAll('.hosp-v2-row').forEach((card) => {
-    card.querySelectorAll('.hosp-nf-alert').forEach((alert) => alert.remove());
+    const existing = card.querySelector('.hosp-nf-alert');
     const id = card.querySelector('[data-v2-action][data-id]')?.dataset.id;
     const row = id ? state.rows.get(String(id)) : null;
     const hotel = rowHotel(row);
-    if (!row || !hotel || hotel.emite_nota_fiscal !== false) return;
+    const shouldAlert = Boolean(row && hotel?.emite_nota_fiscal === false);
+    if (!shouldAlert) {
+      existing?.remove();
+      return;
+    }
     const finance = isFinance(row);
+    const text = finance ? '⚠ Financeiro: hotel não emite NF' : '⚠ Hotel não emite NF';
+    const title = finance ? 'Pagamento enviado ao Financeiro sem previsão de nota fiscal' : 'Hotel cadastrado como não emissor de nota fiscal';
+    if (existing) {
+      existing.classList.toggle('finance', finance);
+      if (existing.textContent !== text) existing.textContent = text;
+      if (existing.title !== title) existing.title = title;
+      return;
+    }
     const target = card.querySelector('.hosp-v2-hotel')?.parentElement || card.querySelector('.hosp-v2-cell:nth-child(3)');
     if (!target) return;
-    target.insertAdjacentHTML('beforeend', `<div class="hosp-nf-alert ${finance ? 'finance' : ''}" title="${finance ? 'Pagamento enviado ao Financeiro sem previsão de nota fiscal' : 'Hotel cadastrado como não emissor de nota fiscal'}">⚠ ${finance ? 'Financeiro: hotel não emite NF' : 'Hotel não emite NF'}</div>`);
+    target.insertAdjacentHTML('beforeend', `<div class="hosp-nf-alert ${finance ? 'finance' : ''}" title="${title}">${text}</div>`);
   });
 }
 
@@ -166,7 +184,7 @@ function decorateKpis() {
   const activeNoInvoice = [...state.rows.values()].filter((row) => isActive(row) && rowHotel(row)?.emite_nota_fiscal === false);
   const financeNoInvoice = activeNoInvoice.filter(isFinance);
   document.querySelectorAll('#hospV2Kpis .hosp-v2-kpi').forEach((card) => {
-    card.querySelectorAll('.hosp-nf-kpi-alert').forEach((alert) => alert.remove());
+    const existing = card.querySelector('.hosp-nf-kpi-alert');
     const label = card.querySelector('small')?.textContent?.trim().toLowerCase();
     let count = 0;
     let title = '';
@@ -177,7 +195,15 @@ function decorateKpis() {
       count = financeNoInvoice.length;
       title = `${count} pagamento(s) enviado(s) ao Financeiro para hotel que não emite nota fiscal`;
     }
-    if (count) card.insertAdjacentHTML('beforeend', `<i class="hosp-nf-kpi-alert" title="${esc(title)}">⚠</i>`);
+    if (!count) {
+      existing?.remove();
+      return;
+    }
+    if (existing) {
+      if (existing.title !== title) existing.title = title;
+      return;
+    }
+    card.insertAdjacentHTML('beforeend', `<i class="hosp-nf-kpi-alert" title="${esc(title)}">⚠</i>`);
   });
 }
 
