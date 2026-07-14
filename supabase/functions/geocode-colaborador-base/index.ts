@@ -79,6 +79,17 @@ function formatCepBR(cep8: string): string {
   return `${cep8.slice(0, 5)}-${cep8.slice(5)}`;
 }
 
+// CEP válido sempre vira chave. Sem CEP, só vale a pena tentar "cidade:" se
+// cidade E estado existirem — cidade/estado vazios geravam a chave degenerada
+// "cidade:|", que o Nominatim resolvia como o país "Brazil" inteiro (retorna
+// o centroide do Brasil como se fosse um endereço válido, e essa chave ficava
+// deduplicada/compartilhada por todo mundo sem cidade/estado cadastrado).
+function chaveGeo(c: { cep: string; cidade: string; estado: string }): string | null {
+  if (c.cep.length === 8) return c.cep;
+  if (c.cidade && c.estado) return `cidade:${c.cidade}|${c.estado}`;
+  return null;
+}
+
 type Pendente = { colaborador_id: string; cpf: string; nome: string; nome_chave: string; cep: string; cidade: string; estado: string; endereco: string; bairro: string };
 type BaseColaborador = {
   colaborador_id: string;
@@ -458,7 +469,7 @@ Deno.serve(async (req) => {
 
     // 2) Cache existente (por CEP) — evita regeocodificar quem já foi resolvido
     // para outro colaborador com o mesmo CEP.
-    const chavesNecessarias = [...new Set(faltantes.map((c) => (c.cep.length === 8 ? c.cep : `cidade:${c.cidade}|${c.estado}`)))];
+    const chavesNecessarias = [...new Set(faltantes.map(chaveGeo).filter((k): k is string => k !== null))];
     const cepKeys = chavesNecessarias.filter((k) => !k.startsWith('cidade:'));
     const { data: cacheRaw, error: cacheErr } = await supabase
       .from('geocode_cache')
@@ -526,7 +537,8 @@ Deno.serve(async (req) => {
     // pequenos para uma linha problemática não travar as demais.
     const linhas = faltantes
       .map((c) => {
-        const chave = c.cep.length === 8 ? c.cep : `cidade:${c.cidade}|${c.estado}`;
+        const chave = chaveGeo(c);
+        if (!chave) return null;
         const geo = cacheOk.get(chave);
         if (!geo) return null;
         return {
