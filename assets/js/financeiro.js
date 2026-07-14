@@ -293,7 +293,11 @@ function readWorkbookRows(file) {
 }
 
 
-const PAGAMENTO_VALOR_ALMOCO = 30;
+const PAGAMENTO_VALOR_REFEICAO = Object.freeze({
+  CAFE: 15,
+  ALMOCO: 30,
+  JANTA: 30
+});
 const PAGAMENTO_IFOOD_CNPJ = '29.666.679/0001-34';
 
 function onlyDigits(value) {
@@ -413,7 +417,7 @@ function apurarAlmocoRows(rows, rhMap) {
       return;
     }
 
-    const valor = PAGAMENTO_VALOR_ALMOCO;
+    const valor = PAGAMENTO_VALOR_REFEICAO[String(row.tipo_beneficio || '').toUpperCase()] ?? PAGAMENTO_VALOR_REFEICAO.ALMOCO;
     const bancoNorm = normalize(rh.banco).replace(/\s+/g, '');
     let destino = 'Pendente';
     if (bancoNorm.includes('graomilflash') || bancoNorm.includes('flash')) destino = 'Flash';
