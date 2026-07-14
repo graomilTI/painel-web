@@ -4,6 +4,7 @@ const title = String(body?.dataset?.logisticaTitle || 'Logística').trim();
 
 const validTabs = new Set([
   'os',
+  'fob',
   'finalizacao',
   'classificadores',
   'conferencias',
