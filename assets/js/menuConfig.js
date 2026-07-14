@@ -153,11 +153,11 @@ export const MENU_CONFIG = [
     itens: [
       item("logistica_adm", "Painel de Logística", "adm-logistica", ["LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_informativos", "Informativos", "logistica-informativos", ["LOGISTICA_INFORMATIVOS", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_finalizacao_os", "Finalização de O.S", "adm-logistica#finalizacao", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS"]),
-      item("logistica_classificadores", "Classificadores", "adm-logistica#classificadores", ["LOGISTICA_CLASSIFICADORES"]),
-      item("logistica_conferencias", "Conferências", "adm-logistica#conferencias", ["LOGISTICA_CONFERENCIAS"]),
-      item("logistica_exportacoes", "Exportações clientes", "adm-logistica#exportacoes", ["LOGISTICA_EXPORTACOES"]),
-      item("logistica_relatorios_cliente", "Relatórios ao Cliente", "adm-logistica#relatorios", ["LOGISTICA_RELATORIOS_CLIENTE"]),
+      item("logistica_finalizacao_os", "Finalização de O.S", "adm-logistica#finalizacao", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS", "LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_classificadores", "Classificadores", "adm-logistica#classificadores", ["LOGISTICA_CLASSIFICADORES", "LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_conferencias", "Conferências", "adm-logistica#conferencias", ["LOGISTICA_CONFERENCIAS", "LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_exportacoes", "Exportações clientes", "adm-logistica#exportacoes", ["LOGISTICA_EXPORTACOES", "LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_relatorios_cliente", "Relatórios ao Cliente", "adm-logistica#relatorios", ["LOGISTICA_RELATORIOS_CLIENTE", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_btg", "BTG", "btg-logistica", ["LOGISTICA_BTG", "BTG_LOGISTICA", "BTG", "LOGISTICA_ADM"])
     ]
   },
