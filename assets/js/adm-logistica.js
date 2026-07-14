@@ -50,6 +50,8 @@ const state = {
   producao: [],
   producaoLoaded: false,
   destinatariosRelatorios: [],
+  ufsCargasLoaded: false,
+  mapaRegionalUf: [], // [{estado, regional}] vindo de metas_producao
   filters: {
     data: '',
     coordenacao: '',
@@ -359,6 +361,17 @@ export async function renderContent(content) {
 
       <div id="fobReportResult" class="mt-16"></div>
 
+      <div class="card mt-16 log-subcard">
+        <h4 style="margin:0 0 14px;color:#bbf7d0">Imagem por Regional</h4>
+        <p class="muted" style="margin:-8px 0 14px">Equivalente ao script Regional.js: agrupa o relatório FOB acima por Supervisão (regional) e gera uma imagem para compartilhar.</p>
+        <div class="log-report-grid" style="grid-template-columns:260px auto auto">
+          <div class="field"><label>Regional</label><select id="logRegionalFob" class="log-input"><option value="">Selecione</option></select></div>
+          <div class="field" style="align-self:end"><button id="logGerarImagemRegional" class="btn btn-primary" type="button">Gerar imagem</button></div>
+          <div class="field" style="align-self:end"><button id="logGerarZipRegionais" class="btn btn-secondary" type="button">Gerar ZIP (todas)</button></div>
+        </div>
+        <div class="log-note" id="logRegionalFeedback" style="display:none"></div>
+      </div>
+
       <details class="card mt-16 log-subcard">
         <summary style="cursor:pointer;font-weight:950;color:#bbf7d0">Lançamento manual / histórico de validação</summary>
         <div class="card mt-16">
@@ -407,6 +420,16 @@ export async function renderContent(content) {
       <div class="section-head"><div><h3>Exportações por cliente</h3><p class="muted">Agrupamento inspirado nos scripts LDC/COFCO, Sipal, Ouro Safra e Agrícola Alvorada.</p></div></div>
       <div class="field" style="max-width:360px"><label>Cliente</label><select id="logClienteExportacao" class="log-input"><option value="">Clientes dos scripts</option>${CLIENTES_EXPORTACAO.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
       <div id="logExportacoesList" class="mt-16"></div>
+
+      <div class="card mt-16 log-subcard">
+        <h4 style="margin:0 0 14px;color:#bbf7d0">Baixar Cargas por Cliente + UF</h4>
+        <p class="muted" style="margin:-8px 0 14px">Equivalente ao "Baixar Cargas" do script antigo. Use o campo Cliente acima e escolha a UF — a UF é resolvida via <strong>Metas &gt; Produção</strong> (coordenação ↔ estado), já que a base de cargas sincronizada não traz UF diretamente.</p>
+        <div class="log-report-grid" style="grid-template-columns:220px auto">
+          <div class="field"><label>UF</label><select id="logUfCargas" class="log-input"><option value="">Selecione</option></select></div>
+          <div class="field" style="align-self:end"><button id="logBaixarCargasBtn" class="btn btn-primary" type="button">Baixar XLSX</button></div>
+        </div>
+        <div class="log-note" id="logBaixarCargasFeedback" style="display:none"></div>
+      </div>
     </section>
 
     <section class="card mt-16 log-section" id="section-relatorios">
@@ -477,6 +500,13 @@ export async function renderContent(content) {
     relPreviewBox: document.getElementById('relPreviewBox'),
     relHistorico: document.getElementById('relHistorico'),
     reload: document.getElementById('logReload'),
+    ufCargas: document.getElementById('logUfCargas'),
+    baixarCargasBtn: document.getElementById('logBaixarCargasBtn'),
+    baixarCargasFeedback: document.getElementById('logBaixarCargasFeedback'),
+    regionalFob: document.getElementById('logRegionalFob'),
+    gerarImagemRegional: document.getElementById('logGerarImagemRegional'),
+    gerarZipRegionais: document.getElementById('logGerarZipRegionais'),
+    regionalFeedback: document.getElementById('logRegionalFeedback'),
   };
 
   el.tabs.addEventListener('click', (event) => {
@@ -499,6 +529,9 @@ export async function renderContent(content) {
   el.relAplicarClienteDest.addEventListener('click', () => { el.relDestCliente.value = el.relCliente.value.trim(); });
   el.relCliente.addEventListener('change', () => { if (!el.relDestCliente.value) el.relDestCliente.value = el.relCliente.value.trim(); });
   el.reload.addEventListener('click', loadAll);
+  el.baixarCargasBtn.addEventListener('click', baixarCargasClienteUf);
+  el.gerarImagemRegional.addEventListener('click', () => gerarImagemRegional(el.regionalFob.value));
+  el.gerarZipRegionais.addEventListener('click', gerarZipTodasRegionais);
   content.addEventListener('click', onClick);
   content.addEventListener('change', onChange);
 
@@ -567,6 +600,89 @@ export async function renderContent(content) {
     render();
   }
 
+  // Baixar Cargas por Cliente + UF (equivalente a Cargas.js/ModalUF.html). grm_cargas_importacoes
+  // não tem UF nativa (nem a fonte do GRM expõe isso) -- resolvemos via metas_producao, que já
+  // mantém o par estado/regional e cujo "regional" bate com a "coordenacao" das cargas.
+  async function loadUfsCargas() {
+    if (state.ufsCargasLoaded) return;
+    state.ufsCargasLoaded = true;
+    const { data, error } = await supabase.from('metas_producao').select('estado,regional');
+    if (error) {
+      state.ufsCargasLoaded = false;
+      console.warn('metas_producao indisponível para Baixar Cargas por UF:', error);
+      return;
+    }
+    state.mapaRegionalUf = safeArray(data);
+    const ufs = [...new Set(state.mapaRegionalUf.map((r) => String(r.estado || '').toUpperCase()).filter(Boolean))].sort();
+    if (el.ufCargas) el.ufCargas.innerHTML = '<option value="">Selecione</option>' + ufs.map((uf) => `<option value="${esc(uf)}">${esc(uf)}</option>`).join('');
+  }
+
+  async function baixarCargasClienteUf() {
+    const cliente = (el.clienteExportacao.value || state.filters.clienteExportacao || '').trim();
+    const uf = el.ufCargas.value;
+    const feedback = el.baixarCargasFeedback;
+    feedback.style.display = 'block';
+    if (!cliente) { feedback.textContent = 'Selecione um cliente no campo acima.'; return; }
+    if (!uf) { feedback.textContent = 'Selecione uma UF.'; return; }
+
+    const regionais = new Set(state.mapaRegionalUf.filter((r) => String(r.estado || '').toUpperCase() === uf).map((r) => normalize(r.regional)));
+    if (!regionais.size) { feedback.textContent = `Nenhuma regional cadastrada em Metas > Produção para UF ${uf}.`; return; }
+
+    el.baixarCargasBtn.disabled = true;
+    feedback.textContent = 'Buscando cargas...';
+    try {
+      const nCliente = normalize(cliente);
+      const { data, error } = await supabase
+        .from('grm_cargas_importacoes')
+        .select('os,cliente,coordenacao,supervisao,colaborador,placa,laudo,nota_fiscal,dados_json,data_classificacao')
+        .ilike('cliente', `%${cliente}%`)
+        .limit(20000);
+      if (error) throw error;
+
+      const linhas = safeArray(data).filter((row) => {
+        if (!normalize(row.cliente).includes(nCliente)) return false;
+        return regionais.has(normalize(row.coordenacao)) || regionais.has(normalize(row.supervisao));
+      });
+
+      if (!linhas.length) {
+        feedback.textContent = `Nenhuma carga encontrada para "${cliente}" na UF ${uf}.`;
+        return;
+      }
+
+      // Campos vindos de dados_json (a base sincronizada não tem Origem/Destino como o
+      // script antigo tinha na aba "Dados Cargas" -- só o que o GRM realmente expõe hoje).
+      const linhasXlsx = linhas.map((row) => {
+        const j = row.dados_json || {};
+        return {
+          Cliente: row.cliente || j['Cliente'] || '-',
+          'O.S.': row.os || j['O.S.'] || '-',
+          Contrato: j['Contrato'] || '-',
+          Laudo: row.laudo || j['Laudo'] || '-',
+          Tons: j['Tons'] || '-',
+          Produto: j['Produto'] || '-',
+          Data: row.data_classificacao || j['Data'] || '-',
+          Placa: row.placa || j['Placa'] || '-',
+          'Nota Fiscal': row.nota_fiscal || j['Nota Fiscal'] || '-',
+          Coordenacao: row.coordenacao || '-',
+          Supervisao: row.supervisao || '-',
+          Classificador: j['Classificador'] || row.colaborador || '-',
+          Situacao: j['Situação'] || '-',
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(linhasXlsx);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Cargas');
+      XLSX.writeFile(wb, `Cargas_${cliente.replace(/[^a-zA-Z0-9]+/g, '_')}_${uf}.xlsx`);
+      feedback.textContent = `${linhas.length} carga(s) exportada(s) para ${cliente} / ${uf}.`;
+    } catch (error) {
+      console.error('[Baixar Cargas]', error);
+      feedback.textContent = error?.message || 'Erro ao gerar o XLSX de cargas.';
+    } finally {
+      el.baixarCargasBtn.disabled = false;
+    }
+  }
+
   function fillCoords() {
     const current = el.coord.value;
     const coords = [...new Set(state.os.map(coordOf).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
@@ -588,6 +704,7 @@ export async function renderContent(content) {
     if (state.tab === 'fob' && !state.fobLoaded) loadFob();
     if (state.tab === 'fob' && !state.fobReportAutoLoaded) { state.fobReportAutoLoaded = true; gerarRelatorioFobAutomatico(); }
     if (isAdmTab && !state.producaoLoaded) loadProducao(); // produção sob demanda
+    if (state.tab === 'exportacoes' && !state.ufsCargasLoaded) loadUfsCargas();
   }
 
   function renderStats() {
@@ -1245,6 +1362,132 @@ export async function renderContent(content) {
         </div>
         ${rows.length > preview.length ? `<div class="log-note">Prévia limitada a ${preview.length} linhas no painel. Use Exportar CSV para o relatório completo.</div>` : ''}
       </section>`;
+    atualizarSelectRegionalFob();
+  }
+
+  // Imagem por Regional (equivalente a Regional.js/RegionalSelector.html). "Regional" é o
+  // texto antes do "-" na Supervisão, igual ao script antigo; sem "-" usa o texto inteiro.
+  function regionalDe(supervisao) {
+    const s = String(supervisao || '').trim();
+    if (!s) return 'SEM REGIONAL';
+    const idx = s.indexOf('-');
+    return (idx > 0 ? s.slice(0, idx) : s).trim().toUpperCase();
+  }
+
+  function atualizarSelectRegionalFob() {
+    if (!el.regionalFob) return;
+    const atual = el.regionalFob.value;
+    const regionais = [...new Set((state.fobReportRows || []).map((r) => regionalDe(r.supervisao)))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    el.regionalFob.innerHTML = '<option value="">Selecione</option>' + regionais.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+    if (regionais.includes(atual)) el.regionalFob.value = atual;
+  }
+
+  async function ensureExportLibLocal(url, globalName) {
+    if (window[globalName]) return;
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = url;
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`Não foi possível carregar ${globalName}.`));
+      document.head.appendChild(script);
+    });
+  }
+
+  function buildRegionalTableNode(regional, rows) {
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-99999px;top:0;background:#fff;padding:24px;font-family:Arial,sans-serif;width:1000px;color:#111';
+    const statusColor = (status) => status === 'OK' ? '#16a34a' : status === 'DOIS EMBARQUES' ? '#ca8a04' : '#dc2626';
+    host.innerHTML = `
+      <h2 style="margin:0 0 4px">FOB — ${esc(regional)}</h2>
+      <p style="margin:0 0 16px;color:#555">${new Date().toLocaleString('pt-BR')} · ${rows.length} O.S.</p>
+      <table style="border-collapse:collapse;width:100%;font-size:13px">
+        <thead><tr>${['DATA', 'OS', 'SUPERVISÃO', 'FUNCIONÁRIO', 'STATUS', 'OBS'].map((h) => `<th style="border:1px solid #ccc;padding:6px;background:#f1f5f9;text-align:left">${h}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((r) => `<tr>
+          <td style="border:1px solid #ddd;padding:6px">${esc(r.data_br)}</td>
+          <td style="border:1px solid #ddd;padding:6px">${esc(r.os)}</td>
+          <td style="border:1px solid #ddd;padding:6px">${esc(r.supervisao || '-')}</td>
+          <td style="border:1px solid #ddd;padding:6px">${esc(r.funcionario || '-')}</td>
+          <td style="border:1px solid #ddd;padding:6px;font-weight:700;color:${statusColor(r.status)}">${esc(r.status)}</td>
+          <td style="border:1px solid #ddd;padding:6px">${esc(r.observacao || '')}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    document.body.appendChild(host);
+    return host;
+  }
+
+  async function domToPngRegional(node) {
+    const canvas = await window.html2canvas(node, { scale: 2, backgroundColor: '#ffffff' });
+    return canvas.toDataURL('image/png');
+  }
+
+  function baixarUrl(url, filename) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function gerarImagemRegional(regional) {
+    if (!regional) { el.regionalFeedback.style.display = 'block'; el.regionalFeedback.textContent = 'Selecione uma regional.'; return; }
+    const rows = (state.fobReportRows || []).filter((r) => regionalDe(r.supervisao) === regional);
+    if (!rows.length) { el.regionalFeedback.style.display = 'block'; el.regionalFeedback.textContent = 'Nenhuma linha para essa regional.'; return; }
+    el.gerarImagemRegional.disabled = true;
+    el.regionalFeedback.style.display = 'block';
+    el.regionalFeedback.textContent = 'Gerando imagem...';
+    let node;
+    try {
+      await ensureExportLibLocal('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
+      node = buildRegionalTableNode(regional, rows);
+      const dataUrl = await domToPngRegional(node);
+      baixarUrl(dataUrl, `FOB_${regional.replace(/[^a-zA-Z0-9]+/g, '_')}.png`);
+      el.regionalFeedback.textContent = `Imagem gerada: ${rows.length} O.S.`;
+    } catch (error) {
+      console.error('[Imagem Regional]', error);
+      el.regionalFeedback.textContent = error?.message || 'Erro ao gerar imagem.';
+    } finally {
+      node?.remove();
+      el.gerarImagemRegional.disabled = false;
+    }
+  }
+
+  async function gerarZipTodasRegionais() {
+    const rows = state.fobReportRows || [];
+    if (!rows.length) { el.regionalFeedback.style.display = 'block'; el.regionalFeedback.textContent = 'Gere o relatório FOB antes.'; return; }
+    el.gerarZipRegionais.disabled = true;
+    el.regionalFeedback.style.display = 'block';
+    el.regionalFeedback.textContent = 'Gerando ZIP...';
+    const nodes = [];
+    try {
+      await ensureExportLibLocal('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
+      await ensureExportLibLocal('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'JSZip');
+      const grupos = new Map();
+      rows.forEach((r) => {
+        const reg = regionalDe(r.supervisao);
+        if (!grupos.has(reg)) grupos.set(reg, []);
+        grupos.get(reg).push(r);
+      });
+      const zip = new window.JSZip();
+      for (const [regional, regRows] of grupos) {
+        const node = buildRegionalTableNode(regional, regRows);
+        nodes.push(node);
+        const dataUrl = await domToPngRegional(node);
+        zip.file(`FOB_${regional.replace(/[^a-zA-Z0-9]+/g, '_')}.png`, dataUrl.split(',')[1], { base64: true });
+      }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      baixarUrl(url, `FOB_regionais_${new Date().toISOString().slice(0, 10)}.zip`);
+      URL.revokeObjectURL(url);
+      el.regionalFeedback.textContent = `ZIP gerado com ${grupos.size} regional(is).`;
+    } catch (error) {
+      console.error('[ZIP Regionais]', error);
+      el.regionalFeedback.textContent = error?.message || 'Erro ao gerar ZIP.';
+    } finally {
+      nodes.forEach((n) => n.remove());
+      el.gerarZipRegionais.disabled = false;
+    }
   }
 
   function fobRowsToCsv(rows) {
