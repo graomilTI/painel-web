@@ -12,6 +12,21 @@ const BOUNCE_KEY = 'grao1000:auth-bounce-guard';
 const BOUNCE_WINDOW_MS = 10000;
 const BOUNCE_LIMIT = 2;
 
+const LOGISTICA_CODES = new Set([
+  'logistica',
+  'logistica_adm',
+  'logistica_informativos',
+  'logistica_finalizacao_os',
+  'finalizacao_os',
+  'logistica_classificadores',
+  'logistica_conferencias',
+  'logistica_exportacoes',
+  'logistica_relatorios_cliente',
+  'logistica_btg',
+  'btg_logistica',
+  'btg',
+]);
+
 function registerBounceAndCheckLoop() {
   let entry = null;
   try { entry = JSON.parse(sessionStorage.getItem(BOUNCE_KEY) || 'null'); } catch { entry = null; }
@@ -68,6 +83,12 @@ function buildModuleCodeSet(context) {
   return set;
 }
 
+function hasLogisticaAccess(context) {
+  if (context?.user?.is_master) return true;
+  const allowedCodes = buildModuleCodeSet(context);
+  return [...allowedCodes].some((code) => LOGISTICA_CODES.has(code) || code.startsWith('logistica_'));
+}
+
 function itemIsAllowedByModules(item, allowedCodes) {
   const candidates = [item.code, ...(Array.isArray(item.aliases) ? item.aliases : [])]
     .map(normalize)
@@ -100,8 +121,14 @@ export function allowedItemsForContext(context) {
   }
 
   const allowedCodes = buildModuleCodeSet(context);
-  return PANEL_MENU.flatMap((section) => section.items || [])
-    .filter((item) => itemIsAllowedByModules(item, allowedCodes))
+  const unlockLogistica = hasLogisticaAccess(context);
+
+  return PANEL_MENU.flatMap((section) => {
+    const isLogisticaSection = normalize(section.section) === 'logistica';
+    return (section.items || []).filter((item) => (
+      itemIsAllowedByModules(item, allowedCodes) || (unlockLogistica && isLogisticaSection)
+    ));
+  })
     .map(permissionRoute)
     .concat(CHAMADOS_TI_ITEM);
 }
@@ -118,16 +145,25 @@ export function canOpenPath(context, path) {
   const normalizedPath = normalizePath(path);
   if (!normalizedPath || normalizedPath === 'login') return true;
 
+  const [basePath] = normalizedPath.split('#', 2);
+
+  // Qualquer permissão pertencente à família LOGÍSTICA libera o painel inteiro
+  // e todas as abas internas. Isso evita o ciclo adm-logistica -> dashboard
+  // quando o usuário possui um código específico, mas não LOGISTICA_ADM.
+  if (
+    hasLogisticaAccess(context) &&
+    ['adm-logistica', 'logistica-informativos', 'btg-logistica'].includes(basePath)
+  ) {
+    return true;
+  }
+
   const allowedPaths = new Set(
     allowedItemsForContext(context).map((item) => normalizePath(item.path)).filter(Boolean)
   );
 
   if (allowedPaths.has(normalizedPath)) return true;
 
-  // LOGISTICA_ADM e a Logística do Gestor são permissões do módulo inteiro.
-  // Portanto, qualquer aba interna via hash deve continuar liberada quando a
-  // rota base já estiver autorizada (ex.: adm-logistica#fob/#conferencias).
-  const [basePath, hash = ''] = normalizedPath.split('#', 2);
+  const [, hash = ''] = normalizedPath.split('#', 2);
   if (hash && ['adm-logistica', 'logistica'].includes(basePath) && allowedPaths.has(basePath)) {
     return true;
   }
@@ -156,9 +192,6 @@ export async function requireAuth() {
     clearUserContext();
     console.error('Erro ao carregar permissões do usuário:', error);
     if (registerBounceAndCheckLoop()) {
-      // Loop detectado (>2 tentativas em 10s): a sessão em si continua válida
-      // e login.js mandaria de volta pra cá — encerra a sessão pra sair do
-      // ciclo em vez de travar a aba, e sinaliza login.html pra não redirecionar.
       console.error('[authGuard] loop de redirecionamento detectado — encerrando sessão.');
       try { await signOut(); } catch {}
       clearBounceGuard();
