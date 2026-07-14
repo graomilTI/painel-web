@@ -163,10 +163,12 @@ export function canOpenPath(context, path) {
 
   if (allowedPaths.has(normalizedPath)) return true;
 
+  // Quando a rota-base está autorizada, o hash representa apenas uma aba
+  // interna do mesmo módulo (ex.: financeiro#dashboard ou adm-logistica#fob).
+  // Permissões que liberam somente uma aba específica continuam restritas,
+  // pois nesse caso allowedPaths não contém a rota-base sem hash.
   const [, hash = ''] = normalizedPath.split('#', 2);
-  if (hash && ['adm-logistica', 'logistica'].includes(basePath) && allowedPaths.has(basePath)) {
-    return true;
-  }
+  if (hash && allowedPaths.has(basePath)) return true;
 
   return false;
 }
