@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 
-const RELEASE = '20260714-rotaskm4';
+const RELEASE = '20260714-rotaskm5';
 const ROUTE_COLORS = ['#a78bfa', '#f472b6', '#fb923c', '#38bdf8', '#facc15', '#4ade80'];
 const CACHE_MS = 30 * 1000;
 
@@ -396,6 +396,33 @@ function ensureRouteLayer() {
   return state.layer;
 }
 
+// Motorista/frota com carona vinculada mas sem posição BFleet utilizável hoje
+// (sem rastreador, ou posição velha demais — ver POSICAO_MAX_IDADE_MS) não tem
+// rota desenhada. Sem aviso, isso parece bug do painel em vez de veículo sem
+// rastreador — então listamos quem ficou de fora, reaproveitando o chip de
+// aviso (.peqb-chip.warn) já injetado globalmente por programacao-equipe.js.
+function renderPositionWarning(missing) {
+  const band = document.getElementById('peqbMapBand');
+  if (!band) return;
+  let box = band.querySelector('#pmgSemPosicaoWarn');
+  if (!missing.length) {
+    if (box) box.remove();
+    return;
+  }
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'pmgSemPosicaoWarn';
+    box.style.cssText = 'margin:0 0 10px;padding:8px 12px;border-radius:12px;border:1px solid rgba(245,158,11,.32);background:rgba(245,158,11,.1);font-size:11.5px;color:#fde68a;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center';
+    const map = band.querySelector('.pmg-map');
+    if (map) map.insertAdjacentElement('beforebegin', box);
+    else band.appendChild(box);
+  }
+  const chips = missing
+    .map(item => `<span class="peqb-chip warn" style="margin:0">${text(item.name)} · ${text(item.plate)}</span>`)
+    .join('');
+  box.innerHTML = `<strong style="font-weight:900;white-space:nowrap">Sem posição atual (rota não desenhada):</strong>${chips}`;
+}
+
 async function rebuildRoutes({ force = false } = {}) {
   if (state.rebuilding) {
     state.rerun = true;
@@ -417,10 +444,15 @@ async function rebuildRoutes({ force = false } = {}) {
 
     clearRoutes();
     let routeIndex = 0;
+    const semPosicao = [];
     for (const group of groups.values()) {
       const originRow = positions.get(group.plate);
       const origin = pointOf(originRow);
-      if (!origin) continue;
+      if (!origin) {
+        const driverName = collaboratorName(group.drivers[0]) || `Frota ${group.plate}`;
+        semPosicao.push({ name: driverName, plate: group.plate });
+        continue;
+      }
       const plan = makeStops(group, origin, indexes, availabilityMap);
       if (!plan.ordered.length) continue;
 
@@ -455,6 +487,7 @@ async function rebuildRoutes({ force = false } = {}) {
       }
       routeIndex += 1;
     }
+    renderPositionWarning(semPosicao);
   } catch (error) {
     console.error('[rotas-conectadas] falha ao desenhar:', error);
   } finally {
