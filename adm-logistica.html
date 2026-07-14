@@ -3,66 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Painel</title>
-  <link rel="icon" href="./assets/icons/pwa-192.png" />
-  <link rel="stylesheet" href="./styles.css?v=logistica-20260714-v5" />
-
-  <!--
-    adm-logistica.js importava diretamente o módulo remoto do SheetJS. Quando
-    esse CDN atrasava ou era bloqueado, nenhum código da página era executado e
-    o usuário via apenas a tela preta. O import map mantém o mesmo import do
-    arquivo principal, mas o resolve localmente; a biblioteca completa é
-    carregada em paralelo e só é necessária nas ações de planilha.
-  -->
-  <script type="importmap">
-    {
-      "imports": {
-        "https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs": "./assets/js/xlsx-window-shim.mjs?v=20260714-v1"
-      }
-    }
-  </script>
-  <script async src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+  <title>Redirecionando — Logística</title>
+  <meta name="robots" content="noindex" />
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <h2>Painel</h2>
-        <p>Gestão integrada</p>
-      </div>
-      <div id="sidebarMenu"></div>
-    </aside>
-
-    <div class="content-wrap">
-      <header class="topbar">
-        <div>
-          <h1 id="pageTitle">Painel</h1>
-          <div class="meta" id="welcomeUser">Olá</div>
-        </div>
-        <div class="topbar-actions">
-          <span class="badge" id="roleBadge">USUÁRIO</span>
-          <button class="btn btn-secondary" id="signOutBtn" type="button">Sair</button>
-        </div>
-      </header>
-
-      <main class="page-main" id="pageContent">
-        <section class="card mt-16">
-          <div class="feedback">Carregando Painel de Logística...</div>
-        </section>
-      </main>
-    </div>
-  </div>
-
+  <p>Redirecionando para o módulo de Logística...</p>
   <script>
-    window.setTimeout(function () {
-      var content = document.getElementById('pageContent');
-      if (content && /Carregando Painel de Logística/.test(content.textContent || '')) {
-        document.documentElement.classList.remove('is-route-booting', 'is-route-transitioning');
-        document.documentElement.classList.add('is-route-ready', 'is-app-booted');
-        content.innerHTML = '<section class="card mt-16"><div class="log-empty">O carregamento demorou mais que o esperado. Abra a aba Console para ver o erro ou recarregue a página.</div></section>';
-      }
-    }, 12000);
+    (function () {
+      var hash = String(window.location.hash || '').replace('#', '').toLowerCase();
+      var routes = {
+        finalizacao: 'logistica-finalizacao',
+        classificadores: 'logistica-classificadores',
+        conferencias: 'logistica-conferencias',
+        exportacoes: 'logistica-exportacoes',
+        relatorios: 'logistica-relatorios'
+      };
+      var target = routes[hash] || 'logistica-adm-os';
+      var url = new URL('./' + target, window.location.href);
+      window.location.replace(url.href);
+    })();
   </script>
-  <script type="module" src="./assets/js/adm-logistica.js?v=logistica-20260714-v5"></script>
 </body>
 </html>
