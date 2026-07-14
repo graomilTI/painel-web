@@ -31,7 +31,7 @@ export const MENU_CONFIG = [
       item("programacao", "Programação", "programacao", ["PROGRAMACAO", "OS", "O.S", "OPERACIONAL_OS", "GESTOR_OS", "OS_GESTOR"]),
       item("hospedagem", "Hospedagem", "hospedagem", ["HOSPEDAGEM"]),
       item("compras_gestor", "Compras", "compras", ["COMPRAS"]),
-      item("logistica_gestor", "Logística", "logistica", ["LOGISTICA"]),
+      item("logistica_gestor", "Logística", "logistica", ["LOGISTICA_GESTOR", "GESTOR_LOGISTICA"]),
       item("patrimonios_gestor", "Patrimônios", "patrimonios", ["PATRIMONIOS"]),
       item("contato_cliente", "Contato Cliente", "contato-cliente", ["CONTATO_CLIENTE"]),
       item("historico_producao", "Histórico Produção", "consultar-producao", ["RELATORIOS_PROD", "CONSULTAR_PRODUCAO", "PRODUCAO_HISTORICO", "GESTOR_APP", "PROGRAMACAO", "DESEMPENHO"])
@@ -151,14 +151,14 @@ export const MENU_CONFIG = [
   {
     grupo: "LOGÍSTICA",
     itens: [
-      item("logistica_adm", "Painel de Logística", "adm-logistica", ["LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_adm", "Painel de Logística", "logistica-adm-os", ["LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_informativos", "Informativos", "logistica-informativos", ["LOGISTICA_INFORMATIVOS", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_finalizacao_os", "Finalização de O.S", "adm-logistica#finalizacao", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_classificadores", "Classificadores", "adm-logistica#classificadores", ["LOGISTICA_CLASSIFICADORES", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_conferencias", "Conferências", "adm-logistica#conferencias", ["LOGISTICA_CONFERENCIAS", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_exportacoes", "Exportações clientes", "adm-logistica#exportacoes", ["LOGISTICA_EXPORTACOES", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_relatorios_cliente", "Relatórios ao Cliente", "adm-logistica#relatorios", ["LOGISTICA_RELATORIOS_CLIENTE", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_btg", "BTG", "btg-logistica", ["LOGISTICA_BTG", "BTG_LOGISTICA", "BTG", "LOGISTICA_ADM"])
+      item("logistica_finalizacao_os", "Finalização de O.S", "logistica-finalizacao", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS", "LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_classificadores", "Classificadores", "logistica-classificadores", ["LOGISTICA_CLASSIFICADORES", "LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_conferencias", "Conferências", "logistica-conferencias", ["LOGISTICA_CONFERENCIAS", "LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_exportacoes", "Exportações clientes", "logistica-exportacoes", ["LOGISTICA_EXPORTACOES", "LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_relatorios_cliente", "Relatórios ao Cliente", "logistica-relatorios", ["LOGISTICA_RELATORIOS_CLIENTE", "LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_btg", "BTG", "btg-logistica", ["LOGISTICA_BTG", "BTG_LOGISTICA", "BTG", "LOGISTICA_ADM", "LOGISTICA"])
     ]
   },
 
