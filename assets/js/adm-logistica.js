@@ -31,6 +31,11 @@ const CLIENTES_EXPORTACAO = [
   'AGRÍCOLA ALVORADA',
 ];
 
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const state = {
   user: null,
   tab: 'os',
@@ -52,7 +57,7 @@ const state = {
   ufsCargasLoaded: false,
   mapaRegionalUf: [], // [{estado, regional}] vindo de metas_producao
   filters: {
-    data: '',
+    data: todayIso(),
     coordenacao: '',
     status: '',
     busca: '',
@@ -288,7 +293,7 @@ export async function renderContent(content) {
         <button class="log-tab" data-tab="relatorios" type="button">Relatórios ao cliente</button>
       </div>
       <div class="filters-grid log-grid">
-        <div class="field"><label>Data</label><input id="logData" class="log-input" type="date" /></div>
+        <div class="field"><label>Data</label><input id="logData" class="log-input" type="date" value="${esc(state.filters.data)}" /></div>
         <div class="field"><label>Coordenação</label><select id="logCoord" class="log-input"></select></div>
         <div class="field"><label>Status logística</label><select id="logStatus" class="log-input"><option value="">Todos</option>${Object.entries(STATUS_LOGISTICA).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
         <div class="field"><label>Buscar</label><input id="logBusca" class="log-input" type="text" placeholder="O.S., cliente, classificador, local..." /></div>
