@@ -24,7 +24,13 @@ function lockRouteHash() {
 }
 
 function applyPageIdentity() {
-  document.title = `${title} — Logística`;
+  // Guard obrigatório: setar document.title substitui o nó de texto do <title>,
+  // o que conta como mutação childList dentro de documentElement -- sem o
+  // "!==" abaixo, o MutationObserver reagia à própria escrita e reentrava em
+  // applyPageIdentity() indefinidamente (loop síncrono, trava a aba, tela
+  // preta, sem nenhum erro no console porque nada lança exceção).
+  const fullTitle = `${title} — Logística`;
+  if (document.title !== fullTitle) document.title = fullTitle;
   const pageTitle = document.getElementById('pageTitle');
   if (pageTitle && pageTitle.textContent !== title) pageTitle.textContent = title;
 
