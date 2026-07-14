@@ -5,7 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Painel</title>
   <link rel="icon" href="./assets/icons/pwa-192.png" />
-  <link rel="stylesheet" href="./styles.css?v=logistica-20260714-v4" />
+  <link rel="stylesheet" href="./styles.css?v=logistica-20260714-v5" />
+
+  <!--
+    adm-logistica.js importava diretamente o módulo remoto do SheetJS. Quando
+    esse CDN atrasava ou era bloqueado, nenhum código da página era executado e
+    o usuário via apenas a tela preta. O import map mantém o mesmo import do
+    arquivo principal, mas o resolve localmente; a biblioteca completa é
+    carregada em paralelo e só é necessária nas ações de planilha.
+  -->
+  <script type="importmap">
+    {
+      "imports": {
+        "https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs": "./assets/js/xlsx-window-shim.mjs?v=20260714-v1"
+      }
+    }
+  </script>
+  <script defer src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -47,6 +63,6 @@
       }
     }, 12000);
   </script>
-  <script type="module" src="./assets/js/adm-logistica.js?v=logistica-20260714-v4"></script>
+  <script type="module" src="./assets/js/adm-logistica.js?v=logistica-20260714-v5"></script>
 </body>
 </html>
