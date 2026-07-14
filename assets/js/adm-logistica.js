@@ -439,6 +439,7 @@ export async function renderContent(content) {
       <div class="log-inline-actions mt-16">
         <button id="relPreview" class="btn btn-secondary" type="button">Pré-visualizar</button>
         <button id="relEnviar" class="btn btn-primary" type="button">Gerar e enviar</button>
+        <button id="relGerarImagem" class="btn btn-secondary" type="button">Gerar imagem (WhatsApp)</button>
       </div>
       <div id="relPreviewBox" class="log-copy mt-16" style="display:none"></div>
       <div id="relHistorico" class="log-report-history"></div>
@@ -475,6 +476,7 @@ export async function renderContent(content) {
     relDestinatariosFixos: document.getElementById('relDestinatariosFixos'),
     relPreview: document.getElementById('relPreview'),
     relEnviar: document.getElementById('relEnviar'),
+    relGerarImagem: document.getElementById('relGerarImagem'),
     relPreviewBox: document.getElementById('relPreviewBox'),
     relHistorico: document.getElementById('relHistorico'),
     reload: document.getElementById('logReload'),
@@ -503,6 +505,7 @@ export async function renderContent(content) {
   el.clienteExportacao.addEventListener('change', () => { state.filters.clienteExportacao = el.clienteExportacao.value; render(); });
   el.relPreview.addEventListener('click', previewRelatorioCliente);
   el.relEnviar.addEventListener('click', enviarRelatorioCliente);
+  el.relGerarImagem.addEventListener('click', gerarImagemRelatorioCliente);
   el.relSalvarDest.addEventListener('click', salvarDestinatarioFixo);
   el.relAplicarClienteDest.addEventListener('click', () => { el.relDestCliente.value = el.relCliente.value.trim(); });
   el.relCliente.addEventListener('change', () => { if (!el.relDestCliente.value) el.relDestCliente.value = el.relCliente.value.trim(); });
@@ -696,7 +699,7 @@ export async function renderContent(content) {
     if (state.tab === 'fob' && !state.fobLoaded) loadFob();
     if (state.tab === 'fob' && !state.fobReportAutoLoaded) { state.fobReportAutoLoaded = true; gerarRelatorioFobAutomatico(); }
     if (isAdmTab && !state.producaoLoaded) loadProducao(); // produção sob demanda
-    if (state.tab === 'exportacoes' && !state.ufsCargasLoaded) loadUfsCargas();
+    if ((state.tab === 'exportacoes' || state.tab === 'relatorios') && !state.ufsCargasLoaded) loadUfsCargas();
   }
 
   function renderStats() {
@@ -1478,7 +1481,7 @@ export async function renderContent(content) {
     };
   }
 
-  function relatorioRowsPreview(payload) {
+  function relatorioRowsForCliente(payload) {
     const clienteFiltro = normalize(payload.cliente);
     const ini = payload.data_inicial;
     const fim = payload.data_final;
@@ -1488,7 +1491,172 @@ export async function renderContent(content) {
       if (fim && d > fim) return false;
       if (clienteFiltro && !normalize(clienteOf(row)).includes(clienteFiltro)) return false;
       return true;
-    }).slice(0, 80);
+    });
+  }
+
+  function relatorioRowsPreview(payload) {
+    return relatorioRowsForCliente(payload).slice(0, 80);
+  }
+
+  // ── Imagem do relatório por cliente (pra WhatsApp) ──────────────────────
+  // Mesmas regras da Edge Function enviar-relatorio-cliente (LDC/COFCO,
+  // Sipal/Usimat MT, Ouro Safra, Agrícola Alvorada), portadas pro navegador
+  // porque html2canvas só roda no DOM -- se mudar uma regra lá, muda aqui também.
+  const REGIONAL_EXCECOES_OS = { '81020': 'PR', '80110': 'MT_SUL' };
+  const CONTRATOS_IGNORADOS_LDC_COFCO = ['VAGOES', 'RECEBIMENTO', 'CIF'];
+
+  function detectarRegraCliente(cliente) {
+    const c = normalize(cliente);
+    if (c.includes('LDC') || c.includes('LOUIS DREYFUS') || c.includes('COFCO')) return 'LDC_COFCO';
+    if (c.includes('SIPAL') || c.includes('USIMAT')) return 'SIPAL_USIMAT';
+    if (c.includes('OURO SAFRA')) return 'OURO_SAFRA';
+    if (c.includes('AGRICOLA ALVORADA')) return 'AGRICOLA_ALVORADA';
+    return 'GENERICO';
+  }
+
+  function mapaUfDoState() {
+    const map = new Map();
+    (state.mapaRegionalUf || []).forEach((r) => {
+      const regional = normalize(r.regional);
+      if (regional && !map.has(regional)) map.set(regional, String(r.estado || '').toUpperCase());
+    });
+    return map;
+  }
+
+  function resolverUfCliente(row, mapaUf) {
+    const os = String(row.os || row.numero_os || '').trim();
+    if (REGIONAL_EXCECOES_OS[os]) return REGIONAL_EXCECOES_OS[os];
+    return mapaUf.get(normalize(row.coordenacao)) || mapaUf.get(normalize(row.supervisao)) || '-';
+  }
+
+  function destaqueSemMovimento(row) {
+    return numberBr(row.remanescente) > 0 && numberBr(row.embarcado) === 0 && numberBr(row.cargas) === 0;
+  }
+
+  function montarSheetLdcCofco(rows, mapaUf) {
+    const filtradas = rows.filter((r) => !CONTRATOS_IGNORADOS_LDC_COFCO.some((c) => normalize(r.contrato).includes(c)));
+    const grupos = new Map();
+    filtradas.forEach((row) => {
+      const key = [normalize(clienteOf(row)), normalize(row.local_embarque), normalize(row.produto)].join('|');
+      if (!grupos.has(key)) {
+        grupos.set(key, { cliente: clienteOf(row), local: row.local_embarque || '-', produto: row.produto || '-', uf: resolverUfCliente(row, mapaUf), toneladas: 0, remanescente: 0, embarcado: 0, destaque: false });
+      }
+      const g = grupos.get(key);
+      g.toneladas += numberBr(row.toneladas);
+      g.remanescente += numberBr(row.remanescente);
+      g.embarcado += numberBr(row.embarcado);
+      if (destaqueSemMovimento(row)) g.destaque = true;
+    });
+    return {
+      header: ['Cliente', 'UF', 'Local', 'Produto', 'Toneladas', 'Remanescente', 'Embarcado'],
+      linhas: [...grupos.values()].sort((a, b) => String(a.cliente).localeCompare(String(b.cliente), 'pt-BR'))
+        .map((g) => ({ destaque: g.destaque, valores: [g.cliente, g.uf, g.local, g.produto, BR_NUM.format(g.toneladas), BR_NUM.format(g.remanescente), BR_NUM.format(g.embarcado)] })),
+    };
+  }
+
+  function montarSheetSipalUsimat(rows, mapaUf) {
+    const filtradas = rows.filter((r) => resolverUfCliente(r, mapaUf) === 'MT');
+    return {
+      header: ['Data', 'O.S.', 'Cliente', 'Local', 'Destino', 'Produto', 'Cargas', 'Toneladas', 'Embarcado'],
+      linhas: filtradas.map((r) => ({ destaque: false, valores: [brDate(r.data), r.os || '-', clienteOf(r), r.local_embarque || '-', r.destino || '-', r.produto || '-', BR_INT.format(numberBr(r.cargas)), BR_NUM.format(numberBr(r.toneladas)), BR_NUM.format(numberBr(r.embarcado))] })),
+    };
+  }
+
+  function montarSheetOuroSafra(rows, mapaUf) {
+    const ufsAlvo = new Set(['BA', 'PR', 'SP', 'RS']);
+    const grupos = new Map();
+    rows.forEach((row) => {
+      const uf = resolverUfCliente(row, mapaUf);
+      if (!ufsAlvo.has(uf)) return;
+      if (!grupos.has(uf)) grupos.set(uf, { uf, cargas: 0, toneladas: 0, embarcado: 0, remanescente: 0 });
+      const g = grupos.get(uf);
+      g.cargas += numberBr(row.cargas);
+      g.toneladas += numberBr(row.toneladas);
+      g.embarcado += numberBr(row.embarcado);
+      g.remanescente += numberBr(row.remanescente);
+    });
+    return {
+      header: ['UF', 'Cargas', 'Toneladas', 'Embarcado', 'Remanescente'],
+      linhas: [...grupos.values()].sort((a, b) => a.uf.localeCompare(b.uf))
+        .map((g) => ({ destaque: false, valores: [g.uf, BR_INT.format(g.cargas), BR_NUM.format(g.toneladas), BR_NUM.format(g.embarcado), BR_NUM.format(g.remanescente)] })),
+    };
+  }
+
+  function montarSheetAgricolaAlvorada(rows) {
+    return {
+      header: ['Cliente', 'O.S.', 'Data', 'Local Embarque', 'Destino', 'Responsável', 'Carregado', 'Tons Carreg.', 'Saldo'],
+      linhas: rows.map((r) => ({ destaque: false, valores: [clienteOf(r), r.os || '-', brDate(r.data), r.local_embarque || '-', r.destino || '-', r.funcionario || '-', BR_NUM.format(numberBr(r.embarcado)), BR_NUM.format(numberBr(r.toneladas)), BR_NUM.format(numberBr(r.remanescente))] })),
+    };
+  }
+
+  function montarSheetGenerico(rows) {
+    const grupos = new Map();
+    rows.forEach((row) => {
+      const key = [normalize(clienteOf(row)), normalize(row.local_embarque), normalize(row.destino), normalize(row.produto)].join('|');
+      if (!grupos.has(key)) grupos.set(key, { cliente: clienteOf(row), origem: row.local_embarque || '-', destino: row.destino || '-', produto: row.produto || '-', cargas: 0, toneladas: 0, embarcado: 0, remanescente: 0 });
+      const g = grupos.get(key);
+      g.cargas += numberBr(row.cargas);
+      g.toneladas += numberBr(row.toneladas);
+      g.embarcado += numberBr(row.embarcado);
+      g.remanescente += numberBr(row.remanescente);
+    });
+    return {
+      header: ['Cliente', 'Origem', 'Destino', 'Produto', 'Cargas', 'Toneladas', 'Embarcado', 'Remanescente'],
+      linhas: [...grupos.values()].sort((a, b) => String(a.cliente).localeCompare(String(b.cliente), 'pt-BR'))
+        .map((g) => ({ destaque: false, valores: [g.cliente, g.origem, g.destino, g.produto, BR_INT.format(g.cargas), BR_NUM.format(g.toneladas), BR_NUM.format(g.embarcado), BR_NUM.format(g.remanescente)] })),
+    };
+  }
+
+  function montarSheetRelatorioCliente(cliente, rows) {
+    const regra = detectarRegraCliente(cliente);
+    const mapaUf = mapaUfDoState();
+    if (regra === 'LDC_COFCO') return montarSheetLdcCofco(rows, mapaUf);
+    if (regra === 'SIPAL_USIMAT') return montarSheetSipalUsimat(rows, mapaUf);
+    if (regra === 'OURO_SAFRA') return montarSheetOuroSafra(rows, mapaUf);
+    if (regra === 'AGRICOLA_ALVORADA') return montarSheetAgricolaAlvorada(rows);
+    return montarSheetGenerico(rows);
+  }
+
+  function buildRelatorioImagemNode(cliente, payload, sheet) {
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-99999px;top:0;background:#fff;padding:24px;font-family:Arial,sans-serif;width:1100px;color:#111';
+    host.innerHTML = `
+      <h2 style="margin:0 0 4px">${esc(cliente)}</h2>
+      <p style="margin:0 0 16px;color:#555">${esc(brDate(payload.data_inicial))} a ${esc(brDate(payload.data_final))} · ${sheet.linhas.length} linha(s)</p>
+      <table style="border-collapse:collapse;width:100%;font-size:13px">
+        <thead><tr>${sheet.header.map((h) => `<th style="border:1px solid #ccc;padding:6px;background:#f1f5f9;text-align:left">${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>${sheet.linhas.map((l) => `<tr style="background:${l.destaque ? '#F8C8DC' : '#fff'}">${l.valores.map((v) => `<td style="border:1px solid #ddd;padding:6px">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>`;
+    document.body.appendChild(host);
+    return host;
+  }
+
+  async function gerarImagemRelatorioCliente() {
+    const payload = getRelatorioPayload();
+    if (!payload.cliente) { el.feedback.textContent = 'Informe o cliente para gerar a imagem.'; return; }
+    if (!state.mapaRegionalUf.length) await loadUfsCargas();
+    const rows = relatorioRowsForCliente(payload);
+    if (!rows.length) { el.feedback.textContent = 'Nenhum registro encontrado para este cliente/período.'; return; }
+
+    const sheet = montarSheetRelatorioCliente(payload.cliente, rows);
+    if (!sheet.linhas.length) { el.feedback.textContent = 'Nenhuma linha após aplicar as regras deste cliente para o período.'; return; }
+
+    el.relGerarImagem.disabled = true;
+    el.feedback.textContent = 'Gerando imagem...';
+    let node;
+    try {
+      await ensureExportLibLocal('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
+      node = buildRelatorioImagemNode(payload.cliente, payload, sheet);
+      const dataUrl = await domToPngRegional(node);
+      baixarUrl(dataUrl, `Relatorio_${payload.cliente.replace(/[^a-zA-Z0-9]+/g, '_')}_${payload.data_inicial || 'periodo'}.png`);
+      el.feedback.textContent = `Imagem gerada: ${sheet.linhas.length} linha(s). Baixe e envie no grupo do WhatsApp.`;
+    } catch (error) {
+      console.error('[Imagem relatório cliente]', error);
+      el.feedback.textContent = error?.message || 'Erro ao gerar imagem.';
+    } finally {
+      node?.remove();
+      el.relGerarImagem.disabled = false;
+    }
   }
 
   function previewRelatorioCliente() {
