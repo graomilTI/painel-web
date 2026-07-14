@@ -114,13 +114,25 @@ export function getFirstAllowedPath(context) {
 
 export function canOpenPath(context, path) {
   if (context?.user?.is_master) return true;
-  if (!path || path === 'login') return true;
+
+  const normalizedPath = normalizePath(path);
+  if (!normalizedPath || normalizedPath === 'login') return true;
 
   const allowedPaths = new Set(
     allowedItemsForContext(context).map((item) => normalizePath(item.path)).filter(Boolean)
   );
 
-  return allowedPaths.has(path);
+  if (allowedPaths.has(normalizedPath)) return true;
+
+  // LOGISTICA_ADM e a Logística do Gestor são permissões do módulo inteiro.
+  // Portanto, qualquer aba interna via hash deve continuar liberada quando a
+  // rota base já estiver autorizada (ex.: adm-logistica#fob/#conferencias).
+  const [basePath, hash = ''] = normalizedPath.split('#', 2);
+  if (hash && ['adm-logistica', 'logistica'].includes(basePath) && allowedPaths.has(basePath)) {
+    return true;
+  }
+
+  return false;
 }
 
 function userCanOpenCurrentPage(context) {
