@@ -17,7 +17,7 @@ import './hospedagem-colaboradores-regional.js?v=20260713-cache-v10';
 const FULL_PAGE_RELEASES = new Map([
   ['hospedagem', '20260713-cache-v10'],
   ['adm-hotel', '20260713-fluxo-v2-sidebar1'],
-  ['adm-logistica', '20260714-logistica-v3'],
+  ['adm-logistica', '20260714-logistica-v4'],
 ]);
 
 function routeFromPath(pathname) {
