@@ -508,6 +508,13 @@ export async function renderContent(content) {
   content.addEventListener('click', onClick);
   content.addEventListener('change', onChange);
 
+  // Declaradas aqui (e não junto das funções lá embaixo) porque loadOsLog()/
+  // loadAberturaOs() são chamadas logo abaixo, ainda dentro deste boot -- um
+  // `let` declarado só perto da função ficava em temporal dead zone nesse
+  // ponto da execução e lançava "Cannot access before initialization".
+  let osLogInflight = null;
+  let aberturaOsInflight = null;
+
   const hash = normalize(location.hash.replace('#', ''));
   if (hash.includes('ABERTURA')) state.tab = 'abertura_os';
   else if (hash.includes('CLASSIFIC')) state.tab = 'classificadores';
@@ -546,9 +553,16 @@ export async function renderContent(content) {
 
     const ids = state.os.map((row) => row.id).filter(Boolean);
     if (ids.length) {
-      const atr = await supabase.from('operacional_os_colaboradores').select('*').in('os_id', ids);
-      state.atribuicoes = atr.error ? [] : safeArray(atr.data);
-      if (atr.error) console.warn('Falha ao carregar colaboradores da O.S.', atr.error);
+      // Em lotes: com milhares de O.S. carregadas, um .in() só com todos os ids
+      // vira uma URL GET grande demais e o Supabase responde 400.
+      const atribuicoes = [];
+      for (let i = 0; i < ids.length; i += 300) {
+        const chunk = ids.slice(i, i + 300);
+        const atr = await supabase.from('operacional_os_colaboradores').select('*').in('os_id', chunk);
+        if (atr.error) { console.warn('Falha ao carregar colaboradores da O.S.', atr.error); continue; }
+        atribuicoes.push(...safeArray(atr.data));
+      }
+      state.atribuicoes = atribuicoes;
     } else {
       state.atribuicoes = [];
     }
@@ -1751,7 +1765,7 @@ export async function renderContent(content) {
 
   // Mesmo risco de chamada concorrente duplicada do loadOsLog (chamada direta no boot +
   // condicional em renderTabs quando a aba 'abertura_os' já vem selecionada pela hash).
-  let aberturaOsInflight = null;
+  // (guard "aberturaOsInflight" declarado lá em cima, junto do boot -- ver comentário lá)
   async function loadAberturaOs() {
     if (aberturaOsInflight) return aberturaOsInflight;
     aberturaOsInflight = (async () => {
@@ -1830,7 +1844,7 @@ export async function renderContent(content) {
   // esteja ativa -- as duas rodavam em paralelo (osLogLoaded só vira true depois do await,
   // tarde demais pra bloquear a 2a chamada), duplicando a consulta e piorando o
   // congestionamento de conexões concorrentes na carga inicial. Guard reusa a mesma chamada.
-  let osLogInflight = null;
+  // (guard "osLogInflight" declarado lá em cima, junto do boot -- ver comentário lá)
   async function loadOsLog() {
     if (osLogInflight) return osLogInflight;
     osLogInflight = (async () => {
