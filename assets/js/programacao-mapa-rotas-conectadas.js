@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 
-const RELEASE = '20260713-rotas-conectadas1';
+const RELEASE = '20260714-rotaskm1';
 const ROUTE_COLORS = ['#a78bfa', '#f472b6', '#fb923c', '#38bdf8', '#facc15', '#4ade80'];
 const CACHE_MS = 30 * 1000;
 
@@ -321,7 +321,13 @@ function makeStops(group, origin, indexes, availabilityMap) {
   return { driver, passengers, ordered };
 }
 
-function tooltipFor(group, plan, position) {
+function routeKm(points) {
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) total += kmBetween(points[index - 1], points[index]);
+  return total;
+}
+
+function tooltipFor(group, plan, position, km) {
   const driverName = collaboratorName(plan.driver) || text(position.motorista) || `Frota ${group.plate}`;
   const steps = plan.ordered.map((stop, index) => {
     if (stop.type === 'pickup') return `${index + 1}. Buscar ${stop.name}`;
@@ -330,7 +336,16 @@ function tooltipFor(group, plan, position) {
     return `${index + 1}. Atendimento · O.S. ${text(stop.os?.numero_os) || '-'}`;
   }).join('<br>');
   const address = text(position.endereco);
-  return `<b>${driverName}</b> · ${group.plate}${address ? `<br>BFleet: ${address}` : ''}${steps ? `<br>${steps}` : ''}`;
+  const kmLabel = Number.isFinite(km) ? ` · ~${km.toFixed(1)} km no dia` : '';
+  return `<b>${driverName}</b> · ${group.plate}${kmLabel}${address ? `<br>BFleet: ${address}` : ''}${steps ? `<br>${steps}` : ''}`;
+}
+
+function kmBadge(color, driverName, km) {
+  return window.L.divIcon({
+    className: 'pmg-km-badge',
+    html: `<span style="display:inline-block;background:${color};color:#020617;font-weight:900;font-size:10.5px;padding:2px 7px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.5)">${driverName} · ~${km.toFixed(1)} km/dia</span>`,
+    iconSize: [0, 0],
+  });
 }
 
 function clearRoutes() {
@@ -383,6 +398,7 @@ async function rebuildRoutes({ force = false } = {}) {
 
       const points = [origin, ...plan.ordered.map(stop => stop.point)].filter(validPoint);
       if (points.length < 2) continue;
+      const km = routeKm(points);
       const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
       const line = window.L.polyline(points.map(point => [point.lat, point.lng]), {
         color,
@@ -394,9 +410,22 @@ async function rebuildRoutes({ force = false } = {}) {
         interactive: true,
       });
       line.__pmgConnectedRoute = RELEASE;
-      line.bindTooltip(tooltipFor(group, plan, originRow), { className: 'peqb-tt', sticky: true });
+      line.bindTooltip(tooltipFor(group, plan, originRow, km), { className: 'peqb-tt', sticky: true });
       layerGroup.addLayer(line);
       state.layers.push(line);
+
+      const meio = points[Math.floor(points.length / 2)];
+      if (meio) {
+        const driverName = collaboratorName(plan.driver) || text(originRow.motorista) || `Frota ${group.plate}`;
+        const badge = window.L.marker([meio.lat, meio.lng], {
+          icon: kmBadge(color, driverName, km),
+          interactive: false,
+          keyboard: false,
+        });
+        badge.__pmgConnectedRoute = RELEASE;
+        layerGroup.addLayer(badge);
+        state.layers.push(badge);
+      }
       routeIndex += 1;
     }
   } catch (error) {
