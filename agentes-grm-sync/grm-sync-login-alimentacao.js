@@ -16,10 +16,12 @@
  *    financeiro_alimentacao_colaboradores (coluna tipo_beneficio = CAFE/ALMOCO/JANTA), 1
  *    linha por dia+colaborador+turno — um colaborador pode aparecer nos 3 turnos no mesmo
  *    dia. Se houver mais de um login dentro do mesmo turno, fica só o mais próximo do
- *    embarque (o script sempre rebaixa e reprocessa o relatório do dia inteiro, então cada
- *    execução já "acumula" o melhor login visto até ali, sem precisar lembrar execuções
- *    anteriores). Agendado via pg_cron pra rodar várias vezes dentro de cada janela (ver
- *    migration 20260712150000_cron_sync_login_alimentacao_turnos.sql).
+ *    embarque. O relatório do GRM só traz o login MAIS RECENTE do colaborador, então a
+ *    elegibilidade é recalculada a cada execução a partir do HISTÓRICO acumulado em
+ *    grm_login_movimentos_importacoes (não do relatório desta execução isolada) — assim um
+ *    check-in válido dentro da janela não some se o colaborador logar de novo em outro
+ *    lugar antes da próxima checagem. Agendado via pg_cron pra rodar várias vezes dentro de
+ *    cada janela (ver migration 20260712150000_cron_sync_login_alimentacao_turnos.sql).
  *
  * Compatível com o padrão dos agentes Puppeteer/Supabase do cPanel/WHM.
  */
@@ -62,6 +64,7 @@ var WAIT_AFTER_GENERATE_MS = Number(process.env.LOGIN_REPORT_WAIT_AFTER_GENERATE
 var XLS_READY_TIMEOUT_MS = Number(process.env.LOGIN_REPORT_XLS_READY_TIMEOUT_MS || 180000);
 var XLS_READY_POLL_MS = Number(process.env.LOGIN_REPORT_XLS_READY_POLL_MS || 1000);
 var MAX_LOCAL_ROWS = Number(process.env.ALIMENTACAO_MAX_LOCAL_ROWS || 20000);
+var MAX_MOVIMENTOS_ROWS = Number(process.env.ALIMENTACAO_MAX_MOVIMENTOS_ROWS || 50000);
 var DEBUG = String(process.env.GRM_DEBUG || '').toLowerCase() === 'true';
 
 var REPORT_CONFIG = {
@@ -1384,6 +1387,32 @@ async function fetchTableRows(table, selectColumns) {
   return all;
 }
 
+// O relatório do GRM só mostra o login MAIS RECENTE de cada colaborador (não um histórico).
+// Se buscássemos elegibilidade só a partir dele, um check-in válido dentro da janela às
+// 11h que fosse seguido por outro às 12h em outro lugar sumiria do relatório antes da
+// próxima execução, e o colaborador perderia o almoço mesmo tendo cumprido a regra.
+// Por isso qualifyForMeal roda sobre o HISTÓRICO acumulado em tableImportacoes (cada login
+// distinto vira uma linha própria ali, já que chave_unica inclui a hora), não apenas sobre
+// o relatório baixado nesta execução.
+async function loadImportedMovements(fromYmd, toYmd) {
+  var all = [];
+  var pageSize = 1000;
+  var columns = 'chave_unica,data_movimento,hora_movimento,colaborador_chave,codigo_colaborador,cpf,colaborador,coordenacao,supervisao,uf_embarque,cidade_embarque,local_servico,possui_movimento,tipo_movimento,latitude,longitude,precisao_m,dispositivo,dados_json';
+  for (var from = 0; from < MAX_MOVIMENTOS_ROWS; from += pageSize) {
+    var result = await supabase
+      .from(REPORT_CONFIG.tableImportacoes)
+      .select(columns)
+      .gte('data_movimento', fromYmd)
+      .lte('data_movimento', toYmd)
+      .range(from, from + pageSize - 1);
+    if (result.error) throw result.error;
+    var rows = result.data || [];
+    all = all.concat(rows);
+    if (rows.length < pageSize) break;
+  }
+  return all;
+}
+
 function isInactiveLocal(value) {
   if (value === false || value === 0) return true;
   var n = normalizeText(value);
@@ -1455,12 +1484,11 @@ function nearestLocal(row, locals) {
 
 // Colaborador pode abrir o app perto do embarque e, no mesmo dia, longe (ou vice-versa).
 // Cada linha só entra em "inside" se JÁ estiver dentro do raio (linhas fora do raio nunca
-// competem); dentre as que estão dentro, fica só a mais próxima (sort + [0]). Como o
-// agente roda várias vezes na janela 11h-12h30 e sempre baixa o relatório do dia inteiro
-// de novo (não é incremental), cada execução já "acumula" o melhor login visto até ali —
-// não precisa lembrar execuções anteriores. O upsert (chave_unica = data+colaborador)
-// nunca envia a coluna status, então recomputar não derruba uma decisão OK/PAGO já tomada
-// pelo financeiro.
+// competem); dentre as que estão dentro, fica só a mais próxima (sort + [0]). Esta função
+// deve ser chamada com o HISTÓRICO acumulado (loadImportedMovements), não com o relatório
+// de uma única execução — veja o comentário de loadImportedMovements para o motivo. O
+// upsert (chave_unica = data+colaborador) nunca envia a coluna status, então recomputar
+// não derruba uma decisão OK/PAGO já tomada pelo financeiro.
 // Acha em qual turno (Café/Almoço/Janta) um horário cai, ou null se não cai em nenhum.
 function turnoForMinutes(minutes) {
   for (var i = 0; i < TURNOS.length; i++) {
@@ -1652,7 +1680,8 @@ async function main() {
     await saveImports(movements);
 
     var locals = await loadLocalPoints();
-    var eligible = qualifyForMeal(movements, locals);
+    var historico = await loadImportedMovements(fromYmd, toYmd);
+    var eligible = qualifyForMeal(historico, locals);
     await saveEligible(eligible, fromYmd, toYmd);
 
     await finishRun(runId, {
