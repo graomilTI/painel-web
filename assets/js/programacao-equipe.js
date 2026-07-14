@@ -124,11 +124,22 @@ function precisaHotel(km) { return km != null && km >= HOTEL_KM_THRESHOLD; }
 function kmValido(km) { return km != null && Number.isFinite(Number(km)); }
 function kmSortValue(km) { return kmValido(km) ? Number(km) : Number.POSITIVE_INFINITY; }
 function candidatoPerto(cand) { return kmValido(cand?.km) && Number(cand.km) <= EMBARQUE_PROXIMO_KM; }
+function custoSortValue(cand) {
+  return cand?.custoTotal != null && Number.isFinite(Number(cand.custoTotal))
+    ? Number(cand.custoTotal)
+    : Number.POSITIVE_INFINITY;
+}
+// Dentro do raio de embarque viável, o candidato sugerido (principal do card)
+// é sempre o de menor custo estimado — km só desempata quando o custo empata
+// ou nenhum dos dois tem custo calculado.
 function ordenarCandidatosPorEmbarque(lista = []) {
   return [...lista].sort((a, b) => {
     const pa = candidatoPerto(a) ? 0 : 1;
     const pb = candidatoPerto(b) ? 0 : 1;
     if (pa !== pb) return pa - pb;
+    const ca = custoSortValue(a);
+    const cb = custoSortValue(b);
+    if (ca !== cb) return ca - cb;
     const ka = kmSortValue(a?.km);
     const kb = kmSortValue(b?.km);
     if (ka !== kb) return ka - kb;

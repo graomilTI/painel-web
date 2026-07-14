@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260710-crosstabrefresh1';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260714-menorcusto1';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260709-regionalfix1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
