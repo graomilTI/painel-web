@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conferências — Logística</title>
+  <link rel="icon" href="./assets/icons/pwa-192.png" />
+  <link rel="stylesheet" href="./styles.css?v=logistica-admin-20260714-v1" />
+  <script type="importmap">
+    {"imports":{"https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs":"./assets/js/xlsx-window-shim.mjs?v=20260714-v1"}}
+  </script>
+</head>
+<body data-logistica-tab="conferencias" data-logistica-title="Conferências">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><h2>Painel</h2><p>Gestão integrada</p></div>
+      <div id="sidebarMenu"></div>
+    </aside>
+    <div class="content-wrap">
+      <header class="topbar">
+        <div><h1 id="pageTitle">Conferências</h1><div class="meta" id="welcomeUser">Olá</div></div>
+        <div class="topbar-actions"><span class="badge" id="roleBadge">USUÁRIO</span><button class="btn btn-secondary" id="signOutBtn" type="button">Sair</button></div>
+      </header>
+      <main class="page-main" id="pageContent"><section class="card mt-16"><div class="feedback">Carregando Conferências...</div></section></main>
+    </div>
+  </div>
+  <script type="module" src="./assets/js/logistica-admin-entry.js?v=20260714-v1"></script>
+</body>
+</html>
