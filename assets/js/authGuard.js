@@ -12,21 +12,6 @@ const BOUNCE_KEY = 'grao1000:auth-bounce-guard';
 const BOUNCE_WINDOW_MS = 10000;
 const BOUNCE_LIMIT = 2;
 
-const LOGISTICA_CODES = new Set([
-  'logistica',
-  'logistica_adm',
-  'logistica_informativos',
-  'logistica_finalizacao_os',
-  'finalizacao_os',
-  'logistica_classificadores',
-  'logistica_conferencias',
-  'logistica_exportacoes',
-  'logistica_relatorios_cliente',
-  'logistica_btg',
-  'btg_logistica',
-  'btg',
-]);
-
 function registerBounceAndCheckLoop() {
   let entry = null;
   try { entry = JSON.parse(sessionStorage.getItem(BOUNCE_KEY) || 'null'); } catch { entry = null; }
@@ -83,12 +68,6 @@ function buildModuleCodeSet(context) {
   return set;
 }
 
-function hasLogisticaAccess(context) {
-  if (context?.user?.is_master) return true;
-  const allowedCodes = buildModuleCodeSet(context);
-  return [...allowedCodes].some((code) => LOGISTICA_CODES.has(code) || code.startsWith('logistica_'));
-}
-
 function itemIsAllowedByModules(item, allowedCodes) {
   const candidates = [item.code, ...(Array.isArray(item.aliases) ? item.aliases : [])]
     .map(normalize)
@@ -111,6 +90,9 @@ export function allowedItemsForContext(context) {
     return PANEL_MENU.flatMap((section) => section.items || []).map(permissionRoute).concat(CHAMADOS_TI_ITEM);
   }
 
+  // O módulo /painel/logistica pertence ao fluxo do Gestor. Ele não depende das
+  // permissões administrativas da seção LOGÍSTICA e continua disponível apenas
+  // no contexto Gestor.
   if (isGestorContext(context)) {
     const allowedSections = new Set(['inicio', 'gestor']);
     return PANEL_MENU
@@ -121,14 +103,13 @@ export function allowedItemsForContext(context) {
   }
 
   const allowedCodes = buildModuleCodeSet(context);
-  const unlockLogistica = hasLogisticaAccess(context);
 
-  return PANEL_MENU.flatMap((section) => {
-    const isLogisticaSection = normalize(section.section) === 'logistica';
-    return (section.items || []).filter((item) => (
-      itemIsAllowedByModules(item, allowedCodes) || (unlockLogistica && isLogisticaSection)
-    ));
-  })
+  // Cada submenu administrativo da Logística possui rota e módulo próprios.
+  // LOGISTICA_ADM/LOGISTICA continuam como aliases amplos nos itens do menu,
+  // enquanto códigos específicos liberam somente a página correspondente.
+  return PANEL_MENU
+    .flatMap((section) => section.items || [])
+    .filter((item) => itemIsAllowedByModules(item, allowedCodes))
     .map(permissionRoute)
     .concat(CHAMADOS_TI_ITEM);
 }
@@ -145,29 +126,15 @@ export function canOpenPath(context, path) {
   const normalizedPath = normalizePath(path);
   if (!normalizedPath || normalizedPath === 'login') return true;
 
-  const [basePath] = normalizedPath.split('#', 2);
-
-  // Qualquer permissão pertencente à família LOGÍSTICA libera o painel inteiro
-  // e todas as abas internas. Isso evita o ciclo adm-logistica -> dashboard
-  // quando o usuário possui um código específico, mas não LOGISTICA_ADM.
-  if (
-    hasLogisticaAccess(context) &&
-    ['adm-logistica', 'logistica-informativos', 'btg-logistica'].includes(basePath)
-  ) {
-    return true;
-  }
-
   const allowedPaths = new Set(
     allowedItemsForContext(context).map((item) => normalizePath(item.path)).filter(Boolean)
   );
 
   if (allowedPaths.has(normalizedPath)) return true;
 
-  // Quando a rota-base está autorizada, o hash representa apenas uma aba
-  // interna do mesmo módulo (ex.: financeiro#dashboard ou adm-logistica#fob).
-  // Permissões que liberam somente uma aba específica continuam restritas,
-  // pois nesse caso allowedPaths não contém a rota-base sem hash.
-  const [, hash = ''] = normalizedPath.split('#', 2);
+  // O hash nas novas páginas da Logística apenas fixa a tela interna carregada
+  // pelo entrypoint. A permissão continua vinculada à rota-base do submenu.
+  const [basePath, hash = ''] = normalizedPath.split('#', 2);
   if (hash && allowedPaths.has(basePath)) return true;
 
   return false;
