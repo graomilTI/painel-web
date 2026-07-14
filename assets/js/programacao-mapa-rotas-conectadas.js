@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 
-const RELEASE = '20260714-rotaskm3';
+const RELEASE = '20260714-rotaskm4';
 const ROUTE_COLORS = ['#a78bfa', '#f472b6', '#fb923c', '#38bdf8', '#facc15', '#4ade80'];
 const CACHE_MS = 30 * 1000;
 
@@ -158,15 +158,22 @@ function resolveAssignments(indexes, programacaoId, collaboratorIdValue) {
   return indexes.assignmentsById.get(text(collaboratorIdValue)) || [];
 }
 
+// Posição BFleet muito velha (rastreador offline há dias) não é "de onde o
+// motorista está saindo hoje" — é melhor não desenhar a rota do que desenhar
+// uma rota fantasma de centenas de km partindo de onde o veículo não está mais.
+const POSICAO_MAX_IDADE_MS = 6 * 60 * 60 * 1000; // 6h
+
 function positionByPlate(rows) {
   const map = new Map();
+  const now = Date.now();
   for (const row of rows || []) {
     const pl = plate(row.placa);
     const point = pointOf(row);
     if (!pl || !point) continue;
+    const nextAt = new Date(row.reportado_em || row.atualizado_em || 0).getTime();
+    if (!nextAt || now - nextAt > POSICAO_MAX_IDADE_MS) continue;
     const current = map.get(pl);
     const currentAt = current ? new Date(current.reportado_em || current.atualizado_em || 0).getTime() : 0;
-    const nextAt = new Date(row.reportado_em || row.atualizado_em || 0).getTime();
     if (!current || nextAt >= currentAt) map.set(pl, { ...row, ...point, placa: pl });
   }
   return map;
