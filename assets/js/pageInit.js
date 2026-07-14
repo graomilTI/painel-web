@@ -10,14 +10,14 @@ import './searchableSelect.js';
 import './pwa-register.js?v=20260713-cache-v10';
 import './hospedagem-colaboradores-regional.js?v=20260713-cache-v10';
 
-// Algumas páginas são compostas por vários módulos complementares que alteram o
-// layout base. A navegação suave carrega somente o módulo principal e, nesses
-// casos, pode exibir o layout antigo até um hard refresh. Essas rotas usam uma
-// navegação completa e versionada para garantir que todos os scripts da página
-// sejam carregados na ordem definida no HTML.
+// Algumas páginas são compostas por vários módulos complementares ou ainda
+// executam boot próprio no topo do módulo. A navegação suave pode importar o
+// módulo e, ao mesmo tempo, chamar renderContent(), causando dois boots e duas
+// cargas concorrentes. Essas rotas usam navegação completa e versionada.
 const FULL_PAGE_RELEASES = new Map([
   ['hospedagem', '20260713-cache-v10'],
   ['adm-hotel', '20260713-fluxo-v2-sidebar1'],
+  ['adm-logistica', '20260714-logistica-v3'],
 ]);
 
 function routeFromPath(pathname) {
@@ -151,6 +151,17 @@ function withRejectTimeout(promise, ms, message) {
 }
 
 export async function initProtectedPage(title, renderContent) {
+  // Quando um módulo é importado pelo router durante soft-nav, o próprio router
+  // será responsável por montar o layout e chamar renderContent. Muitos módulos
+  // ainda mantêm initProtectedPage() no topo; sem esta guarda, ambos executam em
+  // paralelo, duplicando RPCs/consultas e podendo deixar a tela preta.
+  if (
+    document.documentElement.classList.contains('is-app-booted') &&
+    document.documentElement.classList.contains('is-route-transitioning')
+  ) {
+    return;
+  }
+
   document.documentElement.classList.remove('is-route-transitioning');
   document.documentElement.classList.add('is-route-booting');
 
