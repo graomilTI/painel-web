@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 
-const RELEASE = '20260714-rotaskm1';
+const RELEASE = '20260714-rotaskm3';
 const ROUTE_COLORS = ['#a78bfa', '#f472b6', '#fb923c', '#38bdf8', '#facc15', '#4ade80'];
 const CACHE_MS = 30 * 1000;
 
@@ -100,10 +100,18 @@ function addPerson(index, row) {
   if (merged.nome) index.byName.set(norm(merged.nome), merged);
 }
 
-function buildIndexes(snapshot) {
+function buildIndexes(snapshot, coords) {
   const people = { byId: new Map(), byName: new Map() };
   const assignments = new Map();
   const assignmentsById = new Map();
+
+  // Preenche a coordenada de casa de todo mundo que aparece em programacao_deslocamento
+  // primeiro — quem também vier no snapshot (candidato/regional/equipe) sobrescreve
+  // depois com o que já estava carregado ali, mas ninguém fica sem pickup só por
+  // não ser mais candidato de nenhuma O.S. aberta.
+  for (const row of coords || []) {
+    addPerson(people, { colaboradorId: row.cpf, nome: row.nome, latitude: row.latitude, longitude: row.longitude });
+  }
 
   for (const item of snapshot?.osComCandidatosAtual || []) {
     const programacaoId = programacaoIdFor(snapshot, item);
@@ -199,10 +207,23 @@ async function loadRouteData(snapshot, { force = false } = {}) {
   if (availability.error) console.warn('[rotas-conectadas] disponibilidade:', availability.error);
   if (positions.error) throw positions.error;
 
+  // Motorista/carona (moves) só trazem colaborador_id/nome — a coordenada de
+  // casa (pickup) precisa vir daqui, direto do cadastro, porque o snapshot da
+  // Etapa 2 só embute lat/lng de quem aparece como candidato/regional de
+  // ALGUMA O.S. aberta (RPC top-N). Um confirmado que já não é mais candidato
+  // em nenhuma O.S. visível ficava sem coordenada e a rota pulava o embarque
+  // dele, indo direto pra O.S. como se não houvesse carona.
+  const cpfs = [...new Set((moves.data || []).map(row => text(row.colaborador_id)).filter(Boolean))];
+  const coords = cpfs.length
+    ? await supabase.from('colaborador_cruzamento').select('cpf,nome,latitude,longitude').in('cpf', cpfs)
+    : { data: [] };
+  if (coords.error) console.warn('[rotas-conectadas] coordenadas de colaborador:', coords.error);
+
   const data = {
     moves: moves.data || [],
     availability: availability.data || [],
     positions: positions.data || [],
+    coords: coords.data || [],
   };
   state.cache = data;
   state.dataAt = Date.now();
@@ -340,10 +361,10 @@ function tooltipFor(group, plan, position, km) {
   return `<b>${driverName}</b> · ${group.plate}${kmLabel}${address ? `<br>BFleet: ${address}` : ''}${steps ? `<br>${steps}` : ''}`;
 }
 
-function kmBadge(color, driverName, km) {
+function kmBadge(color, km) {
   return window.L.divIcon({
     className: 'pmg-km-badge',
-    html: `<span style="display:inline-block;background:${color};color:#020617;font-weight:900;font-size:10.5px;padding:2px 7px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.5)">${driverName} · ~${km.toFixed(1)} km/dia</span>`,
+    html: `<span style="display:inline-block;background:${color};color:#020617;font-weight:900;font-size:10px;padding:1px 6px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.5)">~${km.toFixed(1)} km</span>`,
     iconSize: [0, 0],
   });
 }
@@ -380,7 +401,7 @@ async function rebuildRoutes({ force = false } = {}) {
   try {
     const data = await loadRouteData(snapshot, { force });
     if (!data) return;
-    const indexes = buildIndexes(snapshot);
+    const indexes = buildIndexes(snapshot, data.coords);
     const groups = groupMoves(data.moves);
     const positions = positionByPlate(data.positions);
     const availabilityMap = availabilityIndex(data.availability);
@@ -416,9 +437,8 @@ async function rebuildRoutes({ force = false } = {}) {
 
       const meio = points[Math.floor(points.length / 2)];
       if (meio) {
-        const driverName = collaboratorName(plan.driver) || text(originRow.motorista) || `Frota ${group.plate}`;
         const badge = window.L.marker([meio.lat, meio.lng], {
-          icon: kmBadge(color, driverName, km),
+          icon: kmBadge(color, km),
           interactive: false,
           keyboard: false,
         });
