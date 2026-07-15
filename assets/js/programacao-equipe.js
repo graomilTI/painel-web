@@ -369,7 +369,7 @@ function injectStyles() {
 async function loadOsRelevantes(supervisao) {
   let query = supabase
     .from('operacional_os')
-    .select('id,numero_os,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os');
+    .select('id,numero_os,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os,configurada_em');
   query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
   const { data, error } = await query
     .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR,status_gestor.eq.ATENDER')
@@ -384,12 +384,27 @@ function statusNorm(os) {
   return normalizeText(os?.status_gestor || '') || 'PENDENTE';
 }
 
+// status_gestor é global à O.S. (persiste entre dias até FINALIZAR — a
+// mesma O.S. pode continuar "aguardando"/"atender" em várias datas até o
+// supervisor encerrar). Mas o realce visual do botão (.on) precisa refletir
+// "essa ação foi tomada PARA O DIA selecionado" — senão o botão continua
+// aceso ao trocar de data mesmo sem nenhuma ação nesse dia. Comparamos
+// configurada_em (gravado a cada clique de status) com a data de referência
+// selecionada; sem tocar em status_gestor nem no fluxo de negócio.
+function localDateFromIso(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
 // Tira de status/saldo/conferir reaproveitada da triagem (os-programacao-lite),
 // agora dentro da própria tela de equipe.
-function statusStripHtml(os) {
+function statusStripHtml(os, dataReferencia) {
   const st = statusNorm(os);
+  const configuradaHoje = !dataReferencia || localDateFromIso(os.configurada_em) === dataReferencia;
   const btn = (status, label, icon, cls) =>
-    `<button type="button" class="peqb-st ${cls} ${st === status ? 'on' : ''}" data-status="${status}" data-os="${esc(os.id)}" title="${label}">${icon}</button>`;
+    `<button type="button" class="peqb-st ${cls} ${st === status && configuradaHoje ? 'on' : ''}" data-status="${status}" data-os="${esc(os.id)}" title="${label}">${icon}</button>`;
   const kgAtivo = String(os.observacao_logistica || '').startsWith('KG solicitado');
   const laudoAtivo = String(os.observacao_logistica || '').startsWith('LAUDO:');
   return `<div class="peqb-status-strip">
@@ -769,7 +784,7 @@ function embarqueHtml(embarque) {
 // OS sempre visíveis como tiles, no mesmo estilo visual do resumo
 // "Km total estimado / OS com equipe" do topo da tela (.peqb-kpi) — antes
 // eram chips inline junto do nome do cliente.
-function osLeftHtml(os, { hideStatusStrip = false } = {}) {
+function osLeftHtml(os, { hideStatusStrip = false, dataReferencia = null } = {}) {
   const rem = os.remanescente;
   return `<div class="peqb-os2-left">
     <div class="peqb-os2-kpis">
@@ -778,7 +793,7 @@ function osLeftHtml(os, { hideStatusStrip = false } = {}) {
       <div class="peqb-os2-kpi"><span>Remanescente</span><strong>${rem != null && rem !== '' ? BRI.format(Number(rem) || 0) : '-'}</strong></div>
       <div class="peqb-os2-kpi"><span>OS</span><strong>${esc(os.numero_os || '-')}</strong></div>
     </div>
-    ${hideStatusStrip ? '' : `<div class="peqb-os2-tagsrow">${statusStripHtml(os)}</div>`}
+    ${hideStatusStrip ? '' : `<div class="peqb-os2-tagsrow">${statusStripHtml(os, dataReferencia)}</div>`}
   </div>`;
 }
 
@@ -1106,7 +1121,7 @@ export async function renderProgramacaoSituacao(content, options = {}) {
     if (!silent) listEl.innerHTML = '<div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div>';
     osListAtual = await loadOsRelevantes(supervisaoQuery);
     listEl.innerHTML = osListAtual.length
-      ? osListAtual.map((os) => `<article class="peqb-row peqs-row" data-os-id="${esc(os.id)}">${osLeftHtml(os)}</article>`).join('')
+      ? osListAtual.map((os) => `<article class="peqb-row peqs-row" data-os-id="${esc(os.id)}">${osLeftHtml(os, { dataReferencia: options.dataReferencia || null })}</article>`).join('')
       : '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
     if (silent && scroller) scroller.scrollTop = scrollPos;
   }
