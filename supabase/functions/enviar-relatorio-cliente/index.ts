@@ -25,9 +25,33 @@ function normalize(value: unknown): string {
     .toUpperCase();
 }
 
-function numberBr(value: unknown): number {
+// normalize() colapsa tudo pra letras/números (bom pra comparar cliente),
+// mas os buckets regionais/agrupamento por local+contrato precisam manter
+// espaço simples (sem virar tudo maiúsculo+trim é o normText do script antigo).
+function normText(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/ /g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+function normOs(value: unknown): string {
+  let s = String(value ?? "").trim();
+  if (!s) return "";
+  if (/^\d+(\.0+)?$/.test(s)) s = s.replace(/\.0+$/, "");
+  if (s.includes("/")) s = s.split("/")[0].trim();
+  return s.replace(/\s+/g, " ").trim();
+}
+
+function numLoose(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const n = Number(value);
+  const s = String(value ?? "").trim();
+  if (!s) return 0;
+  const cleaned = s.replace(/\./g, "").replace(",", ".").replace(/[^0-9.-]/g, "");
+  const n = Number(cleaned);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -37,195 +61,244 @@ function brDate(value: unknown): string {
   return y && m && d ? `${d}/${m}/${y}` : s || "-";
 }
 
+// yyyy-mm-dd -> dd/mm/yyyy (formato do campo "Data" dentro de dados_json).
+function isoParaDataBr(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return y && m && d ? `${d}/${m}/${y}` : iso;
+}
+
 function clienteOf(row: Record<string, any>): string {
   return row.cliente_final || row.cliente_regional || row.cliente_nacional || "-";
 }
 
+function esc(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
 // ---------------------------------------------------------------------------
-// Regras por cliente, portadas dos scripts Apps Script antigos (LDC-COFCO.js,
-// Sipal.js, OuroSafra.js, agricola_alvorada.js). A tabela `relatorio_resultado_diario`
-// não tem as colunas "Aguardando/Carregando/Carregado/Lote" que a planilha antiga
-// tinha — o destaque "rosa" (linha sem nenhum movimento) é aproximado aqui por
-// remanescente > 0 e nenhuma carga/embarque no período, e vira uma coluna
-// "Destaque" em vez de cor de célula (o pacote `xlsx` community não escreve estilo
-// de preenchimento de forma confiável).
+// Regras por cliente, portadas literalmente dos scripts Apps Script antigos
+// (LDC-COFCO.js, Sipal.js, OuroSafra.js, agricola_alvorada.js).
+//
+// LDC/COFCO/Sipal/Ouro Safra vêm de `grm_mapa_embarque_importacoes` -- é o
+// equivalente vivo (sincronizado pelo agente) da antiga aba "Movimentação_hoje":
+// tem UF, Cidade, Lote, Aguardando e Carregando, que `relatorio_resultado_diario`
+// NÃO tem. Agrícola Alvorada e o fallback genérico continuam em
+// `relatorio_resultado_diario` -- o script antigo já lia Agrícola Alvorada de
+// "Resultado_diario", não de "Movimentação_hoje".
 // ---------------------------------------------------------------------------
 
-// Exceções manuais por O.S., herdadas literalmente de LDC-COFCO.js (mapRegional).
-const REGIONAL_EXCECOES_OS: Record<string, string> = {
-  "81020": "PR",
-  "80110": "MT_SUL",
-};
-
-const CONTRATOS_IGNORADOS_LDC_COFCO = ["VAGOES", "RECEBIMENTO", "CIF"];
-
-type Regra = "LDC_COFCO" | "SIPAL_USIMAT" | "OURO_SAFRA" | "AGRICOLA_ALVORADA" | "GENERICO";
+type Regra = "LDC" | "COFCO" | "SIPAL_USIMAT" | "OURO_SAFRA" | "AGRICOLA_ALVORADA" | "GENERICO";
 
 function detectarRegra(cliente: string): Regra {
   const c = normalize(cliente);
-  if (c.includes("LDC") || c.includes("LOUIS DREYFUS") || c.includes("COFCO")) return "LDC_COFCO";
+  if (c.includes("LDC") || c.includes("LOUIS DREYFUS")) return "LDC";
+  if (c.includes("COFCO")) return "COFCO";
   if (c.includes("SIPAL") || c.includes("USIMAT")) return "SIPAL_USIMAT";
   if (c.includes("OURO SAFRA")) return "OURO_SAFRA";
   if (c.includes("AGRICOLA ALVORADA") || c.includes("AGRÍCOLA ALVORADA")) return "AGRICOLA_ALVORADA";
   return "GENERICO";
 }
 
-async function carregarMapaUf(service: ReturnType<typeof createClient>): Promise<Map<string, string>> {
-  const { data } = await service.from("metas_producao").select("estado,regional");
-  const map = new Map<string, string>();
-  for (const row of data || []) {
-    const regional = normalize((row as any).regional);
-    if (regional && !map.has(regional)) map.set(regional, String((row as any).estado || "").toUpperCase());
-  }
-  return map;
+const CONTRATOS_IGNORADOS_LDC_COFCO = ["VAGOES", "RECEBIMENTO", "CIF"];
+
+// Regional exato de LDC-COFCO.js (mapRegional + ajustes manuais por O.S. 81020/80110).
+function mapRegionalLdc(uf: unknown, supervisao: unknown, os: unknown): string {
+  const osNorm = normOs(os);
+  if (osNorm === "81020") return "PR";
+  if (osNorm === "80110") return "MT_SUL";
+  const sSup = normText(supervisao);
+  const sUf = normText(uf);
+  if (sSup.includes("MATO GROSSO MT3")) return "MT3";
+  if (sSup.includes("MATO GROSSO MT2")) return "MT2";
+  if (sUf === "MG" || sUf === "GO") return "GO/MG";
+  if (["PR", "SP", "RS"].includes(sUf)) return sUf;
+  if (sSup.includes("MATO GROSSO MT4")) return "MT4";
+  return "OUTROS";
 }
 
-function resolverUf(row: Record<string, any>, mapaUf: Map<string, string>): string {
-  const os = String(row.os ?? "").trim();
-  if (REGIONAL_EXCECOES_OS[os]) return REGIONAL_EXCECOES_OS[os];
-  const coord = normalize(row.coordenacao);
-  const sup = normalize(row.supervisao);
-  return mapaUf.get(coord) || mapaUf.get(sup) || "-";
-}
+type Bucket = { nome: string; titulo: string; header: string[]; linhas: { destaque: boolean; valores: (string | number)[] }[] };
 
-function destaqueSemMovimento(row: Record<string, any>): boolean {
-  return numberBr(row.remanescente) > 0 && numberBr(row.embarcado) === 0 && numberBr(row.cargas) === 0;
-}
+const HEADER_BUCKET_REGIONAL = ["Data", "OS", "Contrato", "Localização", "Remanescente", "Aguardando", "Carregando", "Carregado", "Última Atualização", "Observações"];
 
-type Sheet = { nome: string; header: string[]; linhas: (string | number)[][] };
+// Agrupa por Local+Contrato dentro de cada bucket regional (LDC/COFCO) --
+// igual unificarBucketImagem_ do script antigo. "Carregado" vem de "Cargas Hoje".
+function montarBucketsPorRegional(linhasCliente: Record<string, any>[], prefixo: string, regionalFn: (row: Record<string, any>) => string, nomesRegionais: string[]): Bucket[] {
+  const grupos = new Map<string, Map<string, any>>();
 
-function montarPlanilhaLdcCofco(rows: Record<string, any>[], mapaUf: Map<string, string>): Sheet {
-  const filtradas = rows.filter((r) => {
-    const contrato = normalize(r.contrato);
-    return !CONTRATOS_IGNORADOS_LDC_COFCO.some((c) => contrato.includes(c));
-  });
-  const grupos = new Map<string, any>();
-  for (const row of filtradas) {
-    const key = [normalize(clienteOf(row)), normalize(row.local_embarque), normalize(row.produto)].join("|");
-    if (!grupos.has(key)) {
-      grupos.set(key, {
-        cliente: clienteOf(row),
-        local: row.local_embarque || "-",
-        produto: row.produto || "-",
-        uf: resolverUf(row, mapaUf),
-        toneladas: 0,
-        remanescente: 0,
-        embarcado: 0,
-        destaque: false,
-        observacoes: "",
+  function addLinha(nomeBucket: string, row: Record<string, any>) {
+    if (!grupos.has(nomeBucket)) grupos.set(nomeBucket, new Map());
+    const mapaBucket = grupos.get(nomeBucket)!;
+    const local = String(row.Local ?? "").trim();
+    const cidade = String(row.Cidade ?? "").trim();
+    const uf = String(row.UF ?? "").trim();
+    const contrato = String(row.Contrato ?? "");
+    const chave = `${normText(local)}|${normText(contrato)}`;
+    const remanescente = numLoose(row.Remanescente);
+    const aguardando = numLoose(row.Aguardando);
+    const carregando = numLoose(row.Carregando);
+    const cargasHoje = numLoose(row["Cargas Hoje"]);
+    const obs = String(row["Observações"] ?? "").trim();
+    if (!mapaBucket.has(chave)) {
+      mapaBucket.set(chave, {
+        data: row.Data, os: row.OS, contrato, localizacao: `${local}/${cidade}/${uf}`,
+        remanescente, aguardando, carregando, cargasHoje,
+        ultimaAtualizacao: row["Última Atualização"], obsSet: obs ? new Set([obs]) : new Set<string>(),
       });
+    } else {
+      const g = mapaBucket.get(chave);
+      g.remanescente += remanescente;
+      g.aguardando += aguardando;
+      g.carregando += carregando;
+      g.cargasHoje += cargasHoje;
+      if (obs) g.obsSet.add(obs);
+      g.ultimaAtualizacao = row["Última Atualização"] || g.ultimaAtualizacao;
     }
-    const g = grupos.get(key);
-    g.toneladas += numberBr(row.toneladas);
-    g.remanescente += numberBr(row.remanescente);
-    g.embarcado += numberBr(row.embarcado);
-    if (destaqueSemMovimento(row)) g.destaque = true;
-    if (row.observacoes) g.observacoes = row.observacoes;
   }
-  const linhas = [...grupos.values()]
-    .sort((a, b) => String(a.cliente).localeCompare(String(b.cliente), "pt-BR"))
-    .map((g) => [g.cliente, g.uf, g.local, g.produto, g.toneladas, g.remanescente, g.embarcado, g.destaque ? "SIM" : "", g.observacoes]);
-  return {
-    nome: "LDC_COFCO",
-    header: ["Cliente", "UF", "Local", "Produto", "Toneladas", "Remanescente", "Embarcado", "Destaque (sem movimento)", "Observações"],
-    linhas,
-  };
+
+  linhasCliente.forEach((row) => {
+    addLinha(`${prefixo}_Geral`, row);
+    const reg = regionalFn(row);
+    if (nomesRegionais.includes(reg)) addLinha(`${prefixo}_${reg.replace("/", "_")}`, row);
+  });
+
+  const buckets: Bucket[] = [];
+  grupos.forEach((mapaBucket, nomeBucket) => {
+    if (!mapaBucket.size) return;
+    const linhas = [...mapaBucket.values()]
+      .sort((a, b) => String(a.localizacao).localeCompare(String(b.localizacao), "pt-BR"))
+      .map((g) => ({
+        destaque: g.aguardando === 0 && g.carregando === 0 && g.cargasHoje === 0,
+        valores: [String(g.data ?? ""), g.os, g.contrato, g.localizacao, g.remanescente, g.aguardando, g.carregando, g.cargasHoje, String(g.ultimaAtualizacao ?? ""), Array.from(g.obsSet).join(" | ")],
+      }));
+    buckets.push({ nome: nomeBucket, titulo: nomeBucket.replace(/_/g, " "), header: HEADER_BUCKET_REGIONAL, linhas });
+  });
+  return buckets;
 }
 
-function montarPlanilhaSipalUsimat(rows: Record<string, any>[], mapaUf: Map<string, string>): Sheet {
-  const filtradas = rows.filter((r) => resolverUf(r, mapaUf) === "MT");
-  const linhas = filtradas.map((r) => [
-    brDate(r.data), r.os || "-", clienteOf(r), r.local_embarque || "-", r.destino || "-", r.produto || "-",
-    numberBr(r.cargas), numberBr(r.toneladas), numberBr(r.embarcado), numberBr(r.remanescente),
-  ]);
-  return {
-    nome: "SIPAL_USIMAT_MT",
-    header: ["Data", "O.S.", "Cliente", "Local", "Destino", "Produto", "Cargas", "Toneladas", "Embarcado", "Remanescente"],
-    linhas,
-  };
+function montarBucketsLdc(rows: Record<string, any>[]): Bucket[] {
+  const linhasCliente = rows.filter((r) => {
+    const cli = normText(r.Cliente);
+    const contrato = normText(r.Contrato);
+    return cli.includes("LOUIS DREYFUS COMPANY BRASIL") && !CONTRATOS_IGNORADOS_LDC_COFCO.some((c) => contrato.includes(c));
+  });
+  return montarBucketsPorRegional(linhasCliente, "LDC", (r) => mapRegionalLdc(r.UF, r["Supervisão"], r.OS), ["MT2", "MT3", "GO/MG", "PR", "SP", "RS", "MT4", "MT_SUL"]);
 }
 
-function montarPlanilhaOuroSafra(rows: Record<string, any>[], mapaUf: Map<string, string>): Sheet {
-  const ufsAlvo = new Set(["BA", "PR", "SP", "RS"]);
-  const grupos = new Map<string, any>();
-  for (const row of rows) {
-    const uf = resolverUf(row, mapaUf);
-    if (!ufsAlvo.has(uf)) continue;
-    if (!grupos.has(uf)) grupos.set(uf, { uf, cargas: 0, toneladas: 0, embarcado: 0, remanescente: 0, os: new Set<string>() });
-    const g = grupos.get(uf);
-    g.cargas += numberBr(row.cargas);
-    g.toneladas += numberBr(row.toneladas);
-    g.embarcado += numberBr(row.embarcado);
-    g.remanescente += numberBr(row.remanescente);
-    if (row.os) g.os.add(String(row.os));
+function montarBucketsCofco(rows: Record<string, any>[]): Bucket[] {
+  const linhasCliente = rows.filter((r) => {
+    const cli = normText(r.Cliente);
+    const contrato = normText(r.Contrato);
+    return cli.includes("COFCO INTERNATIONAL") && !CONTRATOS_IGNORADOS_LDC_COFCO.some((c) => contrato.includes(c));
+  });
+  return montarBucketsPorRegional(linhasCliente, "COFCO", (r) => normText(r.UF), ["MT", "PR", "RS"]);
+}
+
+// Agrupa por Cliente+Local (Sipal/Usimat MT e Ouro Safra por UF) -- mesma
+// lógica de pegarDadosPorClientesUF_/pegarDadosOuroSafra_PorUF_ do script antigo.
+function montarBucketClienteLocal(linhas: Record<string, any>[], nome: string, titulo: string): Bucket | null {
+  const mapa = new Map<string, any>();
+  linhas.forEach((row) => {
+    const cliente = normText(row.Cliente);
+    const local = String(row.Local ?? "").trim();
+    const chave = `${cliente}|${normText(local)}`;
+    const remanescente = numLoose(row.Remanescente);
+    const aguardando = numLoose(row.Aguardando);
+    const carregando = numLoose(row.Carregando);
+    const cargasHoje = numLoose(row["Cargas Hoje"]);
+    const obs = String(row["Observações"] ?? "").trim();
+    if (!mapa.has(chave)) {
+      mapa.set(chave, { os: row.OS, local, remanescente, aguardando, carregando, cargasHoje, ultimaAtualizacao: row["Última Atualização"], obsSet: obs ? new Set([obs]) : new Set<string>() });
+    } else {
+      const g = mapa.get(chave);
+      g.remanescente += remanescente;
+      g.aguardando += aguardando;
+      g.carregando += carregando;
+      g.cargasHoje += cargasHoje;
+      if (obs) g.obsSet.add(obs);
+      g.ultimaAtualizacao = row["Última Atualização"] || g.ultimaAtualizacao;
+    }
+  });
+  if (!mapa.size) return null;
+  const linhasOut = [...mapa.values()]
+    .sort((a, b) => String(a.local).localeCompare(String(b.local), "pt-BR"))
+    .map((g) => ({ destaque: false, valores: [g.os, g.local, g.remanescente, g.aguardando, g.carregando, g.cargasHoje, String(g.ultimaAtualizacao ?? ""), Array.from(g.obsSet).join(" | ")] }));
+  return { nome, titulo, header: ["OS", "Local", "Remanescente", "Aguardando", "Carregando", "Cargas Hoje", "Última Atualização", "Observações"], linhas: linhasOut };
+}
+
+function montarBucketsSipalUsimat(rows: Record<string, any>[]): Bucket[] {
+  const linhas = rows.filter((r) => {
+    const cli = normText(r.Cliente);
+    const uf = normText(r.UF);
+    return (cli.includes("SIPAL") || cli.includes("USIMAT")) && uf === "MT";
+  });
+  const b = montarBucketClienteLocal(linhas, "SIPAL_USIMAT_MT", "SIPAL/USIMAT — MT");
+  return b ? [b] : [];
+}
+
+function montarBucketsOuroSafra(rows: Record<string, any>[]): Bucket[] {
+  const linhasCliente = rows.filter((r) => normText(r.Cliente).includes("OURO SAFRA"));
+  const buckets: Bucket[] = [];
+  for (const uf of ["BA", "PR", "SP", "RS"]) {
+    const linhasUf = linhasCliente.filter((r) => normText(r.UF) === uf);
+    const b = montarBucketClienteLocal(linhasUf, `OURO_SAFRA_${uf}`, `Ouro Safra — ${uf}`);
+    if (b) buckets.push(b);
   }
-  const linhas = [...grupos.values()]
-    .sort((a, b) => String(a.uf).localeCompare(String(b.uf)))
-    .map((g) => [g.uf, g.cargas, g.toneladas, g.embarcado, g.remanescente, g.os.size]);
-  return {
-    nome: "OURO_SAFRA",
-    header: ["UF", "Cargas", "Toneladas", "Embarcado", "Remanescente", "Qtde. O.S."],
-    linhas,
-  };
+  return buckets;
 }
 
-function montarPlanilhaAgricolaAlvorada(rows: Record<string, any>[]): Sheet {
-  const linhas = rows.map((r) => [
-    clienteOf(r), r.os || "-", brDate(r.data), r.local_embarque || "-", r.destino || "-", r.funcionario || "-",
-    numberBr(r.embarcado), numberBr(r.toneladas), numberBr(r.remanescente),
-  ]);
-  return {
-    nome: "AGRICOLA_ALVORADA",
-    header: ["Cliente", "O.S.", "Data", "Local Embarque", "Destino", "Responsável", "Carregado", "Tons Carreg.", "Saldo"],
-    linhas,
-  };
+// Agrícola Alvorada e o fallback genérico continuam vindo de
+// relatorio_resultado_diario -- é a fonte certa pra eles.
+function montarBucketAgricolaAlvorada(rows: Record<string, any>[]): Bucket {
+  const linhas = rows.map((r) => ({
+    destaque: false,
+    valores: [clienteOf(r), r.os || "-", brDate(r.data), r.local_embarque || "-", r.destino || "-", r.funcionario || "-", numLoose(r.embarcado), numLoose(r.toneladas), numLoose(r.remanescente)],
+  }));
+  return { nome: "AGRICOLA_ALVORADA", titulo: "Agrícola Alvorada", header: ["Cliente", "O.S.", "Data", "Local Embarque", "Destino", "Responsável", "Carregado", "Tons Carreg.", "Saldo"], linhas };
 }
 
-function montarPlanilhaGenerica(rows: Record<string, any>[]): Sheet {
+function montarBucketGenerico(cliente: string, rows: Record<string, any>[]): Bucket {
   const grupos = new Map<string, any>();
   for (const row of rows) {
     const key = [normalize(clienteOf(row)), normalize(row.local_embarque), normalize(row.destino), normalize(row.produto)].join("|");
     if (!grupos.has(key)) {
-      grupos.set(key, {
-        cliente: clienteOf(row), origem: row.local_embarque || "-", destino: row.destino || "-", produto: row.produto || "-",
-        cargas: 0, toneladas: 0, embarcado: 0, remanescente: 0, os: new Set<string>(),
-      });
+      grupos.set(key, { cliente: clienteOf(row), origem: row.local_embarque || "-", destino: row.destino || "-", produto: row.produto || "-", cargas: 0, toneladas: 0, embarcado: 0, remanescente: 0, os: new Set<string>() });
     }
     const g = grupos.get(key);
-    g.cargas += numberBr(row.cargas);
-    g.toneladas += numberBr(row.toneladas);
-    g.embarcado += numberBr(row.embarcado);
-    g.remanescente += numberBr(row.remanescente);
+    g.cargas += numLoose(row.cargas);
+    g.toneladas += numLoose(row.toneladas);
+    g.embarcado += numLoose(row.embarcado);
+    g.remanescente += numLoose(row.remanescente);
     if (row.os) g.os.add(String(row.os));
   }
   const linhas = [...grupos.values()]
     .sort((a, b) => String(a.cliente).localeCompare(String(b.cliente), "pt-BR"))
-    .map((g) => [g.cliente, g.origem, g.destino, g.produto, g.cargas, g.toneladas, g.embarcado, g.remanescente, [...g.os].join(", ")]);
-  return {
-    nome: "RELATORIO",
-    header: ["Cliente", "Origem", "Destino", "Produto", "Cargas", "Toneladas", "Embarcado", "Remanescente", "O.S."],
-    linhas,
-  };
+    .map((g) => ({ destaque: false, valores: [g.cliente, g.origem, g.destino, g.produto, g.cargas, g.toneladas, g.embarcado, g.remanescente, [...g.os].join(", ")] }));
+  return { nome: "RELATORIO", titulo: cliente, header: ["Cliente", "Origem", "Destino", "Produto", "Cargas", "Toneladas", "Embarcado", "Remanescente", "O.S."], linhas };
 }
 
-function gerarXlsxBase64(sheet: Sheet): string {
+function gerarXlsxMultiBucketBase64(buckets: Bucket[]): string {
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([sheet.header, ...sheet.linhas]);
-  XLSX.utils.book_append_sheet(wb, ws, sheet.nome.slice(0, 31));
+  for (const bucket of buckets) {
+    const ws = XLSX.utils.aoa_to_sheet([bucket.header, ...bucket.linhas.map((l) => l.valores)]);
+    XLSX.utils.book_append_sheet(wb, ws, bucket.nome.slice(0, 31));
+  }
   return XLSX.write(wb, { type: "base64", bookType: "xlsx" });
 }
 
-function sheetToCsv(sheet: Sheet): string {
-  const linhas = [sheet.header, ...sheet.linhas];
-  return linhas.map((l) => l.map((v) => `"${String(v ?? "").replaceAll('"', '""')}"`).join(";")).join("\r\n");
+function bucketsToCsv(buckets: Bucket[]): string {
+  return buckets.map((b) => {
+    const linhas = [b.header, ...b.linhas.map((l) => l.valores)];
+    const csv = linhas.map((l) => l.map((v) => `"${String(v ?? "").replaceAll('"', '""')}"`).join(";")).join("\r\n");
+    return `${b.titulo}\r\n${csv}`;
+  }).join("\r\n\r\n");
 }
 
-function sheetToHtml(sheet: Sheet, titulo: string): string {
-  const head = sheet.header.map((h) => `<th style="border:1px solid #ccc;padding:6px;background:#f1f5f9;text-align:left">${h}</th>`).join("");
-  const rows = sheet.linhas
-    .map((l) => `<tr>${l.map((v) => `<td style="border:1px solid #ddd;padding:6px">${v ?? ""}</td>`).join("")}</tr>`)
-    .join("");
-  return `<h2 style="font-family:Arial,sans-serif">${titulo}</h2><table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+function bucketsToHtml(buckets: Bucket[]): string {
+  return buckets.map((b) => {
+    const head = b.header.map((h) => `<th style="border:1px solid #ccc;padding:6px;background:#f1f5f9;text-align:left">${h}</th>`).join("");
+    const rows = b.linhas.map((l) => `<tr style="background:${l.destaque ? "#F8C8DC" : "#fff"}">${l.valores.map((v) => `<td style="border:1px solid #ddd;padding:6px">${v ?? ""}</td>`).join("")}</tr>`).join("");
+    return `<h3 style="font-family:Arial,sans-serif">${esc(b.titulo)}</h3><table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;margin-bottom:18px"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+  }).join("");
 }
 
 Deno.serve(async (req: Request) => {
@@ -305,51 +378,90 @@ Deno.serve(async (req: Request) => {
       return json({ ok: false, error: "Nenhum destinatário cadastrado para este cliente. Cadastre na lista fixa ou informe manualmente." }, 400);
     }
 
-    // 2) Linhas do período.
-    const { data: rowsData, error: rowsError } = await service
-      .from("relatorio_resultado_diario")
-      .select("*")
-      .gte("data", dataInicial)
-      .lte("data", dataFinal)
-      .limit(20000);
-    if (rowsError) throw new Error(`Falha ao buscar dados: ${rowsError.message}`);
-
-    const rows = (rowsData || []).filter((r: any) => normalize(clienteOf(r)).includes(nCliente));
-    if (!rows.length) {
-      await registrarEnvio("ERRO", { erro: "Nenhum registro encontrado para este cliente/período." });
-      return json({ ok: false, error: "Nenhum registro encontrado para este cliente/período." }, 404);
-    }
-
-    // 3) Regra específica por cliente.
+    // 2) Regra + dados: LDC/COFCO/Sipal/Ouro Safra vêm de grm_mapa_embarque_importacoes
+    // (um único dia -- igual "Movimentação_hoje" do script antigo, que era sempre um
+    // retrato do dia; usamos data_inicial como esse dia). Agrícola Alvorada e o
+    // fallback genérico vêm de relatorio_resultado_diario, por período.
     const regra = detectarRegra(cliente);
-    const mapaUf = ["LDC_COFCO", "SIPAL_USIMAT", "OURO_SAFRA"].includes(regra) ? await carregarMapaUf(service) : new Map<string, string>();
-    const sheet =
-      regra === "LDC_COFCO" ? montarPlanilhaLdcCofco(rows, mapaUf)
-      : regra === "SIPAL_USIMAT" ? montarPlanilhaSipalUsimat(rows, mapaUf)
-      : regra === "OURO_SAFRA" ? montarPlanilhaOuroSafra(rows, mapaUf)
-      : regra === "AGRICOLA_ALVORADA" ? montarPlanilhaAgricolaAlvorada(rows)
-      : montarPlanilhaGenerica(rows);
+    let buckets: Bucket[] = [];
+    let totalLinhas = 0, totalCargas = 0, totalToneladas = 0, totalEmbarcado = 0;
 
-    if (!sheet.linhas.length) {
-      await registrarEnvio("ERRO", { erro: "Regras do cliente não geraram nenhuma linha para o período." });
-      return json({ ok: false, error: "Nenhuma linha após aplicar as regras deste cliente para o período." }, 404);
+    if (regra === "LDC" || regra === "COFCO" || regra === "SIPAL_USIMAT" || regra === "OURO_SAFRA") {
+      const dataAlvoBr = isoParaDataBr(dataInicial);
+      const { data: movData, error: movError } = await service
+        .from("grm_mapa_embarque_importacoes")
+        .select("dados_json,created_at")
+        .eq("dados_json->>Data", dataAlvoBr)
+        .order("created_at", { ascending: false })
+        .limit(20000);
+      if (movError) throw new Error(`Falha ao buscar movimentação do dia: ${movError.message}`);
+
+      const vistos = new Set<string>();
+      const rows: Record<string, any>[] = [];
+      for (const row of movData || []) {
+        const os = String((row as any).dados_json?.OS ?? "").trim();
+        if (!os || vistos.has(os)) continue;
+        vistos.add(os);
+        rows.push((row as any).dados_json || {});
+      }
+
+      if (regra === "LDC") buckets = montarBucketsLdc(rows);
+      else if (regra === "COFCO") buckets = montarBucketsCofco(rows);
+      else if (regra === "SIPAL_USIMAT") buckets = montarBucketsSipalUsimat(rows);
+      else buckets = montarBucketsOuroSafra(rows);
+
+      // Totais informativos pro histórico (não têm toneladas/embarcado nessa
+      // fonte -- usa a bucket "_Geral" quando existir pra não contar 2x linhas
+      // que também aparecem em um bucket regional).
+      const totalBucket = buckets.find((b) => b.nome.endsWith("_Geral")) || buckets[0];
+      if (totalBucket) {
+        totalLinhas = totalBucket.linhas.length;
+        const idxCargas = totalBucket.header.indexOf("Carregado") >= 0 ? totalBucket.header.indexOf("Carregado") : totalBucket.header.indexOf("Cargas Hoje");
+        if (idxCargas >= 0) totalCargas = totalBucket.linhas.reduce((s, l) => s + numLoose(l.valores[idxCargas]), 0);
+      }
+    } else {
+      const { data: rowsData, error: rowsError } = await service
+        .from("relatorio_resultado_diario")
+        .select("*")
+        .gte("data", dataInicial)
+        .lte("data", dataFinal)
+        .limit(20000);
+      if (rowsError) throw new Error(`Falha ao buscar dados: ${rowsError.message}`);
+
+      const rows = (rowsData || []).filter((r: any) => normalize(clienteOf(r)).includes(nCliente));
+      if (!rows.length) {
+        await registrarEnvio("ERRO", { erro: "Nenhum registro encontrado para este cliente/período." });
+        return json({ ok: false, error: "Nenhum registro encontrado para este cliente/período." }, 404);
+      }
+
+      const bucket = regra === "AGRICOLA_ALVORADA" ? montarBucketAgricolaAlvorada(rows) : montarBucketGenerico(cliente, rows);
+      buckets = bucket.linhas.length ? [bucket] : [];
+      totalLinhas = bucket.linhas.length;
+      totalCargas = rows.reduce((s: number, r: any) => s + numLoose(r.cargas), 0);
+      totalToneladas = rows.reduce((s: number, r: any) => s + numLoose(r.toneladas), 0);
+      totalEmbarcado = rows.reduce((s: number, r: any) => s + numLoose(r.embarcado), 0);
     }
 
-    const totalCargas = rows.reduce((s: number, r: any) => s + numberBr(r.cargas), 0);
-    const totalToneladas = rows.reduce((s: number, r: any) => s + numberBr(r.toneladas), 0);
-    const totalEmbarcado = rows.reduce((s: number, r: any) => s + numberBr(r.embarcado), 0);
+    if (!buckets.length) {
+      const motivo = ["LDC", "COFCO", "SIPAL_USIMAT", "OURO_SAFRA"].includes(regra)
+        ? `Nenhum registro encontrado para este cliente em ${isoParaDataBr(dataInicial)}.`
+        : "Nenhuma linha após aplicar as regras deste cliente para o período.";
+      await registrarEnvio("ERRO", { erro: motivo });
+      return json({ ok: false, error: motivo }, 404);
+    }
 
-    // 4) XLSX + corpo do e-mail conforme formato escolhido.
+    // 3) XLSX (uma aba por bucket) + corpo do e-mail conforme formato escolhido.
     const arquivoNome = `Relatorio_${cliente.replace(/[^a-zA-Z0-9]+/g, "_")}_${dataInicial}_a_${dataFinal}.xlsx`;
-    const xlsxBase64 = gerarXlsxBase64(sheet);
+    const xlsxBase64 = gerarXlsxMultiBucketBase64(buckets);
     const titulo = `Relatório ${cliente} — ${brDate(dataInicial)} a ${brDate(dataFinal)}`;
-    let corpoHtml = `<p style="font-family:Arial,sans-serif">${mensagem ? esc(mensagem) + "<br/><br/>" : ""}Segue em anexo o relatório de ${esc(cliente)}, período ${brDate(dataInicial)} a ${brDate(dataFinal)}.</p>`;
-    if (formato === "HTML" || formato === "CSV_HTML") corpoHtml += sheetToHtml(sheet, titulo);
+    let corpoHtml = `<p style="font-family:Arial,sans-serif">${mensagem ? esc(mensagem) + "<br/><br/>" : ""}Segue em anexo o relatório de ${esc(cliente)}, período ${brDate(dataInicial)} a ${brDate(dataFinal)} (${buckets.length} tabela(s): ${buckets.map((b) => esc(b.titulo)).join(", ")}).</p>`;
+    if (formato === "HTML" || formato === "CSV_HTML") corpoHtml += bucketsToHtml(buckets);
     let corpoTexto = mensagem ? `${mensagem}\n\n` : "";
-    corpoTexto += `Relatório ${cliente} — ${dataInicial} a ${dataFinal}\nLinhas: ${sheet.linhas.length}\nCargas: ${totalCargas}\nToneladas: ${totalToneladas.toFixed(2)}\nEmbarcado: ${totalEmbarcado.toFixed(2)}`;
-    if (formato === "CSV" || formato === "CSV_HTML") corpoTexto += `\n\n${sheetToCsv(sheet)}`;
+    corpoTexto += `Relatório ${cliente} — ${dataInicial} a ${dataFinal}\nTabelas: ${buckets.map((b) => b.titulo).join(", ")}\nLinhas (geral): ${totalLinhas}`;
+    if (totalToneladas || totalEmbarcado) corpoTexto += `\nCargas: ${totalCargas}\nToneladas: ${totalToneladas.toFixed(2)}\nEmbarcado: ${totalEmbarcado.toFixed(2)}`;
+    if (formato === "CSV" || formato === "CSV_HTML") corpoTexto += `\n\n${bucketsToCsv(buckets)}`;
 
-    // 5) Credenciais SMTP (TI > Integrações > SMTP_RELATORIOS_LOGISTICA).
+    // 4) Credenciais SMTP (TI > Integrações > SMTP_RELATORIOS_LOGISTICA).
     const { data: integracao } = await service.from("ti_integracoes").select("id").eq("codigo", "SMTP_RELATORIOS_LOGISTICA").maybeSingle();
     if (!integracao) throw new Error("Integração SMTP_RELATORIOS_LOGISTICA não está cadastrada em TI > Integrações.");
     const { data: segredos, error: segredosError } = await service
@@ -370,7 +482,7 @@ Deno.serve(async (req: Request) => {
       throw new Error("Credenciais SMTP incompletas em TI > Integrações (SMTP_HOST/SMTP_USER/SMTP_PASS).");
     }
 
-    // 6) Envio.
+    // 5) Envio.
     const client = new SMTPClient({
       connection: {
         hostname: smtpHost,
@@ -402,14 +514,14 @@ Deno.serve(async (req: Request) => {
 
     await registrarEnvio("ENVIADO", {
       assunto: titulo,
-      total_linhas: sheet.linhas.length,
+      total_linhas: totalLinhas,
       total_cargas: totalCargas,
       total_toneladas: totalToneladas,
       total_embarcado: totalEmbarcado,
       arquivo_nome: arquivoNome,
     });
 
-    return json({ ok: true, message: `Relatório enviado para ${toSet.size} destinatário(s) (${sheet.linhas.length} linha(s)).` });
+    return json({ ok: true, message: `Relatório enviado para ${toSet.size} destinatário(s) (${buckets.length} tabela(s), ${totalLinhas} linha(s) na geral).` });
   } catch (error) {
     console.error("[enviar-relatorio-cliente]", error);
     const message = error instanceof Error ? error.message : String(error);
@@ -417,10 +529,3 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: message }, 500);
   }
 });
-
-function esc(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
