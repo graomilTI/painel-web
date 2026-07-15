@@ -1489,16 +1489,20 @@ function nearestLocal(row, locals) {
 // de uma única execução — veja o comentário de loadImportedMovements para o motivo. O
 // upsert (chave_unica = data+colaborador) nunca envia a coluna status, então recomputar
 // não derruba uma decisão OK/PAGO já tomada pelo financeiro.
-// Acha em qual turno (Café/Almoço/Janta) um horário cai, ou null se não cai em nenhum.
-function turnoForMinutes(minutes) {
+// Acha em quais turnos (Café/Almoço/Janta) um horário se qualifica. ALMOÇO não tem janela
+// de horário: qualquer ação do dia em um ponto de embarque conta (basta estar dentro do
+// raio). Café e Janta continuam restritos à janela de horário configurada.
+function turnosForMinutes(minutes) {
+  var result = [];
   for (var i = 0; i < TURNOS.length; i++) {
     var t = TURNOS[i];
+    if (t.tipo === 'ALMOCO') { result.push(t); continue; }
     var start = timeToMinutes(t.inicio);
     var end = timeToMinutes(t.fim);
     if (start === null || end === null || end < start) throw new Error('Janela do turno ' + t.tipo + ' inválida: ' + t.inicio + '-' + t.fim);
-    if (minutes >= start && minutes <= end) return t;
+    if (minutes >= start && minutes <= end) result.push(t);
   }
-  return null;
+  return result;
 }
 
 function qualifyForMeal(rows, locals) {
@@ -1509,13 +1513,15 @@ function qualifyForMeal(rows, locals) {
     if (!row.hora_movimento || !isValidCoord(row.latitude, row.longitude)) return;
     var minutes = timeToMinutes(row.hora_movimento);
     if (minutes === null) return;
-    var turno = turnoForMinutes(minutes);
-    if (!turno) return;
-    var groupKey = row.data_movimento + '|' + row.colaborador_chave + '|' + turno.tipo;
-    if (!grouped[groupKey]) grouped[groupKey] = { turno: turno, rows: [], inside: [] };
-    grouped[groupKey].rows.push(row);
+    var turnos = turnosForMinutes(minutes);
+    if (!turnos.length) return;
     var nearest = nearestLocal(row, locals);
-    if (nearest && nearest.distancia <= RAIO_M) grouped[groupKey].inside.push({ row: row, nearest: nearest });
+    turnos.forEach(function (turno) {
+      var groupKey = row.data_movimento + '|' + row.colaborador_chave + '|' + turno.tipo;
+      if (!grouped[groupKey]) grouped[groupKey] = { turno: turno, rows: [], inside: [] };
+      grouped[groupKey].rows.push(row);
+      if (nearest && nearest.distancia <= RAIO_M) grouped[groupKey].inside.push({ row: row, nearest: nearest });
+    });
   });
 
   var now = new Date().toISOString();
@@ -1562,7 +1568,13 @@ function qualifyForMeal(rows, locals) {
       dados_json: {
         movimento_selecionado: row.dados_json,
         local_selecionado: local.raw,
-        regra: {
+        regra: turno.tipo === 'ALMOCO' ? {
+          tipo_beneficio: turno.tipo,
+          hora_inicio: null,
+          hora_fim: null,
+          raio_m: RAIO_M,
+          criterio: 'ao_menos_um_ponto_no_dia_dentro_do_raio'
+        } : {
           tipo_beneficio: turno.tipo,
           hora_inicio: turno.inicio,
           hora_fim: turno.fim,
