@@ -550,7 +550,15 @@ async function upsertVinculo({ programacaoId, os, cand, disponibilidade }) {
     km_estimado: cand.km ?? null,
     confirmado: true,
   };
-  const { error: equipeErr } = await supabase.from('programacao_equipe').upsert(equipePayload, { onConflict: 'programacao_id,os_id,colaborador_id' });
+  // .select() aqui não é só pra ler o resultado: programacao-ultima-programacao-fix.js
+  // faz um monkeypatch em supabase.from('programacao_equipe').upsert(...) que, se a
+  // chamada NÃO encadear .select(), apaga em seguida qualquer outro colaborador já
+  // confirmado nessa mesma O.S. que não esteja neste payload — pensado pra "trocar"
+  // colaborador (não deixar linha antiga duplicando despesa), mas isso também apaga
+  // por engano o 1º colaborador quando o objetivo aqui é ADICIONAR um 2º/3º (drag do
+  // pool). O botão nativo "+" (adicionarColaboradorOs) já encadeia .select() por isso
+  // nunca teve esse problema. Ver limparEquipeAntiga() nesse arquivo.
+  const { error: equipeErr } = await supabase.from('programacao_equipe').upsert(equipePayload, { onConflict: 'programacao_id,os_id,colaborador_id' }).select().limit(1);
   if (equipeErr) throw equipeErr;
 
   const cpf = /^\d+$/.test(String(cand.colaboradorId)) ? String(cand.colaboradorId) : null;
