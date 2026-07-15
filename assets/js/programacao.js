@@ -489,7 +489,14 @@ export function renderContent(content) {
     window.__progLoadColaboradores = loadContext;
     window.__progGetProgramacaoId = () => state.programacaoId;
     window.__progGetProgramacaoIdMap = () => state.programacaoIdMap;
-    el.loadBtn.addEventListener('click', loadContext);
+    // programacao-gestor-fluxo-avancado.js precisa saber quando loadContext()
+    // (assíncrono — cria programacao_dia se a data/supervisão for nova, ex.:
+    // programar adiantado) realmente termina, em vez de adivinhar com
+    // setTimeout — por isso o próprio clique guarda a promise em
+    // window.__progLoadColaboradoresPromise (ver hookLoadButton lá).
+    el.loadBtn.addEventListener('click', () => {
+      window.__progLoadColaboradoresPromise = loadContext();
+    });
     el.saveBtn.addEventListener('click', saveProgramacao);
     el.search.addEventListener('input', debounce(() => {
       state.search = el.search.value.trim().toLowerCase();
