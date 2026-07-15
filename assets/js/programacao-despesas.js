@@ -5,7 +5,7 @@
 // passou a reescrever #progSteps só com os botões das 3 etapas novas.
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
-import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260715-acaorefresh1';
+import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260715-readonly1';
 
 function esc(value) {
   return String(value ?? '')
@@ -178,8 +178,17 @@ function injectStylesDespesas() {
     .peqd-extra-add{border:1px solid rgba(134,239,172,.35);background:rgba(22,163,74,.16);color:#dcfce7;border-radius:8px;padding:0 12px;height:32px;font-size:11.5px;font-weight:900;cursor:pointer}
     .peqd-extra-add:hover{background:rgba(22,163,74,.3)}
     @media(max-width:600px){.peqd-inp-sm,.peqd-tipo-est,.peqd-tipo-desl,.peqd-placa,.peqd-km,.peqd-valor,.peqd-obs{flex:1 1 100%}}
+    .prog-readonly-banner{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 14px;border:1px solid rgba(234,179,8,.32);background:rgba(234,179,8,.1);border-radius:12px;color:#fde68a;font-size:12.5px;font-weight:800}
+    .prog-readonly-scope{pointer-events:none!important;opacity:.55;filter:saturate(.6)}
   `;
   document.head.appendChild(style);
+}
+
+// Data no passado = só leitura, mesmo critério de programacao-equipe.js
+// (isDataPassada) — duplicado aqui porque os módulos não compartilham
+// estado além do que passa por window.__peqb*.
+function isDataPassada(dataReferencia) {
+  return !!dataReferencia && dataReferencia < todayIso();
 }
 
 // Roster do dia: só quem foi de fato confirmado (programacao_equipe.confirmado),
@@ -301,13 +310,15 @@ export async function renderProgramacaoDespesas(content, options = {}) {
   const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
   const supervisaoQuery = programacaoIdMap.size ? [...programacaoIdMap.keys()] : supervisao;
   const programacaoIdQuery = programacaoIdMap.size ? [...programacaoIdMap.values()] : programacaoId;
+  const readOnly = isDataPassada(options.dataReferencia);
 
   content.innerHTML = `
     <div class="prog-section-title">
       <h4>Despesas — Estadia · Alimentação · Deslocamento · Extras</h4>
       <span class="badge">Etapa 3</span>
     </div>
-    <div class="peqd-list" id="peqdRoster"><div class="peqd-empty peqd-loading"><span class="peqd-spinner" aria-hidden="true"></span><span>Carregando equipe do dia...</span></div></div>
+    ${readOnly ? '<div class="prog-readonly-banner">🔒 Data retroativa — somente leitura. Só é possível editar a programação de hoje em diante.</div>' : ''}
+    <div class="peqd-list ${readOnly ? 'prog-readonly-scope' : ''}" id="peqdRoster"><div class="peqd-empty peqd-loading"><span class="peqd-spinner" aria-hidden="true"></span><span>Carregando equipe do dia...</span></div></div>
   `;
 
   const rootEl = content.querySelector('#peqdRoster');
@@ -441,6 +452,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
   }
 
   rootEl.addEventListener('input', (event) => {
+    if (readOnly) return;
     const inp = event.target;
     if (inp.matches('[data-extra-fld]')) {
       const itemEl = inp.closest('[data-extra-id]');
@@ -454,6 +466,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
   });
 
   rootEl.addEventListener('change', (event) => {
+    if (readOnly) return;
     const sel = event.target;
     if (sel.matches('[data-extra-fld]')) {
       const itemEl = sel.closest('[data-extra-id]');
@@ -471,6 +484,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
   });
 
   rootEl.addEventListener('click', async (event) => {
+    if (readOnly) return;
     const chip = event.target.closest('.peqd-chip[data-ref]');
     if (chip) {
       chip.classList.toggle('on');

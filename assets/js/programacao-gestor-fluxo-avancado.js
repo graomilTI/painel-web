@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260715-acaorefresh1';
-import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260709-regionalfix1';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260715-readonly1';
+import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260715-readonly1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 // Programação Gestor — fluxo avançado:
@@ -354,11 +354,11 @@ async function carregarMotoristas(supervisoes) {
   return state.motoristasCache;
 }
 
-function colabCardHtml(c) {
+function colabCardHtml(c, readOnly = false) {
   const motorista = isMotorista(c);
   const letter = motorista ? '🚗' : tipoLetter(c.tipoLabel);
   const meta = [c.tipoLabel, c.supervisao, c.veiculoPlaca ? `Placa ${c.veiculoPlaca}` : ''].filter(Boolean).join(' · ');
-  return `<div class="pgc-colab-card ${c.linked ? 'is-linked' : ''}" draggable="true" data-pgc-colab='${esc(JSON.stringify(c))}'>
+  return `<div class="pgc-colab-card ${c.linked ? 'is-linked' : ''}" draggable="${readOnly ? 'false' : 'true'}" data-pgc-colab='${esc(JSON.stringify(c))}'>
     <span class="pgc-colab-ico ${motorista ? 'car' : 'person'}">${esc(letter)}</span>
     <span style="min-width:0"><span class="pgc-colab-name">${esc(c.nome)}</span><span class="pgc-colab-meta">${esc(meta || 'Colaborador')}</span></span>
     <span class="pgc-colab-badge">${c.linked ? 'vinc.' : 'livre'}</span>
@@ -371,14 +371,14 @@ function colabCardHtml(c) {
 // observer de novo -> escreve de novo -> ... rodando pra sempre a cada ~400ms
 // assim que a Etapa 2 é aberta pela 1ª vez, mesmo sem nada realmente mudar.
 // Só escreve quando o conteúdo calculado é diferente do que já está lá.
-function renderPool(poolEl, pool, query = '') {
+function renderPool(poolEl, pool, query = '', readOnly = false) {
   const q = normalizeText(query);
   const filtrados = q ? pool.filter((c) => normalizeText(`${c.nome} ${c.tipoLabel} ${c.supervisao} ${c.veiculoPlaca}`).includes(q)) : pool;
   const countEl = poolEl.querySelector('.pgc-pool-count');
   const countText = `${filtrados.length}/${pool.length}`;
   if (countEl.textContent !== countText) countEl.textContent = countText;
   const list = poolEl.querySelector('.pgc-colab-list');
-  const html = filtrados.length ? filtrados.map(colabCardHtml).join('') : '<div class="pgc-colab-empty">Nenhum colaborador encontrado.</div>';
+  const html = filtrados.length ? filtrados.map((c) => colabCardHtml(c, readOnly)).join('') : '<div class="pgc-colab-empty">Nenhum colaborador encontrado.</div>';
   if (list.__pgcHtmlCache === html) return;
   list.__pgcHtmlCache = html;
   list.innerHTML = html;
@@ -415,15 +415,17 @@ async function augmentEquipeDnd() {
 
   await carregarMotoristas(snapshot.supervisoesResolvidas || []);
   const pool = buildPoolFromSnapshot(snapshot);
-  renderPool(poolEl, pool, poolEl.querySelector('#pgcPoolSearch')?.value || '');
+  renderPool(poolEl, pool, poolEl.querySelector('#pgcPoolSearch')?.value || '', snapshot.readOnly);
 
   if (poolEl.dataset.pgcWired !== '1') {
     poolEl.dataset.pgcWired = '1';
     poolEl.addEventListener('input', (event) => {
       if (!event.target.matches('#pgcPoolSearch')) return;
-      renderPool(poolEl, buildPoolFromSnapshot(window.__peqbGetEquipeSnapshot?.()), event.target.value);
+      const freshSnapshot = window.__peqbGetEquipeSnapshot?.();
+      renderPool(poolEl, buildPoolFromSnapshot(freshSnapshot), event.target.value, freshSnapshot?.readOnly);
     });
     poolEl.addEventListener('dragstart', (event) => {
+      if (window.__peqbGetEquipeSnapshot?.()?.readOnly) { event.preventDefault(); return; }
       const card = event.target.closest('[data-pgc-colab]');
       if (!card) return;
       event.dataTransfer.effectAllowed = 'copy';
@@ -435,6 +437,7 @@ async function augmentEquipeDnd() {
   if (list.dataset.pgcDndWired !== '1') {
     list.dataset.pgcDndWired = '1';
     list.addEventListener('dragover', (event) => {
+      if (window.__peqbGetEquipeSnapshot?.()?.readOnly) return;
       const row = event.target.closest('.peqb-row[data-os-id]');
       if (!row) return;
       event.preventDefault();
@@ -449,6 +452,7 @@ async function augmentEquipeDnd() {
       if (pessoa) pessoa.classList.remove('pgc-drop-hot');
     });
     list.addEventListener('drop', async (event) => {
+      if (window.__peqbGetEquipeSnapshot?.()?.readOnly) return;
       const row = event.target.closest('.peqb-row[data-os-id]');
       if (!row) return;
       event.preventDefault();
@@ -589,6 +593,7 @@ async function upsertVinculo({ programacaoId, os, cand, disponibilidade }) {
 async function vincularColaboradorNaOs(osId, colab) {
   const { snapshot, item } = findItemByOs(osId);
   if (!snapshot || !item) return;
+  if (snapshot.readOnly) { alert('Data retroativa — somente leitura.'); return; }
   const cand = materializarCand(item, colab);
   const jaNaOs = (item.equipeRows || []).some((r) => String(r.colaborador_id) === String(cand.colaboradorId));
   if (jaNaOs) { alert(`${cand.nome} já está vinculado nesta O.S.`); return; }
@@ -637,6 +642,7 @@ function alvoColaboradorIdFromDrop(alvoPessoa, item) {
 async function vincularMotoristaAoColaborador(osId, alvoPessoa, motorista) {
   const { snapshot, item } = findItemByOs(osId);
   if (!snapshot || !item) return;
+  if (snapshot.readOnly) { alert('Data retroativa — somente leitura.'); return; }
   const alvoId = alvoColaboradorIdFromDrop(alvoPessoa, item);
   if (!alvoId) { await vincularColaboradorNaOs(osId, motorista); return; }
   const programacaoId = snapshot.programacaoIdParaOs?.(item.os) || item.equipeRows?.[0]?.programacao_id || snapshot.programacaoId;

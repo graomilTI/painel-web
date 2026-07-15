@@ -359,8 +359,23 @@ function injectStyles() {
     .peqb-map-band .peqb-map{height:min(420px,60vh);position:relative}
     @media(max-width:760px){.peqb-row.peqb-os2{grid-template-columns:1fr!important}.peqb-os2-left{border-right:0;border-bottom:1px solid rgba(111,208,165,.14)}.peqb-os2-right{border-radius:0 0 13px 13px}.peqb-crow,.peqb-crow-2,.peqb-crow-3{grid-template-columns:1fr!important}}
     @media(max-width:600px){.peqb-cand-cost{align-self:flex-start}}
+    .prog-readonly-banner{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 14px;border:1px solid rgba(234,179,8,.32);background:rgba(234,179,8,.1);border-radius:12px;color:#fde68a;font-size:12.5px;font-weight:800}
+    .prog-readonly-scope{pointer-events:none!important;opacity:.55;filter:saturate(.6)}
   `;
   document.head.appendChild(style);
+}
+
+// Data no passado (antes de hoje) = só leitura: gestor pode ver a
+// programação de um dia que já passou, mas não editar (status_gestor,
+// equipe, drag-and-drop) — evita mexer retroativamente numa O.S. cujo
+// resultado real já aconteceu. Comparação por string funciona porque
+// dataReferencia/todayIso() são sempre 'YYYY-MM-DD'.
+function isDataPassada(dataReferencia) {
+  return !!dataReferencia && dataReferencia < todayIso();
+}
+
+function readonlyBannerHtml() {
+  return '<div class="prog-readonly-banner">🔒 Data retroativa — somente leitura. Só é possível editar a programação de hoje em diante.</div>';
 }
 
 // Carrega as OS acionáveis da supervisão (pendentes/aguardar/atender) — as
@@ -403,16 +418,18 @@ function localDateFromIso(iso) {
 function statusStripHtml(os, dataReferencia) {
   const st = statusNorm(os);
   const configuradaHoje = !dataReferencia || localDateFromIso(os.configurada_em) === dataReferencia;
+  const readOnly = isDataPassada(dataReferencia);
+  const dis = readOnly ? 'disabled' : '';
   const btn = (status, label, icon, cls) =>
-    `<button type="button" class="peqb-st ${cls} ${st === status && configuradaHoje ? 'on' : ''}" data-status="${status}" data-os="${esc(os.id)}" title="${label}">${icon}</button>`;
+    `<button type="button" class="peqb-st ${cls} ${st === status && configuradaHoje ? 'on' : ''}" data-status="${status}" data-os="${esc(os.id)}" title="${readOnly ? 'Data retroativa — somente leitura' : label}" ${dis}>${icon}</button>`;
   const kgAtivo = String(os.observacao_logistica || '').startsWith('KG solicitado');
   const laudoAtivo = String(os.observacao_logistica || '').startsWith('LAUDO:');
   return `<div class="peqb-status-strip">
     ${btn('AGUARDAR', 'Aguardar', '❚❚', 'warn')}
     ${btn('ATENDER', 'Atender', '✓', 'ok')}
     ${btn('FINALIZAR', 'Finalizar', '＄', 'danger')}
-    <button type="button" class="peqb-st kg ${kgAtivo ? 'on' : ''}" data-kg="${esc(os.id)}" title="Aumentar saldo">＋</button>
-    <button type="button" class="peqb-st conf ${laudoAtivo ? 'on' : ''}" data-conf="${esc(os.id)}" title="Conferir / anexar laudo">▣</button>
+    <button type="button" class="peqb-st kg ${kgAtivo ? 'on' : ''}" data-kg="${esc(os.id)}" title="Aumentar saldo" ${dis}>＋</button>
+    <button type="button" class="peqb-st conf ${laudoAtivo ? 'on' : ''}" data-conf="${esc(os.id)}" title="Conferir / anexar laudo" ${dis}>▣</button>
   </div>`;
 }
 
@@ -852,7 +869,7 @@ function colabsExtrasHtml(item) {
       <span class="peqb-cand-av">${esc(iniciais(r.nome_colaborador || r.colaborador_id))}</span>
       <span class="peqb-cand-tag peqb-conf-tag t-info">Adicional</span>
       <span class="peqb-name-sel">${esc(r.nome_colaborador || r.colaborador_id)}</span>
-      <button type="button" data-remover-adicional="${esc(r.id)}" title="Remover colaborador">×</button>
+      <button type="button" data-remover-adicional="${esc(r.id)}" ${item.readOnly ? 'disabled' : ''} title="Remover colaborador">×</button>
     </span>`).join('')}</div>`;
 }
 
@@ -860,10 +877,10 @@ function colabsExtrasHtml(item) {
 // Atendimento (disponibilidade=OK) ou Logística (LOGISTICA) — hoje isso é
 // só um efeito colateral automático de confirmarCandidato/adicionarColaboradorOs;
 // este toggle deixa a escolha explícita pro gestor.
-function dispToggleHtml(colaboradorId, dispAtual) {
+function dispToggleHtml(colaboradorId, dispAtual, readOnly = false) {
   const isLogistica = disponibilidadeCategoriaLocal(dispAtual) === 'LOGISTICA';
   const btn = (valor, label, ativo) =>
-    `<button type="button" class="peqb-row-btn ${ativo ? '' : ''}" data-disp-toggle="${esc(valor)}" data-disp-colab="${esc(colaboradorId)}" style="${ativo ? 'border-color:rgba(134,239,172,.5);background:rgba(22,163,74,.28);color:#bbf7d0' : ''}">${label}</button>`;
+    `<button type="button" class="peqb-row-btn ${ativo ? '' : ''}" data-disp-toggle="${esc(valor)}" data-disp-colab="${esc(colaboradorId)}" ${readOnly ? 'disabled' : ''} style="${ativo ? 'border-color:rgba(134,239,172,.5);background:rgba(22,163,74,.28);color:#bbf7d0' : ''}">${label}</button>`;
   return `<div class="peqb-row-actions" style="margin-top:6px" title="Motorista com frota vinculada — Atendimento ou Logística no dia">
     <span class="peqb-clab" style="align-self:center">🚗</span>
     ${btn('OK', 'Atendimento', !isLogistica)}
@@ -875,8 +892,9 @@ function disponibilidadeCategoriaLocal(value) {
 }
 
 function osRowHtml(item) {
-  const { os, confirmadoRow, candidatos } = item;
+  const { os, confirmadoRow, candidatos, readOnly } = item;
   const confirmado = !!confirmadoRow;
+  const dis = readOnly ? 'disabled' : '';
 
   let right;
   if (confirmado) {
@@ -886,21 +904,21 @@ function osRowHtml(item) {
     const hotelBtn = precisaHotel(km)
       ? (hotelJaPedido
         ? '<button type="button" class="peqb-row-btn hotel done" disabled>✓ Hotel solicitado</button>'
-        : `<button type="button" class="peqb-row-btn hotel" data-pedir-hotel title="Combustível ida+volta estimado: R$${custoKm != null ? brl(custoKm) : '?'} — hotel pode ser mais econômico">🏨 Pedir hotel</button>`)
+        : `<button type="button" class="peqb-row-btn hotel" data-pedir-hotel ${dis} title="Combustível ida+volta estimado: R$${custoKm != null ? brl(custoKm) : '?'} — hotel pode ser mais econômico">🏨 Pedir hotel</button>`)
       : '';
     right = `<div class="peqb-os2-right">
       <div class="peqb-conf-head">
         <span class="peqb-conf-name">
           <span class="peqb-cand-av">${esc(iniciais(confirmadoRow.nome_colaborador))}</span>
           <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(item.confirmadoTipoLabel)}">${esc(item.confirmadoTipoLabel)}</span>
-          <select class="peqb-name-sel" data-trocar-colab title="Trocar o colaborador (♻ = já escalado em outra OS)">
+          <select class="peqb-name-sel" data-trocar-colab ${dis} title="Trocar o colaborador (♻ = já escalado em outra OS)">
             ${trocarOptionsHtml(item)}
           </select>
-          <button type="button" class="peqb-add-colab" data-toggle-add-colab title="Adicionar outro colaborador nesta O.S.">+</button>
+          <button type="button" class="peqb-add-colab" data-toggle-add-colab ${dis} title="Adicionar outro colaborador nesta O.S.">+</button>
         </span>
         ${hotelBtn}
       </div>
-      ${item.custos?.placaAuto ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual) : ''}
+      ${item.custos?.placaAuto ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual, readOnly) : ''}
       ${colabsExtrasHtml(item)}
       <div class="peqb-add-box" data-add-box hidden>
         <span class="peqb-cand-av">+</span>
@@ -930,7 +948,7 @@ function osRowHtml(item) {
       ${candHtml}
       ${outrosHtml}
       <div class="peqb-row-actions">
-        <button type="button" class="peqb-row-btn" data-confirmar ${candidatos.length ? '' : 'disabled'}>Confirmar selecionado</button>
+        <button type="button" class="peqb-row-btn" data-confirmar ${candidatos.length && !readOnly ? '' : 'disabled'}>Confirmar selecionado</button>
       </div>
     </div>`;
   }
@@ -1096,13 +1114,15 @@ export async function renderProgramacaoSituacao(content, options = {}) {
   const supervisao = String(options.supervisao || '').trim();
   const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
   const supervisaoQuery = programacaoIdMap.size ? [...programacaoIdMap.keys()] : supervisao;
+  const readOnly = isDataPassada(options.dataReferencia);
 
   content.innerHTML = `
     <div class="prog-section-title">
       <h4>Situação da O.S.</h4>
       <span class="badge">Etapa 1</span>
     </div>
-    <div class="peqb-os-list peqb-os-list-full" id="peqsOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
+    ${readOnly ? readonlyBannerHtml() : ''}
+    <div class="peqb-os-list peqb-os-list-full ${readOnly ? 'prog-readonly-scope' : ''}" id="peqsOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
   `;
 
   if (!currentUser) getCurrentUser().then((u) => { currentUser = u; }).catch(() => {});
@@ -1242,24 +1262,27 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     return programacaoIdMap.size ? (programacaoIdMap.get(os?.supervisao) || null) : programacaoId;
   }
 
+  const readOnly = isDataPassada(options.dataReferencia);
+
   content.innerHTML = `
     <div class="prog-section-title">
       <h4>Equipe + Mapa — colaborador por O.S.</h4>
       <span class="badge">Etapa 2</span>
     </div>
+    ${readOnly ? readonlyBannerHtml() : ''}
     <div class="peqb-kpis">
       <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
       <div class="peqb-kpi"><span>OS com equipe</span><strong id="peqbKpiOs">0</strong></div>
     </div>
     <div class="peqb-legend"><b>Score:</b> <span><i class="lg-c"></i>Contrato 50%</span> <span><i class="lg-d"></i>Distância 30%</span> <span><i class="lg-a"></i>Auditoria 20%</span></div>
     <div class="peqb-toolbar">
-      <button type="button" class="peqb-btn" id="peqbAutoPreencher">Auto-preencher equipe</button>
-      <button type="button" class="peqb-btn" id="peqbSugerirCaronas" title="Motorista/carona por frota (desvio ≤ ${CARONA_DESVIO_KM} km), sobra vira próprio/Uber">Sugerir caronas</button>
+      <button type="button" class="peqb-btn" id="peqbAutoPreencher" ${readOnly ? 'disabled' : ''}>Auto-preencher equipe</button>
+      <button type="button" class="peqb-btn" id="peqbSugerirCaronas" ${readOnly ? 'disabled' : ''} title="Motorista/carona por frota (desvio ≤ ${CARONA_DESVIO_KM} km), sobra vira próprio/Uber">Sugerir caronas</button>
       <span id="peqbCaronasMsg" style="font-size:11.5px;color:#9fb7aa;align-self:center"></span>
       <button type="button" class="peqb-btn" id="peqbVerMapa">🗺️ Ver mapa do gestor</button>
     </div>
     <div id="peqbMapBand" hidden></div>
-    <div class="peqb-os-list peqb-os-list-full" id="peqbOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
+    <div class="peqb-os-list peqb-os-list-full ${readOnly ? 'prog-readonly-scope' : ''}" id="peqbOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
   `;
 
   // Ponte para o módulo do mapa (programacao-mapa-gestor.js), carregado à
@@ -1271,6 +1294,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     supervisoesResolvidas: programacaoIdMap.size ? [...programacaoIdMap.keys()] : [supervisao],
     programacaoIdParaOs,
     dataReferencia: options.dataReferencia || null,
+    readOnly,
   });
 
   // Ponte pro drag-and-drop do mapa (programacao-gestor-hotfix-manual-v3.js):
@@ -1521,6 +1545,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
           os,
           ponto,
           confirmadoRow,
+          readOnly,
           equipeRows: equipeRowsOs,
           confirmadoTipoLabel: confirmadoRow ? (tipoLabelPorColaborador.get(String(confirmadoRow.colaborador_id)) || 'Não informado') : null,
           candidatos: ordenarCandidatosPorEmbarque(confirmadoRow
@@ -1744,6 +1769,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   }
 
   listEl.addEventListener('click', async (event) => {
+    if (readOnly) return;
     // Triagem embutida: status / saldo / conferir (vale para os dois blocos)
     const statusBtn = event.target.closest('[data-status]');
     if (statusBtn) { await atualizarStatusOs(statusBtn.dataset.os, statusBtn.dataset.status, statusBtn); return; }
