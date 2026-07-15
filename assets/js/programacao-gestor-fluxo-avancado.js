@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260714-menorcusto1';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260715-acaorefresh1';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260709-regionalfix1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
@@ -225,6 +225,21 @@ async function renderAllTabs({ force = false } = {}) {
 }
 
 window.__pgcProgramacaoReload = () => renderAllTabs({ force: true });
+
+// Refresh pós-vínculo (drag do pool de colaboradores): usa o mesmo caminho
+// leve já comprovado pelo drag no mapa e pelo botão "+" nativo
+// (window.__peqbSilentRefresh, ver programacao-equipe.js) em vez de
+// renderAllTabs({force:true}) — que remonta as 3 abas e o mapa Leaflet do
+// zero e pode ser descartado silenciosamente pela trava de reentrância de
+// renderAllTabs se outro render estiver em andamento. Cai pro remount
+// completo só se o bridge ainda não existir (pane 2 nunca foi aberta).
+async function refreshAposVinculo() {
+  if (window.__peqbSilentRefresh) {
+    await Promise.all([window.__peqbSilentRefresh(), window.__pgcRefreshDespesas?.()]);
+  } else {
+    await renderAllTabs({ force: true });
+  }
+}
 
 // Atualização parcial da Aba 3 (Despesas), usada por
 // programacao-gestor-hotfix-manual-v3.js depois de um vínculo feito pelo
@@ -593,7 +608,7 @@ async function vincularColaboradorNaOs(osId, colab) {
         motivo,
       });
     }
-    await renderAllTabs({ force: true });
+    await refreshAposVinculo();
     setActiveStep('2');
     setFeedback(`${cand.nome} vinculado à O.S. ${item.os.numero_os || ''}.`, 'ok');
   } catch (error) {
@@ -642,7 +657,7 @@ async function vincularMotoristaAoColaborador(osId, alvoPessoa, motorista) {
       placa,
       disponibilidade,
     });
-    await renderAllTabs({ force: true });
+    await refreshAposVinculo();
     setActiveStep('2');
     setFeedback(`Motorista ${cand.nome} vinculado na O.S. ${item.os.numero_os || ''}.`, 'ok');
   } catch (error) {
