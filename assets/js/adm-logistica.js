@@ -408,6 +408,15 @@ export async function renderContent(content) {
         </div>
         <div class="log-note" id="logBaixarCargasFeedback" style="display:none"></div>
       </div>
+
+      <div class="card mt-16 log-subcard">
+        <h4 style="margin:0 0 14px;color:#bbf7d0">NHE — COFCO / AMAGGI</h4>
+        <p class="muted" style="margin:-8px 0 14px">Equivalente ao script NHE.js: separa o NHE de hoje por Supervisão (COFCO: Supervisão começando com "Mato Grosso MT1" ou "MT4"; AMAGGI: "Rio Grande do Sul") em duas abas de um mesmo XLSX.</p>
+        <div class="log-inline-actions">
+          <button id="logBaixarNheBtn" class="btn btn-primary" type="button">Baixar XLSX (COFCO + AMAGGI)</button>
+        </div>
+        <div class="log-note" id="logBaixarNheFeedback" style="display:none"></div>
+      </div>
     </section>
 
     <section class="card mt-16 log-section" id="section-relatorios">
@@ -482,6 +491,7 @@ export async function renderContent(content) {
     reload: document.getElementById('logReload'),
     ufCargas: document.getElementById('logUfCargas'),
     baixarCargasBtn: document.getElementById('logBaixarCargasBtn'),
+    baixarNheBtn: document.getElementById('logBaixarNheBtn'),
     baixarCargasFeedback: document.getElementById('logBaixarCargasFeedback'),
     regionalFob: document.getElementById('logRegionalFob'),
     gerarImagemRegional: document.getElementById('logGerarImagemRegional'),
@@ -511,6 +521,7 @@ export async function renderContent(content) {
   el.relCliente.addEventListener('change', () => { if (!el.relDestCliente.value) el.relDestCliente.value = el.relCliente.value.trim(); });
   el.reload.addEventListener('click', loadAll);
   el.baixarCargasBtn.addEventListener('click', baixarCargasClienteUf);
+  el.baixarNheBtn.addEventListener('click', baixarNheCofcoAmaggi);
   el.gerarImagemRegional.addEventListener('click', () => gerarImagemRegional(el.regionalFob.value));
   el.gerarZipRegionais.addEventListener('click', gerarZipTodasRegionais);
   content.addEventListener('click', onClick);
@@ -675,6 +686,60 @@ export async function renderContent(content) {
       feedback.textContent = error?.message || 'Erro ao gerar o XLSX de cargas.';
     } finally {
       el.baixarCargasBtn.disabled = false;
+    }
+  }
+
+  // NHE -> COFCO/AMAGGI (equivalente a NHE.js). O script antigo processava a
+  // aba NHE inteira sem filtrar por data/serviço; aqui restringe a hoje pra
+  // não puxar as dezenas de milhares de linhas históricas de grm_nhe_importacoes.
+  const HEADER_NHE_CLIENTE = ['OS', 'Data', 'Embarque', 'Cidade de Destino', 'Destino', 'Classificador', 'Motivo', 'Obs', 'Lote'];
+
+  async function buscarNheHoje() {
+    const hoje = hojeBr();
+    const { data, error } = await supabase
+      .from('grm_nhe_importacoes')
+      .select('dados_json')
+      .eq('dados_json->>Data', hoje)
+      .limit(20000);
+    if (error) throw error;
+    return (data || []).map((row) => row.dados_json || {});
+  }
+
+  function montarNheClienteLinhas(rows, filtroFn) {
+    return rows.filter(filtroFn).map((r) => [r['O.S.'], r.Data, r.Embarque, r['Cidade de Destino'], r.Destino, r.Classificador, r.Motivo, r.Obs, r.Lote]);
+  }
+
+  async function baixarNheCofcoAmaggi() {
+    const feedback = document.getElementById('logBaixarNheFeedback');
+    feedback.style.display = 'block';
+    feedback.textContent = 'Buscando NHE de hoje...';
+    el.baixarNheBtn.disabled = true;
+    try {
+      const rows = await buscarNheHoje();
+      const linhasCofco = montarNheClienteLinhas(rows, (r) => {
+        const cliente = normText(r.Cliente);
+        const sup = normText(r['Supervisão']);
+        return cliente.includes('COFCO') && (sup.startsWith('MATO GROSSO MT1') || sup.startsWith('MATO GROSSO MT4'));
+      });
+      const linhasAmaggi = montarNheClienteLinhas(rows, (r) => {
+        const cliente = normText(r.Cliente);
+        const sup = normText(r['Supervisão']);
+        return cliente.includes('AMAGGI') && sup.startsWith('RIO GRANDE DO SUL');
+      });
+      if (!linhasCofco.length && !linhasAmaggi.length) {
+        feedback.textContent = 'Nenhuma linha de NHE hoje bateu com as regras de COFCO ou AMAGGI.';
+        return;
+      }
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADER_NHE_CLIENTE, ...linhasCofco]), 'COFCO');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADER_NHE_CLIENTE, ...linhasAmaggi]), 'AMAGGI');
+      XLSX.writeFile(wb, `NHE_COFCO_AMAGGI_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      feedback.textContent = `COFCO: ${linhasCofco.length} linha(s) · AMAGGI: ${linhasAmaggi.length} linha(s).`;
+    } catch (error) {
+      console.error('[NHE COFCO/AMAGGI]', error);
+      feedback.textContent = error?.message || 'Erro ao gerar o XLSX de NHE.';
+    } finally {
+      el.baixarNheBtn.disabled = false;
     }
   }
 
