@@ -32,7 +32,7 @@ function normText(value: unknown): string {
   return String(value ?? "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
-    .replace(/ /g, " ")
+    .replace(/\xa0/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .toUpperCase();
@@ -122,6 +122,8 @@ const HEADER_BUCKET_REGIONAL = ["Data", "OS", "Contrato", "Localização", "Rema
 
 // Agrupa por Local+Contrato dentro de cada bucket regional (LDC/COFCO) --
 // igual unificarBucketImagem_ do script antigo. "Carregado" vem de "Cargas Hoje".
+// Com nomesRegionais=[] só produz o bucket "${prefixo}_Geral" -- útil pra
+// agrupar um subconjunto de linhas já filtrado (ex.: só MT, só não-MT).
 function montarBucketsPorRegional(linhasCliente: Record<string, any>[], prefixo: string, regionalFn: (row: Record<string, any>) => string, nomesRegionais: string[]): Bucket[] {
   const grupos = new Map<string, Map<string, any>>();
 
@@ -175,22 +177,31 @@ function montarBucketsPorRegional(linhasCliente: Record<string, any>[], prefixo:
   return buckets;
 }
 
-function montarBucketsLdc(rows: Record<string, any>[]): Bucket[] {
-  const linhasCliente = rows.filter((r) => {
+function montarBucketSimples(linhas: Record<string, any>[], nome: string, titulo: string): Bucket | null {
+  const gerados = montarBucketsPorRegional(linhas, nome, () => "", []);
+  const b = gerados.find((x) => x.nome === `${nome}_Geral`);
+  return b ? { ...b, titulo } : null;
+}
+
+function filtrarLinhasLdc(rows: Record<string, any>[]): Record<string, any>[] {
+  return rows.filter((r) => {
     const cli = normText(r.Cliente);
     const contrato = normText(r.Contrato);
     return cli.includes("LOUIS DREYFUS COMPANY BRASIL") && !CONTRATOS_IGNORADOS_LDC_COFCO.some((c) => contrato.includes(c));
   });
-  return montarBucketsPorRegional(linhasCliente, "LDC", (r) => mapRegionalLdc(r.UF, r["Supervisão"], r.OS), ["MT2", "MT3", "GO/MG", "PR", "SP", "RS", "MT4", "MT_SUL"]);
 }
 
-function montarBucketsCofco(rows: Record<string, any>[]): Bucket[] {
-  const linhasCliente = rows.filter((r) => {
+function filtrarLinhasCofco(rows: Record<string, any>[]): Record<string, any>[] {
+  return rows.filter((r) => {
     const cli = normText(r.Cliente);
     const contrato = normText(r.Contrato);
     return cli.includes("COFCO INTERNATIONAL") && !CONTRATOS_IGNORADOS_LDC_COFCO.some((c) => contrato.includes(c));
   });
-  return montarBucketsPorRegional(linhasCliente, "COFCO", (r) => normText(r.UF), ["MT", "PR", "RS"]);
+}
+
+function montarBucketsLdc(rows: Record<string, any>[]): Bucket[] {
+  const linhasCliente = filtrarLinhasLdc(rows);
+  return montarBucketsPorRegional(linhasCliente, "LDC", (r) => mapRegionalLdc(r.UF, r["Supervisão"], r.OS), ["MT2", "MT3", "GO/MG", "PR", "SP", "RS", "MT4", "MT_SUL"]);
 }
 
 // Agrupa por Cliente+Local (Sipal/Usimat MT e Ouro Safra por UF) -- mesma
@@ -276,12 +287,16 @@ function montarBucketGenerico(cliente: string, rows: Record<string, any>[]): Buc
   return { nome: "RELATORIO", titulo: cliente, header: ["Cliente", "Origem", "Destino", "Produto", "Cargas", "Toneladas", "Embarcado", "Remanescente", "O.S."], linhas };
 }
 
-function gerarXlsxMultiBucketBase64(buckets: Bucket[]): string {
+function gerarXlsxBuckets(buckets: (Bucket | null)[]): string {
   const wb = XLSX.utils.book_new();
+  let algum = false;
   for (const bucket of buckets) {
+    if (!bucket) continue;
+    algum = true;
     const ws = XLSX.utils.aoa_to_sheet([bucket.header, ...bucket.linhas.map((l) => l.valores)]);
     XLSX.utils.book_append_sheet(wb, ws, bucket.nome.slice(0, 31));
   }
+  if (!algum) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Sem dados"]]), "Vazio");
   return XLSX.write(wb, { type: "base64", bookType: "xlsx" });
 }
 
@@ -299,6 +314,88 @@ function bucketsToHtml(buckets: Bucket[]): string {
     const rows = b.linhas.map((l) => `<tr style="background:${l.destaque ? "#F8C8DC" : "#fff"}">${l.valores.map((v) => `<td style="border:1px solid #ddd;padding:6px">${v ?? ""}</td>`).join("")}</tr>`).join("");
     return `<h3 style="font-family:Arial,sans-serif">${esc(b.titulo)}</h3><table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;margin-bottom:18px"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
   }).join("");
+}
+
+// ---------------------------------------------------------------------------
+// COFCO manda 3 e-mails separados pra 3 listas diferentes -- equivalente de
+// getGruposEmailCOFCO_() em LDC-COFCO.js. É a única regra com isso; as outras
+// (LDC/Sipal/Ouro Safra/Alvorada/genérico) usam a lista fixa cadastrada em
+// Logística > Relatórios ao Cliente e mandam 1 e-mail só.
+//
+// Os e-mails (dado de negócio, não código) ficam em
+// logistica_relatorios_destinatarios (cliente='COFCO', coluna grupo=
+// GERAL/PR/MT) -- não hardcoded aqui, pra não versionar endereços pessoais
+// de terceiros num repo público. Assunto por grupo é só texto, sem PII.
+// ---------------------------------------------------------------------------
+const ASSUNTO_GRUPO_COFCO: Record<"GERAL" | "PR" | "MT", string> = {
+  GERAL: "Atualizações de Embarques Grão 1000 - COFCO INTERNATIONAL - Geral",
+  PR: "Atualizações de Embarques Grão 1000 - COFCO INTERNATIONAL - PR",
+  MT: "Atualizações de Embarques Grão 1000 - COFCO INTERNATIONAL - MT",
+};
+
+async function carregarGruposEmailCofco(service: ReturnType<typeof createClient>): Promise<{ bucket: "GERAL" | "PR" | "MT"; assunto: string; destinatarios: string[] }[]> {
+  const { data, error } = await service
+    .from("logistica_relatorios_destinatarios")
+    .select("email,grupo")
+    .eq("cliente", "COFCO")
+    .eq("ativo", true)
+    .in("grupo", ["GERAL", "PR", "MT"]);
+  if (error) throw new Error(`Falha ao buscar destinatários COFCO: ${error.message}`);
+
+  const porGrupo = new Map<string, string[]>();
+  for (const row of data || []) {
+    const grupo = String((row as any).grupo || "");
+    if (!porGrupo.has(grupo)) porGrupo.set(grupo, []);
+    porGrupo.get(grupo)!.push(String((row as any).email));
+  }
+
+  return (["GERAL", "PR", "MT"] as const).map((bucket) => ({
+    bucket,
+    assunto: ASSUNTO_GRUPO_COFCO[bucket],
+    destinatarios: [...(porGrupo.get(bucket) || []), "informativo@grao1000.com.br"],
+  }));
+}
+
+type SmtpConfig = { host: string; port: number; user: string; pass: string; from: string; fromName: string };
+
+async function carregarSmtp(service: ReturnType<typeof createClient>): Promise<SmtpConfig> {
+  const { data: integracao } = await service.from("ti_integracoes").select("id").eq("codigo", "SMTP_RELATORIOS_LOGISTICA").maybeSingle();
+  if (!integracao) throw new Error("Integração SMTP_RELATORIOS_LOGISTICA não está cadastrada em TI > Integrações.");
+  const { data: segredos, error: segredosError } = await service
+    .from("ti_integracao_segredos")
+    .select("chave,valor")
+    .eq("integracao_id", (integracao as any).id)
+    .eq("ativo", true);
+  if (segredosError) throw new Error(`Falha ao buscar credenciais SMTP: ${segredosError.message}`);
+  const smtp: Record<string, string> = {};
+  for (const s of segredos || []) smtp[String((s as any).chave)] = String((s as any).valor ?? "");
+  const host = smtp.SMTP_HOST;
+  const port = Number(smtp.SMTP_PORT || 587);
+  const user = smtp.SMTP_USER;
+  const pass = smtp.SMTP_PASS;
+  const from = smtp.SMTP_FROM || user;
+  const fromName = smtp.SMTP_FROM_NAME || "Logística Grão 1000";
+  if (!host || !user || !pass) throw new Error("Credenciais SMTP incompletas em TI > Integrações (SMTP_HOST/SMTP_USER/SMTP_PASS).");
+  return { host, port, user, pass, from, fromName };
+}
+
+async function enviarEmailComAnexo(client: SMTPClient, cfg: SmtpConfig, opts: { to: string[]; cc?: string[]; subject: string; text: string; html: string; filename: string; base64: string }) {
+  await client.send({
+    from: `${cfg.fromName} <${cfg.from}>`,
+    to: opts.to,
+    cc: opts.cc && opts.cc.length ? opts.cc : undefined,
+    subject: opts.subject,
+    content: opts.text,
+    html: opts.html,
+    attachments: [
+      {
+        filename: opts.filename,
+        content: opts.base64,
+        encoding: "base64",
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    ],
+  });
 }
 
 Deno.serve(async (req: Request) => {
@@ -349,8 +446,119 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  const regra = detectarRegra(cliente);
+
+  // -------------------------------------------------------------------------
+  // COFCO: fluxo dedicado, 3 e-mails pras 3 listas (grupo GERAL/PR/MT) vindas
+  // de logistica_relatorios_destinatarios. Não usa o corpo único (1 e-mail) da
+  // regra genérica abaixo, embora consulte a mesma tabela.
+  // -------------------------------------------------------------------------
+  if (regra === "COFCO") {
+    try {
+      const dataAlvoBr = isoParaDataBr(dataInicial);
+      const { data: movData, error: movError } = await service
+        .from("grm_mapa_embarque_importacoes")
+        .select("dados_json,created_at")
+        .eq("dados_json->>Data", dataAlvoBr)
+        .order("created_at", { ascending: false })
+        .limit(20000);
+      if (movError) throw new Error(`Falha ao buscar movimentação do dia: ${movError.message}`);
+
+      const vistos = new Set<string>();
+      const rows: Record<string, any>[] = [];
+      for (const row of movData || []) {
+        const os = String((row as any).dados_json?.OS ?? "").trim();
+        if (!os || vistos.has(os)) continue;
+        vistos.add(os);
+        rows.push((row as any).dados_json || {});
+      }
+
+      const linhasCliente = filtrarLinhasCofco(rows);
+      const bucketMt = montarBucketSimples(linhasCliente.filter((r) => normText(r.UF) === "MT"), "COFCO_MT", "COFCO — MT");
+      const bucketPr = montarBucketSimples(linhasCliente.filter((r) => normText(r.UF) === "PR"), "COFCO_PR", "COFCO — PR");
+      const bucketResto = montarBucketSimples(linhasCliente.filter((r) => normText(r.UF) !== "MT"), "COFCO_RESTO", "COFCO — Resto (não MT)");
+
+      if (!bucketMt && !bucketPr && !bucketResto) {
+        const motivo = `Nenhum registro encontrado para COFCO em ${dataAlvoBr}.`;
+        await registrarEnvio("ERRO", { erro: motivo });
+        return json({ ok: false, error: motivo }, 404);
+      }
+
+      const gruposEmail = await carregarGruposEmailCofco(service);
+      const semDestinatarios = gruposEmail.filter((g) => g.destinatarios.length <= 1);
+      if (semDestinatarios.length === gruposEmail.length) {
+        const motivo = "Nenhum destinatário COFCO cadastrado (logistica_relatorios_destinatarios, cliente=COFCO, coluna grupo).";
+        await registrarEnvio("ERRO", { erro: motivo });
+        return json({ ok: false, error: motivo }, 400);
+      }
+
+      const smtp = await carregarSmtp(service);
+      const client = new SMTPClient({
+        connection: { hostname: smtp.host, port: smtp.port, tls: smtp.port === 465, auth: { username: smtp.user, password: smtp.pass } },
+      });
+
+      const arquivosPorGrupo: Record<string, { bucket: (Bucket | null)[]; filename: string }> = {
+        GERAL: { bucket: [bucketMt, bucketResto], filename: "COFCO_Geral_MT_vs_Restante.xlsx" },
+        PR: { bucket: [bucketPr], filename: "COFCO_PR.xlsx" },
+        MT: { bucket: [bucketMt], filename: "COFCO_MT.xlsx" },
+      };
+
+      const enviados: string[] = [];
+      const falhas: string[] = [];
+      try {
+        for (const grupo of gruposEmail) {
+          const info = arquivosPorGrupo[grupo.bucket];
+          const bucketsGrupo = info.bucket.filter(Boolean) as Bucket[];
+          if (!bucketsGrupo.length) { falhas.push(`${grupo.bucket} (sem dados)`); continue; }
+
+          const base64 = gerarXlsxBuckets(bucketsGrupo);
+          const dataHora = new Date().toLocaleString("pt-BR");
+          const corpoTexto = `Atualizações de Embarques Grão 1000 - COFCO INTERNATIONAL - ${grupo.bucket} em anexo.\n\nGerado em: ${dataHora}\n\nAtenciosamente,\nGrão 1000 - Informativo`;
+          const corpoHtml = `<p style="font-family:Arial,sans-serif">Atualizações de Embarques Grão 1000 - COFCO INTERNATIONAL - ${esc(grupo.bucket)} em anexo.</p><p style="font-family:Arial,sans-serif">Gerado em <b>${dataHora}</b></p><p style="font-family:Arial,sans-serif;color:#6b7280;font-size:12px">Grão 1000 - Informativo</p>`;
+
+          try {
+            await enviarEmailComAnexo(client, smtp, {
+              to: grupo.destinatarios,
+              subject: grupo.assunto,
+              text: corpoTexto,
+              html: corpoHtml,
+              filename: info.filename,
+              base64,
+            });
+            enviados.push(grupo.bucket);
+            await registrarEnvio("ENVIADO", {
+              assunto: grupo.assunto,
+              total_linhas: bucketsGrupo.reduce((s, b) => s + b.linhas.length, 0),
+              arquivo_nome: info.filename,
+              destinatarios: grupo.destinatarios,
+            });
+          } catch (erroGrupo) {
+            const msg = erroGrupo instanceof Error ? erroGrupo.message : String(erroGrupo);
+            falhas.push(`${grupo.bucket} (${msg})`);
+            await registrarEnvio("ERRO", { erro: msg, assunto: grupo.assunto, arquivo_nome: info.filename, destinatarios: grupo.destinatarios });
+          }
+        }
+      } finally {
+        await client.close();
+      }
+
+      if (!enviados.length) {
+        return json({ ok: false, error: `Nenhum e-mail COFCO enviado. Falhas: ${falhas.join("; ")}` }, 500);
+      }
+      const sufixo = falhas.length ? ` (falharam: ${falhas.join("; ")})` : "";
+      return json({ ok: true, message: `COFCO: e-mail enviado pra ${enviados.join(", ")}${sufixo}.` });
+    } catch (error) {
+      console.error("[enviar-relatorio-cliente:COFCO]", error);
+      const message = error instanceof Error ? error.message : String(error);
+      await registrarEnvio("ERRO", { erro: message }).catch(() => {});
+      return json({ ok: false, error: message }, 500);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Demais clientes: 1 e-mail, lista fixa de logistica_relatorios_destinatarios.
+  // -------------------------------------------------------------------------
   try {
-    // 1) Destinatários fixos cadastrados (cliente vazio = todos os relatórios).
     const { data: fixosData, error: fixosError } = await service
       .from("logistica_relatorios_destinatarios")
       .select("*")
@@ -378,15 +586,14 @@ Deno.serve(async (req: Request) => {
       return json({ ok: false, error: "Nenhum destinatário cadastrado para este cliente. Cadastre na lista fixa ou informe manualmente." }, 400);
     }
 
-    // 2) Regra + dados: LDC/COFCO/Sipal/Ouro Safra vêm de grm_mapa_embarque_importacoes
-    // (um único dia -- igual "Movimentação_hoje" do script antigo, que era sempre um
-    // retrato do dia; usamos data_inicial como esse dia). Agrícola Alvorada e o
-    // fallback genérico vêm de relatorio_resultado_diario, por período.
-    const regra = detectarRegra(cliente);
+    // Dados: LDC/Sipal/Ouro Safra vêm de grm_mapa_embarque_importacoes (um único
+    // dia -- igual "Movimentação_hoje" do script antigo, sempre um retrato do
+    // dia; usamos data_inicial como esse dia). Agrícola Alvorada e o fallback
+    // genérico vêm de relatorio_resultado_diario, por período.
     let buckets: Bucket[] = [];
     let totalLinhas = 0, totalCargas = 0, totalToneladas = 0, totalEmbarcado = 0;
 
-    if (regra === "LDC" || regra === "COFCO" || regra === "SIPAL_USIMAT" || regra === "OURO_SAFRA") {
+    if (regra === "LDC" || regra === "SIPAL_USIMAT" || regra === "OURO_SAFRA") {
       const dataAlvoBr = isoParaDataBr(dataInicial);
       const { data: movData, error: movError } = await service
         .from("grm_mapa_embarque_importacoes")
@@ -406,13 +613,9 @@ Deno.serve(async (req: Request) => {
       }
 
       if (regra === "LDC") buckets = montarBucketsLdc(rows);
-      else if (regra === "COFCO") buckets = montarBucketsCofco(rows);
       else if (regra === "SIPAL_USIMAT") buckets = montarBucketsSipalUsimat(rows);
       else buckets = montarBucketsOuroSafra(rows);
 
-      // Totais informativos pro histórico (não têm toneladas/embarcado nessa
-      // fonte -- usa a bucket "_Geral" quando existir pra não contar 2x linhas
-      // que também aparecem em um bucket regional).
       const totalBucket = buckets.find((b) => b.nome.endsWith("_Geral")) || buckets[0];
       if (totalBucket) {
         totalLinhas = totalBucket.linhas.length;
@@ -443,16 +646,15 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!buckets.length) {
-      const motivo = ["LDC", "COFCO", "SIPAL_USIMAT", "OURO_SAFRA"].includes(regra)
+      const motivo = ["LDC", "SIPAL_USIMAT", "OURO_SAFRA"].includes(regra)
         ? `Nenhum registro encontrado para este cliente em ${isoParaDataBr(dataInicial)}.`
         : "Nenhuma linha após aplicar as regras deste cliente para o período.";
       await registrarEnvio("ERRO", { erro: motivo });
       return json({ ok: false, error: motivo }, 404);
     }
 
-    // 3) XLSX (uma aba por bucket) + corpo do e-mail conforme formato escolhido.
     const arquivoNome = `Relatorio_${cliente.replace(/[^a-zA-Z0-9]+/g, "_")}_${dataInicial}_a_${dataFinal}.xlsx`;
-    const xlsxBase64 = gerarXlsxMultiBucketBase64(buckets);
+    const xlsxBase64 = gerarXlsxBuckets(buckets);
     const titulo = `Relatório ${cliente} — ${brDate(dataInicial)} a ${brDate(dataFinal)}`;
     let corpoHtml = `<p style="font-family:Arial,sans-serif">${mensagem ? esc(mensagem) + "<br/><br/>" : ""}Segue em anexo o relatório de ${esc(cliente)}, período ${brDate(dataInicial)} a ${brDate(dataFinal)} (${buckets.length} tabela(s): ${buckets.map((b) => esc(b.titulo)).join(", ")}).</p>`;
     if (formato === "HTML" || formato === "CSV_HTML") corpoHtml += bucketsToHtml(buckets);
@@ -461,52 +663,19 @@ Deno.serve(async (req: Request) => {
     if (totalToneladas || totalEmbarcado) corpoTexto += `\nCargas: ${totalCargas}\nToneladas: ${totalToneladas.toFixed(2)}\nEmbarcado: ${totalEmbarcado.toFixed(2)}`;
     if (formato === "CSV" || formato === "CSV_HTML") corpoTexto += `\n\n${bucketsToCsv(buckets)}`;
 
-    // 4) Credenciais SMTP (TI > Integrações > SMTP_RELATORIOS_LOGISTICA).
-    const { data: integracao } = await service.from("ti_integracoes").select("id").eq("codigo", "SMTP_RELATORIOS_LOGISTICA").maybeSingle();
-    if (!integracao) throw new Error("Integração SMTP_RELATORIOS_LOGISTICA não está cadastrada em TI > Integrações.");
-    const { data: segredos, error: segredosError } = await service
-      .from("ti_integracao_segredos")
-      .select("chave,valor")
-      .eq("integracao_id", (integracao as any).id)
-      .eq("ativo", true);
-    if (segredosError) throw new Error(`Falha ao buscar credenciais SMTP: ${segredosError.message}`);
-    const smtp: Record<string, string> = {};
-    for (const s of segredos || []) smtp[String((s as any).chave)] = String((s as any).valor ?? "");
-    const smtpHost = smtp.SMTP_HOST;
-    const smtpPort = Number(smtp.SMTP_PORT || 587);
-    const smtpUser = smtp.SMTP_USER;
-    const smtpPass = smtp.SMTP_PASS;
-    const smtpFrom = smtp.SMTP_FROM || smtpUser;
-    const smtpFromName = smtp.SMTP_FROM_NAME || "Logística Grão 1000";
-    if (!smtpHost || !smtpUser || !smtpPass) {
-      throw new Error("Credenciais SMTP incompletas em TI > Integrações (SMTP_HOST/SMTP_USER/SMTP_PASS).");
-    }
-
-    // 5) Envio.
+    const smtp = await carregarSmtp(service);
     const client = new SMTPClient({
-      connection: {
-        hostname: smtpHost,
-        port: smtpPort,
-        tls: smtpPort === 465,
-        auth: { username: smtpUser, password: smtpPass },
-      },
+      connection: { hostname: smtp.host, port: smtp.port, tls: smtp.port === 465, auth: { username: smtp.user, password: smtp.pass } },
     });
     try {
-      await client.send({
-        from: `${smtpFromName} <${smtpFrom}>`,
+      await enviarEmailComAnexo(client, smtp, {
         to: [...toSet],
-        cc: ccSet.size ? [...ccSet] : undefined,
+        cc: [...ccSet],
         subject: titulo,
-        content: corpoTexto,
+        text: corpoTexto,
         html: corpoHtml,
-        attachments: [
-          {
-            filename: arquivoNome,
-            content: xlsxBase64,
-            encoding: "base64",
-            contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          },
-        ],
+        filename: arquivoNome,
+        base64: xlsxBase64,
       });
     } finally {
       await client.close();
