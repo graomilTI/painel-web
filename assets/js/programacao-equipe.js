@@ -1506,7 +1506,14 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         return;
       }
 
-      const atenderRows = osTodas.filter((os) => statusNorm(os) === 'ATENDER');
+      // status_gestor=ATENDER é permanente (só sai da fila quando o supervisor
+      // finaliza) — sem filtrar por data, uma O.S. atendida há semanas e nunca
+      // finalizada continua poluindo a Etapa 2/mapa todo dia. Aqui (diferente
+      // da Etapa 1 "Situação da O.S.", que continua mostrando a fila inteira
+      // pra triagem) só entra o que é da data selecionada — a "programação de
+      // atendimento" tem que ser configurada diariamente por O.S./dia.
+      const atenderRows = osTodas.filter((os) => statusNorm(os) === 'ATENDER'
+        && (!options.dataReferencia || os.data_os === options.dataReferencia));
 
       const pontosPorId = await loadPontos([...new Set(atenderRows.map((os) => os.ponto_embarque_id).filter(Boolean))]);
 
