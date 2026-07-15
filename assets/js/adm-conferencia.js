@@ -31,6 +31,7 @@ const state = {
   auditoria: [],
   resultado: [],
   uber: [],
+  justificativas: [],
   uberKpi: null,
   loading: false,
   sort: {
@@ -86,6 +87,13 @@ function brDate(value) {
   const date = new Date(`${parts[0]}-${parts[1]}-${parts[2]}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return escapeHtml(value);
   return DATE_FMT.format(date);
+}
+
+function brDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return escapeHtml(value);
+  return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function money(value) {
@@ -245,7 +253,7 @@ function isPedidoDeslocamento(row) {
 }
 
 function getUniqueRegionais() {
-  const values = [...state.despesas, ...state.auditoria, ...state.resultado, ...state.uber]
+  const values = [...state.despesas, ...state.auditoria, ...state.resultado, ...state.uber, ...state.justificativas]
     .map((row) => row.supervisao || row.regional || row.coordenacao)
     .filter(Boolean);
   return [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
@@ -387,6 +395,7 @@ function renderShell(content) {
           <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
           <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
           <button class="conf-tab" data-tab="uber" type="button">Uber</button>
+          <button class="conf-tab" data-tab="justificativas" type="button">Justificativas</button>
         </div>
       </div>
       <div id="conf-table"></div>
@@ -436,11 +445,14 @@ function renderActiveTab() {
         ? 'Ocorrências e divergências registradas na auditoria.'
         : state.tab === 'resultado'
           ? 'Produção importada para comparação operacional.'
-          : 'Corridas corporativas com validação por ponto de embarque e casa do colaborador.';
+          : state.tab === 'justificativas'
+            ? 'Motivo registrado pelo gestor ao escalar mais de 1 colaborador no mesmo ponto de embarque.'
+            : 'Corridas corporativas com validação por ponto de embarque e casa do colaborador.';
   }
 
   if (state.tab === 'despesas') return renderDespesasTable();
   if (state.tab === 'auditoria') return renderAuditoriaTable();
+  if (state.tab === 'justificativas') return renderJustificativasTable();
   if (state.tab === 'uber') return renderUberTable();
   return renderResultadoTable();
 }
@@ -586,6 +598,47 @@ function renderAuditoriaTable() {
   `;
 }
 
+// Filtro próprio (não usa applyLocalFilters): justificativa não tem
+// status/período de conferência, só data/hora do registro, supervisão da
+// O.S. (join feito em loadJustificativas) e busca por colaborador/motivo/OS.
+function applyJustificativasFilters(rows) {
+  const regional = normalizeText(state.filters.regional);
+  const busca = normalizeText(state.filters.colaborador);
+  return rows.filter((row) => {
+    if (regional && normalizeText(row.supervisao) !== regional) return false;
+    if (!busca) return true;
+    const alvo = normalizeText([...(row.nomes || []), row.motivo, row.numero_os, row.cliente].filter(Boolean).join(' '));
+    return alvo.includes(busca);
+  });
+}
+
+function renderJustificativasTable() {
+  const rows = applyJustificativasFilters(state.justificativas);
+  const target = document.getElementById('conf-table');
+  if (!rows.length) {
+    target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma justificativa de mais de 1 colaborador no ponto de embarque encontrada.</td></tr></tbody></table></div>`;
+    return;
+  }
+  target.innerHTML = `
+    <div class="conf-table-wrap">
+      <table class="conf-table">
+        <thead><tr><th>Data/Hora</th><th>Cliente / OS</th><th>Regional</th><th>Colaboradores no ponto</th><th>Motivo</th><th>Registrado por</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${brDateTime(row.created_at)}</td>
+              <td><strong>${escapeHtml(row.cliente || '-')}</strong><small>OS: ${escapeHtml(row.numero_os || '-')}</small></td>
+              <td class="conf-td-regional">${escapeHtml(row.supervisao || '-')}</td>
+              <td>${statusChip(`${row.nomes.length} no ponto`)}<small>${escapeHtml(row.nomes.join(', ') || '-')}</small></td>
+              <td class="conf-td-extras">${escapeHtml(row.motivo || '-')}</td>
+              <td><strong>${escapeHtml(row.usuario_nome || '-')}</strong><small>${escapeHtml(row.usuario_email || '')}</small></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
 
 function isUberUsoPessoal(row) {
   const text = [row.detalhamento_despesa, row.observacao_validacao, row.motivo_validacao, row.observacao, row.observacoes]
@@ -1194,6 +1247,58 @@ async function loadAuditoria() {
   ].sort((a, b) => String(b.data_auditoria || b.data_evento || b.data_classificacao || '').localeCompare(String(a.data_auditoria || a.data_evento || a.data_classificacao || '')));
 }
 
+// Justificativas de "mais de 1 colaborador no mesmo ponto de embarque" — o
+// gestor grava o motivo na Programação (Etapa 2, ao arrastar/adicionar um
+// 2º+ colaborador numa O.S. já vinculada) via logActivity, que insere em
+// app_logs_usuarios (não existe tabela dedicada pra isso). Enriquecido com
+// a supervisão da O.S. (join local por os_id) pra reaproveitar o filtro de
+// Supervisão/Regional já existente na tela.
+async function loadJustificativas() {
+  let query = supabase
+    .from('app_logs_usuarios')
+    .select('id,usuario_nome,usuario_email,detalhes,created_at')
+    .eq('acao', 'justificativa_multiplos_colaboradores_os')
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  if (state.filters.inicio) query = query.gte('created_at', `${state.filters.inicio}T00:00:00`);
+  if (state.filters.fim) query = query.lte('created_at', `${state.filters.fim}T23:59:59`);
+
+  const { data, error } = await query;
+  if (error) {
+    state.justificativas = [];
+    console.warn('[Conferência] Justificativas indisponíveis:', error.message);
+    return;
+  }
+
+  const rows = (data || []).map((row) => ({
+    id: row.id,
+    created_at: row.created_at,
+    usuario_nome: row.usuario_nome,
+    usuario_email: row.usuario_email,
+    os_id: row.detalhes?.os_id || null,
+    numero_os: row.detalhes?.numero_os || '-',
+    nomes: Array.isArray(row.detalhes?.nomes) ? row.detalhes.nomes : [],
+    motivo: row.detalhes?.motivo || '',
+  }));
+
+  const osIds = [...new Set(rows.map((row) => row.os_id).filter(Boolean))];
+  let supervisaoPorOs = new Map();
+  if (osIds.length) {
+    const { data: osRows, error: osError } = await supabase
+      .from('operacional_os')
+      .select('id,supervisao,cliente')
+      .in('id', osIds);
+    if (!osError) supervisaoPorOs = new Map((osRows || []).map((os) => [os.id, os]));
+  }
+
+  state.justificativas = rows.map((row) => ({
+    ...row,
+    supervisao: supervisaoPorOs.get(row.os_id)?.supervisao || '',
+    cliente: supervisaoPorOs.get(row.os_id)?.cliente || '',
+  }));
+}
+
 async function loadResultado() {
   let query = supabase
     .from('relatorio_resultado_diario')
@@ -1501,7 +1606,7 @@ async function loadAll() {
   state.loading = true;
   setFeedback('Carregando dados da conferência...');
   try {
-    await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber()]);
+    await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber(), loadJustificativas()]);
     setFeedback('Dados atualizados.');
   } catch (error) {
     console.error(error);
@@ -1559,7 +1664,9 @@ function exportCsv() {
       ? applyLocalFilters(state.auditoria, 'auditoria')
       : state.tab === 'uber'
         ? applyLocalFilters(state.uber, 'uber')
-        : applyLocalFilters(state.resultado, 'resultado');
+        : state.tab === 'justificativas'
+          ? applyJustificativasFilters(state.justificativas)
+          : applyLocalFilters(state.resultado, 'resultado');
 
   if (!rows.length) {
     setFeedback('Não há dados para exportar.', true);
@@ -1591,6 +1698,18 @@ function exportCsv() {
       row.valor || row.preco_liquido || 0,
       getUberClass(row),
       isUberUsoPessoal(row) ? 'Atenção: observação/detalhamento contém "Pessoal".' : (row.motivo_validacao || row.observacao_validacao || row.detalhamento_despesa || ''),
+    ]);
+  } else if (state.tab === 'justificativas') {
+    headers = ['Data/Hora', 'Cliente', 'OS', 'Regional', 'Colaboradores no ponto', 'Motivo', 'Registrado por', 'E-mail'];
+    csvRows = rows.map((row) => [
+      brDateTime(row.created_at),
+      row.cliente || '',
+      row.numero_os || '',
+      row.supervisao || '',
+      row.nomes.join(', '),
+      row.motivo || '',
+      row.usuario_nome || '',
+      row.usuario_email || '',
     ]);
   } else {
     headers = Object.keys(rows[0]);
