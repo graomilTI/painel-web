@@ -687,15 +687,34 @@ function hookStepClicks() {
   }, true);
 }
 
+// Espera window.__progLoadColaboradoresPromise (setada pelo próprio clique em
+// programacao.js, ver bindEvents lá) em vez de adivinhar com setTimeout. Numa
+// data nunca usada antes (programar adiantado) ensureProgramacaoDia() precisa
+// criar a linha em programacao_dia — mais lento que reaproveitar uma
+// existente — e os 3 timers fixos (650/1250/2100ms) do fluxo antigo podiam
+// disparar renderAllTabs() ANTES do contexto (programacaoId da nova data)
+// estar pronto: contextReady() falhava, a tela ficava com o conteúdo da data
+// anterior (mountShell nunca rodava) e os botões de ação, presos a
+// data-os/data-status da O.S. antiga, pareciam "não responder". poll curto
+// como rede de segurança caso a promise ainda não tenha sido setada (ordem
+// de anexação dos listeners no mesmo clique).
+async function waitLoadColaboradores() {
+  for (let tentativa = 0; tentativa < 20 && !window.__progLoadColaboradoresPromise; tentativa += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  try { await window.__progLoadColaboradoresPromise; } catch (error) { console.warn('[programacao-fluxo] loadContext falhou', error); }
+}
+
 function hookLoadButton() {
   const loadBtn = document.getElementById('progLoadContext');
   if (!loadBtn || loadBtn.dataset.pgcAllTabsBound === '1') return;
   loadBtn.dataset.pgcAllTabsBound = '1';
-  loadBtn.addEventListener('click', () => {
+  loadBtn.addEventListener('click', async () => {
     state.panes = null;
     state.lastOptionsKey = '';
     setFeedback('Carregando contexto e preparando as 3 abas...', 'ok');
-    [650, 1250, 2100].forEach((delay) => setTimeout(() => renderAllTabs(), delay));
+    await waitLoadColaboradores();
+    await renderAllTabs({ force: true });
   }, false);
 }
 
