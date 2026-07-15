@@ -699,7 +699,7 @@ export async function renderContent(content) {
     if (state.tab === 'fob' && !state.fobLoaded) loadFob();
     if (state.tab === 'fob' && !state.fobReportAutoLoaded) { state.fobReportAutoLoaded = true; gerarRelatorioFobAutomatico(); }
     if (isAdmTab && !state.producaoLoaded) loadProducao(); // produção sob demanda
-    if ((state.tab === 'exportacoes' || state.tab === 'relatorios') && !state.ufsCargasLoaded) loadUfsCargas();
+    if (state.tab === 'exportacoes' && !state.ufsCargasLoaded) loadUfsCargas();
   }
 
   function renderStats() {
@@ -1499,89 +1499,173 @@ export async function renderContent(content) {
   }
 
   // ── Imagem do relatório por cliente (pra WhatsApp) ──────────────────────
-  // Mesmas regras da Edge Function enviar-relatorio-cliente (LDC/COFCO,
-  // Sipal/Usimat MT, Ouro Safra, Agrícola Alvorada), portadas pro navegador
-  // porque html2canvas só roda no DOM -- se mudar uma regra lá, muda aqui também.
-  const REGIONAL_EXCECOES_OS = { '81020': 'PR', '80110': 'MT_SUL' };
+  // Réplica de LDC-COFCO.js/Sipal.js/OuroSafra.js/agricola_alvorada.js (script
+  // antigo). LDC/COFCO/Sipal/Ouro Safra vêm de grm_mapa_embarque_importacoes,
+  // que é o equivalente vivo da antiga aba "Movimentação_hoje" (tem UF, Cidade,
+  // Lote, Aguardando, Carregando -- relatorio_resultado_diario NÃO tem esses
+  // campos, só serve pra Agrícola Alvorada, que no script original já lia de
+  // "Resultado_diario" mesmo). Cada cliente gera 1+ imagens (buckets por
+  // regional/UF), viram ZIP quando é mais de uma.
   const CONTRATOS_IGNORADOS_LDC_COFCO = ['VAGOES', 'RECEBIMENTO', 'CIF'];
 
   function detectarRegraCliente(cliente) {
     const c = normalize(cliente);
-    if (c.includes('LDC') || c.includes('LOUIS DREYFUS') || c.includes('COFCO')) return 'LDC_COFCO';
+    if (c.includes('LDC') || c.includes('LOUIS DREYFUS')) return 'LDC';
+    if (c.includes('COFCO')) return 'COFCO';
     if (c.includes('SIPAL') || c.includes('USIMAT')) return 'SIPAL_USIMAT';
     if (c.includes('OURO SAFRA')) return 'OURO_SAFRA';
     if (c.includes('AGRICOLA ALVORADA')) return 'AGRICOLA_ALVORADA';
     return 'GENERICO';
   }
 
-  function mapaUfDoState() {
-    const map = new Map();
-    (state.mapaRegionalUf || []).forEach((r) => {
-      const regional = normalize(r.regional);
-      if (regional && !map.has(regional)) map.set(regional, String(r.estado || '').toUpperCase());
-    });
-    return map;
+  // Regional exato de LDC-COFCO.js (mapRegional + ajustes manuais por O.S.).
+  function mapRegionalLdc(uf, supervisao, os) {
+    const osNorm = normOs(os);
+    if (osNorm === '81020') return 'PR';
+    if (osNorm === '80110') return 'MT_SUL';
+    const sSup = normText(supervisao);
+    const sUf = normText(uf);
+    if (sSup.includes('MATO GROSSO MT3')) return 'MT3';
+    if (sSup.includes('MATO GROSSO MT2')) return 'MT2';
+    if (sUf === 'MG' || sUf === 'GO') return 'GO/MG';
+    if (['PR', 'SP', 'RS'].includes(sUf)) return sUf;
+    if (sSup.includes('MATO GROSSO MT4')) return 'MT4';
+    return 'OUTROS';
   }
 
-  function resolverUfCliente(row, mapaUf) {
-    const os = String(row.os || row.numero_os || '').trim();
-    if (REGIONAL_EXCECOES_OS[os]) return REGIONAL_EXCECOES_OS[os];
-    return mapaUf.get(normalize(row.coordenacao)) || mapaUf.get(normalize(row.supervisao)) || '-';
-  }
+  const CABECALHO_BUCKET_REGIONAL = ['Data', 'OS', 'Contrato', 'Localização', 'Remanescente', 'Aguardando', 'Carregando', 'Carregado', 'Última Atualização', 'Observações'];
 
-  function destaqueSemMovimento(row) {
-    return numberBr(row.remanescente) > 0 && numberBr(row.embarcado) === 0 && numberBr(row.cargas) === 0;
-  }
+  // Agrupa por Local+Contrato dentro de cada bucket regional (LDC/COFCO),
+  // igual unificarBucketImagem_ do script antigo. "Carregado" vem de Cargas Hoje.
+  function montarBucketsPorRegional(linhasCliente, prefixo, regionalFn, nomesRegionais) {
+    const grupos = new Map(); // nomeBucket -> Map(local|contrato -> registro)
 
-  function montarSheetLdcCofco(rows, mapaUf) {
-    const filtradas = rows.filter((r) => !CONTRATOS_IGNORADOS_LDC_COFCO.some((c) => normalize(r.contrato).includes(c)));
-    const grupos = new Map();
-    filtradas.forEach((row) => {
-      const key = [normalize(clienteOf(row)), normalize(row.local_embarque), normalize(row.produto)].join('|');
-      if (!grupos.has(key)) {
-        grupos.set(key, { cliente: clienteOf(row), local: row.local_embarque || '-', produto: row.produto || '-', uf: resolverUfCliente(row, mapaUf), toneladas: 0, remanescente: 0, embarcado: 0, destaque: false });
+    function addLinha(nomeBucket, row) {
+      if (!grupos.has(nomeBucket)) grupos.set(nomeBucket, new Map());
+      const mapaBucket = grupos.get(nomeBucket);
+      const local = String(pickValue(row, ['Local']) || '').trim();
+      const cidade = String(pickValue(row, ['Cidade']) || '').trim();
+      const uf = String(pickValue(row, ['UF']) || '').trim();
+      const contrato = String(pickValue(row, ['Contrato']) || '');
+      const chave = `${normText(local)}|${normText(contrato)}`;
+      const remanescente = toNumberLoose(pickValue(row, ['Remanescente']));
+      const aguardando = toNumberLoose(pickValue(row, ['Aguardando']));
+      const carregando = toNumberLoose(pickValue(row, ['Carregando']));
+      const cargasHoje = toNumberLoose(pickValue(row, ['Cargas Hoje']));
+      const obs = String(pickValue(row, ['Observacoes']) || '').trim();
+      if (!mapaBucket.has(chave)) {
+        mapaBucket.set(chave, {
+          data: pickValue(row, ['Data']), os: pickValue(row, ['OS']), contrato,
+          localizacao: `${local}/${cidade}/${uf}`,
+          remanescente, aguardando, carregando, cargasHoje,
+          ultimaAtualizacao: pickValue(row, ['Ultima Atualizacao']),
+          obsSet: obs ? new Set([obs]) : new Set(),
+        });
+      } else {
+        const g = mapaBucket.get(chave);
+        g.remanescente += remanescente;
+        g.aguardando += aguardando;
+        g.carregando += carregando;
+        g.cargasHoje += cargasHoje;
+        if (obs) g.obsSet.add(obs);
+        g.ultimaAtualizacao = pickValue(row, ['Ultima Atualizacao']) || g.ultimaAtualizacao;
       }
-      const g = grupos.get(key);
-      g.toneladas += numberBr(row.toneladas);
-      g.remanescente += numberBr(row.remanescente);
-      g.embarcado += numberBr(row.embarcado);
-      if (destaqueSemMovimento(row)) g.destaque = true;
+    }
+
+    linhasCliente.forEach((row) => {
+      addLinha(`${prefixo}_Geral`, row);
+      const reg = regionalFn(row);
+      if (nomesRegionais.includes(reg)) addLinha(`${prefixo}_${reg.replace('/', '_')}`, row);
     });
-    return {
-      header: ['Cliente', 'UF', 'Local', 'Produto', 'Toneladas', 'Remanescente', 'Embarcado'],
-      linhas: [...grupos.values()].sort((a, b) => String(a.cliente).localeCompare(String(b.cliente), 'pt-BR'))
-        .map((g) => ({ destaque: g.destaque, valores: [g.cliente, g.uf, g.local, g.produto, BR_NUM.format(g.toneladas), BR_NUM.format(g.remanescente), BR_NUM.format(g.embarcado)] })),
-    };
-  }
 
-  function montarSheetSipalUsimat(rows, mapaUf) {
-    const filtradas = rows.filter((r) => resolverUfCliente(r, mapaUf) === 'MT');
-    return {
-      header: ['Data', 'O.S.', 'Cliente', 'Local', 'Destino', 'Produto', 'Cargas', 'Toneladas', 'Embarcado'],
-      linhas: filtradas.map((r) => ({ destaque: false, valores: [brDate(r.data), r.os || '-', clienteOf(r), r.local_embarque || '-', r.destino || '-', r.produto || '-', BR_INT.format(numberBr(r.cargas)), BR_NUM.format(numberBr(r.toneladas)), BR_NUM.format(numberBr(r.embarcado))] })),
-    };
-  }
-
-  function montarSheetOuroSafra(rows, mapaUf) {
-    const ufsAlvo = new Set(['BA', 'PR', 'SP', 'RS']);
-    const grupos = new Map();
-    rows.forEach((row) => {
-      const uf = resolverUfCliente(row, mapaUf);
-      if (!ufsAlvo.has(uf)) return;
-      if (!grupos.has(uf)) grupos.set(uf, { uf, cargas: 0, toneladas: 0, embarcado: 0, remanescente: 0 });
-      const g = grupos.get(uf);
-      g.cargas += numberBr(row.cargas);
-      g.toneladas += numberBr(row.toneladas);
-      g.embarcado += numberBr(row.embarcado);
-      g.remanescente += numberBr(row.remanescente);
+    const buckets = [];
+    grupos.forEach((mapaBucket, nomeBucket) => {
+      if (!mapaBucket.size) return;
+      const linhas = [...mapaBucket.values()]
+        .sort((a, b) => a.localizacao.localeCompare(b.localizacao, 'pt-BR'))
+        .map((g) => ({
+          destaque: g.aguardando === 0 && g.carregando === 0 && g.cargasHoje === 0,
+          valores: [String(g.data || ''), g.os, g.contrato, g.localizacao, BR_NUM.format(g.remanescente), BR_INT.format(g.aguardando), BR_INT.format(g.carregando), BR_INT.format(g.cargasHoje), String(g.ultimaAtualizacao || ''), Array.from(g.obsSet).join(' | ')],
+        }));
+      buckets.push({ nome: nomeBucket, titulo: nomeBucket.replace(/_/g, ' '), header: CABECALHO_BUCKET_REGIONAL, linhas });
     });
-    return {
-      header: ['UF', 'Cargas', 'Toneladas', 'Embarcado', 'Remanescente'],
-      linhas: [...grupos.values()].sort((a, b) => a.uf.localeCompare(b.uf))
-        .map((g) => ({ destaque: false, valores: [g.uf, BR_INT.format(g.cargas), BR_NUM.format(g.toneladas), BR_NUM.format(g.embarcado), BR_NUM.format(g.remanescente)] })),
-    };
+    return buckets;
   }
 
+  function montarBucketsLdc(rows) {
+    const linhasCliente = rows.filter((r) => {
+      const cli = normText(pickValue(r, ['Cliente']));
+      const contrato = normText(pickValue(r, ['Contrato']));
+      return cli.includes('LOUIS DREYFUS COMPANY BRASIL') && !CONTRATOS_IGNORADOS_LDC_COFCO.some((c) => contrato.includes(c));
+    });
+    return montarBucketsPorRegional(linhasCliente, 'LDC', (r) => mapRegionalLdc(pickValue(r, ['UF']), pickValue(r, ['Supervisao']), pickValue(r, ['OS'])), ['MT2', 'MT3', 'GO/MG', 'PR', 'SP', 'RS', 'MT4', 'MT_SUL']);
+  }
+
+  function montarBucketsCofco(rows) {
+    const linhasCliente = rows.filter((r) => {
+      const cli = normText(pickValue(r, ['Cliente']));
+      const contrato = normText(pickValue(r, ['Contrato']));
+      return cli.includes('COFCO INTERNATIONAL') && !CONTRATOS_IGNORADOS_LDC_COFCO.some((c) => contrato.includes(c));
+    });
+    return montarBucketsPorRegional(linhasCliente, 'COFCO', (r) => normText(pickValue(r, ['UF'])), ['MT', 'PR', 'RS']);
+  }
+
+  // Agrupa por Cliente+Local (Sipal/Usimat MT e Ouro Safra por UF) -- mesma
+  // lógica de pegarDadosPorClientesUF_/pegarDadosOuroSafra_PorUF_ do script antigo.
+  function montarBucketClienteLocal(linhas, nomeBucket, titulo) {
+    const mapa = new Map();
+    linhas.forEach((row) => {
+      const cliente = normText(pickValue(row, ['Cliente']));
+      const local = String(pickValue(row, ['Local']) || '').trim();
+      const chave = `${cliente}|${normText(local)}`;
+      const remanescente = toNumberLoose(pickValue(row, ['Remanescente']));
+      const aguardando = toNumberLoose(pickValue(row, ['Aguardando']));
+      const carregando = toNumberLoose(pickValue(row, ['Carregando']));
+      const cargasHoje = toNumberLoose(pickValue(row, ['Cargas Hoje']));
+      const obs = String(pickValue(row, ['Observacoes']) || '').trim();
+      if (!mapa.has(chave)) {
+        mapa.set(chave, { os: pickValue(row, ['OS']), local, remanescente, aguardando, carregando, cargasHoje, ultimaAtualizacao: pickValue(row, ['Ultima Atualizacao']), obsSet: obs ? new Set([obs]) : new Set() });
+      } else {
+        const g = mapa.get(chave);
+        g.remanescente += remanescente;
+        g.aguardando += aguardando;
+        g.carregando += carregando;
+        g.cargasHoje += cargasHoje;
+        if (obs) g.obsSet.add(obs);
+        g.ultimaAtualizacao = pickValue(row, ['Ultima Atualizacao']) || g.ultimaAtualizacao;
+      }
+    });
+    if (!mapa.size) return null;
+    const linhasOut = [...mapa.values()]
+      .sort((a, b) => a.local.localeCompare(b.local, 'pt-BR'))
+      .map((g) => ({ destaque: false, valores: [g.os, g.local, BR_NUM.format(g.remanescente), BR_INT.format(g.aguardando), BR_INT.format(g.carregando), BR_INT.format(g.cargasHoje), String(g.ultimaAtualizacao || ''), Array.from(g.obsSet).join(' | ')] }));
+    return { nome: nomeBucket, titulo, header: ['OS', 'Local', 'Remanescente', 'Aguardando', 'Carregando', 'Cargas Hoje', 'Última Atualização', 'Observações'], linhas: linhasOut };
+  }
+
+  function montarBucketsSipalUsimat(rows) {
+    const linhas = rows.filter((r) => {
+      const cli = normText(pickValue(r, ['Cliente']));
+      const uf = normText(pickValue(r, ['UF']));
+      return (cli.includes('SIPAL') || cli.includes('USIMAT')) && uf === 'MT';
+    });
+    const b = montarBucketClienteLocal(linhas, 'SIPAL_USIMAT_MT', 'SIPAL/USIMAT — MT');
+    return b ? [b] : [];
+  }
+
+  function montarBucketsOuroSafra(rows) {
+    const linhasCliente = rows.filter((r) => normText(pickValue(r, ['Cliente'])).includes('OURO SAFRA'));
+    const buckets = [];
+    ['BA', 'PR', 'SP', 'RS'].forEach((uf) => {
+      const linhasUf = linhasCliente.filter((r) => normText(pickValue(r, ['UF'])) === uf);
+      const b = montarBucketClienteLocal(linhasUf, `OURO_SAFRA_${uf}`, `Ouro Safra — ${uf}`);
+      if (b) buckets.push(b);
+    });
+    return buckets;
+  }
+
+  // Agrícola Alvorada e o fallback genérico continuam vindo de
+  // relatorio_resultado_diario -- é a fonte certa pra eles (o script antigo já
+  // lia Agrícola Alvorada de "Resultado_diario", não de "Movimentação_hoje").
   function montarSheetAgricolaAlvorada(rows) {
     return {
       header: ['Cliente', 'O.S.', 'Data', 'Local Embarque', 'Destino', 'Responsável', 'Carregado', 'Tons Carreg.', 'Saldo'],
@@ -1607,25 +1691,15 @@ export async function renderContent(content) {
     };
   }
 
-  function montarSheetRelatorioCliente(cliente, rows) {
-    const regra = detectarRegraCliente(cliente);
-    const mapaUf = mapaUfDoState();
-    if (regra === 'LDC_COFCO') return montarSheetLdcCofco(rows, mapaUf);
-    if (regra === 'SIPAL_USIMAT') return montarSheetSipalUsimat(rows, mapaUf);
-    if (regra === 'OURO_SAFRA') return montarSheetOuroSafra(rows, mapaUf);
-    if (regra === 'AGRICOLA_ALVORADA') return montarSheetAgricolaAlvorada(rows);
-    return montarSheetGenerico(rows);
-  }
-
-  function buildRelatorioImagemNode(cliente, payload, sheet) {
+  function buildRelatorioImagemNode(cliente, bucket) {
     const host = document.createElement('div');
     host.style.cssText = 'position:fixed;left:-99999px;top:0;background:#fff;padding:24px;font-family:Arial,sans-serif;width:1100px;color:#111';
     host.innerHTML = `
-      <h2 style="margin:0 0 4px">${esc(cliente)}</h2>
-      <p style="margin:0 0 16px;color:#555">${esc(brDate(payload.data_inicial))} a ${esc(brDate(payload.data_final))} · ${sheet.linhas.length} linha(s)</p>
+      <h2 style="margin:0 0 4px">${esc(cliente)} — ${esc(bucket.titulo)}</h2>
+      <p style="margin:0 0 16px;color:#555">${new Date().toLocaleString('pt-BR')} · ${bucket.linhas.length} linha(s)</p>
       <table style="border-collapse:collapse;width:100%;font-size:13px">
-        <thead><tr>${sheet.header.map((h) => `<th style="border:1px solid #ccc;padding:6px;background:#f1f5f9;text-align:left">${esc(h)}</th>`).join('')}</tr></thead>
-        <tbody>${sheet.linhas.map((l) => `<tr style="background:${l.destaque ? '#F8C8DC' : '#fff'}">${l.valores.map((v) => `<td style="border:1px solid #ddd;padding:6px">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+        <thead><tr>${bucket.header.map((h) => `<th style="border:1px solid #ccc;padding:6px;background:#f1f5f9;text-align:left">${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>${bucket.linhas.map((l) => `<tr style="background:${l.destaque ? '#F8C8DC' : '#fff'}">${l.valores.map((v) => `<td style="border:1px solid #ddd;padding:6px">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody>
       </table>`;
     document.body.appendChild(host);
     return host;
@@ -1634,27 +1708,56 @@ export async function renderContent(content) {
   async function gerarImagemRelatorioCliente() {
     const payload = getRelatorioPayload();
     if (!payload.cliente) { el.feedback.textContent = 'Informe o cliente para gerar a imagem.'; return; }
-    if (!state.mapaRegionalUf.length) await loadUfsCargas();
-    const rows = relatorioRowsForCliente(payload);
-    if (!rows.length) { el.feedback.textContent = 'Nenhum registro encontrado para este cliente/período.'; return; }
 
-    const sheet = montarSheetRelatorioCliente(payload.cliente, rows);
-    if (!sheet.linhas.length) { el.feedback.textContent = 'Nenhuma linha após aplicar as regras deste cliente para o período.'; return; }
-
+    const regra = detectarRegraCliente(payload.cliente);
     el.relGerarImagem.disabled = true;
-    el.feedback.textContent = 'Gerando imagem...';
-    let node;
+    el.feedback.textContent = 'Buscando dados...';
+    const nodes = [];
     try {
+      let buckets;
+      if (['LDC', 'COFCO', 'SIPAL_USIMAT', 'OURO_SAFRA'].includes(regra)) {
+        const rows = await buscarMovimentoAgente(); // "Movimentação_hoje" via agente, sempre hoje (igual ao script antigo)
+        if (regra === 'LDC') buckets = montarBucketsLdc(rows);
+        else if (regra === 'COFCO') buckets = montarBucketsCofco(rows);
+        else if (regra === 'SIPAL_USIMAT') buckets = montarBucketsSipalUsimat(rows);
+        else buckets = montarBucketsOuroSafra(rows);
+      } else {
+        const rows = relatorioRowsForCliente(payload);
+        const sheet = regra === 'AGRICOLA_ALVORADA' ? montarSheetAgricolaAlvorada(rows) : montarSheetGenerico(rows);
+        buckets = sheet.linhas.length ? [{ nome: regra, titulo: payload.cliente, header: sheet.header, linhas: sheet.linhas }] : [];
+      }
+
+      if (!buckets.length) { el.feedback.textContent = 'Nenhum registro encontrado para este cliente (hoje, no caso de LDC/COFCO/Sipal/Ouro Safra).'; return; }
+
+      el.feedback.textContent = 'Gerando imagem...';
       await ensureExportLibLocal('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
-      node = buildRelatorioImagemNode(payload.cliente, payload, sheet);
-      const dataUrl = await domToPngRegional(node);
-      baixarUrl(dataUrl, `Relatorio_${payload.cliente.replace(/[^a-zA-Z0-9]+/g, '_')}_${payload.data_inicial || 'periodo'}.png`);
-      el.feedback.textContent = `Imagem gerada: ${sheet.linhas.length} linha(s). Baixe e envie no grupo do WhatsApp.`;
+      const slug = payload.cliente.replace(/[^a-zA-Z0-9]+/g, '_');
+
+      if (buckets.length === 1) {
+        const node = buildRelatorioImagemNode(payload.cliente, buckets[0]);
+        nodes.push(node);
+        const dataUrl = await domToPngRegional(node);
+        baixarUrl(dataUrl, `Relatorio_${slug}_${buckets[0].nome}.png`);
+      } else {
+        await ensureExportLibLocal('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'JSZip');
+        const zip = new window.JSZip();
+        for (const bucket of buckets) {
+          const node = buildRelatorioImagemNode(payload.cliente, bucket);
+          nodes.push(node);
+          const dataUrl = await domToPngRegional(node);
+          zip.file(`${bucket.nome}.png`, dataUrl.split(',')[1], { base64: true });
+        }
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        baixarUrl(url, `Relatorio_${slug}_imagens.zip`);
+        URL.revokeObjectURL(url);
+      }
+      el.feedback.textContent = `${buckets.length} imagem(ns) gerada(s). Baixe e envie no grupo do WhatsApp.`;
     } catch (error) {
       console.error('[Imagem relatório cliente]', error);
       el.feedback.textContent = error?.message || 'Erro ao gerar imagem.';
     } finally {
-      node?.remove();
+      nodes.forEach((n) => n.remove());
       el.relGerarImagem.disabled = false;
     }
   }
