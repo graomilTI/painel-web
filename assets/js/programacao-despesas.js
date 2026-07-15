@@ -5,7 +5,7 @@
 // passou a reescrever #progSteps só com os botões das 3 etapas novas.
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
-import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260715-datafiltro1';
+import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260715-datafiltro2';
 
 function esc(value) {
   return String(value ?? '')
