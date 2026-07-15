@@ -1512,8 +1512,12 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       // da Etapa 1 "Situação da O.S.", que continua mostrando a fila inteira
       // pra triagem) só entra o que é da data selecionada — a "programação de
       // atendimento" tem que ser configurada diariamente por O.S./dia.
+      // IMPORTANTE: usa configurada_em (quando o gestor marcou ATENDER), não
+      // data_os (data da própria O.S., que pode ser de um dia anterior — ex.:
+      // O.S. de ontem sem atendimento, decidida hoje). Mesmo campo já usado
+      // pro realce visual dos botões em statusStripHtml/localDateFromIso.
       const atenderRows = osTodas.filter((os) => statusNorm(os) === 'ATENDER'
-        && (!options.dataReferencia || os.data_os === options.dataReferencia));
+        && (!options.dataReferencia || localDateFromIso(os.configurada_em) === options.dataReferencia));
 
       const pontosPorId = await loadPontos([...new Set(atenderRows.map((os) => os.ponto_embarque_id).filter(Boolean))]);
 
