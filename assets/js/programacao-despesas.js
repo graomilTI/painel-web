@@ -5,7 +5,7 @@
 // passou a reescrever #progSteps só com os botões das 3 etapas novas.
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
-import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260716-batch2';
+import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260716-hotelfix1';
 import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
 
 function esc(value) {
@@ -81,51 +81,12 @@ async function loadAlojamentos() {
   return alojamentosCache;
 }
 
-let hoteisCache = null;
-async function loadHoteis() {
-  if (hoteisCache) return hoteisCache;
-  try {
-    const { data, error } = await supabase
-      .from('hospedagem_hoteis')
-      .select('id,nome,cidade,uf,status,prioridade,valor_diaria_individual,valor_diaria_padrao')
-      .eq('status', 'ATIVO')
-      .order('cidade', { ascending: true })
-      .order('nome', { ascending: true });
-    if (error) throw error;
-    hoteisCache = data || [];
-  } catch (error) {
-    console.warn('[despesas] hoteis indisponíveis', error);
-    hoteisCache = [];
-  }
-  return hoteisCache;
-}
-
 function alojamentoOptions(selectedId, uf) {
   const lista0 = alojamentosCache || [];
   const ufn = normalizeUF(uf);
   const rows = ufn ? lista0.filter((a) => normalizeUF(a.uf) === ufn) : lista0;
   const lista = rows.length ? rows : lista0;
   return '<option value="">Sugerir alojamento…</option>' + lista.map((a) => `<option value="${esc(a.id)}" ${String(selectedId || '') === String(a.id) ? 'selected' : ''}>${esc(`${a.nome} · ${a.cidade || '-'}/${a.uf || ''}`)}</option>`).join('');
-}
-
-function hotelOptions(selectedId, embarque) {
-  const lista0 = hoteisCache || [];
-  const uf = normalizeUF(ufFromEmbarque(embarque));
-  const cidade = normalizeText(cidadeFromEmbarque(embarque));
-  // Só a cidade vinculada ao embarque da O.S. — sem cair pra outras cidades
-  // da mesma UF nem pra lista toda quando a cidade não tem hotel cadastrado
-  // (pedido do usuário, 2026-07-16: sugestão de outra cidade confundia).
-  const lista = lista0.filter((h) => {
-    if (uf && normalizeUF(h.uf) !== uf) return false;
-    return !cidade || normalizeText(h.cidade) === cidade;
-  });
-  if (!lista.length) return '';
-  return '<option value="">Sugerir hotel…</option>' + lista.map((h) => {
-    const diaria = h.valor_diaria_individual || h.valor_diaria_padrao;
-    const preco = diaria ? ` · R$ ${brl(diaria)}` : '';
-    const pref = normalizeText(h.prioridade).includes('PREFERENCIAL') ? '★ ' : '';
-    return `<option value="${esc(h.id)}" ${String(selectedId || '') === String(h.id) ? 'selected' : ''}>${esc(`${pref}${h.nome} · ${h.cidade || '-'}/${h.uf || ''}${preco}`)}</option>`;
-  }).join('');
 }
 
 // Campo do meio da estadia, contextual ao tipo — mesma lógica que existia no
@@ -135,15 +96,9 @@ function estadiaDestinoHtml(tipo, est, embarque) {
   if (t === 'ALOJAMENTO') {
     return `<select class="peqd-inp peqd-inp-sm" data-tab="estadia" data-fld="alojamento_id">${alojamentoOptions(est.alojamento_id, ufFromEmbarque(embarque))}</select>`;
   }
-  if (t === 'HOTEL') {
-    const opts = hotelOptions(est.hotel_id, embarque);
-    if (opts.includes('<option value="') && (hoteisCache || []).length) {
-      return `<select class="peqd-inp peqd-inp-sm" data-tab="estadia" data-fld="hotel_id">${opts}</select>`;
-    }
-    const cid = est.cidade || cidadeFromEmbarque(embarque);
-    return `<input class="peqd-inp peqd-inp-sm" data-tab="estadia" data-fld="cidade" value="${esc(cid)}" placeholder="Cidade/hotel" />`;
-  }
-  if (t === 'PERNOITE') {
+  if (t === 'HOTEL' || t === 'PERNOITE') {
+    // Só a cidade vinculada à O.S. — sem sugerir hotel específico (pedido do
+    // usuário, 2026-07-16: a sugestão de hotel confundia, queria só a cidade).
     const cid = est.cidade || cidadeFromEmbarque(embarque);
     return `<input class="peqd-inp peqd-inp-sm" data-tab="estadia" data-fld="cidade" value="${esc(cid)}" placeholder="Cidade" />`;
   }
@@ -365,7 +320,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
       loadOsResumo(osIds),
       loadExtras(programacaoIdQuery, colaboradorIds),
     ]);
-    await Promise.all([loadAlojamentos(), loadHoteis()]);
+    await loadAlojamentos();
     rootEl.innerHTML = roster.map((row) => colaboradorCardHtml(row, custos, placasPorCpf, osResumoPorId, extrasPorColab)).join('');
     if (silent && scroller) scroller.scrollTop = scrollPos;
   }
@@ -391,7 +346,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
       const checkin = options.dataReferencia || todayIso();
       const cidadeInput = card.querySelector('[data-fld="cidade"]')?.value || '';
       let cidade = cidadeInput || (card.dataset.embarque ? cidadeFromEmbarque(card.dataset.embarque) : null);
-      let alojamento_id = null; let alojamento_nome = null; let hotel_id = null; let nome_hotel = null;
+      let alojamento_id = null; let alojamento_nome = null;
       const alojSel = card.querySelector('[data-fld="alojamento_id"]');
       if (alojSel && alojSel.value) {
         alojamento_id = alojSel.value;
@@ -399,15 +354,8 @@ export async function renderProgramacaoDespesas(content, options = {}) {
         alojamento_nome = a?.nome || null;
         if (a && !cidade) cidade = a.cidade || null;
       }
-      const hotelSel = card.querySelector('[data-fld="hotel_id"]');
-      if (hotelSel && hotelSel.value) {
-        hotel_id = hotelSel.value;
-        const h = (hoteisCache || []).find((x) => String(x.id) === String(hotelSel.value));
-        nome_hotel = h?.nome || null;
-        if (h && !cidade) cidade = h.cidade || null;
-      }
       Object.assign(payload, {
-        tipo_estadia: tipo, tem_estadia: COM_ESTADIA.has(tipo), cidade, alojamento_id, alojamento_nome, hotel_id, nome_hotel,
+        tipo_estadia: tipo, tem_estadia: COM_ESTADIA.has(tipo), cidade, alojamento_id, alojamento_nome,
         checkin, checkout: addDaysIso(checkin, diasVal),
         observacao: card.querySelector('[data-tab="estadia"][data-fld="observacao"]')?.value || null,
       });
