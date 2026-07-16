@@ -1388,7 +1388,7 @@ async function loadOsEmbarquePointsInRange(fromYmd, toYmd) {
   for (var from = 0; from < MAX_LOCAL_ROWS; from += pageSize) {
     var result = await supabase
       .from('operacional_os')
-      .select('id,numero_os,data_os,ponto1_nome,ponto1_latitude,ponto1_longitude,cidade_embarque,uf_embarque')
+      .select('id,numero_os,data_os,ponto1_nome,ponto1_latitude,ponto1_longitude,ponto_embarque_id')
       .gte('data_os', fromYmd)
       .lte('data_os', toYmd)
       .range(from, from + pageSize - 1);
@@ -1398,6 +1398,26 @@ async function loadOsEmbarquePointsInRange(fromYmd, toYmd) {
     if (rows.length < pageSize) break;
   }
   return all.filter(function (r) { return isValidCoord(r.ponto1_latitude, r.ponto1_longitude); });
+}
+
+// operacional_os não tem cidade/uf do embarque como colunas próprias (só o texto original em
+// `embarque` e o vínculo resolvido `ponto_embarque_id`) — busca em operacional_pontos_embarque
+// só pra enriquecer local_cidade/local_uf no registro de elegibilidade (não afeta o raio).
+async function loadPontosEmbarquePorId(ids) {
+  var unique = Array.from(new Set(ids.filter(Boolean)));
+  var byId = {};
+  if (!unique.length) return byId;
+  var pageSize = 300;
+  for (var i = 0; i < unique.length; i += pageSize) {
+    var chunk = unique.slice(i, i + pageSize);
+    var result = await supabase
+      .from('operacional_pontos_embarque')
+      .select('id,cidade,uf')
+      .in('id', chunk);
+    if (result.error) throw result.error;
+    (result.data || []).forEach(function (r) { byId[r.id] = r; });
+  }
+  return byId;
 }
 
 async function loadOsColaboradoresForIds(osIds) {
@@ -1428,18 +1448,20 @@ async function loadPlannedEmbarquePoints(fromYmd, toYmd) {
   osRows.forEach(function (r) { osById[r.id] = r; });
 
   var assignments = osRows.length ? await loadOsColaboradoresForIds(Object.keys(osById)) : [];
+  var pontosPorId = await loadPontosEmbarquePorId(osRows.map(function (r) { return r.ponto_embarque_id; }));
 
   var byCpf = {};
   var byNome = {};
   assignments.forEach(function (a) {
     var os = osById[a.os_id];
     if (!os) return;
+    var pontoEmbarque = pontosPorId[os.ponto_embarque_id];
     var ponto = {
       fonte_tabela: 'operacional_os',
       fonte_id: os.id,
       nome: os.ponto1_nome || ('Embarque da O.S. ' + (os.numero_os || os.id)),
-      cidade: os.cidade_embarque,
-      uf: os.uf_embarque,
+      cidade: pontoEmbarque ? pontoEmbarque.cidade : null,
+      uf: pontoEmbarque ? pontoEmbarque.uf : null,
       latitude: Number(os.ponto1_latitude),
       longitude: Number(os.ponto1_longitude),
       numero_os: os.numero_os
