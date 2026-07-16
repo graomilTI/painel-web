@@ -85,10 +85,8 @@ export const MENU_CONFIG = [
     itens: [
       // Equipe (Admissões, Integração, Cadastro no Graint, Consultar Base e Contatos vivem como abas dentro desta página)
       item("equipe", "Equipe", "equipe", ["EQUIPE_ADMISSOES", "EQUIPE_INTEGRACAO", "EQUIPE_GRAINT", "BASE_COLAB_CONSULTA", "CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"]),
-      // Exames
-      item("exames_admissional", "Encaminhamento Admissional", "exames-admissional", ["EXAMES_ADMISSIONAL"]),
-      item("exames_periodico", "Exames Periódicos", "exames-periodico", ["EXAMES_PERIODICO"]),
-      item("rh_clinicas_sst", "Clínicas SST", "clinicas-sst", ["RH_CLINICAS", "CLINICAS_SST"]),
+      // Exames (Admissional, Periódico e Clínicas SST vivem como abas dentro desta página)
+      item("exames", "Exames", "exames", ["EXAMES_ADMISSIONAL", "EXAMES_PERIODICO", "RH_CLINICAS", "CLINICAS_SST"]),
       // Contratos
       item("contratos_experiencia", "Contrato de Experiência", "contratos-experiencia", ["CONTRATOS_EXPERIENCIA"]),
       item("contratos_rescisoes", "Rescisões", "contratos-rescisoes", ["CONTRATOS_RESCISOES"]),
