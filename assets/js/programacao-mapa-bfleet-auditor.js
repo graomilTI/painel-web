@@ -444,7 +444,9 @@ function boot() {
   window.setTimeout(() => refreshAll({ force: true }), 500);
 
   document.addEventListener('click', event => {
-    if (event.target.closest('#progLoadContext') || event.target.closest('#progSteps .stepbtn')) {
+    if (event.target.closest('#progLoadContext')
+      || event.target.closest('#progSteps .stepbtn')
+      || event.target.closest('#peqbVerMapa')) {
       window.setTimeout(() => refreshAll({ force: false }), 250);
     }
   }, true);

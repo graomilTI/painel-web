@@ -14,6 +14,7 @@ const STEP_LABELS = {
   '1': { label: 'Situação da O.S.', title: 'Situação da O.S.' },
   '2': { label: 'Equipe e mapa do gestor', title: 'Equipe + Mapa' },
   '3': { label: 'Despesas da equipe', title: 'Despesas' },
+  '4': { label: 'Colaboradores sem O.S.', title: 'Sem O.S.' },
 };
 
 function debounce(fn, wait) {
@@ -227,6 +228,7 @@ function configureSteps() {
     { ui: '1', label: STEP_LABELS['1'].title },
     { ui: '2', label: STEP_LABELS['2'].title },
     { ui: '3', label: STEP_LABELS['3'].title },
+    { ui: '4', label: STEP_LABELS['4'].title },
   ];
 
   layout.forEach((step, index) => {

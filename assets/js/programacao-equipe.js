@@ -474,7 +474,7 @@ export async function loadCruzamentoPlacas(supervisao) {
 // Lista COMPLETA de colaboradores ativos da supervisão (regional liberada do
 // usuário), para o dropdown de troca poder escolher qualquer um — não só os 8
 // candidatos ranqueados. Os já escalados em outra OS são marcados com ♻ na UI.
-async function loadColaboradoresRegional(supervisao) {
+export async function loadColaboradoresRegional(supervisao) {
   const fontes = [];
   const listaSupervisoes = Array.isArray(supervisao) ? supervisao : [supervisao];
   try {
@@ -892,6 +892,21 @@ function disponibilidadeCategoriaLocal(value) {
   return normalizeText(value || '') === 'LOGISTICA' ? 'LOGISTICA' : 'OK';
 }
 
+// Colaborador confirmado sem frota vinculada e sem carona atribuída (ver
+// "Sugerir caronas") — o gestor precisa poder marcar manualmente como vai se
+// deslocar: Uber/Táxi ou reembolso por km rodado (veículo próprio). Mesma
+// tabela/coluna já usada pela Etapa 3 (programacao_deslocamento.tipo_deslocamento).
+function deslocamentoSemFrotaHtml(item, readOnly) {
+  const tipoAtual = normalizeText(item.custos?.des?.tipo_deslocamento || '');
+  const opts = [['', 'Deslocamento…'], ['UBER/TÁXI', 'Uber/Táxi'], ['REEMBOLSO KM', 'Reembolso km']];
+  return `<div class="peqb-row-actions" style="margin-top:6px" title="Sem frota/carona — defina como este colaborador vai se deslocar">
+    <span class="peqb-clab" style="align-self:center">🚕</span>
+    <select class="peqb-name-sel" data-desloc-sem-frota style="max-width:180px;min-width:150px" ${readOnly ? 'disabled' : ''}>
+      ${opts.map(([valor, label]) => `<option value="${esc(valor)}" ${tipoAtual === normalizeText(valor) ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+    </select>
+  </div>`;
+}
+
 function osRowHtml(item) {
   const { os, confirmadoRow, candidatos, readOnly } = item;
   const confirmado = !!confirmadoRow;
@@ -919,7 +934,9 @@ function osRowHtml(item) {
         </span>
         ${hotelBtn}
       </div>
-      ${item.custos?.placaAuto ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual, readOnly) : ''}
+      ${item.custos?.placaAuto
+        ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual, readOnly)
+        : (normalizeText(item.custos?.des?.tipo_deslocamento || '') === 'CARONA FROTA' ? '' : deslocamentoSemFrotaHtml(item, readOnly))}
       ${colabsExtrasHtml(item)}
       <div class="peqb-add-box" data-add-box hidden>
         <span class="peqb-cand-av">+</span>
@@ -2003,6 +2020,32 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   });
 
   listEl.addEventListener('change', async (event) => {
+    // Deslocamento de quem não tem frota/carona — Uber/Táxi ou reembolso km
+    const deslocSel = event.target.closest('[data-desloc-sem-frota]');
+    if (deslocSel) {
+      const card = deslocSel.closest('.peqb-os2');
+      const item = osComCandidatosAtual.find((it) => String(it.os.id) === card?.dataset.osId);
+      const colaboradorId = item?.confirmadoRow?.colaborador_id;
+      if (!item || !colaboradorId) return;
+      deslocSel.disabled = true;
+      try {
+        const { error } = await supabase.from('programacao_deslocamento').upsert({
+          programacao_id: programacaoIdParaOs(item.os),
+          data_referencia: options.dataReferencia || null,
+          colaborador_id: colaboradorId,
+          nome_colaborador: item.confirmadoRow.nome_colaborador,
+          tipo_deslocamento: deslocSel.value || 'NÃO PRECISA',
+        }, { onConflict: 'programacao_id,colaborador_id' });
+        if (error) throw error;
+        if (item.custos) item.custos.des = { ...(item.custos.des || {}), tipo_deslocamento: deslocSel.value || 'NÃO PRECISA' };
+      } catch (error) {
+        console.error('[equipe] deslocamento sem frota:', error);
+        alert(error.message || 'Não foi possível salvar o deslocamento.');
+      } finally {
+        deslocSel.disabled = false;
+      }
+      return;
+    }
     // Trocar colaborador pelo dropdown do nome
     const trocarSel = event.target.closest('[data-trocar-colab]');
     if (trocarSel) {

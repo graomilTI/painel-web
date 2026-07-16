@@ -2,8 +2,8 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
-import { loadCustos } from './programacao-equipe.js?v=20260716-oscount1';
-import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260716-jantahotel1';
+import { loadCustos } from './programacao-equipe.js?v=20260716-batch2';
+import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260716-batch2';
 
 const STEPS = [
   { code: 'A', label: 'Disponibilidade' },
@@ -2107,11 +2107,14 @@ export function renderContent(content) {
         const osLabel = osList.length ? osList.map((o) => o.numero_os || '-').join(', ') : '-';
         const deslocLabel = DESLOC_LABEL[normalizeText(des.tipo_deslocamento || 'NÃO PRECISA')] || (des.tipo_deslocamento || 'Não precisa');
         const deslocTexto = des.placa_veiculo ? `${deslocLabel} · ${des.placa_veiculo}` : deslocLabel;
-        const temEstadia = est.tipo_estadia && normalizeText(est.tipo_estadia) !== 'CASA';
+        // est.tem_estadia é o booleano gravado no save (mais confiável que
+        // re-derivar de tipo_estadia !== 'CASA' — mesma fonte usada pelo card
+        // on-screen da Etapa 3, que já mostra certo).
+        const temEstadia = est.tem_estadia === true || (!!est.tipo_estadia && normalizeText(est.tipo_estadia) !== 'CASA');
         const dias = est?.checkin && est?.checkout
           ? Math.max(1, Math.round((new Date(`${est.checkout}T00:00:00`) - new Date(`${est.checkin}T00:00:00`)) / 86400000))
           : 1;
-        const estadiaTexto = temEstadia ? `${estadiaLabel(est.tipo_estadia)} · ${dias}d` : 'Casa';
+        const estadiaTexto = temEstadia ? `${estadiaLabel(est.tipo_estadia) || 'Hospedagem'} · ${dias}d` : 'Casa';
         const extrasTexto = extras.length ? extras.map((x) => `${x.tipo_despesa || 'Outro'} R$${(Number(x.valor) || 0).toFixed(2)}`).join('; ') : '-';
         return {
           os: osLabel,
