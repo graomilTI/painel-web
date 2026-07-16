@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
-import { loadCustos } from './programacao-equipe.js?v=20260716-jantahotel1';
+import { loadCustos } from './programacao-equipe.js?v=20260716-oscount1';
 import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260716-jantahotel1';
 
 const STEPS = [
