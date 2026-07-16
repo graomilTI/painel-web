@@ -81,73 +81,34 @@ export const MENU_CONFIG = [
   },
 
   {
-    grupo: "EQUIPE",
+    grupo: "RECURSOS HUMANOS",
     itens: [
+      // Equipe
       item("equipe_admissoes", "Admissões", "equipe-admissoes", ["EQUIPE_ADMISSOES"]),
       item("equipe_integracao", "Integração de Colaboradores", "equipe-integracao", ["EQUIPE_INTEGRACAO"]),
       item("equipe_graint", "Cadastro no Graint", "equipe-graint", ["EQUIPE_GRAINT"]),
       item("base_colab_consulta", "Consultar Base", "consultar-colaboradores", ["BASE_COLAB_CONSULTA"]),
-      item("contatos_exportacoes", "Contatos e Cadastros", "contatos", ["CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"])
-    ]
-  },
-
-  {
-    grupo: "EXAMES",
-    itens: [
+      item("contatos_exportacoes", "Contatos e Cadastros", "contatos", ["CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"]),
+      // Exames
       item("exames_admissional", "Encaminhamento Admissional", "exames-admissional", ["EXAMES_ADMISSIONAL"]),
       item("exames_periodico", "Exames Periódicos", "exames-periodico", ["EXAMES_PERIODICO"]),
-      item("rh_clinicas_sst", "Clínicas SST", "clinicas-sst", ["RH_CLINICAS", "CLINICAS_SST"])
-    ]
-  },
-
-  {
-    grupo: "CONTRATOS",
-    itens: [
+      item("rh_clinicas_sst", "Clínicas SST", "clinicas-sst", ["RH_CLINICAS", "CLINICAS_SST"]),
+      // Contratos
       item("contratos_experiencia", "Contrato de Experiência", "contratos-experiencia", ["CONTRATOS_EXPERIENCIA"]),
-      item("contratos_rescisoes", "Rescisões", "contratos-rescisoes", ["CONTRATOS_RESCISOES"])
-    ]
-  },
-
-  {
-    grupo: "SEGURANÇA DO TRABALHO",
-    itens: [
+      item("contratos_rescisoes", "Rescisões", "contratos-rescisoes", ["CONTRATOS_RESCISOES"]),
+      // Segurança do Trabalho
       item("rh_epi", "EPI", "epi-rh", ["RH_EPI"]),
-      item("seguranca_cat", "CAT", "seguranca-cat", ["SEGURANCA_CAT"])
-    ]
-  },
-
-  {
-    grupo: "INDISPONIBILIDADE",
-    itens: [
+      item("seguranca_cat", "CAT", "seguranca-cat", ["SEGURANCA_CAT"]),
+      // Indisponibilidade
       item("ferias_atestados", "Férias e Atestados", "ferias-atestados", ["RH_FERIAS_ATESTADOS"]),
-      item("indisponibilidade_historico", "Histórico", "historico-indisponibilidade", ["RH_HIST_INDISP"])
-    ]
-  },
-
-  {
-    grupo: "CARTÃO PONTO",
-    itens: [
-      item("cartao_ponto", "Cartão Ponto", "cartao-ponto", ["CARTAO_PONTO"])
-    ]
-  },
-
-  {
-    grupo: "ADVERTÊNCIAS",
-    itens: [
-      item("advertencias", "Advertências", "advertencias", ["ADVERTENCIAS"])
-    ]
-  },
-
-  {
-    grupo: "HOLERITE E PAGAMENTOS",
-    itens: [
-      item("holerite_pagamentos", "Folha e Holerite", "holerite-pagamentos", ["HOLERITE_PAGAMENTOS"])
-    ]
-  },
-
-  {
-    grupo: "PLANTÃO",
-    itens: [
+      item("indisponibilidade_historico", "Histórico", "historico-indisponibilidade", ["RH_HIST_INDISP"]),
+      // Cartão Ponto
+      item("cartao_ponto", "Cartão Ponto", "cartao-ponto", ["CARTAO_PONTO"]),
+      // Advertências
+      item("advertencias", "Advertências", "advertencias", ["ADVERTENCIAS"]),
+      // Holerite e Pagamentos
+      item("holerite_pagamentos", "Folha e Holerite", "holerite-pagamentos", ["HOLERITE_PAGAMENTOS"]),
+      // Plantão
       item("rh_plantao", "Plantão", "plantao", ["RH_PLANTAO", "PLANTAO", "PLANTÃO"])
     ]
   },
