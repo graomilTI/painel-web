@@ -5,7 +5,7 @@
 // passou a reescrever #progSteps só com os botões das 3 etapas novas.
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
-import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260716-oscount1';
+import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260716-batch2';
 import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
 
 function esc(value) {
@@ -27,6 +27,18 @@ function normalizeText(value) {
 }
 
 function onlyPlate(value) { return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7); }
+// Acha o ancestral scrollável de verdade (senão o scroll da página/window) —
+// mesmo helper de programacao-equipe.js, usado pra não resetar a rolagem no
+// refresh silencioso (ver carregar({silent}) abaixo).
+function scrollParentDe(el) {
+  let p = el && el.parentElement;
+  while (p) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight + 4) return p;
+    p = p.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
 function todayIso() { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
 function addDaysIso(iso, days) { const d = new Date(`${iso || todayIso()}T00:00:00`); d.setDate(d.getDate() + Number(days || 0)); return d.toISOString().slice(0, 10); }
 function brl(value) { return (Number(value) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -100,12 +112,14 @@ function hotelOptions(selectedId, embarque) {
   const lista0 = hoteisCache || [];
   const uf = normalizeUF(ufFromEmbarque(embarque));
   const cidade = normalizeText(cidadeFromEmbarque(embarque));
-  const porCidade = lista0.filter((h) => {
+  // Só a cidade vinculada ao embarque da O.S. — sem cair pra outras cidades
+  // da mesma UF nem pra lista toda quando a cidade não tem hotel cadastrado
+  // (pedido do usuário, 2026-07-16: sugestão de outra cidade confundia).
+  const lista = lista0.filter((h) => {
     if (uf && normalizeUF(h.uf) !== uf) return false;
     return !cidade || normalizeText(h.cidade) === cidade;
   });
-  const porUf = uf ? lista0.filter((h) => normalizeUF(h.uf) === uf) : [];
-  const lista = porCidade.length ? porCidade : (porUf.length ? porUf : lista0);
+  if (!lista.length) return '';
   return '<option value="">Sugerir hotel…</option>' + lista.map((h) => {
     const diaria = h.valor_diaria_individual || h.valor_diaria_padrao;
     const preco = diaria ? ` · R$ ${brl(diaria)}` : '';
@@ -334,8 +348,10 @@ export async function renderProgramacaoDespesas(content, options = {}) {
   let osResumoPorId = new Map();
   let extrasPorColab = new Map();
 
-  async function carregar() {
-    rootEl.innerHTML = '<div class="peqd-empty peqd-loading"><span class="peqd-spinner" aria-hidden="true"></span><span>Carregando equipe do dia...</span></div>';
+  async function carregar({ silent = false } = {}) {
+    const scroller = silent ? scrollParentDe(rootEl) : null;
+    const scrollPos = scroller ? scroller.scrollTop : 0;
+    if (!silent) rootEl.innerHTML = '<div class="peqd-empty peqd-loading"><span class="peqd-spinner" aria-hidden="true"></span><span>Carregando equipe do dia...</span></div>';
     roster = await loadRosterDoDia(programacaoIdQuery);
     if (!roster.length) {
       rootEl.innerHTML = '<div class="peqd-empty">Nenhum colaborador confirmado ainda. Volte à Etapa 2 (Equipe + Mapa) e confirme quem vai atender antes de lançar despesas.</div>';
@@ -351,7 +367,14 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     ]);
     await Promise.all([loadAlojamentos(), loadHoteis()]);
     rootEl.innerHTML = roster.map((row) => colaboradorCardHtml(row, custos, placasPorCpf, osResumoPorId, extrasPorColab)).join('');
+    if (silent && scroller) scroller.scrollTop = scrollPos;
   }
+
+  // Ponte pra refresh sem remontar a aba inteira (perdia a rolagem toda vez
+  // que um vínculo era feito em outro lugar — drag no mapa, sugestão de
+  // equipe, etc. — ver window.__pgcRefreshDespesas em
+  // programacao-gestor-fluxo-avancado.js, que agora prefere este caminho).
+  window.__pgcSilentRefreshDespesas = () => carregar({ silent: true });
 
   // --- Autosave (mesmo padrão de debounce 450ms do resto do projeto) ---
   async function saveCampo(card, tabela) {
