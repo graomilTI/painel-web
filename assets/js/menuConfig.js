@@ -92,9 +92,8 @@ export const MENU_CONFIG = [
       // Contratos
       item("contratos_experiencia", "Contrato de Experiência", "contratos-experiencia", ["CONTRATOS_EXPERIENCIA"]),
       item("contratos_rescisoes", "Rescisões", "contratos-rescisoes", ["CONTRATOS_RESCISOES"]),
-      // Segurança do Trabalho
-      item("rh_epi", "EPI", "epi-rh", ["RH_EPI"]),
-      item("seguranca_cat", "CAT", "seguranca-cat", ["SEGURANCA_CAT"]),
+      // Segurança do Trabalho (EPIs e CAT vivem como abas dentro desta página)
+      item("seguranca_trabalho", "Segurança do Trabalho", "seguranca-trabalho", ["RH_EPI", "SEGURANCA_CAT"]),
       // Indisponibilidade
       item("ferias_atestados", "Férias e Atestados", "ferias-atestados", ["RH_FERIAS_ATESTADOS"]),
       item("indisponibilidade_historico", "Histórico", "historico-indisponibilidade", ["RH_HIST_INDISP"]),
