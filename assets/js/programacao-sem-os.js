@@ -4,7 +4,7 @@
 // programacao_colaboradores (mesma tabela/colunas já usadas pela
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
-import { loadEquipeExistente, loadColaboradoresRegional } from './programacao-equipe.js?v=20260716-batch2';
+import { loadEquipeExistente, loadColaboradoresRegional } from './programacao-equipe.js?v=20260716-hotelfix1';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
 
