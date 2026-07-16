@@ -90,7 +90,9 @@ async function boot() {
   [0, 80, 250, 700, 1500, 3000].forEach(delay => window.setTimeout(install, delay));
 
   document.addEventListener('click', event => {
-    if (event.target.closest('#progLoadContext') || event.target.closest('#progSteps .stepbtn')) {
+    if (event.target.closest('#progLoadContext')
+      || event.target.closest('#progSteps .stepbtn')
+      || event.target.closest('#peqbVerMapa')) {
       window.setTimeout(install, 100);
     }
   }, true);
