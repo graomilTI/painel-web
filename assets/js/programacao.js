@@ -2,6 +2,8 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
+import { loadCustos } from './programacao-equipe.js?v=20260716-jantahotel1';
+import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260716-jantahotel1';
 
 const STEPS = [
   { code: 'A', label: 'Disponibilidade' },
@@ -396,6 +398,7 @@ export function renderContent(content) {
           <input id="progSearch" type="text" placeholder="Nome, cargo ou supervisão..." />
         </div>
         <button class="prog-save-main" type="button" id="progSaveProgramacao" disabled title="As alterações já são salvas automaticamente — este botão confirma e finaliza a programação">Salvar programação</button>
+        <button class="btn" type="button" id="progGerarPdf" title="Gera um PDF com OS, colaborador, deslocamento, estadia, refeições e extras do dia">📄 Gerar PDF</button>
       </div>
 
       <div class="prog-toolbar-row prog-toolbar-row-steps">
@@ -420,6 +423,7 @@ export function renderContent(content) {
     list: document.getElementById('progList'),
     search: document.getElementById('progSearch'),
     saveBtn: document.getElementById('progSaveProgramacao'),
+    pdfBtn: document.getElementById('progGerarPdf'),
     statTotal: document.getElementById('progStatTotal'),
     statBlocked: document.getElementById('progStatBlocked'),
     currentStep: document.getElementById('progCurrentStep'),
@@ -498,6 +502,7 @@ export function renderContent(content) {
       window.__progLoadColaboradoresPromise = loadContext();
     });
     el.saveBtn.addEventListener('click', saveProgramacao);
+    el.pdfBtn.addEventListener('click', gerarPdfProgramacao);
     el.search.addEventListener('input', debounce(() => {
       state.search = el.search.value.trim().toLowerCase();
       renderRows();
@@ -2062,7 +2067,168 @@ export function renderContent(content) {
     el.feedback.textContent = message;
   }
 
+  // --- PDF pós-conclusão (pedido do usuário, 2026-07-16): resumo por
+  // colaborador — OS | Colaborador | Deslocamento | Estadia | Café | Almoço |
+  // Janta | Extras. Reusa os mesmos loaders da Etapa 3/Despesas em vez de
+  // duplicar query (loadRosterDoDia/loadOsResumo/loadExtras de
+  // programacao-despesas.js, loadCustos de programacao-equipe.js). Botão
+  // manual — não roda sozinho ao salvar.
+  async function gerarPdfProgramacao() {
+    if (!state.programacaoId && !state.programacaoIdMap.size) {
+      setFeedback('Carregue um contexto antes de gerar o PDF.', 'warn');
+      return;
+    }
+    const textoOriginal = el.pdfBtn.textContent;
+    el.pdfBtn.disabled = true;
+    el.pdfBtn.textContent = 'Gerando...';
+    try {
+      const programacaoIdQuery = state.programacaoIdMap.size ? [...state.programacaoIdMap.values()] : state.programacaoId;
+      const roster = await loadRosterDoDia(programacaoIdQuery);
+      if (!roster.length) {
+        setFeedback('Nenhum colaborador confirmado nesta programação ainda.', 'warn');
+        return;
+      }
+      const osIds = [...new Set(roster.flatMap((r) => [...r.osIds]))];
+      const colaboradorIds = roster.map((r) => r.colaboradorId);
+      const [custos, osResumoPorId, extrasPorColab] = await Promise.all([
+        loadCustos(programacaoIdQuery),
+        loadOsResumo(osIds),
+        loadExtras(programacaoIdQuery, colaboradorIds),
+      ]);
+
+      const DESLOC_LABEL = { 'NAO PRECISA': 'Não precisa', 'MOTORISTA FROTA': 'Frota', 'CARONA FROTA': 'Carona', 'UBER TAXI': 'Uber/Táxi', 'REEMBOLSO KM': 'Reemb. km', ONIBUS: 'Ônibus', OUTRO: 'Outro' };
+
+      const linhas = roster.map((row) => {
+        const est = custos.est.get(row.colaboradorId) || {};
+        const ali = custos.ali.get(row.colaboradorId) || { almoco: true };
+        const des = custos.des.get(row.colaboradorId) || {};
+        const extras = extrasPorColab.get(row.colaboradorId) || [];
+        const osList = [...row.osIds].map((id) => osResumoPorId.get(String(id))).filter(Boolean);
+        const osLabel = osList.length ? osList.map((o) => o.numero_os || '-').join(', ') : '-';
+        const deslocLabel = DESLOC_LABEL[normalizeText(des.tipo_deslocamento || 'NÃO PRECISA')] || (des.tipo_deslocamento || 'Não precisa');
+        const deslocTexto = des.placa_veiculo ? `${deslocLabel} · ${des.placa_veiculo}` : deslocLabel;
+        const temEstadia = est.tipo_estadia && normalizeText(est.tipo_estadia) !== 'CASA';
+        const dias = est?.checkin && est?.checkout
+          ? Math.max(1, Math.round((new Date(`${est.checkout}T00:00:00`) - new Date(`${est.checkin}T00:00:00`)) / 86400000))
+          : 1;
+        const estadiaTexto = temEstadia ? `${estadiaLabel(est.tipo_estadia)} · ${dias}d` : 'Casa';
+        const extrasTexto = extras.length ? extras.map((x) => `${x.tipo_despesa || 'Outro'} R$${(Number(x.valor) || 0).toFixed(2)}`).join('; ') : '-';
+        return {
+          os: osLabel,
+          colaborador: row.nome,
+          deslocamento: deslocTexto,
+          estadia: estadiaTexto,
+          cafe: ali.cafe ? 'Sim' : 'Não',
+          almoco: ali.almoco !== false ? 'Sim' : 'Não',
+          janta: ali.janta ? 'Sim' : 'Não',
+          extras: extrasTexto,
+        };
+      });
+
+      await desenharPdfProgramacao(linhas, {
+        supervisaoLabel: state.programacaoIdMap.size ? 'Todas' : (state.supervisao || '-'),
+        dataReferencia: state.dataReferencia,
+      });
+    } catch (error) {
+      console.error(error);
+      setFeedback(error.message || 'Falha ao gerar o PDF.', 'error');
+    } finally {
+      el.pdfBtn.disabled = false;
+      el.pdfBtn.textContent = textoOriginal;
+    }
+  }
+
   init();
+}
+
+// jsPDF via CDN sob demanda (mesmo padrão de assets/js/contato-cliente.js) —
+// sem lib vendorizada localmente, projeto não tem build step.
+async function loadJsPdfProgramacao() {
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return window.jspdf.jsPDF;
+}
+
+function brDateProgramacaoPdf(iso) {
+  if (!iso) return '-';
+  const [ano, mes, dia] = String(iso).split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
+async function desenharPdfProgramacao(linhas, meta = {}) {
+  const JsPDF = await loadJsPdfProgramacao();
+  const doc = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const PW = 297, PH = 210, M = 10;
+  const COLS = [
+    { key: 'os', label: 'O.S.', width: 22 },
+    { key: 'colaborador', label: 'Colaborador', width: 42 },
+    { key: 'deslocamento', label: 'Deslocamento', width: 34 },
+    { key: 'estadia', label: 'Estadia', width: 28 },
+    { key: 'cafe', label: 'Café', width: 16 },
+    { key: 'almoco', label: 'Almoço', width: 16 },
+    { key: 'janta', label: 'Janta', width: 16 },
+    { key: 'extras', label: 'Extras', width: PW - 2 * M - (22 + 42 + 34 + 28 + 16 + 16 + 16) },
+  ];
+  const LH = 4.2;
+  let y = M;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('Programação — resumo por colaborador', M, y + 4);
+  y += 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.text(`Supervisão: ${meta.supervisaoLabel || '-'}   ·   Data: ${brDateProgramacaoPdf(meta.dataReferencia)}`, M, y);
+  y += 6;
+
+  function desenharCabecalho() {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    let x = M;
+    COLS.forEach((col) => {
+      doc.text(col.label, x + 1, y + 4);
+      x += col.width;
+    });
+    doc.setDrawColor(180);
+    doc.line(M, y + 6, PW - M, y + 6);
+    y += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+  }
+
+  desenharCabecalho();
+
+  linhas.forEach((linha) => {
+    const linhasPorCol = COLS.map((col) => doc.splitTextToSize(String(linha[col.key] ?? ''), col.width - 2));
+    const nLinhas = Math.max(...linhasPorCol.map((l) => l.length), 1);
+    const alturaLinha = nLinhas * LH + 2;
+
+    if (y + alturaLinha > PH - M) {
+      doc.addPage();
+      y = M;
+      desenharCabecalho();
+    }
+
+    let x = M;
+    COLS.forEach((col, index) => {
+      doc.text(linhasPorCol[index], x + 1, y + LH);
+      x += col.width;
+    });
+    doc.setDrawColor(230);
+    doc.line(M, y + alturaLinha - 1, PW - M, y + alturaLinha - 1);
+    y += alturaLinha;
+  });
+
+  const supervisaoArquivo = meta.supervisaoLabel || 'programacao';
+  const dataArquivo = meta.dataReferencia || todayIso();
+  const nomeArquivo = `programacao_${supervisaoArquivo.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${dataArquivo}.pdf`;
+  doc.save(nomeArquivo);
 }
 
 initProtectedPage('Programação', renderContent);
