@@ -87,9 +87,8 @@ export const MENU_CONFIG = [
       item("equipe", "Equipe", "equipe", ["EQUIPE_ADMISSOES", "EQUIPE_INTEGRACAO", "EQUIPE_GRAINT", "BASE_COLAB_CONSULTA", "CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"]),
       // Exames (Admissional, Periódico e Clínicas SST vivem como abas dentro desta página)
       item("exames", "Exames", "exames", ["EXAMES_ADMISSIONAL", "EXAMES_PERIODICO", "RH_CLINICAS", "CLINICAS_SST"]),
-      // Contratos
-      item("contratos_experiencia", "Contrato de Experiência", "contratos-experiencia", ["CONTRATOS_EXPERIENCIA"]),
-      item("contratos_rescisoes", "Rescisões", "contratos-rescisoes", ["CONTRATOS_RESCISOES"]),
+      // Contratos (Contrato de Experiência e Rescisões vivem como abas dentro desta página)
+      item("contratos", "Contratos", "contratos", ["CONTRATOS_EXPERIENCIA", "CONTRATOS_RESCISOES"]),
       // Segurança do Trabalho (EPIs e CAT vivem como abas dentro desta página)
       item("seguranca_trabalho", "Segurança do Trabalho", "seguranca-trabalho", ["RH_EPI", "SEGURANCA_CAT"]),
       // Indisponibilidade (Férias, Atestados e Histórico vivem como abas dentro desta página)
