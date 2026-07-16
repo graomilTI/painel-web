@@ -24,6 +24,8 @@ const STATUS_CLASS = {
   CANCELADO: 'neutral',
 };
 
+const LOCALIZACAO_DISTANCIA_ATENCAO_KM = 50;
+
 const state = {
   tab: 'despesas',
   despesas: [],
@@ -32,6 +34,7 @@ const state = {
   resultado: [],
   uber: [],
   justificativas: [],
+  localizacao: [],
   uberKpi: null,
   loading: false,
   sort: {
@@ -253,7 +256,7 @@ function isPedidoDeslocamento(row) {
 }
 
 function getUniqueRegionais() {
-  const values = [...state.despesas, ...state.auditoria, ...state.resultado, ...state.uber, ...state.justificativas]
+  const values = [...state.despesas, ...state.auditoria, ...state.resultado, ...state.uber, ...state.justificativas, ...state.localizacao]
     .map((row) => row.supervisao || row.regional || row.coordenacao)
     .filter(Boolean);
   return [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
@@ -396,6 +399,7 @@ function renderShell(content) {
           <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
           <button class="conf-tab" data-tab="uber" type="button">Uber</button>
           <button class="conf-tab" data-tab="justificativas" type="button">Justificativas</button>
+          <button class="conf-tab" data-tab="localizacao" type="button">Localização</button>
         </div>
       </div>
       <div id="conf-table"></div>
@@ -447,12 +451,15 @@ function renderActiveTab() {
           ? 'Produção importada para comparação operacional.'
           : state.tab === 'justificativas'
             ? 'Motivo registrado pelo gestor ao escalar mais de 1 colaborador no mesmo ponto de embarque.'
-            : 'Corridas corporativas com validação por ponto de embarque e casa do colaborador.';
+            : state.tab === 'localizacao'
+              ? 'Ponto de embarque mais próximo da casa do colaborador, 1 registro por dia/O.S.'
+              : 'Corridas corporativas com validação por ponto de embarque e casa do colaborador.';
   }
 
   if (state.tab === 'despesas') return renderDespesasTable();
   if (state.tab === 'auditoria') return renderAuditoriaTable();
   if (state.tab === 'justificativas') return renderJustificativasTable();
+  if (state.tab === 'localizacao') return renderLocalizacaoTable();
   if (state.tab === 'uber') return renderUberTable();
   return renderResultadoTable();
 }
@@ -632,6 +639,58 @@ function renderJustificativasTable() {
               <td>${statusChip(`${row.nomes.length} no ponto`)}<small>${escapeHtml(row.nomes.join(', ') || '-')}</small></td>
               <td class="conf-td-extras">${escapeHtml(row.motivo || '-')}</td>
               <td><strong>${escapeHtml(row.usuario_nome || '-')}</strong><small>${escapeHtml(row.usuario_email || '')}</small></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// Filtro próprio (não usa applyLocalFilters): localização não tem status de
+// conferência, só a data do registro (já filtrada em loadLocalizacao) e
+// busca por colaborador/OS/cliente.
+function applyLocalizacaoFilters(rows) {
+  const regional = normalizeText(state.filters.regional);
+  const busca = normalizeText(state.filters.colaborador);
+  return rows.filter((row) => {
+    if (regional && normalizeText(row.supervisao) !== regional) return false;
+    if (!busca) return true;
+    const alvo = normalizeText([row.nome_colaborador, row.numero_os, row.cliente].filter(Boolean).join(' '));
+    return alvo.includes(busca);
+  });
+}
+
+function localizacaoDistanciaChip(row) {
+  const km = Number(row.distancia_km);
+  if (!Number.isFinite(km)) return '<span class="conf-chip conf-chip-neutral">Sem coordenada</span>';
+  const cls = km > LOCALIZACAO_DISTANCIA_ATENCAO_KM ? 'conf-chip-warn' : 'conf-chip-ok';
+  return `<span class="conf-chip ${cls}">${km.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km</span>`;
+}
+
+function renderLocalizacaoTable() {
+  const rows = applyLocalizacaoFilters(state.localizacao);
+  const target = document.getElementById('conf-table');
+  if (!rows.length) {
+    target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhum registro de localização encontrado para os filtros selecionados.</td></tr></tbody></table></div>`;
+    return;
+  }
+  target.innerHTML = `
+    <div class="conf-table-wrap">
+      <table class="conf-table">
+        <thead><tr><th>Colaborador</th><th>OS</th><th>Local</th><th>Distância</th><th>Ações</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><strong>${escapeHtml(row.nome_colaborador || '-')}</strong><small>${brDate(row.data_referencia)} • ${escapeHtml(row.supervisao || '-')}</small></td>
+              <td><strong>${escapeHtml(row.numero_os || '-')}</strong><small>${escapeHtml(row.cliente || '-')}</small></td>
+              <td>${escapeHtml(row.ponto_embarque_nome || '-')}</td>
+              <td>${localizacaoDistanciaChip(row)}</td>
+              <td>
+                <div class="conf-row-actions">
+                  <button class="conf-btn" data-ver-rota="${escapeHtml(row.id)}" type="button">Ver Rota</button>
+                </div>
+              </td>
             </tr>
           `).join('')}
         </tbody>
@@ -1299,6 +1358,28 @@ async function loadJustificativas() {
   }));
 }
 
+// Localização: 1 registro/dia por colaborador+OS, gerado pelo cron
+// registrar_localizacao_diaria_colaboradores (comparando a casa do
+// colaborador com o ponto de embarque mais próximo). A tela só lê.
+async function loadLocalizacao() {
+  let query = supabase
+    .from('conferencia_localizacao_colaboradores')
+    .select('*')
+    .order('data_referencia', { ascending: false })
+    .limit(1000);
+
+  if (state.filters.inicio) query = query.gte('data_referencia', state.filters.inicio);
+  if (state.filters.fim) query = query.lte('data_referencia', state.filters.fim);
+
+  const { data, error } = await query;
+  if (error) {
+    state.localizacao = [];
+    console.warn('[Conferência] Localização indisponível:', error.message);
+    return;
+  }
+  state.localizacao = data || [];
+}
+
 async function loadResultado() {
   let query = supabase
     .from('relatorio_resultado_diario')
@@ -1606,7 +1687,7 @@ async function loadAll() {
   state.loading = true;
   setFeedback('Carregando dados da conferência...');
   try {
-    await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber(), loadJustificativas()]);
+    await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber(), loadJustificativas(), loadLocalizacao()]);
     setFeedback('Dados atualizados.');
   } catch (error) {
     console.error(error);
@@ -1666,7 +1747,9 @@ function exportCsv() {
         ? applyLocalFilters(state.uber, 'uber')
         : state.tab === 'justificativas'
           ? applyJustificativasFilters(state.justificativas)
-          : applyLocalFilters(state.resultado, 'resultado');
+          : state.tab === 'localizacao'
+            ? applyLocalizacaoFilters(state.localizacao)
+            : applyLocalFilters(state.resultado, 'resultado');
 
   if (!rows.length) {
     setFeedback('Não há dados para exportar.', true);
@@ -1710,6 +1793,17 @@ function exportCsv() {
       row.motivo || '',
       row.usuario_nome || '',
       row.usuario_email || '',
+    ]);
+  } else if (state.tab === 'localizacao') {
+    headers = ['Data', 'Colaborador', 'OS', 'Cliente', 'Regional', 'Local', 'Distância (km)'];
+    csvRows = rows.map((row) => [
+      brDate(row.data_referencia),
+      row.nome_colaborador || '',
+      row.numero_os || '',
+      row.cliente || '',
+      row.supervisao || '',
+      row.ponto_embarque_nome || '',
+      row.distancia_km ?? '',
     ]);
   } else {
     headers = Object.keys(rows[0]);
@@ -1815,6 +1909,13 @@ function bindEvents() {
     const uberBtn = event.target.closest('[data-uber-action][data-uber-id]');
     if (uberBtn) {
       updateUberStatus(uberBtn.dataset.uberId, uberBtn.dataset.uberAction);
+      return;
+    }
+
+    const verRotaBtn = event.target.closest('[data-ver-rota]');
+    if (verRotaBtn) {
+      const row = state.localizacao.find((item) => String(item.id) === String(verRotaBtn.dataset.verRota));
+      if (row) abrirModalVerRota(row);
       return;
     }
 
@@ -1981,6 +2082,165 @@ function abrirModalDespesa() {
       btn.textContent = 'Enviar para o setor';
     }
   });
+}
+
+// ---------- Modal "Ver Rota" (Localização) ----------
+// Só mostra os 3 pontos (casa do colaborador, O.S. programada, ponto de
+// embarque mais próximo) num mapa — não calcula rota real, é só pra
+// visualizar a divergência entre o ponto oficial da O.S. e o mais próximo
+// de casa. Reaproveita o padrão de mapa (vendor local + divIcon) usado em
+// assets/js/programacao-mapa-gestor.js / programacao-equipe.js.
+const VRM_LEAFLET_CSS_HREF = './assets/vendor/leaflet/leaflet.css';
+const VRM_LEAFLET_JS_SRC = './assets/vendor/leaflet/leaflet.js';
+
+function vrmLoadCss(href, id) {
+  if (document.getElementById(id)) return;
+  const link = document.createElement('link');
+  link.id = id;
+  link.rel = 'stylesheet';
+  link.href = href;
+  document.head.appendChild(link);
+}
+
+function vrmLoadScript(src, id) {
+  if (document.getElementById(id)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.id = id;
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function vrmEnsureLeaflet() {
+  if (window.L) return true;
+  try {
+    vrmLoadCss(VRM_LEAFLET_CSS_HREF, 'vrmLeafletCss');
+    await vrmLoadScript(VRM_LEAFLET_JS_SRC, 'vrmLeafletJs');
+    return !!window.L;
+  } catch {
+    return false;
+  }
+}
+
+function vrmIcon(color) {
+  const svg = `<svg width="26" height="34" viewBox="0 0 26 34" xmlns="http://www.w3.org/2000/svg">
+    <path d="M13 33C13 33 24 20.5 24 12.5C24 6.15 18.85 1 12.5 1S1 6.15 1 12.5C1 20.5 13 33 13 33Z" fill="${color}" stroke="#fff" stroke-width="1.5"/>
+    <circle cx="12.5" cy="12.5" r="5.2" fill="#fff"/>
+  </svg>`;
+  return window.L.divIcon({ className: '', html: svg, iconSize: [26, 34], iconAnchor: [13, 33] });
+}
+
+let vrmMapState = null;
+
+function injectVerRotaModalStyles() {
+  if (document.getElementById('vrmStyles')) return;
+  const s = document.createElement('style');
+  s.id = 'vrmStyles';
+  s.textContent = `
+    .vrm-overlay{position:fixed;inset:0;background:rgba(2,6,23,.78);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
+    .vrm-overlay.open{display:flex}
+    .vrm-card{width:min(760px,100%);background:#15152a;border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:22px;color:#e2e2f0;max-height:90vh;overflow:auto}
+    .vrm-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+    .vrm-head h3{margin:0;font-size:18px}
+    .vrm-head p{margin:4px 0 0;color:#94a3b8;font-size:13px}
+    .vrm-close{border:1px solid rgba(255,255,255,.08);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 12px;cursor:pointer}
+    .vrm-legend{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 12px;font-size:12px;color:#cbd5e1}
+    .vrm-legend span{display:inline-flex;align-items:center;gap:6px}
+    .vrm-legend i{width:10px;height:10px;border-radius:50%;display:inline-block}
+    .vrm-map{width:100%;height:420px;border-radius:16px;overflow:hidden;background:#0d0d18}
+    .vrm-empty{color:#94a3b8;font-size:13px;margin-top:10px}
+  `;
+  document.head.appendChild(s);
+}
+
+function abrirModalVerRota(row) {
+  injectVerRotaModalStyles();
+
+  let overlay = document.getElementById('vrmOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'vrmOverlay';
+    overlay.className = 'vrm-overlay';
+    document.body.appendChild(overlay);
+  }
+
+  overlay.innerHTML = `
+    <div class="vrm-card">
+      <div class="vrm-head">
+        <div>
+          <h3>Ver rota — ${escapeHtml(row.nome_colaborador || 'Colaborador')}</h3>
+          <p>OS ${escapeHtml(row.numero_os || '-')} · ${escapeHtml(row.cliente || '-')} · ${brDate(row.data_referencia)}</p>
+        </div>
+        <button type="button" class="vrm-close" id="vrmClose">Fechar</button>
+      </div>
+      <div class="vrm-legend">
+        <span><i style="background:#60a5fa"></i>Casa do colaborador</span>
+        <span><i style="background:#ef4444"></i>O.S. programada (${escapeHtml(row.os_ponto_nome || '-')})</span>
+        <span><i style="background:#f59e0b"></i>Ponto de embarque mais próximo (${escapeHtml(row.ponto_embarque_nome || '-')} · ${row.distancia_km ?? '-'} km)</span>
+      </div>
+      <div class="vrm-map" id="vrmMap"></div>
+      <div class="vrm-empty" id="vrmEmpty" style="display:none"></div>
+    </div>
+  `;
+
+  overlay.classList.add('open');
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('open'); });
+  overlay.querySelector('#vrmClose').onclick = () => overlay.classList.remove('open');
+
+  desenharVerRotaMapa(row);
+}
+
+async function desenharVerRotaMapa(row) {
+  const mountEl = document.getElementById('vrmMap');
+  const emptyEl = document.getElementById('vrmEmpty');
+  if (!mountEl) return;
+
+  const ok = await vrmEnsureLeaflet();
+  if (!ok || !window.L) {
+    if (emptyEl) { emptyEl.style.display = 'block'; emptyEl.textContent = 'Não foi possível carregar o mapa.'; }
+    return;
+  }
+  const L = window.L;
+
+  if (vrmMapState) {
+    vrmMapState.remove();
+    vrmMapState = null;
+  }
+
+  const map = L.map(mountEl, { zoomControl: true, scrollWheelZoom: true, center: [-14.235, -51.925], zoom: 4 });
+  vrmMapState = map;
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OSM &copy; CARTO',
+    subdomains: 'abcd',
+  }).addTo(map);
+
+  const pontos = [
+    { lat: row.colaborador_latitude, lng: row.colaborador_longitude, cor: '#60a5fa', titulo: 'Casa do colaborador' },
+    { lat: row.os_latitude, lng: row.os_longitude, cor: '#ef4444', titulo: `O.S. programada: ${row.os_ponto_nome || '-'}` },
+    { lat: row.ponto_embarque_latitude, lng: row.ponto_embarque_longitude, cor: '#f59e0b', titulo: `Ponto mais próximo: ${row.ponto_embarque_nome || '-'}` },
+  ];
+
+  const bounds = [];
+  pontos.forEach((ponto) => {
+    if (ponto.lat === null || ponto.lat === undefined || ponto.lng === null || ponto.lng === undefined) return;
+    const marker = L.marker([ponto.lat, ponto.lng], { icon: vrmIcon(ponto.cor) });
+    marker.bindTooltip(escapeHtml(ponto.titulo), { className: 'vrm-tt' });
+    marker.addTo(map);
+    bounds.push([ponto.lat, ponto.lng]);
+  });
+
+  if (bounds.length) {
+    map.fitBounds(bounds, { padding: [32, 32], maxZoom: 13 });
+  } else if (emptyEl) {
+    emptyEl.style.display = 'block';
+    emptyEl.textContent = 'Nenhum ponto com coordenada disponível para este registro.';
+  }
+
+  requestAnimationFrame(() => map.invalidateSize());
 }
 
 export async function renderContent(content) {
