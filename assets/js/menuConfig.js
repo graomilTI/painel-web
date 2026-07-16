@@ -83,12 +83,8 @@ export const MENU_CONFIG = [
   {
     grupo: "RECURSOS HUMANOS",
     itens: [
-      // Equipe
-      item("equipe_admissoes", "Admissões", "equipe-admissoes", ["EQUIPE_ADMISSOES"]),
-      item("equipe_integracao", "Integração de Colaboradores", "equipe-integracao", ["EQUIPE_INTEGRACAO"]),
-      item("equipe_graint", "Cadastro no Graint", "equipe-graint", ["EQUIPE_GRAINT"]),
-      item("base_colab_consulta", "Consultar Base", "consultar-colaboradores", ["BASE_COLAB_CONSULTA"]),
-      item("contatos_exportacoes", "Contatos e Cadastros", "contatos", ["CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"]),
+      // Equipe (Admissões, Integração, Cadastro no Graint, Consultar Base e Contatos vivem como abas dentro desta página)
+      item("equipe", "Equipe", "equipe", ["EQUIPE_ADMISSOES", "EQUIPE_INTEGRACAO", "EQUIPE_GRAINT", "BASE_COLAB_CONSULTA", "CONTATOS_EXPORTACOES", "CONTATOS", "GOOGLE_CONTACTS"]),
       // Exames
       item("exames_admissional", "Encaminhamento Admissional", "exames-admissional", ["EXAMES_ADMISSIONAL"]),
       item("exames_periodico", "Exames Periódicos", "exames-periodico", ["EXAMES_PERIODICO"]),
