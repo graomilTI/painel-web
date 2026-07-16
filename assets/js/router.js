@@ -117,10 +117,8 @@ const SOFT_NAV_PAGES = new Map([
   ] }],
   ['financeiro', { title: 'Financeiro', module: () => import('./financeiro.js'), extraScripts: ['https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'], extraModules: [() => import('./financeiro-access.js'), () => import('./financeiro-local-date.js')] }],
   ['dashboard', { title: 'Dashboard', module: () => import('./dashboard.js'), extraModules: [() => import('./dashboardProducaoHistoryLink.js'), () => import('./dashboard-regional-map.js')] }],
-  // Fase 4 (2026-07-16) — reorganização do módulo de RH em 9 grupos (placeholders "em construção")
-  ['equipe-admissoes', { title: 'Admissões', module: () => import('./equipeAdmissoes.js') }],
-  ['equipe-integracao', { title: 'Integração de Colaboradores', module: () => import('./equipeIntegracao.js') }],
-  ['equipe-graint', { title: 'Cadastro no Graint', module: () => import('./equipeGraint.js') }],
+  // Fase 4 (2026-07-16) — reorganização do módulo de RH (submenus dentro de "RECURSOS HUMANOS")
+  ['equipe', { title: 'Equipe', module: () => import('./equipe.js') }],
   ['exames-admissional', { title: 'Encaminhamento Admissional', module: () => import('./examesAdmissional.js') }],
   ['exames-periodico', { title: 'Exames Periódicos', module: () => import('./examesPeriodico.js') }],
   ['contratos-experiencia', { title: 'Contrato de Experiência', module: () => import('./contratosExperiencia.js') }],
