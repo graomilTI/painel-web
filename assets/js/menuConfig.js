@@ -94,9 +94,8 @@ export const MENU_CONFIG = [
       item("contratos_rescisoes", "Rescisões", "contratos-rescisoes", ["CONTRATOS_RESCISOES"]),
       // Segurança do Trabalho (EPIs e CAT vivem como abas dentro desta página)
       item("seguranca_trabalho", "Segurança do Trabalho", "seguranca-trabalho", ["RH_EPI", "SEGURANCA_CAT"]),
-      // Indisponibilidade
-      item("ferias_atestados", "Férias e Atestados", "ferias-atestados", ["RH_FERIAS_ATESTADOS"]),
-      item("indisponibilidade_historico", "Histórico", "historico-indisponibilidade", ["RH_HIST_INDISP"]),
+      // Indisponibilidade (Férias, Atestados e Histórico vivem como abas dentro desta página)
+      item("indisponibilidade", "Indisponibilidade", "indisponibilidade", ["RH_FERIAS_ATESTADOS", "RH_HIST_INDISP"]),
       // Cartão Ponto
       item("cartao_ponto", "Cartão Ponto", "cartao-ponto", ["CARTAO_PONTO"]),
       // Advertências
