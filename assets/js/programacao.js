@@ -390,6 +390,7 @@ export function renderContent(content) {
           <input id="progDataRef" type="date" />
         </div>
         <button class="btn btn-primary" type="button" id="progLoadContext" title="Carregar colaboradores da supervisão/data selecionada">Carregar</button>
+        <button class="btn" type="button" id="progGerarPdf" title="Gera um PDF com OS, colaborador, deslocamento, estadia, refeições e extras do dia">📄 Gerar PDF</button>
 
         <div class="prog-toolbar-spacer"></div>
 
@@ -398,7 +399,6 @@ export function renderContent(content) {
           <input id="progSearch" type="text" placeholder="Nome, cargo ou supervisão..." />
         </div>
         <button class="prog-save-main" type="button" id="progSaveProgramacao" disabled title="As alterações já são salvas automaticamente — este botão confirma e finaliza a programação">Salvar programação</button>
-        <button class="btn" type="button" id="progGerarPdf" title="Gera um PDF com OS, colaborador, deslocamento, estadia, refeições e extras do dia">📄 Gerar PDF</button>
       </div>
 
       <div class="prog-toolbar-row prog-toolbar-row-steps">

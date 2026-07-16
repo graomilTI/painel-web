@@ -88,6 +88,16 @@
   border-radius: 13px !important;
   font-weight: 700 !important;
 }
+/* O hotfix do combobox de supervisão (programacao-gestor-ajustes.js) deixa
+   .prog-tfield-sup com flex-grow (cresce até 520px) pra sobrar espaço pro
+   dropdown — isso empurra Data/Carregar/Gerar PDF pra longe da Supervisão
+   com um vão grande. Como este arquivo carrega depois (maior especificidade
+   por .app-shell), reduz o crescimento sem mexer no z-index/posicionamento
+   do dropdown (herdados do próprio hotfix). */
+.app-shell .prog-tfield-sup {
+  flex: 0 1 320px !important;
+  max-width: 340px !important;
+}
 
 /* --------------------------------------------------------------------------
    2. Navegação de etapas — agrupada visualmente nas 4 fases do gestor
