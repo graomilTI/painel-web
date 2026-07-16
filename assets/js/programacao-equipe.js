@@ -969,21 +969,21 @@ function osRowHtml(item) {
 function atualizarKpis(root, osComCandidatos, confirmadosPorOs) {
   const kpiKmEl = root.querySelector('#peqbKpiKm');
   const kpiOsEl = root.querySelector('#peqbKpiOs');
-  const kpiTotalEl = root.querySelector('#peqbKpiTotal');
+  const kpiColabEl = root.querySelector('#peqbKpiColab');
   const kmTotal = osComCandidatos.reduce((soma, { os }) => {
     const km = confirmadosPorOs.get(os.id)?.km_estimado;
     return soma + (Number.isFinite(km) ? km : 0);
   }, 0);
   if (kpiKmEl) kpiKmEl.textContent = `${round1(kmTotal)} km`;
   if (kpiOsEl) kpiOsEl.textContent = String(confirmadosPorOs.size);
-  if (kpiTotalEl) {
+  if (kpiColabEl) {
     // Colaboradores únicos de toda a programação: confirmado principal + adicionais
     // (2º+ colaborador na mesma O.S.), já disponíveis em item.equipeRows.
     const colaboradoresUnicos = new Set();
     osComCandidatos.forEach((item) => {
       (item.equipeRows || []).forEach((r) => { if (r.colaborador_id) colaboradoresUnicos.add(String(r.colaborador_id)); });
     });
-    kpiTotalEl.textContent = `${osComCandidatos.length} O.S. | ${colaboradoresUnicos.size} Colaboradores`;
+    kpiColabEl.textContent = String(colaboradoresUnicos.size);
   }
 }
 
@@ -1142,6 +1142,9 @@ export async function renderProgramacaoSituacao(content, options = {}) {
       <span class="badge">Etapa 1</span>
     </div>
     ${readOnly ? readonlyBannerHtml() : ''}
+    <div class="peqb-kpis">
+      <div class="peqb-kpi"><span>O.S. abertas</span><strong id="peqsKpiTotal">0</strong></div>
+    </div>
     <div class="peqb-os-list peqb-os-list-full ${readOnly ? 'prog-readonly-scope' : ''}" id="peqsOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
   `;
 
@@ -1160,6 +1163,10 @@ export async function renderProgramacaoSituacao(content, options = {}) {
     const scrollPos = scroller ? scroller.scrollTop : 0;
     if (!silent) listEl.innerHTML = '<div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div>';
     osListAtual = await loadOsRelevantes(supervisaoQuery);
+    // "Aberta" = qualquer status que loadOsRelevantes já filtra (nulo/PENDENTE/
+    // AGUARDAR/ATENDER) — independente de estar marcada pra atendimento.
+    const kpiTotalEl = content.querySelector('#peqsKpiTotal');
+    if (kpiTotalEl) kpiTotalEl.textContent = String(osListAtual.length);
     listEl.innerHTML = osListAtual.length
       ? osListAtual.map((os) => `<article class="peqb-row peqs-row" data-os-id="${esc(os.id)}">${osLeftHtml(os, { dataReferencia: options.dataReferencia || null })}</article>`).join('')
       : '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
@@ -1291,7 +1298,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     </div>
     ${readOnly ? readonlyBannerHtml() : ''}
     <div class="peqb-kpis">
-      <div class="peqb-kpi"><span>Total</span><strong id="peqbKpiTotal">0 O.S. | 0 Colaboradores</strong></div>
+      <div class="peqb-kpi"><span>Colaboradores</span><strong id="peqbKpiColab">0</strong></div>
       <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
       <div class="peqb-kpi"><span>OS com equipe</span><strong id="peqbKpiOs">0</strong></div>
     </div>
