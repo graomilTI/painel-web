@@ -898,7 +898,7 @@ function disponibilidadeCategoriaLocal(value) {
 // tabela/coluna já usada pela Etapa 3 (programacao_deslocamento.tipo_deslocamento).
 function deslocamentoSemFrotaHtml(item, readOnly) {
   const tipoAtual = normalizeText(item.custos?.des?.tipo_deslocamento || '');
-  const opts = [['', 'Deslocamento…'], ['UBER/TÁXI', 'Uber/Táxi'], ['REEMBOLSO KM', 'Reembolso km']];
+  const opts = [['', 'Deslocamento…'], ['UBER/TÁXI', 'Uber/Táxi'], ['REEMBOLSO KM', 'Reembolso km'], ['CARONA FROTA', 'Carona']];
   return `<div class="peqb-row-actions" style="margin-top:6px" title="Sem frota/carona — defina como este colaborador vai se deslocar">
     <span class="peqb-clab" style="align-self:center">🚕</span>
     <select class="peqb-name-sel" data-desloc-sem-frota style="max-width:180px;min-width:150px" ${readOnly ? 'disabled' : ''}>
@@ -936,7 +936,7 @@ function osRowHtml(item) {
       </div>
       ${item.custos?.placaAuto
         ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual, readOnly)
-        : (normalizeText(item.custos?.des?.tipo_deslocamento || '') === 'CARONA FROTA' ? '' : deslocamentoSemFrotaHtml(item, readOnly))}
+        : deslocamentoSemFrotaHtml(item, readOnly)}
       ${colabsExtrasHtml(item)}
       <div class="peqb-add-box" data-add-box hidden>
         <span class="peqb-cand-av">+</span>

@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260716-batch2';
-import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260716-batch2';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260716-hotelfix1';
+import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260716-hotelfix1';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260716-batch2';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 

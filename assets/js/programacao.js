@@ -2,8 +2,8 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
-import { loadCustos } from './programacao-equipe.js?v=20260716-batch2';
-import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260716-batch2';
+import { loadCustos } from './programacao-equipe.js?v=20260716-hotelfix1';
+import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260716-hotelfix1';
 
 const STEPS = [
   { code: 'A', label: 'Disponibilidade' },
