@@ -117,8 +117,7 @@ const SOFT_NAV_PAGES = new Map([
   ['dashboard', { title: 'Dashboard', module: () => import('./dashboard.js'), extraModules: [() => import('./dashboardProducaoHistoryLink.js'), () => import('./dashboard-regional-map.js')] }],
   // Fase 4 (2026-07-16) — reorganização do módulo de RH (submenus dentro de "RECURSOS HUMANOS")
   ['equipe', { title: 'Equipe', module: () => import('./equipe.js') }],
-  ['exames-admissional', { title: 'Encaminhamento Admissional', module: () => import('./examesAdmissional.js') }],
-  ['exames-periodico', { title: 'Exames Periódicos', module: () => import('./examesPeriodico.js') }],
+  ['exames', { title: 'Exames', module: () => import('./exames.js') }],
   ['contratos-experiencia', { title: 'Contrato de Experiência', module: () => import('./contratosExperiencia.js') }],
   ['contratos-rescisoes', { title: 'Rescisões', module: () => import('./contratosRescisoes.js') }],
   ['seguranca-trabalho', { title: 'Segurança do Trabalho', module: () => import('./segurancaTrabalho.js') }],
