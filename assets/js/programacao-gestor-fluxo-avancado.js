@@ -392,7 +392,14 @@ function renderPool(poolEl, pool, query = '', readOnly = false) {
   const html = filtrados.length ? filtrados.map((c) => colabCardHtml(c, readOnly)).join('') : '<div class="pgc-colab-empty">Nenhum colaborador encontrado.</div>';
   if (list.__pgcHtmlCache === html) return;
   list.__pgcHtmlCache = html;
+  // augmentEquipeDnd roda a cada mutação de DOM na página inteira (observer
+  // global em document.documentElement, ver observeEquipePane) — sem
+  // preservar a rolagem aqui, o sidebar de colaboradores/motoristas voltava
+  // pro topo a qualquer ação, mesmo sem relação com o pool (autosave, toggle
+  // de status, etc.).
+  const scrollPos = poolEl.scrollTop;
   list.innerHTML = html;
+  poolEl.scrollTop = scrollPos;
 }
 
 function ensureEquipeSplit(pane) {
