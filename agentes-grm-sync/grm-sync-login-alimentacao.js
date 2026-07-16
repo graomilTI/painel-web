@@ -10,9 +10,12 @@
  * 5. Clica em Gerar Relatório e aguarda o botão XLS ficar habilitado.
  * 6. Baixa o XLS, capturando arquivo do Chrome, resposta HTTP ou Blob gerado pela página.
  * 7. Grava os registros em grm_login_movimentos_importacoes.
- * 8. Classifica cada login por turno (TURNOS abaixo: Café 06:00-07:30, Almoço 11:00-12:30,
- *    Janta 19:00-20:30) e compara a posição do colaborador com os Locais de Embarque.
- * 9. Se estiver a até 1 km do embarque, relaciona o colaborador em
+ * 8. Classifica cada login por turno (TURNOS abaixo: Café 04:00-07:00, Almoço 05:00-19:00,
+ *    Janta 19:00-00:00) e compara a posição do colaborador com o ponto de embarque
+ *    (ponto1_*) da O.S. PLANEJADA pra esse colaborador naquele dia (operacional_os_colaboradores
+ *    + operacional_os) — não com qualquer Local de Embarque do sistema. Sem O.S. planejada
+ *    pro colaborador naquele dia, não há embarque pra corresponder e ele não fica elegível.
+ * 9. Se o login estiver a até 1 km do embarque da O.S. planejada, relaciona o colaborador em
  *    financeiro_alimentacao_colaboradores (coluna tipo_beneficio = CAFE/ALMOCO/JANTA), 1
  *    linha por dia+colaborador+turno — um colaborador pode aparecer nos 3 turnos no mesmo
  *    dia. Se houver mais de um login dentro do mesmo turno, fica só o mais próximo do
@@ -55,9 +58,9 @@ var GRM_PASSWORD = process.env.GRMSERVER_PASSWORD;
 var TIMEZONE = process.env.LOGIN_REPORT_TIMEZONE || 'America/Sao_Paulo';
 var RAIO_M = Number(process.env.ALIMENTACAO_RAIO_M || 1000);
 var TURNOS = [
-  { tipo: 'CAFE', inicio: process.env.CAFE_HORA_INICIO || '06:00', fim: process.env.CAFE_HORA_FIM || '07:30' },
-  { tipo: 'ALMOCO', inicio: process.env.ALMOCO_HORA_INICIO || process.env.ALIMENTACAO_HORA_INICIO || '11:00', fim: process.env.ALMOCO_HORA_FIM || process.env.ALIMENTACAO_HORA_FIM || '12:30' },
-  { tipo: 'JANTA', inicio: process.env.JANTA_HORA_INICIO || '19:00', fim: process.env.JANTA_HORA_FIM || '20:30' }
+  { tipo: 'CAFE', inicio: process.env.CAFE_HORA_INICIO || '04:00', fim: process.env.CAFE_HORA_FIM || '07:00' },
+  { tipo: 'ALMOCO', inicio: process.env.ALMOCO_HORA_INICIO || process.env.ALIMENTACAO_HORA_INICIO || '05:00', fim: process.env.ALMOCO_HORA_FIM || process.env.ALIMENTACAO_HORA_FIM || '19:00' },
+  { tipo: 'JANTA', inicio: process.env.JANTA_HORA_INICIO || '19:00', fim: process.env.JANTA_HORA_FIM || '00:00' }
 ];
 var DOWNLOAD_TIMEOUT_MS = Number(process.env.LOGIN_REPORT_DOWNLOAD_TIMEOUT_MS || 120000);
 var WAIT_AFTER_GENERATE_MS = Number(process.env.LOGIN_REPORT_WAIT_AFTER_GENERATE_MS || 3000);
@@ -106,13 +109,6 @@ var REPORT_CONFIG = {
     '[class*="loginReport"][class*="xls"] button',
     '[class*="report-to-xls"] button',
     '[class*="xls"] button'
-  ].join(',')),
-  localTables: splitEnv(process.env.ALIMENTACAO_LOCAIS_TABLES || [
-    'locais_servico',
-    'logistica_locais_servico',
-    'operacional_locais_embarque',
-    'operacional_os',
-    'grm_locais_embarque_importacoes'
   ].join(','))
 };
 
@@ -141,16 +137,6 @@ var ALIASES = {
   tipoMovimento: splitEnv('Tipo Movimento,Tipo de Movimento,Evento,Ação,Acao,Tipo,Tipo Login,movementType,eventType'),
   dispositivo: splitEnv('Dispositivo,Aparelho,Device,deviceName,device_id,deviceId'),
   precisao: splitEnv('Precisão,Precisao,Accuracy,accuracy,Precisão GPS,Precisao GPS')
-};
-
-var LOCAL_ALIASES = {
-  id: splitEnv('id,codigo,código,local_id,place_id'),
-  nome: splitEnv('Nome,Descrição,Descricao,Local de Serviço,Local de Servico,Local de Embarque,Local,Armazém,Armazem,nome,descricao,local_servico,embarque,ponto1_nome'),
-  cidade: splitEnv('Cidade,Cidade de Embarque,cidade,cidade_embarque,ponto1_cidade'),
-  uf: splitEnv('UF,Estado,uf,estado,uf_embarque,ponto1_uf'),
-  latitude: splitEnv('Latitude,latitude,Lat,lat,Latitude Local,Latitude do Local,Latitude Serviço,Latitude Servico,lat_local,latitude_local,local_latitude,lat_os,latitude_os,ponto1_latitude,Latitude Embarque,Latitude de Embarque'),
-  longitude: splitEnv('Longitude,longitude,Lng,lng,Long,long,Longitude Local,Longitude do Local,Longitude Serviço,Longitude Servico,lng_local,longitude_local,local_longitude,lng_os,longitude_os,ponto1_longitude,Longitude Embarque,Longitude de Embarque'),
-  ativo: splitEnv('Ativo,ativo,Status,status,Situação,Situacao')
 };
 
 function log(level, msg) {
@@ -339,14 +325,6 @@ function findByAliasesDeep(obj, aliases) {
     }
   }
   return null;
-}
-
-function mergeTopAndRaw(record) {
-  var raw = record && (record.dados_json || record.raw);
-  var out = {};
-  if (raw && typeof raw === 'object') Object.keys(raw).forEach(function (k) { out[k] = raw[k]; });
-  if (record && typeof record === 'object') Object.keys(record).forEach(function (k) { out[k] = record[k]; });
-  return out;
 }
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
@@ -1319,7 +1297,7 @@ async function createRun(fromYmd, toYmd) {
       agente: 'grm-sync-login-alimentacao',
       raio_m: RAIO_M,
       turnos: TURNOS,
-      local_tables: REPORT_CONFIG.localTables
+      criterio_embarque: 'ponto_embarque_da_os_planejada_para_o_colaborador'
     }
   };
   var result = await supabase.from(REPORT_CONFIG.tableExecucoes).insert(payload).select('id').single();
@@ -1373,20 +1351,6 @@ async function saveImports(rows) {
   }
 }
 
-async function fetchTableRows(table, selectColumns) {
-  var all = [];
-  var pageSize = 1000;
-  for (var from = 0; from < MAX_LOCAL_ROWS; from += pageSize) {
-    var query = supabase.from(table).select(selectColumns || '*').range(from, from + pageSize - 1);
-    var result = await query;
-    if (result.error) throw result.error;
-    var rows = result.data || [];
-    all = all.concat(rows);
-    if (rows.length < pageSize) break;
-  }
-  return all;
-}
-
 // O relatório do GRM só mostra o login MAIS RECENTE de cada colaborador (não um histórico).
 // Se buscássemos elegibilidade só a partir dele, um check-in válido dentro da janela às
 // 11h que fosse seguido por outro às 12h em outro lugar sumiria do relatório antes da
@@ -1413,64 +1377,102 @@ async function loadImportedMovements(fromYmd, toYmd) {
   return all;
 }
 
-function isInactiveLocal(value) {
-  if (value === false || value === 0) return true;
-  var n = normalizeText(value);
-  return n === 'INATIVO' || n === 'INATIVA' || n === 'DESATIVADO' || n === 'DESATIVADA' || n === 'N' || n === 'NAO';
+function normalizeCpfDigits(value) {
+  var d = onlyDigits(value);
+  return d && d.length === 11 ? d : null;
 }
 
-function extractLocal(record, table) {
-  var source = mergeTopAndRaw(record);
-  if (isInactiveLocal(findByAliasesDeep(source, LOCAL_ALIASES.ativo))) return null;
-  var lat = parseNumber(findByAliasesDeep(source, LOCAL_ALIASES.latitude));
-  var lng = parseNumber(findByAliasesDeep(source, LOCAL_ALIASES.longitude));
-  if (!isValidCoord(lat, lng)) return null;
-  var nome = clean(findByAliasesDeep(source, LOCAL_ALIASES.nome));
-  return {
-    fonte_tabela: table,
-    fonte_id: clean(findByAliasesDeep(source, LOCAL_ALIASES.id)),
-    nome: nome || 'Local de Embarque',
-    cidade: clean(findByAliasesDeep(source, LOCAL_ALIASES.cidade)),
-    uf: clean(findByAliasesDeep(source, LOCAL_ALIASES.uf)),
-    latitude: Number(lat),
-    longitude: Number(lng),
-    raw: record
-  };
+async function loadOsEmbarquePointsInRange(fromYmd, toYmd) {
+  var all = [];
+  var pageSize = 1000;
+  for (var from = 0; from < MAX_LOCAL_ROWS; from += pageSize) {
+    var result = await supabase
+      .from('operacional_os')
+      .select('id,numero_os,data_os,ponto1_nome,ponto1_latitude,ponto1_longitude,cidade_embarque,uf_embarque')
+      .gte('data_os', fromYmd)
+      .lte('data_os', toYmd)
+      .range(from, from + pageSize - 1);
+    if (result.error) throw result.error;
+    var rows = result.data || [];
+    all = all.concat(rows);
+    if (rows.length < pageSize) break;
+  }
+  return all.filter(function (r) { return isValidCoord(r.ponto1_latitude, r.ponto1_longitude); });
 }
 
-async function loadLocalPoints() {
-  log('INFO', 'Carregando coordenadas dos Locais de Embarque...');
-  var points = [];
-  for (var i = 0; i < REPORT_CONFIG.localTables.length; i++) {
-    var table = REPORT_CONFIG.localTables[i];
-    try {
-      var select = '*';
-      if (table === 'operacional_os') {
-        select = 'id,numero_os,ponto1_nome,ponto1_latitude,ponto1_longitude,embarque,cliente,cidade_embarque,uf_embarque';
-      }
-      var rows = await fetchTableRows(table, select);
-      var before = points.length;
-      rows.forEach(function (r) {
-        var p = extractLocal(r, table);
-        if (p) points.push(p);
-      });
-      log('INFO', table + ': ' + (points.length - before) + ' ponto(s) com coordenadas.');
-    } catch (error) {
-      log('WARN', 'Não foi possível ler ' + table + ': ' + error.message);
+async function loadOsColaboradoresForIds(osIds) {
+  var all = [];
+  var pageSize = 300;
+  for (var i = 0; i < osIds.length; i += pageSize) {
+    var chunk = osIds.slice(i, i + pageSize);
+    var result = await supabase
+      .from('operacional_os_colaboradores')
+      .select('os_id,colaborador_key,colaborador_cpf,colaborador_nome')
+      .in('os_id', chunk);
+    if (result.error) throw result.error;
+    all = all.concat(result.data || []);
+  }
+  return all;
+}
+
+// A elegibilidade agora exige corresponder o login à O.S. PLANEJADA pro colaborador
+// naquele dia (operacional_os_colaboradores -> operacional_os.ponto1_*), não mais ao
+// Local de Embarque mais próximo entre TODOS os cadastrados. colaborador_cpf/colaborador_key
+// em operacional_os_colaboradores é inconsistente (às vezes nome, às vezes CPF, às vezes
+// outro identificador numérico) — por isso indexamos por CPF (11 dígitos) quando disponível
+// e por nome normalizado como fallback.
+async function loadPlannedEmbarquePoints(fromYmd, toYmd) {
+  log('INFO', 'Carregando O.S. planejadas (' + fromYmd + ' a ' + toYmd + ') e seus embarques...');
+  var osRows = await loadOsEmbarquePointsInRange(fromYmd, toYmd);
+  var osById = {};
+  osRows.forEach(function (r) { osById[r.id] = r; });
+
+  var assignments = osRows.length ? await loadOsColaboradoresForIds(Object.keys(osById)) : [];
+
+  var byCpf = {};
+  var byNome = {};
+  assignments.forEach(function (a) {
+    var os = osById[a.os_id];
+    if (!os) return;
+    var ponto = {
+      fonte_tabela: 'operacional_os',
+      fonte_id: os.id,
+      nome: os.ponto1_nome || ('Embarque da O.S. ' + (os.numero_os || os.id)),
+      cidade: os.cidade_embarque,
+      uf: os.uf_embarque,
+      latitude: Number(os.ponto1_latitude),
+      longitude: Number(os.ponto1_longitude),
+      numero_os: os.numero_os
+    };
+
+    var cpf = normalizeCpfDigits(a.colaborador_cpf) || normalizeCpfDigits(a.colaborador_key);
+    if (cpf) {
+      var kc = os.data_os + '|' + cpf;
+      (byCpf[kc] = byCpf[kc] || []).push(ponto);
     }
-  }
-
-  var dedup = {};
-  points.forEach(function (p) {
-    var key = p.latitude.toFixed(6) + '|' + p.longitude.toFixed(6) + '|' + normalizeText(p.nome);
-    if (!dedup[key]) dedup[key] = p;
+    var nome = normalizeText(a.colaborador_nome || a.colaborador_key);
+    if (nome) {
+      var kn = os.data_os + '|' + nome;
+      (byNome[kn] = byNome[kn] || []).push(ponto);
+    }
   });
-  var unique = Object.keys(dedup).map(function (k) { return dedup[k]; });
-  if (!unique.length) {
-    throw new Error('Nenhum Local de Embarque com latitude/longitude foi encontrado. Revise ALIMENTACAO_LOCAIS_TABLES ou cadastre as coordenadas.');
+
+  log('SUCCESS', osRows.length + ' O.S. com embarque resolvido; ' + assignments.length + ' vínculo(s) colaborador-O.S. no período.');
+  return { byCpf: byCpf, byNome: byNome, totalOsPontos: osRows.length };
+}
+
+function plannedPointsForRow(row, planned) {
+  var cpf = normalizeCpfDigits(row.cpf);
+  if (cpf) {
+    var byCpf = planned.byCpf[row.data_movimento + '|' + cpf];
+    if (byCpf && byCpf.length) return byCpf;
   }
-  log('SUCCESS', unique.length + ' Local(is) de Embarque válido(s) carregado(s).');
-  return unique;
+  var nome = normalizeText(row.colaborador);
+  if (nome) {
+    var byNome = planned.byNome[row.data_movimento + '|' + nome];
+    if (byNome && byNome.length) return byNome;
+  }
+  return null;
 }
 
 function nearestLocal(row, locals) {
@@ -1489,23 +1491,28 @@ function nearestLocal(row, locals) {
 // de uma única execução — veja o comentário de loadImportedMovements para o motivo. O
 // upsert (chave_unica = data+colaborador) nunca envia a coluna status, então recomputar
 // não derruba uma decisão OK/PAGO já tomada pelo financeiro.
-// Acha em quais turnos (Café/Almoço/Janta) um horário se qualifica. ALMOÇO não tem janela
-// de horário: qualquer ação do dia em um ponto de embarque conta (basta estar dentro do
-// raio). Café e Janta continuam restritos à janela de horário configurada.
+// Acha em quais turnos (Café 04:00-07:00, Almoço 05:00-19:00, Janta 19:00-00:00) um horário
+// se qualifica. "00:00" no fim representa a virada pro fim do dia (não pro dia seguinte):
+// se hora_fim <= hora_inicio, soma 24h só na comparação.
 function turnosForMinutes(minutes) {
   var result = [];
   for (var i = 0; i < TURNOS.length; i++) {
     var t = TURNOS[i];
-    if (t.tipo === 'ALMOCO') { result.push(t); continue; }
     var start = timeToMinutes(t.inicio);
     var end = timeToMinutes(t.fim);
-    if (start === null || end === null || end < start) throw new Error('Janela do turno ' + t.tipo + ' inválida: ' + t.inicio + '-' + t.fim);
+    if (start === null || end === null) throw new Error('Janela do turno ' + t.tipo + ' inválida: ' + t.inicio + '-' + t.fim);
+    if (end <= start) end += 24 * 60;
     if (minutes >= start && minutes <= end) result.push(t);
   }
   return result;
 }
 
-function qualifyForMeal(rows, locals) {
+// planned = { byCpf, byNome } vindo de loadPlannedEmbarquePoints: só entra em "inside" um
+// login que caia dentro do raio do ponto de embarque da O.S. PLANEJADA pro colaborador
+// naquele dia. Sem O.S. planejada (ou sem colaborador correspondente), plannedPointsForRow
+// retorna null e a linha nunca entra no grupo "inside" — não há mais fallback pro Local de
+// Embarque mais próximo entre todos os cadastrados.
+function qualifyForMeal(rows, planned) {
   // Chave por dia+colaborador+turno: um colaborador pode ficar elegível pros 3 turnos no
   // mesmo dia, cada um vira uma linha própria em financeiro_alimentacao_colaboradores.
   var grouped = {};
@@ -1515,7 +1522,8 @@ function qualifyForMeal(rows, locals) {
     if (minutes === null) return;
     var turnos = turnosForMinutes(minutes);
     if (!turnos.length) return;
-    var nearest = nearestLocal(row, locals);
+    var pontosOs = plannedPointsForRow(row, planned);
+    var nearest = pontosOs && pontosOs.length ? nearestLocal(row, pontosOs) : null;
     turnos.forEach(function (turno) {
       var groupKey = row.data_movimento + '|' + row.colaborador_chave + '|' + turno.tipo;
       if (!grouped[groupKey]) grouped[groupKey] = { turno: turno, rows: [], inside: [] };
@@ -1567,19 +1575,13 @@ function qualifyForMeal(rows, locals) {
       updated_at: now,
       dados_json: {
         movimento_selecionado: row.dados_json,
-        local_selecionado: local.raw,
-        regra: turno.tipo === 'ALMOCO' ? {
-          tipo_beneficio: turno.tipo,
-          hora_inicio: null,
-          hora_fim: null,
-          raio_m: RAIO_M,
-          criterio: 'ao_menos_um_ponto_no_dia_dentro_do_raio'
-        } : {
+        numero_os: local.numero_os,
+        regra: {
           tipo_beneficio: turno.tipo,
           hora_inicio: turno.inicio,
           hora_fim: turno.fim,
           raio_m: RAIO_M,
-          criterio: 'ao_menos_um_ponto_na_janela_dentro_do_raio'
+          criterio: 'ponto_embarque_da_os_planejada_para_o_colaborador'
         }
       }
     });
@@ -1691,16 +1693,16 @@ async function main() {
     var movements = normalizeReportRows(rawRows, fromYmd, toYmd);
     await saveImports(movements);
 
-    var locals = await loadLocalPoints();
+    var planned = await loadPlannedEmbarquePoints(fromYmd, toYmd);
     var historico = await loadImportedMovements(fromYmd, toYmd);
-    var eligible = qualifyForMeal(historico, locals);
+    var eligible = qualifyForMeal(historico, planned);
     await saveEligible(eligible, fromYmd, toYmd);
 
     await finishRun(runId, {
       status: 'SUCESSO',
       total_relatorio: rawRows.length,
       total_movimentos: movements.length,
-      total_locais: locals.length,
+      total_locais: planned.totalOsPontos,
       total_elegiveis: eligible.length
     });
 
@@ -1727,5 +1729,5 @@ module.exports = {
   qualifyForMeal: qualifyForMeal,
   haversineMeters: haversineMeters,
   parseDateTimeFromRow: parseDateTimeFromRow,
-  extractLocal: extractLocal
+  turnosForMinutes: turnosForMinutes
 };
