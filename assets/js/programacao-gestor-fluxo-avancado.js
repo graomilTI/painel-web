@@ -1,7 +1,8 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260716-oscount1';
-import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260716-jantahotel1';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260716-batch2';
+import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260716-batch2';
+import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260716-batch2';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 // Programação Gestor — fluxo avançado:
@@ -165,11 +166,13 @@ function mountShell() {
       <section class="pgc-tab-pane" id="pgcPane1" data-pgc-pane="1">${loadingHtml('Aba 1 · Situação da O.S.')}</section>
       <section class="pgc-tab-pane" id="pgcPane2" data-pgc-pane="2" hidden>${loadingHtml('Aba 2 · Equipe + mapa')}</section>
       <section class="pgc-tab-pane" id="pgcPane3" data-pgc-pane="3" hidden>${loadingHtml('Aba 3 · Despesas')}</section>
+      <section class="pgc-tab-pane" id="pgcPane4" data-pgc-pane="4" hidden>${loadingHtml('Aba 4 · Sem O.S.')}</section>
     </div>`;
   state.panes = {
     '1': document.getElementById('pgcPane1'),
     '2': document.getElementById('pgcPane2'),
     '3': document.getElementById('pgcPane3'),
+    '4': document.getElementById('pgcPane4'),
   };
   setActiveStep(state.activeStep);
   return state.panes;
@@ -192,7 +195,7 @@ async function renderAllTabs({ force = false } = {}) {
   const token = ++state.renderToken;
   const panes = mountShell();
   if (!panes) { state.renderingAll = false; return; }
-  setFeedback('Carregando as 3 abas da programação...', 'ok');
+  setFeedback('Carregando as 4 abas da programação...', 'ok');
   const common = {
     supervisao: opts.supervisao,
     supervisoesResolvidas: opts.supervisoesResolvidas,
@@ -205,6 +208,7 @@ async function renderAllTabs({ force = false } = {}) {
       renderProgramacaoSituacao(panes['1'], common),
       renderProgramacaoEquipe(panes['2'], { ...common, autoPreencher: false }),
       renderProgramacaoDespesas(panes['3'], common),
+      renderProgramacaoSemOs(panes['4'], common),
     ]);
     if (token !== state.renderToken) return;
     const falhas = results.filter((r) => r.status === 'rejected');
@@ -212,7 +216,7 @@ async function renderAllTabs({ force = false } = {}) {
       falhas.forEach((f) => console.error('[programacao-fluxo] falha ao carregar aba', f.reason));
       setFeedback(`Carregou com ${falhas.length} alerta(s). Confira as abas.`, 'warn');
     } else {
-      setFeedback('As 3 abas foram carregadas.', 'ok');
+      setFeedback('As 4 abas foram carregadas.', 'ok');
     }
     setActiveStep(state.activeStep);
     scheduleEquipeAugment(250);
@@ -250,6 +254,13 @@ async function refreshAposVinculo() {
 // recriar as Abas 1/2 (e o mapa Leaflet vivo dentro da Aba 2) à toa.
 window.__pgcRefreshDespesas = async () => {
   if (!state.panes?.['3']) return;
+  // Refresh sem remontar a aba (mantém a rolagem — ver
+  // window.__pgcSilentRefreshDespesas em programacao-despesas.js). Só cai pro
+  // remount completo se a aba 3 nunca chegou a montar essa ponte.
+  if (window.__pgcSilentRefreshDespesas) {
+    await window.__pgcSilentRefreshDespesas();
+    return;
+  }
   const opts = getContextOptions();
   if (!contextReady(opts)) return;
   await renderProgramacaoDespesas(state.panes['3'], {
