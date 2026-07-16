@@ -9,6 +9,7 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
 import { logActivity } from './activityLogger.js';
+import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
 
 let currentUser = null;
 const BRI = new Intl.NumberFormat('pt-BR');
@@ -945,10 +946,19 @@ function osRowHtml(item) {
       : '';
     right = `<div class="peqb-os2-right">
       <input type="hidden" data-select-colaborador value="${esc(selecionadoId)}" />
+      <div class="peqb-conf-head" style="justify-content:flex-end">
+        <button type="button" class="peqb-add-colab" data-toggle-add-colab ${dis} title="Adicionar colaborador digitando/selecionando (sem precisar arrastar)">+</button>
+      </div>
       ${candHtml}
       ${outrosHtml}
       <div class="peqb-row-actions">
         <button type="button" class="peqb-row-btn" data-confirmar ${candidatos.length && !readOnly ? '' : 'disabled'}>Confirmar selecionado</button>
+      </div>
+      <div class="peqb-add-box" data-add-box hidden>
+        <span class="peqb-cand-av">+</span>
+        <span class="peqb-cand-tag peqb-conf-tag t-info">Adicionar</span>
+        <select class="peqb-name-sel" data-add-colab-select>${addColabOptionsHtml(item)}</select>
+        <button type="button" class="peqb-row-btn" data-add-colab-confirm>Adicionar</button>
       </div>
     </div>`;
   }
@@ -959,12 +969,22 @@ function osRowHtml(item) {
 function atualizarKpis(root, osComCandidatos, confirmadosPorOs) {
   const kpiKmEl = root.querySelector('#peqbKpiKm');
   const kpiOsEl = root.querySelector('#peqbKpiOs');
+  const kpiTotalEl = root.querySelector('#peqbKpiTotal');
   const kmTotal = osComCandidatos.reduce((soma, { os }) => {
     const km = confirmadosPorOs.get(os.id)?.km_estimado;
     return soma + (Number.isFinite(km) ? km : 0);
   }, 0);
   if (kpiKmEl) kpiKmEl.textContent = `${round1(kmTotal)} km`;
   if (kpiOsEl) kpiOsEl.textContent = String(confirmadosPorOs.size);
+  if (kpiTotalEl) {
+    // Colaboradores únicos de toda a programação: confirmado principal + adicionais
+    // (2º+ colaborador na mesma O.S.), já disponíveis em item.equipeRows.
+    const colaboradoresUnicos = new Set();
+    osComCandidatos.forEach((item) => {
+      (item.equipeRows || []).forEach((r) => { if (r.colaborador_id) colaboradoresUnicos.add(String(r.colaborador_id)); });
+    });
+    kpiTotalEl.textContent = `${osComCandidatos.length} O.S. | ${colaboradoresUnicos.size} Colaboradores`;
+  }
 }
 
 // --- Mapa: desenho de preview (reta) e de rota real (frotas-roteirizar) ---
@@ -1271,6 +1291,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     </div>
     ${readOnly ? readonlyBannerHtml() : ''}
     <div class="peqb-kpis">
+      <div class="peqb-kpi"><span>Total</span><strong id="peqbKpiTotal">0 O.S. | 0 Colaboradores</strong></div>
       <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
       <div class="peqb-kpi"><span>OS com equipe</span><strong id="peqbKpiOs">0</strong></div>
     </div>
@@ -1777,6 +1798,19 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         placa_veiculo: onlyPlate(des.placa_veiculo || ''),
       }, { onConflict: 'programacao_id,colaborador_id' }),
     ]);
+    // Se o principal está em hotel/alojamento/pernoite, o colaborador copiado
+    // herda tem_estadia (acima) — precisa entrar na janta automática do
+    // Financeiro também (mesma regra da Etapa 3, ver programacao-janta-hotel.js).
+    if (est.tem_estadia) {
+      sincronizarJantaHotelFinanceiro({
+        programacaoId: destinoBase.programacao_id,
+        colaboradorId: cand.colaboradorId,
+        nome: cand.nome || '',
+        comEstadia: true,
+        checkin: est.checkin || options.dataReferencia || todayIso(),
+        checkout: est.checkout || options.dataReferencia || todayIso(),
+      });
+    }
   }
 
   listEl.addEventListener('click', async (event) => {
@@ -1834,29 +1868,44 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       const cand = item?.candidatos.find((c) => String(c.colaboradorId) === String(sel?.value))
         || item?.colaboradoresRegional?.find((c) => String(c.colaboradorId) === String(sel?.value));
       if (!item || !cand) return;
-      // A caixa "+ colaborador" só aparece em O.S. que já tem 1+ confirmado
-      // (ver osRowHtml/data-add-box) — logo todo clique aqui é o 2º+.
+      // A caixa "+ colaborador" hoje também aparece em O.S. ainda sem ninguém
+      // confirmado (ver osRowHtml, branch !confirmado) — só exige a
+      // justificativa de "2+ colaboradores" quando já existe 1+ de verdade.
       const colaboradoresAtuais = item.equipeRows || [];
-      const motivo = await openJustificativaModal(item.os, colaboradoresAtuais, { nome: cand.nome, colaboradorId: cand.colaboradorId });
-      if (!motivo) return;
+      const eraPrimeiroColaborador = colaboradoresAtuais.length === 0;
+      let motivo = null;
+      if (!eraPrimeiroColaborador) {
+        motivo = await openJustificativaModal(item.os, colaboradoresAtuais, { nome: cand.nome, colaboradorId: cand.colaboradorId });
+        if (!motivo) return;
+      }
       addColabConfirm.disabled = true;
-      logActivity('action', 'justificativa_multiplos_colaboradores_os', 'programacao', {
-        os_id: item.os.id,
-        numero_os: item.os.numero_os,
-        colaboradores: [...colaboradoresAtuais.map((c) => c.colaborador_id), cand.colaboradorId],
-        nomes: [...colaboradoresAtuais.map((c) => c.nome_colaborador), cand.nome],
-        motivo,
-      });
+      if (motivo) {
+        logActivity('action', 'justificativa_multiplos_colaboradores_os', 'programacao', {
+          os_id: item.os.id,
+          numero_os: item.os.numero_os,
+          colaboradores: [...colaboradoresAtuais.map((c) => c.colaborador_id), cand.colaboradorId],
+          nomes: [...colaboradoresAtuais.map((c) => c.nome_colaborador), cand.nome],
+          motivo,
+        });
+      }
       try {
-        // Grava e atualiza só esta linha no DOM — recarregar a lista inteira
-        // (49+ O.S., cada uma com candidatos/custos) pra refletir 1 pessoa
-        // adicionada deixava a confirmação visivelmente lenta.
         const [novaLinha] = await Promise.all([
           adicionarColaboradorOs(programacaoIdParaOs(item.os), item.os, cand),
           copiarCustosDoPrincipal(item, cand),
         ]);
-        item.equipeRows = [...(item.equipeRows || []), novaLinha];
-        row.outerHTML = osRowHtml(item);
+        if (eraPrimeiroColaborador) {
+          // Esta O.S. estava sem ninguém confirmado — vira o confirmadoRow
+          // principal, o que muda o layout inteiro do card (tipo/custos/km
+          // ainda não estavam calculados neste item) e não dá pra remendar só
+          // com osRowHtml local; refresh silencioso recalcula tudo direito.
+          await carregarERenderizar({ silent: true });
+        } else {
+          // Grava e atualiza só esta linha no DOM — recarregar a lista inteira
+          // (49+ O.S., cada uma com candidatos/custos) pra refletir 1 pessoa
+          // adicionada deixava a confirmação visivelmente lenta.
+          item.equipeRows = [...colaboradoresAtuais, novaLinha];
+          row.outerHTML = osRowHtml(item);
+        }
       } catch (error) {
         console.error('[equipe] adicionar colaborador:', error);
         addColabConfirm.disabled = false;
