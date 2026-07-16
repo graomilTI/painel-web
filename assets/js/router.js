@@ -118,8 +118,7 @@ const SOFT_NAV_PAGES = new Map([
   // Fase 4 (2026-07-16) — reorganização do módulo de RH (submenus dentro de "RECURSOS HUMANOS")
   ['equipe', { title: 'Equipe', module: () => import('./equipe.js') }],
   ['exames', { title: 'Exames', module: () => import('./exames.js') }],
-  ['contratos-experiencia', { title: 'Contrato de Experiência', module: () => import('./contratosExperiencia.js') }],
-  ['contratos-rescisoes', { title: 'Rescisões', module: () => import('./contratosRescisoes.js') }],
+  ['contratos', { title: 'Contratos', module: () => import('./contratos.js') }],
   ['seguranca-trabalho', { title: 'Segurança do Trabalho', module: () => import('./segurancaTrabalho.js') }],
   ['indisponibilidade', { title: 'Indisponibilidade', module: () => import('./indisponibilidade.js') }],
   ['cartao-ponto', { title: 'Cartão Ponto', module: () => import('./cartaoPonto.js') }],
