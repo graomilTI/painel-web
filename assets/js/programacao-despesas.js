@@ -5,7 +5,8 @@
 // passou a reescrever #progSteps só com os botões das 3 etapas novas.
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
-import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260715-datafiltro2';
+import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260716-jantahotel1';
+import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
 
 function esc(value) {
   return String(value ?? '')
@@ -196,7 +197,7 @@ function isDataPassada(dataReferencia) {
 // linha se foi escalada como adicional em 2+ O.S. no mesmo dia. programacao_id
 // vem direto da própria linha (mais correto sob "Todas" do que recalcular pela
 // supervisão selecionada no combo).
-async function loadRosterDoDia(programacaoIdQuery) {
+export async function loadRosterDoDia(programacaoIdQuery) {
   const equipeRows = await loadEquipeExistente(programacaoIdQuery);
   const porColab = new Map();
   equipeRows.filter((r) => r.confirmado).forEach((r) => {
@@ -209,14 +210,14 @@ async function loadRosterDoDia(programacaoIdQuery) {
   return [...porColab.values()];
 }
 
-async function loadOsResumo(osIds) {
+export async function loadOsResumo(osIds) {
   if (!osIds.length) return new Map();
   const { data, error } = await supabase.from('operacional_os').select('id,numero_os,cliente,embarque').in('id', osIds);
   if (error) throw error;
   return new Map((data || []).map((o) => [String(o.id), o]));
 }
 
-async function loadExtras(programacaoIdQuery, colaboradorIds) {
+export async function loadExtras(programacaoIdQuery, colaboradorIds) {
   if (!colaboradorIds.length) return new Map();
   const ids = Array.isArray(programacaoIdQuery) ? programacaoIdQuery : [programacaoIdQuery];
   const { data, error } = await supabase
@@ -400,6 +401,34 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     }
     const { error } = await supabase.from(tabela).upsert(payload, { onConflict: 'programacao_id,colaborador_id' });
     if (error) console.error('[despesas]', tabela, error);
+    if (!error && tabela === 'programacao_estadia') {
+      // Colaborador em hotel/alojamento/pernoite entra automaticamente na
+      // janta (pedido do usuário, 2026-07-16): acende o chip da Etapa 3 (se
+      // ainda não estiver aceso) e grava em Financeiro > Refeições.
+      const jantaChip = card.querySelector('[data-ref="janta"]');
+      if (payload.tem_estadia && jantaChip && !jantaChip.classList.contains('on')) {
+        jantaChip.classList.add('on');
+        const { error: aliErr } = await supabase.from('programacao_alimentacao').upsert({
+          programacao_id: payload.programacao_id,
+          data_referencia: payload.data_referencia,
+          colaborador_id: colabId,
+          nome_colaborador: card.dataset.nome,
+          cafe: !!card.querySelector('[data-ref="cafe"]')?.classList.contains('on'),
+          almoco: !!card.querySelector('[data-ref="almoco"]')?.classList.contains('on'),
+          janta: true,
+        }, { onConflict: 'programacao_id,colaborador_id' });
+        if (aliErr) console.error('[despesas] auto-janta (chip)', aliErr);
+      }
+      // Não bloqueia o autosave da estadia — roda em paralelo.
+      sincronizarJantaHotelFinanceiro({
+        programacaoId: payload.programacao_id,
+        colaboradorId: colabId,
+        nome: card.dataset.nome,
+        comEstadia: payload.tem_estadia,
+        checkin: payload.checkin,
+        checkout: payload.checkout,
+      });
+    }
   }
 
   const timers = new Map();

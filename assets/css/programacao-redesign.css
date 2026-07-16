@@ -451,3 +451,14 @@ body.prog-step-a-os #progDistribuicaoOsMount .os-a-label {
    7. Respiro geral da página
    -------------------------------------------------------------------------- */
 .app-shell .page-main { padding-bottom: 40px !important; }
+
+/* --------------------------------------------------------------------------
+   8. Aumento geral do texto (pedido do usuário, 2026-07-16)
+   -------------------------------------------------------------------------- */
+/* zoom escala texto + espaçamento/botões juntos, sem precisar sobrescrever
+   cada font-size:...!important espalhado por este arquivo e pelos <style>
+   injetados via JS (equipe.js/despesas.js). Só afeta esta página (este CSS só
+   é carregado em programacao.html). Suportado em Chrome/Edge/Safari (não
+   Firefox) — ok pra ferramenta interna. Ajustar o fator se ficar
+   grande/pequeno demais. */
+.app-shell { zoom: 1.15; }

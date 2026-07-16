@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 
-const RELEASE = '20260714-rotaskm5';
+const RELEASE = '20260716-casamotorista1';
 const ROUTE_COLORS = ['#a78bfa', '#f472b6', '#fb923c', '#38bdf8', '#facc15', '#4ade80'];
 const CACHE_MS = 30 * 1000;
 
@@ -355,17 +355,20 @@ function routeKm(points) {
   return total;
 }
 
-function tooltipFor(group, plan, position, km) {
-  const driverName = collaboratorName(plan.driver) || text(position.motorista) || `Frota ${group.plate}`;
+function tooltipFor(group, plan, position, km, originIsHome = false) {
+  const driverName = collaboratorName(plan.driver) || text(position?.motorista) || `Frota ${group.plate}`;
   const steps = plan.ordered.map((stop, index) => {
     if (stop.type === 'pickup') return `${index + 1}. Buscar ${stop.name}`;
     if (stop.type === 'dropoff') return `${index + 1}. Levar ${stop.names.join(', ')} · O.S. ${text(stop.os?.numero_os) || '-'}`;
     if (stop.type === 'logistics') return `${index + 1}. Logística · O.S. ${text(stop.os?.numero_os) || '-'}`;
     return `${index + 1}. Atendimento · O.S. ${text(stop.os?.numero_os) || '-'}`;
   }).join('<br>');
-  const address = text(position.endereco);
+  const address = text(position?.endereco);
   const kmLabel = Number.isFinite(km) ? ` · ~${km.toFixed(1)} km no dia` : '';
-  return `<b>${driverName}</b> · ${group.plate}${kmLabel}${address ? `<br>BFleet: ${address}` : ''}${steps ? `<br>${steps}` : ''}`;
+  const origemLabel = originIsHome
+    ? '<br>⚠️ Sem rastreador — rota estimada a partir da casa do motorista'
+    : (address ? `<br>BFleet: ${address}` : '');
+  return `<b>${driverName}</b> · ${group.plate}${kmLabel}${origemLabel}${steps ? `<br>${steps}` : ''}`;
 }
 
 function kmBadge(color, km) {
@@ -423,6 +426,31 @@ function renderPositionWarning(missing) {
   box.innerHTML = `<strong style="font-weight:900;white-space:nowrap">Sem posição atual (rota não desenhada):</strong>${chips}`;
 }
 
+// Motorista sem rastreador (ou posição inválida/velha) mas com casa cadastrada
+// (colaborador_cruzamento): a rota ainda é desenhada, só que partindo de casa
+// em vez da posição do veículo — avisa pra não parecer que é a posição real.
+function renderHomeFallbackNotice(list) {
+  const band = document.getElementById('peqbMapBand');
+  if (!band) return;
+  let box = band.querySelector('#pmgCasaMotoristaNotice');
+  if (!list.length) {
+    if (box) box.remove();
+    return;
+  }
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'pmgCasaMotoristaNotice';
+    box.style.cssText = 'margin:0 0 10px;padding:8px 12px;border-radius:12px;border:1px solid rgba(56,189,248,.32);background:rgba(56,189,248,.1);font-size:11.5px;color:#bae6fd;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center';
+    const map = band.querySelector('.pmg-map');
+    if (map) map.insertAdjacentElement('beforebegin', box);
+    else band.appendChild(box);
+  }
+  const chips = list
+    .map(item => `<span class="peqb-chip" style="margin:0;border-color:rgba(56,189,248,.4);color:#bae6fd">${text(item.name)} · ${text(item.plate)}</span>`)
+    .join('');
+  box.innerHTML = `<strong style="font-weight:900;white-space:nowrap">Sem rastreador — rota estimada da casa do motorista:</strong>${chips}`;
+}
+
 async function rebuildRoutes({ force = false } = {}) {
   if (state.rebuilding) {
     state.rerun = true;
@@ -445,13 +473,26 @@ async function rebuildRoutes({ force = false } = {}) {
     clearRoutes();
     let routeIndex = 0;
     const semPosicao = [];
+    const casaMotorista = [];
     for (const group of groups.values()) {
       const originRow = positions.get(group.plate);
-      const origin = pointOf(originRow);
+      let origin = pointOf(originRow);
+      let originIsHome = false;
       if (!origin) {
-        const driverName = collaboratorName(group.drivers[0]) || `Frota ${group.plate}`;
-        semPosicao.push({ name: driverName, plate: group.plate });
-        continue;
+        // Veículo sem rastreador (nunca reportou) ou com posição velha demais
+        // (ver POSICAO_MAX_IDADE_MS) — em vez de simplesmente não desenhar a
+        // rota, usa a casa do motorista (já indexada em `indexes.people`, mesmo
+        // mecanismo dos pickups de carona) como origem alternativa.
+        const driverPerson = resolvePerson(indexes, group.drivers[0]);
+        const home = pointOf(driverPerson);
+        if (home) {
+          origin = home;
+          originIsHome = true;
+        } else {
+          const driverName = collaboratorName(group.drivers[0]) || `Frota ${group.plate}`;
+          semPosicao.push({ name: driverName, plate: group.plate });
+          continue;
+        }
       }
       const plan = makeStops(group, origin, indexes, availabilityMap);
       if (!plan.ordered.length) continue;
@@ -464,15 +505,18 @@ async function rebuildRoutes({ force = false } = {}) {
         color,
         weight: 4,
         opacity: 0.92,
-        dashArray: '6 8',
+        dashArray: originIsHome ? '2 10' : '6 8',
         lineCap: 'round',
         lineJoin: 'round',
         interactive: true,
       });
       line.__pmgConnectedRoute = RELEASE;
-      line.bindTooltip(tooltipFor(group, plan, originRow, km), { className: 'peqb-tt', sticky: true });
+      line.bindTooltip(tooltipFor(group, plan, originRow, km, originIsHome), { className: 'peqb-tt', sticky: true });
       layerGroup.addLayer(line);
       state.layers.push(line);
+      if (originIsHome) {
+        casaMotorista.push({ name: collaboratorName(group.drivers[0]) || collaboratorName(resolvePerson(indexes, group.drivers[0])) || `Frota ${group.plate}`, plate: group.plate });
+      }
 
       const meio = points[Math.floor(points.length / 2)];
       if (meio) {
@@ -488,6 +532,7 @@ async function rebuildRoutes({ force = false } = {}) {
       routeIndex += 1;
     }
     renderPositionWarning(semPosicao);
+    renderHomeFallbackNotice(casaMotorista);
   } catch (error) {
     console.error('[rotas-conectadas] falha ao desenhar:', error);
   } finally {
