@@ -344,7 +344,7 @@ function injectStyles() {
     .peqb-os2-cliente{font-size:13.5px;font-weight:850;color:#f8fafc;line-height:1.25}
     .peqb-os2-emb{font-size:11.5px;color:#8ba79a;margin-top:3px;overflow-wrap:anywhere}
     .peqb-os2-uf{color:#6fd0a5;font-weight:900}
-    .peqb-os2-emb-l1,.peqb-os2-emb-l2{display:block}
+    .peqb-os2-emb-l1,.peqb-os2-emb-l2{display:block!important;width:100%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
     .peqb-os2-emb-l2{font-size:10.5px;color:#8ba79a;margin-top:1px}
     .peqb-os2-tags{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
     .peqb-os2-tagsrow{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:10px}

@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-fixes13';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-fixes14';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260717-fixes5';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260717-fixes6';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
@@ -103,8 +103,9 @@ function injectStyles() {
        isso, cada parte quebrava palavra por palavra quando a coluna era
        estreita, virando 3-4 linhas em vez de 2 (pedido do usuário,
        2026-07-17). Trunca com "..." em vez de quebrar. */
-    #pgcPane2 .peqb-os2-kpi .peqb-os2-emb-l1,#pgcPane2 .peqb-os2-kpi .peqb-os2-emb-l2{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;display:block!important;max-width:100%}
-    #pgcPane2 .peqb-os2-kpi .peqb-os2-uf{white-space:nowrap!important}
+    #pgcPane2 .peqb-os2-kpi .peqb-os2-emb-l1,#pgcPane2 .peqb-os2-kpi .peqb-os2-emb-l2{display:block!important;width:100%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+    #pgcPane2 .peqb-os2-kpi .peqb-os2-uf{display:inline!important;white-space:nowrap!important}
+    #pgcPane2 .peqb-os2-kpi strong br{display:none!important}
 
     /* Aba 2: lista arrastável + OS — uma janela só (pool + cards de O.S.) com
        rolagem própria, pra não empurrar o mapa (que fica logo abaixo) pra
