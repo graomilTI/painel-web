@@ -4,6 +4,7 @@
 // programacao_colaboradores (mesma tabela/colunas já usadas pela
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
+import { getCurrentUser } from './auth.js';
 import { loadEquipeExistente, loadColaboradoresRegional } from './programacao-equipe.js?v=20260717-frotafix1';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
@@ -79,15 +80,29 @@ function injectStyles() {
     .pso-sit-btn.on{border-color:rgba(111,208,165,.5);background:rgba(63,168,120,.18);color:#bbf7d0}
     .pso-obs{min-height:38px;padding:8px 11px;border-radius:11px;border:1px solid rgba(52,211,153,.18);background:#0d0d18;color:#e2e2f0;font-size:13px;width:100%;box-sizing:border-box}
     @media(max-width:820px){.pso-card{grid-template-columns:1fr}}
+    .pso-inativar-btn{border:1px solid rgba(248,113,113,.4);background:rgba(127,29,29,.18);color:#fca5a5;border-radius:9px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;flex:0 0 auto}
+    .pso-inativar-btn[disabled]{opacity:.6;cursor:default}
+    .pso-inativar-btn.pendente{border-color:rgba(251,191,36,.4);background:rgba(120,53,15,.22);color:#fde68a}
+    .pso-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
+    .pso-modal.open{display:flex}
+    .pso-modal-card{width:min(480px,100%);background:#15152a;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:22px;color:#e2e2f0}
+    .pso-modal-card h3{margin:0 0 4px}
+    .pso-modal-card textarea{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.28);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;font-size:13px;margin-top:12px;resize:vertical}
+    .pso-modal-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+    .pso-modal-fb{display:block;margin-top:8px;font-weight:700;font-size:12.5px}
+    .pso-modal-fb.err{color:#fca5a5}
   `;
   document.head.appendChild(style);
 }
 
-function cardHtml(colab, row, readOnly) {
+function cardHtml(colab, row, readOnly, pendente) {
   const situacaoAtual = normalizeText(row?.disponibilidade || '');
   const dis = readOnly ? 'disabled' : '';
+  const inativarDis = readOnly || pendente ? 'disabled' : '';
+  const inativarLabel = pendente ? 'Inativação solicitada' : 'Inativar';
   return `<article class="pso-card" data-colab-id="${esc(colab.colaboradorId)}">
     <div class="pso-name">
+      <button type="button" class="pso-inativar-btn ${pendente ? 'pendente' : ''}" data-inativar ${inativarDis}>${esc(inativarLabel)}</button>
       <span class="pso-av">${esc(iniciais(colab.nome))}</span>
       <div class="pso-name-txt">
         <div class="pso-nome">${esc(colab.nome)}</div>
@@ -123,16 +138,69 @@ export async function renderProgramacaoSemOs(content, options = {}) {
       <div class="pso-kpi"><span>Sem O.S.</span><strong id="psoKpiTotal">0</strong></div>
     </div>
     <div class="pso-list ${readOnly ? 'prog-readonly-scope' : ''}" id="psoList"><div class="pso-empty pso-loading"><span class="pso-spinner" aria-hidden="true"></span><span>Carregando colaboradores...</span></div></div>
+    <div class="pso-modal" id="psoModal"></div>
   `;
 
   const listEl = content.querySelector('#psoList');
   const kpiEl = content.querySelector('#psoKpiTotal');
+  const modalEl = content.querySelector('#psoModal');
   if (!supervisao || (!options.programacaoId && !programacaoIdMap.size)) {
     listEl.innerHTML = '<div class="pso-empty">Carregue o contexto (supervisão e data) para ver quem está sem O.S.</div>';
     return;
   }
 
+  let currentUser = null;
+  getCurrentUser().then((u) => { currentUser = u; }).catch(() => {});
+
   let colabsAtual = [];
+  let pendentesAtual = new Set();
+
+  function fecharModal() { modalEl.classList.remove('open'); modalEl.innerHTML = ''; }
+
+  function abrirModalInativar(colab) {
+    modalEl.innerHTML = `<div class="pso-modal-card">
+      <h3>Inativar ${esc(colab.nome)}</h3>
+      <p class="muted" style="margin:0">Isso NÃO inativa o colaborador agora — registra um pedido para o setor de Recursos Humanos (Equipe &gt; Inativações) processar.</p>
+      <textarea id="psoMotivo" rows="3" placeholder="Explique o motivo da inativação..."></textarea>
+      <div class="pso-modal-actions">
+        <button type="button" class="btn btn-primary" id="psoConfirmar">Confirmar solicitação</button>
+        <button type="button" class="btn btn-secondary" id="psoCancelar">Cancelar</button>
+      </div>
+      <span class="pso-modal-fb" id="psoModalFb"></span>
+    </div>`;
+    modalEl.classList.add('open');
+    modalEl.querySelector('#psoCancelar').onclick = fecharModal;
+    modalEl.querySelector('#psoConfirmar').onclick = async () => {
+      const fb = modalEl.querySelector('#psoModalFb');
+      const motivo = modalEl.querySelector('#psoMotivo').value.trim();
+      if (!motivo) { fb.textContent = 'Descreva o motivo.'; fb.classList.add('err'); return; }
+      const btn = modalEl.querySelector('#psoConfirmar');
+      btn.disabled = true;
+      fb.textContent = 'Enviando...';
+      fb.classList.remove('err');
+      try {
+        const { error } = await supabase.from('programacao_inativacao_solicitacoes').insert({
+          colaborador_id: colab.colaboradorId,
+          nome_colaborador: colab.nome,
+          cargo: colab.cargo || null,
+          coordenacao: colab.coordenacao || null,
+          supervisao: colab.supervisao || null,
+          motivo,
+          data_referencia: options.dataReferencia || todayIso(),
+          programacao_id: programacaoIdParaColab(colab),
+          solicitado_por: currentUser?.id || null,
+          solicitado_por_nome: currentUser?.email || currentUser?.user_metadata?.nome || null,
+        });
+        if (error) throw error;
+        fecharModal();
+        await carregar({ silent: true });
+      } catch (error) {
+        fb.textContent = error.message || 'Não foi possível registrar a solicitação.';
+        fb.classList.add('err');
+        btn.disabled = false;
+      }
+    };
+  }
 
   async function carregar({ silent = false } = {}) {
     const scroller = silent ? scrollParentDe(listEl) : null;
@@ -167,10 +235,21 @@ export async function renderProgramacaoSemOs(content, options = {}) {
       situacoesPorColab = new Map((data || []).map((r) => [String(r.colaborador_id), r]));
     }
 
+    pendentesAtual = new Set();
+    if (ids.length) {
+      const { data, error } = await supabase
+        .from('programacao_inativacao_solicitacoes')
+        .select('colaborador_id')
+        .eq('status', 'PENDENTE')
+        .in('colaborador_id', ids);
+      if (error) console.warn('[sem-os] inativações pendentes:', error);
+      pendentesAtual = new Set((data || []).map((r) => String(r.colaborador_id)));
+    }
+
     colabsAtual = semOs;
     kpiEl.textContent = String(semOs.length);
     listEl.innerHTML = semOs.length
-      ? semOs.map((c) => cardHtml(c, situacoesPorColab.get(c.colaboradorId), readOnly)).join('')
+      ? semOs.map((c) => cardHtml(c, situacoesPorColab.get(c.colaboradorId), readOnly, pendentesAtual.has(String(c.colaboradorId)))).join('')
       : '<div class="pso-empty">Ninguém da regional sem O.S. no momento.</div>';
 
     if (silent && scroller) scroller.scrollTop = scrollPos;
@@ -196,6 +275,13 @@ export async function renderProgramacaoSemOs(content, options = {}) {
   const obsTimers = new Map();
   listEl.addEventListener('click', (event) => {
     if (readOnly) return;
+    const inativarBtn = event.target.closest('[data-inativar]');
+    if (inativarBtn) {
+      const card = inativarBtn.closest('.pso-card');
+      const colab = colabsAtual.find((c) => c.colaboradorId === card?.dataset.colabId);
+      if (colab) abrirModalInativar(colab);
+      return;
+    }
     const btn = event.target.closest('[data-situacao]');
     if (!btn) return;
     const card = btn.closest('.pso-card');

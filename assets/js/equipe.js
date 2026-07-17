@@ -6,6 +6,7 @@ const TABS = [
   { id: 'admissoes', label: 'Admissões' },
   { id: 'integracao', label: 'Integração' },
   { id: 'graint', label: 'Cadastro no Graint' },
+  { id: 'inativacoes', label: 'Inativações' },
   { id: 'consultar', label: 'Consultar Base' },
   { id: 'contatos', label: 'Contatos e Cadastros' },
 ];
@@ -20,7 +21,7 @@ const STATUS_ADMISSAO = {
   concluida: { label: 'Concluída', next: null, nextLabel: null },
 };
 
-const state = { tab: 'admissoes', admissoes: [], integracoes: [], ctx: null };
+const state = { tab: 'admissoes', admissoes: [], integracoes: [], inativacoes: [], inativacoesPendentesCount: 0, ctx: null };
 
 const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const brDate = (v) => { const [y, m, d] = String(v || '').slice(0, 10).split('-'); return y && m && d ? `${d}/${m}/${y}` : '-'; };
@@ -52,11 +53,22 @@ function styles() {
     .eq-feedback.err{color:#fecaca}
     .eq-checklist label{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid rgba(148,163,184,.18);border-radius:12px;cursor:pointer;background:#0d0d18;margin-bottom:8px}
     .eq-checklist input{width:18px;height:18px;accent-color:#4ade80}
+    .eq-tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;font-weight:900}
+    .eq-inativ-card{border:1px solid rgba(248,113,113,.22);background:rgba(2,6,23,.28);border-radius:14px;padding:14px;margin-bottom:10px}
+    .eq-inativ-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start}
+    .eq-inativ-motivo{margin:8px 0 0;color:#e2e2f0;font-size:13.5px;line-height:1.4}
+    .eq-inativ-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+    .eq-inativ-obs{flex:1;min-width:180px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;font-size:12.5px}
   </style>`;
 }
 
 function tabsHtml() {
-  return `<div class="eq-tabs mt-16">${TABS.map((t) => `<button class="btn btn-secondary${t.id === state.tab ? ' active' : ''}" data-eq-tab="${t.id}" type="button">${esc(t.label)}</button>`).join('')}</div>`;
+  return `<div class="eq-tabs mt-16">${TABS.map((t) => {
+    const badge = t.id === 'inativacoes' && state.inativacoesPendentesCount
+      ? `<span class="eq-tab-badge">${state.inativacoesPendentesCount}</span>`
+      : '';
+    return `<button class="btn btn-secondary${t.id === state.tab ? ' active' : ''}" data-eq-tab="${t.id}" type="button">${esc(t.label)}${badge}</button>`;
+  }).join('')}</div>`;
 }
 
 async function safe(fn, fallback = []) {
@@ -328,6 +340,102 @@ async function renderGraintTab(area) {
   });
 }
 
+// ---------- Inativações (solicitadas pelo gestor na Programação > Sem O.S.) ----------
+
+// Só conta pendentes (não depende de qual aba está aberta) — usado pro badge
+// vermelho no botão da aba, pra RH perceber que tem pedido novo mesmo sem
+// entrar na aba. Chamado uma vez no boot da tela.
+async function refreshInativacoesBadge(container) {
+  try {
+    const { count, error } = await supabase.from('programacao_inativacao_solicitacoes').select('id', { count: 'exact', head: true }).eq('status', 'PENDENTE');
+    if (error) throw error;
+    state.inativacoesPendentesCount = count || 0;
+  } catch (e) {
+    console.warn('[Equipe] contagem inativações pendentes', e);
+    state.inativacoesPendentesCount = 0;
+  }
+  const tabsEl = container.querySelector('.eq-tabs');
+  if (tabsEl) tabsEl.outerHTML = tabsHtml();
+  container.querySelectorAll('[data-eq-tab]').forEach((b) => b.onclick = () => { state.tab = b.dataset.eqTab; renderTab(container); });
+}
+
+async function loadInativacoes() {
+  state.inativacoes = await safe(() => supabase.from('programacao_inativacao_solicitacoes').select('*').order('solicitado_em', { ascending: false }).limit(200));
+}
+
+function renderInativacoesList(area) {
+  const pendentes = state.inativacoes.filter((r) => r.status === 'PENDENTE');
+  const processadas = state.inativacoes.filter((r) => r.status !== 'PENDENTE').slice(0, 20);
+
+  function cardHtml(r) {
+    const isPendente = r.status === 'PENDENTE';
+    const statusLabel = r.status === 'PROCESSADA' ? 'Processada' : r.status === 'CANCELADA' ? 'Cancelada' : 'Pendente';
+    return `<div class="eq-inativ-card">
+      <div class="eq-inativ-head">
+        <div>
+          <b>${esc(r.nome_colaborador)}</b>
+          <div class="muted" style="font-size:12px">${esc(r.cargo || 'Colaborador')} · ${esc(r.coordenacao || r.supervisao || '-')} · pedido em ${brDate(r.solicitado_em)}</div>
+        </div>
+        ${statusPill(r.status, { PENDENTE: { label: 'Pendente' }, PROCESSADA: { label: 'Processada' }, CANCELADA: { label: 'Cancelada' } })}
+      </div>
+      <p class="eq-inativ-motivo"><b>Motivo:</b> ${esc(r.motivo)}</p>
+      ${r.observacao_rh ? `<p class="eq-inativ-motivo"><b>Observação RH:</b> ${esc(r.observacao_rh)}</p>` : ''}
+      ${isPendente ? `<div class="eq-inativ-actions">
+        <input type="text" class="eq-inativ-obs" data-obs-rh="${esc(r.id)}" placeholder="Observação (opcional)">
+        <button class="btn btn-small btn-primary" data-processar="${esc(r.id)}" type="button">Marcar como processada</button>
+        <button class="btn btn-small btn-secondary" data-cancelar="${esc(r.id)}" type="button">Cancelar pedido</button>
+      </div>` : (r.processado_por_nome ? `<div class="muted mt-8" style="font-size:12px">${statusLabel} por ${esc(r.processado_por_nome)} em ${brDate(r.processado_em)}</div>` : '')}
+    </div>`;
+  }
+
+  area.innerHTML = `<div class="section-head mt-16"><div><h3>Inativações solicitadas</h3><p class="muted">Pedidos de inativação feitos pelo gestor na Programação (Etapa "Sem O.S."). O clique do gestor não desliga ninguém — processe aqui e realize a inativação no cadastro/GRM.</p></div></div>
+  <div class="mt-16">${pendentes.length ? pendentes.map(cardHtml).join('') : '<p class="eq-empty">Nenhuma solicitação pendente.</p>'}</div>
+  ${processadas.length ? `<div class="section-head mt-16"><div><h3>Histórico recente</h3></div></div><div class="mt-16">${processadas.map(cardHtml).join('')}</div>` : ''}`;
+
+  area.querySelectorAll('[data-processar]').forEach((b) => b.onclick = async () => {
+    const id = b.dataset.processar;
+    const obs = area.querySelector(`[data-obs-rh="${id}"]`)?.value?.trim() || null;
+    b.disabled = true;
+    try {
+      const { error } = await supabase.from('programacao_inativacao_solicitacoes').update({
+        status: 'PROCESSADA',
+        observacao_rh: obs,
+        processado_por: state.ctx?.user?.id || null,
+        processado_por_nome: state.ctx?.user?.email || null,
+        processado_em: new Date().toISOString(),
+      }).eq('id', id);
+      if (error) throw error;
+      await loadInativacoes();
+      renderInativacoesList(area);
+    } catch (e) { alert(e.message); b.disabled = false; }
+  });
+  area.querySelectorAll('[data-cancelar]').forEach((b) => b.onclick = async () => {
+    if (!confirm('Cancelar esta solicitação de inativação?')) return;
+    const id = b.dataset.cancelar;
+    const obs = area.querySelector(`[data-obs-rh="${id}"]`)?.value?.trim() || null;
+    b.disabled = true;
+    try {
+      const { error } = await supabase.from('programacao_inativacao_solicitacoes').update({
+        status: 'CANCELADA',
+        observacao_rh: obs,
+        processado_por: state.ctx?.user?.id || null,
+        processado_por_nome: state.ctx?.user?.email || null,
+        processado_em: new Date().toISOString(),
+      }).eq('id', id);
+      if (error) throw error;
+      await loadInativacoes();
+      renderInativacoesList(area);
+    } catch (e) { alert(e.message); b.disabled = false; }
+  });
+}
+
+async function renderInativacoesTab(area, container) {
+  area.innerHTML = `<div class="eq-empty mt-16">Carregando...</div>`;
+  await loadInativacoes();
+  renderInativacoesList(area);
+  await refreshInativacoesBadge(container);
+}
+
 // ---------- Consultar Base (delega para consultarColaboradores.js) ----------
 
 async function renderConsultarTab(area) {
@@ -361,6 +469,7 @@ async function renderTab(container) {
   if (state.tab === 'admissoes') renderAdmissoesTab(area);
   else if (state.tab === 'integracao') renderIntegracaoTab(area);
   else if (state.tab === 'graint') renderGraintTab(area);
+  else if (state.tab === 'inativacoes') renderInativacoesTab(area, container);
   else if (state.tab === 'consultar') renderConsultarTab(area);
   else if (state.tab === 'contatos') renderContatosTab(area);
 }
@@ -373,6 +482,7 @@ export async function renderContent(content, userContext) {
   <div class="eq-modal" id="eqModal"></div>`;
   content.querySelectorAll('[data-eq-tab]').forEach((b) => b.onclick = () => { state.tab = b.dataset.eqTab; renderTab(content); });
   await renderTab(content);
+  if (state.tab !== 'inativacoes') refreshInativacoesBadge(content).catch(() => {});
 }
 
 initProtectedPage('Equipe', renderContent);
