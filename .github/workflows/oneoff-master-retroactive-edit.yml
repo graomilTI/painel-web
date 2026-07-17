@@ -1,0 +1,157 @@
+name: Aplicar permissão master retroativa
+
+on:
+  push:
+    paths:
+      - '.github/workflows/oneoff-master-retroactive-edit.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Aplicar ajuste
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path_str, old, new):
+              path = Path(path_str)
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path_str}: esperado 1 trecho, encontrado {count}: {old[:100]!r}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          equipe = 'assets/js/programacao-equipe.js'
+          replace_once(
+              equipe,
+              "import { getCurrentUser } from './auth.js';",
+              "import { getCurrentUser, getUserContext } from './auth.js';",
+          )
+          replace_once(
+              equipe,
+              "let currentUser = null;\nconst BRI = new Intl.NumberFormat('pt-BR');",
+              """let currentUser = null;
+          let currentUserIsMaster = false;
+          let masterPermissionReady = null;
+
+          function ensureMasterPermission() {
+            if (!masterPermissionReady) {
+              masterPermissionReady = getUserContext()
+                .then((ctx) => {
+                  currentUserIsMaster = !!ctx?.user?.is_master;
+                  return currentUserIsMaster;
+                })
+                .catch((error) => {
+                  console.warn('[programacao] não foi possível validar permissão master:', error);
+                  currentUserIsMaster = false;
+                  return false;
+                });
+            }
+            return masterPermissionReady;
+          }
+
+          const BRI = new Intl.NumberFormat('pt-BR');""",
+          )
+          replace_once(
+              equipe,
+              "function isDataPassada(dataReferencia) {\n  return !!dataReferencia && dataReferencia < todayIso();\n}",
+              "function isDataPassada(dataReferencia) {\n  return !currentUserIsMaster && !!dataReferencia && dataReferencia < todayIso();\n}",
+          )
+          replace_once(
+              equipe,
+              "export async function renderProgramacaoSituacao(content, options = {}) {\n  injectStyles();",
+              "export async function renderProgramacaoSituacao(content, options = {}) {\n  injectStyles();\n  await ensureMasterPermission();",
+          )
+          replace_once(
+              equipe,
+              "export async function renderProgramacaoEquipe(content, options = {}) {\n  injectStyles();",
+              "export async function renderProgramacaoEquipe(content, options = {}) {\n  injectStyles();\n  await ensureMasterPermission();",
+          )
+
+          despesas = 'assets/js/programacao-despesas.js'
+          replace_once(
+              despesas,
+              "import { supabase } from './supabaseClient.js';\nimport { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260717-kgfix1';",
+              "import { supabase } from './supabaseClient.js';\nimport { getUserContext } from './auth.js';\nimport { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260717-masterretro1';",
+          )
+          replace_once(
+              despesas,
+              "import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';\n\nfunction esc(value) {",
+              """import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
+
+          let currentUserIsMaster = false;
+          let masterPermissionReady = null;
+
+          function ensureMasterPermission() {
+            if (!masterPermissionReady) {
+              masterPermissionReady = getUserContext()
+                .then((ctx) => {
+                  currentUserIsMaster = !!ctx?.user?.is_master;
+                  return currentUserIsMaster;
+                })
+                .catch((error) => {
+                  console.warn('[programacao-despesas] não foi possível validar permissão master:', error);
+                  currentUserIsMaster = false;
+                  return false;
+                });
+            }
+            return masterPermissionReady;
+          }
+
+          function esc(value) {""",
+          )
+          replace_once(
+              despesas,
+              "function isDataPassada(dataReferencia) {\n  return !!dataReferencia && dataReferencia < todayIso();\n}",
+              "function isDataPassada(dataReferencia) {\n  return !currentUserIsMaster && !!dataReferencia && dataReferencia < todayIso();\n}",
+          )
+          replace_once(
+              despesas,
+              "export async function renderProgramacaoDespesas(content, options = {}) {\n  injectStylesDespesas();",
+              "export async function renderProgramacaoDespesas(content, options = {}) {\n  injectStylesDespesas();\n  await ensureMasterPermission();",
+          )
+
+          fluxo = 'assets/js/programacao-gestor-fluxo-avancado.js'
+          replace_once(
+              fluxo,
+              "import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-kgfix1';",
+              "import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-masterretro1';",
+          )
+          replace_once(
+              fluxo,
+              "import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260716-hotelfix1';",
+              "import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260717-masterretro1';",
+          )
+
+          replace_once(
+              'programacao.html',
+              "./assets/js/programacao-gestor-fluxo-avancado.js?v=20260717-regionalfix1",
+              "./assets/js/programacao-gestor-fluxo-avancado.js?v=20260717-masterretro1",
+          )
+
+          # Workflow de uso único: remove a si próprio no mesmo commit do ajuste.
+          Path('.github/workflows/oneoff-master-retroactive-edit.yml').unlink()
+
+      - name: Validar sintaxe JavaScript
+        run: |
+          node --check assets/js/programacao-equipe.js
+          node --check assets/js/programacao-despesas.js
+          node --check assets/js/programacao-gestor-fluxo-avancado.js
+
+      - name: Commitar ajuste
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: master edita programação em qualquer data"
+          git push origin HEAD:main
