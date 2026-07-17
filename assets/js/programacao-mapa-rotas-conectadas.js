@@ -399,6 +399,26 @@ function ensureRouteLayer() {
   return state.layer;
 }
 
+// .pmg-map já reserva altura fixa desde o 1º render (CSS !important do
+// próprio módulo do mapa) — os avisos abaixo precisam entrar como overlay
+// ABSOLUTO dentro dela (não como irmão antes dela), senão a inserção/remoção
+// assíncrona (chega depois de BFleet responder) empurra tudo que vem depois
+// no fluxo da página — inclusive os cards de O.S. — e quem estiver rolando
+// a tela bem nessa hora vê a rolagem "pular"/resetar (reportado 2026-07-16).
+function ensureMapOverlayHost(band) {
+  const map = band.querySelector('.pmg-map');
+  if (!map) return null;
+  if (getComputedStyle(map).position === 'static') map.style.position = 'relative';
+  let host = map.querySelector('#pmgMapOverlays');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'pmgMapOverlays';
+    host.style.cssText = 'position:absolute;top:8px;left:8px;right:8px;z-index:500;display:flex;flex-direction:column;gap:6px;pointer-events:none';
+    map.insertBefore(host, map.firstChild);
+  }
+  return host;
+}
+
 // Motorista/frota com carona vinculada mas sem posição BFleet utilizável hoje
 // (sem rastreador, ou posição velha demais — ver POSICAO_MAX_IDADE_MS) não tem
 // rota desenhada. Sem aviso, isso parece bug do painel em vez de veículo sem
@@ -407,19 +427,19 @@ function ensureRouteLayer() {
 function renderPositionWarning(missing) {
   const band = document.getElementById('peqbMapBand');
   if (!band) return;
-  let box = band.querySelector('#pmgSemPosicaoWarn');
+  const host = ensureMapOverlayHost(band);
+  let box = host?.querySelector('#pmgSemPosicaoWarn');
   if (!missing.length) {
     if (box) box.remove();
     return;
   }
-  if (!box) {
+  if (!box && host) {
     box = document.createElement('div');
     box.id = 'pmgSemPosicaoWarn';
-    box.style.cssText = 'margin:0 0 10px;padding:8px 12px;border-radius:12px;border:1px solid rgba(245,158,11,.32);background:rgba(245,158,11,.1);font-size:11.5px;color:#fde68a;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center';
-    const map = band.querySelector('.pmg-map');
-    if (map) map.insertAdjacentElement('beforebegin', box);
-    else band.appendChild(box);
+    box.style.cssText = 'padding:8px 12px;border-radius:12px;border:1px solid rgba(245,158,11,.32);background:rgba(15,23,42,.92);font-size:11.5px;color:#fde68a;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;pointer-events:auto';
+    host.appendChild(box);
   }
+  if (!box) return;
   const chips = missing
     .map(item => `<span class="peqb-chip warn" style="margin:0">${text(item.name)} · ${text(item.plate)}</span>`)
     .join('');
@@ -432,19 +452,19 @@ function renderPositionWarning(missing) {
 function renderHomeFallbackNotice(list) {
   const band = document.getElementById('peqbMapBand');
   if (!band) return;
-  let box = band.querySelector('#pmgCasaMotoristaNotice');
+  const host = ensureMapOverlayHost(band);
+  let box = host?.querySelector('#pmgCasaMotoristaNotice');
   if (!list.length) {
     if (box) box.remove();
     return;
   }
-  if (!box) {
+  if (!box && host) {
     box = document.createElement('div');
     box.id = 'pmgCasaMotoristaNotice';
-    box.style.cssText = 'margin:0 0 10px;padding:8px 12px;border-radius:12px;border:1px solid rgba(56,189,248,.32);background:rgba(56,189,248,.1);font-size:11.5px;color:#bae6fd;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center';
-    const map = band.querySelector('.pmg-map');
-    if (map) map.insertAdjacentElement('beforebegin', box);
-    else band.appendChild(box);
+    box.style.cssText = 'padding:8px 12px;border-radius:12px;border:1px solid rgba(56,189,248,.32);background:rgba(15,23,42,.92);font-size:11.5px;color:#bae6fd;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;pointer-events:auto';
+    host.appendChild(box);
   }
+  if (!box) return;
   const chips = list
     .map(item => `<span class="peqb-chip" style="margin:0;border-color:rgba(56,189,248,.4);color:#bae6fd">${text(item.name)} · ${text(item.plate)}</span>`)
     .join('');
