@@ -355,16 +355,17 @@ function injectStyles() {
     .peqb-conf-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
     .peqb-conf-head .peqb-row-btn{height:32px;font-size:12px;padding:0 11px;white-space:nowrap;flex:0 0 auto}
     .peqb-conf-head .peqb-row-btn.hotel{font-weight:850}
-    .peqb-conf-name{display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 140px}
+    .peqb-conf-name{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0;flex:1 1 140px}
     .peqb-conf-tag{flex:0 0 auto;white-space:nowrap}
     .peqb-name-sel{flex:1 1 140px;min-width:0;max-width:100%;border:1px solid transparent;background:transparent;color:#f8fafc;font-size:13.5px;font-weight:850;cursor:pointer;border-radius:8px;padding:4px 24px 4px 7px;color-scheme:dark;text-overflow:ellipsis}
     .peqb-name-sel:hover{border-color:rgba(111,208,165,.35);background:rgba(8,22,17,.55)}
     .peqb-name-sel:focus{border-color:rgba(111,208,165,.55);outline:none;background:#06130e}
     .peqb-name-sel option{background:#0c1f17;color:#eef7f2;font-weight:600}
+    .peqb-desloc-inline{flex:0 0 auto;background:rgba(8,22,17,.6);border-color:rgba(111,208,165,.22);font-size:12px;font-weight:800;padding:4px 20px 4px 8px}
     .peqb-add-colab{width:28px;height:28px;min-height:28px;padding:0;border-radius:9px;border:1px solid rgba(56,189,248,.42);background:rgba(14,116,144,.16);color:#bfdbfe;font-size:16px;font-weight:950;cursor:pointer;flex:0 0 auto;line-height:1}
     .peqb-add-colab:hover{background:rgba(14,116,144,.28);color:#e0f2fe}
     .peqb-extra-colabs{display:flex;flex-direction:column;gap:6px;width:100%;margin:-2px 0 7px}
-    .peqb-extra-colab{display:flex;align-items:center;gap:6px;width:100%;border:1px solid rgba(56,189,248,.24);background:rgba(15,23,42,.74);border-radius:10px;padding:5px 7px;box-sizing:border-box}
+    .peqb-extra-colab{display:flex;align-items:center;flex-wrap:wrap;gap:6px;width:100%;border:1px solid rgba(56,189,248,.24);background:rgba(15,23,42,.74);border-radius:10px;padding:5px 7px;box-sizing:border-box}
     .peqb-extra-colab .peqb-name-sel{background:rgba(15,23,42,.9);border-color:rgba(56,189,248,.18);cursor:default}
     .peqb-extra-colab button{width:28px;height:28px;border-radius:9px;border:1px solid rgba(248,113,113,.3);background:rgba(127,29,29,.18);color:#fecaca;font-size:14px;font-weight:950;cursor:pointer;padding:0;line-height:1;flex:0 0 auto}
     .peqb-extra-colab button:hover{background:rgba(127,29,29,.3)}
@@ -940,14 +941,17 @@ function colabsExtrasHtml(item) {
   if (!extras.length) return '';
   return `<div class="peqb-extra-colabs">${extras.map((r) => {
     const cpf = String(r.colaborador_id || '').replace(/\D/g, '');
+    const temFrotaPropria = !!item.placasPorCpf?.get(cpf);
     const tipoLabel = item.tipoLabelPorColaborador?.get(String(r.colaborador_id)) || 'Não informado';
-    const isMotoristaLogistica = !!(item.placasPorCpf?.get(cpf))
+    const isMotoristaLogistica = temFrotaPropria
       && disponibilidadeCategoriaLocal(item.dispPorColaborador?.get(String(r.colaborador_id))) === 'LOGISTICA';
+    const desTipo = item.custosRaw?.des?.get(String(r.colaborador_id))?.tipo_deslocamento;
     return `
     <span class="peqb-extra-colab" title="Colaborador adicional nesta O.S.">
       ${isMotoristaLogistica ? '<span class="peqb-clab" title="Motorista em Logística">🚗</span>' : ''}
       <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(tipoLabel)}">${esc(tipoLabel)}</span>
       <span class="peqb-name-sel">${esc(r.nome_colaborador || r.colaborador_id)}</span>
+      ${temFrotaPropria ? '' : deslocamentoInlineHtml(r.colaborador_id, desTipo, item.readOnly)}
       <button type="button" data-remover-adicional="${esc(r.id)}" ${item.readOnly ? 'disabled' : ''} title="Remover colaborador">×</button>
     </span>`;
   }).join('')}</div>`;
@@ -971,19 +975,17 @@ function disponibilidadeCategoriaLocal(value) {
   return normalizeText(value || '') === 'LOGISTICA' ? 'LOGISTICA' : 'OK';
 }
 
-// Colaborador confirmado sem frota vinculada e sem carona atribuída (ver
-// "Sugerir caronas") — o gestor precisa poder marcar manualmente como vai se
-// deslocar: Uber/Táxi ou reembolso por km rodado (veículo próprio). Mesma
-// tabela/coluna já usada pela Etapa 3 (programacao_deslocamento.tipo_deslocamento).
-function deslocamentoSemFrotaHtml(item, readOnly) {
-  const tipoAtual = normalizeText(item.custos?.des?.tipo_deslocamento || '');
+// Colaborador (principal ou adicional) sem frota vinculada e sem carona
+// atribuída — o gestor precisa poder marcar manualmente como CADA um vai se
+// deslocar: Uber/Táxi ou reembolso por km rodado (nem todo mundo na mesma
+// O.S. necessariamente vai no mesmo carro). Inline, na mesma linha do nome —
+// mesma tabela/coluna já usada pela Etapa 3 (programacao_deslocamento.tipo_deslocamento).
+function deslocamentoInlineHtml(colaboradorId, tipoAtualRaw, readOnly) {
+  const tipoAtual = normalizeText(tipoAtualRaw || '');
   const opts = [['', 'Deslocamento…'], ['UBER/TÁXI', 'Uber/Táxi'], ['REEMBOLSO KM', 'Reembolso km'], ['CARONA FROTA', 'Carona']];
-  return `<div class="peqb-row-actions" style="margin-top:6px" title="Sem frota/carona — defina como este colaborador vai se deslocar">
-    <span class="peqb-clab" style="align-self:center">🚕</span>
-    <select class="peqb-name-sel" data-desloc-sem-frota style="max-width:180px;min-width:150px" ${readOnly ? 'disabled' : ''}>
-      ${opts.map(([valor, label]) => `<option value="${esc(valor)}" ${tipoAtual === normalizeText(valor) ? 'selected' : ''}>${esc(label)}</option>`).join('')}
-    </select>
-  </div>`;
+  return `<select class="peqb-name-sel peqb-desloc-inline" data-desloc-colab="${esc(colaboradorId)}" style="max-width:170px;min-width:140px" ${readOnly ? 'disabled' : ''} title="Tipo de deslocamento deste colaborador">
+    ${opts.map(([valor, label]) => `<option value="${esc(valor)}" ${tipoAtual === normalizeText(valor) ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+  </select>`;
 }
 
 function osRowHtml(item) {
@@ -1009,13 +1011,12 @@ function osRowHtml(item) {
           <select class="peqb-name-sel" data-trocar-colab ${dis} title="Trocar o colaborador (♻ = já escalado em outra OS)">
             ${trocarOptionsHtml(item)}
           </select>
+          ${item.custos?.placaAuto ? '' : deslocamentoInlineHtml(confirmadoRow.colaborador_id, item.custos?.des?.tipo_deslocamento, readOnly)}
           <button type="button" class="peqb-add-colab" data-toggle-add-colab ${dis} title="Adicionar outro colaborador nesta O.S.">+</button>
         </span>
         ${hotelBtn}
       </div>
-      ${item.custos?.placaAuto
-        ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual, readOnly)
-        : deslocamentoSemFrotaHtml(item, readOnly)}
+      ${item.custos?.placaAuto ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual, readOnly) : ''}
       ${colabsExtrasHtml(item)}
       <div class="peqb-add-box" data-add-box hidden>
         <span class="peqb-cand-av">+</span>
@@ -1715,6 +1716,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
           tipoLabelPorColaborador,
           placasPorCpf,
           dispPorColaborador,
+          custosRaw: custos,
           confirmadoTipoLabel: confirmadoRow ? (tipoLabelPorColaborador.get(String(confirmadoRow.colaborador_id)) || 'Não informado') : null,
           candidatos: ordenarCandidatosPorEmbarque(confirmadoRow
             ? [{ colaboradorId: confirmadoRow.colaborador_id, nome: confirmadoRow.nome_colaborador, km: confirmadoRow.km_estimado != null ? Number(confirmadoRow.km_estimado) : null, custoTotal: null }, ...(candidatosPorOs.get(os.id) || [])]
@@ -2167,12 +2169,16 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   });
 
   listEl.addEventListener('change', async (event) => {
-    // Deslocamento de quem não tem frota/carona — Uber/Táxi ou reembolso km
-    const deslocSel = event.target.closest('[data-desloc-sem-frota]');
+    // Deslocamento de quem não tem frota/carona — Uber/Táxi ou reembolso km.
+    // Inline em CADA colaborador da O.S. (principal ou adicional) — nem todo
+    // mundo vai necessariamente no mesmo carro.
+    const deslocSel = event.target.closest('[data-desloc-colab]');
     if (deslocSel) {
       const card = deslocSel.closest('.peqb-os2');
       const item = osComCandidatosAtual.find((it) => String(it.os.id) === card?.dataset.osId);
-      const colaboradorId = item?.confirmadoRow?.colaborador_id;
+      const colaboradorId = deslocSel.dataset.deslocColab;
+      const equipeRow = item?.equipeRows?.find((r) => String(r.colaborador_id) === String(colaboradorId));
+      const nome = equipeRow?.nome_colaborador || (String(colaboradorId) === String(item?.confirmadoRow?.colaborador_id) ? item?.confirmadoRow?.nome_colaborador : null);
       if (!item || !colaboradorId) return;
       deslocSel.disabled = true;
       try {
@@ -2180,13 +2186,18 @@ export async function renderProgramacaoEquipe(content, options = {}) {
           programacao_id: programacaoIdParaOs(item.os),
           data_referencia: options.dataReferencia || null,
           colaborador_id: colaboradorId,
-          nome_colaborador: item.confirmadoRow.nome_colaborador,
+          nome_colaborador: nome || '',
           tipo_deslocamento: deslocSel.value || 'NÃO PRECISA',
         }, { onConflict: 'programacao_id,colaborador_id' });
         if (error) throw error;
-        if (item.custos) item.custos.des = { ...(item.custos.des || {}), tipo_deslocamento: deslocSel.value || 'NÃO PRECISA' };
+        if (String(colaboradorId) === String(item.confirmadoRow?.colaborador_id) && item.custos) {
+          item.custos.des = { ...(item.custos.des || {}), tipo_deslocamento: deslocSel.value || 'NÃO PRECISA' };
+        }
+        if (item.custosRaw?.des) {
+          item.custosRaw.des.set(String(colaboradorId), { ...(item.custosRaw.des.get(String(colaboradorId)) || {}), tipo_deslocamento: deslocSel.value || 'NÃO PRECISA' });
+        }
       } catch (error) {
-        console.error('[equipe] deslocamento sem frota:', error);
+        console.error('[equipe] deslocamento:', error);
         alert(error.message || 'Não foi possível salvar o deslocamento.');
       } finally {
         deslocSel.disabled = false;
