@@ -5,7 +5,7 @@
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
-import { loadEquipeExistente, loadColaboradoresRegional } from './programacao-equipe.js?v=20260717-fixes2';
+import { loadEquipeExistente, loadColaboradoresRegional } from './programacao-equipe.js?v=20260717-fixes3';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
 
