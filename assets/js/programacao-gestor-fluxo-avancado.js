@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-fixes8';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-fixes10';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260717-fixes5';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260717-fixes6';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
@@ -104,11 +104,6 @@ function injectStyles() {
        estreita, virando 3-4 linhas em vez de 2 (pedido do usuário,
        2026-07-17). Trunca com "..." em vez de quebrar. */
     #pgcPane2 .peqb-os2-kpi .peqb-os2-emb-l1,#pgcPane2 .peqb-os2-kpi .peqb-os2-emb-l2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-    /* Avatar do colaborador CONFIRMADO na O.S. fica verde de verdade — antes
-       usava a mesma cor fraca do candidato (peqb-cand-av é compartilhado com
-       a lista de sugestão e o "+"), sem diferenciar quem já está associado. */
-    #pgcPane2 .peqb-conf-name .peqb-cand-av{background:rgba(34,197,94,.35);color:#bbf7d0;border:1px solid rgba(34,197,94,.55)}
 
     /* Aba 2: lista arrastável + OS — uma janela só (pool + cards de O.S.) com
        rolagem própria, pra não empurrar o mapa (que fica logo abaixo) pra
