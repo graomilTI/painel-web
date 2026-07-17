@@ -1194,7 +1194,15 @@ export async function renderProgramacaoSituacao(content, options = {}) {
     if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
     try {
       const agoraIso = new Date().toISOString();
-      const patch = { status_gestor: nextStatus, configurada_em: agoraIso, observacao_logistica: null, updated_at: agoraIso };
+      // Aumento de saldo (KG) fica registrado em observacao_logistica pra
+      // aparecer na fila do módulo de Logística (logistica.js filtra por
+      // "KG solicitado%") — só quem resolve o pedido lá (handleOk) pode
+      // limpar esse campo. Mudar o status aqui (inclusive Atender) não pode
+      // apagar o pedido: a Logística ainda precisa enxergá-lo.
+      const osAtual = osListAtual.find((o) => String(o.id) === String(osId));
+      const kgAtivo = String(osAtual?.observacao_logistica || '').startsWith('KG solicitado');
+      const patch = { status_gestor: nextStatus, configurada_em: agoraIso, updated_at: agoraIso };
+      if (!kgAtivo) patch.observacao_logistica = null;
       if (nextStatus === 'FINALIZAR') {
         patch.status_logistica = 'PENDENTE';
         patch.enviado_logistica_em = agoraIso;
@@ -1668,7 +1676,13 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
     try {
       const agoraIso = new Date().toISOString();
-      const patch = { status_gestor: nextStatus, configurada_em: agoraIso, observacao_logistica: null, updated_at: agoraIso };
+      // Ver comentário equivalente em renderProgramacaoSituacao — aumento de
+      // saldo (KG) só some da fila da Logística quando ela mesma resolve
+      // (logistica.js handleOk), nunca por mudança de status aqui.
+      const osAtual = osComCandidatosAtual.find((it) => String(it.os.id) === String(osId))?.os;
+      const kgAtivo = String(osAtual?.observacao_logistica || '').startsWith('KG solicitado');
+      const patch = { status_gestor: nextStatus, configurada_em: agoraIso, updated_at: agoraIso };
+      if (!kgAtivo) patch.observacao_logistica = null;
       if (nextStatus === 'FINALIZAR') {
         patch.status_logistica = 'PENDENTE';
         patch.enviado_logistica_em = agoraIso;
