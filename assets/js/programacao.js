@@ -2106,6 +2106,10 @@ export function renderContent(content) {
         const extras = extrasPorColab.get(row.colaboradorId) || [];
         const osList = [...row.osIds].map((id) => osResumoPorId.get(String(id))).filter(Boolean);
         const osLabel = osList.length ? osList.map((o) => o.numero_os || '-').join(', ') : '-';
+        const clienteLabel = osList.length ? [...new Set(osList.map((o) => o.cliente || '-'))].join('; ') : '-';
+        const embarqueDetalhes = osList.map((o) => parseEmbarqueDetalhes(o.embarque));
+        const localLabel = embarqueDetalhes.length ? [...new Set(embarqueDetalhes.map((d) => d.local || '-'))].join('; ') : '-';
+        const cidadeLabel = embarqueDetalhes.length ? [...new Set(embarqueDetalhes.map((d) => d.cidade || '-'))].join('; ') : '-';
         const deslocLabel = DESLOC_LABEL[normalizeText(des.tipo_deslocamento || 'NÃO PRECISA')] || (des.tipo_deslocamento || 'Não precisa');
         const deslocTexto = des.placa_veiculo ? `${deslocLabel} · ${des.placa_veiculo}` : deslocLabel;
         // est.tem_estadia é o booleano gravado no save (mais confiável que
@@ -2120,6 +2124,9 @@ export function renderContent(content) {
         return {
           os: osLabel,
           colaborador: row.nome,
+          cliente: clienteLabel,
+          local: localLabel,
+          cidade: cidadeLabel,
           deslocamento: deslocTexto,
           estadia: estadiaTexto,
           cafe: ali.cafe ? 'Sim' : 'Não',
@@ -2191,6 +2198,20 @@ async function loadJsPdfProgramacao() {
   return window.jspdf.jsPDF;
 }
 
+// Mesma leitura de "UF – CIDADE (LOCAL)" já usada na Etapa 2 (embarqueHtml,
+// programacao-equipe.js) — reimplementada aqui só pra cidade/local (sem UF)
+// porque o PDF já tem colunas próprias pra Cliente/Local/Cidade.
+function parseEmbarqueDetalhes(embarque) {
+  const s = String(embarque || '').trim();
+  if (!s) return { cidade: '', local: '' };
+  const m = s.match(/^([A-Za-z]{2})\s*[–-]\s*(.+)$/);
+  const resto = m ? m[2].trim() : s;
+  const p = resto.match(/^([^(]+?)\s*\(([^)]*)\)\s*$/);
+  const cidade = (p ? p[1] : resto).trim();
+  const local = p ? p[2].trim() : '';
+  return { cidade, local };
+}
+
 function brDateProgramacaoPdf(iso) {
   if (!iso) return '-';
   const [ano, mes, dia] = String(iso).split('-');
@@ -2256,14 +2277,17 @@ async function desenharPdfProgramacao(linhas, semOsLinhas, meta = {}) {
   y += 6;
 
   desenharTabela([
-    { key: 'os', label: 'O.S.', width: 22 },
-    { key: 'colaborador', label: 'Colaborador', width: 42 },
-    { key: 'deslocamento', label: 'Deslocamento', width: 34 },
-    { key: 'estadia', label: 'Estadia', width: 28 },
-    { key: 'cafe', label: 'Café', width: 16 },
-    { key: 'almoco', label: 'Almoço', width: 16 },
-    { key: 'janta', label: 'Janta', width: 16 },
-    { key: 'extras', label: 'Extras', width: PW - 2 * M - (22 + 42 + 34 + 28 + 16 + 16 + 16) },
+    { key: 'os', label: 'O.S.', width: 16 },
+    { key: 'colaborador', label: 'Colaborador', width: 32 },
+    { key: 'cliente', label: 'Cliente', width: 26 },
+    { key: 'local', label: 'Local', width: 24 },
+    { key: 'cidade', label: 'Cidade', width: 18 },
+    { key: 'deslocamento', label: 'Deslocamento', width: 26 },
+    { key: 'estadia', label: 'Estadia', width: 22 },
+    { key: 'cafe', label: 'Café', width: 12 },
+    { key: 'almoco', label: 'Almoço', width: 12 },
+    { key: 'janta', label: 'Janta', width: 12 },
+    { key: 'extras', label: 'Extras', width: PW - 2 * M - (16 + 32 + 26 + 24 + 18 + 26 + 22 + 12 + 12 + 12) },
   ], linhas);
 
   if (semOsLinhas?.length) {
