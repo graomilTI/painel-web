@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-frotafix1';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-fixes2';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260717-merged1';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260717-inativar1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
