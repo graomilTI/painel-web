@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-fixes14';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-declutter1';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260717-fixes5';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260717-fixes6';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
@@ -85,8 +85,15 @@ function injectStyles() {
        (grid-column) — a ordem no HTML continua a mesma de sempre, então a
        Aba 1 (#pgcPane1, que trata esses 4 itens como "contents" dentro do
        próprio grid dela) não é afetada. */
-    #pgcPane2 .peqb-os2-kpis{display:grid;grid-template-columns:minmax(60px,74px) minmax(220px,1.5fr) minmax(220px,1.5fr) minmax(64px,84px);gap:8px}
-    #pgcPane2 .peqb-os2-kpi{min-width:0;flex:none}
+    #pgcPane2 .peqb-os2-kpis{display:grid;grid-template-columns:minmax(60px,74px) minmax(220px,1.5fr) minmax(220px,1.5fr) minmax(64px,84px);gap:0}
+    /* Tiles com borda própria viravam "caixa dentro de caixa" ao lado uma da
+       outra — troca por uma única linha com divisores finos entre colunas
+       (pedido do usuário, 2026-07-17: "menos poluído"). */
+    #pgcPane2 .peqb-os2-kpi{min-width:0;flex:none;border:0!important;background:transparent!important;border-radius:0!important;padding:0 14px!important}
+    #pgcPane2 .peqb-os2-kpi:nth-child(4){padding-left:0!important}
+    #pgcPane2 .peqb-os2-kpi:nth-child(1),#pgcPane2 .peqb-os2-kpi:nth-child(2),#pgcPane2 .peqb-os2-kpi:nth-child(3){border-left:1px solid rgba(111,208,165,.14)!important}
+    #pgcPane2 .peqb-os2-kpi span{font-size:8.5px!important;color:#7fa596!important}
+    #pgcPane2 .peqb-os2-kpi strong{font-weight:750!important}
     /* grid-row:1 explícito em todo mundo — sem isso, o cursor de auto-placement
        do grid manda a OS (coluna 1, mas é o 4º item no HTML) pra uma 2ª linha
        só porque a coluna dela é "menor" que a do item anterior (regra do
