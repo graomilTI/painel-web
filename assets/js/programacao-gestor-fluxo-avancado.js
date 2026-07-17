@@ -77,10 +77,12 @@ function injectStyles() {
     @media(max-width:980px){#pgcPane1 .peqs-row .peqb-os2-left{grid-template-columns:1fr 1fr}#pgcPane1 .peqs-row .peqb-os2-tagsrow{justify-content:flex-start}}
     @media(max-width:720px){#pgcPane1 .peqs-row .peqb-os2-left{display:block}#pgcPane1 .peqs-row .peqb-os2-kpis{display:grid!important;grid-template-columns:1fr 1fr}#pgcPane1 .peqs-row .peqb-os2-tagsrow{margin-top:8px!important}}
 
-    /* Aba 2: lista arrastável + OS */
-    .pgc-equipe-split{display:grid;grid-template-columns:minmax(250px,320px) minmax(360px,1fr);gap:12px;align-items:start}
+    /* Aba 2: lista arrastável + OS — uma janela só (pool + cards de O.S.) com
+       rolagem própria, pra não empurrar o mapa (que fica logo abaixo) pra
+       baixo conforme a quantidade de O.S. (pedido do usuário, 2026-07-17). */
+    .pgc-equipe-split{display:grid;grid-template-columns:minmax(250px,320px) minmax(360px,1fr);gap:12px;align-items:start;max-height:min(560px,calc(100vh - 260px));overflow-y:auto;padding-right:6px;border:1px solid rgba(52,211,153,.14);border-radius:16px}
     @media(max-width:1080px){.pgc-equipe-split{grid-template-columns:1fr}.pgc-colab-pool{position:relative!important;top:auto!important;max-height:none!important}}
-    .pgc-colab-pool{position:sticky;top:10px;max-height:calc(100vh - 255px);overflow:auto;border:1px solid rgba(52,211,153,.18);border-radius:16px;background:rgba(2,6,23,.34);padding:10px}
+    .pgc-colab-pool{position:sticky;top:0;max-height:min(560px,calc(100vh - 260px));overflow:auto;border:1px solid rgba(52,211,153,.18);border-radius:16px;background:rgba(2,6,23,.34);padding:10px}
     .pgc-pool-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
     .pgc-pool-head strong{font-size:12.5px;color:#f8fafc}.pgc-pool-head span{font-size:10.5px;color:#9fb7aa}
     .pgc-pool-search{width:100%;height:34px;margin:0 0 9px;border:1px solid rgba(111,208,165,.28);border-radius:10px;background:#06130e;color:#eef7f2;padding:0 10px;color-scheme:dark;box-sizing:border-box}
