@@ -336,11 +336,11 @@ function injectStyles() {
     .peqb-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
     /* Card de O.S. em duas colunas (esquerda OS+status / direita colaborador+custos) */
     .peqb-os-list-full{max-height:none!important;overflow:visible!important}
-    .peqb-row.peqb-os2{display:grid!important;grid-template-columns:minmax(0,0.8fr) minmax(0,1.2fr)!important;padding:0!important;gap:0!important;overflow:visible!important;align-items:stretch}
+    .peqb-row.peqb-os2{display:block!important;padding:0!important;overflow:visible!important}
     /* Card focado sobe acima dos vizinhos para o dropdown de troca "passar" por cima. */
     .peqb-row.peqb-os2:focus-within{position:relative;z-index:30}
-    .peqb-os2-left{padding:14px 15px;border-right:1px solid rgba(111,208,165,.14)}
-    .peqb-os2-right{padding:14px 15px;background:rgba(16,40,30,.45);border-radius:0 13px 13px 0}
+    .peqb-os2-left{padding:14px 15px;border-bottom:1px solid rgba(111,208,165,.14)}
+    .peqb-os2-right{padding:14px 15px;background:rgba(16,40,30,.45);border-radius:0 0 13px 13px}
     .peqb-os2-cliente{font-size:13.5px;font-weight:850;color:#f8fafc;line-height:1.25}
     .peqb-os2-emb{font-size:11.5px;color:#8ba79a;margin-top:3px;overflow-wrap:anywhere}
     .peqb-os2-uf{color:#6fd0a5;font-weight:900}
@@ -380,7 +380,7 @@ function injectStyles() {
     .peqb-map-band{margin-top:14px;border:1px solid rgba(111,208,165,.14);border-radius:16px;overflow:hidden;background:rgba(2,6,23,.36)}
     .peqb-map-band-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(111,208,165,.14);font-size:12.5px;font-weight:850;color:#cfe7da}
     .peqb-map-band .peqb-map{height:min(420px,60vh);position:relative}
-    @media(max-width:760px){.peqb-row.peqb-os2{grid-template-columns:1fr!important}.peqb-os2-left{border-right:0;border-bottom:1px solid rgba(111,208,165,.14)}.peqb-os2-right{border-radius:0 0 13px 13px}.peqb-crow,.peqb-crow-2,.peqb-crow-3{grid-template-columns:1fr!important}}
+    @media(max-width:760px){.peqb-crow,.peqb-crow-2,.peqb-crow-3{grid-template-columns:1fr!important}}
     @media(max-width:600px){.peqb-cand-cost{align-self:flex-start}}
     .prog-readonly-banner{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 14px;border:1px solid rgba(234,179,8,.32);background:rgba(234,179,8,.1);border-radius:12px;color:#fde68a;font-size:12.5px;font-weight:800}
     .prog-readonly-scope{pointer-events:none!important;opacity:.55;filter:saturate(.6)}

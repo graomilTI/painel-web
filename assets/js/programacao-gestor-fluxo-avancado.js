@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-fixes5';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260717-fixes8';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260717-fixes5';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260717-fixes6';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
@@ -77,20 +77,24 @@ function injectStyles() {
     @media(max-width:980px){#pgcPane1 .peqs-row .peqb-os2-left{grid-template-columns:1fr 1fr}#pgcPane1 .peqs-row .peqb-os2-tagsrow{justify-content:flex-start}}
     @media(max-width:720px){#pgcPane1 .peqs-row .peqb-os2-left{display:block}#pgcPane1 .peqs-row .peqb-os2-kpis{display:grid!important;grid-template-columns:1fr 1fr}#pgcPane1 .peqs-row .peqb-os2-tagsrow{margin-top:8px!important}}
 
-    /* Aba 2: os 4 KPIs da O.S. (Cliente/Local/Remanescente/OS) num grid 2x2 —
-       OS e Remanescente (curtos) numa coluna estreita, Cliente e Local (mais
-       longos) numa coluna larga, em vez do flex-wrap que quebrava linha de
-       jeito desalinhado (pedido do usuário, 2026-07-17: "menos poluído"). Só
-       reposiciona visualmente (grid-column/row) — a ordem no HTML continua a
-       mesma de sempre, então a Aba 1 (#pgcPane1, que trata esses 4 itens como
-       "contents" dentro do próprio grid dela) não é afetada. */
-    #pgcPane2 .peqb-os2-kpis{display:grid;grid-template-columns:minmax(64px,84px) 1fr;gap:6px 10px}
+    /* Aba 2: os 4 KPIs da O.S. (Cliente/Local/Remanescente/OS) numa linha só
+       (OS/Rem estreitos, Cliente/Local largos) — o card virou uma coluna só
+       (ver .peqb-row.peqb-os2 em programacao-equipe.js), então sobra largura
+       de sobra pra caber tudo numa linha em vez do 2x2/flex-wrap de antes
+       (pedido do usuário, 2026-07-17). Só reposiciona visualmente
+       (grid-column) — a ordem no HTML continua a mesma de sempre, então a
+       Aba 1 (#pgcPane1, que trata esses 4 itens como "contents" dentro do
+       próprio grid dela) não é afetada. */
+    #pgcPane2 .peqb-os2-kpis{display:grid;grid-template-columns:minmax(64px,84px) minmax(150px,1.6fr) minmax(150px,1.6fr) minmax(70px,96px);gap:8px}
     #pgcPane2 .peqb-os2-kpi{min-width:0;flex:none}
-    #pgcPane2 .peqb-os2-kpi:nth-child(1){grid-column:2;grid-row:1}
-    #pgcPane2 .peqb-os2-kpi:nth-child(2){grid-column:2;grid-row:2}
-    #pgcPane2 .peqb-os2-kpi:nth-child(3){grid-column:1;grid-row:2}
-    #pgcPane2 .peqb-os2-kpi:nth-child(4){grid-column:1;grid-row:1}
-    @media(max-width:640px){#pgcPane2 .peqb-os2-kpis{grid-template-columns:1fr 1fr}}
+    #pgcPane2 .peqb-os2-kpi:nth-child(1){grid-column:2} /* Cliente */
+    #pgcPane2 .peqb-os2-kpi:nth-child(2){grid-column:3} /* Local de embarque */
+    #pgcPane2 .peqb-os2-kpi:nth-child(3){grid-column:4} /* Remanescente */
+    #pgcPane2 .peqb-os2-kpi:nth-child(4){grid-column:1} /* OS */
+    @media(max-width:760px){
+      #pgcPane2 .peqb-os2-kpis{grid-template-columns:1fr 1fr}
+      #pgcPane2 .peqb-os2-kpi:nth-child(1),#pgcPane2 .peqb-os2-kpi:nth-child(2),#pgcPane2 .peqb-os2-kpi:nth-child(3),#pgcPane2 .peqb-os2-kpi:nth-child(4){grid-column:auto}
+    }
 
     /* Avatar do colaborador CONFIRMADO na O.S. fica verde de verdade — antes
        usava a mesma cor fraca do candidato (peqb-cand-av é compartilhado com
