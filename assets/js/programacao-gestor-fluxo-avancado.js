@@ -77,6 +77,26 @@ function injectStyles() {
     @media(max-width:980px){#pgcPane1 .peqs-row .peqb-os2-left{grid-template-columns:1fr 1fr}#pgcPane1 .peqs-row .peqb-os2-tagsrow{justify-content:flex-start}}
     @media(max-width:720px){#pgcPane1 .peqs-row .peqb-os2-left{display:block}#pgcPane1 .peqs-row .peqb-os2-kpis{display:grid!important;grid-template-columns:1fr 1fr}#pgcPane1 .peqs-row .peqb-os2-tagsrow{margin-top:8px!important}}
 
+    /* Aba 2: os 4 KPIs da O.S. (Cliente/Local/Remanescente/OS) num grid 2x2 —
+       OS e Remanescente (curtos) numa coluna estreita, Cliente e Local (mais
+       longos) numa coluna larga, em vez do flex-wrap que quebrava linha de
+       jeito desalinhado (pedido do usuário, 2026-07-17: "menos poluído"). Só
+       reposiciona visualmente (grid-column/row) — a ordem no HTML continua a
+       mesma de sempre, então a Aba 1 (#pgcPane1, que trata esses 4 itens como
+       "contents" dentro do próprio grid dela) não é afetada. */
+    #pgcPane2 .peqb-os2-kpis{display:grid;grid-template-columns:minmax(64px,84px) 1fr;gap:6px 10px}
+    #pgcPane2 .peqb-os2-kpi{min-width:0;flex:none}
+    #pgcPane2 .peqb-os2-kpi:nth-child(1){grid-column:2;grid-row:1}
+    #pgcPane2 .peqb-os2-kpi:nth-child(2){grid-column:2;grid-row:2}
+    #pgcPane2 .peqb-os2-kpi:nth-child(3){grid-column:1;grid-row:2}
+    #pgcPane2 .peqb-os2-kpi:nth-child(4){grid-column:1;grid-row:1}
+    @media(max-width:640px){#pgcPane2 .peqb-os2-kpis{grid-template-columns:1fr 1fr}}
+
+    /* Avatar do colaborador CONFIRMADO na O.S. fica verde de verdade — antes
+       usava a mesma cor fraca do candidato (peqb-cand-av é compartilhado com
+       a lista de sugestão e o "+"), sem diferenciar quem já está associado. */
+    #pgcPane2 .peqb-conf-name .peqb-cand-av{background:rgba(34,197,94,.35);color:#bbf7d0;border:1px solid rgba(34,197,94,.55)}
+
     /* Aba 2: lista arrastável + OS — uma janela só (pool + cards de O.S.) com
        rolagem própria, pra não empurrar o mapa (que fica logo abaixo) pra
        baixo conforme a quantidade de O.S. (pedido do usuário, 2026-07-17). */
