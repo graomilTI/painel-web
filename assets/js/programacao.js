@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
-import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260717-kgfix1';
+import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260717-frotafix1';
 import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260717-deslocfix1';
 
 const STEPS = [

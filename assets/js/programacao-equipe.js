@@ -1695,20 +1695,30 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         : '<div class="peqb-empty">Nenhuma O.S. marcada para atender ainda. Volte à Etapa 1 (Situação da O.S.) e marque ATENDER nas O.S. desejadas.</div>';
       if (silent && scroller) scroller.scrollTop = scrollPos;
 
-      // Persiste (uma vez) a placa puxada da leitura do veículo para motoristas
-      // confirmados sem deslocamento gravado — assim a placa fica salva sem o
-      // gestor precisar tocar. Na próxima carga já vem de des.placa_veiculo.
+      // Persiste a placa puxada da leitura do veículo para motoristas
+      // confirmados — assim a placa fica salva sem o gestor precisar tocar.
+      // Também corrige o tipo de deslocamento pra MOTORISTA FROTA sempre que
+      // o confirmado tem frota própria (placaAuto) mas ainda está marcado
+      // como Uber/Reembolso — cenário comum quando o vínculo com a frota é
+      // feito DEPOIS de já ter selecionado um desses tipos manualmente
+      // (pedido do usuário, 2026-07-17: adicionar frota tem que corrigir o
+      // campo, não deixar Uber/deslocamento "grudado").
       osComCandidatosAtual.forEach((it) => {
-        if (it.confirmadoRow && it.custos?.placaAuto && !it.custos.des?.placa_veiculo) {
-          supabase.from('programacao_deslocamento').upsert({
-            programacao_id: programacaoIdParaOs(it.os),
-            data_referencia: options.dataReferencia || null,
-            colaborador_id: String(it.confirmadoRow.colaborador_id),
-            nome_colaborador: it.confirmadoRow.nome_colaborador || '',
-            tipo_deslocamento: 'MOTORISTA FROTA',
-            placa_veiculo: onlyPlate(it.custos.placaAuto),
-          }, { onConflict: 'programacao_id,colaborador_id' }).then(({ error }) => { if (error) console.warn('[equipe] auto-placa', error); });
-        }
+        if (!it.confirmadoRow || !it.custos?.placaAuto) return;
+        const placaAlvo = onlyPlate(it.custos.placaAuto);
+        const tipoAtual = normalizeText(it.custos.des?.tipo_deslocamento || '');
+        const placaAtual = onlyPlate(it.custos.des?.placa_veiculo || '');
+        const precisaCorrigir = !placaAtual || placaAtual !== placaAlvo
+          || tipoAtual === 'UBER TAXI' || tipoAtual === 'REEMBOLSO KM';
+        if (!precisaCorrigir) return;
+        supabase.from('programacao_deslocamento').upsert({
+          programacao_id: programacaoIdParaOs(it.os),
+          data_referencia: options.dataReferencia || null,
+          colaborador_id: String(it.confirmadoRow.colaborador_id),
+          nome_colaborador: it.confirmadoRow.nome_colaborador || '',
+          tipo_deslocamento: 'MOTORISTA FROTA',
+          placa_veiculo: placaAlvo,
+        }, { onConflict: 'programacao_id,colaborador_id' }).then(({ error }) => { if (error) console.warn('[equipe] auto-placa', error); });
       });
 
       atualizarKpis(content, osComCandidatosAtual, confirmadosPorOs);
