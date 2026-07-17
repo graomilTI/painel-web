@@ -235,6 +235,9 @@ function injectStyles() {
   style.id = 'progEquipeStyles';
   style.textContent = `
     .peqs-finalizadas-title{margin-top:16px!important;opacity:.85}
+    .peqb-kpis-window{max-height:220px;overflow-y:auto;margin-bottom:12px;padding-right:4px}
+    .peqb-kpis-window .peqb-kpis{margin-bottom:10px}
+    .peqb-kpis-window .peqb-toolbar,.peqb-kpis-window .peqb-legend{margin-bottom:0}
     .peqb-kpis{display:grid;grid-template-columns:repeat(2,minmax(140px,1fr));gap:10px;margin-bottom:12px}
     .peqb-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:12px;padding:10px}
     .peqb-kpi span{display:block;color:#93c5fd;font-size:9.5px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}
@@ -1375,17 +1378,19 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       <span class="badge">Etapa 2</span>
     </div>
     ${readOnly ? readonlyBannerHtml() : ''}
-    <div class="peqb-kpis">
-      <div class="peqb-kpi"><span>Colaboradores</span><strong id="peqbKpiColab">0</strong></div>
-      <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
-      <div class="peqb-kpi"><span>OS com equipe</span><strong id="peqbKpiOs">0</strong></div>
-    </div>
-    <div class="peqb-legend"><b>Score:</b> <span><i class="lg-c"></i>Contrato 50%</span> <span><i class="lg-d"></i>Distância 30%</span> <span><i class="lg-a"></i>Auditoria 20%</span></div>
-    <div class="peqb-toolbar">
-      <button type="button" class="peqb-btn" id="peqbAutoPreencher" ${readOnly ? 'disabled' : ''}>Auto-preencher equipe</button>
-      <button type="button" class="peqb-btn" id="peqbSugerirCaronas" ${readOnly ? 'disabled' : ''} title="Motorista/carona por frota (desvio ≤ ${CARONA_DESVIO_KM} km), sobra vira próprio/Uber">Sugerir caronas</button>
-      <span id="peqbCaronasMsg" style="font-size:11.5px;color:#9fb7aa;align-self:center"></span>
-      <button type="button" class="peqb-btn" id="peqbVerMapa">🗺️ Ver mapa do gestor</button>
+    <div class="peqb-kpis-window">
+      <div class="peqb-kpis">
+        <div class="peqb-kpi"><span>Colaboradores</span><strong id="peqbKpiColab">0</strong></div>
+        <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
+        <div class="peqb-kpi"><span>OS com equipe</span><strong id="peqbKpiOs">0</strong></div>
+      </div>
+      <div class="peqb-legend"><b>Score:</b> <span><i class="lg-c"></i>Contrato 50%</span> <span><i class="lg-d"></i>Distância 30%</span> <span><i class="lg-a"></i>Auditoria 20%</span></div>
+      <div class="peqb-toolbar">
+        <button type="button" class="peqb-btn" id="peqbAutoPreencher" ${readOnly ? 'disabled' : ''}>Auto-preencher equipe</button>
+        <button type="button" class="peqb-btn" id="peqbSugerirCaronas" ${readOnly ? 'disabled' : ''} title="Motorista/carona por frota (desvio ≤ ${CARONA_DESVIO_KM} km), sobra vira próprio/Uber">Sugerir caronas</button>
+        <span id="peqbCaronasMsg" style="font-size:11.5px;color:#9fb7aa;align-self:center"></span>
+        <button type="button" class="peqb-btn" id="peqbVerMapa">🗺️ Ver mapa do gestor</button>
+      </div>
     </div>
     <div id="peqbMapBand" hidden></div>
     <div class="peqb-os-list peqb-os-list-full ${readOnly ? 'prog-readonly-scope' : ''}" id="peqbOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
@@ -1429,6 +1434,16 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   let autoPreencherPendente = !!options.autoPreencher;
   let osComCandidatosAtual = [];
   let osTodasAtual = [];
+
+  // Um refresh "silencioso" reconstrói #peqbOsList inteiro — se o gestor
+  // estiver com um <select> aberto nesse instante (ex.: acabou de adicionar
+  // outro colaborador na mesma O.S., o que dispara esse refresh), o navegador
+  // fecha o dropdown sozinho porque o elemento embaixo dele foi substituído.
+  // Enquanto o foco estiver num select da lista, adia o repaint e só aplica
+  // depois que o gestor sair dele (blur/change) — sem isso o dropdown de
+  // deslocamento "fecha sozinho" bem no meio da escolha (reportado 2026-07-17).
+  let selectFocadoNaLista = false;
+  let renderPendenteAposSelect = false;
 
   // Confirma o candidato de menor custo para cada O.S. ainda sem equipe.
   // Usado pelo botão "Auto-preencher" e pelo preenchimento automático inicial
@@ -1690,10 +1705,17 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         return carregarERenderizar({ silent: true });
       }
 
-      listEl.innerHTML = osComCandidatosAtual.length
-        ? `<div class="peqb-block-head">Equipe da O.S. · ${osComCandidatosAtual.length}</div>${osComCandidatosAtual.map(osRowHtml).join('')}`
-        : '<div class="peqb-empty">Nenhuma O.S. marcada para atender ainda. Volte à Etapa 1 (Situação da O.S.) e marque ATENDER nas O.S. desejadas.</div>';
-      if (silent && scroller) scroller.scrollTop = scrollPos;
+      if (silent && selectFocadoNaLista) {
+        // Gestor está com um <select> aberto/focado (ex.: escolhendo o tipo de
+        // deslocamento) — não troca o HTML agora pra não fechar o dropdown
+        // sozinho. O focusout cuidado abaixo dispara o render assim que ele sair.
+        renderPendenteAposSelect = true;
+      } else {
+        listEl.innerHTML = osComCandidatosAtual.length
+          ? `<div class="peqb-block-head">Equipe da O.S. · ${osComCandidatosAtual.length}</div>${osComCandidatosAtual.map(osRowHtml).join('')}`
+          : '<div class="peqb-empty">Nenhuma O.S. marcada para atender ainda. Volte à Etapa 1 (Situação da O.S.) e marque ATENDER nas O.S. desejadas.</div>';
+        if (silent && scroller) scroller.scrollTop = scrollPos;
+      }
 
       // Persiste a placa puxada da leitura do veículo para motoristas
       // confirmados — assim a placa fica salva sem o gestor precisar tocar.
@@ -2093,6 +2115,18 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       console.error('[programacao-equipe] ação:', error);
       btn.disabled = false;
       alert(error.message || 'Erro ao salvar. Tente novamente.');
+    }
+  });
+
+  listEl.addEventListener('focusin', (event) => {
+    if (event.target.matches('select')) selectFocadoNaLista = true;
+  });
+  listEl.addEventListener('focusout', (event) => {
+    if (!event.target.matches('select')) return;
+    selectFocadoNaLista = false;
+    if (renderPendenteAposSelect) {
+      renderPendenteAposSelect = false;
+      carregarERenderizar({ silent: true });
     }
   });
 

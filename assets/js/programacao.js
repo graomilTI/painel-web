@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
-import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260717-frotafix1';
+import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260717-fixes2';
 import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260717-deslocfix1';
 
 const STEPS = [
@@ -2241,7 +2241,7 @@ async function desenharPdfProgramacao(linhas, semOsLinhas, meta = {}) {
       doc.line(M, y + 6, PW - M, y + 6);
       y += 8;
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
+      doc.setFontSize(8);
     }
 
     desenharCabecalho();
@@ -2278,16 +2278,16 @@ async function desenharPdfProgramacao(linhas, semOsLinhas, meta = {}) {
 
   desenharTabela([
     { key: 'os', label: 'O.S.', width: 16 },
-    { key: 'colaborador', label: 'Colaborador', width: 32 },
-    { key: 'cliente', label: 'Cliente', width: 26 },
-    { key: 'local', label: 'Local', width: 24 },
-    { key: 'cidade', label: 'Cidade', width: 18 },
-    { key: 'deslocamento', label: 'Deslocamento', width: 26 },
-    { key: 'estadia', label: 'Estadia', width: 22 },
-    { key: 'cafe', label: 'Café', width: 12 },
-    { key: 'almoco', label: 'Almoço', width: 12 },
-    { key: 'janta', label: 'Janta', width: 12 },
-    { key: 'extras', label: 'Extras', width: PW - 2 * M - (16 + 32 + 26 + 24 + 18 + 26 + 22 + 12 + 12 + 12) },
+    { key: 'colaborador', label: 'Colaborador', width: 34 },
+    { key: 'cliente', label: 'Cliente', width: 34 },
+    { key: 'local', label: 'Local', width: 28 },
+    { key: 'cidade', label: 'Cidade', width: 20 },
+    { key: 'deslocamento', label: 'Deslocamento', width: 24 },
+    { key: 'estadia', label: 'Estadia', width: 20 },
+    { key: 'cafe', label: 'Café', width: 11 },
+    { key: 'almoco', label: 'Almoço', width: 11 },
+    { key: 'janta', label: 'Janta', width: 11 },
+    { key: 'extras', label: 'Extras', width: PW - 2 * M - (16 + 34 + 34 + 28 + 20 + 24 + 20 + 11 + 11 + 11) },
   ], linhas);
 
   if (semOsLinhas?.length) {
