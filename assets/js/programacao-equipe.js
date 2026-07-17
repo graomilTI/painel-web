@@ -760,7 +760,7 @@ function aplicarSugestoesRegionais(porOs, osComPonto, colaboradoresRegional, exc
 // em cada O.S. — reaproveita o que já veio no ranking de candidatos (se o
 // confirmado estiver no top-8) e só consulta colaborador_cruzamento por CPF
 // para os que faltarem (trocados manualmente / fora do ranking).
-async function loadTipoContratoConfirmados(confirmadosPorOs, candidatosPorOs) {
+async function loadTipoContratoConfirmados(idsConfirmados, candidatosPorOs) {
   const mapa = new Map();
   candidatosPorOs.forEach((lista) => {
     lista.forEach((c) => {
@@ -768,8 +768,7 @@ async function loadTipoContratoConfirmados(confirmadosPorOs, candidatosPorOs) {
       if (id && c.tipoLabel && !mapa.has(id)) mapa.set(id, c.tipoLabel);
     });
   });
-  const idsConfirmados = [...confirmadosPorOs.values()].map((r) => String(r.colaborador_id));
-  const cpfsFaltantes = [...new Set(idsConfirmados.filter((id) => !mapa.has(id) && /^\d+$/.test(id)))];
+  const cpfsFaltantes = [...new Set(idsConfirmados.map(String).filter((id) => !mapa.has(id) && /^\d+$/.test(id)))];
   if (cpfsFaltantes.length) {
     const { data, error } = await supabase.from('colaborador_cruzamento').select('cpf,tipo_contrato').in('cpf', cpfsFaltantes);
     if (!error) {
@@ -859,15 +858,15 @@ function todayIso() { const n = new Date(); return new Date(n.getTime() - n.getT
 // parênteses, ou o restante do texto quando não houver parênteses).
 function embarqueHtml(embarque) {
   const s = String(embarque == null ? '' : embarque).trim();
-  if (!s || s === '-') return '📍 -';
+  if (!s || s === '-') return '-';
   const m = s.match(/^([A-Za-z]{2})\s*[–-]\s*(.+)$/);
-  if (!m) return `<span class="peqb-os2-emb-l1">📍 ${esc(s)}</span>`;
+  if (!m) return `<span class="peqb-os2-emb-l1">${esc(s)}</span>`;
   const uf = m[1].toUpperCase();
   const resto = m[2].trim();
   const p = resto.match(/^([^(]+?)\s*\(([^)]*)\)\s*$/);
   const cidade = (p ? p[1] : resto).trim();
   const local = p ? p[2].trim() : '';
-  const linha1 = `<span class="peqb-os2-emb-l1">📍 <span class="peqb-os2-uf">${esc(uf)}</span> · ${esc(cidade)}</span>`;
+  const linha1 = `<span class="peqb-os2-emb-l1"><span class="peqb-os2-uf">${esc(uf)}</span> - ${esc(cidade)}</span>`;
   const linha2 = local ? `<span class="peqb-os2-emb-l2">${esc(local)}</span>` : '';
   return linha1 + linha2;
 }
@@ -939,13 +938,19 @@ function addColabOptionsHtml(item) {
 function colabsExtrasHtml(item) {
   const extras = (item.equipeRows || []).filter((r) => String(r.colaborador_id) !== String(item.confirmadoRow?.colaborador_id));
   if (!extras.length) return '';
-  return `<div class="peqb-extra-colabs">${extras.map((r) => `
+  return `<div class="peqb-extra-colabs">${extras.map((r) => {
+    const cpf = String(r.colaborador_id || '').replace(/\D/g, '');
+    const tipoLabel = item.tipoLabelPorColaborador?.get(String(r.colaborador_id)) || 'Não informado';
+    const isMotoristaLogistica = !!(item.placasPorCpf?.get(cpf))
+      && disponibilidadeCategoriaLocal(item.dispPorColaborador?.get(String(r.colaborador_id))) === 'LOGISTICA';
+    return `
     <span class="peqb-extra-colab" title="Colaborador adicional nesta O.S.">
-      <span class="peqb-cand-av">${esc(iniciais(r.nome_colaborador || r.colaborador_id))}</span>
-      <span class="peqb-cand-tag peqb-conf-tag t-info">Adicional</span>
+      ${isMotoristaLogistica ? '<span class="peqb-clab" title="Motorista em Logística">🚗</span>' : ''}
+      <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(tipoLabel)}">${esc(tipoLabel)}</span>
       <span class="peqb-name-sel">${esc(r.nome_colaborador || r.colaborador_id)}</span>
       <button type="button" data-remover-adicional="${esc(r.id)}" ${item.readOnly ? 'disabled' : ''} title="Remover colaborador">×</button>
-    </span>`).join('')}</div>`;
+    </span>`;
+  }).join('')}</div>`;
 }
 
 // Motorista com frota vinculada (placaAuto) pode ser marcado como
@@ -999,7 +1004,7 @@ function osRowHtml(item) {
     right = `<div class="peqb-os2-right">
       <div class="peqb-conf-head">
         <span class="peqb-conf-name">
-          <span class="peqb-cand-av">${esc(iniciais(confirmadoRow.nome_colaborador))}</span>
+          ${item.custos?.placaAuto && disponibilidadeCategoriaLocal(item.custos?.dispAtual) === 'LOGISTICA' ? '<span class="peqb-clab" title="Motorista em Logística">🚗</span>' : ''}
           <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(item.confirmadoTipoLabel)}">${esc(item.confirmadoTipoLabel)}</span>
           <select class="peqb-name-sel" data-trocar-colab ${dis} title="Trocar o colaborador (♻ = já escalado em outra OS)">
             ${trocarOptionsHtml(item)}
@@ -1696,8 +1701,8 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         colaboradoresRegional,
         colaboradoresConfirmadosEmOutraOs,
       );
-      const tipoLabelPorColaborador = await loadTipoContratoConfirmados(confirmadosPorOs, candidatosPorOs);
-      const dispPorColaborador = await loadDisponibilidadeConfirmados(programacaoIdQuery, [...confirmadosPorOs.values()].map((r) => r.colaborador_id));
+      const tipoLabelPorColaborador = await loadTipoContratoConfirmados([...colaboradoresConfirmadosEmOutraOs], candidatosPorOs);
+      const dispPorColaborador = await loadDisponibilidadeConfirmados(programacaoIdQuery, [...colaboradoresConfirmadosEmOutraOs]);
 
       osComCandidatosAtual = osComPonto.map(({ os, ponto, confirmadoRow }) => {
         const equipeRowsOs = equipeRowsPorOs.get(os.id) || (confirmadoRow ? [confirmadoRow] : []);
@@ -1707,6 +1712,9 @@ export async function renderProgramacaoEquipe(content, options = {}) {
           confirmadoRow,
           readOnly,
           equipeRows: equipeRowsOs,
+          tipoLabelPorColaborador,
+          placasPorCpf,
+          dispPorColaborador,
           confirmadoTipoLabel: confirmadoRow ? (tipoLabelPorColaborador.get(String(confirmadoRow.colaborador_id)) || 'Não informado') : null,
           candidatos: ordenarCandidatosPorEmbarque(confirmadoRow
             ? [{ colaboradorId: confirmadoRow.colaborador_id, nome: confirmadoRow.nome_colaborador, km: confirmadoRow.km_estimado != null ? Number(confirmadoRow.km_estimado) : null, custoTotal: null }, ...(candidatosPorOs.get(os.id) || [])]
