@@ -355,9 +355,10 @@ function injectStyles() {
     .peqb-conf-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
     .peqb-conf-head .peqb-row-btn{height:32px;font-size:12px;padding:0 11px;white-space:nowrap;flex:0 0 auto}
     .peqb-conf-head .peqb-row-btn.hotel{font-weight:850}
-    .peqb-conf-name{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0;flex:1 1 140px}
+    .peqb-conf-name{display:flex;align-items:center;flex-wrap:nowrap;gap:6px;min-width:0;flex:1 1 140px}
+    .peqb-conf-tagwrap{display:flex;align-items:center;gap:6px;flex:0 0 auto}
     .peqb-conf-tag{flex:0 0 auto;white-space:nowrap}
-    .peqb-name-sel{flex:1 1 140px;min-width:0;max-width:100%;border:1px solid transparent;background:transparent;color:#f8fafc;font-size:13.5px;font-weight:850;cursor:pointer;border-radius:8px;padding:4px 24px 4px 7px;color-scheme:dark;text-overflow:ellipsis}
+    .peqb-name-sel{flex:1 1 0;min-width:0;max-width:100%;overflow:hidden;white-space:nowrap;border:1px solid transparent;background:transparent;color:#f8fafc;font-size:13.5px;font-weight:850;cursor:pointer;border-radius:8px;padding:4px 24px 4px 7px;color-scheme:dark;text-overflow:ellipsis}
     .peqb-name-sel:hover{border-color:rgba(111,208,165,.35);background:rgba(8,22,17,.55)}
     .peqb-name-sel:focus{border-color:rgba(111,208,165,.55);outline:none;background:#06130e}
     .peqb-name-sel option{background:#0c1f17;color:#eef7f2;font-weight:600}
@@ -365,7 +366,7 @@ function injectStyles() {
     .peqb-add-colab{width:28px;height:28px;min-height:28px;padding:0;border-radius:9px;border:1px solid rgba(56,189,248,.42);background:rgba(14,116,144,.16);color:#bfdbfe;font-size:16px;font-weight:950;cursor:pointer;flex:0 0 auto;line-height:1}
     .peqb-add-colab:hover{background:rgba(14,116,144,.28);color:#e0f2fe}
     .peqb-extra-colabs{display:flex;flex-direction:column;gap:6px;width:100%;margin:-2px 0 7px}
-    .peqb-extra-colab{display:flex;align-items:center;flex-wrap:wrap;gap:6px;width:100%;border:1px solid rgba(56,189,248,.24);background:rgba(15,23,42,.74);border-radius:10px;padding:5px 7px;box-sizing:border-box}
+    .peqb-extra-colab{display:flex;align-items:center;flex-wrap:nowrap;gap:6px;width:100%;border:1px solid rgba(56,189,248,.24);background:rgba(15,23,42,.74);border-radius:10px;padding:5px 7px;box-sizing:border-box}
     .peqb-extra-colab .peqb-name-sel{background:rgba(15,23,42,.9);border-color:rgba(56,189,248,.18);cursor:default}
     .peqb-extra-colab button{width:28px;height:28px;border-radius:9px;border:1px solid rgba(248,113,113,.3);background:rgba(127,29,29,.18);color:#fecaca;font-size:14px;font-weight:950;cursor:pointer;padding:0;line-height:1;flex:0 0 auto}
     .peqb-extra-colab button:hover{background:rgba(127,29,29,.3)}
@@ -948,8 +949,10 @@ function colabsExtrasHtml(item) {
     const desTipo = item.custosRaw?.des?.get(String(r.colaborador_id))?.tipo_deslocamento;
     return `
     <span class="peqb-extra-colab" title="Colaborador adicional nesta O.S.">
-      ${isMotoristaLogistica ? '<span class="peqb-clab" title="Motorista em Logística">🚗</span>' : ''}
-      <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(tipoLabel)}">${esc(tipoLabel)}</span>
+      <span class="peqb-conf-tagwrap">
+        ${isMotoristaLogistica ? '<span class="peqb-clab" title="Motorista em Logística">🚗</span>' : ''}
+        <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(tipoLabel)}">${esc(tipoLabel)}</span>
+      </span>
       <span class="peqb-name-sel">${esc(r.nome_colaborador || r.colaborador_id)}</span>
       ${temFrotaPropria ? '' : deslocamentoInlineHtml(r.colaborador_id, desTipo, item.readOnly)}
       <button type="button" data-remover-adicional="${esc(r.id)}" ${item.readOnly ? 'disabled' : ''} title="Remover colaborador">×</button>
@@ -1006,8 +1009,10 @@ function osRowHtml(item) {
     right = `<div class="peqb-os2-right">
       <div class="peqb-conf-head">
         <span class="peqb-conf-name">
-          ${item.custos?.placaAuto && disponibilidadeCategoriaLocal(item.custos?.dispAtual) === 'LOGISTICA' ? '<span class="peqb-clab" title="Motorista em Logística">🚗</span>' : ''}
-          <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(item.confirmadoTipoLabel)}">${esc(item.confirmadoTipoLabel)}</span>
+          <span class="peqb-conf-tagwrap">
+            ${item.custos?.placaAuto && disponibilidadeCategoriaLocal(item.custos?.dispAtual) === 'LOGISTICA' ? '<span class="peqb-clab" title="Motorista em Logística">🚗</span>' : ''}
+            <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(item.confirmadoTipoLabel)}">${esc(item.confirmadoTipoLabel)}</span>
+          </span>
           <select class="peqb-name-sel" data-trocar-colab ${dis} title="Trocar o colaborador (♻ = já escalado em outra OS)">
             ${trocarOptionsHtml(item)}
           </select>
