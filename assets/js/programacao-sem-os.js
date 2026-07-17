@@ -5,7 +5,7 @@
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
-import { loadEquipeExistente, loadColaboradoresRegional, tipoContratoLetra } from './programacao-equipe.js?v=20260717-fixes5';
+import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20260717-fixes5';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
 
@@ -91,14 +91,14 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-function cardHtml(colab, row, readOnly, pendente) {
+function cardHtml(colab, row, readOnly, pendente, tipoContratoCru) {
   const situacaoAtual = normalizeText(row?.disponibilidade || '');
   const dis = readOnly ? 'disabled' : '';
   const inativarDis = readOnly || pendente ? 'disabled' : '';
   const inativarLabel = pendente ? 'Inativação solicitada' : 'Inativar';
   return `<article class="pso-card" data-colab-id="${esc(colab.colaboradorId)}">
     <div class="pso-name">
-      <span class="pso-av" title="Tipo de contrato">${esc(tipoContratoLetra(colab.tipoLabel))}</span>
+      <span class="pso-av" title="Tipo de contrato">${esc(tipoContratoLetra(tipoContratoCru || colab.tipoLabel))}</span>
       <div class="pso-name-txt">
         <div class="pso-nome">${esc(colab.nome)}</div>
         <div class="pso-meta">${esc(colab.cargo || 'Colaborador')} · ${esc(colab.coordenacao || colab.supervisao || '-')}</div>
@@ -203,9 +203,10 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     const scrollPos = scroller ? scroller.scrollTop : 0;
     if (!silent) listEl.innerHTML = '<div class="pso-empty pso-loading"><span class="pso-spinner" aria-hidden="true"></span><span>Carregando colaboradores...</span></div>';
 
-    const [regionalBruto, equipeRows] = await Promise.all([
+    const [regionalBruto, equipeRows, tipoContratoPorCpf] = await Promise.all([
       loadColaboradoresRegional(supervisaoQuery),
       loadEquipeExistente(programacaoIdQuery),
+      loadCruzamentoTipoContrato(supervisaoQuery),
     ]);
     // loadColaboradoresRegional foi feita pra sugestão de candidato (Etapa 2)
     // e aceita match "parecido" (regionalScore por token) quando a RPC não
@@ -245,7 +246,7 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     colabsAtual = semOs;
     kpiEl.textContent = String(semOs.length);
     listEl.innerHTML = semOs.length
-      ? semOs.map((c) => cardHtml(c, situacoesPorColab.get(c.colaboradorId), readOnly, pendentesAtual.has(String(c.colaboradorId)))).join('')
+      ? semOs.map((c) => cardHtml(c, situacoesPorColab.get(c.colaboradorId), readOnly, pendentesAtual.has(String(c.colaboradorId)), tipoContratoPorCpf.get(String(c.colaboradorId).replace(/\D/g, '')))).join('')
       : '<div class="pso-empty">Ninguém da regional sem O.S. no momento.</div>';
 
     if (silent && scroller) scroller.scrollTop = scrollPos;
