@@ -7,11 +7,30 @@
 // quando o gestor pedir "Ver rotas no mapa" (reaproveita a Edge Function já
 // usada em Frotas Roteirização, ver supabase/functions/frotas-roteirizar).
 import { supabase } from './supabaseClient.js';
-import { getCurrentUser } from './auth.js';
+import { getCurrentUser, getUserContext } from './auth.js';
 import { logActivity } from './activityLogger.js';
 import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
 
 let currentUser = null;
+let currentUserIsMaster = false;
+let masterPermissionReady = null;
+
+function ensureMasterPermission() {
+  if (!masterPermissionReady) {
+    masterPermissionReady = getUserContext()
+      .then((ctx) => {
+        currentUserIsMaster = !!ctx?.user?.is_master;
+        return currentUserIsMaster;
+      })
+      .catch((error) => {
+        console.warn('[programacao] não foi possível validar permissão master:', error);
+        currentUserIsMaster = false;
+        return false;
+      });
+  }
+  return masterPermissionReady;
+}
+
 const BRI = new Intl.NumberFormat('pt-BR');
 const STATUS_OPTS = ['AGUARDAR', 'ATENDER', 'FINALIZAR'];
 
@@ -371,7 +390,7 @@ function injectStyles() {
 // resultado real já aconteceu. Comparação por string funciona porque
 // dataReferencia/todayIso() são sempre 'YYYY-MM-DD'.
 function isDataPassada(dataReferencia) {
-  return !!dataReferencia && dataReferencia < todayIso();
+  return !currentUserIsMaster && !!dataReferencia && dataReferencia < todayIso();
 }
 
 function readonlyBannerHtml() {
@@ -1147,6 +1166,7 @@ function scrollParentDe(el) {
 // candidatos, sem mapa — isso é tudo Etapa 2 (renderProgramacaoEquipe).
 export async function renderProgramacaoSituacao(content, options = {}) {
   injectStyles();
+  await ensureMasterPermission();
   const supervisao = String(options.supervisao || '').trim();
   const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
   const supervisaoQuery = programacaoIdMap.size ? [...programacaoIdMap.keys()] : supervisao;
@@ -1302,6 +1322,7 @@ export async function renderProgramacaoSituacao(content, options = {}) {
 
 export async function renderProgramacaoEquipe(content, options = {}) {
   injectStyles();
+  await ensureMasterPermission();
   const supervisao = String(options.supervisao || '').trim();
   const programacaoId = options.programacaoId || null;
   const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();

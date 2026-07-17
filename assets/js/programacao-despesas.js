@@ -5,8 +5,28 @@
 // passou a reescrever #progSteps só com os botões das 3 etapas novas.
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
-import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260717-kgfix1';
+import { getUserContext } from './auth.js';
+import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260717-masterretro1';
 import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
+
+let currentUserIsMaster = false;
+let masterPermissionReady = null;
+
+function ensureMasterPermission() {
+  if (!masterPermissionReady) {
+    masterPermissionReady = getUserContext()
+      .then((ctx) => {
+        currentUserIsMaster = !!ctx?.user?.is_master;
+        return currentUserIsMaster;
+      })
+      .catch((error) => {
+        console.warn('[programacao-despesas] não foi possível validar permissão master:', error);
+        currentUserIsMaster = false;
+        return false;
+      });
+  }
+  return masterPermissionReady;
+}
 
 function esc(value) {
   return String(value ?? '')
@@ -158,7 +178,7 @@ function injectStylesDespesas() {
 // (isDataPassada) — duplicado aqui porque os módulos não compartilham
 // estado além do que passa por window.__peqb*.
 function isDataPassada(dataReferencia) {
-  return !!dataReferencia && dataReferencia < todayIso();
+  return !currentUserIsMaster && !!dataReferencia && dataReferencia < todayIso();
 }
 
 // Roster do dia: só quem foi de fato confirmado (programacao_equipe.confirmado),
@@ -275,6 +295,7 @@ function colaboradorCardHtml(row, custos, placasPorCpf, osResumoPorId, extrasPor
 
 export async function renderProgramacaoDespesas(content, options = {}) {
   injectStylesDespesas();
+  await ensureMasterPermission();
   const supervisao = String(options.supervisao || '').trim();
   const programacaoId = options.programacaoId || null;
   const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
