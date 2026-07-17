@@ -139,10 +139,18 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     const scrollPos = scroller ? scroller.scrollTop : 0;
     if (!silent) listEl.innerHTML = '<div class="pso-empty pso-loading"><span class="pso-spinner" aria-hidden="true"></span><span>Carregando colaboradores...</span></div>';
 
-    const [regional, equipeRows] = await Promise.all([
+    const [regionalBruto, equipeRows] = await Promise.all([
       loadColaboradoresRegional(supervisaoQuery),
       loadEquipeExistente(programacaoIdQuery),
     ]);
+    // loadColaboradoresRegional foi feita pra sugestão de candidato (Etapa 2)
+    // e aceita match "parecido" (regionalScore por token) quando a RPC não
+    // devolve ninguém — bom pra sugerir alguém próximo, ruim aqui: listava
+    // colaborador de OUTRA regional só por compartilhar uma palavra
+    // (ex.: "MATO GROSSO MT4" aparecendo pra "MATO GROSSO DO SUL"). Etapa 4
+    // exige match exato de supervisão.
+    const supervisoesAlvo = new Set((Array.isArray(supervisaoQuery) ? supervisaoQuery : [supervisaoQuery]).map((s) => normalizeText(s)).filter(Boolean));
+    const regional = regionalBruto.filter((c) => supervisoesAlvo.has(normalizeText(c.supervisao)));
     const confirmados = new Set(equipeRows.filter((r) => r.confirmado).map((r) => String(r.colaborador_id)));
     const semOs = regional.filter((c) => !confirmados.has(String(c.colaboradorId)));
 
