@@ -1392,8 +1392,8 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         <button type="button" class="peqb-btn" id="peqbVerMapa">🗺️ Ver mapa do gestor</button>
       </div>
     </div>
-    <div id="peqbMapBand" hidden></div>
     <div class="peqb-os-list peqb-os-list-full ${readOnly ? 'prog-readonly-scope' : ''}" id="peqbOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
+    <div id="peqbMapBand" hidden></div>
   `;
 
   // Ponte para o módulo do mapa (programacao-mapa-gestor.js), carregado à
