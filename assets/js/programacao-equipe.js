@@ -234,6 +234,7 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'progEquipeStyles';
   style.textContent = `
+    .peqs-finalizadas-title{margin-top:16px!important;opacity:.85}
     .peqb-kpis{display:grid;grid-template-columns:repeat(2,minmax(140px,1fr));gap:10px;margin-bottom:12px}
     .peqb-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:12px;padding:10px}
     .peqb-kpi span{display:block;color:#93c5fd;font-size:9.5px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}
@@ -400,10 +401,16 @@ function readonlyBannerHtml() {
 // Carrega as OS acionáveis da supervisão (pendentes/aguardar/atender) — as
 // FINALIZAR já saíram do fluxo do dia. A triagem (mudar status) e a atribuição
 // passam a conviver na mesma tela.
-async function loadOsRelevantes(supervisao) {
-  let query = supabase
-    .from('operacional_os')
-    .select('id,numero_os,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os,configurada_em');
+const OS_COLUNAS = 'id,numero_os,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os,configurada_em';
+
+// dataReferencia é opcional (só a Etapa 1 passa) — quando informada, também
+// busca as O.S. FINALIZAR do dia (configurada_em na data selecionada) pra
+// exibir num grupo separado (pedido do usuário: finalizar não pode mais
+// sumir da tela na hora). Sem dataReferencia, mantém o comportamento antigo
+// (só as não finalizadas) — usado pela Etapa 2/mapa, que já filtra por
+// ATENDER na frente e não precisa do histórico de finalizadas.
+async function loadOsRelevantes(supervisao, dataReferencia) {
+  let query = supabase.from('operacional_os').select(OS_COLUNAS);
   query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
   const { data, error } = await query
     .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR,status_gestor.eq.ATENDER')
@@ -411,7 +418,20 @@ async function loadOsRelevantes(supervisao) {
     .order('numero_os', { ascending: false })
     .limit(400);
   if (error) throw error;
-  return data || [];
+
+  let finalizadas = [];
+  if (dataReferencia) {
+    let queryFin = supabase.from('operacional_os').select(OS_COLUNAS).eq('status_gestor', 'FINALIZAR');
+    queryFin = Array.isArray(supervisao) ? queryFin.in('supervisao', supervisao) : queryFin.eq('supervisao', supervisao);
+    const inicio = `${dataReferencia}T00:00:00`;
+    const fimData = new Date(`${dataReferencia}T00:00:00`);
+    fimData.setDate(fimData.getDate() + 1);
+    const fim = fimData.toISOString().slice(0, 19);
+    const finResult = await queryFin.gte('configurada_em', inicio).lt('configurada_em', fim).order('numero_os', { ascending: false }).limit(200);
+    if (finResult.error) console.warn('[equipe] O.S. finalizadas do dia:', finResult.error);
+    finalizadas = finResult.data || [];
+  }
+  return [...(data || []), ...finalizadas];
 }
 
 function statusNorm(os) {
@@ -646,6 +666,11 @@ async function loadCandidatosPorOsUnico(supervisao, osComPonto, excluirIds) {
 
   const porOs = new Map();
   (data || []).forEach((row) => {
+    // Auditor/supervisor/coordenador/administrativo não pode aparecer como
+    // candidato pra atender O.S. — a RPC (banco) não filtra cargo, e o
+    // patch que fazia isso no mapa não cobria as opções de troca/adicionar
+    // aqui na Etapa 2 (pedido do usuário, 2026-07-17: filtrar na fonte).
+    if (isCargoBloqueado(row.cargo)) return;
     const lista = porOs.get(row.os_id) || [];
     lista.push({
       nome: row.nome,
@@ -1198,14 +1223,22 @@ export async function renderProgramacaoSituacao(content, options = {}) {
     const scroller = silent ? scrollParentDe(listEl) : null;
     const scrollPos = scroller ? scroller.scrollTop : 0;
     if (!silent) listEl.innerHTML = '<div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div>';
-    osListAtual = await loadOsRelevantes(supervisaoQuery);
+    osListAtual = await loadOsRelevantes(supervisaoQuery, options.dataReferencia);
     // "Aberta" = qualquer status que loadOsRelevantes já filtra (nulo/PENDENTE/
     // AGUARDAR/ATENDER) — independente de estar marcada pra atendimento.
+    // Finalizada não conta no total nem mistura com a lista principal — vai
+    // num grupo próprio abaixo (pedido do usuário: continuar visível, mas
+    // separada, só a do dia selecionado).
+    const abertas = osListAtual.filter((os) => statusNorm(os) !== 'FINALIZAR');
+    const finalizadas = osListAtual.filter((os) => statusNorm(os) === 'FINALIZAR');
     const kpiTotalEl = content.querySelector('#peqsKpiTotal');
-    if (kpiTotalEl) kpiTotalEl.textContent = String(osListAtual.length);
-    listEl.innerHTML = osListAtual.length
-      ? osListAtual.map((os) => `<article class="peqb-row peqs-row" data-os-id="${esc(os.id)}">${osLeftHtml(os, { dataReferencia: options.dataReferencia || null })}</article>`).join('')
-      : '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
+    if (kpiTotalEl) kpiTotalEl.textContent = String(abertas.length);
+    const linhaOs = (os) => `<article class="peqb-row peqs-row" data-os-id="${esc(os.id)}">${osLeftHtml(os, { dataReferencia: options.dataReferencia || null })}</article>`;
+    const blocoAbertas = abertas.length ? abertas.map(linhaOs).join('') : '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
+    const blocoFinalizadas = finalizadas.length
+      ? `<div class="prog-section-title peqs-finalizadas-title"><h4>Finalizadas hoje</h4><span class="badge">${finalizadas.length}</span></div>${finalizadas.map(linhaOs).join('')}`
+      : '';
+    listEl.innerHTML = blocoAbertas + blocoFinalizadas;
     if (silent && scroller) scroller.scrollTop = scrollPos;
   }
 
