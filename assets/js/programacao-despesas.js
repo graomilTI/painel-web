@@ -5,8 +5,28 @@
 // passou a reescrever #progSteps só com os botões das 3 etapas novas.
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
-import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260717-kgfix1';
+import { getUserContext } from './auth.js';
+import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260717-masterretro1';
 import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
+
+let currentUserIsMaster = false;
+let masterPermissionReady = null;
+
+function ensureMasterPermission() {
+  if (!masterPermissionReady) {
+    masterPermissionReady = getUserContext()
+      .then((ctx) => {
+        currentUserIsMaster = !!ctx?.user?.is_master;
+        return currentUserIsMaster;
+      })
+      .catch((error) => {
+        console.warn('[programacao-despesas] não foi possível validar permissão master:', error);
+        currentUserIsMaster = false;
+        return false;
+      });
+  }
+  return masterPermissionReady;
+}
 
 function esc(value) {
   return String(value ?? '')
@@ -46,7 +66,9 @@ function iniciais(nome) { return String(nome || '?').trim().split(/\s+/).map((p)
 
 const TIPOS_ESTADIA = ['CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
 const COM_ESTADIA = new Set(['PERNOITE', 'ALOJAMENTO', 'HOTEL']);
-const TIPOS_DESLOC = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'ÔNIBUS', 'OUTRO'];
+// Só as 5 opções que fazem sentido pro gestor escolher aqui (pedido do
+// usuário, 2026-07-17) — Ônibus/Outro removidos.
+const TIPOS_DESLOC = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM'];
 const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
 const REFEICOES = [['cafe', 'Café'], ['almoco', 'Almoço'], ['janta', 'Janta']];
 
@@ -110,6 +132,8 @@ function injectStylesDespesas() {
   const style = document.createElement('style');
   style.id = 'progDespesasStyles';
   style.textContent = `
+    .peqd-card-erro{border-color:rgba(239,68,68,.6)!important}
+    .peqd-erro-aviso{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.4);color:#fecaca;border-radius:10px;padding:7px 10px;font-size:11.5px;font-weight:700;margin-bottom:9px}
     .peqd-empty{border:1px dashed rgba(148,163,184,.22);border-radius:14px;padding:22px;text-align:center;color:#94a3b8;line-height:1.4}
     .peqd-loading{display:flex;align-items:center;justify-content:center;gap:10px;text-align:left}
     .peqd-spinner{width:24px;height:24px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;flex:0 0 auto;animation:peqdSpin .75s linear infinite}
@@ -158,7 +182,7 @@ function injectStylesDespesas() {
 // (isDataPassada) — duplicado aqui porque os módulos não compartilham
 // estado além do que passa por window.__peqb*.
 function isDataPassada(dataReferencia) {
-  return !!dataReferencia && dataReferencia < todayIso();
+  return !currentUserIsMaster && !!dataReferencia && dataReferencia < todayIso();
 }
 
 // Roster do dia: só quem foi de fato confirmado (programacao_equipe.confirmado),
@@ -275,6 +299,7 @@ function colaboradorCardHtml(row, custos, placasPorCpf, osResumoPorId, extrasPor
 
 export async function renderProgramacaoDespesas(content, options = {}) {
   injectStylesDespesas();
+  await ensureMasterPermission();
   const supervisao = String(options.supervisao || '').trim();
   const programacaoId = options.programacaoId || null;
   const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
@@ -331,6 +356,26 @@ export async function renderProgramacaoDespesas(content, options = {}) {
   // programacao-gestor-fluxo-avancado.js, que agora prefere este caminho).
   window.__pgcSilentRefreshDespesas = () => carregar({ silent: true });
 
+  // Autosave falhava em silêncio (só console.error) — o campo continuava
+  // mostrando a escolha do gestor na tela mesmo quando o upsert não ia pro
+  // banco, dando a impressão de "salvo" quando não estava (relatado
+  // 2026-07-17: Reembolso km selecionado na Etapa 3 não aparecia no PDF
+  // porque nunca tinha sido gravado). Marca o card visualmente até salvar de novo com sucesso.
+  function avisarFalhaSalvar(card, tabela, error) {
+    card.classList.add('peqd-card-erro');
+    let aviso = card.querySelector('.peqd-erro-aviso');
+    if (!aviso) {
+      aviso = document.createElement('div');
+      aviso.className = 'peqd-erro-aviso';
+      card.prepend(aviso);
+    }
+    aviso.textContent = `⚠ Não foi possível salvar (${tabela.replace('programacao_', '')}): ${error?.message || 'erro desconhecido'} — tente de novo.`;
+  }
+  function limparAvisoFalhaSalvar(card) {
+    card.classList.remove('peqd-card-erro');
+    card.querySelector('.peqd-erro-aviso')?.remove();
+  }
+
   // --- Autosave (mesmo padrão de debounce 450ms do resto do projeto) ---
   async function saveCampo(card, tabela) {
     const colabId = card.dataset.colabId;
@@ -371,7 +416,12 @@ export async function renderProgramacaoDespesas(content, options = {}) {
       REFEICOES.forEach(([k]) => { payload[k] = !!card.querySelector(`[data-ref="${k}"]`)?.classList.contains('on'); });
     }
     const { error } = await supabase.from(tabela).upsert(payload, { onConflict: 'programacao_id,colaborador_id' });
-    if (error) console.error('[despesas]', tabela, error);
+    if (error) {
+      console.error('[despesas]', tabela, error);
+      avisarFalhaSalvar(card, tabela, error);
+    } else {
+      limparAvisoFalhaSalvar(card);
+    }
     if (!error && tabela === 'programacao_estadia') {
       // Colaborador em hotel/alojamento/pernoite entra automaticamente na
       // janta (pedido do usuário, 2026-07-16): acende o chip da Etapa 3 (se
