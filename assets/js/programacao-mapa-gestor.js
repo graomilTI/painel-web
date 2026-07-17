@@ -28,6 +28,36 @@ function normalizeText(value) {
 function hasGeo(lat, lng) { return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng)); }
 function cpfNorm(value) { return String(value || '').replace(/\D/g, ''); }
 
+// Mesmo critério de programacao-equipe.js (isCargoBloqueado) — duplicado aqui
+// porque colaborador_cruzamento (fonte das posições confirmadas no mapa) não
+// tem coluna cargo; o cargo do confirmado vem de programacao_colaboradores.
+function isCargoBloqueado(value) {
+  const cargo = normalizeText(value);
+  return cargo.includes('SUPERVISOR')
+    || cargo.includes('AUDITOR')
+    || cargo.includes('COORDENADOR')
+    || cargo.includes('COORDENADORA')
+    || cargo.includes('ADMINISTRATIVO')
+    || cargo === 'COORDENACAO'
+    || cargo.startsWith('COORDENACAO ');
+}
+
+async function carregarCargosConfirmados(colaboradorIds, programacaoIds) {
+  if (!colaboradorIds.length || !programacaoIds.length) return new Map();
+  try {
+    const { data, error } = await supabase
+      .from('programacao_colaboradores')
+      .select('colaborador_id,cargo')
+      .in('programacao_id', programacaoIds)
+      .in('colaborador_id', colaboradorIds);
+    if (error) throw error;
+    return new Map((data || []).map((r) => [String(r.colaborador_id), r.cargo]));
+  } catch (error) {
+    console.warn('[mapa-gestor] cargos confirmados indisponíveis', error);
+    return new Map();
+  }
+}
+
 function tipoLetter(label) {
   const n = normalizeText(label);
   if (n.includes('INTERMITENTE')) return 'I';
@@ -102,7 +132,7 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'progMapaGestorStyles';
   style.textContent = `
-    #peqbMapBand{margin-bottom:12px;max-height:70vh;overflow-y:auto;border-radius:18px}
+    #peqbMapBand{margin-bottom:12px}
     .pmg-wrap{border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.36);overflow:hidden}
     .pmg-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(148,163,184,.14);flex-wrap:wrap}
     .pmg-head strong{color:#f8fafc;font-size:12.5px}
@@ -272,13 +302,20 @@ async function renderizarMapa(band, { silent = false } = {}) {
   const { osComCandidatosAtual } = snapshot;
   const idsConfirmados = new Set();
   osComCandidatosAtual.forEach((item) => (item.equipeRows || []).forEach((r) => idsConfirmados.add(String(r.colaborador_id))));
-  const posicoes = await carregarPosicoesConfirmados([...idsConfirmados], snapshot);
+  const programacaoIds = programaIdsFromSnapshot(snapshot);
+  const [posicoes, cargosConfirmados] = await Promise.all([
+    carregarPosicoesConfirmados([...idsConfirmados], snapshot),
+    carregarCargosConfirmados([...idsConfirmados], programacaoIds),
+  ]);
 
   const L = window.L;
   const bounds = [];
 
   osComCandidatosAtual.forEach((item) => {
-    const equipeRows = item.equipeRows || [];
+    // Confirmado com cargo bloqueado (auditor/supervisor/coordenador) nunca
+    // aparece no mapa — mesmo já tendo sido vinculado antes do filtro na
+    // origem dos candidatos existir (pedido do usuário, 2026-07-17).
+    const equipeRows = (item.equipeRows || []).filter((r) => !isCargoBloqueado(cargosConfirmados.get(String(r.colaborador_id))));
     const temEquipe = equipeRows.length > 0;
 
     if (item.ponto && hasGeo(item.ponto.lat, item.ponto.lng)) {
@@ -306,7 +343,7 @@ async function renderizarMapa(band, { silent = false } = {}) {
     const idsJaConfirmados = new Set(equipeRows.map((r) => String(r.colaborador_id)));
     (item.candidatos || []).forEach((cand) => {
       const id = String(cand.colaboradorId || '');
-      if (!id || idsJaConfirmados.has(id) || !hasGeo(cand.lat, cand.lng)) return;
+      if (!id || idsJaConfirmados.has(id) || !hasGeo(cand.lat, cand.lng) || isCargoBloqueado(cand.cargo)) return;
       const isMot = !!(cand.veiculoId || cand.veiculoPlaca);
       const marker = L.marker([Number(cand.lat), Number(cand.lng)], { icon: isMot ? iconMotoristaLivre() : iconColabLivre(cand.tipoLabel) });
       marker.bindTooltip(`${esc(cand.nome || 'Colaborador')} · candidato OS ${esc(item.os.numero_os || '-')}${isMot ? ' · motorista' : ` · ${esc(cand.tipoLabel || 'Efetivo')}`}`, { className: 'peqb-tt' });
