@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
-import { loadCustos } from './programacao-equipe.js?v=20260717-kgfix1';
+import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260717-kgfix1';
 import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260716-hotelfix1';
 
 const STEPS = [
@@ -2083,6 +2083,7 @@ export function renderContent(content) {
     el.pdfBtn.textContent = 'Gerando...';
     try {
       const programacaoIdQuery = state.programacaoIdMap.size ? [...state.programacaoIdMap.values()] : state.programacaoId;
+      const supervisaoQuery = state.programacaoIdMap.size ? [...state.programacaoIdMap.keys()] : state.supervisao;
       const roster = await loadRosterDoDia(programacaoIdQuery);
       if (!roster.length) {
         setFeedback('Nenhum colaborador confirmado nesta programação ainda.', 'warn');
@@ -2128,7 +2129,39 @@ export function renderContent(content) {
         };
       });
 
-      await desenharPdfProgramacao(linhas, {
+      // Sem O.S. — mesma regra da Etapa 4 (programacao-sem-os.js): regional
+      // menos quem já está confirmado hoje, com match EXATO de supervisão
+      // (loadColaboradoresRegional aceita match parecido por token, bom pra
+      // sugestão de candidato mas errado aqui — ver commit da Etapa 4).
+      const SITUACAO_LABEL = { ATESTADO: 'Atestado', FALTA: 'Falta', FERIAS: 'Férias', FOLGA: 'Folga' };
+      const confirmadosIds = new Set(roster.map((r) => r.colaboradorId));
+      const supervisoesAlvo = new Set((Array.isArray(supervisaoQuery) ? supervisaoQuery : [supervisaoQuery]).map((s) => normalizeText(s)).filter(Boolean));
+      const regionalBruto = await loadColaboradoresRegional(supervisaoQuery);
+      const semOsColabs = regionalBruto
+        .filter((c) => supervisoesAlvo.has(normalizeText(c.supervisao)))
+        .filter((c) => !confirmadosIds.has(c.colaboradorId));
+
+      let situacoesPorColab = new Map();
+      if (semOsColabs.length) {
+        const idsProgramacao = Array.isArray(programacaoIdQuery) ? programacaoIdQuery : [programacaoIdQuery];
+        const { data, error } = await supabase
+          .from('programacao_colaboradores')
+          .select('colaborador_id,disponibilidade,observacao')
+          .in('programacao_id', idsProgramacao)
+          .in('colaborador_id', semOsColabs.map((c) => c.colaboradorId));
+        if (error) console.warn('[pdf] situações sem O.S.', error);
+        situacoesPorColab = new Map((data || []).map((r) => [String(r.colaborador_id), r]));
+      }
+      const semOsLinhas = semOsColabs.map((c) => {
+        const row = situacoesPorColab.get(c.colaboradorId);
+        return {
+          colaborador: c.nome,
+          situacao: SITUACAO_LABEL[normalizeText(row?.disponibilidade || '')] || '-',
+          observacao: row?.observacao || '-',
+        };
+      });
+
+      await desenharPdfProgramacao(linhas, semOsLinhas, {
         supervisaoLabel: state.programacaoIdMap.size ? 'Todas' : (state.supervisao || '-'),
         dataReferencia: state.dataReferencia,
       });
@@ -2164,22 +2197,54 @@ function brDateProgramacaoPdf(iso) {
   return `${dia}/${mes}/${ano}`;
 }
 
-async function desenharPdfProgramacao(linhas, meta = {}) {
+async function desenharPdfProgramacao(linhas, semOsLinhas, meta = {}) {
   const JsPDF = await loadJsPdfProgramacao();
   const doc = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const PW = 297, PH = 210, M = 10;
-  const COLS = [
-    { key: 'os', label: 'O.S.', width: 22 },
-    { key: 'colaborador', label: 'Colaborador', width: 42 },
-    { key: 'deslocamento', label: 'Deslocamento', width: 34 },
-    { key: 'estadia', label: 'Estadia', width: 28 },
-    { key: 'cafe', label: 'Café', width: 16 },
-    { key: 'almoco', label: 'Almoço', width: 16 },
-    { key: 'janta', label: 'Janta', width: 16 },
-    { key: 'extras', label: 'Extras', width: PW - 2 * M - (22 + 42 + 34 + 28 + 16 + 16 + 16) },
-  ];
   const LH = 4.2;
   let y = M;
+
+  // Desenha uma tabela genérica (cabeçalho + linhas com paginação) a partir
+  // da posição Y atual — usada tanto pra tabela principal (alocados numa
+  // O.S.) quanto pra "Sem O.S." logo abaixo dela.
+  function desenharTabela(cols, dados) {
+    function desenharCabecalho() {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      let x = M;
+      cols.forEach((col) => {
+        doc.text(col.label, x + 1, y + 4);
+        x += col.width;
+      });
+      doc.setDrawColor(180);
+      doc.line(M, y + 6, PW - M, y + 6);
+      y += 8;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+    }
+
+    desenharCabecalho();
+    dados.forEach((linha) => {
+      const linhasPorCol = cols.map((col) => doc.splitTextToSize(String(linha[col.key] ?? ''), col.width - 2));
+      const nLinhas = Math.max(...linhasPorCol.map((l) => l.length), 1);
+      const alturaLinha = nLinhas * LH + 2;
+
+      if (y + alturaLinha > PH - M) {
+        doc.addPage();
+        y = M;
+        desenharCabecalho();
+      }
+
+      let x = M;
+      cols.forEach((col, index) => {
+        doc.text(linhasPorCol[index], x + 1, y + LH);
+        x += col.width;
+      });
+      doc.setDrawColor(230);
+      doc.line(M, y + alturaLinha - 1, PW - M, y + alturaLinha - 1);
+      y += alturaLinha;
+    });
+  }
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
@@ -2190,43 +2255,30 @@ async function desenharPdfProgramacao(linhas, meta = {}) {
   doc.text(`Supervisão: ${meta.supervisaoLabel || '-'}   ·   Data: ${brDateProgramacaoPdf(meta.dataReferencia)}`, M, y);
   y += 6;
 
-  function desenharCabecalho() {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    let x = M;
-    COLS.forEach((col) => {
-      doc.text(col.label, x + 1, y + 4);
-      x += col.width;
-    });
-    doc.setDrawColor(180);
-    doc.line(M, y + 6, PW - M, y + 6);
+  desenharTabela([
+    { key: 'os', label: 'O.S.', width: 22 },
+    { key: 'colaborador', label: 'Colaborador', width: 42 },
+    { key: 'deslocamento', label: 'Deslocamento', width: 34 },
+    { key: 'estadia', label: 'Estadia', width: 28 },
+    { key: 'cafe', label: 'Café', width: 16 },
+    { key: 'almoco', label: 'Almoço', width: 16 },
+    { key: 'janta', label: 'Janta', width: 16 },
+    { key: 'extras', label: 'Extras', width: PW - 2 * M - (22 + 42 + 34 + 28 + 16 + 16 + 16) },
+  ], linhas);
+
+  if (semOsLinhas?.length) {
     y += 8;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
+    if (y + 16 > PH - M) { doc.addPage(); y = M; }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text('Sem O.S. — colaboradores da regional sem atendimento hoje', M, y + 4);
+    y += 8;
+    desenharTabela([
+      { key: 'colaborador', label: 'Colaborador', width: 80 },
+      { key: 'situacao', label: 'Situação', width: 40 },
+      { key: 'observacao', label: 'Observação', width: PW - 2 * M - (80 + 40) },
+    ], semOsLinhas);
   }
-
-  desenharCabecalho();
-
-  linhas.forEach((linha) => {
-    const linhasPorCol = COLS.map((col) => doc.splitTextToSize(String(linha[col.key] ?? ''), col.width - 2));
-    const nLinhas = Math.max(...linhasPorCol.map((l) => l.length), 1);
-    const alturaLinha = nLinhas * LH + 2;
-
-    if (y + alturaLinha > PH - M) {
-      doc.addPage();
-      y = M;
-      desenharCabecalho();
-    }
-
-    let x = M;
-    COLS.forEach((col, index) => {
-      doc.text(linhasPorCol[index], x + 1, y + LH);
-      x += col.width;
-    });
-    doc.setDrawColor(230);
-    doc.line(M, y + alturaLinha - 1, PW - M, y + alturaLinha - 1);
-    y += alturaLinha;
-  });
 
   const supervisaoArquivo = meta.supervisaoLabel || 'programacao';
   const dataArquivo = meta.dataReferencia || todayIso();
