@@ -85,16 +85,25 @@ function injectStyles() {
        (grid-column) — a ordem no HTML continua a mesma de sempre, então a
        Aba 1 (#pgcPane1, que trata esses 4 itens como "contents" dentro do
        próprio grid dela) não é afetada. */
-    #pgcPane2 .peqb-os2-kpis{display:grid;grid-template-columns:minmax(64px,84px) minmax(150px,1.6fr) minmax(150px,1.6fr) minmax(70px,96px);gap:8px}
+    #pgcPane2 .peqb-os2-kpis{display:grid;grid-template-columns:minmax(60px,74px) minmax(220px,1.5fr) minmax(220px,1.5fr) minmax(64px,84px);gap:8px}
     #pgcPane2 .peqb-os2-kpi{min-width:0;flex:none}
-    #pgcPane2 .peqb-os2-kpi:nth-child(1){grid-column:2} /* Cliente */
-    #pgcPane2 .peqb-os2-kpi:nth-child(2){grid-column:3} /* Local de embarque */
-    #pgcPane2 .peqb-os2-kpi:nth-child(3){grid-column:4} /* Remanescente */
-    #pgcPane2 .peqb-os2-kpi:nth-child(4){grid-column:1} /* OS */
+    /* grid-row:1 explícito em todo mundo — sem isso, o cursor de auto-placement
+       do grid manda a OS (coluna 1, mas é o 4º item no HTML) pra uma 2ª linha
+       só porque a coluna dela é "menor" que a do item anterior (regra do
+       algoritmo de auto-placement pra layout "sparse"). */
+    #pgcPane2 .peqb-os2-kpi:nth-child(1){grid-column:2;grid-row:1} /* Cliente */
+    #pgcPane2 .peqb-os2-kpi:nth-child(2){grid-column:3;grid-row:1} /* Local de embarque */
+    #pgcPane2 .peqb-os2-kpi:nth-child(3){grid-column:4;grid-row:1} /* Remanescente */
+    #pgcPane2 .peqb-os2-kpi:nth-child(4){grid-column:1;grid-row:1} /* OS */
     @media(max-width:760px){
       #pgcPane2 .peqb-os2-kpis{grid-template-columns:1fr 1fr}
-      #pgcPane2 .peqb-os2-kpi:nth-child(1),#pgcPane2 .peqb-os2-kpi:nth-child(2),#pgcPane2 .peqb-os2-kpi:nth-child(3),#pgcPane2 .peqb-os2-kpi:nth-child(4){grid-column:auto}
+      #pgcPane2 .peqb-os2-kpi:nth-child(1),#pgcPane2 .peqb-os2-kpi:nth-child(2),#pgcPane2 .peqb-os2-kpi:nth-child(3),#pgcPane2 .peqb-os2-kpi:nth-child(4){grid-column:auto;grid-row:auto}
     }
+    /* Local de embarque só tem 2 linhas de verdade (UF+cidade / local) — sem
+       isso, cada parte quebrava palavra por palavra quando a coluna era
+       estreita, virando 3-4 linhas em vez de 2 (pedido do usuário,
+       2026-07-17). Trunca com "..." em vez de quebrar. */
+    #pgcPane2 .peqb-os2-kpi .peqb-os2-emb-l1,#pgcPane2 .peqb-os2-kpi .peqb-os2-emb-l2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
     /* Avatar do colaborador CONFIRMADO na O.S. fica verde de verdade — antes
        usava a mesma cor fraca do candidato (peqb-cand-av é compartilhado com
@@ -111,7 +120,7 @@ function injectStyles() {
     .pgc-pool-head strong{font-size:12.5px;color:#f8fafc}.pgc-pool-head span{font-size:10.5px;color:#9fb7aa}
     .pgc-pool-search{width:100%;height:34px;margin:0 0 9px;border:1px solid rgba(111,208,165,.28);border-radius:10px;background:#06130e;color:#eef7f2;padding:0 10px;color-scheme:dark;box-sizing:border-box}
     .pgc-colab-list{display:flex;flex-direction:column;gap:6px}
-    .pgc-colab-card{display:grid;grid-template-columns:34px 1fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.55);border-radius:12px;padding:7px 8px;cursor:grab;color:#e2e8f0;user-select:none}
+    .pgc-colab-card{display:grid;grid-template-columns:34px 1fr;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.55);border-radius:12px;padding:7px 8px;cursor:grab;color:#e2e8f0;user-select:none}
     .pgc-colab-card:hover{border-color:rgba(134,239,172,.42);background:rgba(22,101,52,.16)}
     .pgc-colab-card:active{cursor:grabbing}
     .pgc-colab-card.is-linked{border-color:rgba(34,197,94,.34);background:rgba(22,101,52,.18)}
@@ -119,7 +128,6 @@ function injectStyles() {
     .pgc-colab-ico.person{background:#eab308;color:#422006}.pgc-colab-card.is-linked .pgc-colab-ico.person{background:#22c55e;color:#052e16}
     .pgc-colab-ico.car{background:#eab308;color:#422006}.pgc-colab-card.is-linked .pgc-colab-ico.car{background:#22c55e;color:#052e16}
     .pgc-colab-name{font-size:12px;font-weight:900;color:#f8fafc;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pgc-colab-meta{font-size:10.5px;color:#9fb7aa;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .pgc-colab-badge{font-size:9px;font-weight:950;border:1px solid rgba(148,163,184,.18);border-radius:999px;padding:3px 6px;color:#cbd5e1;background:rgba(15,23,42,.8)}
     .pgc-colab-empty{font-size:12px;color:#94a3b8;border:1px dashed rgba(148,163,184,.22);border-radius:12px;padding:12px;text-align:center}
     .peqb-row.pgc-drop-hot{outline:2px dashed rgba(134,239,172,.75);outline-offset:3px;background:rgba(22,101,52,.18)!important}
     .peqb-conf-name.pgc-drop-hot,.peqb-extra-colab.pgc-drop-hot{outline:2px dashed rgba(56,189,248,.75);outline-offset:3px;border-radius:10px}
@@ -398,7 +406,6 @@ function colabCardHtml(c, readOnly = false) {
   return `<div class="pgc-colab-card ${c.linked ? 'is-linked' : ''}" draggable="${readOnly ? 'false' : 'true'}" data-pgc-colab='${esc(JSON.stringify(c))}'>
     <span class="pgc-colab-ico ${motorista ? 'car' : 'person'}">${esc(letter)}</span>
     <span style="min-width:0"><span class="pgc-colab-name">${esc(c.nome)}</span><span class="pgc-colab-meta">${esc(meta || 'Colaborador')}</span></span>
-    <span class="pgc-colab-badge">${c.linked ? 'vinc.' : 'livre'}</span>
   </div>`;
 }
 
