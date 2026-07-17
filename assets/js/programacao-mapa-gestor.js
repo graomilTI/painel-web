@@ -102,7 +102,7 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'progMapaGestorStyles';
   style.textContent = `
-    #peqbMapBand{margin-bottom:12px}
+    #peqbMapBand{margin-bottom:12px;max-height:70vh;overflow-y:auto;border-radius:18px}
     .pmg-wrap{border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.36);overflow:hidden}
     .pmg-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(148,163,184,.14);flex-wrap:wrap}
     .pmg-head strong{color:#f8fafc;font-size:12.5px}
