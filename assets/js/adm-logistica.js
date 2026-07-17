@@ -392,6 +392,11 @@ export async function renderContent(content) {
     <section class="card mt-16 log-section" id="section-conferencias">
       <div class="section-head"><div><h3>Conferências operacionais</h3><p class="muted">Resumo visual das rotinas Cargas, FOB e NHE dos scripts anexados.</p></div></div>
       <div id="logConferenciasList"></div>
+
+      <div class="card mt-16 log-subcard">
+        <div class="section-head"><div><h3>Laudos anexados</h3><p class="muted">O.S. com remanescente negativo e laudo anexado pelo gestor, aguardando conferência.</p></div></div>
+        <div id="logConferenciasLaudos"></div>
+      </div>
     </section>
 
     <section class="card mt-16 log-section" id="section-exportacoes">
@@ -869,6 +874,48 @@ export async function renderContent(content) {
       </div>
       <div class="log-note">Nesta etapa o painel replica a lógica de leitura/conferência dos scripts. A geração de XLSX/e-mail por cliente fica como próxima automação, usando estes agrupamentos já exibidos.</div>
       <div class="log-pill-row">${Object.entries(byStatus).map(([k, v]) => badge(`${k}: ${v}`, k.includes('Pendente') ? 'warn' : 'ok')).join('') || badge('Sem dados', 'neutral')}</div>`;
+
+    renderConferenciasLaudos();
+  }
+
+  // O gestor anexa laudo (assets/js/os.js, openLaudoModal) quando o
+  // remanescente fica negativo -- grava em operacional_os.observacao_logistica
+  // como "LAUDO:url1,url2,...". Sem esta lista, o laudo anexado não aparecia
+  // em nenhuma tela para a Logística abrir/conferir. "Ajustado" só limpa
+  // observacao_logistica (mesmo padrão do fluxo de KG em #osLogList/oslogOk)
+  // -- NÃO usa status_conferencia='AJUSTADA' porque essa coluna já tem outro
+  // dono (distribuir-os.js a usa, com status_gestor='ATENDER', pra marcar que
+  // o colaborador foi distribuído); uma O.S. com laudo pode estar em ATENDER
+  // ao mesmo tempo, e reaproveitar a coluna a faria sumir da fila de
+  // distribuição sem ninguém ter distribuído colaborador nenhum.
+  function selectedLaudos() {
+    return state.os.filter((row) => String(row.observacao_logistica || '').startsWith('LAUDO:'));
+  }
+
+  function laudoUrls(row) {
+    return String(row.observacao_logistica || '').slice('LAUDO:'.length).split(',').map((s) => s.trim()).filter(Boolean);
+  }
+
+  function renderConferenciasLaudos() {
+    const list = document.getElementById('logConferenciasLaudos');
+    if (!list) return;
+    const rows = selectedLaudos();
+    if (!rows.length) { list.innerHTML = '<div class="log-empty">Nenhum laudo pendente de conferência.</div>'; return; }
+    list.innerHTML = `
+      <div class="log-table-wrap"><table class="log-table"><thead><tr>
+        <th>O.S.</th><th>Coordenação</th><th>Saldo</th><th>Remanescente</th><th>Ações</th>
+      </tr></thead><tbody>
+      ${rows.map((row) => `<tr data-os-id="${esc(String(row.id))}">
+        <td><div class="log-title">${esc(osNumber(row))}</div><div class="log-meta">${brDate(row.data_os)}</div></td>
+        <td><span class="log-badge info">${esc(coordOf(row))}</span></td>
+        <td>${BR_NUM.format(numberBr(row.lote))}</td>
+        <td><span class="log-badge danger">${BR_NUM.format(numberBr(row.remanescente))}</span></td>
+        <td><div class="log-actions">
+          <button class="btn btn-secondary" type="button" data-abrir-laudo="${esc(String(row.id))}">Abrir</button>
+          <button class="btn btn-primary" type="button" data-ajustar-laudo="${esc(String(row.id))}">Ajustado</button>
+        </div></td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
   }
 
   function renderExportacoes() {
@@ -2009,6 +2056,33 @@ export async function renderContent(content) {
         const { error } = await supabase.from('logistica_relatorios_destinatarios').update({ ativo: row.ativo === false, updated_at: new Date().toISOString() }).eq('id', id);
         if (error) el.feedback.textContent = error.message || 'Erro ao alterar destinatário.';
         else await carregarDestinatariosFixos();
+      }
+      return;
+    }
+
+    const abrirLaudo = event.target.closest('[data-abrir-laudo]');
+    if (abrirLaudo) {
+      const row = state.os.find((r) => String(r.id) === String(abrirLaudo.dataset.abrirLaudo));
+      if (row) laudoUrls(row).forEach((url) => window.open(url, '_blank', 'noopener'));
+      return;
+    }
+
+    const ajustarLaudo = event.target.closest('[data-ajustar-laudo]');
+    if (ajustarLaudo) {
+      const id = ajustarLaudo.dataset.ajustarLaudo;
+      const row = state.os.find((r) => String(r.id) === String(id));
+      if (!row) return;
+      ajustarLaudo.disabled = true;
+      ajustarLaudo.textContent = '...';
+      const now = new Date().toISOString();
+      const previous = row.observacao_logistica;
+      row.observacao_logistica = null;
+      renderConferenciasLaudos();
+      const { error } = await supabase.from('operacional_os').update({ observacao_logistica: null, updated_at: now }).eq('id', id);
+      if (error) {
+        row.observacao_logistica = previous;
+        renderConferenciasLaudos();
+        el.feedback.textContent = error.message;
       }
       return;
     }
