@@ -5,7 +5,7 @@
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
-import { loadEquipeExistente, loadColaboradoresRegional } from './programacao-equipe.js?v=20260717-fixes3';
+import { loadEquipeExistente, loadColaboradoresRegional, tipoContratoLetra } from './programacao-equipe.js?v=20260717-fixes5';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
 
@@ -25,10 +25,6 @@ function normalizeText(value) {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, ' ')
     .trim();
-}
-
-function iniciais(nome) {
-  return String(nome || '?').trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase() || '?';
 }
 
 function todayIso() {
@@ -102,14 +98,14 @@ function cardHtml(colab, row, readOnly, pendente) {
   const inativarLabel = pendente ? 'Inativação solicitada' : 'Inativar';
   return `<article class="pso-card" data-colab-id="${esc(colab.colaboradorId)}">
     <div class="pso-name">
-      <button type="button" class="pso-inativar-btn ${pendente ? 'pendente' : ''}" data-inativar ${inativarDis}>${esc(inativarLabel)}</button>
-      <span class="pso-av">${esc(iniciais(colab.nome))}</span>
+      <span class="pso-av" title="Tipo de contrato">${esc(tipoContratoLetra(colab.tipoLabel))}</span>
       <div class="pso-name-txt">
         <div class="pso-nome">${esc(colab.nome)}</div>
         <div class="pso-meta">${esc(colab.cargo || 'Colaborador')} · ${esc(colab.coordenacao || colab.supervisao || '-')}</div>
       </div>
     </div>
     <div class="pso-situacoes">
+      <button type="button" class="pso-inativar-btn ${pendente ? 'pendente' : ''}" data-inativar ${inativarDis}>${esc(inativarLabel)}</button>
       ${SITUACOES.map(([valor, label]) => `<button type="button" class="pso-sit-btn ${situacaoAtual === valor ? 'on' : ''}" data-situacao="${esc(valor)}" ${dis}>${esc(label)}</button>`).join('')}
     </div>
     <input class="pso-obs" type="text" data-obs value="${esc(row?.observacao || '')}" placeholder="Observação" ${dis} />

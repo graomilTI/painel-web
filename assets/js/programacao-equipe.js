@@ -512,6 +512,34 @@ export async function loadCruzamentoPlacas(supervisao) {
   }
 }
 
+// Tipo de contrato do colaborador confirmado (programacao_equipe/roster não
+// guarda cargo/tipo_contrato, só score/km) — igual à placa acima, lido de
+// colaborador_cruzamento e indexado por CPF normalizado. Usado pra trocar o
+// avatar (sigla do nome) pela letra do tipo de contrato (E/I/D).
+export async function loadCruzamentoTipoContrato(supervisao) {
+  try {
+    let query = supabase.from('colaborador_cruzamento').select('cpf,tipo_contrato');
+    query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
+    const { data, error } = await query.limit(5000);
+    if (error) throw error;
+    const map = new Map();
+    (data || []).forEach((r) => { if (r.tipo_contrato) map.set(String(r.cpf || '').replace(/\D/g, ''), r.tipo_contrato); });
+    return map;
+  } catch (error) {
+    console.warn('[equipe] cruzamento de tipo de contrato indisponível', error);
+    return new Map();
+  }
+}
+
+// E/I/D pro avatar — mesmo critério de contratoLabel, só que reduzido a 1 letra.
+export function tipoContratoLetra(tipo) {
+  const norm = normalizeText(tipo);
+  if (norm.includes('EFETIVO')) return 'E';
+  if (norm.includes('INTERMITENTE')) return 'I';
+  if (norm.includes('DIARISTA')) return 'D';
+  return '?';
+}
+
 // Lista COMPLETA de colaboradores ativos da supervisão (regional liberada do
 // usuário), para o dropdown de troca poder escolher qualquer um — não só os 8
 // candidatos ranqueados. Os já escalados em outra OS são marcados com ♻ na UI.

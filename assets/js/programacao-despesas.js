@@ -6,7 +6,7 @@
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
 import { getUserContext } from './auth.js';
-import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas } from './programacao-equipe.js?v=20260717-fixes3';
+import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20260717-fixes5';
 import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
 
 let currentUserIsMaster = false;
@@ -62,7 +62,6 @@ function scrollParentDe(el) {
 function todayIso() { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
 function addDaysIso(iso, days) { const d = new Date(`${iso || todayIso()}T00:00:00`); d.setDate(d.getDate() + Number(days || 0)); return d.toISOString().slice(0, 10); }
 function brl(value) { return (Number(value) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function iniciais(nome) { return String(nome || '?').trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase() || '?'; }
 
 const TIPOS_ESTADIA = ['CASA', 'PERNOITE', 'ALOJAMENTO', 'HOTEL'];
 const COM_ESTADIA = new Set(['PERNOITE', 'ALOJAMENTO', 'HOTEL']);
@@ -239,7 +238,7 @@ function extraItemHtml(r) {
   </div>`;
 }
 
-function colaboradorCardHtml(row, custos, placasPorCpf, osResumoPorId, extrasPorColab) {
+function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab) {
   const est = custos.est.get(row.colaboradorId) || {};
   const ali = custos.ali.get(row.colaboradorId) || { almoco: true };
   const des = custos.des.get(row.colaboradorId) || {};
@@ -253,10 +252,11 @@ function colaboradorCardHtml(row, custos, placasPorCpf, osResumoPorId, extrasPor
   const placa = des.placa_veiculo || placaAuto || '';
   const tipoDesl = des.tipo_deslocamento || (placa ? 'MOTORISTA FROTA' : 'NÃO PRECISA');
   const extras = extrasPorColab.get(row.colaboradorId) || [];
+  const letraContrato = tipoContratoLetra(tipoContratoPorCpf.get(String(row.colaboradorId).replace(/\D/g, '')) || '');
 
   return `<article class="peqd-card" data-colab-id="${esc(row.colaboradorId)}" data-programacao-id="${esc(row.programacaoId)}" data-nome="${esc(row.nome)}" data-embarque="${esc(embarqueRef)}">
     <div class="peqd-head">
-      <span class="peqd-av">${esc(iniciais(row.nome))}</span>
+      <span class="peqd-av" title="Tipo de contrato">${esc(letraContrato)}</span>
       <div>
         <div class="peqd-nome">${esc(row.nome)}</div>
         <div class="peqd-os-ref">${esc(osRefLabel)}</div>
@@ -325,6 +325,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
   let roster = [];
   let custos = { est: new Map(), ali: new Map(), des: new Map() };
   let placasPorCpf = new Map();
+  let tipoContratoPorCpf = new Map();
   let osResumoPorId = new Map();
   let extrasPorColab = new Map();
 
@@ -339,14 +340,15 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     }
     const osIds = [...new Set(roster.flatMap((r) => [...r.osIds]))];
     const colaboradorIds = roster.map((r) => r.colaboradorId);
-    [custos, placasPorCpf, osResumoPorId, extrasPorColab] = await Promise.all([
+    [custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab] = await Promise.all([
       loadCustos(programacaoIdQuery),
       loadCruzamentoPlacas(supervisaoQuery),
+      loadCruzamentoTipoContrato(supervisaoQuery),
       loadOsResumo(osIds),
       loadExtras(programacaoIdQuery, colaboradorIds),
     ]);
     await loadAlojamentos();
-    rootEl.innerHTML = roster.map((row) => colaboradorCardHtml(row, custos, placasPorCpf, osResumoPorId, extrasPorColab)).join('');
+    rootEl.innerHTML = roster.map((row) => colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab)).join('');
     if (silent && scroller) scroller.scrollTop = scrollPos;
   }
 
