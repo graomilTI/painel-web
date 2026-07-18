@@ -1,6 +1,11 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { searchColaboradores } from './colaboradoresCache.js';
+import {
+  esc, brDate, todayIso, colabAutocomplete,
+  filtrosHtml, filtrosStyle, bindFiltros, lerFiltros, aplicarFiltros,
+  exportCsv, acoesHtml, bindAcoes,
+  anexoFieldHtml, resolverAnexo, anexoBtnHtml, bindAnexoButtons,
+} from './rhShared.js';
 
 const TABS = [
   { id: 'admissional', label: 'Admissional' },
@@ -16,11 +21,7 @@ const STATUS_EXAME = {
   vencido: { label: 'Vencido' },
 };
 
-const state = { tab: 'admissional', exames: [], ctx: null };
-
-const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-const brDate = (v) => { const [y, m, d] = String(v || '').slice(0, 10).split('-'); return y && m && d ? `${d}/${m}/${y}` : '-'; };
-const today = () => new Date().toISOString().slice(0, 10);
+const state = { tab: 'admissional', exames: [], ctx: null, filtros: null };
 
 function statusPill(status) {
   const label = STATUS_EXAME[status]?.label || status || '-';
@@ -35,7 +36,7 @@ function styles() {
     .ex-tabs{display:flex;gap:8px;flex-wrap:wrap}
     .ex-tabs .active{background:#166534!important;color:#fff!important}
     .ex-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}
-    .ex-table{width:100%;border-collapse:collapse;min-width:640px}
+    .ex-table{width:100%;border-collapse:collapse;min-width:760px}
     .ex-table th,.ex-table td{padding:14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
     .ex-table th{font-size:12px;color:var(--muted);text-transform:uppercase}
     .ex-empty{text-align:center;color:var(--muted)}
@@ -48,6 +49,7 @@ function styles() {
     .ex-actions{display:flex;gap:10px;flex-wrap:wrap}
     .ex-feedback{font-weight:700;display:block}
     .ex-feedback.err{color:#fecaca}
+    ${filtrosStyle()}
   </style>`;
 }
 
@@ -60,69 +62,81 @@ async function safe(fn, fallback = []) {
   catch (e) { console.warn('[Exames]', e); return fallback; }
 }
 
-function colabAutocomplete(modal, inputSel, sugSel, onPick) {
-  const input = modal.querySelector(inputSel);
-  const sug = modal.querySelector(sugSel);
-  let debounce = null;
-  input.addEventListener('input', () => {
-    onPick(null);
-    const q = input.value.trim();
-    if (q.length < 2) { sug.style.display = 'none'; return; }
-    clearTimeout(debounce);
-    debounce = setTimeout(async () => {
-      const lista = await searchColaboradores(q, { limite: 10 });
-      if (!lista.length) { sug.style.display = 'none'; return; }
-      sug.innerHTML = lista.map((c, idx) => `<button type="button" data-idx="${idx}" style="display:block;width:100%;text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px;margin-bottom:4px;cursor:pointer">${esc(c.nome)}</button>`).join('');
-      sug.style.display = 'block';
-      sug.querySelectorAll('button').forEach((b) => b.onmousedown = (ev) => { ev.preventDefault(); const c = lista[Number(b.dataset.idx)]; input.value = c.nome; sug.style.display = 'none'; onPick(c); });
-    }, 250);
-  });
-}
-
 // ---------- Admissional / Periódico (mesma tabela rh_exames, filtrada por tipo) ----------
 
 async function loadExames(tipo) {
-  state.exames = await safe(() => supabase.from('rh_exames').select('*').eq('tipo', tipo).order('data_agendada', { ascending: false }).limit(200));
+  state.exames = await safe(() => supabase.from('rh_exames').select('*').eq('tipo', tipo).order('data_agendada', { ascending: false }).limit(500));
 }
 
-function renderExamesTable(bodyId) {
+function examesFiltrados() {
+  return aplicarFiltros(state.exames, state.filtros, { dataKey: 'data_agendada' });
+}
+
+function renderExamesTable(bodyId, tipo, recarregar) {
   const body = document.getElementById(bodyId);
   if (!body) return;
-  if (!state.exames.length) {
-    body.innerHTML = `<tr><td colspan="5" class="ex-empty">Nenhum exame encontrado.</td></tr>`;
+  const rows = examesFiltrados();
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="7" class="ex-empty">${state.exames.length ? 'Nenhum exame no filtro atual.' : 'Nenhum exame encontrado.'}</td></tr>`;
     return;
   }
-  body.innerHTML = state.exames.map((e) => `<tr>
+  body.innerHTML = rows.map((e) => `<tr>
     <td><b>${esc(e.colaborador_nome)}</b></td>
     <td>${esc(e.clinica_nome || '-')}</td>
     <td>${brDate(e.data_agendada)}${e.tipo === 'periodico' && e.data_vencimento ? `<br><small class="muted">Vence: ${brDate(e.data_vencimento)}</small>` : ''}</td>
     <td>${statusPill(e.status)}</td>
     <td><select data-ex-status="${esc(e.id)}">${Object.entries(STATUS_EXAME).map(([k, v]) => `<option value="${k}" ${k === e.status ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></td>
+    <td>${anexoBtnHtml(e.anexo_url)}</td>
+    <td>${acoesHtml(e.id)}</td>
   </tr>`).join('');
+  bindAnexoButtons(body);
   body.querySelectorAll('[data-ex-status]').forEach((sel) => sel.onchange = async () => {
     const patch = { status: sel.value, updated_at: new Date().toISOString() };
-    if (sel.value === 'realizado' || sel.value === 'apto' || sel.value === 'inapto') patch.data_realizada = today();
+    if (sel.value === 'realizado' || sel.value === 'apto' || sel.value === 'inapto') patch.data_realizada = todayIso();
     await supabase.from('rh_exames').update(patch).eq('id', sel.dataset.exStatus);
-    await loadExames(state.exames.find((e) => String(e.id) === sel.dataset.exStatus)?.tipo);
-    renderExamesTable(bodyId);
+    await recarregar();
+  });
+  bindAcoes(body, {
+    table: 'rh_exames',
+    reload: recarregar,
+    descricao: 'este exame',
+    onEdit: (id) => {
+      const row = state.exames.find((e) => String(e.id) === String(id));
+      if (row) openExameModal(tipo, recarregar, row);
+    },
   });
 }
 
-function openNovoExameModal(tipo, onSaved) {
+function exportar(tipo) {
+  exportCsv(`exames-${tipo}`, [
+    { key: 'colaborador_nome', label: 'Colaborador' },
+    { key: 'clinica_nome', label: 'Clínica' },
+    { key: 'data_agendada', label: 'Data agendada', fmt: brDate },
+    { key: 'data_realizada', label: 'Data realizada', fmt: brDate },
+    { key: 'data_vencimento', label: 'Vencimento', fmt: brDate },
+    { key: 'status', label: 'Status', fmt: (v) => STATUS_EXAME[v]?.label || v },
+    { key: 'observacoes', label: 'Observações' },
+  ], examesFiltrados());
+}
+
+function openExameModal(tipo, onSaved, row = null) {
   const modal = document.getElementById('exModal');
   let selecionado = null;
-  const titulo = tipo === 'admissional' ? 'Encaminhar para Exame Admissional' : 'Agendar Exame Periódico';
+  const titulo = row
+    ? 'Editar Exame'
+    : (tipo === 'admissional' ? 'Encaminhar para Exame Admissional' : 'Agendar Exame Periódico');
   modal.innerHTML = `<div class="ex-modal-card">
     <div class="section-head"><div><h3>${esc(titulo)}</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="mt-16" style="position:relative">
-      <label class="ex-full">Colaborador *<input id="exColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off"></label>
+      <label class="ex-full">Colaborador *<input id="exColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off" value="${esc(row?.colaborador_nome || '')}"></label>
       <div id="exColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
     </div>
     <div class="ex-grid mt-16">
-      <label class="ex-full">Clínica<input id="exClinica" type="text" placeholder="Nome da clínica (ver aba Clínicas SST)"></label>
-      <label>Data agendada<input id="exDataAgendada" type="date" value="${today()}"></label>
-      ${tipo === 'periodico' ? '<label>Vencimento<input id="exVencimento" type="date"></label>' : ''}
-      <label class="ex-full">Observações<textarea id="exObs" rows="2"></textarea></label>
+      <label class="ex-full">Clínica<input id="exClinica" type="text" placeholder="Nome da clínica (ver aba Clínicas SST)" value="${esc(row?.clinica_nome || '')}"></label>
+      <label>Data agendada<input id="exDataAgendada" type="date" value="${esc(row?.data_agendada ? String(row.data_agendada).slice(0, 10) : todayIso())}"></label>
+      ${tipo === 'periodico' ? `<label>Vencimento<input id="exVencimento" type="date" value="${esc(row?.data_vencimento ? String(row.data_vencimento).slice(0, 10) : '')}"></label>` : ''}
+      <label class="ex-full">Observações<textarea id="exObs" rows="2">${esc(row?.observacoes || '')}</textarea></label>
+      ${anexoFieldHtml('exAnexo', { label: 'ASO / resultado (PDF/foto)', atual: row?.anexo_url })}
     </div>
     <div class="ex-actions mt-16"><button class="btn btn-primary" id="exSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="exCancelar" type="button">Cancelar</button></div>
     <span class="ex-feedback mt-8" id="exFeedback"></span>
@@ -136,19 +150,27 @@ function openNovoExameModal(tipo, onSaved) {
     const nome = selecionado?.nome || modal.querySelector('#exColabInput').value.trim();
     if (!nome) { fb.textContent = 'Selecione o colaborador.'; fb.classList.add('err'); return; }
     try {
+      const anexo = await resolverAnexo(modal, 'exAnexo', 'exames', row?.anexo_url || null);
       const payload = {
-        colaborador_id: selecionado?.id || null,
+        colaborador_id: selecionado?.id || row?.colaborador_id || null,
         colaborador_nome: nome,
         tipo,
         clinica_nome: modal.querySelector('#exClinica').value.trim() || null,
         data_agendada: modal.querySelector('#exDataAgendada').value || null,
-        data_vencimento: tipo === 'periodico' ? (modal.querySelector('#exVencimento').value || null) : null,
+        data_vencimento: tipo === 'periodico' ? (modal.querySelector('#exVencimento')?.value || null) : null,
         observacoes: modal.querySelector('#exObs').value.trim() || null,
-        status: 'agendado',
-        created_by: state.ctx?.user?.id || null,
+        anexo_url: anexo,
       };
-      const { error } = await supabase.from('rh_exames').insert(payload);
-      if (error) throw error;
+      if (row) {
+        payload.updated_at = new Date().toISOString();
+        const { error } = await supabase.from('rh_exames').update(payload).eq('id', row.id);
+        if (error) throw error;
+      } else {
+        payload.status = 'agendado';
+        payload.created_by = state.ctx?.user?.id || null;
+        const { error } = await supabase.from('rh_exames').insert(payload);
+        if (error) throw error;
+      }
       modal.classList.remove('open');
       onSaved();
     } catch (e) { fb.textContent = e.message; fb.classList.add('err'); }
@@ -160,9 +182,12 @@ function renderExameTab(area, tipo) {
   const desc = tipo === 'admissional' ? 'Encaminhamento de colaboradores para exame admissional.' : 'Controle de exames periódicos e vencimentos.';
   const btnLabel = tipo === 'admissional' ? '+ Encaminhar' : '+ Agendar';
   area.innerHTML = `<div class="section-head mt-16"><div><h3>${esc(titulo)}</h3><p class="muted">${esc(desc)}</p></div><button class="btn btn-primary" id="exNovo" type="button">${esc(btnLabel)}</button></div>
-  <div class="ex-table-wrap mt-16"><table class="ex-table"><thead><tr><th>Colaborador</th><th>Clínica</th><th>Data</th><th>Status</th><th>Atualizar</th></tr></thead><tbody id="exBody_${tipo}"><tr><td colspan="5" class="ex-empty">Carregando...</td></tr></tbody></table></div>`;
-  const carregar = async () => { await loadExames(tipo); renderExamesTable(`exBody_${tipo}`); };
-  area.querySelector('#exNovo').onclick = () => openNovoExameModal(tipo, carregar);
+  ${filtrosHtml('ex')}
+  <div class="ex-table-wrap mt-16"><table class="ex-table"><thead><tr><th>Colaborador</th><th>Clínica</th><th>Data</th><th>Status</th><th>Atualizar</th><th>Anexo</th><th>Ações</th></tr></thead><tbody id="exBody_${tipo}"><tr><td colspan="7" class="ex-empty">Carregando...</td></tr></tbody></table></div>`;
+  const carregar = async () => { await loadExames(tipo); renderExamesTable(`exBody_${tipo}`, tipo, carregar); };
+  area.querySelector('#exNovo').onclick = () => openExameModal(tipo, carregar);
+  bindFiltros(area, 'ex', () => { state.filtros = lerFiltros(area, 'ex'); renderExamesTable(`exBody_${tipo}`, tipo, carregar); });
+  area.querySelector('#exExportar').onclick = () => exportar(tipo);
   carregar();
 }
 
@@ -186,6 +211,7 @@ async function renderTab(container) {
   container.querySelectorAll('[data-ex-tab]').forEach((b) => b.classList.toggle('active', b.dataset.exTab === state.tab));
   const area = container.querySelector('#exTabContent');
   if (!area) return;
+  state.filtros = null;
   area.innerHTML = `<div class="ex-empty mt-16">Carregando...</div>`;
   if (state.tab === 'admissional') renderExameTab(area, 'admissional');
   else if (state.tab === 'periodico') renderExameTab(area, 'periodico');

@@ -1,6 +1,11 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { searchColaboradores } from './colaboradoresCache.js';
+import {
+  esc, brDate, colabAutocomplete,
+  filtrosHtml, filtrosStyle, bindFiltros, lerFiltros, aplicarFiltros,
+  exportCsv, acoesHtml, bindAcoes,
+  anexoFieldHtml, resolverAnexo, anexoBtnHtml, bindAnexoButtons,
+} from './rhShared.js';
 
 const TABS = [
   { id: 'ferias', label: 'Férias' },
@@ -20,10 +25,8 @@ const STATUS_ATESTADO = {
   aprovado: { label: 'Aprovado' },
 };
 
-const state = { tab: 'ferias', ferias: [], atestados: [], ctx: null };
+const state = { tab: 'ferias', ferias: [], atestados: [], ctx: null, filtros: null };
 
-const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-const brDate = (v) => { const [y, m, d] = String(v || '').slice(0, 10).split('-'); return y && m && d ? `${d}/${m}/${y}` : '-'; };
 const diasEntre = (ini, fim) => { const a = new Date(`${ini}T00:00:00`); const b = new Date(`${fim}T00:00:00`); return Math.max(1, Math.round((b - a) / 86400000) + 1); };
 
 function statusPill(status, map) {
@@ -38,7 +41,7 @@ function styles() {
     .in-tabs{display:flex;gap:8px;flex-wrap:wrap}
     .in-tabs .active{background:#166534!important;color:#fff!important}
     .in-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}
-    .in-table{width:100%;border-collapse:collapse;min-width:640px}
+    .in-table{width:100%;border-collapse:collapse;min-width:720px}
     .in-table th,.in-table td{padding:14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
     .in-table th{font-size:12px;color:var(--muted);text-transform:uppercase}
     .in-empty{text-align:center;color:var(--muted)}
@@ -51,6 +54,7 @@ function styles() {
     .in-actions{display:flex;gap:10px;flex-wrap:wrap}
     .in-feedback{font-weight:700;display:block}
     .in-feedback.err{color:#fecaca}
+    ${filtrosStyle()}
   </style>`;
 }
 
@@ -63,68 +67,78 @@ async function safe(fn, fallback = []) {
   catch (e) { console.warn('[Indisponibilidade]', e); return fallback; }
 }
 
-function colabAutocomplete(modal, inputSel, sugSel, onPick) {
-  const input = modal.querySelector(inputSel);
-  const sug = modal.querySelector(sugSel);
-  let debounce = null;
-  input.addEventListener('input', () => {
-    onPick(null);
-    const q = input.value.trim();
-    if (q.length < 2) { sug.style.display = 'none'; return; }
-    clearTimeout(debounce);
-    debounce = setTimeout(async () => {
-      const lista = await searchColaboradores(q, { limite: 10 });
-      if (!lista.length) { sug.style.display = 'none'; return; }
-      sug.innerHTML = lista.map((c, idx) => `<button type="button" data-idx="${idx}" style="display:block;width:100%;text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px;margin-bottom:4px;cursor:pointer">${esc(c.nome)}</button>`).join('');
-      sug.style.display = 'block';
-      sug.querySelectorAll('button').forEach((b) => b.onmousedown = (ev) => { ev.preventDefault(); const c = lista[Number(b.dataset.idx)]; input.value = c.nome; sug.style.display = 'none'; onPick(c); });
-    }, 250);
-  });
-}
-
 // ---------- Férias ----------
 
 async function loadFerias() {
-  state.ferias = await safe(() => supabase.from('rh_ferias').select('*').order('data_inicio', { ascending: false }).limit(200));
+  state.ferias = await safe(() => supabase.from('rh_ferias').select('*').order('data_inicio', { ascending: false }).limit(500));
   renderFeriasTable();
+}
+
+function feriasFiltradas() {
+  return aplicarFiltros(state.ferias, state.filtros, { dataKey: 'data_inicio' });
 }
 
 function renderFeriasTable() {
   const body = document.getElementById('inFerBody');
   if (!body) return;
-  if (!state.ferias.length) {
-    body.innerHTML = `<tr><td colspan="5" class="in-empty">Nenhuma férias programada. Clique em <b>+ Programar Férias</b> para começar.</td></tr>`;
+  const rows = feriasFiltradas();
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="6" class="in-empty">${state.ferias.length ? 'Nenhuma férias no filtro atual.' : 'Nenhuma férias programada. Clique em <b>+ Programar Férias</b> para começar.'}</td></tr>`;
     return;
   }
-  body.innerHTML = state.ferias.map((f) => `<tr>
+  body.innerHTML = rows.map((f) => `<tr>
     <td><b>${esc(f.colaborador_nome)}</b></td>
     <td>${brDate(f.data_inicio)} — ${brDate(f.data_fim)}</td>
     <td>${f.dias_direito ?? '-'} dias</td>
     <td>${statusPill(f.status, STATUS_FERIAS)}</td>
     <td><select data-fer-status="${esc(f.id)}">${Object.entries(STATUS_FERIAS).map(([k, v]) => `<option value="${k}" ${k === f.status ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></td>
+    <td>${acoesHtml(f.id)}</td>
   </tr>`).join('');
   body.querySelectorAll('[data-fer-status]').forEach((sel) => sel.onchange = async () => {
     await supabase.from('rh_ferias').update({ status: sel.value, updated_at: new Date().toISOString() }).eq('id', sel.dataset.ferStatus);
     await loadFerias();
   });
+  bindAcoes(body, {
+    table: 'rh_ferias',
+    reload: loadFerias,
+    descricao: 'este período de férias',
+    onEdit: (id) => {
+      const row = state.ferias.find((r) => String(r.id) === String(id));
+      if (row) openFeriasModal(row);
+    },
+  });
 }
 
-function openNovaFeriasModal() {
+function exportarFerias() {
+  exportCsv('ferias', [
+    { key: 'colaborador_nome', label: 'Colaborador' },
+    { key: 'data_inicio', label: 'Início do gozo', fmt: brDate },
+    { key: 'data_fim', label: 'Fim do gozo', fmt: brDate },
+    { key: 'dias_direito', label: 'Dias de direito' },
+    { key: 'periodo_aquisitivo_inicio', label: 'Aquisitivo início', fmt: brDate },
+    { key: 'periodo_aquisitivo_fim', label: 'Aquisitivo fim', fmt: brDate },
+    { key: 'periodo_concessivo_limite', label: 'Limite concessivo', fmt: brDate },
+    { key: 'status', label: 'Status', fmt: (v) => STATUS_FERIAS[v]?.label || v },
+  ], feriasFiltradas());
+}
+
+function openFeriasModal(row = null) {
   const modal = document.getElementById('inModal');
   let selecionado = null;
+  const d = (v) => v ? String(v).slice(0, 10) : '';
   modal.innerHTML = `<div class="in-modal-card">
-    <div class="section-head"><div><h3>Programar Férias</h3><p class="muted">Controle de período aquisitivo e concessivo.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="section-head"><div><h3>${row ? 'Editar Férias' : 'Programar Férias'}</h3><p class="muted">Controle de período aquisitivo e concessivo.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="mt-16" style="position:relative">
-      <label class="in-full">Colaborador *<input id="ferColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off"></label>
+      <label class="in-full">Colaborador *<input id="ferColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off" value="${esc(row?.colaborador_nome || '')}"></label>
       <div id="ferColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
     </div>
     <div class="in-grid mt-16">
-      <label>Período aquisitivo — início<input id="ferAqIni" type="date"></label>
-      <label>Período aquisitivo — fim<input id="ferAqFim" type="date"></label>
-      <label>Limite do período concessivo<input id="ferConcessivo" type="date"></label>
-      <label>Dias de direito<input id="ferDiasDireito" type="number" value="30" min="1" max="30"></label>
-      <label>Início do gozo *<input id="ferInicio" type="date"></label>
-      <label>Fim do gozo *<input id="ferFim" type="date"></label>
+      <label>Período aquisitivo — início<input id="ferAqIni" type="date" value="${d(row?.periodo_aquisitivo_inicio)}"></label>
+      <label>Período aquisitivo — fim<input id="ferAqFim" type="date" value="${d(row?.periodo_aquisitivo_fim)}"></label>
+      <label>Limite do período concessivo<input id="ferConcessivo" type="date" value="${d(row?.periodo_concessivo_limite)}"></label>
+      <label>Dias de direito<input id="ferDiasDireito" type="number" value="${esc(row?.dias_direito ?? 30)}" min="1" max="30"></label>
+      <label>Início do gozo *<input id="ferInicio" type="date" value="${d(row?.data_inicio)}"></label>
+      <label>Fim do gozo *<input id="ferFim" type="date" value="${d(row?.data_fim)}"></label>
     </div>
     <div class="in-actions mt-16"><button class="btn btn-primary" id="ferSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="ferCancelar" type="button">Cancelar</button></div>
     <span class="in-feedback mt-8" id="ferFeedback"></span>
@@ -142,7 +156,7 @@ function openNovaFeriasModal() {
     if (!inicio || !fim) { fb.textContent = 'Informe o início e o fim do gozo de férias.'; fb.classList.add('err'); return; }
     try {
       const payload = {
-        colaborador_id: selecionado?.id || null,
+        colaborador_id: selecionado?.id || row?.colaborador_id || null,
         colaborador_nome: nome,
         periodo_aquisitivo_inicio: modal.querySelector('#ferAqIni').value || null,
         periodo_aquisitivo_fim: modal.querySelector('#ferAqFim').value || null,
@@ -150,11 +164,17 @@ function openNovaFeriasModal() {
         dias_direito: Number(modal.querySelector('#ferDiasDireito').value || 30),
         data_inicio: inicio,
         data_fim: fim,
-        status: 'programada',
-        created_by: state.ctx?.user?.id || null,
       };
-      const { error } = await supabase.from('rh_ferias').insert(payload);
-      if (error) throw error;
+      if (row) {
+        payload.updated_at = new Date().toISOString();
+        const { error } = await supabase.from('rh_ferias').update(payload).eq('id', row.id);
+        if (error) throw error;
+      } else {
+        payload.status = 'programada';
+        payload.created_by = state.ctx?.user?.id || null;
+        const { error } = await supabase.from('rh_ferias').insert(payload);
+        if (error) throw error;
+      }
       modal.classList.remove('open');
       await loadFerias();
     } catch (e) { fb.textContent = e.message; fb.classList.add('err'); }
@@ -163,54 +183,88 @@ function openNovaFeriasModal() {
 
 function renderFeriasTab(area) {
   area.innerHTML = `<div class="section-head mt-16"><div><h3>Férias</h3><p class="muted">Controle e programação de férias por colaborador.</p></div><button class="btn btn-primary" id="inFerNova" type="button">+ Programar Férias</button></div>
-  <div class="in-table-wrap mt-16"><table class="in-table"><thead><tr><th>Colaborador</th><th>Período</th><th>Dias</th><th>Status</th><th>Atualizar</th></tr></thead><tbody id="inFerBody"><tr><td colspan="5" class="in-empty">Carregando...</td></tr></tbody></table></div>`;
-  area.querySelector('#inFerNova').onclick = openNovaFeriasModal;
+  ${filtrosHtml('fer')}
+  <div class="in-table-wrap mt-16"><table class="in-table"><thead><tr><th>Colaborador</th><th>Período</th><th>Dias</th><th>Status</th><th>Atualizar</th><th>Ações</th></tr></thead><tbody id="inFerBody"><tr><td colspan="6" class="in-empty">Carregando...</td></tr></tbody></table></div>`;
+  area.querySelector('#inFerNova').onclick = () => openFeriasModal();
+  bindFiltros(area, 'fer', () => { state.filtros = lerFiltros(area, 'fer'); renderFeriasTable(); });
+  area.querySelector('#ferExportar').onclick = exportarFerias;
   loadFerias();
 }
 
 // ---------- Atestados ----------
 
 async function loadAtestados() {
-  state.atestados = await safe(() => supabase.from('rh_atestados').select('*').order('data_inicio', { ascending: false }).limit(200));
+  state.atestados = await safe(() => supabase.from('rh_atestados').select('*').order('data_inicio', { ascending: false }).limit(500));
   renderAtestadosTable();
+}
+
+function atestadosFiltrados() {
+  return aplicarFiltros(state.atestados, state.filtros, { dataKey: 'data_inicio' });
 }
 
 function renderAtestadosTable() {
   const body = document.getElementById('inAteBody');
   if (!body) return;
-  if (!state.atestados.length) {
-    body.innerHTML = `<tr><td colspan="5" class="in-empty">Nenhum atestado lançado. Clique em <b>+ Lançar Atestado</b> para registrar.</td></tr>`;
+  const rows = atestadosFiltrados();
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="7" class="in-empty">${state.atestados.length ? 'Nenhum atestado no filtro atual.' : 'Nenhum atestado lançado. Clique em <b>+ Lançar Atestado</b> para registrar.'}</td></tr>`;
     return;
   }
-  body.innerHTML = state.atestados.map((a) => `<tr>
+  body.innerHTML = rows.map((a) => `<tr>
     <td><b>${esc(a.colaborador_nome)}</b></td>
     <td>${brDate(a.data_inicio)} — ${brDate(a.data_fim)}</td>
     <td>${a.dias ?? '-'} dias${a.cid ? ` · CID: ${esc(a.cid)}` : ''}</td>
     <td>${statusPill(a.status, STATUS_ATESTADO)}</td>
     <td>${a.status !== 'aprovado' ? `<button class="btn btn-small btn-secondary" data-ate-aprovar="${esc(a.id)}" type="button">Aprovar</button>` : '-'}</td>
+    <td>${anexoBtnHtml(a.anexo_url)}</td>
+    <td>${acoesHtml(a.id)}</td>
   </tr>`).join('');
+  bindAnexoButtons(body);
   body.querySelectorAll('[data-ate-aprovar]').forEach((b) => b.onclick = async () => {
     await supabase.from('rh_atestados').update({ status: 'aprovado', updated_at: new Date().toISOString() }).eq('id', b.dataset.ateAprovar);
     await loadAtestados();
   });
+  bindAcoes(body, {
+    table: 'rh_atestados',
+    reload: loadAtestados,
+    descricao: 'este atestado',
+    onEdit: (id) => {
+      const row = state.atestados.find((r) => String(r.id) === String(id));
+      if (row) openAtestadoModal(row);
+    },
+  });
 }
 
-function openNovoAtestadoModal() {
+function exportarAtestados() {
+  exportCsv('atestados', [
+    { key: 'colaborador_nome', label: 'Colaborador' },
+    { key: 'data_inicio', label: 'Início', fmt: brDate },
+    { key: 'data_fim', label: 'Fim', fmt: brDate },
+    { key: 'dias', label: 'Dias' },
+    { key: 'cid', label: 'CID' },
+    { key: 'medico', label: 'Médico' },
+    { key: 'status', label: 'Status', fmt: (v) => STATUS_ATESTADO[v]?.label || v },
+    { key: 'observacoes', label: 'Observações' },
+  ], atestadosFiltrados());
+}
+
+function openAtestadoModal(row = null) {
   const modal = document.getElementById('inModal');
   let selecionado = null;
+  const d = (v) => v ? String(v).slice(0, 10) : '';
   modal.innerHTML = `<div class="in-modal-card">
-    <div class="section-head"><div><h3>Lançar Atestado</h3><p class="muted">Controle de atestados médicos.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="section-head"><div><h3>${row ? 'Editar Atestado' : 'Lançar Atestado'}</h3><p class="muted">Controle de atestados médicos.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="mt-16" style="position:relative">
-      <label class="in-full">Colaborador *<input id="ateColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off"></label>
+      <label class="in-full">Colaborador *<input id="ateColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off" value="${esc(row?.colaborador_nome || '')}"></label>
       <div id="ateColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
     </div>
     <div class="in-grid mt-16">
-      <label>Início *<input id="ateInicio" type="date"></label>
-      <label>Fim *<input id="ateFim" type="date"></label>
-      <label>CID<input id="ateCid" type="text"></label>
-      <label>Médico<input id="ateMedico" type="text"></label>
-      <label class="in-full">Link do anexo (opcional)<input id="ateAnexo" type="text" placeholder="URL do arquivo digitalizado"></label>
-      <label class="in-full">Observações<textarea id="ateObs" rows="2"></textarea></label>
+      <label>Início *<input id="ateInicio" type="date" value="${d(row?.data_inicio)}"></label>
+      <label>Fim *<input id="ateFim" type="date" value="${d(row?.data_fim)}"></label>
+      <label>CID<input id="ateCid" type="text" value="${esc(row?.cid || '')}"></label>
+      <label>Médico<input id="ateMedico" type="text" value="${esc(row?.medico || '')}"></label>
+      ${anexoFieldHtml('ateAnexo', { label: 'Atestado digitalizado (PDF/foto)', atual: row?.anexo_url })}
+      <label class="in-full">Observações<textarea id="ateObs" rows="2">${esc(row?.observacoes || '')}</textarea></label>
     </div>
     <div class="in-actions mt-16"><button class="btn btn-primary" id="ateSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="ateCancelar" type="button">Cancelar</button></div>
     <span class="in-feedback mt-8" id="ateFeedback"></span>
@@ -227,21 +281,28 @@ function openNovoAtestadoModal() {
     if (!nome) { fb.textContent = 'Selecione o colaborador.'; fb.classList.add('err'); return; }
     if (!inicio || !fim) { fb.textContent = 'Informe o início e o fim do atestado.'; fb.classList.add('err'); return; }
     try {
+      const anexo = await resolverAnexo(modal, 'ateAnexo', 'atestados', row?.anexo_url || null);
       const payload = {
-        colaborador_id: selecionado?.id || null,
+        colaborador_id: selecionado?.id || row?.colaborador_id || null,
         colaborador_nome: nome,
         data_inicio: inicio,
         data_fim: fim,
         dias: diasEntre(inicio, fim),
         cid: modal.querySelector('#ateCid').value.trim() || null,
         medico: modal.querySelector('#ateMedico').value.trim() || null,
-        anexo_url: modal.querySelector('#ateAnexo').value.trim() || null,
+        anexo_url: anexo,
         observacoes: modal.querySelector('#ateObs').value.trim() || null,
-        status: 'lancado',
-        created_by: state.ctx?.user?.id || null,
       };
-      const { error } = await supabase.from('rh_atestados').insert(payload);
-      if (error) throw error;
+      if (row) {
+        payload.updated_at = new Date().toISOString();
+        const { error } = await supabase.from('rh_atestados').update(payload).eq('id', row.id);
+        if (error) throw error;
+      } else {
+        payload.status = 'lancado';
+        payload.created_by = state.ctx?.user?.id || null;
+        const { error } = await supabase.from('rh_atestados').insert(payload);
+        if (error) throw error;
+      }
       modal.classList.remove('open');
       await loadAtestados();
     } catch (e) { fb.textContent = e.message; fb.classList.add('err'); }
@@ -250,8 +311,11 @@ function openNovoAtestadoModal() {
 
 function renderAtestadosTab(area) {
   area.innerHTML = `<div class="section-head mt-16"><div><h3>Atestados</h3><p class="muted">Controle de atestados médicos por colaborador.</p></div><button class="btn btn-primary" id="inAteNovo" type="button">+ Lançar Atestado</button></div>
-  <div class="in-table-wrap mt-16"><table class="in-table"><thead><tr><th>Colaborador</th><th>Período</th><th>Dias / CID</th><th>Status</th><th></th></tr></thead><tbody id="inAteBody"><tr><td colspan="5" class="in-empty">Carregando...</td></tr></tbody></table></div>`;
-  area.querySelector('#inAteNovo').onclick = openNovoAtestadoModal;
+  ${filtrosHtml('ate')}
+  <div class="in-table-wrap mt-16"><table class="in-table"><thead><tr><th>Colaborador</th><th>Período</th><th>Dias / CID</th><th>Status</th><th></th><th>Anexo</th><th>Ações</th></tr></thead><tbody id="inAteBody"><tr><td colspan="7" class="in-empty">Carregando...</td></tr></tbody></table></div>`;
+  area.querySelector('#inAteNovo').onclick = () => openAtestadoModal();
+  bindFiltros(area, 'ate', () => { state.filtros = lerFiltros(area, 'ate'); renderAtestadosTable(); });
+  area.querySelector('#ateExportar').onclick = exportarAtestados;
   loadAtestados();
 }
 
@@ -281,6 +345,7 @@ async function renderTab(container) {
   container.querySelectorAll('[data-in-tab]').forEach((b) => b.classList.toggle('active', b.dataset.inTab === state.tab));
   const area = container.querySelector('#inTabContent');
   if (!area) return;
+  state.filtros = null;
   area.innerHTML = `<div class="in-empty mt-16">Carregando...</div>`;
   if (state.tab === 'ferias') renderFeriasTab(area);
   else if (state.tab === 'atestados') renderAtestadosTab(area);

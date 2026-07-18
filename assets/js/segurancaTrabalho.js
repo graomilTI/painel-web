@@ -1,6 +1,11 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { searchColaboradores } from './colaboradoresCache.js';
+import {
+  esc, brDate, todayIso, colabAutocomplete,
+  filtrosHtml, filtrosStyle, bindFiltros, lerFiltros, aplicarFiltros,
+  exportCsv, acoesHtml, bindAcoes,
+  anexoFieldHtml, resolverAnexo, anexoBtnHtml, bindAnexoButtons,
+} from './rhShared.js';
 
 const TABS = [
   { id: 'epis', label: 'EPIs' },
@@ -13,11 +18,7 @@ const STATUS_CAT = {
   encerrada: { label: 'Encerrada' },
 };
 
-const state = { tab: 'epis', cats: [], ctx: null };
-
-const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-const brDate = (v) => { const [y, m, d] = String(v || '').slice(0, 10).split('-'); return y && m && d ? `${d}/${m}/${y}` : '-'; };
-const today = () => new Date().toISOString().slice(0, 10);
+const state = { tab: 'epis', cats: [], ctx: null, filtros: null };
 
 function statusPill(status, map) {
   const label = map?.[status]?.label || status || '-';
@@ -30,7 +31,7 @@ function styles() {
     .st-tabs{display:flex;gap:8px;flex-wrap:wrap}
     .st-tabs .active{background:#166534!important;color:#fff!important}
     .st-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}
-    .st-table{width:100%;border-collapse:collapse;min-width:640px}
+    .st-table{width:100%;border-collapse:collapse;min-width:720px}
     .st-table th,.st-table td{padding:14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
     .st-table th{font-size:12px;color:var(--muted);text-transform:uppercase}
     .st-empty{text-align:center;color:var(--muted)}
@@ -43,6 +44,7 @@ function styles() {
     .st-actions{display:flex;gap:10px;flex-wrap:wrap}
     .st-feedback{font-weight:700;display:block}
     .st-feedback.err{color:#fecaca}
+    ${filtrosStyle()}
   </style>`;
 }
 
@@ -73,64 +75,81 @@ async function renderEpisTab(area) {
 // ---------- CAT ----------
 
 async function loadCats() {
-  state.cats = await safe(() => supabase.from('rh_cat').select('*').order('data_acidente', { ascending: false }).limit(200));
+  state.cats = await safe(() => supabase.from('rh_cat').select('*').order('data_acidente', { ascending: false }).limit(500));
   renderCatsTable();
+}
+
+function catsFiltradas() {
+  return aplicarFiltros(state.cats, state.filtros, { dataKey: 'data_acidente' });
 }
 
 function renderCatsTable() {
   const body = document.getElementById('stCatBody');
   if (!body) return;
-  if (!state.cats.length) {
-    body.innerHTML = `<tr><td colspan="5" class="st-empty">Nenhuma CAT registrada. Clique em <b>+ Abrir CAT</b> para registrar um acidente.</td></tr>`;
+  const rows = catsFiltradas();
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="7" class="st-empty">${state.cats.length ? 'Nenhuma CAT no filtro atual.' : 'Nenhuma CAT registrada. Clique em <b>+ Abrir CAT</b> para registrar um acidente.'}</td></tr>`;
     return;
   }
-  body.innerHTML = state.cats.map((c) => `<tr>
+  body.innerHTML = rows.map((c) => `<tr>
     <td><b>${esc(c.colaborador_nome)}</b></td>
     <td>${brDate(c.data_acidente)}</td>
     <td>${esc(c.tipo === 'trajeto' ? 'Trajeto' : 'Típico')}</td>
     <td>${statusPill(c.status, STATUS_CAT)}</td>
     <td><button class="btn btn-small btn-secondary" data-cat-ver="${esc(c.id)}" type="button">Ver</button></td>
+    <td>${anexoBtnHtml(c.anexo_url)}</td>
+    <td>${acoesHtml(c.id)}</td>
   </tr>`).join('');
+  bindAnexoButtons(body);
   body.querySelectorAll('[data-cat-ver]').forEach((b) => b.onclick = () => openCatModal(b.dataset.catVer));
+  bindAcoes(body, {
+    table: 'rh_cat',
+    reload: loadCats,
+    descricao: 'esta CAT',
+    onEdit: (id) => {
+      const row = state.cats.find((c) => String(c.id) === String(id));
+      if (row) openNovaCatModal(row);
+    },
+  });
 }
 
-function openNovaCatModal() {
+function exportarCats() {
+  exportCsv('cat', [
+    { key: 'colaborador_nome', label: 'Colaborador' },
+    { key: 'data_acidente', label: 'Data do acidente', fmt: brDate },
+    { key: 'tipo', label: 'Tipo', fmt: (v) => v === 'trajeto' ? 'Trajeto' : 'Típico' },
+    { key: 'cid', label: 'CID' },
+    { key: 'afastamento_dias', label: 'Dias de afastamento' },
+    { key: 'protocolo', label: 'Protocolo' },
+    { key: 'status', label: 'Status', fmt: (v) => STATUS_CAT[v]?.label || v },
+    { key: 'descricao', label: 'Descrição' },
+  ], catsFiltradas());
+}
+
+function openNovaCatModal(row = null) {
   const modal = document.getElementById('stModal');
   let selecionado = null;
-  let debounce = null;
   modal.innerHTML = `<div class="st-modal-card">
-    <div class="section-head"><div><h3>Abrir CAT</h3><p class="muted">Comunicação de Acidente de Trabalho.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="section-head"><div><h3>${row ? 'Editar CAT' : 'Abrir CAT'}</h3><p class="muted">Comunicação de Acidente de Trabalho.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="mt-16" style="position:relative">
-      <label class="st-full">Colaborador *<input id="catColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off"></label>
+      <label class="st-full">Colaborador *<input id="catColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off" value="${esc(row?.colaborador_nome || '')}"></label>
       <div id="catColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
     </div>
     <div class="st-grid mt-16">
-      <label>Data do acidente *<input id="catData" type="date" value="${today()}"></label>
-      <label>Tipo<select id="catTipo"><option value="tipico">Típico</option><option value="trajeto">Trajeto</option></select></label>
-      <label>CID<input id="catCid" type="text"></label>
-      <label>Dias de afastamento<input id="catDias" type="number" min="0"></label>
-      <label class="st-full">Protocolo (se já emitido)<input id="catProtocolo" type="text"></label>
-      <label class="st-full">Descrição do acidente<textarea id="catDesc" rows="3"></textarea></label>
+      <label>Data do acidente *<input id="catData" type="date" value="${esc(row?.data_acidente ? String(row.data_acidente).slice(0, 10) : todayIso())}"></label>
+      <label>Tipo<select id="catTipo"><option value="tipico" ${row?.tipo !== 'trajeto' ? 'selected' : ''}>Típico</option><option value="trajeto" ${row?.tipo === 'trajeto' ? 'selected' : ''}>Trajeto</option></select></label>
+      <label>CID<input id="catCid" type="text" value="${esc(row?.cid || '')}"></label>
+      <label>Dias de afastamento<input id="catDias" type="number" min="0" value="${esc(row?.afastamento_dias ?? '')}"></label>
+      <label class="st-full">Protocolo (se já emitido)<input id="catProtocolo" type="text" value="${esc(row?.protocolo || '')}"></label>
+      ${anexoFieldHtml('catAnexo', { label: 'CAT emitida / laudos (PDF/foto)', atual: row?.anexo_url })}
+      <label class="st-full">Descrição do acidente<textarea id="catDesc" rows="3">${esc(row?.descricao || '')}</textarea></label>
     </div>
     <div class="st-actions mt-16"><button class="btn btn-primary" id="catSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="catCancelar" type="button">Cancelar</button></div>
     <span class="st-feedback mt-8" id="catFeedback"></span>
   </div>`;
   modal.classList.add('open');
   const input = modal.querySelector('#catColabInput');
-  const sug = modal.querySelector('#catColabSug');
-  input.addEventListener('input', () => {
-    selecionado = null;
-    const q = input.value.trim();
-    if (q.length < 2) { sug.style.display = 'none'; return; }
-    clearTimeout(debounce);
-    debounce = setTimeout(async () => {
-      const lista = await searchColaboradores(q, { limite: 10 });
-      if (!lista.length) { sug.style.display = 'none'; return; }
-      sug.innerHTML = lista.map((c, idx) => `<button type="button" data-idx="${idx}" style="display:block;width:100%;text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px;margin-bottom:4px;cursor:pointer">${esc(c.nome)}</button>`).join('');
-      sug.style.display = 'block';
-      sug.querySelectorAll('button').forEach((b) => b.onmousedown = (ev) => { ev.preventDefault(); selecionado = lista[Number(b.dataset.idx)]; input.value = selecionado.nome; sug.style.display = 'none'; });
-    }, 250);
-  });
+  colabAutocomplete(modal, '#catColabInput', '#catColabSug', (c) => { selecionado = c; });
   modal.querySelector('#mClose').onclick = () => modal.classList.remove('open');
   modal.querySelector('#catCancelar').onclick = () => modal.classList.remove('open');
   modal.querySelector('#catSalvar').onclick = async () => {
@@ -140,8 +159,9 @@ function openNovaCatModal() {
     if (!nome) { fb.textContent = 'Selecione o colaborador.'; fb.classList.add('err'); return; }
     if (!data) { fb.textContent = 'Informe a data do acidente.'; fb.classList.add('err'); return; }
     try {
+      const anexo = await resolverAnexo(modal, 'catAnexo', 'cat', row?.anexo_url || null);
       const payload = {
-        colaborador_id: selecionado?.id || null,
+        colaborador_id: selecionado?.id || row?.colaborador_id || null,
         colaborador_nome: nome,
         data_acidente: data,
         tipo: modal.querySelector('#catTipo').value,
@@ -149,11 +169,18 @@ function openNovaCatModal() {
         afastamento_dias: modal.querySelector('#catDias').value ? Number(modal.querySelector('#catDias').value) : null,
         protocolo: modal.querySelector('#catProtocolo').value.trim() || null,
         descricao: modal.querySelector('#catDesc').value.trim() || null,
-        status: 'aberta',
-        created_by: state.ctx?.user?.id || null,
+        anexo_url: anexo,
       };
-      const { error } = await supabase.from('rh_cat').insert(payload);
-      if (error) throw error;
+      if (row) {
+        payload.updated_at = new Date().toISOString();
+        const { error } = await supabase.from('rh_cat').update(payload).eq('id', row.id);
+        if (error) throw error;
+      } else {
+        payload.status = 'aberta';
+        payload.created_by = state.ctx?.user?.id || null;
+        const { error } = await supabase.from('rh_cat').insert(payload);
+        if (error) throw error;
+      }
       modal.classList.remove('open');
       await loadCats();
     } catch (e) { fb.textContent = e.message; fb.classList.add('err'); }
@@ -173,11 +200,13 @@ async function openCatModal(id) {
       <div><span class="muted">Protocolo</span><br><b>${esc(c.protocolo || '-')}</b></div>
     </div>
     ${c.descricao ? `<div class="mt-16"><span class="muted">Descrição</span><p>${esc(c.descricao)}</p></div>` : ''}
+    ${c.anexo_url ? `<div class="mt-16">${anexoBtnHtml(c.anexo_url)}</div>` : ''}
     <label class="st-full mt-16">Status<select id="catStatusSel">${Object.entries(STATUS_CAT).map(([k, v]) => `<option value="${k}" ${k === c.status ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></label>
     <div class="st-actions mt-16"><button class="btn btn-primary" id="catAtualizarStatus" type="button">Atualizar status</button></div>
     <span class="st-feedback mt-8" id="catModalFb"></span>
   </div>`;
   modal.classList.add('open');
+  bindAnexoButtons(modal);
   modal.querySelector('#mClose').onclick = () => modal.classList.remove('open');
   modal.querySelector('#catAtualizarStatus').onclick = async () => {
     const fb = modal.querySelector('#catModalFb');
@@ -192,8 +221,11 @@ async function openCatModal(id) {
 
 function renderCatTab(area) {
   area.innerHTML = `<div class="section-head mt-16"><div><h3>CAT</h3><p class="muted">Abertura e acompanhamento de Comunicação de Acidente de Trabalho.</p></div><button class="btn btn-primary" id="stCatNova" type="button">+ Abrir CAT</button></div>
-  <div class="st-table-wrap mt-16"><table class="st-table"><thead><tr><th>Colaborador</th><th>Data</th><th>Tipo</th><th>Status</th><th></th></tr></thead><tbody id="stCatBody"><tr><td colspan="5" class="st-empty">Carregando...</td></tr></tbody></table></div>`;
-  area.querySelector('#stCatNova').onclick = openNovaCatModal;
+  ${filtrosHtml('cat')}
+  <div class="st-table-wrap mt-16"><table class="st-table"><thead><tr><th>Colaborador</th><th>Data</th><th>Tipo</th><th>Status</th><th></th><th>Anexo</th><th>Ações</th></tr></thead><tbody id="stCatBody"><tr><td colspan="7" class="st-empty">Carregando...</td></tr></tbody></table></div>`;
+  area.querySelector('#stCatNova').onclick = () => openNovaCatModal();
+  bindFiltros(area, 'cat', () => { state.filtros = lerFiltros(area, 'cat'); renderCatsTable(); });
+  area.querySelector('#catExportar').onclick = exportarCats;
   loadCats();
 }
 
@@ -203,6 +235,7 @@ async function renderTab(container) {
   container.querySelectorAll('[data-st-tab]').forEach((b) => b.classList.toggle('active', b.dataset.stTab === state.tab));
   const area = container.querySelector('#stTabContent');
   if (!area) return;
+  state.filtros = null;
   area.innerHTML = `<div class="st-empty mt-16">Carregando...</div>`;
   if (state.tab === 'epis') renderEpisTab(area);
   else if (state.tab === 'cat') renderCatTab(area);

@@ -1,6 +1,11 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { searchColaboradores } from './colaboradoresCache.js';
+import {
+  esc, brDate, todayIso, colabAutocomplete,
+  filtrosHtml, filtrosStyle, bindFiltros, lerFiltros, aplicarFiltros,
+  exportCsv, acoesHtml, bindAcoes,
+  anexoFieldHtml, resolverAnexo, anexoBtnHtml, bindAnexoButtons,
+} from './rhShared.js';
 
 const TABS = [
   { id: 'experiencia', label: 'Contrato de Experiência' },
@@ -27,11 +32,8 @@ const STATUS_RESCISAO = {
   concluida: { label: 'Concluída' },
 };
 
-const state = { tab: 'experiencia', ctx: null };
+const state = { tab: 'experiencia', experiencias: [], rescisoes: [], ctx: null, filtros: null };
 
-const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-const brDate = (v) => { const [y, m, d] = String(v || '').slice(0, 10).split('-'); return y && m && d ? `${d}/${m}/${y}` : '-'; };
-const today = () => new Date().toISOString().slice(0, 10);
 const money = (v) => v == null ? '-' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 function statusPill(status, map) {
@@ -47,7 +49,7 @@ function styles() {
     .ct-tabs{display:flex;gap:8px;flex-wrap:wrap}
     .ct-tabs .active{background:#166534!important;color:#fff!important}
     .ct-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}
-    .ct-table{width:100%;border-collapse:collapse;min-width:640px}
+    .ct-table{width:100%;border-collapse:collapse;min-width:720px}
     .ct-table th,.ct-table td{padding:14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
     .ct-table th{font-size:12px;color:var(--muted);text-transform:uppercase}
     .ct-empty{text-align:center;color:var(--muted)}
@@ -60,6 +62,7 @@ function styles() {
     .ct-actions{display:flex;gap:10px;flex-wrap:wrap}
     .ct-feedback{font-weight:700;display:block}
     .ct-feedback.err{color:#fecaca}
+    ${filtrosStyle()}
   </style>`;
 }
 
@@ -72,65 +75,78 @@ async function safe(fn, fallback = []) {
   catch (e) { console.warn('[Contratos]', e); return fallback; }
 }
 
-function colabAutocomplete(modal, inputSel, sugSel, onPick) {
-  const input = modal.querySelector(inputSel);
-  const sug = modal.querySelector(sugSel);
-  let debounce = null;
-  input.addEventListener('input', () => {
-    onPick(null);
-    const q = input.value.trim();
-    if (q.length < 2) { sug.style.display = 'none'; return; }
-    clearTimeout(debounce);
-    debounce = setTimeout(async () => {
-      const lista = await searchColaboradores(q, { limite: 10 });
-      if (!lista.length) { sug.style.display = 'none'; return; }
-      sug.innerHTML = lista.map((c, idx) => `<button type="button" data-idx="${idx}" style="display:block;width:100%;text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px;margin-bottom:4px;cursor:pointer">${esc(c.nome)}</button>`).join('');
-      sug.style.display = 'block';
-      sug.querySelectorAll('button').forEach((b) => b.onmousedown = (ev) => { ev.preventDefault(); const c = lista[Number(b.dataset.idx)]; input.value = c.nome; sug.style.display = 'none'; onPick(c); });
-    }, 250);
-  });
-}
-
 // ---------- Contrato de Experiência ----------
 
 async function loadExperiencias() {
-  return safe(() => supabase.from('rh_contratos_experiencia').select('*').order('data_fim_experiencia', { ascending: true }).limit(200));
+  state.experiencias = await safe(() => supabase.from('rh_contratos_experiencia').select('*').order('data_fim_experiencia', { ascending: true }).limit(500));
+  renderExperienciasTable();
 }
 
-function renderExperienciasTable(lista) {
+function experienciasFiltradas() {
+  return aplicarFiltros(state.experiencias, state.filtros, { dataKey: 'data_inicio' });
+}
+
+function renderExperienciasTable() {
   const body = document.getElementById('ctExpBody');
   if (!body) return;
-  if (!lista.length) {
-    body.innerHTML = `<tr><td colspan="5" class="ct-empty">Nenhum contrato de experiência em acompanhamento.</td></tr>`;
+  const rows = experienciasFiltradas();
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="6" class="ct-empty">${state.experiencias.length ? 'Nenhum contrato no filtro atual.' : 'Nenhum contrato de experiência em acompanhamento.'}</td></tr>`;
     return;
   }
-  body.innerHTML = lista.map((c) => `<tr>
+  body.innerHTML = rows.map((c) => `<tr>
     <td><b>${esc(c.colaborador_nome)}</b></td>
     <td>${brDate(c.data_inicio)}</td>
     <td>${brDate(c.prorrogado ? c.data_fim_prorrogacao : c.data_fim_experiencia)}${c.prorrogado ? ' <small class="muted">(prorrogado)</small>' : ''}</td>
     <td>${statusPill(c.status, STATUS_EXPERIENCIA)}</td>
     <td><select data-exp-status="${esc(c.id)}">${Object.entries(STATUS_EXPERIENCIA).map(([k, v]) => `<option value="${k}" ${k === c.status ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></td>
+    <td>${acoesHtml(c.id)}</td>
   </tr>`).join('');
   body.querySelectorAll('[data-exp-status]').forEach((sel) => sel.onchange = async () => {
     const patch = { status: sel.value, updated_at: new Date().toISOString() };
-    if (sel.value === 'efetivado') patch.data_efetivacao = today();
+    if (sel.value === 'efetivado') patch.data_efetivacao = todayIso();
+    if (sel.value === 'prorrogado') patch.prorrogado = true;
     await supabase.from('rh_contratos_experiencia').update(patch).eq('id', sel.dataset.expStatus);
-    renderExperienciasTable(await loadExperiencias());
+    await loadExperiencias();
+  });
+  bindAcoes(body, {
+    table: 'rh_contratos_experiencia',
+    reload: loadExperiencias,
+    descricao: 'este contrato de experiência',
+    onEdit: (id) => {
+      const row = state.experiencias.find((r) => String(r.id) === String(id));
+      if (row) openExperienciaModal(row);
+    },
   });
 }
 
-function openNovaExperienciaModal(area) {
+function exportarExperiencias() {
+  exportCsv('contratos-experiencia', [
+    { key: 'colaborador_nome', label: 'Colaborador' },
+    { key: 'data_inicio', label: 'Início', fmt: brDate },
+    { key: 'data_fim_experiencia', label: 'Fim 1º período', fmt: brDate },
+    { key: 'prorrogado', label: 'Prorrogado', fmt: (v) => v ? 'Sim' : 'Não' },
+    { key: 'data_fim_prorrogacao', label: 'Fim prorrogação', fmt: brDate },
+    { key: 'data_efetivacao', label: 'Efetivação', fmt: brDate },
+    { key: 'status', label: 'Status', fmt: (v) => STATUS_EXPERIENCIA[v]?.label || v },
+  ], experienciasFiltradas());
+}
+
+function openExperienciaModal(row = null) {
   const modal = document.getElementById('ctModal');
   let selecionado = null;
+  const d = (v) => v ? String(v).slice(0, 10) : '';
   modal.innerHTML = `<div class="ct-modal-card">
-    <div class="section-head"><div><h3>Novo Contrato de Experiência</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="section-head"><div><h3>${row ? 'Editar Contrato de Experiência' : 'Novo Contrato de Experiência'}</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="mt-16" style="position:relative">
-      <label class="ct-full">Colaborador *<input id="expColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off"></label>
+      <label class="ct-full">Colaborador *<input id="expColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off" value="${esc(row?.colaborador_nome || '')}"></label>
       <div id="expColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
     </div>
     <div class="ct-grid mt-16">
-      <label>Início do contrato *<input id="expInicio" type="date"></label>
-      <label>Fim do 1º período (45 dias) *<input id="expFim" type="date"></label>
+      <label>Início do contrato *<input id="expInicio" type="date" value="${d(row?.data_inicio)}"></label>
+      <label>Fim do 1º período (45 dias) *<input id="expFim" type="date" value="${d(row?.data_fim_experiencia)}"></label>
+      <label>Fim da prorrogação (se houver)<input id="expFimProrrog" type="date" value="${d(row?.data_fim_prorrogacao)}"></label>
+      <label class="ct-full">Observações<textarea id="expObs" rows="2">${esc(row?.observacoes || '')}</textarea></label>
     </div>
     <div class="ct-actions mt-16"><button class="btn btn-primary" id="expSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="expCancelar" type="button">Cancelar</button></div>
     <span class="ct-feedback mt-8" id="expFeedback"></span>
@@ -147,63 +163,112 @@ function openNovaExperienciaModal(area) {
     if (!nome) { fb.textContent = 'Selecione o colaborador.'; fb.classList.add('err'); return; }
     if (!inicio || !fim) { fb.textContent = 'Informe o início e o fim do 1º período.'; fb.classList.add('err'); return; }
     try {
-      const payload = { colaborador_id: selecionado?.id || null, colaborador_nome: nome, data_inicio: inicio, data_fim_experiencia: fim, status: 'em_experiencia', created_by: state.ctx?.user?.id || null };
-      const { error } = await supabase.from('rh_contratos_experiencia').insert(payload);
-      if (error) throw error;
+      const fimProrrog = modal.querySelector('#expFimProrrog').value || null;
+      const payload = {
+        colaborador_id: selecionado?.id || row?.colaborador_id || null,
+        colaborador_nome: nome,
+        data_inicio: inicio,
+        data_fim_experiencia: fim,
+        data_fim_prorrogacao: fimProrrog,
+        prorrogado: Boolean(fimProrrog) || row?.prorrogado || false,
+        observacoes: modal.querySelector('#expObs').value.trim() || null,
+      };
+      if (row) {
+        payload.updated_at = new Date().toISOString();
+        const { error } = await supabase.from('rh_contratos_experiencia').update(payload).eq('id', row.id);
+        if (error) throw error;
+      } else {
+        payload.status = 'em_experiencia';
+        payload.created_by = state.ctx?.user?.id || null;
+        const { error } = await supabase.from('rh_contratos_experiencia').insert(payload);
+        if (error) throw error;
+      }
       modal.classList.remove('open');
-      renderExperienciasTable(await loadExperiencias());
+      await loadExperiencias();
     } catch (e) { fb.textContent = e.message; fb.classList.add('err'); }
   };
 }
 
 async function renderExperienciaTab(area) {
   area.innerHTML = `<div class="section-head mt-16"><div><h3>Contrato de Experiência</h3><p class="muted">Controle de prazos e prorrogação de contratos de experiência.</p></div><button class="btn btn-primary" id="ctExpNovo" type="button">+ Novo Contrato</button></div>
-  <div class="ct-table-wrap mt-16"><table class="ct-table"><thead><tr><th>Colaborador</th><th>Início</th><th>Vencimento</th><th>Status</th><th>Atualizar</th></tr></thead><tbody id="ctExpBody"><tr><td colspan="5" class="ct-empty">Carregando...</td></tr></tbody></table></div>`;
-  area.querySelector('#ctExpNovo').onclick = () => openNovaExperienciaModal(area);
-  renderExperienciasTable(await loadExperiencias());
+  ${filtrosHtml('exp')}
+  <div class="ct-table-wrap mt-16"><table class="ct-table"><thead><tr><th>Colaborador</th><th>Início</th><th>Vencimento</th><th>Status</th><th>Atualizar</th><th>Ações</th></tr></thead><tbody id="ctExpBody"><tr><td colspan="6" class="ct-empty">Carregando...</td></tr></tbody></table></div>`;
+  area.querySelector('#ctExpNovo').onclick = () => openExperienciaModal();
+  bindFiltros(area, 'exp', () => { state.filtros = lerFiltros(area, 'exp'); renderExperienciasTable(); });
+  area.querySelector('#expExportar').onclick = exportarExperiencias;
+  await loadExperiencias();
 }
 
 // ---------- Rescisões ----------
 
 async function loadRescisoes() {
-  return safe(() => supabase.from('rh_rescisoes').select('*').order('data_desligamento', { ascending: false }).limit(200));
+  state.rescisoes = await safe(() => supabase.from('rh_rescisoes').select('*').order('data_desligamento', { ascending: false }).limit(500));
+  renderRescisoesTable();
 }
 
-function renderRescisoesTable(lista) {
+function rescisoesFiltradas() {
+  return aplicarFiltros(state.rescisoes, state.filtros, { dataKey: 'data_desligamento' });
+}
+
+function renderRescisoesTable() {
   const body = document.getElementById('ctResBody');
   if (!body) return;
-  if (!lista.length) {
-    body.innerHTML = `<tr><td colspan="5" class="ct-empty">Nenhuma rescisão em andamento.</td></tr>`;
+  const rows = rescisoesFiltradas();
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="7" class="ct-empty">${state.rescisoes.length ? 'Nenhuma rescisão no filtro atual.' : 'Nenhuma rescisão em andamento.'}</td></tr>`;
     return;
   }
-  body.innerHTML = lista.map((r) => `<tr>
+  body.innerHTML = rows.map((r) => `<tr>
     <td><b>${esc(r.colaborador_nome)}</b></td>
     <td>${brDate(r.data_desligamento)}</td>
     <td>${esc(TIPOS_RESCISAO[r.tipo] || r.tipo)}</td>
     <td>${money(r.valor_total)}</td>
     <td>${statusPill(r.status, STATUS_RESCISAO)}${r.status !== 'concluida' ? ` <button class="btn btn-small btn-secondary" data-res-concluir="${esc(r.id)}" type="button">Concluir</button>` : ''}</td>
+    <td>${anexoBtnHtml(r.documentos_url)}</td>
+    <td>${acoesHtml(r.id)}</td>
   </tr>`).join('');
+  bindAnexoButtons(body);
   body.querySelectorAll('[data-res-concluir]').forEach((b) => b.onclick = async () => {
     await supabase.from('rh_rescisoes').update({ status: 'concluida', updated_at: new Date().toISOString() }).eq('id', b.dataset.resConcluir);
-    renderRescisoesTable(await loadRescisoes());
+    await loadRescisoes();
+  });
+  bindAcoes(body, {
+    table: 'rh_rescisoes',
+    reload: loadRescisoes,
+    descricao: 'esta rescisão',
+    onEdit: (id) => {
+      const row = state.rescisoes.find((r) => String(r.id) === String(id));
+      if (row) openRescisaoModal(row);
+    },
   });
 }
 
-function openNovaRescisaoModal() {
+function exportarRescisoes() {
+  exportCsv('rescisoes', [
+    { key: 'colaborador_nome', label: 'Colaborador' },
+    { key: 'data_desligamento', label: 'Desligamento', fmt: brDate },
+    { key: 'tipo', label: 'Tipo', fmt: (v) => TIPOS_RESCISAO[v] || v },
+    { key: 'valor_total', label: 'Verbas (R$)', fmt: (v) => v == null ? '' : String(v).replace('.', ',') },
+    { key: 'status', label: 'Status', fmt: (v) => STATUS_RESCISAO[v]?.label || v },
+    { key: 'observacoes', label: 'Motivo / observações' },
+  ], rescisoesFiltradas());
+}
+
+function openRescisaoModal(row = null) {
   const modal = document.getElementById('ctModal');
   let selecionado = null;
   modal.innerHTML = `<div class="ct-modal-card">
-    <div class="section-head"><div><h3>Nova Rescisão</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="section-head"><div><h3>${row ? 'Editar Rescisão' : 'Nova Rescisão'}</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="mt-16" style="position:relative">
-      <label class="ct-full">Colaborador *<input id="resColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off"></label>
+      <label class="ct-full">Colaborador *<input id="resColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off" value="${esc(row?.colaborador_nome || '')}"></label>
       <div id="resColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
     </div>
     <div class="ct-grid mt-16">
-      <label>Data do desligamento *<input id="resData" type="date" value="${today()}"></label>
-      <label>Tipo<select id="resTipo">${Object.entries(TIPOS_RESCISAO).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></label>
-      <label>Valor total das verbas (R$)<input id="resValor" type="number" step="0.01" min="0"></label>
-      <label class="ct-full">Link de documentos (opcional)<input id="resDocs" type="text"></label>
-      <label class="ct-full">Motivo / observações<textarea id="resMotivo" rows="2"></textarea></label>
+      <label>Data do desligamento *<input id="resData" type="date" value="${esc(row?.data_desligamento ? String(row.data_desligamento).slice(0, 10) : todayIso())}"></label>
+      <label>Tipo<select id="resTipo">${Object.entries(TIPOS_RESCISAO).map(([k, v]) => `<option value="${k}" ${row?.tipo === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+      <label>Valor total das verbas (R$)<input id="resValor" type="number" step="0.01" min="0" value="${esc(row?.valor_total ?? '')}"></label>
+      ${anexoFieldHtml('resDocs', { label: 'Documentos da rescisão (PDF)', atual: row?.documentos_url })}
+      <label class="ct-full">Motivo / observações<textarea id="resMotivo" rows="2">${esc(row?.observacoes || '')}</textarea></label>
     </div>
     <div class="ct-actions mt-16"><button class="btn btn-primary" id="resSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="resCancelar" type="button">Cancelar</button></div>
     <span class="ct-feedback mt-8" id="resFeedback"></span>
@@ -219,30 +284,40 @@ function openNovaRescisaoModal() {
     if (!nome) { fb.textContent = 'Selecione o colaborador.'; fb.classList.add('err'); return; }
     if (!data) { fb.textContent = 'Informe a data do desligamento.'; fb.classList.add('err'); return; }
     try {
+      const docs = await resolverAnexo(modal, 'resDocs', 'rescisoes', row?.documentos_url || null);
       const payload = {
-        colaborador_id: selecionado?.id || null,
+        colaborador_id: selecionado?.id || row?.colaborador_id || null,
         colaborador_nome: nome,
         data_desligamento: data,
         tipo: modal.querySelector('#resTipo').value,
         valor_total: modal.querySelector('#resValor').value ? Number(modal.querySelector('#resValor').value) : null,
-        documentos_url: modal.querySelector('#resDocs').value.trim() || null,
+        documentos_url: docs,
         observacoes: modal.querySelector('#resMotivo').value.trim() || null,
-        status: 'em_andamento',
-        created_by: state.ctx?.user?.id || null,
       };
-      const { error } = await supabase.from('rh_rescisoes').insert(payload);
-      if (error) throw error;
+      if (row) {
+        payload.updated_at = new Date().toISOString();
+        const { error } = await supabase.from('rh_rescisoes').update(payload).eq('id', row.id);
+        if (error) throw error;
+      } else {
+        payload.status = 'em_andamento';
+        payload.created_by = state.ctx?.user?.id || null;
+        const { error } = await supabase.from('rh_rescisoes').insert(payload);
+        if (error) throw error;
+      }
       modal.classList.remove('open');
-      renderRescisoesTable(await loadRescisoes());
+      await loadRescisoes();
     } catch (e) { fb.textContent = e.message; fb.classList.add('err'); }
   };
 }
 
 async function renderRescisoesTab(area) {
   area.innerHTML = `<div class="section-head mt-16"><div><h3>Rescisões</h3><p class="muted">Controle do processo de rescisão contratual dos colaboradores.</p></div><button class="btn btn-primary" id="ctResNova" type="button">+ Nova Rescisão</button></div>
-  <div class="ct-table-wrap mt-16"><table class="ct-table"><thead><tr><th>Colaborador</th><th>Desligamento</th><th>Tipo</th><th>Verbas</th><th>Status</th></tr></thead><tbody id="ctResBody"><tr><td colspan="5" class="ct-empty">Carregando...</td></tr></tbody></table></div>`;
-  area.querySelector('#ctResNova').onclick = openNovaRescisaoModal;
-  renderRescisoesTable(await loadRescisoes());
+  ${filtrosHtml('res')}
+  <div class="ct-table-wrap mt-16"><table class="ct-table"><thead><tr><th>Colaborador</th><th>Desligamento</th><th>Tipo</th><th>Verbas</th><th>Status</th><th>Docs</th><th>Ações</th></tr></thead><tbody id="ctResBody"><tr><td colspan="7" class="ct-empty">Carregando...</td></tr></tbody></table></div>`;
+  area.querySelector('#ctResNova').onclick = () => openRescisaoModal();
+  bindFiltros(area, 'res', () => { state.filtros = lerFiltros(area, 'res'); renderRescisoesTable(); });
+  area.querySelector('#resExportar').onclick = exportarRescisoes;
+  await loadRescisoes();
 }
 
 // ---------- Boot ----------
@@ -251,6 +326,7 @@ async function renderTab(container) {
   container.querySelectorAll('[data-ct-tab]').forEach((b) => b.classList.toggle('active', b.dataset.ctTab === state.tab));
   const area = container.querySelector('#ctTabContent');
   if (!area) return;
+  state.filtros = null;
   area.innerHTML = `<div class="ct-empty mt-16">Carregando...</div>`;
   if (state.tab === 'experiencia') renderExperienciaTab(area);
   else if (state.tab === 'rescisoes') renderRescisoesTab(area);
