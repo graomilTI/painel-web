@@ -645,6 +645,73 @@ async function loadDisponibilidadeConfirmados(programacaoId, colaboradorIds) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Indisponibilidade (RH) — férias programadas/em gozo e atestados vigentes na
+// data da programação (tela RH > Indisponibilidade, tabelas rh_ferias e
+// rh_atestados). Colaborador indisponível não entra como candidato na Etapa 2
+// nem como opção de troca; no "Sem O.S." (Etapa 4) aparece com o motivo.
+// A RPC de candidatos usa CPF normalizado (ou o nome, quando sem CPF) como
+// colaborador_id, enquanto o RH grava o uuid de `colaboradores` — por isso
+// resolvemos uuid -> cpf/nome aqui e casamos por chave de CPF E por nome
+// normalizado. Falha aberta: qualquer erro devolve "ninguém indisponível"
+// (melhor sugerir alguém de férias do que travar a programação inteira).
+export async function loadIndisponiveisNaData(dataReferencia) {
+  const vazio = { chavesRpc: [], match: () => false, motivo: () => null };
+  const dia = String(dataReferencia || todayIso()).slice(0, 10);
+  try {
+    const [ferias, atestados] = await Promise.all([
+      supabase.from('rh_ferias')
+        .select('colaborador_id,colaborador_nome')
+        .in('status', ['programada', 'em_gozo'])
+        .lte('data_inicio', dia).gte('data_fim', dia),
+      supabase.from('rh_atestados')
+        .select('colaborador_id,colaborador_nome')
+        .in('status', ['lancado', 'aprovado'])
+        .lte('data_inicio', dia).gte('data_fim', dia),
+    ]);
+    if (ferias.error) throw ferias.error;
+    if (atestados.error) throw atestados.error;
+    const rows = [
+      ...(ferias.data || []).map((r) => ({ ...r, motivoLabel: 'Férias' })),
+      ...(atestados.data || []).map((r) => ({ ...r, motivoLabel: 'Atestado' })),
+    ];
+    if (!rows.length) return vazio;
+
+    const uuids = [...new Set(rows.map((r) => r.colaborador_id).filter(Boolean))];
+    const porUuid = new Map();
+    if (uuids.length) {
+      const { data, error } = await supabase.from('colaboradores').select('id,cpf,nome').in('id', uuids);
+      if (error) throw error;
+      (data || []).forEach((c) => porUuid.set(String(c.id), c));
+    }
+
+    const motivoPorChave = new Map(); // cpf norm / uuid / nome cru -> motivo
+    const motivoPorNome = new Map();  // nome normalizado -> motivo
+    rows.forEach((r) => {
+      const cadastro = r.colaborador_id ? porUuid.get(String(r.colaborador_id)) : null;
+      const registra = (k) => { if (k && !motivoPorChave.has(k)) motivoPorChave.set(k, r.motivoLabel); };
+      registra(cpfNorm(cadastro?.cpf));
+      registra(r.colaborador_id ? String(r.colaborador_id) : '');
+      [cadastro?.nome, r.colaborador_nome].forEach((nome) => {
+        const cru = String(nome || '').trim();
+        if (!cru) return;
+        registra(cru);
+        const norm = normalizeText(cru);
+        if (norm && !motivoPorNome.has(norm)) motivoPorNome.set(norm, r.motivoLabel);
+      });
+    });
+
+    const motivo = (c) => {
+      const id = String(c?.colaboradorId ?? c?.colaborador_id ?? '').trim();
+      return (id && motivoPorChave.get(id)) || motivoPorNome.get(normalizeText(c?.nome)) || null;
+    };
+    return { chavesRpc: [...motivoPorChave.keys()], match: (c) => motivo(c) != null, motivo };
+  } catch (e) {
+    console.warn('[equipe] indisponibilidade RH indisponível (ignorando)', e);
+    return vazio;
+  }
+}
+
 export async function loadCustos(programacaoId) {
   const ids = Array.isArray(programacaoId) ? programacaoId : [programacaoId];
   const [est, ali, des] = await Promise.all([
@@ -1667,8 +1734,14 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     try {
       const [osTodas, equipeRows, custos] = await Promise.all([loadOsRelevantes(supervisaoQuery), loadEquipeExistente(programacaoIdQuery), loadCustos(programacaoIdQuery)]);
       osTodasAtual = osTodas;
-      const placasPorCpf = await loadCruzamentoPlacas(supervisaoQuery);
-      const colaboradoresRegional = await loadColaboradoresRegional(supervisaoQuery);
+      const [placasPorCpf, colaboradoresRegionalBruto, indisponiveis] = await Promise.all([
+        loadCruzamentoPlacas(supervisaoQuery),
+        loadColaboradoresRegional(supervisaoQuery),
+        loadIndisponiveisNaData(options.dataReferencia),
+      ]);
+      // Colaborador de férias/atestado (RH > Indisponibilidade) não entra
+      // como sugestão regional nem como opção no dropdown de troca.
+      const colaboradoresRegional = colaboradoresRegionalBruto.filter((c) => !indisponiveis.match(c));
       if (!osTodas.length) {
         listEl.innerHTML = '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
         osComCandidatosAtual = [];
@@ -1710,8 +1783,15 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         // dropdown de troca do nome ter alternativas.
         return { os, ponto: pontoDaOs(os, pontosPorId), confirmadoRow, candidatosNecessarios: true };
       });
+      // Indisponíveis entram na exclusão da RPC (que casa por chave exata de
+      // CPF/nome) e num pós-filtro por nome normalizado como rede de segurança.
+      const excluirComIndisponiveis = new Set([...colaboradoresConfirmadosEmOutraOs, ...indisponiveis.chavesRpc]);
+      const candidatosBrutosPorOs = await loadCandidatosPorOs(supervisao, osComPonto, excluirComIndisponiveis);
+      candidatosBrutosPorOs.forEach((lista, osId) => {
+        candidatosBrutosPorOs.set(osId, (lista || []).filter((c) => !indisponiveis.match(c)));
+      });
       const candidatosPorOs = aplicarSugestoesRegionais(
-        await loadCandidatosPorOs(supervisao, osComPonto, colaboradoresConfirmadosEmOutraOs),
+        candidatosBrutosPorOs,
         osComPonto,
         colaboradoresRegional,
         colaboradoresConfirmadosEmOutraOs,
