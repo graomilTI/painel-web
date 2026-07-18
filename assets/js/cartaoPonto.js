@@ -1,12 +1,12 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { searchColaboradores } from './colaboradoresCache.js';
+import {
+  esc, brDate, todayIso, colabAutocomplete,
+  filtrosHtml, filtrosStyle, bindFiltros, lerFiltros, aplicarFiltros,
+  exportCsv, acoesHtml, bindAcoes,
+} from './rhShared.js';
 
-const state = { registros: [], ctx: null };
-
-const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-const brDate = (v) => { const [y, m, d] = String(v || '').slice(0, 10).split('-'); return y && m && d ? `${d}/${m}/${y}` : '-'; };
-const today = () => new Date().toISOString().slice(0, 10);
+const state = { registros: [], ctx: null, filtros: null, root: null };
 
 function calcularHoras(entrada, saidaAlmoco, retornoAlmoco, saida) {
   if (!entrada || !saida) return null;
@@ -19,7 +19,7 @@ function calcularHoras(entrada, saidaAlmoco, retornoAlmoco, saida) {
 function styles() {
   return `<style>
     .cp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}
-    .cp-table{width:100%;border-collapse:collapse;min-width:720px}
+    .cp-table{width:100%;border-collapse:collapse;min-width:760px}
     .cp-table th,.cp-table td{padding:14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
     .cp-table th{font-size:12px;color:var(--muted);text-transform:uppercase}
     .cp-empty{text-align:center;color:var(--muted)}
@@ -32,6 +32,7 @@ function styles() {
     .cp-actions{display:flex;gap:10px;flex-wrap:wrap}
     .cp-feedback{font-weight:700;display:block}
     .cp-feedback.err{color:#fecaca}
+    ${filtrosStyle()}
   </style>`;
 }
 
@@ -41,64 +42,81 @@ async function safe(fn, fallback = []) {
 }
 
 async function loadRegistros() {
-  state.registros = await safe(() => supabase.from('rh_cartao_ponto').select('*').order('data', { ascending: false }).limit(200));
+  state.registros = await safe(() => supabase.from('rh_cartao_ponto').select('*').order('data', { ascending: false }).limit(500));
   renderTable();
+}
+
+function registrosFiltrados() {
+  return aplicarFiltros(state.registros, state.filtros, { dataKey: 'data' });
 }
 
 function renderTable() {
   const body = document.getElementById('cpBody');
   if (!body) return;
-  if (!state.registros.length) {
-    body.innerHTML = `<tr><td colspan="6" class="cp-empty">Nenhum registro de ponto lançado. Clique em <b>+ Lançar Ponto</b> para começar.</td></tr>`;
+  const rows = registrosFiltrados();
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="7" class="cp-empty">${state.registros.length ? 'Nenhum registro no filtro atual.' : 'Nenhum registro de ponto lançado. Clique em <b>+ Lançar Ponto</b> para começar.'}</td></tr>`;
     return;
   }
-  body.innerHTML = state.registros.map((r) => `<tr>
+  body.innerHTML = rows.map((r) => `<tr>
     <td><b>${esc(r.colaborador_nome)}</b></td>
     <td>${brDate(r.data)}</td>
     <td>${esc(r.entrada || '-')}</td>
     <td>${esc(r.saida_almoco || '-')} — ${esc(r.retorno_almoco || '-')}</td>
     <td>${esc(r.saida || '-')}</td>
     <td>${r.horas_trabalhadas != null ? `${r.horas_trabalhadas}h` : '-'}</td>
+    <td>${acoesHtml(r.id)}</td>
   </tr>`).join('');
+  bindAcoes(body, {
+    table: 'rh_cartao_ponto',
+    reload: loadRegistros,
+    descricao: 'este lançamento de ponto',
+    onEdit: (id) => {
+      const row = state.registros.find((r) => String(r.id) === String(id));
+      if (row) openRegistroModal(row);
+    },
+  });
 }
 
-function openNovoRegistroModal() {
+function exportar() {
+  const hhmm = (v) => String(v || '').slice(0, 5);
+  exportCsv('cartao-ponto', [
+    { key: 'colaborador_nome', label: 'Colaborador' },
+    { key: 'data', label: 'Data', fmt: brDate },
+    { key: 'entrada', label: 'Entrada', fmt: hhmm },
+    { key: 'saida_almoco', label: 'Saída almoço', fmt: hhmm },
+    { key: 'retorno_almoco', label: 'Retorno almoço', fmt: hhmm },
+    { key: 'saida', label: 'Saída', fmt: hhmm },
+    { key: 'horas_trabalhadas', label: 'Horas' },
+    { key: 'observacoes', label: 'Observações' },
+  ], registrosFiltrados());
+}
+
+// row = null (novo) ou o registro sendo editado.
+function openRegistroModal(row = null) {
   const modal = document.getElementById('cpModal');
   let selecionado = null;
-  let debounce = null;
+  const hhmm = (v) => String(v || '').slice(0, 5);
   modal.innerHTML = `<div class="cp-modal-card">
-    <div class="section-head"><div><h3>Lançar Ponto</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="section-head"><div><h3>${row ? 'Editar Ponto' : 'Lançar Ponto'}</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="mt-16" style="position:relative">
-      <label class="cp-full">Colaborador *<input id="cpColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off"></label>
+      <label class="cp-full">Colaborador *<input id="cpColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off" value="${esc(row?.colaborador_nome || '')}"></label>
       <div id="cpColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
     </div>
     <div class="cp-grid mt-16">
-      <label>Data *<input id="cpData" type="date" value="${today()}"></label>
-      <label>Entrada<input id="cpEntrada" type="time"></label>
-      <label>Saída almoço<input id="cpSaidaAlmoco" type="time"></label>
-      <label>Retorno almoço<input id="cpRetornoAlmoco" type="time"></label>
-      <label>Saída<input id="cpSaida" type="time"></label>
-      <label class="cp-full">Observações<textarea id="cpObs" rows="2"></textarea></label>
+      <label>Data *<input id="cpData" type="date" value="${esc(row?.data ? String(row.data).slice(0, 10) : todayIso())}"></label>
+      <label>Entrada<input id="cpEntrada" type="time" value="${esc(hhmm(row?.entrada))}"></label>
+      <label>Saída almoço<input id="cpSaidaAlmoco" type="time" value="${esc(hhmm(row?.saida_almoco))}"></label>
+      <label>Retorno almoço<input id="cpRetornoAlmoco" type="time" value="${esc(hhmm(row?.retorno_almoco))}"></label>
+      <label>Saída<input id="cpSaida" type="time" value="${esc(hhmm(row?.saida))}"></label>
+      <label class="cp-full">Observações<textarea id="cpObs" rows="2">${esc(row?.observacoes || '')}</textarea></label>
     </div>
     <div class="cp-actions mt-16"><button class="btn btn-primary" id="cpSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="cpCancelar" type="button">Cancelar</button></div>
     <span class="cp-feedback mt-8" id="cpFeedback"></span>
   </div>`;
   modal.classList.add('open');
   const input = modal.querySelector('#cpColabInput');
-  const sug = modal.querySelector('#cpColabSug');
-  input.addEventListener('input', () => {
-    selecionado = null;
-    const q = input.value.trim();
-    if (q.length < 2) { sug.style.display = 'none'; return; }
-    clearTimeout(debounce);
-    debounce = setTimeout(async () => {
-      const lista = await searchColaboradores(q, { limite: 10 });
-      if (!lista.length) { sug.style.display = 'none'; return; }
-      sug.innerHTML = lista.map((c, idx) => `<button type="button" data-idx="${idx}" style="display:block;width:100%;text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px;margin-bottom:4px;cursor:pointer">${esc(c.nome)}</button>`).join('');
-      sug.style.display = 'block';
-      sug.querySelectorAll('button').forEach((b) => b.onmousedown = (ev) => { ev.preventDefault(); selecionado = lista[Number(b.dataset.idx)]; input.value = selecionado.nome; sug.style.display = 'none'; });
-    }, 250);
-  });
+  colabAutocomplete(modal, '#cpColabInput', '#cpColabSug', (c) => { selecionado = c; });
   modal.querySelector('#mClose').onclick = () => modal.classList.remove('open');
   modal.querySelector('#cpCancelar').onclick = () => modal.classList.remove('open');
   modal.querySelector('#cpSalvar').onclick = async () => {
@@ -113,7 +131,7 @@ function openNovoRegistroModal() {
       const retornoAlmoco = modal.querySelector('#cpRetornoAlmoco').value || null;
       const saida = modal.querySelector('#cpSaida').value || null;
       const payload = {
-        colaborador_id: selecionado?.id || null,
+        colaborador_id: selecionado?.id || row?.colaborador_id || null,
         colaborador_nome: nome,
         data,
         entrada,
@@ -122,10 +140,16 @@ function openNovoRegistroModal() {
         saida,
         horas_trabalhadas: calcularHoras(entrada, saidaAlmoco, retornoAlmoco, saida),
         observacoes: modal.querySelector('#cpObs').value.trim() || null,
-        created_by: state.ctx?.user?.id || null,
       };
-      const { error } = await supabase.from('rh_cartao_ponto').insert(payload);
-      if (error) throw error;
+      if (row) {
+        payload.updated_at = new Date().toISOString();
+        const { error } = await supabase.from('rh_cartao_ponto').update(payload).eq('id', row.id);
+        if (error) throw error;
+      } else {
+        payload.created_by = state.ctx?.user?.id || null;
+        const { error } = await supabase.from('rh_cartao_ponto').insert(payload);
+        if (error) throw error;
+      }
       modal.classList.remove('open');
       await loadRegistros();
     } catch (e) { fb.textContent = e.message; fb.classList.add('err'); }
@@ -134,11 +158,15 @@ function openNovoRegistroModal() {
 
 export async function renderContent(content, userContext) {
   state.ctx = userContext;
+  state.root = content;
   content.innerHTML = `${styles()}<section class="hero-card"><div><div class="eyebrow">Recursos Humanos</div><h2>Cartão Ponto</h2><p>Controle de cartão ponto dos colaboradores.</p></div><div class="hero-badge-wrap"><span class="hero-badge">RH</span></div></section>
   <div class="section-head mt-16"><div><h3>Registros</h3><p class="muted">Lançamentos de entrada, saída e intervalo.</p></div><button class="btn btn-primary" id="cpNovo" type="button">+ Lançar Ponto</button></div>
-  <div class="cp-table-wrap mt-16"><table class="cp-table"><thead><tr><th>Colaborador</th><th>Data</th><th>Entrada</th><th>Almoço</th><th>Saída</th><th>Horas</th></tr></thead><tbody id="cpBody"><tr><td colspan="6" class="cp-empty">Carregando...</td></tr></tbody></table></div>
+  ${filtrosHtml('cp')}
+  <div class="cp-table-wrap mt-16"><table class="cp-table"><thead><tr><th>Colaborador</th><th>Data</th><th>Entrada</th><th>Almoço</th><th>Saída</th><th>Horas</th><th>Ações</th></tr></thead><tbody id="cpBody"><tr><td colspan="7" class="cp-empty">Carregando...</td></tr></tbody></table></div>
   <div class="cp-modal" id="cpModal"></div>`;
-  content.querySelector('#cpNovo').onclick = openNovoRegistroModal;
+  content.querySelector('#cpNovo').onclick = () => openRegistroModal();
+  bindFiltros(content, 'cp', () => { state.filtros = lerFiltros(content, 'cp'); renderTable(); });
+  content.querySelector('#cpExportar').onclick = exportar;
   await loadRegistros();
 }
 
