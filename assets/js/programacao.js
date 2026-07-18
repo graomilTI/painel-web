@@ -2,8 +2,8 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
-import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260718-indisp1';
-import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260718-indisp1';
+import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260718-revisao1';
+import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260718-revisao1';
 
 const STEPS = [
   { code: 'A', label: 'Disponibilidade' },
@@ -1058,15 +1058,56 @@ export function renderContent(content) {
     return inserted.data;
   }
 
+  // Une a tabela legada `indisponibilidades` (importada, chaveada por CPF) com
+  // os lançamentos novos do RH (rh_ferias/rh_atestados, chaveados por uuid de
+  // `colaboradores` — resolvido pra CPF aqui). Sem a parte do RH, férias e
+  // atestado lançados em RH > Indisponibilidade não pré-marcavam o colaborador
+  // como INDISPONÍVEL no roster da programação.
   async function loadIndisponibilidades(dataReferencia) {
     try {
-      const { data, error } = await supabase
-        .from('indisponibilidades')
-        .select('colaborador_cpf, colaborador_nome, data_inicio, data_fim, motivo')
-        .lte('data_inicio', dataReferencia)
-        .or(`data_fim.is.null,data_fim.gte.${dataReferencia}`);
-      if (error) return new Map();
-      return new Map((data || []).map((r) => [normalizeCpf(r.colaborador_cpf), r]));
+      const [legado, ferias, atestados] = await Promise.all([
+        supabase
+          .from('indisponibilidades')
+          .select('colaborador_cpf, colaborador_nome, data_inicio, data_fim, motivo')
+          .lte('data_inicio', dataReferencia)
+          .or(`data_fim.is.null,data_fim.gte.${dataReferencia}`),
+        supabase
+          .from('rh_ferias')
+          .select('colaborador_id, colaborador_nome, data_inicio, data_fim')
+          .in('status', ['programada', 'em_gozo'])
+          .lte('data_inicio', dataReferencia)
+          .gte('data_fim', dataReferencia),
+        supabase
+          .from('rh_atestados')
+          .select('colaborador_id, colaborador_nome, data_inicio, data_fim')
+          .in('status', ['lancado', 'aprovado'])
+          .lte('data_inicio', dataReferencia)
+          .gte('data_fim', dataReferencia),
+      ]);
+      const map = new Map((legado.data || []).map((r) => [normalizeCpf(r.colaborador_cpf), r]));
+
+      const rhRows = [
+        ...(ferias.data || []).map((r) => ({ ...r, motivo: 'FERIAS' })),
+        ...(atestados.data || []).map((r) => ({ ...r, motivo: 'ATESTADO' })),
+      ];
+      const ids = [...new Set(rhRows.map((r) => r.colaborador_id).filter(Boolean))];
+      const cpfPorId = new Map();
+      if (ids.length) {
+        const { data: cads } = await supabase.from('colaboradores').select('id,cpf').in('id', ids);
+        (cads || []).forEach((c) => cpfPorId.set(String(c.id), normalizeCpf(c.cpf)));
+      }
+      rhRows.forEach((r) => {
+        const cpf = r.colaborador_id ? cpfPorId.get(String(r.colaborador_id)) : '';
+        if (!cpf || map.has(cpf)) return;
+        map.set(cpf, {
+          colaborador_cpf: cpf,
+          colaborador_nome: r.colaborador_nome,
+          data_inicio: r.data_inicio,
+          data_fim: r.data_fim,
+          motivo: r.motivo,
+        });
+      });
+      return map;
     } catch (_) {
       return new Map();
     }
@@ -2035,7 +2076,7 @@ export function renderContent(content) {
         const engine = window.__painelNotifEngine;
         const ctx = state.userContext || {};
         const criador = firstFilled(ctx?.user?.name, ctx?.user?.email, 'Gestor');
-        const hoje = new Date().toISOString().slice(0, 10);
+        const hoje = todayIso();
         if (engine) {
           await Promise.all(idsPorSupervisao.map(([sup, pid]) => {
             const supervisaoLabel = sup && sup !== TODAS_SUPERVISOES ? sup : firstFilled(ctx?.supervisao, ctx?.user?.supervisao, '');

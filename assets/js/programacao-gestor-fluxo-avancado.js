@@ -1,12 +1,12 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260718-indisp1';
-import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260718-indisp1';
-import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260718-indisp1';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260718-revisao1';
+import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260718-revisao1';
+import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260718-revisao1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 // Programação Gestor — fluxo avançado:
-// - o botão Carregar monta as 3 abas de uma vez;
+// - o botão Carregar monta as 4 abas de uma vez;
 // - Aba 1 fica em linhas compactas de O.S.;
 // - Aba 2 ganha lista lateral arrastável de colaboradores/motoristas;
 // - vínculos feitos por arrastar alimentam a Aba 3 automaticamente.
@@ -773,7 +773,7 @@ function hookLoadButton() {
   loadBtn.addEventListener('click', async () => {
     state.panes = null;
     state.lastOptionsKey = '';
-    setFeedback('Carregando contexto e preparando as 3 abas...', 'ok');
+    setFeedback('Carregando contexto e preparando as 4 abas...', 'ok');
     await waitLoadColaboradores();
     await renderAllTabs({ force: true });
   }, false);

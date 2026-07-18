@@ -2338,7 +2338,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
       alert(error.message || 'Erro ao auto-preencher.');
     } finally {
       autoPreencherBtn.disabled = false;
-      autoPreencherBtn.textContent = 'Auto-preencher';
+      autoPreencherBtn.textContent = 'Auto-preencher equipe';
     }
   });
 
@@ -2401,7 +2401,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
 
 async function solicitarHospedagem(os, confirmadoRow, dataReferencia) {
   const { uf, cidade } = parseEmbarqueUfCidade(os.embarque);
-  const data = dataReferencia || new Date().toISOString().slice(0, 10);
+  const data = dataReferencia || todayIso();
   const nome = confirmadoRow?.nome_colaborador || '';
   const km = confirmadoRow?.km_estimado;
 
