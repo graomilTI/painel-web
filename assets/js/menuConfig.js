@@ -175,11 +175,6 @@ export const MENU_CONFIG = [
   },
 
   {
-    grupo: "TROCA DE NOTAS",
-    itens: []
-  },
-
-  {
     grupo: 'CORREIOS',
     itens: [
       item('envios',    'Correios',  'envios',    ['ENVIOS', 'CORREIOS', 'PREPOSTAGEM']),

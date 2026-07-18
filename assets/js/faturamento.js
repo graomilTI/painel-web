@@ -130,36 +130,9 @@ function isCoordinator() {
   return Boolean(state.userContext?.user?.is_master) || ['admin', 'master', 'coordenador', 'gestor'].includes(role) || setor.includes('faturamento');
 }
 
-function seedData() {
-  const hoje = todayISO();
-  const equipe = [
-    { id: 'ana', nome: 'Ana Faturamento', email: 'faturamento@grao1000.com.br' },
-    { id: 'carlos', nome: 'Carlos Financeiro', email: 'financeiro@grao1000.com.br' },
-    { id: 'juliana', nome: 'Juliana Atendimento', email: 'atendimento@grao1000.com.br' },
-  ];
-  const clientes = [
-    { id: 'cli-nidera', nome: 'Nidera Sementes', cnpj: '', email_financeiro: 'financeiro@cliente.com', whatsapp: '', periodicidade: 'Semanal', prazo_retorno_dias: 2, prazo_pagamento_dias: 7, status: 'Ativo', observacoes: 'Cliente com faturamento recorrente semanal.' },
-    { id: 'cli-btg', nome: 'BTG Pactual Commodities', cnpj: '', email_financeiro: 'financeiro@cliente.com', whatsapp: '', periodicidade: 'Quinzenal', prazo_retorno_dias: 3, prazo_pagamento_dias: 15, status: 'Ativo', observacoes: 'Conferir contratos antes do envio.' },
-    { id: 'cli-cargill', nome: 'Cargill', cnpj: '', email_financeiro: 'financeiro@cliente.com', whatsapp: '', periodicidade: 'Mensal', prazo_retorno_dias: 5, prazo_pagamento_dias: 30, status: 'Ativo', observacoes: 'Validar descontos comerciais.' },
-  ];
-  const faturas = [
-    makeFatura({ cliente_id: 'cli-nidera', cliente_nome: 'Nidera Sementes', periodicidade: 'Semanal', periodo: '01/07 a 07/07', valor_bruto: 18450, descontos: 0, prazo_envio: hoje, prazo_retorno: addDays(hoje, 2), status: 'Sem responsável', prioridade: 'Alta', os_abertas: 8, os_sem_movimento: 2 }),
-    makeFatura({ cliente_id: 'cli-btg', cliente_nome: 'BTG Pactual Commodities', periodicidade: 'Quinzenal', periodo: '16/06 a 30/06', valor_bruto: 32780, descontos: 1200, prazo_envio: addDays(hoje, 1), prazo_retorno: addDays(hoje, 4), status: 'Distribuída', responsavel_id: 'ana', responsavel_nome: 'Ana Faturamento', prioridade: 'Normal', os_abertas: 4, os_sem_movimento: 0 }),
-    makeFatura({ cliente_id: 'cli-cargill', cliente_nome: 'Cargill', periodicidade: 'Mensal', periodo: 'Junho/2026', valor_bruto: 64120, descontos: 2500, prazo_envio: addDays(hoje, -1), prazo_retorno: addDays(hoje, 3), status: 'Com divergência', responsavel_id: 'juliana', responsavel_nome: 'Juliana Atendimento', prioridade: 'Urgente', os_abertas: 12, os_sem_movimento: 5, divergencia: 'Cliente apontou divergência de quantidade em duas OS.' }),
-    makeFatura({ cliente_id: 'cli-nidera', cliente_nome: 'Nidera Sementes', periodicidade: 'Semanal', periodo: '08/07 a 14/07', valor_bruto: 15800, descontos: 0, prazo_envio: addDays(hoje, 6), prazo_retorno: addDays(hoje, 8), status: 'Aguardando retorno', responsavel_id: 'carlos', responsavel_nome: 'Carlos Financeiro', prioridade: 'Normal', os_abertas: 3, os_sem_movimento: 0 }),
-  ];
-  const tarifas = [
-    { id: uuid(), cliente_id: 'cli-nidera', cliente_nome: 'Nidera Sementes', servico: 'Classificação de grãos', unidade: 'Tonelada', valor: 3.5, vigencia: hoje, status: 'Ativa' },
-    { id: uuid(), cliente_id: 'cli-btg', cliente_nome: 'BTG Pactual Commodities', servico: 'Auditoria operacional', unidade: 'Serviço', valor: 80, vigencia: hoje, status: 'Ativa' },
-    { id: uuid(), cliente_id: 'cli-cargill', cliente_nome: 'Cargill', servico: 'Embarque acompanhado', unidade: 'Tonelada', valor: 4.2, vigencia: hoje, status: 'Ativa' },
-  ];
-  const documentos = [
-    makeDocumento({ fatura_id: faturas[1].id, cliente_nome: 'BTG Pactual Commodities', tipo: 'Nota Fiscal', status: 'A emitir', vencimento: addDays(hoje, 1) }),
-    makeDocumento({ fatura_id: faturas[1].id, cliente_nome: 'BTG Pactual Commodities', tipo: 'Boleto', status: 'A emitir', vencimento: addDays(hoje, 1) }),
-    makeDocumento({ fatura_id: faturas[2].id, cliente_nome: 'Cargill', tipo: 'Nota de Débito', status: 'Pendente', vencimento: hoje }),
-  ];
-  return { equipe, clientes, faturas, tarifas, documentos };
-}
+// Os dados de demonstração (seedData) foram removidos: com as tabelas
+// faturamento_* liberadas no Supabase (migration 20260718020500), a tela
+// passa a refletir só o que existe de verdade no banco.
 
 function makeFatura(overrides = {}) {
   const bruto = Number(overrides.valor_bruto || 0);
@@ -247,23 +220,37 @@ async function loadData() {
       fetchTable(TABLES.documentos),
     ]);
     state.storageMode = 'supabase';
-    state.faturas = faturas.length ? faturas : seedData().faturas;
-    state.clientes = clientes.length ? clientes : seedData().clientes;
-    state.tarifas = tarifas.length ? tarifas : seedData().tarifas;
-    state.documentos = documentos.length ? documentos : seedData().documentos;
-    state.equipe = buildEquipeFromContext();
+    state.faturas = faturas;
+    state.clientes = clientes;
+    state.tarifas = tarifas;
+    state.documentos = documentos;
+    state.equipe = await loadEquipe();
   } catch (error) {
-    const local = loadLocal() || seedData();
+    const local = loadLocal();
     state.storageMode = 'local';
-    state.dbError = error?.message || 'Tabelas de faturamento ainda não encontradas no Supabase.';
-    state.faturas = Array.isArray(local.faturas) ? local.faturas : [];
-    state.clientes = Array.isArray(local.clientes) ? local.clientes : [];
-    state.tarifas = Array.isArray(local.tarifas) ? local.tarifas : [];
-    state.documentos = Array.isArray(local.documentos) ? local.documentos : [];
-    state.equipe = Array.isArray(local.equipe) ? local.equipe : buildEquipeFromContext();
-    if (!state.equipe.length) state.equipe = seedData().equipe;
-    saveLocal();
+    state.dbError = error?.message || 'Sem acesso às tabelas de faturamento no Supabase.';
+    state.faturas = Array.isArray(local?.faturas) ? local.faturas : [];
+    state.clientes = Array.isArray(local?.clientes) ? local.clientes : [];
+    state.tarifas = Array.isArray(local?.tarifas) ? local.tarifas : [];
+    state.documentos = Array.isArray(local?.documentos) ? local.documentos : [];
+    state.equipe = Array.isArray(local?.equipe) && local.equipe.length ? local.equipe : buildEquipeFromContext();
   }
+}
+
+// Equipe real: usuários ativos do painel (mesma base de Usuários e Acessos).
+async function loadEquipe() {
+  try {
+    const { data, error } = await supabase
+      .from('app_usuarios')
+      .select('id,nome,email')
+      .eq('ativo', true)
+      .order('nome');
+    if (error) throw error;
+    if (Array.isArray(data) && data.length) return data;
+  } catch (e) {
+    console.warn('[Faturamento] falha ao carregar equipe de app_usuarios', e);
+  }
+  return buildEquipeFromContext();
 }
 
 function buildEquipeFromContext() {
@@ -272,14 +259,15 @@ function buildEquipeFromContext() {
     nome: getCurrentUserName(),
     email: state.userContext?.user?.email || '',
   };
-  const base = seedData().equipe;
-  if (!current.nome || normalize(current.nome) === 'sistema') return base;
-  return [current, ...base.filter((u) => normalize(u.nome) !== normalize(current.nome))];
+  if (!current.nome || normalize(current.nome) === 'sistema') return [];
+  return [current];
 }
 
 async function persistTable(table, row) {
-  saveLocal();
-  if (state.storageMode !== 'supabase') return;
+  if (state.storageMode !== 'supabase') {
+    saveLocal();
+    return;
+  }
   const { error } = await supabase.from(table).upsert(row, { onConflict: 'id' });
   if (error) throw error;
 }
@@ -311,10 +299,22 @@ function getKPIs() {
 }
 
 function renderModeWarning() {
-  if (state.storageMode === 'supabase') return '';
+  if (state.storageMode === 'supabase') {
+    // Sobrou rascunho antigo do "modo estrutura" (dados locais/demonstração,
+    // gravados no navegador quando o banco ainda estava bloqueado)?
+    if (loadLocal()) {
+      return `
+        <div class="fat-warning">
+          <strong>Rascunho local antigo encontrado:</strong> este navegador tem dados de faturamento salvos da fase de estrutura (provavelmente de demonstração). Eles não são mais usados — a tela agora lê e grava direto no banco compartilhado.
+          <button class="fat-btn fat-btn-secondary" type="button" data-action="discard-local">Descartar rascunho local</button>
+        </div>
+      `;
+    }
+    return '';
+  }
   return `
     <div class="fat-warning">
-      <strong>Modo estrutura:</strong> a tela já está funcional no navegador, mas as tabelas de faturamento ainda precisam existir no Supabase para salvar compartilhado entre usuários.
+      <strong>Sem conexão com o banco:</strong> não foi possível acessar as tabelas de faturamento. As alterações feitas agora ficam salvas <b>somente neste navegador</b> e não são compartilhadas — tente atualizar a página; se persistir, avise o TI.
       <span>${esc(state.dbError)}</span>
     </div>
   `;
@@ -747,6 +747,12 @@ async function handleAction(action, el, content) {
   try {
     if (action === 'refresh') {
       await loadData();
+      renderShell(content);
+      return;
+    }
+    if (action === 'discard-local') {
+      if (!confirm('Descartar o rascunho local antigo deste navegador? Os dados do banco compartilhado não são afetados.')) return;
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
       renderShell(content);
       return;
     }

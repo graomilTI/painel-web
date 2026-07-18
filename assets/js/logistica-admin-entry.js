@@ -70,6 +70,6 @@ const observer = new MutationObserver(applyPageIdentity);
 observer.observe(document.documentElement, { childList: true, subtree: true });
 applyPageIdentity();
 
-import('./adm-logistica.js?v=logistica-admin-isolado-20260714-v1')
+import('./adm-logistica.js?v=logistica-admin-isolado-20260718-v1')
   .then(() => applyPageIdentity())
   .catch(renderBootError);
