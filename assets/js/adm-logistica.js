@@ -284,8 +284,6 @@ export async function renderContent(content) {
         <button class="log-tab active" data-tab="os" type="button">O.S.</button>
         <button class="log-tab" data-tab="abertura_os" type="button">Abertura de OS</button>
         <button class="log-tab" data-tab="fob" type="button">FOB</button>
-        <button class="log-tab" data-tab="report" type="button">Report</button>
-        <button class="log-tab" data-tab="conferir" type="button">Conferir</button>
         <button class="log-tab" data-tab="finalizacao" type="button">Finalização ADM</button>
         <button class="log-tab" data-tab="classificadores" type="button">Classificadores</button>
         <button class="log-tab" data-tab="conferencias" type="button">Conferências</button>
@@ -368,14 +366,6 @@ export async function renderContent(content) {
         </div>
         <div id="fobList" class="mt-16"></div>
       </details>
-    </section>
-
-    <section class="card mt-16 log-section" id="section-report">
-      <div class="log-empty">Módulo <strong>Report</strong> em desenvolvimento.</div>
-    </section>
-
-    <section class="card mt-16 log-section" id="section-conferir">
-      <div class="log-empty">Módulo <strong>Conferir</strong> em desenvolvimento.</div>
     </section>
 
     <section class="card mt-16 log-section" id="section-finalizacao">
@@ -542,12 +532,10 @@ export async function renderContent(content) {
   const hash = normalize(location.hash.replace('#', ''));
   if (hash.includes('ABERTURA')) state.tab = 'abertura_os';
   else if (hash.includes('CLASSIFIC')) state.tab = 'classificadores';
-  else if (hash.includes('CONFER') && !hash.includes('CONFERIR')) state.tab = 'conferencias';
+  else if (hash.includes('CONFER')) state.tab = 'conferencias';
   else if (hash.includes('EXPORT')) state.tab = 'exportacoes';
   else if (hash.includes('FINALIZACAO') || hash.includes('FINALIZ')) state.tab = 'finalizacao';
   else if (hash.includes('FOB')) state.tab = 'fob';
-  else if (hash.includes('REPORT')) state.tab = 'report';
-  else if (hash.includes('CONFERIR')) state.tab = 'conferir';
   else state.tab = 'os';
   if (window.location.hash === '#relatorios') state.tab = 'relatorios';
   renderTabs();
@@ -757,7 +745,7 @@ export async function renderContent(content) {
 
   function renderTabs() {
     [...el.tabs.querySelectorAll('.log-tab')].forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === state.tab));
-    ['os', 'abertura_os', 'fob', 'report', 'conferir', 'finalizacao', 'classificadores', 'conferencias', 'exportacoes', 'relatorios'].forEach((tab) => {
+    ['os', 'abertura_os', 'fob', 'finalizacao', 'classificadores', 'conferencias', 'exportacoes', 'relatorios'].forEach((tab) => {
       document.getElementById(`section-${tab}`)?.classList.toggle('active', tab === state.tab);
     });
     const isAdmTab = ['finalizacao', 'classificadores', 'conferencias', 'exportacoes', 'relatorios'].includes(state.tab);
