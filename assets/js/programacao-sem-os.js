@@ -5,7 +5,7 @@
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
-import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20260717-declutter1';
+import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData } from './programacao-equipe.js?v=20260718-indisp1';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
 
@@ -71,6 +71,7 @@ function injectStyles() {
     .pso-name-txt{min-width:0}
     .pso-nome{font-weight:900;color:#f8fafc;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pso-meta{font-size:11px;color:#9fb7aa;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pso-indisp{display:inline-flex;align-items:center;gap:3px;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:900;vertical-align:middle;background:rgba(245,158,11,.14);color:#fde68a;border:1px solid rgba(245,158,11,.35)}
     .pso-situacoes{display:flex;gap:6px;flex-wrap:wrap}
     .pso-sit-btn{border:1px solid rgba(111,208,165,.28);background:transparent;color:#8ba79a;border-radius:9px;padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
     .pso-sit-btn.on{border-color:rgba(111,208,165,.5);background:rgba(63,168,120,.18);color:#bbf7d0}
@@ -91,16 +92,19 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-function cardHtml(colab, row, readOnly, pendente, tipoContratoCru) {
+function cardHtml(colab, row, readOnly, pendente, tipoContratoCru, indispMotivo) {
   const situacaoAtual = normalizeText(row?.disponibilidade || '');
   const dis = readOnly ? 'disabled' : '';
   const inativarDis = readOnly || pendente ? 'disabled' : '';
   const inativarLabel = pendente ? 'Inativação solicitada' : 'Inativar';
+  const indispBadge = indispMotivo
+    ? `<span class="pso-indisp" title="Lançado em RH > Indisponibilidade — não aparece como candidato na Etapa 2">${indispMotivo === 'Férias' ? '🏖' : '🤒'} ${esc(indispMotivo)} (RH)</span>`
+    : '';
   return `<article class="pso-card" data-colab-id="${esc(colab.colaboradorId)}">
     <div class="pso-name">
       <span class="pso-av" title="Tipo de contrato">${esc(tipoContratoLetra(tipoContratoCru || colab.tipoLabel))}</span>
       <div class="pso-name-txt">
-        <div class="pso-nome">${esc(colab.nome)}</div>
+        <div class="pso-nome">${esc(colab.nome)}${indispBadge}</div>
         <div class="pso-meta">${esc(colab.cargo || 'Colaborador')} · ${esc(colab.coordenacao || colab.supervisao || '-')}</div>
       </div>
     </div>
@@ -203,10 +207,11 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     const scrollPos = scroller ? scroller.scrollTop : 0;
     if (!silent) listEl.innerHTML = '<div class="pso-empty pso-loading"><span class="pso-spinner" aria-hidden="true"></span><span>Carregando colaboradores...</span></div>';
 
-    const [regionalBruto, equipeRows, tipoContratoPorCpf] = await Promise.all([
+    const [regionalBruto, equipeRows, tipoContratoPorCpf, indisponiveis] = await Promise.all([
       loadColaboradoresRegional(supervisaoQuery),
       loadEquipeExistente(programacaoIdQuery),
       loadCruzamentoTipoContrato(supervisaoQuery),
+      loadIndisponiveisNaData(options.dataReferencia),
     ]);
     // loadColaboradoresRegional foi feita pra sugestão de candidato (Etapa 2)
     // e aceita match "parecido" (regionalScore por token) quando a RPC não
@@ -246,7 +251,7 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     colabsAtual = semOs;
     kpiEl.textContent = String(semOs.length);
     listEl.innerHTML = semOs.length
-      ? semOs.map((c) => cardHtml(c, situacoesPorColab.get(c.colaboradorId), readOnly, pendentesAtual.has(String(c.colaboradorId)), tipoContratoPorCpf.get(String(c.colaboradorId).replace(/\D/g, '')))).join('')
+      ? semOs.map((c) => cardHtml(c, situacoesPorColab.get(c.colaboradorId), readOnly, pendentesAtual.has(String(c.colaboradorId)), tipoContratoPorCpf.get(String(c.colaboradorId).replace(/\D/g, '')), indisponiveis.motivo(c))).join('')
       : '<div class="pso-empty">Ninguém da regional sem O.S. no momento.</div>';
 
     if (silent && scroller) scroller.scrollTop = scrollPos;
