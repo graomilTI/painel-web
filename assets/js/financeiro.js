@@ -1184,7 +1184,26 @@ export function renderContent(content, userContext) {
 
           <section class="pay-card pay-mode-panel" id="pay-mode-diarias">
             <h4>DIÁRIAS</h4>
-            <div class="fin-empty" style="padding:60px 20px;font-size:16px">🚧 Em Desenvolvimento</div>
+            <p>Apuração automática: dias com colaborador <b>confirmado na Programação</b> × valor/dia do GRM (colaborador_cruzamento). Só Intermitente/Diarista — Efetivo não recebe diária. Confira e exporte; o pagamento em lote entra numa próxima fase.</p>
+            <div class="pay-filter-grid">
+              <div class="fin-field"><label>De</label><input id="diariasDe" type="date"></div>
+              <div class="fin-field"><label>Até</label><input id="diariasAte" type="date"></div>
+              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-secondary" id="btnAtualizarDiarias" type="button">↻ Apurar</button></div>
+              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-secondary" id="btnExportarDiarias" type="button">⬇ Exportar CSV</button></div>
+              <div class="fin-field full"><label>&nbsp;</label><span id="fbDiarias" class="fin-feedback"></span></div>
+            </div>
+            <div class="pay-summary">
+              <div class="pay-mini"><span>Colaboradores</span><strong id="diariasColabs">0</strong></div>
+              <div class="pay-mini"><span>Diárias no período</span><strong id="diariasQtd">0</strong></div>
+              <div class="pay-mini"><span>Sem valor no GRM</span><strong id="diariasSemValor">0</strong></div>
+              <div class="pay-mini"><span>Total apurado</span><strong id="diariasTotal">R$ 0,00</strong></div>
+            </div>
+            <div class="fin-table-wrap" style="overflow:auto">
+              <table class="fin-table" style="min-width:760px">
+                <thead><tr><th>Colaborador</th><th>Tipo</th><th>Supervisão</th><th>Dias</th><th>Valor/dia</th><th>Total</th></tr></thead>
+                <tbody id="diariasBody"><tr><td colspan="6" class="fin-empty">Selecione o período e clique em Apurar.</td></tr></tbody>
+              </table>
+            </div>
           </section>
         </div>
 
@@ -2888,6 +2907,142 @@ export function renderContent(content, userContext) {
   }
 
 
+  // ---------- DIÁRIAS (apuração, sem pagamento automático) ----------
+  // Dias com colaborador CONFIRMADO na programação (programacao_equipe ×
+  // programacao_dia) × valor/dia do GRM (colaborador_cruzamento.salario, que
+  // pra Intermitente/Diarista é diária — mesma convenção do motor de custo da
+  // Etapa 2; Efetivo fica de fora). Um dia conta UMA diária, mesmo com 2 O.S.
+  // no mesmo dia. Não grava nada: conferência + CSV; pagamento em lote fica
+  // pra uma próxima fase com regra de aprovação definida.
+  async function carregarDiarias() {
+    const fb = (msg, tone) => paySetFeedback('fbDiarias', msg, tone);
+    const de = document.getElementById('diariasDe')?.value;
+    const ate = document.getElementById('diariasAte')?.value;
+    if (!de || !ate) { fb('Informe o período (De/Até).', 'err'); return; }
+    if (de > ate) { fb('Data inicial maior que a final.', 'err'); return; }
+    fb('Apurando...');
+    try {
+      const { data: dias, error: e1 } = await supabase
+        .from('programacao_dia')
+        .select('id,data_referencia,supervisao')
+        .gte('data_referencia', de)
+        .lte('data_referencia', ate)
+        .limit(2000);
+      if (e1) throw e1;
+      const diaPorProg = new Map((dias || []).map((d) => [String(d.id), d]));
+      if (!diaPorProg.size) { state.diariasRows = []; renderDiarias(); fb('Nenhuma programação no período.'); return; }
+
+      const progIds = [...diaPorProg.keys()];
+      const equipe = [];
+      // .in() com centenas de ids estoura o limite de URL do PostgREST — corta em lotes.
+      for (let i = 0; i < progIds.length; i += 100) {
+        const { data, error } = await supabase
+          .from('programacao_equipe')
+          .select('programacao_id,colaborador_id,nome_colaborador')
+          .eq('confirmado', true)
+          .in('programacao_id', progIds.slice(i, i + 100))
+          .limit(10000);
+        if (error) throw error;
+        equipe.push(...(data || []));
+      }
+      if (!equipe.length) { state.diariasRows = []; renderDiarias(); fb('Nenhum colaborador confirmado no período.'); return; }
+
+      // Agrupa por colaborador: dias distintos + supervisões vistas.
+      const porColab = new Map();
+      equipe.forEach((r) => {
+        const key = String(r.colaborador_id || '').trim();
+        if (!key) return;
+        const dia = diaPorProg.get(String(r.programacao_id));
+        if (!dia) return;
+        const atual = porColab.get(key) || { key, nome: r.nome_colaborador || key, dias: new Set(), supervisoes: new Set() };
+        atual.dias.add(String(dia.data_referencia).slice(0, 10));
+        if (dia.supervisao) atual.supervisoes.add(dia.supervisao);
+        if (!atual.nome && r.nome_colaborador) atual.nome = r.nome_colaborador;
+        porColab.set(key, atual);
+      });
+
+      // Valor/dia e tipo de contrato do cruzamento (linha mais recente por CPF).
+      const cpfs = [...porColab.keys()].filter((k) => /^\d{6,}$/.test(k));
+      const taxaPorCpf = new Map();
+      for (let i = 0; i < cpfs.length; i += 150) {
+        const { data, error } = await supabase
+          .from('colaborador_cruzamento')
+          .select('cpf,tipo_contrato,salario,atualizado_em')
+          .in('cpf', cpfs.slice(i, i + 150))
+          .order('atualizado_em', { ascending: false })
+          .limit(10000);
+        if (error) throw error;
+        (data || []).forEach((r) => { if (!taxaPorCpf.has(r.cpf)) taxaPorCpf.set(r.cpf, r); });
+      }
+
+      const rows = [];
+      porColab.forEach((c) => {
+        const cz = taxaPorCpf.get(c.key) || null;
+        const tipo = String(cz?.tipo_contrato || '').toUpperCase();
+        if (tipo.includes('EFETIVO')) return; // efetivo não recebe diária
+        const valorDia = Number(cz?.salario || 0);
+        rows.push({
+          nome: c.nome,
+          tipo: cz?.tipo_contrato || 'Sem cadastro no GRM',
+          supervisao: [...c.supervisoes].join(', ') || '-',
+          dias: c.dias.size,
+          valorDia,
+          total: valorDia > 0 ? valorDia * c.dias.size : 0,
+          semValor: !(valorDia > 0),
+        });
+      });
+      rows.sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome, 'pt-BR'));
+      state.diariasRows = rows;
+      renderDiarias();
+      fb(rows.length ? `Apurado: ${de.split('-').reverse().join('/')} a ${ate.split('-').reverse().join('/')}.` : 'Nenhum Intermitente/Diarista confirmado no período.');
+    } catch (err) {
+      console.error('[financeiro] diárias:', err);
+      fb(err.message || 'Erro ao apurar diárias.', 'err');
+    }
+  }
+
+  function renderDiarias() {
+    const rows = state.diariasRows || [];
+    const body = document.getElementById('diariasBody');
+    if (!body) return;
+    const comValor = rows.filter((r) => !r.semValor);
+    document.getElementById('diariasColabs').textContent = String(rows.length);
+    document.getElementById('diariasQtd').textContent = String(rows.reduce((s, r) => s + r.dias, 0));
+    document.getElementById('diariasSemValor').textContent = String(rows.length - comValor.length);
+    document.getElementById('diariasTotal').textContent = money(comValor.reduce((s, r) => s + r.total, 0));
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="6" class="fin-empty">Nenhuma diária apurada no período.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map((r) => `<tr>
+      <td><b>${esc(r.nome)}</b></td>
+      <td>${esc(r.tipo)}</td>
+      <td>${esc(r.supervisao)}</td>
+      <td>${r.dias}</td>
+      <td>${r.semValor ? '<span style="color:#fde68a;font-weight:700">sem valor</span>' : esc(money(r.valorDia))}</td>
+      <td><b>${r.semValor ? '-' : esc(money(r.total))}</b></td>
+    </tr>`).join('');
+  }
+
+  function exportarDiariasCsv() {
+    const rows = state.diariasRows || [];
+    if (!rows.length) { paySetFeedback('fbDiarias', 'Apure um período antes de exportar.', 'err'); return; }
+    const de = document.getElementById('diariasDe')?.value || 'inicio';
+    const ate = document.getElementById('diariasAte')?.value || 'fim';
+    const num = (v) => String(v ?? '').replace('.', ',');
+    const cel = (v) => { const s = String(v ?? ''); return /[";\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; };
+    const linhas = [
+      ['Colaborador', 'Tipo', 'Supervisão', 'Dias', 'Valor/dia', 'Total'].join(';'),
+      ...rows.map((r) => [cel(r.nome), cel(r.tipo), cel(r.supervisao), r.dias, r.semValor ? '' : num(r.valorDia.toFixed(2)), r.semValor ? '' : num(r.total.toFixed(2))].join(';')),
+    ];
+    const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `diarias-${de}-a-${ate}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
   function setPayMode(mode) {
     const clean = ['almoco', 'diarias'].includes(mode) ? mode : 'adiantamentos';
     state.pagamentos.modo = clean;
@@ -2901,6 +3056,19 @@ export function renderContent(content, userContext) {
     if (clean === 'almoco' && !state.almocoLoaded) {
       state.almocoLoaded = true;
       carregarAlmoco();
+    }
+    if (clean === 'diarias' && !state.diariasLoaded) {
+      state.diariasLoaded = true;
+      const hoje = new Date();
+      const primeiroDia = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
+      const hojeIso = new Date(hoje.getTime() - hoje.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      const de = document.getElementById('diariasDe');
+      const ate = document.getElementById('diariasAte');
+      if (de && !de.value) de.value = primeiroDia;
+      if (ate && !ate.value) ate.value = hojeIso;
+      document.getElementById('btnAtualizarDiarias')?.addEventListener('click', carregarDiarias);
+      document.getElementById('btnExportarDiarias')?.addEventListener('click', exportarDiariasCsv);
+      carregarDiarias();
     }
   }
 
