@@ -275,6 +275,7 @@ function renderShell(content) {
           <p class="uber-sub">Visualize todos os lançamentos sincronizados, confira as corridas e identifique automaticamente quando a despesa estiver ligada ao embarque com base na Produção Diária.</p>
         </div>
         <div class="uber-actions">
+          <button class="uber-btn" type="button" data-export-csv>⬇ Exportar CSV</button>
           <button class="uber-btn" type="button" data-refresh>↻ Atualizar</button>
           <button class="uber-btn primary" type="button" data-sync-api>Sincronizar API</button>
         </div>
@@ -612,6 +613,7 @@ function bindEvents(root) {
     loadRows();
   });
   root.querySelector('[data-sync-api]')?.addEventListener('click', () => syncApi(root));
+  root.querySelector('[data-export-csv]')?.addEventListener('click', exportCsv);
   root.querySelector('[data-q]')?.addEventListener('input', (event) => {
     state.filters.q = event.target.value || '';
     renderData();

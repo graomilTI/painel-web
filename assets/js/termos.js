@@ -2,7 +2,7 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
-const state = { tab:'celular', celular:[], empresas:[] };
+const state = { tab:'celular', celular:[], veiculos:[], empresas:[] };
 const esc=(v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate=(v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-'};
 const money=(v)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
@@ -284,6 +284,228 @@ async function confirmarTermo(tc){
   }
 }
 
+// ---------- Veículos (termos_veiculos) ----------
+// Mesmo fluxo da aba Celular: lançar -> gerar documento pra impressão ->
+// anexar o termo assinado. Sem etapa de Financeiro (não há valor a descontar;
+// é termo de responsabilidade de uso, não autorização de desconto).
+
+function gerarHTMLTermoVeiculo({nome,cpf,empresa,cnpj,cidade,uf,veiculo,placa}){
+  const dataHoje=new Date();
+  const diaFormatado=dataHoje.getDate();
+  const mesHojeExtenso=mesExtenso(dataHoje.getFullYear(),dataHoje.getMonth()+1);
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Termo de Responsabilidade — ${nome}</title>
+<style>
+@page{size:A4;margin:3cm 2.5cm}
+body{font-family:'Times New Roman',Times,serif;font-size:13pt;line-height:1.9;color:#000;background:#fff;margin:0}
+h1{text-align:center;font-size:14pt;font-weight:bold;text-transform:uppercase;letter-spacing:.06em;margin:0 0 36px}
+p{text-align:justify;margin:0 0 14px}
+ol{margin:0 0 14px 22px;padding:0}
+ol li{margin-bottom:8px;text-align:justify}
+.data-local{text-align:right;margin:40px 0 24px}
+.assinatura{margin-top:60px;text-align:center}
+.linha-assinatura{display:inline-block;border-top:1px solid #000;padding-top:8px;min-width:320px;text-align:center}
+</style></head><body>
+<h1>Termo de Responsabilidade de Uso de Veículo</h1>
+<p>Eu, <strong>${nome}</strong>, CPF nº <strong>${cpf||'___________________'}</strong>, declaro ter recebido da empresa <strong>${empresa}</strong>, CNPJ nº <strong>${cnpj}</strong>, o veículo <strong>${veiculo||'___________________'}</strong>, placa <strong>${placa||'___________'}</strong>, para uso exclusivo em atividades de trabalho, comprometendo-me a:</p>
+<ol>
+<li>Zelar pela guarda, conservação e limpeza do veículo, comunicando imediatamente qualquer avaria, defeito ou sinistro;</li>
+<li>Utilizá-lo somente em serviço, conduzindo-o com habilitação válida e em observância à legislação de trânsito;</li>
+<li>Responsabilizar-me pelas multas e infrações de trânsito cometidas enquanto o veículo estiver sob minha condução, autorizando a indicação do condutor junto ao órgão competente;</li>
+<li>Devolver o veículo nas mesmas condições em que o recebi, ressalvado o desgaste natural de uso, quando solicitado pela empresa ou ao término do contrato de trabalho.</li>
+</ol>
+<div class="data-local"><p>${cidade}, ${uf}, ${diaFormatado} de ${mesHojeExtenso}.</p></div>
+<p>Por ser verdade, firmo o presente na forma da lei.</p>
+<div class="assinatura"><div class="linha-assinatura"><p>${nome}</p></div></div>
+</body></html>`;
+}
+
+async function loadVeiculos(){
+  state.veiculos=await safe(()=>supabase.from('termos_veiculos').select('*').order('created_at',{ascending:false}).limit(300));
+  renderVeiculos();
+}
+
+function statusPillVeiculo(s){
+  const map={
+    aguardando_termo:['#fde68a','rgba(245,158,11,.1)','Aguardando Termo'],
+    assinado:['#bbf7d0','rgba(22,101,52,.18)','Assinado']
+  };
+  const [color,bg,label]=map[s]||['#cbd5e1','rgba(148,163,184,.1)',s||'-'];
+  return `<span style="display:inline-flex;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800;color:${color};background:${bg};border:1px solid rgba(148,163,184,.2)">${esc(label)}</span>`;
+}
+
+function renderVeiculos(){
+  const body=document.getElementById('termosVeiculosBody');
+  if(!body) return;
+  if(!state.veiculos.length){
+    body.innerHTML=`<tr><td colspan="6" class="termos-empty">Nenhum termo de veículo lançado. Clique em <b>+ Novo Termo</b> para começar.</td></tr>`;
+    return;
+  }
+  body.innerHTML=state.veiculos.map(tv=>`<tr>
+    <td>${brDate(tv.created_at)}</td>
+    <td><b>${esc(tv.colaborador_nome||'-')}</b></td>
+    <td>${esc(tv.veiculo||'-')}</td>
+    <td>${esc(tv.placa||'-')}</td>
+    <td>${statusPillVeiculo(tv.status)}</td>
+    <td class="termos-acoes">
+      ${tv.status!=='assinado'?`<button class="btn btn-small btn-primary" data-veic-termo="${esc(tv.id)}" type="button">Criar Termo</button>`:''}
+      ${tv.termo_url?`<a class="btn btn-small btn-secondary" href="${esc(tv.termo_url)}" target="_blank" rel="noopener">Ver Termo</a>`:''}
+    </td>
+  </tr>`).join('');
+  body.querySelectorAll('[data-veic-termo]').forEach(b=>b.onclick=()=>openVeiculoTermoModal(b.dataset.veicTermo));
+}
+
+function openNovoVeiculoModal(){
+  const modal=document.getElementById('termosModal');
+  let selecionado=null;
+  modal.innerHTML=`<div class="termos-modal-card">
+    <div class="section-head"><div><h3>Novo Termo — Veículo</h3><p class="muted">Lance o veículo entregue ao colaborador; o documento é gerado na etapa seguinte.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="mt-16" style="position:relative">
+      <label class="adm-cmp-full" style="display:block">Colaborador *<input id="veicColabInput" placeholder="Digite o nome para pesquisar..." autocomplete="off" style="width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px"></label>
+      <div id="veicColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
+    </div>
+    <div class="adm-cmp-grid mt-16">
+      <label>Veículo (modelo) *<input id="veicModelo" placeholder="Ex.: Fiat Strada 1.4"></label>
+      <label>Placa *<input id="veicPlaca" placeholder="ABC1D23" maxlength="8"></label>
+      <label class="adm-cmp-full">Observação (opcional)<input id="veicObs" placeholder="Ex.: entrega com 45.000 km"></label>
+    </div>
+    <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="veicSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="veicCancelar" type="button">Cancelar</button></div>
+    <span class="termos-feedback mt-8" id="veicFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  const input=modal.querySelector('#veicColabInput');
+  const sug=modal.querySelector('#veicColabSug');
+  let debounce=null;
+  input.addEventListener('input',()=>{
+    selecionado=null;
+    const q=input.value.trim();
+    if(q.length<2){sug.style.display='none';return;}
+    clearTimeout(debounce);
+    debounce=setTimeout(async()=>{
+      const lista=await getColaboradores();
+      const nq=norm(q);
+      const hits=lista.filter(c=>norm(c.nome).includes(nq)).slice(0,10);
+      if(!hits.length){sug.style.display='none';return;}
+      sug.innerHTML=hits.map((c,i)=>`<button type="button" data-idx="${i}" style="display:block;width:100%;text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px;margin-bottom:4px;cursor:pointer">${esc(c.nome)}</button>`).join('');
+      sug.style.display='block';
+      sug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault();selecionado=hits[Number(b.dataset.idx)];input.value=selecionado.nome;sug.style.display='none';});
+    },250);
+  });
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#veicCancelar').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#veicSalvar').onclick=async()=>{
+    const fb=modal.querySelector('#veicFeedback');
+    const nome=selecionado?.nome||input.value.trim();
+    const veiculo=modal.querySelector('#veicModelo').value.trim();
+    const placa=modal.querySelector('#veicPlaca').value.trim().toUpperCase();
+    if(!nome){fb.textContent='Selecione o colaborador.';fb.classList.add('err');return;}
+    if(!veiculo||!placa){fb.textContent='Informe o veículo e a placa.';fb.classList.add('err');return;}
+    try{
+      const {error}=await supabase.from('termos_veiculos').insert({
+        colaborador_id:selecionado?.id||null,
+        colaborador_nome:nome,
+        veiculo,
+        placa,
+        observacao:modal.querySelector('#veicObs').value.trim()||null,
+        status:'aguardando_termo'
+      });
+      if(error) throw error;
+      modal.classList.remove('open');
+      setMsg('Termo de veículo lançado.');
+      await loadVeiculos();
+    }catch(e){fb.textContent=e.message;fb.classList.add('err');}
+  };
+}
+
+async function openVeiculoTermoModal(id){
+  const tv=state.veiculos.find(x=>String(x.id)===String(id)); if(!tv) return;
+  const modal=document.getElementById('termosModal');
+  modal.innerHTML=`<div class="termos-modal-card"><p style="color:var(--muted);padding:20px">Carregando...</p></div>`;
+  modal.classList.add('open');
+
+  const [cpf]=await Promise.all([fetchCPF(tv.colaborador_id),loadEmpresas()]);
+  const optEmpresas=state.empresas.map(e=>`<option value="${esc(e.id)}" data-nome="${esc((e.nome||'').trim())}" data-cnpj="${esc(e.cpf_cnpj||'')}" data-cidade="${esc(e.cidade||'Cascavel')}" data-uf="${esc(e.uf||'PR')}">${esc((e.nome||'').trim())} — ${esc(e.cpf_cnpj||'')}</option>`).join('');
+
+  modal.innerHTML=`<div class="termos-modal-card">
+    <div class="section-head">
+      <div><h3>Criar Termo — Veículo</h3><p class="muted">Gere o documento, imprima, colete a assinatura e anexe abaixo.</p></div>
+      <button class="btn btn-secondary" id="mClose" type="button">Fechar</button>
+    </div>
+    <div class="termos-detail-grid mt-16">
+      <div><span class="muted">Colaborador</span><b>${esc(tv.colaborador_nome||'-')}</b></div>
+      <div><span class="muted">Veículo</span><b>${esc(tv.veiculo||'-')}</b></div>
+      <div><span class="muted">Placa</span><b>${esc(tv.placa||'-')}</b></div>
+    </div>
+    <div class="termos-gerar-box mt-16">
+      <p class="termos-gerar-title">1. Gerar documento</p>
+      <div class="adm-cmp-grid">
+        <label class="adm-cmp-full">Empresa / CNPJ
+          <select id="veicTermoEmpresa"><option value="">— Selecione a empresa —</option>${optEmpresas}</select>
+        </label>
+        <label>CPF do Colaborador<input id="veicTermoCPF" placeholder="000.000.000-00" value="${esc(cpf)}"></label>
+      </div>
+      <div class="adm-cmp-actions mt-12"><button class="btn btn-secondary" id="veicGerarBtn" type="button">Imprimir Termo</button></div>
+    </div>
+    <div class="termos-gerar-box mt-16">
+      <p class="termos-gerar-title">2. Anexar termo assinado</p>
+      <div class="adm-cmp-grid">
+        <label class="adm-cmp-full">Arquivo do Termo Assinado<input id="veicTermoFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp"></label>
+        <label class="adm-cmp-full">Observação (opcional)<input id="veicTermoObs" value="${esc(tv.observacao||'')}"></label>
+      </div>
+      <div class="adm-cmp-actions mt-12">
+        <button class="btn btn-primary" id="veicConfirmar" type="button">Confirmar Termo Assinado</button>
+        <button class="btn btn-secondary" id="veicCancelar" type="button">Cancelar</button>
+      </div>
+    </div>
+    <span class="termos-feedback mt-8" id="veicTermoFb"></span>
+  </div>`;
+
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#veicCancelar').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#veicGerarBtn').onclick=()=>{
+    const sel=modal.querySelector('#veicTermoEmpresa');
+    const opt=sel?.options[sel.selectedIndex];
+    const fb=modal.querySelector('#veicTermoFb');
+    if(!opt?.value){fb.textContent='Selecione a empresa.';fb.classList.add('err');return;}
+    const html=gerarHTMLTermoVeiculo({
+      nome:tv.colaborador_nome||'',
+      cpf:modal.querySelector('#veicTermoCPF')?.value?.trim()||'',
+      empresa:opt.dataset.nome||opt.text,
+      cnpj:opt.dataset.cnpj||'',
+      cidade:opt.dataset.cidade||'Cascavel',
+      uf:opt.dataset.uf||'PR',
+      veiculo:tv.veiculo||'',
+      placa:tv.placa||''
+    });
+    const win=window.open('','_blank','width=860,height=760');
+    win.document.write(html);
+    win.document.close();
+    setTimeout(()=>win.print(),600);
+  };
+  modal.querySelector('#veicConfirmar').onclick=async()=>{
+    const btn=modal.querySelector('#veicConfirmar');
+    const fb=modal.querySelector('#veicTermoFb');
+    btn.disabled=true;
+    fb.textContent='Processando...';fb.classList.remove('err');
+    try{
+      const file=modal.querySelector('#veicTermoFile')?.files?.[0]||null;
+      if(!file&&!tv.termo_url) throw new Error('Anexe o termo assinado antes de confirmar.');
+      let termoUrl=tv.termo_url||null;
+      if(file){fb.textContent='Enviando arquivo...';termoUrl=await uploadTermo(file);}
+      const {error}=await supabase.from('termos_veiculos').update({
+        status:'assinado',
+        termo_url:termoUrl,
+        observacao:modal.querySelector('#veicTermoObs')?.value?.trim()||null,
+        assinado_em:new Date().toISOString()
+      }).eq('id',tv.id);
+      if(error) throw error;
+      modal.classList.remove('open');
+      setMsg('Termo de veículo confirmado.');
+      await loadVeiculos();
+    }catch(e){fb.textContent=e.message;fb.classList.add('err');}
+    finally{btn.disabled=false;}
+  };
+}
+
 function styles(){return `<style>
 .termos-tabs{display:flex;gap:8px;flex-wrap:wrap}.termos-tabs .active{background:#166534!important;color:#fff!important}
 .termos-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.termos-table{width:100%;border-collapse:collapse;min-width:760px}.termos-table th,.termos-table td{padding:14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.termos-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.termos-empty{text-align:center;color:var(--muted)}.termos-acoes{display:flex;gap:8px;flex-wrap:wrap}
@@ -320,7 +542,15 @@ export async function renderContent(content){
       </div>
     </div>
     <div id="termosTabVeiculos" class="mt-16" style="display:none">
-      <div class="termos-empty" style="padding:32px;text-align:center;color:var(--muted)">Módulo em desenvolvimento.</div>
+      <div class="adm-cmp-actions" style="justify-content:flex-end;margin-bottom:12px">
+        <button class="btn btn-primary" id="veicNovo" type="button">+ Novo Termo</button>
+      </div>
+      <div class="termos-table-wrap">
+        <table class="termos-table">
+          <thead><tr><th>Data</th><th>Colaborador</th><th>Veículo</th><th>Placa</th><th>Status</th><th>Ações</th></tr></thead>
+          <tbody id="termosVeiculosBody"></tbody>
+        </table>
+      </div>
     </div>
     <span class="termos-feedback mt-8" id="termosFeedbackMain"></span>
   </section>
@@ -332,8 +562,9 @@ export async function renderContent(content){
     document.getElementById('termosTabCelular').style.display=state.tab==='celular'?'block':'none';
     document.getElementById('termosTabVeiculos').style.display=state.tab==='veiculos'?'block':'none';
   });
-  document.getElementById('termosRefresh').onclick=loadCelular;
-  await loadCelular();
+  document.getElementById('termosRefresh').onclick=()=>{loadCelular();loadVeiculos();};
+  document.getElementById('veicNovo').onclick=openNovoVeiculoModal;
+  await Promise.all([loadCelular(),loadVeiculos()]);
 }
 
 initProtectedPage('Termos', renderContent);

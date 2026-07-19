@@ -45,7 +45,6 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas-historico', { title: 'Frotas', module: () => import('./frotas-historico.js') }],
   ['frotas-veiculos', { title: 'Frotas · Veículos', module: () => import('./frotas-veiculos.js') }],
   ['historico-producao', { title: 'Histórico de Produção', module: () => import('./historicoProducao.js') }],
-  ['historico', { title: 'Histórico Geral', module: () => import('./historico.js') }],
   ['hotel-relatorio', { title: 'Relatório de Hospedagem', module: () => import('./hotel-relatorio.js') }],
   ['importar-colaboradores', { title: 'Importar Colaboradores', module: () => import('./importarColaboradores.js') }],
   ['importar-patrimonios', { title: 'Importar Patrimônios', module: () => import('./importarPatrimonios.js') }],
@@ -90,7 +89,7 @@ const SOFT_NAV_PAGES = new Map([
   ['relatorio-servicos-faturados', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
   // Fase 2 — Categoria C (múltiplos scripts na origem, verificados individualmente)
   ['envios', { title: 'Correios', module: () => import('./envios.js'), extraScripts: ['https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'] }],
-  ['frotas-dashboard', { title: 'Dashboard de Frotas', module: () => import('./frotas-dashboard.js'), extraScripts: ['https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'] }],
+  ['frotas-dashboard', { title: 'Dashboard de Frotas', module: () => import('./frotas-dashboard.js') }],
   // adm-logistica fica fora da navegação suave por enquanto: o módulo ainda possui boot próprio
   // via initProtectedPage() e, quando importado pelo router, executa duas renderizações/consultas
   // concorrentes. Isso travava a tela ao clicar no menu. Mantém navegação normal por reload.
