@@ -35,7 +35,10 @@ function getAccess() {
     const context = JSON.parse(localStorage.getItem(CONTEXT_KEY) || 'null');
     if (!context) return null;
     if (isMasterContext(context)) {
-      return { allowed: new Set(['dashboard', 'fluxo', 'importar', 'config', 'detalhes', 'despesas', 'pagamentos']), editFluxo: true };
+      // Precisa cobrir TODOS os data-tab reais de financeiro.js — 'notas-fiscais'
+      // e 'ajustes' ficaram de fora quando essas abas foram criadas, e o
+      // applyPermissions() escondia as duas até de usuário master.
+      return { allowed: new Set(['dashboard', 'fluxo', 'importar', 'config', 'detalhes', 'despesas', 'pagamentos', 'notas-fiscais', 'ajustes']), editFluxo: true };
     }
 
     const modules = Array.isArray(context.modules) ? context.modules : [];
@@ -59,7 +62,9 @@ function getAccess() {
       if (canEdit('financeiro', 'financeiro_fluxo_caixa', 'fluxo_caixa')) {
         allowed.add('importar');
         allowed.add('config');
+        allowed.add('ajustes');
       }
+      allowed.add('notas-fiscais');
     }
     if (has('financeiro_despesas', 'financeiro_adiantamentos', 'financeiro_alimentacao', 'adiantamentos', 'alimentacao', 'diarias')) {
       allowed.add('despesas');

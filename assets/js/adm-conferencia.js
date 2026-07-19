@@ -388,6 +388,8 @@ function renderShell(content) {
       <div class="conf-feedback" id="conf-feedback"></div>
     </section>
 
+    <div class="conf-grid" id="conf-metrics"></div>
+
     <section class="conf-panel">
       <div class="conf-panel-head">
         <div>
@@ -398,6 +400,7 @@ function renderShell(content) {
           <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
           <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
           <button class="conf-tab" data-tab="uber" type="button">Uber</button>
+          <button class="conf-tab" data-tab="resultado" type="button">Resultado</button>
           <button class="conf-tab" data-tab="justificativas" type="button">Justificativas</button>
           <button class="conf-tab" data-tab="localizacao" type="button">Localização</button>
         </div>
@@ -434,12 +437,14 @@ function renderMetrics() {
       <p>${escapeHtml(desc)}</p>
     </article>
   `).join('');
-  document.getElementById('conf-metrics').innerHTML = html;
+  const mount = document.getElementById('conf-metrics');
+  if (mount) mount.innerHTML = html;
 }
 
 function renderActiveTab() {
   document.querySelectorAll('.conf-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === state.tab));
   renderRegionalOptions();
+  renderMetrics();
 
   const subtitle = document.getElementById('conf-table-subtitle');
   if (subtitle) {

@@ -20,8 +20,7 @@ export const MENU_CONFIG = [
     grupo: "INÍCIO",
     itens: [
       item("dashboard", "Dashboard", "dashboard", ["DASHBOARD"]),
-      item("notificacoes", "Notificações", "notificacoes", ["NOTIFICACOES"]),
-      item("historico_geral", "Histórico Geral", "historico", ["HISTORICO_GERAL"])
+      item("notificacoes", "Notificações", "notificacoes", ["NOTIFICACOES"])
     ]
   },
 

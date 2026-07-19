@@ -112,9 +112,6 @@ const CSS = `
 .fd-hdr-title h1{font-family:"Syne",system-ui,sans-serif;font-size:20px;font-weight:800;letter-spacing:-.03em;color:var(--fd-text);line-height:1.1}
 .fd-hdr-title p{font-size:11px;color:var(--fd-muted);margin-top:3px}
 .fd-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;background:rgba(63,168,120,.15);border:1px solid rgba(111,208,165,.22);font-size:11px;font-weight:700;color:var(--fd-green2)}
-.fd-upbtn{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--fd-green);border:none;border-radius:12px;color:#fff;font-family:"DM Sans",system-ui,sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;white-space:nowrap}
-.fd-upbtn:hover{background:var(--fd-green2);box-shadow:0 6px 20px rgba(63,168,120,.35);transform:translateY(-1px)}
-.fd-upbtn svg{width:13px;height:13px;flex-shrink:0}
 
 /* STATUS CARDS */
 .fd-status-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
@@ -167,30 +164,11 @@ const CSS = `
 .fd-coord-count{font-size:10px;font-weight:700;color:var(--fd-green2);min-width:24px;text-align:right}
 
 /* UPLOAD MODAL */
-.fd-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
-.fd-overlay.on{display:flex}
-.fd-modal{background:#0b1220;border:1px solid var(--fd-line2);border-radius:24px;padding:28px 30px;width:460px;position:relative;box-shadow:0 24px 60px rgba(0,0,0,.3)}
 .fd-modal h3{font-family:"Syne",system-ui,sans-serif;font-size:18px;font-weight:800;color:var(--fd-text);letter-spacing:-.02em;margin-bottom:6px}
 .fd-modal p{font-size:12px;color:var(--fd-muted);margin-bottom:20px}
-.fd-drop{border:2px dashed rgba(111,208,165,.25);border-radius:16px;padding:30px;text-align:center;cursor:pointer;transition:all .25s}
-.fd-drop:hover{border-color:var(--fd-green);background:rgba(111,208,165,.08)}
-.fd-mclose{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--fd-muted);font-size:16px;cursor:pointer;padding:3px 6px;border-radius:8px;transition:color .2s}
-.fd-mclose:hover{color:var(--fd-text)}
 `;
 
 /* ── Expense categories (for donut) ── */
-const EXPENSE_CATS = [
-  { label: 'Combustíveis e Troca de Óleo', color: '#3fa878', pct: 42 },
-  { label: 'Manutenção', color: '#6fd0a5', pct: 28 },
-  { label: 'Pedágios', color: '#2d7a58', pct: 12 },
-  { label: 'Impostos e Taxas', color: '#9fe8c8', pct: 9 },
-  { label: 'Seguros e Franquias', color: '#1f6f4a', pct: 6 },
-  { label: 'Outros', color: '#5db898', pct: 3 },
-];
-
-/* ── Monthly demo data (invest. values) ── */
-const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-const MONTHLY_DEMO = [48200,52400,45800,61000,58700,67300,63100,70500,55900,72800,68400,74200];
 
 /* ── Build SVG map ── */
 function buildMapSvg(stateVals) {
@@ -248,10 +226,6 @@ function renderFrotasDashboard(container, opts = {}) {
         <p id="fd-sub">Módulo de Frotas · ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'})}</p>
       </div>
       <div class="fd-badge" id="fd-total-badge">⋯ carregando</div>
-      <button class="fd-upbtn" id="fd-open-upload">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        Importar Planilha
-      </button>
     </div>
 
     <!-- STATUS CARDS -->
@@ -282,7 +256,7 @@ function renderFrotasDashboard(container, opts = {}) {
       </div>
     </div>
 
-    <!-- ROW 1: coordenação + mapa despesas -->
+    <!-- ROW 1: coordenação + mapa regional -->
     <div class="fd-row fd-row-2">
       <div class="fd-card" style="min-height:220px">
         <div class="fd-card-title"><span class="dot"></span>Veículos por Coordenação</div>
@@ -291,27 +265,6 @@ function renderFrotasDashboard(container, opts = {}) {
         </div>
       </div>
       <div class="fd-card" style="min-height:220px">
-        <div class="fd-card-title"><span class="dot"></span>Mapa de Despesas · Categorias</div>
-        <div class="fd-cw" id="fd-expense-wrap">
-          <div class="fd-empty">
-            <div class="fd-empty-icon">📊</div>
-            <div class="fd-empty-title">Aguardando importação de dados</div>
-            <div class="fd-empty-sub">Use "Importar Planilha" para carregar as despesas da frota. As categorias abaixo serão preenchidas automaticamente.</div>
-            <div class="fd-categories">
-              ${EXPENSE_CATS.map(c=>`<div class="fd-cat-row"><span class="fd-cat-dot" style="background:${c.color}"></span><span>${c.label}</span></div>`).join('')}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ROW 2: linha + mapa regional -->
-    <div class="fd-row fd-row-2">
-      <div class="fd-card" style="min-height:200px">
-        <div class="fd-card-title"><span class="dot"></span>Valores Investidos por Mês · Demo</div>
-        <div class="fd-cw"><canvas id="fd-line-chart"></canvas></div>
-      </div>
-      <div class="fd-card" style="min-height:200px">
         <div class="fd-card-title"><span class="dot"></span>Veículos por Regional</div>
         <div class="fd-cw" id="fd-map-wrap" style="overflow:hidden"></div>
         <div class="fd-map-legend">
@@ -332,22 +285,6 @@ function renderFrotasDashboard(container, opts = {}) {
   <div class="ts" id="fd-tip-sub"></div>
 </div>
 
-<!-- UPLOAD MODAL -->
-<div class="fd-overlay" id="fd-overlay">
-  <div class="fd-modal">
-    <button class="fd-mclose" id="fd-close-modal">✕</button>
-    <h3>Importar Planilha de Despesas</h3>
-    <p>Faça upload da planilha com as despesas da frota (combustível, manutenção, pedágios, impostos, seguros). O dashboard será atualizado automaticamente com os dados reais.</p>
-    <div class="fd-drop" id="fd-drop">
-      <div style="font-size:32px;margin-bottom:10px">📊</div>
-      <div style="font-size:12px;color:#9fb7aa">Arraste o arquivo ou clique para selecionar</div>
-      <div style="font-size:10px;color:rgba(159,183,170,.55);margin-top:4px">Suporta .xlsx, .xls e .csv · Máx 10 MB</div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:16px">
-      ${['xlsx','xls','csv'].map(f=>`<span style="padding:4px 11px;border-radius:8px;background:rgba(63,168,120,.15);font-size:10px;font-weight:700;color:#6fd0a5;letter-spacing:.05em;text-transform:uppercase;border:1px solid rgba(111,208,165,.2)">${f}</span>`).join('')}
-    </div>
-  </div>
-</div>
 `);
 
   /* ── Tab navigation ── */
@@ -355,64 +292,6 @@ function renderFrotasDashboard(container, opts = {}) {
     btn.addEventListener('click', () => window.location.assign(panelUrl(btn.dataset.nav)));
   });
 
-  /* ── Upload modal ── */
-  const overlay = container.querySelector('#fd-overlay');
-  container.querySelector('#fd-open-upload').onclick = () => overlay.classList.add('on');
-  container.querySelector('#fd-close-modal').onclick = () => overlay.classList.remove('on');
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('on'); });
-  const drop = container.querySelector('#fd-drop');
-  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = '#3fa878'; });
-  drop.addEventListener('dragleave', () => { drop.style.borderColor = ''; });
-  drop.addEventListener('drop', e => {
-    e.preventDefault(); drop.style.borderColor = '';
-    const f = e.dataTransfer.files[0];
-    if (f) { overlay.classList.remove('on'); alert(`Arquivo recebido: ${f.name}`); }
-  });
-  drop.addEventListener('click', () => {
-    const inp = document.createElement('input');
-    inp.type = 'file'; inp.accept = '.xlsx,.xls,.csv';
-    inp.onchange = ev => { const f = ev.target.files[0]; if (f) { overlay.classList.remove('on'); alert(`Arquivo selecionado: ${f.name}`); } };
-    inp.click();
-  });
-
-  /* ── Line chart (demo) ── */
-  if (typeof Chart !== 'undefined') {
-    const G = '#3fa878', G2 = '#6fd0a5';
-    const GRID_C = 'rgba(111,208,165,0.07)';
-    const TT = { backgroundColor:'#0b1220', borderColor:'rgba(111,208,165,.28)', borderWidth:1, titleFont:{family:"'Syne',system-ui",size:11,weight:'700'}, bodyFont:{size:11}, padding:10 };
-    Chart.defaults.color = '#9fb7aa';
-    Chart.defaults.borderColor = GRID_C;
-    Chart.defaults.font.family = "'DM Sans',system-ui,sans-serif";
-    Chart.defaults.font.size = 11;
-
-    new Chart(container.querySelector('#fd-line-chart'), {
-      type: 'line',
-      data: {
-        labels: MONTHS,
-        datasets: [{
-          label: 'Despesas (R$)',
-          data: MONTHLY_DEMO,
-          borderColor: G,
-          backgroundColor: ctx => {
-            const gr = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
-            gr.addColorStop(0, 'rgba(63,168,120,0.22)');
-            gr.addColorStop(1, 'rgba(63,168,120,0)');
-            return gr;
-          },
-          fill: true, tension: .42, pointRadius: 4, pointHoverRadius: 6,
-          pointBackgroundColor: G2, pointBorderColor: '#0a1e17', pointBorderWidth: 2, borderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        animation: { duration: 1200, easing: 'easeOutQuart' },
-        plugins: {
-          legend: { display: false }, tooltip: { ...TT, callbacks: { label: ctx => '  ' + fmtBRL(ctx.parsed.y) } }
-        },
-        scales: {
-          x: { grid: { color: GRID_C }, ticks: { font: { size: 10 } } },
-          y: { grid: { color: GRID_C }, ticks: { font: { size: 10 }, callback: v => 'R$' + (v/1000).toFixed(0) + 'k' } }
-        }
       }
     });
   }
