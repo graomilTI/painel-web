@@ -92,13 +92,17 @@ async function liberarJobTravado(job) {
 }
 
 async function existeJobAberto() {
-  // sync-colaboradores é agendado direto pelo pg_cron (fora deste round-robin) e roda a
-  // cada 5min o dia todo — ignorar seus jobs aqui pra não bloquear os outros agentes.
+  // sync-colaboradores e sync-login-alimentacao são agendados direto pelo pg_cron (fora
+  // deste round-robin) — sync-colaboradores roda a cada 5min o dia todo, sync-login-alimentacao
+  // roda em rajadas na janela 11h-12h30 (ver migration 20260712140000_cron_sync_login_alimentacao_janela.sql).
+  // Ignorar os dois aqui pra não bloquear a vez dos 14 agentes contínuos (ex.: sync-mapa-embarque)
+  // enquanto um deles está rodando — antes só sync-colaboradores era ignorado, e o
+  // sync-login-alimentacao segurava o agendador travado durante suas rajadas.
   const { data, error } = await supabase
     .from('grm_sync_jobs')
     .select('id,agente_id,status,solicitado_em,iniciado_em,created_at')
     .in('status', ['pendente', 'rodando'])
-    .neq('agente_id', 'sync-colaboradores')
+    .not('agente_id', 'in', '(sync-colaboradores,sync-login-alimentacao)')
     .order('created_at', { ascending: true })
     .limit(1);
 
