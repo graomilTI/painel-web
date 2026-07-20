@@ -1,16 +1,32 @@
 // Programação: usa a relação programacao_usuario_supervisoes/RPC para não buscar todas as supervisões a cada carregamento.
 import { supabase } from './supabaseClient.js';
 
-const CACHE_KEY = 'programacao_supervisoes_v2';
+const CACHE_KEY_PREFIX = 'programacao_supervisoes_v3';
 const CACHE_TTL_MS = 1000 * 60 * 60 * 12;
+try { localStorage.removeItem('programacao_supervisoes_v2'); localStorage.removeItem('programacao_supervisoes_v1'); } catch (_) {}
 const originalFrom = supabase.from.bind(supabase);
 const originalRpc = supabase.rpc.bind(supabase);
 let pending = null;
 let lastResult = null;
 
-function readCache() {
+// A chave PRECISA ser por usuário: antes (v1/v2) era uma chave global só em
+// localStorage, então num mesmo navegador/dispositivo o resultado do RPC
+// programacao_listar_supervisoes (que já é restrito por usuário) de quem
+// carregasse a página primeiro ficava em cache e era servido pro PRÓXIMO
+// usuário que logasse ali dentro das 12h — vazando a lista de supervisões
+// (e, em cascata, colaboradores/O.S.) de outra conta pra quem não deveria ver.
+async function cacheKey() {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const { data } = await supabase.auth.getUser();
+    return `${CACHE_KEY_PREFIX}:${data?.user?.id || 'anon'}`;
+  } catch (_) {
+    return `${CACHE_KEY_PREFIX}:anon`;
+  }
+}
+
+async function readCache() {
+  try {
+    const raw = localStorage.getItem(await cacheKey());
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.rows)) return null;
@@ -21,9 +37,9 @@ function readCache() {
   }
 }
 
-function writeCache(rows) {
+async function writeCache(rows) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), rows }));
+    localStorage.setItem(await cacheKey(), JSON.stringify({ ts: Date.now(), rows }));
   } catch (_) {}
 }
 
@@ -38,7 +54,7 @@ function normalizeRows(rows) {
 }
 
 async function fetchSupervisoes() {
-  const cached = readCache();
+  const cached = await readCache();
   if (cached?.length) return { data: cached, error: null, fromCache: true };
 
   if (pending) return pending;
@@ -48,7 +64,7 @@ async function fetchSupervisoes() {
       if (error) throw error;
       const rows = normalizeRows(data);
       if (rows.length) {
-        writeCache(rows);
+        await writeCache(rows);
         lastResult = { data: rows, error: null };
         return lastResult;
       }
@@ -61,7 +77,7 @@ async function fetchSupervisoes() {
       .eq('ativo', true)
       .order('nome', { ascending: true });
     const rows = normalizeRows(fallback.data || []);
-    if (!fallback.error && rows.length) writeCache(rows);
+    if (!fallback.error && rows.length) await writeCache(rows);
     lastResult = { data: rows, error: fallback.error || null };
     return lastResult;
   })().finally(() => { pending = null; });
@@ -86,8 +102,8 @@ supabase.from = function patchedFrom(table) {
 };
 
 window.programacaoSupervisoesCache = {
-  clear() {
-    try { localStorage.removeItem(CACHE_KEY); } catch (_) {}
+  async clear() {
+    try { localStorage.removeItem(await cacheKey()); } catch (_) {}
     lastResult = null;
   },
   getLast() { return lastResult; },
