@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient.js';
 import { loadUserContext } from './sessionStore.js';
-import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-lista1';
-import { panelHtml, renderRows, renderDetailsContent } from './adm-hotel-alojamentos-v2-view.js?v=20260720-lista1';
+import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-titulares1';
+import { panelHtml, renderRows, renderDetailsContent } from './adm-hotel-alojamentos-v2-view.js?v=20260720-titulares1';
 
 const state = { rows: [], editingId: null, selectedDetailsId: null, query: '', mountTimer: null };
 let toastTimer = null;
@@ -49,10 +49,10 @@ function openModal(row = null) {
       alojV2ContratoFim: row.contrato_fim, alojV2Logradouro: row.endereco_logradouro || row.endereco, alojV2Numero: row.endereco_numero,
       alojV2Complemento: row.endereco_complemento, alojV2Bairro: row.bairro, alojV2Cidade: row.cidade, alojV2Uf: row.uf,
       alojV2Cep: row.cep, alojV2Referencia: row.referencia, alojV2Localizacao: row.link_localizacao,
-      alojV2AguaInclusa: row.agua_inclusa === null ? '' : String(row.agua_inclusa), alojV2AguaMatricula: row.agua_matricula,
-      alojV2EnergiaInclusa: row.energia_inclusa === null ? '' : String(row.energia_inclusa), alojV2EnergiaMatricula: row.energia_matricula,
-      alojV2InternetInclusa: row.internet_inclusa === null ? '' : String(row.internet_inclusa), alojV2InternetMatricula: row.internet_matricula,
-      alojV2EmpresaInternet: row.empresa_internet, alojV2GasPagamento: row.gas_forma_pagamento, alojV2Observacoes: row.observacoes_limpa
+      alojV2AguaInclusa: row.agua_inclusa === null ? '' : String(row.agua_inclusa), alojV2AguaTitular: row.agua_titular, alojV2AguaMatricula: row.agua_matricula,
+      alojV2EnergiaInclusa: row.energia_inclusa === null ? '' : String(row.energia_inclusa), alojV2EnergiaTitular: row.energia_titular, alojV2EnergiaMatricula: row.energia_matricula,
+      alojV2InternetInclusa: row.internet_inclusa === null ? '' : String(row.internet_inclusa), alojV2InternetTitular: row.internet_titular, alojV2InternetMatricula: row.internet_matricula,
+      alojV2EmpresaInternet: row.empresa_internet, alojV2GasTitular: row.gas_titular, alojV2GasPagamento: row.gas_forma_pagamento, alojV2Observacoes: row.observacoes_limpa
     };
     Object.entries(values).forEach(([id, value]) => setValue(id, value));
     document.getElementById('alojV2ModalTitle').textContent = 'Editar alojamento';
@@ -102,10 +102,10 @@ function readForm() {
     endereco_logradouro: getValue('alojV2Logradouro').trim(), endereco_numero: getValue('alojV2Numero').trim(), endereco_complemento: getValue('alojV2Complemento').trim(),
     bairro: getValue('alojV2Bairro').trim(), cidade: getValue('alojV2Cidade').trim(), uf: getValue('alojV2Uf').trim().toUpperCase().slice(0, 2),
     cep: getValue('alojV2Cep').trim(), referencia: getValue('alojV2Referencia').trim(), link_localizacao: getValue('alojV2Localizacao').trim(),
-    agua_inclusa: boolValue('alojV2AguaInclusa'), agua_matricula: getValue('alojV2AguaMatricula').trim(),
-    energia_inclusa: boolValue('alojV2EnergiaInclusa'), energia_matricula: getValue('alojV2EnergiaMatricula').trim(),
-    internet_inclusa: boolValue('alojV2InternetInclusa'), internet_matricula: getValue('alojV2InternetMatricula').trim(),
-    empresa_internet: getValue('alojV2EmpresaInternet').trim(), gas_forma_pagamento: getValue('alojV2GasPagamento').trim(),
+    agua_inclusa: boolValue('alojV2AguaInclusa'), agua_titular: getValue('alojV2AguaTitular').trim(), agua_matricula: getValue('alojV2AguaMatricula').trim(),
+    energia_inclusa: boolValue('alojV2EnergiaInclusa'), energia_titular: getValue('alojV2EnergiaTitular').trim(), energia_matricula: getValue('alojV2EnergiaMatricula').trim(),
+    internet_inclusa: boolValue('alojV2InternetInclusa'), internet_titular: getValue('alojV2InternetTitular').trim(), internet_matricula: getValue('alojV2InternetMatricula').trim(),
+    empresa_internet: getValue('alojV2EmpresaInternet').trim(), gas_titular: getValue('alojV2GasTitular').trim(), gas_forma_pagamento: getValue('alojV2GasPagamento').trim(),
     observacoes: getValue('alojV2Observacoes').trim()
   };
 }
@@ -131,9 +131,10 @@ async function saveRecord(event) {
     contrato_url: data.contrato_url || null, contrato_inicio: data.contrato_inicio || null, contrato_fim: data.contrato_fim || null,
     endereco_logradouro: data.endereco_logradouro || null, endereco_numero: data.endereco_numero || null, endereco_complemento: data.endereco_complemento || null,
     bairro: data.bairro || null, cep: data.cep || null, referencia: data.referencia || null, link_localizacao: data.link_localizacao || null,
-    agua_inclusa: data.agua_inclusa, agua_matricula: data.agua_matricula || null, energia_inclusa: data.energia_inclusa,
-    energia_matricula: data.energia_matricula || null, internet_inclusa: data.internet_inclusa, internet_matricula: data.internet_matricula || null,
-    gas_forma_pagamento: data.gas_forma_pagamento || null
+    agua_inclusa: data.agua_inclusa, agua_titular: data.agua_titular || null, agua_matricula: data.agua_matricula || null,
+    energia_inclusa: data.energia_inclusa, energia_titular: data.energia_titular || null, energia_matricula: data.energia_matricula || null,
+    internet_inclusa: data.internet_inclusa, internet_titular: data.internet_titular || null, internet_matricula: data.internet_matricula || null,
+    gas_titular: data.gas_titular || null, gas_forma_pagamento: data.gas_forma_pagamento || null
   };
   const legacy = {
     nome: data.nome, tipo: data.tipo, cidade: data.cidade, uf: data.uf,
