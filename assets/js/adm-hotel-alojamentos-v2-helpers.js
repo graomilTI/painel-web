@@ -98,10 +98,10 @@ export function hydrateRow(row) {
     contrato_url: row.contrato_url || meta.contrato_url || '', contrato_inicio: row.contrato_inicio || meta.contrato_inicio || '', contrato_fim: row.contrato_fim || meta.contrato_fim || '',
     endereco_logradouro: row.endereco_logradouro || meta.endereco_logradouro || row.endereco || '', endereco_numero: row.endereco_numero || meta.endereco_numero || '', endereco_complemento: row.endereco_complemento || meta.endereco_complemento || '',
     bairro: row.bairro || meta.bairro || '', cep: row.cep || meta.cep || '', referencia: row.referencia || meta.referencia || '', link_localizacao: row.link_localizacao || meta.link_localizacao || '',
-    agua_inclusa: nullableBoolean(row.agua_inclusa ?? meta.agua_inclusa ?? inferredIncluded(row.agua)), agua_matricula: row.agua_matricula || meta.agua_matricula || '',
-    energia_inclusa: nullableBoolean(row.energia_inclusa ?? meta.energia_inclusa ?? inferredIncluded(row.energia)), energia_matricula: row.energia_matricula || meta.energia_matricula || '',
-    internet_inclusa: nullableBoolean(row.internet_inclusa ?? meta.internet_inclusa ?? inferredIncluded(row.internet)), internet_matricula: row.internet_matricula || meta.internet_matricula || '',
-    gas_forma_pagamento: row.gas_forma_pagamento || meta.gas_forma_pagamento || ''
+    agua_inclusa: nullableBoolean(row.agua_inclusa ?? meta.agua_inclusa ?? inferredIncluded(row.agua)), agua_matricula: row.agua_matricula || meta.agua_matricula || '', agua_titular: row.agua_titular || meta.agua_titular || '',
+    energia_inclusa: nullableBoolean(row.energia_inclusa ?? meta.energia_inclusa ?? inferredIncluded(row.energia)), energia_matricula: row.energia_matricula || meta.energia_matricula || '', energia_titular: row.energia_titular || meta.energia_titular || '',
+    internet_inclusa: nullableBoolean(row.internet_inclusa ?? meta.internet_inclusa ?? inferredIncluded(row.internet)), internet_matricula: row.internet_matricula || meta.internet_matricula || '', internet_titular: row.internet_titular || meta.internet_titular || '',
+    gas_forma_pagamento: row.gas_forma_pagamento || meta.gas_forma_pagamento || '', gas_titular: row.gas_titular || meta.gas_titular || ''
   };
 }
 
