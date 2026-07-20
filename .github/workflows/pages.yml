@@ -53,6 +53,11 @@ jobs:
           git rm -rf . 2>/dev/null || true
           cp -r /tmp/deploy/. .
 
+          # Sinal de versão que muda em TODO deploy (SHA do commit). O painel
+          # faz poll deste arquivo e avisa o usuário quando há versão nova, sem
+          # depender de bump manual de ?v= em cada arquivo.
+          printf '{"version":"%s","deployedAt":"%s"}\n' "${GITHUB_SHA}" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > version.json
+
           git add -A
           git commit -m "Deploy $(date '+%Y-%m-%d %H:%M:%S')" --allow-empty
           git push origin gh-pages --force
