@@ -410,8 +410,11 @@ export async function renderProgramacaoDespesas(content, options = {}) {
       Object.assign(payload, {
         tipo_deslocamento: card.querySelector('[data-fld="tipo_deslocamento"]')?.value || 'NÃO PRECISA',
         placa_veiculo: onlyPlate(card.querySelector('[data-fld="placa_veiculo"]')?.value || ''),
-        km: Number(card.querySelector('[data-fld="km"]')?.value || 0) || null,
-        valor: card.querySelector('[data-tab="deslocamento"][data-fld="valor"]')?.value || null,
+        // km/valor são NOT NULL (default 0) no banco — enviar null explícito
+        // ignora o default e viola a constraint (ex.: Uber/Táxi sem km digitado).
+        // valor é campo de texto (formato BR): mesma parse dos extras (linha ~490).
+        km: Number(card.querySelector('[data-fld="km"]')?.value || 0) || 0,
+        valor: Number(String(card.querySelector('[data-tab="deslocamento"][data-fld="valor"]')?.value || '0').replace(',', '.')) || 0,
         observacao: card.querySelector('[data-tab="deslocamento"][data-fld="observacao"]')?.value || null,
       });
     } else if (tabela === 'programacao_alimentacao') {
