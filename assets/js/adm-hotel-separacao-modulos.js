@@ -1,12 +1,15 @@
 import { supabase } from './supabaseClient.js';
-import { contractAlert, money, esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-kpis1';
+import { contractAlert, money, esc, hydrateRow } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-kpis1';
 
 const STYLE_ID = 'admHotelSeparacaoModulosCss';
-const USAGE_REFRESH_MS = 60_000;
+const KPI_REFRESH_MS = 60_000;
 
 const accommodationKpiState = {
   rows: Array.isArray(window.__alojamentosV2Rows) ? window.__alojamentosV2Rows : [],
   rowsReady: Boolean(window.__alojamentosV2RowsReady),
+  rowsLoading: false,
+  rowsLoadedAt: 0,
+  baseFingerprint: '',
   usage: { collaborators: 0, accommodations: 0, ready: false, loading: false, error: false },
   usageDate: '',
   usageLoadedAt: 0,
@@ -174,12 +177,37 @@ function restoreHotelKpis() {
   if (!isAccommodationRender && root.innerHTML.trim()) accommodationKpiState.hotelHtml = root.innerHTML;
 }
 
+async function loadAccommodationRows({ force = false } = {}) {
+  if (accommodationKpiState.rowsLoading) return;
+  const isFresh = accommodationKpiState.rowsReady
+    && Date.now() - accommodationKpiState.rowsLoadedAt < KPI_REFRESH_MS;
+  if (!force && isFresh) return;
+
+  accommodationKpiState.rowsLoading = true;
+  try {
+    const { data, error } = await supabase
+      .from('hospedagem_alojamentos')
+      .select('*')
+      .order('cidade', { ascending: true })
+      .order('nome', { ascending: true });
+    if (error) throw error;
+    accommodationKpiState.rows = (data || []).map(hydrateRow);
+    accommodationKpiState.rowsReady = true;
+    accommodationKpiState.rowsLoadedAt = Date.now();
+  } catch (error) {
+    console.error('[alojamentos-kpis] cadastros:', error);
+  } finally {
+    accommodationKpiState.rowsLoading = false;
+  }
+  if (currentMode() === 'alojamentos') renderAccommodationKpis();
+}
+
 async function loadAccommodationUsage({ force = false } = {}) {
   if (accommodationKpiState.usage.loading) return;
   const date = todayInSaoPaulo();
   const isFresh = accommodationKpiState.usage.ready
     && accommodationKpiState.usageDate === date
-    && Date.now() - accommodationKpiState.usageLoadedAt < USAGE_REFRESH_MS;
+    && Date.now() - accommodationKpiState.usageLoadedAt < KPI_REFRESH_MS;
   if (!force && isFresh) return;
 
   accommodationKpiState.usage = { ...accommodationKpiState.usage, loading: true, error: false };
@@ -236,6 +264,12 @@ async function loadAccommodationUsage({ force = false } = {}) {
   if (currentMode() === 'alojamentos') renderAccommodationKpis();
 }
 
+function internalKpiFingerprint() {
+  return ['alojV2KpiTotal', 'alojV2KpiAtivos', 'alojV2KpiAluguel', 'alojV2KpiContratos']
+    .map((id) => document.getElementById(id)?.textContent?.trim() || '')
+    .join('|');
+}
+
 function applySeparation() {
   ensureStyles();
   const root = document.getElementById('pageContent');
@@ -248,7 +282,11 @@ function applySeparation() {
 
   if (mode === 'alojamentos') {
     activatePanel(root, 'alojamentos');
+    const fingerprint = internalKpiFingerprint();
+    const changed = fingerprint && fingerprint !== accommodationKpiState.baseFingerprint;
+    if (changed) accommodationKpiState.baseFingerprint = fingerprint;
     renderAccommodationKpis();
+    loadAccommodationRows({ force: changed });
     loadAccommodationUsage();
   } else {
     restoreHotelKpis();
@@ -274,11 +312,15 @@ if (!window.__admHotelSeparacaoModulos) {
   observer.observe(document.body, { childList: true, subtree: true });
   window.addEventListener('hashchange', scheduleApply);
   window.addEventListener('focus', () => {
-    if (currentMode() === 'alojamentos') loadAccommodationUsage();
+    if (currentMode() === 'alojamentos') {
+      loadAccommodationRows();
+      loadAccommodationUsage();
+    }
   });
   window.addEventListener('alojamentos:loaded', (event) => {
     accommodationKpiState.rows = Array.isArray(event.detail?.rows) ? event.detail.rows : [];
     accommodationKpiState.rowsReady = true;
+    accommodationKpiState.rowsLoadedAt = Date.now();
     if (currentMode() === 'alojamentos') renderAccommodationKpis();
   });
   document.addEventListener('click', (event) => {
