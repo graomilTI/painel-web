@@ -406,10 +406,12 @@ async function carregarMotoristas(supervisoes) {
 function colabCardHtml(c, readOnly = false) {
   const motorista = isMotorista(c);
   const letter = motorista ? '🚗' : tipoLetter(c.tipoLabel);
-  const meta = [c.tipoLabel, c.supervisao, c.veiculoPlaca ? `Placa ${c.veiculoPlaca}` : ''].filter(Boolean).join(' · ');
+  // Só o nome no card (a linha de tipo/supervisão/placa poluía — a supervisão
+  // já é fixa após o filtro da Etapa 2). A busca do pool ainda casa por
+  // tipo/supervisão/placa via os dados do objeto, mesmo sem exibi-los.
   return `<div class="pgc-colab-card ${c.linked ? 'is-linked' : ''}" draggable="${readOnly ? 'false' : 'true'}" data-pgc-colab='${esc(JSON.stringify(c))}'>
     <span class="pgc-colab-ico ${motorista ? 'car' : 'person'}">${esc(letter)}</span>
-    <span style="min-width:0"><span class="pgc-colab-name">${esc(c.nome)}</span><span class="pgc-colab-meta">${esc(meta || 'Colaborador')}</span></span>
+    <span style="min-width:0"><span class="pgc-colab-name">${esc(c.nome)}</span></span>
   </div>`;
 }
 
