@@ -1,6 +1,6 @@
-import { esc, money, brDate, safeUrl, icon, fullAddress, contractAlert, normalizeText } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-lista1';
+import { esc, money, brDate, safeUrl, icon, fullAddress, contractAlert, normalizeText } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-titulares1';
 
-function serviceCard(kind, title, included, matricula, extra = '') {
+function serviceCard(kind, title, included, matricula, extra = '', titular = '') {
   const isGas = kind === 'gas';
   const status = isGas ? (extra ? 'Forma definida' : 'Não informado') : included === true ? 'Incluso' : included === false ? 'Pago' : 'Não informado';
   const badgeClass = isGas && extra ? 'paid' : included === true ? 'included' : included === false ? 'paid' : '';
@@ -8,6 +8,7 @@ function serviceCard(kind, title, included, matricula, extra = '') {
   return `<div class="aloj-v2-service ${kind}">
     <div class="aloj-v2-service-top">${icon(kind)}<strong>${esc(title)}</strong></div>
     <span class="aloj-v2-service-badge ${badgeClass}">${esc(status)}</span>
+    <small>Titular</small><p title="${esc(titular || 'Não informado')}">${esc(titular || 'Não informado')}</p>
     <small>${isGas ? 'Forma de pagamento' : 'Matrícula'}</small><p title="${esc(detail)}">${esc(detail)}</p>
   </div>`;
 }
@@ -55,10 +56,10 @@ export function renderDetailsContent(row) {
       <div class="aloj-v2-info"><span>Estrutura</span><strong>${esc(row.capacidade || 0)} vagas · ${esc(row.quartos || 0)} quartos</strong></div>
     </div>
     <div class="aloj-v2-services">
-      ${serviceCard('water', 'Água', row.agua_inclusa, row.agua_matricula)}
-      ${serviceCard('energy', 'Luz', row.energia_inclusa, row.energia_matricula)}
-      ${serviceCard('internet', 'Internet', row.internet_inclusa, row.internet_matricula, row.empresa_internet)}
-      ${serviceCard('gas', 'Gás', null, '', row.gas_forma_pagamento)}
+      ${serviceCard('water', 'Água', row.agua_inclusa, row.agua_matricula, '', row.agua_titular)}
+      ${serviceCard('energy', 'Luz', row.energia_inclusa, row.energia_matricula, '', row.energia_titular)}
+      ${serviceCard('internet', 'Internet', row.internet_inclusa, row.internet_matricula, row.empresa_internet, row.internet_titular)}
+      ${serviceCard('gas', 'Gás', null, '', row.gas_forma_pagamento, row.gas_titular)}
     </div>
     <div class="aloj-v2-bottom">
       <div class="aloj-v2-address"><div class="aloj-v2-block-title">${icon('pin')} Endereço completo</div><p>${esc(fullAddress(row))}</p>${row.referencia ? `<small>Referência: ${esc(row.referencia)}</small>` : ''}</div>
@@ -97,10 +98,10 @@ function modalHtml() {
         <div class="aloj-v2-field span-2"><label>Referência</label><input id="alojV2Referencia"></div><div class="aloj-v2-field span-2"><label>Link de localização</label><input id="alojV2Localizacao" type="url" placeholder="Link do Google Maps"></div>
       </div></section>
       <section class="aloj-v2-form-section"><div class="aloj-v2-form-section-title">${icon('services')} Água, luz, internet e gás</div><div class="aloj-v2-service-form-grid">
-        <div class="aloj-v2-service-form"><h5>Água</h5><div class="aloj-v2-field"><label>Pagamento</label><select id="alojV2AguaInclusa"><option value="">Não informado</option><option value="true">Incluso no aluguel</option><option value="false">Pago separadamente</option></select></div><div class="aloj-v2-field"><label>Matrícula</label><input id="alojV2AguaMatricula"></div></div>
-        <div class="aloj-v2-service-form"><h5>Luz</h5><div class="aloj-v2-field"><label>Pagamento</label><select id="alojV2EnergiaInclusa"><option value="">Não informado</option><option value="true">Incluso no aluguel</option><option value="false">Pago separadamente</option></select></div><div class="aloj-v2-field"><label>Matrícula</label><input id="alojV2EnergiaMatricula"></div></div>
-        <div class="aloj-v2-service-form"><h5>Internet</h5><div class="aloj-v2-field"><label>Pagamento</label><select id="alojV2InternetInclusa"><option value="">Não informado</option><option value="true">Incluso no aluguel</option><option value="false">Pago separadamente</option></select></div><div class="aloj-v2-field"><label>Matrícula</label><input id="alojV2InternetMatricula"></div><div class="aloj-v2-field"><label>Empresa</label><input id="alojV2EmpresaInternet"></div></div>
-        <div class="aloj-v2-service-form"><h5>Gás</h5><div class="aloj-v2-field"><label>Como é pago</label><input id="alojV2GasPagamento" placeholder="Ex.: botijão, condomínio, reembolso"></div></div>
+        <div class="aloj-v2-service-form"><h5>Água</h5><div class="aloj-v2-field"><label>Pagamento</label><select id="alojV2AguaInclusa"><option value="">Não informado</option><option value="true">Incluso no aluguel</option><option value="false">Pago separadamente</option></select></div><div class="aloj-v2-field"><label>Titular</label><input id="alojV2AguaTitular" placeholder="Nome do titular da conta"></div><div class="aloj-v2-field"><label>Matrícula</label><input id="alojV2AguaMatricula"></div></div>
+        <div class="aloj-v2-service-form"><h5>Luz</h5><div class="aloj-v2-field"><label>Pagamento</label><select id="alojV2EnergiaInclusa"><option value="">Não informado</option><option value="true">Incluso no aluguel</option><option value="false">Pago separadamente</option></select></div><div class="aloj-v2-field"><label>Titular</label><input id="alojV2EnergiaTitular" placeholder="Nome do titular da conta"></div><div class="aloj-v2-field"><label>Matrícula</label><input id="alojV2EnergiaMatricula"></div></div>
+        <div class="aloj-v2-service-form"><h5>Internet</h5><div class="aloj-v2-field"><label>Pagamento</label><select id="alojV2InternetInclusa"><option value="">Não informado</option><option value="true">Incluso no aluguel</option><option value="false">Pago separadamente</option></select></div><div class="aloj-v2-field"><label>Titular</label><input id="alojV2InternetTitular" placeholder="Nome do titular da conta"></div><div class="aloj-v2-field"><label>Matrícula</label><input id="alojV2InternetMatricula"></div><div class="aloj-v2-field"><label>Empresa</label><input id="alojV2EmpresaInternet"></div></div>
+        <div class="aloj-v2-service-form"><h5>Gás</h5><div class="aloj-v2-field"><label>Titular</label><input id="alojV2GasTitular" placeholder="Nome do titular da despesa"></div><div class="aloj-v2-field"><label>Como é pago</label><input id="alojV2GasPagamento" placeholder="Ex.: botijão, condomínio, reembolso"></div></div>
       </div></section>
       <section class="aloj-v2-form-section"><div class="aloj-v2-form-section-title">${icon('contract')} Observações</div><div class="aloj-v2-field full"><label>Observações gerais</label><textarea id="alojV2Observacoes"></textarea></div></section>
     </form>
@@ -118,7 +119,7 @@ export function renderRows(state) {
   const list = document.getElementById('alojV2List');
   if (!list) return;
   const query = normalizeText(state.query);
-  const rows = state.rows.filter((row) => !query || normalizeText([row.nome, row.responsavel, row.contato, row.cidade, row.uf, row.bairro, row.endereco_logradouro, row.endereco, row.agua_matricula, row.energia_matricula, row.internet_matricula, row.gas_forma_pagamento].join(' ')).includes(query));
+  const rows = state.rows.filter((row) => !query || normalizeText([row.nome, row.responsavel, row.contato, row.cidade, row.uf, row.bairro, row.endereco_logradouro, row.endereco, row.agua_matricula, row.agua_titular, row.energia_matricula, row.energia_titular, row.internet_matricula, row.internet_titular, row.gas_titular, row.gas_forma_pagamento].join(' ')).includes(query));
   list.innerHTML = rows.length ? `<div class="aloj-v2-list-table"><div class="aloj-v2-list-head"><span></span><span>Alojamento</span><span>Responsável</span><span>Aluguel / estrutura</span><span>Serviços</span><span>Status</span></div><div class="aloj-v2-list-body">${rows.map(renderListRow).join('')}</div></div>` : '<div class="aloj-v2-empty"><strong>Nenhum alojamento encontrado</strong>Revise a busca ou cadastre um novo alojamento.</div>';
   const values = {
     alojV2KpiTotal: state.rows.length,
