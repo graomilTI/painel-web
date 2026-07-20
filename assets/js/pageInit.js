@@ -73,17 +73,17 @@ function installFreshModuleNavigation() {
 
 installFreshModuleNavigation();
 
-// Aviso de "nova versão disponível": router.js e o resto do bootstrap
-// compartilhado (layout, auth etc.) não têm cache-busting por query string
-// como os scripts de patch da Programação -- uma aba já aberta antes de um
-// deploy fica com o módulo antigo na memória até um reload completo (nem o
-// service worker resolve isso sozinho, só evita refetch repetido). Em vez de
-// deixar o usuário descobrir na marra (feature quebrada, precisa adivinhar
-// que é F5), poll leve comparando o ETag/Last-Modified do router.js a cada
-// alguns minutos e mostra um aviso discreto pra atualizar quando mudar.
-const ROUTER_VERSION_URL = new URL('./router.js', import.meta.url).href;
-const VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-let lastRouterVersionTag = null;
+// Aviso de "nova versão disponível": uma aba já aberta antes de um deploy fica
+// com os módulos antigos na memória até um reload completo (nem o service
+// worker resolve isso sozinho, só evita refetch repetido), e o cache-busting
+// por ?v= nos <script> só age no reload da página. Em vez de deixar o usuário
+// descobrir na marra (feature quebrada, precisa adivinhar que é F5), o painel
+// faz poll de version.json — arquivo gerado pelo CI a cada deploy com o SHA do
+// commit (ver .github/workflows/pages.yml). Isso detecta QUALQUER deploy, não
+// só mudanças no router.js, sem depender de bump manual de versão.
+const VERSION_URL = new URL('../../version.json', import.meta.url).href;
+const VERSION_CHECK_INTERVAL_MS = 3 * 60 * 1000;
+let knownVersionTag = null;
 let updateBannerShown = false;
 
 function showUpdateBanner() {
@@ -99,12 +99,17 @@ function showUpdateBanner() {
 
 async function checkForNewVersion() {
   try {
-    const res = await fetch(ROUTER_VERSION_URL, { cache: 'no-store' });
+    const res = await fetch(VERSION_URL, { cache: 'no-store' });
     if (!res.ok) return;
-    const tag = res.headers.get('etag') || res.headers.get('last-modified') || res.headers.get('content-length') || '';
+    // version.json = { version: "<sha>", ... }. Se por algum motivo não vier o
+    // campo (arquivo antigo/malformado), cai pro ETag/Last-Modified do próprio
+    // arquivo como sinal de mudança.
+    let tag = '';
+    try { tag = (await res.clone().json())?.version || ''; } catch { /* não é JSON */ }
+    if (!tag) tag = res.headers.get('etag') || res.headers.get('last-modified') || '';
     if (!tag) return;
-    if (lastRouterVersionTag === null) { lastRouterVersionTag = tag; return; }
-    if (tag !== lastRouterVersionTag) showUpdateBanner();
+    if (knownVersionTag === null) { knownVersionTag = tag; return; }
+    if (tag !== knownVersionTag) showUpdateBanner();
   } catch { /* rede instável/offline — não é crítico, tenta de novo no próximo intervalo */ }
 }
 
@@ -113,6 +118,11 @@ function startUpdateWatcher() {
   window.__pgcUpdateWatcherStarted = true;
   checkForNewVersion();
   setInterval(checkForNewVersion, VERSION_CHECK_INTERVAL_MS);
+  // Checa também quando o usuário volta pra aba (deixou aberta o dia todo é o
+  // caso mais comum de ficar preso numa versão antiga).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkForNewVersion();
+  });
 }
 
 function currentRouteName() {
