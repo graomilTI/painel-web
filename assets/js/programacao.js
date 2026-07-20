@@ -909,7 +909,7 @@ export function renderContent(content) {
     ];
 
     return {
-      restricted: !isMaster && isGestor,
+      restricted: !isMaster && (isGestor || allowedSupervisoes.length > 0),
       allowedSupervisoes: [...new Set(allowedSupervisoes)],
       role,
       setor,
