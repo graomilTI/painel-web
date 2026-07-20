@@ -1263,12 +1263,11 @@ export async function renderContent(content) {
     return obj;
   }
 
-  async function buscarMovimentoAgente() {
-    const hoje = hojeBr();
+  async function buscarMovimentoAgente(dataRef) {
     const { data, error } = await supabase
       .from('grm_mapa_embarque_importacoes')
       .select('dados_json,created_at')
-      .eq('dados_json->>Data', hoje)
+      .eq('dados_json->>Data', dataRef)
       .order('created_at', { ascending: false })
       .limit(20000);
     if (error) throw error;
@@ -1284,13 +1283,12 @@ export async function renderContent(content) {
     return rows;
   }
 
-  async function buscarServicoFobAgente(tabela) {
-    const hoje = hojeBr();
+  async function buscarServicoFobAgente(tabela, dataRef) {
     const { data, error } = await supabase
       .from(tabela)
       .select('dados_json')
       .eq('dados_json->>Serviço', 'Classificação FOB')
-      .eq('dados_json->>Data', hoje)
+      .eq('dados_json->>Data', dataRef)
       .limit(20000);
     if (error) throw error;
     return (data || []).map((row) => agentRowToHeaderObject(row.dados_json));
@@ -1301,12 +1299,22 @@ export async function renderContent(content) {
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   }
 
+  // Fechamento diário: assim como a planilha (Apps Script) é fechada no fim do dia,
+  // a comparação automática deve olhar para ONTEM (dia já fechado pelos agentes),
+  // nunca para hoje — hoje ainda está sendo sincronizado e sempre traria poucas linhas.
+  function ontemBr() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  }
+
   async function gerarRelatorioFobAutomatico() {
     try {
+      const dataRef = ontemBr();
       const [movRows, prodRows, nheRows] = await Promise.all([
-        buscarMovimentoAgente(),
-        buscarServicoFobAgente('grm_producao_diaria_importacoes'),
-        buscarServicoFobAgente('grm_nhe_importacoes'),
+        buscarMovimentoAgente(dataRef),
+        buscarServicoFobAgente('grm_producao_diaria_importacoes', dataRef),
+        buscarServicoFobAgente('grm_nhe_importacoes', dataRef),
       ]);
 
       const { rows, stats } = compararFob(movRows, prodRows, nheRows);
@@ -1314,13 +1322,14 @@ export async function renderContent(content) {
       state.fobReportRows = rows;
       state.fobReportStats = {
         ...stats,
+        dataRef,
         abaMovimento: 'Distribuição de O.S. (sincronizado pelo agente)',
         abaProducao: 'Produção Diária (sincronizado pelo agente)',
         abaNhe: 'NHE (sincronizado pelo agente)',
         fonte: 'agente',
       };
       renderFobReport();
-      el.feedback.textContent = `Comparação FOB automática: ${rows.length} linha(s), ${state.fobReportStats.pendentes} pendente(s).`;
+      el.feedback.textContent = `Comparação FOB automática (${dataRef}): ${rows.length} linha(s), ${state.fobReportStats.pendentes} pendente(s).`;
     } catch (error) {
       console.error('[FOB automático]', error);
       el.feedback.textContent = `Falha ao gerar comparação automática do FOB: ${error.message || 'erro desconhecido'}. Use o reprocessamento manual.`;
@@ -1337,7 +1346,7 @@ export async function renderContent(content) {
     if (btnCsv) btnCsv.disabled = !rows.length;
     if (btnSave) btnSave.disabled = !rows.some((r) => r.status === 'PENDENTE');
     if (!rows.length) {
-      box.innerHTML = '<div class="log-empty">Comparação automática rodou e não encontrou nenhuma O.S. com Tons Hoje = 0 na base sincronizada pelos agentes.</div>';
+      box.innerHTML = `<div class="log-empty">Comparação automática de ${esc(stats?.dataRef || '-')} não encontrou nenhuma O.S. com Tons Hoje = 0 na base sincronizada pelos agentes.</div>`;
       return;
     }
     const preview = rows.slice(0, 250);
@@ -1345,7 +1354,7 @@ export async function renderContent(content) {
       <section class="card">
         <div class="section-head">
           <div>
-            <h3>Resultado da comparação FOB</h3>
+            <h3>Resultado da comparação FOB — ${esc(stats?.dataRef || '-')}</h3>
             <p class="muted">Fonte: <b>automática (agentes)</b> · Mov./Mapa <b>${esc(stats?.abaMovimento || '-')}</b> · Produção <b>${esc(stats?.abaProducao || '-')}</b> · NHE <b>${esc(stats?.abaNhe || '-')}</b></p>
           </div>
         </div>
@@ -1816,7 +1825,7 @@ export async function renderContent(content) {
     try {
       let buckets;
       if (['LDC', 'COFCO', 'SIPAL_USIMAT', 'OURO_SAFRA'].includes(regra)) {
-        const rows = await buscarMovimentoAgente(); // "Movimentação_hoje" via agente, sempre hoje (igual ao script antigo)
+        const rows = await buscarMovimentoAgente(hojeBr()); // "Movimentação_hoje" via agente, sempre hoje (igual ao script antigo)
         if (regra === 'LDC') buckets = montarBucketsLdc(rows);
         else if (regra === 'COFCO') buckets = montarBucketsCofco(rows);
         else if (regra === 'SIPAL_USIMAT') buckets = montarBucketsSipalUsimat(rows);
