@@ -1739,9 +1739,21 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         loadColaboradoresRegional(supervisaoQuery),
         loadIndisponiveisNaData(options.dataReferencia),
       ]);
-      // Colaborador de férias/atestado (RH > Indisponibilidade) não entra
+      // A Etapa 2 mostra SÓ a equipe da supervisão selecionada.
+      // loadColaboradoresRegional aceita match "parecido" por token (bom pra
+      // sugestão quando a RPC não devolve ninguém), o que vazava colaborador de
+      // outra regional que compartilha uma palavra (ex.: "MATO GROSSO MT4"
+      // aparecendo em "MATO GROSSO MT3"). Mesmo filtro EXATO de supervisão que a
+      // Etapa 4 (programacao-sem-os.js) e o PDF (programacao.js) já aplicam.
+      // Colaborador de férias/atestado (RH > Indisponibilidade) também não entra
       // como sugestão regional nem como opção no dropdown de troca.
-      const colaboradoresRegional = colaboradoresRegionalBruto.filter((c) => !indisponiveis.match(c));
+      const supervisoesAlvoRegional = new Set(
+        (Array.isArray(supervisaoQuery) ? supervisaoQuery : [supervisaoQuery])
+          .map((s) => normalizeText(s)).filter(Boolean)
+      );
+      const colaboradoresRegional = colaboradoresRegionalBruto
+        .filter((c) => !supervisoesAlvoRegional.size || supervisoesAlvoRegional.has(normalizeText(c.supervisao)))
+        .filter((c) => !indisponiveis.match(c));
       if (!osTodas.length) {
         listEl.innerHTML = '<div class="peqb-empty">Nenhuma O.S. pendente para esta supervisão.</div>';
         osComCandidatosAtual = [];
