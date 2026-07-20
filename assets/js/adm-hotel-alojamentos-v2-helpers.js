@@ -63,12 +63,18 @@ export function icon(name) {
 }
 
 export function ensureStyles() {
-  if (document.getElementById('admAlojamentosV2Css')) return;
-  const link = document.createElement('link');
-  link.id = 'admAlojamentosV2Css';
-  link.rel = 'stylesheet';
-  link.href = new URL('../css/adm-hotel-alojamentos-v2.css', import.meta.url).href;
-  document.head.appendChild(link);
+  const styles = [
+    { id: 'admAlojamentosV2Css', file: '../css/adm-hotel-alojamentos-v2.css' },
+    { id: 'admAlojamentosListaCss', file: '../css/adm-hotel-alojamentos-lista.css?v=20260720-lista1' }
+  ];
+  styles.forEach(({ id, file }) => {
+    if (document.getElementById(id)) return;
+    const link = document.createElement('link');
+    link.id = id;
+    link.rel = 'stylesheet';
+    link.href = new URL(file, import.meta.url).href;
+    document.head.appendChild(link);
+  });
 }
 
 export function extractMeta(observacoes) {
