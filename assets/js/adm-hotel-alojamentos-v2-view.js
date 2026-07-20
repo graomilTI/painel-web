@@ -1,4 +1,4 @@
-import { esc, money, brDate, safeUrl, icon, fullAddress, contractAlert, normalizeText } from './adm-hotel-alojamentos-v2-helpers.js';
+import { esc, money, brDate, safeUrl, icon, fullAddress, contractAlert, normalizeText } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-lista1';
 
 function serviceCard(kind, title, included, matricula, extra = '') {
   const isGas = kind === 'gas';
@@ -12,12 +12,37 @@ function serviceCard(kind, title, included, matricula, extra = '') {
   </div>`;
 }
 
-function renderCard(row) {
+function compactService(label, value, kind) {
+  const state = value === true ? 'Incluso' : value === false ? 'Pago' : '—';
+  const className = value === true ? 'included' : value === false ? 'paid' : '';
+  return `<span class="aloj-v2-mini-service ${className}" title="${esc(label)}: ${esc(state)}"><i class="${esc(kind)}"></i>${esc(label)} ${esc(state)}</span>`;
+}
+
+function renderListRow(row) {
+  const status = String(row.status || 'ATIVO').toLowerCase();
+  return `<div class="aloj-v2-list-row" data-id="${esc(row.id)}">
+    <div class="aloj-v2-list-open-cell"><button type="button" class="aloj-v2-expand-btn" data-aloj-v2-action="details" data-id="${esc(row.id)}" aria-label="Abrir detalhes de ${esc(row.nome || 'alojamento')}" title="Abrir detalhes">+</button></div>
+    <div class="aloj-v2-list-identity">
+      <div class="aloj-v2-list-home">${icon('home')}</div>
+      <div class="aloj-v2-list-title"><strong>${esc(row.nome || 'Alojamento sem nome')}</strong><span>${esc(row.tipo || 'CASA')} · ${esc([row.cidade, row.uf].filter(Boolean).join('/') || 'Local não informado')}</span></div>
+    </div>
+    <div class="aloj-v2-list-cell" data-label="Responsável"><strong>${esc(row.responsavel || 'Não informado')}</strong><span>${esc(row.contato || '')}</span></div>
+    <div class="aloj-v2-list-cell rent" data-label="Aluguel"><strong>${row.valor_aluguel ? money(row.valor_aluguel) : 'Não informado'}</strong><span>${esc(row.capacidade || 0)} vagas · ${esc(row.quartos || 0)} quartos</span></div>
+    <div class="aloj-v2-list-services" data-label="Serviços">
+      ${compactService('Água', row.agua_inclusa, 'water')}
+      ${compactService('Luz', row.energia_inclusa, 'energy')}
+      ${compactService('Internet', row.internet_inclusa, 'internet')}
+    </div>
+    <div class="aloj-v2-list-status"><span class="aloj-v2-status ${esc(status)}">${esc(row.status || 'ATIVO')}</span>${contractAlert(row) ? '<small>Contrato a vencer</small>' : ''}</div>
+  </div>`;
+}
+
+export function renderDetailsContent(row) {
   const contractUrl = safeUrl(row.contrato_url);
   const locationUrl = safeUrl(row.link_localizacao);
   const status = String(row.status || 'ATIVO').toLowerCase();
   const contractLabel = row.contrato_fim ? `Contrato até ${brDate(row.contrato_fim)}` : 'Acessar contrato';
-  return `<article class="aloj-v2-card" data-id="${esc(row.id)}">
+  return `<article class="aloj-v2-card aloj-v2-detail-card" data-id="${esc(row.id)}">
     <div class="aloj-v2-card-head">
       <div class="aloj-v2-title-wrap"><div class="aloj-v2-home-icon">${icon('home')}</div><div style="min-width:0">
         <h4 title="${esc(row.nome)}">${esc(row.nome || 'Alojamento sem nome')}</h4>
@@ -44,6 +69,13 @@ function renderCard(row) {
     </div>
     <div class="aloj-v2-card-actions"><button type="button" class="aloj-v2-secondary" data-aloj-v2-action="edit" data-id="${esc(row.id)}">Editar</button><button type="button" class="aloj-v2-danger" data-aloj-v2-action="delete" data-id="${esc(row.id)}">Excluir</button></div>
   </article>`;
+}
+
+function detailsModalHtml() {
+  return `<div class="aloj-v2-modal aloj-v2-details-modal" id="alojV2DetailsModal" aria-hidden="true"><div class="aloj-v2-modal-card aloj-v2-details-modal-card" role="dialog" aria-modal="true" aria-labelledby="alojV2DetailsTitle">
+    <div class="aloj-v2-modal-head"><div><div class="aloj-v2-eyebrow">Detalhes</div><h3 id="alojV2DetailsTitle">Alojamento</h3><p id="alojV2DetailsSubtitle">Informações completas do cadastro.</p></div><button type="button" class="aloj-v2-icon-btn" id="alojV2DetailsClose" aria-label="Fechar">${icon('close')}</button></div>
+    <div id="alojV2DetailsBody" class="aloj-v2-details-body"></div>
+  </div></div>`;
 }
 
 function modalHtml() {
@@ -77,9 +109,9 @@ function modalHtml() {
 }
 
 export function panelHtml() {
-  return `<div class="aloj-v2-shell"><section class="aloj-v2-head"><div><div class="aloj-v2-eyebrow">Hospedagem</div><h3>Controle de Alojamentos</h3><p>Contratos, aluguel, endereço e serviços essenciais em um único cadastro.</p></div><div class="aloj-v2-head-actions"><div class="aloj-v2-search-wrap">${icon('search')}<input id="alojV2Search" class="aloj-v2-search" placeholder="Buscar alojamento, cidade ou responsável..."></div><button type="button" class="aloj-v2-primary" id="alojV2New">+ Novo alojamento</button></div></section>
+  return `<div class="aloj-v2-shell"><section class="aloj-v2-head"><div><div class="aloj-v2-eyebrow">Hospedagem</div><h3>Controle de Alojamentos</h3><p>Visualize a lista e use o botão + para abrir as informações completas de cada alojamento.</p></div><div class="aloj-v2-head-actions"><div class="aloj-v2-search-wrap">${icon('search')}<input id="alojV2Search" class="aloj-v2-search" placeholder="Buscar alojamento, cidade ou responsável..."></div><button type="button" class="aloj-v2-primary" id="alojV2New">+ Novo alojamento</button></div></section>
     <section class="aloj-v2-kpis"><div class="aloj-v2-kpi"><span>Alojamentos</span><strong id="alojV2KpiTotal">0</strong></div><div class="aloj-v2-kpi accent"><span>Ativos</span><strong id="alojV2KpiAtivos">0</strong></div><div class="aloj-v2-kpi accent"><span>Aluguel mensal</span><strong id="alojV2KpiAluguel">R$ 0,00</strong></div><div class="aloj-v2-kpi"><span>Contratos a vencer</span><strong id="alojV2KpiContratos">0</strong></div></section>
-    <section id="alojV2List" class="aloj-v2-list"><div class="aloj-v2-loading"><strong>Carregando alojamentos</strong>Aguarde a consulta da base.</div></section>${modalHtml()}<div id="alojV2Toast" class="aloj-v2-toast"></div></div>`;
+    <section id="alojV2List" class="aloj-v2-list"><div class="aloj-v2-loading"><strong>Carregando alojamentos</strong>Aguarde a consulta da base.</div></section>${detailsModalHtml()}${modalHtml()}<div id="alojV2Toast" class="aloj-v2-toast"></div></div>`;
 }
 
 export function renderRows(state) {
@@ -87,7 +119,7 @@ export function renderRows(state) {
   if (!list) return;
   const query = normalizeText(state.query);
   const rows = state.rows.filter((row) => !query || normalizeText([row.nome, row.responsavel, row.contato, row.cidade, row.uf, row.bairro, row.endereco_logradouro, row.endereco, row.agua_matricula, row.energia_matricula, row.internet_matricula, row.gas_forma_pagamento].join(' ')).includes(query));
-  list.innerHTML = rows.length ? rows.map(renderCard).join('') : '<div class="aloj-v2-empty"><strong>Nenhum alojamento encontrado</strong>Revise a busca ou cadastre um novo alojamento.</div>';
+  list.innerHTML = rows.length ? `<div class="aloj-v2-list-table"><div class="aloj-v2-list-head"><span></span><span>Alojamento</span><span>Responsável</span><span>Aluguel / estrutura</span><span>Serviços</span><span>Status</span></div><div class="aloj-v2-list-body">${rows.map(renderListRow).join('')}</div></div>` : '<div class="aloj-v2-empty"><strong>Nenhum alojamento encontrado</strong>Revise a busca ou cadastre um novo alojamento.</div>';
   const values = {
     alojV2KpiTotal: state.rows.length,
     alojV2KpiAtivos: state.rows.filter((row) => String(row.status || 'ATIVO') === 'ATIVO').length,

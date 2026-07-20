@@ -1,9 +1,9 @@
 import { supabase } from './supabaseClient.js';
 import { loadUserContext } from './sessionStore.js';
-import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './adm-hotel-alojamentos-v2-helpers.js';
-import { panelHtml, renderRows } from './adm-hotel-alojamentos-v2-view.js';
+import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-lista1';
+import { panelHtml, renderRows, renderDetailsContent } from './adm-hotel-alojamentos-v2-view.js?v=20260720-lista1';
 
-const state = { rows: [], editingId: null, query: '', mountTimer: null };
+const state = { rows: [], editingId: null, selectedDetailsId: null, query: '', mountTimer: null };
 let toastTimer = null;
 
 function getValue(id) { return document.getElementById(id)?.value ?? ''; }
@@ -69,6 +69,27 @@ function closeModal() {
   modal?.classList.remove('open');
   modal?.setAttribute('aria-hidden', 'true');
   feedback('');
+}
+
+function openDetails(row) {
+  state.selectedDetailsId = row.id;
+  const modal = document.getElementById('alojV2DetailsModal');
+  const body = document.getElementById('alojV2DetailsBody');
+  const title = document.getElementById('alojV2DetailsTitle');
+  const subtitle = document.getElementById('alojV2DetailsSubtitle');
+  if (!modal || !body) return;
+  body.innerHTML = renderDetailsContent(row);
+  if (title) title.textContent = row.nome || 'Alojamento';
+  if (subtitle) subtitle.textContent = `${row.tipo || 'CASA'} · ${[row.cidade, row.uf].filter(Boolean).join('/') || 'Local não informado'}`;
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeDetails() {
+  state.selectedDetailsId = null;
+  const modal = document.getElementById('alojV2DetailsModal');
+  modal?.classList.remove('open');
+  modal?.setAttribute('aria-hidden', 'true');
 }
 
 function readForm() {
@@ -153,10 +174,11 @@ async function deleteRecord(id) {
     const message = normalizeText(result.error.message);
     if (message.includes('foreign key') || message.includes('violates') || message.includes('referenced')) {
       const fallback = await supabase.from('hospedagem_alojamentos').update({ status: 'INATIVO', atualizado_por: loadUserContext()?.user?.id || null }).eq('id', id);
-      if (!fallback.error) { await loadRows(); toast('Alojamento com vínculo marcado como inativo.'); return; }
+      if (!fallback.error) { closeDetails(); await loadRows(); toast('Alojamento com vínculo marcado como inativo.'); return; }
     }
     return toast(result.error.message || 'Não foi possível excluir.', 'err');
   }
+  closeDetails();
   await loadRows();
   toast('Alojamento excluído.');
 }
@@ -178,17 +200,25 @@ function bindPanel(panel) {
     const actionButton = event.target.closest('[data-aloj-v2-action]');
     if (actionButton) {
       const row = state.rows.find((item) => String(item.id) === String(actionButton.dataset.id));
-      if (actionButton.dataset.alojV2Action === 'edit' && row) openModal(row);
+      if (actionButton.dataset.alojV2Action === 'details' && row) openDetails(row);
+      if (actionButton.dataset.alojV2Action === 'edit' && row) { closeDetails(); openModal(row); }
       if (actionButton.dataset.alojV2Action === 'delete') deleteRecord(actionButton.dataset.id);
       return;
     }
     if (event.target === document.getElementById('alojV2Modal')) closeModal();
+    if (event.target === document.getElementById('alojV2DetailsModal')) closeDetails();
   });
   document.getElementById('alojV2New')?.addEventListener('click', () => openModal());
   document.getElementById('alojV2Close')?.addEventListener('click', closeModal);
   document.getElementById('alojV2Cancel')?.addEventListener('click', closeModal);
+  document.getElementById('alojV2DetailsClose')?.addEventListener('click', closeDetails);
   document.getElementById('alojV2Form')?.addEventListener('submit', saveRecord);
   document.getElementById('alojV2Search')?.addEventListener('input', (event) => { state.query = event.target.value; renderRows(state); });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (document.getElementById('alojV2Modal')?.classList.contains('open')) closeModal();
+    else if (document.getElementById('alojV2DetailsModal')?.classList.contains('open')) closeDetails();
+  });
 }
 
 async function mount() {
