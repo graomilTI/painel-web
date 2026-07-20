@@ -49,6 +49,7 @@ const SCRIPT_MAP = {
   'sync-lista-os': 'grm-sync-lista-os.js',
   'sync-operacional-os': 'grm-sync-operacional-os.js',
   'sync-distribuicao-os': 'grm-sync-distribuicao-os.js',
+  'aplicar-distribuicao-os': 'grm-sync-aplicar-distribuicao-os.js',
   'sync-cargas-geofence': 'grm-sync-cargas-geofence.js',
   'sync-btg-relatorios': 'grm-sync-btg-classificador.js',
   'sync-btg-classificador': 'grm-sync-btg-classificador.js',
@@ -85,14 +86,14 @@ function trimOutput(value) {
   return str.length > MAX_OUTPUT ? str.slice(str.length - MAX_OUTPUT) : str;
 }
 
-async function getNextJob() {
-  const { data, error } = await supabase
-    .from('grm_sync_jobs')
-    .select('*')
-    .eq('status', 'pendente')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+async function claimNextJob() {
+  // RPC atômica (trava via pg_advisory_xact_lock): só retorna um job se não
+  // houver NENHUM outro agente 'rodando' no momento, mesmo que a fila tenha
+  // sido alimentada por fontes diferentes (auto-scheduler, cron de
+  // sync-colaboradores, cron de sync-login-alimentacao). Isso serializa todos
+  // os agentes entre si e também evita que dois processos --once concorrentes
+  // (cron de 1min disparando antes do anterior terminar) rodem jobs em paralelo.
+  const { data, error } = await supabase.rpc('claim_next_grm_sync_job');
 
   if (error) throw error;
   return data;
@@ -168,9 +169,12 @@ function runScript(scriptName) {
 }
 
 async function processOne() {
-  const job = await getNextJob();
-  if (!job) {
-    log('Nenhum job pendente.');
+  const job = await claimNextJob();
+  // Quando a função SQL retorna NULL (composite), o PostgREST serializa como
+  // objeto com todos os campos null em vez de JSON null puro — por isso o
+  // check precisa ser em job.id, não só em job.
+  if (!job || !job.id) {
+    log('Nenhum job pendente (ou já existe outro agente rodando).');
     return false;
   }
 
@@ -183,12 +187,6 @@ async function processOne() {
     });
     return true;
   }
-
-  await updateJob(job.id, {
-    status: 'rodando',
-    iniciado_em: new Date().toISOString(),
-    erro: null,
-  });
 
   const result = await runScript(scriptName);
 
