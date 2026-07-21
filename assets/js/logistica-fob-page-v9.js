@@ -3,6 +3,10 @@ import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
 
 const PAGE_SIZE = 1000;
+// Quantas páginas buscar em paralelo por tabela. Antes o fetch paginava em
+// série (Produção = 30 idas-e-voltas em fila só ela), dominando o tempo de
+// carregamento. Buscar em ondas concorrentes derruba o tempo pra ~nº de ondas.
+const PAGE_CONCURRENCY = 6;
 const MAX_MOV_ROWS = 20000;
 const MAX_PROD_ROWS = 30000;
 const MAX_NHE_ROWS = 15000;
@@ -135,13 +139,26 @@ function serviceDate(row) {
 
 async function fetchPaged(builder, maxRows) {
   const rows = [];
-  for (let from = 0; from < maxRows; from += PAGE_SIZE) {
-    const to = Math.min(from + PAGE_SIZE, maxRows) - 1;
-    const { data, error } = await builder(from, to);
-    if (error) throw error;
-    const chunk = data || [];
-    rows.push(...chunk);
-    if (chunk.length < PAGE_SIZE) break;
+  const waveSpan = PAGE_SIZE * PAGE_CONCURRENCY;
+  // Busca as páginas em ondas concorrentes (em vez de uma a uma em série).
+  // Preserva a ordem original (results[] mantém a ordem das páginas) e ainda
+  // corta cedo quando uma página vem incompleta = fim da tabela — assim uma
+  // tabela pequena não dispara ondas de requests vazios.
+  for (let waveStart = 0; waveStart < maxRows; waveStart += waveSpan) {
+    const requests = [];
+    for (let from = waveStart; from < waveStart + waveSpan && from < maxRows; from += PAGE_SIZE) {
+      const to = Math.min(from + PAGE_SIZE, maxRows) - 1;
+      requests.push(builder(from, to));
+    }
+    const results = await Promise.all(requests);
+    let reachedEnd = false;
+    for (const { data, error } of results) {
+      if (error) throw error;
+      const chunk = data || [];
+      rows.push(...chunk);
+      if (chunk.length < PAGE_SIZE) reachedEnd = true;
+    }
+    if (reachedEnd) break;
   }
   return rows;
 }
