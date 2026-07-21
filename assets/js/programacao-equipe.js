@@ -140,7 +140,7 @@ const EMBARQUE_PROXIMO_KM = 400;
 const HOTEL_KM_THRESHOLD = EMBARQUE_PROXIMO_KM;
 const HOTEL_DIARIA_EST = 120; // R$ estimado por diária (referência básica)
 
-function precisaHotel(km) { return km != null && km >= HOTEL_KM_THRESHOLD; }
+export function precisaHotel(km) { return km != null && km >= HOTEL_KM_THRESHOLD; }
 function kmValido(km) { return km != null && Number.isFinite(Number(km)); }
 function kmSortValue(km) { return kmValido(km) ? Number(km) : Number.POSITIVE_INFINITY; }
 function candidatoPerto(cand) { return kmValido(cand?.km) && Number(cand.km) <= EMBARQUE_PROXIMO_KM; }
@@ -152,7 +152,7 @@ function custoSortValue(cand) {
 // Dentro do raio de embarque viável, o candidato sugerido (principal do card)
 // é sempre o de menor custo estimado — km só desempata quando o custo empata
 // ou nenhum dos dois tem custo calculado.
-function ordenarCandidatosPorEmbarque(lista = []) {
+export function ordenarCandidatosPorEmbarque(lista = []) {
   return [...lista].sort((a, b) => {
     const pa = candidatoPerto(a) ? 0 : 1;
     const pb = candidatoPerto(b) ? 0 : 1;
@@ -166,7 +166,7 @@ function ordenarCandidatosPorEmbarque(lista = []) {
     return (Number(b?.score) || 0) - (Number(a?.score) || 0);
   });
 }
-function melhorCandidatoEmbarque(disponiveis = []) {
+export function melhorCandidatoEmbarque(disponiveis = []) {
   const perto = disponiveis.filter(candidatoPerto);
   const pool = perto.length ? perto : disponiveis;
   const comCusto = pool.filter((c) => c.custoTotal != null);
@@ -176,11 +176,11 @@ function melhorCandidatoEmbarque(disponiveis = []) {
   });
   return ordenarCandidatosPorEmbarque(pool)[0] || null;
 }
-function estimarCustoKm(km) {
+export function estimarCustoKm(km) {
   if (km == null) return null;
   return Math.round((km * 2 / 10) * 7 * 100) / 100;
 }
-function parseEmbarqueUfCidade(embarque) {
+export function parseEmbarqueUfCidade(embarque) {
   const m = /^([A-Z]{2})\s*-\s*([^(]+)/.exec(embarque || '');
   if (!m) return { uf: '', cidade: '' };
   return { uf: m[1].trim(), cidade: m[2].trim() };
@@ -455,11 +455,11 @@ function injectStyles() {
 // equipe, drag-and-drop) — evita mexer retroativamente numa O.S. cujo
 // resultado real já aconteceu. Comparação por string funciona porque
 // dataReferencia/todayIso() são sempre 'YYYY-MM-DD'.
-function isDataPassada(dataReferencia) {
+export function isDataPassada(dataReferencia) {
   return !currentUserIsMaster && !!dataReferencia && dataReferencia < todayIso();
 }
 
-function readonlyBannerHtml() {
+export function readonlyBannerHtml() {
   return '<div class="prog-readonly-banner">🔒 Data retroativa — somente leitura. Só é possível editar a programação de hoje em diante.</div>';
 }
 
@@ -474,7 +474,7 @@ const OS_COLUNAS = 'id,numero_os,cliente,servico,embarque,destino,ponto_embarque
 // sumir da tela na hora). Sem dataReferencia, mantém o comportamento antigo
 // (só as não finalizadas) — usado pela Etapa 2/mapa, que já filtra por
 // ATENDER na frente e não precisa do histórico de finalizadas.
-async function loadOsRelevantes(supervisao, dataReferencia) {
+export async function loadOsRelevantes(supervisao, dataReferencia) {
   let query = supabase.from('operacional_os').select(OS_COLUNAS);
   query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
   const { data, error } = await query
@@ -499,7 +499,7 @@ async function loadOsRelevantes(supervisao, dataReferencia) {
   return [...(data || []), ...finalizadas];
 }
 
-function statusNorm(os) {
+export function statusNorm(os) {
   return normalizeText(os?.status_gestor || '') || 'PENDENTE';
 }
 
@@ -510,7 +510,7 @@ function statusNorm(os) {
 // aceso ao trocar de data mesmo sem nenhuma ação nesse dia. Comparamos
 // configurada_em (gravado a cada clique de status) com a data de referência
 // selecionada; sem tocar em status_gestor nem no fluxo de negócio.
-function localDateFromIso(iso) {
+export function localDateFromIso(iso) {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
@@ -537,7 +537,7 @@ function statusStripHtml(os, dataReferencia) {
   </div>`;
 }
 
-async function loadPontos(ids) {
+export async function loadPontos(ids) {
   if (!ids.length) return new Map();
   const { data, error } = await supabase
     .from('operacional_pontos_embarque')
@@ -678,7 +678,7 @@ export async function loadColaboradoresRegional(supervisao) {
 // Estado atual de Atendimento(OK)/Logística de cada colaborador confirmado —
 // só pra refletir no toggle do card; o valor em si já é escrito/mantido por
 // confirmarCandidato/adicionarColaboradorOs (auto) ou pelo próprio toggle.
-async function loadDisponibilidadeConfirmados(programacaoId, colaboradorIds) {
+export async function loadDisponibilidadeConfirmados(programacaoId, colaboradorIds) {
   const ids = [...new Set((colaboradorIds || []).filter(Boolean))];
   if (!ids.length) return new Map();
   const pids = Array.isArray(programacaoId) ? programacaoId : [programacaoId];
@@ -796,7 +796,7 @@ function pontoDaOs(os, pontosPorId) {
 // única supervisão — sob "Todas" (múltiplas supervisões na mesma tela),
 // agrupamos as O.S. pela própria supervisão (já vem em os.supervisao) e
 // chamamos a RPC uma vez por grupo, mesclando os resultados no final.
-async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
+export async function loadCandidatosPorOs(supervisao, osComPonto, excluirIds) {
   const grupos = new Map();
   osComPonto.forEach((item) => {
     const sup = item.os?.supervisao || supervisao;
@@ -857,7 +857,7 @@ async function loadCandidatosPorOsUnico(supervisao, osComPonto, excluirIds) {
   return porOs;
 }
 
-function aplicarSugestoesRegionais(porOs, osComPonto, colaboradoresRegional, excluirIds) {
+export function aplicarSugestoesRegionais(porOs, osComPonto, colaboradoresRegional, excluirIds) {
   if (!colaboradoresRegional?.length) return porOs;
   const bloqueados = new Set([...excluirIds].map(String));
   const nomesBloqueados = new Set();
@@ -889,7 +889,7 @@ function aplicarSugestoesRegionais(porOs, osComPonto, colaboradoresRegional, exc
 // em cada O.S. — reaproveita o que já veio no ranking de candidatos (se o
 // confirmado estiver no top-8) e só consulta colaborador_cruzamento por CPF
 // para os que faltarem (trocados manualmente / fora do ranking).
-async function loadTipoContratoConfirmados(idsConfirmados, candidatosPorOs) {
+export async function loadTipoContratoConfirmados(idsConfirmados, candidatosPorOs) {
   const mapa = new Map();
   candidatosPorOs.forEach((lista) => {
     lista.forEach((c) => {
@@ -909,7 +909,7 @@ async function loadTipoContratoConfirmados(idsConfirmados, candidatosPorOs) {
   return mapa;
 }
 
-function brl(value) {
+export function brl(value) {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -921,7 +921,7 @@ function candidatoOptionLabel(cand) {
   return `${cand.nome} — ${km} — ${custo} — score ${(cand.score * 100).toFixed(0)}${logistica}${hotel}`;
 }
 
-function iniciais(nome) {
+export function iniciais(nome) {
   return String(nome || '?').trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase() || '?';
 }
 
@@ -935,11 +935,11 @@ function avatarColor(seed) {
   for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
 }
-function avatarBadgeHtml(nome, seed) {
+export function avatarBadgeHtml(nome, seed) {
   return `<span class="peqb-avatar-badge" style="background:${avatarColor(seed || nome)}">${esc(iniciais(nome))}</span>`;
 }
 
-function tipoTone(label) {
+export function tipoTone(label) {
   const n = normalizeText(label);
   if (n.includes('EFETIVO')) return 'ok';
   if (n.includes('INTERMITENTE')) return 'warn';
@@ -949,7 +949,7 @@ function tipoTone(label) {
 
 // Barra de score quebrada em Contrato / Distância / Auditoria (pesos 50/30/20
 // vindos da RPC) — torna visível o que está sustentando o ranking.
-function scoreSeg(cand) {
+export function scoreSeg(cand) {
   const c = Math.max(0, Number(cand.scoreContrato) || 0);
   const d = Math.max(0, Number(cand.scoreDistancia) || 0);
   const a = Math.max(0, Number(cand.scoreAuditoria) || 0);
@@ -970,7 +970,7 @@ function osHeadHtml(os, confirmado) {
 }
 
 // Cartão selecionável de candidato — substitui cada <option> do antigo select.
-function candCardHtml(cand, selected, minCustoId) {
+export function candCardHtml(cand, selected, minCustoId) {
   const hotel = precisaHotel(cand.km);
   const km = cand.km != null ? `${cand.km} km` : 'sem coord.';
   const custo = cand.custoTotal != null ? `R$ ${brl(cand.custoTotal)}` : 's/ custo';
@@ -999,7 +999,7 @@ function todayIso() { const n = new Date(); return new Date(n.getTime() - n.getT
 // Embarque vem como "UF – CIDADE (FAZENDA…)". Divide em 2 linhas: a 1ª com
 // UF - Cidade (UF destacada) e a 2ª com o local em si (o que vier entre
 // parênteses, ou o restante do texto quando não houver parênteses).
-function embarqueHtml(embarque) {
+export function embarqueHtml(embarque) {
   const s = String(embarque == null ? '' : embarque).trim();
   if (!s || s === '-') return '-';
   const m = s.match(/^([A-Za-z]{2})\s*[–-]\s*(.+)$/);
@@ -2575,8 +2575,51 @@ export async function renderProgramacaoEquipe(content, options = {}) {
   await carregarERenderizar();
 }
 
+// Núcleo (sem UI) de atualizarStatusOs/openKgModal/openLaudoModal, que vivem
+// como closures dentro de renderProgramacaoEquipe/renderProgramacaoSituacao
+// (dependem de osComCandidatosAtual/carregarERenderizar). Extraído pra ser
+// reaproveitado pelo painel lateral novo (programacao-lista-drawer.js), que
+// não tem acesso a esses closures — mesma tabela/mesmo patch, sem UI.
+export async function atualizarStatusOsCore(os, nextStatus, currentUserId) {
+  const agoraIso = new Date().toISOString();
+  const kgAtivo = String(os?.observacao_logistica || '').startsWith('KG solicitado');
+  const patch = { status_gestor: nextStatus, configurada_em: agoraIso, updated_at: agoraIso };
+  if (!kgAtivo) patch.observacao_logistica = null;
+  if (nextStatus === 'FINALIZAR') {
+    patch.status_logistica = 'PENDENTE';
+    patch.enviado_logistica_em = agoraIso;
+    patch.logistica_solicitado_por = currentUserId || null;
+  } else {
+    patch.status_logistica = null;
+    patch.enviado_logistica_em = null;
+    patch.logistica_solicitado_por = null;
+  }
+  const { error } = await supabase.from('operacional_os').update(patch).eq('id', os.id);
+  if (error) throw error;
+}
 
-async function solicitarHospedagem(os, confirmadoRow, dataReferencia) {
+export async function registrarSaldoKg(osId, kg) {
+  const kgText = `KG solicitado pelo gestor: ${BRI.format(kg)} kg`;
+  const { error } = await supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: 'AGUARDAR', configurada_em: null, updated_at: new Date().toISOString() }).eq('id', osId);
+  if (error) throw error;
+}
+
+export async function anexarLaudo(osId, files) {
+  const urls = [];
+  for (const file of files) {
+    const path = `${osId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+    const { data: up, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
+    if (upErr) throw upErr;
+    const { data: urlData } = supabase.storage.from('os-laudos').getPublicUrl(up.path);
+    urls.push(urlData.publicUrl);
+  }
+  const laudoText = `LAUDO:${urls.join(',')}`;
+  const { error } = await supabase.from('operacional_os').update({ observacao_logistica: laudoText, updated_at: new Date().toISOString() }).eq('id', osId);
+  if (error) throw error;
+  return urls;
+}
+
+export async function solicitarHospedagem(os, confirmadoRow, dataReferencia) {
   const { uf, cidade } = parseEmbarqueUfCidade(os.embarque);
   const data = dataReferencia || todayIso();
   const nome = confirmadoRow?.nome_colaborador || '';
@@ -2609,7 +2652,7 @@ async function solicitarHospedagem(os, confirmadoRow, dataReferencia) {
   return sol;
 }
 
-async function confirmarCandidato(programacaoId, os, cand) {
+export async function confirmarCandidato(programacaoId, os, cand) {
   const payload = {
     programacao_id: programacaoId,
     os_id: os.id,
@@ -2656,7 +2699,7 @@ async function confirmarCandidato(programacaoId, os, cand) {
   if (espelhoErr) console.warn('[programacao-equipe] falha ao espelhar disponibilidade.', espelhoErr);
 }
 
-async function adicionarColaboradorOs(programacaoId, os, cand) {
+export async function adicionarColaboradorOs(programacaoId, os, cand) {
   const payload = {
     programacao_id: programacaoId,
     os_id: os.id,
@@ -2702,7 +2745,7 @@ async function adicionarColaboradorOs(programacaoId, os, cand) {
 // Versão em LOTE de confirmarCandidato: grava N atribuições ({os, cand}) com
 // ~4 chamadas no total (em vez de ~4 por O.S.). Usada no auto-preencher, que
 // antes fazia uma confirmação sequencial por O.S. e ficava lento (37 O.S.).
-async function confirmarCandidatosEmLote(programacaoIdParaOs, atribuicoes) {
+export async function confirmarCandidatosEmLote(programacaoIdParaOs, atribuicoes) {
   if (!atribuicoes.length) return;
   const resolverId = typeof programacaoIdParaOs === 'function' ? programacaoIdParaOs : () => programacaoIdParaOs;
 
@@ -2754,7 +2797,7 @@ async function confirmarCandidatosEmLote(programacaoIdParaOs, atribuicoes) {
   if (espErr) console.warn('[programacao-equipe] lote: espelhar disponibilidade', espErr);
 }
 
-async function removerConfirmacao(programacaoId, equipeRowId) {
+export async function removerConfirmacao(programacaoId, equipeRowId) {
   const { data: rows, error: selErr } = await supabase.from('programacao_equipe').select('colaborador_id,os_id').eq('id', equipeRowId).limit(1);
   if (selErr) throw selErr;
   const colaboradorId = rows?.[0]?.colaborador_id;

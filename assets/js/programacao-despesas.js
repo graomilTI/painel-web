@@ -6,7 +6,7 @@
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
 import { getUserContext } from './auth.js';
-import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20260721-mockupredesign1';
+import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20260721-listadrawer1';
 import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
 
 let currentUserIsMaster = false;
@@ -85,7 +85,7 @@ function diasFromEstadia(est) {
 }
 
 let alojamentosCache = null;
-async function loadAlojamentos() {
+export async function loadAlojamentos() {
   if (alojamentosCache) return alojamentosCache;
   try {
     const { data, error } = await supabase
@@ -312,7 +312,7 @@ function extraItemHtml(r) {
   </div>`;
 }
 
-function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab) {
+export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab) {
   const est = custos.est.get(row.colaboradorId) || {};
   const ali = custos.ali.get(row.colaboradorId) || { almoco: true };
   const des = custos.des.get(row.colaboradorId) || {};
@@ -432,6 +432,31 @@ export async function renderProgramacaoDespesas(content, options = {}) {
   // programacao-gestor-fluxo-avancado.js, que agora prefere este caminho).
   window.__pgcSilentRefreshDespesas = () => carregar({ silent: true });
 
+  wireDespesasCards(rootEl, {
+    getDataReferencia: () => options.dataReferencia,
+    getCustos: () => custos,
+    isReadOnly: () => readOnly,
+  });
+
+  await carregar();
+}
+
+// Autosave (Estadia/Alimentação/Deslocamento/Extras) + toda a interação do
+// card de colaborador — extraído de dentro de renderProgramacaoDespesas pra
+// ser reaproveitado pelo painel lateral novo (programacao-lista-drawer.js),
+// que monta os MESMOS cards (colaboradorCardHtml) só que escopados a UMA O.S.
+// em vez do roster do dia inteiro. `ctx` é um conjunto de getters (não
+// valores fixos) porque o chamador pode trocar dataReferencia/custos/readOnly
+// depois de religar (ex.: reabrir o painel numa O.S. diferente) sem precisar
+// re-registrar os listeners — a guarda de `dataset.peqdWired` abaixo garante
+// que isso só roda 1x por elemento contêiner.
+export function wireDespesasCards(containerEl, ctx = {}) {
+  if (containerEl.dataset.peqdWired === '1') return;
+  containerEl.dataset.peqdWired = '1';
+  const getDataReferencia = ctx.getDataReferencia || (() => null);
+  const getCustos = ctx.getCustos || (() => ({ est: new Map(), ali: new Map(), des: new Map() }));
+  const isReadOnly = ctx.isReadOnly || (() => false);
+
   // Autosave falhava em silêncio (só console.error) — o campo continuava
   // mostrando a escolha do gestor na tela mesmo quando o upsert não ia pro
   // banco, dando a impressão de "salvo" quando não estava (relatado
@@ -457,14 +482,14 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     const colabId = card.dataset.colabId;
     const payload = {
       programacao_id: card.dataset.programacaoId,
-      data_referencia: options.dataReferencia || null,
+      data_referencia: getDataReferencia() || null,
       colaborador_id: colabId,
       nome_colaborador: card.dataset.nome,
     };
     if (tabela === 'programacao_estadia') {
       const tipo = normalizeText(card.querySelector('[data-fld="tipo_estadia"]')?.value || 'CASA') || 'CASA';
       const diasVal = Math.max(1, Number(card.querySelector('[data-fld="dias"]')?.value || 1));
-      const checkin = options.dataReferencia || todayIso();
+      const checkin = getDataReferencia() || todayIso();
       const cidadeInput = card.querySelector('[data-fld="cidade"]')?.value || '';
       let cidade = cidadeInput || (card.dataset.embarque ? cidadeFromEmbarque(card.dataset.embarque) : null);
       let alojamento_id = null; let alojamento_nome = null;
@@ -542,7 +567,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     const colabId = card.dataset.colabId;
     const { data, error } = await supabase.from('programacao_extras').insert({
       programacao_id: card.dataset.programacaoId,
-      data_referencia: options.dataReferencia || null,
+      data_referencia: getDataReferencia() || null,
       colaborador_id: colabId,
       nome_colaborador: card.dataset.nome,
       tipo_despesa: 'OUTRO',
@@ -580,8 +605,8 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     itemEl.remove();
   }
 
-  rootEl.addEventListener('focusin', (event) => {
-    if (readOnly) return;
+  containerEl.addEventListener('focusin', (event) => {
+    if (isReadOnly()) return;
     const input = event.target.closest('.peqd-aloj-combo-input');
     if (!input) return;
     const select = input.previousElementSibling;
@@ -590,7 +615,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     abrirAlojDropdown(input, select, '');
   });
 
-  rootEl.addEventListener('keydown', (event) => {
+  containerEl.addEventListener('keydown', (event) => {
     const input = event.target.closest('.peqd-aloj-combo-input');
     if (!input) return;
     if (event.key === 'Escape') { hideAlojDropdown(); input.blur(); }
@@ -610,8 +635,8 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     }
   });
 
-  rootEl.addEventListener('input', (event) => {
-    if (readOnly) return;
+  containerEl.addEventListener('input', (event) => {
+    if (isReadOnly()) return;
     const inp = event.target;
     if (inp.matches('.peqd-aloj-combo-input')) {
       const select = inp.previousElementSibling;
@@ -629,8 +654,8 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     if (card) scheduleSaveCampo(card, `programacao_${inp.dataset.tab}`);
   });
 
-  rootEl.addEventListener('change', (event) => {
-    if (readOnly) return;
+  containerEl.addEventListener('change', (event) => {
+    if (isReadOnly()) return;
     const sel = event.target;
     if (sel.matches('[data-extra-fld]')) {
       const itemEl = sel.closest('[data-extra-id]');
@@ -641,14 +666,14 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     const card = sel.closest('.peqd-card');
     if (sel.dataset.fld === 'tipo_estadia' && card) {
       const destino = card.querySelector('[data-estadia-destino]');
-      const est = custos.est.get(card.dataset.colabId) || {};
+      const est = getCustos().est.get(card.dataset.colabId) || {};
       if (destino) destino.innerHTML = estadiaDestinoHtml(sel.value, est, card.dataset.embarque);
     }
     if (card) scheduleSaveCampo(card, `programacao_${sel.dataset.tab}`);
   });
 
-  rootEl.addEventListener('click', async (event) => {
-    if (readOnly) return;
+  containerEl.addEventListener('click', async (event) => {
+    if (isReadOnly()) return;
     const chip = event.target.closest('.peqd-chip[data-ref]');
     if (chip) {
       chip.classList.toggle('on');
@@ -668,6 +693,4 @@ export async function renderProgramacaoDespesas(content, options = {}) {
       if (itemEl) await removeExtra(rmBtn.dataset.extraRemove, itemEl);
     }
   });
-
-  await carregar();
 }

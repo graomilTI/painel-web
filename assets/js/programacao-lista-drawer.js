@@ -1,0 +1,830 @@
+// Programação — tela única "lista + painel lateral" (2026-07-21), substitui o
+// sistema de 4 abas (Situação da O.S. / Equipe + Mapa / Despesas / Sem O.S.)
+// por um modelo de referência que a usuária mandou (mockup "GuiM Logística"):
+// lista de O.S. à esquerda (filtro/paginação) + painel lateral (drawer) que
+// abre ao clicar na O.S., com Ações de status + Colaboradores da O.S. (cada
+// um com Deslocamento/Estadia/Alimentação/Extras) + Justificativa + Salvar.
+//
+// Não reimplementa a lógica de dados — reaproveita 100% do que já existe em
+// programacao-equipe.js (candidatos/custos/status/etc.) e programacao-despesas.js
+// (colaboradorCardHtml + autosave via wireDespesasCards), só com uma
+// apresentação nova. "Sem O.S." continua como aba separada (renderProgramacaoSemOs)
+// porque não é sobre uma O.S. — não cabe no modelo de painel lateral.
+import { supabase } from './supabaseClient.js';
+import { logActivity } from './activityLogger.js';
+import { getCurrentUser } from './auth.js';
+import {
+  loadOsRelevantes, loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato,
+  loadColaboradoresRegional, loadIndisponiveisNaData, loadPontos, loadCandidatosPorOs,
+  aplicarSugestoesRegionais, loadDisponibilidadeConfirmados,
+  ordenarCandidatosPorEmbarque, candCardHtml, tipoTone, avatarBadgeHtml, embarqueHtml,
+  brl, statusNorm, isDataPassada,
+  confirmarCandidato, adicionarColaboradorOs, removerConfirmacao,
+  atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
+} from './programacao-equipe.js?v=20260721-listadrawer1';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos } from './programacao-despesas.js?v=20260721-listadrawer1';
+
+function esc(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+function normalizeText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim();
+}
+function todayIso() { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+
+let currentUser = null;
+getCurrentUser().then((u) => { currentUser = u; }).catch(() => {});
+
+const state = {
+  page: 1,
+  pageSize: 10,
+  busca: '',
+  cliente: '',
+  local: '',
+  soRemanescente: false,
+  osAbertaId: null,
+};
+
+function injectStyles() {
+  if (document.getElementById('pldStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'pldStyles';
+  style.textContent = `
+    .pld-shell{display:grid;grid-template-columns:minmax(420px,1fr) minmax(0,0px);gap:16px;align-items:start;position:relative}
+    .pld-shell.pld-drawer-open{grid-template-columns:minmax(380px,1fr) min(480px,42vw)}
+    .pld-list-col{min-width:0}
+    .pld-title{margin:0;font-size:22px;font-weight:950;color:#f8fafc;letter-spacing:.01em}
+    .pld-subtitle{margin:4px 0 14px;color:#8ba79a;font-size:13px}
+    .pld-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+    .pld-filters input[type="text"],.pld-filters select{height:38px;border:1px solid rgba(52,211,153,.22);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;font-size:12.5px;color-scheme:dark}
+    .pld-filters input[type="text"]{flex:1 1 220px;min-width:160px}
+    .pld-filters select{flex:0 1 180px}
+    .pld-toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:#8ba79a;white-space:nowrap;cursor:pointer}
+    .pld-toggle input{accent-color:#16a34a;width:16px;height:16px}
+    .pld-count-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12.5px;color:#8ba79a}
+    .pld-count-row b{color:#6fd0a5}
+    .pld-table-wrap{border:1px solid rgba(52,211,153,.16);border-radius:16px;overflow:hidden;background:rgba(2,6,23,.28)}
+    .pld-table{width:100%;border-collapse:separate;border-spacing:0}
+    .pld-table thead th{text-align:left;font-size:10.5px;font-weight:850;letter-spacing:.06em;text-transform:uppercase;color:#93c5fd;padding:11px 14px;border-bottom:1px solid rgba(52,211,153,.16)}
+    .pld-row{cursor:pointer;border-bottom:1px solid rgba(148,163,184,.1)}
+    .pld-row:last-child{border-bottom:0}
+    .pld-row:hover td{background:rgba(34,197,94,.06)}
+    .pld-row.active td{background:rgba(34,197,94,.12)}
+    .pld-row td{padding:12px 14px;vertical-align:middle;font-size:13px;color:#e2e2f0}
+    .pld-os-num{display:flex;align-items:center;gap:8px;font-weight:900;color:#f8fafc}
+    .pld-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+    .pld-dot.tone-pendente{background:#64748b}
+    .pld-dot.tone-aguardar{background:#f59e0b}
+    .pld-dot.tone-atender{background:#22c55e}
+    .pld-dot.tone-finalizar{background:#475569}
+    .pld-cliente{font-weight:750;color:#f8fafc}
+    .pld-local-uf{color:#6fd0a5;font-weight:900}
+    .pld-local-cid{color:#8ba79a;font-size:11.5px;margin-top:1px}
+    .pld-rem{font-weight:900;color:#f8fafc;white-space:nowrap}
+    .pld-chevron{color:#6b7a86;font-size:15px}
+    .pld-empty{padding:26px;text-align:center;color:#94a3b8}
+    .pld-pagination{display:flex;justify-content:center;align-items:center;gap:6px;margin-top:14px}
+    .pld-page-btn{min-width:34px;height:34px;border-radius:9px;border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.5);color:#cbd5e1;font-weight:800;font-size:12.5px;cursor:pointer}
+    .pld-page-btn.active{border-color:rgba(52,211,153,.55);background:rgba(22,163,74,.28);color:#dcfce7}
+    .pld-page-btn:disabled{opacity:.4;cursor:not-allowed}
+
+    /* Painel lateral */
+    .pld-drawer{position:sticky;top:8px;max-height:calc(100vh - 60px);overflow-y:auto;border:1px solid rgba(52,211,153,.22);border-radius:18px;background:#0a1a12;padding:20px 22px}
+    .pld-drawer[hidden]{display:none}
+    .pld-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .pld-os-title{display:flex;align-items:center;gap:10px;font-size:19px;color:#f8fafc}
+    .pld-os-title b{font-weight:950}
+    .pld-status-badge{font-size:10.5px;font-weight:900;padding:4px 10px;border-radius:999px;background:rgba(34,197,94,.18);color:#86efac;border:1px solid rgba(34,197,94,.32)}
+    .pld-status-badge.tone-fim{background:rgba(100,116,139,.18);color:#cbd5e1;border-color:rgba(100,116,139,.32)}
+    .pld-drawer-close{border:0;background:transparent;color:#8ba79a;font-size:20px;cursor:pointer;line-height:1;padding:4px}
+    .pld-drawer-close:hover{color:#f8fafc}
+    .pld-drawer-sub{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin:14px 0 18px;padding-bottom:16px;border-bottom:1px solid rgba(111,208,165,.14)}
+    .pld-sub-left{font-size:13px;color:#e2e2f0;line-height:1.5}
+    .pld-sub-emb{color:#8ba79a;font-size:12px;margin-top:2px}
+    .pld-sub-rem{text-align:right;flex:0 0 auto}
+    .pld-sub-rem span{display:block;font-size:10px;color:#7d8aa3;text-transform:uppercase;letter-spacing:.06em;font-weight:850}
+    .pld-sub-rem strong{display:block;margin-top:3px;font-size:17px;color:#f8fafc}
+    .pld-section-label{font-size:10.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#7d8aa3;margin:0 0 10px;display:flex;align-items:center;justify-content:space-between}
+    .pld-section-label a,.pld-section-label button.pld-link{background:none;border:0;color:#6fd0a5;font-size:11.5px;font-weight:850;cursor:pointer;padding:0}
+    .pld-acoes-row{display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap}
+    .pld-acao-btn{display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:0;cursor:pointer;color:#9fb7aa;font-size:10px;font-weight:800;width:66px}
+    .pld-acao-btn span.pld-acao-ico{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;background:rgba(148,163,184,.12);color:#cbd5e1;border:1px solid rgba(148,163,184,.16)}
+    .pld-acao-btn:hover span.pld-acao-ico{border-color:rgba(148,163,184,.35)}
+    .pld-acao-btn.on span.pld-acao-ico{background:rgba(22,163,74,.28);color:#86efac;border-color:rgba(34,197,94,.5)}
+    .pld-acao-btn[disabled]{opacity:.4;cursor:not-allowed}
+    .pld-acao-menu-wrap{position:relative}
+    .pld-acao-menu{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:6px;background:#0c1f17;border:1px solid rgba(111,208,165,.3);border-radius:10px;box-shadow:0 14px 32px rgba(0,0,0,.5);z-index:50;min-width:190px;padding:6px}
+    .pld-acao-menu[hidden]{display:none}
+    .pld-acao-menu button{display:block;width:100%;text-align:left;background:none;border:0;color:#e2e2f0;font-size:12.5px;padding:8px 10px;border-radius:7px;cursor:pointer}
+    .pld-acao-menu button:hover{background:rgba(111,208,165,.12)}
+    .pld-lock{border:1px dashed rgba(148,163,184,.25);border-radius:14px;padding:20px;text-align:center;color:#8ba79a;font-size:12.5px;line-height:1.5}
+    .pld-lock b{color:#cbd5e1}
+    .pld-cand-wrap{margin-bottom:10px}
+    .pld-colab-card{border:1px solid rgba(52,211,153,.18);border-radius:14px;background:rgba(2,6,23,.3);padding:12px 14px;margin-bottom:12px}
+    .pld-colab-card .peqd-card{border:0;padding:0;background:transparent}
+    .pld-colab-card .peqd-head{display:none}
+    .pld-colab-head{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+    .pld-colab-head .peqb-avatar-badge{width:28px;height:28px;font-size:10.5px}
+    .pld-colab-nome{font-size:13.5px;font-weight:850;color:#f8fafc;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pld-colab-tag{font-size:10px;font-weight:850;padding:3px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);white-space:nowrap}
+    .pld-colab-tag.t-ok{background:rgba(22,163,74,.18);color:#bbf7d0;border-color:rgba(34,197,94,.3)}
+    .pld-colab-tag.t-warn{background:rgba(245,158,11,.14);color:#fde68a;border-color:rgba(245,158,11,.3)}
+    .pld-colab-tag.t-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(59,130,246,.3)}
+    .pld-colab-tag.t-muted{background:rgba(148,163,184,.14);color:#cbd5e1}
+    .pld-kebab-wrap{position:relative;flex:0 0 auto}
+    .pld-kebab{background:none;border:0;color:#8ba79a;font-size:16px;cursor:pointer;padding:2px 6px}
+    .pld-kebab:hover{color:#f8fafc}
+    .pld-kebab-menu{position:absolute;top:100%;right:0;margin-top:4px;background:#0c1f17;border:1px solid rgba(111,208,165,.3);border-radius:10px;box-shadow:0 14px 32px rgba(0,0,0,.5);z-index:40;min-width:170px;padding:6px}
+    .pld-kebab-menu[hidden]{display:none}
+    .pld-kebab-menu button{display:block;width:100%;text-align:left;background:none;border:0;color:#e2e2f0;font-size:12px;padding:7px 9px;border-radius:7px;cursor:pointer}
+    .pld-kebab-menu button:hover{background:rgba(111,208,165,.12)}
+    .pld-kebab-menu button.danger{color:#fca5a5}
+    .pld-add-box{display:flex;gap:8px;align-items:center;border:1px solid rgba(56,189,248,.28);background:rgba(15,23,42,.72);border-radius:11px;padding:8px;margin-bottom:12px}
+    .pld-add-box select{flex:1 1 auto;height:34px;border:1px solid rgba(56,189,248,.3);background:#06130e;color:#eef7f2;border-radius:8px;padding:0 8px;font-size:12px;color-scheme:dark}
+    .pld-add-box button{height:34px;padding:0 12px;border-radius:8px;border:1px solid rgba(56,189,248,.42);background:rgba(14,116,144,.2);color:#bfdbfe;font-size:11.5px;font-weight:850;cursor:pointer}
+    .pld-justif{margin-top:6px}
+    .pld-justif label{display:block;font-size:10.5px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#7d8aa3;margin-bottom:6px}
+    .pld-justif textarea{width:100%;box-sizing:border-box;min-height:64px;resize:vertical;border:1px solid rgba(52,211,153,.28);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:10px 12px;font-size:12.5px}
+    .pld-justif-count{display:flex;justify-content:space-between;font-size:10.5px;color:#7d8aa3;margin-top:4px}
+    .pld-save-row{margin-top:16px;position:sticky;bottom:-1px;background:#0a1a12;padding-top:10px}
+    .pld-save-btn{width:100%;height:44px;border-radius:12px;border:1px solid rgba(187,247,208,.32);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;font-weight:950;font-size:13.5px;cursor:pointer}
+    .pld-save-btn:disabled{opacity:.5;cursor:not-allowed;filter:grayscale(.3)}
+    .pld-loading{display:flex;align-items:center;gap:10px;color:#94a3b8;padding:18px;font-size:12.5px}
+    .pld-spinner{width:20px;height:20px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;flex:0 0 auto;animation:pldSpin .75s linear infinite}
+    @keyframes pldSpin{to{transform:rotate(360deg)}}
+    .pld-modal-ov{position:fixed;inset:0;background:rgba(2,6,23,.72);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
+    .pld-modal{background:#0c1f17;border:1px solid rgba(111,208,165,.25);border-radius:16px;padding:18px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px;max-height:80vh;overflow-y:auto}
+    .pld-modal h3{margin:0;font-size:15px;color:#f8fafc}
+    .pld-modal p{margin:0;font-size:12px;color:#9fb7aa}
+    .pld-modal input,.pld-modal textarea{padding:9px 10px;border-radius:9px;border:1px solid rgba(111,208,165,.3);background:#0a1e17;color:#f8fafc;font-size:13px;color-scheme:dark}
+    .pld-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+    .pld-modal-btn{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.6);color:#e2e2f0;border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:800;cursor:pointer}
+    .pld-modal-btn.primary{border-color:rgba(134,239,172,.4);color:#bbf7d0;background:rgba(22,163,74,.16)}
+    .pld-hist-item{border-bottom:1px solid rgba(148,163,184,.12);padding:8px 0;font-size:12px;color:#e2e2f0}
+    .pld-hist-item:last-child{border-bottom:0}
+    .pld-hist-when{color:#7d8aa3;font-size:10.5px;margin-top:2px}
+    .prog-readonly-banner{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 14px;border:1px solid rgba(234,179,8,.32);background:rgba(234,179,8,.1);border-radius:12px;color:#fde68a;font-size:12.5px;font-weight:800}
+    @media(max-width:980px){.pld-shell.pld-drawer-open{grid-template-columns:1fr}.pld-drawer{position:fixed;inset:0;top:auto;max-height:88vh;border-radius:18px 18px 0 0;z-index:200}}
+  `;
+  document.head.appendChild(style);
+}
+
+function fmtRem(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? brl(n) : '-';
+}
+
+function statusToneClass(os) {
+  const st = statusNorm(os);
+  if (st === 'ATENDER') return 'tone-atender';
+  if (st === 'AGUARDAR') return 'tone-aguardar';
+  if (st === 'FINALIZAR') return 'tone-finalizar';
+  return 'tone-pendente';
+}
+
+function programacaoIdParaOs(os, programacaoId, programacaoIdMap) {
+  return programacaoIdMap?.size ? (programacaoIdMap.get(os?.supervisao) || null) : programacaoId;
+}
+
+export async function renderProgramacaoListaDrawer(content, options = {}) {
+  injectStyles();
+  const supervisao = String(options.supervisao || '').trim();
+  const programacaoId = options.programacaoId || null;
+  const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
+  const supervisaoQuery = programacaoIdMap.size ? [...programacaoIdMap.keys()] : supervisao;
+  const programacaoIdQuery = programacaoIdMap.size ? [...programacaoIdMap.values()] : programacaoId;
+  const readOnly = isDataPassada(options.dataReferencia);
+
+  content.innerHTML = `
+    ${readOnly ? '<div class="prog-readonly-banner">🔒 Data retroativa — somente leitura. Só é possível editar a programação de hoje em diante.</div>' : ''}
+    <div class="pld-shell" id="pldShell">
+      <div class="pld-list-col">
+        <h2 class="pld-title">PROGRAMAÇÃO DE O.S.</h2>
+        <p class="pld-subtitle">Distribua colaboradores, deslocamentos, estadia e despesas</p>
+        <div class="pld-filters">
+          <input type="text" id="pldBusca" placeholder="Buscar O.S. ou cliente..." />
+          <select id="pldCliente"><option value="">Todos os clientes</option></select>
+          <select id="pldLocal"><option value="">Todos os locais</option></select>
+          <label class="pld-toggle"><input type="checkbox" id="pldSoRemanescente" /> Exibir apenas O.S. com remanescente</label>
+        </div>
+        <div id="pldListaBody"><div class="pld-loading"><span class="pld-spinner" aria-hidden="true"></span><span>Carregando O.S. da supervisão...</span></div></div>
+      </div>
+      <aside class="pld-drawer" id="pldDrawer" hidden></aside>
+    </div>
+  `;
+
+  const listaBody = content.querySelector('#pldListaBody');
+  if (!supervisao || (!programacaoId && !programacaoIdMap.size)) {
+    listaBody.innerHTML = '<div class="pld-empty">Carregue o contexto (supervisão e data) para ver as O.S.</div>';
+    return;
+  }
+
+  let osTodasAtual = [];
+  let equipeRowsAtual = [];
+  const shellEl = content.querySelector('#pldShell');
+  const drawerEl = content.querySelector('#pldDrawer');
+
+  async function recarregarEquipeRows() {
+    equipeRowsAtual = await loadEquipeExistente(programacaoIdQuery);
+    return equipeRowsAtual;
+  }
+
+  function confirmadosPorOsMap() {
+    const map = new Map();
+    equipeRowsAtual.filter((r) => r.confirmado).forEach((r) => {
+      if (!map.has(r.os_id)) map.set(r.os_id, r);
+    });
+    return map;
+  }
+
+  function equipeRowsDaOs(osId) {
+    return equipeRowsAtual.filter((r) => r.confirmado && String(r.os_id) === String(osId));
+  }
+
+  function popularFiltros() {
+    const clienteSel = content.querySelector('#pldCliente');
+    const localSel = content.querySelector('#pldLocal');
+    const clienteAtual = clienteSel.value;
+    const localAtual = localSel.value;
+    const clientes = [...new Set(osTodasAtual.map((os) => os.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const locais = [...new Set(osTodasAtual.map((os) => os.embarque).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    clienteSel.innerHTML = '<option value="">Todos os clientes</option>' + clientes.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    localSel.innerHTML = '<option value="">Todos os locais</option>' + locais.map((l) => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+    clienteSel.value = clientes.includes(clienteAtual) ? clienteAtual : '';
+    localSel.value = locais.includes(localAtual) ? localAtual : '';
+  }
+
+  function osFiltradas() {
+    const busca = normalizeText(state.busca);
+    return osTodasAtual.filter((os) => {
+      if (state.cliente && os.cliente !== state.cliente) return false;
+      if (state.local && os.embarque !== state.local) return false;
+      if (state.soRemanescente && !(Number(os.remanescente) > 0)) return false;
+      if (busca && !normalizeText(`${os.numero_os} ${os.cliente} ${os.embarque}`).includes(busca)) return false;
+      return true;
+    });
+  }
+
+  function renderLista() {
+    const filtradas = osFiltradas();
+    const totalPaginas = Math.max(1, Math.ceil(filtradas.length / state.pageSize));
+    state.page = Math.min(state.page, totalPaginas);
+    const inicio = (state.page - 1) * state.pageSize;
+    const pagina = filtradas.slice(inicio, inicio + state.pageSize);
+
+    const linhas = pagina.map((os) => {
+      const emb = embarqueHtml(os.embarque);
+      return `<tr class="pld-row ${String(os.id) === String(state.osAbertaId) ? 'active' : ''}" data-os-id="${esc(os.id)}">
+        <td><span class="pld-os-num"><span class="pld-dot ${statusToneClass(os)}"></span>${esc(os.numero_os || '-')}</span></td>
+        <td class="pld-cliente">${esc(os.cliente || '-')}</td>
+        <td><span class="pld-local-uf">${emb}</span></td>
+        <td class="pld-rem">${fmtRem(os.remanescente)}</td>
+        <td><span class="pld-chevron">›</span></td>
+      </tr>`;
+    }).join('');
+
+    const paginacao = totalPaginas > 1 ? `<div class="pld-pagination">
+      <button type="button" class="pld-page-btn" data-page="${state.page - 1}" ${state.page <= 1 ? 'disabled' : ''}>‹</button>
+      ${Array.from({ length: totalPaginas }, (_, i) => i + 1).slice(0, 7).map((p) => `<button type="button" class="pld-page-btn ${p === state.page ? 'active' : ''}" data-page="${p}">${p}</button>`).join('')}
+      ${totalPaginas > 7 ? '<span style="color:#7d8aa3">…</span>' : ''}
+      <button type="button" class="pld-page-btn" data-page="${state.page + 1}" ${state.page >= totalPaginas ? 'disabled' : ''}>›</button>
+    </div>` : '';
+
+    listaBody.innerHTML = `
+      <div class="pld-count-row"><span><b>${filtradas.length}</b> O.S. encontradas</span></div>
+      <div class="pld-table-wrap">
+        <table class="pld-table">
+          <thead><tr><th>OS</th><th>Cliente</th><th>Local</th><th>Remanescente</th><th></th></tr></thead>
+          <tbody>${linhas || '<tr><td colspan="5" class="pld-empty">Nenhuma O.S. encontrada com esses filtros.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div style="font-size:11.5px;color:#7d8aa3;margin-top:8px;text-align:center">Exibindo ${pagina.length ? inicio + 1 : 0} a ${inicio + pagina.length} de ${filtradas.length}</div>
+      ${paginacao}
+    `;
+  }
+
+  async function carregarLista({ manterDrawer = false } = {}) {
+    listaBody.innerHTML = '<div class="pld-loading"><span class="pld-spinner" aria-hidden="true"></span><span>Carregando O.S. da supervisão...</span></div>';
+    try {
+      const [osTodas] = await Promise.all([
+        loadOsRelevantes(supervisaoQuery, options.dataReferencia),
+        recarregarEquipeRows(),
+      ]);
+      osTodasAtual = osTodas;
+      popularFiltros();
+      renderLista();
+      if (manterDrawer && state.osAbertaId) {
+        const os = osTodasAtual.find((o) => String(o.id) === String(state.osAbertaId));
+        if (os) await abrirDrawer(os, { silent: true }); else fecharDrawer();
+      }
+    } catch (error) {
+      console.error('[programacao-lista-drawer] carregarLista:', error);
+      listaBody.innerHTML = `<div class="pld-empty">${esc(error.message || 'Erro ao carregar as O.S.')}</div>`;
+    }
+  }
+
+  // --- Drawer: candidato sugerido (O.S. ATENDER sem ninguém confirmado ainda) ---
+  async function carregarCandidatoSugerido(os) {
+    const ponto = (await loadPontos([os.ponto_embarque_id].filter(Boolean))).get(os.ponto_embarque_id) || null;
+    const [colaboradoresRegionalBruto, indisponiveis] = await Promise.all([
+      loadColaboradoresRegional(supervisaoQuery),
+      loadIndisponiveisNaData(options.dataReferencia),
+    ]);
+    const supervisoesAlvo = new Set((Array.isArray(supervisaoQuery) ? supervisaoQuery : [supervisaoQuery]).map((s) => normalizeText(s)).filter(Boolean));
+    const colaboradoresRegional = colaboradoresRegionalBruto
+      .filter((c) => !supervisoesAlvo.size || supervisoesAlvo.has(normalizeText(c.supervisao)))
+      .filter((c) => !indisponiveis.match(c));
+    const jaEscalados = new Set(equipeRowsAtual.filter((r) => r.confirmado).map((r) => r.colaborador_id));
+    const excluir = new Set([...jaEscalados, ...indisponiveis.chavesRpc]);
+    const osComPonto = [{ os, ponto, confirmadoRow: null, candidatosNecessarios: true }];
+    const candidatosBrutos = await loadCandidatosPorOs(os.supervisao || supervisao, osComPonto, excluir);
+    const listaBruta = (candidatosBrutos.get(os.id) || []).filter((c) => !indisponiveis.match(c));
+    candidatosBrutos.set(os.id, listaBruta);
+    const candidatosPorOs = aplicarSugestoesRegionais(candidatosBrutos, osComPonto, colaboradoresRegional, jaEscalados);
+    return { candidatos: ordenarCandidatosPorEmbarque(candidatosPorOs.get(os.id) || []), colaboradoresRegional };
+  }
+
+  function candidatoSugeridoHtml(candidatos) {
+    if (!candidatos.length) {
+      return '<div class="pld-lock">Nenhum candidato disponível pra sugerir automaticamente. Use "Adicionar colaborador" pra escolher manualmente.</div>';
+    }
+    const comCusto = candidatos.filter((c) => c.custoTotal != null);
+    const minCustoId = comCusto.length ? comCusto.reduce((a, b) => (a.custoTotal <= b.custoTotal ? a : b)).colaboradorId : null;
+    return `<div class="pld-cand-wrap">
+      ${candCardHtml(candidatos[0], true, minCustoId)}
+      <div class="pld-row-actions" style="margin-top:8px">
+        <button type="button" class="pld-save-btn" style="height:38px" data-confirmar-candidato="${esc(candidatos[0].colaboradorId)}">Confirmar ${esc(candidatos[0].nome)}</button>
+      </div>
+    </div>`;
+  }
+
+  // --- Drawer: colaboradores confirmados + despesas por colaborador ---
+  async function carregarColaboradoresConfirmados(os, rows) {
+    const colaboradorIds = rows.map((r) => r.colaborador_id);
+    const [custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, dispPorColaborador] = await Promise.all([
+      loadCustos(programacaoIdQuery),
+      loadCruzamentoPlacas(supervisaoQuery),
+      loadCruzamentoTipoContrato(supervisaoQuery),
+      loadExtras(programacaoIdQuery, colaboradorIds),
+      loadDisponibilidadeConfirmados(programacaoIdQuery, colaboradorIds),
+    ]);
+    await loadAlojamentos();
+    const osResumoPorId = new Map([[String(os.id), { id: os.id, numero_os: os.numero_os, cliente: os.cliente, embarque: os.embarque }]]);
+    return { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId, dispPorColaborador };
+  }
+
+  function colaboradorRowWrapHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab, escaladoEmOutra) {
+    const cpf = String(row.colaboradorId || '').replace(/\D/g, '');
+    const tipoLabelTexto = tipoContratoPorCpf.get(cpf) || 'Não informado';
+    const cardHtml = colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab);
+    return `<div class="pld-colab-card" data-colab-wrap="${esc(row.colaboradorId)}" data-equipe-row-id="${esc(row.equipeRowId || '')}">
+      <div class="pld-colab-head">
+        ${avatarBadgeHtml(row.nome, row.colaboradorId)}
+        <span class="pld-colab-nome">${esc(row.nome)}</span>
+        <span class="pld-colab-tag t-${tipoTone(tipoLabelTexto)}">${esc(tipoLabelTexto)}${escaladoEmOutra ? ' · ♻' : ''}</span>
+        <span class="pld-kebab-wrap">
+          <button type="button" class="pld-kebab" data-kebab-toggle title="Mais opções">⋮</button>
+          <div class="pld-kebab-menu" hidden data-kebab-menu>
+            <button type="button" data-remover-colab="${esc(row.equipeRowId || '')}">Remover da O.S.</button>
+          </div>
+        </span>
+      </div>
+      ${cardHtml}
+    </div>`;
+  }
+
+  async function montarProgramacaoBody(os) {
+    const progBody = drawerEl.querySelector('#pldProgBody');
+    const lockNote = drawerEl.querySelector('#pldProgLockNote');
+    const st = statusNorm(os);
+    if (st !== 'ATENDER') {
+      lockNote.innerHTML = '🔒 Disponível após Atender a O.S.';
+      progBody.innerHTML = `<div class="pld-lock">Marque <b>Atender</b> nas Ações acima pra liberar colaboradores, deslocamento, estadia, alimentação e extras dessa O.S.</div>`;
+      return;
+    }
+    lockNote.textContent = '';
+    progBody.innerHTML = '<div class="pld-loading"><span class="pld-spinner" aria-hidden="true"></span><span>Carregando equipe da O.S....</span></div>';
+    try {
+      const rows = equipeRowsDaOs(os.id);
+      const escaladosPorColab = new Map();
+      equipeRowsAtual.filter((r) => r.confirmado).forEach((r) => {
+        if (String(r.os_id) !== String(os.id)) escaladosPorColab.set(String(r.colaborador_id), true);
+      });
+
+      if (!rows.length) {
+        const { candidatos } = await carregarCandidatoSugerido(os);
+        progBody.innerHTML = `
+          ${candidatoSugeridoHtml(candidatos)}
+          <div class="pld-add-box" data-add-box>
+            <select data-add-colab-select><option value="">Escolha um colaborador…</option></select>
+            <button type="button" data-add-colab-confirm>Adicionar</button>
+          </div>
+        `;
+        await popularAddBox(os, []);
+        return;
+      }
+
+      const programacaoIdDaOs = rows[0]?.programacao_id || programacaoIdParaOs(os, programacaoId, programacaoIdMap);
+      const { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId } = await carregarColaboradoresConfirmados(os, rows);
+      const cardsHtml = rows.map((r) => colaboradorRowWrapHtml(
+        { colaboradorId: r.colaborador_id, nome: r.nome_colaborador || r.colaborador_id, programacaoId: r.programacao_id || programacaoIdDaOs, osIds: new Set([os.id]), equipeRowId: r.id },
+        custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab,
+        escaladosPorColab.has(String(r.colaborador_id)),
+      )).join('');
+
+      const justificativaHtml = rows.length > 1 ? `
+        <div class="pld-justif">
+          <label>Justificativa para ${rows.length} colaboradores <span style="color:#f87171">*</span></label>
+          <textarea id="pldJustifTxt" maxlength="250" placeholder="Explique o motivo da necessidade de ${rows.length} colaboradores neste embarque..."></textarea>
+          <div class="pld-justif-count"><span>Obrigatório quando mais de 1 colaborador.</span><span id="pldJustifCount">0/250</span></div>
+        </div>` : '';
+
+      progBody.innerHTML = `
+        ${cardsHtml}
+        <div class="pld-add-box" data-add-box>
+          <select data-add-colab-select><option value="">Escolha um colaborador…</option></select>
+          <button type="button" data-add-colab-confirm>Adicionar</button>
+        </div>
+        ${justificativaHtml}
+      `;
+      wireDespesasCards(progBody, {
+        getDataReferencia: () => options.dataReferencia,
+        getCustos: () => custos,
+        isReadOnly: () => readOnly,
+      });
+      await popularAddBox(os, rows);
+      atualizarEstadoSalvar();
+    } catch (error) {
+      console.error('[programacao-lista-drawer] montarProgramacaoBody:', error);
+      progBody.innerHTML = `<div class="pld-empty">${esc(error.message || 'Erro ao carregar a equipe desta O.S.')}</div>`;
+    }
+  }
+
+  async function popularAddBox(os, rowsAtuais) {
+    const sel = progBodySelectAtual();
+    if (!sel) return;
+    const jaNaOs = new Set(rowsAtuais.map((r) => String(r.colaborador_id)));
+    const regional = await loadColaboradoresRegional(os.supervisao || supervisaoQuery);
+    const escalados = new Set(equipeRowsAtual.filter((r) => r.confirmado).map((r) => String(r.colaborador_id)));
+    const opcoes = regional.filter((c) => c.colaboradorId && !jaNaOs.has(String(c.colaboradorId)));
+    sel.innerHTML = '<option value="">Escolha um colaborador…</option>' + opcoes.map((c) => {
+      const id = String(c.colaboradorId);
+      const jaEmOutra = escalados.has(id);
+      return `<option value="${esc(id)}" data-nome="${esc(c.nome)}">${jaEmOutra ? '♻ ' : ''}${esc(c.nome)}</option>`;
+    }).join('');
+  }
+
+  function progBodySelectAtual() {
+    return drawerEl.querySelector('[data-add-colab-select]');
+  }
+
+  function atualizarEstadoSalvar() {
+    const salvarBtn = drawerEl.querySelector('#pldSalvarBtn');
+    if (!salvarBtn) return;
+    const textarea = drawerEl.querySelector('#pldJustifTxt');
+    salvarBtn.disabled = !!textarea && !textarea.value.trim();
+  }
+
+  function fecharKebabs(exceto) {
+    drawerEl.querySelectorAll('[data-kebab-menu]').forEach((m) => { if (m !== exceto) m.hidden = true; });
+  }
+
+  async function abrirDrawer(os, { silent = false } = {}) {
+    state.osAbertaId = os.id;
+    shellEl.classList.add('pld-drawer-open');
+    drawerEl.hidden = false;
+    const st = statusNorm(os);
+    const badgeTone = st === 'FINALIZAR' ? 'tone-fim' : '';
+    const badgeLabel = st === 'FINALIZAR' ? 'FINALIZADA' : 'EM ABERTO';
+    drawerEl.innerHTML = `
+      <div class="pld-drawer-head">
+        <div class="pld-os-title">OS <b>${esc(os.numero_os || '-')}</b> <span class="pld-status-badge ${badgeTone}">${badgeLabel}</span></div>
+        <button type="button" class="pld-drawer-close" id="pldDrawerClose" title="Fechar">×</button>
+      </div>
+      <div class="pld-drawer-sub">
+        <div class="pld-sub-left">
+          📍 ${esc(os.cliente || '-')}<br/>
+          <span class="pld-sub-emb">${embarqueHtml(os.embarque)}</span>
+        </div>
+        <div class="pld-sub-rem"><span>Remanescente</span><strong>${fmtRem(os.remanescente)}</strong></div>
+      </div>
+      <div class="pld-section-label">AÇÕES</div>
+      <div class="pld-acoes-row">
+        <button type="button" class="pld-acao-btn ${st === 'AGUARDAR' ? 'on' : ''}" data-acao-status="AGUARDAR" ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">⏸</span>Pausar</button>
+        <button type="button" class="pld-acao-btn ${st === 'ATENDER' ? 'on' : ''}" data-acao-status="ATENDER" ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">✓</span>Atender</button>
+        <button type="button" class="pld-acao-btn ${st === 'FINALIZAR' ? 'on' : ''}" data-acao-status="FINALIZAR" ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">$</span>Financeiro</button>
+        <span class="pld-acao-menu-wrap">
+          <button type="button" class="pld-acao-btn" data-mais-acoes-toggle ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">⋯</span>Mais ações</button>
+          <div class="pld-acao-menu" hidden data-mais-acoes-menu>
+            <button type="button" data-abrir-kg>💰 Aumentar saldo (KG)</button>
+            <button type="button" data-abrir-laudo>📎 Conferir / anexar laudo</button>
+          </div>
+        </span>
+        <button type="button" class="pld-acao-btn" data-abrir-historico><span class="pld-acao-ico">🗂</span>Histórico</button>
+      </div>
+      <div class="pld-section-label">PROGRAMAÇÃO <span id="pldProgLockNote"></span></div>
+      <div id="pldProgBody"></div>
+      <div class="pld-save-row"><button type="button" class="pld-save-btn" id="pldSalvarBtn" ${readOnly ? 'disabled' : ''}>Salvar programação</button></div>
+    `;
+    if (!silent) drawerEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    await montarProgramacaoBody(os);
+  }
+
+  function fecharDrawer() {
+    state.osAbertaId = null;
+    shellEl.classList.remove('pld-drawer-open');
+    drawerEl.hidden = true;
+    drawerEl.innerHTML = '';
+  }
+
+  function abrirModalOv(html) {
+    const ov = document.createElement('div');
+    ov.className = 'pld-modal-ov';
+    ov.innerHTML = html;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+    return ov;
+  }
+
+  async function abrirHistorico(os) {
+    const ov = abrirModalOv(`<div class="pld-modal">
+      <h3>Histórico — O.S. ${esc(os.numero_os || '-')}</h3>
+      <div id="pldHistList"><div class="pld-loading"><span class="pld-spinner" aria-hidden="true"></span><span>Carregando...</span></div></div>
+      <div class="pld-modal-actions"><button type="button" class="pld-modal-btn" data-hist-fechar>Fechar</button></div>
+    </div>`);
+    ov.querySelector('[data-hist-fechar]').addEventListener('click', () => ov.remove());
+    const listEl = ov.querySelector('#pldHistList');
+    try {
+      const { data, error } = await supabase.from('app_logs_usuarios').select('acao,usuario_nome,created_at,detalhes')
+        .eq('modulo', 'programacao').order('created_at', { ascending: false }).limit(200);
+      if (error) throw error;
+      const relevantes = (data || []).filter((r) => String(r.detalhes?.os_id || '') === String(os.id) || String(r.detalhes?.numero_os || '') === String(os.numero_os));
+      listEl.innerHTML = relevantes.length
+        ? relevantes.slice(0, 20).map((r) => `<div class="pld-hist-item">${esc(r.acao || '-')}${r.detalhes?.motivo ? ` — "${esc(r.detalhes.motivo)}"` : ''}<div class="pld-hist-when">${esc(r.usuario_nome || 'Usuário')} · ${new Date(r.created_at).toLocaleString('pt-BR')}</div></div>`).join('')
+        : '<div class="pld-empty" style="padding:12px">Sem registros de atividade pra essa O.S. ainda (só ações como justificativa de múltiplos colaboradores ficam registradas aqui).</div>';
+    } catch (error) {
+      listEl.innerHTML = `<div class="pld-empty" style="padding:12px">Não foi possível carregar o histórico: ${esc(error.message || 'erro desconhecido')}</div>`;
+    }
+  }
+
+  function abrirModalKg(os) {
+    const ov = abrirModalOv(`<div class="pld-modal">
+      <h3>Quanto somar na O.S.?</h3>
+      <p>O.S. <b style="color:#bbf7d0">${esc(os.numero_os || '-')}</b> — vai para a Logística como saldo.</p>
+      <input id="pldKgInput" type="number" min="1" placeholder="Inserir KG" inputmode="numeric" />
+      <div class="pld-modal-actions"><button type="button" class="pld-modal-btn" data-cancel>Cancelar</button><button type="button" class="pld-modal-btn primary" data-ok>Confirmar</button></div>
+    </div>`);
+    const input = ov.querySelector('#pldKgInput');
+    input.focus();
+    ov.querySelector('[data-cancel]').addEventListener('click', () => ov.remove());
+    ov.querySelector('[data-ok]').addEventListener('click', async () => {
+      const kg = Number(input.value);
+      if (!kg || kg <= 0) { input.focus(); return; }
+      ov.remove();
+      try {
+        await registrarSaldoKg(os.id, kg);
+        await carregarLista({ manterDrawer: true });
+      } catch (error) { alert(error.message || 'Não foi possível solicitar saldo.'); }
+    });
+  }
+
+  function abrirModalLaudo(os) {
+    const ov = abrirModalOv(`<div class="pld-modal">
+      <h3>Conferir · anexar laudo</h3>
+      <p>O.S. <b style="color:#bbf7d0">${esc(os.numero_os || '-')}</b> — anexe o(s) arquivo(s).</p>
+      <input id="pldLaudoFile" type="file" multiple />
+      <div id="pldLaudoList" style="font-size:11px;color:#9fb7aa"></div>
+      <div class="pld-modal-actions"><button type="button" class="pld-modal-btn" data-cancel>Cancelar</button><button type="button" class="pld-modal-btn primary" data-ok>Enviar</button></div>
+    </div>`);
+    const fileInput = ov.querySelector('#pldLaudoFile');
+    const listInfo = ov.querySelector('#pldLaudoList');
+    let files = [];
+    fileInput.addEventListener('change', () => { files = [...(fileInput.files || [])]; listInfo.textContent = files.map((f) => f.name).join(', '); });
+    ov.querySelector('[data-cancel]').addEventListener('click', () => ov.remove());
+    ov.querySelector('[data-ok]').addEventListener('click', async () => {
+      if (!files.length) { fileInput.focus(); return; }
+      const okBtn = ov.querySelector('[data-ok]');
+      okBtn.disabled = true; okBtn.textContent = 'Enviando...';
+      try {
+        await anexarLaudo(os.id, files);
+        ov.remove();
+        await carregarLista({ manterDrawer: true });
+      } catch (error) {
+        okBtn.disabled = false; okBtn.textContent = 'Enviar';
+        alert(error.message || 'Não foi possível anexar o laudo.');
+      }
+    });
+  }
+
+  function abrirModalJustificativaAoAdicionar(os, nomesAtuais, novoNome) {
+    return new Promise((resolve) => {
+      const ov = abrirModalOv(`<div class="pld-modal">
+        <h3>Justificar 2+ colaboradores</h3>
+        <p>O.S. <b style="color:#bbf7d0">${esc(os.numero_os || '-')}</b> já tem <b>${esc(nomesAtuais || '-')}</b>. Adicionar <b style="color:#bbf7d0">${esc(novoNome || '-')}</b> também — informe o motivo:</p>
+        <textarea id="pldJustifModalTxt" rows="3" placeholder="Ex.: volume da carga exige 2 pessoas no ponto"></textarea>
+        <div class="pld-modal-actions"><button type="button" class="pld-modal-btn" data-cancel>Cancelar</button><button type="button" class="pld-modal-btn primary" data-ok>Confirmar</button></div>
+      </div>`);
+      const input = ov.querySelector('#pldJustifModalTxt');
+      input.focus();
+      ov.querySelector('[data-cancel]').addEventListener('click', () => { ov.remove(); resolve(null); });
+      ov.querySelector('[data-ok]').addEventListener('click', () => {
+        const motivo = input.value.trim();
+        if (!motivo) { input.focus(); return; }
+        ov.remove();
+        resolve(motivo);
+      });
+    });
+  }
+
+  // --- Eventos: lista (filtros, paginação, clique na linha) ---
+  content.querySelector('#pldBusca').addEventListener('input', (e) => { state.busca = e.target.value; state.page = 1; renderLista(); });
+  content.querySelector('#pldCliente').addEventListener('change', (e) => { state.cliente = e.target.value; state.page = 1; renderLista(); });
+  content.querySelector('#pldLocal').addEventListener('change', (e) => { state.local = e.target.value; state.page = 1; renderLista(); });
+  content.querySelector('#pldSoRemanescente').addEventListener('change', (e) => { state.soRemanescente = e.target.checked; state.page = 1; renderLista(); });
+
+  listaBody.addEventListener('click', async (event) => {
+    const pageBtn = event.target.closest('[data-page]');
+    if (pageBtn) {
+      const p = Number(pageBtn.dataset.page);
+      if (p >= 1) { state.page = p; renderLista(); }
+      return;
+    }
+    const row = event.target.closest('.pld-row[data-os-id]');
+    if (row) {
+      const os = osTodasAtual.find((o) => String(o.id) === row.dataset.osId);
+      if (os) await abrirDrawer(os);
+    }
+  });
+  content.addEventListener('input', (e) => { if (e.target.id === 'pldBusca') { /* já tratado acima */ } });
+
+  // --- Eventos: drawer (delegados no #pldShell, sobrevivem ao innerHTML do drawer) ---
+  shellEl.addEventListener('click', async (event) => {
+    const osAtual = () => osTodasAtual.find((o) => String(o.id) === String(state.osAbertaId));
+
+    if (event.target.closest('#pldDrawerClose')) { fecharDrawer(); return; }
+
+    const statusBtn = event.target.closest('[data-acao-status]');
+    if (statusBtn) {
+      const os = osAtual();
+      if (!os || statusBtn.disabled) return;
+      statusBtn.disabled = true;
+      try {
+        await atualizarStatusOsCore(os, statusBtn.dataset.acaoStatus, currentUser?.id);
+        await carregarLista({ manterDrawer: true });
+      } catch (error) {
+        alert(error.message || 'Não foi possível atualizar a O.S.');
+      } finally {
+        statusBtn.disabled = false;
+      }
+      return;
+    }
+
+    const maisAcoesToggle = event.target.closest('[data-mais-acoes-toggle]');
+    if (maisAcoesToggle) {
+      const menu = maisAcoesToggle.parentElement.querySelector('[data-mais-acoes-menu]');
+      const estavaAberto = !menu.hidden;
+      fecharKebabs();
+      menu.hidden = estavaAberto;
+      return;
+    }
+    const kebabToggle = event.target.closest('[data-kebab-toggle]');
+    if (kebabToggle) {
+      const menu = kebabToggle.parentElement.querySelector('[data-kebab-menu]');
+      const estavaAberto = !menu.hidden;
+      fecharKebabs();
+      menu.hidden = estavaAberto;
+      drawerEl.querySelectorAll('[data-mais-acoes-menu]').forEach((m) => { m.hidden = true; });
+      return;
+    }
+    if (!event.target.closest('.pld-acao-menu-wrap') && !event.target.closest('.pld-kebab-wrap')) {
+      fecharKebabs();
+      drawerEl.querySelectorAll('[data-mais-acoes-menu]').forEach((m) => { m.hidden = true; });
+    }
+
+    if (event.target.closest('[data-abrir-kg]')) { const os = osAtual(); fecharKebabs(); if (os) abrirModalKg(os); return; }
+    if (event.target.closest('[data-abrir-laudo]')) { const os = osAtual(); fecharKebabs(); if (os) abrirModalLaudo(os); return; }
+    if (event.target.closest('[data-abrir-historico]')) { const os = osAtual(); if (os) await abrirHistorico(os); return; }
+
+    const confirmarCandBtn = event.target.closest('[data-confirmar-candidato]');
+    if (confirmarCandBtn) {
+      const os = osAtual();
+      if (!os) return;
+      confirmarCandBtn.disabled = true;
+      confirmarCandBtn.textContent = 'Confirmando...';
+      try {
+        const { candidatos } = await carregarCandidatoSugerido(os);
+        const cand = candidatos.find((c) => String(c.colaboradorId) === confirmarCandBtn.dataset.confirmarCandidato) || candidatos[0];
+        if (cand) {
+          await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
+          await recarregarEquipeRows();
+          await montarProgramacaoBody(os);
+          await carregarLista({ manterDrawer: true });
+        }
+      } catch (error) {
+        alert(error.message || 'Não foi possível confirmar o colaborador.');
+      }
+      return;
+    }
+
+    const addConfirmBtn = event.target.closest('[data-add-colab-confirm]');
+    if (addConfirmBtn) {
+      const os = osAtual();
+      const sel = progBodySelectAtual();
+      if (!os || !sel || !sel.value) return;
+      const opt = sel.selectedOptions[0];
+      const cand = { colaboradorId: sel.value, nome: opt?.dataset.nome || sel.value };
+      const rowsAtuais = equipeRowsDaOs(os.id);
+      if (rowsAtuais.length) {
+        const nomesAtuais = rowsAtuais.map((r) => r.nome_colaborador).filter(Boolean).join(', ');
+        const motivo = await abrirModalJustificativaAoAdicionar(os, nomesAtuais, cand.nome);
+        if (!motivo) return;
+        addConfirmBtn.disabled = true;
+        try {
+          await adicionarColaboradorOs(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
+          logActivity('action', 'justificativa_multiplos_colaboradores_os', 'programacao', {
+            os_id: os.id, numero_os: os.numero_os,
+            colaboradores: [...rowsAtuais.map((r) => r.colaborador_id), cand.colaboradorId],
+            nomes: [...rowsAtuais.map((r) => r.nome_colaborador), cand.nome],
+            motivo,
+          });
+          await recarregarEquipeRows();
+          await montarProgramacaoBody(os);
+          await carregarLista({ manterDrawer: true });
+        } catch (error) {
+          alert(error.message || 'Não foi possível adicionar o colaborador.');
+        } finally {
+          addConfirmBtn.disabled = false;
+        }
+      } else {
+        addConfirmBtn.disabled = true;
+        try {
+          await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
+          await recarregarEquipeRows();
+          await montarProgramacaoBody(os);
+          await carregarLista({ manterDrawer: true });
+        } catch (error) {
+          alert(error.message || 'Não foi possível adicionar o colaborador.');
+        } finally {
+          addConfirmBtn.disabled = false;
+        }
+      }
+      return;
+    }
+
+    const removerBtn = event.target.closest('[data-remover-colab]');
+    if (removerBtn) {
+      const os = osAtual();
+      if (!os || !removerBtn.dataset.removerColab) return;
+      if (!confirm('Remover este colaborador da O.S.?')) return;
+      try {
+        await removerConfirmacao(programacaoIdParaOs(os, programacaoId, programacaoIdMap), removerBtn.dataset.removerColab);
+        await recarregarEquipeRows();
+        await montarProgramacaoBody(os);
+        await carregarLista({ manterDrawer: true });
+      } catch (error) {
+        alert(error.message || 'Não foi possível remover o colaborador.');
+      }
+      return;
+    }
+
+    const salvarBtn = event.target.closest('#pldSalvarBtn');
+    if (salvarBtn) {
+      const os = osAtual();
+      if (!os) return;
+      const textarea = drawerEl.querySelector('#pldJustifTxt');
+      if (textarea && !textarea.value.trim()) { textarea.focus(); return; }
+      if (textarea && textarea.value.trim()) {
+        const rows = equipeRowsDaOs(os.id);
+        logActivity('action', 'justificativa_multiplos_colaboradores_os', 'programacao', {
+          os_id: os.id, numero_os: os.numero_os,
+          colaboradores: rows.map((r) => r.colaborador_id),
+          nomes: rows.map((r) => r.nome_colaborador),
+          motivo: textarea.value.trim(),
+        });
+      }
+      salvarBtn.disabled = true;
+      salvarBtn.textContent = 'Salvo ✓';
+      setTimeout(() => { salvarBtn.textContent = 'Salvar programação'; atualizarEstadoSalvar(); }, 1400);
+    }
+  });
+
+  shellEl.addEventListener('input', (event) => {
+    if (event.target.id === 'pldJustifTxt') {
+      const countEl = drawerEl.querySelector('#pldJustifCount');
+      if (countEl) countEl.textContent = `${event.target.value.length}/250`;
+      atualizarEstadoSalvar();
+    }
+  });
+
+  await carregarLista();
+}

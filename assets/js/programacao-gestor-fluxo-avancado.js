@@ -1,15 +1,22 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260721-mockupredesign1';
-import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260721-alojcombo1';
-import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260720-supfix1';
+import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260721-listadrawer1';
+import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260721-listadrawer1';
+import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260721-listadrawer1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
-// Programação Gestor — fluxo avançado:
-// - o botão Carregar monta as 4 abas de uma vez;
-// - Aba 1 fica em linhas compactas de O.S.;
-// - Aba 2 ganha lista lateral arrastável de colaboradores/motoristas;
-// - vínculos feitos por arrastar alimentam a Aba 3 automaticamente.
+// Programação Gestor (2026-07-21, "lista + painel lateral"): o botão Carregar
+// monta 2 abas — O.S. (lista+drawer, programacao-lista-drawer.js) e Sem O.S.
+// (renderProgramacaoSemOs, mantido à parte porque não é sobre uma O.S.
+// específica, não cabe no modelo de painel lateral). Substitui o antigo
+// sistema de 4 abas (Situação/Equipe+Mapa/Despesas/Sem O.S.) — ver
+// [[programacao-redesign]] na memória do projeto pro histórico completo.
+// O mapa do gestor e o drag-and-drop de colaboradores/motoristas (augmentEquipeDnd
+// logo abaixo) eram exclusivos da antiga Aba 2 "Equipe + Mapa", que não existe
+// mais nesta tela — o código continua no arquivo (não removido, risco baixo
+// de manter código morto vs. risco de quebrar algo cortando na pressa), mas
+// nunca mais é acionado: scheduleEquipeAugment não é mais chamado, e
+// window.__pmgRenderMapaGestor não é mais disparado por setActiveStep.
 
 const state = {
   activeStep: '1',
@@ -187,12 +194,6 @@ function setActiveStep(step) {
   if (state.panes) {
     Object.entries(state.panes).forEach(([key, pane]) => { pane.hidden = key !== state.activeStep; });
   }
-  // O mapa arrastável da Etapa 2 (#peqbMapBand) só abre quando alguém chama
-  // window.__pmgRenderMapaGestor, exposto por programacao-gestor-hotfix-manual-v3.js.
-  // O clique no botão de etapa é interceptado aqui via stopImmediatePropagation
-  // antes de chegar no listener de clique daquele arquivo — sem este gatilho o
-  // mapa nunca abre sozinho ao trocar de aba, só a lista lateral de arrastar.
-  if (state.activeStep === '2') window.__pmgRenderMapaGestor?.();
 }
 
 function getContextOptions() {
@@ -218,16 +219,12 @@ function mountShell() {
   if (!list) return null;
   list.innerHTML = `
     <div class="pgc-tabs-shell" id="pgcTabsShell">
-      <section class="pgc-tab-pane" id="pgcPane1" data-pgc-pane="1">${loadingHtml('Aba 1 · Situação da O.S.')}</section>
-      <section class="pgc-tab-pane" id="pgcPane2" data-pgc-pane="2" hidden>${loadingHtml('Aba 2 · Equipe + mapa')}</section>
-      <section class="pgc-tab-pane" id="pgcPane3" data-pgc-pane="3" hidden>${loadingHtml('Aba 3 · Despesas')}</section>
-      <section class="pgc-tab-pane" id="pgcPane4" data-pgc-pane="4" hidden>${loadingHtml('Aba 4 · Sem O.S.')}</section>
+      <section class="pgc-tab-pane" id="pgcPane1" data-pgc-pane="1">${loadingHtml('O.S.')}</section>
+      <section class="pgc-tab-pane" id="pgcPane2" data-pgc-pane="2" hidden>${loadingHtml('Sem O.S.')}</section>
     </div>`;
   state.panes = {
     '1': document.getElementById('pgcPane1'),
     '2': document.getElementById('pgcPane2'),
-    '3': document.getElementById('pgcPane3'),
-    '4': document.getElementById('pgcPane4'),
   };
   setActiveStep(state.activeStep);
   return state.panes;
@@ -250,7 +247,7 @@ async function renderAllTabs({ force = false } = {}) {
   const token = ++state.renderToken;
   const panes = mountShell();
   if (!panes) { state.renderingAll = false; return; }
-  setFeedback('Carregando as 4 abas da programação...', 'ok');
+  setFeedback('Carregando a programação...', 'ok');
   const common = {
     supervisao: opts.supervisao,
     supervisoesResolvidas: opts.supervisoesResolvidas,
@@ -260,10 +257,8 @@ async function renderAllTabs({ force = false } = {}) {
   };
   try {
     const results = await Promise.allSettled([
-      renderProgramacaoSituacao(panes['1'], common),
-      renderProgramacaoEquipe(panes['2'], { ...common, autoPreencher: false }),
-      renderProgramacaoDespesas(panes['3'], common),
-      renderProgramacaoSemOs(panes['4'], common),
+      renderProgramacaoListaDrawer(panes['1'], common),
+      renderProgramacaoSemOs(panes['2'], common),
     ]);
     if (token !== state.renderToken) return;
     const falhas = results.filter((r) => r.status === 'rejected');
@@ -271,10 +266,9 @@ async function renderAllTabs({ force = false } = {}) {
       falhas.forEach((f) => console.error('[programacao-fluxo] falha ao carregar aba', f.reason));
       setFeedback(`Carregou com ${falhas.length} alerta(s). Confira as abas.`, 'warn');
     } else {
-      setFeedback('As 4 abas foram carregadas.', 'ok');
+      setFeedback('Programação carregada.', 'ok');
     }
     setActiveStep(state.activeStep);
-    scheduleEquipeAugment(250);
   } catch (error) {
     console.error('[programacao-fluxo] renderAllTabs:', error);
     setFeedback(error.message || 'Erro ao carregar as abas.', 'error');
@@ -859,7 +853,6 @@ function hookStepClicks() {
     event.stopImmediatePropagation();
     const ui = btn.dataset.uiStep || btn.dataset.step || (btn.textContent.match(/\d/) || ['1'])[0];
     setActiveStep(ui);
-    if (ui === '2') scheduleEquipeAugment(120);
   }, true);
 }
 
@@ -888,7 +881,7 @@ function hookLoadButton() {
   loadBtn.addEventListener('click', async () => {
     state.panes = null;
     state.lastOptionsKey = '';
-    setFeedback('Carregando contexto e preparando as 4 abas...', 'ok');
+    setFeedback('Carregando contexto e preparando a programação...', 'ok');
     await waitLoadColaboradores();
     await renderAllTabs({ force: true });
   }, false);
