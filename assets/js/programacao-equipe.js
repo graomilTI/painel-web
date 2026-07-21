@@ -2105,6 +2105,41 @@ export async function renderProgramacaoEquipe(content, options = {}) {
           .eq('colaborador_id', colaboradorId);
         if (error) throw error;
         if (item.custos) item.custos.dispAtual = valor;
+
+        // Motorista virando Logística: os demais colaboradores da mesma O.S.
+        // (que não tenham frota própria) passam a ir de Carona nesse veículo —
+        // pedido do usuário, 2026-07-21: associar frota como Logística precisa
+        // corrigir o deslocamento de todo mundo pra Carona + a placa. Mesma
+        // filosofia da correção automática de MOTORISTA FROTA logo abaixo
+        // (renderAllTabs): sobrescreve sem pedir confirmação.
+        if (disponibilidadeCategoriaLocal(valor) === 'LOGISTICA' && item.custos?.placaAuto) {
+          const placa = onlyPlate(item.custos.placaAuto);
+          const caronaAlvos = (item.equipeRows || []).filter((r) => {
+            const idr = String(r.colaborador_id);
+            if (idr === String(colaboradorId)) return false;
+            const cpf = idr.replace(/\D/g, '');
+            return !item.placasPorCpf?.get(cpf);
+          });
+          await Promise.all(caronaAlvos.map(async (r) => {
+            const idr = String(r.colaborador_id);
+            const { error: caronaErr } = await supabase.from('programacao_deslocamento').upsert({
+              programacao_id: programacaoIdParaOs(item.os),
+              data_referencia: options.dataReferencia || null,
+              colaborador_id: idr,
+              nome_colaborador: r.nome_colaborador || '',
+              tipo_deslocamento: 'CARONA FROTA',
+              placa_veiculo: placa,
+            }, { onConflict: 'programacao_id,colaborador_id' });
+            if (caronaErr) { console.warn('[equipe] carona automática', idr, caronaErr); return; }
+            if (idr === String(item.confirmadoRow?.colaborador_id) && item.custos) {
+              item.custos.des = { ...(item.custos.des || {}), tipo_deslocamento: 'CARONA FROTA' };
+            }
+            if (item.custosRaw?.des) {
+              item.custosRaw.des.set(idr, { ...(item.custosRaw.des.get(idr) || {}), tipo_deslocamento: 'CARONA FROTA' });
+            }
+          }));
+        }
+
         if (colabRow) colabRow.outerHTML = osRowHtml(item);
       } catch (error) {
         dispToggleBtn.disabled = false;
