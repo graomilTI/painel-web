@@ -30,7 +30,7 @@ function injectEtapa1LinhaCss() {
     #pgcPane1 .pgc-os-kpi-head,
     #pgcPane1 .pgc-os-line-head {
       display: grid !important;
-      grid-template-columns: minmax(300px, 1.8fr) minmax(430px, 2.55fr) 112px 74px 194px !important;
+      grid-template-columns: minmax(300px, 1.8fr) minmax(430px, 2.55fr) 112px 74px 224px !important;
       gap: 0 !important;
       align-items: center !important;
       margin: 0 0 4px !important;
@@ -86,7 +86,7 @@ function injectEtapa1LinhaCss() {
 
     #pgcPane1 .peqs-row .peqb-os2-left {
       display: grid !important;
-      grid-template-columns: minmax(300px, 1.8fr) minmax(430px, 2.55fr) 112px 74px 194px !important;
+      grid-template-columns: minmax(300px, 1.8fr) minmax(430px, 2.55fr) 112px 74px 224px !important;
       gap: 0 !important;
       align-items: stretch !important;
       min-height: 38px !important;
