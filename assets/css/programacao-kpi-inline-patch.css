@@ -13,6 +13,12 @@
 .prog-toolbar .prog-tfield-sup select{max-width:180px!important}
 .prog-toolbar .prog-tfield-date{flex:0 0 auto!important}
 .prog-toolbar .prog-tfield select,.prog-toolbar .prog-tfield input{min-height:30px!important;padding:4px 8px!important;font-size:12px!important}
+/* Data precisa ser BEM visível (pedido do usuário, 2026-07-21) — é a variável
+   mais crítica da tela (qual dia está sendo editado) e tinha ficado pequena
+   demais junto dos outros campos ao comprimir o cabeçalho numa linha só.
+   Chip com destaque próprio: maior, mais contraste que o resto do cabeçalho. */
+.prog-toolbar .prog-tfield-date label{font-size:10.5px!important;color:#6fd0a5!important;font-weight:950!important}
+.prog-toolbar .prog-tfield-date input{min-height:36px!important;padding:6px 10px!important;font-size:14.5px!important;font-weight:800!important;border-color:rgba(111,208,165,.55)!important;background:#0a1e17!important;box-shadow:0 0 0 1px rgba(111,208,165,.12)!important}
 .prog-toolbar #progLoadContext,.prog-toolbar #progGerarPdf,.prog-toolbar .prog-save-main{min-height:30px!important;padding:0 12px!important;font-size:12.5px!important}
 .prog-toolbar .prog-toolbar-spacer{flex:0 0 0!important;min-width:0!important}
 #progSteps{gap:6px!important}
@@ -61,8 +67,13 @@
    pra baixo do nome em vez de sobrepô-lo. O nome mantém um mínimo legível
    pra a quebra acontecer antes de ele sumir. */
 .peqb-conf-name,.peqb-extra-colab{flex-wrap:wrap!important}
-.peqb-desloc-inline{width:auto!important;min-width:104px!important;max-width:168px!important;flex:0 1 auto!important}
-.peqb-conf-name>select[data-trocar-colab].peqb-name-sel,.peqb-extra-colab>span.peqb-name-sel{width:auto!important;min-width:88px!important;flex:1 1 88px!important}
+.peqb-desloc-inline{width:auto!important;min-width:96px!important;max-width:168px!important;flex:0 1 auto!important}
+/* Nome do colaborador ganha prioridade de espaço sobre o deslocamento — antes
+   min-width:88px truncava nomes compridos ("GILVAN PINHEIRO DE MIRANDA" virava
+   "GILVAN P..."); pedido do usuário 2026-07-21: "a box do nome pode ser mais
+   comprida pra caber o nome". flex-grow maior (2 vs 1 do deslocamento) faz o
+   nome absorver a folga disponível primeiro. */
+.peqb-conf-name>select[data-trocar-colab].peqb-name-sel,.peqb-extra-colab>span.peqb-name-sel{width:auto!important;min-width:150px!important;flex:2 1 150px!important}
 .peqb-conf-km{font-size:10px!important;color:#9fb7aa!important;font-weight:800!important;margin:2px 0 5px!important}
 .peqb-conf-head .peqb-row-btn.hotel{grid-column:2!important;grid-row:1!important;justify-self:start!important;height:28px!important;min-height:28px!important;padding:0 10px!important;white-space:nowrap!important;font-size:11px!important}
 .peqb-chip{min-height:24px!important;padding:4px 7px!important;font-size:10px!important}
