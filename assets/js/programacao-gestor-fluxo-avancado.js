@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260721-uxrefresh1';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260721-mockupredesign1';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260721-alojcombo1';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260720-supfix1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
@@ -19,6 +19,9 @@ const state = {
   lastOptionsKey: '',
   motoristasCacheKey: '',
   motoristasCache: [],
+  poolTab: 'pessoas',
+  veiculosCacheKey: '',
+  veiculosCache: [],
 };
 
 function esc(value) {
@@ -122,17 +125,30 @@ function injectStyles() {
     .pgc-colab-pool{position:sticky;top:0;max-height:min(560px,calc(100vh - 260px));overflow:auto;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:rgba(2,6,23,.34);padding:10px}
     .pgc-pool-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
     .pgc-pool-head strong{font-size:12.5px;color:#f8fafc}.pgc-pool-head span{font-size:10.5px;color:#9fb7aa}
+    /* Pessoas/Frota — segmentado (inspirado no mockup de referência, 2026-07-21):
+       o painel de recursos vira 2 abas em vez de uma lista só misturando
+       colaborador e veículo, mais fácil de escanear quando o gestor já sabe
+       o que está procurando. */
+    .pgc-pool-tabs{display:flex;gap:4px;margin-bottom:8px;border:1px solid rgba(148,163,184,.16);border-radius:10px;padding:3px;background:rgba(2,6,23,.3)}
+    .pgc-pool-tab{flex:1 1 0;border:0;border-radius:8px;background:transparent;color:#9fb7aa;font-size:11.5px;font-weight:850;padding:7px 0;cursor:pointer}
+    .pgc-pool-tab:hover{color:#dcfce7}
+    .pgc-pool-tab.active{background:rgba(22,163,74,.28);color:#dcfce7}
     .pgc-pool-search{width:100%;height:34px;margin:0 0 9px;border:1px solid rgba(148,163,184,.2);border-radius:10px;background:#06130e;color:#eef7f2;padding:0 10px;color-scheme:dark;box-sizing:border-box}
     .pgc-pool-search:focus{outline:none;border-color:rgba(52,211,153,.5)}
     .pgc-colab-list{display:flex;flex-direction:column;gap:6px}
-    .pgc-colab-card{display:grid;grid-template-columns:34px 1fr;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.55);border-radius:12px;padding:7px 8px;cursor:grab;color:#e2e8f0;user-select:none}
+    .pgc-colab-list[hidden]{display:none}
+    .pgc-colab-card{display:grid;grid-template-columns:34px 1fr auto;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.55);border-radius:12px;padding:7px 8px;cursor:grab;color:#e2e8f0;user-select:none}
     .pgc-colab-card:hover{border-color:rgba(134,239,172,.42);background:rgba(22,101,52,.16)}
     .pgc-colab-card:active{cursor:grabbing}
     .pgc-colab-card.is-linked{border-color:rgba(34,197,94,.34);background:rgba(22,101,52,.18)}
     .pgc-colab-ico{width:30px;height:30px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-weight:950;font-size:12px;border:1px solid rgba(255,255,255,.75);box-shadow:0 0 0 1px rgba(0,0,0,.35)}
     .pgc-colab-ico.person{background:#eab308;color:#422006}.pgc-colab-card.is-linked .pgc-colab-ico.person{background:#22c55e;color:#052e16}
     .pgc-colab-ico.car{background:#eab308;color:#422006}.pgc-colab-card.is-linked .pgc-colab-ico.car{background:#22c55e;color:#052e16}
+    .pgc-colab-main{min-width:0}
     .pgc-colab-name{font-size:12px;font-weight:900;color:#f8fafc;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pgc-colab-meta{font-size:10.5px;color:#9fb7aa;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pgc-colab-tag{flex:0 0 auto;font-size:9.5px;font-weight:850;color:#6fd0a5;white-space:nowrap}
+    .pgc-colab-tag.is-linked{color:#7d8aa3}
+    .pgc-veiculo-card{cursor:default}
     .pgc-colab-empty{font-size:12px;color:#94a3b8;border:1px dashed rgba(148,163,184,.22);border-radius:12px;padding:12px;text-align:center}
     .peqb-row.pgc-drop-hot{outline:2px dashed rgba(134,239,172,.75);outline-offset:3px;background:rgba(22,101,52,.18)!important}
     .peqb-conf-name.pgc-drop-hot,.peqb-extra-colab.pgc-drop-hot{outline:2px dashed rgba(56,189,248,.75);outline-offset:3px;border-radius:10px}
@@ -372,6 +388,44 @@ function buildPoolFromSnapshot(snapshot) {
   });
 }
 
+// "Veículos disponíveis" (inspirado no mockup de referência, 2026-07-21) —
+// painel só INFORMATIVO por enquanto (não arrastável): o schema não tem
+// vínculo O.S./veículo direto, só colaborador→placa (programacao_deslocamento,
+// item.custos.placaAuto) — arrastar um veículo sozinho pra uma O.S. não tem
+// pra onde gravar sem também escolher UM colaborador motorista, o que essa
+// lista não carrega. Serve pra o gestor ver de relance o que está livre
+// antes de escolher o motorista na aba Pessoas (cujo card já traz a placa).
+async function carregarVeiculos(supervisoes) {
+  const lista = Array.isArray(supervisoes) ? supervisoes.filter(Boolean) : [supervisoes].filter(Boolean);
+  const key = lista.slice().sort().join('|');
+  if (!key || state.veiculosCacheKey === key) return state.veiculosCache;
+  state.veiculosCacheKey = key;
+  try {
+    let query = supabase.from('frotas_veiculos').select('id,placa,marca,modelo,status,motorista_atual,supervisao').eq('status', 'ATIVO');
+    query = lista.length > 1 ? query.in('supervisao', lista) : query.eq('supervisao', lista[0]);
+    const { data, error } = await query.order('placa', { ascending: true }).limit(2000);
+    if (error) throw error;
+    state.veiculosCache = (data || []).filter((v) => v.placa);
+  } catch (error) {
+    console.warn('[programacao-fluxo] veículos indisponíveis', error);
+    state.veiculosCache = [];
+  }
+  return state.veiculosCache;
+}
+
+function veiculoCardHtml(v, placasEmUso) {
+  const placa = onlyPlate(v.placa);
+  const emUso = placasEmUso.has(placa);
+  return `<div class="pgc-colab-card pgc-veiculo-card ${emUso ? 'is-linked' : ''}">
+    <span class="pgc-colab-ico car">🚚</span>
+    <span class="pgc-colab-main">
+      <span class="pgc-colab-name">${esc(v.placa)}</span>
+      <span class="pgc-colab-meta">${esc([v.marca, v.modelo].filter(Boolean).join(' ') || '—')}</span>
+    </span>
+    <span class="pgc-colab-tag ${emUso ? 'is-linked' : ''}">${emUso ? 'Em uso' : 'Disponível'}</span>
+  </div>`;
+}
+
 async function carregarMotoristas(supervisoes) {
   const lista = Array.isArray(supervisoes) ? supervisoes.filter(Boolean) : [supervisoes].filter(Boolean);
   const key = lista.slice().sort().join('|');
@@ -412,7 +466,8 @@ function colabCardHtml(c, readOnly = false) {
   // tipo/supervisão/placa via os dados do objeto, mesmo sem exibi-los.
   return `<div class="pgc-colab-card ${c.linked ? 'is-linked' : ''}" draggable="${readOnly ? 'false' : 'true'}" data-pgc-colab='${esc(JSON.stringify(c))}'>
     <span class="pgc-colab-ico ${motorista ? 'car' : 'person'}">${esc(letter)}</span>
-    <span style="min-width:0"><span class="pgc-colab-name">${esc(c.nome)}</span></span>
+    <span class="pgc-colab-main"><span class="pgc-colab-name">${esc(c.nome)}</span></span>
+    <span class="pgc-colab-tag ${c.linked ? 'is-linked' : ''}">${c.linked ? 'Escalado' : 'Disponível'}</span>
   </div>`;
 }
 
@@ -422,14 +477,7 @@ function colabCardHtml(c, readOnly = false) {
 // observer de novo -> escreve de novo -> ... rodando pra sempre a cada ~400ms
 // assim que a Etapa 2 é aberta pela 1ª vez, mesmo sem nada realmente mudar.
 // Só escreve quando o conteúdo calculado é diferente do que já está lá.
-function renderPool(poolEl, pool, query = '', readOnly = false) {
-  const q = normalizeText(query);
-  const filtrados = q ? pool.filter((c) => normalizeText(`${c.nome} ${c.tipoLabel} ${c.supervisao} ${c.veiculoPlaca}`).includes(q)) : pool;
-  const countEl = poolEl.querySelector('.pgc-pool-count');
-  const countText = `${filtrados.length}/${pool.length}`;
-  if (countEl.textContent !== countText) countEl.textContent = countText;
-  const list = poolEl.querySelector('.pgc-colab-list');
-  const html = filtrados.length ? filtrados.map((c) => colabCardHtml(c, readOnly)).join('') : '<div class="pgc-colab-empty">Nenhum colaborador encontrado.</div>';
+function renderIntoList(list, html) {
   if (list.__pgcHtmlCache === html) return;
   list.__pgcHtmlCache = html;
   // augmentEquipeDnd roda a cada mutação de DOM na página inteira (observer
@@ -437,9 +485,36 @@ function renderPool(poolEl, pool, query = '', readOnly = false) {
   // preservar a rolagem aqui, o sidebar de colaboradores/motoristas voltava
   // pro topo a qualquer ação, mesmo sem relação com o pool (autosave, toggle
   // de status, etc.).
-  const scrollPos = poolEl.scrollTop;
+  const scroller = list.closest('.pgc-colab-pool') || list;
+  const scrollPos = scroller.scrollTop;
   list.innerHTML = html;
-  poolEl.scrollTop = scrollPos;
+  scroller.scrollTop = scrollPos;
+}
+
+function renderPool(poolEl, pool, query = '', readOnly = false) {
+  const q = normalizeText(query);
+  const filtrados = q ? pool.filter((c) => normalizeText(`${c.nome} ${c.tipoLabel} ${c.supervisao} ${c.veiculoPlaca}`).includes(q)) : pool;
+  const list = poolEl.querySelector('[data-pool-panel="pessoas"]');
+  const html = filtrados.length ? filtrados.map((c) => colabCardHtml(c, readOnly)).join('') : '<div class="pgc-colab-empty">Nenhum colaborador encontrado.</div>';
+  renderIntoList(list, html);
+  if (poolEl.dataset.pgcActiveTab !== 'frota') {
+    const countEl = poolEl.querySelector('.pgc-pool-count');
+    const countText = `${filtrados.length}/${pool.length}`;
+    if (countEl.textContent !== countText) countEl.textContent = countText;
+  }
+}
+
+function renderVeiculosPool(poolEl, veiculos, query = '', placasEmUso) {
+  const q = normalizeText(query);
+  const filtrados = q ? veiculos.filter((v) => normalizeText(`${v.placa} ${v.marca} ${v.modelo}`).includes(q)) : veiculos;
+  const list = poolEl.querySelector('[data-pool-panel="frota"]');
+  const html = filtrados.length ? filtrados.map((v) => veiculoCardHtml(v, placasEmUso)).join('') : '<div class="pgc-colab-empty">Nenhum veículo ativo encontrado pra essa supervisão.</div>';
+  renderIntoList(list, html);
+  if (poolEl.dataset.pgcActiveTab === 'frota') {
+    const countEl = poolEl.querySelector('.pgc-pool-count');
+    const countText = `${filtrados.length}/${veiculos.length}`;
+    if (countEl.textContent !== countText) countEl.textContent = countText;
+  }
 }
 
 function ensureEquipeSplit(pane) {
@@ -453,10 +528,15 @@ function ensureEquipeSplit(pane) {
   pool.id = 'pgcColabPool';
   pool.className = 'pgc-colab-pool';
   pool.innerHTML = `
-    <div class="pgc-pool-head"><strong>Colaboradores / motoristas</strong><span class="pgc-pool-count">0</span></div>
+    <div class="pgc-pool-head"><strong>Recursos disponíveis</strong><span class="pgc-pool-count">0</span></div>
+    <div class="pgc-pool-tabs" role="tablist">
+      <button type="button" class="pgc-pool-tab active" data-pool-tab="pessoas">Pessoas</button>
+      <button type="button" class="pgc-pool-tab" data-pool-tab="frota">Frota</button>
+    </div>
     <input class="pgc-pool-search" id="pgcPoolSearch" placeholder="Buscar colaborador, tipo ou placa..." />
-    <div class="pgc-colab-list"><div class="pgc-colab-empty">Carregando lista...</div></div>
-    <div class="pgc-dnd-note">Arraste para uma O.S. para associar. Se a O.S. já tiver colaborador, a justificativa é obrigatória. Motorista pode ser solto na O.S. ou sobre um colaborador confirmado.</div>`;
+    <div class="pgc-colab-list" data-pool-panel="pessoas"><div class="pgc-colab-empty">Carregando lista...</div></div>
+    <div class="pgc-colab-list" data-pool-panel="frota" hidden><div class="pgc-colab-empty">Carregando frota...</div></div>
+    <div class="pgc-dnd-note">Arraste para uma O.S. para associar. Se a O.S. já tiver colaborador, a justificativa é obrigatória. Motorista pode ser solto na O.S. ou sobre um colaborador confirmado. A lista de veículos é só consulta — o vínculo é feito pelo motorista.</div>`;
   list.parentNode.insertBefore(split, list);
   split.appendChild(pool);
   split.appendChild(list);
@@ -471,16 +551,48 @@ async function augmentEquipeDnd() {
   const { pool: poolEl } = ensureEquipeSplit(pane) || {};
   if (!poolEl) return;
 
-  await carregarMotoristas(snapshot.supervisoesResolvidas || []);
+  const [, veiculos] = await Promise.all([
+    carregarMotoristas(snapshot.supervisoesResolvidas || []),
+    carregarVeiculos(snapshot.supervisoesResolvidas || []),
+  ]);
   const pool = buildPoolFromSnapshot(snapshot);
-  renderPool(poolEl, pool, poolEl.querySelector('#pgcPoolSearch')?.value || '', snapshot.readOnly);
+  // Placa "em uso" = já é o veículo de algum motorista LINKED no pool (ou
+  // seja, confirmado numa O.S. hoje) — mesma noção de "escalado" aplicada ao
+  // veículo em vez do colaborador.
+  const placasEmUso = new Set(pool.filter((c) => c.linked && c.veiculoPlaca).map((c) => onlyPlate(c.veiculoPlaca)));
+  const searchValue = poolEl.querySelector('#pgcPoolSearch')?.value || '';
+  renderPool(poolEl, pool, searchValue, snapshot.readOnly);
+  renderVeiculosPool(poolEl, veiculos, searchValue, placasEmUso);
 
   if (poolEl.dataset.pgcWired !== '1') {
     poolEl.dataset.pgcWired = '1';
+    poolEl.dataset.pgcActiveTab = 'pessoas';
     poolEl.addEventListener('input', (event) => {
       if (!event.target.matches('#pgcPoolSearch')) return;
       const freshSnapshot = window.__peqbGetEquipeSnapshot?.();
-      renderPool(poolEl, buildPoolFromSnapshot(freshSnapshot), event.target.value, freshSnapshot?.readOnly);
+      const freshPool = buildPoolFromSnapshot(freshSnapshot);
+      const freshPlacas = new Set(freshPool.filter((c) => c.linked && c.veiculoPlaca).map((c) => onlyPlate(c.veiculoPlaca)));
+      renderPool(poolEl, freshPool, event.target.value, freshSnapshot?.readOnly);
+      renderVeiculosPool(poolEl, state.veiculosCache, event.target.value, freshPlacas);
+    });
+    poolEl.addEventListener('click', (event) => {
+      const tabBtn = event.target.closest('[data-pool-tab]');
+      if (!tabBtn) return;
+      const alvo = tabBtn.dataset.poolTab;
+      poolEl.dataset.pgcActiveTab = alvo;
+      poolEl.querySelectorAll('[data-pool-tab]').forEach((b) => b.classList.toggle('active', b === tabBtn));
+      poolEl.querySelector('[data-pool-panel="pessoas"]').hidden = alvo !== 'pessoas';
+      poolEl.querySelector('[data-pool-panel="frota"]').hidden = alvo !== 'frota';
+      const searchEl = poolEl.querySelector('#pgcPoolSearch');
+      searchEl.placeholder = alvo === 'frota' ? 'Buscar placa ou modelo...' : 'Buscar colaborador, tipo ou placa...';
+      const freshSnapshot = window.__peqbGetEquipeSnapshot?.();
+      const countEl = poolEl.querySelector('.pgc-pool-count');
+      if (alvo === 'frota') {
+        countEl.textContent = `${state.veiculosCache.length}/${state.veiculosCache.length}`;
+      } else {
+        const freshPool = buildPoolFromSnapshot(freshSnapshot);
+        countEl.textContent = `${freshPool.length}/${freshPool.length}`;
+      }
     });
     poolEl.addEventListener('dragstart', (event) => {
       if (window.__peqbGetEquipeSnapshot?.()?.readOnly) { event.preventDefault(); return; }

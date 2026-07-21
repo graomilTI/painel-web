@@ -245,6 +245,16 @@ function injectStyles() {
     .peqb-kpi+.peqb-kpi{border-left:1px solid rgba(148,163,184,.14)}
     .peqb-kpi span{display:block;color:#93c5fd;font-size:9.5px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
     .peqb-kpi strong{display:block;margin-top:4px;color:#fff;font-size:17px}
+    /* KPI com ícone (inspirado no mockup de referência, 2026-07-21): círculo
+       colorido + texto ao lado, em vez de só rótulo-em-cima-do-número. */
+    .peqb-kpi-ic{display:flex;align-items:center;gap:10px}
+    .peqb-kpi-icon{flex:0 0 auto;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px}
+    .peqb-kpi-icon.tone-blue{background:rgba(59,130,246,.18)}
+    .peqb-kpi-icon.tone-amber{background:rgba(245,158,11,.18)}
+    .peqb-kpi-icon.tone-green{background:rgba(34,197,94,.18)}
+    .peqb-kpi-icon.tone-purple{background:rgba(168,85,247,.18)}
+    .peqb-kpi-body{min-width:0}
+    .peqb-kpi-body small{display:block;color:#7d8aa3;font-size:9.5px;margin-top:1px;white-space:nowrap}
     .peqb-os2-kpis{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
     .peqb-os2-kpi{border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.24);border-radius:10px;padding:7px 9px;flex:1 1 90px;min-width:90px}
     .peqb-os2-kpi span{display:block;color:#93c5fd;font-size:9px;font-weight:950;letter-spacing:.06em;text-transform:uppercase}
@@ -397,6 +407,38 @@ function injectStyles() {
     .peqb-conf-sub{font-size:11px;color:#8ba79a}
     .peqb-conf-km{font-size:11px;color:#9fb7aa;font-weight:800;white-space:nowrap;display:inline-flex;align-items:center;gap:3px}
     .peqb-clab{font-size:15px;line-height:1;flex:0 0 auto;opacity:.9}
+    /* Avatar com iniciais (inspirado no mockup de referência, 2026-07-21) —
+       identifica rápido "quem é quem" na O.S. sem precisar ler o nome inteiro. */
+    .peqb-avatar-badge{flex:0 0 auto;width:24px;height:24px;border-radius:50%;margin:0 6px 0 2px;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:950;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.35)}
+    /* Zona da equipe + card de deslocamento lado a lado — o deslocamento do
+       colaborador confirmado (frota/uber/carona/reembolso) ganha destaque
+       visual próprio em vez de um <select> apertado dentro da pílula do
+       nome (mesmo <select data-desloc-colab>/mesmo handler, só reposicionado
+       e restilizado, ver deslocamentoCardHtml()). */
+    .peqb-team-row{display:flex;gap:10px;align-items:stretch}
+    .peqb-team-zone{flex:1 1 auto;min-width:0}
+    .peqb-desloc-card{position:relative;flex:0 0 172px;display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:12px;border:1px dashed rgba(148,163,184,.3);background:rgba(148,163,184,.06);color:#94a3b8}
+    .peqb-desloc-icon{flex:0 0 auto;font-size:16px;line-height:1}
+    .peqb-desloc-icon::before{content:"➕"}
+    .peqb-desloc-main{min-width:0;display:flex;flex-direction:column;gap:1px}
+    .peqb-desloc-label{font-size:12px;font-weight:850;color:inherit}
+    .peqb-desloc-label::after{content:"Definir deslocamento"}
+    .peqb-desloc-main strong{font-size:12.5px;font-weight:900;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .peqb-desloc-main small{font-size:9.5px;color:#9fb7aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .peqb-desloc-select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;appearance:none;border:0;background:transparent}
+    .peqb-desloc-select:disabled{cursor:not-allowed}
+    .peqb-desloc-card.tone-frota{border-style:solid;border-color:rgba(34,197,94,.35);background:rgba(22,163,74,.14);color:#bbf7d0}
+    .peqb-desloc-card.tone-frota .peqb-desloc-icon::before{content:"🚛"}
+    .peqb-desloc-card:has(option[value="UBER/TÁXI"]:checked){border-style:solid;border-color:rgba(168,85,247,.35);background:rgba(147,51,234,.14);color:#e9d5ff}
+    .peqb-desloc-card:has(option[value="UBER/TÁXI"]:checked) .peqb-desloc-icon::before{content:"🚕"}
+    .peqb-desloc-card:has(option[value="UBER/TÁXI"]:checked) .peqb-desloc-label::after{content:"Uber/Táxi"}
+    .peqb-desloc-card:has(option[value="CARONA FROTA"]:checked){border-style:solid;border-color:rgba(59,130,246,.35);background:rgba(37,99,235,.14);color:#bfdbfe}
+    .peqb-desloc-card:has(option[value="CARONA FROTA"]:checked) .peqb-desloc-icon::before{content:"🤝"}
+    .peqb-desloc-card:has(option[value="CARONA FROTA"]:checked) .peqb-desloc-label::after{content:"Carona"}
+    .peqb-desloc-card:has(option[value="REEMBOLSO KM"]:checked){border-style:solid;border-color:rgba(245,158,11,.35);background:rgba(217,119,6,.14);color:#fde68a}
+    .peqb-desloc-card:has(option[value="REEMBOLSO KM"]:checked) .peqb-desloc-icon::before{content:"💵"}
+    .peqb-desloc-card:has(option[value="REEMBOLSO KM"]:checked) .peqb-desloc-label::after{content:"Reembolso km"}
+    @media(max-width:640px){.peqb-team-row{flex-direction:column}.peqb-desloc-card{flex-basis:auto}}
     .peqb-map-band{margin-top:14px;border:1px solid rgba(111,208,165,.14);border-radius:16px;overflow:hidden;background:rgba(2,6,23,.36)}
     .peqb-map-band-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(111,208,165,.14);font-size:12.5px;font-weight:850;color:#cfe7da}
     .peqb-map-band .peqb-map{height:min(420px,60vh);position:relative}
@@ -883,6 +925,20 @@ function iniciais(nome) {
   return String(nome || '?').trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase() || '?';
 }
 
+// Paleta fixa (não aleatória) pra cor do avatar ficar ESTÁVEL pro mesmo
+// colaborador entre renders — hash simples da string do id/nome, sem depender
+// de nenhuma ordem de carregamento.
+const AVATAR_PALETTE = ['#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#22c55e', '#06b6d4', '#f97316'];
+function avatarColor(seed) {
+  const s = String(seed || '');
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
+}
+function avatarBadgeHtml(nome, seed) {
+  return `<span class="peqb-avatar-badge" style="background:${avatarColor(seed || nome)}">${esc(iniciais(nome))}</span>`;
+}
+
 function tipoTone(label) {
   const n = normalizeText(label);
   if (n.includes('EFETIVO')) return 'ok';
@@ -1034,6 +1090,7 @@ function colabsExtrasHtml(item) {
     const desTipo = item.custosRaw?.des?.get(String(r.colaborador_id))?.tipo_deslocamento;
     return `
     <span class="peqb-extra-colab" title="Colaborador adicional nesta O.S.">
+      ${avatarBadgeHtml(r.nome_colaborador, r.colaborador_id)}
       <span class="peqb-conf-tagwrap">
         ${isMotoristaLogistica ? '<span class="peqb-clab" title="Motorista em Logística">🚗</span>' : ''}
         <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(tipoLabel)}">${esc(tipoLabel)}</span>
@@ -1076,6 +1133,36 @@ function deslocamentoInlineHtml(colaboradorId, tipoAtualRaw, readOnly) {
   </select>`;
 }
 
+// Card de deslocamento (inspirado no mockup de referência, 2026-07-21):
+// destaca o transporte PRINCIPAL da O.S. (o do colaborador confirmado) como
+// um bloco colorido próprio, em vez do <select> apertado dentro da pílula do
+// nome. Continua sendo o MESMO <select data-desloc-colab> / mesmo handler de
+// 'change' já existente (ver listEl.addEventListener('change', ...)) — só
+// muda onde ele aparece e como fica visualmente. Quando o confirmado já tem
+// frota própria (placaAuto), não há escolha a fazer — mostra só a placa/
+// condutor, direto (sem select). Extras continuam com o próprio inline
+// pequeno (colabsExtrasHtml) pra quem não vai no mesmo veículo do principal.
+function deslocamentoCardHtml(item, confirmadoRow, readOnly) {
+  if (item.custos?.placaAuto) {
+    return `<div class="peqb-desloc-card tone-frota">
+      <span class="peqb-desloc-icon">🚛</span>
+      <span class="peqb-desloc-main">
+        <strong>${esc(onlyPlate(item.custos.placaAuto))}</strong>
+        <small>Condutor vinculado: ${esc(confirmadoRow.nome_colaborador || '')}</small>
+      </span>
+    </div>`;
+  }
+  const tipoAtual = normalizeText(item.custos?.des?.tipo_deslocamento || '');
+  const opts = [['', 'Definir deslocamento'], ['UBER/TÁXI', 'Uber/Táxi'], ['REEMBOLSO KM', 'Reembolso km'], ['CARONA FROTA', 'Carona']];
+  return `<div class="peqb-desloc-card">
+    <span class="peqb-desloc-icon"></span>
+    <span class="peqb-desloc-main"><strong class="peqb-desloc-label"></strong></span>
+    <select class="peqb-desloc-select" data-desloc-colab="${esc(confirmadoRow.colaborador_id)}" ${readOnly ? 'disabled' : ''} title="Tipo de deslocamento do colaborador confirmado">
+      ${opts.map(([valor, label]) => `<option value="${esc(valor)}" ${tipoAtual === normalizeText(valor) ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+    </select>
+  </div>`;
+}
+
 function osRowHtml(item) {
   const { os, confirmadoRow, candidatos, readOnly } = item;
   const confirmado = !!confirmadoRow;
@@ -1092,29 +1179,34 @@ function osRowHtml(item) {
         : `<button type="button" class="peqb-row-btn hotel" data-pedir-hotel ${dis} title="Combustível ida+volta estimado: R$${custoKm != null ? brl(custoKm) : '?'} — hotel pode ser mais econômico">🏨 Pedir hotel</button>`)
       : '';
     right = `<div class="peqb-os2-right">
-      <div class="peqb-conf-head">
-        <span class="peqb-conf-name">
-          <span class="peqb-conf-tagwrap">
-            ${item.custos?.placaAuto && disponibilidadeCategoriaLocal(item.custos?.dispAtual) === 'LOGISTICA' ? '<span class="peqb-clab" title="Motorista em Logística">🚗</span>' : ''}
-            <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(item.confirmadoTipoLabel)}">${esc(item.confirmadoTipoLabel)}</span>
-          </span>
-          <select class="peqb-name-sel" data-trocar-colab ${dis} title="Trocar o colaborador (♻ = já escalado em outra OS)">
-            ${trocarOptionsHtml(item)}
-          </select>
-          ${item.custos?.placaAuto ? '' : deslocamentoInlineHtml(confirmadoRow.colaborador_id, item.custos?.des?.tipo_deslocamento, readOnly)}
-          <button type="button" class="peqb-add-colab" data-toggle-add-colab ${dis} title="Adicionar outro colaborador nesta O.S.">+</button>
-        </span>
-        ${hotelBtn}
+      <div class="peqb-team-row">
+        <div class="peqb-team-zone">
+          <div class="peqb-conf-head">
+            <span class="peqb-conf-name">
+              ${avatarBadgeHtml(confirmadoRow.nome_colaborador, confirmadoRow.colaborador_id)}
+              <span class="peqb-conf-tagwrap">
+                ${item.custos?.placaAuto && disponibilidadeCategoriaLocal(item.custos?.dispAtual) === 'LOGISTICA' ? '<span class="peqb-clab" title="Motorista em Logística">🚗</span>' : ''}
+                <span class="peqb-cand-tag peqb-conf-tag t-${tipoTone(item.confirmadoTipoLabel)}">${esc(item.confirmadoTipoLabel)}</span>
+              </span>
+              <select class="peqb-name-sel" data-trocar-colab ${dis} title="Trocar o colaborador (♻ = já escalado em outra OS)">
+                ${trocarOptionsHtml(item)}
+              </select>
+              <button type="button" class="peqb-add-colab" data-toggle-add-colab ${dis} title="Adicionar outro colaborador nesta O.S.">+</button>
+            </span>
+            ${hotelBtn}
+          </div>
+          ${item.custos?.placaAuto ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual, readOnly) : ''}
+          ${colabsExtrasHtml(item)}
+          <div class="peqb-add-box" data-add-box hidden>
+            <span class="peqb-cand-av">+</span>
+            <span class="peqb-cand-tag peqb-conf-tag t-info">Adicionar</span>
+            <select class="peqb-name-sel" data-add-colab-select>${addColabOptionsHtml(item)}</select>
+            <button type="button" class="peqb-row-btn" data-add-colab-confirm>Adicionar</button>
+          </div>
+          <div class="peqb-conf-km" title="Distância do colaborador até o ponto de embarque">📍 ${km != null ? `${round1(km)} km até o embarque` : 'sem coordenada do ponto'}</div>
+        </div>
+        ${deslocamentoCardHtml(item, confirmadoRow, readOnly)}
       </div>
-      ${item.custos?.placaAuto ? dispToggleHtml(confirmadoRow.colaborador_id, item.custos.dispAtual, readOnly) : ''}
-      ${colabsExtrasHtml(item)}
-      <div class="peqb-add-box" data-add-box hidden>
-        <span class="peqb-cand-av">+</span>
-        <span class="peqb-cand-tag peqb-conf-tag t-info">Adicionar</span>
-        <select class="peqb-name-sel" data-add-colab-select>${addColabOptionsHtml(item)}</select>
-        <button type="button" class="peqb-row-btn" data-add-colab-confirm>Adicionar</button>
-      </div>
-      <div class="peqb-conf-km" title="Distância do colaborador até o ponto de embarque">📍 ${km != null ? `${round1(km)} km até o embarque` : 'sem coordenada do ponto'}</div>
     </div>`;
   } else {
     const selecionadoId = candidatos[0]?.colaboradorId || '';
@@ -1153,24 +1245,52 @@ function osRowHtml(item) {
   return `<article class="peqb-row peqb-os2 ${confirmado ? 'peqb-os2-done' : ''}" data-os-id="${esc(os.id)}">${osLeftHtml(os, { hideStatusStrip: true })}${right}</article>`;
 }
 
-function atualizarKpis(root, osComCandidatos, confirmadosPorOs) {
+function formatDataCurta(iso) {
+  const [, m, d] = String(iso || '').split('-');
+  return d && m ? `${d}/${m}` : '';
+}
+
+// 4 KPIs no espírito do mockup de referência (2026-07-21): OS abertas / Sem
+// equipe / Colaboradores livres / Km estimado — trocam os 3 antigos
+// (Colaboradores confirmados / Km total / OS com equipe), que descreviam só o
+// que já estava resolvido. Os novos priorizam o que falta fazer (sem equipe,
+// quem sobra pra escalar), mais acionável pro gestor do que só um placar do
+// que já foi feito.
+function atualizarKpis(root, osComCandidatos, confirmadosPorOs, dataReferencia) {
   const kpiKmEl = root.querySelector('#peqbKpiKm');
-  const kpiOsEl = root.querySelector('#peqbKpiOs');
   const kpiColabEl = root.querySelector('#peqbKpiColab');
+  const kpiOsAbertasEl = root.querySelector('#peqbKpiOsAbertas');
+  const kpiOsAbertasCapEl = root.querySelector('#peqbKpiOsAbertasCap');
+  const kpiSemEquipeEl = root.querySelector('#peqbKpiSemEquipe');
+  const kpiSemEquipeCapEl = root.querySelector('#peqbKpiSemEquipeCap');
   const kmTotal = osComCandidatos.reduce((soma, { os }) => {
     const km = confirmadosPorOs.get(os.id)?.km_estimado;
     return soma + (Number.isFinite(km) ? km : 0);
   }, 0);
   if (kpiKmEl) kpiKmEl.textContent = `${round1(kmTotal)} km`;
-  if (kpiOsEl) kpiOsEl.textContent = String(confirmadosPorOs.size);
+
+  const total = osComCandidatos.length;
+  const semEquipe = total - confirmadosPorOs.size;
+  if (kpiOsAbertasEl) kpiOsAbertasEl.textContent = String(total);
+  if (kpiOsAbertasCapEl) kpiOsAbertasCapEl.textContent = dataReferencia === todayIso() ? 'Hoje' : (dataReferencia ? formatDataCurta(dataReferencia) : ' ');
+  if (kpiSemEquipeEl) kpiSemEquipeEl.textContent = String(semEquipe);
+  if (kpiSemEquipeCapEl) kpiSemEquipeCapEl.textContent = total ? `${Math.round((semEquipe / total) * 100)}% do total` : ' ';
+
   if (kpiColabEl) {
-    // Colaboradores únicos de toda a programação: confirmado principal + adicionais
-    // (2º+ colaborador na mesma O.S.), já disponíveis em item.equipeRows.
+    // Colaboradores únicos JÁ escalados hoje (confirmado + adicionais) vs os
+    // da regional que ainda não entraram em nenhuma O.S. — "livres" de verdade,
+    // não só uma contagem do que já foi preenchido.
     const colaboradoresUnicos = new Set();
     osComCandidatos.forEach((item) => {
       (item.equipeRows || []).forEach((r) => { if (r.colaborador_id) colaboradoresUnicos.add(String(r.colaborador_id)); });
     });
-    kpiColabEl.textContent = String(colaboradoresUnicos.size);
+    const regionalIds = new Set();
+    osComCandidatos.forEach((item) => {
+      (item.colaboradoresRegional || []).forEach((c) => { if (c.colaboradorId) regionalIds.add(String(c.colaboradorId)); });
+    });
+    let livres = 0;
+    regionalIds.forEach((id) => { if (!colaboradoresUnicos.has(id)) livres += 1; });
+    kpiColabEl.textContent = String(livres);
   }
 }
 
@@ -1504,9 +1624,10 @@ export async function renderProgramacaoEquipe(content, options = {}) {
     ${readOnly ? readonlyBannerHtml() : ''}
     <div class="peqb-kpis-window">
       <div class="peqb-kpis">
-        <div class="peqb-kpi"><span>Colaboradores</span><strong id="peqbKpiColab">0</strong></div>
-        <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
-        <div class="peqb-kpi"><span>OS com equipe</span><strong id="peqbKpiOs">0</strong></div>
+        <div class="peqb-kpi peqb-kpi-ic"><span class="peqb-kpi-icon tone-blue">🗒️</span><span class="peqb-kpi-body"><span>OS abertas</span><strong id="peqbKpiOsAbertas">0</strong><small id="peqbKpiOsAbertasCap">&nbsp;</small></span></div>
+        <div class="peqb-kpi peqb-kpi-ic"><span class="peqb-kpi-icon tone-amber">👥</span><span class="peqb-kpi-body"><span>Sem equipe</span><strong id="peqbKpiSemEquipe">0</strong><small id="peqbKpiSemEquipeCap">&nbsp;</small></span></div>
+        <div class="peqb-kpi peqb-kpi-ic"><span class="peqb-kpi-icon tone-green">🧑</span><span class="peqb-kpi-body"><span>Colaboradores livres</span><strong id="peqbKpiColab">0</strong><small>Disponíveis</small></span></div>
+        <div class="peqb-kpi peqb-kpi-ic"><span class="peqb-kpi-icon tone-purple">🚚</span><span class="peqb-kpi-body"><span>Km estimado</span><strong id="peqbKpiKm">0 km</strong><small>Total do dia</small></span></div>
       </div>
       <div class="peqb-legend"><span class="peqb-legend-lbl">Score</span><span><i class="lg-c"></i>Contrato 50%</span><span><i class="lg-d"></i>Distância 30%</span><span><i class="lg-a"></i>Auditoria 20%</span></div>
       <div class="peqb-toolbar">
@@ -1896,7 +2017,7 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         }, { onConflict: 'programacao_id,colaborador_id' }).then(({ error }) => { if (error) console.warn('[equipe] auto-placa', error); });
       });
 
-      atualizarKpis(content, osComCandidatosAtual, confirmadosPorOs);
+      atualizarKpis(content, osComCandidatosAtual, confirmadosPorOs, options.dataReferencia || null);
 
       if (mapMount && osComCandidatosAtual.length) {
         const manterFoco = focoOsId && osComCandidatosAtual.some((it) => String(it.os.id) === focoOsId);
