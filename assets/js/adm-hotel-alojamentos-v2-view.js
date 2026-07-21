@@ -1,4 +1,11 @@
-import { esc, money, brDate, safeUrl, icon, fullAddress, contractAlert, normalizeText } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-titulares1';
+import { esc, money, brDate, safeUrl, icon, fullAddress, contractAlert, normalizeText } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
+
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+function pad2(value) { return String(value).padStart(2, '0'); }
+
+export function isoDate(date) { return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`; }
 
 function serviceCard(kind, title, included, matricula, extra = '', titular = '') {
   const isGas = kind === 'gas';
@@ -22,7 +29,7 @@ function compactService(label, value, kind) {
 function renderListRow(row) {
   const status = String(row.status || 'ATIVO').toLowerCase();
   return `<div class="aloj-v2-list-row" data-id="${esc(row.id)}">
-    <div class="aloj-v2-list-open-cell"><button type="button" class="aloj-v2-expand-btn" data-aloj-v2-action="details" data-id="${esc(row.id)}" aria-label="Abrir detalhes de ${esc(row.nome || 'alojamento')}" title="Abrir detalhes">+</button></div>
+    <div class="aloj-v2-list-open-cell"><button type="button" class="aloj-v2-expand-btn" data-aloj-v2-action="details" data-id="${esc(row.id)}" aria-label="Abrir detalhes de ${esc(row.nome || 'alojamento')}" title="Abrir detalhes">+</button><button type="button" class="aloj-v2-icon-btn aloj-v2-obs-btn" data-aloj-v2-action="obs" data-id="${esc(row.id)}" aria-label="Observações de ${esc(row.nome || 'alojamento')}" title="Observações">${icon('notes')}</button></div>
     <div class="aloj-v2-list-identity">
       <div class="aloj-v2-list-home">${icon('home')}</div>
       <div class="aloj-v2-list-title"><strong>${esc(row.nome || 'Alojamento sem nome')}</strong><span>${esc(row.tipo || 'CASA')} · ${esc([row.cidade, row.uf].filter(Boolean).join('/') || 'Local não informado')}</span></div>
@@ -68,7 +75,7 @@ export function renderDetailsContent(row) {
         <a class="aloj-v2-link ${locationUrl ? '' : 'disabled'}" href="${esc(locationUrl || '#')}" target="_blank" rel="noopener"><span>Abrir localização</span>${icon('external')}</a>
       </div></div>
     </div>
-    <div class="aloj-v2-card-actions"><button type="button" class="aloj-v2-secondary" data-aloj-v2-action="edit" data-id="${esc(row.id)}">Editar</button><button type="button" class="aloj-v2-danger" data-aloj-v2-action="delete" data-id="${esc(row.id)}">Excluir</button></div>
+    <div class="aloj-v2-card-actions"><button type="button" class="aloj-v2-secondary" data-aloj-v2-action="obs" data-id="${esc(row.id)}">${icon('notes')} Observações</button><button type="button" class="aloj-v2-secondary" data-aloj-v2-action="edit" data-id="${esc(row.id)}">Editar</button><button type="button" class="aloj-v2-danger" data-aloj-v2-action="delete" data-id="${esc(row.id)}">Excluir</button></div>
   </article>`;
 }
 
@@ -109,10 +116,65 @@ function modalHtml() {
   </div></div>`;
 }
 
+function obsModalHtml() {
+  return `<div class="aloj-v2-modal aloj-v2-obs-modal" id="alojV2ObsModal" aria-hidden="true"><div class="aloj-v2-modal-card aloj-v2-obs-modal-card" role="dialog" aria-modal="true" aria-labelledby="alojV2ObsTitle">
+    <div class="aloj-v2-modal-head"><div><div class="aloj-v2-eyebrow">Observações</div><h3 id="alojV2ObsTitle">Alojamento</h3><p>Registre anotações datadas e acompanhe pelo calendário ao lado.</p></div><button type="button" class="aloj-v2-icon-btn" id="alojV2ObsClose" aria-label="Fechar">${icon('close')}</button></div>
+    <div class="aloj-v2-obs-body">
+      <div class="aloj-v2-obs-notes">
+        <form id="alojV2ObsForm" class="aloj-v2-obs-form">
+          <div class="aloj-v2-field"><label>Data</label><input id="alojV2ObsData" type="date" required></div>
+          <div class="aloj-v2-field full"><label>Anotação</label><textarea id="alojV2ObsTexto" placeholder="Escreva a anotação..." required></textarea></div>
+          <div class="aloj-v2-obs-form-actions"><span id="alojV2ObsFeedback" class="aloj-v2-feedback"></span><button type="submit" class="aloj-v2-primary">Adicionar anotação</button></div>
+        </form>
+        <div id="alojV2ObsList" class="aloj-v2-obs-list"></div>
+      </div>
+      <div class="aloj-v2-obs-calendar">
+        <div class="aloj-v2-obs-cal-head"><button type="button" class="aloj-v2-icon-btn" id="alojV2ObsPrev" aria-label="Mês anterior">${icon('chevronLeft')}</button><strong id="alojV2ObsCalLabel"></strong><button type="button" class="aloj-v2-icon-btn" id="alojV2ObsNext" aria-label="Próximo mês">${icon('chevronRight')}</button></div>
+        <div id="alojV2ObsCalGrid" class="aloj-v2-obs-cal-grid"></div>
+      </div>
+    </div>
+  </div></div>`;
+}
+
+export function renderObsCalendar(year, month, notesByDate, selectedDate) {
+  const label = document.getElementById('alojV2ObsCalLabel');
+  if (label) label.textContent = `${MONTHS[month]} de ${year}`;
+  const grid = document.getElementById('alojV2ObsCalGrid');
+  if (!grid) return;
+  const first = new Date(year, month, 1);
+  const startWeekday = first.getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayIso = isoDate(new Date());
+  const cells = [];
+  for (let i = 0; i < startWeekday; i += 1) cells.push('<span class="aloj-v2-obs-cal-cell empty"></span>');
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const iso = `${year}-${pad2(month + 1)}-${pad2(day)}`;
+    const count = (notesByDate[iso] || []).length;
+    const classes = ['aloj-v2-obs-cal-cell'];
+    if (iso === todayIso) classes.push('today');
+    if (iso === selectedDate) classes.push('selected');
+    if (count) classes.push('has-notes');
+    cells.push(`<button type="button" class="${classes.join(' ')}" data-date="${iso}">${day}${count ? `<span class="aloj-v2-obs-cal-dot" title="${count} anotação(ões)"></span>` : ''}</button>`);
+  }
+  grid.innerHTML = `<div class="aloj-v2-obs-cal-weekdays">${WEEKDAYS.map((day) => `<span>${day}</span>`).join('')}</div><div class="aloj-v2-obs-cal-days">${cells.join('')}</div>`;
+}
+
+export function renderObsList(notes, selectedDate) {
+  const list = document.getElementById('alojV2ObsList');
+  if (!list) return;
+  const sorted = [...notes].sort((a, b) => (b.data || '').localeCompare(a.data || '') || (b.criado_em || '').localeCompare(a.criado_em || ''));
+  if (!sorted.length) { list.innerHTML = '<div class="aloj-v2-obs-empty">Nenhuma anotação registrada ainda.</div>'; return; }
+  list.innerHTML = sorted.map((note) => `<div class="aloj-v2-obs-item${note.data === selectedDate ? ' selected' : ''}" data-id="${esc(note.id)}">
+    <div class="aloj-v2-obs-item-head"><strong>${esc(brDate(note.data))}</strong><button type="button" class="aloj-v2-icon-btn aloj-v2-obs-delete" data-id="${esc(note.id)}" aria-label="Excluir anotação">${icon('trash')}</button></div>
+    <p>${esc(note.texto)}</p>
+    ${note.autor ? `<small>${esc(note.autor)}</small>` : ''}
+  </div>`).join('');
+}
+
 export function panelHtml() {
   return `<div class="aloj-v2-shell"><section class="aloj-v2-head"><div><div class="aloj-v2-eyebrow">Hospedagem</div><h3>Controle de Alojamentos</h3><p>Visualize a lista e use o botão + para abrir as informações completas de cada alojamento.</p></div><div class="aloj-v2-head-actions"><div class="aloj-v2-search-wrap">${icon('search')}<input id="alojV2Search" class="aloj-v2-search" placeholder="Buscar alojamento, cidade ou responsável..."></div><button type="button" class="aloj-v2-primary" id="alojV2New">+ Novo alojamento</button></div></section>
     <section class="aloj-v2-kpis"><div class="aloj-v2-kpi"><span>Alojamentos</span><strong id="alojV2KpiTotal">0</strong></div><div class="aloj-v2-kpi accent"><span>Ativos</span><strong id="alojV2KpiAtivos">0</strong></div><div class="aloj-v2-kpi accent"><span>Aluguel mensal</span><strong id="alojV2KpiAluguel">R$ 0,00</strong></div><div class="aloj-v2-kpi"><span>Contratos a vencer</span><strong id="alojV2KpiContratos">0</strong></div></section>
-    <section id="alojV2List" class="aloj-v2-list"><div class="aloj-v2-loading"><strong>Carregando alojamentos</strong>Aguarde a consulta da base.</div></section>${detailsModalHtml()}${modalHtml()}<div id="alojV2Toast" class="aloj-v2-toast"></div></div>`;
+    <section id="alojV2List" class="aloj-v2-list"><div class="aloj-v2-loading"><strong>Carregando alojamentos</strong>Aguarde a consulta da base.</div></section>${detailsModalHtml()}${modalHtml()}${obsModalHtml()}<div id="alojV2Toast" class="aloj-v2-toast"></div></div>`;
 }
 
 export function renderRows(state) {
