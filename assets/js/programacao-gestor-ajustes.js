@@ -84,7 +84,29 @@ function injectGestorAjustesStyles() {
     .prog-spinner{width:28px;height:28px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;flex:0 0 auto;animation:progSpin .75s linear infinite}
     @keyframes progSpin{to{transform:rotate(360deg)}}
     .prog-sup-native-hidden{position:absolute!important;width:0!important;height:0!important;padding:0!important;border:0!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
-    .prog-sup-combo-input{position:relative!important;z-index:9020!important;min-width:320px!important;width:100%;box-sizing:border-box;padding:9px 12px;background:#020617!important;color:#f8fafc!important;border:1px solid rgba(52,211,153,.45)!important;border-radius:10px;font-size:13.5px;outline:none}
+    /* A regra acima (classe) perdia pra `#progSup{...}" logo abaixo (seletor
+       por ID, especificidade maior — ID sempre vence empate de !important,
+       não importa a ordem de declaração) em 3 propriedades: position virava
+       relative (não absolute), min-width:320px sobrepunha o width:0, e
+       opacity:1 sobrepunha o opacity:0. Resultado: o <select> "escondido"
+       nunca saiu do fluxo — continuava ocupando ~320px reais na linha
+       (embora opacity:1 devesse deixá-lo visível também, um bug próprio),
+       disputando espaço via flex-shrink com o combo visível (#progSupCombo)
+       logo ao lado, dentro do wrapper agora comprimido a 260px (cabeçalho
+       numa linha só, 21/07) — essa disputa que estava empurrando o combo pra
+       sobrepor o campo Data. ID+classe aqui garante especificidade maior que
+       o `#progSup` sozinho, então SEMPRE vence, não importa a ordem dos
+       `<style>` injetados. */
+    #progSup.prog-sup-native-hidden{position:absolute!important;width:0!important;height:0!important;min-width:0!important;min-height:0!important;margin:0!important;opacity:0!important}
+    /* min-width:320px!important daqui (pré-existente, 16/07) brigava com o
+       max-width:260px!important do wrapper .prog-tfield-sup (compressão do
+       cabeçalho numa linha só, ver programacao-kpi-inline-patch.css, 21/07):
+       como o wrapper tem overflow:visible, o input forçado a 320px vazava
+       ~60-120px pra fora da própria caixa e pintava por cima do campo Data ao
+       lado (reportado pela usuária com print, sobreposição real confirmada em
+       harness por getBoundingClientRect). width:100% já basta — o input deve
+       só preencher o wrapper, nunca forçar um piso maior que ele. */
+    .prog-sup-combo-input{position:relative!important;z-index:9020!important;width:100%;box-sizing:border-box;padding:9px 12px;background:#020617!important;color:#f8fafc!important;border:1px solid rgba(52,211,153,.45)!important;border-radius:10px;font-size:13.5px;outline:none}
     .prog-sup-combo-input:focus{outline:2px solid rgba(52,211,153,.35)!important;outline-offset:1px!important}
     .prog-sup-combo-portal{position:fixed;background:#020617;border:1px solid rgba(52,211,153,.35);border-radius:10px;max-height:280px;overflow-y:auto;z-index:99999;box-shadow:0 14px 38px rgba(0,0,0,.55);opacity:1;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
     .prog-sup-combo-item{padding:9px 12px;cursor:pointer;font-size:13.5px;color:#f8fafc;background:#020617}
