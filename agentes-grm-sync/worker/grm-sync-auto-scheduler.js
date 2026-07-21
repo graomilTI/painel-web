@@ -63,9 +63,12 @@ const AGENTES_DIARIOS = [
     ativo: true,
   },
   {
+    // Sempre avalia o informativo de ONTEM (referenceDate = hoje-1, ver
+    // grm-sync-lancar-nhe.js) — não precisa rodar mais de 1x/dia, já que os
+    // dados de ontem não mudam mais depois de sincronizados.
     agente_id: 'sync-lancar-nhe',
     nome: 'Lançamento automático de NHE (geofence de login)',
-    intervalo_minutos: 60,
+    intervalo_minutos: 1440,
     ativo: true,
   },
 ];
