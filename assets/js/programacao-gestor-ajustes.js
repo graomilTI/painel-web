@@ -84,19 +84,19 @@ function injectGestorAjustesStyles() {
     .prog-spinner{width:28px;height:28px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;flex:0 0 auto;animation:progSpin .75s linear infinite}
     @keyframes progSpin{to{transform:rotate(360deg)}}
     .prog-sup-native-hidden{position:absolute!important;width:0!important;height:0!important;padding:0!important;border:0!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
-    /* A regra acima (classe) perdia pra `#progSup{...}" logo abaixo (seletor
+    /* A regra acima (classe) perdia pra #progSup{...} logo abaixo (seletor
        por ID, especificidade maior — ID sempre vence empate de !important,
        não importa a ordem de declaração) em 3 propriedades: position virava
        relative (não absolute), min-width:320px sobrepunha o width:0, e
-       opacity:1 sobrepunha o opacity:0. Resultado: o <select> "escondido"
+       opacity:1 sobrepunha o opacity:0. Resultado: o select "escondido"
        nunca saiu do fluxo — continuava ocupando ~320px reais na linha
        (embora opacity:1 devesse deixá-lo visível também, um bug próprio),
-       disputando espaço via flex-shrink com o combo visível (#progSupCombo)
+       disputando espaço via flex-shrink com o combo visível (progSupCombo)
        logo ao lado, dentro do wrapper agora comprimido a 260px (cabeçalho
        numa linha só, 21/07) — essa disputa que estava empurrando o combo pra
        sobrepor o campo Data. ID+classe aqui garante especificidade maior que
-       o `#progSup` sozinho, então SEMPRE vence, não importa a ordem dos
-       `<style>` injetados. */
+       o #progSup sozinho, então SEMPRE vence, não importa a ordem dos
+       estilos injetados. */
     #progSup.prog-sup-native-hidden{position:absolute!important;width:0!important;height:0!important;min-width:0!important;min-height:0!important;margin:0!important;opacity:0!important}
     /* min-width:320px!important daqui (pré-existente, 16/07) brigava com o
        max-width:260px!important do wrapper .prog-tfield-sup (compressão do
