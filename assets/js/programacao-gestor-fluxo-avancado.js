@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
-import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260721-caronaauto1';
+import { renderProgramacaoEquipe, renderProgramacaoSituacao } from './programacao-equipe.js?v=20260721-uxrefresh1';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260721-alojcombo1';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260720-supfix1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
@@ -91,7 +91,7 @@ function injectStyles() {
        (pedido do usuário, 2026-07-17: "menos poluído"). */
     #pgcPane2 .peqb-os2-kpi{min-width:0;flex:none;border:0!important;background:transparent!important;border-radius:0!important;padding:0 14px!important}
     #pgcPane2 .peqb-os2-kpi:nth-child(4){padding-left:0!important}
-    #pgcPane2 .peqb-os2-kpi:nth-child(1),#pgcPane2 .peqb-os2-kpi:nth-child(2),#pgcPane2 .peqb-os2-kpi:nth-child(3){border-left:1px solid rgba(111,208,165,.14)!important}
+    #pgcPane2 .peqb-os2-kpi:nth-child(1),#pgcPane2 .peqb-os2-kpi:nth-child(2),#pgcPane2 .peqb-os2-kpi:nth-child(3){border-left:1px solid rgba(148,163,184,.14)!important}
     #pgcPane2 .peqb-os2-kpi span{font-size:8.5px!important;color:#7fa596!important}
     #pgcPane2 .peqb-os2-kpi strong{font-weight:750!important}
     /* grid-row:1 explícito em todo mundo — sem isso, o cursor de auto-placement
@@ -117,12 +117,13 @@ function injectStyles() {
     /* Aba 2: lista arrastável + OS — uma janela só (pool + cards de O.S.) com
        rolagem própria, pra não empurrar o mapa (que fica logo abaixo) pra
        baixo conforme a quantidade de O.S. (pedido do usuário, 2026-07-17). */
-    .pgc-equipe-split{display:grid;grid-template-columns:minmax(250px,320px) minmax(360px,1fr);gap:12px;align-items:start;max-height:min(560px,calc(100vh - 260px));overflow-y:auto;padding-right:6px;border:1px solid rgba(52,211,153,.14);border-radius:16px}
+    .pgc-equipe-split{display:grid;grid-template-columns:minmax(250px,320px) minmax(360px,1fr);gap:12px;align-items:start;max-height:min(560px,calc(100vh - 260px));overflow-y:auto;padding-right:6px;border:1px solid rgba(148,163,184,.14);border-radius:16px}
     @media(max-width:1080px){.pgc-equipe-split{grid-template-columns:1fr}.pgc-colab-pool{position:relative!important;top:auto!important;max-height:none!important}}
-    .pgc-colab-pool{position:sticky;top:0;max-height:min(560px,calc(100vh - 260px));overflow:auto;border:1px solid rgba(52,211,153,.18);border-radius:16px;background:rgba(2,6,23,.34);padding:10px}
+    .pgc-colab-pool{position:sticky;top:0;max-height:min(560px,calc(100vh - 260px));overflow:auto;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:rgba(2,6,23,.34);padding:10px}
     .pgc-pool-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
     .pgc-pool-head strong{font-size:12.5px;color:#f8fafc}.pgc-pool-head span{font-size:10.5px;color:#9fb7aa}
-    .pgc-pool-search{width:100%;height:34px;margin:0 0 9px;border:1px solid rgba(111,208,165,.28);border-radius:10px;background:#06130e;color:#eef7f2;padding:0 10px;color-scheme:dark;box-sizing:border-box}
+    .pgc-pool-search{width:100%;height:34px;margin:0 0 9px;border:1px solid rgba(148,163,184,.2);border-radius:10px;background:#06130e;color:#eef7f2;padding:0 10px;color-scheme:dark;box-sizing:border-box}
+    .pgc-pool-search:focus{outline:none;border-color:rgba(52,211,153,.5)}
     .pgc-colab-list{display:flex;flex-direction:column;gap:6px}
     .pgc-colab-card{display:grid;grid-template-columns:34px 1fr;gap:8px;align-items:center;border:1px solid rgba(148,163,184,.14);background:rgba(15,23,42,.55);border-radius:12px;padding:7px 8px;cursor:grab;color:#e2e8f0;user-select:none}
     .pgc-colab-card:hover{border-color:rgba(134,239,172,.42);background:rgba(22,101,52,.16)}
