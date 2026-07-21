@@ -402,18 +402,18 @@ async function fetchServiceDay(table, label, maxRows) {
 }
 
 function compareFob(movementRows, productionRows, nheRows) {
-  // Regra (definida pelo usuário em 21/07/2026):
+  // Regra (atualizada pelo usuário em 21/07/2026):
   // - Base = OS com "Última Atualização" no Mapa de Embarque no dia de referência
   //   (movementDate já é a "Última Atualização"; movement.rows já vem filtrado
   //   por chooseMovementBatch para o dia de referência). SEM o filtro antigo de
   //   Tons Hoje = 0.
-  // - Lançamento = a OS aparece em QUALQUER linha da Produção Diária do dia
-  //   (independente de Cargas/NHE).
-  // - Ok = tem lançamento próprio. Pendente = não tem. Dois Embarques = não tem
-  //   lançamento próprio, mas há OUTRA OS do mesmo Cliente + Local de Embarque
-  //   (grupo com mais de uma OS) que tem lançamento — o embarque foi lançado na
-  //   O.S. irmã.
-  // NHE não entra mais na classificação (mantido só para o diagnóstico).
+  // - Lançamento = a OS aparece em QUALQUER linha do NHE do dia. Produção Diária
+  //   é IGNORADA na classificação (mesmo com carga lançada lá, não conta como
+  //   "Ok" nesta tela) — mantida só pro card de diagnóstico.
+  // - Ok = tem lançamento (NHE) próprio. Pendente = não tem. Dois Embarques =
+  //   não tem lançamento próprio, mas há OUTRA OS do mesmo Cliente + Local de
+  //   Embarque (grupo com mais de uma OS) que tem lançamento — o embarque foi
+  //   lançado na O.S. irmã.
   const setProdOs = new Set();
   productionRows.forEach((row) => {
     const os = normOs(pick(row, ['O.S.', 'OS']));
@@ -447,19 +447,19 @@ function compareFob(movementRows, productionRows, nheRows) {
   });
 
   // Por grupo Cliente + Local de Embarque: quantas O.S. distintas e se alguma
-  // delas tem lançamento na Produção (pra decidir "Dois Embarques").
+  // delas tem lançamento no NHE (pra decidir "Dois Embarques").
   const grupos = new Map();
   base.forEach((item) => {
     const key = grupoKey(item.cliente, item.local);
     let g = grupos.get(key);
     if (!g) { g = { osSet: new Set(), temLancamento: false }; grupos.set(key, g); }
     g.osSet.add(item.os);
-    if (setProdOs.has(item.os)) g.temLancamento = true;
+    if (setNheOsOnly.has(item.os)) g.temLancamento = true;
   });
 
   const rows = base.map((item) => {
     let status;
-    if (setProdOs.has(item.os)) {
+    if (setNheOsOnly.has(item.os)) {
       status = 'OK';
     } else {
       const g = grupos.get(grupoKey(item.cliente, item.local));
@@ -525,7 +525,7 @@ function renderShell(content) {
         <div class="fob-actions"><button id="fobReload" class="btn btn-secondary" type="button">↻ Atualizar</button><button id="fobSave" class="btn btn-secondary" type="button" disabled>Salvar pendentes no painel</button><button id="fobCsv" class="btn btn-secondary" type="button" disabled>Exportar CSV</button></div>
       </div>
       <div class="fob-note fob-reference">Data de referência: <strong>${referenceBr()}</strong></div>
-      <div class="fob-note">Regra: base = O.S. com Última Atualização no Mapa de Embarque. Ok = tem lançamento na Produção Diária. Dois Embarques = não tem lançamento próprio, mas outra O.S. do mesmo Cliente + Local de Embarque tem. Pendente = nenhuma O.S. do grupo tem lançamento.</div>
+      <div class="fob-note">Regra: base = O.S. com Última Atualização no Mapa de Embarque. Ok = tem lançamento no NHE. Dois Embarques = não tem lançamento próprio, mas outra O.S. do mesmo Cliente + Local de Embarque tem. Pendente = nenhuma O.S. do grupo tem lançamento. (Produção Diária não entra nessa classificação, só no diagnóstico.)</div>
       <div id="fobFeedback" class="feedback mt-16">Carregando bases...</div>
       <div id="fobWarnings"></div>
       <div id="fobResult" class="mt-16"></div>
