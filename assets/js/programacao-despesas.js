@@ -110,12 +110,79 @@ function alojamentoOptions(selectedId, uf) {
   return '<option value="">Sugerir alojamento…</option>' + lista.map((a) => `<option value="${esc(a.id)}" ${String(selectedId || '') === String(a.id) ? 'selected' : ''}>${esc(`${a.nome} · ${a.cidade || '-'}/${a.uf || ''}`)}</option>`).join('');
 }
 
+// Combobox do alojamento: o <select> nativo fica escondido (fonte da verdade
+// pro autosave, que lê [data-fld="alojamento_id"]) e a lista de opções é
+// desenhada num portal fixo em document.body — mesma técnica de
+// programacao-gestor-ajustes.js (#progSupCombo) — pra não ficar clipada
+// pelas bordas do card quando aberta perto do fim da lista rolável.
+let alojDropdownEl = null;
+let alojComboState = { input: null, select: null };
+
+function ensureAlojDropdown() {
+  if (alojDropdownEl) return alojDropdownEl;
+  alojDropdownEl = document.createElement('div');
+  alojDropdownEl.className = 'peqd-aloj-combo-portal';
+  alojDropdownEl.hidden = true;
+  document.body.appendChild(alojDropdownEl);
+
+  document.addEventListener('mousedown', (event) => {
+    if (alojDropdownEl.hidden) return;
+    const item = event.target.closest('.peqd-aloj-combo-item');
+    if (item && alojDropdownEl.contains(item)) {
+      event.preventDefault();
+      const { select, input } = alojComboState;
+      if (select && item.dataset.value !== undefined) {
+        select.value = item.dataset.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      if (input) input.value = item.dataset.value ? item.textContent : '';
+      hideAlojDropdown();
+      return;
+    }
+    if (!alojDropdownEl.contains(event.target) && event.target !== alojComboState.input) {
+      hideAlojDropdown();
+    }
+  });
+
+  const reposition = () => { if (alojDropdownEl && !alojDropdownEl.hidden && alojComboState.input) positionAlojDropdown(alojDropdownEl, alojComboState.input); };
+  window.addEventListener('scroll', reposition, true);
+  window.addEventListener('resize', reposition);
+  return alojDropdownEl;
+}
+
+function positionAlojDropdown(dd, input) {
+  const rect = input.getBoundingClientRect();
+  dd.style.left = `${rect.left}px`;
+  dd.style.top = `${rect.bottom + 4}px`;
+  dd.style.width = `${Math.max(rect.width, 220)}px`;
+}
+
+function hideAlojDropdown() {
+  if (alojDropdownEl) alojDropdownEl.hidden = true;
+  alojComboState = { input: null, select: null };
+}
+
+function abrirAlojDropdown(input, select, query) {
+  const dd = ensureAlojDropdown();
+  alojComboState = { input, select };
+  positionAlojDropdown(dd, input);
+  const norm = normalizeText(query);
+  const options = [...select.options].filter((opt) => opt.value).filter((opt) => !norm || normalizeText(opt.textContent).includes(norm));
+  dd.hidden = false;
+  dd.innerHTML = options.length
+    ? options.map((opt) => `<div class="peqd-aloj-combo-item ${opt.value === select.value ? 'active' : ''}" data-value="${esc(opt.value)}">${esc(opt.textContent)}</div>`).join('')
+    : '<div class="peqd-aloj-combo-empty">Nenhum alojamento encontrado.</div>';
+}
+
 // Campo do meio da estadia, contextual ao tipo — mesma lógica que existia no
 // card de O.S. antes de virar tela própria (ver commit d5bbc6d).
 function estadiaDestinoHtml(tipo, est, embarque) {
   const t = normalizeText(tipo);
   if (t === 'ALOJAMENTO') {
-    return `<select class="peqd-inp peqd-inp-sm" data-tab="estadia" data-fld="alojamento_id">${alojamentoOptions(est.alojamento_id, ufFromEmbarque(embarque))}</select>`;
+    const selId = est.alojamento_id || '';
+    const selecionado = (alojamentosCache || []).find((a) => String(a.id) === String(selId));
+    const displayVal = selecionado ? `${selecionado.nome} · ${selecionado.cidade || '-'}/${selecionado.uf || ''}` : '';
+    return `<span class="peqd-aloj-combo"><select class="peqd-aloj-native" data-tab="estadia" data-fld="alojamento_id">${alojamentoOptions(selId, ufFromEmbarque(embarque))}</select><input type="text" class="peqd-inp peqd-inp-sm peqd-aloj-combo-input" value="${esc(displayVal)}" placeholder="Sugerir alojamento…" autocomplete="off" spellcheck="false" /></span>`;
   }
   if (t === 'HOTEL' || t === 'PERNOITE') {
     // Só a cidade vinculada à O.S. — sem sugerir hotel específico (pedido do
@@ -171,6 +238,13 @@ function injectStylesDespesas() {
     .peqd-extra-add{border:1px solid rgba(134,239,172,.35);background:rgba(22,163,74,.16);color:#dcfce7;border-radius:8px;padding:0 12px;height:32px;font-size:11.5px;font-weight:900;cursor:pointer}
     .peqd-extra-add:hover{background:rgba(22,163,74,.3)}
     @media(max-width:600px){.peqd-inp-sm,.peqd-tipo-est,.peqd-tipo-desl,.peqd-placa,.peqd-km,.peqd-valor,.peqd-obs{flex:1 1 100%}}
+    .peqd-aloj-combo{position:relative;flex:1 1 130px;min-width:100px}
+    .peqd-aloj-native{position:absolute!important;width:0!important;height:0!important;min-height:0!important;padding:0!important;margin:0!important;border:0!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
+    .peqd-aloj-combo-input{width:100%}
+    .peqd-aloj-combo-portal{position:fixed;background:#06130e;border:1px solid rgba(111,208,165,.3);border-radius:8px;max-height:260px;overflow-y:auto;z-index:99999;box-shadow:0 14px 38px rgba(0,0,0,.55)}
+    .peqd-aloj-combo-item{padding:8px 10px;cursor:pointer;font-size:12px;color:#eef7f2}
+    .peqd-aloj-combo-item:hover,.peqd-aloj-combo-item.active{background:#0d2a1f}
+    .peqd-aloj-combo-empty{padding:8px 10px;font-size:11.5px;color:#8ba79a;font-style:italic}
     .prog-readonly-banner{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 14px;border:1px solid rgba(234,179,8,.32);background:rgba(234,179,8,.1);border-radius:12px;color:#fde68a;font-size:12.5px;font-weight:800}
     .prog-readonly-scope{pointer-events:none!important;opacity:.55;filter:saturate(.6)}
   `;
@@ -506,9 +580,44 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     itemEl.remove();
   }
 
+  rootEl.addEventListener('focusin', (event) => {
+    if (readOnly) return;
+    const input = event.target.closest('.peqd-aloj-combo-input');
+    if (!input) return;
+    const select = input.previousElementSibling;
+    if (!select || !select.matches('select[data-fld="alojamento_id"]')) return;
+    input.select();
+    abrirAlojDropdown(input, select, '');
+  });
+
+  rootEl.addEventListener('keydown', (event) => {
+    const input = event.target.closest('.peqd-aloj-combo-input');
+    if (!input) return;
+    if (event.key === 'Escape') { hideAlojDropdown(); input.blur(); }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const active = alojDropdownEl?.querySelector('.peqd-aloj-combo-item.active') || alojDropdownEl?.querySelector('.peqd-aloj-combo-item');
+      if (active) {
+        const select = input.previousElementSibling;
+        if (select) {
+          select.value = active.dataset.value;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        input.value = active.dataset.value ? active.textContent : '';
+        hideAlojDropdown();
+        input.blur();
+      }
+    }
+  });
+
   rootEl.addEventListener('input', (event) => {
     if (readOnly) return;
     const inp = event.target;
+    if (inp.matches('.peqd-aloj-combo-input')) {
+      const select = inp.previousElementSibling;
+      if (select) abrirAlojDropdown(inp, select, inp.value);
+      return;
+    }
     if (inp.matches('[data-extra-fld]')) {
       const itemEl = inp.closest('[data-extra-id]');
       if (itemEl) scheduleSaveExtraItem(itemEl);
