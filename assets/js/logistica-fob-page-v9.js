@@ -137,6 +137,42 @@ function referenceDate() {
 function referenceIso() { return ymd(referenceDate()); }
 function referenceBr() { return brDate(referenceDate()); }
 
+// Esta página NÃO está na navegação suave do router (é reload completo a cada
+// troca de tela) — sair e voltar destrói o DOM/estado e a tela ficava em
+// branco ("Carregando fechamento...") até o fetch terminar de novo, mesmo que
+// o resultado já tivesse sido calculado há poucos minutos. sessionStorage
+// (dura enquanto a aba do navegador ficar aberta, some ao fechar) guarda o
+// último resultado bem-sucedido pra pintar a tela na hora ao reabrir a página,
+// enquanto uma atualização roda por trás sem apagar o que já está visível.
+const REPORT_CACHE_KEY = 'fob_v9_report_cache_v1';
+
+function readReportCache() {
+  try {
+    const raw = sessionStorage.getItem(REPORT_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.referenceIso !== referenceIso() || !Array.isArray(parsed.rows)) return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeReportCache() {
+  try {
+    sessionStorage.setItem(REPORT_CACHE_KEY, JSON.stringify({
+      referenceIso: referenceIso(),
+      rows: state.rows,
+      stats: state.stats,
+      warnings: state.warnings,
+      activeTab: state.activeTab,
+      ts: Date.now(),
+    }));
+  } catch (_) {
+    // Sem espaço/indisponível: segue sem cache, próxima visita carrega normal.
+  }
+}
+
 function movementDate(row) {
   // O Apps Script atribui COL_MOV.Data à coluna "Última Atualização".
   return ymd(pick(row, [
@@ -528,7 +564,15 @@ async function generateReport() {
   state.loading = true;
   state.warnings = [];
   const feedback = document.getElementById('fobFeedback');
-  if (feedback) feedback.textContent = `Carregando fechamento de ${referenceBr()}...`;
+  // Se já tem alguma linha na tela (pintada do cache ou de uma consulta
+  // anterior nesta mesma sessão), não apaga nada — só avisa que está
+  // atualizando por trás. Só mostra "Carregando..." vazio na 1ª carga real.
+  const hadRows = state.rows.length > 0;
+  if (feedback) {
+    feedback.textContent = hadRows
+      ? `Atualizando fechamento de ${referenceBr()}...`
+      : `Carregando fechamento de ${referenceBr()}...`;
+  }
 
   try {
     const [movement, production, nhe] = await Promise.all([
@@ -541,8 +585,11 @@ async function generateReport() {
     const report = compareFob(movement.rows, production.rows, nhe.rows);
     state.rows = report.rows;
     // Abre numa aba que tenha linhas (na ordem Ok → Dois Embarques → Pendente),
-    // pra não cair numa aba vazia.
-    state.activeTab = FOB_TABS.map(([status]) => status).find((status) => state.rows.some((row) => row.status === status)) || 'OK';
+    // mantendo a aba atual se ela já tiver linhas (evita pular de aba sozinho
+    // numa atualização silenciosa em segundo plano).
+    if (!state.rows.some((row) => row.status === state.activeTab)) {
+      state.activeTab = FOB_TABS.map(([status]) => status).find((status) => state.rows.some((row) => row.status === status)) || 'OK';
+    }
     state.stats = {
       ...report.stats,
       movBatchAt: movement.batchAt,
@@ -555,16 +602,25 @@ async function generateReport() {
 
     renderWarnings();
     renderResult();
+    writeReportCache();
 
     if (feedback) {
       feedback.textContent = `Comparação concluída: ${state.rows.length} linha(s), ${state.stats.pendentes} pendente(s), ${state.stats.ok} OK.`;
     }
   } catch (error) {
     console.error('[FOB v9]', error);
-    state.rows = [];
-    state.stats = null;
-    renderResult();
-    if (feedback) feedback.textContent = `Falha ao gerar FOB: ${error.message || error}.`;
+    // Numa atualização silenciosa, um erro de rede não pode apagar o que já
+    // estava correto na tela — só avisa e mantém os dados anteriores.
+    if (!hadRows) {
+      state.rows = [];
+      state.stats = null;
+      renderResult();
+    }
+    if (feedback) {
+      feedback.textContent = hadRows
+        ? `Falha ao atualizar (mostrando última consulta): ${error.message || error}.`
+        : `Falha ao gerar FOB: ${error.message || error}.`;
+    }
   } finally {
     state.loading = false;
   }
@@ -715,6 +771,22 @@ export async function renderContent(content) {
   state.user = await getCurrentUser();
   renderShell(content);
   bind(content);
+
+  // Pinta na hora com o último resultado desta sessão (se houver, mesma data
+  // de referência) — a página faz reload completo a cada navegação, então sem
+  // isso a tela sempre voltava vazia mesmo já tendo o resultado há segundos.
+  const cached = readReportCache();
+  if (cached) {
+    state.rows = cached.rows;
+    state.stats = cached.stats;
+    state.warnings = cached.warnings || [];
+    state.activeTab = cached.activeTab || 'OK';
+    renderWarnings();
+    renderResult();
+    const feedback = document.getElementById('fobFeedback');
+    if (feedback) feedback.textContent = `Mostrando última consulta (${new Date(cached.ts).toLocaleTimeString('pt-BR')}) — atualizando...`;
+  }
+
   await Promise.all([generateReport(), loadHistory()]);
 }
 
