@@ -57,14 +57,19 @@ export function icon(name) {
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"></path></svg>',
     building: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21V3h12v18"></path><path d="M16 8h4v13"></path><path d="M8 7h4M8 11h4M8 15h4M2 21h20"></path></svg>',
     address: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 3v6M18 3v6"></path><rect x="3" y="6" width="18" height="15" rx="2"></rect><path d="M7 11h4M7 15h10"></path></svg>',
-    services: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18v3h3l6.1-6.1a4 4 0 0 0 5.6-5.6l-2.4 2.4-3-3 2.4-2.4Z"></path></svg>'
+    services: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18v3h3l6.1-6.1a4 4 0 0 0 5.6-5.6l-2.4 2.4-3-3 2.4-2.4Z"></path></svg>',
+    notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l4 4v16H6z"></path><path d="M14 2v5h5"></path><path d="M9 12h6M9 16h6M9 8h2"></path></svg>',
+    calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>',
+    chevronLeft: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 6-6 6 6 6"></path></svg>',
+    chevronRight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"></path></svg>',
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16"></path><path d="M6 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"></path><path d="M19 7v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7"></path><path d="M10 11v6M14 11v6"></path></svg>'
   };
   return icons[name] || '';
 }
 
 export function ensureStyles() {
   const styles = [
-    { id: 'admAlojamentosV2Css', file: '../css/adm-hotel-alojamentos-v2.css' },
+    { id: 'admAlojamentosV2Css', file: '../css/adm-hotel-alojamentos-v2.css?v=20260721-obs1' },
     { id: 'admAlojamentosListaCss', file: '../css/adm-hotel-alojamentos-lista.css?v=20260720-lista1' }
   ];
   styles.forEach(({ id, file }) => {
@@ -101,7 +106,8 @@ export function hydrateRow(row) {
     agua_inclusa: nullableBoolean(row.agua_inclusa ?? meta.agua_inclusa ?? inferredIncluded(row.agua)), agua_matricula: row.agua_matricula || meta.agua_matricula || '', agua_titular: row.agua_titular || meta.agua_titular || '',
     energia_inclusa: nullableBoolean(row.energia_inclusa ?? meta.energia_inclusa ?? inferredIncluded(row.energia)), energia_matricula: row.energia_matricula || meta.energia_matricula || '', energia_titular: row.energia_titular || meta.energia_titular || '',
     internet_inclusa: nullableBoolean(row.internet_inclusa ?? meta.internet_inclusa ?? inferredIncluded(row.internet)), internet_matricula: row.internet_matricula || meta.internet_matricula || '', internet_titular: row.internet_titular || meta.internet_titular || '',
-    gas_forma_pagamento: row.gas_forma_pagamento || meta.gas_forma_pagamento || '', gas_titular: row.gas_titular || meta.gas_titular || ''
+    gas_forma_pagamento: row.gas_forma_pagamento || meta.gas_forma_pagamento || '', gas_titular: row.gas_titular || meta.gas_titular || '',
+    anotacoes: parseAnotacoes(row.anotacoes)
   };
 }
 
@@ -110,6 +116,12 @@ export function fullAddress(row) {
   const second = [row.endereco_complemento, row.bairro].filter(Boolean).join(' · ');
   const third = [[row.cidade, row.uf].filter(Boolean).join('/'), row.cep ? `CEP ${row.cep}` : ''].filter(Boolean).join(' · ');
   return [first, second, third].filter(Boolean).join(' — ') || 'Endereço não informado';
+}
+
+export function parseAnotacoes(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 }
 
 export function contractAlert(row) {

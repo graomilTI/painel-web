@@ -1,9 +1,10 @@
 import { supabase } from './supabaseClient.js';
 import { loadUserContext } from './sessionStore.js';
-import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-titulares1';
-import { panelHtml, renderRows, renderDetailsContent } from './adm-hotel-alojamentos-v2-view.js?v=20260720-titulares1';
+import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
+import { panelHtml, renderRows, renderDetailsContent, renderObsCalendar, renderObsList, isoDate } from './adm-hotel-alojamentos-v2-view.js?v=20260721-obs1';
 
 const state = { rows: [], editingId: null, selectedDetailsId: null, query: '', mountTimer: null };
+const obsState = { alojamentoId: null, year: 0, month: 0, selectedDate: '' };
 let toastTimer = null;
 
 function getValue(id) { return document.getElementById(id)?.value ?? ''; }
@@ -90,6 +91,115 @@ function closeDetails() {
   const modal = document.getElementById('alojV2DetailsModal');
   modal?.classList.remove('open');
   modal?.setAttribute('aria-hidden', 'true');
+}
+
+function authorName() {
+  const ctx = loadUserContext();
+  return ctx?.user?.nome || ctx?.user?.name || ctx?.user?.email || 'Sistema';
+}
+
+function notesByDate(notes) {
+  return notes.reduce((map, note) => {
+    (map[note.data] || (map[note.data] = [])).push(note);
+    return map;
+  }, {});
+}
+
+function renderObsPanel() {
+  const row = state.rows.find((item) => String(item.id) === String(obsState.alojamentoId));
+  if (!row) return;
+  renderObsCalendar(obsState.year, obsState.month, notesByDate(row.anotacoes || []), obsState.selectedDate);
+  renderObsList(row.anotacoes || [], obsState.selectedDate);
+}
+
+function openObs(row) {
+  obsState.alojamentoId = row.id;
+  const today = new Date();
+  obsState.year = today.getFullYear();
+  obsState.month = today.getMonth();
+  obsState.selectedDate = isoDate(today);
+  const title = document.getElementById('alojV2ObsTitle');
+  if (title) title.textContent = row.nome || 'Alojamento';
+  const dataInput = document.getElementById('alojV2ObsData');
+  if (dataInput) dataInput.value = obsState.selectedDate;
+  const textarea = document.getElementById('alojV2ObsTexto');
+  if (textarea) textarea.value = '';
+  const obsFeedback = document.getElementById('alojV2ObsFeedback');
+  if (obsFeedback) obsFeedback.textContent = '';
+  renderObsPanel();
+  const modal = document.getElementById('alojV2ObsModal');
+  modal?.classList.add('open');
+  modal?.setAttribute('aria-hidden', 'false');
+}
+
+function closeObs() {
+  obsState.alojamentoId = null;
+  const modal = document.getElementById('alojV2ObsModal');
+  modal?.classList.remove('open');
+  modal?.setAttribute('aria-hidden', 'true');
+}
+
+async function persistNotes(row, anotacoes) {
+  const result = await supabase.from('hospedagem_alojamentos').update({ anotacoes }).eq('id', row.id);
+  if (result.error) return false;
+  row.anotacoes = anotacoes;
+  return true;
+}
+
+async function addNote(event) {
+  event.preventDefault();
+  const row = state.rows.find((item) => String(item.id) === String(obsState.alojamentoId));
+  const obsFeedback = document.getElementById('alojV2ObsFeedback');
+  if (!row) return;
+  const data = document.getElementById('alojV2ObsData')?.value;
+  const texto = document.getElementById('alojV2ObsTexto')?.value.trim();
+  if (!data || !texto) { if (obsFeedback) { obsFeedback.textContent = 'Informe a data e a anotação.'; obsFeedback.className = 'aloj-v2-feedback err'; } return; }
+  const note = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, data, texto, autor: authorName(), criado_por: loadUserContext()?.user?.id || null, criado_em: new Date().toISOString() };
+  const anotacoes = [...(row.anotacoes || []), note];
+  if (obsFeedback) { obsFeedback.textContent = 'Salvando...'; obsFeedback.className = 'aloj-v2-feedback'; }
+  const ok = await persistNotes(row, anotacoes);
+  if (!ok) { if (obsFeedback) { obsFeedback.textContent = 'Não foi possível salvar a anotação.'; obsFeedback.className = 'aloj-v2-feedback err'; } return; }
+  const textarea = document.getElementById('alojV2ObsTexto');
+  if (textarea) textarea.value = '';
+  if (obsFeedback) { obsFeedback.textContent = 'Anotação adicionada.'; obsFeedback.className = 'aloj-v2-feedback ok'; }
+  obsState.selectedDate = data;
+  renderObsPanel();
+}
+
+async function deleteNote(noteId) {
+  const row = state.rows.find((item) => String(item.id) === String(obsState.alojamentoId));
+  if (!row || !window.confirm('Excluir esta anotação?')) return;
+  const anotacoes = (row.anotacoes || []).filter((note) => String(note.id) !== String(noteId));
+  const ok = await persistNotes(row, anotacoes);
+  if (!ok) return toast('Não foi possível excluir a anotação.', 'err');
+  renderObsPanel();
+}
+
+function shiftObsMonth(delta) {
+  const date = new Date(obsState.year, obsState.month + delta, 1);
+  obsState.year = date.getFullYear();
+  obsState.month = date.getMonth();
+  renderObsPanel();
+}
+
+function bindObsPanel(panel) {
+  document.getElementById('alojV2ObsClose')?.addEventListener('click', closeObs);
+  document.getElementById('alojV2ObsForm')?.addEventListener('submit', addNote);
+  document.getElementById('alojV2ObsPrev')?.addEventListener('click', () => shiftObsMonth(-1));
+  document.getElementById('alojV2ObsNext')?.addEventListener('click', () => shiftObsMonth(1));
+  document.getElementById('alojV2ObsModal')?.addEventListener('click', (event) => {
+    if (event.target === document.getElementById('alojV2ObsModal')) closeObs();
+    const dayButton = event.target.closest('[data-date]');
+    if (dayButton) {
+      obsState.selectedDate = dayButton.dataset.date;
+      const dataInput = document.getElementById('alojV2ObsData');
+      if (dataInput) dataInput.value = obsState.selectedDate;
+      renderObsPanel();
+      return;
+    }
+    const deleteButton = event.target.closest('.aloj-v2-obs-delete');
+    if (deleteButton) deleteNote(deleteButton.dataset.id);
+  });
 }
 
 function readForm() {
@@ -204,6 +314,7 @@ function bindPanel(panel) {
       if (actionButton.dataset.alojV2Action === 'details' && row) openDetails(row);
       if (actionButton.dataset.alojV2Action === 'edit' && row) { closeDetails(); openModal(row); }
       if (actionButton.dataset.alojV2Action === 'delete') deleteRecord(actionButton.dataset.id);
+      if (actionButton.dataset.alojV2Action === 'obs' && row) openObs(row);
       return;
     }
     if (event.target === document.getElementById('alojV2Modal')) closeModal();
@@ -218,8 +329,10 @@ function bindPanel(panel) {
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     if (document.getElementById('alojV2Modal')?.classList.contains('open')) closeModal();
+    else if (document.getElementById('alojV2ObsModal')?.classList.contains('open')) closeObs();
     else if (document.getElementById('alojV2DetailsModal')?.classList.contains('open')) closeDetails();
   });
+  bindObsPanel(panel);
 }
 
 async function mount() {
