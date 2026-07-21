@@ -527,6 +527,14 @@ async function buscarGestorRegional(coordenacao, supervisao) {
   if (alvoSupervisao) {
     var porSupervisao = gestores.find(function (g) { return g.cargo === 'Supervisor' && normText(g.supervisao) === alvoSupervisao; });
     if (porSupervisao) return porSupervisao;
+
+    // Achado 21/07 (O.S. em "SP - Cândido Mota"): existe gestor cadastrado
+    // como Coordenador mas com a Supervisão exata dessa sub-região no
+    // próprio registro (coordenacao dele é "SÃO PAULO", que não bate com o
+    // prefixo "SP" derivado do texto) — tenta por Supervisão antes de cair
+    // pro match (mais frágil) por Coordenação abaixo.
+    var coordPorSupervisao = gestores.find(function (g) { return g.cargo === 'Coordenador' && normText(g.supervisao) === alvoSupervisao; });
+    if (coordPorSupervisao) return coordPorSupervisao;
   }
   var alvoCoordenacao = normText(coordenacao);
   if (alvoCoordenacao) {
