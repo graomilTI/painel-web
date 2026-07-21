@@ -1,0 +1,1003 @@
+#!/usr/bin/env node
+/*
+ * GRM Server - Lançamento automático de NHE por geofence de login
+ *
+ * O agente:
+ * 1. Recalcula a mesma regra da tela FOB (logistica-fob-page-v9.js) direto no
+ *    Supabase — Movimentação Diária + Produção Diária + NHE — e extrai as O.S.
+ *    em status PENDENTE (tem informativo/"Última Atualização" no Mapa de
+ *    Embarque, mas nenhum NHE nem carga real lançados).
+ * 2. Para cada O.S. pendente, resolve a coordenada da O.S. (operacional_os.
+ *    ponto1_latitude/longitude) e procura, em grm_login_movimentos_importacoes
+ *    (alimentada pelo grm-sync-login-alimentacao.js), um login do MESMO
+ *    colaborador que fez o informativo (campo "Atualizado por" da
+ *    Movimentação), na mesma data, dentro do raio configurado (padrão 2km).
+ * 3. Se achar, loga no GRM (grmserver.com.br), abre a O.S., clica no ícone de
+ *    caminhão ("Lista de Cargas"), clica em "+NHE" e preenche o formulário
+ *    (Coordenação/Supervisão/Funcionário/Data/Motivo/Obs.), sem revisão
+ *    humana — decisão do usuário (2026-07-21).
+ * 4. Grava o resultado (sucesso/erro/sem match) em
+ *    logistica_nhe_lancamentos_auto, evitando relançar a mesma O.S.+data já
+ *    lançada com sucesso.
+ *
+ * Seletores confirmados ao vivo em 2026-07-21 (ver sessão de mapeamento):
+ *   - Campo O.S.: input dentro do .v-input cujo texto começa com "O.S"
+ *   - Busca: .serviceOrder-act-search
+ *   - Linha da O.S.: <td> com texto exatamente igual ao número da O.S.
+ *   - Ícone "Lista de Cargas": lord-icon[src*="497-truck-delivery"]
+ *   - Botão "+NHE": .sOrderloads-act-add-nhe
+ *   - Campo Data do modal: #lnsDate | Campo Motivo: #lnsReason
+ *   - Coordenação/Supervisão/Funcionário/Motivo são v-autocomplete e SÓ abrem
+ *     com um clique de mouse "de verdade" (page.mouse.click nas coordenadas do
+ *     campo) — um .click() sintético via DOM não abre o menu (confirmado por
+ *     teste ao vivo: DOM click abre o menu de navegação lateral por engano).
+ *   - Motivo fixo escolhido pelo usuário: "Falta de Caminhão".
+ *   - Obs. fixa escolhida pelo usuário: "Lançado via Bot".
+ */
+
+process.env.TMPDIR = process.env.TMPDIR || '/tmp';
+process.env.TEMP = process.env.TEMP || process.env.TMPDIR;
+process.env.TMP = process.env.TMP || process.env.TMPDIR;
+
+require('dotenv').config();
+
+var puppeteer = require('puppeteer-extra');
+var StealthPlugin = require('puppeteer-extra-plugin-stealth');
+var WebSocket = require('ws');
+var fs = require('fs');
+var path = require('path');
+var os = require('os');
+var createClient = require('@supabase/supabase-js').createClient;
+
+puppeteer.use(StealthPlugin());
+
+var SUPABASE_URL = process.env.SUPABASE_URL || process.env.SB_URL;
+var SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SB_SERVICE_KEY || process.env.SUPABASE_KEY;
+var GRM_USER = process.env.GRMSERVER_USER;
+var GRM_PASSWORD = process.env.GRMSERVER_PASSWORD;
+
+var RAIO_M = Number(process.env.NHE_LANCAMENTO_RAIO_M || 2000);
+var MOTIVO_FIXO = process.env.NHE_LANCAMENTO_MOTIVO || 'Falta de Caminhão';
+var OBS_FIXA = process.env.NHE_LANCAMENTO_OBS || 'Lançado via Bot';
+var FOB_JANELA_DIAS = Number(process.env.NHE_LANCAMENTO_FOB_DIAS || 3);
+var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 20000);
+var MAX_PROD_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_PROD_ROWS || 30000);
+var MAX_NHE_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_NHE_ROWS || 15000);
+var DEBUG = String(process.env.GRM_DEBUG || '').toLowerCase() === 'true';
+var DRY_RUN = String(process.env.NHE_LANCAMENTO_DRY_RUN || '').toLowerCase() === 'true';
+
+var TABLE_RESULTADOS = 'logistica_nhe_lancamentos_auto';
+var TABLE_EXECUCOES = 'logistica_nhe_lancamentos_execucoes';
+var TABLE_LOGIN = 'grm_login_movimentos_importacoes';
+
+var supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  realtime: { transport: WebSocket },
+  auth: { persistSession: false, autoRefreshToken: false }
+});
+
+var browserAtual = null;
+
+function log(level, msg) {
+  console.log('[' + level + '] ' + new Date().toISOString() + ' - ' + msg);
+}
+
+function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+
+function assertConfig() {
+  var missing = [];
+  if (!SUPABASE_URL) missing.push('SUPABASE_URL');
+  if (!SUPABASE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY/SUPABASE_KEY');
+  if (!GRM_USER) missing.push('GRMSERVER_USER');
+  if (!GRM_PASSWORD) missing.push('GRMSERVER_PASSWORD');
+  if (missing.length) throw new Error('Variáveis ausentes: ' + missing.join(', '));
+}
+
+function parseArgs(argv) {
+  var out = {};
+  for (var i = 0; i < argv.length; i++) {
+    if (argv[i] === '--os') out.os = argv[++i];
+    else if (argv[i] === '--debug') out.debug = true;
+    else if (argv[i] === '--dry-run') out.dryRun = true;
+    else if (argv[i] === '--funcionario') out.funcionario = argv[++i];
+    else if (argv[i] === '--forcar') out.forcar = true;
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Regra do FOB (portada de assets/js/logistica-fob-page-v9.js) — só o que
+ * é necessário para chegar às linhas PENDENTE com o campo "funcionario".
+ * ---------------------------------------------------------------------- */
+
+function stripAccents(value) {
+  return String(value == null ? '' : value).normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function normHeader(value) {
+  return stripAccents(value).replace(/ /g, ' ').replace(/[^a-zA-Z0-9]+/g, ' ').trim().toUpperCase();
+}
+
+function normText(value) {
+  return stripAccents(value).replace(/ /g, ' ').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+function normOs(value) {
+  var text = String(value == null ? '' : value).trim();
+  if (!text) return '';
+  if (/^\d+(\.0+)?$/.test(text)) text = text.replace(/\.0+$/, '');
+  if (text.indexOf('/') !== -1) text = text.split('/')[0].trim();
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function normalizedRow(raw) {
+  var output = {};
+  Object.keys(raw || {}).forEach(function (key) { output[normHeader(key)] = raw[key]; });
+  return output;
+}
+
+function pick(row, aliases) {
+  for (var i = 0; i < aliases.length; i++) {
+    var key = normHeader(aliases[i]);
+    if (Object.prototype.hasOwnProperty.call(row || {}, key)) return row[key];
+  }
+  return '';
+}
+
+function parseDateOnly(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+  var text = String(value == null ? '' : value).trim();
+  if (!text) return null;
+  var match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (match) return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  var date = new Date(text);
+  return isNaN(date.getTime()) ? null : new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function ymd(value) {
+  var date = parseDateOnly(value);
+  if (!date) return '';
+  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+}
+
+function brDate(value) {
+  var date = parseDateOnly(value);
+  if (!date) return '-';
+  return String(date.getDate()).padStart(2, '0') + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + date.getFullYear();
+}
+
+function toNumberLoose(value) {
+  if (typeof value === 'number') return isFinite(value) ? value : 0;
+  var text = String(value == null ? '' : value).trim();
+  if (!text || text === '--') return 0;
+  var cleaned = text.replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+  var parsed = Number(cleaned);
+  return isFinite(parsed) ? parsed : 0;
+}
+
+function referenceDate() {
+  var date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() - 1);
+  return date;
+}
+function referenceIso() { return ymd(referenceDate()); }
+function referenceBr() { return brDate(referenceDate()); }
+
+function movementDate(row) {
+  return ymd(pick(row, ['Última Atualização', 'Ultima Atualizacao', 'Última Atualizacao', 'Ultima Atualização']));
+}
+function serviceDate(row) {
+  return ymd(pick(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
+}
+
+async function fetchPaged(builder, maxRows) {
+  var rows = [];
+  var pageSize = 1000;
+  var concurrency = 6;
+  var waveSpan = pageSize * concurrency;
+  for (var waveStart = 0; waveStart < maxRows; waveStart += waveSpan) {
+    var requests = [];
+    for (var from = waveStart; from < waveStart + waveSpan && from < maxRows; from += pageSize) {
+      var to = Math.min(from + pageSize, maxRows) - 1;
+      requests.push(builder(from, to));
+    }
+    var results = await Promise.all(requests);
+    var reachedEnd = false;
+    for (var i = 0; i < results.length; i++) {
+      if (results[i].error) throw results[i].error;
+      var chunk = results[i].data || [];
+      rows = rows.concat(chunk);
+      if (chunk.length < pageSize) reachedEnd = true;
+    }
+    if (reachedEnd) break;
+  }
+  return rows;
+}
+
+async function fetchByCreatedAt(table, maxRows, dias) {
+  var cutoffIso = new Date(Date.now() - dias * 86400000).toISOString();
+  return fetchPaged(function (from, to) {
+    return supabase.from(table).select('id,dados_json,created_at').gte('created_at', cutoffIso).order('created_at', { ascending: false }).range(from, to);
+  }, maxRows);
+}
+
+async function fetchLoteRecente(table, maxRows) {
+  try {
+    return await fetchPaged(function (from, to) {
+      return supabase.rpc('fob_lote_recente', { p_table: table, p_dias: FOB_JANELA_DIAS }).order('created_at', { ascending: false }).range(from, to);
+    }, maxRows);
+  } catch (error) {
+    log('WARN', 'RPC fob_lote_recente indisponível para ' + table + '; usando fallback created_at: ' + error.message);
+    return fetchByCreatedAt(table, maxRows, FOB_JANELA_DIAS);
+  }
+}
+
+async function fetchProducaoLoteVencedor(referenciaDdMmYyyy, maxRows) {
+  try {
+    return await fetchPaged(function (from, to) {
+      return supabase.rpc('fob_producao_lote_vencedor', { p_referencia_ddmmyyyy: referenciaDdMmYyyy, p_dias: FOB_JANELA_DIAS }).order('created_at', { ascending: false }).range(from, to);
+    }, maxRows);
+  } catch (error) {
+    log('WARN', 'RPC fob_producao_lote_vencedor indisponível; usando fallback created_at: ' + error.message);
+    return fetchByCreatedAt('grm_producao_diaria_importacoes', maxRows, FOB_JANELA_DIAS);
+  }
+}
+
+function splitBatches(records, maxGapMs) {
+  maxGapMs = maxGapMs || 90000;
+  var sorted = (records || []).filter(function (r) { return r && r.created_at; })
+    .slice()
+    .sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at); });
+  var batches = [];
+  var current = [];
+  var previousAt = null;
+  sorted.forEach(function (record) {
+    var currentAt = new Date(record.created_at).getTime();
+    if (current.length && previousAt !== null && currentAt - previousAt > maxGapMs) {
+      batches.push(current);
+      current = [];
+    }
+    current.push(record);
+    previousAt = currentAt;
+  });
+  if (current.length) batches.push(current);
+  return batches;
+}
+
+function dedupeMovement(records) {
+  var map = {};
+  (records || []).forEach(function (record) {
+    var row = normalizedRow(record.dados_json || {});
+    var os = normOs(pick(row, ['OS', 'O.S.', 'O.S', 'O S']));
+    if (os && normText(os) !== 'OS') map[os] = { row: row, createdAt: record.created_at };
+  });
+  return Object.keys(map).map(function (k) { return map[k]; });
+}
+
+function chooseMovementBatch(records) {
+  var selected = null;
+  splitBatches(records).forEach(function (batch) {
+    var deduped = dedupeMovement(batch);
+    var matching = deduped.filter(function (item) { return movementDate(item.row) === referenceIso(); });
+    var zeroCount = matching.filter(function (item) {
+      var tons = pick(item.row, ['Tons Hoje', 'TonsHoje', 'Tons']);
+      return String(tons == null ? '' : tons).trim() !== '' && toNumberLoose(tons) === 0;
+    }).length;
+    var score = matching.length * 1000 + zeroCount;
+    var batchAt = batch[0] ? batch[0].created_at : null;
+    if (!selected || score > selected.score || (score === selected.score && String(batchAt) > String(selected.batchAt))) {
+      selected = { score: score, batchAt: batchAt, rawCount: deduped.length, matchingCount: matching.length, rows: matching };
+    }
+  });
+  return selected;
+}
+
+function chooseServiceBatch(records) {
+  var selected = null;
+  splitBatches(records).forEach(function (batch) {
+    var normalized = batch.map(function (record) { return normalizedRow(record.dados_json || {}); });
+    var matching = normalized.filter(function (row) { return serviceDate(row) === referenceIso(); });
+    var score = matching.length;
+    var batchAt = batch[0] ? batch[0].created_at : null;
+    if (!selected || score > selected.score || (score === selected.score && String(batchAt) > String(selected.batchAt))) {
+      selected = { score: score, batchAt: batchAt, rawCount: normalized.length, rows: matching };
+    }
+  });
+  if (!selected) return { rows: [] };
+  return selected;
+}
+
+async function fetchMovementDaily() {
+  var records = await fetchLoteRecente('grm_mapa_embarque_importacoes', MAX_MOV_ROWS);
+  var selected = chooseMovementBatch(records);
+  return (selected && selected.rows) || [];
+}
+
+async function fetchServiceDay(table, maxRows) {
+  var records = table === 'grm_producao_diaria_importacoes'
+    ? await fetchProducaoLoteVencedor(referenceBr(), maxRows)
+    : await fetchLoteRecente(table, maxRows);
+  return chooseServiceBatch(records).rows || [];
+}
+
+// Mesma regra de assets/js/logistica-fob-page-v9.js:compareFob — só o
+// suficiente para chegar às linhas PENDENTE com "funcionario".
+function calcularPendentes(movementRows, productionRows, nheRows) {
+  var setCargaRealOs = {};
+  var setNheEmProducaoOs = {};
+  productionRows.forEach(function (row) {
+    var os = normOs(pick(row, ['O.S.', 'OS']));
+    if (!os) return;
+    var cargasRaw = String(pick(row, ['Cargas']) == null ? '' : pick(row, ['Cargas'])).trim();
+    if (normText(cargasRaw) === 'NHE') setNheEmProducaoOs[os] = true;
+    else if (cargasRaw && toNumberLoose(cargasRaw) > 0) setCargaRealOs[os] = true;
+  });
+
+  var setNheOsOnly = {};
+  nheRows.forEach(function (row) {
+    var os = normOs(pick(row, ['O.S.', 'OS', 'O.S', 'O S']));
+    if (os) setNheOsOnly[os] = true;
+  });
+
+  function temNhe(os) { return !!setNheOsOnly[os] || !!setNheEmProducaoOs[os]; }
+  function temCargaReal(os) { return !!setCargaRealOs[os]; }
+  function grupoKey(cliente, local) { return normText(cliente) + '|' + normText(local); }
+
+  var base = [];
+  movementRows.forEach(function (item) {
+    var row = item.row;
+    var os = normOs(pick(row, ['OS', 'O.S.', 'O.S']));
+    var date = movementDate(row);
+    if (!os || !date) return;
+    base.push({
+      os: os,
+      date: date,
+      cliente: pick(row, ['Cliente']),
+      local: pick(row, ['Local', 'Local de Embarque']),
+      supervisao: pick(row, ['Supervisão', 'Supervisao']),
+      funcionario: pick(row, ['Atualizado por', 'Atualizado Por', 'Classificador', 'Funcionário', 'Funcionario'])
+    });
+  });
+
+  var grupos = {};
+  base.forEach(function (item) {
+    var key = grupoKey(item.cliente, item.local);
+    if (!grupos[key]) grupos[key] = { temLancamento: false };
+    if (temNhe(item.os) || temCargaReal(item.os)) grupos[key].temLancamento = true;
+  });
+
+  var pendentes = [];
+  base.forEach(function (item) {
+    if (temCargaReal(item.os)) return;
+    if (temNhe(item.os)) return;
+    var g = grupos[grupoKey(item.cliente, item.local)];
+    var status = (g && g.temLancamento) ? 'DOIS EMBARQUES' : 'PENDENTE';
+    if (status !== 'PENDENTE') return;
+    if (!item.funcionario) return;
+    pendentes.push({
+      data: item.date,
+      data_br: brDate(item.date),
+      os: item.os,
+      cliente: item.cliente,
+      local: item.local,
+      supervisao: item.supervisao,
+      funcionario: item.funcionario
+    });
+  });
+  return pendentes;
+}
+
+async function buscarPendentes() {
+  log('INFO', 'Recalculando regra do FOB para ' + referenceBr() + '...');
+  var movement = await fetchMovementDaily();
+  var production = await fetchServiceDay('grm_producao_diaria_importacoes', MAX_PROD_ROWS);
+  var nhe = await fetchServiceDay('grm_nhe_importacoes', MAX_NHE_ROWS);
+  var pendentes = calcularPendentes(movement, production, nhe);
+  log('SUCCESS', pendentes.length + ' O.S. pendente(s) de NHE em ' + referenceBr() + '.');
+  return pendentes;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Coordenada da O.S. + login do colaborador dentro do raio
+ * ---------------------------------------------------------------------- */
+
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  var R = 6371000;
+  function toRad(v) { return Number(v) * Math.PI / 180; }
+  var dLat = toRad(lat2 - lat1);
+  var dLng = toRad(lng2 - lng1);
+  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function isValidCoord(lat, lng) {
+  if (lat === null || lat === undefined || lat === '' || lng === null || lng === undefined || lng === '') return false;
+  return isFinite(Number(lat)) && isFinite(Number(lng)) && Math.abs(Number(lat)) <= 90 && Math.abs(Number(lng)) <= 180 && !(Number(lat) === 0 && Number(lng) === 0);
+}
+
+async function resolverCoordenadaOs(numeroOs) {
+  var result = await supabase
+    .from('operacional_os')
+    .select('numero_os,data_os,ponto1_nome,ponto1_latitude,ponto1_longitude,supervisao')
+    .eq('numero_os', numeroOs)
+    .order('data_os', { ascending: false })
+    .limit(5);
+  if (result.error) throw result.error;
+  var rows = result.data || [];
+  for (var i = 0; i < rows.length; i++) {
+    if (isValidCoord(rows[i].ponto1_latitude, rows[i].ponto1_longitude)) {
+      return {
+        lat: Number(rows[i].ponto1_latitude),
+        lng: Number(rows[i].ponto1_longitude),
+        nome: rows[i].ponto1_nome,
+        // operacional_os não tem coluna "coordenação" própria — só supervisão
+        // (texto tipo "MATO GROSSO MT4 - Geral"); o campo Coordenação do GRM é
+        // escolhido por match de substring contra esse texto (ver preencherEModalNhe).
+        supervisao: rows[i].supervisao
+      };
+    }
+  }
+  return null;
+}
+
+async function buscarLoginColaborador(dataYmd, funcionario, osCoord) {
+  var wanted = normText(funcionario);
+  if (!wanted) return null;
+
+  var result = await supabase
+    .from(TABLE_LOGIN)
+    .select('colaborador,colaborador_chave,latitude,longitude,hora_movimento,coordenacao,supervisao')
+    .eq('data_movimento', dataYmd)
+    .limit(5000);
+  if (result.error) throw result.error;
+
+  var candidatos = (result.data || []).filter(function (row) {
+    return normText(row.colaborador) === wanted && isValidCoord(row.latitude, row.longitude);
+  });
+  if (!candidatos.length) return null;
+
+  var melhor = null;
+  candidatos.forEach(function (row) {
+    var distancia = haversineMeters(row.latitude, row.longitude, osCoord.lat, osCoord.lng);
+    if (!melhor || distancia < melhor.distancia) {
+      melhor = {
+        distancia: distancia,
+        colaborador_chave: row.colaborador_chave,
+        hora_movimento: row.hora_movimento,
+        // Coordenação/Supervisão do PRÓPRIO colaborador (registro do login no
+        // GRM) — é o que precisa ser selecionado no modal Adicionar NHE, pois
+        // o campo Funcionário só lista quem pertence à Coordenação/Supervisão
+        // escolhidas ali. Usar a supervisão da O.S. em vez da do colaborador
+        // pode deixar a lista sem esse colaborador (confirmado pelo usuário).
+        coordenacao: row.coordenacao,
+        supervisao: row.supervisao
+      };
+    }
+  });
+  return melhor;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Persistência do resultado (audita e evita relançar)
+ * ---------------------------------------------------------------------- */
+
+function chaveUnica(dataReferencia, numeroOs) {
+  return dataReferencia + '|' + numeroOs;
+}
+
+async function carregarJaLancadas(dataReferencia) {
+  var result = await supabase
+    .from(TABLE_RESULTADOS)
+    .select('numero_os,status')
+    .eq('data_referencia', dataReferencia)
+    .eq('status', 'SUCESSO');
+  if (result.error) throw result.error;
+  var set = {};
+  (result.data || []).forEach(function (row) { set[row.numero_os] = true; });
+  return set;
+}
+
+async function salvarResultado(candidato, patch) {
+  var now = new Date().toISOString();
+  var payload = Object.assign({
+    chave_unica: chaveUnica(candidato.data, candidato.os),
+    data_referencia: candidato.data,
+    numero_os: candidato.os,
+    cliente: candidato.cliente || null,
+    supervisao: candidato.supervisao || null,
+    coordenacao: candidato.osCoord ? candidato.osCoord.coordenacao : null,
+    funcionario: candidato.funcionario || null,
+    colaborador_chave: candidato.loginMatch ? candidato.loginMatch.colaborador_chave : null,
+    distancia_m: candidato.loginMatch ? Math.round(candidato.loginMatch.distancia) : null,
+    raio_m: RAIO_M,
+    motivo: MOTIVO_FIXO,
+    observacao: OBS_FIXA,
+    updated_at: now
+  }, patch);
+
+  var result = await supabase.from(TABLE_RESULTADOS).upsert(payload, { onConflict: 'chave_unica' });
+  if (result.error) throw result.error;
+}
+
+async function criarExecucao(dataReferencia) {
+  var result = await supabase.from(TABLE_EXECUCOES).insert({
+    data_referencia: dataReferencia,
+    status: 'INICIADO',
+    raw: { raio_m: RAIO_M, motivo: MOTIVO_FIXO, dry_run: DRY_RUN }
+  }).select('id').single();
+  if (result.error) { log('WARN', 'Não consegui criar execução: ' + result.error.message); return null; }
+  return result.data ? result.data.id : null;
+}
+
+async function finalizarExecucao(runId, patch) {
+  if (!runId) return;
+  patch.finalizado_em = new Date().toISOString();
+  var result = await supabase.from(TABLE_EXECUCOES).update(patch).eq('id', runId);
+  if (result.error) log('WARN', 'Falha ao finalizar execução: ' + result.error.message);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Puppeteer: login + lançamento do NHE
+ * ---------------------------------------------------------------------- */
+
+async function login(page) {
+  log('INFO', 'Iniciando login no GRM Server...');
+  await page.goto('https://www.grmserver.com.br/login', { waitUntil: 'networkidle2', timeout: 60000 });
+  await page.waitForSelector('input#input-v-2', { timeout: 30000 });
+  await clearAndType(page, 'input#input-v-2', GRM_USER);
+  await clearAndType(page, 'input#input-v-5', GRM_PASSWORD);
+  await page.click('button.submit-btn');
+  var ok = false;
+  for (var i = 0; i < 45; i++) {
+    await wait(1000);
+    if (page.url().indexOf('/login') === -1) { ok = true; break; }
+  }
+  if (!ok) throw new Error('Login falhou: página não saiu de /login após 45s.');
+  log('SUCCESS', 'Login realizado');
+}
+
+async function clearAndType(page, selector, value) {
+  await page.waitForSelector(selector, { timeout: 30000 });
+  await page.focus(selector);
+  await page.keyboard.down('Control');
+  await page.keyboard.press('A');
+  await page.keyboard.up('Control');
+  await page.keyboard.press('Backspace');
+  await page.type(selector, String(value), { delay: 20 });
+  await page.evaluate(function (payload) {
+    var input = document.querySelector(payload.selector);
+    if (!input) return;
+    var proto = input.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    var setter = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (setter && setter.set) setter.set.call(input, payload.value); else input.value = payload.value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+  }, { selector: selector, value: String(value) });
+}
+
+async function shot(page, name) {
+  try {
+    var dir = process.env.GRM_DEBUG_DIR || path.join(os.tmpdir(), 'grm-sync-lancar-nhe-debug');
+    fs.mkdirSync(dir, { recursive: true });
+    var p = path.join(dir, name);
+    await page.screenshot({ path: p, fullPage: false });
+    log('DEBUG', 'Screenshot salvo em ' + p);
+  } catch (e) { /* debug apenas, nunca derruba o fluxo */ }
+}
+
+// Clique real (mousedown+mouseup via CDP) no campo identificado pelo rótulo,
+// dentro do diálogo "Adicionar NHE" — um .click() sintético via DOM NÃO abre
+// o menu do v-autocomplete (confirmado ao vivo: some ainda clica em outro
+// elemento da página por trás, ex. o menu de navegação lateral).
+async function realClickCampoNhe(page, label) {
+  var box = await page.evaluate(function (label) {
+    function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+    var wanted = norm(label);
+    var dialogs = Array.from(document.querySelectorAll('.v-overlay--active'));
+    var dialog = dialogs.reverse().find(function (d) { return norm(d.innerText || '').indexOf('ADICIONAR NHE') !== -1; });
+    if (!dialog) return null;
+    var fields = Array.from(dialog.querySelectorAll('.v-input, .v-select, .v-autocomplete, .v-field'));
+    var f = fields.find(function (field) { return norm(field.innerText || '').indexOf(wanted) !== -1; });
+    if (!f) return null;
+    var r = f.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, label);
+  if (!box) throw new Error('Campo "' + label + '" não encontrado no modal Adicionar NHE.');
+  await page.mouse.click(box.x, box.y);
+}
+
+// modo: 'primeira' (clica a 1ª opção da lista — usado quando só há uma opção
+// possível, ex. Supervisão já filtrada pela Coordenação), 'exata' (texto
+// normalizado === alvo) ou 'substring' (alvo contido no texto ou vice-versa —
+// usado pra Coordenação/Funcionário, onde o texto exibido pode ter sufixos
+// como " - Geral"). IMPORTANTE: os valores capturados no Node (alvo, modo)
+// precisam ser passados como dado serializável pro page.evaluate — uma
+// closure do Node (função + toString) NÃO carrega as variáveis capturadas
+// pro contexto da página (bug já visto ao vivo: ReferenceError na variável
+// capturada, pois só o texto-fonte da função sobrevive à serialização).
+async function selecionarOpcaoAberta(page, alvo, modo) {
+  await wait(800);
+  var clicked = await page.evaluate(function (payload) {
+    function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+    var alvoNorm = norm(payload.alvo);
+    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+    for (var i = overlays.length - 1; i >= 0; i--) {
+      var options = Array.from(overlays[i].querySelectorAll('[role="option"], .v-list-item'));
+      for (var j = 0; j < options.length; j++) {
+        var textoOriginal = (options[j].innerText || options[j].textContent || '').trim();
+        if (!textoOriginal) continue;
+        var texto = norm(textoOriginal);
+        var bate = false;
+        if (payload.modo === 'primeira') bate = true;
+        else if (payload.modo === 'exata') bate = texto === alvoNorm;
+        else bate = alvoNorm.length > 0 && (texto.indexOf(alvoNorm) !== -1 || alvoNorm.indexOf(texto) !== -1);
+        if (bate) { options[j].click(); return textoOriginal; }
+      }
+    }
+    return null;
+  }, { alvo: alvo || '', modo: modo || 'substring' });
+  return clicked;
+}
+
+async function abrirOsEModalCargas(page, numeroOs) {
+  await page.goto('https://www.grmserver.com.br/operation/serviceOrder', { waitUntil: 'networkidle2', timeout: 60000 });
+  await wait(2500);
+
+  var osFilled = await page.evaluate(function (numeroOs) {
+    var input = Array.from(document.querySelectorAll('input')).find(function (i) {
+      var lbl = (i.closest('.v-input') || {}).innerText || '';
+      return lbl.trim().indexOf('O.S') === 0;
+    });
+    if (!input) return false;
+    input.focus();
+    return true;
+  }, String(numeroOs));
+  if (!osFilled) throw new Error('Campo "O.S." não encontrado na tela de Ordem de Serviço.');
+
+  var osInputHandle = await page.evaluateHandle(function () {
+    return Array.from(document.querySelectorAll('input')).find(function (i) {
+      var lbl = (i.closest('.v-input') || {}).innerText || '';
+      return lbl.trim().indexOf('O.S') === 0;
+    });
+  });
+  await osInputHandle.asElement().click({ clickCount: 3 });
+  await page.keyboard.press('Backspace');
+  await osInputHandle.asElement().type(String(numeroOs), { delay: 30 });
+  await wait(400);
+
+  var searchClicked = await page.evaluate(function () {
+    var btn = document.querySelector('.serviceOrder-act-search button, .serviceOrder-act-search');
+    if (!btn) return false;
+    (btn.tagName === 'BUTTON' ? btn : btn.querySelector('button') || btn).click();
+    return true;
+  });
+  if (!searchClicked) throw new Error('Botão de busca (.serviceOrder-act-search) não encontrado.');
+  await wait(2500);
+
+  var rowSelected = await page.evaluate(function (numeroOs) {
+    var cell = Array.from(document.querySelectorAll('td')).find(function (td) { return td.textContent.trim() === numeroOs; });
+    if (!cell) return false;
+    var row = cell.closest('tr');
+    var checkbox = row && row.querySelector('input[type="checkbox"]');
+    if (!checkbox) return false;
+    checkbox.click();
+    return true;
+  }, String(numeroOs));
+  if (!rowSelected) throw new Error('O.S. ' + numeroOs + ' não encontrada na listagem após a busca.');
+  await wait(800);
+
+  var truckClicked = await page.evaluate(function () {
+    var icon = document.querySelector('lord-icon[src*="497-truck-delivery"]');
+    var btn = icon ? icon.closest('button') : null;
+    if (!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true') return false;
+    btn.click();
+    return true;
+  });
+  if (!truckClicked) throw new Error('Ícone "Lista de Cargas" (caminhão) não encontrado/habilitado.');
+  await wait(1800);
+
+  var nheClicked = await page.evaluate(function () {
+    var el = document.querySelector('.sOrderloads-act-add-nhe button, .sOrderloads-act-add-nhe');
+    if (!el) return false;
+    (el.tagName === 'BUTTON' ? el : el.querySelector('button') || el).click();
+    return true;
+  });
+  if (!nheClicked) throw new Error('Botão "+NHE" (.sOrderloads-act-add-nhe) não encontrado.');
+  await wait(1200);
+
+  var modalAberto = await page.evaluate(function () {
+    return Array.from(document.querySelectorAll('.v-overlay--active')).some(function (d) {
+      return (d.innerText || '').toUpperCase().indexOf('ADICIONAR NHE') !== -1;
+    });
+  });
+  if (!modalAberto) throw new Error('Modal "Adicionar NHE" não abriu.');
+}
+
+async function preencherEModalNhe(page, candidato, dryRun, debug) {
+  var dataBr = brDate(candidato.data);
+
+  await realClickCampoNhe(page, 'Coordenação');
+  // O campo Funcionário só lista quem pertence à Coordenação/Supervisão
+  // escolhidas aqui — por isso a região tem que ser a do PRÓPRIO colaborador
+  // (registrada no login dele, grm_login_movimentos_importacoes), não a da
+  // O.S.: um colaborador pode estar registrado numa supervisão ligeiramente
+  // diferente da supervisão gravada na O.S., e nesse caso ele não apareceria
+  // na lista se seguíssemos a supervisão da O.S. (confirmado pelo usuário).
+  // osCoord.supervisao só entra como fallback se o login não tiver essa info.
+  var regiaoAlvo = (candidato.loginMatch && (candidato.loginMatch.coordenacao || candidato.loginMatch.supervisao))
+    || (candidato.osCoord && candidato.osCoord.supervisao)
+    || candidato.supervisao || '';
+  var coordEscolhida = await selecionarOpcaoAberta(page, regiaoAlvo, 'substring');
+  if (!coordEscolhida) throw new Error('Não achei opção de Coordenação compatível com "' + regiaoAlvo + '".');
+  log('INFO', 'Coordenação selecionada: ' + coordEscolhida);
+
+  // Supervisão é populada por um fetch em cascata disparado pela escolha da
+  // Coordenação — precisa de uma folga maior antes de tentar abrir o campo,
+  // senão a lista ainda está vazia (confirmado ao vivo: sem essa espera extra
+  // o campo abre sem nenhuma opção).
+  await wait(1200);
+  await realClickCampoNhe(page, 'Supervisão');
+  var supervisaoAlvo = (candidato.loginMatch && candidato.loginMatch.supervisao) || '';
+  var supEscolhida = supervisaoAlvo ? await selecionarOpcaoAberta(page, supervisaoAlvo, 'substring') : null;
+  // Sem opção batendo com a supervisão do colaborador (ou só existe 1 opção
+  // mesmo, caso mais comum quando a Coordenação já é bem específica): cai
+  // pra "primeira" — a lista continua aberta porque nenhum clique aconteceu.
+  if (!supEscolhida) supEscolhida = await selecionarOpcaoAberta(page, '', 'primeira');
+  if (!supEscolhida) throw new Error('Não consegui selecionar Supervisão (nenhuma opção na lista).');
+  log('INFO', 'Supervisão selecionada: ' + supEscolhida);
+
+  // Funcionário é uma busca server-side com resultado padrão pequeno (~27-48
+  // nomes) que NÃO necessariamente inclui o colaborador certo — confirmado ao
+  // vivo: um colaborador real da própria Coordenação/Supervisão escolhida só
+  // apareceu depois de digitar o nome no campo (o clique sozinho não é
+  // suficiente, é preciso digitar pra disparar a busca filtrada no servidor).
+  await realClickCampoNhe(page, 'Funcionário');
+  await wait(900);
+  var primeiroNome = String(candidato.funcionario || '').trim().split(/\s+/)[0] || '';
+  if (primeiroNome) {
+    // Não confiar em document.activeElement após o clique de mouse (o campo
+    // pode não ter recebido foco de verdade) — acha explicitamente o <input>
+    // de busca dentro do campo Funcionário e digita nele via elementHandle.
+    var inputHandle = await page.evaluateHandle(function () {
+      function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+      var dialogs = Array.from(document.querySelectorAll('.v-overlay--active'));
+      var dialog = dialogs.reverse().find(function (d) { return norm(d.innerText || '').indexOf('ADICIONAR NHE') !== -1; });
+      var fields = Array.from(dialog.querySelectorAll('.v-input, .v-select, .v-autocomplete, .v-field'));
+      var f = fields.find(function (field) { return norm(field.innerText || '').indexOf('FUNCIONARIO') !== -1; });
+      return f ? f.querySelector('input') : null;
+    });
+    var el = inputHandle && inputHandle.asElement();
+    if (el) {
+      await el.type(primeiroNome, { delay: 80 });
+    } else {
+      await page.keyboard.type(primeiroNome, { delay: 80 });
+    }
+  }
+  await wait(1500);
+  var funcEscolhido = await selecionarOpcaoAberta(page, candidato.funcionario, 'substring');
+  if (!funcEscolhido) throw new Error('Não achei "' + candidato.funcionario + '" na lista de Funcionário (busquei por "' + primeiroNome + '").');
+  log('INFO', 'Funcionário selecionado: ' + funcEscolhido);
+
+  var dataOk = await page.evaluate(function (payload) {
+    var input = document.querySelector('#lnsDate');
+    if (!input) return false;
+    var proto = window.HTMLInputElement.prototype;
+    var setter = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (setter && setter.set) setter.set.call(input, payload.value); else input.value = payload.value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+    return true;
+  }, { value: dataBr });
+  if (!dataOk) throw new Error('Campo Data (#lnsDate) não encontrado.');
+
+  await realClickCampoNhe(page, 'Motivo');
+  var motivoEscolhido = await selecionarOpcaoAberta(page, MOTIVO_FIXO, 'exata');
+  if (!motivoEscolhido) throw new Error('Motivo "' + MOTIVO_FIXO + '" não encontrado na lista.');
+
+  var obsOk = await page.evaluate(function (payload) {
+    var dialogs = Array.from(document.querySelectorAll('.v-overlay--active'));
+    var dialog = dialogs.reverse().find(function (d) { return (d.innerText || '').toUpperCase().indexOf('ADICIONAR NHE') !== -1; });
+    if (!dialog) return false;
+    var field = Array.from(dialog.querySelectorAll('.v-input, .v-field')).find(function (f) {
+      return (f.innerText || '').toUpperCase().indexOf('OBS') !== -1;
+    });
+    var input = field && (field.querySelector('input') || field.querySelector('textarea'));
+    if (!input) return false;
+    var proto = input.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    var setter = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (setter && setter.set) setter.set.call(input, payload.value); else input.value = payload.value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+    return true;
+  }, { value: OBS_FIXA });
+  if (!obsOk) log('WARN', 'Campo Obs. não encontrado — seguindo sem observação.');
+
+  if (debug) await shot(page, 'os-' + candidato.os + '-form-preenchido.png');
+
+  if (dryRun) {
+    log('INFO', 'DRY-RUN: formulário preenchido, cancelando em vez de salvar.');
+    var cancelado = await page.evaluate(function () {
+      var dialogs = Array.from(document.querySelectorAll('.v-overlay--active'));
+      var dialog = dialogs.reverse().find(function (d) { return (d.innerText || '').toUpperCase().indexOf('ADICIONAR NHE') !== -1; });
+      var btn = dialog && Array.from(dialog.querySelectorAll('button')).find(function (b) { return (b.innerText || '').toUpperCase().indexOf('CANCELAR') !== -1; });
+      if (!btn) return false;
+      btn.click();
+      return true;
+    });
+    if (!cancelado) log('WARN', 'Botão Cancelar não encontrado no dry-run.');
+    return;
+  }
+
+  var salvo = await page.evaluate(function () {
+    var dialogs = Array.from(document.querySelectorAll('.v-overlay--active'));
+    var dialog = dialogs.reverse().find(function (d) { return (d.innerText || '').toUpperCase().indexOf('ADICIONAR NHE') !== -1; });
+    var btn = dialog && Array.from(dialog.querySelectorAll('button')).find(function (b) { return (b.innerText || '').toUpperCase().indexOf('SALVAR') !== -1; });
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  if (!salvo) throw new Error('Botão "Salvar" não encontrado no modal Adicionar NHE.');
+  await wait(2000);
+}
+
+async function fecharModais(page) {
+  try {
+    await page.evaluate(function () {
+      Array.from(document.querySelectorAll('.v-overlay--active')).forEach(function (overlay) {
+        var closeBtn = overlay.querySelector('button.v-btn[aria-label="Close"], .mdi-close');
+        if (closeBtn) (closeBtn.closest('button') || closeBtn).click();
+      });
+    });
+    await page.keyboard.press('Escape');
+    await wait(500);
+  } catch (e) { /* best-effort */ }
+}
+
+async function lancarNheParaCandidato(page, candidato, dryRun, debug) {
+  await abrirOsEModalCargas(page, candidato.os);
+  if (debug) await shot(page, 'os-' + candidato.os + '-modal-cargas.png');
+  await preencherEModalNhe(page, candidato, dryRun, debug);
+  await fecharModais(page);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Main
+ * ---------------------------------------------------------------------- */
+
+async function main() {
+  assertConfig();
+  var args = parseArgs(process.argv.slice(2));
+  var debug = args.debug || DEBUG;
+  var dryRun = args.dryRun || DRY_RUN;
+  var runId = null;
+
+  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, foraDoRaio: 0, semCoordenadaOs: 0 };
+
+  try {
+    log('INFO', '=== Lançamento automático de NHE (raio=' + RAIO_M + 'm, motivo="' + MOTIVO_FIXO + '"' + (dryRun ? ', DRY-RUN' : '') + ') ===');
+    var dataReferencia = referenceIso();
+    runId = await criarExecucao(dataReferencia);
+
+    var pendentes = args.os
+      ? [{ os: normOs(args.os), data: dataReferencia, data_br: referenceBr(), funcionario: args.funcionario || '', cliente: '', local: '', supervisao: '' }]
+      : await buscarPendentes();
+    stats.pendentes = pendentes.length;
+
+    var jaLancadas = await carregarJaLancadas(dataReferencia);
+    var candidatos = [];
+
+    for (var i = 0; i < pendentes.length; i++) {
+      var p = pendentes[i];
+      if (jaLancadas[p.os]) continue;
+
+      var osCoord = await resolverCoordenadaOs(p.os);
+      if (!osCoord) {
+        stats.semCoordenadaOs++;
+        await salvarResultado(p, { status: 'SEM_COORDENADA_OS' });
+        continue;
+      }
+
+      var loginMatch = await buscarLoginColaborador(p.data, p.funcionario, osCoord);
+      if (!loginMatch && args.forcar) loginMatch = { distancia: 0, colaborador_chave: null, hora_movimento: null };
+      if (!loginMatch) {
+        stats.semLogin++;
+        await salvarResultado(Object.assign({}, p, { osCoord: osCoord }), { status: 'SEM_LOGIN' });
+        continue;
+      }
+
+      if (loginMatch.distancia > RAIO_M && !args.forcar) {
+        stats.foraDoRaio++;
+        await salvarResultado(Object.assign({}, p, { osCoord: osCoord, loginMatch: loginMatch }), { status: 'FORA_DO_RAIO' });
+        continue;
+      }
+
+      candidatos.push(Object.assign({}, p, { osCoord: osCoord, loginMatch: loginMatch }));
+    }
+
+    stats.candidatos = candidatos.length;
+    log('SUCCESS', candidatos.length + ' candidato(s) elegível(is) para lançamento automático.');
+
+    if (candidatos.length) {
+      var browser = await puppeteer.launch({
+        headless: process.env.GRM_HEADLESS === 'new' ? 'new' : true,
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        dumpio: true,
+        args: [
+          '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+          '--disable-software-rasterizer', '--disable-extensions', '--disable-background-networking',
+          '--disable-default-apps', '--disable-sync', '--metrics-recording-only', '--mute-audio',
+          '--no-first-run', '--no-default-browser-check',
+          '--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
+          '--disable-site-isolation-trials'
+        ],
+        defaultViewport: { width: 1600, height: 900 }
+      });
+      browserAtual = browser;
+
+      try {
+        var page = await browser.newPage();
+        await login(page);
+
+        for (var c = 0; c < candidatos.length; c++) {
+          var candidato = candidatos[c];
+          try {
+            log('INFO', 'Lançando NHE para O.S. ' + candidato.os + ' (colaborador=' + candidato.funcionario + ', distância=' + Math.round(candidato.loginMatch.distancia) + 'm)...');
+            await lancarNheParaCandidato(page, candidato, dryRun, debug);
+            stats.sucesso++;
+            await salvarResultado(candidato, { status: dryRun ? 'DRY_RUN_OK' : 'SUCESSO', lancado_em: new Date().toISOString(), erro: null });
+            log('SUCCESS', 'O.S. ' + candidato.os + ': NHE ' + (dryRun ? 'validado (dry-run)' : 'lançado') + '.');
+          } catch (error) {
+            stats.erro++;
+            log('ERROR', 'O.S. ' + candidato.os + ': ' + error.message);
+            if (debug) await shot(page, 'erro-os-' + candidato.os + '.png');
+            await salvarResultado(candidato, { status: 'ERRO', erro: String(error.message || error).slice(0, 2000) });
+            await fecharModais(page);
+          }
+        }
+      } finally {
+        browserAtual = null;
+        await browser.close();
+      }
+    }
+
+    await finalizarExecucao(runId, {
+      status: 'SUCESSO',
+      total_pendentes: stats.pendentes,
+      total_candidatos: stats.candidatos,
+      total_sucesso: stats.sucesso,
+      total_erro: stats.erro,
+      total_sem_login: stats.semLogin,
+      total_fora_do_raio: stats.foraDoRaio,
+      total_sem_coordenada_os: stats.semCoordenadaOs
+    });
+
+    log('SUCCESS', 'Concluído: ' + JSON.stringify(stats));
+  } catch (error) {
+    log('ERROR', error.stack || error.message);
+    await finalizarExecucao(runId, { status: 'ERRO', erro: String(error.message || error).slice(0, 4000) }).catch(function () {});
+    throw error;
+  }
+}
+
+if (require.main === module) {
+  main().then(function () { process.exit(0); }).catch(function () { process.exit(1); });
+  setTimeout(function () {
+    log('ERROR', 'Timeout geral do agente atingido.');
+    if (browserAtual) browserAtual.close().catch(function () {});
+    process.exit(1);
+  }, Number(process.env.NHE_LANCAMENTO_TIMEOUT_MS || 480000)).unref();
+}
+
+module.exports = {
+  calcularPendentes: calcularPendentes,
+  haversineMeters: haversineMeters,
+  normOs: normOs,
+  normText: normText
+};

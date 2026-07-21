@@ -62,6 +62,12 @@ const AGENTES_DIARIOS = [
     intervalo_minutos: 15,
     ativo: true,
   },
+  {
+    agente_id: 'sync-lancar-nhe',
+    nome: 'Lançamento automático de NHE (geofence de login)',
+    intervalo_minutos: 60,
+    ativo: true,
+  },
 ];
 
 // Nenhum dos 14 agentes historicamente passa de ~10min rodando; acima disso é job travado (processo morto sem atualizar status).
