@@ -26,6 +26,7 @@ const state = {
   warnings: [],
   loading: false,
   activeTab: 'OK',
+  historyTab: 'PENDENTE',
 };
 
 // Abas do resultado, na ordem pedida (Ok | Dois Embarques | Pendente).
@@ -33,6 +34,16 @@ const FOB_TABS = [
   ['OK', 'Ok', '#bbf7d0'],
   ['DOIS EMBARQUES', 'Dois Embarques', '#fde68a'],
   ['PENDENTE', 'Pendente', '#fecaca'],
+];
+
+// Abas do histórico salvo em logistica_fob (fila de revisão do gestor —
+// pedido do usuário, 2026-07-21: "Pendente | Ok | Recusado". PENDENTE = veio
+// da comparação automática e ainda não foi conferido; VALIDO = gestor deu Ok
+// (botão ✓); INVALIDO = gestor recusou (botão ✕).
+const HISTORY_TABS = [
+  ['PENDENTE', 'Pendente', '#fecaca'],
+  ['VALIDO', 'Ok', '#bbf7d0'],
+  ['INVALIDO', 'Recusado', '#fca5a5'],
 ];
 
 function esc(value) {
@@ -683,13 +694,34 @@ async function loadHistory() {
   }
 
   state.fob = data || [];
+  renderHistory();
+}
+
+function renderHistory() {
+  const host = document.getElementById('fobHistory');
   if (!host) return;
+
   if (!state.fob.length) {
     host.innerHTML = '<div class="fob-empty">Nenhum FOB salvo no histórico.</div>';
     return;
   }
 
-  host.innerHTML = `<div class="fob-table-wrap"><table class="fob-table"><thead><tr><th>Data</th><th>O.S.</th><th>Cliente</th><th>Status</th><th>Ação</th></tr></thead><tbody>${state.fob.map((row) => `<tr><td>${esc(brDate(row.data_referencia))}</td><td>${esc(row.numero_os || '-')}</td><td>${esc(row.cliente || '-')}</td><td>${esc(row.status || 'PENDENTE')}</td><td>${String(row.status || 'PENDENTE') === 'PENDENTE' ? `<button class="btn btn-primary" type="button" data-valid="${esc(row.id)}">✓</button> <button class="btn btn-secondary" type="button" data-invalid="${esc(row.id)}">✕</button>` : '-'}</td></tr>`).join('')}</tbody></table></div>`;
+  const activeTab = HISTORY_TABS.some(([status]) => status === state.historyTab) ? state.historyTab : 'PENDENTE';
+  const normalizedStatus = (row) => String(row.status || 'PENDENTE');
+  const tabRows = state.fob.filter((row) => normalizedStatus(row) === activeTab);
+  const activeLabel = (HISTORY_TABS.find(([status]) => status === activeTab) || [, 'Pendente'])[1];
+
+  const tabsHtml = HISTORY_TABS.map(([status, label, color]) => {
+    const count = state.fob.filter((row) => normalizedStatus(row) === status).length;
+    const isActive = status === activeTab;
+    return `<button type="button" class="fob-tab ${isActive ? 'active' : ''}" data-fob-history-tab="${esc(status)}" style="--fob-tab-color:${color}"><span>${esc(label)}</span><span class="fob-tab-count">${BR_INT.format(count)}</span></button>`;
+  }).join('');
+
+  const tableHtml = tabRows.length
+    ? `<div class="fob-table-wrap mt-16"><table class="fob-table"><thead><tr><th>Data</th><th>O.S.</th><th>Cliente</th><th>Supervisão</th><th>Ação</th></tr></thead><tbody>${tabRows.map((row) => `<tr><td>${esc(brDate(row.data_referencia))}</td><td>${esc(row.numero_os || '-')}</td><td>${esc(row.cliente || '-')}</td><td>${esc(row.supervisao || '-')}</td><td>${activeTab === 'PENDENTE' ? `<button class="btn btn-primary" type="button" data-valid="${esc(row.id)}" title="Marcar como Ok">✓</button> <button class="btn btn-secondary" type="button" data-invalid="${esc(row.id)}" title="Recusar">✕</button>` : '-'}</td></tr>`).join('')}</tbody></table></div>`
+    : `<div class="fob-empty mt-16">Nenhuma O.S. em "${esc(activeLabel)}" no histórico.</div>`;
+
+  host.innerHTML = `<div class="fob-tabs">${tabsHtml}</div>${tableHtml}`;
 }
 
 async function savePending() {
@@ -793,6 +825,9 @@ function bind(content) {
 
       const tab = event.target.closest('[data-fob-tab]');
       if (tab) { state.activeTab = tab.dataset.fobTab; renderResult(); return; }
+
+      const historyTab = event.target.closest('[data-fob-history-tab]');
+      if (historyTab) { state.historyTab = historyTab.dataset.fobHistoryTab; renderHistory(); return; }
 
       const valid = event.target.closest('[data-valid]');
       if (valid) { await validate(valid.dataset.valid, 'VALIDO'); return; }
