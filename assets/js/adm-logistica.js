@@ -261,6 +261,7 @@ function injectStyles() {
   style.textContent = `
     .log-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.log-report-grid{display:grid;grid-template-columns:repeat(4,minmax(170px,1fr));gap:12px}.log-report-grid .wide{grid-column:span 2}.log-report-history{margin-top:16px}.log-tab{border:1px solid rgba(52,211,153,.2);background:#0d0d18;color:#e2e2f0;border-radius:999px;padding:10px 14px;font-weight:900;cursor:pointer}.log-tab.active{background:rgba(22,101,52,.38);color:#dcfce7;border-color:rgba(74,222,128,.42)}
     .log-grid{display:grid;grid-template-columns:170px 210px 210px 1fr 160px;gap:12px}.log-input{width:100%;min-height:40px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0d0d18!important;color:#e2e2f0!important;color-scheme:dark;padding:9px}.log-input option{background:#0d0d18;color:#e2e2f0}.log-textarea{min-height:70px;resize:vertical}.log-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:18px;background:rgba(2,6,23,.25)}.log-table{width:100%;min-width:1160px;border-collapse:separate;border-spacing:0;color:#e2e2f0}.log-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(52,211,153,.18);z-index:1}.log-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:top;background:rgba(15,23,42,.24)}.log-table tr:hover td{background:rgba(22,101,52,.1)}.log-title{font-weight:950;color:#f8fafc;font-size:14px;line-height:1.2}.log-meta{font-size:12px;color:#6b7280;margin-top:4px;line-height:1.35}.log-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18);white-space:nowrap}.log-badge.ok{background:rgba(22,163,74,.13);color:#bbf7d0}.log-badge.warn{background:rgba(250,204,21,.14);color:#fde68a}.log-badge.info{background:rgba(59,130,246,.13);color:#bfdbfe}.log-badge.danger{background:rgba(239,68,68,.12);color:#fecaca}.log-badge.neutral{background:rgba(148,163,184,.12);color:#e2e8f0}.log-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#6b7280;background:rgba(15,23,42,.16)}.log-actions{display:flex;flex-direction:column;gap:8px}.log-actions .btn{width:100%;justify-content:center}.log-kpi-warn{color:#fde68a!important}.log-kpi-danger{color:#fecaca!important}.log-kpi-ok{color:#bbf7d0!important}.log-section{display:none}.log-section.active{display:block}.log-note{border:1px solid rgba(59,130,246,.2);background:rgba(59,130,246,.08);color:#bfdbfe;border-radius:16px;padding:12px;margin-top:12px;font-size:13px}.log-mini-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.log-pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.log-inline-actions{display:flex;gap:8px;flex-wrap:wrap}.log-inline-actions .btn{width:auto!important;margin-top:0!important}.log-copy{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;background:rgba(15,23,42,.7);border:1px solid rgba(148,163,184,.2);border-radius:12px;padding:10px;font-size:12px;color:#e2e8f0;max-height:180px;overflow:auto}
+    .log-card-clickable{cursor:pointer;transition:border-color .15s,background .15s}.log-card-clickable:hover{border-color:rgba(134,239,172,.5)!important;background:rgba(22,101,52,.13)!important}
     .log-upload-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.log-upload-card{display:flex;flex-direction:column;gap:7px;border:1px dashed rgba(52,211,153,.28);border-radius:18px;background:rgba(15,23,42,.36);padding:14px;cursor:pointer;min-height:118px}.log-upload-card:hover{border-color:rgba(134,239,172,.55);background:rgba(22,101,52,.13)}.log-upload-card span{font-weight:950;color:#f8fafc}.log-upload-card small{color:#94a3b8;line-height:1.35}.log-upload-card b{margin-top:auto;color:#86efac;font-size:12px;word-break:break-word}.log-status-pendente{color:#fecaca!important}.log-status-ok{color:#bbf7d0!important}.log-status-dois{color:#fde68a!important}.log-report-actions{display:flex;gap:8px;flex-wrap:wrap}.log-subcard summary::marker{color:#86efac}
     @media(max-width:1100px){.log-grid{grid-template-columns:1fr 1fr}.log-mini-grid,.log-report-grid{grid-template-columns:1fr 1fr}.log-table{min-width:980px}}@media(max-width:720px){.log-grid,.log-mini-grid,.log-report-grid,.log-upload-grid{grid-template-columns:1fr}.log-report-grid .wide{grid-column:auto}.log-tabs{overflow:auto;flex-wrap:nowrap}.log-tab{white-space:nowrap}}
   `;
@@ -498,6 +499,15 @@ export async function renderContent(content) {
     const btn = event.target.closest('[data-tab]');
     if (!btn) return;
     state.tab = btn.dataset.tab;
+    window.location.hash = state.tab;
+    renderTabs();
+    render();
+  });
+
+  el.stats.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-jump-tab]');
+    if (!card) return;
+    state.tab = card.dataset.jumpTab;
     window.location.hash = state.tab;
     renderTabs();
     render();
@@ -767,7 +777,9 @@ export async function renderContent(content) {
     const andamento = finalizacao.filter((r) => statusLog(r) === 'EM_ANDAMENTO').length;
     const finalizadas = finalizacao.filter((r) => statusLog(r) === 'FINALIZADA').length;
     const suspensos = state.alertas.filter((a) => normalize(a.tipo) === 'SUSPENSO' && dateKey(a.created_at) === dateKey(new Date().toISOString())).length;
+    const solicitacoes = safeArray(state.aberturaOs).filter((r) => String(r.status || 'PENDENTE') === 'PENDENTE').length;
     el.stats.innerHTML = `
+      <article class="card log-card-clickable" data-jump-tab="abertura_os" title="Ver solicitações de abertura de O.S."><h3>Solicitações</h3><p class="metric ${solicitacoes ? 'log-kpi-warn' : 'log-kpi-ok'}">${solicitacoes}</p><p class="muted">Gestor pediu abertura de O.S.</p></article>
       <article class="card"><h3>Fila pendente</h3><p class="metric log-kpi-warn">${pend}</p><p class="muted">Gestor solicitou finalizar.</p></article>
       <article class="card"><h3>Em andamento</h3><p class="metric">${andamento}</p><p class="muted">Assumidas pela logística.</p></article>
       <article class="card"><h3>Finalizadas</h3><p class="metric log-kpi-ok">${finalizadas}</p><p class="muted">Concluídas no painel.</p></article>
@@ -2196,6 +2208,7 @@ export async function renderContent(content) {
       }
       state.aberturaOs = safeArray(data);
       renderAberturaOs();
+      renderStats();
     })();
     try { return await aberturaOsInflight; } finally { aberturaOsInflight = null; }
   }
@@ -2248,6 +2261,7 @@ export async function renderContent(content) {
     if (error) { alert(error.message); btn.disabled = false; btn.textContent = 'Cadastrado'; return; }
     state.aberturaOs = state.aberturaOs.map(r => String(r.id) === String(id) ? { ...r, ...patch } : r);
     renderAberturaOs();
+    renderStats();
     el.feedback.textContent = `O.S. ${numero} vinculada à solicitação e liberada para o Gestor.`;
   }
 
