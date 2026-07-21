@@ -402,22 +402,34 @@ async function fetchServiceDay(table, label, maxRows) {
 }
 
 function compareFob(movementRows, productionRows, nheRows) {
-  // Regra (atualizada pelo usuário em 21/07/2026):
-  // - Base = OS com "Última Atualização" no Mapa de Embarque no dia de referência
-  //   (movementDate já é a "Última Atualização"; movement.rows já vem filtrado
-  //   por chooseMovementBatch para o dia de referência). SEM o filtro antigo de
-  //   Tons Hoje = 0.
-  // - Lançamento = a OS aparece em QUALQUER linha do NHE do dia. Produção Diária
-  //   é IGNORADA na classificação (mesmo com carga lançada lá, não conta como
-  //   "Ok" nesta tela) — mantida só pro card de diagnóstico.
-  // - Ok = tem lançamento (NHE) próprio. Pendente = não tem. Dois Embarques =
-  //   não tem lançamento próprio, mas há OUTRA OS do mesmo Cliente + Local de
-  //   Embarque (grupo com mais de uma OS) que tem lançamento — o embarque foi
-  //   lançado na O.S. irmã.
-  const setProdOs = new Set();
+  // Regra (reformulada pelo usuário em 21/07/2026 — esta tela avalia só
+  // pendências de NHE, não de carga em geral):
+  // - Base = OS com "Última Atualização" no Mapa de Embarque no dia de
+  //   referência.
+  // - Na Produção Diária, o campo "Cargas" de uma linha é OU um número (carga
+  //   real embarcada) OU o texto "NHE" (marcador) — nunca os dois pra mesma
+  //   OS/data (confirmado nos dados: são mutuamente exclusivos).
+  // - Se a OS tem CARGA REAL (Cargas numérico > 0) na Produção + Atualização:
+  //   situação correta — NÃO entra nesta tela (fora do escopo, que é só
+  //   pendência de NHE).
+  // - Se a OS tem NHE (tabela NHE OU Cargas="NHE" na Produção) + Atualização:
+  //   OK.
+  // - Se a OS não tem NHE nem carga real própria, mas OUTRA OS do mesmo
+  //   Cliente + Local de Embarque tem (NHE ou carga real): DOIS EMBARQUES —
+  //   o embarque foi lançado na O.S. irmã.
+  // - Se só tem Atualização, sem nenhuma dessas informações (própria ou de
+  //   irmã): PENDENTE.
+  const setCargaRealOs = new Set();
+  const setNheEmProducaoOs = new Set();
   productionRows.forEach((row) => {
     const os = normOs(pick(row, ['O.S.', 'OS']));
-    if (os) setProdOs.add(os);
+    if (!os) return;
+    const cargasRaw = String(pick(row, ['Cargas']) ?? '').trim();
+    if (normText(cargasRaw) === 'NHE') {
+      setNheEmProducaoOs.add(os);
+    } else if (cargasRaw && toNumberLoose(cargasRaw) > 0) {
+      setCargaRealOs.add(os);
+    }
   });
 
   const setNheOsOnly = new Set();
@@ -425,6 +437,9 @@ function compareFob(movementRows, productionRows, nheRows) {
     const os = normOs(pick(row, ['O.S.', 'OS', 'O.S', 'O S']));
     if (os) setNheOsOnly.add(os);
   });
+
+  const temNhe = (os) => setNheOsOnly.has(os) || setNheEmProducaoOs.has(os);
+  const temCargaReal = (os) => setCargaRealOs.has(os);
 
   const grupoKey = (cliente, local) => `${normText(cliente)}|${normText(local)}`;
 
@@ -446,26 +461,33 @@ function compareFob(movementRows, productionRows, nheRows) {
     });
   });
 
-  // Por grupo Cliente + Local de Embarque: quantas O.S. distintas e se alguma
-  // delas tem lançamento no NHE (pra decidir "Dois Embarques").
+  // Por grupo Cliente + Local de Embarque: se QUALQUER OS do grupo tem NHE ou
+  // carga real, isso conta pra decidir "Dois Embarques" nas OS irmãs sem
+  // lançamento próprio — mesmo que a OS "dona" do lançamento nem apareça no
+  // painel (por já ter carga real, ver exclusão abaixo).
   const grupos = new Map();
   base.forEach((item) => {
     const key = grupoKey(item.cliente, item.local);
     let g = grupos.get(key);
-    if (!g) { g = { osSet: new Set(), temLancamento: false }; grupos.set(key, g); }
-    g.osSet.add(item.os);
-    if (setNheOsOnly.has(item.os)) g.temLancamento = true;
+    if (!g) { g = { temLancamento: false }; grupos.set(key, g); }
+    if (temNhe(item.os) || temCargaReal(item.os)) g.temLancamento = true;
   });
 
-  const rows = base.map((item) => {
+  const rows = [];
+  base.forEach((item) => {
+    // Carga real na Produção + Atualização = situação correta, fora do
+    // escopo desta tela (não é pendência de NHE) — não entra no painel.
+    if (temCargaReal(item.os)) return;
+
     let status;
-    if (setNheOsOnly.has(item.os)) {
+    if (temNhe(item.os)) {
       status = 'OK';
     } else {
       const g = grupos.get(grupoKey(item.cliente, item.local));
-      status = (g && g.osSet.size > 1 && g.temLancamento) ? 'DOIS EMBARQUES' : 'PENDENTE';
+      status = (g && g.temLancamento) ? 'DOIS EMBARQUES' : 'PENDENTE';
     }
-    return {
+
+    rows.push({
       data: item.date,
       data_br: brDate(item.date),
       os: item.os,
@@ -477,7 +499,7 @@ function compareFob(movementRows, productionRows, nheRows) {
       tons_movimento: item.tons,
       status,
       observacao: item.observacao,
-    };
+    });
   });
 
   const rank = { PENDENTE: 0, 'DOIS EMBARQUES': 1, OK: 2 };
@@ -492,7 +514,7 @@ function compareFob(movementRows, productionRows, nheRows) {
       producao: productionRows.length,
       nhe: nheRows.length,
       nheOsOnly: setNheOsOnly.size,
-      prodOs: setProdOs.size,
+      prodOs: setCargaRealOs.size,
       pendentes: rows.filter((row) => row.status === 'PENDENTE').length,
       dois: rows.filter((row) => row.status === 'DOIS EMBARQUES').length,
       ok: rows.filter((row) => row.status === 'OK').length,
@@ -525,7 +547,7 @@ function renderShell(content) {
         <div class="fob-actions"><button id="fobReload" class="btn btn-secondary" type="button">↻ Atualizar</button><button id="fobSave" class="btn btn-secondary" type="button" disabled>Salvar pendentes no painel</button><button id="fobCsv" class="btn btn-secondary" type="button" disabled>Exportar CSV</button></div>
       </div>
       <div class="fob-note fob-reference">Data de referência: <strong>${referenceBr()}</strong></div>
-      <div class="fob-note">Regra: base = O.S. com Última Atualização no Mapa de Embarque. Ok = tem lançamento no NHE. Dois Embarques = não tem lançamento próprio, mas outra O.S. do mesmo Cliente + Local de Embarque tem. Pendente = nenhuma O.S. do grupo tem lançamento. (Produção Diária não entra nessa classificação, só no diagnóstico.)</div>
+      <div class="fob-note">Regra (só pendências de NHE): base = O.S. com Última Atualização no Mapa de Embarque. Carga real na Produção Diária + Atualização = correto, não entra na lista. Ok = tem NHE (tabela NHE ou "Cargas"=NHE na Produção) + Atualização. Dois Embarques = não tem NHE nem carga própria, mas outra O.S. do mesmo Cliente + Local de Embarque tem. Pendente = só tem Atualização, sem NHE/carga própria nem de irmã.</div>
       <div id="fobFeedback" class="feedback mt-16">Carregando bases...</div>
       <div id="fobWarnings"></div>
       <div id="fobResult" class="mt-16"></div>
