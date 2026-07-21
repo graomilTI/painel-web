@@ -59,10 +59,18 @@
 .peqb-os2-right{min-width:0!important;padding:8px 10px!important;gap:6px!important}
 .peqb-os2-right-fallback{min-height:110px!important;display:flex!important;flex-direction:column!important;justify-content:center!important}
 .peqb-cand-av{display:none!important}
-.peqb-conf-head{display:grid!important;grid-template-columns:minmax(300px,390px) auto!important;grid-template-rows:auto!important;gap:6px 8px!important;align-items:center!important;margin:0!important}
-.peqb-conf-name{grid-column:1!important;grid-row:1!important;width:100%!important;min-width:0!important}
+/* .peqb-conf-head era um grid com a 1ª coluna travada em 300-390px — herança
+   do card antigo de 2 colunas (esquerda estreita/direita larga). O card hoje
+   é largura cheia (ver .peqb-row.peqb-os2{display:block} acima), então esses
+   ~390px são uma fração pequena do espaço real disponível: tag+nome+
+   deslocamento+botão "+" ficavam espremidos numa caixa bem menor do que
+   precisavam, causando nome cortado (ellipsis) e o "+" sobrando sozinho numa
+   2ª linha (reportado pela usuária, 2026-07-21, print mostrando sobreposição).
+   Troca pra flex simples: a pílula do nome cresce até o espaço real do card
+   e só quebra linha de verdade quando o espaço acaba, sem teto artificial. */
+.peqb-conf-head{display:flex!important;flex-wrap:wrap!important;align-items:center!important;gap:6px 8px!important;margin:0!important}
+.peqb-conf-name{flex:1 1 420px!important;width:auto!important;max-width:100%!important;min-width:0!important}
 .peqb-add-colab{height:28px!important;width:28px!important;min-height:28px!important;padding:0!important}
-.peqb-extra-colabs,.peqb-add-box{grid-column:1 / -1!important}
 .peqb-conf-tag{height:20px!important;line-height:20px!important;padding:0 7px!important;font-size:9.5px!important}
 .peqb-name-sel{width:100%!important;min-width:0!important;height:30px!important;min-height:30px!important;font-size:12.2px!important}
 /* O select de deslocamento (Carona/Uber/etc.) compartilha a classe
@@ -78,10 +86,10 @@
    "GILVAN P..."); pedido do usuário 2026-07-21: "a box do nome pode ser mais
    comprida pra caber o nome". flex-grow maior (2 vs 1 do deslocamento) faz o
    nome absorver a folga disponível primeiro. */
-.peqb-conf-name>select[data-trocar-colab].peqb-name-sel,.peqb-extra-colab>span.peqb-name-sel{width:auto!important;min-width:150px!important;flex:2 1 150px!important}
+.peqb-conf-name>select[data-trocar-colab].peqb-name-sel,.peqb-extra-colab>span.peqb-name-sel{width:auto!important;min-width:170px!important;flex:2 1 170px!important}
 .peqb-conf-km{font-size:10px!important;color:#9fb7aa!important;font-weight:800!important;margin:2px 0 5px!important}
-.peqb-conf-head .peqb-row-btn.hotel{grid-column:2!important;grid-row:1!important;justify-self:start!important;height:28px!important;min-height:28px!important;padding:0 10px!important;white-space:nowrap!important;font-size:11px!important}
+.peqb-conf-head .peqb-row-btn.hotel{height:28px!important;min-height:28px!important;padding:0 10px!important;white-space:nowrap!important;font-size:11px!important}
 .peqb-chip{min-height:24px!important;padding:4px 7px!important;font-size:10px!important}
-@media(max-width:1380px){.peqb-row.peqb-os2{grid-template-columns:minmax(790px,1.72fr) minmax(320px,.68fr)!important}.peqb-os2-cliente{font-size:11.6px!important;letter-spacing:-.18px!important}.peqb-os2-emb{font-size:9.7px!important;letter-spacing:-.18px!important}.peqb-conf-head{grid-template-columns:minmax(270px,350px) auto!important}.peqb-chip{font-size:9.5px!important;padding:4px 6px!important}.peqb-os2-tagsrow>.peqb-tag+.peqb-tag{margin-left:58px!important}}
-@media(max-width:1280px){.peqb-row.peqb-os2{grid-template-columns:1fr!important}.peqb-conf-head{grid-template-columns:minmax(268px,360px) auto!important}}
-@media(max-width:720px){#progList .peqb-toolbar{margin:0 0 5px auto!important}.peqb-os2-left{display:flex!important;flex-direction:column!important;align-items:flex-start!important;padding:10px 12px!important}.peqb-os2-cliente{font-size:10.5px!important}.peqb-os2-emb{font-size:9.5px!important}.peqb-status-strip,.peqb-os2-tagsrow{position:static!important;justify-self:auto!important}.peqb-os2-tagsrow{display:flex!important}.peqb-os2-tagsrow>.peqb-tag+.peqb-tag{margin-left:0!important}.peqb-conf-head{grid-template-columns:1fr auto!important}.peqb-conf-name,.peqb-conf-head .peqb-row-btn.hotel{grid-column:1 / -1!important;grid-row:auto!important}}
+@media(max-width:1380px){.peqb-row.peqb-os2{grid-template-columns:minmax(790px,1.72fr) minmax(320px,.68fr)!important}.peqb-os2-cliente{font-size:11.6px!important;letter-spacing:-.18px!important}.peqb-os2-emb{font-size:9.7px!important;letter-spacing:-.18px!important}.peqb-chip{font-size:9.5px!important;padding:4px 6px!important}.peqb-os2-tagsrow>.peqb-tag+.peqb-tag{margin-left:58px!important}}
+@media(max-width:1280px){.peqb-row.peqb-os2{grid-template-columns:1fr!important}}
+@media(max-width:720px){#progList .peqb-toolbar{margin:0 0 5px auto!important}.peqb-os2-left{display:flex!important;flex-direction:column!important;align-items:flex-start!important;padding:10px 12px!important}.peqb-os2-cliente{font-size:10.5px!important}.peqb-os2-emb{font-size:9.5px!important}.peqb-status-strip,.peqb-os2-tagsrow{position:static!important;justify-self:auto!important}.peqb-os2-tagsrow{display:flex!important}.peqb-os2-tagsrow>.peqb-tag+.peqb-tag{margin-left:0!important}.peqb-conf-name,.peqb-conf-head .peqb-row-btn.hotel{flex:1 1 100%!important}}
