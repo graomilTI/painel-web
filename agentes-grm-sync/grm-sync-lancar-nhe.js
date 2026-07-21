@@ -327,7 +327,45 @@ async function fetchServiceDay(table, maxRows) {
 
 // Mesma regra de assets/js/logistica-fob-page-v9.js:compareFob — só o
 // suficiente para chegar às linhas PENDENTE com "funcionario".
-function calcularPendentes(movementRows, productionRows, nheRows) {
+// Só resolvido dentro de calcularPendentes (por O.S., data_os <= referência,
+// já traz servico pro filtro FOB/CIF); ver resolverCoordenadaOs (versão
+// avulsa, usada só no modo manual --os) logo abaixo para o mesmo critério.
+async function resolverCoordenadasEmLote(numerosOs) {
+  var unique = Array.from(new Set(numerosOs.filter(Boolean)));
+  var resolvido = {};
+  if (!unique.length) return resolvido;
+  var pageSize = 200;
+  for (var i = 0; i < unique.length; i += pageSize) {
+    var chunk = unique.slice(i, i + pageSize);
+    var result = await supabase
+      .from('operacional_os')
+      .select('numero_os,data_os,ponto1_latitude,ponto1_longitude,servico,supervisao')
+      .in('numero_os', chunk)
+      .lte('data_os', referenceIso())
+      .order('data_os', { ascending: false });
+    if (result.error) throw result.error;
+    (result.data || []).forEach(function (row) {
+      // A 1ª linha de cada numero_os já é a mais recente <= referência (order
+      // by data_os desc) — não sobrescrever com uma mais antiga. Isso evita
+      // pegar coordenada/serviço de uma reabertura do MESMO número de O.S. em
+      // data futura (ex.: O.S. reaproveitada hoje pra outro embarque) — só
+      // aceitamos o que já existia até a data de referência (pedido do
+      // usuário 21/07, achado com a O.S. 87597).
+      if (resolvido[row.numero_os]) return;
+      resolvido[row.numero_os] = {
+        lat: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_latitude) : null,
+        lng: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_longitude) : null,
+        servico: row.servico,
+        supervisao: row.supervisao
+      };
+    });
+  }
+  return resolvido;
+}
+
+var SERVICOS_FOB_CIF = ['CLASSIFICACAO FOB', 'CLASSIFICACAO CIF'];
+
+async function calcularPendentes(movementRows, productionRows, nheRows) {
   var setCargaRealOs = {};
   var setNheEmProducaoOs = {};
   productionRows.forEach(function (row) {
@@ -346,15 +384,14 @@ function calcularPendentes(movementRows, productionRows, nheRows) {
 
   function temNhe(os) { return !!setNheOsOnly[os] || !!setNheEmProducaoOs[os]; }
   function temCargaReal(os) { return !!setCargaRealOs[os]; }
-  function grupoKey(cliente, local) { return normText(cliente) + '|' + normText(local); }
 
-  var base = [];
+  var brutos = [];
   movementRows.forEach(function (item) {
     var row = item.row;
     var os = normOs(pick(row, ['OS', 'O.S.', 'O.S']));
     var date = movementDate(row);
     if (!os || !date) return;
-    base.push({
+    brutos.push({
       os: os,
       date: date,
       cliente: pick(row, ['Cliente']),
@@ -364,9 +401,44 @@ function calcularPendentes(movementRows, productionRows, nheRows) {
     });
   });
 
+  // Coordenada + Serviço de toda O.S. envolvida (informativo do dia + quem já
+  // tem NHE/carga, já que essas últimas entram no cálculo de grupo) numa
+  // única rodada de consultas — reaproveitada pro filtro de Serviço, pro
+  // filtro de data, e pro agrupamento "Dois Embarques" por proximidade.
+  var todasOs = brutos.map(function (item) { return item.os; })
+    .concat(Object.keys(setCargaRealOs))
+    .concat(Object.keys(setNheEmProducaoOs))
+    .concat(Object.keys(setNheOsOnly));
+  var coordPorOs = await resolverCoordenadasEmLote(todasOs);
+
+  // Só entra no escopo desta tela O.S. de Serviço "Classificação FOB" ou
+  // "Classificação CIF" (pedido do usuário 21/07) — qualquer outro serviço
+  // (ex.: auditoria) nunca deveria virar pendência de NHE aqui, mesmo que
+  // tenha "Última Atualização" no Mapa de Embarque.
+  function servicoValido(os) {
+    var info = coordPorOs[os];
+    return !!(info && info.servico && SERVICOS_FOB_CIF.indexOf(normText(info.servico)) !== -1);
+  }
+
+  var base = brutos.filter(function (item) { return servicoValido(item.os); });
+
+  // Agrupamento por PROXIMIDADE (não mais por texto exato de "Local de
+  // Embarque"): locais como "FAZENDA VEREDAO - ADEMAR..." e "FAZENDA VEREDAO
+  // - THAIS..." são o mesmo ponto físico com sufixo de proprietário/talhão
+  // diferente — arredondar lat/lng a 3 casas (~100m) agrupa esses casos junto
+  // (achado do usuário 21/07, com print de exemplo). Sem coordenada
+  // resolvida, cai pro texto do Local como antes (fallback).
+  function clusterKey(item) {
+    var info = coordPorOs[item.os];
+    if (info && info.lat !== null && info.lng !== null) {
+      return normText(item.cliente) + '|geo:' + (Math.round(info.lat * 1000) / 1000) + ',' + (Math.round(info.lng * 1000) / 1000);
+    }
+    return normText(item.cliente) + '|txt:' + normText(item.local);
+  }
+
   var grupos = {};
   base.forEach(function (item) {
-    var key = grupoKey(item.cliente, item.local);
+    var key = clusterKey(item);
     if (!grupos[key]) grupos[key] = { temLancamento: false };
     if (temNhe(item.os) || temCargaReal(item.os)) grupos[key].temLancamento = true;
   });
@@ -375,7 +447,7 @@ function calcularPendentes(movementRows, productionRows, nheRows) {
   base.forEach(function (item) {
     if (temCargaReal(item.os)) return;
     if (temNhe(item.os)) return;
-    var g = grupos[grupoKey(item.cliente, item.local)];
+    var g = grupos[clusterKey(item)];
     var status = (g && g.temLancamento) ? 'DOIS EMBARQUES' : 'PENDENTE';
     if (status !== 'PENDENTE') return;
     if (!item.funcionario) return;
@@ -386,7 +458,9 @@ function calcularPendentes(movementRows, productionRows, nheRows) {
       cliente: item.cliente,
       local: item.local,
       supervisao: item.supervisao,
-      funcionario: item.funcionario
+      funcionario: item.funcionario,
+      // já resolvido acima (coordenada + serviço) — evita nova consulta.
+      osCoord: coordPorOs[item.os] || null
     });
   });
   return pendentes;
@@ -397,7 +471,7 @@ async function buscarPendentes() {
   var movement = await fetchMovementDaily();
   var production = await fetchServiceDay('grm_producao_diaria_importacoes', MAX_PROD_ROWS);
   var nhe = await fetchServiceDay('grm_nhe_importacoes', MAX_NHE_ROWS);
-  var pendentes = calcularPendentes(movement, production, nhe);
+  var pendentes = await calcularPendentes(movement, production, nhe);
   log('SUCCESS', pendentes.length + ' O.S. pendente(s) de NHE em ' + referenceBr() + '.');
   return pendentes;
 }
@@ -420,27 +494,44 @@ function isValidCoord(lat, lng) {
   return isFinite(Number(lat)) && isFinite(Number(lng)) && Math.abs(Number(lat)) <= 90 && Math.abs(Number(lng)) <= 180 && !(Number(lat) === 0 && Number(lng) === 0);
 }
 
+// Versão avulsa de resolverCoordenadasEmLote, usada só no modo manual (--os).
+// Mesmo critério: só considera operacional_os com data_os <= data de
+// referência (não pega reabertura futura do mesmo número de O.S.).
 async function resolverCoordenadaOs(numeroOs) {
+  var mapa = await resolverCoordenadasEmLote([numeroOs]);
+  return mapa[numeroOs] || null;
+}
+
+var gestoresCache = null;
+
+async function carregarGestores() {
+  if (gestoresCache) return gestoresCache;
   var result = await supabase
-    .from('operacional_os')
-    .select('numero_os,data_os,ponto1_nome,ponto1_latitude,ponto1_longitude,supervisao')
-    .eq('numero_os', numeroOs)
-    .order('data_os', { ascending: false })
-    .limit(5);
+    .from('colaboradores')
+    .select('nome,cargo,coordenacao,supervisao')
+    .eq('situacao', 'Ativo')
+    .in('cargo', ['Supervisor', 'Coordenador']);
   if (result.error) throw result.error;
-  var rows = result.data || [];
-  for (var i = 0; i < rows.length; i++) {
-    if (isValidCoord(rows[i].ponto1_latitude, rows[i].ponto1_longitude)) {
-      return {
-        lat: Number(rows[i].ponto1_latitude),
-        lng: Number(rows[i].ponto1_longitude),
-        nome: rows[i].ponto1_nome,
-        // operacional_os não tem coluna "coordenação" própria — só supervisão
-        // (texto tipo "MATO GROSSO MT4 - Geral"); o campo Coordenação do GRM é
-        // escolhido por match de substring contra esse texto (ver preencherEModalNhe).
-        supervisao: rows[i].supervisao
-      };
-    }
+  gestoresCache = result.data || [];
+  return gestoresCache;
+}
+
+// Colaborador fora do raio: em vez de deixar pendente, lança no nome do
+// gestor da regional (pedido do usuário 21/07). Prioriza o Supervisor cuja
+// Supervisão bate exatamente com a da O.S. (mais específico); sem isso, cai
+// pro Coordenador da mesma Coordenação. Sem nenhum dos dois, retorna null e
+// o chamador mantém o comportamento antigo (fica PENDENTE).
+async function buscarGestorRegional(coordenacao, supervisao) {
+  var gestores = await carregarGestores();
+  var alvoSupervisao = normText(supervisao);
+  if (alvoSupervisao) {
+    var porSupervisao = gestores.find(function (g) { return g.cargo === 'Supervisor' && normText(g.supervisao) === alvoSupervisao; });
+    if (porSupervisao) return porSupervisao;
+  }
+  var alvoCoordenacao = normText(coordenacao);
+  if (alvoCoordenacao) {
+    var porCoordenacao = gestores.find(function (g) { return g.cargo === 'Coordenador' && normText(g.coordenacao) === alvoCoordenacao; });
+    if (porCoordenacao) return porCoordenacao;
   }
   return null;
 }
@@ -502,6 +593,12 @@ async function carregarJaLancadas(dataReferencia) {
   return set;
 }
 
+function observacaoPara(candidato) {
+  if (!candidato.viaGestor) return OBS_FIXA;
+  var km = (candidato.loginMatch.distancia / 1000).toFixed(1);
+  return 'Lançamento BOT - ' + km + 'km de distancia';
+}
+
 async function salvarResultado(candidato, patch) {
   var now = new Date().toISOString();
   var payload = Object.assign({
@@ -511,12 +608,13 @@ async function salvarResultado(candidato, patch) {
     cliente: candidato.cliente || null,
     supervisao: candidato.supervisao || null,
     coordenacao: candidato.osCoord ? candidato.osCoord.coordenacao : null,
-    funcionario: candidato.funcionario || null,
+    funcionario: candidato.viaGestor ? candidato.gestorNome : (candidato.funcionario || null),
     colaborador_chave: candidato.loginMatch ? candidato.loginMatch.colaborador_chave : null,
     distancia_m: candidato.loginMatch ? Math.round(candidato.loginMatch.distancia) : null,
     raio_m: RAIO_M,
     motivo: MOTIVO_FIXO,
-    observacao: OBS_FIXA,
+    observacao: candidato.loginMatch ? observacaoPara(candidato) : OBS_FIXA,
+    raw: candidato.viaGestor ? { via_gestor: true, colaborador_original: candidato.funcionario, gestor: candidato.gestorNome } : null,
     updated_at: now
   }, patch);
 
@@ -730,9 +828,14 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
   // diferente da supervisão gravada na O.S., e nesse caso ele não apareceria
   // na lista se seguíssemos a supervisão da O.S. (confirmado pelo usuário).
   // osCoord.supervisao só entra como fallback se o login não tiver essa info.
-  var regiaoAlvo = (candidato.loginMatch && (candidato.loginMatch.coordenacao || candidato.loginMatch.supervisao))
-    || (candidato.osCoord && candidato.osCoord.supervisao)
-    || candidato.supervisao || '';
+  // Quando lança no nome do GESTOR (colaborador fora do raio), a região tem
+  // que ser a do PRÓPRIO gestor (onde ele está cadastrado), não a do
+  // colaborador original que logou longe — senão o Funcionário não o acha.
+  var regiaoAlvo = candidato.viaGestor
+    ? (candidato.gestorCoordenacao || candidato.gestorSupervisao || '')
+    : (candidato.loginMatch && (candidato.loginMatch.coordenacao || candidato.loginMatch.supervisao))
+      || (candidato.osCoord && candidato.osCoord.supervisao)
+      || candidato.supervisao || '';
   var coordEscolhida = await selecionarOpcaoAberta(page, regiaoAlvo, 'substring');
   if (!coordEscolhida) throw new Error('Não achei opção de Coordenação compatível com "' + regiaoAlvo + '".');
   log('INFO', 'Coordenação selecionada: ' + coordEscolhida);
@@ -757,9 +860,11 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
   // vivo: um colaborador real da própria Coordenação/Supervisão escolhida só
   // apareceu depois de digitar o nome no campo (o clique sozinho não é
   // suficiente, é preciso digitar pra disparar a busca filtrada no servidor).
+  var nomeParaFuncionario = candidato.viaGestor ? candidato.gestorNome : candidato.funcionario;
+
   await realClickCampoNhe(page, 'Funcionário');
   await wait(900);
-  var primeiroNome = String(candidato.funcionario || '').trim().split(/\s+/)[0] || '';
+  var primeiroNome = String(nomeParaFuncionario || '').trim().split(/\s+/)[0] || '';
   if (primeiroNome) {
     // Não confiar em document.activeElement após o clique de mouse (o campo
     // pode não ter recebido foco de verdade) — acha explicitamente o <input>
@@ -780,8 +885,8 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
     }
   }
   await wait(1500);
-  var funcEscolhido = await selecionarOpcaoAberta(page, candidato.funcionario, 'substring');
-  if (!funcEscolhido) throw new Error('Não achei "' + candidato.funcionario + '" na lista de Funcionário (busquei por "' + primeiroNome + '").');
+  var funcEscolhido = await selecionarOpcaoAberta(page, nomeParaFuncionario, 'substring');
+  if (!funcEscolhido) throw new Error('Não achei "' + nomeParaFuncionario + '" na lista de Funcionário (busquei por "' + primeiroNome + '").');
   log('INFO', 'Funcionário selecionado: ' + funcEscolhido);
 
   var dataOk = await page.evaluate(function (payload) {
@@ -817,7 +922,7 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
     input.dispatchEvent(new Event('change', { bubbles: true }));
     input.dispatchEvent(new Event('blur', { bubbles: true }));
     return true;
-  }, { value: OBS_FIXA });
+  }, { value: observacaoPara(candidato) });
   if (!obsOk) log('WARN', 'Campo Obs. não encontrado — seguindo sem observação.');
 
   if (debug) await shot(page, 'os-' + candidato.os + '-form-preenchido.png');
@@ -901,7 +1006,7 @@ async function main() {
   var dryRun = args.dryRun || DRY_RUN;
   var runId = null;
 
-  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, foraDoRaio: 0, semCoordenadaOs: 0 };
+  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0 };
 
   try {
     log('INFO', '=== Lançamento automático de NHE (raio=' + RAIO_M + 'm, motivo="' + MOTIVO_FIXO + '"' + (dryRun ? ', DRY-RUN' : '') + ') ===');
@@ -920,10 +1025,27 @@ async function main() {
       var p = pendentes[i];
       if (jaLancadas[p.os]) continue;
 
-      var osCoord = await resolverCoordenadaOs(p.os);
+      // pendentes vindos de calcularPendentes já trazem osCoord resolvido; o
+      // modo manual (--os) não passa por calcularPendentes, então resolve na
+      // hora (mesmo critério: data_os <= referência).
+      var osCoord = p.osCoord !== undefined ? p.osCoord : await resolverCoordenadaOs(p.os);
       if (!osCoord) {
         stats.semCoordenadaOs++;
         await salvarResultado(p, { status: 'SEM_COORDENADA_OS' });
+        continue;
+      }
+
+      // Defensivo: o caminho automático já filtra por Serviço dentro de
+      // calcularPendentes, mas o modo manual (--os) não passa por lá.
+      if (!osCoord.servico || SERVICOS_FOB_CIF.indexOf(normText(osCoord.servico)) === -1) {
+        stats.semServico++;
+        await salvarResultado(Object.assign({}, p, { osCoord: osCoord }), { status: 'SERVICO_NAO_APLICAVEL' });
+        continue;
+      }
+
+      if (!isValidCoord(osCoord.lat, osCoord.lng)) {
+        stats.semCoordenadaOs++;
+        await salvarResultado(Object.assign({}, p, { osCoord: osCoord }), { status: 'SEM_COORDENADA_OS' });
         continue;
       }
 
@@ -936,8 +1058,29 @@ async function main() {
       }
 
       if (loginMatch.distancia > RAIO_M && !args.forcar) {
-        stats.foraDoRaio++;
-        await salvarResultado(Object.assign({}, p, { osCoord: osCoord, loginMatch: loginMatch }), { status: 'FORA_DO_RAIO' });
+        // Colaborador fora do raio: não fica mais pendente sem mais — lança
+        // no nome do gestor da regional (pedido do usuário 21/07), com Obs.
+        // indicando a distância. Só cai pro comportamento antigo (fica
+        // PENDENTE) se não achar nenhum gestor pra essa Coordenação/Supervisão.
+        // operacional_os não tem coluna "coordenação" própria — só supervisão
+        // (texto "MATO GROSSO MT4 - Geral"); a coordenação é o prefixo antes
+        // do " - " (mesmo padrão usado pro campo Coordenação do GRM alhures).
+        var coordenacaoDaOs = osCoord.supervisao ? String(osCoord.supervisao).split(' - ')[0].trim() : null;
+        var gestor = await buscarGestorRegional(coordenacaoDaOs, osCoord.supervisao);
+        if (gestor) {
+          stats.viaGestor++;
+          candidatos.push(Object.assign({}, p, {
+            osCoord: osCoord,
+            loginMatch: loginMatch,
+            viaGestor: true,
+            gestorNome: gestor.nome,
+            gestorCoordenacao: gestor.coordenacao,
+            gestorSupervisao: gestor.supervisao
+          }));
+        } else {
+          stats.foraDoRaio++;
+          await salvarResultado(Object.assign({}, p, { osCoord: osCoord, loginMatch: loginMatch }), { status: 'FORA_DO_RAIO', erro: 'Sem gestor regional identificado para lançar em nome dele.' });
+        }
         continue;
       }
 
@@ -971,7 +1114,7 @@ async function main() {
         for (var c = 0; c < candidatos.length; c++) {
           var candidato = candidatos[c];
           try {
-            log('INFO', 'Lançando NHE para O.S. ' + candidato.os + ' (colaborador=' + candidato.funcionario + ', distância=' + Math.round(candidato.loginMatch.distancia) + 'm)...');
+            log('INFO', 'Lançando NHE para O.S. ' + candidato.os + ' (' + (candidato.viaGestor ? 'via gestor ' + candidato.gestorNome + ', colaborador original=' + candidato.funcionario : 'colaborador=' + candidato.funcionario) + ', distância=' + Math.round(candidato.loginMatch.distancia) + 'm)...');
             await lancarNheParaCandidato(page, candidato, dryRun, debug);
             stats.sucesso++;
             await salvarResultado(candidato, { status: dryRun ? 'DRY_RUN_OK' : 'SUCESSO', lancado_em: new Date().toISOString(), erro: null });
@@ -1026,5 +1169,8 @@ module.exports = {
   calcularPendentes: calcularPendentes,
   haversineMeters: haversineMeters,
   normOs: normOs,
-  normText: normText
+  normText: normText,
+  buscarPendentes: buscarPendentes,
+  resolverCoordenadaOs: resolverCoordenadaOs,
+  buscarGestorRegional: buscarGestorRegional
 };

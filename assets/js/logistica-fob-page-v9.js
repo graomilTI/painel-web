@@ -29,11 +29,17 @@ const state = {
   historyTab: 'PENDENTE',
 };
 
-// Abas do resultado, na ordem pedida (Ok | Dois Embarques | Pendente).
+// Abas do resultado, na ordem pedida (Ok | Dois Embarques | Pendente | Fora do Raio).
 const FOB_TABS = [
   ['OK', 'Ok', '#bbf7d0'],
   ['DOIS EMBARQUES', 'Dois Embarques', '#fde68a'],
   ['PENDENTE', 'Pendente', '#fecaca'],
+  // "Fora do Raio" não vem da comparação Movimentação/Produção/NHE — são O.S.
+  // que o bot de lançamento automático (grm-sync-lancar-nhe.js) lançou em
+  // nome do GESTOR da regional porque o colaborador que fez o informativo
+  // estava fora do raio de 2km da O.S. Existe pra o setor acompanhar quais
+  // classificadores mostram esse padrão (pedido do usuário, 2026-07-21).
+  ['FORA_DO_RAIO', 'Fora do Raio', '#fdba74'],
 ];
 
 // Abas do histórico salvo em logistica_fob (fila de revisão do gestor —
@@ -611,6 +617,39 @@ function renderResult() {
     ${tableHtml}`;
 }
 
+// Busca os lançamentos que o bot fez em nome do GESTOR (colaborador do
+// informativo fora do raio de 2km) — ver grm-sync-lancar-nhe.js:salvarResultado,
+// que grava raw.via_gestor=true e raw.colaborador_original nessas linhas.
+// Mostra o colaborador ORIGINAL (não o gestor) — é ele que o setor precisa
+// acompanhar.
+async function fetchForaDoRaio() {
+  try {
+    const { data, error } = await supabase
+      .from('logistica_nhe_lancamentos_auto')
+      .select('numero_os,cliente,supervisao,distancia_m,observacao,raw,data_referencia')
+      .eq('data_referencia', referenceIso())
+      .eq('status', 'SUCESSO')
+      .filter('raw->>via_gestor', 'eq', 'true');
+
+    if (error) throw error;
+
+    return (data || []).map((row) => ({
+      data: row.data_referencia,
+      data_br: brDate(row.data_referencia),
+      os: normOs(row.numero_os),
+      cliente: row.cliente,
+      local: '',
+      supervisao: row.supervisao,
+      funcionario: (row.raw && row.raw.colaborador_original) || '-',
+      status: 'FORA_DO_RAIO',
+      observacao: `${row.observacao || ''} (lançado por ${(row.raw && row.raw.gestor) || 'gestor da regional'})`.trim(),
+    }));
+  } catch (error) {
+    console.warn('[FOB v9] Falha ao buscar lançamentos Fora do Raio.', error);
+    return [];
+  }
+}
+
 async function generateReport() {
   if (state.loading) return;
   state.loading = true;
@@ -627,15 +666,20 @@ async function generateReport() {
   }
 
   try {
-    const [movement, production, nhe] = await Promise.all([
+    const [movement, production, nhe, foraDoRaio] = await Promise.all([
       fetchMovementDaily(),
       fetchServiceDay('grm_producao_diaria_importacoes', 'Produção Diária', MAX_PROD_ROWS),
       fetchServiceDay('grm_nhe_importacoes', 'NHE', MAX_NHE_ROWS),
+      fetchForaDoRaio(),
     ]);
 
     state.warnings.push(movement.warning, production.warning, nhe.warning);
     const report = compareFob(movement.rows, production.rows, nhe.rows);
-    state.rows = report.rows;
+    // "Fora do Raio" é independente da comparação Ok/Dois Embarques/Pendente —
+    // a MESMA O.S. pode aparecer ali (ex.: já em Ok, porque o NHE foi
+    // lançado) e também em Fora do Raio (flag de acompanhamento do
+    // colaborador que logou longe). Não é uma 4ª categoria excludente.
+    state.rows = [...report.rows, ...foraDoRaio];
     // Abre numa aba que tenha linhas (na ordem Ok → Dois Embarques → Pendente),
     // mantendo a aba atual se ela já tiver linhas (evita pular de aba sozinho
     // numa atualização silenciosa em segundo plano).
