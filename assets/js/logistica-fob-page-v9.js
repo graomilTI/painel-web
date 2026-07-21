@@ -213,45 +213,62 @@ async function fetchPaged(builder, maxRows) {
   return rows;
 }
 
-async function fetchRecentRowsById(table, maxRows) {
-  // As tabelas de importação são muito grandes. Ordenar/filtrar por created_at
-  // estava provocando statement timeout. A PK id é indexada e permite recuperar
-  // os lotes recentes sem varrer a tabela inteira.
-  try {
-    return await fetchPaged((from, to) => supabase
-      .from(table)
-      .select('id,dados_json,created_at')
-      .order('id', { ascending: false })
-      .range(from, to), maxRows);
-  } catch (error) {
-    const message = String(error?.message || error || '');
-    if (!/column.*id|does not exist|PGRST/i.test(message)) throw error;
+// IMPORTANTE: `id` dessas tabelas é uuid v4 (gen_random_uuid(), ALEATÓRIO por
+// definição — sem nenhuma relação com ordem de inserção). Uma versão anterior
+// deste arquivo paginava "order by id desc" pra pegar "as linhas mais
+// recentes" — isso está ERRADO: devolve uma amostra essencialmente aleatória
+// da tabela inteira, não as N linhas mais novas. Sintoma real que expôs o bug
+// (2026-07-21): uma O.S. com lançamento óbvio na Produção Diária de ontem
+// aparecia como "Pendente" porque a amostra por id simplesmente não pegou
+// aquela linha (o lote existia, só não foi sorteado). NUNCA usar `order by
+// id` como proxy de recência aqui — sempre `created_at`, com os índices
+// idx_grm_*_created_at (ver migração fob_lote_recente_fix_e_producao_vencedor).
 
-    // Compatibilidade defensiva para instalações antigas sem id exposto.
-    return fetchPaged((from, to) => supabase
-      .from(table)
-      .select('dados_json,created_at')
-      .order('created_at', { ascending: false })
-      .range(from, to), Math.min(maxRows, 5000));
-  }
+// Fallback correto (não usa id): filtra created_at direto. Só é lento se os
+// índices de created_at não existirem — hoje existem nas 3 tabelas.
+async function fetchByCreatedAt(table, maxRows, dias = FOB_JANELA_DIAS) {
+  const cutoffIso = new Date(Date.now() - dias * 86_400_000).toISOString();
+  return fetchPaged((from, to) => supabase
+    .from(table)
+    .select('id,dados_json,created_at')
+    .gte('created_at', cutoffIso)
+    .order('created_at', { ascending: false })
+    .range(from, to), maxRows);
 }
 
-// Caminho rápido: a RPC fob_lote_recente devolve só os últimos FOB_JANELA_DIAS
-// dias de importação (5-30x menos linhas do que baixar 20-30k por id), fazendo
-// o corte pesado no servidor. O resultado ainda é paginado porque o PostgREST
-// limita ~1000 linhas por resposta — mas agora são pouquíssimas páginas. Se a
-// RPC falhar/não existir (deploy parcial, permissão), cai pro caminho antigo de
-// paginação por id, que continua correto (só mais lento). O resultado alimenta
-// exatamente o mesmo splitBatches/chooseBatch — mesma seleção de lote/data.
+// Movimentação/NHE: volume pequeno o bastante (poucos milhares em 3 dias) pra
+// baixar a janela inteira e deixar o splitBatches/chooseBatch do cliente
+// escolher o lote, sem precisar de lógica extra no servidor. A RPC
+// fob_lote_recente só filtra por created_at (índice, rápido); se falhar, cai
+// no fallback acima (mesmo resultado, só mais lento se faltar índice).
 async function fetchLoteRecente(table, maxRows) {
   try {
     return await fetchPaged((from, to) => supabase
       .rpc('fob_lote_recente', { p_table: table, p_dias: FOB_JANELA_DIAS })
-      .order('id', { ascending: false })
+      .order('created_at', { ascending: false })
       .range(from, to), maxRows);
   } catch (error) {
-    console.warn(`[FOB v9] RPC fob_lote_recente indisponível para ${table}; usando paginação por id.`, error);
-    return fetchRecentRowsById(table, maxRows);
+    console.warn(`[FOB v9] RPC fob_lote_recente indisponível para ${table}; usando fallback created_at.`, error);
+    return fetchByCreatedAt(table, maxRows);
+  }
+}
+
+// Produção Diária tem MILHÕES de linhas e lotes de ~10 mil linhas várias
+// vezes por dia — mesmo só "últimos 3 dias" são ~190 mil linhas, caro demais
+// pra baixar toda vez. fob_producao_lote_vencedor escolhe o lote no SERVIDOR
+// (mesmo critério do chooseServiceBatch abaixo: mais linhas batendo a data de
+// referência, empate pelo lote mais recente) e devolve só as linhas desse
+// lote — o cliente ainda roda chooseServiceBatch em cima (redundante mas
+// inofensivo: o resultado já é só 1 lote, então splitBatches devolve só ele).
+async function fetchProducaoLoteVencedor(referenciaDdMmYyyy, maxRows) {
+  try {
+    return await fetchPaged((from, to) => supabase
+      .rpc('fob_producao_lote_vencedor', { p_referencia_ddmmyyyy: referenciaDdMmYyyy, p_dias: FOB_JANELA_DIAS })
+      .order('created_at', { ascending: false })
+      .range(from, to), maxRows);
+  } catch (error) {
+    console.warn('[FOB v9] RPC fob_producao_lote_vencedor indisponível; usando fallback created_at (baixa a janela inteira, mais lento).', error);
+    return fetchByCreatedAt('grm_producao_diaria_importacoes', maxRows);
   }
 }
 
@@ -370,7 +387,9 @@ async function fetchMovementDaily() {
 
 async function fetchServiceDay(table, label, maxRows) {
   try {
-    const records = await fetchLoteRecente(table, maxRows);
+    const records = table === 'grm_producao_diaria_importacoes'
+      ? await fetchProducaoLoteVencedor(referenceBr(), maxRows)
+      : await fetchLoteRecente(table, maxRows);
     return chooseServiceBatch(records, label);
   } catch (error) {
     return {
