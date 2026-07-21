@@ -10,6 +10,12 @@ const PAGE_CONCURRENCY = 6;
 const MAX_MOV_ROWS = 20000;
 const MAX_PROD_ROWS = 30000;
 const MAX_NHE_ROWS = 15000;
+// Janela (dias) que a RPC fob_lote_recente devolve. Um lote só pode conter
+// linhas da data de referência (ontem) se foi criado nessa data ou depois, então
+// 3 dias cobrem TODOS os lotes candidatos com folga — o cliente segue rodando
+// splitBatches/chooseBatch inalterado sobre o resultado. Ver migração
+// fob_lote_recente_rpc.
+const FOB_JANELA_DIAS = 3;
 const BR_INT = new Intl.NumberFormat('pt-BR');
 
 const state = {
@@ -186,6 +192,25 @@ async function fetchRecentRowsById(table, maxRows) {
   }
 }
 
+// Caminho rápido: a RPC fob_lote_recente devolve só os últimos FOB_JANELA_DIAS
+// dias de importação (5-30x menos linhas do que baixar 20-30k por id), fazendo
+// o corte pesado no servidor. O resultado ainda é paginado porque o PostgREST
+// limita ~1000 linhas por resposta — mas agora são pouquíssimas páginas. Se a
+// RPC falhar/não existir (deploy parcial, permissão), cai pro caminho antigo de
+// paginação por id, que continua correto (só mais lento). O resultado alimenta
+// exatamente o mesmo splitBatches/chooseBatch — mesma seleção de lote/data.
+async function fetchLoteRecente(table, maxRows) {
+  try {
+    return await fetchPaged((from, to) => supabase
+      .rpc('fob_lote_recente', { p_table: table, p_dias: FOB_JANELA_DIAS })
+      .order('id', { ascending: false })
+      .range(from, to), maxRows);
+  } catch (error) {
+    console.warn(`[FOB v9] RPC fob_lote_recente indisponível para ${table}; usando paginação por id.`, error);
+    return fetchRecentRowsById(table, maxRows);
+  }
+}
+
 function splitBatches(records, maxGapMs = 90_000) {
   const sorted = [...(records || [])]
     .filter((record) => record?.created_at)
@@ -276,7 +301,7 @@ function chooseServiceBatch(records, label) {
 
 async function fetchMovementDaily() {
   try {
-    const records = await fetchRecentRowsById('grm_mapa_embarque_importacoes', MAX_MOV_ROWS);
+    const records = await fetchLoteRecente('grm_mapa_embarque_importacoes', MAX_MOV_ROWS);
     const selected = chooseMovementBatch(records);
 
     if (!selected || !selected.rows.length) {
@@ -301,7 +326,7 @@ async function fetchMovementDaily() {
 
 async function fetchServiceDay(table, label, maxRows) {
   try {
-    const records = await fetchRecentRowsById(table, maxRows);
+    const records = await fetchLoteRecente(table, maxRows);
     return chooseServiceBatch(records, label);
   } catch (error) {
     return {
