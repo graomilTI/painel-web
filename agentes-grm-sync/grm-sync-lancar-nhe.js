@@ -47,6 +47,7 @@ var WebSocket = require('ws');
 var fs = require('fs');
 var path = require('path');
 var os = require('os');
+var childProcess = require('child_process');
 var createClient = require('@supabase/supabase-js').createClient;
 
 puppeteer.use(StealthPlugin());
@@ -847,6 +848,28 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
   await wait(2000);
 }
 
+// Depois de lançar NHE de verdade no GRM, o painel FOB (logistica-fob-page-v9.js)
+// só passa a mostrar essas O.S. na aba "Ok" quando grm_nhe_importacoes tiver um
+// LOTE recente com essas linhas — a tela escolhe o lote com mais linhas batendo
+// a data de referência (chooseServiceBatch), então inserir manualmente 1 linha
+// por O.S. aqui perderia essa disputa contra o próximo lote real. Mais robusto:
+// rodar o sync de leitura já existente (grm-sync-nhe.js), que baixa o relatório
+// de verdade do GRM (já refletindo os lançamentos que acabamos de fazer) e vira
+// o lote mais recente — sem duplicar a lógica de download/parse aqui.
+function atualizarRelatorioNhe() {
+  return new Promise(function (resolve) {
+    var scriptPath = path.join(__dirname, 'grm-sync-nhe.js');
+    log('INFO', 'Atualizando grm_nhe_importacoes (rodando grm-sync-nhe.js) para refletir os lançamentos na tela FOB...');
+    childProcess.execFile(process.execPath, [scriptPath], { timeout: Number(process.env.NHE_LANCAMENTO_POS_SYNC_TIMEOUT_MS || 150000), env: process.env }, function (error, stdout, stderr) {
+      if (stdout) log('INFO', '[grm-sync-nhe] ' + stdout.trim().split('\n').join('\n[grm-sync-nhe] '));
+      if (stderr) log('WARN', '[grm-sync-nhe] ' + stderr.trim().split('\n').join('\n[grm-sync-nhe] '));
+      if (error) log('WARN', 'grm-sync-nhe.js terminou com erro (' + error.message + ') — a tela FOB só refletirá os lançamentos no próximo sync automático.');
+      else log('SUCCESS', 'grm_nhe_importacoes atualizado — tela FOB já deve mostrar essas O.S. como Ok.');
+      resolve();
+    });
+  });
+}
+
 async function fecharModais(page) {
   try {
     await page.evaluate(function () {
@@ -964,6 +987,10 @@ async function main() {
       } finally {
         browserAtual = null;
         await browser.close();
+      }
+
+      if (stats.sucesso > 0 && !dryRun) {
+        await atualizarRelatorioNhe();
       }
     }
 
