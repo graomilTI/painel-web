@@ -41,9 +41,18 @@
   }
   function isoDate(d){return d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
   function fmtDate(v){const d=parseDate(v);return d?isoDate(d).split('-').reverse().join('/'):'';}
+  // Enquanto o condutor não foi indicado ao DETRAN, o vencimento que importa é o prazo
+  // para indicação/defesa (data_limite_defesa). Só depois de indicado é que vale a data
+  // de pagamento (data_vencimento_auto/data_limite_pagto) — usar essa antes disso mostra
+  // uma data de cobrança que ainda nem existe de fato para a empresa.
+  function condutorIndicado(m){return Boolean(String(m.motorista||'').trim())&&!isIdentificar(m);}
   function dueDate(m){
-    return first(
-      apiPick(m,['dataVencimentoAuto','data_vencimento_auto','dataLimitePagto','data_limite_pagto','dataLimitePagamento','data_limite_pagamento','dataLimiteDefesa','data_limite_defesa']),
+    const indicacao=first(
+      apiPick(m,['dataLimiteDefesa','data_limite_defesa']),
+      m.data_limite_defesa
+    );
+    const pagamento=first(
+      apiPick(m,['dataVencimentoAuto','data_vencimento_auto','dataLimitePagto','data_limite_pagto','dataLimitePagamento','data_limite_pagamento']),
       m.data_vencimento_auto,
       m.data_limite_pagto,
       m.data_vencimento,
@@ -51,9 +60,9 @@
       m.data_venc,
       m.data_limite_pagamento,
       m.data_pagamento_limite,
-      m.data_limite,
-      m.data_limite_defesa
+      m.data_limite
     );
+    return condutorIndicado(m)?first(pagamento,indicacao):first(indicacao,pagamento);
   }
   function infractionDate(m){
     return first(
