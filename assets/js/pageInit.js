@@ -6,7 +6,7 @@ import { initAgentDataMode } from './agentDataMode.js';
 import { initGestorMenuAjustes } from './gestor-menu-ajustes.js';
 import { initProgramacaoRuntimeFixes } from './programacao-runtime-fixes.js';
 import { initRouter } from './router.js';
-import './searchableSelect.js';
+import './searchableSelect.js?v=20260721-dropdownfix1';
 import './pwa-register.js?v=20260713-cache-v10';
 import './hospedagem-colaboradores-regional.js?v=20260713-cache-v10';
 
