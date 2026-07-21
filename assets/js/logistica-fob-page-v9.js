@@ -25,7 +25,15 @@ const state = {
   fob: [],
   warnings: [],
   loading: false,
+  activeTab: 'OK',
 };
+
+// Abas do resultado, na ordem pedida (Ok | Dois Embarques | Pendente).
+const FOB_TABS = [
+  ['OK', 'Ok', '#bbf7d0'],
+  ['DOIS EMBARQUES', 'Dois Embarques', '#fde68a'],
+  ['PENDENTE', 'Pendente', '#fecaca'],
+];
 
 function esc(value) {
   return String(value ?? '')
@@ -339,85 +347,82 @@ async function fetchServiceDay(table, label, maxRows) {
 }
 
 function compareFob(movementRows, productionRows, nheRows) {
-  const setNheOsData = new Set();
-  const setNheOsOnly = new Set();
-  const setNheCcld = new Set();
-
-  nheRows.forEach((row) => {
-    const os = normOs(pick(row, ['O.S.', 'OS', 'O.S', 'O S']));
-    const date = serviceDate(row);
-    if (os) setNheOsOnly.add(os);
-    if (os && date) setNheOsData.add(`${os}|${date}`);
-
-    const cliente = pick(row, ['Cliente']);
-    const cidade = pick(row, ['Cidade de Embarque', 'Cidade']);
-    const local = pick(row, ['Embarque', 'Local', 'Local de Embarque']);
-    if (cliente && cidade && local && date) {
-      setNheCcld.add(`${normText(cliente)}|${normText(cidade)}|${normText(local)}|${date}`);
-    }
-  });
-
-  const setProdNheOsData = new Set();
-  const setProdNheOsOnly = new Set();
+  // Regra (definida pelo usuário em 21/07/2026):
+  // - Base = OS com "Última Atualização" no Mapa de Embarque no dia de referência
+  //   (movementDate já é a "Última Atualização"; movement.rows já vem filtrado
+  //   por chooseMovementBatch para o dia de referência). SEM o filtro antigo de
+  //   Tons Hoje = 0.
+  // - Lançamento = a OS aparece em QUALQUER linha da Produção Diária do dia
+  //   (independente de Cargas/NHE).
+  // - Ok = tem lançamento próprio. Pendente = não tem. Dois Embarques = não tem
+  //   lançamento próprio, mas há OUTRA OS do mesmo Cliente + Local de Embarque
+  //   (grupo com mais de uma OS) que tem lançamento — o embarque foi lançado na
+  //   O.S. irmã.
+  // NHE não entra mais na classificação (mantido só para o diagnóstico).
+  const setProdOs = new Set();
   productionRows.forEach((row) => {
     const os = normOs(pick(row, ['O.S.', 'OS']));
-    const date = serviceDate(row);
-    const cargas = normText(pick(row, ['Cargas']));
-    if (!os || cargas !== 'NHE') return;
-    setProdNheOsOnly.add(os);
-    if (date) setProdNheOsData.add(`${os}|${date}`);
+    if (os) setProdOs.add(os);
   });
 
-  const movementCcldCount = new Map();
-  movementRows.forEach(({ row }) => {
-    const date = movementDate(row);
-    const cliente = pick(row, ['Cliente']);
-    const cidade = pick(row, ['Cidade']);
-    const local = pick(row, ['Local', 'Local de Embarque']);
-    if (!date || !cliente || !cidade || !local) return;
-    const key = `${normText(cliente)}|${normText(cidade)}|${normText(local)}|${date}`;
-    movementCcldCount.set(key, (movementCcldCount.get(key) || 0) + 1);
+  const setNheOsOnly = new Set();
+  nheRows.forEach((row) => {
+    const os = normOs(pick(row, ['O.S.', 'OS', 'O.S', 'O S']));
+    if (os) setNheOsOnly.add(os);
   });
 
-  const rows = [];
+  const grupoKey = (cliente, local) => `${normText(cliente)}|${normText(local)}`;
+
+  const base = [];
   movementRows.forEach(({ row }) => {
     const os = normOs(pick(row, ['OS', 'O.S.', 'O.S']));
     const date = movementDate(row);
     if (!os || !date) return;
-
-    const tonsHoje = toNumberLoose(pick(row, ['Tons Hoje', 'TonsHoje', 'Tons']));
-    if (tonsHoje !== 0) return;
-
-    const cliente = pick(row, ['Cliente']);
-    const cidade = pick(row, ['Cidade']);
-    const local = pick(row, ['Local', 'Local de Embarque']);
-    const keyOsData = `${os}|${date}`;
-
-    let status = 'PENDENTE';
-    const okNhe = setNheOsData.has(keyOsData) || setNheOsOnly.has(os);
-    const okProd = setProdNheOsData.has(keyOsData) || setProdNheOsOnly.has(os);
-
-    if (okNhe || okProd) {
-      status = 'OK';
-    } else {
-      const keyCcld = `${normText(cliente)}|${normText(cidade)}|${normText(local)}|${date}`;
-      const quantity = movementCcldCount.get(keyCcld) || 0;
-      if (quantity >= 2 || setNheCcld.has(keyCcld)) status = 'DOIS EMBARQUES';
-    }
-
-    rows.push({
-      data: date,
-      data_br: brDate(date),
+    base.push({
       os,
+      date,
+      cliente: pick(row, ['Cliente']),
+      cidade: pick(row, ['Cidade']),
+      local: pick(row, ['Local', 'Local de Embarque']),
       supervisao: pick(row, ['Supervisão', 'Supervisao']),
       funcionario: pick(row, ['Atualizado por', 'Atualizado Por', 'Classificador', 'Funcionário', 'Funcionario']),
-      cliente,
-      cidade,
-      local,
-      tons_movimento: tonsHoje,
-      status,
+      tons: toNumberLoose(pick(row, ['Tons Hoje', 'TonsHoje', 'Tons'])),
       observacao: pick(row, ['Observações', 'Observacoes', 'Obs']),
     });
+  });
+
+  // Por grupo Cliente + Local de Embarque: quantas O.S. distintas e se alguma
+  // delas tem lançamento na Produção (pra decidir "Dois Embarques").
+  const grupos = new Map();
+  base.forEach((item) => {
+    const key = grupoKey(item.cliente, item.local);
+    let g = grupos.get(key);
+    if (!g) { g = { osSet: new Set(), temLancamento: false }; grupos.set(key, g); }
+    g.osSet.add(item.os);
+    if (setProdOs.has(item.os)) g.temLancamento = true;
+  });
+
+  const rows = base.map((item) => {
+    let status;
+    if (setProdOs.has(item.os)) {
+      status = 'OK';
+    } else {
+      const g = grupos.get(grupoKey(item.cliente, item.local));
+      status = (g && g.osSet.size > 1 && g.temLancamento) ? 'DOIS EMBARQUES' : 'PENDENTE';
+    }
+    return {
+      data: item.date,
+      data_br: brDate(item.date),
+      os: item.os,
+      supervisao: item.supervisao,
+      funcionario: item.funcionario,
+      cliente: item.cliente,
+      cidade: item.cidade,
+      local: item.local,
+      tons_movimento: item.tons,
+      status,
+      observacao: item.observacao,
+    };
   });
 
   const rank = { PENDENTE: 0, 'DOIS EMBARQUES': 1, OK: 2 };
@@ -432,7 +437,7 @@ function compareFob(movementRows, productionRows, nheRows) {
       producao: productionRows.length,
       nhe: nheRows.length,
       nheOsOnly: setNheOsOnly.size,
-      prodNheOsOnly: setProdNheOsOnly.size,
+      prodOs: setProdOs.size,
       pendentes: rows.filter((row) => row.status === 'PENDENTE').length,
       dois: rows.filter((row) => row.status === 'DOIS EMBARQUES').length,
       ok: rows.filter((row) => row.status === 'OK').length,
@@ -447,6 +452,11 @@ function injectStyles() {
   style.textContent = `
     .fob-actions{display:flex;gap:8px;flex-wrap:wrap}.fob-actions .btn{width:auto!important}.fob-note{border:1px solid rgba(59,130,246,.28);background:rgba(59,130,246,.08);color:#bfdbfe;border-radius:16px;padding:12px;margin-top:12px;font-size:13px}.fob-reference{border-color:rgba(74,222,128,.38);background:rgba(22,101,52,.16);color:#dcfce7;font-weight:800}.fob-warning{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.08);color:#fde68a}.fob-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.fob-diag{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.fob-diag span{border:1px solid rgba(148,163,184,.18);border-radius:999px;padding:6px 10px;font-size:12px;color:#cbd5e1;background:rgba(15,23,42,.28)}
     .fob-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:18px;background:rgba(2,6,23,.25)}.fob-table{width:100%;min-width:980px;border-collapse:separate;border-spacing:0;color:#e2e2f0}.fob-table th{position:sticky;top:0;background:#07170f;color:#bbf7d0;text-align:left;padding:10px;font-size:12px;border-bottom:1px solid rgba(52,211,153,.18)}.fob-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);vertical-align:top}.fob-empty{border:1px dashed rgba(148,163,184,.2);border-radius:18px;padding:18px;color:#94a3b8;background:rgba(15,23,42,.16)}.fob-status-PENDENTE{color:#fecaca}.fob-status-OK{color:#bbf7d0}.fob-status-DOIS-EMBARQUES{color:#fde68a}.fob-input{width:100%;min-height:40px;border-radius:12px;border:1px solid rgba(52,211,153,.18);background:#0d0d18!important;color:#e2e2f0!important;padding:9px;color-scheme:dark}.fob-form{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:12px}.fob-subcard summary::marker{color:#86efac}
+    .fob-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+    .fob-tab{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.4);color:#cbd5e1;border-radius:12px;padding:9px 14px;font-size:13px;font-weight:800;cursor:pointer}
+    .fob-tab:hover{border-color:rgba(148,163,184,.45)}
+    .fob-tab.active{color:var(--fob-tab-color,#bbf7d0);background:rgba(15,23,42,.72);box-shadow:inset 0 0 0 1px currentColor}
+    .fob-tab-count{min-width:22px;text-align:center;background:rgba(2,6,23,.5);border-radius:999px;padding:1px 8px;font-size:12px;color:#e2e2f0}
     @media(max-width:850px){.fob-grid,.fob-form{grid-template-columns:1fr 1fr}}@media(max-width:600px){.fob-grid,.fob-form{grid-template-columns:1fr}}
   `;
   document.head.appendChild(style);
@@ -460,7 +470,7 @@ function renderShell(content) {
         <div class="fob-actions"><button id="fobReload" class="btn btn-secondary" type="button">↻ Atualizar</button><button id="fobSave" class="btn btn-secondary" type="button" disabled>Salvar pendentes no painel</button><button id="fobCsv" class="btn btn-secondary" type="button" disabled>Exportar CSV</button></div>
       </div>
       <div class="fob-note fob-reference">Data de referência: <strong>${referenceBr()}</strong></div>
-      <div class="fob-note">Regra original: Movimentação Diária com Tons Hoje = 0. OK por NHE ou Produção com Cargas = NHE; DOIS EMBARQUES por Cliente + Cidade + Local + Data repetidos; restante PENDENTE.</div>
+      <div class="fob-note">Regra: base = O.S. com Última Atualização no Mapa de Embarque. Ok = tem lançamento na Produção Diária. Dois Embarques = não tem lançamento próprio, mas outra O.S. do mesmo Cliente + Local de Embarque tem. Pendente = nenhuma O.S. do grupo tem lançamento.</div>
       <div id="fobFeedback" class="feedback mt-16">Carregando bases...</div>
       <div id="fobWarnings"></div>
       <div id="fobResult" class="mt-16"></div>
@@ -493,10 +503,24 @@ function renderResult() {
   const movBatch = stats.movBatchAt ? new Date(stats.movBatchAt).toLocaleString('pt-BR') : '-';
   const prodBatch = stats.prodBatchAt ? new Date(stats.prodBatchAt).toLocaleString('pt-BR') : '-';
 
+  const activeTab = FOB_TABS.some(([status]) => status === state.activeTab) ? state.activeTab : 'OK';
+  const tabRows = state.rows.filter((row) => row.status === activeTab);
+  const activeLabel = (FOB_TABS.find(([status]) => status === activeTab) || [, 'Ok'])[1];
+
+  const tabsHtml = FOB_TABS.map(([status, label, color]) => {
+    const count = state.rows.filter((row) => row.status === status).length;
+    const isActive = status === activeTab;
+    return `<button type="button" class="fob-tab ${isActive ? 'active' : ''}" data-fob-tab="${esc(status)}" style="--fob-tab-color:${color}"><span>${esc(label)}</span><span class="fob-tab-count">${BR_INT.format(count)}</span></button>`;
+  }).join('');
+
+  const tableHtml = tabRows.length
+    ? `<div class="fob-table-wrap mt-16"><table class="fob-table"><thead><tr><th>Data</th><th>O.S.</th><th>Supervisão</th><th>Funcionário</th><th>Observação</th></tr></thead><tbody>${tabRows.map((row) => `<tr><td>${esc(row.data_br)}</td><td><strong>${esc(row.os)}</strong><div class="muted">${esc(row.cliente || '-')}</div></td><td>${esc(row.supervisao || '-')}</td><td>${esc(row.funcionario || '-')}</td><td>${esc(row.observacao || '')}</td></tr>`).join('')}</tbody></table></div>`
+    : `<div class="fob-empty mt-16">Nenhuma O.S. em "${esc(activeLabel)}" para ${referenceBr()}.</div>`;
+
   host.innerHTML = `
-    <div class="fob-grid"><article class="card"><h3>Pendentes</h3><p class="metric" style="color:#fecaca">${BR_INT.format(stats.pendentes || 0)}</p></article><article class="card"><h3>Dois embarques</h3><p class="metric" style="color:#fde68a">${BR_INT.format(stats.dois || 0)}</p></article><article class="card"><h3>OK</h3><p class="metric" style="color:#bbf7d0">${BR_INT.format(stats.ok || 0)}</p></article><article class="card"><h3>Total FOB</h3><p class="metric">${BR_INT.format(state.rows.length)}</p></article></div>
-    <div class="fob-diag"><span>Movimentação: ${BR_INT.format(stats.movimento || 0)}</span><span>Lote MOV: ${esc(movBatch)}</span><span>Produção: ${BR_INT.format(stats.producao || 0)}</span><span>Lote Produção: ${esc(prodBatch)}</span><span>NHE: ${BR_INT.format(stats.nhe || 0)}</span><span>NHE OS-only: ${BR_INT.format(stats.nheOsOnly || 0)}</span><span>Produção NHE OS-only: ${BR_INT.format(stats.prodNheOsOnly || 0)}</span></div>
-    <div class="fob-table-wrap mt-16"><table class="fob-table"><thead><tr><th>Data</th><th>O.S.</th><th>Supervisão</th><th>Funcionário</th><th>Status</th><th>Observação</th></tr></thead><tbody>${state.rows.map((row) => `<tr><td>${esc(row.data_br)}</td><td><strong>${esc(row.os)}</strong><div class="muted">${esc(row.cliente || '-')}</div></td><td>${esc(row.supervisao || '-')}</td><td>${esc(row.funcionario || '-')}</td><td><strong class="fob-status-${row.status.replaceAll(' ', '-')}">${esc(row.status)}</strong></td><td>${esc(row.observacao || '')}</td></tr>`).join('')}</tbody></table></div>`;
+    <div class="fob-diag"><span>Movimentação: ${BR_INT.format(stats.movimento || 0)}</span><span>Lote MOV: ${esc(movBatch)}</span><span>Produção: ${BR_INT.format(stats.producao || 0)}</span><span>Lote Produção: ${esc(prodBatch)}</span><span>NHE: ${BR_INT.format(stats.nhe || 0)}</span><span>O.S. distintas na Produção: ${BR_INT.format(stats.prodOs || 0)}</span></div>
+    <div class="fob-tabs">${tabsHtml}</div>
+    ${tableHtml}`;
 }
 
 async function generateReport() {
@@ -516,6 +540,9 @@ async function generateReport() {
     state.warnings.push(movement.warning, production.warning, nhe.warning);
     const report = compareFob(movement.rows, production.rows, nhe.rows);
     state.rows = report.rows;
+    // Abre numa aba que tenha linhas (na ordem Ok → Dois Embarques → Pendente),
+    // pra não cair numa aba vazia.
+    state.activeTab = FOB_TABS.map(([status]) => status).find((status) => state.rows.some((row) => row.status === status)) || 'OK';
     state.stats = {
       ...report.stats,
       movBatchAt: movement.batchAt,
@@ -666,6 +693,9 @@ function bind(content) {
       if (event.target.closest('#fobSave')) { await savePending(); return; }
       if (event.target.closest('#fobCsv')) { exportCsv(); return; }
       if (event.target.closest('#fobManual')) { await saveManual(); return; }
+
+      const tab = event.target.closest('[data-fob-tab]');
+      if (tab) { state.activeTab = tab.dataset.fobTab; renderResult(); return; }
 
       const valid = event.target.closest('[data-valid]');
       if (valid) { await validate(valid.dataset.valid, 'VALIDO'); return; }
