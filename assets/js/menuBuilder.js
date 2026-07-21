@@ -462,6 +462,66 @@ async function markProgramacaoIfFobPending(container, userContext) {
   }
 }
 
+function ensureLogisticaAberturaBadgeStyle() {
+  if (document.getElementById('logistica-abertura-badge-style')) return;
+  const style = document.createElement('style');
+  style.id = 'logistica-abertura-badge-style';
+  style.textContent = `
+    .menu-list a .menu-item-badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:18px;
+      height:18px;
+      padding:0 5px;
+      margin-left:auto;
+      border-radius:999px;
+      font-size:10.5px;
+      font-weight:900;
+      color:#7f1d1d;
+      background:#fde68a;
+      flex:0 0 auto;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+// Contador de solicitações de "Abertura de OS" (Gestor > Logística > Abrir O.S.)
+// ainda não cadastradas — a tela de resposta existe (aba "Abertura de OS" dentro
+// de Painel de Logística), mas fica escondida como aba e sem nenhum aviso no
+// menu, então a Logística ADM não percebia que havia pendência (2026-07-21).
+async function markLogisticaAberturaOsPendente(container) {
+  try {
+    const link = [...container.querySelectorAll('a')].find((a) => (a.getAttribute('href') || '').includes('logistica-adm-os'));
+    if (!link) return;
+
+    const { data, error } = await supabase
+      .from('logistica_abertura_os')
+      .select('id')
+      .eq('status', 'PENDENTE')
+      .limit(500);
+    if (error || !Array.isArray(data) || !data.length) return;
+
+    ensureLogisticaAberturaBadgeStyle();
+    const badge = document.createElement('span');
+    badge.className = 'menu-item-badge';
+    badge.textContent = String(data.length);
+    badge.title = `${data.length} solicitação(ões) de abertura de O.S. aguardando cadastro`;
+    link.appendChild(badge);
+
+    if (!link.dataset.aberturaHashApplied) {
+      try {
+        const url = new URL(link.href, window.location.href);
+        url.hash = 'abertura';
+        link.href = url.toString();
+      } catch {}
+      link.dataset.aberturaHashApplied = '1';
+    }
+  } catch (error) {
+    console.warn('Não foi possível checar pendências de Abertura de OS para o menu.', error);
+  }
+}
+
 const SECTION_ICONS = {
   'INÍCIO':            `<svg class="menu-section-icon" viewBox="0 0 24 24"><path d="M3 12L5 10M5 10L12 3L19 10M5 10V20a1 1 0 001 1h3M19 10V20a1 1 0 01-1 1h-3M9 21V15a1 1 0 011-1h4a1 1 0 011 1v6M9 21h6"/></svg>`,
   'GESTOR':            `<svg class="menu-section-icon" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>`,
@@ -609,4 +669,5 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
   });
 
   markProgramacaoIfFobPending(container, userContext);
+  markLogisticaAberturaOsPendente(container);
 }
