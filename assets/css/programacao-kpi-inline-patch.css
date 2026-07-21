@@ -34,6 +34,15 @@
 .peqb-extra-colabs,.peqb-add-box{grid-column:1 / -1!important}
 .peqb-conf-tag{height:20px!important;line-height:20px!important;padding:0 7px!important;font-size:9.5px!important}
 .peqb-name-sel{width:100%!important;min-width:0!important;height:30px!important;min-height:30px!important;font-size:12.2px!important}
+/* O select de deslocamento (Carona/Uber/etc.) compartilha a classe
+   .peqb-name-sel e herdava o width:100% acima — em card estreito ele
+   transbordava e cobria o nome. Aqui ele ganha largura própria e a pílula
+   passa a quebrar linha (flex-wrap): quando não cabe, o deslocamento desce
+   pra baixo do nome em vez de sobrepô-lo. O nome mantém um mínimo legível
+   pra a quebra acontecer antes de ele sumir. */
+.peqb-conf-name,.peqb-extra-colab{flex-wrap:wrap!important}
+.peqb-desloc-inline{width:auto!important;min-width:104px!important;max-width:168px!important;flex:0 1 auto!important}
+.peqb-conf-name>select[data-trocar-colab].peqb-name-sel,.peqb-extra-colab>span.peqb-name-sel{width:auto!important;min-width:88px!important;flex:1 1 88px!important}
 .peqb-conf-km{font-size:10px!important;color:#9fb7aa!important;font-weight:800!important;margin:2px 0 5px!important}
 .peqb-conf-head .peqb-row-btn.hotel{grid-column:2!important;grid-row:1!important;justify-self:start!important;height:28px!important;min-height:28px!important;padding:0 10px!important;white-space:nowrap!important;font-size:11px!important}
 .peqb-chip{min-height:24px!important;padding:4px 7px!important;font-size:10px!important}
