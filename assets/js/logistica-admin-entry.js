@@ -4,6 +4,7 @@ const title = String(body?.dataset?.logisticaTitle || 'Logística').trim();
 
 const validTabs = new Set([
   'os',
+  'abertura_os',
   'fob',
   'finalizacao',
   'classificadores',
@@ -70,6 +71,6 @@ const observer = new MutationObserver(applyPageIdentity);
 observer.observe(document.documentElement, { childList: true, subtree: true });
 applyPageIdentity();
 
-import('./adm-logistica.js?v=logistica-admin-isolado-20260721-solicitacoes1')
+import('./adm-logistica.js?v=logistica-admin-isolado-20260721-solicitacoes2')
   .then(() => applyPageIdentity())
   .catch(renderBootError);

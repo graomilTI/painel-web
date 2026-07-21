@@ -2,6 +2,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
+import { toPanelUrl } from './paths.js';
 
 const BR_INT = new Intl.NumberFormat('pt-BR');
 const BR_NUM = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -504,10 +505,17 @@ export async function renderContent(content) {
     render();
   });
 
+  // Cada página de Logística ADM é isolada numa única aba (ver
+  // logistica-admin-entry.js: body[data-logistica-tab] força só uma
+  // #section-* visível via CSS) — trocar state.tab aqui dentro não revela a
+  // seção noutra página, então o card navega pra página dedicada da aba.
   el.stats.addEventListener('click', (event) => {
     const card = event.target.closest('[data-jump-tab]');
     if (!card) return;
-    state.tab = card.dataset.jumpTab;
+    const tab = card.dataset.jumpTab;
+    if (tab === state.tab) return;
+    if (tab === 'abertura_os') { window.location.href = toPanelUrl('logistica-abertura-os'); return; }
+    state.tab = tab;
     window.location.hash = state.tab;
     renderTabs();
     render();
