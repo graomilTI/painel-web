@@ -162,6 +162,7 @@ export const MENU_CONFIG = [
     grupo: "LOGÍSTICA",
     itens: [
       item("logistica_adm", "Painel de Logística", "logistica-adm-os", ["LOGISTICA_ADM", "LOGISTICA"]),
+      item("logistica_abertura_os", "Abertura de O.S.", "logistica-abertura-os", ["LOGISTICA_ABERTURA_OS", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_fob", "FOB", "logistica-fob", ["LOGISTICA_FOB", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_informativos", "Informativos", "logistica-informativos", ["LOGISTICA_INFORMATIVOS", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_finalizacao_os", "Finalização de O.S", "logistica-finalizacao", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS", "LOGISTICA_ADM", "LOGISTICA"]),

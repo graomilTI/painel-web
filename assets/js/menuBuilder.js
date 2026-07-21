@@ -487,12 +487,14 @@ function ensureLogisticaAberturaBadgeStyle() {
 }
 
 // Contador de solicitações de "Abertura de OS" (Gestor > Logística > Abrir O.S.)
-// ainda não cadastradas — a tela de resposta existe (aba "Abertura de OS" dentro
-// de Painel de Logística), mas fica escondida como aba e sem nenhum aviso no
-// menu, então a Logística ADM não percebia que havia pendência (2026-07-21).
+// ainda não cadastradas. A resposta mora em logistica-abertura-os.html, página
+// própria (item de menu "Abertura de O.S.") — cada tela de Logística ADM é
+// isolada numa única aba via body[data-logistica-tab], então um link com hash
+// pra aba dentro de "Painel de Logística" nunca funcionava (a própria página
+// trava o hash de volta pro seu tab fixo). Ver [[painel-web-abertura-os-menu-escondido]].
 async function markLogisticaAberturaOsPendente(container) {
   try {
-    const link = [...container.querySelectorAll('a')].find((a) => (a.getAttribute('href') || '').includes('logistica-adm-os'));
+    const link = [...container.querySelectorAll('a')].find((a) => (a.getAttribute('href') || '').includes('logistica-abertura-os'));
     if (!link) return;
 
     const { data, error } = await supabase
@@ -508,15 +510,6 @@ async function markLogisticaAberturaOsPendente(container) {
     badge.textContent = String(data.length);
     badge.title = `${data.length} solicitação(ões) de abertura de O.S. aguardando cadastro`;
     link.appendChild(badge);
-
-    if (!link.dataset.aberturaHashApplied) {
-      try {
-        const url = new URL(link.href, window.location.href);
-        url.hash = 'abertura';
-        link.href = url.toString();
-      } catch {}
-      link.dataset.aberturaHashApplied = '1';
-    }
   } catch (error) {
     console.warn('Não foi possível checar pendências de Abertura de OS para o menu.', error);
   }
