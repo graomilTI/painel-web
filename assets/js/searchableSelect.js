@@ -27,7 +27,15 @@ function injectStyle() {
     .ssel-wrap{position:relative;width:100%}
     .ssel-input{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;font:inherit;cursor:pointer}
     .ssel-wrap.is-disabled .ssel-input{opacity:.55;cursor:not-allowed;pointer-events:none}
-    .ssel-list{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:260px;overflow-y:auto;background:#0d0d18;border:1px solid rgba(45,212,160,.28);border-radius:12px;z-index:300;box-shadow:0 12px 32px rgba(0,0,0,.5)}
+    /* position:fixed (não absolute) e anexada em document.body de propósito:
+       .card (container universal do painel) tem "overflow:hidden" pra recortar
+       um brilho decorativo (::after) — isso corta QUALQUER filho absolutamente
+       posicionado que precise "vazar" pra fora da card, inclusive esta lista.
+       Fixed+body escapa desse recorte sem mexer no CSS global do .card (que
+       outras telas dependem pro efeito visual). Posição calculada em JS
+       (posicionarLista) a partir do input; z-index bem alto pra ficar acima
+       de qualquer card/stacking context comum. */
+    .ssel-list{position:fixed;max-height:260px;overflow-y:auto;background:#0d0d18;border:1px solid rgba(45,212,160,.28);border-radius:12px;z-index:9999;box-shadow:0 12px 32px rgba(0,0,0,.5)}
     .ssel-item{padding:9px 14px;font-size:13px;color:#e2e2f0;cursor:pointer}
     .ssel-item:hover,.ssel-item.is-active{background:rgba(45,212,160,.14);color:#fff}
     .ssel-empty{padding:10px 14px;font-size:13px;color:#7d8aa3;text-align:center}
@@ -59,7 +67,9 @@ function buildCombobox(select) {
 
   select.insertAdjacentElement('afterend', wrap);
   wrap.appendChild(input);
-  wrap.appendChild(list);
+  // A lista é anexada em document.body (não em wrap) — ver comentário em
+  // injectStyle sobre o overflow:hidden do .card cortando conteúdo absoluto.
+  document.body.appendChild(list);
   select.style.display = 'none';
 
   function syncDisabled() {
@@ -72,6 +82,15 @@ function buildCombobox(select) {
     syncDisabled();
   }
 
+  function posicionarLista() {
+    const r = input.getBoundingClientRect();
+    list.style.left = `${r.left}px`;
+    list.style.top = `${r.bottom + 4}px`;
+    list.style.width = `${r.width}px`;
+  }
+
+  function fecharAoRolar() { closeList(); }
+
   function renderList(query = '') {
     const q = normalize(query);
     const matches = [...select.options].filter((opt) => !q || normalize(opt.textContent).includes(q)).slice(0, 200);
@@ -79,10 +98,19 @@ function buildCombobox(select) {
     list.innerHTML = matches.length
       ? matches.map((opt) => `<div class="ssel-item${opt.value === select.value ? ' is-active' : ''}" data-value="${opt.value}">${opt.textContent}</div>`).join('')
       : '<div class="ssel-empty">Nenhum resultado encontrado.</div>';
+    posicionarLista();
     list.hidden = false;
+    // Rolar a página (não a própria lista) invalidaria a posição calculada —
+    // mais simples e robusto fechar do que reposicionar em tempo real.
+    window.addEventListener('scroll', fecharAoRolar, { capture: true, passive: true });
+    window.addEventListener('resize', fecharAoRolar, { passive: true });
   }
 
-  function closeList() { list.hidden = true; }
+  function closeList() {
+    list.hidden = true;
+    window.removeEventListener('scroll', fecharAoRolar, { capture: true });
+    window.removeEventListener('resize', fecharAoRolar);
+  }
 
   function selectValue(value) {
     if (select.value === value) { closeList(); syncInputFromSelect(); return; }
@@ -134,9 +162,28 @@ function buildCombobox(select) {
   select.addEventListener('change', syncInputFromSelect);
 
   syncInputFromSelect();
+  // A lista vive em document.body, fora de onde o <select> original está —
+  // em páginas com navegação suave (router.js troca #pageContent sem reload),
+  // o <select> some do DOM mas a lista ficaria órfã em body pra sempre.
+  // Registrada aqui pra cleanupOrphans() (chamada a cada scan()) remover
+  // quando o select desconectar.
+  activeCombos.push({ select, wrap, list, closeList });
+}
+
+const activeCombos = [];
+function cleanupOrphans() {
+  for (let i = activeCombos.length - 1; i >= 0; i -= 1) {
+    const combo = activeCombos[i];
+    if (combo.select.isConnected) continue;
+    combo.closeList();
+    combo.list.remove();
+    combo.wrap.remove();
+    activeCombos.splice(i, 1);
+  }
 }
 
 function scan(root) {
+  cleanupOrphans();
   if (!root) return;
   if (root.matches?.('select')) buildCombobox(root);
   root.querySelectorAll?.('select').forEach(buildCombobox);
