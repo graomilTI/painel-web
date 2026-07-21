@@ -27,7 +27,7 @@
 /* Cartões Colaboradores/Km total/OS com equipe (Etapa 2) — mesmo espírito,
    metade da folga vertical. */
 .peqb-kpis-window{margin-bottom:8px!important}
-.peqb-kpis{gap:8px!important;margin-bottom:8px!important}
+.peqb-kpis{gap:0!important;margin-bottom:8px!important}
 .peqb-kpi{padding:7px 10px!important}
 .peqb-kpi strong{font-size:15px!important;margin-top:2px!important}
 .peqb-legend{margin:-2px 0 8px!important}
@@ -40,9 +40,14 @@
 #progList .peqb-btn{padding:7px 13px!important;font-size:11.5px!important}
 #progList .peqb-block-head{margin:5px 0 6px!important;font-size:10.5px!important;line-height:1.1!important}
 #progList .peqb-empty{padding:10px!important}
-.peqb-row.peqb-os2{grid-template-columns:minmax(920px,1.96fr) minmax(340px,.64fr)!important;min-height:94px!important;border:1.5px solid rgba(111,208,165,.30)!important;box-shadow:0 1px 0 rgba(111,208,165,.10) inset,0 6px 16px rgba(0,0,0,.28)!important}
-.peqb-row.peqb-os2:hover{border-color:rgba(111,208,165,.5)!important}
-.peqb-row.peqb-os2.peqb-os2-done{border-color:#6fd0a5!important;box-shadow:0 0 0 1.5px rgba(63,168,120,.16) inset,0 0 18px rgba(63,168,120,.22)!important}
+/* Card confirmado ("done") não precisa gritar mais que os outros — é o
+   estado normal/esperado da tela, não uma exceção. O contorno + glow verde em
+   TODA O.S. confirmada deixava a lista inteira "piscando" a mesma cor; o
+   destaque de cor agora fica só pro estado que realmente pede atenção (sem
+   equipe ainda, ver .peqb-cand/.peqb-row-actions). */
+.peqb-row.peqb-os2{grid-template-columns:minmax(920px,1.96fr) minmax(340px,.64fr)!important;min-height:94px!important;border:1px solid rgba(148,163,184,.18)!important;box-shadow:0 4px 12px rgba(0,0,0,.22)!important}
+.peqb-row.peqb-os2:hover{border-color:rgba(111,208,165,.45)!important}
+.peqb-row.peqb-os2.peqb-os2-done{border-color:rgba(111,208,165,.24)!important;box-shadow:0 4px 12px rgba(0,0,0,.22)!important}
 .peqb-os2-left{display:grid!important;grid-template-columns:minmax(0,1fr) max-content!important;grid-template-rows:auto auto!important;column-gap:9px!important;row-gap:5px!important;align-content:center!important;align-items:center!important;min-width:0!important;padding:10px 14px!important}
 .peqb-os2-cliente{grid-column:1!important;grid-row:1!important;margin:0!important;white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important;min-width:0!important;line-height:1.08!important;font-size:12.8px!important;letter-spacing:-.14px!important;max-width:100%!important;transform-origin:left center!important}
 .peqb-os2-tagsrow{display:contents!important;margin:0!important}

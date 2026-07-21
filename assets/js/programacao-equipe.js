@@ -235,27 +235,36 @@ function injectStyles() {
   style.id = 'progEquipeStyles';
   style.textContent = `
     .peqs-finalizadas-title{margin-top:16px!important;opacity:.85}
-    .peqb-kpis-window{max-height:220px;overflow-y:auto;margin-bottom:12px;padding-right:4px}
-    .peqb-kpis-window .peqb-kpis{margin-bottom:10px}
-    .peqb-kpis-window .peqb-toolbar,.peqb-kpis-window .peqb-legend{margin-bottom:0}
-    .peqb-kpis{display:grid;grid-template-columns:repeat(2,minmax(140px,1fr));gap:10px;margin-bottom:12px}
-    .peqb-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:12px;padding:10px}
-    .peqb-kpi span{display:block;color:#93c5fd;font-size:9.5px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}
-    .peqb-kpi strong{display:block;margin-top:4px;color:#fff;font-size:18px}
+    /* KPIs numa faixa só com divisórias finas, em vez de 3 caixas soltas num
+       grid de 2 colunas que sobrava espaço vazio ao lado do 3º número — e sem
+       scroll interno pra um conteúdo que nunca chega a precisar (pedido do
+       usuário, 2026-07-21: "menos poluído / mais intuitivo"). */
+    .peqb-kpis-window{margin-bottom:12px}
+    .peqb-kpis{display:flex;flex-wrap:wrap;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.3);border-radius:12px;overflow:hidden;margin-bottom:10px}
+    .peqb-kpi{padding:9px 18px;flex:1 1 auto;min-width:112px}
+    .peqb-kpi+.peqb-kpi{border-left:1px solid rgba(148,163,184,.14)}
+    .peqb-kpi span{display:block;color:#93c5fd;font-size:9.5px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+    .peqb-kpi strong{display:block;margin-top:4px;color:#fff;font-size:17px}
     .peqb-os2-kpis{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
-    .peqb-os2-kpi{border:1px solid rgba(34,197,94,.16);background:rgba(2,6,23,.28);border-radius:10px;padding:7px 9px;flex:1 1 90px;min-width:90px}
+    .peqb-os2-kpi{border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.24);border-radius:10px;padding:7px 9px;flex:1 1 90px;min-width:90px}
     .peqb-os2-kpi span{display:block;color:#93c5fd;font-size:9px;font-weight:950;letter-spacing:.06em;text-transform:uppercase}
     .peqb-os2-kpi strong{display:block;margin-top:3px;color:#fff;font-size:13px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .peqb-os2-kpi-wide{flex-basis:160px}
-    .peqb-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin-bottom:12px}
+    .peqb-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+    .peqb-toolbar-msg{font-size:11.5px;color:#9fb7aa;align-self:center}
     .peqb-btn{border:1px solid rgba(134,239,172,.35);background:rgba(22,163,74,.16);color:#dcfce7;border-radius:999px;padding:8px 14px;font-size:12px;font-weight:950;cursor:pointer;white-space:nowrap}
     .peqb-btn:hover{background:rgba(22,163,74,.3)}
     .peqb-btn:disabled{opacity:.55;cursor:not-allowed}
+    /* Ações secundárias (não são "o botão principal da etapa") ganham peso
+       visual menor — sem isso todo botão vira mais um retângulo verde e a
+       tela inteira pisca a mesma cor, obscurecendo qual ação é a principal. */
+    .peqb-btn-ghost{background:transparent;border-color:rgba(148,163,184,.28);color:#cbd5e1}
+    .peqb-btn-ghost:hover{background:rgba(148,163,184,.1);border-color:rgba(148,163,184,.42)}
     .peqb-grid{display:grid;grid-template-columns:minmax(360px,1fr) minmax(320px,.85fr);gap:14px;align-items:start}
     @media(max-width:1080px){.peqb-grid{grid-template-columns:1fr}}
-    .peqb-os-list{display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 320px);min-height:300px;overflow:auto;padding-right:2px}
-    .peqb-row{border:1px solid rgba(52,211,153,.18);border-radius:14px;background:rgba(2,6,23,.32);padding:10px 12px;cursor:pointer}
-    .peqb-row:hover,.peqb-row.focus{border-color:rgba(52,211,153,.45);background:rgba(34,197,94,.08)}
+    .peqb-os-list{display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 320px);min-height:300px;overflow:auto;padding-right:2px}
+    .peqb-row{border:1px solid rgba(148,163,184,.14);border-radius:14px;background:rgba(2,6,23,.32);padding:10px 12px;cursor:pointer}
+    .peqb-row:hover,.peqb-row.focus{border-color:rgba(52,211,153,.4);background:rgba(34,197,94,.06)}
     .peqb-row-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;color:#f8fafc;font-weight:950;font-size:12.5px}
     .peqb-row-head small{color:#bbf7d0;font-size:10.5px;white-space:nowrap}
     .peqb-row-meta{color:#94a3b8;font-size:10.5px;margin-top:2px;line-height:1.3}
@@ -285,7 +294,7 @@ function injectStyles() {
     .peqs-row:hover{border-color:rgba(52,211,153,.18);background:rgba(2,6,23,.32)}
     .peqs-row .peqb-os2-left{padding:14px 15px;border-right:0}
     /* Cartões de candidato (Fase 2 do redesenho) — substituem o <select> apertado */
-    .peqb-cand{display:flex;align-items:flex-start;gap:11px;width:100%;text-align:left;cursor:pointer;border:1px solid var(--line-2,rgba(111,208,165,.22));background:rgba(8,22,17,.5);border-radius:13px;padding:11px 12px;margin-top:8px;color:var(--text,#eef7f2);font:inherit}
+    .peqb-cand{display:flex;align-items:flex-start;gap:11px;width:100%;text-align:left;cursor:pointer;border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.4);border-radius:13px;padding:11px 12px;margin-top:8px;color:var(--text,#eef7f2);font:inherit}
     .peqb-cand:hover{border-color:var(--green-2,#6fd0a5);background:rgba(63,168,120,.12)}
     .peqb-cand.sel{border-color:var(--green-2,#6fd0a5);background:rgba(63,168,120,.16);box-shadow:0 0 0 1px rgba(111,208,165,.25) inset}
     .peqb-cand-confirmado{cursor:default}
@@ -315,9 +324,9 @@ function injectStyles() {
     .peqb-cand-more.open{color:#bbf7d0}
     .peqb-cand-list{display:flex;flex-direction:column}
     .peqb-cand-list[hidden]{display:none}
-    .peqb-legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:-2px 0 12px;font-size:11px;color:#9fb7aa}
-    .peqb-legend b{font-weight:850;color:#cbd5e1}
-    .peqb-legend i{display:inline-block;width:13px;height:6px;border-radius:2px;margin-right:5px;vertical-align:middle}
+    .peqb-legend{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:0 0 12px;font-size:10px;color:#7d8aa3}
+    .peqb-legend-lbl{font-weight:850;color:#8ba79a;text-transform:uppercase;letter-spacing:.06em;font-size:9px}
+    .peqb-legend i{display:inline-block;width:11px;height:5px;border-radius:2px;margin-right:4px;vertical-align:middle;opacity:.85}
     .peqb-legend .lg-c{background:#22c55e}.peqb-legend .lg-d{background:#38bdf8}.peqb-legend .lg-a{background:#fbbf24}
     .peqb-block-head{font-size:11px;font-weight:850;letter-spacing:.06em;text-transform:uppercase;color:#6fd0a5;margin:2px 0 9px}
     .peqb-status-strip{display:flex;gap:5px;flex-wrap:wrap;margin:9px 0 4px}
@@ -339,8 +348,8 @@ function injectStyles() {
     .peqb-row.peqb-os2{display:block!important;padding:0!important;overflow:visible!important}
     /* Card focado sobe acima dos vizinhos para o dropdown de troca "passar" por cima. */
     .peqb-row.peqb-os2:focus-within{position:relative;z-index:30}
-    .peqb-os2-left{padding:14px 15px;border-bottom:1px solid rgba(111,208,165,.14)}
-    .peqb-os2-right{padding:14px 15px;background:rgba(16,40,30,.45);border-radius:0 0 13px 13px}
+    .peqb-os2-left{padding:14px 15px}
+    .peqb-os2-right{padding:13px 15px;background:rgba(8,13,24,.4);border-top:1px solid rgba(148,163,184,.1);border-radius:0 0 13px 13px}
     .peqb-os2-cliente{font-size:13.5px;font-weight:850;color:#f8fafc;line-height:1.25}
     .peqb-os2-emb{font-size:11.5px;color:#8ba79a;margin-top:3px;overflow-wrap:anywhere}
     .peqb-os2-uf{color:#6fd0a5;font-weight:900}
@@ -360,7 +369,7 @@ function injectStyles() {
        mesmo com border/background "transparent" (faltava appearance:none),
        o que empilhava caixa dentro de caixa (pedido do usuário, 2026-07-17:
        "menos poluído"). */
-    .peqb-conf-name{display:flex;align-items:center;flex-wrap:nowrap;gap:0;min-width:0;flex:1 1 140px;border:1px solid rgba(111,208,165,.16);background:rgba(8,22,17,.4);border-radius:10px;padding:3px 4px}
+    .peqb-conf-name{display:flex;align-items:center;flex-wrap:nowrap;gap:0;min-width:0;flex:1 1 140px;border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.45);border-radius:10px;padding:3px 4px}
     .peqb-conf-tagwrap{display:flex;align-items:center;gap:6px;flex:0 0 auto;padding:0 6px}
     .peqb-conf-tag{flex:0 0 auto;white-space:nowrap}
     .peqb-name-sel{appearance:none;-webkit-appearance:none;-moz-appearance:none;flex:1 1 0;min-width:0;max-width:100%;overflow:hidden;white-space:nowrap;border:0;background:transparent;color:#f8fafc;font-size:13.5px;font-weight:850;cursor:pointer;border-radius:7px;padding:5px 22px 5px 8px;color-scheme:dark;text-overflow:ellipsis}
@@ -372,10 +381,10 @@ function injectStyles() {
     .peqb-add-colab{width:26px;height:26px;min-height:26px;margin:0 3px 0 2px;padding:0;border-radius:7px;border:0;background:transparent;color:#7dd3fc;font-size:16px;font-weight:950;cursor:pointer;flex:0 0 auto;line-height:1}
     .peqb-add-colab:hover{background:rgba(56,189,248,.16);color:#e0f2fe}
     .peqb-extra-colabs{display:flex;flex-direction:column;gap:6px;width:100%;margin:-2px 0 7px}
-    .peqb-extra-colab{display:flex;align-items:center;flex-wrap:nowrap;gap:0;width:100%;border:1px solid rgba(56,189,248,.2);background:rgba(15,23,42,.6);border-radius:10px;padding:3px 4px;box-sizing:border-box}
+    .peqb-extra-colab{display:flex;align-items:center;flex-wrap:nowrap;gap:0;width:100%;border:1px solid rgba(148,163,184,.14);border-left:2px solid rgba(56,189,248,.5);background:rgba(15,23,42,.4);border-radius:10px;padding:3px 4px;box-sizing:border-box}
     .peqb-extra-colab .peqb-conf-tagwrap{padding:0 6px}
     .peqb-extra-colab .peqb-name-sel{flex:1 1 0;background:transparent;cursor:default;padding:5px 8px}
-    .peqb-extra-colab .peqb-desloc-inline{border-left-color:rgba(56,189,248,.2)}
+    .peqb-extra-colab .peqb-desloc-inline{border-left-color:rgba(148,163,184,.16)}
     .peqb-extra-colab button{width:26px;height:26px;margin:0 2px;border-radius:7px;border:0;background:transparent;color:#fca5a5;font-size:14px;font-weight:950;cursor:pointer;padding:0;line-height:1;flex:0 0 auto}
     .peqb-extra-colab button:hover{background:rgba(239,68,68,.16);color:#fecaca}
     .peqb-extra-colab button:hover{background:rgba(127,29,29,.3)}
@@ -1499,12 +1508,12 @@ export async function renderProgramacaoEquipe(content, options = {}) {
         <div class="peqb-kpi"><span>Km total estimado</span><strong id="peqbKpiKm">0 km</strong></div>
         <div class="peqb-kpi"><span>OS com equipe</span><strong id="peqbKpiOs">0</strong></div>
       </div>
-      <div class="peqb-legend"><b>Score:</b> <span><i class="lg-c"></i>Contrato 50%</span> <span><i class="lg-d"></i>Distância 30%</span> <span><i class="lg-a"></i>Auditoria 20%</span></div>
+      <div class="peqb-legend"><span class="peqb-legend-lbl">Score</span><span><i class="lg-c"></i>Contrato 50%</span><span><i class="lg-d"></i>Distância 30%</span><span><i class="lg-a"></i>Auditoria 20%</span></div>
       <div class="peqb-toolbar">
         <button type="button" class="peqb-btn" id="peqbAutoPreencher" ${readOnly ? 'disabled' : ''}>Auto-preencher equipe</button>
-        <button type="button" class="peqb-btn" id="peqbSugerirCaronas" ${readOnly ? 'disabled' : ''} title="Motorista/carona por frota (desvio ≤ ${CARONA_DESVIO_KM} km), sobra vira próprio/Uber">Sugerir caronas</button>
-        <span id="peqbCaronasMsg" style="font-size:11.5px;color:#9fb7aa;align-self:center"></span>
-        <button type="button" class="peqb-btn" id="peqbVerMapa">🗺️ Ver mapa do gestor</button>
+        <button type="button" class="peqb-btn peqb-btn-ghost" id="peqbSugerirCaronas" ${readOnly ? 'disabled' : ''} title="Motorista/carona por frota (desvio ≤ ${CARONA_DESVIO_KM} km), sobra vira próprio/Uber">Sugerir caronas</button>
+        <span id="peqbCaronasMsg" class="peqb-toolbar-msg"></span>
+        <button type="button" class="peqb-btn peqb-btn-ghost" id="peqbVerMapa">🗺️ Ver mapa do gestor</button>
       </div>
     </div>
     <div class="peqb-os-list peqb-os-list-full ${readOnly ? 'prog-readonly-scope' : ''}" id="peqbOsList"><div class="peqb-empty peqb-loading"><span class="peqb-spinner" aria-hidden="true"></span><span>Carregando O.S....</span></div></div>
