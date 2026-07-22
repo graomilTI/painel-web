@@ -5,7 +5,7 @@
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
-import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData } from './programacao-equipe.js?v=20260722-cleanup1';
+import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData } from './programacao-equipe.js?v=20260723-fix1';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
 
@@ -241,8 +241,19 @@ export async function renderProgramacaoSemOs(content, options = {}) {
       const digits = String(value || '').replace(/\D/g, '');
       return digits.length >= 9 ? digits : String(value || '').trim();
     };
-    const confirmados = new Set(equipeRows.filter((r) => r.confirmado).map((r) => idKey(r.colaborador_id)));
-    const semOs = regional.filter((c) => !confirmados.has(idKey(c.colaboradorId)));
+    // Ainda vazava mesmo com idKey (colaborador confirmado continuava
+    // aparecendo, reportado 2026-07-23 com nome real: "Henrique Lopes").
+    // Causa: quando o colaborador não vem da RPC de regional (só do
+    // fallback colaboradores_atuais) E o CPF dele está vazio nessa tabela,
+    // loadColaboradoresRegional() usa o NOME como colaboradorId (ver
+    // colaboradorKey() em programacao-equipe.js) — não tem CPF nenhum pra
+    // normalizar, e nunca vai bater com o CPF gravado em
+    // programacao_equipe.colaborador_id no momento da confirmação. Nome
+    // normalizado como 2ª rede de segurança: se bater o nome, também conta
+    // como confirmado.
+    const confirmadosPorId = new Set(equipeRows.filter((r) => r.confirmado).map((r) => idKey(r.colaborador_id)));
+    const confirmadosPorNome = new Set(equipeRows.filter((r) => r.confirmado).map((r) => normalizeText(r.nome_colaborador)));
+    const semOs = regional.filter((c) => !confirmadosPorId.has(idKey(c.colaboradorId)) && !confirmadosPorNome.has(normalizeText(c.nome)));
 
     const ids = semOs.map((c) => c.colaboradorId);
     let situacoesPorColab = new Map();
