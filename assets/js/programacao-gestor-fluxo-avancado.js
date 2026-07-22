@@ -1,4 +1,4 @@
-import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260723-fix1';
+import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260723-fix2';
 import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260723-sem-os-sync1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
