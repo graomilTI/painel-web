@@ -118,9 +118,14 @@ function injectFixedLayoutStyles() {
     #pldOverlayRoot .pld-sub-emb {font-size:10px}
     #pldOverlayRoot .pld-sub-rem strong {font-size:14px}
     #pldOverlayRoot .pld-section-label {margin-bottom:6px}
+    /* 6 ações (Pausar/Atender/Financeiro/Saldo KG/Laudo/Histórico) numa linha
+       só — "Mais ações" (que escondia as 2 últimas atrás de um submenu) foi
+       removido, então o grid ganhou uma coluna a mais (pedido do usuário,
+       2026-07-22: "ajustar a distância entre as ações caiba todos os ícones
+       em linha"). */
     #pldOverlayRoot .pld-acoes-row {
       display:grid;
-      grid-template-columns:repeat(5,minmax(0,1fr));
+      grid-template-columns:repeat(6,minmax(0,1fr));
       gap:2px;
       margin-bottom:12px;
     }
@@ -128,16 +133,15 @@ function injectFixedLayoutStyles() {
       width:auto;
       min-width:0;
       gap:3px;
-      font-size:8.5px;
-      line-height:1.15;
+      font-size:8px;
+      line-height:1.1;
       padding:0;
     }
     #pldOverlayRoot .pld-acao-btn span.pld-acao-ico {
-      width:34px;
-      height:34px;
-      font-size:14px;
+      width:30px;
+      height:30px;
+      font-size:12.5px;
     }
-    #pldOverlayRoot .pld-acao-menu-wrap {min-width:0}
 
     /* Colaborador como ficha simples, com recolhimento individual. */
     #pldOverlayRoot .pld-colab-card {
@@ -292,7 +296,7 @@ function injectFixedLayoutStyles() {
     #pldOverlayRoot .pld-save-btn {height:38px;font-size:11.5px}
 
     @media (max-width:1049px) {
-      #pldOverlayRoot .pld-acoes-row {grid-template-columns:repeat(5,minmax(54px,1fr))}
+      #pldOverlayRoot .pld-acoes-row {grid-template-columns:repeat(6,minmax(46px,1fr))}
       #pldOverlayRoot .pld-fixed-empty {display:none}
     }
   `;
@@ -372,7 +376,10 @@ function enhanceCollaboratorCards(root = document) {
     button.dataset.pldColabCollapse = '1';
     button.setAttribute('aria-expanded', 'true');
     button.title = 'Minimizar despesas';
-    button.textContent = '⌄';
+    // Ícone de verdade (SVG) em vez do caractere "⌄" — cada fonte/SO desenha
+    // esse glifo com peso/alinhamento diferente, ficando torto no botão
+    // circular (pedido do usuário, 2026-07-22: "não um caractere").
+    button.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
     name.insertAdjacentElement('afterend', button);
   });
 }

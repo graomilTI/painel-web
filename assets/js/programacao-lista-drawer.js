@@ -46,13 +46,13 @@ let currentUser = null;
 getCurrentUser().then((u) => { currentUser = u; }).catch(() => {});
 
 const state = {
-  page: 1,
-  pageSize: 10,
   busca: '',
   cliente: '',
   local: '',
   soRemanescente: false,
   osAbertaId: null,
+  sortField: null,
+  sortDir: 'asc',
 };
 
 function injectStyles() {
@@ -71,17 +71,29 @@ function injectStyles() {
     .pld-backdrop[hidden]{display:none}
     .pld-title{margin:0;font-size:22px;font-weight:950;color:#f8fafc;letter-spacing:.01em}
     .pld-subtitle{margin:4px 0 14px;color:#8ba79a;font-size:13px}
+    /* Os 3 campos de filtro (busca/cliente/local) ficam numa linha só — o
+       toggle "só remanescente" tem flex-basis:100%, o que força ele pra uma
+       2ª linha num container flex-wrap sem precisar de outro elemento
+       (pedido do usuário, 2026-07-22: "não consumir tanto espaço de tela"). */
     .pld-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
     .pld-filters input[type="text"],.pld-filters select{height:38px;border:1px solid rgba(52,211,153,.22);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;font-size:12.5px;color-scheme:dark}
-    .pld-filters input[type="text"]{flex:1 1 220px;min-width:160px}
-    .pld-filters select{flex:0 1 180px}
-    .pld-toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:#8ba79a;white-space:nowrap;cursor:pointer}
+    .pld-filters input[type="text"]{flex:2 1 0;min-width:130px}
+    .pld-filters select{flex:1 1 0;min-width:110px}
+    .pld-toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:#8ba79a;white-space:nowrap;cursor:pointer;flex:1 1 100%;order:5}
     .pld-toggle input{accent-color:#16a34a;width:16px;height:16px}
     .pld-count-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12.5px;color:#8ba79a}
     .pld-count-row b{color:#6fd0a5}
-    .pld-table-wrap{border:1px solid rgba(52,211,153,.16);border-radius:16px;overflow:hidden;background:rgba(2,6,23,.28)}
+    /* A lista rola dentro da própria caixa (altura travada ao viewport), em
+       vez de crescer com a página inteira — assim ela tem rolagem
+       independente do painel lateral fixo (que já rola sozinho, ver
+       .pld-drawer em programacao-lista-drawer-fixo.js), e cabem todas as O.S.
+       de uma vez sem paginação (pedido do usuário, 2026-07-22). */
+    .pld-table-wrap{border:1px solid rgba(52,211,153,.16);border-radius:16px;background:rgba(2,6,23,.28);max-height:calc(100vh - 300px);overflow-y:auto}
     .pld-table{width:100%;border-collapse:separate;border-spacing:0}
-    .pld-table thead th{text-align:left;font-size:10.5px;font-weight:850;letter-spacing:.06em;text-transform:uppercase;color:#93c5fd;padding:11px 14px;border-bottom:1px solid rgba(52,211,153,.16)}
+    .pld-table thead th{position:sticky;top:0;z-index:2;text-align:left;font-size:10.5px;font-weight:850;letter-spacing:.06em;text-transform:uppercase;color:#93c5fd;padding:11px 14px;border-bottom:1px solid rgba(52,211,153,.16);background:#0a1710}
+    .pld-th-sort{cursor:pointer;user-select:none;white-space:nowrap}
+    .pld-th-sort:hover{color:#bfe3ff}
+    .pld-th-sort .pld-sort-arrow{margin-left:4px;color:#6fd0a5;font-size:9px}
     .pld-row{cursor:pointer;border-bottom:1px solid rgba(148,163,184,.1)}
     .pld-row:last-child{border-bottom:0}
     .pld-row:hover td{background:rgba(34,197,94,.06)}
@@ -99,10 +111,6 @@ function injectStyles() {
     .pld-rem{font-weight:900;color:#f8fafc;white-space:nowrap}
     .pld-chevron{color:#6b7a86;font-size:15px}
     .pld-empty{padding:26px;text-align:center;color:#94a3b8}
-    .pld-pagination{display:flex;justify-content:center;align-items:center;gap:6px;margin-top:14px}
-    .pld-page-btn{min-width:34px;height:34px;border-radius:9px;border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.5);color:#cbd5e1;font-weight:800;font-size:12.5px;cursor:pointer}
-    .pld-page-btn.active{border-color:rgba(52,211,153,.55);background:rgba(22,163,74,.28);color:#dcfce7}
-    .pld-page-btn:disabled{opacity:.4;cursor:not-allowed}
 
     /* Painel lateral — overlay fixo, desliza da direita. O backdrop e o drawer
        vivem direto no <body> (fora de #pageContent) porque position:fixed vira
@@ -141,11 +149,6 @@ function injectStyles() {
     .pld-acao-btn:hover span.pld-acao-ico{border-color:rgba(148,163,184,.35)}
     .pld-acao-btn.on span.pld-acao-ico{background:rgba(22,163,74,.28);color:#86efac;border-color:rgba(34,197,94,.5)}
     .pld-acao-btn[disabled]{opacity:.4;cursor:not-allowed}
-    .pld-acao-menu-wrap{position:relative}
-    .pld-acao-menu{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:6px;background:#0c1f17;border:1px solid rgba(111,208,165,.3);border-radius:10px;box-shadow:0 14px 32px rgba(0,0,0,.5);z-index:50;min-width:190px;padding:6px}
-    .pld-acao-menu[hidden]{display:none}
-    .pld-acao-menu button{display:block;width:100%;text-align:left;background:none;border:0;color:#e2e2f0;font-size:12.5px;padding:8px 10px;border-radius:7px;cursor:pointer}
-    .pld-acao-menu button:hover{background:rgba(111,208,165,.12)}
     .pld-lock{border:1px dashed rgba(148,163,184,.25);border-radius:14px;padding:20px;text-align:center;color:#8ba79a;font-size:12.5px;line-height:1.5}
     .pld-lock b{color:#cbd5e1}
     .pld-cand-wrap{margin-bottom:10px}
@@ -320,23 +323,41 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
 
   function osFiltradas() {
     const busca = normalizeText(state.busca);
-    return osTodasAtual.filter((os) => {
+    const filtradas = osTodasAtual.filter((os) => {
       if (state.cliente && os.cliente !== state.cliente) return false;
       if (state.local && os.embarque !== state.local) return false;
       if (state.soRemanescente && !(Number(os.remanescente) > 0)) return false;
       if (busca && !normalizeText(`${os.numero_os} ${os.cliente} ${os.embarque}`).includes(busca)) return false;
       return true;
     });
+    if (!state.sortField) return filtradas;
+    const dir = state.sortDir === 'desc' ? -1 : 1;
+    const campo = state.sortField;
+    return [...filtradas].sort((a, b) => {
+      if (campo === 'numero_os' || campo === 'remanescente') {
+        return ((Number(a[campo]) || 0) - (Number(b[campo]) || 0)) * dir;
+      }
+      return String(a[campo] || '').localeCompare(String(b[campo] || ''), 'pt-BR') * dir;
+    });
+  }
+
+  const COLUNAS_ORDENAVEIS = [
+    ['numero_os', 'OS'],
+    ['cliente', 'Cliente'],
+    ['embarque', 'Local'],
+    ['remanescente', 'Remanescente'],
+  ];
+
+  function thSortHtml(campo, label) {
+    const ativa = state.sortField === campo;
+    const seta = ativa ? `<span class="pld-sort-arrow">${state.sortDir === 'desc' ? '▼' : '▲'}</span>` : '';
+    return `<th class="pld-th-sort" data-sort-campo="${campo}">${esc(label)}${seta}</th>`;
   }
 
   function renderLista() {
     const filtradas = osFiltradas();
-    const totalPaginas = Math.max(1, Math.ceil(filtradas.length / state.pageSize));
-    state.page = Math.min(state.page, totalPaginas);
-    const inicio = (state.page - 1) * state.pageSize;
-    const pagina = filtradas.slice(inicio, inicio + state.pageSize);
 
-    const linhas = pagina.map((os) => {
+    const linhas = filtradas.map((os) => {
       const emb = embarqueHtml(os.embarque);
       return `<tr class="pld-row ${String(os.id) === String(state.osAbertaId) ? 'active' : ''}" data-os-id="${esc(os.id)}">
         <td><span class="pld-os-num"><span class="pld-dot ${statusToneClass(os)}"></span>${esc(os.numero_os || '-')}</span></td>
@@ -347,23 +368,14 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       </tr>`;
     }).join('');
 
-    const paginacao = totalPaginas > 1 ? `<div class="pld-pagination">
-      <button type="button" class="pld-page-btn" data-page="${state.page - 1}" ${state.page <= 1 ? 'disabled' : ''}>‹</button>
-      ${Array.from({ length: totalPaginas }, (_, i) => i + 1).slice(0, 7).map((p) => `<button type="button" class="pld-page-btn ${p === state.page ? 'active' : ''}" data-page="${p}">${p}</button>`).join('')}
-      ${totalPaginas > 7 ? '<span style="color:#7d8aa3">…</span>' : ''}
-      <button type="button" class="pld-page-btn" data-page="${state.page + 1}" ${state.page >= totalPaginas ? 'disabled' : ''}>›</button>
-    </div>` : '';
-
     listaBody.innerHTML = `
       <div class="pld-count-row"><span><b>${filtradas.length}</b> O.S. encontradas</span></div>
       <div class="pld-table-wrap">
         <table class="pld-table">
-          <thead><tr><th>OS</th><th>Cliente</th><th>Local</th><th>Remanescente</th><th></th></tr></thead>
+          <thead><tr>${COLUNAS_ORDENAVEIS.map(([campo, label]) => thSortHtml(campo, label)).join('')}<th></th></tr></thead>
           <tbody>${linhas || '<tr><td colspan="5" class="pld-empty">Nenhuma O.S. encontrada com esses filtros.</td></tr>'}</tbody>
         </table>
       </div>
-      <div style="font-size:11.5px;color:#7d8aa3;margin-top:8px;text-align:center">Exibindo ${pagina.length ? inicio + 1 : 0} a ${inicio + pagina.length} de ${filtradas.length}</div>
-      ${paginacao}
     `;
   }
 
@@ -590,13 +602,8 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         <button type="button" class="pld-acao-btn ${st === 'AGUARDAR' ? 'on' : ''}" data-acao-status="AGUARDAR" ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">⏸</span>Pausar</button>
         <button type="button" class="pld-acao-btn ${st === 'ATENDER' ? 'on' : ''}" data-acao-status="ATENDER" ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">✓</span>Atender</button>
         <button type="button" class="pld-acao-btn ${st === 'FINALIZAR' ? 'on' : ''}" data-acao-status="FINALIZAR" ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">$</span>Financeiro</button>
-        <span class="pld-acao-menu-wrap">
-          <button type="button" class="pld-acao-btn" data-mais-acoes-toggle ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">⋯</span>Mais ações</button>
-          <div class="pld-acao-menu" hidden data-mais-acoes-menu>
-            <button type="button" data-abrir-kg>💰 Aumentar saldo (KG)</button>
-            <button type="button" data-abrir-laudo>📎 Conferir / anexar laudo</button>
-          </div>
-        </span>
+        <button type="button" class="pld-acao-btn" data-abrir-kg ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">💰</span>Saldo KG</button>
+        <button type="button" class="pld-acao-btn" data-abrir-laudo ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">📎</span>Laudo</button>
         <button type="button" class="pld-acao-btn" data-abrir-historico><span class="pld-acao-ico">🗂</span>Histórico</button>
       </div>
       <div class="pld-section-label">PROGRAMAÇÃO <span id="pldProgLockNote"></span></div>
@@ -721,17 +728,19 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     });
   }
 
-  // --- Eventos: lista (filtros, paginação, clique na linha) ---
-  content.querySelector('#pldBusca').addEventListener('input', (e) => { state.busca = e.target.value; state.page = 1; renderLista(); });
-  content.querySelector('#pldCliente').addEventListener('change', (e) => { state.cliente = e.target.value; state.page = 1; renderLista(); });
-  content.querySelector('#pldLocal').addEventListener('change', (e) => { state.local = e.target.value; state.page = 1; renderLista(); });
-  content.querySelector('#pldSoRemanescente').addEventListener('change', (e) => { state.soRemanescente = e.target.checked; state.page = 1; renderLista(); });
+  // --- Eventos: lista (filtros, ordenação, clique na linha) ---
+  content.querySelector('#pldBusca').addEventListener('input', (e) => { state.busca = e.target.value; renderLista(); });
+  content.querySelector('#pldCliente').addEventListener('change', (e) => { state.cliente = e.target.value; renderLista(); });
+  content.querySelector('#pldLocal').addEventListener('change', (e) => { state.local = e.target.value; renderLista(); });
+  content.querySelector('#pldSoRemanescente').addEventListener('change', (e) => { state.soRemanescente = e.target.checked; renderLista(); });
 
   listaBody.addEventListener('click', async (event) => {
-    const pageBtn = event.target.closest('[data-page]');
-    if (pageBtn) {
-      const p = Number(pageBtn.dataset.page);
-      if (p >= 1) { state.page = p; renderLista(); }
+    const th = event.target.closest('[data-sort-campo]');
+    if (th) {
+      const campo = th.dataset.sortCampo;
+      state.sortDir = state.sortField === campo && state.sortDir === 'asc' ? 'desc' : 'asc';
+      state.sortField = campo;
+      renderLista();
       return;
     }
     const row = event.target.closest('.pld-row[data-os-id]');
@@ -770,30 +779,18 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       return;
     }
 
-    const maisAcoesToggle = event.target.closest('[data-mais-acoes-toggle]');
-    if (maisAcoesToggle) {
-      const menu = maisAcoesToggle.parentElement.querySelector('[data-mais-acoes-menu]');
-      const estavaAberto = !menu.hidden;
-      fecharKebabs();
-      menu.hidden = estavaAberto;
-      return;
-    }
     const kebabToggle = event.target.closest('[data-kebab-toggle]');
     if (kebabToggle) {
       const menu = kebabToggle.parentElement.querySelector('[data-kebab-menu]');
       const estavaAberto = !menu.hidden;
       fecharKebabs();
       menu.hidden = estavaAberto;
-      drawerEl.querySelectorAll('[data-mais-acoes-menu]').forEach((m) => { m.hidden = true; });
       return;
     }
-    if (!event.target.closest('.pld-acao-menu-wrap') && !event.target.closest('.pld-kebab-wrap')) {
-      fecharKebabs();
-      drawerEl.querySelectorAll('[data-mais-acoes-menu]').forEach((m) => { m.hidden = true; });
-    }
+    if (!event.target.closest('.pld-kebab-wrap')) fecharKebabs();
 
-    if (event.target.closest('[data-abrir-kg]')) { const os = osAtual(); fecharKebabs(); if (os) abrirModalKg(os); return; }
-    if (event.target.closest('[data-abrir-laudo]')) { const os = osAtual(); fecharKebabs(); if (os) abrirModalLaudo(os); return; }
+    if (event.target.closest('[data-abrir-kg]')) { const os = osAtual(); if (os) abrirModalKg(os); return; }
+    if (event.target.closest('[data-abrir-laudo]')) { const os = osAtual(); if (os) abrirModalLaudo(os); return; }
     if (event.target.closest('[data-abrir-historico]')) { const os = osAtual(); if (os) await abrirHistorico(os); return; }
 
     const confirmarCandBtn = event.target.closest('[data-confirmar-candidato]');
