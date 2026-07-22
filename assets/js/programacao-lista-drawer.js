@@ -170,10 +170,15 @@ function injectStyles() {
        candCardHtml) ao lado de um botão de confirmar em ícone — antes o
        card ficava escondido (só "Confirmar"/"Outro" em texto) e o gestor
        confirmava sem saber quem estava sendo sugerido (pedido do usuário,
-       2026-07-22). */
-    .pld-cand-wrap{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+       2026-07-22). align-items:flex-start (em vez de center) ancora o
+       botão no topo do card em vez de flutuar sozinho no meio de uma
+       caixa bem mais alta — sem isso parecia "um adesivo colado" ao lado
+       do card (reportado pela usuária com print, 2026-07-22). Fontes do
+       card em si compactadas junto com o resto do painel lateral, ver
+       #pldOverlayRoot .peqb-cand-* em programacao-lista-drawer-fixo.js. */
+    .pld-cand-wrap{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px}
     .pld-cand-wrap .peqb-cand{width:auto;flex:1 1 auto;margin-top:0}
-    .pld-cand-confirm{flex:0 0 auto;width:40px;height:40px;border-radius:50%;border:1px solid rgba(134,239,172,.5);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;font-size:17px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .pld-cand-confirm{flex:0 0 auto;width:34px;height:34px;border-radius:50%;border:1px solid rgba(134,239,172,.5);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;font-size:15px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center}
     .pld-cand-confirm:hover{filter:brightness(1.08)}
     .pld-cand-confirm:disabled{opacity:.5;cursor:not-allowed;filter:grayscale(.4)}
     .pld-colab-card{border:1px solid rgba(52,211,153,.18);border-radius:14px;background:rgba(2,6,23,.3);padding:12px 14px;margin-bottom:12px}
