@@ -1,13 +1,14 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import {
-  esc, brDate, colabAutocomplete,
+  esc, brDate, todayIso, colabAutocomplete,
   filtrosHtml, filtrosStyle, bindFiltros, lerFiltros, aplicarFiltros,
   exportCsv, acoesHtml, bindAcoes,
   anexoFieldHtml, resolverAnexo, anexoBtnHtml, bindAnexoButtons,
 } from './rhShared.js';
 
 const TABS = [
+  { id: 'indisponiveis', label: 'Indisponíveis' },
   { id: 'ferias', label: 'Férias' },
   { id: 'atestados', label: 'Atestados' },
   { id: 'historico', label: 'Histórico' },
@@ -25,7 +26,7 @@ const STATUS_ATESTADO = {
   aprovado: { label: 'Aprovado' },
 };
 
-const state = { tab: 'ferias', ferias: [], atestados: [], ctx: null, filtros: null };
+const state = { tab: 'indisponiveis', indisponiveis: [], ferias: [], atestados: [], ctx: null, filtros: null };
 
 const diasEntre = (ini, fim) => { const a = new Date(`${ini}T00:00:00`); const b = new Date(`${fim}T00:00:00`); return Math.max(1, Math.round((b - a) / 86400000) + 1); };
 
@@ -65,6 +66,120 @@ function tabsHtml() {
 async function safe(fn, fallback = []) {
   try { const { data, error } = await fn(); if (error) throw error; return data || fallback; }
   catch (e) { console.warn('[Indisponibilidade]', e); return fallback; }
+}
+
+// ---------- Indisponíveis ----------
+
+async function loadIndisponiveis() {
+  state.indisponiveis = await safe(() => supabase.from('indisponibilidades').select('*').order('data_inicio', { ascending: false }).limit(500));
+  renderIndisponiveisTable();
+}
+
+function indisponiveisFiltrados() {
+  const hoje = todayIso();
+  const ativos = state.indisponiveis.filter((r) => !r.data_fim || r.data_fim >= hoje);
+  return aplicarFiltros(ativos, state.filtros, { dataKey: 'data_inicio' });
+}
+
+function renderIndisponiveisTable() {
+  const body = document.getElementById('inIndsBody');
+  if (!body) return;
+  const rows = indisponiveisFiltrados();
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="5" class="in-empty">${state.indisponiveis.length ? 'Nenhum colaborador indisponível no filtro atual.' : 'Nenhum colaborador indisponível. Clique em <b>+ Adicionar Indisponibilidade</b> para registrar.'}</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map((r) => `<tr>
+    <td><b>${esc(r.colaborador_nome)}</b></td>
+    <td>${brDate(r.data_inicio)}</td>
+    <td>${brDate(r.data_fim)}</td>
+    <td>${esc(r.motivo)}</td>
+    <td>${acoesHtml(r.id)}</td>
+  </tr>`).join('');
+  bindAcoes(body, {
+    table: 'indisponibilidades',
+    reload: loadIndisponiveis,
+    descricao: 'esta indisponibilidade',
+    onEdit: (id) => {
+      const row = state.indisponiveis.find((r) => String(r.id) === String(id));
+      if (row) openIndisponibilidadeModal(row);
+    },
+  });
+}
+
+function exportarIndisponiveis() {
+  exportCsv('indisponiveis', [
+    { key: 'colaborador_nome', label: 'Colaborador' },
+    { key: 'data_inicio', label: 'Início', fmt: brDate },
+    { key: 'data_fim', label: 'Fim', fmt: brDate },
+    { key: 'motivo', label: 'Motivo' },
+  ], indisponiveisFiltrados());
+}
+
+function openIndisponibilidadeModal(row = null) {
+  const modal = document.getElementById('inModal');
+  let selecionado = null;
+  const d = (v) => v ? String(v).slice(0, 10) : '';
+  modal.innerHTML = `<div class="in-modal-card">
+    <div class="section-head"><div><h3>${row ? 'Editar Indisponibilidade' : 'Adicionar Indisponibilidade'}</h3><p class="muted">Marca o colaborador como indisponível em um período.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="mt-16" style="position:relative">
+      <label class="in-full">Colaborador *<input id="indsColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off" value="${esc(row?.colaborador_nome || '')}"></label>
+      <div id="indsColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
+    </div>
+    <div class="in-grid mt-16">
+      <label>Início *<input id="indsInicio" type="date" value="${d(row?.data_inicio)}"></label>
+      <label>Fim *<input id="indsFim" type="date" value="${d(row?.data_fim)}"></label>
+      <label class="in-full">Motivo *<input id="indsMotivo" type="text" value="${esc(row?.motivo || '')}" placeholder="Ex.: licença, afastamento, folga..."></label>
+    </div>
+    <div class="in-actions mt-16"><button class="btn btn-primary" id="indsSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="indsCancelar" type="button">Cancelar</button></div>
+    <span class="in-feedback mt-8" id="indsFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  colabAutocomplete(modal, '#indsColabInput', '#indsColabSug', (c) => { selecionado = c; });
+  modal.querySelector('#mClose').onclick = () => modal.classList.remove('open');
+  modal.querySelector('#indsCancelar').onclick = () => modal.classList.remove('open');
+  modal.querySelector('#indsSalvar').onclick = async () => {
+    const fb = modal.querySelector('#indsFeedback');
+    fb.className = 'in-feedback mt-8';
+    const nome = selecionado?.nome || modal.querySelector('#indsColabInput').value.trim();
+    const inicio = modal.querySelector('#indsInicio').value;
+    const fim = modal.querySelector('#indsFim').value;
+    const motivo = modal.querySelector('#indsMotivo').value.trim();
+    if (!nome) { fb.textContent = 'Selecione o colaborador.'; fb.classList.add('err'); return; }
+    if (!inicio || !fim) { fb.textContent = 'Informe o início e o fim da indisponibilidade.'; fb.classList.add('err'); return; }
+    if (fim < inicio) { fb.textContent = 'O fim não pode ser antes do início.'; fb.classList.add('err'); return; }
+    if (fim < todayIso()) { fb.textContent = 'O fim não pode ser retroativo.'; fb.classList.add('err'); return; }
+    if (!motivo) { fb.textContent = 'Informe o motivo.'; fb.classList.add('err'); return; }
+    try {
+      const payload = {
+        colaborador_nome: nome,
+        colaborador_cpf: selecionado?.cpf || row?.colaborador_cpf || null,
+        data_inicio: inicio,
+        data_fim: fim,
+        motivo,
+      };
+      if (row) {
+        const { error } = await supabase.from('indisponibilidades').update(payload).eq('id', row.id);
+        if (error) throw error;
+      } else {
+        payload.created_by = state.ctx?.user?.id || null;
+        const { error } = await supabase.from('indisponibilidades').insert(payload);
+        if (error) throw error;
+      }
+      modal.classList.remove('open');
+      await loadIndisponiveis();
+    } catch (e) { fb.textContent = e.message; fb.classList.add('err'); }
+  };
+}
+
+function renderIndisponiveisTab(area) {
+  area.innerHTML = `<div class="section-head mt-16"><div><h3>Indisponíveis</h3><p class="muted">Colaboradores indisponíveis agora ou em breve.</p></div><button class="btn btn-primary" id="inIndsNovo" type="button">+ Adicionar Indisponibilidade</button></div>
+  ${filtrosHtml('inds')}
+  <div class="in-table-wrap mt-16"><table class="in-table"><thead><tr><th>Colaborador</th><th>Início</th><th>Fim</th><th>Motivo</th><th>Ações</th></tr></thead><tbody id="inIndsBody"><tr><td colspan="5" class="in-empty">Carregando...</td></tr></tbody></table></div>`;
+  area.querySelector('#inIndsNovo').onclick = () => openIndisponibilidadeModal();
+  bindFiltros(area, 'inds', () => { state.filtros = lerFiltros(area, 'inds'); renderIndisponiveisTable(); });
+  area.querySelector('#indsExportar').onclick = exportarIndisponiveis;
+  loadIndisponiveis();
 }
 
 // ---------- Férias ----------
@@ -347,7 +462,8 @@ async function renderTab(container) {
   if (!area) return;
   state.filtros = null;
   area.innerHTML = `<div class="in-empty mt-16">Carregando...</div>`;
-  if (state.tab === 'ferias') renderFeriasTab(area);
+  if (state.tab === 'indisponiveis') renderIndisponiveisTab(area);
+  else if (state.tab === 'ferias') renderFeriasTab(area);
   else if (state.tab === 'atestados') renderAtestadosTab(area);
   else if (state.tab === 'historico') renderHistoricoTab(area);
 }
