@@ -472,3 +472,10 @@ body.prog-step-a-os #progDistribuicaoOsMount .os-a-label {
    Firefox) — ok pra ferramenta interna. Ajustar o fator se ficar
    grande/pequeno demais. */
 .app-shell { zoom: 1.15; }
+
+/* --------------------------------------------------------------------------
+   9. Título "Programação" do topbar some (pedido do usuário, 2026-07-22) —
+      redundante com o próprio menu/URL da página; mantém #welcomeUser ("Olá,
+      Fulano") ao lado, que é a única informação nova ali.
+   -------------------------------------------------------------------------- */
+.app-shell #pageTitle { display: none !important; }

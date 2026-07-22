@@ -2,7 +2,7 @@ import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
 import { renderProgramacaoDespesas } from './programacao-despesas.js?v=20260721-listadrawer3';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260721-listadrawer3';
-import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260722-uiajustes1';
+import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260722-uiajustes2';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 // Programação Gestor (2026-07-21, "lista + painel lateral"): o botão Carregar
