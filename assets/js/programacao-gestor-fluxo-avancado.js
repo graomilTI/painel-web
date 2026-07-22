@@ -1,5 +1,5 @@
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260723-fix1';
-import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260723-fix1';
+import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260723-sem-os-sync1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 // Programação Gestor (2026-07-21, "lista + painel lateral"): o botão Carregar
@@ -172,6 +172,14 @@ function setActiveStep(step) {
   });
   if (state.panes) {
     Object.entries(state.panes).forEach(([key, pane]) => { pane.hidden = key !== state.activeStep; });
+  }
+  // Além do refresh disparado ao editar a equipe, confira novamente ao abrir
+  // Sem O.S. para absorver vínculos feitos por outro usuário/dispositivo.
+  // Não aguardamos a rede: a troca visual da aba continua instantânea.
+  if (state.activeStep === '2' && typeof window.__pgcSilentRefreshSemOs === 'function') {
+    window.__pgcSilentRefreshSemOs().catch((error) => {
+      console.warn('[programacao-fluxo] refresh Sem O.S.:', error);
+    });
   }
 }
 

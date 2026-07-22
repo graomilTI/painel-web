@@ -445,6 +445,15 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     if (equipe) await recarregarEquipeRows();
     renderLista();
     if (String(state.osAbertaId) === String(os.id)) await abrirDrawer(os, { silent: true });
+    // A aba Sem O.S. é montada em paralelo e mantinha a fotografia anterior
+    // da equipe. Depois de adicionar/remover alguém, atualize-a em segundo
+    // plano para que um colaborador vinculado a uma O.S. desapareça antes
+    // mesmo de o usuário trocar de aba.
+    if (equipe && typeof window.__pgcSilentRefreshSemOs === 'function') {
+      window.__pgcSilentRefreshSemOs().catch((error) => {
+        console.warn('[programacao-lista-drawer] refresh Sem O.S.:', error);
+      });
+    }
   }
 
   // --- Drawer: candidato sugerido (O.S. ATENDER sem ninguém confirmado ainda) ---
