@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260722-cleanup1';
-import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260722-cleanup1';
+import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260722-cleanup2';
 
 const STEPS = [
   { code: 'A', label: 'Disponibilidade' },
@@ -2138,7 +2138,7 @@ export function renderContent(content) {
         loadExtras(programacaoIdQuery, colaboradorIds),
       ]);
 
-      const DESLOC_LABEL = { 'NAO PRECISA': 'Não precisa', 'MOTORISTA FROTA': 'Frota', 'CARONA FROTA': 'Carona', 'UBER TAXI': 'Uber/Táxi', 'REEMBOLSO KM': 'Reemb. km', ONIBUS: 'Ônibus', OUTRO: 'Outro' };
+      const DESLOC_LABEL = { 'NAO PRECISA': 'Não precisa', 'MOTORISTA FROTA': 'Frota - Motorista', 'CARONA FROTA': 'Frota - Carona', 'UBER TAXI': 'Uber/Táxi', 'REEMBOLSO KM': 'Reemb. km', ONIBUS: 'Ônibus', OUTRO: 'Outro' };
 
       const linhas = roster.map((row) => {
         const est = custos.est.get(row.colaboradorId) || {};

@@ -23,7 +23,7 @@ import {
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
 } from './programacao-equipe.js?v=20260722-cleanup1';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, injectStylesDespesas } from './programacao-despesas.js?v=20260722-cleanup1';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260722-cleanup2';
 
 function esc(value) {
   return String(value ?? '')
@@ -173,14 +173,8 @@ function injectStyles() {
     .pld-colab-tag.t-warn{background:rgba(245,158,11,.14);color:#fde68a;border-color:rgba(245,158,11,.3)}
     .pld-colab-tag.t-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(59,130,246,.3)}
     .pld-colab-tag.t-muted{background:rgba(148,163,184,.14);color:#cbd5e1}
-    .pld-kebab-wrap{position:relative;flex:0 0 auto}
-    .pld-kebab{background:none;border:0;color:#8ba79a;font-size:16px;cursor:pointer;padding:2px 6px}
-    .pld-kebab:hover{color:#f8fafc}
-    .pld-kebab-menu{position:absolute;top:100%;right:0;margin-top:4px;background:#0c1f17;border:1px solid rgba(111,208,165,.3);border-radius:10px;box-shadow:0 14px 32px rgba(0,0,0,.5);z-index:40;min-width:170px;padding:6px}
-    .pld-kebab-menu[hidden]{display:none}
-    .pld-kebab-menu button{display:block;width:100%;text-align:left;background:none;border:0;color:#e2e2f0;font-size:12px;padding:7px 9px;border-radius:7px;cursor:pointer}
-    .pld-kebab-menu button:hover{background:rgba(111,208,165,.12)}
-    .pld-kebab-menu button.danger{color:#fca5a5}
+    .pld-colab-remover{flex:0 0 auto;width:22px;height:22px;border-radius:6px;border:0;background:none;color:#8ba79a;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .pld-colab-remover:hover{background:rgba(239,68,68,.14);color:#fca5a5}
     .pld-add-box{display:flex;gap:8px;align-items:center;border:1px solid rgba(56,189,248,.28);background:rgba(15,23,42,.72);border-radius:11px;padding:8px;margin-bottom:12px}
     .pld-add-box select{flex:1 1 auto;height:34px;border:1px solid rgba(56,189,248,.3);background:#06130e;color:#eef7f2;border-radius:8px;padding:0 8px;font-size:12px;color-scheme:dark}
     .pld-add-box button{height:34px;padding:0 12px;border-radius:8px;border:1px solid rgba(56,189,248,.42);background:rgba(14,116,144,.2);color:#bfdbfe;font-size:11.5px;font-weight:850;cursor:pointer}
@@ -312,6 +306,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   const getIndisponiveis = () => memoized('indisp', () => loadIndisponiveisNaData(options.dataReferencia));
   const getPlacas = () => memoized('placas', () => loadCruzamentoPlacas(supervisaoQuery));
   const getTipoContrato = () => memoized('tipoContrato', () => loadCruzamentoTipoContrato(supervisaoQuery));
+  const getVeiculos = () => memoized('veiculos', () => loadVeiculosAtivos(supervisaoQuery));
 
   async function recarregarEquipeRows() {
     equipeRowsAtual = await loadEquipeExistente(programacaoIdQuery);
@@ -470,16 +465,26 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   // --- Drawer: colaboradores confirmados + despesas por colaborador ---
   async function carregarColaboradoresConfirmados(os, rows) {
     const colaboradorIds = rows.map((r) => r.colaborador_id);
-    const [custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, dispPorColaborador] = await Promise.all([
+    const [custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, dispPorColaborador, veiculos] = await Promise.all([
       loadCustos(programacaoIdQuery),
       getPlacas(),
       getTipoContrato(),
       loadExtras(programacaoIdQuery, colaboradorIds),
       loadDisponibilidadeConfirmados(programacaoIdQuery, colaboradorIds),
+      getVeiculos(),
     ]);
     await loadAlojamentos();
     const osResumoPorId = new Map([[String(os.id), { id: os.id, numero_os: os.numero_os, cliente: os.cliente, embarque: os.embarque }]]);
-    return { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId, dispPorColaborador };
+    return { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId, dispPorColaborador, veiculos };
+  }
+
+  // Datalist compartilhado do campo Placa (list="pldVeiculosList", ver
+  // programacao-despesas.js) — procura tanto pela placa quanto pelo nome do
+  // motorista habitual (pedido do usuário, 2026-07-22: "opção de procurar
+  // pela placa ou pelo colaborador associado").
+  function veiculosDatalistHtml(veiculos) {
+    const opts = (veiculos || []).map((v) => `<option value="${esc(v.placa)}">${esc(v.motorista_atual || 'Sem motorista habitual')}</option>`).join('');
+    return `<datalist id="pldVeiculosList">${opts}</datalist>`;
   }
 
   function colaboradorRowWrapHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab, escaladoEmOutra) {
@@ -491,12 +496,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         ${avatarBadgeHtml(row.nome, row.colaboradorId)}
         <span class="pld-colab-nome">${esc(row.nome)}</span>
         <span class="pld-colab-tag t-${tipoTone(tipoLabelTexto)}">${esc(tipoLabelTexto)}${escaladoEmOutra ? ' · ♻' : ''}</span>
-        <span class="pld-kebab-wrap">
-          <button type="button" class="pld-kebab" data-kebab-toggle title="Mais opções">⋮</button>
-          <div class="pld-kebab-menu" hidden data-kebab-menu>
-            <button type="button" data-remover-colab="${esc(row.equipeRowId || '')}">Remover da O.S.</button>
-          </div>
-        </span>
+        <button type="button" class="pld-colab-remover" data-remover-colab="${esc(row.equipeRowId || '')}" title="Remover da O.S.">✕</button>
       </div>
       ${cardHtml}
     </div>`;
@@ -534,7 +534,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       }
 
       const programacaoIdDaOs = rows[0]?.programacao_id || programacaoIdParaOs(os, programacaoId, programacaoIdMap);
-      const { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId } = await carregarColaboradoresConfirmados(os, rows);
+      const { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId, veiculos } = await carregarColaboradoresConfirmados(os, rows);
       const cardsHtml = rows.map((r) => colaboradorRowWrapHtml(
         { colaboradorId: r.colaborador_id, nome: r.nome_colaborador || r.colaborador_id, programacaoId: r.programacao_id || programacaoIdDaOs, osIds: new Set([os.id]), equipeRowId: r.id },
         custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab,
@@ -549,6 +549,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         </div>` : '';
 
       progBody.innerHTML = `
+        ${veiculosDatalistHtml(veiculos)}
         ${cardsHtml}
         <div class="pld-add-box" data-add-box>
           <select data-add-colab-select><option value="">Escolha um colaborador…</option></select>
@@ -592,10 +593,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     if (!salvarBtn) return;
     const textarea = drawerEl.querySelector('#pldJustifTxt');
     salvarBtn.disabled = !!textarea && !textarea.value.trim();
-  }
-
-  function fecharKebabs(exceto) {
-    drawerEl.querySelectorAll('[data-kebab-menu]').forEach((m) => { if (m !== exceto) m.hidden = true; });
   }
 
   async function abrirDrawer(os, { silent = false } = {}) {
@@ -800,16 +797,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       }
       return;
     }
-
-    const kebabToggle = event.target.closest('[data-kebab-toggle]');
-    if (kebabToggle) {
-      const menu = kebabToggle.parentElement.querySelector('[data-kebab-menu]');
-      const estavaAberto = !menu.hidden;
-      fecharKebabs();
-      menu.hidden = estavaAberto;
-      return;
-    }
-    if (!event.target.closest('.pld-kebab-wrap')) fecharKebabs();
 
     if (event.target.closest('[data-abrir-kg]')) { const os = osAtual(); if (os) abrirModalKg(os); return; }
     if (event.target.closest('[data-abrir-laudo]')) { const os = osAtual(); if (os) abrirModalLaudo(os); return; }

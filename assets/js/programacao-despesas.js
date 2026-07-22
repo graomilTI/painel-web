@@ -72,7 +72,7 @@ const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', '
 const REFEICOES = [['cafe', 'Café'], ['almoco', 'Almoço'], ['janta', 'Janta']];
 
 function estadiaLabel(t) { return ({ CASA: 'Casa', PERNOITE: 'Pernoite', ALOJAMENTO: 'Alojamento', HOTEL: 'Hotel' })[normalizeText(t)] || t; }
-function deslocLabel(t) { return ({ 'NAO PRECISA': 'Não precisa', 'MOTORISTA FROTA': 'Frota', 'CARONA FROTA': 'Carona', 'UBER TAXI': 'Uber/Táxi', 'REEMBOLSO KM': 'Reemb. km', ONIBUS: 'Ônibus', OUTRO: 'Outro' })[normalizeText(t)] || t; }
+function deslocLabel(t) { return ({ 'NAO PRECISA': 'Não precisa', 'MOTORISTA FROTA': 'Frota - Motorista', 'CARONA FROTA': 'Frota - Carona', 'UBER TAXI': 'Uber/Táxi', 'REEMBOLSO KM': 'Reemb. km', ONIBUS: 'Ônibus', OUTRO: 'Outro' })[normalizeText(t)] || t; }
 function normalizeUF(v) { return String(v || '').trim().toUpperCase().slice(0, 2); }
 function ufFromEmbarque(emb) { const m = /^([A-Z]{2})\s*-/.exec(String(emb || '').trim()); return m ? m[1].toUpperCase() : ''; }
 function cidadeFromEmbarque(emb) { const m = /^[A-Z]{2}\s*-\s*([^(]+)/.exec(String(emb || '').trim()); return m ? m[1].trim() : ''; }
@@ -82,6 +82,30 @@ function diasFromEstadia(est) {
     return diff > 0 ? diff : 1;
   }
   return 1;
+}
+
+// Veículos ativos da supervisão pra sugerir placa (ver deslocLabel "Frota -
+// Motorista"/"Frota - Carona") quando o colaborador não tem placa própria
+// associada (placasPorCpf) — o gestor pode procurar pela placa OU pelo nome
+// do motorista habitual (pedido do usuário, 2026-07-22).
+let veiculosAtivosCacheKey = '';
+let veiculosAtivosCache = [];
+export async function loadVeiculosAtivos(supervisao) {
+  const lista = Array.isArray(supervisao) ? supervisao.filter(Boolean) : [supervisao].filter(Boolean);
+  const key = lista.slice().sort().join('|');
+  if (!key || veiculosAtivosCacheKey === key) return veiculosAtivosCache;
+  veiculosAtivosCacheKey = key;
+  try {
+    let query = supabase.from('frotas_veiculos').select('placa,motorista_atual').eq('status', 'ATIVO');
+    query = lista.length > 1 ? query.in('supervisao', lista) : query.eq('supervisao', lista[0]);
+    const { data, error } = await query.order('placa', { ascending: true }).limit(2000);
+    if (error) throw error;
+    veiculosAtivosCache = (data || []).filter((v) => v.placa);
+  } catch (error) {
+    console.warn('[despesas] veículos ativos indisponíveis', error);
+    veiculosAtivosCache = [];
+  }
+  return veiculosAtivosCache;
 }
 
 let alojamentosCache = null;
@@ -219,8 +243,8 @@ export function injectStylesDespesas() {
     .peqd-inp-na{color:#5f7a6d;font-size:12px;flex:1 1 130px}
     .peqd-tipo-est{flex:0 0 120px}
     .peqd-dias{flex:0 0 60px;width:60px!important;text-align:center}
-    .peqd-tipo-desl{flex:0 0 140px}
-    .peqd-placa{flex:0 0 100px;text-transform:uppercase;font-family:ui-monospace,monospace}
+    .peqd-tipo-desl{flex:0 0 110px}
+    .peqd-placa{flex:0 0 140px;text-transform:uppercase;font-family:ui-monospace,monospace}
     .peqd-km{flex:0 0 90px}
     .peqd-valor{flex:0 0 100px}
     .peqd-obs{flex:1 1 160px;min-width:120px}
@@ -328,7 +352,7 @@ export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCp
   const extras = extrasPorColab.get(row.colaboradorId) || [];
   const letraContrato = tipoContratoLetra(tipoContratoPorCpf.get(String(row.colaboradorId).replace(/\D/g, '')) || '');
 
-  return `<article class="peqd-card" data-colab-id="${esc(row.colaboradorId)}" data-programacao-id="${esc(row.programacaoId)}" data-nome="${esc(row.nome)}" data-embarque="${esc(embarqueRef)}">
+  return `<article class="peqd-card" data-colab-id="${esc(row.colaboradorId)}" data-programacao-id="${esc(row.programacaoId)}" data-nome="${esc(row.nome)}" data-embarque="${esc(embarqueRef)}" data-placa-auto="${esc(onlyPlate(placaAuto))}">
     <div class="peqd-head">
       <span class="peqd-av" title="Tipo de contrato">${esc(letraContrato)}</span>
       <div>
@@ -356,7 +380,7 @@ export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCp
       <div class="peqd-sec-label">🚐 Deslocamento</div>
       <div class="peqd-row">
         <select class="peqd-inp peqd-tipo-desl" data-tab="deslocamento" data-fld="tipo_deslocamento">${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(tipoDesl) === normalizeText(t) ? 'selected' : ''}>${esc(deslocLabel(t))}</option>`).join('')}</select>
-        <input class="peqd-inp peqd-placa" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(onlyPlate(placa))}" placeholder="Placa" title="${placaAuto && !des.placa_veiculo ? 'Puxada da leitura do veículo' : 'Placa do veículo'}" />
+        <input class="peqd-inp peqd-placa" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(onlyPlate(placa))}" placeholder="Placa" title="${placaAuto && !des.placa_veiculo ? 'Puxada da leitura do veículo' : 'Placa do veículo'}" list="pldVeiculosList" autocomplete="off" />
         <input class="peqd-inp peqd-km" data-tab="deslocamento" data-fld="km" type="number" min="0" step="0.01" value="${esc(des.km ?? '')}" placeholder="KM" />
         <input class="peqd-inp peqd-valor" data-tab="deslocamento" data-fld="valor" type="text" value="${esc(des.valor || '')}" placeholder="R$ 0,00" />
         <input class="peqd-inp peqd-obs" data-tab="deslocamento" data-fld="observacao" value="${esc(des.observacao || '')}" placeholder="Observação" />
@@ -668,6 +692,20 @@ export function wireDespesasCards(containerEl, ctx = {}) {
       const destino = card.querySelector('[data-estadia-destino]');
       const est = getCustos().est.get(card.dataset.colabId) || {};
       if (destino) destino.innerHTML = estadiaDestinoHtml(sel.value, est, card.dataset.embarque);
+    }
+    // Ao escolher "Frota - Motorista"/"Frota - Carona", puxa a placa já
+    // associada ao colaborador (placasPorCpf, gravada em data-placa-auto no
+    // card) quando o campo ainda está vazio — antes só preenchia sozinho na
+    // 1ª renderização, não ao trocar o tipo depois (pedido do usuário,
+    // 2026-07-22). Se o colaborador não tem placa própria, o campo continua
+    // vazio e o gestor procura no datalist (list="pldVeiculosList", por
+    // placa OU pelo nome do motorista habitual).
+    if (sel.dataset.fld === 'tipo_deslocamento' && card) {
+      const tipoNorm = normalizeText(sel.value);
+      const placaInput = card.querySelector('[data-fld="placa_veiculo"]');
+      if ((tipoNorm === 'MOTORISTA FROTA' || tipoNorm === 'CARONA FROTA') && placaInput && !placaInput.value.trim() && card.dataset.placaAuto) {
+        placaInput.value = card.dataset.placaAuto;
+      }
     }
     if (card) scheduleSaveCampo(card, `programacao_${sel.dataset.tab}`);
   });

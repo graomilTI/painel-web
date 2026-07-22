@@ -138,12 +138,22 @@ export async function renderProgramacaoSemOs(content, options = {}) {
       <div class="pso-kpi"><span>Sem O.S.</span><strong id="psoKpiTotal">0</strong></div>
     </div>
     <div class="pso-list ${readOnly ? 'prog-readonly-scope' : ''}" id="psoList"><div class="pso-empty pso-loading"><span class="pso-spinner" aria-hidden="true"></span><span>Carregando colaboradores...</span></div></div>
-    <div class="pso-modal" id="psoModal"></div>
   `;
 
   const listEl = content.querySelector('#psoList');
   const kpiEl = content.querySelector('#psoKpiTotal');
-  const modalEl = content.querySelector('#psoModal');
+  // O modal vivia dentro de #content (dentro de #pgcPane2, várias camadas de
+  // ancestrais abaixo) — position:fixed some vira relativo ao 1º ancestral
+  // com transform/filter/will-change (ou o zoom:1.15 do .app-shell) em vez
+  // do viewport, então o modal abria fora da área visível em vez de
+  // centralizado (reportado pela usuária, 2026-07-22: "fica lá embaixo").
+  // Ancorado direto no <body>, igual o painel lateral de programacao-lista-
+  // drawer.js já faz pelo mesmo motivo, fica imune a isso.
+  document.getElementById('psoModalRoot')?.remove();
+  const modalEl = document.createElement('div');
+  modalEl.id = 'psoModalRoot';
+  modalEl.className = 'pso-modal';
+  document.body.appendChild(modalEl);
   if (!supervisao || (!options.programacaoId && !programacaoIdMap.size)) {
     listEl.innerHTML = '<div class="pso-empty">Carregue o contexto (supervisão e data) para ver quem está sem O.S.</div>';
     return;
@@ -221,8 +231,18 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     // exige match exato de supervisão.
     const supervisoesAlvo = new Set((Array.isArray(supervisaoQuery) ? supervisaoQuery : [supervisaoQuery]).map((s) => normalizeText(s)).filter(Boolean));
     const regional = regionalBruto.filter((c) => supervisoesAlvo.has(normalizeText(c.supervisao)));
-    const confirmados = new Set(equipeRows.filter((r) => r.confirmado).map((r) => String(r.colaborador_id)));
-    const semOs = regional.filter((c) => !confirmados.has(String(c.colaboradorId)));
+    // colaboradorId chega em 2 formatos possíveis (CPF puro ou CPF formatado
+    // com pontuação, dependendo de qual fonte alimentou a linha) — comparar
+    // a string crua deixava passar colaborador já confirmado numa O.S. na
+    // lista de "Sem O.S." sempre que os formatos não batiam byte a byte
+    // (reportado pela usuária, 2026-07-22). idKey() normaliza os 2 lados
+    // pro mesmo formato (só dígitos quando é CPF) antes de comparar.
+    const idKey = (value) => {
+      const digits = String(value || '').replace(/\D/g, '');
+      return digits.length >= 9 ? digits : String(value || '').trim();
+    };
+    const confirmados = new Set(equipeRows.filter((r) => r.confirmado).map((r) => idKey(r.colaborador_id)));
+    const semOs = regional.filter((c) => !confirmados.has(idKey(c.colaboradorId)));
 
     const ids = semOs.map((c) => c.colaboradorId);
     let situacoesPorColab = new Map();

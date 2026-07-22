@@ -185,6 +185,16 @@ function injectFixedLayoutStyles() {
     #pldOverlayRoot .pld-colab-collapse:hover {background:rgba(111,208,165,.1)}
     #pldOverlayRoot .pld-colab-card.pld-colab-collapsed .pld-colab-collapse {transform:rotate(-90deg)}
     #pldOverlayRoot .pld-colab-card.pld-colab-collapsed > .peqd-card {display:none !important}
+    /* Card aberto (não colapsado) = em edição — ganha um destaque visual
+       próprio pra diferenciar de relance dos demais colaboradores da lista,
+       que ficam só como linhas flat (pedido do usuário, 2026-07-22). */
+    #pldOverlayRoot .pld-colab-card:not(.pld-colab-collapsed) {
+      background:rgba(63,168,120,.08);
+      border-top-color:transparent;
+      border-radius:12px;
+      padding:9px 10px 11px;
+      box-shadow:0 0 0 1px rgba(111,208,165,.28);
+    }
 
     #pldOverlayRoot .peqd-sec {
       margin-top:0 !important;
