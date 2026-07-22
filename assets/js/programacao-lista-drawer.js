@@ -166,7 +166,16 @@ function injectStyles() {
     .pld-acao-btn[disabled]{opacity:.4;cursor:not-allowed}
     .pld-lock{border:1px dashed rgba(148,163,184,.25);border-radius:14px;padding:20px;text-align:center;color:#8ba79a;font-size:12.5px;line-height:1.5}
     .pld-lock b{color:#cbd5e1}
-    .pld-cand-wrap{margin-bottom:10px}
+    /* Candidato sugerido sempre visível (nome/tag/km/custo, ver
+       candCardHtml) ao lado de um botão de confirmar em ícone — antes o
+       card ficava escondido (só "Confirmar"/"Outro" em texto) e o gestor
+       confirmava sem saber quem estava sendo sugerido (pedido do usuário,
+       2026-07-22). */
+    .pld-cand-wrap{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+    .pld-cand-wrap .peqb-cand{width:auto;flex:1 1 auto;margin-top:0}
+    .pld-cand-confirm{flex:0 0 auto;width:40px;height:40px;border-radius:50%;border:1px solid rgba(134,239,172,.5);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;font-size:17px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .pld-cand-confirm:hover{filter:brightness(1.08)}
+    .pld-cand-confirm:disabled{opacity:.5;cursor:not-allowed;filter:grayscale(.4)}
     .pld-colab-card{border:1px solid rgba(52,211,153,.18);border-radius:14px;background:rgba(2,6,23,.3);padding:12px 14px;margin-bottom:12px}
     .pld-colab-card .peqd-card{border:0;padding:0;background:transparent}
     .pld-colab-card .peqd-head{display:none}
@@ -183,13 +192,6 @@ function injectStyles() {
     .pld-add-box{display:flex;gap:8px;align-items:center;border:1px solid rgba(56,189,248,.28);background:rgba(15,23,42,.72);border-radius:11px;padding:8px;margin-bottom:12px}
     .pld-add-box select{flex:1 1 auto;height:34px;border:1px solid rgba(56,189,248,.3);background:#06130e;color:#eef7f2;border-radius:8px;padding:0 8px;font-size:12px;color-scheme:dark}
     .pld-add-box button{height:34px;padding:0 12px;border-radius:8px;border:1px solid rgba(56,189,248,.42);background:rgba(14,116,144,.2);color:#bfdbfe;font-size:11.5px;font-weight:850;cursor:pointer}
-    .pld-justif{margin-top:6px}
-    .pld-justif label{display:block;font-size:10.5px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#7d8aa3;margin-bottom:6px}
-    .pld-justif textarea{width:100%;box-sizing:border-box;min-height:64px;resize:vertical;border:1px solid rgba(52,211,153,.28);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:10px 12px;font-size:12.5px}
-    .pld-justif-count{display:flex;justify-content:space-between;font-size:10.5px;color:#7d8aa3;margin-top:4px}
-    .pld-save-row{margin-top:16px;position:sticky;bottom:-1px;background:#0a1a12;padding-top:10px}
-    .pld-save-btn{width:100%;height:44px;border-radius:12px;border:1px solid rgba(187,247,208,.32);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;font-weight:950;font-size:13.5px;cursor:pointer}
-    .pld-save-btn:disabled{opacity:.5;cursor:not-allowed;filter:grayscale(.3)}
     .pld-loading{display:flex;align-items:center;gap:10px;color:#94a3b8;padding:18px;font-size:12.5px}
     .pld-spinner{width:20px;height:20px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;flex:0 0 auto;animation:pldSpin .75s linear infinite}
     @keyframes pldSpin{to{transform:rotate(360deg)}}
@@ -461,9 +463,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     const minCustoId = comCusto.length ? comCusto.reduce((a, b) => (a.custoTotal <= b.custoTotal ? a : b)).colaboradorId : null;
     return `<div class="pld-cand-wrap">
       ${candCardHtml(candidatos[0], true, minCustoId)}
-      <div class="pld-row-actions" style="margin-top:8px">
-        <button type="button" class="pld-save-btn" style="height:38px" data-confirmar-candidato="${esc(candidatos[0].colaboradorId)}">Confirmar ${esc(candidatos[0].nome)}</button>
-      </div>
+      <button type="button" class="pld-cand-confirm" data-confirmar-candidato="${esc(candidatos[0].colaboradorId)}" title="Confirmar ${esc(candidatos[0].nome)}">✓</button>
     </div>`;
   }
 
@@ -539,20 +539,12 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         escaladosPorColab.has(String(r.colaborador_id)),
       )).join('');
 
-      const justificativaHtml = rows.length > 1 ? `
-        <div class="pld-justif">
-          <label>Justificativa para ${rows.length} colaboradores <span style="color:#f87171">*</span></label>
-          <textarea id="pldJustifTxt" maxlength="250" placeholder="Explique o motivo da necessidade de ${rows.length} colaboradores neste embarque..."></textarea>
-          <div class="pld-justif-count"><span>Obrigatório quando mais de 1 colaborador.</span><span id="pldJustifCount">0/250</span></div>
-        </div>` : '';
-
       progBody.innerHTML = `
         ${cardsHtml}
         <div class="pld-add-box" data-add-box>
           <select data-add-colab-select><option value="">Escolha um colaborador…</option></select>
           <button type="button" data-add-colab-confirm>Adicionar</button>
         </div>
-        ${justificativaHtml}
       `;
       wireDespesasCards(progBody, {
         getDataReferencia: () => options.dataReferencia,
@@ -583,13 +575,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
 
   function progBodySelectAtual() {
     return drawerEl.querySelector('[data-add-colab-select]');
-  }
-
-  function atualizarEstadoSalvar() {
-    const salvarBtn = drawerEl.querySelector('#pldSalvarBtn');
-    if (!salvarBtn) return;
-    const textarea = drawerEl.querySelector('#pldJustifTxt');
-    salvarBtn.disabled = !!textarea && !textarea.value.trim();
   }
 
   async function abrirDrawer(os, { silent = false } = {}) {
@@ -632,7 +617,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       </div>
       <div class="pld-section-label">PROGRAMAÇÃO <span id="pldProgLockNote"></span></div>
       <div id="pldProgBody"></div>
-      <div class="pld-save-row"><button type="button" class="pld-save-btn" id="pldSalvarBtn" ${readOnly ? 'disabled' : ''}>Salvar programação</button></div>
     `;
     drawerEl.scrollTop = 0;
     await montarProgramacaoBody(os);
@@ -813,7 +797,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       const os = osAtual();
       if (!os) return;
       confirmarCandBtn.disabled = true;
-      confirmarCandBtn.textContent = 'Confirmando...';
       try {
         const { candidatos } = await carregarCandidatoSugerido(os);
         const cand = candidatos.find((c) => String(c.colaboradorId) === confirmarCandBtn.dataset.confirmarCandidato) || candidatos[0];
@@ -882,33 +865,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       return;
     }
 
-    const salvarBtn = event.target.closest('#pldSalvarBtn');
-    if (salvarBtn) {
-      const os = osAtual();
-      if (!os) return;
-      const textarea = drawerEl.querySelector('#pldJustifTxt');
-      if (textarea && !textarea.value.trim()) { textarea.focus(); return; }
-      if (textarea && textarea.value.trim()) {
-        const rows = equipeRowsDaOs(os.id);
-        logActivity('action', 'justificativa_multiplos_colaboradores_os', 'programacao', {
-          os_id: os.id, numero_os: os.numero_os,
-          colaboradores: rows.map((r) => r.colaborador_id),
-          nomes: rows.map((r) => r.nome_colaborador),
-          motivo: textarea.value.trim(),
-        });
-      }
-      salvarBtn.disabled = true;
-      salvarBtn.textContent = 'Salvo ✓';
-      setTimeout(() => { salvarBtn.textContent = 'Salvar programação'; atualizarEstadoSalvar(); }, 1400);
-    }
-  });
-
-  overlayRoot.addEventListener('input', (event) => {
-    if (event.target.id === 'pldJustifTxt') {
-      const countEl = drawerEl.querySelector('#pldJustifCount');
-      if (countEl) countEl.textContent = `${event.target.value.length}/250`;
-      atualizarEstadoSalvar();
-    }
   });
 
   await carregarLista();
