@@ -143,6 +143,20 @@ function injectFixedLayoutStyles() {
       font-size:12.5px;
     }
 
+    /* Card do candidato sugerido (programacao-lista-drawer.js,
+       candidatoSugeridoHtml) reaproveita candCardHtml de programacao-equipe.js,
+       pensado pra uma tela mais larga — fontes/avatar/padding grandes demais
+       pro painel lateral de 440px, destoando do resto (pedido do usuário,
+       2026-07-22: "proporcional ao conteúdo da tela"). */
+    #pldOverlayRoot .peqb-cand {gap:8px; padding:9px 10px}
+    #pldOverlayRoot .peqb-cand-av {width:26px; height:26px; font-size:10px}
+    #pldOverlayRoot .peqb-cand-top strong {font-size:12px}
+    #pldOverlayRoot .peqb-cand-tag {font-size:8.5px; padding:2px 6px}
+    #pldOverlayRoot .peqb-cand-veic {font-size:9.5px}
+    #pldOverlayRoot .peqb-cand-flag {font-size:8.5px; padding:2px 6px}
+    #pldOverlayRoot .peqb-cand-sub {font-size:10px}
+    #pldOverlayRoot .peqb-cand-cost {font-size:12.5px}
+
     /* Colaborador como ficha simples, com recolhimento individual. */
     #pldOverlayRoot .pld-colab-card {
       border:0;
