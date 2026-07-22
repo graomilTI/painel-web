@@ -178,8 +178,12 @@ function injectStyles() {
        #pldOverlayRoot .peqb-cand-* em programacao-lista-drawer-fixo.js. */
     .pld-cand-wrap{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px}
     .pld-cand-wrap .peqb-cand{width:auto;flex:1 1 auto;margin-top:0}
-    .pld-cand-confirm{flex:0 0 auto;width:34px;height:34px;border-radius:50%;border:1px solid rgba(134,239,172,.5);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;font-size:15px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .pld-cand-actions{flex:0 0 auto;display:flex;flex-direction:column;gap:6px}
+    .pld-cand-confirm,.pld-cand-reject{width:34px;height:34px;border-radius:50%;font-size:14px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .pld-cand-confirm{border:1px solid rgba(134,239,172,.5);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}
     .pld-cand-confirm:hover{filter:brightness(1.08)}
+    .pld-cand-reject{border:1px solid rgba(248,113,113,.4);background:rgba(127,29,29,.18);color:#fca5a5}
+    .pld-cand-reject:hover{background:rgba(127,29,29,.32)}
     .pld-cand-confirm:disabled{opacity:.5;cursor:not-allowed;filter:grayscale(.4)}
     .pld-colab-card{border:1px solid rgba(52,211,153,.18);border-radius:14px;background:rgba(2,6,23,.3);padding:12px 14px;margin-bottom:12px}
     .pld-colab-card .peqd-card{border:0;padding:0;background:transparent}
@@ -468,7 +472,10 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     const minCustoId = comCusto.length ? comCusto.reduce((a, b) => (a.custoTotal <= b.custoTotal ? a : b)).colaboradorId : null;
     return `<div class="pld-cand-wrap">
       ${candCardHtml(candidatos[0], false, minCustoId)}
-      <button type="button" class="pld-cand-confirm" data-confirmar-candidato="${esc(candidatos[0].colaboradorId)}" title="Confirmar ${esc(candidatos[0].nome)}">✓</button>
+      <span class="pld-cand-actions">
+        <button type="button" class="pld-cand-confirm" data-confirmar-candidato="${esc(candidatos[0].colaboradorId)}" title="Confirmar ${esc(candidatos[0].nome)}">✓</button>
+        <button type="button" class="pld-cand-reject" data-pld-reject-candidate="1" title="Recusar sugestão e escolher outro colaborador">✕</button>
+      </span>
     </div>`;
   }
 

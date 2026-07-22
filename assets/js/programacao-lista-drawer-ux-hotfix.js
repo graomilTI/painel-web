@@ -44,6 +44,11 @@ function injectHotfixStyles() {
   document.head.appendChild(style);
 }
 
+function getAddBoxFromElement(element) {
+  return element?.closest('#pldProgBody')?.querySelector('.pld-add-box')
+    || document.querySelector('#pldOverlayRoot .pld-add-box');
+}
+
 function setAddEditorOpen(box, open) {
   if (!box) return false;
 
@@ -102,6 +107,18 @@ document.addEventListener('click', (event) => {
     const box = addToggle.closest('.pld-add-box');
     const editor = box?.querySelector('.pld-add-editor');
     setAddEditorOpen(box, editor?.hidden !== false);
+    return;
+  }
+
+  // Recusar a sugestão (candidatoSugeridoHtml, programacao-lista-drawer.js):
+  // abre direto a seleção manual de colaborador, mesmo destino que o antigo
+  // botão "Outro" (pedido do usuário, 2026-07-22: "a sugestão tem que ter o
+  // botão de recusar também").
+  const reject = event.target.closest('[data-pld-reject-candidate]');
+  if (reject) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setAddEditorOpen(getAddBoxFromElement(reject), true);
   }
 }, true);
 
