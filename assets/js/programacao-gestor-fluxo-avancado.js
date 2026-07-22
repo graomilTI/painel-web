@@ -181,6 +181,15 @@ function setActiveStep(step) {
       console.warn('[programacao-fluxo] refresh Sem O.S.:', error);
     });
   }
+  // O aquecimento de layout (ver prelayoutInactivePanes abaixo) só rodava
+  // 1x, logo após "Carregar" — aquecia a aba que estava inativa NAQUELE
+  // momento (normalmente a 2). A aba que ficava ativa (a 1) nunca era
+  // aquecida, então só a 1ª troca (1→2) ficava fluida; a volta (2→1) não,
+  // porque a aba 1 tinha acabado de ser escondida sem re-aquecimento
+  // (reportado pela usuária, 2026-07-23: "fluida independente da direção").
+  // Chamando aqui também, toda troca de aba re-aquece quem acabou de ficar
+  // oculta, deixando a PRÓXIMA troca de volta igualmente fluida.
+  prelayoutInactivePanes();
 }
 
 // `hidden` evita trabalho enquanto os dados das duas abas são montados, mas
@@ -278,7 +287,6 @@ async function renderAllTabs({ force = false } = {}) {
       setFeedback('Programação carregada.', 'ok');
     }
     setActiveStep(state.activeStep);
-    prelayoutInactivePanes();
   } catch (error) {
     console.error('[programacao-fluxo] renderAllTabs:', error);
     setFeedback(error.message || 'Erro ao carregar as abas.', 'error');
