@@ -552,7 +552,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         isReadOnly: () => readOnly,
       });
       await popularAddBox(os, rows);
-      atualizarEstadoSalvar();
     } catch (error) {
       console.error('[programacao-lista-drawer] montarProgramacaoBody:', error);
       progBody.innerHTML = `<div class="pld-empty">${esc(error.message || 'Erro ao carregar a equipe desta O.S.')}</div>`;
