@@ -22,7 +22,7 @@ import {
   confirmarCandidato, adicionarColaboradorOs, removerConfirmacao,
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
-} from './programacao-equipe.js?v=20260723-fix1';
+} from './programacao-equipe.js?v=20260723-fix2';
 import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260722-cleanup3';
 
 function esc(value) {

@@ -5,7 +5,7 @@
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
-import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData } from './programacao-equipe.js?v=20260723-fix1';
+import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData } from './programacao-equipe.js?v=20260723-fix2';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
 
@@ -257,26 +257,29 @@ export async function renderProgramacaoSemOs(content, options = {}) {
 
     const ids = semOs.map((c) => c.colaboradorId);
     let situacoesPorColab = new Map();
+    pendentesAtual = new Set();
+    // As 2 consultas abaixo não dependem uma da outra (só de `ids`) — rodavam
+    // em sequência (await uma, depois await a outra), somando os 2 tempos de
+    // ida-e-volta ao banco só pra montar a Etapa 4. Como essa aba já é a mais
+    // lenta pra carregar (regional inteira + várias consultas), essa espera
+    // extra é o que a usuária sentia como "troca de tela lenta" pro Sem O.S.
+    // (reportado 2026-07-23). Em paralelo.
     if (ids.length) {
       const idsProgramacao = Array.isArray(programacaoIdQuery) ? programacaoIdQuery : [programacaoIdQuery];
-      const { data, error } = await supabase
-        .from('programacao_colaboradores')
-        .select('colaborador_id,disponibilidade,observacao')
-        .in('programacao_id', idsProgramacao)
-        .in('colaborador_id', ids);
-      if (error) console.warn('[sem-os] situações:', error);
-      situacoesPorColab = new Map((data || []).map((r) => [String(r.colaborador_id), r]));
-    }
-
-    pendentesAtual = new Set();
-    if (ids.length) {
-      const { data, error } = await supabase
-        .from('programacao_inativacao_solicitacoes')
-        .select('colaborador_id')
-        .eq('status', 'PENDENTE')
-        .in('colaborador_id', ids);
-      if (error) console.warn('[sem-os] inativações pendentes:', error);
-      pendentesAtual = new Set((data || []).map((r) => String(r.colaborador_id)));
+      const [situacoesRes, pendentesRes] = await Promise.all([
+        supabase.from('programacao_colaboradores')
+          .select('colaborador_id,disponibilidade,observacao')
+          .in('programacao_id', idsProgramacao)
+          .in('colaborador_id', ids),
+        supabase.from('programacao_inativacao_solicitacoes')
+          .select('colaborador_id')
+          .eq('status', 'PENDENTE')
+          .in('colaborador_id', ids),
+      ]);
+      if (situacoesRes.error) console.warn('[sem-os] situações:', situacoesRes.error);
+      situacoesPorColab = new Map((situacoesRes.data || []).map((r) => [String(r.colaborador_id), r]));
+      if (pendentesRes.error) console.warn('[sem-os] inativações pendentes:', pendentesRes.error);
+      pendentesAtual = new Set((pendentesRes.data || []).map((r) => String(r.colaborador_id)));
     }
 
     colabsAtual = semOs;

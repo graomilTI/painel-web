@@ -479,7 +479,27 @@ export function tipoContratoLetra(tipo) {
 // Lista COMPLETA de colaboradores ativos da supervisão (regional liberada do
 // usuário), para o dropdown de troca poder escolher qualquer um — não só os 8
 // candidatos ranqueados. Os já escalados em outra OS são marcados com ♻ na UI.
-export async function loadColaboradoresRegional(supervisao) {
+// programacao-lista-drawer.js e programacao-sem-os.js chamam essa função em
+// paralelo (Promise.allSettled das 2 abas) com a MESMA supervisão — sem
+// cache, isso dobrava a consulta mais pesada daqui (colaboradores_atuais,
+// até 12000 linhas) rodando 2x ao mesmo tempo, esticando o carregamento da
+// aba Sem O.S. e fazendo a troca de tela parecer lenta logo depois de
+// "Carregar" (reportado pela usuária, 2026-07-23). Cacheia a PROMISE (não só
+// o resultado) por 60s, então a 2ª chamada concorrente reaproveita a mesma
+// requisição em vez de disparar outra.
+let regionalCache = { key: '', promise: null, ts: 0 };
+const REGIONAL_CACHE_TTL_MS = 60000;
+export function loadColaboradoresRegional(supervisao) {
+  const key = (Array.isArray(supervisao) ? supervisao : [supervisao]).filter(Boolean).sort().join('|');
+  const agora = Date.now();
+  if (key && regionalCache.key === key && regionalCache.promise && (agora - regionalCache.ts) < REGIONAL_CACHE_TTL_MS) {
+    return regionalCache.promise;
+  }
+  const promise = loadColaboradoresRegionalFresh(supervisao);
+  regionalCache = { key, promise, ts: agora };
+  return promise;
+}
+async function loadColaboradoresRegionalFresh(supervisao) {
   const fontes = [];
   const listaSupervisoes = Array.isArray(supervisao) ? supervisao : [supervisao];
   try {
