@@ -80,6 +80,15 @@ function injectStyles() {
     .pld-filters input[type="text"],.pld-filters select{height:38px;border:1px solid rgba(52,211,153,.22);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;font-size:12.5px;color-scheme:dark}
     .pld-filters input[type="text"]{flex:2 1 0;min-width:130px}
     .pld-filters select{flex:1 1 0;min-width:110px}
+    /* Cliente/Local têm muitas opções -> searchableSelect.js (global) troca o
+       <select> por um combobox pesquisável (.ssel-wrap/.ssel-input), que por
+       padrão vem com width:100% e sem cor nenhuma (herda o branco/azulado
+       nativo do navegador) — cada campo ficava sozinho numa linha inteira e
+       com uma cara clara destoando do resto do painel (pedido do usuário,
+       2026-07-22). Aqui eles ganham o mesmo tamanho/tema do <select> que
+       substituem. */
+    .pld-filters .ssel-wrap{width:auto;flex:1 1 0;min-width:110px}
+    .pld-filters .ssel-input{height:38px;box-sizing:border-box;border:1px solid rgba(52,211,153,.22);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;font-size:12.5px}
     .pld-toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:#8ba79a;white-space:nowrap;cursor:pointer;flex:1 1 100%;order:5}
     .pld-toggle input{accent-color:#16a34a;width:16px;height:16px}
     .pld-count-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12.5px;color:#8ba79a}
