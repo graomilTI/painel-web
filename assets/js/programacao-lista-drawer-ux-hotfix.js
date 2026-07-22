@@ -31,35 +31,6 @@ function injectHotfixStyles() {
       font-size:12px !important;
     }
 
-    /* Remove a faixa cinza de score/custo do candidato sugerido. */
-    #pldOverlayRoot .pld-cand-wrap > .peqb-cand {
-      display:none !important;
-    }
-    #pldOverlayRoot .pld-cand-wrap {
-      margin-bottom:7px !important;
-    }
-    #pldOverlayRoot .pld-cand-choice {
-      display:grid;
-      grid-template-columns:minmax(0,1fr) minmax(0,.72fr);
-      gap:6px;
-      margin-top:0 !important;
-    }
-    #pldOverlayRoot .pld-cand-choice .pld-save-btn {
-      width:100%;
-      height:36px !important;
-      margin:0;
-      font-size:11px !important;
-      border-radius:9px !important;
-    }
-    #pldOverlayRoot .pld-cand-other {
-      border:1px solid rgba(111,208,165,.48) !important;
-      background:rgba(3,32,22,.82) !important;
-      color:#9ef0c0 !important;
-    }
-    #pldOverlayRoot .pld-cand-other:hover {
-      background:rgba(22,163,74,.18) !important;
-    }
-
     /* O seletor precisa aparecer acima do botão Salvar e sem ser clipado. */
     #pldOverlayRoot .pld-add-editor {
       position:relative;
@@ -71,11 +42,6 @@ function injectHotfixStyles() {
   `;
 
   document.head.appendChild(style);
-}
-
-function getAddBoxFromElement(element) {
-  return element?.closest('#pldProgBody')?.querySelector('.pld-add-box')
-    || document.querySelector('#pldOverlayRoot .pld-add-box');
 }
 
 function setAddEditorOpen(box, open) {
@@ -114,34 +80,9 @@ function setAddEditorOpen(box, open) {
   return true;
 }
 
-function enhanceCandidateChoice(root = document) {
-  root.querySelectorAll('.pld-cand-wrap:not([data-choice-enhanced])').forEach((wrap) => {
-    const confirm = wrap.querySelector('[data-confirmar-candidato]');
-    const actions = confirm?.closest('.pld-row-actions');
-    if (!confirm || !actions) return;
-
-    wrap.dataset.choiceEnhanced = '1';
-    actions.classList.add('pld-cand-choice');
-
-    // O candidato continua sendo o sugerido internamente, mas o botão fica limpo.
-    confirm.textContent = 'Confirmar';
-    confirm.removeAttribute('style');
-
-    const other = document.createElement('button');
-    other.type = 'button';
-    other.className = 'pld-save-btn pld-cand-other';
-    other.dataset.pldOtherCandidate = '1';
-    other.textContent = 'Outro';
-    actions.appendChild(other);
-  });
-}
-
 function applyHotfixes() {
   hotfixScheduled = false;
   injectHotfixStyles();
-  const overlay = document.getElementById('pldOverlayRoot');
-  if (!overlay) return;
-  enhanceCandidateChoice(overlay);
 }
 
 function scheduleHotfixes() {
@@ -161,14 +102,6 @@ document.addEventListener('click', (event) => {
     const box = addToggle.closest('.pld-add-box');
     const editor = box?.querySelector('.pld-add-editor');
     setAddEditorOpen(box, editor?.hidden !== false);
-    return;
-  }
-
-  const other = event.target.closest('[data-pld-other-candidate]');
-  if (other) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    setAddEditorOpen(getAddBoxFromElement(other), true);
   }
 }, true);
 

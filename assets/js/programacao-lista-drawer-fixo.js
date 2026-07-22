@@ -302,9 +302,6 @@ function injectFixedLayoutStyles() {
     #pldOverlayRoot .pld-add-editor[hidden] {display:none !important}
     #pldOverlayRoot .pld-add-editor select {width:100%;min-width:0}
 
-    #pldOverlayRoot .pld-save-row {margin-top:9px;padding-top:7px}
-    #pldOverlayRoot .pld-save-btn {height:38px;font-size:11.5px}
-
     @media (max-width:1049px) {
       #pldOverlayRoot .pld-acoes-row {grid-template-columns:repeat(6,minmax(46px,1fr))}
       #pldOverlayRoot .pld-fixed-empty {display:none}
