@@ -321,6 +321,13 @@ function injectFixedLayoutStyles() {
     }
     #pldOverlayRoot .pld-add-editor[hidden] {display:none !important}
     #pldOverlayRoot .pld-add-editor select {width:100%;min-width:0}
+    /* "Escolha um colaborador" tem muitas opções -> searchableSelect.js
+       (global) troca pelo combobox pesquisável (.ssel-wrap/.ssel-input),
+       que por padrão vem sem cor nenhuma (herda o branco/azulado nativo do
+       navegador) — mesmo caso já corrigido nos filtros da lista, agora
+       aqui (reportado pela usuária com print, 2026-07-22). */
+    #pldOverlayRoot .pld-add-editor .ssel-wrap {width:100%;min-width:0}
+    #pldOverlayRoot .pld-add-editor .ssel-input {width:100%;box-sizing:border-box;height:34px;border:1px solid rgba(56,189,248,.3);background:#06130e;color:#eef7f2;border-radius:8px;padding:0 8px;font-size:12px}
 
     @media (max-width:1049px) {
       #pldOverlayRoot .pld-acoes-row {grid-template-columns:repeat(6,minmax(46px,1fr))}
