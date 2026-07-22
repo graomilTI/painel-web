@@ -21,8 +21,9 @@ import {
   brl, statusNorm, isDataPassada,
   confirmarCandidato, adicionarColaboradorOs, removerConfirmacao,
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
-} from './programacao-equipe.js?v=20260721-listadrawer3';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, injectStylesDespesas } from './programacao-despesas.js?v=20260721-listadrawer3';
+  injectStyles as injectStylesEquipe, ensureMasterPermission,
+} from './programacao-equipe.js?v=20260722-cleanup1';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, injectStylesDespesas } from './programacao-despesas.js?v=20260722-cleanup1';
 
 function esc(value) {
   return String(value ?? '')
@@ -225,6 +226,18 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   // (a tela antiga), o CSS delas nunca era injetado e os cards ficavam sem
   // estilo dentro do painel lateral (reportado pela usuária, 2026-07-21).
   injectStylesDespesas();
+  // Mesmo caso pro candidato sugerido (candCardHtml/.peqb-cand-*): o CSS
+  // delas vivia em programacao-equipe.js, só injetado pelas antigas
+  // renderProgramacaoSituacao/renderProgramacaoEquipe. Removidas essas 2
+  // (código morto, 2026-07-22), injectStyles() ficou órfã — sem chamá-la
+  // aqui, o card do candidato sugerido voltava a ficar sem estilo.
+  injectStylesEquipe();
+  // Idem ensureMasterPermission(): isDataPassada() (usada logo abaixo, em
+  // abrirDrawer) só isenta usuário master do bloqueio de data retroativa se
+  // isso já tiver sido resolvido. Também só era chamada pelas renders
+  // antigas removidas — sem aguardar aqui, gestor master ficava travado
+  // como usuário comum em datas passadas.
+  await ensureMasterPermission();
   const supervisao = String(options.supervisao || '').trim();
   const programacaoId = options.programacaoId || null;
   const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
