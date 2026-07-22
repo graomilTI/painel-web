@@ -374,7 +374,7 @@ export function isDataPassada(dataReferencia) {
 // Carrega as OS acionáveis da supervisão (pendentes/aguardar/atender) — as
 // FINALIZAR já saíram do fluxo do dia. A triagem (mudar status) e a atribuição
 // passam a conviver na mesma tela.
-const OS_COLUNAS = 'id,numero_os,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os,configurada_em';
+const OS_COLUNAS = 'id,numero_os,contrato,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os,configurada_em';
 
 // dataReferencia é opcional (só a Etapa 1 passa) — quando informada, também
 // busca as O.S. FINALIZAR do dia (configurada_em na data selecionada) pra

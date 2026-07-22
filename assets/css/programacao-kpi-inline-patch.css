@@ -9,10 +9,16 @@
 .prog-toolbar .prog-toolbar-row,.prog-toolbar .prog-toolbar-row-steps{display:contents!important}
 .prog-toolbar .prog-tfield{flex:0 0 auto!important;flex-direction:row!important;align-items:center!important;gap:6px!important}
 .prog-toolbar .prog-tfield label{font-size:9.5px!important;white-space:nowrap!important;margin:0!important}
-/* Mais comprido, chegando perto do campo Data ao lado (pedido do usuário,
-   2026-07-22) — antes ficava travado em 260px, bem mais estreito que o
-   flex:1 1 320px que .prog-tfield-sup já tinha (ver gestor-ajustes.js). */
-.prog-toolbar .prog-tfield-sup{max-width:420px!important}
+/* Mais comprido (pedido do usuário, 2026-07-22 e reforçado 2026-07-23: o
+   1º ajuste de max-width sozinho não bastou). Causa raiz: programacao-
+   redesign.css tem `.app-shell .prog-tfield-sup{flex:0 1 320px}` — mesma
+   especificidade (2 classes) desta regra, então só quem também travava
+   flex-grow em 0 "vencia" o max-width, e o campo nunca crescia de verdade
+   (só encolhia com flex-shrink quando a linha ficava apertada, ficando
+   BEM menor que 320px, ver print). Aqui repete o `flex` (não só
+   max-width) pra essa regra vencer o empate por ordem de carregamento
+   (este arquivo é o último <link> do <head>). */
+.prog-toolbar .prog-tfield-sup{flex:1 1 340px!important;max-width:460px!important}
 .prog-toolbar .prog-tfield-sup select{max-width:180px!important}
 .prog-toolbar .prog-tfield-date{flex:0 0 auto!important}
 .prog-toolbar .prog-tfield select,.prog-toolbar .prog-tfield input{min-height:30px!important;padding:4px 8px!important;font-size:12px!important}

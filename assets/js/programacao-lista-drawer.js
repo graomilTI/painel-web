@@ -22,7 +22,7 @@ import {
   confirmarCandidato, adicionarColaboradorOs, removerConfirmacao,
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
-} from './programacao-equipe.js?v=20260722-cleanup1';
+} from './programacao-equipe.js?v=20260723-fix1';
 import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260722-cleanup3';
 
 function esc(value) {
@@ -115,6 +115,7 @@ function injectStyles() {
     .pld-row.active td:first-child{box-shadow:inset 3px 0 0 #22c55e}
     .pld-row td{padding:12px 14px;vertical-align:middle;font-size:13px;color:#e2e2f0}
     .pld-os-num{display:flex;align-items:center;gap:8px;font-weight:900;color:#f8fafc}
+    .pld-os-contrato{margin:2px 0 0 16px;font-size:10.5px;color:#7d8aa3}
     .pld-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
     .pld-dot.tone-pendente{background:#64748b}
     .pld-dot.tone-aguardar{background:#f59e0b}
@@ -393,7 +394,10 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     const linhas = filtradas.map((os) => {
       const emb = embarqueHtml(os.embarque);
       return `<tr class="pld-row ${String(os.id) === String(state.osAbertaId) ? 'active' : ''}" data-os-id="${esc(os.id)}">
-        <td><span class="pld-os-num"><span class="pld-dot ${statusToneClass(os)}"></span>${esc(os.numero_os || '-')}</span></td>
+        <td>
+          <span class="pld-os-num"><span class="pld-dot ${statusToneClass(os)}"></span>${esc(os.numero_os || '-')}</span>
+          ${os.contrato ? `<div class="pld-os-contrato">Contrato ${esc(os.contrato)}</div>` : ''}
+        </td>
         <td class="pld-cliente">${esc(os.cliente || '-')}</td>
         <td><span class="pld-local-uf">${emb}</span></td>
         <td class="pld-rem">${fmtRem(os.remanescente)}</td>
