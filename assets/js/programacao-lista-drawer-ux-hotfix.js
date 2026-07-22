@@ -93,8 +93,11 @@ function setAddEditorOpen(box, open) {
     }
     if (open) {
       requestAnimationFrame(() => {
-        const select = editor.querySelector('[data-add-colab-select], select');
-        select?.focus();
+        // Quando o searchableSelect.js já transformou o select num combobox
+        // pesquisável, o campo de verdade (visível e focável) é o .ssel-input;
+        // o <select> original fica com display:none escondido atrás dele.
+        const foco = editor.querySelector('.ssel-input, [data-add-colab-select], select');
+        foco?.focus();
         editor.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       });
     }

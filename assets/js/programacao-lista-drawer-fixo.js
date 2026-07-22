@@ -191,16 +191,15 @@ function injectFixedLayoutStyles() {
     #pldOverlayRoot .peqd-inp {min-height:31px;font-size:10.5px;border-radius:7px}
     #pldOverlayRoot .peqd-chip {padding:5px 9px;font-size:10.5px}
 
-    /* Estadia: tipo + destino / diárias + observação. */
+    /* Estadia: tipo + cidade + diárias numa linha só; observação removida. */
     #pldOverlayRoot .peqd-sec[data-sec="estadia"] .peqd-row {
       display:grid;
-      grid-template-columns:108px minmax(0,1fr);
+      grid-template-columns:minmax(0,.85fr) minmax(0,1fr) 56px;
       gap:5px;
       align-items:center;
     }
     #pldOverlayRoot .peqd-sec[data-sec="estadia"] .peqd-tipo-est,
-    #pldOverlayRoot .peqd-sec[data-sec="estadia"] [data-estadia-destino],
-    #pldOverlayRoot .peqd-sec[data-sec="estadia"] .peqd-obs {
+    #pldOverlayRoot .peqd-sec[data-sec="estadia"] [data-estadia-destino] {
       width:100%;
       min-width:0;
       max-width:none;
@@ -211,12 +210,15 @@ function injectFixedLayoutStyles() {
       min-width:0;
     }
     #pldOverlayRoot .peqd-sec[data-sec="estadia"] .peqd-dias {
-      width:58px !important;
-      min-width:58px;
+      width:56px !important;
+      min-width:56px;
       justify-self:start;
     }
+    #pldOverlayRoot .peqd-sec[data-sec="estadia"] .peqd-obs {
+      display:none !important;
+    }
 
-    /* Deslocamento em linhas curtas e legíveis. */
+    /* Deslocamento: só tipo + placa; KM, valor e observação saem da vista. */
     #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-row {
       display:grid;
       grid-template-columns:minmax(0,1fr) 84px;
@@ -224,16 +226,17 @@ function injectFixedLayoutStyles() {
       align-items:center;
     }
     #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-tipo-desl,
-    #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-placa,
-    #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-km,
-    #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-valor,
-    #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-obs {
+    #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-placa {
       width:100%;
       min-width:0;
       max-width:none;
       flex:none;
     }
-    #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-obs {grid-column:1 / -1}
+    #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-km,
+    #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-valor,
+    #pldOverlayRoot .peqd-sec[data-sec="deslocamento"] .peqd-obs {
+      display:none !important;
+    }
 
     #pldOverlayRoot .peqd-extra-item {
       display:grid;
@@ -341,7 +344,14 @@ function enhanceAddBoxes(root = document) {
     const editor = document.createElement('div');
     editor.className = 'pld-add-editor';
     editor.hidden = true;
-    editor.append(select, confirm);
+    // Move TODOS os filhos atuais da caixa (não só select+confirm): o
+    // searchableSelect.js (global, via pageInit.js) troca selects com muitas
+    // opções por um combobox pesquisável, inserindo um <div class="ssel-wrap">
+    // como IRMÃO do <select> (que fica com display:none escondido atrás dele).
+    // Pegar só select+confirm aqui e descartar o resto via replaceChildren
+    // jogava fora esse .ssel-wrap — sobrava um <select> invisível sem nada
+    // clicável, e "Adicionar colaborador" parecia não abrir lista nenhuma.
+    editor.append(...box.childNodes);
 
     box.replaceChildren(toggle, editor);
   });

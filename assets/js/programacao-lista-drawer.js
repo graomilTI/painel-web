@@ -233,8 +233,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     ${readOnly ? '<div class="prog-readonly-banner">🔒 Data retroativa — somente leitura. Só é possível editar a programação de hoje em diante.</div>' : ''}
     <div class="pld-shell" id="pldShell">
       <div class="pld-list-col">
-        <h2 class="pld-title">PROGRAMAÇÃO DE O.S.</h2>
-        <p class="pld-subtitle">Distribua colaboradores, deslocamentos, estadia e despesas</p>
         <div class="pld-filters">
           <input type="text" id="pldBusca" placeholder="Buscar O.S. ou cliente..." />
           <select id="pldCliente"><option value="">Todos os clientes</option></select>
