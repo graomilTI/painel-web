@@ -108,6 +108,73 @@ export async function loadVeiculosAtivos(supervisao) {
   return veiculosAtivosCache;
 }
 
+// Combobox de veículo pro campo Placa — mesma técnica do combo de
+// alojamento logo abaixo (portal fixo em document.body, pra não ficar
+// clipado pelas bordas do card). Diferente do alojamento, aqui não tem
+// <select> escondido: o próprio <input> de texto já É o campo gravado
+// (data-fld="placa_veiculo"), então o clique só escreve a placa nele.
+// Trocado de <datalist> nativo pra isso porque a sugestão do <datalist>
+// é estilo do navegador (fundo/tema claro) e não dá pra pintar do tema
+// escuro do painel (reportado pela usuária com print, 2026-07-22).
+let veiculoDropdownEl = null;
+let veiculoComboState = { input: null };
+
+function ensureVeiculoDropdown() {
+  if (veiculoDropdownEl) return veiculoDropdownEl;
+  veiculoDropdownEl = document.createElement('div');
+  veiculoDropdownEl.className = 'peqd-veic-combo-portal';
+  veiculoDropdownEl.hidden = true;
+  document.body.appendChild(veiculoDropdownEl);
+
+  document.addEventListener('mousedown', (event) => {
+    if (veiculoDropdownEl.hidden) return;
+    const item = event.target.closest('.peqd-veic-combo-item');
+    if (item && veiculoDropdownEl.contains(item)) {
+      event.preventDefault();
+      const { input } = veiculoComboState;
+      if (input && item.dataset.placa !== undefined) {
+        input.value = item.dataset.placa;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      hideVeiculoDropdown();
+      return;
+    }
+    if (!veiculoDropdownEl.contains(event.target) && event.target !== veiculoComboState.input) {
+      hideVeiculoDropdown();
+    }
+  });
+
+  const reposition = () => { if (veiculoDropdownEl && !veiculoDropdownEl.hidden && veiculoComboState.input) positionVeiculoDropdown(veiculoDropdownEl, veiculoComboState.input); };
+  window.addEventListener('scroll', reposition, true);
+  window.addEventListener('resize', reposition);
+  return veiculoDropdownEl;
+}
+
+function positionVeiculoDropdown(dd, input) {
+  const rect = input.getBoundingClientRect();
+  dd.style.left = `${rect.left}px`;
+  dd.style.top = `${rect.bottom + 4}px`;
+  dd.style.width = `${Math.max(rect.width, 220)}px`;
+}
+
+function hideVeiculoDropdown() {
+  if (veiculoDropdownEl) veiculoDropdownEl.hidden = true;
+  veiculoComboState = { input: null };
+}
+
+function abrirVeiculoDropdown(input, query) {
+  const dd = ensureVeiculoDropdown();
+  veiculoComboState = { input };
+  positionVeiculoDropdown(dd, input);
+  const norm = normalizeText(query);
+  const lista = veiculosAtivosCache || [];
+  const options = norm ? lista.filter((v) => normalizeText(`${v.placa} ${v.motorista_atual || ''}`).includes(norm)) : lista;
+  dd.hidden = false;
+  dd.innerHTML = options.length
+    ? options.slice(0, 60).map((v) => `<div class="peqd-veic-combo-item" data-placa="${esc(v.placa)}"><b>${esc(v.placa)}</b><span>${esc(v.motorista_atual || 'Sem motorista habitual')}</span></div>`).join('')
+    : '<div class="peqd-veic-combo-empty">Nenhum veículo encontrado.</div>';
+}
+
 let alojamentosCache = null;
 export async function loadAlojamentos() {
   if (alojamentosCache) return alojamentosCache;
@@ -269,6 +336,12 @@ export function injectStylesDespesas() {
     .peqd-aloj-combo-item{padding:8px 10px;cursor:pointer;font-size:12px;color:#eef7f2}
     .peqd-aloj-combo-item:hover,.peqd-aloj-combo-item.active{background:#0d2a1f}
     .peqd-aloj-combo-empty{padding:8px 10px;font-size:11.5px;color:#8ba79a;font-style:italic}
+    .peqd-veic-combo-portal{position:fixed;background:#06130e;border:1px solid rgba(111,208,165,.3);border-radius:8px;max-height:260px;overflow-y:auto;z-index:99999;box-shadow:0 14px 38px rgba(0,0,0,.55)}
+    .peqd-veic-combo-item{padding:7px 10px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
+    .peqd-veic-combo-item:hover{background:#0d2a1f}
+    .peqd-veic-combo-item b{font-size:12px;font-family:ui-monospace,monospace;color:#eef7f2}
+    .peqd-veic-combo-item span{font-size:10.5px;color:#8ba79a}
+    .peqd-veic-combo-empty{padding:8px 10px;font-size:11.5px;color:#8ba79a;font-style:italic}
     .prog-readonly-banner{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 14px;border:1px solid rgba(234,179,8,.32);background:rgba(234,179,8,.1);border-radius:12px;color:#fde68a;font-size:12.5px;font-weight:800}
     .prog-readonly-scope{pointer-events:none!important;opacity:.55;filter:saturate(.6)}
   `;
@@ -380,7 +453,7 @@ export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCp
       <div class="peqd-sec-label">🚐 Deslocamento</div>
       <div class="peqd-row">
         <select class="peqd-inp peqd-tipo-desl" data-tab="deslocamento" data-fld="tipo_deslocamento">${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(tipoDesl) === normalizeText(t) ? 'selected' : ''}>${esc(deslocLabel(t))}</option>`).join('')}</select>
-        <input class="peqd-inp peqd-placa" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(onlyPlate(placa))}" placeholder="Placa" title="${placaAuto && !des.placa_veiculo ? 'Puxada da leitura do veículo' : 'Placa do veículo'}" list="pldVeiculosList" autocomplete="off" />
+        <input class="peqd-inp peqd-placa peqd-veic-combo-input" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(onlyPlate(placa))}" placeholder="Placa" title="${placaAuto && !des.placa_veiculo ? 'Puxada da leitura do veículo' : 'Placa do veículo'}" autocomplete="off" spellcheck="false" />
         <input class="peqd-inp peqd-km" data-tab="deslocamento" data-fld="km" type="number" min="0" step="0.01" value="${esc(des.km ?? '')}" placeholder="KM" />
         <input class="peqd-inp peqd-valor" data-tab="deslocamento" data-fld="valor" type="text" value="${esc(des.valor || '')}" placeholder="R$ 0,00" />
         <input class="peqd-inp peqd-obs" data-tab="deslocamento" data-fld="observacao" value="${esc(des.observacao || '')}" placeholder="Observação" />
@@ -631,6 +704,8 @@ export function wireDespesasCards(containerEl, ctx = {}) {
 
   containerEl.addEventListener('focusin', (event) => {
     if (isReadOnly()) return;
+    const veicInput = event.target.closest('.peqd-veic-combo-input');
+    if (veicInput) { veicInput.select(); abrirVeiculoDropdown(veicInput, veicInput.value); return; }
     const input = event.target.closest('.peqd-aloj-combo-input');
     if (!input) return;
     const select = input.previousElementSibling;
@@ -640,6 +715,16 @@ export function wireDespesasCards(containerEl, ctx = {}) {
   });
 
   containerEl.addEventListener('keydown', (event) => {
+    const veicInput = event.target.closest('.peqd-veic-combo-input');
+    if (veicInput) {
+      if (event.key === 'Escape') { hideVeiculoDropdown(); veicInput.blur(); }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        const active = veiculoDropdownEl?.querySelector('.peqd-veic-combo-item');
+        if (active) { veicInput.value = active.dataset.placa; veicInput.dispatchEvent(new Event('input', { bubbles: true })); hideVeiculoDropdown(); veicInput.blur(); }
+      }
+      return;
+    }
     const input = event.target.closest('.peqd-aloj-combo-input');
     if (!input) return;
     if (event.key === 'Escape') { hideAlojDropdown(); input.blur(); }
@@ -673,7 +758,10 @@ export function wireDespesasCards(containerEl, ctx = {}) {
       return;
     }
     if (!inp.matches('input[data-fld][data-tab]')) return;
-    if (inp.dataset.fld === 'placa_veiculo') inp.value = inp.value.toUpperCase();
+    if (inp.dataset.fld === 'placa_veiculo') {
+      inp.value = inp.value.toUpperCase();
+      abrirVeiculoDropdown(inp, inp.value);
+    }
     const card = inp.closest('.peqd-card');
     if (card) scheduleSaveCampo(card, `programacao_${inp.dataset.tab}`);
   });
@@ -698,8 +786,8 @@ export function wireDespesasCards(containerEl, ctx = {}) {
     // card) quando o campo ainda está vazio — antes só preenchia sozinho na
     // 1ª renderização, não ao trocar o tipo depois (pedido do usuário,
     // 2026-07-22). Se o colaborador não tem placa própria, o campo continua
-    // vazio e o gestor procura no datalist (list="pldVeiculosList", por
-    // placa OU pelo nome do motorista habitual).
+    // vazio e o gestor procura no combo de veículo (abrirVeiculoDropdown,
+    // acima), por placa OU pelo nome do motorista habitual.
     if (sel.dataset.fld === 'tipo_deslocamento' && card) {
       const tipoNorm = normalizeText(sel.value);
       const placaInput = card.querySelector('[data-fld="placa_veiculo"]');
