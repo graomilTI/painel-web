@@ -467,7 +467,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     const comCusto = candidatos.filter((c) => c.custoTotal != null);
     const minCustoId = comCusto.length ? comCusto.reduce((a, b) => (a.custoTotal <= b.custoTotal ? a : b)).colaboradorId : null;
     return `<div class="pld-cand-wrap">
-      ${candCardHtml(candidatos[0], true, minCustoId)}
+      ${candCardHtml(candidatos[0], false, minCustoId)}
       <button type="button" class="pld-cand-confirm" data-confirmar-candidato="${esc(candidatos[0].colaboradorId)}" title="Confirmar ${esc(candidatos[0].nome)}">✓</button>
     </div>`;
   }

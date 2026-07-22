@@ -148,7 +148,13 @@ function injectFixedLayoutStyles() {
        pensado pra uma tela mais larga — fontes/avatar/padding grandes demais
        pro painel lateral de 440px, destoando do resto (pedido do usuário,
        2026-07-22: "proporcional ao conteúdo da tela"). */
-    #pldOverlayRoot .peqb-cand {gap:8px; padding:9px 10px}
+    /* Mesmo padrão visual (fundo/borda) da lista de O.S. à esquerda
+       (.pld-table-wrap/.pld-row) em vez do verde vivo de "selecionado" que
+       o componente usa por padrão numa lista de vários candidatos pra
+       escolher — aqui é só 1 sugestão, não uma lista, e o brilho ficava
+       destoando (reportado pela usuária com print, 2026-07-22). */
+    #pldOverlayRoot .peqb-cand {gap:8px; padding:9px 10px; border-color:rgba(52,211,153,.16); background:rgba(2,6,23,.28); border-radius:14px}
+    #pldOverlayRoot .peqb-cand:hover {border-color:rgba(52,211,153,.32); background:rgba(2,6,23,.4)}
     #pldOverlayRoot .peqb-cand-av {width:26px; height:26px; font-size:10px}
     #pldOverlayRoot .peqb-cand-top strong {font-size:12px}
     #pldOverlayRoot .peqb-cand-tag {font-size:8.5px; padding:2px 6px}
