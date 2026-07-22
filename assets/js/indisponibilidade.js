@@ -55,6 +55,15 @@ function styles() {
     .in-actions{display:flex;gap:10px;flex-wrap:wrap}
     .in-feedback{font-weight:700;display:block}
     .in-feedback.err{color:#fecaca}
+    .inds-modal-card{padding:28px}
+    .inds-modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:18px;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.14)}
+    .inds-modal-head h3{margin:0 0 6px;font-size:19px}
+    .inds-modal-head p{margin:0;font-size:13px;line-height:1.4}
+    .inds-modal-close{flex:0 0 auto;width:34px;height:34px;padding:0;border-radius:11px;font-size:15px;line-height:1;background:rgba(148,163,184,.08)!important;border:1px solid rgba(148,163,184,.18)!important;color:var(--muted)}
+    .inds-modal-close:hover{color:#fff;border-color:rgba(248,113,113,.4)!important}
+    .in-grid.inds-grid{gap:18px 16px}
+    .inds-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:24px;padding-top:18px;border-top:1px solid rgba(148,163,184,.14)}
+    .inds-actions .btn{width:auto;margin-top:0;min-width:120px}
     ${filtrosStyle()}
   </style>`;
 }
@@ -120,18 +129,21 @@ function openIndisponibilidadeModal(row = null) {
   const modal = document.getElementById('inModal');
   let selecionado = null;
   const d = (v) => v ? String(v).slice(0, 10) : '';
-  modal.innerHTML = `<div class="in-modal-card">
-    <div class="section-head"><div><h3>${row ? 'Editar Indisponibilidade' : 'Adicionar Indisponibilidade'}</h3><p class="muted">Marca o colaborador como indisponível em um período.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
-    <div class="mt-16" style="position:relative">
+  modal.innerHTML = `<div class="in-modal-card inds-modal-card">
+    <div class="inds-modal-head">
+      <div><h3>${row ? 'Editar Indisponibilidade' : 'Adicionar Indisponibilidade'}</h3><p class="muted">Marca o colaborador como indisponível em um período.</p></div>
+      <button class="inds-modal-close" id="mClose" type="button" title="Fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div style="position:relative">
       <label class="in-full">Colaborador *<input id="indsColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off" value="${esc(row?.colaborador_nome || '')}"></label>
       <div id="indsColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
     </div>
-    <div class="in-grid mt-16">
+    <div class="in-grid inds-grid mt-16">
       <label>Início *<input id="indsInicio" type="date" value="${d(row?.data_inicio)}"></label>
       <label>Fim *<input id="indsFim" type="date" value="${d(row?.data_fim)}"></label>
       <label class="in-full">Motivo *<input id="indsMotivo" type="text" value="${esc(row?.motivo || '')}" placeholder="Ex.: licença, afastamento, folga..."></label>
     </div>
-    <div class="in-actions mt-16"><button class="btn btn-primary" id="indsSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="indsCancelar" type="button">Cancelar</button></div>
+    <div class="inds-actions"><button class="btn btn-secondary" id="indsCancelar" type="button">Cancelar</button><button class="btn btn-primary" id="indsSalvar" type="button">Salvar</button></div>
     <span class="in-feedback mt-8" id="indsFeedback"></span>
   </div>`;
   modal.classList.add('open');
