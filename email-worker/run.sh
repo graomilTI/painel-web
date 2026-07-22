@@ -1,7 +1,19 @@
 #!/bin/bash
-export SUPABASE_URL=https://xyzpnuumdqhegxakkyws.supabase.co
-export SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5enBudXVtZHFoZWd4YWtreXdzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDU1NTQyOSwiZXhwIjoyMDkwMTMxNDI5fQ.ZXShCpiJXIDpBmkko4MZeDcgsUSI-0o1PHmjzBBBdXo
-export EMAIL_CREDENTIALS_KEY=H3101dOSVKYoF7Qgw5DQNvsLX36kNIHoTOOAp+VK5B0=
-export OPENAI_API_KEY=
-export EMAIL_WORKER_INTERVAL_SECONDS=180
-/usr/nodejs/node-v14.9.0/bin/node "$(dirname "$0")/worker.bundle.cjs" --once
+# Central de E-mails - executor do worker (v3)
+#
+# IMPORTANTE: este script NAO define mais credenciais aqui dentro.
+# Toda a configuracao vem exclusivamente do arquivo .env que fica na
+# mesma pasta (o worker carrega via dotenv). Antes, este arquivo
+# exportava um SUPABASE_URL antigo por cima do .env e isso derrubou a
+# sincronizacao inteira quando o projeto antigo foi desativado.
+#
+# Para alterar configuracoes: edite o arquivo .env - nunca este script.
+
+cd "$(dirname "$0")" || exit 1
+
+NODE_BIN="/usr/nodejs/node-v14.9.0/bin/node"
+[ -x "$NODE_BIN" ] || NODE_BIN="$(command -v node)"
+
+# Trava de execucao: se o ciclo anterior ainda estiver rodando (caixa com muitos
+# e-mails atrasados, por exemplo), o cron nao inicia um segundo processo por cima.
+exec flock -n /tmp/email-worker.lock "$NODE_BIN" worker.bundle.cjs --once

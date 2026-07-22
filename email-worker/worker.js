@@ -153,9 +153,7 @@ function messageId(value, fallback = true) {
 // e nomes de cidade tirados do cadastro de colaboradores porque aquele cadastro tem cidades
 // repetidas em mais de uma regional (ex: "Rio Verde" aparece em Goiás e no MT2) — usar isso
 // arriscaria encaminhar pro gestor errado.
-function extractRegional(content) {
-  const source = normalize(content);
-  const checks = [
+const REGIONAL_CHECKS_FALLBACK = [
     ['MATO GROSSO MT3', ['vale sul', 'confresa', 'querencia', 'mt3', 'mato grosso mt3']],
     ['MATO GROSSO MT1', ['br163 sul', 'br163 norte', 'br 163', 'mt1', 'sinop', 'sorriso', 'lucas do rio verde']],
     ['MATO GROSSO MT2', ['mt2', 'rondonopolis', 'primavera do leste']],
@@ -174,8 +172,41 @@ function extractRegional(content) {
     ['RIO GRANDE DO SUL', ['rio grande do sul']],
     ['SAO PAULO', ['sao paulo']],
     ['TOCANTINS', ['tocantins', 'palmas', 'gurupi']]
-  ];
-  return checks.find(([, words]) => words.some((word) => source.includes(normalize(word))))?.[0] || null;
+];
+
+// v3: as palavras-chave de regional agora podem ser cadastradas pela equipe na
+// tabela email_regionais_keywords (via painel/SQL), sem mexer em código. Se a
+// tabela ainda não existir (migração não aplicada) ou estiver vazia, o worker
+// continua usando a lista fixa acima — nada quebra.
+let regionalChecksCache = REGIONAL_CHECKS_FALLBACK;
+
+async function loadRegionalChecks() {
+  try {
+    const { data, error } = await supabase
+      .from('email_regionais_keywords')
+      .select('regional, palavra, prioridade')
+      .eq('ativo', true)
+      .order('prioridade')
+      .order('regional');
+    if (error) throw error;
+    if (!data || !data.length) return REGIONAL_CHECKS_FALLBACK;
+    const grouped = new Map();
+    for (const row of data) {
+      const key = text(row.regional).toUpperCase();
+      if (!key || !text(row.palavra)) continue;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(text(row.palavra));
+    }
+    return grouped.size ? Array.from(grouped.entries()) : REGIONAL_CHECKS_FALLBACK;
+  } catch (err) {
+    console.warn('Palavras-chave de regional do banco indisponíveis, usando lista interna:', err.message);
+    return REGIONAL_CHECKS_FALLBACK;
+  }
+}
+
+function extractRegional(content) {
+  const source = normalize(content);
+  return regionalChecksCache.find(([, words]) => words.some((word) => source.includes(normalize(word))))?.[0] || null;
 }
 
 function resolveEncaminhamento(rule, regional, gestores) {
@@ -503,31 +534,83 @@ function classifyByRules(message, rules, gestores) {
     auto_responder: matched?.auto_responder === true,
     risco: matched?.risco || null,
     classificado_por: matched ? `regra:${matched.nome}` : 'regras',
+    auto_encaminhar_regra: matched?.auto_encaminhar === true,
+    _rule: matched || null,
     ...resolveEncaminhamento(matched, regional, gestores)
   };
 }
 
-async function classifyWithAI(message, base) {
+const CATEGORIAS_VALIDAS = ['LOGISTICA', 'FINANCEIRO', 'NOTAS_FISCAIS', 'FROTAS', 'QUALIDADE', 'RH', 'COMERCIAL', 'COTACAO', 'CONTRATO', 'PROPOSTA', 'JURIDICO', 'TI', 'GERAL'];
+const PRIORIDADES_VALIDAS = ['BAIXA', 'NORMAL', 'ALTA', 'URGENTE'];
+
+function buildAIPrompt(gestores) {
+  const regionais = regionalChecksCache.map(([regional, palavras]) => `- ${regional} (indicadores: ${palavras.slice(0, 8).join(', ')})`).join('\n');
+  const listaGestores = gestores && gestores.size
+    ? Array.from(gestores.keys()).join(', ')
+    : regionalChecksCache.map(([r]) => r).join(', ');
+  return [
+    'Você é o triador de e-mails da GRAOMIL (Grão 1000), empresa de classificação e logística de grãos no Brasil.',
+    'Sua tarefa: classificar o e-mail recebido em comercial@grao1000.com.br para que ele seja distribuído ao gestor correto.',
+    '',
+    'REGIONAIS VÁLIDAS (use EXATAMENTE um destes nomes ou null se não der pra identificar):',
+    regionais,
+    `Regionais cadastradas com gestor: ${listaGestores}`,
+    '',
+    `CATEGORIAS VÁLIDAS: ${CATEGORIAS_VALIDAS.join(', ')}`,
+    `PRIORIDADES VÁLIDAS: ${PRIORIDADES_VALIDAS.join(', ')}`,
+    '',
+    'Dicas de negócio:',
+    '- Solicitações de serviço/atendimento em ponto de embarque, liberação/bloqueio de embarque, ordem de serviço = LOGISTICA.',
+    '- Cotações e pedidos de orçamento = COTACAO. Contratos e aditivos = CONTRATO.',
+    '- Boletos, pagamentos, comprovantes = FINANCEIRO. NF-e, NFS-e, XML de nota = NOTAS_FISCAIS.',
+    '- Multas, placas, veículos = FROTAS. Carga recusada/fora do padrão = QUALIDADE.',
+    '- Identifique a regional pela cidade/estado/terminal citados no texto (ex: Sinop=MATO GROSSO MT1, Rondonópolis=MATO GROSSO MT2, Cascavel=PR CASCAVEL, Paranaguá=PR MARINGA).',
+    '- URGENTE apenas quando há risco operacional imediato (embarque parado, prazo hoje, bloqueio).',
+    '',
+    'Responda APENAS JSON válido com as chaves:',
+    '{"regional": string|null, "categoria": string, "prioridade": string, "precisa_resposta": boolean, "resumo_ia": string (resumo objetivo em português, 1-3 frases, sem saudações), "dados_detectados": object (contrato, os, placa, cidade_embarque, produto, valor etc quando existirem), "resposta_sugerida": string (curta, profissional, sem prometer pagamento/prazo/decisão jurídica; vazia se não precisar)}'
+  ].join('\n');
+}
+
+function sanitizeAIResult(parsed, base, gestores) {
+  const out = { ...base };
+  const regionaisValidas = new Set(regionalChecksCache.map(([r]) => r).concat(gestores ? Array.from(gestores.keys()) : []));
+  const regional = text(parsed.regional).toUpperCase();
+  if (regional && regionaisValidas.has(regional)) out.regional = regional;
+  const categoria = text(parsed.categoria).toUpperCase();
+  if (CATEGORIAS_VALIDAS.includes(categoria)) out.categoria = categoria;
+  const prioridade = text(parsed.prioridade).toUpperCase();
+  if (PRIORIDADES_VALIDAS.includes(prioridade)) out.prioridade = prioridade;
+  if (typeof parsed.precisa_resposta === 'boolean') out.precisa_resposta = parsed.precisa_resposta;
+  if (text(parsed.resumo_ia)) out.resumo_ia = text(parsed.resumo_ia).slice(0, 800);
+  if (text(parsed.resposta_sugerida)) out.resposta_sugerida = text(parsed.resposta_sugerida).slice(0, 2000);
+  out.dados_detectados = { ...(base.dados_detectados || {}), ...pickNonEmpty(parsed.dados_detectados || {}) };
+  return out;
+}
+
+async function classifyWithAI(message, base, gestores) {
   const openai = await getOpenAI();
   if (!openai) return base;
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.1,
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'Classifique e-mails corporativos. Responda só JSON com regional, categoria, prioridade, precisa_resposta, resumo_ia, dados_detectados e resposta_sugerida. Nunca prometa pagamentos, prazos ou decisões jurídicas/RH.' },
-        { role: 'user', content: `Assunto: ${message.subject}\nRemetente: ${message.fromText}\nTexto: ${text(message.text || message.html).slice(0, 6000)}\nBase: ${JSON.stringify(base)}` }
+        { role: 'system', content: buildAIPrompt(gestores) },
+        { role: 'user', content: `Assunto: ${message.subject}\nRemetente: ${message.fromText}\nTexto do e-mail:\n${stripArtifacts(message.text || message.html).slice(0, 6000)}\n\nClassificação preliminar por regras (pode corrigir): ${JSON.stringify({ regional: base.regional, categoria: base.categoria, prioridade: base.prioridade })}` }
       ]
     });
     const parsed = JSON.parse(response.choices?.[0]?.message?.content || '{}');
-    return {
-      ...base,
-      ...parsed,
-      auto_responder: base.auto_responder,
-      dados_detectados: { ...(base.dados_detectados || {}), ...(parsed.dados_detectados || {}) },
-      classificado_por: 'ia+regras'
-    };
+    const merged = sanitizeAIResult(parsed, base, gestores);
+    merged.auto_responder = base.auto_responder;
+    merged.classificado_por = 'ia+regras';
+    // A IA pode ter encontrado uma regional que as regras não viram — nesse caso
+    // recalcula o destino sugerido de encaminhamento com a regional dela.
+    if (merged.regional !== base.regional) {
+      Object.assign(merged, resolveEncaminhamento(base._rule || null, merged.regional, gestores));
+    }
+    return merged;
   } catch (error) {
     console.warn('Falha na IA, mantendo regras:', error.message);
     return base;
@@ -634,6 +717,60 @@ async function collectAttachments(parsed, depth = 0) {
   return result;
 }
 
+// v3: encaminhamento automático (opt-in). Só acontece quando TRÊS coisas são
+// verdade ao mesmo tempo: a conta permite (email_accounts.auto_encaminhar ou a
+// variável EMAIL_AUTO_ENCAMINHAR=SIM no .env), a regra que casou permite
+// (email_regras.auto_encaminhar) e existe um destino sugerido. E-mails de risco
+// alto/crítico nunca são encaminhados sozinhos — ficam pra aprovação humana.
+function envFlag(name) {
+  return /^(1|true|sim|yes)$/i.test(text(process.env[name]));
+}
+
+async function autoForwardEmail(account, emailId, cls, parsed, risco) {
+  try {
+    const contaPermite = account.auto_encaminhar === true || envFlag('EMAIL_AUTO_ENCAMINHAR');
+    const regraPermite = cls.auto_encaminhar_regra === true;
+    const destino = text(cls.encaminhar_sugerido_para);
+    if (!contaPermite || !regraPermite || !destino) return;
+    if (['ALTO', 'CRITICO'].includes(text(risco).toUpperCase())) return;
+    // Anti-loop: nunca encaminhar de volta pra própria conta receptora.
+    const destinos = destino.split(',').map((d) => normalize(d)).filter((d) => d && d !== normalize(account.email));
+    if (!destinos.length) return;
+    // Anti-duplicado: se já existe encaminhamento na fila pra esse e-mail, não repete.
+    const { data: existing } = await supabase.from('email_outbox')
+      .select('id').eq('email_id', emailId).eq('tipo', 'ENCAMINHAMENTO').limit(1);
+    if (existing && existing.length) return;
+    const assunto = /^fwd:/i.test(parsed.subject || '') ? parsed.subject : `Fwd: ${parsed.subject || '(sem assunto)'}`;
+    const corpo = [
+      'Encaminhado automaticamente pela Central de E-mails (triagem por regional/assunto).',
+      `Regional identificada: ${cls.regional || 'não identificada'} · Categoria: ${cls.categoria || 'GERAL'} · Prioridade: ${cls.prioridade || 'NORMAL'}`,
+      '',
+      stripArtifacts(text(parsed.text) || text(parsed.html)).slice(0, 20000)
+    ].join('\n');
+    const { error } = await supabase.from('email_outbox').insert({
+      email_id: emailId,
+      account_id: account.id,
+      tipo: 'ENCAMINHAMENTO',
+      para: destinos.join(','),
+      cc: cls.encaminhar_sugerido_cc || null,
+      assunto,
+      corpo,
+      status: 'PENDENTE',
+      aprovado_por_nome: 'Encaminhamento automático (worker)',
+      aprovado_em: new Date().toISOString()
+    });
+    if (error) throw error;
+    await supabase.from('email_historico').insert({
+      email_id: emailId,
+      acao: 'ENCAMINHAMENTO_AUTOMATICO',
+      detalhes: { para: destinos.join(','), cc: cls.encaminhar_sugerido_cc || null, regional: cls.regional, categoria: cls.categoria }
+    });
+    console.log(`Encaminhamento automático criado para ${destinos.join(',')} (email ${emailId}).`);
+  } catch (err) {
+    console.warn('Falha no encaminhamento automático (segue para aprovação manual):', err.message);
+  }
+}
+
 async function processMailbox(client, account, rules, gestores, mailbox, state) {
   const mailboxPath = mailbox.path;
   const lock = await client.getMailboxLock(mailboxPath);
@@ -669,7 +806,7 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
         const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', id).maybeSingle();
         if (exists.data?.id) continue;
         const input = { subject: text(parsed.subject) || '(sem assunto)', fromText: text(parsed.from?.text || from.address), text: text(parsed.text), html: text(parsed.html) };
-        const cls = await classifyWithAI(input, classifyByRules(input, rules, gestores));
+        const cls = await classifyWithAI(input, classifyByRules(input, rules, gestores), gestores);
         const { data: saved, error } = await supabase.from('email_messages').insert({
           account_id: account.id,
           uid: item.uid,
@@ -726,7 +863,7 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
         }
         const linhasSuspensas = linhasEmbarque.filter((linha) => normalize(linha?.status).includes('suspenso'));
         if (linhasSuspensas.length) {
-          const sugestoes = (await Promise.all(linhasSuspensas.map((linha) => sugerirAguardarOS(linha, message.fromText)))).filter(Boolean);
+          const sugestoes = (await Promise.all(linhasSuspensas.map((linha) => sugerirAguardarOS(linha, input.fromText)))).filter(Boolean);
           if (sugestoes.length) updatePayload.os_sugestao_aguardar = sanitizeForPostgres(sugestoes);
         }
         if (Object.keys(updatePayload).length > 1) {
@@ -742,6 +879,7 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
             status: 'PENDENTE'
           });
         }
+        await autoForwardEmail(account, saved.id, cls, parsed, updatePayload.risco || cls.risco);
       } catch (itemError) {
         failed++;
         console.error(`Falha ao processar mensagem uid=${item.uid} de ${account.email} em ${mailboxPath}:`, itemError);
@@ -906,6 +1044,7 @@ async function processOutbox() {
 }
 
 async function runOnce() {
+  regionalChecksCache = await loadRegionalChecks();
   const rules = await loadRules();
   const gestores = await loadGestoresRegionais();
   const { data: accounts, error } = await supabase.from('email_accounts').select('*').eq('ativo', true).order('nome');
