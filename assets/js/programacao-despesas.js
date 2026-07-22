@@ -6,7 +6,7 @@
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
 import { getUserContext } from './auth.js';
-import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20260721-listadrawer1';
+import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20260721-listadrawer2';
 import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
 
 let currentUserIsMaster = false;
@@ -193,7 +193,7 @@ function estadiaDestinoHtml(tipo, est, embarque) {
   return '<span class="peqd-inp-na">—</span>';
 }
 
-function injectStylesDespesas() {
+export function injectStylesDespesas() {
   if (document.getElementById('progDespesasStyles')) return;
   const style = document.createElement('style');
   style.id = 'progDespesasStyles';

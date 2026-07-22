@@ -21,8 +21,8 @@ import {
   brl, statusNorm, isDataPassada,
   confirmarCandidato, adicionarColaboradorOs, removerConfirmacao,
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
-} from './programacao-equipe.js?v=20260721-listadrawer1';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos } from './programacao-despesas.js?v=20260721-listadrawer1';
+} from './programacao-equipe.js?v=20260721-listadrawer2';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, injectStylesDespesas } from './programacao-despesas.js?v=20260721-listadrawer2';
 
 function esc(value) {
   return String(value ?? '')
@@ -60,9 +60,15 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'pldStyles';
   style.textContent = `
-    .pld-shell{display:grid;grid-template-columns:minmax(420px,1fr) minmax(0,0px);gap:16px;align-items:start;position:relative}
-    .pld-shell.pld-drawer-open{grid-template-columns:minmax(380px,1fr) min(480px,42vw)}
-    .pld-list-col{min-width:0}
+    /* Lista sempre em largura total; o painel de programação abre como OVERLAY
+       fixo à direita, sem comprimir os filtros/lista (que antes "amassavam"
+       num grid de 2 colunas quando o painel abria — reportado pela usuária,
+       2026-07-21). */
+    .pld-shell{position:relative}
+    .pld-list-col{min-width:0;max-width:1100px}
+    .pld-backdrop{position:fixed;inset:0;background:rgba(2,6,23,.45);z-index:180;opacity:0;transition:opacity .18s ease}
+    .pld-backdrop.show{opacity:1}
+    .pld-backdrop[hidden]{display:none}
     .pld-title{margin:0;font-size:22px;font-weight:950;color:#f8fafc;letter-spacing:.01em}
     .pld-subtitle{margin:4px 0 14px;color:#8ba79a;font-size:13px}
     .pld-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
@@ -98,8 +104,9 @@ function injectStyles() {
     .pld-page-btn.active{border-color:rgba(52,211,153,.55);background:rgba(22,163,74,.28);color:#dcfce7}
     .pld-page-btn:disabled{opacity:.4;cursor:not-allowed}
 
-    /* Painel lateral */
-    .pld-drawer{position:sticky;top:8px;max-height:calc(100vh - 60px);overflow-y:auto;border:1px solid rgba(52,211,153,.22);border-radius:18px;background:#0a1a12;padding:20px 22px}
+    /* Painel lateral — overlay fixo, desliza da direita */
+    .pld-drawer{position:fixed;top:0;right:0;z-index:190;width:min(440px,94vw);height:100vh;overflow-y:auto;border-left:1px solid rgba(52,211,153,.22);background:#0a1a12;padding:20px 22px;box-shadow:-18px 0 48px rgba(0,0,0,.5);transform:translateX(100%);transition:transform .2s ease}
+    .pld-shell.pld-drawer-open .pld-drawer{transform:translateX(0)}
     .pld-drawer[hidden]{display:none}
     .pld-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
     .pld-os-title{display:flex;align-items:center;gap:10px;font-size:19px;color:#f8fafc}
@@ -174,7 +181,7 @@ function injectStyles() {
     .pld-hist-item:last-child{border-bottom:0}
     .pld-hist-when{color:#7d8aa3;font-size:10.5px;margin-top:2px}
     .prog-readonly-banner{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 14px;border:1px solid rgba(234,179,8,.32);background:rgba(234,179,8,.1);border-radius:12px;color:#fde68a;font-size:12.5px;font-weight:800}
-    @media(max-width:980px){.pld-shell.pld-drawer-open{grid-template-columns:1fr}.pld-drawer{position:fixed;inset:0;top:auto;max-height:88vh;border-radius:18px 18px 0 0;z-index:200}}
+    @media(max-width:560px){.pld-drawer{width:100vw}}
   `;
   document.head.appendChild(style);
 }
@@ -198,6 +205,11 @@ function programacaoIdParaOs(os, programacaoId, programacaoIdMap) {
 
 export async function renderProgramacaoListaDrawer(content, options = {}) {
   injectStyles();
+  // Os cards de Estadia/Alimentação/Deslocamento/Extras usam as classes .peqd-*
+  // definidas em programacao-despesas.js — sem chamar renderProgramacaoDespesas
+  // (a tela antiga), o CSS delas nunca era injetado e os cards ficavam sem
+  // estilo dentro do painel lateral (reportado pela usuária, 2026-07-21).
+  injectStylesDespesas();
   const supervisao = String(options.supervisao || '').trim();
   const programacaoId = options.programacaoId || null;
   const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
@@ -219,11 +231,13 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         </div>
         <div id="pldListaBody"><div class="pld-loading"><span class="pld-spinner" aria-hidden="true"></span><span>Carregando O.S. da supervisão...</span></div></div>
       </div>
+      <div class="pld-backdrop" id="pldBackdrop" hidden></div>
       <aside class="pld-drawer" id="pldDrawer" hidden></aside>
     </div>
   `;
 
   const listaBody = content.querySelector('#pldListaBody');
+  const backdropEl = content.querySelector('#pldBackdrop');
   if (!supervisao || (!programacaoId && !programacaoIdMap.size)) {
     listaBody.innerHTML = '<div class="pld-empty">Carregue o contexto (supervisão e data) para ver as O.S.</div>';
     return;
@@ -233,6 +247,23 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   let equipeRowsAtual = [];
   const shellEl = content.querySelector('#pldShell');
   const drawerEl = content.querySelector('#pldDrawer');
+
+  // Memo de dados que dependem só de supervisão/data (fixos durante todo o
+  // render): sem isso, cada abertura de painel refazia loadColaboradoresRegional
+  // (que bate no colaborador_snapshot, o gargalo lento do projeto) DUAS vezes —
+  // uma no candidato sugerido, outra no popularAddBox — além de placas/contrato/
+  // indisponíveis a cada O.S. Reportado pela usuária como carregamento lento
+  // (2026-07-21). A promise é guardada (não o resultado) pra que chamadas
+  // concorrentes na mesma abertura compartilhem o mesmo fetch.
+  const memo = {};
+  function memoized(chave, fn) {
+    if (!memo[chave]) memo[chave] = fn();
+    return memo[chave];
+  }
+  const getRegional = () => memoized('regional', () => loadColaboradoresRegional(supervisaoQuery));
+  const getIndisponiveis = () => memoized('indisp', () => loadIndisponiveisNaData(options.dataReferencia));
+  const getPlacas = () => memoized('placas', () => loadCruzamentoPlacas(supervisaoQuery));
+  const getTipoContrato = () => memoized('tipoContrato', () => loadCruzamentoTipoContrato(supervisaoQuery));
 
   async function recarregarEquipeRows() {
     equipeRowsAtual = await loadEquipeExistente(programacaoIdQuery);
@@ -333,12 +364,23 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     }
   }
 
+  // Refresh leve pós-ação (status/vínculo): NÃO refaz loadOsRelevantes (até 400
+  // O.S., o que a usuária sentia como lentidão a cada clique) — a lista de O.S.
+  // em si não muda com essas ações, só status_gestor (patcheado localmente) ou
+  // a equipe. Só recarrega programacao_equipe quando pedido (add/remover) e
+  // remonta o corpo do painel da O.S. aberta.
+  async function refreshAposAcao(os, { equipe = false } = {}) {
+    if (equipe) await recarregarEquipeRows();
+    renderLista();
+    if (String(state.osAbertaId) === String(os.id)) await abrirDrawer(os, { silent: true });
+  }
+
   // --- Drawer: candidato sugerido (O.S. ATENDER sem ninguém confirmado ainda) ---
   async function carregarCandidatoSugerido(os) {
-    const ponto = (await loadPontos([os.ponto_embarque_id].filter(Boolean))).get(os.ponto_embarque_id) || null;
-    const [colaboradoresRegionalBruto, indisponiveis] = await Promise.all([
-      loadColaboradoresRegional(supervisaoQuery),
-      loadIndisponiveisNaData(options.dataReferencia),
+    const [ponto, colaboradoresRegionalBruto, indisponiveis] = await Promise.all([
+      loadPontos([os.ponto_embarque_id].filter(Boolean)).then((m) => m.get(os.ponto_embarque_id) || null),
+      getRegional(),
+      getIndisponiveis(),
     ]);
     const supervisoesAlvo = new Set((Array.isArray(supervisaoQuery) ? supervisaoQuery : [supervisaoQuery]).map((s) => normalizeText(s)).filter(Boolean));
     const colaboradoresRegional = colaboradoresRegionalBruto
@@ -373,8 +415,8 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     const colaboradorIds = rows.map((r) => r.colaborador_id);
     const [custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, dispPorColaborador] = await Promise.all([
       loadCustos(programacaoIdQuery),
-      loadCruzamentoPlacas(supervisaoQuery),
-      loadCruzamentoTipoContrato(supervisaoQuery),
+      getPlacas(),
+      getTipoContrato(),
       loadExtras(programacaoIdQuery, colaboradorIds),
       loadDisponibilidadeConfirmados(programacaoIdQuery, colaboradorIds),
     ]);
@@ -474,7 +516,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     const sel = progBodySelectAtual();
     if (!sel) return;
     const jaNaOs = new Set(rowsAtuais.map((r) => String(r.colaborador_id)));
-    const regional = await loadColaboradoresRegional(os.supervisao || supervisaoQuery);
+    const regional = await getRegional();
     const escalados = new Set(equipeRowsAtual.filter((r) => r.confirmado).map((r) => String(r.colaborador_id)));
     const opcoes = regional.filter((c) => c.colaboradorId && !jaNaOs.has(String(c.colaboradorId)));
     sel.innerHTML = '<option value="">Escolha um colaborador…</option>' + opcoes.map((c) => {
@@ -501,6 +543,8 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
 
   async function abrirDrawer(os, { silent = false } = {}) {
     state.osAbertaId = os.id;
+    backdropEl.hidden = false;
+    requestAnimationFrame(() => backdropEl.classList.add('show'));
     shellEl.classList.add('pld-drawer-open');
     drawerEl.hidden = false;
     const st = statusNorm(os);
@@ -536,13 +580,15 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       <div id="pldProgBody"></div>
       <div class="pld-save-row"><button type="button" class="pld-save-btn" id="pldSalvarBtn" ${readOnly ? 'disabled' : ''}>Salvar programação</button></div>
     `;
-    if (!silent) drawerEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    drawerEl.scrollTop = 0;
     await montarProgramacaoBody(os);
   }
 
   function fecharDrawer() {
     state.osAbertaId = null;
     shellEl.classList.remove('pld-drawer-open');
+    backdropEl.classList.remove('show');
+    backdropEl.hidden = true;
     drawerEl.hidden = true;
     drawerEl.innerHTML = '';
   }
@@ -671,7 +717,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   shellEl.addEventListener('click', async (event) => {
     const osAtual = () => osTodasAtual.find((o) => String(o.id) === String(state.osAbertaId));
 
-    if (event.target.closest('#pldDrawerClose')) { fecharDrawer(); return; }
+    if (event.target.closest('#pldDrawerClose') || event.target === backdropEl) { fecharDrawer(); return; }
 
     const statusBtn = event.target.closest('[data-acao-status]');
     if (statusBtn) {
@@ -679,8 +725,12 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       if (!os || statusBtn.disabled) return;
       statusBtn.disabled = true;
       try {
-        await atualizarStatusOsCore(os, statusBtn.dataset.acaoStatus, currentUser?.id);
-        await carregarLista({ manterDrawer: true });
+        const novoStatus = statusBtn.dataset.acaoStatus;
+        await atualizarStatusOsCore(os, novoStatus, currentUser?.id);
+        // Patcheia o objeto local em vez de refazer a lista inteira do banco.
+        os.status_gestor = novoStatus;
+        os.configurada_em = new Date().toISOString();
+        await refreshAposAcao(os);
       } catch (error) {
         alert(error.message || 'Não foi possível atualizar a O.S.');
       } finally {
@@ -726,9 +776,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         const cand = candidatos.find((c) => String(c.colaboradorId) === confirmarCandBtn.dataset.confirmarCandidato) || candidatos[0];
         if (cand) {
           await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
-          await recarregarEquipeRows();
-          await montarProgramacaoBody(os);
-          await carregarLista({ manterDrawer: true });
+          await refreshAposAcao(os, { equipe: true });
         }
       } catch (error) {
         alert(error.message || 'Não foi possível confirmar o colaborador.');
@@ -757,9 +805,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
             nomes: [...rowsAtuais.map((r) => r.nome_colaborador), cand.nome],
             motivo,
           });
-          await recarregarEquipeRows();
-          await montarProgramacaoBody(os);
-          await carregarLista({ manterDrawer: true });
+          await refreshAposAcao(os, { equipe: true });
         } catch (error) {
           alert(error.message || 'Não foi possível adicionar o colaborador.');
         } finally {
@@ -769,9 +815,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         addConfirmBtn.disabled = true;
         try {
           await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
-          await recarregarEquipeRows();
-          await montarProgramacaoBody(os);
-          await carregarLista({ manterDrawer: true });
+          await refreshAposAcao(os, { equipe: true });
         } catch (error) {
           alert(error.message || 'Não foi possível adicionar o colaborador.');
         } finally {
@@ -788,9 +832,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       if (!confirm('Remover este colaborador da O.S.?')) return;
       try {
         await removerConfirmacao(programacaoIdParaOs(os, programacaoId, programacaoIdMap), removerBtn.dataset.removerColab);
-        await recarregarEquipeRows();
-        await montarProgramacaoBody(os);
-        await carregarLista({ manterDrawer: true });
+        await refreshAposAcao(os, { equipe: true });
       } catch (error) {
         alert(error.message || 'Não foi possível remover o colaborador.');
       }
