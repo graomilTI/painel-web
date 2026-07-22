@@ -62,6 +62,7 @@ function styles() {
     .inds-modal-close{flex:0 0 auto;width:34px;height:34px;padding:0;border-radius:11px;font-size:15px;line-height:1;background:rgba(148,163,184,.08)!important;border:1px solid rgba(148,163,184,.18)!important;color:var(--muted)}
     .inds-modal-close:hover{color:#fff;border-color:rgba(248,113,113,.4)!important}
     .in-grid.inds-grid{gap:18px 16px}
+    #indsColabInput{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}
     .inds-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:24px;padding-top:18px;border-top:1px solid rgba(148,163,184,.14)}
     .inds-actions .btn{width:auto;margin-top:0;min-width:120px}
     ${filtrosStyle()}
