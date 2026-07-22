@@ -47,6 +47,7 @@ function injectStyles() {
   style.textContent = `
     .pgc-tabs-shell{display:block;width:100%}
     .pgc-tab-pane[hidden]{display:none!important}
+    .pgc-tab-pane.pgc-prelayout{position:absolute!important;left:-100000px!important;top:0!important;width:min(1400px,100vw)!important;display:block!important;visibility:hidden!important;pointer-events:none!important;contain:layout style paint!important}
     .pgc-loading-card{border:1px dashed rgba(52,211,153,.22);border-radius:18px;padding:18px;background:rgba(15,23,42,.18);color:#94a3b8;display:flex;gap:12px;align-items:center}
     .pgc-spinner{width:26px;height:26px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;animation:pgcSpin .75s linear infinite;flex:0 0 auto}
     @keyframes pgcSpin{to{transform:rotate(360deg)}}
@@ -174,6 +175,28 @@ function setActiveStep(step) {
   }
 }
 
+// `hidden` evita trabalho enquanto os dados das duas abas são montados, mas
+// também faz o navegador adiar o primeiro layout da aba oculta até o clique.
+// Em listas grandes esse layout aparecia para o usuário como uma transição
+// lenta entre O.S. e Sem O.S. Aquecemos a aba pronta durante o tempo ocioso;
+// depois disso o clique abaixo só alterna visibilidade.
+function prelayoutInactivePanes() {
+  const run = () => {
+    if (!state.panes || state.renderingAll) return;
+    Object.entries(state.panes).forEach(([key, pane]) => {
+      if (!pane || key === state.activeStep || !pane.hidden) return;
+      pane.classList.add('pgc-prelayout');
+      pane.hidden = false;
+      // Leitura intencional: força o cálculo de layout fora do clique.
+      void pane.getBoundingClientRect().height;
+      pane.hidden = true;
+      pane.classList.remove('pgc-prelayout');
+    });
+  };
+  if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 800 });
+  else window.setTimeout(run, 80);
+}
+
 function getContextOptions() {
   const supervisao = document.getElementById('progSup')?.value || '';
   const dataReferencia = document.getElementById('progDataRef')?.value || '';
@@ -247,6 +270,7 @@ async function renderAllTabs({ force = false } = {}) {
       setFeedback('Programação carregada.', 'ok');
     }
     setActiveStep(state.activeStep);
+    prelayoutInactivePanes();
   } catch (error) {
     console.error('[programacao-fluxo] renderAllTabs:', error);
     setFeedback(error.message || 'Erro ao carregar as abas.', 'error');
