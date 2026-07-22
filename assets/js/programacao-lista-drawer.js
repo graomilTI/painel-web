@@ -23,7 +23,7 @@ import {
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
 } from './programacao-equipe.js?v=20260722-cleanup1';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260722-cleanup2';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260722-cleanup3';
 
 function esc(value) {
   return String(value ?? '')
@@ -107,7 +107,12 @@ function injectStyles() {
     .pld-row{cursor:pointer;border-bottom:1px solid rgba(148,163,184,.1)}
     .pld-row:last-child{border-bottom:0}
     .pld-row:hover td{background:rgba(34,197,94,.06)}
-    .pld-row.active td{background:rgba(34,197,94,.12)}
+    /* Destaque mais forte que um simples tingimento de fundo — faixa verde
+       na borda esquerda + fundo mais evidente, pra achar de relance qual
+       O.S. está aberta no painel lateral (pedido do usuário, 2026-07-22:
+       "faltou o destaque da OS selecionada"). */
+    .pld-row.active td{background:rgba(34,197,94,.16)}
+    .pld-row.active td:first-child{box-shadow:inset 3px 0 0 #22c55e}
     .pld-row td{padding:12px 14px;vertical-align:middle;font-size:13px;color:#e2e2f0}
     .pld-os-num{display:flex;align-items:center;gap:8px;font-weight:900;color:#f8fafc}
     .pld-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
@@ -465,7 +470,9 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   // --- Drawer: colaboradores confirmados + despesas por colaborador ---
   async function carregarColaboradoresConfirmados(os, rows) {
     const colaboradorIds = rows.map((r) => r.colaborador_id);
-    const [custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, dispPorColaborador, veiculos] = await Promise.all([
+    // getVeiculos() só precisa rodar (popula o cache do combo de placa em
+    // programacao-despesas.js) — o resultado em si não é usado aqui.
+    const [custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, dispPorColaborador] = await Promise.all([
       loadCustos(programacaoIdQuery),
       getPlacas(),
       getTipoContrato(),
@@ -475,16 +482,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     ]);
     await loadAlojamentos();
     const osResumoPorId = new Map([[String(os.id), { id: os.id, numero_os: os.numero_os, cliente: os.cliente, embarque: os.embarque }]]);
-    return { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId, dispPorColaborador, veiculos };
-  }
-
-  // Datalist compartilhado do campo Placa (list="pldVeiculosList", ver
-  // programacao-despesas.js) — procura tanto pela placa quanto pelo nome do
-  // motorista habitual (pedido do usuário, 2026-07-22: "opção de procurar
-  // pela placa ou pelo colaborador associado").
-  function veiculosDatalistHtml(veiculos) {
-    const opts = (veiculos || []).map((v) => `<option value="${esc(v.placa)}">${esc(v.motorista_atual || 'Sem motorista habitual')}</option>`).join('');
-    return `<datalist id="pldVeiculosList">${opts}</datalist>`;
+    return { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId, dispPorColaborador };
   }
 
   function colaboradorRowWrapHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab, escaladoEmOutra) {
@@ -534,7 +532,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       }
 
       const programacaoIdDaOs = rows[0]?.programacao_id || programacaoIdParaOs(os, programacaoId, programacaoIdMap);
-      const { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId, veiculos } = await carregarColaboradoresConfirmados(os, rows);
+      const { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId } = await carregarColaboradoresConfirmados(os, rows);
       const cardsHtml = rows.map((r) => colaboradorRowWrapHtml(
         { colaboradorId: r.colaborador_id, nome: r.nome_colaborador || r.colaborador_id, programacaoId: r.programacao_id || programacaoIdDaOs, osIds: new Set([os.id]), equipeRowId: r.id },
         custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab,
@@ -549,7 +547,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         </div>` : '';
 
       progBody.innerHTML = `
-        ${veiculosDatalistHtml(veiculos)}
         ${cardsHtml}
         <div class="pld-add-box" data-add-box>
           <select data-add-colab-select><option value="">Escolha um colaborador…</option></select>
@@ -597,6 +594,14 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
 
   async function abrirDrawer(os, { silent = false } = {}) {
     state.osAbertaId = os.id;
+    // Marca a linha da O.S. aberta na lista — sem isso a classe "active" só
+    // era aplicada no <tr> na hora do renderLista() inicial (quando
+    // osAbertaId ainda era null), nunca atualizada ao clicar numa linha
+    // depois (reportado pela usuária, 2026-07-22: "faltou o destaque da OS
+    // selecionada"). Troca a classe direto em vez de chamar renderLista()
+    // de novo, que perderia a posição do scroll da lista.
+    listaBody.querySelectorAll('.pld-row.active').forEach((tr) => tr.classList.remove('active'));
+    listaBody.querySelector(`.pld-row[data-os-id="${CSS.escape(String(os.id))}"]`)?.classList.add('active');
     backdropEl.hidden = false;
     drawerEl.hidden = false;
     requestAnimationFrame(() => { backdropEl.classList.add('show'); drawerEl.classList.add('open'); });
@@ -635,6 +640,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
 
   function fecharDrawer() {
     state.osAbertaId = null;
+    listaBody.querySelectorAll('.pld-row.active').forEach((tr) => tr.classList.remove('active'));
     shellEl.classList.remove('pld-drawer-open');
     backdropEl.classList.remove('show');
     drawerEl.classList.remove('open');
