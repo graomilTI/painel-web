@@ -21,8 +21,8 @@ import {
   brl, statusNorm, isDataPassada,
   confirmarCandidato, adicionarColaboradorOs, removerConfirmacao,
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
-} from './programacao-equipe.js?v=20260721-listadrawer2';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, injectStylesDespesas } from './programacao-despesas.js?v=20260721-listadrawer2';
+} from './programacao-equipe.js?v=20260721-listadrawer3';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, injectStylesDespesas } from './programacao-despesas.js?v=20260721-listadrawer3';
 
 function esc(value) {
   return String(value ?? '')
@@ -104,9 +104,21 @@ function injectStyles() {
     .pld-page-btn.active{border-color:rgba(52,211,153,.55);background:rgba(22,163,74,.28);color:#dcfce7}
     .pld-page-btn:disabled{opacity:.4;cursor:not-allowed}
 
-    /* Painel lateral — overlay fixo, desliza da direita */
-    .pld-drawer{position:fixed;top:0;right:0;z-index:190;width:min(440px,94vw);height:100vh;overflow-y:auto;border-left:1px solid rgba(52,211,153,.22);background:#0a1a12;padding:20px 22px;box-shadow:-18px 0 48px rgba(0,0,0,.5);transform:translateX(100%);transition:transform .2s ease}
-    .pld-shell.pld-drawer-open .pld-drawer{transform:translateX(0)}
+    /* Painel lateral — overlay fixo, desliza da direita. O backdrop e o drawer
+       vivem direto no <body> (fora de #pageContent) porque position:fixed vira
+       relativo a QUALQUER ancestral com transform/filter/will-change — e vários
+       ancestrais têm :hover{transform:...}, o que fazia o painel "pular"
+       conforme o mouse (reportado pela usuária, 2026-07-21). Ancorado no body,
+       fica imune a isso. box-sizing:border-box pra a largura já incluir o
+       padding (senão o painel passava dos 440px pedidos). */
+    /* z-index alto pra o painel (top:0, altura total) ficar ACIMA da topbar
+       fixa do app — senão o cabeçalho do painel (nº da O.S. + botão fechar)
+       fica cortado atrás dela. Abaixo dos modais (.pld-modal-ov = 9999), que
+       precisam abrir por cima do painel (KG/laudo/justificativa). */
+    .pld-overlay-root{position:fixed;inset:0;z-index:9990;pointer-events:none}
+    .pld-overlay-root .pld-backdrop,.pld-overlay-root .pld-drawer{pointer-events:auto}
+    .pld-drawer{box-sizing:border-box;position:fixed;top:0;right:0;z-index:190;width:min(440px,94vw);height:100vh;overflow-y:auto;border-left:1px solid rgba(52,211,153,.22);background:#0a1a12;padding:20px 22px;box-shadow:-18px 0 48px rgba(0,0,0,.5);transform:translateX(100%);transition:transform .2s ease}
+    .pld-drawer.open{transform:translateX(0)}
     .pld-drawer[hidden]{display:none}
     .pld-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
     .pld-os-title{display:flex;align-items:center;gap:10px;font-size:19px;color:#f8fafc}
@@ -231,13 +243,26 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         </div>
         <div id="pldListaBody"><div class="pld-loading"><span class="pld-spinner" aria-hidden="true"></span><span>Carregando O.S. da supervisão...</span></div></div>
       </div>
-      <div class="pld-backdrop" id="pldBackdrop" hidden></div>
-      <aside class="pld-drawer" id="pldDrawer" hidden></aside>
     </div>
   `;
 
+  // Backdrop + drawer ancorados no <body> (não em #pageContent) — ver comentário
+  // no CSS de .pld-overlay-root: position:fixed quebra dentro de ancestral com
+  // transform, e há :hover{transform} em vários lugares, o que fazia o painel
+  // "pular" com o mouse. Remove um root anterior antes de criar (o Carregar
+  // re-renderiza a tela, senão vazaria um overlay órfão no body a cada clique).
+  document.getElementById('pldOverlayRoot')?.remove();
+  const overlayRoot = document.createElement('div');
+  overlayRoot.id = 'pldOverlayRoot';
+  overlayRoot.className = 'pld-overlay-root';
+  overlayRoot.innerHTML = `
+    <div class="pld-backdrop" id="pldBackdrop" hidden></div>
+    <aside class="pld-drawer" id="pldDrawer" hidden></aside>
+  `;
+  document.body.appendChild(overlayRoot);
+
   const listaBody = content.querySelector('#pldListaBody');
-  const backdropEl = content.querySelector('#pldBackdrop');
+  const backdropEl = overlayRoot.querySelector('#pldBackdrop');
   if (!supervisao || (!programacaoId && !programacaoIdMap.size)) {
     listaBody.innerHTML = '<div class="pld-empty">Carregue o contexto (supervisão e data) para ver as O.S.</div>';
     return;
@@ -246,7 +271,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   let osTodasAtual = [];
   let equipeRowsAtual = [];
   const shellEl = content.querySelector('#pldShell');
-  const drawerEl = content.querySelector('#pldDrawer');
+  const drawerEl = overlayRoot.querySelector('#pldDrawer');
 
   // Memo de dados que dependem só de supervisão/data (fixos durante todo o
   // render): sem isso, cada abertura de painel refazia loadColaboradoresRegional
@@ -544,9 +569,9 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   async function abrirDrawer(os, { silent = false } = {}) {
     state.osAbertaId = os.id;
     backdropEl.hidden = false;
-    requestAnimationFrame(() => backdropEl.classList.add('show'));
-    shellEl.classList.add('pld-drawer-open');
     drawerEl.hidden = false;
+    requestAnimationFrame(() => { backdropEl.classList.add('show'); drawerEl.classList.add('open'); });
+    shellEl.classList.add('pld-drawer-open');
     const st = statusNorm(os);
     const badgeTone = st === 'FINALIZAR' ? 'tone-fim' : '';
     const badgeLabel = st === 'FINALIZAR' ? 'FINALIZADA' : 'EM ABERTO';
@@ -588,9 +613,15 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     state.osAbertaId = null;
     shellEl.classList.remove('pld-drawer-open');
     backdropEl.classList.remove('show');
-    backdropEl.hidden = true;
-    drawerEl.hidden = true;
-    drawerEl.innerHTML = '';
+    drawerEl.classList.remove('open');
+    // Espera a transição de saída (translateX) antes de esconder/limpar, senão
+    // o painel some na hora em vez de deslizar pra fora.
+    setTimeout(() => {
+      if (state.osAbertaId) return; // reabriu nesse meio-tempo
+      backdropEl.hidden = true;
+      drawerEl.hidden = true;
+      drawerEl.innerHTML = '';
+    }, 200);
   }
 
   function abrirModalOv(html) {
@@ -714,7 +745,9 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   content.addEventListener('input', (e) => { if (e.target.id === 'pldBusca') { /* já tratado acima */ } });
 
   // --- Eventos: drawer (delegados no #pldShell, sobrevivem ao innerHTML do drawer) ---
-  shellEl.addEventListener('click', async (event) => {
+  // Handlers no overlayRoot (não no shell) porque backdrop+drawer agora vivem
+  // no <body>, fora de #pldShell — os cliques deles não borbulham pro shell.
+  overlayRoot.addEventListener('click', async (event) => {
     const osAtual = () => osTodasAtual.find((o) => String(o.id) === String(state.osAbertaId));
 
     if (event.target.closest('#pldDrawerClose') || event.target === backdropEl) { fecharDrawer(); return; }
@@ -860,7 +893,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     }
   });
 
-  shellEl.addEventListener('input', (event) => {
+  overlayRoot.addEventListener('input', (event) => {
     if (event.target.id === 'pldJustifTxt') {
       const countEl = drawerEl.querySelector('#pldJustifCount');
       if (countEl) countEl.textContent = `${event.target.value.length}/250`;
