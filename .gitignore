@@ -4,3 +4,5 @@ node_modules/
 .env.bkp-*
 .env.*.bkp-*
 agentes-grm-sync/logs/*.log
+agentes-grm-sync/exploracao-distribuicao-os/
+supabase/.temp/
