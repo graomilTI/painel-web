@@ -282,7 +282,10 @@ function estadiaDestinoHtml(tipo, est, embarque) {
     // Só a cidade vinculada à O.S. — sem sugerir hotel específico (pedido do
     // usuário, 2026-07-16: a sugestão de hotel confundia, queria só a cidade).
     const cid = est.cidade || cidadeFromEmbarque(embarque);
-    return `<input class="peqd-inp peqd-inp-sm" data-tab="estadia" data-fld="cidade" value="${esc(cid)}" placeholder="Cidade" />`;
+    const cidadeInput = `<input class="peqd-inp peqd-inp-sm" data-tab="estadia" data-fld="cidade" value="${esc(cid)}" placeholder="Cidade" />`;
+    // Badge de feedback da solicitação automática em Hospedagem > Hotel (pedido
+    // do usuário, 2026-07-23) — some no próximo re-render, só confirma na hora.
+    return t === 'HOTEL' ? `${cidadeInput}<span class="peqd-hotel-badge" data-hotel-badge hidden></span>` : cidadeInput;
   }
   return '<span class="peqd-inp-na">—</span>';
 }
@@ -311,6 +314,9 @@ export function injectStylesDespesas() {
     .peqd-inp{min-height:34px;border:1px solid rgba(111,208,165,.3);background:#06130e;color:#eef7f2;border-radius:8px;padding:5px 8px;font-size:12px;color-scheme:dark;box-sizing:border-box}
     .peqd-inp-sm{flex:1 1 130px;min-width:100px}
     .peqd-inp-na{color:#5f7a6d;font-size:12px;flex:1 1 130px}
+    .peqd-hotel-badge{font-size:10px;font-weight:850;padding:3px 9px;border-radius:999px;background:rgba(34,197,94,.18);color:#86efac;border:1px solid rgba(34,197,94,.4);white-space:nowrap}
+    .peqd-hotel-badge[hidden]{display:none}
+    .peqd-hotel-badge.erro{background:rgba(239,68,68,.14);color:#fecaca;border-color:rgba(239,68,68,.4)}
     .peqd-tipo-est{flex:0 0 120px}
     .peqd-dias{flex:0 0 60px;width:60px!important;text-align:center}
     .peqd-tipo-desl{flex:0 0 110px}
@@ -418,6 +424,7 @@ export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCp
   const des = custos.des.get(row.colaboradorId) || {};
   const osList = [...row.osIds].map((id) => osResumoPorId.get(String(id))).filter(Boolean);
   const embarqueRef = osList[0]?.embarque || '';
+  const clienteRef = osList[0]?.cliente || '';
   const osRefLabel = osList.length ? `Atendendo O.S. ${osList.map((o) => o.numero_os || '-').join(', ')}` : 'Sem O.S. vinculada';
 
   const tipoEst = normalizeText(est.tipo_estadia || 'CASA');
@@ -428,7 +435,7 @@ export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCp
   const extras = extrasPorColab.get(row.colaboradorId) || [];
   const letraContrato = tipoContratoLetra(tipoContratoPorCpf.get(String(row.colaboradorId).replace(/\D/g, '')) || '');
 
-  return `<article class="peqd-card" data-colab-id="${esc(row.colaboradorId)}" data-programacao-id="${esc(row.programacaoId)}" data-nome="${esc(row.nome)}" data-embarque="${esc(embarqueRef)}" data-placa-auto="${esc(onlyPlate(placaAuto))}">
+  return `<article class="peqd-card" data-colab-id="${esc(row.colaboradorId)}" data-programacao-id="${esc(row.programacaoId)}" data-nome="${esc(row.nome)}" data-embarque="${esc(embarqueRef)}" data-cliente="${esc(clienteRef)}" data-placa-auto="${esc(onlyPlate(placaAuto))}">
     <div class="peqd-head">
       <span class="peqd-av" title="Tipo de contrato">${esc(letraContrato)}</span>
       <div>
@@ -539,6 +546,106 @@ export async function renderProgramacaoDespesas(content, options = {}) {
   });
 
   await carregar();
+}
+
+// Programação → Hospedagem > Hotel: ao escolher HOTEL na estadia, cria a
+// solicitação automaticamente (pedido do usuário, 2026-07-23) — mesma tabela
+// e mesmos campos da criação manual em hospedagem.js. Sem coluna de vínculo
+// no banco ligando de volta à Programação, a checagem de "já existe" é por
+// nome do colaborador + data de check-in (mesmo critério usado no backfill
+// de 20260630161000) — não é à prova de 2 colaboradores homônimos check-in no
+// mesmo dia, mas evita duplicar ao reabrir/editar a estadia depois de já
+// ter HOTEL selecionado. Colunas normalizadas automaticamente por
+// programacao-hospedagem-colaboradores-fix.js (patch global no supabase.from).
+async function criarSolicitacaoHotelSeNecessario(card, dataReferencia) {
+  const badge = card.querySelector('[data-hotel-badge]');
+  const colabId = card.dataset.colabId;
+  const nome = card.dataset.nome || '';
+  const embarque = card.dataset.embarque || '';
+  const cliente = card.dataset.cliente || null;
+  try {
+    const dias = Math.max(1, Number(card.querySelector('[data-fld="dias"]')?.value || 1));
+    const dataCheckin = dataReferencia || todayIso();
+    const checkout = addDaysIso(dataCheckin, dias);
+    const cidade = card.querySelector('[data-fld="cidade"]')?.value?.trim() || cidadeFromEmbarque(embarque);
+    const uf = ufFromEmbarque(embarque);
+
+    const { data: solsNoDia, error: errSols } = await supabase
+      .from('hospedagem_solicitacoes')
+      .select('id')
+      .eq('data_checkin_prevista', dataCheckin);
+    if (errSols) throw errSols;
+    const idsNoDia = (solsNoDia || []).map((s) => s.id);
+    let jaExiste = false;
+    if (idsNoDia.length) {
+      const { data: colabsNoDia, error: errColabs } = await supabase
+        .from('hospedagem_solicitacao_colaboradores')
+        .select('nome_colaborador')
+        .in('solicitacao_id', idsNoDia);
+      if (errColabs) throw errColabs;
+      jaExiste = (colabsNoDia || []).some((c) => normalizeText(c.nome_colaborador) === normalizeText(nome));
+    }
+
+    let codigo = null;
+    if (!jaExiste) {
+      const ctx = await getUserContext().catch(() => null);
+      const user = ctx?.user || {};
+      const payload = {
+        data_solicitacao: dataCheckin,
+        solicitante_id: user.id || null,
+        solicitante_nome: user.name || null,
+        solicitante_email: user.email || null,
+        empresa: user.empresa || null,
+        coordenacao: user.coordenacao || null,
+        supervisao: user.supervisao || null,
+        regional: user.supervisao || null,
+        cidade: cidade || embarque || '',
+        uf: uf || null,
+        cliente,
+        local_embarque: embarque || '',
+        data_checkin_prevista: dataCheckin,
+        data_checkout_prevista: checkout,
+        quantidade_diarias_prevista: dias,
+        observacao_gestor: `Solicitação automática via Programação — ${nome}.`,
+        status_solicitacao: 'SOLICITADA',
+      };
+      const { data: sol, error } = await supabase.from('hospedagem_solicitacoes').insert(payload).select('id,codigo').single();
+      if (error) throw error;
+      codigo = sol.codigo;
+      // colaboradorId chega às vezes como CPF puro, às vezes formatado com
+      // pontuação (ver painel-web-endereco-colaboradores) — extrai só os dígitos.
+      const cpfDigits = String(colabId || '').replace(/\D/g, '');
+      const cpf = cpfDigits.length === 11 ? cpfDigits : null;
+      const { error: colabError } = await supabase.from('hospedagem_solicitacao_colaboradores').insert({
+        solicitacao_id: sol.id,
+        nome_colaborador: nome,
+        cpf,
+        status_colaborador: 'ATIVO',
+      });
+      if (colabError) throw colabError;
+      await supabase.from('hospedagem_eventos').insert({
+        solicitacao_id: sol.id,
+        usuario_id: user.id || null,
+        usuario_nome: user.name || null,
+        tipo_evento: 'SOLICITACAO_CRIADA',
+        descricao: 'Solicitação criada automaticamente pela Programação.',
+        status_novo: 'SOLICITADA',
+      });
+    }
+
+    if (badge) {
+      badge.hidden = false;
+      badge.classList.remove('erro');
+      badge.textContent = codigo ? `✓ Hotel solicitado (${codigo})` : '✓ Hotel já solicitado';
+    }
+  } catch (error) {
+    if (badge) {
+      badge.hidden = false;
+      badge.classList.add('erro');
+      badge.textContent = '⚠ Falha ao solicitar hotel';
+    }
+    throw error;
+  }
 }
 
 // Autosave (Estadia/Alimentação/Deslocamento/Extras) + toda a interação do
@@ -794,6 +901,14 @@ export function wireDespesasCards(containerEl, ctx = {}) {
       if (normalizeText(sel.value) === 'PERNOITE') {
         card.querySelectorAll('.peqd-chip[data-ref].on').forEach((c) => c.classList.remove('on'));
         scheduleSaveCampo(card, 'programacao_alimentacao');
+      }
+      // Hotel cria a solicitação em Hospedagem > Hotel automaticamente (pedido
+      // do usuário, 2026-07-23). Roda em paralelo, sem travar o autosave da
+      // estadia — mesmo padrão do sincronizarJantaHotelFinanceiro acima.
+      if (normalizeText(sel.value) === 'HOTEL') {
+        criarSolicitacaoHotelSeNecessario(card, getDataReferencia()).catch((error) => {
+          console.error('[despesas] solicitação de hotel', error);
+        });
       }
     }
     // Ao escolher "Frota - Motorista"/"Frota - Carona", puxa a placa já
