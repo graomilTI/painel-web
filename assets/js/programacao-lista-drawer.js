@@ -49,12 +49,21 @@ getCurrentUser().then((u) => { currentUser = u; }).catch(() => {});
 const state = {
   busca: '',
   cliente: '',
+  cidade: '',
   local: '',
   soRemanescente: false,
   osAbertaId: null,
   sortField: null,
   sortDir: 'asc',
 };
+
+// Mesma extração de "UF - Cidade (Local)" usada em programacao-despesas.js/
+// programacao-hospedagem-colaboradores-fix.js — só a cidade, sem o local
+// específico entre parênteses.
+function cidadeFromEmbarque(embarque) {
+  const m = /^[A-Z]{2}\s*-\s*([^(]+)/.exec(String(embarque || '').trim());
+  return m ? m[1].trim() : '';
+}
 
 function injectStyles() {
   if (document.getElementById('pldStyles')) return;
@@ -72,24 +81,29 @@ function injectStyles() {
     .pld-backdrop[hidden]{display:none}
     .pld-title{margin:0;font-size:22px;font-weight:950;color:#f8fafc;letter-spacing:.01em}
     .pld-subtitle{margin:4px 0 14px;color:#8ba79a;font-size:13px}
-    /* Os 3 campos de filtro (busca/cliente/local) ficam numa linha só — o
-       toggle "só remanescente" tem flex-basis:100%, o que força ele pra uma
-       2ª linha num container flex-wrap sem precisar de outro elemento
-       (pedido do usuário, 2026-07-22: "não consumir tanto espaço de tela"). */
-    .pld-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
-    .pld-filters input[type="text"],.pld-filters select{height:38px;border:1px solid rgba(52,211,153,.22);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;font-size:12.5px;color-scheme:dark}
-    .pld-filters input[type="text"]{flex:2 1 0;min-width:130px}
-    .pld-filters select{flex:1 1 0;min-width:110px}
-    /* Cliente/Local têm muitas opções -> searchableSelect.js (global) troca o
-       <select> por um combobox pesquisável (.ssel-wrap/.ssel-input), que por
-       padrão vem com width:100% e sem cor nenhuma (herda o branco/azulado
-       nativo do navegador) — cada campo ficava sozinho numa linha inteira e
-       com uma cara clara destoando do resto do painel (pedido do usuário,
-       2026-07-22). Aqui eles ganham o mesmo tamanho/tema do <select> que
-       substituem. */
-    .pld-filters .ssel-wrap{width:auto;flex:1 1 0;min-width:110px}
-    .pld-filters .ssel-input{height:38px;box-sizing:border-box;border:1px solid rgba(52,211,153,.22);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;font-size:12.5px}
-    .pld-toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:#8ba79a;white-space:nowrap;cursor:pointer;flex:1 1 100%;order:5}
+    /* Os 4 campos de filtro (busca/cliente/cidade/local) ficam SEMPRE numa
+       linha só, sem quebrar (pedido do usuário, 2026-07-23) — .pld-filters-row
+       tem flex-wrap:nowrap e cada campo com flex-basis 0 (min-width:0 pra
+       poder encolher em vez de forçar quebra). O toggle "só remanescente" é
+       um irmão de fora dessa row, sempre na linha de baixo — não depende mais
+       do truque de flex-basis:100%+order (pedido do usuário, 2026-07-22:
+       "não consumir tanto espaço de tela"). */
+    .pld-filters{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+    .pld-filters-row{display:flex;flex-wrap:nowrap;gap:8px;align-items:center}
+    .pld-filters-row input[type="text"],.pld-filters-row select{height:38px;border:1px solid rgba(52,211,153,.22);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;font-size:12.5px;color-scheme:dark}
+    .pld-filters-row input[type="text"]{flex:1.3 1 0;min-width:0}
+    .pld-filters-row select{flex:1 1 0;min-width:0}
+    /* Cliente/Cidade/Local têm muitas opções -> searchableSelect.js (global)
+       troca o <select> por um combobox pesquisável (.ssel-wrap/.ssel-input),
+       que por padrão vem com width:100% e sem cor nenhuma (herda o
+       branco/azulado nativo do navegador) — cada campo ficava sozinho numa
+       linha inteira e com uma cara clara destoando do resto do painel
+       (pedido do usuário, 2026-07-22). Aqui eles ganham o mesmo tamanho/tema
+       do <select> que substituem, encolhendo junto com o resto da linha.
+    */
+    .pld-filters-row .ssel-wrap{width:auto;flex:1 1 0;min-width:0}
+    .pld-filters-row .ssel-input{height:38px;box-sizing:border-box;border:1px solid rgba(52,211,153,.22);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;font-size:12.5px}
+    .pld-toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:#8ba79a;white-space:nowrap;cursor:pointer}
     .pld-toggle input{accent-color:#16a34a;width:16px;height:16px}
     .pld-count-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12.5px;color:#8ba79a}
     .pld-count-row b{color:#6fd0a5}
@@ -270,9 +284,12 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     <div class="pld-shell" id="pldShell">
       <div class="pld-list-col">
         <div class="pld-filters">
-          <input type="text" id="pldBusca" placeholder="Buscar O.S. ou cliente..." />
-          <select id="pldCliente"><option value="">Todos os clientes</option></select>
-          <select id="pldLocal"><option value="">Todos os locais</option></select>
+          <div class="pld-filters-row">
+            <input type="text" id="pldBusca" placeholder="Buscar O.S. ou cliente..." />
+            <select id="pldCliente"><option value="">Todos os clientes</option></select>
+            <select id="pldCidade"><option value="">Todas as cidades</option></select>
+            <select id="pldLocal"><option value="">Todos os locais</option></select>
+          </div>
           <label class="pld-toggle"><input type="checkbox" id="pldSoRemanescente" /> Exibir apenas O.S. com remanescente</label>
         </div>
         <div id="pldListaBody"><div class="pld-loading"><span class="pld-spinner" aria-hidden="true"></span><span>Carregando O.S. da supervisão...</span></div></div>
@@ -344,14 +361,19 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
 
   function popularFiltros() {
     const clienteSel = content.querySelector('#pldCliente');
+    const cidadeSel = content.querySelector('#pldCidade');
     const localSel = content.querySelector('#pldLocal');
     const clienteAtual = clienteSel.value;
+    const cidadeAtual = cidadeSel.value;
     const localAtual = localSel.value;
     const clientes = [...new Set(osTodasAtual.map((os) => os.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const cidades = [...new Set(osTodasAtual.map((os) => cidadeFromEmbarque(os.embarque)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     const locais = [...new Set(osTodasAtual.map((os) => os.embarque).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     clienteSel.innerHTML = '<option value="">Todos os clientes</option>' + clientes.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    cidadeSel.innerHTML = '<option value="">Todas as cidades</option>' + cidades.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
     localSel.innerHTML = '<option value="">Todos os locais</option>' + locais.map((l) => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
     clienteSel.value = clientes.includes(clienteAtual) ? clienteAtual : '';
+    cidadeSel.value = cidades.includes(cidadeAtual) ? cidadeAtual : '';
     localSel.value = locais.includes(localAtual) ? localAtual : '';
   }
 
@@ -359,6 +381,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     const busca = normalizeText(state.busca);
     const filtradas = osTodasAtual.filter((os) => {
       if (state.cliente && os.cliente !== state.cliente) return false;
+      if (state.cidade && cidadeFromEmbarque(os.embarque) !== state.cidade) return false;
       if (state.local && os.embarque !== state.local) return false;
       if (state.soRemanescente && !(Number(os.remanescente) > 0)) return false;
       if (busca && !normalizeText(`${os.numero_os} ${os.cliente} ${os.embarque}`).includes(busca)) return false;
@@ -758,6 +781,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   // --- Eventos: lista (filtros, ordenação, clique na linha) ---
   content.querySelector('#pldBusca').addEventListener('input', (e) => { state.busca = e.target.value; renderLista(); });
   content.querySelector('#pldCliente').addEventListener('change', (e) => { state.cliente = e.target.value; renderLista(); });
+  content.querySelector('#pldCidade').addEventListener('change', (e) => { state.cidade = e.target.value; renderLista(); });
   content.querySelector('#pldLocal').addEventListener('change', (e) => { state.local = e.target.value; renderLista(); });
   content.querySelector('#pldSoRemanescente').addEventListener('change', (e) => { state.soRemanescente = e.target.checked; renderLista(); });
 
