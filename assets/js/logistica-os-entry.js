@@ -35,6 +35,11 @@ style.textContent = `
   /* Conferência = só os laudos anexados: esconde o resumo operacional (Cargas/FOB/NHE) */
   .logistica-os-page #section-conferencias > .section-head,
   .logistica-os-page #logConferenciasList { display:none!important; }
+  /* Cabeçalho compacto: só a barra de abas + reload (o título "O.S" já está na topbar) */
+  .logistica-os-page #logisticaOsHeader { padding:10px 14px!important; }
+  .logistica-os-page #logisticaOsHeader .los-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .logistica-os-page #logisticaOsHeader .log-tabs { margin:0; }
+  .logistica-os-page #logisticaOsHeader #logisticaOsReload { flex:0 0 auto; }
 `;
 document.head.appendChild(style);
 
@@ -98,15 +103,11 @@ async function setup() {
   header.className = 'card mt-16';
   header.id = 'logisticaOsHeader';
   header.innerHTML = `
-    <div class="section-head">
-      <div>
-        <h3>O.S</h3>
-        <p class="muted">Abertura, conferência (laudos), ajuste de saldo e finalização das O.S. num só lugar.</p>
+    <div class="los-bar">
+      <div class="log-tabs" id="logisticaOsTabs">
+        ${TABS.map((t) => `<button class="log-tab" data-key="${t.key}" type="button">${t.label}</button>`).join('')}
       </div>
       <button class="btn btn-secondary" id="logisticaOsReload" type="button">↻ Atualizar</button>
-    </div>
-    <div class="log-tabs" id="logisticaOsTabs">
-      ${TABS.map((t) => `<button class="log-tab" data-key="${t.key}" type="button">${t.label}</button>`).join('')}
     </div>`;
   content.insertBefore(header, content.firstChild);
 
