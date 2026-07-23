@@ -71,6 +71,6 @@ const observer = new MutationObserver(applyPageIdentity);
 observer.observe(document.documentElement, { childList: true, subtree: true });
 applyPageIdentity();
 
-import('./adm-logistica.js?v=logistica-admin-isolado-20260723-render-gate1')
+import('./adm-logistica.js?v=logistica-admin-isolado-20260723-hashfix1')
   .then(() => applyPageIdentity())
   .catch(renderBootError);

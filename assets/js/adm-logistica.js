@@ -37,6 +37,19 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Atualiza o hash da URL sem usar `window.location.hash = ...`. Essa forma
+// direta dispara um evento de navegação (mesmo sendo só um "#" -- confirmado
+// ao vivo via depurador: um `location.hash = 'x'` sozinho, sem nenhum outro
+// código rodando, já faz a tela toda "piscar" com o fundo preto por um
+// instante, sidebar incluída) — reportado pela usuária como bug na página
+// unificada O.S (23/07/2026), mas a causa é aqui, no clique de aba
+// compartilhado por TODAS as 9 abas de qualquer página de Logística ADM.
+// `history.replaceState` atualiza a URL (inclusive `location.hash`) sem esse
+// efeito colateral.
+function setTabHash(tab) {
+  history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${tab}`);
+}
+
 const state = {
   user: null,
   tab: 'os',
@@ -506,7 +519,7 @@ export async function renderContent(content) {
     const btn = event.target.closest('[data-tab]');
     if (!btn) return;
     state.tab = btn.dataset.tab;
-    window.location.hash = state.tab;
+    setTabHash(state.tab);
     renderTabs();
     render();
   });
@@ -522,7 +535,7 @@ export async function renderContent(content) {
     if (tab === state.tab) return;
     if (tab === 'abertura_os') { window.location.href = toPanelUrl('logistica-abertura-os'); return; }
     state.tab = tab;
-    window.location.hash = state.tab;
+    setTabHash(state.tab);
     renderTabs();
     render();
   });
