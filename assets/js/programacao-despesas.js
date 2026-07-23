@@ -282,10 +282,7 @@ function estadiaDestinoHtml(tipo, est, embarque) {
     // Só a cidade vinculada à O.S. — sem sugerir hotel específico (pedido do
     // usuário, 2026-07-16: a sugestão de hotel confundia, queria só a cidade).
     const cid = est.cidade || cidadeFromEmbarque(embarque);
-    const cidadeInput = `<input class="peqd-inp peqd-inp-sm" data-tab="estadia" data-fld="cidade" value="${esc(cid)}" placeholder="Cidade" />`;
-    // Badge de feedback da solicitação automática em Hospedagem > Hotel (pedido
-    // do usuário, 2026-07-23) — some no próximo re-render, só confirma na hora.
-    return t === 'HOTEL' ? `${cidadeInput}<span class="peqd-hotel-badge" data-hotel-badge hidden></span>` : cidadeInput;
+    return `<input class="peqd-inp peqd-inp-sm" data-tab="estadia" data-fld="cidade" value="${esc(cid)}" placeholder="Cidade" />`;
   }
   return '<span class="peqd-inp-na">—</span>';
 }
@@ -445,7 +442,7 @@ export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCp
     </div>
 
     <div class="peqd-sec" data-sec="estadia">
-      <div class="peqd-sec-label">🛏 Estadia</div>
+      <div class="peqd-sec-label">🛏 Estadia <span class="peqd-hotel-badge" data-hotel-badge hidden></span></div>
       <div class="peqd-row">
         <select class="peqd-inp peqd-tipo-est" data-tab="estadia" data-fld="tipo_estadia">${TIPOS_ESTADIA.map((t) => `<option value="${t}" ${tipoEst === t ? 'selected' : ''}>${estadiaLabel(t)}</option>`).join('')}</select>
         <span data-estadia-destino>${estadiaDestinoHtml(tipoEst, est, embarqueRef)}</span>
@@ -858,8 +855,22 @@ export function wireDespesasCards(containerEl, ctx = {}) {
     }
   });
 
+  // Dispara a solicitação de Hotel represada em card.dataset.hotelPendente
+  // assim que o gestor mexer em qualquer campo FORA da seção Estadia (garante
+  // que cidade/diárias já estão com o valor final antes de solicitar).
+  function talvezDispararHotelPendente(event) {
+    const card = event.target.closest?.('.peqd-card');
+    if (!card || card.dataset.hotelPendente !== '1') return;
+    if (event.target.closest('[data-sec="estadia"]')) return;
+    delete card.dataset.hotelPendente;
+    criarSolicitacaoHotelSeNecessario(card, getDataReferencia()).catch((error) => {
+      console.error('[despesas] solicitação de hotel', error);
+    });
+  }
+
   containerEl.addEventListener('input', (event) => {
     if (isReadOnly()) return;
+    talvezDispararHotelPendente(event);
     const inp = event.target;
     if (inp.matches('.peqd-aloj-combo-input')) {
       const select = inp.previousElementSibling;
@@ -882,6 +893,7 @@ export function wireDespesasCards(containerEl, ctx = {}) {
 
   containerEl.addEventListener('change', (event) => {
     if (isReadOnly()) return;
+    talvezDispararHotelPendente(event);
     const sel = event.target;
     if (sel.matches('[data-extra-fld]')) {
       const itemEl = sel.closest('[data-extra-id]');
@@ -902,13 +914,18 @@ export function wireDespesasCards(containerEl, ctx = {}) {
         card.querySelectorAll('.peqd-chip[data-ref].on').forEach((c) => c.classList.remove('on'));
         scheduleSaveCampo(card, 'programacao_alimentacao');
       }
-      // Hotel cria a solicitação em Hospedagem > Hotel automaticamente (pedido
-      // do usuário, 2026-07-23). Roda em paralelo, sem travar o autosave da
-      // estadia — mesmo padrão do sincronizarJantaHotelFinanceiro acima.
+      // Hotel cria a solicitação em Hospedagem > Hotel, mas só depois que o
+      // gestor mexer em algum campo FORA da Estadia (pedido do usuário,
+      // 2026-07-23) — dispara cedo demais pegava cidade/diárias com o valor
+      // ainda default, antes do gestor corrigir. Arma um "pendente" aqui;
+      // talvezDispararHotelPendente() (chamado pelos handlers de input/change/
+      // click abaixo) decide a hora certa de disparar.
+      const badge = card.querySelector('[data-hotel-badge]');
       if (normalizeText(sel.value) === 'HOTEL') {
-        criarSolicitacaoHotelSeNecessario(card, getDataReferencia()).catch((error) => {
-          console.error('[despesas] solicitação de hotel', error);
-        });
+        card.dataset.hotelPendente = '1';
+      } else {
+        delete card.dataset.hotelPendente;
+        if (badge) badge.hidden = true;
       }
     }
     // Ao escolher "Frota - Motorista"/"Frota - Carona", puxa a placa já
@@ -930,6 +947,7 @@ export function wireDespesasCards(containerEl, ctx = {}) {
 
   containerEl.addEventListener('click', async (event) => {
     if (isReadOnly()) return;
+    talvezDispararHotelPendente(event);
     const chip = event.target.closest('.peqd-chip[data-ref]');
     if (chip) {
       chip.classList.toggle('on');
