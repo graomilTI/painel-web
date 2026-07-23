@@ -72,9 +72,17 @@ function injectFixedLayoutStyles() {
         line-height:1.35;
       }
       #pldShell.pld-fixed-layout .pld-rem {font-size:11.5px}
-      #pldShell.pld-fixed-layout .pld-filters input[type="text"] {flex:1 1 100%}
-      #pldShell.pld-fixed-layout .pld-filters select {
-        flex:1 1 150px;
+      /* Coluna da lista fica mais estreita nesse layout (grid com a coluna
+         fixa do painel do lado) — os 4 filtros (busca/cliente/cidade/local)
+         continuam em linha única (pedido do usuário, 2026-07-23), só que sem
+         basis fixo de 150px por campo, senão não cabe 1 input + 3 selects
+         lado a lado numa coluna mais estreita. */
+      #pldShell.pld-fixed-layout .pld-filters-row input[type="text"] {
+        flex:1.3 1 0;
+        min-width:0;
+      }
+      #pldShell.pld-fixed-layout .pld-filters-row select {
+        flex:1 1 0;
         min-width:0;
       }
     }
