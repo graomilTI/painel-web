@@ -40,6 +40,15 @@ style.textContent = `
   .logistica-os-page #logisticaOsHeader .los-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
   .logistica-os-page #logisticaOsHeader .log-tabs { margin:0; }
   .logistica-os-page #logisticaOsHeader #logisticaOsReload { flex:0 0 auto; }
+  /* KPIs "Pendentes/Cadastradas" da aba Abertura: .metric/.card globais são
+     pensados pra hero cards de página inteira (fonte 40px+, padding 18px) —
+     gigantescos demais pra um resumo dentro de uma aba. Compacta só aqui,
+     sem tocar no estilo global (usado em várias outras telas). */
+  .logistica-os-page #section-abertura_os .log-mini-grid { grid-template-columns:repeat(auto-fit,minmax(140px,220px)); gap:10px; margin-bottom:12px!important; }
+  .logistica-os-page #section-abertura_os .log-mini-grid article.card { padding:10px 12px; }
+  .logistica-os-page #section-abertura_os .log-mini-grid article.card h3 { font-size:12px; margin:0 0 2px; text-transform:uppercase; letter-spacing:.04em; color:#9fb7aa; }
+  .logistica-os-page #section-abertura_os .log-mini-grid .metric { font-size:22px; margin:0 0 2px; }
+  .logistica-os-page #section-abertura_os .log-mini-grid .muted { font-size:11px; margin:0; }
 `;
 document.head.appendChild(style);
 
