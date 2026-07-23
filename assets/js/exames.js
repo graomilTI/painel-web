@@ -21,7 +21,42 @@ const STATUS_EXAME = {
   vencido: { label: 'Vencido' },
 };
 
-const state = { tab: 'admissional', exames: [], ctx: null, filtros: null };
+const state = { tab: 'admissional', exames: [], ctx: null, filtros: null, clinicas: [] };
+
+// Clínicas do cadastro SST (aba Clínicas SST desta mesma tela) — antes o campo
+// era texto livre e o nome divergia do cadastro; agora sugere do cadastro real
+// e grava clinica_id junto (texto livre continua aceito como fallback).
+async function loadClinicas() {
+  if (state.clinicas.length) return state.clinicas;
+  state.clinicas = await safe(() => supabase
+    .from('rh_clinicas_sst')
+    .select('id,nome,cidade,estado')
+    .eq('ativo', true)
+    .order('nome')
+    .limit(1000));
+  return state.clinicas;
+}
+
+function clinicaAutocomplete(modal, inputSel, sugSel, onPick) {
+  const input = modal.querySelector(inputSel);
+  const sug = modal.querySelector(sugSel);
+  const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  let debounce = null;
+  input.addEventListener('input', () => {
+    onPick(null);
+    const q = norm(input.value.trim());
+    if (q.length < 2) { sug.style.display = 'none'; return; }
+    clearTimeout(debounce);
+    debounce = setTimeout(async () => {
+      const lista = await loadClinicas();
+      const hits = lista.filter((c) => norm(`${c.nome} ${c.cidade} ${c.estado}`).includes(q)).slice(0, 10);
+      if (!hits.length) { sug.style.display = 'none'; return; }
+      sug.innerHTML = hits.map((c, i) => `<button type="button" data-idx="${i}" style="display:block;width:100%;text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px;margin-bottom:4px;cursor:pointer">${esc(c.nome)}<br><small style="color:#94a3b8">${esc([c.cidade, c.estado].filter(Boolean).join(' - '))}</small></button>`).join('');
+      sug.style.display = 'block';
+      sug.querySelectorAll('button').forEach((b) => b.onmousedown = (ev) => { ev.preventDefault(); const c = hits[Number(b.dataset.idx)]; input.value = c.nome; sug.style.display = 'none'; onPick(c); });
+    }, 200);
+  });
+}
 
 function statusPill(status) {
   const label = STATUS_EXAME[status]?.label || status || '-';
@@ -132,7 +167,10 @@ function openExameModal(tipo, onSaved, row = null) {
       <div id="exColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
     </div>
     <div class="ex-grid mt-16">
-      <label class="ex-full">Clínica<input id="exClinica" type="text" placeholder="Nome da clínica (ver aba Clínicas SST)" value="${esc(row?.clinica_nome || '')}"></label>
+      <div class="ex-full" style="position:relative">
+        <label style="display:block">Clínica<input id="exClinica" type="text" placeholder="Digite para buscar no cadastro de Clínicas SST..." autocomplete="off" value="${esc(row?.clinica_nome || '')}" style="width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px"></label>
+        <div id="exClinicaSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:60;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:220px;overflow:auto;margin-top:4px"></div>
+      </div>
       <label>Data agendada<input id="exDataAgendada" type="date" value="${esc(row?.data_agendada ? String(row.data_agendada).slice(0, 10) : todayIso())}"></label>
       ${tipo === 'periodico' ? `<label>Vencimento<input id="exVencimento" type="date" value="${esc(row?.data_vencimento ? String(row.data_vencimento).slice(0, 10) : '')}"></label>` : ''}
       <label class="ex-full">Observações<textarea id="exObs" rows="2">${esc(row?.observacoes || '')}</textarea></label>
