@@ -74,8 +74,14 @@ function waitFor(selector, timeout = 12000) {
 }
 
 function tabFromHash() {
+  // O próprio adm-logistica.js grava window.location.hash com o nome REAL da
+  // aba (ex.: "conferencias", "abertura_os"), não com a key curta usada aqui
+  // ("conferencia", "abertura"). Sem checar o realTab também, um refresh/link
+  // direto pra #conferencias caía no default "abertura" (nunca batia com a
+  // key "conferencia", que tem uma letra a menos).
   const h = String(window.location.hash || '').replace('#', '').toLowerCase();
-  return TABS.find((t) => t.key === h)?.key || 'abertura';
+  const match = TABS.find((t) => t.key === h) || TABS.find((t) => t.realTab.toLowerCase() === h);
+  return match?.key || 'abertura';
 }
 
 function activate(key) {
