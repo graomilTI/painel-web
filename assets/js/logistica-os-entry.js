@@ -47,6 +47,9 @@ document.head.appendChild(style);
 // aqui pela barra de filtros da Finalização. Guardamos a referência para
 // mostrá-lo apenas nessa aba.
 let introCard = null;
+// Limpa o filtro de data da Finalização só na 1ª abertura, pra não apagar um
+// filtro que o usuário tenha definido depois ao alternar entre as abas.
+let finalizacaoDataLimpa = false;
 
 function waitFor(selector, timeout = 12000) {
   return new Promise((resolve, reject) => {
@@ -79,9 +82,21 @@ function activate(key) {
   // Barra de filtros só faz sentido na Finalização (data/coordenação/status/busca);
   // Abertura, Conferência (laudos) e Ajuste ignoram esses filtros.
   if (introCard) introCard.style.display = target.key === 'finalizacao' ? '' : 'none';
-  if (window.location.hash.replace('#', '').toLowerCase() !== target.key) {
-    history.replaceState(history.state, '', `${window.location.pathname}${window.location.search}#${target.key}`);
+  // A fila de finalização filtra por data e vem com "hoje" por padrão, então
+  // O.S. finalizadas pelo gestor em datas anteriores não apareciam. Limpa o
+  // filtro de data ao abrir a aba (mostra todas as pendentes); o usuário ainda
+  // pode digitar uma data pra estreitar.
+  if (target.key === 'finalizacao' && !finalizacaoDataLimpa) {
+    finalizacaoDataLimpa = true;
+    const dataInput = document.getElementById('logData');
+    if (dataInput && dataInput.value) {
+      dataInput.value = '';
+      dataInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
   }
+  // Não mexe no location.hash aqui: o handler interno do adm-logistica.js já
+  // grava window.location.hash = state.tab (nome real da aba). Reescrever aqui
+  // dispararia hashchange e criava loop/reset de aba.
 }
 
 async function setup() {
@@ -120,8 +135,6 @@ async function setup() {
   header.querySelector('#logisticaOsReload').addEventListener('click', () => {
     document.getElementById('logReload')?.click();
   });
-
-  window.addEventListener('hashchange', () => activate(tabFromHash()));
 
   activate(tabFromHash());
 }
