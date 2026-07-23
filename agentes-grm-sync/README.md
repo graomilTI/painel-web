@@ -42,10 +42,13 @@ Não usa mais Docker, PM2 nem Edge Functions (arquiteturas antigas, abandonadas 
 | sync-nhe | grm-sync-nhe.js | grm_nhe_importacoes |
 | sync-lista-os | grm-sync-lista-os.js | grm_lista_os_importacoes |
 | sync-distribuicao-os | grm-sync-distribuicao-os.js | grm_distribuicao_os_importacoes |
+| aplicar-distribuicao-os | grm-sync-aplicar-distribuicao-os.js | operacional_os (write-back) |
 | sync-btg-relatorios / sync-btg-classificador | grm-sync-btg-classificador.js | colaborador_cruzamento / BTG |
 | sync-btg-checkin | grm-sync-btg-checkin.js | logistica_btg_solicitacoes |
 | sync-cargas-geofence | grm-sync-cargas-geofence.js | cargas/geofence |
 | sync-adiantamentos | grm-sync-adiantamentos.js | grm_adiantamentos_importacoes |
+
+`aplicar-distribuicao-os` é o único agente de escrita (os demais só leem do GRM e gravam no Supabase): ele lê `operacional_os`/`operacional_os_colaboradores` (grupos pendentes de conferência que já têm colaborador indicado em Conferência → Distribuir O.S.), replica a associação dentro do Graint (Supervisão → Atualizar → associar colaborador → SALVAR) e só marca `status_conferencia='AJUSTADA'` no Supabase se o Graint confirmar o salvamento. Se um grupo falhar em qualquer etapa, ele é pulado (sem marcar AJUSTADA) e reprocessado no próximo ciclo — não há coluna de idempotência extra, o filtro `status_conferencia != 'AJUSTADA'` já cobre isso. Suporta `--dry-run` (ou `DRY_RUN=true`) pra simular sem clicar em SALVAR nem gravar no Supabase, e `HEADLESS=false` pra rodar com o Chrome visível.
 
 `safe-table-load.js` fornece `replaceTableSafely()` — grava em tabela `_staging` e promove via função SQL transacional, evitando janela de tabela vazia (ver migration `20260630124500_grm_staging_promote_agents.sql` no painel-web). `download-utils.js` tem os helpers de download de XLS compartilhados pelos agentes de relatório.
 

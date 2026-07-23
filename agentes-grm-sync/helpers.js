@@ -4,7 +4,9 @@
 
 require('dotenv').config();
 
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 const fs = require('fs');
 const path = require('path');
 
@@ -290,6 +292,104 @@ async function listPageSelectors(user, password) {
 }
 
 /**
+ * Explorar a tela de Distribuição de OS (sOrderDistribution) em modo visível.
+ * Faz login, navega até a tela, clica em Atualizar e depois deixa a janela
+ * aberta por 10 minutos capturando um snapshot (screenshot + seletores) toda
+ * vez que a página muda — pra descobrir o filtro de Supervisão e o controle
+ * de associar colaborador por linha enquanto o usuário mexe manualmente.
+ */
+const SO_ORDER_DISTRIBUTION_URL = 'https://www.grmserver.com.br/operation/sOrderDistribution';
+
+async function loginSOrderDistribution(page, user, password) {
+  await page.goto('https://www.grmserver.com.br/login', { waitUntil: 'networkidle2' });
+  await page.type('input#input-v-2', user);
+  await page.type('input#input-v-5', password);
+  await Promise.all([
+    page.click('button.submit-btn'),
+    page.waitForNavigation({ waitUntil: 'networkidle2' }),
+  ]);
+}
+
+async function exploreOrderDistribution(user, password) {
+  const outDir = path.resolve(__dirname, 'exploracao-distribuicao-os');
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+  console.log('[EXPLORE] Abrindo navegador visível...');
+  const browser = await puppeteer.launch({
+    headless: false,
+    args: ['--no-sandbox', '--window-size=1600,1000'],
+    defaultViewport: null,
+  });
+  const page = await browser.newPage();
+  let lastSignature = '';
+  let n = 0;
+
+  async function snapshot(tag) {
+    const data = await page.evaluate(() => ({
+      url: location.href,
+      selects: Array.from(document.querySelectorAll('select')).map((el) => ({
+        id: el.id, name: el.name, class: el.className,
+        options: Array.from(el.options).map((o) => ({ value: o.value, text: o.text })),
+      })),
+      buttons: Array.from(document.querySelectorAll('button')).map((el) => ({
+        id: el.id, class: el.className, text: (el.textContent || '').trim().slice(0, 60), disabled: el.disabled,
+      })),
+      inputs: Array.from(document.querySelectorAll('input')).map((el) => ({
+        id: el.id, name: el.name, class: el.className, type: el.type, value: el.value,
+      })),
+      dialogos: Array.from(document.querySelectorAll('.v-dialog--active, [role="dialog"]')).map((el) => (el.textContent || '').trim().slice(0, 300)),
+    }));
+    const signature = JSON.stringify(data);
+    if (signature === lastSignature) return;
+    lastSignature = signature;
+    n += 1;
+    const name = `${String(n).padStart(2, '0')}-${tag}`;
+    fs.writeFileSync(path.join(outDir, `${name}.json`), JSON.stringify(data, null, 2));
+    await page.screenshot({ path: path.join(outDir, `${name}.png`), fullPage: true });
+    const html = await page.content();
+    fs.writeFileSync(path.join(outDir, `${name}.html`), html);
+    console.log(`[EXPLORE] mudança detectada, snapshot salvo: ${name}`);
+  }
+
+  try {
+    console.log('[EXPLORE] Login...');
+    await loginSOrderDistribution(page, user, password);
+
+    console.log('[EXPLORE] Indo para sOrderDistribution...');
+    await page.goto(SO_ORDER_DISTRIBUTION_URL, { waitUntil: 'networkidle2' });
+    await snapshot('inicial');
+
+    await page.click('.sOrderDistribution-act-update button').catch((e) => {
+      console.log('[EXPLORE] Não achei o botão Atualizar automaticamente:', e.message);
+    });
+    await new Promise((r) => setTimeout(r, 3000));
+    await snapshot('apos-atualizar');
+
+    console.log('\n[EXPLORE] ================================================');
+    console.log('[EXPLORE] Janela aberta por 10 minutos.');
+    console.log('[EXPLORE] Selecione manualmente uma Supervisão, clique em Atualizar,');
+    console.log('[EXPLORE] depois clique numa OS pra ver como associar o colaborador.');
+    console.log('[EXPLORE] Cada mudança na tela vira um snapshot (screenshot + JSON) em:');
+    console.log('[EXPLORE]', outDir);
+    console.log('[EXPLORE] ================================================\n');
+
+    const totalMs = 10 * 60 * 1000;
+    const stepMs = 2000;
+    let elapsed = 0;
+    while (elapsed < totalMs) {
+      await new Promise((r) => setTimeout(r, stepMs));
+      elapsed += stepMs;
+      await snapshot('auto').catch(() => {});
+    }
+  } catch (error) {
+    console.error('[EXPLORE][ERROR]', error.message);
+  } finally {
+    await browser.close();
+    console.log('[EXPLORE] Navegador fechado. Snapshots em', outDir);
+  }
+}
+
+/**
  * Teste de parsing de XLS
  */
 function testXlsParsing(filePath) {
@@ -350,6 +450,10 @@ if (require.main === module) {
       listPageSelectors(user, password).catch(console.error);
       break;
 
+    case 'distribuicao':
+      exploreOrderDistribution(user, password).catch(console.error);
+      break;
+
     case 'parse':
       if (!process.argv[3]) {
         console.error('Uso: node helpers.js parse <caminho-do-arquivo.xlsx>');
@@ -363,14 +467,16 @@ if (require.main === module) {
 Uso: node grmserver-colaboradores-sync-helpers.js <comando>
 
 Comandos:
-  login      - Teste interativo de login (headless: false)
-  download   - Teste de navegação e download
-  selectors  - Analisar página e extrair seletores CSS
-  parse      - Parsear arquivo XLS e exibir estrutura
+  login        - Teste interativo de login (headless: false)
+  download     - Teste de navegação e download
+  selectors    - Analisar página e extrair seletores CSS
+  distribuicao - Explorar sOrderDistribution em modo visível (Supervisão + associar colaborador)
+  parse        - Parsear arquivo XLS e exibir estrutura
 
 Exemplos:
   node grmserver-colaboradores-sync-helpers.js login
   node grmserver-colaboradores-sync-helpers.js selectors
+  node grmserver-colaboradores-sync-helpers.js distribuicao
   node grmserver-colaboradores-sync-helpers.js parse ./colaboradores.xlsx
       `);
       break;
@@ -381,5 +487,6 @@ module.exports = {
   testLogin,
   testDownload,
   listPageSelectors,
+  exploreOrderDistribution,
   testXlsParsing,
 };
