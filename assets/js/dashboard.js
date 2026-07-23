@@ -403,11 +403,11 @@ async function fetchGestorData(ctx, { force = false } = {}) {
 }
 
 async function fetchGestorDataLive(ctx) {
-  // producao_snapshot é a base da Meta Mensal; dispara a sincronização com o agente
-  // de produção diária em paralelo (sem await) para não travar o carregamento do
-  // dashboard — o delete+insert de milhares de linhas é pesado demais para bloquear
-  // a página. O resultado fica disponível na próxima atualização (cache de 1h).
-  sincronizarProducaoSnapshotDoAgente().catch((error) => console.warn('[dashboard] falha ao sincronizar producao_snapshot:', error?.message || error));
+  // producao_snapshot é a base da Meta Mensal. A sincronização faz delete+insert
+  // do mês inteiro; se disparada sem esperar, a leitura abaixo pode acontecer no
+  // meio do delete e contar um total muito menor que o real (bug 23/07 — cache
+  // gravou 169k t em vez de 1,33M t). Por isso esperamos ela terminar antes de somar.
+  await sincronizarProducaoSnapshotDoAgente().catch((error) => console.warn('[dashboard] falha ao sincronizar producao_snapshot:', error?.message || error));
 
   const isMaster = !!ctx?.user?.is_master;
   const coordenacao = ctx?.user?.coordenacao || '';
