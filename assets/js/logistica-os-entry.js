@@ -188,6 +188,6 @@ function renderBootError(error) {
     </section>`;
 }
 
-import('./adm-logistica.js?v=logistica-admin-isolado-20260723-render-gate1')
+import('./adm-logistica.js?v=logistica-admin-isolado-20260723-hashfix1')
   .then(setup)
   .catch(renderBootError);
