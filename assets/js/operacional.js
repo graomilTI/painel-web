@@ -7,7 +7,6 @@ import { getCurrentUser } from './auth.js';
   const STYLE_ID = 'mapa-operacional-style';
   const LEAFLET_CSS = 'leaflet-css-mapaop';
   const LEAFLET_JS = 'leaflet-js-mapaop';
-  const OSRM_BASE = 'https://router.project-osrm.org';
   const TILE_LAYERS = {
     escuro: {
       url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -68,32 +67,11 @@ import { getCurrentUser } from './auth.js';
   // a primeira OS grande processada "gastar" o colaborador mais próximo pra sempre, mesmo que ele
   // pudesse perfeitamente atender uma segunda OS a 30-80km em outro dia — daí colaboradores sendo
   // sugeridos a 800+km quando havia gente muito mais perto, só que já "usada" numa OS vizinha maior.
-  const RAIO_REPETIR_COLAB_KM = 100;
   const RAIO_HOTEL_KM = 60;
   const RAIO_CARONA_KM = 5;
-  // Dentro dessa margem, candidatos são tratados como "praticamente igual em distância" e o
-  // desempate passa a ser por carga de trabalho — sem isso, alargar RAIO_REPETIR_COLAB_KM faria
-  // o colaborador mais central de uma região virar sugestão repetida pra dezenas de OS (um empate
-  // exato de distância real quase nunca acontece, então o desempate por carga nunca entrava).
-  const DIST_TOLERANCIA_EMPATE_KM = 20;
-  const OS_SALDO_PEQUENO_KG = 500;
-  // Com ~433 classificadores ativos geocodificados pra ~800 OS abertas (achado em 2026-07-03), a
-  // média nacional é <2 OS por pessoa — ninguém deveria precisar de muito mais que isso na passada
-  // normal. Teto baixo aqui é o que garante rota lisa (poucas paradas por colaborador); a passada de
-  // fallback abaixo (mais permissiva) só entra pras OS que sobrarem sem ninguém na passada normal.
-  const MAX_OS_POR_COLABORADOR = 3;
-  const MAX_OS_POR_COLABORADOR_FALLBACK = 6;
-  // Passada normal: só reusa colaborador se o novo ponto estiver perto de alguma parada já
-  // atribuída (rota lisa, sem saltos entre clusters distantes). Passada de fallback (mais abaixo,
-  // em escolherColaborador/build) ignora esse raio e usa só RAIO_REPETIR_COLAB_KM — é o "menos pior"
-  // pras OS que a passada normal deixou sem ninguém, e vem sinalizada como rota estendida.
-  const ROTA_VIZINHA_MAX_KM = 40;
-  const ROTA_DESVIO_MAX_KM = 45;
   // Leitura de patrimônio (Frotas > Veículos) mais velha que isso não confirma posse atual do
   // veículo — média real hoje é 4,4 dias, 65% das leituras são de até 7 dias.
   const LIMITE_DIAS_LEITURA_PATRIMONIO = 7;
-  const ROTAS_REAIS_SIMULTANEAS = 4;
-  const ROTAS_REAIS_LIMITE = 180;
 
   // Combustível: R$7/L, 10km/L, ida+volta. Mesma premissa usada em programacao-fase2-custos.js.
   const COMBUSTIVEL_PRECO_L = 7;
@@ -116,20 +94,17 @@ import { getCurrentUser } from './auth.js';
   const OS_GRANDE_KG = 400000;
 
   const st = {
-    os: [], osTodas: [], pontos: [], colaboradores: [], veiculos: [], rotas: [], semAssociacao: [],
-    estado: '', ponto: '', rota: '', mostrarRota: true, tab: 'mapa', mapaBase: 'escuro', kpiFiltro: '',
+    os: [], osTodas: [], pontos: [], colaboradores: [], veiculos: [],
+    estado: '', ponto: '', tab: 'mapa', mapaBase: 'escuro',
     mostrarVeiculos: true, mostrarColaboradores: true, mostrarOsComSaldo: true, mostrarOsSemSaldo: true, mostrarHoteis: false,
     mostrarIrregularidades: true, irregularidades: [], ufPorNumeroOs: new Map(),
     comparativo: [], supervisaoComparativo: '',
     alertasLaudo: [], alertasFiltroData: '', alertasFiltroCoordenacao: '',
-    map: null, mapEl: null, tileLayer: null, layer: null, routeLayer: null, rotaRealCache: new Map(), drawToken: 0,
-    rotaSelecionadaReal: null, alternativaComparativo: null, alternativaToken: 0,
-    // hospedagemParaPonto/candidatosProximos só dependem do ponto, não do colaborador nem da OS —
-    // sem cache, build() recalculava os dois pra cada par (OS × colaborador), varrendo
-    // st.hoteisComCoord (~1000 linhas) de novo a cada vez. Com ~1000 OS abertas × ~2200
-    // colaboradores isso passava de 2 bilhões de iterações; cacheado por ponto, cai pra uma vez
-    // por ponto distinto (dezenas/poucas centenas). Limpo no início de cada build().
-    hospedagemCache: new Map(), candidatosProximosCache: new Map(), caronaInfoCache: new Map(),
+    map: null, mapEl: null, tileLayer: null, layer: null,
+    // hospedagemParaPonto/caronaInfoPara só dependem do ponto — sem cache, a aba Sugerido x
+    // Registrado recalcularia os dois pra cada par (OS × colaborador), varrendo st.hoteisComCoord
+    // (~1000 linhas) de novo a cada vez. Cacheado por ponto.__key; limpo no início de cada load().
+    hospedagemCache: new Map(), caronaInfoCache: new Map(),
   };
 
   const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -206,10 +181,6 @@ import { getCurrentUser } from './auth.js';
   }
 
   function colaboradorAtivo(c) { return norm(c.situacao) === 'ATIVO'; }
-  // Efetivo tem prioridade sobre Intermitente/Diarista no desempate entre candidatos praticamente
-  // equidistantes — pedido do usuário pra não mandar mão de obra avulsa pra rotas que dá pra
-  // cobrir com quadro fixo mais perto ou igualmente perto.
-  function pesoContrato(c) { return norm(c?.tipoContrato) === 'EFETIVO' ? 0 : 1; }
 
   function colKey(cpf, nome, extra) {
     const d = digits(cpf);
@@ -558,120 +529,6 @@ import { getCurrentUser } from './auth.js';
     };
   }
 
-  function distEntrePontos(p1, p2) {
-    if (!p1?.temCoord || !p2?.temCoord) return Infinity;
-    const d = km(p1.lat, p1.lng, p2.lat, p2.lng);
-    return d === null ? Infinity : d;
-  }
-
-  // Melhor jeito de encaixar `ponto` na rota já existente do colaborador — casa só no início e
-  // no fim, entre uma parada e outra é OS pra OS direto. Testa toda posição de inserção (antes
-  // da 1ª parada, entre cada par consecutivo, depois da última) e devolve a mais barata (custo
-  // em km extra + posição pra manter a rota na ordem de visita) — sem isso, a rota vira sempre
-  // "casa -> parada -> casa -> parada -> casa..." em vez de um trajeto único. Rota vazia = ida
-  // e volta direta de casa (não tem o que encadear ainda).
-  function melhorInsercaoRota(c, rota, ponto) {
-    const distHomePonto = distColabPonto(c, ponto);
-    if (!rota.length) return { custo: distHomePonto * 2, posicao: 0 };
-    let melhorCusto = distHomePonto + distEntrePontos(ponto, rota[0].ponto) - distColabPonto(c, rota[0].ponto);
-    let melhorPos = 0;
-    for (let i = 0; i < rota.length - 1; i++) {
-      const custoAtual = distEntrePontos(rota[i].ponto, rota[i + 1].ponto);
-      const custoNovo = distEntrePontos(rota[i].ponto, ponto) + distEntrePontos(ponto, rota[i + 1].ponto) - custoAtual;
-      if (custoNovo < melhorCusto) { melhorCusto = custoNovo; melhorPos = i + 1; }
-    }
-    const ultimo = rota[rota.length - 1];
-    const custoFim = distEntrePontos(ultimo.ponto, ponto) + distHomePonto - distColabPonto(c, ultimo.ponto);
-    if (custoFim < melhorCusto) { melhorCusto = custoFim; melhorPos = rota.length; }
-    return { custo: melhorCusto, posicao: melhorPos };
-  }
-
-  function podeUsarColaborador(c, ponto, usos, osSaldoKg, fallback = false) {
-    const usados = usos.get(c.id) || [];
-    if (!usados.length) return true;
-    if (usados.length >= (fallback ? MAX_OS_POR_COLABORADOR_FALLBACK : MAX_OS_POR_COLABORADOR)) return false;
-    // OS pequena (saldo <= 500kg): não justifica dedicar um colaborador exclusivo, quem já
-    // está em campo hoje pode assumir também, mesmo fora do raio de atendimento.
-    if (Number(osSaldoKg) <= OS_SALDO_PEQUENO_KG) return true;
-    // Fallback (só usado pras OS que sobraram sem ninguém na passada normal): aceita qualquer
-    // desvio dentro do raio de reuso, sem exigir proximidade com uma parada já existente — é o
-    // "menos pior" disponível, marcado como rota estendida em vez de aparecer como se fosse ideal.
-    if (fallback) return melhorInsercaoRota(c, usados, ponto).custo <= RAIO_REPETIR_COLAB_KM;
-    // Passada normal: o novo ponto precisa estar perto de alguma parada já atribuída (rota lisa,
-    // sem saltos entre clusters distantes) E caber sem um desvio grande de inserção.
-    const distParadaMaisProxima = Math.min(...usados.map(u => distEntrePontos(u.ponto, ponto)).filter(Number.isFinite));
-    if (!Number.isFinite(distParadaMaisProxima) || distParadaMaisProxima > ROTA_VIZINHA_MAX_KM) return false;
-    return melhorInsercaoRota(c, usados, ponto).custo <= ROTA_DESVIO_MAX_KM;
-  }
-  function registrarUso(c, ponto, saldo, usos) {
-    const arr = usos.get(c.id) || [];
-    if (!arr.length) { arr.push({ ponto, saldo: Number(saldo) || 0 }); usos.set(c.id, arr); return; }
-    const { posicao } = melhorInsercaoRota(c, arr, ponto);
-    arr.splice(posicao, 0, { ponto, saldo: Number(saldo) || 0 });
-    usos.set(c.id, arr);
-  }
-  function saldoAcumulado(c, usos) { return (usos.get(c.id) || []).reduce((acc, u) => acc + u.saldo, 0); }
-
-  // Quantos candidatos existem fisicamente ao alcance da OS, ignorando quem já foi "usado" —
-  // mede escassez real de mão de obra na região, não a disponibilidade momentânea no backlog.
-  // Usado só pra ordenar o build() (atender primeiro quem tem menos opção), não como filtro.
-  function candidatosProximos(ponto) {
-    if (st.candidatosProximosCache.has(ponto.__key)) return st.candidatosProximosCache.get(ponto.__key);
-    const n = st.colaboradores.reduce((acc, c) => {
-      const d = distColabPonto(c, ponto);
-      return acc + (Number.isFinite(d) && d <= DIST_MAX_DESLOCAMENTO_DIARIO_KM ? 1 : 0);
-    }, 0);
-    st.candidatosProximosCache.set(ponto.__key, n);
-    return n;
-  }
-
-  function escolherColaborador(os, ponto, usos, fallback = false) {
-    const vinculados = (st.vinculosPorOs.get(String(os.id)) || [])
-      .map(v => st.colaboradores.find(c => (digits(v.cpf).length === 11 && c.cpf === digits(v.cpf)) || norm(c.nome) === norm(v.nome)))
-      .filter(Boolean);
-
-    function ranquear(lista) {
-      // Todo item de st.colaboradores (cadastrados ou sintéticos de frota) já tem geo válida garantida na origem.
-      return lista
-        .filter(c => podeUsarColaborador(c, ponto, usos, os.__saldo, fallback))
-        .map(c => {
-          const dist = distColabPonto(c, ponto);
-          const avaliacao = avaliarCandidato(c, ponto, dist, os.__saldo);
-          return { c, dist: avaliacao.distReal, avaliacao, saldoAtual: saldoAcumulado(c, usos) };
-        })
-        .filter(x => Number.isFinite(x.dist))
-        // Candidato "inviável" (mais de 150km sem hospedagem real/estimada que justifique) não é
-        // uma sugestão executável — é só o "menos pior" quando a mão de obra próxima já foi
-        // consumida por outras OS. Nunca deve aparecer como se fosse uma recomendação normal;
-        // melhor cair em "sem colaborador" e sinalizar que precisa de revisão manual.
-        .filter(x => !x.avaliacao.inviavel)
-        // Sempre o colaborador mais próximo primeiro — nunca mandamos alguém a milhares de km só
-        // porque o modo de transporte "parece" mais barato no papel. Mas dentro de ~20km de
-        // diferença, distância deixa de ser decisiva e quem tem menos carga acumulada no dia
-        // ganha prioridade — senão o colaborador mais central de uma região vira sugestão
-        // repetida pra dezenas de OS, já que um empate exato de distância real é raríssimo.
-        .sort((a, b) => {
-          if (Math.abs(a.dist - b.dist) > DIST_TOLERANCIA_EMPATE_KM) return a.dist - b.dist;
-          return pesoContrato(a.c) - pesoContrato(b.c) || a.saldoAtual - b.saldoAtual || a.avaliacao.custoDia - b.avaliacao.custoDia || a.dist - b.dist;
-        });
-    }
-
-    // Segundo colocado só interessa como "alternativa" pra conferência por rota real quando está
-    // dentro da mesma margem de empate usada no desempate acima — fora disso não é um empate de
-    // verdade, é só o próximo da fila (não vale a pena gastar uma chamada ao OSRM pra comparar).
-    function comAlternativa(lista, origem) {
-      if (!lista.length) return null;
-      const alternativa = lista[1] && Math.abs(lista[1].dist - lista[0].dist) <= DIST_TOLERANCIA_EMPATE_KM ? lista[1] : null;
-      return { ...lista[0], origem, alternativa };
-    }
-
-    const candidatosVinculados = ranquear(vinculados);
-    if (candidatosVinculados.length) return comAlternativa(candidatosVinculados, 'associado');
-
-    const candidatosTodos = ranquear(st.colaboradores);
-    return comAlternativa(candidatosTodos, 'sugerido');
-  }
-
   async function loadIrregularidades() {
     return sel('logistica_cargas_irregularidades', '*', q => q.order('detectado_em', { ascending: false }), 500);
   }
@@ -710,23 +567,30 @@ import { getCurrentUser } from './auth.js';
     st.hoteisComCoord = hospedagem.hoteisComCoord;
     st.alojamentosPorUf = hospedagem.alojamentosPorUf;
 
-    // Motoristas de frota com posição atual mas sem cadastro em operacional_colaborador_base
-    // (ex.: admissão recente) não podem ficar de fora — senão nunca seriam sugeridos,
-    // mesmo custando zero e estando fisicamente perto do ponto.
-    const nomesJaCadastrados = new Set(colaboradores.map(c => norm(c.nome)));
-    const sinteticos = [];
-    for (const [key, pos] of frotaAtual.posicaoPorNome.entries()) {
-      if (nomesJaCadastrados.has(key) || !geo(pos)) continue;
-      const nome = frotaAtual.nomeOriginalPorNome.get(key) || key;
-      sinteticos.push({ id: colKey('', nome, 'frota-sem-cadastro'), cpf: '', nome, latitude: lat(pos), longitude: lng(pos) });
-      nomesJaCadastrados.add(key);
-    }
-
-    st.colaboradores = [...colaboradores, ...sinteticos];
+    st.colaboradores = colaboradores;
     st.frotaTrajetos = calcularTrajetosFrota();
-    build();
+    atualizarUfPorNumeroOs();
     if (root) render(root, true);
+
+    // hospedagemParaPonto/caronaInfoPara cacheiam por ponto — limpa antes de recalcular o
+    // comparativo pra não reaproveitar cache de um carregamento anterior (endereço/hotel podem
+    // ter mudado). caronaInfoPara depende de st.frotaTrajetos, recém-recalculado acima.
+    st.hospedagemCache.clear();
+    st.caronaInfoCache.clear();
     st.comparativo = await loadComparativo();
+  }
+
+  // logistica_cargas_irregularidades não tem UF própria — só o número da OS. Resolve pela UF do
+  // ponto de embarque daquela OS (usa st.osTodas, não só st.os, pra cobrir OS já fechadas).
+  // Consumido por ufDaIrregularidade() -> drawIrregularidades().
+  function atualizarUfPorNumeroOs() {
+    const pontosPorChave = new Map(st.pontos.map(p => [p.__key, p]));
+    st.ufPorNumeroOs = new Map();
+    st.osTodas.forEach(o => {
+      const ponto = pontosPorChave.get(o.__pontoKey);
+      const uf = ponto?.uf || ufDaCoordenada(ponto?.lat, ponto?.lng);
+      if (uf && o.numero_os) st.ufPorNumeroOs.set(String(o.numero_os), uf);
+    });
   }
 
   // Aproxima o "trajeto do motorista até seu ponto de embarque" pelo segmento entre a posição
@@ -855,131 +719,18 @@ import { getCurrentUser } from './auth.js';
     return linhas.sort((a, b) => (b.diferenca ?? -Infinity) - (a.diferenca ?? -Infinity));
   }
 
-  function build() {
-    st.hospedagemCache.clear();
-    st.candidatosProximosCache.clear();
-    st.caronaInfoCache.clear();
-    const pontosPorChave = new Map(st.pontos.map(p => [p.__key, p]));
-    const usos = new Map();
-    st.semAssociacao = [];
-    st.rotas = [];
-
-    // logistica_cargas_irregularidades não tem UF própria — só o número da OS. Resolve pela UF
-    // do ponto de embarque daquela OS (usa st.osTodas, não só st.os, pra cobrir OS já fechadas).
-    st.ufPorNumeroOs = new Map();
-    st.osTodas.forEach(o => {
-      const ponto = pontosPorChave.get(o.__pontoKey);
-      // Embarque parseável dá a UF exata; sem isso (texto "-  ()" vazio na origem, mas com
-      // coordenada real), cai no fallback por proximidade da capital.
-      const uf = ponto?.uf || ufDaCoordenada(ponto?.lat, ponto?.lng);
-      if (uf && o.numero_os) st.ufPorNumeroOs.set(String(o.numero_os), uf);
-    });
-
-    // Escassez primeiro: processar a OS com menos candidatos por perto antes das que têm gente
-    // sobrando ao redor. Sem isso, a ordem por saldo desc deixa a maior OS "sequestrar" o
-    // colaborador mais próximo da região logo de cara, empurrando as OS vizinhas menores pra
-    // reusar alguém mais longe (ou pra "sem colaborador") mesmo quando há gente perto o bastante
-    // pra atender todo mundo se a ordem fosse melhor — achado ao investigar OS "sem atendente"
-    // crescendo depois de apertar os limites de rota (2026-07-03, 433 candidatos reais pra ~800
-    // OS abertas, então a escassez normalmente é de ordem, não de gente).
-    const escassezPorOs = new Map();
-    for (const os of st.os) {
-      const ponto = pontosPorChave.get(os.__pontoKey);
-      escassezPorOs.set(os.id, ponto?.temCoord ? candidatosProximos(ponto) : 0);
-    }
-    const ordenadas = [...st.os].sort((a, b) => {
-      const diffEscassez = escassezPorOs.get(a.id) - escassezPorOs.get(b.id);
-      return diffEscassez !== 0 ? diffEscassez : b.__saldo - a.__saldo;
-    });
-
-    function tentarAssociar(os, ponto, fallback) {
-      const escolhido = escolherColaborador(os, ponto, usos, fallback);
-      if (!escolhido) return false;
-      const { c, dist, avaliacao, saldoAtual, origem, alternativa } = escolhido;
-      registrarUso(c, ponto, os.__saldo, usos);
-      const repetido = (usos.get(c.id) || []).length > 1;
-      st.rotas.push({
-        id: `${os.id}|${c.id}`, os, ponto, colab: avaliacao.candidato, dist,
-        alternativa: alternativa ? { colab: alternativa.avaliacao.candidato, dist: alternativa.dist } : null,
-        origem, repetido, rotaEstendida: fallback,
-        modo: avaliacao.modoInfo.modo, modoLabel: avaliacao.modoInfo.label, modoEstimado: !!avaliacao.modoInfo.estimado,
-        custoDeslocamento: avaliacao.custoDeslocamento, hospedagem: avaliacao.hospedagem,
-        recomendacao: avaliacao.recomendacao, custoDia: avaliacao.custoDia, economia: avaliacao.economia,
-        inviavel: avaliacao.inviavel,
-        saldoAntes: saldoAtual, saldoDepois: saldoAtual + os.__saldo,
-      });
-      return true;
-    }
-
-    const pendentes = [];
-    for (const os of ordenadas) {
-      const ponto = pontosPorChave.get(os.__pontoKey);
-      if (!ponto) continue;
-      if (!ponto.temCoord) {
-        st.semAssociacao.push({ os, ponto, motivo: 'Ponto de embarque sem coordenada cadastrada (endereço não geocodificado) — associe manualmente' });
-        continue;
-      }
-      if (!tentarAssociar(os, ponto, false)) pendentes.push({ os, ponto });
-    }
-    // Segunda passada (fallback): só pras OS que a passada normal deixou sem ninguém. Usa raio de
-    // reuso mais largo e teto por colaborador mais alto — o resultado vem marcado `rotaEstendida`
-    // pra não se misturar com as rotas normais como se fosse uma sugestão igualmente boa.
-    for (const { os, ponto } of pendentes) {
-      if (!tentarAssociar(os, ponto, true)) {
-        const motivo = `Sem colaborador viável a até ${DIST_MAX_DESLOCAMENTO_DIARIO_KM}km (ou dentro do raio de ${RAIO_REPETIR_COLAB_KM}km pra reuso) e sem hospedagem por perto — precisa de revisão manual`;
-        st.semAssociacao.push({ os, ponto, motivo });
-      }
-    }
-    st.rotas.sort((a, b) => b.custoDia - a.custoDia || b.dist - a.dist);
-    st.pontos = st.pontos.filter(p => st.osTodas.some(o => o.__pontoKey === p.__key));
-  }
-
   // --- Renderização ------------------------------------------------------
 
   function estadosDisponiveis() { return [...new Set(st.osTodas.map(o => pontoKeyToUf(o.__pontoKey)).filter(Boolean))].sort(); }
   function pontoKeyToUf(key) { return st.pontos.find(p => p.__key === key)?.uf || ''; }
   function passaFiltroPonto(p) { if (!p) return false; if (st.estado && p.uf !== st.estado) return false; if (st.ponto && p.__key !== st.ponto) return false; return true; }
-  // Filtro por KPI clicado no rodapé do mapa (KM frota/particular/uber, Recomenda hospedar, Rota
-  // estendida) — os KPIs de saldo de OS ficam de fora porque já têm botão equivalente na legenda.
-  function passaFiltroKpi(r) {
-    if (st.kpiFiltro === 'km-frota') return r.modo === 'frota' || r.modo === 'carona';
-    if (st.kpiFiltro === 'km-particular') return r.modo === 'reembolso';
-    if (st.kpiFiltro === 'km-uber') return r.modo === 'uber';
-    if (st.kpiFiltro === 'hospedar') return r.recomendacao === 'hospedar';
-    if (st.kpiFiltro === 'rota-estendida') return !!r.rotaEstendida;
-    return true;
-  }
-
-  async function rotaReal(points) {
-    const key = points.map(p => `${Number(p.lng).toFixed(5)},${Number(p.lat).toFixed(5)}`).join(';');
-    if (st.rotaRealCache.has(key)) return st.rotaRealCache.get(key);
-    if (st.rotaRealCache.size > 2000) st.rotaRealCache.clear(); // evita crescimento sem limite em sessões longas
-    try {
-      const res = await fetch(`${OSRM_BASE}/route/v1/driving/${key}?overview=full&geometries=geojson`);
-      if (!res.ok) throw new Error(`OSRM HTTP ${res.status}`);
-      const data = await res.json();
-      const route = data?.routes?.[0];
-      if (!route?.geometry?.coordinates) throw new Error('Sem rota real para os pontos');
-      const out = {
-        coords: route.geometry.coordinates.map(([lg, la]) => [la, lg]),
-        distanciaKm: route.distance / 1000,
-        duracaoMin: route.duration / 60,
-      };
-      st.rotaRealCache.set(key, out);
-      return out;
-    } catch (err) {
-      const fallback = { coords: null, distanciaKm: null, duracaoMin: null };
-      st.rotaRealCache.set(key, fallback);
-      return fallback;
-    }
-  }
 
   function css() {
     if (document.getElementById(STYLE_ID)) return;
     const s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent = `
-      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:12px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo h2{font-size:24px;line-height:1}.mo p{color:#94a3b8;margin:5px 0 0;font-size:12px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:12px;background:#166534;color:#ecfdf5;font-weight:900;padding:8px 12px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:38px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-map-select{width:180px}.mo-map-tools{position:relative;z-index:2500;padding:0 16px 10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}.mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}.mo-map{height:calc(100vh - 300px);min-height:500px;max-height:760px;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}.mo-kpi{flex:1 0 126px;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:8px;background:rgba(2,6,23,.35)}.mo-kpi.clicavel{cursor:pointer}.mo-kpi.clicavel:hover{border-color:rgba(34,197,94,.5)}.mo-kpi.active{border-color:#facc15;box-shadow:0 0 0 1px rgba(250,204,21,.5);background:rgba(120,53,15,.18)}.mo-kpi span{display:block;font-size:8.5px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:16px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alerts{border-top:1px solid rgba(251,191,36,.18);border-bottom:1px solid rgba(251,191,36,.12);background:rgba(120,53,15,.12)}.mo-alert{padding:7px 16px;color:#fde68a;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-alert+.mo-alert{border-top:1px solid rgba(251,191,36,.12)}.mo-legend{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;color:#94a3b8;font-size:12px}.mo-rota-real{color:#facc15;font-weight:700}.mo-rota-real:empty{display:none}.mo-rota-real.mo-rota-alerta{color:#f87171}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .veiculo{background:#06b6d4}.mo-legend .roxo{background:#a855f7}.mo-legend .laranja{background:#f59e0b}.mo-legend .frota{background:#3b82f6;box-shadow:inset 0 0 0 3px #fff}.mo-marker-toggle{border:1px solid rgba(34,197,94,.28);background:rgba(6,78,59,.45);color:#ecfdf5;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;cursor:pointer}.mo-marker-toggle.off{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.22);color:#94a3b8}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk-irreg{width:19px;height:19px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#451a03;font-weight:900;font-size:12px;line-height:1}.mk-irreg.sel{box-shadow:0 0 0 3px rgba(250,204,21,.6)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.frota{background:#3b82f6}.mk.frota:after{content:'';position:absolute;left:4px;top:4px;width:4px;height:4px;border-radius:50%;background:#fff}.mk.veic-mov{background:#06b6d4}.mk.veic-park{background:#f59e0b}.mk.veic-mov:after,.mk.veic-park:after{content:'';position:absolute;left:3px;top:3px;width:5px;height:5px;border-radius:50%;background:#0f172a}.mk.hotel{background:#a855f7}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mk.aprox{border-style:dashed;border-width:2px;border-color:#fde68a}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5),.mo-colabs-table td:nth-child(6){text-align:right}.mo-colabs-table tbody tr{cursor:pointer}.mo-colabs-table tbody tr:hover{background:rgba(63,168,120,.1)}.mo-colabs-table tbody tr.active{background:rgba(22,101,52,.22)}.mo-colabs-table tbody tr.active td:first-child{color:#facc15;font-weight:800}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}.mo-tabs{display:flex;gap:8px;padding:0 16px 8px;position:relative;z-index:20}.mo-tab-btn{border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-size:12.5px}.mo-tab-btn.active{background:#166534;border-color:rgba(34,197,94,.4);color:#ecfdf5}.mo-comp-table{width:100%;border-collapse:collapse;font-size:12px}.mo-comp-table th,.mo-comp-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-comp-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55);position:sticky;top:0}.mo-comp-table td.num{text-align:right;white-space:nowrap}.mo-comp-wrap{max-height:520px;overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:16px}.mo-pill.concorda{color:#bbf7d0}.mo-pill.diverge{color:#fecaca}.mo-pill.sem-registro{color:#94a3b8}@media(max-width:1100px){.mo-head{flex-direction:column}.mo-map-tools{flex-direction:column;align-items:stretch}.mo-legend{justify-content:flex-start}.mo-below{grid-template-columns:1fr}.mo-map{height:560px;min-height:420px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:nowrap}.mo-map-select{width:100%}}
+      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:12px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo h2{font-size:24px;line-height:1}.mo p{color:#94a3b8;margin:5px 0 0;font-size:12px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:12px;background:#166534;color:#ecfdf5;font-weight:900;padding:8px 12px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:38px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-map-select{width:180px}.mo-map-tools{position:relative;z-index:2500;padding:0 16px 10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}.mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}.mo-map{height:calc(100vh - 300px);min-height:500px;max-height:760px;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}.mo-kpi{flex:1 0 126px;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:8px;background:rgba(2,6,23,.35)}.mo-kpi.clicavel{cursor:pointer}.mo-kpi.clicavel:hover{border-color:rgba(34,197,94,.5)}.mo-kpi.active{border-color:#facc15;box-shadow:0 0 0 1px rgba(250,204,21,.5);background:rgba(120,53,15,.18)}.mo-kpi span{display:block;font-size:8.5px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:16px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alerts{border-top:1px solid rgba(251,191,36,.18);border-bottom:1px solid rgba(251,191,36,.12);background:rgba(120,53,15,.12)}.mo-alert{padding:7px 16px;color:#fde68a;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-alert+.mo-alert{border-top:1px solid rgba(251,191,36,.12)}.mo-legend{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;color:#94a3b8;font-size:12px}.mo-rota-real{color:#facc15;font-weight:700}.mo-rota-real:empty{display:none}.mo-rota-real.mo-rota-alerta{color:#f87171}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .veiculo{background:#06b6d4}.mo-legend .roxo{background:#a855f7}.mo-legend .laranja{background:#f59e0b}.mo-marker-toggle{border:1px solid rgba(34,197,94,.28);background:rgba(6,78,59,.45);color:#ecfdf5;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;cursor:pointer}.mo-marker-toggle.off{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.22);color:#94a3b8}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk-irreg{width:19px;height:19px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#451a03;font-weight:900;font-size:12px;line-height:1}.mk-irreg.sel{box-shadow:0 0 0 3px rgba(250,204,21,.6)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.veic-mov{background:#06b6d4}.mk.veic-park{background:#f59e0b}.mk.hotel{background:#a855f7}.mk-ico{width:18px;height:18px;border-width:2px;display:flex;align-items:center;justify-content:center;line-height:0}.mk-ico svg{display:block}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mk.aprox{border-style:dashed;border-width:2px;border-color:#fde68a}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5),.mo-colabs-table td:nth-child(6){text-align:right}.mo-colabs-table tbody tr{cursor:pointer}.mo-colabs-table tbody tr:hover{background:rgba(63,168,120,.1)}.mo-colabs-table tbody tr.active{background:rgba(22,101,52,.22)}.mo-colabs-table tbody tr.active td:first-child{color:#facc15;font-weight:800}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}.mo-tabs{display:flex;gap:8px;padding:0 16px 8px;position:relative;z-index:20}.mo-tab-btn{border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-size:12.5px}.mo-tab-btn.active{background:#166534;border-color:rgba(34,197,94,.4);color:#ecfdf5}.mo-comp-table{width:100%;border-collapse:collapse;font-size:12px}.mo-comp-table th,.mo-comp-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-comp-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55);position:sticky;top:0}.mo-comp-table td.num{text-align:right;white-space:nowrap}.mo-comp-wrap{max-height:520px;overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:16px}.mo-pill.concorda{color:#bbf7d0}.mo-pill.diverge{color:#fecaca}.mo-pill.sem-registro{color:#94a3b8}@media(max-width:1100px){.mo-head{flex-direction:column}.mo-map-tools{flex-direction:column;align-items:stretch}.mo-legend{justify-content:flex-start}.mo-below{grid-template-columns:1fr}.mo-map{height:560px;min-height:420px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:nowrap}.mo-map-select{width:100%}}
     `;
     document.head.appendChild(s);
   }
@@ -993,19 +744,8 @@ import { getCurrentUser } from './auth.js';
   function scriptTag(src, id) { return new Promise((res, rej) => { if (document.getElementById(id)) return res(); const s = document.createElement('script'); s.src = src; s.id = id; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
 
   function kpis() {
-    const osSemSaldo = st.osTodas.filter(o => o.__saldo <= 0).length;
-    const kmRoundTrip = r => r.dist * 2;
-    const kmFrota = st.rotas.filter(r => r.modo === 'frota' || r.modo === 'carona').reduce((a, r) => a + kmRoundTrip(r), 0);
-    const kmParticular = st.rotas.filter(r => r.modo === 'reembolso').reduce((a, r) => a + kmRoundTrip(r), 0);
-    const kmUber = st.rotas.filter(r => r.modo === 'uber').reduce((a, r) => a + kmRoundTrip(r), 0);
-    return {
-      os: st.os.length, osSemSaldo, kmFrota, kmParticular, kmUber,
-      hospedar: st.rotas.filter(r => r.recomendacao === 'hospedar').length,
-      semColaborador: st.semAssociacao.length,
-      rotaEstendida: st.rotas.filter(r => r.rotaEstendida).length,
-    };
+    return { os: st.os.length, osSemSaldo: st.osTodas.filter(o => o.__saldo <= 0).length };
   }
-  function rows() { return { base: st.rotas.filter(r => passaFiltroPonto(r.ponto) && passaFiltroKpi(r)), sem: st.semAssociacao.filter(r => passaFiltroPonto(r.ponto)) }; }
 
   function html() {
     const irregAbertas = st.irregularidades.filter(i => norm(i.status) === 'ABERTA').length;
@@ -1013,28 +753,23 @@ import { getCurrentUser } from './auth.js';
     const tabs = `<div class="mo-tabs"><button class="mo-tab-btn ${st.tab === 'mapa' ? 'active' : ''}" data-tab="mapa">Mapa</button><button class="mo-tab-btn ${st.tab === 'irregularidades' ? 'active' : ''}" data-tab="irregularidades">Irregularidades${irregAbertas ? ` (${irregAbertas})` : ''}</button><button class="mo-tab-btn ${st.tab === 'comparativo' ? 'active' : ''}" data-tab="comparativo">Sugerido x Registrado</button><button class="mo-tab-btn ${st.tab === 'alertas' ? 'active' : ''}" data-tab="alertas">Alertas${alertasPendentes ? ` (${alertasPendentes})` : ''}</button></div>`;
     const corpo = st.tab === 'comparativo' ? htmlComparativo() : st.tab === 'irregularidades' ? htmlIrregularidades() : st.tab === 'alertas' ? htmlAlertas() : htmlMapa();
     return `
-      <div class="mo"><section class="mo-card"><div class="mo-head"><div><h2>Mapa operacional</h2><p>Custo-benefício por OS: compara frota/carona (grátis), veículo próprio, Uber/táxi (até 60km, além disso vira carro) e hospedagem próxima.</p></div><div class="mo-actions"><select class="mo-select mo-map-select" data-map-base><option value="escuro" ${st.mapaBase === 'escuro' ? 'selected' : ''}>Mapa escuro</option><option value="real" ${st.mapaBase === 'real' ? 'selected' : ''}>Visualização real</option><option value="padrao" ${st.mapaBase === 'padrao' ? 'selected' : ''}>Mapa padrão</option></select><button class="mo-btn ${st.mostrarRota ? '' : 'off'}" data-toggle-rota>${st.mostrarRota ? 'Desligar rota' : 'Ligar rota'}</button><button class="mo-btn" data-reload>Atualizar</button></div></div>
+      <div class="mo"><section class="mo-card"><div class="mo-head"><div><h2>Mapa operacional</h2><p>Localização de O.S. abertas, frota, classificadores e hotéis. Filtre por estado ou ponto de embarque.</p></div><div class="mo-actions"><select class="mo-select mo-map-select" data-map-base><option value="escuro" ${st.mapaBase === 'escuro' ? 'selected' : ''}>Mapa escuro</option><option value="real" ${st.mapaBase === 'real' ? 'selected' : ''}>Visualização real</option><option value="padrao" ${st.mapaBase === 'padrao' ? 'selected' : ''}>Mapa padrão</option></select><button class="mo-btn" data-reload>Atualizar</button></div></div>
         ${tabs}
         ${corpo}
-      </section>${st.tab === 'mapa' ? colabsHtml() : ''}</div>`;
+      </section></div>`;
   }
 
-  const KPI_FILTRO_LABEL = { 'km-frota': 'KM frota', 'km-particular': 'KM particular', 'km-uber': 'KM uber', hospedar: 'Recomenda hospedar', 'rota-estendida': 'Rota estendida' };
-  function kpiBox(label, valor, filtro) {
-    const clicavel = filtro ? ' data-kpi-filtro="' + filtro + '"' : '';
-    const ativo = filtro && st.kpiFiltro === filtro ? ' active' : '';
-    return `<div class="mo-kpi${clicavel ? ' clicavel' : ''}${ativo}"${clicavel}><span>${esc(label)}</span><strong>${valor}</strong></div>`;
+  function kpiBox(label, valor) {
+    return `<div class="mo-kpi"><span>${esc(label)}</span><strong>${valor}</strong></div>`;
   }
   function htmlMapa() {
-    const k = kpis(), { base } = rows(), estados = estadosDisponiveis(), pontosFiltrados = st.pontos.filter(p => !st.estado || p.uf === st.estado);
-    const filtroInfo = st.kpiFiltro ? ` · filtro: ${KPI_FILTRO_LABEL[st.kpiFiltro]} (clique de novo pra tirar)` : '';
-    const rotaInfo = st.mostrarRota ? `Ligado · desenhando ${base.length} rota(s) visíveis${filtroInfo}` : 'Desligada';
+    const k = kpis(), estados = estadosDisponiveis(), pontosFiltrados = st.pontos.filter(p => !st.estado || p.uf === st.estado);
     return `
         <div class="mo-map-tools"><div class="mo-filter"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select><select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
-        <div class="mo-legend"><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsComSaldo ? '' : 'off'}" data-toggle-marker="os-com-saldo"><i class="verde"></i>OS com saldo ${st.mostrarOsComSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsSemSaldo ? '' : 'off'}" data-toggle-marker="os-sem-saldo"><i class="vermelho"></i>OS sem saldo ${st.mostrarOsSemSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarHoteis ? '' : 'off'}" data-toggle-marker="hoteis"><i class="roxo"></i>Hotéis ${st.mostrarHoteis ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarIrregularidades ? '' : 'off'}" data-toggle-marker="irregularidades"><i class="laranja"></i>Irregularidades ${st.mostrarIrregularidades ? 'On' : 'Off'}</button><span data-rota-status>Rotas: ${rotaInfo}</span><span data-rota-real class="mo-rota-real"></span><span data-rota-alternativa class="mo-rota-real"></span></div></div>
+        <div class="mo-legend"><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsComSaldo ? '' : 'off'}" data-toggle-marker="os-com-saldo"><i class="verde"></i>OS com saldo ${st.mostrarOsComSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsSemSaldo ? '' : 'off'}" data-toggle-marker="os-sem-saldo"><i class="vermelho"></i>OS sem saldo ${st.mostrarOsSemSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarHoteis ? '' : 'off'}" data-toggle-marker="hoteis"><i class="roxo"></i>Hotéis ${st.mostrarHoteis ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarIrregularidades ? '' : 'off'}" data-toggle-marker="irregularidades"><i class="laranja"></i>Irregularidades ${st.mostrarIrregularidades ? 'On' : 'Off'}</button></div></div>
         <div class="mo-body">
           <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
-          <div class="mo-kpis">${kpiBox('OS com saldo', k.os)}${kpiBox('OS sem saldo', k.osSemSaldo)}${kpiBox('KM frota', fmtKm(k.kmFrota), 'km-frota')}${kpiBox('KM particular', fmtKm(k.kmParticular), 'km-particular')}${kpiBox('KM uber', fmtKm(k.kmUber), 'km-uber')}${kpiBox('Recomenda hospedar', k.hospedar, 'hospedar')}${kpiBox('Sem colaborador', k.semColaborador)}${kpiBox('Rota estendida', k.rotaEstendida, 'rota-estendida')}</div>
+          <div class="mo-kpis">${kpiBox('OS com saldo', k.os)}${kpiBox('OS sem saldo', k.osSemSaldo)}</div>
         </div>`;
   }
 
@@ -1183,39 +918,10 @@ import { getCurrentUser } from './auth.js';
     URL.revokeObjectURL(url);
   }
 
-  function estadiaLabel(r) {
-    if (r.recomendacao !== 'hospedar' || !r.hospedagem) return 'Não precisa';
-    const tipo = r.hospedagem.tipo === 'alojamento' ? 'Alojamento' : 'Hotel';
-    return `${tipo}${r.hospedagem.estimado ? ' (estimado)' : ''} · ${r.hospedagem.nome}`;
-  }
-
-  function colabsHtml() {
-    const porColab = new Map();
-    for (const r of st.rotas.filter(passaFiltroKpi)) {
-      const key = norm(r.colab.nome);
-      // st.rotas já vem ordenado por custo desc (build()); a primeira rota encontrada aqui pra
-      // cada colaborador é a de maior custo — usada como âncora pro clique (destaque no mapa) e
-      // como referência de deslocamento/estadia exibida na linha.
-      const atual = porColab.get(key) || { nome: r.colab.nome, colabId: r.colab.id, modo: r.modoLabel, estadia: estadiaLabel(r), os: 0, saldo: 0, custo: 0, rotaPrincipal: r.id, estendida: false };
-      atual.os += 1; atual.saldo += r.os.__saldo; atual.custo += r.custoDia;
-      if (r.rotaEstendida) atual.estendida = true;
-      porColab.set(key, atual);
-    }
-    const lista = [...porColab.values()].sort((a, b) => b.custo - a.custo);
-    const colabSelecionadoId = st.rotas.find(x => x.id === st.rota)?.colab?.id;
-    // "Rota estendida" = colaborador entrou pela passada de fallback (build()) porque a OS não
-    // tinha ninguém dentro do raio normal de rota lisa — sinaliza pro gestor que esse deslocamento
-    // é atípico (maior desvio que o comum), não uma sugestão equivalente às demais.
-    const body = lista.length
-      ? `<table class="mo-colabs-table"><thead><tr><th>Colaborador</th><th>Deslocamento</th><th>Estadia</th><th>OS</th><th>Saldo</th><th>Custo total</th></tr></thead><tbody>${lista.map(c => `<tr class="${c.colabId === colabSelecionadoId ? 'active' : ''}" data-colab-rota="${esc(c.rotaPrincipal)}"><td>${esc(c.nome)}${c.estendida ? ' <span class="mo-pill warn" title="Alguma OS desse colaborador só encontrou vaga na passada de fallback (raio mais largo)">Rota estendida</span>' : ''}</td><td>${esc(c.modo)}</td><td>${esc(c.estadia)}</td><td>${c.os}</td><td>${fmtKg(c.saldo)}</td><td>${fmtRs(c.custo)}</td></tr>`).join('')}</tbody></table>`
-      : '<div class="mo-load">Nenhum colaborador associado para o filtro atual.</div>';
-    return `<section class="mo-colabs-card"><div class="mo-colabs-head"><strong>Colaboradores no mapa</strong><span>${lista.length} colaborador(es) · clique pra destacar no mapa</span></div>${body}</section>`;
-  }
-
   function bind(root) {
     root.querySelectorAll('[data-tab]').forEach(el => { el.onclick = () => { st.tab = el.dataset.tab; render(root); }; });
-    root.querySelector('[data-estado]')?.addEventListener('change', e => { st.estado = e.target.value; st.ponto = ''; st.rota = ''; render(root, true); });
-    root.querySelector('[data-ponto]')?.addEventListener('change', e => { st.ponto = e.target.value; st.rota = ''; render(root, true); });
+    root.querySelector('[data-estado]')?.addEventListener('change', e => { st.estado = e.target.value; st.ponto = ''; render(root, true); });
+    root.querySelector('[data-ponto]')?.addEventListener('change', e => { st.ponto = e.target.value; render(root, true); });
     root.querySelector('[data-map-base]')?.addEventListener('change', e => { st.mapaBase = TILE_LAYERS[e.target.value] ? e.target.value : 'escuro'; applyBaseLayer(); });
     root.querySelectorAll('[data-toggle-marker]').forEach(el => {
       el.onclick = () => {
@@ -1229,12 +935,7 @@ import { getCurrentUser } from './auth.js';
         render(root);
       };
     });
-    root.querySelector('[data-toggle-rota]')?.addEventListener('click', () => { st.mostrarRota = !st.mostrarRota; render(root); });
-    root.querySelectorAll('[data-kpi-filtro]').forEach(el => {
-      el.onclick = () => { st.kpiFiltro = st.kpiFiltro === el.dataset.kpiFiltro ? '' : el.dataset.kpiFiltro; render(root); };
-    });
     root.querySelector('[data-reload]')?.addEventListener('click', () => openHome(root));
-    root.querySelectorAll('[data-colab-rota]').forEach(el => { el.onclick = () => { st.rota = el.dataset.colabRota; render(root); }; });
     root.querySelector('[data-supervisao-comp]')?.addEventListener('change', e => { st.supervisaoComparativo = e.target.value; render(root); });
     root.querySelector('[data-export-csv]')?.addEventListener('click', () => exportarComparativoCSV());
     root.querySelector('[data-alertas-data]')?.addEventListener('change', e => { st.alertasFiltroData = e.target.value; render(root); });
@@ -1277,7 +978,6 @@ import { getCurrentUser } from './auth.js';
     st.tileLayer = null;
     applyBaseLayer();
     st.layer = L.layerGroup().addTo(st.map);
-    st.routeLayer = L.layerGroup().addTo(st.map);
     await draw(root, true);
     setTimeout(() => st.map?.invalidateSize(), 80);
   }
@@ -1289,7 +989,18 @@ import { getCurrentUser } from './auth.js';
     }
     st.tileLayer = window.L.tileLayer(cfg.url, cfg.options).addTo(st.map);
   }
-  function icon(t, selected = false, aproximado = false) { return window.L.divIcon({ className: '', html: `<div class="mk ${t} ${selected ? 'sel' : ''} ${aproximado ? 'aprox' : ''}"></div>`, iconSize: [13, 13], iconAnchor: [6.5, 6.5] }); }
+  // Glifos brancos (casinha p/ classificador, carro p/ frota) desenhados dentro do círculo
+  // colorido — mesmo espírito do "!" da irregularidade, só um pouco maiores pra caber o desenho.
+  const MARKER_GLYPHS = {
+    colab: '<svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path fill="#fff" d="M12 3 2 12h3v8h5v-5h4v5h5v-8h3z"/></svg>',
+    'veic-mov': '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="#fff" d="M4 11l1.4-4.2A2 2 0 0 1 7.3 5.5h9.4a2 2 0 0 1 1.9 1.3L20 11h.5a1.5 1.5 0 0 1 1.5 1.5V16a1 1 0 0 1-1 1h-1.2a2.3 2.3 0 0 1-4.6 0H8.8a2.3 2.3 0 0 1-4.6 0H3a1 1 0 0 1-1-1v-3.5A1.5 1.5 0 0 1 3.5 11z"/></svg>',
+    'veic-park': '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="#fff" d="M4 11l1.4-4.2A2 2 0 0 1 7.3 5.5h9.4a2 2 0 0 1 1.9 1.3L20 11h.5a1.5 1.5 0 0 1 1.5 1.5V16a1 1 0 0 1-1 1h-1.2a2.3 2.3 0 0 1-4.6 0H8.8a2.3 2.3 0 0 1-4.6 0H3a1 1 0 0 1-1-1v-3.5A1.5 1.5 0 0 1 3.5 11z"/></svg>',
+  };
+  function icon(t, selected = false, aproximado = false) {
+    const glifo = MARKER_GLYPHS[t];
+    if (glifo) return window.L.divIcon({ className: '', html: `<div class="mk mk-ico ${t} ${selected ? 'sel' : ''} ${aproximado ? 'aprox' : ''}">${glifo}</div>`, iconSize: [18, 18], iconAnchor: [9, 9] });
+    return window.L.divIcon({ className: '', html: `<div class="mk ${t} ${selected ? 'sel' : ''} ${aproximado ? 'aprox' : ''}"></div>`, iconSize: [13, 13], iconAnchor: [6.5, 6.5] });
+  }
   function osPorPonto(ponto) { return st.osTodas.filter(o => o.__pontoKey === ponto.__key); }
 
   function veiculoTooltip(v) {
@@ -1359,27 +1070,20 @@ import { getCurrentUser } from './auth.js';
   async function draw(root, ajustarZoom = false) {
     if (!st.map || !window.L || !st.layer) return;
     const L = window.L, b = [];
-    const token = ++st.drawToken;
     st.layer.clearLayers();
-    st.routeLayer?.clearLayers();
-    const { base } = rows();
-    const r = st.rotas.find(x => x.id === st.rota) || base[0];
-    const colabSelecionadoId = r?.colab?.id;
     const pontosVisiveis = st.pontos.filter(p => passaFiltroPonto(p) && p.temCoord);
 
     if (st.mostrarOsComSaldo || st.mostrarOsSemSaldo) {
       pontosVisiveis.forEach(p => {
         const oss = osPorPonto(p);
         const comSaldo = oss.filter(o => o.__saldo > 0).length, semSaldo = oss.filter(o => o.__saldo <= 0).length;
-        const sel = r?.ponto?.__key === p.__key;
+        // Sem seleção de rota não há ponto "selecionado" — sel fica sempre false, mas é mantido
+        // como token porque os patches de popup (street view) em operacional-rotas-inteligentes.js
+        // usam a linha do marcador (com `sel`) como âncora de string-replace.
+        const sel = false;
         const aviso = p.aproximado ? ' · <em>posição aproximada (nível de cidade — fazenda/armazém específico não localizado)</em>' : '';
-        // Clicar num ponto seleciona a rota que atende aquele local (mesma rota que o clique na
-        // tabela "Colaboradores no mapa" seleciona) — busca em st.rotas (não em `base`) pra
-        // funcionar mesmo com um filtro de KPI ativo que não inclua essa rota especificamente.
-        const rotaDoPonto = st.rotas.find(x => x.ponto.__key === p.__key)?.id || '';
         if (st.mostrarOsComSaldo && comSaldo) {
-          const marker = L.marker([p.lat, p.lng], { icon: icon('os-ok', sel, p.aproximado) }).bindTooltip(`OS com saldo · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${comSaldo} OS${aviso}`).addTo(st.layer);
-          if (rotaDoPonto) marker.on('click', () => { st.rota = rotaDoPonto; render(root); });
+          L.marker([p.lat, p.lng], { icon: icon('os-ok', sel, p.aproximado) }).bindTooltip(`OS com saldo · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${comSaldo} OS${aviso}`).addTo(st.layer);
           b.push([p.lat, p.lng]);
         }
         if (st.mostrarOsSemSaldo && semSaldo) {
@@ -1393,138 +1097,22 @@ import { getCurrentUser } from './auth.js';
     if (st.mostrarHoteis) drawHoteis(L, b);
     if (st.mostrarIrregularidades) drawIrregularidades(L, b);
 
-    const usados = new Map();
-    if (st.mostrarColaboradores) base.forEach(x => { if (geo(x.colab) && !usados.has(x.colab.id)) usados.set(x.colab.id, x.colab); });
-    // Destaca o colaborador selecionado (via clique na rota ou na tabela "Colaboradores no mapa")
-    // e TODAS as rotas dele, não só a rota exata clicada — comparado por id, não por nome, pra não
-    // colidir entre homônimos.
-    usados.forEach(c => {
-      const sel = c.id === colabSelecionadoId;
-      const rotaDoColab = st.rotas.find(x => x.colab.id === c.id)?.id || '';
-      const marker = L.marker([lat(c), lng(c)], { icon: icon(sel ? 'frota' : 'colab', sel) }).bindTooltip(`Colaborador: ${esc(c.nome)}`).addTo(st.layer);
-      if (rotaDoColab) marker.on('click', () => { st.rota = rotaDoColab; render(root); });
-      b.push([lat(c), lng(c)]);
-    });
-
-    if (st.mostrarRota) drawAllRoutes(root, base, token, b);
-    // Só ajusta zoom/posição na carga inicial, ao trocar filtro de estado/ponto ou num recarregar
-    // explícito — em toggles de legenda/seleção de linha o mapa mantém a posição atual do usuário
-    // (senão cada clique "pulava" o mapa de volta pro enquadramento geral, parecendo fechar/reabrir).
-    if (b.length && ajustarZoom) st.map.fitBounds(b, { padding: [34, 34], maxZoom: st.estado || st.ponto ? 9 : 10 });
-  }
-
-  function drawFallbackRoute(L, route, selected) {
-    const c = [lat(route.colab), lng(route.colab)], p = [route.ponto.lat, route.ponto.lng];
-    return L.polyline([c, p], { color: selected ? '#facc15' : '#60a5fa', weight: selected ? 4 : 1.5, opacity: selected ? .9 : .18, dashArray: '5 8' }).addTo(st.routeLayer);
-  }
-
-  async function drawAllRoutes(root, base, token, bounds) {
-    if (!st.map || !window.L || !st.routeLayer) return;
-    const L = window.L;
-    const selecionada = st.rotas.find(x => x.id === st.rota) || base[0];
-    const colabSelecionadoId = selecionada?.colab?.id;
-    // Zera o painel de rota real ao trocar de seleção — senão o número da rota anterior fica
-    // exibido (errado) até a nova consulta ao OSRM resolver.
-    st.rotaSelecionadaReal = null;
-    updateRotaRealStatus(root);
-    const validas = base.filter(r => geo(r.colab) && r.ponto.temCoord);
-    let fallbackSelecionado = null;
-    validas.forEach(r => {
-      // Pontilhado (reta simplificada) só na rota do colaborador selecionado — desenhar em todas
-      // poluía o mapa inteiro quando havia centenas de rotas sem rota real carregada ainda.
-      if (r.colab.id === colabSelecionadoId) fallbackSelecionado = drawFallbackRoute(L, r, true);
-      bounds.push([lat(r.colab), lng(r.colab)], [r.ponto.lat, r.ponto.lng]);
-    });
-
-    updateRouteStatus(root, `Rotas: desenhando ${validas.length} rota(s) visíveis...`);
-    // A rota selecionada vai primeiro na fila — senão ela podia nunca resolver pra rota real se
-    // caísse fora do limite de ROTAS_REAIS_LIMITE, ficando só no pontilhado indefinidamente.
-    const ordenadas = [...validas].sort((a, b) => (b.colab.id === colabSelecionadoId ? 1 : 0) - (a.colab.id === colabSelecionadoId ? 1 : 0));
-    const fila = ordenadas.slice(0, ROTAS_REAIS_LIMITE);
-    let done = 0, realOk = 0;
-    async function worker() {
-      while (fila.length && token === st.drawToken) {
-        const r = fila.shift();
-        const real = await rotaReal([{ lat: lat(r.colab), lng: lng(r.colab) }, { lat: r.ponto.lat, lng: r.ponto.lng }]);
-        if (token !== st.drawToken || !st.routeLayer) return;
-        done++;
-        if (real?.coords?.length) {
-          realOk++;
-          const sel = r.colab.id === colabSelecionadoId;
-          // Some o pontilhado assim que a rota real chega — senão as duas ficam sobrepostas
-          // no mapa pro resto do carregamento (parecia um bug de rota errada).
-          if (sel && fallbackSelecionado) {
-            st.routeLayer.removeLayer(fallbackSelecionado);
-            fallbackSelecionado = null;
-          }
-          L.polyline(real.coords, { color: sel ? '#facc15' : '#22c55e', weight: sel ? 4 : 2, opacity: sel ? .95 : .35 }).addTo(st.routeLayer);
-          if (sel && Number.isFinite(real.distanciaKm)) {
-            st.rotaSelecionadaReal = { distanciaKm: real.distanciaKm, duracaoMin: real.duracaoMin, distanciaRetaKm: r.dist };
-            updateRotaRealStatus(root);
-          }
-        }
-        updateRouteStatus(root, `Rotas: ${done}/${Math.min(validas.length, ROTAS_REAIS_LIMITE)} reais carregadas${validas.length > ROTAS_REAIS_LIMITE ? ` · limite ${ROTAS_REAIS_LIMITE}/${validas.length}` : ''}`);
-      }
+    // Todos os classificadores ativos com coordenada (casa do colaborador), filtrados por estado
+    // quando houver — camada de referência de "onde moram os classificadores", sem pareamento.
+    if (st.mostrarColaboradores) {
+      st.colaboradores
+        .filter(geo)
+        .filter(c => !st.estado || norm(c.uf_base) === norm(st.estado))
+        .forEach(c => {
+          L.marker([lat(c), lng(c)], { icon: icon('colab') }).bindTooltip(`Classificador: ${esc(c.nome)}`).addTo(st.layer);
+          b.push([lat(c), lng(c)]);
+        });
     }
-    await Promise.all(Array.from({ length: Math.min(ROTAS_REAIS_SIMULTANEAS, fila.length) }, worker));
-    if (token === st.drawToken) updateRouteStatus(root, `Rotas: ${validas.length} visíveis · ${realOk} reais carregadas${validas.length > ROTAS_REAIS_LIMITE ? ' · use filtro de estado/ponto para carregar as demais' : ''}`);
-  }
 
-  function updateRouteStatus(root, text) {
-    const a = root.querySelector('[data-rota-status]');
-    if (a) a.textContent = text;
-  }
-
-  // Mostra, pro colaborador/OS selecionado no momento, a distância e o tempo reais (via OSRM,
-  // por estrada) ao lado da estimativa em linha reta usada pelo motor de custo — protótipo pra
-  // avaliar se vale a pena usar rota real (em vez de só linha reta) na sugestão de eficiência.
-  function updateRotaRealStatus(root) {
-    const el = root?.querySelector('[data-rota-real]');
-    if (!el) return;
-    const info = st.rotaSelecionadaReal;
-    if (!info) { el.textContent = ''; return; }
-    const h = Math.floor(info.duracaoMin / 60), m = Math.round(info.duracaoMin % 60);
-    const tempo = h > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${m}min`;
-    const diffPct = Number.isFinite(info.distanciaRetaKm) && info.distanciaRetaKm > 0
-      ? Math.round((info.distanciaKm / info.distanciaRetaKm - 1) * 100) : null;
-    const rotulo = info.paradas > 1 ? `Rota do dia (${info.paradas} paradas) por estrada` : 'Rota selecionada por estrada';
-    el.textContent = `${rotulo}: ${fmtKm(info.distanciaKm)} · ${tempo}` +
-      (Number.isFinite(info.distanciaRetaKm) ? ` (linha reta: ${fmtKm(info.distanciaRetaKm)}${diffPct !== null ? `, ${diffPct >= 0 ? '+' : ''}${diffPct}%` : ''})` : '');
-  }
-
-  // Só existe uma "alternativa" quando o motor encontrou um segundo candidato praticamente
-  // empatado em linha reta (dentro de DIST_TOLERANCIA_EMPATE_KM) com o escolhido — nesses casos a
-  // linha reta não é confiável o bastante pra decidir sozinha quem está de fato mais perto por
-  // estrada. Roda em paralelo ao desenho do mapa, sem bloquear nada; se a seleção mudar no meio da
-  // consulta, o token descarta o resultado velho.
-  async function checarAlternativa(root) {
-    const r = st.rotas.find(x => x.id === st.rota) || st.rotas[0];
-    const token = ++st.alternativaToken;
-    st.alternativaComparativo = null;
-    updateAlternativaStatus(root);
-    if (!r?.alternativa) return;
-    const [real1, real2] = await Promise.all([
-      rotaReal([{ lat: lat(r.colab), lng: lng(r.colab) }, { lat: r.ponto.lat, lng: r.ponto.lng }]),
-      rotaReal([{ lat: lat(r.alternativa.colab), lng: lng(r.alternativa.colab) }, { lat: r.ponto.lat, lng: r.ponto.lng }]),
-    ]);
-    if (token !== st.alternativaToken) return;
-    if (!Number.isFinite(real1?.distanciaKm) || !Number.isFinite(real2?.distanciaKm)) return;
-    st.alternativaComparativo = {
-      escolhido: { nome: r.colab.nome, retaKm: r.dist, realKm: real1.distanciaKm },
-      alternativa: { nome: r.alternativa.colab.nome, retaKm: r.alternativa.dist, realKm: real2.distanciaKm },
-    };
-    updateAlternativaStatus(root);
-  }
-
-  function updateAlternativaStatus(root) {
-    const el = root?.querySelector('[data-rota-alternativa]');
-    if (!el) return;
-    const c = st.alternativaComparativo;
-    if (!c) { el.textContent = ''; el.classList.remove('mo-rota-alerta'); return; }
-    const inverteu = c.alternativa.realKm < c.escolhido.realKm;
-    el.textContent = `Empate na linha reta — ${c.escolhido.nome}: ${fmtKm(c.escolhido.realKm)} real (${fmtKm(c.escolhido.retaKm)} reta) vs. ${c.alternativa.nome}: ${fmtKm(c.alternativa.realKm)} real (${fmtKm(c.alternativa.retaKm)} reta)` +
-      (inverteu ? ' — pela rota real, a alternativa seria mais perto' : ' — confirma o escolhido');
-    el.classList.toggle('mo-rota-alerta', inverteu);
+    // Só ajusta zoom/posição na carga inicial, ao trocar filtro de estado/ponto ou num recarregar
+    // explícito — em toggles de legenda o mapa mantém a posição atual do usuário (senão cada
+    // clique "pulava" o mapa de volta pro enquadramento geral, parecendo fechar/reabrir).
+    if (b.length && ajustarZoom) st.map.fitBounds(b, { padding: [34, 34], maxZoom: st.estado || st.ponto ? 9 : 10 });
   }
 
   // ajustarZoom=true só na carga inicial/recarregar/troca de filtro geográfico — em interações
@@ -1563,9 +1151,8 @@ import { getCurrentUser } from './auth.js';
         if (st.tab === 'mapa') await map(root);
       }
       await load(root);
-      st.rota = rows().base[0]?.id || '';
       render(root, true);
-      console.info('[mapa-operacional] carregado', { osComSaldo: st.os.length, pontos: st.pontos.length, associadas: st.rotas.length, semAssociacao: st.semAssociacao.length, comparativo: st.comparativo.length });
+      console.info('[mapa-operacional] carregado', { osComSaldo: st.os.length, pontos: st.pontos.length, colaboradores: st.colaboradores.length, veiculos: st.veiculos.length, comparativo: st.comparativo.length });
     } catch (err) {
       console.error('[mapa-operacional] erro ao carregar:', err);
       renderErro(root, err);
