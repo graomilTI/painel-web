@@ -162,12 +162,13 @@ export const MENU_CONFIG = [
     grupo: "LOGÍSTICA",
     itens: [
       item("logistica_adm", "Painel de Logística", "logistica-adm-os", ["LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_abertura_os", "Abertura de O.S.", "logistica-abertura-os", ["LOGISTICA_ABERTURA_OS", "LOGISTICA_ADM", "LOGISTICA"]),
+      // "O.S" reúne Abertura | Conferência | Ajuste | Finalização num único ponto
+      // (logistica-os.html, 4 abas). Os códigos antigos ficam como aliases para
+      // preservar as permissões de quem já tinha acesso a essas telas separadas.
+      item("logistica_os", "O.S", "logistica-os", ["LOGISTICA_OS", "LOGISTICA_ABERTURA_OS", "LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS", "LOGISTICA_CONFERENCIAS", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_fob", "FOB", "logistica-fob", ["LOGISTICA_FOB", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_informativos", "Informativos", "logistica-informativos", ["LOGISTICA_INFORMATIVOS", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_finalizacao_os", "Finalização de O.S", "logistica-finalizacao", ["LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_classificadores", "Classificadores", "logistica-classificadores", ["LOGISTICA_CLASSIFICADORES", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_conferencias", "Conferências", "logistica-conferencias", ["LOGISTICA_CONFERENCIAS", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_exportacoes", "Exportações clientes", "logistica-exportacoes", ["LOGISTICA_EXPORTACOES", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_relatorios_cliente", "Relatórios ao Cliente", "logistica-relatorios", ["LOGISTICA_RELATORIOS_CLIENTE", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_btg", "BTG", "btg-logistica", ["LOGISTICA_BTG", "BTG_LOGISTICA", "BTG", "LOGISTICA_ADM", "LOGISTICA"])
