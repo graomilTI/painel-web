@@ -17,6 +17,8 @@ const BTG_AGENT_ALIASES = [
 
 const CARGAS_AGENT_ID = 'sync-cargas-geofence';
 
+// direction: 'entrada' (informação vem de fora e entra no painel) é o padrão.
+// 'saida' = o agente pega informação do painel e leva pra fora (Graint, BTG, etc).
 const AGENTES = [
   { id: 'sync-colaboradores', name: 'Colaboradores', freq: '5 min', table: 'colaboradores' },
   { id: 'sync-producao-diaria', name: 'Produção Diária', freq: '1h', table: 'grm_producao_diaria_importacoes' },
@@ -31,10 +33,15 @@ const AGENTES = [
   { id: 'sync-auditorias', name: 'Auditorias', freq: '1h', table: 'grm_auditorias_importacoes' },
   { id: 'sync-nhe', name: 'NHE', freq: '1h', table: 'grm_nhe_importacoes' },
   { id: 'sync-lista-os', name: 'Lista de OS', freq: '1h', table: 'grm_lista_os_importacoes' },
+  { id: 'sync-operacional-os', name: 'Operacional · OS', freq: 'contínuo', table: 'operacional_os' },
   { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: '1h', table: 'grm_distribuicao_os_importacoes' },
   { id: CARGAS_AGENT_ID, name: 'Cargas · Geofence', freq: '1h', table: 'grm_cargas_importacoes' },
   { id: BTG_AGENT_ID, name: 'BTG · Relatórios', freq: '1h / disparo', table: 'logistica_btg_solicitacoes', aliases: BTG_AGENT_ALIASES, kpi: true },
+  { id: 'sync-adiantamentos', name: 'Adiantamentos', freq: '15 min', table: 'grm_adiantamentos_importacoes' },
+  { id: 'sync-login-alimentacao', name: 'Login Alimentação', freq: 'contínuo', table: 'financeiro_alimentacao_colaboradores' },
   { id: 'botconversa-sync', name: 'BotConversa · Contatos', freq: '1h', table: 'botconversa_contatos', source: 'botconversa' },
+  { id: 'sync-btg-checkin', name: 'BTG · Envio de Check-in', freq: 'sob demanda', table: 'logistica_btg_solicitacoes', direction: 'saida' },
+  { id: 'aplicar-distribuicao-os', name: 'Aplicar Distribuição de OS (Graint)', freq: '15 min', table: 'operacional_os', direction: 'saida' },
 ];
 
 const STATUS_META = {
@@ -46,7 +53,11 @@ const STATUS_META = {
   sem_job: { ui: 'idle', label: 'Aguardando', color: '#f59e0b', detail: '🟡 Aguardando' },
 };
 
-const state = { agentes: [], loading: false, selectedAgent: null, botconversaFailures: [], cargasKpi: null };
+const state = { agentes: [], loading: false, selectedAgent: null, botconversaFailures: [], cargasKpi: null, activeTab: 'entrada' };
+
+function getDirection(agenteDef) {
+  return agenteDef?.direction === 'saida' ? 'saida' : 'entrada';
+}
 
 const esc = (v) => String(v ?? '')
   .replaceAll('&','&amp;')
@@ -58,6 +69,7 @@ const esc = (v) => String(v ?? '')
 function getStyles() {
   return `<style id="agentes-style">
 .ag-wrap{width:100%;color:#e2e2f0}.ag-hero{background:radial-gradient(ellipse at top left,rgba(59,130,246,.13),transparent 55%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:24px 28px;margin-bottom:20px}.ag-hero h2{margin:0;font-size:clamp(20px,2vw,28px);letter-spacing:-.03em;color:#f8fafc}.ag-hero p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;max-width:700px}.ag-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}.ag-stat{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:12px 18px;text-align:center}.ag-stat-val{font-size:22px;font-weight:900;color:#3b82f6;line-height:1}.ag-stat-lbl{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi{margin-top:16px;background:linear-gradient(135deg,rgba(59,130,246,.16),rgba(34,197,94,.08));border:1px solid rgba(96,165,250,.28);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-btg-kpi:hover{border-color:rgba(96,165,250,.48);background:linear-gradient(135deg,rgba(59,130,246,.22),rgba(34,197,94,.12))}.ag-btg-kpi-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.ag-btg-kpi-title{font-size:15px;font-weight:900;color:#f8fafc}.ag-btg-kpi-sub{font-size:11px;color:#94a3b8;margin-top:3px}.ag-btg-kpi-status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:900}.ag-btg-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.ag-btg-kpi-item{background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.ag-btg-kpi-item span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi-item strong{display:block;margin-top:3px;color:#f8fafc;font-size:13px}.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:20px}.ag-card{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-card:hover{border-color:rgba(59,130,246,.3);background:rgba(15,23,42,.85)}.ag-card.active{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)}.ag-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}.ag-card-title{font-size:14px;font-weight:900;color:#f8fafc}.ag-card-freq{font-size:11px;color:#94a3b8;background:rgba(148,163,184,.1);padding:3px 8px;border-radius:6px}.ag-card-status{display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px}.ag-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.ag-status-dot.online{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}.ag-status-dot.error{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}.ag-status-dot.idle{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.4)}.ag-status-dot.running{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.4)}.ag-card-meta{display:flex;gap:16px;font-size:12px;color:#6b7280}.ag-card-meta span{display:flex;flex-direction:column}.ag-card-meta span strong{color:#e2e2f0;display:block;font-weight:900;font-size:13px}.ag-details{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:20px;margin-bottom:20px}.ag-details-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:16px}.ag-details-title{font-size:16px;font-weight:900;color:#f8fafc}.ag-details-close{background:transparent;border:0;color:#94a3b8;cursor:pointer;padding:4px;font-size:18px}.ag-log-box{background:rgba(0,0,0,.3);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;color:#6b7280;line-height:1.4;white-space:pre-wrap}.ag-log-line{margin:2px 0;color:#94a3b8}.ag-log-error{color:#fca5a5}.ag-log-success{color:#86efac}.ag-btn{border:0;border-radius:12px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-btn-primary{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}.ag-btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.22)}.ag-btn:disabled{opacity:.5;cursor:not-allowed}
+.ag-tabs{display:flex;gap:8px;margin-top:18px;border-bottom:1px solid rgba(148,163,184,.14);padding-bottom:0}.ag-tab{background:transparent;border:0;border-bottom:2px solid transparent;color:#6b7280;font-weight:900;font-size:13px;padding:10px 4px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-tab:hover{color:#cbd5e1}.ag-tab.active{color:#f8fafc;border-bottom-color:#3b82f6}.ag-tab-count{background:rgba(148,163,184,.14);color:#cbd5e1;border-radius:999px;padding:1px 8px;font-size:11px}.ag-tab.active .ag-tab-count{background:rgba(59,130,246,.22);color:#bfdbfe}.ag-dir-badge{font-size:10px;font-weight:900;letter-spacing:.04em;padding:2px 7px;border-radius:6px;text-transform:uppercase}.ag-dir-badge.entrada{background:rgba(34,197,94,.13);color:#86efac}.ag-dir-badge.saida{background:rgba(251,146,60,.15);color:#fdba74}
 </style>`;
 }
 
@@ -229,35 +241,44 @@ async function loadCargasKpi() {
 }
 
 function renderAgentes() {
+  const entrada = AGENTES.filter((a) => getDirection(a) === 'entrada');
+  const saida = AGENTES.filter((a) => getDirection(a) === 'saida');
+  const visiveis = state.activeTab === 'saida' ? saida : entrada;
+
   const statusCount = {
-    online: AGENTES.filter((a) => getAgenteStatus(state.agentes.find((x) => x.id === a.id)) === 'online').length,
-    error: AGENTES.filter((a) => getAgenteStatus(state.agentes.find((x) => x.id === a.id)) === 'error').length,
+    online: visiveis.filter((a) => getAgenteStatus(state.agentes.find((x) => x.id === a.id)) === 'online').length,
+    error: visiveis.filter((a) => getAgenteStatus(state.agentes.find((x) => x.id === a.id)) === 'error').length,
   };
 
   let html = getStyles();
   html += `<div class="ag-wrap">
     <div class="ag-hero">
       <h2>🤖 Agentes de Sincronização</h2>
-      <p>Monitor em tempo real dos ${AGENTES.length} agentes de sincronização (worker do cPanel + Edge Functions do Supabase).</p>
+      <p>Monitor em tempo real dos ${AGENTES.length} agentes de sincronização (worker do cPanel + Edge Functions do Supabase) — ${entrada.length} de entrada, ${saida.length} de saída.</p>
+      <div class="ag-tabs">
+        <button class="ag-tab ${state.activeTab === 'entrada' ? 'active' : ''}" onclick="setTab('entrada')" type="button">⬇️ Entrada <span class="ag-tab-count">${entrada.length}</span></button>
+        <button class="ag-tab ${state.activeTab === 'saida' ? 'active' : ''}" onclick="setTab('saida')" type="button">⬆️ Saída <span class="ag-tab-count">${saida.length}</span></button>
+      </div>
       <div class="ag-stats">
-        <div class="ag-stat"><div class="ag-stat-val">${AGENTES.length}</div><div class="ag-stat-lbl">Total de Agentes</div></div>
+        <div class="ag-stat"><div class="ag-stat-val">${visiveis.length}</div><div class="ag-stat-lbl">Agentes nesta aba</div></div>
         <div class="ag-stat"><div class="ag-stat-val" style="color:#22c55e">${statusCount.online}</div><div class="ag-stat-lbl">Online</div></div>
         <div class="ag-stat"><div class="ag-stat-val" style="color:#ef4444">${statusCount.error}</div><div class="ag-stat-lbl">Com Erro</div></div>
       </div>
-      ${renderBtgKpi()}
-      ${renderCargasKpi()}
+      ${state.activeTab === 'entrada' ? renderBtgKpi() : ''}
+      ${state.activeTab === 'entrada' ? renderCargasKpi() : ''}
     </div>`;
 
   if (state.selectedAgent) html += renderAgentDetails(state.selectedAgent);
 
   html += '<div class="ag-grid">';
-  AGENTES.forEach((a) => {
+  visiveis.forEach((a) => {
     const agente = state.agentes.find((x) => x.id === a.id);
     const meta = getAgenteMeta(agente);
+    const dir = getDirection(a);
 
     html += `<div class="ag-card ${state.selectedAgent?.id === a.id ? 'active' : ''}" onclick="selectAgent('${a.id}')">
       <div class="ag-card-header"><div class="ag-card-title">${esc(a.name)}</div><div class="ag-card-freq">${a.freq}</div></div>
-      <div class="ag-card-status"><div class="ag-status-dot ${meta.ui}"></div><span style="color:${meta.color}">${meta.label}</span></div>
+      <div class="ag-card-status"><div class="ag-status-dot ${meta.ui}"></div><span style="color:${meta.color}">${meta.label}</span><span class="ag-dir-badge ${dir}">${dir === 'saida' ? 'Saída' : 'Entrada'}</span></div>
       <div class="ag-card-meta">
         <span>Total<strong>${formatInt(agente?.total_records)}</strong></span>
         <span>Última Sync<strong>${formatDate(agente?.ultima_sync)}</strong></span>
@@ -327,6 +348,12 @@ async function loadBotConversaFailures(jobId) {
   }
   render();
 }
+
+window.setTab = (tab) => {
+  state.activeTab = tab === 'saida' ? 'saida' : 'entrada';
+  state.selectedAgent = null;
+  render();
+};
 
 window.selectAgent = (agentId) => {
   const agente = AGENTES.find((a) => a.id === agentId);
