@@ -1,7 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import './operacional-os-ativas-patch.js?v=20260707-lista-os';
 import './operacional-motorista-placa-patch.js?v=20260703-fix-fetch-url';
-import './operacional-rotas-inteligentes.js?v=20260707-efetivo-veiculo-proprio';
+import './operacional-rotas-inteligentes.js?v=20260723-sem-motor-sugestao';
 import './operacional-irregularidades-acoes.js?v=20260702-1430';
 import './operacional-filtros-click-fix.js?v=20260702-1735';
 
