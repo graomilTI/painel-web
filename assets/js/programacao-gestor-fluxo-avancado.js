@@ -1,5 +1,5 @@
-import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260723-fix2';
-import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260723-sem-os-sync1';
+import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260723-fix3';
+import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260723-anexo-saldo1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 // Programação Gestor (2026-07-21, "lista + painel lateral"): o botão Carregar

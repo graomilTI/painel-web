@@ -167,6 +167,6 @@ function renderBootError(error) {
     </section>`;
 }
 
-import('./adm-logistica.js?v=logistica-admin-isolado-20260723-os1')
+import('./adm-logistica.js?v=logistica-admin-isolado-20260723-ajuste-anexo1')
   .then(setup)
   .catch(renderBootError);

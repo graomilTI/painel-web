@@ -2307,6 +2307,7 @@ export async function renderContent(content) {
       const kgCount = state.osLog.filter((r) => String(r.observacao_logistica || '').startsWith('KG solicitado')).length;
       if (meta) meta.textContent = `${finalizarCount} para finalizar · ${kgCount} aumento de saldo`;
       if (error) { if (list) list.innerHTML = `<div class="log-empty">${esc(error.message)}</div>`; return; }
+      await carregarAnexosSaldo();
       renderOsLog();
       renderAjuste();
       const reloadBtn = document.getElementById('osLogReload');
@@ -2363,25 +2364,56 @@ export async function renderContent(content) {
     const BR = new Intl.NumberFormat('pt-BR');
     const fmt = (v) => BR.format(Number(v) || 0);
     const brD = (v) => { if (!v) return '-'; const [y,m,d] = String(v).slice(0,10).split('-'); return `${d}/${m}/${y}`; };
+    const anexos = state.anexosSaldo || new Map();
     list.innerHTML = `
       <div class="log-table-wrap"><table class="log-table"><thead><tr>
-        <th style="width:12%">O.S.</th>
-        <th style="width:33%">Cliente / Rota</th>
-        <th style="width:15%">Remanescente</th>
-        <th style="width:28%">Saldo solicitado</th>
+        <th style="width:11%">O.S.</th>
+        <th style="width:28%">Cliente / Rota</th>
+        <th style="width:13%">Remanescente</th>
+        <th style="width:23%">Saldo solicitado</th>
+        <th style="width:13%">Anexo</th>
         <th style="width:12%">Ação</th>
       </tr></thead><tbody>
       ${rows.map((row) => {
         const rem = Number(row.remanescente);
+        const anexo = anexos.get(row.id);
+        const urls = safeArray(anexo?.arquivos_urls);
+        const anexoCell = urls.length
+          ? urls.map((url, i) => `<a href="${esc(url)}" target="_blank" rel="noopener" class="log-badge ok" style="margin:0 4px 4px 0">📎 ${i + 1}</a>`).join('')
+          : '<span class="log-badge warn">Sem anexo</span>';
         return `<tr>
           <td><div class="log-title">${esc(row.numero_os || '-')}</div><div class="log-meta">${brD(row.data_os)}</div><div class="log-meta">${esc(row.supervisao || '-')}</div></td>
           <td><div class="log-title">${esc(row.cliente || '-')}</div><div class="log-meta">Emb.: ${esc(row.embarque || '-')}</div><div class="log-meta">Dest.: ${esc(row.destino || '-')}</div></td>
           <td><span class="log-badge ${rem <= 0 ? 'warn' : 'ok'}">${fmt(rem)}</span><div class="log-meta" style="margin-top:4px">Lote ${fmt(row.lote)}</div></td>
           <td><span class="log-badge danger">↑ KG</span><div class="log-meta" style="margin-top:4px">${esc(row.observacao_logistica)}</div></td>
+          <td>${anexoCell}</td>
           <td><button class="btn btn-primary" data-oslog-ok="${esc(String(row.id))}" data-oslog-type="kg" type="button">Ajustado</button></td>
         </tr>`;
       }).join('')}
       </tbody></table></div>`;
+  }
+
+  // Anexo/print obrigatório de alguns clientes na ação Saldo (Gestor >
+  // Programação, ver logistica_clientes_anexo_regras) fica salvo em
+  // operacional_laudos com origem='programacao_saldo' -- NÃO reaproveita o
+  // "LAUDO:" de observacao_logistica (que já é dono do texto "KG solicitado
+  // ..." pra essas mesmas linhas). Carregado sob demanda junto do loadOsLog,
+  // só pras O.S. que estão na fila de Ajuste.
+  async function carregarAnexosSaldo() {
+    const ids = state.osLog.filter((r) => String(r.observacao_logistica || '').startsWith('KG solicitado')).map((r) => r.id);
+    if (!ids.length) { state.anexosSaldo = new Map(); return; }
+    const { data, error } = await supabase
+      .from('operacional_laudos')
+      .select('os_id,arquivos_urls,enviado_em')
+      .eq('origem', 'programacao_saldo')
+      .in('os_id', ids)
+      .order('enviado_em', { ascending: false });
+    if (error) { console.warn('Falha ao carregar anexos de saldo:', error); state.anexosSaldo = new Map(); return; }
+    const map = new Map();
+    for (const row of safeArray(data)) {
+      if (!map.has(row.os_id)) map.set(row.os_id, row); // ordenado desc: 1ª ocorrência = mais recente
+    }
+    state.anexosSaldo = map;
   }
 
   async function addLog(row, action, payload) {

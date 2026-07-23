@@ -22,8 +22,9 @@ import {
   confirmarCandidato, adicionarColaboradorOs, removerConfirmacao,
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
-} from './programacao-equipe.js?v=20260723-fix2';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260722-cleanup3';
+  ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
+} from './programacao-equipe.js?v=20260723-fix3';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260723-fix1';
 
 function esc(value) {
   return String(value ?? '')
@@ -230,6 +231,12 @@ function injectStyles() {
     .pld-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
     .pld-modal-btn{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.6);color:#e2e2f0;border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:800;cursor:pointer}
     .pld-modal-btn.primary{border-color:rgba(134,239,172,.4);color:#bbf7d0;background:rgba(22,163,74,.16)}
+    .pld-anexo-area{border:1px dashed rgba(111,208,165,.4);border-radius:10px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;cursor:pointer;color:#9fb7aa;font-size:12px}
+    .pld-anexo-area:hover,.pld-anexo-area:focus{border-color:rgba(134,239,172,.7);outline:none}
+    .pld-anexo-pick{color:#6fd0a5;font-weight:800;text-decoration:underline;cursor:pointer}
+    .pld-anexo-list{display:flex;flex-wrap:wrap;gap:6px}
+    .pld-anexo-chip{background:rgba(111,208,165,.14);border:1px solid rgba(111,208,165,.3);color:#bbf7d0;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:700;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pld-anexo-erro{color:#fca5a5!important;font-weight:800}
     .prog-readonly-banner{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 14px;border:1px solid rgba(234,179,8,.32);background:rgba(234,179,8,.1);border-radius:12px;color:#fde68a;font-size:12.5px;font-weight:800}
     @media(max-width:560px){.pld-drawer{width:100vw}}
   `;
@@ -271,7 +278,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   // isso já tiver sido resolvido. Também só era chamada pelas renders
   // antigas removidas — sem aguardar aqui, gestor master ficava travado
   // como usuário comum em datas passadas.
-  await ensureMasterPermission();
+  await Promise.all([ensureMasterPermission(), ensureRegrasAnexoSaldo()]);
   const supervisao = String(options.supervisao || '').trim();
   const programacaoId = options.programacaoId || null;
   const programacaoIdMap = options.programacaoIdMap instanceof Map ? options.programacaoIdMap : new Map();
@@ -709,24 +716,68 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     return ov;
   }
 
+  // Alguns clientes exigem anexo/print pra autorizar o aumento de saldo (ver
+  // logistica_clientes_anexo_regras, carregada por ensureRegrasAnexoSaldo() no
+  // boot do drawer). Quando exige, o modal ganha uma área de anexo que aceita
+  // tanto escolher um arquivo quanto colar (Ctrl+V) uma captura de tela — sem
+  // pelo menos 1 anexo, o Confirmar mostra "Essa ação é obrigatória." e não
+  // envia a solicitação.
   function abrirModalKg(os) {
+    const regraAnexo = precisaAnexoSaldo(os);
+    const anexoObrigatorio = regraAnexo.precisaAnexo === true;
     const ov = abrirModalOv(`<div class="pld-modal">
       <h3>Quanto somar na O.S.?</h3>
       <p>O.S. <b style="color:#bbf7d0">${esc(os.numero_os || '-')}</b> — vai para a Logística como saldo.</p>
       <input id="pldKgInput" type="number" min="1" placeholder="Inserir KG" inputmode="numeric" />
+      ${anexoObrigatorio ? `
+      <p>Cliente <b style="color:#bbf7d0">${esc(regraAnexo.cliente || os.cliente || '-')}</b> exige anexo pra liberar o saldo.</p>
+      <label class="pld-anexo-area" id="pldKgAnexoArea" tabindex="0">
+        <span>Cole aqui (Ctrl+V) uma captura de tela ou <span class="pld-anexo-pick">escolha um arquivo</span></span>
+        <input id="pldKgAnexoFile" type="file" accept="image/*,.pdf" multiple hidden>
+      </label>
+      <div id="pldKgAnexoList" class="pld-anexo-list"></div>
+      <p class="pld-anexo-erro" id="pldKgAnexoErro" hidden>Essa ação é obrigatória.</p>
+      ` : ''}
       <div class="pld-modal-actions"><button type="button" class="pld-modal-btn" data-cancel>Cancelar</button><button type="button" class="pld-modal-btn primary" data-ok>Confirmar</button></div>
     </div>`);
     const input = ov.querySelector('#pldKgInput');
     input.focus();
+
+    let anexos = [];
+    if (anexoObrigatorio) {
+      const fileInput = ov.querySelector('#pldKgAnexoFile');
+      const lista = ov.querySelector('#pldKgAnexoList');
+      const erro = ov.querySelector('#pldKgAnexoErro');
+      const addAnexos = (novos) => {
+        if (!novos.length) return;
+        anexos.push(...novos);
+        lista.innerHTML = anexos.map((f) => `<span class="pld-anexo-chip">📎 ${esc(f.name || 'captura.png')}</span>`).join('');
+        erro.hidden = true;
+      };
+      fileInput.addEventListener('change', () => { addAnexos([...(fileInput.files || [])]); fileInput.value = ''; });
+      ov.addEventListener('paste', (e) => {
+        const itens = [...(e.clipboardData?.items || [])];
+        const imagens = itens.filter((it) => it.kind === 'file' && it.type.startsWith('image/')).map((it) => it.getAsFile()).filter(Boolean);
+        addAnexos(imagens);
+      });
+    }
+
     ov.querySelector('[data-cancel]').addEventListener('click', () => ov.remove());
     ov.querySelector('[data-ok]').addEventListener('click', async () => {
       const kg = Number(input.value);
       if (!kg || kg <= 0) { input.focus(); return; }
-      ov.remove();
+      if (anexoObrigatorio && !anexos.length) { ov.querySelector('#pldKgAnexoErro').hidden = false; return; }
+      const okBtn = ov.querySelector('[data-ok]');
+      okBtn.disabled = true; okBtn.textContent = '...';
       try {
+        if (anexos.length) await anexarAnexoSaldo(os.id, anexos, { usuario: currentUser });
         await registrarSaldoKg(os.id, kg);
+        ov.remove();
         await carregarLista({ manterDrawer: true });
-      } catch (error) { alert(error.message || 'Não foi possível solicitar saldo.'); }
+      } catch (error) {
+        okBtn.disabled = false; okBtn.textContent = 'Confirmar';
+        alert(error.message || 'Não foi possível solicitar saldo.');
+      }
     });
   }
 
