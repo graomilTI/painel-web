@@ -49,6 +49,26 @@ style.textContent = `
   .logistica-os-page #section-abertura_os .log-mini-grid article.card h3 { font-size:12px; margin:0 0 2px; text-transform:uppercase; letter-spacing:.04em; color:#9fb7aa; }
   .logistica-os-page #section-abertura_os .log-mini-grid .metric { font-size:22px; margin:0 0 2px; }
   .logistica-os-page #section-abertura_os .log-mini-grid .muted { font-size:11px; margin:0; }
+  /* Evita o "piscar com fundo preto" ao trocar de aba (reportado pela
+     usuária, 23/07/2026): o toggle padrão do painel monolítico esconde a
+     aba inativa com display:none e a nova com display:block, o que destrói
+     e recria do zero a árvore de renderização/composição daquela seção —
+     caro pra tabelas grandes com <th> sticky, e o Chromium/Electron chega a
+     desenhar um frame em preto sólido enquanto a camada nova é montada.
+     Depois que uma aba já foi visitada 1x (activate() marca com
+     .log-visited), trocar pra outra NÃO usa mais display:none nela: só
+     esconde com visibility+altura zero, mantendo a camada "viva" — a
+     próxima vez que voltar pra essa aba não precisa recriar nada. */
+  .logistica-os-page #pageContent { position:relative; }
+  .logistica-os-page .log-section.log-visited:not(.active) {
+    display:block;
+    visibility:hidden;
+    position:absolute;
+    top:0; left:0; width:100%;
+    height:0;
+    overflow:hidden;
+    pointer-events:none;
+  }
 `;
 document.head.appendChild(style);
 
@@ -94,6 +114,10 @@ function activate(key) {
   // o loader sob demanda daquela aba.
   const realBtn = document.querySelector(`#logTabs .log-tab[data-tab="${target.realTab}"]`);
   if (realBtn) realBtn.click();
+  // Marca a seção como "já visitada" (ver .log-visited na <style> acima) --
+  // da próxima vez que ela for escondida, usa visibility em vez de
+  // display:none, evitando recriar a camada de composição do zero.
+  document.getElementById(`section-${target.realTab}`)?.classList.add('log-visited');
   // Barra de filtros só faz sentido na Finalização (data/coordenação/status/busca);
   // Abertura, Conferência (laudos) e Ajuste ignoram esses filtros.
   if (introCard) introCard.style.display = target.key === 'finalizacao' ? '' : 'none';
