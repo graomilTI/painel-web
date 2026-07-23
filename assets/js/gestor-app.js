@@ -385,12 +385,13 @@ async function fetchDashData({ force = false } = {}) {
 }
 
 async function fetchDashDataLive() {
-  // producao_snapshot é a base da meta mensal aqui; dispara a sincronização com o
-  // agente em paralelo (sem await, é pesada) para não travar o carregamento — o
-  // resultado fica disponível na próxima atualização.
+  // producao_snapshot é a base da meta mensal aqui. A sincronização faz delete+insert
+  // do mês inteiro; se disparada sem esperar, a leitura abaixo pode acontecer no meio
+  // do delete e contar um total muito menor que o real (bug 23/07 — cache gravou
+  // 169k t em vez de 1,33M t). Por isso esperamos ela terminar antes de somar.
   // (patrimonios_snapshot ficou de fora: a sincronização limpa+reinsere a tabela e
   // exige privilégio que o app da Supervisão não tem — feita só em patrimonioRelatorios.js.)
-  sincronizarProducaoSnapshotDoAgente().catch((error) => console.warn('[gestor-app] falha ao sincronizar producao_snapshot:', error?.message || error));
+  await sincronizarProducaoSnapshotDoAgente().catch((error) => console.warn('[gestor-app] falha ao sincronizar producao_snapshot:', error?.message || error));
 
   const now = new Date();
   const ano = now.getFullYear();
