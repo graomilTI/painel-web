@@ -216,9 +216,6 @@ function injectStyles() {
     .pld-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
     .pld-modal-btn{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.6);color:#e2e2f0;border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:800;cursor:pointer}
     .pld-modal-btn.primary{border-color:rgba(134,239,172,.4);color:#bbf7d0;background:rgba(22,163,74,.16)}
-    .pld-hist-item{border-bottom:1px solid rgba(148,163,184,.12);padding:8px 0;font-size:12px;color:#e2e2f0}
-    .pld-hist-item:last-child{border-bottom:0}
-    .pld-hist-when{color:#7d8aa3;font-size:10.5px;margin-top:2px}
     .prog-readonly-banner{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 14px;border:1px solid rgba(234,179,8,.32);background:rgba(234,179,8,.1);border-radius:12px;color:#fde68a;font-size:12.5px;font-weight:800}
     @media(max-width:560px){.pld-drawer{width:100vw}}
   `;
@@ -394,6 +391,13 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   function renderLista() {
     const filtradas = osFiltradas();
 
+    // .pld-table-wrap (a rolagem da lista) é recriado do zero aqui — clicar
+    // numa ação de uma O.S. abaixo da dobra (depois de rolar) chamava
+    // refreshAposAcao → renderLista() e a rolagem voltava pro topo, feio
+    // visualmente (reportado pela usuária, 2026-07-23). Guarda o scrollTop
+    // do wrap antigo antes de substituir e restaura no novo.
+    const scrollTopAnterior = listaBody.querySelector('.pld-table-wrap')?.scrollTop || 0;
+
     const linhas = filtradas.map((os) => {
       const emb = embarqueHtml(os.embarque);
       return `<tr class="pld-row ${String(os.id) === String(state.osAbertaId) ? 'active' : ''}" data-os-id="${esc(os.id)}">
@@ -417,6 +421,11 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         </table>
       </div>
     `;
+
+    if (scrollTopAnterior) {
+      const novoWrap = listaBody.querySelector('.pld-table-wrap');
+      if (novoWrap) novoWrap.scrollTop = scrollTopAnterior;
+    }
   }
 
   async function carregarLista({ manterDrawer = false } = {}) {
@@ -641,10 +650,9 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       <div class="pld-acoes-row">
         <button type="button" class="pld-acao-btn ${st === 'AGUARDAR' ? 'on' : ''}" data-acao-status="AGUARDAR" ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">⏸</span>Pausar</button>
         <button type="button" class="pld-acao-btn ${st === 'ATENDER' ? 'on' : ''}" data-acao-status="ATENDER" ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">✓</span>Atender</button>
-        <button type="button" class="pld-acao-btn ${st === 'FINALIZAR' ? 'on' : ''}" data-acao-status="FINALIZAR" ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">$</span>Financeiro</button>
-        <button type="button" class="pld-acao-btn" data-abrir-kg ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">💰</span>Saldo KG</button>
-        <button type="button" class="pld-acao-btn" data-abrir-laudo ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">📎</span>Laudo</button>
-        <button type="button" class="pld-acao-btn" data-abrir-historico><span class="pld-acao-ico">🗂</span>Histórico</button>
+        <button type="button" class="pld-acao-btn ${st === 'FINALIZAR' ? 'on' : ''}" data-acao-status="FINALIZAR" ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">$</span>Finalizar</button>
+        <button type="button" class="pld-acao-btn" data-abrir-kg ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">💰</span>Saldo</button>
+        <button type="button" class="pld-acao-btn" data-abrir-laudo ${readOnly ? 'disabled' : ''}><span class="pld-acao-ico">📎</span>Conferir</button>
       </div>
       <div class="pld-section-label">PROGRAMAÇÃO <span id="pldProgLockNote"></span></div>
       <div id="pldProgBody"></div>
@@ -676,27 +684,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     document.body.appendChild(ov);
     ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
     return ov;
-  }
-
-  async function abrirHistorico(os) {
-    const ov = abrirModalOv(`<div class="pld-modal">
-      <h3>Histórico — O.S. ${esc(os.numero_os || '-')}</h3>
-      <div id="pldHistList"><div class="pld-loading"><span class="pld-spinner" aria-hidden="true"></span><span>Carregando...</span></div></div>
-      <div class="pld-modal-actions"><button type="button" class="pld-modal-btn" data-hist-fechar>Fechar</button></div>
-    </div>`);
-    ov.querySelector('[data-hist-fechar]').addEventListener('click', () => ov.remove());
-    const listEl = ov.querySelector('#pldHistList');
-    try {
-      const { data, error } = await supabase.from('app_logs_usuarios').select('acao,usuario_nome,created_at,detalhes')
-        .eq('modulo', 'programacao').order('created_at', { ascending: false }).limit(200);
-      if (error) throw error;
-      const relevantes = (data || []).filter((r) => String(r.detalhes?.os_id || '') === String(os.id) || String(r.detalhes?.numero_os || '') === String(os.numero_os));
-      listEl.innerHTML = relevantes.length
-        ? relevantes.slice(0, 20).map((r) => `<div class="pld-hist-item">${esc(r.acao || '-')}${r.detalhes?.motivo ? ` — "${esc(r.detalhes.motivo)}"` : ''}<div class="pld-hist-when">${esc(r.usuario_nome || 'Usuário')} · ${new Date(r.created_at).toLocaleString('pt-BR')}</div></div>`).join('')
-        : '<div class="pld-empty" style="padding:12px">Sem registros de atividade pra essa O.S. ainda (só ações como justificativa de múltiplos colaboradores ficam registradas aqui).</div>';
-    } catch (error) {
-      listEl.innerHTML = `<div class="pld-empty" style="padding:12px">Não foi possível carregar o histórico: ${esc(error.message || 'erro desconhecido')}</div>`;
-    }
   }
 
   function abrirModalKg(os) {
@@ -821,7 +808,6 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
 
     if (event.target.closest('[data-abrir-kg]')) { const os = osAtual(); if (os) abrirModalKg(os); return; }
     if (event.target.closest('[data-abrir-laudo]')) { const os = osAtual(); if (os) abrirModalLaudo(os); return; }
-    if (event.target.closest('[data-abrir-historico]')) { const os = osAtual(); if (os) await abrirHistorico(os); return; }
 
     const confirmarCandBtn = event.target.closest('[data-confirmar-candidato]');
     if (confirmarCandBtn) {
