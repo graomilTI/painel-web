@@ -494,7 +494,12 @@ function ensureLogisticaAberturaBadgeStyle() {
 // trava o hash de volta pro seu tab fixo). Ver [[painel-web-abertura-os-menu-escondido]].
 async function markLogisticaAberturaOsPendente(container) {
   try {
-    const link = [...container.querySelectorAll('a')].find((a) => (a.getAttribute('href') || '').includes('logistica-abertura-os'));
+    // O item "Abertura de O.S." virou a aba Abertura dentro de "O.S"
+    // (logistica-os). O badge de solicitações pendentes acompanha o novo link.
+    const link = [...container.querySelectorAll('a')].find((a) => {
+      const href = a.getAttribute('href') || '';
+      return href.includes('logistica-os') || href.includes('logistica-abertura-os');
+    });
     if (!link) return;
 
     const { data, error } = await supabase

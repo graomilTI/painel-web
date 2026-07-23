@@ -285,6 +285,7 @@ export async function renderContent(content) {
       <div class="log-tabs" id="logTabs">
         <button class="log-tab active" data-tab="os" type="button">O.S.</button>
         <button class="log-tab" data-tab="abertura_os" type="button">Abertura de OS</button>
+        <button class="log-tab" data-tab="ajuste" type="button">Ajuste</button>
         <button class="log-tab" data-tab="fob" type="button">FOB</button>
         <button class="log-tab" data-tab="finalizacao" type="button">Finalização ADM</button>
         <button class="log-tab" data-tab="classificadores" type="button">Classificadores</button>
@@ -373,6 +374,11 @@ export async function renderContent(content) {
     <section class="card mt-16 log-section" id="section-finalizacao">
       <div class="section-head"><div><h3>Fila de finalização</h3><p class="muted">O.S. enviadas pelo gestor com status <strong>Finalizar</strong>.</p></div></div>
       <div id="logFinalizacaoList"></div>
+    </section>
+
+    <section class="card mt-16 log-section" id="section-ajuste">
+      <div class="section-head"><div><h3>Ajuste de saldo (KG)</h3><p class="muted">O.S. com aumento de saldo solicitado pelo gestor (Programação › <strong>Saldo</strong>), aguardando ajuste da Logística.</p></div></div>
+      <div id="logAjusteList"></div>
     </section>
 
     <section class="card mt-16 log-section" id="section-classificadores">
@@ -549,6 +555,7 @@ export async function renderContent(content) {
 
   const hash = normalize(location.hash.replace('#', ''));
   if (hash.includes('ABERTURA')) state.tab = 'abertura_os';
+  else if (hash.includes('AJUSTE')) state.tab = 'ajuste';
   else if (hash.includes('CLASSIFIC')) state.tab = 'classificadores';
   else if (hash.includes('CONFER')) state.tab = 'conferencias';
   else if (hash.includes('EXPORT')) state.tab = 'exportacoes';
@@ -763,7 +770,7 @@ export async function renderContent(content) {
 
   function renderTabs() {
     [...el.tabs.querySelectorAll('.log-tab')].forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === state.tab));
-    ['os', 'abertura_os', 'fob', 'finalizacao', 'classificadores', 'conferencias', 'exportacoes', 'relatorios'].forEach((tab) => {
+    ['os', 'abertura_os', 'ajuste', 'fob', 'finalizacao', 'classificadores', 'conferencias', 'exportacoes', 'relatorios'].forEach((tab) => {
       document.getElementById(`section-${tab}`)?.classList.toggle('active', tab === state.tab);
     });
     const isAdmTab = ['finalizacao', 'classificadores', 'conferencias', 'exportacoes', 'relatorios'].includes(state.tab);
@@ -771,6 +778,7 @@ export async function renderContent(content) {
     el.atraso.closest('.field').style.display = state.tab === 'classificadores' ? '' : 'none';
     document.querySelector('.filters-grid')?.style.setProperty('display', isAdmTab ? '' : 'none');
     if (state.tab === 'os' && !state.osLogLoaded) loadOsLog();
+    if (state.tab === 'ajuste' && !state.osLogLoaded) loadOsLog();
     if (state.tab === 'abertura_os' && !state.aberturaOsLoaded) loadAberturaOs();
     if (state.tab === 'fob' && !state.fobLoaded) loadFob();
     if (state.tab === 'fob' && !state.fobReportAutoLoaded) { state.fobReportAutoLoaded = true; gerarRelatorioFobAutomatico(); }
@@ -969,6 +977,7 @@ export async function renderContent(content) {
     renderExportacoes();
     renderRelatorios();
     if (state.tab === 'abertura_os') renderAberturaOs();
+    if (state.tab === 'ajuste') renderAjuste();
     if (state.tab === 'fob') { renderFob(); renderFobReport(); }
   }
 
@@ -2049,6 +2058,7 @@ export async function renderContent(content) {
       if (error) { alert(error.message); oslogOk.disabled = false; oslogOk.textContent = 'OK'; return; }
       state.osLog = state.osLog.filter((r) => String(r.id) !== String(id));
       renderOsLog();
+      renderAjuste();
       const meta = document.getElementById('osLogMeta');
       const f = state.osLog.filter((r) => String(r.status_gestor || '') === 'FINALIZAR').length;
       const k = state.osLog.filter((r) => String(r.observacao_logistica || '').startsWith('KG solicitado')).length;
@@ -2298,6 +2308,7 @@ export async function renderContent(content) {
       if (meta) meta.textContent = `${finalizarCount} para finalizar · ${kgCount} aumento de saldo`;
       if (error) { if (list) list.innerHTML = `<div class="log-empty">${esc(error.message)}</div>`; return; }
       renderOsLog();
+      renderAjuste();
       const reloadBtn = document.getElementById('osLogReload');
       if (reloadBtn && !reloadBtn.dataset.osLogReloadBound) {
         reloadBtn.dataset.osLogReloadBound = '1';
@@ -2335,6 +2346,39 @@ export async function renderContent(content) {
           <td><span class="log-badge ${rem <= 0 ? 'warn' : 'ok'}">${fmt(rem)}</span><div class="log-meta" style="margin-top:4px">Lote ${fmt(row.lote)}</div></td>
           <td>${badge}</td>
           <td><button class="btn btn-primary" data-oslog-ok="${esc(String(row.id))}" data-oslog-type="${type}" type="button">OK</button></td>
+        </tr>`;
+      }).join('')}
+      </tbody></table></div>`;
+  }
+
+  // Aba "Ajuste": mesma fonte do loadOsLog (state.osLog), filtrada só nas O.S.
+  // de aumento de saldo (Programação › Saldo -> observacao_logistica "KG solicitado...").
+  // O botão "Ajustado" usa o mesmo handler data-oslog-type="kg", que limpa
+  // observacao_logistica, marcando o saldo como resolvido pela Logística.
+  function renderAjuste() {
+    const list = document.getElementById('logAjusteList');
+    if (!list) return;
+    const rows = state.osLog.filter((r) => String(r.observacao_logistica || '').startsWith('KG solicitado'));
+    if (!rows.length) { list.innerHTML = '<div class="log-empty">Nenhuma O.S. com aumento de saldo pendente.</div>'; return; }
+    const BR = new Intl.NumberFormat('pt-BR');
+    const fmt = (v) => BR.format(Number(v) || 0);
+    const brD = (v) => { if (!v) return '-'; const [y,m,d] = String(v).slice(0,10).split('-'); return `${d}/${m}/${y}`; };
+    list.innerHTML = `
+      <div class="log-table-wrap"><table class="log-table"><thead><tr>
+        <th style="width:12%">O.S.</th>
+        <th style="width:33%">Cliente / Rota</th>
+        <th style="width:15%">Remanescente</th>
+        <th style="width:28%">Saldo solicitado</th>
+        <th style="width:12%">Ação</th>
+      </tr></thead><tbody>
+      ${rows.map((row) => {
+        const rem = Number(row.remanescente);
+        return `<tr>
+          <td><div class="log-title">${esc(row.numero_os || '-')}</div><div class="log-meta">${brD(row.data_os)}</div><div class="log-meta">${esc(row.supervisao || '-')}</div></td>
+          <td><div class="log-title">${esc(row.cliente || '-')}</div><div class="log-meta">Emb.: ${esc(row.embarque || '-')}</div><div class="log-meta">Dest.: ${esc(row.destino || '-')}</div></td>
+          <td><span class="log-badge ${rem <= 0 ? 'warn' : 'ok'}">${fmt(rem)}</span><div class="log-meta" style="margin-top:4px">Lote ${fmt(row.lote)}</div></td>
+          <td><span class="log-badge danger">↑ KG</span><div class="log-meta" style="margin-top:4px">${esc(row.observacao_logistica)}</div></td>
+          <td><button class="btn btn-primary" data-oslog-ok="${esc(String(row.id))}" data-oslog-type="kg" type="button">Ajustado</button></td>
         </tr>`;
       }).join('')}
       </tbody></table></div>`;
