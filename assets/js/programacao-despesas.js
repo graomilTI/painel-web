@@ -68,7 +68,10 @@ const COM_ESTADIA = new Set(['PERNOITE', 'ALOJAMENTO', 'HOTEL']);
 // Só as 5 opções que fazem sentido pro gestor escolher aqui (pedido do
 // usuário, 2026-07-17) — Ônibus/Outro removidos.
 const TIPOS_DESLOC = ['NÃO PRECISA', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM'];
-const TIPOS_EXTRA = ['ESTADIA', 'RECARGA', 'LAVAGEM', 'MANUTENÇÃO VEÍCULO', 'PEDÁGIO', 'ESTACIONAMENTO', 'MATERIAL', 'OUTRO'];
+// Reduzido pras 4 opções que o gestor realmente usa (pedido do usuário,
+// 2026-07-23) — registros antigos com os tipos removidos continuam salvos
+// no banco, só não aparecem mais selecionados no combo se reabertos.
+const TIPOS_EXTRA = ['RECARGA', 'LAVANDERIA', 'LAVAGEM DE VEÍCULO', 'OUTROS'];
 const REFEICOES = [['cafe', 'Café'], ['almoco', 'Almoço'], ['janta', 'Janta']];
 
 function estadiaLabel(t) { return ({ CASA: 'Casa', PERNOITE: 'Pernoite', ALOJAMENTO: 'Alojamento', HOTEL: 'Hotel' })[normalizeText(t)] || t; }
@@ -401,7 +404,7 @@ export async function loadExtras(programacaoIdQuery, colaboradorIds) {
 
 function extraItemHtml(r) {
   return `<div class="peqd-extra-item" data-extra-id="${esc(r.id)}">
-    <select class="peqd-inp peqd-extra-tipo" data-extra-fld="tipo_despesa">${TIPOS_EXTRA.map((t) => `<option value="${esc(t)}" ${String(r.tipo_despesa || 'OUTRO').toUpperCase() === t ? 'selected' : ''}>${esc(t.charAt(0) + t.slice(1).toLowerCase())}</option>`).join('')}</select>
+    <select class="peqd-inp peqd-extra-tipo" data-extra-fld="tipo_despesa">${TIPOS_EXTRA.map((t) => `<option value="${esc(t)}" ${String(r.tipo_despesa || 'OUTROS').toUpperCase() === t ? 'selected' : ''}>${esc(t.charAt(0) + t.slice(1).toLowerCase())}</option>`).join('')}</select>
     <input class="peqd-inp peqd-extra-desc" data-extra-fld="descricao" value="${esc(r.descricao || '')}" placeholder="Descrição" />
     <input class="peqd-inp peqd-extra-valor" data-extra-fld="valor" type="text" value="${esc(r.valor ?? '')}" placeholder="R$ 0,00" />
     <input class="peqd-inp peqd-extra-obs" data-extra-fld="observacao" value="${esc(r.observacao || '')}" placeholder="Observação" />
@@ -624,11 +627,13 @@ export function wireDespesasCards(containerEl, ctx = {}) {
       limparAvisoFalhaSalvar(card);
     }
     if (!error && tabela === 'programacao_estadia') {
-      // Colaborador em hotel/alojamento/pernoite entra automaticamente na
-      // janta (pedido do usuário, 2026-07-16): acende o chip da Etapa 3 (se
-      // ainda não estiver aceso) e grava em Financeiro > Refeições.
+      // Colaborador em hotel/alojamento entra automaticamente na janta (pedido
+      // do usuário, 2026-07-16): acende o chip da Etapa 3 (se ainda não estiver
+      // aceso) e grava em Financeiro > Refeições. Pernoite fica de fora dessa
+      // regra (pedido 2026-07-23: pernoite limpa as refeições em vez de acender
+      // a janta sozinho — ver handler de tipo_estadia acima).
       const jantaChip = card.querySelector('[data-ref="janta"]');
-      if (payload.tem_estadia && jantaChip && !jantaChip.classList.contains('on')) {
+      if (payload.tem_estadia && payload.tipo_estadia !== 'PERNOITE' && jantaChip && !jantaChip.classList.contains('on')) {
         jantaChip.classList.add('on');
         const { error: aliErr } = await supabase.from('programacao_alimentacao').upsert({
           programacao_id: payload.programacao_id,
@@ -641,12 +646,14 @@ export function wireDespesasCards(containerEl, ctx = {}) {
         }, { onConflict: 'programacao_id,colaborador_id' });
         if (aliErr) console.error('[despesas] auto-janta (chip)', aliErr);
       }
-      // Não bloqueia o autosave da estadia — roda em paralelo.
+      // Não bloqueia o autosave da estadia — roda em paralelo. Pernoite fica de
+      // fora da janta automática no Financeiro também (mesma regra da linha
+      // acima) — senão o colaborador seria cobrado mesmo com o chip limpo.
       sincronizarJantaHotelFinanceiro({
         programacaoId: payload.programacao_id,
         colaboradorId: colabId,
         nome: card.dataset.nome,
-        comEstadia: payload.tem_estadia,
+        comEstadia: payload.tem_estadia && payload.tipo_estadia !== 'PERNOITE',
         checkin: payload.checkin,
         checkout: payload.checkout,
       });
@@ -667,7 +674,7 @@ export function wireDespesasCards(containerEl, ctx = {}) {
       data_referencia: getDataReferencia() || null,
       colaborador_id: colabId,
       nome_colaborador: card.dataset.nome,
-      tipo_despesa: 'OUTRO',
+      tipo_despesa: 'OUTROS',
       descricao: '',
       valor: 0,
       observacao: '',
@@ -682,7 +689,7 @@ export function wireDespesasCards(containerEl, ctx = {}) {
     const extraId = itemEl.dataset.extraId;
     if (!extraId) return;
     const payload = {
-      tipo_despesa: itemEl.querySelector('[data-extra-fld="tipo_despesa"]')?.value || 'OUTRO',
+      tipo_despesa: itemEl.querySelector('[data-extra-fld="tipo_despesa"]')?.value || 'OUTROS',
       descricao: itemEl.querySelector('[data-extra-fld="descricao"]')?.value || '',
       valor: Number(String(itemEl.querySelector('[data-extra-fld="valor"]')?.value || '0').replace(',', '.')) || 0,
       observacao: itemEl.querySelector('[data-extra-fld="observacao"]')?.value || '',
@@ -780,6 +787,14 @@ export function wireDespesasCards(containerEl, ctx = {}) {
       const destino = card.querySelector('[data-estadia-destino]');
       const est = getCustos().est.get(card.dataset.colabId) || {};
       if (destino) destino.innerHTML = estadiaDestinoHtml(sel.value, est, card.dataset.embarque);
+      // Pernoite limpa café/almoço/janta em vez de herdar o que já estava marcado
+      // (pedido do usuário, 2026-07-23) — não bloqueia os chips, só reseta a
+      // seleção. Só pra PERNOITE: Hotel/Alojamento seguem com o auto-liga-janta
+      // de 16/07 (ver saveCampo abaixo) sem mudança.
+      if (normalizeText(sel.value) === 'PERNOITE') {
+        card.querySelectorAll('.peqd-chip[data-ref].on').forEach((c) => c.classList.remove('on'));
+        scheduleSaveCampo(card, 'programacao_alimentacao');
+      }
     }
     // Ao escolher "Frota - Motorista"/"Frota - Carona", puxa a placa já
     // associada ao colaborador (placasPorCpf, gravada em data-placa-auto no
