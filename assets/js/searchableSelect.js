@@ -89,7 +89,14 @@ function buildCombobox(select) {
     list.style.width = `${r.width}px`;
   }
 
-  function fecharAoRolar() { closeList(); }
+  function fecharAoRolar(event) {
+    // A própria .ssel-list tem overflow-y:auto — rolar o mouse sobre as opções
+    // dispara "scroll" nela, que também chega aqui (listener em capture no
+    // window). Isso não invalida a posição calculada (o input não se moveu),
+    // então não deve fechar (reportado 2026-07-23: lista fechava ao rolar).
+    if (event.target === list || (event.target instanceof Node && list.contains(event.target))) return;
+    closeList();
+  }
 
   function renderList(query = '') {
     const q = normalize(query);
