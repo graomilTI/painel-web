@@ -7,7 +7,8 @@
 // quando o gestor pedir "Ver rotas no mapa" (reaproveita a Edge Function já
 // usada em Frotas Roteirização, ver supabase/functions/frotas-roteirizar).
 import { supabase } from './supabaseClient.js';
-import { getUserContext } from './auth.js';
+import { getUserContext, getCurrentUser } from './auth.js';
+import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
 
 let currentUserIsMaster = false;
 let masterPermissionReady = null;
@@ -886,18 +887,11 @@ export async function registrarSaldoKg(osId, kg) {
 }
 
 export async function anexarLaudo(osId, files) {
-  const urls = [];
-  for (const file of files) {
-    const path = `${osId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-    const { data: up, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
-    if (upErr) throw upErr;
-    const { data: urlData } = supabase.storage.from('os-laudos').getPublicUrl(up.path);
-    urls.push(urlData.publicUrl);
-  }
-  const laudoText = `LAUDO:${urls.join(',')}`;
-  const { error } = await supabase.from('operacional_os').update({ observacao_logistica: laudoText, updated_at: new Date().toISOString() }).eq('id', osId);
-  if (error) throw error;
-  return urls;
+  const user = await getCurrentUser().catch(() => null);
+  return anexarLaudoComGeolocalizacao(osId, files, {
+    origem: 'programacao',
+    usuario: user ? { id: user.id, email: user.email } : null,
+  });
 }
 
 export async function confirmarCandidato(programacaoId, os, cand) {

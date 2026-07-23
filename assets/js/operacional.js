@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js';
+import { getCurrentUser } from './auth.js';
 
 (function () {
   'use strict';
@@ -120,6 +121,7 @@ import { supabase } from './supabaseClient.js';
     mostrarVeiculos: true, mostrarColaboradores: true, mostrarOsComSaldo: true, mostrarOsSemSaldo: true, mostrarHoteis: false,
     mostrarIrregularidades: true, irregularidades: [], ufPorNumeroOs: new Map(),
     comparativo: [], supervisaoComparativo: '',
+    alertasLaudo: [], alertasFiltroData: '', alertasFiltroCoordenacao: '',
     map: null, mapEl: null, tileLayer: null, layer: null, routeLayer: null, rotaRealCache: new Map(), drawToken: 0,
     rotaSelecionadaReal: null, alternativaComparativo: null, alternativaToken: 0,
     // hospedagemParaPonto/candidatosProximos só dependem do ponto, não do colaborador nem da OS —
@@ -674,6 +676,10 @@ import { supabase } from './supabaseClient.js';
     return sel('logistica_cargas_irregularidades', '*', q => q.order('detectado_em', { ascending: false }), 500);
   }
 
+  async function loadAlertasLaudo() {
+    return sel('operacional_laudos', '*', q => q.order('enviado_em', { ascending: false }), 500);
+  }
+
   // Carrega em duas fases pra o mapa ir mostrando pontos conforme os dados chegam, em vez de
   // ficar tudo em branco até a última consulta terminar: OS/pontos primeiro (dá pra ver algo
   // rápido), depois colaboradores/frota/hospedagem/irregularidades em paralelo. Cada fase chama
@@ -687,10 +693,11 @@ import { supabase } from './supabaseClient.js';
     st.os = abertas.filter(o => o.__saldo > 0);
     if (root) render(root, true);
 
-    const [colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem, irregularidades] = await Promise.all([
-      loadColaboradores(), loadVinculos(), loadModoHabitual(), loadVeiculoProprio(), loadFrotaAtual(), loadHospedagem(), loadIrregularidades(),
+    const [colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem, irregularidades, alertasLaudo] = await Promise.all([
+      loadColaboradores(), loadVinculos(), loadModoHabitual(), loadVeiculoProprio(), loadFrotaAtual(), loadHospedagem(), loadIrregularidades(), loadAlertasLaudo(),
     ]);
     st.irregularidades = irregularidades;
+    st.alertasLaudo = alertasLaudo;
 
     st.vinculosPorOs = vinculosPorOs;
     st.modoHabitualPorCpf = modoHabitual.porCpf;
@@ -1002,8 +1009,9 @@ import { supabase } from './supabaseClient.js';
 
   function html() {
     const irregAbertas = st.irregularidades.filter(i => norm(i.status) === 'ABERTA').length;
-    const tabs = `<div class="mo-tabs"><button class="mo-tab-btn ${st.tab === 'mapa' ? 'active' : ''}" data-tab="mapa">Mapa</button><button class="mo-tab-btn ${st.tab === 'irregularidades' ? 'active' : ''}" data-tab="irregularidades">Irregularidades${irregAbertas ? ` (${irregAbertas})` : ''}</button><button class="mo-tab-btn ${st.tab === 'comparativo' ? 'active' : ''}" data-tab="comparativo">Sugerido x Registrado</button></div>`;
-    const corpo = st.tab === 'comparativo' ? htmlComparativo() : st.tab === 'irregularidades' ? htmlIrregularidades() : htmlMapa();
+    const alertasPendentes = st.alertasLaudo.filter(l => l.suspeito && !l.revisado_em).length;
+    const tabs = `<div class="mo-tabs"><button class="mo-tab-btn ${st.tab === 'mapa' ? 'active' : ''}" data-tab="mapa">Mapa</button><button class="mo-tab-btn ${st.tab === 'irregularidades' ? 'active' : ''}" data-tab="irregularidades">Irregularidades${irregAbertas ? ` (${irregAbertas})` : ''}</button><button class="mo-tab-btn ${st.tab === 'comparativo' ? 'active' : ''}" data-tab="comparativo">Sugerido x Registrado</button><button class="mo-tab-btn ${st.tab === 'alertas' ? 'active' : ''}" data-tab="alertas">Alertas${alertasPendentes ? ` (${alertasPendentes})` : ''}</button></div>`;
+    const corpo = st.tab === 'comparativo' ? htmlComparativo() : st.tab === 'irregularidades' ? htmlIrregularidades() : st.tab === 'alertas' ? htmlAlertas() : htmlMapa();
     return `
       <div class="mo"><section class="mo-card"><div class="mo-head"><div><h2>Mapa operacional</h2><p>Custo-benefício por OS: compara frota/carona (grátis), veículo próprio, Uber/táxi (até 60km, além disso vira carro) e hospedagem próxima.</p></div><div class="mo-actions"><select class="mo-select mo-map-select" data-map-base><option value="escuro" ${st.mapaBase === 'escuro' ? 'selected' : ''}>Mapa escuro</option><option value="real" ${st.mapaBase === 'real' ? 'selected' : ''}>Visualização real</option><option value="padrao" ${st.mapaBase === 'padrao' ? 'selected' : ''}>Mapa padrão</option></select><button class="mo-btn ${st.mostrarRota ? '' : 'off'}" data-toggle-rota>${st.mostrarRota ? 'Desligar rota' : 'Ligar rota'}</button><button class="mo-btn" data-reload>Atualizar</button></div></div>
         ${tabs}
@@ -1062,6 +1070,54 @@ import { supabase } from './supabaseClient.js';
               <td class="num">${Number.isFinite(Number(i.distancia_m)) ? fmtKm(Number(i.distancia_m) / 1000) : '—'}</td>
               <td>${irregStatusPill(i.status)}</td>
             </tr>`).join('') : '<tr><td colspan="8" style="text-align:center;padding:20px;color:#94a3b8">Nenhuma irregularidade registrada.</td></tr>'}</tbody></table></div>
+        </div>`;
+  }
+
+  const ORIGEM_LAUDO_LABEL = { gestor_app: 'App Gestor', programacao: 'Programação', distribuir_os: 'Distribuir O.S.' };
+  function origemLaudoLabel(o) { return ORIGEM_LAUDO_LABEL[o] || o || '—'; }
+  function fmtDataHoraBr(v) {
+    if (!v) return '—';
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+  function passaFiltroAlertas(l) {
+    if (st.alertasFiltroData && String(l.enviado_em || '').slice(0, 10) !== st.alertasFiltroData) return false;
+    if (st.alertasFiltroCoordenacao && (l.coordenacao || '') !== st.alertasFiltroCoordenacao) return false;
+    return true;
+  }
+  function coordenacoesAlertas() { return [...new Set(st.alertasLaudo.map(l => l.coordenacao).filter(Boolean))].sort(); }
+  function kpisAlertas() {
+    const linhas = st.alertasLaudo.filter(passaFiltroAlertas);
+    const suspeitos = linhas.filter(l => l.suspeito);
+    return {
+      total: linhas.length, suspeitos: suspeitos.length,
+      pendentes: suspeitos.filter(l => !l.revisado_em).length,
+      revisados: suspeitos.filter(l => l.revisado_em).length,
+      semGeo: linhas.filter(l => !l.geo_capturada).length,
+    };
+  }
+
+  function htmlAlertas() {
+    const k = kpisAlertas();
+    const coordenacoes = coordenacoesAlertas();
+    const linhas = st.alertasLaudo.filter(passaFiltroAlertas).filter(l => l.suspeito);
+    return `
+        <div class="mo-body">
+          <p style="color:#94a3b8;font-size:12px;margin:0 16px">Laudos anexados com geolocalização longe da casa do colaborador e do local da O.S. (raio de 1km). Não bloqueia o envio do laudo — é só sinal para revisão manual.</p>
+          <div class="mo-kpis"><div class="mo-kpi"><span>Laudos no período</span><strong>${k.total}</strong></div><div class="mo-kpi"><span>Suspeitos</span><strong>${k.suspeitos}</strong></div><div class="mo-kpi"><span>Pendentes</span><strong>${k.pendentes}</strong></div><div class="mo-kpi"><span>Revisados</span><strong>${k.revisados}</strong></div><div class="mo-kpi"><span>Sem geolocalização</span><strong>${k.semGeo}</strong></div></div>
+          <div class="mo-filter" style="grid-template-columns:200px 260px auto"><input type="date" class="mo-select" data-alertas-data value="${esc(st.alertasFiltroData)}" /><select class="mo-select" data-alertas-coordenacao><option value="">Todas as coordenações</option>${coordenacoes.map(c => `<option value="${esc(c)}" ${st.alertasFiltroCoordenacao === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+          <div class="mo-comp-wrap"><table class="mo-comp-table"><thead><tr><th>Colaborador</th><th>O.S.</th><th>Cliente</th><th>Dist. casa</th><th>Dist. O.S.</th><th>Origem</th><th>Enviado em</th><th>Status</th><th></th></tr></thead><tbody>${linhas.length ? linhas.map(l => `
+            <tr>
+              <td>${esc(l.colaborador_nome || l.colaborador_key || '—')}</td>
+              <td>${esc(l.numero_os || '—')}</td>
+              <td>${esc(l.cliente || '—')}</td>
+              <td class="num">${l.distancia_casa_km !== null && l.distancia_casa_km !== undefined ? fmtKm(l.distancia_casa_km) : '—'}</td>
+              <td class="num">${l.distancia_os_km !== null && l.distancia_os_km !== undefined ? fmtKm(l.distancia_os_km) : '—'}</td>
+              <td>${esc(origemLaudoLabel(l.origem))}</td>
+              <td>${esc(fmtDataHoraBr(l.enviado_em))}</td>
+              <td>${l.revisado_em ? '<span class="mo-pill ok">Revisado</span>' : '<span class="mo-pill bad">Pendente</span>'}</td>
+              <td>${l.revisado_em ? '' : `<button class="mo-btn" data-alerta-revisar="${esc(l.id)}">Revisar</button>`}</td>
+            </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8">Nenhum laudo suspeito no filtro atual.</td></tr>'}</tbody></table></div>
         </div>`;
   }
 
@@ -1181,6 +1237,32 @@ import { supabase } from './supabaseClient.js';
     root.querySelectorAll('[data-colab-rota]').forEach(el => { el.onclick = () => { st.rota = el.dataset.colabRota; render(root); }; });
     root.querySelector('[data-supervisao-comp]')?.addEventListener('change', e => { st.supervisaoComparativo = e.target.value; render(root); });
     root.querySelector('[data-export-csv]')?.addEventListener('click', () => exportarComparativoCSV());
+    root.querySelector('[data-alertas-data]')?.addEventListener('change', e => { st.alertasFiltroData = e.target.value; render(root); });
+    root.querySelector('[data-alertas-coordenacao]')?.addEventListener('change', e => { st.alertasFiltroCoordenacao = e.target.value; render(root); });
+    root.querySelectorAll('[data-alerta-revisar]').forEach(el => {
+      el.onclick = async () => {
+        const id = el.dataset.alertaRevisar;
+        const obs = window.prompt('Observação da revisão (opcional):', '') ?? '';
+        el.disabled = true; el.textContent = 'Salvando...';
+        try {
+          const user = await getCurrentUser().catch(() => null);
+          const revisadoEm = new Date().toISOString();
+          const { error } = await supabase.from('operacional_laudos').update({
+            revisado_em: revisadoEm,
+            revisado_por: user?.id || null,
+            revisado_por_nome: user?.email || null,
+            observacao_revisao: obs || null,
+          }).eq('id', id);
+          if (error) throw error;
+          const row = st.alertasLaudo.find(l => String(l.id) === String(id));
+          if (row) { row.revisado_em = revisadoEm; row.revisado_por_nome = user?.email || null; row.observacao_revisao = obs || null; }
+          render(root);
+        } catch (err) {
+          alert(err.message || 'Não foi possível marcar como revisado.');
+          el.disabled = false; el.textContent = 'Revisar';
+        }
+      };
+    });
   }
 
   async function map(root) {

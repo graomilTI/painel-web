@@ -1,6 +1,7 @@
 ﻿import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { getColaboradores } from './colaboradoresCache.js';
+import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -864,13 +865,14 @@ export async function renderOsModule(content, options = {}) {
       const btn = overlay.querySelector('#laudoConfirmar');
       btn.disabled = true; btn.textContent = 'Enviando...';
 
-      const urls = [];
-      for (const file of files) {
-        const path = `os/${osId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
-        const { data: up, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
-        if (upErr) { alert(`Erro ao enviar ${file.name}: ${upErr.message}`); btn.disabled = false; btn.textContent = 'Enviar'; return; }
-        const { data: pub } = supabase.storage.from('os-laudos').getPublicUrl(up.path);
-        urls.push(pub.publicUrl);
+      let urls;
+      try {
+        urls = await anexarLaudoComGeolocalizacao(osId, files, {
+          origem: 'distribuir_os',
+          usuario: state.user ? { id: state.user.id, email: state.user.email } : null,
+        });
+      } catch (upErr) {
+        alert(`Erro ao enviar laudo: ${upErr.message}`); btn.disabled = false; btn.textContent = 'Enviar'; return;
       }
 
       const laudoRef = `LAUDO:${urls.join(',')}`;
@@ -878,7 +880,6 @@ export async function renderOsModule(content, options = {}) {
       if (row) row.observacao_logistica = laudoRef;
       overlay.remove();
       render();
-      supabase.from('operacional_os').update({ observacao_logistica: laudoRef, updated_at: new Date().toISOString() }).eq('id', osId);
     });
   }
 
