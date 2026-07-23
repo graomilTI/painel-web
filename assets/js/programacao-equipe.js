@@ -8,7 +8,7 @@
 // usada em Frotas Roteirização, ver supabase/functions/frotas-roteirizar).
 import { supabase } from './supabaseClient.js';
 import { getUserContext, getCurrentUser } from './auth.js';
-import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
+import { anexarLaudoComGeolocalizacao, capturarGeolocalizacao } from './laudoUpload.js';
 
 let currentUserIsMaster = false;
 let masterPermissionReady = null;
@@ -884,6 +884,102 @@ export async function registrarSaldoKg(osId, kg) {
   const kgText = `KG solicitado pelo gestor: ${BRI.format(kg)} kg`;
   const { error } = await supabase.from('operacional_os').update({ observacao_logistica: kgText, status_gestor: 'AGUARDAR', configurada_em: null, updated_at: new Date().toISOString() }).eq('id', osId);
   if (error) throw error;
+}
+
+// ── Regras de anexo obrigatório na ação Saldo (por cliente) ─────────────────
+// Tabela logistica_clientes_anexo_regras: levantamento da usuária de quais
+// clientes exigem comprovante/print pra autorizar aumento de saldo (23/07/2026).
+// Carregada 1x e cacheada em memória -- poucas dezenas de linhas, sem custo
+// de refazer a consulta a cada abertura do modal de Saldo.
+let regrasAnexoSaldoCache = null;
+let regrasAnexoSaldoPromise = null;
+
+function normalizeClienteChave(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+}
+
+async function carregarRegrasAnexoSaldo() {
+  if (!regrasAnexoSaldoPromise) {
+    regrasAnexoSaldoPromise = supabase
+      .from('logistica_clientes_anexo_regras')
+      .select('cliente,aliases,precisa_anexo,excecao_origem_igual_cliente,observacao')
+      .then(({ data, error }) => {
+        if (error) { console.warn('[programacao] falha ao carregar regras de anexo de saldo:', error); return []; }
+        return (data || []).map((r) => ({
+          ...r,
+          chaves: [r.cliente, ...(r.aliases || [])].map(normalizeClienteChave).filter(Boolean),
+        }));
+      });
+  }
+  regrasAnexoSaldoCache = await regrasAnexoSaldoPromise;
+  return regrasAnexoSaldoCache;
+}
+
+// Chamar (e aguardar) antes de abrir o modal de Saldo -- mesmo padrão de
+// ensureMasterPermission(): precisaAnexoSaldo() é síncrona e depende do
+// cache já estar carregado.
+export function ensureRegrasAnexoSaldo() {
+  return carregarRegrasAnexoSaldo();
+}
+
+// operacional_os.cliente segue o padrão "<RAZÃO SOCIAL> - <FILIAL/CIDADE>"
+// (ex.: "CARGILL AGRICOLA - SAPEZAL"), por isso o match é por substring
+// normalizada (sem acento/pontuação/espaço) contra o cliente da regra OU
+// qualquer alias -- em ambas as direções, pra cobrir tanto abreviação
+// (BTG ⊂ BTG PACTUAL COMMODITIES...) quanto nome completo batendo com um
+// alias mais curto cadastrado na regra.
+export function precisaAnexoSaldo(os) {
+  const regras = regrasAnexoSaldoCache;
+  if (!regras || !regras.length) return { precisaAnexo: false };
+  const clienteChave = normalizeClienteChave(os?.cliente);
+  if (!clienteChave) return { precisaAnexo: false };
+  const regra = regras.find((r) => r.chaves.some((chave) => chave && (clienteChave.includes(chave) || chave.includes(clienteChave))));
+  if (!regra || !regra.precisa_anexo) return { precisaAnexo: false };
+  if (regra.excecao_origem_igual_cliente) {
+    const embarqueChave = normalizeClienteChave(os?.embarque);
+    if (embarqueChave && regra.chaves.some((chave) => chave && embarqueChave.includes(chave))) {
+      return { precisaAnexo: false };
+    }
+  }
+  return { precisaAnexo: true, cliente: regra.cliente };
+}
+
+// Anexo de comprovante da ação Saldo (obrigatório pra alguns clientes, ver
+// precisaAnexoSaldo). Guarda em operacional_laudos (mesma tabela/bucket do
+// laudo de Conferência) com origem própria pra não se confundir com o laudo
+// de remanescente negativo -- NÃO mexe em observacao_logistica (esse campo
+// já é usado por registrarSaldoKg pro texto "KG solicitado...").
+export async function anexarAnexoSaldo(osId, files, { usuario } = {}) {
+  const geo = await capturarGeolocalizacao();
+  const urls = [];
+  for (const file of files) {
+    const path = `${osId}/saldo_${Date.now()}_${(file.name || 'anexo.png').replace(/\s+/g, '_')}`;
+    const { data: up, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
+    if (upErr) throw upErr;
+    const { data: urlData } = supabase.storage.from('os-laudos').getPublicUrl(up.path);
+    urls.push(urlData.publicUrl);
+  }
+  // Diferente do laudo de Conferência (onde esse insert é só auditoria/sinal
+  // pra aba Alertas, e o "sinal real" já foi gravado em observacao_logistica):
+  // aqui este insert É a única prova do anexo -- não pode falhar em silêncio,
+  // senão a exigência vira letra morta sem ninguém perceber.
+  const { error } = await supabase.from('operacional_laudos').insert({
+    os_id: osId,
+    arquivos_urls: urls,
+    origem: 'programacao_saldo',
+    geo_capturada: !!geo,
+    geo_latitude: geo?.lat ?? null,
+    geo_longitude: geo?.lng ?? null,
+    geo_precisao_m: geo?.accuracy ?? null,
+    enviado_por: usuario?.id ?? null,
+    enviado_por_nome: usuario?.nome ?? usuario?.email ?? null,
+  });
+  if (error) throw error;
+  return urls;
 }
 
 export async function anexarLaudo(osId, files) {

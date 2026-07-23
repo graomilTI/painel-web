@@ -71,6 +71,6 @@ const observer = new MutationObserver(applyPageIdentity);
 observer.observe(document.documentElement, { childList: true, subtree: true });
 applyPageIdentity();
 
-import('./adm-logistica.js?v=logistica-admin-isolado-20260721-solicitacoes2')
+import('./adm-logistica.js?v=logistica-admin-isolado-20260723-ajuste-anexo1')
   .then(() => applyPageIdentity())
   .catch(renderBootError);
