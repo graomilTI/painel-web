@@ -197,6 +197,9 @@ function injectStyles() {
     .pld-colab-tag.t-warn{background:rgba(245,158,11,.14);color:#fde68a;border-color:rgba(245,158,11,.3)}
     .pld-colab-tag.t-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(59,130,246,.3)}
     .pld-colab-tag.t-muted{background:rgba(148,163,184,.14);color:#cbd5e1}
+    /* Destaque verde pra colaborador já confirmado em outra O.S. hoje (evita escalar 2x sem perceber). */
+    .pld-colab-card.ja-outra-os{border-color:rgba(34,197,94,.55);box-shadow:0 0 0 1px rgba(34,197,94,.2) inset}
+    .pld-colab-outra-os-badge{font-size:10px;font-weight:850;padding:3px 9px;border-radius:999px;background:rgba(34,197,94,.18);color:#86efac;border:1px solid rgba(34,197,94,.4);white-space:nowrap}
     .pld-colab-remover{flex:0 0 auto;width:22px;height:22px;border-radius:6px;border:0;background:none;color:#8ba79a;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center}
     .pld-colab-remover:hover{background:rgba(239,68,68,.14);color:#fca5a5}
     .pld-add-box{display:flex;gap:8px;align-items:center;border:1px solid rgba(56,189,248,.28);background:rgba(15,23,42,.72);border-radius:11px;padding:8px;margin-bottom:12px}
@@ -514,11 +517,12 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     const cpf = String(row.colaboradorId || '').replace(/\D/g, '');
     const tipoLabelTexto = tipoContratoPorCpf.get(cpf) || 'Não informado';
     const cardHtml = colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab);
-    return `<div class="pld-colab-card" data-colab-wrap="${esc(row.colaboradorId)}" data-equipe-row-id="${esc(row.equipeRowId || '')}">
+    return `<div class="pld-colab-card${escaladoEmOutra ? ' ja-outra-os' : ''}" data-colab-wrap="${esc(row.colaboradorId)}" data-equipe-row-id="${esc(row.equipeRowId || '')}">
       <div class="pld-colab-head">
         ${avatarBadgeHtml(row.nome, row.colaboradorId)}
         <span class="pld-colab-nome">${esc(row.nome)}</span>
-        <span class="pld-colab-tag t-${tipoTone(tipoLabelTexto)}">${esc(tipoLabelTexto)}${escaladoEmOutra ? ' · ♻' : ''}</span>
+        <span class="pld-colab-tag t-${tipoTone(tipoLabelTexto)}">${esc(tipoLabelTexto)}</span>
+        ${escaladoEmOutra ? '<span class="pld-colab-outra-os-badge" title="Este colaborador também está confirmado em outra O.S. hoje">♻ Outra O.S.</span>' : ''}
         <button type="button" class="pld-colab-remover" data-remover-colab="${esc(row.equipeRowId || '')}" title="Remover da O.S.">✕</button>
       </div>
       ${cardHtml}
@@ -593,7 +597,10 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     sel.innerHTML = '<option value="">Escolha um colaborador…</option>' + opcoes.map((c) => {
       const id = String(c.colaboradorId);
       const jaEmOutra = escalados.has(id);
-      return `<option value="${esc(id)}" data-nome="${esc(c.nome)}">${jaEmOutra ? '♻ ' : ''}${esc(c.nome)}</option>`;
+      // <option> aceita pouco CSS, mas color/background-color funcionam nos principais navegadores
+      // (Chrome/Edge/Firefox) — dá pra destacar em verde quem já está confirmado em outra O.S. hoje.
+      const estilo = jaEmOutra ? ' style="color:#16a34a;font-weight:700"' : '';
+      return `<option value="${esc(id)}" data-nome="${esc(c.nome)}"${estilo}>${jaEmOutra ? '♻ ' : ''}${esc(c.nome)}</option>`;
     }).join('');
   }
 

@@ -166,7 +166,7 @@ async function buscarTodasOsExistentes() {
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from('operacional_os')
-      .select('numero_os,status_gestor,status_conferencia')
+      .select('numero_os,data_os,status_gestor,status_conferencia')
       .order('numero_os', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
@@ -372,11 +372,14 @@ async function sincronizarListaOsDoAgente() {
 
   const payload = [...uniqueMap.values()].map((row) => {
     const existente = statusExistente.get(row.numero_os);
+    // só preserva o trabalho do gestor quando é a mesma ocorrência (data_os igual);
+    // O.S. recorrente cuja data_os avançou pra um novo dia entra limpa, como se fosse nova,
+    // senão ela fica presa no status_gestor='FINALIZAR' de ontem e some da Programação de hoje.
+    const mesmaOcorrencia = existente && existente.data_os === row.data_os;
     return {
       ...row,
-      // preserva o trabalho do gestor para O.S. que já existiam; novas entram como antes (null/PENDENTE).
-      status_gestor: existente ? existente.status_gestor : null,
-      status_conferencia: existente ? existente.status_conferencia : 'PENDENTE',
+      status_gestor: mesmaOcorrencia ? existente.status_gestor : null,
+      status_conferencia: mesmaOcorrencia ? existente.status_conferencia : 'PENDENTE',
     };
   });
 
