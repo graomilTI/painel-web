@@ -9,10 +9,10 @@
 // funcionando sem duplicação de lógica. Ver [[painel-web-abertura-os-menu-escondido]].
 
 const TABS = [
-  { key: 'abertura',    realTab: 'abertura_os',  label: 'Abertura' },
-  { key: 'conferencia', realTab: 'conferencias', label: 'Conferência' },
-  { key: 'ajuste',      realTab: 'ajuste',       label: 'Ajuste' },
-  { key: 'finalizacao', realTab: 'finalizacao',  label: 'Finalização' },
+  { key: 'abertura',    realTab: 'abertura_os',  label: 'Abertura',   listId: 'aberturaOsList' },
+  { key: 'conferencia', realTab: 'conferencias', label: 'Conferência', listId: 'logConferenciasLaudos' },
+  { key: 'ajuste',      realTab: 'ajuste',       label: 'Ajuste',     listId: 'logAjusteList' },
+  { key: 'finalizacao', realTab: 'finalizacao',  label: 'Finalização', listId: 'logFinalizacaoList' },
 ];
 
 document.documentElement.classList.add('logistica-os-page');
@@ -49,26 +49,6 @@ style.textContent = `
   .logistica-os-page #section-abertura_os .log-mini-grid article.card h3 { font-size:12px; margin:0 0 2px; text-transform:uppercase; letter-spacing:.04em; color:#9fb7aa; }
   .logistica-os-page #section-abertura_os .log-mini-grid .metric { font-size:22px; margin:0 0 2px; }
   .logistica-os-page #section-abertura_os .log-mini-grid .muted { font-size:11px; margin:0; }
-  /* Evita o "piscar com fundo preto" ao trocar de aba (reportado pela
-     usuária, 23/07/2026): o toggle padrão do painel monolítico esconde a
-     aba inativa com display:none e a nova com display:block, o que destrói
-     e recria do zero a árvore de renderização/composição daquela seção —
-     caro pra tabelas grandes com <th> sticky, e o Chromium/Electron chega a
-     desenhar um frame em preto sólido enquanto a camada nova é montada.
-     Depois que uma aba já foi visitada 1x (activate() marca com
-     .log-visited), trocar pra outra NÃO usa mais display:none nela: só
-     esconde com visibility+altura zero, mantendo a camada "viva" — a
-     próxima vez que voltar pra essa aba não precisa recriar nada. */
-  .logistica-os-page #pageContent { position:relative; }
-  .logistica-os-page .log-section.log-visited:not(.active) {
-    display:block;
-    visibility:hidden;
-    position:absolute;
-    top:0; left:0; width:100%;
-    height:0;
-    overflow:hidden;
-    pointer-events:none;
-  }
 `;
 document.head.appendChild(style);
 
@@ -104,8 +84,29 @@ function tabFromHash() {
   return match?.key || 'abertura';
 }
 
+// Aba atualmente ativa (key curta), pra saber qual esvaziar ao trocar.
+let currentKey = null;
+
 function activate(key) {
   const target = TABS.find((t) => t.key === key) || TABS[0];
+  // Esvazia a tabela grande da aba que está SAINDO antes de trocar. O
+  // painel monolítico só esconde a seção via CSS (display:none), deixando a
+  // tabela inteira (às vezes centenas de linhas, com <th> sticky) viva no
+  // DOM enquanto invisível -- isso é o que causa o "piscar com fundo preto"
+  // reportado pela usuária (23/07/2026): o Chromium/Electron tem que
+  // destruir/recriar a camada de composição dessa árvore grande a cada
+  // troca. O Painel de Conferência (adm-conferencia.js) não sofre disso
+  // porque só mantém 1 tabela por vez no DOM, recriando o conteúdo a cada
+  // troca de aba em vez de esconder várias em paralelo -- aqui replicamos
+  // esse padrão: some com o conteúdo pesado da aba anterior (os dados
+  // continuam em memória em state.*, então reabrir essa aba só re-renderiza
+  // do cache, sem precisar buscar de novo no Supabase).
+  if (currentKey && currentKey !== target.key) {
+    const prevTarget = TABS.find((t) => t.key === currentKey);
+    const prevList = prevTarget && document.getElementById(prevTarget.listId);
+    if (prevList) prevList.innerHTML = '';
+  }
+  currentKey = target.key;
   document.querySelectorAll('#logisticaOsTabs .log-tab').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.key === target.key);
   });
@@ -114,10 +115,6 @@ function activate(key) {
   // o loader sob demanda daquela aba.
   const realBtn = document.querySelector(`#logTabs .log-tab[data-tab="${target.realTab}"]`);
   if (realBtn) realBtn.click();
-  // Marca a seção como "já visitada" (ver .log-visited na <style> acima) --
-  // da próxima vez que ela for escondida, usa visibility em vez de
-  // display:none, evitando recriar a camada de composição do zero.
-  document.getElementById(`section-${target.realTab}`)?.classList.add('log-visited');
   // Barra de filtros só faz sentido na Finalização (data/coordenação/status/busca);
   // Abertura, Conferência (laudos) e Ajuste ignoram esses filtros.
   if (introCard) introCard.style.display = target.key === 'finalizacao' ? '' : 'none';
