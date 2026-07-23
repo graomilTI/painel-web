@@ -969,16 +969,26 @@ export async function renderContent(content) {
     ].join('\n');
   }
 
+  // Cada renderX() reconstrói a tabela inteira via innerHTML -- caro pra
+  // seções com centenas de linhas (Finalização, Classificadores etc.), e como
+  // só a .log-section do state.tab atual fica visível (as outras ficam
+  // display:none), rodar as 6 sempre era trabalho jogado fora nas 5 ocultas.
+  // Isso travava a thread principal por tempo suficiente pra virar um
+  // "piscar com fundo preto" perceptível ao trocar de aba (reportado pela
+  // usuária, 23/07/2026, na página unificada O.S. — mas o problema já
+  // existia em qualquer tela com essas 9 abas). Gate por state.tab: só a aba
+  // ativa é re-renderizada a cada clique/filtro, igual ao padrão que já
+  // existia pra abertura_os/ajuste/fob.
   function render() {
     renderStats();
-    renderFinalizacao();
-    renderClassificadores();
-    renderConferencias();
-    renderExportacoes();
-    renderRelatorios();
     if (state.tab === 'abertura_os') renderAberturaOs();
     if (state.tab === 'ajuste') renderAjuste();
     if (state.tab === 'fob') { renderFob(); renderFobReport(); }
+    if (state.tab === 'finalizacao') renderFinalizacao();
+    if (state.tab === 'classificadores') renderClassificadores();
+    if (state.tab === 'conferencias') renderConferencias();
+    if (state.tab === 'exportacoes') renderExportacoes();
+    if (state.tab === 'relatorios') renderRelatorios();
   }
 
   // ── FOB 0 ────────────────────────────────────────────────────────────────
