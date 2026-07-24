@@ -13,6 +13,7 @@ const state={items:[],selected:null,canEdit:false,context:null,channel:null,filt
 function currentUser(){return{id:state.context?.user?.id||null,name:state.context?.user?.nome||state.context?.user?.name||state.context?.user?.email||'Usuário do painel'};}
 function userCanEdit(ctx){if(ctx?.user?.is_master)return true;const roles=[ctx?.user?.role,ctx?.role,ctx?.perfil_codigo,ctx?.perfil_nome,ctx?.department?.code,ctx?.department?.name,ctx?.setor].map(norm);return roles.some((v)=>['admin','administrador','ti'].includes(v)||v.includes('tecnologia')||v.includes('desenvolv'));}
 function selectedItem(){return state.items.find((i)=>i.id===state.selected)||null;}
+function localDateValue(value){if(!value)return value;const raw=String(value).slice(0,10);return{toString:()=>raw,valueOf:()=>new Date(`${raw}T12:00:00`).getTime()};}
 
 async function showDetail(content){
   const item=selectedItem();
@@ -31,7 +32,7 @@ function repaint(content){
 async function load(content){
   const {data,error}=await supabase.from(TABLE).select('*').order('ordem').order('updated_at',{ascending:false});
   if(error){content.querySelector('[data-list]').innerHTML=`<div class="dv-error"><b>Não foi possível carregar.</b><br>${esc(error.message)}<br><br>Aplique a migration <code>20260724160000_diretoria_desenvolvimento.sql</code> no Supabase.</div>`;return;}
-  state.items=data||[];applyModules(content,state.items,state.filters.modulo);repaint(content);
+  state.items=(data||[]).map((item)=>({...item,data_inicio:localDateValue(item.data_inicio),previsao_conclusao:localDateValue(item.previsao_conclusao),data_conclusao:localDateValue(item.data_conclusao)}));applyModules(content,state.items,state.filters.modulo);repaint(content);
 }
 
 async function addHistory(after,before,note){
