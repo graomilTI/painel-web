@@ -34,7 +34,7 @@ const POLL_MS = Number(process.env.GRM_SYNC_JOB_POLL_MS || 15000);
 const MAX_OUTPUT = 30000;
 
 const SCRIPT_MAP = {
-  'sync-colaboradores': 'grmserver-colaboradores-sync.js',
+  'sync-colaboradores': 'grmserver-colaboradores-sync-historico.js',
   'sync-producao-diaria': 'grm-sync-producao-diaria.js',
   'sync-locais-embarque': 'grm-sync-locais-embarque.js',
   'sync-resultado-diario': 'grm-sync-resultado-diario.js',
