@@ -141,6 +141,21 @@ async function responsePayload(response: Response): Promise<unknown> {
   }
 }
 
+function outputText(result: any): string {
+  if (typeof result?.output_text === "string" && result.output_text.trim()) {
+    return result.output_text.trim();
+  }
+  for (const item of result?.output ?? []) {
+    if (item?.type !== "message") continue;
+    for (const content of item?.content ?? []) {
+      if (content?.type === "output_text" && typeof content?.text === "string" && content.text.trim()) {
+        return content.text.trim();
+      }
+    }
+  }
+  return "";
+}
+
 serve(async (req) => {
   const requestId = crypto.randomUUID();
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -150,10 +165,10 @@ serve(async (req) => {
   if (!auth.ok) return json({ error: auth.error, code: `AUTH_${auth.status}`, request_id: requestId }, auth.status);
 
   try {
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CLAUDE_API_KEY") || "";
+    const apiKey = Deno.env.get("OPENAI_API_KEY") || "";
     if (!apiKey) {
       return json({
-        error: "Secret de OCR não configurado. Cadastre ANTHROPIC_API_KEY ou CLAUDE_API_KEY nas Edge Function Secrets.",
+        error: "OPENAI_API_KEY não configurada. Cadastre a chave da OpenAI nas Edge Function Secrets.",
         code: "OCR_SECRET_MISSING",
         request_id: requestId,
       }, 500);
@@ -168,62 +183,78 @@ serve(async (req) => {
     if (url && !isAllowedDocumentUrl(String(url))) return json({ error: `URL de documento não permitida: ${new URL(String(url)).hostname}`, code: "URL_NOT_ALLOWED", request_id: requestId }, 400);
     if (instrucao && String(instrucao).length > 2000) return json({ error: "Instrução muito longa.", code: "PROMPT_TOO_LONG", request_id: requestId }, 400);
 
-    const mediaType = MIME_TYPES[String(tipo).toLowerCase()];
+    const extension = String(tipo).toLowerCase();
+    const mediaType = MIME_TYPES[extension];
     if (!mediaType) return json({ error: `Tipo '${tipo}' não suportado`, code: "TYPE_UNSUPPORTED", request_id: requestId }, 400);
 
     const prompt = instrucao || "Extraia todo o texto deste documento. Retorne apenas o texto extraído, sem comentários adicionais.";
-    let contentBlock: unknown;
+    const documentPart = mediaType === "application/pdf"
+      ? base64
+        ? { type: "input_file", filename: `documento.${extension}`, file_data: String(base64) }
+        : { type: "input_file", file_url: String(url) }
+      : {
+          type: "input_image",
+          image_url: base64 ? `data:${mediaType};base64,${String(base64)}` : String(url),
+          detail: "high",
+        };
 
-    if (mediaType === "application/pdf") {
-      contentBlock = {
-        type: "document",
-        source: base64
-          ? { type: "base64", media_type: mediaType, data: base64 }
-          : { type: "url", url },
-      };
-    } else {
-      contentBlock = {
-        type: "image",
-        source: base64
-          ? { type: "base64", media_type: mediaType, data: base64 }
-          : { type: "url", url },
-      };
-    }
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const model = Deno.env.get("OPENAI_OCR_MODEL") || "gpt-5.6-luna";
+    const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "pdfs-2024-09-25",
-        "content-type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: Deno.env.get("ANTHROPIC_OCR_MODEL") || "claude-haiku-4-5-20251001",
-        max_tokens: 4096,
-        temperature: 0,
-        messages: [{ role: "user", content: [contentBlock, { type: "text", text: prompt }] }],
+        model,
+        store: false,
+        max_output_tokens: 4096,
+        reasoning: { effort: "none" },
+        input: [{
+          role: "user",
+          content: [
+            { type: "input_text", text: prompt },
+            documentPart,
+          ],
+        }],
+        metadata: { request_id: requestId, source: "grao1000-ocr-documento" },
       }),
     });
 
     if (!response.ok) {
       const detail = await responsePayload(response);
-      console.error("[ocr-documento] Anthropic", { requestId, status: response.status, detail });
+      console.error("[ocr-documento] OpenAI", { requestId, status: response.status, model, detail });
       return json({
-        error: `Erro no serviço de OCR (${response.status}).`,
+        error: `Erro na OpenAI (${response.status}).`,
         code: "OCR_PROVIDER_ERROR",
+        provider: "openai",
         provider_status: response.status,
+        modelo: model,
         detalhe: detail,
         request_id: requestId,
       }, 502);
     }
 
     const result = await response.json();
-    const texto = result.content?.find?.((item: any) => item?.type === "text")?.text ?? result.content?.[0]?.text ?? "";
+    const texto = outputText(result);
     if (!texto) {
-      return json({ error: "O serviço de OCR não retornou texto.", code: "OCR_EMPTY_RESPONSE", request_id: requestId }, 502);
+      return json({
+        error: "A OpenAI não retornou texto para o documento.",
+        code: "OCR_EMPTY_RESPONSE",
+        provider: "openai",
+        modelo: model,
+        request_id: requestId,
+      }, 502);
     }
-    return json({ texto, tokens: result.usage, request_id: requestId });
+
+    return json({
+      texto,
+      tokens: result.usage,
+      provider: "openai",
+      modelo: model,
+      response_id: result.id,
+      request_id: requestId,
+    });
   } catch (e) {
     console.error("[ocr-documento] erro inesperado", { requestId, error: e });
     return json({
