@@ -50,20 +50,36 @@ grant select on public.colaboradores_status_historico to authenticated;
 grant all on public.colaboradores_status_historico to service_role;
 
 -- Backfill inicial: aproveita qualquer colaborador que já esteja como não ativo
--- na base atual. Isso resolve imediatamente desligamentos já presentes no último
--- relatório, mesmo antes da primeira execução do agente com a comparação nova.
+-- na base atual. A tabela colaboradores mantém admissão/desligamento como TEXT,
+-- então convertemos somente formatos reconhecidos para DATE.
 with base as (
   select
     id,
     regexp_replace(coalesce(cpf, ''), '\D', '', 'g') as cpf_normalizado,
     nome,
     situacao,
-    desligamento,
+    case
+      when trim(coalesce(desligamento, '')) ~ '^\d{4}-\d{2}-\d{2}'
+        then substring(trim(desligamento) from 1 for 10)::date
+      when trim(coalesce(desligamento, '')) ~ '^\d{1,2}/\d{1,2}/\d{4}$'
+        then to_date(trim(desligamento), 'DD/MM/YYYY')
+      when trim(coalesce(desligamento, '')) ~ '^\d{1,2}-\d{1,2}-\d{4}$'
+        then to_date(trim(desligamento), 'DD-MM-YYYY')
+      else null
+    end as desligamento_data,
     coalesce(sincronizado_em, updated_at, created_at) as momento,
     row_number() over (
       partition by regexp_replace(coalesce(cpf, ''), '\D', '', 'g')
       order by coalesce(sincronizado_em, updated_at, created_at) desc nulls last,
-               desligamento desc nulls last,
+               case
+                 when trim(coalesce(desligamento, '')) ~ '^\d{4}-\d{2}-\d{2}'
+                   then substring(trim(desligamento) from 1 for 10)::date
+                 when trim(coalesce(desligamento, '')) ~ '^\d{1,2}/\d{1,2}/\d{4}$'
+                   then to_date(trim(desligamento), 'DD/MM/YYYY')
+                 when trim(coalesce(desligamento, '')) ~ '^\d{1,2}-\d{1,2}-\d{4}$'
+                   then to_date(trim(desligamento), 'DD-MM-YYYY')
+                 else null
+               end desc nulls last,
                id desc
     ) as rn
   from public.colaboradores
@@ -96,11 +112,14 @@ select
   coalesce(nullif(trim(situacao), ''), 'Não ativo'),
   null,
   false,
-  coalesce(desligamento, current_date),
+  coalesce(desligamento_data, current_date),
   coalesce(momento, now()),
   'backfill_colaboradores_atual',
   momento,
-  jsonb_build_object('backfill', true)
+  jsonb_build_object(
+    'backfill', true,
+    'data_desligamento_encontrada', desligamento_data
+  )
 from inativos
 on conflict do nothing;
 
