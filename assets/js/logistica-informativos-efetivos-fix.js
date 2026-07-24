@@ -4,8 +4,8 @@ const PT = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' });
 const ROWS_PER_PAGE = 20;
 let applying = false;
 let scheduled = false;
-let databaseCache = null;
-let databaseCacheAt = 0;
+let historyCache = null;
+let historyCacheAt = 0;
 
 function clean(value) {
   return String(value ?? '').trim();
@@ -20,47 +20,14 @@ function norm(value) {
     .trim();
 }
 
-function isoDate(value) {
-  const text = clean(value);
-  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const br = text.match(/^(\d{1,2})[/. -](\d{1,2})[/. -](\d{2,4})$/);
-  if (!br) return '';
-  const year = br[3].length === 2 ? `20${br[3]}` : br[3];
-  return `${year}-${String(br[2]).padStart(2, '0')}-${String(br[1]).padStart(2, '0')}`;
-}
-
-function timestamp(value) {
-  const parsed = Date.parse(clean(value));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function recordMoment(row) {
-  return Math.max(
-    timestamp(row.sincronizado_em),
-    timestamp(row.updated_at),
-    timestamp(row.created_at),
-    timestamp(row.desligamento),
-    timestamp(row.admissao),
-  );
-}
-
-function maxIso(values) {
-  return values.map(isoDate).filter(Boolean).sort().at(-1) || '';
-}
-
-function isInactiveStatus(value) {
-  const status = norm(value);
-  return ['INATIV', 'DESLIGAD', 'DEMITID', 'RESCINDID'].some((term) => status.includes(term));
-}
-
-async function fetchAll(table, select, orderColumn, maxRows = 15000) {
+async function fetchAll(table, select, maxRows = 50000) {
   const rows = [];
   const pageSize = 1000;
   for (let offset = 0; offset < maxRows; offset += pageSize) {
-    let query = supabase.from(table).select(select).range(offset, offset + pageSize - 1);
-    if (orderColumn) query = query.order(orderColumn, { ascending: true });
-    const { data, error } = await query;
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .range(offset, offset + pageSize - 1);
     if (error) throw error;
     rows.push(...(data || []));
     if (!data || data.length < pageSize) break;
@@ -68,83 +35,31 @@ async function fetchAll(table, select, orderColumn, maxRows = 15000) {
   return rows;
 }
 
-async function fetchDatabaseSources() {
+async function loadStatusHistory() {
   const now = Date.now();
-  if (databaseCache && now - databaseCacheAt < 60_000) return databaseCache;
-
-  const [collaborators, rescissions] = await Promise.all([
-    fetchAll(
-      'colaboradores',
-      'id,nome,cpf,situacao,admissao,desligamento,sincronizado_em,created_at,updated_at',
-      'nome',
-      15000,
-    ),
-    fetchAll(
-      'rh_rescisoes',
-      'id,colaborador_id,colaborador_nome,data_desligamento,status,tipo,created_at,updated_at',
-      'data_desligamento',
-      5000,
-    ).catch((error) => {
-      console.warn('[informativos/efetivos] rh_rescisoes indisponível', error);
-      return [];
-    }),
-  ]);
-
-  databaseCache = { collaborators, rescissions };
-  databaseCacheAt = now;
-  return databaseCache;
+  if (historyCache && now - historyCacheAt < 60_000) return historyCache;
+  historyCache = await fetchAll(
+    'colaboradores_status_historico',
+    'cpf,nome,situacao_nova,ativo_novo,data_efetiva,detectado_em,fonte',
+  );
+  historyCacheAt = now;
+  return historyCache;
 }
 
-function employmentStatusByName(collaborators, rescissions, reportFrom) {
-  const collaboratorGroups = new Map();
-  collaborators.forEach((row) => {
-    const key = norm(row.nome);
-    if (!key) return;
-    if (!collaboratorGroups.has(key)) collaboratorGroups.set(key, []);
-    collaboratorGroups.get(key).push(row);
-  });
-
+function latestStatusByNameAtDate(history, referenceDate) {
   const result = new Map();
-  collaboratorGroups.forEach((records, key) => {
-    const latestRow = [...records].sort((a, b) => recordMoment(b) - recordMoment(a))[0] || {};
-    const latestAdmission = maxIso(records.map((row) => row.admissao));
-    const latestDismissal = maxIso(records.map((row) => row.desligamento));
-    const rehiredAfterDismissal = Boolean(latestAdmission && latestDismissal && latestAdmission > latestDismissal);
-    const dismissedBeforePeriod = Boolean(latestDismissal && latestDismissal < reportFrom && !rehiredAfterDismissal);
-    const inactiveByLatestStatus = isInactiveStatus(latestRow.situacao) && !rehiredAfterDismissal;
+  history.forEach((row) => {
+    const nameKey = norm(row.nome);
+    const effectiveDate = clean(row.data_efetiva).slice(0, 10);
+    if (!nameKey || !effectiveDate || effectiveDate > referenceDate) return;
 
-    result.set(key, {
-      inactive: dismissedBeforePeriod || inactiveByLatestStatus,
-      source: dismissedBeforePeriod || inactiveByLatestStatus ? 'colaboradores' : null,
-      dismissal: latestDismissal,
-      status: clean(latestRow.situacao),
-      records: records.length,
-    });
+    const previous = result.get(nameKey);
+    const rowKey = `${effectiveDate}|${row.detectado_em || ''}`;
+    const previousKey = previous
+      ? `${previous.data_efetiva || ''}|${previous.detectado_em || ''}`
+      : '';
+    if (!previous || rowKey > previousKey) result.set(nameKey, row);
   });
-
-  rescissions.forEach((row) => {
-    const key = norm(row.colaborador_nome);
-    const dismissal = isoDate(row.data_desligamento);
-    const status = norm(row.status);
-    const cancelled = status.includes('CANCEL');
-    if (!key || !dismissal || cancelled || dismissal >= reportFrom) return;
-
-    const current = result.get(key) || { inactive: false, source: null, dismissal: '', status: '', records: 0 };
-    const collaboratorRecords = collaboratorGroups.get(key) || [];
-    const latestAdmission = maxIso(collaboratorRecords.map((record) => record.admissao));
-    const rehiredAfterRescission = Boolean(latestAdmission && latestAdmission > dismissal);
-    if (rehiredAfterRescission) return;
-
-    result.set(key, {
-      ...current,
-      inactive: true,
-      source: 'rh_rescisoes',
-      dismissal,
-      status: clean(row.status) || 'rescisão registrada',
-      rescissionId: row.id,
-    });
-  });
-
   return result;
 }
 
@@ -188,12 +103,10 @@ function forceSupervisionIndicator(reportPages) {
   });
 }
 
-function updateValidationText(reportPages, removed) {
-  const byCollaborators = removed.filter((item) => item.source === 'colaboradores').length;
-  const byRescissions = removed.filter((item) => item.source === 'rh_rescisoes').length;
+function updateValidationText(reportPages, removedCount) {
   reportPages.querySelectorAll('.li-report-head p').forEach((paragraph) => {
     const base = clean(paragraph.textContent).replace(/\s*·\s*Validação da base:.*$/i, '');
-    paragraph.textContent = `${base} · Validação da base: ${removed.length} desligado${removed.length === 1 ? '' : 's'} removido${removed.length === 1 ? '' : 's'} (${byCollaborators} em colaboradores; ${byRescissions} em Rescisões RH).`;
+    paragraph.textContent = `${base} · Validação da base: ${removedCount} não ativo${removedCount === 1 ? '' : 's'} removido${removedCount === 1 ? '' : 's'} pelo histórico dos relatórios de colaboradores.`;
   });
 }
 
@@ -210,14 +123,19 @@ async function applyEffectiveFix() {
 
   applying = true;
   try {
-    const { collaborators, rescissions } = await fetchDatabaseSources();
-    const statusByName = employmentStatusByName(collaborators, rescissions, reportFrom);
+    const history = await loadStatusHistory();
+    const statusByName = latestStatusByNameAtDate(history, reportFrom);
     const removed = [];
 
     const filtered = currentRows.filter(({ cells }) => {
       const status = statusByName.get(norm(cells[0]));
-      if (status?.inactive) {
-        removed.push({ name: cells[0], ...status });
+      if (status && status.ativo_novo === false) {
+        removed.push({
+          name: cells[0],
+          status: status.situacao_nova,
+          effectiveDate: status.data_efetiva,
+          source: status.fonte,
+        });
         return false;
       }
       return true;
@@ -230,21 +148,20 @@ async function applyEffectiveFix() {
     ));
 
     if (!filtered.length) {
-      reportPages.innerHTML = '<div class="li-empty">Todos os efetivos ativos aparecem no relatório de cargas ou foram desconsiderados por indisponibilidade/desligamento no período.</div>';
+      reportPages.innerHTML = '<div class="li-empty">Todos os efetivos ativos aparecem no relatório de cargas ou estavam não ativos/indisponíveis no período.</div>';
     } else {
       distributeRows(reportPages, filtered);
       forceSupervisionIndicator(reportPages);
-      updateValidationText(reportPages, removed);
+      updateValidationText(reportPages, removed.length);
     }
     reportCount.textContent = `${filtered.length} registro${filtered.length === 1 ? '' : 's'}`;
 
-    if (feedback && removed.length) {
-      const rescissionCount = removed.filter((item) => item.source === 'rh_rescisoes').length;
-      feedback.textContent = `Conferência concluída: ${filtered.length} efetivo(s) sem cargas; ${removed.length} desligado(s) removido(s), sendo ${rescissionCount} identificado(s) em RH > Rescisões.`;
+    if (feedback) {
+      feedback.textContent = `Conferência concluída: ${filtered.length} efetivo(s) sem cargas; ${removed.length} não ativo(s) removido(s) conforme a mudança registrada entre relatórios de colaboradores.`;
     }
-    if (removed.length) console.info('[informativos/efetivos] desligados removidos', removed);
+    if (removed.length) console.info('[informativos/efetivos] não ativos removidos pelo histórico', removed);
   } catch (error) {
-    console.warn('[informativos/efetivos-fix] não foi possível validar desligamentos', error);
+    console.warn('[informativos/efetivos] histórico de situação indisponível', error);
     const rows = collectReportRows(reportPages).sort((a, b) => (
       PT.compare(a.cells[2] || '', b.cells[2] || '')
       || PT.compare(a.cells[1] || '', b.cells[1] || '')
@@ -252,7 +169,9 @@ async function applyEffectiveFix() {
     ));
     distributeRows(reportPages, rows);
     forceSupervisionIndicator(reportPages);
-    if (feedback) feedback.textContent = `A ordenação foi aplicada, mas a validação das tabelas colaboradores/rh_rescisoes falhou: ${error.message || error}`;
+    if (feedback) {
+      feedback.textContent = `A ordenação foi aplicada, mas o histórico dos relatórios de colaboradores não pôde ser consultado: ${error.message || error}`;
+    }
   } finally {
     window.setTimeout(() => { applying = false; }, 0);
   }
@@ -270,13 +189,13 @@ function scheduleApply() {
 function install() {
   const reportPages = document.getElementById('liReportPages');
   if (!reportPages) return false;
-  if (reportPages.dataset.efetivosDismissalFix === 'true') return true;
-  reportPages.dataset.efetivosDismissalFix = 'true';
+  if (reportPages.dataset.efetivosHistoryFix === 'true') return true;
+  reportPages.dataset.efetivosHistoryFix = 'true';
 
   new MutationObserver(scheduleApply).observe(reportPages, { childList: true, subtree: true });
   document.addEventListener('change', (event) => {
     if (event.target?.matches?.('#liEfetivosDateFrom, #liEfetivosDateTo')) {
-      databaseCache = null;
+      historyCache = null;
       scheduleApply();
     }
   });
