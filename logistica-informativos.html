@@ -6,6 +6,90 @@
   <title>Informativos - Logística</title>
   <link rel="icon" href="./assets/icons/pwa-192.png" />
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./assets/css/painel-design-system-fixes.css?v=20260724-previewfix3" />
+  <style id="liPreviewThemeLock">
+    /*
+     * A pré-visualização é uma folha clara e precisa manter exatamente as mesmas
+     * cores na tela e no PNG. Estes seletores ficam deliberadamente mais
+     * específicos que o tema global carregado pelo pageInit.
+     */
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page {
+      color-scheme: light;
+      isolation: isolate;
+      background: #ffffff !important;
+      color: #111827 !important;
+      opacity: 1 !important;
+      filter: none !important;
+      mix-blend-mode: normal !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-head h3 {
+      color: #111827 !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-head p {
+      color: #4b5563 !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-head > span {
+      color: #6b7280 !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table {
+      background: #ffffff !important;
+      color: #111827 !important;
+      border-color: #cbd5e1 !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table th,
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table td {
+      border-color: #cbd5e1 !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table th {
+      background: #b6d7a8 !important;
+      color: #111827 !important;
+      letter-spacing: normal !important;
+      text-transform: none !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table td {
+      background: transparent !important;
+      color: #111827 !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table tbody tr,
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table tbody tr:nth-child(even) {
+      background: #ffffff !important;
+      box-shadow: none !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table tbody tr:nth-child(odd) {
+      background: #f8fafc !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table tbody tr:hover {
+      background: inherit !important;
+    }
+
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table th button,
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table th button:hover,
+    html.painel-ui-v2 body .content-wrap .page-main .li-report-pages .li-report-page .li-report-table th button:focus {
+      width: 100%;
+      min-height: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      color: #111827 !important;
+      box-shadow: none !important;
+      font: inherit;
+      font-weight: 800;
+      letter-spacing: normal !important;
+      text-transform: none !important;
+      transform: none !important;
+    }
+  </style>
 </head>
 <body>
   <div class="app-shell">
@@ -32,7 +116,7 @@
       <main class="page-main" id="pageContent"></main>
     </div>
   </div>
-  <script type="module" src="./assets/js/logistica-informativos.js"></script>
-  <script type="module" src="./assets/js/logistica-informativos-ui.js"></script>
+  <script type="module" src="./assets/js/logistica-informativos.js?v=20260724-previewfix3"></script>
+  <script type="module" src="./assets/js/logistica-informativos-ui.js?v=20260724-previewfix3"></script>
 </body>
 </html>
