@@ -1,0 +1,90 @@
+/*
+ * Correções de isolamento para componentes que possuem visual próprio.
+ *
+ * O informativo de Logística representa uma folha branca que também é
+ * capturada pelo html2canvas. Por isso, o tema escuro global não pode alterar
+ * cores, fundos ou botões da tabela que compõe o PNG.
+ */
+
+html.painel-ui-v2 .page-main .li-report-page {
+  color-scheme: light;
+  isolation: isolate;
+  background: #ffffff !important;
+  color: #111827 !important;
+  opacity: 1 !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-head h3 {
+  color: #111827 !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-head p {
+  color: #4b5563 !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-head > span {
+  color: #6b7280 !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-table {
+  background: #ffffff !important;
+  color: #111827 !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-table th,
+html.painel-ui-v2 .page-main .li-report-page .li-report-table td {
+  border-color: #cbd5e1 !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-table th {
+  background: #b6d7a8 !important;
+  color: #111827 !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-table td {
+  background: transparent !important;
+  color: #111827 !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-table tbody tr,
+html.painel-ui-v2 .page-main .li-report-page .li-report-table tbody tr:nth-child(even) {
+  background: #ffffff !important;
+  box-shadow: none !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-table tbody tr:nth-child(odd) {
+  background: #f8fafc !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-table tbody tr:hover {
+  background: inherit !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-table th button {
+  width: 100%;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  transform: none !important;
+}
+
+html.painel-ui-v2 .page-main .li-report-page .li-report-table th button:hover,
+html.painel-ui-v2 .page-main .li-report-page .li-report-table th button:focus {
+  background: transparent !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
