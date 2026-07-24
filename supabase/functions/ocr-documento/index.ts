@@ -73,7 +73,7 @@ async function authorizeRequest(req: Request): Promise<AuthorizationResult> {
   const { data, error } = await client.rpc("rpc_get_user_context");
   if (error) {
     console.error("[ocr-documento] rpc_get_user_context", error);
-    return { ok: false, status: 403, error: "Não foi possível validar as permissões." };
+    return { ok: false, status: 403, error: `Não foi possível validar as permissões: ${error.message}` };
   }
 
   const context = (Array.isArray(data) ? data[0] : data) as Record<string, any> | null;
@@ -122,34 +122,54 @@ function isAllowedDocumentUrl(value: string): boolean {
     if (url.protocol !== "https:") return false;
     const projectHost = new URL(Deno.env.get("SUPABASE_URL") || "https://invalid.local").hostname.toLowerCase();
     const host = url.hostname.toLowerCase();
-    return host === projectHost || host === "grao1000.com.br" || host === "www.grao1000.com.br";
+    return host === projectHost
+      || host.endsWith(".supabase.co")
+      || host === "grao1000.com.br"
+      || host === "www.grao1000.com.br";
   } catch {
     return false;
   }
 }
 
+async function responsePayload(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 serve(async (req) => {
+  const requestId = crypto.randomUUID();
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "Método não permitido." }, 405);
+  if (req.method !== "POST") return json({ error: "Método não permitido.", code: "METHOD_NOT_ALLOWED", request_id: requestId }, 405);
 
   const auth = await authorizeRequest(req);
-  if (!auth.ok) return json({ error: auth.error }, auth.status);
+  if (!auth.ok) return json({ error: auth.error, code: `AUTH_${auth.status}`, request_id: requestId }, auth.status);
 
   try {
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY não configurada" }, 500);
+    const apiKey = Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CLAUDE_API_KEY") || "";
+    if (!apiKey) {
+      return json({
+        error: "Secret de OCR não configurado. Cadastre ANTHROPIC_API_KEY ou CLAUDE_API_KEY nas Edge Function Secrets.",
+        code: "OCR_SECRET_MISSING",
+        request_id: requestId,
+      }, 500);
+    }
 
     const body = await req.json();
     const { base64, url, tipo, instrucao } = body;
 
-    if (!base64 && !url) return json({ error: "Envie 'base64' ou 'url' do arquivo" }, 400);
-    if (!tipo) return json({ error: "Informe o 'tipo' do arquivo (jpg, png, pdf, etc)" }, 400);
-    if (base64 && String(base64).length > MAX_BASE64_LENGTH) return json({ error: "Arquivo excede o limite de 15 MB." }, 413);
-    if (url && !isAllowedDocumentUrl(String(url))) return json({ error: "URL de documento não permitida." }, 400);
-    if (instrucao && String(instrucao).length > 2000) return json({ error: "Instrução muito longa." }, 400);
+    if (!base64 && !url) return json({ error: "Envie 'base64' ou 'url' do arquivo", code: "DOCUMENT_MISSING", request_id: requestId }, 400);
+    if (!tipo) return json({ error: "Informe o 'tipo' do arquivo (jpg, png, pdf, etc)", code: "TYPE_MISSING", request_id: requestId }, 400);
+    if (base64 && String(base64).length > MAX_BASE64_LENGTH) return json({ error: "Arquivo excede o limite de 15 MB.", code: "FILE_TOO_LARGE", request_id: requestId }, 413);
+    if (url && !isAllowedDocumentUrl(String(url))) return json({ error: `URL de documento não permitida: ${new URL(String(url)).hostname}`, code: "URL_NOT_ALLOWED", request_id: requestId }, 400);
+    if (instrucao && String(instrucao).length > 2000) return json({ error: "Instrução muito longa.", code: "PROMPT_TOO_LONG", request_id: requestId }, 400);
 
     const mediaType = MIME_TYPES[String(tipo).toLowerCase()];
-    if (!mediaType) return json({ error: `Tipo '${tipo}' não suportado` }, 400);
+    if (!mediaType) return json({ error: `Tipo '${tipo}' não suportado`, code: "TYPE_UNSUPPORTED", request_id: requestId }, 400);
 
     const prompt = instrucao || "Extraia todo o texto deste documento. Retorne apenas o texto extraído, sem comentários adicionais.";
     let contentBlock: unknown;
@@ -179,21 +199,37 @@ serve(async (req) => {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: Deno.env.get("ANTHROPIC_OCR_MODEL") || "claude-haiku-4-5-20251001",
         max_tokens: 4096,
+        temperature: 0,
         messages: [{ role: "user", content: [contentBlock, { type: "text", text: prompt }] }],
       }),
     });
 
     if (!response.ok) {
-      const err = await response.json();
-      return json({ error: "Erro na API Claude", detalhe: err }, 502);
+      const detail = await responsePayload(response);
+      console.error("[ocr-documento] Anthropic", { requestId, status: response.status, detail });
+      return json({
+        error: `Erro no serviço de OCR (${response.status}).`,
+        code: "OCR_PROVIDER_ERROR",
+        provider_status: response.status,
+        detalhe: detail,
+        request_id: requestId,
+      }, 502);
     }
 
     const result = await response.json();
-    const texto = result.content?.[0]?.text ?? "";
-    return json({ texto, tokens: result.usage });
+    const texto = result.content?.find?.((item: any) => item?.type === "text")?.text ?? result.content?.[0]?.text ?? "";
+    if (!texto) {
+      return json({ error: "O serviço de OCR não retornou texto.", code: "OCR_EMPTY_RESPONSE", request_id: requestId }, 502);
+    }
+    return json({ texto, tokens: result.usage, request_id: requestId });
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : String(e) }, 500);
+    console.error("[ocr-documento] erro inesperado", { requestId, error: e });
+    return json({
+      error: e instanceof Error ? e.message : String(e),
+      code: "OCR_UNEXPECTED_ERROR",
+      request_id: requestId,
+    }, 500);
   }
 });
