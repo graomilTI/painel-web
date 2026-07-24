@@ -1,3 +1,4 @@
+import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
 function normalizeText(value) {
@@ -14,13 +15,72 @@ function colaboradorKey(row = {}) {
   return cpf || normalizeText(row.nome) || String(row.id || '').trim();
 }
 
-function deduplicate(rows = []) {
+function activeStatus(row = {}) {
+  if (row.ativo === false || row.ativo === 0) return false;
+  if (row.ativo === true || row.ativo === 1) return !String(row.desligamento || '').trim();
+
+  const ativoText = normalizeText(row.ativo);
+  if (['FALSE', '0', 'NAO', 'N'].includes(ativoText)) return false;
+  if (['TRUE', '1', 'SIM', 'S'].includes(ativoText)) return !String(row.desligamento || '').trim();
+  if (String(row.desligamento || '').trim()) return false;
+
+  const situation = normalizeText(row.situacao || row.status);
+  return ![
+    'INATIV',
+    'DESLIG',
+    'DEMIT',
+    'CANCEL',
+    'RESCIND',
+    'EXCLUID',
+    'AFASTADO DEFINITIVO',
+  ].some((token) => situation.includes(token));
+}
+
+function rowReference(row = {}) {
+  const value = String(row.data_referencia || row.updated_at || row.created_at || '').trim();
+  return value ? Date.parse(value) || 0 : 0;
+}
+
+function deduplicateLatest(rows = []) {
   const map = new Map();
   rows.forEach((row) => {
     const key = colaboradorKey(row);
-    if (key && !map.has(key)) map.set(key, row);
+    if (!key) return;
+    const current = map.get(key);
+    if (!current || rowReference(row) >= rowReference(current)) map.set(key, row);
   });
   return [...map.values()];
+}
+
+async function paginatedSelect(table, columns) {
+  const rows = [];
+  const pageSize = 1000;
+  for (let start = 0; ; start += pageSize) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .order('nome', { ascending: true })
+      .range(start, start + pageSize - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
+}
+
+async function fetchActiveCollaborators() {
+  try {
+    const rows = await paginatedSelect(
+      'colaboradores_atuais',
+      'id,nome,cpf,tipo,supervisao,coordenacao,empresa,situacao,ativo,desligamento,data_referencia',
+    );
+    return deduplicateLatest(rows).filter(activeStatus);
+  } catch (error) {
+    console.warn('[hospedagem-ativos] colaboradores_atuais indisponível; usando cache compartilhado.', error);
+    const rows = await getColaboradores({ force: true });
+    return deduplicateLatest(rows).filter(activeStatus);
+  }
 }
 
 let activeCollaborators = [];
@@ -111,8 +171,7 @@ function refreshUi() {
 
 async function loadActiveCollaborators() {
   try {
-    const rows = await getColaboradores({ force: true, somenteAtivos: true });
-    activeCollaborators = deduplicate(rows);
+    activeCollaborators = await fetchActiveCollaborators();
     activeNames = new Set(activeCollaborators.map((row) => normalizeText(row.nome)).filter(Boolean));
     activeTotal = activeCollaborators.length;
     loadError = null;
