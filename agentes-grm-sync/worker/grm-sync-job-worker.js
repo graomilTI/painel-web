@@ -57,6 +57,7 @@ const SCRIPT_MAP = {
   'sync-adiantamentos': 'grm-sync-adiantamentos.js',
   'sync-login-alimentacao': 'grm-sync-login-alimentacao.js',
   'sync-lancar-nhe': 'grm-sync-lancar-nhe.js',
+  'sync-finalizar-os': 'grm-sync-finalizar-os.js',
 };
 
 function getSupabase() {
@@ -129,7 +130,7 @@ function runScript(scriptName) {
         XDG_RUNTIME_DIR: '/home/grao100/chrome-runtime/tmp',
         XDG_CACHE_HOME: '/home/grao100/chrome-runtime/cache',
         MALLOC_ARENA_MAX: '2',
-},
+      },
       shell: false,
     });
 
