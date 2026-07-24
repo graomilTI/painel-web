@@ -1,4 +1,8 @@
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient.js';
+
 const CASA_ICON = '<svg viewBox="0 0 48 48"><path d="M7 24L24 10l17 14"/><path d="M13 22v17h22V22"/><path d="M20 39V28h8v11"/></svg>';
+const FINALIZAR_IDLE_MS = 5 * 60 * 1000;
+const FINALIZAR_RPC = 'solicitar_finalizacao_os_gestor';
 
 function routeName() {
   return String(window.location.pathname || '')
@@ -106,6 +110,133 @@ function bindClickGuard(content) {
     hidden.dispatchEvent(new Event('input', { bubbles: true }));
   }, true);
 }
+
+function initFinalizacaoAgentTrigger() {
+  if (window.__programacaoFinalizacaoAgentTrigger) return;
+
+  const state = {
+    lastRoute: routeName(),
+    dirty: routeName() === 'programacao',
+    idleTimer: null,
+    requestInFlight: null,
+    accessToken: null,
+    lastDispatchAt: 0,
+  };
+
+  function clearIdleTimer() {
+    if (state.idleTimer) clearTimeout(state.idleTimer);
+    state.idleTimer = null;
+  }
+
+  function armIdleTimer() {
+    clearIdleTimer();
+    if (routeName() !== 'programacao' || !state.dirty) return;
+    state.idleTimer = setTimeout(() => {
+      dispatchAgent('inatividade_5_min').catch(() => {});
+    }, FINALIZAR_IDLE_MS);
+  }
+
+  async function refreshToken() {
+    try {
+      const { data } = await supabase.auth.getSession();
+      state.accessToken = data?.session?.access_token || null;
+    } catch {
+      state.accessToken = null;
+    }
+  }
+
+  async function dispatchAgent(reason = 'programacao') {
+    const now = Date.now();
+    if (!state.dirty || state.requestInFlight || now - state.lastDispatchAt < 5000) return null;
+    state.lastDispatchAt = now;
+    state.requestInFlight = supabase
+      .rpc(FINALIZAR_RPC, { p_motivo: reason })
+      .then(({ data, error }) => {
+        if (error) throw error;
+        const pending = Number(data?.pendencias || 0);
+        state.dirty = pending > 0 && data?.enfileirado !== true;
+        if (data?.enfileirado || data?.job_existente) state.dirty = false;
+        return data;
+      })
+      .catch((error) => {
+        console.warn('[programacao] falha ao disparar agente de finalização:', error);
+        state.dirty = true;
+        throw error;
+      })
+      .finally(() => {
+        state.requestInFlight = null;
+        armIdleTimer();
+      });
+    return state.requestInFlight;
+  }
+
+  function dispatchKeepalive(reason = 'saida_programacao') {
+    if (!state.dirty || !state.accessToken) return;
+    const url = `${SUPABASE_URL}/rest/v1/rpc/${FINALIZAR_RPC}`;
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${state.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_motivo: reason }),
+      keepalive: true,
+    }).catch(() => {});
+    state.dirty = false;
+  }
+
+  function markPending() {
+    state.dirty = true;
+    armIdleTimer();
+  }
+
+  function syncRoute() {
+    const current = routeName();
+    if (state.lastRoute === 'programacao' && current !== 'programacao') {
+      clearIdleTimer();
+      dispatchAgent('saida_programacao').catch(() => {});
+    }
+    if (state.lastRoute !== 'programacao' && current === 'programacao') {
+      state.dirty = true;
+      armIdleTimer();
+    }
+    state.lastRoute = current;
+  }
+
+  const activityEvents = ['pointerdown', 'keydown', 'input', 'change', 'touchstart', 'wheel'];
+  activityEvents.forEach((eventName) => {
+    document.addEventListener(eventName, () => {
+      if (routeName() === 'programacao' && state.dirty) armIdleTimer();
+    }, { capture: true, passive: true });
+  });
+
+  document.addEventListener('click', (event) => {
+    const finalizeBtn = event.target.closest?.('[data-acao-status="FINALIZAR"]');
+    if (finalizeBtn) markPending();
+    setTimeout(syncRoute, 0);
+    setTimeout(syncRoute, 300);
+  }, true);
+
+  window.addEventListener('popstate', () => setTimeout(syncRoute, 0));
+  window.addEventListener('pagehide', () => {
+    if (routeName() === 'programacao') dispatchKeepalive('saida_programacao_pagehide');
+  });
+
+  supabase.auth.onAuthStateChange((_event, session) => {
+    state.accessToken = session?.access_token || null;
+  });
+  refreshToken();
+  setInterval(syncRoute, 1000);
+  if (state.dirty) armIdleTimer();
+
+  window.__programacaoFinalizacaoAgentTrigger = {
+    markPending,
+    dispatch: dispatchAgent,
+  };
+}
+
+initFinalizacaoAgentTrigger();
 
 export function initProgramacaoRuntimeFixes(content = document.getElementById('pageContent')) {
   if (!content || routeName() !== 'programacao') return;
