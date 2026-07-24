@@ -9,6 +9,9 @@ verify_jwt = true
 [functions.ocr-documento]
 verify_jwt = true
 
+[functions.ocr-documento-local]
+verify_jwt = true
+
 [functions.ocr-comprovante]
 verify_jwt = false
 

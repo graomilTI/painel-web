@@ -2,6 +2,9 @@ import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
 
 const HISTORY_TABLE = 'logistica_pre_conferencia_os';
+const OCR_FUNCTION = 'ocr-documento-local';
+const OCR_POLL_INTERVAL_MS = 2000;
+const OCR_POLL_TIMEOUT_MS = 15 * 60 * 1000;
 const LABEL = {
   OK: 'OK',
   NOT_FOUND: 'Não localizada',
@@ -18,6 +21,7 @@ const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt
 const norm = (v) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
 const normCode = (v) => norm(v).replace(/[^A-Z0-9]/g, '');
 const osNumber = (row) => String(row?.numero_os ?? row?.os ?? '').trim();
+const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const laudoUrls = (row) => String(row?.observacao_logistica || '').startsWith('LAUDO:')
   ? String(row.observacao_logistica).slice(6).split(',').map((v) => v.trim()).filter(Boolean) : [];
 
@@ -66,6 +70,8 @@ function reportLoad(row, index, url) {
     pesoKg: numberValue(row?.peso_kg ?? row?.peso),
     nf: String(row?.nota_fiscal ?? row?.nf ?? '').trim(),
     pagina: numberValue(row?.pagina),
+    confianca: numberValue(row?.confianca),
+    origem: String(row?.origem ?? '').trim(),
     url,
   };
 }
@@ -82,7 +88,7 @@ function parseOcr(text) {
       if (Array.isArray(parsed?.cargas)) return parsed.cargas;
     } catch { /* próximo formato */ }
   }
-  throw new Error('O OCR não devolveu uma lista válida de cargas.');
+  throw new Error('O OCR local não devolveu uma lista válida de cargas.');
 }
 
 function compare(systemRows, reportRows) {
@@ -128,6 +134,12 @@ function formatKg(value) {
   return value == null ? '-' : `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value)} kg`;
 }
 
+function formatConfidence(value) {
+  const number = numberValue(value);
+  if (number == null) return '-';
+  return `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(number * 100)}%`;
+}
+
 function totals(result) {
   return result.reduce((acc, row) => {
     acc[row.status] = (acc[row.status] || 0) + 1;
@@ -142,7 +154,7 @@ function installStyle() {
   const style = document.createElement('style'); style.id = 'preConfStyle';
   style.textContent = `
     #logConferenciasLaudos .pc-actions{display:flex!important;flex-direction:row!important;gap:6px;min-width:390px}#logConferenciasLaudos .pc-actions .btn{width:auto!important;min-width:105px;white-space:nowrap}#logConferenciasLaudos .pc-actions .btn:disabled{opacity:.45}
-    .pc-bg{position:fixed;inset:0;z-index:10080;background:rgba(0,8,5,.84);display:flex;align-items:center;justify-content:center;padding:18px}.pc-box{width:min(1500px,98vw);max-height:94vh;display:flex;flex-direction:column;background:#031b12;border:1px solid rgba(52,211,153,.3);border-radius:20px;overflow:hidden;color:#e5f7ee}.pc-head,.pc-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid rgba(52,211,153,.18)}.pc-head h2{margin:0}.pc-head p{margin:4px 0 0;color:#8dac9d;font-size:12px}.pc-body{padding:16px 18px;overflow:auto}.pc-kpis{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:8px;margin-bottom:12px}.pc-kpi{padding:10px;border:1px solid rgba(52,211,153,.15);border-radius:13px;background:rgba(2,17,12,.6)}.pc-kpi small{display:block;color:#83a697;text-transform:uppercase}.pc-kpi b{font-size:21px}.pc-docs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}.pc-docs a{color:#9cf5c8;text-decoration:none;border:1px solid rgba(52,211,153,.2);border-radius:999px;padding:6px 9px}.pc-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:14px}.pc-table{width:100%;min-width:1120px;border-collapse:collapse}.pc-table th{position:sticky;top:0;background:#06251a;color:#8ef0bd;padding:9px;text-align:left;font-size:11px;text-transform:uppercase}.pc-table td{padding:9px;border-top:1px solid rgba(148,163,184,.1);vertical-align:top}.pc-tag{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:11px;font-weight:900}.pc-ok{background:rgba(34,197,94,.14);color:#bbf7d0}.pc-warn{background:rgba(245,158,11,.14);color:#fde68a}.pc-bad{background:rgba(239,68,68,.14);color:#fecaca}.pc-close{border:1px solid rgba(148,163,184,.2);background:#09261b;color:white;border-radius:10px;padding:8px 12px;cursor:pointer}.pc-loading,.pc-error{padding:36px;text-align:center}.pc-error{color:#fecaca}.pc-foot{justify-content:flex-end;border-bottom:0;border-top:1px solid rgba(52,211,153,.18)}@media(max-width:800px){.pc-kpis{grid-template-columns:1fr 1fr}.pc-bg{padding:6px}}
+    .pc-bg{position:fixed;inset:0;z-index:10080;background:rgba(0,8,5,.84);display:flex;align-items:center;justify-content:center;padding:18px}.pc-box{width:min(1500px,98vw);max-height:94vh;display:flex;flex-direction:column;background:#031b12;border:1px solid rgba(52,211,153,.3);border-radius:20px;overflow:hidden;color:#e5f7ee}.pc-head,.pc-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid rgba(52,211,153,.18)}.pc-head h2{margin:0}.pc-head p{margin:4px 0 0;color:#8dac9d;font-size:12px}.pc-body{padding:16px 18px;overflow:auto}.pc-kpis{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:8px;margin-bottom:12px}.pc-kpi{padding:10px;border:1px solid rgba(52,211,153,.15);border-radius:13px;background:rgba(2,17,12,.6)}.pc-kpi small{display:block;color:#83a697;text-transform:uppercase}.pc-kpi b{font-size:21px}.pc-docs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}.pc-docs a{color:#9cf5c8;text-decoration:none;border:1px solid rgba(52,211,153,.2);border-radius:999px;padding:6px 9px}.pc-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:14px}.pc-table{width:100%;min-width:1260px;border-collapse:collapse}.pc-table th{position:sticky;top:0;background:#06251a;color:#8ef0bd;padding:9px;text-align:left;font-size:11px;text-transform:uppercase}.pc-table td{padding:9px;border-top:1px solid rgba(148,163,184,.1);vertical-align:top}.pc-tag{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:11px;font-weight:900}.pc-ok{background:rgba(34,197,94,.14);color:#bbf7d0}.pc-warn{background:rgba(245,158,11,.14);color:#fde68a}.pc-bad{background:rgba(239,68,68,.14);color:#fecaca}.pc-close{border:1px solid rgba(148,163,184,.2);background:#09261b;color:white;border-radius:10px;padding:8px 12px;cursor:pointer}.pc-loading,.pc-error{padding:28px;text-align:center}.pc-error{color:#fecaca;white-space:pre-wrap}.pc-progress{display:grid;gap:8px;max-width:760px;margin:18px auto 0;text-align:left}.pc-progress-row{display:grid;grid-template-columns:minmax(120px,1fr) 3fr auto;align-items:center;gap:10px;padding:10px;border:1px solid rgba(52,211,153,.16);border-radius:12px;background:rgba(2,17,12,.55)}.pc-progress-row b{font-size:12px}.pc-progress-row span{color:#a7c5b7;font-size:12px}.pc-progress-bar{height:7px;border-radius:999px;background:rgba(148,163,184,.16);overflow:hidden}.pc-progress-bar i{display:block;height:100%;width:0;background:#34d399;transition:width .25s ease}.pc-foot{justify-content:flex-end;border-bottom:0;border-top:1px solid rgba(52,211,153,.18)}@media(max-width:800px){.pc-kpis{grid-template-columns:1fr 1fr}.pc-bg{padding:6px}.pc-progress-row{grid-template-columns:1fr}}
   `;
   document.head.appendChild(style);
 }
@@ -158,19 +170,49 @@ function modal() {
 }
 
 function closeModal() { const el = modal(); el.hidden = true; document.body.style.overflow = ''; }
-function modalLoading(row) { const el = modal(); el.hidden = false; document.body.style.overflow = 'hidden'; el.querySelector('#pcTitle').textContent = `Pré-Conferência — O.S. ${osNumber(row)}`; el.querySelector('#pcSub').textContent = 'Leitura OCR e comparação por placa/carga.'; el.querySelector('#pcBody').innerHTML = '<div class="pc-loading">Analisando os relatórios…</div>'; }
-function modalError(row, error) { const el = modal(); el.hidden = false; el.querySelector('#pcTitle').textContent = `Pré-Conferência — O.S. ${osNumber(row)}`; el.querySelector('#pcSub').textContent = 'A leitura não foi concluída.'; el.querySelector('#pcBody').innerHTML = `<div class="pc-error">${esc(error?.message || error)}</div>`; }
+
+function modalLoading(row, urls) {
+  const el = modal(); el.hidden = false; document.body.style.overflow = 'hidden';
+  el.querySelector('#pcTitle').textContent = `Pré-Conferência — O.S. ${osNumber(row)}`;
+  el.querySelector('#pcSub').textContent = 'PaddleOCR local — processamento no servidor da Grão 1000.';
+  el.querySelector('#pcBody').innerHTML = `<div class="pc-loading"><strong>Preparando os relatórios…</strong><div class="pc-progress">${urls.map((_, index) => `<div class="pc-progress-row" data-pc-doc="${index}"><b>Relatório ${index + 1}</b><div><span>Aguardando envio para a fila</span><div class="pc-progress-bar"><i></i></div></div><em>0%</em></div>`).join('')}</div></div>`;
+}
+
+function updateDocProgress(index, data = {}) {
+  const row = modal().querySelector(`[data-pc-doc="${index}"]`);
+  if (!row) return;
+  const status = String(data.status || 'PENDENTE').toUpperCase();
+  const progress = Math.max(0, Math.min(100, Number(data.progress || 0)));
+  const page = data.pagina_atual && data.paginas_total ? ` · página ${data.pagina_atual}/${data.paginas_total}` : '';
+  const labels = {
+    PENDENTE: data.worker_online === false ? 'Na fila — aguardando o worker do VPS ficar online' : 'Na fila do OCR local',
+    PROCESSANDO: `Lendo o documento${page}`,
+    CONCLUIDO: 'Leitura concluída',
+    ERRO: data.error || 'Falha no processamento',
+    CANCELADO: 'Processamento cancelado',
+  };
+  row.querySelector('span').textContent = labels[status] || status;
+  row.querySelector('i').style.width = `${status === 'CONCLUIDO' ? 100 : progress}%`;
+  row.querySelector('em').textContent = `${status === 'CONCLUIDO' ? 100 : progress}%`;
+}
+
+function modalError(row, error) {
+  const el = modal(); el.hidden = false;
+  el.querySelector('#pcTitle').textContent = `Pré-Conferência — O.S. ${osNumber(row)}`;
+  el.querySelector('#pcSub').textContent = 'A leitura não foi concluída.';
+  el.querySelector('#pcBody').innerHTML = `<div class="pc-error">${esc(error?.message || error)}</div>`;
+}
 
 function showResult(row, analysis) {
   const el = modal(); const count = totals(analysis.result); const badgeClass = (status) => status === LABEL.OK ? 'pc-ok' : [LABEL.PLATE, LABEL.WEIGHT].includes(status) ? 'pc-warn' : 'pc-bad';
   el.hidden = false; document.body.style.overflow = 'hidden';
   el.querySelector('#pcTitle').textContent = `Pré-Conferência — O.S. ${osNumber(row)}`;
-  el.querySelector('#pcSub').textContent = `${analysis.system.length} carga(s) no sistema · ${analysis.report.length} lida(s) pelo OCR`;
+  el.querySelector('#pcSub').textContent = `${analysis.system.length} carga(s) no sistema · ${analysis.report.length} lida(s) pelo PaddleOCR`;
   el.querySelector('#pcBody').innerHTML = `
     <div class="pc-kpis"><div class="pc-kpi"><small>Total</small><b>${count.total}</b></div><div class="pc-kpi"><small>OK</small><b>${count[LABEL.OK] || 0}</b></div><div class="pc-kpi"><small>Placa/Peso</small><b>${(count[LABEL.PLATE] || 0) + (count[LABEL.WEIGHT] || 0)}</b></div><div class="pc-kpi"><small>Falta lançar</small><b>${count[LABEL.MISSING] || 0}</b></div><div class="pc-kpi"><small>Não localizada</small><b>${count[LABEL.NOT_FOUND] || 0}</b></div></div>
     <div class="pc-docs">${analysis.urls.map((url, i) => `<a href="${esc(url)}" target="_blank" rel="noopener">Relatório ${i + 1}</a>`).join('')}</div>
-    <div class="pc-table-wrap"><table class="pc-table"><thead><tr><th>Status</th><th>Carga</th><th>Placa sistema</th><th>Placa relatório</th><th>Peso sistema</th><th>Peso relatório</th><th>NF</th><th>Anotação</th></tr></thead><tbody>
-      ${analysis.result.map((item) => `<tr><td><span class="pc-tag ${badgeClass(item.status)}">${esc(item.status)}</span></td><td>${esc(item.system?.carga || item.report?.carga || '-')}</td><td>${esc(item.system?.placa || '-')}</td><td>${esc(item.report?.placa || '-')}</td><td>${esc(formatKg(item.system?.pesoKg))}</td><td>${esc(formatKg(item.report?.pesoKg))}</td><td>${esc(item.report?.nf || item.system?.nf || '-')}</td><td>${esc(item.note)}</td></tr>`).join('') || '<tr><td colspan="8">Nenhuma carga encontrada.</td></tr>'}
+    <div class="pc-table-wrap"><table class="pc-table"><thead><tr><th>Status</th><th>Carga</th><th>Placa sistema</th><th>Placa relatório</th><th>Peso sistema</th><th>Peso relatório</th><th>NF</th><th>Página</th><th>Conf.</th><th>Anotação</th></tr></thead><tbody>
+      ${analysis.result.map((item) => `<tr><td><span class="pc-tag ${badgeClass(item.status)}">${esc(item.status)}</span></td><td>${esc(item.system?.carga || item.report?.carga || '-')}</td><td>${esc(item.system?.placa || '-')}</td><td>${esc(item.report?.placa || '-')}</td><td>${esc(formatKg(item.system?.pesoKg))}</td><td>${esc(formatKg(item.report?.pesoKg))}</td><td>${esc(item.report?.nf || item.system?.nf || '-')}</td><td>${esc(item.report?.pagina || '-')}</td><td>${esc(formatConfidence(item.report?.confianca))}</td><td>${esc(item.note)}</td></tr>`).join('') || '<tr><td colspan="10">Nenhuma carga encontrada.</td></tr>'}
     </tbody></table></div>`;
 }
 
@@ -190,12 +232,57 @@ async function getSystemLoads(row) {
   return (response.data || []).map(systemLoad);
 }
 
-const OCR_PROMPT = `Retorne SOMENTE JSON válido no formato {"cargas":[{"placa":"ABC1D23","carga":"123","peso_kg":35420,"nota_fiscal":"456","pagina":1}]}. Extraia uma linha por carga/veículo deste relatório. O campo carga é o número da carga, ticket, romaneio ou laudo. Normalize placas sem espaços e converta pesos para quilogramas. Quando não existir um campo, use string vazia ou null. Não invente.`;
+const OCR_PROMPT = `Extraia placa, carga/ticket/romaneio/laudo, peso em quilogramas, nota fiscal e página de cada veículo do relatório.`;
 function fileType(url) { const ext = String(url).split('?')[0].split('.').pop()?.toLowerCase(); return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'].includes(ext) ? ext : 'pdf'; }
-async function readReport(url, docIndex) {
-  const { data, error } = await supabase.functions.invoke('ocr-documento', { body: { url, tipo: fileType(url), instrucao: OCR_PROMPT } });
-  if (error) throw new Error(error.message || `Erro no relatório ${docIndex + 1}.`); if (data?.error) throw new Error(data.error);
-  return parseOcr(data?.texto).map((row, index) => reportLoad(row, `${docIndex}-${index}`, url));
+
+async function functionError(error, fallback) {
+  let details = null;
+  const response = error?.context;
+  if (response?.clone) {
+    try { details = await response.clone().json(); } catch { /* resposta não JSON */ }
+  }
+  const message = details?.error || details?.message || error?.message || fallback;
+  const suffix = [details?.code, details?.request_id].filter(Boolean).join(' · ');
+  return new Error(suffix ? `${message}\n${suffix}` : message);
+}
+
+async function invokeOcr(body, fallback) {
+  const { data, error } = await supabase.functions.invoke(OCR_FUNCTION, { body });
+  if (error) throw await functionError(error, fallback);
+  if (data?.error) throw new Error(data.error);
+  return data || {};
+}
+
+async function readReport(url, docIndex, osRow) {
+  const submitted = await invokeOcr({
+    action: 'submit',
+    url,
+    tipo: fileType(url),
+    instrucao: OCR_PROMPT,
+    os_id: String(osRow.id),
+    numero_os: osNumber(osRow),
+  }, `Não foi possível colocar o relatório ${docIndex + 1} na fila.`);
+
+  updateDocProgress(docIndex, submitted);
+  let state = submitted;
+  const jobId = Number(submitted.job_id);
+  if (!Number.isInteger(jobId)) throw new Error(`O servidor não devolveu o job do relatório ${docIndex + 1}.`);
+  const startedAt = Date.now();
+
+  while (state.status !== 'CONCLUIDO') {
+    if (['ERRO', 'CANCELADO'].includes(String(state.status))) {
+      throw new Error(state.error || `Falha no relatório ${docIndex + 1}.`);
+    }
+    if (Date.now() - startedAt > OCR_POLL_TIMEOUT_MS) {
+      throw new Error(`O relatório ${docIndex + 1} excedeu 15 minutos de processamento. O job ${jobId} continuará registrado para diagnóstico.`);
+    }
+    await sleep(Number(state.poll_after_ms || OCR_POLL_INTERVAL_MS));
+    state = await invokeOcr({ action: 'status', job_id: jobId }, `Não foi possível consultar o job ${jobId}.`);
+    updateDocProgress(docIndex, state);
+  }
+
+  const rows = parseOcr(state.texto || JSON.stringify(state.resultado || {}));
+  return rows.map((row, index) => reportLoad(row, `${docIndex}-${index}`, url));
 }
 
 async function saveHistory(row, analysis) {
@@ -212,10 +299,10 @@ async function loadHistory() {
 }
 
 async function run(id, button) {
-  if (busy) return; busy = true; button.disabled = true; const text = button.textContent; button.textContent = 'Analisando…'; let row;
+  if (busy) return; busy = true; button.disabled = true; const text = button.textContent; button.textContent = 'Na fila…'; let row;
   try {
-    row = await getOs(id); const urls = laudoUrls(row); if (!urls.length) throw new Error('Nenhum relatório anexado foi encontrado.'); modalLoading(row);
-    const [system, reports] = await Promise.all([getSystemLoads(row), Promise.all(urls.map(readReport))]);
+    row = await getOs(id); const urls = laudoUrls(row); if (!urls.length) throw new Error('Nenhum relatório anexado foi encontrado.'); modalLoading(row, urls);
+    const [system, reports] = await Promise.all([getSystemLoads(row), Promise.all(urls.map((url, index) => readReport(url, index, row)))]);
     const report = reports.flat(); const analysis = { urls, system, report, result: compare(system, report) };
     cache.set(String(id), analysis); sessionStorage.setItem(`pre-conferencia-os:${id}`, JSON.stringify(analysis)); await saveHistory(row, analysis); patchButtons(); showResult(row, analysis);
   } catch (error) { console.error(error); if (row) modalError(row, error); else alert(error?.message || error); }
