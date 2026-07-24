@@ -41,7 +41,17 @@ serve(async (req) => {
 
   const auth = await authorizeRequest(
     req,
-    ["notas_fiscais", "compras_adm", "financeiro_pagamentos", "frotas_multas", "envios", "telegrama"],
+    [
+      "notas_fiscais",
+      "compras_adm",
+      "financeiro_pagamentos",
+      "frotas_multas",
+      "envios",
+      "telegrama",
+      "logistica_os",
+      "logistica_adm",
+      "logistica_conferencias",
+    ],
     { requireEdit: true },
   );
   if (!auth.ok) return json({ error: auth.error }, auth.status);
