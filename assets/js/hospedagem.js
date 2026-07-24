@@ -1,4 +1,4 @@
-﻿import { initProtectedPage } from './pageInit.js';
+import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
@@ -8,7 +8,7 @@ const STATUS_SOLICITACAO = {
   EM_COTACAO: 'Em cotação',
   RESERVADA: 'Reservada',
   CANCELADA: 'Cancelada',
-  CONCLUIDA: 'Concluída'
+  CONCLUIDA: 'Concluída',
 };
 
 function esc(value) {
@@ -26,11 +26,6 @@ function brDate(value) {
   return y && m && d ? `${d}/${m}/${y}` : String(value);
 }
 
-function money(value) {
-  const n = Number(value || 0);
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
 function todayISO() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -45,7 +40,11 @@ function diffDays(start, end) {
 }
 
 function normalizeText(value) {
-  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 }
 
 function getUserField(ctx, ...paths) {
@@ -58,16 +57,18 @@ function getUserField(ctx, ...paths) {
   return null;
 }
 
-async function safeSelect(table, columns = '*', build = null) {
-  try {
-    let query = supabase.from(table).select(columns);
-    if (typeof build === 'function') query = build(query);
-    const { data, error } = await query;
-    if (error) throw error;
-    return { data: data || [], error: null };
-  } catch (error) {
-    return { data: [], error };
+function colaboradorKey(row = {}) {
+  const cpf = String(row.cpf || '').replace(/\D/g, '');
+  return cpf || normalizeText(row.nome) || String(row.id || '').trim();
+}
+
+function deduplicateColaboradores(rows = []) {
+  const map = new Map();
+  for (const row of rows) {
+    const key = colaboradorKey(row);
+    if (key && !map.has(key)) map.set(key, row);
   }
+  return [...map.values()];
 }
 
 function injectStyles() {
@@ -75,130 +76,147 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'hospedagemGestorStyles';
   style.textContent = `
-    .hosp-tabs{display:flex;gap:6px;margin:0 0 16px;flex-wrap:wrap}
-    .hosp-tab{border:1px solid var(--line);background:var(--bg-card);color:var(--muted);border-radius:12px;padding:9px 16px;cursor:pointer;font-weight:700;font-size:13px;width:auto;margin:0}
-    .hosp-tab:hover{color:#cfe7da;border-color:var(--line-2)}
-    .hosp-tab.active{background:linear-gradient(135deg,var(--green-3),var(--green));color:#f0fff7;border-color:var(--green-2)}
-    .hosp-panel{display:none}.hosp-panel.active{display:block}
-    .hosp-card{background:var(--bg-card);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
-    .hosp-grp{margin-top:16px}.hosp-grp:first-child{margin-top:0}
-    .hosp-grp-h{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:850;letter-spacing:.05em;text-transform:uppercase;color:var(--green-2);margin:0 0 9px}
-    .hosp-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:10px}
+    .hosp-workspace{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:rgba(3,18,12,.72);min-height:calc(100vh - 150px)}
+    .hosp-workspace-head{height:42px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--line);color:var(--green-2);font-size:10px;font-weight:900;letter-spacing:.17em;text-transform:uppercase;background:rgba(7,28,18,.78)}
+    .hosp-workspace-head::before{content:'▣';font-size:13px;margin-right:10px;color:#22c55e}
+    .hosp-workspace-body{display:grid;grid-template-columns:minmax(320px,360px) minmax(0,1fr);min-height:calc(100vh - 193px)}
+    .hosp-form-pane{border-right:1px solid var(--line);background:rgba(5,25,16,.78);min-width:0;display:flex;flex-direction:column}
+    .hosp-form-intro{padding:17px 19px;border-bottom:1px solid var(--line)}
+    .hosp-form-intro h2{margin:0;color:#f0fff7;font-size:15px;font-weight:900}
+    .hosp-form-intro p{margin:5px 0 0;color:#6fa589;font-size:12px}
+    .hosp-form{padding:0 19px 18px;display:flex;flex-direction:column;min-height:0}
+    .hosp-grp{padding:17px 0;border-bottom:1px solid rgba(34,197,94,.16)}
+    .hosp-grp:last-of-type{border-bottom:0}
+    .hosp-grp-h{display:flex;align-items:center;gap:8px;margin:0 0 12px;color:#31d57a;font-size:9.5px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}
+    .hosp-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:9px}
     .hosp-field{display:flex;flex-direction:column;gap:5px;min-width:0}
-    .hosp-field.full{grid-column:1/-1}.hosp-field.col-2{grid-column:span 2}.hosp-field.col-3{grid-column:span 3}.hosp-field.col-4{grid-column:span 4}.hosp-field.col-5{grid-column:span 5}.hosp-field.col-6{grid-column:span 6}
-    .hosp-field label{font-size:11px;color:var(--muted);font-weight:700}
-    .hosp-field input,.hosp-field textarea,.hosp-field select{width:100%;min-height:40px;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px 11px;outline:none;color-scheme:dark;font-size:14px;box-sizing:border-box}
-    .hosp-field textarea{min-height:62px;resize:vertical}
-    .hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus{border-color:var(--green-2);outline:2px solid rgba(111,208,165,.16)}
-    .hosp-help{font-size:11.5px;color:var(--muted)}
-    .hosp-diarias-badge{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(111,208,165,.28);background:rgba(63,168,120,.14);color:#bbf7d0;border-radius:999px;padding:6px 13px;font-weight:800;font-size:12px;white-space:nowrap}
-    .hosp-diarias-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green-2)}
-    .hosp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
-    .hosp-btn{width:auto!important;margin-top:0!important}
-    .hosp-feedback{color:var(--muted);font-size:13px}.hosp-feedback.ok{color:#bbf7d0}.hosp-feedback.err{color:#fecaca}
+    .hosp-field.full{grid-column:1/-1}.hosp-field.col-3{grid-column:span 3}.hosp-field.col-4{grid-column:span 4}.hosp-field.col-5{grid-column:span 5}.hosp-field.col-6{grid-column:span 6}.hosp-field.col-7{grid-column:span 7}.hosp-field.col-8{grid-column:span 8}.hosp-field.col-9{grid-column:span 9}
+    .hosp-field label{font-size:10.5px;color:#67a383;font-weight:750}
+    .hosp-field input,.hosp-field textarea,.hosp-field select,.hosp-colab-row input{width:100%;min-height:36px;border:1px solid rgba(34,197,94,.23);background:#092117;color:#eafff3;border-radius:0;padding:8px 10px;outline:none;color-scheme:dark;font-size:12.5px;box-sizing:border-box}
+    .hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus,.hosp-colab-row input:focus{border-color:#2dd778;box-shadow:0 0 0 1px rgba(45,215,120,.15)}
+    .hosp-field textarea{min-height:76px;resize:vertical}
+    .hosp-diarias-badge{display:inline-flex;align-items:center;margin-left:auto;border:1px solid rgba(34,197,94,.35);background:rgba(22,101,52,.15);color:#7bf2ad;padding:4px 8px;font-size:9.5px;font-weight:850;letter-spacing:0;text-transform:none;white-space:nowrap}
     .hosp-colab-box{display:flex;flex-direction:column;gap:8px}
-    .hosp-colab-row{display:grid;grid-template-columns:1.5fr .8fr auto;gap:8px;align-items:center}
-    .hosp-colab-row input{width:100%;min-height:40px;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px 11px;outline:none;color-scheme:dark;font-size:14px;box-sizing:border-box}
-    .hosp-colab-row input:focus{border-color:var(--green-2);outline:2px solid rgba(111,208,165,.16)}
+    .hosp-colab-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:7px;align-items:center}
+    .hosp-colab-type{display:none;align-items:center;min-height:34px;border:1px solid rgba(34,197,94,.22);background:rgba(22,101,52,.14);color:#9df2bd;padding:0 9px;font-size:10.5px;white-space:nowrap}
+    .hosp-colab-type.show{display:flex}
+    .hosp-remove{width:36px!important;height:36px!important;min-width:36px!important;margin:0!important;padding:0!important;border-radius:0!important;border:1px solid rgba(239,68,68,.25)!important;background:transparent!important;color:#d58b8b!important}
+    .hosp-remove:hover{border-color:rgba(248,113,113,.55)!important;color:#fecaca!important}
+    .hosp-add-colab{width:auto;align-self:flex-start;margin-top:8px;border:0;background:transparent;color:#2cdb79;padding:4px 0;cursor:pointer;font-weight:800;font-size:11.5px}
+    .hosp-add-colab:hover{color:#86efac}
+    .hosp-colab-hint{margin-top:10px;color:#4d8065;font-size:10.5px;font-style:italic;line-height:1.45}
     .hosp-ac{position:relative;width:100%}
-    .hosp-ac-list{position:absolute;top:calc(100% + 5px);left:0;right:0;background:#0a1e17;border:1px solid rgba(111,208,165,.3);border-radius:12px;overflow:hidden;z-index:50;max-height:230px;overflow-y:auto;box-shadow:0 10px 30px rgba(0,0,0,.45)}
-    .hosp-ac-item{padding:9px 12px;cursor:pointer;font-size:13px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.05)}
-    .hosp-ac-item:last-child{border-bottom:0}
-    .hosp-ac-item:hover{background:rgba(111,208,165,.12);color:#eafff4}
-    .hosp-ac-item small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
-    .hosp-ac-empty{padding:9px 12px;font-size:12.5px;color:var(--muted);text-align:center}
-    .hosp-remove{width:auto!important;margin:0!important;padding:0 14px!important;height:40px;border-radius:11px!important;white-space:nowrap;font-size:15px}
-    .hosp-remove:hover{border-color:rgba(248,113,113,.4);color:#fecaca}
-    .hosp-add-colab{width:auto;align-self:flex-start;margin-top:2px;border:1px dashed var(--line-2);background:transparent;color:var(--muted);border-radius:11px;padding:9px 14px;cursor:pointer;font-weight:700;font-size:13px}
-    .hosp-add-colab:hover{border-color:var(--green-2);color:#bbf7d0}
-    .hosp-empty{padding:16px;color:var(--muted);text-align:center}
-    .hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;border-radius:12px;padding:10px 12px;margin-top:10px;font-size:12.5px}
-    .hosp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
-    .hosp-stat{background:var(--bg-card);border:1px solid var(--line);border-radius:13px;padding:11px 14px}
-    .hosp-stat span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-    .hosp-stat strong{display:block;font-size:22px;margin-top:3px;color:var(--text)}
-    .hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px}
-    .hosp-table{width:100%;border-collapse:collapse;min-width:760px}
-    .hosp-table th,.hosp-table td{padding:11px 13px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:13px}
-    .hosp-table th{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:800;background:rgba(13,32,24,.55)}
-    .hosp-table tr:hover td{background:rgba(111,208,165,.045)}
-    .hosp-status{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;border:1px solid var(--line-2);font-size:11.5px;font-weight:700;white-space:nowrap}
+    .hosp-ac-list{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#092117;border:1px solid rgba(45,215,120,.35);overflow:hidden;z-index:80;max-height:230px;overflow-y:auto;box-shadow:0 14px 35px rgba(0,0,0,.5)}
+    .hosp-ac-item{padding:9px 11px;cursor:pointer;font-size:12px;color:#eafff3;border-bottom:1px solid rgba(255,255,255,.05)}
+    .hosp-ac-item:last-child{border-bottom:0}.hosp-ac-item:hover{background:rgba(45,215,120,.12)}
+    .hosp-ac-item small{display:block;color:#6c9e82;font-size:10px;margin-top:2px}.hosp-ac-empty{padding:10px 11px;font-size:11.5px;color:#6c9e82;text-align:center}
+    .hosp-form-actions{display:flex;align-items:center;gap:10px;margin-top:auto;padding:15px 0 0;border-top:1px solid rgba(34,197,94,.18);flex-wrap:wrap}
+    .hosp-form-actions .btn{width:auto!important;margin:0!important;border-radius:0!important;min-height:38px;padding:0 14px;font-size:11.5px}
+    .hosp-submit{background:rgba(22,101,52,.2)!important;border-color:rgba(45,215,120,.35)!important;color:#77eda8!important}
+    .hosp-feedback{flex:1 1 100%;color:#6c9e82;font-size:11.5px}.hosp-feedback.ok{color:#86efac}.hosp-feedback.err{color:#fecaca}
+    .hosp-list-pane{min-width:0;display:flex;flex-direction:column;background:rgba(3,20,12,.62)}
+    .hosp-list-head{min-height:72px;display:flex;align-items:stretch;justify-content:space-between;border-bottom:1px solid var(--line);gap:12px}
+    .hosp-stats{display:flex;align-items:stretch;min-width:0}
+    .hosp-stat{min-width:110px;padding:14px 20px;border-right:1px solid rgba(34,197,94,.12);display:flex;flex-direction:column;justify-content:center}
+    .hosp-stat span{font-size:8.5px;color:#4f9670;text-transform:uppercase;letter-spacing:.18em;font-weight:800}.hosp-stat strong{font-size:24px;color:#eafff3;margin-top:7px;font-weight:500;line-height:1}
+    .hosp-refresh-wrap{display:flex;align-items:center;padding:0 18px}.hosp-refresh{width:auto!important;margin:0!important;border-radius:0!important;background:transparent!important;color:#65ad82!important;border-color:rgba(34,197,94,.25)!important;font-size:11px!important;padding:8px 13px!important}
+    .hosp-table-wrap{overflow:auto;flex:1;min-height:320px}
+    .hosp-table{width:100%;border-collapse:collapse;min-width:880px}
+    .hosp-table th,.hosp-table td{padding:14px 16px;border-bottom:1px solid rgba(34,197,94,.14);text-align:left;vertical-align:top;font-size:12px}
+    .hosp-table th{position:sticky;top:0;z-index:2;background:#082117;color:#4f9670;font-size:8.5px;text-transform:uppercase;letter-spacing:.18em;font-weight:850}
+    .hosp-table tr:hover td{background:rgba(45,215,120,.035)}
+    .hosp-table td{color:#e9fff2}.hosp-help{font-size:10px;color:#4b996d}.hosp-empty{padding:24px!important;color:#5c8d70!important;text-align:center}
+    .hosp-status{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid rgba(34,197,94,.24);font-size:10px;font-weight:750;white-space:nowrap}
     .hosp-status::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
-    .hosp-status.solicitada,.hosp-status.em_analise,.hosp-status.em_cotacao{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.hosp-status.reservada{color:#bfdbfe;background:rgba(59,130,246,.11);border-color:rgba(59,130,246,.25)}.hosp-status.concluida{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.hosp-status.cancelada{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}
-    @media(max-width:760px){.hosp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hosp-grid .hosp-field{grid-column:span 1}.hosp-field.full{grid-column:1/-1}.hosp-colab-row{grid-template-columns:1fr auto}.hosp-colab-row .hosp-ac{grid-column:1/-1}}
+    .hosp-status.solicitada{color:#48e78d;background:rgba(22,101,52,.18)}
+    .hosp-status.em_analise,.hosp-status.em_cotacao{color:#facc15;background:rgba(161,98,7,.17);border-color:rgba(250,204,21,.3)}
+    .hosp-status.reservada,.hosp-status.concluida{color:#32df79;background:rgba(22,101,52,.23)}
+    .hosp-status.cancelada{color:#f87171;background:rgba(127,29,29,.17);border-color:rgba(248,113,113,.28)}
+    .hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;padding:9px 10px;margin-top:9px;font-size:11.5px}
+    @media(max-width:1180px){.hosp-workspace-body{grid-template-columns:1fr}.hosp-form-pane{border-right:0;border-bottom:1px solid var(--line)}.hosp-form{max-width:none}.hosp-list-pane{min-height:520px}}
+    @media(max-width:700px){.hosp-grid{grid-template-columns:1fr 1fr}.hosp-grid .hosp-field{grid-column:1/-1}.hosp-field.col-3,.hosp-field.col-4,.hosp-field.col-5,.hosp-field.col-6,.hosp-field.col-7,.hosp-field.col-8,.hosp-field.col-9{grid-column:span 1}.hosp-list-head{flex-direction:column}.hosp-stats{width:100%}.hosp-stat{flex:1;min-width:0}.hosp-refresh-wrap{padding:10px 14px}.hosp-colab-row{grid-template-columns:minmax(0,1fr) auto}.hosp-colab-type{grid-column:1/-1;grid-row:2}}
   `;
   document.head.appendChild(style);
 }
 
 export function renderContent(content, userContext) {
   injectStyles();
-  const state = { solicitacoes: [], colaboradores: [], tab: 'solicitar' };
+  const state = {
+    solicitacoes: [],
+    colaboradores: [],
+    totalAtivos: 0,
+    totalDisponiveis: 0,
+  };
 
   content.innerHTML = `
-    <div class="hosp-tabs" id="hospTabs">
-      <button class="hosp-tab active" data-tab="solicitar" type="button">Solicitar</button>
-      <button class="hosp-tab" data-tab="minhas" type="button">Minhas solicitações</button>
-    </div>
-
-    <section class="hosp-panel active" id="panel-solicitar">
-      <form id="hospForm" class="hosp-card">
-        <div class="hosp-grp">
-          <div class="hosp-grp-h">📍 Onde e para quem</div>
-          <div class="hosp-grid">
-            <div class="hosp-field col-5"><label for="cidade">Cidade *</label><input id="cidade" required placeholder="Ex.: Araguapaz" /></div>
-            <div class="hosp-field col-2"><label for="uf">UF *</label><input id="uf" required maxlength="2" placeholder="GO" /></div>
-            <div class="hosp-field col-5"><label for="cliente">Cliente *</label><input id="cliente" required placeholder="Cliente / unidade / fazenda" /></div>
-            <div class="hosp-field col-6"><label for="localEmbarque">Local de embarque *</label><input id="localEmbarque" required placeholder="Ex.: Fazenda Claite" /></div>
-            <div class="hosp-field col-6"><label for="linkLocal">Localização (link)</label><input id="linkLocal" placeholder="Link do Google Maps ou referência" /></div>
+    <section class="hosp-workspace">
+      <header class="hosp-workspace-head">Setor de hotéis</header>
+      <div class="hosp-workspace-body">
+        <aside class="hosp-form-pane">
+          <div class="hosp-form-intro">
+            <h2>Nova solicitação</h2>
+            <p>Preencha os dados da hospedagem</p>
           </div>
-        </div>
 
-        <div class="hosp-grp">
-          <div class="hosp-grp-h">Período <span class="hosp-diarias-badge" id="diariasLabel" style="margin-left:auto;text-transform:none;letter-spacing:0">1 diária prevista</span></div>
-          <div class="hosp-grid">
-            <div class="hosp-field col-4"><label for="checkin">Check-in *</label><input id="checkin" type="date" required /></div>
-            <div class="hosp-field col-4"><label for="checkout">Check-out *</label><input id="checkout" type="date" required /></div>
-            <div class="hosp-field col-4"><label for="horario">Chegada</label><input id="horario" type="time" /></div>
+          <form id="hospForm" class="hosp-form">
+            <div class="hosp-grp">
+              <div class="hosp-grp-h">⌖ Onde e para quem</div>
+              <div class="hosp-grid">
+                <div class="hosp-field col-8"><label for="cidade">Cidade *</label><input id="cidade" required placeholder="Ex.: Correntina" /></div>
+                <div class="hosp-field col-4"><label for="uf">UF *</label><input id="uf" required maxlength="2" placeholder="BA" /></div>
+                <div class="hosp-field full"><label for="cliente">Cliente *</label><input id="cliente" required placeholder="Cliente / unidade / fazenda" /></div>
+                <div class="hosp-field full"><label for="localEmbarque">Local de embarque *</label><input id="localEmbarque" required placeholder="Ex.: Fazenda Nova Prata" /></div>
+                <div class="hosp-field full"><label for="linkLocal">Localização (link)</label><input id="linkLocal" placeholder="Google Maps ou referência" /></div>
+              </div>
+            </div>
+
+            <div class="hosp-grp">
+              <div class="hosp-grp-h">▣ Período <span class="hosp-diarias-badge" id="diariasLabel">1 diária</span></div>
+              <div class="hosp-grid">
+                <div class="hosp-field col-6"><label for="checkin">Check-in *</label><input id="checkin" type="date" required /></div>
+                <div class="hosp-field col-6"><label for="checkout">Check-out *</label><input id="checkout" type="date" required /></div>
+                <div class="hosp-field full"><label for="horario">Previsão de chegada</label><input id="horario" type="time" /></div>
+              </div>
+            </div>
+
+            <div class="hosp-grp">
+              <div class="hosp-grp-h">♧ Colaboradores</div>
+              <div class="hosp-colab-box" id="colabBox"></div>
+              <button class="hosp-add-colab" type="button" id="addColabBtn">＋ Adicionar colaborador</button>
+              <div class="hosp-colab-hint" id="colabBaseInfo">Carregando colaboradores ativos...</div>
+              <div class="hosp-alert" id="colabFallback" style="display:none;">Não foi possível consultar a base de colaboradores agora. Você pode digitar os nomes manualmente.</div>
+            </div>
+
+            <div class="hosp-grp">
+              <div class="hosp-grp-h">▤ Observações</div>
+              <div class="hosp-field full"><textarea id="obs" placeholder="Ex.: chegará ~17h, priorizar hotel próximo ao embarque, observações sobre quartos..."></textarea></div>
+            </div>
+
+            <div class="hosp-form-actions">
+              <button class="btn hosp-submit" type="submit" id="submitBtn">Enviar solicitação</button>
+              <button class="btn btn-secondary" type="button" id="clearBtn">Limpar</button>
+              <span class="hosp-feedback" id="feedback"></span>
+            </div>
+          </form>
+        </aside>
+
+        <section class="hosp-list-pane">
+          <div class="hosp-list-head">
+            <div class="hosp-stats">
+              <div class="hosp-stat"><span>Total</span><strong id="statTotal">0</strong></div>
+              <div class="hosp-stat"><span>Em andamento</span><strong id="statOpen">0</strong></div>
+              <div class="hosp-stat"><span>Reservadas</span><strong id="statReserved">0</strong></div>
+            </div>
+            <div class="hosp-refresh-wrap"><button class="btn btn-secondary hosp-refresh" type="button" id="refreshBtn">↻ Atualizar</button></div>
           </div>
-        </div>
 
-        <div class="hosp-grp">
-          <div class="hosp-grp-h">Colaboradores</div>
-          <div class="hosp-colab-box" id="colabBox"></div>
-          <button class="hosp-add-colab" type="button" id="addColabBtn">+ Adicionar colaborador</button>
-          <div class="hosp-alert" id="colabFallback" style="display:none;">Não foi possível consultar a base de colaboradores agora. Você pode digitar os nomes manualmente.</div>
-        </div>
-
-        <div class="hosp-grp">
-          <div class="hosp-grp-h">Observações</div>
-          <div class="hosp-field full"><textarea id="obs" placeholder="Ex.: chegará ~17h, priorizar hotel próximo ao embarque, observações sobre quartos..."></textarea></div>
-        </div>
-
-        <div class="hosp-actions">
-          <button class="btn btn-primary hosp-btn" type="submit" id="submitBtn">Enviar solicitação</button>
-          <button class="btn btn-secondary hosp-btn" type="button" id="clearBtn">Limpar</button>
-          <span class="hosp-feedback" id="feedback"></span>
-        </div>
-      </form>
-    </section>
-
-    <section class="hosp-panel" id="panel-minhas">
-      <div class="hosp-stats">
-        <div class="hosp-stat"><span>Total</span><strong id="statTotal">0</strong></div>
-        <div class="hosp-stat"><span>Em andamento</span><strong id="statOpen">0</strong></div>
-        <div class="hosp-stat"><span>Reservadas</span><strong id="statReserved">0</strong></div>
-      </div>
-      <div class="hosp-card" style="padding:14px 16px">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-          <strong style="font-size:15px">Minhas solicitações</strong>
-          <button class="btn btn-secondary hosp-btn" type="button" id="refreshBtn">↻ Atualizar</button>
-        </div>
-        <div class="hosp-table-wrap">
-          <table class="hosp-table">
-            <thead><tr><th>Código</th><th>Colaboradores</th><th>Cidade</th><th>Embarque</th><th>Período</th><th>Hotel</th><th>Status</th></tr></thead>
-            <tbody id="minhasTbody"><tr><td colspan="7" class="hosp-empty">Carregando...</td></tr></tbody>
-          </table>
-        </div>
+          <div class="hosp-table-wrap">
+            <table class="hosp-table">
+              <thead><tr><th>Código</th><th>Colaboradores</th><th>Cidade</th><th>Embarque</th><th>Período</th><th>Hotel</th><th>Status</th></tr></thead>
+              <tbody id="minhasTbody"><tr><td colspan="7" class="hosp-empty">Carregando...</td></tr></tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </section>
   `;
@@ -209,42 +227,16 @@ export function renderContent(content, userContext) {
   const checkin = document.getElementById('checkin');
   const checkout = document.getElementById('checkout');
   const diariasLabel = document.getElementById('diariasLabel');
+  const colabBaseInfo = document.getElementById('colabBaseInfo');
 
   function setFeedback(msg, type = '') {
     feedback.textContent = msg || '';
     feedback.className = `hosp-feedback ${type}`.trim();
   }
 
-  function moveTabIndicator(immediate = false) {
-    const active = document.querySelector('.hosp-tab.active');
-    const indicator = document.getElementById('hospTabIndicator');
-    if (!active || !indicator) return;
-    if (immediate) indicator.style.transition = 'none';
-    indicator.style.width = `${active.offsetWidth}px`;
-    indicator.style.transform = `translateX(${active.offsetLeft - 5}px)`;
-    if (immediate) {
-      // eslint-disable-next-line no-unused-expressions
-      indicator.offsetHeight; // força reflow antes de reativar a transição
-      indicator.style.transition = '';
-    }
-  }
-
-  function setTab(tab) {
-    state.tab = tab;
-    document.querySelectorAll('.hosp-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
-    document.querySelectorAll('.hosp-panel').forEach((panel) => panel.classList.remove('active'));
-    document.getElementById(`panel-${tab}`).classList.add('active');
-    moveTabIndicator();
-    if (tab === 'minhas') loadMinhas();
-  }
-
   function updateDiarias() {
     const n = diffDays(checkin.value, checkout.value);
-    diariasLabel.textContent = `${n} diária${n === 1 ? '' : 's'} prevista${n === 1 ? '' : 's'}`;
-  }
-
-  function renumberColabRows() {
-    colabBox.querySelectorAll('.hosp-colab-index').forEach((el, i) => { el.textContent = i + 1; });
+    diariasLabel.textContent = `${n} diária${n === 1 ? '' : 's'}`;
   }
 
   function buscarColaboradores(query) {
@@ -265,48 +257,60 @@ export function renderContent(content, userContext) {
         <input id="${id}" class="colabNome hosp-ac-input" autocomplete="off" spellcheck="false" required value="${esc(value)}" placeholder="Nome do colaborador..." />
         <div class="hosp-ac-list" hidden></div>
       </div>
-      <input class="colabTipo" value="${esc(tipo)}" placeholder="Fixo / Diarista" />
-      <button class="btn btn-secondary hosp-remove" type="button" title="Remover colaborador" aria-label="Remover">✕</button>
+      <input class="colabTipo" type="hidden" value="${esc(tipo)}" />
+      <span class="hosp-colab-type ${tipo ? 'show' : ''}">${esc(tipo || 'Tipo automático')}</span>
+      <button class="btn btn-secondary hosp-remove" type="button" title="Remover colaborador" aria-label="Remover">×</button>
     `;
-    wrap.querySelector('.hosp-remove').addEventListener('click', () => {
-      if (colabBox.children.length <= 1) return;
-      wrap.remove();
-      renumberColabRows();
-    });
 
+    const removeBtn = wrap.querySelector('.hosp-remove');
     const nomeInput = wrap.querySelector('.colabNome');
     const tipoInput = wrap.querySelector('.colabTipo');
+    const tipoBadge = wrap.querySelector('.hosp-colab-type');
     const acList = wrap.querySelector('.hosp-ac-list');
     let matches = [];
+
+    removeBtn.addEventListener('click', () => {
+      if (colabBox.children.length <= 1) return;
+      wrap.remove();
+    });
 
     function renderSuggestions() {
       matches = buscarColaboradores(nomeInput.value);
       if (!nomeInput.value.trim()) {
         acList.hidden = true;
         acList.innerHTML = '';
+        tipoInput.value = '';
+        tipoBadge.textContent = 'Tipo automático';
+        tipoBadge.classList.remove('show');
         return;
       }
       acList.innerHTML = matches.length
         ? matches.map((c, i) => `<div class="hosp-ac-item" data-idx="${i}">${esc(c.nome)}<small>${esc([c.tipo, c.supervisao].filter(Boolean).join(' · '))}</small></div>`).join('')
-        : '<div class="hosp-ac-empty">Nenhum colaborador encontrado na sua regional</div>';
+        : '<div class="hosp-ac-empty">Nenhum colaborador ativo encontrado</div>';
       acList.hidden = false;
     }
 
-    nomeInput.addEventListener('input', renderSuggestions);
+    nomeInput.addEventListener('input', () => {
+      tipoInput.value = '';
+      tipoBadge.textContent = 'Tipo automático';
+      tipoBadge.classList.remove('show');
+      renderSuggestions();
+    });
     nomeInput.addEventListener('focus', () => { if (nomeInput.value.trim()) renderSuggestions(); });
     nomeInput.addEventListener('blur', () => { setTimeout(() => { acList.hidden = true; }, 180); });
-    acList.addEventListener('click', (ev) => {
-      const item = ev.target.closest('.hosp-ac-item');
+    acList.addEventListener('click', (event) => {
+      const item = event.target.closest('.hosp-ac-item');
       if (!item) return;
       const selected = matches[Number(item.dataset.idx)];
       if (!selected) return;
       nomeInput.value = selected.nome;
       tipoInput.value = selected.tipo || '';
+      tipoBadge.textContent = selected.tipo || 'Tipo não informado';
+      tipoBadge.classList.add('show');
       acList.hidden = true;
     });
 
     colabBox.appendChild(wrap);
-    renumberColabRows();
   }
 
   function resetForm() {
@@ -324,17 +328,17 @@ export function renderContent(content, userContext) {
   function getColaboradoresPayload() {
     return Array.from(colabBox.querySelectorAll('.hosp-colab-row')).map((row) => {
       const nome = row.querySelector('.colabNome').value.trim();
-      const tipoManual = row.querySelector('.colabTipo').value.trim();
+      const tipoAutomatico = row.querySelector('.colabTipo').value.trim();
       const found = state.colaboradores.find((c) => normalizeText(c.nome) === normalizeText(nome));
       return {
         colaborador_id: found?.id || null,
         nome_colaborador: nome,
         cpf: found?.cpf || null,
-        tipo_colaborador: found?.tipo || tipoManual || null,
+        tipo_colaborador: found?.tipo || tipoAutomatico || null,
         empresa: found?.empresa || getUserField(userContext, 'empresa', 'user.empresa') || null,
         coordenacao: found?.coordenacao || getUserField(userContext, 'coordenacao', 'user.coordenacao') || null,
         supervisao: found?.supervisao || getUserField(userContext, 'supervisao', 'user.supervisao') || null,
-        status_colaborador: 'ATIVO'
+        status_colaborador: 'ATIVO',
       };
     }).filter((c) => c.nome_colaborador);
   }
@@ -351,43 +355,38 @@ export function renderContent(content, userContext) {
   }
 
   async function loadColaboradores() {
-    let data;
     try {
-      data = await getColaboradores(); // cache compartilhado (foto mais recente)
-    } catch {
+      const ativos = deduplicateColaboradores(await getColaboradores({ force: true, somenteAtivos: true }));
+      const minhasRegionais = getMinhasRegionais();
+      const disponiveis = minhasRegionais.length
+        ? ativos.filter((row) => minhasRegionais.includes(normalizeText(row.supervisao)))
+        : ativos;
+
+      state.totalAtivos = ativos.length;
+      state.totalDisponiveis = disponiveis.length;
+      state.colaboradores = disponiveis.map((row) => ({
+        id: row.id,
+        nome: row.nome,
+        cpf: row.cpf,
+        tipo: row.tipo,
+        empresa: row.empresa,
+        coordenacao: row.coordenacao,
+        supervisao: row.supervisao,
+      }));
+
+      colabBaseInfo.textContent = minhasRegionais.length
+        ? `${state.totalAtivos} colaboradores ativos na base · ${state.totalDisponiveis} disponíveis na sua regional. O tipo é preenchido automaticamente.`
+        : `${state.totalAtivos} colaboradores ativos disponíveis. O tipo é preenchido automaticamente.`;
+    } catch (error) {
+      console.error('[hospedagem] Falha ao carregar colaboradores:', error);
       document.getElementById('colabFallback').style.display = 'block';
+      colabBaseInfo.textContent = 'Tipo do colaborador preenchido automaticamente quando encontrado na base.';
       state.colaboradores = [];
-      return;
     }
-    const latest = data.reduce((max, row) => row.data_referencia > max ? row.data_referencia : max, '');
-    const minhasRegionais = getMinhasRegionais();
-    const filtrados = data
-      .filter((row) => !latest || row.data_referencia === latest)
-      .filter((row) => row.ativo !== false)
-      // Restringe a sugestão à(s) regional(is) do próprio gestor (campo supervisao).
-      // Sem nenhuma regional configurada no perfil, mantém a lista completa como fallback.
-      .filter((row) => !minhasRegionais.length || minhasRegionais.includes(normalizeText(row.supervisao)));
-    // Dedup por colaborador (cpf ou nome) — colaborador_snapshot pode ter mais de uma linha por pessoa na mesma data.
-    // Usa cpf/nome (estáveis por pessoa) em vez de id (chave de linha, diferente em cada duplicata).
-    const porChave = new Map();
-    for (const row of filtrados) {
-      const cpfChave = String(row.cpf || '').replace(/\D/g, '');
-      const chave = cpfChave || String(row.nome || row.id || '').trim();
-      if (!chave || !porChave.has(chave)) porChave.set(chave, row);
-    }
-    state.colaboradores = [...porChave.values()].map((row) => ({
-      id: row.id,
-      nome: row.nome,
-      cpf: row.cpf,
-      tipo: row.tipo,
-      empresa: row.empresa,
-      coordenacao: row.coordenacao,
-      supervisao: row.supervisao
-    }));
   }
 
-  async function submitSolicitacao(ev) {
-    ev.preventDefault();
+  async function submitSolicitacao(event) {
+    event.preventDefault();
     setFeedback('Enviando solicitação...');
     const btn = document.getElementById('submitBtn');
     btn.disabled = true;
@@ -400,8 +399,6 @@ export function renderContent(content, userContext) {
     }
 
     const payload = {
-      // Compatibilidade com bases antigas do painel que possuem data_solicitacao NOT NULL.
-      // Na base nova, a view usa created_at como data_solicitacao; este campo extra é ignorado quando não existe.
       data_solicitacao: new Date().toISOString().slice(0, 10),
       solicitante_id: userContext?.user?.id || null,
       solicitante_nome: userContext?.user?.name || null,
@@ -420,10 +417,15 @@ export function renderContent(content, userContext) {
       horario_chegada_previsto: document.getElementById('horario').value || null,
       quantidade_diarias_prevista: diffDays(checkin.value, checkout.value),
       observacao_gestor: document.getElementById('obs').value.trim() || null,
-      status_solicitacao: 'SOLICITADA'
+      status_solicitacao: 'SOLICITADA',
     };
 
-    const { data, error } = await supabase.from('hospedagem_solicitacoes').insert(payload).select('id,codigo').single();
+    const { data, error } = await supabase
+      .from('hospedagem_solicitacoes')
+      .insert(payload)
+      .select('id,codigo')
+      .single();
+
     if (error) {
       setFeedback(error.message || 'Erro ao criar solicitação.', 'err');
       btn.disabled = false;
@@ -444,61 +446,65 @@ export function renderContent(content, userContext) {
       usuario_nome: userContext?.user?.name || null,
       tipo_evento: 'SOLICITACAO_CRIADA',
       descricao: 'Solicitação criada pelo gestor.',
-      status_novo: 'SOLICITADA'
+      status_novo: 'SOLICITADA',
     });
 
     resetForm();
     setFeedback(`Solicitação ${data.codigo || ''} enviada com sucesso.`, 'ok');
-    await loadMinhas(false);
+    await loadSolicitacoes(false);
     btn.disabled = false;
   }
 
-  async function loadMinhas(showLoading = true) {
+  async function loadSolicitacoes(showLoading = true) {
     const tbody = document.getElementById('minhasTbody');
-    if (showLoading) tbody.innerHTML = `<tr><td colspan="7" class="hosp-empty">Carregando...</td></tr>`;
-    let query = supabase.from('hospedagem_minhas_solicitacoes').select('*').order('data_solicitacao', { ascending: false });
+    if (showLoading) tbody.innerHTML = '<tr><td colspan="7" class="hosp-empty">Carregando...</td></tr>';
+
+    let query = supabase
+      .from('hospedagem_minhas_solicitacoes')
+      .select('*')
+      .order('data_solicitacao', { ascending: false });
     if (userContext?.user?.id) query = query.eq('solicitante_id', userContext.user.id);
+
     const { data, error } = await query;
     if (error) {
       tbody.innerHTML = `<tr><td colspan="7" class="hosp-empty">${esc(error.message)}</td></tr>`;
       return;
     }
+
     state.solicitacoes = data || [];
     document.getElementById('statTotal').textContent = state.solicitacoes.length;
-    document.getElementById('statOpen').textContent = state.solicitacoes.filter((r) => ['SOLICITADA', 'EM_ANALISE', 'EM_COTACAO'].includes(r.status_solicitacao)).length;
-    document.getElementById('statReserved').textContent = state.solicitacoes.filter((r) => r.status_solicitacao === 'RESERVADA').length;
+    document.getElementById('statOpen').textContent = state.solicitacoes.filter((row) => ['SOLICITADA', 'EM_ANALISE', 'EM_COTACAO'].includes(row.status_solicitacao)).length;
+    document.getElementById('statReserved').textContent = state.solicitacoes.filter((row) => row.status_solicitacao === 'RESERVADA').length;
+
     if (!state.solicitacoes.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="hosp-empty">Nenhuma solicitação encontrada.</td></tr>`;
+      tbody.innerHTML = '<tr><td colspan="7" class="hosp-empty">Nenhuma solicitação encontrada.</td></tr>';
       return;
     }
-    tbody.innerHTML = state.solicitacoes.map((r) => `
+
+    tbody.innerHTML = state.solicitacoes.map((row) => `
       <tr>
-        <td><strong>${esc(r.codigo || '-')}</strong><br><span class="hosp-help">${brDate(r.data_solicitacao)}</span></td>
-        <td>${esc(r.colaboradores || '-')}</td>
-        <td>${esc([r.cidade, r.uf].filter(Boolean).join('/'))}</td>
-        <td>${esc(r.local_embarque || '-')}</td>
-        <td>${brDate(r.data_checkin_prevista)} até ${brDate(r.data_checkout_prevista)}<br><span class="hosp-help">${esc(r.quantidade_diarias_prevista || '-')} diária(s)</span></td>
-        <td>${esc(r.hotel || '-')}</td>
-        <td><span class="hosp-status ${esc(String(r.status_solicitacao || '').toLowerCase())}">${esc(STATUS_SOLICITACAO[r.status_solicitacao] || r.status_solicitacao || '-')}</span></td>
+        <td><strong>${esc(row.codigo || '-')}</strong><br><span class="hosp-help">${brDate(row.data_solicitacao)}</span></td>
+        <td>${esc(row.colaboradores || '-')}</td>
+        <td>${esc([row.cidade, row.uf].filter(Boolean).join('/'))}</td>
+        <td>${esc(row.local_embarque || '-')}</td>
+        <td>${brDate(row.data_checkin_prevista)} até ${brDate(row.data_checkout_prevista)}<br><span class="hosp-help">${esc(row.quantidade_diarias_prevista || '-')} diária(s)</span></td>
+        <td>${esc(row.hotel || '-')}</td>
+        <td><span class="hosp-status ${esc(String(row.status_solicitacao || '').toLowerCase())}">${esc(STATUS_SOLICITACAO[row.status_solicitacao] || row.status_solicitacao || '-')}</span></td>
       </tr>
     `).join('');
   }
 
-  document.querySelectorAll('.hosp-tab').forEach((btn) => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
   document.getElementById('addColabBtn').addEventListener('click', () => addColabRow());
   document.getElementById('clearBtn').addEventListener('click', resetForm);
-  document.getElementById('refreshBtn').addEventListener('click', () => loadMinhas());
+  document.getElementById('refreshBtn').addEventListener('click', () => loadSolicitacoes());
   checkin.addEventListener('change', updateDiarias);
   checkout.addEventListener('change', updateDiarias);
   form.addEventListener('submit', submitSolicitacao);
-  window.addEventListener('resize', () => moveTabIndicator(true));
-
-  moveTabIndicator(true);
 
   (async function boot() {
     await loadColaboradores();
     resetForm();
-    await loadMinhas(false);
+    await loadSolicitacoes(false);
   })();
 }
 
