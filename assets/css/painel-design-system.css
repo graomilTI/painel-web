@@ -1,0 +1,641 @@
+/*
+ * Painel Grão 1000 — padrão visual operacional
+ *
+ * Esta camada padroniza o conteúdo e o cabeçalho dos módulos sem alterar
+ * a sidebar, que mantém seu layout próprio. Os seletores ficam limitados a
+ * .content-wrap, .topbar e .page-main.
+ */
+
+html.painel-ui-v2 .content-wrap {
+  --panel-bg: #00170f;
+  --panel-bg-deep: #00110b;
+  --panel-surface: #031d14;
+  --panel-surface-2: #06261b;
+  --panel-surface-3: #0a3022;
+  --panel-control: #071920;
+  --panel-control-hover: #0a2228;
+  --panel-line: rgba(55, 184, 128, 0.19);
+  --panel-line-strong: rgba(45, 212, 160, 0.34);
+  --panel-text: #f3f8f5;
+  --panel-muted: #8da99b;
+  --panel-muted-2: #6f8d7f;
+  --panel-green: #12d88f;
+  --panel-green-hover: #20e69e;
+  --panel-green-deep: #075b3d;
+  --panel-green-soft: rgba(18, 216, 143, 0.12);
+  --panel-warning: #eabf59;
+  --panel-danger: #f16872;
+  --panel-info: #68aef5;
+  --panel-radius-sm: 10px;
+  --panel-radius: 14px;
+  --panel-radius-lg: 20px;
+  --panel-shadow: 0 16px 38px rgba(0, 0, 0, 0.18);
+  --panel-shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.13);
+
+  min-width: 0;
+  background:
+    radial-gradient(circle at 68% -12%, rgba(18, 216, 143, 0.045), transparent 35%),
+    var(--panel-bg);
+  color: var(--panel-text);
+}
+
+/* Cabeçalho global do conteúdo. A sidebar não é tocada por esta camada. */
+html.painel-ui-v2 .topbar {
+  min-height: 64px;
+  padding: 8px 16px !important;
+  gap: 12px;
+  border-bottom: 1px solid var(--panel-line) !important;
+  background: rgba(0, 18, 12, 0.96) !important;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.14);
+  backdrop-filter: blur(16px);
+}
+
+html.painel-ui-v2 .topbar-title {
+  min-width: 120px;
+  max-width: 230px;
+}
+
+html.painel-ui-v2 .topbar-title h1,
+html.painel-ui-v2 .topbar h1 {
+  margin: 0;
+  color: var(--panel-text);
+  font-size: clamp(15px, 1.1vw, 19px) !important;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+html.painel-ui-v2 .topbar .meta {
+  margin-top: 2px !important;
+  color: var(--panel-muted) !important;
+  font-size: 12px !important;
+  line-height: 1.2;
+}
+
+html.painel-ui-v2 .topbar-search {
+  min-width: 180px;
+  max-width: 440px;
+  height: 42px;
+  flex: 1 1 320px;
+  border: 1px solid var(--panel-line) !important;
+  border-radius: 14px !important;
+  background: rgba(1, 18, 13, 0.74) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018);
+}
+
+html.painel-ui-v2 .topbar-search:focus-within {
+  border-color: var(--panel-line-strong) !important;
+  box-shadow: 0 0 0 3px rgba(18, 216, 143, 0.08);
+}
+
+html.painel-ui-v2 .topbar-search-input {
+  color: var(--panel-text) !important;
+  background: transparent !important;
+}
+
+html.painel-ui-v2 .topbar-search-input::placeholder {
+  color: var(--panel-muted-2) !important;
+}
+
+html.painel-ui-v2 .topbar-search-icon {
+  color: var(--panel-muted-2) !important;
+}
+
+html.painel-ui-v2 .topbar-actions {
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+}
+
+html.painel-ui-v2 .topbar-actions > button,
+html.painel-ui-v2 .topbar-actions > .badge,
+html.painel-ui-v2 .settings-gear-btn,
+html.painel-ui-v2 .sidebar-toggle-btn,
+html.painel-ui-v2 .notification-bell-btn {
+  min-height: 40px;
+  border-radius: 13px !important;
+  border-color: var(--panel-line) !important;
+  background: rgba(3, 29, 20, 0.82) !important;
+  color: var(--panel-text) !important;
+  box-shadow: none !important;
+}
+
+html.painel-ui-v2 .topbar-actions > button:hover,
+html.painel-ui-v2 .settings-gear-btn:hover,
+html.painel-ui-v2 .sidebar-toggle-btn:hover,
+html.painel-ui-v2 .notification-bell-btn:hover {
+  border-color: var(--panel-line-strong) !important;
+  background: var(--panel-green-soft) !important;
+  color: var(--panel-green-hover) !important;
+  transform: none !important;
+}
+
+html.painel-ui-v2 .topbar .badge,
+html.painel-ui-v2 #roleBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 12px !important;
+  border: 1px solid rgba(18, 216, 143, 0.22);
+  border-radius: 999px !important;
+  background: rgba(18, 216, 143, 0.13) !important;
+  color: #baf7dc !important;
+  font-size: 11px !important;
+  font-weight: 800;
+  letter-spacing: 0.045em;
+}
+
+/* Área principal */
+html.painel-ui-v2 .page-main {
+  min-width: 0;
+  min-height: calc(100vh - 64px);
+  padding: 20px 24px 28px !important;
+  background: transparent;
+  color: var(--panel-text);
+}
+
+html.painel-ui-v2 .page-main > :first-child {
+  margin-top: 0;
+}
+
+html.painel-ui-v2 .page-main h1,
+html.painel-ui-v2 .page-main h2,
+html.painel-ui-v2 .page-main h3,
+html.painel-ui-v2 .page-main h4,
+html.painel-ui-v2 .page-main h5,
+html.painel-ui-v2 .page-main h6 {
+  color: var(--panel-text);
+}
+
+html.painel-ui-v2 .page-main p,
+html.painel-ui-v2 .page-main .muted,
+html.painel-ui-v2 .page-main .meta,
+html.painel-ui-v2 .page-main small {
+  color: var(--panel-muted);
+}
+
+html.painel-ui-v2 .page-main :where(.eyebrow, .base-label, .users-label, .section-label, [class$="-label"]) {
+  color: #63d8a7;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+/* Superfícies modulares */
+html.painel-ui-v2 .page-main :where(
+  .card,
+  .base-card,
+  .hero-card,
+  .mini-card,
+  .users-module-group,
+  .users-modal,
+  .prog-item,
+  .log-card,
+  .adm-card,
+  .dashboard-card,
+  .panel-card,
+  .section-card,
+  .toolbar-card,
+  .filter-card,
+  .summary-card
+) {
+  border: 1px solid var(--panel-line) !important;
+  border-radius: var(--panel-radius-lg) !important;
+  background: rgba(3, 29, 20, 0.78) !important;
+  box-shadow: var(--panel-shadow-soft) !important;
+  color: var(--panel-text);
+}
+
+html.painel-ui-v2 .page-main :where(.card, .base-card, .hero-card) {
+  padding: 18px !important;
+}
+
+html.painel-ui-v2 .page-main :where(.mini-card, .panel-card, .section-card, .summary-card) {
+  background: rgba(4, 36, 25, 0.72) !important;
+}
+
+html.painel-ui-v2 .page-main :where(.card, .base-card, .panel-card, .section-card) + :where(.card, .base-card, .panel-card, .section-card) {
+  margin-top: 14px;
+}
+
+/* Barras de contexto, filtros e ações */
+html.painel-ui-v2 .page-main :where(
+  .users-toolbar,
+  .prog-toolbar,
+  .toolbar,
+  .filters,
+  .filter-bar,
+  .filter-row,
+  .actions-bar,
+  .section-toolbar,
+  .context-bar,
+  .base-actions
+) {
+  border-color: var(--panel-line);
+}
+
+html.painel-ui-v2 .page-main :where(.toolbar, .filter-bar, .actions-bar, .section-toolbar, .context-bar) {
+  border: 1px solid var(--panel-line);
+  border-radius: var(--panel-radius-lg);
+  background: rgba(3, 29, 20, 0.68);
+  padding: 14px;
+}
+
+/* Campos. Somente conteúdo do painel; checkboxes e radios preservam o desenho nativo. */
+html.painel-ui-v2 .page-main :where(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea,
+  .users-input,
+  .users-select,
+  .base-input,
+  .base-select,
+  .base-textarea,
+  [contenteditable="true"]
+) {
+  color: var(--panel-text) !important;
+  border: 1px solid rgba(102, 135, 151, 0.24) !important;
+  border-radius: 12px !important;
+  background: var(--panel-control) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018) !important;
+  outline: none;
+}
+
+html.painel-ui-v2 .page-main :where(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  .users-input,
+  .users-select,
+  .base-input,
+  .base-select
+) {
+  min-height: 42px;
+}
+
+html.painel-ui-v2 .page-main :where(input, textarea)::placeholder {
+  color: #71887e !important;
+}
+
+html.painel-ui-v2 .page-main :where(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea,
+  [contenteditable="true"]
+):focus {
+  border-color: var(--panel-line-strong) !important;
+  box-shadow: 0 0 0 3px rgba(18, 216, 143, 0.075) !important;
+  background: var(--panel-control-hover) !important;
+}
+
+html.painel-ui-v2 .page-main :where(input, select, textarea):disabled,
+html.painel-ui-v2 .page-main :where(input, select, textarea)[readonly] {
+  opacity: 0.68;
+  cursor: not-allowed;
+}
+
+html.painel-ui-v2 .page-main input[type="checkbox"],
+html.painel-ui-v2 .page-main input[type="radio"] {
+  accent-color: var(--panel-green);
+}
+
+/* Botões */
+html.painel-ui-v2 .page-main :where(
+  .btn,
+  .base-button,
+  .users-action-btn,
+  .stepbtn,
+  .tab-btn,
+  [role="tab"]
+) {
+  min-height: 38px;
+  border: 1px solid var(--panel-line) !important;
+  border-radius: 12px !important;
+  background: rgba(6, 38, 27, 0.92) !important;
+  color: var(--panel-text) !important;
+  box-shadow: none !important;
+  font-weight: 750;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+html.painel-ui-v2 .page-main :where(.btn, .base-button, .users-action-btn, .stepbtn, .tab-btn, [role="tab"]):hover:not(:disabled) {
+  border-color: var(--panel-line-strong) !important;
+  background: var(--panel-green-soft) !important;
+  color: #d8ffed !important;
+  transform: translateY(-1px);
+}
+
+html.painel-ui-v2 .page-main :where(
+  .btn-primary,
+  .base-button.primary,
+  .primary-btn,
+  .action-primary,
+  .stepbtn.active,
+  .tab-btn.active,
+  [role="tab"][aria-selected="true"]
+) {
+  border-color: rgba(18, 216, 143, 0.6) !important;
+  background: var(--panel-green) !important;
+  color: #002116 !important;
+}
+
+html.painel-ui-v2 .page-main :where(
+  .btn-primary,
+  .base-button.primary,
+  .primary-btn,
+  .action-primary
+):hover:not(:disabled) {
+  background: var(--panel-green-hover) !important;
+  color: #001a11 !important;
+}
+
+html.painel-ui-v2 .page-main :where(.danger, .btn-danger, .action-danger, [data-variant="danger"]) {
+  border-color: rgba(241, 104, 114, 0.34) !important;
+  background: rgba(241, 104, 114, 0.11) !important;
+  color: #ffc4c8 !important;
+}
+
+html.painel-ui-v2 .page-main button:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Abas e navegação interna */
+html.painel-ui-v2 .page-main :where(.steps-wrap, .tabs, .tab-list, .inline-nav, [role="tablist"]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+html.painel-ui-v2 .page-main .inline-nav a {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--panel-line) !important;
+  border-radius: 12px !important;
+  background: rgba(6, 38, 27, 0.8) !important;
+  color: var(--panel-text) !important;
+}
+
+html.painel-ui-v2 .page-main .inline-nav a:hover,
+html.painel-ui-v2 .page-main .inline-nav a.active {
+  border-color: var(--panel-line-strong) !important;
+  background: var(--panel-green-soft) !important;
+  color: #d8ffed !important;
+}
+
+/* Tabelas e listas operacionais */
+html.painel-ui-v2 .page-main :where(
+  .users-table-wrap,
+  .base-table-wrap,
+  .table-wrap,
+  .table-container,
+  .data-table-wrap,
+  .list-wrap
+) {
+  overflow: auto;
+  border: 1px solid var(--panel-line) !important;
+  border-radius: 16px !important;
+  background: rgba(0, 18, 12, 0.54) !important;
+  box-shadow: none !important;
+}
+
+html.painel-ui-v2 .page-main table {
+  color: var(--panel-text);
+  background: transparent !important;
+  border-color: var(--panel-line) !important;
+}
+
+html.painel-ui-v2 .page-main table th {
+  color: #71d9ae !important;
+  background: rgba(2, 24, 17, 0.96) !important;
+  border-color: var(--panel-line) !important;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+html.painel-ui-v2 .page-main table td {
+  color: var(--panel-text);
+  border-color: rgba(55, 184, 128, 0.12) !important;
+  background: transparent;
+}
+
+html.painel-ui-v2 .page-main table tbody tr {
+  background: rgba(1, 22, 15, 0.46);
+  transition: background 0.14s ease, box-shadow 0.14s ease;
+}
+
+html.painel-ui-v2 .page-main table tbody tr:nth-child(even) {
+  background: rgba(4, 31, 22, 0.38);
+}
+
+html.painel-ui-v2 .page-main table tbody tr:hover {
+  background: rgba(18, 216, 143, 0.065) !important;
+}
+
+html.painel-ui-v2 .page-main table tbody tr:is(.selected, .active, [aria-selected="true"], [data-selected="true"]) {
+  background: rgba(18, 216, 143, 0.12) !important;
+  box-shadow: inset 3px 0 0 var(--panel-green);
+}
+
+/* Tags, badges e estados */
+html.painel-ui-v2 .page-main :where(
+  .badge,
+  .chip,
+  .base-pill,
+  .users-status,
+  .status-badge,
+  .tag,
+  .pill
+) {
+  border: 1px solid rgba(18, 216, 143, 0.21);
+  border-radius: 999px !important;
+  background: rgba(18, 216, 143, 0.1) !important;
+  color: #baf7dc !important;
+  box-shadow: none !important;
+}
+
+html.painel-ui-v2 .page-main :where(.is-inactive, .status-danger, .status-error, .status-cancelado) {
+  border-color: rgba(241, 104, 114, 0.28) !important;
+  background: rgba(241, 104, 114, 0.1) !important;
+  color: #ffc4c8 !important;
+}
+
+html.painel-ui-v2 .page-main :where(.status-warning, .status-pendente, .is-pending) {
+  border-color: rgba(234, 191, 89, 0.3) !important;
+  background: rgba(234, 191, 89, 0.1) !important;
+  color: #ffe5a6 !important;
+}
+
+html.painel-ui-v2 .page-main :where(.status-info, .is-info) {
+  border-color: rgba(104, 174, 245, 0.3) !important;
+  background: rgba(104, 174, 245, 0.1) !important;
+  color: #c7e3ff !important;
+}
+
+/* Modais e drawers fora da sidebar */
+html.painel-ui-v2 body > :where(
+  .users-modal-backdrop,
+  .modal-backdrop,
+  .modal-overlay,
+  .dialog-overlay,
+  .drawer-overlay,
+  .usm-overlay
+) {
+  background: rgba(0, 8, 5, 0.76) !important;
+  backdrop-filter: blur(7px);
+}
+
+html.painel-ui-v2 body > :where(.users-modal-backdrop, .modal-backdrop, .modal-overlay, .dialog-overlay, .drawer-overlay, .usm-overlay)
+  :where(.users-modal, .modal, .modal-content, .dialog, .dialog-card, .drawer, .usm-card) {
+  border: 1px solid var(--panel-line-strong) !important;
+  border-radius: 20px !important;
+  background: #031d14 !important;
+  color: var(--panel-text) !important;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.42) !important;
+}
+
+/* Estados vazios e feedbacks */
+html.painel-ui-v2 .page-main :where(.empty-state, .log-empty, .peqb-empty, .no-results, .loading-state) {
+  color: var(--panel-muted) !important;
+  border-color: var(--panel-line) !important;
+}
+
+html.painel-ui-v2 .page-main :where(.feedback, .users-feedback, .alert, .notice) {
+  border-radius: 12px;
+}
+
+/* Utilitário oficial para novas telas mestre-detalhe. */
+html.painel-ui-v2 .page-main .panel-master-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 28vw);
+  gap: 16px;
+  min-height: 0;
+}
+
+html.painel-ui-v2 .page-main .panel-master,
+html.painel-ui-v2 .page-main .panel-detail {
+  min-width: 0;
+  border: 1px solid var(--panel-line);
+  border-radius: var(--panel-radius-lg);
+  background: rgba(3, 29, 20, 0.74);
+}
+
+html.painel-ui-v2 .page-main .panel-detail {
+  position: sticky;
+  top: 78px;
+  align-self: start;
+  max-height: calc(100vh - 98px);
+  overflow: auto;
+}
+
+/* Scrollbar discreta apenas no conteúdo. */
+html.painel-ui-v2 .content-wrap :where(*) {
+  scrollbar-color: rgba(69, 145, 112, 0.48) transparent;
+  scrollbar-width: thin;
+}
+
+html.painel-ui-v2 .content-wrap :where(*)::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html.painel-ui-v2 .content-wrap :where(*)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html.painel-ui-v2 .content-wrap :where(*)::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(69, 145, 112, 0.45);
+  background-clip: padding-box;
+}
+
+html.painel-ui-v2 .content-wrap :where(*)::-webkit-scrollbar-thumb:hover {
+  background: rgba(69, 145, 112, 0.7);
+  background-clip: padding-box;
+}
+
+@media (max-width: 1180px) {
+  html.painel-ui-v2 .topbar-title {
+    max-width: 180px;
+  }
+
+  html.painel-ui-v2 .page-main {
+    padding: 16px 18px 24px !important;
+  }
+
+  html.painel-ui-v2 .page-main .panel-master-detail {
+    grid-template-columns: minmax(0, 1fr) minmax(330px, 34vw);
+  }
+}
+
+@media (max-width: 920px) {
+  html.painel-ui-v2 .topbar {
+    flex-wrap: wrap;
+  }
+
+  html.painel-ui-v2 .topbar-search {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  html.painel-ui-v2 .page-main .panel-master-detail {
+    grid-template-columns: 1fr;
+  }
+
+  html.painel-ui-v2 .page-main .panel-detail {
+    position: static;
+    max-height: none;
+  }
+}
+
+@media (max-width: 720px) {
+  html.painel-ui-v2 .topbar {
+    min-height: 58px;
+    padding: 7px 10px !important;
+  }
+
+  html.painel-ui-v2 .topbar-title {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  html.painel-ui-v2 .topbar-actions {
+    margin-left: auto;
+  }
+
+  html.painel-ui-v2 .topbar-actions > .badge {
+    display: none;
+  }
+
+  html.painel-ui-v2 .page-main {
+    min-height: calc(100vh - 58px);
+    padding: 12px 10px 20px !important;
+  }
+
+  html.painel-ui-v2 .page-main :where(.card, .base-card, .hero-card) {
+    padding: 14px !important;
+    border-radius: 16px !important;
+  }
+
+  html.painel-ui-v2 .page-main :where(.toolbar, .filter-bar, .actions-bar, .section-toolbar, .context-bar) {
+    padding: 11px;
+    border-radius: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.painel-ui-v2 .content-wrap *,
+  html.painel-ui-v2 .content-wrap *::before,
+  html.painel-ui-v2 .content-wrap *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
