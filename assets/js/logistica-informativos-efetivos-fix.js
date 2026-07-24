@@ -4,8 +4,8 @@ const PT = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' });
 const ROWS_PER_PAGE = 20;
 let applying = false;
 let scheduled = false;
-let collaboratorsCache = null;
-let collaboratorsCacheAt = 0;
+let databaseCache = null;
+let databaseCacheAt = 0;
 
 function clean(value) {
   return String(value ?? '').trim();
@@ -54,39 +54,58 @@ function isInactiveStatus(value) {
   return ['INATIV', 'DESLIGAD', 'DEMITID', 'RESCINDID'].some((term) => status.includes(term));
 }
 
-async function fetchCollaborators() {
-  const now = Date.now();
-  if (collaboratorsCache && now - collaboratorsCacheAt < 60_000) return collaboratorsCache;
-
+async function fetchAll(table, select, orderColumn, maxRows = 15000) {
   const rows = [];
   const pageSize = 1000;
-  for (let offset = 0; offset < 15000; offset += pageSize) {
-    const { data, error } = await supabase
-      .from('colaboradores')
-      .select('id,nome,cpf,situacao,admissao,desligamento,sincronizado_em,created_at,updated_at')
-      .order('nome', { ascending: true })
-      .range(offset, offset + pageSize - 1);
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    let query = supabase.from(table).select(select).range(offset, offset + pageSize - 1);
+    if (orderColumn) query = query.order(orderColumn, { ascending: true });
+    const { data, error } = await query;
     if (error) throw error;
     rows.push(...(data || []));
     if (!data || data.length < pageSize) break;
   }
-
-  collaboratorsCache = rows;
-  collaboratorsCacheAt = now;
   return rows;
 }
 
-function employmentStatusByName(rows, reportFrom) {
-  const groups = new Map();
-  rows.forEach((row) => {
+async function fetchDatabaseSources() {
+  const now = Date.now();
+  if (databaseCache && now - databaseCacheAt < 60_000) return databaseCache;
+
+  const [collaborators, rescissions] = await Promise.all([
+    fetchAll(
+      'colaboradores',
+      'id,nome,cpf,situacao,admissao,desligamento,sincronizado_em,created_at,updated_at',
+      'nome',
+      15000,
+    ),
+    fetchAll(
+      'rh_rescisoes',
+      'id,colaborador_id,colaborador_nome,data_desligamento,status,tipo,created_at,updated_at',
+      'data_desligamento',
+      5000,
+    ).catch((error) => {
+      console.warn('[informativos/efetivos] rh_rescisoes indisponível', error);
+      return [];
+    }),
+  ]);
+
+  databaseCache = { collaborators, rescissions };
+  databaseCacheAt = now;
+  return databaseCache;
+}
+
+function employmentStatusByName(collaborators, rescissions, reportFrom) {
+  const collaboratorGroups = new Map();
+  collaborators.forEach((row) => {
     const key = norm(row.nome);
     if (!key) return;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
+    if (!collaboratorGroups.has(key)) collaboratorGroups.set(key, []);
+    collaboratorGroups.get(key).push(row);
   });
 
   const result = new Map();
-  groups.forEach((records, key) => {
+  collaboratorGroups.forEach((records, key) => {
     const latestRow = [...records].sort((a, b) => recordMoment(b) - recordMoment(a))[0] || {};
     const latestAdmission = maxIso(records.map((row) => row.admissao));
     const latestDismissal = maxIso(records.map((row) => row.desligamento));
@@ -96,11 +115,36 @@ function employmentStatusByName(rows, reportFrom) {
 
     result.set(key, {
       inactive: dismissedBeforePeriod || inactiveByLatestStatus,
+      source: dismissedBeforePeriod || inactiveByLatestStatus ? 'colaboradores' : null,
       dismissal: latestDismissal,
       status: clean(latestRow.situacao),
       records: records.length,
     });
   });
+
+  rescissions.forEach((row) => {
+    const key = norm(row.colaborador_nome);
+    const dismissal = isoDate(row.data_desligamento);
+    const status = norm(row.status);
+    const cancelled = status.includes('CANCEL');
+    if (!key || !dismissal || cancelled || dismissal >= reportFrom) return;
+
+    const current = result.get(key) || { inactive: false, source: null, dismissal: '', status: '', records: 0 };
+    const collaboratorRecords = collaboratorGroups.get(key) || [];
+    const latestAdmission = maxIso(collaboratorRecords.map((record) => record.admissao));
+    const rehiredAfterRescission = Boolean(latestAdmission && latestAdmission > dismissal);
+    if (rehiredAfterRescission) return;
+
+    result.set(key, {
+      ...current,
+      inactive: true,
+      source: 'rh_rescisoes',
+      dismissal,
+      status: clean(row.status) || 'rescisão registrada',
+      rescissionId: row.id,
+    });
+  });
+
   return result;
 }
 
@@ -144,10 +188,12 @@ function forceSupervisionIndicator(reportPages) {
   });
 }
 
-function updateValidationText(reportPages, removedCount) {
+function updateValidationText(reportPages, removed) {
+  const byCollaborators = removed.filter((item) => item.source === 'colaboradores').length;
+  const byRescissions = removed.filter((item) => item.source === 'rh_rescisoes').length;
   reportPages.querySelectorAll('.li-report-head p').forEach((paragraph) => {
     const base = clean(paragraph.textContent).replace(/\s*·\s*Validação da base:.*$/i, '');
-    paragraph.textContent = `${base} · Validação da base: ${removedCount} desligado${removedCount === 1 ? '' : 's'} removido${removedCount === 1 ? '' : 's'}.`;
+    paragraph.textContent = `${base} · Validação da base: ${removed.length} desligado${removed.length === 1 ? '' : 's'} removido${removed.length === 1 ? '' : 's'} (${byCollaborators} em colaboradores; ${byRescissions} em Rescisões RH).`;
   });
 }
 
@@ -164,8 +210,8 @@ async function applyEffectiveFix() {
 
   applying = true;
   try {
-    const collaborators = await fetchCollaborators();
-    const statusByName = employmentStatusByName(collaborators, reportFrom);
+    const { collaborators, rescissions } = await fetchDatabaseSources();
+    const statusByName = employmentStatusByName(collaborators, rescissions, reportFrom);
     const removed = [];
 
     const filtered = currentRows.filter(({ cells }) => {
@@ -188,12 +234,13 @@ async function applyEffectiveFix() {
     } else {
       distributeRows(reportPages, filtered);
       forceSupervisionIndicator(reportPages);
-      updateValidationText(reportPages, removed.length);
+      updateValidationText(reportPages, removed);
     }
     reportCount.textContent = `${filtered.length} registro${filtered.length === 1 ? '' : 's'}`;
 
     if (feedback && removed.length) {
-      feedback.textContent = `Conferência concluída: ${filtered.length} efetivo(s) sem cargas; ${removed.length} colaborador(es) desligado(s) removido(s) após validação direta na tabela colaboradores.`;
+      const rescissionCount = removed.filter((item) => item.source === 'rh_rescisoes').length;
+      feedback.textContent = `Conferência concluída: ${filtered.length} efetivo(s) sem cargas; ${removed.length} desligado(s) removido(s), sendo ${rescissionCount} identificado(s) em RH > Rescisões.`;
     }
     if (removed.length) console.info('[informativos/efetivos] desligados removidos', removed);
   } catch (error) {
@@ -205,7 +252,7 @@ async function applyEffectiveFix() {
     ));
     distributeRows(reportPages, rows);
     forceSupervisionIndicator(reportPages);
-    if (feedback) feedback.textContent = `A ordenação foi aplicada, mas a validação direta da tabela colaboradores falhou: ${error.message || error}`;
+    if (feedback) feedback.textContent = `A ordenação foi aplicada, mas a validação das tabelas colaboradores/rh_rescisoes falhou: ${error.message || error}`;
   } finally {
     window.setTimeout(() => { applying = false; }, 0);
   }
@@ -229,7 +276,7 @@ function install() {
   new MutationObserver(scheduleApply).observe(reportPages, { childList: true, subtree: true });
   document.addEventListener('change', (event) => {
     if (event.target?.matches?.('#liEfetivosDateFrom, #liEfetivosDateTo')) {
-      collaboratorsCache = null;
+      databaseCache = null;
       scheduleApply();
     }
   });
