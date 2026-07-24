@@ -37,21 +37,21 @@ function timestamp(value) {
 
 function recordMoment(row) {
   return Math.max(
+    timestamp(row.sincronizado_em),
     timestamp(row.updated_at),
     timestamp(row.created_at),
     timestamp(row.desligamento),
-    timestamp(row.data_desligamento),
     timestamp(row.admissao),
-    timestamp(row.data_admissao),
   );
 }
 
-function isInactiveRecord(row, reportFrom) {
-  const dismissal = isoDate(row.desligamento || row.data_desligamento);
-  if (dismissal && dismissal < reportFrom) return true;
-  if (row.ativo === false) return true;
-  const status = norm(row.situacao || row.status);
-  return ['INATIV', 'DESLIGAD', 'DEMITID'].some((term) => status.includes(term));
+function maxIso(values) {
+  return values.map(isoDate).filter(Boolean).sort().at(-1) || '';
+}
+
+function isInactiveStatus(value) {
+  const status = norm(value);
+  return ['INATIV', 'DESLIGAD', 'DEMITID', 'RESCINDID'].some((term) => status.includes(term));
 }
 
 async function fetchCollaborators() {
@@ -62,8 +62,8 @@ async function fetchCollaborators() {
   const pageSize = 1000;
   for (let offset = 0; offset < 15000; offset += pageSize) {
     const { data, error } = await supabase
-      .from('colaboradores_atuais')
-      .select('id,nome,cpf,situacao,status,ativo,admissao,data_admissao,desligamento,data_desligamento,created_at,updated_at')
+      .from('colaboradores')
+      .select('id,nome,cpf,situacao,admissao,desligamento,sincronizado_em,created_at,updated_at')
       .order('nome', { ascending: true })
       .range(offset, offset + pageSize - 1);
     if (error) throw error;
@@ -76,15 +76,32 @@ async function fetchCollaborators() {
   return rows;
 }
 
-function latestRecordByName(rows) {
-  const latest = new Map();
+function employmentStatusByName(rows, reportFrom) {
+  const groups = new Map();
   rows.forEach((row) => {
     const key = norm(row.nome);
     if (!key) return;
-    const previous = latest.get(key);
-    if (!previous || recordMoment(row) >= recordMoment(previous)) latest.set(key, row);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
   });
-  return latest;
+
+  const result = new Map();
+  groups.forEach((records, key) => {
+    const latestRow = [...records].sort((a, b) => recordMoment(b) - recordMoment(a))[0] || {};
+    const latestAdmission = maxIso(records.map((row) => row.admissao));
+    const latestDismissal = maxIso(records.map((row) => row.desligamento));
+    const rehiredAfterDismissal = Boolean(latestAdmission && latestDismissal && latestAdmission > latestDismissal);
+    const dismissedBeforePeriod = Boolean(latestDismissal && latestDismissal < reportFrom && !rehiredAfterDismissal);
+    const inactiveByLatestStatus = isInactiveStatus(latestRow.situacao) && !rehiredAfterDismissal;
+
+    result.set(key, {
+      inactive: dismissedBeforePeriod || inactiveByLatestStatus,
+      dismissal: latestDismissal,
+      status: clean(latestRow.situacao),
+      records: records.length,
+    });
+  });
+  return result;
 }
 
 function effectiveModeActive() {
@@ -127,10 +144,18 @@ function forceSupervisionIndicator(reportPages) {
   });
 }
 
+function updateValidationText(reportPages, removedCount) {
+  reportPages.querySelectorAll('.li-report-head p').forEach((paragraph) => {
+    const base = clean(paragraph.textContent).replace(/\s*·\s*Validação da base:.*$/i, '');
+    paragraph.textContent = `${base} · Validação da base: ${removedCount} desligado${removedCount === 1 ? '' : 's'} removido${removedCount === 1 ? '' : 's'}.`;
+  });
+}
+
 async function applyEffectiveFix() {
   if (applying || !effectiveModeActive()) return;
   const reportPages = document.getElementById('liReportPages');
   const reportCount = document.getElementById('liReportCount');
+  const feedback = document.getElementById('liFeedback');
   const reportFrom = document.getElementById('liEfetivosDateFrom')?.value;
   if (!reportPages || !reportCount || !reportFrom) return;
 
@@ -140,11 +165,16 @@ async function applyEffectiveFix() {
   applying = true;
   try {
     const collaborators = await fetchCollaborators();
-    const latest = latestRecordByName(collaborators);
+    const statusByName = employmentStatusByName(collaborators, reportFrom);
+    const removed = [];
 
     const filtered = currentRows.filter(({ cells }) => {
-      const record = latest.get(norm(cells[0]));
-      return !record || !isInactiveRecord(record, reportFrom);
+      const status = statusByName.get(norm(cells[0]));
+      if (status?.inactive) {
+        removed.push({ name: cells[0], ...status });
+        return false;
+      }
+      return true;
     });
 
     filtered.sort((a, b) => (
@@ -153,9 +183,19 @@ async function applyEffectiveFix() {
       || PT.compare(a.cells[0] || '', b.cells[0] || '')
     ));
 
-    distributeRows(reportPages, filtered);
-    forceSupervisionIndicator(reportPages);
+    if (!filtered.length) {
+      reportPages.innerHTML = '<div class="li-empty">Todos os efetivos ativos aparecem no relatório de cargas ou foram desconsiderados por indisponibilidade/desligamento no período.</div>';
+    } else {
+      distributeRows(reportPages, filtered);
+      forceSupervisionIndicator(reportPages);
+      updateValidationText(reportPages, removed.length);
+    }
     reportCount.textContent = `${filtered.length} registro${filtered.length === 1 ? '' : 's'}`;
+
+    if (feedback && removed.length) {
+      feedback.textContent = `Conferência concluída: ${filtered.length} efetivo(s) sem cargas; ${removed.length} colaborador(es) desligado(s) removido(s) após validação direta na tabela colaboradores.`;
+    }
+    if (removed.length) console.info('[informativos/efetivos] desligados removidos', removed);
   } catch (error) {
     console.warn('[informativos/efetivos-fix] não foi possível validar desligamentos', error);
     const rows = collectReportRows(reportPages).sort((a, b) => (
@@ -165,6 +205,7 @@ async function applyEffectiveFix() {
     ));
     distributeRows(reportPages, rows);
     forceSupervisionIndicator(reportPages);
+    if (feedback) feedback.textContent = `A ordenação foi aplicada, mas a validação direta da tabela colaboradores falhou: ${error.message || error}`;
   } finally {
     window.setTimeout(() => { applying = false; }, 0);
   }
