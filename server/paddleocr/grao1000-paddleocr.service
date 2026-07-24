@@ -1,0 +1,21 @@
+[Unit]
+Description=Grão 1000 - Worker local PaddleOCR
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=grao100
+Group=grao100
+WorkingDirectory=/home/grao100/paddleocr-worker
+EnvironmentFile=/etc/grao1000/paddleocr-worker.env
+ExecStart=/home/grao100/paddleocr-worker/.venv/bin/python /home/grao100/paddleocr-worker/logistica_ocr_worker.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=40
+Nice=10
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
