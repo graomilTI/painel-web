@@ -58,6 +58,7 @@ const SCRIPT_MAP = {
   'sync-login-alimentacao': 'grm-sync-login-alimentacao.js',
   'sync-lancar-nhe': 'grm-sync-lancar-nhe.js',
   'sync-finalizar-os': 'grm-sync-finalizar-os.js',
+  'sync-abrir-os': 'grm-sync-abrir-os.js',
 };
 
 function getSupabase() {
