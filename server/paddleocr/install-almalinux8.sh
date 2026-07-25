@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 APP_USER="${APP_USER:-grao100}"
 APP_GROUP="${APP_GROUP:-grao100}"
+APP_HOME="${APP_HOME:-/home/grao100}"
 APP_DIR="${APP_DIR:-/home/grao100/paddleocr-worker}"
 ENV_DIR="${ENV_DIR:-/etc/grao1000}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,7 +39,7 @@ if [[ -z "$PYTHON_BIN" ]]; then
   exit 1
 fi
 
-install -d -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR"
+install -d -o "$APP_USER" -g "$APP_GROUP" "$APP_HOME/.cache" "$APP_DIR"
 install -m 0644 -o "$APP_USER" -g "$APP_GROUP" "$SOURCE_DIR/logistica_ocr_worker.py" "$APP_DIR/logistica_ocr_worker.py"
 install -m 0644 -o "$APP_USER" -g "$APP_GROUP" "$SOURCE_DIR/requirements.txt" "$APP_DIR/requirements.txt"
 
@@ -72,8 +73,10 @@ Instalação concluída.
    nano $ENV_DIR/paddleocr-worker.env
 
 2. Teste o carregamento dos modelos:
+   cd $APP_DIR
    runuser -u $APP_USER -- env \
-     \$(grep -v '^#' $ENV_DIR/paddleocr-worker.env | xargs) \
+     HOME=$APP_HOME \
+     XDG_CACHE_HOME=$APP_HOME/.cache \
      $APP_DIR/.venv/bin/python -c 'from paddleocr import PaddleOCR; PaddleOCR(lang="pt", ocr_version="PP-OCRv5", use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False, device="cpu"); print("PaddleOCR OK")'
 
 3. Ative o worker:
