@@ -1,21 +1,20 @@
 /*
  * Painel Grão 1000 — padrão visual operacional
  *
- * Esta camada padroniza o conteúdo e o cabeçalho dos módulos sem alterar
- * a sidebar, que mantém seu layout próprio. Os seletores ficam limitados a
- * .content-wrap, .topbar e .page-main.
+ * Esta camada é a fonte única do visual do painel: navegação, cabeçalho,
+ * conteúdo, formulários, tabelas, botões, modais e estados.
  */
 
-html.painel-ui-v2 .content-wrap {
-  --panel-bg: #00170f;
-  --panel-bg-deep: #00110b;
+html.painel-ui-v2 {
+  --panel-bg: #00160f;
+  --panel-bg-deep: #000d09;
   --panel-surface: #031d14;
-  --panel-surface-2: #06261b;
-  --panel-surface-3: #0a3022;
-  --panel-control: #071920;
-  --panel-control-hover: #0a2228;
-  --panel-line: rgba(55, 184, 128, 0.19);
-  --panel-line-strong: rgba(45, 212, 160, 0.34);
+  --panel-surface-2: #06271c;
+  --panel-surface-3: #0a3023;
+  --panel-control: #061922;
+  --panel-control-hover: #09232a;
+  --panel-line: rgba(68, 195, 139, 0.21);
+  --panel-line-strong: rgba(46, 224, 155, 0.42);
   --panel-text: #f3f8f5;
   --panel-muted: #8da99b;
   --panel-muted-2: #6f8d7f;
@@ -27,11 +26,18 @@ html.painel-ui-v2 .content-wrap {
   --panel-danger: #f16872;
   --panel-info: #68aef5;
   --panel-radius-sm: 10px;
-  --panel-radius: 14px;
-  --panel-radius-lg: 20px;
+  --panel-radius: 13px;
+  --panel-radius-lg: 18px;
   --panel-shadow: 0 16px 38px rgba(0, 0, 0, 0.18);
   --panel-shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.13);
 
+  background:
+    radial-gradient(circle at 68% -12%, rgba(18, 216, 143, 0.045), transparent 35%),
+    var(--panel-bg);
+  color: var(--panel-text);
+}
+
+html.painel-ui-v2 .content-wrap {
   min-width: 0;
   background:
     radial-gradient(circle at 68% -12%, rgba(18, 216, 143, 0.045), transparent 35%),
@@ -39,7 +45,70 @@ html.painel-ui-v2 .content-wrap {
   color: var(--panel-text);
 }
 
-/* Cabeçalho global do conteúdo. A sidebar não é tocada por esta camada. */
+html.painel-ui-v2 body {
+  background: var(--panel-bg-deep);
+  color: var(--panel-text);
+}
+
+html.painel-ui-v2 body,
+html.painel-ui-v2 button,
+html.painel-ui-v2 input,
+html.painel-ui-v2 select,
+html.painel-ui-v2 textarea {
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+html.painel-ui-v2 :where(h1, h2, h3, h4, h5, h6) {
+  font-family: 'Syne', system-ui, sans-serif;
+}
+
+/* Navegação lateral */
+html.painel-ui-v2 .app-shell {
+  background: var(--panel-bg);
+}
+
+html.painel-ui-v2 .sidebar {
+  border-right: 1px solid var(--panel-line) !important;
+  background:
+    linear-gradient(180deg, rgba(3, 30, 20, 0.96), rgba(0, 13, 9, 0.99)) !important;
+  box-shadow: 14px 0 36px rgba(0, 0, 0, 0.16);
+}
+
+html.painel-ui-v2 .sidebar-brand {
+  border-bottom-color: var(--panel-line) !important;
+}
+
+html.painel-ui-v2 .sidebar-brand h2 {
+  color: var(--panel-text);
+}
+
+html.painel-ui-v2 .sidebar-brand p,
+html.painel-ui-v2 .menu-section h4 {
+  color: var(--panel-muted) !important;
+}
+
+html.painel-ui-v2 .menu-list a {
+  border: 1px solid transparent;
+  border-radius: 12px !important;
+  color: #b8cbc1 !important;
+  transition: color .16s ease, background .16s ease, border-color .16s ease;
+}
+
+html.painel-ui-v2 .menu-list a:hover {
+  border-color: var(--panel-line);
+  background: rgba(18, 216, 143, 0.07) !important;
+  color: #e9fff4 !important;
+}
+
+html.painel-ui-v2 .menu-list a.active,
+html.painel-ui-v2 .menu-list a[aria-current="page"] {
+  border-color: rgba(18, 216, 143, 0.28);
+  background: rgba(18, 216, 143, 0.13) !important;
+  color: #baf7dc !important;
+  box-shadow: inset 3px 0 0 var(--panel-green);
+}
+
+/* Cabeçalho global do conteúdo */
 html.painel-ui-v2 .topbar {
   min-height: 64px;
   padding: 8px 16px !important;
@@ -317,6 +386,10 @@ html.painel-ui-v2 .page-main :where(
   transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
 }
 
+html.painel-ui-v2 .page-main button:not(.leaflet-control-zoom-in):not(.leaflet-control-zoom-out) {
+  font-family: inherit;
+}
+
 html.painel-ui-v2 .page-main :where(.btn, .base-button, .users-action-btn, .stepbtn, .tab-btn, [role="tab"]):hover:not(:disabled) {
   border-color: var(--panel-line-strong) !important;
   background: var(--panel-green-soft) !important;
@@ -336,6 +409,11 @@ html.painel-ui-v2 .page-main :where(
   border-color: rgba(18, 216, 143, 0.6) !important;
   background: var(--panel-green) !important;
   color: #002116 !important;
+}
+
+html.painel-ui-v2 .page-main .btn-primary {
+  width: auto;
+  margin-top: 0;
 }
 
 html.painel-ui-v2 .page-main :where(
@@ -496,6 +574,17 @@ html.painel-ui-v2 body > :where(.users-modal-backdrop, .modal-backdrop, .modal-o
   background: #031d14 !important;
   color: var(--panel-text) !important;
   box-shadow: 0 26px 70px rgba(0, 0, 0, 0.42) !important;
+}
+
+html.painel-ui-v2 body :where(dialog, [role="dialog"]) {
+  border-color: var(--panel-line-strong);
+  border-radius: var(--panel-radius-lg);
+  color: var(--panel-text);
+}
+
+html.painel-ui-v2 :where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--panel-green);
+  outline-offset: 2px;
 }
 
 /* Estados vazios e feedbacks */
