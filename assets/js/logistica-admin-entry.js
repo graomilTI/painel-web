@@ -72,5 +72,10 @@ observer.observe(document.documentElement, { childList: true, subtree: true });
 applyPageIdentity();
 
 import('./adm-logistica.js?v=logistica-admin-isolado-20260723-hashfix1')
-  .then(() => applyPageIdentity())
+  .then(async () => {
+    applyPageIdentity();
+    if (tab === 'abertura_os') {
+      await import('./logistica-abertura-os-workflow.js?v=20260725-aprovacao1');
+    }
+  })
   .catch(renderBootError);
