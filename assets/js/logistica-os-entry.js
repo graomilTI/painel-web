@@ -189,5 +189,8 @@ function renderBootError(error) {
 }
 
 import('./adm-logistica.js?v=logistica-admin-isolado-20260723-hashfix1')
-  .then(setup)
+  .then(async () => {
+    await setup();
+    await import('./logistica-abertura-os-workflow.js?v=20260725-aprovacao1');
+  })
   .catch(renderBootError);
