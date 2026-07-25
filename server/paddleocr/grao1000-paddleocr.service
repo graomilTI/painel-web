@@ -8,6 +8,8 @@ Type=simple
 User=grao100
 Group=grao100
 WorkingDirectory=/home/grao100/paddleocr-worker
+Environment=HOME=/home/grao100
+Environment=XDG_CACHE_HOME=/home/grao100/.cache
 EnvironmentFile=/etc/grao1000/paddleocr-worker.env
 ExecStart=/home/grao100/paddleocr-worker/.venv/bin/python /home/grao100/paddleocr-worker/logistica_ocr_worker.py
 Restart=always
