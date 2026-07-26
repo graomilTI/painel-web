@@ -35,6 +35,8 @@
 .ds-btn:disabled{opacity:.45;cursor:not-allowed}
 .ds-btn-primary{background:#3fa878;border-color:rgba(111,208,165,.4);color:#04130d}
 .ds-btn-primary:hover:not(:disabled){background:#22c55e}
+.ds-btn-danger{background:rgba(220,72,72,.14);border-color:rgba(220,72,72,.45);color:#f3b7b7}
+.ds-btn-danger:hover:not(:disabled){background:rgba(220,72,72,.32);color:#fff}
 .ds-btn-retry{margin-top:10px}
 
 /* ── estados ── */
@@ -87,7 +89,7 @@
 .ds-filter{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px;align-items:end}
 .ds-field{display:grid;gap:6px}
 .ds-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}
-.ds-field input,.ds-field select{border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:10px 12px;color-scheme:dark}
+.ds-field input,.ds-field select,.ds-field textarea{border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:10px 12px;color-scheme:dark;font:inherit;resize:vertical}
 
 /* ── responsivo ── */
 @media(max-width:760px){
