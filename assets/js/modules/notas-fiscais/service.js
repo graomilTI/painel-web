@@ -7,6 +7,7 @@ import {
   listarItensComNf,
   listarPagamentosPorItens,
   marcarItensLancados,
+  estornarItens,
   salvarDadosNfNoPagamento,
 } from './repository.js';
 import { registrarAuditoria } from '../../core/audit.js';
@@ -54,7 +55,46 @@ export function agruparPorNf(itens, pagamentos) {
       nf_lancado_em: lancadoEm,
       itens: grupo,
     };
+  }).map((g) => {
+    g.categoria = sugerirCategoria(g);
+    g.pendencias = pendenciasDoGrupo(g);
+    return g;
   }).sort((a, b) => (b.comprado_em > a.comprado_em ? 1 : -1));
+}
+
+// ── pendências e categorização (plano 6.3/6.4) ──────────────────────────────
+// Regras de categoria por palavra-chave do material (base ajustável — as
+// correções manuais alimentam nf_categorizacao_correcoes quando a migration
+// estiver aplicada).
+const REGRAS_CATEGORIA = [
+  { categoria: 'EPI', re: /\b(bota|luva|capacete|oculos|óculos|protetor|epi|colete|abafador|máscara|mascara)\b/i },
+  { categoria: 'Uniforme', re: /\b(camisa|camiseta|calça|calca|uniforme|blusa|jaqueta|farda)\b/i },
+  { categoria: 'Ferramentas', re: /\b(chave|alicate|martelo|furadeira|serra|trena|ferramenta|parafusadeira)\b/i },
+  { categoria: 'Escritório', re: /\b(papel|caneta|toner|cartucho|grampeador|escritorio|escritório|impressora)\b/i },
+  { categoria: 'Limpeza', re: /\b(detergente|sabão|sabao|desinfetante|vassoura|rodo|limpeza|alcool|álcool)\b/i },
+  { categoria: 'Informática', re: /\b(mouse|teclado|monitor|notebook|cabo|hd|ssd|mem[oó]ria|celular|carregador)\b/i },
+  { categoria: 'Alimentação', re: /\b(café|cafe|açúcar|acucar|agua|água|copo|alimento|lanche|marmita)\b/i },
+  { categoria: 'Manutenção', re: /\b(tinta|cimento|madeira|prego|parafuso|lampada|lâmpada|fita|cola|lona)\b/i },
+];
+
+export function sugerirCategoria(grupo) {
+  const texto = (grupo.itens || []).map((r) => r.material || '').join(' ');
+  for (const regra of REGRAS_CATEGORIA) {
+    if (regra.re.test(texto)) return regra.categoria;
+  }
+  return 'Geral';
+}
+
+/** Pendências objetivas de um grupo de NF (plano 6.4): o que falta para o
+ *  lançamento ficar completo, exibido como badges na janela Pendentes. */
+export function pendenciasDoGrupo(grupo) {
+  const p = [];
+  if (!grupo.numero) p.push('Sem número de NF (OCR não processado)');
+  if (!grupo.cnpj || grupo.cnpj === '-') p.push('Sem CNPJ do fornecedor');
+  if (!grupo.fornecedor || grupo.fornecedor === '-') p.push('Sem fornecedor');
+  if (!grupo.comprovante_url) p.push('Sem comprovante');
+  if (!Number(grupo.valor_total)) p.push('Valor zerado');
+  return p;
 }
 
 export function resumo(grupos) {
@@ -114,6 +154,35 @@ export async function lancarNf(grupo) {
       tabela: 'compras_itens',
       registroId: grupo.ids.join(','),
       acao: 'nf_lancada',
+      erro: String(error?.message || error),
+    });
+    throw error;
+  }
+}
+
+// ── estornar NF (com justificativa obrigatória — plano 6.5) ────────────────
+export async function estornarNf(grupo, { justificativa, usuario = null } = {}) {
+  const texto = String(justificativa || '').trim();
+  if (texto.length < 5) {
+    throw new Error('O estorno exige uma justificativa com pelo menos 5 caracteres.');
+  }
+  try {
+    await estornarItens(grupo.ids);
+    await registrarAuditoria({
+      modulo: 'notas-fiscais',
+      tabela: 'compras_itens',
+      registroId: grupo.ids.join(','),
+      acao: 'nf_estornada',
+      valorAnterior: { nf_lancado: true, nf_lancado_em: grupo.nf_lancado_em || null },
+      valorNovo: { nf_lancado: false, justificativa: texto, usuario },
+    });
+    return true;
+  } catch (error) {
+    await registrarAuditoria({
+      modulo: 'notas-fiscais',
+      tabela: 'compras_itens',
+      registroId: grupo.ids.join(','),
+      acao: 'nf_estornada',
       erro: String(error?.message || error),
     });
     throw error;

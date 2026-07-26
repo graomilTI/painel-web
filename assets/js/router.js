@@ -57,6 +57,7 @@ const SOFT_NAV_PAGES = new Map([
   ['ti-contatos', { title: 'TI · Contatos de Notificação', module: () => import('./ti-contatos.js') }],
   ['frotas-rastreadores', { title: 'Frotas · Rastreadores', module: () => import('./frotas-rastreadores.js') }],
   ['logs-usuarios', { title: 'Logs de Usuários', module: () => import('./logs-usuarios.js') }],
+  ['auditoria-central', { title: 'Auditoria Central', module: () => import('./auditoria-central.js') }],
   ['frotas-multas', { title: 'Frotas · Multas', module: () => import('./frotas-multas.js') }],
   ['propostas', { title: 'Propostas', module: () => import('./propostas.js') }],
   ['ti-comunicacao', { title: 'TI · Comunicação', module: () => import('./ti-comunicacao.js') }],

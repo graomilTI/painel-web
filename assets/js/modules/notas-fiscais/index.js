@@ -8,7 +8,7 @@
 import { pageHeader, tabs, kpis, dataStatus, esc, dinheiro, debounce, toast, confirmar } from '../../core/ui.js';
 import { normalizarTexto } from '../../core/supabaseService.js';
 import { nfState } from './state.js';
-import { carregarNotas, agruparPorNf, resumo, lancarNf } from './service.js';
+import { carregarNotas, agruparPorNf, resumo, lancarNf, estornarNf } from './service.js';
 import { renderTabela } from './components/table.js';
 import { abrirModalNf } from './components/modal.js';
 
@@ -155,6 +155,42 @@ function vincularEventos(grupos) {
       if (!ok) b.disabled = false;
     });
   });
+
+  raiz.querySelectorAll('[data-estornar]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const grupo = grupos.find((g) => g.key === b.dataset.estornar);
+      if (!grupo) return;
+      b.disabled = true;
+      const ok = await estornar(grupo);
+      if (!ok) b.disabled = false;
+    });
+  });
+}
+
+async function estornar(grupo) {
+  const justificativa = await confirmar({
+    titulo: 'Estornar NF',
+    mensagem: `A NF de ${dinheiro(grupo.valor_total)} (${grupo.regional}) voltará para Pendentes. Esta ação fica registrada na auditoria.`,
+    confirmarLabel: 'Estornar',
+    justificativa: true,
+    justificativaPlaceholder: 'Explique o motivo do estorno…',
+  });
+  if (!justificativa) return false;
+
+  try {
+    await estornarNf(grupo, { justificativa, usuario: window.currentUser?.email || null });
+    const estado = nfState.get();
+    const itens = estado.itens.map((r) => (grupo.ids.includes(r.id)
+      ? { ...r, nf_lancado: false, nf_lancado_em: null }
+      : r));
+    nfState.set({ itens });
+    toast('NF estornada e devolvida para Pendentes.', 'ok');
+    render();
+    return true;
+  } catch (error) {
+    toast(`Erro ao estornar: ${String(error?.message || error)}`, 'err', 6000);
+    return false;
+  }
 }
 
 async function lancar(grupo) {

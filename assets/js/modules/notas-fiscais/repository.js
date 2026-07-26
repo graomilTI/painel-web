@@ -62,6 +62,18 @@ export async function marcarItensLancados(ids, quandoISO) {
 }
 
 /**
+ * Estorna (reabre) os itens de uma NF lançada — volta para Pendentes (plano 6.5).
+ */
+export async function estornarItens(ids) {
+  return atualizar(
+    'compras_itens',
+    [{ coluna: 'id', op: 'in', valor: ids }],
+    { nf_lancado: false, nf_lancado_em: null },
+    { select: 'id' },
+  );
+}
+
+/**
  * Persiste dados extraídos da NF (OCR/XML) no pagamento correspondente.
  */
 export async function salvarDadosNfNoPagamento(origemId, payload) {

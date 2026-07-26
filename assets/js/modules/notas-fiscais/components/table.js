@@ -16,18 +16,22 @@ export function renderTabela({ status, erro, grupos, janela, ordenacao, pagina, 
 
   const linhas = grupos.map((g) => {
     const itensLabel = g.itens.length > 1 ? `<br><small style="color:#6b7280">${g.itens.length} itens</small>` : '';
-    const statusCell = g.nf_lancado
+    const pendencias = !g.nf_lancado && g.pendencias?.length
+      ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${g.pendencias.map((p) => badge(p, 'danger')).join(' ')}</div>`
+      : '';
+    const statusCell = (g.nf_lancado
       ? badge(`Lançado ${dataBR(g.nf_lancado_em)}`, 'ok')
-      : badge('Pendente', 'warn');
+      : badge('Pendente', 'warn')) + pendencias;
     const acoes = [
       `<button class="ds-btn" data-consultar="${esc(g.key)}" type="button">Consultar</button>`,
       isUrl(g.nf_url) ? `<a class="ds-btn" href="${esc(g.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : '',
       isUrl(g.comprovante_url) ? `<a class="ds-btn" href="${esc(g.comprovante_url)}" target="_blank" rel="noopener">Comprovante</a>` : '',
       !g.nf_lancado ? `<button class="ds-btn ds-btn-primary" data-lancar="${esc(g.key)}" type="button">Lançado</button>` : '',
+      g.nf_lancado ? `<button class="ds-btn ds-btn-danger" data-estornar="${esc(g.key)}" type="button">Estornar</button>` : '',
     ].filter(Boolean).join(' ');
     return `<tr>
       <td>${dataBR(g.comprado_em)}${itensLabel}</td>
-      <td><strong>${esc(g.regional)}</strong></td>
+      <td><strong>${esc(g.regional)}</strong><br><small style="color:#6b7280">${esc(g.categoria || 'Geral')}</small></td>
       <td>${esc(g.solicitante)}</td>
       <td>${dinheiro(g.valor_total)}</td>
       <td>${statusCell}</td>

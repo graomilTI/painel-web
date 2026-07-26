@@ -188,13 +188,27 @@ export function closeModal(id = 'dsModal') {
 }
 
 // ── confirmação padrão (substitui window.confirm) ────────────────────────────
-export function confirmar({ titulo = 'Confirmar ação', mensagem = 'Deseja continuar?', confirmarLabel = 'Confirmar', cancelarLabel = 'Cancelar' } = {}) {
+// Com `justificativa: true`, exibe um campo obrigatório e resolve com o texto
+// digitado (ou false ao cancelar) — usado em estornos e ações sensíveis.
+export function confirmar({
+  titulo = 'Confirmar ação', mensagem = 'Deseja continuar?',
+  confirmarLabel = 'Confirmar', cancelarLabel = 'Cancelar',
+  justificativa = false, justificativaMin = 5,
+  justificativaPlaceholder = 'Descreva o motivo…',
+} = {}) {
   return new Promise((resolve) => {
+    const campoHtml = justificativa ? `
+        <div class="ds-field" style="margin-top:10px">
+          <label for="dsJustificativa">Justificativa (obrigatória)</label>
+          <textarea id="dsJustificativa" rows="3" placeholder="${esc(justificativaPlaceholder)}"></textarea>
+          <small id="dsJustificativaErro" style="color:#c0392b;display:none">Informe pelo menos ${justificativaMin} caracteres.</small>
+        </div>` : '';
     const overlay = openModal({
       id: 'dsConfirmModal',
       conteudoHtml: `
         <h3 class="ds-modal-title">${esc(titulo)}</h3>
         <p class="ds-modal-text">${esc(mensagem)}</p>
+        ${campoHtml}
         <div class="ds-modal-actions">
           <button class="ds-btn" data-ds-cancel type="button">${esc(cancelarLabel)}</button>
           <button class="ds-btn ds-btn-primary" data-ds-ok type="button">${esc(confirmarLabel)}</button>
@@ -202,7 +216,23 @@ export function confirmar({ titulo = 'Confirmar ação', mensagem = 'Deseja cont
       aoFechar: () => resolve(false),
     });
     overlay.querySelector('[data-ds-cancel]').addEventListener('click', () => { closeModal('dsConfirmModal'); resolve(false); });
-    overlay.querySelector('[data-ds-ok]').addEventListener('click', () => { closeModal('dsConfirmModal'); resolve(true); });
+    overlay.querySelector('[data-ds-ok]').addEventListener('click', () => {
+      if (justificativa) {
+        const texto = String(overlay.querySelector('#dsJustificativa')?.value || '').trim();
+        if (texto.length < justificativaMin) {
+          const erroEl = overlay.querySelector('#dsJustificativaErro');
+          if (erroEl) erroEl.style.display = 'block';
+          overlay.querySelector('#dsJustificativa')?.focus();
+          return;
+        }
+        closeModal('dsConfirmModal');
+        resolve(texto);
+        return;
+      }
+      closeModal('dsConfirmModal');
+      resolve(true);
+    });
+    if (justificativa) setTimeout(() => overlay.querySelector('#dsJustificativa')?.focus(), 50);
   });
 }
 
