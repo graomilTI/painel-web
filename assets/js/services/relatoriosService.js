@@ -36,12 +36,12 @@ export const METRICAS = [
   {
     id: 'nf_lancadas_mes',
     nome: 'Notas fiscais lançadas no mês',
-    definicao: 'Quantidade de NFs com status Lançada cujo lançamento ocorreu no mês corrente.',
-    origem: 'Supabase · notas_fiscais',
-    consulta: () => listar('notas_fiscais', {
+    definicao: 'Itens de compra com NF lançada (nf_lancado = true) cujo lançamento ocorreu no mês corrente.',
+    origem: 'Supabase · compras_itens',
+    consulta: () => listar('compras_itens', {
       filtros: [
-        { coluna: 'status', valor: 'Lançada' },
-        { coluna: 'updated_at', op: 'gte', valor: `${new Date().toISOString().slice(0, 7)}-01` },
+        { coluna: 'nf_lancado', valor: true },
+        { coluna: 'nf_lancado_em', op: 'gte', valor: `${new Date().toISOString().slice(0, 7)}-01` },
       ],
       porPagina: 1000,
     }),

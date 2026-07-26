@@ -25,7 +25,7 @@ export async function perfilDoColaborador(colaboradorId) {
     listar('rh_contratos', { filtros: [{ coluna: 'colaborador_id', valor: id }], ordenar: [{ coluna: 'versao', asc: false }], porPagina: 50 }).catch(() => ({ rows: [] })),
     listar('rh_epi', { filtros: [{ coluna: 'colaborador_id', valor: id }], porPagina: 100 }).catch(() => ({ rows: [] })),
     listar('rh_cat', { filtros: [{ coluna: 'colaborador_id', valor: id }], porPagina: 50 }).catch(() => ({ rows: [] })),
-    listar('rh_indisponibilidades', { filtros: [{ coluna: 'colaborador_id', valor: id }], ordenar: [{ coluna: 'inicio', asc: false }], porPagina: 100 }).catch(() => ({ rows: [] })),
+    listarIndisponibilidadesBrutas(id).catch(() => ({ rows: [] })),
     listar('patrimonios_movimentacoes', { filtros: [{ coluna: 'responsavel_novo', valor: id }], porPagina: 100 }).catch(() => ({ rows: [] })),
   ]);
   return {
@@ -181,6 +181,21 @@ export async function registrarCat(payload, { usuario = null } = {}) {
 }
 
 // ── 10.6 Indisponibilidade (férias/atestados) ────────────────────────────────
+/** Lê da tabela nova rh_indisponibilidades e cai para a legada `indisponibilidades`. */
+async function listarIndisponibilidadesBrutas(colaboradorId, opcoes = {}) {
+  const params = {
+    filtros: [{ coluna: 'colaborador_id', valor: String(colaboradorId) }],
+    ordenar: [{ coluna: 'inicio', asc: false }],
+    porPagina: opcoes.porPagina || 100,
+    pagina: opcoes.pagina || 1,
+  };
+  try {
+    return await listar('rh_indisponibilidades', params);
+  } catch {
+    return listar('indisponibilidades', params);
+  }
+}
+
 /** Registra indisponibilidade com bloqueio de conflito de período e
  *  aceitando retroativo válido, inclusive de um único dia (plano 10.6). */
 export async function registrarIndisponibilidade(payload, { usuario = null } = {}) {
@@ -192,10 +207,8 @@ export async function registrarIndisponibilidade(payload, { usuario = null } = {
   if (fim < inicio) throw new Error('A data final não pode ser anterior à inicial.');
 
   // Bloqueio de conflitos: sobreposição com registros existentes do colaborador
-  const { rows: existentes } = await listar('rh_indisponibilidades', {
-    filtros: [{ coluna: 'colaborador_id', valor: String(payload.colaborador_id) }],
-    porPagina: 500,
-  }).catch(() => ({ rows: [] }));
+  const { rows: existentes } = await listarIndisponibilidadesBrutas(payload.colaborador_id, { porPagina: 500 })
+    .catch(() => ({ rows: [] }));
   const conflito = (existentes || []).find((r) => {
     const rIni = String(r.inicio).slice(0, 10);
     const rFim = String(r.fim || r.inicio).slice(0, 10);
@@ -204,11 +217,19 @@ export async function registrarIndisponibilidade(payload, { usuario = null } = {
   if (conflito) {
     throw new Error(`Conflito de período: já existe ${conflito.tipo} de ${conflito.inicio} a ${conflito.fim || conflito.inicio}.`);
   }
-  const linhas = await inserir('rh_indisponibilidades', {
+  let linhas;
+  const registro = {
     ...payload, inicio, fim,
     retroativo: inicio < new Date().toISOString().slice(0, 10),
     criado_por: usuario,
-  });
+  };
+  try {
+    linhas = await inserir('rh_indisponibilidades', registro);
+  } catch {
+    // tabela nova ainda não migrada: usa a legada sem os campos extras
+    const { retroativo, criado_por, ...legado } = registro;
+    linhas = await inserir('indisponibilidades', legado);
+  }
   const linha = linhas?.[0] || null;
   await registrarAuditoria({
     modulo: MODULO, tabela: 'rh_indisponibilidades', registroId: linha?.id,
@@ -218,9 +239,5 @@ export async function registrarIndisponibilidade(payload, { usuario = null } = {
 }
 
 export async function historicoIndisponibilidades(colaboradorId, { pagina = 1, porPagina = 50 } = {}) {
-  return listar('rh_indisponibilidades', {
-    filtros: [{ coluna: 'colaborador_id', valor: String(colaboradorId) }],
-    ordenar: [{ coluna: 'inicio', asc: false }],
-    pagina, porPagina,
-  });
+  return listarIndisponibilidadesBrutas(colaboradorId, { pagina, porPagina });
 }

@@ -14,10 +14,24 @@ const MODULO = 'ti';
 
 // ── 11.1 Agentes ─────────────────────────────────────────────────────────────
 export async function listarAgentes() {
-  return listar('grm_sync_agentes', {
-    ordenar: [{ coluna: 'nome', asc: true }],
-    porPagina: 100,
-  }).catch(() => listar('agentes', { porPagina: 100 }));
+  // Não há tabela de catálogo: os agentes são derivados dos jobs registrados
+  const { rows } = await listar('grm_sync_jobs', {
+    ordenar: [{ coluna: 'created_at', asc: false }], porPagina: 500,
+  }).catch(() => ({ rows: [] }));
+  const mapa = new Map();
+  for (const j of rows || []) {
+    const id = String(j.agente_id || j.agente || 'desconhecido');
+    if (!mapa.has(id)) {
+      mapa.set(id, {
+        id, nome: j.agente_nome || id, ultimoJob: j,
+        totalJobs: 0, comErro: 0,
+      });
+    }
+    const a = mapa.get(id);
+    a.totalJobs += 1;
+    if (j.erro) a.comErro += 1;
+  }
+  return { rows: [...mapa.values()], total: mapa.size };
 }
 
 export async function listarJobs({ agenteId = null, status = null, pagina = 1, porPagina = 50 } = {}) {
@@ -126,19 +140,22 @@ export async function statusDasIntegracoes() {
   const { rows: jobs } = await listar('grm_sync_jobs', {
     ordenar: [{ coluna: 'created_at', asc: false }], porPagina: 500,
   }).catch(() => ({ rows: [] }));
-  const { rows: statusRows } = await listar('grm_sync_status', { porPagina: 100 }).catch(() => ({ rows: [] }));
+  const { rows: statusRows } = await listar('botconversa_jobs', {
+    ordenar: [{ coluna: 'created_at', asc: false }], porPagina: 50,
+  }).catch(() => ({ rows: [] }));
 
   return {
     integracoes: INTEGRACOES.map((integ) => {
       const jobsInteg = (jobs || []).filter((j) => String(j.agente_id || j.agente || '').includes(integ.agentePadrao || '§'));
       const ultimo = jobsInteg[0] || null;
       const comErro = jobsInteg.find((j) => j.erro);
-      const st = (statusRows || []).find((s) => String(s.agente || s.nome || '').includes(integ.agentePadrao || '§'));
+      const stBot = integ.id === 'botconversa' ? (statusRows || [])[0] : null;
       return {
         ...integ,
-        status: ultimo ? (ultimo.erro ? 'erro' : String(ultimo.status || 'ok')) : 'sem execuções',
-        ultimaExecucao: ultimo?.finalizado_em || ultimo?.iniciado_em || ultimo?.created_at || null,
-        proximaExecucao: ultimo?.proximo_processamento || st?.proxima_execucao || null,
+        status: ultimo ? (ultimo.erro ? 'erro' : String(ultimo.status || 'ok'))
+          : (stBot ? String(stBot.status || 'ok') : 'sem execuções'),
+        ultimaExecucao: ultimo?.finalizado_em || ultimo?.iniciado_em || ultimo?.created_at || stBot?.created_at || null,
+        proximaExecucao: ultimo?.proximo_processamento || null,
         erro: comErro?.erro || null,
         credencialConfigurada: integ.agentePadrao != null,
         totalJobs: jobsInteg.length,
@@ -166,13 +183,13 @@ export async function moverEmailNoFluxo(emailId, novoEstado, { usuario = null, d
   if (!FLUXO_EMAIL.includes(novoEstado) && novoEstado !== 'Respondido') {
     throw new Error(`Estado inválido no fluxo de e-mails: ${novoEstado}.`);
   }
-  const { rows } = await listar('emails_recebidos', { filtros: [{ coluna: 'id', valor: emailId }], porPagina: 1 });
+  const { rows } = await listar('email_messages', { filtros: [{ coluna: 'id', valor: emailId }], porPagina: 1 });
   const anterior = rows?.[0] || null;
-  const linhas = await atualizar('emails_recebidos', [{ coluna: 'id', valor: emailId }], {
+  const linhas = await atualizar('email_messages', [{ coluna: 'id', valor: emailId }], {
     status_fluxo: novoEstado,
   });
   await registrarAuditoria({
-    modulo: MODULO, tabela: 'emails_recebidos', registroId: emailId, acao: 'email_fluxo',
+    modulo: MODULO, tabela: 'email_messages', registroId: emailId, acao: 'email_fluxo',
     valorAnterior: { status: anterior?.status_fluxo }, valorNovo: { status: novoEstado, detalhe, usuario },
   });
   return linhas?.[0] || null;
