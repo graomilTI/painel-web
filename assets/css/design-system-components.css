@@ -1,0 +1,97 @@
+/* assets/css/design-system-components.css
+   Componentes reutilizáveis do design system (fundação P0, item 2.6).
+   Visual: dark theme com detalhes em verde, layout compacto, alto contraste. */
+
+/* ── cabeçalho de página ── */
+.ds-hero{border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:22px;background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(22,101,52,.22));box-shadow:0 20px 50px rgba(2,6,23,.22)}
+.ds-hero h2{margin:0 0 6px;color:#f8fafc;font-size:28px}
+.ds-hero p{margin:0;color:#94a3b8}
+
+/* ── cards ── */
+.ds-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(15,23,42,.82);padding:18px}
+
+/* ── abas ── */
+.ds-tabs{display:flex;gap:8px;flex-wrap:wrap}
+.ds-tab{border:1px solid rgba(148,163,184,.18);border-radius:999px;padding:9px 18px;background:rgba(15,23,42,.6);color:#94a3b8;cursor:pointer;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.ds-tab.active{background:rgba(22,101,52,.28);color:#bbf7d0;border-color:rgba(111,208,165,.3)}
+.ds-tab-badge{background:rgba(148,163,184,.16);border-radius:999px;padding:1px 8px;font-size:11px;color:#e2e2f0}
+.ds-tab.active .ds-tab-badge{background:rgba(34,197,94,.25);color:#dcfce7}
+
+/* ── KPIs ── */
+.ds-kpis{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:12px}
+.ds-kpi{border:1px solid rgba(148,163,184,.14);border-radius:18px;padding:14px;background:rgba(2,6,23,.36)}
+.ds-kpi span{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.ds-kpi strong{display:block;margin-top:6px;color:#f8fafc;font-size:20px}
+
+/* ── badges ── */
+.ds-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid rgba(148,163,184,.18);background:rgba(148,163,184,.12);color:#cbd5e1}
+.ds-badge.ok{background:rgba(22,101,52,.22);color:#bbf7d0;border-color:rgba(22,101,52,.34)}
+.ds-badge.warn{background:rgba(245,158,11,.1);color:#fde68a;border-color:rgba(245,158,11,.24)}
+.ds-badge.danger{background:rgba(239,68,68,.12);color:#fecaca;border-color:rgba(239,68,68,.28)}
+
+/* ── botões ── */
+.ds-btn{border:1px solid rgba(148,163,184,.22);border-radius:14px;background:rgba(15,23,42,.78);color:#e2e2f0;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer}
+.ds-btn:hover:not(:disabled){background:rgba(22,101,52,.24)}
+.ds-btn:disabled{opacity:.45;cursor:not-allowed}
+.ds-btn-primary{background:#3fa878;border-color:rgba(111,208,165,.4);color:#04130d}
+.ds-btn-primary:hover:not(:disabled){background:#22c55e}
+.ds-btn-retry{margin-top:10px}
+
+/* ── estados ── */
+.ds-state{display:grid;justify-items:center;gap:8px;text-align:center;color:#94a3b8;padding:28px 16px;border:1px dashed rgba(148,163,184,.18);border-radius:18px;background:rgba(2,6,23,.3)}
+.ds-state small{color:#6b7280}
+.ds-error{border-color:rgba(239,68,68,.3);color:#fecaca}
+.ds-empty-icon{font-size:26px;color:#475569}
+.ds-spinner{width:18px;height:18px;border-radius:50%;border:2px solid rgba(148,163,184,.3);border-top-color:#22c55e;animation:dsspin .8s linear infinite}
+@keyframes dsspin{to{transform:rotate(360deg)}}
+
+/* ── status de dados ── */
+.ds-data-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#6fd0a5;background:rgba(22,101,52,.14);border:1px solid rgba(111,208,165,.22);border-radius:999px;padding:5px 12px}
+.ds-data-status.err{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.26)}
+
+/* ── tabela ── */
+.ds-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}
+.ds-table{width:100%;border-collapse:collapse}
+.ds-table th,.ds-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;color:#e2e2f0;vertical-align:top}
+.ds-table th{background:rgba(15,23,42,.96);color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.ds-td-empty{text-align:center;color:#6b7280;padding:24px!important}
+.ds-th-sort{all:unset;cursor:pointer;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;display:inline-flex;gap:4px;align-items:center}
+.ds-th-sort:hover{color:#bbf7d0}
+.ds-th-sort span{color:#22c55e;font-size:10px}
+
+/* ── paginação ── */
+.ds-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 2px 0;color:#94a3b8;font-size:13px}
+.ds-pagination-btns{display:flex;align-items:center;gap:10px}
+.ds-page-num{color:#e2e2f0;font-weight:700}
+
+/* ── modal ── */
+.ds-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;align-items:center;justify-content:center;padding:16px}
+.ds-modal.open{display:flex}
+.ds-modal-card{background:#0f172a;border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:24px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto}
+.ds-modal-title{margin:0 0 8px;color:#f8fafc}
+.ds-modal-text{margin:0 0 16px;color:#94a3b8}
+.ds-modal-actions{display:flex;gap:10px;justify-content:flex-end}
+.ds-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.ds-modal-full{grid-column:1/-1}
+.ds-modal-label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.ds-modal-value{color:#e2e2f0;font-size:14px}
+
+/* ── toast ── */
+.ds-toast-host{position:fixed;right:18px;bottom:18px;z-index:99999;display:grid;gap:8px}
+.ds-toast{background:#123524;color:#eef7f2;border:1px solid rgba(111,208,165,.4);border-radius:14px;padding:11px 16px;font-size:13px;font-weight:700;opacity:0;transform:translateY(8px);transition:all .25s ease;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.ds-toast.show{opacity:1;transform:translateY(0)}
+.ds-toast.err{background:#3b1113;border-color:rgba(239,68,68,.4);color:#fecaca}
+.ds-toast.warn{background:#3b2a08;border-color:rgba(245,158,11,.4);color:#fde68a}
+
+/* ── filtros ── */
+.ds-filter{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px;align-items:end}
+.ds-field{display:grid;gap:6px}
+.ds-field label{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}
+.ds-field input,.ds-field select{border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:10px 12px;color-scheme:dark}
+
+/* ── responsivo ── */
+@media(max-width:760px){
+  .ds-kpis,.ds-filter,.ds-modal-grid{grid-template-columns:1fr}
+  .ds-modal-full{grid-column:1}
+  .ds-hero h2{font-size:22px}
+}
