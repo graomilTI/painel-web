@@ -7,6 +7,7 @@ import {
   listarItensComNf,
   listarPagamentosPorItens,
   marcarItensLancados,
+  estornarItens,
   salvarDadosNfNoPagamento,
 } from './repository.js';
 import { registrarAuditoria } from '../../core/audit.js';
@@ -114,6 +115,35 @@ export async function lancarNf(grupo) {
       tabela: 'compras_itens',
       registroId: grupo.ids.join(','),
       acao: 'nf_lancada',
+      erro: String(error?.message || error),
+    });
+    throw error;
+  }
+}
+
+// ── estornar NF (com justificativa obrigatória — plano 6.5) ────────────────
+export async function estornarNf(grupo, { justificativa, usuario = null } = {}) {
+  const texto = String(justificativa || '').trim();
+  if (texto.length < 5) {
+    throw new Error('O estorno exige uma justificativa com pelo menos 5 caracteres.');
+  }
+  try {
+    await estornarItens(grupo.ids);
+    await registrarAuditoria({
+      modulo: 'notas-fiscais',
+      tabela: 'compras_itens',
+      registroId: grupo.ids.join(','),
+      acao: 'nf_estornada',
+      valorAnterior: { nf_lancado: true, nf_lancado_em: grupo.nf_lancado_em || null },
+      valorNovo: { nf_lancado: false, justificativa: texto, usuario },
+    });
+    return true;
+  } catch (error) {
+    await registrarAuditoria({
+      modulo: 'notas-fiscais',
+      tabela: 'compras_itens',
+      registroId: grupo.ids.join(','),
+      acao: 'nf_estornada',
       erro: String(error?.message || error),
     });
     throw error;

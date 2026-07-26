@@ -24,6 +24,7 @@ export function renderTabela({ status, erro, grupos, janela, ordenacao, pagina, 
       isUrl(g.nf_url) ? `<a class="ds-btn" href="${esc(g.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : '',
       isUrl(g.comprovante_url) ? `<a class="ds-btn" href="${esc(g.comprovante_url)}" target="_blank" rel="noopener">Comprovante</a>` : '',
       !g.nf_lancado ? `<button class="ds-btn ds-btn-primary" data-lancar="${esc(g.key)}" type="button">Lançado</button>` : '',
+      g.nf_lancado ? `<button class="ds-btn ds-btn-danger" data-estornar="${esc(g.key)}" type="button">Estornar</button>` : '',
     ].filter(Boolean).join(' ');
     return `<tr>
       <td>${dataBR(g.comprado_em)}${itensLabel}</td>
