@@ -411,7 +411,7 @@
     box.innerHTML = '<div class="ti-empty">Verificando saúde das integrações...</div>';
     const fontes = [
       { nome: 'GRM · Sincronização', consulta: () => supabase.from('grm_sync_jobs').select('status, iniciado_em, finalizado_em, erro').order('created_at', { ascending: false }).limit(1) },
-      { nome: 'BotConversa', consulta: () => supabase.from('botconversa_jobs').select('status, created_at, updated_at').order('created_at', { ascending: false }).limit(1) },
+      { nome: 'BotConversa', consulta: () => supabase.from('botconversa_jobs').select('status, created_at').order('created_at', { ascending: false }).limit(1) },
       { nome: 'Central de E-mails', consulta: () => supabase.from('email_messages').select('created_at').order('created_at', { ascending: false }).limit(1) },
       { nome: 'BFleet / Cargas x Geofence', consulta: () => supabase.from('logistica_cargas_monitor_execucoes').select('status, iniciado_em, finalizado_em, erro').order('iniciado_em', { ascending: false }).limit(1) }
     ];
