@@ -186,7 +186,8 @@ export const MENU_CONFIG = [
   {
     grupo: "AUDITORIA",
     itens: [
-      item("admin_auditoria", "Auditoria do Sistema", "admin-auditoria", ["ADMIN_AUDITORIA"])
+      item("admin_auditoria", "Auditoria do Sistema", "admin-auditoria", ["ADMIN_AUDITORIA"]),
+      item("auditoria_central", "Auditoria Central", "auditoria-central", ["AUDITORIA_CENTRAL", "LOGS_USUARIOS", "ADMIN_AUDITORIA"])
     ]
   },
 
