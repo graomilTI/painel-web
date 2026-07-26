@@ -10,6 +10,7 @@ import {
   salvarDadosNfNoPagamento,
 } from './repository.js';
 import { registrarAuditoria } from '../../core/audit.js';
+import { validarParaLancamento } from './validators.js';
 
 // ── carga consolidada ────────────────────────────────────────────────────────
 export async function carregarNotas({ chaveCorrida } = {}) {
@@ -80,6 +81,22 @@ export function descricaoItens(itens) {
 // ── lançar NF (com auditoria) ────────────────────────────────────────────────
 export async function lancarNf(grupo) {
   const quando = new Date().toISOString();
+  // Validação mínima antes do lançamento (6.4/6.6). O fluxo atual de
+  // compras garante origem via compras_solicitacoes, então a exigência de
+  // origem fica satisfeita pelos ids dos itens; os demais campos são
+  // verificados de forma defensiva sem bloquear grupos legados.
+  const { valido, pendencias } = validarParaLancamento(
+    { numero_nf: grupo.numero, valor: grupo.valor_total, data_emissao: grupo.comprado_em, categoria: 'compras', origem_id: grupo.ids?.[0] },
+    { exigirOrigem: true },
+  );
+  if (!valido) {
+    const criticas = pendencias.filter((p) => p.includes('origem') || p.includes('Valor'));
+    if (criticas.length) {
+      const error = new Error(criticas.join(' '));
+      error.pendencias = pendencias;
+      throw error;
+    }
+  }
   try {
     await marcarItensLancados(grupo.ids, quando);
     await registrarAuditoria({

@@ -7,7 +7,7 @@ Documento gerado como primeiro item da fundação (P0, item 2.1 do plano de rees
 | Dimensão | Quantidade | Detalhe |
 | --- | --- | --- |
 | Páginas HTML (rotas) | 99 | Uma página por rota, montadas sobre `pageInit.js` + `layout.js` |
-| Arquivos JavaScript em `assets/js` | 244 | Inclui 43 hotfixes/patches a incorporar nos módulos principais |
+| Arquivos JavaScript em `assets/js` | 235 | Inclui 31 hotfixes/patches vivos a incorporar nos módulos principais; 9 hotfixes mortos (zero referências) removidos nesta entrega |
 | Arquivos CSS | 17 | `styles.css` global + design system + CSS por módulo |
 | Migrations Supabase | 153 | Em `supabase/migrations`, nomeadas por data |
 | Edge Functions | 21 | Ver lista abaixo |
@@ -41,4 +41,4 @@ O frontend é publicado por push na branch `main`, que dispara o workflow `.gith
 
 ## Pontos de atenção mapeados (alimentam as fases seguintes)
 
-O levantamento confirma os problemas descritos no plano de reestruturação: existem 43 arquivos de hotfix/patch carregados por cima dos módulos principais (a Programação sozinha carrega 12 scripts extras), consultas `supabase.from(...)` espalhadas por funções de renderização em praticamente todos os módulos, ausência de tabela de auditoria genérica com valor anterior/novo (existe apenas `app_logs_usuarios`, focada em login/acesso), e menu com dezenas de aliases de contingência em `menuConfig.js`. Esses pontos são endereçados pelos itens 2.2 a 2.7 da fundação, começando pelo módulo piloto de Notas Fiscais.
+O levantamento confirma os problemas descritos no plano de reestruturação: existem 31 arquivos de hotfix/patch vivos carregados por cima dos módulos principais (outros 9 estavam mortos, sem nenhuma referência, e foram removidos nesta entrega) (a Programação sozinha carrega 12 scripts extras), consultas `supabase.from(...)` espalhadas por funções de renderização em praticamente todos os módulos, ausência de tabela de auditoria genérica com valor anterior/novo (existe apenas `app_logs_usuarios`, focada em login/acesso), e menu com dezenas de aliases de contingência em `menuConfig.js`. Esses pontos são endereçados pelos itens 2.2 a 2.7 da fundação, começando pelo módulo piloto de Notas Fiscais.
