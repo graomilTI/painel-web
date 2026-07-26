@@ -402,6 +402,55 @@
     }
   }
 
+  // ── Saúde das integrações (plano 11.2): última execução, status e erro por
+  // integração, lendo as tabelas de jobs que os workers já alimentam. ────────
+  async function loadHealth(root, opts = {}) {
+    const supabase = getSupabase(opts);
+    const box = root.querySelector('[data-ti-health]');
+    if (!supabase || !box) return;
+    box.innerHTML = '<div class="ti-empty">Verificando saúde das integrações...</div>';
+    const fontes = [
+      { nome: 'GRM · Sincronização', consulta: () => supabase.from('grm_sync_jobs').select('status, iniciado_em, finalizado_em, erro').order('created_at', { ascending: false }).limit(1) },
+      { nome: 'BotConversa', consulta: () => supabase.from('botconversa_jobs').select('status, created_at, updated_at').order('created_at', { ascending: false }).limit(1) },
+      { nome: 'Central de E-mails', consulta: () => supabase.from('email_messages').select('created_at').order('created_at', { ascending: false }).limit(1) },
+      { nome: 'BFleet / Cargas x Geofence', consulta: () => supabase.from('logistica_cargas_monitor_execucoes').select('status, iniciado_em, finalizado_em, erro').order('iniciado_em', { ascending: false }).limit(1) }
+    ];
+    const cards = [];
+    for (const fonte of fontes) {
+      try {
+        const { data, error } = await fonte.consulta();
+        if (error) throw error;
+        const ultimo = Array.isArray(data) ? data[0] : null;
+        if (!ultimo) {
+          cards.push({ nome: fonte.nome, statusUi: 'idle', detalhe: 'Sem execuções registradas.' });
+          continue;
+        }
+        const quando = ultimo.finalizado_em || ultimo.updated_at || ultimo.iniciado_em || ultimo.created_at || null;
+        const status = String(ultimo.status || (ultimo.erro ? 'erro' : 'ok')).toLowerCase();
+        const comErro = Boolean(ultimo.erro) || /erro|fail|falha/.test(status);
+        const dataFmt = quando ? new Date(quando).toLocaleString('pt-BR') : 'sem data';
+        cards.push({
+          nome: fonte.nome,
+          statusUi: comErro ? 'error' : 'online',
+          detalhe: `Última execução: ${dataFmt}${ultimo.status ? ` · status: ${escapeHtml(String(ultimo.status))}` : ''}${ultimo.erro ? `<br><span style="color:#fca5a5">Erro: ${escapeHtml(String(ultimo.erro).slice(0, 200))}</span>` : ''}`
+        });
+      } catch (err) {
+        cards.push({ nome: fonte.nome, statusUi: 'idle', detalhe: `Sem leitura (${escapeHtml(err?.message || 'tabela indisponível')}).` });
+      }
+    }
+    const cor = { online: '#22c55e', error: '#ef4444', idle: '#f59e0b' };
+    const rotulo = { online: 'Operando', error: 'Com erro', idle: 'Sem dados' };
+    box.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">${cards.map((c) => `
+      <div class="ti-panel" style="padding:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="width:9px;height:9px;border-radius:50%;background:${cor[c.statusUi]};box-shadow:0 0 8px ${cor[c.statusUi]}66"></span>
+          <strong style="color:#f8fafc;font-size:13px">${escapeHtml(c.nome)}</strong>
+          <span class="ti-badge" style="margin-left:auto">${rotulo[c.statusUi]}</span>
+        </div>
+        <div style="color:#94a3b8;font-size:12px;line-height:1.5">${c.detalhe}</div>
+      </div>`).join('')}</div>`;
+  }
+
   function renderIntegracoes(container, opts = {}) {
     container.innerHTML = `${styles()}
       <section class="ti-shell">
@@ -409,6 +458,10 @@
           <div class="ti-kicker">TI · Segurança · APIs</div>
           <h1 class="ti-title">Integrações</h1>
           <p class="ti-subtitle">Gerencie endpoints, tokens e chaves usados por Edge Functions, Workers e automações. Assim você troca credenciais pelo painel sem editar arquivos do projeto.</p>
+        </div>
+        <div class="ti-panel" style="margin-bottom:16px">
+          <h3>Saúde das integrações</h3>
+          <div data-ti-health></div>
         </div>
         <div class="ti-card">
           <div class="ti-tabs"><button class="ti-tab" type="button">Integrações</button></div>
@@ -466,6 +519,7 @@
     container.querySelector('[data-test-integracao]')?.addEventListener('click', () => testIntegration(container, opts));
     container.querySelectorAll('[data-template]').forEach((btn) => btn.addEventListener('click', () => applyTemplate(container, opts, TEMPLATES[Number(btn.getAttribute('data-template'))])));
     loadData(container, opts);
+    loadHealth(container, opts);
   }
 
   window[MODULE_NAME] = window[MODULE_NAME] || {};
