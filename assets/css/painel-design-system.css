@@ -120,8 +120,16 @@ html.painel-ui-v2 .topbar {
 }
 
 html.painel-ui-v2 .topbar-title {
-  min-width: 120px;
+  min-width: 0;
   max-width: 230px;
+  flex: 0 1 auto !important;
+  overflow: hidden;
+}
+
+html.painel-ui-v2 .topbar-title * {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 html.painel-ui-v2 .topbar-title h1,
@@ -141,10 +149,10 @@ html.painel-ui-v2 .topbar .meta {
 }
 
 html.painel-ui-v2 .topbar-search {
-  min-width: 180px;
+  min-width: 90px !important;
   max-width: 440px;
   height: 42px;
-  flex: 1 1 320px;
+  flex: 1 1 160px !important;
   border: 1px solid var(--panel-line) !important;
   border-radius: 14px !important;
   background: rgba(1, 18, 13, 0.74) !important;
@@ -172,6 +180,11 @@ html.painel-ui-v2 .topbar-search-icon {
 html.painel-ui-v2 .topbar-actions {
   gap: 8px !important;
   flex-wrap: nowrap !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+}
+
+html.painel-ui-v2 .topbar {
   min-width: 0;
 }
 
@@ -180,7 +193,7 @@ html.painel-ui-v2 .topbar-actions {
 html.painel-ui-v2 .topbar-actions .agent-update-pill,
 .agent-update-pill {
   flex: 0 1 auto !important;
-  min-width: 0 !important;
+  min-width: 56px !important;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
