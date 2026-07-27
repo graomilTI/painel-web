@@ -428,11 +428,13 @@
         const quando = ultimo.finalizado_em || ultimo.updated_at || ultimo.iniciado_em || ultimo.created_at || null;
         const status = String(ultimo.status || (ultimo.erro ? 'erro' : 'ok')).toLowerCase();
         const comErro = Boolean(ultimo.erro) || /erro|fail|falha/.test(status);
-        const dataFmt = quando ? new Date(quando).toLocaleString('pt-BR') : 'sem data';
+        const dataFmt = quando ? new Date(quando).toLocaleString('pt-BR') : '';
         cards.push({
           nome: fonte.nome,
-          statusUi: comErro ? 'error' : 'online',
-          detalhe: `Última execução: ${dataFmt}${ultimo.status ? ` · status: ${escapeHtml(String(ultimo.status))}` : ''}${ultimo.erro ? `<br><span style="color:#fca5a5">Erro: ${escapeHtml(String(ultimo.erro).slice(0, 200))}</span>` : ''}`
+          statusUi: comErro ? 'error' : (quando ? 'online' : 'idle'),
+          detalhe: quando
+            ? `Última execução: ${dataFmt}${ultimo.status ? ` · status: ${escapeHtml(String(ultimo.status))}` : ''}${ultimo.erro ? `<br><span style="color:#fca5a5">Erro: ${escapeHtml(String(ultimo.erro).slice(0, 200))}</span>` : ''}`
+            : `Sem execuções com data registrada${ultimo.status ? ` · último status: ${escapeHtml(String(ultimo.status))}` : ''}${ultimo.erro ? `<br><span style="color:#fca5a5">Erro: ${escapeHtml(String(ultimo.erro).slice(0, 200))}</span>` : ''}`
         });
       } catch (err) {
         cards.push({ nome: fonte.nome, statusUi: 'idle', detalhe: `Sem leitura (${escapeHtml(err?.message || 'tabela indisponível')}).` });
