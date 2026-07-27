@@ -161,7 +161,7 @@ function referenceBr() { return brDate(referenceDate()); }
 // (dura enquanto a aba do navegador ficar aberta, some ao fechar) guarda o
 // último resultado bem-sucedido pra pintar a tela na hora ao reabrir a página,
 // enquanto uma atualização roda por trás sem apagar o que já está visível.
-const REPORT_CACHE_KEY = 'fob_v9_report_cache_v1';
+const REPORT_CACHE_KEY = 'fob_v9_report_cache_v2_sem_carga_ponto';
 
 function readReportCache() {
   try {
@@ -478,30 +478,32 @@ function compareFob(movementRows, productionRows, nheRows) {
     });
   });
 
-  // Por grupo Cliente + Local de Embarque: se QUALQUER OS do grupo tem NHE ou
-  // carga real, isso conta pra decidir "Dois Embarques" nas OS irmãs sem
-  // lançamento próprio — mesmo que a OS "dona" do lançamento nem apareça no
-  // painel (por já ter carga real, ver exclusão abaixo).
+  // Regra obrigatória por ponto: se QUALQUER O.S. do mesmo Cliente + Local
+  // de Embarque tiver carga real, nenhuma O.S. desse ponto pode gerar FOB/NHE.
+  // O ponto inteiro fica fora da relação. "Dois Embarques" só é usado quando
+  // existe NHE numa O.S. irmã e não existe carga real em nenhuma O.S. do ponto.
   const grupos = new Map();
   base.forEach((item) => {
     const key = grupoKey(item.cliente, item.local);
     let g = grupos.get(key);
-    if (!g) { g = { temLancamento: false }; grupos.set(key, g); }
-    if (temNhe(item.os) || temCargaReal(item.os)) g.temLancamento = true;
+    if (!g) { g = { temCargaReal: false, temNhe: false }; grupos.set(key, g); }
+    if (temCargaReal(item.os)) g.temCargaReal = true;
+    if (temNhe(item.os)) g.temNhe = true;
   });
 
   const rows = [];
   base.forEach((item) => {
-    // Carga real na Produção + Atualização = situação correta, fora do
-    // escopo desta tela (não é pendência de NHE) — não entra no painel.
-    if (temCargaReal(item.os)) return;
+    const g = grupos.get(grupoKey(item.cliente, item.local));
+
+    // Mesmo que ESTA O.S. esteja zerada, uma carga em outra O.S. do mesmo
+    // Cliente + ponto bloqueia o lançamento de FOB para o grupo inteiro.
+    if (g && g.temCargaReal) return;
 
     let status;
     if (temNhe(item.os)) {
       status = 'OK';
     } else {
-      const g = grupos.get(grupoKey(item.cliente, item.local));
-      status = (g && g.temLancamento) ? 'DOIS EMBARQUES' : 'PENDENTE';
+      status = (g && g.temNhe) ? 'DOIS EMBARQUES' : 'PENDENTE';
     }
 
     rows.push({
@@ -564,7 +566,7 @@ function renderShell(content) {
         <div class="fob-actions"><button id="fobReload" class="btn btn-secondary" type="button">↻ Atualizar</button><button id="fobSave" class="btn btn-secondary" type="button" disabled>Salvar pendentes no painel</button><button id="fobCsv" class="btn btn-secondary" type="button" disabled>Exportar CSV</button></div>
       </div>
       <div class="fob-note fob-reference">Data de referência: <strong>${referenceBr()}</strong></div>
-      <div class="fob-note">Regra (só pendências de NHE): base = O.S. com Última Atualização no Mapa de Embarque. Carga real na Produção Diária + Atualização = correto, não entra na lista. Ok = tem NHE (tabela NHE ou "Cargas"=NHE na Produção) + Atualização. Dois Embarques = não tem NHE nem carga própria, mas outra O.S. do mesmo Cliente + Local de Embarque tem. Pendente = só tem Atualização, sem NHE/carga própria nem de irmã.</div>
+      <div class="fob-note">Regra (só pendências de NHE): só existe FOB quando <strong>nenhuma O.S. do mesmo Cliente no mesmo ponto de embarque possui carga real</strong>. Havendo qualquer carga no ponto, o grupo inteiro não entra. Ok = a própria O.S. tem NHE. Dois Embarques = outra O.S. do mesmo Cliente + ponto tem NHE, sem carga real no ponto. Pendente = nenhuma O.S. do ponto tem carga nem NHE.</div>
       <div id="fobFeedback" class="feedback mt-16">Carregando bases...</div>
       <div id="fobWarnings"></div>
       <div id="fobResult" class="mt-16"></div>
