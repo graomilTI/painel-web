@@ -1,0 +1,40 @@
+name: Aplicar ajuste da pré-conferência logística
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-logistica-preconferencia-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Aplicar ajustes
+        run: python3 .github/scripts/apply_logistica_preconferencia_fix.py
+
+      - name: Validar JavaScript
+        run: node --check assets/js/logistica-conferencia-ocr.js
+
+      - name: Remover arquivos temporários
+        run: |
+          rm -f .github/scripts/apply_logistica_preconferencia_fix.py
+          rm -f .github/workflows/apply-logistica-preconferencia-fix.yml
+
+      - name: Publicar alteração
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "fix: ajustar pré-conferência e normalizar placas"
+          git push origin main
