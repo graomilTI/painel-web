@@ -14,7 +14,7 @@ if (typeof document !== 'undefined' && !document.getElementById(CSS_ID)) {
   const link = document.createElement('link');
   link.id = CSS_ID;
   link.rel = 'stylesheet';
-  link.href = new URL('../../css/design-system-components.css?v=20260726-p0', import.meta.url).href;
+  link.href = new URL('../../css/design-system-components.css?v=20260727-visual1', import.meta.url).href;
   document.head.appendChild(link);
 }
 

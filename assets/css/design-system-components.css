@@ -9,6 +9,7 @@
 
 /* ── cards ── */
 .ds-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(15,23,42,.82);padding:18px;min-width:0;max-width:100%}
+.ds-card{grid-template-columns:minmax(0,1fr)}
 
 /* ── abas ── */
 .ds-tabs{display:flex;gap:8px;flex-wrap:wrap}
