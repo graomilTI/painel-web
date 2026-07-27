@@ -71,7 +71,7 @@ function render() {
       })}
 
       <article class="ds-card" style="display:grid;gap:14px">
-        <div class="ds-filter" style="grid-template-columns:repeat(4,minmax(150px,1fr))">
+        <div class="ds-filter" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
           <div class="ds-field">
             <label for="fUsuario">Usuário</label>
             <input id="fUsuario" type="search" placeholder="e-mail ou parte dele" value="${esc(f.usuario)}" autocomplete="off">
