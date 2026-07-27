@@ -172,6 +172,32 @@ html.painel-ui-v2 .topbar-search-icon {
 html.painel-ui-v2 .topbar-actions {
   gap: 8px !important;
   flex-wrap: nowrap !important;
+  min-width: 0;
+}
+
+/* O pill "Atualizado dd/mm, hh:mm" (agentUpdateStatus.js) pode empurrar a topbar
+   para fora da viewport em telas medianas. Permite encolher com reticências. */
+html.painel-ui-v2 .topbar-actions .agent-update-pill,
+.agent-update-pill {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1360px) {
+  html.painel-ui-v2 .topbar-actions .agent-update-pill,
+  .agent-update-pill {
+    max-width: 150px;
+  }
+}
+
+@media (max-width: 1180px) {
+  html.painel-ui-v2 .topbar-actions .agent-update-pill,
+  .agent-update-pill {
+    display: none !important;
+  }
 }
 
 html.painel-ui-v2 .topbar-actions > button,
