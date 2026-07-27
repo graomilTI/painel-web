@@ -735,6 +735,10 @@ html.painel-ui-v2 .content-wrap :where(*)::-webkit-scrollbar-thumb:hover {
 
   html.painel-ui-v2 .topbar-actions {
     margin-left: auto;
+    max-width: 100%;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow: hidden;
   }
 
   html.painel-ui-v2 .topbar-actions > .badge {

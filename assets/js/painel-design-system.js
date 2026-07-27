@@ -16,7 +16,7 @@ function ensureDesignSystemStyles() {
   const link = document.createElement('link');
   link.id = STYLE_ID;
   link.rel = 'stylesheet';
-  link.href = new URL('../css/painel-design-system.css?v=20260727-visual2', import.meta.url).href;
+  link.href = new URL('../css/painel-design-system.css?v=20260727-visual3', import.meta.url).href;
   link.addEventListener('load', enableDesignSystem, { once: true });
   link.addEventListener('error', () => {
     console.warn('[painel-design-system] Não foi possível carregar a camada visual global.');
