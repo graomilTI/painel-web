@@ -45,6 +45,32 @@ function getRowDate(row) {
   return String(row?.data || row?.data_referencia || '').slice(0, 10);
 }
 
+// #26: cabeçalho como ordenador nas 3 tabelas da tela (diária, por
+// coordenação, detalhada). '_data' é uma chave especial pra ordenar a tabela
+// detalhada pelo mesmo valor calculado que a coluna exibe (getRowDate),
+// já que a linha crua pode ter o campo em 'data' ou 'data_referencia'.
+function sortByKey(rows, key, dir) {
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = key === '_data' ? getRowDate(a) : a[key];
+    const vb = key === '_data' ? getRowDate(b) : b[key];
+    if (typeof va === 'number' || typeof vb === 'number') {
+      return ((Number(va) || 0) - (Number(vb) || 0)) * mul;
+    }
+    return String(va ?? '').localeCompare(String(vb ?? ''), 'pt-BR') * mul;
+  });
+}
+
+function sortableTh(label, key, sortState, extraClass = '') {
+  const active = sortState.key === key;
+  const arrow = active ? (sortState.dir === 'asc' ? ' ▲' : ' ▼') : '';
+  return `<th class="prod-th-sort${extraClass ? ` ${extraClass}` : ''}${active ? ' active' : ''}" data-sort-key="${key}">${label}${arrow}</th>`;
+}
+
+let dailySort = { key: 'data', dir: 'desc' };
+let regionalSort = { key: 'tons', dir: 'desc' };
+let detailSort = { key: '_data', dir: 'desc' };
+
 function monthValueFromDate(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
@@ -152,6 +178,9 @@ function injectHistoricoStyles() {
     .prod-table .num { text-align:right; font-variant-numeric:tabular-nums; }
     .prod-empty { padding:24px; color:#8b94a7; text-align:center; }
     .prod-meta-line { color:#8b94a7; font-size:12px; margin-top:8px; }
+    .prod-th-sort { cursor:pointer; user-select:none; white-space:nowrap; }
+    .prod-th-sort:hover { color:#00c87a; }
+    .prod-th-sort.active { color:#00c87a; }
   `;
   document.head.appendChild(style);
 }
@@ -287,14 +316,21 @@ function renderSummary(summary) {
 
 function renderDailyTable(summary) {
   if (!summary.dailyRows.length) return '<div class="prod-empty">Nenhuma produção localizada para os filtros selecionados.</div>';
+  const rows = sortByKey(summary.dailyRows, dailySort.key, dailySort.dir);
   return `
     <div class="prod-table-wrap">
       <table class="prod-table">
         <thead>
-          <tr><th>Data</th><th class="num">Produção</th><th class="num">Cargas</th><th class="num">O.S.</th><th class="num">Clientes</th></tr>
+          <tr>
+            ${sortableTh('Data', 'data', dailySort)}
+            ${sortableTh('Produção', 'tons', dailySort, 'num')}
+            ${sortableTh('Cargas', 'cargas', dailySort, 'num')}
+            ${sortableTh('O.S.', 'osTotal', dailySort, 'num')}
+            ${sortableTh('Clientes', 'clientesTotal', dailySort, 'num')}
+          </tr>
         </thead>
         <tbody>
-          ${summary.dailyRows.map((row) => `
+          ${rows.map((row) => `
             <tr>
               <td>${fmtDate(row.data)}</td>
               <td class="num">${fmtTons(row.tons)}</td>
@@ -311,14 +347,21 @@ function renderDailyTable(summary) {
 
 function renderRegionalTable(summary) {
   if (!summary.regionalRows.length) return '<div class="prod-empty">Sem coordenações para exibir.</div>';
+  const rows = sortByKey(summary.regionalRows, regionalSort.key, regionalSort.dir);
   return `
     <div class="prod-table-wrap">
       <table class="prod-table">
         <thead>
-          <tr><th>Coordenação</th><th class="num">Produção</th><th class="num">Cargas</th><th class="num">O.S.</th><th class="num">Colaboradores</th></tr>
+          <tr>
+            ${sortableTh('Coordenação', 'coordenacao', regionalSort)}
+            ${sortableTh('Produção', 'tons', regionalSort, 'num')}
+            ${sortableTh('Cargas', 'cargas', regionalSort, 'num')}
+            ${sortableTh('O.S.', 'osTotal', regionalSort, 'num')}
+            ${sortableTh('Colaboradores', 'colaboradoresTotal', regionalSort, 'num')}
+          </tr>
         </thead>
         <tbody>
-          ${summary.regionalRows.map((row) => `
+          ${rows.map((row) => `
             <tr>
               <td>${esc(row.coordenacao)}</td>
               <td class="num">${fmtTons(row.tons)}</td>
@@ -335,14 +378,24 @@ function renderRegionalTable(summary) {
 
 function renderDetailTable(rows, truncated) {
   if (!rows.length) return '<div class="prod-empty">Nenhum lançamento detalhado para exibir.</div>';
-  const limitedRows = rows.slice(0, MAX_TABLE_ROWS);
+  const sorted = sortByKey(rows, detailSort.key, detailSort.dir);
+  const limitedRows = sorted.slice(0, MAX_TABLE_ROWS);
   return `
     ${rows.length > MAX_TABLE_ROWS || truncated ? `<div class="prod-meta-line">Mostrando ${fmtInt(limitedRows.length)} lançamento(s) de ${fmtInt(rows.length)} carregado(s). Use os filtros para refinar a consulta.</div>` : ''}
     <div class="prod-table-wrap" style="margin-top:10px">
       <table class="prod-table">
         <thead>
           <tr>
-            <th>Data</th><th>Coordenação</th><th>Supervisão</th><th>Colaborador</th><th>Cliente</th><th>Cidade</th><th>O.S.</th><th>Serviço</th><th class="num">Cargas</th><th class="num">Tons</th>
+            ${sortableTh('Data', '_data', detailSort)}
+            ${sortableTh('Coordenação', 'coordenacao', detailSort)}
+            ${sortableTh('Supervisão', 'supervisao', detailSort)}
+            ${sortableTh('Colaborador', 'funcionario', detailSort)}
+            ${sortableTh('Cliente', 'cliente', detailSort)}
+            ${sortableTh('Cidade', 'cidade', detailSort)}
+            ${sortableTh('O.S.', 'os', detailSort)}
+            ${sortableTh('Serviço', 'servico', detailSort)}
+            ${sortableTh('Cargas', 'cargas', detailSort, 'num')}
+            ${sortableTh('Tons', 'tons', detailSort, 'num')}
           </tr>
         </thead>
         <tbody>
@@ -412,6 +465,22 @@ function setLoadingState(isLoading) {
 
 let currentRows = [];
 let currentMonth = monthValueFromDate();
+let currentSummary = null;
+let currentTruncated = false;
+
+// Reordena as 3 tabelas com os dados já carregados (sem nova consulta ao
+// Supabase) -- chamado ao clicar num cabeçalho ordenável.
+function rerenderTables() {
+  if (!currentSummary) return;
+  document.getElementById('dailySlot').innerHTML = renderDailyTable(currentSummary);
+  document.getElementById('regionalSlot').innerHTML = renderRegionalTable(currentSummary);
+  document.getElementById('detailSlot').innerHTML = renderDetailTable(currentRows, currentTruncated);
+}
+
+function toggleSort(sortState, key) {
+  if (sortState.key === key) sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+  else { sortState.key = key; sortState.dir = 'asc'; }
+}
 
 async function loadData(userContext) {
   const meta = document.getElementById('metaConsulta');
@@ -434,7 +503,9 @@ async function loadData(userContext) {
   try {
     const { rows, truncated } = await fetchAllRows(buildQuery({ userContext, filters, bounds }));
     currentRows = rows;
+    currentTruncated = truncated;
     const summary = summarize(rows, bounds);
+    currentSummary = summary;
 
     summarySlot.innerHTML = renderSummary(summary);
     dailySlot.innerHTML = renderDailyTable(summary);
@@ -568,6 +639,20 @@ export async function renderContent(content, userContext) {
     document.getElementById('monthChips').innerHTML = renderMonthChips(chip.dataset.month);
     loadData(userContext);
   });
+
+  const sortTargets = [
+    ['dailySlot', dailySort],
+    ['regionalSlot', regionalSort],
+    ['detailSlot', detailSort],
+  ];
+  for (const [slotId, sortState] of sortTargets) {
+    document.getElementById(slotId)?.addEventListener('click', (event) => {
+      const th = event.target.closest('[data-sort-key]');
+      if (!th) return;
+      toggleSort(sortState, th.dataset.sortKey);
+      rerenderTables();
+    });
+  }
 
   await loadData(userContext);
 }
