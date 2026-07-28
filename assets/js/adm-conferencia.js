@@ -3,9 +3,6 @@ import { supabase } from './supabaseClient.js';
 
 const DATE_FMT = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' });
 const MONEY_FMT = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-const GEOCODING_DELAY_MS = 1300;
-const GEOCODING_RETRY_DELAY_MS = 3500;
-const GEOCODING_MAX_BATCH = 25;
 
 
 const STATUS_LABELS = {
@@ -35,12 +32,10 @@ const state = {
   uber: [],
   justificativas: [],
   localizacao: [],
-  uberKpi: null,
   producaoPorColaboradorData: new Map(),
   loading: false,
   sort: {
     despesas: { column: 'colaborador', direction: 'asc' },
-    uber: { column: 'data', direction: 'desc' },
   },
   filters: {
     inicio: '',
@@ -140,13 +135,6 @@ function sortableTh(column, label, kind = 'despesas') {
 }
 
 function getSortValue(row, column, kind = 'despesas') {
-  if (kind === 'uber') {
-    if (column === 'data') return row.data_solicitacao_local || row.data_corrida || row.data || '';
-    if (column === 'colaborador') return row.nome_colaborador || row.nome || '';
-    if (column === 'regional') return row.supervisao || row.regional || '';
-    if (column === 'valor') return asNumber(row.valor || row.preco_liquido);
-    if (column === 'gps') return hasUberCoordinates(row) ? 1 : 0;
-  }
   if (column === 'colaborador') return row.colaborador || row.nome_colaborador || '';
   if (column === 'regional') return getRegional(row);
   if (column === 'status') return STATUS_LABELS[getStatus(row)] || getStatus(row);
@@ -719,373 +707,6 @@ function getUberClass(row) {
   return 'ATENCAO';
 }
 
-function uberClassChip(row) {
-  const key = getUberClass(row);
-  if (key === 'VALIDADA') return '<span class="conf-chip conf-chip-ok">Válida</span>';
-  if (key === 'CAIXA_COLABORADOR') return '<span class="conf-chip conf-chip-danger">Caixa colaborador</span>';
-  return '<span class="conf-chip conf-chip-warn">Atenção</span>';
-}
-
-
-function hasUberCoordinates(row) {
-  return row.partida_latitude !== null && row.partida_latitude !== undefined && row.partida_latitude !== ''
-    && row.partida_longitude !== null && row.partida_longitude !== undefined && row.partida_longitude !== ''
-    && row.destino_latitude !== null && row.destino_latitude !== undefined && row.destino_latitude !== ''
-    && row.destino_longitude !== null && row.destino_longitude !== undefined && row.destino_longitude !== '';
-}
-
-function needsUberGeocoding(row) {
-  return !hasUberCoordinates(row) && (row.endereco_partida || row.endereco_destino);
-}
-
-function geocodingKey(address) {
-  return normalizeText(address).replace(/\s+/g, ' ').slice(0, 220);
-}
-
-function buildBrazilAddress(address) {
-  const text = String(address || '').trim();
-  if (!text) return '';
-  return /brasil|brazil/i.test(text) ? text : `${text}, Brasil`;
-}
-
-function cleanUberAddress(address) {
-  return String(address || '')
-    .replace(/\s+/g, ' ')
-    .replace(/\s+-\s+/g, ', ')
-    .replace(/,\s*,+/g, ',')
-    .replace(/\bBrasil\b,?\s*Brasil\b/gi, 'Brasil')
-    .trim();
-}
-
-function extractPostalCode(address) {
-  const match = String(address || '').match(/\b\d{5}-?\d{3}\b/);
-  return match ? match[0].replace(/\D/g, '') : '';
-}
-
-function withoutPostalCode(address) {
-  return String(address || '').replace(/\b\d{5}-?\d{3}\b/g, '').replace(/,\s*,+/g, ',').trim();
-}
-
-function buildGeocodeQueries(address) {
-  const raw = cleanUberAddress(address);
-  if (!raw) return [];
-
-  const noCep = cleanUberAddress(withoutPostalCode(raw));
-  const normalizedSeparators = cleanUberAddress(raw.replace(/\s+-\s+/g, ', '));
-  const noCepNormalized = cleanUberAddress(withoutPostalCode(normalizedSeparators));
-
-  const parts = raw.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
-  const variants = [
-    raw,
-    normalizedSeparators,
-    noCep,
-    noCepNormalized,
-  ];
-
-  if (parts.length >= 2) variants.push(`${parts[0]}, ${parts.slice(-1)[0]}`);
-  if (parts.length >= 3) variants.push(`${parts[0]}, ${parts[parts.length - 2]}, ${parts[parts.length - 1]}`);
-
-  const cep = extractPostalCode(raw);
-  if (cep) variants.push(cep);
-
-  const unique = [];
-  const seen = new Set();
-  variants.forEach((variant) => {
-    const value = buildBrazilAddress(cleanUberAddress(variant));
-    const key = normalizeText(value);
-    if (value && !seen.has(key)) {
-      seen.add(key);
-      unique.push(value);
-    }
-  });
-  return unique.slice(0, 7);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function getCachedGeocode(address) {
-  const addressKey = geocodingKey(address);
-  if (!addressKey) return null;
-
-  const { data, error } = await supabase
-    .from('conferencia_geocoding_cache')
-    .select('latitude,longitude,display_name')
-    .eq('address_key', addressKey)
-    .maybeSingle();
-
-  if (error) {
-    console.warn('[Conferência Uber] cache indisponível:', error.message);
-    return null;
-  }
-  if (!data) return null;
-  return { lat: Number(data.latitude), lon: Number(data.longitude), display_name: data.display_name || '' };
-}
-
-async function saveGeocodeCache(address, result, provider = 'nominatim') {
-  if (!address || !result || !Number.isFinite(result.lat) || !Number.isFinite(result.lon)) return;
-  const payload = {
-    address_key: geocodingKey(address),
-    endereco_original: address,
-    latitude: result.lat,
-    longitude: result.lon,
-    display_name: result.display_name || null,
-    provider,
-    updated_at: new Date().toISOString(),
-  };
-
-  const { error } = await supabase
-    .from('conferencia_geocoding_cache')
-    .upsert(payload, { onConflict: 'address_key' });
-
-  if (error) console.warn('[Conferência Uber] não salvou cache:', error.message);
-}
-
-async function fetchNominatim(query) {
-  const params = new URLSearchParams({
-    q: query,
-    format: 'jsonv2',
-    addressdetails: '1',
-    limit: '3',
-    countrycodes: 'br',
-  });
-
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-    headers: { 'Accept': 'application/json', 'Accept-Language': 'pt-BR,pt;q=0.9' },
-  });
-
-  if (response.status === 429) {
-    await sleep(GEOCODING_RETRY_DELAY_MS);
-    throw new Error('Limite temporário do geocoding. Tente novamente em alguns segundos.');
-  }
-  if (!response.ok) throw new Error(`Geocoding retornou HTTP ${response.status}`);
-
-  const results = await response.json();
-  const first = Array.isArray(results) ? results[0] : null;
-  if (!first?.lat || !first?.lon) return null;
-
-  return {
-    lat: Number(first.lat),
-    lon: Number(first.lon),
-    display_name: first.display_name || '',
-    query_used: query,
-  };
-}
-
-async function geocodeAddress(address) {
-  const original = cleanUberAddress(address);
-  if (!original) return null;
-
-  const cached = await getCachedGeocode(original);
-  if (cached && Number.isFinite(cached.lat) && Number.isFinite(cached.lon)) return cached;
-
-  const queries = buildGeocodeQueries(original);
-  for (let index = 0; index < queries.length; index += 1) {
-    const query = queries[index];
-    try {
-      const result = await fetchNominatim(query);
-      if (result && Number.isFinite(result.lat) && Number.isFinite(result.lon)) {
-        await saveGeocodeCache(original, result, 'nominatim');
-        return result;
-      }
-    } catch (error) {
-      console.warn('[Conferência Uber] falha no geocoding:', query, error.message);
-      if (/Limite temporário/i.test(error.message)) throw error;
-    }
-    if (index < queries.length - 1) await sleep(GEOCODING_DELAY_MS);
-  }
-
-  return null;
-}
-
-async function geocodeUberRow(row) {
-  if (!row?.id) return false;
-  const update = {};
-  let changed = false;
-  const missing = [];
-
-  if ((!row.partida_latitude || !row.partida_longitude) && row.endereco_partida) {
-    const partida = await geocodeAddress(row.endereco_partida);
-    if (partida) {
-      update.partida_latitude = partida.lat;
-      update.partida_longitude = partida.lon;
-      changed = true;
-    } else {
-      missing.push('partida');
-    }
-    await sleep(GEOCODING_DELAY_MS);
-  }
-
-  if ((!row.destino_latitude || !row.destino_longitude) && row.endereco_destino) {
-    const destino = await geocodeAddress(row.endereco_destino);
-    if (destino) {
-      update.destino_latitude = destino.lat;
-      update.destino_longitude = destino.lon;
-      changed = true;
-    } else {
-      missing.push('destino');
-    }
-    await sleep(GEOCODING_DELAY_MS);
-  }
-
-  if (!changed && missing.length) {
-    update.observacao_validacao = `GPS não localizado automaticamente para ${missing.join(' e ')}. Conferir manualmente ou ajustar endereço.`;
-    update.updated_at = new Date().toISOString();
-    const { error } = await supabase
-      .from('conferencia_uber_corridas')
-      .update(update)
-      .eq('id', row.id);
-    if (error) throw new Error(`Não foi possível salvar retorno do GPS: ${error.message}`);
-    return false;
-  }
-
-  if (!changed) return false;
-
-  update.observacao_validacao = missing.length
-    ? `GPS convertido parcialmente. Ainda falta ${missing.join(' e ')}.`
-    : null;
-  update.updated_at = new Date().toISOString();
-
-  const { error } = await supabase
-    .from('conferencia_uber_corridas')
-    .update(update)
-    .eq('id', row.id);
-
-  if (error) throw new Error(`Não foi possível salvar coordenadas: ${error.message}`);
-  return true;
-}
-
-async function geocodeUberBatch(onlyId = null) {
-  const sourceRows = onlyId
-    ? state.uber.filter((row) => String(row.id) === String(onlyId))
-    : applyLocalFilters(state.uber, 'uber').filter(needsUberGeocoding).slice(0, GEOCODING_MAX_BATCH);
-
-  if (!sourceRows.length) {
-    setFeedback('Nenhuma corrida pendente de coordenadas nos filtros atuais.');
-    return;
-  }
-
-  setFeedback(`Convertendo endereços em GPS: 0/${sourceRows.length}. Aguarde a finalização antes de sair da tela.`);
-  let ok = 0;
-  let fail = 0;
-
-  for (const row of sourceRows) {
-    try {
-      const changed = await geocodeUberRow(row);
-      if (changed) ok += 1;
-      else fail += 1;
-    } catch (error) {
-      console.error(error);
-      fail += 1;
-    }
-    setFeedback(`Convertendo endereços em GPS: ${ok + fail}/${sourceRows.length}. Sucesso: ${ok}. Não localizados/erro: ${fail}.`);
-  }
-
-  await loadUber();
-  renderActiveTab();
-  setFeedback(`Conversão GPS concluída. Atualizadas: ${ok}. Não localizadas/erro: ${fail}.`);
-}
-
-function uberKpiCard(key, label, count) {
-  const isActive = (state.uberKpi || '') === key;
-  return `<button class="conf-uber-kpi ${isActive ? 'active' : ''}" type="button" data-uber-kpi="${escapeHtml(key)}"><strong>${count}</strong><span>${escapeHtml(label)}</span></button>`;
-}
-
-function renderUberTable() {
-  const baseRows = sortRows(applyLocalFilters(state.uber, 'uber'), 'uber');
-  const kpiCounts = {
-    SEM_GPS: baseRows.filter(needsUberGeocoding).length,
-    ATENCAO: baseRows.filter((row) => getUberClass(row) === 'ATENCAO').length,
-    VALIDADA: baseRows.filter((row) => getUberClass(row) === 'VALIDADA').length,
-    CAIXA_COLABORADOR: baseRows.filter((row) => getUberClass(row) === 'CAIXA_COLABORADOR').length,
-  };
-  const rows = !state.uberKpi ? baseRows
-    : state.uberKpi === 'SEM_GPS' ? baseRows.filter(needsUberGeocoding)
-    : baseRows.filter((row) => getUberClass(row) === state.uberKpi);
-  const kpiRow = `
-    <div class="conf-uber-kpis">
-      ${uberKpiCard('', 'Total', baseRows.length)}
-      ${uberKpiCard('SEM_GPS', 'Sem GPS', kpiCounts.SEM_GPS)}
-      ${uberKpiCard('ATENCAO', 'Atenção', kpiCounts.ATENCAO)}
-      ${uberKpiCard('VALIDADA', 'Validadas', kpiCounts.VALIDADA)}
-      ${uberKpiCard('CAIXA_COLABORADOR', 'Caixa colaborador', kpiCounts.CAIXA_COLABORADOR)}
-    </div>`;
-  const target = document.getElementById('conf-table');
-  const pendingGps = rows.filter(needsUberGeocoding).length;
-  if (!rows.length) {
-    target.innerHTML = `
-      ${kpiRow}
-      <div class="conf-uber-tools">
-        <div>
-          <strong>Sincronização Uber</strong>
-          <p>Nenhuma corrida encontrada nos filtros atuais. Sincronize pela API para buscar as corridas do período selecionado.</p>
-        </div>
-        <div class="conf-uber-actions">
-          <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar</button>
-          <label class="conf-btn" for="uber-csv-import-empty">Importar CSV Uber<input id="uber-csv-import-empty" data-uber-csv-import="1" type="file" accept=".csv,text/csv" hidden></label>
-          <button class="conf-btn" data-uber-geocode-pending="1" type="button" disabled>Converter GPS pendentes</button>
-          <button class="conf-btn conf-btn-success" data-uber-validar-laudo="1" type="button">Validar por laudo</button>
-        </div>
-      </div>
-      <div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma corrida Uber encontrada para os filtros selecionados.</td></tr></tbody></table></div>`;
-    return;
-  }
-  target.innerHTML = `
-    ${kpiRow}
-    <div class="conf-uber-tools">
-      <div>
-        <strong>GPS das corridas</strong>
-        <p>${pendingGps ? `${pendingGps} corrida(s) sem coordenadas nos filtros atuais.` : 'Todas as corridas filtradas já possuem coordenadas de partida e destino.'} Fonte: OpenStreetMap/Nominatim.</p>
-      </div>
-      <div class="conf-uber-actions">
-        <button class="conf-btn conf-btn-primary" data-uber-sync-api="1" type="button">Sincronizar</button>
-        <label class="conf-btn" for="uber-csv-import">Importar CSV Uber<input id="uber-csv-import" data-uber-csv-import="1" type="file" accept=".csv,text/csv" hidden></label>
-        <button class="conf-btn" data-uber-geocode-pending="1" type="button" ${pendingGps ? '' : 'disabled'}>Converter GPS pendentes</button>
-        <button class="conf-btn conf-btn-success" data-uber-validar-laudo="1" type="button">Validar por laudo</button>
-      </div>
-    </div>
-    <div class="conf-table-wrap">
-      <table class="conf-table" style="min-width:1540px">
-        <thead><tr>
-          ${sortableTh('data', 'Data', 'uber')}
-          ${sortableTh('colaborador', 'Colaborador', 'uber')}
-          ${sortableTh('regional', 'Regional', 'uber')}
-          <th>Partida</th><th>Destino</th>
-          ${sortableTh('valor', 'Valor', 'uber')}
-          <th>Distância</th>
-          ${sortableTh('gps', 'GPS', 'uber')}
-          <th>Validação</th><th>Motivo</th><th>Ações</th>
-        </tr></thead>
-        <tbody>
-          ${rows.map((row) => `
-            <tr>
-              <td>${brDate(row.data_solicitacao_local || row.data_corrida || row.data)}</td>
-              <td><strong>${escapeHtml(row.nome_colaborador || row.nome || '-')}</strong><small>${escapeHtml(row.servico || row.grupo || '')}</small></td>
-              <td>${escapeHtml(row.supervisao || row.regional || '-')}<small>${escapeHtml(row.coordenacao || row.coord || '')}</small></td>
-              <td>${escapeHtml(row.endereco_partida || '-')}<small>Casa: ${escapeHtml(row.distancia_partida_casa_km ?? row.distancia_destino_casa_km ?? '-')} km</small></td>
-              <td>${escapeHtml(row.endereco_destino || '-')}<small>Embarque: ${escapeHtml(row.distancia_partida_embarque_km ?? row.distancia_destino_embarque_km ?? '-')} km</small></td>
-              <td><strong>${money(row.valor || row.preco_liquido || 0)}</strong></td>
-              <td>${escapeHtml(row.distancia_mi || row.distancia_km || '-')}<small>${escapeHtml(row.duracao_min ? `${row.duracao_min} min` : '')}</small></td>
-              <td>${hasUberCoordinates(row) ? '<span class="conf-gps-ok">GPS ok</span>' : '<span class="conf-gps-missing">Sem GPS</span>'}</td>
-              <td>${uberClassChip(row)}</td>
-              <td>${escapeHtml(isUberUsoPessoal(row) ? 'Atenção: observação/detalhamento contém "Pessoal". Conferir antes de validar a corrida.' : (row.motivo_validacao || row.observacao_validacao || row.detalhamento_despesa || '-'))}</td>
-              <td>
-                <div class="conf-row-actions">
-                  ${needsUberGeocoding(row) ? `<button class="conf-btn" data-uber-geocode-id="${escapeHtml(row.id)}" type="button">GPS</button>` : ''}
-                  <button class="conf-btn conf-btn-primary" data-uber-action="VALIDADA" data-uber-id="${escapeHtml(row.id)}" type="button">Validar</button>
-                  <button class="conf-btn conf-btn-danger" data-uber-action="CAIXA_COLABORADOR" data-uber-id="${escapeHtml(row.id)}" type="button">Caixa</button>
-                  <button class="conf-btn" data-uber-action="ATENCAO" data-uber-id="${escapeHtml(row.id)}" type="button">Atenção</button>
-                </div>
-              </td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
 function renderResultadoTable() {
   const rows = applyLocalFilters(state.resultado, 'resultado');
   const target = document.getElementById('conf-table');
@@ -1457,282 +1078,6 @@ async function loadUber() {
   state.uber = data || [];
 }
 
-
-function parseDelimitedLine(line, delimiter = ';') {
-  const values = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-    const next = line[i + 1];
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        current += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-    if (char === delimiter && !inQuotes) {
-      values.push(current);
-      current = '';
-      continue;
-    }
-    current += char;
-  }
-  values.push(current);
-  return values.map((value) => String(value || '').trim());
-}
-
-function parseUberCsvText(text) {
-  const normalized = String(text || '').replace(/^\ufeff/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalized.split('\n').filter((line) => line.trim() !== '');
-  const headerIndex = lines.findIndex((line) => /^Data da solicitação/i.test(line.trim()));
-  if (headerIndex < 0) throw new Error('Cabeçalho do CSV Uber não localizado. O arquivo precisa conter a seção Transações.');
-
-  const headers = parseDelimitedLine(lines[headerIndex]).map((h) => h.trim());
-  const rows = [];
-  for (const line of lines.slice(headerIndex + 1)) {
-    const cols = parseDelimitedLine(line);
-    if (!cols.some(Boolean)) continue;
-    const obj = {};
-    headers.forEach((header, index) => { obj[header] = cols[index] ?? ''; });
-    rows.push(obj);
-  }
-  return rows;
-}
-
-function uberCsvDateToISO(value) {
-  const raw = String(value || '').trim();
-  const mdy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (mdy) {
-    const [, month, day, year] = mdy;
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  }
-  const dmy = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (dmy) {
-    const [, day, month, year] = dmy;
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  }
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? todayISO() : date.toISOString().slice(0, 10);
-}
-
-function normalizeUberTime(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-  const match12 = raw.match(/^(\d{1,2}):(\d{2})\s*([AP]M)$/i);
-  if (match12) {
-    let hour = Number(match12[1]);
-    const minute = match12[2];
-    const suffix = match12[3].toUpperCase();
-    if (suffix === 'PM' && hour < 12) hour += 12;
-    if (suffix === 'AM' && hour === 12) hour = 0;
-    return `${String(hour).padStart(2, '0')}:${minute}:00`;
-  }
-  const match24 = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (match24) return `${String(match24[1]).padStart(2, '0')}:${match24[2]}:${match24[3] || '00'}`;
-  return raw.slice(0, 20);
-}
-
-function uberUtcToLocal(dateISO, timeStr) {
-  if (!dateISO) return { date: dateISO, time: timeStr };
-  const time = timeStr || '00:00:00';
-  const utcDate = new Date(`${dateISO}T${time}Z`);
-  if (Number.isNaN(utcDate.getTime())) return { date: dateISO, time: timeStr };
-  // Brasil não observa mais horário de verão desde 2019: offset de Brasília é UTC-3 fixo.
-  const localDate = new Date(utcDate.getTime() - 3 * 60 * 60 * 1000);
-  return { date: localDate.toISOString().slice(0, 10), time: localDate.toISOString().slice(11, 19) };
-}
-
-function makeUberImportHash(row) {
-  return [
-    row.data_solicitacao_local,
-    row.hora_solicitacao_local,
-    row.nome_colaborador,
-    row.servico,
-    row.endereco_partida,
-    row.endereco_destino,
-    row.valor,
-  ].map((v) => String(v ?? '').trim().toUpperCase()).join('|');
-}
-
-function mapUberCsvRow(row, fileName = '') {
-  const nome = String(row.Nome || '').trim();
-  const sobrenome = String(row.Sobrenome || '').trim();
-  const dataUtc = uberCsvDateToISO(row['Data da solicitação (UTC)']);
-  const horaUtc = normalizeUberTime(row['Hora da solicitação (UTC)']);
-  const { date: data, time: hora } = uberUtcToLocal(dataUtc, horaUtc);
-  const valor = asNumber(row['Valor total: BRL']);
-  const payload = {
-    external_id: null,
-    import_hash: null,
-    data_solicitacao_local: data,
-    hora_solicitacao_local: hora,
-    hora_solicitacao_utc: horaUtc,
-    nome_colaborador: [nome, sobrenome].filter(Boolean).join(' ').trim(),
-    nome,
-    regional: row.Cidade || null,
-    supervisao: row.Cidade || null,
-    servico: row.Serviço || null,
-    grupo: row.Serviço || null,
-    categoria: 'UBER_EMPRESAS',
-    endereco_partida: row['Endereço de partida'] || null,
-    endereco_destino: row['Endereço de destino'] || null,
-    valor,
-    preco_liquido: valor,
-    detalhamento_despesa: row['Detalhamento da despesa'] || null,
-    observacao: row['Detalhamento da despesa'] || null,
-    status_validacao: /pessoal/i.test(String(row['Detalhamento da despesa'] || '')) ? 'ATENCAO' : 'PENDENTE',
-    origem: 'SFTP_CSV',
-    raw: { ...row, arquivo_origem: fileName, conta_sftp: 'a3f32dd9' },
-    updated_at: new Date().toISOString(),
-  };
-  payload.import_hash = makeUberImportHash(payload);
-  return payload;
-}
-
-async function importUberCsvFile(file) {
-  if (!file) return;
-  setFeedback(`Lendo CSV Uber: ${file.name}...`);
-  try {
-    const text = await file.text();
-    const rawRows = parseUberCsvText(text);
-    const rows = rawRows.map((row) => mapUberCsvRow(row, file.name)).filter((row) => row.import_hash && row.nome_colaborador);
-    if (!rows.length) throw new Error('Nenhuma transação válida localizada no CSV Uber.');
-
-    const chunkSize = 400;
-    let saved = 0;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-      const { error } = await supabase
-        .from('conferencia_uber_corridas')
-        .upsert(chunk, { onConflict: 'import_hash' });
-      if (error) throw error;
-      saved += chunk.length;
-      setFeedback(`Importando CSV Uber: ${saved}/${rows.length} corrida(s)...`);
-    }
-
-    await loadUber();
-    renderActiveTab();
-    setFeedback(`CSV Uber importado. ${saved} corrida(s) inseridas/atualizadas.`);
-  } catch (error) {
-    console.error('[Conferência Uber] importação CSV:', error);
-    setFeedback(`Falha ao importar CSV Uber. Detalhe: ${error.message || 'erro desconhecido'}`, true);
-  }
-}
-
-async function syncUberApi() {
-  if (state.loading) return;
-
-  // Bug reportado pela cliente (27/07): "precisa acionar 2 botões pra puxar os dados".
-  // Causa: o sync usava as datas digitadas nos inputs, mas o loadUber() em seguida
-  // filtrava por state.filters (só atualizado ao clicar em "Aplicar"). Se o usuário
-  // mudava o período e clicava direto em "Sincronizar", as corridas eram gravadas
-  // mas a listagem continuava no período antigo — aparentando 0 resultados.
-  // Correção: sincronizar aplica os filtros da tela antes de recarregar (1 ação só).
-  getFilterValues();
-  const inicio = state.filters.inicio || todayISO();
-  const fim = state.filters.fim || inicio;
-  state.filters.inicio = inicio;
-  state.filters.fim = fim;
-
-  setFeedback(`Sincronizando corridas da API Uber de ${brDate(inicio)} até ${brDate(fim)}...`);
-
-  const { data, error } = await supabase.functions.invoke('sync-uber-corridas', {
-    body: {
-      inicio,
-      fim,
-      data_inicial: inicio,
-      data_final: fim,
-    },
-  });
-
-  if (error) {
-    console.error('[Conferência Uber] falha ao sincronizar API:', error);
-    setFeedback(`Falha ao sincronizar a API Uber. Confira a Edge Function sync-uber-corridas e a integração em TI > Integrações. Detalhe: ${error.message || 'erro desconhecido'}`, true);
-    return;
-  }
-
-  if (data && data.ok === false) {
-    console.warn('[Conferência Uber] sincronização pendente:', data);
-    setFeedback(data.message || data.error || 'A sincronização Uber retornou pendência de configuração.', true);
-    return;
-  }
-
-  await loadUber();
-  renderActiveTab();
-
-  const total = data?.inserted ?? data?.upserted ?? data?.total ?? data?.count ?? data?.sincronizadas ?? 0;
-  const baseMsg = data?.message || `Sincronização Uber concluída. Corridas retornadas/gravadas: ${total}.`;
-
-  try {
-    const { data: vd } = await supabase.rpc('auto_validar_uber_por_laudo', { p_inicio: inicio, p_fim: fim });
-    if (vd?.validados > 0) {
-      await loadUber();
-      renderActiveTab();
-      setFeedback(`${baseMsg} ${vd.validados} corrida(s) validadas automaticamente por laudo.`);
-      return;
-    }
-  } catch (e) {
-    console.warn('[Uber] auto-validação por laudo falhou:', e);
-  }
-
-  setFeedback(baseMsg);
-}
-
-async function validarUberPorLaudo() {
-  // Mesmo princípio do syncUberApi: aplica os filtros visíveis antes de validar/recarregar.
-  getFilterValues();
-  const inicio = state.filters.inicio || firstDayOfMonthISO();
-  const fim = state.filters.fim || todayISO();
-  state.filters.inicio = inicio;
-  state.filters.fim = fim;
-  setFeedback('Validando corridas Uber por laudo de produção...');
-  try {
-    const { data, error } = await supabase.rpc('auto_validar_uber_por_laudo', { p_inicio: inicio, p_fim: fim });
-    if (error) throw error;
-    await loadUber();
-    renderActiveTab();
-    setFeedback(`${data?.validados ?? 0} corrida(s) validadas automaticamente por laudo de produção.`);
-  } catch (e) {
-    setFeedback(`Falha ao validar por laudo: ${e.message}`, true);
-  }
-}
-
-const UBER_STATUS_VALIDACAO_DB = {
-  VALIDADA: 'VALIDADO',
-  CAIXA_COLABORADOR: 'CAIXA',
-};
-
-async function updateUberStatus(id, classificacao) {
-  const row = state.uber.find((item) => String(item.id) === String(id));
-  if (!row) return;
-  setFeedback('Salvando validação da corrida Uber...');
-
-  const { data, error } = await supabase
-    .from('conferencia_uber_corridas')
-    .update({
-      classificacao_manual: classificacao,
-      status_validacao: UBER_STATUS_VALIDACAO_DB[classificacao] || classificacao,
-      validado_em: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .select('*')
-    .single();
-
-  if (error) {
-    setFeedback(`Não foi possível salvar validação Uber. Rode o SQL enviado no ZIP. Detalhe: ${error.message}`, true);
-    return;
-  }
-
-  Object.assign(row, data, { classificacao });
-  setFeedback('Validação da corrida Uber atualizada.');
-  await loadUber();
-  renderActiveTab();
-}
-
 async function loadAll() {
   if (state.loading) return;
   state.loading = true;
@@ -1809,13 +1154,11 @@ function exportCsv() {
     ? sortRows(applyLocalFilters(state.despesas, 'despesas'), 'despesas')
     : state.tab === 'auditoria'
       ? applyLocalFilters(state.auditoria, 'auditoria')
-      : state.tab === 'uber'
-        ? applyLocalFilters(state.uber, 'uber')
-        : state.tab === 'justificativas'
-          ? applyJustificativasFilters(state.justificativas)
-          : state.tab === 'localizacao'
-            ? applyLocalizacaoFilters(state.localizacao)
-            : applyLocalFilters(state.resultado, 'resultado');
+      : state.tab === 'justificativas'
+        ? applyJustificativasFilters(state.justificativas)
+        : state.tab === 'localizacao'
+          ? applyLocalizacaoFilters(state.localizacao)
+          : applyLocalFilters(state.resultado, 'resultado');
 
   if (!rows.length) {
     setFeedback('Não há dados para exportar.', true);
@@ -1835,18 +1178,6 @@ function exportCsv() {
       row.janta_valor ? 'Sim' : 'Não',
       deslocamentoResumo(row),
       extrasResumo(row),
-    ]);
-  } else if (state.tab === 'uber') {
-    headers = ['Data', 'Colaborador', 'Regional', 'Partida', 'Destino', 'Valor', 'Validação', 'Motivo'];
-    csvRows = rows.map((row) => [
-      row.data_solicitacao_local || row.data_corrida || '',
-      row.nome_colaborador || row.nome || '',
-      row.supervisao || row.regional || '',
-      row.endereco_partida || '',
-      row.endereco_destino || '',
-      row.valor || row.preco_liquido || 0,
-      getUberClass(row),
-      isUberUsoPessoal(row) ? 'Atenção: observação/detalhamento contém "Pessoal".' : (row.motivo_validacao || row.observacao_validacao || row.detalhamento_despesa || ''),
     ]);
   } else if (state.tab === 'justificativas') {
     headers = ['Data/Hora', 'Cliente', 'OS', 'Regional', 'Colaboradores no ponto', 'Motivo', 'Registrado por', 'E-mail'];
@@ -1908,7 +1239,6 @@ function bindEvents() {
 
   document.getElementById('conf-clear')?.addEventListener('click', () => {
     state.filters = { inicio: todayISO(), fim: todayISO(), regional: '', colaborador: '', status: '' };
-    state.uberKpi = null;
     document.getElementById('conf-inicio').value = state.filters.inicio;
     document.getElementById('conf-fim').value = state.filters.fim;
     document.getElementById('conf-colaborador').value = '';
@@ -1922,14 +1252,6 @@ function bindEvents() {
       state.tab = btn.dataset.tab;
       renderActiveTab();
     });
-  });
-
-  document.getElementById('conf-table')?.addEventListener('change', (event) => {
-    const input = event.target.closest('[data-uber-csv-import]');
-    if (!input) return;
-    const file = input.files && input.files[0];
-    input.value = '';
-    importUberCsvFile(file);
   });
 
   document.getElementById('conf-table')?.addEventListener('click', (event) => {
@@ -1946,48 +1268,10 @@ function bindEvents() {
       return;
     }
 
-    const kpiBtn = event.target.closest('[data-uber-kpi]');
-    if (kpiBtn) {
-      const key = kpiBtn.dataset.uberKpi || '';
-      state.uberKpi = state.uberKpi === key || !key ? null : key;
-      renderUberTable();
-      return;
-    }
-
-    const syncUberBtn = event.target.closest('[data-uber-sync-api]');
-    if (syncUberBtn) {
-      syncUberApi();
-      return;
-    }
-
-    const geocodePendingBtn = event.target.closest('[data-uber-geocode-pending]');
-    if (geocodePendingBtn) {
-      geocodeUberBatch();
-      return;
-    }
-
-    const geocodeBtn = event.target.closest('[data-uber-geocode-id]');
-    if (geocodeBtn) {
-      geocodeUberBatch(geocodeBtn.dataset.uberGeocodeId);
-      return;
-    }
-
-    const uberBtn = event.target.closest('[data-uber-action][data-uber-id]');
-    if (uberBtn) {
-      updateUberStatus(uberBtn.dataset.uberId, uberBtn.dataset.uberAction);
-      return;
-    }
-
     const verRotaBtn = event.target.closest('[data-ver-rota]');
     if (verRotaBtn) {
       const row = state.localizacao.find((item) => String(item.id) === String(verRotaBtn.dataset.verRota));
       if (row) abrirModalVerRota(row);
-      return;
-    }
-
-    const laudoBtn = event.target.closest('[data-uber-validar-laudo]');
-    if (laudoBtn) {
-      validarUberPorLaudo();
       return;
     }
 
