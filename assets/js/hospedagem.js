@@ -203,6 +203,12 @@ function injectStyles() {
     .hosp-status.reservada,.hosp-status.concluida{color:#32df79;background:rgba(22,101,52,.23)}
     .hosp-status.cancelada{color:#f87171;background:rgba(127,29,29,.17);border-color:rgba(248,113,113,.28)}
     .hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;padding:9px 10px;margin-top:9px;font-size:11.5px}
+    .hosp-row-actions{display:flex;flex-direction:column;gap:5px;min-width:104px}
+    .hosp-row-actions button{border:1px solid rgba(34,197,94,.25);background:transparent;color:#65ad82;padding:5px 8px;font-size:10.5px;font-weight:750;cursor:pointer;text-align:left;white-space:nowrap}
+    .hosp-row-actions button:hover{border-color:rgba(45,215,120,.55);color:#9df2bd}
+    .hosp-row-actions button[data-act="cancelar"]{border-color:rgba(239,68,68,.22);color:#d58b8b}
+    .hosp-row-actions button[data-act="cancelar"]:hover{border-color:rgba(248,113,113,.5);color:#fecaca}
+    .hosp-row-actions button:disabled{opacity:.4;cursor:not-allowed}
     @media(max-width:1180px){.hosp-workspace-body{grid-template-columns:1fr}.hosp-form-pane{border-right:0;border-bottom:1px solid var(--line)}.hosp-form{max-width:none}.hosp-list-pane{min-height:520px}}
     @media(max-width:700px){.hosp-grid{grid-template-columns:1fr 1fr}.hosp-grid .hosp-field{grid-column:1/-1}.hosp-field.col-3,.hosp-field.col-4,.hosp-field.col-5,.hosp-field.col-6,.hosp-field.col-7,.hosp-field.col-8,.hosp-field.col-9{grid-column:span 1}.hosp-list-head{flex-direction:column}.hosp-stats{width:100%}.hosp-stat{flex:1;min-width:0}.hosp-refresh-wrap{padding:10px 14px}.hosp-colab-row{grid-template-columns:minmax(0,1fr) auto}.hosp-colab-type{grid-column:1/-1;grid-row:2}}
   `;
@@ -291,8 +297,8 @@ export function renderContent(content, userContext) {
 
           <div class="hosp-table-wrap">
             <table class="hosp-table">
-              <thead><tr><th>Código</th><th>Colaboradores</th><th>Cidade</th><th>Embarque</th><th>Período</th><th>Hotel</th><th>Status</th></tr></thead>
-              <tbody id="minhasTbody"><tr><td colspan="7" class="hosp-empty">Carregando...</td></tr></tbody>
+              <thead><tr><th>Código</th><th>Colaboradores</th><th>Cidade</th><th>Embarque</th><th>Período</th><th>Hotel</th><th>Status</th><th>Ações</th></tr></thead>
+              <tbody id="minhasTbody"><tr><td colspan="8" class="hosp-empty">Carregando...</td></tr></tbody>
             </table>
           </div>
         </section>
@@ -597,7 +603,7 @@ export function renderContent(content, userContext) {
 
   async function loadSolicitacoes(showLoading = true) {
     const tbody = document.getElementById('minhasTbody');
-    if (showLoading) tbody.innerHTML = '<tr><td colspan="7" class="hosp-empty">Carregando...</td></tr>';
+    if (showLoading) tbody.innerHTML = '<tr><td colspan="8" class="hosp-empty">Carregando...</td></tr>';
 
     let query = supabase
       .from('hospedagem_minhas_solicitacoes')
@@ -607,7 +613,7 @@ export function renderContent(content, userContext) {
 
     const { data, error } = await query;
     if (error) {
-      tbody.innerHTML = `<tr><td colspan="7" class="hosp-empty">${esc(error.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="hosp-empty">${esc(error.message)}</td></tr>`;
       return;
     }
 
@@ -617,11 +623,13 @@ export function renderContent(content, userContext) {
     document.getElementById('statReserved').textContent = state.solicitacoes.filter((row) => row.status_solicitacao === 'RESERVADA').length;
 
     if (!state.solicitacoes.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="hosp-empty">Nenhuma solicitação encontrada.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="hosp-empty">Nenhuma solicitação encontrada.</td></tr>';
       return;
     }
 
-    tbody.innerHTML = state.solicitacoes.map((row) => `
+    tbody.innerHTML = state.solicitacoes.map((row) => {
+      const encerrada = ['CANCELADA', 'CONCLUIDA'].includes(row.status_solicitacao);
+      return `
       <tr>
         <td><strong>${esc(row.codigo || '-')}</strong><br><span class="hosp-help">${brDate(row.data_solicitacao)}</span></td>
         <td>${esc(row.colaboradores || '-')}</td>
@@ -630,13 +638,88 @@ export function renderContent(content, userContext) {
         <td>${brDate(row.data_checkin_prevista)} até ${brDate(row.data_checkout_prevista)}<br><span class="hosp-help">${esc(row.quantidade_diarias_prevista || '-')} diária(s)</span></td>
         <td>${esc(row.hotel || '-')}</td>
         <td><span class="hosp-status ${esc(String(row.status_solicitacao || '').toLowerCase())}">${esc(STATUS_SOLICITACAO[row.status_solicitacao] || row.status_solicitacao || '-')}</span></td>
+        <td>
+          <div class="hosp-row-actions">
+            <button type="button" data-act="estender" data-id="${esc(row.solicitacao_id)}" data-checkout="${esc(row.data_checkout_prevista || '')}" ${encerrada ? 'disabled' : ''}>Estender</button>
+            <button type="button" data-act="checkout" data-id="${esc(row.solicitacao_id)}" ${encerrada ? 'disabled' : ''}>Checkout</button>
+            <button type="button" data-act="cancelar" data-id="${esc(row.solicitacao_id)}" ${encerrada ? 'disabled' : ''}>Cancelar</button>
+          </div>
+        </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
+  }
+
+  async function registrarEvento(solicitacaoId, tipoEvento, descricao, statusAnterior, statusNovo) {
+    await supabase.from('hospedagem_eventos').insert({
+      solicitacao_id: solicitacaoId,
+      usuario_id: userContext?.user?.id || null,
+      usuario_nome: userContext?.user?.name || null,
+      tipo_evento: tipoEvento,
+      descricao,
+      status_anterior: statusAnterior || null,
+      status_novo: statusNovo || null,
+    });
+  }
+
+  async function acaoEstender(id, checkoutAtual) {
+    const base = checkoutAtual || todayISO();
+    const sugestao = addDaysISO(base, 1);
+    const novaData = window.prompt('Nova data de check-out (AAAA-MM-DD):', sugestao);
+    if (!novaData) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(novaData) || novaData <= base) {
+      window.alert('Data inválida — precisa ser uma data no formato AAAA-MM-DD, posterior ao check-out atual.');
+      return;
+    }
+    const { error } = await supabase
+      .from('hospedagem_solicitacoes')
+      .update({ data_checkout_prevista: novaData, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) { window.alert(`Erro ao estender: ${error.message}`); return; }
+    await registrarEvento(id, 'CHECKOUT_ESTENDIDO', `Check-out estendido para ${brDate(novaData)}.`, null, null);
+    await loadSolicitacoes(false);
+  }
+
+  async function acaoCheckout(id) {
+    if (!window.confirm('Confirmar checkout desta hospedagem?')) return;
+    const { error } = await supabase
+      .from('hospedagem_solicitacoes')
+      .update({ status_solicitacao: 'CONCLUIDA', updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) { window.alert(`Erro ao confirmar checkout: ${error.message}`); return; }
+    await registrarEvento(id, 'CHECKOUT_REALIZADO', 'Checkout confirmado pelo gestor.', null, 'CONCLUIDA');
+    await loadSolicitacoes(false);
+  }
+
+  async function acaoCancelar(id) {
+    const motivo = window.prompt('Motivo do cancelamento (opcional):', '') || null;
+    if (!window.confirm('Confirmar cancelamento desta hospedagem?')) return;
+    const { error } = await supabase
+      .from('hospedagem_solicitacoes')
+      .update({
+        status_solicitacao: 'CANCELADA',
+        cancelado_em: new Date().toISOString(),
+        cancelado_por: userContext?.user?.id || null,
+        motivo_cancelamento: motivo,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+    if (error) { window.alert(`Erro ao cancelar: ${error.message}`); return; }
+    await registrarEvento(id, 'CANCELADA', motivo ? `Cancelada pelo gestor: ${motivo}` : 'Cancelada pelo gestor.', null, 'CANCELADA');
+    await loadSolicitacoes(false);
   }
 
   document.getElementById('addColabBtn').addEventListener('click', () => addColabRow());
   document.getElementById('clearBtn').addEventListener('click', resetForm);
   document.getElementById('refreshBtn').addEventListener('click', () => loadSolicitacoes());
+  document.getElementById('minhasTbody').addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-act]');
+    if (!btn || btn.disabled) return;
+    const { act, id, checkout: checkoutAtual } = btn.dataset;
+    if (act === 'estender') acaoEstender(id, checkoutAtual);
+    else if (act === 'checkout') acaoCheckout(id);
+    else if (act === 'cancelar') acaoCancelar(id);
+  });
   checkin.addEventListener('change', () => { updateDataLimits(); updateDiarias(); });
   checkout.addEventListener('change', () => { updateDataLimits(); updateDiarias(); });
   ufSelect.addEventListener('change', () => populateCidades(ufSelect.value));
