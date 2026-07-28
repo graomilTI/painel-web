@@ -1,15 +1,33 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
-// Tela: Conferência · Deslocamento — gerencia a RELAÇÃO DE VEÍCULO PRÓPRIO
-// (programacao_veiculo_proprio). É o fallback das caronas: passageiro que não
-// pega carona e está nesta relação vai de carro próprio (REEMBOLSO KM); quem
-// não está, vai de Uber/Táxi.
+// Tela: Conferência · Deslocamento
+// Aba 1 — Conferência de km: lê os deslocamentos sincronizados da programação
+//         (programacao_deslocamento, alimentada pelo fluxo GRM/Programação),
+//         permite conferir/lançar km por colaborador e calcula o valor de
+//         reembolso com base na tarifa R$/km configurável.
+// Aba 2 — Relação de veículo próprio (programacao_veiculo_proprio): fallback
+//         das caronas; quem está na relação vai de carro próprio (REEMBOLSO KM),
+//         quem não está vai de Uber/Táxi.
 
 const STYLE_ID = 'conf-desloc-styles';
-let baseColabs = [];   // { chave, nome, nomeNorm, supervisao }
-let lista = [];        // linhas de programacao_veiculo_proprio
+
 let elRoot = null;
+let abaAtiva = 'km';
+
+// ------ estado aba KM ------
+let deslocs = [];        // linhas de programacao_deslocamento no período
+let tarifaKm = 1.2;      // R$/km (deslocamento_config.tarifa_km)
+let filtroTipo = 'TODOS';
+let filtroBusca = '';
+let kmDe = '';
+let kmAte = '';
+
+// ------ estado aba Relação ------
+let baseColabs = [];     // { chave, nome, nomeNorm, supervisao }
+let lista = [];          // linhas de programacao_veiculo_proprio
+
+const TIPOS = ['REEMBOLSO KM', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'ÔNIBUS', 'NÃO PRECISA', 'OUTRO'];
 
 function norm(s) {
   return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim().replace(/\s+/g, ' ');
@@ -21,20 +39,84 @@ function chaveDe(cpf, nome) {
 function esc(s) {
   return String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
+function moeda(v) {
+  return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+function numKm(v) {
+  return Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+}
+function dataBr(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = String(iso).slice(0, 10).split('-');
+  return `${d}/${m}/${y}`;
+}
+function isoHoje(offsetDias = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDias);
+  return d.toISOString().slice(0, 10);
+}
+function tipoClasse(t) {
+  const n = norm(t);
+  if (n.includes('REEMBOLSO')) return 'reemb';
+  if (n.includes('MOTORISTA')) return 'motorista';
+  if (n.includes('CARONA')) return 'carona';
+  if (n.includes('UBER') || n.includes('TAXI')) return 'uber';
+  if (n.includes('ONIBUS')) return 'onibus';
+  if (n.includes('NAO PRECISA')) return 'nao';
+  return 'outro';
+}
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
   const st = document.createElement('style');
   st.id = STYLE_ID;
   st.textContent = `
-    .cd-wrap{max-width:880px}
-    .cd-head h3{margin:0 0 4px;font-size:18px;color:#f8fafc}
-    .cd-head p{margin:0 0 14px;font-size:13px;color:#9fb7aa;line-height:1.4}
-    .cd-card{background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:16px;padding:16px;margin-bottom:14px}
-    .cd-lbl{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#6fd0a5;margin-bottom:6px;display:block}
-    .cd-input,.cd-area{width:100%;box-sizing:border-box;background:#06130e;color:#eef7f2;border:1px solid rgba(111,208,165,.3);border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none}
-    .cd-input:focus,.cd-area:focus{border-color:#6fd0a5}
+    .cd-wrap{max-width:1180px}
+    .cd-topo{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+    .cd-topo h3{margin:0 0 2px;font-size:18px;color:#f8fafc}
+    .cd-topo p{margin:0;font-size:12.5px;color:#9fb7aa;line-height:1.45;max-width:640px}
+    .cd-tabs{display:flex;gap:6px;background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:12px;padding:4px}
+    .cd-tab{background:none;border:1px solid transparent;color:#9fb7aa;font-size:13px;font-weight:800;padding:8px 16px;border-radius:9px;cursor:pointer;white-space:nowrap}
+    .cd-tab.on{background:rgba(63,168,120,.22);color:#dcfce7;border-color:rgba(134,239,172,.35)}
+    .cd-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px}
+    .cd-kpi{background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:12px;padding:10px 14px;display:flex;flex-direction:column;gap:2px}
+    .cd-kpi small{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#6fd0a5}
+    .cd-kpi b{font-size:19px;color:#f8fafc;font-variant-numeric:tabular-nums}
+    .cd-kpi span{font-size:11px;color:#8ba79a}
+    .cd-card{background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:16px;padding:14px 16px;margin-bottom:14px}
+    .cd-filtros{display:grid;grid-template-columns:150px 150px 200px minmax(200px,1fr) 190px;gap:8px;align-items:end}
+    @media (max-width:960px){.cd-filtros{grid-template-columns:1fr 1fr}}
+    .cd-lbl{font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#6fd0a5;margin-bottom:4px;display:block}
+    .cd-input,.cd-area,.cd-select{width:100%;box-sizing:border-box;background:#06130e;color:#eef7f2;border:1px solid rgba(111,208,165,.3);border-radius:10px;padding:9px 11px;font-size:13.5px;font-family:inherit;outline:none}
+    .cd-input:focus,.cd-area:focus,.cd-select:focus{border-color:#6fd0a5}
     .cd-area{min-height:84px;resize:vertical}
+    .cd-tarifa{display:flex;align-items:center;gap:6px}
+    .cd-tarifa .cd-input{width:90px;text-align:right}
+    .cd-btn{background:rgba(63,168,120,.16);border:1px solid rgba(134,239,172,.4);color:#dcfce7;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
+    .cd-btn:hover{background:rgba(63,168,120,.3)}
+    .cd-btn:disabled{opacity:.6;cursor:not-allowed}
+    .cd-btn.ghost{background:none;border-color:rgba(148,163,184,.35);color:#cbd5e1}
+    .cd-table-wrap{overflow:auto;max-height:60vh;border-radius:12px}
+    .cd-table{width:100%;border-collapse:separate;border-spacing:0 5px}
+    .cd-table th{position:sticky;top:0;z-index:5;background:#0a1d15;font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#6fd0a5;text-align:left;padding:8px 10px;border-bottom:1px solid rgba(111,208,165,.25)}
+    .cd-table td{background:rgba(13,32,24,.6);border-top:1px solid rgba(111,208,165,.12);border-bottom:1px solid rgba(111,208,165,.12);padding:8px 10px;font-size:13px;color:#eef7f2;vertical-align:middle}
+    .cd-table td:first-child{border-left:1px solid rgba(111,208,165,.12);border-radius:10px 0 0 10px}
+    .cd-table td:last-child{border-right:1px solid rgba(111,208,165,.12);border-radius:0 10px 10px 0}
+    .cd-table td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .cd-badge{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.03em;padding:3px 9px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+    .cd-badge.reemb{background:rgba(250,204,21,.14);color:#fde68a;border-color:rgba(250,204,21,.35)}
+    .cd-badge.motorista{background:rgba(96,165,250,.14);color:#bfdbfe;border-color:rgba(96,165,250,.3)}
+    .cd-badge.carona{background:rgba(63,168,120,.18);color:#86efac;border-color:rgba(134,239,172,.35)}
+    .cd-badge.uber{background:rgba(192,132,252,.14);color:#e9d5ff;border-color:rgba(192,132,252,.3)}
+    .cd-badge.onibus{background:rgba(45,212,191,.14);color:#99f6e4;border-color:rgba(45,212,191,.3)}
+    .cd-badge.nao{background:rgba(148,163,184,.14);color:#cbd5e1;border-color:rgba(148,163,184,.25)}
+    .cd-badge.outro{background:rgba(251,146,60,.14);color:#fed7aa;border-color:rgba(251,146,60,.3)}
+    .cd-km-input{width:84px;background:#06130e;color:#eef7f2;border:1px solid rgba(111,208,165,.3);border-radius:8px;padding:6px 8px;font-size:13px;text-align:right;outline:none;font-variant-numeric:tabular-nums}
+    .cd-km-input:focus{border-color:#6fd0a5}
+    .cd-km-input.salvo{border-color:#86efac;box-shadow:0 0 0 2px rgba(134,239,172,.2)}
+    .cd-valor{font-weight:800;color:#fde68a}
+    .cd-valor.zero{color:#64748b;font-weight:600}
+    .cd-sub{font-size:11px;color:#8ba79a}
     .cd-search{position:relative}
     .cd-dd{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;background:#0c1f17;border:1px solid rgba(111,208,165,.3);border-radius:10px;max-height:280px;overflow:auto;box-shadow:0 14px 38px rgba(0,0,0,.5)}
     .cd-dd[hidden]{display:none}
@@ -42,25 +124,209 @@ function injectStyles() {
     .cd-dd-item:hover{background:rgba(63,168,120,.18)}
     .cd-dd-item small{color:#8ba79a}
     .cd-dd-empty{padding:10px 12px;font-size:13px;color:#8ba79a;font-style:italic}
-    .cd-btn{background:rgba(63,168,120,.16);border:1px solid rgba(134,239,172,.4);color:#dcfce7;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:800;cursor:pointer}
-    .cd-btn:hover{background:rgba(63,168,120,.3)}
-    .cd-btn:disabled{opacity:.6;cursor:not-allowed}
     .cd-row-actions{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
     .cd-count{font-size:12.5px;color:#9fb7aa}
     .cd-count b{color:#6fd0a5}
-    .cd-table{width:100%;border-collapse:separate;border-spacing:0 6px;margin-top:4px}
-    .cd-table td{background:rgba(13,32,24,.6);border-top:1px solid rgba(111,208,165,.12);border-bottom:1px solid rgba(111,208,165,.12);padding:9px 11px;font-size:13px;color:#eef7f2}
-    .cd-table td:first-child{border-left:1px solid rgba(111,208,165,.12);border-radius:10px 0 0 10px;font-weight:700}
-    .cd-table td:last-child{border-right:1px solid rgba(111,208,165,.12);border-radius:0 10px 10px 0;text-align:right;white-space:nowrap}
+    .cd-rel-table{width:100%;border-collapse:separate;border-spacing:0 6px;margin-top:4px}
+    .cd-rel-table td{background:rgba(13,32,24,.6);border-top:1px solid rgba(111,208,165,.12);border-bottom:1px solid rgba(111,208,165,.12);padding:9px 11px;font-size:13px;color:#eef7f2}
+    .cd-rel-table td:first-child{border-left:1px solid rgba(111,208,165,.12);border-radius:10px 0 0 10px;font-weight:700}
+    .cd-rel-table td:last-child{border-right:1px solid rgba(111,208,165,.12);border-radius:0 10px 10px 0;text-align:right;white-space:nowrap}
     .cd-pill{font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;cursor:pointer;border:1px solid transparent}
     .cd-pill.on{background:rgba(63,168,120,.18);color:#86efac;border-color:rgba(134,239,172,.4)}
     .cd-pill.off{background:rgba(148,163,184,.14);color:#cbd5e1}
     .cd-del{background:none;border:0;color:#f87171;font-size:13px;font-weight:800;cursor:pointer;margin-left:10px}
     .cd-msg{font-size:12.5px;color:#9fb7aa;margin-top:8px;line-height:1.5}
-    .cd-empty{padding:14px;border:1px dashed rgba(111,208,165,.22);border-radius:12px;color:#8ba79a;font-size:13px;text-align:center}
+    .cd-empty{padding:16px;border:1px dashed rgba(111,208,165,.22);border-radius:12px;color:#8ba79a;font-size:13px;text-align:center}
+    .cd-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+    @media (max-width:900px){.cd-grid2{grid-template-columns:1fr}}
   `;
   document.head.appendChild(st);
 }
+
+/* ========================== ABA 1 · CONFERÊNCIA DE KM ========================== */
+
+async function loadTarifa() {
+  const { data, error } = await supabase
+    .from('deslocamento_config')
+    .select('valor')
+    .eq('chave', 'tarifa_km')
+    .maybeSingle();
+  if (!error && data?.valor && typeof data.valor.valor !== 'undefined') {
+    const v = Number(data.valor.valor);
+    if (Number.isFinite(v) && v > 0) tarifaKm = v;
+  }
+}
+
+async function saveTarifa(v) {
+  const { error } = await supabase
+    .from('deslocamento_config')
+    .upsert({ chave: 'tarifa_km', valor: { valor: v }, updated_at: new Date().toISOString() }, { onConflict: 'chave' });
+  if (error) throw error;
+  tarifaKm = v;
+}
+
+async function loadDeslocs() {
+  let q = supabase
+    .from('programacao_deslocamento')
+    .select('id,data_referencia,colaborador_id,nome_colaborador,tipo_deslocamento,origem,destino,km,valor,placa_veiculo,observacao')
+    .order('data_referencia', { ascending: false })
+    .order('nome_colaborador')
+    .limit(3000);
+  if (kmDe) q = q.gte('data_referencia', kmDe);
+  if (kmAte) q = q.lte('data_referencia', kmAte);
+  const { data, error } = await q;
+  if (error) { console.warn('[conf-desloc] km', error); deslocs = []; return; }
+  deslocs = data || [];
+}
+
+function deslocsFiltrados() {
+  const busca = norm(filtroBusca);
+  return deslocs.filter((d) => {
+    if (filtroTipo !== 'TODOS' && norm(d.tipo_deslocamento) !== norm(filtroTipo)) return false;
+    if (busca && !norm(d.nome_colaborador).includes(busca) && !norm(d.placa_veiculo).includes(busca)) return false;
+    return true;
+  });
+}
+
+function valorLinha(d) {
+  const v = Number(d.valor || 0);
+  if (v > 0) return v;
+  if (norm(d.tipo_deslocamento).includes('REEMBOLSO')) return Number(d.km || 0) * tarifaKm;
+  return 0;
+}
+
+function renderKpisKm() {
+  const box = elRoot.querySelector('#cdKpis');
+  if (!box) return;
+  const rows = deslocsFiltrados();
+  const kmTotal = rows.reduce((s, d) => s + Number(d.km || 0), 0);
+  const reemb = rows.filter((d) => norm(d.tipo_deslocamento).includes('REEMBOLSO'));
+  const valorReemb = reemb.reduce((s, d) => s + valorLinha(d), 0);
+  const colabs = new Set(rows.map((d) => d.colaborador_id || d.nome_colaborador)).size;
+  const naRelacao = lista.filter((l) => l.ativo).length;
+  box.innerHTML = `
+    <div class="cd-kpi"><small>Registros no período</small><b>${rows.length}</b><span>${colabs} colaborador(es)</span></div>
+    <div class="cd-kpi"><small>Km total</small><b>${numKm(kmTotal)} km</b><span>todos os tipos</span></div>
+    <div class="cd-kpi"><small>Reembolso km</small><b>${reemb.length}</b><span>deslocamentos a reembolsar</span></div>
+    <div class="cd-kpi"><small>Valor a reembolsar</small><b>${moeda(valorReemb)}</b><span>tarifa ${moeda(tarifaKm)}/km</span></div>
+    <div class="cd-kpi"><small>Veículo próprio</small><b>${naRelacao}</b><span>ativos na relação</span></div>
+  `;
+}
+
+function renderTabelaKm() {
+  const box = elRoot.querySelector('#cdKmTabela');
+  if (!box) return;
+  const rows = deslocsFiltrados();
+  if (!rows.length) {
+    box.innerHTML = '<div class="cd-empty">Nenhum deslocamento sincronizado para o período/filtros selecionados. Os dados chegam aqui pela Etapa de Deslocamento da Programação (sincronização GRM).</div>';
+    return;
+  }
+  box.innerHTML = `
+    <div class="cd-table-wrap">
+      <table class="cd-table">
+        <thead>
+          <tr>
+            <th>Data</th><th>Colaborador</th><th>Tipo</th><th>Placa</th><th>Trajeto</th>
+            <th style="text-align:right">Km</th><th style="text-align:right">Valor (R$)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((d) => {
+            const val = valorLinha(d);
+            const trajeto = [d.origem, d.destino].filter(Boolean).join(' → ') || '—';
+            return `
+              <tr data-id="${esc(d.id)}">
+                <td style="white-space:nowrap">${dataBr(d.data_referencia)}</td>
+                <td>${esc(d.nome_colaborador || d.colaborador_id)}${d.observacao ? `<div class="cd-sub">${esc(d.observacao)}</div>` : ''}</td>
+                <td><span class="cd-badge ${tipoClasse(d.tipo_deslocamento)}">${esc(d.tipo_deslocamento || '—')}</span></td>
+                <td>${esc(d.placa_veiculo || '—')}</td>
+                <td>${esc(trajeto)}</td>
+                <td class="num"><input class="cd-km-input" data-km type="number" min="0" step="0.1" value="${Number(d.km || 0)}" /></td>
+                <td class="num"><span class="cd-valor ${val > 0 ? '' : 'zero'}" data-valor>${moeda(val)}</span></td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="cd-msg">Edite o km diretamente na tabela e pressione Enter (ou clique fora do campo) para salvar. Para deslocamentos do tipo <b>REEMBOLSO KM</b>, o valor é recalculado automaticamente pela tarifa vigente.</div>
+  `;
+}
+
+async function salvarKm(id, kmNovo, inputEl, rowEl) {
+  const d = deslocs.find((x) => String(x.id) === String(id));
+  if (!d) return;
+  const km = Number(kmNovo);
+  if (!Number.isFinite(km) || km < 0) { inputEl.value = Number(d.km || 0); return; }
+  const isReemb = norm(d.tipo_deslocamento).includes('REEMBOLSO');
+  const valor = isReemb ? Number((km * tarifaKm).toFixed(2)) : Number(d.valor || 0);
+  const { error } = await supabase
+    .from('programacao_deslocamento')
+    .update({ km, valor, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) { alert(error.message || 'Não foi possível salvar o km.'); inputEl.value = Number(d.km || 0); return; }
+  d.km = km; d.valor = valor;
+  const spanValor = rowEl.querySelector('[data-valor]');
+  const val = valorLinha(d);
+  if (spanValor) {
+    spanValor.textContent = moeda(val);
+    spanValor.classList.toggle('zero', !(val > 0));
+  }
+  inputEl.classList.add('salvo');
+  setTimeout(() => inputEl.classList.remove('salvo'), 1200);
+  renderKpisKm();
+}
+
+function wireAbaKm() {
+  const de = elRoot.querySelector('#cdDe');
+  const ate = elRoot.querySelector('#cdAte');
+  const tipo = elRoot.querySelector('#cdTipo');
+  const busca = elRoot.querySelector('#cdBusca');
+  const tarifa = elRoot.querySelector('#cdTarifa');
+  const tarifaBtn = elRoot.querySelector('#cdTarifaBtn');
+  const aplicar = elRoot.querySelector('#cdAplicar');
+
+  const recarregar = async () => {
+    kmDe = de.value; kmAte = ate.value;
+    aplicar.disabled = true; aplicar.textContent = 'Carregando...';
+    await loadDeslocs();
+    aplicar.disabled = false; aplicar.textContent = 'Aplicar período';
+    renderKpisKm(); renderTabelaKm();
+  };
+  aplicar.addEventListener('click', recarregar);
+  de.addEventListener('change', recarregar);
+  ate.addEventListener('change', recarregar);
+
+  tipo.addEventListener('change', () => { filtroTipo = tipo.value; renderKpisKm(); renderTabelaKm(); });
+  busca.addEventListener('input', () => { filtroBusca = busca.value; renderKpisKm(); renderTabelaKm(); });
+
+  tarifaBtn.addEventListener('click', async () => {
+    const v = Number(String(tarifa.value).replace(',', '.'));
+    if (!Number.isFinite(v) || v <= 0) { alert('Informe uma tarifa válida (R$/km).'); return; }
+    tarifaBtn.disabled = true;
+    try {
+      await saveTarifa(v);
+      renderKpisKm(); renderTabelaKm();
+      tarifaBtn.textContent = 'Salva ✓';
+      setTimeout(() => { tarifaBtn.textContent = 'Salvar'; }, 1500);
+    } catch (err) { alert(err.message || 'Não foi possível salvar a tarifa.'); }
+    finally { tarifaBtn.disabled = false; }
+  });
+
+  const tabela = elRoot.querySelector('#cdKmTabela');
+  tabela.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.matches('[data-km]')) { e.preventDefault(); e.target.blur(); }
+  });
+  tabela.addEventListener('focusout', (e) => {
+    if (!e.target.matches('[data-km]')) return;
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    const d = deslocs.find((x) => String(x.id) === String(tr.dataset.id));
+    if (d && Number(e.target.value) === Number(d.km || 0)) return; // sem mudança
+    salvarKm(tr.dataset.id, e.target.value, e.target, tr);
+  });
+}
+
+/* ========================== ABA 2 · RELAÇÃO VEÍCULO PRÓPRIO ========================== */
 
 async function loadBase() {
   const { data, error } = await supabase
@@ -98,10 +364,11 @@ async function addEntry(chave, nome) {
 function renderLista() {
   const box = elRoot.querySelector('#cdLista');
   const cnt = elRoot.querySelector('#cdCount');
+  if (!box) return;
   const ativos = lista.filter((l) => l.ativo).length;
   if (cnt) cnt.innerHTML = `<b>${ativos}</b> ativo(s) · ${lista.length} no total`;
-  if (!lista.length) { box.innerHTML = '<div class="cd-empty">Nenhum colaborador na relação ainda. Adicione acima.</div>'; return; }
-  box.innerHTML = `<table class="cd-table"><tbody>${lista.map((l) => `
+  if (!lista.length) { box.innerHTML = '<div class="cd-empty">Nenhum colaborador na relação ainda. Adicione ao lado.</div>'; return; }
+  box.innerHTML = `<table class="cd-rel-table"><tbody>${lista.map((l) => `
     <tr data-id="${esc(l.id)}">
       <td>${esc(l.nome || l.colaborador_id)}</td>
       <td><span class="cd-pill ${l.ativo ? 'on' : 'off'}" data-toggle>${l.ativo ? 'Ativo' : 'Inativo'}</span></td>
@@ -130,6 +397,7 @@ async function bulkAdd(text, msgEl) {
   }
   await loadLista();
   renderLista();
+  renderKpisKm();
   if (msgEl) {
     msgEl.innerHTML = `Adicionados: <b style="color:#86efac">${unicos.length}</b>.` +
       (naoAchados.length ? ` Não encontrados (confira o nome): ${naoAchados.map(esc).join(', ')}` : '');
@@ -139,6 +407,7 @@ async function bulkAdd(text, msgEl) {
 function wireSearch() {
   const input = elRoot.querySelector('#cdSearch');
   const dd = elRoot.querySelector('#cdDropdown');
+  if (!input || !dd) return;
   const render = () => {
     const term = norm(input.value);
     if (term.length < 2) { dd.hidden = true; return; }
@@ -150,7 +419,10 @@ function wireSearch() {
   };
   input.addEventListener('input', render);
   input.addEventListener('focus', render);
-  document.addEventListener('click', (e) => { if (!elRoot.querySelector('#cdSearchWrap').contains(e.target)) dd.hidden = true; });
+  document.addEventListener('click', (e) => {
+    const wrap = elRoot.querySelector('#cdSearchWrap');
+    if (wrap && !wrap.contains(e.target)) dd.hidden = true;
+  });
   dd.addEventListener('click', async (e) => {
     const it = e.target.closest('.cd-dd-item');
     if (!it) return;
@@ -159,12 +431,14 @@ function wireSearch() {
       await addEntry(it.dataset.chave, it.dataset.nome);
       await loadLista();
       renderLista();
+      renderKpisKm();
     } catch (err) { alert(err.message || 'Não foi possível adicionar.'); }
   });
 }
 
 function wireLista() {
   const box = elRoot.querySelector('#cdLista');
+  if (!box) return;
   box.addEventListener('click', async (e) => {
     const tr = e.target.closest('tr[data-id]');
     if (!tr) return;
@@ -173,64 +447,148 @@ function wireLista() {
       if (!confirm('Remover este colaborador da relação?')) return;
       const { error } = await supabase.from('programacao_veiculo_proprio').delete().eq('id', id);
       if (error) { alert(error.message); return; }
-      await loadLista(); renderLista();
+      await loadLista(); renderLista(); renderKpisKm();
     } else if (e.target.closest('[data-toggle]')) {
       const atual = lista.find((l) => String(l.id) === String(id));
       const { error } = await supabase.from('programacao_veiculo_proprio').update({ ativo: !atual?.ativo, updated_at: new Date().toISOString() }).eq('id', id);
       if (error) { alert(error.message); return; }
-      await loadLista(); renderLista();
+      await loadLista(); renderLista(); renderKpisKm();
     }
   });
 }
 
-export function renderContent(content) {
-  injectStyles();
-  elRoot = content;
-  content.innerHTML = `
-    <div class="cd-wrap">
-      <div class="cd-head">
-        <h3>Deslocamento — relação de veículo próprio</h3>
-        <p>Quem está nesta relação, quando <b>não pega carona</b> na programação, vai de <b>carro próprio</b> (reembolso por km). Quem não está vai de <b>Uber/Táxi</b>. Usada pela sugestão de caronas na Etapa 1 da Programação.</p>
-      </div>
+/* ========================== RENDER GERAL ========================== */
 
+function htmlAbaKm() {
+  return `
+    <div class="cd-card">
+      <div class="cd-filtros">
+        <div>
+          <label class="cd-lbl">De</label>
+          <input class="cd-input" id="cdDe" type="date" value="${esc(kmDe)}" />
+        </div>
+        <div>
+          <label class="cd-lbl">Até</label>
+          <input class="cd-input" id="cdAte" type="date" value="${esc(kmAte)}" />
+        </div>
+        <div>
+          <label class="cd-lbl">Tipo de deslocamento</label>
+          <select class="cd-select" id="cdTipo">
+            <option value="TODOS">Todos os tipos</option>
+            ${TIPOS.map((t) => `<option value="${esc(t)}" ${filtroTipo === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="cd-lbl">Buscar colaborador / placa</label>
+          <input class="cd-input" id="cdBusca" type="text" placeholder="Nome ou placa..." value="${esc(filtroBusca)}" />
+        </div>
+        <div>
+          <label class="cd-lbl">Tarifa (R$/km)</label>
+          <div class="cd-tarifa">
+            <input class="cd-input" id="cdTarifa" type="number" min="0" step="0.01" value="${tarifaKm}" />
+            <button class="cd-btn" id="cdTarifaBtn" type="button">Salvar</button>
+          </div>
+        </div>
+      </div>
+      <div class="cd-row-actions">
+        <button class="cd-btn ghost" id="cdAplicar" type="button">Aplicar período</button>
+        <span class="cd-sub">Os deslocamentos são gravados pela Programação (sincronização GRM) — aqui você confere, ajusta o km e apura o valor de reembolso.</span>
+      </div>
+    </div>
+    <div id="cdKmTabela"><div class="cd-empty">Carregando deslocamentos...</div></div>
+  `;
+}
+
+function htmlAbaRelacao() {
+  return `
+    <div class="cd-grid2">
       <div class="cd-card">
         <label class="cd-lbl">Adicionar colaborador</label>
         <div class="cd-search" id="cdSearchWrap">
           <input class="cd-input" id="cdSearch" type="text" placeholder="Buscar pelo nome..." autocomplete="off" spellcheck="false" />
           <div class="cd-dd" id="cdDropdown" hidden></div>
         </div>
-
         <label class="cd-lbl" style="margin-top:14px">Ou colar lista de nomes (um por linha)</label>
         <textarea class="cd-area" id="cdBulk" placeholder="João da Silva&#10;Maria Souza&#10;..."></textarea>
         <div class="cd-row-actions">
           <button class="cd-btn" id="cdBulkBtn" type="button">Adicionar lista</button>
         </div>
         <div class="cd-msg" id="cdBulkMsg"></div>
+        <div class="cd-msg">Quem está nesta relação, quando <b>não pega carona</b> na programação, vai de <b>carro próprio</b> (reembolso por km). Quem não está vai de <b>Uber/Táxi</b>. Usada pela sugestão de caronas na Etapa 1 da Programação.</div>
       </div>
-
       <div class="cd-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <label class="cd-lbl" style="margin:0">Relação atual</label>
           <span class="cd-count" id="cdCount"></span>
         </div>
-        <div id="cdLista"><div class="cd-empty">Carregando...</div></div>
+        <div id="cdLista" style="max-height:56vh;overflow:auto"><div class="cd-empty">Carregando...</div></div>
       </div>
     </div>
   `;
+}
 
-  wireSearch();
-  wireLista();
-  const bulkBtn = content.querySelector('#cdBulkBtn');
-  bulkBtn.addEventListener('click', async () => {
-    bulkBtn.disabled = true;
-    try {
-      await bulkAdd(content.querySelector('#cdBulk').value, content.querySelector('#cdBulkMsg'));
-      content.querySelector('#cdBulk').value = '';
-    } catch (err) { alert(err.message || 'Erro ao adicionar a lista.'); }
-    finally { bulkBtn.disabled = false; }
+function renderAba() {
+  const body = elRoot.querySelector('#cdBody');
+  elRoot.querySelectorAll('.cd-tab').forEach((b) => b.classList.toggle('on', b.dataset.aba === abaAtiva));
+  if (abaAtiva === 'km') {
+    body.innerHTML = htmlAbaKm();
+    wireAbaKm();
+    renderKpisKm();
+    renderTabelaKm();
+  } else {
+    body.innerHTML = htmlAbaRelacao();
+    wireSearch();
+    wireLista();
+    renderLista();
+    renderKpisKm();
+    const bulkBtn = elRoot.querySelector('#cdBulkBtn');
+    bulkBtn.addEventListener('click', async () => {
+      bulkBtn.disabled = true;
+      try {
+        await bulkAdd(elRoot.querySelector('#cdBulk').value, elRoot.querySelector('#cdBulkMsg'));
+        elRoot.querySelector('#cdBulk').value = '';
+      } catch (err) { alert(err.message || 'Erro ao adicionar a lista.'); }
+      finally { bulkBtn.disabled = false; }
+    });
+  }
+}
+
+export function renderContent(content) {
+  injectStyles();
+  elRoot = content;
+
+  // período padrão: mês corrente
+  const hoje = new Date();
+  kmDe = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+  kmAte = isoHoje();
+
+  content.innerHTML = `
+    <div class="cd-wrap">
+      <div class="cd-topo">
+        <div>
+          <h3>Conferência · Deslocamento</h3>
+          <p>Km rodado por colaborador conforme a sincronização da Programação (GRM), apuração do reembolso por km e gestão da relação de veículo próprio.</p>
+        </div>
+        <div class="cd-tabs">
+          <button class="cd-tab on" data-aba="km" type="button">Conferência de km</button>
+          <button class="cd-tab" data-aba="relacao" type="button">Relação veículo próprio</button>
+        </div>
+      </div>
+      <div class="cd-kpis" id="cdKpis"></div>
+      <div id="cdBody"></div>
+    </div>
+  `;
+
+  content.querySelector('.cd-tabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('.cd-tab');
+    if (!btn || btn.dataset.aba === abaAtiva) return;
+    abaAtiva = btn.dataset.aba;
+    renderAba();
   });
 
-  Promise.all([loadBase(), loadLista()]).then(() => renderLista());
+  Promise.all([loadTarifa(), loadDeslocs(), loadBase(), loadLista()]).then(() => {
+    renderAba();
+  });
 }
 
 initProtectedPage('Conferência · Deslocamento', renderContent);
