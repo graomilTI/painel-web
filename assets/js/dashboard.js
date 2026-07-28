@@ -168,6 +168,10 @@ function injectDashStyles() {
     @keyframes db-wave { to { transform: translateX(60px); } }
     @keyframes db-state-rise { from { transform: scaleY(0); } }
     @keyframes db-glow-pulse { 0%,100%{opacity:.55} 50%{opacity:1} }
+    @keyframes db-skel-pulse { 0%,100%{opacity:.55} 50%{opacity:1} }
+
+    .db-skel { background: rgba(255,255,255,.06); border-radius: 10px; animation: db-skel-pulse 1.3s ease-in-out infinite; }
+    .db-skel-map { width:100%; aspect-ratio: 800/796; border-radius: 16px; }
 
     .db-section { margin-bottom: 24px; animation: db-fade-up .35s ease both; }
     .db-section-head {
@@ -610,6 +614,43 @@ function renderMiniChart(daily7) {
   return `<svg viewBox="0 0 ${W} ${H+14}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:62px;display:block;overflow:visible">${bars}</svg>`;
 }
 
+function renderGestorSkeleton() {
+  return `
+    <div class="db-section">
+      <div class="db-section-head">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div class="db-skel" style="width:120px;height:22px"></div>
+          <div class="db-skel" style="width:90px;height:22px;border-radius:999px"></div>
+        </div>
+        <div class="db-skel" style="width:96px;height:28px"></div>
+      </div>
+      <div class="db-prod-card">
+        <div class="db-skel" style="width:140px;height:12px;margin-bottom:14px"></div>
+        <div class="db-prod-body">
+          <div class="db-prod-left"><div class="db-skel db-skel-map"></div></div>
+          <div class="db-prod-right">
+            <div class="db-stat-block">
+              <div class="db-skel" style="width:80px;height:11px;margin-bottom:8px"></div>
+              <div class="db-skel" style="width:110px;height:22px"></div>
+            </div>
+            <div class="db-stat-sep"></div>
+            <div class="db-stat-block">
+              <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
+              <div class="db-skel" style="width:120px;height:22px"></div>
+            </div>
+            <div class="db-stat-sep"></div>
+            <div class="db-skel" style="width:100%;height:62px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="db-secondary-grid">
+        <div class="db-skel" style="height:150px"></div>
+        <div class="db-skel" style="height:150px"></div>
+      </div>
+    </div>
+  `;
+}
+
 function renderGestorDashboard(container, data) {
   const { ano, mes, coordenacao, isMaster, produzido, diasComDados, meta, daily7, mapaEstados, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal } = data;
   const now = new Date();
@@ -714,7 +755,7 @@ function renderGestorDashboard(container, data) {
               <div class="db-os-label">Total</div>
             </div>
           </div>
-          <a class="db-os-link" href="${buildPanelHref('programacao')}">Abrir módulo de OS →</a>
+          <a class="db-os-link" href="${buildPanelHref('programacao')}">Abrir Programação →</a>
         </div>
       </div>
     </div>
@@ -801,7 +842,7 @@ export async function renderContent(content, userContext) {
   const showGestor     = isGestorOrMaster(userContext);
 
   const gestorPlaceholder = showGestor
-    ? `<div id="dbGestorSection"><div class="db-loading">Carregando dashboard...</div></div>`
+    ? `<div id="dbGestorSection">${renderGestorSkeleton()}</div>`
     : '';
 
   content.innerHTML = `

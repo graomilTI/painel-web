@@ -51,10 +51,13 @@ function injectStyles() {
     .pn-nor{background:rgba(59,130,246,.11);color:#bfdbfe;border-color:rgba(59,130,246,.26)}
     .pn-inf{background:rgba(100,116,139,.1);color:#cbd5e1;border-color:rgba(100,116,139,.22)}
     .pn-computed-tag{background:rgba(45,212,160,.1);color:#6ee7b7;border:1px solid rgba(45,212,160,.22);border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700}
-    .pn-actions{display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex-shrink:0}
-    .pn-btn{border:1px solid rgba(255,255,255,.08);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;text-decoration:none;display:inline-flex;transition:.15s}
-    .pn-btn:hover{background:rgba(45,212,160,.15);border-color:rgba(45,212,160,.3)}
-    .pn-btn-exec{background:rgba(22,101,52,.28);border-color:rgba(45,212,160,.35);color:#bbf7d0}
+    .pn-actions{display:flex;flex-direction:row;gap:6px;align-items:center;flex-shrink:0}
+    .pn-icon-btn{width:32px;height:32px;border:1px solid rgba(255,255,255,.08);background:#0d0d18;color:#e2e2f0;border-radius:9px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;transition:.15s;flex-shrink:0}
+    .pn-icon-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.2}
+    .pn-icon-btn:hover{background:rgba(45,212,160,.15);border-color:rgba(45,212,160,.3)}
+    .pn-icon-btn-exec{background:rgba(22,101,52,.28);border-color:rgba(45,212,160,.35);color:#bbf7d0}
+    .pn-icon-btn-exec.is-done{background:rgba(45,212,160,.22);border-color:rgba(45,212,160,.5);color:#6ee7b7;cursor:default}
+    .pn-icon-btn[disabled]{opacity:.6;cursor:wait}
     .pn-empty{padding:32px;text-align:center;color:#475569;font-size:14px}
     .pn-master-table{overflow:auto;border:1px solid rgba(148,163,184,.12);border-radius:16px}
     .pn-table{width:100%;border-collapse:collapse;min-width:900px;background:#0d0d18;font-size:13px}
@@ -194,8 +197,12 @@ export async function renderContent(content, userContext) {
             </div>
           </div>
           <div class="pn-actions">
-            <a class="pn-btn" href="${url}" data-action-link="${esc(n.id)}" data-computed="${!!n.computed}">Ir ao módulo →</a>
-            ${!n.computed ? `<button class="pn-btn pn-btn-exec" data-exec-id="${esc(n.id)}" type="button">Marcar como feito</button>` : ''}
+            <a class="pn-icon-btn" href="${url}" title="Ir ao módulo" aria-label="Ir ao módulo" data-action-link="${esc(n.id)}" data-computed="${!!n.computed}">
+              <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </a>
+            ${!n.computed ? `<button class="pn-icon-btn pn-icon-btn-exec" title="Marcar como feito" aria-label="Marcar como feito" data-exec-id="${esc(n.id)}" type="button">
+              <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>` : ''}
           </div>
         </div>`;
     }).join('');
@@ -212,9 +219,10 @@ export async function renderContent(content, userContext) {
     el.querySelectorAll('[data-exec-id]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         btn.disabled = true;
-        btn.textContent = 'Salvando...';
+        btn.title = 'Salvando...';
         await engine.marcarExecutada(btn.dataset.execId);
-        btn.textContent = '✓ Concluído';
+        btn.title = 'Concluído';
+        btn.classList.add('is-done');
       });
     });
   }

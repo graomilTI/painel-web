@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Histórico | Grão 1000</title>
+  <link rel="icon" href="./assets/icons/pwa-192.png" />
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./responsive.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <button class="mobile-nav-toggle" id="mobileNavToggle" type="button" aria-controls="sidebarNav" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span>Menu</span>
+    </button>
+    <div class="mobile-sidebar-backdrop" id="mobileSidebarBackdrop" hidden></div>
+
+    <aside class="sidebar" id="sidebarNav">
+      <div class="sidebar-brand">
+        <h2>Painel</h2>
+        <p>Gestão integrada</p>
+      </div>
+      <div id="sidebarMenu"></div>
+    </aside>
+
+    <div class="content-wrap">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">Histórico</h1>
+          <div class="meta" id="welcomeUser">Olá</div>
+        </div>
+        <div class="topbar-actions">
+          <span class="badge" id="roleBadge">USUÁRIO</span>
+          <button class="btn btn-secondary" id="signOutBtn" type="button">Sair</button>
+        </div>
+      </header>
+
+      <main class="page-main" id="pageContent"></main>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const toggle = document.getElementById('mobileNavToggle');
+      const backdrop = document.getElementById('mobileSidebarBackdrop');
+      const sidebar = document.getElementById('sidebarNav');
+
+      if (!toggle || !backdrop || !sidebar) return;
+
+      const setMenuOpen = (open) => {
+        document.body.classList.toggle('mobile-nav-open', open);
+        toggle.setAttribute('aria-expanded', String(open));
+        backdrop.hidden = !open;
+      };
+
+      toggle.addEventListener('click', () => {
+        setMenuOpen(!document.body.classList.contains('mobile-nav-open'));
+      });
+
+      backdrop.addEventListener('click', () => setMenuOpen(false));
+
+      sidebar.addEventListener('click', (event) => {
+        if (event.target.closest('a')) setMenuOpen(false);
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') setMenuOpen(false);
+      });
+
+      window.addEventListener('resize', () => {
+        if (window.innerWidth > 980) setMenuOpen(false);
+      });
+    })();
+  </script>
+  <script type="module" src="./assets/js/historico.js"></script>
+</body>
+</html>
