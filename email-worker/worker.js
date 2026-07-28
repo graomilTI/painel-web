@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { createDecipheriv, createHash } from 'node:crypto';
+import { request as httpsRequest } from 'node:https';
 import { createClient } from '@supabase/supabase-js';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
@@ -38,9 +39,100 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
 });
 
-// Carregado sob demanda: o pacote 'openai' usa um shim de detecção de runtime
-// (_shims/auto/runtime) que não resolve em Node 14, então só importamos se a
-// chave estiver configurada.
+// ---------------------------------------------------------------------------
+// Camada de IA: Groq (com rotação de chaves) ou OpenAI (legado).
+// GROQ_API_KEYS aceita várias chaves separadas por vírgula; a cada chamada usa
+// a próxima chave (round-robin) e, em erro de limite/quota (429/413/5xx), pula
+// para a seguinte com cooldown — assim o consumo diário é diluído entre todas
+// as chaves e nenhuma esgota sozinha. Implementado com https nativo para rodar
+// no Node 14 da VPS (sem fetch e sem o pacote openai, cujo shim não resolve lá).
+// ---------------------------------------------------------------------------
+const GROQ_KEYS = String(process.env.GROQ_API_KEYS || '')
+  .split(/[\s,;]+/)
+  .map((k) => k.trim())
+  .filter((k) => k.startsWith('gsk_'));
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
+const GROQ_KEY_COOLDOWN_MS = 10 * 60 * 1000; // 10 min fora de rotação após rate limit
+
+let groqKeyIndex = 0;
+const groqKeyCooldown = new Map(); // key -> timestamp até quando está em cooldown
+
+function nextGroqKey() {
+  const now = Date.now();
+  for (let i = 0; i < GROQ_KEYS.length; i += 1) {
+    const key = GROQ_KEYS[(groqKeyIndex + i) % GROQ_KEYS.length];
+    if ((groqKeyCooldown.get(key) || 0) <= now) {
+      groqKeyIndex = (groqKeyIndex + i + 1) % GROQ_KEYS.length;
+      return key;
+    }
+  }
+  return null; // todas em cooldown
+}
+
+function httpsJsonPost(url, headers, payload, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const u = new URL(url);
+    const req = httpsRequest({
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...headers },
+      timeout: timeoutMs || 60000
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        let parsed = null;
+        try { parsed = JSON.parse(data); } catch (_) { /* corpo não-JSON */ }
+        resolve({ status: res.statusCode, body: parsed, raw: data });
+      });
+    });
+    req.on('timeout', () => { req.destroy(new Error('timeout')); });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// Chamada de chat na Groq com rotação/failover de chaves. `messages` no formato
+// OpenAI-compatible; retorna o objeto response (com choices) ou null se falhar.
+async function groqChat({ model, messages, jsonMode = true, maxTokens = 1024 }) {
+  if (!GROQ_KEYS.length) return null;
+  const maxAttempts = Math.min(GROQ_KEYS.length, 5);
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const key = nextGroqKey();
+    if (!key) {
+      console.warn('Groq: todas as chaves em cooldown neste momento.');
+      return null;
+    }
+    try {
+      const payload = { model, temperature: 0, max_tokens: maxTokens, messages };
+      if (jsonMode) payload.response_format = { type: 'json_object' };
+      const res = await httpsJsonPost(
+        'https://api.groq.com/openai/v1/chat/completions',
+        { Authorization: `Bearer ${key}` },
+        payload
+      );
+      if (res.status === 200 && res.body?.choices?.length) return res.body;
+      const errMsg = res.body?.error?.message || res.raw?.slice(0, 160) || `HTTP ${res.status}`;
+      if (res.status === 429 || res.status === 413 || res.status >= 500 || /quota|rate limit/i.test(errMsg)) {
+        groqKeyCooldown.set(key, Date.now() + GROQ_KEY_COOLDOWN_MS);
+        console.warn(`Groq: chave ...${key.slice(-6)} em cooldown (${res.status}): ${errMsg}`);
+        continue; // tenta a próxima chave
+      }
+      console.warn(`Groq: erro não-recuperável (${res.status}): ${errMsg}`);
+      return null;
+    } catch (err) {
+      console.warn(`Groq: falha de rede com a chave ...${key.slice(-6)}: ${err.message}`);
+    }
+  }
+  return null;
+}
+
+// Cliente legado OpenAI, mantido como alternativa quando GROQ_API_KEYS não
+// estiver configurado (carregado sob demanda por causa do Node 14 da VPS).
 let openaiClientPromise = null;
 function getOpenAI() {
   if (!process.env.OPENAI_API_KEY) return Promise.resolve(null);
@@ -53,6 +145,28 @@ function getOpenAI() {
       });
   }
   return openaiClientPromise;
+}
+
+const AI_ENABLED = GROQ_KEYS.length > 0 || Boolean(process.env.OPENAI_API_KEY);
+
+// Interface unificada: tenta Groq primeiro (com rotação), depois OpenAI.
+// `vision: true` usa o modelo multimodal da Groq (imagens em base64).
+async function aiChat({ messages, jsonMode = true, vision = false, maxTokens = 1024 }) {
+  if (GROQ_KEYS.length) {
+    const model = vision ? GROQ_VISION_MODEL : GROQ_MODEL;
+    const res = await groqChat({ model, messages, jsonMode, maxTokens });
+    if (res) return res;
+  }
+  const openai = await getOpenAI();
+  if (!openai) return null;
+  try {
+    const params = { model: process.env.OPENAI_MODEL || 'gpt-4o-mini', temperature: 0, messages };
+    if (jsonMode) params.response_format = { type: 'json_object' };
+    return await openai.chat.completions.create(params);
+  } catch (err) {
+    console.warn('Falha na OpenAI:', err.message);
+    return null;
+  }
 }
 
 function text(value) {
@@ -429,18 +543,15 @@ function interpretXmlAttachment(buffer) {
 const ANEXO_IA_PROMPT = 'Extraia dados financeiros deste documento (boleto, comprovante de pagamento, recibo ou nota fiscal). Responda apenas JSON com os campos: tipo_documento (BOLETO, COMPROVANTE, RECIBO, NF-e, NFS-e ou OUTRO), valor (ex: "R$ 1.234,56"), vencimento (DD/MM/AAAA), favorecido_nome, favorecido_documento (CNPJ ou CPF), pagador_nome, chave_pix, numero_documento, banco. Use null para campos não encontrados na imagem/texto.';
 
 async function interpretAttachmentWithAI(attachment) {
-  const openai = await getOpenAI();
-  if (!openai) return null;
+  if (!AI_ENABLED) return null;
   const mime = (attachment.contentType || '').toLowerCase();
   const buffer = attachment.content;
   if (!buffer || buffer.length > MAX_ANEXO_IA_BYTES) return null;
   try {
     if (/^image\/(jpe?g|png|webp|gif)$/.test(mime)) {
       const b64 = buffer.toString('base64');
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        temperature: 0,
-        response_format: { type: 'json_object' },
+      const response = await aiChat({
+        vision: true,
         messages: [
           { role: 'system', content: ANEXO_IA_PROMPT },
           { role: 'user', content: [
@@ -449,6 +560,7 @@ async function interpretAttachmentWithAI(attachment) {
           ] }
         ]
       });
+      if (!response) return null;
       return pickNonEmpty(JSON.parse(response.choices?.[0]?.message?.content || '{}'));
     }
     if (mime === 'application/pdf') {
@@ -456,15 +568,13 @@ async function interpretAttachmentWithAI(attachment) {
       const { text: pdfText } = await pdfParse(buffer);
       const clean = text(pdfText).replace(/\s+/g, ' ').slice(0, 6000);
       if (clean.length < 30) return null;
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        temperature: 0,
-        response_format: { type: 'json_object' },
+      const response = await aiChat({
         messages: [
           { role: 'system', content: ANEXO_IA_PROMPT },
           { role: 'user', content: `Texto extraído do PDF:\n\n${clean}` }
         ]
       });
+      if (!response) return null;
       return pickNonEmpty(JSON.parse(response.choices?.[0]?.message?.content || '{}'));
     }
   } catch (err) {
@@ -479,17 +589,14 @@ const PROGRAMACAO_EMBARQUE_PROMPT = 'Esta imagem pode ser uma tabela de "Program
 // embutida no corpo, não como texto — por isso essa interpretação só roda pra imagens
 // (collectAttachments já filtra por tamanho antes de chegar aqui).
 async function interpretEmbarqueTable(attachment) {
-  const openai = await getOpenAI();
-  if (!openai) return null;
+  if (!AI_ENABLED) return null;
   const mime = (attachment.contentType || '').toLowerCase();
   const buffer = attachment.content;
   if (!buffer || buffer.length > MAX_ANEXO_IA_BYTES || !/^image\/(jpe?g|png|webp|gif)$/.test(mime)) return null;
   try {
     const b64 = buffer.toString('base64');
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0,
-      response_format: { type: 'json_object' },
+    const response = await aiChat({
+      vision: true,
       messages: [
         { role: 'system', content: PROGRAMACAO_EMBARQUE_PROMPT },
         { role: 'user', content: [
@@ -498,6 +605,7 @@ async function interpretEmbarqueTable(attachment) {
         ] }
       ]
     });
+    if (!response) return null;
     const parsed = JSON.parse(response.choices?.[0]?.message?.content || '{}');
     return { eh_tabela_embarque: parsed.eh_tabela_embarque === true, linhas: Array.isArray(parsed.linhas) ? parsed.linhas : [] };
   } catch (err) {
@@ -633,18 +741,15 @@ function sanitizeAIResult(parsed, base, gestores) {
 }
 
 async function classifyWithAI(message, base, gestores) {
-  const openai = await getOpenAI();
-  if (!openai) return base;
+  if (!AI_ENABLED) return base;
   try {
-    const response = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      temperature: 0,
-      response_format: { type: 'json_object' },
+    const response = await aiChat({
       messages: [
         { role: 'system', content: buildAIPrompt(gestores) },
         { role: 'user', content: `Assunto: ${message.subject}\nRemetente: ${message.fromText}\nTexto do e-mail:\n${stripArtifacts(readableBody(message)).slice(0, 6000)}\n\nClassificação preliminar por regras (pode corrigir): ${JSON.stringify({ regional: base.regional, categoria: base.categoria, prioridade: base.prioridade })}` }
       ]
     });
+    if (!response) return base;
     const parsed = JSON.parse(response.choices?.[0]?.message?.content || '{}');
     const merged = sanitizeAIResult(parsed, base, gestores);
     merged.auto_responder = base.auto_responder;
@@ -699,7 +804,7 @@ async function saveAttachment(emailId, attachment) {
         dadosExtraidos = { linhas_embarque: tabela.linhas };
         status = 'OK';
       } else {
-        status = process.env.OPENAI_API_KEY ? 'SEM_DADOS' : 'SEM_IA';
+        status = AI_ENABLED ? 'SEM_DADOS' : 'SEM_IA';
       }
     } else if (/^image\/(jpe?g|png|webp|gif)$/.test(mime) || mime === 'application/pdf') {
       const ai = await interpretAttachmentWithAI(attachment);
@@ -707,7 +812,7 @@ async function saveAttachment(emailId, attachment) {
         dadosExtraidos = ai;
         status = 'OK';
       } else {
-        status = process.env.OPENAI_API_KEY ? 'SEM_DADOS' : 'SEM_IA';
+        status = AI_ENABLED ? 'SEM_DADOS' : 'SEM_IA';
       }
     }
   } catch (err) {
