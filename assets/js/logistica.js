@@ -1,5 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
+import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnexoSaldo, atualizarStatusOsCore } from './programacao-equipe.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 function fmt(v) { return BR.format(Number(v) || 0); }
@@ -13,8 +15,8 @@ function dateFromTomorrowLock() {
   return d.toISOString().slice(0,10);
 }
 
-const TABS = ['abrir_os'];
-const TAB_LABELS = { abrir_os: 'Abrir OS' };
+const TABS = ['abrir_os', 'conferencia', 'ajuste', 'finalizar'];
+const TAB_LABELS = { abrir_os: 'Abrir OS', conferencia: 'Conferência', ajuste: 'Ajuste de saldo', finalizar: 'Finalizar' };
 
 const OS_STATUS_LABELS = { PENDENTE: 'Pendente', AGUARDAR: 'Aguardar', ATENDER: 'Atender', FINALIZAR: 'Finalizar' };
 
@@ -28,11 +30,31 @@ const state = {
   aberturaRefs: { clientes: [], filiais: [], armazens: [], destinos: [], locaisDestino: [], regionais: [] },
   aberturaLoading: false,
   aberturaSaving: false,
+  osRegional: [],
+  osRegionalLoading: false,
   loading: false
 };
 
-export async function renderContent(content) {
+function getUserField(ctx, ...paths) {
+  for (const path of paths) {
+    const parts = path.split('.');
+    let cur = ctx;
+    for (const part of parts) cur = cur?.[part];
+    if (cur !== undefined && cur !== null && String(cur).trim() !== '') return cur;
+  }
+  return null;
+}
+
+function getMinhasRegionais(ctx) {
+  const raw = getUserField(ctx, 'supervisao', 'user.supervisao', 'coordenacao', 'user.coordenacao') || '';
+  return [...new Set(String(raw).split(/[,;|\n]+/).map((s) => normalizeText(s)).filter(Boolean))];
+}
+
+const REGIONAL_TABS = ['conferencia', 'ajuste', 'finalizar'];
+
+export async function renderContent(content, userContext) {
   injectStyles();
+  state.ctx = userContext;
   content.innerHTML = `
     <section class="card mt-16">
       <div class="log-tab-bar">${TABS.map(t => `<button class="log-tab ${state.tab===t?'active':''}" data-tab="${t}">${TAB_LABELS[t]}</button>`).join('')}</div>
@@ -48,6 +70,9 @@ export async function renderContent(content) {
     content.querySelectorAll('.log-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
     if (state.tab === 'os' && !state.rows.length) await Promise.all([loadOs(), loadAllOs()]);
     if (state.tab === 'abrir_os' && !state.aberturaRows.length) await loadAberturaOs();
+    if (REGIONAL_TABS.includes(state.tab) && !state.osRegional.length) {
+      await Promise.all([loadOsRegional(state.ctx), ensureRegrasAnexoSaldo()]);
+    }
     render(content);
   });
 
@@ -63,9 +88,19 @@ export async function renderContent(content) {
 
     if (e.target.closest('#logReload')) { await Promise.all([loadOs(), loadAllOs()]); render(content); return; }
     if (e.target.closest('#abrirOsSalvarBtn')) { await handleSalvarAberturaOs(content); return; }
+
+    const confBtn = e.target.closest('[data-conf-send]');
+    if (confBtn) { await handleEnviarConferencia(confBtn.dataset.confSend, content); return; }
+
+    const ajusteBtn = e.target.closest('[data-ajuste-send]');
+    if (ajusteBtn) { await handleEnviarAjuste(ajusteBtn.dataset.ajusteSend, content); return; }
+
+    const finalBtn = e.target.closest('[data-final-send]');
+    if (finalBtn) { await handleEnviarFinalizacao(finalBtn.dataset.finalSend, content); return; }
   });
 
   if (state.tab === 'abrir_os') await loadAberturaOs();
+  if (REGIONAL_TABS.includes(state.tab)) await Promise.all([loadOsRegional(state.ctx), ensureRegrasAnexoSaldo()]);
   render(content);
 }
 
@@ -150,11 +185,46 @@ async function loadAberturaOs() {
   state.aberturaLoading = false;
 }
 
+// OS da regional do gestor, base compartilhada pelas 3 abas de submissão
+// (Conferência/Ajuste de saldo/Finalizar). Últimos 90 dias, filtrado por
+// supervisão/coordenação do usuário (mesmo padrão de getMinhasRegionais em
+// hospedagem.js); sem regional cadastrada, mostra tudo (fallback).
+async function loadOsRegional(ctx) {
+  state.osRegionalLoading = true;
+  const cutoff = (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString().slice(0,10); })();
+  const { data, error } = await supabase
+    .from('operacional_os')
+    .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,status_gestor,status_logistica,observacao_logistica')
+    .gte('data_os', cutoff)
+    .order('data_os', { ascending: false })
+    .limit(500);
+
+  if (error) {
+    console.error(error);
+    state.osRegional = [];
+    state.osRegionalLoading = false;
+    return;
+  }
+
+  const rows = safe(data);
+  const minhasRegionais = getMinhasRegionais(ctx);
+  state.osRegional = minhasRegionais.length
+    ? rows.filter((r) => {
+        const reg = normalizeText(r.supervisao);
+        return minhasRegionais.some((m) => reg.includes(m) || m.includes(reg));
+      })
+    : rows;
+  state.osRegionalLoading = false;
+}
+
 function render(content) {
   const el = content.querySelector('#logContent');
   if (!el) return;
   if (state.tab === 'os') { el.innerHTML = renderOsTab(); return; }
   if (state.tab === 'abrir_os') { el.innerHTML = renderAbrirOsTab(); return; }
+  if (state.tab === 'conferencia') { el.innerHTML = renderConferenciaTab(); return; }
+  if (state.tab === 'ajuste') { el.innerHTML = renderAjusteTab(); return; }
+  if (state.tab === 'finalizar') { el.innerHTML = renderFinalizarTab(); return; }
   el.innerHTML = `<section class="card mt-16"><div class="log-empty">Módulo <strong>${TAB_LABELS[state.tab]}</strong> em desenvolvimento.</div></section>`;
 }
 
@@ -332,6 +402,123 @@ function renderAberturaOsHistorico() {
     </tr>`).join('')}</tbody></table></div>`;
 }
 
+function osRegionalHead() {
+  if (state.osRegionalLoading) return `<p class="muted" style="padding:16px">Carregando O.S. da regional...</p>`;
+  return '';
+}
+
+function osCellHtml(row) {
+  return `<td data-label="O.S."><strong>${esc(row.numero_os)}</strong><br><small class="muted">${brDate(row.data_os)}</small><br><small class="muted">${esc(row.supervisao||'-')}</small></td>
+    <td data-label="Cliente / Rota"><strong>${esc(row.cliente||'-')}</strong><div class="muted" style="font-size:11px;margin-top:2px">Emb.: ${esc(row.embarque||'-')} → ${esc(row.destino||'-')}</div></td>
+    <td data-label="Remanescente"><span class="log-chip ${Number(row.remanescente)<=0?'warn':'ok'}">${fmt(row.remanescente)}</span></td>`;
+}
+
+function renderConferenciaTab() {
+  const loading = osRegionalHead();
+  if (loading) return `<section class="card mt-16">${loading}</section>`;
+
+  const rows = state.osRegional.filter((r) => Number(r.remanescente) < 0 || String(r.observacao_logistica||'').startsWith('LAUDO:'));
+  return `
+    <section class="card mt-16">
+      <div class="section-head">
+        <div><h3>Conferência</h3><p class="muted">O.S. da sua regional com remanescente negativo — anexe o relatório de correção para a Logística conferir.</p></div>
+      </div>
+      <div class="log-table-wrap">
+        <table class="log-table">
+          <thead><tr><th>O.S.</th><th>Cliente / Rota</th><th>Remanescente</th><th>Anexo</th><th>Ação</th></tr></thead>
+          <tbody>
+            ${rows.length ? rows.map((row) => {
+              const enviado = String(row.observacao_logistica||'').startsWith('LAUDO:');
+              return `<tr data-os-row="${esc(row.id)}">
+                ${osCellHtml(row)}
+                <td colspan="2">
+                  ${enviado
+                    ? '<span class="log-chip ok">Laudo enviado — aguardando conferência</span>'
+                    : `<input type="file" id="conf-file-${esc(row.id)}" class="log-file-input" accept="image/*,.pdf,.xlsx,.xls,.csv" multiple>
+                       <button type="button" class="log-btn-ok mt-8" data-conf-send="${esc(row.id)}">Enviar</button>`}
+                </td>
+              </tr>`;
+            }).join('') : `<tr><td class="log-empty" colspan="5" style="text-align:center;padding:24px">Nenhuma O.S. com remanescente negativo na sua regional.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function renderAjusteTab() {
+  const loading = osRegionalHead();
+  if (loading) return `<section class="card mt-16">${loading}</section>`;
+
+  const rows = state.osRegional;
+  return `
+    <section class="card mt-16">
+      <div class="section-head">
+        <div><h3>Ajuste de saldo</h3><p class="muted">Solicite aumento de KG para O.S. da sua regional. Alguns clientes exigem anexo de comprovante.</p></div>
+      </div>
+      <div class="log-table-wrap">
+        <table class="log-table">
+          <thead><tr><th>O.S.</th><th>Cliente / Rota</th><th>Remanescente</th><th>KG a somar</th><th>Anexo</th><th>Ação</th></tr></thead>
+          <tbody>
+            ${rows.length ? rows.map((row) => {
+              const enviado = String(row.observacao_logistica||'').startsWith('KG solicitado');
+              if (enviado) {
+                return `<tr data-os-row="${esc(row.id)}">${osCellHtml(row)}<td colspan="3"><span class="log-chip ok">${esc(row.observacao_logistica)}</span></td></tr>`;
+              }
+              const regra = precisaAnexoSaldo(row);
+              return `<tr data-os-row="${esc(row.id)}">
+                ${osCellHtml(row)}
+                <td><input type="number" min="1" id="ajuste-kg-${esc(row.id)}" class="log-input" placeholder="KG" style="max-width:110px"></td>
+                <td>
+                  <input type="file" id="ajuste-file-${esc(row.id)}" class="log-file-input" accept="image/*,.pdf" multiple>
+                  <small class="${regra.precisaAnexo ? 'log-anexo-required' : 'muted'}">${regra.precisaAnexo ? `Cliente ${esc(regra.cliente || row.cliente || '')} exige anexo` : 'Opcional'}</small>
+                </td>
+                <td><button type="button" class="log-btn-ok" data-ajuste-send="${esc(row.id)}">Enviar</button></td>
+              </tr>`;
+            }).join('') : `<tr><td class="log-empty" colspan="6" style="text-align:center;padding:24px">Nenhuma O.S. encontrada na sua regional.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function renderFinalizarTab() {
+  const loading = osRegionalHead();
+  if (loading) return `<section class="card mt-16">${loading}</section>`;
+
+  const rows = state.osRegional;
+  return `
+    <section class="card mt-16">
+      <div class="section-head">
+        <div><h3>Finalizar</h3><p class="muted">Envie a O.S. da sua regional para a Logística finalizar, com o relatório de correção anexado.</p></div>
+      </div>
+      <div class="log-table-wrap">
+        <table class="log-table">
+          <thead><tr><th>O.S.</th><th>Cliente / Rota</th><th>Remanescente</th><th>Anexo</th><th>Ação</th></tr></thead>
+          <tbody>
+            ${rows.length ? rows.map((row) => {
+              const finalizada = row.status_logistica === 'FINALIZADA';
+              const enviada = !finalizada && row.status_gestor === 'FINALIZAR';
+              return `<tr data-os-row="${esc(row.id)}">
+                ${osCellHtml(row)}
+                <td colspan="2">
+                  ${finalizada
+                    ? '<span class="log-chip ok">Finalizada</span>'
+                    : enviada
+                      ? '<span class="log-chip blue">Enviada — aguardando finalização</span>'
+                      : `<input type="file" id="final-file-${esc(row.id)}" class="log-file-input" accept="image/*,.pdf,.xlsx,.xls,.csv" multiple>
+                         <button type="button" class="log-btn-ok mt-8" data-final-send="${esc(row.id)}">Enviar</button>`}
+                </td>
+              </tr>`;
+            }).join('') : `<tr><td class="log-empty" colspan="5" style="text-align:center;padding:24px">Nenhuma O.S. encontrada na sua regional.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function rowHtml(row) {
   const isKg = String(row.observacao_logistica||'').startsWith('KG solicitado');
   const isFinalizar = !isKg && String(row.status_gestor||'') === 'FINALIZAR';
@@ -438,6 +625,101 @@ async function handleOk(id, type, content) {
   render(content);
 }
 
+function currentUsuario() {
+  const u = state.ctx?.user || {};
+  return { id: u.id || null, nome: u.name || u.email || null };
+}
+
+// Upload de anexo pra Finalizar: mesmo bucket/tabela de auditoria usados por
+// anexarLaudoComGeolocalizacao (laudoUpload.js), mas SEM tocar em
+// operacional_os.observacao_logistica -- esse campo já é dono do prefixo
+// "LAUDO:" (Conferência) e "KG solicitado" (Ajuste de saldo); finalizar usa
+// status_gestor/status_logistica (via atualizarStatusOsCore) pra não colidir.
+async function uploadAnexoLogistica(osId, files, origem) {
+  const usuario = currentUsuario();
+  const urls = [];
+  for (const file of files) {
+    const path = `${osId}/${origem}_${Date.now()}_${(file.name || 'anexo').replace(/\s+/g, '_')}`;
+    const { data: up, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
+    if (upErr) throw upErr;
+    const { data: urlData } = supabase.storage.from('os-laudos').getPublicUrl(up.path);
+    urls.push(urlData.publicUrl);
+  }
+  const { error } = await supabase.from('operacional_laudos').insert({
+    os_id: osId,
+    arquivos_urls: urls,
+    origem,
+    enviado_por: usuario.id,
+    enviado_por_nome: usuario.nome,
+  });
+  if (error) throw error;
+  return urls;
+}
+
+async function handleEnviarConferencia(osId, content) {
+  const fileInput = content.querySelector(`#conf-file-${CSS.escape(String(osId))}`);
+  const files = [...(fileInput?.files || [])];
+  if (!files.length) { alert('Anexe o relatório de correção antes de enviar.'); return; }
+
+  const btn = content.querySelector(`[data-conf-send="${osId}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+  try {
+    await anexarLaudoComGeolocalizacao(osId, files, { origem: 'logistica_gestor_conferencia', usuario: currentUsuario() });
+    await loadOsRegional(state.ctx);
+    render(content);
+  } catch (error) {
+    alert(error.message || 'Erro ao enviar o relatório.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar'; }
+  }
+}
+
+async function handleEnviarAjuste(osId, content) {
+  const row = state.osRegional.find((r) => String(r.id) === String(osId));
+  if (!row) return;
+
+  const kgInput = content.querySelector(`#ajuste-kg-${CSS.escape(String(osId))}`);
+  const kg = Number(kgInput?.value || 0);
+  if (!kg || kg <= 0) { alert('Informe a quantidade de KG.'); return; }
+
+  const regra = precisaAnexoSaldo(row);
+  const fileInput = content.querySelector(`#ajuste-file-${CSS.escape(String(osId))}`);
+  const files = [...(fileInput?.files || [])];
+  if (regra.precisaAnexo && !files.length) { alert(`Cliente ${regra.cliente || row.cliente || ''} exige anexo para liberar o saldo.`); return; }
+
+  const btn = content.querySelector(`[data-ajuste-send="${osId}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+  try {
+    if (files.length) await anexarAnexoSaldo(osId, files, { usuario: currentUsuario() });
+    await registrarSaldoKg(osId, kg);
+    await loadOsRegional(state.ctx);
+    render(content);
+  } catch (error) {
+    alert(error.message || 'Erro ao solicitar ajuste de saldo.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar'; }
+  }
+}
+
+async function handleEnviarFinalizacao(osId, content) {
+  const row = state.osRegional.find((r) => String(r.id) === String(osId));
+  if (!row) return;
+
+  const fileInput = content.querySelector(`#final-file-${CSS.escape(String(osId))}`);
+  const files = [...(fileInput?.files || [])];
+  if (!files.length) { alert('Anexe o relatório de correção antes de enviar.'); return; }
+
+  const btn = content.querySelector(`[data-final-send="${osId}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+  try {
+    await uploadAnexoLogistica(osId, files, 'logistica_gestor_finalizacao');
+    await atualizarStatusOsCore(row, 'FINALIZAR', state.ctx?.user?.id || null);
+    await loadOsRegional(state.ctx);
+    render(content);
+  } catch (error) {
+    alert(error.message || 'Erro ao enviar para finalização.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar'; }
+  }
+}
+
 function injectStyles() {
   if (document.getElementById('log-styles')) return;
   const s = document.createElement('style');
@@ -467,6 +749,9 @@ function injectStyles() {
     .log-input{width:100%;box-sizing:border-box;min-height:40px;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px 11px;outline:none;color-scheme:dark;font-size:14px}
     select.log-input{appearance:none;-webkit-appearance:none;-moz-appearance:none;padding-right:36px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%236fd0a5' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:14px}
     .log-input:focus{border-color:var(--green-2);outline:2px solid rgba(111,208,165,.16)}
+    .log-file-input{display:block;font-size:12px;color:#8fa1b5;max-width:260px}
+    .log-anexo-required{display:block;color:#fde68a;font-weight:800;margin-top:2px}
+    .mt-8{margin-top:8px}
     .log-muted-box{border:1px dashed rgba(148,163,184,.18);border-radius:16px;padding:14px;color:#8fa1b5;background:rgba(15,23,42,.28);margin:12px 0}
     .log-alert.bad{border:1px solid rgba(239,68,68,.26);background:rgba(239,68,68,.08);color:#fecaca;border-radius:16px;padding:12px;margin:14px 0}
     .fob-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:0 0 12px}
