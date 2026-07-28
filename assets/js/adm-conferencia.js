@@ -397,7 +397,6 @@ function renderShell(content) {
         <div class="conf-tabs">
           <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
           <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
-          <button class="conf-tab" data-tab="uber" type="button">Uber</button>
           <button class="conf-tab" data-tab="resultado" type="button">Resultado</button>
           <button class="conf-tab" data-tab="justificativas" type="button">Justificativas</button>
           <button class="conf-tab" data-tab="localizacao" type="button">Localização</button>
@@ -456,14 +455,13 @@ function renderActiveTab() {
             ? 'Motivo registrado pelo gestor ao escalar mais de 1 colaborador no mesmo ponto de embarque.'
             : state.tab === 'localizacao'
               ? 'Ponto de embarque mais próximo da casa do colaborador, 1 registro por dia/O.S.'
-              : 'Corridas corporativas com validação por ponto de embarque e casa do colaborador.';
+              : 'Produção importada para comparação operacional.';
   }
 
   if (state.tab === 'despesas') return renderDespesasTable();
   if (state.tab === 'auditoria') return renderAuditoriaTable();
   if (state.tab === 'justificativas') return renderJustificativasTable();
   if (state.tab === 'localizacao') return renderLocalizacaoTable();
-  if (state.tab === 'uber') return renderUberTable();
   return renderResultadoTable();
 }
 
