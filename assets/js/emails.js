@@ -74,6 +74,8 @@ function decodeEntities(html) {
 // para não virar um bloco único de texto corrido.
 function htmlToText(html) {
   let s = String(html || '');
+  s = s.replace(/<style[\s\S]*?<\/style>/gi, ' ');
+  s = s.replace(/<script[\s\S]*?<\/script>/gi, ' ');
   s = s.replace(/<(br|hr)\s*\/?>/gi, '\n');
   s = s.replace(/<\/(p|div|tr|li|h[1-6]|table)>/gi, '\n');
   s = s.replace(/<li[^>]*>/gi, '• ');
@@ -101,8 +103,15 @@ function resumoLegivel(value) {
   const raw = String(value || '');
   if (!raw) return '';
   const parece_html = /<!DOCTYPE|<html|<head|<body|<meta|<style|<div|<span|<table|<td|<p[\s>]/i.test(raw);
-  const limpo = parece_html ? htmlToText(raw).replace(/\s+/g, ' ').trim() : raw;
-  return cleanEmailArtifacts(limpo).trim();
+  let limpo = parece_html ? htmlToText(raw).replace(/\s+/g, ' ').trim() : raw;
+  // Resquícios de CSS que sobram quando o resumo foi gravado a partir de HTML
+  // cujo <style> não veio fechado (ex.: "body { font-family: Verdana... }").
+  limpo = limpo
+    .replace(/[a-zA-Z0-9_.#*>\[\]="'-]+\s*\{\s*[a-zA-Z-]+\s*:[^{}]*\}/g, ' ')
+    .replace(/@(?:media|import|font-face|charset)[^;{]*[;{]?/gi, ' ');
+  // Entidades HTML que sobraram em texto puro (&ocirc; &atilde; &amp; etc.)
+  if (/&[a-zA-Z]{2,8};|&#\d{2,6};/.test(limpo)) limpo = decodeEntities(limpo);
+  return cleanEmailArtifacts(limpo).replace(/\s{2,}/g, ' ').trim();
 }
 
 function emailBodyText(e) {
