@@ -36,6 +36,7 @@ const state = {
   justificativas: [],
   localizacao: [],
   uberKpi: null,
+  producaoPorColaboradorData: new Map(),
   loading: false,
   sort: {
     despesas: { column: 'colaborador', direction: 'asc' },
@@ -319,7 +320,7 @@ function renderStyles() {
       .conf-table td{color:#e2e2f0}.conf-table small{display:block;color:var(--muted);margin-top:4px}.conf-empty{text-align:center;color:var(--muted);padding:24px!important}
       .conf-row-actions{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;white-space:nowrap}.conf-row-actions button{font-size:12px;padding:8px 10px;border-radius:12px;flex-shrink:0}
       .conf-row-icon-btn{display:inline-flex;align-items:center;justify-content:center;padding:8px!important;border-radius:10px!important;line-height:1}
-      .conf-td-regional{font-size:11px;white-space:nowrap}.conf-td-extras{max-width:160px;word-break:break-word;line-height:1.35}
+      .conf-td-regional{font-size:11px;white-space:nowrap}.conf-td-extras{max-width:160px;word-break:break-word;line-height:1.35}.conf-producao-sem{color:#f87171;font-weight:800}
       .conf-chip{display:inline-flex;align-items:center;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:900;border:1px solid rgba(148,163,184,.18)}.conf-chip-ok{background:rgba(34,197,94,.16);color:#bbf7d0;border-color:rgba(34,197,94,.28)}.conf-chip-warn{background:rgba(234,179,8,.14);color:#fde68a;border-color:rgba(234,179,8,.28)}.conf-chip-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}.conf-chip-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(96,165,250,.30)}.conf-chip-neutral{background:rgba(148,163,184,.12);color:#cbd5e1}
       .conf-note{width:100%;min-height:74px;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#15152a;color:#e2e2f0;padding:12px;resize:vertical}.conf-feedback{min-height:20px;margin-top:10px;color:var(--muted)}
       .conf-subsection-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin:0 0 12px}.conf-subsection-head h4{margin:0;color:#f8fafc;font-size:17px;font-weight:900}.conf-subsection-head p{margin:4px 0 0;color:var(--muted);font-size:13px}.conf-counter{display:inline-flex;align-items:center;white-space:nowrap;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#e2e2f0;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:900}.conf-counter-ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.30);color:#bbf7d0}.conf-conferidos-box{margin-top:22px;padding:16px;border:1px solid rgba(34,197,94,.22);border-radius:20px;background:rgba(4,24,18,.58)}.conf-table-wrap-conferidos{border-color:rgba(34,197,94,.24)}.conf-row-conferido{background:rgba(34,197,94,.045)}
@@ -477,6 +478,7 @@ function despesasTableHead() {
         <th>Janta</th>
         <th>Deslocamento</th>
         <th>Extras</th>
+        <th>Produção</th>
         <th>Ações</th>
       </tr>
     </thead>
@@ -507,6 +509,7 @@ function despesasRowHtml(row, mode = 'fila') {
         <strong>${escapeHtml(extrasResumo(row))}</strong>
         <small>${escapeHtml(row.extras_obs || '')}</small>
       </td>
+      <td>${(() => { const p = producaoDoDia(row); return p ? escapeHtml(p) : '<span class="conf-producao-sem">Sem</span>'; })()}</td>
       <td>
         <div class="conf-row-actions">
           ${isConferido
@@ -550,7 +553,7 @@ function renderDespesasTable() {
         <tbody>
           ${filaRows.length
             ? filaRows.map((row) => despesasRowHtml(row, 'fila')).join('')
-            : '<tr><td class="conf-empty" colspan="9">Nenhum item pendente. Os registros conferidos estão na tabela abaixo.</td></tr>'}
+            : '<tr><td class="conf-empty" colspan="10">Nenhum item pendente. Os registros conferidos estão na tabela abaixo.</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -569,7 +572,7 @@ function renderDespesasTable() {
           <tbody>
             ${conferidosRows.length
               ? conferidosRows.map((row) => despesasRowHtml(row, 'conferidos')).join('')
-              : '<tr><td class="conf-empty" colspan="9">Nenhum registro conferido nos filtros atuais.</td></tr>'}
+              : '<tr><td class="conf-empty" colspan="10">Nenhum registro conferido nos filtros atuais.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -1172,6 +1175,40 @@ function baseRow(programacao, colaboradorId, nomeColaborador = '') {
   };
 }
 
+// #29: coluna "Produção" na fila de conferência -- cruza colaborador+data com
+// producao_snapshot (mesma tabela alimentada pelo agente de Produção Diária,
+// já usada em dashboard.js/historico.js) pra mostrar a O.S./NHE do dia, ou
+// "Sem" quando o colaborador não teve produção lançada naquela data.
+function producaoKey(nome, data) {
+  return `${normalizeText(nome)}|${String(data || '').slice(0, 10)}`;
+}
+
+async function loadProducaoColaboradores() {
+  let query = supabase
+    .from('producao_snapshot')
+    .select('data,funcionario,os,tipo')
+    .not('funcionario', 'is', null)
+    .limit(20000);
+
+  if (state.filters.inicio) query = query.gte('data', state.filters.inicio);
+  if (state.filters.fim) query = query.lte('data', state.filters.fim);
+
+  const { data, error } = await query;
+  if (error) { console.warn('[conferencia] falha ao carregar produção diária:', error.message); state.producaoPorColaboradorData = new Map(); return; }
+
+  const map = new Map();
+  for (const row of (data || [])) {
+    const key = producaoKey(row.funcionario, row.data);
+    if (!map.has(key)) map.set(key, row.os || row.tipo || '');
+  }
+  state.producaoPorColaboradorData = map;
+}
+
+function producaoDoDia(row) {
+  const key = producaoKey(row.colaborador || row.nome_colaborador, row.data_referencia);
+  return state.producaoPorColaboradorData.get(key) || '';
+}
+
 async function loadDespesas() {
   let progQuery = supabase
     .from('programacao_dia')
@@ -1701,7 +1738,7 @@ async function loadAll() {
   state.loading = true;
   setFeedback('Carregando dados da conferência...');
   try {
-    await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber(), loadJustificativas(), loadLocalizacao()]);
+    await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber(), loadJustificativas(), loadLocalizacao(), loadProducaoColaboradores()]);
     setFeedback('Dados atualizados.');
   } catch (error) {
     console.error(error);
