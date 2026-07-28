@@ -26,6 +26,7 @@ let kmAte = '';
 // ------ estado aba Relação ------
 let baseColabs = [];     // { chave, nome, nomeNorm, supervisao }
 let lista = [];          // linhas de programacao_veiculo_proprio
+let estimativaPorColaborador = new Map(); // chave -> média mensal (R$) dos últimos 3 meses
 
 const TIPOS = ['REEMBOLSO KM', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'ÔNIBUS', 'NÃO PRECISA', 'OUTRO'];
 
@@ -128,6 +129,8 @@ function injectStyles() {
     .cd-count{font-size:12.5px;color:#9fb7aa}
     .cd-count b{color:#6fd0a5}
     .cd-rel-table{width:100%;border-collapse:separate;border-spacing:0 6px;margin-top:4px}
+    .cd-rel-table th{text-align:left;padding:0 11px 4px;font-size:10.5px;color:#6fa589;text-transform:uppercase;letter-spacing:.04em;font-weight:750}
+    .cd-rel-table th:last-child{text-align:right}
     .cd-rel-table td{background:rgba(13,32,24,.6);border-top:1px solid rgba(111,208,165,.12);border-bottom:1px solid rgba(111,208,165,.12);padding:9px 11px;font-size:13px;color:#eef7f2}
     .cd-rel-table td:first-child{border-left:1px solid rgba(111,208,165,.12);border-radius:10px 0 0 10px;font-weight:700}
     .cd-rel-table td:last-child{border-right:1px solid rgba(111,208,165,.12);border-radius:0 10px 10px 0;text-align:right;white-space:nowrap}
@@ -353,6 +356,63 @@ async function loadLista() {
   lista = data || [];
 }
 
+// #35: colaborador desligado (inativo em operacional_colaborador_base) sai
+// automaticamente da relação de veículo próprio -- baseColabs só traz os
+// ativos (usado pra busca/adição), então checamos o status real de cada um
+// já presente na lista contra a base completa antes de decidir remover.
+async function limparInativosDaLista() {
+  if (!lista.length) return;
+  const { data, error } = await supabase
+    .from('operacional_colaborador_base')
+    .select('cpf,nome,ativo')
+    .limit(5000);
+  if (error) { console.warn('[conf-desloc] checar inativos', error); return; }
+
+  const statusPorChave = new Map((data || []).map((r) => [chaveDe(r.cpf, r.nome), !!r.ativo]));
+  const paraRemover = lista.filter((l) => statusPorChave.get(l.colaborador_id) === false);
+  if (!paraRemover.length) return;
+
+  const { error: delErr } = await supabase
+    .from('programacao_veiculo_proprio')
+    .delete()
+    .in('id', paraRemover.map((l) => l.id));
+  if (delErr) { console.warn('[conf-desloc] remover inativos', delErr); return; }
+
+  const idsRemovidos = new Set(paraRemover.map((l) => l.id));
+  lista = lista.filter((l) => !idsRemovidos.has(l.id));
+}
+
+// #36: estimativa mensal de consumo por colaborador, baseada na média dos
+// últimos 3 meses de deslocamento (programacao_deslocamento), independente
+// do filtro de período selecionado na aba Conferência de km.
+async function loadEstimativaConsumo() {
+  const hoje = new Date();
+  const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 3, 1).toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('programacao_deslocamento')
+    .select('data_referencia,colaborador_id,nome_colaborador,tipo_deslocamento,km,valor')
+    .gte('data_referencia', inicio)
+    .limit(20000);
+  if (error) { console.warn('[conf-desloc] estimativa', error); estimativaPorColaborador = new Map(); return; }
+
+  const porColabMes = new Map();
+  for (const d of (data || [])) {
+    const chave = d.colaborador_id || d.nome_colaborador;
+    const mes = String(d.data_referencia || '').slice(0, 7);
+    if (!chave || !mes) continue;
+    if (!porColabMes.has(chave)) porColabMes.set(chave, new Map());
+    const meses = porColabMes.get(chave);
+    meses.set(mes, (meses.get(mes) || 0) + valorLinha(d));
+  }
+
+  estimativaPorColaborador = new Map();
+  for (const [chave, meses] of porColabMes.entries()) {
+    const totais = [...meses.values()];
+    const media = totais.reduce((s, v) => s + v, 0) / totais.length;
+    estimativaPorColaborador.set(chave, media);
+  }
+}
+
 async function addEntry(chave, nome) {
   if (!chave) return;
   const { error } = await supabase
@@ -368,12 +428,16 @@ function renderLista() {
   const ativos = lista.filter((l) => l.ativo).length;
   if (cnt) cnt.innerHTML = `<b>${ativos}</b> ativo(s) · ${lista.length} no total`;
   if (!lista.length) { box.innerHTML = '<div class="cd-empty">Nenhum colaborador na relação ainda. Adicione ao lado.</div>'; return; }
-  box.innerHTML = `<table class="cd-rel-table"><tbody>${lista.map((l) => `
+  box.innerHTML = `<table class="cd-rel-table"><thead><tr><th>Colaborador</th><th>Estimativa mensal</th><th>Status</th><th></th></tr></thead><tbody>${lista.map((l) => {
+    const estimativa = estimativaPorColaborador.get(l.colaborador_id);
+    return `
     <tr data-id="${esc(l.id)}">
       <td>${esc(l.nome || l.colaborador_id)}</td>
+      <td>${estimativa != null ? `${moeda(estimativa)}/mês` : '—'}</td>
       <td><span class="cd-pill ${l.ativo ? 'on' : 'off'}" data-toggle>${l.ativo ? 'Ativo' : 'Inativo'}</span></td>
       <td><button class="cd-del" data-del>remover</button></td>
-    </tr>`).join('')}</tbody></table>`;
+    </tr>`;
+  }).join('')}</tbody></table>`;
 }
 
 async function bulkAdd(text, msgEl) {
@@ -586,7 +650,9 @@ export function renderContent(content) {
     renderAba();
   });
 
-  Promise.all([loadTarifa(), loadDeslocs(), loadBase(), loadLista()]).then(() => {
+  Promise.all([loadTarifa(), loadDeslocs(), loadBase(), loadLista()]).then(async () => {
+    await limparInativosDaLista();
+    await loadEstimativaConsumo();
     renderAba();
   });
 }
