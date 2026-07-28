@@ -71,20 +71,75 @@ function injectVisualStyles() {
   const style = document.createElement('style');
   style.id = 'patrimonio-relatorios-visual-styles';
   style.textContent = `
+    /* ===== Revisão 28/07/2026 — apontamento da cliente: "botões e filtros
+       ocupando a tela inteira". Filtros agora ficam em uma única faixa em
+       grade e os botões têm largura proporcional ao texto. ===== */
+    .patrimonio-relatorios-page .section-heading { margin-bottom: 12px; }
+    .patrimonio-relatorios-page .section-heading h2 { font-size: 1.28rem; margin: 0 0 2px; }
+    .patrimonio-relatorios-page .section-heading .section-subtitle { font-size: .85rem; margin: 0; }
+    .patrimonio-relatorios-page .base-card { padding: 14px 16px; }
+    .patrimonio-relatorios-page .pat-filtros-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(180px, 1.4fr);
+      gap: 10px;
+      align-items: end;
+    }
+    .patrimonio-relatorios-page .pat-filtros-grid .base-field { grid-column: auto; }
+    .patrimonio-relatorios-page .pat-filtros-grid .base-label { margin-bottom: 5px; font-size: 12px; }
+    .patrimonio-relatorios-page .pat-filtros-grid .base-select,
+    .patrimonio-relatorios-page .pat-filtros-grid .base-input {
+      min-height: 40px;
+      padding: 8px 11px;
+      border-radius: 11px;
+      font-size: 13.5px;
+    }
+    .patrimonio-relatorios-page .base-actions {
+      margin-top: 10px;
+      gap: 8px;
+    }
+    .patrimonio-relatorios-page .base-actions .base-button {
+      width: auto;
+      flex: 0 0 auto;
+      min-height: 38px;
+      padding: 8px 14px;
+      border-radius: 11px;
+      font-size: 13.5px;
+    }
+    .patrimonio-relatorios-page #patrimonioFeedback { margin: 10px 0 0; font-size: .85rem; }
     .patrimonio-relatorios-page .grid-cards {
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-      gap: 16px;
-      margin-bottom: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
     }
     .patrimonio-relatorios-page .grid-cards .card {
       border: 1px solid rgba(148, 163, 184, 0.14);
       background: linear-gradient(180deg, rgba(3, 19, 17, 0.88), rgba(4, 28, 24, 0.92));
       box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 10px 14px;
+    }
+    .patrimonio-relatorios-page .grid-cards .card h3 {
+      margin: 0;
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .02em;
+      color: rgba(226, 232, 240, .75);
+      order: 2;
     }
     .patrimonio-relatorios-page .hero-metric {
-      font-size: clamp(1.8rem, 2.5vw, 2.3rem);
+      font-size: 1.35rem;
       line-height: 1;
-      margin-top: 12px;
+      margin-top: 0;
+      order: 1;
+    }
+    @media (max-width: 1080px) {
+      .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: 1fr; }
+      .patrimonio-relatorios-page .base-actions .base-button { flex: 1 1 auto; }
     }
     .patrimonio-table-card { padding: 18px; }
     .patrimonio-table-toolbar {
@@ -687,16 +742,16 @@ export function renderContent(content) {
       </div>
 
       <article class="base-card">
-        <div class="base-grid">
-          <div class="base-field third">
+        <div class="pat-filtros-grid">
+          <div class="base-field">
             <label class="base-label" for="fCoordenacao">Regional</label>
             <select class="base-select" id="fCoordenacao"><option value="">Todas</option></select>
           </div>
-          <div class="base-field third">
+          <div class="base-field">
             <label class="base-label" for="fSupervisao">Supervisão</label>
             <select class="base-select" id="fSupervisao"><option value="">Todas</option></select>
           </div>
-          <div class="base-field third">
+          <div class="base-field">
             <label class="base-label" for="fTipo">Situação</label>
             <select class="base-select" id="fTipo">
               <option value="geral">Geral</option>
@@ -705,7 +760,7 @@ export function renderContent(content) {
               <option value="semdias">Somente sem dias</option>
             </select>
           </div>
-          <div class="base-field third">
+          <div class="base-field">
             <label class="base-label" for="fIgnorados">Baixado / Manutenção</label>
             <select class="base-select" id="fIgnorados">
               <option value="mostrar">Mostrar</option>

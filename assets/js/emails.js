@@ -92,6 +92,19 @@ function cleanEmailArtifacts(value) {
     .replace(/[ \t]{2,}/g, ' ');
 }
 
+// Resumo seguro para exibição: e-mails processados antes da correção do worker
+// (28/07/2026) podem ter resumo_ia gravado com HTML bruto (<!DOCTYPE html>...),
+// porque o fallback usava corpo_html sem conversão quando o e-mail não tinha
+// versão em texto. Aqui detectamos esse caso e convertemos para texto legível,
+// cobrindo também os registros antigos já salvos no banco.
+function resumoLegivel(value) {
+  const raw = String(value || '');
+  if (!raw) return '';
+  const parece_html = /<!DOCTYPE|<html|<head|<body|<meta|<style|<div|<span|<table|<td|<p[\s>]/i.test(raw);
+  const limpo = parece_html ? htmlToText(raw).replace(/\s+/g, ' ').trim() : raw;
+  return cleanEmailArtifacts(limpo).trim();
+}
+
 function emailBodyText(e) {
   const source = (e.corpo_texto && e.corpo_texto.trim()) ? e.corpo_texto : htmlToText(e.corpo_html);
   return cleanEmailArtifacts(source)
@@ -643,7 +656,7 @@ export function renderContent(content, userContext) {
         </div>
         <div class="em-meta">${esc(e.remetente_nome || e.remetente_email || '-')} · ${brDate(e.data_recebimento)}</div>
         <div class="em-actions">${prioBadge(e.prioridade)}<span class="em-badge arquivado" title="${esc(categoriaDesc(e.categoria))}">${esc(categoriaLabel(e.categoria))}</span><span class="em-badge arquivado">${esc(regionalLabel(e.regional))}</span></div>
-        <div class="em-snippet">${esc(cleanEmailArtifacts(e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
+        <div class="em-snippet">${esc((resumoLegivel(e.resumo_ia) || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
       </div>
     `).join('');
   }
@@ -704,7 +717,7 @@ export function renderContent(content, userContext) {
           <div class="em-insight-cell" title="Como o sistema decidiu a categoria acima"><span>Classificado por</span><b>${esc(classificadoPorLabel(e.classificado_por))}</b></div>
         </div>
 
-        ${e.resumo_ia ? `<div class="em-summary"><span class="em-summary-label">✨ Resumo da IA</span><p>${esc(cleanEmailArtifacts(e.resumo_ia))}</p></div>` : ''}
+        ${resumoLegivel(e.resumo_ia) ? `<div class="em-summary"><span class="em-summary-label">✨ Resumo da IA</span><p>${esc(resumoLegivel(e.resumo_ia))}</p></div>` : ''}
 
         ${dadosEntries.length ? `<div class="em-extracted"><span class="em-section-label">Dados detectados</span><dl class="em-dl">${dadosEntries.map(([k, v]) => `<dt>${esc(DADOS_LABELS[k] || prettyKey(k))}</dt><dd>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>` : ''}
 
@@ -844,7 +857,7 @@ export function renderContent(content, userContext) {
           <span class="em-badge erro">${e.risco || 'CRITICO'}</span>
         </div>
         <div class="em-meta">${esc(e.remetente_nome || e.remetente_email || '-')} · ${brDate(e.data_recebimento)}</div>
-        <div class="em-snippet em-danger">⚠️ ${esc(cleanEmailArtifacts(e.resumo_ia || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
+        <div class="em-snippet em-danger">⚠️ ${esc((resumoLegivel(e.resumo_ia) || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
       </div>
     `).join('');
     document.getElementById('emPerigoList').addEventListener('click', (event) => {

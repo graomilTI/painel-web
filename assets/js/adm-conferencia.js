@@ -299,13 +299,17 @@ function summarize() {
 function renderStyles() {
   return `
     <style>
-      .conf-hero{display:flex;justify-content:space-between;gap:18px;align-items:center;background:radial-gradient(circle at top right,rgba(34,197,94,.15),transparent 32%),linear-gradient(180deg,rgba(8,22,17,.95),rgba(6,19,14,.95));border:1px solid var(--line);border-radius:28px;padding:24px;box-shadow:var(--shadow)}
-      .conf-hero h2{font-size:30px;margin:6px 0 10px}.conf-hero p{margin:0;color:var(--muted)}
-      .conf-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.conf-btn{border:1px solid rgba(111,208,165,.22);background:rgba(15,23,42,.78);color:#eef7f2;border-radius:14px;padding:11px 14px;font-weight:800;cursor:pointer}.conf-btn:hover{background:rgba(22,101,52,.28)}.conf-btn-primary{background:#3fa878;color:#04130d}.conf-btn-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}
-      .conf-grid{display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:14px;margin-top:16px}.conf-card{background:rgba(8,22,17,.68);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow-soft)}.conf-card h3{margin:0 0 10px;font-size:15px}.conf-metric{font-size:34px;line-height:1;font-weight:900;color:#dcfce7;margin:0 0 8px}.conf-card p{margin:0;color:var(--muted);font-size:13px}
+      /* Cabeçalho compacto (pedido da cliente 27/07: "informações jogadas, ocupando a maior parte da tela funcional").
+         Título + ações + filtros vivem numa única faixa; KPIs viram uma linha fina de chips. */
+      .conf-hero{display:flex;justify-content:space-between;gap:14px;align-items:center;background:radial-gradient(circle at top right,rgba(34,197,94,.15),transparent 32%),linear-gradient(180deg,rgba(8,22,17,.95),rgba(6,19,14,.95));border:1px solid var(--line);border-radius:18px;padding:12px 16px;box-shadow:var(--shadow)}
+      .conf-hero h2{font-size:19px;margin:0;display:inline}.conf-hero p{margin:2px 0 0;color:var(--muted);font-size:12px}
+      .conf-hero .eyebrow{display:inline;margin-right:8px}
+      .conf-header-band{margin-top:10px;background:rgba(8,22,17,.72);border:1px solid var(--line);border-radius:18px;padding:10px 14px;box-shadow:var(--shadow-soft)}
+      .conf-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.conf-btn{border:1px solid rgba(111,208,165,.22);background:rgba(15,23,42,.78);color:#eef7f2;border-radius:12px;padding:8px 12px;font-weight:800;cursor:pointer;font-size:13px}.conf-btn:hover{background:rgba(22,101,52,.28)}.conf-btn-primary{background:#3fa878;color:#04130d}.conf-btn-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}
+      .conf-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:8px;margin-top:10px}.conf-card{display:flex;align-items:baseline;gap:8px;background:rgba(8,22,17,.68);border:1px solid var(--line);border-radius:14px;padding:8px 12px;box-shadow:var(--shadow-soft)}.conf-card h3{margin:0;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:800;order:2}.conf-metric{font-size:20px;line-height:1;font-weight:900;color:#dcfce7;margin:0;order:1}.conf-card p{display:none}
       .conf-panel{margin-top:16px;background:rgba(8,22,17,.72);border:1px solid var(--line);border-radius:24px;padding:18px;box-shadow:var(--shadow-soft)}.conf-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.conf-panel-head h3{margin:0 0 6px}.conf-panel-head p{margin:0;color:var(--muted)}
       .conf-tabs{display:flex;gap:10px;flex-wrap:wrap}.conf-tab{border:1px solid rgba(111,208,165,.22);background:#15152a;color:#e2e2f0;border-radius:999px;padding:10px 14px;font-weight:800;cursor:pointer}.conf-tab.active{background:rgba(34,197,94,.22);border-color:rgba(111,208,165,.45);color:#dcfce7}
-      .conf-filters{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}.conf-field{flex:1;min-width:120px}.conf-field-sm{flex:0 0 130px}.conf-field label{display:block;font-size:12px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px}.conf-field input,.conf-field select{width:100%;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#15152a;color:#e2e2f0;padding:10px 11px;color-scheme:dark;box-sizing:border-box}.conf-field option{background:#0d0d18;color:#e2e2f0}.conf-filter-actions{display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
+      .conf-filters{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}.conf-field{flex:1;min-width:110px}.conf-field-sm{flex:0 0 122px}.conf-field label{display:block;font-size:11px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px}.conf-field input,.conf-field select{width:100%;border:1px solid rgba(96,165,250,.22);border-radius:11px;background:#15152a;color:#e2e2f0;padding:7px 10px;font-size:13px;color-scheme:dark;box-sizing:border-box}.conf-field option{background:#0d0d18;color:#e2e2f0}.conf-filter-actions{display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
       .conf-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#081611}
       .conf-table{width:100%;border-collapse:collapse;min-width:1180px}.conf-table-despesas{min-width:1220px}
       .conf-table th,.conf-table td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;vertical-align:top}
@@ -321,7 +325,9 @@ function renderStyles() {
       .conf-subsection-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin:0 0 12px}.conf-subsection-head h4{margin:0;color:#f8fafc;font-size:17px;font-weight:900}.conf-subsection-head p{margin:4px 0 0;color:var(--muted);font-size:13px}.conf-counter{display:inline-flex;align-items:center;white-space:nowrap;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#e2e2f0;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:900}.conf-counter-ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.30);color:#bbf7d0}.conf-conferidos-box{margin-top:22px;padding:16px;border:1px solid rgba(34,197,94,.22);border-radius:20px;background:rgba(4,24,18,.58)}.conf-table-wrap-conferidos{border-color:rgba(34,197,94,.24)}.conf-row-conferido{background:rgba(34,197,94,.045)}
       .conf-uber-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px;padding:12px 14px;border:1px solid rgba(111,208,165,.18);border-radius:18px;background:rgba(15,23,42,.48)}.conf-uber-tools p{margin:4px 0 0;color:var(--muted);font-size:12px}.conf-uber-actions{display:flex;gap:10px;flex-wrap:wrap}.conf-gps-ok{font-size:12px;color:#bbf7d0;font-weight:800}.conf-gps-missing{font-size:12px;color:#fde68a;font-weight:800}
       .conf-uber-kpis{display:grid;grid-template-columns:repeat(5,minmax(110px,1fr));gap:10px;margin:0 0 12px}.conf-uber-kpi{cursor:pointer;text-align:left;border:1px solid var(--line);background:rgba(8,22,17,.68);border-radius:16px;padding:12px 14px;color:#eef7f2}.conf-uber-kpi strong{display:block;font-size:24px;font-weight:900;color:#dcfce7}.conf-uber-kpi span{display:block;margin-top:2px;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}.conf-uber-kpi:hover{border-color:rgba(111,208,165,.4)}.conf-uber-kpi.active{border-color:#3fa878;background:rgba(22,101,52,.28)}.conf-uber-kpi.active strong{color:#86efac}
-      @media(max-width:760px){.conf-hero,.conf-panel-head{display:block}.conf-filters{flex-direction:column}.conf-field,.conf-field-sm{flex:1 1 100%}.conf-actions{justify-content:flex-start;margin-top:12px}}
+      .conf-feedback:empty{display:none;min-height:0;margin:0}
+      @media(max-width:1100px){.conf-grid{grid-template-columns:repeat(3,1fr)}}
+      @media(max-width:760px){.conf-hero,.conf-panel-head{display:block}.conf-filters{flex-direction:column}.conf-field,.conf-field-sm{flex:1 1 100%}.conf-actions{justify-content:flex-start;margin-top:10px}.conf-grid{grid-template-columns:repeat(2,1fr)}}
     </style>
   `;
 }
@@ -334,9 +340,8 @@ function renderShell(content) {
     ${renderStyles()}
     <section class="conf-hero">
       <div>
-        <div class="eyebrow">Operação ADM</div>
-        <h2>Conferência operacional</h2>
-        <p>Central para conferir despesas solicitadas na programação, irregularidades de auditoria e produção do período.</p>
+        <span class="eyebrow">Operação ADM</span><h2>Conferência operacional</h2>
+        <p>Despesas da programação, auditoria, Uber e produção do período em um só lugar.</p>
       </div>
       <div class="conf-actions">
         <button class="conf-btn" id="conf-export-csv" type="button">Exportar CSV</button>
@@ -345,13 +350,7 @@ function renderShell(content) {
       </div>
     </section>
 
-    <section class="conf-panel">
-      <div class="conf-panel-head">
-        <div>
-          <h3>Filtros</h3>
-          <p>Filtre por período, supervisão/regional, colaborador e status da conferência.</p>
-        </div>
-      </div>
+    <section class="conf-header-band">
       <form class="conf-filters" id="conf-filters">
         <div class="conf-field conf-field-sm">
           <label for="conf-inicio">De</label>
@@ -386,9 +385,8 @@ function renderShell(content) {
         </div>
       </form>
       <div class="conf-feedback" id="conf-feedback"></div>
+      <div class="conf-grid" id="conf-metrics"></div>
     </section>
-
-    <div class="conf-grid" id="conf-metrics"></div>
 
     <section class="conf-panel">
       <div class="conf-panel-head">
@@ -1593,8 +1591,17 @@ async function importUberCsvFile(file) {
 async function syncUberApi() {
   if (state.loading) return;
 
-  const inicio = document.getElementById('conf-inicio')?.value || state.filters.inicio || todayISO();
-  const fim = document.getElementById('conf-fim')?.value || state.filters.fim || inicio;
+  // Bug reportado pela cliente (27/07): "precisa acionar 2 botões pra puxar os dados".
+  // Causa: o sync usava as datas digitadas nos inputs, mas o loadUber() em seguida
+  // filtrava por state.filters (só atualizado ao clicar em "Aplicar"). Se o usuário
+  // mudava o período e clicava direto em "Sincronizar", as corridas eram gravadas
+  // mas a listagem continuava no período antigo — aparentando 0 resultados.
+  // Correção: sincronizar aplica os filtros da tela antes de recarregar (1 ação só).
+  getFilterValues();
+  const inicio = state.filters.inicio || todayISO();
+  const fim = state.filters.fim || inicio;
+  state.filters.inicio = inicio;
+  state.filters.fim = fim;
 
   setFeedback(`Sincronizando corridas da API Uber de ${brDate(inicio)} até ${brDate(fim)}...`);
 
@@ -1641,8 +1648,12 @@ async function syncUberApi() {
 }
 
 async function validarUberPorLaudo() {
-  const inicio = document.getElementById('conf-inicio')?.value || state.filters.inicio || firstDayOfMonthISO();
-  const fim = document.getElementById('conf-fim')?.value || state.filters.fim || todayISO();
+  // Mesmo princípio do syncUberApi: aplica os filtros visíveis antes de validar/recarregar.
+  getFilterValues();
+  const inicio = state.filters.inicio || firstDayOfMonthISO();
+  const fim = state.filters.fim || todayISO();
+  state.filters.inicio = inicio;
+  state.filters.fim = fim;
   setFeedback('Validando corridas Uber por laudo de produção...');
   try {
     const { data, error } = await supabase.rpc('auto_validar_uber_por_laudo', { p_inicio: inicio, p_fim: fim });

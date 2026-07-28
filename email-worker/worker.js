@@ -233,6 +233,50 @@ function stripArtifacts(content) {
     .replace(/[ \t]{2,}/g, ' ');
 }
 
+// Converte HTML de e-mail em texto puro legível. Necessário porque muitos
+// e-mails corporativos chegam SEM versão text/plain — nesses casos o fallback
+// de resumo usava message.html cru e o card "Resumo da IA" exibia <!DOCTYPE html>...
+// (bug reportado pela cliente em 27/07/2026).
+function htmlToPlainText(html) {
+  const raw = text(html);
+  if (!raw) return '';
+  // Se não parece HTML, devolve como está.
+  if (!/<[a-z!\/]/i.test(raw)) return raw;
+  return raw
+    // Remove blocos irrelevantes inteiros (estilos, scripts, cabeçalho e comentários).
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<head[\s\S]*?<\/head>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<!DOCTYPE[^>]*>/gi, ' ')
+    // Quebras de linha estruturais viram \n para manter parágrafos legíveis.
+    .replace(/<br\s*\/?>(?=.)/gi, '\n')
+    .replace(/<\/(p|div|tr|li|h[1-6]|table|blockquote)>/gi, '\n')
+    // Remove todas as demais tags.
+    .replace(/<[^>]+>/g, ' ')
+    // Decodifica entidades HTML mais comuns.
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, code) => {
+      try { return String.fromCodePoint(Number(code)); } catch { return ' '; }
+    })
+    // Normaliza espaços preservando quebras de parágrafo.
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// Texto "legível" do e-mail: prefere text/plain; se só houver HTML, converte.
+function readableBody(message) {
+  const plain = text(message.text).trim();
+  if (plain) return plain;
+  return htmlToPlainText(message.html);
+}
+
 function extractData(content) {
   const raw = text(content);
   return {
@@ -513,14 +557,14 @@ async function loadGestoresRegionais() {
 }
 
 function classifyByRules(message, rules, gestores) {
-  const haystack = normalize([message.subject, message.fromText, message.text, message.html].join('\n'));
+  const haystack = normalize([message.subject, message.fromText, message.text, htmlToPlainText(message.html)].join('\n'));
   const matched = rules.find((rule) => {
     const words = Array.isArray(rule.palavras_chave) ? rule.palavras_chave : [];
     return (!words.length || words.some((word) => haystack.includes(normalize(word))))
       && (!rule.remetente_contem || normalize(message.fromText).includes(normalize(rule.remetente_contem)))
       && (!rule.assunto_contem || normalize(message.subject).includes(normalize(rule.assunto_contem)));
   });
-  const full = [message.subject, message.text, message.html].join('\n');
+  const full = [message.subject, readableBody(message)].join('\n');
   const fullLimpo = stripArtifacts(full);
   const regional = matched?.regional || extractRegional(fullLimpo);
   return {
@@ -528,7 +572,7 @@ function classifyByRules(message, rules, gestores) {
     categoria: matched?.categoria || 'GERAL',
     prioridade: matched?.prioridade_email || 'NORMAL',
     precisa_resposta: matched?.precisa_resposta ?? false,
-    resumo_ia: stripArtifacts(message.text || message.html).replace(/\s+/g, ' ').slice(0, 420) || 'E-mail recebido sem texto suficiente para resumo.',
+    resumo_ia: stripArtifacts(readableBody(message)).replace(/\s+/g, ' ').slice(0, 420) || 'E-mail recebido sem texto suficiente para resumo.',
     dados_detectados: { ...extractData(fullLimpo), ...extractFormFields(fullLimpo) },
     resposta_sugerida: matched?.resposta_modelo || '',
     auto_responder: matched?.auto_responder === true,
@@ -598,7 +642,7 @@ async function classifyWithAI(message, base, gestores) {
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: buildAIPrompt(gestores) },
-        { role: 'user', content: `Assunto: ${message.subject}\nRemetente: ${message.fromText}\nTexto do e-mail:\n${stripArtifacts(message.text || message.html).slice(0, 6000)}\n\nClassificação preliminar por regras (pode corrigir): ${JSON.stringify({ regional: base.regional, categoria: base.categoria, prioridade: base.prioridade })}` }
+        { role: 'user', content: `Assunto: ${message.subject}\nRemetente: ${message.fromText}\nTexto do e-mail:\n${stripArtifacts(readableBody(message)).slice(0, 6000)}\n\nClassificação preliminar por regras (pode corrigir): ${JSON.stringify({ regional: base.regional, categoria: base.categoria, prioridade: base.prioridade })}` }
       ]
     });
     const parsed = JSON.parse(response.choices?.[0]?.message?.content || '{}');
@@ -745,7 +789,7 @@ async function autoForwardEmail(account, emailId, cls, parsed, risco) {
       'Encaminhado automaticamente pela Central de E-mails (triagem por regional/assunto).',
       `Regional identificada: ${cls.regional || 'não identificada'} · Categoria: ${cls.categoria || 'GERAL'} · Prioridade: ${cls.prioridade || 'NORMAL'}`,
       '',
-      stripArtifacts(text(parsed.text) || text(parsed.html)).slice(0, 20000)
+      stripArtifacts(readableBody({ text: parsed.text, html: parsed.html })).slice(0, 20000)
     ].join('\n');
     const { error } = await supabase.from('email_outbox').insert({
       email_id: emailId,
