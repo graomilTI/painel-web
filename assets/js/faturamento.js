@@ -7,7 +7,11 @@ const TABLES = {
   clientes: 'faturamento_clientes',
   documentos: 'faturamento_documentos',
   tarifas: 'faturamento_tarifas',
+  agenda: 'faturamento_agenda',
 };
+
+// Setores autorizados a operar o módulo (equipe restrita por função).
+const SETORES_FATURAMENTO = ['fatur', 'financ'];
 
 const TABS = [
   { id: 'painel', label: 'Painel do Dia' },
@@ -43,7 +47,10 @@ const state = {
   clientes: [],
   tarifas: [],
   documentos: [],
+  agenda: [],
   equipe: [],
+  syncing: false,
+  lastSync: '',
   selectedIds: new Set(),
   filters: {
     q: '',
@@ -87,6 +94,13 @@ function dateBR(value) {
   const [y, m, d] = String(value).slice(0, 10).split('-');
   if (!y || !m || !d) return String(value);
   return `${d}/${m}/${y}`;
+}
+
+function formatDateTimeBR(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function daysBetween(start, end = todayISO()) {
@@ -210,20 +224,40 @@ async function fetchTable(name) {
   return Array.isArray(data) ? data : [];
 }
 
+// Faturas: prioriza as abertas (mais recentes primeiro) para não estourar o limite com histórico finalizado.
+async function fetchTableOrdered(name) {
+  const { data, error } = await supabase
+    .from(name)
+    .select('*')
+    .order('updated_at', { ascending: false })
+    .limit(2000);
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+function computeLastSync(faturas) {
+  const grm = (faturas || []).filter((f) => String(f.id || '').startsWith('grm-'));
+  if (!grm.length) return '';
+  return grm.reduce((max, f) => (String(f.updated_at || '') > max ? String(f.updated_at || '') : max), '');
+}
+
 async function loadData() {
   state.dbError = '';
   try {
-    const [faturas, clientes, tarifas, documentos] = await Promise.all([
-      fetchTable(TABLES.faturas),
+    const [faturas, clientes, tarifas, documentos, agenda] = await Promise.all([
+      fetchTableOrdered(TABLES.faturas),
       fetchTable(TABLES.clientes),
       fetchTable(TABLES.tarifas),
       fetchTable(TABLES.documentos),
+      fetchTable(TABLES.agenda).catch(() => []),
     ]);
     state.storageMode = 'supabase';
     state.faturas = faturas;
     state.clientes = clientes;
     state.tarifas = tarifas;
     state.documentos = documentos;
+    state.agenda = agenda;
+    state.lastSync = computeLastSync(faturas);
     state.equipe = await loadEquipe();
   } catch (error) {
     const local = loadLocal();
@@ -237,20 +271,34 @@ async function loadData() {
   }
 }
 
-// Equipe real: usuários ativos do painel (mesma base de Usuários e Acessos).
+// Equipe restrita por função: apenas usuários dos setores de Faturamento/Financeiro
+// (ex.: "Gestora de Faturamento", "Financeiro"). Se ninguém estiver marcado nesses
+// setores, cai para a lista completa de ativos para não travar a operação.
 async function loadEquipe() {
   try {
     const { data, error } = await supabase
       .from('app_usuarios')
-      .select('id,nome,email')
+      .select('id,nome,email,setor')
       .eq('ativo', true)
       .order('nome');
     if (error) throw error;
-    if (Array.isArray(data) && data.length) return data;
+    const todos = Array.isArray(data) ? data : [];
+    const equipeFat = todos.filter((u) => {
+      const setor = normalize(u.setor || '');
+      return SETORES_FATURAMENTO.some((s) => setor.includes(s));
+    });
+    if (equipeFat.length) return equipeFat;
+    if (todos.length) return todos;
   } catch (e) {
     console.warn('[Faturamento] falha ao carregar equipe de app_usuarios', e);
   }
   return buildEquipeFromContext();
+}
+
+function getCurrentEquipeUser() {
+  const email = normalize(state.userContext?.user?.email || '');
+  const nome = normalize(getCurrentUserName());
+  return state.equipe.find((u) => (email && normalize(u.email || '') === email) || (nome && normalize(u.nome || '') === nome)) || null;
 }
 
 function buildEquipeFromContext() {
@@ -328,10 +376,11 @@ function renderShell(content) {
         <div>
           <div class="fat-eyebrow">Módulo operacional</div>
           <h2>Faturamento</h2>
-          <p>Agenda, distribuição por usuário, faturas, documentos fiscais, boletos, divergências, clientes e tarifas em uma única rotina.</p>
+          <p>Agenda, distribuição por usuário, faturas, documentos fiscais, boletos, divergências, clientes e tarifas em uma única rotina.${state.lastSync ? ` <span class="fat-sync-badge">Última sincronização GRM: ${esc(formatDateTimeBR(state.lastSync))}</span>` : ''}</p>
         </div>
         <div class="fat-actions">
           <button class="fat-btn fat-btn-secondary" type="button" data-action="refresh">↻ Atualizar</button>
+          <button class="fat-btn fat-btn-secondary" type="button" data-action="sync-grm" ${state.syncing ? 'disabled' : ''}>${state.syncing ? 'Sincronizando…' : '⇅ Sincronizar GRM'}</button>
           <button class="fat-btn fat-btn-primary" type="button" data-action="new-invoice">+ Nova fatura</button>
         </div>
       </section>
@@ -417,8 +466,10 @@ function renderDistributionToolbar() {
 }
 
 function renderMinhaFila() {
-  const userIds = new Set(state.equipe.slice(0, 1).map((u) => String(u.id)));
-  const minhas = state.faturas.filter((f) => userIds.has(String(f.responsavel_id)) && !['Finalizada', 'Cancelada'].includes(f.status));
+  const me = getCurrentEquipeUser();
+  const minhas = me
+    ? state.faturas.filter((f) => String(f.responsavel_id || '') === String(me.id) && !['Finalizada', 'Cancelada'].includes(f.status))
+    : [];
   return `
     <section class="fat-panel">
       <div class="fat-panel-head slim">
@@ -433,7 +484,7 @@ function renderMinhaFila() {
             <strong>${esc(f.cliente_nome)}</strong>
             <span>${esc(f.codigo)} • ${esc(f.status)}</span>
           </button>
-        `).join('') : '<div class="fat-empty">Nenhuma fatura atribuída ao usuário atual.</div>'}
+        `).join('') : '<div class="fat-empty">Nenhuma fatura atribuída a você no momento.</div>'}
       </div>
     </section>
   `;
@@ -475,9 +526,11 @@ function renderAgenda() {
       <div class="fat-panel-head">
         <div>
           <h3>Agenda de faturamento</h3>
-          <p>Clientes recorrentes organizados por periodicidade, próximo envio e status da rotina.</p>
+          <p>Rotina configurável: adicione clientes com periodicidade, dia de referência, responsável e canal de envio.</p>
         </div>
+        <button class="fat-btn fat-btn-primary" type="button" data-action="agenda-add">+ Adicionar cliente à agenda</button>
       </div>
+      ${renderAgendaTable()}
       <div class="fat-agenda-grid">
         ${grupos.map((grupo) => renderAgendaGroup(grupo)).join('')}
       </div>
@@ -485,14 +538,54 @@ function renderAgenda() {
   `;
 }
 
+function renderAgendaTable() {
+  const rows = [...state.agenda].sort((a, b) => String(a.proximo_envio || '9999').localeCompare(String(b.proximo_envio || '9999')));
+  if (!rows.length) {
+    return '<div class="fat-empty">Nenhum cliente configurado na agenda ainda. Use “Adicionar cliente à agenda” para montar a rotina de faturamento.</div>';
+  }
+  return `
+    <div class="fat-table-wrap">
+      <table class="fat-table">
+        <thead>
+          <tr><th>Cliente</th><th>Periodicidade</th><th>Dia de referência</th><th>Próximo envio</th><th>Responsável</th><th>Canal</th><th>Status</th><th>Ações</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map((a) => `
+            <tr>
+              <td><div class="fat-strong">${esc(a.cliente_nome)}</div>${a.observacoes ? `<span class="fat-muted">${esc(a.observacoes)}</span>` : ''}</td>
+              <td>${esc(a.periodicidade || 'Mensal')}</td>
+              <td>${esc(a.dia_referencia || '—')}</td>
+              <td>${dateBR(a.proximo_envio)}</td>
+              <td>${esc(a.responsavel_nome || '—')}</td>
+              <td>${esc(a.canal_envio || 'E-mail')}</td>
+              <td><span class="fat-chip ${a.ativo === false ? 'is-muted' : 'is-green'}">${a.ativo === false ? 'Pausada' : 'Ativa'}</span></td>
+              <td>
+                <div class="fat-row-actions">
+                  <button class="fat-mini-btn" type="button" data-action="agenda-edit" data-id="${esc(a.id)}">Editar</button>
+                  <button class="fat-mini-btn" type="button" data-action="agenda-toggle" data-id="${esc(a.id)}">${a.ativo === false ? 'Reativar' : 'Pausar'}</button>
+                  <button class="fat-mini-btn" type="button" data-action="agenda-remove" data-id="${esc(a.id)}">Remover</button>
+                </div>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderAgendaGroup(periodicidade) {
-  const clientes = state.clientes.filter((c) => String(c.periodicidade || '') === periodicidade);
+  const daAgenda = state.agenda.filter((a) => String(a.periodicidade || '') === periodicidade && a.ativo !== false);
+  const clientes = daAgenda.length
+    ? daAgenda.map((a) => state.clientes.find((c) => String(c.id) === String(a.cliente_id)) || { id: a.cliente_id, nome: a.cliente_nome, prazo_retorno_dias: 0 })
+    : state.clientes.filter((c) => String(c.periodicidade || '') === periodicidade && !String(c.id || '').startsWith('grm-cli-'));
   return `
     <article class="fat-agenda-card">
       <h4>${esc(periodicidade)}</h4>
       ${clientes.length ? clientes.map((cliente) => {
         const abertas = state.faturas.filter((f) => String(f.cliente_id) === String(cliente.id) && !['Finalizada', 'Cancelada'].includes(f.status));
-        const prox = abertas[0]?.prazo_envio || '—';
+        const agendaRow = daAgenda.find((a) => String(a.cliente_id) === String(cliente.id));
+        const prox = agendaRow?.proximo_envio || abertas[0]?.prazo_envio || '—';
         return `
           <div class="fat-agenda-row">
             <div>
@@ -757,6 +850,11 @@ async function handleAction(action, el, content) {
       return;
     }
     if (action === 'new-invoice') return openInvoiceModal(content);
+    if (action === 'sync-grm') return syncGrm(content);
+    if (action === 'agenda-add') return openAgendaModal(content, null);
+    if (action === 'agenda-edit') return openAgendaModal(content, el.dataset.id);
+    if (action === 'agenda-toggle') return toggleAgenda(el.dataset.id, content);
+    if (action === 'agenda-remove') return removeAgenda(el.dataset.id, content);
     if (action === 'assign-selected') return assignSelected(content);
     if (action === 'suggest-distribution') return suggestDistribution(content);
     if (action === 'change-status') return updateFatura(el.dataset.id, { status: el.value }, content);
@@ -877,26 +975,168 @@ async function openDivergence(id, content) {
   await updateFatura(id, { status: 'Com divergência', prioridade: 'Urgente', divergencia }, content);
 }
 
-function openInvoiceModal(content) {
-  const clienteNome = prompt('Cliente da fatura:', '') || '';
-  if (!clienteNome.trim()) return;
-  const periodo = prompt('Período da fatura:', 'Julho/2026') || '';
-  const valor = toNumber(prompt('Valor bruto:', '0') || 0);
-  const descontos = toNumber(prompt('Descontos:', '0') || 0);
-  const periodicidade = prompt('Periodicidade: Semanal, Quinzenal, Mensal ou Sob demanda', 'Mensal') || 'Mensal';
-  const cliente = state.clientes.find((c) => normalize(c.nome) === normalize(clienteNome));
-  const fatura = makeFatura({
-    cliente_id: cliente?.id || '',
-    cliente_nome: clienteNome,
-    periodo,
-    valor_bruto: valor,
-    descontos,
-    periodicidade,
-    prazo_envio: todayISO(),
-    prazo_retorno: addDays(todayISO(), Number(cliente?.prazo_retorno_dias || 2)),
+// Sincronização com o GRM: importa contas a receber em aberto via RPC no banco.
+async function syncGrm(content) {
+  if (state.syncing) return;
+  state.syncing = true;
+  renderShell(content);
+  try {
+    const { data, error } = await supabase.rpc('faturamento_sync_grm', { p_dias: 60 });
+    if (error) throw error;
+    const r = Array.isArray(data) ? data[0] : data;
+    await loadData();
+    state.syncing = false;
+    renderShell(content);
+    const imp = Number(r?.faturas_importadas || 0);
+    const atu = Number(r?.faturas_atualizadas || 0);
+    alert(`Sincronização GRM concluída.\n\nFaturas novas importadas: ${imp}\nFaturas atualizadas: ${atu}\nClientes atualizados: ${Number(r?.clientes_importados || 0)}`);
+  } catch (e) {
+    state.syncing = false;
+    renderShell(content);
+    alert(`Falha na sincronização com o GRM: ${e?.message || e}`);
+  }
+}
+
+// ===== Modais =====
+function closeModal() {
+  document.getElementById('fatModalOverlay')?.remove();
+}
+
+function openModal(title, bodyHtml, onSubmit) {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.id = 'fatModalOverlay';
+  overlay.className = 'fat-modal-overlay';
+  overlay.innerHTML = `
+    <div class="fat-modal" role="dialog" aria-modal="true">
+      <div class="fat-modal-head">
+        <h3>${esc(title)}</h3>
+        <button type="button" class="fat-modal-close" data-close>×</button>
+      </div>
+      <form class="fat-modal-body" id="fatModalForm">${bodyHtml}
+        <div class="fat-modal-actions">
+          <button type="button" class="fat-btn fat-btn-secondary" data-close>Cancelar</button>
+          <button type="submit" class="fat-btn fat-btn-primary">Salvar</button>
+        </div>
+      </form>
+    </div>`;
+  overlay.addEventListener('click', (ev) => {
+    if (ev.target === overlay || ev.target.closest('[data-close]')) closeModal();
   });
-  state.faturas.unshift(fatura);
-  persistTable(TABLES.faturas, fatura).finally(() => renderShell(content));
+  overlay.querySelector('#fatModalForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const form = ev.currentTarget;
+    const values = {};
+    form.querySelectorAll('[name]').forEach((i) => { values[i.name] = i.value; });
+    await onSubmit(values);
+  });
+  document.body.appendChild(overlay);
+  overlay.querySelector('input,select,textarea')?.focus();
+}
+
+function clienteDatalist() {
+  const nomes = [...new Set(state.clientes.map((c) => String(c.nome || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  return `<datalist id="fatClientesList">${nomes.slice(0, 800).map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>`;
+}
+
+function openInvoiceModal(content) {
+  openModal('Nova fatura', `
+    ${clienteDatalist()}
+    <div class="fat-form-grid">
+      <label class="fat-field fat-col-2"><span>Cliente *</span><input class="fat-input" name="cliente" list="fatClientesList" required placeholder="Digite para buscar o cliente" /></label>
+      <label class="fat-field"><span>Período</span><input class="fat-input" name="periodo" placeholder="Ex.: Julho/2026" value="${esc(new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }))}" /></label>
+      <label class="fat-field"><span>Periodicidade</span><select class="fat-input" name="periodicidade"><option>Mensal</option><option>Semanal</option><option>Quinzenal</option><option>Sob demanda</option></select></label>
+      <label class="fat-field"><span>Valor bruto (R$)</span><input class="fat-input" name="valor" type="number" step="0.01" min="0" value="0" /></label>
+      <label class="fat-field"><span>Descontos (R$)</span><input class="fat-input" name="descontos" type="number" step="0.01" min="0" value="0" /></label>
+      <label class="fat-field"><span>Prazo de envio</span><input class="fat-input" name="prazo_envio" type="date" value="${esc(todayISO())}" /></label>
+      <label class="fat-field"><span>Prioridade</span><select class="fat-input" name="prioridade">${PRIORIDADES.map((p) => `<option ${p === 'Normal' ? 'selected' : ''}>${p}</option>`).join('')}</select></label>
+      <label class="fat-field"><span>Responsável</span><select class="fat-input" name="responsavel"><option value="">— Definir depois —</option>${state.equipe.map((u) => `<option value="${esc(u.id)}">${esc(u.nome)}</option>`).join('')}</select></label>
+      <label class="fat-field fat-col-2"><span>Observações</span><textarea class="fat-input" name="observacoes" rows="2" placeholder="Detalhes da fatura (opcional)"></textarea></label>
+    </div>
+  `, async (v) => {
+    const clienteNome = String(v.cliente || '').trim();
+    if (!clienteNome) return alert('Informe o cliente.');
+    const cliente = state.clientes.find((c) => normalize(c.nome) === normalize(clienteNome));
+    const responsavel = state.equipe.find((u) => String(u.id) === String(v.responsavel));
+    const fatura = makeFatura({
+      cliente_id: cliente?.id || '',
+      cliente_nome: clienteNome,
+      periodo: v.periodo || '',
+      valor_bruto: toNumber(v.valor),
+      descontos: toNumber(v.descontos),
+      periodicidade: v.periodicidade || 'Mensal',
+      prioridade: v.prioridade || 'Normal',
+      observacoes: v.observacoes || '',
+      prazo_envio: v.prazo_envio || todayISO(),
+      prazo_retorno: addDays(v.prazo_envio || todayISO(), Number(cliente?.prazo_retorno_dias || 2)),
+      ...(responsavel ? { responsavel_id: responsavel.id, responsavel_nome: responsavel.nome, status: 'Distribuída', distribuido_por_nome: getCurrentUserName(), distribuido_em: new Date().toISOString() } : {}),
+    });
+    state.faturas.unshift(fatura);
+    closeModal();
+    await persistTable(TABLES.faturas, fatura);
+    renderShell(content);
+  });
+}
+
+function openAgendaModal(content, id) {
+  const current = id ? state.agenda.find((a) => String(a.id) === String(id)) : null;
+  openModal(current ? 'Editar rotina de faturamento' : 'Adicionar cliente à agenda', `
+    ${clienteDatalist()}
+    <div class="fat-form-grid">
+      <label class="fat-field fat-col-2"><span>Cliente *</span><input class="fat-input" name="cliente" list="fatClientesList" required value="${esc(current?.cliente_nome || '')}" placeholder="Digite para buscar o cliente" /></label>
+      <label class="fat-field"><span>Periodicidade</span><select class="fat-input" name="periodicidade">${['Semanal', 'Quinzenal', 'Mensal', 'Sob demanda'].map((p) => `<option ${String(current?.periodicidade || 'Mensal') === p ? 'selected' : ''}>${p}</option>`).join('')}</select></label>
+      <label class="fat-field"><span>Dia de referência</span><input class="fat-input" name="dia_referencia" value="${esc(current?.dia_referencia || '')}" placeholder="Ex.: dia 5, toda segunda" /></label>
+      <label class="fat-field"><span>Próximo envio</span><input class="fat-input" name="proximo_envio" type="date" value="${esc(current?.proximo_envio || todayISO())}" /></label>
+      <label class="fat-field"><span>Responsável</span><select class="fat-input" name="responsavel"><option value="">— Sem responsável fixo —</option>${state.equipe.map((u) => `<option value="${esc(u.id)}" ${String(current?.responsavel_id || '') === String(u.id) ? 'selected' : ''}>${esc(u.nome)}</option>`).join('')}</select></label>
+      <label class="fat-field"><span>Canal de envio</span><select class="fat-input" name="canal_envio">${['E-mail', 'WhatsApp', 'E-mail + WhatsApp'].map((c) => `<option ${String(current?.canal_envio || 'E-mail') === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+      <label class="fat-field fat-col-2"><span>Observações</span><textarea class="fat-input" name="observacoes" rows="2">${esc(current?.observacoes || '')}</textarea></label>
+    </div>
+  `, async (v) => {
+    const clienteNome = String(v.cliente || '').trim();
+    if (!clienteNome) return alert('Informe o cliente.');
+    const cliente = state.clientes.find((c) => normalize(c.nome) === normalize(clienteNome));
+    const responsavel = state.equipe.find((u) => String(u.id) === String(v.responsavel));
+    const row = {
+      ...(current || { id: `age-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ativo: true, created_at: new Date().toISOString() }),
+      cliente_id: cliente?.id || current?.cliente_id || '',
+      cliente_nome: clienteNome,
+      periodicidade: v.periodicidade || 'Mensal',
+      dia_referencia: v.dia_referencia || '',
+      proximo_envio: v.proximo_envio || null,
+      responsavel_id: responsavel?.id || '',
+      responsavel_nome: responsavel?.nome || '',
+      canal_envio: v.canal_envio || 'E-mail',
+      observacoes: v.observacoes || '',
+      updated_at: new Date().toISOString(),
+    };
+    state.agenda = current ? state.agenda.map((a) => String(a.id) === String(row.id) ? row : a) : [...state.agenda, row];
+    closeModal();
+    await persistTable(TABLES.agenda, row);
+    renderShell(content);
+  });
+}
+
+async function toggleAgenda(id, content) {
+  const current = state.agenda.find((a) => String(a.id) === String(id));
+  if (!current) return;
+  const updated = { ...current, ativo: current.ativo === false, updated_at: new Date().toISOString() };
+  state.agenda = state.agenda.map((a) => String(a.id) === String(id) ? updated : a);
+  await persistTable(TABLES.agenda, updated);
+  renderShell(content);
+}
+
+async function removeAgenda(id, content) {
+  const current = state.agenda.find((a) => String(a.id) === String(id));
+  if (!current) return;
+  if (!confirm(`Remover “${current.cliente_nome}” da agenda de faturamento?`)) return;
+  state.agenda = state.agenda.filter((a) => String(a.id) !== String(id));
+  if (state.storageMode === 'supabase') {
+    const { error } = await supabase.from(TABLES.agenda).delete().eq('id', id);
+    if (error) { alert(`Erro ao remover: ${error.message}`); return; }
+  } else {
+    saveLocal();
+  }
+  renderShell(content);
 }
 
 function openDocModal(content) {
@@ -926,6 +1166,20 @@ function ensureStyles() {
   style.id = 'fatStyles';
   style.textContent = `
     .fat-shell{display:flex;flex-direction:column;gap:18px;color:#e2e8f0}
+    .fat-sync-badge{display:inline-flex;margin-left:8px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800;background:rgba(0,200,122,.12);border:1px solid rgba(52,211,153,.3);color:#86efac;white-space:nowrap}
+    .fat-modal-overlay{position:fixed;inset:0;z-index:1200;background:rgba(2,6,23,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:18px}
+    .fat-modal{width:min(680px,100%);max-height:90vh;overflow:auto;border:1px solid rgba(52,211,153,.22);border-radius:22px;background:linear-gradient(180deg,#0f172a,#020617);box-shadow:0 30px 80px rgba(2,6,23,.6);color:#e2e8f0}
+    .fat-modal-head{display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid rgba(51,65,85,.5)}
+    .fat-modal-head h3{margin:0;font-size:19px}
+    .fat-modal-close{border:none;background:transparent;color:#94a3b8;font-size:26px;line-height:1;cursor:pointer;padding:2px 8px;border-radius:10px}
+    .fat-modal-close:hover{background:rgba(255,255,255,.06);color:#f8fafc}
+    .fat-modal-body{padding:18px 20px}
+    .fat-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .fat-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+    .fat-field>span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:900;color:#94a3b8}
+    .fat-col-2{grid-column:span 2}
+    .fat-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+    @media (max-width:640px){.fat-form-grid{grid-template-columns:1fr}.fat-col-2{grid-column:span 1}}
     .fat-hero{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;padding:22px;border:1px solid rgba(45,212,160,.16);border-radius:26px;background:linear-gradient(135deg,rgba(2,6,23,.96),rgba(6,78,59,.26));box-shadow:0 18px 50px rgba(2,6,23,.28)}
     .fat-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:#34d399;font-weight:900;margin-bottom:8px}.fat-hero h2{margin:0;font-size:clamp(28px,4vw,42px);letter-spacing:-.05em}.fat-hero p{margin:8px 0 0;color:#94a3b8;max-width:820px;line-height:1.45}.fat-actions{display:flex;gap:10px;flex-wrap:wrap}.fat-btn,.fat-mini-btn{border:1px solid transparent;border-radius:14px;padding:11px 15px;font-weight:800;cursor:pointer;transition:.16s ease}.fat-btn:hover,.fat-mini-btn:hover{transform:translateY(-1px)}.fat-btn-primary{background:#00c87a;color:#03130b}.fat-btn-secondary,.fat-mini-btn{background:#0d0d18;border-color:rgba(255,255,255,.08);color:#e2e8f0}.fat-mini-btn{padding:8px 10px;border-radius:11px;font-size:12px}.fat-warning{border:1px solid rgba(251,191,36,.28);background:rgba(120,53,15,.18);border-radius:18px;padding:13px 15px;color:#fde68a;display:flex;gap:10px;flex-wrap:wrap}.fat-warning span{color:#fbbf24;opacity:.85}.fat-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}.fat-kpi{border:1px solid rgba(51,65,85,.72);background:linear-gradient(180deg,rgba(15,23,42,.95),rgba(2,6,23,.88));border-radius:20px;padding:16px}.fat-kpi span{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:900}.fat-kpi strong{display:block;font-size:30px;margin:8px 0 4px;letter-spacing:-.05em}.fat-kpi small{color:#64748b}.fat-tabs{display:flex;gap:8px;overflow:auto;padding:4px}.fat-tab{border:1px solid rgba(51,65,85,.78);background:#0d0d18;color:#94a3b8;border-radius:999px;padding:10px 14px;font-weight:900;white-space:nowrap;cursor:pointer}.fat-tab.is-active{background:rgba(0,200,122,.14);border-color:rgba(52,211,153,.38);color:#bbf7d0}.fat-grid-main{display:grid;grid-template-columns:minmax(0,2fr) minmax(320px,.75fr);gap:16px;align-items:start}.fat-span-2{min-width:0}.fat-side{display:flex;flex-direction:column;gap:16px}.fat-panel{border:1px solid rgba(51,65,85,.72);background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.92));border-radius:24px;box-shadow:0 18px 34px rgba(2,6,23,.24);overflow:hidden}.fat-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:20px 20px 0;flex-wrap:wrap}.fat-panel-head.slim{padding-bottom:10px}.fat-panel-head h3{margin:0;font-size:20px}.fat-panel-head p{margin:5px 0 0;color:#64748b}.fat-distrib-toolbar,.fat-filters{display:grid;grid-template-columns:minmax(180px,1.4fr) minmax(130px,1fr) minmax(130px,1fr) auto auto;gap:10px;padding:18px 20px}.fat-distrib-toolbar>select[style*="display: none"],.fat-distrib-toolbar>select[style*="display:none"]{display:none!important}.fat-filters{grid-template-columns:2fr 1fr 1fr 1fr}.fat-input{width:100%;box-sizing:border-box;border:1px solid rgba(255,255,255,.09);background:#0d0d18;color:#e2e8f0;border-radius:13px;padding:10px 12px;outline:none}.fat-input:focus{border-color:rgba(52,211,153,.44);box-shadow:0 0 0 3px rgba(52,211,153,.10)}.fat-input-sm{min-width:160px;padding:8px 10px;font-size:12px}.fat-table-wrap{padding:0 20px 20px;overflow:auto}.fat-table{width:100%;border-collapse:collapse;min-width:980px}.fat-table th,.fat-table td{padding:13px 11px;border-bottom:1px solid rgba(51,65,85,.42);text-align:left;vertical-align:top}.fat-table th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;background:rgba(15,23,42,.86);position:sticky;top:0;z-index:1}.fat-table tbody tr:hover{background:rgba(15,23,42,.52)}.fat-strong{font-weight:900;color:#f8fafc}.fat-muted{display:block;color:#64748b;font-size:12px;margin-top:3px}.fat-note{margin-top:7px;color:#fecaca;font-size:12px;max-width:280px}.fat-late{display:inline-flex;margin-top:5px;color:#fecaca;font-size:11px;font-weight:900}.fat-chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:900;border:1px solid rgba(255,255,255,.08);background:#10101e;color:#cbd5e1;margin-top:5px}.fat-chip.is-green{background:rgba(22,101,52,.18);border-color:rgba(34,197,94,.28);color:#86efac}.fat-chip.is-amber{background:rgba(120,53,15,.22);border-color:rgba(251,191,36,.28);color:#fde68a}.fat-chip.is-red{background:rgba(127,29,29,.2);border-color:rgba(248,113,113,.3);color:#fecaca}.fat-chip.is-blue{background:rgba(30,64,175,.18);border-color:rgba(96,165,250,.28);color:#bfdbfe}.fat-chip.is-muted{background:rgba(51,65,85,.42);color:#94a3b8}.is-red{color:#fca5a5!important}.fat-row-actions{display:flex;gap:6px;flex-wrap:wrap;min-width:190px}.fat-mini-list,.fat-team-list,.fat-client-list{display:flex;flex-direction:column;gap:10px;padding:0 20px 20px}.fat-mini-item{width:100%;text-align:left;border:1px solid rgba(51,65,85,.7);background:#0d0d18;color:#e2e8f0;border-radius:16px;padding:12px;cursor:pointer}.fat-mini-item strong,.fat-mini-item span{display:block}.fat-mini-item span{color:#64748b;font-size:12px;margin-top:4px}.fat-team-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;border:1px solid rgba(51,65,85,.65);border-radius:15px;padding:12px;background:#0d0d18}.fat-team-row div{min-width:0}.fat-team-row strong,.fat-team-row span,.fat-team-row small{display:block}.fat-team-row span,.fat-team-row small{color:#64748b;font-size:12px}.fat-team-row b{font-size:22px;color:#f8fafc}.fat-team-row.is-warn{border-color:rgba(251,191,36,.26);background:rgba(120,53,15,.12)}.fat-empty{padding:18px;color:#64748b}.fat-agenda-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:20px}.fat-agenda-card{border:1px solid rgba(51,65,85,.65);border-radius:18px;background:#0d0d18;padding:16px}.fat-agenda-card h4{margin:0 0 12px}.fat-agenda-row{display:flex;justify-content:space-between;gap:10px;padding:12px 0;border-top:1px solid rgba(51,65,85,.45)}.fat-agenda-row strong,.fat-agenda-row span{display:block}.fat-agenda-row span{color:#64748b;font-size:12px}.fat-client-card{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid rgba(51,65,85,.65);border-radius:18px;background:#0d0d18;padding:14px}.fat-client-card h4{margin:0 0 5px}.fat-client-card p{margin:0;color:#94a3b8}.fat-client-card span{display:block;color:#64748b;font-size:12px;margin-top:4px}@media(max-width:1200px){.fat-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.fat-grid-main{grid-template-columns:1fr}.fat-distrib-toolbar,.fat-filters{grid-template-columns:1fr 1fr}}@media(max-width:720px){.fat-kpis,.fat-agenda-grid,.fat-distrib-toolbar,.fat-filters{grid-template-columns:1fr}.fat-hero{padding:18px}.fat-panel-head{padding:16px 16px 0}.fat-table-wrap{padding:0 12px 16px}.fat-client-card,.fat-agenda-row{align-items:flex-start;flex-direction:column}}
   `;
