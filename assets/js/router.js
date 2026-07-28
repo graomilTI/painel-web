@@ -113,6 +113,7 @@ const SOFT_NAV_PAGES = new Map([
   ] }],
   ['financeiro', { title: 'Financeiro', module: () => import('./financeiro.js'), extraScripts: ['https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'], extraModules: [() => import('./financeiro-access.js'), () => import('./financeiro-local-date.js')] }],
   ['dashboard', { title: 'Dashboard', module: () => import('./dashboard.js'), extraModules: [() => import('./dashboardProducaoHistoryLink.js'), () => import('./dashboard-regional-map.js')] }],
+  ['historico', { title: 'Histórico', module: () => import('./historico.js'), extraScripts: ['https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'] }],
   // Fase 4 (2026-07-16) — reorganização do módulo de RH (submenus dentro de "RECURSOS HUMANOS")
   ['equipe', { title: 'Equipe', module: () => import('./equipe.js') }],
   ['exames', { title: 'Exames', module: () => import('./exames.js') }],

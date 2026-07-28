@@ -123,11 +123,25 @@ initProtectedPage('Chamados de TI', async (content, userContext) => {
         ${gestorTi ? '<button class="ct-tab" data-tab="todos">Todos os chamados</button>' : ''}
       </div>
 
+      ${gestorTi ? `
+      <div class="ct-tabs" id="ctFilters" style="display:none">
+        <select class="base-select" id="ctFiltroStatus" style="max-width:180px">
+          <option value="">Todos os status</option>
+          ${Object.keys(STATUS_LABEL).map((k) => `<option value="${k}">${STATUS_LABEL[k]}</option>`).join('')}
+        </select>
+        <select class="base-select" id="ctFiltroPrioridade" style="max-width:180px">
+          <option value="">Todas as prioridades</option>
+          ${Object.keys(PRIORIDADE_LABEL).map((k) => `<option value="${k}">${PRIORIDADE_LABEL[k]}</option>`).join('')}
+        </select>
+      </div>` : ''}
+
       <div class="ct-list" id="ctList"></div>
     </div>
   `;
 
   let currentTab = 'meus';
+  let filtroStatus = '';
+  let filtroPrioridade = '';
   let cache = [];
 
   async function loadChamados() {
@@ -153,12 +167,16 @@ initProtectedPage('Chamados de TI', async (content, userContext) => {
 
   function renderList() {
     const list = document.getElementById('ctList');
-    if (!cache.length) {
+    const items = cache.filter((c) =>
+      (!filtroStatus || c.status === filtroStatus) &&
+      (!filtroPrioridade || c.prioridade === filtroPrioridade)
+    );
+    if (!items.length) {
       list.innerHTML = '<div class="ct-empty">Nenhum chamado encontrado.</div>';
       return;
     }
 
-    list.innerHTML = cache.map((c) => `
+    list.innerHTML = items.map((c) => `
       <div class="ct-item" data-id="${esc(c.id)}">
         <div class="ct-item-top">
           <div>
@@ -185,10 +203,22 @@ initProtectedPage('Chamados de TI', async (content, userContext) => {
   document.getElementById('ctTabs').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-tab]');
     if (!btn) return;
-    document.querySelectorAll('.ct-tab').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('#ctTabs .ct-tab').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     currentTab = btn.dataset.tab;
+    const filtersRow = document.getElementById('ctFilters');
+    if (filtersRow) filtersRow.style.display = currentTab === 'todos' ? 'flex' : 'none';
     loadChamados();
+  });
+
+  document.getElementById('ctFiltroStatus')?.addEventListener('change', (e) => {
+    filtroStatus = e.target.value;
+    renderList();
+  });
+
+  document.getElementById('ctFiltroPrioridade')?.addEventListener('change', (e) => {
+    filtroPrioridade = e.target.value;
+    renderList();
   });
 
   document.getElementById('ctForm').addEventListener('submit', async (e) => {
