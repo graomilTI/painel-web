@@ -114,6 +114,48 @@ function renderHistorico(){
   });
 }
 
+function csvEscape(v){
+  const s=String(v??'');
+  return /[",\n;]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+}
+
+function downloadCsv(filename, headers, rows){
+  const lines=[headers.map(csvEscape).join(';'), ...rows.map((r)=>r.map(csvEscape).join(';'))];
+  const blob=new Blob(['﻿'+lines.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// #24: download do histórico com 3 recortes -- total, só os em atraso
+// (>30 dias, mesmo limiar já usado no destaque visual "dias-alerta") e
+// agregado por colaborador. Respeita os filtros de texto já aplicados na
+// tela pra o download bater com o que o gestor está vendo.
+function downloadHistorico(tipo){
+  const {num,material}=state.histFilters;
+  const rows=state.histRows.filter((r)=>{
+    if(num && !normalize(r.patrimonio_codigo||'').includes(normalize(num)) && !normalize(r.funcionario||'').includes(normalize(num))) return false;
+    if(material && !normalize(r.identificacao||'').includes(normalize(material))) return false;
+    return true;
+  });
+  const stamp=new Date().toISOString().slice(0,10);
+
+  if(tipo==='colaborador'){
+    const groups=groupByColaborador(rows);
+    downloadCsv(`patrimonios-por-colaborador-${stamp}.csv`,
+      ['Colaborador','Qtd. Materiais','Maior atraso (dias)'],
+      groups.map((g)=>[g.funcionario, g.items.length, g.maxDias>=0?g.maxDias:'']));
+    return;
+  }
+
+  const filtered = tipo==='atraso' ? rows.filter((r)=>(r.dias_sem_leitura??0)>30) : rows;
+  downloadCsv(`patrimonios-${tipo==='atraso'?'atraso':'total'}-${stamp}.csv`,
+    ['Nº Patrimônio','Material','Colaborador','Supervisão','Dias sem leitura'],
+    filtered.map((r)=>[r.patrimonio_codigo||'', r.identificacao||'', r.funcionario||'', r.supervisao||'', r.dias_sem_leitura??'']));
+}
+
 function setHistSort(key){
   const cur=state.histSort;
   state.histSort = cur.key===key ? {key, dir: cur.dir==='asc'?'desc':'asc'} : {key, dir: key==='funcionario'?'asc':'desc'};
@@ -139,16 +181,20 @@ function styles(){return `<style>
 .pat-feedback.err{color:#fecaca}
 .pat-row-inativo td{color:#f87171}
 .dias-alerta{color:#fca5a5;font-weight:950}
-.pat-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:stretch}
-.pat-hist-card{display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:16px;border:1px solid rgba(148,163,184,.24);background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(99,102,241,.05));cursor:pointer;color:#e2e2f0;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;flex:1 1 220px}
-.pat-hist-card:hover{transform:translateY(-1px);border-color:rgba(99,102,241,.55)}
-.pat-hist-card-active{border-color:#818cf8;box-shadow:0 0 0 2px rgba(129,140,248,.35);background:linear-gradient(135deg,rgba(99,102,241,.3),rgba(99,102,241,.08))}
+.pat-layout{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:start;margin-top:16px}
+.pat-content{display:flex;flex-direction:column;gap:16px;min-width:0}
+.pat-download-select{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;font-size:13px}
+.pat-tabs{display:flex;flex-direction:column;gap:6px}
+.pat-hist-card{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;border:1px solid rgba(148,163,184,.24);background:transparent;cursor:pointer;color:var(--muted);transition:background-color .15s ease,border-color .15s ease,color .15s ease;font-size:12px;font-weight:800;text-align:left}
+.pat-hist-card:hover{border-color:rgba(129,140,248,.4);color:#e2e2f0}
+.pat-hist-card-active{border-color:#818cf8;background:rgba(129,140,248,.14);color:#e2e2f0}
 .pat-actions{display:flex;gap:10px;flex-wrap:wrap}
 .pat-actions .btn,.pat-table .btn{width:auto;margin-top:0}
-.pat-hist-icon{font-size:22px}
-.pat-hist-text{display:flex;flex-direction:column;gap:2px;text-align:left}
-.pat-hist-text strong{font-size:14px}
-.pat-hist-text small{font-size:11px;color:var(--muted)}
+.pat-hist-icon{font-size:14px}
+.pat-hist-text{display:flex;flex-direction:column;gap:0;text-align:left;min-width:0}
+.pat-hist-text strong{font-size:12px}
+.pat-hist-text small{display:none}
+@media(max-width:760px){.pat-layout{grid-template-columns:1fr}.pat-tabs{flex-direction:row;flex-wrap:wrap}}
 .pat-hist-filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .pat-hist-filters input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;min-width:220px}
 .pat-hist-sortbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
@@ -190,39 +236,44 @@ export async function renderContent(content, userContext){
   state.allowedSupervisoes = new Set(rawSupervisoes.map(normalize));
 
   content.innerHTML=`${styles()}<section class="hero-card"><div><div class="eyebrow">Gestor</div><h2>Patrimônios</h2><p>Histórico de leituras e cadastro dos números patrimoniais dos itens comprados pelo setor de compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">GESTOR</span></div></section>
-    <div class="pat-tabs">
-      <button class="pat-hist-card pat-hist-card-active" data-pat-tab="cadastrar" type="button">
-        <span class="pat-hist-icon">📝</span>
-        <span class="pat-hist-text"><strong>Cadastro</strong><small>Informar nº de patrimônio dos itens comprados</small></span>
-      </button>
-      <button class="pat-hist-card" data-pat-tab="historico" type="button">
-        <span class="pat-hist-icon">🕒</span>
-        <span class="pat-hist-text"><strong>Histórico</strong><small>Leituras e cadastros já feitos</small></span>
-      </button>
-    </div>
-    <section class="card mt-16" id="patCadastrarSection">
-      <div class="section-head"><div><h3>Compras aguardando número de patrimônio</h3><p class="muted">Cada item comprado como Patrimônio entra aqui em uma linha. É possível salvar individualmente ou em lote.</p></div><div class="pat-actions"><button class="btn btn-primary" id="patSaveAll" type="button">Salvar lote preenchido</button><button class="btn btn-secondary" id="patRefresh" type="button">↻ Atualizar</button></div></div>
-      <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th>Data</th><th>Material</th><th>Marca</th><th>Coordenação</th><th>Nº</th><th>Obs.</th><th>Ação</th></tr></thead><tbody id="patComprasBody"></tbody></table></div>
-      <div class="form-actions"><span class="pat-feedback" id="patFeedback"></span></div>
-    </section>
-    <section class="card mt-16" id="patHistoricoSection" style="display:none">
-      <div class="section-head"><div><h3>Histórico de patrimônios</h3><p class="muted">Patrimônios já cadastrados na regional, com os dias desde a última leitura do agente.</p></div><button class="btn btn-secondary" id="patHistRefresh" type="button">↻ Atualizar</button></div>
-      <div class="pat-hist-filters">
-        <input id="patHistFilterNum" type="text" placeholder="Filtrar por Nº ou colaborador">
-        <input id="patHistFilterMaterial" type="text" placeholder="Filtrar por material">
+    <div class="pat-layout">
+      <div class="pat-tabs">
+        <button class="pat-hist-card pat-hist-card-active" data-pat-tab="cadastrar" type="button">
+          <span class="pat-hist-icon">📝</span>
+          <span class="pat-hist-text"><strong>Cadastro</strong></span>
+        </button>
+        <button class="pat-hist-card" data-pat-tab="historico" type="button">
+          <span class="pat-hist-icon">🕒</span>
+          <span class="pat-hist-text"><strong>Histórico</strong></span>
+        </button>
       </div>
-      <div class="pat-hist-sortbar">
-        <span class="pat-hist-sortbar-label">Ordenar por:</span>
-        <button class="pat-sort-chip" data-sort-key="funcionario" type="button">Colaborador</button>
-        <button class="pat-sort-chip" data-sort-key="maxDias" type="button">Dias s/ Leitura</button>
-        <button class="pat-sort-chip" data-sort-key="qtd" type="button">Qtd. Materiais</button>
+      <div class="pat-content">
+        <section class="card" id="patCadastrarSection">
+          <div class="section-head"><div><h3>Compras aguardando número de patrimônio</h3><p class="muted">Cada item comprado como Patrimônio entra aqui em uma linha. É possível salvar individualmente ou em lote.</p></div><div class="pat-actions"><button class="btn btn-primary" id="patSaveAll" type="button">Salvar lote preenchido</button><button class="btn btn-secondary" id="patRefresh" type="button">↻ Atualizar</button></div></div>
+          <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th>Data</th><th>Material</th><th>Marca</th><th>Coordenação</th><th>Nº</th><th>Obs.</th><th>Ação</th></tr></thead><tbody id="patComprasBody"></tbody></table></div>
+          <div class="form-actions"><span class="pat-feedback" id="patFeedback"></span></div>
+        </section>
+        <section class="card" id="patHistoricoSection" style="display:none">
+          <div class="section-head"><div><h3>Histórico de patrimônios</h3><p class="muted">Patrimônios já cadastrados na regional, com os dias desde a última leitura do agente.</p></div><div class="pat-actions"><select class="pat-download-select" id="patDownloadTipo"><option value="total">Total</option><option value="atraso">Por atraso (&gt;30 dias)</option><option value="colaborador">Por colaborador</option></select><button class="btn btn-secondary" id="patDownloadBtn" type="button">↓ Baixar</button><button class="btn btn-secondary" id="patHistRefresh" type="button">↻ Atualizar</button></div></div>
+          <div class="pat-hist-filters">
+            <input id="patHistFilterNum" type="text" placeholder="Filtrar por Nº ou colaborador">
+            <input id="patHistFilterMaterial" type="text" placeholder="Filtrar por material">
+          </div>
+          <div class="pat-hist-sortbar">
+            <span class="pat-hist-sortbar-label">Ordenar por:</span>
+            <button class="pat-sort-chip" data-sort-key="funcionario" type="button">Colaborador</button>
+            <button class="pat-sort-chip" data-sort-key="maxDias" type="button">Dias s/ Leitura</button>
+            <button class="pat-sort-chip" data-sort-key="qtd" type="button">Qtd. Materiais</button>
+          </div>
+          <div class="pat-hist-grid" id="patHistoricoGrid"></div>
+        </section>
       </div>
-      <div class="pat-hist-grid" id="patHistoricoGrid"></div>
-    </section>`;
+    </div>`;
 
   document.getElementById('patRefresh').onclick=loadCadastrar;
   document.getElementById('patSaveAll').onclick=saveAll;
   document.getElementById('patHistRefresh').onclick=loadHistorico;
+  document.getElementById('patDownloadBtn').onclick=()=>downloadHistorico(document.getElementById('patDownloadTipo').value);
   document.getElementById('patHistFilterNum').addEventListener('input', (e)=>{state.histFilters.num=e.target.value; renderHistorico();});
   document.getElementById('patHistFilterMaterial').addEventListener('input', (e)=>{state.histFilters.material=e.target.value; renderHistorico();});
   document.querySelectorAll('#patHistoricoSection [data-sort-key]').forEach((btn)=>btn.addEventListener('click', () => setHistSort(btn.dataset.sortKey)));
