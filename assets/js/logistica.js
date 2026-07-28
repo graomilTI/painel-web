@@ -1,13 +1,11 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { getColaboradores } from './colaboradoresCache.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 function fmt(v) { return BR.format(Number(v) || 0); }
 function brDate(v) { if (!v) return '-'; const [y,m,d] = String(v).slice(0,10).split('-'); return `${d}/${m}/${y}`; }
 function esc(v) { return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
 function safe(d) { return Array.isArray(d) ? d : []; }
-function todayISO() { return new Date().toISOString().slice(0,10); }
 function normalizeText(v) { return String(v ?? '').trim().toUpperCase(); }
 function dateFromTomorrowLock() {
   const d = new Date();
@@ -15,27 +13,21 @@ function dateFromTomorrowLock() {
   return d.toISOString().slice(0,10);
 }
 
-const TABS = ['abrir_os','fob'];
-const TAB_LABELS = { abrir_os: 'Abrir OS', fob: 'FOB' };
+const TABS = ['abrir_os'];
+const TAB_LABELS = { abrir_os: 'Abrir OS' };
 
 const OS_STATUS_LABELS = { PENDENTE: 'Pendente', AGUARDAR: 'Aguardar', ATENDER: 'Atender', FINALIZAR: 'Finalizar' };
 
 const state = {
-  tab: (() => { const h = location.hash.replace('#',''); return ['abrir_os','fob'].includes(h) ? h : 'abrir_os'; })(),
+  tab: (() => { const h = location.hash.replace('#',''); return TABS.includes(h) ? h : 'abrir_os'; })(),
   rows: [],
   allOs: [],
   allOsFilter: 'TODAS',
   allOsLoading: false,
-  fobRows: [],
   aberturaRows: [],
   aberturaRefs: { clientes: [], filiais: [], armazens: [], destinos: [], locaisDestino: [], regionais: [] },
   aberturaLoading: false,
   aberturaSaving: false,
-  colaboradores: [],
-  fobLoading: false,
-  fobSaving: false,
-  fobSearchOs: null,
-  fobSearchError: '',
   loading: false
 };
 
@@ -56,7 +48,6 @@ export async function renderContent(content) {
     content.querySelectorAll('.log-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
     if (state.tab === 'os' && !state.rows.length) await Promise.all([loadOs(), loadAllOs()]);
     if (state.tab === 'abrir_os' && !state.aberturaRows.length) await loadAberturaOs();
-    if (state.tab === 'fob') await loadFob();
     render(content);
   });
 
@@ -71,20 +62,10 @@ export async function renderContent(content) {
     if (osFilterBtn) { state.allOsFilter = osFilterBtn.dataset.osFilter; render(content); return; }
 
     if (e.target.closest('#logReload')) { await Promise.all([loadOs(), loadAllOs()]); render(content); return; }
-    if (e.target.closest('#fobReload')) { await loadFob(); render(content); return; }
-    if (e.target.closest('#fobSearchOsBtn')) { await handleBuscarOsFob(content); return; }
-    if (e.target.closest('#fobAddManualBtn')) { await handleAdicionarFobManual(content); return; }
     if (e.target.closest('#abrirOsSalvarBtn')) { await handleSalvarAberturaOs(content); return; }
-
-    const validBtn = e.target.closest('[data-fob-action]');
-    if (validBtn) {
-      await handleValidarFob(validBtn.dataset.fobId, validBtn.dataset.fobAction, content);
-      return;
-    }
   });
 
-  if (state.tab === 'fob') await loadFob();
-  else if (state.tab === 'abrir_os') await loadAberturaOs();
+  if (state.tab === 'abrir_os') await loadAberturaOs();
   render(content);
 }
 
@@ -116,29 +97,6 @@ async function loadAllOs() {
   state.allOs = safe(data);
   state.allOsLoading = false;
 }
-
-async function loadFob() {
-  state.fobLoading = true;
-  state.fobSearchError = '';
-  await ensureColaboradores();
-
-  const { data, error } = await supabase
-    .from('logistica_fob')
-    .select('id,data_referencia,numero_os,cliente,supervisao,funcionario,cidade,local_embarque,motivo,status_comparacao,status,visualizado,tons_movimento,tons_producao,tons_nh,observacao,observacao_gestor,origem,criado_em,validado_em,updated_at')
-    .order('data_referencia', { ascending: false })
-    .order('criado_em', { ascending: false })
-    .limit(1500);
-
-  if (error) {
-    console.error(error);
-    state.fobRows = [];
-    state.fobSearchError = error.message || 'Falha ao carregar FOB.';
-  } else {
-    state.fobRows = safe(data);
-  }
-  state.fobLoading = false;
-}
-
 
 async function loadAberturaRefs() {
   const refs = { clientes: [], filiais: [], armazens: [], destinos: [], locaisDestino: [], regionais: [] };
@@ -192,52 +150,11 @@ async function loadAberturaOs() {
   state.aberturaLoading = false;
 }
 
-const COLAB_SS_KEY = 'grao1000:logistica-colab:v1';
-
-async function ensureColaboradores() {
-  if (state.colaboradores.length) return;
-
-  try {
-    const raw = sessionStorage.getItem(COLAB_SS_KEY);
-    if (raw) {
-      const { data } = JSON.parse(raw);
-      if (Array.isArray(data) && data.length) { state.colaboradores = data; return; }
-    }
-  } catch {}
-
-  try {
-    const colabs = await getColaboradores({ somenteAtivos: true }); // cache compartilhado
-    if (colabs.length) {
-      const seen = new Set();
-      state.colaboradores = colabs.filter(c => {
-        const key = normalizeText(c.cpf || c.nome);
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      try { sessionStorage.setItem(COLAB_SS_KEY, JSON.stringify({ data: state.colaboradores })); } catch {}
-      return;
-    }
-  } catch {}
-
-  const fallback = await supabase
-    .from('colaboradores')
-    .select('nome,cpf,supervisao,coordenacao')
-    .order('nome', { ascending: true })
-    .limit(1200);
-
-  state.colaboradores = safe(fallback.data);
-  if (state.colaboradores.length) {
-    try { sessionStorage.setItem(COLAB_SS_KEY, JSON.stringify({ data: state.colaboradores })); } catch {}
-  }
-}
-
 function render(content) {
   const el = content.querySelector('#logContent');
   if (!el) return;
   if (state.tab === 'os') { el.innerHTML = renderOsTab(); return; }
   if (state.tab === 'abrir_os') { el.innerHTML = renderAbrirOsTab(); return; }
-  if (state.tab === 'fob') { el.innerHTML = renderFobTab(); return; }
   el.innerHTML = `<section class="card mt-16"><div class="log-empty">Módulo <strong>${TAB_LABELS[state.tab]}</strong> em desenvolvimento.</div></section>`;
 }
 
@@ -415,95 +332,6 @@ function renderAberturaOsHistorico() {
     </tr>`).join('')}</tbody></table></div>`;
 }
 
-function renderFobTab() {
-  if (state.fobLoading) return `<section class="card mt-16"><p class="muted" style="padding:16px">Carregando FOB...</p></section>`;
-
-  const pendentes = state.fobRows.filter(r => String(r.status || 'PENDENTE') === 'PENDENTE');
-  const naoVisualizados = state.fobRows.filter(r => r.visualizado === false && String(r.status || 'PENDENTE') === 'PENDENTE');
-  const validos = state.fobRows.filter(r => String(r.status || '') === 'VALIDO').length;
-  const invalidos = state.fobRows.filter(r => String(r.status || '') === 'INVALIDO').length;
-
-  return `
-    <section class="card mt-16">
-      <div class="section-head">
-        <div>
-          <h3>FOB do Gestor</h3>
-          <p class="muted">Histórico permanente de FOB. Valide todos os pendentes para liberar a programação do dia seguinte.</p>
-        </div>
-        <button class="btn btn-secondary" id="fobReload" type="button">↻ Atualizar</button>
-      </div>
-
-      <div class="fob-kpis">
-        <div class="fob-kpi"><strong>${pendentes.length}</strong><span>Pendentes</span></div>
-        <div class="fob-kpi gray"><strong>${naoVisualizados.length}</strong><span>Não visualizados</span></div>
-        <div class="fob-kpi ok"><strong>${validos}</strong><span>Válidos</span></div>
-        <div class="fob-kpi bad"><strong>${invalidos}</strong><span>Inválidos</span></div>
-      </div>
-
-      ${state.fobSearchError ? `<div class="log-alert bad">${esc(state.fobSearchError)}</div>` : ''}
-
-      <details class="fob-add" open>
-        <summary>+ Adicionar FOB</summary>
-        <div class="fob-add-grid">
-          <label>O.S.
-            <div class="fob-os-line">
-              <input id="fobOsInput" class="log-input" type="text" placeholder="Digite a OS" value="${esc(state.fobSearchOs?.numero_os || '')}">
-              <button id="fobSearchOsBtn" class="btn btn-secondary" type="button">Buscar OS</button>
-            </div>
-          </label>
-          <label>Data da FOB
-            <input id="fobDataInput" class="log-input" type="date" value="${esc(state.fobSearchOs?.data_os || todayISO())}">
-          </label>
-          <label>Colaborador
-            <input id="fobColabInput" class="log-input" list="fobColabList" placeholder="Digite o nome do colaborador">
-            <datalist id="fobColabList">${state.colaboradores.map(c => `<option value="${esc(c.nome)}"></option>`).join('')}</datalist>
-          </label>
-          <label>Motivo
-            <textarea id="fobMotivoInput" class="log-input" rows="2" placeholder="Motivo da FOB"></textarea>
-          </label>
-        </div>
-        ${state.fobSearchOs ? renderOsEncontrada(state.fobSearchOs) : `<div class="log-muted-box">Digite a O.S. e clique em <strong>Buscar OS</strong> para puxar cliente, supervisão e local automaticamente.</div>`}
-        <button id="fobAddManualBtn" class="log-btn-ok" type="button">Salvar FOB</button>
-      </details>
-
-      <div class="fob-list">
-        ${state.fobRows.length ? state.fobRows.map(fobRowHtml).join('') : `<div class="log-empty">Nenhum FOB encontrado no histórico.</div>`}
-      </div>
-    </section>
-  `;
-}
-
-function renderOsEncontrada(os) {
-  return `<div class="fob-os-found">
-    <div><small>Cliente</small><strong>${esc(os.cliente || '-')}</strong></div>
-    <div><small>Supervisão</small><strong>${esc(os.supervisao || '-')}</strong></div>
-    <div><small>Local / embarque</small><strong>${esc(os.embarque || os.local_embarque || '-')}</strong></div>
-    <div><small>Destino</small><strong>${esc(os.destino || '-')}</strong></div>
-  </div>`;
-}
-
-function fobRowHtml(row) {
-  const status = String(row.status || 'PENDENTE').toUpperCase();
-  const unseen = row.visualizado === false && status === 'PENDENTE';
-  const cls = status === 'VALIDO' ? 'valid' : status === 'INVALIDO' ? 'invalid' : unseen ? 'unseen' : 'pending';
-  const comp = String(row.status_comparacao || 'PENDENTE').toUpperCase();
-  const compLabel = comp === 'OK' ? 'Comparação OK' : comp === 'DOIS EMBARQUES' ? 'Dois embarques' : 'Comparação pendente';
-  const statusLabel = status === 'VALIDO' ? 'FOB válida' : status === 'INVALIDO' ? 'FOB inválida' : 'Não validada';
-
-  return `<article class="fob-row ${cls}">
-    <div class="fob-cell date"><strong>${brDate(row.data_referencia)}</strong><span>${esc(row.supervisao || '-')}</span></div>
-    <div class="fob-cell main"><strong>${esc(row.cliente || '-')}</strong><span>OS: ${esc(row.numero_os || '-')}</span><span>Local: ${esc(row.local_embarque || row.cidade || '-')}</span></div>
-    <div class="fob-cell person"><strong>${esc(row.funcionario || '-')}</strong><span>${esc(row.motivo || row.observacao || 'FOB pendente sem confirmação na mesma data')}</span></div>
-    <div class="fob-cell status"><span class="log-chip ${comp === 'OK' ? 'ok' : comp === 'DOIS EMBARQUES' ? 'warn' : 'red'}">${compLabel}</span><span class="fob-tons">Mov.: ${fmt(row.tons_movimento)} · Prod.: ${fmt(row.tons_producao)} · NHE: ${fmt(row.tons_nh)}</span></div>
-    <div class="fob-cell view"><span class="log-chip ${unseen ? 'gray' : status === 'VALIDO' ? 'ok' : status === 'INVALIDO' ? 'red' : 'warn'}">${unseen ? 'Não visualizado' : statusLabel}</span></div>
-    <div class="fob-cell actions">
-      <input class="log-input fob-obs" data-fob-obs="${esc(String(row.id))}" placeholder="Observação do gestor" value="${esc(row.observacao_gestor || '')}">
-      <button class="fob-icon ok" title="FOB válida" data-fob-id="${esc(String(row.id))}" data-fob-action="VALIDO" type="button">✓</button>
-      <button class="fob-icon bad" title="FOB inválida" data-fob-id="${esc(String(row.id))}" data-fob-action="INVALIDO" type="button">×</button>
-    </div>
-  </article>`;
-}
-
 function rowHtml(row) {
   const isKg = String(row.observacao_logistica||'').startsWith('KG solicitado');
   const isFinalizar = !isKg && String(row.status_gestor||'') === 'FINALIZAR';
@@ -567,113 +395,6 @@ async function handleSalvarAberturaOs(content) {
   await loadAberturaOs();
   render(content);
   alert('Solicitação enviada para a Logística ADM.');
-}
-
-async function handleBuscarOsFob(content) {
-  const os = content.querySelector('#fobOsInput')?.value?.trim();
-  if (!os) { alert('Digite a O.S. para buscar.'); return; }
-  state.fobSearchError = '';
-
-  const { data, error } = await supabase
-    .from('operacional_os')
-    .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,embarcado')
-    .eq('numero_os', os)
-    .maybeSingle();
-
-  if (error) {
-    state.fobSearchOs = null;
-    state.fobSearchError = error.message;
-  } else if (!data) {
-    state.fobSearchOs = null;
-    state.fobSearchError = `O.S. ${os} não encontrada.`;
-  } else {
-    state.fobSearchOs = data;
-  }
-  render(content);
-}
-
-async function handleAdicionarFobManual(content) {
-  if (state.fobSaving) return;
-
-  const numeroOs = content.querySelector('#fobOsInput')?.value?.trim();
-  const dataRef = content.querySelector('#fobDataInput')?.value || state.fobSearchOs?.data_os || todayISO();
-  const funcionario = content.querySelector('#fobColabInput')?.value?.trim();
-  const motivo = content.querySelector('#fobMotivoInput')?.value?.trim();
-
-  if (!numeroOs) { alert('Digite a O.S.'); return; }
-  if (!funcionario) { alert('Informe o colaborador.'); return; }
-  if (!motivo) { alert('Informe o motivo da FOB.'); return; }
-
-  state.fobSaving = true;
-  const os = state.fobSearchOs || {};
-  const row = {
-    data: dataRef,
-    os: numeroOs,
-    cliente: os.cliente || null,
-    supervisao: os.supervisao || null,
-    funcionario,
-    cidade: null,
-    local: os.embarque || null,
-    status: 'PENDENTE',
-    motivo,
-    observacao: motivo,
-    tons_movimento: 0,
-    tons_producao: 0,
-    tons_nh: 0,
-    origem: 'MANUAL_GESTOR',
-    raw: { operacional_os: os }
-  };
-
-  let error = null;
-  const rpc = await supabase.rpc('salvar_logistica_fob_importacao', { p_linhas: [row] });
-  if (rpc.error) {
-    const direct = await supabase.from('logistica_fob').insert({
-      data_referencia: row.data,
-      numero_os: row.os,
-      cliente: row.cliente,
-      supervisao: row.supervisao,
-      funcionario: row.funcionario,
-      cidade: row.cidade,
-      local_embarque: row.local,
-      status_comparacao: 'PENDENTE',
-      status: 'PENDENTE',
-      visualizado: false,
-      motivo: row.motivo,
-      observacao: row.observacao,
-      tons_movimento: 0,
-      tons_producao: 0,
-      tons_nh: 0,
-      origem: 'MANUAL_GESTOR',
-      raw: row.raw
-    });
-    error = direct.error;
-  }
-
-  state.fobSaving = false;
-  if (error) { alert(error.message); return; }
-
-  state.fobSearchOs = null;
-  await loadFob();
-  render(content);
-}
-
-async function handleValidarFob(id, action, content) {
-  const obs = content.querySelector(`[data-fob-obs="${CSS.escape(String(id))}"]`)?.value?.trim() || null;
-  const { data: userData } = await supabase.auth.getUser();
-  const patch = {
-    status: action === 'VALIDO' ? 'VALIDO' : 'INVALIDO',
-    visualizado: true,
-    observacao_gestor: obs,
-    validado_em: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  };
-  if (userData?.user?.id) patch.validado_por = userData.user.id;
-
-  const { error } = await supabase.from('logistica_fob').update(patch).eq('id', id);
-  if (error) { alert(error.message); return; }
-
-  state.fobRows = state.fobRows.map(r => String(r.id) === String(id) ? { ...r, ...patch } : r);
-  render(content);
 }
 
 async function handleOsStatusChange(id, newStatus, content) {
