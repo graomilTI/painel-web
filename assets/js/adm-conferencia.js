@@ -1749,6 +1749,21 @@ async function loadAll() {
   }
 }
 
+// #32: alerta antes de autorizar de novo uma despesa que já está CONFERIDO --
+// checagem local (sem chamada externa, sem gargalo de requisição), só evita
+// reenvio acidental de duplo-clique/segunda conferência sem o gestor perceber.
+function isDespesaJaAutorizada(id, action) {
+  if (action !== 'CONFERIDO') return false;
+  const row = state.despesas.find((item) => String(item.id) === String(id));
+  return !!row && row.status_conferencia === 'CONFERIDO';
+}
+
+function confirmarReautorizacao(id) {
+  const row = state.despesas.find((item) => String(item.id) === String(id));
+  const quando = row?.conferido_em ? brDateTime(row.conferido_em) : 'anteriormente';
+  return window.confirm(`Esta despesa já foi conferida/autorizada em ${quando}. Autorizar novamente mesmo assim?`);
+}
+
 async function updateDespesaStatus(id, status) {
   const row = state.despesas.find((item) => String(item.id) === String(id));
   if (!row) return;
@@ -1978,6 +1993,7 @@ function bindEvents() {
 
     const btn = event.target.closest('[data-action][data-id]');
     if (!btn) return;
+    if (isDespesaJaAutorizada(btn.dataset.id, btn.dataset.action) && !confirmarReautorizacao(btn.dataset.id)) return;
     updateDespesaStatus(btn.dataset.id, btn.dataset.action);
   });
 }
