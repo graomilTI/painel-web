@@ -108,6 +108,7 @@ function resumoLegivel(value) {
   // cujo <style> não veio fechado (ex.: "body { font-family: Verdana... }").
   limpo = limpo
     .replace(/[a-zA-Z0-9_.#*>\[\]="'-]+\s*\{\s*[a-zA-Z-]+\s*:[^{}]*\}/g, ' ')
+    .replace(/[a-zA-Z0-9_.#*>\[\]="'-]+\s*\{\s*[a-zA-Z-]+\s*:[^{}]*$/g, ' ')
     .replace(/@(?:media|import|font-face|charset)[^;{]*[;{]?/gi, ' ');
   // Entidades HTML que sobraram em texto puro (&ocirc; &atilde; &amp; etc.)
   if (/&[a-zA-Z]{2,8};|&#\d{2,6};/.test(limpo)) limpo = decodeEntities(limpo);
