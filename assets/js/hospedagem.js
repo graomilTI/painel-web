@@ -2,6 +2,76 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
+const BR_UFS = [
+  ['AC', 'Acre'], ['AL', 'Alagoas'], ['AP', 'Amapá'], ['AM', 'Amazonas'], ['BA', 'Bahia'],
+  ['CE', 'Ceará'], ['DF', 'Distrito Federal'], ['ES', 'Espírito Santo'], ['GO', 'Goiás'],
+  ['MA', 'Maranhão'], ['MT', 'Mato Grosso'], ['MS', 'Mato Grosso do Sul'], ['MG', 'Minas Gerais'],
+  ['PA', 'Pará'], ['PB', 'Paraíba'], ['PR', 'Paraná'], ['PE', 'Pernambuco'], ['PI', 'Piauí'],
+  ['RJ', 'Rio de Janeiro'], ['RN', 'Rio Grande do Norte'], ['RS', 'Rio Grande do Sul'],
+  ['RO', 'Rondônia'], ['RR', 'Roraima'], ['SC', 'Santa Catarina'], ['SP', 'São Paulo'],
+  ['SE', 'Sergipe'], ['TO', 'Tocantins'],
+];
+
+// Mesma chave/cache usada em programacao.js — municípios não mudam, cache de 30 dias
+// compartilhado entre as páginas evita repetir ~5.500 linhas do IBGE.
+const CIDADES_CACHE_KEY = 'grm:cidades_ibge:v1';
+const CIDADES_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function readCidadesCache() {
+  try {
+    const raw = localStorage.getItem(CIDADES_CACHE_KEY);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (!ts || Date.now() - ts > CIDADES_CACHE_TTL_MS || !Array.isArray(data) || !data.length) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCidadesCache(data) {
+  try {
+    localStorage.setItem(CIDADES_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+  } catch {}
+}
+
+async function loadCidadesBrasil() {
+  const cached = readCidadesCache();
+  if (cached) return cached;
+  try {
+    const resp = await fetch('https://servicodados.ibge.gov.br/api/v1/localidades/municipios?orderBy=nome');
+    const data = await resp.json();
+    const cidades = (Array.isArray(data) ? data : []).map((m) => ({
+      nome: m.nome,
+      uf: m.microrregiao?.mesorregiao?.UF?.sigla || '',
+    })).filter((m) => m.nome && m.uf);
+    writeCidadesCache(cidades);
+    return cidades;
+  } catch (error) {
+    console.warn('[hospedagem] Não foi possível carregar cidades do IBGE.', error);
+    return [];
+  }
+}
+
+async function loadClientesRef() {
+  const nomes = new Set();
+  const add = (v) => {
+    const txt = String(v ?? '').trim();
+    if (txt) nomes.add(txt);
+  };
+  try {
+    const [prod, os] = await Promise.all([
+      supabase.from('relatorio_resultado_diario').select('cliente_nacional').limit(5000),
+      supabase.from('operacional_os').select('cliente').limit(5000),
+    ]);
+    (prod.data || []).forEach((r) => add(r.cliente_nacional));
+    (os.data || []).forEach((r) => add(r.cliente));
+  } catch (error) {
+    console.warn('[hospedagem] Não foi possível carregar clientes.', error);
+  }
+  return [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
 const STATUS_SOLICITACAO = {
   SOLICITADA: 'Solicitada',
   EM_ANALISE: 'Em análise',
@@ -146,6 +216,8 @@ export function renderContent(content, userContext) {
     colaboradores: [],
     totalAtivos: 0,
     totalDisponiveis: 0,
+    cidades: [],
+    clientes: [],
   };
 
   content.innerHTML = `
@@ -162,9 +234,16 @@ export function renderContent(content, userContext) {
             <div class="hosp-grp">
               <div class="hosp-grp-h">⌖ Onde e para quem</div>
               <div class="hosp-grid">
-                <div class="hosp-field col-8"><label for="cidade">Cidade *</label><input id="cidade" required placeholder="Ex.: Correntina" /></div>
-                <div class="hosp-field col-4"><label for="uf">UF *</label><input id="uf" required maxlength="2" placeholder="BA" /></div>
-                <div class="hosp-field full"><label for="cliente">Cliente *</label><input id="cliente" required placeholder="Cliente / unidade / fazenda" /></div>
+                <div class="hosp-field col-4"><label for="uf">UF *</label>
+                  <select id="uf" required><option value="">Selecione</option>${BR_UFS.map(([sigla, nome]) => `<option value="${sigla}">${sigla} — ${esc(nome)}</option>`).join('')}</select>
+                </div>
+                <div class="hosp-field col-8"><label for="cidade">Cidade *</label>
+                  <select id="cidade" required disabled><option value="">Selecione a UF primeiro</option></select>
+                </div>
+                <div class="hosp-field full"><label for="cliente">Cliente *</label>
+                  <select id="cliente" required><option value="">Carregando clientes...</option></select>
+                  <input id="clienteManual" style="display:none;margin-top:6px" placeholder="Digite o nome do cliente" />
+                </div>
                 <div class="hosp-field full"><label for="localEmbarque">Local de embarque *</label><input id="localEmbarque" required placeholder="Ex.: Fazenda Nova Prata" /></div>
                 <div class="hosp-field full"><label for="linkLocal">Localização (link)</label><input id="linkLocal" placeholder="Google Maps ou referência" /></div>
               </div>
@@ -228,15 +307,52 @@ export function renderContent(content, userContext) {
   const checkout = document.getElementById('checkout');
   const diariasLabel = document.getElementById('diariasLabel');
   const colabBaseInfo = document.getElementById('colabBaseInfo');
+  const ufSelect = document.getElementById('uf');
+  const cidadeSelect = document.getElementById('cidade');
+  const clienteSelect = document.getElementById('cliente');
+  const clienteManual = document.getElementById('clienteManual');
 
   function setFeedback(msg, type = '') {
     feedback.textContent = msg || '';
     feedback.className = `hosp-feedback ${type}`.trim();
   }
 
+  function addDaysISO(iso, days) {
+    const d = new Date(`${iso}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
   function updateDiarias() {
     const n = diffDays(checkin.value, checkout.value);
     diariasLabel.textContent = `${n} diária${n === 1 ? '' : 's'}`;
+  }
+
+  // #12/#13: checkin não pode ser retroativo; checkout não pode passar de checkin + 7 dias.
+  function updateDataLimits() {
+    const hoje = todayISO();
+    checkin.min = hoje;
+    if (checkin.value && checkin.value < hoje) checkin.value = hoje;
+
+    const minCheckout = checkin.value || hoje;
+    checkout.min = minCheckout;
+    checkout.max = addDaysISO(minCheckout, 7);
+    if (checkout.value && (checkout.value < checkout.min || checkout.value > checkout.max)) {
+      checkout.value = checkout.min > checkout.max ? checkout.max : checkout.min;
+    }
+  }
+
+  function populateCidades(uf) {
+    if (!uf) {
+      cidadeSelect.innerHTML = '<option value="">Selecione a UF primeiro</option>';
+      cidadeSelect.disabled = true;
+      return;
+    }
+    const doUf = state.cidades.filter((c) => c.uf === uf).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    cidadeSelect.innerHTML = doUf.length
+      ? `<option value="">Selecione</option>${doUf.map((c) => `<option value="${esc(c.nome)}">${esc(c.nome)}</option>`).join('')}`
+      : '<option value="">Nenhuma cidade encontrada</option>';
+    cidadeSelect.disabled = !doUf.length;
   }
 
   function buscarColaboradores(query) {
@@ -316,13 +432,19 @@ export function renderContent(content, userContext) {
   function resetForm() {
     form.reset();
     checkin.value = todayISO();
-    const out = new Date();
-    out.setDate(out.getDate() + 1);
-    checkout.value = `${out.getFullYear()}-${String(out.getMonth() + 1).padStart(2, '0')}-${String(out.getDate()).padStart(2, '0')}`;
+    checkout.value = addDaysISO(checkin.value, 1);
+    updateDataLimits();
+    populateCidades('');
+    clienteManual.style.display = 'none';
+    clienteManual.value = '';
     colabBox.innerHTML = '';
     addColabRow();
     updateDiarias();
     setFeedback('');
+  }
+
+  function getClienteValue() {
+    return clienteManual.style.display !== 'none' ? clienteManual.value.trim() : clienteSelect.value.trim();
   }
 
   function getColaboradoresPayload() {
@@ -398,6 +520,24 @@ export function renderContent(content, userContext) {
       return;
     }
 
+    if (!getClienteValue()) {
+      setFeedback('Selecione o cliente.', 'err');
+      btn.disabled = false;
+      return;
+    }
+
+    if (checkin.value < todayISO()) {
+      setFeedback('A data de check-in não pode ser anterior a hoje.', 'err');
+      btn.disabled = false;
+      return;
+    }
+
+    if (checkout.value > addDaysISO(checkin.value, 7)) {
+      setFeedback('A data de check-out não pode passar de 7 dias após o check-in.', 'err');
+      btn.disabled = false;
+      return;
+    }
+
     const payload = {
       data_solicitacao: new Date().toISOString().slice(0, 10),
       solicitante_id: userContext?.user?.id || null,
@@ -407,9 +547,9 @@ export function renderContent(content, userContext) {
       coordenacao: getUserField(userContext, 'coordenacao', 'user.coordenacao') || null,
       supervisao: getUserField(userContext, 'supervisao', 'user.supervisao') || null,
       regional: getUserField(userContext, 'regional', 'user.regional') || getUserField(userContext, 'supervisao', 'user.supervisao') || null,
-      cidade: document.getElementById('cidade').value.trim(),
-      uf: document.getElementById('uf').value.trim().toUpperCase() || null,
-      cliente: document.getElementById('cliente').value.trim() || null,
+      cidade: cidadeSelect.value.trim(),
+      uf: ufSelect.value.trim().toUpperCase() || null,
+      cliente: getClienteValue() || null,
       local_embarque: document.getElementById('localEmbarque').value.trim(),
       link_local_embarque: document.getElementById('linkLocal').value.trim() || null,
       data_checkin_prevista: checkin.value,
@@ -497,14 +637,32 @@ export function renderContent(content, userContext) {
   document.getElementById('addColabBtn').addEventListener('click', () => addColabRow());
   document.getElementById('clearBtn').addEventListener('click', resetForm);
   document.getElementById('refreshBtn').addEventListener('click', () => loadSolicitacoes());
-  checkin.addEventListener('change', updateDiarias);
-  checkout.addEventListener('change', updateDiarias);
+  checkin.addEventListener('change', () => { updateDataLimits(); updateDiarias(); });
+  checkout.addEventListener('change', () => { updateDataLimits(); updateDiarias(); });
+  ufSelect.addEventListener('change', () => populateCidades(ufSelect.value));
   form.addEventListener('submit', submitSolicitacao);
+
+  async function loadCidadesEClientes() {
+    const [cidades, clientes] = await Promise.all([loadCidadesBrasil(), loadClientesRef()]);
+    state.cidades = cidades;
+    state.clientes = clientes;
+
+    if (clientes.length) {
+      clienteSelect.innerHTML = `<option value="">Selecione o cliente</option>${clientes.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}`;
+    } else {
+      clienteSelect.innerHTML = '<option value="">Não foi possível carregar a lista</option>';
+      clienteSelect.disabled = true;
+      clienteManual.style.display = 'block';
+    }
+
+    if (ufSelect.value) populateCidades(ufSelect.value);
+  }
 
   (async function boot() {
     await loadColaboradores();
     resetForm();
     await loadSolicitacoes(false);
+    await loadCidadesEClientes();
   })();
 }
 
