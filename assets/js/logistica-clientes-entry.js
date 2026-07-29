@@ -14,6 +14,8 @@
 // aba é aberta e nunca é destruído depois (só escondido via display:none),
 // pra não perder o estado/recarregar tudo a cada troca de aba.
 
+import { toPanelUrl } from './paths.js';
+
 const TABS = [
   { key: 'relatorios',   realTab: 'relatorios',   label: 'Relatórios' },
   { key: 'exportacoes',  realTab: 'exportacoes',  label: 'Exportações' },
@@ -76,7 +78,11 @@ function ensureBtgFrame() {
   const content = document.getElementById('pageContent');
   btgFrame = document.createElement('iframe');
   btgFrame.id = 'logisticaBtgFrame';
-  btgFrame.src = './btg-logistica.html';
+  // Em produção as rotas do painel não têm .html (o Worker reescreve
+  // /painel/btg-logistica -> btg-logistica.html); um src="./btg-logistica.html"
+  // direto caía fora do /painel e abria o site institucional. toPanelUrl()
+  // já resolve esse mapeamento certo pros dois ambientes.
+  btgFrame.src = toPanelUrl('btg-logistica');
   btgFrame.style.display = 'none';
   content.appendChild(btgFrame);
   return btgFrame;
