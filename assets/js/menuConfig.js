@@ -173,10 +173,11 @@ export const MENU_CONFIG = [
       item("logistica_os", "O.S", "logistica-os", ["LOGISTICA_OS", "LOGISTICA_ABERTURA_OS", "LOGISTICA_FINALIZACAO_OS", "FINALIZACAO_OS", "LOGISTICA_CONFERENCIAS", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_fob", "FOB", "logistica-fob", ["LOGISTICA_FOB", "LOGISTICA_ADM", "LOGISTICA"]),
       item("logistica_informativos", "Informativos", "logistica-informativos", ["LOGISTICA_INFORMATIVOS", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_classificadores", "Classificadores", "logistica-classificadores", ["LOGISTICA_CLASSIFICADORES", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_exportacoes", "Exportações clientes", "logistica-exportacoes", ["LOGISTICA_EXPORTACOES", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_relatorios_cliente", "Relatórios ao Cliente", "logistica-relatorios", ["LOGISTICA_RELATORIOS_CLIENTE", "LOGISTICA_ADM", "LOGISTICA"]),
-      item("logistica_btg", "BTG", "btg-logistica", ["LOGISTICA_BTG", "BTG_LOGISTICA", "BTG", "LOGISTICA_ADM", "LOGISTICA"])
+      // "Clientes" reúne Relatórios | Exportações | BTG num único ponto
+      // (logistica-clientes.html, 3 abas — mesmo padrão do "O.S"). Códigos
+      // antigos ficam como aliases pra preservar permissão de quem já tinha
+      // acesso às telas separadas. Ver [[painel-web-logistica-os-abas-unificadas]].
+      item("logistica_clientes", "Clientes", "logistica-clientes", ["LOGISTICA_CLIENTES", "LOGISTICA_EXPORTACOES", "LOGISTICA_RELATORIOS_CLIENTE", "LOGISTICA_BTG", "BTG_LOGISTICA", "BTG", "LOGISTICA_ADM", "LOGISTICA"])
     ]
   },
 
