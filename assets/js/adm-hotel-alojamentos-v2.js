@@ -225,6 +225,27 @@ function schemaCompatibilityError(error) {
   return message.includes('schema cache') || message.includes('does not exist') || message.includes('could not find') || message.includes('column');
 }
 
+const geocodeCache = new Map();
+// Mapa Operacional só desenha o alojamento se ele tiver coordenada — geocodifica por
+// cidade/UF (sem endereço completo, a maioria dos cadastros só tem isso) ao salvar, em vez
+// de depender de um backfill manual toda vez que um alojamento novo entra.
+async function geocodeCidadeUf(cidade, uf) {
+  const chave = `${normalizeText(cidade)}|${normalizeText(uf)}`;
+  if (geocodeCache.has(chave)) return geocodeCache.get(chave);
+  const promise = fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&country=Brazil&city=${encodeURIComponent(cidade)}&state=${encodeURIComponent(uf)}`, {
+    headers: { 'Accept-Language': 'pt-BR' },
+  })
+    .then((r) => (r.ok ? r.json() : []))
+    .then((rows) => {
+      const first = Array.isArray(rows) ? rows[0] : null;
+      const lat = Number(first?.lat), lng = Number(first?.lon);
+      return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+    })
+    .catch(() => null);
+  geocodeCache.set(chave, promise);
+  return promise;
+}
+
 async function persist(payload) {
   if (state.editingId) return supabase.from('hospedagem_alojamentos').update(payload).eq('id', state.editingId);
   return supabase.from('hospedagem_alojamentos').insert(payload);
@@ -263,6 +284,12 @@ async function saveRecord(event) {
     endereco_logradouro: meta.endereco_logradouro, endereco_numero: meta.endereco_numero, endereco_complemento: meta.endereco_complemento
   };
   if (!state.editingId) { legacy.criado_por = userId; enhanced.criado_por = userId; }
+
+  const cidadeMudou = !current || normalizeText(current.cidade) !== normalizeText(data.cidade) || normalizeText(current.uf) !== normalizeText(data.uf);
+  if (cidadeMudou || current?.latitude == null || current?.longitude == null) {
+    const geo = await geocodeCidadeUf(data.cidade, data.uf);
+    if (geo) { legacy.latitude = geo.lat; legacy.longitude = geo.lng; enhanced.latitude = geo.lat; enhanced.longitude = geo.lng; }
+  }
 
   feedback('Salvando...');
   let result = await persist(enhanced);

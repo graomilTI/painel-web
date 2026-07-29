@@ -98,6 +98,13 @@ import { getCurrentUser } from './auth.js';
     estado: '', ponto: '', tab: 'mapa', mapaBase: 'escuro',
     mostrarVeiculos: true, mostrarColaboradores: true, mostrarOsComSaldo: true, mostrarOsSemSaldo: true, mostrarHoteis: false,
     mostrarIrregularidades: true, irregularidades: [], ufPorNumeroOs: new Map(),
+    // "Só hoje": recorte opcional (item #51) — OS marcada como Atender pelo gestor pra hoje,
+    // colaboradores vinculados a elas, frotas desses colaboradores e hotéis com reserva hoje.
+    // Desligado por padrão pra não mudar o comportamento de referência já em uso (mostrar tudo).
+    somenteHoje: false, mostrarAlojamentos: false, alojamentosComCoord: [],
+    // Só relevante com somenteHoje ligado: colaboradores fora do recorte de hoje ficam ocultos
+    // por padrão, mas o gestor pode religar um específico manualmente na lista de "não escalados".
+    colaboradoresExtras: new Set(), reservasHotelHoje: { porId: new Set(), porNome: new Set() },
     comparativo: [], supervisaoComparativo: '',
     alertasLaudo: [], alertasFiltroData: '', alertasFiltroCoordenacao: '',
     map: null, mapEl: null, tileLayer: null, layer: null,
@@ -110,6 +117,8 @@ import { getCurrentUser } from './auth.js';
   const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
   const norm = v => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
   const digits = v => String(v ?? '').replace(/\D/g, '');
+  // Data de hoje em Brasília (não UTC do servidor/navegador) — usada só pelo recorte "Só hoje".
+  const hojeISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
   function num(v) {
     if (v === null || v === undefined || v === '') return null;
@@ -391,8 +400,8 @@ import { getCurrentUser } from './auth.js';
 
   async function loadHospedagem() {
     const [hoteis, alojamentos] = await Promise.all([
-      sel('hospedagem_hoteis', 'nome,cidade,uf,latitude,longitude,valor_diaria_individual,valor_diaria_padrao'),
-      sel('hospedagem_alojamentos', 'nome,cidade,uf,status', q => q.eq('status', 'ATIVO')),
+      sel('hospedagem_hoteis', 'id,nome,cidade,uf,latitude,longitude,valor_diaria_individual,valor_diaria_padrao'),
+      sel('hospedagem_alojamentos', 'id,nome,cidade,uf,status,latitude,longitude', q => q.eq('status', 'ATIVO')),
     ]);
     const hoteisComCoord = hoteis.filter(geo);
     // Poucos registros (dezenas) — mantidos em lista simples, não em Map por chave exata: nomes
@@ -400,7 +409,28 @@ import { getCurrentUser } from './auth.js';
     // em vez de "Campo Novo do Parecis"), então o casamento com o ponto da OS precisa ser por
     // substring, não igualdade exata.
     const alojamentosPorUf = alojamentos.map(a => ({ ...a, cidadeNorm: norm(a.cidade), ufNorm: norm(a.uf) }));
-    return { hoteisComCoord, alojamentosPorUf };
+    // Camada do mapa (item #51) — só entram os que já têm coordenada geocodificada por
+    // cidade/UF (ver adm-hotel-alojamentos-v2.js); sem filtro de dia (alojamento é vínculo
+    // mensal, não diária, então "ativo" já é o único recorte que faz sentido aqui).
+    const alojamentosComCoord = alojamentos.filter(geo);
+    return { hoteisComCoord, alojamentosPorUf, alojamentosComCoord };
+  }
+
+  // Reservas de hotel com estadia cobrindo hoje (item #51 — "hotéis ativos no dia"). Casa por
+  // hotel_id quando a reserva está ligada ao cadastro de hospedagem_hoteis; cai pro nome/cidade/UF
+  // quando a reserva foi lançada avulsa (sem vínculo com o hotel pré-cadastrado).
+  async function loadReservasHotelHoje() {
+    const hoje = hojeISO();
+    const rows = await sel('hospedagem_reservas', 'hotel_id,nome_hotel,cidade_hotel,uf_hotel,data_checkin,data_checkout,status_hospedagem', q => q
+      .lte('data_checkin', hoje)
+      .gte('data_checkout', hoje)
+    );
+    const porId = new Set(), porNome = new Set();
+    rows.filter(r => !norm(r.status_hospedagem).includes('CANCELAD')).forEach(r => {
+      if (r.hotel_id) porId.add(String(r.hotel_id));
+      porNome.add(`${norm(r.nome_hotel)}|${norm(r.cidade_hotel)}|${norm(r.uf_hotel)}`);
+    });
+    return { porId, porNome };
   }
 
   // --- Motor de custo-benefício ----------------------------------------
@@ -550,11 +580,13 @@ import { getCurrentUser } from './auth.js';
     st.os = abertas.filter(o => o.__saldo > 0);
     if (root) render(root, true);
 
-    const [colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem, irregularidades, alertasLaudo] = await Promise.all([
-      loadColaboradores(), loadVinculos(), loadModoHabitual(), loadVeiculoProprio(), loadFrotaAtual(), loadHospedagem(), loadIrregularidades(), loadAlertasLaudo(),
+    const [colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem, irregularidades, alertasLaudo, reservasHotelHoje] = await Promise.all([
+      loadColaboradores(), loadVinculos(), loadModoHabitual(), loadVeiculoProprio(), loadFrotaAtual(), loadHospedagem(), loadIrregularidades(), loadAlertasLaudo(), loadReservasHotelHoje(),
     ]);
     st.irregularidades = irregularidades;
     st.alertasLaudo = alertasLaudo;
+    st.reservasHotelHoje = reservasHotelHoje;
+    st.alojamentosComCoord = hospedagem.alojamentosComCoord;
 
     st.vinculosPorOs = vinculosPorOs;
     st.modoHabitualPorCpf = modoHabitual.porCpf;
@@ -730,7 +762,7 @@ import { getCurrentUser } from './auth.js';
     const s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent = `
-      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:12px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo h2{font-size:24px;line-height:1}.mo p{color:#94a3b8;margin:5px 0 0;font-size:12px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:12px;background:#166534;color:#ecfdf5;font-weight:900;padding:8px 12px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:38px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-map-select{width:180px}.mo-map-tools{position:relative;z-index:2500;padding:0 16px 10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}.mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}.mo-map{height:calc(100vh - 300px);min-height:500px;max-height:760px;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}.mo-kpi{flex:1 0 126px;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:8px;background:rgba(2,6,23,.35)}.mo-kpi.clicavel{cursor:pointer}.mo-kpi.clicavel:hover{border-color:rgba(34,197,94,.5)}.mo-kpi.active{border-color:#facc15;box-shadow:0 0 0 1px rgba(250,204,21,.5);background:rgba(120,53,15,.18)}.mo-kpi span{display:block;font-size:8.5px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:16px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alerts{border-top:1px solid rgba(251,191,36,.18);border-bottom:1px solid rgba(251,191,36,.12);background:rgba(120,53,15,.12)}.mo-alert{padding:7px 16px;color:#fde68a;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-alert+.mo-alert{border-top:1px solid rgba(251,191,36,.12)}.mo-legend{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;color:#94a3b8;font-size:12px}.mo-rota-real{color:#facc15;font-weight:700}.mo-rota-real:empty{display:none}.mo-rota-real.mo-rota-alerta{color:#f87171}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .veiculo{background:#06b6d4}.mo-legend .roxo{background:#a855f7}.mo-legend .laranja{background:#f59e0b}.mo-marker-toggle{border:1px solid rgba(34,197,94,.28);background:rgba(6,78,59,.45);color:#ecfdf5;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;cursor:pointer}.mo-marker-toggle.off{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.22);color:#94a3b8}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk-irreg{width:19px;height:19px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#451a03;font-weight:900;font-size:12px;line-height:1}.mk-irreg.sel{box-shadow:0 0 0 3px rgba(250,204,21,.6)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.veic-mov{background:#06b6d4}.mk.veic-park{background:#f59e0b}.mk.hotel{background:#a855f7}.mk-ico{width:18px;height:18px;border-width:2px;display:flex;align-items:center;justify-content:center;line-height:0}.mk-ico svg{display:block}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mk.aprox{border-style:dashed;border-width:2px;border-color:#fde68a}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5),.mo-colabs-table td:nth-child(6){text-align:right}.mo-colabs-table tbody tr{cursor:pointer}.mo-colabs-table tbody tr:hover{background:rgba(63,168,120,.1)}.mo-colabs-table tbody tr.active{background:rgba(22,101,52,.22)}.mo-colabs-table tbody tr.active td:first-child{color:#facc15;font-weight:800}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}.mo-tabs{display:flex;gap:8px;padding:0 16px 8px;position:relative;z-index:20}.mo-tab-btn{border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-size:12.5px}.mo-tab-btn.active{background:#166534;border-color:rgba(34,197,94,.4);color:#ecfdf5}.mo-comp-table{width:100%;border-collapse:collapse;font-size:12px}.mo-comp-table th,.mo-comp-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-comp-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55);position:sticky;top:0}.mo-comp-table td.num{text-align:right;white-space:nowrap}.mo-comp-wrap{max-height:520px;overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:16px}.mo-pill.concorda{color:#bbf7d0}.mo-pill.diverge{color:#fecaca}.mo-pill.sem-registro{color:#94a3b8}@media(max-width:1100px){.mo-head{flex-direction:column}.mo-map-tools{flex-direction:column;align-items:stretch}.mo-legend{justify-content:flex-start}.mo-below{grid-template-columns:1fr}.mo-map{height:560px;min-height:420px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:nowrap}.mo-map-select{width:100%}}
+      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:12px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo h2{font-size:24px;line-height:1}.mo p{color:#94a3b8;margin:5px 0 0;font-size:12px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:12px;background:#166534;color:#ecfdf5;font-weight:900;padding:8px 12px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:38px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-map-select{width:180px}.mo-map-tools{position:relative;z-index:2500;padding:0 16px 10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}.mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}.mo-map{height:calc(100vh - 300px);min-height:500px;max-height:760px;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}.mo-kpi{flex:1 0 126px;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:8px;background:rgba(2,6,23,.35)}.mo-kpi.clicavel{cursor:pointer}.mo-kpi.clicavel:hover{border-color:rgba(34,197,94,.5)}.mo-kpi.active{border-color:#facc15;box-shadow:0 0 0 1px rgba(250,204,21,.5);background:rgba(120,53,15,.18)}.mo-kpi span{display:block;font-size:8.5px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:16px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alerts{border-top:1px solid rgba(251,191,36,.18);border-bottom:1px solid rgba(251,191,36,.12);background:rgba(120,53,15,.12)}.mo-alert{padding:7px 16px;color:#fde68a;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-alert+.mo-alert{border-top:1px solid rgba(251,191,36,.12)}.mo-legend{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;color:#94a3b8;font-size:12px}.mo-rota-real{color:#facc15;font-weight:700}.mo-rota-real:empty{display:none}.mo-rota-real.mo-rota-alerta{color:#f87171}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .veiculo{background:#06b6d4}.mo-legend .roxo{background:#a855f7}.mo-legend .laranja{background:#f59e0b}.mo-legend .agua{background:#14b8a6}.mo-marker-toggle{border:1px solid rgba(34,197,94,.28);background:rgba(6,78,59,.45);color:#ecfdf5;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;cursor:pointer}.mo-marker-toggle.off{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.22);color:#94a3b8}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk-irreg{width:19px;height:19px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#451a03;font-weight:900;font-size:12px;line-height:1}.mk-irreg.sel{box-shadow:0 0 0 3px rgba(250,204,21,.6)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.colab-fora{background:#ef4444}.mk.veic-mov{background:#06b6d4}.mk.veic-park{background:#f59e0b}.mk.hotel{background:#a855f7}.mk.alojamento{background:#14b8a6}.mk-ico{width:18px;height:18px;border-width:2px;display:flex;align-items:center;justify-content:center;line-height:0}.mk-ico svg{display:block}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mk.aprox{border-style:dashed;border-width:2px;border-color:#fde68a}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5),.mo-colabs-table td:nth-child(6){text-align:right}.mo-colabs-table tbody tr{cursor:pointer}.mo-colabs-table tbody tr:hover{background:rgba(63,168,120,.1)}.mo-colabs-table tbody tr.active{background:rgba(22,101,52,.22)}.mo-colabs-table tbody tr.active td:first-child{color:#facc15;font-weight:800}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}.mo-tabs{display:flex;gap:8px;padding:0 16px 8px;position:relative;z-index:20}.mo-tab-btn{border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-size:12.5px}.mo-tab-btn.active{background:#166534;border-color:rgba(34,197,94,.4);color:#ecfdf5}.mo-comp-table{width:100%;border-collapse:collapse;font-size:12px}.mo-comp-table th,.mo-comp-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-comp-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55);position:sticky;top:0}.mo-comp-table td.num{text-align:right;white-space:nowrap}.mo-comp-wrap{max-height:520px;overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:16px}.mo-pill.concorda{color:#bbf7d0}.mo-pill.diverge{color:#fecaca}.mo-pill.sem-registro{color:#94a3b8}@media(max-width:1100px){.mo-head{flex-direction:column}.mo-map-tools{flex-direction:column;align-items:stretch}.mo-legend{justify-content:flex-start}.mo-below{grid-template-columns:1fr}.mo-map{height:560px;min-height:420px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:nowrap}.mo-map-select{width:100%}}
     `;
     document.head.appendChild(s);
   }
@@ -766,11 +798,27 @@ import { getCurrentUser } from './auth.js';
     const k = kpis(), estados = estadosDisponiveis(), pontosFiltrados = st.pontos.filter(p => !st.estado || p.uf === st.estado);
     return `
         <div class="mo-map-tools"><div class="mo-filter"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select><select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
-        <div class="mo-legend"><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsComSaldo ? '' : 'off'}" data-toggle-marker="os-com-saldo"><i class="verde"></i>OS com saldo ${st.mostrarOsComSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsSemSaldo ? '' : 'off'}" data-toggle-marker="os-sem-saldo"><i class="vermelho"></i>OS sem saldo ${st.mostrarOsSemSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarHoteis ? '' : 'off'}" data-toggle-marker="hoteis"><i class="roxo"></i>Hotéis ${st.mostrarHoteis ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarIrregularidades ? '' : 'off'}" data-toggle-marker="irregularidades"><i class="laranja"></i>Irregularidades ${st.mostrarIrregularidades ? 'On' : 'Off'}</button></div></div>
+        <div class="mo-legend"><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsComSaldo ? '' : 'off'}" data-toggle-marker="os-com-saldo"><i class="verde"></i>OS com saldo ${st.mostrarOsComSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsSemSaldo ? '' : 'off'}" data-toggle-marker="os-sem-saldo"><i class="vermelho"></i>OS sem saldo ${st.mostrarOsSemSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarHoteis ? '' : 'off'}" data-toggle-marker="hoteis"><i class="roxo"></i>Hotéis ${st.mostrarHoteis ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarAlojamentos ? '' : 'off'}" data-toggle-marker="alojamentos"><i class="agua"></i>Alojamentos ${st.mostrarAlojamentos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarIrregularidades ? '' : 'off'}" data-toggle-marker="irregularidades"><i class="laranja"></i>Irregularidades ${st.mostrarIrregularidades ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.somenteHoje ? '' : 'off'}" data-toggle-marker="somente-hoje" title="OS marcadas Atender pra hoje + colaboradores/frotas vinculados a elas + hotéis com reserva hoje">Só hoje ${st.somenteHoje ? 'On' : 'Off'}</button></div></div>
         <div class="mo-body">
           <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
           <div class="mo-kpis">${kpiBox('OS com saldo', k.os)}${kpiBox('OS sem saldo', k.osSemSaldo)}</div>
+          ${st.somenteHoje ? htmlColaboradoresNaoEscalados() : ''}
         </div>`;
+  }
+
+  // Lista de colaboradores fora do recorte "Só hoje" (sem vínculo com OS Atender hoje) — cada um
+  // tem um toggle individual (fica com ícone vermelho no mapa quando ligado manualmente). Sem
+  // isso, "Só hoje" simplesmente some com todo mundo que não está escalado, sem meio-termo.
+  function htmlColaboradoresNaoEscalados() {
+    const hojeIds = osAtenderHojeIds();
+    const hojeKeys = colaboradoresHojeKeys(hojeIds);
+    const fora = st.colaboradores.filter(c => geo(c) && (!st.estado || norm(c.uf_base) === norm(st.estado)) && !hojeKeys.has(colaboradorKey(c)));
+    if (!fora.length) return '';
+    return `<div class="mo-legend" style="justify-content:flex-start"><span style="color:#94a3b8;font-weight:900;width:100%">Não escalados hoje (${fora.length}) — clique pra mostrar/ocultar no mapa:</span>${fora.map(c => {
+      const key = colaboradorKey(c);
+      const on = st.colaboradoresExtras.has(key);
+      return `<button class="mo-marker-toggle ${on ? '' : 'off'}" data-toggle-colab="${esc(key)}"><i class="vermelho"></i>${esc(c.nome)} ${on ? 'On' : 'Off'}</button>`;
+    }).join('')}</div>`;
   }
 
   function fmtDataBr(v) {
@@ -931,7 +979,21 @@ import { getCurrentUser } from './auth.js';
         if (alvo === 'os-com-saldo') st.mostrarOsComSaldo = !st.mostrarOsComSaldo;
         if (alvo === 'os-sem-saldo') st.mostrarOsSemSaldo = !st.mostrarOsSemSaldo;
         if (alvo === 'hoteis') st.mostrarHoteis = !st.mostrarHoteis;
+        if (alvo === 'alojamentos') st.mostrarAlojamentos = !st.mostrarAlojamentos;
         if (alvo === 'irregularidades') st.mostrarIrregularidades = !st.mostrarIrregularidades;
+        if (alvo === 'somente-hoje') {
+          st.somenteHoje = !st.somenteHoje;
+          // Lista de "não escalados" só existe dentro do modo Só hoje — sem isso, ligar de novo
+          // depois reaproveitaria toggles manuais de uma sessão anterior sem contexto visível.
+          if (!st.somenteHoje) st.colaboradoresExtras.clear();
+        }
+        render(root);
+      };
+    });
+    root.querySelectorAll('[data-toggle-colab]').forEach(el => {
+      el.onclick = () => {
+        const key = el.dataset.toggleColab;
+        if (st.colaboradoresExtras.has(key)) st.colaboradoresExtras.delete(key); else st.colaboradoresExtras.add(key);
         render(root);
       };
     });
@@ -993,6 +1055,7 @@ import { getCurrentUser } from './auth.js';
   // colorido — mesmo espírito do "!" da irregularidade, só um pouco maiores pra caber o desenho.
   const MARKER_GLYPHS = {
     colab: '<svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path fill="#fff" d="M12 3 2 12h3v8h5v-5h4v5h5v-8h3z"/></svg>',
+    'colab-fora': '<svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path fill="#fff" d="M12 3 2 12h3v8h5v-5h4v5h5v-8h3z"/></svg>',
     'veic-mov': '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="#fff" d="M4 11l1.4-4.2A2 2 0 0 1 7.3 5.5h9.4a2 2 0 0 1 1.9 1.3L20 11h.5a1.5 1.5 0 0 1 1.5 1.5V16a1 1 0 0 1-1 1h-1.2a2.3 2.3 0 0 1-4.6 0H8.8a2.3 2.3 0 0 1-4.6 0H3a1 1 0 0 1-1-1v-3.5A1.5 1.5 0 0 1 3.5 11z"/></svg>',
     'veic-park': '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="#fff" d="M4 11l1.4-4.2A2 2 0 0 1 7.3 5.5h9.4a2 2 0 0 1 1.9 1.3L20 11h.5a1.5 1.5 0 0 1 1.5 1.5V16a1 1 0 0 1-1 1h-1.2a2.3 2.3 0 0 1-4.6 0H8.8a2.3 2.3 0 0 1-4.6 0H3a1 1 0 0 1-1-1v-3.5A1.5 1.5 0 0 1 3.5 11z"/></svg>',
   };
@@ -1003,6 +1066,32 @@ import { getCurrentUser } from './auth.js';
   }
   function osPorPonto(ponto) { return st.osTodas.filter(o => o.__pontoKey === ponto.__key); }
 
+  // --- "Só hoje" (item #51) -------------------------------------------
+  function osAtenderHojeIds() {
+    const hoje = hojeISO();
+    return new Set(st.osTodas.filter(o => norm(o.status_gestor) === 'ATENDER' && String(o.data_os || '').slice(0, 10) === hoje).map(o => String(o.id)));
+  }
+  function osPorPontoRelevante(ponto, hojeIds) {
+    const todas = osPorPonto(ponto);
+    return hojeIds ? todas.filter(o => hojeIds.has(String(o.id))) : todas;
+  }
+  // Colaborador "escalado hoje" = tem vínculo (operacional_os_colaboradores) com alguma OS
+  // marcada Atender pra hoje. Chave dupla (CPF normalizado e nome normalizado) porque nem todo
+  // vínculo tem CPF preenchido.
+  function colaboradoresHojeKeys(hojeIds) {
+    const keys = new Set();
+    for (const [osId, vinc] of st.vinculosPorOs.entries()) {
+      if (!hojeIds.has(String(osId))) continue;
+      vinc.forEach(v => { if (v.cpf) keys.add(digits(v.cpf)); if (v.nome) keys.add(norm(v.nome)); });
+    }
+    return keys;
+  }
+  function colaboradorKey(c) { return c.cpf ? digits(c.cpf) : norm(c.nome); }
+  function hotelAtivoHoje(h) {
+    if (h.id && st.reservasHotelHoje.porId.has(String(h.id))) return true;
+    return st.reservasHotelHoje.porNome.has(`${norm(h.nome)}|${norm(h.cidade)}|${norm(h.uf)}`);
+  }
+
   function veiculoTooltip(v) {
     const estado = v.status === 'em_movimento' ? 'em movimento' : 'parado/estacionado';
     const vel = Number.isFinite(Number(v.velocidade)) ? `${Number(v.velocidade).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} km/h` : 'sem velocidade';
@@ -1012,13 +1101,20 @@ import { getCurrentUser } from './auth.js';
     return `<strong>Veículo: ${esc(v.placa || 'Sem placa')}</strong><br>${esc(estado)} · ${esc(vel)}${motorista}${quando}${endereco}`;
   }
 
-  function drawVeiculos(L, bounds) {
+  function drawVeiculos(L, bounds, hojeKeys) {
     // UF extraída do endereço reverso-geocodificado (posição atual do veículo), não da UF de
     // registro/placa — um veículo emplacado em MT pode estar operando em GO agora.
-    st.veiculos.filter(geo).filter(v => !st.estado || ufDoEndereco(v.endereco) === st.estado).forEach(v => {
-      L.marker([lat(v), lng(v)], { icon: icon(v.status === 'em_movimento' ? 'veic-mov' : 'veic-park') }).bindTooltip(veiculoTooltip(v)).addTo(st.layer);
-      bounds.push([lat(v), lng(v)]);
-    });
+    st.veiculos
+      .filter(geo)
+      .filter(v => !st.estado || ufDoEndereco(v.endereco) === st.estado)
+      // "Frota ativa no dia" (item #51) = motorista dessa posição está entre os colaboradores
+      // escalados hoje (vínculo com OS marcada Atender) — mesma chave de nome usada no restante
+      // do módulo (calcularTrajetosFrota, avaliação de custo).
+      .filter(v => !st.somenteHoje || hojeKeys.has(norm(v.motorista)))
+      .forEach(v => {
+        L.marker([lat(v), lng(v)], { icon: icon(v.status === 'em_movimento' ? 'veic-mov' : 'veic-park') }).bindTooltip(veiculoTooltip(v)).addTo(st.layer);
+        bounds.push([lat(v), lng(v)]);
+      });
   }
 
   function hotelTooltip(h) {
@@ -1029,9 +1125,25 @@ import { getCurrentUser } from './auth.js';
   }
 
   function drawHoteis(L, bounds) {
-    st.hoteisComCoord.filter(h => !st.estado || norm(h.uf) === norm(st.estado)).forEach(h => {
-      L.marker([lat(h), lng(h)], { icon: icon('hotel') }).bindTooltip(hotelTooltip(h)).addTo(st.layer);
-      bounds.push([lat(h), lng(h)]);
+    st.hoteisComCoord
+      .filter(h => !st.estado || norm(h.uf) === norm(st.estado))
+      .filter(h => !st.somenteHoje || hotelAtivoHoje(h))
+      .forEach(h => {
+        L.marker([lat(h), lng(h)], { icon: icon('hotel') }).bindTooltip(hotelTooltip(h)).addTo(st.layer);
+        bounds.push([lat(h), lng(h)]);
+      });
+  }
+
+  function alojamentoTooltip(a) {
+    const local = [a.cidade, a.uf].filter(Boolean).join('/');
+    return `<strong>Alojamento: ${esc(a.nome)}</strong>${local ? `<br>${esc(local)}` : ''}`;
+  }
+
+  // Alojamento é vínculo mensal (não diária) — mostra todos os ativos sempre, sem recorte de dia.
+  function drawAlojamentos(L, bounds) {
+    st.alojamentosComCoord.filter(a => !st.estado || norm(a.uf) === norm(st.estado)).forEach(a => {
+      L.marker([lat(a), lng(a)], { icon: icon('alojamento') }).bindTooltip(alojamentoTooltip(a)).addTo(st.layer);
+      bounds.push([lat(a), lng(a)]);
     });
   }
 
@@ -1072,10 +1184,14 @@ import { getCurrentUser } from './auth.js';
     const L = window.L, b = [];
     st.layer.clearLayers();
     const pontosVisiveis = st.pontos.filter(p => passaFiltroPonto(p) && p.temCoord);
+    // Recorte "Só hoje" (item #51): calculado uma vez por desenho e reaproveitado pelas camadas
+    // de OS, veículos e colaboradores — evita recalcular a mesma coisa em cada ponto/marcador.
+    const hojeIds = st.somenteHoje ? osAtenderHojeIds() : null;
+    const hojeKeys = st.somenteHoje ? colaboradoresHojeKeys(hojeIds) : null;
 
     if (st.mostrarOsComSaldo || st.mostrarOsSemSaldo) {
       pontosVisiveis.forEach(p => {
-        const oss = osPorPonto(p);
+        const oss = osPorPontoRelevante(p, hojeIds);
         const comSaldo = oss.filter(o => o.__saldo > 0).length, semSaldo = oss.filter(o => o.__saldo <= 0).length;
         // Sem seleção de rota não há ponto "selecionado" — sel fica sempre false, mas é mantido
         // como token porque os patches de popup (street view) em operacional-rotas-inteligentes.js
@@ -1093,18 +1209,26 @@ import { getCurrentUser } from './auth.js';
       });
     }
 
-    if (st.mostrarVeiculos) drawVeiculos(L, b);
+    if (st.mostrarVeiculos) drawVeiculos(L, b, hojeKeys);
     if (st.mostrarHoteis) drawHoteis(L, b);
+    if (st.mostrarAlojamentos) drawAlojamentos(L, b);
     if (st.mostrarIrregularidades) drawIrregularidades(L, b);
 
     // Todos os classificadores ativos com coordenada (casa do colaborador), filtrados por estado
     // quando houver — camada de referência de "onde moram os classificadores", sem pareamento.
+    // Com "Só hoje" ligado, só os escalados (vínculo com OS Atender hoje) entram normalmente;
+    // os demais ficam ocultos a menos que o gestor religue um específico na lista abaixo do
+    // mapa (aí entram com ícone vermelho, sinalizando "fora do recorte de hoje").
     if (st.mostrarColaboradores) {
       st.colaboradores
         .filter(geo)
         .filter(c => !st.estado || norm(c.uf_base) === norm(st.estado))
         .forEach(c => {
-          L.marker([lat(c), lng(c)], { icon: icon('colab') }).bindTooltip(`Classificador: ${esc(c.nome)}`).addTo(st.layer);
+          const escaladoHoje = !st.somenteHoje || hojeKeys.has(colaboradorKey(c));
+          if (!escaladoHoje && !st.colaboradoresExtras.has(colaboradorKey(c))) return;
+          const tipo = escaladoHoje ? 'colab' : 'colab-fora';
+          const aviso = escaladoHoje ? '' : ' · Não escalado hoje';
+          L.marker([lat(c), lng(c)], { icon: icon(tipo) }).bindTooltip(`Classificador: ${esc(c.nome)}${aviso}`).addTo(st.layer);
           b.push([lat(c), lng(c)]);
         });
     }
