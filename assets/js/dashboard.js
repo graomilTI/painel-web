@@ -282,6 +282,14 @@ function injectDashStyles() {
     .db-os-link { display:block; width:100%; background:rgba(0,200,122,.10); color:#00c87a; border:1px solid rgba(0,200,122,.26); border-radius:10px; padding:9px; font-size:11px; font-weight:950; text-align:center; text-decoration:none; transition:background .15s; }
     .db-os-link:hover { background:rgba(0,200,122,.18); }
 
+    .db-donut-wrap { display:flex; justify-content:center; margin:4px 0 14px; }
+    .db-donut-value { font-size:24px; font-weight:1000; letter-spacing:-.04em; fill:#e2e2f0; font-variant-numeric:tabular-nums; }
+    .db-donut-value.is-green { fill:#00c87a; }
+    .db-donut-value.is-amber { fill:#fde68a; }
+    .db-donut-sub { font-size:10px; font-weight:800; fill:#6b7280; letter-spacing:.04em; }
+    .db-donut-detail { text-align:center; font-size:10px; color:#6b7280; margin-top:2px; }
+    .db-donut-status { text-align:center; font-size:11px; font-weight:900; margin-top:6px; }
+
     .db-loading { padding:32px; text-align:center; color:#6b7280; font-size:13px; }
 
     .db-prod-body { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:center; margin-bottom:18px; }
@@ -614,6 +622,23 @@ function renderMiniChart(daily7) {
   return `<svg viewBox="0 0 ${W} ${H+14}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:62px;display:block;overflow:visible">${bars}</svg>`;
 }
 
+function renderDonut(pct, { colorClass = '', label = '' } = {}) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const size = 108, stroke = 10, r = (size - stroke) / 2, cx = size / 2, cy = size / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = (clamped / 100) * circ;
+  const color = colorClass === 'is-amber' ? '#fde68a' : colorClass === 'is-red' ? '#f87171' : '#00c87a';
+  return `
+    <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="${stroke}"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round"
+        stroke-dasharray="${dash.toFixed(1)} ${circ.toFixed(1)}" transform="rotate(-90 ${cx} ${cy})" style="transition:stroke-dasharray .6s ease"/>
+      <text x="${cx}" y="${cy - 2}" text-anchor="middle" class="db-donut-value ${colorClass}">${clamped.toFixed(0)}%</text>
+      ${label ? `<text x="${cx}" y="${cy + 16}" text-anchor="middle" class="db-donut-sub">${esc(label)}</text>` : ''}
+    </svg>
+  `;
+}
+
 function renderGestorSkeleton() {
   return `
     <div class="db-section">
@@ -666,6 +691,7 @@ function renderGestorDashboard(container, data) {
   const patriOk     = patriTotal - patriAtrasados;
   const patriPct    = patriTotal > 0 ? (patriOk / patriTotal * 100) : 100;
   const patriAtrPct = patriTotal > 0 ? (patriAtrasados / patriTotal * 100) : 0;
+  const osAtendPct  = osTotal > 0 ? ((osTotal - osPendentes) / osTotal * 100) : 100;
   const regionLabel = isMaster ? 'TODAS AS REGIONAIS' : (coordenacao || 'REGIONAL');
   const estado      = isMaster ? 'BR' : (resolveStateFromRegionalName(coordenacao) || null);
   const patrimonioLeituraUrl = toPanelUrl('patrimonio-status');
@@ -719,43 +745,25 @@ function renderGestorDashboard(container, data) {
 
       <div class="db-secondary-grid">
         <div class="db-mini-card is-clickable" role="button" tabindex="0" title="Abrir painel Leitura de Patrimônios" onclick="window.location.href='${patrimonioLeituraUrl}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${patrimonioLeituraUrl}';}">
-          <div class="db-mini-eyebrow">Leitura de Patrimônios</div>
-          <div class="db-patri-hero">
-            <span class="db-patri-num ${patriAtrasados===0 ? 'is-green' : ''}">${patriOk}</span>
-            <span class="db-patri-den">/ ${patriTotal}</span>
-          </div>
-          <div class="db-patri-read-row"><span>Leitura regularizada</span><strong>${patriPct.toFixed(0)}%</strong></div>
-          <div class="db-seg" aria-label="${patriPct.toFixed(0)}% de leitura regularizada">
-            <div class="db-seg-ok"   style="width:${patriPct.toFixed(1)}%"></div>
-            <div class="db-seg-late" style="width:${patriAtrPct.toFixed(1)}%"></div>
-          </div>
-          <div class="db-patri-status">
+          <div class="db-mini-eyebrow">Leitura</div>
+          <div class="db-donut-wrap">${renderDonut(patriPct, { colorClass: patriAtrasados===0 ? 'is-green' : 'is-amber', label: `${patriOk}/${patriTotal}` })}</div>
+          <div class="db-donut-status">
             ${patriAtrasados > 0
               ? `<span class="db-status-late">${patriAtrasados} em atraso &gt;7d</span>`
               : '<span class="db-status-ok">Tudo em dia ✓</span>'}
           </div>
-          <div class="db-patri-detail">${patriTotal} patrimônios ativos</div>
+          <div class="db-donut-detail">${patriTotal} patrimônios ativos</div>
         </div>
 
-        <div class="db-mini-card">
-          <div class="db-mini-eyebrow">Ordens de Serviço</div>
-          <div class="db-os-nums">
-            <div class="db-os-block">
-              <div class="db-os-num ${osPendentes>0 ? 'is-amber' : ''}">${osPendentes}</div>
-              <div class="db-os-label">Pendentes</div>
-            </div>
-            <div class="db-os-sep"></div>
-            <div class="db-os-block">
-              <div class="db-os-num ${osAtender>0 ? 'is-green' : ''}">${osAtender}</div>
-              <div class="db-os-label">Conferência</div>
-            </div>
-            <div class="db-os-sep"></div>
-            <div class="db-os-block">
-              <div class="db-os-num">${osTotal}</div>
-              <div class="db-os-label">Total</div>
-            </div>
+        <div class="db-mini-card is-clickable" role="button" tabindex="0" title="Abrir Programação" onclick="window.location.href='${buildPanelHref('programacao')}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${buildPanelHref('programacao')}';}">
+          <div class="db-mini-eyebrow">Atendimento</div>
+          <div class="db-donut-wrap">${renderDonut(osAtendPct, { colorClass: osPendentes===0 ? 'is-green' : 'is-amber', label: `${osAtender}/${osTotal}` })}</div>
+          <div class="db-donut-status">
+            ${osPendentes > 0
+              ? `<span class="db-status-late">${osPendentes} pendente${osPendentes===1?'':'s'}</span>`
+              : '<span class="db-status-ok">Tudo em dia ✓</span>'}
           </div>
-          <a class="db-os-link" href="${buildPanelHref('programacao')}">Abrir Programação →</a>
+          <div class="db-donut-detail">${osTotal} ordens de serviço</div>
         </div>
       </div>
     </div>
