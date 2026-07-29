@@ -134,7 +134,8 @@ export const MENU_CONFIG = [
       item("ti_integracoes", "Integrações", "ti-integracoes", ["TI", "INTEGRACOES", "TI_INTEGRACOES", "CONFIG_INTEGRACOES"]),
       item("ti_contatos", "Contatos de Notificação", "ti-contatos", ["TI_CONTATOS", "TI"]),
       item("ti_comunicacao", "Comunicação", "ti-comunicacao", ["TI_COMUNICACAO", "TI"]),
-      item("emails", "Central de E-mails", "emails", ["EMAILS", "CENTRAL_EMAILS", "CENTRAL_DE_EMAILS", "TI_EMAILS"])
+      item("emails", "Central de E-mails", "emails", ["EMAILS", "CENTRAL_EMAILS", "CENTRAL_DE_EMAILS", "TI_EMAILS"]),
+      item("chamados_ti", "Chamados de TI", "chamados-ti", ["CHAMADOS_TI", "CHAMADOS", "TI_CHAMADOS", "CHAMADOS_TI_GESTAO"])
     ]
   },
 

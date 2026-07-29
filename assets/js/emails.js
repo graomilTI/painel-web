@@ -757,12 +757,22 @@ export function renderContent(content, userContext) {
 
     actionEl.innerHTML = `
       <div class="em-detail">
-        ${e.encaminhar_sugerido_para ? `<div class="em-summary"><span class="em-summary-label">📤 Encaminhamento sugerido</span><p>Para: <b>${esc(e.encaminhar_sugerido_para)}</b>${e.encaminhar_sugerido_cc ? ` · Cc: <b>${esc(e.encaminhar_sugerido_cc)}</b>` : ''}</p><div class="em-muted em-small">O sistema identificou pra quem esse e-mail deveria ir. Ao aprovar, ele reenvia o e-mail original (com os anexos) pra esse destinatário — você não precisa reescrever nada.</div>${(() => {
-          const existente = state.outbox.find((o) => o.tipo === 'ENCAMINHAMENTO');
-          return existente
-            ? `<div class="em-muted em-small">Encaminhamento já ${esc(existente.status)} em ${brDate(existente.created_at)}</div>`
-            : `<div class="em-actions"><button class="btn btn-primary em-btn-full" type="button" id="emAprovarEncaminhamento">Aprovar encaminhamento</button></div>`;
-        })()}</div>` : ''}
+        <div class="em-summary">
+          <span class="em-summary-label">📤 Encaminhar e-mail</span>
+          ${e.encaminhar_sugerido_para ? `<div class="em-muted em-small">Sugestão do sistema: <b>${esc(e.encaminhar_sugerido_para)}</b>${e.encaminhar_sugerido_cc ? ` · Cc: <b>${esc(e.encaminhar_sugerido_cc)}</b>` : ''} — você pode manter ou trocar abaixo.</div>` : `<div class="em-muted em-small">O sistema não identificou destinatário automático — selecione manualmente pra onde encaminhar.</div>`}
+          ${(() => {
+            const existente = state.outbox.find((o) => o.tipo === 'ENCAMINHAMENTO');
+            if (existente) return `<div class="em-muted em-small">Encaminhamento já ${esc(existente.status)} em ${brDate(existente.created_at)}</div>`;
+            return `
+              <form id="emEncaminharForm" class="em-field">
+                <label>Para</label>
+                <input type="text" id="emEncaminharPara" value="${esc(e.encaminhar_sugerido_para || '')}" placeholder="email@dominio.com" />
+                <label>Cc (opcional)</label>
+                <input type="text" id="emEncaminharCc" value="${esc(e.encaminhar_sugerido_cc || '')}" placeholder="email@dominio.com" />
+                <button class="btn btn-primary em-btn-full" type="submit" id="emAprovarEncaminhamento" style="margin-top:8px">Aprovar e encaminhar</button>
+              </form>`;
+          })()}
+        </div>
 
         ${(e.os_sugestao_aguardar || []).map((sug) => {
           const linha = sug.linha || {};
@@ -824,13 +834,17 @@ export function renderContent(content, userContext) {
       alert('Resposta aprovada e colocada na fila. O worker enviará via SMTP.');
     });
 
-    document.getElementById('emAprovarEncaminhamento')?.addEventListener('click', async () => {
+    document.getElementById('emEncaminharForm')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const para = document.getElementById('emEncaminharPara').value.trim();
+      const cc = document.getElementById('emEncaminharCc').value.trim();
+      if (!para) return alert('Informe o destinatário do encaminhamento.');
       const { error } = await supabase.from('email_outbox').insert({
         email_id: e.id,
         account_id: e.account_id,
         tipo: 'ENCAMINHAMENTO',
-        para: e.encaminhar_sugerido_para,
-        cc: e.encaminhar_sugerido_cc || null,
+        para,
+        cc: cc || null,
         assunto: /^fwd:/i.test(e.assunto || '') ? e.assunto : `Fwd: ${e.assunto || ''}`,
         corpo: `Encaminhado automaticamente pela Central de E-mails.\n\n${bodyText}`,
         status: 'PENDENTE',
@@ -847,7 +861,7 @@ export function renderContent(content, userContext) {
   async function loadPerigo() {
     const list = document.getElementById('emPerigoList');
     list.innerHTML = `<div class="em-empty">Carregando...</div>`;
-    const { data, error } = await supabase.from('email_messages').select(EMAIL_LIST_SELECT).in('risco', ['ALTO', 'CRITICO']).order('data_recebimento', { ascending: false }).limit(100);
+    const { data, error } = await supabase.from('email_messages').select(EMAIL_LIST_SELECT).in('risco', ['ALTO', 'CRITICO']).not('status', 'in', '(ARQUIVADO,RESOLVIDO)').order('data_recebimento', { ascending: false }).limit(100);
     if (error) {
       list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}</div>`;
       return;
@@ -864,13 +878,24 @@ export function renderContent(content, userContext) {
             <span class="em-avatar sm" style="background:#dc2626">${esc(initials(e.remetente_nome, e.remetente_email))}</span>
             <div class="em-subject">${esc(e.assunto || '(sem assunto)')}</div>
           </div>
-          <span class="em-badge erro">${e.risco || 'CRITICO'}</span>
+          <div class="em-actions">
+            <span class="em-badge erro">${e.risco || 'CRITICO'}</span>
+            <button class="btn em-btn-ghost" type="button" data-excluir-perigo="${esc(e.id)}" title="Remove da lista de risco sem precisar abrir">🗑️ Excluir</button>
+          </div>
         </div>
         <div class="em-meta">${esc(e.remetente_nome || e.remetente_email || '-')} · ${brDate(e.data_recebimento)}</div>
         <div class="em-snippet em-danger">⚠️ ${esc((resumoLegivel(e.resumo_ia) || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
       </div>
     `).join('');
-    document.getElementById('emPerigoList').addEventListener('click', (event) => {
+    document.getElementById('emPerigoList').addEventListener('click', async (event) => {
+      const excluirBtn = event.target.closest('[data-excluir-perigo]');
+      if (excluirBtn) {
+        if (!confirm('Excluir este e-mail da lista de risco? Ele não aparece mais aqui (continua guardado como arquivado).')) return;
+        const { error: delError } = await supabase.from('email_messages').update({ status: 'ARQUIVADO' }).eq('id', excluirBtn.dataset.excluirPerigo);
+        if (delError) return alert(delError.message);
+        await loadPerigo();
+        return;
+      }
       const row = event.target.closest('[data-email-id]');
       if (row) selectEmail(row.dataset.emailId);
     });
