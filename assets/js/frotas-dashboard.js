@@ -299,7 +299,7 @@ async function loadVehicleData(container, sb) {
   try {
     const { data: vehicles, error } = await sb
       .from('frotas_veiculos')
-      .select('status, possui_rastreador, bfleet_rastreador, patrimonio_coordenacao');
+      .select('status, possui_rastreador, bfleet_rastreador, rastreador_bfleet, patrimonio_coordenacao');
 
     if (error || !vehicles) throw error || new Error('sem dados');
 
@@ -308,7 +308,10 @@ async function loadVehicleData(container, sb) {
     const coordMap = {};
 
     for (const v of vehicles) {
-      const hasTracker = v.possui_rastreador || v.bfleet_rastreador;
+      // rastreador_bfleet é o campo que a sincronização real (sync-bfleet-veiculos) grava;
+      // bfleet_rastreador é um campo legado/paralelo que quase não é preenchido — sem os três,
+      // 19 veículos com rastreador confirmado apareciam como "sem rastreador" no card.
+      const hasTracker = v.possui_rastreador || v.bfleet_rastreador || v.rastreador_bfleet;
       const st = (v.status || '').toUpperCase();
       if (st === 'ATIVO' && hasTracker) comRastreador++;
       else if (st === 'ATIVO' && !hasTracker) semRastreador++;
