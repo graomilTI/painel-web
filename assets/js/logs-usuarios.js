@@ -88,7 +88,7 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'luStyles';
   style.textContent = `
-    .lu-wrap{display:grid;gap:18px;padding:0 2px}.lu-hero{border:1px solid rgba(148,163,184,.16);border-radius:8px;padding:20px 24px;background:#0f172a}.lu-hero h2{margin:0 0 4px;color:#f8fafc;font-size:22px}.lu-hero p{margin:0;color:#94a3b8;font-size:13px}.lu-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.lu-kpi{border:1px solid rgba(148,163,184,.12);border-radius:8px;padding:16px;background:rgba(15,23,42,.55);text-align:center}.lu-kpi span{display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:4px}.lu-kpi strong{font-size:28px;color:#f8fafc}.lu-filters{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:rgba(15,23,42,.6);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:14px 16px}.lu-filters label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase}.lu-filters input,.lu-filters select{background:#0d0d18;border:1px solid rgba(255,255,255,.10);border-radius:8px;color:#e2e2f0;font-size:13px;padding:8px 10px;min-width:140px}.lu-btn{border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.15);color:#e2e2f0;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer}.lu-btn:disabled{cursor:not-allowed;opacity:.4}.lu-btn-export{border-color:rgba(45,212,160,.3);color:#2dd4a0}.lu-table-wrap{overflow-x:auto;border:1px solid rgba(255,255,255,.06);border-radius:8px;background:rgba(15,23,42,.5)}.lu-table{width:100%;border-collapse:collapse;font-size:13px}.lu-table th{padding:12px 14px;text-align:left;font-size:11px;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid rgba(255,255,255,.06)}.lu-table td{padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.04);color:#cbd5e1;vertical-align:top}.lu-badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;text-transform:uppercase}.lu-badge-login{color:#4ade80}.lu-badge-logout{color:#f87171}.lu-badge-page{color:#a5b4fc}.lu-badge-action{color:#fbbf24}.lu-badge-mudanca{color:#f472b6}.lu-empty{text-align:center;padding:40px;color:#94a3b8;font-size:14px}.lu-pagination{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:10px 4px}.lu-user-nome{font-weight:600;color:#e2e2f0}.lu-user-email{font-size:11px;color:#94a3b8}.lu-modulo{font-family:monospace;font-size:12px;color:#94a3b8}.lu-badge-resultado-erro{color:#f87171}.lu-badge-resultado-ok{color:#4ade80}@media(max-width:600px){.lu-kpis{grid-template-columns:repeat(2,1fr)}.lu-filters{align-items:stretch;flex-direction:column}}
+    .lu-wrap{display:grid;gap:18px;padding:0 2px}.lu-hero{border:1px solid rgba(148,163,184,.16);border-radius:8px;padding:20px 24px;background:#0f172a}.lu-hero h2{margin:0 0 4px;color:#f8fafc;font-size:22px}.lu-hero p{margin:0;color:#94a3b8;font-size:13px}.lu-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.lu-kpi{border:1px solid rgba(148,163,184,.12);border-radius:8px;padding:16px;background:rgba(15,23,42,.55);text-align:center}.lu-kpi span{display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:4px}.lu-kpi strong{font-size:28px;color:#f8fafc}.lu-filters{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:rgba(15,23,42,.6);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:14px 16px}.lu-filters label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase}.lu-filters input,.lu-filters select{background:#0d0d18;border:1px solid rgba(255,255,255,.10);border-radius:8px;color:#e2e2f0;font-size:13px;padding:8px 10px;min-width:140px}.lu-btn{border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.15);color:#e2e2f0;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer}.lu-btn:disabled{cursor:not-allowed;opacity:.4}.lu-btn-export{border-color:rgba(45,212,160,.3);color:#2dd4a0}.lu-table-wrap{overflow-x:auto;border:1px solid rgba(255,255,255,.06);border-radius:8px;background:rgba(15,23,42,.5)}.lu-table{width:100%;border-collapse:collapse;font-size:13px}.lu-table th{padding:12px 14px;text-align:left;font-size:11px;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid rgba(255,255,255,.06)}.lu-table td{padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.04);color:#cbd5e1;vertical-align:top}.lu-badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;text-transform:uppercase}.lu-badge-login{color:#4ade80}.lu-badge-logout{color:#f87171}.lu-badge-page{color:#a5b4fc}.lu-badge-action{color:#fbbf24}.lu-badge-mudanca{color:#f472b6}.lu-empty{text-align:center;padding:40px;color:#94a3b8;font-size:14px}.lu-pagination{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:10px 4px}.lu-user-nome{font-weight:600;color:#e2e2f0}.lu-user-email{font-size:11px;color:#94a3b8}.lu-modulo{font-family:monospace;font-size:12px;color:#94a3b8}.lu-badge-resultado-erro{color:#f87171}.lu-badge-resultado-ok{color:#4ade80}.lu-usuario-grupo{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px;margin-bottom:12px;background:rgba(15,23,42,.35)}.lu-usuario-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.06)}.lu-usuario-head .lu-user-nome{font-size:15px}.lu-dia-bloco{margin-bottom:10px}.lu-dia-bloco:last-child{margin-bottom:0}.lu-dia-head{font-size:12px;font-weight:700;color:#a5b4fc;margin-bottom:6px;display:flex;gap:8px;align-items:center}.lu-dia-count{font-size:11px;color:#94a3b8;font-weight:600}@media(max-width:600px){.lu-kpis{grid-template-columns:repeat(2,1fr)}.lu-filters{align-items:stretch;flex-direction:column}}
   `;
   document.head.appendChild(style);
 }
@@ -204,17 +204,51 @@ function resultadoBadge(row) {
   return `<span class="lu-badge ${erro ? 'lu-badge-resultado-erro' : 'lu-badge-resultado-ok'}">${erro ? 'Erro' : 'Sucesso'}</span>`;
 }
 
-function renderTable(logs) {
-  if (!logs.length) return '<div class="lu-empty">Nenhum registro encontrado para os filtros selecionados.</div>';
-  const rows = logs.map((row, i) => `<tr>
+function rowHtml(row, i) {
+  return `<tr>
     <td style="white-space:nowrap">${esc(fmtDT(row.created_at))}</td>
-    <td><div class="lu-user-nome">${esc(row.usuario_nome || row.usuario_email || '—')}</div><div class="lu-user-email">${esc(row.usuario_email || '')}</div></td>
-    <td>${esc(row.usuario_role || '—')}</td><td>${tipoPill(row.tipo)}</td>
+    <td>${tipoPill(row.tipo)}</td>
     <td><span class="lu-modulo">${esc(row.modulo || '—')}</span></td><td>${esc(row.acao || '—')}</td>
     <td>${resultadoBadge(row)}</td>
     <td>${row.__fonte === 'auditoria' ? `<button class="lu-btn" data-detalhe="${i}" type="button" style="padding:5px 10px;font-size:11px">Detalhes</button>` : ''}</td>
-  </tr>`).join('');
-  return `<div class="lu-table-wrap"><table class="lu-table"><thead><tr><th>Data/Hora</th><th>Usuário</th><th>Perfil</th><th>Tipo</th><th>Módulo</th><th>Ação</th><th>Resultado</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  </tr>`;
+}
+
+function diaBr(iso) {
+  return new Date(iso).toLocaleDateString('pt-BR', { timeZone: TIME_ZONE, day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+// #95: ações de cada usuário agrupadas por usuário e por data — em vez de uma
+// tabela plana, cada usuário vira uma seção e, dentro dela, um bloco por dia.
+function renderTable(logs) {
+  if (!logs.length) return '<div class="lu-empty">Nenhum registro encontrado para os filtros selecionados.</div>';
+
+  const porUsuario = new Map();
+  logs.forEach((row, i) => {
+    const chave = row.usuario_nome || row.usuario_email || '—';
+    if (!porUsuario.has(chave)) porUsuario.set(chave, { email: row.usuario_email || '', porDia: new Map() });
+    const grupo = porUsuario.get(chave);
+    if (!grupo.email && row.usuario_email) grupo.email = row.usuario_email;
+    const dia = diaBr(row.created_at);
+    if (!grupo.porDia.has(dia)) grupo.porDia.set(dia, []);
+    grupo.porDia.get(dia).push({ row, i });
+  });
+
+  const usuariosHtml = [...porUsuario.entries()].map(([nome, grupo]) => {
+    const totalUsuario = [...grupo.porDia.values()].reduce((acc, arr) => acc + arr.length, 0);
+    const diasHtml = [...grupo.porDia.entries()].map(([dia, itens]) => `
+      <div class="lu-dia-bloco">
+        <div class="lu-dia-head">${esc(dia)} <span class="lu-dia-count">${itens.length} evento(s)</span></div>
+        <div class="lu-table-wrap"><table class="lu-table"><thead><tr><th>Data/Hora</th><th>Tipo</th><th>Módulo</th><th>Ação</th><th>Resultado</th><th></th></tr></thead><tbody>${itens.map(({ row, i }) => rowHtml(row, i)).join('')}</tbody></table></div>
+      </div>`).join('');
+    return `
+      <section class="lu-usuario-grupo">
+        <div class="lu-usuario-head"><span class="lu-user-nome">${esc(nome)}</span>${grupo.email ? `<span class="lu-user-email">${esc(grupo.email)}</span>` : ''}<span class="lu-dia-count">${totalUsuario} evento(s)</span></div>
+        ${diasHtml}
+      </section>`;
+  }).join('');
+
+  return usuariosHtml;
 }
 
 function abrirDetalhe(row) {
