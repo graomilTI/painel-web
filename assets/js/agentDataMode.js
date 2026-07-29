@@ -1,5 +1,4 @@
 const ROUTES_WITH_AGENT_DATA = new Set([
-  'dashboard',
   'dashboard-socio',
   'desempenho',
   'metas',
@@ -18,7 +17,6 @@ const ROUTES_WITH_AGENT_DATA = new Set([
 ]);
 
 const ROUTE_LABELS = {
-  dashboard: 'Dashboard',
   'dashboard-socio': 'Dashboard do Sócio',
   desempenho: 'Desempenho',
   metas: 'Metas',
