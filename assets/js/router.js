@@ -119,7 +119,7 @@ const SOFT_NAV_PAGES = new Map([
   ['exames', { title: 'Exames', module: () => import('./exames.js') }],
   ['contratos', { title: 'Contratos', module: () => import('./contratos.js') }],
   ['seguranca-trabalho', { title: 'Segurança do Trabalho', module: () => import('./segurancaTrabalho.js') }],
-  ['indisponibilidade', { title: 'Indisponibilidade', module: () => import('./indisponibilidade.js') }],
+  ['indisponibilidade', { title: 'Indisponibilidade', module: () => import('./indisponibilidade.js'), extraModules: [() => import('./indisponibilidade-informados.js')] }],
   ['cartao-ponto', { title: 'Cartão Ponto', module: () => import('./cartaoPonto.js') }],
   ['advertencias', { title: 'Advertências', module: () => import('./advertenciasRh.js') }],
   ['holerite-pagamentos', { title: 'Folha e Holerite', module: () => import('./holeritePagamentos.js') }],
