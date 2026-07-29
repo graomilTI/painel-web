@@ -17,7 +17,12 @@
     bonus: null,
     regionais: [],
     mesesDisponiveis: [],
-    mesSelecionado: null
+    mesSelecionado: null,
+    producaoPorCliente: [],
+    producaoPorSupervisao: [],
+    despesasPorCategoria: [],
+    frotasResumo: null,
+    comparativoMesAnterior: null
   };
 
   const charts = { meta: null, financeiro: null };
@@ -161,7 +166,7 @@
     while (true) {
       const { data, error } = await supabase
         .from('relatorio_resultado_diario')
-        .select('toneladas, valor_embarcado, total_embarcado_mais_teste, coordenacao, funcionario')
+        .select('toneladas, valor_embarcado, total_embarcado_mais_teste, coordenacao, funcionario, supervisao, cliente_final, data')
         .gte('data', inicio).lt('data', fim)
         .range(from, from + pageSize - 1);
       if (error) throw error;
@@ -171,6 +176,83 @@
       from += pageSize;
     }
     return all;
+  }
+
+  // #88: comparativo entre datas — só os totais do mês anterior, sem repetir a
+  // carga pesada (paginação completa) do mês atual.
+  async function carregarTotaisMes(supabase, inicio, fim) {
+    const pageSize = 1000;
+    let from = 0;
+    let tons = 0, receita = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('relatorio_resultado_diario')
+        .select('toneladas, valor_embarcado')
+        .gte('data', inicio).lt('data', fim)
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      const rows = data || [];
+      rows.forEach((r) => { tons += n(r.toneladas); receita += n(r.valor_embarcado); });
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    const despesas = await carregarDespesasAgente(supabase, inicio, fim);
+    const totalDespesas = despesas.reduce((s, r) => s + n(r.total_com_rateio), 0);
+    return { tons, receita, despesas: totalDespesas };
+  }
+
+  // #88: Custos por categoria — grm_despesas_importacoes já traz `categoria`
+  // (dre_despesas_mensal, usado no resto do dashboard, não tem essa granularidade).
+  async function carregarDespesasPorCategoria(supabase, inicio, fim) {
+    try {
+      const rows = await carregarLoteMaisRecenteAgente(
+        supabase,
+        'grm_despesas_importacoes',
+        'categoria, grupo_categoria, valor, data_conta_de, data_conta_ate, supervisao, coordenacao'
+      );
+      const filtradas = rows.filter((r) => rangeOverlaps(r.data_conta_de, r.data_conta_ate, inicio, fim));
+      const porCategoria = new Map();
+      filtradas.forEach((r) => {
+        const categoria = String(r.categoria || r.grupo_categoria || 'Sem categoria').trim() || 'Sem categoria';
+        porCategoria.set(categoria, (porCategoria.get(categoria) || 0) + n(r.valor));
+      });
+      return Array.from(porCategoria.entries())
+        .map(([categoria, total]) => ({ categoria, total }))
+        .sort((a, b) => b.total - a.total);
+    } catch (e) {
+      console.warn('[dashboard socio] custos por categoria indisponível', e);
+      return [];
+    }
+  }
+
+  // #88: bloco de Frotas — status da frota + custo de manutenção/troca de óleo
+  // do mês de referência (frotas_manutencoes/frotas_trocas_oleo, adicionadas
+  // no mesmo checklist, item #57-58).
+  async function carregarFrotasResumo(supabase, inicio, fim) {
+    try {
+      const [{ data: veiculos }, { data: manutencoes }, { data: trocasOleo }] = await Promise.all([
+        supabase.from('frotas_veiculos').select('status, rastreador_bfleet, possui_rastreador, bfleet_rastreador'),
+        supabase.from('frotas_manutencoes').select('custo').gte('data_execucao', inicio).lt('data_execucao', fim),
+        supabase.from('frotas_trocas_oleo').select('custo').gte('data_execucao', inicio).lt('data_execucao', fim),
+      ]);
+      const lista = veiculos || [];
+      const ativos = lista.filter((v) => String(v.status || '').toUpperCase() === 'ATIVO');
+      const comRastreador = ativos.filter((v) => v.possui_rastreador || v.bfleet_rastreador || v.rastreador_bfleet).length;
+      const custoManutencao = (manutencoes || []).reduce((s, r) => s + n(r.custo), 0);
+      const custoOleo = (trocasOleo || []).reduce((s, r) => s + n(r.custo), 0);
+      return {
+        totalVeiculos: lista.length,
+        ativos: ativos.length,
+        comRastreador,
+        semRastreador: ativos.length - comRastreador,
+        custoManutencao,
+        custoOleo,
+        custoTotal: custoManutencao + custoOleo,
+      };
+    } catch (e) {
+      console.warn('[dashboard socio] resumo de frotas indisponível', e);
+      return null;
+    }
   }
 
   function dataRealDaNota(r) {
@@ -319,6 +401,11 @@
       .socio-table td.pos{color:#86efac;font-weight:900;}
       .socio-table td.neg{color:#fca5a5;font-weight:900;}
 
+      .socio-delta{display:inline-block;margin-top:4px;font-size:11px;font-weight:800;}
+      .socio-delta.pos{color:#86efac;}
+      .socio-delta.neg{color:#fca5a5;}
+      .socio-delta.neutral{color:var(--socio-muted);}
+
       .socio-status{margin:0 0 16px;padding:14px 16px;border-radius:16px;border:1px solid var(--socio-border);background:rgba(15,23,42,.7);color:var(--socio-muted);font-size:13px;}
       .socio-status.error{border-color:rgba(248,113,113,.4);color:#fca5a5;}
 
@@ -377,6 +464,8 @@
     const inicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
     const fimMesObj = new Date(ano, mes, 1);
     const fim = `${fimMesObj.getFullYear()}-${String(fimMesObj.getMonth() + 1).padStart(2, '0')}-01`;
+    const inicioMesAnteriorObj = new Date(ano, mes - 2, 1);
+    const inicioMesAnterior = `${inicioMesAnteriorObj.getFullYear()}-${String(inicioMesAnteriorObj.getMonth() + 1).padStart(2, '0')}-01`;
 
     const [
       producaoRows,
@@ -385,7 +474,10 @@
       { data: metasRegionaisRows },
       { data: contasReceberRows },
       despesasAgenteRows,
-      faturamentoNotasAgente
+      faturamentoNotasAgente,
+      totaisMesAnterior,
+      despesasPorCategoria,
+      frotasResumo
     ] = await Promise.all([
       carregarProducaoMes(supabase, inicio, fim),
       supabase
@@ -408,7 +500,10 @@
         .lt('recebimento', fim)
         .not('recebimento', 'is', null),
       carregarDespesasAgente(supabase, inicio, fim),
-      carregarFaturamentoNotasAgente(supabase, inicio, fim)
+      carregarFaturamentoNotasAgente(supabase, inicio, fim),
+      carregarTotaisMes(supabase, inicioMesAnterior, inicio),
+      carregarDespesasPorCategoria(supabase, inicio, fim),
+      carregarFrotasResumo(supabase, inicio, fim)
     ]);
 
     const despesasRows = despesasAgenteRows?.length ? despesasAgenteRows : (despesasDreRows || []);
@@ -457,6 +552,24 @@
       if (r.funcionario) acc.colaboradores.add(String(r.funcionario).trim().toUpperCase());
       return acc;
     }, { tons: 0, receita: 0, embarcadoTotal: 0, coordenacoes: new Set(), colaboradores: new Set() });
+
+    // #88: Produção por cliente e por supervisão — mesma agregação simples do
+    // por-regional, só que com outra chave de agrupamento.
+    function agruparProducaoPor(campo) {
+      const mapa = new Map();
+      (producaoRows || []).forEach((r) => {
+        const valor = String(r[campo] || '').trim();
+        if (!valor) return;
+        const key = normKey(valor);
+        if (!mapa.has(key)) mapa.set(key, { nome: valor, tons: 0, receita: 0 });
+        const item = mapa.get(key);
+        item.tons += n(r.toneladas);
+        item.receita += n(r.valor_embarcado);
+      });
+      return Array.from(mapa.values()).sort((a, b) => b.tons - a.tons);
+    }
+    const producaoPorCliente = agruparProducaoPor('cliente_final').slice(0, 12);
+    const producaoPorSupervisao = agruparProducaoPor('supervisao').slice(0, 12);
 
     (metasRegionalView || []).forEach((r) => {
       if (isRegionalExcluida(r.regional)) return;
@@ -519,7 +632,19 @@
         margem
       },
       bonus: { total: totalRegionaisBonus, qualificando: qualificandoBonus },
-      regionais
+      regionais,
+      producaoPorCliente,
+      producaoPorSupervisao,
+      despesasPorCategoria,
+      frotasResumo,
+      comparativoMesAnterior: {
+        tons: totaisMesAnterior.tons,
+        receita: totaisMesAnterior.receita,
+        despesas: totaisMesAnterior.despesas,
+        deltaTonsPct: totaisMesAnterior.tons > 0 ? ((prod.tons - totaisMesAnterior.tons) / totaisMesAnterior.tons) * 100 : null,
+        deltaReceitaPct: totaisMesAnterior.receita > 0 ? ((faturamentoNF - totaisMesAnterior.receita) / totaisMesAnterior.receita) * 100 : null,
+        deltaDespesasPct: totaisMesAnterior.despesas > 0 ? ((totalTodasRegionais - totaisMesAnterior.despesas) / totaisMesAnterior.despesas) * 100 : null
+      }
     };
   }
 
@@ -558,6 +683,74 @@
             }).join('')}
           </tbody>
         </table>
+      </div>`;
+  }
+
+  function deltaBadge(pct) {
+    if (pct == null || !Number.isFinite(pct)) return '<span class="socio-delta neutral">— vs mês anterior</span>';
+    const cls = pct > 0 ? 'pos' : pct < 0 ? 'neg' : 'neutral';
+    const seta = pct > 0 ? '▲' : pct < 0 ? '▼' : '—';
+    return `<span class="socio-delta ${cls}">${seta} ${fmtPct(Math.abs(pct))} vs mês anterior</span>`;
+  }
+
+  // #88: tabela simples de ranking (usada por Produção por cliente e por
+  // supervisão) — mesmo visual da tabela de regionais, só com 2 colunas.
+  function renderRankingSimples(itens, { fmt = fmtTons } = {}) {
+    if (!itens.length) return `<p class="hint">Sem dados suficientes para este período ainda.</p>`;
+    const max = Math.max(...itens.map((i) => i.tons), 1);
+    return `<div class="socio-rank">
+      ${itens.map((i) => `
+        <div class="socio-rank-row">
+          <span class="reg" title="${safe(i.nome)}">${safe(i.nome)}</span>
+          <div class="bar-wrap"><div class="bar" style="width:${Math.max((i.tons / max) * 100, 3)}%"></div></div>
+          <span class="amt">${fmt(i.tons)}</span>
+        </div>`).join('')}
+    </div>`;
+  }
+
+  function renderCustosPorCategoria(itens) {
+    if (!itens.length) return `<p class="hint">Sem despesas categorizadas para este período ainda.</p>`;
+    const total = itens.reduce((s, i) => s + i.total, 0);
+    return `
+      <div class="socio-table-wrap">
+        <table class="socio-table">
+          <thead><tr><th>Categoria</th><th>Valor</th><th>% do total</th></tr></thead>
+          <tbody>
+            ${itens.slice(0, 12).map((i) => `
+              <tr>
+                <td>${safe(i.categoria)}</td>
+                <td>${fmtMoney(i.total)}</td>
+                <td>${total > 0 ? fmtPct((i.total / total) * 100) : '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function renderFrotasResumo(frotas) {
+    if (!frotas) return `<p class="hint">Dados de frotas indisponíveis para este período.</p>`;
+    return `
+      <div class="socio-cards" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+        <div class="socio-card">
+          <span class="lbl">Veículos ativos</span>
+          <strong class="val">${fmtNum(frotas.ativos)}</strong>
+          <span class="sub">de ${fmtNum(frotas.totalVeiculos)} cadastrados</span>
+        </div>
+        <div class="socio-card green">
+          <span class="lbl">Com rastreador</span>
+          <strong class="val">${fmtNum(frotas.comRastreador)}</strong>
+          <span class="sub">${fmtNum(frotas.semRastreador)} sem rastreador</span>
+        </div>
+        <div class="socio-card gold">
+          <span class="lbl">Custo de manutenção</span>
+          <strong class="val">${fmtMoney(frotas.custoManutencao)}</strong>
+          <span class="sub">Registrado no mês de referência</span>
+        </div>
+        <div class="socio-card red">
+          <span class="lbl">Custo total de frota</span>
+          <strong class="val">${fmtMoney(frotas.custoTotal)}</strong>
+          <span class="sub">Manutenção + troca de óleo</span>
+        </div>
       </div>`;
   }
 
@@ -677,8 +870,9 @@
   }
 
   function renderConteudo() {
-    const { ano, mes, producao, metasMes, despesas, bonus } = state;
+    const { ano, mes, producao, metasMes, despesas, bonus, producaoPorCliente, producaoPorSupervisao, despesasPorCategoria, frotasResumo, comparativoMesAnterior } = state;
     const periodo = `${MESES[(mes || 1) - 1]} de ${ano}`;
+    const comp = comparativoMesAnterior || {};
 
     const pctAtingido = n(metasMes?.percentual_atingido);
     const metaTotal = n(metasMes?.meta_total_tons);
@@ -691,11 +885,13 @@
           <span class="lbl">Produção total</span>
           <strong class="val">${fmtTons(producao.tons)}</strong>
           <span class="sub">Toneladas movimentadas no mês</span>
+          ${deltaBadge(comp.deltaTonsPct)}
         </div>
         <div class="socio-card green">
           <span class="lbl">Faturamento</span>
           <strong class="val">${fmtMoney(producao.receita)}</strong>
           <span class="sub">NFs recebidas no período</span>
+          ${deltaBadge(comp.deltaReceitaPct)}
         </div>
         <div class="socio-card">
           <span class="lbl">% da meta atingida</span>
@@ -810,6 +1006,35 @@
         </div>
         ${renderTabelaRegionais(regionais)}
         ` : semRegionais}
+
+        <div class="socio-section-title">
+          <h3>Produção por cliente e supervisão</h3>
+          <span>Toneladas movimentadas no mês, top 12 — ${safe(periodo)}</span>
+        </div>
+        <div class="socio-grid">
+          <div class="socio-panel">
+            <h4>Por cliente</h4>
+            <p class="hint">Cliente final da carga classificada.</p>
+            ${renderRankingSimples(producaoPorCliente || [])}
+          </div>
+          <div class="socio-panel">
+            <h4>Por supervisão</h4>
+            <p class="hint">Supervisão responsável pela produção.</p>
+            ${renderRankingSimples(producaoPorSupervisao || [])}
+          </div>
+        </div>
+
+        <div class="socio-section-title">
+          <h3>Custos por categoria</h3>
+          <span>Despesas do mês agrupadas por categoria — ${safe(periodo)}</span>
+        </div>
+        ${renderCustosPorCategoria(despesasPorCategoria || [])}
+
+        <div class="socio-section-title">
+          <h3>Frotas</h3>
+          <span>Situação da frota e custo de manutenção do mês — ${safe(periodo)}</span>
+        </div>
+        ${renderFrotasResumo(frotasResumo)}
       </div>
     `;
   }
