@@ -280,9 +280,13 @@ function injectDashStyles() {
     .db-stat-sub.is-neg { color:#fde68a; }
     .db-delta-inline { }
     .db-stat-sep { height:1px; background:rgba(255,255,255,.06); }
-    .db-chart-label-row { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:6px; }
-    .db-chart-label { font-size:9px; font-weight:950; letter-spacing:.12em; text-transform:uppercase; color:#6b7280; }
-    .db-chart-value { font-size:11px; font-weight:900; color:#dfe3ea; white-space:nowrap; }
+
+    .db-prod-grid2x2 { display:grid; grid-template-columns:1fr 1fr; column-gap:18px; row-gap:16px; }
+    .db-prod-grid2x2 > *:nth-child(odd) { border-right:1px solid rgba(255,255,255,.06); padding-right:18px; }
+    .db-prod-grid2x2 > *:nth-child(3), .db-prod-grid2x2 > *:nth-child(4) { border-top:1px solid rgba(255,255,255,.06); padding-top:14px; }
+    @media(max-width:480px) { .db-prod-grid2x2 { grid-template-columns:1fr; } .db-prod-grid2x2 > *:nth-child(odd) { border-right:0; padding-right:0; } .db-prod-grid2x2 > *:nth-child(2) { border-top:1px solid rgba(255,255,255,.06); padding-top:14px; } }
+
+    .db-chart-label { font-size:9px; font-weight:950; letter-spacing:.12em; text-transform:uppercase; color:#6b7280; margin-bottom:6px; }
     .db-chart-bar { cursor:pointer; }
     .db-chart-bar-fill { fill:rgba(0,200,122,.35); transition:fill .15s ease; }
     .db-chart-bar.is-selected .db-chart-bar-fill { fill:rgba(0,200,122,.90); }
@@ -591,8 +595,11 @@ function selectChartBar(bar) {
   const svg = bar.closest('.db-mini-chart-svg');
   svg?.querySelectorAll('.db-chart-bar.is-selected').forEach((el) => el.classList.remove('is-selected'));
   bar.classList.add('is-selected');
-  const valueEl = svg?.closest('.db-prod-right')?.querySelector('#dbChartValue');
-  if (valueEl) valueEl.innerHTML = `${fmtDiaChart(bar.dataset.date)} &middot; ${fmtTons(bar.dataset.tons)}`;
+  const prodRight = svg?.closest('.db-prod-right');
+  const valueEl = prodRight?.querySelector('#dbDayValue');
+  const dateEl  = prodRight?.querySelector('#dbDayDate');
+  if (valueEl) valueEl.textContent = fmtTons(bar.dataset.tons);
+  if (dateEl) dateEl.textContent = fmtDiaChart(bar.dataset.date);
 }
 
 function fmtDiaChart(dateStr) {
@@ -601,7 +608,7 @@ function fmtDiaChart(dateStr) {
 }
 
 function renderMiniChart(daily7) {
-  if (!daily7?.length) return { html: '<div style="height:56px"></div>', defaultLabel: '' };
+  if (!daily7?.length) return { html: '<div style="height:56px"></div>', defaultLabel: '—', defaultTons: 0 };
   const lastIdx = daily7.length - 1;
   const maxT = Math.max(...daily7.map(d => d.tons), 1);
   const W = 180, H = 46, bw = 18, gap = 6;
@@ -620,7 +627,7 @@ function renderMiniChart(daily7) {
   }).join('');
   const html = `<svg viewBox="0 0 ${W} ${H+14}" xmlns="http://www.w3.org/2000/svg" class="db-mini-chart-svg" style="width:100%;height:62px;display:block;overflow:visible">${bars}</svg>`;
   const last = daily7[lastIdx];
-  return { html, defaultLabel: `${fmtDiaChart(last.date)} &middot; ${fmtTons(last.tons)}` };
+  return { html, defaultLabel: fmtDiaChart(last.date), defaultTons: last.tons };
 }
 
 function renderDonut(pct, { size = 108, colorClass = '', label = '' } = {}) {
@@ -657,17 +664,21 @@ function renderGestorSkeleton() {
         <div class="db-prod-body">
           <div class="db-prod-left"><div class="db-skel db-skel-map"></div></div>
           <div class="db-prod-right">
-            <div class="db-stat-block">
-              <div class="db-skel" style="width:80px;height:11px;margin-bottom:8px"></div>
-              <div class="db-skel" style="width:110px;height:22px"></div>
+            <div class="db-prod-grid2x2">
+              <div class="db-stat-block">
+                <div class="db-skel" style="width:80px;height:11px;margin-bottom:8px"></div>
+                <div class="db-skel" style="width:110px;height:22px"></div>
+              </div>
+              <div class="db-skel" style="width:100%;height:62px"></div>
+              <div class="db-stat-block">
+                <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
+                <div class="db-skel" style="width:120px;height:22px"></div>
+              </div>
+              <div class="db-stat-block">
+                <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
+                <div class="db-skel" style="width:100px;height:22px"></div>
+              </div>
             </div>
-            <div class="db-stat-sep"></div>
-            <div class="db-stat-block">
-              <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
-              <div class="db-skel" style="width:120px;height:22px"></div>
-            </div>
-            <div class="db-stat-sep"></div>
-            <div class="db-skel" style="width:100%;height:62px"></div>
             <div class="db-stat-sep"></div>
             <div style="display:flex;gap:10px">
               <div class="db-skel" style="flex:1;height:110px;border-radius:16px"></div>
@@ -720,24 +731,26 @@ function renderGestorDashboard(container, data) {
             ${renderStateFill({ pct, onTrack, estado, mapaEstados })}
           </div>
           <div class="db-prod-right">
-            <div class="db-stat-block">
-              <div class="db-stat-label">Meta do mês</div>
-              <div class="db-stat-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
-            </div>
-            <div class="db-stat-sep"></div>
-            <div class="db-stat-block">
-              <div class="db-stat-label">Produção atual</div>
-              <div class="db-stat-value ${onTrack ? 'is-green' : 'is-amber'}">${fmtTons(produzido)}</div>
-              <div class="db-stat-sub">${pct.toFixed(0)}% da meta &middot; DIA ${diaAtual}/${diasNoMes}</div>
-              ${meta > 0 ? `<div class="db-stat-sub db-delta-inline ${onTrack ? 'is-pos' : 'is-neg'}">${fmtDelta(delta)} vs ritmo do dia</div>` : ''}
-            </div>
-            <div class="db-stat-sep"></div>
-            <div>
-              <div class="db-chart-label-row">
-                <span class="db-chart-label">Últimos 7 dias</span>
-                <span class="db-chart-value" id="dbChartValue">${miniChart.defaultLabel}</span>
+            <div class="db-prod-grid2x2">
+              <div class="db-stat-block">
+                <div class="db-stat-label">Meta do mês</div>
+                <div class="db-stat-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
               </div>
-              ${miniChart.html}
+              <div>
+                <div class="db-chart-label">Últimos 7 dias</div>
+                ${miniChart.html}
+              </div>
+              <div class="db-stat-block">
+                <div class="db-stat-label">Produção atual</div>
+                <div class="db-stat-value ${onTrack ? 'is-green' : 'is-amber'}">${fmtTons(produzido)}</div>
+                <div class="db-stat-sub">${pct.toFixed(0)}% da meta &middot; DIA ${diaAtual}/${diasNoMes}</div>
+                ${meta > 0 ? `<div class="db-stat-sub db-delta-inline ${onTrack ? 'is-pos' : 'is-neg'}">${fmtDelta(delta)} vs ritmo do dia</div>` : ''}
+              </div>
+              <div class="db-stat-block">
+                <div class="db-stat-label">Produção do dia</div>
+                <div class="db-stat-value" id="dbDayValue">${fmtTons(miniChart.defaultTons)}</div>
+                <div class="db-stat-sub" id="dbDayDate">${miniChart.defaultLabel}</div>
+              </div>
             </div>
             <div class="db-stat-sep"></div>
             <div class="db-donut-row">
