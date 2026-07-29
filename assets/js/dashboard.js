@@ -249,46 +249,20 @@ function injectDashStyles() {
     .db-delta.is-pos { color:#00c87a; }
     .db-delta.is-neg { color:#fde68a; }
 
-    .db-secondary-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; animation:db-fade-up .35s .08s ease both; }
-    @media(max-width:700px) { .db-secondary-grid{grid-template-columns:1fr} }
-
-    .db-mini-card { border:1px solid rgba(255,255,255,.07); border-radius:18px; padding:18px 16px; background:rgba(13,13,24,.88); }
-    .db-mini-card.is-clickable { cursor:pointer; transition:border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
-    .db-mini-card.is-clickable:hover { border-color:rgba(0,200,122,.44); box-shadow:0 0 0 1px rgba(0,200,122,.12), 0 16px 44px rgba(0,0,0,.24); transform:translateY(-1px); }
-    .db-mini-card.is-clickable:focus-visible { outline:2px solid rgba(45,212,160,.85); outline-offset:3px; }
-    .db-mini-eyebrow { font-size:9px; font-weight:950; letter-spacing:.14em; text-transform:uppercase; color:#6b7280; margin-bottom:12px; }
-    .db-patri-hero { display:flex; align-items:baseline; gap:5px; margin-bottom:12px; }
-    .db-patri-num { font-size:40px; font-weight:1000; letter-spacing:-.05em; line-height:1; font-variant-numeric:tabular-nums; color:#e2e2f0; }
-    .db-patri-num.is-green { color:#00c87a; }
-    .db-patri-den { font-size:14px; font-weight:700; color:#6b7280; }
-    .db-seg { display:flex; height:7px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.06); margin-bottom:8px; gap:2px; }
-    .db-patri-read-row { display:flex; justify-content:space-between; align-items:center; gap:10px; margin:8px 0 9px; color:#7c8aa0; font-size:10px; font-weight:950; letter-spacing:.08em; text-transform:uppercase; }
-    .db-patri-read-row strong { color:#27e0a2; font-size:15px; letter-spacing:0; }
-    .db-mini-card.is-clickable:hover .db-seg-ok { filter:brightness(1.16); }
-    .db-seg-ok   { background:#00c87a; border-radius:999px; transition:width .6s ease; }
-    .db-seg-late { background:#f87171; border-radius:999px; transition:width .6s ease; }
-    .db-patri-status { font-size:11px; font-weight:900; }
+    .db-mini-eyebrow { font-size:9px; font-weight:950; letter-spacing:.14em; text-transform:uppercase; color:#6b7280; margin-bottom:8px; }
     .db-status-ok   { color:#00c87a; }
     .db-status-late { color:#f87171; }
-    .db-patri-detail { font-size:10px; color:#6b7280; margin-top:5px; }
 
-    .db-os-nums { display:flex; align-items:stretch; margin-bottom:14px; }
-    .db-os-block { flex:1; text-align:center; padding:10px 6px; }
-    .db-os-num { font-size:32px; font-weight:1000; letter-spacing:-.05em; line-height:1; font-variant-numeric:tabular-nums; color:#e2e2f0; }
-    .db-os-num.is-amber { color:#fde68a; }
-    .db-os-num.is-green { color:#00c87a; }
-    .db-os-label { font-size:9px; font-weight:900; letter-spacing:.08em; color:#6b7280; text-transform:uppercase; margin-top:4px; }
-    .db-os-sep { width:1px; background:rgba(255,255,255,.07); }
-    .db-os-link { display:block; width:100%; background:rgba(0,200,122,.10); color:#00c87a; border:1px solid rgba(0,200,122,.26); border-radius:10px; padding:9px; font-size:11px; font-weight:950; text-align:center; text-decoration:none; transition:background .15s; }
-    .db-os-link:hover { background:rgba(0,200,122,.18); }
-
-    .db-donut-wrap { display:flex; justify-content:center; margin:4px 0 14px; }
     .db-donut-value { font-size:24px; font-weight:1000; letter-spacing:-.04em; fill:#e2e2f0; font-variant-numeric:tabular-nums; }
     .db-donut-value.is-green { fill:#00c87a; }
     .db-donut-value.is-amber { fill:#fde68a; }
     .db-donut-sub { font-size:10px; font-weight:800; fill:#6b7280; letter-spacing:.04em; }
-    .db-donut-detail { text-align:center; font-size:10px; color:#6b7280; margin-top:2px; }
     .db-donut-status { text-align:center; font-size:11px; font-weight:900; margin-top:6px; }
+
+    .db-donut-row { display:flex; gap:10px; }
+    .db-donut-mini { flex:1; display:flex; flex-direction:column; align-items:center; padding:10px 6px; border-radius:16px; cursor:pointer; transition:background .18s ease, transform .18s ease; }
+    .db-donut-mini.is-clickable:hover { background:rgba(255,255,255,.035); transform:translateY(-1px); }
+    .db-donut-mini.is-clickable:focus-visible { outline:2px solid rgba(45,212,160,.85); outline-offset:2px; }
 
     .db-loading { padding:32px; text-align:center; color:#6b7280; font-size:13px; }
 
@@ -306,7 +280,15 @@ function injectDashStyles() {
     .db-stat-sub.is-neg { color:#fde68a; }
     .db-delta-inline { }
     .db-stat-sep { height:1px; background:rgba(255,255,255,.06); }
-    .db-chart-label { font-size:9px; font-weight:950; letter-spacing:.12em; text-transform:uppercase; color:#6b7280; margin-bottom:6px; }
+    .db-chart-label-row { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:6px; }
+    .db-chart-label { font-size:9px; font-weight:950; letter-spacing:.12em; text-transform:uppercase; color:#6b7280; }
+    .db-chart-value { font-size:11px; font-weight:900; color:#dfe3ea; white-space:nowrap; }
+    .db-chart-bar { cursor:pointer; }
+    .db-chart-bar-fill { fill:rgba(0,200,122,.35); transition:fill .15s ease; }
+    .db-chart-bar.is-selected .db-chart-bar-fill { fill:rgba(0,200,122,.90); }
+    .db-chart-bar:hover .db-chart-bar-fill { fill:rgba(0,200,122,.65); }
+    .db-chart-bar-label { font-size:7px; font-family:monospace; font-weight:700; fill:rgba(255,255,255,.35); }
+    .db-chart-bar.is-selected .db-chart-bar-label { fill:rgba(255,255,255,.7); }
 
     .db-state-wrap {
       margin: 0;
@@ -605,8 +587,22 @@ function renderStateFill({ pct, onTrack, estado, mapaEstados }) {
   `;
 }
 
+function selectChartBar(bar) {
+  const svg = bar.closest('.db-mini-chart-svg');
+  svg?.querySelectorAll('.db-chart-bar.is-selected').forEach((el) => el.classList.remove('is-selected'));
+  bar.classList.add('is-selected');
+  const valueEl = svg?.closest('.db-prod-right')?.querySelector('#dbChartValue');
+  if (valueEl) valueEl.innerHTML = `${fmtDiaChart(bar.dataset.date)} &middot; ${fmtTons(bar.dataset.tons)}`;
+}
+
+function fmtDiaChart(dateStr) {
+  const d = String(dateStr || '');
+  return d ? `${d.slice(8,10)}/${d.slice(5,7)}` : '—';
+}
+
 function renderMiniChart(daily7) {
-  if (!daily7?.length) return '<div style="height:56px"></div>';
+  if (!daily7?.length) return { html: '<div style="height:56px"></div>', defaultLabel: '' };
+  const lastIdx = daily7.length - 1;
   const maxT = Math.max(...daily7.map(d => d.tons), 1);
   const W = 180, H = 46, bw = 18, gap = 6;
   const totalW = daily7.length * bw + (daily7.length - 1) * gap;
@@ -615,26 +611,33 @@ function renderMiniChart(daily7) {
     const h = Math.max(2, Math.round((d.tons / maxT) * H));
     const x = ox + i * (bw + gap);
     const dd = String(d.date || '').slice(8);
-    const fill = i === 6 ? 'rgba(0,200,122,.90)' : 'rgba(0,200,122,.35)';
-    return `<rect x="${x}" y="${H-h}" width="${bw}" height="${h}" rx="3" fill="${fill}"/>
-            <text x="${x + bw/2}" y="${H+11}" text-anchor="middle" fill="rgba(255,255,255,.35)" style="font-size:7px;font-family:monospace;font-weight:700">${dd}</text>`;
+    const isSelected = i === lastIdx;
+    return `<g class="db-chart-bar${isSelected ? ' is-selected' : ''}" data-idx="${i}" data-date="${esc(d.date || '')}" data-tons="${d.tons}" tabindex="0" role="button" aria-label="${fmtDiaChart(d.date)}: ${fmtTons(d.tons)}">
+              <rect x="${x}" y="0" width="${bw}" height="${H}" fill="transparent"/>
+              <rect class="db-chart-bar-fill" x="${x}" y="${H-h}" width="${bw}" height="${h}" rx="3"/>
+              <text x="${x + bw/2}" y="${H+11}" text-anchor="middle" class="db-chart-bar-label">${dd}</text>
+            </g>`;
   }).join('');
-  return `<svg viewBox="0 0 ${W} ${H+14}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:62px;display:block;overflow:visible">${bars}</svg>`;
+  const html = `<svg viewBox="0 0 ${W} ${H+14}" xmlns="http://www.w3.org/2000/svg" class="db-mini-chart-svg" style="width:100%;height:62px;display:block;overflow:visible">${bars}</svg>`;
+  const last = daily7[lastIdx];
+  return { html, defaultLabel: `${fmtDiaChart(last.date)} &middot; ${fmtTons(last.tons)}` };
 }
 
-function renderDonut(pct, { colorClass = '', label = '' } = {}) {
+function renderDonut(pct, { size = 108, colorClass = '', label = '' } = {}) {
   const clamped = Math.max(0, Math.min(100, pct));
-  const size = 108, stroke = 10, r = (size - stroke) / 2, cx = size / 2, cy = size / 2;
+  const stroke = Math.max(7, Math.round(size * 0.09)), r = (size - stroke) / 2, cx = size / 2, cy = size / 2;
   const circ = 2 * Math.PI * r;
   const dash = (clamped / 100) * circ;
   const color = colorClass === 'is-amber' ? '#fde68a' : colorClass === 'is-red' ? '#f87171' : '#00c87a';
+  const valueSize = Math.max(13, Math.round(size * 0.2));
+  const subSize = Math.max(8, Math.round(size * 0.09));
   return `
     <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="${stroke}"/>
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round"
         stroke-dasharray="${dash.toFixed(1)} ${circ.toFixed(1)}" transform="rotate(-90 ${cx} ${cy})" style="transition:stroke-dasharray .6s ease"/>
-      <text x="${cx}" y="${cy - 2}" text-anchor="middle" class="db-donut-value ${colorClass}">${clamped.toFixed(0)}%</text>
-      ${label ? `<text x="${cx}" y="${cy + 16}" text-anchor="middle" class="db-donut-sub">${esc(label)}</text>` : ''}
+      <text x="${cx}" y="${cy - 2}" text-anchor="middle" class="db-donut-value ${colorClass}" style="font-size:${valueSize}px">${clamped.toFixed(0)}%</text>
+      ${label ? `<text x="${cx}" y="${cy + subSize + 4}" text-anchor="middle" class="db-donut-sub" style="font-size:${subSize}px">${esc(label)}</text>` : ''}
     </svg>
   `;
 }
@@ -665,12 +668,13 @@ function renderGestorSkeleton() {
             </div>
             <div class="db-stat-sep"></div>
             <div class="db-skel" style="width:100%;height:62px"></div>
+            <div class="db-stat-sep"></div>
+            <div style="display:flex;gap:10px">
+              <div class="db-skel" style="flex:1;height:110px;border-radius:16px"></div>
+              <div class="db-skel" style="flex:1;height:110px;border-radius:16px"></div>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="db-secondary-grid">
-        <div class="db-skel" style="height:150px"></div>
-        <div class="db-skel" style="height:150px"></div>
       </div>
     </div>
   `;
@@ -690,8 +694,8 @@ function renderGestorDashboard(container, data) {
   const delta       = produzido - ritmo;
   const patriOk     = patriTotal - patriAtrasados;
   const patriPct    = patriTotal > 0 ? (patriOk / patriTotal * 100) : 100;
-  const patriAtrPct = patriTotal > 0 ? (patriAtrasados / patriTotal * 100) : 0;
   const osAtendPct  = osTotal > 0 ? ((osTotal - osPendentes) / osTotal * 100) : 100;
+  const miniChart   = renderMiniChart(daily7);
   const regionLabel = isMaster ? 'TODAS AS REGIONAIS' : (coordenacao || 'REGIONAL');
   const estado      = isMaster ? 'BR' : (resolveStateFromRegionalName(coordenacao) || null);
   const patrimonioLeituraUrl = toPanelUrl('patrimonio-status');
@@ -729,8 +733,32 @@ function renderGestorDashboard(container, data) {
             </div>
             <div class="db-stat-sep"></div>
             <div>
-              <div class="db-chart-label">Últimos 7 dias</div>
-              ${renderMiniChart(daily7)}
+              <div class="db-chart-label-row">
+                <span class="db-chart-label">Últimos 7 dias</span>
+                <span class="db-chart-value" id="dbChartValue">${miniChart.defaultLabel}</span>
+              </div>
+              ${miniChart.html}
+            </div>
+            <div class="db-stat-sep"></div>
+            <div class="db-donut-row">
+              <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir painel Leitura de Patrimônios" onclick="window.location.href='${patrimonioLeituraUrl}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${patrimonioLeituraUrl}';}">
+                <div class="db-mini-eyebrow">Leitura</div>
+                ${renderDonut(patriPct, { size: 86, colorClass: patriAtrasados===0 ? 'is-green' : 'is-amber', label: `${patriOk}/${patriTotal}` })}
+                <div class="db-donut-status">
+                  ${patriAtrasados > 0
+                    ? `<span class="db-status-late">${patriAtrasados} em atraso</span>`
+                    : '<span class="db-status-ok">Tudo em dia ✓</span>'}
+                </div>
+              </div>
+              <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir Programação" onclick="window.location.href='${buildPanelHref('programacao')}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${buildPanelHref('programacao')}';}">
+                <div class="db-mini-eyebrow">Atendimento</div>
+                ${renderDonut(osAtendPct, { size: 86, colorClass: osPendentes===0 ? 'is-green' : 'is-amber', label: `${osAtender}/${osTotal}` })}
+                <div class="db-donut-status">
+                  ${osPendentes > 0
+                    ? `<span class="db-status-late">${osPendentes} pendente${osPendentes===1?'':'s'}</span>`
+                    : '<span class="db-status-ok">Tudo em dia ✓</span>'}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -740,30 +768,6 @@ function renderGestorDashboard(container, data) {
             <span>${onTrack ? 'No ritmo esperado' : 'Abaixo do ritmo'}</span>
           </div>
           ${meta > 0 ? `<div class="db-delta ${onTrack ? 'is-pos' : 'is-neg'}">${fmtDelta(delta)} vs meta do dia</div>` : ''}
-        </div>
-      </div>
-
-      <div class="db-secondary-grid">
-        <div class="db-mini-card is-clickable" role="button" tabindex="0" title="Abrir painel Leitura de Patrimônios" onclick="window.location.href='${patrimonioLeituraUrl}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${patrimonioLeituraUrl}';}">
-          <div class="db-mini-eyebrow">Leitura</div>
-          <div class="db-donut-wrap">${renderDonut(patriPct, { colorClass: patriAtrasados===0 ? 'is-green' : 'is-amber', label: `${patriOk}/${patriTotal}` })}</div>
-          <div class="db-donut-status">
-            ${patriAtrasados > 0
-              ? `<span class="db-status-late">${patriAtrasados} em atraso &gt;7d</span>`
-              : '<span class="db-status-ok">Tudo em dia ✓</span>'}
-          </div>
-          <div class="db-donut-detail">${patriTotal} patrimônios ativos</div>
-        </div>
-
-        <div class="db-mini-card is-clickable" role="button" tabindex="0" title="Abrir Programação" onclick="window.location.href='${buildPanelHref('programacao')}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${buildPanelHref('programacao')}';}">
-          <div class="db-mini-eyebrow">Atendimento</div>
-          <div class="db-donut-wrap">${renderDonut(osAtendPct, { colorClass: osPendentes===0 ? 'is-green' : 'is-amber', label: `${osAtender}/${osTotal}` })}</div>
-          <div class="db-donut-status">
-            ${osPendentes > 0
-              ? `<span class="db-status-late">${osPendentes} pendente${osPendentes===1?'':'s'}</span>`
-              : '<span class="db-status-ok">Tudo em dia ✓</span>'}
-          </div>
-          <div class="db-donut-detail">${osTotal} ordens de serviço</div>
         </div>
       </div>
     </div>
@@ -844,43 +848,54 @@ function renderQuickAccess(menuSections) {
 }
 
 export async function renderContent(content, userContext) {
-  const menuSections   = buildAllowedMenu(userContext);
-  const menuItems      = flattenAllowedMenu(userContext);
-  const totalLiberados = menuItems.length;
-  const showGestor     = isGestorOrMaster(userContext);
+  const showGestor = isGestorOrMaster(userContext);
 
-  const gestorPlaceholder = showGestor
-    ? `<div id="dbGestorSection">${renderGestorSkeleton()}</div>`
-    : '';
+  if (showGestor) {
+    content.innerHTML = `<div id="dbGestorSection">${renderGestorSkeleton()}</div>`;
+  } else {
+    const menuSections   = buildAllowedMenu(userContext);
+    const menuItems      = flattenAllowedMenu(userContext);
+    const totalLiberados = menuItems.length;
 
-  content.innerHTML = `
-    ${gestorPlaceholder}
+    content.innerHTML = `
+      ${renderStatCards(userContext.user, userContext.department, totalLiberados)}
 
-    ${renderStatCards(userContext.user, userContext.department, totalLiberados)}
+      <section class="hero-card mt-16">
+        <div>
+          <div class="eyebrow">Painel corporativo</div>
+          <h2>Bem-vindo, ${userContext.user.name}</h2>
+          <p class="muted" style="margin:0;line-height:1.6;max-width:560px">
+            Painel com autenticação real, sessão persistida, proteção de páginas,
+            menu dinâmico por perfil e acesso seguro via Supabase Auth.
+          </p>
+        </div>
+        <div class="hero-badge-wrap">
+          <span class="hero-badge">
+            ${userContext.user.is_master ? 'MASTER' : (userContext.user.role || 'USUÁRIO')}
+          </span>
+        </div>
+      </section>
 
-    <section class="hero-card mt-16">
-      <div>
-        <div class="eyebrow">Painel corporativo</div>
-        <h2>Bem-vindo, ${userContext.user.name}</h2>
-        <p class="muted" style="margin:0;line-height:1.6;max-width:560px">
-          Painel com autenticação real, sessão persistida, proteção de páginas,
-          menu dinâmico por perfil e acesso seguro via Supabase Auth.
-        </p>
-      </div>
-      <div class="hero-badge-wrap">
-        <span class="hero-badge">
-          ${userContext.user.is_master ? 'MASTER' : (userContext.user.role || 'USUÁRIO')}
-        </span>
-      </div>
-    </section>
-
-    ${renderQuickAccess(menuSections)}
-  `;
+      ${renderQuickAccess(menuSections)}
+    `;
+  }
 
   if (!showGestor) return;
 
   injectDashStyles();
   const gestorSection = document.getElementById('dbGestorSection');
+
+  gestorSection.addEventListener('click', (e) => {
+    const bar = e.target.closest('.db-chart-bar');
+    if (bar) selectChartBar(bar);
+  });
+  gestorSection.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const bar = e.target.closest?.('.db-chart-bar');
+    if (!bar) return;
+    e.preventDefault();
+    selectChartBar(bar);
+  });
 
   async function loadGestorData({ force = false } = {}) {
     const btn = document.getElementById('dbRefreshBtn');
@@ -906,27 +921,41 @@ export async function renderContent(content, userContext) {
     });
     const localKey = dashLocalCacheKey(ref);
 
+    // staleData: uma leitura anterior do localStorage, mesmo vencida. Mostrá-la
+    // na hora (em vez de esperar o pipeline completo) evita que o usuário fique
+    // encarando o skeleton sempre que o cache (local de 1h ou o remoto na tabela
+    // dashboard_cache) expira no mesmo momento em que ele abre a tela — o dado
+    // "velho" é substituído silenciosamente assim que o refresh em segundo
+    // plano terminar.
+    let staleData = null;
     if (!force) {
       try {
         const raw = localStorage.getItem(localKey);
         if (raw) {
           const { ts, data } = JSON.parse(raw);
-          if (Date.now() - ts < GESTOR_CACHE_TTL && data) {
-            renderAndAnimate(data);
-            const b = document.getElementById('dbRefreshBtn');
-            if (b) { b.classList.remove('loading'); b.disabled = false; }
-            return;
+          if (data) {
+            staleData = data;
+            if (Date.now() - ts < GESTOR_CACHE_TTL) {
+              renderAndAnimate(data);
+              const b = document.getElementById('dbRefreshBtn');
+              if (b) { b.classList.remove('loading'); b.disabled = false; }
+              return;
+            }
           }
         }
       } catch {}
     }
+
+    if (staleData) renderAndAnimate(staleData);
 
     try {
       const data = await fetchGestorData(userContext, { force });
       try { localStorage.setItem(localKey, JSON.stringify({ ts: Date.now(), data })); } catch {}
       renderAndAnimate(data);
     } catch (e) {
-      gestorSection.innerHTML = `<div class="db-loading" style="color:#f87171">Erro ao carregar: ${esc(e?.message || 'Tente novamente.')}</div>`;
+      if (!staleData) {
+        gestorSection.innerHTML = `<div class="db-loading" style="color:#f87171">Erro ao carregar: ${esc(e?.message || 'Tente novamente.')}</div>`;
+      }
       console.error('dashboard gestor:', e);
     } finally {
       const b = document.getElementById('dbRefreshBtn');
