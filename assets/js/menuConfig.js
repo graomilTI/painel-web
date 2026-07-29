@@ -192,18 +192,21 @@ export const MENU_CONFIG = [
   {
     grupo: "AUDITORIA",
     itens: [
-      item("admin_auditoria", "Auditoria do Sistema", "admin-auditoria", ["ADMIN_AUDITORIA"]),
-      item("auditoria_central", "Auditoria Central", "auditoria-central", ["AUDITORIA_CENTRAL", "LOGS_USUARIOS", "ADMIN_AUDITORIA"])
+      item("admin_auditoria", "Auditoria do Sistema", "admin-auditoria", ["ADMIN_AUDITORIA"])
+      // "Auditoria Central" foi consolidada em Diretoria > Logs de Usuários
+      // (#83) — filtros de módulo/ação/registro/resultado e o diff antes×depois
+      // continuam existindo lá. AUDITORIA_CENTRAL fica como alias de
+      // logs_usuarios pra não quebrar permissão de quem já tinha acesso.
     ]
   },
 
   {
     grupo: "RELATÓRIOS",
     itens: [
-      item("relatorios_importar", "Importar Relatórios", "importar-relatorios", ["RELATORIOS_IMPORTAR", "RELATORIOS_UPLOAD", "IMPORTAR_RELATORIOS", "RELATORIOS"]),
-      item("relatorios_colab", "Colaboradores", "consultar-colaboradores", ["RELATORIOS_COLAB", "RELATORIOS"]),
-      item("relatorios_prod", "Produção", "consultar-producao", ["RELATORIOS_PROD", "RELATORIOS"]),
-      item("relatorios_patrimonios_importar", "Patrimônios", "importar-patrimonios", ["RELATORIOS_PATRIMONIOS_IMPORTAR", "RELATORIOS"])
+      // Colaboradores/Produção/Patrimônios removidos do menu (#85-87). Produção
+      // segue acessível via GESTOR > Histórico Produção (mesma rota
+      // consultar-producao); Colaboradores e Patrimônios ficam só por URL direta.
+      item("relatorios_importar", "Importar Relatórios", "importar-relatorios", ["RELATORIOS_IMPORTAR", "RELATORIOS_UPLOAD", "IMPORTAR_RELATORIOS", "RELATORIOS"])
     ]
   },
 
@@ -217,7 +220,7 @@ export const MENU_CONFIG = [
       item("diretoria_desempenho", "Desempenho", "desempenho", ["DESEMPENHO", "DIRETORIA_DESEMPENHO"]),
       item("diretoria_contato_cliente", "Contato Cliente", "contato-cliente", ["DIRETORIA_CONTATO_CLIENTE"]),
       item("usuarios_acessos", "Usuários e Acessos", "admin-usuarios", ["ADMIN_USUARIOS", "USUARIOS_E_ACESSOS"]),
-      item("logs_usuarios", "Logs de Usuários", "logs-usuarios", ["LOGS_USUARIOS"]),
+      item("logs_usuarios", "Logs de Usuários", "logs-usuarios", ["LOGS_USUARIOS", "AUDITORIA_CENTRAL"]),
       item("admin_config", "Configurações", "admin-configuracoes", ["ADMIN_CONFIG"])
     ]
   }
