@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/dashboard-socio.js';
+import './modules/dashboard-socio.js?v=20260729-faturamento-rpc-fix';
 
 function normalizarChaveDashboardSocio(value) {
   return String(value ?? '')

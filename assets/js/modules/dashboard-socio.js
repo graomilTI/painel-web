@@ -255,41 +255,25 @@
     }
   }
 
-  function dataRealDaNota(r) {
-    const json = r?.dados_json || {};
-    const raw = json['Data N.F.'] ?? json['Data da NF'] ?? json['Data NF'] ?? json['Data Nota'] ?? json['Data'];
-    const m = String(raw ?? '').match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-    return m ? `${m[3]}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}` : null;
-  }
-
+  // ACHADO AO VIVO 29/07/2026: grm_notas_fiscais_importacoes reinsere a MESMA
+  // NF a cada sync sem upsert por chave única (a suposição no comentário antigo
+  // — "a tabela agora tem upsert deduplicado por numero_nf" — está errada: 269
+  // mil linhas pra ~poucas centenas de NFs distintas por mês). O código antigo
+  // baixava a tabela inteira (270+ requisições sequenciais, minutos de carga) E
+  // somava os duplicados sem deduplicar (faturamento de junho aparecia como
+  // R$1,34 BILHÃO em vez de ~R$5,6 milhões reais). Substituído por RPC que
+  // deduplica por número da NF (pega o registro mais recente de cada uma) e
+  // soma direto no banco — 1 requisição, resultado correto.
+  // Migration companion: colunas data_nota_real/valor_nota_real (backfilled)
+  // + índice em data_nota_real + função resumo_faturamento_notas_periodo.
   async function carregarFaturamentoNotasAgente(supabase, inicio, fim) {
     try {
-      // data_nota_de/data_fatura_de na tabela sao a JANELA de busca usada pelo robo
-      // (~35 dias), nao a data real da nota - e o lote "mais recente" (ultimos 5min)
-      // so cobre uma fracao da sincronizacao, que leva bem mais que isso. A tabela
-      // agora tem upsert deduplicado por numero_nf, entao basta ler tudo e filtrar
-      // pela data real dentro do dados_json.
-      const pageSize = 1000;
-      let from = 0;
-      const rows = [];
-      while (true) {
-        const { data, error } = await supabase
-          .from('grm_notas_fiscais_importacoes')
-          .select('dados_json')
-          .range(from, from + pageSize - 1);
-        if (error) throw error;
-        const batch = data || [];
-        rows.push(...batch);
-        if (batch.length < pageSize) break;
-        from += pageSize;
-      }
-
-      return rows.reduce((sum, r) => {
-        const data = dataRealDaNota(r);
-        if (!data || data < inicio || data >= fim) return sum;
-        const raw = rawValue(r, ['Valor Bruto', 'Valor da N.F.', 'Valor Total', 'Valor']);
-        return sum + numberBr(raw);
-      }, 0);
+      const { data, error } = await supabase.rpc('resumo_faturamento_notas_periodo', {
+        p_inicio: inicio,
+        p_fim: fim
+      });
+      if (error) throw error;
+      return n(data);
     } catch (e) {
       console.warn('[dashboard socio] fallback de notas fiscais dos agentes indisponível', e);
       return 0;
