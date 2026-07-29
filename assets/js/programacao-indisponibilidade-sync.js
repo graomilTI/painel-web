@@ -255,8 +255,9 @@ function injetarStyles() {
   style.id = 'progIndisponibilidadeSyncStyles';
   style.textContent = `
     .pso-sync-rh-badge{display:inline-flex;align-items:center;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:900;background:rgba(245,158,11,.14);color:#fde68a;border:1px solid rgba(245,158,11,.35);vertical-align:middle}
-    .pso-rh-feedback{display:block;margin-top:5px;font-size:10.5px;font-weight:800;color:#86efac}
-    .pso-rh-feedback.err{color:#fca5a5}
+    .pso-rh-status{display:inline-flex;align-items:center;justify-content:center;min-width:58px;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:900;white-space:nowrap;justify-self:end}
+    .pso-rh-status.ok{background:rgba(34,197,94,.14);color:#4ade80;border:1px solid rgba(34,197,94,.35)}
+    .pso-rh-status.err{background:rgba(239,68,68,.14);color:#fca5a5;border:1px solid rgba(239,68,68,.35)}
   `;
   document.head.appendChild(style);
 }
@@ -280,17 +281,39 @@ function dadosDoCard(card) {
   };
 }
 
-function feedbackRh(card, mensagem, erro = false) {
-  let el = card.querySelector('.pso-rh-feedback');
-  if (!el) {
-    el = document.createElement('span');
-    el.className = 'pso-rh-feedback';
-    card.querySelector('.pso-situacoes')?.insertAdjacentElement('afterend', el);
-  }
-  el.classList.toggle('err', erro);
-  el.textContent = mensagem;
+// O badge mora num slot fixo (4ª coluna do grid de .pso-card, ver
+// programacao-sem-os.js) em vez de ser inserido/removido como sibling solto
+// — isso é o que evitava manter as colunas alinhadas (o texto de feedback
+// entrava como um item extra no grid de 3 colunas e empurrava a Observação
+// pra uma linha nova, reportado pela usuária 2026-07-29).
+function setStatusRh(card, informado) {
+  const el = card.querySelector('[data-rh-status]');
+  if (!el) return;
   clearTimeout(el._timer);
-  el._timer = setTimeout(() => { if (el.isConnected) el.remove(); }, 3500);
+  el.title = '';
+  if (informado) {
+    el.className = 'pso-rh-status ok';
+    el.textContent = 'RH ✔';
+  } else {
+    el.className = 'pso-rh-status';
+    el.textContent = '';
+  }
+}
+
+function mostrarErroRh(card) {
+  const el = card.querySelector('[data-rh-status]');
+  if (!el) return;
+  const classeAnterior = el.className;
+  const textoAnterior = el.textContent;
+  clearTimeout(el._timer);
+  el.className = 'pso-rh-status err';
+  el.textContent = 'Falha';
+  el.title = 'Falha ao informar o RH.';
+  el._timer = setTimeout(() => {
+    el.className = classeAnterior;
+    el.textContent = textoAnterior;
+    el.title = '';
+  }, 3500);
 }
 
 async function enviarAoRh(card, tipo, selecionado) {
@@ -323,10 +346,10 @@ async function enviarAoRh(card, tipo, selecionado) {
 
   if (error) {
     console.error('[programacao-indisponibilidade] informar RH:', error);
-    feedbackRh(card, 'Falha ao informar o RH.', true);
+    mostrarErroRh(card);
     return;
   }
-  feedbackRh(card, selecionado ? 'Informado ao RH.' : 'Informação cancelada no RH.');
+  setStatusRh(card, selecionado);
 }
 
 function observarAcoesSemOs() {

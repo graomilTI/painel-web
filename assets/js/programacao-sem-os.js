@@ -65,7 +65,7 @@ function injectStyles() {
     .pso-loading{display:flex;align-items:center;justify-content:center;gap:10px;text-align:left}
     .pso-spinner{width:24px;height:24px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;flex:0 0 auto;animation:psoSpin .75s linear infinite}
     @keyframes psoSpin{to{transform:rotate(360deg)}}
-    .pso-card{display:grid;grid-template-columns:minmax(180px,1.2fr) auto minmax(220px,1.4fr);gap:12px;align-items:center;border:1px solid rgba(52,211,153,.16);background:rgba(2,6,23,.28);border-radius:14px;padding:11px 14px}
+    .pso-card{display:grid;grid-template-columns:minmax(180px,1.2fr) auto minmax(180px,1fr) auto;gap:12px;align-items:center;border:1px solid rgba(52,211,153,.16);background:rgba(2,6,23,.28);border-radius:14px;padding:11px 14px}
     .pso-name{display:flex;align-items:center;gap:10px;min-width:0}
     .pso-av{width:32px;height:32px;border-radius:999px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-weight:950;font-size:12px;background:rgba(59,130,246,.18);color:#bfdbfe;border:1px solid rgba(59,130,246,.35)}
     .pso-name-txt{min-width:0}
@@ -113,6 +113,7 @@ function cardHtml(colab, row, readOnly, pendente, tipoContratoCru, indispMotivo)
       ${SITUACOES.map(([valor, label]) => `<button type="button" class="pso-sit-btn ${situacaoAtual === valor ? 'on' : ''}" data-situacao="${esc(valor)}" ${dis}>${esc(label)}</button>`).join('')}
     </div>
     <input class="pso-obs" type="text" data-obs value="${esc(row?.observacao || '')}" placeholder="Observação" ${dis} />
+    <span class="pso-rh-status" data-rh-status></span>
   </article>`;
 }
 
