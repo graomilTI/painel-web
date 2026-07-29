@@ -486,9 +486,19 @@ function bindPageEvents(content) {
   content.querySelector('#auRefreshBtn')?.addEventListener('click', () => loadAll(content, true));
   content.querySelector('#auCreateBtn')?.addEventListener('click', () => openUserModal('create'));
 
+  // renderPage() reconstrói a página inteira (content.innerHTML) — sem debounce,
+  // cada tecla digitada disparava um re-render completo da lista, travando a
+  // digitação quando há muitos usuários (#93). 250ms é o mesmo intervalo já
+  // usado nas outras buscas com autocomplete deste painel.
+  let filtroBuscaDebounce = null;
   content.querySelector('#auFiltroBusca')?.addEventListener('input', (event) => {
-    state.filters.q = event.target.value;
-    renderPage(content);
+    const valor = event.target.value;
+    clearTimeout(filtroBuscaDebounce);
+    filtroBuscaDebounce = setTimeout(() => {
+      state.filters.q = valor;
+      renderPage(content);
+      content.querySelector('#auFiltroBusca')?.focus();
+    }, 250);
   });
   content.querySelector('#auFiltroPerfil')?.addEventListener('change', (event) => {
     state.filters.perfil = event.target.value;

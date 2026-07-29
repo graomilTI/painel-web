@@ -214,7 +214,6 @@ export const MENU_CONFIG = [
     grupo: "DIRETORIA",
     itens: [
       item("dashboard_socio", "Dashboard do Sócio", "dashboard-socio", ["DASHBOARD_SOCIO"]),
-      item("diretoria_desenvolvimento", "Desenvolvimento", "desenvolvimento", ["DIRETORIA_DESENVOLVIMENTO", "DESENVOLVIMENTO", "DIRETORIA_DRE", "DASHBOARD_SOCIO"]),
       item("diretoria_dre", "DRE", "dre", ["DRE", "DIRETORIA_DRE"]),
       item("diretoria_metas", "METAS", "metas", ["METAS", "DIRETORIA_METAS"]),
       item("diretoria_desempenho", "Desempenho", "desempenho", ["DESEMPENHO", "DIRETORIA_DESEMPENHO"]),
