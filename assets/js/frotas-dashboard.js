@@ -90,7 +90,6 @@ const CSS = `
   --fd-bg:#06130e;--fd-sb:#0b1220;--fd-green:#3fa878;--fd-green2:#6fd0a5;
   --fd-line:rgba(111,208,165,.12);--fd-line2:rgba(111,208,165,.22);
   --fd-text:#eef7f2;--fd-muted:#9fb7aa;--fd-card:rgba(8,22,17,.72);
-  --fd-gd:rgba(111,208,165,;
 }
 .fd-host{padding:0!important;overflow:hidden!important;display:flex!important;flex-direction:column;height:100%}
 .fd-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden;font-family:"DM Sans",system-ui,sans-serif;font-size:13px;color:var(--fd-text)}
@@ -291,10 +290,6 @@ function renderFrotasDashboard(container, opts = {}) {
   container.querySelectorAll('.fd-tab[data-nav]').forEach(btn => {
     btn.addEventListener('click', () => window.location.assign(panelUrl(btn.dataset.nav)));
   });
-
-      }
-    });
-  }
 
   /* ── Load live data ── */
   loadVehicleData(container, sb);
