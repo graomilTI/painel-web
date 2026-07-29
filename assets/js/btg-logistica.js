@@ -310,6 +310,39 @@ async function loadSavedDistData() {
     }
   } catch (err) { console.warn('Distribuição BTG salva ainda não disponível:', err?.message || err); }
 }
+// Item #79 do checklist: colaborador inserido em Gestor > Programação numa OS
+// BTG deve refletir no status de checkin sem esperar o próximo upload manual
+// de Distribuição de OS. logistica_btg_distribuicao é sobrescrita inteira a
+// cada upload (persistDistribuicaoRows apaga tudo antes de inserir), então
+// gravar aqui seria perdido no próximo upload — em vez disso, complementa
+// state.distRows em memória com os vínculos AO VIVO de operacional_os_colaboradores
+// (Programação), lidos direto do banco a cada carregamento da página. hasColab
+// (distIndexes → reconcile) já faz "some(...)" sobre esses registros, então
+// não precisa de nenhuma mudança na lógica de status — só entrar como mais
+// uma fonte de "colaborador vinculado a esta OS".
+async function loadColaboradoresProgramacaoAoVivo() {
+  try {
+    const { data, error } = await supabase
+      .from('operacional_os_colaboradores')
+      .select('colaborador_nome, colaborador_cpf, operacional_os!inner(numero_os)')
+      .limit(20000);
+    if (error) throw error;
+    const rows = (data || [])
+      .filter(r => r.operacional_os?.numero_os && (r.colaborador_nome || r.colaborador_cpf))
+      .map(r => ({
+        os: clean(r.operacional_os.numero_os),
+        contrato: '',
+        colaborador: clean(r.colaborador_nome) || '—',
+        supervisao: '—',
+        lote: null,
+        remanescente: null,
+        financeiro: '',
+        prodDiaOs: null,
+        fonte: 'Programação (ao vivo)',
+      }));
+    if (rows.length) state.distRows = [...(state.distRows || []), ...rows];
+  } catch (err) { console.warn('Vínculos ao vivo de Programação (BTG checkin) indisponíveis:', err?.message || err); }
+}
 async function persistListaOsRows(rows) {
   const list = rows || [];
   if (!list.length) return;
@@ -576,6 +609,7 @@ async function loadDbData(el) {
   }
   await loadSavedBtgData();
   await loadSavedDistData();
+  await loadColaboradoresProgramacaoAoVivo();
   await loadSavedListaOsData();
   if (state.mode === 'db') state.finalRows = state.dbRows;
 }
