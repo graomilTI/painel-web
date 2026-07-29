@@ -1,4 +1,4 @@
-const SW_VERSION = '20260713-cache-v10';
+const SW_VERSION = '20260729-cache-v11';
 
 export function registerPanelPwa() {
   if (!('serviceWorker' in navigator)) return;
